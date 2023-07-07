@@ -3,9 +3,20 @@ from pathlib import Path
 import json
 import os
 import file_io
+import itertools
+from operator import itemgetter
 
 import plate_solving
 import spatial_association
+
+
+def group_by_fits_header(filenames, fits_keyword):
+  def read_keyword(f):
+    return file_io.read_fits(f)[fits_keyword]
+
+  sorted_input = sorted(filenames, key=read_keyword)
+  return [(k, list(g))
+          for k, g in itertools.groupby(sorted_input, key=read_keyword)]
 
 
 class AstroFlow(FlowSpec):
@@ -84,17 +95,107 @@ class AstroFlow(FlowSpec):
       print(f'Plate solving {len(self.light_frames)} light frames...')
       self.plate_solutions = plate_solving.solve_fields(self.light_frames)
 
-    self.next(self.spatial_association)
+    self.next(self.spatial_grouping)
 
   @step
-  def spatial_association(self):
+  def spatial_grouping(self):
     positions = [
         spatial_association.get_position(wcs)
         for wcs, _ in self.plate_solutions.values()
     ]
-    components = spatial_association.find_components(positions)
-    print('Found components', components)
+    self.spatial_groups = spatial_association.find_components(
+        self.plate_solutions.keys(), positions)
 
+    for i, g in enumerate(self.spatial_groups):
+      print(f'Spatial group #{i + 1} has {len(g)} light frames')
+
+    # TODO: Group light frames by spatial component, run foreach
+    # TODO: Further group light frames by rig, run foreach
+    # TODO: Further group light frames by filter, run foreach
+    # TODO: Assign flat frames to each light frame
+
+    # This association is from filename to component, e.g. ('file.fits', 2).
+    self.next(self.rig_grouping, foreach='spatial_groups')
+
+  def pretty_print_foreach_stack(self):
+    stack = self.foreach_stack()
+
+    if len(stack) > 0:
+      component_index, num_components, component_filenames = stack[0]
+      print(
+          f'Component {component_index} / {num_components} has {len(component_filenames)} light frames'
+      )
+
+    if len(stack) > 1:
+      rig_index, num_rigs, value = stack[1]
+      rig, filenames = value
+      print(
+          f'Component {component_index} / {num_components}, rig {rig}, has {len(filenames)} light frames'
+      )
+
+    if len(stack) > 2:
+      filter_index, num_filters, value = stack[2]
+      filter, filenames = value
+      print(
+          f'Component {component_index} / {num_components}, rig {rig}, filter {filter}, has {len(filenames)} light frames'
+      )
+
+  def extract_group_keys_from_stack(self):
+    stack = self.foreach_stack()
+
+    group_keys = []
+
+    if len(stack) > 0:
+      component_index, _, _ = stack[0]
+      group_keys.append(f'Component {component_index}')
+
+    if len(stack) > 1:
+      rig_index, num_rigs, value = stack[1]
+      rig, filenames = value
+      group_keys.append(rig)
+
+    if len(stack) > 2:
+      filter_index, num_filters, value = stack[2]
+      filter, filenames = value
+      group_keys.append(filter)
+
+    return ', '.join(group_keys)
+
+  @step
+  def rig_grouping(self):
+    # self.pretty_print_foreach_stack()
+
+    self.rig_groups = group_by_fits_header(self.input, 'RIG')
+    self.next(self.filter_grouping, foreach='rig_groups')
+
+  @step
+  def filter_grouping(self):
+    # self.pretty_print_foreach_stack()
+
+    rig, filenames = self.input
+    self.filter_groups = group_by_fits_header(filenames, 'FILTER')
+    self.next(self.stack, foreach='filter_groups')
+
+  @step
+  def stack(self):
+    # self.pretty_print_foreach_stack()
+
+    group_keys = self.extract_group_keys_from_stack()
+    filter, filenames = self.input
+    print(f'{group_keys}: Stacking {len(filenames)} light frames...')
+
+    self.next(self.join_filter_grouping)
+
+  @step
+  def join_filter_grouping(self, inputs):
+    self.next(self.join_rig_grouping)
+
+  @step
+  def join_rig_grouping(self, inputs):
+    self.next(self.join_spatial_grouping)
+
+  @step
+  def join_spatial_grouping(self, inputs):
     self.next(self.end)
 
   @step

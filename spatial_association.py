@@ -1,5 +1,6 @@
 import itertools
 import io
+from operator import itemgetter
 
 import numpy as np
 from scipy import linalg
@@ -34,7 +35,7 @@ def check_fit(gmm):
   return True
 
 
-def remove_small_components(gmm, positions):
+def remove_small_components(gmm, ids, positions):
   pred = gmm.predict(positions)
   # print('GMM predictions are', pred)
   for g in set(pred):
@@ -43,16 +44,25 @@ def remove_small_components(gmm, positions):
     if n_members < 5:
       pred = [p if p != g else -1 for p in pred]
 
-  return pred
+  # TODO: Don't leak the component numbers outside this module.
+  return [(i, p) for i, p in zip(ids, pred) if p != -1]
 
 
-def find_components(positions):
+def as_groups(filename_and_pred):
+  filename_and_pred = sorted(filename_and_pred, key=itemgetter(1))
+  return [
+      list(map(itemgetter(0), list(g)))
+      for _, g in itertools.groupby(filename_and_pred, key=itemgetter(1))
+  ]
+
+
+def find_components(ids, positions):
   gmm = None
   for i in range(1, 10):
     gmm = fit_n_components(i, positions)
     if check_fit(gmm):
       print(f'Found acceptable solution with {i} components.')
-      return remove_small_components(gmm, positions)
+      return as_groups(remove_small_components(gmm, ids, positions))
 
 
 def get_position(wcs_string):
