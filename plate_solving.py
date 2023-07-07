@@ -3,6 +3,7 @@ import sys
 import tempfile
 import os
 from pathlib import Path
+from multiprocessing import Pool
 
 
 def solve_field(filename):
@@ -20,11 +21,19 @@ def solve_field(filename):
 
     wcs_file = Path(dest_filename).with_suffix('.wcs')
     if os.path.exists(wcs_file):
-      wcs = open(wcs_file).read()
+      wcs = open(wcs_file, 'rb').read()
     else:
+      # TODO: Emit warnings through Metaflow's reporting system.
+      print(f'Could not plate-solve file {filename}')
       wcs = None
 
     return wcs, stdout
+
+
+def solve_fields(filenames):
+  with Pool() as p:
+    solutions = p.map(solve_field, filenames)
+    return {f: s for f, s in zip(filenames, solutions) if s[0] != None}
 
 
 if __name__ == '__main__':

@@ -2,8 +2,10 @@ from metaflow import Flow, FlowSpec, Parameter, step, JSONType, schedule
 from pathlib import Path
 import json
 import os
+import file_io
 
 import plate_solving
+import spatial_association
 
 
 class AstroFlow(FlowSpec):
@@ -45,43 +47,59 @@ class AstroFlow(FlowSpec):
 
   @step
   def find_files(self):
-    self.filenames = sorted(
-        list(str(f) for f in Path(self.abs_project_dir).rglob("*.fit")))
-    self.next(self.plate_solve, foreach='filenames')
+    # TODO: Make sure that adding new dark, bias, or flat frames invalidates
+    # stacks that depend on them.
+    filenames = list(str(f) for f in Path(self.abs_project_dir).rglob("*.fit"))
+
+    self.light_frames = sorted(
+        [f for f in filenames if file_io.fits_matches(f, 'IMAGETYP', 'Light')])
+    self.dark_frames = sorted(
+        [f for f in filenames if file_io.fits_matches(f, 'IMAGETYP', 'Dark')])
+    self.bias_frames = sorted(
+        [f for f in filenames if file_io.fits_matches(f, 'IMAGETYP', 'Bias')])
+    self.flat_frames = sorted(
+        [f for f in filenames if file_io.fits_matches(f, 'IMAGETYP', 'Flat')])
+
+    self.next(self.plate_solve)
 
   @step
   def plate_solve(self):
-    self.filename = self.input
-
-    # Try to find the plate solution in previous runs of the DAG. If no previous
-    # plate solution can be found, compute it.
-    self.result = None
+    # Try to find the plate solutions in previous runs of the DAG.
     try:
-      for task in Flow('AstroFlow').latest_successful_run['plate_solve']:
-        if not task.successful:
-          continue
+      prev_data = Flow(
+          'AstroFlow').latest_successful_run['plate_solve'].task.data
 
-        if 'filename' in task.data and task.data.filename == self.filename:
-          self.result = task.data.result
+      if self.light_frames == prev_data.light_frames:
+        print(
+            'Light frame list is unchanged; re-using previous plate solutions')
+        self.plate_solutions = prev_data.plate_solutions
+      else:
+        # TODO also handle removed files
+        added_files = list(
+            set(self.light_frames) - set(prev_data.light_frames))
+        print(f'Plate solving {len(added_files)} added light frames...')
+        self.plate_solutions = (prev_data.plate_solutions
+                                | plate_solving.solve_fields(added_files))
     except:
-      pass
+      print(f'Plate solving {len(self.light_frames)} light frames...')
+      self.plate_solutions = plate_solving.solve_fields(self.light_frames)
 
-    if not self.result:
-      self.result = plate_solving.solve_field(self.filename)
-
-    self.next(self.join)
+    self.next(self.spatial_association)
 
   @step
-  def join(self, inputs):
-    self.results = [input.result for input in inputs]
+  def spatial_association(self):
+    positions = [
+        spatial_association.get_position(wcs)
+        for wcs, _ in self.plate_solutions.values()
+    ]
+    components = spatial_association.find_components(positions)
+    print('Found components', components)
+
     self.next(self.end)
 
   @step
   def end(self):
-    num_successes = sum(map(lambda r: r[0] != None, self.results))
-    print(
-        f'Successfully plate-solved {num_successes} / {len(self.results)} images'
-    )
+    print('Finished!')
 
 
 if __name__ == '__main__':

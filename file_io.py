@@ -1,6 +1,7 @@
 import astropy.io.fits as pyfits
 from functools import lru_cache
 from pathlib import Path
+from dateutil.parser import parse
 
 
 def find_files(path, pattern):
@@ -34,3 +35,8 @@ def read_fits(filename, print_header=False):
       output['PANE'] = int(header['PANE'])
 
     return output
+
+
+@lru_cache(maxsize=100000)
+def fits_matches(filename, key, value):
+  return read_fits(filename)[key] == value
