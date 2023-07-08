@@ -5,9 +5,13 @@ import os
 import file_io
 import itertools
 from operator import itemgetter
+import tempfile
+import subprocess
+import shutil
 
 import plate_solving
 import spatial_association
+import stacking
 
 
 def group_by_fits_header(filenames, fits_keyword):
@@ -15,8 +19,9 @@ def group_by_fits_header(filenames, fits_keyword):
     return file_io.read_fits(f)[fits_keyword]
 
   sorted_input = sorted(filenames, key=read_keyword)
-  return [(k, list(g))
-          for k, g in itertools.groupby(sorted_input, key=read_keyword)]
+  groups = [(k, list(g))
+            for k, g in itertools.groupby(sorted_input, key=read_keyword)]
+  return sorted(groups, key=itemgetter(0, 1))
 
 
 class AstroFlow(FlowSpec):
@@ -62,14 +67,12 @@ class AstroFlow(FlowSpec):
     # stacks that depend on them.
     filenames = list(str(f) for f in Path(self.abs_project_dir).rglob("*.fit"))
 
-    self.light_frames = sorted(
-        [f for f in filenames if file_io.fits_matches(f, 'IMAGETYP', 'Light')])
-    self.dark_frames = sorted(
-        [f for f in filenames if file_io.fits_matches(f, 'IMAGETYP', 'Dark')])
-    self.bias_frames = sorted(
-        [f for f in filenames if file_io.fits_matches(f, 'IMAGETYP', 'Bias')])
-    self.flat_frames = sorted(
-        [f for f in filenames if file_io.fits_matches(f, 'IMAGETYP', 'Flat')])
+    self.light_frames = sorted([
+        f for f in filenames if file_io.fits_matches(f, 'IMAGETYP', 'Light')
+    ])[0:10]
+    self.flat_frames = sorted([
+        f for f in filenames if file_io.fits_matches(f, 'IMAGETYP', 'Flat')
+    ])[0:10]
 
     self.next(self.plate_solve)
 
@@ -97,6 +100,11 @@ class AstroFlow(FlowSpec):
 
     self.next(self.spatial_grouping)
 
+  # TODO: Remove light frames during dithers and slews.
+  # @step
+  # def remove_frames_during_mount_movements(self):
+  #   pass
+
   @step
   def spatial_grouping(self):
     positions = [
@@ -109,36 +117,8 @@ class AstroFlow(FlowSpec):
     for i, g in enumerate(self.spatial_groups):
       print(f'Spatial group #{i + 1} has {len(g)} light frames')
 
-    # TODO: Group light frames by spatial component, run foreach
-    # TODO: Further group light frames by rig, run foreach
-    # TODO: Further group light frames by filter, run foreach
-    # TODO: Assign flat frames to each light frame
-
     # This association is from filename to component, e.g. ('file.fits', 2).
     self.next(self.rig_grouping, foreach='spatial_groups')
-
-  def pretty_print_foreach_stack(self):
-    stack = self.foreach_stack()
-
-    if len(stack) > 0:
-      component_index, num_components, component_filenames = stack[0]
-      print(
-          f'Component {component_index} / {num_components} has {len(component_filenames)} light frames'
-      )
-
-    if len(stack) > 1:
-      rig_index, num_rigs, value = stack[1]
-      rig, filenames = value
-      print(
-          f'Component {component_index} / {num_components}, rig {rig}, has {len(filenames)} light frames'
-      )
-
-    if len(stack) > 2:
-      filter_index, num_filters, value = stack[2]
-      filter, filenames = value
-      print(
-          f'Component {component_index} / {num_components}, rig {rig}, filter {filter}, has {len(filenames)} light frames'
-      )
 
   def extract_group_keys_from_stack(self):
     stack = self.foreach_stack()
@@ -159,30 +139,33 @@ class AstroFlow(FlowSpec):
       filter, filenames = value
       group_keys.append(filter)
 
-    return ', '.join(group_keys)
+    return group_keys
 
   @step
   def rig_grouping(self):
-    # self.pretty_print_foreach_stack()
-
     self.rig_groups = group_by_fits_header(self.input, 'RIG')
     self.next(self.filter_grouping, foreach='rig_groups')
 
   @step
   def filter_grouping(self):
-    # self.pretty_print_foreach_stack()
-
     rig, filenames = self.input
     self.filter_groups = group_by_fits_header(filenames, 'FILTER')
     self.next(self.stack, foreach='filter_groups')
 
   @step
   def stack(self):
-    # self.pretty_print_foreach_stack()
-
+    filter, light_frames = self.input
     group_keys = self.extract_group_keys_from_stack()
-    filter, filenames = self.input
-    print(f'{group_keys}: Stacking {len(filenames)} light frames...')
+    _, rig, filter = group_keys
+
+    # TODO: Maybe filter the flat frames at the same time I filter the
+    # light frames.
+    keys, values = ['IMAGETYP', 'RIG', 'FILTER'], ['Flat', rig, filter]
+    flat_frames = [
+        f for f in self.flat_frames if file_io.fits_matches(f, keys, values)
+    ]
+
+    stacking.stack(light_frames, flat_frames)
 
     self.next(self.join_filter_grouping)
 

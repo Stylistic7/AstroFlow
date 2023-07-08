@@ -37,6 +37,12 @@ def read_fits(filename, print_header=False):
     return output
 
 
-@lru_cache(maxsize=100000)
 def fits_matches(filename, key, value):
-  return read_fits(filename)[key] == value
+  if type(key) == str and type(value) == str:
+    return read_fits(filename)[key] == value
+
+  for k, v in zip(key, value):
+    if read_fits(filename)[k] != v:
+      return False
+
+  return True
