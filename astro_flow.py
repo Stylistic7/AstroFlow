@@ -67,12 +67,10 @@ class AstroFlow(FlowSpec):
     # stacks that depend on them.
     filenames = list(str(f) for f in Path(self.abs_project_dir).rglob("*.fit"))
 
-    self.light_frames = sorted([
-        f for f in filenames if file_io.fits_matches(f, 'IMAGETYP', 'Light')
-    ])[0:10]
-    self.flat_frames = sorted([
-        f for f in filenames if file_io.fits_matches(f, 'IMAGETYP', 'Flat')
-    ])[0:10]
+    self.light_frames = sorted(
+        [f for f in filenames if file_io.fits_matches(f, 'IMAGETYP', 'Light')])
+    self.flat_frames = sorted(
+        [f for f in filenames if file_io.fits_matches(f, 'IMAGETYP', 'Flat')])
 
     self.next(self.plate_solve)
 
@@ -154,18 +152,57 @@ class AstroFlow(FlowSpec):
 
   @step
   def stack(self):
-    filter, light_frames = self.input
+    filter, self.light_frames = self.input
     group_keys = self.extract_group_keys_from_stack()
-    _, rig, filter = group_keys
+    _, self.rig, self.filter = group_keys
 
     # TODO: Maybe filter the flat frames at the same time I filter the
     # light frames.
-    keys, values = ['IMAGETYP', 'RIG', 'FILTER'], ['Flat', rig, filter]
-    flat_frames = [
+    keys, values = ['IMAGETYP', 'RIG',
+                    'FILTER'], ['Flat', self.rig, self.filter]
+    self.flat_frames = [
         f for f in self.flat_frames if file_io.fits_matches(f, keys, values)
     ]
 
-    stacking.stack(light_frames, flat_frames)
+    # Try to find a previous result with the same rig, filter, and sets of
+    # light and flat frames.
+    #
+    # If a previous result with exactly the same inputs is found, use it.
+    #
+    # If a previous result with the same rig and filter, but different light
+    # and/or flat frames are found, create a new version.
+    # TODO: Also include changes to dark or bias frames.
+    self.masters = None
+    self.version = 1
+    try:
+      prev_step = Flow('AstroFlow').latest_successful_run['stack']
+
+      found = False
+      for task in prev_step:
+        if task.data.rig != self.rig or task.data.filter != self.filter:
+          continue
+
+        # print('Found task with matching rig and filter')
+        if (self.light_frames == task.data.light_frames and
+            self.flat_frames == task.data.flat_frames):
+          # TODO: Also detect new dark or bias frames.
+          print(
+              'Light and flat frames are unchanged; re-using previous stack,',
+              f'v{task.data.version}')
+          self.masters = task.data.masters
+          found = True
+          break
+
+      if not found:
+        self.version = task.data.version + 1
+        print(f'Lights or flats changed, stacking new version v{self.version}')
+    except:
+      pass
+
+    if not self.masters:
+      print(f'Stacking {len(self.light_frames)} light frames...')
+      self.masters = stacking.stack(self.version, self.light_frames,
+                                    self.flat_frames)
 
     self.next(self.join_filter_grouping)
 
