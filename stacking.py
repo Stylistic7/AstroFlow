@@ -7,7 +7,7 @@ import file_io
 import flat_frame_association
 import dark_and_bias_association
 
-TEST_MODE = False
+TEST_MODE = True
 
 
 def stack(version, light_frames, flat_frames):

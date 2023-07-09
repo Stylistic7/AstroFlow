@@ -112,19 +112,7 @@ for (let i = 0; i < output_ids.length; ++i) {{
 """
 
 
-def run_post_processing_for_stack(config, project_dir, date):
-  print(f"Starting post-processing for date {date}")
-  date_dir = os.path.join(project_dir, date.strftime('%Y-%m-%d'))
-  output_dir = os.path.join(date_dir, 'post_processed')
-
-  # Find the most recent color channels for that date.
-  masters = find_masters(project_dir, date)
-  if not masters:
-    print(f"Skipping date {date} because there are no masters")
-    return
-
-  for master in masters:
-    print(f"Found master {master} with max_date {date}")
+def run_post_processing_for_stack(masters):
   masters = find_most_recent_color_channels(masters)
   for master in masters:
     print(f"Using master {master}")
