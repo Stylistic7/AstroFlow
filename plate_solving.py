@@ -11,11 +11,14 @@ def solve_field(filename):
     dest_filename = os.path.join(temp_dir, os.path.basename(filename))
     os.symlink(filename, dest_filename)
 
-    command = [
-        "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
-        "--no-background-subtraction", "--guess-scale", dest_filename
-    ]
-    ret = subprocess.run(command, capture_output=True)
+    try:
+      command = [
+          "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
+          "--no-background-subtraction", "--guess-scale", dest_filename
+      ]
+      ret = subprocess.run(command, capture_output=True, timeout=120)
+    except:
+      return None, None
 
     stdout = ret.stdout.decode("utf-8")
 

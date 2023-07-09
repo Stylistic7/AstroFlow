@@ -1,7 +1,9 @@
 import tempfile
 import os
 import shutil
+import subprocess
 
+import file_io
 import flat_frame_association
 import dark_and_bias_association
 
@@ -43,8 +45,11 @@ def stack(version, light_frames, flat_frames):
     print('stacking: dst_master_dir', dst_master_dir)
 
     if TEST_MODE:
+      filter = file_io.read_fits(light_frames[0])['FILTER']
+      master_filename = f'masterLight_BIN-1_6248x4176_EXPOSURE-60.00s_FILTER-{filter}_mono_drizzle_2x_autocrop.xisf'
+
       os.makedirs(src_master_dir, exist_ok=True)
-      open(os.path.join(src_master_dir, 'foo'), 'w').write('foo')
+      open(os.path.join(src_master_dir, master_filename), 'w').write('foo')
     else:
       script = f"/Applications/PixInsight/src/scripts/WeightedBatchPreprocessing/WeightedBatchPreprocessing.js,automationMode=true,dir={tmp_dir},outputDirectory={tmp_dir},keywords=RIG;INSTRUME;FILTER;FLATVERS"
       print('PixInsight WBPP command line is', script)
@@ -54,4 +59,7 @@ def stack(version, light_frames, flat_frames):
       ]).returncode
 
     shutil.copytree(src_master_dir, dst_master_dir, dirs_exist_ok=True)
-    return os.listdir(dst_master_dir)
+
+    masters = os.listdir(dst_master_dir)
+    print('Stacking produced masters', masters)
+    return masters

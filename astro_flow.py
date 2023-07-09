@@ -59,6 +59,11 @@ class AstroFlow(FlowSpec):
     self.abs_project_dir = os.path.abspath(self.project_dir)
     print(f"Project directory is {self.abs_project_dir}")
     self.config = self.config_json
+    self.next(self.download)
+
+  # TODO: Add download functionality, which may repeat until sunrise.
+  @step
+  def download(self):
     self.next(self.find_files)
 
   @step
@@ -72,6 +77,11 @@ class AstroFlow(FlowSpec):
     self.flat_frames = sorted(
         [f for f in filenames if file_io.fits_matches(f, 'IMAGETYP', 'Flat')])
 
+    self.next(self.measure)
+
+  # TODO: Add measurement.
+  @step
+  def measure(self):
     self.next(self.plate_solve)
 
   @step
@@ -201,21 +211,55 @@ class AstroFlow(FlowSpec):
 
     if not self.masters:
       print(f'Stacking {len(self.light_frames)} light frames...')
-      self.masters = stacking.stack(self.version, self.light_frames,
-                                    self.flat_frames)
+      self.masters = (self.rig, self.filter,
+                      stacking.stack(self.version, self.light_frames,
+                                     self.flat_frames))
+      print('self.masters is', self.masters)
 
+    self.next(self.post_process_per_stack)
+
+  # TODO: Add per-rig, per-filter post-processing here. This will apply:
+  # Run ABE on all images.
+  # Run BXT on all images.
+  # Run IntegerResample on all C11 images.
+  # Run horizontal mirror on all RC71 images.
+  @step
+  def post_process_per_stack(self):
+    print('post_process_per_stack', self.rig, self.filter, self.masters)
     self.next(self.join_filter_grouping)
 
   @step
   def join_filter_grouping(self, inputs):
+    print('join_filter_grouping, inputs are')
+    for input in inputs:
+      print('input', input)
+
+    self.next(self.post_process_per_rig)
+
+  # TODO: Add per-rig post-processing here. It will:
+  # Combine LRGB channels.
+  # Run ImageSolver and SPCC.
+  @step
+  def post_process_per_rig(self):
     self.next(self.join_rig_grouping)
 
   @step
   def join_rig_grouping(self, inputs):
+    self.next(self.post_process_per_spatial_component)
+
+  # TODO: Add per-spatial-component post-processing here. It will star align
+  # images from multiple rigs.
+  @step
+  def post_process_per_spatial_component(self):
     self.next(self.join_spatial_grouping)
 
   @step
   def join_spatial_grouping(self, inputs):
+    self.next(self.post_process_mosaics)
+
+  # TODO: Add mosaic processing here.
+  @step
+  def post_process_mosaics(self):
     self.next(self.end)
 
   @step
