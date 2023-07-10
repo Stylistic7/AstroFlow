@@ -16,6 +16,7 @@ import stacking
 import post_processing_per_stack
 import guide_log_analysis
 import autorun_log_analysis
+import subframe_selector
 
 
 def get_latest_run():
@@ -80,15 +81,11 @@ class AstroFlow(FlowSpec):
 
     self.light_frames = sorted(
         [f for f in filenames if file_io.fits_matches(f, 'IMAGETYP', 'Light')])
-    self.flat_frames = sorted(
-        [f for f in filenames if file_io.fits_matches(f, 'IMAGETYP', 'Flat')])
 
     if config.MAX_FRAMES:
       self.light_frames = self.light_frames[0:config.MAX_FRAMES]
-      self.flat_frames = self.flat_frames[0:config.MAX_FRAMES]
 
-    print(f'Found {len(self.light_frames)} light frames '
-          f'and {len(self.flat_frames)} flat frames')
+    print(f'Found {len(self.light_frames)} light frames')
 
     self.next(self.remove_frames_during_mount_movements)
 
@@ -101,9 +98,62 @@ class AstroFlow(FlowSpec):
     self.light_frames = filtered_light_frames
     self.next(self.measure)
 
-  # TODO: Add measurement.
   @step
   def measure(self):
+    self.rigs = unique_fits_values(self.light_frames, 'RIG')
+    print('rig_grouping, rigs is', self.rigs)
+    self.next(self.measure_for_rig, foreach='rigs')
+
+  # TODO: Add measurement.
+  @step
+  def measure_for_rig(self):
+    self.rig = self.input
+
+    # TODO: Put this into a config struct.
+    if self.rig == 'C11':
+      image_scale = 1.38
+    elif self.rig == 'RC71':
+      image_scale = 2.22
+
+    self.light_frames = [
+        f for f in self.light_frames
+        if file_io.fits_matches(f, 'RIG', self.rig)
+    ]
+
+    # Try to find the plate solutions in previous runs of the DAG.
+    try:
+      prev_data = get_latest_run()['measure'].task.data
+
+      if self.light_frames == prev_data.light_frames:
+        print('Light frame list is unchanged; re-using previous measurements')
+        self.measurements = prev_data.measurements
+      else:
+        # TODO: also handle removed files
+        # TODO: This pattern is common, it should be factored out.
+        added_files = list(
+            set(self.light_frames) - set(prev_data.light_frames))
+        print(f'Measuring {len(added_files)} added light frames...')
+        self.measurements = (prev_data.measurements
+                             | subframe_selector.measure_frames(
+                                 added_files, image_scale))
+    except:
+      print(f'Measuring {len(self.light_frames)} light frames...')
+      self.measurements = subframe_selector.measure_frames(
+          self.light_frames, image_scale)
+
+    self.next(self.join_measurements)
+
+  @step
+  def join_measurements(self, inputs):
+    self.merge_artifacts(inputs, exclude=['measurements'])
+
+    self.measurements = {
+        k: v
+        for d in inputs for k, v in d.measurements.items()
+    }
+
+    # TODO: remove images that could not be measured.
+    self.light_frames = list(self.measurements.keys())
     self.next(self.plate_solve)
 
   @step
@@ -185,16 +235,16 @@ class AstroFlow(FlowSpec):
     self.component, self.rig, self.filter = group_keys
     print('stack group_keys is', group_keys)
 
-    # TODO: Maybe filter the flat frames at the same time I filter the
-    # light frames.
     self.light_frames = [
         f for f in self.light_frames if file_io.fits_matches(
             f, ['IMAGETYP', 'RIG', 'FILTER'], ['Light', self.rig, self.filter])
     ]
-    self.flat_frames = [
-        f for f in self.flat_frames if file_io.fits_matches(
+
+    filenames = list(str(f) for f in Path(self.abs_project_dir).rglob("*.fit"))
+    self.flat_frames = sorted([
+        f for f in filenames if file_io.fits_matches(
             f, ['IMAGETYP', 'RIG', 'FILTER'], ['Flat', self.rig, self.filter])
-    ]
+    ])
 
     # TODO avoid arrow code here.
     if self.light_frames:

@@ -1,5 +1,5 @@
 STACKING_TEST_MODE = False
-MAX_FRAMES = None
+MAX_FRAMES = 10
 USE_ARTIFACTS_FROM_FAILED_RUNS = True
 
 # TODO: Paramterize these
