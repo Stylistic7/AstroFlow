@@ -14,6 +14,8 @@ import plate_solving
 import spatial_association
 import stacking
 import post_processing_per_stack
+import guide_log_analysis
+import autorun_log_analysis
 
 
 def get_latest_run():
@@ -88,6 +90,15 @@ class AstroFlow(FlowSpec):
     print(f'Found {len(self.light_frames)} light frames '
           f'and {len(self.flat_frames)} flat frames')
 
+    self.next(self.remove_frames_during_mount_movements)
+
+  @step
+  def remove_frames_during_mount_movements(self):
+    filtered_light_frames = autorun_log_analysis.remove_frames_during_settling(
+        self.light_frames)
+    print(f'Removed {len(self.light_frames) - len(filtered_light_frames)} '
+          f'light frames during settling periods.')
+    self.light_frames = filtered_light_frames
     self.next(self.measure)
 
   # TODO: Add measurement.
@@ -117,11 +128,6 @@ class AstroFlow(FlowSpec):
       self.plate_solutions = plate_solving.solve_fields(self.light_frames)
 
     self.next(self.spatial_grouping)
-
-  # TODO: Remove light frames during dithers and slews.
-  # @step
-  # def remove_frames_during_mount_movements(self):
-  #   pass
 
   @step
   def spatial_grouping(self):
