@@ -1,3 +1,8 @@
+import os
+import tempfile
+import subprocess
+import time
+
 post_process_script = """
 var P_bxt = new BlurXTerminator;
 P_bxt.ai_file = "/Applications/PixInsight/library/BlurXTerminator.2.mlpackage";
@@ -56,150 +61,46 @@ P_ir.forceResolution = false;
 P_ir.gammaCorrection = false;
 P_ir.noGUIMessages = true;
 
-// Open all the files. Store their ImageWindow objects in an array. Element 0 is the
-// reference image.
-var input_filenames = {input_filenames};
-var input_rigs = {input_rigs};
-var output_path = "{output_path}";
-var output_ids = {output_ids};
+let window = ImageWindow.open("{input_filename}");
+window[0].show();
 
-var windows = [];
-for (let i = 0; i < input_filenames.length; ++i) {{
-  let w = ImageWindow.open(input_filenames[i]);
-  w[0].show();
-  windows.push(w[0]);
+P_abe.executeOn(window[0].currentView);
+
+P_bxt.executeOn(window[0].currentView);
+
+if ("{rig}" == "C11") {{
+  P_ir.executeOn(window[0].currentView);
 }}
 
-// Run ABE on all images.
-for (let i = 0; i < windows.length; ++i) {{
-  P_abe.executeOn(windows[i].currentView);
+if ("{rig}" == "RC71") {{
+  P_fr.executeOn(window[0].currentView);
 }}
 
-// Run BXT on all images.
-for (let i = 0; i < windows.length; ++i) {{
-  P_bxt.executeOn(windows[i].currentView);
-}}
+window[0].saveAs("{output_filename}", false, false, true, false);
 
-// Run IntegerResample on all C11 images.
-for (let i = 0; i < windows.length; ++i) {{
-  if (input_rigs[i] == 'C11') {{
-    P_ir.executeOn(windows[i].currentView);
-  }}
-}}
-
-// Run horizontal mirror on all RC71 images.
-for (let i = 0; i < windows.length; ++i) {{
-  if (input_rigs[i] == 'RC71') {{
-    P_fr.executeOn(windows[i].currentView);
-  }}
-}}
-
-// Rename all the registered images to the desired output ids.
-console.writeln('rename view ', windows[0].currentView.id, ' to ', output_ids[0]);
-windows[0].currentView.id = output_ids[0];
-for (let i = 0; i < P_sa.outputData.length; ++i) {{
-  console.writeln('star alignment output', i, P_sa.outputData[i]);
-  console.writeln('rename view ', P_sa.outputData[i][0], ' to ', output_ids[i + 1]);
-  View.viewById(P_sa.outputData[i][0]).id = output_ids[i + 1];
-}}
-
-// Save all of the images.
-for (let i = 0; i < output_ids.length; ++i) {{
-  let view_id = output_ids[i];
-  let window = View.viewById(view_id).window;
-  window.saveAs(output_path + "/" + view_id + ".xisf", false, false, true, false);
+for (let i = 0; i < window.length; ++i) {{
+  window[i].forceClose();
 }}
 """
 
 
-def run_post_processing_for_stack(masters):
-  masters = find_most_recent_color_channels(masters)
-  for master in masters:
-    print(f"Using master {master}")
-
-  # Put the reference filename in position 0.
-  reference = find_reference(masters)
-  assert reference
-  print(f'Reference is {reference}')
-  masters = [reference] + [m for m in masters if m != reference]
-
-  if os.path.exists(output_dir):
-    print(f"Post-processing output directory '{output_dir}' already exists.")
-    return
-
-  os.makedirs(output_dir, exist_ok=True)
-
-  for master in masters:
-    print('Setting output_id for master', master)
-    master['output_id'] = f"{master['filter']}_{master['rig']}"
-
-  for m in masters:
-    print(f"Input master {m['stack_filename']} -> output {m['output_id']}")
-
-  input_filenames_string = json.dumps([m['stack_filename'] for m in masters])
-  print('input_filenames_string', input_filenames_string)
-
-  input_rigs_string = json.dumps([m['rig'] for m in masters])
-  print('input_rigs_string', input_rigs_string)
-
-  output_ids_string = json.dumps([m['output_id'] for m in masters])
-  print('output_ids_string', output_ids_string)
-
-  sentinel_filename = os.path.join(output_dir, 'sentinel')
-
-  # rgb_channels = [None] * 3
-  # rgb_rig = None
-  # focal_length = 0
-  # pixel_size = 0
-  # ra_degrees = 0
-  # dec_degrees = 0
-  # for master in masters:
-  #   if master['filter'] == 'R':
-  #     print('red channel master', master)
-
-  #     # FIXME this is ugly
-  #     rgb_rig = [rig for rig in config.rigs if rig.name == master['rig']][0]
-
-  #     header = file_io.read_xisf(master['stack_filename'])
-  #     ra_degrees = header['RA']
-  #     dec_degrees = header['DEC']
-
-  #     rgb_channels[0] = master['output_id']
-  #   elif master['filter'] == 'G':
-  #     rgb_channels[1] = master['output_id']
-  #   elif master['filter'] == 'B':
-  #     rgb_channels[2] = master['output_id']
-
-  # if None in rgb_rig:
-  #   rgb_channels = []
-  # else:
-  #   rgb_channels = json.dumps([[True, x] for x in rgb_channels])
+def run_post_processing(rig, master):
+  filename, ext = os.path.splitext(master)
+  output_filename = filename + '_post' + ext
 
   with tempfile.TemporaryDirectory() as tmp_dir:
     script_filename = os.path.join(tmp_dir, "run_post_processing.js")
     with open(script_filename, "w") as f:
-      script = post_process_script.format(
-          input_filenames=input_filenames_string,
-          reference_basename=Path(reference['stack_filename']).stem,
-          input_rigs=input_rigs_string,
-          output_path=output_dir,
-          output_ids=output_ids_string,
-          # rgb_channels=rgb_channels,
-          # focal_length=rgb_rig.focal_length,
-          # pixel_size=rgb_rig.pixel_size,
-          # ra_degrees=ra_degrees,
-          # dec_degrees=dec_degrees,
-          sentinel_filename=sentinel_filename)
-      # print('script', script)
+      script = post_process_script.format(input_filename=master,
+                                          rig=rig,
+                                          output_filename=output_filename)
       f.write(script)
 
-    print(f'Running PixInsight post-processing on {len(masters)} masters...')
+    print(f'Running PixInsight post-processing on master {master}')
     ret = subprocess.run([
         '/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight',
         f'--execute={script_filename}'
     ]).returncode
 
-    while not os.path.exists(sentinel_filename):
+    while not os.path.exists(output_filename):
       time.sleep(5)
-
-    os.unlink(sentinel_filename)

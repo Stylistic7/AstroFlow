@@ -2,15 +2,15 @@ import tempfile
 import os
 import shutil
 import subprocess
+from pathlib import Path
 
+import config
 import file_io
 import flat_frame_association
 import dark_and_bias_association
 
-TEST_MODE = True
 
-
-def stack(version, light_frames, flat_frames):
+def stack(rig, filter, light_frames, flat_frames, version):
   def symlink_frames(filenames, dest_path):
     for filename in filenames:
       dest_filename = os.path.join(dest_path, os.path.basename(filename))
@@ -23,8 +23,8 @@ def stack(version, light_frames, flat_frames):
   dark_frames = []
   camera_configs = dark_and_bias_association.get_unique_camera_configs(
       light_frames)
-  for config in camera_configs:
-    camera, temperature, exposure = config
+  for camera_config in camera_configs:
+    camera, temperature, exposure = camera_config
     bias_frames += dark_and_bias_association.find_bias_frames(
         camera, temperature)
     dark_frames += dark_and_bias_association.find_dark_frames(
@@ -37,14 +37,13 @@ def stack(version, light_frames, flat_frames):
     symlink_frames(dark_frames, tmp_dir)
 
     src_master_dir = os.path.join(tmp_dir, 'master')
-    dst_master_dir = os.path.join(os.path.commonpath(light_frames),
-                                  f'master_v{version}')
+    dst_master_dir = os.path.commonpath(light_frames)
     os.makedirs(dst_master_dir, exist_ok=True)
 
     print('stacking: src_master_dir', src_master_dir)
     print('stacking: dst_master_dir', dst_master_dir)
 
-    if TEST_MODE:
+    if config.STACKING_TEST_MODE:
       filter = file_io.read_fits(light_frames[0])['FILTER']
       master_filename = f'masterLight_BIN-1_6248x4176_EXPOSURE-60.00s_FILTER-{filter}_mono_drizzle_2x_autocrop.xisf'
 
@@ -58,8 +57,16 @@ def stack(version, light_frames, flat_frames):
           '-n', '--automation-mode', f'-r={script}', '--force-exit'
       ]).returncode
 
-    shutil.copytree(src_master_dir, dst_master_dir, dirs_exist_ok=True)
+    filenames = list(
+        str(f)
+        for f in Path(src_master_dir).rglob("*mono_drizzle_2x_autocrop.xisf"))
+    if not filenames:
+      return None
 
-    masters = os.listdir(dst_master_dir)
-    print('Stacking produced masters', masters)
-    return masters
+    print('filenames', filenames)
+    src_filename = filenames[0]
+    dst_filename = os.path.join(
+        dst_master_dir, f'master_light_{rig}_{filter}_v{version}.xisf')
+    shutil.copy(src_filename, dst_filename)
+    print('Stacking produced master', src_filename)
+    return dst_filename

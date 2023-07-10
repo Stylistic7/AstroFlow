@@ -24,6 +24,8 @@ def read_fits(filename, print_header=False):
 
     if 'EXPOSURE' in header:
       output['EXPOSURE'] = float(header['EXPOSURE'])
+    elif 'EXPTIME' in header:
+      output['EXPOSURE'] = float(header['EXPTIME'])
 
     if 'DATE-OBS' in header:
       output['DATE-OBS'] = parse(header['DATE-OBS'] + ' UTC')

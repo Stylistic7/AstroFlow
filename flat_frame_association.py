@@ -10,7 +10,7 @@ def frames_for_date(frames, date):
 def set_flatvers_fits_header(filenames, flat_version):
   for filename in filenames:
     with pyfits.open(filename, mode='update') as fits:
-      print(f'Setting FLATVERS = {flat_version} for file {filename}')
+      # print(f'Setting FLATVERS = {flat_version} for file {filename}')
       fits[0].header['FLATVERS'] = flat_version
 
 

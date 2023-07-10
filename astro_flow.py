@@ -1,4 +1,4 @@
-from metaflow import Flow, FlowSpec, Parameter, step, JSONType, schedule
+from metaflow import Flow, FlowSpec, Parameter, catch, step, JSONType, schedule
 from pathlib import Path
 import json
 import os
@@ -9,20 +9,19 @@ import tempfile
 import subprocess
 import shutil
 
+import config
 import plate_solving
 import spatial_association
 import stacking
 import post_processing_per_stack
 
 
-def group_by_fits_header(filenames, fits_keyword):
-  def read_keyword(f):
-    return file_io.read_fits(f)[fits_keyword]
-
-  sorted_input = sorted(filenames, key=read_keyword)
-  groups = [(k, list(g))
-            for k, g in itertools.groupby(sorted_input, key=read_keyword)]
-  return sorted(groups, key=itemgetter(0, 1))
+def get_latest_run():
+  if config.USE_ARTIFACTS_FROM_FAILED_RUNS:
+    *_, run = Flow('AstroFlow').runs()
+    return run
+  else:
+    return Flow('AstroFlow').latest_successful_run
 
 
 def unique_fits_values(filenames, fits_keyword):
@@ -82,6 +81,13 @@ class AstroFlow(FlowSpec):
     self.flat_frames = sorted(
         [f for f in filenames if file_io.fits_matches(f, 'IMAGETYP', 'Flat')])
 
+    if config.MAX_FRAMES:
+      self.light_frames = self.light_frames[0:config.MAX_FRAMES]
+      self.flat_frames = self.flat_frames[0:config.MAX_FRAMES]
+
+    print(f'Found {len(self.light_frames)} light frames '
+          f'and {len(self.flat_frames)} flat frames')
+
     self.next(self.measure)
 
   # TODO: Add measurement.
@@ -93,8 +99,7 @@ class AstroFlow(FlowSpec):
   def plate_solve(self):
     # Try to find the plate solutions in previous runs of the DAG.
     try:
-      prev_data = Flow(
-          'AstroFlow').latest_successful_run['plate_solve'].task.data
+      prev_data = get_latest_run()['plate_solve'].task.data
 
       if self.light_frames == prev_data.light_frames:
         print(
@@ -161,22 +166,13 @@ class AstroFlow(FlowSpec):
     print('rig_grouping, rigs is', self.rigs)
     self.next(self.filter_grouping, foreach='rigs')
 
-    # self.rig_groups = group_by_fits_header(self.input, 'RIG')
-    # self.next(self.filter_grouping, foreach='rig_groups')
-
   @step
   def filter_grouping(self):
     self.filters = unique_fits_values(self.light_frames, 'FILTER')
     print('filter_grouping, filters is', self.filters)
     self.next(self.stack, foreach='filters')
 
-    # rig, filenames = self.input
-    # self.filter_groups = group_by_fits_header(filenames, 'FILTER')
-    # self.next(self.stack, foreach='filter_groups')
-
-  # TODO: This is going to repeat every filter, even when only one filter
-  # has more light frames. It would be ideal to version the master file,
-  # not the directory containing all of the filters.
+  @catch(var='stack_failed')
   @step
   def stack(self):
     group_keys = self.extract_group_keys_from_stack()
@@ -204,45 +200,46 @@ class AstroFlow(FlowSpec):
       # If a previous result with the same rig and filter, but different light
       # and/or flat frames are found, create a new version.
       # TODO: Also include changes to dark or bias frames.
-      self.masters = None
+      self.master = None
+      self.new_stack = False
       self.version = 1
       try:
-        prev_step = Flow('AstroFlow').latest_successful_run['stack']
+        prev_step = get_latest_run()['stack']
 
         found = False
         for task in prev_step:
           if task.data.rig != self.rig or task.data.filter != self.filter:
             continue
 
-          # print('Found task with matching rig and filter')
           if (self.light_frames == task.data.light_frames and
-              self.flat_frames == task.data.flat_frames):
+              self.flat_frames == task.data.flat_frames and
+              os.path.exists(task.data.master)):
             # TODO: Also detect new dark or bias frames.
             print(
                 'Light and flat frames are unchanged; re-using previous stack,',
                 f'v{task.data.version}')
-            self.masters = task.data.masters
+            self.master = task.data.master
             found = True
             break
 
         if not found:
           self.version = task.data.version + 1
-          print(
-              f'Lights or flats changed, stacking new version v{self.version}')
+          print(f'Lights or flats changed, or master file is missing.')
+          print(f'Stacking new version v{self.version}')
       except:
         pass
 
-      if not self.masters:
+      if not self.master:
         print(f'Stacking {len(self.light_frames)} light frames...')
-        self.masters = (self.rig, self.filter,
-                        stacking.stack(self.version, self.light_frames,
-                                       self.flat_frames))
+        self.new_stack = True
+        self.master = stacking.stack(self.rig, self.filter, self.light_frames,
+                                     self.flat_frames, self.version)
         # TODO: masters can be more elaborate than just the list of files.
-        print('self.masters is', self.masters)
+        print('self.master is', self.master)
     else:
       print(f'There are no light frames for rig '
             f'{self.rig} and filter {self.filter}')
-      self.masters = []
+      self.master = None
 
     self.next(self.post_process_per_stack)
 
@@ -251,10 +248,14 @@ class AstroFlow(FlowSpec):
   # Run BXT on all images.
   # Run IntegerResample on all C11 images.
   # Run horizontal mirror on all RC71 images.
+  @catch(var='post_process_per_stack_failed')
   @step
   def post_process_per_stack(self):
-    if self.masters:
-      print('post_process_per_stack', self.rig, self.filter, self.masters)
+    # TODO: Don't rerun this if all previous steps were no-ops.
+    if self.new_stack and self.master:
+      print('post_process_per_stack', self.rig, self.filter, self.master)
+      self.master_post = post_processing_per_stack.run_post_processing(
+          self.rig, self.master)
 
     self.next(self.join_filter_grouping)
 
