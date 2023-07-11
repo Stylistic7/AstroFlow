@@ -48,12 +48,23 @@ def remove_small_components(gmm, ids, positions):
   return [(i, p) for i, p in zip(ids, pred) if p != -1]
 
 
-def as_groups(filename_and_pred):
+def canonical_position_string(position):
+  def round_to_nearest_tenth(number):
+    return int(round(number * 10.0)) / 10.0
+
+  ra, dec = position
+  ra = round_to_nearest_tenth(ra)
+  dec = round_to_nearest_tenth(dec)
+
+  return f'RA_{ra:.1f}_DEC_{dec:.1f}'
+
+
+def as_groups(gmm, filename_and_pred):
   filename_and_pred = sorted(filename_and_pred, key=itemgetter(1))
-  return [
-      list(map(itemgetter(0), list(g)))
-      for _, g in itertools.groupby(filename_and_pred, key=itemgetter(1))
-  ]
+  return [(canonical_position_string(
+      gmm.means_[component]), list(map(itemgetter(0), list(g))))
+          for component, g in itertools.groupby(filename_and_pred,
+                                                key=itemgetter(1))]
 
 
 def find_components(ids, positions):
@@ -62,7 +73,8 @@ def find_components(ids, positions):
     gmm = fit_n_components(i, positions)
     if check_fit(gmm):
       print(f'Found acceptable solution with {i} components.')
-      return as_groups(remove_small_components(gmm, ids, positions))
+      filename_and_pred = remove_small_components(gmm, ids, positions)
+      return as_groups(gmm, filename_and_pred)
 
 
 def get_position(wcs_string):

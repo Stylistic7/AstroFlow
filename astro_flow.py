@@ -178,36 +178,17 @@ class AstroFlow(FlowSpec):
     self.spatial_groups = spatial_association.find_components(
         self.plate_solutions.keys(), positions)
 
-    for i, g in enumerate(self.spatial_groups):
-      print(f'Spatial group #{i + 1} has {len(g)} light frames')
+    for position_string, g in self.spatial_groups:
+      print(f'Spatial group {position_string} has {len(g)} light frames')
 
     # This association is from filename to component, e.g. ('file.fits', 2).
     self.next(self.rig_grouping, foreach='spatial_groups')
-
-  def extract_group_keys_from_stack(self):
-    stack = self.foreach_stack()
-
-    group_keys = []
-
-    if len(stack) > 0:
-      component_index, num_components, component = stack[0]
-      group_keys.append(component_index)
-
-    if len(stack) > 1:
-      rig_index, num_rigs, rig = stack[1]
-      group_keys.append(rig)
-
-    if len(stack) > 2:
-      filter_index, num_filters, filter = stack[2]
-      group_keys.append(filter)
-
-    return group_keys
 
   # TODO: Just pass the branches down into subtasks via the foreach_stack().
   # Then, these branches do no work, except dividing up the rigs and filters.
   @step
   def rig_grouping(self):
-    self.light_frames = self.input
+    self.position_string, self.light_frames = self.input
     self.rigs = unique_fits_values(self.light_frames, 'RIG')
     print('rig_grouping, rigs is', self.rigs)
     self.next(self.filter_grouping, foreach='rigs')
@@ -219,15 +200,16 @@ class AstroFlow(FlowSpec):
     print('filter_grouping, filters is', self.filters)
     self.next(self.stack, foreach='filters')
 
+  # TODO: The stacked (and post-processed) filenames need to include some id
+  # that is unique for the spatial location. Otherwise, the files for each
+  # panel just get overwritten.
   @catch(var='stack_failed')
   @step
   def stack(self):
     self.filter = self.input
-    # group_keys = self.extract_group_keys_from_stack()
-    # self.component, self.rig, self.filter = group_keys
-    # print('stack group_keys is', group_keys)
-
-    print(f'Top of stack(), rig is {self.rig}, filter is {self.filter}')
+    print(f'Top of stack(), canonical position is '
+          f'{self.position_string}, rig is {self.rig}, '
+          f'filter is {self.filter}')
 
     self.light_frames = [
         f for f in self.light_frames if file_io.fits_matches(
@@ -254,22 +236,26 @@ class AstroFlow(FlowSpec):
       # and/or flat frames are found, create a new version.
       self.version = 1
 
-      # TODO: Make this iterative, so adding more light frames doesn't invalidate
-      # the previous result.
       # TODO: Also detect new dark or bias frames.
       task = metaflow_data_helper.find_most_recent_successful_task(
-          'stack', ['rig', 'filter', 'light_frames', 'flat_frames'],
-          [self.rig, self.filter, self.light_frames, self.flat_frames])
+          'stack',
+          ['position_string', 'rig', 'filter', 'light_frames', 'flat_frames'],
+          [
+              self.position_string, self.rig, self.filter, self.light_frames,
+              self.flat_frames
+          ])
 
       if task and os.path.exists(task.data.master):
         print('Light and flat frames are unchanged; re-using previous stack,',
               f'v{task.data.version}')
         self.master = task.data.master
       else:
-        print(f'Stacking {len(self.light_frames)} light frames for rig '
+        print(f'Stacking {len(self.light_frames)} light frames for '
+              f'canonical position {self.position_string}, rig '
               f'{self.rig} and filter {self.filter}...')
         self.new_stack = True
-        self.master = stacking.stack(self.rig, self.filter, self.light_frames,
+        self.master = stacking.stack(self.position_string, self.rig,
+                                     self.filter, self.light_frames,
                                      self.flat_frames, self.version)
         # TODO: masters can be more elaborate than just the list of files.
         print('self.master is', self.master)

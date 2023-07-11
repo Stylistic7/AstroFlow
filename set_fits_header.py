@@ -8,4 +8,5 @@ for filename in filenames:
   with pyfits.open(filename, mode='update') as fits:
     fits[0].header['INSTRUME'] = 'ZWO ASI2600MM Pro'
     fits[0].header['IMAGETYP'] = 'Dark'
-    del fits[0].header['FILTER']
+    if 'FILTER' in fits[0].header:
+      del fits[0].header['FILTER']

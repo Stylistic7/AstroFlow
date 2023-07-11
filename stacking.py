@@ -10,7 +10,7 @@ import flat_frame_association
 import dark_and_bias_association
 
 
-def stack(rig, filter, light_frames, flat_frames, version):
+def stack(position_string, rig, filter, light_frames, flat_frames, version):
   def symlink_frames(filenames, dest_path):
     for filename in filenames:
       dest_filename = os.path.join(dest_path, os.path.basename(filename))
@@ -66,7 +66,8 @@ def stack(rig, filter, light_frames, flat_frames, version):
     print('filenames', filenames)
     src_filename = filenames[0]
     dst_filename = os.path.join(
-        dst_master_dir, f'master_light_{rig}_{filter}_v{version}.xisf')
+        dst_master_dir,
+        f'master_light_{position_string}_{rig}_{filter}_v{version}.xisf')
     shutil.copy(src_filename, dst_filename)
     print('Stacking produced master', src_filename)
     return dst_filename

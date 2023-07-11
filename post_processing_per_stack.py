@@ -88,6 +88,9 @@ def run_post_processing(rig, master):
   filename, ext = os.path.splitext(master)
   output_filename = filename + '_post' + ext
 
+  if os.path.exists(output_filename):
+    os.remove(output_filename)
+
   with tempfile.TemporaryDirectory() as tmp_dir:
     script_filename = os.path.join(tmp_dir, "run_post_processing.js")
     with open(script_filename, "w") as f:
