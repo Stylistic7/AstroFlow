@@ -17,18 +17,21 @@ import post_processing_per_stack
 import guide_log_analysis
 import autorun_log_analysis
 import subframe_selector
+import metaflow_data_helper
 
 
 def get_latest_run():
   if config.USE_ARTIFACTS_FROM_FAILED_RUNS:
-    *_, run = Flow('AstroFlow').runs()
-    return run
+    sorted_runs = list(sorted(Flow('AstroFlow').runs(), key=lambda r: r.id))
+    print('sorted_runs', sorted_runs)
+    return sorted_runs[-2]
   else:
     return Flow('AstroFlow').latest_successful_run
 
 
 def unique_fits_values(filenames, fits_keyword):
-  return set([file_io.read_fits(f)[fits_keyword] for f in filenames])
+  return sorted(
+      list(set([file_io.read_fits(f)[fits_keyword] for f in filenames])))
 
 
 class AstroFlow(FlowSpec):
@@ -120,23 +123,15 @@ class AstroFlow(FlowSpec):
         if file_io.fits_matches(f, 'RIG', self.rig)
     ]
 
-    # Try to find the plate solutions in previous runs of the DAG.
-    try:
-      prev_data = get_latest_run()['measure'].task.data
-
-      if self.light_frames == prev_data.light_frames:
-        print('Light frame list is unchanged; re-using previous measurements')
-        self.measurements = prev_data.measurements
-      else:
-        # TODO: also handle removed files
-        # TODO: This pattern is common, it should be factored out.
-        added_files = list(
-            set(self.light_frames) - set(prev_data.light_frames))
-        print(f'Measuring {len(added_files)} added light frames...')
-        self.measurements = (prev_data.measurements
-                             | subframe_selector.measure_frames(
-                                 added_files, image_scale))
-    except:
+    # TODO: Make this iterative, so adding more light frames doesn't invalidate
+    # the previous result.
+    task = metaflow_data_helper.find_most_recent_successful_task(
+        'measure_for_rig', ['light_frames'], [self.light_frames])
+    if task:
+      self.measurements = task.data.measurements
+      print('Light frame list is unchanged; re-using previous measurements '
+            f'for {len(self.measurements)} light frames')
+    else:
       print(f'Measuring {len(self.light_frames)} light frames...')
       self.measurements = subframe_selector.measure_frames(
           self.light_frames, image_scale)
@@ -145,35 +140,30 @@ class AstroFlow(FlowSpec):
 
   @step
   def join_measurements(self, inputs):
-    self.merge_artifacts(inputs, exclude=['measurements'])
+    self.merge_artifacts(inputs,
+                         exclude=['measurements', 'rig', 'light_frames'])
 
     self.measurements = {
         k: v
         for d in inputs for k, v in d.measurements.items()
     }
+    print(f'Joined measurements for a total of '
+          f'{len(self.measurements)} light frames')
 
     # TODO: remove images that could not be measured.
-    self.light_frames = list(self.measurements.keys())
+    self.light_frames = list(sorted(self.measurements.keys()))
     self.next(self.plate_solve)
 
   @step
   def plate_solve(self):
     # Try to find the plate solutions in previous runs of the DAG.
-    try:
-      prev_data = get_latest_run()['plate_solve'].task.data
-
-      if self.light_frames == prev_data.light_frames:
-        print(
-            'Light frame list is unchanged; re-using previous plate solutions')
-        self.plate_solutions = prev_data.plate_solutions
-      else:
-        # TODO also handle removed files
-        added_files = list(
-            set(self.light_frames) - set(prev_data.light_frames))
-        print(f'Plate solving {len(added_files)} added light frames...')
-        self.plate_solutions = (prev_data.plate_solutions
-                                | plate_solving.solve_fields(added_files))
-    except:
+    # TODO: Handle situation where files have been added.
+    task = metaflow_data_helper.find_most_recent_successful_task(
+        'plate_solve', ['light_frames'], [self.light_frames])
+    if task:
+      print('Light frame list is unchanged; re-using previous plate solutions')
+      self.plate_solutions = task.data.plate_solutions
+    else:
       print(f'Plate solving {len(self.light_frames)} light frames...')
       self.plate_solutions = plate_solving.solve_fields(self.light_frames)
 
@@ -224,6 +214,7 @@ class AstroFlow(FlowSpec):
 
   @step
   def filter_grouping(self):
+    self.rig = self.input
     self.filters = unique_fits_values(self.light_frames, 'FILTER')
     print('filter_grouping, filters is', self.filters)
     self.next(self.stack, foreach='filters')
@@ -231,9 +222,12 @@ class AstroFlow(FlowSpec):
   @catch(var='stack_failed')
   @step
   def stack(self):
-    group_keys = self.extract_group_keys_from_stack()
-    self.component, self.rig, self.filter = group_keys
-    print('stack group_keys is', group_keys)
+    self.filter = self.input
+    # group_keys = self.extract_group_keys_from_stack()
+    # self.component, self.rig, self.filter = group_keys
+    # print('stack group_keys is', group_keys)
+
+    print(f'Top of stack(), rig is {self.rig}, filter is {self.filter}')
 
     self.light_frames = [
         f for f in self.light_frames if file_io.fits_matches(
@@ -246,6 +240,9 @@ class AstroFlow(FlowSpec):
             f, ['IMAGETYP', 'RIG', 'FILTER'], ['Flat', self.rig, self.filter])
     ])
 
+    self.master = None
+    self.new_stack = False
+
     # TODO avoid arrow code here.
     if self.light_frames:
       # Try to find a previous result with the same rig, filter, and sets of
@@ -255,38 +252,22 @@ class AstroFlow(FlowSpec):
       #
       # If a previous result with the same rig and filter, but different light
       # and/or flat frames are found, create a new version.
-      # TODO: Also include changes to dark or bias frames.
-      self.master = None
-      self.new_stack = False
       self.version = 1
-      try:
-        prev_step = get_latest_run()['stack']
 
-        found = False
-        for task in prev_step:
-          if task.data.rig != self.rig or task.data.filter != self.filter:
-            continue
+      # TODO: Make this iterative, so adding more light frames doesn't invalidate
+      # the previous result.
+      # TODO: Also detect new dark or bias frames.
+      task = metaflow_data_helper.find_most_recent_successful_task(
+          'stack', ['rig', 'filter', 'light_frames', 'flat_frames'],
+          [self.rig, self.filter, self.light_frames, self.flat_frames])
 
-          if (self.light_frames == task.data.light_frames and
-              self.flat_frames == task.data.flat_frames and
-              os.path.exists(task.data.master)):
-            # TODO: Also detect new dark or bias frames.
-            print(
-                'Light and flat frames are unchanged; re-using previous stack,',
-                f'v{task.data.version}')
-            self.master = task.data.master
-            found = True
-            break
-
-        if not found:
-          self.version = task.data.version + 1
-          print(f'Lights or flats changed, or master file is missing.')
-          print(f'Stacking new version v{self.version}')
-      except:
-        pass
-
-      if not self.master:
-        print(f'Stacking {len(self.light_frames)} light frames...')
+      if task and os.path.exists(task.data.master):
+        print('Light and flat frames are unchanged; re-using previous stack,',
+              f'v{task.data.version}')
+        self.master = task.data.master
+      else:
+        print(f'Stacking {len(self.light_frames)} light frames for rig '
+              f'{self.rig} and filter {self.filter}...')
         self.new_stack = True
         self.master = stacking.stack(self.rig, self.filter, self.light_frames,
                                      self.flat_frames, self.version)
