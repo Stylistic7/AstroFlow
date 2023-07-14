@@ -8,6 +8,7 @@ from operator import itemgetter
 import tempfile
 import subprocess
 import shutil
+from collections import Counter
 
 import config
 import plate_solving
@@ -90,6 +91,63 @@ class AstroFlow(FlowSpec):
 
     print(f'Found {len(self.light_frames)} light frames')
 
+    self.next(self.check_duplicates)
+
+  def process_and_merge_added_keys(self, step_name, input_names, input_values,
+                                   current_keys, compute_fn, output_name):
+    # Find the most recent successful run of the step. If the input arguments
+    # match exactly, just use the previous result.
+    task = metaflow_data_helper.find_most_recent_successful_task(
+        step_name, input_names, input_values)
+    if task:
+      print(f'Re-using previous artifact for step {step_name}')
+      return task[output_name].data
+    else:
+      # No successful task was found with the same input arguments, so look for
+      # the most recent successful task with any input arguments.
+      task = metaflow_data_helper.find_most_recent_successful_task(step_name)
+      if task:
+        added_keys = list(
+            set(current_keys) - set(task[output_name].data.keys()))
+        print(f'Processing {len(added_keys)} added keys.')
+        return task[output_name].data | compute_fn(added_keys)
+      else:
+        print(f'Processing {len(current_keys)} keys from scratch.')
+        return compute_fn(current_keys)
+
+  # @catch(var='check_duplicates_failed')
+  @step
+  def check_duplicates(self):
+    def compute_fn(light_frames):
+      return {f: file_io.hash_of_image_data(f) for f in light_frames}
+
+    self.image_hashes = self.process_and_merge_added_keys(
+        'check_duplicates', ['light_frames'], [self.light_frames],
+        self.light_frames, compute_fn, 'image_hashes')
+
+    # Remove any image files that have been deleted.
+    # TODO: This is a bit ugly.
+    self.image_hashes = {
+        k: v
+        for k, v in self.image_hashes.items() if os.path.exists(k)
+    }
+
+    # If there are any duplicated images, inform the user and fail.
+    image_hashes = list(self.image_hashes.values())
+    self.image_hash_counts = Counter(image_hashes)
+    if not all(x == 1 for x in self.image_hash_counts.values()):
+      for image_hash, count in self.image_hash_counts.items():
+        if count == 1:
+          continue
+        print('The following files have the same image data hash:')
+        filenames = [
+            k for k, v in self.image_hashes.items() if v == image_hash
+        ]
+        for filename in filenames:
+          print(f'  {filename}')
+
+      raise Exception('Some images were duplicated')
+
     self.next(self.remove_frames_during_mount_movements)
 
   @step
@@ -115,26 +173,22 @@ class AstroFlow(FlowSpec):
     # TODO: Put this into a config struct.
     if self.rig == 'C11':
       image_scale = 1.38
+    elif self.rig == 'C11_F7':
+      image_scale = 0.38
     elif self.rig == 'RC71':
       image_scale = 2.22
+
+    def compute_fn(light_frames):
+      return subframe_selector.measure_frames(light_frames, image_scale)
 
     self.light_frames = [
         f for f in self.light_frames
         if file_io.fits_matches(f, 'RIG', self.rig)
     ]
 
-    # TODO: Make this iterative, so adding more light frames doesn't invalidate
-    # the previous result.
-    task = metaflow_data_helper.find_most_recent_successful_task(
-        'measure_for_rig', ['light_frames'], [self.light_frames])
-    if task:
-      self.measurements = task.data.measurements
-      print('Light frame list is unchanged; re-using previous measurements '
-            f'for {len(self.measurements)} light frames')
-    else:
-      print(f'Measuring {len(self.light_frames)} light frames...')
-      self.measurements = subframe_selector.measure_frames(
-          self.light_frames, image_scale)
+    self.measurements = self.process_and_merge_added_keys(
+        'measure_for_rig', ['light_frames'], [self.light_frames],
+        self.light_frames, compute_fn, 'measurements')
 
     self.next(self.join_measurements)
 
@@ -156,21 +210,27 @@ class AstroFlow(FlowSpec):
 
   @step
   def plate_solve(self):
-    # Try to find the plate solutions in previous runs of the DAG.
-    # TODO: Handle situation where files have been added.
-    task = metaflow_data_helper.find_most_recent_successful_task(
-        'plate_solve', ['light_frames'], [self.light_frames])
-    if task:
-      print('Light frame list is unchanged; re-using previous plate solutions')
-      self.plate_solutions = task.data.plate_solutions
-    else:
-      print(f'Plate solving {len(self.light_frames)} light frames...')
-      self.plate_solutions = plate_solving.solve_fields(self.light_frames)
+    self.plate_solutions = self.process_and_merge_added_keys(
+        'plate_solve', ['light_frames'], [self.light_frames],
+        self.light_frames, plate_solving.solve_fields, 'plate_solutions')
+
+    # Remove any image files that have been deleted.
+    # TODO: This is a bit ugly.
+    self.plate_solutions = {
+        k: v
+        for k, v in self.plate_solutions.items() if os.path.exists(k)
+    }
 
     self.next(self.spatial_grouping)
 
   @step
   def spatial_grouping(self):
+    # TODO: This should only group the light frames actually selected, even
+    # if there are more plate solutions in the artifact database.
+    #
+    # TODO: All of the spatial positions should be printed out, along with their
+    # common directory. I need to make sure the tolerances (0.1 degree) are
+    # actually reasonable, and won't ever get confused by dither.
     positions = [
         spatial_association.get_position(wcs)
         for wcs, _ in self.plate_solutions.values()
@@ -216,17 +276,20 @@ class AstroFlow(FlowSpec):
             f, ['IMAGETYP', 'RIG', 'FILTER'], ['Light', self.rig, self.filter])
     ]
 
-    filenames = list(str(f) for f in Path(self.abs_project_dir).rglob("*.fit"))
-    self.flat_frames = sorted([
-        f for f in filenames if file_io.fits_matches(
-            f, ['IMAGETYP', 'RIG', 'FILTER'], ['Flat', self.rig, self.filter])
-    ])
-
     self.master = None
     self.new_stack = False
 
     # TODO avoid arrow code here.
-    if self.light_frames:
+    if len(self.light_frames) > 1:
+      light_frames_path = os.path.commonpath(self.light_frames)
+      print(f'Looking for flat frames in common path {light_frames_path}')
+      filenames = list(str(f) for f in Path(light_frames_path).rglob("*.fit"))
+      self.flat_frames = sorted([
+          f for f in filenames
+          if file_io.fits_matches(f, ['IMAGETYP', 'RIG', 'FILTER'],
+                                  ['Flat', self.rig, self.filter])
+      ])
+
       # Try to find a previous result with the same rig, filter, and sets of
       # light and flat frames.
       #
@@ -248,6 +311,7 @@ class AstroFlow(FlowSpec):
       if task and os.path.exists(task.data.master):
         print('Light and flat frames are unchanged; re-using previous stack,',
               f'v{task.data.version}')
+        self.new_stack = False
         self.master = task.data.master
       else:
         print(f'Stacking {len(self.light_frames)} light frames for '
@@ -262,15 +326,11 @@ class AstroFlow(FlowSpec):
     else:
       print(f'There are no light frames for rig '
             f'{self.rig} and filter {self.filter}')
+      self.new_stack = False
       self.master = None
 
     self.next(self.post_process_per_stack)
 
-  # TODO: Add per-rig, per-filter post-processing here. This will apply:
-  # Run ABE on all images.
-  # Run BXT on all images.
-  # Run IntegerResample on all C11 images.
-  # Run horizontal mirror on all RC71 images.
   @catch(var='post_process_per_stack_failed')
   @step
   def post_process_per_stack(self):

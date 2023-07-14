@@ -1,7 +1,7 @@
 from metaflow import Flow, FlowSpec, Parameter, catch, step, JSONType, schedule
 
 
-def find_most_recent_successful_task(step, keys, values):
+def find_most_recent_successful_task(step, keys=[], values=[]):
   sorted_runs = reversed(
       list(sorted(Flow('AstroFlow').runs(), key=lambda r: r.id)))
   for run in sorted_runs:

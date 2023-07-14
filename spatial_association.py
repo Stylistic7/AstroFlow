@@ -7,6 +7,9 @@ from scipy import linalg
 from sklearn import mixture
 import astropy.io.fits as pyfits
 
+MIN_COMPONENT_MEMBERS = 5
+LARGEST_ACCEPTABLE_COVARIANCE_NORM = 1.0
+
 
 def fit_n_components(n_components, positions):
   gmm = mixture.GaussianMixture(n_components=n_components,
@@ -16,8 +19,8 @@ def fit_n_components(n_components, positions):
   # print('GMM covariance norms are',
   #       [np.linalg.norm(c) for c in gmm.covariances_])
 
-  # for m, c in zip(gmm.means_, gmm.covariances_):
-  #   print(f'Gaussian with mean {m} has norm {np.linalg.norm(c)}')
+  for m, c in zip(gmm.means_, gmm.covariances_):
+    print(f'Gaussian with mean {m} has norm {np.linalg.norm(c)}')
 
   pred = gmm.predict(positions)
   # print('GMM predictions are', pred)
@@ -29,7 +32,7 @@ def fit_n_components(n_components, positions):
 
 def check_fit(gmm):
   for c in gmm.covariances_:
-    if np.linalg.norm(c) > 1.0:
+    if np.linalg.norm(c) > LARGEST_ACCEPTABLE_COVARIANCE_NORM:
       return False
 
   return True
@@ -41,7 +44,7 @@ def remove_small_components(gmm, ids, positions):
   for g in set(pred):
     n_members = list(pred).count(g)
     # print(f'Gaussian {g} has {n_members} members')
-    if n_members < 5:
+    if n_members < MIN_COMPONENT_MEMBERS:
       pred = [p if p != g else -1 for p in pred]
 
   # TODO: Don't leak the component numbers outside this module.
@@ -69,12 +72,14 @@ def as_groups(gmm, filename_and_pred):
 
 def find_components(ids, positions):
   gmm = None
-  for i in range(1, 10):
+  for i in range(1, 100000):
     gmm = fit_n_components(i, positions)
     if check_fit(gmm):
       print(f'Found acceptable solution with {i} components.')
       filename_and_pred = remove_small_components(gmm, ids, positions)
       return as_groups(gmm, filename_and_pred)
+    else:
+      print(f'Rejected solution with {i} components')
 
 
 def get_position(wcs_string):

@@ -1,4 +1,5 @@
 import astropy.io.fits as pyfits
+import xxhash
 from functools import lru_cache
 from pathlib import Path
 from dateutil.parser import parse
@@ -32,11 +33,18 @@ def read_fits(filename, print_header=False):
 
     if 'DATE' in header:
       output['DATE'] = parse(header['DATE'])
+    else:
+      output['DATE'] = output['DATE-OBS'].date()
 
     if 'PANE' in header:
       output['PANE'] = int(header['PANE'])
 
     return output
+
+
+def hash_of_image_data(filename):
+  with pyfits.open(filename) as fits:
+    return xxhash.xxh128(fits[0].data.tobytes()).hexdigest()
 
 
 def fits_matches(filename, key, value):

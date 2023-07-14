@@ -2,6 +2,9 @@ import os
 import tempfile
 import subprocess
 import time
+from pathlib import Path
+
+import config
 
 post_process_script = """
 var P_bxt = new BlurXTerminator;
@@ -88,6 +91,11 @@ def run_post_processing(rig, master):
   filename, ext = os.path.splitext(master)
   output_filename = filename + '_post' + ext
 
+  if config.STACKING_TEST_MODE:
+    print(f'In test mode; immediately returning {output_filename}')
+    Path(output_filename).touch()
+    return output_filename
+
   if os.path.exists(output_filename):
     os.remove(output_filename)
 
@@ -107,3 +115,5 @@ def run_post_processing(rig, master):
 
     while not os.path.exists(output_filename):
       time.sleep(5)
+
+    return output_filename

@@ -17,6 +17,10 @@ def stack(position_string, rig, filter, light_frames, flat_frames, version):
       if not os.path.exists(dest_filename):
         os.symlink(filename, dest_filename)
 
+  if len(light_frames) == 1:
+    print('Refusing to stack a single light frame')
+    return
+
   flat_frame_association.associate_flat_frames(light_frames, flat_frames)
 
   bias_frames = []
@@ -38,7 +42,7 @@ def stack(position_string, rig, filter, light_frames, flat_frames, version):
 
     src_master_dir = os.path.join(tmp_dir, 'master')
     dst_master_dir = os.path.commonpath(light_frames)
-    os.makedirs(dst_master_dir, exist_ok=True)
+    # os.makedirs(dst_master_dir, exist_ok=True)
 
     print('stacking: src_master_dir', src_master_dir)
     print('stacking: dst_master_dir', dst_master_dir)
