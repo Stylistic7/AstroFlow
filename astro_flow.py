@@ -9,6 +9,7 @@ import tempfile
 import subprocess
 import shutil
 from collections import Counter
+from filelock import FileLock
 
 import config
 import plate_solving
@@ -20,6 +21,8 @@ import guide_log_analysis
 import autorun_log_analysis
 import subframe_selector
 import metaflow_data_helper
+
+PIXINSIGHT_LOCK_FILE = "pixinsight.lock"
 
 
 def get_latest_run():
@@ -320,9 +323,11 @@ class AstroFlow(FlowSpec):
               f'canonical position {self.position_string}, rig '
               f'{self.rig} and filter {self.filter}...')
         self.new_stack = True
-        self.master = stacking.stack(self.position_string, self.rig,
-                                     self.filter, self.light_frames,
-                                     self.flat_frames, self.version)
+        lock = FileLock(PIXINSIGHT_LOCK_FILE)
+        with lock:
+          self.master = stacking.stack(self.position_string, self.rig,
+                                       self.filter, self.light_frames,
+                                       self.flat_frames, self.version)
         # TODO: masters can be more elaborate than just the list of files.
         print('self.master is', self.master)
     else:
@@ -355,8 +360,10 @@ class AstroFlow(FlowSpec):
         print('Post-processing stacked master', self.rig, self.filter,
               self.master)
         self.output_changed = True
-        self.master_post = post_processing_per_stack.run_post_processing(
-            self.rig, self.master)
+        lock = FileLock(PIXINSIGHT_LOCK_FILE)
+        with lock:
+          self.master_post = post_processing_per_stack.run_post_processing(
+              self.rig, self.master)
 
     self.next(self.join_filter_grouping)
 
@@ -431,4 +438,7 @@ class AstroFlow(FlowSpec):
 
 
 if __name__ == '__main__':
+  if os.path.exists(PIXINSIGHT_LOCK_FILE):
+    os.remove(PIXINSIGHT_LOCK_FILE)
+
   AstroFlow()
