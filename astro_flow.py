@@ -342,41 +342,21 @@ class AstroFlow(FlowSpec):
     self.output_changed = False
 
     if self.master:
-      print('top of post_process_per_stack, master is', self.master)
-      if self.new_stack:
-        print('Post-processing new stacked master', self.rig, self.filter,
+      previous_output = (
+          metaflow_data_helper.find_most_recent_successful_task_output(
+              'post_process_per_stack', ['rig', 'filter', 'master'],
+              [self.rig, self.filter, self.master], ['master_post']))
+      if previous_output:
+        if os.path.exists(previous_output[0]):
+          self.master_post = previous_output[0]
+          print('Found previous output', self.master_post)
+
+      if self.new_stack or not self.master_post:
+        print('Post-processing stacked master', self.rig, self.filter,
               self.master)
         self.output_changed = True
         self.master_post = post_processing_per_stack.run_post_processing(
             self.rig, self.master)
-      else:
-        task = metaflow_data_helper.find_most_recent_successful_task(
-            'post_process_per_stack', ['rig', 'filter', 'master'],
-            [self.rig, self.filter, self.master])
-
-        if not task:
-          print('No task')
-        elif 'master_post' not in task.data:
-          print('master_post not in task.data')
-        elif not task['master_post'].data:
-          print("task['master_post'].data is False")
-        elif not os.path.exists(task['master_post'].data):
-          print('master does not exist')
-
-        if (task and 'master_post' in task.data and
-            task['master_post'].data and
-            os.path.exists(task['master_post'].data)):
-          print(f'Re-using previous artifact for post_process_per_stack',
-                self.rig, self.filter, self.master)
-          self.output_changed = False
-          self.master_post = task['master_post'].data
-        else:
-          print(
-              'Could not get previous artifact. Post-processing old stacked master',
-              self.rig, self.filter, self.master)
-          self.output_changed = True
-          self.master_post = post_processing_per_stack.run_post_processing(
-              self.rig, self.master)
 
     self.next(self.join_filter_grouping)
 

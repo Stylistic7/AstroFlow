@@ -110,4 +110,5 @@ def run_post_processing(rig, master):
     while not os.path.exists(output_filename):
       time.sleep(5)
 
+    print(f'Success, returning filename {output_filename}')
     return output_filename
