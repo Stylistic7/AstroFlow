@@ -19,12 +19,6 @@ P_bxt.nonstellar_psf_diameter = 0.00;
 P_bxt.auto_nonstellar_psf = true;
 P_bxt.sharpen_nonstellar = 0.90;
 
-var P_sxt = new StarXTerminator;
-P_sxt.ai_file = "/Applications/PixInsight/library/StarXTerminator.11.mlmodel";
-P_sxt.stars = true;
-P_sxt.unscreen = true;
-P_sxt.overlap = 0.50;
-
 var P_abe = new AutomaticBackgroundExtractor;
 P_abe.tolerance = 1.000;
 P_abe.deviation = 0.800;

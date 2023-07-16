@@ -1,45 +1,48 @@
 from metaflow import Flow, FlowSpec, Parameter, catch, step, JSONType, schedule
 
 
-def find_most_recent_successful_task(step, keys=[], values=[]):
+def find_most_recent_successful_task(step, keys=[], values=[], debug=False):
   sorted_runs = reversed(
       list(sorted(Flow('AstroFlow').runs(), key=lambda r: r.id)))
   for run in sorted_runs:
     try:
-      # print(f'Looking at run {run}')
+      if debug: print(f'Looking at run {run}')
       for task in run[step]:
-        # print(f'Looking at task {task}')
+        if debug: print(f'  Looking at task {task}')
         if not task.successful:
-          # print(f'Task was not successful')
+          if debug: print(f'Task was not successful')
           continue
         else:
-          # print(f'Task was successful!')
+          if debug: print(f'Task was successful!')
           pass
 
         failed = False
         for k, v in zip(keys, values):
           if k not in task.data:
-            # print(f'Data key {k} not in task.data')
+            if debug: print(f'Data key {k} not in task.data')
             break
           else:
-            # print(f'Data key {k} is in task.data!')
+            if debug: print(f'Data key {k} is in task.data!')
             pass
 
           if sorted(task[k].data) == sorted(v):
-            # print(f'Found value for data key {k}')
+            if debug: print(f'Found value for data key {k}')
             pass
           else:
-            # print(f'Value for data key {k} (len {len(task[k].data)}) '
-            #       f'did not match value (len {len(v)})')
+            if debug:
+              print(f'Value for data key {k} ({task[k].data}) '
+                    f'did not match value ({v})')
             failed = True
             break
 
         if not failed:
+          if debug: print('Found a matching task.')
           return task
     except:
-      # print(f'Exception encountered while querying run {run.id}')
+      if debug: print(f'Exception encountered while querying run {run.id}')
       pass
 
+  if debug: print('Did not find a matching task.')
   return None
 
 

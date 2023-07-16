@@ -15,6 +15,7 @@ import plate_solving
 import spatial_association
 import stacking
 import post_processing_per_stack
+import post_processing_per_spatial_component
 import guide_log_analysis
 import autorun_log_analysis
 import subframe_selector
@@ -280,7 +281,7 @@ class AstroFlow(FlowSpec):
     self.new_stack = False
 
     # TODO avoid arrow code here.
-    if len(self.light_frames) > 1:
+    if len(self.light_frames) > 5:
       light_frames_path = os.path.commonpath(self.light_frames)
       print(f'Looking for flat frames in common path {light_frames_path}')
       filenames = list(str(f) for f in Path(light_frames_path).rglob("*.fit"))
@@ -308,7 +309,8 @@ class AstroFlow(FlowSpec):
               self.flat_frames
           ])
 
-      if task and os.path.exists(task.data.master):
+      if (task and 'master' in task.data and task['master'].data and
+          os.path.exists(task.data.master)):
         print('Light and flat frames are unchanged; re-using previous stack,',
               f'v{task.data.version}')
         self.new_stack = False
@@ -324,7 +326,7 @@ class AstroFlow(FlowSpec):
         # TODO: masters can be more elaborate than just the list of files.
         print('self.master is', self.master)
     else:
-      print(f'There are no light frames for rig '
+      print(f'There are too few light frames for rig '
             f'{self.rig} and filter {self.filter}')
       self.new_stack = False
       self.master = None
@@ -335,36 +337,103 @@ class AstroFlow(FlowSpec):
   @step
   def post_process_per_stack(self):
     # TODO: Don't rerun this if all previous steps were no-ops.
-    if self.new_stack and self.master:
-      print('post_process_per_stack', self.rig, self.filter, self.master)
-      self.master_post = post_processing_per_stack.run_post_processing(
-          self.rig, self.master)
+    # This looks ugly, maybe it's a pattern I can factor out.
+    self.master_post = None
+    self.output_changed = False
+
+    if self.master:
+      print('top of post_process_per_stack, master is', self.master)
+      if self.new_stack:
+        print('Post-processing new stacked master', self.rig, self.filter,
+              self.master)
+        self.output_changed = True
+        self.master_post = post_processing_per_stack.run_post_processing(
+            self.rig, self.master)
+      else:
+        task = metaflow_data_helper.find_most_recent_successful_task(
+            'post_process_per_stack', ['rig', 'filter', 'master'],
+            [self.rig, self.filter, self.master])
+
+        if not task:
+          print('No task')
+        elif 'master_post' not in task.data:
+          print('master_post not in task.data')
+        elif not task['master_post'].data:
+          print("task['master_post'].data is False")
+        elif not os.path.exists(task['master_post'].data):
+          print('master does not exist')
+
+        if (task and 'master_post' in task.data and
+            task['master_post'].data and
+            os.path.exists(task['master_post'].data)):
+          print(f'Re-using previous artifact for post_process_per_stack',
+                self.rig, self.filter, self.master)
+          self.output_changed = False
+          self.master_post = task['master_post'].data
+        else:
+          print(
+              'Could not get previous artifact. Post-processing old stacked master',
+              self.rig, self.filter, self.master)
+          self.output_changed = True
+          self.master_post = post_processing_per_stack.run_post_processing(
+              self.rig, self.master)
 
     self.next(self.join_filter_grouping)
 
   @step
   def join_filter_grouping(self, inputs):
-    print('join_filter_grouping, inputs are')
-    for input in inputs:
-      print('input', input)
+    self.output_changed = any(i.output_changed for i in inputs)
+
+    self.rigs = [i.rig for i in inputs]
+    self.filters = [i.filter for i in inputs]
+    self.master_posts = [i.master_post for i in inputs]
+
+    print(f'join_filter_grouping, '
+          f'output_changed {self.output_changed}, '
+          f'rigs {self.rigs}, '
+          f'filters {self.filters}, '
+          f'master_posts {self.master_posts}')
 
     self.next(self.post_process_per_rig)
 
-  # TODO: Add per-rig post-processing here. It will:
-  # Combine LRGB channels.
-  # Run ImageSolver and SPCC.
   @step
   def post_process_per_rig(self):
     self.next(self.join_rig_grouping)
 
   @step
   def join_rig_grouping(self, inputs):
+    self.output_changed = any(i.output_changed for i in inputs)
+
+    self.rigs = sum([i.rigs for i in inputs], [])
+    self.filters = sum([i.filters for i in inputs], [])
+    self.master_posts = sum([i.master_posts for i in inputs], [])
+
+    print(f'join_rig_grouping, '
+          f'output_changed {self.output_changed}, '
+          f'rigs {self.rigs}, '
+          f'filters {self.filters}, '
+          f'master_posts {self.master_posts}')
+
     self.next(self.post_process_per_spatial_component)
 
-  # TODO: Add per-spatial-component post-processing here. It will star align
-  # images from multiple rigs.
+  # TODO: Add per-spatial-component post-processing here. It will:
+  # - star align images from multiple rigs
+  # - combine LRGB channels
+  # - plate solve
+  # - spectro-photometric color calibration
   @step
   def post_process_per_spatial_component(self):
+    print(f'post_process_per_spatial_component, '
+          f'output_changed {self.output_changed}, '
+          f'rigs {self.rigs}, '
+          f'filters {self.filters}, '
+          f'master_posts {self.master_posts}')
+
+    if self.output_changed:
+      self.aligned_masters = (
+          post_processing_per_spatial_component.run_post_processing(
+              self.rigs, self.filters, self.master_posts))
+
     self.next(self.join_spatial_grouping)
 
   @step
