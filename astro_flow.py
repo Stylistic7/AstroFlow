@@ -9,7 +9,6 @@ import tempfile
 import subprocess
 import shutil
 from collections import Counter
-from filelock import FileLock
 
 import config
 import plate_solving
@@ -21,8 +20,7 @@ import guide_log_analysis
 import autorun_log_analysis
 import subframe_selector
 import metaflow_data_helper
-
-PIXINSIGHT_LOCK_FILE = "pixinsight.lock"
+import file_locking
 
 
 def get_latest_run():
@@ -73,6 +71,7 @@ class AstroFlow(FlowSpec):
   def start(self):
     self.abs_project_dir = os.path.abspath(self.project_dir)
     print(f"Project directory is {self.abs_project_dir}")
+    file_locking.remove_lockfile(self.abs_project_dir, 'PixInsight')
     self.config = self.config_json
     self.next(self.download)
 
@@ -323,11 +322,11 @@ class AstroFlow(FlowSpec):
               f'canonical position {self.position_string}, rig '
               f'{self.rig} and filter {self.filter}...')
         self.new_stack = True
-        lock = FileLock(PIXINSIGHT_LOCK_FILE)
-        with lock:
-          self.master = stacking.stack(self.position_string, self.rig,
-                                       self.filter, self.light_frames,
-                                       self.flat_frames, self.version)
+        self.master = file_locking.serialize(
+            self.abs_project_dir, 'PixInsight', stacking.stack,
+            self.position_string, self.rig, self.filter, self.light_frames,
+            self.flat_frames, self.version)
+
         # TODO: masters can be more elaborate than just the list of files.
         print('self.master is', self.master)
     else:
@@ -343,27 +342,26 @@ class AstroFlow(FlowSpec):
   def post_process_per_stack(self):
     # TODO: Don't rerun this if all previous steps were no-ops.
     # This looks ugly, maybe it's a pattern I can factor out.
-    self.master_post = None
+    self.post_per_stack = None
     self.output_changed = False
 
     if self.master:
-      previous_output = (
+      previous_results = (
           metaflow_data_helper.find_most_recent_successful_task_output(
               'post_process_per_stack', ['rig', 'filter', 'master'],
-              [self.rig, self.filter, self.master], ['master_post']))
-      if previous_output:
-        if os.path.exists(previous_output[0]):
-          self.master_post = previous_output[0]
-          print('Found previous output', self.master_post)
+              [self.rig, self.filter, self.master], ['post_per_stack']))
+      if previous_results:
+        if all(os.path.exists(f) for f in previous_results[0]):
+          self.post_per_stack = previous_results[0]
 
-      if self.new_stack or not self.master_post:
+      if self.new_stack or not self.post_per_stack:
         print('Post-processing stacked master', self.rig, self.filter,
               self.master)
         self.output_changed = True
-        lock = FileLock(PIXINSIGHT_LOCK_FILE)
-        with lock:
-          self.master_post = post_processing_per_stack.run_post_processing(
-              self.rig, self.master)
+        self.post_per_stack = file_locking.serialize(
+            self.abs_project_dir, 'PixInsight',
+            post_processing_per_stack.run_post_processing, self.rig,
+            self.master)
 
     self.next(self.join_filter_grouping)
 
@@ -373,13 +371,13 @@ class AstroFlow(FlowSpec):
 
     self.rigs = [i.rig for i in inputs]
     self.filters = [i.filter for i in inputs]
-    self.master_posts = [i.master_post for i in inputs]
+    self.posts_per_stack = [i.post_per_stack for i in inputs]
 
     print(f'join_filter_grouping, '
           f'output_changed {self.output_changed}, '
           f'rigs {self.rigs}, '
           f'filters {self.filters}, '
-          f'master_posts {self.master_posts}')
+          f'posts_per_stack {self.posts_per_stack}')
 
     self.next(self.post_process_per_rig)
 
@@ -393,13 +391,13 @@ class AstroFlow(FlowSpec):
 
     self.rigs = sum([i.rigs for i in inputs], [])
     self.filters = sum([i.filters for i in inputs], [])
-    self.master_posts = sum([i.master_posts for i in inputs], [])
+    self.posts_per_stack = sum([i.posts_per_stack for i in inputs], [])
 
     print(f'join_rig_grouping, '
           f'output_changed {self.output_changed}, '
           f'rigs {self.rigs}, '
           f'filters {self.filters}, '
-          f'master_posts {self.master_posts}')
+          f'posts_per_stack {self.posts_per_stack}')
 
     self.next(self.post_process_per_spatial_component)
 
@@ -414,12 +412,12 @@ class AstroFlow(FlowSpec):
           f'output_changed {self.output_changed}, '
           f'rigs {self.rigs}, '
           f'filters {self.filters}, '
-          f'master_posts {self.master_posts}')
+          f'posts_per_stack {self.posts_per_stack}')
 
     if self.output_changed:
       self.aligned_masters = (
           post_processing_per_spatial_component.run_post_processing(
-              self.rigs, self.filters, self.master_posts))
+              self.rigs, self.filters, self.posts_per_stack))
 
     self.next(self.join_spatial_grouping)
 
@@ -438,7 +436,8 @@ class AstroFlow(FlowSpec):
 
 
 if __name__ == '__main__':
-  if os.path.exists(PIXINSIGHT_LOCK_FILE):
-    os.remove(PIXINSIGHT_LOCK_FILE)
+  # FIXME don't hardcode this name.
+  if os.path.exists("PixInsight.lock"):
+    os.remove("PixInsight.lock")
 
   AstroFlow()

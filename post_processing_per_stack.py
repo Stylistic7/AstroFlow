@@ -73,7 +73,8 @@ if ("{rig}" == "RC71") {{
   P_fr.executeOn(window[0].currentView);
 }}
 
-window[0].saveAs("{output_filename}", false, false, true, false);
+window[0].saveAs("{fit_filename}", false, false, true, false);
+window[0].saveAs("{xisf_filename}", false, false, true, false);
 
 for (let i = 0; i < window.length; ++i) {{
   window[i].forceClose();
@@ -83,22 +84,26 @@ for (let i = 0; i < window.length; ++i) {{
 
 def run_post_processing(rig, master):
   filename, ext = os.path.splitext(master)
-  output_filename = filename + '_post' + ext
+  fit_filename = filename + '_post' + '.fit'
+  xisf_filename = filename + '_post' + '.xisf'
+  output_filenames = [fit_filename, xisf_filename]
 
   if config.STACKING_TEST_MODE:
-    print(f'In test mode; immediately returning {output_filename}')
-    Path(output_filename).touch()
-    return output_filename
+    print(f'In test mode; immediately returning {output_filenames}')
+    Path(output_filenames).touch()
+    return output_filenames
 
-  if os.path.exists(output_filename):
-    os.remove(output_filename)
+  for filename in output_filenames:
+    if os.path.exists(filename):
+      os.remove(filename)
 
   with tempfile.TemporaryDirectory() as tmp_dir:
     script_filename = os.path.join(tmp_dir, "run_post_processing.js")
     with open(script_filename, "w") as f:
       script = post_process_script.format(input_filename=master,
                                           rig=rig,
-                                          output_filename=output_filename)
+                                          fit_filename=fit_filename,
+                                          xisf_filename=xisf_filename)
       f.write(script)
 
     print(f'Running PixInsight post-processing on master {master}')
@@ -107,8 +112,9 @@ def run_post_processing(rig, master):
         f'--execute={script_filename}'
     ]).returncode
 
-    while not os.path.exists(output_filename):
-      time.sleep(5)
-
-    print(f'Success, returning filename {output_filename}')
-    return output_filename
+    while True:
+      if all(os.path.exists(f) for f in output_filenames):
+        print(f'PixInsight completed, returning filenames {output_filenames}')
+        return output_filenames
+      else:
+        time.sleep(5)
