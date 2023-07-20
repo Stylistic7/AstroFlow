@@ -3,6 +3,7 @@ import tempfile
 import subprocess
 import time
 import json
+import math
 
 subframe_selector_script = """
 var P = new SubframeSelector;
@@ -110,6 +111,7 @@ def measure_frames(light_frames, image_scale):
       output_dict = {}
       for line in result.splitlines():
         line_dict = dict(zip(column_headings, line.split(',')))
-        output_dict[line_dict['File']] = line_dict
+        if math.isfinite(float(line_dict['PSF Signal Weight'])):
+          output_dict[line_dict['File']] = line_dict
 
       return output_dict

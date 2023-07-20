@@ -9,8 +9,12 @@ import tempfile
 import subprocess
 import shutil
 from collections import Counter
+from attrdict import AttrDict
+import time
+import functools
 
 import config
+import download_asiair
 import plate_solving
 import spatial_association
 import stacking
@@ -20,21 +24,42 @@ import guide_log_analysis
 import autorun_log_analysis
 import subframe_selector
 import metaflow_data_helper
-import file_locking
-
-
-def get_latest_run():
-  if config.USE_ARTIFACTS_FROM_FAILED_RUNS:
-    sorted_runs = list(sorted(Flow('AstroFlow').runs(), key=lambda r: r.id))
-    print('sorted_runs', sorted_runs)
-    return sorted_runs[-2]
-  else:
-    return Flow('AstroFlow').latest_successful_run
 
 
 def unique_fits_values(filenames, fits_keyword):
   return sorted(
       list(set([file_io.read_fits(f)[fits_keyword] for f in filenames])))
+
+
+def serialize(resource_name, lockfile_directory='/tmp'):
+  def decorator_serialize(fn):
+    @functools.wraps(fn)
+    def wrapper_serialize(*args, **kwargs):
+      lock_filename = os.path.join(lockfile_directory,
+                                   f"AstroFlow.{resource_name}.lock")
+      while True:
+        try:
+          os.open(lock_filename, os.O_CREAT | os.O_EXCL)
+          print(f'Acquired lock for resource {resource_name}')
+          result = fn(*args, **kwargs)
+          os.remove(lock_filename)
+          return result
+        except FileExistsError:
+          # print(f'Waiting for lock on resource {resource_name}')
+          time.sleep(5)
+        except Exception as e:
+          print(f'serialize: Caught exception {e}')
+
+    return wrapper_serialize
+
+  return decorator_serialize
+
+
+def remove_lockfile(resource_name, lockfile_directory='/tmp'):
+  lock_filename = os.path.join(lockfile_directory,
+                               f"AstroFlow.{resource_name}.lock")
+  if os.path.exists(lock_filename):
+    os.remove(lock_filename)
 
 
 class AstroFlow(FlowSpec):
@@ -62,22 +87,58 @@ class AstroFlow(FlowSpec):
       default=False,
   )
 
-  C11_filter = Parameter('C11_filter',
-                         help="Filter installed on the C11",
-                         type=str,
-                         required=True)
+  default_filter = Parameter('default_filter',
+                             help="Default filter",
+                             type=str,
+                             default=None)
 
   @step
   def start(self):
     self.abs_project_dir = os.path.abspath(self.project_dir)
     print(f"Project directory is {self.abs_project_dir}")
-    file_locking.remove_lockfile(self.abs_project_dir, 'PixInsight')
+    remove_lockfile('PixInsight')
     self.config = self.config_json
     self.next(self.download)
 
   # TODO: Add download functionality, which may repeat until sunrise.
   @step
   def download(self):
+    self.rigs = [
+        {
+            'name': 'RC71',
+            'ip': '192.168.50.15',
+        },
+        {
+            'name': 'C11',
+            'ip': '192.168.50.16',
+        },
+    ]
+
+    self.search_defs = [{
+        'volume': 'EMMC%20Images',
+        'log_dir': 'log',
+        'fits_paths': ['Autorun', 'Plan']
+    }, {
+        'volume': 'TF%20Images',
+        'log_dir': 'ASIAIR/log',
+        'fits_paths': ['ASIAIR/Autorun', 'ASIAIR/Plan']
+    }]
+
+    self.next(self.download_from_rig, foreach='rigs')
+
+  @step
+  def download_from_rig(self):
+    self.rig = self.input
+
+    download_asiair.download_from_rig(self.rig['name'], self.rig['ip'],
+                                      self.search_defs, self.abs_project_dir,
+                                      self.default_filter)
+
+    self.next(self.join_downloads)
+
+  @step
+  def join_downloads(self, inputs):
+    self.merge_artifacts(inputs, exclude=['rig'])
     self.next(self.find_files)
 
   @step
@@ -85,6 +146,7 @@ class AstroFlow(FlowSpec):
     # TODO: Make sure that adding new dark, bias, or flat frames invalidates
     # stacks that depend on them.
     filenames = list(str(f) for f in Path(self.abs_project_dir).rglob("*.fit"))
+    filenames = [f for f in filenames if 'master' not in f]
 
     self.light_frames = sorted(
         [f for f in filenames if file_io.fits_matches(f, 'IMAGETYP', 'Light')])
@@ -96,6 +158,7 @@ class AstroFlow(FlowSpec):
 
     self.next(self.check_duplicates)
 
+  # TODO: Put these into the metaflow_helper module.
   def process_and_merge_added_keys(self, step_name, input_names, input_values,
                                    current_keys, compute_fn, output_name):
     # Find the most recent successful run of the step. If the input arguments
@@ -168,8 +231,9 @@ class AstroFlow(FlowSpec):
     print('rig_grouping, rigs is', self.rigs)
     self.next(self.measure_for_rig, foreach='rigs')
 
-  # TODO: Add measurement.
+  # TODO: Automatically remove images that cannot be measured or plate-solved.
   @step
+  @serialize('PixInsight')
   def measure_for_rig(self):
     self.rig = self.input
 
@@ -207,7 +271,6 @@ class AstroFlow(FlowSpec):
     print(f'Joined measurements for a total of '
           f'{len(self.measurements)} light frames')
 
-    # TODO: remove images that could not be measured.
     self.light_frames = list(sorted(self.measurements.keys()))
     self.next(self.plate_solve)
 
@@ -223,6 +286,8 @@ class AstroFlow(FlowSpec):
         k: v
         for k, v in self.plate_solutions.items() if os.path.exists(k)
     }
+    print(f'Plate solved a total of '
+          f'{len(self.plate_solutions)} light frames')
 
     self.next(self.spatial_grouping)
 
@@ -263,11 +328,36 @@ class AstroFlow(FlowSpec):
     print('filter_grouping, filters is', self.filters)
     self.next(self.stack, foreach='filters')
 
+  def find_previous_stack_loose(self, position_string, rig, filter):
+    task = metaflow_data_helper.find_most_recent_successful_task(
+        'stack', ['position_string', 'rig', 'filter'],
+        [self.position_string, self.rig, self.filter])
+    if (task and 'master' in task.data and task['master'].data and
+        os.path.exists(task.data.master)):
+      return task.data.version, task.data.master
+    else:
+      return None, None
+
+  def find_previous_stack_exact(self, position_string, rig, filter,
+                                light_frames, flat_frames):
+    task = metaflow_data_helper.find_most_recent_successful_task(
+        'stack',
+        ['position_string', 'rig', 'filter', 'light_frames', 'flat_frames'], [
+            self.position_string, self.rig, self.filter, self.light_frames,
+            self.flat_frames
+        ])
+    if (task and 'master' in task.data and task['master'].data and
+        os.path.exists(task.data.master)):
+      return task.data.version, task.data.master
+    else:
+      return None, None
+
   # TODO: The stacked (and post-processed) filenames need to include some id
   # that is unique for the spatial location. Otherwise, the files for each
   # panel just get overwritten.
   @catch(var='stack_failed')
   @step
+  @serialize('PixInsight')
   def stack(self):
     self.filter = self.input
     print(f'Top of stack(), canonical position is '
@@ -300,35 +390,30 @@ class AstroFlow(FlowSpec):
       #
       # If a previous result with the same rig and filter, but different light
       # and/or flat frames are found, create a new version.
-      self.version = 1
-
+      #
+      # TODO: Moving to find_most_recent_successful_task() broke the versioning.
       # TODO: Also detect new dark or bias frames.
-      task = metaflow_data_helper.find_most_recent_successful_task(
-          'stack',
-          ['position_string', 'rig', 'filter', 'light_frames', 'flat_frames'],
-          [
-              self.position_string, self.rig, self.filter, self.light_frames,
-              self.flat_frames
-          ])
+      self.new_stack = False
+      self.version, self.master = self.find_previous_stack_exact(
+          self.position_string, self.rig, self.filter, self.light_frames,
+          self.flat_frames)
 
-      if (task and 'master' in task.data and task['master'].data and
-          os.path.exists(task.data.master)):
-        print('Light and flat frames are unchanged; re-using previous stack,',
-              f'v{task.data.version}')
-        self.new_stack = False
-        self.master = task.data.master
-      else:
+      if not self.version:
+        self.version, self.master = self.find_previous_stack_loose(
+            self.position_string, self.rig, self.filter)
+
+        if self.version:
+          self.version = self.version + 1
+        else:
+          self.version = 1
+
         print(f'Stacking {len(self.light_frames)} light frames for '
               f'canonical position {self.position_string}, rig '
               f'{self.rig} and filter {self.filter}...')
         self.new_stack = True
-        self.master = file_locking.serialize(
-            self.abs_project_dir, 'PixInsight', stacking.stack,
-            self.position_string, self.rig, self.filter, self.light_frames,
-            self.flat_frames, self.version)
-
-        # TODO: masters can be more elaborate than just the list of files.
-        print('self.master is', self.master)
+        self.master = stacking.stack(self.position_string, self.rig,
+                                     self.filter, self.light_frames,
+                                     self.flat_frames, self.version)
     else:
       print(f'There are too few light frames for rig '
             f'{self.rig} and filter {self.filter}')
@@ -339,6 +424,7 @@ class AstroFlow(FlowSpec):
 
   @catch(var='post_process_per_stack_failed')
   @step
+  @serialize('PixInsight')
   def post_process_per_stack(self):
     # TODO: Don't rerun this if all previous steps were no-ops.
     # This looks ugly, maybe it's a pattern I can factor out.
@@ -358,10 +444,12 @@ class AstroFlow(FlowSpec):
         print('Post-processing stacked master', self.rig, self.filter,
               self.master)
         self.output_changed = True
-        self.post_per_stack = file_locking.serialize(
-            self.abs_project_dir, 'PixInsight',
-            post_processing_per_stack.run_post_processing, self.rig,
-            self.master)
+        # self.post_per_stack = file_locking.serialize(
+        #     self.abs_project_dir, 'PixInsight',
+        #     post_processing_per_stack.run_post_processing, self.rig,
+        #     self.master)
+        self.post_per_stack = post_processing_per_stack.run_post_processing(
+            self.rig, self.master)
 
     self.next(self.join_filter_grouping)
 
@@ -407,6 +495,7 @@ class AstroFlow(FlowSpec):
   # - plate solve
   # - spectro-photometric color calibration
   @step
+  @serialize('PixInsight')
   def post_process_per_spatial_component(self):
     print(f'post_process_per_spatial_component, '
           f'output_changed {self.output_changed}, '
