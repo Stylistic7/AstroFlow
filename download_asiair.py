@@ -165,8 +165,8 @@ def download_from_rig(rig, ip, search_defs, dest_path, default_filter):
           print(f'Copying FITS files from path {path}')
           min_date = download_from_rig_grouped_by_date(path, dest_path, rig,
                                                        default_filter)
-          total_min_date = min(total_min_date,
-                               min_date) if total_min_date else min_date
+          total_min_date = min(total_min_date, min_date) if (
+              min_date and total_min_date) else min_date
 
         if total_min_date:
           log_dir = os.path.join(mount_point, search_def['log_dir'])

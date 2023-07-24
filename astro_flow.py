@@ -45,10 +45,7 @@ def serialize(resource_name, lockfile_directory='/tmp'):
           os.remove(lock_filename)
           return result
         except FileExistsError:
-          # print(f'Waiting for lock on resource {resource_name}')
           time.sleep(5)
-        except Exception as e:
-          print(f'serialize: Caught exception {e}')
 
     return wrapper_serialize
 
@@ -334,6 +331,8 @@ class AstroFlow(FlowSpec):
         [self.position_string, self.rig, self.filter])
     if (task and 'master' in task.data and task['master'].data and
         os.path.exists(task.data.master)):
+      print(
+          f'Found previous stack (v{task.data.version}) with different inputs.')
       return task.data.version, task.data.master
     else:
       return None, None
@@ -348,6 +347,8 @@ class AstroFlow(FlowSpec):
         ])
     if (task and 'master' in task.data and task['master'].data and
         os.path.exists(task.data.master)):
+      print(f'Found previous stack (v{task.data.version}) with exactly the '
+            'same inputs.')
       return task.data.version, task.data.master
     else:
       return None, None
@@ -437,7 +438,8 @@ class AstroFlow(FlowSpec):
               'post_process_per_stack', ['rig', 'filter', 'master'],
               [self.rig, self.filter, self.master], ['post_per_stack']))
       if previous_results:
-        if all(os.path.exists(f) for f in previous_results[0]):
+        if type(previous_results[0]) is str and os.path.exists(
+            previous_results[0]):
           self.post_per_stack = previous_results[0]
 
       if self.new_stack or not self.post_per_stack:

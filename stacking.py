@@ -40,6 +40,8 @@ def stack(position_string, rig, filter, light_frames, flat_frames, version):
     symlink_frames(bias_frames, tmp_dir)
     symlink_frames(dark_frames, tmp_dir)
 
+    assert not any('master' in f for f in os.listdir(tmp_dir))
+
     src_master_dir = os.path.join(tmp_dir, 'master')
     dst_master_dir = os.path.commonpath(light_frames)
     # os.makedirs(dst_master_dir, exist_ok=True)

@@ -4,6 +4,18 @@ import tempfile
 import os
 from pathlib import Path
 from multiprocessing import Pool
+import astropy.io.fits as pyfits
+
+save_as_fits_script = """
+let window = ImageWindow.open("{input_filename}");
+window[0].show();
+
+window[0].saveAs("{fit_filename}", false, false, true, false);
+
+for (let i = 0; i < window.length; ++i) {{
+  window[i].forceClose();
+}}
+"""
 
 
 def solve_field(filename):
@@ -14,7 +26,8 @@ def solve_field(filename):
     try:
       command = [
           "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
-          "--no-background-subtraction", "--guess-scale", dest_filename
+          "--no-background-subtraction", "--guess-scale", "--objs", "1000",
+          dest_filename
       ]
       ret = subprocess.run(command, capture_output=True, timeout=120)
     except:
