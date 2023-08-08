@@ -1,73 +1,77 @@
+import traceback
+
 from metaflow import Flow, FlowSpec, Parameter, catch, step, JSONType, schedule
 
+from compact_repr import compact_repr
 
-def find_most_recent_successful_task_output(step,
-                                            keys=[],
-                                            values=[],
-                                            output_keys=[],
-                                            debug=False):
-  task = find_most_recent_successful_task(step, keys, values, debug)
-  if not task:
-    if debug: print('Task was false')
-    return None
 
-  output_values = []
-  for k in output_keys:
-    if k not in task.data:
-      if debug: print(f'Output key {k} was not in task.data')
+def find(step, output_names, input_names=None, inputs=None, debug=False):
+  # FIXME remove this hack
+  def equivalent(a, b):
+    if type(a) is list and type(b) is list:
+      return list(sorted(a)) == list(sorted(b))
+    else:
+      return a == b
+
+  def value_or_none(task, name):
+    try:
+      return task[name].data
+    except:
       return None
-    output_values.append(task[k].data)
 
-  if debug: print(f'Returning output_values {output_values}')
-  return output_values
-
-
-def find_most_recent_successful_task(step, keys=[], values=[], debug=False):
   sorted_runs = list(
       reversed(sorted(Flow('AstroFlow').runs(), key=lambda r: r.id)))[1:]
-  for run in sorted_runs:
+  for i, run in enumerate(sorted_runs):
+    if debug: print(f'find: looking at run {i}')
+
+    if step not in run:
+      print(f'step {step} not in run {i}')
+      continue
+
     try:
-      if debug: print(f'Looking at run {run}')
       for task in run[step]:
-        if debug: print(f'  Looking at task {task}')
         if not task.successful:
-          if debug: print(f'Task was not successful')
+          print(f'step {step} was not successful')
           continue
+
+        if debug:
+          for name, value in zip(input_names or [], inputs or []):
+            if name not in task:
+              print(f'find: input {name} is missing from task')
+
+            if task[name].data == value:
+              equality_string = ' == '
+            elif type(
+                task[name].data) is list and type(value) is list and sorted(
+                    task[name].data) == sorted(value):
+              equality_string = ' == (with sort) '
+            else:
+              equality_string = ' != '
+            print(f'find: input {name}: {compact_repr(task[name].data)} '
+                  f'{equality_string} {compact_repr(value)}')
+
+        # If any of the inputs don't match, ignore this task.
+        if not all(
+            equivalent(task[name].data, value)
+            for name, value in zip(input_names or [], inputs or [])):
+          continue
+
+        if debug:
+          print('find: found matching run')
+          print('version in task', 'version' in task.data)
+          print('master in task', 'master' in task.data)
+
+        if type(output_names) is list:
+          output = [value_or_none(task, name) for name in output_names]
         else:
-          if debug: print(f'Task was successful!')
-          pass
+          output = value_or_none(task, output_names)
 
-        failed = False
-        for k, v in zip(keys, values):
-          if k not in task.data:
-            if debug: print(f'Data key {k} not in task.data')
-            break
-          else:
-            if debug: print(f'Data key {k} is in task.data!')
-            pass
-
-          if task[k].data == v:
-            if debug: print(f'Found value for data key {k}')
-            pass
-          else:
-            if debug:
-              print(f'Value for data key {k} ({task[k].data}) '
-                    f'did not match value ({v})')
-            failed = True
-            break
-
-        if not failed:
-          if debug: print('Found a matching task.')
-          return task
+        if debug: print(f'find: returning output {output}')
+        return output
     except Exception as e:
-      if debug:
-        print(f'Exception encountered while querying run {run.id}: {str(e)}')
-      pass
+      print(traceback.format_exc())
 
-  if debug: print('Did not find a matching task.')
-  return None
-
-
-if __name__ == '__main__':
-  find_most_recent_successful_task('measure_for_rig', ['light_frames'],
-                                   [['foo']])
+  if type(output_names) is list:
+    return [None for o in output_names]
+  else:
+    return None
