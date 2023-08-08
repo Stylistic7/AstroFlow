@@ -3,6 +3,7 @@ import xxhash
 from functools import lru_cache
 from pathlib import Path
 from dateutil.parser import parse
+import itertools
 
 
 def find_files(path, pattern):
@@ -12,8 +13,8 @@ def find_files(path, pattern):
 @lru_cache(maxsize=100000)
 def read_fits(filename, print_header=False):
   with pyfits.open(filename) as fits:
-    if len(fits) > 1:
-      print(f"WARNING: FITS file {filename} has more than one HDU")
+    # if len(fits) > 1:
+    #   print(f"WARNING: FITS file {filename} has more than one HDU")
 
     header = fits[0].header
 
@@ -32,12 +33,18 @@ def read_fits(filename, print_header=False):
       output['DATE-OBS'] = parse(header['DATE-OBS'] + ' UTC')
 
     if 'DATE' in header:
-      output['DATE'] = parse(header['DATE'])
+      output['DATE'] = parse(header['DATE']).date()
     else:
       output['DATE'] = output['DATE-OBS'].date()
 
     if 'PANE' in header:
       output['PANE'] = int(header['PANE'])
+
+    # if header['IMAGETYP'] == 'Light' and 'RIG' not in header:
+    #   print(f'WARNING: light frame {filename} did not have RIG keyword')
+
+    # if header['IMAGETYP'] == 'Flat' and 'RIG' not in header:
+    #   print(f'WARNING: flat frame {filename} did not have RIG keyword')
 
     return output
 
@@ -56,3 +63,11 @@ def fits_matches(filename, key, value):
       return False
 
   return True
+
+
+def group_by_fits_keyword(filenames, fits_keyword):
+  def key(f):
+    return read_fits(f)[fits_keyword]
+
+  filenames = sorted(filenames, key=key)
+  return [(k, list(g)) for k, g in itertools.groupby(filenames, key=key)]

@@ -203,32 +203,39 @@ def run_post_processing(rigs, filters, masters):
   reference = find_reference(rigs, filters, masters)
   print('found reference', reference)
 
-  # filename, ext = os.path.splitext(master)
-  # output_filename = filename + '_post' + ext
+  # TODO: Push these restrictive id constraints up into the original masters.
+  output_path = os.path.commonpath(masters)
+  output_ids = [
+      os.path.splitext(os.path.basename(m))[0].replace('.', '_').replace(
+          '-', 'M') + '_aligned' for m in masters
+  ]
+  print('output_ids are', output_ids)
 
-  # if config.STACKING_TEST_MODE:
-  #   print(f'In test mode; immediately returning {output_filename}')
-  #   Path(output_filename).touch()
-  #   return output_filename
+  output_filenames = [
+      os.path.join(output_path, o + '_stars.xisf') for o in output_ids
+  ]
+  output_filenames += [
+      os.path.join(output_path, o + '_starless.xisf') for o in output_ids
+  ]
 
-  # if os.path.exists(output_filename):
-  #   os.remove(output_filename)
+  with tempfile.TemporaryDirectory() as tmp_dir:
+    sentinel_filename = os.path.join(tmp_dir, 'sentinel.txt')
 
-  # with tempfile.TemporaryDirectory() as tmp_dir:
-  #   script_filename = os.path.join(tmp_dir, "run_post_processing.js")
-  #   with open(script_filename, "w") as f:
-  #     script = post_process_script.format(input_filename=master,
-  #                                         rig=rig,
-  #                                         output_filename=output_filename)
-  #     f.write(script)
+    script_filename = os.path.join(tmp_dir, "run_post_processing.js")
+    with open(script_filename, "w") as f:
+      script = post_process_script.format(input_filenames=masters,
+                                          output_path=output_path,
+                                          output_ids=output_ids,
+                                          sentinel_filename=sentinel_filename)
+      f.write(script)
 
-  #   print(f'Running PixInsight post-processing on master {master}')
-  #   ret = subprocess.run([
-  #       '/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight',
-  #       f'--execute={script_filename}'
-  #   ]).returncode
+    print(f'Running PixInsight post-processing on {len(masters)}')
+    ret = subprocess.run([
+        '/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight',
+        f'--execute={script_filename}'
+    ]).returncode
 
-  #   while not os.path.exists(output_filename):
-  #     time.sleep(5)
+    while not all(os.path.exists(f) for f in output_filenames):
+      time.sleep(5)
 
-  #   return output_filename
+    return output_filenames
