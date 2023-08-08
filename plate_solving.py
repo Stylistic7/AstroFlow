@@ -6,16 +6,14 @@ from pathlib import Path
 from multiprocessing import Pool
 import astropy.io.fits as pyfits
 
-save_as_fits_script = """
-let window = ImageWindow.open("{input_filename}");
-window[0].show();
 
-window[0].saveAs("{fit_filename}", false, false, true, false);
-
-for (let i = 0; i < window.length; ++i) {{
-  window[i].forceClose();
-}}
-"""
+def calc_footprint(wcs_file):
+  with pyfits.open(wcs_file) as fits:
+    header = fits[0].header
+    header['NAXIS1'] = header['IMAGEW']
+    header['NAXIS2'] = header['IMAGEH']
+    wcs = astropy.wcs.WCS(header=header, fobj=fits)
+    return wcs.calc_footprint(header=header)
 
 
 def solve_field(filename):
