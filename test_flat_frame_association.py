@@ -4,7 +4,7 @@ import datetime
 
 import file_io
 import make_test_frames
-import flat_frame_association
+import step_flat_frame_association
 
 
 class TestFlatFrameAssociation(unittest.TestCase):
@@ -12,7 +12,7 @@ class TestFlatFrameAssociation(unittest.TestCase):
     light_frame_dates = [datetime.datetime(2023, 7, 3, 0, 0)]
     flat_frame_dates = [datetime.datetime(2023, 7, 3, 0, 0)]
 
-    associations = flat_frame_association.associate_dates(
+    associations = step_flat_frame_association._associate_dates(
         light_frame_dates, flat_frame_dates)
 
     expected_associations = {datetime.datetime(2023, 7, 3, 0, 0): 0}
@@ -25,7 +25,7 @@ class TestFlatFrameAssociation(unittest.TestCase):
     ]
     flat_frame_dates = [datetime.datetime(2023, 7, 3, 0, 0)]
 
-    associations = flat_frame_association.associate_dates(
+    associations = step_flat_frame_association._associate_dates(
         light_frame_dates, flat_frame_dates)
 
     expected_associations = {
@@ -46,7 +46,7 @@ class TestFlatFrameAssociation(unittest.TestCase):
         datetime.datetime(2023, 7, 6, 0, 0)
     ]
 
-    associations = flat_frame_association.associate_dates(
+    associations = step_flat_frame_association._associate_dates(
         light_frame_datese, flat_frame_dates)
 
     expected_associations = {
