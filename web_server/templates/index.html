@@ -1,0 +1,11 @@
+<link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+
+{% block body %}
+<div id="starmap_container">
+	<img id="starmap_img" src="/static/images/starmap_2020_4k.png" />
+	<img id="constellation_figures_img" src="/static/images/constellation_figures_4k.png" />
+	<svg id="starmap_svg" viewbox="0 0 360 180"></svg>
+</div>
+{% endblock %}
+
+<script src="{{url_for('static', filename='js/starmap.js')}}"></script>

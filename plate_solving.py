@@ -4,6 +4,7 @@ import tempfile
 import os
 from pathlib import Path
 from multiprocessing import Pool
+import astropy.wcs
 import astropy.io.fits as pyfits
 
 
