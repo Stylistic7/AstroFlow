@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-
+import numpy as np
 import flask
 
 import metaflow_data_helper
@@ -8,6 +8,40 @@ import io
 
 # Create the application.
 app = flask.Flask(__name__, template_folder='./templates')
+
+
+@app.route('/targets')
+def targets():
+  targets = metaflow_data_helper.find('spatial_grouping',
+                                      'targets_and_light_frames') or []
+  return targets
+
+
+def min_footprint(footprints):
+  min_ra = np.min([p[0] for f in footprints for p in f])
+  max_ra = np.max([p[0] for f in footprints for p in f])
+  min_dec = np.min([p[1] for f in footprints for p in f])
+  max_dec = np.max([p[1] for f in footprints for p in f])
+
+  return [[min_ra, min_dec], [max_ra, min_dec], [max_ra, max_dec],
+          [min_ra, max_dec]]
+
+
+@app.route('/target_footprints')
+def target_footprints():
+  targets_and_light_frames = metaflow_data_helper.find(
+      'spatial_grouping', 'targets_and_light_frames') or []
+  plate_solutions = metaflow_data_helper.find('plate_solve',
+                                              'plate_solutions') or {}
+
+  output = {}
+  for target, light_frames in targets_and_light_frames:
+    ps = [plate_solutions[light_frame] for light_frame in light_frames]
+    footprints = [f for _, f, _ in ps]
+    print('footprints', footprints)
+    output[target] = min_footprint(footprints)
+
+  return output
 
 
 @app.route('/')

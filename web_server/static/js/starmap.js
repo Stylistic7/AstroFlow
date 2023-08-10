@@ -1,15 +1,16 @@
-const draw_footprints = (footprints) => {
+const draw_footprints = (target_footprints) => {
 	console.log('draw_footprints');
+	console.log('target_footprints', target_footprints);
 
 	var svg = document.getElementById("starmap_svg");
 
-	for (footprint of footprints) {
-		console.log('new polygon')
+	for (const [target, footprint] of Object.entries(target_footprints)) {
+		console.log('target', target);
+		console.log('footprint', footprint);
+
 		var polygon = document.createElementNS(
 			"http://www.w3.org/2000/svg", "polygon");
 		svg.appendChild(polygon);
-
-		// footprint = [[190, 80], [170, 80], [170, -80], [190, -80]];
 
 		for (point of footprint) {
 			var svg_point = svg.createSVGPoint();
@@ -21,6 +22,6 @@ const draw_footprints = (footprints) => {
 	}
 };
 
-fetch('/footprints')
+fetch('/target_footprints')
    .then(response => response.json())
    .then(draw_footprints);
