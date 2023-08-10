@@ -48,7 +48,7 @@ def check_fit(gmm, positions):
         for mean_ra, mean_dec in gmm.means_
     ])
     # print(f'ra {ra} dec {dec} min distance {min_distance}')
-    if min_distance > 0.25:  # degrees
+    if min_distance > 0.75:  # degrees
       num_outliers += 1
 
     # min_mahalanobis_distance = np.min([
@@ -146,8 +146,3 @@ def find_components(ids,
       return as_groups(gmm, filename_and_pred)
     else:
       print(f'Rejected solution with {i} components')
-
-
-def get_position(wcs_string):
-  with pyfits.open(io.BytesIO(wcs_string)) as fits:
-    return fits[0].header['CRVAL1'], fits[0].header['CRVAL2']

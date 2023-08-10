@@ -25,13 +25,13 @@ def find(step, output_names, input_names=None, inputs=None, debug=False):
     if debug: print(f'find: looking at run {i}')
 
     if step not in run:
-      print(f'step {step} not in run {i}')
+      if debug: print(f'step {step} not in run {i}')
       continue
 
     try:
       for task in run[step]:
         if not task.successful:
-          print(f'step {step} was not successful')
+          if debug: print(f'step {step} was not successful')
           continue
 
         if debug:

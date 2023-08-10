@@ -23,8 +23,8 @@ def debug(func):
         else:
           input_string = f'{str(input)} [type {type(input).__name__}]'
 
-        print(
-            f'Stack frame: task {index+1} / {num_tasks}: input {input_string}')
+        print(f'Foreach frame: task {index+1} / {num_tasks}: '
+              f'input {input_string}')
 
     func(*args, **kwargs)
 

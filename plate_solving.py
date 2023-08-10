@@ -6,15 +6,24 @@ from pathlib import Path
 from multiprocessing import Pool
 import astropy.wcs
 import astropy.io.fits as pyfits
+import warnings
 
 
 def calc_footprint(wcs_file):
   with pyfits.open(wcs_file) as fits:
+    with warnings.catch_warnings():
+      warnings.simplefilter("ignore")
+      header = fits[0].header
+      header['NAXIS1'] = header['IMAGEW']
+      header['NAXIS2'] = header['IMAGEH']
+      wcs = astropy.wcs.WCS(header=header, fobj=fits)
+      return wcs.calc_footprint(header=header).tolist()
+
+
+def get_center(wcs_file):
+  with pyfits.open(wcs_file) as fits:
     header = fits[0].header
-    header['NAXIS1'] = header['IMAGEW']
-    header['NAXIS2'] = header['IMAGEH']
-    wcs = astropy.wcs.WCS(header=header, fobj=fits)
-    return wcs.calc_footprint(header=header)
+    return header['CRVAL1'], header['CRVAL2']
 
 
 def solve_field(filename):
@@ -30,19 +39,19 @@ def solve_field(filename):
       ]
       ret = subprocess.run(command, capture_output=True, timeout=120)
     except:
-      return None, None
-
-    stdout = ret.stdout.decode("utf-8")
+      return None, None, None
 
     wcs_file = Path(dest_filename).with_suffix('.wcs')
     if os.path.exists(wcs_file):
       wcs = open(wcs_file, 'rb').read()
+      center = get_center(wcs_file)
+      footprint = calc_footprint(wcs_file)
+
+      return center, footprint, wcs
     else:
       # TODO: Emit warnings through Metaflow's reporting system.
       print(f'Could not plate-solve file {filename}')
-      wcs = None
-
-    return wcs, stdout
+      return None, None, None
 
 
 def solve_fields(filenames):

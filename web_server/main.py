@@ -26,14 +26,7 @@ def hello(name):
 def footprints():
   plate_solutions = metaflow_data_helper.find('plate_solve',
                                               'plate_solutions') or {}
-
-  # TODO: This is quite slow.
-  footprints = [
-      plate_solving.calc_footprint(io.BytesIO(wcs)).tolist()
-      for wcs, _ in list(plate_solutions.values())
-  ]
-
-  return footprints
+  return [f for _, f, _ in list(plate_solutions.values())]
 
 
 if __name__ == '__main__':

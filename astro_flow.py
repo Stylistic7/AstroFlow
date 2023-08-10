@@ -206,9 +206,9 @@ class AstroFlow(FlowSpec):
 
     # FIXME hack
     # TODO: Put real target selection here.
-    self.targets_and_light_frames = [
-        x for x in self.targets_and_light_frames if x[0].startswith('M101')
-    ]
+    # self.targets_and_light_frames = [
+    #     x for x in self.targets_and_light_frames if x[0].startswith('M101')
+    # ]
 
     self.next(self.measure, foreach='targets_and_light_frames')
 
@@ -332,7 +332,8 @@ class AstroFlow(FlowSpec):
     self.stack_is_good = step_sanity_check_stack.run(
         self.rig, self.filter, self.camera_configs, self.light_frames,
         self.dark_frames, self.bias_frames, self.flat_frames)
-    print('Stack passes sanity checks!')
+    if self.stack_is_good:
+      print('Stack passes sanity checks!')
 
     self.next(self.stack)
 
