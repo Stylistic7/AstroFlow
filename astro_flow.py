@@ -351,50 +351,12 @@ class AstroFlow(FlowSpec):
     # TODO: Pull this logic into step_stack.py
     # TODO: Don't pass flat frames with FLATVERS that are not used by any of
     # the light frames.
+    # TODO: Remove the version=1 hack.
     if self.stack_is_good:
-      # Look for a previous exact match.
-      self.version, self.master = metaflow_data_helper.find(
-          'stack', ['version', 'master'], [
-              'stack_is_good', 'target', 'rig', 'filter', 'light_frames',
-              'dark_frames', 'bias_frames', 'flat_frames',
-              'flat_frame_associations'
-          ], [
-              self.stack_is_good, self.target, self.rig, self.filter,
-              self.light_frames, self.dark_frames, self.bias_frames,
-              self.flat_frames, self.flat_frame_associations
-          ],
-          debug=True)
-
-      if self.master and not os.path.exists(self.master):
-        self.master = None
-
-      if self.version and self.master:
-        print(f'Re-using previous master, version v{self.version}')
-
-      # Look for a previous partial match, and get its version.
-      if not self.master:
-        self.version = metaflow_data_helper.find(
-            'stack',
-            'version', ['stack_is_good', 'target', 'rig', 'filter'],
-            [self.stack_is_good, self.target, self.rig, self.filter],
-            debug=True)
-        if self.version:
-          self.version += 1
-          print(f'Found previous master, incrementing version to '
-                f'v{self.version}')
-        else:
-          self.version = 1
-          print(f'Starting from scratch with version v{self.version}')
-
-      # If necessary, stack the new version.
-      if not self.master:
-        print(f'About to run WBPP for new stack version v{self.version}')
-        step_flat_frame_association.set_flat_versions(
-            self.light_frames, self.flat_frames, self.flat_frame_associations)
-        self.master = step_stack.run(self.target, self.rig, self.filter,
-                                     self.light_frames, self.dark_frames,
-                                     self.bias_frames, self.flat_frames,
-                                     self.version, self.output_dir)
+      self.master = step_stack.run(self.target, self.rig, self.filter,
+                                   self.light_frames, self.dark_frames,
+                                   self.bias_frames, self.flat_frames, 1,
+                                   self.output_dir)
 
     self.next(self.post_process_stack)
 

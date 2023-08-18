@@ -53,9 +53,15 @@ def run(target, rig, filter, light_frames, dark_frames, bias_frames,
 
       print('filenames', filenames)
       src_filename = filenames[0]
-      dst_filename = os.path.join(
-          dest_path, target, 'masters',
-          f'master_light_{target}_{rig}_{filter}_v{version}.xisf')
+
+      while True:
+        dst_filename = os.path.join(
+            dest_path, target, 'masters',
+            f'master_light_{target}_{rig}_{filter}_v{version}.xisf')
+        if not os.path.exists(dst_filename):
+          break
+
+        version += 1
 
     os.makedirs(os.path.join(dest_path, target, 'masters'), exist_ok=True)
     shutil.copy(src_filename, dst_filename)
