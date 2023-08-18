@@ -4,6 +4,9 @@ import subprocess
 import time
 import json
 import math
+import diskcache
+
+cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
 
 subframe_selector_script = """
 var P = new SubframeSelector;
@@ -70,6 +73,7 @@ File.writeTextFile("{output_filename}", measurements);
 """
 
 
+@cache.memoize(tag='subframe_selector')
 def measure_frames(light_frames, image_scale):
   with tempfile.TemporaryDirectory() as tmp_dir:
     script_filename = os.path.join(tmp_dir, "run_subframe_selector.js")

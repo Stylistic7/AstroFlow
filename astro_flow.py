@@ -94,7 +94,7 @@ class AstroFlow(FlowSpec):
   def step_with_debugging(func):
     return step(debug(func))
 
-  @step_with_debugging
+  @step
   def start(self):
     self.config = self.config_json
 
@@ -111,7 +111,7 @@ class AstroFlow(FlowSpec):
     self.next(self.download)
 
   # TODO: Add download functionality, which may repeat until sunrise.
-  @step_with_debugging
+  @step
   def download(self):
     # TODO: Put these into the config file.
     self.rigs = [
@@ -149,13 +149,13 @@ class AstroFlow(FlowSpec):
                                self.default_filter)
     self.next(self.join_downloads)
 
-  @step_with_debugging
+  @step
   def join_downloads(self, inputs):
     # Foreach stack: [rig]
     self.merge_artifacts(inputs, exclude=['rig'])
     self.next(self.find_files)
 
-  @step_with_debugging
+  @step
   def find_files(self):
     self.light_frames, self.dark_frames, self.bias_frames, self.flat_frames = (
         step_find_files.run(self.input_dir))
@@ -165,7 +165,7 @@ class AstroFlow(FlowSpec):
     print(f'Found {len(self.flat_frames)} flat frames')
     self.next(self.compute_image_hashes)
 
-  @step_with_debugging
+  @step
   def compute_image_hashes(self):
     prev_result = metaflow_data_helper.find('compute_image_hashes',
                                             'image_hashes') or {}
@@ -174,12 +174,12 @@ class AstroFlow(FlowSpec):
     self.next(self.check_duplicates)
 
   @catch(var='check_duplicates_failed')
-  @step_with_debugging
+  @step
   def check_duplicates(self):
     step_check_duplicates.run(self.image_hashes)
     self.next(self.remove_frames_during_mount_movements)
 
-  @step_with_debugging
+  @step
   def remove_frames_during_mount_movements(self):
     # TODO: This currently only removes frames during dithers. Should we also
     # remove frames during slews?
@@ -189,7 +189,7 @@ class AstroFlow(FlowSpec):
 
   # TODO: Put plate-solving here, before measurement. Let the user pick which targets
   # to process next.
-  @step_with_debugging
+  @step
   def plate_solve(self):
     prev_result = metaflow_data_helper.find('plate_solve',
                                             'plate_solutions') or {}
@@ -197,7 +197,7 @@ class AstroFlow(FlowSpec):
                                                 self.bad_file_dir)
     self.next(self.spatial_grouping)
 
-  @step_with_debugging
+  @step
   def spatial_grouping(self):
     self.targets_and_light_frames = step_spatial_grouping.run(
         self.plate_solutions)
@@ -219,7 +219,9 @@ class AstroFlow(FlowSpec):
     self.rigs_and_light_frames = file_io.group_by_fits_keyword(
         self.light_frames, 'RIG')
     for i, x in enumerate(self.rigs_and_light_frames):
-      print(f'rigs_and_light_frames[{i}] = {compact_repr(x)}')
+      print(
+          f'target {self.target} rigs_and_light_frames[{i}] = {compact_repr(x)}'
+      )
 
     # FIXME hack
     # TODO: Put real rig selection here.
@@ -247,6 +249,10 @@ class AstroFlow(FlowSpec):
   @step_with_debugging
   def join_measure_for_rig(self, inputs):
     # Foreach stack: [target, rig]
+    for i, input in enumerate(inputs):
+      for j, x in enumerate(input.targets_and_light_frames):
+        print(f'input {i} targets_and_light_frames[{j}] = {compact_repr(x)}')
+
     self.merge_artifacts(inputs,
                          exclude=['rig', 'measurements', 'light_frames'])
     self.measurements = {
@@ -331,7 +337,8 @@ class AstroFlow(FlowSpec):
   def sanity_check_stack(self):
     self.stack_is_good = step_sanity_check_stack.run(
         self.rig, self.filter, self.camera_configs, self.light_frames,
-        self.dark_frames, self.bias_frames, self.flat_frames)
+        self.dark_frames, self.bias_frames, self.flat_frames,
+        self.plate_solutions)
     if self.stack_is_good:
       print('Stack passes sanity checks!')
 
@@ -357,6 +364,9 @@ class AstroFlow(FlowSpec):
               self.flat_frames, self.flat_frame_associations
           ],
           debug=True)
+
+      if self.master and not os.path.exists(self.master):
+        self.master = None
 
       if self.version and self.master:
         print(f'Re-using previous master, version v{self.version}')
@@ -403,7 +413,7 @@ class AstroFlow(FlowSpec):
     # Foreach stack: [target]
     self.next(self.join_process_target)
 
-  @step_with_debugging
+  @step
   def join_process_target(self, inputs):
     # Foreach stack: []
     # TODO: implement per-target combining here (e.g. Star Alignment).

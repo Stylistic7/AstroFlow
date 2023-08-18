@@ -4,20 +4,23 @@ const draw_footprints = (target_footprints) => {
 
 	var svg = document.getElementById("starmap_svg");
 
-	for (const [target, footprint] of Object.entries(target_footprints)) {
+	for (const [target, footprints] of Object.entries(target_footprints)) {
 		console.log('target', target);
-		console.log('footprint', footprint);
+		// console.log('footprints', footprints);
 
 		var polygon = document.createElementNS(
 			"http://www.w3.org/2000/svg", "polygon");
 		svg.appendChild(polygon);
+		polygon.addEventListener('click', () => console.log(target, 'clicked'));
 
-		for (point of footprint) {
-			var svg_point = svg.createSVGPoint();
-		  svg_point.x = 360 - (point[0] + 180) % 360;
-		  svg_point.y = 90 - point[1];
-		  console.log('point', point[0], point[1]);
-		  polygon.points.appendItem(svg_point);
+		for (footprint of footprints) {
+			for (point of footprint) {
+			  var svg_point = svg.createSVGPoint();
+			  svg_point.x = 360 - (point[0] + 180) % 360;
+			  svg_point.y = 90 - point[1];
+			  // console.log('point', point[0], point[1]);
+			  polygon.points.appendItem(svg_point);
+			}
 		}
 	}
 };

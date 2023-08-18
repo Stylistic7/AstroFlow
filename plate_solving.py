@@ -7,9 +7,13 @@ from multiprocessing import Pool
 import astropy.wcs
 import astropy.io.fits as pyfits
 import warnings
+import diskcache
+
+cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
 
 
 def calc_footprint(wcs_file):
+  """Returns a 4x2 array. Order is clockwise starting with the bottom left corner."""
   with pyfits.open(wcs_file) as fits:
     with warnings.catch_warnings():
       warnings.simplefilter("ignore")
@@ -26,6 +30,7 @@ def get_center(wcs_file):
     return header['CRVAL1'], header['CRVAL2']
 
 
+@cache.memoize(tag='plate_solving')
 def solve_field(filename):
   with tempfile.TemporaryDirectory() as temp_dir:
     dest_filename = os.path.join(temp_dir, os.path.basename(filename))

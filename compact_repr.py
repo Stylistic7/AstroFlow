@@ -4,6 +4,8 @@ def compact_repr(L):
       return f"'{element}'"
     elif type(element) is list:
       return f"list[{len(element)}]"
+    elif type(element) is frozenset:
+      return f"frozenset[{len(element)}]"
     elif type(element) is tuple:
       return '(' + ', '.join([inner(x) for x in element]) + ')'
     else:

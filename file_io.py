@@ -1,16 +1,19 @@
+import os
 import astropy.io.fits as pyfits
 import xxhash
 from functools import lru_cache
 from pathlib import Path
 from dateutil.parser import parse
 import itertools
+import diskcache
+
+cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
 
 
 def find_files(path, pattern):
   return list(sorted(str(f) for f in Path(path).rglob(pattern)))
 
 
-@lru_cache(maxsize=100000)
 def read_fits(filename, print_header=False):
   with pyfits.open(filename) as fits:
     # if len(fits) > 1:
@@ -49,6 +52,7 @@ def read_fits(filename, print_header=False):
     return output
 
 
+@cache.memoize('file_io')
 def hash_of_image_data(filename):
   with pyfits.open(filename) as fits:
     return xxhash.xxh128(fits[0].data.tobytes()).hexdigest()

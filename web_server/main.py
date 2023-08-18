@@ -17,6 +17,7 @@ def targets():
   return targets
 
 
+# TODO: Move computations into new files.
 def min_footprint(footprints):
   min_ra = np.min([p[0] for f in footprints for p in f])
   max_ra = np.max([p[0] for f in footprints for p in f])
@@ -35,11 +36,12 @@ def target_footprints():
                                               'plate_solutions') or {}
 
   output = {}
-  for target, light_frames in targets_and_light_frames:
+  for target, light_frames in targets_and_light_frames[0:1]:
+    print(f'target {target}')
     ps = [plate_solutions[light_frame] for light_frame in light_frames]
     footprints = [f for _, f, _ in ps]
-    print('footprints', footprints)
-    output[target] = min_footprint(footprints)
+    # print('footprints', footprints)
+    output[target] = footprints
 
   return output
 

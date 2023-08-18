@@ -1,3 +1,5 @@
+import numpy as np
+
 import file_io
 
 
@@ -6,7 +8,7 @@ def _check_frame_list(L, name):
     print(f'Stack is not good: {name} is not a list.')
     return False
 
-  if len(L) < 5:
+  if len(L) < 10:
     print(f'Stack is not good: {name} has too few elements.')
     return False
 
@@ -17,8 +19,18 @@ def _check_frame_list(L, name):
   return True
 
 
+def _min_footprint(footprints):
+  min_ra = np.min([p[0] for f in footprints for p in f])
+  max_ra = np.max([p[0] for f in footprints for p in f])
+  min_dec = np.min([p[1] for f in footprints for p in f])
+  max_dec = np.max([p[1] for f in footprints for p in f])
+
+  return [[min_ra, min_dec], [max_ra, min_dec], [max_ra, max_dec],
+          [min_ra, max_dec]]
+
+
 def run(rig, filter, camera_configs, light_frames, dark_frames, bias_frames,
-        flat_frames):
+        flat_frames, plate_solutions):
   # TODO: Also check that:
   # They all have essentially the same plate solution
 
@@ -61,6 +73,20 @@ def run(rig, filter, camera_configs, light_frames, dark_frames, bias_frames,
       file_io.fits_matches(f, ['IMAGETYP', 'INSTRUME'], ['Bias', camera])
       for f in bias_frames):
     print(f'Stack is not good: some bias frames had incorrect IMAGETYP keyword')
+    return False
+
+  my_plate_solutions = [plate_solutions[f] for f in light_frames]
+  footprints = [f for _, f, _ in my_plate_solutions]
+  min_footprint = _min_footprint(footprints)
+  min_x = np.min([p[0] for p in min_footprint])
+  max_x = np.max([p[0] for p in min_footprint])
+  min_y = np.min([p[1] for p in min_footprint])
+  max_y = np.max([p[1] for p in min_footprint])
+  print('min_footprint', min_footprint)
+  aspect_ratio = (max_x - min_x) / (max_y - min_y)
+  print('aspect_ratio', aspect_ratio)
+  if aspect_ratio > 1.6 or aspect_ratio < 0.6:
+    print(f'Stack is not good: Aspect ratio is too extreme at {aspect_ratio}')
     return False
 
   return True

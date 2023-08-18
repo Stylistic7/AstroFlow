@@ -1,3 +1,6 @@
+from compact_repr import compact_repr
+
+
 def debug(func):
   def wrapper(*args, **kwargs):
     flow, *foo = args
@@ -6,23 +9,15 @@ def debug(func):
     # flow = the `self` object passed into each step in a Flow
     # *_ is needed to allow this line to work regardless of whether we pass only 1 (e.g. `self`) or more parameters (e.g. `self, inputs`)
 
-    def repr(x):
-      if type(x) is list:
-        return f"list[{len(x)}]"
-      else:
-        return f"'{str(x)}'"
+    # def repr(x):
+    #   if type(x) is list:
+    #     return f"list[{len(x)}]"
+    #   else:
+    #     return f"'{str(x)}'"
 
     if len(foo) == 0:
       for index, num_tasks, input in flow.foreach_stack():
-        if type(input) is str:
-          input_string = f"'{input}'"
-        elif type(input) is list:
-          return repr(input)
-        elif type(input) is tuple:
-          input_string = '(' + ', '.join([repr(x) for x in input]) + ')'
-        else:
-          input_string = f'{str(input)} [type {type(input).__name__}]'
-
+        input_string = compact_repr(input)
         print(f'Foreach frame: task {index+1} / {num_tasks}: '
               f'input {input_string}')
 

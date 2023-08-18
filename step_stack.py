@@ -3,11 +3,15 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+import diskcache
 
 import config
 import file_io
 
+cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
 
+
+@cache.memoize(tag='step_stack')
 def run(target, rig, filter, light_frames, dark_frames, bias_frames,
         flat_frames, version, dest_path):
   def symlink_frames(filenames, dest_path):

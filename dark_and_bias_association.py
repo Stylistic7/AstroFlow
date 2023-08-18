@@ -1,14 +1,19 @@
 import itertools
 from pathlib import Path
+import diskcache
+import os
 
 import config
 import file_io
+
+cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
 
 
 def _round_to_nearest_multiple(number, multiple):
   return int(multiple * round(number / multiple))
 
 
+@cache.memoize(tag='dark_and_bias_association')
 def find_bias_frames(bias_frames, camera_configs):
   output = []
   for camera, temperature, _ in camera_configs:
@@ -22,6 +27,7 @@ def find_bias_frames(bias_frames, camera_configs):
   return list(sorted(set(output)))
 
 
+@cache.memoize(tag='dark_and_bias_association')
 def find_dark_frames(dark_frames, camera_configs):
   output = []
   for camera, temperature, exposure in camera_configs:
