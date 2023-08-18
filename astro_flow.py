@@ -14,7 +14,6 @@ import functools
 # TODO: This file should only include step*.py files, never any lower granularity.
 import config
 import stacking
-import post_processing_per_stack
 import post_processing_per_spatial_component
 import guide_log_analysis
 import subframe_selector
@@ -38,6 +37,7 @@ import step_measure
 import step_flat_frame_association
 import step_sanity_check_stack
 import step_stack
+import step_post_process_stack
 
 
 class AstroFlow(FlowSpec):
@@ -357,12 +357,19 @@ class AstroFlow(FlowSpec):
                                    self.light_frames, self.dark_frames,
                                    self.bias_frames, self.flat_frames, 1,
                                    self.output_dir)
+    else:
+      self.master = None
 
     self.next(self.post_process_stack)
 
+  @catch(var='post_process_stack_failed')
   @step_with_debugging
+  @serialize('PixInsight')
   def post_process_stack(self):
     # Foreach stack: [target, rig, filter]
+    if self.master:
+      self.post_processed = step_post_process_stack.run(self.rig, self.master)
+
     self.next(self.join_process_target_rig_filter)
 
   @step_with_debugging

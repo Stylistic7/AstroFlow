@@ -8,6 +8,9 @@ from xisf import XISF
 import plate_solving
 import config
 import astropy.io.fits as pyfits
+import diskcache
+
+cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
 
 post_process_script = """
 var P_bxt = new BlurXTerminator;
@@ -105,7 +108,8 @@ def add_xisf_fits_header(filename, data):
              shuffle=True)
 
 
-def run_post_processing(rig, master):
+@cache.memoize(tag='post_processing')
+def run(rig, master):
   filename, ext = os.path.splitext(master)
   fit_filename = filename + '_post' + '.fit'
   xisf_filename = filename + '_post' + '.xisf'
@@ -140,7 +144,7 @@ def run_post_processing(rig, master):
       else:
         time.sleep(5)
 
-    wcs, _ = plate_solving.solve_field(fit_filename)
+    center, footprint, wcs = plate_solving.solve_field(fit_filename)
     if not wcs:
       print(f'Failed to plate-solve post-processed result')
       return None
