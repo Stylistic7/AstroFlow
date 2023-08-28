@@ -1,6 +1,7 @@
 import numpy as np
 
 import file_io
+from structs import Stack
 
 
 def _check_frame_list(L, name):
@@ -29,12 +30,11 @@ def _min_footprint(footprints):
           [min_ra, max_dec]]
 
 
-def run(rig, filter, camera_configs, light_frames, dark_frames, bias_frames,
-        flat_frames, plate_solutions):
+def run(stack, plate_solutions):
   # TODO: Also check that:
   # They all have essentially the same plate solution
 
-  cameras = set(cc[0] for cc in camera_configs)
+  cameras = set(cc[0] for cc in stack.camera_configs)
   if len(cameras) > 1:
     print(f'Stack is not good: there are multiple cameras: {cameras}')
     return False
@@ -42,40 +42,41 @@ def run(rig, filter, camera_configs, light_frames, dark_frames, bias_frames,
   camera = list(cameras)[0]
 
   if not all(
-      _check_frame_list(f, n) for f, n in
-      zip([light_frames, dark_frames, bias_frames, flat_frames],
-          ['light_frames', 'dark_frames', 'bias_frames', 'flat_frames'])):
+      _check_frame_list(f, n) for f, n in zip([
+          stack.light_frames, stack.dark_frames, stack.bias_frames,
+          stack.flat_frames
+      ], ['light_frames', 'dark_frames', 'bias_frames', 'flat_frames'])):
     return False
 
   if not all(
       file_io.fits_matches(f, ['IMAGETYP', 'INSTRUME', 'RIG', 'FILTER'],
-                           ['Light', camera, rig, filter])
-      for f in light_frames):
+                           ['Light', camera, stack.rig, filter])
+      for f in stack.light_frames):
     print(f'Stack is not good: some light frames had incorrect '
           f'RIG or FILTER keywords')
     return False
 
   if not all(
       file_io.fits_matches(f, ['IMAGETYP', 'INSTRUME', 'RIG', 'FILTER'],
-                           ['Flat', camera, rig, filter])
-      for f in flat_frames):
+                           ['Flat', camera, stack.rig, stack.filter])
+      for f in stack.flat_frames):
     print(f'Stack is not good: some flat frames had incorrect '
           f'RIG or FILTER keywords')
     return False
 
   if not all(
       file_io.fits_matches(f, ['IMAGETYP', 'INSTRUME'], ['Dark', camera])
-      for f in dark_frames):
+      for f in stack.dark_frames):
     print(f'Stack is not good: some dark frames had incorrect IMAGETYP keyword')
     return False
 
   if not all(
       file_io.fits_matches(f, ['IMAGETYP', 'INSTRUME'], ['Bias', camera])
-      for f in bias_frames):
+      for f in stack.bias_frames):
     print(f'Stack is not good: some bias frames had incorrect IMAGETYP keyword')
     return False
 
-  my_plate_solutions = [plate_solutions[f] for f in light_frames]
+  my_plate_solutions = [plate_solutions[f] for f in stack.light_frames]
   footprints = [f for _, f, _ in my_plate_solutions]
   min_footprint = _min_footprint(footprints)
   min_x = np.min([p[0] for p in min_footprint])

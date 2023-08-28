@@ -15,29 +15,42 @@ import plate_solving
 
 cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
 
-MIN_COMPONENT_MEMBERS = 10
+MIN_COMPONENT_MEMBERS = 5
 
 
-def get_iou(ground_truth, pred):
+def intersection(box_1, box_2):
+  if box_1 is None:
+    left_2 = np.min([p[0] for p in box_2])
+    top_2 = np.min([p[1] for p in box_2])
+    right_2 = np.max([p[0] for p in box_2])
+    bottom_2 = np.max([p[1] for p in box_2])
+    return [left_2, top_2, right_2, bottom_2]
+
   # top left to bottom right corner
-  left_gt = np.min([p[0] for p in ground_truth])
-  top_gt = np.min([p[1] for p in ground_truth])
-  right_gt = np.max([p[0] for p in ground_truth])
-  bottom_gt = np.max([p[1] for p in ground_truth])
+  left_1 = np.min([p[0] for p in box_1])
+  top_1 = np.min([p[1] for p in box_1])
+  right_1 = np.max([p[0] for p in box_1])
+  bottom_1 = np.max([p[1] for p in box_1])
 
-  left_pred = np.min([p[0] for p in pred])
-  top_pred = np.min([p[1] for p in pred])
-  right_pred = np.max([p[0] for p in pred])
-  bottom_pred = np.max([p[1] for p in pred])
+  left_2 = np.min([p[0] for p in box_2])
+  top_2 = np.min([p[1] for p in box_2])
+  right_2 = np.max([p[0] for p in box_2])
+  bottom_2 = np.max([p[1] for p in box_2])
 
-  ground_truth = [left_gt, top_gt, right_gt, bottom_gt]
-  pred = [left_pred, top_pred, right_pred, bottom_pred]
+  box_1 = [left_1, top_1, right_1, bottom_1]
+  box_2 = [left_2, top_2, right_2, bottom_2]
 
   # coordinates of the area of intersection.
-  ix1 = np.maximum(ground_truth[0], pred[0])
-  iy1 = np.maximum(ground_truth[1], pred[1])
-  ix2 = np.minimum(ground_truth[2], pred[2])
-  iy2 = np.minimum(ground_truth[3], pred[3])
+  ix1 = np.maximum(box_1[0], box_2[0])
+  iy1 = np.maximum(box_1[1], box_2[1])
+  ix2 = np.minimum(box_1[2], box_2[2])
+  iy2 = np.minimum(box_1[3], box_2[3])
+
+  return ix1, iy1, ix2, iy2
+
+
+def iou(ground_truth, pred):
+  ix1, iy1, ix2, iy2 = intersection(ground_truth, pred)
 
   # Intersection height and width.
   i_height = np.maximum(iy2 - iy1 + 1, np.array(0.))
@@ -88,7 +101,7 @@ def find_components(filenames, min_component_members=MIN_COMPONENT_MEMBERS):
   for filename, footprint in footprints.items():
     found = False
     for target in targets:
-      if all(get_iou(footprint, footprints[f]) > 0.7 for f in target):
+      if all(iou(footprint, footprints[f]) > 0.7 for f in target):
         target.append(filename)
         found = True
         break

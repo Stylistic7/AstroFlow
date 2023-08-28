@@ -10,11 +10,12 @@ import subprocess
 import shutil
 from attrdict import AttrDict
 import functools
+from copy import copy
 
 # TODO: This file should only include step*.py files, never any lower granularity.
 import config
+from structs import Stack
 import stacking
-import post_processing_per_spatial_component
 import guide_log_analysis
 import subframe_selector
 import metaflow_data_helper
@@ -38,6 +39,18 @@ import step_flat_frame_association
 import step_sanity_check_stack
 import step_stack
 import step_post_process_stack
+import step_post_process_target
+
+
+def _merge_lists(*args):
+  return list(itertools.chain.from_iterable(*args))
+
+
+def new_stack(stack, **kwargs):
+  stack = copy(stack)
+  for k, v in kwargs.items():
+    stack.__setattr__(k, v)
+  return stack
 
 
 class AstroFlow(FlowSpec):
@@ -195,170 +208,132 @@ class AstroFlow(FlowSpec):
                                             'plate_solutions') or {}
     self.plate_solutions = step_plate_solve.run(prev_result, self.light_frames,
                                                 self.bad_file_dir)
-    self.next(self.spatial_grouping)
+    self.next(self.split_by_target)
 
   @step
-  def spatial_grouping(self):
-    self.targets_and_light_frames = step_spatial_grouping.run(
-        self.plate_solutions)
-    for i, x in enumerate(self.targets_and_light_frames):
+  def split_by_target(self):
+    targets_and_light_frames = step_spatial_grouping.run(self.plate_solutions)
+    for i, x in enumerate(targets_and_light_frames):
       print(f'targets_and_light_frames[{i}] = {compact_repr(x)}')
 
     # FIXME hack
     # TODO: Put real target selection here.
-    # self.targets_and_light_frames = [
-    #     x for x in self.targets_and_light_frames if x[0].startswith('M101')
-    # ]
+    targets_and_light_frames = [
+        x for x in targets_and_light_frames if x[0].startswith('Filamentary')
+    ]
 
-    self.next(self.measure, foreach='targets_and_light_frames')
+    self.stacks = [
+        Stack(target=target, light_frames=list(sorted(light_frames)))
+        for target, light_frames in targets_and_light_frames
+    ]
+
+    self.next(self.split_by_rig, foreach='stacks')
 
   @step_with_debugging
-  def measure(self):
+  def split_by_rig(self):
     # Foreach stack: [target]
-    self.target, self.light_frames = self.input
-    self.rigs_and_light_frames = file_io.group_by_fits_keyword(
-        self.light_frames, 'RIG')
-    for i, x in enumerate(self.rigs_and_light_frames):
-      print(
-          f'target {self.target} rigs_and_light_frames[{i}] = {compact_repr(x)}'
-      )
+    self.stacks = [
+        new_stack(self.input, rig=rig, light_frames=list(sorted(light_frames)))
+        for rig, light_frames in file_io.group_by_fits_keyword(
+            self.input.light_frames, 'RIG')
+    ]
 
-    # FIXME hack
-    # TODO: Put real rig selection here.
-    # self.rigs_and_light_frames = [
-    #     x for x in self.rigs_and_light_frames if x[0] == 'C11'
-    # ]
+    self.next(self.split_by_filter, foreach='stacks')
 
-    self.next(self.measure_for_rig, foreach='rigs_and_light_frames')
+  @step_with_debugging
+  def split_by_filter(self):
+    # Foreach stack: [target, rig]
+    self.stacks = [
+        new_stack(self.input,
+                  filter=filter,
+                  light_frames=list(sorted(light_frames)))
+        for filter, light_frames in file_io.group_by_fits_keyword(
+            self.input.light_frames, 'FILTER')
+    ]
+    self.next(self.measure, foreach='stacks')
 
   @step_with_debugging
   @serialize('PixInsight')
-  def measure_for_rig(self):
-    # Foreach stack: [target, rig]
-    self.rig, self.light_frames = self.input
-    prev_result = metaflow_data_helper.find('measure_for_rig', 'measurements',
-                                            ['target', 'rig'],
-                                            [self.target, self.rig]) or {}
+  def measure(self):
+    # Foreach stack: [target, rig, filter]
+    self.stack = self.input
+
+    # TODO: Maybe cleaner to just read this from the disk cache.
+    prev_result = metaflow_data_helper.find(
+        'measure_for_rig', 'measurements', ['target', 'rig'],
+        [self.stack.target, self.stack.rig]) or {}
 
     # TODO: Put this in a config file.
     image_scales = {'C11': 1.38, 'C11_F7': 0.38, 'RC71': 2.22}
-    self.measurements = step_measure.run(prev_result, image_scales[self.rig],
-                                         self.light_frames)
-    self.next(self.join_measure_for_rig)
+    self.measurements = step_measure.run(
+        prev_result, image_scales[self.stack.rig], self.stack.light_frames)
+
+    # FIXME eliminate light frames that failed measurement.
+    self.next(self.get_camera_configs)
 
   @step_with_debugging
-  def join_measure_for_rig(self, inputs):
-    # Foreach stack: [target, rig]
-    for i, input in enumerate(inputs):
-      for j, x in enumerate(input.targets_and_light_frames):
-        print(f'input {i} targets_and_light_frames[{j}] = {compact_repr(x)}')
-
-    self.merge_artifacts(inputs,
-                         exclude=['rig', 'measurements', 'light_frames'])
-    self.measurements = {
-        k: v
-        for d in inputs for k, v in d.measurements.items()
-    }
-    self.light_frames = list(self.measurements.keys())
-    self.next(self.process_target)
-
-  @step_with_debugging
-  def process_target(self):
-    # Foreach stack: [target]
-    print(f"Target '{self.target}' has {len(self.light_frames)} light frames")
-    self.rigs_and_light_frames = file_io.group_by_fits_keyword(
-        self.light_frames, 'RIG')
-
-    # FIXME hack
-    # TODO: Put real rig selection here.
-    # self.rigs_and_light_frames = [
-    #     x for x in self.rigs_and_light_frames if x[0] == 'C11'
-    # ]
-
-    self.next(self.process_target_rig, foreach='rigs_and_light_frames')
-
-  @step_with_debugging
-  def process_target_rig(self):
-    # Foreach stack: [target, rig]
-    self.rig, self.light_frames = self.input
-    print(f"Target '{self.target}' rig {self.rig} has "
-          f"{len(self.light_frames)} light frames")
-    self.filters_and_light_frames = file_io.group_by_fits_keyword(
-        self.light_frames, 'FILTER')
-
-    # TODO: pick specific filters to process here.
-    # self.filters_and_light_frames = [
-    #     x for x in self.filters_and_light_frames if x[0] == 'H'
-    # ]
-
-    self.next(self.process_target_rig_filter,
-              foreach='filters_and_light_frames')
-
-  @step_with_debugging
-  def process_target_rig_filter(self):
-    # Foreach stack: [target, rig, filter]
-    # TODO: There's probably some neat way to put the foreach_stack in here as the
-    # input to the find() function.
-    self.filter, self.light_frames = self.input
-    self.light_frames = list(sorted(self.light_frames))
-    self.camera_configs = camera_configs.get_unique_camera_configs(
-        self.light_frames)
+  def get_camera_configs(self):
+    print('self.stack', self.stack)
+    self.stack.camera_configs = camera_configs.get_unique_camera_configs(
+        self.stack.light_frames)
+    print('camera_configs', self.stack.camera_configs)
     self.next(self.bias_frame_association)
 
   @step_with_debugging
   def bias_frame_association(self):
     # Foreach stack: [target, rig, filter]
     print(f'Trying to associate {len(self.bias_frames)} bias frames')
-    self.bias_frames = dark_and_bias_association.find_bias_frames(
-        self.bias_frames, self.camera_configs)
-    print(f'Found {len(self.bias_frames)} bias frames')
+    self.stack.bias_frames = dark_and_bias_association.find_bias_frames(
+        self.bias_frames, self.stack.camera_configs)
+    print(f'Found {len(self.stack.bias_frames)} bias frames')
     self.next(self.dark_frame_association)
 
   @step_with_debugging
   def dark_frame_association(self):
     # Foreach stack: [target, rig, filter]
     print(f'Trying to associate {len(self.dark_frames)} dark frames')
-    self.dark_frames = dark_and_bias_association.find_dark_frames(
-        self.dark_frames, self.camera_configs)
-    print(f'Found {len(self.dark_frames)} dark frames')
+    self.stack.dark_frames = dark_and_bias_association.find_dark_frames(
+        self.dark_frames, self.stack.camera_configs)
+    print(f'Found {len(self.stack.dark_frames)} dark frames')
     self.next(self.flat_frame_association)
 
   @step_with_debugging
   def flat_frame_association(self):
-    self.flat_frames = step_flat_frame_association.filter_flat_frames(
-        self.flat_frames, self.rig, self.filter, self.camera_configs)
-    self.flat_frame_associations = step_flat_frame_association.run(
-        self.light_frames, self.flat_frames)
-    print(f'associations {self.flat_frame_associations}')
+    self.stack.flat_frames = step_flat_frame_association.filter_flat_frames(
+        self.flat_frames, self.stack.rig, self.stack.filter,
+        self.stack.camera_configs)
+    self.stack.flat_frame_associations = step_flat_frame_association.run(
+        self.stack.light_frames, self.flat_frames)
+    print(f'associations {self.stack.flat_frame_associations}')
 
     self.next(self.sanity_check_stack)
 
   @step_with_debugging
   def sanity_check_stack(self):
-    self.stack_is_good = step_sanity_check_stack.run(
-        self.rig, self.filter, self.camera_configs, self.light_frames,
-        self.dark_frames, self.bias_frames, self.flat_frames,
-        self.plate_solutions)
+    # FIXME just pass the Stack object to step_sanity_check_stack.run()
+    self.stack_is_good = step_sanity_check_stack.run(self.stack,
+                                                     self.plate_solutions)
     if self.stack_is_good:
       print('Stack passes sanity checks!')
 
-    self.next(self.stack)
+    self.next(self.stack_subframes)
 
   @step_with_debugging
   @serialize('PixInsight')
-  def stack(self):
+  def stack_subframes(self):
     # Foreach stack: [target, rig, filter]
     # TODO: Pull this logic into step_stack.py
     # TODO: Don't pass flat frames with FLATVERS that are not used by any of
     # the light frames.
     # TODO: Remove the version=1 hack.
+    # FIXME just pass the Stack object to step_stack.run()
     if self.stack_is_good:
-      self.master = step_stack.run(self.target, self.rig, self.filter,
-                                   self.light_frames, self.dark_frames,
-                                   self.bias_frames, self.flat_frames, 1,
-                                   self.output_dir)
+      self.stack.master = step_stack.run(
+          self.stack.target, self.stack.rig, self.stack.filter,
+          self.stack.light_frames, self.stack.dark_frames,
+          self.stack.bias_frames, self.stack.flat_frames, 1, self.output_dir)
     else:
-      self.master = None
+      self.stack.master = None
 
     self.next(self.post_process_stack)
 
@@ -367,90 +342,186 @@ class AstroFlow(FlowSpec):
   @serialize('PixInsight')
   def post_process_stack(self):
     # Foreach stack: [target, rig, filter]
-    if self.master:
-      self.post_processed = step_post_process_stack.run(self.rig, self.master)
+    if self.stack.master:
+      self.stack.post_processed = step_post_process_stack.run(
+          self.stack.rig, self.stack.master)
+    else:
+      self.stack.post_processed = None
 
-    self.next(self.join_process_target_rig_filter)
-
-  @step_with_debugging
-  def join_process_target_rig_filter(self, inputs):
-    # Foreach stack: [target, rig]
-    self.next(self.join_process_target_rig)
+    self.next(self.join_filters)
 
   @step_with_debugging
-  def join_process_target_rig(self, inputs):
-    # Foreach stack: [target]
-    self.next(self.join_process_target)
+  def join_filters(self, inputs):
+    self.next(self.join_rigs)
 
-  @step
-  def join_process_target(self, inputs):
-    # Foreach stack: []
-    # TODO: implement per-target combining here (e.g. Star Alignment).
+  @step_with_debugging
+  def join_rigs(self, inputs):
+    self.next(self.join_targets)
+
+  @step_with_debugging
+  def join_targets(self, inputs):
     self.next(self.end)
 
-  # @catch(var='post_process_per_stack_failed')
+  # @step_with_debugging
+  # def join_measure_for_rig(self, inputs):
+  #   # Foreach stack: [target, rig]
+  #   # for i, input in enumerate(inputs):
+  #   #   for j, x in enumerate(input.stack):
+  #   #     print(f'input {i} stack[{j}] = {repr(x)}')
+
+  #   self.merge_artifacts(inputs,
+  #                        exclude=['rig', 'measurements', 'light_frames'])
+  #   self.measurements = {
+  #       k: v
+  #       for d in inputs for k, v in d.measurements.items()
+  #   }
+  #   self.stack.light_frames = list(self.measurements.keys())
+  #   self.next(self.process_target)
+
+  # @step_with_debugging
+  # def process_target(self):
+  #   # Foreach stack: [target]
+  #   # print(
+  #   #     f"Target '{self.stack.target}' has {len(self.stack.light_frames)} light frames"
+  #   # )
+  #   # rigs_and_light_frames = file_io.group_by_fits_keyword(
+  #   #     self.stack.light_frames, 'RIG')
+
+  #   # FIXME hack
+  #   # TODO: Put real rig selection here.
+  #   # rigs_and_light_frames = [
+  #   #     x for x in rigs_and_light_frames if x[0] == 'C11'
+  #   # ]
+
+  #   self.next(self.process_target_rig, foreach='rigs_and_light_frames')
+
+  # @step_with_debugging
+  # def process_target_rig(self):
+  #   # Foreach stack: [target, rig]
+  #   self.rig, self.stack.light_frames = self.input
+  #   print(f"Target '{self.target}' rig {self.rig} has "
+  #         f"{len(self.stack.light_frames)} light frames")
+  #   self.filters_and_light_frames = file_io.group_by_fits_keyword(
+  #       self.stack.light_frames, 'FILTER')
+
+  #   # TODO: pick specific filters to process here.
+  #   # self.filters_and_light_frames = [
+  #   #     x for x in self.filters_and_light_frames if x[0] == 'H'
+  #   # ]
+
+  #   self.next(self.process_target_rig_filter,
+  #             foreach='filters_and_light_frames')
+
+  # @step_with_debugging
+  # def process_target_rig_filter(self):
+  #   # Foreach stack: [target, rig, filter]
+  #   # TODO: There's probably some neat way to put the foreach_stack in here as the
+  #   # input to the find() function.
+  #   self.filter, self.stack.light_frames = self.input
+  #   self.stack.light_frames = list(sorted(self.stack.light_frames))
+  #   self.camera_configs = camera_configs.get_unique_camera_configs(
+  #       self.stack.light_frames)
+  #   self.next(self.bias_frame_association)
+
+  # @step_with_debugging
+  # def join_process_target_rig_filter(self, inputs):
+  #   # Foreach stack: [target, rig]
+  #   self.targets = [input.target for input in inputs if input.master]
+  #   self.rigs = [input.rig for input in inputs if input.master]
+  #   self.filters = [input.filter for input in inputs if input.master]
+  #   self.masters = [input.master for input in inputs if input.master]
+  #   self.post_processed = [
+  #       input.post_processed for input in inputs if input.master
+  #   ]
+
+  #   print('self.targets', self.targets)
+  #   print('self.rigs', self.rigs)
+  #   print('self.filters', self.filters)
+  #   print('self.masters', self.masters)
+  #   print('self.post_processed', self.post_processed)
+
+  #   self.next(self.join_process_target_rig)
+
+  # @step_with_debugging
+  # def join_process_target_rig(self, inputs):
+  #   # Foreach stack: [target]
+  #   self.targets = _merge_lists([input.targets for input in inputs])
+  #   self.rigs = _merge_lists([input.rigs for input in inputs])
+  #   self.filters = _merge_lists([input.filters for input in inputs])
+  #   self.masters = _merge_lists([input.masters for input in inputs])
+  #   self.post_processed = _merge_lists(
+  #       [input.post_processed for input in inputs])
+
+  #   print('self.targets', self.targets)
+  #   print('self.rigs', self.rigs)
+  #   print('self.filters', self.filters)
+  #   print('self.masters', self.masters)
+  #   print('self.post_processed', self.post_processed)
+
+  #   self.next(self.join_process_target)
+
   # @step
-  # @serialize('PixInsight')
-  # def post_process_per_stack(self):
-  #   # TODO: Don't rerun this if all previous steps were no-ops.
-  #   # This looks ugly, maybe it's a pattern I can factor out.
-  #   self.post_per_stack = None
-  #   self.output_changed = False
+  # def join_process_target(self, inputs):
+  #   # Foreach stack: []
+  #   # TODO: implement per-target combining here (e.g. Star Alignment).
+  #   self.targets = _merge_lists([input.targets for input in inputs])
+  #   self.rigs = _merge_lists([input.rigs for input in inputs])
+  #   self.filters = _merge_lists([input.filters for input in inputs])
+  #   self.masters = _merge_lists([input.masters for input in inputs])
+  #   self.post_processed = _merge_lists(
+  #       [input.post_processed for input in inputs])
 
-  #   if self.master:
-  #     previous_results = (
-  #         metaflow_data_helper.find_most_recent_successful_task_output(
-  #             'post_process_per_stack', ['rig', 'filter', 'master'],
-  #             [self.rig, self.filter, self.master], ['post_per_stack']))
-  #     if previous_results:
-  #       if type(previous_results[0]) is str and os.path.exists(
-  #           previous_results[0]):
-  #         self.post_per_stack = previous_results[0]
+  #   print('self.targets', self.targets)
+  #   print('self.rigs', self.rigs)
+  #   print('self.filters', self.filters)
+  #   print('self.masters', self.masters)
+  #   print('self.post_processed', self.post_processed)
 
-  #     if self.new_stack or not self.post_per_stack:
-  #       print('Post-processing stacked master', self.rig, self.filter,
-  #             self.master)
-  #       self.output_changed = True
-  #       self.post_per_stack = post_processing_per_stack.run_post_processing(
-  #           self.rig, self.master)
+  #   self.post_processed_for_target = step_post_process_target.run(
+  #       self.rigs, self.filters, self.masters)
 
-  #   self.next(self.join_filter_grouping)
+  #   self.next(self.identify_mosiacs)
 
   # @step
-  # def join_filter_grouping(self, inputs):
-  #   self.output_changed = any(i.output_changed for i in inputs)
+  # def identify_mosiacs(self):
+  #   # Identify images that belong to mosaics
+  #   # Rough idea is to find stacks that overlap with an overlap area that
+  #   # has a large aspect ratio.
+  #   #
+  #   self.mosaics = []
+  #   self.next(self.order_mosaic_tiles, foreach='mosaics')
 
-  #   self.rigs = [i.rig for i in inputs]
-  #   self.filters = [i.filter for i in inputs]
-  #   self.posts_per_stack = [i.post_per_stack for i in inputs]
+  # @step_with_debugging
+  # def order_mosaic_tiles(self):
+  #   # Order them by rows, and then columns (or vice versa).
+  #   # The output here is a list of pairs of (reference, target) that,
+  #   # when executed in order, will produce the final desired mosaic.
+  #   self.tile_pairs = []
+  #   self.next(self.merge_mosaic_tile_pairs, foreach='tile_pairs')
 
-  #   print(f'join_filter_grouping, '
-  #         f'output_changed {self.output_changed}, '
-  #         f'rigs {self.rigs}, '
-  #         f'filters {self.filters}, '
-  #         f'posts_per_stack {self.posts_per_stack}')
+  # @step_with_debugging
+  # def merge_mosaic_tile_pairs(self):
+  #   # Run ImageSolver, MosaicByCoordinates on each image
+  #   # Create an automatic trim function, like TrimMosaicTile.
+  #   #   Write FITS headers the same way.
+  #   # Run PhotometricMosaic on each pair, growing the mosaic
+  #   self.next(self.join_mosaic_tile_pairs)
 
-  #   self.next(self.post_process_per_rig)
+  # @step_with_debugging
+  # def join_mosaic_tile_pairs(self, inputs):
+  #   self.next(self.post_process_mosaic)
 
-  # @step
-  # def post_process_per_rig(self):
-  #   self.next(self.join_rig_grouping)
+  # @step_with_debugging
+  # def post_process_mosaic(self):
+  #   # Run StarAlignment on all the color channels in the mosaic.
+  #   # Run StarXTerminator on all color channels.
+  #   # Combine RGB or LRGB, run SPCC.
+  #   # Is this exactly the same logic as in post_process_stack?
+  #   self.next(self.join_mosaics)
 
-  # @step
-  # def join_rig_grouping(self, inputs):
-  #   self.output_changed = any(i.output_changed for i in inputs)
-
-  #   self.rigs = sum([i.rigs for i in inputs], [])
-  #   self.filters = sum([i.filters for i in inputs], [])
-  #   self.posts_per_stack = sum([i.posts_per_stack for i in inputs], [])
-
-  #   print(f'join_rig_grouping, '
-  #         f'output_changed {self.output_changed}, '
-  #         f'rigs {self.rigs}, '
-  #         f'filters {self.filters}, '
-  #         f'posts_per_stack {self.posts_per_stack}')
-
-  #   self.next(self.post_process_per_spatial_component)
+  # @step_with_debugging
+  # def join_mosaics(self, inputs):
+  #   self.next(self.end)
 
   # # TODO: Add per-spatial-component post-processing here. It will:
   # # - star align images from multiple rigs

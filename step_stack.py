@@ -7,13 +7,13 @@ import diskcache
 
 import config
 import file_io
+from structs import Stack
 
 cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
 
 
 @cache.memoize(tag='step_stack')
-def run(target, rig, filter, light_frames, dark_frames, bias_frames,
-        flat_frames, version, dest_path):
+def run(stack, version, dest_path):
   def symlink_frames(filenames, dest_path):
     for filename in filenames:
       dest_filename = os.path.join(dest_path, os.path.basename(filename))
@@ -21,17 +21,17 @@ def run(target, rig, filter, light_frames, dark_frames, bias_frames,
         os.symlink(filename, dest_filename)
 
   with tempfile.TemporaryDirectory() as tmp_dir:
-    symlink_frames(light_frames, tmp_dir)
-    symlink_frames(flat_frames, tmp_dir)
-    symlink_frames(bias_frames, tmp_dir)
-    symlink_frames(dark_frames, tmp_dir)
+    symlink_frames(stack.light_frames, tmp_dir)
+    symlink_frames(stack.flat_frames, tmp_dir)
+    symlink_frames(stack.bias_frames, tmp_dir)
+    symlink_frames(stack.dark_frames, tmp_dir)
 
     src_master_dir = os.path.join(tmp_dir, 'master')
 
     if config.STACKING_TEST_MODE:
       # In test mode, don't actually stack anything. Just copy the first
       # light frame over.
-      src_filename = light_frames[0]
+      src_filename = stack.light_frames[0]
       dst_filename = os.path.join(dest_path, os.path.basename(src_filename))
       print(f'Stacking: test mode, returning light frame {src_filename}')
     else:
@@ -57,7 +57,7 @@ def run(target, rig, filter, light_frames, dark_frames, bias_frames,
       while True:
         dst_filename = os.path.join(
             dest_path, target, 'masters',
-            f'master_light_{target}_{rig}_{filter}_v{version}.xisf')
+            f'master_light_{stack.target}_{stack.rig}_{filter}_v{version}.xisf')
         if not os.path.exists(dst_filename):
           break
 

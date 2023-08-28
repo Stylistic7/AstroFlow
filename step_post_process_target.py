@@ -3,8 +3,11 @@ import tempfile
 import subprocess
 import time
 from pathlib import Path
+import diskcache
 
 import config
+
+cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
 
 post_process_script = """
 var P_sa = new StarAlignment;
@@ -199,7 +202,8 @@ def find_reference(rigs, filters, masters):
           return master
 
 
-def run_post_processing(rigs, filters, masters):
+@cache.memoize(tag='step_post_process_target')
+def run(rigs, filters, masters):
   reference = find_reference(rigs, filters, masters)
   print('found reference', reference)
 

@@ -36,7 +36,7 @@ def target_footprints():
                                               'plate_solutions') or {}
 
   output = {}
-  for target, light_frames in targets_and_light_frames[0:1]:
+  for target, light_frames in targets_and_light_frames:
     print(f'target {target}')
     ps = [plate_solutions[light_frame] for light_frame in light_frames]
     footprints = [f for _, f, _ in ps]

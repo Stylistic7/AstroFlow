@@ -1,7 +1,11 @@
 import numpy as np
 from numpy import radians, degrees
+import diskcache
+import os
 
 from distance import distance
+
+cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
 
 
 def _read_names_catalog():
@@ -113,6 +117,7 @@ def _find_best_object_by_distance(ra, dec):
   return best_distance, best_entry
 
 
+@cache.memoize(tag='ngc2000_catalog')
 def find_best_object(ra, dec):
   distance, entry = _find_best_object_by_size(ra, dec)
   if entry:
