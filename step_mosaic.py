@@ -11,6 +11,8 @@ import astropy.io.fits as pyfits
 import diskcache
 
 import pixinsight_shell_script
+import pixinsight_image_solver
+import pixinsight_mosaic_by_coordinates
 
 # cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
 
@@ -30,3 +32,12 @@ run -x -p="engine_files,/Users/nobody/Downloads/Veil Pano/master_light_Filamenta
 
 ![echo 'done' > {sentinel_filename}
 """
+
+if __name__ == '__main__':
+  filenames = [
+      '/Users/nobody/Downloads/Veil Pano/master_light_Filamentary_nebula_RA_311_5_DEC_30_2_C11_H_v1_post_registered.xisf',
+      '/Users/nobody/Downloads/Veil Pano/master_light_Filamentary_nebula_RA_313_1_DEC_30_0_C11_H_v1_post_registered.xisf'
+  ]
+
+  pixinsight_image_solver.run(filenames)
+  pixinsight_mosaic_by_coordinates.run(filenames)

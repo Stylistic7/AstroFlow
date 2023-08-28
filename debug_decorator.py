@@ -9,12 +9,6 @@ def debug(func):
     # flow = the `self` object passed into each step in a Flow
     # *_ is needed to allow this line to work regardless of whether we pass only 1 (e.g. `self`) or more parameters (e.g. `self, inputs`)
 
-    # def repr(x):
-    #   if type(x) is list:
-    #     return f"list[{len(x)}]"
-    #   else:
-    #     return f"'{str(x)}'"
-
     if len(foo) == 0:
       for index, num_tasks, input in flow.foreach_stack():
         input_string = compact_repr(input)

@@ -50,7 +50,7 @@ def run(stack, plate_solutions):
 
   if not all(
       file_io.fits_matches(f, ['IMAGETYP', 'INSTRUME', 'RIG', 'FILTER'],
-                           ['Light', camera, stack.rig, filter])
+                           ['Light', camera, stack.rig, stack.filter])
       for f in stack.light_frames):
     print(f'Stack is not good: some light frames had incorrect '
           f'RIG or FILTER keywords')

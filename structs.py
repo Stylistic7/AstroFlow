@@ -1,10 +1,15 @@
 import numpy as np
 from dataclasses import dataclass, field
 import functools
+from shapely.geometry import Polygon
 
-# from compact_repr import compact_repr
 import plate_solving
 import spatial_association
+
+
+@dataclass
+class Footprint:
+  corners: Polygon
 
 
 @dataclass
@@ -32,8 +37,8 @@ class Stack:
 
   def footprint(self):
     plate_solutions = plate_solving.solve_fields(self.light_frames)
-    footprints = [f for _, f, _ in plate_solutions]
-    return functools.reduce(spatial_association.intersection, footprints, None)
+    footprints = [Polygon(f) for _, f, _ in plate_solutions]
+    return functools.reduce(Polygon.intersection, footprints, footprints[0])
 
   def __repr__(self):
     return (

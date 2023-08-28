@@ -10,7 +10,7 @@ import subprocess
 import shutil
 from attrdict import AttrDict
 import functools
-from copy import copy
+import copy
 
 # TODO: This file should only include step*.py files, never any lower granularity.
 import config
@@ -47,10 +47,10 @@ def _merge_lists(*args):
 
 
 def new_stack(stack, **kwargs):
-  stack = copy(stack)
+  new_stack = copy.deepcopy(stack)
   for k, v in kwargs.items():
-    stack.__setattr__(k, v)
-  return stack
+    new_stack.__setattr__(k, v)
+  return new_stack
 
 
 class AstroFlow(FlowSpec):
@@ -222,35 +222,39 @@ class AstroFlow(FlowSpec):
         x for x in targets_and_light_frames if x[0].startswith('Filamentary')
     ]
 
-    self.stacks = [
+    self.stacks_per_target = [
         Stack(target=target, light_frames=list(sorted(light_frames)))
         for target, light_frames in targets_and_light_frames
     ]
 
-    self.next(self.split_by_rig, foreach='stacks')
+    self.next(self.split_by_rig, foreach='stacks_per_target')
 
   @step_with_debugging
   def split_by_rig(self):
     # Foreach stack: [target]
-    self.stacks = [
-        new_stack(self.input, rig=rig, light_frames=list(sorted(light_frames)))
+    self.stacks_per_rig = [
+        Stack(target=self.input.target,
+              rig=rig,
+              light_frames=list(sorted(light_frames)))
         for rig, light_frames in file_io.group_by_fits_keyword(
             self.input.light_frames, 'RIG')
     ]
 
-    self.next(self.split_by_filter, foreach='stacks')
+    self.next(self.split_by_filter, foreach='stacks_per_rig')
 
   @step_with_debugging
   def split_by_filter(self):
     # Foreach stack: [target, rig]
-    self.stacks = [
-        new_stack(self.input,
-                  filter=filter,
-                  light_frames=list(sorted(light_frames)))
+    self.stacks_per_filter = [
+        Stack(target=self.input.target,
+              rig=self.input.rig,
+              filter=filter,
+              light_frames=list(sorted(light_frames)))
         for filter, light_frames in file_io.group_by_fits_keyword(
             self.input.light_frames, 'FILTER')
     ]
-    self.next(self.measure, foreach='stacks')
+
+    self.next(self.measure, foreach='stacks_per_filter')
 
   @step_with_debugging
   @serialize('PixInsight')

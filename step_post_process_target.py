@@ -54,11 +54,9 @@ P_sa.intersection = StarAlignment.prototype.MosaicOnly;
 P_sa.useBrightnessRelations = false;
 P_sa.useScaleDifferences = false;
 P_sa.scaleTolerance = 0.100;
-P_sa.referenceImage = "masterLight_BIN_1_9576x6388_EXPOSURE_300_00s_FILTER_H_mono_drizzle_2x_autocrop_integration_autocrop";
+P_sa.referenceImage = "";
 P_sa.referenceIsFile = false;
-P_sa.targets = [ // enabled, isFile, image
-   [true, false, "masterLight_BIN_1_9576x6388_EXPOSURE_300_00s_FILTER_S_mono_drizzle_2x_autocrop_integration_autocrop"]
-];
+P_sa.targets = [];
 P_sa.inputHints = "";
 P_sa.outputHints = "";
 P_sa.mode = StarAlignment.prototype.RegisterMatch;
@@ -194,25 +192,27 @@ for (let i = 0; i < output_ids.length; ++i) {{
 
 
 def find_reference(stacks):
-  rigs, filters, masters = [(s.rig, s.filter, s.master) for s in stacks]
-  print(f"find_reference with masters {masters}")
   for best_rig in ['C11_F7', 'C11', 'RC71', 'TestRig']:
     for best_filter in ['H', 'O', 'S', 'L', 'G', 'R', 'B']:
-      for rig, filter, master in zip(rigs, filters, masters):
-        if rig == best_rig and filter == best_filter:
-          return master
+      for stack in stacks:
+        if stack.rig == best_rig and stack.filter == best_filter:
+          return stack
 
 
 @cache.memoize(tag='step_post_process_target')
 def run(stacks):
   reference = find_reference(stacks)
   print('found reference', reference)
+  stacks.remove(reference)
+  stacks.insert(0, reference)
+
+  input_filenames = [s.post_processed for s in stacks]
 
   # TODO: Push these restrictive id constraints up into the original masters.
-  output_path = os.path.commonpath(masters)
+  output_path = os.path.commonpath(input_filenames)
   output_ids = [
       os.path.splitext(os.path.basename(m))[0].replace('.', '_').replace(
-          '-', 'M') + '_aligned' for m in masters
+          '-', 'M') + '_aligned' for m in input_filenames
   ]
   print('output_ids are', output_ids)
 
@@ -228,13 +228,13 @@ def run(stacks):
 
     script_filename = os.path.join(tmp_dir, "run_post_processing.js")
     with open(script_filename, "w") as f:
-      script = post_process_script.format(input_filenames=masters,
+      script = post_process_script.format(input_filenames=input_filenames,
                                           output_path=output_path,
                                           output_ids=output_ids,
                                           sentinel_filename=sentinel_filename)
       f.write(script)
 
-    print(f'Running PixInsight post-processing on {len(masters)}')
+    print(f'Running PixInsight post-processing on {len(input_filenames)}')
     ret = subprocess.run([
         '/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight',
         f'--execute={script_filename}'
