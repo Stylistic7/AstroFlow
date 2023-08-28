@@ -13,7 +13,7 @@ cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
 
 
 @cache.memoize(tag='step_stack')
-def run(stack, version, dest_path):
+def run(stack, dest_path):
   def symlink_frames(filenames, dest_path):
     for filename in filenames:
       dest_filename = os.path.join(dest_path, os.path.basename(filename))
@@ -57,11 +57,9 @@ def run(stack, version, dest_path):
       while True:
         dst_filename = os.path.join(
             dest_path, target, 'masters',
-            f'master_light_{stack.target}_{stack.rig}_{filter}_v{version}.xisf')
+            f'master_light_{stack.target}_{stack.rig}_{filter}.xisf')
         if not os.path.exists(dst_filename):
           break
-
-        version += 1
 
     os.makedirs(os.path.join(dest_path, target, 'masters'), exist_ok=True)
     shutil.copy(src_filename, dst_filename)

@@ -1,3 +1,4 @@
+import numpy as np
 from dataclasses import dataclass, field
 import functools
 
@@ -23,6 +24,11 @@ class Stack:
 
   master: str = None
   post_processed: str = None
+
+  def center(self):
+    plate_solutions = plate_solving.solve_fields(self.light_frames)
+    centers = [c for c, f, _ in plate_solutions]
+    return np.mean(centers, axis=0)
 
   def footprint(self):
     plate_solutions = plate_solving.solve_fields(self.light_frames)

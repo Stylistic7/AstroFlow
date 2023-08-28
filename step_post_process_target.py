@@ -193,7 +193,8 @@ for (let i = 0; i < output_ids.length; ++i) {{
 """
 
 
-def find_reference(rigs, filters, masters):
+def find_reference(stacks):
+  rigs, filters, masters = [(s.rig, s.filter, s.master) for s in stacks]
   print(f"find_reference with masters {masters}")
   for best_rig in ['C11_F7', 'C11', 'RC71', 'TestRig']:
     for best_filter in ['H', 'O', 'S', 'L', 'G', 'R', 'B']:
@@ -203,8 +204,8 @@ def find_reference(rigs, filters, masters):
 
 
 @cache.memoize(tag='step_post_process_target')
-def run(rigs, filters, masters):
-  reference = find_reference(rigs, filters, masters)
+def run(stacks):
+  reference = find_reference(stacks)
   print('found reference', reference)
 
   # TODO: Push these restrictive id constraints up into the original masters.
