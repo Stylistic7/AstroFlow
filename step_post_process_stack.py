@@ -80,38 +80,36 @@ if ("{rig}" == "RC71") {{
 }}
 
 window[0].saveAs("{xisf_filename}", false, false, true, false);
-window[0].saveAs("{fit_filename}", false, false, true, false);
 
 for (let i = 0; i < window.length; ++i) {{
   window[i].forceClose();
 }}
 """
 
+# def add_xisf_fits_header(filename, data):
+#   xisf = XISF(filename)
+#   file_meta = xisf.get_file_metadata()
+#   ims_meta = xisf.get_images_metadata()
 
-def add_xisf_fits_header(filename, data):
-  xisf = XISF(filename)
-  file_meta = xisf.get_file_metadata()
-  ims_meta = xisf.get_images_metadata()
+#   fits_keywords = ims_meta[0]['FITSKeywords']
+#   for k, v in data.items():
+#     fits_keywords[k] = [{'value': str(v), 'comment': ''}]
+#     print(f"Added FITS keyword {k} = {fits_keywords[k]}")
 
-  fits_keywords = ims_meta[0]['FITSKeywords']
-  for k, v in data.items():
-    fits_keywords[k] = [{'value': str(v), 'comment': ''}]
-    print(f"Added FITS keyword {k} = {fits_keywords[k]}")
-
-  im_data = xisf.read_image(0)
-  XISF.write(filename,
-             im_data,
-             creator_app="PixInsight",
-             image_metadata=ims_meta[0],
-             xisf_metadata=file_meta,
-             codec='lz4hc',
-             shuffle=True)
+#   im_data = xisf.read_image(0)
+#   XISF.write(filename,
+#              im_data,
+#              creator_app="PixInsight",
+#              image_metadata=ims_meta[0],
+#              xisf_metadata=file_meta,
+#              codec='lz4hc',
+#              shuffle=True)
 
 
 @cache.memoize(tag='post_processing')
 def run(rig, master):
   filename, ext = os.path.splitext(master)
-  fit_filename = filename + '_post' + '.fit'
+  # fit_filename = filename + '_post' + '.fit'
   xisf_filename = filename + '_post' + '.xisf'
 
   if config.STACKING_TEST_MODE:
@@ -127,8 +125,7 @@ def run(rig, master):
     with open(script_filename, "w") as f:
       script = post_process_script.format(input_filename=master,
                                           rig=rig,
-                                          xisf_filename=xisf_filename,
-                                          fit_filename=fit_filename)
+                                          xisf_filename=xisf_filename)
       f.write(script)
 
     print(f'Running PixInsight post-processing on master {master}')
@@ -144,23 +141,23 @@ def run(rig, master):
       else:
         time.sleep(5)
 
-    center, footprint, wcs = plate_solving.solve_field(fit_filename)
-    if not wcs:
-      print(f'Failed to plate-solve post-processed result')
-      return None
+    # center, footprint, wcs = plate_solving.solve_field(fit_filename)
+    # if not wcs:
+    #   print(f'Failed to plate-solve post-processed result')
+    #   return None
 
-    with pyfits.open(io.BytesIO(wcs)) as fits:
-      idl_keys = [
-          "CD1_1", "CD1_2", "CD2_1", "CD2_2", "CRPIX1", "CRPIX2", "CRVAL1",
-          "CRVAL2", "LONPOLE", "LATPOLE", "CUNIT1", "CUNIT2", "CTYPE1",
-          "CTYPE2"
-      ]
-      idl_solution = {k: fits[0].header[k] for k in idl_keys}
+    # with pyfits.open(io.BytesIO(wcs)) as fits:
+    #   idl_keys = [
+    #       "CD1_1", "CD1_2", "CD2_1", "CD2_2", "CRPIX1", "CRPIX2", "CRVAL1",
+    #       "CRVAL2", "LONPOLE", "LATPOLE", "CUNIT1", "CUNIT2", "CTYPE1",
+    #       "CTYPE2"
+    #   ]
+    #   idl_solution = {k: fits[0].header[k] for k in idl_keys}
 
-      add_xisf_fits_header(xisf_filename, idl_solution)
-      print(f'Wrote {len(idl_solution)} WCS FITS values into XISF '
-            f'{xisf_filename}')
+    #   add_xisf_fits_header(xisf_filename, idl_solution)
+    #   print(f'Wrote {len(idl_solution)} WCS FITS values into XISF '
+    #         f'{xisf_filename}')
 
-    os.remove(fit_filename)
+    # os.remove(fit_filename)
 
     return xisf_filename

@@ -11,6 +11,7 @@ import shutil
 from attrdict import AttrDict
 import functools
 import copy
+import diskcache
 
 # TODO: This file should only include step*.py files, never any lower granularity.
 import config
@@ -40,6 +41,8 @@ import step_sanity_check_stack
 import step_stack
 import step_post_process_stack
 import step_post_process_target
+
+cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
 
 
 def _merge_lists(*args):
@@ -218,9 +221,10 @@ class AstroFlow(FlowSpec):
 
     # FIXME hack
     # TODO: Put real target selection here.
-    targets_and_light_frames = [
-        x for x in targets_and_light_frames if x[0].startswith('Filamentary')
-    ]
+    # targets_and_light_frames = [
+    #     x for x in targets_and_light_frames
+    #     if x[0].startswith('North America nebula')
+    # ]
 
     self.stacks_per_target = [
         Stack(target=target, light_frames=list(sorted(light_frames)))
@@ -263,14 +267,20 @@ class AstroFlow(FlowSpec):
     self.stack = self.input
 
     # TODO: Maybe cleaner to just read this from the disk cache.
-    prev_result = metaflow_data_helper.find(
-        'measure_for_rig', 'measurements', ['target', 'rig'],
-        [self.stack.target, self.stack.rig]) or {}
+    # prev_result = metaflow_data_helper.find(
+    #     'measure_for_rig', 'measurements', ['target', 'rig'],
+    #     [self.stack.target, self.stack.rig]) or {}
 
     # TODO: Put this in a config file.
     image_scales = {'C11': 1.38, 'C11_F7': 0.38, 'RC71': 2.22}
-    self.measurements = step_measure.run(
-        prev_result, image_scales[self.stack.rig], self.stack.light_frames)
+
+    measurements = subframe_selector.measure_frames(
+        self.stack.light_frames, image_scales[self.stack.rig])
+    self.stack.light_frames = list(sorted(measurements.keys()))
+
+    if 'measurements' not in cache:
+      cache['measurements'] = {}
+    cache['measurements'] |= measurements
 
     # FIXME eliminate light frames that failed measurement.
     self.next(self.get_camera_configs)
@@ -359,13 +369,13 @@ class AstroFlow(FlowSpec):
 
   @step_with_debugging
   def post_process_target(self):
-    self.post_processed = step_post_process_target.run(self.stacks)
+    # self.post_processed = step_post_process_target.run(self.stacks)
     self.next(self.join_targets)
 
   @step_with_debugging
   def join_targets(self, inputs):
-    self.post_processed = _merge_lists(
-        [input.post_processed for input in inputs])
+    # self.post_processed = _merge_lists(
+    #     [input.post_processed for input in inputs])
     self.next(self.end)
 
   # @step

@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import tempfile
 import os
 import subprocess
@@ -8,13 +8,16 @@ import time
 @dataclass
 class PixInsightShellScriptTask:
   javascript_filename: str
-  parameters: dict
+  parameters: dict = field(default_factory=dict)
+  arguments: dict = field(default_factory=dict)
 
 
 def _create_run_command(task):
+  arguments = ' '.join(
+      f'-a="{name}={value}"' for name, value in task.arguments.items())
   parameters = ' '.join(
       f'-p="{name},{value}"' for name, value in task.parameters.items())
-  return f'run -x {parameters} "{task.javascript_filename}"'
+  return f'run -x {arguments} {parameters} "{task.javascript_filename}"'
 
 
 def run_script(tasks):

@@ -8,6 +8,7 @@ import diskcache
 import config
 import file_io
 from structs import Stack
+import pixinsight_wbpp
 
 cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
 
@@ -35,12 +36,7 @@ def run(stack, dest_path):
       dst_filename = os.path.join(dest_path, os.path.basename(src_filename))
       print(f'Stacking: test mode, returning light frame {src_filename}')
     else:
-      script = f"/Applications/PixInsight/src/scripts/WeightedBatchPreprocessing/WeightedBatchPreprocessing.js,automationMode=true,dir={tmp_dir},outputDirectory={tmp_dir},keywords=RIG;INSTRUME;FILTER;FLATVERS"
-      print('PixInsight WBPP command line is', script)
-      ret = subprocess.run([
-          '/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight',
-          '-n', '--automation-mode', f'-r={script}', '--force-exit'
-      ]).returncode
+      pixinsight_wbpp.run(dir=tmp_dir, outputDirectory=tmp_dir)
 
       filenames = list(
           str(f)
@@ -56,12 +52,13 @@ def run(stack, dest_path):
 
       while True:
         dst_filename = os.path.join(
-            dest_path, target, 'masters',
-            f'master_light_{stack.target}_{stack.rig}_{filter}.xisf')
+            dest_path, stack.target, 'masters',
+            f'master_light_{stack.target}_{stack.rig}_{stack.filter}.xisf')
         if not os.path.exists(dst_filename):
           break
 
-    os.makedirs(os.path.join(dest_path, target, 'masters'), exist_ok=True)
+    os.makedirs(os.path.join(dest_path, stack.target, 'masters'),
+                exist_ok=True)
     shutil.copy(src_filename, dst_filename)
     print('Stacking produced master', dst_filename)
     return dst_filename
