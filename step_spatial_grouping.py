@@ -6,7 +6,6 @@ import spatial_association
 cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
 
 
-@cache.memoize(tag='step_spatial_grouping')
 def run(plate_solutions):
   # TODO: This should only group the light frames actually selected, even
   # if there are more plate solutions in the artifact database.

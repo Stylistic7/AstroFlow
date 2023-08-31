@@ -42,10 +42,9 @@ def run(stack, plate_solutions):
   camera = list(cameras)[0]
 
   if not all(
-      _check_frame_list(f, n) for f, n in zip([
-          stack.light_frames, stack.dark_frames, stack.bias_frames,
-          stack.flat_frames
-      ], ['light_frames', 'dark_frames', 'bias_frames', 'flat_frames'])):
+      _check_frame_list(f, n) for f, n in
+      zip([stack.light_frames, stack.bias_frames, stack.flat_frames],
+          ['light_frames', 'dark_frames', 'bias_frames', 'flat_frames'])):
     return False
 
   if not all(

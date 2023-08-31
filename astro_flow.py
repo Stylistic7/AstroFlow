@@ -24,6 +24,7 @@ from serialization import serialize
 import file_io
 import camera_configs
 import dark_and_bias_association
+import image_handling
 
 from debug_decorator import debug
 from compact_repr import compact_repr
@@ -222,8 +223,7 @@ class AstroFlow(FlowSpec):
     # FIXME hack
     # TODO: Put real target selection here.
     # targets_and_light_frames = [
-    #     x for x in targets_and_light_frames
-    #     if x[0].startswith('North America nebula')
+    #     x for x in targets_and_light_frames if 'Andromeda' not in x[0]
     # ]
 
     self.stacks_per_target = [
@@ -265,24 +265,10 @@ class AstroFlow(FlowSpec):
   def measure(self):
     # Foreach stack: [target, rig, filter]
     self.stack = self.input
-
-    # TODO: Maybe cleaner to just read this from the disk cache.
-    # prev_result = metaflow_data_helper.find(
-    #     'measure_for_rig', 'measurements', ['target', 'rig'],
-    #     [self.stack.target, self.stack.rig]) or {}
-
-    # TODO: Put this in a config file.
-    image_scales = {'C11': 1.38, 'C11_F7': 0.38, 'RC71': 2.22}
-
-    measurements = subframe_selector.measure_frames(
-        self.stack.light_frames, image_scales[self.stack.rig])
-    self.stack.light_frames = list(sorted(measurements.keys()))
-
-    if 'measurements' not in cache:
-      cache['measurements'] = {}
-    cache['measurements'] |= measurements
-
-    # FIXME eliminate light frames that failed measurement.
+    # image_scales = {'C11': 1.38, 'C11_F7': 0.38, 'RC71': 2.22}
+    # measurements = subframe_selector.measure_frames(
+    #     self.stack.light_frames, image_scales[self.stack.rig])
+    # self.stack.light_frames = list(sorted(measurements.keys()))
     self.next(self.get_camera_configs)
 
   @step_with_debugging
@@ -329,6 +315,11 @@ class AstroFlow(FlowSpec):
     if self.stack_is_good:
       print('Stack passes sanity checks!')
 
+    self.next(self.make_thumbnail_video)
+
+  @step_with_debugging
+  def make_thumbnail_video(self):
+    image_handling.thumbnail_video(self.stack.light_frames)
     self.next(self.stack_subframes)
 
   @step_with_debugging

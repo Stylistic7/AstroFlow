@@ -52,7 +52,7 @@ def read_fits(filename, print_header=False):
     return output
 
 
-@cache.memoize('file_io')
+@cache.memoize()
 def hash_of_image_data(filename):
   with pyfits.open(filename) as fits:
     return xxhash.xxh128(fits[0].data.tobytes()).hexdigest()
@@ -75,3 +75,13 @@ def group_by_fits_keyword(filenames, fits_keyword):
 
   filenames = sorted(filenames, key=key)
   return [(k, list(g)) for k, g in itertools.groupby(filenames, key=key)]
+
+
+def read_xisf_image(filename):
+  xisf = XISF(filename)
+  return xisf.read_image(0).squeeze()
+
+
+def read_fits_image(filename):
+  with pyfits.open(filename) as fits:
+    return fits[0].data

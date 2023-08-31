@@ -35,7 +35,8 @@ def run_script(tasks):
     print(f'Running PixInsight shell script...')
     ret = subprocess.run([
         '/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight',
-        '-n', f'--execute={script_filename}'
+        '-n', '--no-startup-check-updates', '--no-startup-gui-messages',
+        '--no-splash', '--without-printer', f'--execute={script_filename}'
     ]).returncode
 
     while not os.path.exists(sentinel_filename):

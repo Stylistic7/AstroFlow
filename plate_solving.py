@@ -30,7 +30,7 @@ def get_center(wcs_file):
     return header['CRVAL1'], header['CRVAL2']
 
 
-@cache.memoize(tag='plate_solving')
+@cache.memoize()
 def solve_field(filename):
   with tempfile.TemporaryDirectory() as temp_dir:
     dest_filename = os.path.join(temp_dir, os.path.basename(filename))
@@ -39,8 +39,8 @@ def solve_field(filename):
     try:
       command = [
           "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
-          "--no-background-subtraction", "--guess-scale", "--objs", "1000",
-          dest_filename
+          "--no-background-subtraction", "--guess-scale", "--downsample", "4",
+          "--objs", "1000", dest_filename
       ]
       ret = subprocess.run(command, capture_output=True, timeout=120)
     except:

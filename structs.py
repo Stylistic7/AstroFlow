@@ -8,11 +8,6 @@ import spatial_association
 
 
 @dataclass
-class Footprint:
-  corners: Polygon
-
-
-@dataclass
 class Stack:
   target: str = None
   rig: str = None
@@ -36,6 +31,7 @@ class Stack:
     return np.mean(centers, axis=0)
 
   def footprint(self):
+    # FIXME this is probably broken, because plate_solutions is a dict
     plate_solutions = plate_solving.solve_fields(self.light_frames)
     footprints = [Polygon(f) for _, f, _ in plate_solutions]
     return functools.reduce(Polygon.intersection, footprints, footprints[0])
