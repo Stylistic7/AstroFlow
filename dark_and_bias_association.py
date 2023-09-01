@@ -1,12 +1,11 @@
 import itertools
 from pathlib import Path
-import diskcache
 import os
 
 import config
 import file_io
 
-cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
+from cache import cache
 
 
 def _round_to_nearest_multiple(number, multiple):

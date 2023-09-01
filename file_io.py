@@ -5,9 +5,8 @@ from functools import lru_cache
 from pathlib import Path
 from dateutil.parser import parse
 import itertools
-import diskcache
 
-cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
+from cache import cache
 
 
 def find_files(path, pattern):

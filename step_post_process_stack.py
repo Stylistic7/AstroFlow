@@ -8,9 +8,7 @@ from xisf import XISF
 import plate_solving
 import config
 import astropy.io.fits as pyfits
-import diskcache
-
-cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
+from cache import cache
 
 post_process_script = """
 var P_bxt = new BlurXTerminator;

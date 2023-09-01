@@ -2,9 +2,7 @@ import os
 
 import file_io
 import subframe_selector
-import diskcache
-
-cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
+from cache import cache
 
 
 def run(light_frames, image_scale):

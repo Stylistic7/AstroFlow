@@ -1,7 +1,6 @@
 import os
-import diskcache
 
-cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
+from cache import cache
 
 if __name__ == '__main__':
   if 'measurements' in cache:

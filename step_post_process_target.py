@@ -3,11 +3,9 @@ import tempfile
 import subprocess
 import time
 from pathlib import Path
-import diskcache
 
 import config
-
-cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
+from cache import cache
 
 post_process_script = """
 var P_sa = new StarAlignment;

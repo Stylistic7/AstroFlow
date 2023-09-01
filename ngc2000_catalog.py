@@ -1,11 +1,10 @@
 import numpy as np
 from numpy import radians, degrees
-import diskcache
 import os
 
 from distance import distance
 
-cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
+from cache import cache
 
 
 def _read_names_catalog():

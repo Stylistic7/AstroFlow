@@ -11,7 +11,6 @@ import shutil
 from attrdict import AttrDict
 import functools
 import copy
-import diskcache
 
 # TODO: This file should only include step*.py files, never any lower granularity.
 import config
@@ -42,8 +41,7 @@ import step_sanity_check_stack
 import step_stack
 import step_post_process_stack
 import step_post_process_target
-
-cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
+from cache import cache
 
 
 def _merge_lists(*args):
@@ -208,15 +206,18 @@ class AstroFlow(FlowSpec):
   # to process next.
   @step
   def plate_solve(self):
-    prev_result = metaflow_data_helper.find('plate_solve',
-                                            'plate_solutions') or {}
-    self.plate_solutions = step_plate_solve.run(prev_result, self.light_frames,
-                                                self.bad_file_dir)
+    prev_result = cache[
+        'plate_solutions'] if 'plate_solutions' in cache else {}
+    cache['plate_solutions'] = step_plate_solve.run(
+        prev_result, self.light_frames, self.bad_file_dir)
+    print(f"cache['plate_solutions'] has "
+          f"{len(cache['plate_solutions'])} entries")
     self.next(self.split_by_target)
 
   @step
   def split_by_target(self):
-    targets_and_light_frames = step_spatial_grouping.run(self.plate_solutions)
+    targets_and_light_frames = step_spatial_grouping.run(
+        cache['plate_solutions'])
     for i, x in enumerate(targets_and_light_frames):
       print(f'targets_and_light_frames[{i}] = {compact_repr(x)}')
 
@@ -311,7 +312,7 @@ class AstroFlow(FlowSpec):
   @step_with_debugging
   def sanity_check_stack(self):
     self.stack_is_good = step_sanity_check_stack.run(self.stack,
-                                                     self.plate_solutions)
+                                                     cache['plate_solutions'])
     if self.stack_is_good:
       print('Stack passes sanity checks!')
 

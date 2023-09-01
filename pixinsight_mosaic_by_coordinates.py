@@ -32,9 +32,20 @@ def run(filenames, **kwargs):
   parameters = _default_parameters | kwargs
   javascript_filename = "/Applications/PixInsight/src/scripts/AdP/MosaicByCoordinates.js"
 
+  # Remove output filenames that already exist.
+  output_filenames = [
+      f'{os.path.splitext(f)[0]}_registered.xisf' for f in filenames
+  ]
+  filenames = [
+      i for i, o in zip(filenames, output_filenames) if not os.path.exists(o)
+  ]
+
   parameters['engine_files'] = '|'.join(filenames)
 
   task = pixinsight_shell_script.PixInsightShellScriptTask(
       javascript_filename, parameters)
 
   pixinsight_shell_script.run_script([task])
+
+  assert (all(os.path.exists(f) for f in output_filenames))
+  return output_filenames

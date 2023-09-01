@@ -7,9 +7,8 @@ from multiprocessing import Pool
 import astropy.wcs
 import astropy.io.fits as pyfits
 import warnings
-import diskcache
 
-cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
+from cache import cache
 
 
 def calc_footprint(wcs_file):

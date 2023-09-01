@@ -3,14 +3,12 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-import diskcache
 
 import config
 import file_io
 from structs import Stack
 import pixinsight_wbpp
-
-cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
+from cache import cache
 
 
 @cache.memoize()

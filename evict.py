@@ -1,8 +1,7 @@
 import os
-import diskcache
 import sys
 
-cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
+from cache import cache
 
 if __name__ == '__main__':
   tag = sys.argv[1]

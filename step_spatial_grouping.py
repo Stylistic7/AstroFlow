@@ -1,9 +1,7 @@
 import os
-import diskcache
 
 import spatial_association
-
-cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
+from cache import cache
 
 
 def run(plate_solutions):

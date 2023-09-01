@@ -4,9 +4,8 @@ import subprocess
 import time
 import json
 import math
-import diskcache
 
-cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
+from cache import cache
 
 subframe_selector_script = """
 var P = new SubframeSelector;

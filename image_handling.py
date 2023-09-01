@@ -3,7 +3,6 @@ import numpy as np
 from numpy import abs, minimum, maximum, median
 import cv2
 import os
-import diskcache
 from shapely.geometry import Polygon
 import tempfile
 from multiprocessing import Pool
@@ -12,7 +11,7 @@ from functools import partial
 import file_io
 import plate_solving
 
-cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
+from cache import cache
 
 
 def resize_array(array, new_width):

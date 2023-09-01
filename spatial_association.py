@@ -3,7 +3,6 @@ import io
 import os
 from operator import itemgetter
 from collections import Counter
-import diskcache
 import numpy as np
 from scipy import linalg
 from sklearn import mixture
@@ -14,7 +13,7 @@ import ngc2000_catalog
 from distance import distance
 import plate_solving
 
-cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
+from cache import cache
 
 MIN_COMPONENT_MEMBERS = 5
 
@@ -45,10 +44,14 @@ def canonical_target_string(position):
 
 # @cache.memoize(tag='spatial_association')
 def find_components(filenames, min_component_members=MIN_COMPONENT_MEMBERS):
-  footprints = {f: Polygon(plate_solving.solve_field(f)[1]) for f in filenames}
+  footprints = {
+      f: Polygon(p[1])
+      for f, p in cache['plate_solutions'].items() if f in filenames
+  }
 
   targets = []
-  for filename, footprint in footprints.items():
+  last_printed_percent_done = 0
+  for i, (filename, footprint) in enumerate(footprints.items()):
     found = False
     for target in targets:
       if all(iou(footprint, footprints[f]) > 0.7 for f in target):
@@ -59,10 +62,16 @@ def find_components(filenames, min_component_members=MIN_COMPONENT_MEMBERS):
     if not found:
       targets.append([filename])
 
+    percent_done = 100.0 * i / len(filenames)
+    percent_done = 10.0 * round(percent_done / 10.0)
+    if percent_done > last_printed_percent_done:
+      print(f'Finding components is {percent_done:.0f}% done.')
+      last_printed_percent_done = percent_done
+
   targets = [t for t in targets if len(t) > MIN_COMPONENT_MEMBERS]
 
   def get_name(target):
-    position, _, _ = plate_solving.solve_field(target[0])
+    position, _, _ = cache['plate_solutions'][target[0]]
     return canonical_target_string(position)
 
   targets = [(get_name(t), t) for t in targets]
@@ -74,7 +83,7 @@ def find_components(filenames, min_component_members=MIN_COMPONENT_MEMBERS):
 
   output_targets = []
   for name, filenames in targets:
-    position = plate_solving.solve_field(filenames[0])[0]
+    position = cache['plate_solutions'][filenames[0]][0]
     if target_string_counts[name] > 1:
       new_name = f'{name}_{ra_dec_string(*position)}'
       output_targets.append((new_name, filenames))
