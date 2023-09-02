@@ -42,7 +42,7 @@ def canonical_target_string(position):
     return ra_dec_string(ra, dec)
 
 
-# @cache.memoize(tag='spatial_association')
+@cache.memoize()
 def find_components(filenames, min_component_members=MIN_COMPONENT_MEMBERS):
   footprints = {
       f: Polygon(p[1])

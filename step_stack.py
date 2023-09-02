@@ -3,6 +3,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+import numpy as np
 
 import config
 import file_io
@@ -11,7 +12,13 @@ import pixinsight_wbpp
 from cache import cache
 
 
-@cache.memoize()
+def _exposure_time_string(stack):
+  exposure = sum(file_io.read_fits(f)['EXPOSURE'] for f in stack.light_frames)
+  hours = np.floor(exposure / 3600)
+  minutes = np.floor(exposure % 3600 / 60)
+  return f'{hours:02.0f}h{minutes:02.0f}m'
+
+
 def run(stack, dest_path):
   def symlink_frames(filenames, dest_path):
     for filename in filenames:
@@ -19,9 +26,11 @@ def run(stack, dest_path):
       if not os.path.exists(dest_filename):
         os.symlink(filename, dest_filename)
 
+  exposure = _exposure_time_string(stack)
+
   dst_filename = os.path.join(
       dest_path, stack.target, 'masters',
-      f'master_light_{stack.target}_{stack.rig}_{stack.filter}.xisf')
+      f'master_light_{stack.target}_{stack.rig}_{stack.filter}_{exposure}.xisf')
 
   if os.path.exists(dst_filename):
     print('Stacked master already exists')

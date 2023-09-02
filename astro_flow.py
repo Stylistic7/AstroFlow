@@ -212,6 +212,11 @@ class AstroFlow(FlowSpec):
         prev_result, self.light_frames, self.bad_file_dir)
     print(f"cache['plate_solutions'] has "
           f"{len(cache['plate_solutions'])} entries")
+    self.next(self.prepare_cache)
+
+  @step
+  def prepare_cache(self):
+    cache['stacks'] = []
     self.next(self.split_by_target)
 
   @step
@@ -223,9 +228,9 @@ class AstroFlow(FlowSpec):
 
     # FIXME hack
     # TODO: Put real target selection here.
-    # targets_and_light_frames = [
-    #     x for x in targets_and_light_frames if 'Andromeda' not in x[0]
-    # ]
+    targets_and_light_frames = [
+        x for x in targets_and_light_frames if 'IC1318' in x[0]
+    ]
 
     self.stacks_per_target = [
         Stack(target=target, light_frames=list(sorted(light_frames)))
@@ -262,7 +267,6 @@ class AstroFlow(FlowSpec):
     self.next(self.measure, foreach='stacks_per_filter')
 
   @step_with_debugging
-  @serialize('PixInsight')
   def measure(self):
     # Foreach stack: [target, rig, filter]
     self.stack = self.input
@@ -315,6 +319,8 @@ class AstroFlow(FlowSpec):
                                                      cache['plate_solutions'])
     if self.stack_is_good:
       print('Stack passes sanity checks!')
+      with cache.transact():
+        cache['stacks'] = cache['stacks'] + [self.stack]
 
     self.next(self.make_thumbnail_video)
 
@@ -324,7 +330,6 @@ class AstroFlow(FlowSpec):
     self.next(self.stack_subframes)
 
   @step_with_debugging
-  @serialize('PixInsight')
   def stack_subframes(self):
     # Foreach stack: [target, rig, filter]
     # TODO: Don't pass flat frames with FLATVERS that are not used by any of
@@ -338,7 +343,6 @@ class AstroFlow(FlowSpec):
 
   @catch(var='post_process_stack_failed')
   @step_with_debugging
-  @serialize('PixInsight')
   def post_process_stack(self):
     # Foreach stack: [target, rig, filter]
     if self.stack.master:

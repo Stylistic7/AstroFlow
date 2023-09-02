@@ -12,6 +12,10 @@ def trim_mosaic_tile(xisf_filename):
   printf(f'Trimmed {filename} '
          'top {top} left {left} height {height} width {width}')
 
+  blank_im = np.zeros(im.shape)
+  blank_im[top:top + height, left:left + width] = im[top:top + height,
+                                                     left:left + width]
+
   file_meta = xisf.get_file_metadata()
   img_meta = xisf.get_images_metadata()[0]
   fits_meta = img_meta['FITSKeywords']
