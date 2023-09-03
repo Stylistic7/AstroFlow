@@ -24,6 +24,7 @@ import file_io
 import camera_configs
 import dark_and_bias_association
 import image_handling
+import pixinsight_shell_script
 
 from debug_decorator import debug
 from compact_repr import compact_repr
@@ -217,6 +218,7 @@ class AstroFlow(FlowSpec):
   @step
   def prepare_cache(self):
     cache['stacks'] = []
+    pixinsight_shell_script._clear_cache()
     self.next(self.split_by_target)
 
   @step
@@ -319,6 +321,7 @@ class AstroFlow(FlowSpec):
                                                      cache['plate_solutions'])
     if self.stack_is_good:
       print('Stack passes sanity checks!')
+      self.stack.store_center_and_footprint()
       with cache.transact():
         cache['stacks'] = cache['stacks'] + [self.stack]
 

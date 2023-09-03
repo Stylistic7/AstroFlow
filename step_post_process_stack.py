@@ -9,10 +9,11 @@ import plate_solving
 import config
 import astropy.io.fits as pyfits
 from cache import cache
+import pixinsight_shell_script
 
 post_process_script = """
 var P_bxt = new BlurXTerminator;
-P_bxt.ai_file = "/Applications/PixInsight/library/BlurXTerminator.2.mlpackage";
+P_bxt.ai_file = "BlurXTerminator.2.mlpackage";
 P_bxt.correct_only = false;
 P_bxt.correct_first = false;
 P_bxt.nonstellar_then_stellar = false;
@@ -84,27 +85,7 @@ for (let i = 0; i < window.length; ++i) {{
 }}
 """
 
-# def add_xisf_fits_header(filename, data):
-#   xisf = XISF(filename)
-#   file_meta = xisf.get_file_metadata()
-#   ims_meta = xisf.get_images_metadata()
 
-#   fits_keywords = ims_meta[0]['FITSKeywords']
-#   for k, v in data.items():
-#     fits_keywords[k] = [{'value': str(v), 'comment': ''}]
-#     print(f"Added FITS keyword {k} = {fits_keywords[k]}")
-
-#   im_data = xisf.read_image(0)
-#   XISF.write(filename,
-#              im_data,
-#              creator_app="PixInsight",
-#              image_metadata=ims_meta[0],
-#              xisf_metadata=file_meta,
-#              codec='lz4hc',
-#              shuffle=True)
-
-
-@cache.memoize(tag='post_processing')
 def run(rig, master):
   filename, ext = os.path.splitext(master)
   # fit_filename = filename + '_post' + '.fit'
@@ -116,7 +97,7 @@ def run(rig, master):
     return xisf_filename
 
   if os.path.exists(xisf_filename):
-    os.remove(xisf_filename)
+    return xisf_filename
 
   with tempfile.TemporaryDirectory() as tmp_dir:
     script_filename = os.path.join(tmp_dir, "run_post_processing.js")
@@ -126,36 +107,8 @@ def run(rig, master):
                                           xisf_filename=xisf_filename)
       f.write(script)
 
-    print(f'Running PixInsight post-processing on master {master}')
-    ret = subprocess.run([
-        '/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight',
-        f'--execute={script_filename}'
-    ]).returncode
+    task = pixinsight_shell_script.PixInsightShellScriptTask(script_filename)
+    pixinsight_shell_script.run_script([task])
 
-    while True:
-      if os.path.exists(xisf_filename):
-        print(f'PixInsight completed, result {xisf_filename}')
-        break
-      else:
-        time.sleep(5)
-
-    # center, footprint, wcs = plate_solving.solve_field(fit_filename)
-    # if not wcs:
-    #   print(f'Failed to plate-solve post-processed result')
-    #   return None
-
-    # with pyfits.open(io.BytesIO(wcs)) as fits:
-    #   idl_keys = [
-    #       "CD1_1", "CD1_2", "CD2_1", "CD2_2", "CRPIX1", "CRPIX2", "CRVAL1",
-    #       "CRVAL2", "LONPOLE", "LATPOLE", "CUNIT1", "CUNIT2", "CTYPE1",
-    #       "CTYPE2"
-    #   ]
-    #   idl_solution = {k: fits[0].header[k] for k in idl_keys}
-
-    #   add_xisf_fits_header(xisf_filename, idl_solution)
-    #   print(f'Wrote {len(idl_solution)} WCS FITS values into XISF '
-    #         f'{xisf_filename}')
-
-    # os.remove(fit_filename)
-
+    assert os.path.exists(xisf_filename)
     return xisf_filename

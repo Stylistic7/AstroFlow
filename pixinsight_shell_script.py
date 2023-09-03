@@ -4,6 +4,7 @@ import os
 import subprocess
 import time
 import concurrent.futures
+from contextlib import nullcontext
 
 from cache import cache
 
@@ -81,16 +82,17 @@ def _create_run_command(task):
   return f'run -x {arguments} {parameters} "{task.javascript_filename}"'
 
 
-def run_script(tasks, blocking=True):
+def run_script(tasks, blocking=True, tmp_dir_in=None):
   slot = _start_pixinsight_instance(blocking)
   print(f'PixInsight is now running in a background process in slot {slot}')
 
-  with tempfile.TemporaryDirectory() as tmp_dir:
+  with tempfile.TemporaryDirectory() if not tmp_dir_in else nullcontext(
+      tmp_dir_in) as tmp_dir:
     sentinel_filename = os.path.join(tmp_dir, 'sentinel.txt')
     script_filename = os.path.join(tmp_dir, 'script.scp')
 
     script = '\n\n'.join(_create_run_command(t) for t in tasks) + '\n\n'
-    script += f'!sleep {30 * (slot - 99)}\n'
+    # script += f'!sleep {30 * (slot - 99)}\n'
     script += f'![echo "done" > {sentinel_filename}\n'
     script += f'exit\n'
 
