@@ -53,22 +53,15 @@ def array_to_png(array, filename):
   im.save('/tmp/foo.png')
 
 
-def _rotation_angle(filename):
-  _, _, wcs = plate_solving.solve_field(filename)
-  with pyfits.open(io.BytesIO(wcs)) as fits:
-    header = fits[0].header
-    return np.arctan2(header['CD1_2'], header['CD1_1'])
-
-
 @cache.memoize()
 def thumbnail(filename, width=640):
   if filename.endswith('.xisf'):
     im = file_io.read_xisf_image(filename)
   elif filename.endswith('.fit') or filename.endswith('.fits'):
     im = file_io.read_fits_image(filename)
-    theta = _rotation_angle(filename)
-    print(f'{filename} has theta {theta}')
-    if theta < 0.0:
+    plate_solution = plate_solving.solve_field(filename)
+    print(f'{filename} has theta {plate_solution.theta}')
+    if plate_solution.theta < 0.0:
       im = np.rot90(im, 2)
 
   return autostretch(resize_array(im, width))

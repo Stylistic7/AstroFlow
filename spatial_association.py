@@ -71,8 +71,8 @@ def find_components(filenames, min_component_members=MIN_COMPONENT_MEMBERS):
   targets = [t for t in targets if len(t) > MIN_COMPONENT_MEMBERS]
 
   def get_name(target):
-    position, _, _ = cache['plate_solutions'][target[0]]
-    return canonical_target_string(position)
+    plate_solution = cache['plate_solutions'][target[0]]
+    return canonical_target_string(plate_solution.center)
 
   targets = [(get_name(t), t) for t in targets]
 
@@ -80,9 +80,9 @@ def find_components(filenames, min_component_members=MIN_COMPONENT_MEMBERS):
 
   output_targets = []
   for name, filenames in targets:
-    position = cache['plate_solutions'][filenames[0]][0]
+    center = cache['plate_solutions'][filenames[0]].center
     if target_string_counts[name] > 1:
-      new_name = f'{name}_{ra_dec_string(*position)}'
+      new_name = f'{name}_{ra_dec_string(*center)}'
       output_targets.append((new_name, filenames))
     else:
       output_targets.append((name, filenames))

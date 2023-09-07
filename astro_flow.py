@@ -14,7 +14,7 @@ import copy
 
 # TODO: This file should only include step*.py files, never any lower granularity.
 import config
-from structs import Stack
+from stack import Stack
 import stacking
 import guide_log_analysis
 import subframe_selector
@@ -47,13 +47,6 @@ from cache import cache
 
 def _merge_lists(*args):
   return list(itertools.chain.from_iterable(*args))
-
-
-def new_stack(stack, **kwargs):
-  new_stack = copy.deepcopy(stack)
-  for k, v in kwargs.items():
-    new_stack.__setattr__(k, v)
-  return new_stack
 
 
 class AstroFlow(FlowSpec):
@@ -124,6 +117,12 @@ class AstroFlow(FlowSpec):
     else:
       self.bad_file_dir = None
 
+    self.next(self.prepare_cache)
+
+  @step
+  def prepare_cache(self):
+    cache['stacks'] = []
+    pixinsight_shell_script._clear_cache()
     self.next(self.download)
 
   # TODO: Add download functionality, which may repeat until sunrise.
@@ -212,16 +211,8 @@ class AstroFlow(FlowSpec):
         'plate_solutions'] if 'plate_solutions' in cache else {}
     cache['plate_solutions'] = step_plate_solve.run(
         prev_result, self.light_frames, self.bad_file_dir)
-    self.light_frames = sorted(list(cache['plate_solutions'].keys()))
-    cache['light_frames'] = self.light_frames
     print(f"cache['plate_solutions'] has "
           f"{len(cache['plate_solutions'])} entries")
-    self.next(self.prepare_cache)
-
-  @step
-  def prepare_cache(self):
-    cache['stacks'] = []
-    pixinsight_shell_script._clear_cache()
     self.next(self.split_by_target)
 
   @step
@@ -389,13 +380,9 @@ class AstroFlow(FlowSpec):
     self.next(self.end)
 
   # @step
-  # def identify_mosiacs(self):
-  #   # Identify images that belong to mosaics
-  #   # Rough idea is to find stacks that overlap with an overlap area that
-  #   # has a large aspect ratio.
-  #   #
-  #   self.mosaics = []
-  #   self.next(self.order_mosaic_tiles, foreach='mosaics')
+  # def identify_mosaics(self):
+  #   self.mosaics = step_mosaic.run(self.)
+  #   self.next(self.split_by_target, foreach='mosaics')
 
   # @step_with_debugging
   # def order_mosaic_tiles(self):

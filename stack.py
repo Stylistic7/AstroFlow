@@ -35,7 +35,7 @@ class Stack:
     for f in self.light_frames:
       print('  light frame', f)
     plate_solutions = plate_solving.solve_fields(self.light_frames)
-    centers = [c for c, _, _ in plate_solutions.values()]
+    centers = [p.center for p in plate_solutions.values()]
     print('centers', centers)
     mean_center = np.mean(centers, axis=0)
     print('  mean_center:', mean_center)

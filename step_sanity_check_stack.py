@@ -1,7 +1,7 @@
 import numpy as np
 
 import file_io
-from structs import Stack
+from stack import Stack
 
 
 def _check_frame_list(L, name):
@@ -77,7 +77,7 @@ def run(stack, plate_solutions):
 
   my_plate_solutions = [plate_solutions[f] for f in stack.light_frames]
 
-  footprints = [f for _, f, _ in my_plate_solutions]
+  footprints = [f.footprint in my_plate_solutions]
   min_footprint = _min_footprint(footprints)
   min_x = np.min([p[0] for p in min_footprint])
   max_x = np.max([p[0] for p in min_footprint])

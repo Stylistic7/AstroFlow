@@ -7,7 +7,7 @@ import numpy as np
 
 import config
 import file_io
-from structs import Stack
+from stack import Stack
 import pixinsight_wbpp
 from cache import cache
 
