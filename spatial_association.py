@@ -42,7 +42,7 @@ def canonical_target_string(position):
     return ra_dec_string(ra, dec)
 
 
-@cache.memoize()
+# @cache.memoize()
 def find_components(filenames, min_component_members=MIN_COMPONENT_MEMBERS):
   footprints = {
       f: Polygon(p[1])
@@ -54,7 +54,7 @@ def find_components(filenames, min_component_members=MIN_COMPONENT_MEMBERS):
   for i, (filename, footprint) in enumerate(footprints.items()):
     found = False
     for target in targets:
-      if all(iou(footprint, footprints[f]) > 0.7 for f in target):
+      if all(iou(footprint, footprints[f]) > 0.65 for f in target):
         target.append(filename)
         found = True
         break
@@ -76,9 +76,6 @@ def find_components(filenames, min_component_members=MIN_COMPONENT_MEMBERS):
 
   targets = [(get_name(t), t) for t in targets]
 
-  for name, filenames in targets:
-    print(f'Target {name} has {len(filenames)} files')
-
   target_string_counts = Counter(name for name, _ in targets)
 
   output_targets = []
@@ -92,5 +89,13 @@ def find_components(filenames, min_component_members=MIN_COMPONENT_MEMBERS):
 
   output_targets = [(name, list(sorted(filenames)))
                     for name, filenames in output_targets]
+  output_targets = list(sorted(output_targets))
 
-  return list(sorted(output_targets))
+  for name, filenames in output_targets:
+    print(f'Target {name} has {len(filenames)} files')
+
+  return output_targets
+
+
+if __name__ == '__main__':
+  find_components(cache['light_frames'])

@@ -14,6 +14,14 @@ def _set_flatvers_fits_header(filenames, flat_version):
       fits[0].header['FLATVERS'] = flat_version
 
 
+def _dates_to_strings(associations):
+  output = {}
+  for k, v in associations.items():
+    output[str(k)] = str(v)
+
+  return output
+
+
 def _associate_dates(light_frame_dates, flat_frame_dates):
   associations = {}
   for flat_version, ffd in enumerate(flat_frame_dates):
@@ -45,7 +53,8 @@ def run(light_frames, flat_frames):
   flat_frame_dates = list(
       sorted(set(file_io.read_fits(f)['DATE'] for f in flat_frames)))
 
-  return _associate_dates(light_frame_dates, flat_frame_dates)
+  return _dates_to_strings(
+      _associate_dates(light_frame_dates, flat_frame_dates))
 
 
 def set_flat_versions(light_frames, flat_frames, associations):

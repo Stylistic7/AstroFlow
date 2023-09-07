@@ -43,8 +43,8 @@ def load_autorun_log_file(filename):
   autorun_start_regex = re.compile('(.*) \[Autorun\|Begin\]')
   autorun_end_regex = re.compile('(.*) \[Autorun\|End\]')
 
-  # settling_start_regex = re.compile('(.*) \[Guide\] (Dither|Guide) Settle')
-  settling_start_regex = re.compile('(.*) \[Guide\] Dither Settle')
+  settling_start_regex = re.compile('(.*) \[Guide\] (Dither|Guide) Settle')
+  # settling_start_regex = re.compile('(.*) \[Guide\] Dither Settle')
   settling_end_regex = re.compile('(.*) \[Guide\] Settle Done')
   settling_failed_regex = re.compile('(.*) [Guide] Settle failed')
 

@@ -37,12 +37,7 @@ def run(stack, dest_path):
     return dst_filename
 
   if config.STACKING_TEST_MODE:
-    # In test mode, don't actually stack anything. Just copy the first
-    # light frame over.
-    src_filename = stack.light_frames[0]
-    dst_filename = os.path.join(dest_path, os.path.basename(src_filename))
-    print(f'Stacking: test mode, returning light frame {src_filename}')
-    return dst_filename
+    return None
 
   with tempfile.TemporaryDirectory() as tmp_dir:
     symlink_frames(stack.light_frames, tmp_dir)

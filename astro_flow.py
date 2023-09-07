@@ -201,6 +201,7 @@ class AstroFlow(FlowSpec):
     # remove frames during slews?
     self.light_frames = step_remove_frames_during_mount_movements.run(
         self.light_frames, self.bad_file_dir)
+    cache['light_frames'] = self.light_frames
     self.next(self.plate_solve)
 
   # TODO: Put plate-solving here, before measurement. Let the user pick which targets
@@ -211,6 +212,8 @@ class AstroFlow(FlowSpec):
         'plate_solutions'] if 'plate_solutions' in cache else {}
     cache['plate_solutions'] = step_plate_solve.run(
         prev_result, self.light_frames, self.bad_file_dir)
+    self.light_frames = sorted(list(cache['plate_solutions'].keys()))
+    cache['light_frames'] = self.light_frames
     print(f"cache['plate_solutions'] has "
           f"{len(cache['plate_solutions'])} entries")
     self.next(self.prepare_cache)
@@ -329,7 +332,14 @@ class AstroFlow(FlowSpec):
 
   @step_with_debugging
   def make_thumbnail_video(self):
-    image_handling.thumbnail_video(self.stack.light_frames)
+    if self.stack_is_good:
+      thumbnail_video = image_handling.thumbnail_video(self.stack)
+      with cache.transact():
+        thumbnail_videos = cache.get('thumbnail_videos', default={})
+        id = (self.stack.target, self.stack.rig, self.stack.filter)
+        thumbnail_videos[id] = thumbnail_video
+        cache['thumbnail_videos'] = thumbnail_videos
+
     self.next(self.stack_subframes)
 
   @step_with_debugging
@@ -364,6 +374,7 @@ class AstroFlow(FlowSpec):
   @step_with_debugging
   def join_rigs(self, inputs):
     self.stacks = _merge_lists([input.stacks for input in inputs])
+    cache['stacks'] = self.stacks
     self.next(self.post_process_target)
 
   @step_with_debugging

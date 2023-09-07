@@ -2,6 +2,7 @@
 import numpy as np
 import flask
 
+from cache import cache
 import metaflow_data_helper
 import plate_solving
 import io
@@ -49,7 +50,7 @@ def target_footprints():
 @app.route('/')
 def index():
   """ Displays the index page accessible at '/'"""
-  return flask.render_template('index.html')
+  return flask.render_template('index.html', stacks=cache['stacks'])
 
 
 @app.route('/hello/<name>/')
@@ -63,6 +64,20 @@ def footprints():
   plate_solutions = metaflow_data_helper.find('plate_solve',
                                               'plate_solutions') or {}
   return [f for _, f, _ in list(plate_solutions.values())]
+
+
+@app.route('/stacks')
+def stacks():
+  return cache['stacks']
+
+
+@app.route('/thumbnail_video/<target>/<rig>/<filter>')
+def thumbnail_video(target, rig, filter):
+  buffer = io.BytesIO()
+  buffer.write(cache['thumbnail_videos'][(target, rig, filter)])
+  buffer.seek(0)
+  print(f'video buffer has size {buffer.getbuffer().nbytes}')
+  return flask.send_file(buffer, mimetype='video/webm')
 
 
 if __name__ == '__main__':

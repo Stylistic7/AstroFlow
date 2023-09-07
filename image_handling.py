@@ -1,8 +1,10 @@
 from xisf import XISF
+import astropy.io.fits as pyfits
 import numpy as np
 from numpy import abs, minimum, maximum, median
 import cv2
 import os
+import io
 from shapely.geometry import Polygon
 import tempfile
 from multiprocessing import Pool
@@ -51,12 +53,23 @@ def array_to_png(array, filename):
   im.save('/tmp/foo.png')
 
 
+def _rotation_angle(filename):
+  _, _, wcs = plate_solving.solve_field(filename)
+  with pyfits.open(io.BytesIO(wcs)) as fits:
+    header = fits[0].header
+    return np.arctan2(header['CD1_2'], header['CD1_1'])
+
+
 @cache.memoize()
 def thumbnail(filename, width=640):
   if filename.endswith('.xisf'):
     im = file_io.read_xisf_image(filename)
   elif filename.endswith('.fit') or filename.endswith('.fits'):
     im = file_io.read_fits_image(filename)
+    theta = _rotation_angle(filename)
+    print(f'{filename} has theta {theta}')
+    if theta < 0.0:
+      im = np.rot90(im, 2)
 
   return autostretch(resize_array(im, width))
 
@@ -67,24 +80,19 @@ def thumbnails(filenames, width=640):
 
 
 @cache.memoize()
-def thumbnail_video(light_frames, width=640):
-  height, width = resize_array(file_io.read_fits_image(light_frames[0]),
+def thumbnail_video(stack, width=640):
+  height, width = resize_array(file_io.read_fits_image(stack.light_frames[0]),
                                width).shape
   height = int(((height + 8 - 1) / 8) * 8)
   print(f'Creating video of width {width}, height {height} '
-        f'with {len(light_frames)} frames')
-
-  plate_solutions = plate_solving.solve_fields(light_frames)
-  light_frames = list(sorted(plate_solutions.keys()))
-
-  # footprints = [Polygon(f) for _, f, _ in plate_solutions]
+        f'with {len(stack.light_frames)} frames')
 
   with tempfile.TemporaryDirectory() as tmp_dir:
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    video_filename = os.path.join(tmp_dir, 'output.mp4')
+    fourcc = cv2.VideoWriter_fourcc(*'VP80')
+    video_filename = os.path.join(tmp_dir, 'output.webm')
     out = cv2.VideoWriter(video_filename, fourcc, 10.0, (width, height), False)
 
-    for im in thumbnails(light_frames, width):
+    for im in thumbnails(stack.light_frames, width):
       im = (im * 255.0).astype(np.uint8)
       frame = np.zeros((height, width), dtype=np.uint8)
       frame[0:im.shape[0], 0:im.shape[1]] = im
@@ -97,13 +105,14 @@ def thumbnail_video(light_frames, width=640):
 
 if __name__ == '__main__':
   frames = file_io.find_files('/Users/nobody/Projects/Astro/Raw/M101', '*.fit')
-  light_frames = [
+  stack = Stack()
+  stack.light_frames = [
       f for f in frames if file_io.fits_matches(f, 'IMAGETYP', 'Light')
   ]
-  print(f'First light frame is {light_frames[0]}')
-  light_frames = list(sorted(light_frames))
-  video = thumbnail_video(light_frames)
+  print(f'First light frame is {stack.light_frames[0]}')
+  stack.light_frames = list(sorted(stack.light_frames))
+  video = thumbnail_video(stack)
 
-  video_filename = '/tmp/foo.mp4'
+  video_filename = '/tmp/foo.webm'
   open(video_filename, 'wb').write(video)
   print(f'Wrote video to {video_filename}')

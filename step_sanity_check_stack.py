@@ -76,6 +76,7 @@ def run(stack, plate_solutions):
     return False
 
   my_plate_solutions = [plate_solutions[f] for f in stack.light_frames]
+
   footprints = [f for _, f, _ in my_plate_solutions]
   min_footprint = _min_footprint(footprints)
   min_x = np.min([p[0] for p in min_footprint])
@@ -88,5 +89,16 @@ def run(stack, plate_solutions):
   if aspect_ratio > 1.6 or aspect_ratio < 0.6:
     print(f'Stack is not good: Aspect ratio is too extreme at {aspect_ratio}')
     return False
+
+  # centers = [c for c, _, _ in my_plate_solutions]
+  # print('centers', centers)
+  # mean_center = np.mean(centers, axis=0)
+  # print('mean_center:', mean_center)
+  # std_dev_center = np.std(centers, axis=0)
+
+  # if np.max(std_dev_center) > 0.1:
+  #   print(f'Stack is not good: Center std. dev. is too extreme at '
+  #         f'{std_dev_center}')
+  #   return False
 
   return True
