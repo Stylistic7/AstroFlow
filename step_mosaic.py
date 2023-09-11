@@ -10,6 +10,7 @@ import config
 import astropy.io.fits as pyfits
 import numpy as np
 import matplotlib.pyplot as plt
+from shapely import Polygon
 
 from cache import cache
 import pixinsight_shell_script
@@ -30,7 +31,9 @@ def _identify_mosiacs(stacks):
   for stack in stacks:
     found = False
     for mosaic in mosaics:
-      if any(overlap(stack.footprint, s.footprint) for s in mosaic):
+      if any(
+          overlap(stack.footprint_polygon(), s.footprint_polygon())
+          for s in mosaic):
         mosaic.append(stack)
         found = True
 
@@ -69,7 +72,7 @@ def _error(center, basis_vectors):
   return np.mean(np.abs(center_in_basis - np.round(center_in_basis)), axis=0)
 
 
-def _ransac(mosaic):
+def _ransac(mosaic, plot=False, plot_title=None):
   print(f'Running RANSAC on mosaic with {len(mosaic)} stacks')
 
   if len(mosaic) < 3:
@@ -80,7 +83,8 @@ def _ransac(mosaic):
   best_inliers = []
   best_basis_vectors = None
 
-  centers = np.vstack([s.footprint.centroid.coords for s in mosaic]).T
+  centers = np.vstack(
+      [s.footprint_polygon().centroid.coords for s in mosaic]).T
   print(f'centers {centers}')
 
   for iteration in range(500):
@@ -116,7 +120,7 @@ def _ransac(mosaic):
       print(f'  transformed_center {transformed_center} '
             f'has Euclidean error {error}')
       if error < 0.2:
-        inliers.append(stacks[i])
+        inliers.append(mosaic[i])
         errors.append(error)
     print(f'Found {len(inliers)} inliers')
 
@@ -137,7 +141,23 @@ def _ransac(mosaic):
   if not best_inliers:
     return []
 
+  print('centers in best basis:')
+  for i, center in enumerate(centers.T):
+    transformed_center = np.linalg.solve(best_basis_vectors,
+                                         center - best_origin)
+    print(f'  transformed_center {i}: {transformed_center}')
+    error = np.linalg.norm(transformed_center - np.round(transformed_center))
+    print(f'  transformed_center {transformed_center} '
+          f'has Euclidean error {error}')
+
+    mosaic[i].tile_indices = np.round(transformed_center).astype(np.int32)
+    print(f'  tile_indices {i}: {mosaic[i].tile_indices}')
+
+  if not plot:
+    return best_inliers
+
   plt.figure()
+  plt.title(plot_title)
 
   # Draw the basis vectors.
   for i, basis_vector in enumerate(best_basis_vectors.T):
@@ -150,18 +170,6 @@ def _ransac(mosaic):
              linewidth=5,
              color=f"C{i + 2}")
 
-  print('centers in best basis:')
-  for i, center in enumerate(centers.T):
-    transformed_center = np.linalg.solve(best_basis_vectors,
-                                         center - best_origin)
-    print(f'  transformed_center {i}: {transformed_center}')
-    error = np.linalg.norm(transformed_center - np.round(transformed_center))
-    print(f'  transformed_center {transformed_center} '
-          f'has Euclidean error {error}')
-
-    stacks[i].tile_indices = np.round(transformed_center).astype(np.int32)
-    print(f'  tile_indices {i}: {stacks[i].tile_indices}')
-
   # Plot the centers of the N x M grid.
   # points = []
   # for x in range(np.max(integral_centers, axis=0)):
@@ -171,19 +179,46 @@ def _ransac(mosaic):
   # xs, ys = [p[0] for p in points], [p[1] for p in points]
   # plt.scatter(xs, ys, color='red')
 
-  for stack in best_inliers:
-    plt.plot(*stack.footprint.exterior.xy, color='black')
-    plt.scatter([stack.center[0]], [stack.center[1]], color='black')
+  if plot:
+    for stack in best_inliers:
+      plt.plot(*stack.footprint_polygon().exterior.xy, color='black')
+      plt.scatter([stack.center[0]], [stack.center[1]], color='black')
 
-  outliers = [s for s in mosaic if s not in best_inliers]
-  print(f'There are {len(outliers)} outliers')
-  for stack in outliers:
-    plt.plot(*stack.footprint.exterior.xy, color='#dddddd')
-    plt.scatter([stack.center[0]], [stack.center[1]], color='#dddddd')
+    outliers = [s for s in mosaic if s not in best_inliers]
+    print(f'There are {len(outliers)} outliers')
+    for stack in outliers:
+      plt.plot(*stack.footprint_polygon().exterior.xy, color='#dddddd')
+      plt.scatter([stack.center[0]], [stack.center[1]], color='#dddddd')
 
-  plt.show()
+    plt.show()
 
   return best_inliers
+
+
+def run(stacks, plot=False):
+  for s in stacks:
+    s.store_center_and_footprint()
+
+  rigs = set(s.rig for s in stacks)
+  filters = set(s.filter for s in stacks)
+
+  all_mosaics = []
+
+  for rig in rigs:
+    for filter in filters:
+      mosaics = _identify_mosiacs(
+          [s for s in stacks if s.rig == rig and s.filter == filter])
+      print(f'Found {len(mosaics)} mosaics for rig {rig} and filter {filter}')
+
+      for mosaic in mosaics:
+        print(f'Mosaic composed of {len(mosaic)} stacks:')
+        mosaic = _ransac(mosaic,
+                         plot=plot,
+                         plot_title=f'Rig {rig} and filter {filter}')
+
+      all_mosaics.extend(mosaics)
+
+  return all_mosaics
 
 
 if __name__ == '__main__':
@@ -204,12 +239,4 @@ if __name__ == '__main__':
   stacks = [s for s in cache['stacks'] if s.rig == 'C11' and s.filter == 'H']
   print(f'Found {len(stacks)} stacks')
 
-  for s in stacks:
-    s.store_center_and_footprint()
-
-  mosaics = _identify_mosiacs(stacks)
-  print(f'Found {len(mosaics)} mosaics')
-
-  for mosaic in mosaics:
-    print(f'Mosaic composed of {len(mosaic)} stacks:')
-    mosaic = _ransac(mosaic)
+  run(stacks, plot=True)

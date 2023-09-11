@@ -11,6 +11,9 @@ import matplotlib.pyplot as plt
 
 @dataclass
 class Stack:
+  # TODO: This currently just means "good" or not. Elaborate.
+  status: bool = False
+
   target: str = None
   rig: str = None
   filter: str = None
@@ -22,6 +25,8 @@ class Stack:
 
   flat_frame_associations: list = field(default_factory=list)
 
+  thumbnail_video_url: str = None
+
   camera_configs = None
 
   center: list[float] = field(default_factory=list)
@@ -29,6 +34,9 @@ class Stack:
 
   master: str = None
   post_processed: str = None
+
+  def footprint_polygon(self):
+    return Polygon(self.footprint)
 
   def compute_center(self, plot=False):
     print('### Entering compute_center()')
@@ -54,9 +62,8 @@ class Stack:
     # This might be too Draconian, because it includes outliers.
     # TODO: Use RANSAC to compute a better footprint.
     plate_solutions = plate_solving.solve_fields(self.light_frames)
-    footprints = [Polygon(f) for _, f, _ in plate_solutions.values()]
-    footprint = functools.reduce(Polygon.intersection, footprints,
-                                 footprints[0])
+    footprints = [Polygon(p.footprint) for p in plate_solutions.values()]
+    footprint = functools.reduce(Polygon.union, footprints, footprints[0])
     return list(footprint.exterior.coords)
 
   def store_center_and_footprint(self):

@@ -25,6 +25,7 @@ import camera_configs
 import dark_and_bias_association
 import image_handling
 import pixinsight_shell_script
+from cache import cache
 
 from debug_decorator import debug
 from compact_repr import compact_repr
@@ -42,7 +43,7 @@ import step_sanity_check_stack
 import step_stack
 import step_post_process_stack
 import step_post_process_target
-from cache import cache
+import step_mosaic
 
 
 def _merge_lists(*args):
@@ -224,9 +225,9 @@ class AstroFlow(FlowSpec):
 
     # FIXME hack
     # TODO: Put real target selection here.
-    targets_and_light_frames = [
-        x for x in targets_and_light_frames if 'IC1318' in x[0]
-    ]
+    # targets_and_light_frames = [
+    #     x for x in targets_and_light_frames if 'IC1318' in x[0]
+    # ]
 
     self.stacks_per_target = [
         Stack(target=target, light_frames=list(sorted(light_frames)))
@@ -311,78 +312,86 @@ class AstroFlow(FlowSpec):
 
   @step_with_debugging
   def sanity_check_stack(self):
-    self.stack_is_good = step_sanity_check_stack.run(self.stack,
-                                                     cache['plate_solutions'])
-    if self.stack_is_good:
+    self.stack.status = step_sanity_check_stack.run(self.stack,
+                                                    cache['plate_solutions'])
+    if self.stack.status:
       print('Stack passes sanity checks!')
       self.stack.store_center_and_footprint()
-      with cache.transact():
-        cache['stacks'] = cache['stacks'] + [self.stack]
 
-    self.next(self.make_thumbnail_video)
+    with cache.transact():
+      cache['stacks'] = cache['stacks'] + [self.stack]
+
+    self.next(self.join_filters)
 
   @step_with_debugging
-  def make_thumbnail_video(self):
-    if self.stack_is_good:
-      thumbnail_video = image_handling.thumbnail_video(self.stack)
-      with cache.transact():
-        thumbnail_videos = cache.get('thumbnail_videos', default={})
-        id = (self.stack.target, self.stack.rig, self.stack.filter)
-        thumbnail_videos[id] = thumbnail_video
-        cache['thumbnail_videos'] = thumbnail_videos
+  def join_filters(self, inputs):
+    self.merge_artifacts(inputs, exclude=['stack', 'stacks_per_filter'])
+    # self.stacks = [input.stack for input in inputs]
+    self.next(self.join_rigs)
+
+  @step_with_debugging
+  def join_rigs(self, inputs):
+    self.merge_artifacts(inputs, exclude=['stack', 'stacks_per_rig'])
+    # self.stacks = _merge_lists([input.stacks for input in inputs])
+    # cache['stacks'] = self.stacks
+    self.next(self.join_targets)
+
+  # @step_with_debugging
+  # def post_process_target(self):
+  #   # self.post_processed = step_post_process_target.run(self.stacks)
+  #   self.next(self.join_targets)
+
+  @step_with_debugging
+  def join_targets(self, inputs):
+    self.merge_artifacts(inputs, exclude=['stack'])
+    # self.stacks = _merge_lists([input.stacks for input in inputs])
+    # self.post_processed = _merge_lists(
+    #     [input.post_processed for input in inputs])
+    self.next(self.identify_mosaics)
+
+  @step
+  def identify_mosaics(self):
+    cache['mosaics'] = step_mosaic.run(cache['stacks'])
+    self.next(self.make_thumbnail_videos)
+
+  @step_with_debugging
+  def make_thumbnail_videos(self):
+    stacks = cache['stacks']
+    for stack in stacks:
+      if stack.status:
+        thumbnail_video = image_handling.thumbnail_video(stack)
+        with cache.transact():
+          thumbnail_videos = cache.get('thumbnail_videos', default={})
+          id = (stack.target, stack.rig, stack.filter)
+          thumbnail_videos[id] = thumbnail_video
+          cache['thumbnail_videos'] = thumbnail_videos
+          cache['stacks'] = stacks
 
     self.next(self.stack_subframes)
 
   @step_with_debugging
   def stack_subframes(self):
-    # Foreach stack: [target, rig, filter]
     # TODO: Don't pass flat frames with FLATVERS that are not used by any of
     # the light frames.
-    if self.stack_is_good:
-      self.stack.master = step_stack.run(self.stack, self.output_dir)
-    else:
-      self.stack.master = None
+    stacks = cache['stacks']
+    for stack in stacks:
+      if stack.status:
+        stack.master = step_stack.run(stack, self.output_dir)
+        cache['stacks'] = stacks
 
     self.next(self.post_process_stack)
 
   @catch(var='post_process_stack_failed')
   @step_with_debugging
   def post_process_stack(self):
-    # Foreach stack: [target, rig, filter]
-    if self.stack.master:
-      self.stack.post_processed = step_post_process_stack.run(
-          self.stack.rig, self.stack.master)
-    else:
-      self.stack.post_processed = None
+    stacks = cache['stacks']
+    for stack in stacks:
+      if stack.master:
+        stack.post_processed = step_post_process_stack.run(
+            stack.rig, stack.master)
+        cache['stacks'] = stacks
 
-    self.next(self.join_filters)
-
-  @step_with_debugging
-  def join_filters(self, inputs):
-    self.stacks = [input.stack for input in inputs]
-    self.next(self.join_rigs)
-
-  @step_with_debugging
-  def join_rigs(self, inputs):
-    self.stacks = _merge_lists([input.stacks for input in inputs])
-    cache['stacks'] = self.stacks
-    self.next(self.post_process_target)
-
-  @step_with_debugging
-  def post_process_target(self):
-    # self.post_processed = step_post_process_target.run(self.stacks)
-    self.next(self.join_targets)
-
-  @step_with_debugging
-  def join_targets(self, inputs):
-    # self.post_processed = _merge_lists(
-    #     [input.post_processed for input in inputs])
     self.next(self.end)
-
-  # @step
-  # def identify_mosaics(self):
-  #   self.mosaics = step_mosaic.run(self.)
-  #   self.next(self.split_by_target, foreach='mosaics')
 
   # @step_with_debugging
   # def order_mosaic_tiles(self):

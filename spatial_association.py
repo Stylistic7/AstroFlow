@@ -15,7 +15,7 @@ import plate_solving
 
 from cache import cache
 
-MIN_COMPONENT_MEMBERS = 5
+MIN_COMPONENT_MEMBERS = 3
 
 
 def iou(a, b):
@@ -45,7 +45,7 @@ def canonical_target_string(position):
 # @cache.memoize()
 def find_components(filenames, min_component_members=MIN_COMPONENT_MEMBERS):
   footprints = {
-      f: Polygon(p[1])
+      f: Polygon(p.footprint)
       for f, p in cache['plate_solutions'].items() if f in filenames
   }
 
@@ -54,7 +54,7 @@ def find_components(filenames, min_component_members=MIN_COMPONENT_MEMBERS):
   for i, (filename, footprint) in enumerate(footprints.items()):
     found = False
     for target in targets:
-      if all(iou(footprint, footprints[f]) > 0.65 for f in target):
+      if all(iou(footprint, footprints[f]) > 0.6 for f in target):
         target.append(filename)
         found = True
         break

@@ -90,7 +90,7 @@ def solve_field(filename):
 def solve_fields(filenames):
   with Pool() as p:
     solutions = p.map(solve_field, filenames)
-    return {f: s for f, s in zip(filenames, solutions) if s[0] != None}
+    return {f: s for f, s in zip(filenames, solutions) if s != None}
 
 
 if __name__ == '__main__':

@@ -9,7 +9,7 @@ def _check_frame_list(L, name):
     print(f'Stack is not good: {name} is not a list.')
     return False
 
-  if len(L) < 5:
+  if len(L) < 3:
     print(f'Stack is not good: {name} has too few elements.')
     return False
 
@@ -77,7 +77,7 @@ def run(stack, plate_solutions):
 
   my_plate_solutions = [plate_solutions[f] for f in stack.light_frames]
 
-  footprints = [f.footprint in my_plate_solutions]
+  footprints = [f.footprint for f in my_plate_solutions]
   min_footprint = _min_footprint(footprints)
   min_x = np.min([p[0] for p in min_footprint])
   max_x = np.max([p[0] for p in min_footprint])

@@ -60,8 +60,8 @@ def thumbnail(filename, width=640):
   elif filename.endswith('.fit') or filename.endswith('.fits'):
     im = file_io.read_fits_image(filename)
     plate_solution = plate_solving.solve_field(filename)
-    print(f'{filename} has theta {plate_solution.theta}')
-    if plate_solution.theta < 0.0:
+    print(f'{filename} has rotation_angle {plate_solution.rotation_angle}')
+    if plate_solution.rotation_angle < 0.0:
       im = np.rot90(im, 2)
 
   return autostretch(resize_array(im, width))
