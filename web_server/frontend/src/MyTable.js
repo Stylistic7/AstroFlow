@@ -93,8 +93,6 @@ export default function Orders(props) {
   ];
 
   const collapseContent = () => {
-    console.log('entering collapseContent');
-
     const collapseHeaders = [
       {
         key: "checkbox",
@@ -108,6 +106,14 @@ export default function Orders(props) {
       //   ),
       //   stopPropagation: true,
       // },
+      {
+        key: "plot",
+        label: "Plot",
+        component: (data) => (
+          <iframe src={data.plot.url} width="300" height="200"></iframe>
+        ),
+        stopPropagation: true,
+      },
       {
         key: "video",
         label: "Blink Video",
@@ -178,9 +184,7 @@ export default function Orders(props) {
       },
     ];
 
-    console.log('data', data);
     if (data) {
-      console.log('returning some foobars');
       return data.map((order) => (
         <EnhancedTable
           key={order.order_number}
