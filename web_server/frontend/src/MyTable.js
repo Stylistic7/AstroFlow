@@ -100,11 +100,22 @@ export default function Orders(props) {
         key: "checkbox",
         checkbox: true,
       },
+      // {
+      //   key: "image",
+      //   label: "Image",
+      //   component: (data) => (
+      //     <img src={data.image.url} alt={data.name} width="200px" loading="lazy" />
+      //   ),
+      //   stopPropagation: true,
+      // },
       {
-        key: "image",
-        label: "Image",
+        key: "video",
+        label: "Blink Video",
         component: (data) => (
-          <img src={data.image.url} alt={data.name} width="200px" loading="lazy" />
+          <video width="300" loop autoPlay muted>
+            <source src={data.video.url} type="video/mp4" />
+            Your browser does not support the video tag.
+          </video>
         ),
         stopPropagation: true,
       },
@@ -239,68 +250,9 @@ export default function Orders(props) {
   function handleAction(event, key, row = null) {}
 
   useEffect(() => {
-    getData();
-
-    function getData() {
-      setData([
-        {
-          'id': 'foobar',
-          'order_number': 1234,
-          'status': 'In Progress',
-          'updated_at': '2014-02-11',
-          'user': {
-            'name': 'Stylistic7',
-            'email': 'Stylistic7@proton.me',
-            'phone': '408-910-3224',
-          },
-          'order_items': [
-            {
-              'id': '1',
-              'name': 'foo',
-              'image': {
-                'url': 'https://img.freepik.com/free-photo/beagle-tricolor-puppy-is-posing_155003-31772.jpg?w=1480&t=st=1694757101~exp=1694757701~hmac=91cd6aaff87cb9502773c90d36e3bab81655a074a27dae5055a5dbf5a85d11df',
-              },
-              'product': {
-                'name': 'ASI6200MM Pro',
-                'sku': '123-1929-19283',
-              },
-              'quantity': 1,
-              'status': 'Pending',
-              'updated_at': '2014-02-11',
-            },
-            {
-              'id': '1',
-              'name': 'foo',
-              'image': {
-                'url': 'https://img.freepik.com/free-photo/beagle-tricolor-puppy-is-posing_155003-31772.jpg?w=1480&t=st=1694757101~exp=1694757701~hmac=91cd6aaff87cb9502773c90d36e3bab81655a074a27dae5055a5dbf5a85d11df',
-              },
-              'product': {
-                'name': 'Sky-Watcher EQ8-Rh Pro',
-                'sku': '123-1929-19283',
-              },
-              'quantity': 1,
-              'status': 'Completed',
-              'updated_at': '2014-02-11',
-            },
-          ],
-          'total': 123.45,
-        },
-        {
-          'id': 'barbaz',
-          'order_number': 5678,
-          'status': 'Completed',
-          'updated_at': '2023-09-12',
-          'user': {
-            'name': 'Élyse',
-            'email': 'elyse.a.c.weir@gmail.com',
-            'phone': '800-555-1212',
-          },
-          'order_items': [
-          ],
-          'total': 2092.22,
-        }
-      ]);
-    }
+    fetch('/state').then(res => res.json()).then(data => {
+      setData(data);
+    });
   }, [order, orderBy, rowsPerPage, page, filters]);
 
   return (

@@ -84,6 +84,47 @@ def thumbnail_video(target, rig, filter):
   return flask.send_file(buffer, mimetype='video/webm')
 
 
+@app.route('/state')
+def state():
+  def build_stack(stack):
+    return {
+        'id': '1',
+        'name': 'foo',
+        'image': {
+            'url':
+            'https://img.freepik.com/free-photo/beagle-tricolor-puppy-is-posing_155003-31772.jpg?w=1480&t=st=1694757101~exp=1694757701~hmac=91cd6aaff87cb9502773c90d36e3bab81655a074a27dae5055a5dbf5a85d11df',
+        },
+        'video': {
+            'url':
+            f'/thumbnail_video/{stack.target}/{stack.rig}/{stack.filter}'
+        },
+        'product': {
+            'name': stack.target,
+            'sku': f'{stack.rig} {stack.filter}',
+        },
+        'quantity': 1,
+        'status': 'Pending',
+        'updated_at': '2014-02-11',
+    }
+
+  def build_mosaic(index, mosaic):
+    return {
+        'id': index,
+        'order_number': f'Mosaic {len(mosaic)} stack',
+        'status': 'In Progress',
+        'updated_at': '2014-02-11',
+        'user': {
+            'name': 'Stylistic7',
+            'email': 'Stylistic7@proton.me',
+            'phone': '408-910-3224',
+        },
+        'order_items': [build_stack(s) for s in mosaic],
+        'total': 123.45,
+    }
+
+  return [build_mosaic(i, m) for i, m in enumerate(cache['mosaics'])]
+
+
 if __name__ == '__main__':
   app.debug = True
   app.run(host='0.0.0.0', port=80)
