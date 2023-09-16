@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import MyTable from "./MyTable.js";
+import TargetTable from "./TargetTable.jsx";
 import logo from './logo.svg';
 import './App.css';
 
@@ -19,7 +19,7 @@ function App() {
   return (
     <ThemeProvider theme={darkTheme}>
       <CssBaseline />
-      <MyTable></MyTable>
+      <TargetTable></TargetTable>
     </ThemeProvider>
   );
 }

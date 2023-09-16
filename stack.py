@@ -11,12 +11,16 @@ import matplotlib.pyplot as plt
 
 @dataclass
 class Stack:
+  id: str = None
+
   # TODO: This currently just means "good" or not. Elaborate.
   status: bool = False
 
   target: str = None
   rig: str = None
   filter: str = None
+
+  camera_configs = None
 
   light_frames: list[str] = field(default_factory=list)
   dark_frames: list[str] = field(default_factory=list)
@@ -26,8 +30,6 @@ class Stack:
   flat_frame_associations: list = field(default_factory=list)
 
   thumbnail_video_url: str = None
-
-  camera_configs = None
 
   center: list[float] = field(default_factory=list)
   footprint: list[tuple[float]] = None
@@ -72,5 +74,15 @@ class Stack:
 
   def __repr__(self):
     return (
-        f'Stack(target={self.target}, rig={self.rig}, filter={self.filter}, '
-        f'{len(self.light_frames)} light frames)')
+        f'Stack(target={self.target}, status={self.status}, rig={self.rig}, '
+        f'filter={self.filter}, {len(self.light_frames)} light frames)')
+
+  def store_id(self):
+    self.id = (f'{self.target}_{self.rig}_{self.filter}_{self.status}_'
+               f'{hash(frozenset(self.camera_configs))}_'
+               f'{hash(frozenset(self.light_frames))}_'
+               f'{hash(frozenset(self.dark_frames))}_'
+               f'{hash(frozenset(self.bias_frames))}_'
+               f'{hash(frozenset(self.flat_frames))}_'
+               f'{hash(frozenset(self.flat_frame_associations))}')
+    print(f'stack has id {self.id}')

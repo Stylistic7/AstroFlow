@@ -15,6 +15,7 @@ import copy
 # TODO: This file should only include step*.py files, never any lower granularity.
 import config
 from stack import Stack
+from target import Target
 import stacking
 import guide_log_analysis
 import subframe_selector
@@ -123,6 +124,7 @@ class AstroFlow(FlowSpec):
   @step
   def prepare_cache(self):
     cache['stacks'] = []
+    cache['targets'] = []
     pixinsight_shell_script._clear_cache()
     self.next(self.download)
 
@@ -314,6 +316,8 @@ class AstroFlow(FlowSpec):
   def sanity_check_stack(self):
     self.stack.status = step_sanity_check_stack.run(self.stack,
                                                     cache['plate_solutions'])
+    self.stack.store_id()
+
     if self.stack.status:
       print('Stack passes sanity checks!')
       self.stack.store_center_and_footprint()
@@ -347,6 +351,20 @@ class AstroFlow(FlowSpec):
     # self.stacks = _merge_lists([input.stacks for input in inputs])
     # self.post_processed = _merge_lists(
     #     [input.post_processed for input in inputs])
+
+    # At this point, all of the stacks have been sanity-checked, and they
+    # can be reliably fingerprinted. Create Target objects that hold the
+    # fingerprints of the Stacks they include.
+    targets = {}
+    for stack in cache['stacks']:
+      if stack.target in targets:
+        targets[stack.target].stacks.append(stack.id)
+      else:
+        targets[stack.target] = Target(name=stack.target, stacks=[stack.id])
+
+    print('targets', targets)
+    cache['targets'] = targets
+
     self.next(self.identify_mosaics)
 
   @step

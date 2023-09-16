@@ -30,6 +30,11 @@ def get_plot_html():
 
 
 def build_stack(stack):
+  print('build_stack', stack)
+
+  # FIXME where did the footprint go?
+  print('build_stack stack.footprint', stack.footprint)
+
   return {
       'id': '1',
       'name': 'foo',
@@ -46,7 +51,7 @@ def build_stack(stack):
       },
       'product': {
           'name': stack.target,
-          'sku': f'{stack.rig} {stack.filter} {len(stack.footprint)} vertices',
+          'sku': f'{stack.rig} {stack.filter}',
       },
       'quantity': 1,
       'status': 'Pending',
@@ -54,10 +59,17 @@ def build_stack(stack):
   }
 
 
-def build_mosaic(index, mosaic):
+def build_target(index, target):
+  print('target', target)
+  print(f'target.stacks {target.stacks}')
+  stacks = [
+      next(s for s in cache['stacks'] if s.id == id) for id in target.stacks
+  ]
+  print(f'Found {len(stacks)} stacks')
+
   return {
       'id': index,
-      'order_number': f'Mosaic {len(mosaic)} stack',
+      'target': f'Target {target.name}',
       'status': 'In Progress',
       'updated_at': '2014-02-11',
       'user': {
@@ -65,7 +77,7 @@ def build_mosaic(index, mosaic):
           'email': 'Stylistic7@proton.me',
           'phone': '408-910-3224',
       },
-      'order_items': [build_stack(s) for s in mosaic],
+      'stacks': [build_stack(s) for s in stacks],
       'total': 123.45,
   }
 
@@ -73,12 +85,11 @@ def build_mosaic(index, mosaic):
 # Create the application.
 app = flask.Flask(__name__, template_folder='./templates')
 
-
-@app.route('/targets')
-def targets():
-  targets = metaflow_data_helper.find('spatial_grouping',
-                                      'targets_and_light_frames') or []
-  return targets
+# @app.route('/targets')
+# def targets():
+#   targets = metaflow_data_helper.find('spatial_grouping',
+#                                       'targets_and_light_frames') or []
+#   return targets
 
 
 # TODO: Move computations into new files.
@@ -129,6 +140,11 @@ def footprints():
   return [f for _, f, _ in list(plate_solutions.values())]
 
 
+@app.route('/targets')
+def targets():
+  return cache['targets']
+
+
 @app.route('/stacks')
 def stacks():
   return cache['stacks']
@@ -153,7 +169,7 @@ def plot():
 
 @app.route('/state')
 def state():
-  return [build_mosaic(i, m) for i, m in enumerate(cache['mosaics'])]
+  return [build_target(i, t) for i, t in enumerate(cache['targets'].values())]
 
 
 if __name__ == '__main__':
