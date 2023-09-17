@@ -196,9 +196,6 @@ def _ransac(mosaic, plot=False, plot_title=None):
 
 
 def run(stacks, plot=False):
-  for s in stacks:
-    s.store_center_and_footprint()
-
   rigs = set(s.rig for s in stacks)
   filters = set(s.filter for s in stacks)
 

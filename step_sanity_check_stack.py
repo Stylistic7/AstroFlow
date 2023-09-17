@@ -2,6 +2,7 @@ import numpy as np
 
 import file_io
 from stack import Stack
+from cache import cache
 
 
 def _check_frame_list(L, name):
@@ -30,6 +31,7 @@ def _min_footprint(footprints):
           [min_ra, max_dec]]
 
 
+@cache.memoize()
 def run(stack, plate_solutions):
   # TODO: Also check that:
   # They all have essentially the same plate solution

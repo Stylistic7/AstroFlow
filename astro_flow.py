@@ -19,7 +19,6 @@ from target import Target
 import stacking
 import guide_log_analysis
 import subframe_selector
-import metaflow_data_helper
 from serialization import serialize
 import file_io
 import camera_configs
@@ -185,16 +184,16 @@ class AstroFlow(FlowSpec):
 
   @step
   def compute_image_hashes(self):
-    prev_result = metaflow_data_helper.find('compute_image_hashes',
-                                            'image_hashes') or {}
-    self.image_hashes = step_compute_image_hashes.run(prev_result,
-                                                      self.light_frames)
+    prev_result = cache['image_hashes'] if 'image_hashes' in cache else {}
+    cache['image_hashes'] = step_compute_image_hashes.run(
+        prev_result, self.light_frames)
+
     self.next(self.check_duplicates)
 
   @catch(var='check_duplicates_failed')
   @step
   def check_duplicates(self):
-    step_check_duplicates.run(self.image_hashes)
+    step_check_duplicates.run(cache['image_hashes'])
     self.next(self.remove_frames_during_mount_movements)
 
   @step
@@ -314,13 +313,11 @@ class AstroFlow(FlowSpec):
 
   @step_with_debugging
   def sanity_check_stack(self):
+    self.stack.store_metadata()
     self.stack.status = step_sanity_check_stack.run(self.stack,
                                                     cache['plate_solutions'])
-    self.stack.store_id()
-
     if self.stack.status:
       print('Stack passes sanity checks!')
-      self.stack.store_center_and_footprint()
 
     with cache.transact():
       cache['stacks'] = cache['stacks'] + [self.stack]
@@ -363,7 +360,7 @@ class AstroFlow(FlowSpec):
         targets[stack.target] = Target(name=stack.target, stacks=[stack.id])
 
     print('targets', targets)
-    cache['targets'] = targets
+    cache['targets'] = list(targets.values())
 
     self.next(self.identify_mosaics)
 
@@ -377,6 +374,7 @@ class AstroFlow(FlowSpec):
     stacks = cache['stacks']
     for stack in stacks:
       if stack.status:
+        thumbnail_image_url = image_handling.thumbnail_image_url(stack)
         thumbnail_video = image_handling.thumbnail_video(stack)
         with cache.transact():
           thumbnail_videos = cache.get('thumbnail_videos', default={})

@@ -45,7 +45,7 @@ def _start_pixinsight_instance(blocking=False):
     slots = cache.get('pixinsight_slots', default=[])
     print(f'Running PixInsight slots:', slots)
     slot = max(slots) + 1 if slots else 100
-    cache['pixinsight_slots'] = cache['pixinsight_slots'] + [slot]
+    cache['pixinsight_slots'] = slots + [slot]
     if blocking:
       cache['pixinsight_blocking_instance'] = True
 

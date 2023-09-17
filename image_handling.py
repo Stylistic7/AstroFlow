@@ -48,9 +48,8 @@ def autostretch(image):
 
 def array_to_png(array, filename):
   array = (array * 255.0).astype(np.uint8)
-
-  im = Image.fromarray(array)
-  im.save('/tmp/foo.png')
+  _, png = cv2.imencode('.png', array)
+  return png.tobytes()
 
 
 @cache.memoize()
@@ -60,13 +59,14 @@ def thumbnail(filename, width=640):
   elif filename.endswith('.fit') or filename.endswith('.fits'):
     im = file_io.read_fits_image(filename)
     plate_solution = plate_solving.solve_field(filename)
-    print(f'{filename} has rotation_angle {plate_solution.rotation_angle}')
+    # print(f'{filename} has rotation_angle {plate_solution.rotation_angle}')
     if plate_solution.rotation_angle < 0.0:
       im = np.rot90(im, 2)
 
   return autostretch(resize_array(im, width))
 
 
+@cache.memoize()
 def thumbnails(filenames, width=640):
   with Pool() as p:
     return p.map(partial(thumbnail, width=width), filenames)
@@ -94,6 +94,13 @@ def thumbnail_video(stack, width=640):
 
     out.release()
     return open(video_filename, 'rb').read()
+
+
+@cache.memoize()
+def thumbnail_image_url(stack, width=640):
+  images = thumbnails(stack.light_frames, width)
+  index = np.argmax(map(np.std, images))
+  return f'/thumbnail_image/{stack.light_frames[index]}'
 
 
 if __name__ == '__main__':

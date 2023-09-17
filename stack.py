@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 import functools
 from shapely.geometry import Polygon
 
+import file_io
 import plate_solving
 import spatial_association
 
@@ -29,13 +30,31 @@ class Stack:
 
   flat_frame_associations: list = field(default_factory=list)
 
+  thumbnail_image_url: str = None
   thumbnail_video_url: str = None
 
   center: list[float] = field(default_factory=list)
   footprint: list[tuple[float]] = None
+  exposure_time_s: int = None
 
   master: str = None
   post_processed: str = None
+
+  def store_metadata(self):
+    self.id = self.compute_id()
+    self.exposure_time_s = self.compute_exposure_time_s()
+    self.center = self.compute_center()
+    self.footprint = self.compute_footprint()
+
+  def compute_id(self):
+    return (f'{self.target}_{self.rig}_{self.filter}_'
+            f'{self.exposure_time_s}_{self.status}_'
+            f'{hash(frozenset(self.camera_configs))}_'
+            f'{hash(frozenset(self.light_frames))}_'
+            f'{hash(frozenset(self.dark_frames))}_'
+            f'{hash(frozenset(self.bias_frames))}_'
+            f'{hash(frozenset(self.flat_frames))}_'
+            f'{hash(frozenset(self.flat_frame_associations))}')
 
   def footprint_polygon(self):
     return Polygon(self.footprint)
@@ -68,21 +87,10 @@ class Stack:
     footprint = functools.reduce(Polygon.union, footprints, footprints[0])
     return list(footprint.exterior.coords)
 
-  def store_center_and_footprint(self):
-    self.center = self.compute_center()
-    self.footprint = self.compute_footprint()
+  def compute_exposure_time_s(self):
+    return sum(file_io.read_fits(f)['EXPOSURE'] for f in self.light_frames)
 
   def __repr__(self):
     return (
         f'Stack(target={self.target}, status={self.status}, rig={self.rig}, '
         f'filter={self.filter}, {len(self.light_frames)} light frames)')
-
-  def store_id(self):
-    self.id = (f'{self.target}_{self.rig}_{self.filter}_{self.status}_'
-               f'{hash(frozenset(self.camera_configs))}_'
-               f'{hash(frozenset(self.light_frames))}_'
-               f'{hash(frozenset(self.dark_frames))}_'
-               f'{hash(frozenset(self.bias_frames))}_'
-               f'{hash(frozenset(self.flat_frames))}_'
-               f'{hash(frozenset(self.flat_frame_associations))}')
-    print(f'stack has id {self.id}')

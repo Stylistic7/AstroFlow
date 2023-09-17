@@ -13,7 +13,7 @@ from cache import cache
 
 
 def _exposure_time_string(stack):
-  exposure = sum(file_io.read_fits(f)['EXPOSURE'] for f in stack.light_frames)
+  exposure = stack.exposure_time_s
   hours = np.floor(exposure / 3600)
   minutes = np.floor(exposure % 3600 / 60)
   return f'{hours:02.0f}h{minutes:02.0f}m'
