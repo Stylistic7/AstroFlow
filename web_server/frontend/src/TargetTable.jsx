@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import EnhancedTable from "@jeremyling/react-material-ui-enhanced-table";
 import { amber, green, indigo, lightGreen, red } from "@mui/material/colors";
 import { Block, MoveToInbox } from "@mui/icons-material";
+import StackTable from "./StackTable.jsx";
 
 export default function Targets(props) {
   const [data, setData] = useState([]);
@@ -27,48 +28,56 @@ export default function Targets(props) {
       collapse: true,
     },
     { key: "name", attribute: "name", label: "Target" },
-    {
-      key: "status",
-      attribute: "status",
-      label: "Status",
-      chip: true,
-      chipColor: {
-        "In Progress": [amber[50], amber[200]],
-        Completed: [green[50], green[200]],
-      },
-    },
-    {
-      attribute: "updated_at",
-      datetime: true,
-      label: "Updated",
-    },
-    {
-      multiField: true,
-      key: "customer",
-      multiFieldData: [
-        {
-          attribute: "user.name",
-        },
-        {
-          attribute: "user.email",
-        },
-        {
-          attribute: "user.phone",
-        },
-      ],
-      html: `
-        <div><strong>{{0}}</strong></div>
-        <div style="color: #777">{{1}}</div>
-        <div style="color: #777">{{2}}</div>
-      `,
-      label: "Customer",
-    },
-    {
-      attribute: "total",
-      label: "Total",
-      numeric: true,
-      price: true,
-    },
+    // {
+    //   key: "image",
+    //   label: "Thumbnail",
+    //   component: (data) => (
+    //     <img src={data.thumbnail_image_url} alt={data.name} width="200px" loading="lazy" />
+    //   ),
+    //   stopPropagation: true,
+    // },
+    // {
+    //   key: "status",
+    //   attribute: "status",
+    //   label: "Status",
+    //   chip: true,
+    //   chipColor: {
+    //     "In Progress": [amber[50], amber[200]],
+    //     Completed: [green[50], green[200]],
+    //   },
+    // },
+    // {
+    //   attribute: "updated_at",
+    //   datetime: true,
+    //   label: "Updated",
+    // },
+    // {
+    //   multiField: true,
+    //   key: "customer",
+    //   multiFieldData: [
+    //     {
+    //       attribute: "user.name",
+    //     },
+    //     {
+    //       attribute: "user.email",
+    //     },
+    //     {
+    //       attribute: "user.phone",
+    //     },
+    //   ],
+    //   html: `
+    //     <div><strong>{{0}}</strong></div>
+    //     <div style="color: #777">{{1}}</div>
+    //     <div style="color: #777">{{2}}</div>
+    //   `,
+    //   label: "Customer",
+    // },
+    // {
+    //   attribute: "total",
+    //   label: "Total",
+    //   numeric: true,
+    //   price: true,
+    // },
     {
       key: "actions",
       actions: [
@@ -93,113 +102,11 @@ export default function Targets(props) {
   ];
 
   const collapseContent = () => {
-    const collapseHeaders = [
-      {
-        key: "checkbox",
-        checkbox: true,
-      },
-      // {
-      //   key: "image",
-      //   label: "Image",
-      //   component: (data) => (
-      //     <img src={data.image.url} alt={data.name} width="200px" loading="lazy" />
-      //   ),
-      //   stopPropagation: true,
-      // },
-      {
-        key: "plot",
-        label: "Plot",
-        component: (data) => (
-          <iframe src={data.plot.url} width="300" height="200"></iframe>
-        ),
-        stopPropagation: true,
-      },
-      {
-        key: "video",
-        label: "Blink Video",
-        component: (data) => (
-          <video width="300" loop autoPlay muted>
-            <source src={data.video.url} type="video/mp4" />
-            Your browser does not support the video tag.
-          </video>
-        ),
-        stopPropagation: true,
-      },
-      {
-        multiField: true,
-        key: "product",
-        multiFieldData: [
-          {
-            attribute: "product.name",
-          },
-          {
-            attribute: "product.sku",
-          },
-        ],
-        html: `
-        <div><strong>{{0}}</strong></div>
-        <div><strong style="color: #777">SKU: {{1}}</strong></div>
-      `,
-        label: "Product",
-        minWidth: "200px",
-      },
-      {
-        key: "status",
-        attribute: "status",
-        label: "Status",
-        chip: true,
-        chipColor: {
-          Pending: [amber[50], amber[200]],
-          Paid: [lightGreen[50], lightGreen[200]],
-          Processed: [indigo[50], indigo[200]],
-          Completed: [green[50], green[200]],
-        },
-      },
-      {
-        attribute: "updated_at",
-        datetime: true,
-        label: "Updated",
-      },
-      { attribute: "quantity", label: "Qty", numeric: true },
-      {
-        key: "actions",
-        actions: [
-          {
-            id: "process",
-            icon: <MoveToInbox />,
-            tooltip: "Process",
-            onClick: (event, row) => handleAction(event, "process", row),
-            color: amber[400],
-            hideCondition: (data) => {},
-          },
-          {
-            id: "cancel-target",
-            icon: <Block />,
-            tooltip: "Cancel",
-            onClick: (event, row) => handleAction(event, "cancel", row),
-            color: indigo[400],
-          },
-        ],
-        label: "Actions",
-      },
-    ];
-
     if (data) {
       return data.map((target) => (
-        <EnhancedTable
-          key={target.name}
-          rows={target.stacks}
-          headers={collapseHeaders}
-          handleActionClick={(event, key) => handleAction(event, key)}
-          handleRowClick={(event, row) =>
-            handleCollapsibleTableRowClick(event, row)
-          }
-          selected={selectedItems[target.id]}
-          showToolbar={false}
-          selectibleRows={getSelectibleItems(selectedRow)}
-        />
+        <StackTable stacks={target.stacks} />
       ));
-    } 
+    }
   };
 
   const handleRowClick = (event, item) => {
@@ -254,7 +161,8 @@ export default function Targets(props) {
   function handleAction(event, key, row = null) {}
 
   useEffect(() => {
-    fetch('/state').then(res => res.json()).then(data => {
+    console.log('fetching targets...');
+    fetch('/targets').then(res => res.json()).then(data => {
       setData(data);
     });
   }, [order, orderBy, rowsPerPage, page, filters]);

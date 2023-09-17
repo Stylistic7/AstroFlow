@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import TargetTable from "./TargetTable.jsx";
+import StackTable from "./StackTable.jsx";
 import logo from './logo.svg';
 import './App.css';
 
@@ -19,7 +20,7 @@ function App() {
   return (
     <ThemeProvider theme={darkTheme}>
       <CssBaseline />
-      <TargetTable></TargetTable>
+      <TargetTable />
     </ThemeProvider>
   );
 }
