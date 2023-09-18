@@ -12,13 +12,12 @@ import argparse
 import image_handling
 from cache import cache
 from . import test_app
-import metaflow_data_helper
 import plate_solving
 
 import plotly.express as px
 from base64 import b64encode
 
-debug = True
+debug = False
 
 
 def get_plot_html():
@@ -81,12 +80,6 @@ def get_plot_html():
 
 # Create the application.
 app = flask.Flask(__name__, template_folder='./templates')
-
-# @app.route('/targets')
-# def targets():
-#   targets = metaflow_data_helper.find('spatial_grouping',
-#                                       'targets_and_light_frames') or []
-#   return targets
 
 
 # TODO: Move computations into new files.
@@ -153,10 +146,10 @@ def stack(id):
   return asdict(next(s for s in stacks if s.id == id))
 
 
-@app.route('/thumbnail_image/<filename>')
-def thumbnail_image(filename):
+@app.route('/thumbnail_image/<target>/<rig>/<filter>')
+def thumbnail_image(target, rig, filter):
   buffer = io.BytesIO()
-  buffer.write(image_handling.array_to_png(image_handling.thumbnail(filename)))
+  buffer.write(cache['thumbnail_images'][(target, rig, filter)])
   buffer.seek(0)
   return flask.send_file(buffer, mimetype='image/png')
 
@@ -166,7 +159,6 @@ def thumbnail_video(target, rig, filter):
   buffer = io.BytesIO()
   buffer.write(cache['thumbnail_videos'][(target, rig, filter)])
   buffer.seek(0)
-  print(f'video buffer has size {buffer.getbuffer().nbytes}')
   return flask.send_file(buffer, mimetype='video/webm')
 
 

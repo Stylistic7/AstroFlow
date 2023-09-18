@@ -122,6 +122,8 @@ class AstroFlow(FlowSpec):
 
   @step
   def prepare_cache(self):
+    # TODO: Don't just delete all of these; the ones that haven't changed
+    # should be kept, reducing run time.
     cache['stacks'] = []
     cache['targets'] = []
     pixinsight_shell_script._clear_cache()
@@ -282,6 +284,8 @@ class AstroFlow(FlowSpec):
     print('camera_configs', self.stack.camera_configs)
     self.next(self.bias_frame_association)
 
+  # TODO: Dark and bias assocation is too slow right now, but it's a very easy
+  # problem. Don't split this into multiple paths, and re-use the FITS reads.
   @step_with_debugging
   def bias_frame_association(self):
     # Foreach stack: [target, rig, filter]
@@ -359,7 +363,7 @@ class AstroFlow(FlowSpec):
       else:
         targets[stack.target] = Target(name=stack.target, stacks=[stack.id])
 
-    print('targets', targets)
+    print('### targets', targets)
     cache['targets'] = list(targets.values())
 
     self.next(self.identify_mosaics)
@@ -373,15 +377,26 @@ class AstroFlow(FlowSpec):
   def make_thumbnail_videos(self):
     stacks = cache['stacks']
     for stack in stacks:
-      if stack.status:
-        thumbnail_image_url = image_handling.thumbnail_image_url(stack)
-        thumbnail_video = image_handling.thumbnail_video(stack)
-        with cache.transact():
-          thumbnail_videos = cache.get('thumbnail_videos', default={})
-          id = (stack.target, stack.rig, stack.filter)
-          thumbnail_videos[id] = thumbnail_video
-          cache['thumbnail_videos'] = thumbnail_videos
-          cache['stacks'] = stacks
+      thumbnail_image = image_handling.thumbnail_image(stack)
+      stack.thumbnail_image_url = f'/thumbnail_image/{stack.target}/{stack.rig}/{stack.filter}'
+
+      thumbnail_video = image_handling.thumbnail_video(stack)
+      stack.thumbnail_video_url = f'/thumbnail_video/{stack.target}/{stack.rig}/{stack.filter}'
+
+      with cache.transact():
+        thumbnail_images = cache.get('thumbnail_images', default={})
+        thumbnail_videos = cache.get('thumbnail_videos', default={})
+
+        id = (stack.target, stack.rig, stack.filter)
+        print(f'Updating thumbnail image and video for stack {id}')
+
+        thumbnail_images[id] = thumbnail_image
+        thumbnail_videos[id] = thumbnail_video
+
+        cache['thumbnail_images'] = thumbnail_images
+        cache['thumbnail_videos'] = thumbnail_videos
+
+        cache['stacks'] = stacks
 
     self.next(self.stack_subframes)
 

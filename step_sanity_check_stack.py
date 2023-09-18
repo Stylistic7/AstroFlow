@@ -21,6 +21,8 @@ def _check_frame_list(L, name):
   return True
 
 
+# TODO: Put this computation in the Stack.store_metadata() function, so
+# doesn't have to be repeated over and over.
 def _min_footprint(footprints):
   min_ra = np.min([p[0] for f in footprints for p in f])
   max_ra = np.max([p[0] for f in footprints for p in f])
@@ -31,7 +33,6 @@ def _min_footprint(footprints):
           [min_ra, max_dec]]
 
 
-@cache.memoize()
 def run(stack, plate_solutions):
   # TODO: Also check that:
   # They all have essentially the same plate solution
@@ -77,19 +78,9 @@ def run(stack, plate_solutions):
     print(f'Stack is not good: some bias frames had incorrect IMAGETYP keyword')
     return False
 
-  my_plate_solutions = [plate_solutions[f] for f in stack.light_frames]
-
-  footprints = [f.footprint for f in my_plate_solutions]
-  min_footprint = _min_footprint(footprints)
-  min_x = np.min([p[0] for p in min_footprint])
-  max_x = np.max([p[0] for p in min_footprint])
-  min_y = np.min([p[1] for p in min_footprint])
-  max_y = np.max([p[1] for p in min_footprint])
-  print('min_footprint', min_footprint)
-  aspect_ratio = (max_x - min_x) / (max_y - min_y)
-  print('aspect_ratio', aspect_ratio)
-  if aspect_ratio > 1.6 or aspect_ratio < 0.6:
-    print(f'Stack is not good: Aspect ratio is too extreme at {aspect_ratio}')
+  if stack.aspect_ratio > 1.6 or stack.aspect_ratio < 0.6:
+    print(f'Stack is not good: Aspect ratio is too extreme at '
+          f'{stack.aspect_ratio}')
     return False
 
   # centers = [c for c, _, _ in my_plate_solutions]

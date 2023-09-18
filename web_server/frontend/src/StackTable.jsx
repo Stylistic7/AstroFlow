@@ -6,7 +6,23 @@ import { Block, MoveToInbox } from "@mui/icons-material";
 function exposure_time_string(exposure_time_s) {
   let hours = Math.floor(exposure_time_s / 3600)
   let minutes = Math.floor(exposure_time_s % 3600 / 60)
-  return hours + ' h ' + minutes + ' m';
+  return hours + ' h ' + minutes.toString().padStart(2, '0') + ' m';
+}
+
+function style_for_filter(filter) {
+ const color = {
+    'L': [51, 51, 51],
+    'R': [230, 0, 0],
+    'G': [0, 204, 0],
+    'B': [0, 0, 204],
+    'H': [159, 43, 104],
+    'S': [140, 0, 0],
+    'O': [0, 204, 204],
+  }[filter];
+  
+  return {
+    border: `1px solid rgba(${color[0]}, ${color[1]}, ${color[2]}, 1.0)`,
+  };
 }
 
 export default function Stacks(props) {
@@ -48,17 +64,6 @@ export default function Stacks(props) {
     //   ),
     //   stopPropagation: true,
     // },
-    // {
-    //   key: "video",
-    //   label: "Blink Video",
-    //   component: (data) => (
-    //     <video width="300" loop autoPlay muted>
-    //       <source src={data.video.url} type="video/mp4" />
-    //       Your browser does not support the video tag.
-    //     </video>
-    //   ),
-    //   stopPropagation: true,
-    // },
     {
       multiField: true,
       key: "stack",
@@ -73,11 +78,6 @@ export default function Stacks(props) {
           attribute: "exposure_time_s",
         },
       ],
-    //   html: `
-    //   <div><strong>Rig: {{0}}, Filter: {{1}}</strong></div>
-    //   <div><strong style="color: #777">Exposure: {{2}}</strong></div>
-    // `,
-
       component: (data) => (
         <div>
           <div><strong>Rig: {data.rig}, Filter: {data.filter}</strong></div>
@@ -88,6 +88,25 @@ export default function Stacks(props) {
       ),
       label: "Stack",
       minWidth: "200px",
+    },
+    {
+      key: "video",
+      label: "Raw Blink Video",
+      component: (data) => (
+        <video width="300" loop autoPlay muted style={style_for_filter(data.filter)}>
+          <source src={data.thumbnail_video_url} type="video/mp4" />
+          Your browser does not support the video tag.
+        </video>
+      ),
+      stopPropagation: true,
+    },
+    {
+      key: "image",
+      label: "Flat-Corrected",
+      component: (data) => (
+        <img src={data.thumbnail_image_url} alt={data.name} width="200px" loading="lazy" />
+      ),
+      stopPropagation: true,
     },
     // {
     //   key: "status",
@@ -192,6 +211,7 @@ export default function Stacks(props) {
 
   return (
     <EnhancedTable
+      key={props.key}
       rows={data || []}
       totalCount={totalCount}
       headers={headers}

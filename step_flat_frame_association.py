@@ -49,7 +49,6 @@ def filter_flat_frames(flat_frames, rig, filter, camera_configs):
   return list(sorted(set(output)))
 
 
-@cache.memoize()
 def run(light_frames, flat_frames):
   light_frame_dates = list(
       sorted(set(file_io.read_fits(f)['DATE'] for f in light_frames)))

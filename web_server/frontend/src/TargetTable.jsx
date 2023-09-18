@@ -4,8 +4,26 @@ import { amber, green, indigo, lightGreen, red } from "@mui/material/colors";
 import { Block, MoveToInbox } from "@mui/icons-material";
 import StackTable from "./StackTable.jsx";
 
+// TODO: Unify this.
+function style_for_filter(filter) {
+ const color = {
+    'L': [51, 51, 51],
+    'R': [230, 0, 0],
+    'G': [0, 204, 0],
+    'B': [0, 0, 204],
+    'H': [159, 43, 104],
+    'S': [140, 0, 0],
+    'O': [0, 204, 204],
+  }[filter];
+  
+  return {
+    border: `1px solid rgba(${color[0]}, ${color[1]}, ${color[2]}, 1.0)`,
+  };
+}
+
 export default function Targets(props) {
-  const [data, setData] = useState([]);
+  const [targets, setTargets] = useState([]);
+  const [stacks, setStacks] = useState([]);
   const [totalCount, setTotalCount] = useState();
   const [tableLoading, setTableLoading] = useState(false);
   const [order, setOrder] = useState("");
@@ -28,14 +46,32 @@ export default function Targets(props) {
       collapse: true,
     },
     { key: "name", attribute: "name", label: "Target" },
-    // {
-    //   key: "image",
-    //   label: "Thumbnail",
-    //   component: (data) => (
-    //     <img src={data.thumbnail_image_url} alt={data.name} width="200px" loading="lazy" />
-    //   ),
-    //   stopPropagation: true,
-    // },
+    {
+      key: "image",
+      label: "Thumbnails",
+      component: (target) => {
+        let output = [];
+        if (stacks) {
+          for (let id in target.stacks) {
+            console.log('looking up stack id ' + id);
+            let found = stacks.find(function (element) {
+              return element.id == id;
+            });
+            console.log('found ' + found);
+
+            if (found) {
+              // TODO: Assert found
+              // TODO: Sort images by filter
+              output.push(
+                <img src={found.thumbnail_image_url}
+                     style={style_for_filter(found.filter)} />);
+            }
+          }
+        }
+        return output;
+      },
+      stopPropagation: true,
+    },
     // {
     //   key: "status",
     //   attribute: "status",
@@ -102,9 +138,9 @@ export default function Targets(props) {
   ];
 
   const collapseContent = () => {
-    if (data) {
-      return data.map((target) => (
-        <StackTable stacks={target.stacks} />
+    if (targets) {
+      return targets.map((target) => (
+        <StackTable key={target.name} stacks={target.stacks} />
       ));
     }
   };
@@ -162,14 +198,17 @@ export default function Targets(props) {
 
   useEffect(() => {
     console.log('fetching targets...');
-    fetch('/targets').then(res => res.json()).then(data => {
-      setData(data);
+    fetch('/targets').then(res => res.json()).then(targets => {
+      setTargets(targets);  
+    });
+    fetch('/stacks').then(res => res.json()).then(stacks => {
+      setStacks(stacks);  
     });
   }, [order, orderBy, rowsPerPage, page, filters]);
 
   return (
     <EnhancedTable
-      rows={data || []}
+      rows={targets || []}
       totalCount={totalCount}
       headers={headers}
       order={order}

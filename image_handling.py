@@ -46,7 +46,7 @@ def autostretch(image):
   return E6
 
 
-def array_to_png(array, filename):
+def array_to_png(array):
   array = (array * 255.0).astype(np.uint8)
   _, png = cv2.imencode('.png', array)
   return png.tobytes()
@@ -66,12 +66,13 @@ def thumbnail(filename, width=640):
   return autostretch(resize_array(im, width))
 
 
-@cache.memoize()
 def thumbnails(filenames, width=640):
   with Pool() as p:
     return p.map(partial(thumbnail, width=width), filenames)
 
 
+# TODO: Memoize only using the lists of light, dark, bias, and flat frames.
+# I think some round-off errors, etc. are preventing memoization from happening.
 @cache.memoize()
 def thumbnail_video(stack, width=640):
   height, width = resize_array(file_io.read_fits_image(stack.light_frames[0]),
@@ -97,10 +98,10 @@ def thumbnail_video(stack, width=640):
 
 
 @cache.memoize()
-def thumbnail_image_url(stack, width=640):
+def thumbnail_image(stack, width=640):
   images = thumbnails(stack.light_frames, width)
   index = np.argmax(map(np.std, images))
-  return f'/thumbnail_image/{stack.light_frames[index]}'
+  return array_to_png(images[index])
 
 
 if __name__ == '__main__':
