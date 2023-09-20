@@ -51,26 +51,26 @@ def read_fits(filename, print_header=False):
     return output
 
 
-@cache.memoize()
+# @cache.memoize()
 def hash_of_image_data(filename):
   with pyfits.open(filename) as fits:
     return xxhash.xxh128(fits[0].data.tobytes()).hexdigest()
 
 
-def fits_matches(filename, key, value):
+def fits_matches(fits_headers, filename, key, value):
   if type(key) == str and type(value) == str:
-    return read_fits(filename)[key] == value
+    return fits_headers[filename][key] == value
 
   for k, v in zip(key, value):
-    if read_fits(filename)[k] != v:
+    if fits_headers[filename][k] != v:
       return False
 
   return True
 
 
-def group_by_fits_keyword(filenames, fits_keyword):
+def group_by_fits_keyword(fits_headers, filenames, fits_keyword):
   def key(f):
-    return read_fits(f)[fits_keyword]
+    return fits_headers[f][fits_keyword]
 
   filenames = sorted(filenames, key=key)
   return [(k, list(g)) for k, g in itertools.groupby(filenames, key=key)]

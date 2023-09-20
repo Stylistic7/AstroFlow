@@ -6,35 +6,46 @@ import config
 import file_io
 
 from cache import cache
+import camera_configs
+from stack import Stack
 
 
 def _round_to_nearest_multiple(number, multiple):
   return int(multiple * round(number / multiple))
 
 
-@cache.memoize()
-def find_bias_frames(bias_frames, camera_configs):
+def _find_bias_frames(configs, bias_frames, fits_headers):
   output = []
-  for camera, temperature, _ in camera_configs:
+  for camera, temperature, _ in configs:
     output.extend([
         f for f in bias_frames
-        if file_io.fits_matches(f, 'INSTRUME', camera) and
-        _round_to_nearest_multiple(file_io.read_fits(f)['CCD-TEMP'],
-                                   10.0) == temperature
+        if fits_headers[f]['INSTRUME'] == camera and _round_to_nearest_multiple(
+            fits_headers[f]['CCD-TEMP'], 10.0) == temperature
     ])
 
-  return list(sorted(set(output)))
+  return set(output)
 
 
-@cache.memoize()
-def find_dark_frames(dark_frames, camera_configs):
+def _find_dark_frames(configs, dark_frames, fits_headers):
   output = []
-  for camera, temperature, exposure in camera_configs:
+  for camera, temperature, exposure in configs:
     output.extend([
-        f for f in dark_frames
-        if file_io.fits_matches(f, 'INSTRUME', camera) and
-        _round_to_nearest_multiple(file_io.read_fits(f)['CCD-TEMP'], 10.0) ==
-        temperature and file_io.read_fits(f)['EXPOSURE'] == float(exposure)
+        f for f in dark_frames if fits_headers[f]['INSTRUME'] == camera and
+        _round_to_nearest_multiple(fits_headers[f]['CCD-TEMP'], 10.0) ==
+        temperature and fits_headers[f]['EXPOSURE'] == float(exposure)
     ])
 
-  return list(sorted(set(output)))
+  return set(output)
+
+
+def associate_dark_and_bias_frames(stack, dark_frames, bias_frames,
+                                   fits_headers):
+  print('associate_dark_and_bias_frames', stack)
+  configs = camera_configs.get_unique_camera_configs(stack.light_frames,
+                                                     fits_headers)
+  print('configs', configs)
+  stack.dark_frames = _find_dark_frames(configs, dark_frames, fits_headers)
+  stack.bias_frames = _find_bias_frames(configs, bias_frames, fits_headers)
+
+  print('process_stack done, stack is', stack)
+  return stack

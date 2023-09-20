@@ -50,10 +50,11 @@ def filter_flat_frames(flat_frames, rig, filter, camera_configs):
 
 
 def run(light_frames, flat_frames):
-  light_frame_dates = list(
-      sorted(set(file_io.read_fits(f)['DATE'] for f in light_frames)))
-  flat_frame_dates = list(
-      sorted(set(file_io.read_fits(f)['DATE'] for f in flat_frames)))
+  fits_headers = cache['fits_headers']
+
+  light_frame_dates = sorted(set(
+      fits_headers[f]['DATE'] for f in light_frames))
+  flat_frame_dates = sorted(set(fits_headers[f]['DATE'] for f in flat_frames))
 
   return _dates_to_strings(
       _associate_dates(light_frame_dates, flat_frame_dates))

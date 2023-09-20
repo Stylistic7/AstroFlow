@@ -26,28 +26,25 @@ class PlateSolution:
   footprint: list = None
 
 
-def get_footprint(wcs_file):
+# TODO: Don't open the WCS file multiple times.
+
+
+def get_footprint(header):
   """Returns a 4x2 array. Order is clockwise starting with the bottom left corner."""
-  with pyfits.open(wcs_file) as fits:
-    with warnings.catch_warnings():
-      warnings.simplefilter("ignore")
-      header = fits[0].header
-      header['NAXIS1'] = header['IMAGEW']
-      header['NAXIS2'] = header['IMAGEH']
-      wcs = astropy.wcs.WCS(header=header, fobj=fits)
-      return wcs.calc_footprint(header=header).tolist()
+  with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    header['NAXIS1'] = header['IMAGEW']
+    header['NAXIS2'] = header['IMAGEH']
+    wcs = astropy.wcs.WCS(header=header)
+    return wcs.calc_footprint(header=header).tolist()
 
 
-def get_center(wcs_file):
-  with pyfits.open(wcs_file) as fits:
-    header = fits[0].header
-    return header['CRVAL1'], header['CRVAL2']
+def get_center(header):
+  return header['CRVAL1'], header['CRVAL2']
 
 
-def get_rotation_angle(wcs_file):
-  with pyfits.open(wcs_file) as fits:
-    header = fits[0].header
-    return np.arctan2(header['CD1_2'], header['CD1_1'])
+def get_rotation_angle(header):
+  return np.arctan2(header['CD1_2'], header['CD1_1'])
 
 
 def get_num_stars(axy_file):
@@ -56,7 +53,7 @@ def get_num_stars(axy_file):
     return table.shape[0]
 
 
-@cache.memoize()
+# @cache.memoize()
 def solve_field(filename):
   with tempfile.TemporaryDirectory() as temp_dir:
     dest_filename = os.path.join(temp_dir, os.path.basename(filename))
@@ -66,7 +63,7 @@ def solve_field(filename):
       command = [
           "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
           "--no-background-subtraction", "--guess-scale", "--downsample", "4",
-          "--objs", "1000", dest_filename
+          "--crpix-center", "--objs", "1000", dest_filename
       ]
       ret = subprocess.run(command, capture_output=True, timeout=120)
     except:
@@ -75,12 +72,15 @@ def solve_field(filename):
     wcs_file = Path(dest_filename).with_suffix('.wcs')
     axy_file = Path(dest_filename).with_suffix('.axy')
     if os.path.exists(wcs_file) and os.path.exists(axy_file):
-      return PlateSolution(image_filename=filename,
-                           wcs_contents=open(wcs_file, 'rb').read(),
-                           center=get_center(wcs_file),
-                           footprint=get_footprint(wcs_file),
-                           rotation_angle=get_rotation_angle(wcs_file),
-                           num_stars=get_num_stars(axy_file))
+      wcs_contents = open(wcs_file, 'rb').read()
+      with pyfits.open(wcs_file) as fits:
+        header = fits[0].header
+        return PlateSolution(image_filename=filename,
+                             wcs_contents=wcs_contents,
+                             center=get_center(header),
+                             footprint=get_footprint(header),
+                             rotation_angle=get_rotation_angle(header),
+                             num_stars=get_num_stars(axy_file))
     else:
       # TODO: Emit warnings through Metaflow's reporting system.
       print(f'Could not plate-solve file {filename}')

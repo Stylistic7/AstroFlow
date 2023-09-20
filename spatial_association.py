@@ -15,7 +15,7 @@ import plate_solving
 
 from cache import cache
 
-MIN_COMPONENT_MEMBERS = 3
+MIN_COMPONENT_MEMBERS = 2
 
 
 def iou(a, b):
@@ -42,11 +42,10 @@ def canonical_target_string(position):
     return ra_dec_string(ra, dec)
 
 
-def find_components(filenames, min_component_members=MIN_COMPONENT_MEMBERS):
-  footprints = {
-      f: Polygon(p.footprint)
-      for f, p in cache['plate_solutions'].items() if f in filenames
-  }
+def find_components(plate_solutions,
+                    min_component_members=MIN_COMPONENT_MEMBERS):
+  filenames = plate_solutions.keys()
+  footprints = {f: Polygon(p.footprint) for f, p in plate_solutions.items()}
 
   targets = []
   last_printed_percent_done = 0
@@ -70,7 +69,7 @@ def find_components(filenames, min_component_members=MIN_COMPONENT_MEMBERS):
   targets = [t for t in targets if len(t) > MIN_COMPONENT_MEMBERS]
 
   def get_name(target):
-    plate_solution = cache['plate_solutions'][target[0]]
+    plate_solution = plate_solutions[target[0]]
     return canonical_target_string(plate_solution.center)
 
   targets = [(get_name(t), t) for t in targets]
@@ -79,7 +78,7 @@ def find_components(filenames, min_component_members=MIN_COMPONENT_MEMBERS):
 
   output_targets = []
   for name, filenames in targets:
-    center = cache['plate_solutions'][filenames[0]].center
+    center = plate_solutions[filenames[0]].center
     if target_string_counts[name] > 1:
       new_name = f'{name}_{ra_dec_string(*center)}'
       output_targets.append((new_name, filenames))

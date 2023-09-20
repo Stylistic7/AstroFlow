@@ -19,11 +19,11 @@ import pixinsight_mosaic_by_coordinates
 import trim_mosaic_tile
 import spatial_association
 
-from sklearn.decomposition import PCA
-from sklearn.linear_model import RANSACRegressor
-
 
 def _identify_mosiacs(stacks):
+  if not stacks:
+    return []
+
   def overlap(a, b):
     return a.intersection(b).area > 0
 
@@ -52,13 +52,11 @@ def _make_integral(L):
     return np.mean(np.abs(L - np.round(L)))
 
   divisors = list(range(1, int(np.ceil(np.max(L))) + 1))
-  print('divisors', divisors)
 
   if not divisors:
     return [], np.inf
 
   maes = [mae(L / d) for d in divisors]
-  print('maes', maes)
 
   index = np.argmin(maes)
   integral = np.round(L / divisors[index]).astype(np.int32)
@@ -68,14 +66,25 @@ def _make_integral(L):
 
 def _error(center, basis_vectors):
   center_in_basis = np.dot(center, basis_vectors)
-  print('center_in_basis', center_in_basis)
   return np.mean(np.abs(center_in_basis - np.round(center_in_basis)), axis=0)
+
+
+def _plot_mosaic(mosaic, plot_title=None):
+  plt.figure()
+  plt.title(plot_title)
+
+  for stack in mosaic:
+    plt.plot(*stack.footprint_polygon().exterior.xy, color='black')
+    plt.scatter([stack.center[0]], [stack.center[1]], color='black')
+
+  plt.show()
 
 
 def _ransac(mosaic, plot=False, plot_title=None):
   print(f'Running RANSAC on mosaic with {len(mosaic)} stacks')
 
   if len(mosaic) < 3:
+    _plot_mosaic(mosaic, plot_title)
     return mosaic
 
   best_error = np.inf
@@ -85,26 +94,26 @@ def _ransac(mosaic, plot=False, plot_title=None):
 
   centers = np.vstack(
       [s.footprint_polygon().centroid.coords for s in mosaic]).T
-  print(f'centers {centers}')
+  # print(f'centers {centers}')
 
   for iteration in range(500):
-    print(f'### Top of iteration {iteration}')
+    # print(f'### Top of iteration {iteration}')
 
     # Choose 3 tiles at random. Compute two basis vectors from them.
     # Skip the iteration if the basis vectors aren't (nearly) orthogonal.
     random_centers = centers[:,
                              np.random.
                              choice(centers.shape[1], 3, replace=False)]
-    print('random_centers', random_centers)
+    # print('random_centers', random_centers)
     origin = random_centers[:, 0]
-    print('origin', origin)
+    # print('origin', origin)
     basis_vectors = np.asarray(
         [random_centers[:, 1] - origin, random_centers[:, 2] - origin])
-    print('basis_vectors', basis_vectors)
+    # print('basis_vectors', basis_vectors)
     basis_dot = np.dot(basis_vectors[:, 0], basis_vectors[:, 1]) / (
         np.linalg.norm(basis_vectors[:, 0]) *
         np.linalg.norm(basis_vectors[:, 1]))
-    print('dot product of basis vectors', basis_dot)
+    # print('dot product of basis vectors', basis_dot)
     if np.abs(basis_dot) > 0.05:
       continue
 
@@ -113,16 +122,16 @@ def _ransac(mosaic, plot=False, plot_title=None):
     inliers = []
     errors = []
     for i, center in enumerate(centers.T):
-      print(f'  center {center}')
+      # print(f'  center {center}')
       transformed_center = np.linalg.solve(basis_vectors, center - origin)
-      print(f'  transformed center', transformed_center)
+      # print(f'  transformed center', transformed_center)
       error = np.linalg.norm(transformed_center - np.round(transformed_center))
-      print(f'  transformed_center {transformed_center} '
-            f'has Euclidean error {error}')
+      # print(f'  transformed_center {transformed_center} '
+      #       f'has Euclidean error {error}')
       if error < 0.2:
         inliers.append(mosaic[i])
         errors.append(error)
-    print(f'Found {len(inliers)} inliers')
+    # print(f'Found {len(inliers)} inliers')
 
     if len(inliers) > len(best_inliers) or (len(inliers) == len(best_inliers)
                                             and np.mean(error) < best_error):
@@ -130,28 +139,28 @@ def _ransac(mosaic, plot=False, plot_title=None):
       best_inliers = inliers
       best_error = np.mean(errors)
       best_basis_vectors = basis_vectors
-      print('### UPDATED BEST MODEL')
+      # print('### UPDATED BEST MODEL')
 
-  print('### END OF RANSAC')
-  print('best_origin', best_origin)
-  print(f'best_inliers length {len(best_inliers)}: {best_inliers}')
-  print('best_error', best_error)
-  print('best_basis_vectors', best_basis_vectors)
+  # print('### END OF RANSAC')
+  # print('best_origin', best_origin)
+  # print(f'best_inliers length {len(best_inliers)}: {best_inliers}')
+  # print('best_error', best_error)
+  # print('best_basis_vectors', best_basis_vectors)
 
   if not best_inliers:
     return []
 
-  print('centers in best basis:')
+  # print('centers in best basis:')
   for i, center in enumerate(centers.T):
     transformed_center = np.linalg.solve(best_basis_vectors,
                                          center - best_origin)
-    print(f'  transformed_center {i}: {transformed_center}')
+    # print(f'  transformed_center {i}: {transformed_center}')
     error = np.linalg.norm(transformed_center - np.round(transformed_center))
-    print(f'  transformed_center {transformed_center} '
-          f'has Euclidean error {error}')
+    # print(f'  transformed_center {transformed_center} '
+    #       f'has Euclidean error {error}')
 
     mosaic[i].tile_indices = np.round(transformed_center).astype(np.int32)
-    print(f'  tile_indices {i}: {mosaic[i].tile_indices}')
+    # print(f'  tile_indices {i}: {mosaic[i].tile_indices}')
 
   if not plot:
     return best_inliers
@@ -161,9 +170,9 @@ def _ransac(mosaic, plot=False, plot_title=None):
 
   # Draw the basis vectors.
   for i, basis_vector in enumerate(best_basis_vectors.T):
-    print('plotting basis_vector', basis_vector)
-    print('best_origin[0]', best_origin[0])
-    print('best_origin[1]', best_origin[1])
+    # print('plotting basis_vector', basis_vector)
+    # print('best_origin[0]', best_origin[0])
+    # print('best_origin[1]', best_origin[1])
     plt.plot([best_origin[0], best_origin[0] + basis_vector[0]],
              [best_origin[1], best_origin[1] + basis_vector[1]],
              label=f"Basis vector {i}",
@@ -205,10 +214,15 @@ def run(stacks, plot=False):
     for filter in filters:
       mosaics = _identify_mosiacs(
           [s for s in stacks if s.rig == rig and s.filter == filter])
+      if not mosaics:
+        continue
       print(f'Found {len(mosaics)} mosaics for rig {rig} and filter {filter}')
 
       for mosaic in mosaics:
         print(f'Mosaic composed of {len(mosaic)} stacks:')
+        for stack in mosaic:
+          print(f'  {stack}')
+
         mosaic = _ransac(mosaic,
                          plot=plot,
                          plot_title=f'Rig {rig} and filter {filter}')

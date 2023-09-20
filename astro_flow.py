@@ -122,8 +122,7 @@ class AstroFlow(FlowSpec):
 
   @step
   def prepare_cache(self):
-    # TODO: Don't just delete all of these; the ones that haven't changed
-    # should be kept, reducing run time.
+    # TODO: Don't delete these if they are slow to regenerate.
     cache['stacks'] = []
     cache['targets'] = []
     pixinsight_shell_script._clear_cache()
@@ -306,6 +305,7 @@ class AstroFlow(FlowSpec):
 
   @step_with_debugging
   def flat_frame_association(self):
+    # TODO: Add flat frame association to the UI.
     self.stack.flat_frames = step_flat_frame_association.filter_flat_frames(
         self.flat_frames, self.stack.rig, self.stack.filter,
         self.stack.camera_configs)
@@ -406,7 +406,7 @@ class AstroFlow(FlowSpec):
     # the light frames.
     stacks = cache['stacks']
     for stack in stacks:
-      if stack.status:
+      if stack.enable and stack.status:
         stack.master = step_stack.run(stack, self.output_dir)
         cache['stacks'] = stacks
 
@@ -417,7 +417,7 @@ class AstroFlow(FlowSpec):
   def post_process_stack(self):
     stacks = cache['stacks']
     for stack in stacks:
-      if stack.master:
+      if stack.enable and stack.master and not stack.post_processed:
         stack.post_processed = step_post_process_stack.run(
             stack.rig, stack.master)
         cache['stacks'] = stacks

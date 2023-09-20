@@ -1,20 +1,20 @@
 import numpy as np
 
 import file_io
-from stack import Stack
+from stack import Stack, FileList
 from cache import cache
 
 
 def _check_frame_list(L, name):
-  if type(L) is not list:
-    print(f'Stack is not good: {name} is not a list.')
+  if type(L) is not FileList:
+    print(f'Stack is not good: {name} is not a FileList.')
     return False
 
-  if len(L) < 3:
+  if len(L) < 2:
     print(f'Stack is not good: {name} has too few elements.')
     return False
 
-  if list(sorted(L)) != L:
+  if list(sorted(L)) != list(L):
     print(f'Stack is not good: {name} is unsorted.')
     return False
 
@@ -33,9 +33,13 @@ def _min_footprint(footprints):
           [min_ra, max_dec]]
 
 
-def run(stack, plate_solutions):
+def run(stack, fits_headers):
   # TODO: Also check that:
   # They all have essentially the same plate solution
+
+  if not stack.camera_configs:
+    print(f'Stack is not good: there are no camera configs')
+    return False
 
   cameras = set(cc[0] for cc in stack.camera_configs)
   if len(cameras) > 1:
@@ -45,13 +49,15 @@ def run(stack, plate_solutions):
   camera = list(cameras)[0]
 
   if not all(
-      _check_frame_list(f, n) for f, n in
-      zip([stack.light_frames, stack.bias_frames, stack.flat_frames],
-          ['light_frames', 'dark_frames', 'bias_frames', 'flat_frames'])):
+      _check_frame_list(f, n) for f, n in zip([
+          stack.light_frames, stack.dark_frames, stack.bias_frames,
+          stack.flat_frames
+      ], ['light_frames', 'dark_frames', 'bias_frames', 'flat_frames'])):
     return False
 
   if not all(
-      file_io.fits_matches(f, ['IMAGETYP', 'INSTRUME', 'RIG', 'FILTER'],
+      file_io.fits_matches(fits_headers, f,
+                           ['IMAGETYP', 'INSTRUME', 'RIG', 'FILTER'],
                            ['Light', camera, stack.rig, stack.filter])
       for f in stack.light_frames):
     print(f'Stack is not good: some light frames had incorrect '
@@ -59,7 +65,8 @@ def run(stack, plate_solutions):
     return False
 
   if not all(
-      file_io.fits_matches(f, ['IMAGETYP', 'INSTRUME', 'RIG', 'FILTER'],
+      file_io.fits_matches(fits_headers, f,
+                           ['IMAGETYP', 'INSTRUME', 'RIG', 'FILTER'],
                            ['Flat', camera, stack.rig, stack.filter])
       for f in stack.flat_frames):
     print(f'Stack is not good: some flat frames had incorrect '
@@ -67,14 +74,14 @@ def run(stack, plate_solutions):
     return False
 
   if not all(
-      file_io.fits_matches(f, ['IMAGETYP', 'INSTRUME'], ['Dark', camera])
-      for f in stack.dark_frames):
+      file_io.fits_matches(fits_headers, f, ['IMAGETYP', 'INSTRUME'],
+                           ['Dark', camera]) for f in stack.dark_frames):
     print(f'Stack is not good: some dark frames had incorrect IMAGETYP keyword')
     return False
 
   if not all(
-      file_io.fits_matches(f, ['IMAGETYP', 'INSTRUME'], ['Bias', camera])
-      for f in stack.bias_frames):
+      file_io.fits_matches(fits_headers, f, ['IMAGETYP', 'INSTRUME'],
+                           ['Bias', camera]) for f in stack.bias_frames):
     print(f'Stack is not good: some bias frames had incorrect IMAGETYP keyword')
     return False
 
