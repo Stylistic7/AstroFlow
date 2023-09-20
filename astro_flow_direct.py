@@ -8,6 +8,7 @@ from multiprocessing import Pool
 import functools
 import hashlib
 from collections import defaultdict
+import concurrent.futures
 
 from stack import Stack, FileList
 from target import Target
@@ -21,6 +22,7 @@ import camera_configs
 import step_flat_frame_association
 import step_sanity_check_stack
 import step_mosaic
+import image_handling
 
 
 # TODO: Building up a context object that is "parallel" to the disk cache
@@ -205,6 +207,7 @@ def compute_image_hashes(all_frames):
 
 def check_duplicates(image_hashes):
   print('Checking for duplicate images...')
+  # TODO: Implement
 
 
 @timeit
@@ -251,29 +254,40 @@ def plate_solve(light_frames):
   return PlateSolutions(plate_solutions)
 
 
+def make_and_cache_thumbnail(light_frame, rotate):
+  key = ('thumbnail_image', light_frame)
+  cache[key] = image_handling.thumbnail(light_frame, rotate)
+
+
 @timeit
-@memoize_by_context()
-def identify_targets(light_frames, plate_solutions):
-  print('Identifying targets...')
-  return [
-      Target(name=name, light_frames=sorted(light_frames)) for name,
-      light_frames in spatial_association.find_components(plate_solutions)
-  ]
+def make_image_thumbnails(light_frames, plate_solutions):
+  with concurrent.futures.ProcessPoolExecutor() as executor:
+    for light_frame in light_frames:
+      if ('thumbnail_image', light_frame) in cache: continue
+      rotate = plate_solutions[light_frame].rotation_angle < 0.0
+      executor.submit(make_and_cache_thumbnail, light_frame, rotate)
 
 
 @timeit
 @memoize_by_context()
-def identify_stacks(targets, fits_headers):
+def identify_spatial_components(plate_solutions):
+  print('Identifying spatial components...')
+  return spatial_association.find_components(plate_solutions)
+
+
+@timeit
+@memoize_by_context()
+def identify_stacks(spatial_components, fits_headers):
   print('Identifying stacks...')
   stacks = []
-  for target in targets:
+  for name, light_frames in spatial_components:
     for rig, rig_light_frames in file_io.group_by_fits_keyword(
-        fits_headers, target.light_frames, 'RIG'):
+        fits_headers, light_frames, 'RIG'):
       for filter, filter_light_frames in file_io.group_by_fits_keyword(
           fits_headers, rig_light_frames, 'FILTER'):
-        print(f'target {target} rig {rig} filter {filter}')
+        print(f'spatial component {name} rig {rig} filter {filter}')
         stacks.append(
-            Stack(target=target.name,
+            Stack(target=name,
                   rig=rig,
                   filter=filter,
                   light_frames=FileList(filter_light_frames)))
@@ -285,7 +299,9 @@ def identify_stacks(targets, fits_headers):
 # @memoize_by_context()
 def identify_mosaics(stacks):
   print('Identifying mosaics...')
-  return step_mosaic.run(stacks, plot=True)
+  mosaics = step_mosaic.run(stacks, plot=False)
+  cache['mosaics'] = mosaics
+  return mosaics
 
 
 def process_in_parallel(fn, elements, key_func=lambda x: x):
@@ -334,7 +350,7 @@ def get_camera_configs(stacks, fits_headers):
 
 @timeit
 @memoize_by_context()
-def dark_frame_association(stacks, dark_frames, fits_headers):
+def associate_dark_frames(stacks, dark_frames, fits_headers):
   print(f'Associating dark frames...')
 
   def rounded_temperature(f):
@@ -363,7 +379,7 @@ def dark_frame_association(stacks, dark_frames, fits_headers):
 
 @timeit
 @memoize_by_context()
-def bias_frame_association(stacks, bias_frames, fits_headers):
+def associate_bias_frames(stacks, bias_frames, fits_headers):
   print(f'Associating bias frames...')
 
   def rounded_temperature(f):
@@ -389,7 +405,7 @@ def bias_frame_association(stacks, bias_frames, fits_headers):
 
 @timeit
 @memoize_by_context()
-def flat_frame_association(stacks, flat_frames, fits_headers):
+def associate_flat_frames(stacks, flat_frames, fits_headers):
   print('Associating flat frames...')
 
   flats_for_camera = group_by_fn(flat_frames,
@@ -430,6 +446,41 @@ def compute_stack_metadata(stacks, fits_headers, plate_solutions):
   return stacks
 
 
+def make_and_cache_stack_thumbnails(stack):
+  image_key = ('stack_thumbnail_image', stack.target, stack.rig, stack.filter)
+  video_key = ('stack_thumbnail_video', stack.target, stack.rig, stack.filter)
+
+  cache[image_key], cache[
+      video_key] = image_handling.stack_thumbnail_image_and_video(stack)
+
+
+# TODO: Consider how changing a config setting and re-running will work.
+# If I just use the (target, rig, filter) keys, they won't get re-generated.
+# Figure out a good universal key strategy for all kinds of objects.
+def make_stack_thumbnails_videos(stacks):
+  print('Making stack thumbnails...')
+  with concurrent.futures.ProcessPoolExecutor() as executor:
+    for stack in stacks:
+      image_key = ('stack_thumbnail_image', stack.target, stack.rig,
+                   stack.filter)
+      video_key = ('stack_thumbnail_video', stack.target, stack.rig,
+                   stack.filter)
+
+      if image_key in cache and video_key in cache:
+        continue
+
+      executor.submit(make_and_cache_stack_thumbnails, stack)
+
+
+@memoize_by_context()
+def group_stacks_into_targets(stacks):
+  stacks_for_target = defaultdict(list)
+  for stack in stacks:
+    stacks_for_target[stack.target].append(stack.id)
+
+  return [Target(name=k, stacks=v) for k, v in stacks_for_target.items()]
+
+
 @memoize_by_context()
 def sanity_check_stacks(stacks, fits_headers):
   print('Sanity-checking stacks...')
@@ -443,9 +494,6 @@ def sanity_check_stacks(stacks, fits_headers):
 
   return stacks
 
-
-# def make_thumbnails(context):
-#   print('Making thumbnails...')
 
 # def stack_subframes(context):
 #   print('Stacking subframes...')
@@ -469,17 +517,23 @@ def main(context):
       all_frames, fits_headers)
   light_frames = remove_frames_during_mount_movements(light_frames)
   plate_solutions = plate_solve(light_frames)
-  targets = identify_targets(light_frames, plate_solutions)
-  stacks = identify_stacks(targets, fits_headers)
+  make_image_thumbnails(light_frames, plate_solutions)
+  spatial_components = identify_spatial_components(plate_solutions)
+  stacks = identify_stacks(spatial_components, fits_headers)
   # measure_stacks()
   stacks = get_camera_configs(stacks, fits_headers)
-  stacks = dark_frame_association(stacks, dark_frames, fits_headers)
-  stacks = bias_frame_association(stacks, bias_frames, fits_headers)
-  stacks = flat_frame_association(stacks, flat_frames, fits_headers)
+  stacks = associate_dark_frames(stacks, dark_frames, fits_headers)
+  stacks = associate_bias_frames(stacks, bias_frames, fits_headers)
+  stacks = associate_flat_frames(stacks, flat_frames, fits_headers)
   stacks = compute_stack_metadata(stacks, fits_headers, plate_solutions)
+  make_stack_thumbnails_videos(stacks)
+  targets = group_stacks_into_targets(stacks)
   stacks = sanity_check_stacks(stacks, fits_headers)
   mosaics = identify_mosaics(stacks)
-  # make_thumbnails()
+
+  cache['stacks'] = stacks
+  cache['targets'] = targets
+
   # stack_subframes()
   # post_process_stacks()
 

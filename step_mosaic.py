@@ -84,7 +84,8 @@ def _ransac(mosaic, plot=False, plot_title=None):
   print(f'Running RANSAC on mosaic with {len(mosaic)} stacks')
 
   if len(mosaic) < 3:
-    _plot_mosaic(mosaic, plot_title)
+    if plot:
+      _plot_mosaic(mosaic, plot_title)
     return mosaic
 
   best_error = np.inf

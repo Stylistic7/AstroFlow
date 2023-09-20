@@ -58,8 +58,8 @@ class Stack:
 
   exposure_time_s: int = None
 
-  thumbnail_image_url: str = None
-  thumbnail_video_url: str = None
+  # thumbnail_image_url: str = None
+  # thumbnail_video_url: str = None
 
   center: list[float] = field(default_factory=list)
   footprint: list[tuple[float]] = None

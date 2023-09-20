@@ -54,17 +54,18 @@ export default function Targets(props) {
         if (stacks) {
           for (let id in target.stacks) {
             console.log('looking up stack id ' + id);
-            let found = stacks.find(function (element) {
+            let stack = stacks.find(function (element) {
               return element.id == id;
             });
-            console.log('found ' + found);
+            console.log('stack ' + stack);
 
-            if (found) {
-              // TODO: Assert found
+            if (stack) {
+              // TODO: Assert stack
               // TODO: Sort images by filter
+              let stack_thumbnail_image_url = `/stack_thumbnail_image/${stack.target}/${stack.rig}/${stack.filter}`;
               output.push(
-                <img src={found.thumbnail_image_url}
-                     style={style_for_filter(found.filter)} />);
+                <img src={stack_thumbnail_image_url}
+                     style={style_for_filter(stack.filter)} />);
             }
           }
         }

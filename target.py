@@ -18,7 +18,7 @@ class Target:
 
   name: str = None
 
-  light_frames: list[str] = field(default_factory=list)
+  # light_frames: list[str] = field(default_factory=list)
   stacks: list[str] = field(default_factory=list)
 
   # def __post_init__(self):

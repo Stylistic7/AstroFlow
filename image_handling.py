@@ -11,7 +11,6 @@ from multiprocessing import Pool
 from functools import partial
 
 import file_io
-import plate_solving
 
 from cache import cache
 
@@ -52,29 +51,31 @@ def array_to_png(array):
   return png.tobytes()
 
 
-@cache.memoize()
-def thumbnail(filename, width=640):
+def thumbnail(filename, rotate, width=640):
   if filename.endswith('.xisf'):
     im = file_io.read_xisf_image(filename)
   elif filename.endswith('.fit') or filename.endswith('.fits'):
     im = file_io.read_fits_image(filename)
-    plate_solution = plate_solving.solve_field(filename)
-    # print(f'{filename} has rotation_angle {plate_solution.rotation_angle}')
-    if plate_solution.rotation_angle < 0.0:
+    if rotate:
       im = np.rot90(im, 2)
 
   return autostretch(resize_array(im, width))
 
 
-def thumbnails(filenames, width=640):
+# TODO: Pass width down through function hierarchy.
+# TODO: Consider thumbnailing every image and storing them in the cache
+# independently. If a mosaic config or threshold changes a stack's composition,
+# the blink video could then be regenerated very quickly. This is also an
+# embarassingly-parallel operation, as is the video encoding.
+def thumbnails(filenames, plate_solutions, width=640):
+  filenames_and_rotation_angles = [(f, p.rotation_angle)
+                                   for f, p in plate_solutions.items()
+                                   if f in filenames]
   with Pool() as p:
-    return p.map(partial(thumbnail, width=width), filenames)
+    return p.starmap(thumbnail, filenames_and_rotation_angles)
 
 
-# TODO: Memoize only using the lists of light, dark, bias, and flat frames.
-# I think some round-off errors, etc. are preventing memoization from happening.
-@cache.memoize()
-def thumbnail_video(stack, width=640):
+def stack_thumbnail_image_and_video(stack, width=640):
   height, width = resize_array(file_io.read_fits_image(stack.light_frames[0]),
                                width).shape
   height = int(((height + 8 - 1) / 8) * 8)
@@ -86,7 +87,11 @@ def thumbnail_video(stack, width=640):
     video_filename = os.path.join(tmp_dir, 'output.webm')
     out = cv2.VideoWriter(video_filename, fourcc, 10.0, (width, height), False)
 
-    for im in thumbnails(stack.light_frames, width):
+    thumbnails = [cache[('thumbnail_image', f)] for f in stack.light_frames]
+    index = np.argmax(map(np.std, thumbnails))
+    thumbnail_image = array_to_png(thumbnails[index])
+
+    for im in thumbnails:
       im = (im * 255.0).astype(np.uint8)
       frame = np.zeros((height, width), dtype=np.uint8)
       frame[0:im.shape[0], 0:im.shape[1]] = im
@@ -94,26 +99,21 @@ def thumbnail_video(stack, width=640):
       out.write(frame)
 
     out.release()
-    return open(video_filename, 'rb').read()
+    thumbnail_video = open(video_filename, 'rb').read()
+
+    return thumbnail_image, thumbnail_video
 
 
-@cache.memoize()
-def thumbnail_image(stack, width=640):
-  images = thumbnails(stack.light_frames, width)
-  index = np.argmax(map(np.std, images))
-  return array_to_png(images[index])
+# if __name__ == '__main__':
+# frames = file_io.find_files('/Users/nobody/Projects/Astro/Raw/M101', '*.fit')
+# stack = Stack()
+# stack.light_frames = [
+#     f for f in frames if file_io.fits_matches(f, 'IMAGETYP', 'Light')
+# ]
+# print(f'First light frame is {stack.light_frames[0]}')
+# stack.light_frames = list(sorted(stack.light_frames))
+# video = thumbnail_video(stack)
 
-
-if __name__ == '__main__':
-  frames = file_io.find_files('/Users/nobody/Projects/Astro/Raw/M101', '*.fit')
-  stack = Stack()
-  stack.light_frames = [
-      f for f in frames if file_io.fits_matches(f, 'IMAGETYP', 'Light')
-  ]
-  print(f'First light frame is {stack.light_frames[0]}')
-  stack.light_frames = list(sorted(stack.light_frames))
-  video = thumbnail_video(stack)
-
-  video_filename = '/tmp/foo.webm'
-  open(video_filename, 'wb').write(video)
-  print(f'Wrote video to {video_filename}')
+# video_filename = '/tmp/foo.webm'
+# open(video_filename, 'wb').write(video)
+# print(f'Wrote video to {video_filename}')

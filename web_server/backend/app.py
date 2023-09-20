@@ -93,22 +93,22 @@ def min_footprint(footprints):
           [min_ra, max_dec]]
 
 
-@app.route('/target_footprints')
-def target_footprints():
-  targets_and_light_frames = metaflow_data_helper.find(
-      'spatial_grouping', 'targets_and_light_frames') or []
-  plate_solutions = metaflow_data_helper.find('plate_solve',
-                                              'plate_solutions') or {}
+# @app.route('/target_footprints')
+# def target_footprints():
+#   targets_and_light_frames = metaflow_data_helper.find(
+#       'spatial_grouping', 'targets_and_light_frames') or []
+#   plate_solutions = metaflow_data_helper.find('plate_solve',
+#                                               'plate_solutions') or {}
 
-  output = {}
-  for target, light_frames in targets_and_light_frames:
-    print(f'target {target}')
-    ps = [plate_solutions[light_frame] for light_frame in light_frames]
-    footprints = [f for _, f, _ in ps]
-    # print('footprints', footprints)
-    output[target] = footprints
+#   output = {}
+#   for target, light_frames in targets_and_light_frames:
+#     print(f'target {target}')
+#     ps = [plate_solutions[light_frame] for light_frame in light_frames]
+#     footprints = [f for _, f, _ in ps]
+#     # print('footprints', footprints)
+#     output[target] = footprints
 
-  return output
+#   return output
 
 
 @app.route('/')
@@ -140,24 +140,30 @@ def stacks():
   return test_app.stacks if debug else cache['stacks']
 
 
+@app.route('/stacks_for_target/<target>')
+def stacks_for_target(target):
+  return [s for s in cache['stacks'] if s.target == target]
+
+
 @app.route('/stack/<id>')
 def stack(id):
   stacks = test_app.stacks if debug else cache['stacks']
+  print(f"Looking for id '{id}'")
   return asdict(next(s for s in stacks if s.id == id))
 
 
-@app.route('/thumbnail_image/<target>/<rig>/<filter>')
-def thumbnail_image(target, rig, filter):
+@app.route('/stack_thumbnail_image/<target>/<rig>/<filter>')
+def stack_thumbnail_image(target, rig, filter):
   buffer = io.BytesIO()
-  buffer.write(cache['thumbnail_images'][(target, rig, filter)])
+  buffer.write(cache[('stack_thumbnail_image', target, rig, filter)])
   buffer.seek(0)
   return flask.send_file(buffer, mimetype='image/png')
 
 
-@app.route('/thumbnail_video/<target>/<rig>/<filter>')
-def thumbnail_video(target, rig, filter):
+@app.route('/stack_thumbnail_video/<target>/<rig>/<filter>')
+def stack_thumbnail_video(target, rig, filter):
   buffer = io.BytesIO()
-  buffer.write(cache['thumbnail_videos'][(target, rig, filter)])
+  buffer.write(cache[('stack_thumbnail_video', target, rig, filter)])
   buffer.seek(0)
   return flask.send_file(buffer, mimetype='video/webm')
 

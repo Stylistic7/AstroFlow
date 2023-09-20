@@ -94,7 +94,7 @@ export default function Stacks(props) {
       label: "Raw Blink Video",
       component: (data) => (
         <video width="300" loop autoPlay muted style={style_for_filter(data.filter)}>
-          <source src={data.thumbnail_video_url} type="video/mp4" />
+          <source src={`/stack_thumbnail_video/${data.target}/${data.rig}/${data.filter}`} type="video/mp4" />
           Your browser does not support the video tag.
         </video>
       ),
@@ -104,7 +104,7 @@ export default function Stacks(props) {
       key: "image",
       label: "Flat-Corrected",
       component: (data) => (
-        <img src={data.thumbnail_image_url} alt={data.name} width="200px" loading="lazy" />
+        <img src={`/stack_thumbnail_image/${data.target}/${data.rig}/${data.filter}`} alt={data.name} width="200px" loading="lazy" />
       ),
       stopPropagation: true,
     },
