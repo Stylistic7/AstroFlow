@@ -37,6 +37,10 @@ def run(stack, fits_headers):
   # TODO: Also check that:
   # They all have essentially the same plate solution
 
+  if not stack.id:
+    print(f'Stack is not good: it does not have an id')
+    return False
+
   if not stack.camera_configs:
     print(f'Stack is not good: there are no camera configs')
     return False

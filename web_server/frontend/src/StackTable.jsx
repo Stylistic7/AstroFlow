@@ -211,7 +211,6 @@ export default function Stacks(props) {
 
   return (
     <EnhancedTable
-      key={props.key}
       rows={data || []}
       totalCount={totalCount}
       headers={headers}

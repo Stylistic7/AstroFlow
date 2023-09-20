@@ -70,8 +70,6 @@ class Stack:
   post_processed: str = None
 
   def store_metadata(self, fits_headers, plate_solutions):
-    start = time.process_time()
-
     self.store_id()
     self.store_exposure_time_s(fits_headers)
     self.store_center(plate_solutions)

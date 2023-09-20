@@ -87,7 +87,7 @@ def memoize_by_context(fields=None):
         if type(x) == Context:
           return None
         elif type(x) in [FitsHeaders, PlateSolutions, ImageHashes]:
-          return None
+          return hash_file_list(x.keys())
         elif type(x) == FileList:
           return hash_file_list(x)
         elif type(x) == Stack:
@@ -96,14 +96,16 @@ def memoize_by_context(fields=None):
                   hash_file_list(x.flat_frames), x.flat_frame_associations)
         elif type(x) is list:
           return [maybe_hash(y) for y in x]
+        elif type(x) is tuple:
+          return tuple(maybe_hash(y) for y in x)
         else:
           return x
 
       key = (func.__name__, [maybe_hash(x) for x in args], kwargs)
-      # print(f'{func.__name__} wrapper: key is {key}')
+      print(f'{func.__name__} wrapper: key is {key}')
 
       if key not in cache or any(getattr(context, f) for f in fields):
-        # print(f'{func.__name__}: calling wrapped function')
+        print(f'### {func.__name__}: calling wrapped function')
         # print(f'{func.__name__}: key not in cache {key not in cache}')
         # print(f'{func.__name__}: context requires it '
         #       f'{any(getattr(context, f) for f in fields)}')
@@ -111,7 +113,7 @@ def memoize_by_context(fields=None):
         cache[key] = result
         return result
       else:
-        # print(f'{func.__name__}: returning cached result')
+        print(f'### {func.__name__}: returning cached result')
         return cache[key]
 
     return wrapper
@@ -186,6 +188,7 @@ def find_files(input_dirs, max_frames=None):
   return FileList(all_frames)
 
 
+# TODO: This will scale poorly when there are hundreds of thousands of images.
 @timeit
 def read_fits_headers(all_frames):
   print('Reading FITS headers...')
@@ -195,6 +198,7 @@ def read_fits_headers(all_frames):
   return FitsHeaders(fits_headers)
 
 
+# TODO: This will scale poorly when there are hundreds of thousands of images.
 @timeit
 def compute_image_hashes(all_frames):
   print('Computing image hashes...')
@@ -244,6 +248,7 @@ def remove_frames_during_mount_movements(light_frames):
   return FileList(settled_light_frames)
 
 
+# TODO: This will scale poorly when there are hundreds of thousands of images.
 @timeit
 def plate_solve(light_frames):
   print('Plate solving...')
@@ -272,7 +277,8 @@ def make_image_thumbnails(light_frames, plate_solutions):
 @memoize_by_context()
 def identify_spatial_components(plate_solutions):
   print('Identifying spatial components...')
-  return spatial_association.find_components(plate_solutions)
+  spatial_components = spatial_association.find_components(plate_solutions)
+  return [(k, FileList(v)) for k, v in spatial_components]
 
 
 @timeit
@@ -296,7 +302,7 @@ def identify_stacks(spatial_components, fits_headers):
   return stacks
 
 
-# @memoize_by_context()
+@memoize_by_context()
 def identify_mosaics(stacks):
   print('Identifying mosaics...')
   mosaics = step_mosaic.run(stacks, plot=False)
@@ -348,6 +354,9 @@ def get_camera_configs(stacks, fits_headers):
   return stacks
 
 
+# TODO: Putting the for-loop body in a single function means that memoization
+# will fail if even one stack changes. These steps are pretty fast, but consider
+# making the loop body an independent function, and memoizing that.
 @timeit
 @memoize_by_context()
 def associate_dark_frames(stacks, dark_frames, fits_headers):
@@ -475,8 +484,9 @@ def make_stack_thumbnails_videos(stacks):
 @memoize_by_context()
 def group_stacks_into_targets(stacks):
   stacks_for_target = defaultdict(list)
-  for stack in stacks:
-    stacks_for_target[stack.target].append(stack.id)
+  for filter in ['L', 'R', 'G', 'B', 'S', 'H', 'O']:
+    for stack in [s for s in stacks if s.filter == filter]:
+      stacks_for_target[stack.target].append(stack.id)
 
   return [Target(name=k, stacks=v) for k, v in stacks_for_target.items()]
 
@@ -495,8 +505,20 @@ def sanity_check_stacks(stacks, fits_headers):
   return stacks
 
 
-# def stack_subframes(context):
-#   print('Stacking subframes...')
+# TODO: The master filenames on disk do not contain the hashes of the images,
+# so it's impossible to know if, e.g. more flats were added since the last
+# stack. Figure out some universal keying system, so we can identify stale
+# results.
+#
+# In general, each artifact is a pure function of a bunch of other artifacts,
+# e.g. light frames, flat frames, configuration, There's a dependency graph
+# between artifacts and their predecessors.
+#
+# Right now, each step contains for loops (e.g. over stacks), but these bodies
+# need to be broken apart into individual function calls.
+def stack_subframes(context):
+  print('Stacking subframes...')
+
 
 # def post_process_stacks(context):
 #   print('Post-processing stacks...')

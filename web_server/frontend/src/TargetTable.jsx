@@ -52,7 +52,7 @@ export default function Targets(props) {
       component: (target) => {
         let output = [];
         if (stacks) {
-          for (let id in target.stacks) {
+          for (let id of target.stacks) {
             console.log('looking up stack id ' + id);
             let stack = stacks.find(function (element) {
               return element.id == id;
@@ -65,6 +65,7 @@ export default function Targets(props) {
               let stack_thumbnail_image_url = `/stack_thumbnail_image/${stack.target}/${stack.rig}/${stack.filter}`;
               output.push(
                 <img src={stack_thumbnail_image_url}
+                     width="100px"
                      style={style_for_filter(stack.filter)} />);
             }
           }
@@ -141,23 +142,37 @@ export default function Targets(props) {
   const collapseContent = () => {
     if (targets) {
       return targets.map((target) => (
-        <StackTable key={target.name} stacks={target.stacks} />
+        <StackTable key="{target.name}" stacks={target.stacks} />
       ));
     }
   };
 
   const handleRowClick = (event, item) => {
-    setSelectedRow(item);
+    // setSelectedRow(item);
   };
 
   function handleCollapsibleTableRowClick(event, row) {}
 
   function getSelectibleItems(row) {}
 
+  function stringifyEvent(e) {
+    const obj = {};
+    for (let k in e) {
+      obj[k] = e[k];
+    }
+    return JSON.stringify(obj, (k, v) => {
+      if (v instanceof Node) return 'Node';
+      if (v instanceof Window) return 'Window';
+      return v;
+    }, ' ');
+  }
+
   function updateOpenRows(event, key, value) {
+    // console.log('updateOpenRows event ' + stringifyEvent(event) + ' key ' + key + ' value ' + value);
     event.stopPropagation();
 
     let updated = JSON.parse(JSON.stringify(openRows));
+    // console.log('openRows ' + JSON.stringify(openRows));
     updated[key] = value;
     setOpenRows(updated);
   }
@@ -231,6 +246,7 @@ export default function Targets(props) {
       disableSelection={true}
       openRows={openRows}
       handleCollapseIconClick={updateOpenRows}
+      identifier="name"
     />
   );
 }
