@@ -163,6 +163,14 @@ def target(target_id):
   return asdict(next(t for t in targets if t.name == target_id))
 
 
+@app.route('/target_polygon_points/<target_id>')
+def target_polygon_points(target_id):
+  targets = test_app.targets if debug else cache['targets']
+  print(f"Looking for target_id '{target_id}'")
+  target = next(t for t in targets if t.name == target_id)
+  return ' '.join([','.join([str(x) for x in pt]) for pt in target.footprint])
+
+
 @app.route('/stack/<stack_id>')
 def stack(stack_id):
   stacks = test_app.stacks if debug else cache['stacks']

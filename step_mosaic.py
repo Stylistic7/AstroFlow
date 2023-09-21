@@ -86,9 +86,9 @@ def _plot_mosaic(mosaic, plot_title=None):
   plt.figure()
   plt.title(plot_title)
 
-  for stack in mosaic:
-    plt.plot(*stack.footprint_polygon().exterior.xy, color='black')
-    plt.scatter([stack.center[0]], [stack.center[1]], color='black')
+  for target in mosaic:
+    plt.plot(*target.footprint_polygon().exterior.xy, color='black')
+    plt.scatter([target.center[0]], [target.center[1]], color='black')
 
   plt.show()
 

@@ -142,11 +142,33 @@ export default function Mosaics(props) {
   ];
 
   const collapseContent = () => {
-    if (mosaics) {
-      return mosaics.map((mosaic) => (
-        <TargetTable key="{mosaic.id}" target_ids={mosaic.target_ids} />
-      ));
-    }
+    return mosaics.map((mosaic) => {
+      let polygons = [];
+      for (let target_id of mosaic.target_ids) {
+        let target = targets.find(function (element) {
+          return element.name == target_id;
+        });
+        if (!target) continue;
+
+        let points_string = target.footprint.join(' ');
+        console.log(points_string);
+
+        polygons.push(
+          <polygon points={points_string} fill="none" stroke="black" stroke-width="0.01"/>
+        );
+      }
+
+      let viewbox = mosaic.viewbox.join(' ');
+
+      return (
+        <div>
+          <svg viewBox={viewbox} width="500px" xmlns="http://www.w3.org/2000/svg">
+            {polygons}
+          </svg>
+          <TargetTable key="{mosaic.id}" target_ids={mosaic.target_ids} />
+        </div>
+      );
+    });
   };
 
   const handleRowClick = (event, item) => {
@@ -222,6 +244,9 @@ export default function Mosaics(props) {
     // the network.
     fetch('/mosaics').then(res => res.json()).then(mosaics => {
       setMosaics(mosaics);  
+    });
+    fetch('/targets').then(res => res.json()).then(targets => {
+      setTargets(targets);  
     });
   }, [order, orderBy, rowsPerPage, page, filters]);
 

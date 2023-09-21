@@ -489,9 +489,7 @@ def group_stacks_into_targets(stacks):
 # @memoize_by_context()
 def group_targets_into_mosaics(targets):
   print('Identifying mosaics...')
-  mosaics = step_mosaic.run(targets, plot=False)
-  cache['mosaics'] = mosaics
-  return mosaics
+  return step_mosaic.run(targets, plot=False)
 
 
 @memoize_by_context()
@@ -558,6 +556,7 @@ def main(context):
 
   cache['stacks'] = stacks
   cache['targets'] = targets
+  cache['mosaics'] = mosaics
 
   # stack_subframes()
   # post_process_stacks()
