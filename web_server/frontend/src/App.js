@@ -12,6 +12,18 @@ const darkTheme = createTheme({
   palette: {
     mode: 'dark',
   },
+  components: {
+    // Name of the component
+    MuiTableCell: {
+      styleOverrides: {
+        // Name of the slot
+        root: {
+          // Some CSS
+          backgroundColor: '#222',
+        },
+      },
+    },
+  },
 });
 
 

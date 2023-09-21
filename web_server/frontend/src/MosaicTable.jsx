@@ -3,6 +3,7 @@ import EnhancedTable from "@jeremyling/react-material-ui-enhanced-table";
 import { amber, green, indigo, lightGreen, red } from "@mui/material/colors";
 import { Block, MoveToInbox } from "@mui/icons-material";
 import TargetTable from "./TargetTable.jsx";
+import './MosaicTable.css'; 
 
 // TODO: Unify this.
 function style_for_filter(filter) {
@@ -154,7 +155,7 @@ export default function Mosaics(props) {
         console.log(points_string);
 
         polygons.push(
-          <polygon points={points_string} fill="none" stroke="black" stroke-width="0.01"/>
+          <polygon className='mosaic_polygon' points={points_string} />
         );
       }
 
@@ -162,7 +163,7 @@ export default function Mosaics(props) {
 
       return (
         <div>
-          <svg viewBox={viewbox} width="500px" xmlns="http://www.w3.org/2000/svg">
+          <svg viewBox={viewbox} style={{display: "block", width: "500px", margin: "auto"}} xmlns="http://www.w3.org/2000/svg">
             {polygons}
           </svg>
           <TargetTable key="{mosaic.id}" target_ids={mosaic.target_ids} />
