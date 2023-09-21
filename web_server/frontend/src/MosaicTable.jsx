@@ -2,9 +2,30 @@ import React, { useEffect, useState } from "react";
 import EnhancedTable from "@jeremyling/react-material-ui-enhanced-table";
 import { amber, green, indigo, lightGreen, red } from "@mui/material/colors";
 import { Block, MoveToInbox } from "@mui/icons-material";
+import TargetTable from "./TargetTable.jsx";
+
+// TODO: Unify this.
+function style_for_filter(filter) {
+ const color = {
+    'L': [51, 51, 51],
+    'R': [230, 0, 0],
+    'G': [0, 204, 0],
+    'B': [0, 0, 204],
+    'H': [159, 43, 104],
+    'S': [140, 0, 0],
+    'O': [0, 204, 204],
+  }[filter];
+  
+  return {
+    border: `1px solid rgba(${color[0]}, ${color[1]}, ${color[2]}, 1.0)`,
+    margin: `2px`,
+  };
+}
 
 export default function Mosaics(props) {
-  const [data, setData] = useState([]);
+  const [mosaics, setMosaics] = useState([]);
+  const [targets, setTargets] = useState([]);
+  // const [stacks, setStacks] = useState([]);
   const [totalCount, setTotalCount] = useState();
   const [tableLoading, setTableLoading] = useState(false);
   const [order, setOrder] = useState("");
@@ -23,75 +44,45 @@ export default function Mosaics(props) {
 
   const headers = [
     {
-      key: "checkbox",
-      checkbox: true,
+      key: "collapse",
+      collapse: true,
     },
+    { key: "name", attribute: "id", label: "Mosaic" },
     // {
     //   key: "image",
-    //   label: "Image",
-    //   component: (data) => (
-    //     <img src={data.image.url} alt={data.name} width="200px" loading="lazy" />
-    //   ),
-    //   stopPropagation: true,
-    // },
-    // {
-    //   key: "plot",
-    //   label: "Plot",
-    //   component: (data) => (
-    //     <iframe src={data.plot.url} width="300" height="200"></iframe>
-    //   ),
-    //   stopPropagation: true,
-    // },
-    // {
-    //   key: "video",
-    //   label: "Blink Video",
-    //   component: (data) => (
-    //     <video width="300" loop autoPlay muted style={style_for_filter(data.filter)}>
-    //       <source src={data.thumbnail_video_url} type="video/mp4" />
-    //       Your browser does not support the video tag.
-    //     </video>
-    //   ),
-    //   stopPropagation: true,
-    // },
-    {
-      multiField: true,
-      key: "mosaic",
-      multiFieldData: [
-        {
-          attribute: "rig",
-        },
-        {
-          attribute: "filter",
-        },
-        {
-          attribute: "exposure_time_s",
-        },
-      ],
-    //   html: `
-    //   <div><strong>Rig: {{0}}, Filter: {{1}}</strong></div>
-    //   <div><strong style="color: #777">Exposure: {{2}}</strong></div>
-    // `,
+    //   label: "Thumbnails",
+    //   component: (target) => {
+    //     let output = [];
+    //     if (stacks) {
+    //       for (let id of target.stacks) {
+    //         console.log('looking up stack id ' + id);
+    //         let stack = stacks.find(function (element) {
+    //           return element.id == id;
+    //         });
+    //         console.log('stack ' + stack);
 
-      component: (data) => (
-        <div>
-          <div><strong>Rig: {data.rig}, Filter: {data.filter}</strong></div>
-          <div><strong style={{color: '#777'}}>
-            Exposure: {exposure_time_string(data.exposure_time_s)}
-          </strong></div>
-        </div>
-      ),
-      label: "Stack",
-      minWidth: "200px",
-    },
+    //         if (stack) {
+    //           // TODO: Assert stack
+    //           // TODO: Sort images by filter
+    //           let stack_thumbnail_image_url = `/stack_thumbnail_image/${stack.target}/${stack.rig}/${stack.filter}`;
+    //           output.push(
+    //             <img src={stack_thumbnail_image_url}
+    //                  width="100px"
+    //                  style={style_for_filter(stack.filter)} />);
+    //         }
+    //       }
+    //     }
+    //     return output;
+    //   },
+    //   stopPropagation: true,
+    // },
     // {
     //   key: "status",
     //   attribute: "status",
     //   label: "Status",
     //   chip: true,
     //   chipColor: {
-    //     Pending: [amber[50], amber[200]],
-    //     Paid: [lightGreen[50], lightGreen[200]],
-    //     Processed: [indigo[50], indigo[200]],
+    //     "In Progress": [amber[50], amber[200]],
     //     Completed: [green[50], green[200]],
     //   },
     // },
@@ -100,7 +91,33 @@ export default function Mosaics(props) {
     //   datetime: true,
     //   label: "Updated",
     // },
-    // { attribute: "quantity", label: "Qty", numeric: true },
+    // {
+    //   multiField: true,
+    //   key: "customer",
+    //   multiFieldData: [
+    //     {
+    //       attribute: "user.name",
+    //     },
+    //     {
+    //       attribute: "user.email",
+    //     },
+    //     {
+    //       attribute: "user.phone",
+    //     },
+    //   ],
+    //   html: `
+    //     <div><strong>{{0}}</strong></div>
+    //     <div style="color: #777">{{1}}</div>
+    //     <div style="color: #777">{{2}}</div>
+    //   `,
+    //   label: "Customer",
+    // },
+    // {
+    //   attribute: "total",
+    //   label: "Total",
+    //   numeric: true,
+    //   price: true,
+    // },
     {
       key: "actions",
       actions: [
@@ -110,10 +127,10 @@ export default function Mosaics(props) {
           tooltip: "Process",
           onClick: (event, row) => handleAction(event, "process", row),
           color: amber[400],
-          hideCondition: (data) => {},
+          hideCondition: (row) => {},
         },
         {
-          id: "cancel-target",
+          id: "cancel",
           icon: <Block />,
           tooltip: "Cancel",
           onClick: (event, row) => handleAction(event, "cancel", row),
@@ -125,20 +142,39 @@ export default function Mosaics(props) {
   ];
 
   const collapseContent = () => {
+    if (mosaics) {
+      return mosaics.map((mosaic) => (
+        <TargetTable key="{mosaic.id}" target_ids={mosaic.target_ids} />
+      ));
+    }
   };
 
   const handleRowClick = (event, item) => {
-    setSelectedRow(item);
+    // setSelectedRow(item);
   };
 
   function handleCollapsibleTableRowClick(event, row) {}
 
   function getSelectibleItems(row) {}
 
+  function stringifyEvent(e) {
+    const obj = {};
+    for (let k in e) {
+      obj[k] = e[k];
+    }
+    return JSON.stringify(obj, (k, v) => {
+      if (v instanceof Node) return 'Node';
+      if (v instanceof Window) return 'Window';
+      return v;
+    }, ' ');
+  }
+
   function updateOpenRows(event, key, value) {
+    console.log('updateOpenRows event ' + stringifyEvent(event) + ' key ' + key + ' value ' + value);
     event.stopPropagation();
 
     let updated = JSON.parse(JSON.stringify(openRows));
+    console.log('openRows ' + JSON.stringify(openRows));
     updated[key] = value;
     setOpenRows(updated);
   }
@@ -179,14 +215,19 @@ export default function Mosaics(props) {
   function handleAction(event, key, row = null) {}
 
   useEffect(() => {
-    Promise.all(
-      props.stacks.map(id => fetch('/stack/' + id).then(res => res.json()))
-    ).then(data => setData(data));    
+    console.log('fetching targets...');
+
+    // TODO: Don't download these multiple times, because they're pretty big.
+    // TODO: Remove the FileLists from the objects before sending them across
+    // the network.
+    fetch('/mosaics').then(res => res.json()).then(mosaics => {
+      setMosaics(mosaics);  
+    });
   }, [order, orderBy, rowsPerPage, page, filters]);
 
   return (
     <EnhancedTable
-      rows={data || []}
+      rows={mosaics || []}
       totalCount={totalCount}
       headers={headers}
       order={order}
@@ -208,6 +249,7 @@ export default function Mosaics(props) {
       disableSelection={true}
       openRows={openRows}
       handleCollapseIconClick={updateOpenRows}
+      identifier="id"
     />
   );
 }

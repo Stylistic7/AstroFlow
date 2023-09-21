@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import TargetTable from "./TargetTable.jsx";
 import StackTable from "./StackTable.jsx";
+import MosaicTable from "./MosaicTable.jsx";
 import logo from './logo.svg';
 import './App.css';
 
@@ -20,7 +21,7 @@ function App() {
   return (
     <ThemeProvider theme={darkTheme}>
       <CssBaseline />
-      <TargetTable />
+      <MosaicTable />
     </ThemeProvider>
   );
 }

@@ -205,7 +205,7 @@ export default function Stacks(props) {
 
   useEffect(() => {
     Promise.all(
-      props.stacks.map(id => fetch('/stack/' + id).then(res => res.json()))
+      props.stack_ids.map(id => fetch('/stack/' + id).then(res => res.json()))
     ).then(data => setData(data));    
   }, [order, orderBy, rowsPerPage, page, filters]);
 

@@ -130,6 +130,11 @@ def footprints():
   return [f for _, f, _ in list(plate_solutions.values())]
 
 
+@app.route('/mosaics')
+def mosaics():
+  return test_app.mosaics if debug else cache['mosaics']
+
+
 @app.route('/targets')
 def targets():
   return test_app.targets if debug else cache['targets']
@@ -140,16 +145,29 @@ def stacks():
   return test_app.stacks if debug else cache['stacks']
 
 
+@app.route('/targets_for_mosaic/<mosaic_id>')
+def targets_for_mosaic(mosaic_id):
+  mosaic = next(m for m in cache['mosaics'] if m.id == mosaic_id)
+  return [t for t in cache['targets'] if t.name in mosaic.target_ids]
+
+
 @app.route('/stacks_for_target/<target>')
 def stacks_for_target(target):
   return [s for s in cache['stacks'] if s.target == target]
 
 
-@app.route('/stack/<id>')
-def stack(id):
+@app.route('/target/<target_id>')
+def target(target_id):
+  targets = test_app.targets if debug else cache['targets']
+  print(f"Looking for target_id '{target_id}'")
+  return asdict(next(t for t in targets if t.name == target_id))
+
+
+@app.route('/stack/<stack_id>')
+def stack(stack_id):
   stacks = test_app.stacks if debug else cache['stacks']
-  print(f"Looking for id '{id}'")
-  return asdict(next(s for s in stacks if s.id == id))
+  print(f"Looking for stack_id '{stack_id}'")
+  return asdict(next(s for s in stacks if s.id == stack_id))
 
 
 @app.route('/stack_thumbnail_image/<target>/<rig>/<filter>')

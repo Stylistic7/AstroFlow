@@ -45,4 +45,4 @@ stacks = [
           exposure_time_s=3600)
 ]
 
-targets = [Target(status=True, name='M101', stacks=[s.id for s in stacks])]
+targets = [Target(status=True, name='M101', stack_ids=[s.id for s in stacks])]

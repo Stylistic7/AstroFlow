@@ -12,6 +12,7 @@ import concurrent.futures
 
 from stack import Stack, FileList
 from target import Target
+from mosaic import Mosaic
 from cache import cache
 import file_io
 import plate_solving
@@ -102,10 +103,10 @@ def memoize_by_context(fields=None):
           return x
 
       key = (func.__name__, [maybe_hash(x) for x in args], kwargs)
-      print(f'{func.__name__} wrapper: key is {key}')
+      # print(f'{func.__name__} wrapper: key is {key}')
 
       if key not in cache or any(getattr(context, f) for f in fields):
-        print(f'### {func.__name__}: calling wrapped function')
+        # print(f'### {func.__name__}: calling wrapped function')
         # print(f'{func.__name__}: key not in cache {key not in cache}')
         # print(f'{func.__name__}: context requires it '
         #       f'{any(getattr(context, f) for f in fields)}')
@@ -113,7 +114,7 @@ def memoize_by_context(fields=None):
         cache[key] = result
         return result
       else:
-        print(f'### {func.__name__}: returning cached result')
+        # print(f'### {func.__name__}: returning cached result')
         return cache[key]
 
     return wrapper
@@ -302,14 +303,6 @@ def identify_stacks(spatial_components, fits_headers):
   return stacks
 
 
-@memoize_by_context()
-def identify_mosaics(stacks):
-  print('Identifying mosaics...')
-  mosaics = step_mosaic.run(stacks, plot=False)
-  cache['mosaics'] = mosaics
-  return mosaics
-
-
 def process_in_parallel(fn, elements, key_func=lambda x: x):
   # Find all of the elements that are already in the cache.
   prev_results = []
@@ -488,7 +481,17 @@ def group_stacks_into_targets(stacks):
     for stack in [s for s in stacks if s.filter == filter]:
       stacks_for_target[stack.target].append(stack.id)
 
-  return [Target(name=k, stacks=v) for k, v in stacks_for_target.items()]
+  targets = [Target(name=k, stack_ids=v) for k, v in stacks_for_target.items()]
+  [t.store_metadata(stacks) for t in targets]
+  return targets
+
+
+# @memoize_by_context()
+def group_targets_into_mosaics(targets):
+  print('Identifying mosaics...')
+  mosaics = step_mosaic.run(targets, plot=False)
+  cache['mosaics'] = mosaics
+  return mosaics
 
 
 @memoize_by_context()
@@ -550,8 +553,8 @@ def main(context):
   stacks = compute_stack_metadata(stacks, fits_headers, plate_solutions)
   make_stack_thumbnails_videos(stacks)
   targets = group_stacks_into_targets(stacks)
+  mosaics = group_targets_into_mosaics(targets)
   stacks = sanity_check_stacks(stacks, fits_headers)
-  mosaics = identify_mosaics(stacks)
 
   cache['stacks'] = stacks
   cache['targets'] = targets

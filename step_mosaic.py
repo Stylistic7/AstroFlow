@@ -12,33 +12,46 @@ import numpy as np
 import matplotlib.pyplot as plt
 from shapely import Polygon
 
+from mosaic import Mosaic
 from cache import cache
 import pixinsight_shell_script
 import pixinsight_image_solver
 import pixinsight_mosaic_by_coordinates
 import trim_mosaic_tile
 import spatial_association
+import position_string
+
+# The sorta basic problem is here is that this code looks at stacks, not
+# targets. Does it need to look at targets?
+#
+# The first thing it does is split apart rigs and filters, and targets
+# purposefully contain all images, for all rigs and filters, of the same part
+# of the sky.
+#
+# Fundamentally, the only real question is "what is the footprint of a target?"
+#
+# It could be just the intersection of the footprints of all its stacks?
 
 
-def _identify_mosiacs(stacks):
-  if not stacks:
+def _identify_mosiacs(targets):
+  if not targets:
     return []
 
   def overlap(a, b):
     return a.intersection(b).area > 0
 
   mosaics = []
-  for stack in stacks:
+  for target in targets:
     found = False
     for mosaic in mosaics:
       if any(
-          overlap(stack.footprint_polygon(), s.footprint_polygon())
-          for s in mosaic):
-        mosaic.append(stack)
+          overlap(target.footprint_polygon(), m.footprint_polygon())
+          for m in mosaic):
+        mosaic.append(target)
         found = True
 
     if not found:
-      mosaics.append([stack])
+      mosaics.append([target])
 
   mosaics = [m for m in mosaics if len(m) > 1]
 
@@ -81,7 +94,7 @@ def _plot_mosaic(mosaic, plot_title=None):
 
 
 def _ransac(mosaic, plot=False, plot_title=None):
-  print(f'Running RANSAC on mosaic with {len(mosaic)} stacks')
+  print(f'Running RANSAC on mosaic with {len(mosaic)} targets')
 
   if len(mosaic) < 3:
     if plot:
@@ -94,7 +107,7 @@ def _ransac(mosaic, plot=False, plot_title=None):
   best_basis_vectors = None
 
   centers = np.vstack(
-      [s.footprint_polygon().centroid.coords for s in mosaic]).T
+      [t.footprint_polygon().centroid.coords for t in mosaic]).T
   # print(f'centers {centers}')
 
   for iteration in range(500):
@@ -190,47 +203,47 @@ def _ransac(mosaic, plot=False, plot_title=None):
   # plt.scatter(xs, ys, color='red')
 
   if plot:
-    for stack in best_inliers:
-      plt.plot(*stack.footprint_polygon().exterior.xy, color='black')
-      plt.scatter([stack.center[0]], [stack.center[1]], color='black')
+    for target in best_inliers:
+      plt.plot(*target.footprint_polygon().exterior.xy, color='black')
+      plt.scatter([target.center[0]], [target.center[1]], color='black')
 
     outliers = [s for s in mosaic if s not in best_inliers]
     print(f'There are {len(outliers)} outliers')
-    for stack in outliers:
-      plt.plot(*stack.footprint_polygon().exterior.xy, color='#dddddd')
-      plt.scatter([stack.center[0]], [stack.center[1]], color='#dddddd')
+    for target in outliers:
+      plt.plot(*target.footprint_polygon().exterior.xy, color='#dddddd')
+      plt.scatter([target.center[0]], [target.center[1]], color='#dddddd')
 
     plt.show()
 
   return best_inliers
 
 
-def run(stacks, plot=False):
-  rigs = set(s.rig for s in stacks)
-  filters = set(s.filter for s in stacks)
+def run(targets, plot=False):
+  mosaics = _identify_mosiacs(targets)
+  if not mosaics:
+    return []
 
-  all_mosaics = []
+  print(f'Found {len(mosaics)} mosaics')
 
-  for rig in rigs:
-    for filter in filters:
-      mosaics = _identify_mosiacs(
-          [s for s in stacks if s.rig == rig and s.filter == filter])
-      if not mosaics:
-        continue
-      print(f'Found {len(mosaics)} mosaics for rig {rig} and filter {filter}')
+  output_mosaics = []
+  for mosaic in mosaics:
+    mosaic = _ransac(mosaic, plot=plot, plot_title='foo')
+    if not mosaic:
+      continue
 
-      for mosaic in mosaics:
-        print(f'Mosaic composed of {len(mosaic)} stacks:')
-        for stack in mosaic:
-          print(f'  {stack}')
+    print(f'Mosaic composed of {len(mosaic)} targets:')
+    for target in mosaic:
+      print(f'  {target.name}')
 
-        mosaic = _ransac(mosaic,
-                         plot=plot,
-                         plot_title=f'Rig {rig} and filter {filter}')
+    output_mosaic = Mosaic()
+    output_mosaic.target_ids = [t.name for t in mosaic]
+    output_mosaic.store_metadata(targets)
+    output_mosaic.id = position_string.canonical_target_string(
+        output_mosaic.center)
 
-      all_mosaics.extend(mosaics)
+    output_mosaics.append(output_mosaic)
 
-  return all_mosaics
+  return output_mosaics
 
 
 if __name__ == '__main__':

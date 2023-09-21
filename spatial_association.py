@@ -10,6 +10,7 @@ import astropy.io.fits as pyfits
 from shapely.geometry import Polygon
 
 import ngc2000_catalog
+import position_string
 from distance import distance
 import plate_solving
 
@@ -20,26 +21,6 @@ MIN_COMPONENT_MEMBERS = 2
 
 def iou(a, b):
   return a.intersection(b).area / a.union(b).area
-
-
-def ra_dec_string(ra, dec):
-  def round_to_nearest_tenth(number):
-    return int(round(number * 10.0)) / 10.0
-
-  ra = round_to_nearest_tenth(ra)
-  dec = round_to_nearest_tenth(dec)
-
-  return f'RA_{ra:.1f}_DEC_{dec:.1f}'
-
-
-def canonical_target_string(position):
-  ra, dec = position
-
-  distance, entry = ngc2000_catalog.find_best_object(ra, dec)
-  if entry and entry['name']:
-    return entry['name']
-  else:
-    return ra_dec_string(ra, dec)
 
 
 def find_components(plate_solutions,
@@ -70,7 +51,7 @@ def find_components(plate_solutions,
 
   def get_name(target):
     plate_solution = plate_solutions[target[0]]
-    return canonical_target_string(plate_solution.center)
+    return position_string.canonical_target_string(plate_solution.center)
 
   targets = [(get_name(t), t) for t in targets]
 
@@ -80,7 +61,7 @@ def find_components(plate_solutions,
   for name, filenames in targets:
     center = plate_solutions[filenames[0]].center
     if target_string_counts[name] > 1:
-      new_name = f'{name}_{ra_dec_string(*center)}'
+      new_name = f'{name}_{position_string.ra_dec_string(*center)}'
       output_targets.append((new_name, filenames))
     else:
       output_targets.append((name, filenames))

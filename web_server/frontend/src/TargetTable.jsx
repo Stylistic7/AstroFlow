@@ -18,6 +18,7 @@ function style_for_filter(filter) {
   
   return {
     border: `1px solid rgba(${color[0]}, ${color[1]}, ${color[2]}, 1.0)`,
+    margin: `2px`,
   };
 }
 
@@ -52,7 +53,7 @@ export default function Targets(props) {
       component: (target) => {
         let output = [];
         if (stacks) {
-          for (let id of target.stacks) {
+          for (let id of target.stack_ids) {
             console.log('looking up stack id ' + id);
             let stack = stacks.find(function (element) {
               return element.id == id;
@@ -142,7 +143,7 @@ export default function Targets(props) {
   const collapseContent = () => {
     if (targets) {
       return targets.map((target) => (
-        <StackTable key="{target.name}" stacks={target.stacks} />
+        <StackTable key="{target.name}" stack_ids={target.stack_ids} />
       ));
     }
   };
@@ -213,13 +214,16 @@ export default function Targets(props) {
   function handleAction(event, key, row = null) {}
 
   useEffect(() => {
-    console.log('fetching targets...');
-    fetch('/targets').then(res => res.json()).then(targets => {
-      setTargets(targets);  
-    });
+    // console.log('fetching targets...');
+    // fetch('/targets').then(res => res.json()).then(targets => {
+    //   setTargets(targets);  
+    // });
     fetch('/stacks').then(res => res.json()).then(stacks => {
       setStacks(stacks);  
     });
+    Promise.all(
+      props.target_ids.map(id => fetch('/target/' + id).then(res => res.json()))
+    ).then(data => setTargets(data));    
   }, [order, orderBy, rowsPerPage, page, filters]);
 
   return (
