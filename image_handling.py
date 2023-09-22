@@ -18,9 +18,6 @@ from cache import cache
 def resize_array(array, new_width):
   height, width = array.shape
   new_height = (height / width) * new_width
-  # print(f'resize_array() from height {height} width {width} '
-  #       f'to height {new_height} width {new_width}')
-
   return cv2.resize(array, (int(new_width), int(new_height)),
                     interpolation=cv2.INTER_AREA)
 
@@ -51,31 +48,101 @@ def array_to_png(array):
   return png.tobytes()
 
 
-def thumbnail(filename, rotate, width=640):
-  if filename.endswith('.xisf'):
-    im = file_io.read_xisf_image(filename)
-  elif filename.endswith('.fit') or filename.endswith('.fits'):
-    im = file_io.read_fits_image(filename)
-    if rotate:
-      im = np.rot90(im, 2)
+# def thumbnail(filename, rotate, auto_stretch=True, width=640):
+#   if filename.endswith('.xisf'):
+#     im = file_io.read_xisf_image(filename)
+#   elif filename.endswith('.fit') or filename.endswith('.fits'):
+#     im = file_io.read_fits_image(filename)
+#     if rotate:
+#       im = np.rot90(im, 2)
 
-  return autostretch(resize_array(im, width))
+#   im = resize_array(im, width)
 
+#   # TODO: Need to put flat-frame correction here.
+
+#   if auto_stretch:
+#     return autostretch(im)
+#   else:
+#     return im
+
+# def make_and_cache_thumbnail(light_frame, rotate):
+#   key = ('thumbnail_image', light_frame)
+#   cache[key] = thumbnail(light_frame, rotate)
+
+# def make_image_thumbnails(light_frames, plate_solutions):
+#   with concurrent.futures.ProcessPoolExecutor() as executor:
+#     for light_frame in light_frames:
+#       if ('thumbnail_image', light_frame) in cache: continue
+#       rotate = plate_solutions[light_frame].rotation_angle < 0.0
+#       executor.submit(make_and_cache_thumbnail, light_frame, rotate)
 
 # TODO: Pass width down through function hierarchy.
 # TODO: Consider thumbnailing every image and storing them in the cache
 # independently. If a mosaic config or threshold changes a stack's composition,
 # the blink video could then be regenerated very quickly. This is also an
 # embarassingly-parallel operation, as is the video encoding.
-def thumbnails(filenames, plate_solutions, width=640):
-  filenames_and_rotation_angles = [(f, p.rotation_angle)
-                                   for f, p in plate_solutions.items()
-                                   if f in filenames]
-  with Pool() as p:
-    return p.starmap(thumbnail, filenames_and_rotation_angles)
+# def thumbnails(filenames, plate_solutions, width=640):
+#   filenames_and_rotation_angles = [(f, p.rotation_angle)
+#                                    for f, p in plate_solutions.items()
+#                                    if f in filenames]
+#   with Pool() as p:
+#     return p.starmap(thumbnail, filenames_and_rotation_angles)
 
 
-def stack_thumbnail_image_and_video(stack, width=640):
+def _get_flat_frame_for_light_frame(light_frame, stack, fits_headers):
+  for light_frames, flat_frames in stack.flat_frame_associations:
+    if light_frame in light_frames:
+      return flat_frames[0]
+
+
+def _read_image(filename):
+  if filename.endswith('.xisf'):
+    return file_io.read_xisf_image(filename)
+  elif filename.endswith('.fit') or filename.endswith('.fits'):
+    return file_io.read_fits_image(filename)
+
+
+def make_and_cache_thumbnail(light_frame, flat_frame, rotate, width=640):
+  light_frame_image = resize_array(_read_image(light_frame), width)
+  flat_frame_image = resize_array(_read_image(flat_frame), width)
+
+  if flat_frame is not None:
+    im = np.divide(light_frame_image, flat_frame_image)
+  else:
+    im = light_frame_image
+
+  if rotate:
+    im = np.rot90(im, 2)
+
+  im = autostretch(im)
+
+  # print(f'### caching thumbnail for light frame {light_frame}')
+  cache[('thumbnail_image', light_frame)] = im
+
+
+# I need a single function that accepts a stack, fits_headers, and
+# plate_solutions. For each light frame, it will find an associated flat frame,
+# then create a flat-corrected, auto-rotated, and auto-stretched thumbnail.
+# It will save the image with the cache key ('thumbnail_image', f). Another
+# function will compress the images into videos.
+#
+# This function will use the concurrent futures API to parallelize the
+# thumbnails.
+# def stack_thumbnail_image_and_video(stack,
+#                                     plate_solutions,
+#                                     fits_headers,
+#                                     width=640):
+#   with concurrent.futures.ProcessPoolExecutor() as executor:
+#     for light_frame in light_frames:
+#       if ('thumbnail_image', light_frame) in cache: continue
+
+#       rotate = plate_solutions[light_frame].rotation_angle < 0.0
+
+#       executor.submit(make_and_cache_thumbnail, light_frame, flat_frame,
+#                       rotate, width)
+
+
+def make_and_cache_stack_thumbnails(stack, width=640):
   height, width = resize_array(file_io.read_fits_image(stack.light_frames[0]),
                                width).shape
   height = int(((height + 8 - 1) / 8) * 8)
@@ -101,7 +168,10 @@ def stack_thumbnail_image_and_video(stack, width=640):
     out.release()
     thumbnail_video = open(video_filename, 'rb').read()
 
-    return thumbnail_image, thumbnail_video
+    cache[('stack_thumbnail_image', stack.target, stack.rig,
+           stack.filter)] = thumbnail_image
+    cache[('stack_thumbnail_video', stack.target, stack.rig,
+           stack.filter)] = thumbnail_video
 
 
 # if __name__ == '__main__':

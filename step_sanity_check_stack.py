@@ -93,6 +93,18 @@ def run(stack, fits_headers):
     print(f'Stack is not good: some bias frames had incorrect IMAGETYP keyword')
     return False
 
+  if set.intersection(
+      *
+      [set(light_frames)
+       for light_frames, _ in stack.flat_frame_associations]):
+    print(f'Stack is not good: some light frames exist in multiple flat frame '
+          f'associations')
+
+  if set.intersection(
+      *[set(flat_frames) for _, flat_frames in stack.flat_frame_associations]):
+    print(f'Stack is not good: some flat frames exist in multiple flat frame '
+          f'associations')
+
   if stack.aspect_ratio > 1.6 or stack.aspect_ratio < 0.6:
     print(f'Stack is not good: Aspect ratio is too extreme at '
           f'{stack.aspect_ratio}')

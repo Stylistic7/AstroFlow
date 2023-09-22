@@ -20,30 +20,8 @@ def _dates_to_strings(associations):
 
 
 def set_flat_versions(stack, fits_headers):
-  flat_runs = list(
-      set(flat_run for _, flat_run in stack.flat_frame_associations))
-
   print(f'Setting FLATVERS for {len(stack.flat_frame_associations)} '
         f'associations')
-  for flat_version, ((imaging_run_start, imaging_run_end),
-                     (flat_run_start, flat_run_end)) in enumerate(
-                         stack.flat_frame_associations):
-    light_frames_in_run = [
-        f for f in stack.light_frames
-        if fits_headers[f]['DATE-OBS'] >= imaging_run_start and
-        fits_headers[f]['DATE-OBS'] <= imaging_run_end
-    ]
-    print(f'Found {len(light_frames_in_run)} in imaging run')
-
-    flat_frames_in_run = [
-        f for f in stack.flat_frames
-        if fits_headers[f]['DATE-OBS'] >= flat_run_start and
-        fits_headers[f]['DATE-OBS'] <= flat_run_end
-    ]
-    print(f'Found {len(flat_frames_in_run)} in flat run')
-
-    print(f'Setting imaging run {imaging_run_start} to {imaging_run_end} '
-          f'to flat run {flat_run_start} to {flat_run_end} with '
-          f'FLATVERS={flat_version}')
-    _set_flatvers_fits_header(light_frames_in_run + flat_frames_in_run,
-                              flat_version)
+  for flat_version, (light_frames, flat_frames) in enumerate(
+      stack.flat_frame_associations):
+    _set_flatvers_fits_header(light_frames + flat_frames, flat_version)

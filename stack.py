@@ -81,12 +81,7 @@ class Stack:
   # alrady in the cache, or makes a new one, computing all its metadata.
   # TODO: Needs to include the flat-frame associations to be complete.
   def store_id(self):
-    self.id = (f'{self.target}_{self.rig}_{self.filter}_'
-               f'{self.exposure_time_s}_{self.status}_'
-               f'{hash(frozenset(self.light_frames))}_'
-               f'{hash(frozenset(self.dark_frames))}_'
-               f'{hash(frozenset(self.bias_frames))}_'
-               f'{hash(frozenset(self.flat_frames))}')
+    self.id = (f'{self.target}_{self.rig}_{self.filter}')
 
   def footprint_polygon(self):
     return Polygon(self.footprint)

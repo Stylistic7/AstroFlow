@@ -265,20 +265,6 @@ def plate_solve(light_frames):
   return PlateSolutions(plate_solutions)
 
 
-def make_and_cache_thumbnail(light_frame, rotate):
-  key = ('thumbnail_image', light_frame)
-  cache[key] = image_handling.thumbnail(light_frame, rotate)
-
-
-@timeit
-def make_image_thumbnails(light_frames, plate_solutions):
-  with concurrent.futures.ProcessPoolExecutor() as executor:
-    for light_frame in light_frames:
-      if ('thumbnail_image', light_frame) in cache: continue
-      rotate = plate_solutions[light_frame].rotation_angle < 0.0
-      executor.submit(make_and_cache_thumbnail, light_frame, rotate)
-
-
 @timeit
 @memoize_by_context()
 def identify_spatial_components(plate_solutions):
@@ -411,6 +397,8 @@ def associate_bias_frames(stacks, bias_frames, fits_headers):
 
 
 def get_runs(frames, fits_headers):
+  if not frames: return []
+
   print(f'### get_runs for {len(frames)} frames')
   frames = sorted(frames, key=lambda f: fits_headers[f]['DATE-OBS'])
 
@@ -453,6 +441,7 @@ def run_distance(a, b):
 
 
 def associate_flat_frames_for_stack(stack, flat_frames, fits_headers):
+  print(f'### Associating flat frames for stack {stack}')
   imaging_runs = get_runs(stack.light_frames, fits_headers)
   for start, end in imaging_runs:
     print(f'imaging run start {start} end {end}')
@@ -472,24 +461,29 @@ def associate_flat_frames_for_stack(stack, flat_frames, fits_headers):
     print(f'associated imaging run {imaging_run} '
           f'with flat run {flat_run}')
 
-  def is_associated(flat_frame, flat_frame_associations):
-    for (imaging_run_start,
-         imaging_run_end), (flat_run_start,
-                            flat_run_end) in flat_frame_associations:
-      if fits_headers[flat_frame]['DATE-OBS'] >= flat_run_start and fits_headers[
-          flat_frame]['DATE-OBS'] <= flat_run_end:
-        return True
+  def is_in_run(frame, run):
+    run_start, run_end = run
+    date_obs = fits_headers[frame]['DATE-OBS']
+    return date_obs >= run_start and date_obs <= run_end
 
-    return False
+  stack.flat_frame_associations = []
+  for imaging_run, flat_run in flat_frame_associations:
+    light_frames = list(
+        f for f in stack.light_frames if is_in_run(f, imaging_run))
+    flat_frames = list(f for f in flat_frames if is_in_run(f, flat_run))
+    stack.flat_frame_associations.append((light_frames, flat_frames))
 
   stack.flat_frames = FileList(
-      f for f in flat_frames if is_associated(f, flat_frame_associations))
-  print(f'### Done! len(stack.flat_frames) '
-        f'{len(stack.flat_frames)}')
+      itertools.chain.from_iterable(
+          flat_frames for _, flat_frames in stack.flat_frame_associations))
 
-  stack.flat_frame_associations = flat_frame_associations
-  print(f'### Done! len(stack.flat_frame_associations) '
-        f'{len(stack.flat_frame_associations)}')
+  # stack.flat_frame_associations = flat_frame_associations
+  # print(f'### Final associations:')
+  # for light_frames, flat_frames in stack.flat_frame_associations:
+  #   print(f'### {len(light_frames)} light frames and '
+  #         f'{len(flat_frames)} flat frames')
+  #   assert light_frames
+  #   assert flat_frames
 
 
 @timeit
@@ -525,18 +519,24 @@ def compute_stack_metadata(stacks, fits_headers, plate_solutions):
   return stacks
 
 
-def make_and_cache_stack_thumbnails(stack):
-  image_key = ('stack_thumbnail_image', stack.target, stack.rig, stack.filter)
-  video_key = ('stack_thumbnail_video', stack.target, stack.rig, stack.filter)
-
-  cache[image_key], cache[
-      video_key] = image_handling.stack_thumbnail_image_and_video(stack)
+# @memoize_by_context()
+def make_image_thumbnails(stacks, plate_solutions, fits_headers, width=640):
+  with concurrent.futures.ProcessPoolExecutor() as executor:
+    for stack in stacks:
+      for light_frame in stack.light_frames:
+        if ('thumbnail_image', light_frame) in cache: continue
+        # print(f'### cache miss on light frame {light_frame}')
+        flat_frame = image_handling._get_flat_frame_for_light_frame(
+            light_frame, stack, fits_headers)
+        rotate = plate_solutions[light_frame].rotation_angle < 0.0
+        executor.submit(image_handling.make_and_cache_thumbnail, light_frame,
+                        flat_frame, rotate, width)
 
 
 # TODO: Consider how changing a config setting and re-running will work.
 # If I just use the (target, rig, filter) keys, they won't get re-generated.
 # Figure out a good universal key strategy for all kinds of objects.
-def make_stack_thumbnails_videos(stacks):
+def make_stack_thumbnails_videos(stacks, plate_solutions, fits_headers):
   print('Making stack thumbnails...')
   with concurrent.futures.ProcessPoolExecutor() as executor:
     for stack in stacks:
@@ -548,7 +548,7 @@ def make_stack_thumbnails_videos(stacks):
       if image_key in cache and video_key in cache:
         continue
 
-      executor.submit(make_and_cache_stack_thumbnails, stack)
+      executor.submit(image_handling.make_and_cache_stack_thumbnails, stack)
 
 
 @memoize_by_context()
@@ -619,7 +619,6 @@ def main(context):
       all_frames, fits_headers)
   light_frames = remove_frames_during_mount_movements(light_frames)
   plate_solutions = plate_solve(light_frames)
-  make_image_thumbnails(light_frames, plate_solutions)
   spatial_components = identify_spatial_components(plate_solutions)
   stacks = identify_stacks(spatial_components, fits_headers)
   # measure_stacks()
@@ -628,7 +627,8 @@ def main(context):
   stacks = associate_bias_frames(stacks, bias_frames, fits_headers)
   stacks = associate_flat_frames(stacks, flat_frames, fits_headers)
   stacks = compute_stack_metadata(stacks, fits_headers, plate_solutions)
-  make_stack_thumbnails_videos(stacks)
+  make_image_thumbnails(stacks, plate_solutions, fits_headers)
+  make_stack_thumbnails_videos(stacks, plate_solutions, fits_headers)
   targets = group_stacks_into_targets(stacks)
   mosaics = group_targets_into_mosaics(targets)
   stacks = sanity_check_stacks(stacks, fits_headers)
