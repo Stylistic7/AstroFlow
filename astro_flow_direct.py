@@ -9,6 +9,9 @@ import functools
 import hashlib
 from collections import defaultdict
 import concurrent.futures
+import datetime
+import pytz
+import numpy as np
 
 from stack import Stack, FileList
 from target import Target
@@ -23,6 +26,7 @@ import camera_configs
 import step_flat_frame_association
 import step_sanity_check_stack
 import step_mosaic
+import step_stack
 import image_handling
 
 
@@ -107,6 +111,7 @@ def memoize_by_context(fields=None):
 
       if key not in cache or any(getattr(context, f) for f in fields):
         # print(f'### {func.__name__}: calling wrapped function')
+        # print(f'### {func.__name__} wrapper: key is {key}')
         # print(f'{func.__name__}: key not in cache {key not in cache}')
         # print(f'{func.__name__}: context requires it '
         #       f'{any(getattr(context, f) for f in fields)}')
@@ -405,8 +410,90 @@ def associate_bias_frames(stacks, bias_frames, fits_headers):
   return stacks
 
 
+def get_runs(frames, fits_headers):
+  print(f'### get_runs for {len(frames)} frames')
+  frames = sorted(frames, key=lambda f: fits_headers[f]['DATE-OBS'])
+
+  # print('### sorted light frame dates:')
+  # for light_frame in stack.light_frames:
+  #   print('###', type(fits_headers[light_frame]['DATE-OBS']))
+  #   print('###', fits_headers[light_frame]['DATE-OBS'])
+
+  max_gap = datetime.timedelta(hours=1)
+  imaging_runs = []
+  prev_date_obs = pytz.utc.localize(datetime.datetime.min)
+  current_imaging_run_start = None
+  for frame in frames:
+    current_date_obs = fits_headers[frame]['DATE-OBS']
+    if current_date_obs > prev_date_obs + max_gap:
+      # Save the current imaging run, if there is one.
+      if current_imaging_run_start:
+        imaging_runs.append((current_imaging_run_start, prev_date_obs))
+
+      # Start a new imaging run.
+      current_imaging_run_start = current_date_obs
+
+    prev_date_obs = current_date_obs
+
+  imaging_runs.append((current_imaging_run_start, prev_date_obs))
+
+  return imaging_runs
+
+
+def run_distance(a, b):
+  start_a, end_a = a
+  end_a, end_b = b
+
+  if end_a < start_b:
+    return start_b - end_a
+  elif end_b < start_a:
+    return start_a - end_b
+  else:
+    return 0
+
+
+def associate_flat_frames_for_stack(stack, flat_frames, fits_headers):
+  imaging_runs = get_runs(stack.light_frames, fits_headers)
+  for start, end in imaging_runs:
+    print(f'imaging run start {start} end {end}')
+
+  flat_runs = get_runs(flat_frames, fits_headers)
+  for start, end in flat_runs:
+    print(f'flat run start {start} end {end}')
+
+  flat_frame_associations = []
+  if flat_runs:
+    for imaging_run in imaging_runs:
+      index = np.argmin(
+          run_distance(imaging_run, flat_run) for flat_run in flat_runs)
+      flat_frame_associations.append((imaging_run, flat_runs[index]))
+
+  for imaging_run, flat_run in flat_frame_associations:
+    print(f'associated imaging run {imaging_run} '
+          f'with flat run {flat_run}')
+
+  def is_associated(flat_frame, flat_frame_associations):
+    for (imaging_run_start,
+         imaging_run_end), (flat_run_start,
+                            flat_run_end) in flat_frame_associations:
+      if fits_headers[flat_frame]['DATE-OBS'] >= flat_run_start and fits_headers[
+          flat_frame]['DATE-OBS'] <= flat_run_end:
+        return True
+
+    return False
+
+  stack.flat_frames = FileList(
+      f for f in flat_frames if is_associated(f, flat_frame_associations))
+  print(f'### Done! len(stack.flat_frames) '
+        f'{len(stack.flat_frames)}')
+
+  stack.flat_frame_associations = flat_frame_associations
+  print(f'### Done! len(stack.flat_frame_associations) '
+        f'{len(stack.flat_frame_associations)}')
+
+
 @timeit
-@memoize_by_context()
+# @memoize_by_context()
 def associate_flat_frames(stacks, flat_frames, fits_headers):
   print('Associating flat frames...')
 
@@ -422,20 +509,10 @@ def associate_flat_frames(stacks, flat_frames, fits_headers):
       flats |= set(flats_for_camera[camera]) & set(
           flats_for_rig[stack.rig]) & set(flats_for_filter[stack.filter])
 
-    stack.flat_frames = FileList(flats)
-    print(f'Found {len(stack.flat_frames)} flat frames for rig {stack.rig} '
-          f'and filter {stack.filter}')
+    print(f'### Found {len(flats)} flat frames for rig '
+          f'{stack.rig} and filter {stack.filter}')
 
-    light_frame_dates = sorted(
-        set(fits_headers[f]['DATE'] for f in stack.light_frames))
-    flat_frame_dates = sorted(
-        set(fits_headers[f]['DATE'] for f in stack.flat_frames))
-
-    stack.flat_frame_associations = step_flat_frame_association._dates_to_strings(
-        step_flat_frame_association._associate_dates(light_frame_dates,
-                                                     flat_frame_dates))
-    print(f'Stack {stack} has flat frame associations '
-          f'{stack.flat_frame_associations}')
+    associate_flat_frames_for_stack(stack, flats, fits_headers)
 
   return stacks
 
@@ -486,13 +563,14 @@ def group_stacks_into_targets(stacks):
   return targets
 
 
+# TODO: Why doesn't memoization work here?
 # @memoize_by_context()
 def group_targets_into_mosaics(targets):
   print('Identifying mosaics...')
   return step_mosaic.run(targets, plot=False)
 
 
-@memoize_by_context()
+# @memoize_by_context()
 def sanity_check_stacks(stacks, fits_headers):
   print('Sanity-checking stacks...')
   for stack in stacks:
@@ -506,23 +584,24 @@ def sanity_check_stacks(stacks, fits_headers):
   return stacks
 
 
-# TODO: The master filenames on disk do not contain the hashes of the images,
-# so it's impossible to know if, e.g. more flats were added since the last
-# stack. Figure out some universal keying system, so we can identify stale
-# results.
-#
-# In general, each artifact is a pure function of a bunch of other artifacts,
-# e.g. light frames, flat frames, configuration, There's a dependency graph
-# between artifacts and their predecessors.
-#
-# Right now, each step contains for loops (e.g. over stacks), but these bodies
-# need to be broken apart into individual function calls.
-def stack_subframes(context):
+# @memoize_by_context()
+def stack_subframes(stacks, fits_headers, output_dir):
   print('Stacking subframes...')
+  for stack in stacks:
+    # if stack.enable and stack.status:
+    if stack.status:
+      print(f'Stacking {stack}')
+      step_flat_frame_association.set_flat_versions(stack, fits_headers)
+      stack.master = step_stack.run(stack, output_dir)
+
+  return stacks
 
 
-# def post_process_stacks(context):
-#   print('Post-processing stacks...')
+# @memoize_by_context()
+def post_process_stacks(stacks):
+  print('Post-processing stacks...')
+  return stacks
+
 
 # TODO: Implement fits_matches with fits_headers
 # TODO: flat frame associations are clearly nuts
@@ -558,8 +637,14 @@ def main(context):
   cache['targets'] = targets
   cache['mosaics'] = mosaics
 
-  # stack_subframes()
-  # post_process_stacks()
+  # TODO: Change the iteration order, so the post-processing happens after each
+  # individual stack is done. Take care with the iteration order elsewhere.
+  stacks = stack_subframes(stacks, fits_headers, context.output_dir)
+  stacks = post_process_stacks(stacks)
+
+  cache['stacks'] = stacks
+  cache['targets'] = targets
+  cache['mosaics'] = mosaics
 
 
 if __name__ == '__main__':

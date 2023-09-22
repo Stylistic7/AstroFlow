@@ -53,7 +53,7 @@ def _identify_mosiacs(targets):
     if not found:
       mosaics.append([target])
 
-  mosaics = [m for m in mosaics if len(m) > 1]
+  # mosaics = [m for m in mosaics if len(m) > 1]
 
   return mosaics
 

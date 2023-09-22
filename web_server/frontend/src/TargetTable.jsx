@@ -17,9 +17,13 @@ function style_for_filter(filter) {
   }[filter];
   
   return {
-    border: `1px solid rgba(${color[0]}, ${color[1]}, ${color[2]}, 1.0)`,
-    margin: `2px`,
+    color: `rgba(${color[0]}, ${color[1]}, ${color[2]}, 1.0)`,
   };
+
+  // return {
+  //   border: `1px solid rgba(${color[0]}, ${color[1]}, ${color[2]}, 1.0)`,
+  //   margin: `2px`,
+  // };
 }
 
 export default function Targets(props) {
@@ -65,9 +69,11 @@ export default function Targets(props) {
               // TODO: Sort images by filter
               let stack_thumbnail_image_url = `/stack_thumbnail_image/${stack.target}/${stack.rig}/${stack.filter}`;
               output.push(
-                <img src={stack_thumbnail_image_url}
-                     width="100px"
-                     style={style_for_filter(stack.filter)} />);
+                <div class="image-container">
+                    <img src={stack_thumbnail_image_url} width="100px"/>
+                    <div class="overlay-text"><span class="overlay-rig">{stack.rig}</span> <span style={style_for_filter(stack.filter)}>{stack.filter}</span></div>
+                </div>
+              );
             }
           }
         }

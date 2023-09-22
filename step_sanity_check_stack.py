@@ -45,6 +45,10 @@ def run(stack, fits_headers):
     print(f'Stack is not good: there are no camera configs')
     return False
 
+  if not stack.flat_frame_associations:
+    print(f'Stack is not good: there no flat frame associations')
+    return False
+
   cameras = set(cc[0] for cc in stack.camera_configs)
   if len(cameras) > 1:
     print(f'Stack is not good: there are multiple cameras: {cameras}')
