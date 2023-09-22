@@ -102,11 +102,21 @@ def _read_image(filename):
     return file_io.read_fits_image(filename)
 
 
-def make_and_cache_thumbnail(light_frame, flat_frame, rotate, width=640):
+def make_and_cache_thumbnail(light_frame,
+                             flat_frame,
+                             rotate,
+                             fudge=None,
+                             width=640):
   light_frame_image = resize_array(_read_image(light_frame), width)
-  flat_frame_image = resize_array(_read_image(flat_frame), width)
 
   if flat_frame is not None:
+    flat_frame_image = resize_array(_read_image(flat_frame), width)
+
+    if fudge:
+      min, max = np.min(flat_frame_image), np.max(flat_frame_image)
+      flat_frame_image = np.interp(flat_frame_image, [min, max],
+                                   [min + fudge * (max - min), max])
+
     im = np.divide(light_frame_image, flat_frame_image)
   else:
     im = light_frame_image
@@ -118,28 +128,6 @@ def make_and_cache_thumbnail(light_frame, flat_frame, rotate, width=640):
 
   # print(f'### caching thumbnail for light frame {light_frame}')
   cache[('thumbnail_image', light_frame)] = im
-
-
-# I need a single function that accepts a stack, fits_headers, and
-# plate_solutions. For each light frame, it will find an associated flat frame,
-# then create a flat-corrected, auto-rotated, and auto-stretched thumbnail.
-# It will save the image with the cache key ('thumbnail_image', f). Another
-# function will compress the images into videos.
-#
-# This function will use the concurrent futures API to parallelize the
-# thumbnails.
-# def stack_thumbnail_image_and_video(stack,
-#                                     plate_solutions,
-#                                     fits_headers,
-#                                     width=640):
-#   with concurrent.futures.ProcessPoolExecutor() as executor:
-#     for light_frame in light_frames:
-#       if ('thumbnail_image', light_frame) in cache: continue
-
-#       rotate = plate_solutions[light_frame].rotation_angle < 0.0
-
-#       executor.submit(make_and_cache_thumbnail, light_frame, flat_frame,
-#                       rotate, width)
 
 
 def make_and_cache_stack_thumbnails(stack, width=640):

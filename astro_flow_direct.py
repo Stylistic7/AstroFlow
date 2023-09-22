@@ -529,8 +529,10 @@ def make_image_thumbnails(stacks, plate_solutions, fits_headers, width=640):
         flat_frame = image_handling._get_flat_frame_for_light_frame(
             light_frame, stack, fits_headers)
         rotate = plate_solutions[light_frame].rotation_angle < 0.0
+        # Hack to slightly fudge flat-frame correction for the C11.
+        fudge = 0.35 if stack.rig == 'C11' else None
         executor.submit(image_handling.make_and_cache_thumbnail, light_frame,
-                        flat_frame, rotate, width)
+                        flat_frame, rotate, fudge, width)
 
 
 # TODO: Consider how changing a config setting and re-running will work.
@@ -584,17 +586,16 @@ def sanity_check_stacks(stacks, fits_headers):
   return stacks
 
 
-# @memoize_by_context()
-def stack_subframes(stacks, fits_headers, output_dir):
-  print('Stacking subframes...')
-  for stack in stacks:
-    # if stack.enable and stack.status:
-    if stack.status:
-      print(f'Stacking {stack}')
-      step_flat_frame_association.set_flat_versions(stack, fits_headers)
-      stack.master = step_stack.run(stack, output_dir)
+@memoize_by_context()
+def stack_subframes(stack, fits_headers, output_dir):
+  print(f'Stacking subframes for stack {stack}')
+  # if stack.enable and stack.status:
+  if stack.status:
+    print(f'Stacking {stack}')
+    step_flat_frame_association.set_flat_versions(stack, fits_headers)
+    stack.master = step_stack.run(stack, output_dir)
 
-  return stacks
+  return stack
 
 
 # @memoize_by_context()
@@ -627,8 +628,12 @@ def main(context):
   stacks = associate_bias_frames(stacks, bias_frames, fits_headers)
   stacks = associate_flat_frames(stacks, flat_frames, fits_headers)
   stacks = compute_stack_metadata(stacks, fits_headers, plate_solutions)
+
+  cache['stacks'] = stacks
+
   make_image_thumbnails(stacks, plate_solutions, fits_headers)
   make_stack_thumbnails_videos(stacks, plate_solutions, fits_headers)
+
   targets = group_stacks_into_targets(stacks)
   mosaics = group_targets_into_mosaics(targets)
   stacks = sanity_check_stacks(stacks, fits_headers)
@@ -639,7 +644,9 @@ def main(context):
 
   # TODO: Change the iteration order, so the post-processing happens after each
   # individual stack is done. Take care with the iteration order elsewhere.
-  stacks = stack_subframes(stacks, fits_headers, context.output_dir)
+  stacks = [
+      stack_subframes(s, fits_headers, context.output_dir) for s in stacks
+  ]
   stacks = post_process_stacks(stacks)
 
   cache['stacks'] = stacks

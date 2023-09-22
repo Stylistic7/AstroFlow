@@ -69,7 +69,7 @@ export default function Targets(props) {
               // TODO: Sort images by filter
               let stack_thumbnail_image_url = `/stack_thumbnail_image/${stack.target}/${stack.rig}/${stack.filter}`;
               output.push(
-                <div class="image-container">
+                <div class="image-container" style={{margin: '2px'}}>
                     <img src={stack_thumbnail_image_url} width="100px"/>
                     <div class="overlay-text"><span class="overlay-rig">{stack.rig}</span> <span style={style_for_filter(stack.filter)}>{stack.filter}</span></div>
                 </div>
