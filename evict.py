@@ -29,8 +29,10 @@ if __name__ == '__main__':
 
   plate_solutions = cache['plate_solutions']
   image_hashes = cache['image_hashes']
+  completed_stacks = cache['completed_stacks']
 
   cache.clear()
 
   cache['plate_solutions'] = plate_solutions
   cache['image_hashes'] = image_hashes
+  cache['completed_stacks'] = completed_stacks

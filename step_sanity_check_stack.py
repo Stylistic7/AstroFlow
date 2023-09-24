@@ -3,6 +3,8 @@ import numpy as np
 import file_io
 from stack import Stack, FileList
 from cache import cache
+from collections import Counter
+import itertools
 
 
 def _check_frame_list(L, name):
@@ -93,16 +95,11 @@ def run(stack, fits_headers):
     print(f'Stack is not good: some bias frames had incorrect IMAGETYP keyword')
     return False
 
-  if set.intersection(
-      *
-      [set(light_frames)
-       for light_frames, _ in stack.flat_frame_associations]):
+  light_frame_counts = Counter(
+      itertools.chain.from_iterable(
+          [light_frames for light_frames, _ in stack.flat_frame_associations]))
+  if any(v > 1 for k, v in light_frame_counts.items()):
     print(f'Stack is not good: some light frames exist in multiple flat frame '
-          f'associations')
-
-  if set.intersection(
-      *[set(flat_frames) for _, flat_frames in stack.flat_frame_associations]):
-    print(f'Stack is not good: some flat frames exist in multiple flat frame '
           f'associations')
 
   if stack.aspect_ratio > 1.6 or stack.aspect_ratio < 0.6:

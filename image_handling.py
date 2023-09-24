@@ -9,6 +9,7 @@ from shapely.geometry import Polygon
 import tempfile
 from multiprocessing import Pool
 from functools import partial
+import traceback
 
 import file_io
 
@@ -103,31 +104,40 @@ def _read_image(filename):
 
 
 def make_and_cache_thumbnail(light_frame,
+                             dark_frame,
                              flat_frame,
                              rotate,
                              fudge=None,
                              width=640):
-  light_frame_image = resize_array(_read_image(light_frame), width)
+  try:
+    light_frame_image = resize_array(_read_image(light_frame), width)
+    if rotate:
+      light_frame_image = np.rot90(light_frame_image, 2)
 
-  if flat_frame is not None:
+    if not dark_frame or not flat_frame:
+      cache[('thumbnail_image', light_frame)] = autostretch(light_frame_image)
+      return
+
     flat_frame_image = resize_array(_read_image(flat_frame), width)
+    dark_frame_image = resize_array(_read_image(dark_frame), width)
 
-    if fudge:
-      min, max = np.min(flat_frame_image), np.max(flat_frame_image)
-      flat_frame_image = np.interp(flat_frame_image, [min, max],
-                                   [min + fudge * (max - min), max])
+    light_frame_image -= dark_frame_image
+    flat_frame_image -= dark_frame_image
 
-    im = np.divide(light_frame_image, flat_frame_image)
-  else:
-    im = light_frame_image
+    # if fudge:
+    #   min, max = np.min(flat_frame_image), np.max(flat_frame_image)
+    #   flat_frame_image = np.interp(flat_frame_image, [min, max],
+    #                                [min + fudge * (max - min), max])
 
-  if rotate:
-    im = np.rot90(im, 2)
+    light_frame_image = np.divide(light_frame_image,
+                                  flat_frame_image,
+                                  out=np.zeros_like(light_frame_image),
+                                  where=flat_frame_image != 0)
 
-  im = autostretch(im)
-
-  # print(f'### caching thumbnail for light frame {light_frame}')
-  cache[('thumbnail_image', light_frame)] = im
+    light_frame_image = autostretch(np.clip(light_frame_image, 0.0, 1.0))
+    cache[('thumbnail_image', light_frame)] = light_frame_image
+  except Exception:
+    traceback.print_exc()
 
 
 def make_and_cache_stack_thumbnails(stack, width=640):

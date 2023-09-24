@@ -5,6 +5,7 @@ from functools import lru_cache
 from pathlib import Path
 from dateutil.parser import parse
 import itertools
+import numpy as np
 
 from cache import cache
 
@@ -78,9 +79,9 @@ def group_by_fits_keyword(fits_headers, filenames, fits_keyword):
 
 def read_xisf_image(filename):
   xisf = XISF(filename)
-  return xisf.read_image(0).squeeze()
+  return xisf.read_image(0).squeeze().astype(np.float32) / 65536.0
 
 
 def read_fits_image(filename):
   with pyfits.open(filename) as fits:
-    return fits[0].data
+    return fits[0].data.astype(np.float32) / 65536.0

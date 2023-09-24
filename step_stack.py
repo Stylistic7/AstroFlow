@@ -26,15 +26,11 @@ def run(stack, dest_path):
       if not os.path.exists(dest_filename):
         os.symlink(filename, dest_filename)
 
-  exposure = _exposure_time_string(stack)
+  # exposure = _exposure_time_string(stack)
 
   dst_filename = os.path.join(
       dest_path, stack.target, 'masters',
-      f'master_light_{stack.target}_{stack.rig}_{stack.filter}_{exposure}.xisf')
-
-  if os.path.exists(dst_filename):
-    print('Stacked master already exists')
-    return dst_filename
+      f'master_light_{stack.target}_{stack.rig}_{stack.filter}.xisf')
 
   if config.STACKING_TEST_MODE:
     return None

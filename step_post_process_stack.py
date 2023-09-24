@@ -86,9 +86,10 @@ for (let i = 0; i < window.length; ++i) {{
 """
 
 
-def run(rig, master):
-  filename, ext = os.path.splitext(master)
-  # fit_filename = filename + '_post' + '.fit'
+def run(stack):
+  assert stack.master and os.path.exists(stack.master)
+
+  filename, ext = os.path.splitext(stack.master)
   xisf_filename = filename + '_post' + '.xisf'
 
   if config.STACKING_TEST_MODE:
@@ -96,14 +97,11 @@ def run(rig, master):
     Path(xisf_filename).touch()
     return xisf_filename
 
-  if os.path.exists(xisf_filename):
-    return xisf_filename
-
   with tempfile.TemporaryDirectory() as tmp_dir:
     script_filename = os.path.join(tmp_dir, "run_post_processing.js")
     with open(script_filename, "w") as f:
-      script = post_process_script.format(input_filename=master,
-                                          rig=rig,
+      script = post_process_script.format(input_filename=stack.master,
+                                          rig=stack.rig,
                                           xisf_filename=xisf_filename)
       f.write(script)
 

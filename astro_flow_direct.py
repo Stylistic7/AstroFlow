@@ -25,6 +25,7 @@ import dark_and_bias_association
 import camera_configs
 import step_flat_frame_association
 import step_sanity_check_stack
+import step_post_process_stack
 import step_mosaic
 import step_stack
 import image_handling
@@ -399,7 +400,7 @@ def associate_bias_frames(stacks, bias_frames, fits_headers):
 def get_runs(frames, fits_headers):
   if not frames: return []
 
-  print(f'### get_runs for {len(frames)} frames')
+  # print(f'### get_runs for {len(frames)} frames')
   frames = sorted(frames, key=lambda f: fits_headers[f]['DATE-OBS'])
 
   # print('### sorted light frame dates:')
@@ -408,24 +409,24 @@ def get_runs(frames, fits_headers):
   #   print('###', fits_headers[light_frame]['DATE-OBS'])
 
   max_gap = datetime.timedelta(hours=1)
-  imaging_runs = []
+  runs = []
   prev_date_obs = pytz.utc.localize(datetime.datetime.min)
-  current_imaging_run_start = None
+  run_start = None
   for frame in frames:
     current_date_obs = fits_headers[frame]['DATE-OBS']
     if current_date_obs > prev_date_obs + max_gap:
       # Save the current imaging run, if there is one.
-      if current_imaging_run_start:
-        imaging_runs.append((current_imaging_run_start, prev_date_obs))
+      if run_start:
+        runs.append((run_start, prev_date_obs))
 
       # Start a new imaging run.
-      current_imaging_run_start = current_date_obs
+      run_start = current_date_obs
 
     prev_date_obs = current_date_obs
 
-  imaging_runs.append((current_imaging_run_start, prev_date_obs))
+  runs.append((run_start, prev_date_obs))
 
-  return imaging_runs
+  return runs
 
 
 def run_distance(a, b):
@@ -443,12 +444,12 @@ def run_distance(a, b):
 def associate_flat_frames_for_stack(stack, flat_frames, fits_headers):
   print(f'### Associating flat frames for stack {stack}')
   imaging_runs = get_runs(stack.light_frames, fits_headers)
-  for start, end in imaging_runs:
-    print(f'imaging run start {start} end {end}')
+  # for start, end in imaging_runs:
+  #   print(f'imaging run start {start} end {end}')
 
   flat_runs = get_runs(flat_frames, fits_headers)
-  for start, end in flat_runs:
-    print(f'flat run start {start} end {end}')
+  # for start, end in flat_runs:
+  #   print(f'flat run start {start} end {end}')
 
   flat_frame_associations = []
   if flat_runs:
@@ -528,11 +529,17 @@ def make_image_thumbnails(stacks, plate_solutions, fits_headers, width=640):
         # print(f'### cache miss on light frame {light_frame}')
         flat_frame = image_handling._get_flat_frame_for_light_frame(
             light_frame, stack, fits_headers)
+        dark_frame = stack.dark_frames[0] if len(stack.dark_frames) else None
         rotate = plate_solutions[light_frame].rotation_angle < 0.0
+
         # Hack to slightly fudge flat-frame correction for the C11.
-        fudge = 0.35 if stack.rig == 'C11' else None
+        # TODO: See if simply apply bias or dark frames makes these fudges
+        # unnecessary.
+        # fudges = {('C11', 'H'): 0.4, ('C11', 'S'): 0.5, ('C11', 'O'): 0.2}
+        # fudge = fudges.get((stack.rig, stack.filter))
+
         executor.submit(image_handling.make_and_cache_thumbnail, light_frame,
-                        flat_frame, rotate, fudge, width)
+                        dark_frame, flat_frame, rotate, None, width)
 
 
 # TODO: Consider how changing a config setting and re-running will work.
@@ -586,26 +593,39 @@ def sanity_check_stacks(stacks, fits_headers):
   return stacks
 
 
-@memoize_by_context()
+# TODO: Don't just memoize this. Instead, compare the stack against the previous
+# stack for the same target. If anything has changed, or the master file is
+# missing, re-stack the stack.
 def stack_subframes(stack, fits_headers, output_dir):
+  if not stack.enable or not stack.status:
+    return stack
+
+  if stack in cache.get('completed_stacks', []) and os.path.exists(
+      stack.master) and os.path.exists(stack.post_processed):
+    print(f'Stack {stack} has already been completed.')
+    return stack
+
   print(f'Stacking subframes for stack {stack}')
-  # if stack.enable and stack.status:
-  if stack.status:
-    print(f'Stacking {stack}')
-    step_flat_frame_association.set_flat_versions(stack, fits_headers)
-    stack.master = step_stack.run(stack, output_dir)
+  step_flat_frame_association.set_flat_versions(stack, fits_headers)
+  stack.master = step_stack.run(stack, output_dir)
+
+  print(f'Post-processing stack {stack}')
+  stack.post_processed = step_post_process_stack.run(stack)
+
+  with cache.transact():
+    cache['completed_stacks'] = cache.get('completed_stacks', []) + [stack]
 
   return stack
 
 
-# @memoize_by_context()
-def post_process_stacks(stacks):
-  print('Post-processing stacks...')
-  return stacks
+def post_process_target(target):
+  print(f'Post-processing target {target.name}')
+  return target
 
 
-# TODO: Implement fits_matches with fits_headers
-# TODO: flat frame associations are clearly nuts
+def post_process_mosaic(mosaic):
+  print(f'Post-processing mosaic {mosaic.id}')
+  return mosaic
 
 
 def main(context):
@@ -642,15 +662,25 @@ def main(context):
   cache['targets'] = targets
   cache['mosaics'] = mosaics
 
+  for stack in stacks:
+    stack.enable = 'IC1318' in stack.target
+
   # TODO: Change the iteration order, so the post-processing happens after each
   # individual stack is done. Take care with the iteration order elsewhere.
+  #
+  # TODO: Save stacks to cache as they are finished.
   stacks = [
       stack_subframes(s, fits_headers, context.output_dir) for s in stacks
   ]
-  stacks = post_process_stacks(stacks)
 
   cache['stacks'] = stacks
   cache['targets'] = targets
+  cache['mosaics'] = mosaics
+
+  targets = [post_process_target(t) for t in targets]
+  cache['targets'] = targets
+
+  mosaics = [post_process_mosaic(m) for m in mosaics]
   cache['mosaics'] = mosaics
 
 
