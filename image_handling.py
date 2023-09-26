@@ -154,6 +154,9 @@ def make_and_cache_stack_thumbnails(stack, width=640):
 
     thumbnails = [cache[('thumbnail_image', f)] for f in stack.light_frames]
     index = np.argmax(map(np.std, thumbnails))
+    # TODO: This isn't saved in the cache.
+    stack.best_light_frame = stack.light_frames[index]
+    print(f'### Stack {stack} has best light frame {stack.best_light_frame}')
     thumbnail_image = array_to_png(thumbnails[index])
 
     for im in thumbnails:

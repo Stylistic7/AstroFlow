@@ -66,6 +66,8 @@ class Stack:
   min_footprint: list[tuple[float]] = None
   aspect_ratio: float = None
 
+  best_light_frame: str = None
+
   master: str = None
   post_processed: str = None
 

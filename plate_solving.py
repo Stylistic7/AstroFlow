@@ -18,6 +18,7 @@ class PlateSolution:
   image_filename: str = None
 
   wcs_contents: bytes = None
+  header: dict = None
 
   num_stars: int = 0
 
@@ -77,6 +78,7 @@ def solve_field(filename):
         header = fits[0].header
         return PlateSolution(image_filename=filename,
                              wcs_contents=wcs_contents,
+                             header=header,
                              center=get_center(header),
                              footprint=get_footprint(header),
                              rotation_angle=get_rotation_angle(header),

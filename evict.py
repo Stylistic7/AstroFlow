@@ -33,6 +33,6 @@ if __name__ == '__main__':
 
   cache.clear()
 
-  cache['plate_solutions'] = plate_solutions
+  # cache['plate_solutions'] = plate_solutions
   cache['image_hashes'] = image_hashes
   cache['completed_stacks'] = completed_stacks

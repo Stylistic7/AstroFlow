@@ -23,6 +23,7 @@ import spatial_association
 import autorun_log_analysis
 import dark_and_bias_association
 import camera_configs
+import step_download_asiair
 import step_flat_frame_association
 import step_sanity_check_stack
 import step_post_process_stack
@@ -44,6 +45,8 @@ import image_handling
 class Context:
   input_dirs: list[str] = field(default_factory=list)
   output_dir: str = None
+
+  default_filter: str = None
 
   # TODO: Move to config.
   max_frames: int = None
@@ -147,7 +150,7 @@ def collect_results_as_dict(filenames, fn, prev_result, parallel=True):
         results = p.map(fn, filenames)
         return {f: x for f, x in zip(filenames, results)}
     else:
-      return {f: fn(f) for f in filenames}
+      return {f: fn(f) for f in filenames if fn(f)}
 
   print('prev_result len', len(prev_result))
   result = {k: v for k, v in prev_result.items() if os.path.exists(k)}
@@ -166,8 +169,33 @@ def collect_results_as_dict(filenames, fn, prev_result, parallel=True):
   return result
 
 
-def download():
+def download(save_dir, default_filter):
   print('Downloading files...')
+  # TODO: Put these into the config file.
+  rigs = [
+      {
+          'name': 'RC71',
+          'ip': '192.168.50.15',
+      },
+      {
+          'name': 'C11',
+          'ip': '192.168.50.16',
+      },
+  ]
+
+  search_defs = [{
+      'volume': 'EMMC%20Images',
+      'log_dir': 'log',
+      'fits_paths': ['Autorun', 'Plan']
+  }, {
+      'volume': 'TF%20Images',
+      'log_dir': 'ASIAIR/log',
+      'fits_paths': ['ASIAIR/Autorun', 'ASIAIR/Plan']
+  }]
+
+  for rig in rigs:
+    step_download_asiair.run(rig['name'], rig['ip'], search_defs, save_dir,
+                             default_filter)
 
 
 @timeit
@@ -262,6 +290,13 @@ def plate_solve(light_frames):
   plate_solutions = collect_results_as_dict(light_frames,
                                             plate_solving.solve_field,
                                             cache.get('plate_solutions', {}))
+
+  num_files = len(plate_solutions)
+  plate_solutions = {f: p for f, p in plate_solutions.items() if p}
+  num_good_files = len(plate_solutions)
+  print(f'### There were {num_files} plate solutions before removing None, '
+        f'and {num_good_files} after')
+
   cache['plate_solutions'] = plate_solutions
   return PlateSolutions(plate_solutions)
 
@@ -631,18 +666,27 @@ def post_process_mosaic(mosaic):
 def main(context):
   decorator_test()
 
-  download()
+  # TODO: Don't just use the first input directory.
+  download(context.input_dirs[0], context.default_filter)
+
   all_frames = find_files(context.input_dirs)
   fits_headers = read_fits_headers(all_frames)
+
   image_hashes = compute_image_hashes(all_frames)
   # check_duplicates(image_hashes)
+
   light_frames, dark_frames, bias_frames, flat_frames = split_images_by_type(
       all_frames, fits_headers)
+
   light_frames = remove_frames_during_mount_movements(light_frames)
+
   plate_solutions = plate_solve(light_frames)
+
   spatial_components = identify_spatial_components(plate_solutions)
   stacks = identify_stacks(spatial_components, fits_headers)
+
   # measure_stacks()
+
   stacks = get_camera_configs(stacks, fits_headers)
   stacks = associate_dark_frames(stacks, dark_frames, fits_headers)
   stacks = associate_bias_frames(stacks, bias_frames, fits_headers)
@@ -663,7 +707,8 @@ def main(context):
   cache['mosaics'] = mosaics
 
   for stack in stacks:
-    stack.enable = 'IC1318' in stack.target
+    # stack.enable = 'IC1318' in stack.target
+    stack.enable = True
 
   # TODO: Change the iteration order, so the post-processing happens after each
   # individual stack is done. Take care with the iteration order elsewhere.
@@ -728,5 +773,6 @@ if __name__ == '__main__':
 
   context.input_dirs = [os.path.abspath(i) for i in args.input_dirs]
   context.output_dir = os.path.abspath(args.output_dir)
+  context.default_filter = args.default_filter
 
   main(context)
