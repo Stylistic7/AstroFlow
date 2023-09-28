@@ -18,7 +18,7 @@ class Mosaic:
   viewbox: list[tuple[float]] = None
 
   def store_metadata(self, targets):
-    print('### Entering Mosaic.store_metadata')
+    # print('### Entering Mosaic.store_metadata')
     # TODO: Some of these other kinds of metadata might apply to Targets?
     # self.store_id()
     # self.store_exposure_time_s(fits_headers)

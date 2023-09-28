@@ -6,6 +6,7 @@ from pathlib import Path
 from dateutil.parser import parse
 import itertools
 import numpy as np
+from xisf import XISF
 
 from cache import cache
 

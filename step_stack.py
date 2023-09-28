@@ -32,6 +32,10 @@ def run(stack, dest_path):
       dest_path, stack.target, 'masters',
       f'master_light_{stack.target}_{stack.rig}_{stack.filter}.xisf')
 
+  if os.path.exists(dst_filename):
+    print(f'### Stack {stack} master already exists')
+    return dst_filename
+
   if config.STACKING_TEST_MODE:
     return None
 

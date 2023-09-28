@@ -92,6 +92,10 @@ def run(stack):
   filename, ext = os.path.splitext(stack.master)
   xisf_filename = filename + '_post' + '.xisf'
 
+  if os.path.exists(xisf_filename):
+    print(f'### Stack {stack} post-processing already exists')
+    return xisf_filename
+
   if config.STACKING_TEST_MODE:
     print(f'In test mode; immediately returning {xisf_filename}')
     Path(xisf_filename).touch()

@@ -12,7 +12,7 @@ def _check_frame_list(L, name):
     print(f'Stack is not good: {name} is not a FileList.')
     return False
 
-  if len(L) < 2:
+  if len(L) < 5:
     print(f'Stack is not good: {name} has too few elements.')
     return False
 

@@ -194,6 +194,20 @@ def stack_thumbnail_video(target, rig, filter):
   return flask.send_file(buffer, mimetype='video/webm')
 
 
+@app.route('/stack_master_image/<target>/<rig>/<filter>')
+def stack_master_image(target, rig, filter):
+  stack = next(s for s in cache['completed_stacks']
+               if s.target == target and s.rig == rig and s.filter == filter)
+  image = image_handling._read_image(stack.master)
+  image = image_handling.resize_array(image, new_width=640)
+  image = image_handling.autostretch(image)
+  image = image_handling.array_to_png(image)
+  buffer = io.BytesIO()
+  buffer.write(image)
+  buffer.seek(0)
+  return flask.send_file(buffer, mimetype='image/png')
+
+
 @app.route('/get_plot')
 def plot():
   mem = io.BytesIO()

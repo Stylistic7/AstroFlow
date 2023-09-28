@@ -16,7 +16,7 @@ import plate_solving
 
 from cache import cache
 
-MIN_COMPONENT_MEMBERS = 2
+MIN_COMPONENT_MEMBERS = 5
 
 
 def iou(a, b):
@@ -25,6 +25,9 @@ def iou(a, b):
 
 def find_components(plate_solutions,
                     min_component_members=MIN_COMPONENT_MEMBERS):
+  # Filter out images that couldn't be plate-solved.
+  plate_solutions = {f: p for f, p in plate_solutions.items() if p is not None}
+
   filenames = plate_solutions.keys()
   footprints = {f: Polygon(p.footprint) for f, p in plate_solutions.items()}
 
@@ -47,7 +50,7 @@ def find_components(plate_solutions,
       print(f'Finding components is {percent_done:.0f}% done.')
       last_printed_percent_done = percent_done
 
-  targets = [t for t in targets if len(t) > MIN_COMPONENT_MEMBERS]
+  targets = [t for t in targets if len(t) >= min_component_members]
 
   def get_name(target):
     plate_solution = plate_solutions[target[0]]
@@ -57,20 +60,16 @@ def find_components(plate_solutions,
 
   target_string_counts = Counter(name for name, _ in targets)
 
-  output_targets = []
+  output_targets = {}
   for name, filenames in targets:
     center = plate_solutions[filenames[0]].center
     if target_string_counts[name] > 1:
       new_name = f'{name}_{position_string.ra_dec_string(*center)}'
-      output_targets.append((new_name, filenames))
+      output_targets[new_name] = list(sorted(filenames))
     else:
-      output_targets.append((name, filenames))
+      output_targets[name] = list(sorted(filenames))
 
-  output_targets = [(name, list(sorted(filenames)))
-                    for name, filenames in output_targets]
-  output_targets = list(sorted(output_targets))
-
-  for name, filenames in output_targets:
+  for name, filenames in output_targets.items():
     print(f'Target {name} has {len(filenames)} files')
 
   return output_targets

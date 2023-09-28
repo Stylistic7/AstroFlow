@@ -10,8 +10,10 @@ import config
 import astropy.io.fits as pyfits
 import numpy as np
 import matplotlib.pyplot as plt
-from shapely import Polygon
+from shapely import Polygon, Point
+import traceback
 
+import file_io
 from mosaic import Mosaic
 from cache import cache
 import pixinsight_shell_script
@@ -40,13 +42,21 @@ def _identify_mosiacs(targets):
   def overlap(a, b):
     return a.intersection(b).area > 0
 
+  def roughly_same_area(a, b):
+    ratio = a.area / b.area
+    return ratio > 0.9 and ratio < 1.1
+
   mosaics = []
   for target in targets:
     found = False
     for mosaic in mosaics:
-      if any(
+      all_roughly_same_area = all(
+          roughly_same_area(target.footprint_polygon(), m.footprint_polygon())
+          for m in mosaic)
+      any_overlap = any(
           overlap(target.footprint_polygon(), m.footprint_polygon())
-          for m in mosaic):
+          for m in mosaic)
+      if all_roughly_same_area and any_overlap:
         mosaic.append(target)
         found = True
 
@@ -142,7 +152,7 @@ def _ransac(mosaic, plot=False, plot_title=None):
       error = np.linalg.norm(transformed_center - np.round(transformed_center))
       # print(f'  transformed_center {transformed_center} '
       #       f'has Euclidean error {error}')
-      if error < 0.2:
+      if error < 0.3:
         inliers.append(mosaic[i])
         errors.append(error)
     # print(f'Found {len(inliers)} inliers')
@@ -218,6 +228,50 @@ def _ransac(mosaic, plot=False, plot_title=None):
   return best_inliers
 
 
+def image_for_mosaic(mosaic, targets, stacks, plate_solutions, resolution=0.1):
+  min_ra, min_dec, ra_span, dec_span = mosaic.viewbox
+  width, height = int(np.ceil(ra_span / resolution)), int(
+      np.ceil(dec_span / resolution))
+  output_image = np.zeros((width, height))
+
+  targets = [t for t in targets if t.name in mosaic.target_ids]
+  print(f'### Found {len(targets)} targets for mosaic')
+
+  stacks = [
+      s for s in stacks
+      if s.filter == 'H' and any(s.id in t.stack_ids for t in targets)
+  ]
+  print(f'### Found {len(stacks)} stacks for the targets')
+
+  # TODO: This filename should be saved in the Stack.
+  def get_best_light_frame(stack):
+    thumbnails = [cache[('thumbnail_image', f)] for f in stack.light_frames]
+    index = np.argmax(map(np.std, thumbnails))
+    return stack.light_frames[index]
+
+  best_light_frames = [get_best_light_frame(s) for s in stacks]
+  print(f'### best_light_frames', best_light_frames)
+
+  images_and_metadata = [
+      (file_io.read_fits_image(f), plate_solutions[f].header,
+       Polygon(plate_solutions[f].footprint)) for f in best_light_frames
+  ]
+  print('### images_and_metadata', images_and_metadata)
+
+  for ra in np.arange(min_ra, min_ra + ra_span, resolution):
+    for dec in np.arange(min_dec, min_dec + dec_span, resolution):
+      for image, header, polygon in images_and_metadata:
+        if polygon.contains(Point(ra, dec)):
+          print(f'#### Found point inside image')
+
+          # We have the map from reference pixel to reference (RA, DEC).
+          # We have the rotation and scale matrix from pixels to (RA, DEC).
+
+          # output_image[ra, dec] = image[]
+
+  # return image
+
+
 def run(targets, plot=False):
   mosaics = _identify_mosiacs(targets)
   if not mosaics:
@@ -235,33 +289,21 @@ def run(targets, plot=False):
     for target in mosaic:
       print(f'  {target.name}')
 
-    output_mosaic = Mosaic()
-    output_mosaic.target_ids = [t.name for t in mosaic]
-    output_mosaic.store_metadata(targets)
-    output_mosaic.id = position_string.canonical_target_string(
-        output_mosaic.center)
+    try:
+      output_mosaic = Mosaic()
+      output_mosaic.target_ids = [t.name for t in mosaic]
+      output_mosaic.store_metadata(targets)
+      output_mosaic.id = position_string.canonical_target_string(
+          output_mosaic.center)
 
-    output_mosaics.append(output_mosaic)
+      output_mosaics.append(output_mosaic)
+    except Exception as e:
+      traceback.print_exc()
 
   return output_mosaics
 
 
 if __name__ == '__main__':
-  # filenames = [
-  #     '/Users/nobody/Downloads/Veil Pano/master_light_Filamentary_nebula_RA_311_5_DEC_30_2_C11_H_v1_post_registered.xisf',
-  #     '/Users/nobody/Downloads/Veil Pano/master_light_Filamentary_nebula_RA_313_1_DEC_30_0_C11_H_v1_post_registered.xisf'
-  # ]
-
-  # filenames = pixinsight_image_solver.run(filenames)
-  # filenames = pixinsight_mosaic_by_coordinates.run(filenames)
-
-  # for filename in filenames:
-  #   filenames = trim_mosaic_tiles(filename)
-
-  # for stack in cache['stacks']:
-  #   print(f'stack {stack.target} has footprint {stack.footprint}')
-
-  stacks = [s for s in cache['stacks'] if s.rig == 'C11' and s.filter == 'H']
-  print(f'Found {len(stacks)} stacks')
-
-  run(stacks, plot=True)
+  mosaic = next(m for m in cache['mosaics'] if 'IC1318' in m.id)
+  image_for_mosaic(mosaic, cache['targets'], cache['stacks'],
+                   cache['plate_solutions'])

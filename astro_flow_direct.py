@@ -172,6 +172,8 @@ def collect_results_as_dict(filenames, fn, prev_result, parallel=True):
 def download(save_dir, default_filter):
   print('Downloading files...')
   # TODO: Put these into the config file.
+  # TODO: Allow the user to pick the rig when they begin an import from an
+  # ASIAIR.
   rigs = [
       {
           'name': 'RC71',
@@ -291,11 +293,12 @@ def plate_solve(light_frames):
                                             plate_solving.solve_field,
                                             cache.get('plate_solutions', {}))
 
-  num_files = len(plate_solutions)
-  plate_solutions = {f: p for f, p in plate_solutions.items() if p}
-  num_good_files = len(plate_solutions)
-  print(f'### There were {num_files} plate solutions before removing None, '
-        f'and {num_good_files} after')
+  # TODO: Implement quarantining.
+  # num_files = len(plate_solutions)
+  # plate_solutions = {f: p for f, p in plate_solutions.items() if p}
+  # num_good_files = len(plate_solutions)
+  # print(f'### There were {num_files} plate solutions before removing None, '
+  #       f'and {num_good_files} after')
 
   cache['plate_solutions'] = plate_solutions
   return PlateSolutions(plate_solutions)
@@ -306,7 +309,7 @@ def plate_solve(light_frames):
 def identify_spatial_components(plate_solutions):
   print('Identifying spatial components...')
   spatial_components = spatial_association.find_components(plate_solutions)
-  return [(k, FileList(v)) for k, v in spatial_components]
+  return [(k, FileList(v)) for k, v in spatial_components.items()]
 
 
 @timeit
@@ -635,7 +638,7 @@ def stack_subframes(stack, fits_headers, output_dir):
   if not stack.enable or not stack.status:
     return stack
 
-  if stack in cache.get('completed_stacks', []) and os.path.exists(
+  if stack.master and stack.post_processed and os.path.exists(
       stack.master) and os.path.exists(stack.post_processed):
     print(f'Stack {stack} has already been completed.')
     return stack
@@ -645,10 +648,7 @@ def stack_subframes(stack, fits_headers, output_dir):
   stack.master = step_stack.run(stack, output_dir)
 
   print(f'Post-processing stack {stack}')
-  stack.post_processed = step_post_process_stack.run(stack)
-
-  with cache.transact():
-    cache['completed_stacks'] = cache.get('completed_stacks', []) + [stack]
+  # stack.post_processed = step_post_process_stack.run(stack)
 
   return stack
 
@@ -667,7 +667,8 @@ def main(context):
   decorator_test()
 
   # TODO: Don't just use the first input directory.
-  download(context.input_dirs[0], context.default_filter)
+  if context.download:
+    download(context.input_dirs[0], context.default_filter)
 
   all_frames = find_files(context.input_dirs)
   fits_headers = read_fits_headers(all_frames)
@@ -708,15 +709,12 @@ def main(context):
 
   for stack in stacks:
     # stack.enable = 'IC1318' in stack.target
-    stack.enable = True
+    # stack.enable = True
+    pass
 
-  # TODO: Change the iteration order, so the post-processing happens after each
-  # individual stack is done. Take care with the iteration order elsewhere.
-  #
-  # TODO: Save stacks to cache as they are finished.
-  stacks = [
-      stack_subframes(s, fits_headers, context.output_dir) for s in stacks
-  ]
+  for stack in stacks:
+    stack = stack_subframes(stack, fits_headers, context.output_dir)
+    cache['stacks'] = stacks
 
   cache['stacks'] = stacks
   cache['targets'] = targets
@@ -773,6 +771,7 @@ if __name__ == '__main__':
 
   context.input_dirs = [os.path.abspath(i) for i in args.input_dirs]
   context.output_dir = os.path.abspath(args.output_dir)
+  context.download = args.download
   context.default_filter = args.default_filter
 
   main(context)

@@ -102,9 +102,9 @@ export default function Stacks(props) {
     },
     {
       key: "image",
-      label: "Flat-Corrected",
+      label: "Stacked",
       component: (data) => (
-        <img src={`/stack_thumbnail_image/${data.target}/${data.rig}/${data.filter}`} alt={data.name} width="200px" loading="lazy" />
+        <img src={`/stack_master_image/${data.target}/${data.rig}/${data.filter}`} alt={data.name} width="300px" loading="lazy" />
       ),
       stopPropagation: true,
     },
