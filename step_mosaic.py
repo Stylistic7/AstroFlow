@@ -23,17 +23,6 @@ import trim_mosaic_tile
 import spatial_association
 import position_string
 
-# The sorta basic problem is here is that this code looks at stacks, not
-# targets. Does it need to look at targets?
-#
-# The first thing it does is split apart rigs and filters, and targets
-# purposefully contain all images, for all rigs and filters, of the same part
-# of the sky.
-#
-# Fundamentally, the only real question is "what is the footprint of a target?"
-#
-# It could be just the intersection of the footprints of all its stacks?
-
 
 def _identify_mosiacs(targets):
   if not targets:
@@ -45,6 +34,8 @@ def _identify_mosiacs(targets):
   def roughly_same_area(a, b):
     ratio = a.area / b.area
     return ratio > 0.9 and ratio < 1.1
+
+  targets = list(sorted(targets, key=lambda t: t.center[0]))
 
   mosaics = []
   for target in targets:

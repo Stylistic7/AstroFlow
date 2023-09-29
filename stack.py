@@ -3,6 +3,7 @@ import numpy as np
 from dataclasses import dataclass, field
 import functools
 from shapely.geometry import Polygon
+import uuid
 
 from cache import cache
 import file_io
@@ -14,7 +15,8 @@ import matplotlib.pyplot as plt
 
 class FileList(list):
   def __init__(self, *args):
-    list.__init__(self, sorted(*args))
+    if args:
+      list.__init__(self, sorted(*args))
 
 
 def _min_footprint(footprints):
@@ -36,7 +38,7 @@ def _min_footprint(footprints):
 
 @dataclass
 class Stack:
-  id: str = None
+  id: uuid.UUID = field(default_factory=uuid.uuid4)
 
   # TODO: This currently just means "good" or not. Elaborate.
   status: bool = False
@@ -49,17 +51,14 @@ class Stack:
 
   camera_configs = None
 
-  light_frames: FileList = None
-  dark_frames: FileList = None
-  bias_frames: FileList = None
-  flat_frames: FileList = None
+  light_frames: FileList = field(default_factory=FileList)
+  dark_frames: FileList = field(default_factory=FileList)
+  bias_frames: FileList = field(default_factory=FileList)
+  flat_frames: FileList = field(default_factory=FileList)
 
   flat_frame_associations: list = field(default_factory=list)
 
   exposure_time_s: int = None
-
-  # thumbnail_image_url: str = None
-  # thumbnail_video_url: str = None
 
   center: list[float] = field(default_factory=list)
   footprint: list[tuple[float]] = None

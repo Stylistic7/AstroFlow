@@ -16,6 +16,7 @@ import plate_solving
 
 from cache import cache
 
+# TODO: Bring all knobs up here.
 MIN_COMPONENT_MEMBERS = 5
 
 

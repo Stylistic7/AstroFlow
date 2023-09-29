@@ -2,11 +2,12 @@ import numpy as np
 from dataclasses import dataclass, field
 import functools
 from shapely.geometry import Polygon
+import uuid
 
 
 @dataclass
 class Mosaic:
-  id: str = None
+  id: uuid.UUID = field(default_factory=uuid.uuid4)
 
   # TODO: This currently just means "good" or not. Elaborate.
   status: bool = False
