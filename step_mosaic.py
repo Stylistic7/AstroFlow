@@ -35,7 +35,11 @@ def _identify_mosiacs(targets):
     ratio = a.area / b.area
     return ratio > 0.9 and ratio < 1.1
 
+  # Sort the targets by their center RA.
   targets = list(sorted(targets, key=lambda t: t.center[0]))
+  print('### Number of targets', len(targets))
+  for target in targets:
+    print(f'### Target {target}')
 
   mosaics = []
   for target in targets:
@@ -50,11 +54,14 @@ def _identify_mosiacs(targets):
       if all_roughly_same_area and any_overlap:
         mosaic.append(target)
         found = True
+        break
 
     if not found:
       mosaics.append([target])
 
   # mosaics = [m for m in mosaics if len(m) > 1]
+
+  print('### Number of targets in mosaics:', sum(len(m) for m in mosaics))
 
   return mosaics
 

@@ -638,6 +638,8 @@ def stack_subframes(stack, fits_headers, output_dir):
   if not stack.enable or not stack.status:
     return stack
 
+  # TODO: This somehow always tries to call step_stack.run(), even when the
+  # stack is already complete.
   if stack.master and stack.post_processed and os.path.exists(
       stack.master) and os.path.exists(stack.post_processed):
     print(f'Stack {stack} has already been completed.')
