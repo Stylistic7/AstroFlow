@@ -709,8 +709,7 @@ def main(context):
 
   for stack in stacks:
     # stack.enable = 'IC1318' in stack.target
-    # stack.enable = True
-    pass
+    stack.enable = True
 
   for stack in stacks:
     stack = stack_subframes(stack, fits_headers, context.output_dir)

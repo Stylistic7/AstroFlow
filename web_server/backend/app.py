@@ -123,6 +123,11 @@ def hello(name):
   return flask.render_template('hello.html', name=name)
 
 
+@app.route('/starmap')
+def starmap():
+  return flask.render_template('index.html')
+
+
 @app.route('/footprints')
 def footprints():
   plate_solutions = metaflow_data_helper.find('plate_solve',
