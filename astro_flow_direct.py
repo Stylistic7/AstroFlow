@@ -171,9 +171,16 @@ def collect_results_as_dict(filenames, fn, prev_result, parallel=True):
 
 def download(save_dir, default_filter):
   print('Downloading files...')
-  # TODO: Put these into the config file.
+  # TODO: Put these into the config file, filled in by the web UI.
+  #
   # TODO: Allow the user to pick the rig when they begin an import from an
   # ASIAIR.
+  #
+  # TODO: Eliminate the RIG keyword entirely. Instead, only associate images
+  # into stacks when they ~the same image scale and resolution. Allow users
+  # to give each combination a mnemonic name.
+  #
+  # TODO: Automatically apply Drizzle for under-sampled images,
   rigs = [
       {
           'name': 'RC71',

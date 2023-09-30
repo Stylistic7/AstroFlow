@@ -1,6 +1,6 @@
 import base64
 
-import pixinsight_shell_script
+from .shell_script import ShellScriptTask, run_script
 
 # run -x -a=automationMode=true
 #   -a=dir=/tmp/foo -p="outputDirectory,/tmp/foo"
@@ -13,7 +13,7 @@ _default_parameters = {
 }
 
 
-def run(dir, **kwargs):
+def WeightedBatchPreprocessing(dir, **kwargs):
   parameters = _default_parameters | kwargs
   javascript_filename = "/Applications/PixInsight/src/scripts/WeightedBatchPreprocessing/WeightedBatchPreprocessing.js"
 
@@ -22,7 +22,5 @@ def run(dir, **kwargs):
   parameters['keywords'] = base64.b64encode(
       parameters['keywords'].encode()).decode()
 
-  task = pixinsight_shell_script.PixInsightShellScriptTask(
-      javascript_filename, parameters, arguments)
-
-  pixinsight_shell_script.run_script([task])
+  task = ShellScriptTask(javascript_filename, parameters, arguments)
+  run_script([task])

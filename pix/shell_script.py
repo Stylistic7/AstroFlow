@@ -12,7 +12,7 @@ executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
 
 @dataclass
-class PixInsightShellScriptTask:
+class ShellScriptTask:
   javascript_filename: str
   parameters: dict = field(default_factory=dict)
   arguments: dict = field(default_factory=dict)

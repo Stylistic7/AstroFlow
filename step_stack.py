@@ -8,7 +8,7 @@ import numpy as np
 import config
 import file_io
 from stack import Stack
-import pixinsight_wbpp
+import pix
 from cache import cache
 
 
@@ -45,7 +45,7 @@ def run(stack, dest_path):
     symlink_frames(stack.bias_frames, tmp_dir)
     symlink_frames(stack.dark_frames, tmp_dir)
 
-    pixinsight_wbpp.run(dir=tmp_dir, outputDirectory=tmp_dir)
+    pix.WeightedBatchPreprocessing(dir=tmp_dir, outputDirectory=tmp_dir)
 
     src_master_dir = os.path.join(tmp_dir, 'master')
     filenames = list(

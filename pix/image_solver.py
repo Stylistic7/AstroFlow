@@ -1,6 +1,6 @@
 import os
 
-import pixinsight_shell_script
+from .shell_script import ShellScriptTask, run_script
 
 _default_parameters = {
     'metadata_focal': '541.5685232722849',
@@ -53,7 +53,7 @@ _default_parameters = {
 }
 
 
-def run(filenames, **kwargs):
+def ImageSolver(filenames, **kwargs):
   parameters = _default_parameters | kwargs
   javascript_filename = "/Applications/PixInsight/src/scripts/AdP/ImageSolver.js"
 
@@ -65,10 +65,8 @@ def run(filenames, **kwargs):
 
   parameters['solver_files'] = '|'.join(filenames)
 
-  task = pixinsight_shell_script.PixInsightShellScriptTask(
-      javascript_filename, parameters)
-
-  pixinsight_shell_script.run_script([task])
+  task = ShellScriptTask(javascript_filename, parameters)
+  run_script([task])
 
   assert (all(os.path.exists(f) for f in output_filenames))
   return output_filenames

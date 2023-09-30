@@ -1,4 +1,4 @@
-import pixinsight_shell_script
+from .shell_script import ShellScriptTask, run_script
 
 _default_parameters = {
     'engine_files': '',
@@ -28,7 +28,7 @@ _default_parameters = {
 }
 
 
-def run(filenames, **kwargs):
+def MosaicByCoordinates(filenames, **kwargs):
   parameters = _default_parameters | kwargs
   javascript_filename = "/Applications/PixInsight/src/scripts/AdP/MosaicByCoordinates.js"
 
@@ -42,10 +42,9 @@ def run(filenames, **kwargs):
 
   parameters['engine_files'] = '|'.join(filenames)
 
-  task = pixinsight_shell_script.PixInsightShellScriptTask(
-      javascript_filename, parameters)
+  task = ShellScriptTask(javascript_filename, parameters)
 
-  pixinsight_shell_script.run_script([task])
+  run_script([task])
 
   assert (all(os.path.exists(f) for f in output_filenames))
   return output_filenames

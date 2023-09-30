@@ -8,17 +8,18 @@ from xisf import XISF
 import plate_solving
 import config
 import astropy.io.fits as pyfits
+from astropy.wcs import WCS
+from astropy.coordinates import SkyCoord
 import numpy as np
 import matplotlib.pyplot as plt
 from shapely import Polygon, Point
 import traceback
+import itertools
 
+import pix
 import file_io
 from mosaic import Mosaic
 from cache import cache
-import pixinsight_shell_script
-import pixinsight_image_solver
-import pixinsight_mosaic_by_coordinates
 import trim_mosaic_tile
 import spatial_association
 import position_string
@@ -183,7 +184,7 @@ def _ransac(mosaic, plot=False, plot_title=None):
     #       f'has Euclidean error {error}')
 
     mosaic[i].tile_indices = np.round(transformed_center).astype(np.int32)
-    # print(f'  tile_indices {i}: {mosaic[i].tile_indices}')
+    print(f'  tile_indices {i}: {mosaic[i].tile_indices}')
 
   if not plot:
     return best_inliers
@@ -231,8 +232,10 @@ def image_for_mosaic(mosaic,
                      targets,
                      stacks,
                      plate_solutions,
-                     resolution=0.01):
+                     resolution=0.005):
   min_ra, min_dec, ra_span, dec_span = mosaic.viewbox
+  print(f'### min_ra {min_ra} ra_span {ra_span} '
+        f'min_dec {min_dec} dec_span {dec_span}')
   width, height = int(np.ceil(ra_span / resolution)), int(
       np.ceil(dec_span / resolution))
   output_image = np.zeros((width, height))
@@ -256,35 +259,39 @@ def image_for_mosaic(mosaic,
   best_light_frames = [get_best_light_frame(s) for s in stacks]
   print(f'### best_light_frames', best_light_frames)
 
-  images_and_metadata = [
-      (file_io.read_fits_image(f), plate_solutions[f].header,
-       Polygon(plate_solutions[f].footprint)) for f in best_light_frames
-  ]
-  print('### images_and_metadata', images_and_metadata)
+  images_and_metadata = [(image_handling.autostretch(
+      file_io.read_fits_image(f)), WCS(
+          plate_solutions[f].header), Polygon(plate_solutions[f].footprint))
+                         for f in best_light_frames]
 
-  for x, ra in enumerate(np.arange(min_ra, min_ra + ra_span, resolution)):
-    for y, dec in enumerate(np.arange(min_dec, min_dec + dec_span,
-                                      resolution)):
-      for image, header, polygon in images_and_metadata:
-        # if polygon.contains(Point(ra, dec)):
-        # print(f'#### Found point inside image')
-        # print(f"### CD1_1 {header['CD1_1']} CD1_2 {header['CD1_2']}")
-        # print(f"### CD2_1 {header['CD2_1']} CD2_2 {header['CD2_2']}")
-        rotation_matrix = np.linalg.inv(
-            np.array([[header['CD1_1'], header['CD1_2']],
-                      [header['CD2_1'], header['CD2_2']]]))
-        pixel_coords = np.dot(
-            np.array([ra - header['CRVAL1'], dec - header['CRVAL2']]),
-            rotation_matrix)
-        pixel_coords += np.array([header['CRPIX1'], header['CRPIX2']])
-        # print('### pixel_coords', pixel_coords)
+  ras = np.arange(min_ra, min_ra + ra_span, resolution)
+  decs = np.arange(min_dec, min_dec + dec_span, resolution)
+  world_positions = itertools.product(ras, decs)
+  ras, decs = zip(*world_positions)
 
-        # TODO: Why do I have to swap x ad y?
-        in_y, in_x = pixel_coords
-        if in_x < 0 or in_x > image.shape[0]: continue
-        if in_y < 0 or in_y > image.shape[1]: continue
-        output_image[x, y] = image[int(in_x), int(in_y)]
+  world_positions = SkyCoord(list(ras), list(decs), frame="icrs", unit="deg")
 
+  # TODO: Use bilinear or bicubic interpolation.
+  def sample_image(image, x, y):
+    x, y = int(x), int(y)
+    if x < 0 or x >= image.shape[0] or y < 0 or y >= image.shape[1]:
+      return 0.0
+    return image[x, y]
+
+  for i, (image, wcs, _) in enumerate(images_and_metadata):
+    source_x, source_y = wcs.world_to_pixel(world_positions)
+
+    x = range(width)
+    y = range(height)
+    image_positions = itertools.product(x, y)
+    dest_x, dest_y = zip(*image_positions)
+
+    for sx, sy, dx, dy in zip(source_x, source_y, dest_x, dest_y):
+      output_image[dx, dy] = max(output_image[dx, dy],
+                                 sample_image(image, sy, sx))
+
+  print(f'### mosaic image min {np.min(output_image)} '
+        f'max {np.max(output_image)}')
   return output_image
 
 
@@ -319,10 +326,28 @@ def run(targets, plot=False):
   return output_mosaics
 
 
-if __name__ == '__main__':
-  mosaic = next(m for m in cache['mosaics'] if 'IC1318' in m.id)
-  image = image_for_mosaic(mosaic, cache['targets'], cache['stacks'],
-                           cache['plate_solutions'])
+# TODO: Implement the PixInsight python wrapper.
+#
+# How I want the mosaic merge process to look:
+#
+# The code should put all tasks into an Executor. Tasks that can be run in
+# parallel on multiple copies of PixInsight should just do it automatically.
+# def merge_mosaic(images):
+#   solved = [pix.ImageSolver(im) for im in images]
+#   positioned = [pix.MosaicByCoordinates(im) for in images]
+#   trimmed = [pix.TrimMosaicTile(im) for im in images]
+#   for im1, im2 in compute_pairs(trimmed):
+#     merged = pix.PhotometricMergeMosaic(im1, im2)
 
-  plt.imshow(image_handling.autostretch(image), cmap='gray')
-  plt.show()
+#   merged.save()
+
+if __name__ == '__main__':
+  for mosaic in cache['mosaics']:
+    print(f'### mosaic {mosaic.id} has {len(mosaic.target_ids)} targets')
+    if 'IC1318' not in mosaic.id or len(mosaic.target_ids) < 2:
+      continue
+
+    image = image_for_mosaic(mosaic, cache['targets'], cache['stacks'],
+                             cache['plate_solutions'])
+    plt.imshow(image, cmap='gray')
+    plt.show()

@@ -5,12 +5,14 @@ import subprocess
 import time
 from pathlib import Path
 from xisf import XISF
+import astropy.io.fits as pyfits
+
+from cache import cache
+import pix
 import plate_solving
 import config
-import astropy.io.fits as pyfits
-from cache import cache
-import pixinsight_shell_script
 
+# TODO: Write this as a pix script, not JavaScript.
 post_process_script = """
 var P_bxt = new BlurXTerminator;
 P_bxt.ai_file = "BlurXTerminator.2.mlpackage";
@@ -109,8 +111,8 @@ def run(stack):
                                           xisf_filename=xisf_filename)
       f.write(script)
 
-    task = pixinsight_shell_script.PixInsightShellScriptTask(script_filename)
-    pixinsight_shell_script.run_script([task])
+    task = pix.ShellScriptTask(script_filename)
+    pix.run_script([task])
 
     assert os.path.exists(xisf_filename)
     return xisf_filename
