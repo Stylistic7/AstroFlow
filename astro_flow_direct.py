@@ -322,7 +322,6 @@ def identify_stacks(spatial_components, fits_headers):
         fits_headers, light_frames, 'RIG'):
       for filter, filter_light_frames in file_io.group_by_fits_keyword(
           fits_headers, rig_light_frames, 'FILTER'):
-        print(f'spatial component {name} rig {rig} filter {filter}')
         stacks.append(
             Stack(target=name,
                   rig=rig,
@@ -526,7 +525,7 @@ def associate_flat_frames_for_stack(stack, flat_frames, fits_headers):
 
 
 @timeit
-# @memoize_by_context()
+@memoize_by_context()
 def associate_flat_frames(stacks, flat_frames, fits_headers):
   print('Associating flat frames...')
 
@@ -556,6 +555,23 @@ def compute_stack_metadata(stacks, fits_headers, plate_solutions):
     stack.store_metadata(fits_headers, plate_solutions)
 
   return stacks
+
+
+def load_stacks_context(stacks):
+  def load_stack_context(stack):
+    key = ('stack_context', stack.id)
+    if key in cache:
+      return cache[key]
+    else:
+      return stack
+
+  return [load_stack_context(s) for s in stacks]
+
+
+def save_stacks_context(stacks):
+  for stack in stacks:
+    key = ('stack_context', stack.id)
+    cache[key] = stack
 
 
 # @memoize_by_context()
@@ -635,24 +651,14 @@ def sanity_check_stacks(stacks, fits_headers):
 # stack for the same target. If anything has changed, or the master file is
 # missing, re-stack the stack.
 def stack_subframes(stack, fits_headers, output_dir):
-  if not stack.enable or not stack.status:
-    return stack
-
-  # TODO: This somehow always tries to call step_stack.run(), even when the
-  # stack is already complete.
-  if stack.master and stack.post_processed and os.path.exists(
-      stack.master) and os.path.exists(stack.post_processed):
-    print(f'Stack {stack} has already been completed.')
-    return stack
-
   print(f'Stacking subframes for stack {stack}')
   step_flat_frame_association.set_flat_versions(stack, fits_headers)
   stack.master = step_stack.run(stack, output_dir)
 
-  print(f'Post-processing stack {stack}')
-  # stack.post_processed = step_post_process_stack.run(stack)
 
-  return stack
+def post_process_stack(stack):
+  print(f'Post-processing stack {stack}')
+  stack.post_processed = step_post_process_stack.run(stack)
 
 
 def post_process_target(target):
@@ -686,6 +692,14 @@ def main(context):
   plate_solutions = plate_solve(light_frames)
 
   spatial_components = identify_spatial_components(plate_solutions)
+
+  # TODO: A problem exists right here. The stacks are not read from the cache;
+  # instead, they are created anew on each run. I need a way to load the stack
+  # from the cache, keeping its master, enable, etc. fields, as long as its
+  # input files and config haven't changed.
+  #
+  # Ultimately, this is how the web server communicates with the backend; it
+  # changes stuff in the cache and re-runs the backend.
   stacks = identify_stacks(spatial_components, fits_headers)
 
   # measure_stacks()
@@ -696,15 +710,16 @@ def main(context):
   stacks = associate_flat_frames(stacks, flat_frames, fits_headers)
   stacks = compute_stack_metadata(stacks, fits_headers, plate_solutions)
 
-  cache['stacks'] = stacks
-
   make_image_thumbnails(stacks, plate_solutions, fits_headers)
   make_stack_thumbnails_videos(stacks, plate_solutions, fits_headers)
+
+  stacks = load_stacks_context(stacks)
 
   targets = group_stacks_into_targets(stacks)
   mosaics = group_targets_into_mosaics(targets)
   stacks = sanity_check_stacks(stacks, fits_headers)
 
+  # These are for the web server to read, not for memoization.
   cache['stacks'] = stacks
   cache['targets'] = targets
   cache['mosaics'] = mosaics
@@ -713,10 +728,28 @@ def main(context):
     # stack.enable = 'IC1318' in stack.target
     stack.enable = True
 
+  print('### Before for loop, stack masters are')
   for stack in stacks:
-    stack = stack_subframes(stack, fits_headers, context.output_dir)
-    cache['stacks'] = stacks
+    print(f'###  {stack.master}')
 
+  for stack in stacks:
+    if not stack.status or not stack.enable:
+      continue
+
+    if not stack.master:
+      stack_subframes(stack, fits_headers, context.output_dir)
+      print(f'### After stack_subframes() stack.master is {stack.master}')
+
+    if not stack.post_processed:
+      post_process_stack(stack)
+
+    save_stacks_context(stacks)
+
+  print('### After for loop, stack masters are')
+  for stack in stacks:
+    print(f'###  {stack.master}')
+
+  # These are for the web server to read, not for memoization.
   cache['stacks'] = stacks
   cache['targets'] = targets
   cache['mosaics'] = mosaics

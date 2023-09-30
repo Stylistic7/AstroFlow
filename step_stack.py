@@ -37,7 +37,7 @@ def run(stack, dest_path):
     return dst_filename
 
   if config.STACKING_TEST_MODE:
-    return None
+    return
 
   with tempfile.TemporaryDirectory() as tmp_dir:
     symlink_frames(stack.light_frames, tmp_dir)
@@ -55,7 +55,7 @@ def run(stack, dest_path):
       # TODO: Return failure, so the stack won't just be attempted again
       # on the next run. Distinguish the cases where the stack has never been
       # attempted from the cases where it just didn't succeed.
-      return None
+      return
 
     print('filenames', filenames)
     src_filename = filenames[0]

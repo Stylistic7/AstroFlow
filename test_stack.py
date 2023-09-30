@@ -14,12 +14,18 @@ class TestStack(unittest.TestCase):
     def modify_stack(stack):
       if stack.target == "Bar":
         stack.enable = True
+      if stack.target == "Foo":
+        stack.master = "foo.xisf"
 
     for stack in stacks:
       modify_stack(stack)
 
-    self.assertFalse(stacks[0].enable)
-    self.assertTrue(stacks[1].enable)
+    foo, bar = stacks
+    self.assertFalse(foo.enable)
+    self.assertEqual(foo.master, "foo.xisf")
+
+    self.assertTrue(bar.enable)
+    self.assertEqual(bar.master, None)
 
 
 if __name__ == '__main__':

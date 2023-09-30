@@ -22,6 +22,7 @@ import pixinsight_mosaic_by_coordinates
 import trim_mosaic_tile
 import spatial_association
 import position_string
+import image_handling
 
 
 def _identify_mosiacs(targets):
@@ -226,7 +227,11 @@ def _ransac(mosaic, plot=False, plot_title=None):
   return best_inliers
 
 
-def image_for_mosaic(mosaic, targets, stacks, plate_solutions, resolution=0.1):
+def image_for_mosaic(mosaic,
+                     targets,
+                     stacks,
+                     plate_solutions,
+                     resolution=0.01):
   min_ra, min_dec, ra_span, dec_span = mosaic.viewbox
   width, height = int(np.ceil(ra_span / resolution)), int(
       np.ceil(dec_span / resolution))
@@ -237,7 +242,8 @@ def image_for_mosaic(mosaic, targets, stacks, plate_solutions, resolution=0.1):
 
   stacks = [
       s for s in stacks
-      if s.filter == 'H' and any(s.id in t.stack_ids for t in targets)
+      if s.rig == 'C11' and s.filter == 'H' and any(s.id in t.stack_ids
+                                                    for t in targets)
   ]
   print(f'### Found {len(stacks)} stacks for the targets')
 
@@ -256,18 +262,30 @@ def image_for_mosaic(mosaic, targets, stacks, plate_solutions, resolution=0.1):
   ]
   print('### images_and_metadata', images_and_metadata)
 
-  for ra in np.arange(min_ra, min_ra + ra_span, resolution):
-    for dec in np.arange(min_dec, min_dec + dec_span, resolution):
+  for x, ra in enumerate(np.arange(min_ra, min_ra + ra_span, resolution)):
+    for y, dec in enumerate(np.arange(min_dec, min_dec + dec_span,
+                                      resolution)):
       for image, header, polygon in images_and_metadata:
-        if polygon.contains(Point(ra, dec)):
-          print(f'#### Found point inside image')
+        # if polygon.contains(Point(ra, dec)):
+        # print(f'#### Found point inside image')
+        # print(f"### CD1_1 {header['CD1_1']} CD1_2 {header['CD1_2']}")
+        # print(f"### CD2_1 {header['CD2_1']} CD2_2 {header['CD2_2']}")
+        rotation_matrix = np.linalg.inv(
+            np.array([[header['CD1_1'], header['CD1_2']],
+                      [header['CD2_1'], header['CD2_2']]]))
+        pixel_coords = np.dot(
+            np.array([ra - header['CRVAL1'], dec - header['CRVAL2']]),
+            rotation_matrix)
+        pixel_coords += np.array([header['CRPIX1'], header['CRPIX2']])
+        # print('### pixel_coords', pixel_coords)
 
-          # We have the map from reference pixel to reference (RA, DEC).
-          # We have the rotation and scale matrix from pixels to (RA, DEC).
+        # TODO: Why do I have to swap x ad y?
+        in_y, in_x = pixel_coords
+        if in_x < 0 or in_x > image.shape[0]: continue
+        if in_y < 0 or in_y > image.shape[1]: continue
+        output_image[x, y] = image[int(in_x), int(in_y)]
 
-          # output_image[ra, dec] = image[]
-
-  # return image
+  return output_image
 
 
 def run(targets, plot=False):
@@ -303,5 +321,8 @@ def run(targets, plot=False):
 
 if __name__ == '__main__':
   mosaic = next(m for m in cache['mosaics'] if 'IC1318' in m.id)
-  image_for_mosaic(mosaic, cache['targets'], cache['stacks'],
-                   cache['plate_solutions'])
+  image = image_for_mosaic(mosaic, cache['targets'], cache['stacks'],
+                           cache['plate_solutions'])
+
+  plt.imshow(image_handling.autostretch(image), cmap='gray')
+  plt.show()
