@@ -1,7 +1,10 @@
 import os
+import inspect
 
-from .shell_script import ShellScriptTask, run_script
+from shell_script import ShellScriptTask, accepts_filenames, run_script, append_task, FileList
 
+# TODO: These parameters must be floats, not strings, so they can be overriden
+# by the user.
 _default_parameters = {
     'metadata_focal': '541.5685232722849',
     'metadata_useFocal': 'true',
@@ -26,7 +29,7 @@ _default_parameters = {
     'solver_brightThreshold': '3',
     'solver_maxStarDistortion': '0.6',
     'solver_psfSearchRadius': '12',
-    'solver_catalogMode': '3',
+    'solver_catalogMode': '2',
     'solver_vizierServer': 'http://vizier.u-strasbg.fr/',
     'solver_showStars': 'false',
     'solver_showSimplifiedSurfaces': 'false',
@@ -53,23 +56,29 @@ _default_parameters = {
 }
 
 
+@accepts_filenames
 def ImageSolver(filenames, **kwargs):
+  print('### ImageSolver() filenames are', filenames)
   parameters = _default_parameters | kwargs
   javascript_filename = "/Applications/PixInsight/src/scripts/AdP/ImageSolver.js"
 
-  # Remove output filenames that already exist.
   output_filenames = [f'{os.path.splitext(f)[0]}_WCS.xisf' for f in filenames]
-  filenames = [
-      i for i, o in zip(filenames, output_filenames) if not os.path.exists(o)
-  ]
+
+  # Remove output filenames that already exist.
+  # filenames = [
+  #     i for i, o in zip(filenames, output_filenames) if not os.path.exists(o)
+  # ]
 
   parameters['solver_files'] = '|'.join(filenames)
+  print('### solver_files', parameters['solver_files'])
 
-  task = ShellScriptTask(javascript_filename, parameters)
-  run_script([task])
+  # TODO: The `javascript_filename` thing is long. Maybe there can be two
+  # ShellScriptTask types, one that accepts code, and one that accepts a filename.
+  append_task(
+      ShellScriptTask(javascript_filename=javascript_filename,
+                      parameters=parameters))
 
-  assert (all(os.path.exists(f) for f in output_filenames))
-  return output_filenames
+  return FileList(output_filenames)
 
 
 if __name__ == '__main__':
