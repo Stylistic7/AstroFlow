@@ -1,10 +1,11 @@
 # TODO: Maybe remove this low-level interface?
 # TODO: Exposing FileList is a wart on the API.
-from .shell_script import ShellScriptTask, run_script, FileList, _clear_cache
+from .classes import ShellScriptTask, FileList
+from .shell_script import _clear_cache
 from .abstract_image import AbstractImage
 
 from .decorators import PixInsight
-
+from .context import append_task, get_next_process_number, get_tmp_dir
 from .save_images import SaveImages
 from .image_solver import ImageSolver
 from .automatic_background_extractor import AutomaticBackgroundExtractor

@@ -1,7 +1,8 @@
 import os
-import inspect
 
-from .shell_script import ShellScriptTask, accepts_filenames, run_script, append_task, FileList
+from .decorators import accepts_filenames
+from .classes import ShellScriptTask, FileList
+from .context import append_task
 
 # TODO: These parameters must be floats, not strings, so they can be overriden
 # by the user.

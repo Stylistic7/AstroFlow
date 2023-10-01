@@ -1,4 +1,6 @@
-from .shell_script import append_task, ShellScriptTask, accepts_view_ids, ViewIdList
+from .decorators import accepts_view_ids
+from .classes import ShellScriptTask, ViewIdList
+from .context import append_task
 from .processes import code_for_process
 
 _default_parameters = {

@@ -748,8 +748,9 @@ def main(context):
       continue
 
     if not stack.master:
-      stack_subframes(stack, fits_headers, context.output_dir)
-      print(f'### After stack_subframes() stack.master is {stack.master}')
+      # stack_subframes(stack, fits_headers, context.output_dir)
+      # print(f'### After stack_subframes() stack.master is {stack.master}')
+      continue
 
     if not stack.post_processed or not os.path.exists(stack.post_processed):
       post_process_stack(stack)

@@ -1,4 +1,4 @@
-from .shell_script import get_next_process_number
+from .context import get_next_process_number
 
 
 def _format(value):

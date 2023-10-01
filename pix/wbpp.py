@@ -1,6 +1,6 @@
 import base64
 
-from .shell_script import ShellScriptTask, run_script
+from .classes import ShellScriptTask
 
 # run -x -a=automationMode=true
 #   -a=dir=/tmp/foo -p="outputDirectory,/tmp/foo"

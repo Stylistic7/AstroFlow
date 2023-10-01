@@ -9,88 +9,13 @@ import os
 import diskcache
 import inspect
 import functools
-from enum import Enum
 import uuid
+
+from . import open_images
 
 cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
 
 executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-
-
-class FileList(list):
-  pass
-
-
-class ViewIdList(list):
-  pass
-
-
-class ArgumentType(Enum):
-  FILENAMES = 1
-  VIEW_IDS = 2
-
-
-def accepts_view_ids(fn):
-  @functools.wraps(fn)
-  def wrapped_f(inputs, *args, **kwargs):
-    print(f'### accepts_view_ids called with type {type(inputs)}')
-    if type(inputs) is FileList:
-      print('### Inserting open_files task')
-      view_ids = ['V' + str(uuid.uuid4()).replace('-', '_') for i in inputs]
-      open_files(inputs, view_ids)
-    elif type(inputs) is ViewIdList:
-      view_ids = inputs
-    else:
-      raise ValueError(f"pix functions must return either FileList or "
-                       f"ViewIdList, not {type(inputs)}")
-
-    return fn(view_ids, *args, **kwargs)
-
-  wrapped_f.input_type = ArgumentType.VIEW_IDS
-  return wrapped_f
-
-
-# TODO: Add a save_files task here.
-def accepts_filenames(fn):
-  @functools.wraps(fn)
-  def wrapped_f(*args, **kwargs):
-    return fn(*args, **kwargs)
-
-  wrapped_f.input_type = ArgumentType.FILENAMES
-  return wrapped_f
-
-
-@dataclass
-class ShellScriptTask:
-  javascript: str = None
-  javascript_filename: str = None
-  parameters: dict = field(default_factory=dict)
-  arguments: dict = field(default_factory=dict)
-
-
-def append_task(task):
-  frame = inspect.currentframe()
-  while 'tasks' not in frame.f_globals:
-    frame = frame.f_back
-
-  frame.f_globals['tasks'].append(task)
-
-
-def get_next_process_number():
-  frame = inspect.currentframe()
-  while 'process_number' not in frame.f_globals:
-    frame = frame.f_back
-
-  frame.f_globals['process_number'] += 1
-  return frame.f_globals['process_number']
-
-
-def get_tmp_dir():
-  frame = inspect.currentframe()
-  while 'tmp_dir' not in frame.f_globals:
-    frame = frame.f_back
-
-  return frame.f_globals['tmp_dir']
 
 
 def _clear_cache():
@@ -174,26 +99,8 @@ def _create_run_command(task):
   return f'run -x {arguments} {parameters} "{task.javascript_filename}"'
 
 
-@accepts_filenames
-def open_files(filenames, view_ids):
-  javascript = """
-    var filenames = {filenames};
-    var view_ids = {view_ids};
-
-    for (let i = 0; i < filenames.length; ++i) {{
-      let w = ImageWindow.open(filenames[i]);
-      w[0].show();
-      w[0].currentView.id = view_ids[i];
-    }}
-    """
-  javascript = javascript.format(filenames=filenames, view_ids=view_ids)
-  append_task(ShellScriptTask(javascript=javascript))
-
-  return ViewIdList(view_ids)
-
-
 # TODO: Re-use already launched PixInsight instance(s) that are idle.
-def run_script(tasks, blocking=True, tmp_dir_in=None, sleep_after=True):
+def run_script(tasks, blocking=True, tmp_dir_in=None, sleep_after=False):
   slot = _start_pixinsight_instance(blocking)
   print(f'PixInsight is now running in a background process in slot {slot}')
 

@@ -1,14 +1,47 @@
-from functools import wraps
 import os
 import inspect
 import tempfile
 import traceback
+import functools
+import uuid
 
 from . import shell_script
+from . import classes
+from . import open_images
+
+
+def accepts_view_ids(fn):
+  @functools.wraps(fn)
+  def wrapped_f(inputs, *args, **kwargs):
+    print(f'### accepts_view_ids called with type {type(inputs)}')
+    if type(inputs) is classes.FileList:
+      print('### Inserting OpenImages task')
+      view_ids = ['V' + str(uuid.uuid4()).replace('-', '_') for i in inputs]
+      open_images.OpenImages(inputs, view_ids)
+    elif type(inputs) is classes.ViewIdList:
+      view_ids = inputs
+    else:
+      raise ValueError(f"pix functions must return either FileList or "
+                       f"ViewIdList, not {type(inputs)}")
+
+    return fn(view_ids, *args, **kwargs)
+
+  wrapped_f.input_type = classes.ArgumentType.VIEW_IDS
+  return wrapped_f
+
+
+# TODO: Add a save_files task here.
+def accepts_filenames(fn):
+  @functools.wraps(fn)
+  def wrapped_f(*args, **kwargs):
+    return fn(*args, **kwargs)
+
+  wrapped_f.input_type = classes.ArgumentType.FILENAMES
+  return wrapped_f
 
 
 def PixInsight(func):
-  @wraps(func)
+  @functools.wraps(func)
   def decorator(*args, **kwargs):
     func_globals = func.__globals__
 
