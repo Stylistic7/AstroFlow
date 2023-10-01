@@ -13,6 +13,7 @@ import datetime
 import pytz
 import numpy as np
 
+import pix
 from stack import Stack, FileList
 from target import Target
 from mosaic import Mosaic
@@ -665,7 +666,7 @@ def stack_subframes(stack, fits_headers, output_dir):
 
 def post_process_stack(stack):
   print(f'Post-processing stack {stack}')
-  stack.post_processed = step_post_process_stack.run(stack)
+  stack.post_processed = step_post_process_stack.post_process_stack(stack)
 
 
 def post_process_target(target):
@@ -680,6 +681,9 @@ def post_process_mosaic(mosaic):
 
 def main(context):
   decorator_test()
+
+  # TODO: This is a wart.
+  pix._clear_cache()
 
   # TODO: Don't just use the first input directory.
   if context.download:
@@ -747,7 +751,7 @@ def main(context):
       stack_subframes(stack, fits_headers, context.output_dir)
       print(f'### After stack_subframes() stack.master is {stack.master}')
 
-    if not stack.post_processed:
+    if not stack.post_processed or not os.path.exists(stack.post_processed):
       post_process_stack(stack)
 
     save_stacks_context(stacks)

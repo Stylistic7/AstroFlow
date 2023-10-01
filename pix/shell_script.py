@@ -38,6 +38,11 @@ def accepts_view_ids(fn):
       print('### Inserting open_files task')
       view_ids = ['V' + str(uuid.uuid4()).replace('-', '_') for i in inputs]
       open_files(inputs, view_ids)
+    elif type(inputs) is ViewIdList:
+      view_ids = inputs
+    else:
+      raise ValueError(f"pix functions must return either FileList or "
+                       f"ViewIdList, not {type(inputs)}")
 
     return fn(view_ids, *args, **kwargs)
 
@@ -187,6 +192,7 @@ def open_files(filenames, view_ids):
   return ViewIdList(view_ids)
 
 
+# TODO: Re-use already launched PixInsight instance(s) that are idle.
 def run_script(tasks, blocking=True, tmp_dir_in=None, sleep_after=True):
   slot = _start_pixinsight_instance(blocking)
   print(f'PixInsight is now running in a background process in slot {slot}')

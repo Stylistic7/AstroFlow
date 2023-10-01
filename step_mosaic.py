@@ -245,8 +245,7 @@ def image_for_mosaic(mosaic,
 
   stacks = [
       s for s in stacks
-      if s.rig == 'C11' and s.filter == 'H' and any(s.id in t.stack_ids
-                                                    for t in targets)
+      if s.filter == 'R' and any(s.id in t.stack_ids for t in targets)
   ]
   print(f'### Found {len(stacks)} stacks for the targets')
 
@@ -272,6 +271,9 @@ def image_for_mosaic(mosaic,
   world_positions = SkyCoord(list(ras), list(decs), frame="icrs", unit="deg")
 
   # TODO: Use bilinear or bicubic interpolation.
+  # TODO: See if there's a built in way to do this.
+  # TODO: Parallelize over the images, which are each independent, and then
+  # compute the max of the stack afterwards.
   def sample_image(image, x, y):
     x, y = int(x), int(y)
     if x < 0 or x >= image.shape[0] or y < 0 or y >= image.shape[1]:
