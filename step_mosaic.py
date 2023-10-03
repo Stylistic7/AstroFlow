@@ -15,6 +15,8 @@ import matplotlib.pyplot as plt
 from shapely import Polygon, Point
 import traceback
 import itertools
+import uuid
+from scipy.interpolate import RegularGridInterpolator
 
 import pix
 import file_io
@@ -228,11 +230,18 @@ def _ransac(mosaic, plot=False, plot_title=None):
   return best_inliers
 
 
+# TODO: This filename should be saved in the Stack.
+def get_best_light_frame(stack):
+  thumbnails = [cache[('thumbnail_image', f)] for f in stack.light_frames]
+  index = np.argmax(map(np.std, thumbnails))
+  return stack.light_frames[index]
+
+
 def image_for_mosaic(mosaic,
                      targets,
                      stacks,
                      plate_solutions,
-                     resolution=0.005):
+                     resolution=0.01):
   min_ra, min_dec, ra_span, dec_span = mosaic.viewbox
   print(f'### min_ra {min_ra} ra_span {ra_span} '
         f'min_dec {min_dec} dec_span {dec_span}')
@@ -243,17 +252,14 @@ def image_for_mosaic(mosaic,
   targets = [t for t in targets if t.name in mosaic.target_ids]
   print(f'### Found {len(targets)} targets for mosaic')
 
+  for t in targets:
+    print(f'### tile has indices {t.tile_indices}')
+
   stacks = [
       s for s in stacks
-      if s.filter == 'R' and any(s.id in t.stack_ids for t in targets)
+      if s.filter == 'H' and any(s.id in t.stack_ids for t in targets)
   ]
   print(f'### Found {len(stacks)} stacks for the targets')
-
-  # TODO: This filename should be saved in the Stack.
-  def get_best_light_frame(stack):
-    thumbnails = [cache[('thumbnail_image', f)] for f in stack.light_frames]
-    index = np.argmax(map(np.std, thumbnails))
-    return stack.light_frames[index]
 
   best_light_frames = [get_best_light_frame(s) for s in stacks]
   print(f'### best_light_frames', best_light_frames)
@@ -274,23 +280,24 @@ def image_for_mosaic(mosaic,
   # TODO: See if there's a built in way to do this.
   # TODO: Parallelize over the images, which are each independent, and then
   # compute the max of the stack afterwards.
-  def sample_image(image, x, y):
-    x, y = int(x), int(y)
-    if x < 0 or x >= image.shape[0] or y < 0 or y >= image.shape[1]:
-      return 0.0
-    return image[x, y]
-
   for i, (image, wcs, _) in enumerate(images_and_metadata):
+    print(f'### Projecting image {i}')
     source_x, source_y = wcs.world_to_pixel(world_positions)
+
+    source_width, source_height = image.shape
+    interp = RegularGridInterpolator(
+        (range(source_width), range(source_height)),
+        image,
+        method='nearest',
+        bounds_error=False,
+        fill_value=0.0)
 
     x = range(width)
     y = range(height)
     image_positions = itertools.product(x, y)
     dest_x, dest_y = zip(*image_positions)
-
     for sx, sy, dx, dy in zip(source_x, source_y, dest_x, dest_y):
-      output_image[dx, dy] = max(output_image[dx, dy],
-                                 sample_image(image, sy, sx))
+      output_image[dx, dy] = max(output_image[dx, dy], interp((sy, sx)))
 
   print(f'### mosaic image min {np.min(output_image)} '
         f'max {np.max(output_image)}')
@@ -343,13 +350,128 @@ def run(targets, plot=False):
 
 #   merged.save()
 
-if __name__ == '__main__':
+from enum import Enum
+from dataclasses import dataclass
+
+
+@dataclass
+class Panel:
+  image_filename: str = None
+  tile_indices: list[int] = None
+
+
+@dataclass
+class MergeOp:
+  image_filenames: list[str] = None
+  output_filename: str = None
+
+
+def fill_template(template, value):
+  return tuple(value if t is None else t for t in template)
+
+
+# TODO: pairs is a misnomer, because the end of an odd-length axis is a single
+# panel.
+def make_pairs(min_index, max_index, template):
+  pairs = [[fill_template(template, i),
+            fill_template(template, i + 1)]
+           for i in list(range(min_index, max_index, 2))]
+
+  num = max_index - min_index + 1
+  if num % 2 == 1:
+    pairs.append([fill_template(template, max_index)])
+
+  return pairs
+
+
+def make_merge_ops(panels):
+  print(f'### Panels are {panels}')
+
+  def get_panel(tile_indices):
+    return next(
+        p for p in panels if list(p.tile_indices) == list(tile_indices))
+
+  min_x_index, min_y_index = -np.inf, -np.inf
+  max_x_index, max_y_index = np.inf, np.inf
+  merge_ops = []
+  level = 0
+  while len(panels) > 1:
+    min_x_index = np.min([p.tile_indices[0] for p in panels])
+    max_x_index = np.max([p.tile_indices[0] for p in panels])
+    min_y_index = np.min([p.tile_indices[1] for p in panels])
+    max_y_index = np.max([p.tile_indices[1] for p in panels])
+    print(f'### Mosaic x axis indices {min_x_index} to {max_x_index}')
+    print(f'### Mosaic y axis indices {min_y_index} to {max_y_index}')
+
+    print(f'### Merging panels at level {level}')
+    level += 1
+    new_panels = []
+
+    def process_pairs(pairs, template):
+      for i, pair in enumerate(pairs):
+        tile_indices = fill_template(template, i)
+        if len(pair) == 1:
+          new_panels.append(
+              Panel(image_filename=get_panel(pair[0]).image_filename,
+                    tile_indices=tile_indices))
+        elif len(pair) == 2:
+          new_image_id = str(uuid.uuid4())
+          new_panels.append(
+              Panel(image_filename=new_image_id, tile_indices=tile_indices))
+          merge_ops.append(
+              MergeOp(
+                  output_filename=new_image_id,
+                  image_filenames=[get_panel(p).image_filename for p in pair]))
+
+    if (max_x_index - min_x_index) > (max_y_index - min_y_index):
+      for y in range(min_y_index, max_y_index + 1):
+        pairs = make_pairs(min_x_index, max_x_index, (None, y))
+        print(f'### pairs {pairs}')
+        process_pairs(pairs, (None, y))
+    else:
+      for x in range(min_x_index, max_x_index + 1):
+        pairs = make_pairs(min_y_index, max_y_index, (x, None))
+        print(f'### pairs {pairs}')
+        process_pairs(pairs, (x, None))
+
+    panels = new_panels
+    print(f'### Panels are now length {len(panels)}')
+    for panel in panels:
+      print(f'### {panel}')
+
+  for merge_op in merge_ops:
+    print(f'### merge_op {merge_op}')
+
+
+# @pix.PixInsight
+def main():
   for mosaic in cache['mosaics']:
-    print(f'### mosaic {mosaic.id} has {len(mosaic.target_ids)} targets')
+    # print(f'### mosaic {mosaic.id} has {len(mosaic.target_ids)} targets')
     if 'IC1318' not in mosaic.id or len(mosaic.target_ids) < 2:
       continue
 
-    image = image_for_mosaic(mosaic, cache['targets'], cache['stacks'],
-                             cache['plate_solutions'])
-    plt.imshow(image, cmap='gray')
-    plt.show()
+    # image = image_for_mosaic(mosaic, cache['targets'], cache['stacks'],
+    #                          cache['plate_solutions'])
+    # plt.imshow(image, cmap='gray')
+    # plt.show()
+
+    targets = [t for t in cache['targets'] if t.name in mosaic.target_ids]
+    print(f'### Found {len(targets)} targets for mosaic')
+
+    panels = []
+    for target in targets:
+      stack = next(s for s in cache['stacks']
+                   if s.filter == 'H' and s.id in target.stack_ids)
+
+      best_light_frame = get_best_light_frame(stack)
+      print(f'### best_light_frame', best_light_frame)
+
+      panels.append(
+          Panel(image_filename=best_light_frame,
+                tile_indices=target.tile_indices))
+
+    make_merge_ops(panels)
+
+
+if __name__ == '__main__':
+  main()
