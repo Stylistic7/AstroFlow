@@ -1,6 +1,7 @@
 import io
 import os
 import tempfile
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -16,7 +17,11 @@ from shapely import Polygon, Point
 import traceback
 import itertools
 import uuid
+from enum import Enum
+from dataclasses import dataclass
 from scipy.interpolate import RegularGridInterpolator
+import largestinteriorrectangle
+from multiprocessing import Pool
 
 import pix
 import file_io
@@ -26,6 +31,19 @@ import trim_mosaic_tile
 import spatial_association
 import position_string
 import image_handling
+
+
+@dataclass
+class Panel:
+  image_filename: str = None
+  plate_solution: plate_solving.PlateSolution = None
+  tile_indices: list[int] = None
+
+
+@dataclass
+class MergeOp:
+  image_filenames: list[str] = None
+  output_filename: str = None
 
 
 def _identify_mosiacs(targets):
@@ -335,37 +353,6 @@ def run(targets, plot=False):
   return output_mosaics
 
 
-# TODO: Implement the PixInsight python wrapper.
-#
-# How I want the mosaic merge process to look:
-#
-# The code should put all tasks into an Executor. Tasks that can be run in
-# parallel on multiple copies of PixInsight should just do it automatically.
-# def merge_mosaic(images):
-#   solved = [pix.ImageSolver(im) for im in images]
-#   positioned = [pix.MosaicByCoordinates(im) for in images]
-#   trimmed = [pix.TrimMosaicTile(im) for im in images]
-#   for im1, im2 in compute_pairs(trimmed):
-#     merged = pix.PhotometricMergeMosaic(im1, im2)
-
-#   merged.save()
-
-from enum import Enum
-from dataclasses import dataclass
-
-
-@dataclass
-class Panel:
-  image_filename: str = None
-  tile_indices: list[int] = None
-
-
-@dataclass
-class MergeOp:
-  image_filenames: list[str] = None
-  output_filename: str = None
-
-
 def fill_template(template, value):
   return tuple(value if t is None else t for t in template)
 
@@ -384,15 +371,13 @@ def make_pairs(min_index, max_index, template):
   return pairs
 
 
-def make_merge_ops(panels):
+def make_merge_ops(panels, tmp_dir):
   print(f'### Panels are {panels}')
 
   def get_panel(tile_indices):
     return next(
         p for p in panels if list(p.tile_indices) == list(tile_indices))
 
-  min_x_index, min_y_index = -np.inf, -np.inf
-  max_x_index, max_y_index = np.inf, np.inf
   merge_ops = []
   level = 0
   while len(panels) > 1:
@@ -405,7 +390,6 @@ def make_merge_ops(panels):
 
     print(f'### Merging panels at level {level}')
     level += 1
-    new_panels = []
 
     def process_pairs(pairs, template):
       for i, pair in enumerate(pairs):
@@ -415,7 +399,7 @@ def make_merge_ops(panels):
               Panel(image_filename=get_panel(pair[0]).image_filename,
                     tile_indices=tile_indices))
         elif len(pair) == 2:
-          new_image_id = str(uuid.uuid4())
+          new_image_id = os.path.join(tmp_dir, f'merged_{uuid.uuid4()}.fit')
           new_panels.append(
               Panel(image_filename=new_image_id, tile_indices=tile_indices))
           merge_ops.append(
@@ -423,16 +407,17 @@ def make_merge_ops(panels):
                   output_filename=new_image_id,
                   image_filenames=[get_panel(p).image_filename for p in pair]))
 
+    new_panels = []
     if (max_x_index - min_x_index) > (max_y_index - min_y_index):
       for y in range(min_y_index, max_y_index + 1):
-        pairs = make_pairs(min_x_index, max_x_index, (None, y))
-        print(f'### pairs {pairs}')
-        process_pairs(pairs, (None, y))
+        template = (None, y)
+        pairs = make_pairs(min_x_index, max_x_index, template)
+        process_pairs(pairs, template)
     else:
       for x in range(min_x_index, max_x_index + 1):
-        pairs = make_pairs(min_y_index, max_y_index, (x, None))
-        print(f'### pairs {pairs}')
-        process_pairs(pairs, (x, None))
+        template = (x, None)
+        pairs = make_pairs(min_y_index, max_y_index, template)
+        process_pairs(pairs, template)
 
     panels = new_panels
     print(f'### Panels are now length {len(panels)}')
@@ -442,8 +427,161 @@ def make_merge_ops(panels):
   for merge_op in merge_ops:
     print(f'### merge_op {merge_op}')
 
+  return merge_ops
 
-# @pix.PixInsight
+
+# TODO: Implement the PixInsight python wrapper.
+#
+# How I want the mosaic merge process to look:
+#
+# The code should put all tasks into an Executor. Tasks that can be run in
+# parallel on multiple copies of PixInsight should just do it automatically.
+# def merge_mosaic(images):
+#   solved = [pix.ImageSolver(im) for im in images]
+#   positioned = [pix.MosaicByCoordinates(im) for in images]
+#   trimmed = [pix.TrimMosaicTile(im) for im in images]
+#   for im1, im2 in compute_pairs(trimmed):
+#     merged = pix.PhotometricMergeMosaic(im1, im2)
+
+#   merged.save()
+
+
+def compute_viewbox(plate_solutions):
+  ras = [f[0] for p in plate_solutions for f in p.footprint]
+  decs = [f[1] for p in plate_solutions for f in p.footprint]
+  print(f'### got {len(ras)} ras and {len(decs)} decs')
+
+  min_ra, max_ra = np.min(ras), np.max(ras)
+  min_dec, max_dec = np.min(decs), np.max(decs)
+
+  return [min_ra, min_dec, max_ra - min_ra, max_dec - min_dec]
+
+
+def show_image(data):
+  fig = plt.figure(figsize=(10, 10))
+  ax = plt.Axes(fig, [0., 0., 1., 1.])
+  ax.set_axis_off()
+  fig.add_axes(ax)
+  ax.imshow(data, cmap="gray")
+  plt.show()
+
+
+@dataclass
+class MosaicDimensions:
+  width: int = None
+  height: int = None
+  world_positions: list = None
+
+
+def get_mosaic_dimensions(panels, plate_solutions):
+  min_ra, min_dec, ra_span, dec_span = compute_viewbox(plate_solutions)
+  print(f'### min_ra {min_ra} ra_span {ra_span} '
+        f'min_dec {min_dec} dec_span {dec_span}')
+  resolution = 0.01
+  width, height = int(np.ceil(ra_span / resolution)), int(
+      np.ceil(dec_span / resolution))
+  print(f'### width {width} height {height}')
+
+  ras = np.arange(min_ra, min_ra + ra_span, resolution)
+  decs = np.arange(min_dec, min_dec + dec_span, resolution)
+  world_positions = itertools.product(ras, decs)
+  ras, decs = zip(*world_positions)
+
+  world_positions = SkyCoord(list(ras), list(decs), frame="icrs", unit="deg")
+
+  return MosaicDimensions(width=width,
+                          height=height,
+                          world_positions=world_positions)
+
+
+def mosaic_by_coordinates(panel, plate_solution, mosaic_dimensions, tmp_dir):
+  print(f'### projecting image {panel.image_filename}')
+  projected_image = np.zeros(
+      (mosaic_dimensions.width, mosaic_dimensions.height))
+  projection_map = np.zeros(
+      (mosaic_dimensions.width, mosaic_dimensions.height))
+
+  header = file_io.read_fits(panel.image_filename)
+
+  image = image_handling.autostretch(
+      file_io.read_fits_image(panel.image_filename))
+
+  wcs = WCS(plate_solution.header)
+  source_x, source_y = wcs.world_to_pixel(mosaic_dimensions.world_positions)
+
+  source_width, source_height = image.shape
+  interp = RegularGridInterpolator((range(source_width), range(source_height)),
+                                   image,
+                                   method='nearest',
+                                   bounds_error=False,
+                                   fill_value=-np.inf)
+
+  x = range(mosaic_dimensions.width)
+  y = range(mosaic_dimensions.height)
+  image_positions = itertools.product(x, y)
+  dest_x, dest_y = zip(*image_positions)
+  for sx, sy, dx, dy in zip(source_x, source_y, dest_x, dest_y):
+    value = interp((sy, sx))
+    if value == -np.inf:
+      continue
+
+    projected_image[dx, dy] = max(projected_image[dx, dy], value)
+    projection_map[dx, dy] = 128
+
+  trim_top, trim_left, trim_height, trim_width = largestinteriorrectangle.lir(
+      projection_map > 0)
+  print(f'Trimmed trim_top {trim_top} trim_left {trim_left} trim_height '
+        f'{trim_height} trim_width {trim_width}')
+
+  projection_map[trim_left:trim_left + trim_width,
+                 trim_top:trim_top + trim_height] = 255
+
+  trimmed_image = np.zeros(projected_image.shape)
+  trimmed_image[trim_left:trim_left + trim_width, trim_top:trim_top +
+                trim_height] = projected_image[trim_left:trim_left +
+                                               trim_width,
+                                               trim_top:trim_top + trim_height]
+
+  output_image = trimmed_image
+
+  # show_image(output_image)
+
+  hdu = pyfits.PrimaryHDU(output_image)
+  hdu.header['FOCALLEN'] = header['FOCALLEN']
+  hdu.header['XPIXSZ'] = header['XPIXSZ']
+  hdu.header['YPIXSZ'] = header['YPIXSZ']
+  hdu.header['HISTORY'] = f"TrimMosaicTile.target: foo"
+  hdu.header['HISTORY'] = f"TrimMosaicTile.top: {trim_top}"
+  hdu.header['HISTORY'] = f"TrimMosaicTile.bottom: {trim_top + trim_height}"
+  hdu.header['HISTORY'] = f"TrimMosaicTile.left: {trim_left}"
+  hdu.header['HISTORY'] = f"TrimMosaicTile.right: {trim_left + trim_width}"
+
+  for k, v in hdu.header.items():
+    print(f'### header {k}: {v}')
+
+  panel.image_filename = os.path.join(tmp_dir, f'placed_{uuid.uuid4()}.fit')
+  hdu.writeto(panel.image_filename, overwrite=True)
+  print(f'### Wrote placed image filename {panel.image_filename}')
+
+  return panel
+
+
+@pix.PixInsight
+def run_photometric_mosaic(merge_op):
+  images = pix.OpenImages(pix.FileList(merge_op.image_filenames),
+                          ['mosaic_0', 'mosaic_1'])
+  merged = pix.PhotometricMosaic(images)
+  return pix.SaveImages(merged, [merge_op.output_filename])
+
+
+# TODO: None should be a valid argument type.
+def merge_mosaic(panels, tmp_dir):
+  for merge_op in make_merge_ops(panels, tmp_dir):
+    output_image = run_photometric_mosaic(merge_op)
+
+  return output_image
+
+
 def main():
   for mosaic in cache['mosaics']:
     # print(f'### mosaic {mosaic.id} has {len(mosaic.target_ids)} targets')
@@ -470,7 +608,26 @@ def main():
           Panel(image_filename=best_light_frame,
                 tile_indices=target.tile_indices))
 
-    make_merge_ops(panels)
+    with Pool() as p:
+      plate_solutions = p.map(plate_solving.solve_field,
+                              (p.image_filename for p in panels))
+
+    print(f'### Got {len(plate_solutions)} plate solutions')
+
+    mosaic_dimensions = get_mosaic_dimensions(panels, plate_solutions)
+
+    # with tempfile.TemporaryDirectory() as tmp_dir:
+    # TODO: Parallelize this.
+    tmp_dir = "/tmp/mosaic"
+    with Pool() as p:
+      panels = p.starmap(mosaic_by_coordinates,
+                         ((p, s, mosaic_dimensions, tmp_dir)
+                          for p, s in zip(panels, plate_solutions)))
+
+    output_image = merge_mosaic(panels, tmp_dir)
+
+    print(f'### Copying final mosaic file {output_image} to /tmp')
+    shutil.copy(output_image[0], '/tmp/mosaic/merged.fits')
 
 
 if __name__ == '__main__':

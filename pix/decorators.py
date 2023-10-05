@@ -13,7 +13,8 @@ from . import open_images
 def accepts_view_ids(fn):
   @functools.wraps(fn)
   def wrapped_f(inputs, *args, **kwargs):
-    print(f'### accepts_view_ids called with type {type(inputs)}')
+    print(
+        f'### accepts_view_ids called with type {type(inputs)} inputs {inputs}')
     if type(inputs) is classes.FileList:
       print('### Inserting OpenImages task')
       view_ids = ['V' + str(uuid.uuid4()).replace('-', '_') for i in inputs]
@@ -40,6 +41,8 @@ def accepts_filenames(fn):
   return wrapped_f
 
 
+# TODO: Put the PixInsight() wrapper back! Use it to say, e.g.
+# @PixInsight(blocking=False)
 def PixInsight(func):
   @functools.wraps(func)
   def decorator(*args, **kwargs):

@@ -698,19 +698,13 @@ def main(context):
   light_frames, dark_frames, bias_frames, flat_frames = split_images_by_type(
       all_frames, fits_headers)
 
-  light_frames = remove_frames_during_mount_movements(light_frames)
+  # TODO: Make this more granular.
+  # light_frames = remove_frames_during_mount_movements(light_frames)
 
   plate_solutions = plate_solve(light_frames)
 
   spatial_components = identify_spatial_components(plate_solutions)
 
-  # TODO: A problem exists right here. The stacks are not read from the cache;
-  # instead, they are created anew on each run. I need a way to load the stack
-  # from the cache, keeping its master, enable, etc. fields, as long as its
-  # input files and config haven't changed.
-  #
-  # Ultimately, this is how the web server communicates with the backend; it
-  # changes stuff in the cache and re-runs the backend.
   stacks = identify_stacks(spatial_components, fits_headers)
 
   # measure_stacks()
@@ -748,9 +742,8 @@ def main(context):
       continue
 
     if not stack.master:
-      # stack_subframes(stack, fits_headers, context.output_dir)
-      # print(f'### After stack_subframes() stack.master is {stack.master}')
-      continue
+      stack_subframes(stack, fits_headers, context.output_dir)
+      print(f'### After stack_subframes() stack.master is {stack.master}')
 
     if not stack.post_processed or not os.path.exists(stack.post_processed):
       post_process_stack(stack)
