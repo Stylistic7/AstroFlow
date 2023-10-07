@@ -203,7 +203,7 @@ def _ransac(mosaic, plot=False, plot_title=None):
     # print(f'  transformed_center {transformed_center} '
     #       f'has Euclidean error {error}')
 
-    mosaic[i].tile_indices = np.round(transformed_center).astype(np.int32)
+    mosaic[i].tile_indices = [int(x) for x in np.round(transformed_center)]
     print(f'  tile_indices {i}: {mosaic[i].tile_indices}')
 
   if not plot:

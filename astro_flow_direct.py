@@ -243,6 +243,10 @@ def read_fits_headers(all_frames):
   return FitsHeaders(fits_headers)
 
 
+def sort_by_observation_date(all_frames, fits_headers):
+  return sorted(all_frames, key=lambda f: fits_headers[f]['DATE-OBS'])
+
+
 # TODO: This will scale poorly when there are hundreds of thousands of images.
 @timeit
 def compute_image_hashes(all_frames):
@@ -312,12 +316,29 @@ def plate_solve(light_frames):
   return PlateSolutions(plate_solutions)
 
 
+def remove_unsolvable_light_frames(light_frames, plate_solutions):
+  solved = [f for f in light_frames if plate_solutions[f] is not None]
+  print(f'### {len(light_frames)}, {len(solved)} plate-solved light frames')
+  return solved
+
+
 @timeit
-@memoize_by_context()
+# @memoize_by_context()
 def identify_spatial_components(plate_solutions):
   print('Identifying spatial components...')
   spatial_components = spatial_association.find_components(plate_solutions)
   return [(k, FileList(v)) for k, v in spatial_components.items()]
+
+
+# def assert_all_light_frames_in_spatial_components(light_frames,
+#                                                   spatial_components):
+#   file_sets = [set(f) for t, f in spatial_components]
+#   light_frames_in_spatial_components = set().union(*file_sets)
+#   print(f'### {len(light_frames)} light frames, '
+#         f'{len(light_frames_in_spatial_components)} light frames in '
+#         f'spatial components')
+#   assert set(light_frames) == light_frames_in_spatial_components
+#   print('### All light frames are in spatial components')
 
 
 @timeit
@@ -338,6 +359,14 @@ def identify_stacks(spatial_components, fits_headers):
 
   print(f'Identified {len(stacks)} stacks')
   return stacks
+
+
+def assert_all_light_frames_in_stacks(light_frames, stacks):
+  file_sets = [set(s.light_frames) for s in stacks]
+  light_frames_in_stacks = set().union(*file_sets)
+  print(f'### {len(light_frames)} light frames, '
+        f'{len(light_frames_in_stacks)} light frames in stacks')
+  assert set(light_frames) == light_frames_in_stacks
 
 
 def process_in_parallel(fn, elements, key_func=lambda x: x):
@@ -666,7 +695,7 @@ def stack_subframes(stack, fits_headers, output_dir):
 
 def post_process_stack(stack):
   print(f'Post-processing stack {stack}')
-  stack.post_processed = step_post_process_stack.post_process_stack(stack)
+  step_post_process_stack.post_process_stack(stack)
 
 
 def post_process_target(target):
@@ -692,6 +721,8 @@ def main(context):
   all_frames = find_files(context.input_dirs)
   fits_headers = read_fits_headers(all_frames)
 
+  all_frames = sort_by_observation_date(all_frames, fits_headers)
+
   image_hashes = compute_image_hashes(all_frames)
   # check_duplicates(image_hashes)
 
@@ -702,10 +733,14 @@ def main(context):
   # light_frames = remove_frames_during_mount_movements(light_frames)
 
   plate_solutions = plate_solve(light_frames)
+  light_frames = remove_unsolvable_light_frames(light_frames, plate_solutions)
 
   spatial_components = identify_spatial_components(plate_solutions)
+  # assert_all_light_frames_in_spatial_components(light_frames,
+  #                                               spatial_components)
 
   stacks = identify_stacks(spatial_components, fits_headers)
+  # assert_all_light_frames_in_stacks(light_frames, stacks)
 
   # measure_stacks()
 
@@ -730,8 +765,8 @@ def main(context):
   cache['mosaics'] = mosaics
 
   for stack in stacks:
-    # stack.enable = 'IC1318' in stack.target
-    stack.enable = True
+    stack.enable = 'IC1318' in stack.target
+    # stack.enable = True
 
   print('### Before for loop, stack masters are')
   for stack in stacks:
@@ -745,6 +780,11 @@ def main(context):
       stack_subframes(stack, fits_headers, context.output_dir)
       print(f'### After stack_subframes() stack.master is {stack.master}')
 
+    print(f'### Stack {stack} post_processed {stack.post_processed}')
+    if stack.post_processed:
+      print(
+          f'### post_processed file exists {os.path.exists(stack.post_processed)}'
+      )
     if not stack.post_processed or not os.path.exists(stack.post_processed):
       post_process_stack(stack)
 
