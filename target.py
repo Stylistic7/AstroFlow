@@ -36,13 +36,14 @@ class Target:
     # self.store_aspect_ratio()
 
   def store_center(self, stacks):
-    centers = [s.center for s in stacks if s.id in self.stack_ids]
+    centers = [s.center for s in stacks.values() if s.id in self.stack_ids]
     mean_center = np.mean(centers, axis=0)
     self.center = list(mean_center)
 
   def store_footprint(self, stacks):
     footprints = [
-        s.footprint_polygon() for s in stacks if s.id in self.stack_ids
+        s.footprint_polygon() for s in stacks.values()
+        if s.id in self.stack_ids
     ]
     footprint = functools.reduce(Polygon.intersection, footprints,
                                  footprints[0])

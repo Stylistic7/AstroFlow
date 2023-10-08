@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 import functools
 from shapely.geometry import Polygon
 import uuid
+import hashlib
 
 from cache import cache
 import file_io
@@ -17,6 +18,12 @@ class FileList(list):
   def __init__(self, *args):
     if args:
       list.__init__(self, sorted(*args))
+
+
+def hash_file_list(x):
+  if x == None:
+    return None
+  return hashlib.sha256(bytes(str(sorted(x)), 'utf-8')).hexdigest()
 
 
 def _min_footprint(footprints):
@@ -38,7 +45,8 @@ def _min_footprint(footprints):
 
 @dataclass
 class Stack:
-  id: uuid.UUID = field(default_factory=uuid.uuid4)
+  # id: uuid.UUID = field(default_factory=lambda: str(uuid.uuid4()))
+  id: str = None
 
   # TODO: This currently just means "good" or not. Elaborate.
   status: bool = False
@@ -81,8 +89,23 @@ class Stack:
   # TODO: Make a Stack factory function that either finds the same stack
   # alrady in the cache, or makes a new one, computing all its metadata.
   # TODO: Needs to include the flat-frame associations to be complete.
+  # def store_id(self):
+  #   self.id = (f'{self.target}_{self.rig}_{self.filter}')
+
+  def hash_flat_frame_associations(self):
+    hashes = ''
+    for light_frames, flat_frames in sorted(self.flat_frame_associations):
+      hashes += hash_file_list(light_frames) + '_' + hash_file_list(flat_frames)
+
+    return hashlib.sha256(bytes(hashes, 'utf-8')).hexdigest()
+
   def store_id(self):
-    self.id = (f'{self.target}_{self.rig}_{self.filter}')
+    self.id = (f'stack_{hash_file_list(self.light_frames)}_'
+               f'{hash_file_list(self.dark_frames)}_'
+               f'{hash_file_list(self.bias_frames)}_'
+               f'{hash_file_list(self.flat_frames)}_'
+               f'{self.hash_flat_frame_associations()}')
+    print(f'### stored stack id {self.id}')
 
   def footprint_polygon(self):
     return Polygon(self.footprint)

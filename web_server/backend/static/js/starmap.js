@@ -4,6 +4,8 @@ const draw_footprints = (targets) => {
 
 	var svg = document.getElementById("starmap_svg");
 
+	svgPanZoom("#starmap_svg");
+
 	for (const target of targets) {
 		console.log('target', target);
 		console.log('target.footprint', target['footprint']);

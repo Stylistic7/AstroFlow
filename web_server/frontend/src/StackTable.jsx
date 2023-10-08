@@ -104,7 +104,7 @@ export default function Stacks(props) {
       key: "image",
       label: "Stacked",
       component: (data) => (
-        <img src={`/stack_master_image/${data.target}/${data.rig}/${data.filter}`} alt={data.name} width="300px" loading="lazy" />
+        <img src={`/stack_master_image/${data.id}`} alt={data.name} width="300px" loading="lazy" />
       ),
       stopPropagation: true,
     },
@@ -201,7 +201,8 @@ export default function Stacks(props) {
     // Update filters
   };
 
-  function handleAction(event, key, row = null) {}
+  function handleAction(event, key, row = null) {
+  }
 
   useEffect(() => {
     Promise.all(

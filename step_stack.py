@@ -55,6 +55,7 @@ def run(stack, dest_path):
       # TODO: Return failure, so the stack won't just be attempted again
       # on the next run. Distinguish the cases where the stack has never been
       # attempted from the cases where it just didn't succeed.
+      print(f'### WBPP did not produce any master file.')
       return
 
     print('filenames', filenames)

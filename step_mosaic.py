@@ -250,6 +250,11 @@ def _ransac(mosaic, plot=False, plot_title=None):
 
 # TODO: This filename should be saved in the Stack.
 def get_best_light_frame(stack):
+  if stack.master and os.path.exists(stack.master):
+    print(f'### Using stack master image for stack {stack}')
+    return file_io.read_xisf_image(stack.master)
+
+  print(f'### Using single light frame thumbnail for stack {stack}')
   thumbnails = [cache[('thumbnail_image', f)] for f in stack.light_frames]
   index = np.argmax(map(np.std, thumbnails))
   return stack.light_frames[index]
@@ -585,7 +590,7 @@ def merge_mosaic(panels, tmp_dir):
 def main():
   for mosaic in cache['mosaics']:
     # print(f'### mosaic {mosaic.id} has {len(mosaic.target_ids)} targets')
-    if 'IC1318' not in mosaic.id or len(mosaic.target_ids) < 2:
+    if 'Filamentary' not in mosaic.id or len(mosaic.target_ids) < 2:
       continue
 
     # image = image_for_mosaic(mosaic, cache['targets'], cache['stacks'],
@@ -598,6 +603,8 @@ def main():
 
     panels = []
     for target in targets:
+      assert target.tile_indices
+
       stack = next(s for s in cache['stacks']
                    if s.filter == 'H' and s.id in target.stack_ids)
 

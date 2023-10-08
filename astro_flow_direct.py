@@ -101,9 +101,7 @@ def memoize_by_context(fields=None):
         elif type(x) == FileList:
           return hash_file_list(x)
         elif type(x) == Stack:
-          return ('stack', hash_file_list(x.light_frames),
-                  hash_file_list(x.dark_frames), hash_file_list(x.bias_frames),
-                  hash_file_list(x.flat_frames), x.flat_frame_associations)
+          return x.id
         elif type(x) is list:
           return [maybe_hash(y) for y in x]
         elif type(x) is tuple:
@@ -324,9 +322,10 @@ def remove_unsolvable_light_frames(light_frames, plate_solutions):
 
 @timeit
 # @memoize_by_context()
-def identify_spatial_components(plate_solutions):
+def identify_spatial_components(plate_solutions, fits_headers):
   print('Identifying spatial components...')
-  spatial_components = spatial_association.find_components(plate_solutions)
+  spatial_components = spatial_association.find_components(
+      plate_solutions, fits_headers)
   return [(k, FileList(v)) for k, v in spatial_components.items()]
 
 
@@ -341,6 +340,8 @@ def identify_spatial_components(plate_solutions):
 #   print('### All light frames are in spatial components')
 
 
+# TODO: This memoization might be storing multiple copies of the entire
+# `fits_headers` in the cache, which is wasteful.
 @timeit
 @memoize_by_context()
 def identify_stacks(spatial_components, fits_headers):
@@ -586,7 +587,7 @@ def associate_flat_frames(stacks, flat_frames, fits_headers):
   return stacks
 
 
-@memoize_by_context()
+# @memoize_by_context()
 def compute_stack_metadata(stacks, fits_headers, plate_solutions):
   for stack in stacks:
     stack.store_metadata(fits_headers, plate_solutions)
@@ -594,21 +595,20 @@ def compute_stack_metadata(stacks, fits_headers, plate_solutions):
   return stacks
 
 
-def load_stacks_context(stacks):
-  def load_stack_context(stack):
-    key = ('stack_context', stack.id)
-    if key in cache:
-      return cache[key]
-    else:
-      return stack
+# def load_stacks_context(stacks):
+#   def load_stack_context(stack):
+#     key = ('stack_context', stack.id)
+#     if key in cache:
+#       return cache[key]
+#     else:
+#       return stack
 
-  return [load_stack_context(s) for s in stacks]
+#   return [load_stack_context(s) for s in stacks]
 
-
-def save_stacks_context(stacks):
-  for stack in stacks:
-    key = ('stack_context', stack.id)
-    cache[key] = stack
+# def save_stacks_context(stacks):
+#   for stack in stacks:
+#     key = ('stack_context', stack.id)
+#     cache[key] = stack
 
 
 # @memoize_by_context()
@@ -639,11 +639,9 @@ def make_image_thumbnails(stacks, plate_solutions, fits_headers, width=640):
 def make_stack_thumbnails_videos(stacks, plate_solutions, fits_headers):
   print('Making stack thumbnails...')
   with concurrent.futures.ProcessPoolExecutor() as executor:
-    for stack in stacks:
-      image_key = ('stack_thumbnail_image', stack.target, stack.rig,
-                   stack.filter)
-      video_key = ('stack_thumbnail_video', stack.target, stack.rig,
-                   stack.filter)
+    for stack in stacks.values():
+      image_key = ('stack_thumbnail_image', stack.id)
+      video_key = ('stack_thumbnail_video', stack.id)
 
       if image_key in cache and video_key in cache:
         continue
@@ -655,7 +653,7 @@ def make_stack_thumbnails_videos(stacks, plate_solutions, fits_headers):
 def group_stacks_into_targets(stacks):
   stacks_for_target = defaultdict(list)
   for filter in ['L', 'R', 'G', 'B', 'S', 'H', 'O']:
-    for stack in [s for s in stacks if s.filter == filter]:
+    for stack in [s for s in stacks.values() if s.filter == filter]:
       stacks_for_target[stack.target].append(stack.id)
 
   targets = [Target(name=k, stack_ids=v) for k, v in stacks_for_target.items()]
@@ -673,7 +671,7 @@ def group_targets_into_mosaics(targets):
 # @memoize_by_context()
 def sanity_check_stacks(stacks, fits_headers):
   print('Sanity-checking stacks...')
-  for stack in stacks:
+  for stack in stacks.values():
     # TODO: Print failures in the correct order so the output is reason
     stack.status = step_sanity_check_stack.run(stack, fits_headers)
     if stack.status:
@@ -735,7 +733,8 @@ def main(context):
   plate_solutions = plate_solve(light_frames)
   light_frames = remove_unsolvable_light_frames(light_frames, plate_solutions)
 
-  spatial_components = identify_spatial_components(plate_solutions)
+  spatial_components = identify_spatial_components(plate_solutions,
+                                                   fits_headers)
   # assert_all_light_frames_in_spatial_components(light_frames,
   #                                               spatial_components)
 
@@ -751,9 +750,19 @@ def main(context):
   stacks = compute_stack_metadata(stacks, fits_headers, plate_solutions)
 
   make_image_thumbnails(stacks, plate_solutions, fits_headers)
+
+  # At this point, the stacks should be fingerprinted. If a stack with the same
+  # fingerprint is stored in the cache, we'll load it and use it. Otherwise,
+  # the stack will be considered new.
+  stacks = {stack.id: stack for stack in stacks}
+  for stack in stacks.values():
+    if stack.id in cache.get('stacks', {}):
+      stacks[stack.id] = cache['stacks'][stack.id]
+      print(f'### Loaded stack {stack} from cache')
+
   make_stack_thumbnails_videos(stacks, plate_solutions, fits_headers)
 
-  stacks = load_stacks_context(stacks)
+  # stacks = load_stacks_context(stacks)
 
   targets = group_stacks_into_targets(stacks)
   mosaics = group_targets_into_mosaics(targets)
@@ -764,15 +773,15 @@ def main(context):
   cache['targets'] = targets
   cache['mosaics'] = mosaics
 
-  for stack in stacks:
-    stack.enable = 'IC1318' in stack.target
+  for stack in stacks.values():
+    stack.enable = 'IC1318' in stack.target or 'IC1311' in stack.target
     # stack.enable = True
 
   print('### Before for loop, stack masters are')
-  for stack in stacks:
+  for stack in stacks.values():
     print(f'###  {stack.master}')
 
-  for stack in stacks:
+  for stack in stacks.values():
     if not stack.status or not stack.enable:
       continue
 
@@ -788,10 +797,11 @@ def main(context):
     if not stack.post_processed or not os.path.exists(stack.post_processed):
       post_process_stack(stack)
 
-    save_stacks_context(stacks)
+    # save_stacks_context(stacks)
+    cache['stacks'] = stacks
 
   print('### After for loop, stack masters are')
-  for stack in stacks:
+  for stack in stacks.values():
     print(f'###  {stack.master}')
 
   # These are for the web server to read, not for memoization.

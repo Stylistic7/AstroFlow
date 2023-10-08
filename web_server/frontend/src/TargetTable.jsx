@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import EnhancedTable from "@jeremyling/react-material-ui-enhanced-table";
 import { amber, green, indigo, lightGreen, red } from "@mui/material/colors";
-import { Block, MoveToInbox } from "@mui/icons-material";
+import { Block, MoveToInbox, DriveFileMove } from "@mui/icons-material";
 import StackTable from "./StackTable.jsx";
 
 // TODO: Unify this.
@@ -59,9 +59,10 @@ export default function Targets(props) {
         if (stacks) {
           for (let id of target.stack_ids) {
             console.log('looking up stack id ' + id);
-            let stack = stacks.find(function (element) {
-              return element.id == id;
-            });
+            // let stack = stacks.find(function (element) {
+            //   return element.id == id;
+            // });
+            let stack = stacks[id];
             console.log('stack ' + stack);
 
             if (stack) {
@@ -127,6 +128,14 @@ export default function Targets(props) {
       key: "actions",
       actions: [
         {
+          id: "delete",
+          icon: <DriveFileMove />,
+          tooltip: "Move Light Frames",
+          onClick: (event, row) => handleAction(event, "move", row),
+          color: amber[400],
+          hideCondition: (data) => {},
+        },
+        {
           id: "process",
           icon: <MoveToInbox />,
           tooltip: "Process",
@@ -155,10 +164,13 @@ export default function Targets(props) {
   };
 
   const handleRowClick = (event, item) => {
+    console.log('handleRowClick');
     // setSelectedRow(item);
   };
 
-  function handleCollapsibleTableRowClick(event, row) {}
+  function handleCollapsibleTableRowClick(event, row) {
+    console.log('handleCollapsibleTableRowClick');
+  }
 
   function getSelectibleItems(row) {}
 
@@ -217,7 +229,25 @@ export default function Targets(props) {
     // Update filters
   };
 
-  function handleAction(event, key, row = null) {}
+  function handleAction(event, key, row = null) {
+    console.log('handleAction ' + event + ' ' + key + ' ' + row.id);
+    if (key == 'move') {
+      console.log('moving light frames for target ' + row.id);
+      fetch('/delete_target/' + row.id);
+
+      // for (let id of target.stack_ids) {
+      //   console.log('looking up stack id ' + id);
+      //   let stack = stacks.find(function (element) {
+      //     return element.id == id;
+      //   });
+      //   console.log('stack ' + stack);
+
+      //   if (stack) {
+
+      //   }
+      // }
+    }
+  }
 
   useEffect(() => {
     // console.log('fetching targets...');

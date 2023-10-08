@@ -6,8 +6,10 @@ sys.path.append('../..')
 import io
 import numpy as np
 import flask
+from flask import jsonify
 from dataclasses import asdict
 import argparse
+import shutil
 
 import image_handling
 from cache import cache
@@ -180,7 +182,7 @@ def target_polygon_points(target_id):
 def stack(stack_id):
   stacks = test_app.stacks if debug else cache['stacks']
   print(f"Looking for stack_id '{stack_id}'")
-  return asdict(next(s for s in stacks if s.id == stack_id))
+  return asdict(stacks[stack_id])
 
 
 @app.route('/stack_thumbnail_image/<target>/<rig>/<filter>')
@@ -199,18 +201,18 @@ def stack_thumbnail_video(target, rig, filter):
   return flask.send_file(buffer, mimetype='video/webm')
 
 
-@app.route('/stack_master_image/<target>/<rig>/<filter>')
-def stack_master_image(target, rig, filter):
-  stack = next(s for s in cache['completed_stacks']
-               if s.target == target and s.rig == rig and s.filter == filter)
-  image = image_handling._read_image(stack.master)
-  image = image_handling.resize_array(image, new_width=640)
-  image = image_handling.autostretch(image)
-  image = image_handling.array_to_png(image)
-  buffer = io.BytesIO()
-  buffer.write(image)
-  buffer.seek(0)
-  return flask.send_file(buffer, mimetype='image/png')
+@app.route('/stack_master_image/<stack_id>')
+def stack_master_image(stack_id):
+  stack = next(s for s in cache['stacks'] if s.id == stack_id)
+  if stack.master and os.path.exists(stack.master):
+    image = image_handling._read_image(stack.master)
+    image = image_handling.resize_array(image, new_width=640)
+    image = image_handling.autostretch(image)
+    image = image_handling.array_to_png(image)
+    buffer = io.BytesIO()
+    buffer.write(image)
+    buffer.seek(0)
+    return flask.send_file(buffer, mimetype='image/png')
 
 
 @app.route('/get_plot')
@@ -219,6 +221,23 @@ def plot():
   mem.write(get_plot_html().encode())
   mem.seek(0)
   return flask.send_file(mem, mimetype='text/html')
+
+
+# TODO: Don't hardcode the quarantine directory.
+quarantine_dir = "/Users/nobody/Projects/Astro/Raw/Bad/"
+
+
+@app.route('/delete_target/<target_id>')
+def delete_target(target_id):
+  target = next(t for t in cache['targets'] if t.id == target_id)
+  for stack_id in target.stack_ids:
+    stack = next(s for s in cache['stacks'] if s.id == stack_id)
+    for filename in stack.light_frames:
+      print(f'### Quarantining file {filename}')
+      shutil.move(filename, quarantine_dir)
+
+  resp = jsonify(success=True)
+  return resp
 
 
 if __name__ == '__main__':
