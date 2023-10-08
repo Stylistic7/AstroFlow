@@ -25,19 +25,23 @@ def iou(a, b):
 
 
 def find_components(plate_solutions,
+                    fits_headers,
                     min_component_members=MIN_COMPONENT_MEMBERS):
   # Filter out images that couldn't be plate-solved.
   plate_solutions = {f: p for f, p in plate_solutions.items() if p is not None}
 
-  filenames = plate_solutions.keys()
-  footprints = {f: Polygon(p.footprint) for f, p in plate_solutions.items()}
+  filenames = sorted(plate_solutions.keys(),
+                     key=lambda x: fits_headers[x]['DATE-OBS'])
+  footprints = {f: Polygon(plate_solutions[f].footprint) for f in filenames}
 
   targets = []
   last_printed_percent_done = 0
-  for i, (filename, footprint) in enumerate(footprints.items()):
+  for i, filename in enumerate(filenames):
     found = False
+    footprint = footprints[filename]
     for target in targets:
-      if all(iou(footprint, footprints[f]) > 0.6 for f in target):
+      # if all(iou(footprint, footprints[f]) > 0.6 for f in target):
+      if iou(footprint, footprints[target[0]]) > 0.6:
         target.append(filename)
         found = True
         break
