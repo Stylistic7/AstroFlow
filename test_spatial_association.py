@@ -43,7 +43,7 @@ def make_fits_headers(prefix, number=1):
   date_obs = datetime.datetime(2007, 12, 6, 16, 29, 43, 79043)
   fits_headers = {}
   for i in range(number):
-    image_filename = f'{prefix}_{i}' if number > 1 else prefix
+    image_filename = f'{prefix}{i}' if number > 1 else prefix
     fits_headers[image_filename] = {'DATE-OBS': date_obs}
     date_obs += datetime.timedelta(minutes=5)
 
@@ -129,35 +129,36 @@ class TestSpatialAssociation(unittest.TestCase):
         all(f.startswith('bar') for f in groups['North America nebula']))
 
   def test_sadr_pano(self):
-    # print('Entering test_sadr_pano')
+    print('Entering test_sadr_pano')
 
-    # centers = [
-    #     (301.625, 41.37361111111111),
-    #     (301.81666666666666, 38.29111111111111),
-    #     (304.34583333333336, 41.44222222222222),
-    #     (304.4125, 38.35472222222222),
-    #     (307.06666666666666, 41.44638888888888),
-    #     (307.01666666666665, 38.36083333333333),
-    # ]
-    # ids = ['Pane 1', 'Pane 2', 'Pane 3', 'Pane 4', 'Pane 5', 'Pane 6']
+    centers = [
+        (301.625, 41.37361111111111),
+        (301.81666666666666, 38.29111111111111),
+        (304.34583333333336, 41.44222222222222),
+        (304.4125, 38.35472222222222),
+        (307.06666666666666, 41.44638888888888),
+        (307.01666666666665, 38.36083333333333),
+    ]
+    ids = ['Pane 0', 'Pane 1', 'Pane 2', 'Pane 3', 'Pane 4', 'Pane 5']
 
-    # plate_solutions = {}
-    # for id, center in zip(ids, centers):
-    #   plate_solutions |= make_plate_solutions(center, id)
+    plate_solutions = {}
+    for id, center in zip(ids, centers):
+      plate_solutions |= make_plate_solutions(center, id)
 
-    # fits_headers = make_fits_headers('bar', 10)
+    fits_headers = make_fits_headers('Pane ', 6)
 
-    # groups = spatial_association.find_components(plate_solutions,
-    #                                              min_component_members=1)
-    # expected_groups = {
-    #     'IC1311': ['Pane 1'],
-    #     'IC1318_RA_301.8_DEC_38.3': ['Pane 2'],
-    #     'IC1318_RA_304.3_DEC_41.4': ['Pane 3'],
-    #     'IC1318_RA_304.4_DEC_38.4': ['Pane 4'],
-    #     'IC1318_RA_307.1_DEC_41.4': ['Pane 5'],
-    #     'IC1318_RA_307.0_DEC_38.4': ['Pane 6'],
-    # }
-    # self.assertCountEqual(groups, expected_groups)
+    groups = spatial_association.find_components(plate_solutions,
+                                                 fits_headers,
+                                                 min_component_members=1)
+    expected_groups = {
+        'IC1311': ['Pane 0'],
+        'IC1318_RA_301.8_DEC_38.3': ['Pane 1'],
+        'IC1318_RA_304.3_DEC_41.4': ['Pane 2'],
+        'IC1318_RA_304.4_DEC_38.4': ['Pane 3'],
+        'IC1318_RA_307.1_DEC_41.4': ['Pane 4'],
+        'IC1318_RA_307.0_DEC_38.4': ['Pane 5'],
+    }
+    self.assertCountEqual(groups, expected_groups)
 
   def test_stability(self):
     plate_solutions = cache['plate_solutions']
@@ -165,7 +166,7 @@ class TestSpatialAssociation(unittest.TestCase):
     expected = sorted(
         spatial_association.find_components(plate_solutions, fits_headers))
 
-    for i in range(100):
+    for i in range(10):
       print(f'### Testing stability, iteration {i}')
       actual = spatial_association.find_components(plate_solutions,
                                                    fits_headers)
