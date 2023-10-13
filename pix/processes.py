@@ -1,22 +1,43 @@
 from .context import get_next_process_number
 
 
+class enum(str):
+  pass
+
+
 def _format(value):
   if value is True:
     return 'true'
   elif value is False:
     return 'false'
+  elif type(value) is enum:
+    return str(value)
+  elif type(value) is str:
+    return f'"{value}"'
 
   return str(value)
 
 
-def code_for_process(process_name, parameters, view_ids):
+def execute_on_view_ids(process_name, parameters, view_ids):
   process_number = get_next_process_number()
   code = [f'var P{process_number} = new {process_name};']
   for k, v in parameters.items():
     code.append(f'P{process_number}.{k} = {_format(v)};')
 
+  code.append(f'P{process_number}.launch();')
+
   for view_id in view_ids:
     code.append(f'P{process_number}.executeOn(View.viewById("{view_id}"));')
+
+  return code
+
+
+def execute_global(process_name, parameters):
+  process_number = get_next_process_number()
+  code = [f'var P{process_number} = new {process_name};']
+  for k, v in parameters.items():
+    code.append(f'P{process_number}.{k} = {_format(v)};')
+
+  code.append(f'P{process_number}.executeGlobal();')
 
   return code

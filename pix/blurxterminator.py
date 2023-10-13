@@ -1,10 +1,10 @@
 from .decorators import accepts_view_ids
 from .classes import ShellScriptTask, ViewIdList
 from .context import append_task
-from .processes import code_for_process
+from .processes import enum, execute_on_view_ids
 
 _default_parameters = {
-    'ai_file': '"BlurXTerminator.2.mlpackage"',
+    'ai_file': enum('BlurXTerminator.2.mlpackage'),
     'correct_only': False,
     'correct_first': False,
     'nonstellar_then_stellar': False,
@@ -21,7 +21,7 @@ _default_parameters = {
 def BlurXTerminator(view_ids, **kwargs):
   append_task(
       ShellScriptTask(
-          javascript=code_for_process('BlurXTerminator', _default_parameters
-                                      | kwargs, view_ids)))
+          javascript=execute_on_view_ids('BlurXTerminator', _default_parameters
+                                         | kwargs, view_ids)))
 
   return ViewIdList(view_ids)

@@ -15,6 +15,8 @@ from .automatic_background_extractor import AutomaticBackgroundExtractor
 from .wbpp import WeightedBatchPreprocessing
 from .mosaic_by_coordinates import MosaicByCoordinates
 from .blurxterminator import BlurXTerminator
+from .starxterminator import StarXTerminator
+from .star_alignment import StarAlignment
 from .integer_resample import IntegerResample
 from .fast_rotation import FastRotation
 from .photometric_mosaic import PhotometricMosaic
