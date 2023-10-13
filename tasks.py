@@ -3,6 +3,9 @@ from enum import Enum
 import functools
 import concurrent.futures
 
+from cache import cache
+from stack import Stack
+
 
 class ControlMode(Enum):
   DISABLED = 0
@@ -40,37 +43,49 @@ class TasksGroup(object):
     return decorator
 
   def should_run(self, f, control_modes, results):
-    control_mode = control_modes.get(f, ControlMode.AUTO)
+    # print('### should run, control_modes', control_modes)
+    control_mode = control_modes.get(f.id, ControlMode.AUTO)
+    print(f'### should_run {f} has id {f.id} and control mode {control_mode}')
 
-    if control_mode == ControlMode.DISABLED: return False
-    if control_mode == ControlMode.FORCE: return True
+    if control_mode == ControlMode.DISABLED:
+      print(f'Refusing to run task {f} because it is disabled')
+      return False
 
-    print(f'Task {f} is in AUTO')
+    if control_mode == ControlMode.FORCE:
+      print(f'Running task {f} because it is forced')
+      return True
+
+    prev_result = results.get(f.id, Result.DID_NOT_RUN)
+
+    print(f'Task {f.id} is in AUTO')
     print(f'Its upstream tasks are {self._upstream[f]}')
     print(f'Its downstream tasks are {self._downstream[f]}')
+    print(f'Its previous result was {prev_result}')
 
     # This task has no upstream tasks to consider.
-    if not self._upstream[f]:
-      print(f'Task has no upstream tasks; running it.')
+    if not self._upstream[f] and prev_result == Result.DID_NOT_RUN:
+      print(f'Task has no upstream tasks, and has never been run; running')
       return True
 
     # If any of the upstream tasks ran and were successful, then this task
     # needs to be re-run.
-    if any(
-        results.get(u, Result.DID_NOT_RUN) == Result.SUCCESS
-        for u in self._upstream[f]):
-      print('At least one upstream task ran and was successful')
+    upstream_results = [
+        results.get(u.id, Result.DID_NOT_RUN) for u in self._upstream[f]
+    ]
+    print('upstream_results', upstream_results)
+    if any(r == Result.SUCCESS for r in upstream_results):
+      print('At least one upstream task ran and was successful; running')
       return True
 
-    print('No upstream tasks ran, or none were successful')
+    print('No upstream tasks ran, or none were successful; not running')
     return False
 
-  def run(self, executor, control_modes):
+  def run(self, executor, control_modes, prev_results):
     """Run tasks respecting the dependencies using an executor."""
     count_deps = {task: len(deps) for task, deps in self._upstream.items()}
     base_tasks = {task for task, count in count_deps.items() if count == 0}
 
-    results = {}
+    results = prev_results
 
     future_to_task = {
         executor.submit(task): task
@@ -84,7 +99,7 @@ class TasksGroup(object):
       done, not_done = wait(not_done, return_when=FIRST_COMPLETED)
       for future in done:
         task = future_to_task[future]
-        results[task] = future.result()
+        results[task.id] = future.result()
         for f in self._downstream[task]:
           count_deps[f] -= 1
           if count_deps[f] == 0:
@@ -94,6 +109,7 @@ class TasksGroup(object):
               not_done.add(fut)
 
     print('Task results:', results)
+    return results
 
 
 # Example
@@ -103,46 +119,43 @@ import time
 tasks = TasksGroup()
 
 
-@tasks.add()
-def f1():
-  print('### f1 called')
-  time.sleep(.4)
-  print(time.time(), 1)
-  return Result.SUCCESS
+def stack_subframes(stack):
+  print(f'stack_subframes for stack {stack}')
+
+  @tasks.add()
+  def inner():
+    print(f'### Stacking stack {stack}!')
+    return Result.SUCCESS
+
+  inner.id = ('stack_subframes', stack.id)
+  return inner
 
 
-@tasks.add(f1)
-def f2():
-  print('### f2 called')
-  time.sleep(4)
-  print(time.time(), 2)
-  return Result.SUCCESS
+def post_process_stack(stack, stack_task):
+  print(f'post_process_stack for stack {stack}')
 
+  @tasks.add(stack_task)
+  def inner():
+    print(f'### Post-processing stack {stack}!')
+    return Result.SUCCESS
 
-@tasks.add(f1)
-def f3():
-  print('### f3 called')
-  time.sleep(.4)
-  print(time.time(), 3)
-  return Result.SUCCESS
-
-
-@tasks.add(f3)
-def f4():
-  print('### f3 called')
-  time.sleep(.4)
-  print(time.time(), 4)
-  return Result.SUCCESS
-
-
-@tasks.add(f3, f4)
-def f5():
-  print('### f5 called')
-  time.sleep(2)
-  print(time.time(), 5)
-  return Result.SUCCESS
+  inner.id = ('post_process_stack', stack.id)
+  return inner
 
 
 with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-  control_modes = {f2: ControlMode.DISABLED}
-  tasks.run(executor, control_modes)
+  control_modes = {('stack_subframes', '298749827439823'): ControlMode.FORCE}
+  # control_modes = {}
+  print('### control_modes are', control_modes)
+
+  prev_results = cache.get('prev_results', {})
+  print(f'### prev_results are {prev_results}')
+
+  stack = Stack(id='298749827439823', target='Veil Nebula')
+  task = stack_subframes(stack)
+  task = post_process_stack(stack, task)
+
+  print('### Starting execution')
+  results = tasks.run(executor, control_modes, prev_results)
+
+  cache['prev_results'] = results
