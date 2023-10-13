@@ -169,10 +169,8 @@ def make_and_cache_stack_thumbnails(stack, width=640):
     out.release()
     thumbnail_video = open(video_filename, 'rb').read()
 
-    cache[('stack_thumbnail_image', stack.target, stack.rig,
-           stack.filter)] = thumbnail_image
-    cache[('stack_thumbnail_video', stack.target, stack.rig,
-           stack.filter)] = thumbnail_video
+    cache[('stack_thumbnail_image', stack.id)] = thumbnail_image
+    cache[('stack_thumbnail_video', stack.id)] = thumbnail_video
 
 
 # if __name__ == '__main__':

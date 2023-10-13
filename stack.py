@@ -5,6 +5,7 @@ import functools
 from shapely.geometry import Polygon
 import uuid
 import hashlib
+from enum import Enum, unique
 
 from cache import cache
 import file_io
@@ -43,13 +44,20 @@ def _min_footprint(footprints):
 #   }
 
 
+@unique
+class Status(str, Enum):
+  NOT_READY: str = "NOT_READY"
+  READY: str = "READY"
+  IN_PROGRESS: str = "IN_PROGRESS"
+  FAILURE: str = "FAILURE"
+  SUCCESS: str = "SUCCESS"
+
+
 @dataclass
 class Stack:
-  # id: uuid.UUID = field(default_factory=lambda: str(uuid.uuid4()))
   id: str = None
 
-  # TODO: This currently just means "good" or not. Elaborate.
-  status: bool = False
+  status: Status = Status.NOT_READY
 
   enable: bool = False
 

@@ -28,7 +28,10 @@ def find_components(plate_solutions,
                     fits_headers,
                     min_component_members=MIN_COMPONENT_MEMBERS):
   # Filter out images that couldn't be plate-solved.
+  num_plate_solutions = len(plate_solutions)
   plate_solutions = {f: p for f, p in plate_solutions.items() if p is not None}
+  print(f'### {num_plate_solutions} plate solutions, '
+        f'{len(plate_solutions)} good')
 
   filenames = sorted(plate_solutions.keys(),
                      key=lambda x: fits_headers[x]['DATE-OBS'])
@@ -62,6 +65,9 @@ def find_components(plate_solutions,
     return position_string.canonical_target_string(plate_solution.center)
 
   targets = [(get_name(t), t) for t in targets]
+  print('### Before renaming')
+  for name, filenames in targets:
+    print(f'### Target {name} has {len(filenames)} files')
 
   target_string_counts = Counter(name for name, _ in targets)
 
@@ -70,9 +76,14 @@ def find_components(plate_solutions,
     center = plate_solutions[filenames[0]].center
     if target_string_counts[name] > 1:
       new_name = f'{name}_{position_string.ra_dec_string(*center)}'
+      # TODO: This can still collide in some cases, resulting in lost stacks.
+      print(f'### Target {name} will be renamed {new_name}')
+      assert new_name not in output_targets
       output_targets[new_name] = list(sorted(filenames))
     else:
       output_targets[name] = list(sorted(filenames))
+
+  assert len(output_targets) == len(targets)
 
   for name, filenames in output_targets.items():
     print(f'Target {name} has {len(filenames)} files')

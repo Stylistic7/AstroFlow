@@ -28,16 +28,29 @@ def run(stack, dest_path):
 
   # exposure = _exposure_time_string(stack)
 
-  dst_filename = os.path.join(
-      dest_path, stack.target, 'masters',
-      f'master_light_{stack.target}_{stack.rig}_{stack.filter}.xisf')
+  output_dir = os.path.join(dest_path, stack.target, 'masters')
+  os.makedirs(output_dir, exist_ok=True)
 
-  if os.path.exists(dst_filename):
-    print(f'### Stack {stack} master already exists')
+  if config.TEST_MODE:
+    dst_filename = os.path.join(
+        output_dir,
+        f'master_light_{stack.target}_{stack.rig}_{stack.filter}.fit')
+    stack.master = dst_filename
+    shutil.copy(stack.light_frames[0], dst_filename)
     return dst_filename
 
-  if config.STACKING_TEST_MODE:
-    return
+  dst_filename = os.path.join(
+      output_dir,
+      f'master_light_{stack.target}_{stack.rig}_{stack.filter}.xisf')
+
+  if config.SKIP_IF_FILE_EXISTS and os.path.exists(dst_filename):
+    print(f'### step_stack.run returning early because '
+          f'{dst_filename} already exists.')
+    return dst_filename
+
+  # if os.path.exists(dst_filename):
+  #   print(f'### Stack {stack} master already exists')
+  #   return dst_filename
 
   with tempfile.TemporaryDirectory() as tmp_dir:
     symlink_frames(stack.light_frames, tmp_dir)
@@ -61,8 +74,8 @@ def run(stack, dest_path):
     print('filenames', filenames)
     src_filename = filenames[0]
 
-    os.makedirs(os.path.join(dest_path, stack.target, 'masters'),
-                exist_ok=True)
     shutil.copy(src_filename, dst_filename)
     print('Stacking produced master', dst_filename)
+
+    stack.master = dst_filename
     return dst_filename

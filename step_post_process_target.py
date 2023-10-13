@@ -4,6 +4,7 @@ import subprocess
 import time
 from pathlib import Path
 
+import pix
 import config
 from cache import cache
 
@@ -197,48 +198,22 @@ def find_reference(stacks):
           return stack
 
 
-@cache.memoize(tag='step_post_process_target')
+@pix.PixInsight
+def _post_process_target(stacks):
+  filenames = pix.FileList(s.post_processed for s in stacks)
+  view_ids = pix.ViewIdList(s.filter for s in stacks)
+  print(f'### filenames {filenames}')
+  print(f'### view_ids {view_ids}')
+
+  images = pix.OpenImages(filenames, view_ids)
+  images = pix.StarAlignment(images)
+  images = pix.StarXTerminator(images)
+
+
 def run(stacks):
   reference = find_reference(stacks)
   print('found reference', reference)
   stacks.remove(reference)
   stacks.insert(0, reference)
 
-  input_filenames = [s.post_processed for s in stacks]
-
-  # TODO: Push these restrictive id constraints up into the original masters.
-  output_path = os.path.commonpath(input_filenames)
-  output_ids = [
-      os.path.splitext(os.path.basename(m))[0].replace('.', '_').replace(
-          '-', 'M') + '_aligned' for m in input_filenames
-  ]
-  print('output_ids are', output_ids)
-
-  output_filenames = [
-      os.path.join(output_path, o + '_stars.xisf') for o in output_ids
-  ]
-  output_filenames += [
-      os.path.join(output_path, o + '_starless.xisf') for o in output_ids
-  ]
-
-  with tempfile.TemporaryDirectory() as tmp_dir:
-    sentinel_filename = os.path.join(tmp_dir, 'sentinel.txt')
-
-    script_filename = os.path.join(tmp_dir, "run_post_processing.js")
-    with open(script_filename, "w") as f:
-      script = post_process_script.format(input_filenames=input_filenames,
-                                          output_path=output_path,
-                                          output_ids=output_ids,
-                                          sentinel_filename=sentinel_filename)
-      f.write(script)
-
-    print(f'Running PixInsight post-processing on {len(input_filenames)}')
-    ret = subprocess.run([
-        '/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight',
-        f'--execute={script_filename}'
-    ]).returncode
-
-    while not all(os.path.exists(f) for f in output_filenames):
-      time.sleep(5)
-
-    return output_filenames
+  _post_process_target(stacks)

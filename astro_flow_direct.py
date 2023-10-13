@@ -14,7 +14,7 @@ import pytz
 import numpy as np
 
 import pix
-from stack import Stack, FileList
+from stack import Stack, Status, FileList
 from target import Target
 from mosaic import Mosaic
 from cache import cache
@@ -28,6 +28,7 @@ import step_download_asiair
 import step_flat_frame_association
 import step_sanity_check_stack
 import step_post_process_stack
+import step_post_process_target
 import step_mosaic
 import step_stack
 import image_handling
@@ -671,13 +672,14 @@ def group_targets_into_mosaics(targets):
 # @memoize_by_context()
 def sanity_check_stacks(stacks, fits_headers):
   print('Sanity-checking stacks...')
-  for stack in stacks.values():
+  for stack in stacks:
     # TODO: Print failures in the correct order so the output is reason
-    stack.status = step_sanity_check_stack.run(stack, fits_headers)
-    if stack.status:
+    if step_sanity_check_stack.run(stack, fits_headers):
       print(f'Stack {stack} is good!')
+      stack.status = Status.READY
     else:
       print(f'Stack {stack} failed sanity check')
+      stack.status = Status.NOT_READY
 
   return stacks
 
@@ -688,7 +690,7 @@ def sanity_check_stacks(stacks, fits_headers):
 def stack_subframes(stack, fits_headers, output_dir):
   print(f'Stacking subframes for stack {stack}')
   step_flat_frame_association.set_flat_versions(stack, fits_headers)
-  stack.master = step_stack.run(stack, output_dir)
+  step_stack.run(stack, output_dir)
 
 
 def post_process_stack(stack):
@@ -696,8 +698,11 @@ def post_process_stack(stack):
   step_post_process_stack.post_process_stack(stack)
 
 
-def post_process_target(target):
+def post_process_target(target, stacks):
   print(f'Post-processing target {target.name}')
+  stacks = [stacks[id] for id in target.stack_ids]
+  print(f'Target contains {len(stacks)} stacks')
+  step_post_process_target.run(stacks)
   return target
 
 
@@ -751,6 +756,8 @@ def main(context):
 
   make_image_thumbnails(stacks, plate_solutions, fits_headers)
 
+  stacks = sanity_check_stacks(stacks, fits_headers)
+
   # At this point, the stacks should be fingerprinted. If a stack with the same
   # fingerprint is stored in the cache, we'll load it and use it. Otherwise,
   # the stack will be considered new.
@@ -766,7 +773,6 @@ def main(context):
 
   targets = group_stacks_into_targets(stacks)
   mosaics = group_targets_into_mosaics(targets)
-  stacks = sanity_check_stacks(stacks, fits_headers)
 
   # These are for the web server to read, not for memoization.
   cache['stacks'] = stacks
@@ -774,42 +780,38 @@ def main(context):
   cache['mosaics'] = mosaics
 
   for stack in stacks.values():
-    stack.enable = 'IC1318' in stack.target or 'IC1311' in stack.target
-    # stack.enable = True
+    print(f'### Looking at stack {stack}')
 
-  print('### Before for loop, stack masters are')
-  for stack in stacks.values():
-    print(f'###  {stack.master}')
-
-  for stack in stacks.values():
-    if not stack.status or not stack.enable:
+    if 'IC1805' not in stack.target:
       continue
 
-    if not stack.master:
-      stack_subframes(stack, fits_headers, context.output_dir)
-      print(f'### After stack_subframes() stack.master is {stack.master}')
+    # if stack.status != Status.READY:
+    #   continue
 
-    print(f'### Stack {stack} post_processed {stack.post_processed}')
-    if stack.post_processed:
-      print(
-          f'### post_processed file exists {os.path.exists(stack.post_processed)}'
-      )
-    if not stack.post_processed or not os.path.exists(stack.post_processed):
-      post_process_stack(stack)
-
-    # save_stacks_context(stacks)
+    stack_subframes(stack, fits_headers, context.output_dir)
+    print(f'### After stack_subframes() stack.master is {stack.master}')
     cache['stacks'] = stacks
 
-  print('### After for loop, stack masters are')
-  for stack in stacks.values():
-    print(f'###  {stack.master}')
+    if not stack.master:
+      stack.status = Status.FAILURE
+      cache['stacks'] = stacks
+      continue
 
-  # These are for the web server to read, not for memoization.
-  cache['stacks'] = stacks
-  cache['targets'] = targets
-  cache['mosaics'] = mosaics
+    post_process_stack(stack)
+    print(f'### After post_process_stack() stack.post_processed is '
+          f'{stack.post_processed}')
 
-  targets = [post_process_target(t) for t in targets]
+    if not stack.post_processed:
+      stack.status = Status.FAILURE
+      cache['stacks'] = stacks
+      continue
+
+    stack.status = Status.SUCCESS
+    cache['stacks'] = stacks
+
+  targets = [
+      post_process_target(t, stacks) for t in targets if 'IC1805' in t.name
+  ]
   cache['targets'] = targets
 
   mosaics = [post_process_mosaic(m) for m in mosaics]

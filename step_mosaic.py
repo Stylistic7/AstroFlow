@@ -338,6 +338,7 @@ def run(targets, plot=False):
   for mosaic in mosaics:
     mosaic = _ransac(mosaic, plot=plot, plot_title='foo')
     if not mosaic:
+      print('### RANSAC failed')
       continue
 
     print(f'Mosaic composed of {len(mosaic)} targets:')

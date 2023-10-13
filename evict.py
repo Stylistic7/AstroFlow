@@ -32,5 +32,7 @@ if __name__ == '__main__':
 
   cache.clear()
 
+  plate_solutions = {f: p for f, p in plate_solutions.items() if p is not None}
+
   cache['plate_solutions'] = plate_solutions
   cache['image_hashes'] = image_hashes
