@@ -44,7 +44,7 @@ def post_process_stack(stack):
     shutil.copy(stack.master, stack.post_processed)
     return
 
-  if config.SKIP_IF_FILE_EXISTS and os.path.exists(dst_filename):
+  if config.SUCCESS_IF_FILE_EXISTS and os.path.exists(dst_filename):
     print(f'### post_process_stack returning early because '
           f'{dst_filename} already exists.')
     return dst_filename

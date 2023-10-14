@@ -24,7 +24,7 @@ class Result(Enum):
   FAILURE = 2
 
 
-class TasksGroup(object):
+class DependencyGraph(object):
   def __init__(self):
     #: Maps functions to their upstream connections (dependencies)
     self._upstream = {}
@@ -45,14 +45,14 @@ class TasksGroup(object):
   def should_run(self, f, control_modes, results):
     # print('### should run, control_modes', control_modes)
     control_mode = control_modes.get(f.id, ControlMode.AUTO)
-    print(f'### should_run {f} has id {f.id} and control mode {control_mode}')
+    print(f'should_run {f} has id {f.id} and control mode {control_mode}')
 
     if control_mode == ControlMode.DISABLED:
-      print(f'Refusing to run task {f} because it is disabled')
+      print(f'### Refusing to run task {f} because it is disabled')
       return False
 
     if control_mode == ControlMode.FORCE:
-      print(f'Running task {f} because it is forced')
+      print(f'### Running task {f} because it is forced')
       return True
 
     prev_result = results.get(f.id, Result.DID_NOT_RUN)
@@ -64,7 +64,7 @@ class TasksGroup(object):
 
     # This task has no upstream tasks to consider.
     if not self._upstream[f] and prev_result == Result.DID_NOT_RUN:
-      print(f'Task has no upstream tasks, and has never been run; running')
+      print(f'### Task has no upstream tasks, and has never been run; running')
       return True
 
     # If any of the upstream tasks ran and were successful, then this task
@@ -74,10 +74,10 @@ class TasksGroup(object):
     ]
     print('upstream_results', upstream_results)
     if any(r == Result.SUCCESS for r in upstream_results):
-      print('At least one upstream task ran and was successful; running')
+      print('### At least one upstream task ran and was successful; running')
       return True
 
-    print('No upstream tasks ran, or none were successful; not running')
+    print('### No upstream tasks ran, or none were successful; not running')
     return False
 
   def run(self, executor, control_modes, prev_results):
@@ -108,54 +108,8 @@ class TasksGroup(object):
               future_to_task[fut] = f
               not_done.add(fut)
 
-    print('Task results:', results)
+    print(f'Task results:')
+    for r in results:
+      print(f'### result {r}')
+
     return results
-
-
-# Example
-
-import time
-
-tasks = TasksGroup()
-
-
-def stack_subframes(stack):
-  print(f'stack_subframes for stack {stack}')
-
-  @tasks.add()
-  def inner():
-    print(f'### Stacking stack {stack}!')
-    return Result.SUCCESS
-
-  inner.id = ('stack_subframes', stack.id)
-  return inner
-
-
-def post_process_stack(stack, stack_task):
-  print(f'post_process_stack for stack {stack}')
-
-  @tasks.add(stack_task)
-  def inner():
-    print(f'### Post-processing stack {stack}!')
-    return Result.SUCCESS
-
-  inner.id = ('post_process_stack', stack.id)
-  return inner
-
-
-with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-  control_modes = {('stack_subframes', '298749827439823'): ControlMode.FORCE}
-  # control_modes = {}
-  print('### control_modes are', control_modes)
-
-  prev_results = cache.get('prev_results', {})
-  print(f'### prev_results are {prev_results}')
-
-  stack = Stack(id='298749827439823', target='Veil Nebula')
-  task = stack_subframes(stack)
-  task = post_process_stack(stack, task)
-
-  print('### Starting execution')
-  results = tasks.run(executor, control_modes, prev_results)
-
-  cache['prev_results'] = results

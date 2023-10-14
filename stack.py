@@ -44,6 +44,9 @@ def _min_footprint(footprints):
 #   }
 
 
+# TODO: Remoe status from this module; it's poor separation of concerns.
+# The Stack object just defines the files and flat frame associations that
+# go into a stack. Other code keeps track of its status, readiness, etc.
 @unique
 class Status(str, Enum):
   NOT_READY: str = "NOT_READY"

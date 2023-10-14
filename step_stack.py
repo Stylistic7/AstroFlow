@@ -28,6 +28,8 @@ def run(stack, dest_path):
 
   # exposure = _exposure_time_string(stack)
 
+  print(f'### Entering step_stack.run() for stack {stack}')
+
   output_dir = os.path.join(dest_path, stack.target, 'masters')
   os.makedirs(output_dir, exist_ok=True)
 
@@ -43,7 +45,7 @@ def run(stack, dest_path):
       output_dir,
       f'master_light_{stack.target}_{stack.rig}_{stack.filter}.xisf')
 
-  if config.SKIP_IF_FILE_EXISTS and os.path.exists(dst_filename):
+  if config.SUCCESS_IF_FILE_EXISTS and os.path.exists(dst_filename):
     print(f'### step_stack.run returning early because '
           f'{dst_filename} already exists.')
     return dst_filename
