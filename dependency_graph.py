@@ -24,6 +24,12 @@ class Result(Enum):
   FAILURE = 2
 
 
+# Users will generally want to pick which images they stack and process first,
+# so the default control mode is DISABLED. Users will have to explicitly time-
+# consuming tasks.
+DEFAULT_CONTROL_MODE = ControlMode.DISABLED
+
+
 class DependencyGraph(object):
   def __init__(self):
     #: Maps functions to their upstream connections (dependencies)
@@ -43,19 +49,34 @@ class DependencyGraph(object):
     return decorator
 
   def should_run(self, f, control_modes, results):
-    # TODO: Carefully consider the default value here.
-    control_mode = control_modes.get(f.id, ControlMode.AUTO)
-    print(f'### should_run {f} has id {f.id} and control mode {control_mode}')
+    # If any of the upstream tasks were forced, this task is also forced.
+    upstream_control_modes = [
+        control_modes.get(u.id, DEFAULT_CONTROL_MODE)
+        for u in self._upstream[f]
+    ]
+    if any(u == ControlMode.FORCE for u in upstream_control_modes):
+      print(f'### Running {f} because some upstream tasks were forced')
+      # TODO: Modifying control_modes here is awkward, but searching the
+      # entire tree backwards is akwward, too.
+      control_modes[f.id] = ControlMode.FORCE
+      return True
+
+    control_mode = control_modes.get(f.id, DEFAULT_CONTROL_MODE)
+    # print(f'### should_run {f} has id {f.id} and control mode {control_mode}')
 
     if control_mode == ControlMode.DISABLED:
-      print(f'### Refusing to run task {f} because it is disabled')
+      print(f'### NOT RUNNING {f}: it is disabled')
       return False
 
     if control_mode == ControlMode.FORCE:
-      print(f'### Running task {f} because it is forced')
+      print(f'### RUNNING {f}: it is forced')
       return True
 
     prev_result = results.get(f.id, Result.DID_NOT_RUN)
+
+    if prev_result == Result.SUCCESS:
+      print(f'### NOT RUNNING {f}: it ran previously and was successful')
+      return False
 
     # print(f'Task {f.id} is in AUTO')
     # print(f'Its upstream tasks are {self._upstream[f]}')
@@ -63,27 +84,27 @@ class DependencyGraph(object):
     # print(f'Its previous result was {prev_result}')
 
     # This task has no upstream tasks to consider.
-    if not self._upstream[f]:
-      if prev_result == Result.DID_NOT_RUN:
-        print(f'### Task has no upstream tasks, and has never been run; '
-              f'running')
-        return True
-      else:
-        print(f'### Task has no upstream tasks, and has been run already; '
-              f'not running')
-        return False
+    # if not self._upstream[f]:
+    #   if prev_result == Result.DID_NOT_RUN:
+    #     print(f'### Task has no upstream tasks, and has never been run; '
+    #           f'running')
+    #     return True
+    #   else:
+    #     print(f'### Task has no upstream tasks, and has been run already; '
+    #           f'not running')
+    #     return False
 
     # If any of the upstream tasks ran and were successful, then this task
     # needs to be re-run.
     upstream_results = [results[u.id] for u in self._upstream[f]]
     # print('upstream ids', [u.id for u in self._upstream[f]])
     # print('upstream_results', upstream_results)
-    if any(r == Result.SUCCESS for r in upstream_results):
-      print('### At least one upstream task ran and was successful; running')
+    if all(r == Result.SUCCESS for r in upstream_results):
+      print(f'### RUNNING {f}: All upstream task ran and were successful')
       return True
-
-    print('### No upstream tasks ran, or none were successful; not running')
-    return False
+    else:
+      print(f'### NOT RUNNING {f}: Some upstream tasks were unsuccessful')
+      return False
 
   def run(self, executor, control_modes):
     """Run tasks respecting the dependencies using an executor."""

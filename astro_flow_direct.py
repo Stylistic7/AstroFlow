@@ -667,7 +667,9 @@ def group_stacks_into_targets(stacks):
 # @memoize_by_context()
 def group_targets_into_mosaics(targets):
   print('Identifying mosaics...')
-  return step_mosaic.run(targets, plot=False)
+  mosaics = step_mosaic.run(targets, plot=False)
+  [m.store_metadata(targets) for m in mosaics]
+  return mosaics
 
 
 # @memoize_by_context()
@@ -855,8 +857,8 @@ def main(context):
     # control_modes = {('stack_subframes', '298749827439823'): ControlMode.FORCE}
     # control_modes = {('stack_subframes', stack.id): dg.ControlMode.DISABLED
     #                  for stack in stacks if stack.status == Status.NOT_READY}
-    control_modes = {('stack_subframes', s.id): dg.ControlMode.DISABLED
-                     for s in stacks.values() if 'IC1805' not in s.target}
+    control_modes = {('stack_subframes', s.id): dg.ControlMode.FORCE
+                     for s in stacks.values() if 'IC1805' in s.target}
     print('### control_modes are', control_modes)
 
     print('### Starting execution')

@@ -2,7 +2,11 @@ import numpy as np
 from dataclasses import dataclass, field
 import functools
 from shapely.geometry import Polygon
-import uuid
+import hashlib
+
+
+def hash_string(s):
+  return hashlib.sha256(bytes(s, 'utf-8')).hexdigest()
 
 
 @dataclass
@@ -27,7 +31,7 @@ class Target:
 
   # TODO: How to guarantee these are always in the same order?
   def store_id(self):
-    self.id = '_'.join(self.stack_ids)
+    self.id = hash_string('_'.join(self.stack_ids))
 
   def store_metadata(self, stacks):
     # TODO: Some of these other kinds of metadata might apply to Targets?

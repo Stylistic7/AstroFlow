@@ -20,7 +20,7 @@ from pix import PixInsight, FileList
 
 
 @PixInsight
-def _post_process_stack(stack):
+def _post_process_stack(stack, dst_filename):
   # TODO: The FileList([...]) is a wart on the API.
   # TODO: Maybe replace ABE with GraXpert?
   images = pix.AutomaticBackgroundExtractor(FileList([stack.master]))
@@ -31,10 +31,7 @@ def _post_process_stack(stack):
   elif stack.rig == 'RC71':
     images = pix.FastRotation(images)
 
-  filename, ext = os.path.splitext(stack.master)
-  stack.post_processed = filename + '_post' + '.xisf'
-
-  pix.SaveImages(images, [stack.post_processed])
+  pix.SaveImages(images, [dst_filename])
   pix.CloseImages(images)
 
 
@@ -56,6 +53,7 @@ def post_process_stack(stack):
   if config.SUCCESS_IF_FILE_EXISTS and os.path.exists(dst_filename):
     print(f'### post_process_stack returning early because '
           f'{dst_filename} already exists.')
+    stack.post_processed = dst_filename
     return dg.Result.SUCCESS
 
   _post_process_stack(stack)

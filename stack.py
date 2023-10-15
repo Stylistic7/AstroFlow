@@ -21,10 +21,14 @@ class FileList(list):
       list.__init__(self, sorted(*args))
 
 
+def hash_string(s):
+  return hashlib.sha256(bytes(s, 'utf-8')).hexdigest()
+
+
 def hash_file_list(x):
   if x == None:
     return None
-  return hashlib.sha256(bytes(str(sorted(x)), 'utf-8')).hexdigest()
+  return hash_string(str(sorted(x)))
 
 
 def _min_footprint(footprints):
@@ -111,11 +115,11 @@ class Stack:
     return hashlib.sha256(bytes(hashes, 'utf-8')).hexdigest()
 
   def store_id(self):
-    self.id = (f'stack_{hash_file_list(self.light_frames)}_'
-               f'{hash_file_list(self.dark_frames)}_'
-               f'{hash_file_list(self.bias_frames)}_'
-               f'{hash_file_list(self.flat_frames)}_'
-               f'{self.hash_flat_frame_associations()}')
+    self.id = hash_string(f'stack_{hash_file_list(self.light_frames)}_'
+                          f'{hash_file_list(self.dark_frames)}_'
+                          f'{hash_file_list(self.bias_frames)}_'
+                          f'{hash_file_list(self.flat_frames)}_'
+                          f'{self.hash_flat_frame_associations()}')
     # print(f'### stored stack id {self.id}')
 
   def footprint_polygon(self):
