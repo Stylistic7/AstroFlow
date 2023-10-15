@@ -4,7 +4,7 @@ from .context import append_task
 from .processes import enum, execute_on_view_ids
 
 _default_parameters = {
-    'ai_file': enum('BlurXTerminator.2.mlpackage'),
+    'ai_file': 'BlurXTerminator.2.mlpackage',
     'correct_only': False,
     'correct_first': False,
     'nonstellar_then_stellar': False,

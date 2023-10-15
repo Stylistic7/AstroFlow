@@ -651,7 +651,7 @@ def make_stack_thumbnails_videos(stacks, plate_solutions, fits_headers):
       executor.submit(image_handling.make_and_cache_stack_thumbnails, stack)
 
 
-@memoize_by_context()
+# @memoize_by_context()
 def group_stacks_into_targets(stacks):
   stacks_for_target = defaultdict(list)
   for filter in ['L', 'R', 'G', 'B', 'S', 'H', 'O']:
@@ -660,7 +660,7 @@ def group_stacks_into_targets(stacks):
 
   targets = [Target(name=k, stack_ids=v) for k, v in stacks_for_target.items()]
   [t.store_metadata(stacks) for t in targets]
-  return targets
+  return {t.id: t for t in targets}
 
 
 # TODO: Why doesn't memoization work here?
@@ -712,34 +712,56 @@ graph = dg.DependencyGraph()
 
 
 def stack_subframes(stack, fits_headers, output_dir):
-  print(f'stack_subframes for stack {stack}')
+  # print(f'stack_subframes for stack {stack.id}')
 
   @graph.add()
   def inner():
-    print(f'### Stacking stack {stack}!')
-    step_flat_frame_association.set_flat_versions(stack, fits_headers)
-    step_stack.run(stack, output_dir)
-
     # TODO: Returning early, because the master file already exists, should
     # be considered dg.Result.DID_NOT_RUN. This should skip flat frame
     # association. So the check should be done HERE, not in step_stack.run().
-
-    return dg.Result.SUCCESS
+    print(f'### Stacking stack {stack}!')
+    return step_stack.run(stack, fits_headers, output_dir)
 
   inner.id = ('stack_subframes', stack.id)
   return inner
 
 
-def post_process_stack(stack, stack_task):
-  print(f'post_process_stack for stack {stack}')
+def post_process_stack(stack, upstream_tasks):
+  # print(f'post_process_stack for stack {stack.id}')
 
-  @graph.add(stack_task)
+  @graph.add(*upstream_tasks)
   def inner():
     print(f'### Post-processing stack {stack}!')
-    step_post_process_stack.post_process_stack(stack)
-    return dg.Result.SUCCESS
+    return step_post_process_stack.post_process_stack(stack)
 
   inner.id = ('post_process_stack', stack.id)
+  return inner
+
+
+def post_process_target(target, stacks, upstream_tasks):
+  # print(f'post_process_target for target {target}')
+
+  @graph.add(*upstream_tasks)
+  def inner():
+    print(f'### Post-processing target {target}!')
+    stacks_for_target = [stacks[id] for id in target.stack_ids]
+    # print(f'Target contains {len(stacks)} stacks')
+    return step_post_process_target.run(stacks_for_target)
+
+  inner.id = ('post_process_target', target.id)
+  return inner
+
+
+def post_process_mosaic(mosaic, targets, stacks, upstream_tasks):
+  # print(f'post_process_mosaic for mosaic {mosaic}')
+
+  @graph.add(*upstream_tasks)
+  def inner():
+    print(f'## Post-processing mosaic {mosaic}!')
+    # TODO: Connect step_mosaic
+    return dg.Result.FAILURE
+
+  inner.id = ('post_process_mosaic', mosaic.id)
   return inner
 
 
@@ -790,11 +812,6 @@ def main(context):
 
   stacks = sanity_check_stacks(stacks, fits_headers)
 
-  # control_modes = {('stack_subframes', '298749827439823'): ControlMode.FORCE}
-  control_modes = {('stack_subframes', stack.id): dg.ControlMode.DISABLED
-                   for stack in stacks if stack.status == Status.NOT_READY}
-  print('### control_modes are', control_modes)
-
   # At this point, the stacks should be fingerprinted. If a stack with the same
   # fingerprint is stored in the cache, we'll load it and use it. Otherwise,
   # the stack will be considered new.
@@ -816,19 +833,34 @@ def main(context):
   cache['targets'] = targets
   cache['mosaics'] = mosaics
 
-  prev_results = cache.get('prev_results', {})
-  print(f'### prev_results are {prev_results}')
-
   # TODO: Consider how to make this multi-threaded.
   with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-    for stack in stacks.values():
-      task = stack_subframes(stack, fits_headers, context.output_dir)
-      task = post_process_stack(stack, task)
+    toplevel_tasks = []
+    for mosaic in mosaics:
+      mosaic_tasks = []
+      for target_id in mosaic.target_ids:
+        target = targets[target_id]
+        target_tasks = []
+        for stack_id in target.stack_ids:
+          stack = stacks[stack_id]
+          task = stack_subframes(stack, fits_headers, context.output_dir)
+          target_tasks.append(post_process_stack(stack, [task]))
+        mosaic_tasks.append(post_process_target(target, stacks, target_tasks))
+      toplevel_tasks.append(
+          post_process_mosaic(mosaic, targets, stacks, mosaic_tasks))
+    print(f'### Created {len(toplevel_tasks)} toplevel tasks')
+
+    # TODO: This is the place to setup control modes, or to read them from the
+    # user interface.
+    # control_modes = {('stack_subframes', '298749827439823'): ControlMode.FORCE}
+    # control_modes = {('stack_subframes', stack.id): dg.ControlMode.DISABLED
+    #                  for stack in stacks if stack.status == Status.NOT_READY}
+    control_modes = {('stack_subframes', s.id): dg.ControlMode.DISABLED
+                     for s in stacks.values() if 'IC1805' not in s.target}
+    print('### control_modes are', control_modes)
 
     print('### Starting execution')
-    results = graph.run(executor, control_modes, prev_results)
-
-    cache['prev_results'] = results
+    results = graph.run(executor, control_modes)
 
   # for stack in stacks.values():
   #   print(f'### Looking at stack {stack}')

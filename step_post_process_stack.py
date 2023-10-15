@@ -13,6 +13,7 @@ from cache import cache
 import plate_solving
 import config
 from stack import Stack
+import dependency_graph as dg
 
 import pix
 from pix import PixInsight, FileList
@@ -21,6 +22,7 @@ from pix import PixInsight, FileList
 @PixInsight
 def _post_process_stack(stack):
   # TODO: The FileList([...]) is a wart on the API.
+  # TODO: Maybe replace ABE with GraXpert?
   images = pix.AutomaticBackgroundExtractor(FileList([stack.master]))
   images = pix.BlurXTerminator(images)
 
@@ -33,11 +35,18 @@ def _post_process_stack(stack):
   stack.post_processed = filename + '_post' + '.xisf'
 
   pix.SaveImages(images, [stack.post_processed])
+  pix.CloseImages(images)
 
 
 def post_process_stack(stack):
+  print(f'### Entering post_process_stack for stack {stack}')
+
+  if not stack.master:
+    return dg.Result.FAILURE
+
   filename, ext = os.path.splitext(stack.master)
-  dst_filename = filename + '_post' + '.fit'
+  dst_filename = filename + '_post' + '.xisf'
+  print(f'### post_process_stack dst_filename {dst_filename}')
 
   if config.TEST_MODE:
     stack.post_processed = dst_filename
@@ -47,6 +56,9 @@ def post_process_stack(stack):
   if config.SUCCESS_IF_FILE_EXISTS and os.path.exists(dst_filename):
     print(f'### post_process_stack returning early because '
           f'{dst_filename} already exists.')
-    return dst_filename
+    return dg.Result.SUCCESS
 
   _post_process_stack(stack)
+
+  # TODO: Return FAILURE if PixInsight task failed for some reason.
+  return dg.Result.SUCCESS

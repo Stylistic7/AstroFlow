@@ -10,6 +10,8 @@ import file_io
 from stack import Stack
 import pix
 from cache import cache
+import dependency_graph as dg
+import step_flat_frame_association
 
 
 def _exposure_time_string(stack):
@@ -19,7 +21,7 @@ def _exposure_time_string(stack):
   return f'{hours:02.0f}h{minutes:02.0f}m'
 
 
-def run(stack, dest_path):
+def run(stack, fits_headers, dest_path):
   def symlink_frames(filenames, dest_path):
     for filename in filenames:
       dest_filename = os.path.join(dest_path, os.path.basename(filename))
@@ -34,6 +36,7 @@ def run(stack, dest_path):
   os.makedirs(output_dir, exist_ok=True)
 
   if config.TEST_MODE:
+    print(f'### step_stack.run returning fake result because TEST_MODE is on')
     dst_filename = os.path.join(
         output_dir,
         f'master_light_{stack.target}_{stack.rig}_{stack.filter}.fit')
@@ -48,13 +51,16 @@ def run(stack, dest_path):
   if config.SUCCESS_IF_FILE_EXISTS and os.path.exists(dst_filename):
     print(f'### step_stack.run returning early because '
           f'{dst_filename} already exists.')
-    return dst_filename
+    stack.master = dst_filename
+    return dg.Result.SUCCESS
 
-  # if os.path.exists(dst_filename):
-  #   print(f'### Stack {stack} master already exists')
-  #   return dst_filename
+  # TODO: Remove these hacks, but replace them with something controllable
+  # from the UI.
+  return dg.Result.DID_NOT_RUN
 
   with tempfile.TemporaryDirectory() as tmp_dir:
+    step_flat_frame_association.set_flat_versions(stack, fits_headers)
+
     symlink_frames(stack.light_frames, tmp_dir)
     symlink_frames(stack.flat_frames, tmp_dir)
     symlink_frames(stack.bias_frames, tmp_dir)
@@ -80,4 +86,4 @@ def run(stack, dest_path):
     print('Stacking produced master', dst_filename)
 
     stack.master = dst_filename
-    return dst_filename
+    return dg.Result.SUCCESS

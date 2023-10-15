@@ -10,7 +10,6 @@ for (let i = 0; i < output_filenames.length; ++i) {{
   console.writeln('Saving view ' + view_ids[i] + ' to filename ' + output_filenames[i]);
   let window = View.viewById(view_ids[i]).window;
   window.saveAs(output_filenames[i], false, false, true, false);
-  window.forceClose();
 }}
 """
 

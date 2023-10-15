@@ -7,7 +7,7 @@ import uuid
 
 @dataclass
 class Mosaic:
-  id: uuid.UUID = field(default_factory=lambda: str(uuid.uuid4()))
+  id: str = None
 
   # TODO: This currently just means "good" or not. Elaborate.
   status: bool = False
@@ -18,10 +18,14 @@ class Mosaic:
   footprint: list[tuple[float]] = None
   viewbox: list[tuple[float]] = None
 
+  # TODO: How to guarantee these are always in the same order?
+  def store_id(self):
+    self.id = '_'.join(self.target_ids)
+
   def store_metadata(self, targets):
     # print('### Entering Mosaic.store_metadata')
     # TODO: Some of these other kinds of metadata might apply to Targets?
-    # self.store_id()
+    self.store_id()
     # self.store_exposure_time_s(fits_headers)
     self.store_center(targets)
     self.store_footprint(targets)
@@ -30,14 +34,12 @@ class Mosaic:
     # self.store_aspect_ratio()
 
   def store_center(self, targets):
-    centers = [t.center for t in targets if t.name in self.target_ids]
+    centers = [targets[id].center for id in self.target_ids]
     mean_center = np.mean(centers, axis=0)
     self.center = list(mean_center)
 
   def store_footprint(self, targets):
-    footprints = [
-        t.footprint_polygon() for t in targets if t.name in self.target_ids
-    ]
+    footprints = [targets[id].footprint_polygon() for id in self.target_ids]
     footprint = functools.reduce(Polygon.union, footprints, footprints[0])
     self.footprint = list(footprint.exterior.coords)
 

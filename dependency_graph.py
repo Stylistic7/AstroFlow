@@ -43,9 +43,9 @@ class DependencyGraph(object):
     return decorator
 
   def should_run(self, f, control_modes, results):
-    # print('### should run, control_modes', control_modes)
+    # TODO: Carefully consider the default value here.
     control_mode = control_modes.get(f.id, ControlMode.AUTO)
-    print(f'should_run {f} has id {f.id} and control mode {control_mode}')
+    print(f'### should_run {f} has id {f.id} and control mode {control_mode}')
 
     if control_mode == ControlMode.DISABLED:
       print(f'### Refusing to run task {f} because it is disabled')
@@ -57,22 +57,27 @@ class DependencyGraph(object):
 
     prev_result = results.get(f.id, Result.DID_NOT_RUN)
 
-    print(f'Task {f.id} is in AUTO')
-    print(f'Its upstream tasks are {self._upstream[f]}')
-    print(f'Its downstream tasks are {self._downstream[f]}')
-    print(f'Its previous result was {prev_result}')
+    # print(f'Task {f.id} is in AUTO')
+    # print(f'Its upstream tasks are {self._upstream[f]}')
+    # print(f'Its downstream tasks are {self._downstream[f]}')
+    # print(f'Its previous result was {prev_result}')
 
     # This task has no upstream tasks to consider.
-    if not self._upstream[f] and prev_result == Result.DID_NOT_RUN:
-      print(f'### Task has no upstream tasks, and has never been run; running')
-      return True
+    if not self._upstream[f]:
+      if prev_result == Result.DID_NOT_RUN:
+        print(f'### Task has no upstream tasks, and has never been run; '
+              f'running')
+        return True
+      else:
+        print(f'### Task has no upstream tasks, and has been run already; '
+              f'not running')
+        return False
 
     # If any of the upstream tasks ran and were successful, then this task
     # needs to be re-run.
-    upstream_results = [
-        results.get(u.id, Result.DID_NOT_RUN) for u in self._upstream[f]
-    ]
-    print('upstream_results', upstream_results)
+    upstream_results = [results[u.id] for u in self._upstream[f]]
+    # print('upstream ids', [u.id for u in self._upstream[f]])
+    # print('upstream_results', upstream_results)
     if any(r == Result.SUCCESS for r in upstream_results):
       print('### At least one upstream task ran and was successful; running')
       return True
@@ -80,17 +85,22 @@ class DependencyGraph(object):
     print('### No upstream tasks ran, or none were successful; not running')
     return False
 
-  def run(self, executor, control_modes, prev_results):
+  def run(self, executor, control_modes):
     """Run tasks respecting the dependencies using an executor."""
+    results = cache.get('prev_results', {})
+    # print(f'### prev_results are {results}')
+
     count_deps = {task: len(deps) for task, deps in self._upstream.items()}
     base_tasks = {task for task, count in count_deps.items() if count == 0}
 
-    results = prev_results
+    # TODO: Should tasks that shouldn't run be excluded entirely from this list?
+    def run_or_no_op(task):
+      if self.should_run(task, control_modes, results):
+        return executor.submit(task)
+      else:
+        return executor.submit(lambda: Result.DID_NOT_RUN)
 
-    future_to_task = {
-        executor.submit(task): task
-        for task in base_tasks if self.should_run(task, control_modes, results)
-    }
+    future_to_task = {run_or_no_op(task): task for task in base_tasks}
     not_done = set(future_to_task.keys())
 
     wait = concurrent.futures.wait
@@ -99,17 +109,20 @@ class DependencyGraph(object):
       done, not_done = wait(not_done, return_when=FIRST_COMPLETED)
       for future in done:
         task = future_to_task[future]
-        results[task.id] = future.result()
+        res = future.result()
+        print(f'### task {task} is done with result {res}; it has '
+              f'{len(self._downstream[task])} downstream tasks')
+        results[task.id] = res
+        cache['prev_results'] = results
         for f in self._downstream[task]:
           count_deps[f] -= 1
           if count_deps[f] == 0:
-            if self.should_run(f, control_modes, results):
-              fut = executor.submit(f)
-              future_to_task[fut] = f
-              not_done.add(fut)
+            fut = run_or_no_op(f)
+            future_to_task[fut] = f
+            not_done.add(fut)
 
     print(f'Task results:')
-    for r in results:
-      print(f'### result {r}')
+    for k, v in results.items():
+      print(f'### task {k} result {v}')
 
     return results

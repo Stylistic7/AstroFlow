@@ -41,7 +41,7 @@ _default_parameters = {
     'replaceTarget':
     True,
     'correctedImageId':
-    '""',
+    '',
     'correctedImageSampleFormat':
     enum('AutomaticBackgroundExtractor.prototype.SameAsTarget'),
     'verboseCoefficients':

@@ -7,7 +7,9 @@ from pathlib import Path
 import pix
 import config
 from cache import cache
+import dependency_graph as dg
 
+# TODO: Remove all of this custom JavaScript
 post_process_script = """
 var P_sa = new StarAlignment;
 P_sa.structureLayers = 5;
@@ -207,7 +209,19 @@ def _post_process_target(stacks):
 
   images = pix.OpenImages(filenames, view_ids)
   images = pix.StarAlignment(images)
+
+  # TODO: Save images here with _registered suffic
+
+  # TODO: StarXTerminator should return two output views for each input view,
+  # the star and starless versions.
   images = pix.StarXTerminator(images)
+
+  # TODO: Save star and starless images
+
+  # TODO: If there are RGB channels, combine them
+  # TODO: If there are RGB channels, run SPCC on them
+
+  # TODO: Save RGB and color-corrected RGB images
 
 
 def run(stacks):
@@ -217,3 +231,6 @@ def run(stacks):
   stacks.insert(0, reference)
 
   _post_process_target(stacks)
+
+  # TODO: Return FAILURE if the PixInsight task failed.
+  return dg.Result.SUCCESS

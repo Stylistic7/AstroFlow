@@ -116,7 +116,7 @@ class Stack:
                f'{hash_file_list(self.bias_frames)}_'
                f'{hash_file_list(self.flat_frames)}_'
                f'{self.hash_flat_frame_associations()}')
-    print(f'### stored stack id {self.id}')
+    # print(f'### stored stack id {self.id}')
 
   def footprint_polygon(self):
     return Polygon(self.footprint)

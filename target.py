@@ -7,7 +7,7 @@ import uuid
 
 @dataclass
 class Target:
-  id: uuid.UUID = field(default_factory=lambda: str(uuid.uuid4()))
+  id: str = None
 
   # TODO: This currently just means "good" or not. Elaborate.
   status: bool = False
@@ -25,9 +25,13 @@ class Target:
   def __repr__(self):
     return (f'Target(name={self.name}, {len(self.stack_ids)} stacks)')
 
+  # TODO: How to guarantee these are always in the same order?
+  def store_id(self):
+    self.id = '_'.join(self.stack_ids)
+
   def store_metadata(self, stacks):
     # TODO: Some of these other kinds of metadata might apply to Targets?
-    # self.store_id()
+    self.store_id()
     # self.store_exposure_time_s(fits_headers)
     self.store_center(stacks)
     self.store_footprint(stacks)
