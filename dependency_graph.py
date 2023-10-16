@@ -61,6 +61,8 @@ class DependencyGraph(object):
       control_modes[f.id] = ControlMode.FORCE
       return True
 
+    # TODO: Must also include *downstream* tasks that are forced!
+
     control_mode = control_modes.get(f.id, DEFAULT_CONTROL_MODE)
     # print(f'### should_run {f} has id {f.id} and control mode {control_mode}')
 

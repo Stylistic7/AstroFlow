@@ -9,189 +9,8 @@ import config
 from cache import cache
 import dependency_graph as dg
 
-# TODO: Remove all of this custom JavaScript
-post_process_script = """
-var P_sa = new StarAlignment;
-P_sa.structureLayers = 5;
-P_sa.noiseLayers = 0;
-P_sa.hotPixelFilterRadius = 1;
-P_sa.noiseReductionFilterRadius = 0;
-P_sa.minStructureSize = 0;
-P_sa.sensitivity = 0.50;
-P_sa.peakResponse = 0.50;
-P_sa.brightThreshold = 3.00;
-P_sa.maxStarDistortion = 0.60;
-P_sa.allowClusteredSources = false;
-P_sa.localMaximaDetectionLimit = 0.75;
-P_sa.upperLimit = 1.000;
-P_sa.invert = false;
-P_sa.distortionModel = "";
-P_sa.undistortedReference = false;
-P_sa.distortionCorrection = true;
-P_sa.distortionMaxIterations = 20;
-P_sa.distortionTolerance = 0.005;
-P_sa.distortionAmplitude = 2;
-P_sa.localDistortion = true;
-P_sa.localDistortionScale = 256;
-P_sa.localDistortionTolerance = 0.050;
-P_sa.localDistortionRejection = 2.50;
-P_sa.localDistortionRejectionWindow = 64;
-P_sa.localDistortionRegularization = 0.010;
-P_sa.matcherTolerance = 0.0500;
-P_sa.ransacTolerance = 2.00;
-P_sa.ransacMaxIterations = 2000;
-P_sa.ransacMaximizeInliers = 1.00;
-P_sa.ransacMaximizeOverlapping = 1.00;
-P_sa.ransacMaximizeRegularity = 1.00;
-P_sa.ransacMinimizeError = 1.00;
-P_sa.maxStars = 0;
-P_sa.fitPSF = StarAlignment.prototype.FitPSF_DistortionOnly;
-P_sa.psfTolerance = 0.50;
-P_sa.useTriangles = false;
-P_sa.polygonSides = 5;
-P_sa.descriptorsPerStar = 20;
-P_sa.restrictToPreviews = true;
-P_sa.intersection = StarAlignment.prototype.MosaicOnly;
-P_sa.useBrightnessRelations = false;
-P_sa.useScaleDifferences = false;
-P_sa.scaleTolerance = 0.100;
-P_sa.referenceImage = "";
-P_sa.referenceIsFile = false;
-P_sa.targets = [];
-P_sa.inputHints = "";
-P_sa.outputHints = "";
-P_sa.mode = StarAlignment.prototype.RegisterMatch;
-P_sa.writeKeywords = true;
-P_sa.generateMasks = false;
-P_sa.generateDrizzleData = true;
-P_sa.generateDistortionMaps = false;
-P_sa.inheritAstrometricSolution = true;
-P_sa.frameAdaptation = false;
-P_sa.randomizeMosaic = false;
-P_sa.noGUIMessages = true;
-P_sa.useSurfaceSplines = true;
-P_sa.extrapolateLocalDistortion = true;
-P_sa.splineSmoothness = 0.050;
-P_sa.pixelInterpolation = StarAlignment.prototype.Auto;
-P_sa.clampingThreshold = 0.30;
-P_sa.outputDirectory = "";
-P_sa.outputExtension = ".xisf";
-P_sa.outputPrefix = "";
-P_sa.outputPostfix = "_r";
-P_sa.maskPostfix = "_m";
-P_sa.distortionMapPostfix = "_dm";
-P_sa.outputSampleFormat = StarAlignment.prototype.SameAsTarget;
-P_sa.overwriteExistingFiles = false;
-P_sa.onError = StarAlignment.prototype.Continue;
-P_sa.useFileThreads = true;
-P_sa.fileThreadOverload = 1.00;
-P_sa.maxFileReadThreads = 0;
-P_sa.maxFileWriteThreads = 0;
-P_sa.memoryLoadControl = true;
-P_sa.memoryLoadLimit = 0.85;
-/*
- * Read-only properties
- *
-P_sa.outputData = [ // outputImage, outputMask, totalPairMatches, inliers, overlapping, regularity, quality, rmsError, rmsErrorDev, peakErrorX, peakErrorY, H11, H12, H13, H21, H22, H23, H31, H32, H33, frameAdaptationBiasRK, frameAdaptationBiasG, frameAdaptationBiasB, frameAdaptationSlopeRK, frameAdaptationSlopeG, frameAdaptationSlopeB, frameAdaptationAvgDevRK, frameAdaptationAvgDevG, frameAdaptationAvgDevB, referenceStarX, referenceStarY, targetStarX, targetStarY, totalLocalDistortionMatches, referenceLocalDistortionX, referenceLocalDistortionY, targetLocalDistortionX, targetLocalDistortionY, targetLocalDistortionDX, targetLocalDistortionDY, localDistortionWeights, outputDistortionMap, localDistortionMinDeltaX, localDistortionMinDeltaY, localDistortionMaxDeltaX, localDistortionMaxDeltaY
-];
- */
 
-var P_sxt = new StarXTerminator;
-P_sxt.ai_file = "/Applications/PixInsight/library/StarXTerminator.11.mlmodel";
-P_sxt.stars = true;
-P_sxt.unscreen = true;
-P_sxt.overlap = 0.50;
-
-// Open all the files. Store their ImageWindow objects in an array. Element 0 is the
-// reference image.
-var input_filenames = {input_filenames};
-var output_path = "{output_path}";
-var output_ids = {output_ids};
-
-var windows = [];
-for (let i = 0; i < input_filenames.length; ++i) {{
-  let w = ImageWindow.open(input_filenames[i]);
-  w[0].show();
-  windows.push(w[0]);
-}}
-
-// Run StarAlignment on images 1-N, with 0 as the reference.
-if (windows.length > 1) {{
-  P_sa.referenceImage = windows[0].currentView.id;
-  let targets = [];
-  for (let i = 1; i < windows.length; ++i) {{
-    targets.push([true, false, windows[i].currentView.id]);
-  }}
-  P_sa.targets = targets;
-}}
-P_sa.executeGlobal();
-
-// Rename all the registered images to the desired output ids.
-console.writeln('rename view ', windows[0].currentView.id, ' to ', output_ids[0]);
-windows[0].currentView.id = output_ids[0];
-for (let i = 0; i < P_sa.outputData.length; ++i) {{
-  console.writeln('star alignment output', i, P_sa.outputData[i]);
-  console.writeln('rename view ', P_sa.outputData[i][0], ' to ', output_ids[i + 1]);
-  View.viewById(P_sa.outputData[i][0]).id = output_ids[i + 1];
-}}
-
-// Save all of the images.
-for (let i = 0; i < output_ids.length; ++i) {{
-  let view_id = output_ids[i];
-  let window = View.viewById(view_id).window;
-  window.saveAs(output_path + "/" + view_id + ".xisf", false, false, true, false);
-}}
-
-
-// TODO Combine RGB images, ImageSolve, run SPCC
-// These color images will be added to the list of output_ids.
-
-/*
-if (rgb_channels.length) {{
-  P_cc.channels = rgb_channels;
-  P_cc.executeGlobal();
-  let view = ImageWindow.activeWindow.currentView;
-  let view_id = 'RGB';
-  view.id = view_id;
-  output_ids.push(view_id);
-
-  P_solver.executeGlobal();
-  P_spcc.executeOn(view);
-
-  let window = View.viewById(view_id).window;
-  window.saveAs(output_path + "/" + view_id + ".xisf", false, false, true, false);
-}}
-*/
-
-// Run SXT on all images.
-for (let i = 0; i < output_ids.length; ++i) {{
-  let view_id = output_ids[i];
-  P_sxt.executeOn(View.viewById(view_id));
-}}
-
-// Rename the base images to _starless.
-for (let i = 0; i < output_ids.length; ++i) {{
-  let view_id = output_ids[i];
-  let view_id_starless = output_ids[i] + "_starless";
-  console.writeln('Renaming view ', view_id, ' to ', view_id_starless);
-  View.viewById(view_id).id = view_id_starless;
-}}
-
-// Save all images.
-for (let i = 0; i < output_ids.length; ++i) {{
-  let view_id = output_ids[i] + "_starless";
-  let window = View.viewById(view_id).window;
-  window.saveAs(output_path + "/" + view_id + ".xisf", false, false, true, false);
-  window.forceClose();
-
-  view_id = output_ids[i] + "_stars";
-  window = View.viewById(view_id).window;
-  window.saveAs(output_path + "/" + view_id + ".xisf", false, false, true, false);
-  window.forceClose();
-}}
-"""
-
-
+# TODO: Move this into the StarAlignment code?
 def find_reference(stacks):
   for best_rig in ['C11_F7', 'C11', 'RC71', 'TestRig']:
     for best_filter in ['H', 'O', 'S', 'L', 'G', 'R', 'B']:
@@ -207,21 +26,56 @@ def _post_process_target(stacks):
   print(f'### filenames {filenames}')
   print(f'### view_ids {view_ids}')
 
-  images = pix.OpenImages(filenames, view_ids)
-  images = pix.StarAlignment(images)
+  dir_name = os.path.dirname(filenames[0])
 
-  # TODO: Save images here with _registered suffic
+  # TODO: Automatically assign view ids by filter.
+  view_ids = pix.OpenImages(filenames, view_ids)
+  registered_view_ids = pix.StarAlignment(view_ids)
 
-  # TODO: StarXTerminator should return two output views for each input view,
-  # the star and starless versions.
-  images = pix.StarXTerminator(images)
+  # TODO: Automatically assign view ids to filenames.
+  registered_filenames = [
+      os.path.join(dir_name, f'{s.filter}_registered.xisf') for s in stacks
+  ]
+  pix.SaveImages(registered_view_ids, registered_filenames)
 
-  # TODO: Save star and starless images
+  # TODO: ViewIdList is leaking out of the API everywhere.
+  # TODO: The "vision" that abstracts views and filenames is really not
+  # working here at all.
+  if all(c in view_ids for c in 'RGB'):
+    registered_rgb_view_ids = pix.ViewIdList(
+        ['R_registered', 'G_registered', 'B_registered'])
+    rgb = pix.ChannelCombination(registered_rgb_view_ids, 'RGB')
+    # TODO: Automatically assign view ids to filenames.
+    rgb_filename = os.path.join(dir_name, 'RGB.xisf')
+    rgb = pix.SaveImages(rgb, pix.FileList([rgb_filename]))
+    pix.CloseImages(registered_rgb_view_ids)
 
-  # TODO: If there are RGB channels, combine them
-  # TODO: If there are RGB channels, run SPCC on them
+    rgb = pix.ImageSolver(rgb)
+    rgb = pix.SpectrophotometricColorCalibration(rgb)
+    rgb_filename = os.path.join(dir_name, 'RGB_SPCC.xisf')
+    pix.SaveImages(rgb, pix.FileList([rgb_filename]))
 
-  # TODO: Save RGB and color-corrected RGB images
+    registered_view_ids = pix.ViewIdList(
+        [r for r in registered_view_ids if r not in registered_rgb_view_ids])
+    registered_view_ids.append('RGB')
+
+  print('### registered_view_ids', registered_view_ids)
+  stars_view_ids = pix.StarXTerminator(registered_view_ids)
+
+  # These filenames are wrong, because I'm no longer using all of the stacks.
+  # The RGB images have been combined.
+  stars_filenames = [
+      os.path.join(dir_name, f'{v}.xisf') for v in stars_view_ids
+  ]
+  pix.SaveImages(stars_view_ids, stars_filenames)
+
+  starless_filenames = [
+      os.path.join(dir_name, f'{v}_starless.xisf') for v in registered_view_ids
+  ]
+  pix.SaveImages(registered_view_ids, starless_filenames)
+
+  # TODO: The ViewIdList is a wart on the API.
+  pix.CloseAllWindows(pix.ViewIdList([]))
 
 
 def run(stacks):

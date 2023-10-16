@@ -87,17 +87,40 @@ _default_parameters = {
 # outputData will contain:
 # outputImage, outputMask, totalPairMatches, inliers, overlapping, regularity, quality, rmsError, rmsErrorDev, peakErrorX, peakErrorY, H11, H12, H13, H21, H22, H23, H31, H32, H33, frameAdaptationBiasRK, frameAdaptationBiasG, frameAdaptationBiasB, frameAdaptationSlopeRK, frameAdaptationSlopeG, frameAdaptationSlopeB, frameAdaptationAvgDevRK, frameAdaptationAvgDevG, frameAdaptationAvgDevB, referenceStarX, referenceStarY, targetStarX, targetStarY, totalLocalDistortionMatches, referenceLocalDistortionX, referenceLocalDistortionY, targetLocalDistortionX, targetLocalDistortionY, targetLocalDistortionDX, targetLocalDistortionDY, localDistortionWeights, outputDistortionMap, localDistortionMinDeltaX, localDistortionMinDeltaY, localDistortionMaxDeltaX, localDistortionMaxDeltaY
 
+_rename_reference_view = """
+View.viewById("{old_view_id}").id = "{new_view_id}";
+"""
+
+_close_views = """
+var view_ids = {view_ids};
+
+for (let i = 0; i < view_ids.length; ++i) {{
+  let window = View.viewById(view_ids[i]).window;
+  window.forceClose();
+}}
+"""
+
 
 # TODO: The reference image is the first view_id, but this is not obvious.
 @accepts_view_ids
-def StarAlignment(view_ids, **kwargs):
+def StarAlignment(view_ids, close_originals=True, **kwargs):
   parameters = _default_parameters | kwargs
   parameters['referenceImage'] = view_ids[0]
 
+  # TODO: This is horrifically ugly.
   targets = [f'[true, false, "{v}"]' for v in view_ids[1:]]
   parameters['targets'] = enum(f'[{", ".join(targets)}]')
 
   append_task(
       ShellScriptTask(javascript=execute_global('StarAlignment', parameters)))
 
-  return ViewIdList(view_ids)
+  rename_reference_view = _rename_reference_view.format(
+      old_view_id=view_ids[0], new_view_id=view_ids[0] + '_registered')
+  append_task(ShellScriptTask(javascript=rename_reference_view))
+
+  if close_originals:
+    close_views = _close_views.format(view_ids=view_ids[1:])
+    append_task(ShellScriptTask(javascript=close_views))
+
+  output_view_ids = [v + '_registered' for v in view_ids]
+  return ViewIdList(output_view_ids)

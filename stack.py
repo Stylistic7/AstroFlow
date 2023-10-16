@@ -1,3 +1,4 @@
+import os
 import time
 import numpy as np
 from dataclasses import dataclass, field
@@ -41,23 +42,10 @@ def _min_footprint(footprints):
           [min_ra, max_dec]]
 
 
-# def _get_plate_solutions(light_frames):
-#   return {
-#       k: v
-#       for k, v in cache['plate_solutions'].items() if k in light_frames
-#   }
-
-
-# TODO: Remoe status from this module; it's poor separation of concerns.
-# The Stack object just defines the files and flat frame associations that
-# go into a stack. Other code keeps track of its status, readiness, etc.
 @unique
 class Status(str, Enum):
   NOT_READY: str = "NOT_READY"
   READY: str = "READY"
-  IN_PROGRESS: str = "IN_PROGRESS"
-  FAILURE: str = "FAILURE"
-  SUCCESS: str = "SUCCESS"
 
 
 @dataclass
@@ -65,8 +53,6 @@ class Stack:
   id: str = None
 
   status: Status = Status.NOT_READY
-
-  enable: bool = False
 
   target: str = None
   rig: str = None
@@ -90,8 +76,16 @@ class Stack:
 
   best_light_frame: str = None
 
+  # TODO: Implement a way to get post-processed filenames, like "_starless",
+  # from the single master filename. Otherwise, we have to pollute this class
+  # with filenames.
   master: str = None
   post_processed: str = None
+
+  def append_suffix(self, suffix):
+    assert self.master
+    filename, ext = os.path.splitext(self.master)
+    return f'{filename}_{suffix}{ext}'
 
   def store_metadata(self, fits_headers, plate_solutions):
     self.store_id()

@@ -8,6 +8,7 @@ from .decorators import PixInsight
 from .context import append_task, get_next_process_number, get_tmp_dir
 from .open_images import OpenImages
 from .save_images import SaveImages
+from .rename_most_recent_view import RenameMostRecentView
 from .close_images import CloseImages
 from .close_all_windows import CloseAllWindows
 from .image_solver import ImageSolver
@@ -20,3 +21,5 @@ from .star_alignment import StarAlignment
 from .integer_resample import IntegerResample
 from .fast_rotation import FastRotation
 from .photometric_mosaic import PhotometricMosaic
+from .channel_combination import ChannelCombination
+from .spectrophotometric_color_calibration import SpectrophotometricColorCalibration

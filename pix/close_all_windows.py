@@ -1,4 +1,4 @@
-from .classes import ShellScriptTask, FileList
+from .classes import ShellScriptTask, ViewIdList
 from .decorators import accepts_view_ids
 from .context import append_task
 
@@ -12,6 +12,6 @@ for (var i = 0; i < windows.length; i++) {{
 
 # TODO: None should be a valid return type.
 @accepts_view_ids
-def CloseAllWindows(inputs, **kwargs):
+def CloseAllWindows(inputs=ViewIdList([]), **kwargs):
   append_task(ShellScriptTask(javascript=_javascript))
-  return FileList([])
+  return ViewIdList([])
