@@ -857,8 +857,10 @@ def main(context):
     # control_modes = {('stack_subframes', '298749827439823'): ControlMode.FORCE}
     # control_modes = {('stack_subframes', stack.id): dg.ControlMode.DISABLED
     #                  for stack in stacks if stack.status == Status.NOT_READY}
+    # control_modes = {('stack_subframes', s.id): dg.ControlMode.FORCE
+    #                  for s in stacks.values() if 'IC1805' in s.target}
     control_modes = {('stack_subframes', s.id): dg.ControlMode.FORCE
-                     for s in stacks.values() if 'IC1805' in s.target}
+                     for s in stacks.values()}
     print('### control_modes are', control_modes)
 
     print('### Starting execution')

@@ -10,13 +10,18 @@ from cache import cache
 import dependency_graph as dg
 
 
-# TODO: Move this into the StarAlignment code?
-def find_reference(stacks):
-  for best_rig in ['C11_F7', 'C11', 'RC71', 'TestRig']:
-    for best_filter in ['H', 'O', 'S', 'L', 'G', 'R', 'B']:
-      for stack in stacks:
-        if stack.rig == best_rig and stack.filter == best_filter:
-          return stack
+# TODO: This is super-specific to my particular setup. If there's confusion about
+# which color channels to use, inform the user and stop.
+def order_stacks(stacks):
+  ordered_stacks = []
+  for filter in ['H', 'S', 'O', 'L', 'G', 'R', 'B']:
+    for rig in ['C11_F7', 'C11', 'RC71', 'TestRig']:
+      matching_stack = next(
+          (s for s in stacks if s.filter == filter and s.rig == rig), None)
+      if matching_stack:
+        ordered_stacks.append(matching_stack)
+
+  return ordered_stacks
 
 
 @pix.PixInsight
@@ -79,12 +84,7 @@ def _post_process_target(stacks):
 
 
 def run(stacks):
-  reference = find_reference(stacks)
-  print('found reference', reference)
-  stacks.remove(reference)
-  stacks.insert(0, reference)
-
-  _post_process_target(stacks)
+  _post_process_target(order_stacks(stacks))
 
   # TODO: Return FAILURE if the PixInsight task failed.
   return dg.Result.SUCCESS
