@@ -34,7 +34,7 @@ _default_parameters = {
     'limitMagnitude': 12.00,
     'autoLimitMagnitude': True,
     'targetSourceCount': 8000,
-    'psfStructureLayers': 5,
+    'psfStructureLayers': 8,
     'saturationThreshold': 0.75,
     'saturationRelative': True,
     'saturationShrinkFactor': 0.10,
