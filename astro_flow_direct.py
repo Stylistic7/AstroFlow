@@ -740,15 +740,13 @@ def post_process_stack(stack, upstream_tasks):
   return inner
 
 
-def post_process_target(target, stacks, upstream_tasks):
+def post_process_target(target, stacks, output_dir, upstream_tasks):
   # print(f'post_process_target for target {target}')
 
   @graph.add(*upstream_tasks)
   def inner():
     print(f'### Post-processing target {target}!')
-    stacks_for_target = [stacks[id] for id in target.stack_ids]
-    # print(f'Target contains {len(stacks)} stacks')
-    return step_post_process_target.run(stacks_for_target)
+    return step_post_process_target.run(target, stacks, output_dir)
 
   inner.id = ('post_process_target', target.id)
   return inner
@@ -847,7 +845,9 @@ def main(context):
           stack = stacks[stack_id]
           task = stack_subframes(stack, fits_headers, context.output_dir)
           target_tasks.append(post_process_stack(stack, [task]))
-        mosaic_tasks.append(post_process_target(target, stacks, target_tasks))
+        mosaic_tasks.append(
+            post_process_target(target, stacks, context.output_dir,
+                                target_tasks))
       toplevel_tasks.append(
           post_process_mosaic(mosaic, targets, stacks, mosaic_tasks))
     print(f'### Created {len(toplevel_tasks)} toplevel tasks')
@@ -859,8 +859,9 @@ def main(context):
     #                  for stack in stacks if stack.status == Status.NOT_READY}
     # control_modes = {('stack_subframes', s.id): dg.ControlMode.FORCE
     #                  for s in stacks.values() if 'IC1805' in s.target}
-    control_modes = {('stack_subframes', s.id): dg.ControlMode.FORCE
-                     for s in stacks.values()}
+    # control_modes = {('stack_subframes', s.id): dg.ControlMode.FORCE
+    #                  for s in stacks.values()}
+    control_modes = {}
     print('### control_modes are', control_modes)
 
     print('### Starting execution')

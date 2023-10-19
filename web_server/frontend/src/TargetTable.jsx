@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import EnhancedTable from "@jeremyling/react-material-ui-enhanced-table";
-import { amber, green, indigo, lightGreen, red } from "@mui/material/colors";
+import { amber, green, blue, indigo, lightGreen, red } from "@mui/material/colors";
 import { Block, MoveToInbox, DriveFileMove } from "@mui/icons-material";
 import StackTable from "./StackTable.jsx";
 
@@ -68,7 +68,7 @@ export default function Targets(props) {
             if (stack) {
               // TODO: Assert stack
               // TODO: Sort images by filter
-              let stack_thumbnail_image_url = `/stack_thumbnail_image/${stack.target}/${stack.rig}/${stack.filter}`;
+              let stack_thumbnail_image_url = `/stack_thumbnail_image/${stack.id}`;
               output.push(
                 <div class="image-container" style={{margin: '2px'}}>
                     <img src={stack_thumbnail_image_url} width="100px"/>
@@ -82,16 +82,19 @@ export default function Targets(props) {
       },
       stopPropagation: true,
     },
-    // {
-    //   key: "status",
-    //   attribute: "status",
-    //   label: "Status",
-    //   chip: true,
-    //   chipColor: {
-    //     "In Progress": [amber[50], amber[200]],
-    //     Completed: [green[50], green[200]],
-    //   },
-    // },
+    {
+      key: "status",
+      attribute: "status",
+      label: "Status",
+      chip: true,
+      chipColor: {
+        "NOT_READY": [amber[50], amber[200]],
+        "READY": [green[50], green[200]],
+        "IN_PROGRESS": [blue[50], blue[200]],
+        "FAILURE": [red[50], red[200]],
+        "SUCCESS": [green[50], green[200]],
+      },
+    },
     // {
     //   attribute: "updated_at",
     //   datetime: true,
@@ -158,7 +161,7 @@ export default function Targets(props) {
   const collapseContent = () => {
     if (targets) {
       return targets.map((target) => (
-        <StackTable key="{target.name}" stack_ids={target.stack_ids} />
+        <StackTable key="{target.id}" stack_ids={target.stack_ids} />
       ));
     }
   };

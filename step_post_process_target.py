@@ -20,18 +20,19 @@ def order_stacks(stacks):
           (s for s in stacks if s.filter == filter and s.rig == rig), None)
       if matching_stack:
         ordered_stacks.append(matching_stack)
+        break
 
   return ordered_stacks
 
 
 @pix.PixInsight
-def _post_process_target(stacks):
+def _post_process_target(target, stacks, dest_path):
   filenames = pix.FileList(s.post_processed for s in stacks)
   view_ids = pix.ViewIdList(s.filter for s in stacks)
   print(f'### filenames {filenames}')
   print(f'### view_ids {view_ids}')
 
-  dir_name = os.path.dirname(filenames[0])
+  dir_name = os.path.join(dest_path, 'Targets', target.name)
 
   # TODO: Automatically assign view ids by filter.
   view_ids = pix.OpenImages(filenames, view_ids)
@@ -83,8 +84,18 @@ def _post_process_target(stacks):
   pix.CloseAllWindows(pix.ViewIdList([]))
 
 
-def run(stacks):
-  _post_process_target(order_stacks(stacks))
+def run(target, stacks, dest_path):
+  if len(target.stack_ids) < 2:
+    print(f'### Skipping target because it has only '
+          f'{len(target.stack_ids)} stacks')
+    return dg.Result.FAILURE
+
+  if any(stacks[s].post_processed == None for s in target.stack_ids):
+    print(f'### Skipping target because some post-processed images are missing')
+    return dg.Result.FAILURE
+
+  ordered_stacks = order_stacks([stacks[id] for id in target.stack_ids])
+  _post_process_target(target, ordered_stacks, dest_path)
 
   # TODO: Return FAILURE if the PixInsight task failed.
   return dg.Result.SUCCESS

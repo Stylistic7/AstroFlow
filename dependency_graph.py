@@ -27,7 +27,8 @@ class Result(Enum):
 # Users will generally want to pick which images they stack and process first,
 # so the default control mode is DISABLED. Users will have to explicitly time-
 # consuming tasks.
-DEFAULT_CONTROL_MODE = ControlMode.DISABLED
+# TODO: Let users pick tasks in the GUI.
+DEFAULT_CONTROL_MODE = ControlMode.AUTO
 
 
 class DependencyGraph(object):

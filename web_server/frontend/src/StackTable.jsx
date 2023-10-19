@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import EnhancedTable from "@jeremyling/react-material-ui-enhanced-table";
-import { amber, green, indigo, lightGreen, red } from "@mui/material/colors";
+import { amber, green, blue, indigo, lightGreen, red } from "@mui/material/colors";
 import { Block, MoveToInbox } from "@mui/icons-material";
+import { Chip, Stack } from '@mui/material';
 
 function exposure_time_string(exposure_time_s) {
   let hours = Math.floor(exposure_time_s / 3600)
@@ -94,7 +95,7 @@ export default function Stacks(props) {
       label: "Raw Blink Video",
       component: (data) => (
         <video width="300" loop autoPlay muted style={style_for_filter(data.filter)}>
-          <source src={`/stack_thumbnail_video/${data.target}/${data.rig}/${data.filter}`} type="video/mp4" />
+          <source src={`/stack_thumbnail_video/${data.id}`} type="video/mp4" />
           Your browser does not support the video tag.
         </video>
       ),
@@ -105,6 +106,17 @@ export default function Stacks(props) {
       label: "Stacked",
       component: (data) => (
         <img src={`/stack_master_image/${data.id}`} alt={data.name} width="300px" loading="lazy" />
+      ),
+      stopPropagation: true,
+    },
+    {
+      key: "status",
+      label: "Status",
+      component: (data) => (
+        <Stack direction="column" spacing={1}>
+          <Chip label="primary" color="primary" />
+          <Chip label="success" color="success" />
+        </Stack>
       ),
       stopPropagation: true,
     },

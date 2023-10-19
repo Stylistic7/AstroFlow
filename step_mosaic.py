@@ -349,8 +349,9 @@ def run(targets, plot=False):
       output_mosaic = Mosaic()
       output_mosaic.target_ids = [t.id for t in mosaic]
       output_mosaic.store_metadata(targets)
-      output_mosaic.id = position_string.canonical_target_string(
+      output_mosaic.name = position_string.canonical_target_string(
           output_mosaic.center)
+      print(f'Mosaic has name {output_mosaic.name} and id {output_mosaic.id}')
 
       output_mosaics.append(output_mosaic)
     except Exception as e:

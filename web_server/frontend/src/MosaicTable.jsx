@@ -48,7 +48,7 @@ export default function Mosaics(props) {
       key: "collapse",
       collapse: true,
     },
-    { key: "name", attribute: "id", label: "Mosaic" },
+    { key: "name", attribute: "name", label: "Mosaic" },
     // {
     //   key: "image",
     //   label: "Thumbnails",
@@ -146,9 +146,7 @@ export default function Mosaics(props) {
     return mosaics.map((mosaic) => {
       let polygons = [];
       for (let target_id of mosaic.target_ids) {
-        let target = targets.find(function (element) {
-          return element.name == target_id;
-        });
+        let target = targets[target_id];
         if (!target) continue;
 
         let points_string = target.footprint.join(' ');

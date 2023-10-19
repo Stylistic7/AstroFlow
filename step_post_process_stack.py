@@ -77,25 +77,26 @@ def post_process_stack(stack):
   if len(image.shape) == 2:
     image = np.expand_dims(image, 2)
 
-  # background_points = background_grid_selection.background_grid_selection(
-  #     image, num_pts_per_row=15, tol=1.0, sample_size=25)
-  # print('### GraXpert returned background_points', background_points)
+  background_points = background_grid_selection.background_grid_selection(
+      image, num_pts_per_row=30, tol=1.5, sample_size=25)
+  print('### GraXpert returned background_points', background_points)
 
   background = background_extraction.extract_background(
       image,
-      [],  # np.array(background_points),
-      interpolation_type='AI',
+      np.array(background_points),
+      interpolation_type='Kriging',
       smoothing=0.0,
-      downscale_factor=1,
-      sample_size=50,
-      RBF_kernel='RBF',
-      spline_order=0,
+      downscale_factor=4,
+      sample_size=25,
+      RBF_kernel='thin_plate',
+      spline_order=5,
       corr_type='Subtraction',
       AI_dir='/Users/nobody/Projects/Astro/GraXpert/bg_model')
   print(f'### After GraXpert, image has shape {image.shape} '
         f'type {image.dtype} min {np.min(image)} max {np.max(image)}')
   print(f'### GraXpert background image has min {np.min(background)} '
         f'max {np.max(background)}')
+  assert np.min(background) != 0.0 and np.max(background) != 0.0
 
   filename, ext = os.path.splitext(stack.master)
   graxpert_filename = filename + '_graxpert' + '.xisf'

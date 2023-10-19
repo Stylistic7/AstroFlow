@@ -13,6 +13,8 @@ def hash_string(s):
 class Mosaic:
   id: str = None
 
+  name: str = None
+
   # TODO: This currently just means "good" or not. Elaborate.
   status: bool = False
 

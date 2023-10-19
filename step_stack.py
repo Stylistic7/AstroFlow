@@ -32,7 +32,7 @@ def run(stack, fits_headers, dest_path):
 
   print(f'### Entering step_stack.run() for stack {stack}')
 
-  output_dir = os.path.join(dest_path, stack.target, 'masters')
+  output_dir = os.path.join(dest_path, 'Stacks', stack.target, 'masters')
   os.makedirs(output_dir, exist_ok=True)
 
   if config.TEST_MODE:
@@ -56,6 +56,7 @@ def run(stack, fits_headers, dest_path):
 
   # TODO: Remove these hacks, but replace them with something controllable
   # from the UI.
+  print(f'### Returning DID_NOT_RUN due to override in code')
   return dg.Result.DID_NOT_RUN
 
   with tempfile.TemporaryDirectory() as tmp_dir:

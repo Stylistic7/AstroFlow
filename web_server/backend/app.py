@@ -154,7 +154,8 @@ def stacks():
 
 @app.route('/targets_for_mosaic/<mosaic_id>')
 def targets_for_mosaic(mosaic_id):
-  mosaic = next(m for m in cache['mosaics'] if m.id == mosaic_id)
+  # mosaic = next(m for m in cache['mosaics'] if m.id == mosaic_id)
+  mosaic = cache['mosaics'][mosaic_id]
   return [t for t in cache['targets'] if t.name in mosaic.target_ids]
 
 
@@ -167,14 +168,16 @@ def stacks_for_target(target):
 def target(target_id):
   targets = test_app.targets if debug else cache['targets']
   print(f"Looking for target_id '{target_id}'")
-  return asdict(next(t for t in targets if t.name == target_id))
+  # return asdict(next(t for t in targets if t.name == target_id))
+  return asdict(targets[target_id])
 
 
 @app.route('/target_polygon_points/<target_id>')
 def target_polygon_points(target_id):
   targets = test_app.targets if debug else cache['targets']
   print(f"Looking for target_id '{target_id}'")
-  target = next(t for t in targets if t.name == target_id)
+  # target = next(t for t in targets if t.name == target_id)
+  target = targets[target_id]
   return ' '.join([','.join([str(x) for x in pt]) for pt in target.footprint])
 
 
@@ -185,25 +188,32 @@ def stack(stack_id):
   return asdict(stacks[stack_id])
 
 
-@app.route('/stack_thumbnail_image/<target>/<rig>/<filter>')
-def stack_thumbnail_image(target, rig, filter):
+@app.route('/stack_thumbnail_image/<stack_id>')
+def stack_thumbnail_image(stack_id):
   buffer = io.BytesIO()
-  buffer.write(cache[('stack_thumbnail_image', target, rig, filter)])
+  buffer.write(cache[('stack_thumbnail_image', stack_id)])
   buffer.seek(0)
   return flask.send_file(buffer, mimetype='image/png')
 
 
-@app.route('/stack_thumbnail_video/<target>/<rig>/<filter>')
-def stack_thumbnail_video(target, rig, filter):
+@app.route('/stack_thumbnail_video/<stack_id>')
+def stack_thumbnail_video(stack_id):
   buffer = io.BytesIO()
-  buffer.write(cache[('stack_thumbnail_video', target, rig, filter)])
+  buffer.write(cache[('stack_thumbnail_video', stack_id)])
   buffer.seek(0)
   return flask.send_file(buffer, mimetype='video/webm')
 
 
 @app.route('/stack_master_image/<stack_id>')
 def stack_master_image(stack_id):
-  stack = next(s for s in cache['stacks'] if s.id == stack_id)
+  # stack = next(s for s in cache['stacks'] if s.id == stack_id)
+  stack = cache['stacks'][stack_id]
+
+  if not stack:
+    print(f'### did not get stack for {stack_id}')
+  else:
+    print(f'### got stack for {stack_id}')
+
   if stack.master and os.path.exists(stack.master):
     image = image_handling._read_image(stack.master)
     image = image_handling.resize_array(image, new_width=640)
@@ -229,9 +239,11 @@ quarantine_dir = "/Users/nobody/Projects/Astro/Raw/Bad/"
 
 @app.route('/delete_target/<target_id>')
 def delete_target(target_id):
-  target = next(t for t in cache['targets'] if t.id == target_id)
+  # target = next(t for t in cache['targets'] if t.id == target_id)
+  target = cache['targets'][target_id]
   for stack_id in target.stack_ids:
-    stack = next(s for s in cache['stacks'] if s.id == stack_id)
+    # stack = next(s for s in cache['stacks'] if s.id == stack_id)
+    stack = cache['stacks'][stack_id]
     for filename in stack.light_frames:
       print(f'### Quarantining file {filename}')
       shutil.move(filename, quarantine_dir)
