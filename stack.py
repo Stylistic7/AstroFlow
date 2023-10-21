@@ -48,7 +48,7 @@ class Status(str, Enum):
   READY: str = "READY"
 
 
-@dataclass
+@dataclass(order=True)
 class Stack:
   id: str = None
 
@@ -81,6 +81,9 @@ class Stack:
   # with filenames.
   master: str = None
   post_processed: str = None
+
+  def __post_init__(self):
+    self.sort_index = self.target
 
   def append_suffix(self, suffix):
     assert self.master

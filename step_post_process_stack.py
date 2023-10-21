@@ -49,6 +49,7 @@ def post_process_stack(stack):
   print(f'### Entering post_process_stack for stack {stack}')
 
   if not stack.master:
+    print('### post_process_stack stack.master is None')
     return dg.Result.FAILURE
 
   filename, ext = os.path.splitext(stack.master)

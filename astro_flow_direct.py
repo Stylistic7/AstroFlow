@@ -719,10 +719,14 @@ def stack_subframes(stack, fits_headers, output_dir):
   @graph.add()
   def inner():
     # TODO: Returning early, because the master file already exists, should
-    # be considered dg.Result.DID_NOT_RUN. This should skip flat frame
+    # be considered dg.Result.NEVER_RUN. This should skip flat frame
     # association. So the check should be done HERE, not in step_stack.run().
+    #
+    # TODO: If the stack has Status.NOT_READY, don't call step_stack.run().
     print(f'### Stacking stack {stack}!')
-    return step_stack.run(stack, fits_headers, output_dir)
+    result = step_stack.run(stack, fits_headers, output_dir)
+    print(f'### step_stack.run returned {result}')
+    return result
 
   inner.id = ('stack_subframes', stack.id)
   return inner
@@ -861,11 +865,22 @@ def main(context):
     #                  for s in stacks.values() if 'IC1805' in s.target}
     # control_modes = {('stack_subframes', s.id): dg.ControlMode.FORCE
     #                  for s in stacks.values()}
-    control_modes = {}
+    control_modes = {('stack_subframes', s.id): dg.ControlMode.FORCE
+                     for s in stacks.values()}
+    control_modes |= {('post_process_stack', s.id): dg.ControlMode.FORCE
+                      for s in stacks.values()}
+    # control_modes = {}
     print('### control_modes are', control_modes)
 
     print('### Starting execution')
     results = graph.run(executor, control_modes)
+
+    # TODO: These need to be stored after each operation, not just after
+    # the entire graph is done. Maybe I can add a decorator to the inner
+    # functions or something?
+    cache['stacks'] = stacks
+    cache['targets'] = targets
+    cache['mosaics'] = mosaics
 
   # for stack in stacks.values():
   #   print(f'### Looking at stack {stack}')

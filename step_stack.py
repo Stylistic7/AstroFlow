@@ -48,16 +48,14 @@ def run(stack, fits_headers, dest_path):
       output_dir,
       f'master_light_{stack.target}_{stack.rig}_{stack.filter}.xisf')
 
+  print(f'### step_stack.run dst_filename {dst_filename} exists '
+        f'{os.path.exists(dst_filename)}')
+
   if config.SUCCESS_IF_FILE_EXISTS and os.path.exists(dst_filename):
     print(f'### step_stack.run returning early because '
           f'{dst_filename} already exists.')
     stack.master = dst_filename
     return dg.Result.SUCCESS
-
-  # TODO: Remove these hacks, but replace them with something controllable
-  # from the UI.
-  print(f'### Returning DID_NOT_RUN due to override in code')
-  return dg.Result.DID_NOT_RUN
 
   with tempfile.TemporaryDirectory() as tmp_dir:
     step_flat_frame_association.set_flat_versions(stack, fits_headers)
@@ -78,7 +76,7 @@ def run(stack, fits_headers, dest_path):
       # on the next run. Distinguish the cases where the stack has never been
       # attempted from the cases where it just didn't succeed.
       print(f'### WBPP did not produce any master file.')
-      return
+      return dg.Result.FAILURE
 
     print('filenames', filenames)
     src_filename = filenames[0]
