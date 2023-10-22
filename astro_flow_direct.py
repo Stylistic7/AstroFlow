@@ -847,6 +847,7 @@ def main(context):
         target_tasks = []
         for stack_id in target.stack_ids:
           stack = stacks[stack_id]
+          if stack.status != Status.READY: continue
           task = stack_subframes(stack, fits_headers, context.output_dir)
           target_tasks.append(post_process_stack(stack, [task]))
         mosaic_tasks.append(
@@ -867,8 +868,10 @@ def main(context):
     #                  for s in stacks.values()}
     control_modes = {('stack_subframes', s.id): dg.ControlMode.FORCE
                      for s in stacks.values()}
-    control_modes |= {('post_process_stack', s.id): dg.ControlMode.FORCE
-                      for s in stacks.values()}
+    # control_modes |= {('post_process_stack', s.id): dg.ControlMode.FORCE
+    #                   for s in stacks.values()}
+    # control_modes = {('post_process_target', t.id): dg.ControlMode.FORCE
+    #                  for t in targets.values()}
     # control_modes = {}
     print('### control_modes are', control_modes)
 

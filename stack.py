@@ -76,15 +76,6 @@ class Stack:
 
   best_light_frame: str = None
 
-  # TODO: Implement a way to get post-processed filenames, like "_starless",
-  # from the single master filename. Otherwise, we have to pollute this class
-  # with filenames.
-  master: str = None
-  post_processed: str = None
-
-  def __post_init__(self):
-    self.sort_index = self.target
-
   def append_suffix(self, suffix):
     assert self.master
     filename, ext = os.path.splitext(self.master)
@@ -97,6 +88,7 @@ class Stack:
     self.store_footprint(plate_solutions)
     self.store_min_footprint(plate_solutions)
     self.store_aspect_ratio()
+    self.sort_index = self.target
 
   # TODO: Make a Stack factory function that either finds the same stack
   # alrady in the cache, or makes a new one, computing all its metadata.
@@ -111,6 +103,11 @@ class Stack:
 
     return hashlib.sha256(bytes(hashes, 'utf-8')).hexdigest()
 
+  # TODO: Don't store the hashes of filenames, which are mutable. People may
+  # re-organize their files, and AstroFlow should roll with it and not re-do any
+  # time consuming work. FITS headers are similarly mutable -- stuff like plate-
+  # solving can change them. So, we should use the image content hashes here.
+  # A stack is defined by the *content* of the images that go into it.
   def store_id(self):
     self.id = hash_string(f'stack_{hash_file_list(self.light_frames)}_'
                           f'{hash_file_list(self.dark_frames)}_'

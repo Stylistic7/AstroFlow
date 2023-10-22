@@ -3,7 +3,8 @@ import dependency_graph as dg
 
 
 def get_sorted_elements(prev_results, task_name, elements, result):
-  return sorted(elements[id] for (name, id), status in prev_results.items()
+  return sorted(elements[id]
+                for (name, id), (status, _) in prev_results.items()
                 if name == task_name and id in elements and status == result)
 
 
@@ -41,3 +42,18 @@ if __name__ == '__main__':
   for stack in get_sorted_elements(prev_results, 'post_process_stack', stacks,
                                    dg.Result.NEVER_RUN):
     print(stack)
+
+  print('\nSuccessful target post_processing:')
+  for target in get_sorted_elements(prev_results, 'post_process_target',
+                                    targets, dg.Result.SUCCESS):
+    print(target)
+
+  print('\nFailing target post_processing:')
+  for target in get_sorted_elements(prev_results, 'post_process_target',
+                                    targets, dg.Result.FAILURE):
+    print(target)
+
+  print('\nNever-run target post_processing:')
+  for target in get_sorted_elements(prev_results, 'post_process_target',
+                                    targets, dg.Result.NEVER_RUN):
+    print(target)

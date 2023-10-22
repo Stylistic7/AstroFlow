@@ -9,7 +9,7 @@ def hash_string(s):
   return hashlib.sha256(bytes(s, 'utf-8')).hexdigest()
 
 
-@dataclass
+@dataclass(order=True)
 class Target:
   id: str = None
 
@@ -32,6 +32,7 @@ class Target:
   # TODO: How to guarantee these are always in the same order?
   def store_id(self):
     self.id = hash_string('_'.join(self.stack_ids))
+    self.sort_index = self.name
 
   def store_metadata(self, stacks):
     # TODO: Some of these other kinds of metadata might apply to Targets?

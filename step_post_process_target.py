@@ -8,6 +8,7 @@ import pix
 import config
 from cache import cache
 import dependency_graph as dg
+from output_file import OutputFile
 
 
 # TODO: This is super-specific to my particular setup. If there's confusion about
@@ -33,16 +34,19 @@ def _post_process_target(target, stacks, dest_path):
   print(f'### view_ids {view_ids}')
 
   dir_name = os.path.join(dest_path, 'Targets', target.name)
+  os.makedirs(dir_name, exist_ok=True)
 
-  # TODO: Automatically assign view ids by filter.
   view_ids = pix.OpenImages(filenames, view_ids)
-  registered_view_ids = pix.StarAlignment(view_ids)
 
-  # TODO: Automatically assign view ids to filenames.
-  registered_filenames = [
-      os.path.join(dir_name, f'{s.filter}_registered.xisf') for s in stacks
-  ]
-  pix.SaveImages(registered_view_ids, registered_filenames)
+  if len(view_ids) > 1:
+    registered_view_ids = pix.StarAlignment(view_ids)
+    registered_filenames = [
+        os.path.join(dir_name, f'{s.filter}_registered.xisf') for s in stacks
+    ]
+    pix.SaveImages(registered_view_ids, registered_filenames)
+    saved_filenames = registered_filenames
+  else:
+    registered_view_ids = view_ids
 
   # TODO: ViewIdList is leaking out of the API everywhere.
   # TODO: The "vision" that abstracts views and filenames is really not
@@ -54,12 +58,14 @@ def _post_process_target(target, stacks, dest_path):
     # TODO: Automatically assign view ids to filenames.
     rgb_filename = os.path.join(dir_name, 'RGB.xisf')
     rgb = pix.SaveImages(rgb, pix.FileList([rgb_filename]))
+    saved_filenames.append(rgb_filename)
     pix.CloseImages(registered_rgb_view_ids)
 
     rgb = pix.ImageSolver(rgb)
     rgb = pix.SpectrophotometricColorCalibration(rgb)
     rgb_filename = os.path.join(dir_name, 'RGB_SPCC.xisf')
     pix.SaveImages(rgb, pix.FileList([rgb_filename]))
+    saved_filenames.append(rgb_filename)
 
     registered_view_ids = pix.ViewIdList(
         [r for r in registered_view_ids if r not in registered_rgb_view_ids])
@@ -74,28 +80,36 @@ def _post_process_target(target, stacks, dest_path):
       os.path.join(dir_name, f'{v}.xisf') for v in stars_view_ids
   ]
   pix.SaveImages(stars_view_ids, stars_filenames)
+  saved_filenames.extend(stars_filenames)
 
   starless_filenames = [
       os.path.join(dir_name, f'{v}_starless.xisf') for v in registered_view_ids
   ]
   pix.SaveImages(registered_view_ids, starless_filenames)
+  saved_filenames.extend(starless_filenames)
 
   # TODO: The ViewIdList is a wart on the API.
   pix.CloseAllWindows(pix.ViewIdList([]))
 
+  # TODO: Automatically keep track of saved filenames.
+  return saved_filenames
+
 
 def run(target, stacks, dest_path):
-  if len(target.stack_ids) < 2:
-    print(f'### Skipping target because it has only '
-          f'{len(target.stack_ids)} stacks')
-    return dg.Result.FAILURE
+  for s in target.stack_ids:
+    print(f'### Target has stack post-processed file '
+          f'{stacks[s].post_processed}')
 
   if any(stacks[s].post_processed == None for s in target.stack_ids):
     print(f'### Skipping target because some post-processed images are missing')
-    return dg.Result.FAILURE
+    return (dg.Result.FAILURE, "Post-processed files are missing")
+
+  # TODO: Add some kind of sentinel file to skip post-processing if it has
+  # already been done. (Maybe only use during development.)
 
   ordered_stacks = order_stacks([stacks[id] for id in target.stack_ids])
-  _post_process_target(target, ordered_stacks, dest_path)
+  saved_filenames = _post_process_target(target, ordered_stacks, dest_path)
 
   # TODO: Return FAILURE if the PixInsight task failed.
-  return dg.Result.SUCCESS
+  return (dg.Result.SUCCESS,
+          dict(filenames=[OutputFile(f) for f in saved_filenames]))

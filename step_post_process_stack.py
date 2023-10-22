@@ -16,6 +16,7 @@ import plate_solving
 import config
 from stack import Stack
 import dependency_graph as dg
+from output_file import OutputFile
 
 # TODO: This is unholy.
 import sys
@@ -50,7 +51,7 @@ def post_process_stack(stack):
 
   if not stack.master:
     print('### post_process_stack stack.master is None')
-    return dg.Result.FAILURE
+    return (dg.Result.FAILURE, "Stack has no master")
 
   filename, ext = os.path.splitext(stack.master)
   dst_filename = filename + '_post' + '.xisf'
@@ -59,13 +60,13 @@ def post_process_stack(stack):
   if config.TEST_MODE:
     stack.post_processed = dst_filename
     shutil.copy(stack.master, stack.post_processed)
-    return
+    return (dg.Result.SUCCESS, dict(post_processed=OutputFile(dst_filename)))
 
   if config.SUCCESS_IF_FILE_EXISTS and os.path.exists(dst_filename):
     print(f'### post_process_stack returning early because '
           f'{dst_filename} already exists.')
     stack.post_processed = dst_filename
-    return dg.Result.SUCCESS
+    return (dg.Result.SUCCESS, dict(post_processed=OutputFile(dst_filename)))
 
   # TODO: Clean up the GraXpert integration.
   # TODO: Move to the `logging` module.
@@ -129,7 +130,6 @@ def post_process_stack(stack):
              xisf_metadata=file_meta)
 
   _post_process_stack(stack, graxpert_filename, dst_filename)
-  stack.post_processed = dst_filename
 
   # TODO: Return FAILURE if PixInsight task failed for some reason.
-  return dg.Result.SUCCESS
+  return (dg.Result.SUCCESS, dict(post_processed=OutputFile(dst_filename)))

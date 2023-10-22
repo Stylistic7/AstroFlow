@@ -12,6 +12,7 @@ import pix
 from cache import cache
 import dependency_graph as dg
 import step_flat_frame_association
+from output_file import OutputFile
 
 
 def _exposure_time_string(stack):
@@ -42,7 +43,7 @@ def run(stack, fits_headers, dest_path):
         f'master_light_{stack.target}_{stack.rig}_{stack.filter}.fit')
     stack.master = dst_filename
     shutil.copy(stack.light_frames[0], dst_filename)
-    return dst_filename
+    return (dg.Result.Success, dst_filename)
 
   dst_filename = os.path.join(
       output_dir,
@@ -55,7 +56,7 @@ def run(stack, fits_headers, dest_path):
     print(f'### step_stack.run returning early because '
           f'{dst_filename} already exists.')
     stack.master = dst_filename
-    return dg.Result.SUCCESS
+    return (dg.Result.SUCCESS, dict(master=OutputFile(dst_filename)))
 
   with tempfile.TemporaryDirectory() as tmp_dir:
     step_flat_frame_association.set_flat_versions(stack, fits_headers)
@@ -76,7 +77,8 @@ def run(stack, fits_headers, dest_path):
       # on the next run. Distinguish the cases where the stack has never been
       # attempted from the cases where it just didn't succeed.
       print(f'### WBPP did not produce any master file.')
-      return dg.Result.FAILURE
+      return (dg.Result.FAILURE,
+              dict(reason="WBPP did not produce any master file"))
 
     print('filenames', filenames)
     src_filename = filenames[0]
@@ -85,4 +87,4 @@ def run(stack, fits_headers, dest_path):
     print('Stacking produced master', dst_filename)
 
     stack.master = dst_filename
-    return dg.Result.SUCCESS
+    return (dg.Result.SUCCESS, dict(master=OutputFile(dst_filename)))

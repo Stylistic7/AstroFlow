@@ -2,6 +2,7 @@ from collections import defaultdict
 from enum import Enum
 import functools
 import concurrent.futures
+from dataclasses import dataclass
 
 from cache import cache
 from stack import Stack
@@ -75,7 +76,7 @@ class DependencyGraph(object):
       print(f'### RUNNING {f}: it is forced')
       return True
 
-    prev_result = results.get(f.id, Result.NEVER_RUN)
+    prev_result, _ = results.get(f.id, (Result.NEVER_RUN, {}))
 
     if prev_result == Result.SUCCESS:
       print(f'### NOT RUNNING {f}: it ran previously and was successful')
@@ -106,7 +107,7 @@ class DependencyGraph(object):
     upstream_results = [results[u.id] for u in self._upstream[f]]
     # print('upstream ids', [u.id for u in self._upstream[f]])
     # print('upstream_results', upstream_results)
-    if all(r == Result.SUCCESS for r in upstream_results):
+    if all(r == Result.SUCCESS for r, _ in upstream_results):
       print(f'### RUNNING {f}: All upstream task ran and were successful')
       return True
     else:
@@ -126,7 +127,7 @@ class DependencyGraph(object):
       if self.should_run(task, control_modes, results):
         return executor.submit(task)
       else:
-        prev_result = results.get(task.id, Result.NEVER_RUN)
+        prev_result = results.get(task.id, (Result.NEVER_RUN, {}))
         print(f'### run_or_no_op task {task.id} prev_result {prev_result}')
         return executor.submit(lambda: prev_result)
 
