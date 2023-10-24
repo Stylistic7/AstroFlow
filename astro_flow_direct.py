@@ -81,6 +81,7 @@ def timeit(method):
   return timed
 
 
+# TODO: Remove this entirely.
 def memoize_by_context(fields=None):
   if fields == None:
     fields = []
@@ -264,7 +265,7 @@ def check_duplicates(image_hashes):
 
 
 @timeit
-@memoize_by_context()
+# @memoize_by_context()
 def split_images_by_type(all_frames, fits_headers):
   print('Splitting images by type...')
 
@@ -283,7 +284,7 @@ def split_images_by_type(all_frames, fits_headers):
 
 
 @timeit
-@memoize_by_context()
+# @memoize_by_context()
 def remove_frames_during_mount_movements(light_frames):
   print('Removing frames during mount movements...')
 
@@ -318,7 +319,7 @@ def plate_solve(light_frames):
 
 def remove_unsolvable_light_frames(light_frames, plate_solutions):
   solved = [f for f in light_frames if plate_solutions[f] is not None]
-  print(f'### {len(light_frames)}, {len(solved)} plate-solved light frames')
+  # print(f'### {len(light_frames)}, {len(solved)} plate-solved light frames')
   return solved
 
 
@@ -345,7 +346,7 @@ def identify_spatial_components(plate_solutions, fits_headers):
 # TODO: This memoization might be storing multiple copies of the entire
 # `fits_headers` in the cache, which is wasteful.
 @timeit
-@memoize_by_context()
+# @memoize_by_context()
 def identify_stacks(spatial_components, fits_headers):
   print('Identifying stacks...')
   stacks = []
@@ -367,8 +368,8 @@ def identify_stacks(spatial_components, fits_headers):
 def assert_all_light_frames_in_stacks(light_frames, stacks):
   file_sets = [set(s.light_frames) for s in stacks]
   light_frames_in_stacks = set().union(*file_sets)
-  print(f'### {len(light_frames)} light frames, '
-        f'{len(light_frames_in_stacks)} light frames in stacks')
+  # print(f'### {len(light_frames)} light frames, '
+  #       f'{len(light_frames_in_stacks)} light frames in stacks')
   assert set(light_frames) == light_frames_in_stacks
 
 
@@ -406,10 +407,11 @@ def group_by_fn(filenames, fn):
 
 
 @timeit
-@memoize_by_context()
+# @memoize_by_context()
 def get_camera_configs(stacks, fits_headers):
   print('Getting camera configs...')
   for stack in stacks:
+    assert stack
     stack.camera_configs = camera_configs.get_unique_camera_configs(
         stack.light_frames, fits_headers)
 
@@ -420,7 +422,7 @@ def get_camera_configs(stacks, fits_headers):
 # will fail if even one stack changes. These steps are pretty fast, but consider
 # making the loop body an independent function, and memoizing that.
 @timeit
-@memoize_by_context()
+# @memoize_by_context()
 def associate_dark_frames(stacks, dark_frames, fits_headers):
   print(f'Associating dark frames...')
 
@@ -436,6 +438,7 @@ def associate_dark_frames(stacks, dark_frames, fits_headers):
                                    lambda f: fits_headers[f]['EXPOSURE'])
 
   for stack in stacks:
+    assert stack
     darks = set()
     for camera, temperature, exposure in stack.camera_configs:
       darks |= set(darks_for_camera[camera]) & set(
@@ -449,7 +452,7 @@ def associate_dark_frames(stacks, dark_frames, fits_headers):
 
 
 @timeit
-@memoize_by_context()
+# @memoize_by_context()
 def associate_bias_frames(stacks, bias_frames, fits_headers):
   print(f'Associating bias frames...')
 
@@ -463,6 +466,7 @@ def associate_bias_frames(stacks, bias_frames, fits_headers):
   biases_for_temperature = group_by_fn(bias_frames, rounded_temperature)
 
   for stack in stacks:
+    assert stack
     biases = set()
     for camera, temperature, _ in stack.camera_configs:
       biases |= set(biases_for_camera[camera]) & set(
@@ -519,7 +523,7 @@ def run_distance(a, b):
 
 
 def associate_flat_frames_for_stack(stack, flat_frames, fits_headers):
-  print(f'### Associating flat frames for stack {stack}')
+  print(f'Associating flat frames for stack {stack}')
   imaging_runs = get_runs(stack.light_frames, fits_headers)
   # for start, end in imaging_runs:
   #   print(f'imaging run start {start} end {end}')
@@ -564,8 +568,9 @@ def associate_flat_frames_for_stack(stack, flat_frames, fits_headers):
   #   assert flat_frames
 
 
+# TODO: There's some kind of terrible bug here where
 @timeit
-@memoize_by_context()
+# @memoize_by_context()
 def associate_flat_frames(stacks, flat_frames, fits_headers):
   print('Associating flat frames...')
 
@@ -576,12 +581,13 @@ def associate_flat_frames(stacks, flat_frames, fits_headers):
                                  lambda f: fits_headers[f]['FILTER'])
 
   for stack in stacks:
+    assert stack
     flats = set()
     for camera, _, _ in stack.camera_configs:
       flats |= set(flats_for_camera[camera]) & set(
           flats_for_rig[stack.rig]) & set(flats_for_filter[stack.filter])
 
-    print(f'### Found {len(flats)} flat frames for rig '
+    print(f'Found {len(flats)} flat frames for rig '
           f'{stack.rig} and filter {stack.filter}')
 
     associate_flat_frames_for_stack(stack, flats, fits_headers)
@@ -597,26 +603,11 @@ def compute_stack_metadata(stacks, fits_headers, plate_solutions):
   return stacks
 
 
-# def load_stacks_context(stacks):
-#   def load_stack_context(stack):
-#     key = ('stack_context', stack.id)
-#     if key in cache:
-#       return cache[key]
-#     else:
-#       return stack
-
-#   return [load_stack_context(s) for s in stacks]
-
-# def save_stacks_context(stacks):
-#   for stack in stacks:
-#     key = ('stack_context', stack.id)
-#     cache[key] = stack
-
-
 # @memoize_by_context()
 def make_image_thumbnails(stacks, plate_solutions, fits_headers, width=640):
   with concurrent.futures.ProcessPoolExecutor() as executor:
     for stack in stacks:
+      assert stack
       for light_frame in stack.light_frames:
         if ('thumbnail_image', light_frame) in cache: continue
         # print(f'### cache miss on light frame {light_frame}')
@@ -624,13 +615,6 @@ def make_image_thumbnails(stacks, plate_solutions, fits_headers, width=640):
             light_frame, stack, fits_headers)
         dark_frame = stack.dark_frames[0] if len(stack.dark_frames) else None
         rotate = plate_solutions[light_frame].rotation_angle < 0.0
-
-        # Hack to slightly fudge flat-frame correction for the C11.
-        # TODO: See if simply apply bias or dark frames makes these fudges
-        # unnecessary.
-        # fudges = {('C11', 'H'): 0.4, ('C11', 'S'): 0.5, ('C11', 'O'): 0.2}
-        # fudge = fudges.get((stack.rig, stack.filter))
-
         executor.submit(image_handling.make_and_cache_thumbnail, light_frame,
                         dark_frame, flat_frame, rotate, None, width)
 
@@ -642,6 +626,7 @@ def make_stack_thumbnails_videos(stacks, plate_solutions, fits_headers):
   print('Making stack thumbnails...')
   with concurrent.futures.ProcessPoolExecutor() as executor:
     for stack in stacks.values():
+      assert stack
       image_key = ('stack_thumbnail_image', stack.id)
       video_key = ('stack_thumbnail_video', stack.id)
 
@@ -667,8 +652,13 @@ def group_stacks_into_targets(stacks):
 # @memoize_by_context()
 def group_targets_into_mosaics(targets):
   print('Identifying mosaics...')
-  mosaics = step_mosaic.run(targets, plot=False)
-  [m.store_metadata(targets) for m in mosaics]
+  result, result_dict = step_mosaic.run(targets, plot=False)
+
+  if result != dg.Result.SUCCESS:
+    print('step_mosaic.run() failed')
+    return []
+
+  mosaics = {m.id: m for m in result_dict['mosaics']}
   return mosaics
 
 
@@ -687,29 +677,6 @@ def sanity_check_stacks(stacks, fits_headers):
   return stacks
 
 
-# # TODO: Don't just memoize this. Instead, compare the stack against the previous
-# # stack for the same target. If anything has changed, or the master file is
-# # missing, re-stack the stack.
-# def stack_subframes(stack, fits_headers, output_dir):
-#   print(f'Stacking subframes for stack {stack}')
-#   step_flat_frame_association.set_flat_versions(stack, fits_headers)
-#   step_stack.run(stack, output_dir)
-
-# def post_process_stack(stack):
-#   print(f'Post-processing stack {stack}')
-#   step_post_process_stack.post_process_stack(stack)
-
-# def post_process_target(target, stacks):
-#   print(f'Post-processing target {target.name}')
-#   stacks = [stacks[id] for id in target.stack_ids]
-#   print(f'Target contains {len(stacks)} stacks')
-#   step_post_process_target.run(stacks)
-#   return target
-
-# def post_process_mosaic(mosaic):
-#   print(f'Post-processing mosaic {mosaic.id}')
-#   return mosaic
-
 graph = dg.DependencyGraph()
 
 
@@ -723,9 +690,9 @@ def stack_subframes(stack, fits_headers, output_dir):
     # association. So the check should be done HERE, not in step_stack.run().
     #
     # TODO: If the stack has Status.NOT_READY, don't call step_stack.run().
-    print(f'### Stacking stack {stack}!')
+    print(f'Stacking stack {stack}!')
     result = step_stack.run(stack, fits_headers, output_dir)
-    print(f'### step_stack.run returned {result}')
+    print(f'step_stack.run returned {result}')
     return result
 
   inner.id = ('stack_subframes', stack.id)
@@ -737,7 +704,7 @@ def post_process_stack(stack, upstream_tasks):
 
   @graph.add(*upstream_tasks)
   def inner():
-    print(f'### Post-processing stack {stack}!')
+    print(f'Post-processing stack {stack}!')
     return step_post_process_stack.post_process_stack(stack)
 
   inner.id = ('post_process_stack', stack.id)
@@ -749,21 +716,20 @@ def post_process_target(target, stacks, output_dir, upstream_tasks):
 
   @graph.add(*upstream_tasks)
   def inner():
-    print(f'### Post-processing target {target}!')
+    print(f'Post-processing target {target}!')
     return step_post_process_target.run(target, stacks, output_dir)
 
   inner.id = ('post_process_target', target.id)
   return inner
 
 
-def post_process_mosaic(mosaic, targets, stacks, upstream_tasks):
+def post_process_mosaic(mosaic, targets, stacks, output_dir, upstream_tasks):
   # print(f'post_process_mosaic for mosaic {mosaic}')
 
   @graph.add(*upstream_tasks)
   def inner():
-    print(f'## Post-processing mosaic {mosaic}!')
-    # TODO: Connect step_mosaic
-    return dg.Result.FAILURE
+    print(f'### Post-processing mosaic {mosaic}!')
+    return step_mosaic.process_mosaic(mosaic, targets, stacks, output_dir)
 
   inner.id = ('post_process_mosaic', mosaic.id)
   return inner
@@ -840,7 +806,7 @@ def main(context):
   # TODO: Consider how to make this multi-threaded.
   with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
     toplevel_tasks = []
-    for mosaic in mosaics:
+    for mosaic in mosaics.values():
       mosaic_tasks = []
       for target_id in mosaic.target_ids:
         target = targets[target_id]
@@ -854,28 +820,31 @@ def main(context):
             post_process_target(target, stacks, context.output_dir,
                                 target_tasks))
       toplevel_tasks.append(
-          post_process_mosaic(mosaic, targets, stacks, mosaic_tasks))
-    print(f'### Created {len(toplevel_tasks)} toplevel tasks')
+          post_process_mosaic(mosaic, targets, stacks, context.output_dir,
+                              mosaic_tasks))
+    print(f'Created {len(toplevel_tasks)} toplevel tasks')
 
     # TODO: This is the place to setup control modes, or to read them from the
     # user interface.
-    # control_modes = {('stack_subframes', '298749827439823'): ControlMode.FORCE}
-    # control_modes = {('stack_subframes', stack.id): dg.ControlMode.DISABLED
+    control_modes = {}
+    # control_modes |= {('stack_subframes', '298749827439823'): ControlMode.FORCE}
+    # control_modes |= {('stack_subframes', stack.id): dg.ControlMode.DISABLED
     #                  for stack in stacks if stack.status == Status.NOT_READY}
-    # control_modes = {('stack_subframes', s.id): dg.ControlMode.FORCE
+    # control_modes |= {('stack_subframes', s.id): dg.ControlMode.FORCE
     #                  for s in stacks.values() if 'IC1805' in s.target}
-    # control_modes = {('stack_subframes', s.id): dg.ControlMode.FORCE
+    # control_modes |= {('stack_subframes', s.id): dg.ControlMode.FORCE
     #                  for s in stacks.values()}
-    control_modes = {('stack_subframes', s.id): dg.ControlMode.FORCE
-                     for s in stacks.values()}
-    # control_modes |= {('post_process_stack', s.id): dg.ControlMode.FORCE
-    #                   for s in stacks.values()}
-    # control_modes = {('post_process_target', t.id): dg.ControlMode.FORCE
-    #                  for t in targets.values()}
-    # control_modes = {}
-    print('### control_modes are', control_modes)
+    control_modes |= {('stack_subframes', s.id): dg.ControlMode.FORCE
+                      for s in stacks.values() if 'IC1848' in s.target}
+    control_modes |= {('post_process_stack', s.id): dg.ControlMode.FORCE
+                      for s in stacks.values() if 'IC1848' in s.target}
+    control_modes |= {('post_process_target', t.id): dg.ControlMode.FORCE
+                      for t in targets.values() if 'IC1848' in t.name}
+    control_modes |= {('post_process_mosaic', m.id): dg.ControlMode.FORCE
+                      for m in mosaics.values() if 'IC1848' in m.name}
+    print('control_modes are', control_modes)
 
-    print('### Starting execution')
+    print('Starting execution')
     results = graph.run(executor, control_modes)
 
     # TODO: These need to be stored after each operation, not just after
@@ -884,44 +853,6 @@ def main(context):
     cache['stacks'] = stacks
     cache['targets'] = targets
     cache['mosaics'] = mosaics
-
-  # for stack in stacks.values():
-  #   print(f'### Looking at stack {stack}')
-
-  #   if 'IC1805' not in stack.target:
-  #     continue
-
-  #   # if stack.status != Status.READY:
-  #   #   continue
-
-  #   stack_subframes(stack, fits_headers, context.output_dir)
-  #   print(f'### After stack_subframes() stack.master is {stack.master}')
-  #   cache['stacks'] = stacks
-
-  #   if not stack.master:
-  #     stack.status = Status.FAILURE
-  #     cache['stacks'] = stacks
-  #     continue
-
-  #   post_process_stack(stack)
-  #   print(f'### After post_process_stack() stack.post_processed is '
-  #         f'{stack.post_processed}')
-
-  #   if not stack.post_processed:
-  #     stack.status = Status.FAILURE
-  #     cache['stacks'] = stacks
-  #     continue
-
-  #   stack.status = Status.SUCCESS
-  #   cache['stacks'] = stacks
-
-  # targets = [
-  #     post_process_target(t, stacks) for t in targets if 'IC1805' in t.name
-  # ]
-  # cache['targets'] = targets
-
-  # mosaics = [post_process_mosaic(m) for m in mosaics]
-  # cache['mosaics'] = mosaics
 
 
 if __name__ == '__main__':

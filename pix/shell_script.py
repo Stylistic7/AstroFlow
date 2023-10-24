@@ -100,7 +100,7 @@ def _create_run_command(task):
 
 
 # TODO: Re-use already launched PixInsight instance(s) that are idle.
-def run_script(tasks, blocking=True, tmp_dir_in=None, sleep_after=False):
+def run_script(tasks, blocking=True, tmp_dir_in=None, sleep_after=True):
   slot = _start_pixinsight_instance(blocking)
   print(f'PixInsight is now running in a background process in slot {slot}')
 

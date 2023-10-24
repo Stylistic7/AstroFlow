@@ -27,13 +27,26 @@ if __name__ == '__main__':
   # # total_size_megabytes = total_size / 1024.0 / 1024.0
   # # print(f'Total size is {total_size_megabytes:.03f} MB')
 
-  plate_solutions = cache['plate_solutions']
-  image_hashes = cache['image_hashes']
+  # plate_solutions = cache['plate_solutions']
+  # image_hashes = cache['image_hashes']
 
-  cache.clear()
+  # cache.clear()
 
-  # TODO: Implement quarantining
-  # plate_solutions = {f: p for f, p in plate_solutions.items() if p is not None}
+  # # TODO: Implement quarantining
+  # # plate_solutions = {f: p for f, p in plate_solutions.items() if p is not None}
 
-  cache['plate_solutions'] = plate_solutions
-  cache['image_hashes'] = image_hashes
+  # cache['plate_solutions'] = plate_solutions
+  # cache['image_hashes'] = image_hashes
+
+  allow_list = [
+      'plate_solutions', 'image_hashes', 'thumbnail_image', 'thumbnail_video',
+      'stack_thumbnail_image', 'stack_thumbnail_video'
+  ]
+
+  for k in cache:
+    # print('looking at key', k)
+    if any(a in k for a in allow_list):
+      continue
+
+    print('deleting key', k)
+    del cache[k]

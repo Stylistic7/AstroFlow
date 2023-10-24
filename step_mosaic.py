@@ -22,6 +22,9 @@ from dataclasses import dataclass
 from scipy.interpolate import RegularGridInterpolator
 import largestinteriorrectangle
 from multiprocessing import Pool
+import dependency_graph as dg
+from output_file import OutputFile
+from prev_results import get_prev_result_object
 
 import pix
 import file_io
@@ -59,9 +62,9 @@ def _identify_mosiacs(targets):
 
   # Sort the targets by their center RA.
   targets = list(sorted(targets, key=lambda t: t.center[0]))
-  print('### Number of targets', len(targets))
+  print('Number of targets', len(targets))
   for target in targets:
-    print(f'### Target {target}')
+    print(f'Target {target}')
 
   mosaics = []
   for target in targets:
@@ -83,7 +86,7 @@ def _identify_mosiacs(targets):
 
   # mosaics = [m for m in mosaics if len(m) > 1]
 
-  print('### Number of targets in mosaics:', sum(len(m) for m in mosaics))
+  print('Number of targets in mosaics:', sum(len(m) for m in mosaics))
 
   return mosaics
 
@@ -141,7 +144,7 @@ def _ransac(mosaic, plot=False, plot_title=None):
   # print(f'centers {centers}')
 
   for iteration in range(500):
-    # print(f'### Top of iteration {iteration}')
+    # print(f'Top of iteration {iteration}')
 
     # Choose 3 tiles at random. Compute two basis vectors from them.
     # Skip the iteration if the basis vectors aren't (nearly) orthogonal.
@@ -183,9 +186,9 @@ def _ransac(mosaic, plot=False, plot_title=None):
       best_inliers = inliers
       best_error = np.mean(errors)
       best_basis_vectors = basis_vectors
-      # print('### UPDATED BEST MODEL')
+      # print('UPDATED BEST MODEL')
 
-  # print('### END OF RANSAC')
+  # print('END OF RANSAC')
   # print('best_origin', best_origin)
   # print(f'best_inliers length {len(best_inliers)}: {best_inliers}')
   # print('best_error', best_error)
@@ -251,10 +254,10 @@ def _ransac(mosaic, plot=False, plot_title=None):
 # TODO: This filename should be saved in the Stack.
 def get_best_light_frame(stack):
   if stack.master and os.path.exists(stack.master):
-    print(f'### Using stack master image for stack {stack}')
+    print(f'Using stack master image for stack {stack}')
     return file_io.read_xisf_image(stack.master)
 
-  print(f'### Using single light frame thumbnail for stack {stack}')
+  print(f'Using single light frame thumbnail for stack {stack}')
   thumbnails = [cache[('thumbnail_image', f)] for f in stack.light_frames]
   index = np.argmax(map(np.std, thumbnails))
   return stack.light_frames[index]
@@ -266,26 +269,26 @@ def image_for_mosaic(mosaic,
                      plate_solutions,
                      resolution=0.01):
   min_ra, min_dec, ra_span, dec_span = mosaic.viewbox
-  print(f'### min_ra {min_ra} ra_span {ra_span} '
+  print(f'min_ra {min_ra} ra_span {ra_span} '
         f'min_dec {min_dec} dec_span {dec_span}')
   width, height = int(np.ceil(ra_span / resolution)), int(
       np.ceil(dec_span / resolution))
   output_image = np.zeros((width, height))
 
   targets = [t for t in targets if t.name in mosaic.target_ids]
-  print(f'### Found {len(targets)} targets for mosaic')
+  print(f'Found {len(targets)} targets for mosaic')
 
   for t in targets:
-    print(f'### tile has indices {t.tile_indices}')
+    print(f'tile has indices {t.tile_indices}')
 
   stacks = [
       s for s in stacks
       if s.filter == 'H' and any(s.id in t.stack_ids for t in targets)
   ]
-  print(f'### Found {len(stacks)} stacks for the targets')
+  print(f'Found {len(stacks)} stacks for the targets')
 
   best_light_frames = [get_best_light_frame(s) for s in stacks]
-  print(f'### best_light_frames', best_light_frames)
+  print(f'best_light_frames', best_light_frames)
 
   images_and_metadata = [(image_handling.autostretch(
       file_io.read_fits_image(f)), WCS(
@@ -304,7 +307,7 @@ def image_for_mosaic(mosaic,
   # TODO: Parallelize over the images, which are each independent, and then
   # compute the max of the stack afterwards.
   for i, (image, wcs, _) in enumerate(images_and_metadata):
-    print(f'### Projecting image {i}')
+    print(f'Projecting image {i}')
     source_x, source_y = wcs.world_to_pixel(world_positions)
 
     source_width, source_height = image.shape
@@ -322,11 +325,12 @@ def image_for_mosaic(mosaic,
     for sx, sy, dx, dy in zip(source_x, source_y, dest_x, dest_y):
       output_image[dx, dy] = max(output_image[dx, dy], interp((sy, sx)))
 
-  print(f'### mosaic image min {np.min(output_image)} '
+  print(f'mosaic image min {np.min(output_image)} '
         f'max {np.max(output_image)}')
   return output_image
 
 
+# TODO: Rename this.
 def run(targets, plot=False):
   mosaics = _identify_mosiacs(targets.values())
   if not mosaics:
@@ -338,7 +342,7 @@ def run(targets, plot=False):
   for mosaic in mosaics:
     mosaic = _ransac(mosaic, plot=plot, plot_title='foo')
     if not mosaic:
-      print('### RANSAC failed')
+      print('RANSAC failed')
       continue
 
     print(f'Mosaic composed of {len(mosaic)} targets:')
@@ -357,7 +361,7 @@ def run(targets, plot=False):
     except Exception as e:
       traceback.print_exc()
 
-  return output_mosaics
+  return (dg.Result.SUCCESS, dict(mosaics=output_mosaics))
 
 
 def fill_template(template, value):
@@ -378,8 +382,8 @@ def make_pairs(min_index, max_index, template):
   return pairs
 
 
-def make_merge_ops(panels, tmp_dir):
-  print(f'### Panels are {panels}')
+def make_merge_ops(panels, output_dir):
+  print(f'Panels are {panels}')
 
   def get_panel(tile_indices):
     return next(
@@ -392,10 +396,10 @@ def make_merge_ops(panels, tmp_dir):
     max_x_index = np.max([p.tile_indices[0] for p in panels])
     min_y_index = np.min([p.tile_indices[1] for p in panels])
     max_y_index = np.max([p.tile_indices[1] for p in panels])
-    print(f'### Mosaic x axis indices {min_x_index} to {max_x_index}')
-    print(f'### Mosaic y axis indices {min_y_index} to {max_y_index}')
+    print(f'Mosaic x axis indices {min_x_index} to {max_x_index}')
+    print(f'Mosaic y axis indices {min_y_index} to {max_y_index}')
 
-    print(f'### Merging panels at level {level}')
+    print(f'Merging panels at level {level}')
     level += 1
 
     def process_pairs(pairs, template):
@@ -406,7 +410,7 @@ def make_merge_ops(panels, tmp_dir):
               Panel(image_filename=get_panel(pair[0]).image_filename,
                     tile_indices=tile_indices))
         elif len(pair) == 2:
-          new_image_id = os.path.join(tmp_dir, f'merged_{uuid.uuid4()}.fit')
+          new_image_id = os.path.join(output_dir, f'merged_{uuid.uuid4()}.fit')
           new_panels.append(
               Panel(image_filename=new_image_id, tile_indices=tile_indices))
           merge_ops.append(
@@ -427,12 +431,12 @@ def make_merge_ops(panels, tmp_dir):
         process_pairs(pairs, template)
 
     panels = new_panels
-    print(f'### Panels are now length {len(panels)}')
+    print(f'Panels are now length {len(panels)}')
     for panel in panels:
-      print(f'### {panel}')
+      print(f'{panel}')
 
   for merge_op in merge_ops:
-    print(f'### merge_op {merge_op}')
+    print(f'merge_op {merge_op}')
 
   return merge_ops
 
@@ -456,7 +460,7 @@ def make_merge_ops(panels, tmp_dir):
 def compute_viewbox(plate_solutions):
   ras = [f[0] for p in plate_solutions for f in p.footprint]
   decs = [f[1] for p in plate_solutions for f in p.footprint]
-  print(f'### got {len(ras)} ras and {len(decs)} decs')
+  print(f'got {len(ras)} ras and {len(decs)} decs')
 
   min_ra, max_ra = np.min(ras), np.max(ras)
   min_dec, max_dec = np.min(decs), np.max(decs)
@@ -482,12 +486,12 @@ class MosaicDimensions:
 
 def get_mosaic_dimensions(panels, plate_solutions):
   min_ra, min_dec, ra_span, dec_span = compute_viewbox(plate_solutions)
-  print(f'### min_ra {min_ra} ra_span {ra_span} '
+  print(f'min_ra {min_ra} ra_span {ra_span} '
         f'min_dec {min_dec} dec_span {dec_span}')
   resolution = 0.01
   width, height = int(np.ceil(ra_span / resolution)), int(
       np.ceil(dec_span / resolution))
-  print(f'### width {width} height {height}')
+  print(f'width {width} height {height}')
 
   ras = np.arange(min_ra, min_ra + ra_span, resolution)
   decs = np.arange(min_dec, min_dec + dec_span, resolution)
@@ -501,8 +505,9 @@ def get_mosaic_dimensions(panels, plate_solutions):
                           world_positions=world_positions)
 
 
-def mosaic_by_coordinates(panel, plate_solution, mosaic_dimensions, tmp_dir):
-  print(f'### projecting image {panel.image_filename}')
+def mosaic_by_coordinates(panel, plate_solution, mosaic_dimensions,
+                          output_dir):
+  print(f'projecting image {panel.image_filename}')
   projected_image = np.zeros(
       (mosaic_dimensions.width, mosaic_dimensions.height))
   projection_map = np.zeros(
@@ -564,11 +569,11 @@ def mosaic_by_coordinates(panel, plate_solution, mosaic_dimensions, tmp_dir):
   hdu.header['HISTORY'] = f"TrimMosaicTile.right: {trim_left + trim_width}"
 
   for k, v in hdu.header.items():
-    print(f'### header {k}: {v}')
+    print(f'header {k}: {v}')
 
-  panel.image_filename = os.path.join(tmp_dir, f'placed_{uuid.uuid4()}.fit')
+  panel.image_filename = os.path.join(output_dir, f'placed_{uuid.uuid4()}.fit')
   hdu.writeto(panel.image_filename, overwrite=True)
-  print(f'### Wrote placed image filename {panel.image_filename}')
+  print(f'Wrote placed image filename {panel.image_filename}')
 
   return panel
 
@@ -582,61 +587,86 @@ def run_photometric_mosaic(merge_op):
 
 
 # TODO: None should be a valid argument type.
-def merge_mosaic(panels, tmp_dir):
-  for merge_op in make_merge_ops(panels, tmp_dir):
+def merge_mosaic(panels, output_dir):
+  for merge_op in make_merge_ops(panels, output_dir):
     output_image = run_photometric_mosaic(merge_op)
 
   return output_image
 
 
+def process_mosaic(mosaic, targets, stacks, output_dir):
+  print(f'Entering process_mosaic for mosaic {mosaic}')
+
+  # image = image_for_mosaic(mosaic, cache['targets'], cache['stacks'],
+  #                          cache['plate_solutions'])
+  # plt.imshow(image, cmap='gray')
+  # plt.show()
+
+  if len(mosaic.target_ids) < 2:
+    print(f'No processing to do for mosaic with only '
+          f'{len(mosaic.target_ids)} target ids')
+    return (dg.Result.FAILURE, dict())
+
+  output_dir = os.path.join(output_dir, 'Mosaics', mosaic.name)
+  os.makedirs(output_dir, exist_ok=True)
+
+  panels = []
+  for target_id in mosaic.target_ids:
+    target = targets[target_id]
+
+    print(f'target {target} tile_indices {target.tile_indices}')
+    assert target.tile_indices
+
+    # TODO: Remove this filter and process all color channels.
+    stack = next(s for s in stacks.values()
+                 if s.filter == 'H' and s.id in target.stack_ids)
+
+    post_pocessed = get_prev_result_object('post_process_target', target.id)
+    if not post_pocessed:
+      print(f'### Aborting mosaic {mosaic.name} because target {target.id} '
+            f'had result {post_pocessed}')
+      return (dg.Result.FAILURE, "Some post-processed images were missing")
+
+    # TODO: Select color channels here.
+    post_pocessed = post_pocessed[0].filename
+
+    panels.append(
+        Panel(image_filename=post_pocessed, tile_indices=target.tile_indices))
+
+  with Pool() as p:
+    plate_solutions = p.map(plate_solving.solve_field,
+                            (p.image_filename for p in panels))
+
+  print(f'Got {len(plate_solutions)} plate solutions')
+
+  mosaic_dimensions = get_mosaic_dimensions(panels, plate_solutions)
+
+  # TODO: Parallelize this.
+  with Pool() as p:
+    panels = p.starmap(mosaic_by_coordinates,
+                       ((p, s, mosaic_dimensions, output_dir)
+                        for p, s in zip(panels, plate_solutions)))
+
+  output_image = merge_mosaic(panels, output_dir)
+
+  merged_mosaic = os.path.join(output_dir, "merged_mosaic.fits")
+  print(f'Copying final mosaic image to {merged_mosaic}')
+  shutil.copy(output_image[0], merged_mosaic)
+
+  output_filenames = [OutputFile(p.output_filename) for p in panels]
+  output_filenames.append(OutputFile(merged_mosaic))
+
+  return (dg.Result.SUCCESS,
+          dict(panels=panels, output_filenames=output_filename))
+
+
 def main():
   for mosaic in cache['mosaics']:
-    # print(f'### mosaic {mosaic.id} has {len(mosaic.target_ids)} targets')
+    # print(f'mosaic {mosaic.id} has {len(mosaic.target_ids)} targets')
     if 'Filamentary' not in mosaic.id or len(mosaic.target_ids) < 2:
       continue
 
-    # image = image_for_mosaic(mosaic, cache['targets'], cache['stacks'],
-    #                          cache['plate_solutions'])
-    # plt.imshow(image, cmap='gray')
-    # plt.show()
-
-    targets = [t for t in cache['targets'] if t.name in mosaic.target_ids]
-    print(f'### Found {len(targets)} targets for mosaic')
-
-    panels = []
-    for target in targets:
-      assert target.tile_indices
-
-      stack = next(s for s in cache['stacks']
-                   if s.filter == 'H' and s.id in target.stack_ids)
-
-      best_light_frame = get_best_light_frame(stack)
-      print(f'### best_light_frame', best_light_frame)
-
-      panels.append(
-          Panel(image_filename=best_light_frame,
-                tile_indices=target.tile_indices))
-
-    with Pool() as p:
-      plate_solutions = p.map(plate_solving.solve_field,
-                              (p.image_filename for p in panels))
-
-    print(f'### Got {len(plate_solutions)} plate solutions')
-
-    mosaic_dimensions = get_mosaic_dimensions(panels, plate_solutions)
-
-    # with tempfile.TemporaryDirectory() as tmp_dir:
-    # TODO: Parallelize this.
-    tmp_dir = "/tmp/mosaic"
-    with Pool() as p:
-      panels = p.starmap(mosaic_by_coordinates,
-                         ((p, s, mosaic_dimensions, tmp_dir)
-                          for p, s in zip(panels, plate_solutions)))
-
-    output_image = merge_mosaic(panels, tmp_dir)
-
-    print(f'### Copying final mosaic file {output_image} to /tmp')
-    shutil.copy(output_image[0], '/tmp/mosaic/merged.fits')
+    process_mosaic(mosaic)
 
 
 if __name__ == '__main__':

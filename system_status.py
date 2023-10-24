@@ -13,6 +13,7 @@ if __name__ == '__main__':
   stacks = cache['stacks']
   targets = cache['targets']
 
+  # TODO: Clean all of this up.
   print('Successful stacks:')
   for stack in get_sorted_elements(prev_results, 'stack_subframes', stacks,
                                    dg.Result.SUCCESS):
@@ -57,3 +58,6 @@ if __name__ == '__main__':
   for target in get_sorted_elements(prev_results, 'post_process_target',
                                     targets, dg.Result.NEVER_RUN):
     print(target)
+
+  for k, mosaic in cache['mosaics'].items():
+    print(f'### mosaic {mosaic.name} {mosaic}')

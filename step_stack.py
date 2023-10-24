@@ -41,7 +41,6 @@ def run(stack, fits_headers, dest_path):
     dst_filename = os.path.join(
         output_dir,
         f'master_light_{stack.target}_{stack.rig}_{stack.filter}.fit')
-    stack.master = dst_filename
     shutil.copy(stack.light_frames[0], dst_filename)
     return (dg.Result.Success, dst_filename)
 
@@ -52,11 +51,12 @@ def run(stack, fits_headers, dest_path):
   print(f'### step_stack.run dst_filename {dst_filename} exists '
         f'{os.path.exists(dst_filename)}')
 
+  # TODO: Save stack ids, target ids, etc. as FITS/XISF headers. Then I can
+  # look at the file to see if it's actually up-to-date or not.
   if config.SUCCESS_IF_FILE_EXISTS and os.path.exists(dst_filename):
     print(f'### step_stack.run returning early because '
           f'{dst_filename} already exists.')
-    stack.master = dst_filename
-    return (dg.Result.SUCCESS, dict(master=OutputFile(dst_filename)))
+    return (dg.Result.SUCCESS, OutputFile(dst_filename))
 
   with tempfile.TemporaryDirectory() as tmp_dir:
     step_flat_frame_association.set_flat_versions(stack, fits_headers)
@@ -86,5 +86,4 @@ def run(stack, fits_headers, dest_path):
     shutil.copy(src_filename, dst_filename)
     print('Stacking produced master', dst_filename)
 
-    stack.master = dst_filename
-    return (dg.Result.SUCCESS, dict(master=OutputFile(dst_filename)))
+    return (dg.Result.SUCCESS, OutputFile(dst_filename))

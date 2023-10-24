@@ -3,12 +3,16 @@ import tempfile
 import subprocess
 import time
 from pathlib import Path
+from enum import Enum
+from dataclasses import dataclass
+import shutil
 
 import pix
 import config
 from cache import cache
 import dependency_graph as dg
 from output_file import OutputFile
+from prev_results import get_prev_result_object
 
 
 # TODO: This is super-specific to my particular setup. If there's confusion about
@@ -28,7 +32,11 @@ def order_stacks(stacks):
 
 @pix.PixInsight
 def _post_process_target(target, stacks, dest_path):
-  filenames = pix.FileList(s.post_processed for s in stacks)
+  # filenames = pix.FileList(s.post_processed for s in stacks)
+  filenames = [
+      get_prev_result_object('post_process_stack', s.id).filename
+      for s in stacks
+  ]
   view_ids = pix.ViewIdList(s.filter for s in stacks)
   print(f'### filenames {filenames}')
   print(f'### view_ids {view_ids}')
@@ -44,9 +52,21 @@ def _post_process_target(target, stacks, dest_path):
         os.path.join(dir_name, f'{s.filter}_registered.xisf') for s in stacks
     ]
     pix.SaveImages(registered_view_ids, registered_filenames)
-    saved_filenames = registered_filenames
+    # TODO: It would be super cool to automatically create these on saves.
+    saved_files = [
+        OutputFile(f, tags=dict(filter=s.filter, type='registered'))
+        for s, f in zip(stacks, registered_filenames)
+    ]
   else:
     registered_view_ids = view_ids
+    registered_filename = os.path.join(dir_name,
+                                       f'{stacks[0].filter}_registered.xisf')
+    shutil.copy(filenames[0], registered_filename)
+    saved_files = [
+        OutputFile(registered_filename,
+                   tags=dict(filter=[stacks[0].filter],
+                             image_type='registered'))
+    ]
 
   # TODO: ViewIdList is leaking out of the API everywhere.
   # TODO: The "vision" that abstracts views and filenames is really not
@@ -58,14 +78,19 @@ def _post_process_target(target, stacks, dest_path):
     # TODO: Automatically assign view ids to filenames.
     rgb_filename = os.path.join(dir_name, 'RGB.xisf')
     rgb = pix.SaveImages(rgb, pix.FileList([rgb_filename]))
-    saved_filenames.append(rgb_filename)
+    # TODO: Include actual RGB stack ids.
+    saved_files.append(
+        OutputFile(rgb_filename,
+                   tags=dict(filter='RGB', image_type='registered')))
     pix.CloseImages(registered_rgb_view_ids)
 
     rgb = pix.ImageSolver(rgb)
     rgb = pix.SpectrophotometricColorCalibration(rgb)
     rgb_filename = os.path.join(dir_name, 'RGB_SPCC.xisf')
     pix.SaveImages(rgb, pix.FileList([rgb_filename]))
-    saved_filenames.append(rgb_filename)
+    saved_files.append(
+        OutputFile(rgb_filename,
+                   tags=dict(filter='RGB_SPCC', image_type='registered')))
 
     registered_view_ids = pix.ViewIdList(
         [r for r in registered_view_ids if r not in registered_rgb_view_ids])
@@ -80,36 +105,57 @@ def _post_process_target(target, stacks, dest_path):
       os.path.join(dir_name, f'{v}.xisf') for v in stars_view_ids
   ]
   pix.SaveImages(stars_view_ids, stars_filenames)
-  saved_filenames.extend(stars_filenames)
+  # TODO: This is a chicken-and-egg problem. The PixInsight compute graph
+  # hasn't run yet, so the OutputFile can't get the image's hash yet.
+  # I need to wait until after the PixInsight function has completed to
+  # compute the image hash.
+  saved_files.extend([
+      OutputFile(f, tags=dict(filter=v, type='stars'))
+      for v, f in zip(stars_view_ids, stars_filenames)
+  ])
 
   starless_filenames = [
       os.path.join(dir_name, f'{v}_starless.xisf') for v in registered_view_ids
   ]
   pix.SaveImages(registered_view_ids, starless_filenames)
-  saved_filenames.extend(starless_filenames)
+  saved_files.extend([
+      OutputFile(f, tags=dict(filter=v, type='starless'))
+      for v, f in zip(registered_view_ids, starless_filenames)
+  ])
 
   # TODO: The ViewIdList is a wart on the API.
   pix.CloseAllWindows(pix.ViewIdList([]))
 
   # TODO: Automatically keep track of saved filenames.
-  return saved_filenames
+  return saved_files
 
 
 def run(target, stacks, dest_path):
-  for s in target.stack_ids:
-    print(f'### Target has stack post-processed file '
-          f'{stacks[s].post_processed}')
+  print('### Entering step_post_process_target.run()')
+  post_processed = [
+      get_prev_result_object('post_process_stack', s) for s in target.stack_ids
+  ]
+  print('### post_processed images are', post_processed)
 
-  if any(stacks[s].post_processed == None for s in target.stack_ids):
+  if None in post_processed:
     print(f'### Skipping target because some post-processed images are missing')
-    return (dg.Result.FAILURE, "Post-processed files are missing")
+    return (dg.Result.FAILURE, "One or more post-processed files are missing")
 
   # TODO: Add some kind of sentinel file to skip post-processing if it has
   # already been done. (Maybe only use during development.)
+  if config.SUCCESS_IF_FILE_EXISTS:
+    dir_name = os.path.join(dest_path, 'Targets', target.name)
+    h_file = os.path.join(dir_name, 'H_registered.xisf')
+    if os.path.exists(h_file):
+      print(
+          '### step_post_process_target returning early because H file exists')
+      return (dg.Result.SUCCESS, [
+          OutputFile(h_file, tags=dict(filter='H', type='registered'))
+      ])
 
   ordered_stacks = order_stacks([stacks[id] for id in target.stack_ids])
-  saved_filenames = _post_process_target(target, ordered_stacks, dest_path)
+  saved_files = _post_process_target(target, ordered_stacks, dest_path)
 
   # TODO: Return FAILURE if the PixInsight task failed.
-  return (dg.Result.SUCCESS,
-          dict(filenames=[OutputFile(f) for f in saved_filenames]))
+  [f.hash_file(assert_exists=True) for f in saved_files]
+  return (dg.Result.SUCCESS, saved_files)
