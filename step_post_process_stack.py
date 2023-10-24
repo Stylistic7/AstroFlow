@@ -29,6 +29,17 @@ import pix
 from pix import PixInsight, FileList
 
 
+def _up_to_date_file_exists(stack_id, filename):
+  try:
+    xisf = XISF(filename)
+    file_meta = xisf.get_file_metadata()
+    if 'AstroFlow:stack_id' in file_meta:
+      if file_meta['AstroFlow:stack_id']['value'] == stack_id:
+        return True
+  except:
+    return False
+
+
 @PixInsight
 def _post_process_stack(stack, src_filename, dst_filename):
   # TODO: The FileList([...]) is a wart on the API.
@@ -63,9 +74,12 @@ def post_process_stack(stack):
     return (dg.Result.SUCCESS, OutputFile(dst_filename))
 
   # TODO: This is a great spot to check the hash of the file on disk.
-  if config.SUCCESS_IF_FILE_EXISTS and os.path.exists(dst_filename):
-    print(f'post_process_stack returning early because '
-          f'{dst_filename} already exists.')
+  # if config.SUCCESS_IF_FILE_EXISTS and os.path.exists(dst_filename):
+  #   print(f'post_process_stack returning early because '
+  #         f'{dst_filename} already exists.')
+  #   return (dg.Result.SUCCESS, OutputFile(dst_filename))
+
+  if _up_to_date_file_exists(stack.id, dst_filename):
     return (dg.Result.SUCCESS, OutputFile(dst_filename))
 
   # TODO: Clean up the GraXpert integration.
@@ -106,9 +120,7 @@ def post_process_stack(stack):
 
   xisf = XISF(master.filename)
   file_meta = xisf.get_file_metadata()
-  file_meta
   ims_meta = xisf.get_images_metadata()
-  ims_meta
   XISF.write(graxpert_filename,
              image,
              creator_app="AstroFlow",
@@ -120,9 +132,7 @@ def post_process_stack(stack):
 
   xisf = XISF(master.filename)
   file_meta = xisf.get_file_metadata()
-  file_meta
   ims_meta = xisf.get_images_metadata()
-  ims_meta
   XISF.write(graxpert_background_filename,
              background,
              creator_app="AstroFlow",

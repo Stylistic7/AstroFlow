@@ -22,6 +22,17 @@ def _exposure_time_string(stack):
   return f'{hours:02.0f}h{minutes:02.0f}m'
 
 
+def _up_to_date_file_exists(stack_id, filename):
+  try:
+    xisf = XISF(filename)
+    file_meta = xisf.get_file_metadata()
+    if 'AstroFlow:stack_id' in file_meta:
+      if file_meta['AstroFlow:stack_id']['value'] == stack_id:
+        return True
+  except:
+    return False
+
+
 def run(stack, fits_headers, dest_path):
   def symlink_frames(filenames, dest_path):
     for filename in filenames:
@@ -53,9 +64,12 @@ def run(stack, fits_headers, dest_path):
 
   # TODO: Save stack ids, target ids, etc. as FITS/XISF headers. Then I can
   # look at the file to see if it's actually up-to-date or not.
-  if config.SUCCESS_IF_FILE_EXISTS and os.path.exists(dst_filename):
-    print(f'### step_stack.run returning early because '
-          f'{dst_filename} already exists.')
+  # if config.SUCCESS_IF_FILE_EXISTS and os.path.exists(dst_filename):
+  #   print(f'### step_stack.run returning early because '
+  #         f'{dst_filename} already exists.')
+  #   return (dg.Result.SUCCESS, OutputFile(dst_filename))
+
+  if _up_to_date_file_exists(stack.id, dst_filename):
     return (dg.Result.SUCCESS, OutputFile(dst_filename))
 
   with tempfile.TemporaryDirectory() as tmp_dir:
@@ -81,9 +95,26 @@ def run(stack, fits_headers, dest_path):
               dict(reason="WBPP did not produce any master file"))
 
     print('filenames', filenames)
+    assert len(filenames) == 1
     src_filename = filenames[0]
 
-    shutil.copy(src_filename, dst_filename)
+    xisf = XISF(master.filename)
+    image = xisf.read_image(0)
+    file_meta = xisf.get_file_metadata()
+    ims_meta = xisf.get_images_metadata()
+    property_dict = {
+        'id': 'AstroFlow:stack_id',
+        'type': 'String',
+        'value': stack.id
+    }
+    file_meta[property_dict[id]] = property_dict
+    XISF.write(dst_filename,
+               image,
+               creator_app="AstroFlow",
+               image_metadata=ims_meta[0],
+               xisf_metadata=file_meta)
+
+    # shutil.copy(src_filename, dst_filename)
     print('Stacking produced master', dst_filename)
 
     return (dg.Result.SUCCESS, OutputFile(dst_filename))
