@@ -12,6 +12,7 @@ import concurrent.futures
 import datetime
 import pytz
 import numpy as np
+import structlog
 
 import pix
 import dependency_graph as dg
@@ -33,6 +34,9 @@ import step_post_process_target
 import step_mosaic
 import step_stack
 import image_handling
+
+logger = structlog.get_logger()
+log = logger
 
 
 # TODO: Building up a context object that is "parallel" to the disk cache
@@ -70,83 +74,11 @@ class ImageHashes(dict):
   pass
 
 
-def timeit(method):
-  def timed(*args, **kw):
-    ts = time.time()
-    result = method(*args, **kw)
-    te = time.time()
-    print('%r  %2.2f s' % (method.__name__, (te - ts)))
-    return result
-
-  return timed
-
-
-# TODO: Remove this entirely.
-def memoize_by_context(fields=None):
-  if fields == None:
-    fields = []
-
-  def actual_decorator(func):
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-      # print(f'{func.__name__} wrapper: context is {context}')
-
-      def hash_file_list(x):
-        if x == None:
-          return None
-        return hashlib.sha256(bytes(str(sorted(x)), 'utf-8')).hexdigest()
-
-      def maybe_hash(x):
-        if type(x) == Context:
-          return None
-        elif type(x) in [FitsHeaders, PlateSolutions, ImageHashes]:
-          return hash_file_list(x.keys())
-        elif type(x) == FileList:
-          return hash_file_list(x)
-        elif type(x) == Stack:
-          return x.id
-        elif type(x) is list:
-          return [maybe_hash(y) for y in x]
-        elif type(x) is tuple:
-          return tuple(maybe_hash(y) for y in x)
-        else:
-          return x
-
-      key = (func.__name__, [maybe_hash(x) for x in args], kwargs)
-      # print(f'{func.__name__} wrapper: key is {key}')
-
-      if key not in cache or any(getattr(context, f) for f in fields):
-        # print(f'### {func.__name__}: calling wrapped function')
-        # print(f'### {func.__name__} wrapper: key is {key}')
-        # print(f'{func.__name__}: key not in cache {key not in cache}')
-        # print(f'{func.__name__}: context requires it '
-        #       f'{any(getattr(context, f) for f in fields)}')
-        result = func(*args, **kwargs)
-        cache[key] = result
-        return result
-      else:
-        # print(f'### {func.__name__}: returning cached result')
-        return cache[key]
-
-    return wrapper
-
-  return actual_decorator
-
-
-@memoize_by_context(['all_frames_changed'])
-def my_func(light_frames):
-  return len(light_frames)
-
-
-def decorator_test():
-  light_frames = ['a', 'b']
-  result = my_func(light_frames)
-  print('decorator_test: result', result)
-
-
 def collect_results_as_dict(filenames, fn, prev_result, parallel=True):
+  log = logger.bind(fn=fn.__name__)
+
   def run_fn(filenames):
-    print(f'Running fn on {len(filenames)}')
+    log.info(f'running fn', num_files=len(filenames))
     if parallel:
       with Pool() as p:
         results = p.map(fn, filenames)
@@ -154,7 +86,7 @@ def collect_results_as_dict(filenames, fn, prev_result, parallel=True):
     else:
       return {f: fn(f) for f in filenames if fn(f)}
 
-  print('prev_result len', len(prev_result))
+  log.info(f'prev_result', num_files=len(prev_result))
   result = {k: v for k, v in prev_result.items() if os.path.exists(k)}
   num_removed_files = len(prev_result) - len(result)
   if num_removed_files:
@@ -209,7 +141,6 @@ def download(save_dir, default_filter):
                              default_filter)
 
 
-@timeit
 def find_files(input_dirs, max_frames=None):
   print('Finding files...')
   all_frames = set()
@@ -235,9 +166,8 @@ def find_files(input_dirs, max_frames=None):
 
 
 # TODO: This will scale poorly when there are hundreds of thousands of images.
-@timeit
 def read_fits_headers(all_frames):
-  print('Reading FITS headers...')
+  structlog.contextvars.bind_contextvars(task='read_fits_headers')
   fits_headers = collect_results_as_dict(all_frames, file_io.read_fits,
                                          cache.get('fits_headers', {}))
   cache['fits_headers'] = fits_headers
@@ -249,7 +179,6 @@ def sort_by_observation_date(all_frames, fits_headers):
 
 
 # TODO: This will scale poorly when there are hundreds of thousands of images.
-@timeit
 def compute_image_hashes(all_frames):
   print('Computing image hashes...')
   image_hashes = collect_results_as_dict(all_frames,
@@ -264,8 +193,6 @@ def check_duplicates(image_hashes):
   # TODO: Implement
 
 
-@timeit
-# @memoize_by_context()
 def split_images_by_type(all_frames, fits_headers):
   print('Splitting images by type...')
 
@@ -283,8 +210,6 @@ def split_images_by_type(all_frames, fits_headers):
   return light_frames, dark_frames, bias_frames, flat_frames
 
 
-@timeit
-# @memoize_by_context()
 def remove_frames_during_mount_movements(light_frames):
   print('Removing frames during mount movements...')
 
@@ -299,7 +224,6 @@ def remove_frames_during_mount_movements(light_frames):
 
 
 # TODO: This will scale poorly when there are hundreds of thousands of images.
-@timeit
 def plate_solve(light_frames):
   print('Plate solving...')
   plate_solutions = collect_results_as_dict(light_frames,
@@ -323,8 +247,6 @@ def remove_unsolvable_light_frames(light_frames, plate_solutions):
   return solved
 
 
-@timeit
-# @memoize_by_context()
 def identify_spatial_components(plate_solutions, fits_headers):
   print('Identifying spatial components...')
   spatial_components = spatial_association.find_components(
@@ -332,21 +254,6 @@ def identify_spatial_components(plate_solutions, fits_headers):
   return [(k, FileList(v)) for k, v in spatial_components.items()]
 
 
-# def assert_all_light_frames_in_spatial_components(light_frames,
-#                                                   spatial_components):
-#   file_sets = [set(f) for t, f in spatial_components]
-#   light_frames_in_spatial_components = set().union(*file_sets)
-#   print(f'### {len(light_frames)} light frames, '
-#         f'{len(light_frames_in_spatial_components)} light frames in '
-#         f'spatial components')
-#   assert set(light_frames) == light_frames_in_spatial_components
-#   print('### All light frames are in spatial components')
-
-
-# TODO: This memoization might be storing multiple copies of the entire
-# `fits_headers` in the cache, which is wasteful.
-@timeit
-# @memoize_by_context()
 def identify_stacks(spatial_components, fits_headers):
   print('Identifying stacks...')
   stacks = []
@@ -406,8 +313,6 @@ def group_by_fn(filenames, fn):
              for k, g in itertools.groupby(filenames, key=fn)})
 
 
-@timeit
-# @memoize_by_context()
 def get_camera_configs(stacks, fits_headers):
   print('Getting camera configs...')
   for stack in stacks:
@@ -418,11 +323,6 @@ def get_camera_configs(stacks, fits_headers):
   return stacks
 
 
-# TODO: Putting the for-loop body in a single function means that memoization
-# will fail if even one stack changes. These steps are pretty fast, but consider
-# making the loop body an independent function, and memoizing that.
-@timeit
-# @memoize_by_context()
 def associate_dark_frames(stacks, dark_frames, fits_headers):
   print(f'Associating dark frames...')
 
@@ -451,8 +351,6 @@ def associate_dark_frames(stacks, dark_frames, fits_headers):
   return stacks
 
 
-@timeit
-# @memoize_by_context()
 def associate_bias_frames(stacks, bias_frames, fits_headers):
   print(f'Associating bias frames...')
 
@@ -478,9 +376,6 @@ def associate_bias_frames(stacks, bias_frames, fits_headers):
   return stacks
 
 
-# TODO: There's some kind of terrible bug here where
-@timeit
-# @memoize_by_context()
 def associate_flat_frames(stacks, flat_frames, fits_headers):
   print('Associating flat frames...')
 
@@ -506,7 +401,6 @@ def associate_flat_frames(stacks, flat_frames, fits_headers):
   return stacks
 
 
-# @memoize_by_context()
 def compute_stack_metadata(stacks, fits_headers, plate_solutions):
   for stack in stacks:
     stack.store_metadata(fits_headers, plate_solutions)
@@ -514,7 +408,6 @@ def compute_stack_metadata(stacks, fits_headers, plate_solutions):
   return stacks
 
 
-# @memoize_by_context()
 def make_image_thumbnails(stacks, plate_solutions, fits_headers, width=640):
   with concurrent.futures.ProcessPoolExecutor() as executor:
     for stack in stacks:
@@ -547,7 +440,6 @@ def make_stack_thumbnails_videos(stacks, plate_solutions, fits_headers):
       executor.submit(image_handling.make_and_cache_stack_thumbnails, stack)
 
 
-# @memoize_by_context()
 def group_stacks_into_targets(stacks):
   stacks_for_target = defaultdict(list)
   for filter in ['L', 'R', 'G', 'B', 'S', 'H', 'O']:
@@ -559,8 +451,6 @@ def group_stacks_into_targets(stacks):
   return {t.id: t for t in targets}
 
 
-# TODO: Why doesn't memoization work here?
-# @memoize_by_context()
 def group_targets_into_mosaics(targets):
   print('Identifying mosaics...')
   result, result_dict = step_mosaic.run(targets, plot=False)
@@ -573,7 +463,6 @@ def group_targets_into_mosaics(targets):
   return mosaics
 
 
-# @memoize_by_context()
 def sanity_check_stacks(stacks, fits_headers):
   print('Sanity-checking stacks...')
   for stack in stacks:
@@ -592,8 +481,6 @@ graph = dg.DependencyGraph()
 
 
 def stack_subframes(stack, fits_headers, output_dir):
-  # print(f'stack_subframes for stack {stack.id}')
-
   @graph.add()
   def inner():
     if stack.status != Status.READY:
@@ -612,8 +499,6 @@ def stack_subframes(stack, fits_headers, output_dir):
 
 
 def post_process_stack(stack, upstream_tasks):
-  # print(f'post_process_stack for stack {stack.id}')
-
   @graph.add(*upstream_tasks)
   def inner():
     print(f'Post-processing stack {stack}!')
@@ -624,8 +509,6 @@ def post_process_stack(stack, upstream_tasks):
 
 
 def post_process_target(target, stacks, output_dir, upstream_tasks):
-  # print(f'post_process_target for target {target}')
-
   @graph.add(*upstream_tasks)
   def inner():
     print(f'Post-processing target {target}!')
@@ -636,8 +519,6 @@ def post_process_target(target, stacks, output_dir, upstream_tasks):
 
 
 def post_process_mosaic(mosaic, targets, stacks, output_dir, upstream_tasks):
-  # print(f'post_process_mosaic for mosaic {mosaic}')
-
   @graph.add(*upstream_tasks)
   def inner():
     print(f'### Post-processing mosaic {mosaic}!')
@@ -648,7 +529,7 @@ def post_process_mosaic(mosaic, targets, stacks, output_dir, upstream_tasks):
 
 
 def main(context):
-  decorator_test()
+  log.info('Starting AstroFlow')
 
   # TODO: This is a wart.
   pix._clear_cache()

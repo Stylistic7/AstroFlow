@@ -29,14 +29,20 @@ def _exposure_time_string(stack):
 
 
 def _up_to_date_file_exists(stack_id, filename):
+  if not os.path.exists(filename):
+    return False
+
   try:
     xisf = XISF(filename)
     file_meta = xisf.get_file_metadata()
-    if 'AstroFlow:stack_id' in file_meta:
-      if file_meta['AstroFlow:stack_id']['value'] == stack_id:
+    key = 'AstroFlow:stack_id'
+    if key in file_meta:
+      if file_meta[key]['value'] == stack_id:
         return True
   except:
-    return False
+    pass
+
+  return False
 
 
 def _output_filename(stack, dest_path):
@@ -50,6 +56,7 @@ def needs_to_run(stack, dest_path):
   up_to_date = _up_to_date_file_exists(stack.id,
                                        _output_filename(stack, dest_path))
   print(f'### stack {stack} up_to_date {up_to_date}')
+  assert up_to_date in [True, False]
   return not up_to_date
 
 
@@ -119,7 +126,7 @@ def run(stack, fits_headers, dest_path):
     assert len(filenames) == 1
     src_filename = filenames[0]
 
-    xisf = XISF(master.filename)
+    xisf = XISF(src_filename)
     image = xisf.read_image(0)
     file_meta = xisf.get_file_metadata()
     ims_meta = xisf.get_images_metadata()

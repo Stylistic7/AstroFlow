@@ -1,7 +1,7 @@
 import astropy.io.fits as pyfits
 from pathlib import Path
 
-path = "/Users/nobody/Projects/Astro/Raw/2023-10-06"
+path = "/Users/nobody/Projects/Astro/Raw/2023-10-26"
 filenames = list(str(f) for f in Path(path).rglob("*.fit"))
 
 num_files = 0

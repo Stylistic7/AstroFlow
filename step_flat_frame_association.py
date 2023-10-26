@@ -5,9 +5,13 @@ import datetime
 import pytz
 import numpy as np
 import itertools
+import structlog
 
 from cache import cache
 from stack import Stack, Status, FileList
+
+logger = structlog.get_logger()
+log = logger
 
 
 def _set_flatvers_fits_header(filenames, flat_version):
@@ -54,8 +58,8 @@ def get_runs(frames, fits_headers):
     if current_date_obs > prev_date_obs + max_gap:
       # Save the current run, if there is one.
       if run_start:
-        print(f'### Appending run with run start {run_start} '
-              f'and frame count {frame_count}')
+        log.debug(f'### Appending run with run start {run_start} '
+                  f'and frame count {frame_count}')
         assert frame_count
         runs.append((run_start, prev_date_obs))
 
@@ -97,7 +101,7 @@ def associate_flat_frames_for_stack(stack, flat_frames, fits_headers):
   if flat_runs:
     for imaging_run in imaging_runs:
       im_start, im_end = imaging_run
-      print(f'### imaging run {str(im_start)} to {str(im_end)}')
+      log.debug(f'### imaging run {str(im_start)} to {str(im_end)}')
       run_distances = [
           run_distance(imaging_run, flat_run) for flat_run in flat_runs
       ]
@@ -106,28 +110,25 @@ def associate_flat_frames_for_stack(stack, flat_frames, fits_headers):
       for i, flat_run in enumerate(flat_runs):
         flat_start, flat_end = flat_run
         if i == index:
-          print(f'### --> flat run {str(flat_start)} to {str(flat_end)}')
+          log.debug(f'### --> flat run {str(flat_start)} to {str(flat_end)}')
         else:
-          print(f'###     flat run {str(flat_start)} to {str(flat_end)}')
+          log.debug(f'###     flat run {str(flat_start)} to {str(flat_end)}')
 
   for imaging_run, flat_run in flat_frame_associations:
-    print(f'associated imaging run {imaging_run} '
-          f'with flat run {flat_run}')
+    log.debug(f'associated imaging run {imaging_run} '
+              f'with flat run {flat_run}')
 
   def is_in_run(frame, run):
     run_start, run_end = run
     date_obs = fits_headers[frame]['DATE-OBS']
     result = date_obs >= run_start and date_obs <= run_end
-    print(
-        f'### run_start {run_start} run_end {run_end} date_obs {date_obs} result {result}'
-    )
     return result
 
   stack.flat_frame_associations = []
   for imaging_run, flat_run in flat_frame_associations:
-    print(f'### finding light frames in imaging_run {imaging_run}')
+    log.debug(f'### finding light frames in imaging_run {imaging_run}')
     lights = list(f for f in stack.light_frames if is_in_run(f, imaging_run))
-    print(f'### finding flat frames in flat_run {flat_run}')
+    log.debug(f'### finding flat frames in flat_run {flat_run}')
     flats = list(f for f in flat_frames if is_in_run(f, flat_run))
     assert lights
     assert flats
@@ -136,11 +137,3 @@ def associate_flat_frames_for_stack(stack, flat_frames, fits_headers):
   stack.flat_frames = FileList(
       itertools.chain.from_iterable(
           flat_frames for _, flat_frames in stack.flat_frame_associations))
-
-  # stack.flat_frame_associations = flat_frame_associations
-  # print(f'### Final associations:')
-  # for light_frames, flat_frames in stack.flat_frame_associations:
-  #   print(f'### {len(light_frames)} light frames and '
-  #         f'{len(flat_frames)} flat frames')
-  #   assert light_frames
-  #   assert flat_frames
