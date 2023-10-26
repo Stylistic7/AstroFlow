@@ -4,6 +4,7 @@ import shutil
 import subprocess
 from pathlib import Path
 import numpy as np
+from xisf import XISF
 
 import config
 import file_io
@@ -13,6 +14,11 @@ from cache import cache
 import dependency_graph as dg
 import step_flat_frame_association
 from output_file import OutputFile
+
+# TODO: Tasks need a unified interface with the following functions:
+#
+# is there any work to do?
+# do the work
 
 
 def _exposure_time_string(stack):
@@ -31,6 +37,20 @@ def _up_to_date_file_exists(stack_id, filename):
         return True
   except:
     return False
+
+
+def _output_filename(stack, dest_path):
+  output_dir = os.path.join(dest_path, 'Stacks', stack.target, 'masters')
+  return os.path.join(
+      output_dir,
+      f'master_light_{stack.target}_{stack.rig}_{stack.filter}.xisf')
+
+
+def needs_to_run(stack, dest_path):
+  up_to_date = _up_to_date_file_exists(stack.id,
+                                       _output_filename(stack, dest_path))
+  print(f'### stack {stack} up_to_date {up_to_date}')
+  return not up_to_date
 
 
 def run(stack, fits_headers, dest_path):
@@ -55,9 +75,10 @@ def run(stack, fits_headers, dest_path):
     shutil.copy(stack.light_frames[0], dst_filename)
     return (dg.Result.Success, dst_filename)
 
-  dst_filename = os.path.join(
-      output_dir,
-      f'master_light_{stack.target}_{stack.rig}_{stack.filter}.xisf')
+  # dst_filename = os.path.join(
+  #     output_dir,
+  #     f'master_light_{stack.target}_{stack.rig}_{stack.filter}.xisf')
+  dst_filename = _output_filename(stack, dest_path)
 
   print(f'### step_stack.run dst_filename {dst_filename} exists '
         f'{os.path.exists(dst_filename)}')

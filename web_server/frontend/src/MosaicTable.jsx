@@ -242,10 +242,10 @@ export default function Mosaics(props) {
     // TODO: Remove the FileLists from the objects before sending them across
     // the network.
     fetch('/mosaics').then(res => res.json()).then(mosaics => {
-      setMosaics(mosaics);  
+      setMosaics(Object.values(mosaics));  
     });
     fetch('/targets').then(res => res.json()).then(targets => {
-      setTargets(targets);  
+      setTargets(Object.values(targets));  
     });
   }, [order, orderBy, rowsPerPage, page, filters]);
 

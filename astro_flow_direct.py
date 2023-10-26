@@ -478,104 +478,6 @@ def associate_bias_frames(stacks, bias_frames, fits_headers):
   return stacks
 
 
-def get_runs(frames, fits_headers):
-  if not frames: return []
-
-  # print(f'### get_runs for {len(frames)} frames')
-  frames = sorted(frames, key=lambda f: fits_headers[f]['DATE-OBS'])
-
-  # print('### sorted light frame dates:')
-  # for light_frame in stack.light_frames:
-  #   print('###', type(fits_headers[light_frame]['DATE-OBS']))
-  #   print('###', fits_headers[light_frame]['DATE-OBS'])
-
-  max_gap = datetime.timedelta(hours=1)
-  runs = []
-  prev_date_obs = pytz.utc.localize(datetime.datetime.min)
-  run_start = None
-  for frame in frames:
-    current_date_obs = fits_headers[frame]['DATE-OBS']
-    if current_date_obs > prev_date_obs + max_gap:
-      # Save the current imaging run, if there is one.
-      if run_start:
-        runs.append((run_start, prev_date_obs))
-
-      # Start a new imaging run.
-      run_start = current_date_obs
-
-    prev_date_obs = current_date_obs
-
-  runs.append((run_start, prev_date_obs))
-
-  return runs
-
-
-def run_distance(a, b):
-  start_a, end_a = a
-  midpoint_a = start_a + (end_a - start_a) / 2
-
-  start_b, end_b = b
-  midpoint_b = start_b + (end_b - start_a) / 2
-
-  return abs(midpoint_a - midpoint_b)
-
-
-def associate_flat_frames_for_stack(stack, flat_frames, fits_headers):
-  print(f'Associating flat frames for stack {stack}')
-  imaging_runs = get_runs(stack.light_frames, fits_headers)
-  # for start, end in imaging_runs:
-  #   print(f'imaging run start {start} end {end}')
-
-  flat_runs = get_runs(flat_frames, fits_headers)
-  # for start, end in flat_runs:
-  #   print(f'### flat run start {str(start)} end {str(end)}')
-
-  flat_frame_associations = []
-  if flat_runs:
-    for imaging_run in imaging_runs:
-      im_start, im_end = imaging_run
-      print(f'### imaging run {str(im_start)} to {str(im_end)}')
-      run_distances = [
-          run_distance(imaging_run, flat_run) for flat_run in flat_runs
-      ]
-      index = np.argmin(run_distances)
-      flat_frame_associations.append((imaging_run, flat_runs[index]))
-      for i, flat_run in enumerate(flat_runs):
-        flat_start, flat_end = flat_run
-        if i == index:
-          print(f'### --> flat run {str(flat_start)} to {str(flat_end)}')
-        else:
-          print(f'###     flat run {str(flat_start)} to {str(flat_end)}')
-
-  for imaging_run, flat_run in flat_frame_associations:
-    print(f'associated imaging run {imaging_run} '
-          f'with flat run {flat_run}')
-
-  def is_in_run(frame, run):
-    run_start, run_end = run
-    date_obs = fits_headers[frame]['DATE-OBS']
-    return date_obs >= run_start and date_obs <= run_end
-
-  stack.flat_frame_associations = []
-  for imaging_run, flat_run in flat_frame_associations:
-    light_frames = list(
-        f for f in stack.light_frames if is_in_run(f, imaging_run))
-    flat_frames = list(f for f in flat_frames if is_in_run(f, flat_run))
-    stack.flat_frame_associations.append((light_frames, flat_frames))
-
-  stack.flat_frames = FileList(
-      itertools.chain.from_iterable(
-          flat_frames for _, flat_frames in stack.flat_frame_associations))
-
-  # stack.flat_frame_associations = flat_frame_associations
-  # print(f'### Final associations:')
-  # for light_frames, flat_frames in stack.flat_frame_associations:
-  #   print(f'### {len(light_frames)} light frames and '
-  #         f'{len(flat_frames)} flat frames')
-  #   assert light_frames
-  #   assert flat_frames
-
-
 # TODO: There's some kind of terrible bug here where
 @timeit
 # @memoize_by_context()
@@ -598,7 +500,8 @@ def associate_flat_frames(stacks, flat_frames, fits_headers):
     print(f'Found {len(flats)} flat frames for rig '
           f'{stack.rig} and filter {stack.filter}')
 
-    associate_flat_frames_for_stack(stack, flats, fits_headers)
+    step_flat_frame_association.associate_flat_frames_for_stack(
+        stack, flats, fits_headers)
 
   return stacks
 
@@ -693,11 +596,12 @@ def stack_subframes(stack, fits_headers, output_dir):
 
   @graph.add()
   def inner():
-    # TODO: Returning early, because the master file already exists, should
-    # be considered dg.Result.NEVER_RUN. This should skip flat frame
-    # association. So the check should be done HERE, not in step_stack.run().
-    #
-    # TODO: If the stack has Status.NOT_READY, don't call step_stack.run().
+    if stack.status != Status.READY:
+      return (dg.Result.FAILURE, "Stack failed sanity checks")
+
+    if not step_stack.needs_to_run(stack, output_dir):
+      return prev_results.get_prev_result('stack_subframes', stack.id)
+
     print(f'Stacking stack {stack}!')
     result = step_stack.run(stack, fits_headers, output_dir)
     print(f'step_stack.run returned {result}')
@@ -821,7 +725,6 @@ def main(context):
         target_tasks = []
         for stack_id in target.stack_ids:
           stack = stacks[stack_id]
-          if stack.status != Status.READY: continue
           task = stack_subframes(stack, fits_headers, context.output_dir)
           target_tasks.append(post_process_stack(stack, [task]))
         mosaic_tasks.append(
@@ -842,8 +745,8 @@ def main(context):
     #                  for s in stacks.values() if 'IC1805' in s.target}
     # control_modes |= {('stack_subframes', s.id): dg.ControlMode.FORCE
     #                  for s in stacks.values()}
-    # control_modes |= {('stack_subframes', s.id): dg.ControlMode.FORCE
-    #                   for s in stacks.values() if 'IC1848' in s.target}
+    control_modes |= {('stack_subframes', s.id): dg.ControlMode.FORCE
+                      for s in stacks.values() if 'IC1848' in s.target}
     # control_modes |= {('post_process_stack', s.id): dg.ControlMode.FORCE
     #                   for s in stacks.values() if 'IC1848' in s.target}
     # control_modes |= {('post_process_target', t.id): dg.ControlMode.FORCE
