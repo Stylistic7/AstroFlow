@@ -1,6 +1,24 @@
+import React, { useState } from "react";
+
 import './Starmap.css';
 
 export default function Starmap({stacks, targets, mosaics}) {
+	const [pos, setPos] = useState({ x: 0, y: 0, scale: 1 });
+
+  const onScroll = (e) => {
+    const delta = e.deltaY * -0.01;
+    const newScale = pos.scale + delta;
+
+    const ratio = 1 - newScale / pos.scale;
+
+    setPos({
+      scale: newScale,
+      x: pos.x + (e.clientX - pos.x) * ratio,
+      y: pos.y + (e.clientY - pos.y) * ratio
+    });
+  };
+
+  // TODO: This probably isn't the right way to do this in React.
 	var svg = document.getElementById("starmap_svg");
 
 	for (const [key, target] of Object.entries(targets)) {
@@ -23,7 +41,12 @@ export default function Starmap({stacks, targets, mosaics}) {
 	}
 
 	return (
-		<div id="starmap_container">
+		<div id="starmap_container"
+				 onWheelCapture={onScroll} 
+				 style={{
+           transformOrigin: "0 0",
+           transform: `translate(${pos.x}px, ${pos.y}px) scale(${pos.scale})`
+         }} >
 			<img id="starmap_img" src="/static/images/starmap_2020_4k.png" />
 			<img id="constellation_figures_img" src="/static/images/constellation_figures_4k.png" />
 			<svg id="starmap_svg" viewBox="0 0 360 180"></svg>
