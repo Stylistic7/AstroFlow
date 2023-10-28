@@ -114,7 +114,10 @@ def download(save_dir, default_filter):
   # into stacks when they ~the same image scale and resolution. Allow users
   # to give each combination a mnemonic name.
   #
-  # TODO: Automatically apply Drizzle for under-sampled images,
+  # TODO: Automatically apply Drizzle for under-sampled images.
+  #
+  # TODO: Scan network for ASIAIR devices, so the user doesn't have to set
+  # static IPs.
   rigs = [
       {
           'name': 'RC71',
@@ -136,6 +139,10 @@ def download(save_dir, default_filter):
       'fits_paths': ['ASIAIR/Autorun', 'ASIAIR/Plan']
   }]
 
+  # TODO: Mount the volumes, then repeatedly copy files from them, e.g. every
+  # half hour. Any imaging runs that are closed (e.g. a pane has been finished)
+  # are then ready to stack. Stacking and downloading must be done in parallel,
+  # though.
   for rig in rigs:
     step_download_asiair.run(rig['name'], rig['ip'], search_defs, save_dir,
                              default_filter)
@@ -626,7 +633,7 @@ def main(context):
     #                  for s in stacks.values() if 'IC1805' in s.target}
     # control_modes |= {('stack_subframes', s.id): dg.ControlMode.FORCE
     #                  for s in stacks.values()}
-    control_modes |= {('stack_subframes', s.id): dg.ControlMode.FORCE
+    control_modes |= {('stack_subframes', s.id): dg.ControlMode.AUTO
                       for s in stacks.values() if 'IC1848' in s.target}
     # control_modes |= {('post_process_stack', s.id): dg.ControlMode.FORCE
     #                   for s in stacks.values() if 'IC1848' in s.target}

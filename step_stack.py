@@ -135,7 +135,7 @@ def run(stack, fits_headers, dest_path):
         'type': 'String',
         'value': stack.id
     }
-    file_meta[property_dict[id]] = property_dict
+    file_meta[property_dict['id']] = property_dict
     XISF.write(dst_filename,
                image,
                creator_app="AstroFlow",
