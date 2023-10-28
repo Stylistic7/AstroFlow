@@ -260,6 +260,37 @@ class TestDependencyGraph(unittest.TestCase):
         }
         self.assertEqual(results, expected)
 
+  def test_one_target_two_stacks_no_work_to_do(self):
+    print('\n\nEntering test_one_target_two_stacks_no_work_to_do')
+
+    make_one_target_two_stack_graph()
+    control_modes = {}
+
+    prev_results = {
+        ('stack_subframes', 'foo'): (dg.Ran.RAN, (dg.Result.SUCCESS, {})),
+        ('post_process_stack', 'foo'): (dg.Ran.RAN, (dg.Result.SUCCESS, {})),
+        ('stack_subframes', 'bar'): (dg.Ran.RAN, (dg.Result.SUCCESS, {})),
+        ('post_process_stack', 'bar'): (dg.Ran.RAN, (dg.Result.SUCCESS, {})),
+        ('post_process_target', 'pretty_nebula'):
+        (dg.Ran.RAN, (dg.Result.SUCCESS, {})),
+    }
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+      results = graph.run(executor, control_modes, prev_results)
+      expected = {
+          ('stack_subframes', 'foo'):
+          (dg.Ran.DID_NOT_RUN, (dg.Result.SUCCESS, {})),
+          ('post_process_stack', 'foo'):
+          (dg.Ran.DID_NOT_RUN, (dg.Result.SUCCESS, {})),
+          ('stack_subframes', 'bar'):
+          (dg.Ran.DID_NOT_RUN, (dg.Result.SUCCESS, {})),
+          ('post_process_stack', 'bar'):
+          (dg.Ran.DID_NOT_RUN, (dg.Result.SUCCESS, {})),
+          ('post_process_target', 'pretty_nebula'): (dg.Ran.DID_NOT_RUN,
+                                                     (dg.Result.SUCCESS, {})),
+      }
+      self.assertEqual(results, expected)
+
   def test_one_target_two_stacks_one_stack_failure(self):
     print('\n\nEntering test_one_target_two_stacks_one_stack_failure')
 

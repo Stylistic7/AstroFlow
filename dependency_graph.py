@@ -101,8 +101,13 @@ class DependencyGraph(object):
 
     upstream_results = [results[u.id] for u in self._upstream[f]]
     if len(upstream_results) == 0:
-      print(f'RUNNING {key}: it has no upstream tasks')
-      return True
+      if prev_result == Result.NEVER_RUN:
+        print(f'RUNNING {key}: it has no upstream tasks and has never run')
+        return True
+      else:
+        print(f'NOT RUNNING {key}: it has no upstream tasks and has '
+              'previously run')
+        return False
 
     if prev_result == Result.NEVER_RUN and all(
         result == Result.SUCCESS for _, (result, _) in upstream_results):
@@ -126,13 +131,6 @@ class DependencyGraph(object):
     count_deps = {task: len(deps) for task, deps in self._upstream.items()}
     base_tasks = {task for task, count in count_deps.items() if count == 0}
 
-    # TODO: Should tasks that shouldn't run be excluded entirely from this list?
-    #
-    # TODO: This clause completely eliminates knowledge about whether the
-    # task actually runs or not.
-    #
-    # This function returns a future... but if the task didn't run, what should
-    # it return instead?
     def run_or_no_op(task):
       if self.should_run(task, control_modes, results):
         return executor.submit(task)
