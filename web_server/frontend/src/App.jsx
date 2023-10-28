@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import LeftDrawer from "./LeftDrawer.jsx";
 import Search from "./Search.jsx";
+import Starmap from "./Starmap.jsx";
 import TargetTable from "./TargetTable.jsx";
 import StackTable from "./StackTable.jsx";
 import MosaicTable from "./MosaicTable.jsx";
@@ -70,6 +71,7 @@ function App() {
       <CssBaseline />
       <Search stacks={stacks} targets={targets} mosaics={mosaics} />
       <LeftDrawer />
+      <Starmap stacks={stacks} targets={targets} mosaics={mosaics} />
       <MosaicTable />
     </ThemeProvider>
   );
