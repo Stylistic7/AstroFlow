@@ -30,6 +30,9 @@ from pix import PixInsight, FileList
 
 
 def _up_to_date_file_exists(stack_id, filename):
+  if not os.path.exists(filename):
+    return False
+
   try:
     xisf = XISF(filename)
     file_meta = xisf.get_file_metadata()
@@ -38,6 +41,21 @@ def _up_to_date_file_exists(stack_id, filename):
         return True
   except:
     return False
+
+
+def _output_filename(stack, dest_path):
+  output_dir = os.path.join(dest_path, 'Stacks', stack.target, 'masters')
+  return os.path.join(
+      output_dir,
+      f'post_processed_{stack.target}_{stack.rig}_{stack.filter}.xisf')
+
+
+def needs_to_run(stack, dest_path):
+  up_to_date = _up_to_date_file_exists(stack.id,
+                                       _output_filename(stack, dest_path))
+  print(f'### stack {stack} up_to_date {up_to_date}')
+  assert up_to_date in [True, False]
+  return not up_to_date
 
 
 @PixInsight
@@ -64,14 +82,18 @@ def post_process_stack(stack):
   master = get_prev_result_object('stack_subframes', stack.id)
   if not master:
     print('post_process_stack master is None')
-    return (dg.Result.FAILURE, "Stack has no master")
+    return (dg.Ran.RAN, (dg.Result.FAILURE, "Stack has no master"))
 
-  filename, ext = os.path.splitext(master.filename)
-  dst_filename = filename + '_post' + '.xisf'
-  print(f'post_process_stack dst_filename {dst_filename}')
+  # filename, ext = os.path.splitext(master.filename)
+  # dst_filename = filename + '_post' + '.xisf'
+  # print(f'post_process_stack dst_filename {dst_filename}')
+
+  dst_filename = _output_filename(stack, dest_path)
+  print(f'### post_process_stack.run dst_filename {dst_filename} exists '
+        f'{os.path.exists(dst_filename)}')
 
   if config.TEST_MODE:
-    return (dg.Result.SUCCESS, OutputFile(dst_filename))
+    return (dg.Ran.RAN, (dg.Result.SUCCESS, OutputFile(dst_filename)))
 
   # TODO: This is a great spot to check the hash of the file on disk.
   # if config.SUCCESS_IF_FILE_EXISTS and os.path.exists(dst_filename):
@@ -79,8 +101,8 @@ def post_process_stack(stack):
   #         f'{dst_filename} already exists.')
   #   return (dg.Result.SUCCESS, OutputFile(dst_filename))
 
-  if _up_to_date_file_exists(stack.id, dst_filename):
-    return (dg.Result.SUCCESS, OutputFile(dst_filename))
+  # if _up_to_date_file_exists(stack.id, dst_filename):
+  #   return (dg.Result.SUCCESS, OutputFile(dst_filename))
 
   # TODO: Clean up the GraXpert integration.
   # TODO: Move to the `logging` module.
@@ -142,4 +164,4 @@ def post_process_stack(stack):
   _post_process_stack(stack, graxpert_filename, dst_filename)
 
   # TODO: Return FAILURE if PixInsight task failed for some reason.
-  return (dg.Result.SUCCESS, OutputFile(dst_filename))
+  return (dg.Ran.RAN, (dg.Result.SUCCESS, OutputFile(dst_filename)))

@@ -80,13 +80,13 @@ def run(stack, fits_headers, dest_path):
         output_dir,
         f'master_light_{stack.target}_{stack.rig}_{stack.filter}.fit')
     shutil.copy(stack.light_frames[0], dst_filename)
-    return (dg.Result.Success, dst_filename)
+    return (dg.Ran.RAN, (dg.Result.Success, dst_filename))
 
   # dst_filename = os.path.join(
   #     output_dir,
   #     f'master_light_{stack.target}_{stack.rig}_{stack.filter}.xisf')
-  dst_filename = _output_filename(stack, dest_path)
 
+  dst_filename = _output_filename(stack, dest_path)
   print(f'### step_stack.run dst_filename {dst_filename} exists '
         f'{os.path.exists(dst_filename)}')
 
@@ -97,8 +97,8 @@ def run(stack, fits_headers, dest_path):
   #         f'{dst_filename} already exists.')
   #   return (dg.Result.SUCCESS, OutputFile(dst_filename))
 
-  if _up_to_date_file_exists(stack.id, dst_filename):
-    return (dg.Result.SUCCESS, OutputFile(dst_filename))
+  # if _up_to_date_file_exists(stack.id, dst_filename):
+  #   return (dg.Result.SUCCESS, OutputFile(dst_filename))
 
   with tempfile.TemporaryDirectory() as tmp_dir:
     step_flat_frame_association.set_flat_versions(stack, fits_headers)
@@ -119,8 +119,9 @@ def run(stack, fits_headers, dest_path):
       # on the next run. Distinguish the cases where the stack has never been
       # attempted from the cases where it just didn't succeed.
       print(f'### WBPP did not produce any master file.')
-      return (dg.Result.FAILURE,
-              dict(reason="WBPP did not produce any master file"))
+      return (dg.Ran.RAN,
+              (dg.Result.FAILURE,
+               dict(reason="WBPP did not produce any master file")))
 
     print('filenames', filenames)
     assert len(filenames) == 1
@@ -145,4 +146,4 @@ def run(stack, fits_headers, dest_path):
     # shutil.copy(src_filename, dst_filename)
     print('Stacking produced master', dst_filename)
 
-    return (dg.Result.SUCCESS, OutputFile(dst_filename))
+    return (dg.Ran.RAN, (dg.Result.SUCCESS, OutputFile(dst_filename)))

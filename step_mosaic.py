@@ -625,7 +625,8 @@ def process_mosaic(mosaic, targets, stacks, output_dir):
     if not post_pocessed:
       print(f'### Aborting mosaic {mosaic.name} because target {target.id} '
             f'had result {post_pocessed}')
-      return (dg.Result.FAILURE, "Some post-processed images were missing")
+      return (dg.Ran.RAN, (dg.Result.FAILURE,
+                           "Some post-processed images were missing"))
 
     # TODO: Select color channels here.
     post_pocessed = post_pocessed[0].filename
@@ -656,8 +657,8 @@ def process_mosaic(mosaic, targets, stacks, output_dir):
   output_filenames = [OutputFile(p.output_filename) for p in panels]
   output_filenames.append(OutputFile(merged_mosaic))
 
-  return (dg.Result.SUCCESS,
-          dict(panels=panels, output_filenames=output_filename))
+  return (dg.Ran.RAN, (dg.Result.SUCCESS,
+                       dict(panels=panels, output_filenames=output_filename)))
 
 
 def main():

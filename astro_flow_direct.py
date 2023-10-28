@@ -491,10 +491,12 @@ def stack_subframes(stack, fits_headers, output_dir):
   @graph.add()
   def inner():
     if stack.status != Status.READY:
-      return (dg.Result.FAILURE, "Stack failed sanity checks")
+      return (dg.Ran.RAN, (dg.Result.FAILURE, "Stack failed sanity checks"))
 
     if not step_stack.needs_to_run(stack, output_dir):
-      return prev_results.get_prev_result('stack_subframes', stack.id)
+      _, prev_result = prev_results.get_prev_result('stack_subframes',
+                                                    stack.id)
+      return (dg.Ran.DID_NOT_RUN, prev_result)
 
     print(f'Stacking stack {stack}!')
     result = step_stack.run(stack, fits_headers, output_dir)
@@ -508,6 +510,11 @@ def stack_subframes(stack, fits_headers, output_dir):
 def post_process_stack(stack, upstream_tasks):
   @graph.add(*upstream_tasks)
   def inner():
+    if not step_post_process_stack.needs_to_run(stack, output_dir):
+      _, prev_result = prev_results.get_prev_result('post_process_stack',
+                                                    stack.id)
+      return (dg.Ran.DID_NOT_RUN, prev_result)
+
     print(f'Post-processing stack {stack}!')
     return step_post_process_stack.post_process_stack(stack)
 
@@ -633,8 +640,8 @@ def main(context):
     #                  for s in stacks.values() if 'IC1805' in s.target}
     # control_modes |= {('stack_subframes', s.id): dg.ControlMode.FORCE
     #                  for s in stacks.values()}
-    control_modes |= {('stack_subframes', s.id): dg.ControlMode.AUTO
-                      for s in stacks.values() if 'IC1848' in s.target}
+    control_modes |= {('stack_subframes', s.id): dg.ControlMode.DISABLED
+                      for s in stacks.values() if 'IC1848' not in s.target}
     # control_modes |= {('post_process_stack', s.id): dg.ControlMode.FORCE
     #                   for s in stacks.values() if 'IC1848' in s.target}
     # control_modes |= {('post_process_target', t.id): dg.ControlMode.FORCE

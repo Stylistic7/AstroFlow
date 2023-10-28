@@ -245,7 +245,7 @@ export default function Mosaics(props) {
       setMosaics(Object.values(mosaics));  
     });
     fetch('/targets').then(res => res.json()).then(targets => {
-      setTargets(Object.values(targets));  
+      setTargets(targets);  
     });
   }, [order, orderBy, rowsPerPage, page, filters]);
 

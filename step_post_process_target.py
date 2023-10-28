@@ -139,7 +139,8 @@ def run(target, stacks, dest_path):
 
   if None in post_processed:
     print(f'### Skipping target because some post-processed images are missing')
-    return (dg.Result.FAILURE, "One or more post-processed files are missing")
+    return (dg.Ran.RAN, (dg.Result.FAILURE,
+                         "One or more post-processed files are missing"))
 
   # TODO: Add some kind of sentinel file to skip post-processing if it has
   # already been done. (Maybe only use during development.)
@@ -149,13 +150,13 @@ def run(target, stacks, dest_path):
     if os.path.exists(h_file):
       print(
           '### step_post_process_target returning early because H file exists')
-      return (dg.Result.SUCCESS, [
+      return (dg.Ran.RAN, (dg.Result.SUCCESS, [
           OutputFile(h_file, tags=dict(filter='H', type='registered'))
-      ])
+      ]))
 
   ordered_stacks = order_stacks([stacks[id] for id in target.stack_ids])
   saved_files = _post_process_target(target, ordered_stacks, dest_path)
 
   # TODO: Return FAILURE if the PixInsight task failed.
   [f.hash_file(assert_exists=True) for f in saved_files]
-  return (dg.Result.SUCCESS, saved_files)
+  return (dg.Ran.RAN, (dg.Result.SUCCESS, saved_files))

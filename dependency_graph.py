@@ -7,6 +7,9 @@ import traceback
 
 from stack import Stack
 
+# TODO: The nested (ran, (result, obj)) structure is weird. Simplify it
+# somehow. Maybe a dataclass?
+
 
 class ControlMode(Enum):
   DISABLED = 0
@@ -34,12 +37,12 @@ class Ran(Enum):
 # so the default control mode is DISABLED. Users will have to explicitly time-
 # consuming tasks.
 # TODO: Let users pick tasks in the GUI.
-DEFAULT_CONTROL_MODE = ControlMode.AUTO
 
 
 class DependencyGraph(object):
   def __init__(self):
     self.clear()
+    self.default_control_mode = ControlMode.AUTO
 
   def clear(self):
     #: Maps functions to their upstream connections (dependencies)
@@ -63,7 +66,7 @@ class DependencyGraph(object):
 
     # If any of the upstream tasks were forced, this task is also forced.
     upstream_control_modes = [
-        control_modes.get(u.id, DEFAULT_CONTROL_MODE)
+        control_modes.get(u.id, self.default_control_mode)
         for u in self._upstream[f]
     ]
     if any(u == ControlMode.FORCE for u in upstream_control_modes):
@@ -75,7 +78,7 @@ class DependencyGraph(object):
 
     # TODO: Must also include *downstream* tasks that are forced!
 
-    control_mode = control_modes.get(f.id, DEFAULT_CONTROL_MODE)
+    control_mode = control_modes.get(f.id, self.default_control_mode)
     # print(f'should_run {key} has id {f.id} and control mode {control_mode}')
 
     if control_mode == ControlMode.DISABLED:
