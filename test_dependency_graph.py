@@ -49,7 +49,7 @@ graph = dg.DependencyGraph()
 # of (task_name, id), and I would like to preserve that.
 
 
-def stack_subframes(stack, output_dir=None):
+def stack_subframes(stack, output_dir=None, fail=False):
   id = ('stack_subframes', stack.id)
 
   # TODO: THis code is wrong. The inner function needs some way to communicate
@@ -67,7 +67,10 @@ def stack_subframes(stack, output_dir=None):
       return (dg.Ran.DID_NOT_RUN, (dg.Result.SUCCESS, {}))
 
     print(f'TASK RUNNING {id}')
-    return (dg.Ran.RAN, (dg.Result.SUCCESS, {}))
+    if fail:
+      return (dg.Ran.RAN, (dg.Result.FAILURE, {}))
+    else:
+      return (dg.Ran.RAN, (dg.Result.SUCCESS, {}))
 
   inner.id = id
   return inner
@@ -131,6 +134,31 @@ class TestDependencyGraph(unittest.TestCase):
       results = graph.run(executor, control_modes)
       expected = {
           ('stack_subframes', 'abc123'): (dg.Ran.RAN, (dg.Result.SUCCESS, {})),
+          ('post_process_stack', 'abc123'):
+          (dg.Ran.RAN, (dg.Result.SUCCESS, {})),
+      }
+      self.assertEqual(results, expected)
+
+  def test_one_stack_prev_run(self):
+    print('\n\nEntering test_one_stack_prev_run')
+
+    graph.clear()
+
+    stack = Stack(id='abc123')
+    task = stack_subframes(stack)
+    post_process_stack(stack, [task])
+
+    control_modes = {}
+
+    prev_results = {
+        ('stack_subframes', 'abc123'): (dg.Ran.RAN, (dg.Result.SUCCESS, {}))
+    }
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+      results = graph.run(executor, control_modes, prev_results)
+      expected = {
+          ('stack_subframes', 'abc123'):
+          (dg.Ran.DID_NOT_RUN, (dg.Result.SUCCESS, {})),
           ('post_process_stack', 'abc123'):
           (dg.Ran.RAN, (dg.Result.SUCCESS, {})),
       }
@@ -231,6 +259,40 @@ class TestDependencyGraph(unittest.TestCase):
             (dg.Ran.RAN, (dg.Result.SUCCESS, {})),
         }
         self.assertEqual(results, expected)
+
+  def test_one_target_two_stacks_one_stack_failure(self):
+    print('\n\nEntering test_one_target_two_stacks_one_stack_failure')
+
+    graph.clear()
+
+    stacks = {'foo': Stack(id='foo'), 'bar': Stack(id='bar')}
+    targets = {
+        'pretty_nebula': Target(id='pretty_nebula', stack_ids=['foo', 'bar'])
+    }
+
+    toplevel_tasks = []
+    for target in targets.values():
+      target_tasks = []
+      for stack_id in target.stack_ids:
+        stack = stacks[stack_id]
+        task = stack_subframes(stack, fail=stack_id == 'foo')
+        target_tasks.append(post_process_stack(stack, [task]))
+      toplevel_tasks.append(post_process_target(target, stacks, target_tasks))
+
+    control_modes = {}
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+      results = graph.run(executor, control_modes)
+      expected = {
+          ('stack_subframes', 'foo'): (dg.Ran.RAN, (dg.Result.FAILURE, {})),
+          ('post_process_stack', 'foo'):
+          (dg.Ran.DID_NOT_RUN, (dg.Result.NEVER_RUN, {})),
+          ('stack_subframes', 'bar'): (dg.Ran.RAN, (dg.Result.SUCCESS, {})),
+          ('post_process_stack', 'bar'): (dg.Ran.RAN, (dg.Result.SUCCESS, {})),
+          ('post_process_target', 'pretty_nebula'):
+          (dg.Ran.DID_NOT_RUN, (dg.Result.NEVER_RUN, {})),
+      }
+      self.assertEqual(results, expected)
 
 
 if __name__ == "__main__":

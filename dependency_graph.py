@@ -137,10 +137,10 @@ class DependencyGraph(object):
       if self.should_run(task, control_modes, results):
         return executor.submit(task)
       else:
-        prev_result = results.get(task.id,
-                                  (Ran.DID_NOT_RUN, (Result.NEVER_RUN, {})))
+        _, prev_result = results.get(task.id,
+                                     (Ran.DID_NOT_RUN, (Result.NEVER_RUN, {})))
         print(f'run_or_no_op task {task.id} prev_result {prev_result}')
-        return executor.submit(lambda: prev_result)
+        return executor.submit(lambda: (Ran.DID_NOT_RUN, prev_result))
 
     future_to_task = {run_or_no_op(task): task for task in base_tasks}
     not_done = set(future_to_task.keys())
