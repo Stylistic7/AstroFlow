@@ -10,44 +10,6 @@ from target import Target
 # TODO: I don't like tthis global, but the decorator uses it. Maybe refactor.
 graph = dg.DependencyGraph()
 
-# TODO: The logic here is incorrect. There are multiple related, but distinct
-# concepts in play here.
-#
-# 1. Could a process run? This means:
-#    - It has passed sanity checks.
-#    - It has never run, or its output is known to be stale.
-#    - Any upstream task ran, and all upstream tasks were successful.
-#
-# 2. Should a process run? This means:
-#    - The user has set it to FORCE.
-#    - The process could run, and the user has set it to AUTO.
-
-# TODO: This structure is incomplete, because it doesn't pass on whether or not
-# the task actually ran this time. If it ran, downstream tasks need to run, too.
-#
-# The graph should take care of that automatically.
-#
-# The leaf nodes at the beginning of the graph (the stack_subframes tasks)
-# could theoretically just get their status from prev_results, but its also
-# really nice to be able to look at the XISF header and know the file is stale.
-# This is stronger evidence of staleness.
-#
-# The rest of the graph essentially follows "orders" that are formed by the
-# status of the leaves.
-
-# Really, the entire graph should be in control_mode AUTO, except for the leaf
-# nodes at the beginning -- the stack_subframes tasks -- merely because those
-# tasks are so slow. The user may want to prioritize them, or ignore some of
-# them. Once the user has made the decision about which stacks to run, the
-# rest of the graph just follows naturally.
-
-# In every case, the entire graph is built everytime -- every possible task is
-# stored in the graph every time. It's just the control modes and the "could
-# run" and "should run" logic that decides the actual behavior.
-
-# I really like the abstraction that every task is defined by a simple tuple
-# of (task_name, id), and I would like to preserve that.
-
 
 def stack_subframes(stack, output_dir=None, fail=False):
   id = ('stack_subframes', stack.id)
@@ -161,6 +123,31 @@ class TestDependencyGraph(unittest.TestCase):
           (dg.Ran.DID_NOT_RUN, (dg.Result.SUCCESS, {})),
           ('post_process_stack', 'abc123'):
           (dg.Ran.RAN, (dg.Result.SUCCESS, {})),
+      }
+      self.assertEqual(results, expected)
+
+  def test_disabled_prev_run_failure(self):
+    print('\n\nEntering test_disabled_prev_run_failure')
+
+    graph.clear()
+
+    stack = Stack(id='abc123')
+    task = stack_subframes(stack)
+    post_process_stack(stack, [task])
+
+    control_modes = {('stack_subframes', 'abc123'): dg.ControlMode.DISABLED}
+
+    prev_results = {
+        ('stack_subframes', 'abc123'): (dg.Ran.RAN, (dg.Result.FAILURE, {}))
+    }
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+      results = graph.run(executor, control_modes, prev_results)
+      expected = {
+          ('stack_subframes', 'abc123'):
+          (dg.Ran.DID_NOT_RUN, (dg.Result.FAILURE, {})),
+          ('post_process_stack', 'abc123'):
+          (dg.Ran.DID_NOT_RUN, (dg.Result.NEVER_RUN, {})),
       }
       self.assertEqual(results, expected)
 

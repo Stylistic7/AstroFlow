@@ -42,17 +42,24 @@ def _min_footprint(footprints):
           [min_ra, max_dec]]
 
 
+# TODO: This is a mess right now. Design a better set of statuses.
 @unique
 class Status(str, Enum):
-  NOT_READY: str = "NOT_READY"
   READY: str = "READY"
+  NOT_READY: str = "NOT_READY"
+
+  CANNOT_RUN: str = "CANNOT_RUN"
+  NEEDS_TO_RUN: str = "NEEDS_TO_RUN"
+  RUNNING: str = "RUNNING"
+  SUCCESS: str = "SUCCESS"
+  FAILURE: str = "FAILURE"
 
 
 @dataclass(order=True)
 class Stack:
   id: str = None
 
-  status: Status = Status.NOT_READY
+  status: Status = Status.CANNOT_RUN
 
   target: str = None
   rig: str = None

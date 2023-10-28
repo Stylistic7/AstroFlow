@@ -15,6 +15,7 @@ class Target:
 
   # TODO: This currently just means "good" or not. Elaborate.
   status: bool = False
+  needs_to_run: bool = False
 
   # TODO: Rename to id
   name: str = None

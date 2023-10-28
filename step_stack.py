@@ -55,7 +55,7 @@ def _output_filename(stack, dest_path):
 def needs_to_run(stack, dest_path):
   up_to_date = _up_to_date_file_exists(stack.id,
                                        _output_filename(stack, dest_path))
-  print(f'### stack {stack} up_to_date {up_to_date}')
+  # print(f'### stack {stack} up_to_date {up_to_date}')
   assert up_to_date in [True, False]
   return not up_to_date
 

@@ -493,10 +493,12 @@ def stack_subframes(stack, fits_headers, output_dir):
     if stack.status != Status.READY:
       return (dg.Ran.RAN, (dg.Result.FAILURE, "Stack failed sanity checks"))
 
-    if not step_stack.needs_to_run(stack, output_dir):
-      _, prev_result = prev_results.get_prev_result('stack_subframes',
-                                                    stack.id)
-      return (dg.Ran.DID_NOT_RUN, prev_result)
+    # TODO: It might be nicer to just assume DISABLED on these tasks if their
+    # output files exist. Then the prev_results just pass through?
+    # if not step_stack.needs_to_run(stack, output_dir):
+    #   _, prev_result = prev_results.get_prev_result('stack_subframes',
+    #                                                 stack.id)
+    #   return (dg.Ran.DID_NOT_RUN, prev_result)
 
     print(f'Stacking stack {stack}!')
     result = step_stack.run(stack, fits_headers, output_dir)
@@ -510,10 +512,10 @@ def stack_subframes(stack, fits_headers, output_dir):
 def post_process_stack(stack, upstream_tasks):
   @graph.add(*upstream_tasks)
   def inner():
-    if not step_post_process_stack.needs_to_run(stack, output_dir):
-      _, prev_result = prev_results.get_prev_result('post_process_stack',
-                                                    stack.id)
-      return (dg.Ran.DID_NOT_RUN, prev_result)
+    # if not step_post_process_stack.needs_to_run(stack, output_dir):
+    #   _, prev_result = prev_results.get_prev_result('post_process_stack',
+    #                                                 stack.id)
+    #   return (dg.Ran.DID_NOT_RUN, prev_result)
 
     print(f'Post-processing stack {stack}!')
     return step_post_process_stack.post_process_stack(stack)
@@ -542,7 +544,7 @@ def post_process_mosaic(mosaic, targets, stacks, output_dir, upstream_tasks):
   return inner
 
 
-def main(context):
+def main(context, default_control_mode=dg.ControlMode.DISABLED):
   log.info('Starting AstroFlow')
 
   # TODO: This is a wart.
@@ -605,34 +607,49 @@ def main(context):
   targets = group_stacks_into_targets(stacks)
   mosaics = group_targets_into_mosaics(targets)
 
-  # These are for the web server to read, not for memoization.
-  cache['stacks'] = stacks
-  cache['targets'] = targets
-  cache['mosaics'] = mosaics
+  graph.default_control_mode = default_control_mode
 
   # TODO: Consider how to make this multi-threaded.
-  with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-    toplevel_tasks = []
-    for mosaic in mosaics.values():
-      mosaic_tasks = []
-      for target_id in mosaic.target_ids:
-        target = targets[target_id]
-        target_tasks = []
-        for stack_id in target.stack_ids:
-          stack = stacks[stack_id]
-          task = stack_subframes(stack, fits_headers, context.output_dir)
-          target_tasks.append(post_process_stack(stack, [task]))
-        mosaic_tasks.append(
-            post_process_target(target, stacks, context.output_dir,
-                                target_tasks))
-      toplevel_tasks.append(
-          post_process_mosaic(mosaic, targets, stacks, context.output_dir,
-                              mosaic_tasks))
+  toplevel_tasks = []
+  for mosaic in mosaics.values():
+    mosaic_tasks = []
+    for target_id in mosaic.target_ids:
+      target = targets[target_id]
+      target_tasks = []
+      for stack_id in target.stack_ids:
+        stack = stacks[stack_id]
+        task = stack_subframes(stack, fits_headers, context.output_dir)
+        target_tasks.append(post_process_stack(stack, [task]))
+      mosaic_tasks.append(
+          post_process_target(target, stacks, context.output_dir,
+                              target_tasks))
+    toplevel_tasks.append(
+        post_process_mosaic(mosaic, targets, stacks, context.output_dir,
+                            mosaic_tasks))
     print(f'Created {len(toplevel_tasks)} toplevel tasks')
+
+    control_modes = {}
+
+    for stack in stacks.values():
+      stack.needs_to_run = step_stack.needs_to_run(stack, context.output_dir)
+
+    for target in targets.values():
+      target.needs_to_run = any(
+          stacks[s].needs_to_run for s in target.stack_ids)
+
+    for mosaic in mosaics.values():
+      if any(targets[t].needs_to_run for t in mosaic.target_ids):
+        mosaic.status = Status.READY
+      else:
+        mosaic.status = Status.NOT_READY
+
+    # These are for the web server to read.
+    cache['stacks'] = stacks
+    cache['targets'] = targets
+    cache['mosaics'] = mosaics
 
     # TODO: This is the place to setup control modes, or to read them from the
     # user interface.
-    control_modes = {}
     # control_modes |= {('stack_subframes', '298749827439823'): ControlMode.FORCE}
     # control_modes |= {('stack_subframes', stack.id): dg.ControlMode.DISABLED
     #                  for stack in stacks if stack.status == Status.NOT_READY}
@@ -641,7 +658,9 @@ def main(context):
     # control_modes |= {('stack_subframes', s.id): dg.ControlMode.FORCE
     #                  for s in stacks.values()}
     control_modes |= {('stack_subframes', s.id): dg.ControlMode.DISABLED
-                      for s in stacks.values() if 'IC1848' not in s.target}
+                      for s in stacks.values()}
+    # control_modes |= {('stack_subframes', s.id): dg.ControlMode.DISABLED
+    #                   for s in stacks.values() if 'IC1848' not in s.target}
     # control_modes |= {('post_process_stack', s.id): dg.ControlMode.FORCE
     #                   for s in stacks.values() if 'IC1848' in s.target}
     # control_modes |= {('post_process_target', t.id): dg.ControlMode.FORCE
@@ -651,7 +670,8 @@ def main(context):
     print('control_modes are', control_modes)
 
     print('Starting execution')
-    results = graph.run(executor, control_modes)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+      results = graph.run(executor, control_modes)
 
     # TODO: These need to be stored after each operation, not just after
     # the entire graph is done. Maybe I can add a decorator to the inner
@@ -707,5 +727,7 @@ if __name__ == '__main__':
   context.output_dir = os.path.abspath(args.output_dir)
   context.download = args.download
   context.default_filter = args.default_filter
+
+  cache['context'] = context
 
   main(context)

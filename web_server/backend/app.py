@@ -6,11 +6,14 @@ sys.path.append('../..')
 import io
 import numpy as np
 import flask
-from flask import jsonify
+from flask import jsonify, Response
 from dataclasses import asdict
 import argparse
 import shutil
+from threading import Thread
 
+import astro_flow_direct
+from astro_flow_direct import Context
 import image_handling
 from cache import cache
 from . import test_app
@@ -119,10 +122,11 @@ def index():
   return flask.render_template('index.html', stacks=cache['stacks'])
 
 
-@app.route('/hello/<name>/')
-def hello(name):
-  """ Displays the page greats who ever comes to visit it."""
-  return flask.render_template('hello.html', name=name)
+@app.route('/run')
+def run():
+  thread = Thread(target=astro_flow_direct.main, args=[cache['context']])
+  thread.start()
+  return Response(status=204)
 
 
 @app.route('/starmap')

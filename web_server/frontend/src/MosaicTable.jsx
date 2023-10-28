@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import EnhancedTable from "@jeremyling/react-material-ui-enhanced-table";
-import { amber, green, indigo, lightGreen, red } from "@mui/material/colors";
+import { amber, green, blue, indigo, lightGreen, red } from "@mui/material/colors";
 import { Block, MoveToInbox } from "@mui/icons-material";
+import { Chip, Stack } from '@mui/material';
 import TargetTable from "./TargetTable.jsx";
 import './MosaicTable.css'; 
 
@@ -119,6 +120,29 @@ export default function Mosaics(props) {
     //   numeric: true,
     //   price: true,
     // },
+    // {
+    //   key: "status",
+    //   label: "Status",
+    //   component: (data) => (
+    //     <Stack direction="column" spacing={1}>
+    //       {data.needs_to_run && <Chip label="Needs to Run" color="primary" />}
+    //     </Stack>
+    //   ),
+    //   stopPropagation: true,
+    // },
+    {
+      key: "status",
+      attribute: "status",
+      label: "Status",
+      chip: true,
+      chipColor: {
+        "NOT_READY": [amber[50], amber[200]],
+        "READY": [green[50], green[200]],
+        "IN_PROGRESS": [blue[50], blue[200]],
+        "FAILURE": [red[50], red[200]],
+        "SUCCESS": [green[50], green[200]],
+      },
+    },
     {
       key: "actions",
       actions: [
