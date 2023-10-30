@@ -1,23 +1,10 @@
 import React, { useState } from "react";
 
+import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
+
 import './Starmap.css';
 
 export default function Starmap({constellation_polylines, stacks, targets, mosaics}) {
-	const [pos, setPos] = useState({ x: 0, y: 0, scale: 1 });
-
-  const onScroll = (e) => {
-    const delta = e.deltaY * -0.01;
-    const newScale = Math.max(1.0, pos.scale + delta);
-
-    const ratio = 1 - newScale / pos.scale;
-
-    setPos({
-      scale: newScale,
-      x: pos.x + (e.clientX - pos.x) * ratio,
-      y: pos.y + (e.clientY - pos.y) * ratio
-    });
-  };
-
   // TODO: This probably isn't the right way to do this in React.
   // TODO: Every polling interval just adds more polylines and polygons.
 	let svg = document.getElementById("constellations_svg");
@@ -43,9 +30,6 @@ export default function Starmap({constellation_polylines, stacks, targets, mosai
 		svg.innerHTML = "";
 
 		for (const [key, target] of Object.entries(targets)) {
-			// console.log('target', target);
-			// console.log('target.footprint', target['footprint']);
-
 			let polygon = document.createElementNS(
 				"http://www.w3.org/2000/svg", "polygon");
 			polygon.classList.add("starmap_polygon");
@@ -62,16 +46,15 @@ export default function Starmap({constellation_polylines, stacks, targets, mosai
 	}
 
 	return (
-		<div id="starmap_container"
-				 onWheelCapture={onScroll} 
-				 style={{
-           transformOrigin: "0 0",
-           transform: `translate(${pos.x}px, ${pos.y}px) scale(${pos.scale})`
-         }} >
-			<img id="starmap_img" src="/static/images/GAIA_EDR3.png" />
-			<span id="starmap_copyright">&copy; ESA/Gaia/DPAC; CC BY-SA 3.0 IGO. Acknowledgement: A. Moitinho.</span>
-			<svg id="constellations_svg" viewBox="0 0 360 180"></svg>
-			<svg id="starmap_svg" viewBox="0 0 360 180"></svg>
-		</div>
+		<TransformWrapper>
+      <TransformComponent>
+      	<div id="starmap_container">
+					<img id="starmap_img" src="/static/images/GAIA_EDR3.png" />
+					<span id="starmap_copyright">&copy; ESA/Gaia/DPAC; CC BY-SA 3.0 IGO. Acknowledgement: A. Moitinho.</span>
+					<svg id="constellations_svg" viewBox="0 0 360 180"></svg>
+					<svg id="starmap_svg" viewBox="0 0 360 180"></svg>
+				</div>
+			</TransformComponent>
+    </TransformWrapper>
 	);
 }
