@@ -1,21 +1,19 @@
-/* TODO: There's probably a better way to do this than repeating 75% */
-
 #starmap_container {
   position: relative;
   display: inline-block;
-  max-width: 75%;
+  width: 100%;
 }
 
 #starmap_img {
   display: block;
-  max-width: 75%;
+  width: 100%;
   height: auto;
 }
 
 #constellation_figures_img {
   opacity: 0.25;
   position: absolute;
-  max-width: 75%;
+  width: 100%;
   top: 0;
   left: 0;
 }
@@ -24,7 +22,21 @@
   position: absolute;
   top: 0;
   left: 0;
-  max-width: 75%;
+  width: 100%;
+}
+
+#constellations_svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+}
+
+#starmap_copyright {
+  float: right;
+  opacity: 0.5;
+  font-size: 12px;
+  margin-right: 10px;
 }
 
 .starmap_polygon {
@@ -33,4 +45,12 @@
   fill-opacity: 0;
   cursor: pointer;
   pointer-events: visible;
+}
+
+.constellation_polyline {
+  stroke: white;
+  stroke-opacity: 0.2;
+  stroke-width: 0.25;
+  fill-opacity: 0;
+  fill: none;
 }

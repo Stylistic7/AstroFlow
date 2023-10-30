@@ -544,7 +544,7 @@ def post_process_mosaic(mosaic, targets, stacks, output_dir, upstream_tasks):
   return inner
 
 
-def main(context, default_control_mode=dg.ControlMode.DISABLED):
+def main(context, default_control_mode=dg.ControlMode.AUTO):
   log.info('Starting AstroFlow')
 
   # TODO: This is a wart.
@@ -657,10 +657,10 @@ def main(context, default_control_mode=dg.ControlMode.DISABLED):
     #                  for s in stacks.values() if 'IC1805' in s.target}
     # control_modes |= {('stack_subframes', s.id): dg.ControlMode.FORCE
     #                  for s in stacks.values()}
-    control_modes |= {('stack_subframes', s.id): dg.ControlMode.DISABLED
-                      for s in stacks.values()}
     # control_modes |= {('stack_subframes', s.id): dg.ControlMode.DISABLED
-    #                   for s in stacks.values() if 'IC1848' not in s.target}
+    #                   for s in stacks.values()}
+    control_modes |= {('stack_subframes', s.id): dg.ControlMode.DISABLED
+                      for s in stacks.values() if 'IC1848' not in s.target}
     # control_modes |= {('post_process_stack', s.id): dg.ControlMode.FORCE
     #                   for s in stacks.values() if 'IC1848' in s.target}
     # control_modes |= {('post_process_target', t.id): dg.ControlMode.FORCE

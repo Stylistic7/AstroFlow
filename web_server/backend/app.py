@@ -13,6 +13,7 @@ import shutil
 from threading import Thread
 
 import astro_flow_direct
+import constellations
 from astro_flow_direct import Context
 import image_handling
 from cache import cache
@@ -132,6 +133,11 @@ def run():
 @app.route('/starmap')
 def starmap():
   return flask.render_template('index.html')
+
+
+@app.route('/constellation_polylines')
+def constellation_polylines():
+  return constellations.polylines()
 
 
 @app.route('/footprints')

@@ -20,6 +20,8 @@ function App() {
   const [targets, setTargets] = useState({});
   const [mosaics, setMosaics] = useState({});
 
+  const [constellationPolylines, setConstellationPolylines] = useState([]);
+
 
   useEffect(() => {
     const pollingCallback = () => {
@@ -34,6 +36,10 @@ function App() {
       //   console.log('Polling failed. Stopped polling.');
       // }
 
+      // TODO: Only fetch the constellation polylines ones.
+      fetch('/constellation_polylines').then(res => res.json()).then(c => {
+        setConstellationPolylines(c);  
+      });
       fetch('/stacks').then(res => res.json()).then(stacks => {
         setStacks(stacks);  
       });
@@ -56,6 +62,7 @@ function App() {
     };
 
     if (isPageVisible && isPollingEnabled) {
+      pollingCallback();
       startPolling();
     } else {
       stopPolling();
@@ -71,8 +78,11 @@ function App() {
       <CssBaseline />
       <Search stacks={stacks} targets={targets} mosaics={mosaics} />
       <LeftDrawer />
-      <Starmap stacks={stacks} targets={targets} mosaics={mosaics} />
-      <MosaicTable />
+      <Starmap
+        constellation_polylines={constellationPolylines}
+        stacks={stacks}
+        targets={targets}
+        mosaics={mosaics} />
     </ThemeProvider>
   );
 }
