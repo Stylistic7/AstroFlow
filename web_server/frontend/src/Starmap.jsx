@@ -42,7 +42,7 @@ export default function Starmap({constellation_polylines, stacks, targets, mosai
 						y: centroid_y - popupPosition.height / 2
 				  });
 					setPopupVisibility("visible");
-					setTimeout(() => {zoomToElement(popupRef.current);}, 100);
+					setTimeout(() => {zoomToElement(popupRef.current)}, 100);
 					event.stopPropagation();
 				}}
 			>
@@ -50,21 +50,28 @@ export default function Starmap({constellation_polylines, stacks, targets, mosai
 		);
   };
 
-  const stackThumbnailImage = (stack_id, index) => {
+  const stackThumbnailImage = (stack_id, index, zoomToElement) => {
   	let stack = stacks[stack_id];
     let stack_thumbnail_image_url = `/stack_thumbnail_image/${stack.id}`;
+    let key = target.id + "_" + stack_id;
     console.log('stack_thumbnail_image_url', stack_thumbnail_image_url);
     return (
       <image
+        id={key}
+      	key={key}
       	href={stack_thumbnail_image_url}
       	x={popupPosition.x + 4 + index * 7}
       	y={popupPosition.y + 6}
       	width="6"
+      	onClick={(event) => {
+					setTimeout(() => {zoomToElement(key)}, 100);
+					event.stopPropagation();
+				}}
       />
     );
   };
 
-  const popupContent = () => {
+  const popupContent = (zoomToElement) => {
   	if (!target) {
   		return;
   	}
@@ -79,14 +86,14 @@ export default function Starmap({constellation_polylines, stacks, targets, mosai
 	  			{targets[target].name}
 	  		</text>
 	  		{ targets[target].stack_ids.map(
-	  			(stack_id, index) => stackThumbnailImage(stack_id, index)) }
+	  			(stack_id, index) => stackThumbnailImage(stack_id, index, zoomToElement)) }
   		</g>
   	);
   };
 
   // TODO: Use the <g> transform property.
 	return (
-		<TransformWrapper>
+		<TransformWrapper maxScale={100} wheel={{smoothStep: 0.01}}>
 			{({ setTransform, zoomToElement, ...rest }) => (
         <React.Fragment>
 		      <TransformComponent>
@@ -127,7 +134,7 @@ export default function Starmap({constellation_polylines, stacks, targets, mosai
 										rx="2"
 										style={{fill: '#999'}}
 									/>
-									{popupContent(target)}
+									{popupContent(zoomToElement)}
 								</g>
 							</svg>
 						</div>
