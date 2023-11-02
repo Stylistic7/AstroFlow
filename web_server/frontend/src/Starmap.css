@@ -39,13 +39,22 @@
   margin-right: 10px;
 }
 
-.starmap_polygon {
+.target_polygon {
+  stroke: #5555ee;
+  stroke-width: 0.25;
+  fill-opacity: 0;
+  cursor: pointer;
+  pointer-events: visible;
+}
+
+.mosaic_polygon {
   stroke: red;
   stroke-width: 0.25;
   fill-opacity: 0;
   cursor: pointer;
   pointer-events: visible;
 }
+
 
 .constellation_polyline {
   stroke: white;

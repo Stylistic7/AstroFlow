@@ -8,7 +8,7 @@ export default function Starmap({constellation_polylines, stacks, targets, mosai
 	const popupRef = useRef(null);
 	const [popupVisbility, setPopupVisibility] = React.useState("hidden");
 	const [popupPosition, setPopupPosition] = React.useState({x: 30, y: 30, width: 50, height: 50});
-	const [target, setTarget] = React.useState(undefined);
+	const [mosaic, setMosaic] = React.useState(undefined);
 
 	const makePolyline = (class_name, polyline, key, setTransform, zoomToElement) => {
 		let points_string = "";
@@ -35,7 +35,7 @@ export default function Starmap({constellation_polylines, stacks, targets, mosai
 				className={class_name}
 				points={points_string}
 				onClick={(event) => {
-					setTarget(key);
+					setMosaic(key);
 					setPopupPosition({
 						...popupPosition,
 						x: centroid_x - popupPosition.width - 7,
@@ -50,18 +50,18 @@ export default function Starmap({constellation_polylines, stacks, targets, mosai
 		);
   };
 
-  const stackThumbnailImage = (stack_id, index, zoomToElement) => {
+  const stackThumbnailImage = (stack_id, x_index, y_index, zoomToElement) => {
   	let stack = stacks[stack_id];
     let stack_thumbnail_image_url = `/stack_thumbnail_image/${stack.id}`;
-    let key = target.id + "_" + stack_id;
+    let key = stack_id;
     console.log('stack_thumbnail_image_url', stack_thumbnail_image_url);
     return (
       <image
         id={key}
       	key={key}
       	href={stack_thumbnail_image_url}
-      	x={popupPosition.x + 4 + index * 7}
-      	y={popupPosition.y + 6}
+      	x={popupPosition.x + 4 + x_index * 7}
+      	y={popupPosition.y + 6 + y_index * 7}
       	width="6"
       	onClick={(event) => {
 					setTimeout(() => {zoomToElement(key)}, 100);
@@ -72,7 +72,7 @@ export default function Starmap({constellation_polylines, stacks, targets, mosai
   };
 
   const popupContent = (zoomToElement) => {
-  	if (!target) {
+  	if (!mosaic) {
   		return;
   	}
 
@@ -83,10 +83,11 @@ export default function Starmap({constellation_polylines, stacks, targets, mosai
 					y={popupPosition.y + 5}
 					fontSize="2"
 	  		>
-	  			{targets[target].name}
+	  			{mosaics[mosaic].name}
 	  		</text>
-	  		{ targets[target].stack_ids.map(
-	  			(stack_id, index) => stackThumbnailImage(stack_id, index, zoomToElement)) }
+	  		{ mosaics[mosaic].target_ids.map(
+	  			(target_id, target_index) => targets[target_id].stack_ids.map(
+	  			(stack_id, stack_index) => stackThumbnailImage(stack_id, target_index, stack_index, zoomToElement))) }
   		</g>
   	);
   };
@@ -109,7 +110,11 @@ export default function Starmap({constellation_polylines, stacks, targets, mosai
 							<svg id="starmap_svg" viewBox="-20 -20 380 200" style={{zIndex: 10}}>
 								{Object.values(targets).map(target => 
 									makePolyline(
-										"starmap_polygon", target.footprint_galactic, target.id,
+										"target_polygon", target.footprint_galactic, target.id,
+										setTransform, zoomToElement))}
+								{Object.values(mosaics).map(mosaic => 
+									makePolyline(
+										"mosaic_polygon", mosaic.footprint_galactic, mosaic.id,
 										setTransform, zoomToElement))}
 								<g ref={popupRef}
 								  x={popupPosition.x}

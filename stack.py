@@ -12,6 +12,7 @@ from cache import cache
 import file_io
 import plate_solving
 import spatial_association
+import mollweide
 
 import matplotlib.pyplot as plt
 
@@ -78,6 +79,7 @@ class Stack:
 
   center: list[float] = field(default_factory=list)
   footprint: list[tuple[float]] = None
+  footprint_galactic: list[tuple[float]] = None
   min_footprint: list[tuple[float]] = None
   aspect_ratio: float = None
 
@@ -93,6 +95,7 @@ class Stack:
     self.store_exposure_time_s(fits_headers)
     self.store_center(plate_solutions)
     self.store_footprint(plate_solutions)
+    self.store_footprint_galactic()
     self.store_min_footprint(plate_solutions)
     self.store_aspect_ratio()
     self.sort_index = self.target
@@ -160,6 +163,13 @@ class Stack:
                                  footprints[0])
     self.footprint = list(footprint.exterior.coords)
     # print('self.footprint', self.footprint)
+
+  def store_footprint_galactic(self):
+    self.footprint_galactic = []
+    for ra, dec in self.footprint:
+      lon, lat = mollweide.equatorial_to_galactic(ra, dec)
+      x, y = mollweide.project_Mollweide(lon, lat)
+      self.footprint_galactic.append((x, y))
 
   def store_min_footprint(self, plate_solutions):
     # plate_solutions = _get_plate_solutions(self.light_frames)

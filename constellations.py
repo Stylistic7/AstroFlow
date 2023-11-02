@@ -1,5 +1,6 @@
 import csv
 import numpy as np
+import logging
 
 import mollweide
 
@@ -32,7 +33,7 @@ def polylines():
     if not polyline:
       return
 
-    print(f'### Polyline had {len(polyline)} points')
+    logging.debug(f'Polyline had {len(polyline)} points')
     polylines.append(polyline)
     last_theta = None
 
@@ -47,9 +48,9 @@ def polylines():
     theta, phi = mollweide.equatorial_to_galactic(ra, dec)
 
     # TODO: This is a hacky way to remove "around the edge" lines.
-    if last_theta and np.abs(theta - last_theta) > np.radians(250):
-      print(f'Ending polyline because theta {theta} and '
-            f'last_theta {last_theta}')
+    if last_theta and np.abs(theta - last_theta) > np.radians(270):
+      logging.debug(f'Ending polyline because theta {theta} and '
+                    f'last_theta {last_theta}')
       end_polyline(polyline)
       polyline = []
       continue
@@ -64,19 +65,14 @@ def polylines():
 
   assert len(polyline) == 0
 
-  for i, polyline in enumerate(polylines[0:4]):
-    print(f'polyline {i}')
-    for p in polyline:
-      print(p)
-
-  print('min_theta', min_theta, 'max_theta', max_theta)
+  logging.debug('min_theta', min_theta, 'max_theta', max_theta)
 
   min_x = np.min([p[0] for polyline in polylines for p in polyline])
   max_x = np.max([p[0] for polyline in polylines for p in polyline])
   min_y = np.min([p[1] for polyline in polylines for p in polyline])
   max_y = np.max([p[1] for polyline in polylines for p in polyline])
-  print('min_x', min_x, 'max_x', max_x)
-  print('min_y', min_y, 'max_y', max_y)
+  logging.debug('min_x', min_x, 'max_x', max_x)
+  logging.debug('min_y', min_y, 'max_y', max_y)
 
   return polylines
 
