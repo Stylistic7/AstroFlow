@@ -8,6 +8,7 @@ export default function Starmap({constellation_polylines, stacks, targets, mosai
 	const popupRef = useRef(null);
 	const [popupVisbility, setPopupVisibility] = React.useState("hidden");
 	const [popupPosition, setPopupPosition] = React.useState({x: 30, y: 30, width: 50, height: 50});
+	const [target, setTarget] = React.useState(undefined);
 
 	const makePolyline = (class_name, polyline, key, setTransform, zoomToElement) => {
 		let points_string = "";
@@ -34,6 +35,7 @@ export default function Starmap({constellation_polylines, stacks, targets, mosai
 				className={class_name}
 				points={points_string}
 				onClick={(event) => {
+					setTarget(key);
 					setPopupPosition({
 						...popupPosition,
 						x: centroid_x - popupPosition.width - 7,
@@ -48,8 +50,43 @@ export default function Starmap({constellation_polylines, stacks, targets, mosai
 		);
   };
 
+  const stackThumbnailImage = (stack_id, index) => {
+  	let stack = stacks[stack_id];
+    let stack_thumbnail_image_url = `/stack_thumbnail_image/${stack.id}`;
+    console.log('stack_thumbnail_image_url', stack_thumbnail_image_url);
+    return (
+      <image
+      	href={stack_thumbnail_image_url}
+      	x={popupPosition.x + 4 + index * 7}
+      	y={popupPosition.y + 6}
+      	width="6"
+      />
+    );
+  };
+
+  const popupContent = () => {
+  	if (!target) {
+  		return;
+  	}
+
+  	return (
+  		<g>
+  			<text
+	  		  x={popupPosition.x + 4}
+					y={popupPosition.y + 5}
+					fontSize="2"
+	  		>
+	  			{targets[target].name}
+	  		</text>
+	  		{ targets[target].stack_ids.map(
+	  			(stack_id, index) => stackThumbnailImage(stack_id, index)) }
+  		</g>
+  	);
+  };
+
+  // TODO: Use the <g> transform property.
 	return (
-		<TransformWrapper limitToBounds={false}>
+		<TransformWrapper>
 			{({ setTransform, zoomToElement, ...rest }) => (
         <React.Fragment>
 		      <TransformComponent>
@@ -62,7 +99,7 @@ export default function Starmap({constellation_polylines, stacks, targets, mosai
 								{constellation_polylines.map((polyline, index) => 
 									makePolyline("constellation_polyline", polyline, index))}
 							</svg>
-							<svg id="starmap_svg" viewBox="-10 -10 370 190" style={{zIndex: 10}}>
+							<svg id="starmap_svg" viewBox="-20 -20 380 200" style={{zIndex: 10}}>
 								{Object.values(targets).map(target => 
 									makePolyline(
 										"starmap_polygon", target.footprint_galactic, target.id,
@@ -88,8 +125,9 @@ export default function Starmap({constellation_polylines, stacks, targets, mosai
 										width={popupPosition.width - 4}
 										height={popupPosition.height - 4}
 										rx="2"
-										style={{fill: 'white'}}
+										style={{fill: '#999'}}
 									/>
+									{popupContent(target)}
 								</g>
 							</svg>
 						</div>
