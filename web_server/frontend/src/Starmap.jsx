@@ -65,7 +65,7 @@ export default function Starmap({constellation_polylines, stacks, targets, mosai
       	width="6"
       	onClick={(event) => {
 					setTimeout(() => {zoomToElement(key)}, 100);
-					event.stopPropagation();
+					// event.stopPropagation();
 				}}
       />
     );
@@ -107,7 +107,12 @@ export default function Starmap({constellation_polylines, stacks, targets, mosai
 								{constellation_polylines.map((polyline, index) => 
 									makePolyline("constellation_polyline", polyline, index))}
 							</svg>
-							<svg id="starmap_svg" viewBox="-20 -20 380 200" style={{zIndex: 10}}>
+							<svg
+								id="starmap_svg"
+								viewBox="-20 -20 380 200"
+								style={{zIndex: 10}}
+								onClick={() => setPopupVisibility("hidden")}
+							>
 								{Object.values(targets).map(target => 
 									makePolyline(
 										"target_polygon", target.footprint_galactic, target.id,
