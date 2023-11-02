@@ -50,24 +50,48 @@ export default function Starmap({constellation_polylines, stacks, targets, mosai
 		);
   };
 
+  const color_for_filter = (filter) => {
+	 let rgb = {
+	    'L': [51, 51, 51],
+	    'R': [230, 0, 0],
+	    'G': [0, 204, 0],
+	    'B': [0, 0, 204],
+	    'H': [159, 43, 104],
+	    'S': [140, 0, 0],
+	    'O': [0, 204, 204],
+	  }[filter];
+
+	  return 'rgb(' + rgb.join(', ') + ')'
+	};
+
   const stackThumbnailImage = (stack_id, x_index, y_index, zoomToElement) => {
   	let stack = stacks[stack_id];
     let stack_thumbnail_image_url = `/stack_thumbnail_image/${stack.id}`;
     let key = stack_id;
     console.log('stack_thumbnail_image_url', stack_thumbnail_image_url);
     return (
-      <image
-        id={key}
-      	key={key}
-      	href={stack_thumbnail_image_url}
-      	x={popupPosition.x + 4 + x_index * 7}
-      	y={popupPosition.y + 6 + y_index * 7}
-      	width="6"
-      	onClick={(event) => {
-					setTimeout(() => {zoomToElement(key)}, 100);
-					// event.stopPropagation();
-				}}
-      />
+      <g>
+      	<image
+	        id={key}
+	      	key={key}
+	      	href={stack_thumbnail_image_url}
+	      	x={popupPosition.x + 4 + x_index * 7}
+	      	y={popupPosition.y + 6 + y_index * 7}
+	      	width="6"
+	      	onClick={(event) => {
+						setTimeout(() => {zoomToElement(key)}, 100);
+						event.stopPropagation();
+					}}
+	      />
+	      <text
+	  		  x={popupPosition.x + 2 + (x_index + 1) * 7}
+	      	y={popupPosition.y + 2.7 + (y_index + 1) * 7}
+					fontSize="1"
+					fill={color_for_filter(stack.filter)}
+	  		>
+	  			{stacks[stack_id].filter}
+	  		</text>
+	     </g>
     );
   };
 
@@ -87,7 +111,7 @@ export default function Starmap({constellation_polylines, stacks, targets, mosai
 	  		</text>
 	  		{ mosaics[mosaic].target_ids.map(
 	  			(target_id, target_index) => targets[target_id].stack_ids.map(
-	  			(stack_id, stack_index) => stackThumbnailImage(stack_id, target_index, stack_index, zoomToElement))) }
+	  			(stack_id, stack_index) => stackThumbnailImage(stack_id, stack_index, target_index, zoomToElement))) }
   		</g>
   	);
   };

@@ -595,10 +595,9 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   # fingerprint is stored in the cache, we'll load it and use it. Otherwise,
   # the stack will be considered new.
   stacks = {stack.id: stack for stack in stacks}
-  # for stack in stacks.values():
-  #   if stack.id in cache.get('stacks', {}):
-  #     stacks[stack.id] = cache['stacks'][stack.id]
-  #     print(f'### Loaded stack {stack} from cache')
+
+  # TODO: Figure out why this one's footprint went nuts.
+  stacks = {k: v for k, v in stacks.items() if 'NGC7822' not in v.target}
 
   make_stack_thumbnails_videos(stacks, plate_solutions, fits_headers)
 
