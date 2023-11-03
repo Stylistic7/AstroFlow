@@ -64,6 +64,8 @@ export default function Starmap({constellation_polylines, stacks, targets, mosai
 	  return 'rgb(' + rgb.join(', ') + ')'
 	};
 
+	// TODO: Split the popup content into new React components, and render
+	// them as HTML, so I'm not reinventing the layout engine.
   const stackThumbnailImage = (stack_id, x_index, y_index, zoomToElement) => {
   	let stack = stacks[stack_id];
     let stack_thumbnail_image_url = `/stack_thumbnail_image/${stack.id}`;
@@ -76,17 +78,17 @@ export default function Starmap({constellation_polylines, stacks, targets, mosai
 	      	key={key}
 	      	href={stack_thumbnail_image_url}
 	      	x={popupPosition.x + 4 + x_index * 7}
-	      	y={popupPosition.y + 6 + y_index * 7}
-	      	width="6"
+	      	y={popupPosition.y + 6 + y_index * 5}
+	      	width="6.5"
 	      	onClick={(event) => {
 						setTimeout(() => {zoomToElement(key)}, 100);
 						event.stopPropagation();
 					}}
 	      />
 	      <text
-	  		  x={popupPosition.x + 2 + (x_index + 1) * 7}
-	      	y={popupPosition.y + 2.7 + (y_index + 1) * 7}
-					fontSize="1"
+	  		  x={popupPosition.x + 2.6 + (x_index + 1) * 7}
+	      	y={popupPosition.y + 5 + (y_index + 1) * 5}
+					fontSize="0.8"
 					fill={color_for_filter(stack.filter)}
 	  		>
 	  			{stacks[stack_id].filter}
