@@ -84,11 +84,19 @@ def group_by_fits_keyword(fits_headers, filenames, fits_keyword):
   return [(k, list(g)) for k, g in itertools.groupby(filenames, key=key)]
 
 
+# TODO: Where should normalization happen? Should I always normalize every
+# image to (0, 1) here?
 def read_xisf_image(filename):
   xisf = XISF(filename)
-  return xisf.read_image(0).squeeze().astype(np.float32) / 65536.0
+  image = xisf.read_image(0).squeeze().astype(np.float32)
+  image_norm = (image - np.min(image)) / (np.max(image) - np.min(image))
+  return image_norm
 
 
+# TODO: Where should normalization happen? Should I always normalize every
+# image to (0, 1) here?
 def read_fits_image(filename):
   with pyfits.open(filename) as fits:
-    return fits[0].data.astype(np.float32) / 65536.0
+    image = fits[0].data.astype(np.float32)
+    image_norm = (image - np.min(image)) / (np.max(image) - np.min(image))
+    return image_norm

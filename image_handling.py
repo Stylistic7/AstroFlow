@@ -92,8 +92,8 @@ def array_to_png(array):
 
 def _get_flat_frame_for_light_frame(light_frame, stack, fits_headers):
   for light_frames, flat_frames in stack.flat_frame_associations:
-    print(f'### association between {len(light_frames)} light frames '
-          f'and {len(flat_frames)} flat frames')
+    # print(f'### association between {len(light_frames)} light frames '
+    #       f'and {len(flat_frames)} flat frames')
     assert len(light_frames)
     assert len(flat_frames)
     if light_frame in light_frames:

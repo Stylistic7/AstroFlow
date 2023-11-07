@@ -62,6 +62,8 @@ class Context:
   config_changed: bool = False
 
 
+# TODO: I think all of these can be removed if I'm not using memoization
+# anymore.
 class FitsHeaders(dict):
   pass
 
@@ -74,6 +76,9 @@ class ImageHashes(dict):
   pass
 
 
+# TODO: The adding of new files, and the removing of deleted files, should be
+# broken up into multiple smaller steps. If the user moves files around, we want
+# to give the user the chance to point the program at the new locations.
 def collect_results_as_dict(filenames, fn, prev_result, parallel=True):
   log = logger.bind(fn=fn.__name__)
 
@@ -148,7 +153,7 @@ def download(save_dir, default_filter):
                              default_filter)
 
 
-def find_files(input_dirs, max_frames=None):
+def find_fits_files(input_dirs, max_frames=None):
   print('Finding files...')
   all_frames = set()
   for input_dir in input_dirs:
@@ -170,6 +175,20 @@ def find_files(input_dirs, max_frames=None):
     all_frames |= set(filenames)
 
   return FileList(all_frames)
+
+
+# TODO: Update the plate solution if the master file has been changed,
+# e.g. its image hash is different.
+def find_masters(output_dir):
+  print(f'Looking for master XISF files in directory {output_dir}')
+  filenames = list(str(f) for f in Path(output_dir).rglob("*.xisf"))
+  print(f'Found {len(filenames)} XISF files')
+  filenames = [
+      f for f in filenames if os.path.basename(f).lower().startswith('master')
+  ]
+  print(f'Found {len(filenames)} XISF files that are masters')
+
+  return FileList(filenames)
 
 
 # TODO: This will scale poorly when there are hundreds of thousands of images.
@@ -214,6 +233,11 @@ def split_images_by_type(all_frames, fits_headers):
   bias_frames = FileList(files['Bias']) if 'Bias' in files else []
   flat_frames = FileList(files['Flat']) if 'Flat' in files else []
 
+  print(f'### Found {len(light_frames)} light frames')
+  print(f'### Found {len(dark_frames)} dark frames')
+  print(f'### Found {len(bias_frames)} bias frames')
+  print(f'### Found {len(flat_frames)} flat frames')
+
   return light_frames, dark_frames, bias_frames, flat_frames
 
 
@@ -231,11 +255,10 @@ def remove_frames_during_mount_movements(light_frames):
 
 
 # TODO: This will scale poorly when there are hundreds of thousands of images.
-def plate_solve(light_frames):
+def plate_solve(filenames, prev_result):
   print('Plate solving...')
-  plate_solutions = collect_results_as_dict(light_frames,
-                                            plate_solving.solve_field,
-                                            cache.get('plate_solutions', {}))
+  plate_solutions = collect_results_as_dict(
+      filenames, plate_solving.solve_field, prev_result)
 
   # TODO: Implement quarantining.
   # num_files = len(plate_solutions)
@@ -244,20 +267,30 @@ def plate_solve(light_frames):
   # print(f'### There were {num_files} plate solutions before removing None, '
   #       f'and {num_good_files} after')
 
-  cache['plate_solutions'] = plate_solutions
   return PlateSolutions(plate_solutions)
 
 
-def remove_unsolvable_light_frames(light_frames, plate_solutions):
-  solved = [f for f in light_frames if plate_solutions[f] is not None]
-  # print(f'### {len(light_frames)}, {len(solved)} plate-solved light frames')
-  return solved
+# TODO: This is a bit weird. We want to keep unsolvable files in the cache,
+# so we don't attempt to re-solve them every run. But we want to filter them
+# out so downstream logic doesn't see them. We also want to ignore plate
+# solutions for images that no longer exist, but ultimately we want to help
+# the user find them.
+#
+# TODO: Report unsolvable images and missing images to the user. Include the
+# cause of failure whenever possible, and provide a solution (e.g. increasing
+# timeout on slow computers).
+def remove_bad_plate_solutions(plate_solutions):
+  return {
+      f: p
+      for f, p in plate_solutions.items()
+      if os.path.exists(f) and type(p) is plate_solving.PlateSolution
+  }
 
 
-def identify_spatial_components(plate_solutions, fits_headers):
+def identify_spatial_components(light_frames, plate_solutions, fits_headers):
   print('Identifying spatial components...')
   spatial_components = spatial_association.find_components(
-      plate_solutions, fits_headers)
+      light_frames, plate_solutions, fits_headers)
   return [(k, FileList(v)) for k, v in spatial_components.items()]
 
 
@@ -487,7 +520,7 @@ def sanity_check_stacks(stacks, fits_headers):
 graph = dg.DependencyGraph()
 
 
-def stack_subframes(stack, fits_headers, output_dir):
+def stack_subframes(stack, fits_headers, plate_solutions, output_dir):
   @graph.add()
   def inner():
     if stack.status != Status.READY:
@@ -501,7 +534,7 @@ def stack_subframes(stack, fits_headers, output_dir):
     #   return (dg.Ran.DID_NOT_RUN, prev_result)
 
     print(f'Stacking stack {stack}!')
-    result = step_stack.run(stack, fits_headers, output_dir)
+    result = step_stack.run(stack, fits_headers, plate_solutions, output_dir)
     print(f'step_stack.run returned {result}')
     return result
 
@@ -554,7 +587,7 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   if context.download:
     download(context.input_dirs[0], context.default_filter)
 
-  all_frames = find_files(context.input_dirs)
+  all_frames = find_fits_files(context.input_dirs)
   fits_headers = read_fits_headers(all_frames)
 
   all_frames = sort_by_observation_date(all_frames, fits_headers)
@@ -565,14 +598,24 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   light_frames, dark_frames, bias_frames, flat_frames = split_images_by_type(
       all_frames, fits_headers)
 
+  masters = find_masters(context.output_dir)
+
   # TODO: Make this more granular.
   # light_frames = remove_frames_during_mount_movements(light_frames)
 
-  plate_solutions = plate_solve(light_frames)
-  light_frames = remove_unsolvable_light_frames(light_frames, plate_solutions)
+  # TODO: Consider whether functions like plate_solve() should be pure, or
+  # if they should include cache operations.
+  plate_solutions = plate_solve(light_frames + masters,
+                                cache.get('plate_solutions', {}))
+  cache['plate_solutions'] = plate_solutions
 
-  spatial_components = identify_spatial_components(plate_solutions,
-                                                   fits_headers)
+  plate_solutions = remove_bad_plate_solutions(plate_solutions)
+
+  # Remove light frames that don't have good plate solutions.
+  light_frames = set(light_frames).intersection(plate_solutions.keys())
+
+  spatial_components = identify_spatial_components(
+      light_frames, plate_solutions, fits_headers)
   # assert_all_light_frames_in_spatial_components(light_frames,
   #                                               spatial_components)
 
@@ -617,7 +660,8 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
       target_tasks = []
       for stack_id in target.stack_ids:
         stack = stacks[stack_id]
-        task = stack_subframes(stack, fits_headers, context.output_dir)
+        task = stack_subframes(stack, fits_headers, plate_solutions,
+                               context.output_dir)
         target_tasks.append(post_process_stack(stack, [task]))
       mosaic_tasks.append(
           post_process_target(target, stacks, context.output_dir,
@@ -629,18 +673,24 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
 
     control_modes = {}
 
-    for stack in stacks.values():
-      stack.needs_to_run = step_stack.needs_to_run(stack, context.output_dir)
+    # Propagate the notion of "needs to run" from the first (free) nodes in the
+    # dependency graph through the rest of the graph.
+    # TODO: This "needs to run" stuff is probably better encapsulated by
+    # the dependency graph primitives. The step itself should look around,
+    # see if it needs to run, and return DID_NOT_RUN if the artifact already
+    # exists. I think I can completely remove this "needs to run" concept.
+    # for stack in stacks.values():
+    #   stack.needs_to_run = step_stack.needs_to_run(stack, context.output_dir,
+    #                                                plate_solutions)
+    #   print(f'### Stack {stack} needs_to_run {stack.needs_to_run}')
 
-    for target in targets.values():
-      target.needs_to_run = any(
-          stacks[s].needs_to_run for s in target.stack_ids)
+    # for target in targets.values():
+    #   target.needs_to_run = any(
+    #       stacks[s].needs_to_run for s in target.stack_ids)
 
-    for mosaic in mosaics.values():
-      if any(targets[t].needs_to_run for t in mosaic.target_ids):
-        mosaic.status = Status.READY
-      else:
-        mosaic.status = Status.NOT_READY
+    # for mosaic in mosaics.values():
+    #   mosaic.needs_to_run = any(
+    #       targets[t].needs_to_run for t in mosaic.target_ids)
 
     # These are for the web server to read.
     cache['stacks'] = stacks

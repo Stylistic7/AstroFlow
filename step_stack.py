@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 import numpy as np
 from xisf import XISF
+from shapely.geometry import Polygon
 
 import config
 import file_io
@@ -14,6 +15,7 @@ from cache import cache
 import dependency_graph as dg
 import step_flat_frame_association
 from output_file import OutputFile
+import spatial_association
 
 # TODO: Tasks need a unified interface with the following functions:
 #
@@ -28,14 +30,14 @@ def _exposure_time_string(stack):
   return f'{hours:02.0f}h{minutes:02.0f}m'
 
 
-def _up_to_date_file_exists(stack_id, filename):
+def _master_with_stack_id_exists(stack_id, filename):
   if not os.path.exists(filename):
     return False
 
   try:
     xisf = XISF(filename)
     file_meta = xisf.get_file_metadata()
-    key = 'AstroFlow:stack_id'
+    key = 'XISF:AstroFlow:StackId'
     if key in file_meta:
       if file_meta[key]['value'] == stack_id:
         return True
@@ -45,6 +47,21 @@ def _up_to_date_file_exists(stack_id, filename):
   return False
 
 
+def _master_with_same_footprint_exits(stack, plate_solutions):
+  # print(f'### Entering _master_with_same_footprint_exits() for stack {stack}')
+  for filename, plate_solution in plate_solutions.items():
+    # TODO: There are better ways to identify masters than just the name.
+    # Maybe I should have a generic "File" object that includes its type,
+    # which can be determined more accurately by FITS/XISF metadata.
+    if not os.path.basename(filename).startswith('master'): continue
+    iou = spatial_association.iou(Polygon(stack.footprint),
+                                  Polygon(plate_solutions[filename].footprint))
+    # print(f'### Master {filename} has IoU {iou} with stack {stack}')
+    if iou > 0.9:
+      # print(f'### Found highly-likely master {filename} for stack {stack}')
+      return filename
+
+
 def _output_filename(stack, dest_path):
   output_dir = os.path.join(dest_path, 'Stacks', stack.target, 'masters')
   return os.path.join(
@@ -52,15 +69,7 @@ def _output_filename(stack, dest_path):
       f'master_light_{stack.target}_{stack.rig}_{stack.filter}.xisf')
 
 
-def needs_to_run(stack, dest_path):
-  up_to_date = _up_to_date_file_exists(stack.id,
-                                       _output_filename(stack, dest_path))
-  # print(f'### stack {stack} up_to_date {up_to_date}')
-  assert up_to_date in [True, False]
-  return not up_to_date
-
-
-def run(stack, fits_headers, dest_path):
+def run(stack, fits_headers, plate_solutions, dest_path):
   def symlink_frames(filenames, dest_path):
     for filename in filenames:
       dest_filename = os.path.join(dest_path, os.path.basename(filename))
@@ -70,9 +79,6 @@ def run(stack, fits_headers, dest_path):
   # exposure = _exposure_time_string(stack)
 
   print(f'### Entering step_stack.run() for stack {stack}')
-
-  output_dir = os.path.join(dest_path, 'Stacks', stack.target, 'masters')
-  os.makedirs(output_dir, exist_ok=True)
 
   if config.TEST_MODE:
     print(f'### step_stack.run returning fake result because TEST_MODE is on')
@@ -87,6 +93,7 @@ def run(stack, fits_headers, dest_path):
   #     f'master_light_{stack.target}_{stack.rig}_{stack.filter}.xisf')
 
   dst_filename = _output_filename(stack, dest_path)
+  os.makedirs(os.path.dirname(dst_filename), exist_ok=True)
   print(f'### step_stack.run dst_filename {dst_filename} exists '
         f'{os.path.exists(dst_filename)}')
 
@@ -97,10 +104,26 @@ def run(stack, fits_headers, dest_path):
   #         f'{dst_filename} already exists.')
   #   return (dg.Result.SUCCESS, OutputFile(dst_filename))
 
-  # if _up_to_date_file_exists(stack.id, dst_filename):
+  # if _master_with_stack_id_exists(stack.id, dst_filename):
   #   return (dg.Result.SUCCESS, OutputFile(dst_filename))
 
+  # The point of this is to short-circuit stacking when the cache is empty,
+  # but the stacks have already been done. This is useful during development.
+  if _master_with_stack_id_exists(stack.id, dst_filename):
+    print(f'### Master (made by AstroFlow) already exists: {dst_filename}')
+    return (dg.Ran.DID_NOT_RUN, (dg.Result.SUCCESS, OutputFile(dst_filename)))
+
+  # The point of this is to short-circuit stacking when the cache empty, but
+  # the stacks have been done outside of AstroFlow. This generally happens when
+  # the user first installs AstroFlow.
+  if dst_filename := _master_with_same_footprint_exits(stack, plate_solutions):
+    print(f'### Master (made outside AstroFlow) already exists: {dst_filename}')
+    return (dg.Ran.DID_NOT_RUN, (dg.Result.SUCCESS, OutputFile(dst_filename)))
+
   with tempfile.TemporaryDirectory() as tmp_dir:
+    # TODO: Don't ever change the user's input files. Instead, use the
+    # "smart naming convention" to put the flat version in the symlinked
+    # frames' names.
     step_flat_frame_association.set_flat_versions(stack, fits_headers)
 
     symlink_frames(stack.light_frames, tmp_dir)
@@ -131,12 +154,12 @@ def run(stack, fits_headers, dest_path):
     image = xisf.read_image(0)
     file_meta = xisf.get_file_metadata()
     ims_meta = xisf.get_images_metadata()
-    property_dict = {
-        'id': 'AstroFlow:stack_id',
-        'type': 'String',
-        'value': stack.id
+    file_meta["XISF:AstroFlow:StackId"] = {
+        "id": "XISF:AstroFlow:StackId",
+        "type": "String",
+        "value": stack.id,
     }
-    file_meta[property_dict['id']] = property_dict
+
     XISF.write(dst_filename,
                image,
                creator_app="AstroFlow",

@@ -24,17 +24,19 @@ def iou(a, b):
   return a.intersection(b).area / a.union(b).area
 
 
-def find_components(plate_solutions,
+def find_components(light_frames,
+                    plate_solutions,
                     fits_headers,
                     min_component_members=MIN_COMPONENT_MEMBERS):
   # Filter out images that couldn't be plate-solved.
-  num_plate_solutions = len(plate_solutions)
-  plate_solutions = {f: p for f, p in plate_solutions.items() if p is not None}
-  print(f'### {num_plate_solutions} plate solutions, '
-        f'{len(plate_solutions)} good')
+  num_plate_solutions = len(light_frames)
 
-  filenames = sorted(plate_solutions.keys(),
-                     key=lambda x: fits_headers[x]['DATE-OBS'])
+  filenames = sorted(light_frames, key=lambda x: fits_headers[x]['DATE-OBS'])
+
+  # TODO: This is probably expensive, and gets repeated in many places. Maybe
+  # it should be done just once, and the footprints stored in Polygon format.
+  # Do we ever need the footprint as a list? I suppose we can always just get
+  # the list of exterior coords from the Polygon.
   footprints = {f: Polygon(plate_solutions[f].footprint) for f in filenames}
 
   targets = []
