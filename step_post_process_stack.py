@@ -29,18 +29,21 @@ import pix
 from pix import PixInsight, FileList
 
 
-def _up_to_date_file_exists(stack_id, filename):
+def _post_processed_with_stack_id_exists(stack_id, filename):
   if not os.path.exists(filename):
     return False
 
   try:
     xisf = XISF(filename)
     file_meta = xisf.get_file_metadata()
-    if 'AstroFlow:stack_id' in file_meta:
-      if file_meta['AstroFlow:stack_id']['value'] == stack_id:
+    key = 'XISF:AstroFlow:StackId'
+    if key in file_meta:
+      if file_meta[key]['value'] == stack_id:
         return True
   except:
-    return False
+    pass
+
+  return False
 
 
 def _output_filename(stack, dest_path):
@@ -48,14 +51,6 @@ def _output_filename(stack, dest_path):
   return os.path.join(
       output_dir,
       f'post_processed_{stack.target}_{stack.rig}_{stack.filter}.xisf')
-
-
-def needs_to_run(stack, dest_path):
-  up_to_date = _up_to_date_file_exists(stack.id,
-                                       _output_filename(stack, dest_path))
-  print(f'### stack {stack} up_to_date {up_to_date}')
-  assert up_to_date in [True, False]
-  return not up_to_date
 
 
 @PixInsight
@@ -76,21 +71,14 @@ def _post_process_stack(stack, src_filename, dst_filename):
   pix.CloseImages(images)
 
 
-def post_process_stack(stack):
+def post_process_stack(stack, dest_path):
   print(f'Entering post_process_stack for stack {stack}')
 
-  # TODO: Looking this stuff up in the cache is bad, because the cache hasn't
-  # been written to yet. Perhaps I can write to the cache automatically when
-  # each task ends.
   master = get_prev_result_object('stack_subframes', stack.id)
   print('master', master)
   if not master:
     print('post_process_stack master is None')
     return (dg.Ran.RAN, (dg.Result.FAILURE, "Stack has no master"))
-
-  # filename, ext = os.path.splitext(master.filename)
-  # dst_filename = filename + '_post' + '.xisf'
-  # print(f'post_process_stack dst_filename {dst_filename}')
 
   dst_filename = _output_filename(stack, dest_path)
   print(f'### post_process_stack.run dst_filename {dst_filename} exists '
@@ -99,18 +87,15 @@ def post_process_stack(stack):
   if config.TEST_MODE:
     return (dg.Ran.RAN, (dg.Result.SUCCESS, OutputFile(dst_filename)))
 
-  # TODO: This is a great spot to check the hash of the file on disk.
-  # if config.SUCCESS_IF_FILE_EXISTS and os.path.exists(dst_filename):
-  #   print(f'post_process_stack returning early because '
-  #         f'{dst_filename} already exists.')
-  #   return (dg.Result.SUCCESS, OutputFile(dst_filename))
-
-  # if _up_to_date_file_exists(stack.id, dst_filename):
-  #   return (dg.Result.SUCCESS, OutputFile(dst_filename))
+  # The point of this is to short-circuit stacking when the cache is empty,
+  # but the stacks have already been done. This is useful during development.
+  if _post_processed_with_stack_id_exists(stack.id, dst_filename):
+    print(f'### Post-processed image (made by AstroFlow) already '
+          f'exists: {dst_filename}')
+    return (dg.Ran.DID_NOT_RUN, (dg.Result.SUCCESS, OutputFile(dst_filename)))
 
   # TODO: Clean up the GraXpert integration.
   # TODO: Move to the `logging` module.
-  # image = file_io.read_xisf_image(master.filename)
   xisf = XISF(master.filename)
   image = xisf.read_image(0)
   print(f'Before GraXpert, image has shape {image.shape} '
@@ -121,7 +106,7 @@ def post_process_stack(stack):
 
   background_points = background_grid_selection.background_grid_selection(
       image, num_pts_per_row=30, tol=1.5, sample_size=25)
-  print('GraXpert returned background_points', background_points)
+  # print('GraXpert returned background_points', background_points)
 
   background = background_extraction.extract_background(
       image,
@@ -146,6 +131,11 @@ def post_process_stack(stack):
 
   xisf = XISF(master.filename)
   file_meta = xisf.get_file_metadata()
+  file_meta["XISF:AstroFlow:StackId"] = {
+      "id": "XISF:AstroFlow:StackId",
+      "type": "String",
+      "value": stack.id,
+  }
   ims_meta = xisf.get_images_metadata()
   XISF.write(graxpert_filename,
              image,
@@ -158,6 +148,11 @@ def post_process_stack(stack):
 
   xisf = XISF(master.filename)
   file_meta = xisf.get_file_metadata()
+  file_meta["XISF:AstroFlow:StackId"] = {
+      "id": "XISF:AstroFlow:StackId",
+      "type": "String",
+      "value": stack.id,
+  }
   ims_meta = xisf.get_images_metadata()
   XISF.write(graxpert_background_filename,
              background,

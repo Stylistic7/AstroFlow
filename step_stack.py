@@ -88,24 +88,10 @@ def run(stack, fits_headers, plate_solutions, dest_path):
     shutil.copy(stack.light_frames[0], dst_filename)
     return (dg.Ran.RAN, (dg.Result.Success, dst_filename))
 
-  # dst_filename = os.path.join(
-  #     output_dir,
-  #     f'master_light_{stack.target}_{stack.rig}_{stack.filter}.xisf')
-
   dst_filename = _output_filename(stack, dest_path)
   os.makedirs(os.path.dirname(dst_filename), exist_ok=True)
   print(f'### step_stack.run dst_filename {dst_filename} exists '
         f'{os.path.exists(dst_filename)}')
-
-  # TODO: Save stack ids, target ids, etc. as FITS/XISF headers. Then I can
-  # look at the file to see if it's actually up-to-date or not.
-  # if config.SUCCESS_IF_FILE_EXISTS and os.path.exists(dst_filename):
-  #   print(f'### step_stack.run returning early because '
-  #         f'{dst_filename} already exists.')
-  #   return (dg.Result.SUCCESS, OutputFile(dst_filename))
-
-  # if _master_with_stack_id_exists(stack.id, dst_filename):
-  #   return (dg.Result.SUCCESS, OutputFile(dst_filename))
 
   # The point of this is to short-circuit stacking when the cache is empty,
   # but the stacks have already been done. This is useful during development.

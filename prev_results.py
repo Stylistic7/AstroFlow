@@ -4,11 +4,12 @@ import dependency_graph as dg
 
 def get_prev_result(task_name, id):
   prev_results = cache.get('prev_results', {})
-  return prev_results.get((task_name, id), (dg.Result.NEVER_RUN, None))
+  return prev_results.get((task_name, id),
+                          (dg.Ran.DID_NOT_RUN, (dg.Result.NEVER_RUN, None)))
 
 
 def get_prev_result_object(task_name, id):
-  result, obj = get_prev_result(task_name, id)
+  ran, (result, obj) = get_prev_result(task_name, id)
   if result == dg.Result.SUCCESS:
     return obj
 

@@ -19,7 +19,6 @@ class Mosaic:
 
   # TODO: This currently just means "good" or not. Elaborate.
   status: bool = False
-  needs_to_run: bool = False
 
   target_ids: list[str] = field(default_factory=list)
 

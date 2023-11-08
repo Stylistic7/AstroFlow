@@ -159,7 +159,7 @@ class DependencyGraph(object):
         except Exception as e:
           print(f'### task {task} raised exception {e}')
           traceback.print_exc()
-          res = (Result.FAILURE, e)
+          res = (Ran.RAN, (Result.FAILURE, e))
 
         # TODO: Make a dict that automatically saves itself to the cache.
         results[task.id] = res

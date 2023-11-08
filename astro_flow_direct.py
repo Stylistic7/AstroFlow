@@ -526,13 +526,6 @@ def stack_subframes(stack, fits_headers, plate_solutions, output_dir):
     if stack.status != Status.READY:
       return (dg.Ran.RAN, (dg.Result.FAILURE, "Stack failed sanity checks"))
 
-    # TODO: It might be nicer to just assume DISABLED on these tasks if their
-    # output files exist. Then the prev_results just pass through?
-    # if not step_stack.needs_to_run(stack, output_dir):
-    #   _, prev_result = prev_results.get_prev_result('stack_subframes',
-    #                                                 stack.id)
-    #   return (dg.Ran.DID_NOT_RUN, prev_result)
-
     print(f'Stacking stack {stack}!')
     result = step_stack.run(stack, fits_headers, plate_solutions, output_dir)
     print(f'step_stack.run returned {result}')
@@ -542,16 +535,11 @@ def stack_subframes(stack, fits_headers, plate_solutions, output_dir):
   return inner
 
 
-def post_process_stack(stack, upstream_tasks):
+def post_process_stack(stack, output_dir, upstream_tasks):
   @graph.add(*upstream_tasks)
   def inner():
-    # if not step_post_process_stack.needs_to_run(stack, output_dir):
-    #   _, prev_result = prev_results.get_prev_result('post_process_stack',
-    #                                                 stack.id)
-    #   return (dg.Ran.DID_NOT_RUN, prev_result)
-
     print(f'Post-processing stack {stack}!')
-    return step_post_process_stack.post_process_stack(stack)
+    return step_post_process_stack.post_process_stack(stack, output_dir)
 
   inner.id = ('post_process_stack', stack.id)
   return inner
@@ -662,7 +650,8 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
         stack = stacks[stack_id]
         task = stack_subframes(stack, fits_headers, plate_solutions,
                                context.output_dir)
-        target_tasks.append(post_process_stack(stack, [task]))
+        target_tasks.append(
+            post_process_stack(stack, context.output_dir, [task]))
       mosaic_tasks.append(
           post_process_target(target, stacks, context.output_dir,
                               target_tasks))
@@ -672,25 +661,6 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
     print(f'Created {len(toplevel_tasks)} toplevel tasks')
 
     control_modes = {}
-
-    # Propagate the notion of "needs to run" from the first (free) nodes in the
-    # dependency graph through the rest of the graph.
-    # TODO: This "needs to run" stuff is probably better encapsulated by
-    # the dependency graph primitives. The step itself should look around,
-    # see if it needs to run, and return DID_NOT_RUN if the artifact already
-    # exists. I think I can completely remove this "needs to run" concept.
-    # for stack in stacks.values():
-    #   stack.needs_to_run = step_stack.needs_to_run(stack, context.output_dir,
-    #                                                plate_solutions)
-    #   print(f'### Stack {stack} needs_to_run {stack.needs_to_run}')
-
-    # for target in targets.values():
-    #   target.needs_to_run = any(
-    #       stacks[s].needs_to_run for s in target.stack_ids)
-
-    # for mosaic in mosaics.values():
-    #   mosaic.needs_to_run = any(
-    #       targets[t].needs_to_run for t in mosaic.target_ids)
 
     # These are for the web server to read.
     cache['stacks'] = stacks
@@ -708,14 +678,16 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
     #                  for s in stacks.values()}
     # control_modes |= {('stack_subframes', s.id): dg.ControlMode.DISABLED
     #                   for s in stacks.values()}
-    control_modes |= {('stack_subframes', s.id): dg.ControlMode.DISABLED
-                      for s in stacks.values() if 'IC1848' in s.target}
+    # control_modes |= {('stack_subframes', s.id): dg.ControlMode.DISABLED
+    #                   for s in stacks.values() if 'IC1848' in s.target}
     # control_modes |= {('post_process_stack', s.id): dg.ControlMode.FORCE
     #                   for s in stacks.values() if 'IC1848' in s.target}
     # control_modes |= {('post_process_target', t.id): dg.ControlMode.FORCE
     #                   for t in targets.values() if 'IC1848' in t.name}
     # control_modes |= {('post_process_mosaic', m.id): dg.ControlMode.FORCE
     #                   for m in mosaics.values() if 'IC1848' in m.name}
+    control_modes |= {('post_process_stack', m.id): dg.ControlMode.FORCE
+                      for m in stacks.values()}
     print('control_modes are', control_modes)
 
     def callback(results):
@@ -725,13 +697,6 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
       results = graph.run(executor, control_modes, cache.get(
           'prev_results', {}), callback)
-
-    # TODO: These need to be stored after each operation, not just after
-    # the entire graph is done. Maybe I can add a decorator to the inner
-    # functions or something?
-    cache['stacks'] = stacks
-    cache['targets'] = targets
-    cache['mosaics'] = mosaics
 
 
 if __name__ == '__main__':
