@@ -68,5 +68,5 @@ if __name__ == '__main__':
                                     targets, dg.Result.NEVER_RUN):
     print(target)
 
-  for k, mosaic in cache.get('mosaics', {}).items():
-    print(f'### mosaic {mosaic.name} {mosaic}')
+  # for k, mosaic in cache.get('mosaics', {}).items():
+  #   print(f'### mosaic {mosaic.name} {mosaic}')

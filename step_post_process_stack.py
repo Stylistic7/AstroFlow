@@ -79,7 +79,11 @@ def _post_process_stack(stack, src_filename, dst_filename):
 def post_process_stack(stack):
   print(f'Entering post_process_stack for stack {stack}')
 
+  # TODO: Looking this stuff up in the cache is bad, because the cache hasn't
+  # been written to yet. Perhaps I can write to the cache automatically when
+  # each task ends.
   master = get_prev_result_object('stack_subframes', stack.id)
+  print('master', master)
   if not master:
     print('post_process_stack master is None')
     return (dg.Ran.RAN, (dg.Result.FAILURE, "Stack has no master"))

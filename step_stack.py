@@ -116,9 +116,9 @@ def run(stack, fits_headers, plate_solutions, dest_path):
   # The point of this is to short-circuit stacking when the cache empty, but
   # the stacks have been done outside of AstroFlow. This generally happens when
   # the user first installs AstroFlow.
-  if dst_filename := _master_with_same_footprint_exits(stack, plate_solutions):
-    print(f'### Master (made outside AstroFlow) already exists: {dst_filename}')
-    return (dg.Ran.DID_NOT_RUN, (dg.Result.SUCCESS, OutputFile(dst_filename)))
+  if existing := _master_with_same_footprint_exits(stack, plate_solutions):
+    print(f'### Master (made outside AstroFlow) already exists: {existing}')
+    return (dg.Ran.DID_NOT_RUN, (dg.Result.SUCCESS, OutputFile(existing)))
 
   with tempfile.TemporaryDirectory() as tmp_dir:
     # TODO: Don't ever change the user's input files. Instead, use the

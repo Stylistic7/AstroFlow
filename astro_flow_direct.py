@@ -718,9 +718,13 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
     #                   for m in mosaics.values() if 'IC1848' in m.name}
     print('control_modes are', control_modes)
 
+    def callback(results):
+      cache['prev_results'] = results
+
     print('Starting execution')
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-      results = graph.run(executor, control_modes)
+      results = graph.run(executor, control_modes, cache.get(
+          'prev_results', {}), callback)
 
     # TODO: These need to be stored after each operation, not just after
     # the entire graph is done. Maybe I can add a decorator to the inner

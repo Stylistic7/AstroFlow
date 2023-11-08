@@ -127,7 +127,7 @@ class DependencyGraph(object):
             f'tasks were unsuccessful')
       return False
 
-  def run(self, executor, control_modes, prev_results=None):
+  def run(self, executor, control_modes, prev_results=None, callback=None):
     """Run tasks respecting the dependencies using an executor."""
     results = prev_results if prev_results else {}
 
@@ -163,6 +163,9 @@ class DependencyGraph(object):
 
         # TODO: Make a dict that automatically saves itself to the cache.
         results[task.id] = res
+
+        if callback:
+          callback(results)
 
         for f in self._downstream[task]:
           count_deps[f] -= 1
