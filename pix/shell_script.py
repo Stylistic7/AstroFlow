@@ -17,11 +17,14 @@ cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
 
 executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
+MAX_INSTANCES = os.cpu_count()
+
 
 def _clear_cache():
   with cache.transact():
     cache['pixinsight_blocking_instance'] = False
     cache['pixinsight_slots'] = []
+    cache['pixinsight_idle_slots'] = []
 
 
 def _wait_until_new_instance_is_allowed():
@@ -30,7 +33,7 @@ def _wait_until_new_instance_is_allowed():
       pixinsight_blocking_instance = cache.get('pixinsight_blocking_instance',
                                                default=False)
       too_many_instances_running = len(
-          cache.get('pixinsight_slots', default=[])) >= os.cpu_count()
+          cache.get('pixinsight_slots', default=[])) >= MAX_INSTANCES
 
       if not pixinsight_blocking_instance and not too_many_instances_running:
         return
@@ -39,6 +42,14 @@ def _wait_until_new_instance_is_allowed():
 
 
 def _start_pixinsight_instance(blocking=False):
+  with cache.transact():
+    idle_slots = cache.get('pixinsight_idle_slots', [])
+    if idle_slots:
+      slot = idle_slots.pop()
+      print(f'### Reusing idle slot {slot}')
+      cache['pixinsight_idle_slots'] = idle_slots
+      return slot
+
   _wait_until_new_instance_is_allowed()
 
   with cache.transact():
@@ -72,6 +83,16 @@ def _start_pixinsight_instance(blocking=False):
   time.sleep(15)
 
   return slot
+
+
+def _slot_is_idle(slot):
+  with cache.transact():
+    assert slot in cache.get('pixinsight_slots', default=[])
+    idle_slots = cache.get('pixinsight_idle_slots', [])
+    assert slot not in idle_slots
+    idle_slots.append(slot)
+    print(f'### Slot {slot} is now idle')
+    cache['pixinsight_idle_slots'] = idle_slots
 
 
 def _save_javascript_file(tmp_dir, task):
@@ -115,7 +136,9 @@ def run_script(tasks, blocking=True, tmp_dir_in=None, sleep_after=True):
     if sleep_after:
       script += f'!sleep {30 * (slot - 99)}\n'
     script += f'![echo "done" > {sentinel_filename}\n'
-    script += f'exit\n'
+
+    # TODO: Gracefully quit PixInsight instances using the `atexit` module.
+    # script += f'exit\n'
 
     with open(script_filename, "w") as f:
       print('script is', script)
@@ -130,6 +153,8 @@ def run_script(tasks, blocking=True, tmp_dir_in=None, sleep_after=True):
 
     while not os.path.exists(sentinel_filename):
       time.sleep(1)
+
+    _slot_is_idle(slot)
 
 
 if __name__ == '__main__':
