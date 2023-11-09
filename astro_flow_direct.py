@@ -493,13 +493,8 @@ def group_stacks_into_targets(stacks):
 
 def group_targets_into_mosaics(targets):
   print('Identifying mosaics...')
-  result, result_dict = step_mosaic.run(targets, plot=False)
-
-  if result != dg.Result.SUCCESS:
-    print('step_mosaic.run() failed')
-    return []
-
-  mosaics = {m.id: m for m in result_dict['mosaics']}
+  mosaics = step_mosaic.identify_mosiacs(targets, plot=False)
+  mosaics = {m.id: m for m in mosaics}
   return mosaics
 
 

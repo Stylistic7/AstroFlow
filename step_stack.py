@@ -17,17 +17,28 @@ import step_flat_frame_association
 from output_file import OutputFile
 import spatial_association
 
-# TODO: Tasks need a unified interface with the following functions:
-#
-# is there any work to do?
-# do the work
-
 
 def _exposure_time_string(stack):
   exposure = stack.exposure_time_s
   hours = np.floor(exposure / 3600)
   minutes = np.floor(exposure % 3600 / 60)
   return f'{hours:02.0f}h{minutes:02.0f}m'
+
+
+# TODO: Pull these functions into a new shared file.
+
+# TODO: There are really three levels of confidence about using pre-existing
+# artifacts:
+#
+# - Greatest confidence: The software has reached production quality, and
+#   there's a reliable record of having run the task. The artifact also contains
+#   unambiguous evidence of provenance (e.g. it contains a hashed stack id).
+# - Middle confidence: The software is in development. There is no reliable
+#   record of running the task, but there artifact contains unambiguous evidence
+#   of provenance (e.g. it contains a hashed stack id).
+# - Least confidence: The software is in development, or is run for the first
+#   time on a new set of images. An artifact with the expected footprint exists,
+#   but there is no evidence of its provenance.
 
 
 def _master_with_stack_id_exists(stack_id, filename):

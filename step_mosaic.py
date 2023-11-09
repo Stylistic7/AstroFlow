@@ -49,7 +49,7 @@ class MergeOp:
   output_filename: str = None
 
 
-def _identify_mosiacs(targets):
+def _identify_overlapping_targets(targets):
   if not targets:
     return []
 
@@ -330,9 +330,8 @@ def image_for_mosaic(mosaic,
   return output_image
 
 
-# TODO: Rename this.
-def run(targets, plot=False):
-  mosaics = _identify_mosiacs(targets.values())
+def identify_mosiacs(targets, plot=False):
+  mosaics = _identify_overlapping_targets(targets.values())
   if not mosaics:
     return []
 
@@ -361,7 +360,7 @@ def run(targets, plot=False):
     except Exception as e:
       traceback.print_exc()
 
-  return (dg.Result.SUCCESS, dict(mosaics=output_mosaics))
+  return output_mosaics
 
 
 def fill_template(template, value):

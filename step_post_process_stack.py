@@ -29,6 +29,7 @@ import pix
 from pix import PixInsight, FileList
 
 
+# TODO: Pull these functions into a new shared file.
 def _post_processed_with_stack_id_exists(stack_id, filename):
   if not os.path.exists(filename):
     return False
@@ -38,11 +39,15 @@ def _post_processed_with_stack_id_exists(stack_id, filename):
     file_meta = xisf.get_file_metadata()
     key = 'XISF:AstroFlow:StackId'
     if key in file_meta:
+      print(f'### filename {filename} has XISF:AstroFlow:StackId',
+            file_meta[key]['value'])
       if file_meta[key]['value'] == stack_id:
         return True
   except:
     pass
 
+  print(f'### filename {filename} did not contain matching '
+        f'XISF:AstroFlow:StackId header')
   return False
 
 
@@ -145,15 +150,6 @@ def post_process_stack(stack, dest_path):
 
   filename, ext = os.path.splitext(master.filename)
   graxpert_background_filename = filename + '_graxpert_background' + '.xisf'
-
-  xisf = XISF(master.filename)
-  file_meta = xisf.get_file_metadata()
-  file_meta["XISF:AstroFlow:StackId"] = {
-      "id": "XISF:AstroFlow:StackId",
-      "type": "String",
-      "value": stack.id,
-  }
-  ims_meta = xisf.get_images_metadata()
   XISF.write(graxpert_background_filename,
              background,
              creator_app="AstroFlow",
@@ -161,6 +157,21 @@ def post_process_stack(stack, dest_path):
              xisf_metadata=file_meta)
 
   _post_process_stack(stack, graxpert_filename, dst_filename)
+
+  xisf = XISF(dst_filename)
+  file_meta = xisf.get_file_metadata()
+  file_meta["XISF:AstroFlow:StackId"] = {
+      "id": "XISF:AstroFlow:StackId",
+      "type": "String",
+      "value": stack.id,
+  }
+  image = xisf.read_image(0)
+  ims_meta = xisf.get_images_metadata()
+  XISF.write(dst_filename,
+             image,
+             creator_app="AstroFlow",
+             image_metadata=ims_meta[0],
+             xisf_metadata=file_meta)
 
   # TODO: Return FAILURE if PixInsight task failed for some reason.
   return (dg.Ran.RAN, (dg.Result.SUCCESS, OutputFile(dst_filename)))
