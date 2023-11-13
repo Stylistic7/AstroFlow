@@ -194,11 +194,3 @@ class Stack:
     return (
         f'Stack(target={self.target}, status={self.status}, rig={self.rig}, '
         f'filter={self.filter}, {len(self.light_frames)} light frames)')
-
-  def __eq__(self, other):
-    return (self.light_frames == other.light_frames and
-            self.dark_frames == other.dark_frames and
-            self.bias_frames == other.bias_frames and
-            self.flat_frames == other.flat_frames and
-            self.camera_configs == other.camera_configs and
-            self.flat_frame_associations == other.flat_frame_associations)

@@ -29,7 +29,7 @@ class Target:
   footprint_galactic: list[tuple[float]] = None
   viewbox: list[tuple[float]] = None
 
-  def __repr__(self):
+  def __str__(self):
     return (f'Target(name={self.name}, {len(self.stack_ids)} stacks)')
 
   # TODO: How to guarantee these are always in the same order?

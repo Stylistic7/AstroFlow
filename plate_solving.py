@@ -37,6 +37,8 @@ def get_footprint(header):
   """Returns a 4x2 array. Order is clockwise starting with the bottom left corner."""
   with warnings.catch_warnings():
     warnings.simplefilter("ignore")
+    print('### IMAGEW', header['IMAGEW'])
+    print('### IMAGEH', header['IMAGEH'])
     header['NAXIS1'] = header['IMAGEW']
     header['NAXIS2'] = header['IMAGEH']
     wcs = astropy.wcs.WCS(header=header)
@@ -57,6 +59,10 @@ def get_num_stars(axy_file):
     return table.shape[0]
 
 
+# TODO: These plate solutions are taking up waaaay too much room in the cache.
+# Consider reducing the amount of information stored per image, and consider
+# a better data structure that a dict, which requires loading all the plate
+# solutions simultaneously.
 def solve_field(filename):
   with tempfile.TemporaryDirectory() as temp_dir:
     if os.path.splitext(filename)[-1] in ['.xisf']:
@@ -64,26 +70,21 @@ def solve_field(filename):
       # fits_to_xisf() functions.
       xisf = XISF(filename)
       image = xisf.read_image(0).squeeze()
+      print('### image has shape', image.shape)
       img_meta = xisf.get_images_metadata()[0]
       fits_meta = img_meta['FITSKeywords']
-      # print('### fits_meta', fits_meta)
 
       # TODO: Is this really necessary?
       image = image * 2**16
       image = image.astype(np.uint16)
-      # print(f'image has min {np.min(image)} and max {np.max(image)}')
-      # print(f'image has dtype {image.dtype}')
 
       hdu = pyfits.PrimaryHDU(image)
       for k, values in fits_meta.items():
         for v in values:
           hdu.header[k] = (v['value'], v['comment'])
-          # print(f'### set FITS header {k} to {hdu.header[k]}')
 
       dest_filename = os.path.join(temp_dir, os.path.basename(filename))
       dest_filename = Path(dest_filename).with_suffix('.fits')
-
-      dest_filename = os.path.join('/tmp', os.path.basename(dest_filename))
 
       print(f'Converting XISF to FITS {dest_filename}')
       hdu.writeto(dest_filename, overwrite=True)
@@ -92,11 +93,6 @@ def solve_field(filename):
       os.symlink(filename, dest_filename)
 
     try:
-      # command = [
-      #     "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
-      #     "--no-background-subtraction", "--guess-scale", "--downsample", "64",
-      #     "--crpix-center", "--depth", "100", dest_filename
-      # ]
       command = [
           "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
           "--scale-low", "0.1", "--scale-high", "180.0", "--scale-units",
@@ -104,6 +100,8 @@ def solve_field(filename):
           "--tweak-order", "2", "--crpix-center",
           "--no-background-subtraction", dest_filename
       ]
+      # TODO: This is an insane timeout. Figure out why some images really do
+      # require 15 minutes to solve?
       ret = subprocess.run(command, capture_output=True, timeout=15 * 60)
     except Exception as e:
       print(f'Could not plate solve file {dest_filename} due to exception')
@@ -138,4 +136,4 @@ def solve_fields(filenames):
 
 if __name__ == '__main__':
   soln = solve_field(sys.argv[1])
-  print('Got plate solution', soln)
+  print(soln.footprint)
