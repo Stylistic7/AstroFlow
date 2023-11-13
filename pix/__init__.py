@@ -10,7 +10,6 @@ from .open_images import OpenImages
 from .save_images import SaveImages
 from .rename_most_recent_view import RenameMostRecentView
 from .close_images import CloseImages
-from .close_all_windows import CloseAllWindows
 from .image_solver import ImageSolver
 from .automatic_background_extractor import AutomaticBackgroundExtractor
 from .wbpp import WeightedBatchPreprocessing

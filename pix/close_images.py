@@ -6,8 +6,17 @@ _javascript = """
 var view_ids = {view_ids};
 
 for (let i = 0; i < view_ids.length; ++i) {{
-  let window = View.viewById(view_ids[i]).window;
-  window.forceClose();
+  let view = View.viewById(view_ids[i]);
+  if (!view) {{
+    console.writeln("Couldn't find view with id " + view_ids[i]);
+    continue;
+  }}
+
+  if (view.window) {{
+    view.window.forceClose();
+  }} else {{
+    console.writeln("View id " + view_ids[i] + " didn't have a window");
+  }}
 }}
 """
 

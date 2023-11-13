@@ -123,15 +123,12 @@ def _post_process_target(target, stacks, dest_path):
       for v, f in zip(registered_view_ids, starless_filenames)
   ])
 
-  # TODO: The ViewIdList is a wart on the API.
-  pix.CloseAllWindows(pix.ViewIdList([]))
-
   # TODO: Automatically keep track of saved filenames.
   return saved_files
 
 
 def run(target, stacks, dest_path):
-  print('### Entering step_post_process_target.run()')
+  print(f'### Entering step_post_process_target.run() for target {target}')
   post_processed = [
       get_prev_result_object('post_process_stack', s) for s in target.stack_ids
   ]

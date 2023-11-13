@@ -121,7 +121,11 @@ def _create_run_command(task):
 
 
 # TODO: Re-use already launched PixInsight instance(s) that are idle.
-def run_script(tasks, blocking=True, tmp_dir_in=None, sleep_after=True):
+def run_script(tasks,
+               blocking=True,
+               tmp_dir_in=None,
+               close_after=True,
+               sleep_after=False):
   slot = _start_pixinsight_instance(blocking)
   print(f'PixInsight is now running in a background process in slot {slot}')
 
@@ -133,6 +137,8 @@ def run_script(tasks, blocking=True, tmp_dir_in=None, sleep_after=True):
 
     tasks = [_save_javascript_file(tmp_dir, t) for t in tasks]
     script = '\n\n'.join(_create_run_command(t) for t in tasks) + '\n\n'
+    if close_after:
+      script += f'close --force *\n'
     if sleep_after:
       script += f'!sleep {30 * (slot - 99)}\n'
     script += f'![echo "done" > {sentinel_filename}\n'
@@ -153,6 +159,8 @@ def run_script(tasks, blocking=True, tmp_dir_in=None, sleep_after=True):
 
     while not os.path.exists(sentinel_filename):
       time.sleep(1)
+
+    # time.sleep(300)
 
     _slot_is_idle(slot)
 
