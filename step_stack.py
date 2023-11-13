@@ -61,10 +61,22 @@ def _master_with_stack_id_exists(stack_id, filename):
 def _master_with_same_footprint_exits(stack, plate_solutions):
   # print(f'### Entering _master_with_same_footprint_exits() for stack {stack}')
   for filename, plate_solution in plate_solutions.items():
+    # TODO: Should these all be filtered out in some unified place?
+    if not os.path.exists(filename):
+      continue
+
     # TODO: There are better ways to identify masters than just the name.
     # Maybe I should have a generic "File" object that includes its type,
     # which can be determined more accurately by FITS/XISF metadata.
-    if not os.path.basename(filename).startswith('master'): continue
+    if not os.path.basename(filename).startswith('master'):
+      continue
+
+    xisf = XISF(filename)
+    ims_meta = xisf.get_images_metadata()
+
+    if ims_meta[0]['FITSKeywords']['FILTER'][0]['value'] != stack.filter:
+      continue
+
     iou = spatial_association.iou(Polygon(stack.footprint),
                                   Polygon(plate_solutions[filename].footprint))
     # print(f'### Master {filename} has IoU {iou} with stack {stack}')
