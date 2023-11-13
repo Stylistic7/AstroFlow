@@ -1,7 +1,9 @@
 import io
 import os
+import objsize
 import tempfile
 import shutil
+import psutil
 import subprocess
 import time
 from pathlib import Path
@@ -206,6 +208,7 @@ def _ransac(mosaic, plot=False, plot_title=None):
     # print(f'  transformed_center {transformed_center} '
     #       f'has Euclidean error {error}')
 
+    # TODO: Do these need to start at (0, 0) or is (-1, 1) acceptable, too?
     mosaic[i].tile_indices = [int(x) for x in np.round(transformed_center)]
     print(f'  tile_indices {i}: {mosaic[i].tile_indices}')
 
@@ -261,73 +264,6 @@ def get_best_light_frame(stack):
   thumbnails = [cache[('thumbnail_image', f)] for f in stack.light_frames]
   index = np.argmax(map(np.std, thumbnails))
   return stack.light_frames[index]
-
-
-def image_for_mosaic(mosaic,
-                     targets,
-                     stacks,
-                     plate_solutions,
-                     resolution=0.01):
-  min_ra, min_dec, ra_span, dec_span = mosaic.viewbox
-  print(f'min_ra {min_ra} ra_span {ra_span} '
-        f'min_dec {min_dec} dec_span {dec_span}')
-  width, height = int(np.ceil(ra_span / resolution)), int(
-      np.ceil(dec_span / resolution))
-  output_image = np.zeros((width, height))
-
-  targets = [t for t in targets if t.name in mosaic.target_ids]
-  print(f'Found {len(targets)} targets for mosaic')
-
-  for t in targets:
-    print(f'tile has indices {t.tile_indices}')
-
-  stacks = [
-      s for s in stacks
-      if s.filter == 'H' and any(s.id in t.stack_ids for t in targets)
-  ]
-  print(f'Found {len(stacks)} stacks for the targets')
-
-  best_light_frames = [get_best_light_frame(s) for s in stacks]
-  print(f'best_light_frames', best_light_frames)
-
-  images_and_metadata = [(image_handling.autostretch(
-      file_io.read_fits_image(f)), WCS(
-          plate_solutions[f].header), Polygon(plate_solutions[f].footprint))
-                         for f in best_light_frames]
-
-  ras = np.arange(min_ra, min_ra + ra_span, resolution)
-  decs = np.arange(min_dec, min_dec + dec_span, resolution)
-  world_positions = itertools.product(ras, decs)
-  ras, decs = zip(*world_positions)
-
-  world_positions = SkyCoord(list(ras), list(decs), frame="icrs", unit="deg")
-
-  # TODO: Use bilinear or bicubic interpolation.
-  # TODO: See if there's a built in way to do this.
-  # TODO: Parallelize over the images, which are each independent, and then
-  # compute the max of the stack afterwards.
-  for i, (image, wcs, _) in enumerate(images_and_metadata):
-    print(f'Projecting image {i}')
-    source_x, source_y = wcs.world_to_pixel(world_positions)
-
-    source_width, source_height = image.shape
-    interp = RegularGridInterpolator(
-        (range(source_width), range(source_height)),
-        image,
-        method='nearest',
-        bounds_error=False,
-        fill_value=0.0)
-
-    x = range(width)
-    y = range(height)
-    image_positions = itertools.product(x, y)
-    dest_x, dest_y = zip(*image_positions)
-    for sx, sy, dx, dy in zip(source_x, source_y, dest_x, dest_y):
-      output_image[dx, dy] = max(output_image[dx, dy], interp((sy, sx)))
-
-  print(f'mosaic image min {np.min(output_image)} '
-        f'max {np.max(output_image)}')
-  return output_image
 
 
 def identify_mosiacs(targets, plot=False):
@@ -459,7 +395,7 @@ def make_merge_ops(panels, output_dir):
 def compute_viewbox(plate_solutions):
   ras = [f[0] for p in plate_solutions for f in p.footprint]
   decs = [f[1] for p in plate_solutions for f in p.footprint]
-  print(f'got {len(ras)} ras and {len(decs)} decs')
+  # print(f'got {len(ras)} ras and {len(decs)} decs')
 
   min_ra, max_ra = np.min(ras), np.max(ras)
   min_dec, max_dec = np.min(decs), np.max(decs)
@@ -480,64 +416,124 @@ def show_image(data):
 class MosaicDimensions:
   width: int = None
   height: int = None
-  world_positions: list = None
+  min_ra: float = None
+  ra_span: float = None
+  min_dec: float = None
+  dec_span: float = None
+  resolution: float = None
+  # world_positions: list = None
 
 
 def get_mosaic_dimensions(panels, plate_solutions):
+  print(f'### get_mosaic_dimensions, {len(panels)} panels have footprints:')
+  assert len(panels) == len(plate_solutions)
+  for p in plate_solutions:
+    print(f'### {p.footprint}')
+
   min_ra, min_dec, ra_span, dec_span = compute_viewbox(plate_solutions)
-  print(f'min_ra {min_ra} ra_span {ra_span} '
+  print(f'### min_ra {min_ra} ra_span {ra_span} '
         f'min_dec {min_dec} dec_span {dec_span}')
-  resolution = 0.01
-  width, height = int(np.ceil(ra_span / resolution)), int(
+
+  resolution = 0.001
+  height, width = int(np.ceil(ra_span / resolution)), int(
       np.ceil(dec_span / resolution))
-  print(f'width {width} height {height}')
-
-  ras = np.arange(min_ra, min_ra + ra_span, resolution)
-  decs = np.arange(min_dec, min_dec + dec_span, resolution)
-  world_positions = itertools.product(ras, decs)
-  ras, decs = zip(*world_positions)
-
-  world_positions = SkyCoord(list(ras), list(decs), frame="icrs", unit="deg")
+  print(f'### Final mosaic will have width {width} height {height}')
 
   return MosaicDimensions(width=width,
                           height=height,
-                          world_positions=world_positions)
+                          min_ra=min_ra,
+                          ra_span=ra_span,
+                          min_dec=min_dec,
+                          dec_span=dec_span,
+                          resolution=resolution)
 
 
 def mosaic_by_coordinates(panel, plate_solution, mosaic_dimensions,
                           output_dir):
-  print(f'projecting image {panel.image_filename}')
+  print(f'### Projecting image {panel.image_filename}')
+  print(f'### panel has size '
+        f'{objsize.get_deep_size(panel) / 1024.0 / 1024.0:.3f} MB')
+  print(f'### plate_solution has size '
+        f'{objsize.get_deep_size(plate_solution) / 1024.0 / 1024.0:.3f} MB')
+  print(f'### mosaic_dimensions has size '
+        f'{objsize.get_deep_size(mosaic_dimensions) / 1024.0 / 1024.0:.3f} MB')
+
   projected_image = np.zeros(
-      (mosaic_dimensions.width, mosaic_dimensions.height))
+      (mosaic_dimensions.height, mosaic_dimensions.width))
   projection_map = np.zeros(
-      (mosaic_dimensions.width, mosaic_dimensions.height))
+      (mosaic_dimensions.height, mosaic_dimensions.width))
 
-  header = file_io.read_fits(panel.image_filename)
+  # TODO: Must also support XISF files here.
+  ext = os.path.splitext(panel.image_filename)[-1]
+  if ext == '.fits':
+    header = file_io.read_fits(panel.image_filename)
+    image = file_io.read_fits_image(panel.image_filename)
+  elif ext == '.xisf':
+    xisf = XISF(panel.image_filename)
+    image = xisf.read_image(0).squeeze()
+    img_meta = xisf.get_images_metadata()[0]
+    header = {k: v[0]['value'] for k, v in img_meta['FITSKeywords'].items()}
 
-  image = image_handling.autostretch(
-      file_io.read_fits_image(panel.image_filename))
+  print(f'### Image has shape {image.shape} and dtype {image.dtype}')
+  print(f'### Projecting to dimensions '
+        f'{mosaic_dimensions.height} x {mosaic_dimensions.width}')
+
+  print('### FITS header is')
+  for k, v in plate_solution.header.items():
+    if 'COMMENT' in k: continue
+    if 'HISTORY' in k: continue
+    print(f'### {k}: {v}')
 
   wcs = WCS(plate_solution.header)
-  source_x, source_y = wcs.world_to_pixel(mosaic_dimensions.world_positions)
 
-  source_width, source_height = image.shape
-  interp = RegularGridInterpolator((range(source_width), range(source_height)),
+  source_height, source_width = image.shape
+  interp = RegularGridInterpolator((range(source_height), range(source_width)),
                                    image,
                                    method='nearest',
                                    bounds_error=False,
                                    fill_value=-np.inf)
 
-  x = range(mosaic_dimensions.width)
-  y = range(mosaic_dimensions.height)
-  image_positions = itertools.product(x, y)
-  dest_x, dest_y = zip(*image_positions)
-  for sx, sy, dx, dy in zip(source_x, source_y, dest_x, dest_y):
-    value = interp((sy, sx))
-    if value == -np.inf:
-      continue
+  # TODO: Use projection other than Mercator.
+  delta_ra = mosaic_dimensions.resolution
+  delta_dec = mosaic_dimensions.resolution
 
-    projected_image[dx, dy] = max(projected_image[dx, dy], value)
-    projection_map[dx, dy] = 128
+  min_ra, min_dec, ra_span, dec_span = compute_viewbox([plate_solution])
+  print(f'### This panel has min_ra {min_ra} ra_span {ra_span} '
+        f'min_dec {min_dec} dec_span {dec_span}')
+  max_ra = min_ra + ra_span
+  max_dec = min_dec + dec_span
+
+  start_ra_index = int(
+      np.floor(
+          (min_ra - mosaic_dimensions.min_ra) / mosaic_dimensions.resolution))
+  end_ra_index = int(
+      np.ceil(
+          (max_ra - mosaic_dimensions.min_ra) / mosaic_dimensions.resolution))
+  print(f'### ra indices {start_ra_index} to {end_ra_index}')
+
+  start_dec_index = int(
+      np.floor((min_dec - mosaic_dimensions.min_dec) /
+               mosaic_dimensions.resolution))
+  end_dec_index = int(
+      np.ceil((max_dec - mosaic_dimensions.min_dec) /
+              mosaic_dimensions.resolution))
+  print(f'### dec indices {start_dec_index} to {end_dec_index}')
+
+  for y in range(start_ra_index, end_ra_index):
+    for x in range(start_dec_index, end_dec_index):
+      # TODO: Vectorize this if possible.
+      ra = mosaic_dimensions.min_ra + y * delta_ra
+      dec = mosaic_dimensions.min_dec + x * delta_dec
+      sy, sx = wcs.world_to_array_index_values([ra], [dec])
+      value = interp((sy, sx))
+      if value == -np.inf:
+        continue
+
+      projected_image[y, x] = value
+      projection_map[y, x] = 128
+
+  print(f'Finished projecting image {panel.image_filename}')
+  assert np.count_nonzero(projection_map), "projection failed"
 
   trim_top, trim_left, trim_height, trim_width = largestinteriorrectangle.lir(
       projection_map > 0)
@@ -547,7 +543,7 @@ def mosaic_by_coordinates(panel, plate_solution, mosaic_dimensions,
   projection_map[trim_left:trim_left + trim_width,
                  trim_top:trim_top + trim_height] = 255
 
-  trimmed_image = np.zeros(projected_image.shape)
+  trimmed_image = np.zeros(projected_image.shape, np.float32)
   trimmed_image[trim_left:trim_left + trim_width, trim_top:trim_top +
                 trim_height] = projected_image[trim_left:trim_left +
                                                trim_width,
@@ -555,12 +551,10 @@ def mosaic_by_coordinates(panel, plate_solution, mosaic_dimensions,
 
   output_image = trimmed_image
 
-  # show_image(output_image)
-
   hdu = pyfits.PrimaryHDU(output_image)
-  hdu.header['FOCALLEN'] = header['FOCALLEN']
-  hdu.header['XPIXSZ'] = header['XPIXSZ']
-  hdu.header['YPIXSZ'] = header['YPIXSZ']
+  hdu.header['FOCALLEN'] = float(header['FOCALLEN'])
+  hdu.header['XPIXSZ'] = float(header['XPIXSZ'])
+  hdu.header['YPIXSZ'] = float(header['YPIXSZ'])
   hdu.header['HISTORY'] = f"TrimMosaicTile.target: foo"
   hdu.header['HISTORY'] = f"TrimMosaicTile.top: {trim_top}"
   hdu.header['HISTORY'] = f"TrimMosaicTile.bottom: {trim_top + trim_height}"
@@ -580,9 +574,11 @@ def mosaic_by_coordinates(panel, plate_solution, mosaic_dimensions,
 @pix.PixInsight
 def run_photometric_mosaic(merge_op):
   images = pix.OpenImages(pix.FileList(merge_op.image_filenames),
-                          ['mosaic_0', 'mosaic_1'])
+                          ['placed_0', 'placed_1'])
   merged = pix.PhotometricMosaic(images)
-  return pix.SaveImages(merged, [merge_op.output_filename])
+  result = pix.SaveImages(merged, [merge_op.output_filename])
+
+  return result
 
 
 # TODO: None should be a valid argument type.
@@ -594,17 +590,20 @@ def merge_mosaic(panels, output_dir):
 
 
 def process_mosaic(mosaic, targets, stacks, output_dir):
-  print(f'Entering process_mosaic for mosaic {mosaic}')
+  print(f'### Entering process_mosaic for mosaic {mosaic}')
 
-  # image = image_for_mosaic(mosaic, cache['targets'], cache['stacks'],
-  #                          cache['plate_solutions'])
-  # plt.imshow(image, cmap='gray')
-  # plt.show()
+  proc = psutil.Process()
+  print(f'### There are {len(proc.open_files())} open files')
 
   if len(mosaic.target_ids) < 2:
     print(f'No processing to do for mosaic with only '
           f'{len(mosaic.target_ids)} target ids')
-    return (dg.Result.FAILURE, dict())
+    return (dg.Ran.DID_NOT_RUN, (dg.Result.NEVER_RUN, dict()))
+
+  ras = [p[0] for p in mosaic.footprint]
+  decs = [p[1] for p in mosaic.footprint]
+  print('### mosaic min(ras)', np.min(ras), 'max(ras)', np.max(ras))
+  print('### mosaic min(decs)', np.min(decs), 'max(decs)', np.max(decs))
 
   output_dir = os.path.join(output_dir, 'Mosaics', mosaic.name)
   os.makedirs(output_dir, exist_ok=True)
@@ -620,32 +619,32 @@ def process_mosaic(mosaic, targets, stacks, output_dir):
     stack = next(s for s in stacks.values()
                  if s.filter == 'H' and s.id in target.stack_ids)
 
-    post_pocessed = get_prev_result_object('post_process_target', target.id)
-    if not post_pocessed:
-      print(f'### Aborting mosaic {mosaic.name} because target {target.id} '
-            f'had result {post_pocessed}')
-      return (dg.Ran.RAN, (dg.Result.FAILURE,
-                           "Some post-processed images were missing"))
+    assert stack.filter == 'H'
 
-    # TODO: Select color channels here.
-    post_pocessed = post_pocessed[0].filename
+    filename = get_prev_result_object('stack_subframes', stack.id).filename
+    print(f'### Got {filename} for {stack} with id {stack.id}')
 
     panels.append(
-        Panel(image_filename=post_pocessed, tile_indices=target.tile_indices))
+        Panel(image_filename=filename, tile_indices=target.tile_indices))
+
+  print(f'### Mosaic contains {len(panels)} panels with filenames:')
+  for p in panels:
+    print(f'###   {p.image_filename}')
 
   with Pool() as p:
     plate_solutions = p.map(plate_solving.solve_field,
                             (p.image_filename for p in panels))
 
-  print(f'Got {len(plate_solutions)} plate solutions')
+  print(f'### Got {len(plate_solutions)} plate solutions')
 
   mosaic_dimensions = get_mosaic_dimensions(panels, plate_solutions)
 
-  # TODO: Parallelize this.
+  print(f'### Running mosaic_by_coordinates in parallel...')
   with Pool() as p:
     panels = p.starmap(mosaic_by_coordinates,
                        ((p, s, mosaic_dimensions, output_dir)
                         for p, s in zip(panels, plate_solutions)))
+  print(f'### mosaic_by_coordinates is done')
 
   output_image = merge_mosaic(panels, output_dir)
 
@@ -653,8 +652,7 @@ def process_mosaic(mosaic, targets, stacks, output_dir):
   print(f'Copying final mosaic image to {merged_mosaic}')
   shutil.copy(output_image[0], merged_mosaic)
 
-  output_filenames = [OutputFile(p.output_filename) for p in panels]
-  output_filenames.append(OutputFile(merged_mosaic))
+  output_filename = [OutputFile(merged_mosaic)]
 
   return (dg.Ran.RAN, (dg.Result.SUCCESS,
                        dict(panels=panels, output_filenames=output_filename)))
@@ -662,7 +660,6 @@ def process_mosaic(mosaic, targets, stacks, output_dir):
 
 def main():
   for mosaic in cache['mosaics']:
-    # print(f'mosaic {mosaic.id} has {len(mosaic.target_ids)} targets')
     if 'Filamentary' not in mosaic.id or len(mosaic.target_ids) < 2:
       continue
 

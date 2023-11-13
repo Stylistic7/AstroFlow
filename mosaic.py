@@ -11,7 +11,7 @@ def hash_string(s):
   return hashlib.sha256(bytes(s, 'utf-8')).hexdigest()
 
 
-@dataclass
+@dataclass(order=True)
 class Mosaic:
   id: str = None
 
@@ -30,6 +30,7 @@ class Mosaic:
   # TODO: How to guarantee these are always in the same order?
   def store_id(self):
     self.id = hash_string('_'.join(self.target_ids))
+    self.sort_index = self.name
 
   def store_metadata(self, targets):
     # print('### Entering Mosaic.store_metadata')
@@ -70,3 +71,6 @@ class Mosaic:
 
   def footprint_polygon(self):
     return Polygon(self.footprint)
+
+  def __str__(self):
+    return (f'Mosaic(name={self.name}, {len(self.target_ids)} targets)')
