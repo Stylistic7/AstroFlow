@@ -1,6 +1,11 @@
+import sys
 from cache import cache
+import objsize
+
 import dependency_graph as dg
 from astro_flow_direct import PlateSolutions
+
+MEGABYTE = 1024.0 * 1024.0
 
 
 def get_sorted_elements(prev_results, task_name, elements, result):
@@ -21,6 +26,7 @@ if __name__ == '__main__':
   prev_results = cache.get('prev_results', {})
   stacks = cache.get('stacks', {})
   targets = cache.get('targets', {})
+  mosaics = cache.get('mosaics', {})
 
   # TODO: Clean all of this up.
   print('\nSuccessful stacks:')
@@ -67,6 +73,46 @@ if __name__ == '__main__':
   for target in get_sorted_elements(prev_results, 'post_process_target',
                                     targets, dg.Result.NEVER_RUN):
     print(target)
+
+  print('\nSuccessful mosaic post_processing:')
+  for mosaic in get_sorted_elements(prev_results, 'post_process_mosaic',
+                                    mosaics, dg.Result.SUCCESS):
+    print(mosaic)
+
+  print('\nFailing mosaic post_processing:')
+  for mosaic in get_sorted_elements(prev_results, 'post_process_mosaic',
+                                    mosaics, dg.Result.FAILURE):
+    print(mosaic)
+
+  print('\nNever-run mosaic post_processing:')
+  for mosaic in get_sorted_elements(prev_results, 'post_process_mosaic',
+                                    mosaics, dg.Result.NEVER_RUN):
+    print(mosaic)
+
+  thumbnail_image_size = sum(
+      objsize.get_deep_size(cache[k]) for k in cache
+      if k[0] == 'thumbnail_image')
+  print(f'\nSize of thumbnail images '
+        f'{thumbnail_image_size / MEGABYTE:.3f} MB')
+
+  stack_thumbnail_image_size = sum(
+      objsize.get_deep_size(cache[k]) for k in cache
+      if k[0] == 'stack_thumbnail_image')
+  print(f'\nSize of stack_thumbnail images '
+        f'{stack_thumbnail_image_size / MEGABYTE:.3f} MB')
+
+  stack_thumbnail_video_size = sum(
+      objsize.get_deep_size(cache[k]) for k in cache
+      if k[0] == 'stack_thumbnail_video')
+  print(f'\nSize of stack_thumbnail videos '
+        f'{stack_thumbnail_video_size / MEGABYTE:.3f} MB')
+
+  plate_solutions_size = objsize.get_deep_size(
+      cache['plate_solutions']) / MEGABYTE
+  print(f'\nSize of plate solutions {plate_solutions_size:.3f} MB')
+
+  fits_headers_size = objsize.get_deep_size(cache['fits_headers']) / MEGABYTE
+  print(f'\nSize of fits headers {fits_headers_size:.3f} MB')
 
   # for k, mosaic in cache.get('mosaics', {}).items():
   #   print(f'### mosaic {mosaic.name} {mosaic}')
