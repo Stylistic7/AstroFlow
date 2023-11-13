@@ -41,14 +41,15 @@ class Ran(Enum):
 
 class DependencyGraph(object):
   def __init__(self):
-    self.clear()
     self.default_control_mode = ControlMode.AUTO
+    self.clear()
 
   def clear(self):
     #: Maps functions to their upstream connections (dependencies)
     self._upstream = {}
     #: Maps functions to their downstream connections
     self._downstream = defaultdict(set)
+    self.task_ids = []
 
   def add(self, *depends_on):
     """Add a task to the group."""
@@ -70,7 +71,7 @@ class DependencyGraph(object):
         for u in self._upstream[f]
     ]
     if any(u == ControlMode.FORCE for u in upstream_control_modes):
-      print(f'Running {key} because some upstream tasks were forced')
+      print(f'### RUNNING {key}: some upstream tasks were forced')
       # TODO: Modifying control_modes here is awkward, but searching the
       # entire tree backwards is akwward, too.
       control_modes[f.id] = ControlMode.FORCE
@@ -86,7 +87,7 @@ class DependencyGraph(object):
       return False
 
     if control_mode == ControlMode.FORCE:
-      print(f'RUNNING {key}: it is forced')
+      print(f'### RUNNING {key}: it is forced')
       return True
 
     # TODO: The run flag is only supposed to be during this graph's operation.
@@ -105,7 +106,7 @@ class DependencyGraph(object):
     upstream_results = [results[u.id] for u in self._upstream[f]]
     if len(upstream_results) == 0:
       if prev_result == Result.NEVER_RUN:
-        print(f'RUNNING {key}: it has no upstream tasks and has never run')
+        print(f'### RUNNING {key}: it has no upstream tasks and has never run')
         return True
       else:
         print(f'NOT RUNNING {key}: it has no upstream tasks and has '
@@ -114,13 +115,13 @@ class DependencyGraph(object):
 
     if prev_result == Result.NEVER_RUN and all(
         result == Result.SUCCESS for _, (result, _) in upstream_results):
-      print(f'RUNNING {key}: Task has never run, and all upstream tasks '
+      print(f'### RUNNING {key}: Task has never run, and all upstream tasks '
             f'were successful')
       return True
     elif any(ran == Ran.RAN for ran, _ in upstream_results) and all(
         result == Result.SUCCESS for _, (result, _) in upstream_results):
-      print(f'RUNNING {key}: Some upstream tasks ran, and all upstream tasks '
-            f'were successful')
+      print(f'### RUNNING {key}: Some upstream tasks ran, and all upstream '
+            f'tasks were successful')
       return True
     else:
       print(f'NOT RUNNING {key}: No upstream tasks ran, or some upstream '
@@ -135,6 +136,9 @@ class DependencyGraph(object):
     base_tasks = {task for task, count in count_deps.items() if count == 0}
 
     def run_or_no_op(task):
+      assert task.id not in self.task_ids, f'task {task.id} encountered twice'
+      self.task_ids.append(task.id)
+
       if self.should_run(task, control_modes, results):
         return executor.submit(task)
       else:
@@ -154,14 +158,18 @@ class DependencyGraph(object):
         task = future_to_task[future]
         try:
           res = future.result()
-          print(f'task {task} is done with result {res}; it has '
+          print(f'task {task.id} is done with result {res}; it has '
                 f'{len(self._downstream[task])} downstream tasks')
         except Exception as e:
-          print(f'### task {task} raised exception {e}')
+          print(f'### task {task.id} raised exception {e}')
           traceback.print_exc()
           res = (Ran.RAN, (Result.FAILURE, e))
 
-        # TODO: Make a dict that automatically saves itself to the cache.
+        if task.id in results:
+          # TODO: Should we ever replace a RAN with a DID_NOT_RUN?
+          print(f'### replacing task {task.id} result'
+                f'\n    previous result {results[task.id]}'
+                f'\n    new result {res}')
         results[task.id] = res
 
         if callback:

@@ -635,63 +635,82 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   graph.default_control_mode = default_control_mode
 
   # TODO: Consider how to make this multi-threaded.
+  print(f'### Building dependency graph...')
   toplevel_tasks = []
+  print(f'### Iterating over {len(mosaics)} mosaics')
   for mosaic in mosaics.values():
+    print(f'###   Entering {mosaic}')
+    print(f'###   Iterating over {len(mosaic.target_ids)} targets')
     mosaic_tasks = []
     for target_id in mosaic.target_ids:
       target = targets[target_id]
+      print(f'###     Entering {target}')
+      print(f'###     Iterating over {len(target.stack_ids)} stacks')
       target_tasks = []
       for stack_id in target.stack_ids:
         stack = stacks[stack_id]
-        task = stack_subframes(stack, fits_headers, plate_solutions,
-                               context.output_dir)
-        target_tasks.append(
-            post_process_stack(stack, context.output_dir, [task]))
+        print(f'###       Entering {stack}')
+        task_0 = stack_subframes(stack, fits_headers, plate_solutions,
+                                 context.output_dir)
+        task_1 = post_process_stack(stack, context.output_dir, [task_0])
+        target_tasks.extend([task_0, task_1])
+
+      print(f'###     Created {len(target_tasks)} tasks for target')
       mosaic_tasks.append(
           post_process_target(target, stacks, context.output_dir,
                               target_tasks))
+    print(f'###   Created {len(mosaic_tasks)} tasks for mosaic')
     toplevel_tasks.append(
         post_process_mosaic(mosaic, targets, stacks, context.output_dir,
                             mosaic_tasks))
-    print(f'Created {len(toplevel_tasks)} toplevel tasks')
 
-    control_modes = {}
+  print(f'### Created {len(toplevel_tasks)} toplevel tasks')
 
-    # These are for the web server to read.
-    cache['stacks'] = stacks
-    cache['targets'] = targets
-    cache['mosaics'] = mosaics
+  control_modes = {}
 
-    # TODO: This is the place to setup control modes, or to read them from the
-    # user interface.
-    # control_modes |= {('stack_subframes', '298749827439823'): ControlMode.FORCE}
-    # control_modes |= {('stack_subframes', stack.id): dg.ControlMode.DISABLED
-    #                  for stack in stacks if stack.status == Status.NOT_READY}
-    # control_modes |= {('stack_subframes', s.id): dg.ControlMode.FORCE
-    #                  for s in stacks.values() if 'IC1805' in s.target}
-    # control_modes |= {('stack_subframes', s.id): dg.ControlMode.FORCE
-    #                  for s in stacks.values()}
-    # control_modes |= {('stack_subframes', s.id): dg.ControlMode.DISABLED
-    #                   for s in stacks.values()}
-    # control_modes |= {('stack_subframes', s.id): dg.ControlMode.DISABLED
-    #                   for s in stacks.values() if 'IC1848' in s.target}
-    # control_modes |= {('post_process_stack', s.id): dg.ControlMode.FORCE
-    #                   for s in stacks.values() if 'IC1848' in s.target}
-    # control_modes |= {('post_process_target', t.id): dg.ControlMode.FORCE
-    #                   for t in targets.values() if 'IC1848' in t.name}
-    # control_modes |= {('post_process_mosaic', m.id): dg.ControlMode.FORCE
-    #                   for m in mosaics.values() if 'IC1848' in m.name}
-    control_modes |= {('post_process_stack', m.id): dg.ControlMode.FORCE
-                      for m in stacks.values()}
-    print('control_modes are', control_modes)
+  # These are for the web server to read.
+  cache['stacks'] = stacks
+  cache['targets'] = targets
+  cache['mosaics'] = mosaics
 
-    def callback(results):
-      cache['prev_results'] = results
+  # TODO: This is the place to setup control modes, or to read them from the
+  # user interface.
+  # control_modes |= {('stack_subframes', '298749827439823'): ControlMode.FORCE}
+  # control_modes |= {('stack_subframes', stack.id): dg.ControlMode.DISABLED
+  #                  for stack in stacks if stack.status == Status.NOT_READY}
+  # control_modes |= {('stack_subframes', s.id): dg.ControlMode.FORCE
+  #                  for s in stacks.values() if 'IC1805' in s.target}
+  # control_modes |= {('stack_subframes', s.id): dg.ControlMode.FORCE
+  #                  for s in stacks.values()}
+  # control_modes |= {('stack_subframes', s.id): dg.ControlMode.DISABLED
+  #                   for s in stacks.values()}
+  control_modes |= {('stack_subframes', s.id): dg.ControlMode.DISABLED
+                    for s in stacks.values() if 'IC1848' not in s.target}
+  # control_modes |= {('post_process_stack', s.id): dg.ControlMode.DISABLED
+  #                   for s in stacks.values() if 'IC1848' not in s.target}
+  # control_modes |= {('post_process_target', t.id): dg.ControlMode.DISABLED
+  #                   for t in targets.values() if 'IC1848' not in t.name}
+  control_modes |= {('post_process_stack', s.id): dg.ControlMode.DISABLED
+                    for s in stacks.values()}
+  control_modes |= {('post_process_target', t.id): dg.ControlMode.DISABLED
+                    for t in targets.values()}
+  control_modes |= {('post_process_mosaic', m.id): dg.ControlMode.FORCE
+                    for m in mosaics.values() if 'IC1848' in m.name}
 
-    print('Starting execution')
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-      results = graph.run(executor, control_modes, cache.get(
-          'prev_results', {}), callback)
+  # control_modes |= {('post_process_stack', m.id): dg.ControlMode.FORCE
+  #                   for m in stacks.values()}
+  # print('control_modes are', control_modes)
+
+  def callback(results):
+    cache['prev_results'] = results
+
+  print('### Starting execution')
+  with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+    results = graph.run(executor, control_modes, cache.get('prev_results', {}),
+                        callback)
+
+  # TODO: Close all subordinate PixInsight instances.
+  print('### Compute graph is done!')
 
 
 if __name__ == '__main__':
