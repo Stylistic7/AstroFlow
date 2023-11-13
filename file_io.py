@@ -92,3 +92,17 @@ def read_xisf_image(filename):
 def read_fits_image(filename):
   with pyfits.open(filename) as fits:
     return fits[0].data.astype(np.float32)
+
+
+# TODO: Add a round-trip unit test.
+def convert_xisf_to_fits(xisf_filename, fits_filename):
+  xisf = XISF(xisf_filename)
+  image = xisf.read_image(0).squeeze()
+  img_meta = xisf.get_images_metadata()[0]
+  fits_meta = img_meta['FITSKeywords']
+
+  hdu = pyfits.PrimaryHDU(image)
+  for k, values in fits_meta.items():
+    for v in values:
+      hdu.header[k] = (v['value'], v['comment'])
+  hdu.writeto(fits_filename)
