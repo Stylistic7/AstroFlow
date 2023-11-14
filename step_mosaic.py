@@ -420,7 +420,8 @@ class MosaicDimensions:
   ra_span: float = None
   min_dec: float = None
   dec_span: float = None
-  resolution: float = None
+  ra_resolution: float = None
+  dec_resolution: float = None
   # world_positions: list = None
 
 
@@ -434,9 +435,18 @@ def get_mosaic_dimensions(panels, plate_solutions):
   print(f'### min_ra {min_ra} ra_span {ra_span} '
         f'min_dec {min_dec} dec_span {dec_span}')
 
-  resolution = 0.00025
-  height, width = int(np.ceil(ra_span / resolution)), int(
-      np.ceil(dec_span / resolution))
+  # Adjust the height by the cos of the dec, so the resulting mosaic won't be
+  # skinny.
+  #
+  # TODO: Implement more principled forms of correction, and choices of
+  # projection.
+  #
+  # TODO: Select output resolution more intelligently, maybe by megapixel?
+  dec_resolution = 0.0002
+  ra_resolution = dec_resolution / np.cos(np.deg2rad(min_dec + dec_span / 2.0))
+
+  height, width = int(np.ceil(ra_span / ra_resolution)), int(
+      np.ceil(dec_span / dec_resolution))
   print(f'### Final mosaic will have width {width} height {height}')
 
   return MosaicDimensions(width=width,
@@ -445,7 +455,8 @@ def get_mosaic_dimensions(panels, plate_solutions):
                           ra_span=ra_span,
                           min_dec=min_dec,
                           dec_span=dec_span,
-                          resolution=resolution)
+                          ra_resolution=ra_resolution,
+                          dec_resolution=dec_resolution)
 
 
 # TODO: Provide some feedback on progress.
@@ -495,8 +506,8 @@ def mosaic_by_coordinates(panel, plate_solution, mosaic_dimensions,
                                    fill_value=-np.inf)
 
   # TODO: Use projection other than Mercator.
-  delta_ra = mosaic_dimensions.resolution
-  delta_dec = mosaic_dimensions.resolution
+  delta_ra = mosaic_dimensions.ra_resolution
+  delta_dec = mosaic_dimensions.dec_resolution
 
   min_ra, min_dec, ra_span, dec_span = compute_viewbox([plate_solution])
   print(f'### This panel has min_ra {min_ra} ra_span {ra_span} '
@@ -505,19 +516,19 @@ def mosaic_by_coordinates(panel, plate_solution, mosaic_dimensions,
   max_dec = min_dec + dec_span
 
   start_ra_index = int(
-      np.floor(
-          (min_ra - mosaic_dimensions.min_ra) / mosaic_dimensions.resolution))
+      np.floor((min_ra - mosaic_dimensions.min_ra) /
+               mosaic_dimensions.ra_resolution))
   end_ra_index = int(
-      np.ceil(
-          (max_ra - mosaic_dimensions.min_ra) / mosaic_dimensions.resolution))
+      np.ceil((max_ra - mosaic_dimensions.min_ra) /
+              mosaic_dimensions.ra_resolution))
   # print(f'### ra indices {start_ra_index} to {end_ra_index}')
 
   start_dec_index = int(
       np.floor((min_dec - mosaic_dimensions.min_dec) /
-               mosaic_dimensions.resolution))
+               mosaic_dimensions.dec_resolution))
   end_dec_index = int(
       np.ceil((max_dec - mosaic_dimensions.min_dec) /
-              mosaic_dimensions.resolution))
+              mosaic_dimensions.dec_resolution))
   # print(f'### dec indices {start_dec_index} to {end_dec_index}')
 
   dest_ys = np.arange(start_ra_index, end_ra_index)
@@ -551,6 +562,8 @@ def mosaic_by_coordinates(panel, plate_solution, mosaic_dimensions,
   print(f'Finished projecting image {panel.image_filename}')
   assert np.count_nonzero(projection_map), "projection failed"
 
+  # TODO: This is surprisingly slow, dominating the projection for fine
+  # output resolutions.
   trim_top, trim_left, trim_height, trim_width = largestinteriorrectangle.lir(
       projection_map > 0)
   print(f'Trimmed trim_top {trim_top} trim_left {trim_left} trim_height '
