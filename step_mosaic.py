@@ -434,7 +434,7 @@ def get_mosaic_dimensions(panels, plate_solutions):
   print(f'### min_ra {min_ra} ra_span {ra_span} '
         f'min_dec {min_dec} dec_span {dec_span}')
 
-  resolution = 0.001
+  resolution = 0.00025
   height, width = int(np.ceil(ra_span / resolution)), int(
       np.ceil(dec_span / resolution))
   print(f'### Final mosaic will have width {width} height {height}')
@@ -448,6 +448,7 @@ def get_mosaic_dimensions(panels, plate_solutions):
                           resolution=resolution)
 
 
+# TODO: Provide some feedback on progress.
 def mosaic_by_coordinates(panel, plate_solution, mosaic_dimensions,
                           output_dir):
   print(f'### Projecting image {panel.image_filename}')
@@ -489,7 +490,7 @@ def mosaic_by_coordinates(panel, plate_solution, mosaic_dimensions,
   source_height, source_width = image.shape
   interp = RegularGridInterpolator((range(source_height), range(source_width)),
                                    image,
-                                   method='nearest',
+                                   method='linear',
                                    bounds_error=False,
                                    fill_value=-np.inf)
 
@@ -509,7 +510,7 @@ def mosaic_by_coordinates(panel, plate_solution, mosaic_dimensions,
   end_ra_index = int(
       np.ceil(
           (max_ra - mosaic_dimensions.min_ra) / mosaic_dimensions.resolution))
-  print(f'### ra indices {start_ra_index} to {end_ra_index}')
+  # print(f'### ra indices {start_ra_index} to {end_ra_index}')
 
   start_dec_index = int(
       np.floor((min_dec - mosaic_dimensions.min_dec) /
@@ -517,20 +518,35 @@ def mosaic_by_coordinates(panel, plate_solution, mosaic_dimensions,
   end_dec_index = int(
       np.ceil((max_dec - mosaic_dimensions.min_dec) /
               mosaic_dimensions.resolution))
-  print(f'### dec indices {start_dec_index} to {end_dec_index}')
+  # print(f'### dec indices {start_dec_index} to {end_dec_index}')
 
-  for y in range(start_ra_index, end_ra_index):
-    for x in range(start_dec_index, end_dec_index):
-      # TODO: Vectorize this if possible.
-      ra = mosaic_dimensions.min_ra + y * delta_ra
-      dec = mosaic_dimensions.min_dec + x * delta_dec
-      sy, sx = wcs.world_to_array_index_values([ra], [dec])
-      value = interp((sy, sx))
-      if value == -np.inf:
-        continue
+  dest_ys = np.arange(start_ra_index, end_ra_index)
+  dest_xs = np.arange(start_dec_index, end_dec_index)
 
-      projected_image[y, x] = value
-      projection_map[y, x] = 128
+  ras = (mosaic_dimensions.min_ra + y * delta_ra for y in dest_ys)
+  decs = (mosaic_dimensions.min_dec + x * delta_dec for x in dest_xs)
+  ras, decs = zip(*itertools.product(ras, decs))
+  source_ys, source_xs = wcs.world_to_array_index_values(ras, decs)
+
+  dest_ys, dest_xs = zip(*itertools.product(dest_ys, dest_xs))
+
+  # print(f'### len(ras)', len(ras))
+  # print(f'### ras[0:10]', ras[0:10])
+  # print(f'### len(decs)', len(decs))
+  # print(f'### decs[0:10]', decs[0:10])
+  # print(f'### len(source_ys)', len(source_ys))
+  # print(f'### source_ys[0:10]', source_ys[0:10])
+  # print(f'### len(source_xs)', len(source_xs))
+  # print(f'### source_xs[0:10]', source_xs[0:10])
+
+  for dy, dx, sy, sx in zip(dest_ys, dest_xs, source_ys, source_xs):
+    # print(f'### dy {dy} dx {dx} sy {sy} sx {sx}')
+    value = interp((sy, sx))
+    if value == -np.inf:
+      continue
+
+    projected_image[dy, dx] = value
+    projection_map[dy, dx] = 128
 
   print(f'Finished projecting image {panel.image_filename}')
   assert np.count_nonzero(projection_map), "projection failed"
