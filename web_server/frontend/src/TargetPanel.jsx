@@ -1,21 +1,19 @@
 import React, { useState, useRef, useEffect, useReducer } from "react";
-import Grid from '@mui/material/Unstable_Grid2';
 import StackThumbnail from "./StackThumbnail.jsx";
 import "./Starmap.css";
 
 export default function TargetPanel({ target, stacks, zoomToElement }) {
 	return (
-		<div>
-			<Grid container spacing={2} height="20px">
+		<div className="row" style={{pointerEvents: "none"}}> 
 				{target.stack_ids.map((stack_id) => (
-					<Grid xs={1}>
-						<StackThumbnail
-							stack={stacks[stack_id]}
-							zoomToElement={zoomToElement}
-						/>
-					</Grid>
+					<StackThumbnail
+						id={"StackThumbnail_" + stack_id}
+						key={stack_id}
+						stack={stacks[stack_id]}
+						width={(100 / target.stack_ids.length) + '%'}
+						zoomToElement={zoomToElement}
+					/>
 				))}
-			</Grid>
 		</div>
 	);
 }

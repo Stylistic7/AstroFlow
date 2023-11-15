@@ -63,3 +63,9 @@
   fill-opacity: 0;
   fill: none;
 }
+
+.row::after {
+  content: "";
+  clear: both;
+  display: table;
+}

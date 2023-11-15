@@ -1,8 +1,7 @@
 import React, { useState, useRef, useEffect, useReducer } from "react";
-
 import './Starmap.css';
 
-export default function StackThumbnail({stack, zoomToElement}) {
+export default function StackThumbnail({stack, width, zoomToElement}) {
 	const color_for_filter = (filter) => {
 	  let rgb = {
 	    'L': [51, 51, 51],
@@ -18,17 +17,15 @@ export default function StackThumbnail({stack, zoomToElement}) {
 	};
 
   let stack_thumbnail_image_url = `/stack_thumbnail_image/${stack.id}`;
-  console.log('stack_thumbnail_image_url', stack_thumbnail_image_url);
   return (
-  	<img
-      id={stack.id}
-    	key={stack.id}
+    <img
+    	id={stack.id}
     	src={stack_thumbnail_image_url}
-    	width="15px"
+    	style={{float: "left", width: width, padding: "0.5px", pointerEvents: "auto"}}
     	onClick={(event) => {
-				setTimeout(() => {zoomToElement(stack.id)}, 100);
-				event.stopPropagation();
-			}}
+		    setTimeout(() => {zoomToElement(stack.id)}, 100);
+		    event.stopPropagation();
+		  }}
     />
   );
 }

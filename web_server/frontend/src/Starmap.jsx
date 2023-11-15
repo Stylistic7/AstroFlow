@@ -15,7 +15,7 @@ export default function Starmap({
 	const [popupPosition, setPopupPosition] = React.useState({
 		x: 30,
 		y: 30,
-		width: 110,
+		width: 120,
 		height: 100,
 	});
 	const [mosaic, setMosaic] = React.useState(undefined);
@@ -51,10 +51,17 @@ export default function Starmap({
 				className={class_name}
 				points={points_string}
 				onClick={(event) => {
+					let x = centroid_x;
+					if (centroid_x < 180) {
+						x = x + 7;
+					} else {
+						x = x - popupPosition.width - 7
+					}
+
 					setMosaic(key);
 					setPopupPosition({
 						...popupPosition,
-						x: centroid_x - popupPosition.width - 7,
+						x: x,
 						y: centroid_y - popupPosition.height / 2,
 					});
 					setPopupVisibility("visible");
@@ -73,12 +80,15 @@ export default function Starmap({
 		}
 
 		return (
-			<div>
+			<div style={{margin: "2px"}}>
 				{mosaics[mosaic].target_ids.map((target_id) => (
 					<TargetPanel
+					  id={"TargetPanel_" + target_id}
+					  key={target_id}
 						target={targets[target_id]}
 						stacks={stacks}
 						zoomToElement={zoomToElement}
+						style={{border: '1px solid blue'}}
 					/>
 				))}
 			</div>
@@ -93,7 +103,7 @@ export default function Starmap({
 				<React.Fragment>
 					<TransformComponent>
 						<div id="starmap_container">
-							<img id="starmap_img" src="/static/images/GAIA_EDR3.png" />
+							<img id="starmap_img" src="/static/images/GAIA_EDR3_darkened.jpg" />
 							<span id="starmap_copyright">
 								&copy; ESA/Gaia/DPAC; CC BY-SA 3.0 IGO. Acknowledgement: A.
 								Moitinho.
@@ -105,9 +115,11 @@ export default function Starmap({
 							</svg>
 							<svg
 								id="starmap_svg"
-								viewBox="-20 -20 380 200"
-								style={{ zIndex: 10 }}
-								onClick={() => setPopupVisibility("hidden")}
+								viewBox="0 0 360 180"
+								onClick={() => {
+									console.log('starmap_svg got click');
+									setPopupVisibility("hidden");
+								}}
 							>
 								{Object.values(targets).map((target) =>
 									makePolyline(
@@ -128,6 +140,7 @@ export default function Starmap({
 									),
 								)}
 								<g
+									id="g"
 									ref={popupRef}
 									x={popupPosition.x}
 									y={popupPosition.y}
@@ -137,22 +150,22 @@ export default function Starmap({
 									transform={`translate(${popupPosition.x}, ${popupPosition.y})`}
 								>
 									<rect
+									  id="rect_b"
 										x="0"
 										y="0"
 										width={popupPosition.width}
 										height={popupPosition.height}
 										rx="2"
-										style={{ fill: "none" }}
-									/>
-									<rect
-										x="0"
-										y="0"
-										width={popupPosition.width - 4}
-										height={popupPosition.height - 4}
-										rx="2"
 										style={{ fill: "#999" }}
 									/>
-									<foreignObject x="5" y="0" width="100" height="100">
+									<foreignObject
+										id="foreignObject"
+										x="0" 
+										y="0"
+										width={popupPosition.width}
+										height={popupPosition.height}
+										style={{pointerEvents: "none"}}
+									>
 										{popupContent(zoomToElement)}
 									</foreignObject>
 								</g>
