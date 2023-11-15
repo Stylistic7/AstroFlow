@@ -18,14 +18,46 @@ export default function StackThumbnail({stack, width, zoomToElement}) {
 
   let stack_thumbnail_image_url = `/stack_thumbnail_image/${stack.id}`;
   return (
-    <img
-    	id={stack.id}
-    	src={stack_thumbnail_image_url}
-    	style={{float: "left", width: width, padding: "0.5px", pointerEvents: "auto"}}
-    	onClick={(event) => {
-		    setTimeout(() => {zoomToElement(stack.id)}, 100);
-		    event.stopPropagation();
-		  }}
-    />
+  	<div
+  	  style={{
+  	  	float: "left",
+  	  	width: width,
+  	  	padding: "0.5px",
+  	  	pointerEvents: "none",
+  	  	position: "relative",
+  	  }}
+  	>
+	    <img
+	    	id={stack.id}
+	    	src={stack_thumbnail_image_url}
+	    	style={{
+	    		pointerEvents: "auto",
+	    		width: "95%",
+	    		position: "absolute",
+	    		top: 0,
+	    		left: 0,
+	    	}}
+	    	onClick={(event) => {
+			    setTimeout(() => {zoomToElement(stack.id)}, 100);
+			    event.stopPropagation();
+			  }}
+	    />
+	    <svg
+	    	xmlns="http://www.w3.org/2000/svg"
+	    	style={{
+	    		position: "absolute",
+	    		top: "-1px",
+	    		right: "1px",
+	    		width: "2px",
+	    		height: "2px"
+	    	}}
+	    >
+	    	<rect
+	    		fill="red"
+	    		width="2"
+	    		height="2"
+	    	/>
+	    </svg>
+	   </div>
   );
 }

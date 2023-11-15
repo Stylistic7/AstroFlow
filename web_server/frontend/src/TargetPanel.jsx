@@ -4,7 +4,12 @@ import "./Starmap.css";
 
 export default function TargetPanel({ target, stacks, zoomToElement }) {
 	return (
-		<div className="row" style={{pointerEvents: "none"}}> 
+		<div
+			className="row"
+			style={{
+				height: "15px",
+				pointerEvents: "none"
+			}}> 
 				{target.stack_ids.map((stack_id) => (
 					<StackThumbnail
 						id={"StackThumbnail_" + stack_id}
