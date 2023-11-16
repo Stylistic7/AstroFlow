@@ -298,6 +298,7 @@ def identify_stacks(spatial_components, fits_headers):
   print('Identifying stacks...')
   stacks = []
   for name, light_frames in spatial_components:
+    # TODO: Merge images into stacks by their image scale, not RIG.
     for rig, rig_light_frames in file_io.group_by_fits_keyword(
         fits_headers, light_frames, 'RIG'):
       for filter, filter_light_frames in file_io.group_by_fits_keyword(
@@ -684,18 +685,18 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   #                  for s in stacks.values()}
   # control_modes |= {('stack_subframes', s.id): dg.ControlMode.DISABLED
   #                   for s in stacks.values()}
-  control_modes |= {('stack_subframes', s.id): dg.ControlMode.DISABLED
-                    for s in stacks.values() if 'IC1848' not in s.target}
+  # control_modes |= {('stack_subframes', s.id): dg.ControlMode.FORCE
+  #                   for s in stacks.values()}
   # control_modes |= {('post_process_stack', s.id): dg.ControlMode.DISABLED
   #                   for s in stacks.values() if 'IC1848' not in s.target}
   # control_modes |= {('post_process_target', t.id): dg.ControlMode.DISABLED
   #                   for t in targets.values() if 'IC1848' not in t.name}
-  control_modes |= {('post_process_stack', s.id): dg.ControlMode.DISABLED
-                    for s in stacks.values()}
-  control_modes |= {('post_process_target', t.id): dg.ControlMode.DISABLED
-                    for t in targets.values()}
+  # control_modes |= {('post_process_stack', s.id): dg.ControlMode.DISABLED
+  #                   for s in stacks.values()}
+  # control_modes |= {('post_process_target', t.id): dg.ControlMode.DISABLED
+  #                   for t in targets.values()}
   control_modes |= {('post_process_mosaic', m.id): dg.ControlMode.FORCE
-                    for m in mosaics.values() if 'IC1848' in m.name}
+                    for m in mosaics.values() if 'IC1848' not in m.name}
 
   # control_modes |= {('post_process_stack', m.id): dg.ControlMode.FORCE
   #                   for m in stacks.values()}

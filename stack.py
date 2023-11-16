@@ -64,6 +64,7 @@ class Stack:
 
   target: str = None
   rig: str = None
+  image_scale: float = None
   filter: str = None
 
   camera_configs = None
@@ -94,6 +95,7 @@ class Stack:
     self.store_id()
     self.store_exposure_time_s(fits_headers)
     self.store_center(plate_solutions)
+    self.store_image_scale(plate_solutions)
     self.store_footprint(plate_solutions)
     self.store_footprint_galactic()
     self.store_min_footprint(plate_solutions)
@@ -150,6 +152,16 @@ class Stack:
       plt.show()
 
     self.center = list(mean_center)
+
+  def store_image_scale(self, plate_solutions):
+    image_scales = [
+        p.image_scale for f, p in plate_solutions.items()
+        if f in self.light_frames
+    ]
+    print('image_scales', image_scales)
+    mean = np.mean(image_scales)
+    assert np.allclose(image_scales, mean, atol=0.01, rtol=0)
+    self.image_scale = mean
 
   def store_footprint(self, plate_solutions):
     # This might be too Draconian, because it includes outliers.

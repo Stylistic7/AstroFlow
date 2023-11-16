@@ -26,6 +26,7 @@ class PlateSolution:
   num_stars: int = 0
 
   center: list[float] = None
+  image_scale: float = None
   rotation_angle: float = None
   footprint: list = None
 
@@ -51,6 +52,19 @@ def get_center(header):
 
 def get_rotation_angle(header):
   return np.arctan2(header['CD1_2'], header['CD1_1'])
+
+
+def get_image_scale(header):
+  scale_x = np.linalg.norm(np.array([header['CD1_1'], header['CD2_1']]))
+  scale_y = np.linalg.norm(np.array([header['CD1_2'], header['CD2_2']]))
+  assert np.isclose(
+      scale_x, scale_y, atol=0.01 / 3600,
+      rtol=0), f'scale_x {scale_x} is not close to scale_y {scale_y}'
+
+  # The result is in arcseconds per pixel.
+  image_scale = scale_x * 3600.0
+  print(f'### image_scale {image_scale:.2f}" / px')
+  return image_scale
 
 
 def get_num_stars(axy_file):
@@ -114,14 +128,21 @@ def solve_field(filename):
       wcs_contents = open(wcs_file, 'rb').read()
       with pyfits.open(wcs_file) as fits:
         header = fits[0].header
-        print(f'### Sucessfully plate-solved file {dest_filename}')
-        return PlateSolution(image_filename=filename,
-                             wcs_contents=wcs_contents,
-                             header=header,
-                             center=get_center(header),
-                             footprint=get_footprint(header),
-                             rotation_angle=get_rotation_angle(header),
-                             num_stars=get_num_stars(axy_file))
+        try:
+          soln = PlateSolution(image_filename=filename,
+                               wcs_contents=wcs_contents,
+                               header=header,
+                               center=get_center(header),
+                               image_scale=get_image_scale(header),
+                               footprint=get_footprint(header),
+                               rotation_angle=get_rotation_angle(header),
+                               num_stars=get_num_stars(axy_file))
+          print(f'### Sucessfully plate-solved file {dest_filename}')
+          return soln
+        except Exception as e:
+          print(f'Could not plate solve file {dest_filename} due to exception')
+          traceback.print_exc()
+          return e
     else:
       # TODO: Emit warnings through Metaflow's reporting system.
       print(f'Could not plate-solve file {filename}')

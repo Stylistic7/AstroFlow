@@ -3,6 +3,7 @@ import StackThumbnail from "./StackThumbnail.jsx";
 import "./Starmap.css";
 
 export default function TargetPanel({ target, stacks, zoomToElement }) {
+	// TODO: Don't hardcode 15px.
 	return (
 		<div
 			className="row"

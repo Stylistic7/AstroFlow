@@ -22,6 +22,7 @@ export default function StackThumbnail({stack, width, zoomToElement}) {
   	  style={{
   	  	float: "left",
   	  	width: width,
+  	  	height: "100%",
   	  	padding: "0.5px",
   	  	pointerEvents: "none",
   	  	position: "relative",
@@ -42,6 +43,24 @@ export default function StackThumbnail({stack, width, zoomToElement}) {
 			    event.stopPropagation();
 			  }}
 	    />
+	    <div
+	      style={{
+	      	position: "absolute",
+	      	right: "1.75px",
+	      	bottom: "3px",
+	      	fontSize: "2px"
+	      }}
+	    >
+	      <span style={{color: "#aaa"}}>
+	      	{stack.image_scale}
+	      </span>
+	      &nbsp;
+	      <span style={{
+	      	color: color_for_filter(stack.filter)
+	      }}>
+	      	{stack.filter}
+	      </span>
+	    </div>
 	    <svg
 	    	xmlns="http://www.w3.org/2000/svg"
 	    	style={{

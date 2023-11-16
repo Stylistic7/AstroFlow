@@ -64,8 +64,6 @@
   fill: none;
 }
 
-.row::after {
-  content: "";
+.row:after {
   clear: both;
-  display: table;
 }
