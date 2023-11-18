@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import numpy as np
 import traceback
 from xisf import XISF
+import objsize
 
 from cache import cache
 import file_io
@@ -19,12 +20,8 @@ import file_io
 @dataclass
 class PlateSolution:
   image_filename: str = None
-
-  wcs_contents: bytes = None
   header: dict = None
-
   num_stars: int = 0
-
   center: list[float] = None
   image_scale: float = None
   rotation_angle: float = None
@@ -71,6 +68,16 @@ def get_num_stars(axy_file):
   with pyfits.open(axy_file) as fits:
     table = fits[1].data
     return table.shape[0]
+
+
+def simplify_header(header):
+  output_header = {}
+  for k in header.keys():
+    if 'COMMENT' in k or 'HISTORY' in k: continue
+    output_header[k] = header[k]
+
+  print(f'### header size {objsize.get_deep_size(output_header)} bytes')
+  return output_header
 
 
 # TODO: These plate solutions are taking up waaaay too much room in the cache.
@@ -127,10 +134,9 @@ def solve_field(filename):
     if os.path.exists(wcs_file) and os.path.exists(axy_file):
       wcs_contents = open(wcs_file, 'rb').read()
       with pyfits.open(wcs_file) as fits:
-        header = fits[0].header
+        header = simplify_header(fits[0].header)
         try:
           soln = PlateSolution(image_filename=filename,
-                               wcs_contents=wcs_contents,
                                header=header,
                                center=get_center(header),
                                image_scale=get_image_scale(header),

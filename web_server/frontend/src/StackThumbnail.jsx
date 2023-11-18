@@ -52,7 +52,7 @@ export default function StackThumbnail({stack, width, zoomToElement}) {
 	      }}
 	    >
 	      <span style={{color: "#aaa"}}>
-	      	{stack.image_scale}
+	      	{stack.image_scale.toFixed(2)}
 	      </span>
 	      &nbsp;
 	      <span style={{
