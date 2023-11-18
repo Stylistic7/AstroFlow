@@ -31,7 +31,7 @@ def get_plot_html():
 
   df = px.data.iris()  # replace with your own data source
   fig = px.scatter(df, x="sepal_width", y="sepal_length", color="species")
-  fig.write_html(buffer)
+  fig.write_html(buffer, full_html=False)
 
   # html_bytes = buffer.getvalue().encode()
   # encoded = b64encode(html_bytes).decode()
