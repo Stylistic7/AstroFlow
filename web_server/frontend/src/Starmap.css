@@ -55,7 +55,6 @@
   pointer-events: visible;
 }
 
-
 .constellation_polyline {
   stroke: white;
   stroke-opacity: 0.2;
@@ -66,4 +65,9 @@
 
 .row:after {
   clear: both;
+}
+
+.MuiBreadcrumbs-separator {
+  margin-left: 1px;
+  margin-right: 0;
 }

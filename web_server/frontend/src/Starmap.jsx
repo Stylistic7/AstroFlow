@@ -1,6 +1,12 @@
 import React, { useState, useRef, useEffect, useReducer } from "react";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
-import Grid from '@mui/material/Unstable_Grid2';
+import Breadcrumbs from '@mui/material/Breadcrumbs';
+import Link from '@mui/material/Link';
+import Typography from '@mui/material/Typography';
+import LayersIcon from '@mui/icons-material/Layers';
+import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import MosaicPanel from "./MosaicPanel.jsx";
 import TargetPanel from "./TargetPanel.jsx";
 import "./Starmap.css";
 
@@ -74,26 +80,60 @@ export default function Starmap({
 		);
 	};
 
+	// TODO: Split the popup content into a "Popup" component.
+	// TODO: Split CSS up into one file for each component?
 	const popupContent = (zoomToElement) => {
 		if (!mosaic) {
 			return;
 		}
 
+		// TODO implement?
+		const handleClick = () => {
+			console.log('handleClick');
+		};
+
+		// TODO: Font sizes are a mess right now. Find some way to gracefully select
+		// them and pass them through the hierarchy.
+		const fontSize = '2.5px';
+		const fontColor = 'black';
+
 		return (
-			<div style={{margin: "2px"}}>
-				{mosaics[mosaic].target_ids.map((target_id) => (
-					<TargetPanel
-					  id={"TargetPanel_" + target_id}
-					  key={target_id}
-						target={targets[target_id]}
-						stacks={stacks}
-						zoomToElement={zoomToElement}
-						style={{border: '1px solid blue'}}
-					/>
-				))}
-			</div>
-		);
-	};
+	    <div role="presentation" onClick={handleClick}>
+	      <Breadcrumbs
+	      	aria-label="breadcrumb"
+	      	fontSize={fontSize}
+	      	sx={{
+	      		color: 'black', ml: 0.15, mt: 0.2, mb: 0
+	      	}}>
+	        <Link
+	          underline="hover"
+	          sx={{ display: 'flex', alignItems: 'center', color: fontColor }}
+	          fontSize={fontSize}
+	          color="inherit"
+	          href="/"
+	        >
+	          <AutoAwesomeMosaicIcon sx={{ ml: 0.1, mr: 0.1 }} fontSize={fontSize} />
+	          Mosaic
+	        </Link>
+	        <Typography
+	          sx={{ display: 'flex', alignItems: 'center', color: fontColor }}
+	          fontSize={fontSize}
+	          color="text.primary"
+	        >
+	          <LayersIcon sx={{ ml: 0.1, mr: 0.1 }} fontSize={fontSize} />
+	          Stack
+	        </Typography>
+	      </Breadcrumbs>
+	      <MosaicPanel
+					mosaic={mosaic}
+					mosaics={mosaics}
+					targets={targets}
+					stacks={stacks}
+					zoomToElement={zoomToElement}
+				/>
+	    </div>
+	  );
+	}
 
 	// TODO: Figure out why some divs (like those containing text) become huge.
 	// Use proper hierarchy for MUI elements.

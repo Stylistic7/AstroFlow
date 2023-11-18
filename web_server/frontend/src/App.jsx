@@ -8,6 +8,7 @@ import MosaicTable from "./MosaicTable.jsx";
 import logo from './logo.svg';
 import { usePageVisibility } from './usePageVisibility';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
+import { StyledEngineProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import './App.css';
 
@@ -75,14 +76,16 @@ function App() {
 
   return (
     <ThemeProvider theme={darkTheme}>
-      <CssBaseline />
-      <Search stacks={stacks} targets={targets} mosaics={mosaics} />
-      <LeftDrawer />
-      <Starmap
-        constellation_polylines={constellationPolylines}
-        stacks={stacks}
-        targets={targets}
-        mosaics={mosaics} />
+      <StyledEngineProvider injectFirst>
+        <CssBaseline />
+        <Search stacks={stacks} targets={targets} mosaics={mosaics} />
+        <LeftDrawer />
+        <Starmap
+          constellation_polylines={constellationPolylines}
+          stacks={stacks}
+          targets={targets}
+          mosaics={mosaics} />
+      </StyledEngineProvider>
     </ThemeProvider>
   );
 }
