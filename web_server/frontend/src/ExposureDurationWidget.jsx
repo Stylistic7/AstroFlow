@@ -33,11 +33,12 @@ export default function ExposureDurationWidget({stack, width}) {
     	xmlns="http://www.w3.org/2000/svg"
     	style={{
     		position: "absolute",
-    		top: "-1px",
-    		right: "1px",
-    		width: "2px",
-    		height: "2px"
+    		top: "5px",
+    		right: "15px",
+    		width: "20px",
+    		height: "20px"
     	}}
+    	viewBox="0 0 2 2"
     >
     	<defs>
 		    <clipPath id="insideCircleOnly">

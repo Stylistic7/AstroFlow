@@ -122,44 +122,15 @@ export default function Starmap({
 										zoomToElement,
 									),
 								)}
-								<g
-									id="g"
-									ref={popupRef}
-									x={popupPosition.x}
-									y={popupPosition.y}
-									width={popupPosition.width}
-									height={popupPosition.height}
-									visibility={popupVisbility}
-									transform={`translate(${popupPosition.x}, ${popupPosition.y})`}
-								>
-									<rect
-									  id="rect_b"
-										x="0"
-										y="0"
-										width={popupPosition.width}
-										height={popupPosition.height}
-										rx="2"
-										style={{ fill: "#999" }}
-									/>
-									<foreignObject
-										id="foreignObject"
-										x="0" 
-										y="0"
-										width={popupPosition.width}
-										height={popupPosition.height}
-										style={{pointerEvents: "none"}}
-									>
-									<Popup
-										mosaic_id={mosaic}
-										stack_id={undefined}
-										mosaics={mosaics}
-										targets={targets}
-										stacks={stacks}
-										zoomToElement={zoomToElement}
-									/>
-									</foreignObject>
-								</g>
 							</svg>
+							<Popup
+								mosaic_id={mosaic}
+								stack_id={undefined}
+								mosaics={mosaics}
+								targets={targets}
+								stacks={stacks}
+								zoomToElement={zoomToElement}
+							/>
 						</div>
 					</TransformComponent>
 				</React.Fragment>

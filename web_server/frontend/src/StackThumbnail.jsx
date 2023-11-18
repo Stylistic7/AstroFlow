@@ -21,10 +21,6 @@ export default function StackThumbnail({stack, width, handleClick}) {
   return (
   	<div
   	  style={{
-  	  	float: "left",
-  	  	width: width,
-  	  	height: "100%",
-  	  	padding: "0.5px",
   	  	pointerEvents: "none",
   	  	position: "relative",
   	  }}
@@ -65,7 +61,7 @@ export default function StackThumbnail({stack, width, handleClick}) {
     	<ExposureDurationWidget
     		key={`exposure_duration_${stack.id}`}
     		stack={stack}
-    		width="2px"
+    		width="20px"
     	/>
 	   </div>
   );

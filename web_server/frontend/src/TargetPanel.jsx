@@ -3,23 +3,19 @@ import StackThumbnail from "./StackThumbnail.jsx";
 import "./Starmap.css";
 
 export default function TargetPanel({ target, stacks, handleClick }) {
-	// TODO: Don't hardcode 15px.
+	// TODO: Don't hardcode 140px.
 	return (
-		<div
-			className="row"
-			style={{
-				height: "15px",
-				pointerEvents: "none"
-			}}> 
-				{target.stack_ids.map((stack_id) => (
+		<tr height="140px">
+			{target.stack_ids.map((stack_id) => (
+				<td key={stack_id} style={{verticalAlign: "text-top"}}>
 					<StackThumbnail
 						id={"StackThumbnail_" + stack_id}
-						key={stack_id}
 						stack={stacks[stack_id]}
-						width={(100 / target.stack_ids.length) + '%'}
+						width="100%"
 						handleClick={handleClick}
 					/>
-				))}
-		</div>
+				</td>
+		))}
+		</tr>
 	);
 }

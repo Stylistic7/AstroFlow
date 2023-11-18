@@ -27,8 +27,8 @@ export default function Popup({ mosaic_id, stack_id, mosaics, targets, stacks, z
 
 	// TODO: Font sizes are a mess right now. Find some way to gracefully select
 	// them and pass them through the hierarchy.
-	const fontSize = '2.5px';
-	const fontColor = 'black';
+	const fontSize = '12px';
+	const fontColor = 'white';
 
 	const stack_breadcrumb = () => {
 		if (!stack) return;
@@ -73,30 +73,30 @@ export default function Popup({ mosaic_id, stack_id, mosaics, targets, stacks, z
 	};
 
 	return (
-    <div role="presentation">
-      <Breadcrumbs
-      	aria-label="breadcrumb"
-      	fontSize={fontSize}
-      	sx={{
-      		color: 'black', ml: 0.15, mt: 0.2, mb: 0
-      	}}>
-        <Link
-          underline="hover"
-          sx={{ display: 'flex', alignItems: 'center', color: fontColor }}
-          style={{pointerEvents: "auto"}}
-          fontSize={fontSize}
-          color="inherit"
-          onClick={(event) => {
-				    setStack(undefined);
-				    event.stopPropagation();
-				  }}
-        >
-          <AutoAwesomeMosaicIcon sx={{ ml: 0.1, mr: 0.1 }} fontSize={fontSize} />
-          {mosaic.name} Mosaic
-        </Link>
-        {stack_breadcrumb()}
-      </Breadcrumbs>
-      {mosaic_or_stack_panel()}
+    <div role="presentation" id="popup" style={{backgroundColor: "#999"}}>
+    	<div style={{margin: "15px"}}>
+	      <Breadcrumbs
+	      	aria-label="breadcrumb"
+	      	fontSize={fontSize}
+	      >
+	        <Link
+	          underline="hover"
+	          sx={{ display: 'flex', alignItems: 'center', color: fontColor }}
+	          style={{pointerEvents: "auto"}}
+	          fontSize={fontSize}
+	          color="inherit"
+	          onClick={(event) => {
+					    setStack(undefined);
+					    event.stopPropagation();
+					  }}
+	        >
+	          <AutoAwesomeMosaicIcon fontSize={fontSize} />
+	          {mosaic.name} Mosaic
+	        </Link>
+	        {stack_breadcrumb()}
+	      </Breadcrumbs>
+	      {mosaic_or_stack_panel()}
+	    </div>
     </div>
   );
 }

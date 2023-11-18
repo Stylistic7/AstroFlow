@@ -63,11 +63,16 @@
   fill: none;
 }
 
-.row:after {
-  clear: both;
-}
 
 .MuiBreadcrumbs-separator {
   margin-left: 1px;
   margin-right: 0;
+}
+
+#popup {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 70%;
+  border-radius: 20px;
 }
