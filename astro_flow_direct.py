@@ -695,8 +695,8 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   #                   for s in stacks.values()}
   # control_modes |= {('post_process_target', t.id): dg.ControlMode.DISABLED
   #                   for t in targets.values()}
-  control_modes |= {('post_process_mosaic', m.id): dg.ControlMode.FORCE
-                    for m in mosaics.values() if 'IC1848' not in m.name}
+  # control_modes |= {('post_process_mosaic', m.id): dg.ControlMode.FORCE
+  #                   for m in mosaics.values() if 'IC1848' not in m.name}
 
   # control_modes |= {('post_process_stack', m.id): dg.ControlMode.FORCE
   #                   for m in stacks.values()}

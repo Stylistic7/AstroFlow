@@ -158,7 +158,6 @@ class Stack:
         p.image_scale for f, p in plate_solutions.items()
         if f in self.light_frames
     ]
-    print('image_scales', image_scales)
     mean = np.mean(image_scales)
     assert np.allclose(image_scales, mean, atol=0.01, rtol=0)
     self.image_scale = mean

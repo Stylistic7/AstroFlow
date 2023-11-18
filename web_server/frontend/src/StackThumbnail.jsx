@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useReducer } from "react";
+import ExposureDurationWidget from "./ExposureDurationWidget.jsx";
 import './Starmap.css';
 
 export default function StackThumbnail({stack, width, zoomToElement}) {
@@ -61,22 +62,10 @@ export default function StackThumbnail({stack, width, zoomToElement}) {
 	      	{stack.filter}
 	      </span>
 	    </div>
-	    <svg
-	    	xmlns="http://www.w3.org/2000/svg"
-	    	style={{
-	    		position: "absolute",
-	    		top: "-1px",
-	    		right: "1px",
-	    		width: "2px",
-	    		height: "2px"
-	    	}}
-	    >
-	    	<rect
-	    		fill="red"
-	    		width="2"
-	    		height="2"
-	    	/>
-	    </svg>
+    	<ExposureDurationWidget
+    		stack={stack}
+    		width="2px"
+    	/>
 	   </div>
   );
 }
