@@ -18,6 +18,7 @@ export default function ExposureDurationWidget({stack, width}) {
 
   	return (
   		<path
+  			key={hour}
   			d={`M ${start_x} ${start_y} L ${end_x} ${end_y}`}
   			style={{
   				stroke: "black",

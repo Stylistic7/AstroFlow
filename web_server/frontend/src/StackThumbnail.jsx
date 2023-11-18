@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useReducer } from "react";
 import ExposureDurationWidget from "./ExposureDurationWidget.jsx";
 import './Starmap.css';
 
-export default function StackThumbnail({stack, width, zoomToElement}) {
+export default function StackThumbnail({stack, width, handleClick}) {
 	const color_for_filter = (filter) => {
 	  let rgb = {
 	    'L': [51, 51, 51],
@@ -40,7 +40,7 @@ export default function StackThumbnail({stack, width, zoomToElement}) {
 	    		left: 0,
 	    	}}
 	    	onClick={(event) => {
-			    setTimeout(() => {zoomToElement(stack.id)}, 100);
+			    handleClick(stack.id);
 			    event.stopPropagation();
 			  }}
 	    />
@@ -63,6 +63,7 @@ export default function StackThumbnail({stack, width, zoomToElement}) {
 	      </span>
 	    </div>
     	<ExposureDurationWidget
+    		key={`exposure_duration_${stack.id}`}
     		stack={stack}
     		width="2px"
     	/>

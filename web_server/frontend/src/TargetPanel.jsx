@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useReducer } from "react";
 import StackThumbnail from "./StackThumbnail.jsx";
 import "./Starmap.css";
 
-export default function TargetPanel({ target, stacks, zoomToElement }) {
+export default function TargetPanel({ target, stacks, handleClick }) {
 	// TODO: Don't hardcode 15px.
 	return (
 		<div
@@ -17,7 +17,7 @@ export default function TargetPanel({ target, stacks, zoomToElement }) {
 						key={stack_id}
 						stack={stacks[stack_id]}
 						width={(100 / target.stack_ids.length) + '%'}
-						zoomToElement={zoomToElement}
+						handleClick={handleClick}
 					/>
 				))}
 		</div>
