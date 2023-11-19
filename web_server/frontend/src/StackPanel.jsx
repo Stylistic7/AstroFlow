@@ -7,8 +7,8 @@ export default function StackPanel({ stack_id, stacks, handleClick }) {
 
 	let stack_thumbnail_video_url = `/stack_thumbnail_video/${stack_id}`;
 	
-	const fetchHtml = () => {
-	  fetch('/get_plot')
+	const fetchHtml = (stack_id) => {
+	  fetch(`/get_num_stars_histogram_html/${stack_id}`)
 	  .then((response) => {
 	    return response.text();
 	  })
@@ -24,7 +24,7 @@ export default function StackPanel({ stack_id, stacks, handleClick }) {
 	  });
 	}
 
-	fetchHtml();
+	fetchHtml(stack_id);
 
 	return (
 		<div style={{margin: "2px"}}>

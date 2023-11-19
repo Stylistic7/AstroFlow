@@ -11,8 +11,10 @@ from dataclasses import asdict
 import argparse
 import shutil
 from threading import Thread
+from base64 import b64encode
 
 import astro_flow_direct
+from astro_flow_direct import PlateSolutions
 import constellations
 from astro_flow_direct import Context
 import image_handling
@@ -21,7 +23,7 @@ from . import test_app
 import plate_solving
 
 import plotly.express as px
-from base64 import b64encode
+import plotly.figure_factory as ff
 
 debug = False
 
@@ -29,60 +31,34 @@ debug = False
 def get_plot_html():
   buffer = io.StringIO()
 
-  df = px.data.iris()  # replace with your own data source
-  fig = px.scatter(df, x="sepal_width", y="sepal_length", color="species")
-  fig.write_html(buffer, full_html=False)
+  # df = px.data.iris()  # replace with your own data source
+  # fig = px.scatter(df, x="sepal_width", y="sepal_length", color="species")
 
-  # html_bytes = buffer.getvalue().encode()
-  # encoded = b64encode(html_bytes).decode()
-  # return encoded
+  x1 = np.random.randn(200) - 2
+  x2 = np.random.randn(200)
+  x3 = np.random.randn(200) + 2
+
+  hist_data = [x1, x2, x3]
+
+  group_labels = ['Group 1', 'Group 2', 'Group 3']
+  colors = ['#A56CC1', '#A6ACEC', '#63F5EF']
+
+  # Create distplot with curve_type set to 'normal'
+  fig = ff.create_distplot(hist_data,
+                           group_labels,
+                           colors=colors,
+                           curve_type='normal',
+                           bin_size=.2,
+                           show_rug=False)
+
+  # Add title
+  fig.update_layout(title_text='Hist and Curve Plot')
+  # fig.show()
+
+  fig.write_html(buffer, full_html=False)
 
   return buffer.getvalue()
 
-
-# def build_stack(stack):
-#   print('build_stack', stack)
-
-#   # FIXME where did the footprint go?
-#   print('build_stack stack.footprint', stack.footprint)
-
-#   return asdict(stack) | {
-#       'name': stack.target,
-#       'image': {
-#           'url':
-#           'https://img.freepik.com/free-photo/beagle-tricolor-puppy-is-posing_155003-31772.jpg?w=1480&t=st=1694757101~exp=1694757701~hmac=91cd6aaff87cb9502773c90d36e3bab81655a074a27dae5055a5dbf5a85d11df',
-#       },
-#       'video': {
-#           'url': f'/thumbnail_video/{stack.target}/{stack.rig}/{stack.filter}'
-#       },
-#       'plot': {
-#           # FIXME why do I need to include the hostname for iframes?
-#           'url': f'http://localhost:80/get_plot'
-#       },
-#       'quantity': 1,
-#       'status': 'Pending',
-#       'updated_at': '2014-02-11',
-#   }
-
-# def build_target(index, target, stacks):
-#   print('target', target)
-#   print(f'target.stacks {target.stacks}')
-#   stacks = [next(s for s in stacks if s.id == id) for id in target.stacks]
-#   print(f'Found {len(stacks)} stacks')
-
-#   return {
-#       'id': index,
-#       'target': f'Target {target.name}',
-#       'status': 'In Progress',
-#       'updated_at': '2014-02-11',
-#       'user': {
-#           'name': 'Stylistic7',
-#           'email': 'Stylistic7@proton.me',
-#           'phone': '408-910-3224',
-#       },
-#       'stacks': [build_stack(s) for s in stacks],
-#       'total': 123.45,
-#   }
 
 # Create the application.
 app = flask.Flask(__name__, template_folder='./templates')
@@ -97,24 +73,6 @@ def min_footprint(footprints):
 
   return [[min_ra, min_dec], [max_ra, min_dec], [max_ra, max_dec],
           [min_ra, max_dec]]
-
-
-# @app.route('/target_footprints')
-# def target_footprints():
-#   targets_and_light_frames = metaflow_data_helper.find(
-#       'spatial_grouping', 'targets_and_light_frames') or []
-#   plate_solutions = metaflow_data_helper.find('plate_solve',
-#                                               'plate_solutions') or {}
-
-#   output = {}
-#   for target, light_frames in targets_and_light_frames:
-#     print(f'target {target}')
-#     ps = [plate_solutions[light_frame] for light_frame in light_frames]
-#     footprints = [f for _, f, _ in ps]
-#     # print('footprints', footprints)
-#     output[target] = footprints
-
-#   return output
 
 
 @app.route('/')
@@ -239,6 +197,33 @@ def stack_master_image(stack_id):
 def plot():
   mem = io.BytesIO()
   mem.write(get_plot_html().encode())
+  mem.seek(0)
+  return flask.send_file(mem, mimetype='text/html')
+
+
+@app.route('/get_num_stars_histogram_html/<stack_id>')
+def get_num_stars_histogram_html(stack_id):
+  print(f'Creating num stars histogram for stack id {stack_id}')
+  stack = cache['stacks'][stack_id]
+  num_stars = [
+      p.num_stars for k, p in cache['plate_solutions'].items()
+      if k in stack.light_frames
+  ]
+  print('num_stars', num_stars)
+
+  colors = ['#A56CC1', '#A6ACEC']
+  fig = ff.create_distplot([num_stars], ['# Stars'],
+                           colors=colors,
+                           curve_type='normal',
+                           bin_size=20,
+                           show_rug=False)
+
+  # fig.update_layout(title_text='Hist and Curve Plot')
+
+  buffer = io.StringIO()
+  fig.write_html(buffer, full_html=False)
+  mem = io.BytesIO()
+  mem.write(buffer.getvalue().encode())
   mem.seek(0)
   return flask.send_file(mem, mimetype='text/html')
 

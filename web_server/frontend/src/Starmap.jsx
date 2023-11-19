@@ -99,6 +99,7 @@ export default function Starmap({
 							<svg
 								id="starmap_svg"
 								viewBox="0 0 360 180"
+								style={{pointerEvents: "auto"}}
 								onClick={() => {
 									console.log('starmap_svg got click');
 									setPopupVisibility("hidden");
