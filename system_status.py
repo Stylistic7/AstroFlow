@@ -3,6 +3,7 @@ from cache import cache
 import objsize
 
 import dependency_graph as dg
+import prev_results
 from astro_flow_direct import PlateSolutions
 
 MEGABYTE = 1024.0 * 1024.0
@@ -38,6 +39,8 @@ if __name__ == '__main__':
   for stack in get_sorted_elements(prev_results, 'stack_subframes', stacks,
                                    dg.Result.FAILURE):
     print(stack)
+    ran, (result, obj) = prev_results[('stack_subframes', stack.id)]
+    print('  Result objecct:', obj)
 
   print('\nNever-run stacks:')
   for stack in get_sorted_elements(prev_results, 'stack_subframes', stacks,
@@ -53,6 +56,8 @@ if __name__ == '__main__':
   for stack in get_sorted_elements(prev_results, 'post_process_stack', stacks,
                                    dg.Result.FAILURE):
     print(stack)
+    ran, (result, obj) = prev_results[('post_process_stack', stack.id)]
+    print('  Result objecct:', obj)
 
   print('\nNever-run stack post_processing:')
   for stack in get_sorted_elements(prev_results, 'post_process_stack', stacks,
