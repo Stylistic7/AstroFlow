@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useReducer } from "react";
+import React, { useState, useRef, useEffect, useReducer, forwardRef } from "react";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import Popup from "./Popup.jsx";
 import "./Starmap.css";
@@ -10,7 +10,7 @@ export default function Starmap({
 	mosaics,
 }) {
 	const popupRef = useRef(null);
-	const [popupVisbility, setPopupVisibility] = React.useState("hidden");
+	const [popupVisbility, setPopupVisibility] = React.useState(false);
 	const [popupPosition, setPopupPosition] = React.useState({
 		x: 30,
 		y: 30,
@@ -64,9 +64,9 @@ export default function Starmap({
 						x: x,
 						y: centroid_y - popupPosition.height / 2,
 					});
-					setPopupVisibility("visible");
+					setPopupVisibility(true);
 					setTimeout(() => {
-						zoomToElement(popupRef.current);
+						zoomToElement("popup");
 					}, 100);
 					event.stopPropagation();
 				}}
@@ -102,7 +102,7 @@ export default function Starmap({
 								style={{pointerEvents: "auto"}}
 								onClick={() => {
 									console.log('starmap_svg got click');
-									setPopupVisibility("hidden");
+									setPopupVisibility(false);
 								}}
 							>
 								{Object.values(targets).map((target) =>
@@ -124,14 +124,15 @@ export default function Starmap({
 									),
 								)}
 							</svg>
-							<Popup
+							{popupVisbility && <Popup
+							  id="popup"
 								mosaic_id={mosaic}
 								stack_id={undefined}
 								mosaics={mosaics}
 								targets={targets}
 								stacks={stacks}
 								zoomToElement={zoomToElement}
-							/>
+							/>}
 						</div>
 					</TransformComponent>
 				</React.Fragment>
