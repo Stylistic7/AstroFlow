@@ -35,6 +35,8 @@ def _min_footprint(footprints):
           [min_ra, max_dec]]
 
 
+# TODO: This should return a SanityCheckFailure exception, which can be
+# stored and passed through prev_results into the UI.
 def run(stack, fits_headers):
   # TODO: Also check that:
   # They all have essentially the same plate solution

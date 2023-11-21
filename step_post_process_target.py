@@ -130,7 +130,8 @@ def _post_process_target(target, stacks, dest_path):
 def run(target, stacks, dest_path):
   print(f'### Entering step_post_process_target.run() for target {target}')
   post_processed = [
-      get_prev_result_object('post_process_stack', s) for s in target.stack_ids
+      get_prev_result_object('post_process_stack', s).output_filename
+      for s in target.stack_ids
   ]
   print('### post_processed images are', post_processed)
 
