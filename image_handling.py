@@ -175,18 +175,3 @@ def make_and_cache_stack_thumbnails(stack, width=640):
 
     cache[('stack_thumbnail_image', stack.id)] = thumbnail_image
     cache[('stack_thumbnail_video', stack.id)] = thumbnail_video
-
-
-# if __name__ == '__main__':
-# frames = file_io.find_files('/Users/nobody/Projects/Astro/Raw/M101', '*.fit')
-# stack = Stack()
-# stack.light_frames = [
-#     f for f in frames if file_io.fits_matches(f, 'IMAGETYP', 'Light')
-# ]
-# print(f'First light frame is {stack.light_frames[0]}')
-# stack.light_frames = list(sorted(stack.light_frames))
-# video = thumbnail_video(stack)
-
-# video_filename = '/tmp/foo.webm'
-# open(video_filename, 'wb').write(video)
-# print(f'Wrote video to {video_filename}')

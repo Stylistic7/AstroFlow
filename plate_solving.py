@@ -95,10 +95,6 @@ def solve_field(filename):
       img_meta = xisf.get_images_metadata()[0]
       fits_meta = img_meta['FITSKeywords']
 
-      # TODO: Is this really necessary?
-      image = image * 2**16
-      image = image.astype(np.uint16)
-
       hdu = pyfits.PrimaryHDU(image)
       for k, values in fits_meta.items():
         for v in values:
@@ -114,11 +110,12 @@ def solve_field(filename):
       os.symlink(filename, dest_filename)
 
     try:
+      # TODO: These options must be exposed to the user.
       command = [
           "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
-          "--scale-low", "0.1", "--scale-high", "180.0", "--scale-units",
-          "degwidth", "--guess-scale", "--downsample", "4", "--objs", "1000",
-          "--tweak-order", "2", "--crpix-center",
+          "--scale-low", "1", "--scale-high", "10.0", "--scale-units",
+          "degwidth", "--guess-scale", "--downsample", "4", "--objs", "100",
+          "--tweak-order", "4", "--crpix-center",
           "--no-background-subtraction", dest_filename
       ]
       # TODO: This is an insane timeout. Figure out why some images really do
