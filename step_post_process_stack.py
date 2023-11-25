@@ -90,7 +90,8 @@ def post_process_stack(stack, dest_path):
         f'{os.path.exists(dst_filename)}')
 
   if config.TEST_MODE:
-    return (dg.Ran.RAN, (dg.Result.SUCCESS, OutputFile(dst_filename)))
+    return (dg.Ran.RAN, (dg.Result.SUCCESS,
+                         dict(output_filename=dst_filename, snr=None)))
 
   # The point of this is to short-circuit stacking when the cache is empty,
   # but the stacks have already been done. This is useful during development.
@@ -98,7 +99,8 @@ def post_process_stack(stack, dest_path):
   if _post_processed_with_stack_id_exists(stack.id, dst_filename):
     print(f'### Post-processed image (made by AstroFlow) already '
           f'exists: {dst_filename}')
-    return (dg.Ran.DID_NOT_RUN, (dg.Result.SUCCESS, OutputFile(dst_filename)))
+    return (dg.Ran.DID_NOT_RUN, (dg.Result.SUCCESS,
+                                 dict(output_filename=dst_filename, snr=None)))
 
   # TODO: Clean up the GraXpert integration.
   # TODO: Move to the `logging` module.
@@ -138,6 +140,7 @@ def post_process_stack(stack, dest_path):
         f'type {image.dtype} min {np.min(image)} max {np.max(image)}')
   print(f'GraXpert background image has min {np.min(background)} '
         f'max {np.max(background)}')
+  # TODO: Use Exceptions that can be stored and shown to the user.
   assert np.min(background) != 0.0 and np.max(background) != 0.0
 
   filename, ext = os.path.splitext(master.filename)
