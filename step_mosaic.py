@@ -442,7 +442,8 @@ def get_mosaic_dimensions(panels, plate_solutions):
   # projection.
   #
   # TODO: Select output resolution more intelligently, maybe by megapixel?
-  dec_resolution = 0.0002
+  # dec_resolution = 0.0002
+  dec_resolution = dec_span / 10000
   ra_resolution = dec_resolution / np.cos(np.deg2rad(min_dec + dec_span / 2.0))
 
   height, width = int(np.ceil(ra_span / ra_resolution)), int(
@@ -497,6 +498,7 @@ def mosaic_by_coordinates(panel, plate_solution, mosaic_dimensions,
     print(f'### {k}: {v}')
 
   wcs = WCS(plate_solution.header)
+  assert wcs.has_distortion
 
   source_height, source_width = image.shape
   interp = RegularGridInterpolator((range(source_height), range(source_width)),
@@ -537,7 +539,8 @@ def mosaic_by_coordinates(panel, plate_solution, mosaic_dimensions,
   ras = (mosaic_dimensions.min_ra + y * delta_ra for y in dest_ys)
   decs = (mosaic_dimensions.min_dec + x * delta_dec for x in dest_xs)
   ras, decs = zip(*itertools.product(ras, decs))
-  source_ys, source_xs = wcs.world_to_array_index_values(ras, decs)
+  # source_ys, source_xs = wcs.world_to_array_index_values(ras, decs)
+  source_xs, source_ys = wcs.all_world2pix(ras, decs, 1)
 
   dest_ys, dest_xs = zip(*itertools.product(dest_ys, dest_xs))
 
@@ -618,41 +621,33 @@ def merge_mosaic(panels, output_dir):
   return output_image
 
 
-def process_mosaic(mosaic, targets, stacks, output_dir):
-  print(f'### Entering process_mosaic for mosaic {mosaic}')
-
-  proc = psutil.Process()
-  print(f'### There are {len(proc.open_files())} open files')
-
-  if len(mosaic.target_ids) < 2:
-    print(f'No processing to do for mosaic with only '
-          f'{len(mosaic.target_ids)} target ids')
-    return (dg.Ran.DID_NOT_RUN, (dg.Result.NEVER_RUN, dict()))
-
-  ras = [p[0] for p in mosaic.footprint]
-  decs = [p[1] for p in mosaic.footprint]
-  print('### mosaic min(ras)', np.min(ras), 'max(ras)', np.max(ras))
-  print('### mosaic min(decs)', np.min(decs), 'max(decs)', np.max(decs))
-
-  output_dir = os.path.join(output_dir, 'Mosaics', mosaic.name)
-  os.makedirs(output_dir, exist_ok=True)
-
+def process_mosaic_per_filter(mosaic, targets, stacks, filter, output_dir):
   panels = []
   for target_id in mosaic.target_ids:
     target = targets[target_id]
 
-    print(f'target {target} tile_indices {target.tile_indices}')
-    assert target.tile_indices
+    assert target.tile_indices, f'target {target} has bad tile_indices'
 
     # TODO: Remove this filter and process all color channels.
-    stack = next(s for s in stacks.values()
-                 if s.filter == 'H' and s.id in target.stack_ids)
+    stack = next((s for s in stacks.values()
+                  if s.filter == filter and s.id in target.stack_ids), None)
 
-    assert stack.filter == 'H'
+    if stack is None:
+      print(f'### Could not find stack {stack.id}')
+      return None
+
+    # prev_result = get_prev_result_object('post_process_stack', stack.id)
+    # if prev_result is None:
+    #   print(f'### Could not get prev result for stack {stack.id}')
+    #   return None
+    # filename = prev_result['output_filename']
 
     filename = get_prev_result_object('stack_subframes', stack.id).filename
-    print(f'### Got {filename} for {stack} with id {stack.id}')
+    if not filename:
+      print(f'### Could not get stack master for {stack}')
+      return None
 
+    print(f'### Got {filename} for {stack} with id {stack.id}')
     panels.append(
         Panel(image_filename=filename, tile_indices=target.tile_indices))
 
@@ -677,14 +672,38 @@ def process_mosaic(mosaic, targets, stacks, output_dir):
 
   output_image = merge_mosaic(panels, output_dir)
 
-  merged_mosaic = os.path.join(output_dir, "merged_mosaic.fits")
+  merged_mosaic = os.path.join(output_dir, f"merged_mosaic_{filter}.fits")
   print(f'Copying final mosaic image to {merged_mosaic}')
   shutil.copy(output_image[0], merged_mosaic)
 
-  output_filename = [OutputFile(merged_mosaic)]
+  return OutputFile(merged_mosaic)
+
+
+def process_mosaic(mosaic, targets, stacks, output_dir):
+  print(f'### Entering process_mosaic for mosaic {mosaic}')
+
+  proc = psutil.Process()
+  print(f'### There are {len(proc.open_files())} open files')
+
+  if len(mosaic.target_ids) < 2:
+    print(f'No processing to do for mosaic with only '
+          f'{len(mosaic.target_ids)} target ids')
+    return (dg.Ran.DID_NOT_RUN, (dg.Result.NEVER_RUN, dict()))
+
+  output_dir = os.path.join(output_dir, 'Mosaics', mosaic.name)
+  os.makedirs(output_dir, exist_ok=True)
+
+  # TODO: Don't hardcode these filters. Find the set from the images
+  # themselves.
+  output_filenames = []
+  for filter in ['H', 'S', 'O', 'L', 'R', 'G', 'B']:
+    result = process_mosaic_per_filter(mosaic, targets, stacks, filter,
+                                       output_dir)
+    if result:
+      output_filenames.append(result)
 
   return (dg.Ran.RAN, (dg.Result.SUCCESS,
-                       dict(panels=panels, output_filenames=output_filename)))
+                       dict(panels=panels, output_filenames=output_filenames)))
 
 
 def main():
