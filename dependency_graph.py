@@ -62,7 +62,9 @@ class DependencyGraph(object):
 
     return decorator
 
-  def should_run(self, f, control_modes, results):
+  # TODO: All of these print statements should be turned into structlog
+  # entries that can be read and examined by the GUI.
+  def should_run(self, f, control_modes, results, debug=False):
     key = (f.__name__, f.id)
 
     # If any of the upstream tasks were forced, this task is also forced.
@@ -71,7 +73,7 @@ class DependencyGraph(object):
         for u in self._upstream[f]
     ]
     if any(u == ControlMode.FORCE for u in upstream_control_modes):
-      print(f'### RUNNING {key}: some upstream tasks were forced')
+      if debug: print(f'### RUNNING {key}: some upstream tasks were forced')
       # TODO: Modifying control_modes here is awkward, but searching the
       # entire tree backwards is akwward, too.
       control_modes[f.id] = ControlMode.FORCE
@@ -83,11 +85,11 @@ class DependencyGraph(object):
     # print(f'should_run {key} has id {f.id} and control mode {control_mode}')
 
     if control_mode == ControlMode.DISABLED:
-      print(f'NOT RUNNING {key}: it is disabled')
+      if debug: print(f'NOT RUNNING {key}: it is disabled')
       return False
 
     if control_mode == ControlMode.FORCE:
-      print(f'### RUNNING {key}: it is forced')
+      if debug: print(f'### RUNNING {key}: it is forced')
       return True
 
     # TODO: The run flag is only supposed to be during this graph's operation.
@@ -96,39 +98,51 @@ class DependencyGraph(object):
         f.id, (Ran.DID_NOT_RUN, (Result.NEVER_RUN, {})))
 
     if prev_result == Result.SUCCESS:
-      print(f'NOT RUNNING {key}: it ran previously and was successful')
+      if debug:
+        print(f'NOT RUNNING {key}: it ran previously and was successful')
       return False
 
     if prev_result == Result.FAILURE:
-      print(f'NOT RUNNING {key}: it ran previously and failed')
+      if debug: print(f'NOT RUNNING {key}: it ran previously and failed')
       return False
 
     upstream_results = [results[u.id] for u in self._upstream[f]]
     if len(upstream_results) == 0:
       if prev_result == Result.NEVER_RUN:
-        print(f'### RUNNING {key}: it has no upstream tasks and has never run')
+        if debug:
+          print(f'### RUNNING {key}: it has no upstream tasks '
+                f'and has never run')
         return True
       else:
-        print(f'NOT RUNNING {key}: it has no upstream tasks and has '
-              'previously run')
+        if debug:
+          print(f'NOT RUNNING {key}: it has no upstream tasks and has '
+                'previously run')
         return False
 
     if prev_result == Result.NEVER_RUN and all(
         result == Result.SUCCESS for _, (result, _) in upstream_results):
-      print(f'### RUNNING {key}: Task has never run, and all upstream tasks '
-            f'were successful')
+      if debug:
+        print(f'### RUNNING {key}: Task has never run, and all upstream tasks '
+              f'were successful')
       return True
     elif any(ran == Ran.RAN for ran, _ in upstream_results) and all(
         result == Result.SUCCESS for _, (result, _) in upstream_results):
-      print(f'### RUNNING {key}: Some upstream tasks ran, and all upstream '
-            f'tasks were successful')
+      if debug:
+        print(f'### RUNNING {key}: Some upstream tasks ran, and all upstream '
+              f'tasks were successful')
       return True
     else:
-      print(f'NOT RUNNING {key}: No upstream tasks ran, or some upstream '
-            f'tasks were unsuccessful')
+      if debug:
+        print(f'NOT RUNNING {key}: No upstream tasks ran, or some upstream '
+              f'tasks were unsuccessful')
       return False
 
-  def run(self, executor, control_modes, prev_results=None, callback=None):
+  def run(self,
+          executor,
+          control_modes,
+          prev_results=None,
+          callback=None,
+          debug=False):
     """Run tasks respecting the dependencies using an executor."""
     results = prev_results if prev_results else {}
 
@@ -144,7 +158,6 @@ class DependencyGraph(object):
       else:
         _, prev_result = results.get(task.id,
                                      (Ran.DID_NOT_RUN, (Result.NEVER_RUN, {})))
-        print(f'run_or_no_op task {task.id} prev_result {prev_result}')
         return executor.submit(lambda: (Ran.DID_NOT_RUN, prev_result))
 
     future_to_task = {run_or_no_op(task): task for task in base_tasks}
@@ -158,18 +171,15 @@ class DependencyGraph(object):
         task = future_to_task[future]
         try:
           res = future.result()
-          print(f'task {task.id} is done with result {res}; it has '
-                f'{len(self._downstream[task])} downstream tasks')
+          if debug:
+            print(f'task {task.id} is done with result {res}; it has '
+                  f'{len(self._downstream[task])} downstream tasks')
         except Exception as e:
           print(f'### task {task.id} raised exception {e}')
           traceback.print_exc()
           res = (Ran.RAN, (Result.FAILURE, e))
 
-        if task.id in results:
-          # TODO: Should we ever replace a RAN with a DID_NOT_RUN?
-          print(f'### replacing task {task.id} result'
-                f'\n    previous result {results[task.id]}'
-                f'\n    new result {res}')
+        # TODO: Should we ever replace a RAN with a DID_NOT_RUN?
         results[task.id] = res
 
         if callback:
@@ -182,8 +192,9 @@ class DependencyGraph(object):
             future_to_task[fut] = f
             not_done.add(fut)
 
-    print(f'Task results:')
-    for k, v in results.items():
-      print(f'task {k} result {v}')
+    # TODO: Log these in some machine-readable way.
+    # print(f'Task results:')
+    # for k, v in results.items():
+    #   print(f'task {k} result {v}')
 
     return results
