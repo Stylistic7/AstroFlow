@@ -16,10 +16,11 @@ import structlog
 
 import pix
 import dependency_graph as dg
-from stack import Stack, Status, FileList
+from stack import Stack, Status
 from target import Target
 from mosaic import Mosaic
 from cache import cache
+from mosaics import identification
 import file_io
 import plate_solving
 import spatial_association
@@ -32,11 +33,29 @@ import step_sanity_check_stack
 import step_post_process_stack
 import step_post_process_target
 import step_mosaic
-import step_stack
+import stacking
 import image_handling
 
 logger = structlog.get_logger()
 log = logger
+
+# Things that need to happen to make AstroFlow reach the "grown-up" point:
+#
+# - It needs to tell you what it's going to do.
+# - It needs to tell you what's currently doing, and a reliable ETA.
+# - It needs to tell you what it has done, so you know to look at new pics.
+# - It needs to explain errors in much greater detail.
+# - It needs a way to retry failed tasks.
+# - Select photos and move / delete them.
+# - It must not touch the user's photos, so there's no risk of bad changes.
+#   - This isn't really possible; it needs to add the filter for HyperStar.
+# - It needs to provide ETAs of all long-running tasks.
+#
+# Parts of AstroFlow that could be standalone projects:
+#
+# - The functional PixInsight library, pix.
+# - The dependency graph and control modes stuff.
+# - The mosaic merging code?
 
 
 # TODO: Building up a context object that is "parallel" to the disk cache
@@ -60,20 +79,6 @@ class Context:
 
   all_frames_changed: bool = False
   config_changed: bool = False
-
-
-# TODO: I think all of these can be removed if I'm not using memoization
-# anymore.
-class FitsHeaders(dict):
-  pass
-
-
-class PlateSolutions(dict):
-  pass
-
-
-class ImageHashes(dict):
-  pass
 
 
 # TODO: The adding of new files, and the removing of deleted files, should be
@@ -174,7 +179,7 @@ def find_fits_files(input_dirs, max_frames=None):
 
     all_frames |= set(filenames)
 
-  return FileList(all_frames)
+  return all_frames
 
 
 # TODO: Update the plate solution if the master file has been changed,
@@ -188,7 +193,7 @@ def find_masters(output_dir):
   ]
   print(f'Found {len(filenames)} XISF files that are masters')
 
-  return FileList(filenames)
+  return filenames
 
 
 # TODO: This will scale poorly when there are hundreds of thousands of images.
@@ -197,7 +202,7 @@ def read_fits_headers(all_frames):
   fits_headers = collect_results_as_dict(all_frames, file_io.read_fits,
                                          cache.get('fits_headers', {}))
   cache['fits_headers'] = fits_headers
-  return FitsHeaders(fits_headers)
+  return fits_headers
 
 
 def sort_by_observation_date(all_frames, fits_headers):
@@ -211,7 +216,7 @@ def compute_image_hashes(all_frames):
                                          file_io.hash_of_image_data,
                                          cache.get('image_hashes', {}))
   cache['image_hashes'] = image_hashes
-  return ImageHashes(image_hashes)
+  return image_hashes
 
 
 def check_duplicates(image_hashes):
@@ -228,10 +233,10 @@ def split_images_by_type(all_frames, fits_headers):
   filenames = sorted(all_frames, key=image_type)
   files = {k: list(g) for k, g in itertools.groupby(filenames, key=image_type)}
 
-  light_frames = FileList(files['Light']) if 'Light' in files else []
-  dark_frames = FileList(files['Dark']) if 'Dark' in files else []
-  bias_frames = FileList(files['Bias']) if 'Bias' in files else []
-  flat_frames = FileList(files['Flat']) if 'Flat' in files else []
+  light_frames = files['Light'] if 'Light' in files else []
+  dark_frames = files['Dark'] if 'Dark' in files else []
+  bias_frames = files['Bias'] if 'Bias' in files else []
+  flat_frames = files['Flat'] if 'Flat' in files else []
 
   print(f'### Found {len(light_frames)} light frames')
   print(f'### Found {len(dark_frames)} dark frames')
@@ -251,7 +256,7 @@ def remove_frames_during_mount_movements(light_frames):
   num_removed_files = len(light_frames) - len(settled_light_frames)
   print(f'Removed {num_removed_files} during settling periods.')
 
-  return FileList(settled_light_frames)
+  return settled_light_frames
 
 
 # TODO: This will scale poorly when there are hundreds of thousands of images.
@@ -267,7 +272,7 @@ def plate_solve(filenames, prev_result):
   # print(f'### There were {num_files} plate solutions before removing None, '
   #       f'and {num_good_files} after')
 
-  return PlateSolutions(plate_solutions)
+  return plate_solutions
 
 
 # TODO: This is a bit weird. We want to keep unsolvable files in the cache,
@@ -291,7 +296,7 @@ def identify_spatial_components(light_frames, plate_solutions, fits_headers):
   print('Identifying spatial components...')
   spatial_components = spatial_association.find_components(
       light_frames, plate_solutions, fits_headers)
-  return [(k, FileList(v)) for k, v in spatial_components.items()]
+  return [(k, v) for k, v in spatial_components.items()]
 
 
 def identify_stacks(spatial_components, fits_headers):
@@ -307,7 +312,7 @@ def identify_stacks(spatial_components, fits_headers):
             Stack(target=name,
                   rig=rig,
                   filter=filter,
-                  light_frames=FileList(filter_light_frames)))
+                  light_frames=filter_light_frames))
 
   print(f'Identified {len(stacks)} stacks')
   return stacks
@@ -386,7 +391,7 @@ def associate_dark_frames(stacks, dark_frames, fits_headers):
           darks_for_temperature[temperature]) & set(
               darks_for_exposure[exposure])
 
-    stack.dark_frames = FileList(darks)
+    stack.dark_frames = darks
     print(f'Found {len(stack.dark_frames)} dark frames')
 
   return stacks
@@ -411,7 +416,7 @@ def associate_bias_frames(stacks, bias_frames, fits_headers):
       biases |= set(biases_for_camera[camera]) & set(
           biases_for_temperature[temperature])
 
-    stack.bias_frames = FileList(biases)
+    stack.bias_frames = biases
     print(f'Found {len(stack.bias_frames)} bias frames')
 
   return stacks
@@ -494,7 +499,7 @@ def group_stacks_into_targets(stacks):
 
 def group_targets_into_mosaics(targets):
   print('Identifying mosaics...')
-  mosaics = step_mosaic.identify_mosiacs(targets, plot=False)
+  mosaics = identification.identify_mosiacs(targets, plot=False)
   mosaics = {m.id: m for m in mosaics}
   return mosaics
 
@@ -523,8 +528,8 @@ def stack_subframes(stack, fits_headers, plate_solutions, output_dir):
       return (dg.Ran.RAN, (dg.Result.FAILURE, "Stack failed sanity checks"))
 
     print(f'Stacking stack {stack}!')
-    result = step_stack.run(stack, fits_headers, plate_solutions, output_dir)
-    print(f'step_stack.run returned {result}')
+    result = stacking.run(stack, fits_headers, plate_solutions, output_dir)
+    print(f'stacking.run returned {result}')
     return result
 
   inner.id = ('stack_subframes', stack.id)
@@ -697,9 +702,11 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   #                   for t in targets.values()}
   # control_modes |= {('post_process_mosaic', m.id): dg.ControlMode.FORCE
   #                   for m in mosaics.values() if 'IC1848' not in m.name}
-
   # control_modes |= {('post_process_stack', m.id): dg.ControlMode.FORCE
   #                   for m in stacks.values()}
+  control_modes |= {('post_process_mosaic', m.id): dg.ControlMode.FORCE
+                    for m in mosaics.values() if 'IC1318' in m.name}
+
   # print('control_modes are', control_modes)
 
   def callback(results):
