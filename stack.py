@@ -17,12 +17,6 @@ import mollweide
 import matplotlib.pyplot as plt
 
 
-class FileList(list):
-  def __init__(self, *args):
-    if args:
-      list.__init__(self, sorted(*args))
-
-
 def hash_string(s):
   return hashlib.sha256(bytes(s, 'utf-8')).hexdigest()
 
@@ -63,16 +57,17 @@ class Stack:
   status: Status = Status.CANNOT_RUN
 
   target: str = None
-  rig: str = None
   image_scale: float = None
+  width_pixels: int = None
+  height_pixels: int = None
   filter: str = None
 
   camera_configs = None
 
-  light_frames: FileList = field(default_factory=FileList)
-  dark_frames: FileList = field(default_factory=FileList)
-  bias_frames: FileList = field(default_factory=FileList)
-  flat_frames: FileList = field(default_factory=FileList)
+  light_frames: list = field(default_factory=list)
+  dark_frames: list = field(default_factory=list)
+  bias_frames: list = field(default_factory=list)
+  flat_frames: list = field(default_factory=list)
 
   flat_frame_associations: list = field(default_factory=list)
 
@@ -86,6 +81,18 @@ class Stack:
 
   best_light_frame: str = None
 
+  def __post_init__(self):
+    self.light_frames = sorted(self.light_frames)
+    self.dark_frames = sorted(self.dark_frames)
+    self.bias_frames = sorted(self.bias_frames)
+    self.flat_frames = sorted(self.flat_frames)
+
+  def normalize(self):
+    self.light_frames = sorted(self.light_frames)
+    self.dark_frames = sorted(self.dark_frames)
+    self.bias_frames = sorted(self.bias_frames)
+    self.flat_frames = sorted(self.flat_frames)
+
   def append_suffix(self, suffix):
     assert self.master
     filename, ext = os.path.splitext(self.master)
@@ -96,17 +103,12 @@ class Stack:
     self.store_exposure_time_s(fits_headers)
     self.store_center(plate_solutions)
     self.store_image_scale(plate_solutions)
+    self.store_width_height(fits_headers)
     self.store_footprint(plate_solutions)
     self.store_footprint_galactic()
     self.store_min_footprint(plate_solutions)
     self.store_aspect_ratio()
     self.sort_index = self.target
-
-  # TODO: Make a Stack factory function that either finds the same stack
-  # alrady in the cache, or makes a new one, computing all its metadata.
-  # TODO: Needs to include the flat-frame associations to be complete.
-  # def store_id(self):
-  #   self.id = (f'{self.target}_{self.rig}_{self.filter}')
 
   def hash_flat_frame_associations(self):
     hashes = ''
@@ -162,6 +164,10 @@ class Stack:
     assert np.allclose(image_scales, mean, atol=0.01, rtol=0)
     self.image_scale = mean
 
+  def store_width_height(self, fits_headers):
+    self.width = fits_headers[self.light_frames[0]]['NAXIS1']
+    self.height = fits_headers[self.light_frames[0]]['NAXIS2']
+
   def store_footprint(self, plate_solutions):
     # This might be too Draconian, because it includes outliers.
     # TODO: Use RANSAC to compute a better footprint.
@@ -202,6 +208,6 @@ class Stack:
         fits_headers[f]['EXPOSURE'] for f in self.light_frames)
 
   def __str__(self):
-    return (
-        f'Stack(target={self.target}, status={self.status}, rig={self.rig}, '
-        f'filter={self.filter}, {len(self.light_frames)} light frames)')
+    return (f'Stack(target={self.target}, status={self.status}, '
+            f'image_scale={self.image_scale}, filter={self.filter}, '
+            f'{len(self.light_frames)} light frames)')
