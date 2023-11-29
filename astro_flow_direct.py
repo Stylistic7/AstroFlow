@@ -13,7 +13,9 @@ import datetime
 import pytz
 import numpy as np
 import structlog
+import operator
 
+import clustering
 import pix
 import dependency_graph as dg
 from stack import Stack, Status
@@ -56,6 +58,16 @@ log = logger
 # - The functional PixInsight library, pix.
 # - The dependency graph and control modes stuff.
 # - The mosaic merging code?
+#
+# Some simple metrics to pick images:
+#
+# - To find the best flat frame, look for the flat-corrected image with the
+#   narrowest "background spike." The background must be sampled with GraXpert
+#   squares. Puzzle: how can I find the best image to choose the squares?
+#
+# - To find the image with the least clouds, try to find the image with the
+#   smallest median. This image is the "darkest." This depends upon the idea
+#   clouds are always brighter than space, so not reliable.
 
 
 # TODO: Building up a context object that is "parallel" to the disk cache
@@ -299,19 +311,23 @@ def identify_spatial_components(light_frames, plate_solutions, fits_headers):
   return [(k, v) for k, v in spatial_components.items()]
 
 
-def identify_stacks(spatial_components, fits_headers):
+def identify_stacks(spatial_components, plate_solutions, fits_headers):
   print('Identifying stacks...')
   stacks = []
   for name, light_frames in spatial_components:
     # TODO: Merge images into stacks by their image scale, not RIG.
-    for rig, rig_light_frames in file_io.group_by_fits_keyword(
-        fits_headers, light_frames, 'RIG'):
+    image_scales = [(f, plate_solutions[f].image_scale) for f in light_frames]
+    clusters = clustering.cluster_1d(image_scales, key=operator.itemgetter(1))
+    # print(f'### spatial_component has {len(clusters)} clusters')
+    for cluster in clusters:
+      # print(f'### image_scale cluster', cluster)
+      image_scale_light_frames, _ = zip(*cluster)
+      # for rig, rig_light_frames in file_io.group_by_fits_keyword(
+      #     fits_headers, light_frames, 'RIG'):
       for filter, filter_light_frames in file_io.group_by_fits_keyword(
-          fits_headers, rig_light_frames, 'FILTER'):
+          fits_headers, image_scale_light_frames, 'FILTER'):
         stacks.append(
-            Stack(target=name,
-                  rig=rig,
-                  filter=filter,
+            Stack(target=name, filter=filter,
                   light_frames=filter_light_frames))
 
   print(f'Identified {len(stacks)} stacks')
@@ -391,7 +407,7 @@ def associate_dark_frames(stacks, dark_frames, fits_headers):
           darks_for_temperature[temperature]) & set(
               darks_for_exposure[exposure])
 
-    stack.dark_frames = darks
+    stack.dark_frames = list(darks)
     print(f'Found {len(stack.dark_frames)} dark frames')
 
   return stacks
@@ -416,7 +432,7 @@ def associate_bias_frames(stacks, bias_frames, fits_headers):
       biases |= set(biases_for_camera[camera]) & set(
           biases_for_temperature[temperature])
 
-    stack.bias_frames = biases
+    stack.bias_frames = list(biases)
     print(f'Found {len(stack.bias_frames)} bias frames')
 
   return stacks
@@ -427,7 +443,6 @@ def associate_flat_frames(stacks, flat_frames, fits_headers):
 
   flats_for_camera = group_by_fn(flat_frames,
                                  lambda f: fits_headers[f]['INSTRUME'])
-  flats_for_rig = group_by_fn(flat_frames, lambda f: fits_headers[f]['RIG'])
   flats_for_filter = group_by_fn(flat_frames,
                                  lambda f: fits_headers[f]['FILTER'])
 
@@ -436,10 +451,10 @@ def associate_flat_frames(stacks, flat_frames, fits_headers):
     flats = set()
     for camera, _, _ in stack.camera_configs:
       flats |= set(flats_for_camera[camera]) & set(
-          flats_for_rig[stack.rig]) & set(flats_for_filter[stack.filter])
+          flats_for_filter[stack.filter])
 
-    print(f'Found {len(flats)} flat frames for rig '
-          f'{stack.rig} and filter {stack.filter}')
+    print(f'Found {len(flats)} flat frames for camera '
+          f'{camera} and filter {stack.filter}')
 
     step_flat_frame_association.associate_flat_frames_for_stack(
         stack, flats, fits_headers)
@@ -454,6 +469,7 @@ def compute_stack_metadata(stacks, fits_headers, plate_solutions):
   return stacks
 
 
+# TODO: Split these into another file.
 def make_image_thumbnails(stacks, plate_solutions, fits_headers, width=640):
   with concurrent.futures.ProcessPoolExecutor() as executor:
     for stack in stacks:
@@ -502,6 +518,13 @@ def group_targets_into_mosaics(targets):
   mosaics = identification.identify_mosiacs(targets, plot=False)
   mosaics = {m.id: m for m in mosaics}
   return mosaics
+
+
+def normalize_stacks(stacks):
+  for stack in stacks:
+    stack.normalize()
+
+  return stacks
 
 
 def sanity_check_stacks(stacks, fits_headers):
@@ -608,7 +631,7 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   # assert_all_light_frames_in_spatial_components(light_frames,
   #                                               spatial_components)
 
-  stacks = identify_stacks(spatial_components, fits_headers)
+  stacks = identify_stacks(spatial_components, plate_solutions, fits_headers)
   # assert_all_light_frames_in_stacks(light_frames, stacks)
 
   # measure_stacks()
@@ -618,6 +641,7 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   stacks = associate_bias_frames(stacks, bias_frames, fits_headers)
   stacks = associate_flat_frames(stacks, flat_frames, fits_headers)
   stacks = compute_stack_metadata(stacks, fits_headers, plate_solutions)
+  stacks = normalize_stacks(stacks)
 
   make_image_thumbnails(stacks, plate_solutions, fits_headers)
 

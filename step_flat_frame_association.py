@@ -8,7 +8,7 @@ import itertools
 import structlog
 
 from cache import cache
-from stack import Stack, Status, FileList
+from stack import Stack, Status
 
 logger = structlog.get_logger()
 log = logger
@@ -127,13 +127,14 @@ def associate_flat_frames_for_stack(stack, flat_frames, fits_headers):
   stack.flat_frame_associations = []
   for imaging_run, flat_run in flat_frame_associations:
     log.debug(f'### finding light frames in imaging_run {imaging_run}')
-    lights = list(f for f in stack.light_frames if is_in_run(f, imaging_run))
+    lights = [f for f in stack.light_frames if is_in_run(f, imaging_run)]
     log.debug(f'### finding flat frames in flat_run {flat_run}')
-    flats = list(f for f in flat_frames if is_in_run(f, flat_run))
+    flats = [f for f in flat_frames if is_in_run(f, flat_run)]
     assert lights
     assert flats
     stack.flat_frame_associations.append((lights, flats))
 
-  stack.flat_frames = FileList(
+  stack.flat_frames = list(
       itertools.chain.from_iterable(
           flat_frames for _, flat_frames in stack.flat_frame_associations))
+  print(f'### len(stack.flat_frames)', len(stack.flat_frames))

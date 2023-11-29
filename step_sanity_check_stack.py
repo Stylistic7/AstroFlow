@@ -1,17 +1,13 @@
 import numpy as np
 
 import file_io
-from stack import Stack, FileList
+from stack import Stack
 from cache import cache
 from collections import Counter
 import itertools
 
 
 def _check_frame_list(L, name):
-  if type(L) is not FileList:
-    print(f'Stack is not good: {name} is not a FileList.')
-    return False
-
   if len(L) < 5:
     print(f'Stack is not good: {name} has too few elements.')
     return False
@@ -68,18 +64,16 @@ def run(stack, fits_headers):
     return False
 
   if not all(
-      file_io.fits_matches(fits_headers, f,
-                           ['IMAGETYP', 'INSTRUME', 'RIG', 'FILTER'],
-                           ['Light', camera, stack.rig, stack.filter])
+      file_io.fits_matches(fits_headers, f, ['IMAGETYP', 'INSTRUME', 'FILTER'],
+                           ['Light', camera, stack.filter])
       for f in stack.light_frames):
     print(f'Stack is not good: some light frames had incorrect '
           f'RIG or FILTER keywords')
     return False
 
   if not all(
-      file_io.fits_matches(fits_headers, f,
-                           ['IMAGETYP', 'INSTRUME', 'RIG', 'FILTER'],
-                           ['Flat', camera, stack.rig, stack.filter])
+      file_io.fits_matches(fits_headers, f, ['IMAGETYP', 'INSTRUME', 'FILTER'],
+                           ['Flat', camera, stack.filter])
       for f in stack.flat_frames):
     print(f'Stack is not good: some flat frames had incorrect '
           f'RIG or FILTER keywords')
