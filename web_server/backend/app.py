@@ -10,17 +10,18 @@ from flask import jsonify, Response
 from dataclasses import asdict
 import argparse
 import shutil
-from threading import Thread
+import threading
 from base64 import b64encode
+import time
 
 import astro_flow_direct
-from astro_flow_direct import PlateSolutions
 import constellations
 from astro_flow_direct import Context
 import image_handling
 from cache import cache
 from . import test_app
 import plate_solving
+import prev_results
 
 import plotly.express as px
 import plotly.figure_factory as ff
@@ -81,10 +82,15 @@ def index():
   return flask.render_template('index.html', stacks=cache['stacks'])
 
 
+run_now = threading.Condition()
+
+
 @app.route('/run')
 def run():
-  thread = Thread(target=astro_flow_direct.main, args=[cache['context']])
-  thread.start()
+  run_now.acquire()
+  run_now.notify()
+  run_now.release()
+
   return Response(status=204)
 
 
@@ -247,5 +253,36 @@ def delete_target(target_id):
   return resp
 
 
+def run_astroflow_repeatedly():
+  def ok_to_run():
+    with cache.transact():
+      if not cache.get('astroflow_running', False):
+        cache['astroflow_running'] = True
+        return True
+
+    return False
+
+  while True:
+    if ok_to_run():
+      print('Running AstroFlow...')
+      context = cache.get('context', {})
+      # astro_flow_direct.main(context)
+      time.sleep(10)
+      print('AstroFlow done')
+      cache['astroflow_running'] = False
+    else:
+      print('Cannot run AstroFlow because it is already running')
+
+    print('Waiting 15 minutes to run AstroFlow again...')
+    run_now.acquire()
+    run_now.wait(15 * 60)
+    run_now.release()
+
+
 if __name__ == '__main__':
+  cache['astroflow_running'] = False
+
+  thread = threading.Thread(target=run_astroflow_repeatedly)
+  thread.start()
+
   app.run(host='0.0.0.0', port=80)
