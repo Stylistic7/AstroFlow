@@ -7,6 +7,7 @@ import numpy as np
 import itertools
 import structlog
 
+import runs
 from cache import cache
 from stack import Stack, Status
 
@@ -36,46 +37,6 @@ def set_flat_versions(stack, fits_headers):
     _set_flatvers_fits_header(light_frames + flat_frames, flat_version)
 
 
-# TODO: Move this into a new file.
-def get_runs(frames, fits_headers):
-  if not frames: return []
-
-  # print(f'### get_runs for {len(frames)} frames')
-  frames = sorted(frames, key=lambda f: fits_headers[f]['DATE-OBS'])
-
-  # print('### sorted light frame dates:')
-  # for light_frame in stack.light_frames:
-  #   print('###', type(fits_headers[light_frame]['DATE-OBS']))
-  #   print('###', fits_headers[light_frame]['DATE-OBS'])
-
-  max_gap = datetime.timedelta(hours=1)
-  runs = []
-  prev_date_obs = pytz.utc.localize(datetime.datetime.min)
-  run_start = None
-  frame_count = 0
-  for frame in frames:
-    current_date_obs = fits_headers[frame]['DATE-OBS']
-    if current_date_obs > prev_date_obs + max_gap:
-      # Save the current run, if there is one.
-      if run_start:
-        log.debug(f'### Appending run with run start {run_start} '
-                  f'and frame count {frame_count}')
-        assert frame_count
-        runs.append((run_start, prev_date_obs))
-
-      # Start a new run.
-      run_start = current_date_obs
-      frame_count = 1
-    else:
-      frame_count += 1
-
-    prev_date_obs = current_date_obs
-
-  runs.append((run_start, prev_date_obs))
-
-  return runs
-
-
 def run_distance(a, b):
   start_a, end_a = a
   midpoint_a = start_a + (end_a - start_a) / 2
@@ -89,11 +50,11 @@ def run_distance(a, b):
 # TODO: Move this into a new file.
 def associate_flat_frames_for_stack(stack, flat_frames, fits_headers):
   print(f'Associating flat frames for stack {stack}')
-  imaging_runs = get_runs(stack.light_frames, fits_headers)
+  imaging_runs = runs.get_runs(stack.light_frames, fits_headers)
   # for start, end in imaging_runs:
   #   print(f'imaging run start {start} end {end}')
 
-  flat_runs = get_runs(flat_frames, fits_headers)
+  flat_runs = runs.get_runs(flat_frames, fits_headers)
   # for start, end in flat_runs:
   #   print(f'### flat run start {str(start)} end {str(end)}')
 

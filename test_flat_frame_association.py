@@ -23,66 +23,6 @@ def _make_test_frames(start_datetime, number=10, prefix='foo'):
 
 
 class TestFlatFrameAssociation(unittest.TestCase):
-  def test_get_runs_one_run(self):
-    frames, fits_headers = _make_test_frames(
-        pytz.utc.localize(datetime.datetime(2023, 7, 3, 0, 0)))
-
-    runs = step_flat_frame_association.get_runs(frames, fits_headers)
-
-    expected_runs = [(pytz.utc.localize(datetime.datetime(2023, 7, 3, 0, 0)),
-                      pytz.utc.localize(datetime.datetime(2023, 7, 3, 0, 45)))]
-    self.assertEqual(runs, expected_runs)
-
-  def test_get_runs_two_close_runs(self):
-    frames = []
-    fits_headers = {}
-
-    # Make 50 minutes of test frames.
-    f, h = _make_test_frames(pytz.utc.localize(
-        datetime.datetime(2023, 7, 3, 0, 0)),
-                             prefix='foo')
-    frames.extend(f)
-    fits_headers |= h
-
-    # Make 50 minutes of test frames, starting one hour later.
-    f, h = _make_test_frames(pytz.utc.localize(
-        datetime.datetime(2023, 7, 3, 1, 0)),
-                             prefix='bar')
-    frames.extend(f)
-    fits_headers |= h
-
-    runs = step_flat_frame_association.get_runs(frames, fits_headers)
-
-    expected_runs = [(pytz.utc.localize(datetime.datetime(2023, 7, 3, 0, 0)),
-                      pytz.utc.localize(datetime.datetime(2023, 7, 3, 1, 45)))]
-    self.assertEqual(runs, expected_runs)
-
-  def test_get_runs_two_distant_runs(self):
-    frames = []
-    fits_headers = {}
-
-    # Make 50 minutes of test frames.
-    f, h = _make_test_frames(pytz.utc.localize(
-        datetime.datetime(2023, 7, 3, 0, 0)),
-                             prefix='foo')
-    frames.extend(f)
-    fits_headers |= h
-
-    # Make 50 minutes of test frames, starting three hours later.
-    f, h = _make_test_frames(pytz.utc.localize(
-        datetime.datetime(2023, 7, 3, 3, 0)),
-                             prefix='bar')
-    frames.extend(f)
-    fits_headers |= h
-
-    runs = step_flat_frame_association.get_runs(frames, fits_headers)
-
-    expected_runs = [(pytz.utc.localize(datetime.datetime(2023, 7, 3, 0, 0)),
-                      pytz.utc.localize(datetime.datetime(2023, 7, 3, 0, 45))),
-                     (pytz.utc.localize(datetime.datetime(2023, 7, 3, 3, 0)),
-                      pytz.utc.localize(datetime.datetime(2023, 7, 3, 3, 45)))]
-    self.assertEqual(runs, expected_runs)
-
   def test_same_day(self):
     light_frames, fits_headers = _make_test_frames(pytz.utc.localize(
         datetime.datetime(2023, 7, 3, 0, 0)),
@@ -92,7 +32,11 @@ class TestFlatFrameAssociation(unittest.TestCase):
                                        prefix='flat_foo')
     fits_headers |= h
 
-    stack = Stack(target='foo', light_frames=light_frames)
+    stack = Stack(target='foo',
+                  light_frames=light_frames,
+                  width_pixels=3000,
+                  height_pixels=2000,
+                  image_scale=1.0)
 
     step_flat_frame_association.associate_flat_frames_for_stack(
         stack, flat_frames, fits_headers)
@@ -110,7 +54,11 @@ class TestFlatFrameAssociation(unittest.TestCase):
                                        prefix='flat_foo')
     fits_headers |= h
 
-    stack = Stack(target='foo', light_frames=light_frames)
+    stack = Stack(target='foo',
+                  light_frames=light_frames,
+                  width_pixels=3000,
+                  height_pixels=2000,
+                  image_scale=1.0)
 
     step_flat_frame_association.associate_flat_frames_for_stack(
         stack, flat_frames, fits_headers)
@@ -145,7 +93,11 @@ class TestFlatFrameAssociation(unittest.TestCase):
     flat_frames.extend(flat_bar)
     fits_headers |= h
 
-    stack = Stack(target='stack', light_frames=light_frames)
+    stack = Stack(target='stack',
+                  light_frames=light_frames,
+                  width_pixels=3000,
+                  height_pixels=2000,
+                  image_scale=1.0)
 
     step_flat_frame_association.associate_flat_frames_for_stack(
         stack, flat_frames, fits_headers)

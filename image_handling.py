@@ -49,47 +49,6 @@ def array_to_png(array):
   return png.tobytes()
 
 
-# def thumbnail(filename, rotate, auto_stretch=True, width=640):
-#   if filename.endswith('.xisf'):
-#     im = file_io.read_xisf_image(filename)
-#   elif filename.endswith('.fit') or filename.endswith('.fits'):
-#     im = file_io.read_fits_image(filename)
-#     if rotate:
-#       im = np.rot90(im, 2)
-
-#   im = resize_array(im, width)
-
-#   # TODO: Need to put flat-frame correction here.
-
-#   if auto_stretch:
-#     return autostretch(im)
-#   else:
-#     return im
-
-# def make_and_cache_thumbnail(light_frame, rotate):
-#   key = ('thumbnail_image', light_frame)
-#   cache[key] = thumbnail(light_frame, rotate)
-
-# def make_image_thumbnails(light_frames, plate_solutions):
-#   with concurrent.futures.ProcessPoolExecutor() as executor:
-#     for light_frame in light_frames:
-#       if ('thumbnail_image', light_frame) in cache: continue
-#       rotate = plate_solutions[light_frame].rotation_angle < 0.0
-#       executor.submit(make_and_cache_thumbnail, light_frame, rotate)
-
-# TODO: Pass width down through function hierarchy.
-# TODO: Consider thumbnailing every image and storing them in the cache
-# independently. If a mosaic config or threshold changes a stack's composition,
-# the blink video could then be regenerated very quickly. This is also an
-# embarassingly-parallel operation, as is the video encoding.
-# def thumbnails(filenames, plate_solutions, width=640):
-#   filenames_and_rotation_angles = [(f, p.rotation_angle)
-#                                    for f, p in plate_solutions.items()
-#                                    if f in filenames]
-#   with Pool() as p:
-#     return p.starmap(thumbnail, filenames_and_rotation_angles)
-
-
 def _get_flat_frame_for_light_frame(light_frame, stack, fits_headers):
   for light_frames, flat_frames in stack.flat_frame_associations:
     # print(f'### association between {len(light_frames)} light frames '

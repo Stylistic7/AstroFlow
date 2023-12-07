@@ -17,6 +17,7 @@ import operator
 
 import clustering
 import pix
+import runs
 import dependency_graph as dg
 from stack import Stack, Status
 from target import Target
@@ -408,7 +409,7 @@ def associate_dark_frames(stacks, dark_frames, fits_headers):
               darks_for_exposure[exposure])
 
     stack.dark_frames = list(darks)
-    print(f'Found {len(stack.dark_frames)} dark frames')
+    # print(f'Found {len(stack.dark_frames)} dark frames')
 
   return stacks
 
@@ -433,9 +434,129 @@ def associate_bias_frames(stacks, bias_frames, fits_headers):
           biases_for_temperature[temperature])
 
     stack.bias_frames = list(biases)
-    print(f'Found {len(stack.bias_frames)} bias frames')
+    # print(f'Found {len(stack.bias_frames)} bias frames')
 
   return stacks
+
+
+# TODO: Parallelize this.
+def cartesian_product_lights_and_flats(stacks, flat_frames, fits_headers,
+                                       plate_solutions):
+  print('### Entering cartesian_product_lights_and_flats')
+
+  flats_for_camera = group_by_fn(flat_frames,
+                                 lambda f: fits_headers[f]['INSTRUME'])
+  flats_for_filter = group_by_fn(flat_frames,
+                                 lambda f: fits_headers[f]['FILTER'])
+
+  for stack in stacks:
+    print(f'### Computing light x flat Cartestian product for {stack}')
+    light_runs = runs.get_runs(stack.light_frames, fits_headers)
+    best_light_frames = [
+        max(
+            {
+                f: p
+                for f, p in plate_solutions.items() if f in
+                runs.get_frames_for_run(run, stack.light_frames, fits_headers)
+            },
+            key=lambda f: plate_solutions[f].num_stars) for run in light_runs
+    ]
+
+    if not stack.dark_frames:
+      print(f'  ### Skipping {stack} because it has no dark frames')
+      continue
+
+    dark_frame = stack.dark_frames[0]
+    # TODO: assert dark frame matches light frame.
+    # TODO: average the darks
+
+    # Filter flat frames with the same camera and filter as the stack.
+    flats = set()
+    for camera, _, _ in stack.camera_configs:
+      flats |= set(flats_for_camera[camera]) & set(
+          flats_for_filter[stack.filter])
+
+    # Group the flat frames into runs.
+    flat_runs = runs.get_runs(flats, fits_headers)
+
+    # Average the flat frames in each run.
+    # TODO Don't just take the first one, it may have banding.
+    average_flats = [
+        runs.get_frames_for_run(run, flat_frames, fits_headers)[0]
+        for run in flat_runs
+    ]
+
+    # For each element in the cross product of light runs and flat runs:
+    # result = {
+    #   'light_run': ...',
+    #   'original_image': ...,
+    #   'trial_flat_corrections': [
+    #     {
+    #       'flat_run': ...,
+    #       'corrected_image': ...,
+    #     },
+    #     {
+    #       'flat_run': ...,
+    #       'corrected_image': ...,
+    #     },
+    #   ]
+    # }
+
+    results = []
+    # for (light_run, light_frame), (flat_run, flat_frame) in itertools.product(
+    #     zip(light_runs, best_light_frames), zip(flat_runs, average_flats)):
+    for light_run, light_frame in zip(light_runs, best_light_frames):
+      width = 640
+
+      light_frame_image = image_handling.resize_array(
+          image_handling._read_image(light_frame), width)
+      rotate = plate_solutions[light_frame].rotation_angle < 0.0
+      if rotate:
+        light_frame_image = np.rot90(light_frame_image, 2)
+
+      dark_frame_image = image_handling.resize_array(
+          image_handling._read_image(dark_frame), width)
+
+      light_frame_image -= dark_frame_image
+
+      original_image = image_handling.array_to_png(
+          image_handling.autostretch(light_frame_image))
+
+      result = {
+          'light_run': light_run,
+          'original_image': original_image,
+          'trial_flat_corrections': []
+      }
+
+      for flat_run, flat_frame in zip(flat_runs, average_flats):
+        print(f'  ### Generating trial flat-correction:')
+        print(f'    ### light frame {light_frame}')
+        print(f'    ### dark frame {dark_frame}')
+        print(f'    ### flat frame {flat_frame}')
+
+        flat_frame_image = image_handling.resize_array(
+            image_handling._read_image(flat_frame), width)
+
+        flat_frame_image -= dark_frame_image
+
+        corrected = np.divide(light_frame_image,
+                              flat_frame_image,
+                              out=np.zeros_like(light_frame_image),
+                              where=flat_frame_image != 0)
+
+        std = float(np.std(corrected))
+
+        corrected = image_handling.array_to_png(
+            image_handling.autostretch(np.clip(corrected, 0.0, 1.0)))
+
+        result['trial_flat_corrections'].append(
+            dict(flat_run=flat_run, std=std, corrected_image=corrected))
+
+      results.append(result)
+
+    key = ('trial_flat_correction', stack.id)
+    print(f'  ### Caching result for key', key)
+    cache[key] = results
 
 
 def associate_flat_frames(stacks, flat_frames, fits_headers):
@@ -639,9 +760,12 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   stacks = get_camera_configs(stacks, fits_headers)
   stacks = associate_dark_frames(stacks, dark_frames, fits_headers)
   stacks = associate_bias_frames(stacks, bias_frames, fits_headers)
-  stacks = associate_flat_frames(stacks, flat_frames, fits_headers)
+  # stacks = associate_flat_frames(stacks, flat_frames, fits_headers)
   stacks = compute_stack_metadata(stacks, fits_headers, plate_solutions)
   stacks = normalize_stacks(stacks)
+
+  cartesian_product_lights_and_flats(stacks, flat_frames, fits_headers,
+                                     plate_solutions)
 
   make_image_thumbnails(stacks, plate_solutions, fits_headers)
 

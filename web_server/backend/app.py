@@ -162,6 +162,37 @@ def stack(stack_id):
   return asdict(stacks[stack_id])
 
 
+@app.route('/trial_flat_corrections/<stack_id>')
+def trial_flat_corrections(stack_id):
+  key = ('trial_flat_correction', stack_id)
+  if key not in cache:
+    return Response(status=404)
+
+  results = cache[key]
+  for result in results:
+    result['original_image'] = 'data:image/png;base64,' + b64encode(
+        result['original_image']).decode()
+    for t in result['trial_flat_corrections']:
+      t['corrected_image'] = 'data:image/png;base64,' + b64encode(
+          t['corrected_image']).decode()
+
+  return results
+
+
+# @app.route('/trial_flat_correction_image/<stack_id>/<index>')
+# def trial_flat_correction_image(stack_id, index):
+#   key = ('trial_flat_correction', stack_id)
+#   if key not in cache:
+#     return Response(status=404)
+
+#   trial_flat_correction = cache[key][int(index)]
+
+#   buffer = io.BytesIO()
+#   buffer.write(trial_flat_correction['image'])
+#   buffer.seek(0)
+#   return flask.send_file(buffer, mimetype='image/png')
+
+
 @app.route('/stack_thumbnail_image/<stack_id>')
 def stack_thumbnail_image(stack_id):
   buffer = io.BytesIO()
@@ -176,6 +207,23 @@ def stack_thumbnail_video(stack_id):
   buffer.write(cache[('stack_thumbnail_video', stack_id)])
   buffer.seek(0)
   return flask.send_file(buffer, mimetype='video/webm')
+
+
+@app.route('/mosaic_image/<mosaic_id>/<filter>')
+def mosaic_image(mosaic_id, filter):
+  obj = prev_results.get_prev_result_object('post_process_mosaic', mosaic_id)
+  if not obj:
+    return Response(status=404)
+
+  # TODO: Get the correct color channel.
+  image = image_handling._read_image(obj.output_filenames[0])
+  image = image_handling.resize_array(image, new_width=640)
+  image = image_handling.autostretch(image)
+  image = image_handling.array_to_png(image)
+  buffer = io.BytesIO()
+  buffer.write(image)
+  buffer.seek(0)
+  return flask.send_file(buffer, mimetype='image/png')
 
 
 @app.route('/stack_master_image/<stack_id>')
