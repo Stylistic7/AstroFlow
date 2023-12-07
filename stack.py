@@ -165,8 +165,8 @@ class Stack:
     self.image_scale = mean
 
   def store_width_height(self, fits_headers):
-    self.width = fits_headers[self.light_frames[0]]['NAXIS1']
-    self.height = fits_headers[self.light_frames[0]]['NAXIS2']
+    self.width_pixels = fits_headers[self.light_frames[0]]['NAXIS1']
+    self.height_pixels = fits_headers[self.light_frames[0]]['NAXIS2']
 
   def store_footprint(self, plate_solutions):
     # This might be too Draconian, because it includes outliers.
@@ -208,6 +208,7 @@ class Stack:
         fits_headers[f]['EXPOSURE'] for f in self.light_frames)
 
   def __str__(self):
-    return (f'Stack(target={self.target}, status={self.status}, '
-            f'image_scale={self.image_scale}, filter={self.filter}, '
-            f'{len(self.light_frames)} light frames)')
+    return (
+        f'Stack({self.target}, {self.status}, '
+        f'{self.width_pixels}x{self.height_pixels}, {self.image_scale:.2f}"/px, '
+        f'{self.filter}, {len(self.light_frames)} light frames)')

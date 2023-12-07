@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 
+# TODO: Remove these somehow. Maybe make them just lists of strings. If the
+# string is a valid filename, it's a file. Otherwise, it's a view id?
 class FileList(list):
   pass
 

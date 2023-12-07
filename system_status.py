@@ -4,7 +4,6 @@ import objsize
 
 import dependency_graph as dg
 import prev_results
-from astro_flow_direct import PlateSolutions
 
 MEGABYTE = 1024.0 * 1024.0
 

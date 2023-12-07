@@ -173,6 +173,8 @@ def process_mosaic(mosaic, targets, stacks, output_dir):
 
   # TODO: Don't hardcode these filters. Find the set from the images
   # themselves.
+  #
+  # TODO: Store the filter along with the output filename.
   output_filenames = []
   for filter in ['H', 'S', 'O', 'L', 'R', 'G', 'B']:
     result = process_mosaic_per_filter(mosaic, targets, stacks, filter,
