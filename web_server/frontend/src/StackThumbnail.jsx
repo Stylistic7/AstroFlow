@@ -43,9 +43,9 @@ export default function StackThumbnail({stack, width, handleClick}) {
 	    <div
 	      style={{
 	      	position: "absolute",
-	      	right: "1.75px",
-	      	bottom: "3px",
-	      	fontSize: "2px"
+	      	right: "15px",
+	      	top: "100px",
+	      	fontSize: "12px"
 	      }}
 	    >
 	      <span style={{color: "#aaa"}}>

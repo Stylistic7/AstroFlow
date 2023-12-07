@@ -1,16 +1,23 @@
 import React, { useState, useEffect, useRef } from 'react';
+import Breadcrumbs from '@mui/material/Breadcrumbs';
+import Link from '@mui/material/Link';
 import LeftDrawer from "./LeftDrawer.jsx";
 import Search from "./Search.jsx";
 import Starmap from "./Starmap.jsx";
 import TargetTable from "./TargetTable.jsx";
 import StackTable from "./StackTable.jsx";
 import MosaicTable from "./MosaicTable.jsx";
+import MosaicPanel from "./MosaicPanel.jsx";
+import TargetPanel from "./TargetPanel.jsx";
+import FlatCorrectionPanel from "./FlatCorrectionPanel.jsx";
 import logo from './logo.svg';
 import { usePageVisibility } from './usePageVisibility';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import { StyledEngineProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
+import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
 import './App.css';
+import { BrowserRouter as Router, Routes, Route} from 'react-router-dom';
 
 function App() {
   const isPageVisible = usePageVisibility();
@@ -74,22 +81,47 @@ function App() {
     };
   }, [isPageVisible, isPollingEnabled]);
 
+  const isEmptyObj = (obj) => {
+    return Object.keys(obj).length === 0 && obj.constructor === Object;
+  };
+
+  const dataIsAvailable = !isEmptyObj(stacks) && !isEmptyObj(targets) && !isEmptyObj(mosaics);
+
+  const starmap = <Starmap
+          constellation_polylines={constellationPolylines}
+          stacks={stacks}
+          targets={targets}
+          mosaics={mosaics} />;
+
+  const fontColor = "#aaa";
+
   return (
     <ThemeProvider theme={darkTheme}>
       <StyledEngineProvider injectFirst>
         <CssBaseline />
         <Search stacks={stacks} targets={targets} mosaics={mosaics} />
         <LeftDrawer />
-        <Starmap
-          constellation_polylines={constellationPolylines}
-          stacks={stacks}
-          targets={targets}
-          mosaics={mosaics} />
+        <Router>
+          <Routes>
+            <Route exact path="/" element={starmap} />
+            <Route exact path="/mosaic/:mosaic_id" element={
+              dataIsAvailable && <MosaicPanel
+                stacks={stacks} targets={targets} mosaics={mosaics}
+              />}
+            />
+            <Route exact path="/target/:target_id" element={
+              dataIsAvailable && <TargetPanel stacks={stacks}  />}
+            />
+            <Route exact path="/flat_correction/:stack_id" element={
+              dataIsAvailable && <FlatCorrectionPanel stacks={stacks} />}
+            />
+          </Routes>
+        </Router>
+
       </StyledEngineProvider>
     </ThemeProvider>
   );
 }
-
 
 const darkTheme = createTheme({
   palette: {
@@ -108,7 +140,5 @@ const darkTheme = createTheme({
     },
   },
 });
-
-
 
 export default App;
