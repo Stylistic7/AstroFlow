@@ -6,11 +6,15 @@ import Breadcrumbs from '@mui/material/Breadcrumbs';
 import Link from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 
+import Polyline from "./Polyline.jsx";
 import TargetPanel from "./TargetPanel.jsx";
 import "./Starmap.css";
 
 export default function MosaicPanel({ mosaics, targets, stacks, handleClick }) {
 	let params = useParams();
+	let mosaic = mosaics[params.mosaic_id];
+
+	console.log('viewbox', mosaic.viewbox.join(" "))
 
 	const fontColor = "#aaa";
 
@@ -34,12 +38,34 @@ export default function MosaicPanel({ mosaics, targets, stacks, handleClick }) {
 	        Starmap
 	      </Link>
 	      <Typography color="text.primary" margin="0.5em">
-	      	{mosaics[params.mosaic_id].name} Mosaic
+	      	{mosaic.name} Mosaic
 	      </Typography>
 	    </Breadcrumbs>
 
-			<div id="mosaicPanel" style={{margin: "2px"}}>
-				<span>mosaic panel {params.mosaic_id}</span>
+			<div id="mosaicPanel">
+				<svg
+					id="mosaic_svg"
+					viewBox={mosaic.viewbox.join(" ")}
+					style={{
+						pointerEvents: "auto",
+						margin: "2px",
+						maxWidth: "100vw",
+						maxHeight: "80vh",
+				}}
+				>
+					{mosaic.target_ids.map((target_id) =>
+						<Polyline
+							className="target_polygon"
+							polyline={targets[target_id].footprint}
+							key={target_id}
+						/>
+					)}
+					<Polyline
+						className="mosaic_polygon"
+						polyline={mosaic.footprint}
+						key={params.mosaic_id}
+					/>
+				</svg>
 			</div>
 		</>
 	);
