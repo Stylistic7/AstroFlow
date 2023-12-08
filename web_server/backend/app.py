@@ -179,6 +179,12 @@ def trial_flat_corrections(stack_id):
   return results
 
 
+@app.route('/flat_frame_associations/<stack_id>')
+def flat_frame_associations(stack_id):
+  stacks = test_app.stacks if debug else cache['stacks']
+  return stacks[stack_id].flat_frame_associations
+
+
 # @app.route('/trial_flat_correction_image/<stack_id>/<index>')
 # def trial_flat_correction_image(stack_id, index):
 #   key = ('trial_flat_correction', stack_id)

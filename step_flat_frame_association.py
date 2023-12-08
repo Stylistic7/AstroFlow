@@ -49,14 +49,8 @@ def run_distance(a, b):
 
 # TODO: Move this into a new file.
 def associate_flat_frames_for_stack(stack, flat_frames, fits_headers):
-  print(f'Associating flat frames for stack {stack}')
   imaging_runs = runs.get_runs(stack.light_frames, fits_headers)
-  # for start, end in imaging_runs:
-  #   print(f'imaging run start {start} end {end}')
-
   flat_runs = runs.get_runs(flat_frames, fits_headers)
-  # for start, end in flat_runs:
-  #   print(f'### flat run start {str(start)} end {str(end)}')
 
   flat_frame_associations = []
   if flat_runs:
@@ -79,23 +73,5 @@ def associate_flat_frames_for_stack(stack, flat_frames, fits_headers):
     log.debug(f'associated imaging run {imaging_run} '
               f'with flat run {flat_run}')
 
-  def is_in_run(frame, run):
-    run_start, run_end = run
-    date_obs = fits_headers[frame]['DATE-OBS']
-    result = date_obs >= run_start and date_obs <= run_end
-    return result
-
-  stack.flat_frame_associations = []
-  for imaging_run, flat_run in flat_frame_associations:
-    log.debug(f'### finding light frames in imaging_run {imaging_run}')
-    lights = [f for f in stack.light_frames if is_in_run(f, imaging_run)]
-    log.debug(f'### finding flat frames in flat_run {flat_run}')
-    flats = [f for f in flat_frames if is_in_run(f, flat_run)]
-    assert lights
-    assert flats
-    stack.flat_frame_associations.append((lights, flats))
-
-  stack.flat_frames = list(
-      itertools.chain.from_iterable(
-          flat_frames for _, flat_frames in stack.flat_frame_associations))
-  print(f'### len(stack.flat_frames)', len(stack.flat_frames))
+  assert flat_frame_associations
+  stack.flat_frame_associations = flat_frame_associations

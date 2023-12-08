@@ -760,7 +760,7 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   stacks = get_camera_configs(stacks, fits_headers)
   stacks = associate_dark_frames(stacks, dark_frames, fits_headers)
   stacks = associate_bias_frames(stacks, bias_frames, fits_headers)
-  # stacks = associate_flat_frames(stacks, flat_frames, fits_headers)
+  stacks = associate_flat_frames(stacks, flat_frames, fits_headers)
   stacks = compute_stack_metadata(stacks, fits_headers, plate_solutions)
   stacks = normalize_stacks(stacks)
 

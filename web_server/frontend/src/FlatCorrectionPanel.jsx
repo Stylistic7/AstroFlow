@@ -53,7 +53,14 @@ export default function FlatCorrectionPanel({ mosaics, targets, stacks, handleCl
 						<img src={e.original_image} width="200" />
 						<span>&nbsp;</span>
 						{e.trial_flat_corrections.map((t) => 
-							<img src={t.corrected_image} width="200" />
+							<img
+								src={t.corrected_image}
+								width="200"
+								style={{
+									margin: "2px",
+									border: "1px solid red"
+								}}
+							/>
 						)}
 					</div>
 				)}
