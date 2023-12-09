@@ -10,6 +10,7 @@ import Polyline from "./Polyline.jsx";
 import TargetPanel from "./TargetPanel.jsx";
 import "./Starmap.css";
 
+// TODO: Add "mosaic not found" messages.
 export default function MosaicPanel({ mosaics, targets, stacks, handleClick }) {
 	let params = useParams();
 	let mosaic = mosaics[params.mosaic_id];
@@ -70,18 +71,3 @@ export default function MosaicPanel({ mosaics, targets, stacks, handleClick }) {
 		</>
 	);
 }
-
-// <table width="100%">
-// 	<thead height="0"></thead>
-// 	<tbody>
-// 		{mosaics[params.mosaic_id].target_ids.map((target_id) => (
-// 			<TargetPanel
-// 			  id={"TargetPanel_" + target_id}
-// 			  key={target_id}
-// 				target={targets[target_id]}
-// 				stacks={stacks}
-// 				handleClick={handleClick}
-// 			/>
-// 		))}
-// 	</tbody>
-// </table>

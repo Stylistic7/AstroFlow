@@ -111,8 +111,10 @@ def process_mosaic_per_filter(mosaic, targets, stacks, filter, output_dir):
                   if s.filter == filter and s.id in target.stack_ids), None)
 
     if stack is None:
-      print(f'### Could not find stack {stack.id}')
+      print(f'### Could not find stack')
       return None
+
+    print(f'### Found stack {stack}')
 
     # prev_result = get_prev_result_object('post_process_stack', stack.id)
     # if prev_result is None:
@@ -120,8 +122,8 @@ def process_mosaic_per_filter(mosaic, targets, stacks, filter, output_dir):
     #   return None
     # filename = prev_result['output_filename']
 
-    filename = get_prev_result_object('stack_subframes', stack.id).filename
-    if not filename:
+    obj = get_prev_result_object('stack_subframes', stack.id)
+    if not obj or not obj.filename:
       print(f'### Could not get stack master for {stack}')
       return None
 

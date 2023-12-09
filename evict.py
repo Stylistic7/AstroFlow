@@ -40,7 +40,7 @@ if __name__ == '__main__':
 
   allow_list = [
       'plate_solutions', 'image_hashes', 'thumbnail_image', 'thumbnail_video',
-      'stack_thumbnail_image', 'stack_thumbnail_video'
+      'stack_thumbnail_image', 'stack_thumbnail_video', 'trial_flat_correction'
   ]
 
   for k in cache:

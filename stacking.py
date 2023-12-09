@@ -92,7 +92,8 @@ def _master_with_same_footprint_exits(stack, plate_solutions):
 def _output_filename(stack, dest_path):
   output_dir = os.path.join(dest_path, 'Stacks', stack.target, 'masters')
   return os.path.join(
-      output_dir, f'master_light_{stack.target}_{stack.width}x{stack.height}'
+      output_dir,
+      f'master_light_{stack.target}_{stack.width_pixels}x{stack.height_pixels}'
       f'_{stack.image_scale:.02f}_{stack.filter}.xisf')
 
 

@@ -5,6 +5,7 @@ from stack import Stack
 from cache import cache
 from collections import Counter
 import itertools
+import runs
 
 
 def _check_frame_list(L, name):
@@ -92,8 +93,10 @@ def run(stack, fits_headers):
     return False
 
   light_frame_counts = Counter(
-      itertools.chain.from_iterable(
-          [light_frames for light_frames, _ in stack.flat_frame_associations]))
+      itertools.chain.from_iterable([
+          runs.get_frames_for_run(light_run, stack.flat_frames, fits_headers)
+          for light_run, _ in stack.flat_frame_associations
+      ]))
   if any(v > 1 for k, v in light_frame_counts.items()):
     print(f'Stack is not good: some light frames exist in multiple flat frame '
           f'associations')

@@ -111,7 +111,6 @@ class Stack:
     self.sort_index = self.target
 
   def hash_flat_frame_associations(self):
-    print('hash_flat_frame_associations', self.flat_frame_associations)
     hashes = ''
     for light_run, flat_run in sorted(self.flat_frame_associations):
       hashes += hash_string(str(light_run)) + '_' + hash_string(str(flat_run))

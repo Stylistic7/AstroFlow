@@ -440,6 +440,7 @@ def associate_bias_frames(stacks, bias_frames, fits_headers):
 
 
 # TODO: Parallelize this.
+# TODO: Move this into a new file.
 def cartesian_product_lights_and_flats(stacks, flat_frames, fits_headers,
                                        plate_solutions):
   print('### Entering cartesian_product_lights_and_flats')
@@ -450,6 +451,10 @@ def cartesian_product_lights_and_flats(stacks, flat_frames, fits_headers,
                                  lambda f: fits_headers[f]['FILTER'])
 
   for stack in stacks:
+    key = ('trial_flat_correction', stack.id)
+    if key in cache:
+      continue
+
     print(f'### Computing light x flat Cartestian product for {stack}')
     light_runs = runs.get_runs(stack.light_frames, fits_headers)
     best_light_frames = [
@@ -554,11 +559,13 @@ def cartesian_product_lights_and_flats(stacks, flat_frames, fits_headers,
 
       results.append(result)
 
-    key = ('trial_flat_correction', stack.id)
     print(f'  ### Caching result for key', key)
     cache[key] = results
 
 
+# TODO: Only run the automated association once. Or maybe never run it unless
+# the user says to. Or maybe an empty association list just means to use the
+# default, time-based method.
 def associate_flat_frames(stacks, flat_frames, fits_headers):
   print('Associating flat frames...')
 

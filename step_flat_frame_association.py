@@ -29,11 +29,17 @@ def _dates_to_strings(associations):
   return output
 
 
+# TODO: Move to encoding FLATVERS in the symlinked file names, vs. modifying the
+# FITS header.
 def set_flat_versions(stack, fits_headers):
   print(f'Setting FLATVERS for {len(stack.flat_frame_associations)} '
         f'associations')
-  for flat_version, (light_frames, flat_frames) in enumerate(
+  for flat_version, (light_run, flat_run) in enumerate(
       stack.flat_frame_associations):
+    light_frames = runs.get_frames_for_run(light_run, stack.light_frames,
+                                           fits_headers)
+    flat_frames = runs.get_frames_for_run(flat_run, stack.flat_frames,
+                                          fits_headers)
     _set_flatvers_fits_header(light_frames + flat_frames, flat_version)
 
 
@@ -73,5 +79,8 @@ def associate_flat_frames_for_stack(stack, flat_frames, fits_headers):
     log.debug(f'associated imaging run {imaging_run} '
               f'with flat run {flat_run}')
 
-  assert flat_frame_associations
   stack.flat_frame_associations = flat_frame_associations
+
+  stack.flat_frames = runs.get_frames_for_runs(
+      (flat_run for _, flat_run in flat_frame_associations), flat_frames,
+      fits_headers)

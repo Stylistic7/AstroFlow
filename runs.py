@@ -1,5 +1,6 @@
 import datetime
 import pytz
+import itertools
 
 
 def get_runs(frames, fits_headers):
@@ -38,3 +39,9 @@ def get_frames_for_run(run, frames, fits_headers):
       f for f in frames if fits_headers[f]['DATE-OBS'] >= start and
       fits_headers[f]['DATE-OBS'] <= end
   ]
+
+
+def get_frames_for_runs(runs, frames, fits_headers):
+  return sorted(
+      itertools.chain.from_iterable(
+          get_frames_for_run(run, frames, fits_headers) for run in runs))
