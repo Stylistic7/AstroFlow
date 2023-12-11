@@ -1,4 +1,6 @@
 import * as React from 'react';
+import { useNavigate, useParams } from "react-router-dom";
+
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import CardMedia from '@mui/material/CardMedia';
@@ -7,10 +9,13 @@ import { CardActionArea } from '@mui/material';
 
 export default function TargetCard({stacks, targets, mosaics, target_id}) {
   const target = targets[target_id];
+  const navigate = useNavigate();
 
   return (
     <Card sx={{ maxWidth: 345 }}>
-      <CardActionArea>
+      <CardActionArea
+        onClick={event => navigate(`/target/${target_id}`)}
+      >
         <CardMedia
           component="img"
           height="140"
