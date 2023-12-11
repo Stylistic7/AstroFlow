@@ -9,6 +9,7 @@ import StackTable from "./StackTable.jsx";
 import MosaicTable from "./MosaicTable.jsx";
 import MosaicPanel from "./MosaicPanel.jsx";
 import TargetPanel from "./TargetPanel.jsx";
+import DisambiguationPanel from "./DisambiguationPanel.jsx";
 import FlatCorrectionPanel from "./FlatCorrectionPanel.jsx";
 import logo from './logo.svg';
 import { usePageVisibility } from './usePageVisibility';
@@ -122,6 +123,11 @@ function App() {
             />
             <Route exact path="/flat_correction/:stack_id" element={
               dataIsAvailable && <FlatCorrectionPanel stacks={stacks} />}
+            />
+            <Route exact path="/disambiguation/:items" element={
+              dataIsAvailable && <DisambiguationPanel
+                stacks={stacks} targets={targets} mosaics={mosaics}
+              />}
             />
           </Routes>
         </Router>

@@ -6,7 +6,7 @@ import Breadcrumbs from '@mui/material/Breadcrumbs';
 import Link from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 
-import Polyline from "./Polyline.jsx";
+import MosaicOutline from "./MosaicOutline.jsx";
 import TargetPanel from "./TargetPanel.jsx";
 import "./Starmap.css";
 
@@ -46,30 +46,12 @@ export default function MosaicPanel({ stacks, targets, mosaics }) {
 	    </Breadcrumbs>
 
 			<div id="mosaicPanel">
-				<svg
-					id="mosaic_svg"
-					viewBox={mosaic.viewbox.join(" ")}
-					style={{
-						pointerEvents: "auto",
-						margin: "2px",
-						maxWidth: "100vw",
-						maxHeight: "80vh",
-				}}
-				>
-					<Polyline
-						className="mosaic_polygon"
-						polyline={mosaic.footprint}
-						key={params.mosaic_id}
-					/>
-					{mosaic.target_ids.map((target_id) =>
-						<Polyline
-							className="target_polygon"
-							polyline={targets[target_id].footprint}
-							key={target_id}
-							handleClick={() => navigate("/target/" + target_id)}
-						/>
-					)}
-				</svg>
+				<MosaicOutline
+          stacks={stacks}
+          targets={targets}
+          mosaics={mosaics}
+          mosaic_id={params.mosaic_id}
+        />
 			</div>
 		</>
 	);

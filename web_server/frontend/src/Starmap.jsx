@@ -18,6 +18,29 @@ export default function Starmap({
 	// TODO: These are really the mosaic id, not the mosaic object itself.
 	const [mosaic, setMosaic] = React.useState(undefined);
 
+	const handleClick = (event) => {
+		// navigate("/mosaic/" + mosaic.id)}
+		console.log('x ' + event.clientX + ', y ' + event.clientY);
+
+		let elements = document.elementsFromPoint(event.clientX, event.clientY);
+		let matching_items = [];
+	  elements.forEach((elt, i) => {
+	    // output.textContent += elt.localName;
+	    // if (i < elements.length - 1) {
+	    //   output.textContent += " < ";
+	    // }
+	    console.log('clicked object ', elt.getAttribute("data"));
+
+	   	const data = elt.getAttribute("data");
+	    if (data) {
+	    	matching_items.push(data);
+	    }
+	  
+	  });
+
+	  navigate(`/disambiguation/${matching_items.join(";")}`);
+	};
+
 	// TODO: Handle clicks on Stacks.
 	//
 	// TODO: Split CSS up into one file for each component?
@@ -55,16 +78,19 @@ export default function Starmap({
 									{Object.values(targets).map((target) =>
 										<Polyline
 											className="target_polygon"
+											data={['target', target.id]}
 											polyline={target.footprint_galactic}
 											key={target.id}
+											handleClick={event => handleClick(event)}
 										/>
 									)}
 									{Object.values(mosaics).map((mosaic) =>
 										<Polyline
 											className="mosaic_polygon"
+											data={['mosaic', mosaic.id]}
 											polyline={mosaic.footprint_galactic}
 											key={mosaic.id}
-											handleClick={() => navigate("/mosaic/" + mosaic.id)}
+											handleClick={event => handleClick(event)}
 										/>
 									)}
 								</g>

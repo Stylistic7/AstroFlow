@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useReducer } from "react";
 
-export default function Polyline({ className, polyline, handleClick }) {
+export default function Polyline({ className, data, polyline, style, handleClick }) {
 	let points_string = "";
 	let centroid_x = 0;
 	let centroid_y = 0;
@@ -21,8 +21,10 @@ export default function Polyline({ className, polyline, handleClick }) {
 	return (
 		<polyline
 			className={className}
+			data={data}
 			points={points_string}
-			onClick={() => {handleClick && handleClick()}}
+			style={style}
+			onClick={(event) => {handleClick && handleClick(event)}}
 		/>
 	);
 }
