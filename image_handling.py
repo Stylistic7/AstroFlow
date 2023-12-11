@@ -71,7 +71,7 @@ def make_and_cache_thumbnail(light_frame,
                              flat_frame,
                              rotate,
                              fudge=None,
-                             width=640):
+                             width=1200):
   try:
     light_frame_image = resize_array(_read_image(light_frame), width)
     if rotate:
@@ -103,9 +103,14 @@ def make_and_cache_thumbnail(light_frame,
     traceback.print_exc()
 
 
-def make_and_cache_stack_thumbnails(stack, width=640):
+# TODO: Compare various ways of getting "the best" thumbnail (preview)
+# image for a stack: highest std, greatest star count, etc.
+#
+# Make a library for picking / sorting images by quality.
+def make_and_cache_stack_thumbnails(stack, plate_solutions, width=1200):
   height, width = resize_array(file_io.read_fits_image(stack.light_frames[0]),
                                width).shape
+
   height = int(((height + 8 - 1) / 8) * 8)
   print(f'Creating video of width {width}, height {height} '
         f'with {len(stack.light_frames)} frames')
@@ -116,17 +121,16 @@ def make_and_cache_stack_thumbnails(stack, width=640):
     out = cv2.VideoWriter(video_filename, fourcc, 10.0, (width, height), False)
 
     thumbnails = [cache[('thumbnail_image', f)] for f in stack.light_frames]
-    index = np.argmax(map(np.std, thumbnails))
-    # TODO: This isn't saved in the cache.
-    stack.best_light_frame = stack.light_frames[index]
-    print(f'### Stack {stack} has best light frame {stack.best_light_frame}')
-    thumbnail_image = array_to_png(thumbnails[index])
+    best_light_frame = max(stack.light_frames,
+                           key=lambda f: plate_solutions[f].num_stars)
+    assert best_light_frame
+    thumbnail_image = array_to_png(
+        cache[('thumbnail_image', best_light_frame)])
 
     for im in thumbnails:
       im = (im * 255.0).astype(np.uint8)
       frame = np.zeros((height, width), dtype=np.uint8)
       frame[0:im.shape[0], 0:im.shape[1]] = im
-      # print('Writing frame to video')
       out.write(frame)
 
     out.release()

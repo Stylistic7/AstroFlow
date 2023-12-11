@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useReducer } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 
 import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
 import Breadcrumbs from '@mui/material/Breadcrumbs';
@@ -11,9 +11,11 @@ import TargetPanel from "./TargetPanel.jsx";
 import "./Starmap.css";
 
 // TODO: Add "mosaic not found" messages.
-export default function MosaicPanel({ mosaics, targets, stacks, handleClick }) {
-	let params = useParams();
-	let mosaic = mosaics[params.mosaic_id];
+export default function MosaicPanel({ stacks, targets, mosaics }) {
+	const params = useParams();
+	const navigate = useNavigate();
+
+	const mosaic = mosaics[params.mosaic_id];
 
 	console.log('viewbox', mosaic.viewbox.join(" "))
 
@@ -54,18 +56,19 @@ export default function MosaicPanel({ mosaics, targets, stacks, handleClick }) {
 						maxHeight: "80vh",
 				}}
 				>
-					{mosaic.target_ids.map((target_id) =>
-						<Polyline
-							className="target_polygon"
-							polyline={targets[target_id].footprint}
-							key={target_id}
-						/>
-					)}
 					<Polyline
 						className="mosaic_polygon"
 						polyline={mosaic.footprint}
 						key={params.mosaic_id}
 					/>
+					{mosaic.target_ids.map((target_id) =>
+						<Polyline
+							className="target_polygon"
+							polyline={targets[target_id].footprint}
+							key={target_id}
+							handleClick={() => navigate("/target/" + target_id)}
+						/>
+					)}
 				</svg>
 			</div>
 		</>

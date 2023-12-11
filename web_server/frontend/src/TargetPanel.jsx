@@ -1,26 +1,60 @@
 import React, { useState, useRef, useEffect, useReducer } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
+
+import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
+import Breadcrumbs from '@mui/material/Breadcrumbs';
+import Link from '@mui/material/Link';
+import Typography from '@mui/material/Typography';
+
 import StackThumbnail from "./StackThumbnail.jsx";
 import "./Starmap.css";
 
-export default function TargetPanel({ stacks, handleClick }) {
-	let params = useParams();
+export default function TargetPanel({ stacks, targets, mosaics }) {
+	const params = useParams();
+	const target = targets[params.target_id];
 
-	// TODO: Don't hardcode 140px.
+	// TODO: Don't hardcode the font color; use the theme.
+	const fontColor = "#aaa";
+
 	return (
-		<span>target panel {params.target_id}</span>
+		<>
+			<Breadcrumbs aria-label="breadcrumb">
+	      <Link
+	      	href="/"
+	        underline="hover"
+	        sx={{
+	        	display: 'flex',
+	        	alignItems: 'center',
+	        	color: fontColor,
+	        	marginLeft: '0.5em',
+	        	marginRight: '0.5em',
+	        }}
+	        style={{pointerEvents: "auto"}}
+	        color="inherit"
+	      >
+	        <AutoAwesomeMosaicIcon sx={{ marginRight: '0.5em' }}/>
+	        Starmap
+	      </Link>
+	      <Typography color="text.primary" margin="0.5em">
+	      	{target.name} Target
+	      </Typography>
+	    </Breadcrumbs>
+	    <div style={{
+	    	display: "grid",
+	    	gridTemplateColumns: "repeat(4, 1fr)",
+	    	border: "1px solid red",
+	    	height: "80vh",
+	    	width: "100%"
+	    }}>
+	    	{target.stack_ids.map((stack_id) => (
+	  			<StackThumbnail
+	  				id={"StackThumbnail_" + stack_id}
+	  				stack={stacks[stack_id]}
+	  			/>
+	      ))}
+	     </div>
+		</>
 	);
 }
 
-// <tr height="140px">
-// 	{target.stack_ids.map((stack_id) => (
-// 		<td key={stack_id} style={{verticalAlign: "text-top"}}>
-// 			<StackThumbnail
-// 				id={"StackThumbnail_" + stack_id}
-// 				stack={stacks[stack_id]}
-// 				width="100%"
-// 				handleClick={handleClick}
-// 			/>
-// 		</td>
-// ))}
-// </tr>
+	

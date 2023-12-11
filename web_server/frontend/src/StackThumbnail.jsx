@@ -19,7 +19,7 @@ export default function StackThumbnail({stack, width, handleClick}) {
 
   let stack_thumbnail_image_url = `/stack_thumbnail_image/${stack.id}`;
   return (
-  	<div
+  	<div class="stack_thumbnail"
   	  style={{
   	  	pointerEvents: "none",
   	  	position: "relative",
@@ -49,7 +49,11 @@ export default function StackThumbnail({stack, width, handleClick}) {
 	      }}
 	    >
 	      <span style={{color: "#aaa"}}>
-	      	{stack.image_scale.toFixed(2)}
+	      	{stack.width_pixels} x {stack.height_pixels}
+	      </span>
+	      &nbsp;
+	      <span style={{color: "#aaa"}}>
+	      	{stack.image_scale.toFixed(2)}"/px
 	      </span>
 	      &nbsp;
 	      <span style={{

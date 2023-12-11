@@ -95,6 +95,12 @@ function App() {
 
   const fontColor = "#aaa";
 
+  // TODO: Breadcrumbs should preserve the path the user took to get here,
+  // but with some normalization. One example: if the user clicks on a mosaic,
+  // and then on a panel, the breadcrumb should reflect that path.
+  //
+  // This could maybe be implemented with "complex but normalized" routes like
+  // /mosaic/:mosaic_id/target/:target_id/stack/:stack_id.
   return (
     <ThemeProvider theme={darkTheme}>
       <StyledEngineProvider injectFirst>
@@ -110,7 +116,9 @@ function App() {
               />}
             />
             <Route exact path="/target/:target_id" element={
-              dataIsAvailable && <TargetPanel stacks={stacks}  />}
+              dataIsAvailable && <TargetPanel
+                stacks={stacks} targets={targets} mosaics={mosaics}
+              />}
             />
             <Route exact path="/flat_correction/:stack_id" element={
               dataIsAvailable && <FlatCorrectionPanel stacks={stacks} />}

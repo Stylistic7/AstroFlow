@@ -627,9 +627,12 @@ def make_stack_thumbnails_videos(stacks, plate_solutions, fits_headers):
       if image_key in cache and video_key in cache:
         continue
 
-      executor.submit(image_handling.make_and_cache_stack_thumbnails, stack)
+      executor.submit(image_handling.make_and_cache_stack_thumbnails, stack,
+                      plate_solutions)
 
 
+# TODO: Make sure targets only include stacks of the same resolution? Or maybe
+# that's restrictive, and we should only use FOV?
 def group_stacks_into_targets(stacks):
   stacks_for_target = defaultdict(list)
   for filter in ['L', 'R', 'G', 'B', 'S', 'H', 'O']:
