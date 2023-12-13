@@ -511,7 +511,7 @@ def cartesian_product_lights_and_flats(stacks, flat_frames, fits_headers,
     # for (light_run, light_frame), (flat_run, flat_frame) in itertools.product(
     #     zip(light_runs, best_light_frames), zip(flat_runs, average_flats)):
     for light_run, light_frame in zip(light_runs, best_light_frames):
-      width = 640
+      width = 1200
 
       light_frame_image = image_handling.resize_array(
           image_handling._read_image(light_frame), width)
@@ -598,7 +598,33 @@ def compute_stack_metadata(stacks, fits_headers, plate_solutions):
 
 
 # TODO: Split these into another file.
-def make_image_thumbnails(stacks, plate_solutions, fits_headers, width=640):
+#
+# TODO: Generally speaking, all prevew-making operations should take
+# precedence, before other long-running tasks like stacking. Currently, there
+# is no priority system in the dependency graph, and the preview-making
+# operations aren't even in the dependency graph.
+#
+# It would be amazing if anytime a better-quality artifact gets made, e.g.
+# starting with an autostretched single image, then a stack master, that all
+# downstream previews would automatically be updated, too.
+#
+# This could be accomplished if there is a node to get the best available
+# preview, and that node emits dg.Ran.RAN when the preview is changed, or a
+# new preview is available.
+#
+# The first layer of previews is the individual frames, autostretched. If any
+# of these frames change, or are removed from a stack, the next layer of
+# previews should be automatically re-generated.
+#
+# The second layer of previews are mosaics. Mosaics can be generated at any
+# output resolution, so they could potentially be built incrementally as
+# "background" tasks. AstroFlow would need to be sorta re-architected as a
+# typical long-running program.
+#
+# The third layer of previews are the stack videos. There may be multiple
+# videos per stack (e.g. one for all frames, and one just for frames selected
+# for stacking, or for different choices of flat frames).
+def make_image_thumbnails(stacks, plate_solutions, fits_headers, width=1200):
   with concurrent.futures.ProcessPoolExecutor() as executor:
     for stack in stacks:
       assert stack

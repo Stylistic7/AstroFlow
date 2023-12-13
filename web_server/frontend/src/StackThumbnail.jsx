@@ -32,7 +32,7 @@ export default function StackThumbnail({stack, width, handleClick}) {
 	    	src={`/stack_thumbnail_image/${stack.id}`}
 	    	style={{
 	    		pointerEvents: "auto",
-	    		width: "95%",
+	    		width: "100%",
 	    		position: "absolute",
 	    		top: 0,
 	    		left: 0,
@@ -42,7 +42,18 @@ export default function StackThumbnail({stack, width, handleClick}) {
 			    event.stopPropagation();
 			  }}
 	    />}
-	    {show_video && <video loop autoPlay muted>
+	    {show_video && <video
+	    	loop
+	    	autoPlay
+	    	muted
+	    	style={{
+	    		pointerEvents: "auto",
+	    		position: "absolute",
+	    		width: "100%",
+	    		top: 0,
+	    		left: 0,
+	    	}}
+	    	>
           <source src={`/stack_thumbnail_video/${stack.id}`} type="video/mp4" />
           Your browser does not support the video tag.
         </video>
@@ -50,8 +61,8 @@ export default function StackThumbnail({stack, width, handleClick}) {
 	    <div
 	      style={{
 	      	position: "absolute",
-	      	right: "15px",
-	      	top: "100px",
+	      	right: "4em",
+	      	top: "0.5em",
 	      	fontSize: "12px"
 	      }}
 	    >

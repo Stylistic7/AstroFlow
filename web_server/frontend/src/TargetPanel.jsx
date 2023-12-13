@@ -42,9 +42,10 @@ export default function TargetPanel({ stacks, targets, mosaics }) {
 	    <div style={{
 	    	display: "grid",
 	    	gridTemplateColumns: "repeat(4, 1fr)",
-	    	border: "1px solid red",
 	    	height: "80vh",
-	    	width: "100%"
+	    	gap: "1em",
+	    	marginLeft: "2em",
+	    	marginRight: "2em",
 	    }}>
 	    	{target.stack_ids.map((stack_id) => (
 	  			<StackThumbnail

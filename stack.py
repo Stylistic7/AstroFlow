@@ -122,6 +122,10 @@ class Stack:
   # time consuming work. FITS headers are similarly mutable -- stuff like plate-
   # solving can change them. So, we should use the image content hashes here.
   # A stack is defined by the *content* of the images that go into it.
+  #
+  # TODO: Choose a hash length that's maybe more reasonable than the 64-byte
+  # hashes used today. When there are only a few dozen or few thousand entities,
+  # the 64-byte hash is almost assuredly unnecessarily long.
   def store_id(self):
     self.id = hash_string(f'stack_{hash_file_list(self.light_frames)}_'
                           f'{hash_file_list(self.dark_frames)}_'
