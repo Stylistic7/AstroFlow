@@ -1,10 +1,17 @@
+import numpy as np
+
+from . import classes
+from . import projection
+
+
 def get_mosaic_dimensions(panels, plate_solutions):
   print(f'### get_mosaic_dimensions, {len(panels)} panels have footprints:')
   assert len(panels) == len(plate_solutions)
   for p in plate_solutions:
     print(f'### {p.footprint}')
 
-  min_ra, min_dec, ra_span, dec_span = compute_viewbox(plate_solutions)
+  min_ra, min_dec, ra_span, dec_span = projection.compute_viewbox(
+      plate_solutions)
   print(f'### min_ra {min_ra} ra_span {ra_span} '
         f'min_dec {min_dec} dec_span {dec_span}')
 
@@ -23,11 +30,11 @@ def get_mosaic_dimensions(panels, plate_solutions):
       np.ceil(dec_span / dec_resolution))
   print(f'### Final mosaic will have width {width} height {height}')
 
-  return MosaicDimensions(width=width,
-                          height=height,
-                          min_ra=min_ra,
-                          ra_span=ra_span,
-                          min_dec=min_dec,
-                          dec_span=dec_span,
-                          ra_resolution=ra_resolution,
-                          dec_resolution=dec_resolution)
+  return classes.MosaicDimensions(width=width,
+                                  height=height,
+                                  min_ra=min_ra,
+                                  ra_span=ra_span,
+                                  min_dec=min_dec,
+                                  dec_span=dec_span,
+                                  ra_resolution=ra_resolution,
+                                  dec_resolution=dec_resolution)

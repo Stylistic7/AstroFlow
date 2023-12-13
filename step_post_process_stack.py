@@ -54,8 +54,8 @@ def _post_processed_with_stack_id_exists(stack_id, filename):
 def _output_filename(stack, dest_path):
   output_dir = os.path.join(dest_path, 'Stacks', stack.target, 'masters')
   return os.path.join(
-      output_dir,
-      f'post_processed_{stack.target}_{stack.rig}_{stack.filter}.xisf')
+      output_dir, f'post_processed_{stack.target}_{stack.width}x{stack.height}'
+      f'_{stack.image_scale:.02f}_{stack.filter}.xisf')
 
 
 @PixInsight

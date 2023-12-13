@@ -21,7 +21,6 @@ import itertools
 import uuid
 from enum import Enum
 from dataclasses import dataclass
-from scipy.interpolate import RegularGridInterpolator
 import largestinteriorrectangle
 from multiprocessing import Pool
 import dependency_graph as dg
@@ -36,6 +35,7 @@ import spatial_association
 import position_string
 import image_handling
 
+from mosaics import classes
 from mosaics import dimensions
 from mosaics import input_selection
 from mosaics import merge_ops
@@ -122,14 +122,31 @@ def process_mosaic_per_filter(mosaic, targets, stacks, filter, output_dir):
     #   return None
     # filename = prev_result['output_filename']
 
+    # TODO: Add universal mechanism for getting the current highest-quality
+    # preview of a stack.
+    #
+    # Ideas for this:
+    #
+    # - Simply update ('stack_preview_image', foo) whenever a better-quality
+    #   version of the image is generated organically. The final stacked master
+    #   will organically replace the autostretched single frame. Downside:
+    #   preview is not part of the dependency graph, so I can't automatically run
+    #   downstream tasks that depend on the preview.
+    #
+    # - Make a preview dependency graph that is sort of a "peer" to the main
+    #   full-resolution graph. The full-resolution graph has stacking in it,
+    #   while the preview graph just has single autostretch images, etc. The
+    #   graph can dictate parameters, like output resolution, for the mosaic
+    #   stitching.
     obj = get_prev_result_object('stack_subframes', stack.id)
     if not obj or not obj.filename:
       print(f'### Could not get stack master for {stack}')
       return None
 
-    print(f'### Got {filename} for {stack} with id {stack.id}')
+    print(f'### Got {obj.filename} for {stack} with id {stack.id}')
     panels.append(
-        Panel(image_filename=filename, tile_indices=target.tile_indices))
+        classes.Panel(image_filename=obj.filename,
+                      tile_indices=target.tile_indices))
 
   print(f'### Mosaic contains {len(panels)} panels with filenames:')
   for p in panels:
@@ -141,11 +158,11 @@ def process_mosaic_per_filter(mosaic, targets, stacks, filter, output_dir):
 
   print(f'### Got {len(plate_solutions)} plate solutions')
 
-  mosaic_dimensions = get_mosaic_dimensions(panels, plate_solutions)
+  mosaic_dimensions = dimensions.get_mosaic_dimensions(panels, plate_solutions)
 
   print(f'### Running mosaic_by_coordinates in parallel...')
   with Pool() as p:
-    panels = p.starmap(mosaic_by_coordinates,
+    panels = p.starmap(projection.mosaic_by_coordinates,
                        ((p, s, mosaic_dimensions, output_dir)
                         for p, s in zip(panels, plate_solutions)))
   print(f'### mosaic_by_coordinates is done')

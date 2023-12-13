@@ -1,3 +1,12 @@
+import os
+import numpy as np
+import objsize
+import itertools
+from xisf import XISF
+from astropy.wcs import WCS
+from scipy.interpolate import RegularGridInterpolator
+
+
 def compute_viewbox(plate_solutions):
   ras = [f[0] for p in plate_solutions for f in p.footprint]
   decs = [f[1] for p in plate_solutions for f in p.footprint]

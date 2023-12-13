@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+import plate_solving
+
 
 @dataclass
 class Panel:
