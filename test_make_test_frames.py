@@ -38,9 +38,6 @@ class TestMakeTestFrames(unittest.TestCase):
         }
     }
 
-    print('fits_headers', fits_headers)
-    print('plate_solutions', plate_solutions)
-
     expected_plate_solutions = {
         'foo_00000.fit':
         PlateSolution(image_filename='foo_00000.fit',

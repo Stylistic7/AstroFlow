@@ -5,64 +5,20 @@ import numpy as np
 import random
 
 import file_io
-import make_test_frames
+from make_test_frames import make_test_frames
 import spatial_association
 from plate_solving import PlateSolution
 from cache import cache
 import datetime
 
 
-def _add_dither(center):
-  ra, dec = center
-  distance = np.random.uniform(0.0, 0.01)  # degrees
-  angle = np.random.uniform(0.0, 2.0 * np.pi)
-
-  return ra + distance * np.sin(distance), dec + np.cos(distance)
-
-
-def footprint_around_center(center, ra_span=4, dec_span=2):
-  ra, dec = center
-  return [(ra - ra_span / 2, dec + dec_span / 2),
-          (ra - ra_span / 2, dec - dec_span / 2),
-          (ra + ra_span / 2, dec - dec_span / 2),
-          (ra + ra_span / 2, dec + dec_span / 2)]
-
-
-def make_plate_solutions(center, prefix, number=1, dither=False):
-  plate_solutions = {}
-  for i in range(number):
-    image_filename = f'{prefix}_{i}' if number > 1 else prefix
-    plate_solutions[image_filename] = PlateSolution(
-        image_filename=image_filename,
-        center=_add_dither(center) if dither else center,
-        footprint=footprint_around_center(center))
-
-  randomized_plate_solutions = {}
-  for k, v in sorted(plate_solutions.items(), key=lambda x: random.random()):
-    randomized_plate_solutions[k] = v
-
-  return randomized_plate_solutions
-
-
-def make_fits_headers(prefix, number=1):
-  date_obs = datetime.datetime(2007, 12, 6, 16, 29, 43, 79043)
-  fits_headers = {}
-  for i in range(number):
-    image_filename = f'{prefix}_{i}' if number > 1 else prefix
-    fits_headers[image_filename] = {'DATE-OBS': date_obs}
-    date_obs += datetime.timedelta(minutes=5)
-
-  randomized_fits_headers = {}
-  for k, v in sorted(fits_headers.items(), key=lambda x: random.random()):
-    randomized_fits_headers[k] = v
-
-  return randomized_fits_headers
-
-
 class TestSpatialAssociation(unittest.TestCase):
   def test_one_perfect_group(self):
-    plate_solutions = make_plate_solutions((100, 50), 'foo', 10)
-    fits_headers = make_fits_headers('foo', 10)
+    fits_headers, plate_solutions = make_test_frames(ra=100,
+                                                     dec=50,
+                                                     prefix='foo',
+                                                     number=10,
+                                                     dither=0)
 
     light_frames = list(plate_solutions.keys())
     groups = spatial_association.find_components(light_frames, plate_solutions,
@@ -72,10 +28,18 @@ class TestSpatialAssociation(unittest.TestCase):
     self.assertEqual(groups, expected_groups)
 
   def test_two_perfect_groups_one_hour_ra(self):
-    plate_solutions = make_plate_solutions((300, 40), 'foo', 10)
-    fits_headers = make_fits_headers('foo', 10)
-    plate_solutions |= make_plate_solutions((315, 40), 'bar', 10)
-    fits_headers |= make_fits_headers('bar', 10)
+    f_foo, p_foo = make_test_frames(ra=300,
+                                    dec=40,
+                                    prefix='foo',
+                                    number=10,
+                                    dither=0)
+    f_bar, p_bar = make_test_frames(ra=315,
+                                    dec=40,
+                                    prefix='bar',
+                                    number=10,
+                                    dither=0)
+    fits_headers = f_foo | f_bar
+    plate_solutions = p_foo | p_bar
 
     light_frames = list(plate_solutions.keys())
     groups = spatial_association.find_components(light_frames, plate_solutions,
@@ -90,10 +54,18 @@ class TestSpatialAssociation(unittest.TestCase):
         all(f.startswith('bar') for f in groups['IC1318_RA_315.0_DEC_40.0']))
 
   def test_two_perfect_groups_one_degree_dec(self):
-    plate_solutions = make_plate_solutions((300, 39), 'foo', 10)
-    fits_headers = make_fits_headers('foo', 10)
-    plate_solutions |= make_plate_solutions((300, 40), 'bar', 10)
-    fits_headers |= make_fits_headers('bar', 10)
+    f_foo, p_foo = make_test_frames(ra=300,
+                                    dec=39,
+                                    prefix='foo',
+                                    number=10,
+                                    dither=0)
+    f_bar, p_bar = make_test_frames(ra=300,
+                                    dec=40,
+                                    prefix='bar',
+                                    number=10,
+                                    dither=0)
+    fits_headers = f_foo | f_bar
+    plate_solutions = p_foo | p_bar
 
     light_frames = list(plate_solutions.keys())
     groups = spatial_association.find_components(light_frames, plate_solutions,
@@ -108,10 +80,20 @@ class TestSpatialAssociation(unittest.TestCase):
         all(f.startswith('bar') for f in groups['IC1318_RA_300.0_DEC_40.0']))
 
   def test_two_perfect_groups_half_degree_dec(self):
-    plate_solutions = make_plate_solutions((300, 39.5), 'foo', 10)
-    fits_headers = make_fits_headers('foo', 10)
-    plate_solutions |= make_plate_solutions((300, 40), 'bar', 10)
-    fits_headers |= make_fits_headers('bar', 10)
+    f_foo, p_foo = make_test_frames(ra=300,
+                                    dec=39.5,
+                                    prefix='foo',
+                                    number=10,
+                                    dither=0,
+                                    rotation_angle_deg=0)
+    f_bar, p_bar = make_test_frames(ra=300,
+                                    dec=40,
+                                    prefix='bar',
+                                    number=10,
+                                    dither=0,
+                                    rotation_angle_deg=0)
+    fits_headers = f_foo | f_bar
+    plate_solutions = p_foo | p_bar
 
     light_frames = list(plate_solutions.keys())
     groups = spatial_association.find_components(light_frames, plate_solutions,
@@ -126,10 +108,10 @@ class TestSpatialAssociation(unittest.TestCase):
         all(f.startswith('bar') for f in groups['IC1318_RA_300.0_DEC_40.0']))
 
   def test_two_noisy_groups(self):
-    plate_solutions = make_plate_solutions((307, 40), 'foo', 10, dither=True)
-    fits_headers = make_fits_headers('foo', 10)
-    plate_solutions |= make_plate_solutions((315, 45), 'bar', 10, dither=True)
-    fits_headers |= make_fits_headers('bar', 10)
+    f_foo, p_foo = make_test_frames(ra=307, dec=40, prefix='foo', number=10)
+    f_bar, p_bar = make_test_frames(ra=315, dec=45, prefix='bar', number=10)
+    fits_headers = f_foo | f_bar
+    plate_solutions = p_foo | p_bar
 
     light_frames = list(plate_solutions.keys())
     groups = spatial_association.find_components(light_frames, plate_solutions,
@@ -155,13 +137,9 @@ class TestSpatialAssociation(unittest.TestCase):
     ]
     ids = ['Pane 0', 'Pane 1', 'Pane 2', 'Pane 3', 'Pane 4', 'Pane 5']
 
-    plate_solutions = {}
-    for id, center in zip(ids, centers):
-      plate_solutions |= make_plate_solutions(center, id, 10)
-
-    fits_headers = {}
-    for id in ids:
-      fits_headers |= make_fits_headers(id, 10)
+    fits_headers, plate_solutions = make_test_frames(centers=centers,
+                                                     ids=ids,
+                                                     dither=0)
 
     light_frames = list(plate_solutions.keys())
     groups = spatial_association.find_components(light_frames,
@@ -176,4 +154,4 @@ class TestSpatialAssociation(unittest.TestCase):
         'IC1318_RA_307.1_DEC_41.4': ['Pane 4'],
         'IC1318_RA_307.0_DEC_38.4': ['Pane 5'],
     }
-    self.assertCountEqual(groups, expected_groups)
+    self.assertCountEqual(groups.keys(), expected_groups)

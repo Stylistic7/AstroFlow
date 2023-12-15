@@ -5,32 +5,27 @@ import pytz
 import copy
 
 import file_io
-import make_test_frames
+from make_test_frames import make_test_frames
 import step_flat_frame_association
 from stack import Stack
-
-
-def _make_test_frames(start_datetime, number=10, prefix='foo'):
-  fits_headers = {}
-  frames = []
-  for i in range(number):
-    filename = f'{prefix}_{i}.fit'
-    date_obs = start_datetime + i * datetime.timedelta(minutes=5)
-    fits_headers[filename] = {'DATE-OBS': date_obs}
-    frames.append(filename)
-
-  return frames, fits_headers
+import runs
 
 
 class TestFlatFrameAssociation(unittest.TestCase):
   def test_same_day(self):
-    light_frames, fits_headers = _make_test_frames(pytz.utc.localize(
+    light_f, light_p = make_test_frames(start_datetime=pytz.utc.localize(
         datetime.datetime(2023, 7, 3, 0, 0)),
-                                                   prefix='light_foo')
-    flat_frames, h = _make_test_frames(pytz.utc.localize(
+                                        prefix='light_foo')
+    flat_f, flat_p = make_test_frames(start_datetime=pytz.utc.localize(
         datetime.datetime(2023, 7, 3, 12, 0)),
-                                       prefix='flat_foo')
-    fits_headers |= h
+                                      image_type='Flat',
+                                      prefix='flat_foo')
+
+    fits_headers = light_f | flat_f
+    plate_solutions = light_p | flat_p
+
+    light_frames = light_f.keys()
+    flat_frames = flat_f.keys()
 
     stack = Stack(target='foo',
                   light_frames=light_frames,
@@ -41,18 +36,29 @@ class TestFlatFrameAssociation(unittest.TestCase):
     step_flat_frame_association.associate_flat_frames_for_stack(
         stack, flat_frames, fits_headers)
 
-    expected = [(light_frames, flat_frames)]
+    light_runs = runs.get_runs(light_frames, fits_headers)
+    self.assertEqual(len(light_runs), 1)
 
+    flat_runs = runs.get_runs(flat_frames, fits_headers)
+    self.assertEqual(len(flat_runs), 1)
+
+    expected = [(light_runs[0], flat_runs[0])]
     self.assertEqual(stack.flat_frame_associations, expected)
 
   def test_prev_day(self):
-    light_frames, fits_headers = _make_test_frames(pytz.utc.localize(
+    light_f, light_p = make_test_frames(start_datetime=pytz.utc.localize(
         datetime.datetime(2023, 7, 3, 0, 0)),
-                                                   prefix='light_foo')
-    flat_frames, h = _make_test_frames(pytz.utc.localize(
+                                        prefix='light_foo')
+    flat_f, flat_p = make_test_frames(start_datetime=pytz.utc.localize(
         datetime.datetime(2023, 7, 2, 0, 0)),
-                                       prefix='flat_foo')
-    fits_headers |= h
+                                      image_type='Flat',
+                                      prefix='flat_foo')
+
+    fits_headers = light_f | flat_f
+    plate_solutions = light_p | flat_p
+
+    light_frames = light_f.keys()
+    flat_frames = flat_f.keys()
 
     stack = Stack(target='foo',
                   light_frames=light_frames,
@@ -63,35 +69,36 @@ class TestFlatFrameAssociation(unittest.TestCase):
     step_flat_frame_association.associate_flat_frames_for_stack(
         stack, flat_frames, fits_headers)
 
-    expected = [(light_frames, flat_frames)]
+    light_runs = runs.get_runs(light_frames, fits_headers)
+    self.assertEqual(len(light_runs), 1)
 
+    flat_runs = runs.get_runs(flat_frames, fits_headers)
+    self.assertEqual(len(flat_runs), 1)
+
+    expected = [(light_runs[0], flat_runs[0])]
     self.assertEqual(stack.flat_frame_associations, expected)
 
   def test_two_flat_days(self):
-    print('### Entering test_two_flat_days')
-    light_foo, h = _make_test_frames(pytz.utc.localize(
-        datetime.datetime(2023, 7, 3, 0, 0)),
-                                     prefix='light_foo')
-    light_frames = copy.copy(light_foo)
-    fits_headers = h
-
-    flat_foo, h = _make_test_frames(pytz.utc.localize(
+    light_foo_f, light_foo_p = make_test_frames(
+        start_datetime=pytz.utc.localize(datetime.datetime(2023, 7, 3, 0, 0)),
+        prefix='light_foo')
+    flat_foo_f, flat_foo_p = make_test_frames(start_datetime=pytz.utc.localize(
         datetime.datetime(2023, 7, 2, 0, 0)),
-                                    prefix='flat_foo')
-    flat_frames = copy.copy(flat_foo)
-    fits_headers |= h
-
-    light_bar, h = _make_test_frames(pytz.utc.localize(
-        datetime.datetime(2023, 7, 5, 0, 0)),
-                                     prefix='light_bar')
-    light_frames.extend(light_bar)
-    fits_headers |= h
-
-    flat_bar, h = _make_test_frames(pytz.utc.localize(
+                                              image_type='Flat',
+                                              prefix='flat_foo')
+    light_bar_f, light_bar_p = make_test_frames(
+        start_datetime=pytz.utc.localize(datetime.datetime(2023, 7, 5, 0, 0)),
+        prefix='light_bar')
+    flat_bar_f, flat_bar_p = make_test_frames(start_datetime=pytz.utc.localize(
         datetime.datetime(2023, 7, 6, 0, 0)),
-                                    prefix='flat_bar')
-    flat_frames.extend(flat_bar)
-    fits_headers |= h
+                                              image_type='Flat',
+                                              prefix='flat_bar')
+
+    fits_headers = light_foo_f | flat_foo_f | light_bar_f | flat_bar_f
+    plate_solutions = light_foo_p | flat_foo_p | light_bar_p | flat_bar_p
+
+    light_frames = list(light_foo_f.keys()) + list(light_bar_f.keys())
+    flat_frames = list(flat_foo_f.keys()) + list(flat_bar_f.keys())
 
     stack = Stack(target='stack',
                   light_frames=light_frames,
@@ -101,11 +108,14 @@ class TestFlatFrameAssociation(unittest.TestCase):
 
     step_flat_frame_association.associate_flat_frames_for_stack(
         stack, flat_frames, fits_headers)
-    print('### associations', stack.flat_frame_associations)
 
-    expected = [(light_foo, flat_foo), (light_bar, flat_bar)]
-    print('### expected', expected)
+    light_runs = runs.get_runs(light_frames, fits_headers)
+    self.assertEqual(len(light_runs), 2)
 
+    flat_runs = runs.get_runs(flat_frames, fits_headers)
+    self.assertEqual(len(flat_runs), 2)
+
+    expected = [(light_runs[0], flat_runs[0]), (light_runs[1], flat_runs[1])]
     self.assertEqual(stack.flat_frame_associations, expected)
 
 
