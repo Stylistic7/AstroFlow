@@ -275,17 +275,25 @@ def remove_frames_during_mount_movements(light_frames):
 # TODO: This will scale poorly when there are hundreds of thousands of images.
 def plate_solve(filenames, prev_result):
   print('Plate solving...')
-  plate_solutions = collect_results_as_dict(
-      filenames, plate_solving.solve_field, prev_result)
+  # plate_solutions = collect_results_as_dict(
+  #     filenames, plate_solving.solve_field, prev_result)
 
-  # TODO: Implement quarantining.
-  # num_files = len(plate_solutions)
-  # plate_solutions = {f: p for f, p in plate_solutions.items() if p}
-  # num_good_files = len(plate_solutions)
-  # print(f'### There were {num_files} plate solutions before removing None, '
-  #       f'and {num_good_files} after')
+  # # TODO: Implement quarantining.
+  # # num_files = len(plate_solutions)
+  # # plate_solutions = {f: p for f, p in plate_solutions.items() if p}
+  # # num_good_files = len(plate_solutions)
+  # # print(f'### There were {num_files} plate solutions before removing None, '
+  # #       f'and {num_good_files} after')
 
-  return plate_solutions
+  # return plate_solutions
+
+  # TODO: Use the image hash, not the filename. This will allow people to move
+  # their files around without bothering AstroFlow.
+  solutions = cache.get('plate_solutions', {})
+  new_filenames = list(set(filenames) - set(solutions.keys()))
+  solutions |= plate_solving.solve_fields(new_filenames)
+
+  return solutions
 
 
 # TODO: This is a bit weird. We want to keep unsolvable files in the cache,
@@ -820,6 +828,9 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   # stacks = load_stacks_context(stacks)
 
   targets = group_stacks_into_targets(stacks)
+  for target in targets:
+    print(f'Target {target}')
+
   mosaics = group_targets_into_mosaics(targets)
 
   graph.default_control_mode = default_control_mode
@@ -889,7 +900,7 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   # control_modes |= {('post_process_stack', m.id): dg.ControlMode.FORCE
   #                   for m in stacks.values()}
   control_modes |= {('post_process_mosaic', m.id): dg.ControlMode.FORCE
-                    for m in mosaics.values() if 'IC1318' in m.name}
+                    for m in mosaics.values() if 'IC410' in m.name}
 
   # print('control_modes are', control_modes)
 

@@ -12,6 +12,8 @@ import numpy as np
 import traceback
 from xisf import XISF
 import objsize
+import concurrent.futures
+import copy
 
 from cache import cache
 import file_io
@@ -35,8 +37,6 @@ def get_footprint(header):
   """Returns a 4x2 array. Order is clockwise starting with the bottom left corner."""
   with warnings.catch_warnings():
     warnings.simplefilter("ignore")
-    print('### IMAGEW', header['IMAGEW'])
-    print('### IMAGEH', header['IMAGEH'])
     header['NAXIS1'] = header['IMAGEW']
     header['NAXIS2'] = header['IMAGEH']
     wcs = astropy.wcs.WCS(header=header)
@@ -60,7 +60,6 @@ def get_image_scale(header):
 
   # The result is in arcseconds per pixel.
   image_scale = scale_x * 3600.0
-  print(f'### image_scale {image_scale:.2f}" / px')
   return image_scale
 
 
@@ -76,22 +75,16 @@ def simplify_header(header):
     if 'COMMENT' in k or 'HISTORY' in k: continue
     output_header[k] = header[k]
 
-  print(f'### header size {objsize.get_deep_size(output_header)} bytes')
   return output_header
 
 
-# TODO: These plate solutions are taking up waaaay too much room in the cache.
-# Consider reducing the amount of information stored per image, and consider
-# a better data structure that a dict, which requires loading all the plate
-# solutions simultaneously.
-def solve_field(filename):
+def _solve_field(filename, arguments):
   with tempfile.TemporaryDirectory() as temp_dir:
     if os.path.splitext(filename)[-1] in ['.xisf']:
       # TODO: Split this out into two round-trippable xisf_to_fits() and
       # fits_to_xisf() functions.
       xisf = XISF(filename)
       image = xisf.read_image(0).squeeze()
-      print('### image has shape', image.shape)
       img_meta = xisf.get_images_metadata()[0]
       fits_meta = img_meta['FITSKeywords']
 
@@ -103,27 +96,18 @@ def solve_field(filename):
       dest_filename = os.path.join(temp_dir, os.path.basename(filename))
       dest_filename = Path(dest_filename).with_suffix('.fits')
 
-      print(f'Converting XISF to FITS {dest_filename}')
+      # print(f'Converting XISF to FITS {dest_filename}')
       hdu.writeto(dest_filename, overwrite=True)
     else:
       dest_filename = os.path.join(temp_dir, os.path.basename(filename))
       os.symlink(filename, dest_filename)
 
     try:
-      # TODO: These options must be exposed to the user.
-      command = [
-          "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
-          "--scale-low", "1", "--scale-high", "10.0", "--scale-units",
-          "degwidth", "--guess-scale", "--downsample", "4", "--objs", "100",
-          "--tweak-order", "4", "--crpix-center",
-          "--no-background-subtraction", dest_filename
-      ]
-      # TODO: This is an insane timeout. Figure out why some images really do
-      # require 15 minutes to solve?
-      ret = subprocess.run(command, capture_output=True, timeout=15 * 60)
+      command = arguments + [dest_filename]
+      ret = subprocess.run(command, capture_output=True)
     except Exception as e:
-      print(f'Could not plate solve file {dest_filename} due to exception')
-      traceback.print_exc()
+      # print(f'Could not plate solve file {dest_filename} due to exception')
+      # traceback.print_exc()
       return e
 
     wcs_file = Path(dest_filename).with_suffix('.wcs')
@@ -140,22 +124,82 @@ def solve_field(filename):
                                footprint=get_footprint(header),
                                rotation_angle=get_rotation_angle(header),
                                num_stars=get_num_stars(axy_file))
-          print(f'### Sucessfully plate-solved file {dest_filename}')
+          # print(f'### Sucessfully plate-solved file {dest_filename}')
           return soln
         except Exception as e:
-          print(f'Could not plate solve file {dest_filename} due to exception')
-          traceback.print_exc()
+          # print(f'Could not plate solve file {dest_filename} due to exception')
+          # traceback.print_exc()
           return e
     else:
       # TODO: Emit warnings through Metaflow's reporting system.
-      print(f'Could not plate-solve file {filename}')
+      # print(f'Could not plate-solve file {filename}')
       return None
 
 
+# def solve_field(filename):
+#   for t in trial_arguments:
+#     result = _solve_field(filename, arguments=t)
+#     if result:
+#       return result
+
+
 def solve_fields(filenames):
-  with Pool() as p:
-    solutions = p.star(solve_field, filenames)
-    return {f: s for f, s in zip(filenames, solutions) if s != None}
+  print('### Entering solve_fields')
+
+  # TODO: These options must be exposed to the user.
+  trial_arguments = [[
+      "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
+      "--scale-low", "1", "--scale-high", "10.0", "--scale-units", "degwidth",
+      "--guess-scale", "--downsample", "4", "--objs", "100", "--tweak-order",
+      "4", "--crpix-center", "--no-background-subtraction", "--cpulimit", "120"
+  ],
+                     [
+                         "solve-field", "--overwrite", "--no-plots",
+                         "--new-fits", "none", "--scale-low", "1",
+                         "--scale-high", "10.0", "--scale-units", "degwidth",
+                         "--guess-scale", "--downsample", "4", "--objs", "100",
+                         "--tweak-order", "4", "--crpix-center", "--cpulimit",
+                         "120"
+                     ]]
+
+  solutions = {}
+
+  with concurrent.futures.ThreadPoolExecutor() as executor:
+    remaining_filenames = copy.copy(filenames)
+    for t, arguments in enumerate(trial_arguments):
+      print(f'### Using trial_arguments[{t}]')
+      future_to_filename = {
+          executor.submit(_solve_field, filename, arguments): filename
+          for filename in filenames
+      }
+
+      num_solved = 0
+      for i, future in enumerate(
+          concurrent.futures.as_completed(future_to_filename)):
+        filename = future_to_filename[future]
+        result = future.result()
+        if not result: continue
+        num_solved += 1
+        solutions[filename] = result
+        remaining_filenames.remove(filename)
+
+        if i > 0 and i % 100 == 0:
+          print(f'### Solved {num_solved} / {i} images')
+
+      if not remaining_filenames:
+        return solutions
+
+  print(f'### Failed to solve {len(filenames) - len(solutions)} images')
+
+  return solutions
+
+  # all_solutions = {}
+  # with Pool() as p:
+  #   for chunk in chunker(filenames, 100):
+  #     solutions = p.star(solve_field, chunk)
+  #     all_solutions |= {f: s for f, s in zip(chunk, solutions) if s != None}
+
+  # return all_solutions
 
 
 if __name__ == '__main__':
