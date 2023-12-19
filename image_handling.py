@@ -15,6 +15,8 @@ import file_io
 
 from cache import cache
 
+MIN_STAR_FRACTION = 0.5
+
 
 def resize_array(array, new_width):
   height, width = array.shape
@@ -120,17 +122,18 @@ def make_and_cache_stack_thumbnails(stack, plate_solutions, width=1200):
     video_filename = os.path.join(tmp_dir, 'output.webm')
     out = cv2.VideoWriter(video_filename, fourcc, 10.0, (width, height), False)
 
-    thumbnails = [cache[('thumbnail_image', f)] for f in stack.light_frames]
-    best_light_frame = max(stack.light_frames,
-                           key=lambda f: plate_solutions[f].num_stars)
-    assert best_light_frame
-    thumbnail_image = array_to_png(
-        cache[('thumbnail_image', best_light_frame)])
+    light_frames_by_stars = sorted(stack.light_frames,
+                                   key=lambda f: plate_solutions[f].num_stars,
+                                   reverse=True)
+    thumbnail_image = cache[('thumbnail_image', light_frames_by_stars[0])]
 
-    for im in thumbnails:
+    for i, filename in enumerate(light_frames_by_stars):
+      im = cache[('thumbnail_image', filename)]
       im = (im * 255.0).astype(np.uint8)
+
       frame = np.zeros((height, width), dtype=np.uint8)
       frame[0:im.shape[0], 0:im.shape[1]] = im
+
       out.write(frame)
 
     out.release()
