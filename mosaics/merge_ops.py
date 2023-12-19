@@ -1,6 +1,10 @@
+import os
+import uuid
+import numpy as np
 from mosaic import Mosaic
 import pix
 import plate_solving
+from . import classes
 
 
 def fill_template(template, value):
@@ -46,14 +50,15 @@ def make_merge_ops(panels, output_dir):
         tile_indices = fill_template(template, i)
         if len(pair) == 1:
           new_panels.append(
-              Panel(image_filename=get_panel(pair[0]).image_filename,
-                    tile_indices=tile_indices))
+              classes.Panel(image_filename=get_panel(pair[0]).image_filename,
+                            tile_indices=tile_indices))
         elif len(pair) == 2:
           new_image_id = os.path.join(output_dir, f'merged_{uuid.uuid4()}.fit')
           new_panels.append(
-              Panel(image_filename=new_image_id, tile_indices=tile_indices))
+              classes.Panel(image_filename=new_image_id,
+                            tile_indices=tile_indices))
           merge_ops.append(
-              MergeOp(
+              classes.MergeOp(
                   output_filename=new_image_id,
                   image_filenames=[get_panel(p).image_filename for p in pair]))
 

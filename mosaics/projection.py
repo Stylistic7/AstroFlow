@@ -5,6 +5,9 @@ import itertools
 from xisf import XISF
 from astropy.wcs import WCS
 from scipy.interpolate import RegularGridInterpolator
+import largestinteriorrectangle
+import astropy.io.fits as pyfits
+import uuid
 
 
 def compute_viewbox(plate_solutions):
@@ -56,7 +59,7 @@ def mosaic_by_coordinates(panel, plate_solution, mosaic_dimensions,
     print(f'### {k}: {v}')
 
   wcs = WCS(plate_solution.header)
-  assert wcs.has_distortion
+  # assert wcs.has_distortion
 
   source_height, source_width = image.shape
   interp = RegularGridInterpolator((range(source_height), range(source_width)),
