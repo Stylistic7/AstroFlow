@@ -66,6 +66,7 @@ def get_image_scale(header):
 def get_num_stars(axy_file):
   with pyfits.open(axy_file) as fits:
     table = fits[1].data
+    # print(f'axy_file contains table of shape {table.shape}')
     return table.shape[0]
 
 
@@ -136,13 +137,6 @@ def _solve_field(filename, arguments):
       return None
 
 
-# def solve_field(filename):
-#   for t in trial_arguments:
-#     result = _solve_field(filename, arguments=t)
-#     if result:
-#       return result
-
-
 def solve_fields(filenames):
   print('### Entering solve_fields')
 
@@ -150,16 +144,15 @@ def solve_fields(filenames):
   trial_arguments = [[
       "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
       "--scale-low", "1", "--scale-high", "10.0", "--scale-units", "degwidth",
-      "--guess-scale", "--downsample", "4", "--objs", "100", "--tweak-order",
-      "4", "--crpix-center", "--no-background-subtraction", "--cpulimit", "120"
+      "--guess-scale", "--downsample", "4", "--tweak-order", "4",
+      "--crpix-center", "--no-background-subtraction", "--cpulimit", "5"
   ],
                      [
                          "solve-field", "--overwrite", "--no-plots",
                          "--new-fits", "none", "--scale-low", "1",
                          "--scale-high", "10.0", "--scale-units", "degwidth",
-                         "--guess-scale", "--downsample", "4", "--objs", "100",
-                         "--tweak-order", "4", "--crpix-center", "--cpulimit",
-                         "120"
+                         "--guess-scale", "--downsample", "4", "--tweak-order",
+                         "4", "--crpix-center", "--cpulimit", "60"
                      ]]
 
   solutions = {}
@@ -177,10 +170,14 @@ def solve_fields(filenames):
       for i, future in enumerate(
           concurrent.futures.as_completed(future_to_filename)):
         filename = future_to_filename[future]
-        result = future.result()
-        if not result: continue
-        num_solved += 1
-        solutions[filename] = result
+        try:
+          result = future.result()
+          solutions[filename] = result
+          if result:
+            num_solved += 1
+        except Exception as e:
+          solutions[filename] = e
+
         remaining_filenames.remove(filename)
 
         if i > 0 and i % 100 == 0:
@@ -192,14 +189,6 @@ def solve_fields(filenames):
   print(f'### Failed to solve {len(filenames) - len(solutions)} images')
 
   return solutions
-
-  # all_solutions = {}
-  # with Pool() as p:
-  #   for chunk in chunker(filenames, 100):
-  #     solutions = p.star(solve_field, chunk)
-  #     all_solutions |= {f: s for f, s in zip(chunk, solutions) if s != None}
-
-  # return all_solutions
 
 
 if __name__ == '__main__':
