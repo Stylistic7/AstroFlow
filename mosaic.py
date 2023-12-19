@@ -21,6 +21,7 @@ class Mosaic:
   status: bool = False
 
   target_ids: list[str] = field(default_factory=list)
+  tile_indices: list[tuple] = field(default_factory=list)
 
   center: list[float] = field(default_factory=list)
   footprint: list[tuple[float]] = None

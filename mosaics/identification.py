@@ -26,8 +26,6 @@ def identify_overlapping_targets(targets):
   # Sort the targets by their center RA.
   targets = list(sorted(targets, key=lambda t: t.center[0]))
   log.info('Identifying overlapping targets', num_targets=len(targets))
-  # for target in targets:
-  #   print(f'Target {target}')
 
   mosaics = []
   for target in targets:
@@ -65,18 +63,22 @@ def identify_mosiacs(targets, plot=False):
 
   output_mosaics = []
   for mosaic in mosaics:
-    mosaic = ransac.ransac(mosaic, plot=plot, plot_title='foo')
-    if not mosaic:
+    target_ids, tile_indices = ransac.ransac(mosaic,
+                                             plot=plot,
+                                             plot_title='foo')
+
+    if not target_ids:
       print('RANSAC failed')
       continue
 
-    print(f'Mosaic composed of {len(mosaic)} targets:')
-    for target in mosaic:
-      print(f'  {target.name}')
+    print(f'Mosaic composed of {len(target_ids)} targets:')
+    for target_id in target_ids:
+      print(f'  {targets[target_id].name}')
 
     try:
       output_mosaic = Mosaic()
-      output_mosaic.target_ids = [t.id for t in mosaic]
+      output_mosaic.target_ids = target_ids
+      output_mosaic.tile_indices = tile_indices
       output_mosaic.store_metadata(targets)
       output_mosaic.name = position_string.canonical_target_string(
           output_mosaic.center)

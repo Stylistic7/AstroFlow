@@ -101,10 +101,12 @@ def show_image(data):
 
 def process_mosaic_per_filter(mosaic, targets, stacks, filter, output_dir):
   panels = []
-  for target_id in mosaic.target_ids:
+  print(f'### process_mosaic_per_filter mosaic name {mosaic.name}')
+  for target_id, tile_indices in zip(mosaic.target_ids, mosaic.tile_indices):
     target = targets[target_id]
-
-    assert target.tile_indices, f'target {target} has bad tile_indices'
+    # print(f'### target has name {target.name} and id {target.id}')
+    # assert target.tile_indices, (f'target {target} has bad tile_indices '
+    #                              f'{target.tile_indices}')
 
     # TODO: Remove this filter and process all color channels.
     stack = next((s for s in stacks.values()
@@ -145,8 +147,7 @@ def process_mosaic_per_filter(mosaic, targets, stacks, filter, output_dir):
 
     print(f'### Got {obj.filename} for {stack} with id {stack.id}')
     panels.append(
-        classes.Panel(image_filename=obj.filename,
-                      tile_indices=target.tile_indices))
+        classes.Panel(image_filename=obj.filename, tile_indices=tile_indices))
 
   print(f'### Mosaic contains {len(panels)} panels with filenames:')
   for p in panels:
@@ -167,7 +168,7 @@ def process_mosaic_per_filter(mosaic, targets, stacks, filter, output_dir):
                         for p, s in zip(panels, plate_solutions)))
   print(f'### mosaic_by_coordinates is done')
 
-  output_image = merge_mosaic(panels, output_dir)
+  output_image = merge_ops.merge_mosaic(panels, output_dir)
 
   merged_mosaic = os.path.join(output_dir, f"merged_mosaic_{filter}.fits")
   print(f'Copying final mosaic image to {merged_mosaic}')

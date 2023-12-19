@@ -22,7 +22,6 @@ class Target:
   name: str = None
 
   stack_ids: list[str] = field(default_factory=list)
-  tile_indices: list[tuple[int, int]] = None
 
   center: list[float] = field(default_factory=list)
   footprint: list[tuple[float]] = None
