@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useReducer } from "react";
+import useVideoFrames from "./useVideoFrames.ts";
 import ExposureDurationWidget from "./ExposureDurationWidget.jsx";
 import './Starmap.css';
 
@@ -19,6 +20,18 @@ export default function StackThumbnail({stack, width, handleClick}) {
 
 	const show_image = false;
 	const show_video = true;
+
+	const video_ref = useRef();
+
+	const [frameCount, setFrameCount] = useState(0);
+
+	const [video, setVideo] = useVideoFrames(frameCount => {
+		setFrameCount(frameCount);
+	});
+
+	useEffect(() => {
+		setVideo(video_ref.current);
+	}, [video_ref]);
 
   return (
   	<div class="stack_thumbnail"
@@ -43,20 +56,21 @@ export default function StackThumbnail({stack, width, handleClick}) {
 			  }}
 	    />}
 	    {show_video && <video
-	    	loop
-	    	autoPlay
-	    	muted
-	    	style={{
-	    		pointerEvents: "auto",
-	    		position: "absolute",
-	    		width: "100%",
-	    		top: 0,
-	    		left: 0,
-	    	}}
+		    	loop
+		    	autoPlay
+		    	muted
+		    	ref={video_ref}
+		    	style={{
+		    		pointerEvents: "auto",
+		    		position: "absolute",
+		    		width: "100%",
+		    		top: 0,
+		    		left: 0,
+		    	}}
 	    	>
-          <source src={`/stack_thumbnail_video/${stack.id}`} type="video/mp4" />
-          Your browser does not support the video tag.
-        </video>
+	        <source src={`/stack_thumbnail_video/${stack.id}`} type="video/mp4" />
+	        Your browser does not support the video tag.
+	      </video>
       }
 	    <div
 	      style={{
@@ -85,6 +99,25 @@ export default function StackThumbnail({stack, width, handleClick}) {
     		stack={stack}
     		width="20px"
     	/>
+    	<div style={{
+    			position: "absolute",
+	    		bottom: "5em",
+	    		left: "0",
+	    		width: "100%",
+    		}}
+    	>
+	    	<div style={{
+	    		margin: "5px",
+	    		backgroundColor: "#aaa"
+	    		}}
+	    	>
+				  <div style={{
+				  	height: "0.75em",
+				  	width: (100.0 * (frameCount % stack.light_frames.length) / stack.light_frames.length) + "%",
+				  	backgroundColor: "#fff"
+				  }}></div>
+				</div>
+			</div>
 	   </div>
   );
 }
