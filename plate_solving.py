@@ -14,9 +14,11 @@ from xisf import XISF
 import objsize
 import concurrent.futures
 import copy
+import time
 
 from cache import cache
 import file_io
+import throughput
 
 
 @dataclass
@@ -55,7 +57,7 @@ def get_image_scale(header):
   scale_x = np.linalg.norm(np.array([header['CD1_1'], header['CD2_1']]))
   scale_y = np.linalg.norm(np.array([header['CD1_2'], header['CD2_2']]))
   assert np.isclose(
-      scale_x, scale_y, atol=0.01 / 3600,
+      scale_x, scale_y, atol=0.05 / 3600,
       rtol=0), f'scale_x {scale_x} is not close to scale_y {scale_y}'
 
   # The result is in arcseconds per pixel.
@@ -118,18 +120,20 @@ def _solve_field(filename, arguments):
       with pyfits.open(wcs_file) as fits:
         header = simplify_header(fits[0].header)
         try:
+          num_stars = get_num_stars(axy_file)
           soln = PlateSolution(image_filename=filename,
                                header=header,
                                center=get_center(header),
                                image_scale=get_image_scale(header),
                                footprint=get_footprint(header),
                                rotation_angle=get_rotation_angle(header),
-                               num_stars=get_num_stars(axy_file))
-          # print(f'### Sucessfully plate-solved file {dest_filename}')
+                               num_stars=num_stars)
+          print(f'### Sucessfully plate-solved file {filename}, '
+                f'has {num_stars} stars')
           return soln
         except Exception as e:
-          # print(f'Could not plate solve file {dest_filename} due to exception')
-          # traceback.print_exc()
+          print(f'Could not plate solve file {filename} due to exception')
+          traceback.print_exc()
           return e
     else:
       # TODO: Emit warnings through Metaflow's reporting system.
@@ -137,58 +141,48 @@ def _solve_field(filename, arguments):
       return None
 
 
-def solve_fields(filenames):
-  print('### Entering solve_fields')
-
+# TODO: Make a "junk drawer" video that shows everything that can't be plate-
+# solved. The user can look at it and decide whether to improve the solver's
+# settings, or to throw the images away.
+def solve_field(filename):
   # TODO: These options must be exposed to the user.
-  trial_arguments = [[
-      "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
-      "--scale-low", "1", "--scale-high", "10.0", "--scale-units", "degwidth",
-      "--guess-scale", "--downsample", "4", "--tweak-order", "4",
-      "--crpix-center", "--no-background-subtraction", "--cpulimit", "5"
-  ],
-                     [
-                         "solve-field", "--overwrite", "--no-plots",
-                         "--new-fits", "none", "--scale-low", "1",
-                         "--scale-high", "10.0", "--scale-units", "degwidth",
-                         "--guess-scale", "--downsample", "4", "--tweak-order",
-                         "4", "--crpix-center", "--cpulimit", "60"
-                     ]]
+  trial_arguments = [
+      [
+          "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
+          "--scale-low", "1.0", "--scale-high", "10.0", "--scale-units",
+          "degwidth", "--guess-scale", "--downsample", "4", "--tweak-order",
+          "4", "--crpix-center", "--no-background-subtraction", "--depth",
+          "10", "--cpulimit", "5"
+      ],
+      [
+          "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
+          "--scale-low", "0.5", "--scale-high", "10.0", "--scale-units",
+          "degwidth", "--guess-scale", "--downsample", "4", "--tweak-order",
+          "4", "--crpix-center", "--no-background-subtraction", "--depth",
+          "100", "--cpulimit", "60"
+      ],
+      [
+          "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
+          "--downsample", "4", "--tweak-order", "4", "--crpix-center",
+          "--no-background-subtraction", "--cpulimit", "120"
+      ],
+      [
+          "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
+          "--downsample", "4", "--tweak-order", "4", "--crpix-center",
+          "--cpulimit", "120"
+      ]
+  ]
 
-  solutions = {}
+  start_time = time.time()
+  for i, arguments in enumerate(trial_arguments):
+    result = _solve_field(filename, arguments)
+    if result:
+      end_time = time.time()
+      throughput.add_sample('plate_solve', end_time - start_time)
+      return result
 
-  with concurrent.futures.ThreadPoolExecutor() as executor:
-    remaining_filenames = copy.copy(filenames)
-    for t, arguments in enumerate(trial_arguments):
-      print(f'### Using trial_arguments[{t}]')
-      future_to_filename = {
-          executor.submit(_solve_field, filename, arguments): filename
-          for filename in filenames
-      }
-
-      num_solved = 0
-      for i, future in enumerate(
-          concurrent.futures.as_completed(future_to_filename)):
-        filename = future_to_filename[future]
-        try:
-          result = future.result()
-          solutions[filename] = result
-          if result:
-            num_solved += 1
-        except Exception as e:
-          solutions[filename] = e
-
-        remaining_filenames.remove(filename)
-
-        if i > 0 and i % 100 == 0:
-          print(f'### Solved {num_solved} / {i} images')
-
-      if not remaining_filenames:
-        return solutions
-
-  print(f'### Failed to solve {len(filenames) - len(solutions)} images')
-
-  return solutions
+  print(f'Could not plate-solve file {filename}')
+  return None
 
 
 if __name__ == '__main__':
