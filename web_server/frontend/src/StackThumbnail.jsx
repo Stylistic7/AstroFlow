@@ -33,6 +33,7 @@ export default function StackThumbnail({stack, width, handleClick}) {
 		setVideo(video_ref.current);
 	}, [video_ref]);
 
+	// TODO: Display the progress bar as red during frames with too few stars.
   return (
   	<div class="stack_thumbnail"
   	  style={{

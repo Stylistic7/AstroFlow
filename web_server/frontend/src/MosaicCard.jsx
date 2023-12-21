@@ -9,6 +9,7 @@ import { CardActionArea } from '@mui/material';
 
 import MosaicOutline from "./MosaicOutline.jsx";
 
+// TODO: Don't show MosaicCards for "mosaics" with just one panel?
 export default function MosaicCard({stacks, targets, mosaics, mosaic_id}) {
   const mosaic = mosaics[mosaic_id];
   const navigate = useNavigate();
@@ -31,8 +32,8 @@ export default function MosaicCard({stacks, targets, mosaics, mosaic_id}) {
             Mosaic {mosaic.name}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Lizards are a widespread group of squamate reptiles, with over 6,000
-            species, ranging across all continents except Antarctica
+            Image scale:&nbsp;
+            {stacks[targets[mosaic.target_ids[0]].stack_ids[0]].image_scale.toFixed(2)}"/px
           </Typography>
         </CardContent>
       </CardActionArea>

@@ -32,7 +32,7 @@ export default function TargetCard({stacks, targets, mosaics, target_id}) {
               )}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-              Image scale: {target.image_scale}
+              Image scale: {stacks[target.stack_ids[0]].image_scale.toFixed(2)}"/px
           </Typography>
         </CardContent>
       </CardActionArea>
