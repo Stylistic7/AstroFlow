@@ -37,6 +37,7 @@ import step_post_process_stack
 import step_post_process_target
 import step_mosaic
 import stacking
+import image_metadata
 import image_handling
 
 logger = structlog.get_logger()
@@ -69,6 +70,11 @@ log = logger
 # - To find the image with the least clouds, try to find the image with the
 #   smallest median. This image is the "darkest." This depends upon the idea
 #   clouds are always brighter than space, so not reliable.
+
+# TODO: Give the user an option to sort mosaics / targets by date, so they
+# can easily resume a previous project.
+
+# TODO: Emit mosaic plans in Telescopius format for easy continuation.
 
 
 # TODO: Building up a context object that is "parallel" to the disk cache
@@ -209,42 +215,24 @@ def find_masters(output_dir):
   return filenames
 
 
-# TODO: This will scale poorly when there are hundreds of thousands of images.
-def read_fits_headers(all_frames):
-  structlog.contextvars.bind_contextvars(task='read_fits_headers')
-  fits_headers = collect_results_as_dict(all_frames, file_io.read_fits,
-                                         cache.get('fits_headers', {}))
-  cache['fits_headers'] = fits_headers
-  return fits_headers
+def sort_by_observation_date(image_hashes, fits_headers):
+  sorted_keys = sorted(image_hashes.keys(),
+                       key=lambda h: fits_headers[h]['DATE-OBS'])
+  output = {}
+  for key in sorted_keys:
+    output[key] = image_hashes[key]
+
+  return output
 
 
-def sort_by_observation_date(all_frames, fits_headers):
-  return sorted(all_frames, key=lambda f: fits_headers[f]['DATE-OBS'])
-
-
-# TODO: This will scale poorly when there are hundreds of thousands of images.
-def compute_image_hashes(all_frames):
-  print('Computing image hashes...')
-  image_hashes = collect_results_as_dict(all_frames,
-                                         file_io.hash_of_image_data,
-                                         cache.get('image_hashes', {}))
-  cache['image_hashes'] = image_hashes
-  return image_hashes
-
-
-def check_duplicates(image_hashes):
-  print('Checking for duplicate images...')
-  # TODO: Implement
-
-
-def split_images_by_type(all_frames, fits_headers):
+def split_images_by_type(image_hashes, fits_headers):
   print('Splitting images by type...')
 
-  def image_type(f):
-    return fits_headers[f]['IMAGETYP']
+  def image_type(h):
+    return fits_headers[h]['IMAGETYP']
 
-  filenames = sorted(all_frames, key=image_type)
-  files = {k: list(g) for k, g in itertools.groupby(filenames, key=image_type)}
+  hashes = sorted(image_hashes, key=image_type)
+  files = {k: list(g) for k, g in itertools.groupby(hashes, key=image_type)}
 
   light_frames = files['Light'] if 'Light' in files else []
   dark_frames = files['Dark'] if 'Dark' in files else []
@@ -272,18 +260,6 @@ def remove_frames_during_mount_movements(light_frames):
   return settled_light_frames
 
 
-# TODO: This will scale poorly when there are hundreds of thousands of images.
-def plate_solve(filenames, prev_result):
-  # TODO: Use the image hash, not the filename. This will allow people to move
-  # their files around without bothering AstroFlow.
-  print(f'Cache contains {len(prev_result)} plate solutions.')
-  new_filenames = list(set(filenames) - set(prev_result.keys()))
-  print(f'Plate solving {len(new_filenames)} images...')
-  prev_result |= plate_solving.solve_fields(new_filenames)
-
-  return prev_result
-
-
 # TODO: This is a bit weird. We want to keep unsolvable files in the cache,
 # so we don't attempt to re-solve them every run. But we want to filter them
 # out so downstream logic doesn't see them. We also want to ignore plate
@@ -295,9 +271,9 @@ def plate_solve(filenames, prev_result):
 # timeout on slow computers).
 def remove_bad_plate_solutions(plate_solutions):
   return {
-      f: p
-      for f, p in plate_solutions.items()
-      if os.path.exists(f) and type(p) is plate_solving.PlateSolution
+      h: p
+      for h, p in plate_solutions.items()
+      if type(p) is plate_solving.PlateSolution
   }
 
 
@@ -437,8 +413,9 @@ def associate_bias_frames(stacks, bias_frames, fits_headers):
 
 # TODO: Parallelize this.
 # TODO: Move this into a new file.
-def cartesian_product_lights_and_flats(stacks, flat_frames, fits_headers,
-                                       plate_solutions):
+# TODO: Add tests.
+def cartesian_product_lights_and_flats(stacks, flat_frames, image_hashes,
+                                       fits_headers, plate_solutions):
   print('### Entering cartesian_product_lights_and_flats')
 
   flats_for_camera = group_by_fn(flat_frames,
@@ -510,13 +487,13 @@ def cartesian_product_lights_and_flats(stacks, flat_frames, fits_headers,
       width = 1200
 
       light_frame_image = image_handling.resize_array(
-          image_handling._read_image(light_frame), width)
+          image_handling._read_image(image_hashes[light_frame]), width)
       rotate = plate_solutions[light_frame].rotation_angle < 0.0
       if rotate:
         light_frame_image = np.rot90(light_frame_image, 2)
 
       dark_frame_image = image_handling.resize_array(
-          image_handling._read_image(dark_frame), width)
+          image_handling._read_image(image_hashes[dark_frame]), width)
 
       light_frame_image -= dark_frame_image
 
@@ -536,7 +513,7 @@ def cartesian_product_lights_and_flats(stacks, flat_frames, fits_headers,
         print(f'    ### flat frame {flat_frame}')
 
         flat_frame_image = image_handling.resize_array(
-            image_handling._read_image(flat_frame), width)
+            image_handling._read_image(image_hashes[flat_frame]), width)
 
         flat_frame_image -= dark_frame_image
 
@@ -620,7 +597,11 @@ def compute_stack_metadata(stacks, fits_headers, plate_solutions):
 # The third layer of previews are the stack videos. There may be multiple
 # videos per stack (e.g. one for all frames, and one just for frames selected
 # for stacking, or for different choices of flat frames).
-def make_image_thumbnails(stacks, plate_solutions, fits_headers, width=1200):
+def make_image_thumbnails(stacks,
+                          image_hashes,
+                          plate_solutions,
+                          fits_headers,
+                          width=1200):
   with concurrent.futures.ProcessPoolExecutor() as executor:
     for stack in stacks:
       assert stack
@@ -631,14 +612,16 @@ def make_image_thumbnails(stacks, plate_solutions, fits_headers, width=1200):
             light_frame, stack, fits_headers)
         dark_frame = stack.dark_frames[0] if len(stack.dark_frames) else None
         rotate = plate_solutions[light_frame].rotation_angle < 0.0
-        executor.submit(image_handling.make_and_cache_thumbnail, light_frame,
-                        dark_frame, flat_frame, rotate, None, width)
+        executor.submit(image_handling.make_and_cache_thumbnail, image_hashes,
+                        light_frame, dark_frame, flat_frame, rotate, None,
+                        width)
 
 
 # TODO: Consider how changing a config setting and re-running will work.
 # If I just use the (target, rig, filter) keys, they won't get re-generated.
 # Figure out a good universal key strategy for all kinds of objects.
-def make_stack_thumbnails_videos(stacks, plate_solutions, fits_headers):
+def make_stack_thumbnails_videos(stacks, image_hashes, plate_solutions,
+                                 fits_headers):
   print('Making stack thumbnails...')
   with concurrent.futures.ProcessPoolExecutor() as executor:
     for stack in stacks.values():
@@ -650,7 +633,7 @@ def make_stack_thumbnails_videos(stacks, plate_solutions, fits_headers):
         continue
 
       executor.submit(image_handling.make_and_cache_stack_thumbnails, stack,
-                      plate_solutions)
+                      image_hashes, plate_solutions)
 
 
 # TODO: Make sure targets only include stacks of the same resolution? Or maybe
@@ -697,14 +680,16 @@ def sanity_check_stacks(stacks, fits_headers):
 graph = dg.DependencyGraph()
 
 
-def stack_subframes(stack, fits_headers, plate_solutions, output_dir):
+def stack_subframes(stack, image_hashes, fits_headers, plate_solutions,
+                    output_dir):
   @graph.add()
   def inner():
     if stack.status != Status.READY:
       return (dg.Ran.RAN, (dg.Result.FAILURE, "Stack failed sanity checks"))
 
     print(f'Stacking stack {stack}!')
-    result = stacking.run(stack, fits_headers, plate_solutions, output_dir)
+    result = stacking.run(stack, image_hashes, fits_headers, plate_solutions,
+                          output_dir)
     print(f'stacking.run returned {result}')
     return result
 
@@ -752,33 +737,44 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   if context.download:
     download(context.input_dirs[0], context.default_filter)
 
+  # TODO: Plate-solve and compute image hashes of masters, too.
   all_frames = find_fits_files(context.input_dirs)
-  fits_headers = read_fits_headers(all_frames)
+  masters = find_masters(context.output_dir)
 
-  all_frames = sort_by_observation_date(all_frames, fits_headers)
+  image_hashes = image_metadata.compute_image_hashes(
+      all_frames, cache.get('image_hashes', {}))
+  cache['image_hashes'] = image_hashes
 
-  image_hashes = compute_image_hashes(all_frames)
-  # check_duplicates(image_hashes)
+  fits_headers = image_metadata.read_fits_headers(
+      image_hashes, cache.get('fits_headers', {}))
+  cache['fits_headers'] = fits_headers
+
+  image_hashes = sort_by_observation_date(image_hashes, fits_headers)
 
   light_frames, dark_frames, bias_frames, flat_frames = split_images_by_type(
-      all_frames, fits_headers)
+      image_hashes, fits_headers)
 
-  masters = find_masters(context.output_dir)
+  # TODO: Make an user option to force this. The plate-solving step should be
+  # pulled into the dependency graph.
+  plate_solutions = remove_bad_plate_solutions(cache.get(
+      'plate_solutions', {}))
+  # plate_solutions = cache.get('plate_solutions', {})
+
+  plate_solutions = image_metadata.plate_solve(light_frames + masters,
+                                               image_hashes, plate_solutions)
+  cache['plate_solutions'] = plate_solutions
 
   # TODO: Make this more granular.
   # light_frames = remove_frames_during_mount_movements(light_frames)
 
-  # TODO: Consider whether functions like plate_solve() should be pure, or
-  # if they should include cache operations.
-  plate_solutions = plate_solve(light_frames + masters,
-                                cache.get('plate_solutions', {}))
-  print(f'### Writing {len(plate_solutions)} plate solutions into cache')
-  cache['plate_solutions'] = plate_solutions
-
   plate_solutions = remove_bad_plate_solutions(plate_solutions)
 
   # Remove light frames that don't have good plate solutions.
-  light_frames = set(light_frames).intersection(plate_solutions.keys())
+  light_frames = list(set(light_frames).intersection(plate_solutions.keys()))
+
+  print('light_frames[0:10]', light_frames[0:10])
+  print('plate_solutions.keys()[0:10]', list(plate_solutions.keys())[0:10])
+  print('fits_headers.keys()[0:10]', list(fits_headers.keys())[0:10])
 
   spatial_components = identify_spatial_components(
       light_frames, plate_solutions, fits_headers)
@@ -797,10 +793,10 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   stacks = compute_stack_metadata(stacks, fits_headers, plate_solutions)
   stacks = normalize_stacks(stacks)
 
-  cartesian_product_lights_and_flats(stacks, flat_frames, fits_headers,
-                                     plate_solutions)
+  cartesian_product_lights_and_flats(stacks, flat_frames, image_hashes,
+                                     fits_headers, plate_solutions)
 
-  make_image_thumbnails(stacks, plate_solutions, fits_headers)
+  make_image_thumbnails(stacks, image_hashes, plate_solutions, fits_headers)
 
   stacks = sanity_check_stacks(stacks, fits_headers)
 
@@ -812,7 +808,8 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   # TODO: Figure out why this one's footprint went nuts.
   stacks = {k: v for k, v in stacks.items() if 'NGC7822' not in v.target}
 
-  make_stack_thumbnails_videos(stacks, plate_solutions, fits_headers)
+  make_stack_thumbnails_videos(stacks, image_hashes, plate_solutions,
+                               fits_headers)
 
   # stacks = load_stacks_context(stacks)
 
@@ -840,8 +837,8 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
       for stack_id in target.stack_ids:
         stack = stacks[stack_id]
         print(f'###       Entering {stack}')
-        task_0 = stack_subframes(stack, fits_headers, plate_solutions,
-                                 context.output_dir)
+        task_0 = stack_subframes(stack, image_hashes, fits_headers,
+                                 plate_solutions, context.output_dir)
         task_1 = post_process_stack(stack, context.output_dir, [task_0])
         target_tasks.extend([task_0, task_1])
 
@@ -874,8 +871,8 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   #                  for s in stacks.values()}
   # control_modes |= {('stack_subframes', s.id): dg.ControlMode.DISABLED
   #                   for s in stacks.values()}
-  # control_modes |= {('stack_subframes', s.id): dg.ControlMode.FORCE
-  #                   for s in stacks.values()}
+  control_modes |= {('stack_subframes', s.id): dg.ControlMode.FORCE
+                    for s in stacks.values()}
   # control_modes |= {('post_process_stack', s.id): dg.ControlMode.DISABLED
   #                   for s in stacks.values() if 'IC1848' not in s.target}
   # control_modes |= {('post_process_target', t.id): dg.ControlMode.DISABLED

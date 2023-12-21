@@ -15,9 +15,9 @@ logger = structlog.get_logger()
 log = logger
 
 
-def _set_flatvers_fits_header(filenames, flat_version):
-  for filename in filenames:
-    with pyfits.open(filename, mode='update') as fits:
+def _set_flatvers_fits_header(hashes, image_hashes, flat_version):
+  for hash in hashes:
+    with pyfits.open(image_hashes[hash], mode='update') as fits:
       fits[0].header['FLATVERS'] = flat_version
 
 
@@ -31,7 +31,7 @@ def _dates_to_strings(associations):
 
 # TODO: Move to encoding FLATVERS in the symlinked file names, vs. modifying the
 # FITS header.
-def set_flat_versions(stack, fits_headers):
+def set_flat_versions(stack, image_hashes, fits_headers):
   print(f'Setting FLATVERS for {len(stack.flat_frame_associations)} '
         f'associations')
   for flat_version, (light_run, flat_run) in enumerate(
@@ -40,7 +40,8 @@ def set_flat_versions(stack, fits_headers):
                                            fits_headers)
     flat_frames = runs.get_frames_for_run(flat_run, stack.flat_frames,
                                           fits_headers)
-    _set_flatvers_fits_header(light_frames + flat_frames, flat_version)
+    _set_flatvers_fits_header(light_frames + flat_frames, image_hashes,
+                              flat_version)
 
 
 def run_distance(a, b):

@@ -28,33 +28,31 @@ def find_components(light_frames,
                     plate_solutions,
                     fits_headers,
                     min_component_members=MIN_COMPONENT_MEMBERS):
-  # Filter out images that couldn't be plate-solved.
-  num_plate_solutions = len(light_frames)
-
-  filenames = sorted(light_frames, key=lambda x: fits_headers[x]['DATE-OBS'])
+  hashes = sorted(light_frames, key=lambda h: fits_headers[h]['DATE-OBS'])
+  print('sorted hashes', hashes[0:10])
 
   # TODO: This is probably expensive, and gets repeated in many places. Maybe
   # it should be done just once, and the footprints stored in Polygon format.
   # Do we ever need the footprint as a list? I suppose we can always just get
   # the list of exterior coords from the Polygon.
-  footprints = {f: Polygon(plate_solutions[f].footprint) for f in filenames}
+  footprints = {h: Polygon(plate_solutions[h].footprint) for h in hashes}
 
   targets = []
   last_printed_percent_done = 0
-  for i, filename in enumerate(filenames):
+  for i, hash in enumerate(hashes):
     found = False
-    footprint = footprints[filename]
+    footprint = footprints[hash]
     for target in targets:
       # if all(iou(footprint, footprints[f]) > 0.6 for f in target):
       if iou(footprint, footprints[target[0]]) > 0.6:
-        target.append(filename)
+        target.append(hash)
         found = True
         break
 
     if not found:
-      targets.append([filename])
+      targets.append([hash])
 
-    percent_done = 100.0 * i / len(filenames)
+    percent_done = 100.0 * i / len(hashes)
     percent_done = 10.0 * round(percent_done / 10.0)
     if percent_done > last_printed_percent_done:
       print(f'Finding components is {percent_done:.0f}% done.')
@@ -68,27 +66,27 @@ def find_components(light_frames,
 
   targets = [(get_name(t), t) for t in targets]
   print('### Before renaming')
-  for name, filenames in targets:
-    print(f'### Target {name} has {len(filenames)} files')
+  for name, hashes in targets:
+    print(f'### Target {name} has {len(hashes)} files')
 
   target_string_counts = Counter(name for name, _ in targets)
 
   output_targets = {}
-  for name, filenames in targets:
-    center = plate_solutions[filenames[0]].center
+  for name, hashes in targets:
+    center = plate_solutions[hashes[0]].center
     if target_string_counts[name] > 1:
       new_name = f'{name}_{position_string.ra_dec_string(*center)}'
       # TODO: This can still collide in some cases, resulting in lost stacks.
       print(f'### Target {name} will be renamed {new_name}')
       assert new_name not in output_targets
-      output_targets[new_name] = list(sorted(filenames))
+      output_targets[new_name] = list(sorted(hashes))
     else:
-      output_targets[name] = list(sorted(filenames))
+      output_targets[name] = list(sorted(hashes))
 
   assert len(output_targets) == len(targets)
 
-  for name, filenames in output_targets.items():
-    print(f'Target {name} has {len(filenames)} files')
+  for name, hashes in output_targets.items():
+    print(f'Target {name} has {len(hashes)} files')
 
   return output_targets
 

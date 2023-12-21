@@ -68,14 +68,16 @@ def _read_image(filename):
     return file_io.read_fits_image(filename)
 
 
-def make_and_cache_thumbnail(light_frame,
+def make_and_cache_thumbnail(image_hashes,
+                             light_frame,
                              dark_frame,
                              flat_frame,
                              rotate,
                              fudge=None,
                              width=1200):
   try:
-    light_frame_image = resize_array(_read_image(light_frame), width)
+    light_frame_image = resize_array(_read_image(image_hashes[light_frame]),
+                                     width)
     if rotate:
       light_frame_image = np.rot90(light_frame_image, 2)
 
@@ -83,8 +85,10 @@ def make_and_cache_thumbnail(light_frame,
       cache[('thumbnail_image', light_frame)] = autostretch(light_frame_image)
       return
 
-    flat_frame_image = resize_array(_read_image(flat_frame), width)
-    dark_frame_image = resize_array(_read_image(dark_frame), width)
+    flat_frame_image = resize_array(_read_image(image_hashes[flat_frame]),
+                                    width)
+    dark_frame_image = resize_array(_read_image(image_hashes[dark_frame]),
+                                    width)
 
     light_frame_image -= dark_frame_image
     flat_frame_image -= dark_frame_image
@@ -109,9 +113,13 @@ def make_and_cache_thumbnail(light_frame,
 # image for a stack: highest std, greatest star count, etc.
 #
 # Make a library for picking / sorting images by quality.
-def make_and_cache_stack_thumbnails(stack, plate_solutions, width=1200):
-  height, width = resize_array(file_io.read_fits_image(stack.light_frames[0]),
-                               width).shape
+def make_and_cache_stack_thumbnails(stack,
+                                    image_hashes,
+                                    plate_solutions,
+                                    width=1200):
+  height, width = resize_array(
+      file_io.read_fits_image(image_hashes[stack.light_frames[0]]),
+      width).shape
 
   height = int(((height + 8 - 1) / 8) * 8)
   print(f'Creating video of width {width}, height {height} '
@@ -127,8 +135,8 @@ def make_and_cache_stack_thumbnails(stack, plate_solutions, width=1200):
                                    reverse=True)
     thumbnail_image = cache[('thumbnail_image', light_frames_by_stars[0])]
 
-    for i, filename in enumerate(light_frames_by_stars):
-      im = cache[('thumbnail_image', filename)]
+    for i, hash in enumerate(light_frames_by_stars):
+      im = cache[('thumbnail_image', hash)]
       im = (im * 255.0).astype(np.uint8)
 
       frame = np.zeros((height, width), dtype=np.uint8)

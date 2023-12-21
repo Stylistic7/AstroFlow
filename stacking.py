@@ -58,10 +58,12 @@ def _master_with_stack_id_exists(stack_id, filename):
   return False
 
 
-def _master_with_same_footprint_exits(stack, plate_solutions):
+def _master_with_same_footprint_exits(stack, image_hashes, plate_solutions):
   print(f'### Entering _master_with_same_footprint_exits() for stack {stack}')
   num_masters = 0
-  for filename, plate_solution in plate_solutions.items():
+  for hash, plate_solution in plate_solutions.items():
+    filename = image_hashes[hash]
+
     # TODO: Should these all be filtered out in some unified place?
     if not os.path.exists(filename):
       continue
@@ -97,7 +99,7 @@ def _output_filename(stack, dest_path):
       f'_{stack.image_scale:.02f}_{stack.filter}.xisf')
 
 
-def run(stack, fits_headers, plate_solutions, dest_path):
+def run(stack, image_hashes, fits_headers, plate_solutions, dest_path):
   def symlink_frames(filenames, dest_path):
     for filename in filenames:
       dest_filename = os.path.join(dest_path, os.path.basename(filename))
@@ -130,7 +132,8 @@ def run(stack, fits_headers, plate_solutions, dest_path):
   # The point of this is to short-circuit stacking when the cache empty, but
   # the stacks have been done outside of AstroFlow. This generally happens when
   # the user first installs AstroFlow.
-  if existing := _master_with_same_footprint_exits(stack, plate_solutions):
+  if existing := _master_with_same_footprint_exits(stack, image_hashes,
+                                                   plate_solutions):
     print(f'### Master (made outside AstroFlow) already exists: {existing}')
     return (dg.Ran.DID_NOT_RUN, (dg.Result.SUCCESS, OutputFile(existing)))
 
@@ -138,12 +141,13 @@ def run(stack, fits_headers, plate_solutions, dest_path):
     # TODO: Don't ever change the user's input files. Instead, use the
     # "smart naming convention" to put the flat version in the symlinked
     # frames' names.
-    step_flat_frame_association.set_flat_versions(stack, fits_headers)
+    step_flat_frame_association.set_flat_versions(stack, image_hashes,
+                                                  fits_headers)
 
-    symlink_frames(stack.light_frames, tmp_dir)
-    symlink_frames(stack.flat_frames, tmp_dir)
-    symlink_frames(stack.bias_frames, tmp_dir)
-    symlink_frames(stack.dark_frames, tmp_dir)
+    symlink_frames([image_hashes[h] for h in stack.light_frames], tmp_dir)
+    symlink_frames([image_hashes[h] for h in stack.flat_frames], tmp_dir)
+    symlink_frames([image_hashes[h] for h in stack.bias_frames], tmp_dir)
+    symlink_frames([image_hashes[h] for h in stack.dark_frames], tmp_dir)
 
     pix.WeightedBatchPreprocessing(dir=tmp_dir, outputDirectory=tmp_dir)
 
