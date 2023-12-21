@@ -132,24 +132,16 @@ class Stack:
                           f'{hash_file_list(self.bias_frames)}_'
                           f'{hash_file_list(self.flat_frames)}_'
                           f'{self.hash_flat_frame_associations()}')
-    # print(f'### stored stack id {self.id}')
 
   def footprint_polygon(self):
     return Polygon(self.footprint)
 
   def store_center(self, plate_solutions, plot=False):
-    # print('### Entering store_center()')
-    # for f in self.light_frames:
-    #   print('  light frame', f)
-    # plate_solutions = _get_plate_solutions(self.light_frames)
     centers = [
         p.center for f, p in plate_solutions.items() if f in self.light_frames
     ]
-    # print('centers', centers)
     mean_center = np.mean(centers, axis=0)
-    # print('  mean_center:', mean_center)
     std_dev_center = np.std(centers, axis=0)
-    # print('  std_dev_center:', std_dev_center)
 
     if plot:
       plt.figure()
@@ -175,7 +167,6 @@ class Stack:
   def store_footprint(self, plate_solutions):
     # This might be too Draconian, because it includes outliers.
     # TODO: Use RANSAC to compute a better footprint.
-    # plate_solutions = _get_plate_solutions(self.light_frames)
     footprints = [
         Polygon(p.footprint) for f, p in plate_solutions.items()
         if f in self.light_frames
@@ -183,7 +174,6 @@ class Stack:
     footprint = functools.reduce(Polygon.intersection, footprints,
                                  footprints[0])
     self.footprint = list(footprint.exterior.coords)
-    # print('self.footprint', self.footprint)
 
   def store_footprint_galactic(self):
     self.footprint_galactic = []
@@ -193,7 +183,6 @@ class Stack:
       self.footprint_galactic.append((x, y))
 
   def store_min_footprint(self, plate_solutions):
-    # plate_solutions = _get_plate_solutions(self.light_frames)
     footprints = [
         p.footprint for f, p in plate_solutions.items()
         if f in self.light_frames
