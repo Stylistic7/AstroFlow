@@ -79,9 +79,10 @@ def make_test_frames(start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
 
     center = _add_dither(centers[i], dither)
 
+    date_obs = start_datetime + i * datetime.timedelta(seconds=exposure + 10)
+
     fits_header = {
-        'DATE-OBS':
-        start_datetime + i * datetime.timedelta(seconds=exposure + 10),
+        'DATE-OBS': date_obs,
         'IMAGETYP': image_type,
         'EXPOSURE': exposure,
         'CRVAL1': center[0],
@@ -105,10 +106,10 @@ def make_test_frames(start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
     if not project_dir:
       continue
 
-    image_data = np.arange(100.0)
+    image_data = np.random.random((100, 100))
     hdu = pyfits.PrimaryHDU(image_data)
     for k, v in fits_header.items():
-      hdu.header[k] = v
+      hdu.header[k] = str(v)
     hdu.writeto(fits_filename)
 
   return _randomize_dict(fits_headers), _randomize_dict(plate_solutions)
