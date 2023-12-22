@@ -64,14 +64,15 @@ def _master_with_same_footprint_exits(stack, image_hashes, plate_solutions):
   for hash, plate_solution in plate_solutions.items():
     filename = image_hashes[hash]
 
-    # TODO: Should these all be filtered out in some unified place?
-    if not os.path.exists(filename):
-      continue
-
     # TODO: There are better ways to identify masters than just the name.
     # Maybe I should have a generic "File" object that includes its type,
     # which can be determined more accurately by FITS/XISF metadata.
     if not os.path.basename(filename).startswith('master'):
+      continue
+
+    # TODO: Should these all be filtered out in some unified place?
+    print(f'### Found a master called {filename}')
+    if not os.path.exists(filename):
       continue
 
     num_masters += 1
@@ -82,7 +83,7 @@ def _master_with_same_footprint_exits(stack, image_hashes, plate_solutions):
       continue
 
     iou = spatial_association.iou(Polygon(stack.footprint),
-                                  Polygon(plate_solutions[filename].footprint))
+                                  Polygon(plate_solutions[hash].footprint))
     # print(f'### Master {filename} has IoU {iou} with stack {stack}')
     if iou > 0.9:
       # print(f'### Found highly-likely master {filename} for stack {stack}')

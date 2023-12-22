@@ -104,16 +104,12 @@ def process_mosaic_per_filter(mosaic, targets, stacks, filter, output_dir):
   print(f'### process_mosaic_per_filter mosaic name {mosaic.name}')
   for target_id, tile_indices in zip(mosaic.target_ids, mosaic.tile_indices):
     target = targets[target_id]
-    # print(f'### target has name {target.name} and id {target.id}')
-    # assert target.tile_indices, (f'target {target} has bad tile_indices '
-    #                              f'{target.tile_indices}')
-
-    # TODO: Remove this filter and process all color channels.
     stack = next((s for s in stacks.values()
                   if s.filter == filter and s.id in target.stack_ids), None)
 
     if stack is None:
-      print(f'### Could not find stack')
+      print(f'### Could not find stack for target {target.name} '
+            f'and filter {filter}')
       return None
 
     print(f'### Found stack {stack}')
@@ -142,7 +138,7 @@ def process_mosaic_per_filter(mosaic, targets, stacks, filter, output_dir):
     #   stitching.
     obj = get_prev_result_object('stack_subframes', stack.id)
     if not obj or not obj.filename:
-      print(f'### Could not get stack master for {stack}')
+      print(f'### Could not get stack master for {stack}: {obj}')
       return None
 
     print(f'### Got {obj.filename} for {stack} with id {stack.id}')
@@ -186,7 +182,7 @@ def process_mosaic(mosaic, targets, stacks, output_dir):
   if len(mosaic.target_ids) < 2:
     print(f'No processing to do for mosaic with only '
           f'{len(mosaic.target_ids)} target ids')
-    return (dg.Ran.DID_NOT_RUN, (dg.Result.NEVER_RUN, dict()))
+    return (dg.Ran.DID_NOT_RUN, (dg.Result.NEVER_RUN, list()))
 
   output_dir = os.path.join(output_dir, 'Mosaics', mosaic.name)
   os.makedirs(output_dir, exist_ok=True)
@@ -195,15 +191,14 @@ def process_mosaic(mosaic, targets, stacks, output_dir):
   # themselves.
   #
   # TODO: Store the filter along with the output filename.
-  output_filenames = []
+  outputs = []
   for filter in ['H', 'S', 'O', 'L', 'R', 'G', 'B']:
     result = process_mosaic_per_filter(mosaic, targets, stacks, filter,
                                        output_dir)
     if result:
-      output_filenames.append(result)
+      outputs.append(dict(filter=filter, result=result))
 
-  return (dg.Ran.RAN, (dg.Result.SUCCESS,
-                       dict(panels=panels, output_filenames=output_filenames)))
+  return (dg.Ran.RAN, (dg.Result.SUCCESS, outputs))
 
 
 def main():

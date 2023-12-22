@@ -198,7 +198,7 @@ def find_fits_files(input_dirs, max_frames=None):
 
     all_frames |= set(filenames)
 
-  return all_frames
+  return list(all_frames)
 
 
 # TODO: Update the plate solution if the master file has been changed,
@@ -215,24 +215,28 @@ def find_masters(output_dir):
   return filenames
 
 
-def sort_by_observation_date(image_hashes, fits_headers):
-  sorted_keys = sorted(image_hashes.keys(),
+# TODO: Make sure the Python version has stable iteration order for dicts.
+def sort_by_observation_date(fits_headers):
+  sorted_keys = sorted(fits_headers.keys(),
                        key=lambda h: fits_headers[h]['DATE-OBS'])
   output = {}
   for key in sorted_keys:
-    output[key] = image_hashes[key]
+    output[key] = fits_headers[key]
 
   return output
 
 
-def split_images_by_type(image_hashes, fits_headers):
+def split_images_by_type(fits_headers):
   print('Splitting images by type...')
 
   def image_type(h):
     return fits_headers[h]['IMAGETYP']
 
-  hashes = sorted(image_hashes, key=image_type)
-  files = {k: list(g) for k, g in itertools.groupby(hashes, key=image_type)}
+  sorted_hashes = sorted(fits_headers, key=image_type)
+  files = {
+      k: list(g)
+      for k, g in itertools.groupby(sorted_hashes, key=image_type)
+  }
 
   light_frames = files['Light'] if 'Light' in files else []
   dark_frames = files['Dark'] if 'Dark' in files else []
@@ -737,31 +741,38 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   if context.download:
     download(context.input_dirs[0], context.default_filter)
 
-  # TODO: Plate-solve and compute image hashes of masters, too.
+  # TODO: Maybe just call these "input files" and "output files" or something.
   all_frames = find_fits_files(context.input_dirs)
   masters = find_masters(context.output_dir)
+  print(f'### Found {len(masters)} masters')
 
   image_hashes = image_metadata.compute_image_hashes(
-      all_frames, cache.get('image_hashes', {}))
+      all_frames + masters, cache.get('image_hashes', {}))
+  print(f'### image_hashes contains {len(image_hashes)} hashes')
   cache['image_hashes'] = image_hashes
 
   fits_headers = image_metadata.read_fits_headers(
       image_hashes, cache.get('fits_headers', {}))
   cache['fits_headers'] = fits_headers
 
-  image_hashes = sort_by_observation_date(image_hashes, fits_headers)
+  fits_headers = sort_by_observation_date(fits_headers)
 
   light_frames, dark_frames, bias_frames, flat_frames = split_images_by_type(
-      image_hashes, fits_headers)
+      fits_headers)
 
   # TODO: Make an user option to force this. The plate-solving step should be
   # pulled into the dependency graph.
-  plate_solutions = remove_bad_plate_solutions(cache.get(
-      'plate_solutions', {}))
-  # plate_solutions = cache.get('plate_solutions', {})
+  # plate_solutions = remove_bad_plate_solutions(cache.get(
+  #     'plate_solutions', {}))
+  plate_solutions = cache.get('plate_solutions', {})
 
-  plate_solutions = image_metadata.plate_solve(light_frames + masters,
+  master_hashes = [h for h, f in image_hashes.items() if f in masters]
+  print(f'### len(master_hashes)', len(master_hashes))
+  print(f'### Calling image_metadata.plate_solve on '
+        f'{len(light_frames) + len(master_hashes)} total files')
+  plate_solutions = image_metadata.plate_solve(light_frames + master_hashes,
                                                image_hashes, plate_solutions)
+  print(f'### plate_solutions contains {len(plate_solutions)} solutions')
   cache['plate_solutions'] = plate_solutions
 
   # TODO: Make this more granular.

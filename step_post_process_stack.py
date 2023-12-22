@@ -144,7 +144,7 @@ def post_process_stack(stack, dest_path):
   assert np.min(background) != 0.0 and np.max(background) != 0.0
 
   filename, ext = os.path.splitext(master.filename)
-  graxpert_filename = filename + '_graxpert' + '.xisf'
+  graxpert_filename = f'graxpert_{filename}.xisf'
   print(f'post_process_stack graxpert_filename {graxpert_filename}')
 
   xisf = XISF(master.filename)
@@ -162,7 +162,7 @@ def post_process_stack(stack, dest_path):
              xisf_metadata=file_meta)
 
   filename, ext = os.path.splitext(master.filename)
-  graxpert_background_filename = filename + '_graxpert_background' + '.xisf'
+  graxpert_background_filename = f'graxpert_background_{filename}.xisf'
   XISF.write(graxpert_background_filename,
              background,
              creator_app="AstroFlow",

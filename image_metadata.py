@@ -33,6 +33,10 @@ def compute_image_hashes(all_frames, image_hashes):
       filename = future_to_filename[future]
       result = future.result()
 
+      # TODO: Report these failures to the user in the "library health" panel.
+      if not result:
+        print(f'### Got falsy result {result} for filename {filename}')
+
       # TODO: Do something wiser than just asserting if there are duplicate
       # images.
       if result in image_hashes:
@@ -47,7 +51,10 @@ def compute_image_hashes(all_frames, image_hashes):
 # TODO: This will scale poorly when there are hundreds of thousands of images.
 def read_fits_headers(image_hashes, fits_headers):
   new_image_hashes = list(set(image_hashes.keys()) - set(fits_headers.keys()))
-  new_filenames = [f for h, f in image_hashes.items() if h in new_image_hashes]
+  new_filenames = [
+      f for h, f in image_hashes.items() if h in new_image_hashes and
+      os.path.splitext(f)[-1] in ['.fit', '.fits']
+  ]
 
   print(f'### Reading FITS headers for {len(new_filenames)} files...')
   with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -60,6 +67,7 @@ def read_fits_headers(image_hashes, fits_headers):
       filename = future_to_filename[future]
       result = future.result()
       hash = next(h for h, f in image_hashes.items() if f == filename)
+      assert hash
       fits_headers[hash] = result
 
   return fits_headers
@@ -71,11 +79,11 @@ def read_fits_headers(image_hashes, fits_headers):
 # across the runs, solving the first image from each run, then the second image
 # from each run, etc. This will allow the user to see what's happening, without
 # having to wait to solve the entire library.
-def plate_solve(light_frames, image_hashes, plate_solutions):
-  new_image_hashes = list(set(light_frames) - set(plate_solutions.keys()))
+def plate_solve(images, image_hashes, plate_solutions):
+  new_image_hashes = list(set(images) - set(plate_solutions.keys()))
   new_filenames = [f for h, f in image_hashes.items() if h in new_image_hashes]
 
-  print(f'### Plate solving {len(new_filenames)} files...')
+  print(f'### Plate solving {len(new_filenames)} newly-added files...')
   num_remaining = len(new_filenames)
   with concurrent.futures.ThreadPoolExecutor() as executor:
     future_to_filename = {

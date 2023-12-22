@@ -38,10 +38,12 @@ if __name__ == '__main__':
   # cache['plate_solutions'] = plate_solutions
   # cache['image_hashes'] = image_hashes
 
-  allow_list = [
-      'plate_solutions', 'image_hashes', 'thumbnail_image', 'thumbnail_video',
-      'stack_thumbnail_image', 'stack_thumbnail_video', 'trial_flat_correction'
-  ]
+  # allow_list = [
+  #     'plate_solutions', 'image_hashes', 'thumbnail_image', 'thumbnail_video',
+  #     'stack_thumbnail_image', 'stack_thumbnail_video', 'trial_flat_correction'
+  # ]
+
+  allow_list = ['image_hashes', 'plate_solutions', 'fits_headers']
 
   for k in cache:
     # print('looking at key', k)

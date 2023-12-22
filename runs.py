@@ -34,14 +34,18 @@ def get_runs(frames, fits_headers):
 
 
 def get_frames_for_run(run, frames, fits_headers):
+  # print(f'### get_frames_for_run run {run} frames {frames}')
   start, end = run
-  return [
+  result = [
       f for f in frames if fits_headers[f]['DATE-OBS'] >= start and
       fits_headers[f]['DATE-OBS'] <= end
   ]
+  assert None not in result
+  # print(f'### result {result}')
+  return result
 
 
 def get_frames_for_runs(runs, frames, fits_headers):
-  return sorted(
-      itertools.chain.from_iterable(
-          get_frames_for_run(run, frames, fits_headers) for run in runs))
+  L = [get_frames_for_run(run, frames, fits_headers) for run in runs]
+  print('### L', L)
+  return sorted(itertools.chain.from_iterable(L))

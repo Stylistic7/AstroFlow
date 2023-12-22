@@ -59,8 +59,12 @@ def read_fits(filename, print_header=False):
 
 # @cache.memoize()
 def hash_of_image_data(filename):
-  with pyfits.open(filename) as fits:
-    return xxhash.xxh128(fits[0].data.tobytes()).hexdigest()
+  if os.path.splitext(filename)[-1] in ['.fit', '.fits']:
+    with pyfits.open(filename) as fits:
+      return xxhash.xxh128(fits[0].data.tobytes()).hexdigest()
+  elif os.path.splitext(filename)[-1] == '.xisf':
+    xisf = XISF(filename)
+    return xxhash.xxh128(xisf.read_image(0)).hexdigest()
 
 
 def fits_matches(fits_headers, filename, key, value):
