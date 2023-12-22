@@ -1,5 +1,6 @@
 import os
 import time
+import shutil
 import concurrent.futures
 
 import file_io
@@ -8,7 +9,7 @@ import throughput
 
 
 # TODO: Need to properly handle renamed or moved or deleted files.
-def compute_image_hashes(all_frames, image_hashes):
+def compute_image_hashes(all_frames, image_hashes, quarantine_dir=None):
   # Set the filename to None for any files that no longer exist. Their hashes
   # remain, though, and they can be found again with some user input.
   prev_num_missing_files = sum(1 for f in image_hashes.values() if not f)
@@ -40,8 +41,11 @@ def compute_image_hashes(all_frames, image_hashes):
       # TODO: Do something wiser than just asserting if there are duplicate
       # images.
       if result in image_hashes:
-        print(f'### DUPLICATE IMAGE HASH: {filename} == '
-              f'{image_hashes[result]}')
+        if quarantine_dir:
+          print(f'### Quarantining file {filename} because it is a duplicate')
+          shutil.move(filename,
+                      os.path.join(quarantine_dir, os.path.basename(filename)))
+        continue
 
       image_hashes[result] = filename
 
@@ -79,7 +83,7 @@ def read_fits_headers(image_hashes, fits_headers):
 # across the runs, solving the first image from each run, then the second image
 # from each run, etc. This will allow the user to see what's happening, without
 # having to wait to solve the entire library.
-def plate_solve(images, image_hashes, plate_solutions):
+def plate_solve(images, image_hashes, plate_solutions, quarantine_dir=None):
   new_image_hashes = list(set(images) - set(plate_solutions.keys()))
   new_filenames = [f for h, f in image_hashes.items() if h in new_image_hashes]
 
@@ -94,6 +98,15 @@ def plate_solve(images, image_hashes, plate_solutions):
     for future in concurrent.futures.as_completed(future_to_filename):
       filename = future_to_filename[future]
       result = future.result()
+
+      if not result:
+        if quarantine_dir:
+          print(f'### Quarantining file {filename} because it could not '
+                f'be plate-solved')
+          shutil.move(filename,
+                      os.path.join(quarantine_dir, os.path.basename(filename)))
+        continue
+
       hash = next(h for h, f in image_hashes.items() if f == filename)
       plate_solutions[hash] = result
       num_remaining -= 1

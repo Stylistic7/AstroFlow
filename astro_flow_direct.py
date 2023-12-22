@@ -737,6 +737,11 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   # TODO: This is a wart.
   pix._clear_cache()
 
+  # TODO: Find a more general way to specify the quarantine dir, or at least
+  # ask the user to confirm the dir.
+  quarantine_dir = os.path.join(context.input_dirs[0],
+                                'Bad') if context.quarantine else None
+
   # TODO: Don't just use the first input directory.
   if context.download:
     download(context.input_dirs[0], context.default_filter)
@@ -747,7 +752,7 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   print(f'### Found {len(masters)} masters')
 
   image_hashes = image_metadata.compute_image_hashes(
-      all_frames + masters, cache.get('image_hashes', {}))
+      all_frames + masters, cache.get('image_hashes', {}), quarantine_dir)
   print(f'### image_hashes contains {len(image_hashes)} hashes')
   cache['image_hashes'] = image_hashes
 
@@ -771,7 +776,8 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   print(f'### Calling image_metadata.plate_solve on '
         f'{len(light_frames) + len(master_hashes)} total files')
   plate_solutions = image_metadata.plate_solve(light_frames + master_hashes,
-                                               image_hashes, plate_solutions)
+                                               image_hashes, plate_solutions,
+                                               quarantine_dir)
   print(f'### plate_solutions contains {len(plate_solutions)} solutions')
   cache['plate_solutions'] = plate_solutions
 
@@ -882,8 +888,8 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   #                  for s in stacks.values()}
   # control_modes |= {('stack_subframes', s.id): dg.ControlMode.DISABLED
   #                   for s in stacks.values()}
-  control_modes |= {('stack_subframes', s.id): dg.ControlMode.FORCE
-                    for s in stacks.values()}
+  # control_modes |= {('stack_subframes', s.id): dg.ControlMode.FORCE
+  #                   for s in stacks.values()}
   # control_modes |= {('post_process_stack', s.id): dg.ControlMode.DISABLED
   #                   for s in stacks.values() if 'IC1848' not in s.target}
   # control_modes |= {('post_process_target', t.id): dg.ControlMode.DISABLED
@@ -935,8 +941,8 @@ if __name__ == '__main__':
       '--quarantine',
       dest='quarantine',
       action='store_true',
-      help=('True to quarantine images that cannot be plate solved, or were '
-            'taken during settling periods.'))
+      help=('True to quarantine images that cannot be plate solved, or are '
+            'duplicates.'))
   parser.add_argument('-d',
                       '--download',
                       dest='download',
@@ -957,6 +963,7 @@ if __name__ == '__main__':
 
   context.input_dirs = [os.path.abspath(i) for i in args.input_dirs]
   context.output_dir = os.path.abspath(args.output_dir)
+  context.quarantine = args.quarantine
   context.download = args.download
   context.default_filter = args.default_filter
 
