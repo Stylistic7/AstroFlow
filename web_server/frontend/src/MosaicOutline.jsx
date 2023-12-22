@@ -1,4 +1,6 @@
 import * as React from 'react';
+import { useNavigate, useParams } from "react-router-dom";
+
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import CardMedia from '@mui/material/CardMedia';
@@ -9,6 +11,8 @@ import Polyline from "./Polyline.jsx";
 
 export default function MosaicOutline({stacks, targets, mosaics, mosaic_id}) {
   const mosaic = mosaics[mosaic_id];
+
+  const navigate = useNavigate();
 
   const target_outline_style = {
     stroke: "#5555ee",
@@ -23,7 +27,7 @@ export default function MosaicOutline({stacks, targets, mosaics, mosaic_id}) {
     strokeWidth: 0.15,
     fillOpacity: 0,
     cursor: "pointer",
-    pointerEvents: "visible"
+    pointerEvents: "none"
   };
 
   return (
@@ -35,13 +39,14 @@ export default function MosaicOutline({stacks, targets, mosaics, mosaic_id}) {
         margin: "2px",
         maxWidth: "100vw",
         maxHeight: "80vh",
-    }}
+      }}
     >
       {mosaic.target_ids.map((target_id) =>
         <Polyline
           polyline={targets[target_id].footprint}
           key={target_id}
           style={target_outline_style}
+          handleClick={event => navigate(`/target/${target_id}`)}
         />
       )}
       <Polyline
