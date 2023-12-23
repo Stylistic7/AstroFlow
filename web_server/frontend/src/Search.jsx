@@ -18,6 +18,7 @@ import MoreIcon from '@mui/icons-material/MoreVert';
 import LayersIcon from '@mui/icons-material/Layers';
 import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import lunr from 'lunr';
 
 const Search = styled('div')(({ theme }) => ({
   position: 'relative',
@@ -60,6 +61,41 @@ const StyledInputBase = styled(InputBase)(({ theme }) => ({
 }));
 
 export default function PrimarySearchAppBar({ stacks, targets, mosaics }) {
+  var documents = [{
+    "type": "mosaic",
+    "name": "Horsehead Nebula Mosaic",
+    "text": "Like Solr, but much smaller, and not as bright.",
+    "scale": 1.42,
+  }, {
+    "type": "mosaic",
+    "name": "Orion Nebula Mosaic",
+    "text": "Like Solr, but much smaller, and not as bright.",
+    "scale": 1.43,
+  },{
+    "type": "target",
+    "name": "A Target",
+    "text": "A JavaScript library for building user interfaces.",
+    "scale": 2.0,
+  }, {
+    "type": "stack",
+    "name": "A Stack",
+    "text": "A modern JavaScript utility library delivering modularity, performance & extras.",
+    "scale": 1.44,
+  }]
+
+  var idx = lunr(function () {
+    this.ref('name')
+    this.field('type')
+    this.field('text')
+    this.field('scale')
+
+    documents.forEach(function (doc) {
+      this.add(doc)
+    }, this)
+  })
+
+  console.log(idx.search("+type:target scale:1.4~1"));
+
   const [anchorEl, setAnchorEl] = React.useState(null);
   const [mobileMoreAnchorEl, setMobileMoreAnchorEl] = React.useState(null);
 

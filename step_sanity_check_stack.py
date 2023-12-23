@@ -42,6 +42,10 @@ def run(stack, fits_headers):
     print(f'Stack is not good: it does not have an id')
     return False
 
+  if stack.image_scales_not_all_close:
+    print(f'Stack is not good: image scales were not all close')
+    return False
+
   if not stack.camera_configs:
     print(f'Stack is not good: there are no camera configs')
     return False

@@ -81,6 +81,8 @@ class Stack:
 
   best_light_frame: str = None
 
+  image_scales_not_all_close: bool = False
+
   def __post_init__(self):
     self.light_frames = sorted(self.light_frames)
     self.dark_frames = sorted(self.dark_frames)
@@ -157,8 +159,15 @@ class Stack:
         if f in self.light_frames
     ]
     mean = np.mean(image_scales)
-    assert np.allclose(image_scales, mean, atol=0.01, rtol=0)
     self.image_scale = mean
+
+    # assert np.allclose(
+    #     image_scales, mean, atol=0.01,
+    #     rtol=0), f"image_scales were not all close: {image_scales}"
+    self.image_scales_not_all_close = np.allclose(image_scales,
+                                                  mean,
+                                                  atol=0.01,
+                                                  rtol=0)
 
   def store_width_height(self, fits_headers):
     self.width_pixels = fits_headers[self.light_frames[0]]['NAXIS1']

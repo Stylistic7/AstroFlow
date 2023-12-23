@@ -13,10 +13,14 @@ def compute_image_hashes(all_frames, image_hashes, quarantine_dir=None):
   # Set the filename to None for any files that no longer exist. Their hashes
   # remain, though, and they can be found again with some user input.
   prev_num_missing_files = sum(1 for f in image_hashes.values() if not f)
-  image_hashes = {
-      h: f if os.path.exists(f) else None
-      for h, f in image_hashes.items()
-  }
+
+  def exists_or_none(f):
+    if f and os.path.exists(f):
+      return f
+    else:
+      return None
+
+  image_hashes = {h: exists_or_none(f) for h, f in image_hashes.items()}
   num_missing_files = sum(1 for f in image_hashes.values() if not f)
   print(f'### {num_missing_files - prev_num_missing_files} '
         f'files have gone missing.')
@@ -56,9 +60,10 @@ def compute_image_hashes(all_frames, image_hashes, quarantine_dir=None):
 def read_fits_headers(image_hashes, fits_headers):
   new_image_hashes = list(set(image_hashes.keys()) - set(fits_headers.keys()))
   new_filenames = [
-      f for h, f in image_hashes.items() if h in new_image_hashes and
+      f for h, f in image_hashes.items() if f and h in new_image_hashes and
       os.path.splitext(f)[-1] in ['.fit', '.fits']
   ]
+  assert None not in new_filenames
 
   print(f'### Reading FITS headers for {len(new_filenames)} files...')
   with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -85,7 +90,10 @@ def read_fits_headers(image_hashes, fits_headers):
 # having to wait to solve the entire library.
 def plate_solve(images, image_hashes, plate_solutions, quarantine_dir=None):
   new_image_hashes = list(set(images) - set(plate_solutions.keys()))
-  new_filenames = [f for h, f in image_hashes.items() if h in new_image_hashes]
+  new_filenames = [
+      f for h, f in image_hashes.items() if f and h in new_image_hashes
+  ]
+  assert None not in new_filenames
 
   print(f'### Plate solving {len(new_filenames)} newly-added files...')
   num_remaining = len(new_filenames)
@@ -105,9 +113,10 @@ def plate_solve(images, image_hashes, plate_solutions, quarantine_dir=None):
                 f'be plate-solved')
           shutil.move(filename,
                       os.path.join(quarantine_dir, os.path.basename(filename)))
-        continue
 
-      hash = next(h for h, f in image_hashes.items() if f == filename)
+      hash = next((h for h, f in image_hashes.items() if f == filename), None)
+      assert hash, f"Could not find filename {f} in image_hashes"
+
       plate_solutions[hash] = result
       num_remaining -= 1
       eta = time.strftime(

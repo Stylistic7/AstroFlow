@@ -145,6 +145,8 @@ def _solve_field(filename, arguments):
 # solved. The user can look at it and decide whether to improve the solver's
 # settings, or to throw the images away.
 def solve_field(filename):
+  assert filename
+
   # TODO: These options must be exposed to the user.
   trial_arguments = [
       [

@@ -879,6 +879,15 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
 
   # TODO: This is the place to setup control modes, or to read them from the
   # user interface.
+  control_modes |= {('stack_subframes', s.id): dg.ControlMode.DISABLED
+                    for s in stacks.values()}
+  control_modes |= {('post_process_stack', s.id): dg.ControlMode.DISABLED
+                    for s in stacks.values()}
+  control_modes |= {('post_process_target', s.id): dg.ControlMode.DISABLED
+                    for s in stacks.values()}
+  control_modes |= {('post_process_mosaic', s.id): dg.ControlMode.DISABLED
+                    for s in stacks.values()}
+
   # control_modes |= {('stack_subframes', '298749827439823'): ControlMode.FORCE}
   # control_modes |= {('stack_subframes', stack.id): dg.ControlMode.DISABLED
   #                  for stack in stacks if stack.status == Status.NOT_READY}
@@ -902,8 +911,8 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   #                   for m in mosaics.values() if 'IC1848' not in m.name}
   # control_modes |= {('post_process_stack', m.id): dg.ControlMode.FORCE
   #                   for m in stacks.values()}
-  control_modes |= {('post_process_mosaic', m.id): dg.ControlMode.FORCE
-                    for m in mosaics.values() if 'IC410' in m.name}
+  # control_modes |= {('post_process_mosaic', m.id): dg.ControlMode.FORCE
+  #                   for m in mosaics.values() if 'IC410' in m.name}
 
   # print('control_modes are', control_modes)
 

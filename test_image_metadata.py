@@ -118,6 +118,37 @@ class TestPlateSolving(unittest.TestCase):
       self.assertEqual(sorted(plate_solutions.keys()),
                        sorted(image_hashes.keys()))
 
+  def test_deleted_files(self):
+    with tempfile.TemporaryDirectory() as tmp_dir:
+      make_test_frames(project_dir=tmp_dir, number=20)
+
+      filenames = glob.glob(f'{tmp_dir}/**/*.fit', recursive=True)
+      image_hashes = image_metadata.compute_image_hashes(filenames, {})
+      self.assertEqual(len(image_hashes), 20)
+
+      plate_solutions = image_metadata.plate_solve(image_hashes.keys(),
+                                                   image_hashes, {})
+      self.assertEqual(sorted(plate_solutions.keys()),
+                       sorted(image_hashes.keys()))
+
+      random.shuffle(filenames)
+      for filename in filenames[:5]:
+        os.remove(filename)
+
+      # After deleting five files, all of the image hashes should still be in
+      # the `image_hashes` dict, but their filenames should be set to None.
+      filenames = glob.glob(f'{tmp_dir}/**/*.fit', recursive=True)
+      image_hashes = image_metadata.compute_image_hashes(
+          filenames, image_hashes)
+      self.assertEqual(len(image_hashes), 20)
+      self.assertEqual(sum(1 for f in image_hashes.values() if f), 15)
+
+      # The `plate_solutions` dict should be unchanged.
+      plate_solutions = image_metadata.plate_solve(
+          image_hashes.keys(), image_hashes, plate_solutions)
+      self.assertEqual(sorted(plate_solutions.keys()),
+                       sorted(image_hashes.keys()))
+
 
 if __name__ == '__main__':
   unittest.main()
