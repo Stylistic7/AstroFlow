@@ -118,10 +118,5 @@ def plate_solve(images, image_hashes, plate_solutions, quarantine_dir=None):
       assert hash, f"Could not find filename {f} in image_hashes"
 
       plate_solutions[hash] = result
-      num_remaining -= 1
-      eta = time.strftime(
-          "%H:%M:%S",
-          time.gmtime(throughput.estimate_time('plate_solve', num_remaining)))
-      print(f'### ETA {eta}')
 
   return plate_solutions

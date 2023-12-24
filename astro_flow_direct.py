@@ -39,6 +39,8 @@ import step_mosaic
 import stacking
 import image_metadata
 import image_handling
+import round_robin
+import throughput
 
 logger = structlog.get_logger()
 log = logger
@@ -731,55 +733,17 @@ def post_process_mosaic(mosaic, targets, stacks, output_dir, upstream_tasks):
   return inner
 
 
-def main(context, default_control_mode=dg.ControlMode.AUTO):
-  log.info('Starting AstroFlow')
-
-  # TODO: This is a wart.
-  pix._clear_cache()
-
-  # TODO: Find a more general way to specify the quarantine dir, or at least
-  # ask the user to confirm the dir.
-  quarantine_dir = os.path.join(context.input_dirs[0],
-                                'Bad') if context.quarantine else None
-
-  # TODO: Don't just use the first input directory.
-  if context.download:
-    download(context.input_dirs[0], context.default_filter)
-
-  # TODO: Maybe just call these "input files" and "output files" or something.
-  all_frames = find_fits_files(context.input_dirs)
-  masters = find_masters(context.output_dir)
-  print(f'### Found {len(masters)} masters')
-
-  image_hashes = image_metadata.compute_image_hashes(
-      all_frames + masters, cache.get('image_hashes', {}), quarantine_dir)
-  print(f'### image_hashes contains {len(image_hashes)} hashes')
-  cache['image_hashes'] = image_hashes
-
-  fits_headers = image_metadata.read_fits_headers(
-      image_hashes, cache.get('fits_headers', {}))
-  cache['fits_headers'] = fits_headers
-
-  fits_headers = sort_by_observation_date(fits_headers)
-
-  light_frames, dark_frames, bias_frames, flat_frames = split_images_by_type(
-      fits_headers)
-
-  # TODO: Make an user option to force this. The plate-solving step should be
-  # pulled into the dependency graph.
-  # plate_solutions = remove_bad_plate_solutions(cache.get(
-  #     'plate_solutions', {}))
-  plate_solutions = cache.get('plate_solutions', {})
-
-  master_hashes = [h for h, f in image_hashes.items() if f in masters]
-  print(f'### len(master_hashes)', len(master_hashes))
-  print(f'### Calling image_metadata.plate_solve on '
-        f'{len(light_frames) + len(master_hashes)} total files')
-  plate_solutions = image_metadata.plate_solve(light_frames + master_hashes,
-                                               image_hashes, plate_solutions,
-                                               quarantine_dir)
-  print(f'### plate_solutions contains {len(plate_solutions)} solutions')
-  cache['plate_solutions'] = plate_solutions
+def plate_solve_and_group_chunk_of_images(chunk,
+                                          image_hashes,
+                                          plate_solutions,
+                                          fits_headers,
+                                          light_frames,
+                                          dark_frames,
+                                          bias_frames,
+                                          flat_frames,
+                                          quarantine_dir=None):
+  plate_solutions = image_metadata.plate_solve(chunk, image_hashes,
+                                               plate_solutions, quarantine_dir)
 
   # TODO: Make this more granular.
   # light_frames = remove_frames_during_mount_movements(light_frames)
@@ -788,10 +752,6 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
 
   # Remove light frames that don't have good plate solutions.
   light_frames = list(set(light_frames).intersection(plate_solutions.keys()))
-
-  print('light_frames[0:10]', light_frames[0:10])
-  print('plate_solutions.keys()[0:10]', list(plate_solutions.keys())[0:10])
-  print('fits_headers.keys()[0:10]', list(fits_headers.keys())[0:10])
 
   spatial_components = identify_spatial_components(
       light_frames, plate_solutions, fits_headers)
@@ -809,9 +769,6 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   stacks = associate_flat_frames(stacks, flat_frames, fits_headers)
   stacks = compute_stack_metadata(stacks, fits_headers, plate_solutions)
   stacks = normalize_stacks(stacks)
-
-  cartesian_product_lights_and_flats(stacks, flat_frames, image_hashes,
-                                     fits_headers, plate_solutions)
 
   make_image_thumbnails(stacks, image_hashes, plate_solutions, fits_headers)
 
@@ -835,6 +792,87 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
     print(f'Target {target}')
 
   mosaics = group_targets_into_mosaics(targets)
+
+  # These are for the web server to read.
+  cache['plate_solutions'] = plate_solutions
+  cache['stacks'] = stacks
+  cache['targets'] = targets
+  cache['mosaics'] = mosaics
+
+  return plate_solutions, stacks, targets, mosaics
+
+
+def main(context, default_control_mode=dg.ControlMode.AUTO):
+  log.info('Starting AstroFlow')
+
+  # TODO: This is a wart.
+  pix._clear_cache()
+
+  # TODO: Find a more general way to specify the quarantine dir, or at least
+  # ask the user to confirm the dir.
+  quarantine_dir = os.path.join(context.input_dirs[0],
+                                'Bad') if context.quarantine else None
+
+  # TODO: Don't just use the first input directory.
+  if context.download:
+    download(context.input_dirs[0], context.default_filter)
+
+  # TODO: Maybe just call these "input files" and "output files" or something.
+  all_frames = find_fits_files(context.input_dirs)
+
+  masters = find_masters(context.output_dir)
+  print(f'Found {len(masters)} masters')
+
+  image_hashes = image_metadata.compute_image_hashes(
+      all_frames + masters, cache.get('image_hashes', {}), quarantine_dir)
+  cache['image_hashes'] = image_hashes
+
+  fits_headers = image_metadata.read_fits_headers(
+      image_hashes, cache.get('fits_headers', {}))
+  cache['fits_headers'] = fits_headers
+
+  fits_headers = sort_by_observation_date(fits_headers)
+
+  light_frames, dark_frames, bias_frames, flat_frames = split_images_by_type(
+      fits_headers)
+
+  master_hashes = [h for h, f in image_hashes.items() if f in masters]
+
+  # TODO: Make an user option to force this. The plate-solving step should be
+  # pulled into the dependency graph.
+  # plate_solutions = remove_bad_plate_solutions(cache.get(
+  #     'plate_solutions', {}))
+  plate_solutions = cache.get('plate_solutions', {})
+
+  # TODO: Each group of 100 ends up having a bunch of stragglers. Limit this
+  # round of plate-solving to the fastest options, and do the rest later.
+  #
+  # Another (maybe better) option is to put all the plate-solving futures into
+  # a queue, but just run the grouping after every N images are done.
+  #
+  # TODO: Delete the stack thumbnail images and videos as they are superceded
+  # by bigger stacks.
+  unsolved = list(
+      set(light_frames + master_hashes) - set(plate_solutions.keys()))
+
+  chunks = round_robin.chunked(round_robin.round_robin_by_directory(unsolved,
+                                                                    cluster=5),
+                               size=100)
+  num_remaining = len(unsolved)
+  for chunk in chunks:
+    chunk = list(chunk)
+    plate_solutions, stacks, targets, mosaics = plate_solve_and_group_chunk_of_images(
+        chunk, image_hashes, plate_solutions, fits_headers, light_frames,
+        dark_frames, bias_frames, flat_frames, quarantine_dir)
+
+    num_remaining -= len(chunk)
+    eta = time.strftime(
+        "%H:%M:%S",
+        time.gmtime(throughput.estimate_time('plate_solve', num_remaining)))
+    print(f'### ETA {eta}')
+
+  cartesian_product_lights_and_flats(stacks, flat_frames, image_hashes,
+                                     fits_headers, plate_solutions)
 
   graph.default_control_mode = default_control_mode
 
