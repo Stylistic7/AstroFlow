@@ -9,6 +9,7 @@ import StackTable from "./StackTable.jsx";
 import MosaicTable from "./MosaicTable.jsx";
 import MosaicPanel from "./MosaicPanel.jsx";
 import TargetPanel from "./TargetPanel.jsx";
+import StackPanel from "./StackPanel.jsx";
 import DisambiguationPanel from "./DisambiguationPanel.jsx";
 import FlatCorrectionPanel from "./FlatCorrectionPanel.jsx";
 import logo from './logo.svg';
@@ -118,6 +119,11 @@ function App() {
             />
             <Route exact path="/target/:target_id" element={
               dataIsAvailable && <TargetPanel
+                stacks={stacks} targets={targets} mosaics={mosaics}
+              />}
+            />
+            <Route exact path="/stack/:stack_id" element={
+              dataIsAvailable && <StackPanel
                 stacks={stacks} targets={targets} mosaics={mosaics}
               />}
             />

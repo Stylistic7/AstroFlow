@@ -51,10 +51,7 @@ export default function StackThumbnail({stack, width, handleClick}) {
 	    		top: 0,
 	    		left: 0,
 	    	}}
-	    	onClick={(event) => {
-			    handleClick(stack.id);
-			    event.stopPropagation();
-			  }}
+	    	onClick={handleClick}
 	    />}
 	    {show_video && <video
 		    	loop
@@ -68,6 +65,7 @@ export default function StackThumbnail({stack, width, handleClick}) {
 		    		top: 0,
 		    		left: 0,
 		    	}}
+		    	onClick={handleClick}
 	    	>
 	        <source src={`/stack_thumbnail_video/${stack.id}`} type="video/mp4" />
 	        Your browser does not support the video tag.
@@ -80,6 +78,7 @@ export default function StackThumbnail({stack, width, handleClick}) {
 	      	top: "0.5em",
 	      	fontSize: "12px"
 	      }}
+	      onClick={handleClick}
 	    >
 	      <span style={{color: "#aaa"}}>
 	      	{stack.width_pixels} x {stack.height_pixels}

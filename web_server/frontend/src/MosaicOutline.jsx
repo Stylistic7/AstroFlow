@@ -38,7 +38,7 @@ export default function MosaicOutline({stacks, targets, mosaics, mosaic_id}) {
         pointerEvents: "auto",
         margin: "2px",
         maxWidth: "100vw",
-        maxHeight: "80vh",
+        maxHeight: "25vh",
       }}
     >
       {mosaic.target_ids.map((target_id) =>

@@ -38,8 +38,8 @@ export default function DisambiguationPanel({ stacks, targets, mosaics }) {
 			<div style={{
 		    	display: "grid",
 		    	gridTemplateColumns: "repeat(4, 1fr)",
-		    	gridColumnGap: "2em",
-		    	border: "1px solid red",
+		    	gridColumnGap: "1em",
+		    	gridRowGap: "1em",
 		  }}>
 				{params.items.split(";").map(item =>
 					{

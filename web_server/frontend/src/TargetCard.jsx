@@ -11,18 +11,33 @@ export default function TargetCard({stacks, targets, mosaics, target_id}) {
   const target = targets[target_id];
   const navigate = useNavigate();
 
+  let num_columns = 1;
+
+  if (target.stack_ids.length > 4) {
+    num_columns = 3;
+  } else if (target.stack_ids.length > 1) {
+    num_columns = 2;
+  }
+
   return (
-    <Card sx={{ maxWidth: 345 }}>
+    <Card>
       <CardActionArea
         onClick={event => navigate(`/target/${target_id}`)}
       >
-        <CardMedia
-          component="img"
-          height="140"
-          image="/static/images/cards/contemplative-reptile.jpg"
-          alt="green iguana"
-        />
         <CardContent>
+          <div style={{
+              display: "grid",
+              gridTemplateColumns: `repeat(${num_columns}, 1fr)`,
+              gridColumnGap: "0.5em",
+              gridRowGap: "0.5em",
+          }}>
+            {
+              target.stack_ids.map(stack_id => <img
+                src={`/stack_thumbnail_image/${stack_id}`}
+                style={{width: "100%"}}
+              />)
+            }
+          </div> 
           <Typography gutterBottom variant="h5" component="div">
             Target {target.name}
           </Typography>

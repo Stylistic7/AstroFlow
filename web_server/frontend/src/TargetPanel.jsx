@@ -13,6 +13,8 @@ export default function TargetPanel({ stacks, targets, mosaics }) {
 	const params = useParams();
 	const target = targets[params.target_id];
 
+	const navigate = useNavigate();
+
 	// TODO: Don't hardcode the font color; use the theme.
 	const fontColor = "#aaa";
 
@@ -51,6 +53,7 @@ export default function TargetPanel({ stacks, targets, mosaics }) {
 	  			<StackThumbnail
 	  				id={"StackThumbnail_" + stack_id}
 	  				stack={stacks[stack_id]}
+	  				handleClick={event => navigate(`/stack/${stack_id}`)}
 	  			/>
 	      ))}
 	     </div>

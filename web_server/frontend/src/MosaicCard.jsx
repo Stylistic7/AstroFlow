@@ -15,7 +15,7 @@ export default function MosaicCard({stacks, targets, mosaics, mosaic_id}) {
   const navigate = useNavigate();
 
   return (
-    <Card sx={{ maxWidth: 345 }}>
+    <Card>
       <CardActionArea
         onClick={event => navigate(`/mosaic/${mosaic_id}`)}
       >
