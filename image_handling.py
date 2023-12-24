@@ -133,7 +133,8 @@ def make_and_cache_stack_thumbnails(stack,
     light_frames_by_stars = sorted(stack.light_frames,
                                    key=lambda f: plate_solutions[f].num_stars,
                                    reverse=True)
-    thumbnail_image = cache[('thumbnail_image', light_frames_by_stars[0])]
+    thumbnail_image = array_to_png(
+        cache[('thumbnail_image', light_frames_by_stars[0])])
 
     for i, hash in enumerate(light_frames_by_stars):
       im = cache[('thumbnail_image', hash)]
