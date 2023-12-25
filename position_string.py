@@ -8,7 +8,7 @@ def ra_dec_string(ra, dec):
   ra = round_to_nearest_tenth(ra)
   dec = round_to_nearest_tenth(dec)
 
-  return f'RA_{ra:.1f}_DEC_{dec:.1f}'
+  return f'RA_{ra:.2f}_DEC_{dec:.2f}'
 
 
 def canonical_target_string(position):

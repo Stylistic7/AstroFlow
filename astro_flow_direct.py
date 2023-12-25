@@ -423,6 +423,7 @@ def associate_bias_frames(stacks, bias_frames, fits_headers):
 def cartesian_product_lights_and_flats(stacks, flat_frames, image_hashes,
                                        fits_headers, plate_solutions):
   print('### Entering cartesian_product_lights_and_flats')
+  print('### stacks', stacks)
 
   flats_for_camera = group_by_fn(flat_frames,
                                  lambda f: fits_headers[f]['INSTRUME'])
@@ -733,18 +734,14 @@ def post_process_mosaic(mosaic, targets, stacks, output_dir, upstream_tasks):
   return inner
 
 
-def plate_solve_and_group_chunk_of_images(chunk,
-                                          image_hashes,
-                                          plate_solutions,
-                                          fits_headers,
-                                          light_frames,
-                                          dark_frames,
-                                          bias_frames,
-                                          flat_frames,
-                                          quarantine_dir=None):
-  plate_solutions = image_metadata.plate_solve(chunk, image_hashes,
-                                               plate_solutions, quarantine_dir)
-
+def group_images(image_hashes,
+                 plate_solutions,
+                 fits_headers,
+                 light_frames,
+                 dark_frames,
+                 bias_frames,
+                 flat_frames,
+                 quarantine_dir=None):
   # TODO: Make this more granular.
   # light_frames = remove_frames_during_mount_movements(light_frames)
 
@@ -793,13 +790,7 @@ def plate_solve_and_group_chunk_of_images(chunk,
 
   mosaics = group_targets_into_mosaics(targets)
 
-  # These are for the web server to read.
-  cache['plate_solutions'] = plate_solutions
-  cache['stacks'] = stacks
-  cache['targets'] = targets
-  cache['mosaics'] = mosaics
-
-  return plate_solutions, stacks, targets, mosaics
+  return stacks, targets, mosaics
 
 
 def main(context, default_control_mode=dg.ControlMode.AUTO):
@@ -852,27 +843,48 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   #
   # TODO: Delete the stack thumbnail images and videos as they are superceded
   # by bigger stacks.
+  #
+  # TODO: Don't quarantine masters, even if they can't be plate-solved. I really
+  # need to figure out why the plate-solving fails for them.
   unsolved = list(
       set(light_frames + master_hashes) - set(plate_solutions.keys()))
 
-  chunks = round_robin.chunked(round_robin.round_robin_by_directory(unsolved,
-                                                                    cluster=5),
-                               size=100)
   num_remaining = len(unsolved)
-  for chunk in chunks:
-    chunk = list(chunk)
-    plate_solutions, stacks, targets, mosaics = plate_solve_and_group_chunk_of_images(
-        chunk, image_hashes, plate_solutions, fits_headers, light_frames,
-        dark_frames, bias_frames, flat_frames, quarantine_dir)
 
-    num_remaining -= len(chunk)
+  # TODO: Make sure exceptions thrown in here bubble up.
+  def callback(plate_solutions):
+    nonlocal num_remaining
+
+    cache['plate_solutions'] = plate_solutions
+    stacks, targets, mosaics = group_images(
+        image_hashes, plate_solutions, fits_headers, light_frames, dark_frames,
+        bias_frames, flat_frames, quarantine_dir)
+
+    # TODO: Re-enable this.
+    # cartesian_product_lights_and_flats(stacks, flat_frames, image_hashes,
+    #                                    fits_headers, plate_solutions)
+
+    # These are for the web server to read.
+    cache['stacks'] = stacks
+    cache['targets'] = targets
+    cache['mosaics'] = mosaics
+
+    num_remaining -= 100
     eta = time.strftime(
         "%H:%M:%S",
         time.gmtime(throughput.estimate_time('plate_solve', num_remaining)))
     print(f'### ETA {eta}')
 
-  cartesian_product_lights_and_flats(stacks, flat_frames, image_hashes,
-                                     fits_headers, plate_solutions)
+  plate_solutions = image_metadata.plate_solve(unsolved,
+                                               image_hashes,
+                                               plate_solutions,
+                                               quarantine_dir,
+                                               callback_number=100,
+                                               callback=callback)
+
+  stacks = cache['stacks']
+  targets = cache['targets']
+  mosaics = cache['mosaics']
 
   graph.default_control_mode = default_control_mode
 

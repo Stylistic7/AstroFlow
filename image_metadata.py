@@ -6,6 +6,7 @@ import concurrent.futures
 import file_io
 import plate_solving
 import throughput
+import round_robin
 
 
 # TODO: Need to properly handle renamed or moved or deleted files.
@@ -88,15 +89,23 @@ def read_fits_headers(image_hashes, fits_headers):
 # across the runs, solving the first image from each run, then the second image
 # from each run, etc. This will allow the user to see what's happening, without
 # having to wait to solve the entire library.
-def plate_solve(images, image_hashes, plate_solutions, quarantine_dir=None):
+def plate_solve(images,
+                image_hashes,
+                plate_solutions,
+                quarantine_dir=None,
+                callback_number=None,
+                callback=None):
   new_image_hashes = list(set(images) - set(plate_solutions.keys()))
   new_filenames = [
       f for h, f in image_hashes.items() if f and h in new_image_hashes
   ]
   assert None not in new_filenames
-
   print(f'### Plate solving {len(new_filenames)} newly-added files...')
-  num_remaining = len(new_filenames)
+
+  new_filenames = round_robin.round_robin_by_directory(new_filenames,
+                                                       cluster=5)
+
+  num_solved = 0
   with concurrent.futures.ThreadPoolExecutor() as executor:
     future_to_filename = {
         executor.submit(plate_solving.solve_field, filename): filename
@@ -117,6 +126,16 @@ def plate_solve(images, image_hashes, plate_solutions, quarantine_dir=None):
       hash = next((h for h, f in image_hashes.items() if f == filename), None)
       assert hash, f"Could not find filename {f} in image_hashes"
 
+      num_solved += 1
       plate_solutions[hash] = result
+
+      if callback:
+        assert callback_number
+
+      if callback and num_solved and num_solved % callback_number == 0:
+        callback(plate_solutions)
+
+    if callback:
+      callback(plate_solutions)
 
   return plate_solutions

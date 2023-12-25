@@ -46,6 +46,6 @@ def get_frames_for_run(run, frames, fits_headers):
 
 
 def get_frames_for_runs(runs, frames, fits_headers):
-  L = [get_frames_for_run(run, frames, fits_headers) for run in runs]
-  print('### L', L)
-  return sorted(itertools.chain.from_iterable(L))
+  return sorted(
+      itertools.chain.from_iterable(
+          get_frames_for_run(run, frames, fits_headers) for run in runs))

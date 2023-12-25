@@ -64,6 +64,13 @@ def find_components(light_frames,
     plate_solution = plate_solutions[target[0]]
     return position_string.canonical_target_string(plate_solution.center)
 
+  def get_complex_name(hash):
+    plate_solution = plate_solutions[hash]
+    name = position_string.canonical_target_string(plate_solution.center)
+    ra_dec = position_string.ra_dec_string(*plate_solution.center)
+    square_degrees = Polygon(plate_solution.footprint).area
+    return f'{name}_{ra_dec}_{square_degrees:0.2f}_sq_deg'
+
   targets = [(get_name(t), t) for t in targets]
   print('### Before renaming')
   for name, hashes in targets:
@@ -75,7 +82,8 @@ def find_components(light_frames,
   for name, hashes in targets:
     center = plate_solutions[hashes[0]].center
     if target_string_counts[name] > 1:
-      new_name = f'{name}_{position_string.ra_dec_string(*center)}'
+      new_name = get_complex_name(hashes[0])
+
       # TODO: This can still collide in some cases, resulting in lost stacks.
       print(f'### Target {name} will be renamed {new_name}')
       assert new_name not in output_targets
