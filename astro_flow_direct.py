@@ -14,6 +14,7 @@ import pytz
 import numpy as np
 import structlog
 import operator
+from shapely.geometry import Polygon
 
 import clustering
 import pix
@@ -281,13 +282,6 @@ def remove_bad_plate_solutions(plate_solutions):
       for h, p in plate_solutions.items()
       if type(p) is plate_solving.PlateSolution
   }
-
-
-def identify_spatial_components(light_frames, plate_solutions, fits_headers):
-  print('Identifying spatial components...')
-  spatial_components = spatial_association.find_components(
-      light_frames, plate_solutions, fits_headers)
-  return [(k, v) for k, v in spatial_components.items()]
 
 
 def identify_stacks(spatial_components, plate_solutions, fits_headers):
@@ -643,15 +637,12 @@ def make_stack_thumbnails_videos(stacks, image_hashes, plate_solutions,
                       image_hashes, plate_solutions)
 
 
-# TODO: Make sure targets only include stacks of the same resolution? Or maybe
-# that's restrictive, and we should only use FOV?
 def group_stacks_into_targets(stacks):
-  stacks_for_target = defaultdict(list)
-  for filter in ['L', 'R', 'G', 'B', 'S', 'H', 'O']:
-    for stack in [s for s in stacks.values() if s.filter == filter]:
-      stacks_for_target[stack.target].append(stack.id)
+  footprints = {id: Polygon(s.footprint) for id, s in stacks.items()}
+  targets = spatial_association.find_groups_by_footprint(
+      [s.id for s in stacks.values()], footprints, min_component_members=1)
 
-  targets = [Target(name=k, stack_ids=v) for k, v in stacks_for_target.items()]
+  targets = [Target(name=stacks[t[0]].target, stack_ids=t) for t in targets]
   [t.store_metadata(stacks) for t in targets]
   return {t.id: t for t in targets}
 
@@ -750,15 +741,10 @@ def group_images(image_hashes,
   # Remove light frames that don't have good plate solutions.
   light_frames = list(set(light_frames).intersection(plate_solutions.keys()))
 
-  spatial_components = identify_spatial_components(
+  spatial_components = spatial_association.find_components(
       light_frames, plate_solutions, fits_headers)
-  # assert_all_light_frames_in_spatial_components(light_frames,
-  #                                               spatial_components)
 
   stacks = identify_stacks(spatial_components, plate_solutions, fits_headers)
-  # assert_all_light_frames_in_stacks(light_frames, stacks)
-
-  # measure_stacks()
 
   stacks = get_camera_configs(stacks, fits_headers)
   stacks = associate_dark_frames(stacks, dark_frames, fits_headers)
@@ -771,18 +757,11 @@ def group_images(image_hashes,
 
   stacks = sanity_check_stacks(stacks, fits_headers)
 
-  # At this point, the stacks should be fingerprinted. If a stack with the same
-  # fingerprint is stored in the cache, we'll load it and use it. Otherwise,
-  # the stack will be considered new.
+  # TODO: Eliminate this shape change.
   stacks = {stack.id: stack for stack in stacks}
-
-  # TODO: Figure out why this one's footprint went nuts.
-  stacks = {k: v for k, v in stacks.items() if 'NGC7822' not in v.target}
 
   make_stack_thumbnails_videos(stacks, image_hashes, plate_solutions,
                                fits_headers)
-
-  # stacks = load_stacks_context(stacks)
 
   targets = group_stacks_into_targets(stacks)
   for target in targets:

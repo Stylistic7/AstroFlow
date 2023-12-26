@@ -57,9 +57,14 @@ class Target:
         s.footprint_polygon() for s in stacks.values()
         if s.id in self.stack_ids
     ]
-    footprint = functools.reduce(Polygon.intersection, footprints,
-                                 footprints[0])
-    self.footprint = list(footprint.exterior.coords)
+
+    if len(footprints) == 1:
+      self.footprint = list(footprints[0].exterior.coords)
+    else:
+      footprint = functools.reduce(Polygon.intersection, footprints,
+                                   footprints[0])
+      assert footprint.area
+      self.footprint = list(footprint.exterior.coords)
 
   def store_footprint_galactic(self):
     self.footprint_galactic = []

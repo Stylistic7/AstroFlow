@@ -24,12 +24,44 @@ def iou(a, b):
   return a.intersection(b).area / a.union(b).area
 
 
+# TODO: This function accepts a list of ids, and a dictionary from id to Polygon.
+# It could be simplified to accept a list of any objects that have an id and
+# a footprint property.
+#
+# TODO: Add tests.
+def find_groups_by_footprint(ids,
+                             footprints,
+                             min_component_members=MIN_COMPONENT_MEMBERS):
+  groups = []
+  last_printed_percent_done = 0
+  for i, id in enumerate(ids):
+    found = False
+    footprint = footprints[id]
+    for group in groups:
+      if iou(footprint, footprints[group[0]]) > 0.6:
+        group.append(id)
+        found = True
+        break
+
+    if not found:
+      groups.append([id])
+
+    percent_done = 100.0 * i / len(ids)
+    percent_done = 10.0 * round(percent_done / 10.0)
+    if percent_done > last_printed_percent_done:
+      print(f'Finding groups is {percent_done:.0f}% done.')
+      last_printed_percent_done = percent_done
+
+  groups = [t for t in groups if len(t) >= min_component_members]
+
+  return groups
+
+
 def find_components(light_frames,
                     plate_solutions,
                     fits_headers,
                     min_component_members=MIN_COMPONENT_MEMBERS):
   hashes = sorted(light_frames, key=lambda h: fits_headers[h]['DATE-OBS'])
-  print('sorted hashes', hashes[0:10])
 
   # TODO: This is probably expensive, and gets repeated in many places. Maybe
   # it should be done just once, and the footprints stored in Polygon format.
@@ -37,28 +69,7 @@ def find_components(light_frames,
   # the list of exterior coords from the Polygon.
   footprints = {h: Polygon(plate_solutions[h].footprint) for h in hashes}
 
-  targets = []
-  last_printed_percent_done = 0
-  for i, hash in enumerate(hashes):
-    found = False
-    footprint = footprints[hash]
-    for target in targets:
-      # if all(iou(footprint, footprints[f]) > 0.6 for f in target):
-      if iou(footprint, footprints[target[0]]) > 0.6:
-        target.append(hash)
-        found = True
-        break
-
-    if not found:
-      targets.append([hash])
-
-    percent_done = 100.0 * i / len(hashes)
-    percent_done = 10.0 * round(percent_done / 10.0)
-    if percent_done > last_printed_percent_done:
-      print(f'Finding components is {percent_done:.0f}% done.')
-      last_printed_percent_done = percent_done
-
-  targets = [t for t in targets if len(t) >= min_component_members]
+  targets = find_groups_by_footprint(hashes, footprints, min_component_members)
 
   def get_name(target):
     plate_solution = plate_solutions[target[0]]
@@ -71,32 +82,9 @@ def find_components(light_frames,
     square_degrees = Polygon(plate_solution.footprint).area
     return f'{name}_{ra_dec}_{square_degrees:0.2f}_sq_deg'
 
-  targets = [(get_name(t), t) for t in targets]
-  print('### Before renaming')
-  for name, hashes in targets:
-    print(f'### Target {name} has {len(hashes)} files')
+  targets = [(get_name(t), list(sorted(t))) for t in targets]
 
-  target_string_counts = Counter(name for name, _ in targets)
-
-  output_targets = {}
-  for name, hashes in targets:
-    center = plate_solutions[hashes[0]].center
-    if target_string_counts[name] > 1:
-      new_name = get_complex_name(hashes[0])
-
-      # TODO: This can still collide in some cases, resulting in lost stacks.
-      print(f'### Target {name} will be renamed {new_name}')
-      assert new_name not in output_targets
-      output_targets[new_name] = list(sorted(hashes))
-    else:
-      output_targets[name] = list(sorted(hashes))
-
-  assert len(output_targets) == len(targets)
-
-  for name, hashes in output_targets.items():
-    print(f'Target {name} has {len(hashes)} files')
-
-  return output_targets
+  return targets
 
 
 if __name__ == '__main__':
