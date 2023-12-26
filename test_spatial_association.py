@@ -24,105 +24,105 @@ class TestSpatialAssociation(unittest.TestCase):
     groups = spatial_association.find_components(light_frames, plate_solutions,
                                                  fits_headers)
 
-    expected_groups = {'IC360': list(sorted(plate_solutions.keys()))}
+    expected_groups = [('IC360', list(sorted(plate_solutions.keys())))]
     self.assertEqual(groups, expected_groups)
 
   def test_two_perfect_groups_one_hour_ra(self):
     f_foo, p_foo = make_test_frames(ra=300,
                                     dec=40,
                                     prefix='foo',
-                                    number=10,
+                                    number=3,
                                     dither=0)
     f_bar, p_bar = make_test_frames(ra=315,
                                     dec=40,
                                     prefix='bar',
-                                    number=10,
+                                    number=3,
                                     dither=0)
     fits_headers = f_foo | f_bar
     plate_solutions = p_foo | p_bar
 
     light_frames = list(plate_solutions.keys())
-    groups = spatial_association.find_components(light_frames, plate_solutions,
-                                                 fits_headers)
+    groups = spatial_association.find_components(light_frames,
+                                                 plate_solutions,
+                                                 fits_headers,
+                                                 min_component_members=3)
 
-    expected_groups = ['IC1318_RA_300.0_DEC_40.0', 'IC1318_RA_315.0_DEC_40.0']
-    self.assertCountEqual(groups.keys(), expected_groups)
-
-    self.assertTrue(
-        all(f.startswith('foo') for f in groups['IC1318_RA_300.0_DEC_40.0']))
-    self.assertTrue(
-        all(f.startswith('bar') for f in groups['IC1318_RA_315.0_DEC_40.0']))
+    expected_groups = [('IC1318', [
+        'foo_00000.fit', 'foo_00001.fit', 'foo_00002.fit'
+    ]), ('IC1318', ['bar_00000.fit', 'bar_00001.fit', 'bar_00002.fit'])]
+    self.assertEqual(groups, expected_groups)
 
   def test_two_perfect_groups_one_degree_dec(self):
     f_foo, p_foo = make_test_frames(ra=300,
                                     dec=39,
                                     prefix='foo',
-                                    number=10,
+                                    number=3,
                                     dither=0)
     f_bar, p_bar = make_test_frames(ra=300,
                                     dec=40,
                                     prefix='bar',
-                                    number=10,
+                                    number=3,
                                     dither=0)
     fits_headers = f_foo | f_bar
     plate_solutions = p_foo | p_bar
 
     light_frames = list(plate_solutions.keys())
-    groups = spatial_association.find_components(light_frames, plate_solutions,
-                                                 fits_headers)
+    groups = spatial_association.find_components(light_frames,
+                                                 plate_solutions,
+                                                 fits_headers,
+                                                 min_component_members=3)
 
-    expected_groups = ['IC1318_RA_300.0_DEC_39.0', 'IC1318_RA_300.0_DEC_40.0']
-    self.assertCountEqual(groups.keys(), expected_groups)
-
-    self.assertTrue(
-        all(f.startswith('foo') for f in groups['IC1318_RA_300.0_DEC_39.0']))
-    self.assertTrue(
-        all(f.startswith('bar') for f in groups['IC1318_RA_300.0_DEC_40.0']))
+    expected_groups = [('IC1318', [
+        'foo_00000.fit', 'foo_00001.fit', 'foo_00002.fit'
+    ]), ('IC1318', ['bar_00000.fit', 'bar_00001.fit', 'bar_00002.fit'])]
+    self.assertEqual(groups, expected_groups)
 
   def test_two_perfect_groups_half_degree_dec(self):
     f_foo, p_foo = make_test_frames(ra=300,
                                     dec=39.5,
                                     prefix='foo',
-                                    number=10,
+                                    number=3,
                                     dither=0,
                                     rotation_angle_deg=0)
     f_bar, p_bar = make_test_frames(ra=300,
                                     dec=40,
                                     prefix='bar',
-                                    number=10,
+                                    number=3,
                                     dither=0,
                                     rotation_angle_deg=0)
     fits_headers = f_foo | f_bar
     plate_solutions = p_foo | p_bar
 
     light_frames = list(plate_solutions.keys())
-    groups = spatial_association.find_components(light_frames, plate_solutions,
-                                                 fits_headers)
+    groups = spatial_association.find_components(light_frames,
+                                                 plate_solutions,
+                                                 fits_headers,
+                                                 min_component_members=3)
 
-    expected_groups = ['IC1318_RA_300.0_DEC_39.5', 'IC1318_RA_300.0_DEC_40.0']
-    self.assertCountEqual(groups.keys(), expected_groups)
-
-    self.assertTrue(
-        all(f.startswith('foo') for f in groups['IC1318_RA_300.0_DEC_39.5']))
-    self.assertTrue(
-        all(f.startswith('bar') for f in groups['IC1318_RA_300.0_DEC_40.0']))
+    expected_groups = [('IC1318', [
+        'foo_00000.fit', 'foo_00001.fit', 'foo_00002.fit'
+    ]), ('IC1318', ['bar_00000.fit', 'bar_00001.fit', 'bar_00002.fit'])]
+    self.assertEqual(groups, expected_groups)
 
   def test_two_noisy_groups(self):
-    f_foo, p_foo = make_test_frames(ra=307, dec=40, prefix='foo', number=10)
-    f_bar, p_bar = make_test_frames(ra=315, dec=45, prefix='bar', number=10)
+    f_foo, p_foo = make_test_frames(ra=307, dec=40, prefix='foo', number=3)
+    f_bar, p_bar = make_test_frames(ra=315, dec=45, prefix='bar', number=3)
     fits_headers = f_foo | f_bar
     plate_solutions = p_foo | p_bar
 
     light_frames = list(plate_solutions.keys())
-    groups = spatial_association.find_components(light_frames, plate_solutions,
-                                                 fits_headers)
+    groups = spatial_association.find_components(light_frames,
+                                                 plate_solutions,
+                                                 fits_headers,
+                                                 min_component_members=3)
 
-    expected_groups = ['North America nebula', 'IC1318']
-    self.assertCountEqual(groups.keys(), expected_groups)
-
-    self.assertTrue(all(f.startswith('foo') for f in groups['IC1318']))
-    self.assertTrue(
-        all(f.startswith('bar') for f in groups['North America nebula']))
+    expected_groups = [('IC1318', [
+        'foo_00000.fit', 'foo_00001.fit', 'foo_00002.fit'
+    ]),
+                       ('North America nebula', [
+                           'bar_00000.fit', 'bar_00001.fit', 'bar_00002.fit'
+                       ])]
+    self.assertEqual(groups, expected_groups)
 
   def test_sadr_pano(self):
     print('Entering test_sadr_pano')
@@ -146,12 +146,7 @@ class TestSpatialAssociation(unittest.TestCase):
                                                  plate_solutions,
                                                  fits_headers,
                                                  min_component_members=1)
-    expected_groups = {
-        'IC1311': ['Pane 0'],
-        'IC1318_RA_301.8_DEC_38.3': ['Pane 1'],
-        'IC1318_RA_304.3_DEC_41.4': ['Pane 2'],
-        'IC1318_RA_304.4_DEC_38.4': ['Pane 3'],
-        'IC1318_RA_307.1_DEC_41.4': ['Pane 4'],
-        'IC1318_RA_307.0_DEC_38.4': ['Pane 5'],
-    }
-    self.assertCountEqual(groups.keys(), expected_groups)
+    expected_groups = [('IC1311', ['Pane 0']), ('IC1318', ['Pane 1']),
+                       ('IC1318', ['Pane 2']), ('IC1318', ['Pane 3']),
+                       ('IC1318', ['Pane 4']), ('IC1318', ['Pane 5'])]
+    self.assertEqual(groups, expected_groups)
