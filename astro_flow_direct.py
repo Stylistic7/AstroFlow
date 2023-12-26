@@ -276,11 +276,11 @@ def remove_frames_during_mount_movements(light_frames):
 # TODO: Report unsolvable images and missing images to the user. Include the
 # cause of failure whenever possible, and provide a solution (e.g. increasing
 # timeout on slow computers).
-def remove_bad_plate_solutions(plate_solutions):
+def remove_bad_images(image_hashes, plate_solutions):
   return {
       h: p
-      for h, p in plate_solutions.items()
-      if type(p) is plate_solving.PlateSolution
+      for h, p in plate_solutions.items() if h in image_hashes and
+      image_hashes[h] and type(p) is plate_solving.PlateSolution
   }
 
 
@@ -736,7 +736,7 @@ def group_images(image_hashes,
   # TODO: Make this more granular.
   # light_frames = remove_frames_during_mount_movements(light_frames)
 
-  plate_solutions = remove_bad_plate_solutions(plate_solutions)
+  plate_solutions = remove_bad_images(image_hashes, plate_solutions)
 
   # Remove light frames that don't have good plate solutions.
   light_frames = list(set(light_frames).intersection(plate_solutions.keys()))
@@ -810,7 +810,7 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
 
   # TODO: Make an user option to force this. The plate-solving step should be
   # pulled into the dependency graph.
-  # plate_solutions = remove_bad_plate_solutions(cache.get(
+  # plate_solutions = remove_bad_images(image_hashes, cache.get(
   #     'plate_solutions', {}))
   plate_solutions = cache.get('plate_solutions', {})
 

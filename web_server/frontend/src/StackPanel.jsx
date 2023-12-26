@@ -4,6 +4,13 @@ import { useNavigate, useParams } from "react-router-dom";
 import LayersIcon from '@mui/icons-material/Layers';
 import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import DeleteIcon from '@mui/icons-material/Delete';
+import Button from '@mui/material/Button';
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogContentText from '@mui/material/DialogContentText';
+import DialogTitle from '@mui/material/DialogTitle';
 
 import Breadcrumbs from '@mui/material/Breadcrumbs';
 import Link from '@mui/material/Link';
@@ -11,6 +18,65 @@ import Typography from '@mui/material/Typography';
 
 import TargetPanel from "./TargetPanel.jsx";
 import "./Starmap.css";
+
+function QuarantineStackDialog({ stack_id }) {
+  const [open, setOpen] = React.useState(false);
+
+  const handleClickOpen = () => {
+    setOpen(true);
+  };
+
+  const handleDisagree = () => {
+    setOpen(false);
+  };
+
+  const handleAgree = () => {
+  	console.log('Quarantining stack id ' + stack_id);
+  	fetch(`/quaratine_stack/${stack_id}`);
+  	setOpen(false);
+  };
+
+  const handleClose = () => {
+  	setOpen(false);
+  };
+
+  return (
+    <React.Fragment>
+      <Typography color="text.primary" margin="0.5em" onClick={handleClickOpen}>
+      	<DeleteIcon sx={{ marginRight: '0.5em' }} onClick={handleClickOpen}/> Delete light frames
+      </Typography>
+      <Dialog
+        open={open}
+        onClose={handleClose}
+        aria-labelledby="alert-dialog-title"
+        aria-describedby="alert-dialog-description"
+      >
+        <DialogTitle id="alert-dialog-title">
+          {"Quarantine this stack's light frames?"}
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText id="alert-dialog-description">
+            <p>
+	            This will quaratine 5 light frames, but will not affect dark, bias,
+	            or flat frames.
+	          </p>
+          	<p>
+	            The quaratined frames will still be on your disk, and you are
+	            responsible for deleting them, if you desire.
+	          </p>
+	          <p>
+            	This action will eliminate this stack from AstroFlow.
+            </p>
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleDisagree}>Disagree</Button>
+          <Button onClick={handleAgree} autoFocus>Agree</Button>
+        </DialogActions>
+      </Dialog>
+    </React.Fragment>
+  );
+}
 
 // TODO: The StackPanel should contain the following information:
 // 
@@ -39,8 +105,17 @@ export default function StackPanel({ stacks, targets, mosaics }) {
 	const params = useParams();
 	const stack_id = params.stack_id;
 	const stack = stacks[stack_id];
-
 	const plotRef = useRef();
+
+	const [open, setOpen] = React.useState(false);
+
+	const handleClickOpen = () => {
+	  setOpen(true);
+	};
+
+	const handleClose = () => {
+	  setOpen(false);
+	};
 
 	// TODO: Don't hardcode the font color; use the theme.
 	const fontColor = "#aaa";
@@ -91,6 +166,25 @@ export default function StackPanel({ stacks, targets, mosaics }) {
 	    </Breadcrumbs>
 
 			<div style={{margin: "2px"}}>
+				<div>
+					<Typography color="text.primary" margin="0.5em">
+						Stack contains {stack.light_frames.length} light frames
+					</Typography>
+					<Typography color="text.primary" margin="0.5em">
+						Stack contains {stack.dark_frames.length} dark frames
+					</Typography>
+					<Typography color="text.primary" margin="0.5em">
+						Stack contains {stack.bias_frames.length} bias frames
+					</Typography>
+					<Typography color="text.primary" margin="0.5em">
+						Stack contains {stack.flat_frames.length} flat frames
+					</Typography>
+		      <QuarantineStackDialog
+		      	stack_id={stack_id}
+		        open={open}
+		        onClose={handleClose}
+		      />
+				</div>
 				<video width="30%" loop autoPlay muted style={{float: "left"}}>
 				  <source src={stack_thumbnail_video_url} type="video/mp4" />
 				  Your browser does not support the video tag.

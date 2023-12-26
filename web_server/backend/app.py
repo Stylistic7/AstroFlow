@@ -3,6 +3,7 @@ import sys
 
 sys.path.append('../..')
 
+import os
 import io
 import numpy as np
 import flask
@@ -305,6 +306,24 @@ def delete_target(target_id):
 
   resp = jsonify(success=True)
   return resp
+
+
+@app.route('/quaratine_stack/<stack_id>')
+def quarantine_stack(stack_id):
+  image_hashes = cache['image_hashes']
+  stack = cache['stacks'][stack_id]
+
+  for hash in stack.light_frames:
+    filename = image_hashes[hash]
+    if filename:
+      print(f'### Quarantining file {filename}')
+      shutil.move(filename,
+                  os.path.join(quarantine_dir, os.path.basename(filename)))
+    else:
+      print(f'### Hash {hash} is not found on disk')
+      resp = jsonify(success=False)
+
+  resp = jsonify(success=True)
 
 
 def run_astroflow_repeatedly():
