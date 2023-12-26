@@ -51,6 +51,8 @@ def identify_overlapping_targets(targets):
            num_grouped_targets=num_grouped_targets,
            num_ungrouped_targets=num_ungrouped_targets)
 
+  mosaics = [m for m in mosaics if len(m) > 1]
+
   return mosaics
 
 
