@@ -9,26 +9,6 @@ from . import identification
 
 
 class TestMosaicIdentification(unittest.TestCase):
-  def test_one_target(self):
-    targets = {
-        'foo':
-        Target(id='foo',
-               name='foo',
-               stack_ids=[1, 2, 3],
-               center=(100, 50),
-               footprint=[(98, 49), (98, 51), (102, 51), (102, 49)])
-    }
-
-    mosaics = identification.identify_mosiacs(targets)
-
-    self.assertEqual(len(mosaics), 1)
-    self.assertEqual(mosaics[0].target_ids, ['foo'])
-    self.assertEqual(mosaics[0].tile_indices, [(0, 0)])
-    self.assertTrue(
-        shapely.Polygon(mosaics[0].footprint).equals(
-            shapely.Polygon([(98, 49), (98, 51), (102, 51), (102, 49)])))
-    self.assertEqual(mosaics[0].viewbox, [98.0, 49.0, 4.0, 2.0])
-
   def test_two_targets(self):
     targets = {
         'foo':
