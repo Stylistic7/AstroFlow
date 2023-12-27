@@ -39,9 +39,9 @@ def mosaic_by_coordinates(panel,
         f'{objsize.get_deep_size(mosaic_dimensions) / 1024.0 / 1024.0:.3f} MB')
 
   projected_image = np.zeros(
-      (mosaic_dimensions.height, mosaic_dimensions.width))
+      (mosaic_dimensions.width, mosaic_dimensions.height))
   projection_map = np.zeros(
-      (mosaic_dimensions.height, mosaic_dimensions.width))
+      (mosaic_dimensions.width, mosaic_dimensions.height))
 
   # TODO: Must also support XISF files here.
   ext = os.path.splitext(panel.image_filename)[-1]
@@ -129,8 +129,8 @@ def mosaic_by_coordinates(panel,
     if value == -np.inf:
       continue
 
-    projected_image[dy, dx] = value
-    projection_map[dy, dx] = 128
+    projected_image[dx, dy] = value
+    projection_map[dx, dy] = 128
 
   print(f'Finished projecting image {panel.image_filename}')
   assert np.count_nonzero(projection_map), "projection failed"
