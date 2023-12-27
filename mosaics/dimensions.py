@@ -4,14 +4,9 @@ from . import classes
 from . import projection
 
 
-def get_mosaic_dimensions(panels, plate_solutions):
-  print(f'### get_mosaic_dimensions, {len(panels)} panels have footprints:')
-  assert len(panels) == len(plate_solutions)
-  for p in plate_solutions:
-    print(f'### {p.footprint}')
-
+def get_mosaic_dimensions(panels):
   min_ra, min_dec, ra_span, dec_span = projection.compute_viewbox(
-      plate_solutions)
+      [p.plate_solution for p in panels])
   print(f'### min_ra {min_ra} ra_span {ra_span} '
         f'min_dec {min_dec} dec_span {dec_span}')
 

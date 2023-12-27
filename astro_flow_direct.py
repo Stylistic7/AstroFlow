@@ -728,8 +728,12 @@ def make_mosaic_preview(image_hashes, plate_solutions, mosaic, targets,
   @graph.add()
   def inner():
     print(f'### Making preview for mosaic {mosaic}!')
-    return step_mosaic.make_mosaic_preview(image_hashes, plate_solutions,
-                                           mosaic, targets, stacks)
+    return step_mosaic.process_mosaic(image_hashes,
+                                      plate_solutions,
+                                      mosaic,
+                                      targets,
+                                      stacks,
+                                      preview=True)
 
   inner.id = ('make_mosaic_preview', mosaic.id)
   return inner

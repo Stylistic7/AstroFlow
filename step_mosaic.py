@@ -44,35 +44,6 @@ from mosaics import projection
 from mosaics import ransac
 from mosaics import trim_mosaic_tile
 
-# TODO: Clean up and improve this code.
-#
-# Split into multiple files:
-#
-# - One file for identifying overlapping targets
-# - One file for finding regular-grid mosaics
-# - One file for image selection
-# - One file for projecting and trimming panels
-# - One file for making pairs and merge ops
-# - One top-level entrypoint file
-
-# def _make_integral(L):
-#   L -= np.min(L)
-
-#   def mae(L):
-#     return np.mean(np.abs(L - np.round(L)))
-
-#   divisors = list(range(1, int(np.ceil(np.max(L))) + 1))
-
-#   if not divisors:
-#     return [], np.inf
-
-#   maes = [mae(L / d) for d in divisors]
-
-#   index = np.argmin(maes)
-#   integral = np.round(L / divisors[index]).astype(np.int32)
-
-#   return integral, maes[index]
-
 
 def _error(center, basis_vectors):
   center_in_basis = np.dot(center, basis_vectors)
@@ -99,159 +70,97 @@ def show_image(data):
   plt.show()
 
 
-def process_mosaic_per_filter(mosaic, targets, stacks, filter, output_dir):
-  panels = []
-  print(f'### process_mosaic_per_filter mosaic name {mosaic.name}')
-  for target_id, tile_indices in zip(mosaic.target_ids, mosaic.tile_indices):
-    target = targets[target_id]
-    stack = next((s for s in stacks.values()
-                  if s.filter == filter and s.id in target.stack_ids), None)
+def _get_preview_panel_for_stack(stack, image_hashes, plate_solutions):
+  light_frames_by_stars = sorted(stack.light_frames,
+                                 key=lambda f: plate_solutions[f].num_stars,
+                                 reverse=True)
+  best_light_frame = light_frames_by_stars[0]
+  filename = image_hashes[best_light_frame]
+  plate_solution = plate_solutions[best_light_frame]
 
-    if stack is None:
-      print(f'### Could not find stack for target {target.name} '
-            f'and filter {filter}')
-      return None
-
-    print(f'### Found stack {stack}')
-
-    # prev_result = get_prev_result_object('post_process_stack', stack.id)
-    # if prev_result is None:
-    #   print(f'### Could not get prev result for stack {stack.id}')
-    #   return None
-    # filename = prev_result['output_filename']
-
-    # TODO: Add universal mechanism for getting the current highest-quality
-    # preview of a stack.
-    #
-    # Ideas for this:
-    #
-    # - Simply update ('stack_preview_image', foo) whenever a better-quality
-    #   version of the image is generated organically. The final stacked master
-    #   will organically replace the autostretched single frame. Downside:
-    #   preview is not part of the dependency graph, so I can't automatically run
-    #   downstream tasks that depend on the preview.
-    #
-    # - Make a preview dependency graph that is sort of a "peer" to the main
-    #   full-resolution graph. The full-resolution graph has stacking in it,
-    #   while the preview graph just has single autostretch images, etc. The
-    #   graph can dictate parameters, like output resolution, for the mosaic
-    #   stitching.
-    obj = get_prev_result_object('stack_subframes', stack.id)
-    if not obj or not obj.filename:
-      print(f'### Could not get stack master for {stack}: {obj}')
-      return None
-
-    print(f'### Got {obj.filename} for {stack} with id {stack.id}')
-    panels.append(
-        classes.Panel(image_filename=obj.filename, tile_indices=tile_indices))
-
-  print(f'### Mosaic contains {len(panels)} panels with filenames:')
-  for p in panels:
-    print(f'###   {p.image_filename}')
-
-  with Pool() as p:
-    plate_solutions = p.map(plate_solving.solve_field,
-                            (p.image_filename for p in panels))
-
-  print(f'### Got {len(plate_solutions)} plate solutions')
-
-  mosaic_dimensions = dimensions.get_mosaic_dimensions(panels, plate_solutions)
-
-  print(f'### Running mosaic_by_coordinates in parallel...')
-  with Pool() as p:
-    panels = p.starmap(projection.mosaic_by_coordinates,
-                       ((p, s, mosaic_dimensions, output_dir)
-                        for p, s in zip(panels, plate_solutions)))
-  print(f'### mosaic_by_coordinates is done')
-
-  output_image = merge_ops.merge_mosaic(panels, output_dir)
-
-  merged_mosaic = os.path.join(output_dir, f"merged_mosaic_{filter}.fits")
-  print(f'Copying final mosaic image to {merged_mosaic}')
-  shutil.copy(output_image[0], merged_mosaic)
-
-  return OutputFile(merged_mosaic)
+  return classes.Panel(image_filename=filename, plate_solution=plate_solution)
 
 
-def make_mosaic_preview_per_filter(image_hashes, plate_solutions, mosaic,
-                                   targets, stacks, filter):
-  with tempfile.TemporaryDirectory() as tmp_dir:
+def _get_master_panel_for_stack(stack):
+  obj = get_prev_result_object('stack_subframes', stack.id)
+  if not obj or not obj.filename:
+    print(f'### Could not get stack master for {stack}: {obj}')
+    return None
+
+  print(f'### Got {obj.filename} for {stack} with id {stack.id}')
+
+  plate_solution = plate_solving.solve_field(obj.filename)
+
+  return classes.Panel(image_filename=obj.filename,
+                       plate_solution=plate_solution)
+
+
+def _get_panel_for_stack(stack, image_hashes, plate_solutions, preview):
+  if preview:
+    return _get_preview_panel_for_stack(stack, image_hashes, plate_solutions)
+  else:
+    return _get_master_panel_for_stack(stack)
+
+
+def process_mosaic_per_filter(image_hashes, plate_solutions, mosaic, targets,
+                              stacks, filter, preview, output_dir):
+  if output_dir:
+    cm = contextlib.nullcontext(output_dir)
+  else:
+    cm = tempfile.TemporaryDirectory()
+
+  with cm as output_dir:
     panels = []
-    plate_solutions_list = []
-    print(f'### make_mosaic_preview_per_filter mosaic name {mosaic.name}')
+    print(f'### process_mosaic_per_filter mosaic name {mosaic.name}')
     for target_id, tile_indices in zip(mosaic.target_ids, mosaic.tile_indices):
       target = targets[target_id]
       stack = next((s for s in stacks.values()
                     if s.filter == filter and s.id in target.stack_ids), None)
-
-      if stack is None:
-        print(f'### Could not find stack for target {target.name} '
-              f'and filter {filter}')
+      if not stack:
         return None
 
-      light_frames_by_stars = sorted(
-          stack.light_frames,
-          key=lambda f: plate_solutions[f].num_stars,
-          reverse=True)
-      best_light_frame = light_frames_by_stars[0]
-      plate_solutions_list.append(plate_solutions[best_light_frame])
-      print(f'### Found stack {stack} best_light_frame {best_light_frame}')
-
-      filename = image_hashes[best_light_frame]
-      print(f'### Got {filename} for {stack} with id {stack.id}')
-      panels.append(
-          classes.Panel(image_filename=filename, tile_indices=tile_indices))
+      panel = _get_panel_for_stack(stack, image_hashes, plate_solutions,
+                                   preview)
+      panel.tile_indices = tile_indices
+      panels.append(panel)
 
     print(f'### Mosaic contains {len(panels)} panels with filenames:')
     for p in panels:
       print(f'###   {p.image_filename}')
 
-    # TODO: Need to figure out some preview size heuristics.
-    mosaic_dimensions = dimensions.get_mosaic_dimensions(
-        panels, plate_solutions_list)
+    mosaic_dimensions = dimensions.get_mosaic_dimensions(panels)
 
-    # TODO: Cache these.
     print(f'### Running mosaic_by_coordinates in parallel...')
     with Pool() as p:
       panels = p.starmap(projection.mosaic_by_coordinates,
-                         ((p, s, mosaic_dimensions, tmp_dir, True)
-                          for p, s in zip(panels, plate_solutions_list)))
+                         ((p, mosaic_dimensions, output_dir) for p in panels))
     print(f'### mosaic_by_coordinates is done')
 
-    # TODO: Need to merge the panels together here.
-    print('### After mosaic_by_coordinates, panel image_filenames are')
-    for p in panels:
-      print('### ', p.image_filename)
+    if preview:
+      output_image = file_io.read_fits_image(panels[0].image_filename)
+      for p in panels[1:]:
+        image = file_io.read_fits_image(p.image_filename)
+        output_image = np.maximum(output_image, image)
 
-    output_image = file_io.read_fits_image(panels[0].image_filename)
-    for p in panels[1:]:
-      image = file_io.read_fits_image(p.image_filename)
-      output_image = np.maximum(output_image, image)
+      return image_handling.array_to_png(output_image)
+    else:
+      # TODO: This returns a different type than the branch above.
+      output_image = merge_ops.merge_mosaic(panels, output_dir)
 
-    return image_handling.array_to_png(output_image)
+      merged_mosaic = os.path.join(output_dir, f"merged_mosaic_{filter}.fits")
+      print(f'Copying final mosaic image to {merged_mosaic}')
+      shutil.copy(output_image[0], merged_mosaic)
 
-
-def make_mosaic_preview(image_hashes, plate_solutions, mosaic, targets,
-                        stacks):
-  if len(mosaic.target_ids) < 2:
-    print(f'No processing to do for mosaic with only '
-          f'{len(mosaic.target_ids)} target ids')
-    return (dg.Ran.DID_NOT_RUN, (dg.Result.NEVER_RUN, list()))
-
-  outputs = {}
-  for filter in ['H', 'S', 'O', 'L', 'R', 'G', 'B']:
-    image = make_mosaic_preview_per_filter(image_hashes, plate_solutions,
-                                           mosaic, targets, stacks, filter)
-    if image:
-      outputs[filter] = image
-
-  # TODO: Figure out how to use the prev obj system, instead of writing these
-  # directly into the cache.
-  cache[('mosaic_preview_image', mosaic.id)] = outputs
-  return (dg.Ran.RAN, (dg.Result.SUCCESS, outputs))
+      return OutputFile(merged_mosaic)
 
 
-def process_mosaic(mosaic, targets, stacks, output_dir):
+def process_mosaic(image_hashes,
+                   plate_solutions,
+                   mosaic,
+                   targets,
+                   stacks,
+                   preview=False,
+                   output_dir=None):
   print(f'### Entering process_mosaic for mosaic {mosaic} preview {preview}')
 
   proc = psutil.Process()
@@ -262,16 +171,16 @@ def process_mosaic(mosaic, targets, stacks, output_dir):
           f'{len(mosaic.target_ids)} target ids')
     return (dg.Ran.DID_NOT_RUN, (dg.Result.NEVER_RUN, list()))
 
-  output_dir = os.path.join(output_dir, 'Mosaics', mosaic.name)
-  os.makedirs(output_dir, exist_ok=True)
+  if output_dir:
+    output_dir = os.path.join(output_dir, 'Mosaics', mosaic.name)
+    os.makedirs(output_dir, exist_ok=True)
 
   # TODO: Don't hardcode these filters. Find the set from the images
   # themselves.
-  #
-  # TODO: Store the filter along with the output filename.
   outputs = []
   for filter in ['H', 'S', 'O', 'L', 'R', 'G', 'B']:
-    result = process_mosaic_per_filter(mosaic, targets, stacks, filter,
+    result = process_mosaic_per_filter(image_hashes, plate_solutions, mosaic,
+                                       targets, stacks, filter, preview,
                                        output_dir)
     if result:
       outputs.append(dict(filter=filter, result=result))

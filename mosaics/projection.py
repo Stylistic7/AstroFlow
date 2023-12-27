@@ -26,17 +26,10 @@ def compute_viewbox(plate_solutions):
 
 # TODO: Provide some feedback on progress.
 def mosaic_by_coordinates(panel,
-                          plate_solution,
                           mosaic_dimensions,
                           output_dir,
                           autostretch=False):
   print(f'### Projecting image {panel.image_filename}')
-  print(f'### panel has size '
-        f'{objsize.get_deep_size(panel) / 1024.0 / 1024.0:.3f} MB')
-  print(f'### plate_solution has size '
-        f'{objsize.get_deep_size(plate_solution) / 1024.0 / 1024.0:.3f} MB')
-  print(f'### mosaic_dimensions has size '
-        f'{objsize.get_deep_size(mosaic_dimensions) / 1024.0 / 1024.0:.3f} MB')
 
   projected_image = np.zeros(
       (mosaic_dimensions.width, mosaic_dimensions.height))
@@ -62,12 +55,12 @@ def mosaic_by_coordinates(panel,
         f'{mosaic_dimensions.height} x {mosaic_dimensions.width}')
 
   print('### FITS header is')
-  for k, v in plate_solution.header.items():
+  for k, v in panel.plate_solution.header.items():
     if 'COMMENT' in k: continue
     if 'HISTORY' in k: continue
     print(f'### {k}: {v}')
 
-  wcs = WCS(plate_solution.header)
+  wcs = WCS(panel.plate_solution.header)
   # assert wcs.has_distortion
 
   source_height, source_width = image.shape
@@ -81,7 +74,7 @@ def mosaic_by_coordinates(panel,
   delta_ra = mosaic_dimensions.ra_resolution
   delta_dec = mosaic_dimensions.dec_resolution
 
-  min_ra, min_dec, ra_span, dec_span = compute_viewbox([plate_solution])
+  min_ra, min_dec, ra_span, dec_span = compute_viewbox([panel.plate_solution])
   print(f'### This panel has min_ra {min_ra} ra_span {ra_span} '
         f'min_dec {min_dec} dec_span {dec_span}')
   max_ra = min_ra + ra_span
