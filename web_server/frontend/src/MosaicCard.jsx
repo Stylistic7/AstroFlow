@@ -20,17 +20,38 @@ export default function MosaicCard({stacks, targets, mosaics, mosaic_id}) {
       <CardActionArea
         onClick={event => navigate(`/mosaic/${mosaic_id}`)}
       >
-        <div id="mosaicPanel" style={{margin: "2em"}}>
+        <div id="mosaicPanel"
+          style={{
+            display: "block",
+            margin: "1em",
+            position: "relative",
+        }}>
+          <img
+            src={`/mosaic_preview_image/${mosaic_id}`}
+            style={{
+              height: "100%",
+              maxWidth: "100%",
+              display: "block",
+              marginLeft: "auto",
+              marginRight: "auto",
+            }}
+          />
           <MosaicOutline
             stacks={stacks}
             targets={targets}
             mosaics={mosaics}
             mosaic_id={mosaic_id}
-          />
-          <img
-            src={`/mosaic_preview_image/${mosaic_id}`}
             style={{
-              maxWidth: "100%",
+              display: "block",
+              position: "absolute",
+              left: 0,
+              top: 0,
+              width: "100%",
+              height: "100%",
+              marginLeft: "auto",
+              marginRight: "auto",
+              maxWidth: "auto",
+              maxHeight: "auto",
             }}
           />
         </div>
