@@ -63,6 +63,11 @@ export default function MosaicCard({stacks, targets, mosaics, mosaic_id}) {
             Image scale:&nbsp;
             {stacks[targets[mosaic.target_ids[0]].stack_ids[0]].image_scale.toFixed(2)}"/px
           </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Resolution:&nbsp;
+            {stacks[targets[mosaic.target_ids[0]].stack_ids[0]].width_pixels}&nbsp;x&nbsp;
+            {stacks[targets[mosaic.target_ids[0]].stack_ids[0]].height_pixels}&nbsp;pixels
+          </Typography>
         </CardContent>
       </CardActionArea>
     </Card>
