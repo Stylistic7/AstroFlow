@@ -41,6 +41,9 @@ function QuarantineStackDialog({ stack_id }) {
   };
 
   // TODO: Put the correct number of light frames into the text of the dialog.
+  //
+  // TODO: Show a spinner until the quarantine and re-run is done, then maybe
+  // go up a level in breadcrumbs.
   return (
     <React.Fragment>
       <Typography color="text.primary" margin="0.5em" onClick={handleClickOpen}>

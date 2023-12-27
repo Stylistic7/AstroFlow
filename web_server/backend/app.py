@@ -233,6 +233,29 @@ def mosaic_image(mosaic_id, filter):
   return flask.send_file(buffer, mimetype='image/png')
 
 
+@app.route('/mosaic_preview_image_for_filter/<mosaic_id>/<filter>')
+def mosaic_preview_image_for_filter(mosaic_id, filter):
+  result = cache[('mosaic_preview_image', mosaic_id)]
+  print('### mosaic has filters', result.keys())
+  buffer = io.BytesIO()
+  buffer.write(result[filter])
+  buffer.seek(0)
+  return flask.send_file(buffer, mimetype='image/png')
+
+
+@app.route('/mosaic_preview_image/<mosaic_id>')
+def mosaic_preview_image(mosaic_id):
+  result = cache[('mosaic_preview_image', mosaic_id)]
+  for filter in ['H', 'L', 'S', 'O', 'G', 'R', 'B']:
+    if filter not in result:
+      continue
+
+    buffer = io.BytesIO()
+    buffer.write(result[filter])
+    buffer.seek(0)
+    return flask.send_file(buffer, mimetype='image/png')
+
+
 @app.route('/stack_master_image/<stack_id>')
 def stack_master_image(stack_id):
   # stack = next(s for s in cache['stacks'] if s.id == stack_id)

@@ -14,6 +14,7 @@ export default function MosaicCard({stacks, targets, mosaics, mosaic_id}) {
   const mosaic = mosaics[mosaic_id];
   const navigate = useNavigate();
 
+  // TODO: Figure out how to show just the "best" channel in the Card.
   return (
     <Card>
       <CardActionArea
@@ -25,6 +26,12 @@ export default function MosaicCard({stacks, targets, mosaics, mosaic_id}) {
             targets={targets}
             mosaics={mosaics}
             mosaic_id={mosaic_id}
+          />
+          <img
+            src={`/mosaic_preview_image/${mosaic_id}`}
+            style={{
+              maxWidth: "100%",
+            }}
           />
         </div>
         <CardContent>
