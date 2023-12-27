@@ -1,6 +1,8 @@
 import numpy as np
 from astropy.coordinates import SkyCoord
 
+# TODO: Unify this API with the Mercator pojection.
+
 
 def _solve_theta(phi):
   theta = 0
