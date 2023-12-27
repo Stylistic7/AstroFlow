@@ -173,8 +173,86 @@ def process_mosaic_per_filter(mosaic, targets, stacks, filter, output_dir):
   return OutputFile(merged_mosaic)
 
 
+def make_mosaic_preview_per_filter(image_hashes, plate_solutions, mosaic,
+                                   targets, stacks, filter):
+  with tempfile.TemporaryDirectory() as tmp_dir:
+    panels = []
+    plate_solutions_list = []
+    print(f'### make_mosaic_preview_per_filter mosaic name {mosaic.name}')
+    for target_id, tile_indices in zip(mosaic.target_ids, mosaic.tile_indices):
+      target = targets[target_id]
+      stack = next((s for s in stacks.values()
+                    if s.filter == filter and s.id in target.stack_ids), None)
+
+      if stack is None:
+        print(f'### Could not find stack for target {target.name} '
+              f'and filter {filter}')
+        return None
+
+      light_frames_by_stars = sorted(
+          stack.light_frames,
+          key=lambda f: plate_solutions[f].num_stars,
+          reverse=True)
+      best_light_frame = light_frames_by_stars[0]
+      plate_solutions_list.append(plate_solutions[best_light_frame])
+      print(f'### Found stack {stack} best_light_frame {best_light_frame}')
+
+      filename = image_hashes[best_light_frame]
+      print(f'### Got {filename} for {stack} with id {stack.id}')
+      panels.append(
+          classes.Panel(image_filename=filename, tile_indices=tile_indices))
+
+    print(f'### Mosaic contains {len(panels)} panels with filenames:')
+    for p in panels:
+      print(f'###   {p.image_filename}')
+
+    # TODO: Need to figure out some preview size heuristics.
+    mosaic_dimensions = dimensions.get_mosaic_dimensions(
+        panels, plate_solutions_list)
+
+    # TODO: Cache these.
+    print(f'### Running mosaic_by_coordinates in parallel...')
+    with Pool() as p:
+      panels = p.starmap(projection.mosaic_by_coordinates,
+                         ((p, s, mosaic_dimensions, tmp_dir, True)
+                          for p, s in zip(panels, plate_solutions_list)))
+    print(f'### mosaic_by_coordinates is done')
+
+    # TODO: Need to merge the panels together here.
+    print('### After mosaic_by_coordinates, panel image_filenames are')
+    for p in panels:
+      print('### ', p.image_filename)
+
+    output_image = file_io.read_fits_image(panels[0].image_filename)
+    for p in panels[1:]:
+      image = file_io.read_fits_image(p.image_filename)
+      output_image = np.maximum(output_image, image)
+
+    return image_handling.array_to_png(output_image)
+
+
+def make_mosaic_preview(image_hashes, plate_solutions, mosaic, targets,
+                        stacks):
+  if len(mosaic.target_ids) < 2:
+    print(f'No processing to do for mosaic with only '
+          f'{len(mosaic.target_ids)} target ids')
+    return (dg.Ran.DID_NOT_RUN, (dg.Result.NEVER_RUN, list()))
+
+  outputs = {}
+  for filter in ['H', 'S', 'O', 'L', 'R', 'G', 'B']:
+    image = make_mosaic_preview_per_filter(image_hashes, plate_solutions,
+                                           mosaic, targets, stacks, filter)
+    if image:
+      outputs[filter] = image
+
+  # TODO: Figure out how to use the prev obj system, instead of writing these
+  # directly into the cache.
+  cache[('mosaic_preview_image', mosaic.id)] = outputs
+  return (dg.Ran.RAN, (dg.Result.SUCCESS, outputs))
+
+
 def process_mosaic(mosaic, targets, stacks, output_dir):
-  print(f'### Entering process_mosaic for mosaic {mosaic}')
+  print(f'### Entering process_mosaic for mosaic {mosaic} preview {preview}')
 
   proc = psutil.Process()
   print(f'### There are {len(proc.open_files())} open files')

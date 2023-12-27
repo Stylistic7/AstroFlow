@@ -193,10 +193,7 @@ def find_fits_files(input_dirs, max_frames=None):
         if not os.path.basename(f).lower().startswith('master')
     ]
     print(f'Found {len(filenames)} FITS files that are not masters')
-    filenames = [
-        f for f in filenames
-        if os.path.split(os.path.dirname(f))[1].lower() != 'bad'
-    ]
+    filenames = [f for f in filenames if 'bad' not in Path(f.lower()).parts]
     print(f'Found {len(filenames)} FITS files that are not marked bad')
 
     all_frames |= set(filenames)
@@ -280,7 +277,8 @@ def remove_bad_images(image_hashes, plate_solutions):
   return {
       h: p
       for h, p in plate_solutions.items() if h in image_hashes and
-      image_hashes[h] and type(p) is plate_solving.PlateSolution
+      image_hashes[h] and 'bad' not in Path(image_hashes[h].lower()).parts and
+      type(p) is plate_solving.PlateSolution
   }
 
 
@@ -725,6 +723,18 @@ def post_process_mosaic(mosaic, targets, stacks, output_dir, upstream_tasks):
   return inner
 
 
+def make_mosaic_preview(image_hashes, plate_solutions, mosaic, targets,
+                        stacks):
+  @graph.add()
+  def inner():
+    print(f'### Making preview for mosaic {mosaic}!')
+    return step_mosaic.make_mosaic_preview(image_hashes, plate_solutions,
+                                           mosaic, targets, stacks)
+
+  inner.id = ('make_mosaic_preview', mosaic.id)
+  return inner
+
+
 def group_images(image_hashes,
                  plate_solutions,
                  fits_headers,
@@ -873,6 +883,10 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   print(f'### Iterating over {len(mosaics)} mosaics')
   for mosaic in mosaics.values():
     print(f'###   Entering {mosaic}')
+    toplevel_tasks.append(
+        make_mosaic_preview(image_hashes, plate_solutions, mosaic, targets,
+                            stacks))
+
     print(f'###   Iterating over {len(mosaic.target_ids)} targets')
     mosaic_tasks = []
     for target_id in mosaic.target_ids:
@@ -901,21 +915,18 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
 
   control_modes = {}
 
-  # These are for the web server to read.
-  cache['stacks'] = stacks
-  cache['targets'] = targets
-  cache['mosaics'] = mosaics
-
   # TODO: This is the place to setup control modes, or to read them from the
   # user interface.
   control_modes |= {('stack_subframes', s.id): dg.ControlMode.DISABLED
                     for s in stacks.values()}
   control_modes |= {('post_process_stack', s.id): dg.ControlMode.DISABLED
                     for s in stacks.values()}
-  control_modes |= {('post_process_target', s.id): dg.ControlMode.DISABLED
-                    for s in stacks.values()}
-  control_modes |= {('post_process_mosaic', s.id): dg.ControlMode.DISABLED
-                    for s in stacks.values()}
+  control_modes |= {('post_process_target', t.id): dg.ControlMode.DISABLED
+                    for t in targets.values()}
+  control_modes |= {('post_process_mosaic', m.id): dg.ControlMode.DISABLED
+                    for m in mosaics.values()}
+  control_modes |= {('make_mosaic_preview', m.id): dg.ControlMode.FORCE
+                    for m in mosaics.values()}
 
   # control_modes |= {('stack_subframes', '298749827439823'): ControlMode.FORCE}
   # control_modes |= {('stack_subframes', stack.id): dg.ControlMode.DISABLED

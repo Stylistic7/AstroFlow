@@ -9,6 +9,9 @@ import largestinteriorrectangle
 import astropy.io.fits as pyfits
 import uuid
 
+import file_io
+import image_handling
+
 
 def compute_viewbox(plate_solutions):
   ras = [f[0] for p in plate_solutions for f in p.footprint]
@@ -22,8 +25,11 @@ def compute_viewbox(plate_solutions):
 
 
 # TODO: Provide some feedback on progress.
-def mosaic_by_coordinates(panel, plate_solution, mosaic_dimensions,
-                          output_dir):
+def mosaic_by_coordinates(panel,
+                          plate_solution,
+                          mosaic_dimensions,
+                          output_dir,
+                          autostretch=False):
   print(f'### Projecting image {panel.image_filename}')
   print(f'### panel has size '
         f'{objsize.get_deep_size(panel) / 1024.0 / 1024.0:.3f} MB')
@@ -39,7 +45,7 @@ def mosaic_by_coordinates(panel, plate_solution, mosaic_dimensions,
 
   # TODO: Must also support XISF files here.
   ext = os.path.splitext(panel.image_filename)[-1]
-  if ext == '.fits':
+  if ext in ['.fit', '.fits']:
     header = file_io.read_fits(panel.image_filename)
     image = file_io.read_fits_image(panel.image_filename)
   elif ext == '.xisf':
@@ -47,6 +53,9 @@ def mosaic_by_coordinates(panel, plate_solution, mosaic_dimensions,
     image = xisf.read_image(0).squeeze()
     img_meta = xisf.get_images_metadata()[0]
     header = {k: v[0]['value'] for k, v in img_meta['FITSKeywords'].items()}
+
+  if autostretch:
+    image = image_handling.autostretch(image)
 
   print(f'### Image has shape {image.shape} and dtype {image.dtype}')
   print(f'### Projecting to dimensions '

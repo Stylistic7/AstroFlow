@@ -23,7 +23,7 @@ def get_mosaic_dimensions(panels, plate_solutions):
   #
   # TODO: Select output resolution more intelligently, maybe by megapixel?
   # dec_resolution = 0.0002
-  dec_resolution = dec_span / 2000
+  dec_resolution = dec_span / 500
   ra_resolution = dec_resolution / np.cos(np.deg2rad(min_dec + dec_span / 2.0))
 
   height, width = int(np.ceil(ra_span / ra_resolution)), int(
