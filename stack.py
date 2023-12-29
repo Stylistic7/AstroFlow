@@ -185,10 +185,11 @@ class Stack:
     self.footprint = list(footprint.exterior.coords)
 
   def store_footprint_galactic(self):
+    proj = mollweide.MollweideProjection()
     self.footprint_galactic = []
     for ra, dec in self.footprint:
       lon, lat = mollweide.equatorial_to_galactic(ra, dec)
-      x, y = mollweide.project_Mollweide(lon, lat)
+      x, y = proj.project(lon, lat)
       self.footprint_galactic.append((x, y))
 
   def store_min_footprint(self, plate_solutions):
