@@ -5,6 +5,7 @@ from shapely.geometry import Polygon
 import hashlib
 
 import mollweide
+import footprints
 
 
 def hash_string(s):
@@ -24,6 +25,7 @@ class Target:
   stack_ids: list[str] = field(default_factory=list)
 
   center: list[float] = field(default_factory=list)
+  footprints: dict[str, list[tuple[float]]] = None
   footprint: list[tuple[float]] = None
   footprint_galactic: list[tuple[float]] = None
   viewbox: list[tuple[float]] = None
@@ -41,6 +43,8 @@ class Target:
     self.store_id()
     # self.store_exposure_time_s(fits_headers)
     self.store_center(stacks)
+    self.footprints = footprints.compute_footprints(
+        [stacks[s] for s in self.stack_ids])
     self.store_footprint(stacks)
     self.store_footprint_galactic()
     self.store_viewbox()

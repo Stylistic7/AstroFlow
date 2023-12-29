@@ -4,8 +4,11 @@ import functools
 from shapely.geometry import Polygon
 import hashlib
 
+import projection
 import mollweide
 import mercator
+import sinusoidal
+import footprints
 
 
 def hash_string(s):
@@ -41,7 +44,9 @@ class Mosaic:
     self.store_id()
     # self.store_exposure_time_s(fits_headers)
     self.store_center(targets)
-    self.store_footprints(targets)
+    # self.store_footprints(targets)
+    self.footprints = footprints.compute_footprints(
+        [targets[t] for t in self.target_ids])
     self.store_footprint(targets)
     self.store_footprint_galactic()
     self.store_viewbox()
@@ -53,39 +58,13 @@ class Mosaic:
     mean_center = np.mean(centers, axis=0)
     self.center = list(mean_center)
 
-  def store_footprints(self, targets):
-    projections = {
-        'mollweide': mollweide.MollweideProjection(lon_0=np.pi),
-        'mercator': mercator.MercatorProjection(lon_0=np.pi)
-    }
-
-    self.footprints = {}
-    for name, proj in projections.items():
-      print(f'### Projecting footprint with {name} projection')
-      footprint = Polygon()
-      for target_id in self.target_ids:
-        coords = list(targets[target_id].footprint_polygon().exterior.coords)
-        print('type(coords)', type(coords))
-        print('type(coords[0])', type(coords[0]))
-        print('coords', coords)
-        lon, lat = zip(*coords)
-        lon, lat = np.radians(np.array(lon)), np.radians(np.array(lat))
-        print('type(lon)', type(lon))
-        print('lon', lon)
-        print('lat', lat)
-        xx, yy = proj.project(lon, lat)
-        print('xx', xx)
-        print('yy', yy)
-        target_footprint = Polygon(zip(xx, yy))
-        footprint = Polygon.union(footprint, target_footprint)
-
-      self.footprints[name] = footprint.exterior.coords
-
+  # TODO: Remove this function.
   def store_footprint(self, targets):
     footprints = [targets[id].footprint_polygon() for id in self.target_ids]
     footprint = functools.reduce(Polygon.union, footprints, footprints[0])
     self.footprint = list(footprint.exterior.coords)
 
+  # TODO: Remove this function.
   def store_footprint_galactic(self):
     proj = mollweide.MollweideProjection()
     self.footprint_galactic = []

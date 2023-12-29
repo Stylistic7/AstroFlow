@@ -27,9 +27,6 @@ class MollweideProjection(Projection):
     return theta
 
   def project(self, lon, lat):
-    print('type(lon)', type(lon))
-    print('type(lat)', type(lat))
-
     theta = self._solve_theta(lat)
 
     x = self.R * (2 * np.sqrt(2) / np.pi) * (lon - self.lon_0) * np.cos(theta)

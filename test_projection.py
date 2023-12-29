@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 
 import mercator
 import mollweide
+import sinusoidal
 
 
 class TestProjection(unittest.TestCase):
@@ -11,7 +12,7 @@ class TestProjection(unittest.TestCase):
     proj = mercator.MercatorProjection(lon_0=0)
 
     # The Mercator projection projects the entire sphere to the xy plane bounded
-    # by x in [0, 2 pi), and y in [-pi/2, pi/2].
+    # by x in [0, 2 pi), and y in [-pi, pi].
     viewbox = 0, -np.pi, 2 * np.pi, 2 * np.pi
     lon, lat = proj.sample_viewbox_lon_lat(viewbox, 1000)
 
@@ -20,6 +21,28 @@ class TestProjection(unittest.TestCase):
 
     self.assertTrue(np.allclose(np.min(lat), np.radians(-85), atol=0.05))
     self.assertTrue(np.allclose(np.max(lat), np.radians(85), atol=0.05))
+
+    if debug:
+      plt.figure()
+      plt.imshow(lon)
+      plt.title('lon')
+
+      plt.figure()
+      plt.imshow(lat)
+      plt.title('lat')
+
+      plt.show()
+
+  def test_sinusoidal_whole_sphere(self, debug=False):
+    proj = sinusoidal.SinusoidalProjection(lon_0=np.pi)
+
+    # The sinusoidal projection projects the entire sphere to the xy plane,
+    # bounded by x in [0, 2 pi), and y in [-pi, pi].
+    viewbox = -np.pi, -np.pi / 2, 2 * np.pi, np.pi
+    lon, lat = proj.sample_viewbox_lon_lat(viewbox, 1000)
+
+    self.assertEqual(np.min(lat), -np.pi / 2)
+    self.assertEqual(np.max(lat), np.pi / 2)
 
     if debug:
       plt.figure()
