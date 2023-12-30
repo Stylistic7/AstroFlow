@@ -85,4 +85,5 @@ class Mosaic:
     return Polygon(self.footprint)
 
   def __str__(self):
-    return (f'Mosaic(name={self.name}, {len(self.target_ids)} targets)')
+    return (f'Mosaic(name={self.name}, id={self.id}, '
+            f'{len(self.target_ids)} targets)')

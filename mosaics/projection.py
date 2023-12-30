@@ -29,7 +29,7 @@ def mosaic_by_coordinates(panel,
                           mosaic_dimensions,
                           output_dir,
                           autostretch=False):
-  print(f'### Projecting image {panel.image_filename}')
+  print(f'### mosaic_by_coordinates projecting image {panel.image_filename}')
 
   projected_image = np.zeros(
       (mosaic_dimensions.width, mosaic_dimensions.height))
@@ -47,18 +47,15 @@ def mosaic_by_coordinates(panel,
     img_meta = xisf.get_images_metadata()[0]
     header = {k: v[0]['value'] for k, v in img_meta['FITSKeywords'].items()}
 
+  print(f'### mosaic_by_coordinates image dtype {image.dtype} '
+        f'min {np.min(image)} max {np.max(image)}')
+
   if autostretch:
     image = image_handling.autostretch(image)
 
   print(f'### Image has shape {image.shape} and dtype {image.dtype}')
   print(f'### Projecting to dimensions '
         f'{mosaic_dimensions.height} x {mosaic_dimensions.width}')
-
-  print('### FITS header is')
-  for k, v in panel.plate_solution.header.items():
-    if 'COMMENT' in k: continue
-    if 'HISTORY' in k: continue
-    print(f'### {k}: {v}')
 
   wcs = WCS(panel.plate_solution.header)
   # assert wcs.has_distortion
@@ -145,6 +142,8 @@ def mosaic_by_coordinates(panel,
                                                trim_top:trim_top + trim_height]
 
   output_image = trimmed_image
+  print(f'### mosaic_by_coordinates output_image dtype {output_image.dtype} '
+        f'min {np.min(output_image)} max {np.max(output_image)}')
 
   hdu = pyfits.PrimaryHDU(output_image)
   hdu.header['FOCALLEN'] = float(header['FOCALLEN'])
@@ -155,9 +154,6 @@ def mosaic_by_coordinates(panel,
   hdu.header['HISTORY'] = f"TrimMosaicTile.bottom: {trim_top + trim_height}"
   hdu.header['HISTORY'] = f"TrimMosaicTile.left: {trim_left}"
   hdu.header['HISTORY'] = f"TrimMosaicTile.right: {trim_left + trim_width}"
-
-  for k, v in hdu.header.items():
-    print(f'header {k}: {v}')
 
   panel.image_filename = os.path.join(output_dir, f'placed_{uuid.uuid4()}.fit')
   hdu.writeto(panel.image_filename, overwrite=True)

@@ -131,13 +131,17 @@ def process_mosaic_per_filter(image_hashes, plate_solutions, mosaic, targets,
     mosaic_dimensions = dimensions.get_mosaic_dimensions(panels)
 
     print(f'### Running mosaic_by_coordinates in parallel...')
+    autostretch = preview
     with Pool() as p:
       panels = p.starmap(projection.mosaic_by_coordinates,
-                         ((p, mosaic_dimensions, output_dir) for p in panels))
+                         ((p, mosaic_dimensions, output_dir, autostretch)
+                          for p in panels))
     print(f'### mosaic_by_coordinates is done')
 
     if preview:
+      # The image returned from read_fits_image() is in [0, 65536].
       output_image = file_io.read_fits_image(panels[0].image_filename)
+
       for p in panels[1:]:
         image = file_io.read_fits_image(p.image_filename)
         output_image = np.maximum(output_image, image)
@@ -177,13 +181,18 @@ def process_mosaic(image_hashes,
 
   # TODO: Don't hardcode these filters. Find the set from the images
   # themselves.
-  outputs = []
+  outputs = {}
   for filter in ['H', 'S', 'O', 'L', 'R', 'G', 'B']:
     result = process_mosaic_per_filter(image_hashes, plate_solutions, mosaic,
                                        targets, stacks, filter, preview,
                                        output_dir)
     if result:
-      outputs.append(dict(filter=filter, result=result))
+      outputs[filter] = result
+
+  # TODO: Stabilize on the "run artifact" vs. just using the diskcache directly.
+  print(f'### process_mosaic successful for mosaic {mosaic} preview {preview}')
+  if preview:
+    cache[('mosaic_preview_image', mosaic.id)] = outputs
 
   return (dg.Ran.RAN, (dg.Result.SUCCESS, outputs))
 

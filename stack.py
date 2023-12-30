@@ -164,10 +164,8 @@ class Stack:
     # assert np.allclose(
     #     image_scales, mean, atol=0.01,
     #     rtol=0), f"image_scales were not all close: {image_scales}"
-    self.image_scales_not_all_close = np.allclose(image_scales,
-                                                  mean,
-                                                  atol=0.01,
-                                                  rtol=0)
+    self.image_scales_not_all_close = not np.allclose(
+        image_scales, mean, rtol=0.02, atol=0)
 
   def store_width_height(self, fits_headers):
     self.width_pixels = fits_headers[self.light_frames[0]]['NAXIS1']

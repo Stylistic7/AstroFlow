@@ -23,6 +23,7 @@ def _read_constellation_csv():
 # TODO: Memoize this.
 def polylines():
   rows = _read_constellation_csv()
+  proj = mollweide.MollweideProjection()
 
   polylines = []
   polyline = []
@@ -60,7 +61,7 @@ def polylines():
     min_theta = min(min_theta, theta)
     max_theta = max(max_theta, theta)
 
-    x, y = mollweide.project_Mollweide(theta, phi)
+    x, y = proj.project(theta, phi)
     polyline.append((x, y))
 
   assert len(polyline) == 0
