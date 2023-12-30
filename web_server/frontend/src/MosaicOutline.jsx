@@ -20,7 +20,7 @@ export default function MosaicOutline({stacks, targets, mosaics, mosaic_id, styl
   const [min_ra, min_dec, ra_span, dec_span] = mosaic.viewbox;
   const area = Math.abs(ra_span) * Math.abs(dec_span);
 
-  const strokeWidth = 0.001;
+  const strokeWidth = 0.0005;
 
   const target_outline_style = {
     stroke: "#5555ee",

@@ -36,6 +36,8 @@ export default function DisambiguationPanel({ stacks, targets, mosaics }) {
 	    </Breadcrumbs>
 
 			<div style={{
+				  marginLeft: "1em",
+				  marginRight: "1em",
 		    	display: "grid",
 		    	gridTemplateColumns: "repeat(4, 1fr)",
 		    	gridColumnGap: "1em",
