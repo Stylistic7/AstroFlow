@@ -19,6 +19,7 @@ from shapely import Polygon, Point
 import traceback
 import itertools
 import uuid
+import contextlib
 from enum import Enum
 from dataclasses import dataclass
 import largestinteriorrectangle
@@ -35,8 +36,10 @@ import spatial_association
 import position_string
 import image_handling
 
+from projection import compute_viewbox
+import mercator
+
 from mosaics import classes
-from mosaics import dimensions
 from mosaics import input_selection
 from mosaics import merge_ops
 from mosaics import identification
@@ -70,6 +73,8 @@ def show_image(data):
   plt.show()
 
 
+# TODO: This seems to sometimes think a completely fogged image has a high
+# star count. Maybe look at the sigma setting on the plate solver?
 def _get_preview_panel_for_stack(stack, image_hashes, plate_solutions):
   light_frames_by_stars = sorted(stack.light_frames,
                                  key=lambda f: plate_solutions[f].num_stars,
@@ -103,7 +108,8 @@ def _get_panel_for_stack(stack, image_hashes, plate_solutions, preview):
 
 
 def process_mosaic_per_filter(image_hashes, plate_solutions, mosaic, targets,
-                              stacks, filter, preview, output_dir):
+                              stacks, dest_xs, dest_ys, ras, decs, filter,
+                              preview, output_dir):
   if output_dir:
     cm = contextlib.nullcontext(output_dir)
   else:
@@ -128,14 +134,13 @@ def process_mosaic_per_filter(image_hashes, plate_solutions, mosaic, targets,
     for p in panels:
       print(f'###   {p.image_filename}')
 
-    mosaic_dimensions = dimensions.get_mosaic_dimensions(panels)
-
     print(f'### Running mosaic_by_coordinates in parallel...')
     autostretch = preview
     with Pool() as p:
-      panels = p.starmap(projection.mosaic_by_coordinates,
-                         ((p, mosaic_dimensions, output_dir, autostretch)
-                          for p in panels))
+      panels = p.starmap(
+          projection.mosaic_by_coordinates,
+          ((p, dest_xs, dest_ys, ras, decs, output_dir, autostretch)
+           for p in panels))
     print(f'### mosaic_by_coordinates is done')
 
     if preview:
@@ -179,13 +184,33 @@ def process_mosaic(image_hashes,
     output_dir = os.path.join(output_dir, 'Mosaics', mosaic.name)
     os.makedirs(output_dir, exist_ok=True)
 
+  proj = mercator.MercatorProjection()
+  ras, decs = zip(*np.radians(mosaic.footprint))
+  xs, ys = proj.project(np.array(ras), np.array(decs))
+  x_min, y_min, x_span, y_span = compute_viewbox(list(zip(xs, ys)))
+  num_samples_x = 1000
+  resolution = x_span / num_samples_x
+  num_samples_y = int(y_span / resolution)
+  xx, yy = np.meshgrid(np.linspace(x_min, x_min + x_span, num_samples_x),
+                       np.linspace(y_min, y_min + y_span, num_samples_y))
+  ras, decs = proj.unproject(xx, yy)
+  ras, decs = np.degrees(ras), np.degrees(decs)
+
+  dest_width, dest_height = ras.shape
+  dest_ys, dest_xs = np.meshgrid(range(dest_height), range(dest_width))
+  assert np.min(dest_ys) == 0
+  assert np.max(dest_ys) == dest_height - 1
+  assert np.min(dest_xs) == 0
+  assert np.max(dest_xs) == dest_width - 1
+  assert dest_xs.shape == dest_ys.shape == ras.shape == decs.shape
+
   # TODO: Don't hardcode these filters. Find the set from the images
   # themselves.
   outputs = {}
   for filter in ['H', 'S', 'O', 'L', 'R', 'G', 'B']:
     result = process_mosaic_per_filter(image_hashes, plate_solutions, mosaic,
-                                       targets, stacks, filter, preview,
-                                       output_dir)
+                                       targets, stacks, dest_xs, dest_ys, ras,
+                                       decs, filter, preview, output_dir)
     if result:
       outputs[filter] = result
 

@@ -8,6 +8,7 @@ from scipy.interpolate import RegularGridInterpolator
 import largestinteriorrectangle
 import astropy.io.fits as pyfits
 import uuid
+from shapely.geometry import Polygon, Point
 
 import file_io
 import image_handling
@@ -26,15 +27,17 @@ def compute_viewbox(plate_solutions):
 
 # TODO: Provide some feedback on progress.
 def mosaic_by_coordinates(panel,
-                          mosaic_dimensions,
+                          dest_xs,
+                          dest_ys,
+                          ras,
+                          decs,
                           output_dir,
                           autostretch=False):
   print(f'### mosaic_by_coordinates projecting image {panel.image_filename}')
 
-  projected_image = np.zeros(
-      (mosaic_dimensions.width, mosaic_dimensions.height))
-  projection_map = np.zeros(
-      (mosaic_dimensions.width, mosaic_dimensions.height))
+  projected_image = np.zeros(ras.shape)
+  projection_map = np.zeros(ras.shape)
+  print(f'### projected_image shape', projected_image.shape)
 
   # TODO: Must also support XISF files here.
   ext = os.path.splitext(panel.image_filename)[-1]
@@ -51,14 +54,14 @@ def mosaic_by_coordinates(panel,
         f'min {np.min(image)} max {np.max(image)}')
 
   if autostretch:
-    image = image_handling.autostretch(image)
+    try:
+      image = image_handling.autostretch(image)
+    except Exception as e:
+      print(f'### failed to autostretch, exception {e}')
 
   print(f'### Image has shape {image.shape} and dtype {image.dtype}')
-  print(f'### Projecting to dimensions '
-        f'{mosaic_dimensions.height} x {mosaic_dimensions.width}')
 
   wcs = WCS(panel.plate_solution.header)
-  # assert wcs.has_distortion
 
   source_height, source_width = image.shape
   interp = RegularGridInterpolator((range(source_height), range(source_width)),
@@ -67,54 +70,18 @@ def mosaic_by_coordinates(panel,
                                    bounds_error=False,
                                    fill_value=-np.inf)
 
-  # TODO: Use projection other than Mercator.
-  delta_ra = mosaic_dimensions.ra_resolution
-  delta_dec = mosaic_dimensions.dec_resolution
+  # Filter out points that aren't in this panel's footprint.
+  assert dest_xs.shape == dest_ys.shape == ras.shape == decs.shape
+  footprint_polygon = Polygon(panel.plate_solution.footprint)
+  dest_xs, dest_ys, ras, decs = zip(
+      *[(dx, dy, ra, dec)
+        for dx, dy, ra, dec in zip(dest_xs.flatten(), dest_ys.flatten(),
+                                   ras.flatten(), decs.flatten())
+        if footprint_polygon.contains(Point(ra, dec))])
 
-  min_ra, min_dec, ra_span, dec_span = compute_viewbox([panel.plate_solution])
-  print(f'### This panel has min_ra {min_ra} ra_span {ra_span} '
-        f'min_dec {min_dec} dec_span {dec_span}')
-  max_ra = min_ra + ra_span
-  max_dec = min_dec + dec_span
-
-  start_ra_index = int(
-      np.floor((min_ra - mosaic_dimensions.min_ra) /
-               mosaic_dimensions.ra_resolution))
-  end_ra_index = int(
-      np.ceil((max_ra - mosaic_dimensions.min_ra) /
-              mosaic_dimensions.ra_resolution))
-  # print(f'### ra indices {start_ra_index} to {end_ra_index}')
-
-  start_dec_index = int(
-      np.floor((min_dec - mosaic_dimensions.min_dec) /
-               mosaic_dimensions.dec_resolution))
-  end_dec_index = int(
-      np.ceil((max_dec - mosaic_dimensions.min_dec) /
-              mosaic_dimensions.dec_resolution))
-  # print(f'### dec indices {start_dec_index} to {end_dec_index}')
-
-  dest_ys = np.arange(start_ra_index, end_ra_index)
-  dest_xs = np.arange(start_dec_index, end_dec_index)
-
-  ras = (mosaic_dimensions.min_ra + y * delta_ra for y in dest_ys)
-  decs = (mosaic_dimensions.min_dec + x * delta_dec for x in dest_xs)
-  ras, decs = zip(*itertools.product(ras, decs))
-  # source_ys, source_xs = wcs.world_to_array_index_values(ras, decs)
-  source_xs, source_ys = wcs.all_world2pix(ras, decs, 1)
-
-  dest_ys, dest_xs = zip(*itertools.product(dest_ys, dest_xs))
-
-  # print(f'### len(ras)', len(ras))
-  # print(f'### ras[0:10]', ras[0:10])
-  # print(f'### len(decs)', len(decs))
-  # print(f'### decs[0:10]', decs[0:10])
-  # print(f'### len(source_ys)', len(source_ys))
-  # print(f'### source_ys[0:10]', source_ys[0:10])
-  # print(f'### len(source_xs)', len(source_xs))
-  # print(f'### source_xs[0:10]', source_xs[0:10])
+  source_xs, source_ys = wcs.all_world2pix(ras, decs, 1, quiet=True)
 
   for dy, dx, sy, sx in zip(dest_ys, dest_xs, source_ys, source_xs):
-    # print(f'### dy {dy} dx {dx} sy {sy} sx {sx}')
     value = interp((sy, sx))
     if value == -np.inf:
       continue
