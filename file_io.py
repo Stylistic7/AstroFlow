@@ -81,7 +81,7 @@ def fits_matches(fits_headers, filename, key, value):
 def group_by_fits_keyword(fits_headers, filenames, fits_keyword):
   def key(f):
     assert fits_keyword in fits_headers[
-        f], f"File {f} does not have 'RIG' FITS keyword"
+        f], f"File {f} does not have FITS keyword"
     return fits_headers[f][fits_keyword]
 
   filenames = sorted(filenames, key=key)

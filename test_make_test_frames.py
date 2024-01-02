@@ -25,7 +25,7 @@ class TestMakeTestFrames(unittest.TestCase):
     self.assertEqual(footprint, expected_footprint)
 
   def test_one_perfectly_centered_image(self):
-    fits_headers, plate_solutions = make_test_frames.make_test_frames(
+    image_hashes, fits_headers, plate_solutions = make_test_frames.make_test_frames(
         number=1, prefix='foo', dither=0)
 
     expected_fits_headers = {

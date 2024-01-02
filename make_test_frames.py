@@ -1,9 +1,10 @@
 import os
 import astropy.io.fits as pyfits
 import numpy as np
-import uuid
 import datetime
 import random
+import xxhash
+import uuid
 
 from plate_solving import PlateSolution
 
@@ -56,10 +57,18 @@ def make_test_frames(start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
                      ra_span=4,
                      dec_span=2,
                      dither=0.01,
+                     focal_length_m=0.35,
+                     pixel_pitch_um=3.76,
                      exposure=300,
+                     filter='H',
+                     fill_value=None,
+                     real_hash=False,
                      num_stars=100,
                      image_scale=1.0,
-                     rotation_angle_deg=90.0):
+                     rotation_angle_deg=90.0,
+                     image_hashes=None,
+                     fits_headers=None,
+                     plate_solutions=None):
   if not prefix:
     prefix = str(uuid.uuid4())
 
@@ -70,12 +79,31 @@ def make_test_frames(start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
   ids = ids if ids else [f'{prefix}_{i:05}.fit' for i in range(number)]
   centers = centers if centers else [(ra, dec)] * number
 
-  fits_headers = {}
-  plate_solutions = {}
+  if not image_hashes:
+    image_hashes = {}
+
+  if not fits_headers:
+    fits_headers = {}
+
+  if not plate_solutions:
+    plate_solutions = {}
+
   for i in range(number):
     fits_filename = ids[i]
     if project_dir:
       fits_filename = os.path.join(project_dir, fits_filename)
+
+    if fill_value:
+      image_data = np.ones((100, 100)) * fill_value
+    else:
+      image_data = np.random.random((100, 100))
+
+    if real_hash:
+      image_hash = xxhash.xxh128(image_data.tobytes()).hexdigest()
+    else:
+      image_hash = 'hash_for_' + fits_filename
+
+    image_hashes[image_hash] = fits_filename
 
     center = _add_dither(centers[i], dither)
 
@@ -86,12 +114,18 @@ def make_test_frames(start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
         'IMAGETYP': image_type,
         'EXPOSURE': exposure,
         'CRVAL1': center[0],
-        'CRVAL2': center[1]
+        'CRVAL2': center[1],
+        'NAXIS1': 3000,
+        'NAXIS2': 2000,
+        'FILTER': filter,
+        'FOCALLEN': focal_length_m,
+        'XPIXSZ': pixel_pitch_um,
+        'YPIXSZ': pixel_pitch_um,
     }
-    fits_headers[fits_filename] = fits_header
+    fits_headers[image_hash] = fits_header
 
     if image_type == 'Light':
-      plate_solutions[fits_filename] = PlateSolution(
+      plate_solutions[image_hash] = PlateSolution(
           image_filename=fits_filename,
           header={
               'CRVAL1': center[0],
@@ -106,10 +140,10 @@ def make_test_frames(start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
     if not project_dir:
       continue
 
-    image_data = np.random.random((100, 100))
     hdu = pyfits.PrimaryHDU(image_data)
     for k, v in fits_header.items():
       hdu.header[k] = str(v)
     hdu.writeto(fits_filename)
 
-  return _randomize_dict(fits_headers), _randomize_dict(plate_solutions)
+  return _randomize_dict(image_hashes), _randomize_dict(
+      fits_headers), _randomize_dict(plate_solutions)
