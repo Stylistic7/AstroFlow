@@ -8,11 +8,15 @@ from scipy import linalg
 from sklearn import mixture
 import astropy.io.fits as pyfits
 from shapely.geometry import Polygon
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+import matplotlib.pyplot as plt
 
 import ngc2000_catalog
 import position_string
 from distance import distance
 import plate_solving
+import distance
 
 from cache import cache
 
@@ -20,28 +24,39 @@ from cache import cache
 MIN_COMPONENT_MEMBERS = 5
 
 
-def iou(a, b):
-  return a.intersection(b).area / a.union(b).area
-
-
-# TODO: This function accepts a list of ids, and a dictionary from id to Polygon.
-# It could be simplified to accept a list of any objects that have an id and
-# a footprint property.
+# TODO: Make sure to sort into stacks by:
 #
-# TODO: Add tests.
-def find_groups_by_footprint(ids,
-                             footprints,
-                             min_component_members=MIN_COMPONENT_MEMBERS):
+# - image scale
+# - width and height in pixels
+# - position angle
+#
+# Together, these quantities define the field of view.
+def find_groups_by_cosine_similarity(ids,
+                                     centroids,
+                                     min_component_members=MIN_COMPONENT_MEMBERS
+                                     ):
   groups = []
   last_printed_percent_done = 0
   for i, id in enumerate(ids):
     found = False
-    footprint = footprints[id]
+    centroid = centroids[id]
+    assert len(centroid) == 3
+
+    # TODO: 0.6 is rather arbitrary. Compute the distance that are maybe 5x typical
+    # dither settings. Detect failures here, and suggest doubling the acceptable
+    # value. Maybe do that automatically.
     for group in groups:
-      if iou(footprint, footprints[group[0]]) > 0.6:
+      group_centroid = centroids[group[0]]
+
+      if np.dot(centroid, group_centroid) > 0.99999:
         group.append(id)
         found = True
         break
+
+      # if iou(footprint, footprints[group[0]]) > 0.6:
+      #   group.append(id)
+      #   found = True
+      #   break
 
     if not found:
       groups.append([id])
@@ -52,9 +67,160 @@ def find_groups_by_footprint(ids,
       print(f'Finding groups is {percent_done:.0f}% done.')
       last_printed_percent_done = percent_done
 
+  num_groups_of_all_sizes = len(groups)
   groups = [t for t in groups if len(t) >= min_component_members]
 
+  print(f'found {len(groups)} groups, discarded '
+        f'{num_groups_of_all_sizes - len(groups)} groups that were too small')
   return groups
+
+
+def _lonlat_to_vector(lon, lat, degrees=True):
+  r"""
+    Converts a location on the unit sphere from longitude and
+    latitude to an *x*, *y*, *z* vector.
+
+    Parameters
+    ----------
+    lon, lat : scalars or 1-D arrays
+
+    degrees : bool, optional
+
+       If `True`, (default) *lon* and *lat* are in decimal degrees,
+       otherwise in radians.
+
+    Returns
+    -------
+    x, y, z : tuple of scalars or 1-D arrays of the same length
+
+    Notes
+    -----
+    Where longitude is *l* and latitude is *b*:
+
+    .. math::
+        x = \cos l \cos b
+
+        y = \sin l \cos b
+
+        z = \sin b
+    """
+  lon = np.asanyarray(lon)
+  lat = np.asanyarray(lat)
+
+  if degrees:
+    lon_rad = np.deg2rad(lon)
+    lat_rad = np.deg2rad(lat)
+  else:
+    lon_rad = lon
+    lat_rad = lat
+
+  cos_lat = np.cos(lat_rad)
+
+  return (np.cos(lon_rad) * cos_lat, np.sin(lon_rad) * cos_lat,
+          np.sin(lat_rad))
+
+
+def vector_to_lonlat(x, y, z, degrees=True):
+  r"""
+    Converts a vector to longitude and latitude.
+
+    Parameters
+    ----------
+    x, y, z : scalars or 1-D arrays
+        The input vectors
+
+    degrees : bool, optional
+        If `True` (default) the result is returned in decimal degrees,
+        otherwise radians.
+
+    Returns
+    -------
+    lon, lat : tuple of scalars or arrays of the same length
+
+    Notes
+    -----
+    Where longitude is *l* and latitude is *b*:
+
+    .. math::
+        l = \arctan2(y, x)
+
+        b = \arctan2(z, \sqrt{x^2 + y^2})
+    """
+  x = np.asanyarray(x, dtype=np.float64)
+  y = np.asanyarray(y, dtype=np.float64)
+  z = np.asanyarray(z, dtype=np.float64)
+
+  lon = np.arctan2(y, x)
+  lon = np.remainder(lon, 2.0 * np.pi)
+
+  lat = np.arctan2(z, np.sqrt(x**2 + y**2))
+  result = (lon, lat)
+
+  if degrees:
+    return np.rad2deg(result[0]), np.rad2deg(result[1])
+  else:
+    return result
+
+
+def find_components_spherical_kmeans(
+    light_frames,
+    plate_solutions,
+    fits_headers,
+    min_component_members=MIN_COMPONENT_MEMBERS):
+  centers = np.array([plate_solutions[h].center for h in light_frames])
+  print('centers', centers)
+
+  x, y, z = _lonlat_to_vector(*zip(*centers))
+
+  X = np.stack([x, y, z], axis=1)
+  print('X', X)
+
+  for n_clusters in range(2, 1000):
+    kmeans = KMeans(n_clusters=n_clusters, n_init='auto',
+                    random_state=0).fit(X)
+    labels = kmeans.labels_
+    print(f'inertia for n_clusters {n_clusters} is {kmeans.inertia_}')
+
+    # score = silhouette_score(X, labels)
+    # print(f'silhouette_score for n_clusters {n_clusters} is {score}')
+
+    len_ = np.sqrt(np.square(kmeans.cluster_centers_).sum(axis=1)[:, None])
+    centers = kmeans.cluster_centers_ / len_
+    dist = 1 - np.dot(centers, X.T)  # K x N matrix of cosine distances
+
+    max_indices = np.unravel_index(np.argmax(dist), dist.shape)
+    print(f'max dist for n_clusters {n_clusters} is {dist[max_indices]}')
+
+  # Original data
+  fig = plt.figure(figsize=(16, 12))
+  ax = fig.add_subplot(1,
+                       2,
+                       1,
+                       aspect='equal',
+                       projection='3d',
+                       adjustable='box',
+                       xlim=[-1.1, 1.1],
+                       ylim=[-1.1, 1.1],
+                       zlim=[-1.1, 1.1])
+  ax.scatter(X[:, 0], X[:, 1], X[:, 2])
+  ax.set_aspect('equal')
+  plt.title('Original data')
+
+  # Spherical K-means labels
+  ax = fig.add_subplot(1,
+                       2,
+                       2,
+                       aspect='equal',
+                       projection='3d',
+                       adjustable='box',
+                       xlim=[-1.1, 1.1],
+                       ylim=[-1.1, 1.1],
+                       zlim=[-1.1, 1.1])
+  ax.scatter(X[:, 0], X[:, 1], X[:, 2], c=labels)
+  ax.set_aspect('equal')
+  plt.title('Spherical K-means clustering')
+
+  plt.show()
 
 
 def find_components(light_frames,
@@ -63,24 +229,17 @@ def find_components(light_frames,
                     min_component_members=MIN_COMPONENT_MEMBERS):
   hashes = sorted(light_frames, key=lambda h: fits_headers[h]['DATE-OBS'])
 
-  # TODO: This is probably expensive, and gets repeated in many places. Maybe
-  # it should be done just once, and the footprints stored in Polygon format.
-  # Do we ever need the footprint as a list? I suppose we can always just get
-  # the list of exterior coords from the Polygon.
-  footprints = {h: Polygon(plate_solutions[h].footprint) for h in hashes}
+  centroids = {
+      h: np.asarray(_lonlat_to_vector(*plate_solutions[h].center))
+      for h in hashes
+  }
 
-  targets = find_groups_by_footprint(hashes, footprints, min_component_members)
+  targets = find_groups_by_cosine_similarity(hashes, centroids,
+                                             min_component_members)
 
   def get_name(target):
     plate_solution = plate_solutions[target[0]]
     return position_string.canonical_target_string(plate_solution.center)
-
-  def get_complex_name(hash):
-    plate_solution = plate_solutions[hash]
-    name = position_string.canonical_target_string(plate_solution.center)
-    ra_dec = position_string.ra_dec_string(*plate_solution.center)
-    square_degrees = Polygon(plate_solution.footprint).area
-    return f'{name}_{ra_dec}_{square_degrees:0.2f}_sq_deg'
 
   targets = [(get_name(t), list(sorted(t))) for t in targets]
 

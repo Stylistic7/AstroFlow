@@ -55,7 +55,7 @@ class TestSpatialAssociation(unittest.TestCase):
         file_for_hash['foo_00000.fit'], file_for_hash['foo_00001.fit'],
         file_for_hash['foo_00002.fit']
     ]),
-                       ('IC1318', [
+                       ('North America nebula', [
                            file_for_hash['bar_00000.fit'],
                            file_for_hash['bar_00001.fit'],
                            file_for_hash['bar_00002.fit']
@@ -147,13 +147,19 @@ class TestSpatialAssociation(unittest.TestCase):
   def test_two_noisy_groups(self):
     start_datetime = datetime(2023, 12, 6, 16, 29, 43)
     image_hashes, fits_headers, plate_solutions = make_test_frames(
-        start_datetime=start_datetime, ra=307, dec=40, prefix='foo', number=3)
+        start_datetime=start_datetime,
+        ra=307,
+        dec=40,
+        prefix='foo',
+        number=3,
+        dither=0.1)
     image_hashes, fits_headers, plate_solutions = make_test_frames(
         start_datetime=start_datetime + timedelta(hours=1),
         ra=315,
         dec=45,
         prefix='bar',
         number=3,
+        dither=0.1,
         image_hashes=image_hashes,
         fits_headers=fits_headers,
         plate_solutions=plate_solutions)
