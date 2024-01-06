@@ -3,7 +3,9 @@ import time
 import numpy as np
 from dataclasses import dataclass, field
 import functools
-from shapely.geometry import Polygon
+# from shapely.geometry import Polygon
+from spherical_geometry.polygon import SphericalPolygon
+import astropy
 import uuid
 import hashlib
 from enum import Enum, unique
@@ -13,6 +15,7 @@ import file_io
 import plate_solving
 import spatial_association
 import mollweide
+import footprints
 
 import matplotlib.pyplot as plt
 
@@ -72,15 +75,10 @@ class Stack:
   flat_frame_associations: list = field(default_factory=list)
 
   exposure_time_s: int = None
+  footprint: SphericalPolygon = None
 
-  center: list[float] = field(default_factory=list)
-  footprint: list[tuple[float]] = None
-  footprint_galactic: list[tuple[float]] = None
-  min_footprint: list[tuple[float]] = None
-  aspect_ratio: float = None
-
+  # TODO: Can these just be removed?
   best_light_frame: str = None
-
   image_scales_not_all_close: bool = False
 
   def __post_init__(self):
@@ -107,10 +105,11 @@ class Stack:
     self.store_image_scale(plate_solutions)
     self.store_width_height(fits_headers)
     self.store_footprint(plate_solutions)
-    self.store_footprint_galactic()
-    self.store_min_footprint(plate_solutions)
-    self.store_aspect_ratio()
     self.sort_index = self.target
+
+  def store_footprint(self, plate_solutions):
+    self.footprint = SphericalPolygon.from_wcs(
+        astropy.io.fits.Header(plate_solutions[self.light_frames[0]].header))
 
   def hash_flat_frame_associations(self):
     hashes = ''
@@ -119,12 +118,6 @@ class Stack:
 
     return hashlib.sha256(bytes(hashes, 'utf-8')).hexdigest()
 
-  # TODO: Don't store the hashes of filenames, which are mutable. People may
-  # re-organize their files, and AstroFlow should roll with it and not re-do any
-  # time consuming work. FITS headers are similarly mutable -- stuff like plate-
-  # solving can change them. So, we should use the image content hashes here.
-  # A stack is defined by the *content* of the images that go into it.
-  #
   # TODO: Choose a hash length that's maybe more reasonable than the 64-byte
   # hashes used today. When there are only a few dozen or few thousand entities,
   # the 64-byte hash is almost assuredly unnecessarily long.
@@ -135,10 +128,9 @@ class Stack:
                           f'{hash_file_list(self.flat_frames)}_'
                           f'{self.hash_flat_frame_associations()}')
 
-  def footprint_polygon(self):
-    return Polygon(self.footprint)
-
   def store_center(self, plate_solutions, plot=False):
+    assert self.light_frames
+
     centers = [
         p.center for f, p in plate_solutions.items() if f in self.light_frames
     ]
@@ -152,6 +144,7 @@ class Stack:
       plt.show()
 
     self.center = list(mean_center)
+    assert len(self.center)
 
   def store_image_scale(self, plate_solutions):
     image_scales = [
@@ -170,39 +163,6 @@ class Stack:
   def store_width_height(self, fits_headers):
     self.width_pixels = fits_headers[self.light_frames[0]]['NAXIS1']
     self.height_pixels = fits_headers[self.light_frames[0]]['NAXIS2']
-
-  def store_footprint(self, plate_solutions):
-    # This might be too Draconian, because it includes outliers.
-    # TODO: Use RANSAC to compute a better footprint.
-    footprints = [
-        Polygon(p.footprint) for f, p in plate_solutions.items()
-        if f in self.light_frames
-    ]
-    footprint = functools.reduce(Polygon.intersection, footprints,
-                                 footprints[0])
-    self.footprint = list(footprint.exterior.coords)
-
-  def store_footprint_galactic(self):
-    proj = mollweide.MollweideProjection()
-    self.footprint_galactic = []
-    for ra, dec in self.footprint:
-      lon, lat = mollweide.equatorial_to_galactic(ra, dec)
-      x, y = proj.project(lon, lat)
-      self.footprint_galactic.append((x, y))
-
-  def store_min_footprint(self, plate_solutions):
-    footprints = [
-        p.footprint for f, p in plate_solutions.items()
-        if f in self.light_frames
-    ]
-    self.min_footprint = _min_footprint(footprints)
-
-  def store_aspect_ratio(self):
-    min_x = np.min([p[0] for p in self.min_footprint])
-    max_x = np.max([p[0] for p in self.min_footprint])
-    min_y = np.min([p[1] for p in self.min_footprint])
-    max_y = np.max([p[1] for p in self.min_footprint])
-    self.aspect_ratio = (max_x - min_x) / (max_y - min_y)
 
   def store_exposure_time_s(self, fits_headers):
     self.exposure_time_s = sum(

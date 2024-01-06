@@ -1,7 +1,7 @@
 import numpy as np
 from dataclasses import dataclass, field
 import functools
-from shapely.geometry import Polygon
+from spherical_geometry.polygon import SphericalPolygon
 import hashlib
 
 import projection
@@ -28,9 +28,7 @@ class Mosaic:
   tile_indices: list[tuple] = field(default_factory=list)
 
   center: list[float] = field(default_factory=list)
-  footprint: list[tuple[float]] = None
-  footprint_galactic: list[tuple[float]] = None
-  footprints: dict[str, list[tuple[float]]] = None
+  footprint: SphericalPolygon = None
   viewbox: list[tuple[float]] = None
 
   # TODO: How to guarantee these are always in the same order?
@@ -39,50 +37,18 @@ class Mosaic:
     self.sort_index = self.name
 
   def store_metadata(self, targets):
-    # print('### Entering Mosaic.store_metadata')
-    # TODO: Some of these other kinds of metadata might apply to Targets?
     self.store_id()
-    # self.store_exposure_time_s(fits_headers)
     self.store_center(targets)
-    # self.store_footprints(targets)
-    self.footprints = footprints.compute_footprints(
-        [targets[t] for t in self.target_ids])
     self.store_footprint(targets)
-    self.store_footprint_galactic()
-    self.store_viewbox()
-    # self.store_min_footprint(plate_solutions)
-    # self.store_aspect_ratio()
 
   def store_center(self, targets):
     centers = [targets[id].center for id in self.target_ids]
     mean_center = np.mean(centers, axis=0)
     self.center = list(mean_center)
 
-  # TODO: Remove this function.
   def store_footprint(self, targets):
-    footprints = [targets[id].footprint_polygon() for id in self.target_ids]
-    footprint = functools.reduce(Polygon.union, footprints, footprints[0])
-    self.footprint = list(footprint.exterior.coords)
-
-  # TODO: Remove this function.
-  def store_footprint_galactic(self):
-    proj = mollweide.MollweideProjection()
-    self.footprint_galactic = []
-    for ra, dec in self.footprint:
-      lon, lat = mollweide.equatorial_to_galactic(ra, dec)
-      x, y = proj.project(lon, lat)
-      self.footprint_galactic.append((x, y))
-
-  def store_viewbox(self):
-    min_ra = np.min([p[0] for p in self.footprint])
-    max_ra = np.max([p[0] for p in self.footprint])
-    min_dec = np.min([p[1] for p in self.footprint])
-    max_dec = np.max([p[1] for p in self.footprint])
-
-    self.viewbox = [min_ra, min_dec, max_ra - min_ra, max_dec - min_dec]
-
-  def footprint_polygon(self):
-    return Polygon(self.footprint)
+    self.footprint = SphericalPolygon.multi_union(
+        [targets[target_id].footprint for target_id in self.target_ids])
 
   def __str__(self):
     return (f'Mosaic(name={self.name}, id={self.id}, '

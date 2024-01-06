@@ -1,8 +1,8 @@
 import numpy as np
 from dataclasses import dataclass, field
 import functools
-from shapely.geometry import Polygon
 import hashlib
+from spherical_geometry.polygon import SphericalPolygon
 
 import mollweide
 import footprints
@@ -25,9 +25,7 @@ class Target:
   stack_ids: list[str] = field(default_factory=list)
 
   center: list[float] = field(default_factory=list)
-  footprints: dict[str, list[tuple[float]]] = None
-  footprint: list[tuple[float]] = None
-  footprint_galactic: list[tuple[float]] = None
+  footprint: SphericalPolygon = None
   viewbox: list[tuple[float]] = None
 
   def __str__(self):
@@ -41,15 +39,8 @@ class Target:
   def store_metadata(self, stacks):
     # TODO: Some of these other kinds of metadata might apply to Targets?
     self.store_id()
-    # self.store_exposure_time_s(fits_headers)
     self.store_center(stacks)
-    self.footprints = footprints.compute_footprints(
-        [stacks[s] for s in self.stack_ids])
     self.store_footprint(stacks)
-    self.store_footprint_galactic()
-    self.store_viewbox()
-    # self.store_min_footprint(plate_solutions)
-    # self.store_aspect_ratio()
 
   def store_center(self, stacks):
     centers = [s.center for s in stacks.values() if s.id in self.stack_ids]
@@ -57,34 +48,5 @@ class Target:
     self.center = list(mean_center)
 
   def store_footprint(self, stacks):
-    footprints = [
-        s.footprint_polygon() for s in stacks.values()
-        if s.id in self.stack_ids
-    ]
-
-    if len(footprints) == 1:
-      self.footprint = list(footprints[0].exterior.coords)
-    else:
-      footprint = functools.reduce(Polygon.intersection, footprints,
-                                   footprints[0])
-      assert footprint.area
-      self.footprint = list(footprint.exterior.coords)
-
-  def store_footprint_galactic(self):
-    proj = mollweide.MollweideProjection()
-    self.footprint_galactic = []
-    for ra, dec in self.footprint:
-      lon, lat = mollweide.equatorial_to_galactic(ra, dec)
-      x, y = proj.project(lon, lat)
-      self.footprint_galactic.append((x, y))
-
-  def store_viewbox(self):
-    min_ra = np.min([p[0] for p in self.footprint])
-    max_ra = np.max([p[0] for p in self.footprint])
-    min_dec = np.min([p[1] for p in self.footprint])
-    max_dec = np.max([p[1] for p in self.footprint])
-
-    self.viewbox = [min_ra, min_dec, max_ra - min_ra, max_dec - min_dec]
-
-  def footprint_polygon(self):
-    return Polygon(self.footprint)
+    self.footprint = SphericalPolygon.multi_intersection(
+        [stacks[stack_id].footprint for stack_id in self.stack_ids])
