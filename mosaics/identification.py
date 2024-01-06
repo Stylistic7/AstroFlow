@@ -1,7 +1,6 @@
 import traceback
-
-from shapely import Polygon
 import structlog
+from spherical_geometry.polygon import SphericalPolygon
 
 from mosaic import Mosaic
 import position_string
@@ -17,10 +16,11 @@ def identify_overlapping_targets(targets):
     return []
 
   def overlap(a, b):
-    return a.intersection(b).area > 0
+    return a.intersection(b).area() > 0
 
   def roughly_same_area(a, b):
-    ratio = a.area / b.area
+    print(f'a area {a.area()} b area {b.area()}')
+    ratio = a.area() / b.area()
     return ratio > 0.9 and ratio < 1.1
 
   # Sort the targets by their center RA.
@@ -32,11 +32,8 @@ def identify_overlapping_targets(targets):
     found = False
     for mosaic in mosaics:
       all_roughly_same_area = all(
-          roughly_same_area(target.footprint_polygon(), m.footprint_polygon())
-          for m in mosaic)
-      any_overlap = any(
-          overlap(target.footprint_polygon(), m.footprint_polygon())
-          for m in mosaic)
+          roughly_same_area(target.footprint, m.footprint) for m in mosaic)
+      any_overlap = any(overlap(target.footprint, m.footprint) for m in mosaic)
       if all_roughly_same_area and any_overlap:
         mosaic.append(target)
         found = True
