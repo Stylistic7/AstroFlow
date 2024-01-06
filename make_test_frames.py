@@ -25,26 +25,6 @@ def _add_dither(center, max_distance_deg):
   return ra + distance * np.sin(angle), dec + distance * np.cos(angle)
 
 
-def _footprint_around_center(center, rotation_angle_deg, width_deg,
-                             height_deg):
-  center = np.array(center)
-
-  # A `rotation_angle_deg` of 0 means the long axis (width) of the image is
-  # parallel to lines of constant RA.
-  theta = np.radians(rotation_angle_deg)
-  half_width_vec = np.array(
-      [width_deg * np.cos(theta) / 2, width_deg * np.sin(theta) / 2])
-  half_height_vec = np.array(
-      [height_deg * np.sin(theta) / 2, height_deg * np.cos(theta) / 2])
-
-  return [
-      tuple(center - half_width_vec - half_height_vec),
-      tuple(center + half_width_vec - half_height_vec),
-      tuple(center + half_width_vec + half_height_vec),
-      tuple(center - half_width_vec + half_height_vec)
-  ]
-
-
 def make_test_frames(start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
                      number=10,
                      image_type='Light',
@@ -54,11 +34,11 @@ def make_test_frames(start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
                      ra=100,
                      dec=45,
                      centers=None,
-                     ra_span=4,
-                     dec_span=2,
                      dither=0.01,
                      focal_length_m=0.35,
                      pixel_pitch_um=3.76,
+                     width_pixels=10800,
+                     height_pixels=7200,
                      exposure=300,
                      filter='H',
                      fill_value=None,
@@ -109,14 +89,33 @@ def make_test_frames(start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
 
     date_obs = start_datetime + i * datetime.timedelta(seconds=exposure + 10)
 
+    deg_per_pix = image_scale / 3600.0
+
     fits_header = {
-        'DATE-OBS': date_obs,
+        'SIMPLE': True,
+        'DATE-OBS': date_obs.strftime("%Y-%m-%dT%H:%M:%S"),
         'IMAGETYP': image_type,
         'EXPOSURE': exposure,
+        'CTYPE1': 'RA---TAN-SIP',
+        'CTYPE2': 'DEC--TAN-SIP',
+        'CUNIT1': 'deg',
+        'CUNIT2': 'deg',
         'CRVAL1': center[0],
         'CRVAL2': center[1],
-        'NAXIS1': 3000,
-        'NAXIS2': 2000,
+        'CRPIX1': width_pixels / 2 + 0.5,
+        'CRPIX2': height_pixels / 2 + 0.5,
+        'CDELT1': deg_per_pix,
+        'CDELT2': deg_per_pix,
+        'CD1_1': deg_per_pix * np.cos(rotation_angle_deg),
+        'CD1_2': -deg_per_pix * np.sin(rotation_angle_deg),
+        'CD2_1': deg_per_pix * np.sin(rotation_angle_deg),
+        'CD2_2': deg_per_pix * np.cos(rotation_angle_deg),
+        'WCSAXES': 2,
+        'NAXIS': 0,
+        'NAXIS1': width_pixels,
+        'NAXIS2': height_pixels,
+        'IMAGEW': width_pixels,
+        'IMAGEH': height_pixels,
         'FILTER': filter,
         'FOCALLEN': focal_length_m,
         'XPIXSZ': pixel_pitch_um,
@@ -127,15 +126,10 @@ def make_test_frames(start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
     if image_type == 'Light':
       plate_solutions[image_hash] = PlateSolution(
           image_filename=fits_filename,
-          header={
-              'CRVAL1': center[0],
-              'CRVAL2': center[1]
-          },
+          header=fits_header,
           center=center,
           image_scale=image_scale,
-          rotation_angle=rotation_angle_deg,
-          footprint=_footprint_around_center(center, rotation_angle_deg,
-                                             ra_span, dec_span))
+          rotation_angle=rotation_angle_deg)
 
     if not project_dir:
       continue

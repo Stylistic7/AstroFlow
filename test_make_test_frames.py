@@ -3,27 +3,14 @@ import unittest
 import tempfile
 import datetime
 
+from spherical_geometry.polygon import SphericalPolygon
+import astropy
+
 from plate_solving import PlateSolution
 import make_test_frames
 
 
 class TestMakeTestFrames(unittest.TestCase):
-  def test_footprint_0_deg_rotation(self):
-    footprint = make_test_frames._footprint_around_center(center=(200, 10),
-                                                          rotation_angle_deg=0,
-                                                          width_deg=4,
-                                                          height_deg=2)
-    expected_footprint = [(198, 9), (202, 9), (202, 11), (198, 11)]
-
-    self.assertEqual(footprint, expected_footprint)
-
-  def test_footprint_90_deg_rotation(self):
-    footprint = make_test_frames._footprint_around_center(
-        center=(200, 10), rotation_angle_deg=90, width_deg=4, height_deg=2)
-    expected_footprint = [(199, 8), (199, 12), (201, 12), (201, 8)]
-
-    self.assertEqual(footprint, expected_footprint)
-
   def test_one_perfectly_centered_image(self):
     image_hashes, fits_headers, plate_solutions = make_test_frames.make_test_frames(
         number=1, prefix='foo', dither=0)
@@ -49,6 +36,8 @@ class TestMakeTestFrames(unittest.TestCase):
                       footprint=[(98.0, 46.0), (98.0, 44.0), (102.0, 44.0),
                                  (102.0, 46.0)])
     }
+
+    # TODO: Actually compare these...
 
 
 if __name__ == '__main__':
