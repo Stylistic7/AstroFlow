@@ -93,6 +93,7 @@ def make_test_frames(start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
 
     fits_header = {
         'SIMPLE': True,
+        'BITPIX': 16,
         'DATE-OBS': date_obs.strftime("%Y-%m-%dT%H:%M:%S"),
         'IMAGETYP': image_type,
         'EXPOSURE': exposure,
@@ -111,7 +112,7 @@ def make_test_frames(start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
         'CD2_1': deg_per_pix * np.sin(rotation_angle_deg),
         'CD2_2': deg_per_pix * np.cos(rotation_angle_deg),
         'WCSAXES': 2,
-        'NAXIS': 0,
+        'NAXIS': 2,
         'NAXIS1': width_pixels,
         'NAXIS2': height_pixels,
         'IMAGEW': width_pixels,
@@ -136,7 +137,7 @@ def make_test_frames(start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
 
     hdu = pyfits.PrimaryHDU(image_data)
     for k, v in fits_header.items():
-      hdu.header[k] = str(v)
+      hdu.header[k] = v
     hdu.writeto(fits_filename)
 
   return _randomize_dict(image_hashes), _randomize_dict(
