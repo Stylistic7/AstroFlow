@@ -11,6 +11,7 @@ from shapely.geometry import Polygon
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 import matplotlib.pyplot as plt
+from spherical_geometry.polygon import SphericalPolygon
 
 import ngc2000_catalog
 import position_string
@@ -24,6 +25,10 @@ from cache import cache
 MIN_COMPONENT_MEMBERS = 5
 
 
+# TODO: This function accepts a list of ids, and a dictionary from id to Polygon.
+# It could be simplified to accept a list of any objects that have an id and
+# a footprint property.
+#
 # TODO: Make sure to sort into stacks by:
 #
 # - image scale
@@ -31,32 +36,27 @@ MIN_COMPONENT_MEMBERS = 5
 # - position angle
 #
 # Together, these quantities define the field of view.
-def find_groups_by_cosine_similarity(ids,
-                                     centroids,
-                                     min_component_members=MIN_COMPONENT_MEMBERS
-                                     ):
+def find_groups(ids,
+                values,
+                comparison_fn,
+                min_component_members=MIN_COMPONENT_MEMBERS):
+  print(f'### Finding groups among {len(values)} values')
   groups = []
   last_printed_percent_done = 0
   for i, id in enumerate(ids):
     found = False
-    centroid = centroids[id]
-    assert len(centroid) == 3
+    value = values[id]
 
     # TODO: 0.6 is rather arbitrary. Compute the distance that are maybe 5x typical
     # dither settings. Detect failures here, and suggest doubling the acceptable
     # value. Maybe do that automatically.
     for group in groups:
-      group_centroid = centroids[group[0]]
+      group_value = values[group[0]]
 
-      if np.dot(centroid, group_centroid) > 0.99999:
+      if comparison_fn(value, group_value):
         group.append(id)
         found = True
         break
-
-      # if iou(footprint, footprints[group[0]]) > 0.6:
-      #   group.append(id)
-      #   found = True
-      #   break
 
     if not found:
       groups.append([id])
@@ -223,19 +223,9 @@ def find_components_spherical_kmeans(
   plt.show()
 
 
-def find_components(light_frames,
-                    plate_solutions,
-                    fits_headers,
-                    min_component_members=MIN_COMPONENT_MEMBERS):
-  hashes = sorted(light_frames, key=lambda h: fits_headers[h]['DATE-OBS'])
-
-  centroids = {
-      h: np.asarray(_lonlat_to_vector(*plate_solutions[h].center))
-      for h in hashes
-  }
-
-  targets = find_groups_by_cosine_similarity(hashes, centroids,
-                                             min_component_members)
+def _find_components(hashes, values, comparison_fn, plate_solutions,
+                     min_component_members):
+  targets = find_groups(hashes, values, comparison_fn, min_component_members)
 
   def get_name(target):
     plate_solution = plate_solutions[target[0]]
@@ -244,6 +234,46 @@ def find_components(light_frames,
   targets = [(get_name(t), list(sorted(t))) for t in targets]
 
   return targets
+
+
+def find_components_by_cosine_similarity(
+    light_frames,
+    plate_solutions,
+    fits_headers,
+    threshold=0.99999,
+    min_component_members=MIN_COMPONENT_MEMBERS):
+  hashes = sorted(light_frames, key=lambda h: fits_headers[h]['DATE-OBS'])
+
+  centroids = {
+      h: np.asarray(_lonlat_to_vector(*plate_solutions[h].center))
+      for h in hashes
+  }
+
+  def comparison_fn(a, b):
+    return np.dot(a, b) > threshold
+
+  return _find_components(hashes, centroids, comparison_fn, plate_solutions,
+                          min_component_members)
+
+
+def find_components_by_iou(light_frames,
+                           plate_solutions,
+                           fits_headers,
+                           threshold=0.6,
+                           min_component_members=MIN_COMPONENT_MEMBERS):
+  hashes = sorted(light_frames, key=lambda h: fits_headers[h]['DATE-OBS'])
+
+  polygons = {
+      h: SphericalPolygon.from_wcs(pyfits.Header(plate_solutions[h].header))
+      for h in hashes
+  }
+
+  def comparison_fn(a, b):
+    iou = a.intersection(b).area() / a.union(b).area()
+    return iou > threshold
+
+  return _find_components(hashes, polygons, comparison_fn, plate_solutions,
+                          min_component_members)
 
 
 if __name__ == '__main__':

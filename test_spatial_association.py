@@ -17,8 +17,8 @@ class TestSpatialAssociation(unittest.TestCase):
         ra=100, dec=50, prefix='foo', number=10, dither=0)
 
     light_frames = list(plate_solutions.keys())
-    groups = spatial_association.find_components(light_frames, plate_solutions,
-                                                 fits_headers)
+    groups = spatial_association.find_components_by_cosine_similarity(
+        light_frames, plate_solutions, fits_headers)
 
     expected_groups = [('IC360', list(sorted(image_hashes.keys())))]
     self.assertEqual(groups, expected_groups)
@@ -46,10 +46,8 @@ class TestSpatialAssociation(unittest.TestCase):
     file_for_hash = {v: k for k, v in image_hashes.items()}
 
     light_frames = list(plate_solutions.keys())
-    groups = spatial_association.find_components(light_frames,
-                                                 plate_solutions,
-                                                 fits_headers,
-                                                 min_component_members=3)
+    groups = spatial_association.find_components_by_cosine_similarity(
+        light_frames, plate_solutions, fits_headers, min_component_members=3)
 
     expected_groups = [('IC1318', [
         file_for_hash['foo_00000.fit'], file_for_hash['foo_00001.fit'],
@@ -85,10 +83,8 @@ class TestSpatialAssociation(unittest.TestCase):
     file_for_hash = {v: k for k, v in image_hashes.items()}
 
     light_frames = list(plate_solutions.keys())
-    groups = spatial_association.find_components(light_frames,
-                                                 plate_solutions,
-                                                 fits_headers,
-                                                 min_component_members=3)
+    groups = spatial_association.find_components_by_cosine_similarity(
+        light_frames, plate_solutions, fits_headers, min_component_members=3)
 
     expected_groups = [
         ('IC1318', [
@@ -127,10 +123,8 @@ class TestSpatialAssociation(unittest.TestCase):
     file_for_hash = {v: k for k, v in image_hashes.items()}
 
     light_frames = list(plate_solutions.keys())
-    groups = spatial_association.find_components(light_frames,
-                                                 plate_solutions,
-                                                 fits_headers,
-                                                 min_component_members=3)
+    groups = spatial_association.find_components_by_cosine_similarity(
+        light_frames, plate_solutions, fits_headers, min_component_members=3)
 
     expected_groups = [
         ('IC1318', [
@@ -167,10 +161,8 @@ class TestSpatialAssociation(unittest.TestCase):
     file_for_hash = {v: k for k, v in image_hashes.items()}
 
     light_frames = list(plate_solutions.keys())
-    groups = spatial_association.find_components(light_frames,
-                                                 plate_solutions,
-                                                 fits_headers,
-                                                 min_component_members=3)
+    groups = spatial_association.find_components_by_cosine_similarity(
+        light_frames, plate_solutions, fits_headers, min_component_members=3)
 
     expected_groups = [
         ('IC1318', [
@@ -203,10 +195,8 @@ class TestSpatialAssociation(unittest.TestCase):
     file_for_hash = {v: k for k, v in image_hashes.items()}
 
     light_frames = list(plate_solutions.keys())
-    groups = spatial_association.find_components(light_frames,
-                                                 plate_solutions,
-                                                 fits_headers,
-                                                 min_component_members=1)
+    groups = spatial_association.find_components_by_cosine_similarity(
+        light_frames, plate_solutions, fits_headers, min_component_members=1)
     expected_groups = [('IC1311', [file_for_hash['Pane 0']]),
                        ('IC1318', [file_for_hash['Pane 1']]),
                        ('IC1318', [file_for_hash['Pane 2']]),
