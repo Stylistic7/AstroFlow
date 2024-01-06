@@ -14,8 +14,10 @@ import pytz
 import numpy as np
 import structlog
 import operator
-from shapely.geometry import Polygon
+from spherical_geometry.polygon import SphericalPolygon
+import astropy.io.fits as pyfits
 
+import position_string
 import clustering
 import pix
 import runs
@@ -25,6 +27,7 @@ from target import Target
 from mosaic import Mosaic
 from cache import cache
 from mosaics import identification
+import stack_identification
 import file_io
 import plate_solving
 import spatial_association
@@ -280,29 +283,6 @@ def remove_bad_images(image_hashes, plate_solutions):
       image_hashes[h] and 'bad' not in Path(image_hashes[h].lower()).parts and
       type(p) is plate_solving.PlateSolution
   }
-
-
-def identify_stacks(spatial_components, plate_solutions, fits_headers):
-  print('Identifying stacks...')
-  stacks = []
-  for name, light_frames in spatial_components:
-    # TODO: Merge images into stacks by their image scale, not RIG.
-    image_scales = [(f, plate_solutions[f].image_scale) for f in light_frames]
-    clusters = clustering.cluster_1d(image_scales, key=operator.itemgetter(1))
-    # print(f'### spatial_component has {len(clusters)} clusters')
-    for cluster in clusters:
-      # print(f'### image_scale cluster', cluster)
-      image_scale_light_frames, _ = zip(*cluster)
-      # for rig, rig_light_frames in file_io.group_by_fits_keyword(
-      #     fits_headers, light_frames, 'RIG'):
-      for filter, filter_light_frames in file_io.group_by_fits_keyword(
-          fits_headers, image_scale_light_frames, 'FILTER'):
-        stacks.append(
-            Stack(target=name, filter=filter,
-                  light_frames=filter_light_frames))
-
-  print(f'Identified {len(stacks)} stacks')
-  return stacks
 
 
 def assert_all_light_frames_in_stacks(light_frames, stacks):
@@ -562,6 +542,33 @@ def associate_flat_frames(stacks, flat_frames, fits_headers):
   return stacks
 
 
+# TODO: This is awkward.
+def mutate_stack(fits_headers, plate_solutions, stack):
+  stack.store_metadata(fits_headers, plate_solutions)
+  return stack
+
+
+def init_pool(fits_headers_in, plate_solutions_in):
+  global fits_headers, plate_solutions
+  fits_headers, plate_solutions = fits_headers_in, plate_solutions_in
+
+
+# def compute_stack_metadata(stacks, fits_headers, plate_solutions):
+#   # for stack in stacks:
+#   #   stack.store_metadata(fits_headers, plate_solutions)
+
+#   func = functools.partial(mutate_stack, fits_headers, plate_solutions)
+#   # with concurrent.futures.ProcessPoolExecutor(
+#   #     max_workers=os.cpu_count() * 10,
+#   #     initializer=init_pool,
+#   #     initargs=(fits_headers, plate_solutions)) as executor:
+#   #   stacks = executor.map(func, stacks)
+#   with concurrent.futures.ThreadPoolExecutor() as executor:
+#     stacks = executor.map(func, stacks)
+
+#   return stacks
+
+
 def compute_stack_metadata(stacks, fits_headers, plate_solutions):
   for stack in stacks:
     stack.store_metadata(fits_headers, plate_solutions)
@@ -635,13 +642,33 @@ def make_stack_thumbnails_videos(stacks, image_hashes, plate_solutions,
                       image_hashes, plate_solutions)
 
 
-def group_stacks_into_targets(stacks):
-  footprints = {id: Polygon(s.footprint) for id, s in stacks.items()}
-  targets = spatial_association.find_groups_by_footprint(
-      [s.id for s in stacks.values()], footprints, min_component_members=1)
+# TOOD: Move this into another file, e.g. identify_targets.py.
+def group_stacks_into_targets(stacks, plate_solutions, fits_headers):
+  polygons = {
+      s.id: SphericalPolygon.from_wcs(
+          pyfits.Header(plate_solutions[s.light_frames[0]].header))
+      for s in stacks.values()
+  }
 
-  targets = [Target(name=stacks[t[0]].target, stack_ids=t) for t in targets]
-  [t.store_metadata(stacks) for t in targets]
+  def comparison_fn(a, b):
+    iou = a.intersection(b).area() / a.union(b).area()
+    return iou > 0.6
+
+  groups = spatial_association.find_groups(polygons.keys(),
+                                           polygons,
+                                           comparison_fn,
+                                           min_component_members=1)
+  print('### Found groups', groups)
+
+  def new_target(stack_ids):
+    center = stacks[stack_ids[0]].center
+    print('### new_target center', center)
+    name = position_string.canonical_target_string(center)
+    target = Target(name=name, stack_ids=stack_ids)
+    target.store_metadata(stacks)
+    return target
+
+  targets = [new_target(g) for g in groups]
   return {t.id: t for t in targets}
 
 
@@ -713,11 +740,18 @@ def post_process_target(target, stacks, output_dir, upstream_tasks):
   return inner
 
 
-def post_process_mosaic(mosaic, targets, stacks, output_dir, upstream_tasks):
+def post_process_mosaic(image_hashes, plate_solutions, mosaic, targets, stacks,
+                        output_dir, upstream_tasks):
   @graph.add(*upstream_tasks)
   def inner():
     print(f'### Post-processing mosaic {mosaic}!')
-    return step_mosaic.process_mosaic(mosaic, targets, stacks, output_dir)
+    return step_mosaic.process_mosaic(image_hashes,
+                                      plate_solutions,
+                                      mosaic,
+                                      targets,
+                                      stacks,
+                                      preview=False,
+                                      output_dir=output_dir)
 
   inner.id = ('post_process_mosaic', mosaic.id)
   return inner
@@ -755,10 +789,11 @@ def group_images(image_hashes,
   # Remove light frames that don't have good plate solutions.
   light_frames = list(set(light_frames).intersection(plate_solutions.keys()))
 
-  spatial_components = spatial_association.find_components(
+  spatial_components = spatial_association.find_components_by_cosine_similarity(
       light_frames, plate_solutions, fits_headers)
 
-  stacks = identify_stacks(spatial_components, plate_solutions, fits_headers)
+  stacks = stack_identification.identify_stacks(spatial_components,
+                                                plate_solutions, fits_headers)
 
   stacks = get_camera_configs(stacks, fits_headers)
   stacks = associate_dark_frames(stacks, dark_frames, fits_headers)
@@ -766,6 +801,10 @@ def group_images(image_hashes,
   stacks = associate_flat_frames(stacks, flat_frames, fits_headers)
   stacks = compute_stack_metadata(stacks, fits_headers, plate_solutions)
   stacks = normalize_stacks(stacks)
+
+  print('### len(stacks)', len(stacks))
+  for stack in stacks:
+    print('### center is', stack.center)
 
   make_image_thumbnails(stacks, image_hashes, plate_solutions, fits_headers)
 
@@ -777,7 +816,7 @@ def group_images(image_hashes,
   make_stack_thumbnails_videos(stacks, image_hashes, plate_solutions,
                                fits_headers)
 
-  targets = group_stacks_into_targets(stacks)
+  targets = group_stacks_into_targets(stacks, plate_solutions, fits_headers)
   for target in targets:
     print(f'Target {target}')
 
@@ -848,6 +887,12 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   def callback(plate_solutions):
     nonlocal num_remaining
 
+    # TODO: Quarantining should be pulled out as an independent step. Each time
+    # AstroFlow runs, it should identify files that are in the wrong directory
+    # and move them.
+    #
+    # - Images with no plate solutions must be in the quarantine dir, or will
+    #   be moved there.
     cache['plate_solutions'] = plate_solutions
     stacks, targets, mosaics = group_images(
         image_hashes, plate_solutions, fits_headers, light_frames, dark_frames,
@@ -912,8 +957,8 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
                               target_tasks))
     print(f'###   Created {len(mosaic_tasks)} tasks for mosaic')
     toplevel_tasks.append(
-        post_process_mosaic(mosaic, targets, stacks, context.output_dir,
-                            mosaic_tasks))
+        post_process_mosaic(image_hashes, plate_solutions, mosaic, targets,
+                            stacks, context.output_dir, mosaic_tasks))
 
   print(f'### Created {len(toplevel_tasks)} toplevel tasks')
 
@@ -921,8 +966,8 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
 
   # TODO: This is the place to setup control modes, or to read them from the
   # user interface.
-  control_modes |= {('stack_subframes', s.id): dg.ControlMode.DISABLED
-                    for s in stacks.values()}
+  # control_modes |= {('stack_subframes', s.id): dg.ControlMode.DISABLED
+  #                   for s in stacks.values()}
   control_modes |= {('post_process_stack', s.id): dg.ControlMode.DISABLED
                     for s in stacks.values()}
   control_modes |= {('post_process_target', t.id): dg.ControlMode.DISABLED

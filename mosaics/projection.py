@@ -8,7 +8,9 @@ from scipy.interpolate import RegularGridInterpolator
 import largestinteriorrectangle
 import astropy.io.fits as pyfits
 import uuid
+from spherical_geometry.polygon import SphericalPolygon
 from shapely.geometry import Polygon, Point
+import astropy.io.fits as pyfits
 
 import file_io
 import image_handling
@@ -72,12 +74,13 @@ def mosaic_by_coordinates(panel,
 
   # Filter out points that aren't in this panel's footprint.
   assert dest_xs.shape == dest_ys.shape == ras.shape == decs.shape
-  footprint_polygon = Polygon(panel.plate_solution.footprint)
+  footprint_polygon = SphericalPolygon.from_wcs(
+      pyfits.Header(panel.plate_solution.header))
   dest_xs, dest_ys, ras, decs = zip(
       *[(dx, dy, ra, dec)
         for dx, dy, ra, dec in zip(dest_xs.flatten(), dest_ys.flatten(),
                                    ras.flatten(), decs.flatten())
-        if footprint_polygon.contains(Point(ra, dec))])
+        if footprint_polygon.contains_lonlat(ra, dec)])
 
   source_xs, source_ys = wcs.all_world2pix(ras, decs, 1, quiet=True)
 

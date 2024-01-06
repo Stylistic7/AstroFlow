@@ -1,10 +1,56 @@
 import numpy as np
 import structlog
+import itertools
 
 logger = structlog.get_logger()
 log = logger
 
+ORTHOGONALITY_THRESHOLD = 0.05
 
+
+def _find_all_possible_bases(centers):
+  bases = []
+  for combo in itertools.permutations(centers, 3):
+    print('### combo', combo)
+    origin = combo[0]
+    print('### origin', origin)
+    basis_vectors = np.asarray([combo[1] - origin, combo[2] - origin])
+    print('### basis_vectors before normalizing', basis_vectors)
+    basis_vectors = basis_vectors / np.linalg.norm(basis_vectors, axis=0)
+    print('### basis_vectors after normalizing', basis_vectors)
+
+    def flip_vector(v):
+      if any(x < 0 for x in v):
+        return -1 * v
+
+      return v
+
+    basis_vectors = np.vstack([flip_vector(v) for v in basis_vectors])
+    print('### basis_vectors after flipping', basis_vectors)
+
+    basis_dot = np.dot(basis_vectors[0], basis_vectors[1]) / (
+        np.linalg.norm(basis_vectors[0]) * np.linalg.norm(basis_vectors[1]))
+    if np.abs(basis_dot) <= ORTHOGONALITY_THRESHOLD:
+      print('### found valid basis', basis_vectors)
+      if any(
+          np.array_equal(np.sort(b.flat), np.sort(basis_vectors.flat))
+          for b in bases):
+        print('### basis already in bases')
+        continue
+
+      bases.append(basis_vectors)
+
+  print(f'### found {len(bases)} bases')
+  print(bases)
+  return bases
+
+
+# A mosaic here is just a set of images that overlap at least a little. There may
+# be no genuine mosaics here (e.g. none with any regular grid) or there may be
+# several independent mosaics, each on their own independent grids.
+#
+# Maybe the first step is to look at every possible triplet of targets, and find
+# all sets of orthogonal basis vectors?
 def ransac(mosaic, debug=False, plot=False, plot_title=None):
   print(f'Running RANSAC on mosaic with {len(mosaic)} targets')
 
@@ -21,15 +67,15 @@ def ransac(mosaic, debug=False, plot=False, plot_title=None):
   best_inliers = []
   best_basis_vectors = None
 
-  centers = np.vstack(
-      [t.footprint_polygon().centroid.coords for t in mosaic]).T
-  # print(f'centers {centers}')
+  centers = np.vstack([t.center for t in mosaic]).T
+  print(f'centers {centers}')
 
   for iteration in range(500):
     # print(f'Top of iteration {iteration}')
 
     # Choose 3 tiles at random. Compute two basis vectors from them.
     # Skip the iteration if the basis vectors aren't (nearly) orthogonal.
+    # TODO: Does this really just always resolve to [[1, 0], [0, 1]]
     random_centers = centers[:,
                              np.random.
                              choice(centers.shape[1], 3, replace=False)]

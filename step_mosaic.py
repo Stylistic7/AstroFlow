@@ -35,6 +35,7 @@ from cache import cache
 import spatial_association
 import position_string
 import image_handling
+import footprints
 
 from projection import compute_viewbox
 import mercator
@@ -118,6 +119,8 @@ def process_mosaic_per_filter(image_hashes, plate_solutions, mosaic, targets,
   with cm as output_dir:
     panels = []
     print(f'### process_mosaic_per_filter mosaic name {mosaic.name}')
+    print(f'### process_mosaic_per_filter mosaic '
+          f'tile_indices {mosaic.tile_indices}')
     for target_id, tile_indices in zip(mosaic.target_ids, mosaic.tile_indices):
       target = targets[target_id]
       stack = next((s for s in stacks.values()
@@ -127,6 +130,7 @@ def process_mosaic_per_filter(image_hashes, plate_solutions, mosaic, targets,
 
       panel = _get_panel_for_stack(stack, image_hashes, plate_solutions,
                                    preview)
+      print('### panel', panel)
       panel.tile_indices = tile_indices
       panels.append(panel)
 
@@ -185,8 +189,10 @@ def process_mosaic(image_hashes,
     os.makedirs(output_dir, exist_ok=True)
 
   proj = mercator.MercatorProjection()
-  ras, decs = zip(*np.radians(mosaic.footprint))
-  xs, ys = proj.project(np.array(ras), np.array(decs))
+  # ras, decs = zip(*np.radians(mosaic.footprint))
+  # xs, ys = proj.project(np.array(ras), np.array(decs))
+  xs, ys = zip(
+      *footprints.project_footprint(mosaic.footprint, proj).exterior.coords)
   x_min, y_min, x_span, y_span = compute_viewbox(list(zip(xs, ys)))
   num_samples_x = 1000
   resolution = x_span / num_samples_x
