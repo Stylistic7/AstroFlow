@@ -2,6 +2,7 @@ import numpy as np
 from spherical_geometry.polygon import SphericalPolygon
 from shapely.geometry import Polygon
 
+from projection import compute_viewbox
 import mercator
 import sinusoidal
 import mollweide
@@ -22,7 +23,9 @@ def all_projections(polygon):
       'mollweide_galactic': mollweide.MollweideGalacticProjection(R=1),
   }
 
-  return {
-      name: list(project_footprint(polygon, proj).exterior.coords)
-      for name, proj in projections.items()
-  }
+  result = {}
+  for name, proj in projections.items():
+    coords = list(project_footprint(polygon, proj).exterior.coords)
+    result[name] = {'coords': coords, 'viewbox': compute_viewbox(coords)}
+
+  return result
