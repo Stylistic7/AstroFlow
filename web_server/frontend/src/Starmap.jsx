@@ -71,7 +71,7 @@ export default function Starmap({
 							</svg>
 							<svg
 								id="starmap_svg"
-								viewBox="-180 -90 360 180"
+								viewBox="-3.141592653589793 -1.5707963267948966 6.283185307179586 3.141592653589793"
 								style={{pointerEvents: "auto"}}
 							>
 								<g transform="scale(1,-1)">
@@ -79,7 +79,7 @@ export default function Starmap({
 										<Polyline
 											className="target_polygon"
 											data={['target', target.id]}
-											polyline={target.footprint_galactic}
+											polyline={target.projected_footprint['mollweide_galactic'].coords}
 											key={target.id}
 											handleClick={event => handleClick(event)}
 										/>
@@ -88,7 +88,7 @@ export default function Starmap({
 										<Polyline
 											className="mosaic_polygon"
 											data={['mosaic', mosaic.id]}
-											polyline={mosaic.footprint_galactic}
+											polyline={mosaic.projected_footprint['mollweide_galactic'].coords}
 											key={mosaic.id}
 											handleClick={event => handleClick(event)}
 										/>

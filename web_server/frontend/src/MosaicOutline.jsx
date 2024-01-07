@@ -17,8 +17,6 @@ export default function MosaicOutline({stacks, targets, mosaics, mosaic_id, styl
   const navigate = useNavigate();
 
   const projection = 'mercator';
-  const [min_ra, min_dec, ra_span, dec_span] = mosaic.viewbox;
-  const area = Math.abs(ra_span) * Math.abs(dec_span);
 
   const strokeWidth = 0.0005;
 
@@ -41,7 +39,7 @@ export default function MosaicOutline({stacks, targets, mosaics, mosaic_id, styl
   return (
     <svg
       id="mosaic_svg"
-      viewBox={mosaic.footprints[projection].viewbox.join(" ")}
+      viewBox={mosaic.projected_footprint[projection].viewbox.join(" ")}
       style={{
         pointerEvents: "auto",
         margin: "2px",
@@ -53,14 +51,14 @@ export default function MosaicOutline({stacks, targets, mosaics, mosaic_id, styl
     >
       {mosaic.target_ids.map((target_id) =>
         <Polyline
-          polyline={targets[target_id].footprints[projection].coords}
+          polyline={targets[target_id].projected_footprint[projection].coords}
           key={target_id}
           style={target_outline_style}
           handleClick={event => navigate(`/target/${target_id}`)}
         />
       )}
       <Polyline
-        polyline={mosaic.footprints[projection].coords}
+        polyline={mosaic.projected_footprint[projection].coords}
         key={mosaic_id}
         style={mosaic_outline_style}
       />
