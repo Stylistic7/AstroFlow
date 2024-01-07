@@ -191,8 +191,8 @@ def process_mosaic(image_hashes,
   proj = mercator.MercatorProjection()
   # ras, decs = zip(*np.radians(mosaic.footprint))
   # xs, ys = proj.project(np.array(ras), np.array(decs))
-  xs, ys = zip(
-      *footprints.project_footprint(mosaic.footprint, proj).exterior.coords)
+  xs, ys = zip(*footprints.project_footprint(mosaic.footprint_polygon(),
+                                             proj).exterior.coords)
   x_min, y_min, x_span, y_span = compute_viewbox(list(zip(xs, ys)))
   num_samples_x = 1000
   resolution = x_span / num_samples_x

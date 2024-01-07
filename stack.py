@@ -3,8 +3,8 @@ import time
 import numpy as np
 from dataclasses import dataclass, field
 import functools
-# from shapely.geometry import Polygon
 from spherical_geometry.polygon import SphericalPolygon
+from shapely.geometry import Polygon
 import astropy
 import uuid
 import hashlib
@@ -76,6 +76,7 @@ class Stack:
 
   exposure_time_s: int = None
   footprint: SphericalPolygon = None
+  projected_footprint: dict[str, Polygon] = None
 
   # TODO: Can these just be removed?
   best_light_frame: str = None
@@ -108,8 +109,15 @@ class Stack:
     self.sort_index = self.target
 
   def store_footprint(self, plate_solutions):
-    self.footprint = SphericalPolygon.from_wcs(
-        astropy.io.fits.Header(plate_solutions[self.light_frames[0]].header))
+    self.footprint = next(
+        SphericalPolygon.from_wcs(
+            astropy.io.fits.Header(plate_solutions[
+                self.light_frames[0]].header)).points).tolist()
+    self.projected_footprint = footprints.all_projections(
+        SphericalPolygon(self.footprint))
+
+  def footprint_polygon(self):
+    return SphericalPolygon(self.footprint)
 
   def hash_flat_frame_associations(self):
     hashes = ''

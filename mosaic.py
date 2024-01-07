@@ -2,6 +2,7 @@ import numpy as np
 from dataclasses import dataclass, field
 import functools
 from spherical_geometry.polygon import SphericalPolygon
+from shapely.geometry import Polygon
 import hashlib
 
 import projection
@@ -29,7 +30,7 @@ class Mosaic:
 
   center: list[float] = field(default_factory=list)
   footprint: SphericalPolygon = None
-  viewbox: list[tuple[float]] = None
+  projected_footprint: dict[str, Polygon] = None
 
   # TODO: How to guarantee these are always in the same order?
   def store_id(self):
@@ -47,8 +48,16 @@ class Mosaic:
     self.center = list(mean_center)
 
   def store_footprint(self, targets):
-    self.footprint = SphericalPolygon.multi_union(
-        [targets[target_id].footprint for target_id in self.target_ids])
+    self.footprint = next(
+        SphericalPolygon.multi_union([
+            SphericalPolygon(targets[target_id].footprint)
+            for target_id in self.target_ids
+        ]).points).tolist()
+    self.projected_footprint = footprints.all_projections(
+        SphericalPolygon(self.footprint))
+
+  def footprint_polygon(self):
+    return SphericalPolygon(self.footprint)
 
   def __str__(self):
     return (f'Mosaic(name={self.name}, id={self.id}, '

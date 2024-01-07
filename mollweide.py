@@ -5,7 +5,7 @@ from projection import Projection
 
 
 def equatorial_to_galactic(ra, dec):
-  eq = SkyCoord(ra, dec, unit='deg')
+  eq = SkyCoord(ra, dec, unit='rad')
 
   theta = np.radians((180 - eq.galactic.l.value) % 360 - 180)
   phi = np.radians(eq.galactic.b.value)
@@ -43,3 +43,15 @@ class MollweideProjection(Projection):
     lat = np.where((lat >= -np.pi) & (lat <= np.pi), lat, np.nan)
 
     return lon, lat
+
+
+class MollweideGalacticProjection(Projection):
+  def __init__(self, lon_0=0, R=45 * np.sqrt(2)):
+    self.proj = MollweideProjection(lon_0, R)
+
+  def project(self, lon, lat):
+    theta, phi = equatorial_to_galactic(lon, lat)
+    return self.proj.project(theta, phi)
+
+  def unproject(self, x, y):
+    raise NotImplementedError

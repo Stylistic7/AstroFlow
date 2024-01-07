@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 import functools
 import hashlib
 from spherical_geometry.polygon import SphericalPolygon
+from shapely.geometry import Polygon
 
 import mollweide
 import footprints
@@ -26,7 +27,7 @@ class Target:
 
   center: list[float] = field(default_factory=list)
   footprint: SphericalPolygon = None
-  viewbox: list[tuple[float]] = None
+  projected_footprint: dict[str, Polygon] = None
 
   def __str__(self):
     return (f'Target(name={self.name}, {len(self.stack_ids)} stacks)')
@@ -48,5 +49,13 @@ class Target:
     self.center = list(mean_center)
 
   def store_footprint(self, stacks):
-    self.footprint = SphericalPolygon.multi_intersection(
-        [stacks[stack_id].footprint for stack_id in self.stack_ids])
+    self.footprint = next(
+        SphericalPolygon.multi_intersection([
+            SphericalPolygon(stacks[stack_id].footprint)
+            for stack_id in self.stack_ids
+        ]).points).tolist()
+    self.projected_footprint = footprints.all_projections(
+        SphericalPolygon(self.footprint))
+
+  def footprint_polygon(self):
+    return SphericalPolygon(self.footprint)

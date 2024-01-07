@@ -40,7 +40,8 @@ class TestFootprints(unittest.TestCase):
     self.assertEqual(len(stacks), 1)
     stack = next(iter(stacks.values()))
 
-    projected_footprint = project_footprint(stack.footprint, self.proj)
+    projected_footprint = project_footprint(stack.footprint_polygon(),
+                                            self.proj)
 
     self.assertTrue(
         shapely.equals(
@@ -89,7 +90,8 @@ class TestFootprints(unittest.TestCase):
     self.assertEqual(len(targets), 1)
     target = next(iter(targets.values()))
 
-    projected_footprint = project_footprint(target.footprint, self.proj)
+    projected_footprint = project_footprint(target.footprint_polygon(),
+                                            self.proj)
 
     self.assertTrue(
         shapely.equals(
@@ -140,7 +142,8 @@ class TestFootprints(unittest.TestCase):
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics))
 
-    projected_footprint = project_footprint(mosaic.footprint, self.proj)
+    projected_footprint = project_footprint(mosaic.footprint_polygon(),
+                                            self.proj)
 
     self.assertTrue(
         shapely.equals(

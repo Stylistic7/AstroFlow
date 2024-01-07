@@ -19,7 +19,6 @@ def identify_overlapping_targets(targets):
     return a.intersection(b).area() > 0
 
   def roughly_same_area(a, b):
-    print(f'a area {a.area()} b area {b.area()}')
     ratio = a.area() / b.area()
     return ratio > 0.9 and ratio < 1.1
 
@@ -32,8 +31,11 @@ def identify_overlapping_targets(targets):
     found = False
     for mosaic in mosaics:
       all_roughly_same_area = all(
-          roughly_same_area(target.footprint, m.footprint) for m in mosaic)
-      any_overlap = any(overlap(target.footprint, m.footprint) for m in mosaic)
+          roughly_same_area(target.footprint_polygon(), m.footprint_polygon())
+          for m in mosaic)
+      any_overlap = any(
+          overlap(target.footprint_polygon(), m.footprint_polygon())
+          for m in mosaic)
       if all_roughly_same_area and any_overlap:
         mosaic.append(target)
         found = True
