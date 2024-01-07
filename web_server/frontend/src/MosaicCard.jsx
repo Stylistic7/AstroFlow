@@ -14,6 +14,16 @@ export default function MosaicCard({stacks, targets, mosaics, mosaic_id}) {
   const mosaic = mosaics[mosaic_id];
   const navigate = useNavigate();
 
+  const get_filters = () => {
+    let filters = new Set();
+    for (let target_id of mosaic.target_ids) {
+      for (let stack_id of targets[target_id].stack_ids) {
+        filters.add(stacks[stack_id].filter);
+      }
+    }
+    return Array.from(filters).join(", ");
+  }
+
   // TODO: Figure out how to show just the "best" channel in the Card.
   return (
     <Card>
@@ -67,6 +77,10 @@ export default function MosaicCard({stacks, targets, mosaics, mosaic_id}) {
             Resolution:&nbsp;
             {stacks[targets[mosaic.target_ids[0]].stack_ids[0]].width_pixels}&nbsp;x&nbsp;
             {stacks[targets[mosaic.target_ids[0]].stack_ids[0]].height_pixels}&nbsp;pixels
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Color Channels:&nbsp;
+            {get_filters()}
           </Typography>
         </CardContent>
       </CardActionArea>
