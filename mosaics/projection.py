@@ -76,6 +76,8 @@ def mosaic_by_coordinates(panel,
   assert dest_xs.shape == dest_ys.shape == ras.shape == decs.shape
   footprint_polygon = SphericalPolygon.from_wcs(
       pyfits.Header(panel.plate_solution.header))
+  print(f'### dest_xs.shape {dest_xs.shape} dest_ys.shape {dest_ys.shape}')
+  print(f'### ras.shape {ras.shape} decs.shape {decs.shape}')
   dest_xs, dest_ys, ras, decs = zip(
       *[(dx, dy, ra, dec)
         for dx, dy, ra, dec in zip(dest_xs.flatten(), dest_ys.flatten(),

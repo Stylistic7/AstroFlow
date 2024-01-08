@@ -84,7 +84,9 @@ def _get_preview_panel_for_stack(stack, image_hashes, plate_solutions):
   filename = image_hashes[best_light_frame]
   plate_solution = plate_solutions[best_light_frame]
 
-  return classes.Panel(image_filename=filename, plate_solution=plate_solution)
+  return classes.Panel(stack_id=stack.id,
+                       image_filename=filename,
+                       plate_solution=plate_solution)
 
 
 def _get_master_panel_for_stack(stack):
@@ -97,7 +99,8 @@ def _get_master_panel_for_stack(stack):
 
   plate_solution = plate_solving.solve_field(obj.filename)
 
-  return classes.Panel(image_filename=obj.filename,
+  return classes.Panel(stack_id=stack.id,
+                       image_filename=obj.filename,
                        plate_solution=plate_solution)
 
 
@@ -118,7 +121,8 @@ def process_mosaic_per_filter(image_hashes, plate_solutions, mosaic, targets,
 
   with cm as output_dir:
     panels = []
-    print(f'### process_mosaic_per_filter mosaic name {mosaic.name}')
+    print(f'### process_mosaic_per_filter mosaic name '
+          f'{mosaic.name} id {mosaic.id} filter {filter}')
     print(f'### process_mosaic_per_filter mosaic '
           f'tile_indices {mosaic.tile_indices}')
     for target_id, tile_indices in zip(mosaic.target_ids, mosaic.tile_indices):
@@ -126,7 +130,9 @@ def process_mosaic_per_filter(image_hashes, plate_solutions, mosaic, targets,
       stack = next((s for s in stacks.values()
                     if s.filter == filter and s.id in target.stack_ids), None)
       if not stack:
-        return None
+        print(f'### process_mosaic_per_filter failed: there is no stack for '
+              f'filter {filter}')
+        continue
 
       panel = _get_panel_for_stack(stack, image_hashes, plate_solutions,
                                    preview)
@@ -134,7 +140,12 @@ def process_mosaic_per_filter(image_hashes, plate_solutions, mosaic, targets,
       panel.tile_indices = tile_indices
       panels.append(panel)
 
-    print(f'### Mosaic contains {len(panels)} panels with filenames:')
+    if not panels:
+      print(f'### There are no panels for filter {filter}, returning None')
+      return None
+
+    print(f'### process_mosaic_per_filter: '
+          f'{len(panels)} panels with filenames:')
     for p in panels:
       print(f'###   {p.image_filename}')
 
