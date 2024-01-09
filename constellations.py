@@ -45,7 +45,7 @@ def polylines():
       continue
 
     # TODO: Process all of the points at once in a batch.
-    ra, dec = 15 * float(row[2]), float(row[3])
+    ra, dec = np.radians(15 * float(row[2])), np.radians(float(row[3]))
     theta, phi = mollweide.equatorial_to_galactic(ra, dec)
 
     # TODO: This is a hacky way to remove "around the edge" lines.
