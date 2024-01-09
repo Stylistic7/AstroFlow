@@ -33,15 +33,9 @@ class Ran(Enum):
   RAN = 1
 
 
-# Users will generally want to pick which images they stack and process first,
-# so the default control mode is DISABLED. Users will have to explicitly time-
-# consuming tasks.
-# TODO: Let users pick tasks in the GUI.
-
-
 class DependencyGraph(object):
   def __init__(self):
-    self.default_control_mode = ControlMode.AUTO
+    self.default_control_mode = ControlMode.DISABLED
     self.clear()
 
   def clear(self):
