@@ -135,6 +135,11 @@ class Stack:
 
     return hashlib.sha256(bytes(hashes, 'utf-8')).hexdigest()
 
+  # TODO: Computing ids from image hashes is sorta weird. When people shoot
+  # more images of the same stack, the stack id should be stable. That way,
+  # selections like flat-frame association, stacking options, etc. will not be
+  # lost.
+  #
   # TODO: Choose a hash length that's maybe more reasonable than the 64-byte
   # hashes used today. When there are only a few dozen or few thousand entities,
   # the 64-byte hash is almost assuredly unnecessarily long.

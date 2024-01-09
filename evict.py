@@ -43,7 +43,9 @@ if __name__ == '__main__':
   #     'stack_thumbnail_image', 'stack_thumbnail_video', 'trial_flat_correction'
   # ]
 
-  allow_list = ['image_hashes', 'plate_solutions', 'fits_headers']
+  allow_list = [
+      'image_hashes', 'plate_solutions', 'fits_headers', 'thumbnail_image'
+  ]
 
   for k in cache:
     # print('looking at key', k)
