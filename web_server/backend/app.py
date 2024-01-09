@@ -23,6 +23,7 @@ from cache import cache
 from . import test_app
 import plate_solving
 import prev_results
+import dependency_graph as dg
 
 import plotly.express as px
 import plotly.figure_factory as ff
@@ -88,6 +89,27 @@ run_now = threading.Condition()
 
 @app.route('/run')
 def run():
+  run_now.acquire()
+  run_now.notify()
+  run_now.release()
+
+  return Response(status=204)
+
+
+@app.route('/add_to_run_cart/<mode>/<task_name>/<ids>')
+def add_to_run_cart(mode, task_name, ids):
+  mode = {
+      'auto': dg.ControlMode.AUTO,
+      'disabled': dg.ControlMode.DISABLED,
+      'force': dg.ControlMode.FORCE
+  }[mode]
+
+  with cache.transact():
+    control_modes = cache.get('control_modes', {})
+    control_modes |= {(task_name, id): mode for id in ids.split(',')}
+    print('control modes are now', control_modes)
+    cache['control_modes'] = control_modes
+
   run_now.acquire()
   run_now.notify()
   run_now.release()
@@ -362,8 +384,7 @@ def run_astroflow_repeatedly():
     if ok_to_run():
       print('Running AstroFlow...')
       context = cache.get('context', {})
-      # astro_flow_direct.main(context)
-      time.sleep(10)
+      astro_flow_direct.main(context)
       print('AstroFlow done')
       cache['astroflow_running'] = False
     else:

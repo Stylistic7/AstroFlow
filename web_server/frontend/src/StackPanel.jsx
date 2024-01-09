@@ -183,6 +183,9 @@ export default function StackPanel({ stacks, targets, mosaics }) {
 					<Typography color="text.primary" margin="0.5em">
 						Stack contains {stack.flat_frames.length} flat frames
 					</Typography>
+					<Typography color="text.primary" margin="0.5em">
+						Best light frame hash {stack.best_light_frame}
+					</Typography>
 		      <QuarantineStackDialog
 		      	stack_id={stack_id}
 		        open={open}
