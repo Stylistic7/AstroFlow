@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 from xisf import XISF
 from shapely.geometry import Polygon
+from spherical_geometry.polygon import SphericalPolygon
 
 import config
 import file_io
@@ -16,6 +17,7 @@ import dependency_graph as dg
 import step_flat_frame_association
 from output_file import OutputFile
 import spatial_association
+import position_string
 
 
 def _exposure_time_string(stack):
@@ -41,32 +43,21 @@ def _exposure_time_string(stack):
 #   but there is no evidence of its provenance.
 
 
-def _master_with_stack_id_exists(stack_id, filename):
-  if not os.path.exists(filename):
-    return False
-
-  try:
-    xisf = XISF(filename)
-    file_meta = xisf.get_file_metadata()
-    key = 'XISF:AstroFlow:StackId'
-    if key in file_meta:
-      if file_meta[key]['value'] == stack_id:
-        return True
-  except:
-    pass
-
-  return False
-
-
-def _master_with_same_footprint_exits(stack, image_hashes, plate_solutions):
-  print(f'### Entering _master_with_same_footprint_exits() for stack {stack}')
+def _master_with_id_or_footprint_exits(stack, correct_filename, image_hashes,
+                                       plate_solutions):
+  print(f'### Entering _master_with_id_or_footprint_exits() for stack {stack}')
   num_masters = 0
   for hash, plate_solution in plate_solutions.items():
-    filename = image_hashes[hash]
-
     # TODO: There are better ways to identify masters than just the name.
     # Maybe I should have a generic "File" object that includes its type,
     # which can be determined more accurately by FITS/XISF metadata.
+    if hash not in image_hashes:
+      continue
+
+    filename = image_hashes[hash]
+    if not filename:
+      continue
+
     if not os.path.basename(filename).startswith('master'):
       continue
 
@@ -82,22 +73,42 @@ def _master_with_same_footprint_exits(stack, image_hashes, plate_solutions):
     if ims_meta[0]['FITSKeywords']['FILTER'][0]['value'] != stack.filter:
       continue
 
-    iou = spatial_association.iou(Polygon(stack.footprint),
-                                  Polygon(plate_solutions[hash].footprint))
-    # print(f'### Master {filename} has IoU {iou} with stack {stack}')
-    if iou > 0.9:
-      # print(f'### Found highly-likely master {filename} for stack {stack}')
-      return filename
+    try:
+      xisf = XISF(filename)
+      file_meta = xisf.get_file_metadata()
+      key = 'XISF:AstroFlow:StackId'
+      if key in file_meta:
+        if file_meta[key]['value'] == stack_id:
+          print(f'### Found highly-likely master {filename} for '
+                f'stack {stack} by XISF metadata')
+          print(f'### Renaming master {filename} to {correct_filename}')
+          os.rename(filename, correct_filename)
+          return correct_filename
+    except:
+      pass
+
+    def iou(a, b):
+      iou = a.intersection(b).area() / a.union(b).area()
+      return iou
+
+    if iou(SphericalPolygon(stack.footprint),
+           SphericalPolygon.from_wcs(plate_solutions[hash].header)) > 0.9:
+      print(f'### Found highly-likely master {filename} for '
+            f'stack {stack} by IoU')
+      print(f'### Renaming master {filename} to {correct_filename}')
+      os.rename(filename, correct_filename)
+      return correct_filename
 
   print(f'### Inspected {num_masters} masters but none matched')
 
 
 def _output_filename(stack, dest_path):
   output_dir = os.path.join(dest_path, 'Stacks', stack.target, 'masters')
+  ra_dec_string = position_string.ra_dec_string(*stack.center)
   return os.path.join(
-      output_dir,
-      f'master_light_{stack.target}_{stack.width_pixels}x{stack.height_pixels}'
-      f'_{stack.image_scale:.02f}_{stack.filter}.xisf')
+      output_dir, f'master_light_{stack.target}_{ra_dec_string}_'
+      f'{stack.width_pixels}x{stack.height_pixels}_'
+      f'{stack.image_scale:.02f}_{stack.filter}.xisf')
 
 
 def run(stack, image_hashes, fits_headers, plate_solutions, dest_path):
@@ -124,18 +135,12 @@ def run(stack, image_hashes, fits_headers, plate_solutions, dest_path):
   print(f'### step_stack.run dst_filename {dst_filename} exists '
         f'{os.path.exists(dst_filename)}')
 
-  # The point of this is to short-circuit stacking when the cache is empty,
-  # but the stacks have already been done. This is useful during development.
-  if _master_with_stack_id_exists(stack.id, dst_filename):
-    print(f'### Master (made by AstroFlow) already exists: {dst_filename}')
-    return (dg.Ran.DID_NOT_RUN, (dg.Result.SUCCESS, OutputFile(dst_filename)))
-
   # The point of this is to short-circuit stacking when the cache empty, but
-  # the stacks have been done outside of AstroFlow. This generally happens when
-  # the user first installs AstroFlow.
-  if existing := _master_with_same_footprint_exits(stack, image_hashes,
-                                                   plate_solutions):
-    print(f'### Master (made outside AstroFlow) already exists: {existing}')
+  # the stacks have been done outside of AstroFlow, or the cache has been nuked.
+  # This generally happens when the user first installs AstroFlow.
+  if existing := _master_with_id_or_footprint_exits(
+      stack, dst_filename, image_hashes, plate_solutions):
+    print(f'### Master already exists: {existing}')
     return (dg.Ran.DID_NOT_RUN, (dg.Result.SUCCESS, OutputFile(existing)))
 
   with tempfile.TemporaryDirectory() as tmp_dir:
