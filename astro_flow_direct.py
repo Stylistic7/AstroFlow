@@ -650,6 +650,7 @@ def group_stacks_into_targets(stacks, plate_solutions, fits_headers):
       for s in stacks.values()
   }
 
+  # TODO: The IoU is expensive, so check cosine similarity of the center first.
   def comparison_fn(a, b):
     iou = a.intersection(b).area() / a.union(b).area()
     return iou > 0.6
@@ -831,6 +832,11 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   # TODO: This is a wart.
   pix._clear_cache()
 
+  control_modes = cache.get('control_modes', {})
+  print('### Control modes are:')
+  for task, mode in control_modes.items():
+    print(f'### task {task} mode {mode}')
+
   # TODO: Find a more general way to specify the quarantine dir, or at least
   # ask the user to confirm the dir.
   quarantine_dir = os.path.join(context.input_dirs[0],
@@ -962,20 +968,18 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
 
   print(f'### Created {len(toplevel_tasks)} toplevel tasks')
 
-  control_modes = {}
-
   # TODO: This is the place to setup control modes, or to read them from the
   # user interface.
   # control_modes |= {('stack_subframes', s.id): dg.ControlMode.DISABLED
   #                   for s in stacks.values()}
-  control_modes |= {('post_process_stack', s.id): dg.ControlMode.DISABLED
-                    for s in stacks.values()}
-  control_modes |= {('post_process_target', t.id): dg.ControlMode.DISABLED
-                    for t in targets.values()}
-  control_modes |= {('post_process_mosaic', m.id): dg.ControlMode.DISABLED
-                    for m in mosaics.values()}
-  control_modes |= {('make_mosaic_preview', m.id): dg.ControlMode.FORCE
-                    for m in mosaics.values()}
+  # control_modes |= {('post_process_stack', s.id): dg.ControlMode.DISABLED
+  #                   for s in stacks.values()}
+  # control_modes |= {('post_process_target', t.id): dg.ControlMode.DISABLED
+  #                   for t in targets.values()}
+  # control_modes |= {('post_process_mosaic', m.id): dg.ControlMode.DISABLED
+  #                   for m in mosaics.values()}
+  # control_modes |= {('make_mosaic_preview', m.id): dg.ControlMode.AUTO
+  #                   for m in mosaics.values()}
 
   # control_modes |= {('stack_subframes', '298749827439823'): ControlMode.FORCE}
   # control_modes |= {('stack_subframes', stack.id): dg.ControlMode.DISABLED
