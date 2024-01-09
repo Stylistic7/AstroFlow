@@ -74,15 +74,9 @@ def show_image(data):
   plt.show()
 
 
-# TODO: This seems to sometimes think a completely fogged image has a high
-# star count. Maybe look at the sigma setting on the plate solver?
 def _get_preview_panel_for_stack(stack, image_hashes, plate_solutions):
-  light_frames_by_stars = sorted(stack.light_frames,
-                                 key=lambda f: plate_solutions[f].num_stars,
-                                 reverse=True)
-  best_light_frame = light_frames_by_stars[0]
-  filename = image_hashes[best_light_frame]
-  plate_solution = plate_solutions[best_light_frame]
+  filename = image_hashes[stack.best_light_frame]
+  plate_solution = plate_solutions[stack.best_light_frame]
 
   return classes.Panel(stack_id=stack.id,
                        image_filename=filename,

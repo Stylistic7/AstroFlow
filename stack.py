@@ -106,7 +106,16 @@ class Stack:
     self.store_image_scale(plate_solutions)
     self.store_width_height(fits_headers)
     self.store_footprint(plate_solutions)
+    self.store_best_light_frame(plate_solutions)
     self.sort_index = self.target
+
+  def store_best_light_frame(self, plate_solutions):
+    # TODO: This seems to sometimes think a completely fogged image has a high
+    # star count. Maybe look at the sigma setting on the plate solver?
+    light_frames_by_stars = sorted(self.light_frames,
+                                   key=lambda f: plate_solutions[f].num_stars,
+                                   reverse=True)
+    self.best_light_frame = light_frames_by_stars[0]
 
   def store_footprint(self, plate_solutions):
     self.footprint = next(

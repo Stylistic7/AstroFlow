@@ -152,25 +152,25 @@ def solve_field(filename):
       [
           "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
           "--scale-low", "1.0", "--scale-high", "10.0", "--scale-units",
-          "degwidth", "--guess-scale", "--downsample", "4", "--tweak-order",
+          "degwidth", "--guess-scale", "--downsample", "16", "--tweak-order",
           "4", "--crpix-center", "--no-background-subtraction", "--depth",
           "10", "--cpulimit", "5"
       ],
       [
           "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
           "--scale-low", "0.5", "--scale-high", "10.0", "--scale-units",
-          "degwidth", "--guess-scale", "--downsample", "4", "--tweak-order",
+          "degwidth", "--guess-scale", "--downsample", "16", "--tweak-order",
           "4", "--crpix-center", "--no-background-subtraction", "--depth",
           "100", "--cpulimit", "60"
       ],
       [
           "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
-          "--downsample", "4", "--tweak-order", "4", "--crpix-center",
+          "--downsample", "16", "--tweak-order", "4", "--crpix-center",
           "--no-background-subtraction", "--cpulimit", "120"
       ],
       [
           "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
-          "--downsample", "4", "--tweak-order", "4", "--crpix-center",
+          "--downsample", "16", "--tweak-order", "4", "--crpix-center",
           "--cpulimit", "120"
       ]
   ]
