@@ -70,7 +70,8 @@ def _copy_fits_files(fits_files, dest_dir):
     return []
 
   print(f"Using rsync to copy {len(fits_files)} FITS files to '{dest_dir}'...")
-  ret = subprocess.run(['rsync', '-uza', *fits_files, dest_dir]).returncode
+  ret = subprocess.run(['rsync', '-ua', '--inplace', *fits_files,
+                        dest_dir]).returncode
   if ret != 0:
     print("Could not rsync FITS files")
     return
