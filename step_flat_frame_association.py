@@ -17,8 +17,9 @@ log = logger
 
 def _set_flatvers_fits_header(hashes, image_hashes, flat_version):
   for hash in hashes:
-    with pyfits.open(image_hashes[hash], mode='update') as fits:
-      fits[0].header['FLATVERS'] = flat_version
+    fits = pyfits.open(image_hashes[hash], mode='update')
+    fits[0].header['FLATVERS'] = flat_version
+    fits.close()
 
 
 def _dates_to_strings(associations):

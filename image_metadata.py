@@ -31,7 +31,7 @@ def compute_image_hashes(all_frames, image_hashes, quarantine_dir=None):
   print('some new filenames', new_filenames[0:10])
 
   print(f'### Computing image hashes for {len(new_filenames)} files...')
-  with concurrent.futures.ProcessPoolExecutor() as executor:
+  with concurrent.futures.ThreadPoolExecutor() as executor:
     future_to_filename = {
         executor.submit(file_io.hash_of_image_data, filename): filename
         for filename in new_filenames

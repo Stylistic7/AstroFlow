@@ -52,14 +52,15 @@ def _modify_fits_headers(fits_files, rig, default_filter):
   print(f'Updating FITS headers of {len(fits_files)} files...')
   for filename in fits_files:
     assert os.path.exists(filename)
-    with pyfits.open(filename, mode='update') as fits:
-      dt = time_util.parse_utc_datetime(fits[0].header['DATE-OBS'])
-      fits[0].header['RIG'] = rig
-      fits[0].header['DATE'] = dt.strftime('%Y-%m-%d')
-      if 'FILTER' not in fits[0].header:
-        assert default_filter, "--default-filter must be specified"
-        fits[0].header['FILTER'] = default_filter
-      fits.flush()
+    fits = pyfits.open(filename, mode='update')
+    dt = time_util.parse_utc_datetime(fits[0].header['DATE-OBS'])
+    fits[0].header['RIG'] = rig
+    fits[0].header['DATE'] = dt.strftime('%Y-%m-%d')
+    if 'FILTER' not in fits[0].header:
+      assert default_filter, "--default-filter must be specified"
+      fits[0].header['FILTER'] = default_filter
+    fits.flush()
+    fits.close()
 
   print('Done updating FITS headers')
   return fits_files

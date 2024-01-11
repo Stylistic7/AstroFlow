@@ -67,10 +67,10 @@ def get_image_scale(header):
 
 
 def get_num_stars(axy_file):
-  with pyfits.open(axy_file) as fits:
-    table = fits[1].data
-    # print(f'axy_file contains table of shape {table.shape}')
-    return table.shape[0]
+  fits = pyfits.open(axy_file)
+  table = fits[1].data
+  fits.close()
+  return table.shape[0]
 
 
 def simplify_header(header):
@@ -118,24 +118,26 @@ def _solve_field(filename, arguments):
     axy_file = Path(dest_filename).with_suffix('.axy')
     if os.path.exists(wcs_file) and os.path.exists(axy_file):
       wcs_contents = open(wcs_file, 'rb').read()
-      with pyfits.open(wcs_file) as fits:
-        header = simplify_header(fits[0].header)
-        try:
-          num_stars = get_num_stars(axy_file)
-          soln = PlateSolution(image_filename=filename,
-                               header=header,
-                               center=get_center(header),
-                               image_scale=get_image_scale(header),
-                               footprint=get_footprint(header),
-                               rotation_angle=get_rotation_angle(header),
-                               num_stars=num_stars)
-          print(f'### Sucessfully plate-solved file {filename}, '
-                f'has {num_stars} stars')
-          return soln
-        except Exception as e:
-          print(f'Could not plate solve file {filename} due to exception')
-          traceback.print_exc()
-          return e
+      fits = pyfits.open(wcs_file)
+      header = simplify_header(fits[0].header)
+      try:
+        num_stars = get_num_stars(axy_file)
+        soln = PlateSolution(image_filename=filename,
+                             header=header,
+                             center=get_center(header),
+                             image_scale=get_image_scale(header),
+                             footprint=get_footprint(header),
+                             rotation_angle=get_rotation_angle(header),
+                             num_stars=num_stars)
+        print(f'### Sucessfully plate-solved file {filename}, '
+              f'has {num_stars} stars')
+        return soln
+      except Exception as e:
+        print(f'Could not plate solve file {filename} due to exception')
+        traceback.print_exc()
+        return e
+      finally:
+        fits.close()
     else:
       # TODO: Emit warnings through Metaflow's reporting system.
       # print(f'Could not plate-solve file {filename}')
@@ -145,7 +147,7 @@ def _solve_field(filename, arguments):
 # TODO: Make a "junk drawer" video that shows everything that can't be plate-
 # solved. The user can look at it and decide whether to improve the solver's
 # settings, or to throw the images away.
-@ray.remote
+@ray.remote(scheduling_strategy="SPREAD")
 def solve_field(filename):
   assert filename
 
