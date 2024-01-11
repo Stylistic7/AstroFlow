@@ -20,6 +20,7 @@ from cache import cache
 import file_io
 import throughput
 
+import ray
 
 @dataclass
 class PlateSolution:
@@ -144,6 +145,7 @@ def _solve_field(filename, arguments):
 # TODO: Make a "junk drawer" video that shows everything that can't be plate-
 # solved. The user can look at it and decide whether to improve the solver's
 # settings, or to throw the images away.
+@ray.remote
 def solve_field(filename):
   assert filename
 

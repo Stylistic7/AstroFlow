@@ -46,6 +46,9 @@ import image_handling
 import round_robin
 import throughput
 
+import ray
+ray.init()
+
 logger = structlog.get_logger()
 log = logger
 
@@ -923,7 +926,7 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
                                                image_hashes,
                                                plate_solutions,
                                                quarantine_dir,
-                                               callback_number=100,
+                                               callback_number=1000,
                                                callback=callback)
 
   stacks = cache['stacks']

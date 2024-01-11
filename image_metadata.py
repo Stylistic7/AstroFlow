@@ -8,6 +8,7 @@ import plate_solving
 import throughput
 import round_robin
 
+import ray
 
 # TODO: Need to properly handle renamed or moved or deleted files.
 def compute_image_hashes(all_frames, image_hashes, quarantine_dir=None):
@@ -27,9 +28,10 @@ def compute_image_hashes(all_frames, image_hashes, quarantine_dir=None):
         f'files have gone missing.')
 
   new_filenames = list(set(all_frames) - set(image_hashes.values()))
+  print('some new filenames', new_filenames[0:10])
 
   print(f'### Computing image hashes for {len(new_filenames)} files...')
-  with concurrent.futures.ThreadPoolExecutor() as executor:
+  with concurrent.futures.ProcessPoolExecutor() as executor:
     future_to_filename = {
         executor.submit(file_io.hash_of_image_data, filename): filename
         for filename in new_filenames
@@ -37,7 +39,9 @@ def compute_image_hashes(all_frames, image_hashes, quarantine_dir=None):
 
     for future in concurrent.futures.as_completed(future_to_filename):
       filename = future_to_filename[future]
+      print(f'future for filename {filename} is done')
       result = future.result()
+      print(f'result it {result}')
 
       # TODO: Report these failures to the user in the "library health" panel.
       if not result:
@@ -45,13 +49,14 @@ def compute_image_hashes(all_frames, image_hashes, quarantine_dir=None):
 
       # TODO: Do something wiser than just asserting if there are duplicate
       # images.
-      if result in image_hashes:
+      if result in image_hashes and image_hashes[result] is not None:
         if quarantine_dir:
           print(f'### Quarantining file {filename} because it is a duplicate')
           shutil.move(filename,
                       os.path.join(quarantine_dir, os.path.basename(filename)))
         continue
 
+      print(f'### image_hash[{result}] = {filename}')
       image_hashes[result] = filename
 
   return image_hashes
@@ -106,36 +111,40 @@ def plate_solve(images,
                                                        cluster=5)
 
   num_solved = 0
-  with concurrent.futures.ThreadPoolExecutor() as executor:
-    future_to_filename = {
-        executor.submit(plate_solving.solve_field, filename): filename
-        for filename in new_filenames
-    }
+  # with concurrent.futures.ThreadPoolExecutor() as executor:
 
-    for future in concurrent.futures.as_completed(future_to_filename):
-      filename = future_to_filename[future]
-      result = future.result()
+  future_to_filename = {
+      # executor.submit(plate_solving.solve_field, filename): filename
+      plate_solving.solve_field.remote(filename): filename
+      for filename in new_filenames
+  }
 
-      if not result:
-        if quarantine_dir:
-          print(f'### Quarantining file {filename} because it could not '
-                f'be plate-solved')
-          shutil.move(filename,
-                      os.path.join(quarantine_dir, os.path.basename(filename)))
+  # for future in concurrent.futures.as_completed(future_to_filename):
+  for future in future_to_filename.keys():
+    filename = future_to_filename[future]
+    # result = future.result()
+    result = ray.get(future)
 
-      hash = next((h for h, f in image_hashes.items() if f == filename), None)
-      assert hash, f"Could not find filename {f} in image_hashes"
+    if not result:
+      if quarantine_dir:
+        print(f'### Quarantining file {filename} because it could not '
+              f'be plate-solved')
+        shutil.move(filename,
+                    os.path.join(quarantine_dir, os.path.basename(filename)))
 
-      num_solved += 1
-      plate_solutions[hash] = result
+    hash = next((h for h, f in image_hashes.items() if f == filename), None)
+    assert hash, f"Could not find filename {f} in image_hashes"
 
-      if callback:
-        assert callback_number
-
-      if callback and num_solved and num_solved % callback_number == 0:
-        callback(plate_solutions)
+    num_solved += 1
+    plate_solutions[hash] = result
 
     if callback:
+      assert callback_number
+
+    if callback and num_solved and num_solved % callback_number == 0:
       callback(plate_solutions)
+
+  if callback:
+    callback(plate_solutions)
 
   return plate_solutions
