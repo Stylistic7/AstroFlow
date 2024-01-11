@@ -836,6 +836,9 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   # TODO: This is a wart.
   pix._clear_cache()
 
+  if any (not os.path.exists(d) for d in context.input_dirs):
+    print('### Input directories were not found; refusing to run.')
+
   control_modes = cache.get('control_modes', {})
   print('### Control modes are:')
   for task, mode in control_modes.items():
