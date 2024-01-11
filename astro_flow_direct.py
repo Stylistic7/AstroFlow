@@ -46,8 +46,9 @@ import image_handling
 import round_robin
 import throughput
 
+# TODO: Productionize this... maybe automatically clone the git repo or something?
 import ray
-ray.init()
+ray.init(runtime_env={"working_dir": "/Users/nobody/Projects/AstroFlow"})
 
 logger = structlog.get_logger()
 log = logger
