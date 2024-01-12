@@ -48,6 +48,7 @@ import throughput
 
 # TODO: Productionize this... maybe automatically clone the git repo or something?
 import ray
+
 ray.init(runtime_env={"working_dir": "/Users/nobody/Projects/AstroFlow"})
 
 logger = structlog.get_logger()
@@ -836,8 +837,9 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   # TODO: This is a wart.
   pix._clear_cache()
 
-  if any (not os.path.exists(d) for d in context.input_dirs):
+  if any(not os.path.exists(d) for d in context.input_dirs):
     print('### Input directories were not found; refusing to run.')
+    return
 
   control_modes = cache.get('control_modes', {})
   print('### Control modes are:')
