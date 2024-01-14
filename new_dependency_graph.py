@@ -26,6 +26,40 @@ import ray
 #     successors should run).
 
 
+# TODO: If explicit local or remote scheduling is supported, then it'll be
+# easy to break up big functions (like stacking.run()) into smaller pieces.
+#
+# The `should_run` mechanism could maybe be eliminated. `should_run` is instead
+# just task that runs locally, and either enables or disables the downstream
+# task. This is conceptually simpler.
+#
+# Within Ray, I can also just specify that some tasks require custom resources,
+# and the custom resource could be the diskcache that contains image hashes
+# and plate solutions. That could be really nice...
+#
+# On the other hand, the plate_solutions are about 125 MB for 20k images,
+# and image_hashes only about 10 MB. This is such a small amount of data that
+# passing it around the network is ~free, compared to the amount of image data
+# that has to be read from NAS (easily 10-100 GB per stack). There can still be
+# scheduling overhead, etc. that would unnecessarily slow down the entire
+# compute graph.
+#
+# So there are basically three options:
+#
+# - Provide a should_run() function that is explicitly outside the Ray system.
+#   It only ever runs locally, and select whether or not tasks will even be
+#   sent to Ray at all. This is extremely fast, but a little ugly.
+#
+# - Split tasks into `should_run` and `run` sub-tasks. The `should_run` task
+#   enables or disables the `run` task. This is conceptually beautiful, and
+#   is likely fast enough. The overhead to run `should_run` remotely is large,
+#   but Ray should automatically avoid sending large amounts of data over the
+#   network.
+#
+# - Split tasks as before, but also set a custom resource (e.g. diskcache) for
+#   steps that use it: `should_run`, but not `run`. This is conceptually nice,
+#   and guarantees that the diskcache-related tasks will only be run on the
+#   head node.
 class ResultDict(dict):
   def __init__(self, *args, **kwargs):
     super(ResultDict, self).__init__(*args, **kwargs)

@@ -11,6 +11,21 @@ ray.init(resources={'diskcache': 1})
 
 
 @ray.remote
+class GlobalVarActor:
+  def __init__(self):
+    self.global_v = 0
+
+  def set_global_v(self, v):
+    self.global_v = v
+
+  def get_global_v(self):
+    return self.global_v
+
+
+global_v_registry = GlobalVarActor.remote()
+
+
+@ray.remote
 def my_remote_task(arg):
   print('running remote task', arg)
   return dg.ResultDict(run_successors=True, result=arg)
@@ -19,6 +34,14 @@ def my_remote_task(arg):
 @ray.remote(resources={'diskcache': 1})
 def my_local_task(arg):
   print('running local task', arg)
+  return dg.ResultDict(run_successors=True, result=arg)
+
+
+@ray.remote
+def my_task_with_global(arg):
+  print('running task with global', arg)
+  value = ray.get(global_v_registry.get_global_v.remote())
+  global_v_registry.set_global_v.remote(value + 1)
   return dg.ResultDict(run_successors=True, result=arg)
 
 
@@ -33,8 +56,6 @@ class TestDependencyGraph(unittest.TestCase):
 
     graph = {D: {B, C}, C: {A}, B: {A}}
     results = dg.run_graph(graph)
-
-    print('### results', results)
 
     expected_results = {
         ('my_remote_task', 'A'): {
@@ -162,6 +183,19 @@ class TestDependencyGraph(unittest.TestCase):
     }
 
     self.assertEqual(results, expected_results)
+
+  def test_global_variable(self):
+    A = (my_task_with_global, "A")
+    B = (my_task_with_global, "B")
+    C = (my_task_with_global, "C")
+    D = (my_task_with_global, "D")
+
+    my_task_with_global.should_run = lambda x: True
+
+    graph = {D: {C}, C: {B}, B: {A}}
+    results = dg.run_graph(graph)
+
+    self.assertEqual(ray.get(global_v_registry.get_global_v.remote()), 4)
 
 
 if __name__ == "__main__":
