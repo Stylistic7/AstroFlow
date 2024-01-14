@@ -20,6 +20,20 @@ import footprints
 import matplotlib.pyplot as plt
 
 
+def ra_to_hms(ra):
+  hours, remainder = np.divmod(ra * 3600, 15 * 3600)
+  minutes, remainder = np.divmod(remainder, 15 * 60)
+  seconds = remainder / 15
+  return f'{hours:.0f}h {minutes:.0f}m {seconds:.0f}s'
+
+
+def dec_to_dms(dec):
+  degrees, remainder = np.divmod(dec * 3600, 3600)
+  minutes, remainder = np.divmod(remainder, 60)
+  seconds = remainder
+  return f"{degrees:.0f}° {minutes:.0f}' {seconds:.0f}\""
+
+
 def hash_string(s):
   return hashlib.sha256(bytes(s, 'utf-8')).hexdigest()
 
@@ -56,6 +70,7 @@ class Status(str, Enum):
 @dataclass(order=True)
 class Stack:
   id: str = None
+  content_hash: str = None
 
   status: Status = Status.CANNOT_RUN
 
@@ -100,11 +115,12 @@ class Stack:
     return f'{filename}_{suffix}{ext}'
 
   def store_metadata(self, fits_headers, plate_solutions):
-    self.store_id()
-    self.store_exposure_time_s(fits_headers)
     self.store_center(plate_solutions)
+    self.store_exposure_time_s(fits_headers)
     self.store_image_scale(plate_solutions)
     self.store_width_height(fits_headers)
+    self.store_id(plate_solutions)
+    self.store_content_hash()
     self.store_footprint(plate_solutions)
     self.store_best_light_frame(plate_solutions)
     self.sort_index = self.target
@@ -135,20 +151,27 @@ class Stack:
 
     return hashlib.sha256(bytes(hashes, 'utf-8')).hexdigest()
 
-  # TODO: Computing ids from image hashes is sorta weird. When people shoot
-  # more images of the same stack, the stack id should be stable. That way,
-  # selections like flat-frame association, stacking options, etc. will not be
-  # lost.
-  #
   # TODO: Choose a hash length that's maybe more reasonable than the 64-byte
   # hashes used today. When there are only a few dozen or few thousand entities,
   # the 64-byte hash is almost assuredly unnecessarily long.
-  def store_id(self):
-    self.id = hash_string(f'stack_{hash_file_list(self.light_frames)}_'
-                          f'{hash_file_list(self.dark_frames)}_'
-                          f'{hash_file_list(self.bias_frames)}_'
-                          f'{hash_file_list(self.flat_frames)}_'
-                          f'{self.hash_flat_frame_associations()}')
+  def store_content_hash(self):
+    self.content_hash = hash_string(
+        f'stack_{hash_file_list(self.light_frames)}_'
+        f'{hash_file_list(self.dark_frames)}_'
+        f'{hash_file_list(self.bias_frames)}_'
+        f'{hash_file_list(self.flat_frames)}_'
+        f'{self.hash_flat_frame_associations()}')
+
+  def store_id(self, plate_solutions):
+    rotation_angle = plate_solutions[self.light_frames[0]].rotation_angle
+    string = (f'RA {ra_to_hms(self.center[0])}, '
+              f'Dec {dec_to_dms(self.center[1])}, '
+              f'Rotation {rotation_angle:.2f}, '
+              f'{self.width_pixels}x{self.height_pixels}, '
+              f'{self.image_scale:.2f}"/px, '
+              f'Filter {self.filter}')
+    print('id string', string)
+    self.id = hash_string(string)
 
   def store_center(self, plate_solutions, plot=False):
     assert self.light_frames
@@ -191,18 +214,6 @@ class Stack:
         fits_headers[f]['EXPOSURE'] for f in self.light_frames)
 
   def __str__(self):
-    def ra_to_hms(ra):
-      hours, remainder = np.divmod(ra * 3600, 15 * 3600)
-      minutes, remainder = np.divmod(remainder, 15 * 60)
-      seconds = remainder / 15
-      return f'{hours:.0f}h {minutes:.0f}m {seconds:.0f}s'
-
-    def dec_to_dms(dec):
-      degrees, remainder = np.divmod(dec * 3600, 3600)
-      minutes, remainder = np.divmod(remainder, 60)
-      seconds = remainder
-      return f"{degrees:.0f}° {minutes:.0f}' {seconds:.0f}\""
-
     return (f'Stack({self.target}, {self.id}, {self.status}, '
             f'RA {ra_to_hms(self.center[0])}, '
             f'Dec {dec_to_dms(self.center[1])}, '
