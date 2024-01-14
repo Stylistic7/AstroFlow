@@ -835,7 +835,7 @@ def main(context):
   print(f'Found {len(masters)} masters')
 
   # FIXME remove hack
-  all_frames = all_frames[0:20]
+  all_frames = all_frames[0:200]
   masters = []
 
   # TODO: This is a bit ugly for such a simple concept. Maybe abstract it in a
@@ -844,13 +844,11 @@ def main(context):
   image_hashes = image_metadata.compute_image_hashes(
       all_frames + masters, image_hashes, quarantine_dir)
   global_registry.set_image_hashes.remote(image_hashes)
-  return
 
   fits_headers = image_metadata.read_fits_headers(
       image_hashes, cache.get('fits_headers', {}))
-  cache['fits_headers'] = fits_headers
-
   fits_headers = sort_by_observation_date(fits_headers)
+  global_registry.set_fits_headers.remote(fits_headers)
 
   light_frames, dark_frames, bias_frames, flat_frames = split_images_by_type(
       fits_headers)
@@ -874,6 +872,8 @@ def main(context):
   #
   # TODO: Don't quarantine masters, even if they can't be plate-solved. I really
   # need to figure out why the plate-solving fails for them.
+  plate_solutions = ray.get(global_registry.get_plate_solutions.remote())
+  global_registry.set_plate_solutions.remote(plate_solutions)
   unsolved = list(
       set(light_frames + master_hashes) - set(plate_solutions.keys()))
 
