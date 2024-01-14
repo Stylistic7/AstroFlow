@@ -16,7 +16,18 @@ import structlog
 import operator
 from spherical_geometry.polygon import SphericalPolygon
 import astropy.io.fits as pyfits
+import traceback
 
+import ray
+
+ray.init(runtime_env={"working_dir": "/Users/nobody/Projects/AstroFlow"},
+         resources={'diskcache': 1},
+         ignore_reinit_error=True)
+
+logger = structlog.get_logger()
+log = logger
+
+from globals import global_registry, print_globals
 import position_string
 import clustering
 import pix
@@ -45,16 +56,6 @@ import image_metadata
 import image_handling
 import round_robin
 import throughput
-
-# TODO: Productionize this... maybe automatically clone the git repo or something?
-import ray
-
-ray.init(runtime_env={"working_dir": "/Users/nobody/Projects/AstroFlow"},
-         resources={'diskcache': 1},
-         ignore_reinit_error=True)
-
-logger = structlog.get_logger()
-log = logger
 
 # Things that need to happen to make AstroFlow reach the "grown-up" point:
 #
@@ -549,33 +550,6 @@ def associate_flat_frames(stacks, flat_frames, fits_headers):
   return stacks
 
 
-# TODO: This is awkward.
-def mutate_stack(fits_headers, plate_solutions, stack):
-  stack.store_metadata(fits_headers, plate_solutions)
-  return stack
-
-
-def init_pool(fits_headers_in, plate_solutions_in):
-  global fits_headers, plate_solutions
-  fits_headers, plate_solutions = fits_headers_in, plate_solutions_in
-
-
-# def compute_stack_metadata(stacks, fits_headers, plate_solutions):
-#   # for stack in stacks:
-#   #   stack.store_metadata(fits_headers, plate_solutions)
-
-#   func = functools.partial(mutate_stack, fits_headers, plate_solutions)
-#   # with concurrent.futures.ProcessPoolExecutor(
-#   #     max_workers=os.cpu_count() * 10,
-#   #     initializer=init_pool,
-#   #     initargs=(fits_headers, plate_solutions)) as executor:
-#   #   stacks = executor.map(func, stacks)
-#   with concurrent.futures.ThreadPoolExecutor() as executor:
-#     stacks = executor.map(func, stacks)
-
-#   return stacks
-
-
 def compute_stack_metadata(stacks, fits_headers, plate_solutions):
   for stack in stacks:
     stack.store_metadata(fits_headers, plate_solutions)
@@ -828,53 +802,6 @@ def group_images(image_hashes,
   return stacks, targets, mosaics
 
 
-@ray.remote(resources={'diskcache': 0.001})
-class GlobalActor:
-  def __init__(self):
-    self.image_hashes = cache.get('image_hashes', {})
-    self.fits_headers = cache.get('fits_headers', {})
-    self.plate_solutions = cache.get('plate_solutions', {})
-
-    print(f'### Read {len(self.image_hashes)} image hashes from the cache')
-
-  def get_image_hashes(self):
-    return self.image_hashes
-
-  def set_image_hashes(self, image_hashes):
-    self.image_hashes = image_hashes
-    print(f'### Writing {len(image_hashes)} image hashes to the cache')
-    cache['image_hashes'] = image_hashes
-
-  def get_fits_headers(self):
-    return self.fits_headers
-
-  def set_fits_headers(self, fits_headers):
-    self.fits_headers = fits_headers
-    cache['fits_headers'] = fits_headers
-
-  def get_plate_solutions(self):
-    return self.plate_solutions
-
-  def set_plate_solutions(self, plate_solutions):
-    self.plate_solutions = plate_solutions
-    cache['plate_solutions'] = plate_solutions
-
-
-global_registry = GlobalActor.remote()
-
-
-@ray.remote
-def print_globals():
-  image_hashes = ray.get(global_registry.get_image_hashes.remote())
-  fits_headers = ray.get(global_registry.get_fits_headers.remote())
-  plate_solutions = ray.get(global_registry.get_plate_solutions.remote())
-
-  return (
-      f'Global registry contains {len(image_hashes)} image hashes, '
-      f'{len(fits_headers)} FITS headers, and {len(plate_solutions)} plate solutions'
-  )
-
-
 def main(context):
   log.info('Starting AstroFlow')
 
@@ -907,7 +834,11 @@ def main(context):
   masters = sorted(find_masters(context.output_dir))
   print(f'Found {len(masters)} masters')
 
-  # TODO: This is a bit ugly for such a simple concept. Maybe wrap it in a
+  # FIXME remove hack
+  all_frames = all_frames[0:20]
+  masters = []
+
+  # TODO: This is a bit ugly for such a simple concept. Maybe abstract it in a
   # function?
   image_hashes = ray.get(global_registry.get_image_hashes.remote())
   image_hashes = image_metadata.compute_image_hashes(
@@ -930,7 +861,7 @@ def main(context):
   # pulled into the dependency graph.
   # plate_solutions = remove_bad_images(image_hashes, cache.get(
   #     'plate_solutions', {}))
-  plate_solutions = cache.get('plate_solutions', {})
+  # plate_solutions = cache.get('plate_solutions', {})
 
   # TODO: Each group of 100 ends up having a bunch of stragglers. Limit this
   # round of plate-solving to the fastest options, and do the rest later.

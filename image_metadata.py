@@ -84,12 +84,6 @@ def read_fits_headers(image_hashes, fits_headers):
   return fits_headers
 
 
-# TODO: This will scale poorly when there are hundreds of thousands of images.
-#
-# TODO: Make this iterative (progressive). Find runs in light frames. Iterate
-# across the runs, solving the first image from each run, then the second image
-# from each run, etc. This will allow the user to see what's happening, without
-# having to wait to solve the entire library.
 def plate_solve(images,
                 image_hashes,
                 plate_solutions,
@@ -106,19 +100,14 @@ def plate_solve(images,
   new_filenames = round_robin.round_robin_by_directory(new_filenames,
                                                        cluster=5)
 
-  num_solved = 0
-  # with concurrent.futures.ThreadPoolExecutor() as executor:
-
   future_to_filename = {
-      # executor.submit(plate_solving.solve_field, filename): filename
       plate_solving.solve_field.remote(filename): filename
       for filename in new_filenames
   }
 
-  # for future in concurrent.futures.as_completed(future_to_filename):
+  num_solved = 0
   for future in future_to_filename.keys():
     filename = future_to_filename[future]
-    # result = future.result()
     result = ray.get(future)
 
     if not result:
