@@ -10,10 +10,11 @@ from spherical_geometry.polygon import SphericalPolygon
 
 import config
 import file_io
-from stack import Stack
+from stack import Stack, Status
 import pix
 from cache import cache
 import dependency_graph as dg
+from new_dependency_graph import ResultDict
 import step_flat_frame_association
 from output_file import OutputFile
 import spatial_association
@@ -114,16 +115,13 @@ def _output_filename(stack, dest_path):
       f'{stack.image_scale:.02f}_{stack.filter}.xisf')
 
 
-@ray.remote(resources={'diskcache': 1})
-def should_run(
-    image_hashes,
-    fits_headers,
-    plate_solutions,
-    dest_path,
-    stack,
-):
+@ray.remote
+def should_run(arg):
+  print('### Entering should_run()')
+  image_hashes, fits_headers, plate_solutions, dest_path, stack = arg
+
   if stack.status != Status.READY:
-    return False
+    return ResultDict(ran=True, run_successors=False)
 
   dst_filename = _output_filename(stack, dest_path)
   os.makedirs(os.path.dirname(dst_filename), exist_ok=True)
@@ -136,9 +134,9 @@ def should_run(
   if existing := _master_with_id_or_footprint_exits(
       stack, dst_filename, image_hashes, plate_solutions):
     print(f'### Master already exists: {existing}')
-    return False
+    return ResultDict(ran=True, run_successors=False)
 
-  return True
+  return ResultDict(ran=True, run_successors=True)
 
 
 def resolve_files(filenames, dest_path, **kwargs):

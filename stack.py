@@ -9,6 +9,7 @@ import astropy
 import uuid
 import hashlib
 from enum import Enum, unique
+import xxhash
 
 from cache import cache
 import file_io
@@ -172,6 +173,9 @@ class Stack:
               f'Filter {self.filter}')
     print('id string', string)
     self.id = hash_string(string)
+
+  def __hash__(self):
+    return xxhash.xxh64(self.id).intdigest()
 
   def store_center(self, plate_solutions, plot=False):
     assert self.light_frames

@@ -1,19 +1,18 @@
 import unittest
 import os
-import ray
 import graphlib
 import tempfile
 import functools
+
+import ray
+
+ray.init(resources={'diskcache': 1}, ignore_reinit_error=True)
 
 from make_test_frames import make_test_frames
 import stacking
 import new_dependency_graph as dg
 from stack_identification import identify_stacks
 from spatial_association import find_components_by_cosine_similarity
-
-# This Ray cluster will be able to run tasks that are explicitly local, as well
-# as any task with no specific resources.
-ray.init(resources={'diskcache': 1})
 
 
 class TestStacking(unittest.TestCase):
@@ -35,16 +34,18 @@ class TestStacking(unittest.TestCase):
                                fits_headers)
       self.assertEqual(len(stacks), 1)
       stack = stacks[0]
-      stack.store_metadata()
+      stack.store_metadata(fits_headers, plate_solutions)
 
-      should_run_p = functools.partial(stacking.should_run, image_hashes,
-                                       fits_headers, plate_solutions, tmp_dir)
+      image_hashes = ray.put(image_hashes)
+      fits_headers = ray.put(fits_headers)
+      plate_solutions = ray.put(plate_solutions)
 
-      A = (stacking.should_run, stack)
-      B = (stacking.run, stack)
-
-      graph = {B: {A}}
+      A = (stacking.should_run, (image_hashes, fits_headers, plate_solutions,
+                                 tmp_dir, stack))
+      graph = {A: {}}
       results = dg.run_graph(graph)
+
+      print('### results', results)
 
 
 if __name__ == "__main__":

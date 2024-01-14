@@ -81,11 +81,13 @@ def run_graph(graph):
     task, arg = node
 
     if hasattr(task, 'should_run') and not task.should_run(arg):
+      print('### has should_run fn and it returned False')
       return False
 
-    if node in graph and all(
+    if node in graph and len(graph[node]) and all(
         not results[(task._function.__name__, arg)].run_successors
         for task, arg in graph[node]):
+      print('### has predecessors and they all say no')
       return False
 
     return True
@@ -110,6 +112,7 @@ def run_graph(graph):
         node = ref_to_node[ref]
         task, arg = node
         result = ray.get(ref)
+        print('### type(result)', type(result))
         assert type(result) is ResultDict
         results[(task._function.__name__, arg)] = result
         ts.done(node)
