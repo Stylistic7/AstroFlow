@@ -18,6 +18,7 @@ import step_flat_frame_association
 from output_file import OutputFile
 import spatial_association
 import position_string
+import ray
 
 
 def _exposure_time_string(stack):
@@ -74,6 +75,8 @@ def _master_with_id_or_footprint_exits(stack, correct_filename, image_hashes,
       continue
 
     try:
+      # TODO: Store and compare the content_hash, in addition to the id.
+      # The id is isomorphic to the filename now.
       xisf = XISF(filename)
       file_meta = xisf.get_file_metadata()
       key = 'XISF:AstroFlow:StackId'
@@ -111,24 +114,16 @@ def _output_filename(stack, dest_path):
       f'{stack.image_scale:.02f}_{stack.filter}.xisf')
 
 
-def run(stack, image_hashes, fits_headers, plate_solutions, dest_path):
-  def symlink_frames(filenames, dest_path):
-    for filename in filenames:
-      dest_filename = os.path.join(dest_path, os.path.basename(filename))
-      if not os.path.exists(dest_filename):
-        os.symlink(filename, dest_filename)
-
-  # exposure = _exposure_time_string(stack)
-
-  print(f'### Entering step_stack.run() for stack {stack}')
-
-  if config.TEST_MODE:
-    print(f'### step_stack.run returning fake result because TEST_MODE is on')
-    dst_filename = os.path.join(
-        output_dir, f'master_light_{stack.target}_{stack.width}x{stack.height}'
-        f'_{stack.image_scale:.02f}_{stack.filter}.fit')
-    shutil.copy(stack.light_frames[0], dst_filename)
-    return (dg.Ran.RAN, (dg.Result.Success, dst_filename))
+@ray.remote(resources={'diskcache': 1})
+def should_run(
+    image_hashes,
+    fits_headers,
+    plate_solutions,
+    dest_path,
+    stack,
+):
+  if stack.status != Status.READY:
+    return False
 
   dst_filename = _output_filename(stack, dest_path)
   os.makedirs(os.path.dirname(dst_filename), exist_ok=True)
@@ -141,8 +136,44 @@ def run(stack, image_hashes, fits_headers, plate_solutions, dest_path):
   if existing := _master_with_id_or_footprint_exits(
       stack, dst_filename, image_hashes, plate_solutions):
     print(f'### Master already exists: {existing}')
-    return (dg.Ran.DID_NOT_RUN, (dg.Result.SUCCESS, OutputFile(existing)))
+    return False
 
+  return True
+
+
+def resolve_files(filenames, dest_path, **kwargs):
+  smart_names = '_'.join([f'{k}_{v}' for k, v in kwargs.items()])
+  dst_filenames = []
+  for src_filename in filenames:
+    filename, ext = os.path.splitext(src_filename)
+    filename = os.path.basename(filename) + '_' + smart_names + ext
+    dst_filename = os.path.join(dest_path, filename)
+    print(f'src_filename {src_filename} symlinked as {dst_filename}')
+    dst_filenames.append(dst_filename)
+    # if not os.path.exists(dst_filename):
+    #   os.symlink(src_filename, dst_filename)
+
+  return dst_filenames
+
+
+# TODO: Simplify this for the new dependency graph structure.
+# `image_hashes` is only needed to find existing masters, and to get filenames
+# for the light / dark / bias / flat frames in the stack. That could be done
+# outside this function.
+#
+# This should be broken up into smaller pieces:
+#
+# should_run() checks for an existing master (local)
+#
+# resolve_files() makes lists of input files and their symlinked names,
+#  which will include FLATVERS (local)
+#
+# symlink_and_run_wbpp() builds the temp directory with symlinks (local or remote)
+#   pix.WeightedBatchPreprocessing() (local or remote)
+#
+# add_metadata() adds the stack id and content hash to the master (local or remote)
+@ray.remote
+def run(stack, image_hashes, fits_headers, plate_solutions, dest_path):
   with tempfile.TemporaryDirectory() as tmp_dir:
     # TODO: Don't ever change the user's input files. Instead, use the
     # "smart naming convention" to put the flat version in the symlinked

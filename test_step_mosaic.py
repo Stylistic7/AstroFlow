@@ -17,7 +17,6 @@ from spatial_association import find_components_by_cosine_similarity
 class TestMosaics(unittest.TestCase):
   def test_four_panels_on_equator(self):
     with tempfile.TemporaryDirectory() as tmp_dir:
-      print('### 1')
       image_hashes, fits_headers, plate_solutions = make_test_frames(
           number=10,
           prefix='foo',
@@ -27,7 +26,6 @@ class TestMosaics(unittest.TestCase):
           rotation_angle_deg=0,
           dither=0,
           fill_value=50)
-      print('### 2')
       image_hashes, fits_headers, plate_solutions = make_test_frames(
           number=10,
           prefix='bar',
@@ -40,7 +38,6 @@ class TestMosaics(unittest.TestCase):
           image_hashes=image_hashes,
           fits_headers=fits_headers,
           plate_solutions=plate_solutions)
-      print('### 3')
       image_hashes, fits_headers, plate_solutions = make_test_frames(
           number=10,
           prefix='baz',
@@ -53,7 +50,6 @@ class TestMosaics(unittest.TestCase):
           image_hashes=image_hashes,
           fits_headers=fits_headers,
           plate_solutions=plate_solutions)
-      print('### 4')
       image_hashes, fits_headers, plate_solutions = make_test_frames(
           number=10,
           prefix='qux',

@@ -10,6 +10,14 @@ import round_robin
 
 import ray
 
+from astro_flow_direct import global_registry
+
+
+@ray.remote
+def hash_image(filename):
+  return file_io.hash_of_image_data(filename)
+
+
 # TODO: Need to properly handle renamed or moved or deleted files.
 def compute_image_hashes(all_frames, image_hashes, quarantine_dir=None):
   # Set the filename to None for any files that no longer exist. Their hashes
@@ -28,27 +36,16 @@ def compute_image_hashes(all_frames, image_hashes, quarantine_dir=None):
         f'files have gone missing.')
 
   new_filenames = list(set(all_frames) - set(image_hashes.values()))
-  print('some new filenames', new_filenames[0:10])
 
-  print(f'### Computing image hashes for {len(new_filenames)} files...')
-  with concurrent.futures.ThreadPoolExecutor() as executor:
-    future_to_filename = {
-        executor.submit(file_io.hash_of_image_data, filename): filename
-        for filename in new_filenames
-    }
+  print(f'### Computing image hashes for {len(new_filenames)} new files...')
+  ref_to_filename = {hash_image.remote(f): f for f in new_filenames}
+  remaining_refs = list(ref_to_filename.keys())
+  while len(remaining_refs):
+    ready_refs, remaining_refs = ray.wait(remaining_refs)
+    for ref in ready_refs:
+      filename = ref_to_filename[ref]
+      result = ray.get(ref)
 
-    for future in concurrent.futures.as_completed(future_to_filename):
-      filename = future_to_filename[future]
-      print(f'future for filename {filename} is done')
-      result = future.result()
-      print(f'result it {result}')
-
-      # TODO: Report these failures to the user in the "library health" panel.
-      if not result:
-        print(f'### Got falsy result {result} for filename {filename}')
-
-      # TODO: Do something wiser than just asserting if there are duplicate
-      # images.
       if result in image_hashes and image_hashes[result] is not None:
         if quarantine_dir:
           print(f'### Quarantining file {filename} because it is a duplicate')
@@ -56,7 +53,6 @@ def compute_image_hashes(all_frames, image_hashes, quarantine_dir=None):
                       os.path.join(quarantine_dir, os.path.basename(filename)))
         continue
 
-      print(f'### image_hash[{result}] = {filename}')
       image_hashes[result] = filename
 
   return image_hashes

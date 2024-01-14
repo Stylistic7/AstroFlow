@@ -21,7 +21,7 @@ import position_string
 import clustering
 import pix
 import runs
-import dependency_graph as dg
+import new_dependency_graph as dg
 from stack import Stack, Status
 from target import Target
 from mosaic import Mosaic
@@ -49,7 +49,9 @@ import throughput
 # TODO: Productionize this... maybe automatically clone the git repo or something?
 import ray
 
-ray.init(runtime_env={"working_dir": "/Users/nobody/Projects/AstroFlow"})
+ray.init(runtime_env={"working_dir": "/Users/nobody/Projects/AstroFlow"},
+         resources={'diskcache': 1},
+         ignore_reinit_error=True)
 
 logger = structlog.get_logger()
 log = logger
@@ -706,77 +708,72 @@ def sanity_check_stacks(stacks, fits_headers):
   return stacks
 
 
-graph = dg.DependencyGraph()
+# graph = dg.DependencyGraph()
 
+# def stack_subframes(stack, image_hashes, fits_headers, plate_solutions,
+#                     output_dir):
+#   @graph.add()
+#   def inner():
+#     if stack.status != Status.READY:
+#       return (dg.Ran.RAN, (dg.Result.FAILURE, "Stack failed sanity checks"))
 
-def stack_subframes(stack, image_hashes, fits_headers, plate_solutions,
-                    output_dir):
-  @graph.add()
-  def inner():
-    if stack.status != Status.READY:
-      return (dg.Ran.RAN, (dg.Result.FAILURE, "Stack failed sanity checks"))
+#     print(f'Stacking stack {stack}!')
+#     result = stacking.run(stack, image_hashes, fits_headers, plate_solutions,
+#                           output_dir)
+#     print(f'stacking.run returned {result}')
+#     return result
 
-    print(f'Stacking stack {stack}!')
-    result = stacking.run(stack, image_hashes, fits_headers, plate_solutions,
-                          output_dir)
-    print(f'stacking.run returned {result}')
-    return result
+#   inner.id = ('stack_subframes', stack.id)
+#   return inner
 
-  inner.id = ('stack_subframes', stack.id)
-  return inner
+# def post_process_stack(stack, output_dir, upstream_tasks):
+#   @graph.add(*upstream_tasks)
+#   def inner():
+#     print(f'Post-processing stack {stack}!')
+#     return step_post_process_stack.post_process_stack(stack, output_dir)
 
+#   inner.id = ('post_process_stack', stack.id)
+#   return inner
 
-def post_process_stack(stack, output_dir, upstream_tasks):
-  @graph.add(*upstream_tasks)
-  def inner():
-    print(f'Post-processing stack {stack}!')
-    return step_post_process_stack.post_process_stack(stack, output_dir)
+# def post_process_target(target, stacks, output_dir, upstream_tasks):
+#   @graph.add(*upstream_tasks)
+#   def inner():
+#     print(f'Post-processing target {target}!')
+#     return step_post_process_target.run(target, stacks, output_dir)
 
-  inner.id = ('post_process_stack', stack.id)
-  return inner
+#   inner.id = ('post_process_target', target.id)
+#   return inner
 
+# def post_process_mosaic(image_hashes, plate_solutions, mosaic, targets, stacks,
+#                         output_dir, upstream_tasks):
+#   @graph.add(*upstream_tasks)
+#   def inner():
+#     print(f'### Post-processing mosaic {mosaic}!')
+#     return step_mosaic.process_mosaic(image_hashes,
+#                                       plate_solutions,
+#                                       mosaic,
+#                                       targets,
+#                                       stacks,
+#                                       preview=False,
+#                                       output_dir=output_dir)
 
-def post_process_target(target, stacks, output_dir, upstream_tasks):
-  @graph.add(*upstream_tasks)
-  def inner():
-    print(f'Post-processing target {target}!')
-    return step_post_process_target.run(target, stacks, output_dir)
+#   inner.id = ('post_process_mosaic', mosaic.id)
+#   return inner
 
-  inner.id = ('post_process_target', target.id)
-  return inner
+# def make_mosaic_preview(image_hashes, plate_solutions, mosaic, targets,
+#                         stacks):
+#   @graph.add()
+#   def inner():
+#     print(f'### Making preview for mosaic {mosaic}!')
+#     return step_mosaic.process_mosaic(image_hashes,
+#                                       plate_solutions,
+#                                       mosaic,
+#                                       targets,
+#                                       stacks,
+#                                       preview=True)
 
-
-def post_process_mosaic(image_hashes, plate_solutions, mosaic, targets, stacks,
-                        output_dir, upstream_tasks):
-  @graph.add(*upstream_tasks)
-  def inner():
-    print(f'### Post-processing mosaic {mosaic}!')
-    return step_mosaic.process_mosaic(image_hashes,
-                                      plate_solutions,
-                                      mosaic,
-                                      targets,
-                                      stacks,
-                                      preview=False,
-                                      output_dir=output_dir)
-
-  inner.id = ('post_process_mosaic', mosaic.id)
-  return inner
-
-
-def make_mosaic_preview(image_hashes, plate_solutions, mosaic, targets,
-                        stacks):
-  @graph.add()
-  def inner():
-    print(f'### Making preview for mosaic {mosaic}!')
-    return step_mosaic.process_mosaic(image_hashes,
-                                      plate_solutions,
-                                      mosaic,
-                                      targets,
-                                      stacks,
-                                      preview=True)
-
-  inner.id = ('make_mosaic_preview', mosaic.id)
-  return inner
+#   inner.id = ('make_mosaic_preview', mosaic.id)
+#   return inner
 
 
 def group_images(image_hashes,
@@ -831,15 +828,64 @@ def group_images(image_hashes,
   return stacks, targets, mosaics
 
 
-def main(context, default_control_mode=dg.ControlMode.AUTO):
-  log.info('Starting AstroFlow')
+@ray.remote(resources={'diskcache': 0.001})
+class GlobalActor:
+  def __init__(self):
+    self.image_hashes = cache.get('image_hashes', {})
+    self.fits_headers = cache.get('fits_headers', {})
+    self.plate_solutions = cache.get('plate_solutions', {})
 
-  # TODO: This is a wart.
-  pix._clear_cache()
+    print(f'### Read {len(self.image_hashes)} image hashes from the cache')
+
+  def get_image_hashes(self):
+    return self.image_hashes
+
+  def set_image_hashes(self, image_hashes):
+    self.image_hashes = image_hashes
+    print(f'### Writing {len(image_hashes)} image hashes to the cache')
+    cache['image_hashes'] = image_hashes
+
+  def get_fits_headers(self):
+    return self.fits_headers
+
+  def set_fits_headers(self, fits_headers):
+    self.fits_headers = fits_headers
+    cache['fits_headers'] = fits_headers
+
+  def get_plate_solutions(self):
+    return self.plate_solutions
+
+  def set_plate_solutions(self, plate_solutions):
+    self.plate_solutions = plate_solutions
+    cache['plate_solutions'] = plate_solutions
+
+
+global_registry = GlobalActor.remote()
+
+
+@ray.remote
+def print_globals():
+  image_hashes = ray.get(global_registry.get_image_hashes.remote())
+  fits_headers = ray.get(global_registry.get_fits_headers.remote())
+  plate_solutions = ray.get(global_registry.get_plate_solutions.remote())
+
+  return (
+      f'Global registry contains {len(image_hashes)} image hashes, '
+      f'{len(fits_headers)} FITS headers, and {len(plate_solutions)} plate solutions'
+  )
+
+
+def main(context):
+  log.info('Starting AstroFlow')
 
   if any(not os.path.exists(d) for d in context.input_dirs):
     print('### Input directories were not found; refusing to run.')
     return
+
+  print(ray.get(print_globals.remote()))
+
+  # TODO: This is a wart.
+  pix._clear_cache()
 
   control_modes = cache.get('control_modes', {})
   print('### Control modes are:')
@@ -856,14 +902,18 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
     download(context.input_dirs[0], context.default_filter)
 
   # TODO: Maybe just call these "input files" and "output files" or something.
-  all_frames = find_fits_files(context.input_dirs)
+  all_frames = sorted(find_fits_files(context.input_dirs))
 
-  masters = find_masters(context.output_dir)
+  masters = sorted(find_masters(context.output_dir))
   print(f'Found {len(masters)} masters')
 
+  # TODO: This is a bit ugly for such a simple concept. Maybe wrap it in a
+  # function?
+  image_hashes = ray.get(global_registry.get_image_hashes.remote())
   image_hashes = image_metadata.compute_image_hashes(
-      all_frames + masters, cache.get('image_hashes', {}), quarantine_dir)
-  cache['image_hashes'] = image_hashes
+      all_frames + masters, image_hashes, quarantine_dir)
+  global_registry.set_image_hashes.remote(image_hashes)
+  return
 
   fits_headers = image_metadata.read_fits_headers(
       image_hashes, cache.get('fits_headers', {}))
@@ -939,43 +989,42 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
   targets = cache['targets']
   mosaics = cache['mosaics']
 
-  graph.default_control_mode = default_control_mode
-
   # TODO: Consider how to make this multi-threaded.
   print(f'### Building dependency graph...')
   toplevel_tasks = []
-  print(f'### Iterating over {len(mosaics)} mosaics')
-  for mosaic in mosaics.values():
-    print(f'###   Entering {mosaic}')
-    toplevel_tasks.append(
-        make_mosaic_preview(image_hashes, plate_solutions, mosaic, targets,
-                            stacks))
 
-    print(f'###   Iterating over {len(mosaic.target_ids)} targets')
-    mosaic_tasks = []
-    for target_id in mosaic.target_ids:
-      target = targets[target_id]
-      print(f'###     Entering {target}')
-      print(f'###     Iterating over {len(target.stack_ids)} stacks')
-      target_tasks = []
-      for stack_id in target.stack_ids:
-        stack = stacks[stack_id]
-        print(f'###       Entering {stack}')
-        task_0 = stack_subframes(stack, image_hashes, fits_headers,
-                                 plate_solutions, context.output_dir)
-        task_1 = post_process_stack(stack, context.output_dir, [task_0])
-        target_tasks.extend([task_0, task_1])
+  # print(f'### Iterating over {len(mosaics)} mosaics')
+  # for mosaic in mosaics.values():
+  #   print(f'###   Entering {mosaic}')
+  #   toplevel_tasks.append(
+  #       make_mosaic_preview(image_hashes, plate_solutions, mosaic, targets,
+  #                           stacks))
 
-      print(f'###     Created {len(target_tasks)} tasks for target')
-      mosaic_tasks.append(
-          post_process_target(target, stacks, context.output_dir,
-                              target_tasks))
-    print(f'###   Created {len(mosaic_tasks)} tasks for mosaic')
-    toplevel_tasks.append(
-        post_process_mosaic(image_hashes, plate_solutions, mosaic, targets,
-                            stacks, context.output_dir, mosaic_tasks))
+  #   print(f'###   Iterating over {len(mosaic.target_ids)} targets')
+  #   mosaic_tasks = []
+  #   for target_id in mosaic.target_ids:
+  #     target = targets[target_id]
+  #     print(f'###     Entering {target}')
+  #     print(f'###     Iterating over {len(target.stack_ids)} stacks')
+  #     target_tasks = []
+  #     for stack_id in target.stack_ids:
+  #       stack = stacks[stack_id]
+  #       print(f'###       Entering {stack}')
+  #       task_0 = stack_subframes(stack, image_hashes, fits_headers,
+  #                                plate_solutions, context.output_dir)
+  #       task_1 = post_process_stack(stack, context.output_dir, [task_0])
+  #       target_tasks.extend([task_0, task_1])
 
-  print(f'### Created {len(toplevel_tasks)} toplevel tasks')
+  #     print(f'###     Created {len(target_tasks)} tasks for target')
+  #     mosaic_tasks.append(
+  #         post_process_target(target, stacks, context.output_dir,
+  #                             target_tasks))
+  #   print(f'###   Created {len(mosaic_tasks)} tasks for mosaic')
+  #   toplevel_tasks.append(
+  #       post_process_mosaic(image_hashes, plate_solutions, mosaic, targets,
+  #                           stacks, context.output_dir, mosaic_tasks))
+
+  # print(f'### Created {len(toplevel_tasks)} toplevel tasks')
 
   # TODO: This is the place to setup control modes, or to read them from the
   # user interface.
@@ -1022,9 +1071,9 @@ def main(context, default_control_mode=dg.ControlMode.AUTO):
     cache['prev_results'] = results
 
   print('### Starting execution')
-  with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-    results = graph.run(executor, control_modes, cache.get('prev_results', {}),
-                        callback)
+  # with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+  #   results = graph.run(executor, control_modes, cache.get('prev_results', {}),
+  #                       callback)
 
   # TODO: Close all subordinate PixInsight instances.
   print('### Compute graph is done!')
