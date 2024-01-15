@@ -9,8 +9,6 @@ import numpy as np
 from xisf import XISF
 import structlog
 
-from cache import cache
-
 logger = structlog.get_logger()
 log = logger
 
@@ -55,7 +53,6 @@ def read_fits(filename, print_header=False):
   return output
 
 
-# @cache.memoize()
 def hash_of_image_data(filename):
   if os.path.splitext(filename)[-1] in ['.fit', '.fits']:
     fits = pyfits.open(filename)

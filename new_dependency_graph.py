@@ -71,6 +71,10 @@ class ResultDict(dict):
     return self[k]
 
 
+class FromAncestors:
+  pass
+
+
 def run_graph(graph):
   ts = graphlib.TopologicalSorter(graph)
   ts.prepare()
@@ -101,13 +105,26 @@ def run_graph(graph):
         ts.done(node)
 
     def ancestor_results(task, arg):
-      return {(t, a): results[(t._function.__name__, a)]
-              for t, a in graph.get((task, arg), [])}
+      values = [
+          results[(t._function.__name__, a)]['result']
+          for t, a in graph.get((task, arg), [])
+      ]
 
-    ref_to_node = {
-        task.remote(arg, ancestor_results(task, arg)): (task, arg)
-        for task, arg in to_run
-    }
+      if len(values) == 0:
+        return None
+
+      if len(values) == 1:
+        return values[0]
+
+      return values
+
+    def run(task, arg):
+      if arg == FromAncestors:
+        return task.remote(ancestor_results(task, arg))
+      else:
+        return task.remote(arg, ancestor_results(task, arg))
+
+    ref_to_node = {run(task, arg): (task, arg) for task, arg in to_run}
     remaining_refs = list(ref_to_node.keys())
 
     while len(remaining_refs):

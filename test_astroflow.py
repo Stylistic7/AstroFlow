@@ -1,36 +1,80 @@
 import unittest
 import tempfile
+import os
+import pathlib
 
+import ray
+
+os.environ['ASTROFLOW_MOCK_CACHE'] = "true"
+
+ray.init(resources={'diskcache': 1},
+         ignore_reinit_error=True,
+         runtime_env={"env_vars": {
+             "ASTROFLOW_MOCK_CACHE": "true"
+         }})
+
+from cache import cache
 import file_io
-import make_test_frames
+import image_metadata
+from make_test_frames import make_test_frames
+import new_dependency_graph as dg
 import spatial_association
+import ray_diskcache
 
 
 class TestAstroFlow(unittest.TestCase):
-  def test_spatial_association(self):
-    pass
+  def setUp(self):
+    ray_diskcache.clear()
+    cache.clear()
 
-    # with tempfile.TemporaryDirectory() as project_dir:
-    #   # Make one group of light frames at one well-defined position in the sky.
-    #   make_test_frames.make_light_frames(project_dir, 311, 37, 0.05)
+  def tearDown(self):
+    ray_diskcache.clear()
+    cache.clear()
 
-    #   # Make another group of light frames a few degrees away.
-    #   make_test_frames.make_light_frames(project_dir, 311, 40, 0.05)
+  def test_read_fits_headers(self):
+    with tempfile.TemporaryDirectory() as tmp_dir:
+      make_test_frames(number=3, project_dir=tmp_dir)
 
-    #   fits_filenames = file_io.find_files(project_dir, 'Light*.fit')
-    #   print('fits_filenames', fits_filenames)
+      filenames = sorted([
+          str(path.absolute()) for path in pathlib.Path(tmp_dir).glob('*.fit*')
+      ])
 
-    #   positions = []
-    #   for filename in fits_filenames:
-    #     header = file_io.read_fits(filename)
-    #     positions.append([header['CRVAL1'], header['CRVAL2']])
+      result = ray.get(image_metadata.read_fits_headers_ray.remote(filenames))
 
-    #   print('positions', positions)
-    #   pred = list(spatial_association.find_components(positions))
-    #   print('pred', pred)
+      self.assertEqual(type(result), dg.ResultDict)
+      self.assertEqual(len(result.result), 3)
 
-    #   self.assertEqual(pred.count(0), 10)
-    #   self.assertEqual(pred.count(1), 10)
+      ray_diskcache.clear()
+      cache.clear()
+
+  def test_read_fits_headers_in_graph(self):
+    with tempfile.TemporaryDirectory() as tmp_dir:
+      make_test_frames(number=6, project_dir=tmp_dir)
+
+      filenames = sorted([
+          str(path.absolute()) for path in pathlib.Path(tmp_dir).glob('*.fit*')
+      ])
+
+      A = (image_metadata.read_fits_headers_ray, tuple(filenames))
+      B = (spatial_association.find_groups_by_fits_header_ray,
+           dg.FromAncestors)
+
+      graph = {B: {A}}
+
+      results = dg.run_graph(graph)
+
+      result = results[('read_fits_headers_ray', tuple(filenames))]
+      self.assertEqual(type(result), dg.ResultDict)
+      self.assertTrue(result.ran)
+      self.assertEqual(len(result.result), 6)
+
+      # TODO: This is messy. What's the best way to get results after the graph
+      # has run?
+      result = next(results[k] for k in results
+                    if k[0] == 'find_groups_by_fits_header_ray')
+      groups = result.result
+      self.assertEqual(len(groups), 1)
+      self.assertEqual(len(groups[0]), 6)
 
 
 if __name__ == '__main__':

@@ -12,14 +12,15 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 import matplotlib.pyplot as plt
 from spherical_geometry.polygon import SphericalPolygon
+import ray
 
+from ray_diskcache import or_equals
 import ngc2000_catalog
 import position_string
 from distance import distance
 import plate_solving
 import distance
-
-from cache import cache
+import new_dependency_graph as dg
 
 # TODO: Bring all knobs up here.
 MIN_COMPONENT_MEMBERS = 5
@@ -276,5 +277,27 @@ def find_components_by_iou(light_frames,
                           min_component_members)
 
 
-if __name__ == '__main__':
-  find_components(cache['light_frames'])
+def find_groups_by_fits_header(fits_headers,
+                               threshold=0.99999,
+                               min_component_members=MIN_COMPONENT_MEMBERS):
+  assert fits_headers
+
+  def center_from_fits_header(fits_header):
+    if 'CRVAL1' in fits_header and 'CRVAL2' in fits_header:
+      return [fits_header['CRVAL1'], fits_header['CRVAL2']]
+    elif 'RA' in fits_header and 'DEC' in fits_header:
+      return [fits_header['RA'], fits_header['DEC']]
+
+  centers = {f: center_from_fits_header(h) for f, h in fits_headers.items()}
+
+  def comparison_fn(a, b):
+    return np.dot(a, b) > threshold
+
+  return find_groups(centers.keys(), centers, comparison_fn,
+                     min_component_members)
+
+
+@ray.remote
+def find_groups_by_fits_header_ray(fits_headers):
+  groups = find_groups_by_fits_header(fits_headers)
+  return dg.ResultDict(ran=True, run_successors=True, result=groups)

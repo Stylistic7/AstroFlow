@@ -13,7 +13,7 @@ import traceback
 
 import file_io
 
-from cache import cache
+# from cache import cache
 
 MIN_STAR_FRACTION = 0.5
 
@@ -68,85 +68,84 @@ def _read_image(filename):
     return file_io.read_fits_image(filename)
 
 
-def make_and_cache_thumbnail(image_hashes,
-                             light_frame,
-                             dark_frame,
-                             flat_frame,
-                             rotate,
-                             fudge=None,
-                             width=1200):
-  try:
-    light_frame_image = resize_array(_read_image(image_hashes[light_frame]),
-                                     width)
-    if rotate:
-      light_frame_image = np.rot90(light_frame_image, 2)
+# def make_and_cache_thumbnail(image_hashes,
+#                              light_frame,
+#                              dark_frame,
+#                              flat_frame,
+#                              rotate,
+#                              fudge=None,
+#                              width=1200):
+#   try:
+#     light_frame_image = resize_array(_read_image(image_hashes[light_frame]),
+#                                      width)
+#     if rotate:
+#       light_frame_image = np.rot90(light_frame_image, 2)
 
-    if not dark_frame or not flat_frame:
-      cache[('thumbnail_image', light_frame)] = autostretch(light_frame_image)
-      return
+#     if not dark_frame or not flat_frame:
+#       cache[('thumbnail_image', light_frame)] = autostretch(light_frame_image)
+#       return
 
-    flat_frame_image = resize_array(_read_image(image_hashes[flat_frame]),
-                                    width)
-    dark_frame_image = resize_array(_read_image(image_hashes[dark_frame]),
-                                    width)
+#     flat_frame_image = resize_array(_read_image(image_hashes[flat_frame]),
+#                                     width)
+#     dark_frame_image = resize_array(_read_image(image_hashes[dark_frame]),
+#                                     width)
 
-    light_frame_image -= dark_frame_image
-    flat_frame_image -= dark_frame_image
+#     light_frame_image -= dark_frame_image
+#     flat_frame_image -= dark_frame_image
 
-    # if fudge:
-    #   min, max = np.min(flat_frame_image), np.max(flat_frame_image)
-    #   flat_frame_image = np.interp(flat_frame_image, [min, max],
-    #                                [min + fudge * (max - min), max])
+#     # if fudge:
+#     #   min, max = np.min(flat_frame_image), np.max(flat_frame_image)
+#     #   flat_frame_image = np.interp(flat_frame_image, [min, max],
+#     #                                [min + fudge * (max - min), max])
 
-    light_frame_image = np.divide(light_frame_image,
-                                  flat_frame_image,
-                                  out=np.zeros_like(light_frame_image),
-                                  where=flat_frame_image != 0)
+#     light_frame_image = np.divide(light_frame_image,
+#                                   flat_frame_image,
+#                                   out=np.zeros_like(light_frame_image),
+#                                   where=flat_frame_image != 0)
 
-    light_frame_image = autostretch(np.clip(light_frame_image, 0.0, 1.0))
-    cache[('thumbnail_image', light_frame)] = light_frame_image
-  except Exception:
-    traceback.print_exc()
+#     light_frame_image = autostretch(np.clip(light_frame_image, 0.0, 1.0))
+#     cache[('thumbnail_image', light_frame)] = light_frame_image
+#   except Exception:
+#     traceback.print_exc()
 
+# # TODO: Compare various ways of getting "the best" thumbnail (preview)
+# # image for a stack: highest std, greatest star count, etc.
+# #
+# # Make a library for picking / sorting images by quality.
+# def make_and_cache_stack_thumbnails(stack,
+#                                     image_hashes,
+#                                     plate_solutions,
+#                                     width=1200):
+#   height, width = resize_array(
+#       file_io.read_fits_image(image_hashes[stack.light_frames[0]]),
+#       width).shape
 
-# TODO: Compare various ways of getting "the best" thumbnail (preview)
-# image for a stack: highest std, greatest star count, etc.
-#
-# Make a library for picking / sorting images by quality.
-def make_and_cache_stack_thumbnails(stack,
-                                    image_hashes,
-                                    plate_solutions,
-                                    width=1200):
-  height, width = resize_array(
-      file_io.read_fits_image(image_hashes[stack.light_frames[0]]),
-      width).shape
+#   height = int(((height + 8 - 1) / 8) * 8)
+#   print(f'Creating video of width {width}, height {height} '
+#         f'with {len(stack.light_frames)} frames')
 
-  height = int(((height + 8 - 1) / 8) * 8)
-  print(f'Creating video of width {width}, height {height} '
-        f'with {len(stack.light_frames)} frames')
+#   with tempfile.TemporaryDirectory() as tmp_dir:
+#     fourcc = cv2.VideoWriter_fourcc(*'VP80')
+#     video_filename = os.path.join(tmp_dir, 'output.webm')
+#     out = cv2.VideoWriter(video_filename, fourcc, 10.0, (width, height), False)
 
-  with tempfile.TemporaryDirectory() as tmp_dir:
-    fourcc = cv2.VideoWriter_fourcc(*'VP80')
-    video_filename = os.path.join(tmp_dir, 'output.webm')
-    out = cv2.VideoWriter(video_filename, fourcc, 10.0, (width, height), False)
+#     light_frames_by_stars = sorted(stack.light_frames,
+#                                    key=lambda f: plate_solutions[f].num_stars,
+#                                    reverse=True)
+#     thumbnail_image = array_to_png(
+#         cache[('thumbnail_image', light_frames_by_stars[0])])
 
-    light_frames_by_stars = sorted(stack.light_frames,
-                                   key=lambda f: plate_solutions[f].num_stars,
-                                   reverse=True)
-    thumbnail_image = array_to_png(
-        cache[('thumbnail_image', light_frames_by_stars[0])])
+#     for i, hash in enumerate(light_frames_by_stars):
+#       im = cache[('thumbnail_image', hash)]
+#       im = (im * 255.0).astype(np.uint8)
 
-    for i, hash in enumerate(light_frames_by_stars):
-      im = cache[('thumbnail_image', hash)]
-      im = (im * 255.0).astype(np.uint8)
+#       frame = np.zeros((height, width), dtype=np.uint8)
+#       frame[0:im.shape[0], 0:im.shape[1]] = im
 
-      frame = np.zeros((height, width), dtype=np.uint8)
-      frame[0:im.shape[0], 0:im.shape[1]] = im
+#       out.write(frame)
 
-      out.write(frame)
+#     out.release()
+#     thumbnail_video = open(video_filename, 'rb').read()
 
-    out.release()
-    thumbnail_video = open(video_filename, 'rb').read()
-
-    cache[('stack_thumbnail_image', stack.id)] = thumbnail_image
-    cache[('stack_thumbnail_video', stack.id)] = thumbnail_video
+#     cache[('stack_thumbnail_image', stack.id)] = thumbnail_image
+#     cache[('stack_thumbnail_video', stack.id)] = thumbnail_video

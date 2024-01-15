@@ -27,7 +27,7 @@ ray.init(runtime_env={"working_dir": "/Users/nobody/Projects/AstroFlow"},
 logger = structlog.get_logger()
 log = logger
 
-from globals import global_registry, print_globals
+import globals
 import position_string
 import clustering
 import pix
@@ -91,6 +91,8 @@ import throughput
 # TODO: Emit mosaic plans in Telescopius format for easy continuation.
 
 
+# Compute graph:
+#
 # TODO: Building up a context object that is "parallel" to the disk cache
 # is an anti-pattern. The only things that might change are:
 #
@@ -783,6 +785,7 @@ def group_images(image_hashes,
   for stack in stacks:
     print('### center is', stack.center)
 
+  # TODO: Put these in the dependency graph.
   make_image_thumbnails(stacks, image_hashes, plate_solutions, fits_headers)
 
   stacks = sanity_check_stacks(stacks, fits_headers)
@@ -790,6 +793,7 @@ def group_images(image_hashes,
   # TODO: Eliminate this shape change.
   stacks = {stack.id: stack for stack in stacks}
 
+  # TODO: Put these in the dependency graph.
   make_stack_thumbnails_videos(stacks, image_hashes, plate_solutions,
                                fits_headers)
 
@@ -809,9 +813,10 @@ def main(context):
     print('### Input directories were not found; refusing to run.')
     return
 
-  print(ray.get(print_globals.remote()))
+  # print(ray.get(print_globals.remote()))
 
   # TODO: This is a wart.
+  # TODO: Every Ray worker node will need its own cache for this.
   pix._clear_cache()
 
   control_modes = cache.get('control_modes', {})
@@ -838,22 +843,41 @@ def main(context):
   all_frames = all_frames[0:200]
   masters = []
 
+  def exists_or_none(f):
+    if f and os.path.exists(f):
+      return f
+    else:
+      return None
+
+  image_hashes = cache.get('image_hashes', {})
+
+  prev_num_missing_files = sum(1 for f in image_hashes.values() if not f)
+  image_hashes = {h: exists_or_none(f) for h, f in image_hashes.items()}
+  num_missing_files = sum(1 for f in image_hashes.values() if not f)
+  print(f'### {num_missing_files - prev_num_missing_files} '
+        f'files have gone missing.')
+
+  new_filenames = list(set(all_frames) - set(image_hashes.values()))
+
+  print('### Calling image_metadata.compute_images_metadata')
+  image_metadata.compute_images_metadata(new_filenames)
+
   # TODO: This is a bit ugly for such a simple concept. Maybe abstract it in a
   # function?
-  image_hashes = ray.get(global_registry.get_image_hashes.remote())
-  image_hashes = image_metadata.compute_image_hashes(
-      all_frames + masters, image_hashes, quarantine_dir)
-  global_registry.set_image_hashes.remote(image_hashes)
+  # image_hashes = ray.get(global_registry.get_image_hashes.remote())
+  # image_hashes = image_metadata.compute_image_hashes(
+  #     all_frames + masters, image_hashes, quarantine_dir)
+  # global_registry.set_image_hashes.remote(image_hashes)
 
-  fits_headers = image_metadata.read_fits_headers(
-      image_hashes, cache.get('fits_headers', {}))
-  fits_headers = sort_by_observation_date(fits_headers)
-  global_registry.set_fits_headers.remote(fits_headers)
+  # fits_headers = image_metadata.read_fits_headers(
+  #     image_hashes, cache.get('fits_headers', {}))
+  # fits_headers = sort_by_observation_date(fits_headers)
+  # global_registry.set_fits_headers.remote(fits_headers)
 
-  light_frames, dark_frames, bias_frames, flat_frames = split_images_by_type(
-      fits_headers)
+  # light_frames, dark_frames, bias_frames, flat_frames = split_images_by_type(
+  #     fits_headers)
 
-  master_hashes = [h for h, f in image_hashes.items() if f in masters]
+  # master_hashes = [h for h, f in image_hashes.items() if f in masters]
 
   # TODO: Make an user option to force this. The plate-solving step should be
   # pulled into the dependency graph.
@@ -872,61 +896,65 @@ def main(context):
   #
   # TODO: Don't quarantine masters, even if they can't be plate-solved. I really
   # need to figure out why the plate-solving fails for them.
-  plate_solutions = ray.get(global_registry.get_plate_solutions.remote())
-  global_registry.set_plate_solutions.remote(plate_solutions)
-  unsolved = list(
-      set(light_frames + master_hashes) - set(plate_solutions.keys()))
+  # plate_solutions = ray.get(global_registry.get_plate_solutions.remote())
+  # global_registry.set_plate_solutions.remote(plate_solutions)
+  # unsolved = list(
+  #     set(light_frames + master_hashes) - set(plate_solutions.keys()))
 
-  num_remaining = len(unsolved)
+  # num_remaining = len(unsolved)
 
-  # TODO: Make sure exceptions thrown in here bubble up.
-  def callback(plate_solutions):
-    nonlocal num_remaining
+  # # TODO: Make sure exceptions thrown in here bubble up.
+  # def callback(plate_solutions):
+  #   nonlocal num_remaining
 
-    # TODO: Quarantining should be pulled out as an independent step. Each time
-    # AstroFlow runs, it should identify files that are in the wrong directory
-    # and move them.
-    #
-    # - Images with no plate solutions must be in the quarantine dir, or will
-    #   be moved there.
-    cache['plate_solutions'] = plate_solutions
-    stacks, targets, mosaics = group_images(
-        image_hashes, plate_solutions, fits_headers, light_frames, dark_frames,
-        bias_frames, flat_frames, quarantine_dir)
+  #   # TODO: Quarantining should be pulled out as an independent step. Each time
+  #   # AstroFlow runs, it should identify files that are in the wrong directory
+  #   # and move them.
+  #   #
+  #   # - Images with no plate solutions must be in the quarantine dir, or will
+  #   #   be moved there.
+  #   cache['plate_solutions'] = plate_solutions
+  #   stacks, targets, mosaics = group_images(
+  #       image_hashes, plate_solutions, fits_headers, light_frames, dark_frames,
+  #       bias_frames, flat_frames, quarantine_dir)
 
-    # TODO: Re-enable this.
-    # cartesian_product_lights_and_flats(stacks, flat_frames, image_hashes,
-    #                                    fits_headers, plate_solutions)
+  #   # TODO: Re-enable this.
+  #   # cartesian_product_lights_and_flats(stacks, flat_frames, image_hashes,
+  #   #                                    fits_headers, plate_solutions)
 
-    # These are for the web server to read.
-    cache['stacks'] = stacks
-    cache['targets'] = targets
-    cache['mosaics'] = mosaics
+  #   # These are for the web server to read.
+  #   cache['stacks'] = stacks
+  #   cache['targets'] = targets
+  #   cache['mosaics'] = mosaics
 
-    num_remaining -= 100
-    eta = time.strftime(
-        "%H:%M:%S",
-        time.gmtime(throughput.estimate_time('plate_solve', num_remaining)))
-    print(f'### ETA {eta}')
+  #   num_remaining -= 100
+  #   eta = time.strftime(
+  #       "%H:%M:%S",
+  #       time.gmtime(throughput.estimate_time('plate_solve', num_remaining)))
+  #   print(f'### ETA {eta}')
 
-  plate_solutions = image_metadata.plate_solve(unsolved,
-                                               image_hashes,
-                                               plate_solutions,
-                                               quarantine_dir,
-                                               callback_number=1000,
-                                               callback=callback)
+  # plate_solutions = image_metadata.plate_solve(unsolved,
+  #                                              image_hashes,
+  #                                              plate_solutions,
+  #                                              quarantine_dir,
+  #                                              callback_number=1000,
+  #                                              callback=callback)
 
-  stacks = cache['stacks']
-  targets = cache['targets']
-  mosaics = cache['mosaics']
+  # stacks = cache['stacks']
+  # targets = cache['targets']
+  # mosaics = cache['mosaics']
 
   # TODO: Consider how to make this multi-threaded.
   print(f'### Building dependency graph...')
-  toplevel_tasks = []
+  # toplevel_tasks = []
 
-  # print(f'### Iterating over {len(mosaics)} mosaics')
-  # for mosaic in mosaics.values():
-  #   print(f'###   Entering {mosaic}')
+  graph = {}
+
+  print(f'### Iterating over {len(mosaics)} mosaics')
+  for mosaic in mosaics.values():
+    print(f'###   Entering {mosaic}')
+    graph[step_mosaic.process_mosaic, (mosaic, targets, stacks)] = {}
+
   #   toplevel_tasks.append(
   #       make_mosaic_preview(image_hashes, plate_solutions, mosaic, targets,
   #                           stacks))
@@ -1002,6 +1030,8 @@ def main(context):
     cache['prev_results'] = results
 
   print('### Starting execution')
+  dg.run_graph(graph)
+
   # with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
   #   results = graph.run(executor, control_modes, cache.get('prev_results', {}),
   #                       callback)

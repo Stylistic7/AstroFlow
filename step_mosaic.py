@@ -24,7 +24,9 @@ from enum import Enum
 from dataclasses import dataclass
 import largestinteriorrectangle
 from multiprocessing import Pool
-import dependency_graph as dg
+import ray
+import globals
+
 from output_file import OutputFile
 from prev_results import get_prev_result_object
 
@@ -172,14 +174,14 @@ def process_mosaic_per_filter(image_hashes, plate_solutions, mosaic, targets,
       return OutputFile(merged_mosaic)
 
 
-def process_mosaic(image_hashes,
-                   plate_solutions,
-                   mosaic,
-                   targets,
-                   stacks,
-                   preview=False,
-                   output_dir=None):
+@ray.remote
+def process_mosaic(mosaic, targets, stacks, preview=False, output_dir=None):
   print(f'### Entering process_mosaic for mosaic {mosaic} preview {preview}')
+
+  # image_hashes = ray.get(global_registry.get_image_hashes.remote())
+  # plate_solutions = ray.get(global_registry.get_plate_solutions.remote())
+  image_hashes = globals.get_global('image_hashes', {})
+  plate_solutions = globals.get_global('plate_solutions', {})
 
   proc = psutil.Process()
   print(f'### There are {len(proc.open_files())} open files')
