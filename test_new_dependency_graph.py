@@ -1,28 +1,13 @@
 import unittest
 import os
-import ray
 import graphlib
 
+import ray
+
+ray.init(resources={'diskcache': 1}, ignore_reinit_error=True)
+
+import globals
 import new_dependency_graph as dg
-
-# This Ray cluster will be able to run tasks that are explicitly local, as well
-# as any task with no specific resources.
-ray.init(resources={'diskcache': 1})
-
-
-@ray.remote
-class GlobalVarActor:
-  def __init__(self):
-    self.global_v = 0
-
-  def set_global_v(self, v):
-    self.global_v = v
-
-  def get_global_v(self):
-    return self.global_v
-
-
-global_v_registry = GlobalVarActor.remote()
 
 
 @ray.remote
@@ -31,7 +16,7 @@ def my_remote_task(arg):
   return dg.ResultDict(run_successors=True, result=arg)
 
 
-@ray.remote(resources={'diskcache': 1})
+@ray.remote(resources={'diskcache': 0.001})
 def my_local_task(arg):
   print('running local task', arg)
   return dg.ResultDict(run_successors=True, result=arg)
@@ -40,8 +25,7 @@ def my_local_task(arg):
 @ray.remote
 def my_task_with_global(arg):
   print('running task with global', arg)
-  value = ray.get(global_v_registry.get_global_v.remote())
-  global_v_registry.set_global_v.remote(value + 1)
+  globals.plus_equals('foo', 1)
   return dg.ResultDict(run_successors=True, result=arg)
 
 
@@ -185,6 +169,8 @@ class TestDependencyGraph(unittest.TestCase):
     self.assertEqual(results, expected_results)
 
   def test_global_variable(self):
+    globals.set_global('foo', 0)
+
     A = (my_task_with_global, "A")
     B = (my_task_with_global, "B")
     C = (my_task_with_global, "C")
@@ -195,7 +181,7 @@ class TestDependencyGraph(unittest.TestCase):
     graph = {D: {C}, C: {B}, B: {A}}
     results = dg.run_graph(graph)
 
-    self.assertEqual(ray.get(global_v_registry.get_global_v.remote()), 4)
+    self.assertEqual(globals.get_global('foo'), 4)
 
 
 if __name__ == "__main__":

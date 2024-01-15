@@ -4,45 +4,52 @@ from cache import cache
 
 
 @ray.remote(resources={'diskcache': 0.001})
-class GlobalActor:
-  def __init__(self):
-    self.image_hashes = cache.get('image_hashes', {})
-    self.fits_headers = cache.get('fits_headers', {})
-    self.plate_solutions = cache.get('plate_solutions', {})
-
-    print(f'### Read {len(self.image_hashes)} image hashes from the cache')
-
-  def get_image_hashes(self):
-    return self.image_hashes
-
-  def set_image_hashes(self, image_hashes):
-    self.image_hashes = image_hashes
-    print(f'### Writing {len(image_hashes)} image hashes to the cache')
-    cache['image_hashes'] = image_hashes
-
-  def get_fits_headers(self):
-    return self.fits_headers
-
-  def set_fits_headers(self, fits_headers):
-    self.fits_headers = fits_headers
-    cache['fits_headers'] = fits_headers
-
-  def get_plate_solutions(self):
-    return self.plate_solutions
-
-  def set_plate_solutions(self, plate_solutions):
-    self.plate_solutions = plate_solutions
-    cache['plate_solutions'] = plate_solutions
+def _get(key, default=None):
+  return cache.get(key, default)
 
 
-global_registry = GlobalActor.remote()
+@ray.remote(resources={'diskcache': 0.001})
+def _set(key, value):
+  cache[key] = value
+
+
+@ray.remote(resources={'diskcache': 0.001})
+def _pipe_equals(key, value):
+  with cache.transact():
+    new_value = cache[key] | value
+    cache[key] = new_value
+    return new_value
+
+
+@ray.remote(resources={'diskcache': 0.001})
+def _plus_equals(key, value):
+  with cache.transact():
+    new_value = cache[key] + value
+    cache[key] = new_value
+    return new_value
+
+
+def get_global(key, default=None):
+  return ray.get(_get.remote(key, default))
+
+
+def set_global(key, value):
+  return ray.get(_set.remote(key, value))
+
+
+def plus_equals(key, value):
+  return ray.get(_plus_equals.remote(key, value))
+
+
+def pipe_equals(key, value):
+  return ray.get(_pipe_equals.remote(key, value))
 
 
 @ray.remote
 def print_globals():
-  image_hashes = ray.get(global_registry.get_image_hashes.remote())
-  fits_headers = ray.get(global_registry.get_fits_headers.remote())
-  plate_solutions = ray.get(global_registry.get_plate_solutions.remote())
+  image_hashes = get_global('image_hashes', {})
+  fits_headers = get_global('fits_headers', {})
+  plate_solutions = get_global('plate_solutions', {})
 
   return (
       f'Global registry contains {len(image_hashes)} image hashes, '
