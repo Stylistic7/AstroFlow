@@ -14,7 +14,7 @@ def _set(key, value):
 
 
 @ray.remote(resources={'diskcache': 0.001})
-def _pipe_equals(key, value):
+def _or_equals(key, value):
   with cache.transact():
     new_value = cache[key] | value
     cache[key] = new_value
@@ -41,8 +41,8 @@ def plus_equals(key, value):
   return ray.get(_plus_equals.remote(key, value))
 
 
-def pipe_equals(key, value):
-  return ray.get(_pipe_equals.remote(key, value))
+def or_equals(key, value):
+  return ray.get(_or_equals.remote(key, value))
 
 
 @ray.remote
