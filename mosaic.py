@@ -4,6 +4,7 @@ import functools
 from spherical_geometry.polygon import SphericalPolygon
 from shapely.geometry import Polygon
 import hashlib
+import xxhash
 
 import projection
 import mollweide
@@ -62,3 +63,6 @@ class Mosaic:
   def __str__(self):
     return (f'Mosaic(name={self.name}, id={self.id}, '
             f'{len(self.target_ids)} targets)')
+
+  def __hash__(self):
+    return xxhash.xxh64(self.id).intdigest()

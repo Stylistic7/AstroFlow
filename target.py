@@ -4,6 +4,7 @@ import functools
 import hashlib
 from spherical_geometry.polygon import SphericalPolygon
 from shapely.geometry import Polygon
+import xxhash
 
 import mollweide
 import footprints
@@ -31,6 +32,9 @@ class Target:
 
   def __str__(self):
     return (f'Target(name={self.name}, {len(self.stack_ids)} stacks)')
+
+  def __hash__(self):
+    return xxhash.xxh64(self.id).intdigest()
 
   # TODO: How to guarantee these are always in the same order?
   def store_id(self):
