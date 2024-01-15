@@ -100,7 +100,14 @@ def run_graph(graph):
         results[(task._function.__name__, arg)] = ResultDict(ran=False)
         ts.done(node)
 
-    ref_to_node = {task.remote(arg): (task, arg) for task, arg in to_run}
+    def ancestor_results(task, arg):
+      return {(t, a): results[(t._function.__name__, a)]
+              for t, a in graph.get((task, arg), [])}
+
+    ref_to_node = {
+        task.remote(arg, ancestor_results(task, arg)): (task, arg)
+        for task, arg in to_run
+    }
     remaining_refs = list(ref_to_node.keys())
 
     while len(remaining_refs):

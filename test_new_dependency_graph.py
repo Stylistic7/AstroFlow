@@ -11,22 +11,35 @@ import new_dependency_graph as dg
 
 
 @ray.remote
-def my_remote_task(arg):
+def my_remote_task(arg, *args):
   print('running remote task', arg)
   return dg.ResultDict(run_successors=True, result=arg)
 
 
 @ray.remote(resources={'diskcache': 0.001})
-def my_local_task(arg):
+def my_local_task(arg, *args):
   print('running local task', arg)
   return dg.ResultDict(run_successors=True, result=arg)
 
 
 @ray.remote
-def my_task_with_global(arg):
+def my_task_with_global(arg, *args):
   print('running task with global', arg)
   globals.plus_equals('foo', 1)
   return dg.ResultDict(run_successors=True, result=arg)
+
+
+@ray.remote
+def my_first_task(*args):
+  return dg.ResultDict(run_successors=True, counter=1)
+
+
+@ray.remote
+def my_later_task(arg, ancestor_results):
+  print('running later task', arg, 'ancestor_results', ancestor_results)
+  return dg.ResultDict(
+      run_successors=True,
+      counter=next(iter(ancestor_results.values()))['counter'] + 1)
 
 
 class TestDependencyGraph(unittest.TestCase):
@@ -176,12 +189,22 @@ class TestDependencyGraph(unittest.TestCase):
     C = (my_task_with_global, "C")
     D = (my_task_with_global, "D")
 
-    my_task_with_global.should_run = lambda x: True
-
     graph = {D: {C}, C: {B}, B: {A}}
     results = dg.run_graph(graph)
 
     self.assertEqual(globals.get_global('foo'), 4)
+
+  def test_pass_down(self):
+    A = (my_first_task, None)
+    B = (my_later_task, None)
+
+    graph = {B: {A}}
+    results = dg.run_graph(graph)
+
+    self.assertEqual(results[(my_first_task._function.__name__, None)].counter,
+                     1)
+    self.assertEqual(results[(my_later_task._function.__name__, None)].counter,
+                     2)
 
 
 if __name__ == "__main__":
