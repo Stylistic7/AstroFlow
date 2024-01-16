@@ -5,13 +5,15 @@ import pathlib
 
 import ray
 
-os.environ['ASTROFLOW_MOCK_CACHE'] = "true"
+os.environ["ASTROFLOW_MOCK_CACHE"] = "true"
 
-ray.init(resources={'diskcache': 1},
-         ignore_reinit_error=True,
-         runtime_env={"env_vars": {
-             "ASTROFLOW_MOCK_CACHE": "true"
-         }})
+ray.init(
+    resources={"diskcache": 1},
+    ignore_reinit_error=True,
+    runtime_env={"env_vars": {
+        "ASTROFLOW_MOCK_CACHE": "true"
+    }},
+)
 
 from cache import cache
 import file_io
@@ -23,81 +25,92 @@ import ray_diskcache
 
 
 class TestAstroFlow(unittest.TestCase):
-  def setUp(self):
-    ray_diskcache.clear()
-    cache.clear()
 
-  def tearDown(self):
-    ray_diskcache.clear()
-    cache.clear()
+    def setUp(self):
+        ray_diskcache.clear()
+        cache.clear()
 
-  def test_read_fits_headers(self):
-    with tempfile.TemporaryDirectory() as tmp_dir:
-      make_test_frames(number=3, project_dir=tmp_dir)
+    def tearDown(self):
+        ray_diskcache.clear()
+        cache.clear()
 
-      filenames = sorted([
-          str(path.absolute()) for path in pathlib.Path(tmp_dir).glob('*.fit*')
-      ])
+    def test_read_fits_headers(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            make_test_frames(number=3, project_dir=tmp_dir)
 
-      result = ray.get(image_metadata.read_fits_headers_ray.remote(filenames))
+            filenames = sorted([
+                str(path.absolute())
+                for path in pathlib.Path(tmp_dir).glob("*.fit*")
+            ])
 
-      self.assertEqual(type(result), dg.ResultDict)
-      self.assertEqual(len(result.result), 3)
+            result = ray.get(
+                image_metadata.read_fits_headers_ray.remote(filenames))
 
-      ray_diskcache.clear()
-      cache.clear()
+            self.assertEqual(type(result), dg.ResultDict)
+            self.assertEqual(len(result.result), 3)
 
-  def test_up_to_plate_solving(self):
-    with tempfile.TemporaryDirectory() as tmp_dir:
-      make_test_frames(number=20, project_dir=tmp_dir)
+            ray_diskcache.clear()
+            cache.clear()
 
-      filenames = sorted([
-          str(path.absolute()) for path in pathlib.Path(tmp_dir).glob('*.fit*')
-      ])
+    def test_up_to_plate_solving(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            make_test_frames(number=20, project_dir=tmp_dir)
 
-      A = (image_metadata.read_fits_headers_ray, tuple(filenames))
-      B = (spatial_association.find_groups_by_fits_header_ray,
-           dg.FromAncestors)
+            filenames = sorted([
+                str(path.absolute())
+                for path in pathlib.Path(tmp_dir).glob("*.fit*")
+            ])
 
-      graph = {B: {A}}
+            A = (image_metadata.read_fits_headers_ray, tuple(filenames))
+            B = (spatial_association.find_groups_by_fits_header_ray,
+                 dg.FromAncestors)
 
-      results = dg.run_graph(graph)
+            graph = {B: {A}}
 
-      result = results[('read_fits_headers_ray', tuple(filenames))]
-      self.assertEqual(type(result), dg.ResultDict)
-      self.assertTrue(result.ran)
-      self.assertEqual(len(result.result), 20)
+            results = dg.run_graph(graph)
 
-      # TODO: This is messy. What's the best way to get results after the graph
-      # has run?
-      result = next(results[k] for k in results
-                    if k[0] == 'find_groups_by_fits_header_ray')
-      groups = result.result
-      self.assertEqual(len(groups), 1)
-      self.assertEqual(len(groups[0]), 20)
+            result = results[("read_fits_headers_ray", tuple(filenames))]
+            self.assertEqual(type(result), dg.ResultDict)
+            self.assertTrue(result.ran)
+            self.assertEqual(len(result.result), 20)
 
-  def test_including_plate_solving(self):
-    with tempfile.TemporaryDirectory() as tmp_dir:
-      make_test_frames(number=20, project_dir=tmp_dir)
+            # TODO: This is messy. What's the best way to get results after the graph
+            # has run?
+            result = next(results[k] for k in results
+                          if k[0] == "find_groups_by_fits_header_ray")
+            groups = result.result
+            self.assertEqual(len(groups), 1)
+            self.assertEqual(len(groups[0]), 20)
 
-      filenames = sorted([
-          str(path.absolute()) for path in pathlib.Path(tmp_dir).glob('*.fit*')
-      ])
+    def test_including_plate_solving(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            make_test_frames(number=20, project_dir=tmp_dir)
 
-      A = (image_metadata.read_fits_headers_ray, tuple(filenames))
-      B = (spatial_association.find_groups_by_fits_header_ray,
-           dg.FromAncestors)
+            filenames = sorted([
+                str(path.absolute())
+                for path in pathlib.Path(tmp_dir).glob("*.fit*")
+            ])
 
-      graph = {B: {A}}
+            A = (image_metadata.read_fits_headers_ray, tuple(filenames))
+            B = (spatial_association.find_groups_by_fits_header_ray,
+                 dg.FromAncestors)
 
-      for f in filenames:
-        graph[(image_metadata.compute_image_metadata_ray, f)] = {B}
+            graph = {B: {A}}
 
-      results = dg.run_graph(graph)
+            image_metadata_tasks = [(image_metadata.compute_image_metadata_ray,
+                                     f) for f in filenames]
+            for t in image_metadata_tasks:
+                graph[t] = {B}
 
-      for k in results.keys():
-        print(f'### results key {k}')
+            C = (image_metadata.store_image_metadata_ray, dg.FromAncestors)
+            graph[C] = image_metadata_tasks
+
+            results = dg.run_graph(graph)
+
+            self.assertEqual(len(cache['image_hashes']), 20)
+            self.assertEqual(len(cache['fits_headers']), 20)
+            self.assertEqual(len(cache['plate_solutions']), 20)
 
 
-if __name__ == '__main__':
-  unittest.main()
+if __name__ == "__main__":
+    unittest.main()

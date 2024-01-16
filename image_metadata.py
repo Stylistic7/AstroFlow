@@ -114,83 +114,113 @@ from image_handling import _read_image, autostretch
 # TODO: I need to associate dark and flat frames *before* computing thumbnails.
 @ray.remote(scheduling_strategy="SPREAD")
 def compute_image_metadata_ray(filename_in, *args):
-  with tempfile.TemporaryDirectory() as tmp_dir:
-    filename = os.path.join(tmp_dir, os.path.basename(filename_in))
-    print(f'### Copying file {filename_in} to local file {filename}')
-    shutil.copy(filename_in, filename)
+    assert os.path.exists(filename_in)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        filename = os.path.join(tmp_dir, os.path.basename(filename_in))
+        print(f"### Copying file {filename_in} to local file {filename}")
+        shutil.copy(filename_in, filename)
 
-    result = {}
-    image = _read_image(filename)
-    result['image_hash'] = xxhash.xxh128(image).hexdigest()
-    result['fits_header'] = file_io.read_fits(filename)
+        result = {}
+        image = _read_image(filename)
+        result['filename'] = filename_in
+        result["image_hash"] = xxhash.xxh128(image).hexdigest()
+        result["fits_header"] = file_io.read_fits(filename)
 
-    if result['fits_header']['IMAGETYP'] == 'Light':
-      result['plate_solution'] = plate_solving.solve_field(filename)
-      # TODO: use dark frame, flat frame, rotation, etc.
-      result['thumbnail_image'] = autostretch(np.clip(image, 0.0, 1.0))
+        if result["fits_header"]["IMAGETYP"] == "Light":
+            result["plate_solution"] = plate_solving.solve_field(filename)
+            # TODO: use dark frame, flat frame, rotation, etc.
+            result["thumbnail_image"] = autostretch(np.clip(image, 0.0, 1.0))
 
-    return dg.ResultDict(ran=True, run_successors=True, result=result)
+        return dg.ResultDict(ran=True, run_successors=True, result=result)
+
+
+@ray.remote(resources={"diskcache": 0.001})
+def store_image_metadata_ray(results):
+    print(f"### len(results)", len(results))
+    with cache.transact():
+        cache['image_hashes'] = cache.get('image_hashes', {}) | {
+            r['filename']: r['image_hash']
+            for r in results
+        }
+        cache['fits_headers'] = cache.get('fits_headers', {}) | {
+            r['filename']: r['fits_header']
+            for r in results
+        }
+        cache['plate_solutions'] = cache.get('plate_solutions', {}) | {
+            r['filename']: r['plate_solution']
+            for r in results
+        }
+
+    for r in results:
+        cache[('thumbnail_image', r['filename'])] = r['thumbnail_image']
+
+    return dg.ResultDict(ran=True, run_successors=True)
 
 
 # TODO: Need to properly handle renamed or moved or deleted files.
 def compute_image_hashes(all_frames, image_hashes, quarantine_dir=None):
-  # Set the filename to None for any files that no longer exist. Their hashes
-  # remain, though, and they can be found again with some user input.
-  prev_num_missing_files = sum(1 for f in image_hashes.values() if not f)
+    # Set the filename to None for any files that no longer exist. Their hashes
+    # remain, though, and they can be found again with some user input.
+    prev_num_missing_files = sum(1 for f in image_hashes.values() if not f)
 
-  def exists_or_none(f):
-    if f and os.path.exists(f):
-      return f
-    else:
-      return None
+    def exists_or_none(f):
+        if f and os.path.exists(f):
+            return f
+        else:
+            return None
 
-  image_hashes = {h: exists_or_none(f) for h, f in image_hashes.items()}
-  num_missing_files = sum(1 for f in image_hashes.values() if not f)
-  print(f'### {num_missing_files - prev_num_missing_files} '
-        f'files have gone missing.')
+    image_hashes = {h: exists_or_none(f) for h, f in image_hashes.items()}
+    num_missing_files = sum(1 for f in image_hashes.values() if not f)
+    print(f"### {num_missing_files - prev_num_missing_files} "
+          f"files have gone missing.")
 
-  new_filenames = list(set(all_frames) - set(image_hashes.values()))
+    new_filenames = list(set(all_frames) - set(image_hashes.values()))
 
-  print(f'### Computing image hashes for {len(new_filenames)} new files...')
-  ref_to_filename = {hash_image.remote(f): f for f in new_filenames}
-  remaining_refs = list(ref_to_filename.keys())
-  while len(remaining_refs):
-    ready_refs, remaining_refs = ray.wait(remaining_refs)
-    for ref in ready_refs:
-      filename = ref_to_filename[ref]
-      result = ray.get(ref)
+    print(f"### Computing image hashes for {len(new_filenames)} new files...")
+    ref_to_filename = {hash_image.remote(f): f for f in new_filenames}
+    remaining_refs = list(ref_to_filename.keys())
+    while len(remaining_refs):
+        ready_refs, remaining_refs = ray.wait(remaining_refs)
+        for ref in ready_refs:
+            filename = ref_to_filename[ref]
+            result = ray.get(ref)
 
-      if result in image_hashes and image_hashes[result] is not None:
-        if quarantine_dir:
-          print(f'### Quarantining file {filename} because it is a duplicate')
-          shutil.move(filename,
-                      os.path.join(quarantine_dir, os.path.basename(filename)))
-        continue
+            if result in image_hashes and image_hashes[result] is not None:
+                if quarantine_dir:
+                    print(
+                        f"### Quarantining file {filename} because it is a duplicate"
+                    )
+                    shutil.move(
+                        filename,
+                        os.path.join(quarantine_dir,
+                                     os.path.basename(filename)),
+                    )
+                continue
 
-      image_hashes[result] = filename
+            image_hashes[result] = filename
 
-  return image_hashes
+    return image_hashes
 
 
 def read_fits_headers(filenames):
-  fits_headers = {}
+    fits_headers = {}
 
-  with concurrent.futures.ThreadPoolExecutor() as executor:
-    future_to_filename = {
-        executor.submit(file_io.read_fits, filename): filename
-        for filename in filenames
-    }
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        future_to_filename = {
+            executor.submit(file_io.read_fits, filename): filename
+            for filename in filenames
+        }
 
-    for future in concurrent.futures.as_completed(future_to_filename):
-      fits_headers[future_to_filename[future]] = future.result()
+        for future in concurrent.futures.as_completed(future_to_filename):
+            fits_headers[future_to_filename[future]] = future.result()
 
-  return fits_headers
+    return fits_headers
 
 
-@ray.remote(resources={'diskcache': 0.001})
+@ray.remote(resources={"diskcache": 0.001})
 def read_fits_headers_ray(filenames, *args):
-  fits_headers = cache.get('fits_headers', {}) | read_fits_headers(filenames)
-  return dg.ResultDict(ran=True, run_successors=True, result=fits_headers)
+    fits_headers = cache.get("fits_headers", {}) | read_fits_headers(filenames)
+    return dg.ResultDict(ran=True, run_successors=True, result=fits_headers)
 
 
 # # TODO: This will scale poorly when there are hundreds of thousands of images.
@@ -219,52 +249,55 @@ def read_fits_headers_ray(filenames, *args):
 #   return fits_headers
 
 
-def plate_solve(images,
-                image_hashes,
-                plate_solutions,
-                quarantine_dir=None,
-                callback_number=None,
-                callback=None):
-  new_image_hashes = list(set(images) - set(plate_solutions.keys()))
-  new_filenames = [
-      f for h, f in image_hashes.items() if f and h in new_image_hashes
-  ]
-  assert None not in new_filenames
-  print(f'### Plate solving {len(new_filenames)} newly-added files...')
+def plate_solve(
+    images,
+    image_hashes,
+    plate_solutions,
+    quarantine_dir=None,
+    callback_number=None,
+    callback=None,
+):
+    new_image_hashes = list(set(images) - set(plate_solutions.keys()))
+    new_filenames = [
+        f for h, f in image_hashes.items() if f and h in new_image_hashes
+    ]
+    assert None not in new_filenames
+    print(f"### Plate solving {len(new_filenames)} newly-added files...")
 
-  new_filenames = round_robin.round_robin_by_directory(new_filenames,
-                                                       cluster=5)
+    new_filenames = round_robin.round_robin_by_directory(new_filenames,
+                                                         cluster=5)
 
-  future_to_filename = {
-      plate_solving.solve_field.remote(filename): filename
-      for filename in new_filenames
-  }
+    future_to_filename = {
+        plate_solving.solve_field.remote(filename): filename
+        for filename in new_filenames
+    }
 
-  num_solved = 0
-  for future in future_to_filename.keys():
-    filename = future_to_filename[future]
-    result = ray.get(future)
+    num_solved = 0
+    for future in future_to_filename.keys():
+        filename = future_to_filename[future]
+        result = ray.get(future)
 
-    if not result:
-      if quarantine_dir:
-        print(f'### Quarantining file {filename} because it could not '
-              f'be plate-solved')
-        shutil.move(filename,
+        if not result:
+            if quarantine_dir:
+                print(f"### Quarantining file {filename} because it could not "
+                      f"be plate-solved")
+                shutil.move(
+                    filename,
                     os.path.join(quarantine_dir, os.path.basename(filename)))
 
-    hash = next((h for h, f in image_hashes.items() if f == filename), None)
-    assert hash, f"Could not find filename {f} in image_hashes"
+        hash = next((h for h, f in image_hashes.items() if f == filename), None)
+        assert hash, f"Could not find filename {f} in image_hashes"
 
-    num_solved += 1
-    plate_solutions[hash] = result
+        num_solved += 1
+        plate_solutions[hash] = result
+
+        if callback:
+            assert callback_number
+
+        if callback and num_solved and num_solved % callback_number == 0:
+            callback(plate_solutions)
 
     if callback:
-      assert callback_number
+        callback(plate_solutions)
 
-    if callback and num_solved and num_solved % callback_number == 0:
-      callback(plate_solutions)
-
-  if callback:
-    callback(plate_solutions)
-
-  return plate_solutions
+    return plate_solutions
