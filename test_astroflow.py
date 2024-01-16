@@ -47,9 +47,9 @@ class TestAstroFlow(unittest.TestCase):
       ray_diskcache.clear()
       cache.clear()
 
-  def test_read_fits_headers_in_graph(self):
+  def test_up_to_plate_solving(self):
     with tempfile.TemporaryDirectory() as tmp_dir:
-      make_test_frames(number=6, project_dir=tmp_dir)
+      make_test_frames(number=20, project_dir=tmp_dir)
 
       filenames = sorted([
           str(path.absolute()) for path in pathlib.Path(tmp_dir).glob('*.fit*')
@@ -66,7 +66,7 @@ class TestAstroFlow(unittest.TestCase):
       result = results[('read_fits_headers_ray', tuple(filenames))]
       self.assertEqual(type(result), dg.ResultDict)
       self.assertTrue(result.ran)
-      self.assertEqual(len(result.result), 6)
+      self.assertEqual(len(result.result), 20)
 
       # TODO: This is messy. What's the best way to get results after the graph
       # has run?
@@ -74,7 +74,29 @@ class TestAstroFlow(unittest.TestCase):
                     if k[0] == 'find_groups_by_fits_header_ray')
       groups = result.result
       self.assertEqual(len(groups), 1)
-      self.assertEqual(len(groups[0]), 6)
+      self.assertEqual(len(groups[0]), 20)
+
+  def test_including_plate_solving(self):
+    with tempfile.TemporaryDirectory() as tmp_dir:
+      make_test_frames(number=20, project_dir=tmp_dir)
+
+      filenames = sorted([
+          str(path.absolute()) for path in pathlib.Path(tmp_dir).glob('*.fit*')
+      ])
+
+      A = (image_metadata.read_fits_headers_ray, tuple(filenames))
+      B = (spatial_association.find_groups_by_fits_header_ray,
+           dg.FromAncestors)
+
+      graph = {B: {A}}
+
+      for f in filenames:
+        graph[(image_metadata.compute_image_metadata_ray, f)] = {B}
+
+      results = dg.run_graph(graph)
+
+      for k in results.keys():
+        print(f'### results key {k}')
 
 
 if __name__ == '__main__':

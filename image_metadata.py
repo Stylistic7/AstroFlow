@@ -113,7 +113,7 @@ from image_handling import _read_image, autostretch
 
 # TODO: I need to associate dark and flat frames *before* computing thumbnails.
 @ray.remote(scheduling_strategy="SPREAD")
-def compute_image_metadata(filename_in):
+def compute_image_metadata_ray(filename_in, *args):
   with tempfile.TemporaryDirectory() as tmp_dir:
     filename = os.path.join(tmp_dir, os.path.basename(filename_in))
     print(f'### Copying file {filename_in} to local file {filename}')
@@ -129,7 +129,7 @@ def compute_image_metadata(filename_in):
       # TODO: use dark frame, flat frame, rotation, etc.
       result['thumbnail_image'] = autostretch(np.clip(image, 0.0, 1.0))
 
-    return result
+    return dg.ResultDict(ran=True, run_successors=True, result=result)
 
 
 # TODO: Need to properly handle renamed or moved or deleted files.
