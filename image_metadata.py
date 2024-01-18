@@ -6,8 +6,9 @@ import xxhash
 import numpy as np
 import concurrent.futures
 import ray
-from cache import cache
+from pathlib import Path
 
+from cache import cache
 import file_io
 import plate_solving
 import throughput
@@ -144,26 +145,51 @@ def plate_solve_ray(filename):
   return dg.ResultDict(ran=True, run_successors=True, result=result)
 
 
+# TODO: This is a bit weird. We want to keep unsolvable files in the cache,
+# so we don't attempt to re-solve them every run. But we want to filter them
+# out so downstream logic doesn't see them. We also want to ignore plate
+# solutions for images that no longer exist, but ultimately we want to help
+# the user find them.
+#
+# TODO: Report unsolvable images and missing images to the user. Include the
+# cause of failure whenever possible, and provide a solution (e.g. increasing
+# timeout on slow computers).
+def remove_bad_images(image_hashes, plate_solutions):
+  return {
+      h: p
+      for h, p in plate_solutions.items() if h in image_hashes
+      and image_hashes[h] and 'bad' not in Path(image_hashes[h].lower()).parts
+      and type(p) is plate_solving.PlateSolution
+  }
+
+
 @ray.remote(resources={"diskcache": 0.001})
 def store_image_metadata_ray(results):
-  with cache.transact():
-    cache['image_hashes'] = cache.get('image_hashes', {}) | {
-        r['image_hash']: r['filename']
-        for r in results
-    }
-    cache['fits_headers'] = cache.get('fits_headers', {}) | {
-        r['image_hash']: r['fits_header']
-        for r in results
-    }
-    cache['plate_solutions'] = cache.get('plate_solutions', {}) | {
-        r['image_hash']: r['plate_solution']
-        for r in results
-    }
+  image_hashes = cache.get('image_hashes', {})
+  fits_headers = cache.get('fits_headers', {})
+  plate_solutions = cache.get('plate_solutions', {})
 
-  # for r in results:
-  #   cache[('thumbnail_image', r['image_hash'])] = r['thumbnail_image']
+  if results:
+    with cache.transact():
+      image_hashes |= {r['image_hash']: r['filename'] for r in results}
+      fits_headers |= {r['image_hash']: r['fits_header'] for r in results}
+      plate_solutions |= {r['image_hash']: r['plate_solution'] for r in results}
 
-  return dg.ResultDict(ran=True, run_successors=True)
+      cache['image_hashes'] = image_hashes
+      cache['fits_headers'] = fits_headers
+      cache['plate_solutions'] = plate_solutions
+
+  plate_solutions = remove_bad_images(image_hashes, plate_solutions)
+
+  image_hashes_ref = ray.put(image_hashes)
+  fits_headers_ref = ray.put(fits_headers)
+  plate_solutions_ref = ray.put(plate_solutions)
+
+  return dg.ResultDict(ran=True,
+                       run_successors=True,
+                       result=dict(image_hashes=image_hashes_ref,
+                                   fits_headers=fits_headers_ref,
+                                   plate_solutions=plate_solutions_ref))
 
 
 # TODO: Need to properly handle renamed or moved or deleted files.

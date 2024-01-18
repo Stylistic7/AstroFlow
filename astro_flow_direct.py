@@ -237,14 +237,14 @@ def find_masters(output_dir):
 
 
 # TODO: Make sure the Python version has stable iteration order for dicts.
-def sort_by_observation_date(fits_headers):
-  sorted_keys = sorted(fits_headers.keys(),
-                       key=lambda h: fits_headers[h]['DATE-OBS'])
-  output = {}
-  for key in sorted_keys:
-    output[key] = fits_headers[key]
+# def sort_by_observation_date(fits_headers):
+#   sorted_keys = sorted(fits_headers.keys(),
+#                        key=lambda h: fits_headers[h]['DATE-OBS'])
+#   output = {}
+#   for key in sorted_keys:
+#     output[key] = fits_headers[key]
 
-  return output
+#   return output
 
 
 def split_images_by_type(fits_headers):
@@ -283,24 +283,6 @@ def remove_frames_during_mount_movements(light_frames):
   print(f'Removed {num_removed_files} during settling periods.')
 
   return settled_light_frames
-
-
-# TODO: This is a bit weird. We want to keep unsolvable files in the cache,
-# so we don't attempt to re-solve them every run. But we want to filter them
-# out so downstream logic doesn't see them. We also want to ignore plate
-# solutions for images that no longer exist, but ultimately we want to help
-# the user find them.
-#
-# TODO: Report unsolvable images and missing images to the user. Include the
-# cause of failure whenever possible, and provide a solution (e.g. increasing
-# timeout on slow computers).
-def remove_bad_images(image_hashes, plate_solutions):
-  return {
-      h: p
-      for h, p in plate_solutions.items() if h in image_hashes
-      and image_hashes[h] and 'bad' not in Path(image_hashes[h].lower()).parts
-      and type(p) is plate_solving.PlateSolution
-  }
 
 
 def assert_all_light_frames_in_stacks(light_frames, stacks):
@@ -761,59 +743,58 @@ def sanity_check_stacks(stacks, fits_headers):
 #   inner.id = ('make_mosaic_preview', mosaic.id)
 #   return inner
 
+# def group_images(image_hashes,
+#                  plate_solutions,
+#                  fits_headers,
+#                  light_frames,
+#                  dark_frames,
+#                  bias_frames,
+#                  flat_frames,
+#                  quarantine_dir=None):
+#   # TODO: Make this more granular.
+#   # light_frames = remove_frames_during_mount_movements(light_frames)
 
-def group_images(image_hashes,
-                 plate_solutions,
-                 fits_headers,
-                 light_frames,
-                 dark_frames,
-                 bias_frames,
-                 flat_frames,
-                 quarantine_dir=None):
-  # TODO: Make this more granular.
-  # light_frames = remove_frames_during_mount_movements(light_frames)
+#   plate_solutions = remove_bad_images(image_hashes, plate_solutions)
 
-  plate_solutions = remove_bad_images(image_hashes, plate_solutions)
+#   # Remove light frames that don't have good plate solutions.
+#   light_frames = list(set(light_frames).intersection(plate_solutions.keys()))
 
-  # Remove light frames that don't have good plate solutions.
-  light_frames = list(set(light_frames).intersection(plate_solutions.keys()))
+#   spatial_components = spatial_association.find_components_by_cosine_similarity(
+#       light_frames, plate_solutions, fits_headers)
 
-  spatial_components = spatial_association.find_components_by_cosine_similarity(
-      light_frames, plate_solutions, fits_headers)
+#   stacks = stack_identification.identify_stacks(spatial_components,
+#                                                 plate_solutions, fits_headers)
 
-  stacks = stack_identification.identify_stacks(spatial_components,
-                                                plate_solutions, fits_headers)
+#   stacks = get_camera_configs(stacks, fits_headers)
+#   stacks = associate_dark_frames(stacks, dark_frames, fits_headers)
+#   stacks = associate_bias_frames(stacks, bias_frames, fits_headers)
+#   stacks = associate_flat_frames(stacks, flat_frames, fits_headers)
+#   stacks = compute_stack_metadata(stacks, fits_headers, plate_solutions)
+#   stacks = normalize_stacks(stacks)
 
-  stacks = get_camera_configs(stacks, fits_headers)
-  stacks = associate_dark_frames(stacks, dark_frames, fits_headers)
-  stacks = associate_bias_frames(stacks, bias_frames, fits_headers)
-  stacks = associate_flat_frames(stacks, flat_frames, fits_headers)
-  stacks = compute_stack_metadata(stacks, fits_headers, plate_solutions)
-  stacks = normalize_stacks(stacks)
+#   print('### len(stacks)', len(stacks))
+#   for stack in stacks:
+#     print('### center is', stack.center)
 
-  print('### len(stacks)', len(stacks))
-  for stack in stacks:
-    print('### center is', stack.center)
+#   # TODO: Put these in the dependency graph.
+#   make_image_thumbnails(stacks, image_hashes, plate_solutions, fits_headers)
 
-  # TODO: Put these in the dependency graph.
-  make_image_thumbnails(stacks, image_hashes, plate_solutions, fits_headers)
+#   stacks = sanity_check_stacks(stacks, fits_headers)
 
-  stacks = sanity_check_stacks(stacks, fits_headers)
+#   # TODO: Eliminate this shape change.
+#   stacks = {stack.id: stack for stack in stacks}
 
-  # TODO: Eliminate this shape change.
-  stacks = {stack.id: stack for stack in stacks}
+#   # TODO: Put these in the dependency graph.
+#   make_stack_thumbnails_videos(stacks, image_hashes, plate_solutions,
+#                                fits_headers)
 
-  # TODO: Put these in the dependency graph.
-  make_stack_thumbnails_videos(stacks, image_hashes, plate_solutions,
-                               fits_headers)
+#   targets = group_stacks_into_targets(stacks, plate_solutions, fits_headers)
+#   for target in targets:
+#     print(f'Target {target}')
 
-  targets = group_stacks_into_targets(stacks, plate_solutions, fits_headers)
-  for target in targets:
-    print(f'Target {target}')
+#   mosaics = group_targets_into_mosaics(targets)
 
-  mosaics = group_targets_into_mosaics(targets)
-
-  return stacks, targets, mosaics
+#   return stacks, targets, mosaics
 
 
 def main(context):
@@ -978,10 +959,16 @@ def main(context):
   store_metadata_task = (image_metadata.store_image_metadata_ray,
                          dg.FromAncestors)
 
-  graph = {store_metadata_task: metadata_tasks}
+  find_components_task = (
+      spatial_association.find_components_by_cosine_similarity_ray,
+      dg.FromAncestors)
+
+  graph = {
+      find_components_task: {store_metadata_task},
+      store_metadata_task: metadata_tasks
+  }
 
   fits_headers = cache.get('fits_headers', {})
-  fits_headers = sort_by_observation_date(fits_headers)
   print(f'### Cache contains {len(fits_headers)} FITS headers')
 
   # A = (image_metadata.compute_image_metadata_ray, tuple(new_filenames))
