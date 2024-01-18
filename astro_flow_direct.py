@@ -20,14 +20,21 @@ import traceback
 
 import ray
 
-ray.init(runtime_env={"working_dir": "/Users/nobody/Projects/AstroFlow"},
-         resources={'diskcache': 1},
-         ignore_reinit_error=True)
+# ray.init(runtime_env={"working_dir": "/Users/nobody/Projects/AstroFlow"},
+#          resources={'diskcache': 1},
+#          ignore_reinit_error=True,
+#          _node_ip_address='192.168.50.3')
+
+ray_context = ray.init(
+    runtime_env={"working_dir": "/Users/nobody/Projects/AstroFlow"},
+    ignore_reinit_error=True,
+    _node_ip_address='192.168.50.3')
+
+print('### Ray dashboard:', ray_context.dashboard_url)
 
 logger = structlog.get_logger()
 log = logger
 
-import globals
 import position_string
 import clustering
 import pix
@@ -56,6 +63,7 @@ import image_metadata
 import image_handling
 import round_robin
 import throughput
+import ray_diskcache
 
 # Things that need to happen to make AstroFlow reach the "grown-up" point:
 #
@@ -289,9 +297,9 @@ def remove_frames_during_mount_movements(light_frames):
 def remove_bad_images(image_hashes, plate_solutions):
   return {
       h: p
-      for h, p in plate_solutions.items() if h in image_hashes and
-      image_hashes[h] and 'bad' not in Path(image_hashes[h].lower()).parts and
-      type(p) is plate_solving.PlateSolution
+      for h, p in plate_solutions.items() if h in image_hashes
+      and image_hashes[h] and 'bad' not in Path(image_hashes[h].lower()).parts
+      and type(p) is plate_solving.PlateSolution
   }
 
 
@@ -331,9 +339,10 @@ def measure_stacks(context):
 
 def group_by_fn(filenames, fn):
   filenames = sorted(filenames, key=fn)
-  return defaultdict(
-      list, {k: list(g)
-             for k, g in itertools.groupby(filenames, key=fn)})
+  return defaultdict(list, {
+      k: list(g)
+      for k, g in itertools.groupby(filenames, key=fn)
+  })
 
 
 def get_camera_configs(stacks, fits_headers):
@@ -628,7 +637,8 @@ def make_stack_thumbnails_videos(stacks, image_hashes, plate_solutions,
 # TOOD: Move this into another file, e.g. identify_targets.py.
 def group_stacks_into_targets(stacks, plate_solutions, fits_headers):
   polygons = {
-      s.id: SphericalPolygon.from_wcs(
+      s.id:
+      SphericalPolygon.from_wcs(
           pyfits.Header(plate_solutions[s.light_frames[0]].header))
       for s in stacks.values()
   }
@@ -839,28 +849,24 @@ def main(context):
   masters = sorted(find_masters(context.output_dir))
   print(f'Found {len(masters)} masters')
 
-  # FIXME remove hack
-  all_frames = all_frames[0:200]
-  masters = []
+  # def exists_or_none(f):
+  #   if f and os.path.exists(f):
+  #     return f
+  #   else:
+  #     return None
 
-  def exists_or_none(f):
-    if f and os.path.exists(f):
-      return f
-    else:
-      return None
+  # image_hashes = cache.get('image_hashes', {})
 
-  image_hashes = cache.get('image_hashes', {})
+  # prev_num_missing_files = sum(1 for f in image_hashes.values() if not f)
+  # image_hashes = {h: exists_or_none(f) for h, f in image_hashes.items()}
+  # num_missing_files = sum(1 for f in image_hashes.values() if not f)
+  # print(f'### {num_missing_files - prev_num_missing_files} '
+  #       f'files have gone missing.')
 
-  prev_num_missing_files = sum(1 for f in image_hashes.values() if not f)
-  image_hashes = {h: exists_or_none(f) for h, f in image_hashes.items()}
-  num_missing_files = sum(1 for f in image_hashes.values() if not f)
-  print(f'### {num_missing_files - prev_num_missing_files} '
-        f'files have gone missing.')
+  # new_filenames = list(set(all_frames) - set(image_hashes.values()))
 
-  new_filenames = list(set(all_frames) - set(image_hashes.values()))
-
-  print('### Calling image_metadata.compute_images_metadata')
-  image_metadata.compute_images_metadata(new_filenames)
+  # print('### Calling image_metadata.compute_images_metadata')
+  # image_metadata.compute_images_metadata(new_filenames)
 
   # TODO: This is a bit ugly for such a simple concept. Maybe abstract it in a
   # function?
@@ -946,14 +952,63 @@ def main(context):
 
   # TODO: Consider how to make this multi-threaded.
   print(f'### Building dependency graph...')
-  # toplevel_tasks = []
-
   graph = {}
 
-  print(f'### Iterating over {len(mosaics)} mosaics')
-  for mosaic in mosaics.values():
-    print(f'###   Entering {mosaic}')
-    graph[step_mosaic.process_mosaic, (mosaic, targets, stacks)] = {}
+  # TODO: Process masters too.
+  filenames = all_frames
+
+  def exists_or_none(f):
+    if f and os.path.exists(f):
+      return f
+    else:
+      return None
+
+  image_hashes = cache.get('image_hashes', {})
+  prev_num_missing_files = sum(1 for f in image_hashes.values() if not f)
+  image_hashes = {h: exists_or_none(f) for h, f in image_hashes.items()}
+  num_missing_files = sum(1 for f in image_hashes.values() if not f)
+  print(f'### {num_missing_files - prev_num_missing_files} '
+        f'files have gone missing.')
+
+  new_filenames = list(set(all_frames) - set(image_hashes.values()))
+  print(f'### Importing {len(new_filenames)} files')
+
+  metadata_tasks = [(image_metadata.compute_image_metadata_ray, f)
+                    for f in new_filenames]
+  store_metadata_task = (image_metadata.store_image_metadata_ray,
+                         dg.FromAncestors)
+
+  graph = {store_metadata_task: metadata_tasks}
+
+  fits_headers = cache.get('fits_headers', {})
+  fits_headers = sort_by_observation_date(fits_headers)
+  print(f'### Cache contains {len(fits_headers)} FITS headers')
+
+  # A = (image_metadata.compute_image_metadata_ray, tuple(new_filenames))
+  # B = (image_metadata.store_image_metadata_ray, dg.FromAncestors)
+
+  # graph = {B: {A}}
+
+  # # TODO: Group all FITS files, not just the ones being added.
+  # C = (spatial_association.find_groups_by_fits_header_ray, dg.FromAncestors)
+
+  # graph = {C: {B}, B: {A}}
+
+  # # image_metadata_tasks = [(image_metadata.compute_image_metadata_ray, f)
+  # #                         for f in new_filenames]
+  # plate_solving_tasks = [(image_metadata.plate_solve_ray, f)
+  #                        for f in new_filenames]
+
+  # for t in plate_solving_tasks:
+  #   graph[t] = {C}
+
+  # D = (image_metadata.store_image_metadata_ray, dg.FromAncestors)
+  # graph[D] = plate_solving_tasks
+
+  # print(f'### Iterating over {len(mosaics)} mosaics')
+  # for mosaic in mosaics.values():
+  #   print(f'###   Entering {mosaic}')
+  #   graph[step_mosaic.process_mosaic, (mosaic, targets, stacks)] = {}
 
   #   toplevel_tasks.append(
   #       make_mosaic_preview(image_hashes, plate_solutions, mosaic, targets,
@@ -1035,6 +1090,8 @@ def main(context):
   # with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
   #   results = graph.run(executor, control_modes, cache.get('prev_results', {}),
   #                       callback)
+
+  print(f"### Cache contains {len(cache['image_hashes'])} image hashes")
 
   # TODO: Close all subordinate PixInsight instances.
   print('### Compute graph is done!')

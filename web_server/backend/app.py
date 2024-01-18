@@ -382,6 +382,8 @@ def run_astroflow_repeatedly():
 
   while True:
     if ok_to_run():
+      # TODO: An empty context won't work. The user will have to fill stuff in
+      # in the UI before the first run here.
       print('Running AstroFlow...')
       context = cache.get('context', {})
       astro_flow_direct.main(context)

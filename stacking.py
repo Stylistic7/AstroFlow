@@ -187,9 +187,10 @@ def run(stack, image_hashes, fits_headers, plate_solutions, dest_path):
     pix.WeightedBatchPreprocessing(dir=tmp_dir, outputDirectory=tmp_dir)
 
     src_master_dir = os.path.join(tmp_dir, 'master')
+    print('tmp_dir contains', os.listdir(tmp_dir))
     filenames = list(
         str(f)
-        for f in Path(src_master_dir).rglob("*mono_drizzle_2x_autocrop.xisf"))
+        for f in Path(src_master_dir).rglob("*autocrop.xisf"))
     if not filenames:
       # TODO: Return failure, so the stack won't just be attempted again
       # on the next run. Distinguish the cases where the stack has never been
