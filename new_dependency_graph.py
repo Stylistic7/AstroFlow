@@ -66,7 +66,7 @@ class ResultDict(dict):
     super(ResultDict, self).__init__(*args, **kwargs)
 
     self.setdefault('ran', True)
-    self.setdefault('run_successors', False)
+    self.setdefault('run_successors', True)
 
   def __getattr__(self, k):
     return self[k]

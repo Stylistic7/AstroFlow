@@ -954,6 +954,8 @@ def main(context):
   new_filenames = list(set(all_frames) - set(image_hashes.values()))
   print(f'### Importing {len(new_filenames)} files')
 
+  # TODO: Since dg.FromAncestors is probably the most common thing to do,
+  # eliminate it from the dependency graph's public API.
   metadata_tasks = [(image_metadata.compute_image_metadata_ray, f)
                     for f in new_filenames]
   store_metadata_task = (image_metadata.store_image_metadata_ray,
@@ -963,13 +965,14 @@ def main(context):
       spatial_association.find_components_by_cosine_similarity_ray,
       dg.FromAncestors)
 
-  graph = {
-      find_components_task: {store_metadata_task},
-      store_metadata_task: metadata_tasks
-  }
+  identify_stacks_task = (stack_identification.identify_stacks_ray,
+                          dg.FromAncestors)
 
-  fits_headers = cache.get('fits_headers', {})
-  print(f'### Cache contains {len(fits_headers)} FITS headers')
+  graph = {
+      store_metadata_task: metadata_tasks,
+      find_components_task: {store_metadata_task},
+      identify_stacks_task: {find_components_task}
+  }
 
   # A = (image_metadata.compute_image_metadata_ray, tuple(new_filenames))
   # B = (image_metadata.store_image_metadata_ray, dg.FromAncestors)
@@ -1072,13 +1075,21 @@ def main(context):
     cache['prev_results'] = results
 
   print('### Starting execution')
-  dg.run_graph(graph)
+  results = dg.run_graph(graph)
 
   # with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
   #   results = graph.run(executor, control_modes, cache.get('prev_results', {}),
   #                       callback)
 
-  print(f"### Cache contains {len(cache['image_hashes'])} image hashes")
+  for t, r in results.items():
+    print(f'### results contained task {t}')
+
+  # TODO: Provide a better API for getting the result for a given task.
+  stacks = next(r for t, r in results.items()
+                if t[0] == 'identify_stacks_ray').result
+  print('### Stacks are')
+  for s in stacks:
+    print('###', s)
 
   # TODO: Close all subordinate PixInsight instances.
   print('### Compute graph is done!')

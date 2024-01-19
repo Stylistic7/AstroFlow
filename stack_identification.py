@@ -1,14 +1,21 @@
 import operator
+import ray
 
 from stack import Stack
 import clustering
 import file_io
+import new_dependency_graph as dg
 
 
-def identify_stacks(spatial_components, plate_solutions, fits_headers):
+@ray.remote
+def identify_stacks_ray(input):
   print('Identifying stacks...')
+  groups = input.groups
+  fits_headers = ray.get(input.fits_headers)
+  plate_solutions = ray.get(input.plate_solutions)
+
   stacks = []
-  for name, light_frames in spatial_components:
+  for name, light_frames in groups:
     scales = [(f, plate_solutions[f].image_scale) for f in light_frames]
     scale_clusters = clustering.cluster_1d(scales, key=operator.itemgetter(1))
     for scale_cluster in scale_clusters:
@@ -27,4 +34,4 @@ def identify_stacks(spatial_components, plate_solutions, fits_headers):
           stacks.append(stack)
 
   print(f'Identified {len(stacks)} stacks')
-  return stacks
+  return dg.ResultDict(result=stacks)

@@ -238,11 +238,8 @@ def _find_components(hashes, values, comparison_fn, plate_solutions,
 @ray.remote
 def find_components_by_cosine_similarity_ray(
     input, threshold=0.99999, min_component_members=MIN_COMPONENT_MEMBERS):
-  fits_headers = ray.get(input['fits_headers'])
-  plate_solutions = ray.get(input['plate_solutions'])
-
-  print('### fits_headers', type(fits_headers), len(fits_headers))
-  print('### plate_solutions', type(plate_solutions), len(plate_solutions))
+  fits_headers = ray.get(input.fits_headers)
+  plate_solutions = ray.get(input.plate_solutions)
 
   light_frames = [
       h for h, header in fits_headers.items()
@@ -259,11 +256,15 @@ def find_components_by_cosine_similarity_ray(
   def comparison_fn(a, b):
     return np.dot(a, b) > threshold
 
-  return dg.ResultDict(ran=True,
-                       run_successors=True,
-                       result=_find_components(light_frames, centroids,
-                                               comparison_fn, plate_solutions,
-                                               min_component_members))
+  groups = _find_components(light_frames, centroids, comparison_fn,
+                            plate_solutions, min_component_members)
+
+  # TODO: Find a clean way to pass inputs to outputs withput having to list them
+  # explicitly.
+  return dg.ResultDict(
+      result=dg.ResultDict(fits_headers=input.fits_headers,
+                           plate_solutions=input.plate_solutions,
+                           groups=groups))
 
 
 def find_components_by_cosine_similarity(

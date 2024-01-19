@@ -185,11 +185,10 @@ def store_image_metadata_ray(results):
   fits_headers_ref = ray.put(fits_headers)
   plate_solutions_ref = ray.put(plate_solutions)
 
-  return dg.ResultDict(ran=True,
-                       run_successors=True,
-                       result=dict(image_hashes=image_hashes_ref,
-                                   fits_headers=fits_headers_ref,
-                                   plate_solutions=plate_solutions_ref))
+  return dg.ResultDict(
+      result=dg.ResultDict(image_hashes=image_hashes_ref,
+                           fits_headers=fits_headers_ref,
+                           plate_solutions=plate_solutions_ref))
 
 
 # TODO: Need to properly handle renamed or moved or deleted files.
