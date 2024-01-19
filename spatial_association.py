@@ -261,8 +261,10 @@ def find_components_by_cosine_similarity_ray(
 
   # TODO: Find a clean way to pass inputs to outputs withput having to list them
   # explicitly.
-  return dg.ResultDict(
-      result=dg.ResultDict(fits_headers=input.fits_headers,
+  return dg.ResultDict(ran=True,
+                       run_successors=True,
+                       result=dg.ResultDict(
+                           fits_headers=input.fits_headers,
                            plate_solutions=input.plate_solutions,
                            groups=groups))
 

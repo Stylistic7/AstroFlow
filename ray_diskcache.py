@@ -15,6 +15,7 @@ def _get(key, default=None):
 
 @ray.remote(resources={'diskcache': 0.001})
 def _set(key, value):
+  print('### in _set, key', key, 'value', value)
   cache[key] = value
 
 
@@ -30,7 +31,10 @@ def _or_equals(key, value):
 @ray.remote(resources={'diskcache': 0.001})
 def _plus_equals(key, value):
   with cache.transact():
+    print('### in _plus_equals, key', key, 'value', value)
+    print('### in _plus_equals, cache contains key', key in cache)
     new_value = cache.get(key, 0) + value
+    print('### in _plus_equals, new_value', new_value)
     cache[key] = new_value
     return new_value
 
@@ -48,6 +52,7 @@ def set(key, value):
 
 
 def plus_equals(key, value):
+  print('Entering plus_equals, cache.get(key, None)', cache.get(key, None))
   return ray.get(_plus_equals.remote(key, value))
 
 

@@ -2,12 +2,15 @@ import unittest
 import os
 import graphlib
 
+os.environ["ASTROFLOW_MOCK_CACHE"] = "true"
+
 import ray
 
 ray.init(resources={'diskcache': 1}, ignore_reinit_error=True)
 
-import globals
+import ray_diskcache
 import new_dependency_graph as dg
+from cache import cache
 
 
 @ray.remote
@@ -22,27 +25,25 @@ def my_local_task(arg, *args):
   return dg.ResultDict(run_successors=True, result=arg)
 
 
-@ray.remote
+@ray.remote(resources={'diskcache': 0.001})
 def my_task_with_global(arg, *args):
-  print('running task with global', arg)
-  globals.plus_equals('foo', 1)
+  cache['foo'] = cache.get('foo', 0) + 1
   return dg.ResultDict(run_successors=True, result=arg)
 
 
 @ray.remote
 def my_first_task(*args):
-  return dg.ResultDict(run_successors=True, counter=1)
+  return dg.ResultDict(run_successors=True, result=1)
 
 
 @ray.remote
-def my_later_task(arg, ancestor_results):
-  print('running later task', arg, 'ancestor_results', ancestor_results)
-  return dg.ResultDict(
-      run_successors=True,
-      counter=next(iter(ancestor_results.values()))['counter'] + 1)
+def my_later_task(ancestor_result):
+  print('running later task ancestor_results', ancestor_results)
+  return dg.ResultDict(run_successors=True, result=ancestor_result + 1)
 
 
 class TestDependencyGraph(unittest.TestCase):
+
   def test_simple_graph(self):
     A = (my_remote_task, "A")
     B = (my_remote_task, "B")
@@ -55,22 +56,22 @@ class TestDependencyGraph(unittest.TestCase):
     results = dg.run_graph(graph)
 
     expected_results = {
-        ('my_remote_task', 'A'): {
+        (my_remote_task, 'A'): {
             'ran': True,
             'result': 'A',
             'run_successors': True,
         },
-        ('my_remote_task', 'C'): {
+        (my_remote_task, 'C'): {
             'ran': True,
             'result': 'C',
             'run_successors': True,
         },
-        ('my_remote_task', 'B'): {
+        (my_remote_task, 'B'): {
             'ran': True,
             'result': 'B',
             'run_successors': True,
         },
-        ('my_remote_task', 'D'): {
+        (my_remote_task, 'D'): {
             'ran': True,
             'result': 'D',
             'run_successors': True,
@@ -91,21 +92,21 @@ class TestDependencyGraph(unittest.TestCase):
     results = dg.run_graph(graph)
 
     expected_results = {
-        ('my_remote_task', 'A'): {
+        (my_remote_task, 'A'): {
             'ran': True,
             'result': 'A',
             'run_successors': True
         },
-        ('my_remote_task', 'C'): {
+        (my_remote_task, 'C'): {
             'ran': True,
             'result': 'C',
             'run_successors': True
         },
-        ('my_remote_task', 'B'): {
+        (my_remote_task, 'B'): {
             'ran': False,
             'run_successors': False
         },
-        ('my_remote_task', 'D'): {
+        (my_remote_task, 'D'): {
             'ran': True,
             'result': 'D',
             'run_successors': True
@@ -126,20 +127,20 @@ class TestDependencyGraph(unittest.TestCase):
     results = dg.run_graph(graph)
 
     expected_results = {
-        ('my_remote_task', 'A'): {
+        (my_remote_task, 'A'): {
             'ran': True,
             'result': 'A',
             'run_successors': True
         },
-        ('my_remote_task', 'C'): {
+        (my_remote_task, 'C'): {
             'ran': False,
             'run_successors': False
         },
-        ('my_remote_task', 'B'): {
+        (my_remote_task, 'B'): {
             'ran': False,
             'run_successors': False
         },
-        ('my_remote_task', 'D'): {
+        (my_remote_task, 'D'): {
             'ran': False,
             'run_successors': False
         }
@@ -160,20 +161,20 @@ class TestDependencyGraph(unittest.TestCase):
     results = dg.run_graph(graph)
 
     expected_results = {
-        ('my_local_task', 'A'): {
+        (my_local_task, 'A'): {
             'ran': True,
             'result': 'A',
             'run_successors': True
         },
-        ('my_local_task', 'C'): {
+        (my_local_task, 'C'): {
             'ran': False,
             'run_successors': False
         },
-        ('my_remote_task', 'B'): {
+        (my_remote_task, 'B'): {
             'ran': False,
             'run_successors': False
         },
-        ('my_remote_task', 'D'): {
+        (my_remote_task, 'D'): {
             'ran': False,
             'run_successors': False
         }
@@ -182,7 +183,7 @@ class TestDependencyGraph(unittest.TestCase):
     self.assertEqual(results, expected_results)
 
   def test_global_variable(self):
-    globals.set_global('foo', 0)
+    cache['foo'] = 10
 
     A = (my_task_with_global, "A")
     B = (my_task_with_global, "B")
@@ -192,19 +193,18 @@ class TestDependencyGraph(unittest.TestCase):
     graph = {D: {C}, C: {B}, B: {A}}
     results = dg.run_graph(graph)
 
-    self.assertEqual(globals.get_global('foo'), 4)
+    self.assertEqual(cache['foo'], 14)
 
   def test_pass_down(self):
-    A = (my_first_task, None)
-    B = (my_later_task, None)
+    A = my_first_task
+    B = (my_later_task, dg.FromAncestors)
 
     graph = {B: {A}}
     results = dg.run_graph(graph)
 
-    self.assertEqual(results[(my_first_task._function.__name__, None)].counter,
-                     1)
-    self.assertEqual(results[(my_later_task._function.__name__, None)].counter,
-                     2)
+    # TODO: Make a better API for getting results.
+    self.assertEqual(results[A].result, 1)
+    self.assertEqual(results[B].result, 2)
 
 
 if __name__ == "__main__":

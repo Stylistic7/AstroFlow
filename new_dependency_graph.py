@@ -66,7 +66,7 @@ class ResultDict(dict):
     super(ResultDict, self).__init__(*args, **kwargs)
 
     self.setdefault('ran', True)
-    self.setdefault('run_successors', True)
+    self.setdefault('run_successors', False)
 
   def __getattr__(self, k):
     return self[k]
@@ -82,15 +82,20 @@ def run_graph(graph):
 
   results = {}
 
+  def unpack_node(node):
+    if type(node) is tuple:
+      return node
+    else:
+      return (node, FromAncestors)
+
   def should_run(node):
-    task, arg = node
+    task, arg = unpack_node(node)
 
     if hasattr(task, 'should_run') and not task.should_run(arg):
       return False
 
     if node in graph and len(graph[node]) and all(
-        not results[(task._function.__name__, arg)].run_successors
-        for task, arg in graph[node]):
+        not results[node].run_successors for node in graph[node]):
       return False
 
     return True
@@ -101,15 +106,14 @@ def run_graph(graph):
       if should_run(node):
         to_run.append(node)
       else:
-        task, arg = node
-        results[(task._function.__name__, arg)] = ResultDict(ran=False)
+        results[node] = ResultDict()
         ts.done(node)
 
-    def ancestor_results(task, arg):
+    def ancestor_results(node):
       # TODO: What happens to tasks that failed or didn't run?
       values = [
-          results[(t._function.__name__, a)]['result']
-          for t, a in graph.get((task, arg), [])
+          results[node].result for node in graph.get(node, [])
+          if 'result' in results[node]
       ]
 
       if len(values) == 0:
@@ -120,13 +124,14 @@ def run_graph(graph):
 
       return values
 
-    def run(task, arg):
+    def run(node):
+      task, arg = unpack_node(node)
       if arg == FromAncestors:
-        return task.remote(ancestor_results(task, arg))
+        return task.remote(ancestor_results(node))
       else:
-        return task.remote(arg, ancestor_results(task, arg))
+        return task.remote(arg, ancestor_results(node))
 
-    ref_to_node = {run(task, arg): (task, arg) for task, arg in to_run}
+    ref_to_node = {run(node): node for node in to_run}
     remaining_refs = list(ref_to_node.keys())
 
     while len(remaining_refs):
@@ -134,10 +139,9 @@ def run_graph(graph):
 
       for ref in ready_refs:
         node = ref_to_node[ref]
-        task, arg = node
         result = ray.get(ref)
         assert type(result) is ResultDict
-        results[(task._function.__name__, arg)] = result
+        results[node] = result
         ts.done(node)
 
   return results

@@ -65,6 +65,10 @@ import round_robin
 import throughput
 import ray_diskcache
 
+from image_metadata import compute_image_metadata_ray, store_image_metadata_ray
+from spatial_association import find_components_by_cosine_similarity_ray
+from stack_identification import identify_stacks_ray
+
 # Things that need to happen to make AstroFlow reach the "grown-up" point:
 #
 # - It needs to tell you what it's going to do.
@@ -956,22 +960,12 @@ def main(context):
 
   # TODO: Since dg.FromAncestors is probably the most common thing to do,
   # eliminate it from the dependency graph's public API.
-  metadata_tasks = [(image_metadata.compute_image_metadata_ray, f)
-                    for f in new_filenames]
-  store_metadata_task = (image_metadata.store_image_metadata_ray,
-                         dg.FromAncestors)
-
-  find_components_task = (
-      spatial_association.find_components_by_cosine_similarity_ray,
-      dg.FromAncestors)
-
-  identify_stacks_task = (stack_identification.identify_stacks_ray,
-                          dg.FromAncestors)
+  metadata_tasks = [(compute_image_metadata_ray, f) for f in new_filenames]
 
   graph = {
-      store_metadata_task: metadata_tasks,
-      find_components_task: {store_metadata_task},
-      identify_stacks_task: {find_components_task}
+      store_image_metadata_ray: metadata_tasks,
+      find_components_by_cosine_similarity_ray: {store_image_metadata_ray},
+      identify_stacks_ray: {find_components_by_cosine_similarity_ray}
   }
 
   # A = (image_metadata.compute_image_metadata_ray, tuple(new_filenames))
@@ -1085,8 +1079,8 @@ def main(context):
     print(f'### results contained task {t}')
 
   # TODO: Provide a better API for getting the result for a given task.
-  stacks = next(r for t, r in results.items()
-                if t[0] == 'identify_stacks_ray').result
+  stacks = next(r for n, r in results.items()
+                if n == identify_stacks_ray).result
   print('### Stacks are')
   for s in stacks:
     print('###', s)

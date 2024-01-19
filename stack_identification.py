@@ -34,4 +34,4 @@ def identify_stacks_ray(input):
           stacks.append(stack)
 
   print(f'Identified {len(stacks)} stacks')
-  return dg.ResultDict(result=stacks)
+  return dg.ResultDict(ran=True, run_successors=True, result=stacks)
