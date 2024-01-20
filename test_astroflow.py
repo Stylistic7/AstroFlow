@@ -8,6 +8,7 @@ import ray
 os.environ["ASTROFLOW_MOCK_CACHE"] = "true"
 
 ray.init(
+    address="local",
     resources={"diskcache": 1},
     ignore_reinit_error=True,
     runtime_env={"env_vars": {
@@ -23,94 +24,52 @@ import new_dependency_graph as dg
 import spatial_association
 import ray_diskcache
 
+from image_metadata import compute_image_metadata_ray, store_image_metadata_ray
+from spatial_association import find_components_by_cosine_similarity_ray
+from stack_identification import identify_stacks_ray
+from compute_graph import build_compute_graph
+
 
 class TestAstroFlow(unittest.TestCase):
+  def setUp(self):
+    ray_diskcache.clear()
+    cache.clear()
 
-    def setUp(self):
-        ray_diskcache.clear()
-        cache.clear()
+  def tearDown(self):
+    ray_diskcache.clear()
+    cache.clear()
 
-    def tearDown(self):
-        ray_diskcache.clear()
-        cache.clear()
+  def test_read_fits_headers(self):
+    with tempfile.TemporaryDirectory() as tmp_dir:
+      make_test_frames(number=3, project_dir=tmp_dir)
 
-    def test_read_fits_headers(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            make_test_frames(number=3, project_dir=tmp_dir)
+      filenames = sorted([
+          str(path.absolute()) for path in pathlib.Path(tmp_dir).glob("*.fit*")
+      ])
 
-            filenames = sorted([
-                str(path.absolute())
-                for path in pathlib.Path(tmp_dir).glob("*.fit*")
-            ])
+      result = ray.get(image_metadata.read_fits_headers_ray.remote(filenames))
 
-            result = ray.get(
-                image_metadata.read_fits_headers_ray.remote(filenames))
+      self.assertEqual(type(result), dg.ResultDict)
+      self.assertEqual(len(result.result), 3)
 
-            self.assertEqual(type(result), dg.ResultDict)
-            self.assertEqual(len(result.result), 3)
+      ray_diskcache.clear()
+      cache.clear()
 
-            ray_diskcache.clear()
-            cache.clear()
+  def test_compute_graph(self):
+    with tempfile.TemporaryDirectory() as tmp_dir:
+      make_test_frames(number=20, project_dir=tmp_dir)
 
-    def test_up_to_plate_solving(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            make_test_frames(number=20, project_dir=tmp_dir)
+      filenames = sorted([
+          str(path.absolute()) for path in pathlib.Path(tmp_dir).glob("*.fit*")
+      ])
 
-            filenames = sorted([
-                str(path.absolute())
-                for path in pathlib.Path(tmp_dir).glob("*.fit*")
-            ])
+      graph = build_compute_graph(filenames, image_hashes={})
+      results = dg.run_graph(graph)
 
-            A = (image_metadata.read_fits_headers_ray, tuple(filenames))
-            B = (spatial_association.find_groups_by_fits_header_ray,
-                 dg.FromAncestors)
-
-            graph = {B: {A}}
-
-            results = dg.run_graph(graph)
-
-            result = results[("read_fits_headers_ray", tuple(filenames))]
-            self.assertEqual(type(result), dg.ResultDict)
-            self.assertTrue(result.ran)
-            self.assertEqual(len(result.result), 20)
-
-            # TODO: This is messy. What's the best way to get results after the graph
-            # has run?
-            result = next(results[k] for k in results
-                          if k[0] == "find_groups_by_fits_header_ray")
-            groups = result.result
-            self.assertEqual(len(groups), 1)
-            self.assertEqual(len(groups[0]), 20)
-
-    def test_including_plate_solving(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            make_test_frames(number=20, project_dir=tmp_dir)
-
-            filenames = sorted([
-                str(path.absolute())
-                for path in pathlib.Path(tmp_dir).glob("*.fit*")
-            ])
-
-            A = (image_metadata.read_fits_headers_ray, tuple(filenames))
-            B = (spatial_association.find_groups_by_fits_header_ray,
-                 dg.FromAncestors)
-
-            graph = {B: {A}}
-
-            image_metadata_tasks = [(image_metadata.compute_image_metadata_ray,
-                                     f) for f in filenames]
-            for t in image_metadata_tasks:
-                graph[t] = {B}
-
-            C = (image_metadata.store_image_metadata_ray, dg.FromAncestors)
-            graph[C] = image_metadata_tasks
-
-            results = dg.run_graph(graph)
-
-            self.assertEqual(len(cache['image_hashes']), 20)
-            self.assertEqual(len(cache['fits_headers']), 20)
-            self.assertEqual(len(cache['plate_solutions']), 20)
+      self.assertEqual(len(cache['image_hashes']), 20)
+      self.assertEqual(len(cache['fits_headers']), 20)
+      self.assertEqual(len(cache['plate_solutions']), 20)
 
 
 if __name__ == "__main__":
-    unittest.main()
+  unittest.main()

@@ -10,7 +10,9 @@ def _clear():
 
 @ray.remote(resources={'diskcache': 0.001})
 def _get(key, default=None):
-  return cache.get(key, default)
+  result = cache.get(key, default)
+  print(f'### in _get, got result of length {len(result)}')
+  return result
 
 
 @ray.remote(resources={'diskcache': 0.001})
@@ -45,6 +47,17 @@ def clear():
 
 def get(key, default=None):
   return ray.get(_get.remote(key, default))
+
+
+@ray.remote(resources={'diskcache': 0.001})
+def load(key, default):
+  result = cache.get(key, default)
+  print(f'### in load, result length {len(result)}')
+  return result
+
+
+# def load(key, default):
+#   return ray.get(_load.remote(key, default)),
 
 
 def set(key, value):

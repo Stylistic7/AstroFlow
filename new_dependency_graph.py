@@ -61,11 +61,10 @@ import ray
 #   and guarantees that the diskcache-related tasks will only be run on the
 #   head node.
 class ResultDict(dict):
-
   def __init__(self, *args, **kwargs):
     super(ResultDict, self).__init__(*args, **kwargs)
 
-    self.setdefault('ran', True)
+    self.setdefault('ran', False)
     self.setdefault('run_successors', False)
 
   def __getattr__(self, k):

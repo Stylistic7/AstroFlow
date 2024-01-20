@@ -16,34 +16,35 @@ from cache import cache
 @ray.remote
 def my_remote_task(arg, *args):
   print('running remote task', arg)
-  return dg.ResultDict(run_successors=True, result=arg)
+  return dg.ResultDict(ran=True, run_successors=True, result=arg)
 
 
 @ray.remote(resources={'diskcache': 0.001})
 def my_local_task(arg, *args):
   print('running local task', arg)
-  return dg.ResultDict(run_successors=True, result=arg)
+  return dg.ResultDict(ran=True, run_successors=True, result=arg)
 
 
 @ray.remote(resources={'diskcache': 0.001})
 def my_task_with_global(arg, *args):
   cache['foo'] = cache.get('foo', 0) + 1
-  return dg.ResultDict(run_successors=True, result=arg)
+  return dg.ResultDict(ran=True, run_successors=True, result=arg)
 
 
 @ray.remote
 def my_first_task(*args):
-  return dg.ResultDict(run_successors=True, result=1)
+  return dg.ResultDict(ran=True, run_successors=True, result=1)
 
 
 @ray.remote
 def my_later_task(ancestor_result):
-  print('running later task ancestor_results', ancestor_results)
-  return dg.ResultDict(run_successors=True, result=ancestor_result + 1)
+  print('running later task ancestor_results', ancestor_result)
+  return dg.ResultDict(ran=True,
+                       run_successors=True,
+                       result=ancestor_result + 1)
 
 
 class TestDependencyGraph(unittest.TestCase):
-
   def test_simple_graph(self):
     A = (my_remote_task, "A")
     B = (my_remote_task, "B")
@@ -125,6 +126,9 @@ class TestDependencyGraph(unittest.TestCase):
 
     graph = {D: {B, C}, C: {A}, B: {A}}
     results = dg.run_graph(graph)
+
+    for k, v in results.items():
+      print(f'### result {k} = {v}')
 
     expected_results = {
         (my_remote_task, 'A'): {

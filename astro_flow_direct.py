@@ -20,11 +20,6 @@ import traceback
 
 import ray
 
-# ray.init(runtime_env={"working_dir": "/Users/nobody/Projects/AstroFlow"},
-#          resources={'diskcache': 1},
-#          ignore_reinit_error=True,
-#          _node_ip_address='192.168.50.3')
-
 ray_context = ray.init(
     runtime_env={"working_dir": "/Users/nobody/Projects/AstroFlow"},
     ignore_reinit_error=True,
@@ -64,10 +59,7 @@ import image_handling
 import round_robin
 import throughput
 import ray_diskcache
-
-from image_metadata import compute_image_metadata_ray, store_image_metadata_ray
-from spatial_association import find_components_by_cosine_similarity_ray
-from stack_identification import identify_stacks_ray
+from compute_graph import build_compute_graph
 
 # Things that need to happen to make AstroFlow reach the "grown-up" point:
 #
@@ -325,10 +317,9 @@ def measure_stacks(context):
 
 def group_by_fn(filenames, fn):
   filenames = sorted(filenames, key=fn)
-  return defaultdict(list, {
-      k: list(g)
-      for k, g in itertools.groupby(filenames, key=fn)
-  })
+  return defaultdict(
+      list, {k: list(g)
+             for k, g in itertools.groupby(filenames, key=fn)})
 
 
 def get_camera_configs(stacks, fits_headers):
@@ -623,8 +614,7 @@ def make_stack_thumbnails_videos(stacks, image_hashes, plate_solutions,
 # TOOD: Move this into another file, e.g. identify_targets.py.
 def group_stacks_into_targets(stacks, plate_solutions, fits_headers):
   polygons = {
-      s.id:
-      SphericalPolygon.from_wcs(
+      s.id: SphericalPolygon.from_wcs(
           pyfits.Header(plate_solutions[s.light_frames[0]].header))
       for s in stacks.values()
   }
@@ -834,160 +824,15 @@ def main(context):
   masters = sorted(find_masters(context.output_dir))
   print(f'Found {len(masters)} masters')
 
-  # def exists_or_none(f):
-  #   if f and os.path.exists(f):
-  #     return f
-  #   else:
-  #     return None
+  # image_hashes_ref = ray_diskcache.load.remote('image_hashes', {})
+  # print(f'### image_hashes_ref type', type(image_hashes_ref))
+  # image_hashes = ray.get(image_hashes_ref)
+  # print('### image_hashes type', type(image_hashes))
 
-  # image_hashes = cache.get('image_hashes', {})
+  image_hashes = ray.get(ray_diskcache.load.remote('image_hashes', {}))
+  print(f'### type(image_hashes)', type(image_hashes))
 
-  # prev_num_missing_files = sum(1 for f in image_hashes.values() if not f)
-  # image_hashes = {h: exists_or_none(f) for h, f in image_hashes.items()}
-  # num_missing_files = sum(1 for f in image_hashes.values() if not f)
-  # print(f'### {num_missing_files - prev_num_missing_files} '
-  #       f'files have gone missing.')
-
-  # new_filenames = list(set(all_frames) - set(image_hashes.values()))
-
-  # print('### Calling image_metadata.compute_images_metadata')
-  # image_metadata.compute_images_metadata(new_filenames)
-
-  # TODO: This is a bit ugly for such a simple concept. Maybe abstract it in a
-  # function?
-  # image_hashes = ray.get(global_registry.get_image_hashes.remote())
-  # image_hashes = image_metadata.compute_image_hashes(
-  #     all_frames + masters, image_hashes, quarantine_dir)
-  # global_registry.set_image_hashes.remote(image_hashes)
-
-  # fits_headers = image_metadata.read_fits_headers(
-  #     image_hashes, cache.get('fits_headers', {}))
-  # fits_headers = sort_by_observation_date(fits_headers)
-  # global_registry.set_fits_headers.remote(fits_headers)
-
-  # light_frames, dark_frames, bias_frames, flat_frames = split_images_by_type(
-  #     fits_headers)
-
-  # master_hashes = [h for h, f in image_hashes.items() if f in masters]
-
-  # TODO: Make an user option to force this. The plate-solving step should be
-  # pulled into the dependency graph.
-  # plate_solutions = remove_bad_images(image_hashes, cache.get(
-  #     'plate_solutions', {}))
-  # plate_solutions = cache.get('plate_solutions', {})
-
-  # TODO: Each group of 100 ends up having a bunch of stragglers. Limit this
-  # round of plate-solving to the fastest options, and do the rest later.
-  #
-  # Another (maybe better) option is to put all the plate-solving futures into
-  # a queue, but just run the grouping after every N images are done.
-  #
-  # TODO: Delete the stack thumbnail images and videos as they are superceded
-  # by bigger stacks.
-  #
-  # TODO: Don't quarantine masters, even if they can't be plate-solved. I really
-  # need to figure out why the plate-solving fails for them.
-  # plate_solutions = ray.get(global_registry.get_plate_solutions.remote())
-  # global_registry.set_plate_solutions.remote(plate_solutions)
-  # unsolved = list(
-  #     set(light_frames + master_hashes) - set(plate_solutions.keys()))
-
-  # num_remaining = len(unsolved)
-
-  # # TODO: Make sure exceptions thrown in here bubble up.
-  # def callback(plate_solutions):
-  #   nonlocal num_remaining
-
-  #   # TODO: Quarantining should be pulled out as an independent step. Each time
-  #   # AstroFlow runs, it should identify files that are in the wrong directory
-  #   # and move them.
-  #   #
-  #   # - Images with no plate solutions must be in the quarantine dir, or will
-  #   #   be moved there.
-  #   cache['plate_solutions'] = plate_solutions
-  #   stacks, targets, mosaics = group_images(
-  #       image_hashes, plate_solutions, fits_headers, light_frames, dark_frames,
-  #       bias_frames, flat_frames, quarantine_dir)
-
-  #   # TODO: Re-enable this.
-  #   # cartesian_product_lights_and_flats(stacks, flat_frames, image_hashes,
-  #   #                                    fits_headers, plate_solutions)
-
-  #   # These are for the web server to read.
-  #   cache['stacks'] = stacks
-  #   cache['targets'] = targets
-  #   cache['mosaics'] = mosaics
-
-  #   num_remaining -= 100
-  #   eta = time.strftime(
-  #       "%H:%M:%S",
-  #       time.gmtime(throughput.estimate_time('plate_solve', num_remaining)))
-  #   print(f'### ETA {eta}')
-
-  # plate_solutions = image_metadata.plate_solve(unsolved,
-  #                                              image_hashes,
-  #                                              plate_solutions,
-  #                                              quarantine_dir,
-  #                                              callback_number=1000,
-  #                                              callback=callback)
-
-  # stacks = cache['stacks']
-  # targets = cache['targets']
-  # mosaics = cache['mosaics']
-
-  # TODO: Consider how to make this multi-threaded.
-  print(f'### Building dependency graph...')
-  graph = {}
-
-  # TODO: Process masters too.
-  filenames = all_frames
-
-  def exists_or_none(f):
-    if f and os.path.exists(f):
-      return f
-    else:
-      return None
-
-  image_hashes = cache.get('image_hashes', {})
-  prev_num_missing_files = sum(1 for f in image_hashes.values() if not f)
-  image_hashes = {h: exists_or_none(f) for h, f in image_hashes.items()}
-  num_missing_files = sum(1 for f in image_hashes.values() if not f)
-  print(f'### {num_missing_files - prev_num_missing_files} '
-        f'files have gone missing.')
-
-  new_filenames = list(set(all_frames) - set(image_hashes.values()))
-  print(f'### Importing {len(new_filenames)} files')
-
-  # TODO: Since dg.FromAncestors is probably the most common thing to do,
-  # eliminate it from the dependency graph's public API.
-  metadata_tasks = [(compute_image_metadata_ray, f) for f in new_filenames]
-
-  graph = {
-      store_image_metadata_ray: metadata_tasks,
-      find_components_by_cosine_similarity_ray: {store_image_metadata_ray},
-      identify_stacks_ray: {find_components_by_cosine_similarity_ray}
-  }
-
-  # A = (image_metadata.compute_image_metadata_ray, tuple(new_filenames))
-  # B = (image_metadata.store_image_metadata_ray, dg.FromAncestors)
-
-  # graph = {B: {A}}
-
-  # # TODO: Group all FITS files, not just the ones being added.
-  # C = (spatial_association.find_groups_by_fits_header_ray, dg.FromAncestors)
-
-  # graph = {C: {B}, B: {A}}
-
-  # # image_metadata_tasks = [(image_metadata.compute_image_metadata_ray, f)
-  # #                         for f in new_filenames]
-  # plate_solving_tasks = [(image_metadata.plate_solve_ray, f)
-  #                        for f in new_filenames]
-
-  # for t in plate_solving_tasks:
-  #   graph[t] = {C}
-
-  # D = (image_metadata.store_image_metadata_ray, dg.FromAncestors)
-  # graph[D] = plate_solving_tasks
+  graph = build_compute_graph(all_frames, image_hashes)
 
   # print(f'### Iterating over {len(mosaics)} mosaics')
   # for mosaic in mosaics.values():
@@ -1065,8 +910,8 @@ def main(context):
 
   # print('control_modes are', control_modes)
 
-  def callback(results):
-    cache['prev_results'] = results
+  # def callback(results):
+  #   cache['prev_results'] = results
 
   print('### Starting execution')
   results = dg.run_graph(graph)
@@ -1079,8 +924,8 @@ def main(context):
     print(f'### results contained task {t}')
 
   # TODO: Provide a better API for getting the result for a given task.
-  stacks = next(r for n, r in results.items()
-                if n == identify_stacks_ray).result
+  stacks = next(
+      r for n, r in results.items() if n == identify_stacks_ray).result
   print('### Stacks are')
   for s in stacks:
     print('###', s)
