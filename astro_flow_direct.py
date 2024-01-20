@@ -20,6 +20,9 @@ import traceback
 
 import ray
 
+from stack_identification import identify_stacks_ray
+
+
 ray_context = ray.init(
     runtime_env={"working_dir": "/Users/nobody/Projects/AstroFlow"},
     ignore_reinit_error=True,

@@ -1,3 +1,5 @@
+import os
+
 from image_metadata import compute_image_metadata_ray, store_image_metadata_ray
 from spatial_association import find_components_by_cosine_similarity_ray
 from stack_identification import identify_stacks_ray
