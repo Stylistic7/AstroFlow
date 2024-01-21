@@ -24,7 +24,7 @@ import distance
 import new_dependency_graph as dg
 
 # TODO: Bring all knobs up here.
-MIN_COMPONENT_MEMBERS = 5
+MIN_COMPONENT_MEMBERS = 3
 
 
 # TODO: This function accepts a list of ids, and a dictionary from id to Polygon.

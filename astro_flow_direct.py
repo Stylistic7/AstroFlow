@@ -316,41 +316,6 @@ def measure_stacks(context):
   print('Measuring images in stacks...')
 
 
-def get_camera_configs(stacks, fits_headers):
-  print('Getting camera configs...')
-  for stack in stacks:
-    assert stack
-    stack.camera_configs = camera_configs.get_unique_camera_configs(
-        stack.light_frames, fits_headers)
-
-  return stacks
-
-
-def associate_bias_frames(stacks, bias_frames, fits_headers):
-  print(f'Associating bias frames...')
-
-  def rounded_temperature(f):
-    temperature = fits_headers[f]['CCD-TEMP']
-    multiple = 10.0
-    return int(multiple * round(temperature / multiple))
-
-  biases_for_camera = group_by_fn(bias_frames,
-                                  lambda f: fits_headers[f]['INSTRUME'])
-  biases_for_temperature = group_by_fn(bias_frames, rounded_temperature)
-
-  for stack in stacks:
-    assert stack
-    biases = set()
-    for camera, temperature, _ in stack.camera_configs:
-      biases |= set(biases_for_camera[camera]) & set(
-          biases_for_temperature[temperature])
-
-    stack.bias_frames = list(biases)
-    # print(f'Found {len(stack.bias_frames)} bias frames')
-
-  return stacks
-
-
 # TODO: Parallelize this.
 # TODO: Move this into a new file.
 # TODO: Add tests.

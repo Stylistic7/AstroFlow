@@ -63,23 +63,36 @@ class TestAstroFlow(unittest.TestCase):
 
   def test_compute_graph(self):
     with tempfile.TemporaryDirectory() as tmp_dir:
-      image_hashes, fits_headers, plate_solutions = make_test_frames(
-          number=5, project_dir=tmp_dir, testdata_image='bubble_nebula')
-      image_hashes, fits_headers, plate_solutions = make_test_frames(
-          number=7, project_dir=tmp_dir, testdata_image='sadr_region')
+      make_test_frames(number=3,
+                       project_dir=tmp_dir,
+                       testdata_image='bubble_nebula')
+      make_test_frames(number=5,
+                       project_dir=tmp_dir,
+                       testdata_image='sadr_region')
+      make_test_frames(number=7, image_type='Dark', project_dir=tmp_dir)
+      make_test_frames(number=11, image_type='Bias', project_dir=tmp_dir)
+      make_test_frames(number=13, image_type='Flat', project_dir=tmp_dir)
 
       filenames = sorted([
           str(path.absolute()) for path in pathlib.Path(tmp_dir).glob("*.fit*")
       ])
-      self.assertEqual(len(filenames), 12)
+      self.assertEqual(len(filenames), 39)
 
       graph = build_compute_graph(filenames)
       results = dg.run_graph(graph)
 
-      self.assertEqual(len(ray_diskcache.get('image_hashes', {})), 12)
-      self.assertEqual(len(ray_diskcache.get('fits_headers', {})), 12)
-      self.assertEqual(len(ray_diskcache.get('plate_solutions', {})), 12)
-      self.assertEqual(len(ray_diskcache.get('stacks', {})), 2)
+      self.assertEqual(len(ray_diskcache.get('image_hashes', {})), 39)
+      self.assertEqual(len(ray_diskcache.get('fits_headers', {})), 39)
+      self.assertEqual(len(ray_diskcache.get('plate_solutions', {})), 39)
+
+      stacks = ray_diskcache.get('stacks', {})
+      self.assertEqual(len(stacks), 2)
+
+      for stack in stacks:
+        self.assertEqual(len(stack.camera_configs), 1)
+        self.assertEqual(len(stack.dark_frames), 7)
+        self.assertEqual(len(stack.bias_frames), 11)
+        self.assertEqual(len(stack.flat_frames), 13)
 
 
 if __name__ == "__main__":

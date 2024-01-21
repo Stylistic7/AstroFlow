@@ -4,7 +4,7 @@ import ray_diskcache
 from image_metadata import compute_image_metadata_ray, store_image_metadata_ray
 from spatial_association import find_components_by_cosine_similarity_ray
 from stack_identification import identify_stacks_ray
-from stacking import associate_dark_frames
+from calibration_frames import associate_calibration_frames
 
 
 def build_compute_graph(filenames):
@@ -42,7 +42,8 @@ def build_compute_graph(filenames):
   graph = {
       store_image_metadata_ray: metadata_tasks,
       find_components_by_cosine_similarity_ray: {store_image_metadata_ray},
-      identify_stacks_ray: {find_components_by_cosine_similarity_ray}
+      identify_stacks_ray: {find_components_by_cosine_similarity_ray},
+      associate_calibration_frames: {identify_stacks_ray}
   }
 
   return graph

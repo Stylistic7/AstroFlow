@@ -19,14 +19,6 @@ from image_handling import _read_image, autostretch
 
 # TODO: I need to associate dark and flat frames *before* computing thumbnails.
 
-
-def group_by_fn(filenames, fn):
-  filenames = sorted(filenames, key=fn)
-  return defaultdict(list, {
-      k: list(g) for k, g in itertools.groupby(filenames, key=fn)
-  })
-
-
 # Stack levels of refinement:
 #   Computed after reading FITS headers.
 #     Middle frame in the run, dark and flat-corrected, autostretched.

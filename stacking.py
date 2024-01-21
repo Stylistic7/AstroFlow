@@ -8,20 +8,22 @@ from xisf import XISF
 from shapely.geometry import Polygon
 from spherical_geometry.polygon import SphericalPolygon
 import ray
+from collections import defaultdict
+import itertools
 
 import config
 import file_io
 from stack import Stack, Status
 import pix
 from cache import cache
-import dependency_graph as dg
+import new_dependency_graph as dg
 from new_dependency_graph import ResultDict
 import step_flat_frame_association
 from output_file import OutputFile
 import spatial_association
 import position_string
-from image_metadata import group_by_fn
 import ray_diskcache
+import camera_configs
 
 
 def _exposure_time_string(stack):
@@ -29,41 +31,6 @@ def _exposure_time_string(stack):
   hours = np.floor(exposure / 3600)
   minutes = np.floor(exposure % 3600 / 60)
   return f'{hours:02.0f}h{minutes:02.0f}m'
-
-
-@ray.remote
-def associate_dark_frames(stack):
-  print(f'Associating dark frames...')
-  assert stack
-
-  # TODO: This is bad, because it requires a full read from the cache
-  # on every call. The metadata should be put into the Ray object store,
-  # and the refs just passed through the graph.
-  # fits_headers = ray.get(
-  #     ray_diskcache.load.remote('fits_headers', {}))
-
-  dark_frames = [
-      h for h, header in fits_headers.items() if header['IMAGETYP'] == 'Dark'
-  ]
-
-  def rounded_temperature(f):
-    temperature = fits_headers[f]['CCD-TEMP']
-    multiple = 10.0
-    return int(multiple * round(temperature / multiple))
-
-  darks_for_camera = group_by_fn(dark_frames,
-                                 lambda f: fits_headers[f]['INSTRUME'])
-  darks_for_temperature = group_by_fn(dark_frames, rounded_temperature)
-  darks_for_exposure = group_by_fn(dark_frames,
-                                   lambda f: fits_headers[f]['EXPOSURE'])
-
-  darks = set()
-  for camera, temperature, exposure in stack.camera_configs:
-    darks |= set(darks_for_camera[camera]) & set(
-        darks_for_temperature[temperature]) & set(darks_for_exposure[exposure])
-
-  stack.dark_frames = list(darks)
-  return stack
 
 
 # TODO: Pull these functions into a new shared file.
