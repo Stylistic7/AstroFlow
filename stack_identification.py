@@ -1,6 +1,7 @@
 import operator
 import ray
 
+import ray_diskcache
 from stack import Stack
 import clustering
 import file_io
@@ -8,14 +9,16 @@ import new_dependency_graph as dg
 
 
 @ray.remote
-def identify_stacks_ray(input):
+def identify_stacks_ray(*args):
   print('Identifying stacks...')
-  groups = input.groups
-  fits_headers = ray.get(input.fits_headers)
-  plate_solutions = ray.get(input.plate_solutions)
+  image_hashes = ray_diskcache.get('image_hashes', {})
+  fits_headers = ray_diskcache.get('fits_headers', {})
+  plate_solutions = ray_diskcache.get('plate_solutions', {})
+  spatial_groups = ray_diskcache.get('spatial_groups', {})
+  print('### identify_stacks_ray len(spatial_groups)', len(spatial_groups))
 
   stacks = []
-  for name, light_frames in groups:
+  for name, light_frames in spatial_groups:
     scales = [(f, plate_solutions[f].image_scale) for f in light_frames]
     scale_clusters = clustering.cluster_1d(scales, key=operator.itemgetter(1))
     for scale_cluster in scale_clusters:
@@ -34,4 +37,6 @@ def identify_stacks_ray(input):
           stacks.append(stack)
 
   print(f'Identified {len(stacks)} stacks')
+  ray_diskcache.set('stacks', stacks)
+
   return dg.ResultDict(ran=True, run_successors=True, result=stacks)

@@ -14,7 +14,8 @@ import matplotlib.pyplot as plt
 from spherical_geometry.polygon import SphericalPolygon
 import ray
 
-from ray_diskcache import or_equals
+import image_metadata
+import ray_diskcache
 import ngc2000_catalog
 import position_string
 from distance import distance
@@ -237,9 +238,13 @@ def _find_components(hashes, values, comparison_fn, plate_solutions,
 
 @ray.remote
 def find_components_by_cosine_similarity_ray(
-    input, threshold=0.99999, min_component_members=MIN_COMPONENT_MEMBERS):
-  fits_headers = ray.get(input.fits_headers)
-  plate_solutions = ray.get(input.plate_solutions)
+    inputs, threshold=0.99999, min_component_members=MIN_COMPONENT_MEMBERS):
+  image_hashes = ray_diskcache.get('image_hashes', {})
+  fits_headers = ray_diskcache.get('fits_headers', {})
+  plate_solutions = ray_diskcache.get('plate_solutions', {})
+
+  plate_solutions = image_metadata.remove_bad_images(image_hashes,
+                                                     plate_solutions)
 
   light_frames = [
       h for h, header in fits_headers.items()
@@ -256,17 +261,12 @@ def find_components_by_cosine_similarity_ray(
   def comparison_fn(a, b):
     return np.dot(a, b) > threshold
 
-  groups = _find_components(light_frames, centroids, comparison_fn,
-                            plate_solutions, min_component_members)
+  spatial_groups = _find_components(light_frames, centroids, comparison_fn,
+                                    plate_solutions, min_component_members)
 
-  # TODO: Find a clean way to pass inputs to outputs withput having to list them
-  # explicitly.
-  return dg.ResultDict(ran=True,
-                       run_successors=True,
-                       result=dg.ResultDict(
-                           fits_headers=input.fits_headers,
-                           plate_solutions=input.plate_solutions,
-                           groups=groups))
+  ray_diskcache.set('spatial_groups', spatial_groups)
+
+  return dg.ResultDict(ran=True, run_successors=True, result=spatial_groups)
 
 
 def find_components_by_cosine_similarity(

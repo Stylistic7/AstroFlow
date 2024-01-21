@@ -33,7 +33,8 @@ class GlobalVarActor:
       self.set(key, self.global_dict.get(key, default) + value)
 
 
-global_var_actor = GlobalVarActor.options(name="ray_diskcache",
+global_var_actor = GlobalVarActor.options(name='ray_diskcache',
+                                          namespace='AstroFlow',
                                           get_if_exists=True).remote()
 
 

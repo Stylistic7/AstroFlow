@@ -6,7 +6,7 @@ from cache import cache
 
 import ray
 ray.init(
-  address="local",
+  address='local',
   namespace='AstroFlow',
   resources={"diskcache": 1},
   ignore_reinit_error=True,
@@ -25,12 +25,10 @@ import tempfile
 
 @ray.remote
 def my_remote_fn():
-  print('### in my_remote_fn')
   ray_diskcache.set('hello', 'aloha')
 
 
 def my_local_fn():
-  print('### in my_local_fn')
   ray_diskcache.set('ham', 'eggs')
 
 

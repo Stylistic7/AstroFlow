@@ -1,16 +1,25 @@
-import unittest
+# yapf: disable
 import os
-import graphlib
-
 os.environ["ASTROFLOW_MOCK_CACHE"] = "true"
 
-import ray
+from cache import cache
 
-ray.init(resources={'diskcache': 1}, ignore_reinit_error=True)
+import ray
+ray.init(
+    address="local",
+    resources={"diskcache": 1},
+    ignore_reinit_error=True,
+    runtime_env={"env_vars": {
+        "ASTROFLOW_MOCK_CACHE": "true"
+    }},
+)
+# yapf: enable
+
+import unittest
+import graphlib
 
 import ray_diskcache
 import new_dependency_graph as dg
-from cache import cache
 
 
 @ray.remote

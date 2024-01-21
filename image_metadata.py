@@ -19,6 +19,14 @@ from image_handling import _read_image, autostretch
 
 # TODO: I need to associate dark and flat frames *before* computing thumbnails.
 
+
+def group_by_fn(filenames, fn):
+  filenames = sorted(filenames, key=fn)
+  return defaultdict(list, {
+      k: list(g) for k, g in itertools.groupby(filenames, key=fn)
+  })
+
+
 # Stack levels of refinement:
 #   Computed after reading FITS headers.
 #     Middle frame in the run, dark and flat-corrected, autostretched.
@@ -156,42 +164,25 @@ def plate_solve_ray(filename):
 # timeout on slow computers).
 def remove_bad_images(image_hashes, plate_solutions):
   return {
-      h: p
-      for h, p in plate_solutions.items() if h in image_hashes
-      and image_hashes[h] and 'bad' not in Path(image_hashes[h].lower()).parts
-      and type(p) is plate_solving.PlateSolution
+      h: p for h, p in plate_solutions.items() if h in image_hashes and
+      image_hashes[h] and 'bad' not in Path(image_hashes[h].lower()).parts and
+      type(p) is plate_solving.PlateSolution
   }
 
 
-@ray.remote(resources={"diskcache": 0.001})
+@ray.remote
 def store_image_metadata_ray(results):
-  image_hashes = cache.get('image_hashes', {})
-  fits_headers = cache.get('fits_headers', {})
-  plate_solutions = cache.get('plate_solutions', {})
-
   if results:
-    with cache.transact():
-      image_hashes |= {r['image_hash']: r['filename'] for r in results}
-      fits_headers |= {r['image_hash']: r['fits_header'] for r in results}
-      plate_solutions |= {r['image_hash']: r['plate_solution'] for r in results}
-
-      cache['image_hashes'] = image_hashes
-      cache['fits_headers'] = fits_headers
-      cache['plate_solutions'] = plate_solutions
-
-  plate_solutions = remove_bad_images(image_hashes, plate_solutions)
-
-  image_hashes_ref = ray.put(image_hashes)
-  fits_headers_ref = ray.put(fits_headers)
-  plate_solutions_ref = ray.put(plate_solutions)
+    ray_diskcache.or_equals('image_hashes',
+                            {r['image_hash']: r['filename'] for r in results})
+    ray_diskcache.or_equals('fits_headers',
+                            {r['image_hash']: r['fits_header'] for r in results})
+    ray_diskcache.or_equals(
+        'plate_solutions',
+        {r['image_hash']: r['plate_solution'] for r in results})
 
   # TODO: Set `run_successors` to False when there are no new files.
-  return dg.ResultDict(ran=True,
-                       run_successors=True,
-                       result=dg.ResultDict(
-                           image_hashes=image_hashes_ref,
-                           fits_headers=fits_headers_ref,
-                           plate_solutions=plate_solutions_ref))
+  return dg.ResultDict(ran=True, run_successors=True)
 
 
 # TODO: Need to properly handle renamed or moved or deleted files.

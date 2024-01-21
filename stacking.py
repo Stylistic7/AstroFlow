@@ -7,6 +7,7 @@ import numpy as np
 from xisf import XISF
 from shapely.geometry import Polygon
 from spherical_geometry.polygon import SphericalPolygon
+import ray
 
 import config
 import file_io
@@ -19,7 +20,8 @@ import step_flat_frame_association
 from output_file import OutputFile
 import spatial_association
 import position_string
-import ray
+from image_metadata import group_by_fn
+import ray_diskcache
 
 
 def _exposure_time_string(stack):
@@ -27,6 +29,41 @@ def _exposure_time_string(stack):
   hours = np.floor(exposure / 3600)
   minutes = np.floor(exposure % 3600 / 60)
   return f'{hours:02.0f}h{minutes:02.0f}m'
+
+
+@ray.remote
+def associate_dark_frames(stack):
+  print(f'Associating dark frames...')
+  assert stack
+
+  # TODO: This is bad, because it requires a full read from the cache
+  # on every call. The metadata should be put into the Ray object store,
+  # and the refs just passed through the graph.
+  # fits_headers = ray.get(
+  #     ray_diskcache.load.remote('fits_headers', {}))
+
+  dark_frames = [
+      h for h, header in fits_headers.items() if header['IMAGETYP'] == 'Dark'
+  ]
+
+  def rounded_temperature(f):
+    temperature = fits_headers[f]['CCD-TEMP']
+    multiple = 10.0
+    return int(multiple * round(temperature / multiple))
+
+  darks_for_camera = group_by_fn(dark_frames,
+                                 lambda f: fits_headers[f]['INSTRUME'])
+  darks_for_temperature = group_by_fn(dark_frames, rounded_temperature)
+  darks_for_exposure = group_by_fn(dark_frames,
+                                   lambda f: fits_headers[f]['EXPOSURE'])
+
+  darks = set()
+  for camera, temperature, exposure in stack.camera_configs:
+    darks |= set(darks_for_camera[camera]) & set(
+        darks_for_temperature[temperature]) & set(darks_for_exposure[exposure])
+
+  stack.dark_frames = list(darks)
+  return stack
 
 
 # TODO: Pull these functions into a new shared file.
@@ -131,8 +168,9 @@ def should_run(arg):
   # The point of this is to short-circuit stacking when the cache empty, but
   # the stacks have been done outside of AstroFlow, or the cache has been nuked.
   # This generally happens when the user first installs AstroFlow.
-  if existing := _master_with_id_or_footprint_exits(
-      stack, dst_filename, image_hashes, plate_solutions):
+  if existing := _master_with_id_or_footprint_exits(stack, dst_filename,
+                                                    image_hashes,
+                                                    plate_solutions):
     print(f'### Master already exists: {existing}')
     return ResultDict(ran=True, run_successors=False)
 
@@ -189,16 +227,14 @@ def run(stack, image_hashes, fits_headers, plate_solutions, dest_path):
     src_master_dir = os.path.join(tmp_dir, 'master')
     print('tmp_dir contains', os.listdir(tmp_dir))
     filenames = list(
-        str(f)
-        for f in Path(src_master_dir).rglob("*autocrop.xisf"))
+        str(f) for f in Path(src_master_dir).rglob("*autocrop.xisf"))
     if not filenames:
       # TODO: Return failure, so the stack won't just be attempted again
       # on the next run. Distinguish the cases where the stack has never been
       # attempted from the cases where it just didn't succeed.
       print(f'### WBPP did not produce any master file.')
-      return (dg.Ran.RAN,
-              (dg.Result.FAILURE,
-               dict(reason="WBPP did not produce any master file")))
+      return (dg.Ran.RAN, (dg.Result.FAILURE,
+                           dict(reason="WBPP did not produce any master file")))
 
     print('filenames', filenames)
     assert len(filenames) == 1

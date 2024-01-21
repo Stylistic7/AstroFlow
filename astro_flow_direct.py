@@ -1,3 +1,33 @@
+from compute_graph import build_compute_graph
+import ray_diskcache
+import throughput
+import round_robin
+import image_handling
+import image_metadata
+import stacking
+import step_mosaic
+import step_post_process_target
+import step_post_process_stack
+import step_sanity_check_stack
+import step_flat_frame_association
+import step_download_asiair
+import camera_configs
+import dark_and_bias_association
+import autorun_log_analysis
+import spatial_association
+import plate_solving
+import file_io
+import stack_identification
+from mosaics import identification
+from cache import cache
+from mosaic import Mosaic
+from target import Target
+from stack import Stack, Status
+import new_dependency_graph as dg
+import runs
+import pix
+import clustering
+import position_string
 import os
 import time
 import argparse
@@ -22,8 +52,8 @@ import ray
 
 from stack_identification import identify_stacks_ray
 
-
 ray_context = ray.init(
+    namespace='AstroFlow',
     runtime_env={"working_dir": "/Users/nobody/Projects/AstroFlow"},
     ignore_reinit_error=True,
     _node_ip_address='192.168.50.3')
@@ -32,37 +62,6 @@ print('### Ray dashboard:', ray_context.dashboard_url)
 
 logger = structlog.get_logger()
 log = logger
-
-import position_string
-import clustering
-import pix
-import runs
-import new_dependency_graph as dg
-from stack import Stack, Status
-from target import Target
-from mosaic import Mosaic
-from cache import cache
-from mosaics import identification
-import stack_identification
-import file_io
-import plate_solving
-import spatial_association
-import autorun_log_analysis
-import dark_and_bias_association
-import camera_configs
-import step_download_asiair
-import step_flat_frame_association
-import step_sanity_check_stack
-import step_post_process_stack
-import step_post_process_target
-import step_mosaic
-import stacking
-import image_metadata
-import image_handling
-import round_robin
-import throughput
-import ray_diskcache
-from compute_graph import build_compute_graph
 
 # Things that need to happen to make AstroFlow reach the "grown-up" point:
 #
@@ -254,8 +253,7 @@ def split_images_by_type(fits_headers):
 
   sorted_hashes = sorted(fits_headers, key=image_type)
   files = {
-      k: list(g)
-      for k, g in itertools.groupby(sorted_hashes, key=image_type)
+      k: list(g) for k, g in itertools.groupby(sorted_hashes, key=image_type)
   }
 
   light_frames = files['Light'] if 'Light' in files else []
@@ -318,47 +316,12 @@ def measure_stacks(context):
   print('Measuring images in stacks...')
 
 
-def group_by_fn(filenames, fn):
-  filenames = sorted(filenames, key=fn)
-  return defaultdict(
-      list, {k: list(g)
-             for k, g in itertools.groupby(filenames, key=fn)})
-
-
 def get_camera_configs(stacks, fits_headers):
   print('Getting camera configs...')
   for stack in stacks:
     assert stack
     stack.camera_configs = camera_configs.get_unique_camera_configs(
         stack.light_frames, fits_headers)
-
-  return stacks
-
-
-def associate_dark_frames(stacks, dark_frames, fits_headers):
-  print(f'Associating dark frames...')
-
-  def rounded_temperature(f):
-    temperature = fits_headers[f]['CCD-TEMP']
-    multiple = 10.0
-    return int(multiple * round(temperature / multiple))
-
-  darks_for_camera = group_by_fn(dark_frames,
-                                 lambda f: fits_headers[f]['INSTRUME'])
-  darks_for_temperature = group_by_fn(dark_frames, rounded_temperature)
-  darks_for_exposure = group_by_fn(dark_frames,
-                                   lambda f: fits_headers[f]['EXPOSURE'])
-
-  for stack in stacks:
-    assert stack
-    darks = set()
-    for camera, temperature, exposure in stack.camera_configs:
-      darks |= set(darks_for_camera[camera]) & set(
-          darks_for_temperature[temperature]) & set(
-              darks_for_exposure[exposure])
-
-    stack.dark_frames = list(darks)
-    # print(f'Found {len(stack.dark_frames)} dark frames')
 
   return stacks
 
@@ -411,8 +374,7 @@ def cartesian_product_lights_and_flats(stacks, flat_frames, image_hashes,
     best_light_frames = [
         max(
             {
-                f: p
-                for f, p in plate_solutions.items() if f in
+                f: p for f, p in plate_solutions.items() if f in
                 runs.get_frames_for_run(run, stack.light_frames, fits_headers)
             },
             key=lambda f: plate_solutions[f].num_stars) for run in light_runs
@@ -584,7 +546,8 @@ def make_image_thumbnails(stacks,
     for stack in stacks:
       assert stack
       for light_frame in stack.light_frames:
-        if ('thumbnail_image', light_frame) in cache: continue
+        if ('thumbnail_image', light_frame) in cache:
+          continue
         # print(f'### cache miss on light frame {light_frame}')
         flat_frame = image_handling._get_flat_frame_for_light_frame(
             light_frame, stack, fits_headers)
@@ -617,8 +580,9 @@ def make_stack_thumbnails_videos(stacks, image_hashes, plate_solutions,
 # TOOD: Move this into another file, e.g. identify_targets.py.
 def group_stacks_into_targets(stacks, plate_solutions, fits_headers):
   polygons = {
-      s.id: SphericalPolygon.from_wcs(
-          pyfits.Header(plate_solutions[s.light_frames[0]].header))
+      s.id:
+          SphericalPolygon.from_wcs(
+              pyfits.Header(plate_solutions[s.light_frames[0]].header))
       for s in stacks.values()
   }
 
@@ -827,15 +791,7 @@ def main(context):
   masters = sorted(find_masters(context.output_dir))
   print(f'Found {len(masters)} masters')
 
-  # image_hashes_ref = ray_diskcache.load.remote('image_hashes', {})
-  # print(f'### image_hashes_ref type', type(image_hashes_ref))
-  # image_hashes = ray.get(image_hashes_ref)
-  # print('### image_hashes type', type(image_hashes))
-
-  image_hashes = ray.get(ray_diskcache.load.remote('image_hashes', {}))
-  print(f'### type(image_hashes)', type(image_hashes))
-
-  graph = build_compute_graph(all_frames, image_hashes)
+  graph = build_compute_graph(all_frames)
 
   # print(f'### Iterating over {len(mosaics)} mosaics')
   # for mosaic in mosaics.values():
