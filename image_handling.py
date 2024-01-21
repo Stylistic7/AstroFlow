@@ -13,6 +13,7 @@ import traceback
 import ray
 
 import ray_diskcache
+from cache import cache
 import file_io
 from new_dependency_graph import ResultDict
 
@@ -69,8 +70,14 @@ def read_image(filename):
     return file_io.read_fits_image(filename)
 
 
+@ray.remote
+def scatter_stack_thumbnails(stacks, *args):
+  return [(compute_stack_thumbnails, stack) for stack in stacks]
+
+
 @ray.remote(scheduling_strategy="SPREAD", num_cpus=0.75)
 def compute_stack_thumbnails(stack, *args):
+  print(f'### compute_stack_thumbnails {str(stack)}')
   image_hashes = ray_diskcache.get('image_hashes', {})
   fits_headers = ray_diskcache.get('fits_headers', {})
   plate_solutions = ray_diskcache.get('plate_solutions', {})
@@ -85,6 +92,16 @@ def compute_stack_thumbnails(stack, *args):
                                              dark_frame, flat_frame, rotate)
 
   return ResultDict(ran=True, run_successors=True, result=thumbnails)
+
+
+@ray.remote(resources={'diskcache': 0.001})
+def gather_stack_thumbnails(results):
+  for result in results:
+    for hash, thumbnail in result.items():
+      key = ('image_thumbnail', hash)
+      cache[key] = thumbnail
+
+  return ResultDict(ran=True, run_sccessors=True, result=None)
 
 
 def make_thumbnail(image_hashes,

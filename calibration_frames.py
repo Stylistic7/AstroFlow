@@ -35,7 +35,6 @@ def _associate_dark_frames(stack, fits_headers):
   assert stack.light_frames
   stack.camera_configs = camera_configs.get_unique_camera_configs(
       stack.light_frames, fits_headers)
-  print(f'### stack {stack} camera configs {stack.camera_configs}')
   assert stack.camera_configs
 
   darks = set()

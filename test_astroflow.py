@@ -94,6 +94,9 @@ class TestAstroFlow(unittest.TestCase):
         self.assertEqual(len(stack.bias_frames), 11)
         self.assertEqual(len(stack.flat_frames), 13)
 
+        for light_frame in stack.light_frames:
+          self.assertTrue(('image_thumbnail', light_frame) in cache)
+
 
 if __name__ == "__main__":
   unittest.main()

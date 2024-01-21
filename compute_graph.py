@@ -5,7 +5,7 @@ from image_metadata import compute_image_metadata_ray, store_image_metadata_ray
 from spatial_association import find_components_by_cosine_similarity_ray
 from stack_identification import identify_stacks_ray
 from calibration_frames import associate_calibration_frames
-from image_handling import compute_stack_thumbnails
+from image_handling import scatter_stack_thumbnails, gather_stack_thumbnails
 
 
 def build_compute_graph(filenames):
@@ -39,7 +39,9 @@ def build_compute_graph(filenames):
       store_image_metadata_ray: metadata_tasks,
       find_components_by_cosine_similarity_ray: {store_image_metadata_ray},
       identify_stacks_ray: {find_components_by_cosine_similarity_ray},
-      associate_calibration_frames: {identify_stacks_ray}
+      associate_calibration_frames: {identify_stacks_ray},
+      scatter_stack_thumbnails: {associate_calibration_frames},
+      gather_stack_thumbnails: {scatter_stack_thumbnails},
   }
 
   return graph

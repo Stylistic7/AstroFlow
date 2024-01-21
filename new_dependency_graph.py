@@ -139,20 +139,16 @@ def run_graph(graph):
     dynamic_task_results = {}
 
     def complete_node(node, result):
-      print(f'### complete_node {node}')
       for k, v in dynamic_tasks.items():
         if node in v:
-          print(f'### node {node} is a dynamic node')
           v.remove(node)
           dynamic_task_results[k].append(result)
           if len(v) == 0:
-            print(f'### all dynamic tasks for node {k} are done')
             dynamic_results = [r.result for r in dynamic_task_results[k]]
-            run_sccessors = any(
-                r.run_sccessors for r in dynamic_task_results[k])
-            print(f'### setting node {k} result to {dynamic_results}')
+            run_successors = any(
+                r.run_successors for r in dynamic_task_results[k])
             results[k] = ResultDict(ran=True,
-                                    run_successors=run_sccessors,
+                                    run_successors=run_successors,
                                     result=dynamic_results)
             del dynamic_tasks[k]
             ts.done(k)
@@ -164,14 +160,11 @@ def run_graph(graph):
       ts.done(node)
 
     while len(remaining_refs):
-      print(f'### top of loop, len(remaining_refs) {len(remaining_refs)} '
-            f'len(dynamic_tasks) {len(dynamic_tasks)}')
       ready_refs, remaining_refs = ray.wait(remaining_refs)
 
       for ref in ready_refs:
         node = ref_to_node[ref]
         result = ray.get(ref)
-        print(f'### node {node} is done with result type {type(result)}')
 
         # There are two possibilities here: the task can return a ResultDict,
         # or a (dynamically-generated) list of additional tasks to run.
@@ -180,8 +173,6 @@ def run_graph(graph):
         elif type(result) is list:
           dynamic_tasks[node] = result
           dynamic_task_results[node] = []
-          print(f'### adding {len(result)} dynamic nodes to graph '
-                f'under node {node}')
           new_dynamic_tasks = {run(node): node for node in result}
           ref_to_node |= new_dynamic_tasks
           remaining_refs.extend(list(new_dynamic_tasks.keys()))
