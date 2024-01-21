@@ -10,10 +10,11 @@ import tempfile
 from multiprocessing import Pool
 from functools import partial
 import traceback
+import ray
 
+import ray_diskcache
 import file_io
-
-# from cache import cache
+from new_dependency_graph import ResultDict
 
 MIN_STAR_FRACTION = 0.5
 
@@ -61,52 +62,68 @@ def _get_flat_frame_for_light_frame(light_frame, stack, fits_headers):
       return flat_frames[0]
 
 
-def _read_image(filename):
+def read_image(filename):
   if filename.endswith('.xisf'):
     return file_io.read_xisf_image(filename)
   elif filename.endswith('.fit') or filename.endswith('.fits'):
     return file_io.read_fits_image(filename)
 
 
-# def make_and_cache_thumbnail(image_hashes,
-#                              light_frame,
-#                              dark_frame,
-#                              flat_frame,
-#                              rotate,
-#                              fudge=None,
-#                              width=1200):
-#   try:
-#     light_frame_image = resize_array(_read_image(image_hashes[light_frame]),
-#                                      width)
-#     if rotate:
-#       light_frame_image = np.rot90(light_frame_image, 2)
+@ray.remote(scheduling_strategy="SPREAD", num_cpus=0.75)
+def compute_stack_thumbnails(stack, *args):
+  image_hashes = ray_diskcache.get('image_hashes', {})
+  fits_headers = ray_diskcache.get('fits_headers', {})
+  plate_solutions = ray_diskcache.get('plate_solutions', {})
 
-#     if not dark_frame or not flat_frame:
-#       cache[('thumbnail_image', light_frame)] = autostretch(light_frame_image)
-#       return
+  thumbnails = {}
+  for light_frame in stack.light_frames:
+    flat_frame = _get_flat_frame_for_light_frame(light_frame, stack,
+                                                 fits_headers)
+    dark_frame = stack.dark_frames[0] if len(stack.dark_frames) else None
+    rotate = plate_solutions[light_frame].rotation_angle < 0.0
+    thumbnails[light_frame] = make_thumbnail(image_hashes, light_frame,
+                                             dark_frame, flat_frame, rotate)
 
-#     flat_frame_image = resize_array(_read_image(image_hashes[flat_frame]),
-#                                     width)
-#     dark_frame_image = resize_array(_read_image(image_hashes[dark_frame]),
-#                                     width)
+  return ResultDict(ran=True, run_successors=True, result=thumbnails)
 
-#     light_frame_image -= dark_frame_image
-#     flat_frame_image -= dark_frame_image
 
-#     # if fudge:
-#     #   min, max = np.min(flat_frame_image), np.max(flat_frame_image)
-#     #   flat_frame_image = np.interp(flat_frame_image, [min, max],
-#     #                                [min + fudge * (max - min), max])
+def make_thumbnail(image_hashes,
+                   light_frame,
+                   dark_frame,
+                   flat_frame,
+                   rotate,
+                   fudge=None,
+                   width=1200):
+  try:
+    light_frame_image = resize_array(read_image(image_hashes[light_frame]),
+                                     width)
+    if rotate:
+      light_frame_image = np.rot90(light_frame_image, 2)
 
-#     light_frame_image = np.divide(light_frame_image,
-#                                   flat_frame_image,
-#                                   out=np.zeros_like(light_frame_image),
-#                                   where=flat_frame_image != 0)
+    if not dark_frame or not flat_frame:
+      return autostretch(light_frame_image)
 
-#     light_frame_image = autostretch(np.clip(light_frame_image, 0.0, 1.0))
-#     cache[('thumbnail_image', light_frame)] = light_frame_image
-#   except Exception:
-#     traceback.print_exc()
+    flat_frame_image = resize_array(read_image(image_hashes[flat_frame]), width)
+    dark_frame_image = resize_array(read_image(image_hashes[dark_frame]), width)
+
+    light_frame_image -= dark_frame_image
+    flat_frame_image -= dark_frame_image
+
+    # if fudge:
+    #   min, max = np.min(flat_frame_image), np.max(flat_frame_image)
+    #   flat_frame_image = np.interp(flat_frame_image, [min, max],
+    #                                [min + fudge * (max - min), max])
+
+    light_frame_image = np.divide(light_frame_image,
+                                  flat_frame_image,
+                                  out=np.zeros_like(light_frame_image),
+                                  where=flat_frame_image != 0)
+
+    light_frame_image = autostretch(np.clip(light_frame_image, 0.0, 1.0))
+    return light_frame_image
+  except Exception:
+    traceback.print_exc()
+
 
 # # TODO: Compare various ways of getting "the best" thumbnail (preview)
 # # image for a stack: highest std, greatest star count, etc.

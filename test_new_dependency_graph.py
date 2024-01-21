@@ -54,6 +54,21 @@ def my_later_task(ancestor_result):
                        result=ancestor_result + 1)
 
 
+@ray.remote
+def scatter(*args):
+  return [(process, i) for i in range(7)]
+
+
+@ray.remote
+def process(item, *args):
+  return dg.ResultDict(ran=True, run_sccessors=True, result=item)
+
+
+@ray.remote
+def gather(results):
+  return dg.ResultDict(ran=True, run_sccessors=True, result=sum(results))
+
+
 class TestDependencyGraph(unittest.TestCase):
 
   def test_simple_graph(self):
@@ -212,7 +227,7 @@ class TestDependencyGraph(unittest.TestCase):
 
   def test_pass_down(self):
     A = my_first_task
-    B = (my_later_task, dg.FromAncestors)
+    B = my_later_task
 
     graph = {B: {A}}
     results = dg.run_graph(graph)
@@ -220,6 +235,14 @@ class TestDependencyGraph(unittest.TestCase):
     # TODO: Make a better API for getting results.
     self.assertEqual(results[A].result, 1)
     self.assertEqual(results[B].result, 2)
+
+  def test_dynamic_task_creation(self):
+    graph = {gather: {scatter}, scatter: {}}
+    results = dg.run_graph(graph)
+
+    self.assertEqual(len(results), 2)
+    self.assertEqual(results[scatter].result, list(range(7)))
+    self.assertEqual(results[gather].result, sum(range(7)))
 
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@ import throughput
 import round_robin
 import new_dependency_graph as dg
 import ray_diskcache
-from image_handling import _read_image, autostretch
+import image_handling
 
 # TODO: I need to associate dark and flat frames *before* computing thumbnails.
 
@@ -112,13 +112,12 @@ from image_handling import _read_image, autostretch
 #   cache['plate_solutions'] = plate_solutions
 
 
-# TODO: I need to associate dark and flat frames *before* computing thumbnails.
 @ray.remote(scheduling_strategy="SPREAD", num_cpus=0.75)
 def compute_image_metadata_ray(filename, *args):
   assert os.path.exists(filename)
 
   result = {}
-  image = _read_image(filename)
+  image = image_handling.read_image(filename)
   result['filename'] = filename
   result['image_hash'] = xxhash.xxh128(image).hexdigest()
   result['fits_header'] = file_io.read_fits(filename)
@@ -126,21 +125,6 @@ def compute_image_metadata_ray(filename, *args):
     result['plate_solution'] = plate_solving.solve_field(filename)
   else:
     result['plate_solution'] = None
-
-  # TODO: use dark frame, flat frame, rotation, etc.
-  # result["thumbnail_image"] = autostretch(np.clip(image, 0.0, 1.0))
-
-  return dg.ResultDict(ran=True, run_successors=True, result=result)
-
-
-@ray.remote(resources={'diskcache': 0.001})
-def plate_solve_ray(filename):
-  assert os.path.exists(filename)
-
-  start = time.time()
-  result = plate_solving.solve_field(filename)
-  end = time.time()
-  print('### plate solving took', end - start, 'seconds')
 
   return dg.ResultDict(ran=True, run_successors=True, result=result)
 

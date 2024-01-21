@@ -61,6 +61,7 @@ import ray
 #   and guarantees that the diskcache-related tasks will only be run on the
 #   head node.
 class ResultDict(dict):
+
   def __init__(self, *args, **kwargs):
     super(ResultDict, self).__init__(*args, **kwargs)
 
@@ -111,7 +112,8 @@ def run_graph(graph):
     def ancestor_results(node):
       # TODO: What happens to tasks that failed or didn't run?
       values = [
-          results[node].result for node in graph.get(node, [])
+          results[node].result
+          for node in graph.get(node, [])
           if 'result' in results[node]
       ]
 
@@ -133,14 +135,57 @@ def run_graph(graph):
     ref_to_node = {run(node): node for node in to_run}
     remaining_refs = list(ref_to_node.keys())
 
+    dynamic_tasks = {}
+    dynamic_task_results = {}
+
+    def complete_node(node, result):
+      print(f'### complete_node {node}')
+      for k, v in dynamic_tasks.items():
+        if node in v:
+          print(f'### node {node} is a dynamic node')
+          v.remove(node)
+          dynamic_task_results[k].append(result)
+          if len(v) == 0:
+            print(f'### all dynamic tasks for node {k} are done')
+            dynamic_results = [r.result for r in dynamic_task_results[k]]
+            run_sccessors = any(
+                r.run_sccessors for r in dynamic_task_results[k])
+            print(f'### setting node {k} result to {dynamic_results}')
+            results[k] = ResultDict(ran=True,
+                                    run_successors=run_sccessors,
+                                    result=dynamic_results)
+            del dynamic_tasks[k]
+            ts.done(k)
+            return
+          else:
+            return
+
+      results[node] = result
+      ts.done(node)
+
     while len(remaining_refs):
+      print(f'### top of loop, len(remaining_refs) {len(remaining_refs)} '
+            f'len(dynamic_tasks) {len(dynamic_tasks)}')
       ready_refs, remaining_refs = ray.wait(remaining_refs)
 
       for ref in ready_refs:
         node = ref_to_node[ref]
         result = ray.get(ref)
-        assert type(result) is ResultDict
-        results[node] = result
-        ts.done(node)
+        print(f'### node {node} is done with result type {type(result)}')
+
+        # There are two possibilities here: the task can return a ResultDict,
+        # or a (dynamically-generated) list of additional tasks to run.
+        if type(result) is ResultDict:
+          complete_node(node, result)
+        elif type(result) is list:
+          dynamic_tasks[node] = result
+          dynamic_task_results[node] = []
+          print(f'### adding {len(result)} dynamic nodes to graph '
+                f'under node {node}')
+          new_dynamic_tasks = {run(node): node for node in result}
+          ref_to_node |= new_dynamic_tasks
+          remaining_refs.extend(list(new_dynamic_tasks.keys()))
+        else:
+          assert False, f"Task return type {type(result)} is unsupported"
 
   return results
