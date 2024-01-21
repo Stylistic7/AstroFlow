@@ -42,6 +42,7 @@ def make_test_frames(start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
                      exposure=300,
                      filter='H',
                      fill_value=None,
+                     testdata_image=None,
                      real_hash=False,
                      num_stars=100,
                      image_scale=1.0,
@@ -75,10 +76,18 @@ def make_test_frames(start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
 
     if fill_value:
       image_data = np.ones((100, 100)) * fill_value
+    elif testdata_image:
+      # Read the image, and add a small amount of noise so it will have a
+      # unique hash.
+      image_data = np.load(os.path.join('testdata', testdata_image))
+      image_data += np.random.randint(low=0,
+                                      high=2,
+                                      size=image_data.shape,
+                                      dtype=image_data.dtype)
     else:
       image_data = np.random.random((100, 100))
 
-    if real_hash:
+    if real_hash or testdata_image:
       image_hash = xxhash.xxh128(image_data.tobytes()).hexdigest()
     else:
       image_hash = 'hash_for_' + fits_filename
