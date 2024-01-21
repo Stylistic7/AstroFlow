@@ -79,7 +79,8 @@ def make_test_frames(start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
     elif testdata_image:
       # Read the image, and add a small amount of noise so it will have a
       # unique hash.
-      image_data = np.load(os.path.join('testdata', testdata_image))
+      filename = os.path.join('testdata', testdata_image) + '.npz'
+      image_data = np.load(filename)[testdata_image]
       image_data += np.random.randint(low=0,
                                       high=2,
                                       size=image_data.shape,

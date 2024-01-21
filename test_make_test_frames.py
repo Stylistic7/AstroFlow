@@ -62,13 +62,13 @@ class TestMakeTestFrames(unittest.TestCase):
         number=7,
         prefix='bubble_nebula',
         dither=0,
-        testdata_image='bubble_nebula.npy')
+        testdata_image='bubble_nebula')
 
     image_hashes, fits_headers, plate_solutions = make_test_frames.make_test_frames(
         number=11,
         prefix='sadr_region',
         dither=0,
-        testdata_image='sadr_region.npy',
+        testdata_image='sadr_region',
         image_hashes=image_hashes,
         fits_headers=fits_headers,
         plate_solutions=plate_solutions)

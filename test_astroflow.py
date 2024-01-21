@@ -64,9 +64,9 @@ class TestAstroFlow(unittest.TestCase):
   def test_compute_graph(self):
     with tempfile.TemporaryDirectory() as tmp_dir:
       image_hashes, fits_headers, plate_solutions = make_test_frames(
-          number=5, project_dir=tmp_dir, testdata_image='bubble_nebula.npy')
+          number=5, project_dir=tmp_dir, testdata_image='bubble_nebula')
       image_hashes, fits_headers, plate_solutions = make_test_frames(
-          number=7, project_dir=tmp_dir, testdata_image='sadr_region.npy')
+          number=7, project_dir=tmp_dir, testdata_image='sadr_region')
 
       filenames = sorted([
           str(path.absolute()) for path in pathlib.Path(tmp_dir).glob("*.fit*")

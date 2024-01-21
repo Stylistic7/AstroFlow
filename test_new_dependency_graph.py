@@ -6,7 +6,8 @@ from cache import cache
 
 import ray
 ray.init(
-    address="local",
+    address='local',
+    namespace='AstroFlow',
     resources={"diskcache": 1},
     ignore_reinit_error=True,
     runtime_env={"env_vars": {
@@ -54,6 +55,7 @@ def my_later_task(ancestor_result):
 
 
 class TestDependencyGraph(unittest.TestCase):
+
   def test_simple_graph(self):
     A = (my_remote_task, "A")
     B = (my_remote_task, "B")
