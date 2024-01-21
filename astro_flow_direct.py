@@ -502,25 +502,25 @@ def compute_stack_metadata(stacks, fits_headers, plate_solutions):
 # The third layer of previews are the stack videos. There may be multiple
 # videos per stack (e.g. one for all frames, and one just for frames selected
 # for stacking, or for different choices of flat frames).
-def make_image_thumbnails(stacks,
-                          image_hashes,
-                          plate_solutions,
-                          fits_headers,
-                          width=1200):
-  with concurrent.futures.ProcessPoolExecutor() as executor:
-    for stack in stacks:
-      assert stack
-      for light_frame in stack.light_frames:
-        if ('thumbnail_image', light_frame) in cache:
-          continue
-        # print(f'### cache miss on light frame {light_frame}')
-        flat_frame = image_handling._get_flat_frame_for_light_frame(
-            light_frame, stack, fits_headers)
-        dark_frame = stack.dark_frames[0] if len(stack.dark_frames) else None
-        rotate = plate_solutions[light_frame].rotation_angle < 0.0
-        executor.submit(image_handling.make_and_cache_thumbnail, image_hashes,
-                        light_frame, dark_frame, flat_frame, rotate, None,
-                        width)
+# def make_image_thumbnails(stacks,
+#                           image_hashes,
+#                           plate_solutions,
+#                           fits_headers,
+#                           width=1200):
+#   with concurrent.futures.ProcessPoolExecutor() as executor:
+#     for stack in stacks:
+#       assert stack
+#       for light_frame in stack.light_frames:
+#         if ('thumbnail_image', light_frame) in cache:
+#           continue
+#         # print(f'### cache miss on light frame {light_frame}')
+#         flat_frame = image_handling._get_flat_frame_for_light_frame(
+#             light_frame, stack, fits_headers)
+#         dark_frame = stack.dark_frames[0] if len(stack.dark_frames) else None
+#         rotate = plate_solutions[light_frame].rotation_angle < 0.0
+#         executor.submit(image_handling.make_and_cache_thumbnail, image_hashes,
+#                         light_frame, dark_frame, flat_frame, rotate, None,
+#                         width)
 
 
 # TODO: Consider how changing a config setting and re-running will work.
@@ -752,6 +752,9 @@ def main(context):
 
   # TODO: Maybe just call these "input files" and "output files" or something.
   all_frames = sorted(find_fits_files(context.input_dirs))
+
+  # FIXME remove hack
+  all_frames = all_frames[0:1000]
 
   masters = sorted(find_masters(context.output_dir))
   print(f'Found {len(masters)} masters')

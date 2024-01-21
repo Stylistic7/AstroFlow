@@ -112,12 +112,19 @@ import image_handling
 #   cache['plate_solutions'] = plate_solutions
 
 
+def read_image(filename):
+  if filename.endswith('.xisf'):
+    return file_io.read_xisf_image(filename)
+  elif filename.endswith('.fit') or filename.endswith('.fits'):
+    return file_io.read_fits_image(filename)
+
+
 @ray.remote(scheduling_strategy="SPREAD", num_cpus=0.75)
 def compute_image_metadata_ray(filename, *args):
   assert os.path.exists(filename)
 
   result = {}
-  image = image_handling.read_image(filename)
+  image = read_image(filename)
   result['filename'] = filename
   result['image_hash'] = xxhash.xxh128(image).hexdigest()
   result['fits_header'] = file_io.read_fits(filename)
