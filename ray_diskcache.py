@@ -14,23 +14,40 @@ class GlobalVarActor:
     # This doesn't clear the cache; it just reclaims the memory.
     self.global_dict = {}
 
-  def get(self, key, default=None):
-    if key not in self.global_dict:
-      self.global_dict[key] = cache.get(key, default)
-    return self.global_dict[key]
+  def get(self, key, default=None, keep_in_memory=True):
+    if key in self.global_dict:
+      value = self.global_dict[key]
+    else:
+      value = cache.get(key, default)
 
-  def set(self, key, value):
-    self.global_dict[key] = value
+    if keep_in_memory:
+      self.global_dict[key] = value
+    elif key in self.global_dict:
+      del self.global_dict[key]
+
+    return value
+
+  def set(self, key, value, keep_in_memory=True):
     cache[key] = value
+
+    if keep_in_memory:
+      self.global_dict[key] = value
+    elif key in self.global_dict:
+      del self.global_dict[key]
+
     return value
 
   def or_equals(self, key, value, default):
     with cache.transact():
-      self.set(key, self.global_dict.get(key, default) | value)
+      new_value = self.global_dict.get(key, default) | value
+      self.set(key, new_value)
+      return new_value
 
   def plus_equals(self, key, value, default):
     with cache.transact():
-      self.set(key, self.global_dict.get(key, default) + value)
+      new_value = self.global_dict.get(key, default) + value
+      self.set(key, new_value)
+      return new_value
 
 
 global_var_actor = GlobalVarActor.options(name='ray_diskcache',

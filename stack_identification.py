@@ -9,13 +9,18 @@ import new_dependency_graph as dg
 
 
 @ray.remote
-def identify_stacks_ray(*args):
+def identify_stacks_ray(context):
   print('Identifying stacks...')
-  image_hashes = ray_diskcache.get('image_hashes', {})
-  fits_headers = ray_diskcache.get('fits_headers', {})
-  plate_solutions = ray_diskcache.get('plate_solutions', {})
-  spatial_groups = ray_diskcache.get('spatial_groups', {})
-  print('### identify_stacks_ray len(spatial_groups)', len(spatial_groups))
+  # image_hashes = ray_diskcache.get('image_hashes', {})
+  # fits_headers = ray_diskcache.get('fits_headers', {})
+  # plate_solutions = ray_diskcache.get('plate_solutions', {})
+  # spatial_groups = ray_diskcache.get('spatial_groups', {})
+  # print('### identify_stacks_ray len(spatial_groups)', len(spatial_groups))
+
+  image_hashes = ray.get(context['image_hashes'])
+  fits_headers = ray.get(context['fits_headers'])
+  plate_solutions = ray.get(context['plate_solutions'])
+  spatial_groups = ray.get(context['spatial_groups'])
 
   stacks = []
   for name, light_frames in spatial_groups:
@@ -37,6 +42,6 @@ def identify_stacks_ray(*args):
           stacks.append(stack)
 
   print(f'Identified {len(stacks)} stacks')
-  ray_diskcache.set('stacks', stacks)
+  # ray_diskcache.set('stacks', stacks)
 
-  return dg.ResultDict(ran=True, run_successors=True, result=stacks)
+  return context | dict(stacks=ray.put(stacks))

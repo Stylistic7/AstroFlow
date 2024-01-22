@@ -253,7 +253,8 @@ def split_images_by_type(fits_headers):
 
   sorted_hashes = sorted(fits_headers, key=image_type)
   files = {
-      k: list(g) for k, g in itertools.groupby(sorted_hashes, key=image_type)
+      k: list(g)
+      for k, g in itertools.groupby(sorted_hashes, key=image_type)
   }
 
   light_frames = files['Light'] if 'Light' in files else []
@@ -339,7 +340,8 @@ def cartesian_product_lights_and_flats(stacks, flat_frames, image_hashes,
     best_light_frames = [
         max(
             {
-                f: p for f, p in plate_solutions.items() if f in
+                f: p
+                for f, p in plate_solutions.items() if f in
                 runs.get_frames_for_run(run, stack.light_frames, fits_headers)
             },
             key=lambda f: plate_solutions[f].num_stars) for run in light_runs
@@ -546,8 +548,8 @@ def make_stack_thumbnails_videos(stacks, image_hashes, plate_solutions,
 def group_stacks_into_targets(stacks, plate_solutions, fits_headers):
   polygons = {
       s.id:
-          SphericalPolygon.from_wcs(
-              pyfits.Header(plate_solutions[s.light_frames[0]].header))
+      SphericalPolygon.from_wcs(
+          pyfits.Header(plate_solutions[s.light_frames[0]].header))
       for s in stacks.values()
   }
 
@@ -754,7 +756,7 @@ def main(context):
   all_frames = sorted(find_fits_files(context.input_dirs))
 
   # FIXME remove hack
-  all_frames = all_frames[0:1000]
+  # all_frames = all_frames[0:1000]
 
   masters = sorted(find_masters(context.output_dir))
   print(f'Found {len(masters)} masters')
@@ -851,8 +853,8 @@ def main(context):
     print(f'### results contained task {t}')
 
   # TODO: Provide a better API for getting the result for a given task.
-  stacks = next(
-      r for n, r in results.items() if n == identify_stacks_ray).result
+  stacks = next(r for n, r in results.items()
+                if n == identify_stacks_ray).result
   print('### Stacks are')
   for s in stacks:
     print('###', s)

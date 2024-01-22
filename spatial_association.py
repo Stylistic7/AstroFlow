@@ -238,10 +238,10 @@ def _find_components(hashes, values, comparison_fn, plate_solutions,
 
 @ray.remote
 def find_components_by_cosine_similarity_ray(
-    inputs, threshold=0.99999, min_component_members=MIN_COMPONENT_MEMBERS):
-  image_hashes = ray_diskcache.get('image_hashes', {})
-  fits_headers = ray_diskcache.get('fits_headers', {})
-  plate_solutions = ray_diskcache.get('plate_solutions', {})
+    context, threshold=0.99999, min_component_members=MIN_COMPONENT_MEMBERS):
+  image_hashes = ray.get(context['image_hashes'])
+  fits_headers = ray.get(context['fits_headers'])
+  plate_solutions = ray.get(context['plate_solutions'])
 
   plate_solutions = image_metadata.remove_bad_images(image_hashes,
                                                      plate_solutions)
@@ -264,9 +264,7 @@ def find_components_by_cosine_similarity_ray(
   spatial_groups = _find_components(light_frames, centroids, comparison_fn,
                                     plate_solutions, min_component_members)
 
-  ray_diskcache.set('spatial_groups', spatial_groups)
-
-  return dg.ResultDict(ran=True, run_successors=True, result=spatial_groups)
+  return context | dict(spatial_groups=ray.put(spatial_groups))
 
 
 def find_components_by_cosine_similarity(

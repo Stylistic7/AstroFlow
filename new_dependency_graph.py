@@ -172,6 +172,8 @@ def run_graph(graph):
           results[node] = result
           ts.done(node)
         elif type(result) is Graph:
+          # TODO: This blocks the parent graph; it should run in parallel
+          # with any other runnable tasks in the parent.
           subgraph_result = run_graph(result)
           results[node] = ResultDict(ran=True,
                                      run_successors=True,

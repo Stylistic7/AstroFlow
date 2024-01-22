@@ -76,41 +76,6 @@ import image_handling
 #     Before stacking, the best preview is the single subframe with most stars.
 #     After stacking, the best preview is the post-processed (BXT, etc.) image.
 
-#
-# Compute the image hashes at the same time.
-#
-# Use the FITS headers to find runs of each IMGTYP.
-#
-#
-# Associate runs of light, dark, bias, and default flat frames.
-#   The default flat frame association is just the pair with the smallest gap.
-#
-#
-
-# def compute_images_metadata(filenames):
-#   image_hashes = {}
-#   fits_headers = {}
-#   plate_solutions = {}
-
-#   ref_to_filename = {compute_image_metadata.remote(f): f for f in filenames}
-#   remaining_refs = list(ref_to_filename.keys())
-#   while len(remaining_refs):
-#     ready_refs, remaining_refs = ray.wait(remaining_refs)
-#     for ref in ready_refs:
-#       filename = ref_to_filename[ref]
-#       result = ray.get(ref)
-
-#       image_hashes[result['image_hash']] = filename
-#       fits_headers[result['image_hash']] = result['fits_header']
-#       if 'plate_solution' in result:
-#         plate_solutions[result['image_hash']] = result['plate_solution']
-#       if 'thumbnail_image' in result:
-#         cache[('thumbnail_image', filename)] = result['thumbnail_image']
-
-#   cache['image_hashes'] = image_hashes
-#   cache['fits_headers'] = fits_headers
-#   cache['plate_solutions'] = plate_solutions
-
 
 def read_image(filename):
   if filename.endswith('.xisf'):
@@ -133,7 +98,7 @@ def compute_image_metadata_ray(filename, *args):
   else:
     result['plate_solution'] = None
 
-  return dg.ResultDict(ran=True, run_successors=True, result=result)
+  return result
 
 
 # TODO: This is a bit weird. We want to keep unsolvable files in the cache,
@@ -153,158 +118,33 @@ def remove_bad_images(image_hashes, plate_solutions):
   }
 
 
+# TODO: If I pass a context object around, I might be able to get rid of
+# ray_diskcache altogether. There would just be a single node somewhere
+# that writes the context to diskcache. Or, maybe there's a way to get previous
+# results from the last time AstroFlow was run.
 @ray.remote
 def store_image_metadata_ray(results):
-  if results:
-    ray_diskcache.or_equals('image_hashes',
-                            {r['image_hash']: r['filename'] for r in results})
-    ray_diskcache.or_equals('fits_headers',
-                            {r['image_hash']: r['fits_header'] for r in results})
-    ray_diskcache.or_equals(
-        'plate_solutions',
-        {r['image_hash']: r['plate_solution'] for r in results})
-
-  # TODO: Set `run_successors` to False when there are no new files.
-  return dg.ResultDict(ran=True, run_successors=True)
-
-
-# TODO: Need to properly handle renamed or moved or deleted files.
-def compute_image_hashes(all_frames, image_hashes, quarantine_dir=None):
-  # Set the filename to None for any files that no longer exist. Their hashes
-  # remain, though, and they can be found again with some user input.
-  prev_num_missing_files = sum(1 for f in image_hashes.values() if not f)
-
-  def exists_or_none(f):
-    if f and os.path.exists(f):
-      return f
-    else:
-      return None
-
-  image_hashes = {h: exists_or_none(f) for h, f in image_hashes.items()}
-  num_missing_files = sum(1 for f in image_hashes.values() if not f)
-  print(f"### {num_missing_files - prev_num_missing_files} "
-        f"files have gone missing.")
-
-  new_filenames = list(set(all_frames) - set(image_hashes.values()))
-
-  print(f"### Computing image hashes for {len(new_filenames)} new files...")
-  ref_to_filename = {hash_image.remote(f): f for f in new_filenames}
-  remaining_refs = list(ref_to_filename.keys())
-  while len(remaining_refs):
-    ready_refs, remaining_refs = ray.wait(remaining_refs)
-    for ref in ready_refs:
-      filename = ref_to_filename[ref]
-      result = ray.get(ref)
-
-      if result in image_hashes and image_hashes[result] is not None:
-        if quarantine_dir:
-          print(f"### Quarantining file {filename} because it is a duplicate")
-          shutil.move(
-              filename,
-              os.path.join(quarantine_dir, os.path.basename(filename)),
-          )
-        continue
-
-      image_hashes[result] = filename
-
-  return image_hashes
-
-
-def read_fits_headers(filenames):
-  fits_headers = {}
-
-  with concurrent.futures.ThreadPoolExecutor() as executor:
-    future_to_filename = {
-        executor.submit(file_io.read_fits, filename): filename
-        for filename in filenames
+  if not results:
+    return {
+        'image_hashes': ray_diskcache.get('image_hashes', {}),
+        'fits_headers': ray_diskcache.get('fits_headers', {}),
+        'plate_solutions': ray_diskcache.get('plate_solutions', {}),
     }
 
-    for future in concurrent.futures.as_completed(future_to_filename):
-      fits_headers[future_to_filename[future]] = future.result()
+  # TODO: Is this an anti-pattern? Should I wait on the results? I assume that
+  # this task won't run until its ancestors have completed, so these results
+  # should always be immediately available.
+  results = [ray.get(r) for r in results]
+  image_hashes = ray_diskcache.or_equals(
+      'image_hashes', {r['image_hash']: r['filename'] for r in results})
+  fits_headers = ray_diskcache.or_equals(
+      'fits_headers', {r['image_hash']: r['fits_header'] for r in results})
+  plate_solutions = ray_diskcache.or_equals(
+      'plate_solutions', {r['image_hash']: r['plate_solution'] for r in results})
 
-  return fits_headers
-
-
-@ray.remote(resources={"diskcache": 0.001})
-def read_fits_headers_ray(filenames, *args):
-  print(f'### Reading FITS headers from {len(filenames)} files')
-  fits_headers = cache.get("fits_headers", {}) | read_fits_headers(filenames)
-  return dg.ResultDict(ran=True, run_successors=True, result=fits_headers)
-
-
-# # TODO: This will scale poorly when there are hundreds of thousands of images.
-# def read_fits_headers(image_hashes, fits_headers):
-#   new_image_hashes = list(set(image_hashes.keys()) - set(fits_headers.keys()))
-#   new_filenames = [
-#       f for h, f in image_hashes.items() if f and h in new_image_hashes and
-#       os.path.splitext(f)[-1] in ['.fit', '.fits']
-#   ]
-#   assert None not in new_filenames
-
-#   print(f'### Reading FITS headers for {len(new_filenames)} files...')
-#   with concurrent.futures.ThreadPoolExecutor() as executor:
-#     future_to_filename = {
-#         executor.submit(file_io.read_fits, filename): filename
-#         for filename in new_filenames
-#     }
-
-#     for future in concurrent.futures.as_completed(future_to_filename):
-#       filename = future_to_filename[future]
-#       result = future.result()
-#       hash = next(h for h, f in image_hashes.items() if f == filename)
-#       assert hash
-#       fits_headers[hash] = result
-
-#   return fits_headers
-
-
-def plate_solve(
-    images,
-    image_hashes,
-    plate_solutions,
-    quarantine_dir=None,
-    callback_number=None,
-    callback=None,
-):
-  new_image_hashes = list(set(images) - set(plate_solutions.keys()))
-  new_filenames = [
-      f for h, f in image_hashes.items() if f and h in new_image_hashes
-  ]
-  assert None not in new_filenames
-  print(f"### Plate solving {len(new_filenames)} newly-added files...")
-
-  new_filenames = round_robin.round_robin_by_directory(new_filenames, cluster=5)
-
-  future_to_filename = {
-      plate_solving.solve_field.remote(filename): filename
-      for filename in new_filenames
+  print('### Stored metadata in diskcache')
+  return {
+      'image_hashes': ray.put(image_hashes),
+      'fits_headers': ray.put(fits_headers),
+      'plate_solutions': ray.put(plate_solutions),
   }
-
-  num_solved = 0
-  for future in future_to_filename.keys():
-    filename = future_to_filename[future]
-    result = ray.get(future)
-
-    if not result:
-      if quarantine_dir:
-        print(f"### Quarantining file {filename} because it could not "
-              f"be plate-solved")
-        shutil.move(filename,
-                    os.path.join(quarantine_dir, os.path.basename(filename)))
-
-    hash = next((h for h, f in image_hashes.items() if f == filename), None)
-    assert hash, f"Could not find filename {f} in image_hashes"
-
-    num_solved += 1
-    plate_solutions[hash] = result
-
-    if callback:
-      assert callback_number
-
-    if callback and num_solved and num_solved % callback_number == 0:
-      callback(plate_solutions)
-
-  if callback:
-    callback(plate_solutions)
-
-  return plate_solutions

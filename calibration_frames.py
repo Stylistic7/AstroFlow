@@ -112,10 +112,12 @@ def _associate_flat_frames(stack, fits_headers):
 
 
 @ray.remote
-def associate_calibration_frames(stacks):
+def associate_calibration_frames(context):
   print(f'Associating calibration frames...')
 
-  fits_headers = ray_diskcache.get('fits_headers', {})
+  # fits_headers = ray_diskcache.get('fits_headers', {})
+  fits_headers = ray.get(context['fits_headers'])
+  stacks = ray.get(context['stacks'])
 
   output_stacks = []
   for stack in stacks:
@@ -124,6 +126,6 @@ def associate_calibration_frames(stacks):
     stack = _associate_flat_frames(stack, fits_headers)
     output_stacks.append(stack)
 
-  ray_diskcache.set('stacks', output_stacks)
+  # ray_diskcache.set('stacks', output_stacks)
 
-  return ResultDict(ran=True, run_successors=True, result=output_stacks)
+  return context | dict(stacks=ray.put(output_stacks))

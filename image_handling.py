@@ -11,6 +11,8 @@ from multiprocessing import Pool
 from functools import partial
 import traceback
 import ray
+import operator
+import functools
 
 import ray_diskcache
 from cache import cache
@@ -71,16 +73,21 @@ def read_image(filename):
 
 
 @ray.remote
-def scatter_stack_thumbnails(stacks, *args):
-  return [(compute_stack_thumbnails, stack) for stack in stacks]
+def scatter_stack_thumbnails(context):
+  stacks = ray.get(context['stacks'])
+  stack_thumbnails = [
+      compute_stack_thumbnails.bind(context, stack) for stack in stacks
+  ]
+  return ray.workflow.continuation(
+      gather_stack_thumbnails.bind(context, stack_thumbnails))
 
 
 @ray.remote(scheduling_strategy="SPREAD", num_cpus=0.75)
-def compute_stack_thumbnails(stack, *args):
+def compute_stack_thumbnails(context, stack):
   print(f'### compute_stack_thumbnails {str(stack)}')
-  image_hashes = ray_diskcache.get('image_hashes', {})
-  fits_headers = ray_diskcache.get('fits_headers', {})
-  plate_solutions = ray_diskcache.get('plate_solutions', {})
+  image_hashes = ray.get(context['image_hashes'])
+  fits_headers = ray.get(context['fits_headers'])
+  plate_solutions = ray.get(context['plate_solutions'])
 
   thumbnails = {}
   for light_frame in stack.light_frames:
@@ -88,20 +95,19 @@ def compute_stack_thumbnails(stack, *args):
                                                  fits_headers)
     dark_frame = stack.dark_frames[0] if len(stack.dark_frames) else None
     rotate = plate_solutions[light_frame].rotation_angle < 0.0
-    thumbnails[light_frame] = make_thumbnail(image_hashes, light_frame,
-                                             dark_frame, flat_frame, rotate)
+    thumbnails[light_frame] = ray.put(
+        make_thumbnail(image_hashes, light_frame, dark_frame, flat_frame,
+                       rotate))
 
-  return ResultDict(ran=True, run_successors=True, result=thumbnails)
+  return thumbnails
 
 
 @ray.remote(resources={'diskcache': 0.001})
-def gather_stack_thumbnails(results):
-  for result in results:
-    for hash, thumbnail in result.items():
-      key = ('image_thumbnail', hash)
-      cache[key] = thumbnail
-
-  return ResultDict(ran=True, run_sccessors=True, result=None)
+def gather_stack_thumbnails(context, results):
+  print('### gather_stack_thumbnails')
+  results = [ray.get(r) for r in results]
+  thumbnails = functools.reduce(operator.ior, results, {})
+  return context | dict(thumbnails=thumbnails)
 
 
 def make_thumbnail(image_hashes,
