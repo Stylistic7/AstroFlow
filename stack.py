@@ -137,8 +137,8 @@ class Stack:
   def store_footprint(self, plate_solutions):
     self.footprint = next(
         SphericalPolygon.from_wcs(
-            astropy.io.fits.Header(plate_solutions[
-                self.light_frames[0]].header)).points).tolist()
+            astropy.io.fits.Header(
+                plate_solutions[self.light_frames[0]].header)).points).tolist()
     self.projected_footprint = footprints.all_projections(
         SphericalPolygon(self.footprint))
 
@@ -197,7 +197,8 @@ class Stack:
 
   def store_image_scale(self, plate_solutions):
     image_scales = [
-        p.image_scale for f, p in plate_solutions.items()
+        p.image_scale
+        for f, p in plate_solutions.items()
         if f in self.light_frames
     ]
     mean = np.mean(image_scales)

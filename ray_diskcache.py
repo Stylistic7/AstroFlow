@@ -55,14 +55,14 @@ global_var_actor = GlobalVarActor.options(name='ray_diskcache',
                                           get_if_exists=True).remote()
 
 
-def get(key, default=None):
+def get(key, default=None, keep_in_memory=True):
   actor = ray.get_actor('ray_diskcache', namespace='AstroFlow')
-  return ray.get(actor.get.remote(key, default))
+  return ray.get(actor.get.remote(key, default, keep_in_memory))
 
 
-def set(key, value):
+def set(key, value, keep_in_memory=True):
   actor = ray.get_actor('ray_diskcache', namespace='AstroFlow')
-  return ray.get(actor.set.remote(key, value))
+  return ray.get(actor.set.remote(key, value, keep_in_memory))
 
 
 def clear():

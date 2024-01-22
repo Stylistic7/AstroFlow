@@ -75,39 +75,66 @@ def read_image(filename):
 @ray.remote
 def scatter_stack_thumbnails(context):
   stacks = ray.get(context['stacks'])
-  stack_thumbnails = [
-      compute_stack_thumbnails.bind(context, stack) for stack in stacks
-  ]
-  return ray.workflow.continuation(
-      gather_stack_thumbnails.bind(context, stack_thumbnails))
+  stacks = [compute_stack_thumbnails.bind(context, stack) for stack in stacks]
+  return ray.workflow.continuation(gather_stack_thumbnails.bind(
+      context, stacks))
 
 
 @ray.remote(scheduling_strategy="SPREAD", num_cpus=0.75)
-def compute_stack_thumbnails(context, stack):
+def compute_stack_thumbnails(context, stack, width=1200):
   print(f'### compute_stack_thumbnails {str(stack)}')
   image_hashes = ray.get(context['image_hashes'])
   fits_headers = ray.get(context['fits_headers'])
   plate_solutions = ray.get(context['plate_solutions'])
 
-  thumbnails = {}
-  for light_frame in stack.light_frames:
-    flat_frame = _get_flat_frame_for_light_frame(light_frame, stack,
-                                                 fits_headers)
-    dark_frame = stack.dark_frames[0] if len(stack.dark_frames) else None
-    rotate = plate_solutions[light_frame].rotation_angle < 0.0
-    thumbnails[light_frame] = ray.put(
-        make_thumbnail(image_hashes, light_frame, dark_frame, flat_frame,
-                       rotate))
+  light_frames_by_stars = sorted(stack.light_frames,
+                                 key=lambda f: plate_solutions[f].num_stars,
+                                 reverse=True)
 
-  return thumbnails
+  height, width = resize_array(
+      file_io.read_fits_image(image_hashes[stack.light_frames[0]]), width).shape
+
+  height = int(((height + 8 - 1) / 8) * 8)
+  print(f'### Creating video of width {width}, height {height} '
+        f'with {len(stack.light_frames)} frames')
+
+  with tempfile.TemporaryDirectory() as tmp_dir:
+    fourcc = cv2.VideoWriter_fourcc(*'VP80')
+    video_filename = os.path.join(tmp_dir, 'output.webm')
+    out = cv2.VideoWriter(video_filename, fourcc, 10.0, (width, height), False)
+    for index, light_frame in enumerate(light_frames_by_stars):
+      flat_frame = _get_flat_frame_for_light_frame(light_frame, stack,
+                                                   fits_headers)
+      dark_frame = stack.dark_frames[0] if len(stack.dark_frames) else None
+      rotate = plate_solutions[light_frame].rotation_angle < 0.0
+      im = make_thumbnail(image_hashes, light_frame, dark_frame, flat_frame,
+                          rotate)
+
+      if index == 0:
+        key = ('stack_thumbnail_image', stack.id)
+        ray_diskcache.set(key, im, keep_in_memory=False)
+        print(f'### Wrote key {key}')
+
+      im = (im * 255.0).astype(np.uint8)
+      frame = np.zeros((height, width), dtype=np.uint8)
+      frame[0:im.shape[0], 0:im.shape[1]] = im
+
+      out.write(frame)
+
+    out.release()
+    thumbnail_video = open(video_filename, 'rb').read()
+
+    key = ('stack_thumbnail_video', stack.id)
+    ray_diskcache.set(key, thumbnail_video, keep_in_memory=False)
+    print(f'### Wrote key {key}')
+
+    return stack
 
 
 @ray.remote(resources={'diskcache': 0.001})
-def gather_stack_thumbnails(context, results):
+def gather_stack_thumbnails(context, stacks):
   print('### gather_stack_thumbnails')
-  results = [ray.get(r) for r in results]
-  thumbnails = functools.reduce(operator.ior, results, {})
-  return context | dict(thumbnails=thumbnails)
+  return context | dict(stacks=stacks)
 
 
 def make_thumbnail(image_hashes,
