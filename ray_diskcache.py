@@ -50,11 +50,6 @@ class GlobalVarActor:
       return new_value
 
 
-global_var_actor = GlobalVarActor.options(name='ray_diskcache',
-                                          namespace='AstroFlow',
-                                          get_if_exists=True).remote()
-
-
 def get(key, default=None, keep_in_memory=True):
   actor = ray.get_actor('ray_diskcache', namespace='AstroFlow')
   return ray.get(actor.get.remote(key, default, keep_in_memory))

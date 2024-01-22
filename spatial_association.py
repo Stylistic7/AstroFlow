@@ -239,6 +239,8 @@ def _find_components(hashes, values, comparison_fn, plate_solutions,
 @ray.remote
 def find_components_by_cosine_similarity_ray(
     context, threshold=0.99999, min_component_members=MIN_COMPONENT_MEMBERS):
+  print('### find_components_by_cosine_similarity_ray os.getcwd() is',
+        os.getcwd())
   image_hashes = ray.get(context['image_hashes'])
   fits_headers = ray.get(context['fits_headers'])
   plate_solutions = ray.get(context['plate_solutions'])

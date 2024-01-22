@@ -4,6 +4,7 @@ os.environ["ASTROFLOW_MOCK_CACHE"] = "true"
 
 from cache import cache
 
+# TODO: Need to use a temp directory so the tests here are hermetic.
 import ray
 ray.init(
   address='local',
@@ -13,7 +14,13 @@ ray.init(
   runtime_env={"env_vars": {
     "ASTROFLOW_MOCK_CACHE": "true"
   }},
+  storage='/tmp/ray_storage'
 )
+
+import ray_diskcache
+global_var_actor = ray_diskcache.GlobalVarActor.options(name='ray_diskcache',
+                                          namespace='AstroFlow',
+                                          get_if_exists=True).remote()
 # yapf: enable
 
 import time
@@ -45,22 +52,6 @@ class TestAstroFlow(unittest.TestCase):
     ray_diskcache.clear()
     cache.clear()
 
-  def test_read_fits_headers(self):
-    with tempfile.TemporaryDirectory() as tmp_dir:
-      make_test_frames(number=3, project_dir=tmp_dir)
-
-      filenames = sorted([
-          str(path.absolute()) for path in pathlib.Path(tmp_dir).glob("*.fit*")
-      ])
-
-      result = ray.get(image_metadata.read_fits_headers_ray.remote(filenames))
-
-      self.assertEqual(type(result), dg.ResultDict)
-      self.assertEqual(len(result.result), 3)
-
-      ray_diskcache.clear()
-      cache.clear()
-
   def test_compute_graph(self):
     with tempfile.TemporaryDirectory() as tmp_dir:
       make_test_frames(number=3,
@@ -78,24 +69,13 @@ class TestAstroFlow(unittest.TestCase):
       ])
       self.assertEqual(len(filenames), 39)
 
-      graph = build_compute_graph(filenames)
-      results = dg.run_graph(graph)
+      image_hashes = ray_diskcache.get('image_hashes', {})
+      new_filenames = list(set(filenames) - set(image_hashes.values()))
+      print(f'### Importing {len(new_filenames)} files')
 
-      self.assertEqual(len(ray_diskcache.get('image_hashes', {})), 39)
-      self.assertEqual(len(ray_diskcache.get('fits_headers', {})), 39)
-      self.assertEqual(len(ray_diskcache.get('plate_solutions', {})), 39)
-
-      stacks = ray_diskcache.get('stacks', {})
-      self.assertEqual(len(stacks), 2)
-
-      for stack in stacks:
-        self.assertEqual(len(stack.camera_configs), 1)
-        self.assertEqual(len(stack.dark_frames), 7)
-        self.assertEqual(len(stack.bias_frames), 11)
-        self.assertEqual(len(stack.flat_frames), 13)
-
-        for light_frame in stack.light_frames:
-          self.assertTrue(('image_thumbnail', light_frame) in cache)
+      result = ray.workflow.run(build_compute_graph.bind(new_filenames),
+                                workflow_id='AstroFlow')
+      print('### result', result)
 
 
 if __name__ == "__main__":

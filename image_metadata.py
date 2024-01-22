@@ -124,12 +124,16 @@ def remove_bad_images(image_hashes, plate_solutions):
 # results from the last time AstroFlow was run.
 @ray.remote
 def store_image_metadata_ray(results):
+  print('### store_image_metadata_ray, os.getcwd() is', os.getcwd())
   if not results:
+    print('### store_image_metadata got no results')
     return {
-        'image_hashes': ray_diskcache.get('image_hashes', {}),
-        'fits_headers': ray_diskcache.get('fits_headers', {}),
-        'plate_solutions': ray_diskcache.get('plate_solutions', {}),
+        'image_hashes': ray.put(ray_diskcache.get('image_hashes', {})),
+        'fits_headers': ray.put(ray_diskcache.get('fits_headers', {})),
+        'plate_solutions': ray.put(ray_diskcache.get('plate_solutions', {})),
     }
+
+  print('### store_image_metadata got results', results)
 
   # TODO: Is this an anti-pattern? Should I wait on the results? I assume that
   # this task won't run until its ancestors have completed, so these results

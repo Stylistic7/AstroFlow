@@ -14,11 +14,16 @@ ray.init(
     "ASTROFLOW_MOCK_CACHE": "true"
   }},
 )
+
+import ray_diskcache
+global_var_actor = ray_diskcache.GlobalVarActor.options(name='ray_diskcache',
+                                          namespace='AstroFlow',
+                                          get_if_exists=True).remote()
+
 # yapf: enable
 
 from make_test_frames import make_test_frames
 import image_metadata
-import ray_diskcache
 import unittest
 import tempfile
 

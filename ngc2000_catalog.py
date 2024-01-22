@@ -4,8 +4,6 @@ import os
 
 from distance import distance
 
-# from cache import get_cache
-
 
 def _read_names_catalog():
   entries = []
@@ -52,8 +50,8 @@ def _read_ngc2000_catalog():
       entry['comment'] = line[46:].strip()
 
       # TODO: This all probably has a bunch of weird edge cases.
-      entry['name'] = next(
-          (n['name'] for n in names if n['id'] == entry['id']), None)
+      entry['name'] = next((n['name'] for n in names if n['id'] == entry['id']),
+                           None)
       if entry['name']:
         # Convert 'M  51' into 'M51'.
         if entry['name'].startswith('M '):
@@ -89,7 +87,8 @@ def _find_best_object_by_size(ra, dec):
   best_distance = np.inf
   best_entry = None
   for entry in entries:
-    if not entry['radius']: continue
+    if not entry['radius']:
+      continue
     d = distance(radians(ra), radians(dec), radians(entry['ra_degrees']),
                  radians(entry['dec_degrees']))
     normalized_radius = d / entry['radius']

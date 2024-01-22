@@ -50,15 +50,28 @@ import traceback
 
 import ray
 
+import ray_diskcache
 from stack_identification import identify_stacks_ray
 
-ray_context = ray.init(
-    namespace='AstroFlow',
-    runtime_env={"working_dir": "/Users/nobody/Projects/AstroFlow"},
-    ignore_reinit_error=True,
-    _node_ip_address='192.168.50.3')
+print('### About to call ray.init')
+traceback.print_stack()
+ray_context = ray.init(address='auto',
+                       namespace='AstroFlow',
+                       runtime_env={
+                           'working_dir': '/Users/nobody/Projects/AstroFlow',
+                           'excludes': [
+                               '/.git/',
+                               '/web_server/',
+                               '/tesdata/',
+                           ]
+                       },
+                       ignore_reinit_error=True,
+                       _node_ip_address='192.168.50.3')
 
 print('### Ray dashboard:', ray_context.dashboard_url)
+
+global_var_actor = ray_diskcache.GlobalVarActor.options(
+    name='ray_diskcache', namespace='AstroFlow', get_if_exists=True).remote()
 
 logger = structlog.get_logger()
 log = logger
@@ -253,8 +266,7 @@ def split_images_by_type(fits_headers):
 
   sorted_hashes = sorted(fits_headers, key=image_type)
   files = {
-      k: list(g)
-      for k, g in itertools.groupby(sorted_hashes, key=image_type)
+      k: list(g) for k, g in itertools.groupby(sorted_hashes, key=image_type)
   }
 
   light_frames = files['Light'] if 'Light' in files else []
@@ -340,8 +352,7 @@ def cartesian_product_lights_and_flats(stacks, flat_frames, image_hashes,
     best_light_frames = [
         max(
             {
-                f: p
-                for f, p in plate_solutions.items() if f in
+                f: p for f, p in plate_solutions.items() if f in
                 runs.get_frames_for_run(run, stack.light_frames, fits_headers)
             },
             key=lambda f: plate_solutions[f].num_stars) for run in light_runs
@@ -524,32 +535,31 @@ def compute_stack_metadata(stacks, fits_headers, plate_solutions):
 #                         light_frame, dark_frame, flat_frame, rotate, None,
 #                         width)
 
-
 # TODO: Consider how changing a config setting and re-running will work.
 # If I just use the (target, rig, filter) keys, they won't get re-generated.
 # Figure out a good universal key strategy for all kinds of objects.
-def make_stack_thumbnails_videos(stacks, image_hashes, plate_solutions,
-                                 fits_headers):
-  print('Making stack thumbnails...')
-  with concurrent.futures.ProcessPoolExecutor() as executor:
-    for stack in stacks.values():
-      assert stack
-      image_key = ('stack_thumbnail_image', stack.id)
-      video_key = ('stack_thumbnail_video', stack.id)
+# def make_stack_thumbnails_videos(stacks, image_hashes, plate_solutions,
+#                                  fits_headers):
+#   print('Making stack thumbnails...')
+#   with concurrent.futures.ProcessPoolExecutor() as executor:
+#     for stack in stacks.values():
+#       assert stack
+#       image_key = ('stack_thumbnail_image', stack.id)
+#       video_key = ('stack_thumbnail_video', stack.id)
 
-      if image_key in cache and video_key in cache:
-        continue
+#       if image_key in cache and video_key in cache:
+#         continue
 
-      executor.submit(image_handling.make_and_cache_stack_thumbnails, stack,
-                      image_hashes, plate_solutions)
+#       executor.submit(image_handling.make_and_cache_stack_thumbnails, stack,
+#                       image_hashes, plate_solutions)
 
 
 # TOOD: Move this into another file, e.g. identify_targets.py.
 def group_stacks_into_targets(stacks, plate_solutions, fits_headers):
   polygons = {
       s.id:
-      SphericalPolygon.from_wcs(
-          pyfits.Header(plate_solutions[s.light_frames[0]].header))
+          SphericalPolygon.from_wcs(
+              pyfits.Header(plate_solutions[s.light_frames[0]].header))
       for s in stacks.values()
   }
 
@@ -725,6 +735,25 @@ def sanity_check_stacks(stacks, fits_headers):
 #   return stacks, targets, mosaics
 
 
+def get_new_filenames(filenames):
+  image_hashes = ray_diskcache.get('image_hashes', {})
+  print(f'### Cache contains {len(image_hashes)} image hashes')
+
+  def exists_or_none(f):
+    if f and os.path.exists(f):
+      return f
+    else:
+      return None
+
+  prev_num_missing_files = sum(1 for f in image_hashes.values() if not f)
+  image_hashes = {h: exists_or_none(f) for h, f in image_hashes.items()}
+  num_missing_files = sum(1 for f in image_hashes.values() if not f)
+  print(f'### {num_missing_files - prev_num_missing_files} '
+        f'files have gone missing.')
+
+  return list(set(filenames) - set(image_hashes.values()))
+
+
 def main(context):
   log.info('Starting AstroFlow')
 
@@ -761,7 +790,8 @@ def main(context):
   masters = sorted(find_masters(context.output_dir))
   print(f'Found {len(masters)} masters')
 
-  graph = build_compute_graph(all_frames)
+  new_filenames = get_new_filenames(all_frames)
+  print(f'### Importing {len(new_filenames)} files')
 
   # print(f'### Iterating over {len(mosaics)} mosaics')
   # for mosaic in mosaics.values():
@@ -842,22 +872,31 @@ def main(context):
   # def callback(results):
   #   cache['prev_results'] = results
 
+  try:
+    ray.workflow.delete(workflow_id="AstroFlow")
+  except:
+    pass
+
   print('### Starting execution')
-  results = dg.run_graph(graph)
+  result = ray.workflow.run(build_compute_graph.bind(new_filenames),
+                            workflow_id='AstroFlow')
+  print('### Compute graph is done! Result is', result)
+
+  # results = dg.run_graph(graph)
 
   # with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
   #   results = graph.run(executor, control_modes, cache.get('prev_results', {}),
   #                       callback)
 
-  for t, r in results.items():
-    print(f'### results contained task {t}')
+  # for t, r in results.items():
+  #   print(f'### results contained task {t}')
 
   # TODO: Provide a better API for getting the result for a given task.
-  stacks = next(r for n, r in results.items()
-                if n == identify_stacks_ray).result
-  print('### Stacks are')
-  for s in stacks:
-    print('###', s)
+  # stacks = next(
+  #     r for n, r in results.items() if n == identify_stacks_ray).result
+  # print('### Stacks are')
+  # for s in stacks:
+  #   print('###', s)
 
   # TODO: Close all subordinate PixInsight instances.
   print('### Compute graph is done!')
