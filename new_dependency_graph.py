@@ -71,9 +71,39 @@ class ResultDict(dict):
   def __getattr__(self, k):
     return self[k]
 
+  def __getitem__(self, input):
+    if type(input) is tuple:
+      key, input_arg = input
+    else:
+      key, input_arg = input, None
+
+    if type(key) is not ray.remote_function.RemoteFunction:
+      return self.get(key)
+
+    for node, result in self.result.items():
+      task, arg = _unpack_node(node)
+      if type(task) is not ray.remote_function.RemoteFunction:
+        continue
+
+      if (task._function.__module__ == key._function.__module__) and (
+          task._function.__name__
+          == key._function.__name__) and (not input_arg or arg == input_arg):
+        return result
+
 
 class FromAncestors:
   pass
+
+
+class Graph(dict):
+  pass
+
+
+def _unpack_node(node):
+  if type(node) is tuple:
+    return node
+  else:
+    return (node, FromAncestors)
 
 
 def run_graph(graph):
@@ -82,14 +112,8 @@ def run_graph(graph):
 
   results = {}
 
-  def unpack_node(node):
-    if type(node) is tuple:
-      return node
-    else:
-      return (node, FromAncestors)
-
   def should_run(node):
-    task, arg = unpack_node(node)
+    task, arg = _unpack_node(node)
 
     if hasattr(task, 'should_run') and not task.should_run(arg):
       return False
@@ -126,7 +150,7 @@ def run_graph(graph):
       return values
 
     def run(node):
-      task, arg = unpack_node(node)
+      task, arg = _unpack_node(node)
       if arg == FromAncestors:
         return task.remote(ancestor_results(node))
       else:
@@ -134,30 +158,6 @@ def run_graph(graph):
 
     ref_to_node = {run(node): node for node in to_run}
     remaining_refs = list(ref_to_node.keys())
-
-    dynamic_tasks = {}
-    dynamic_task_results = {}
-
-    def complete_node(node, result):
-      for k, v in dynamic_tasks.items():
-        if node in v:
-          v.remove(node)
-          dynamic_task_results[k].append(result)
-          if len(v) == 0:
-            dynamic_results = [r.result for r in dynamic_task_results[k]]
-            run_successors = any(
-                r.run_successors for r in dynamic_task_results[k])
-            results[k] = ResultDict(ran=True,
-                                    run_successors=run_successors,
-                                    result=dynamic_results)
-            del dynamic_tasks[k]
-            ts.done(k)
-            return
-          else:
-            return
-
-      results[node] = result
-      ts.done(node)
 
     while len(remaining_refs):
       ready_refs, remaining_refs = ray.wait(remaining_refs)
@@ -167,15 +167,16 @@ def run_graph(graph):
         result = ray.get(ref)
 
         # There are two possibilities here: the task can return a ResultDict,
-        # or a (dynamically-generated) list of additional tasks to run.
+        # or a (dynamically-generated) Graph to run as a sub-graph.
         if type(result) is ResultDict:
-          complete_node(node, result)
-        elif type(result) is list:
-          dynamic_tasks[node] = result
-          dynamic_task_results[node] = []
-          new_dynamic_tasks = {run(node): node for node in result}
-          ref_to_node |= new_dynamic_tasks
-          remaining_refs.extend(list(new_dynamic_tasks.keys()))
+          results[node] = result
+          ts.done(node)
+        elif type(result) is Graph:
+          subgraph_result = run_graph(result)
+          results[node] = ResultDict(ran=True,
+                                     run_successors=True,
+                                     result=subgraph_result)
+          ts.done(node)
         else:
           assert False, f"Task return type {type(result)} is unsupported"
 
