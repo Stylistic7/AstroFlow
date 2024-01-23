@@ -85,8 +85,8 @@ def read_image(filename):
     return file_io.read_fits_image(filename)
 
 
-@ray.remote(scheduling_strategy="SPREAD", num_cpus=0.75)
-def compute_image_metadata_ray(filename, *args):
+@ray.remote(scheduling_strategy="SPREAD", num_cpus=0.75, max_retries=5, retry_exceptions=True)
+def compute_image_metadata_ray(filename):
   assert os.path.exists(filename)
 
   # TODO: Make sure this code doesn't actually repeatedly read the image across
