@@ -80,7 +80,13 @@ def scatter_stack_thumbnails(context):
       context, stacks))
 
 
-@ray.remote(scheduling_strategy="SPREAD", num_cpus=0.75)
+def _get_image_thumbnail(hash):
+  compressed_array = ray_diskcache.get(('image_thumbnail', hash),
+                                       keep_in_memory=False)
+  return np.load(io.BytesIO(compressed_array))['arr_0']
+
+
+@ray.remote(resources={'diskcache': 0.001})
 def compute_stack_thumbnails(context, stack, width=1200):
   print(f'### compute_stack_thumbnails {str(stack)}')
   image_hashes = ray.get(context['image_hashes'])
@@ -91,8 +97,8 @@ def compute_stack_thumbnails(context, stack, width=1200):
                                  key=lambda f: plate_solutions[f].num_stars,
                                  reverse=True)
 
-  height, width = resize_array(
-      file_io.read_fits_image(image_hashes[stack.light_frames[0]]), width).shape
+  image = _get_image_thumbnail(stack.light_frames[0])
+  height, width = image.shape
 
   height = int(((height + 8 - 1) / 8) * 8)
   print(f'### Creating video of width {width}, height {height} '
@@ -107,12 +113,16 @@ def compute_stack_thumbnails(context, stack, width=1200):
                                                    fits_headers)
       dark_frame = stack.dark_frames[0] if len(stack.dark_frames) else None
       rotate = plate_solutions[light_frame].rotation_angle < 0.0
-      im = make_thumbnail(image_hashes, light_frame, dark_frame, flat_frame,
-                          rotate)
+      im = make_thumbnail(light_frame, dark_frame, flat_frame, rotate)
 
       if index == 0:
+        # TODO: Put the thumbnail size in a user config.
         key = ('stack_thumbnail_image', stack.id)
-        ray_diskcache.set(key, im, keep_in_memory=False)
+        compressed_array = io.BytesIO()
+        np.savez_compressed(compressed_array, resize_array(im, new_width=1200))
+        ray_diskcache.set(key,
+                          compressed_array.getvalue(),
+                          keep_in_memory=False)
         print(f'### Wrote key {key}')
 
       im = (im * 255.0).astype(np.uint8)
@@ -137,24 +147,24 @@ def gather_stack_thumbnails(context, stacks):
   return context | dict(stacks=stacks)
 
 
-def make_thumbnail(image_hashes,
-                   light_frame,
+def make_thumbnail(light_frame,
                    dark_frame,
                    flat_frame,
                    rotate,
                    fudge=None,
                    width=1200):
   try:
-    light_frame_image = resize_array(read_image(image_hashes[light_frame]),
-                                     width)
+    print(f'### make_thumbnail {light_frame} {dark_frame} {flat_frame}')
+    light_frame_image = _get_image_thumbnail(light_frame)
+
     if rotate:
       light_frame_image = np.rot90(light_frame_image, 2)
 
     if not dark_frame or not flat_frame:
       return autostretch(light_frame_image)
 
-    flat_frame_image = resize_array(read_image(image_hashes[flat_frame]), width)
-    dark_frame_image = resize_array(read_image(image_hashes[dark_frame]), width)
+    flat_frame_image = _get_image_thumbnail(flat_frame)
+    dark_frame_image = _get_image_thumbnail(dark_frame)
 
     light_frame_image -= dark_frame_image
     flat_frame_image -= dark_frame_image

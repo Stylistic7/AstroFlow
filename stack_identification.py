@@ -42,6 +42,6 @@ def identify_stacks_ray(context):
           stacks.append(stack)
 
   print(f'Identified {len(stacks)} stacks')
-  # ray_diskcache.set('stacks', stacks)
+  ray_diskcache.set('stacks', stacks)
 
   return context | dict(stacks=ray.put(stacks))

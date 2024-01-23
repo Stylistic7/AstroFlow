@@ -15,7 +15,7 @@ import threading
 from base64 import b64encode
 import time
 
-import astro_flow_direct
+# import astro_flow_direct
 import constellations
 from astro_flow_direct import Context
 import image_handling
@@ -312,7 +312,8 @@ def get_num_stars_histogram_html(stack_id):
   print(f'Creating num stars histogram for stack id {stack_id}')
   stack = cache['stacks'][stack_id]
   num_stars = [
-      p.num_stars for k, p in cache['plate_solutions'].items()
+      p.num_stars
+      for k, p in cache['plate_solutions'].items()
       if k in stack.light_frames
   ]
   print('num_stars', num_stars)
@@ -372,6 +373,7 @@ def quarantine_stack(stack_id):
 
 
 def run_astroflow_repeatedly():
+
   def ok_to_run():
     with cache.transact():
       if not cache.get('astroflow_running', False):
@@ -385,8 +387,8 @@ def run_astroflow_repeatedly():
       # TODO: An empty context won't work. The user will have to fill stuff in
       # in the UI before the first run here.
       print('Running AstroFlow...')
-      context = cache.get('context', {})
-      astro_flow_direct.main(context)
+      # context = cache.get('context', {})
+      # astro_flow_direct.main(context)
       print('AstroFlow done')
       cache['astroflow_running'] = False
     else:

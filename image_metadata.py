@@ -7,6 +7,7 @@ import numpy as np
 import concurrent.futures
 import ray
 from pathlib import Path
+import io
 
 from cache import cache
 import file_io
@@ -15,7 +16,7 @@ import throughput
 import round_robin
 import new_dependency_graph as dg
 import ray_diskcache
-import image_handling
+from image_handling import resize_array, read_image
 
 # TODO: I need to associate dark and flat frames *before* computing thumbnails.
 
@@ -88,15 +89,24 @@ def read_image(filename):
 def compute_image_metadata_ray(filename, *args):
   assert os.path.exists(filename)
 
+  # TODO: Make sure this code doesn't actually repeatedly read the image across
+  # the network. It should hit the node's filesystem cache.
   result = {}
   image = read_image(filename)
   result['filename'] = filename
   result['image_hash'] = xxhash.xxh128(image).hexdigest()
   result['fits_header'] = file_io.read_fits(filename)
+
   if result['fits_header']['IMAGETYP'] == 'Light':
     result['plate_solution'] = plate_solving.solve_field(filename)
   else:
     result['plate_solution'] = None
+
+  # TODO: Put the thumbnail size in a user config.
+  compressed_array = io.BytesIO()
+  np.savez_compressed(compressed_array, resize_array(image, new_width=1200))
+  key = ('image_thumbnail', result['image_hash'])
+  ray_diskcache.set(key, compressed_array.getvalue(), keep_in_memory=False)
 
   return result
 
@@ -124,16 +134,12 @@ def remove_bad_images(image_hashes, plate_solutions):
 # results from the last time AstroFlow was run.
 @ray.remote
 def store_image_metadata_ray(results):
-  print('### store_image_metadata_ray, os.getcwd() is', os.getcwd())
   if not results:
-    print('### store_image_metadata got no results')
     return {
         'image_hashes': ray.put(ray_diskcache.get('image_hashes', {})),
         'fits_headers': ray.put(ray_diskcache.get('fits_headers', {})),
         'plate_solutions': ray.put(ray_diskcache.get('plate_solutions', {})),
     }
-
-  print('### store_image_metadata got results', results)
 
   # TODO: Is this an anti-pattern? Should I wait on the results? I assume that
   # this task won't run until its ancestors have completed, so these results
@@ -146,7 +152,6 @@ def store_image_metadata_ray(results):
   plate_solutions = ray_diskcache.or_equals(
       'plate_solutions', {r['image_hash']: r['plate_solution'] for r in results})
 
-  print('### Stored metadata in diskcache')
   return {
       'image_hashes': ray.put(image_hashes),
       'fits_headers': ray.put(fits_headers),
