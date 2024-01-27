@@ -94,8 +94,11 @@ def run_distance(a, b):
 
 
 def _associate_flat_frames(stack, fits_headers):
+  camera = fits_headers[stack.light_frames[0]]['INSTRUME']
+
   flat_frames = [
-      h for h, header in fits_headers.items() if header['IMAGETYP'] == 'Flat'
+      h for h, header in fits_headers.items()
+      if header['IMAGETYP'] == 'Flat' and header['INSTRUME'] == camera
   ]
 
   imaging_runs = runs.get_runs(stack.light_frames, fits_headers)
@@ -104,14 +107,11 @@ def _associate_flat_frames(stack, fits_headers):
   flat_frame_associations = []
   if flat_runs:
     for imaging_run in imaging_runs:
-      im_start, im_end = imaging_run
       run_distances = [
           run_distance(imaging_run, flat_run) for flat_run in flat_runs
       ]
       index = np.argmin(run_distances)
       flat_frame_associations.append((imaging_run, flat_runs[index]))
-      for i, flat_run in enumerate(flat_runs):
-        flat_start, flat_end = flat_run
 
   stack.flat_frame_associations = flat_frame_associations
 

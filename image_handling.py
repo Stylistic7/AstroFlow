@@ -77,12 +77,21 @@ def make_thumbnail(image_hashes,
     light_image = np.rot90(light_image, 2)
 
   if not dark_frame or not bias_frame or not flat_frame:
-    print('### make_thumbnail: no calibration frames')
+    print('### make_thumbnail: warning: no calibration frames')
     return autostretch(light_image)
 
   dark_image = resize_array(read_image(image_hashes[dark_frame]), width)
   bias_image = resize_array(read_image(image_hashes[bias_frame]), width)
   flat_image = resize_array(read_image(image_hashes[flat_frame]), width)
+
+  image_sizes = {
+      light_image.shape, dark_image.shape, bias_image.shape, flat_image.shape
+  }
+  assert (len(image_sizes) == 1), (
+      f"Shapes don't match: {image_hashes[light_frame]} {light_image.shape}, "
+      f"{image_hashes[dark_frame]} {dark_image.shape}, "
+      f"{image_hashes[bias_frame]} {bias_image.shape}, "
+      f"{image_hashes[flat_frame]} {flat_image.shape}")
 
   light_dark_scale = fits_headers[light_frame]['EXPOSURE'] / fits_headers[
       dark_frame]['EXPOSURE']
@@ -163,8 +172,9 @@ def compute_stack_thumbnails(context, stack, width=1200):
         continue
 
       if not made_stack_thumbnail:
+        print('### Writing stack thumbnail image')
         key = ('stack_thumbnail_image', stack.id, stack.content_hash)
-        ray_diskcache.set(key, im, keep_in_memory=False)
+        ray_diskcache.set(key, array_to_png(im), keep_in_memory=False)
         print(f'Wrote key {key}')
         made_stack_thumbnail = True
 
@@ -179,7 +189,7 @@ def compute_stack_thumbnails(context, stack, width=1200):
 
     key = ('stack_thumbnail_video', stack.id, stack.content_hash)
     ray_diskcache.set(key, thumbnail_video, keep_in_memory=False)
-    print(f'### Wrote key {key}')
+    print(f'Wrote key {key}')
 
     return stack
 

@@ -7,6 +7,7 @@ import xxhash
 import uuid
 
 from plate_solving import PlateSolution
+from image_handling import resize_array
 
 
 def _randomize_dict(input):
@@ -37,6 +38,7 @@ def make_test_frames(start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
                      dither=0.01,
                      focal_length_m=0.35,
                      pixel_pitch_um=3.76,
+                     instrument='ASI6200MM Pro',
                      width_pixels=1080,
                      height_pixels=720,
                      exposure=300,
@@ -80,6 +82,7 @@ def make_test_frames(start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
     elif testdata_image:
       filename = os.path.join('testdata', testdata_image) + '.npz'
       image_data = np.load(filename)[testdata_image]
+      image_data = resize_array(image_data, width_pixels)
     else:
       image_data = np.random.random(
           (height_pixels, width_pixels)).astype(np.uint16)
@@ -111,7 +114,7 @@ def make_test_frames(start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
         'RA': center[0],
         'DEC': center[1],
         'IMAGETYP': image_type,
-        'INSTRUME': 'ASI6200MM Pro',
+        'INSTRUME': instrument,
         'CCD-TEMP': -10,
         'EXPOSURE': exposure,
         'CTYPE1': 'RA---TAN-SIP',

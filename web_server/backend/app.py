@@ -17,7 +17,7 @@ import time
 
 # import astro_flow_direct
 import constellations
-from astro_flow_direct import Context
+# from astro_flow_direct import Context
 import image_handling
 from cache import cache
 from . import test_app
@@ -222,12 +222,25 @@ def flat_frame_associations(stack_id):
 #   return flask.send_file(buffer, mimetype='image/png')
 
 
+def tuple_starts_with(t, *values):
+  if type(t) is not tuple:
+    return False
+
+  if len(values) > len(t):
+    return False
+
+  for i, v in enumerate(values):
+    if t[i] != v:
+      return False
+
+  return True
+
+
 @app.route('/stack_thumbnail_image/<stack_id>')
 def stack_thumbnail_image(stack_id):
-  key = next(
-      (k for k in cache.iterkeys()
-       if type(k) is tuple and k[0:1] == ('stack_thumbnail_image', stack_id)),
-      None)
+  key = next((k for k in cache.iterkeys()
+              if tuple_starts_with(k, 'stack_thumbnail_image', stack_id)), None)
+  print(f'### found matching key {key}')
 
   if not key:
     return Response(status=404)
@@ -240,10 +253,9 @@ def stack_thumbnail_image(stack_id):
 
 @app.route('/stack_thumbnail_video/<stack_id>')
 def stack_thumbnail_video(stack_id):
-  key = next(
-      (k for k in cache.iterkeys()
-       if type(k) is tuple and k[0:1] == ('stack_thumbnail_video', stack_id)),
-      None)
+  key = next((k for k in cache.iterkeys()
+              if tuple_starts_with(k, 'stack_thumbnail_video', stack_id)), None)
+  print(f'### found matching key {key}')
 
   if not key:
     return Response(status=404)
