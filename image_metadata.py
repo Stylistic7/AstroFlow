@@ -77,12 +77,12 @@ from image_handling import resize_array
 #     Before stacking, the best preview is the single subframe with most stars.
 #     After stacking, the best preview is the post-processed (BXT, etc.) image.
 
-
 def read_image(filename):
   if filename.endswith('.xisf'):
     return file_io.read_xisf_image(filename)
   elif filename.endswith('.fit') or filename.endswith('.fits'):
     return file_io.read_fits_image(filename)
+
 
 @ray.remote
 def scatter_compute_image_metadata(context, filenames):
@@ -109,15 +109,9 @@ def compute_image_metadata_ray(filename):
     else:
       result['plate_solution'] = None
 
-    # TODO: Put the thumbnail size in a user config.
-    compressed_array = io.BytesIO()
-    np.savez_compressed(compressed_array, resize_array(image, new_width=1200))
-    key = ('image_thumbnail', result['image_hash'])
-    ray_diskcache.set(key, compressed_array.getvalue(), keep_in_memory=False)
-
     return result
-  except:
-    print(f'compute_image_metadata_ray() failed for file {filename}')
+  except Exception as e:
+    print(f'compute_image_metadata_ray() failed for file {filename}, exception {e}')
     return None
 
 
