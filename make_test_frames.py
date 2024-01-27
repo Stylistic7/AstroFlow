@@ -37,8 +37,8 @@ def make_test_frames(start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
                      dither=0.01,
                      focal_length_m=0.35,
                      pixel_pitch_um=3.76,
-                     width_pixels=10800,
-                     height_pixels=7200,
+                     width_pixels=1080,
+                     height_pixels=720,
                      exposure=300,
                      filter='H',
                      fill_value=None,
@@ -75,18 +75,21 @@ def make_test_frames(start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
       fits_filename = os.path.join(project_dir, fits_filename)
 
     if fill_value:
-      image_data = np.ones((100, 100)) * fill_value
+      image_data = np.ones(
+          (height_pixels, width_pixels), dtype=np.uint16) * fill_value
     elif testdata_image:
-      # Read the image, and add a small amount of noise so it will have a
-      # unique hash.
       filename = os.path.join('testdata', testdata_image) + '.npz'
       image_data = np.load(filename)[testdata_image]
-      image_data += np.random.randint(low=0,
-                                      high=2,
-                                      size=image_data.shape,
-                                      dtype=image_data.dtype)
     else:
-      image_data = np.random.random((100, 100))
+      image_data = np.random.random(
+          (height_pixels, width_pixels)).astype(np.uint16)
+
+    # Add a small amount of noise so it will have a unique hash.
+    assert image_data.dtype == np.uint16
+    image_data += np.random.randint(low=0,
+                                    high=2,
+                                    size=image_data.shape,
+                                    dtype=image_data.dtype)
 
     if real_hash or testdata_image:
       image_hash = xxhash.xxh128(image_data.tobytes()).hexdigest()

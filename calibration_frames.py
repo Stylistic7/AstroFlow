@@ -32,6 +32,9 @@ def _associate_dark_frames(stack, fits_headers):
   darks_for_exposure = _group_by_fn(dark_frames,
                                     lambda f: fits_headers[f]['EXPOSURE'])
 
+  unique_dark_exposures = sorted(
+      set(f['EXPOSURE'] for f in fits_headers.values()))
+
   assert stack.light_frames
   stack.camera_configs = camera_configs.get_unique_camera_configs(
       stack.light_frames, fits_headers)
@@ -39,8 +42,16 @@ def _associate_dark_frames(stack, fits_headers):
 
   darks = set()
   for camera, temperature, exposure in stack.camera_configs:
-    darks |= set(darks_for_camera[camera]) & set(
-        darks_for_temperature[temperature]) & set(darks_for_exposure[exposure])
+    acceptable_dark_exposures = [
+        d for d in unique_dark_exposures if d >= exposure
+    ]
+    for dark_exposure in acceptable_dark_exposures:
+      found_darks = set(darks_for_camera[camera]) & set(
+          darks_for_temperature[temperature]) & set(
+              darks_for_exposure[dark_exposure])
+      if found_darks:
+        darks |= found_darks
+        break
 
     stack.dark_frames = list(darks)
 

@@ -4,7 +4,7 @@ os.environ["ASTROFLOW_MOCK_CACHE"] = "true"
 
 from cache import cache
 
-# TODO: Need to use a temp directory so the tests here are hermetic.
+import tempfile
 import ray
 ray.init(
   address='local',
@@ -14,7 +14,7 @@ ray.init(
   runtime_env={"env_vars": {
     "ASTROFLOW_MOCK_CACHE": "true"
   }},
-  storage='/tmp/ray_storage'
+  storage=tempfile.TemporaryDirectory().name
 )
 
 import ray_diskcache
@@ -71,11 +71,9 @@ class TestAstroFlow(unittest.TestCase):
 
       image_hashes = ray_diskcache.get('image_hashes', {})
       new_filenames = list(set(filenames) - set(image_hashes.values()))
-      print(f'### Importing {len(new_filenames)} files')
 
       result = ray.workflow.run(build_compute_graph.bind(new_filenames),
                                 workflow_id='AstroFlow')
-      print('### result', result)
 
 
 if __name__ == "__main__":

@@ -17,9 +17,11 @@ import functools
 import ray_diskcache
 from cache import cache
 import file_io
+import runs
 from new_dependency_graph import ResultDict
 
 MIN_STAR_FRACTION = 0.5
+
 
 def read_image(filename):
   if filename.endswith('.xisf'):
@@ -54,57 +56,62 @@ def autostretch(image):
 
   return E6
 
+
 def array_to_png(array):
   array = (array * 255.0).astype(np.uint8)
   _, png = cv2.imencode('.png', array)
   return png.tobytes()
 
 
-
-def make_thumbnail(light_frame,
+def make_thumbnail(image_hashes,
+                   fits_headers,
+                   light_frame,
                    dark_frame,
+                   bias_frame,
                    flat_frame,
                    rotate,
-                   fudge=None,
                    width=1200):
-  try:
-    print(f'### make_thumbnail {light_frame} {dark_frame} {flat_frame}')
-    light_frame_image = resize_array(read_image(light_frame), width)
+  light_image = resize_array(read_image(image_hashes[light_frame]), width)
 
-    if rotate:
-      light_frame_image = np.rot90(light_frame_image, 2)
+  if rotate:
+    light_image = np.rot90(light_image, 2)
 
-    if not dark_frame or not flat_frame:
-      return autostretch(light_frame_image)
+  if not dark_frame or not bias_frame or not flat_frame:
+    print('### make_thumbnail: no calibration frames')
+    return autostretch(light_image)
 
-    flat_frame_image = resize_array(read_image(flat_frame), width)
-    dark_frame_image = resize_array(read_image(dark_frame), width)
+  dark_image = resize_array(read_image(image_hashes[dark_frame]), width)
+  bias_image = resize_array(read_image(image_hashes[bias_frame]), width)
+  flat_image = resize_array(read_image(image_hashes[flat_frame]), width)
 
-    light_frame_image -= dark_frame_image
-    flat_frame_image -= dark_frame_image
+  light_dark_scale = fits_headers[light_frame]['EXPOSURE'] / fits_headers[
+      dark_frame]['EXPOSURE']
+  flat_dark_scale = fits_headers[flat_frame]['EXPOSURE'] / fits_headers[
+      dark_frame]['EXPOSURE']
 
-    # if fudge:
-    #   min, max = np.min(flat_frame_image), np.max(flat_frame_image)
-    #   flat_frame_image = np.interp(flat_frame_image, [min, max],
-    #                                [min + fudge * (max - min), max])
+  image = (light_image -
+           bias_image) - light_dark_scale * (dark_image - bias_image)
+  flat_image = (flat_image -
+                bias_image) - flat_dark_scale * (dark_image - bias_image)
+  image = np.divide(image,
+                    flat_image,
+                    out=np.zeros_like(image),
+                    where=flat_image != 0)
 
-    light_frame_image = np.divide(light_frame_image,
-                                  flat_frame_image,
-                                  out=np.zeros_like(light_frame_image),
-                                  where=flat_frame_image != 0)
+  image = autostretch(np.clip(image, 0.0, 1.0))
+  return image
 
-    light_frame_image = autostretch(np.clip(light_frame_image, 0.0, 1.0))
-    return light_frame_image
-  except Exception:
-    traceback.print_exc()
 
 def _get_flat_frame_for_light_frame(light_frame, stack, fits_headers):
-  for light_frames, flat_frames in stack.flat_frame_associations:
-    # print(f'### association between {len(light_frames)} light frames '
-    #       f'and {len(flat_frames)} flat frames')
-    assert len(light_frames)
-    assert len(flat_frames)
-    if light_frame in light_frames:
+  for light_run, flat_run in stack.flat_frame_associations:
+    light_frames = runs.get_frames_for_run(light_run, stack.light_frames,
+                                           fits_headers)
+    if light_frame not in light_frames:
+      continue
+
+    flat_frames = runs.get_frames_for_run(flat_run, stack.flat_frames,
+                                          fits_headers)
+    if flat_frames:
       return flat_frames[0]
 
 
@@ -116,9 +123,10 @@ def scatter_stack_thumbnails(context):
       context, stacks))
 
 
+# TODO: Put the thumbnail size in a user config.
 @ray.remote
 def compute_stack_thumbnails(context, stack, width=1200):
-  print(f'### compute_stack_thumbnails {str(stack)}')
+  print(f'Entering compute_stack_thumbnails() for stack {str(stack)}')
   image_hashes = ray.get(context['image_hashes'])
   fits_headers = ray.get(context['fits_headers'])
   plate_solutions = ray.get(context['plate_solutions'])
@@ -127,36 +135,38 @@ def compute_stack_thumbnails(context, stack, width=1200):
                                  key=lambda f: plate_solutions[f].num_stars,
                                  reverse=True)
 
-  # TODO: Put the thumbnail size in a user config.
-  image = read_image(image_hashes[light_frames_by_stars[0]])
+  image = resize_array(read_image(image_hashes[light_frames_by_stars[0]]),
+                       width)
   height, width = image.shape
 
   height = int(((height + 8 - 1) / 8) * 8)
-  print(f'### Creating video of width {width}, height {height} '
+  print(f'Creating video of width {width}, height {height} '
         f'with {len(stack.light_frames)} frames')
 
   with tempfile.TemporaryDirectory() as tmp_dir:
     fourcc = cv2.VideoWriter_fourcc(*'VP80')
     video_filename = os.path.join(tmp_dir, 'output.webm')
     out = cv2.VideoWriter(video_filename, fourcc, 10.0, (width, height), False)
-    for index, light_frame in enumerate(light_frames_by_stars):
+    made_stack_thumbnail = False
+    for light_frame in light_frames_by_stars:
       flat_frame = _get_flat_frame_for_light_frame(light_frame, stack,
                                                    fits_headers)
       dark_frame = stack.dark_frames[0] if len(stack.dark_frames) else None
+      bias_frame = stack.bias_frames[0] if len(stack.bias_frames) else None
       rotate = plate_solutions[light_frame].rotation_angle < 0.0
-      im = make_thumbnail(image_hashes[light_frame], image_hashes.get(dark_frame, None),
-                          image_hashes.get(flat_frame, None), rotate)
-
-      print('### type(im()', type(im))
-      if im is None:
-        print(f'### make_thumbnail() failed for {light_frame}')
+      try:
+        im = make_thumbnail(image_hashes, fits_headers, light_frame, dark_frame,
+                            bias_frame, flat_frame, rotate)
+      except Exception as e:
+        print(f'make_thumbnail() failed for {image_hashes[light_frame]} '
+              f'due to exception {e}')
         continue
 
-      if index == 0:
-        # TODO: Put the thumbnail size in a user config.
+      if not made_stack_thumbnail:
         key = ('stack_thumbnail_image', stack.id)
         ray_diskcache.set(key, im, keep_in_memory=False)
-        print(f'### Wrote key {key}')
+        print(f'Wrote key {key}')
+        made_stack_thumbnail = True
 
       im = (im * 255.0).astype(np.uint8)
       frame = np.zeros((height, width), dtype=np.uint8)
@@ -176,8 +186,8 @@ def compute_stack_thumbnails(context, stack, width=1200):
 
 @ray.remote(resources={'diskcache': 0.001})
 def gather_stack_thumbnails(context, stacks):
-  print('### gather_stack_thumbnails')
   return context | dict(stacks=stacks)
+
 
 # # TODO: Compare various ways of getting "the best" thumbnail (preview)
 # # image for a stack: highest std, greatest star count, etc.

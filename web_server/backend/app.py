@@ -81,7 +81,7 @@ def min_footprint(footprints):
 @app.route('/')
 def index():
   """ Displays the index page accessible at '/'"""
-  return flask.render_template('index.html', stacks=cache['stacks'])
+  return flask.render_template('index.html')
 
 
 run_now = threading.Condition()
@@ -136,17 +136,17 @@ def footprints():
 
 @app.route('/mosaics')
 def mosaics():
-  return test_app.mosaics if debug else cache['mosaics']
+  return test_app.mosaics if debug else cache.get('mosaics', {})
 
 
 @app.route('/targets')
 def targets():
-  return test_app.targets if debug else cache['targets']
+  return test_app.targets if debug else cache.get('targets', {})
 
 
 @app.route('/stacks')
 def stacks():
-  return test_app.stacks if debug else cache['stacks']
+  return test_app.stacks if debug else cache.get('stacks', {})
 
 
 @app.route('/targets_for_mosaic/<mosaic_id>')
