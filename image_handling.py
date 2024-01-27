@@ -163,7 +163,7 @@ def compute_stack_thumbnails(context, stack, width=1200):
         continue
 
       if not made_stack_thumbnail:
-        key = ('stack_thumbnail_image', stack.id)
+        key = ('stack_thumbnail_image', stack.id, stack.content_hash)
         ray_diskcache.set(key, im, keep_in_memory=False)
         print(f'Wrote key {key}')
         made_stack_thumbnail = True
@@ -177,7 +177,7 @@ def compute_stack_thumbnails(context, stack, width=1200):
     out.release()
     thumbnail_video = open(video_filename, 'rb').read()
 
-    key = ('stack_thumbnail_video', stack.id)
+    key = ('stack_thumbnail_video', stack.id, stack.content_hash)
     ray_diskcache.set(key, thumbnail_video, keep_in_memory=False)
     print(f'### Wrote key {key}')
 

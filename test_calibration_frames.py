@@ -79,8 +79,10 @@ class TestCalibrationFrames(unittest.TestCase):
       self.assertEqual(len(stack.bias_frames), 11)
       self.assertEqual(len(stack.flat_frames), 13)
 
-      self.assertTrue(('stack_thumbnail_image', stack.id) in cache)
-      self.assertTrue(('stack_thumbnail_video', stack.id) in cache)
+      self.assertTrue(('stack_thumbnail_image', stack.id,
+                       stack.content_hash) in cache)
+      self.assertTrue(('stack_thumbnail_video', stack.id,
+                       stack.content_hash) in cache)
 
 
 if __name__ == "__main__":

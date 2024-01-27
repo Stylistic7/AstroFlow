@@ -224,16 +224,32 @@ def flat_frame_associations(stack_id):
 
 @app.route('/stack_thumbnail_image/<stack_id>')
 def stack_thumbnail_image(stack_id):
+  key = next(
+      (k for k in cache.iterkeys()
+       if type(k) is tuple and k[0:1] == ('stack_thumbnail_image', stack_id)),
+      None)
+
+  if not key:
+    return Response(status=404)
+
   buffer = io.BytesIO()
-  buffer.write(cache[('stack_thumbnail_image', stack_id)])
+  buffer.write(cache[key])
   buffer.seek(0)
   return flask.send_file(buffer, mimetype='image/png')
 
 
 @app.route('/stack_thumbnail_video/<stack_id>')
 def stack_thumbnail_video(stack_id):
+  key = next(
+      (k for k in cache.iterkeys()
+       if type(k) is tuple and k[0:1] == ('stack_thumbnail_video', stack_id)),
+      None)
+
+  if not key:
+    return Response(status=404)
+
   buffer = io.BytesIO()
-  buffer.write(cache[('stack_thumbnail_video', stack_id)])
+  buffer.write(cache[key])
   buffer.seek(0)
   return flask.send_file(buffer, mimetype='video/webm')
 
