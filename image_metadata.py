@@ -93,7 +93,10 @@ def scatter_compute_image_metadata(context, filenames):
       store_image_metadata_ray.bind(context, compute_metadata))
 
 
-@ray.remote(scheduling_strategy="SPREAD", num_cpus=0.75)
+@ray.remote(scheduling_strategy="SPREAD",
+            num_cpus=0.75,
+            max_retries=5,
+            retry_exceptions=True)
 def compute_image_metadata_ray(filename):
   if not os.path.exists(filename):
     return None

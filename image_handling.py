@@ -134,13 +134,28 @@ def _get_flat_frame_for_light_frame(light_frame, stack, fits_headers):
 @ray.remote
 def scatter_stack_thumbnails(context):
   stacks = ray.get(context['stacks'])
-  stacks = [compute_stack_thumbnails.bind(context, stack) for stack in stacks]
+
+  def has_thumbnails(stack):
+    keys = [
+        ('stack_thumbnail_image', stack.id, stack.content_hash),
+        ('stack_thumbnail_video', stack.id, stack.content_hash),
+    ]
+    return all(ray_diskcache.contains(k) for k in keys)
+
+  stacks = [
+      compute_stack_thumbnails.bind(context, stack)
+      for stack in stacks
+      if not has_thumbnails(stack)
+  ]
   return ray.workflow.continuation(gather_stack_thumbnails.bind(
       context, stacks))
 
 
 # TODO: Put the thumbnail size in a user config.
-@ray.remote
+@ray.remote(scheduling_strategy="SPREAD",
+            num_cpus=0.75,
+            max_retries=5,
+            retry_exceptions=True)
 def compute_stack_thumbnails(context, stack, width=1200):
   print(f'Entering compute_stack_thumbnails() for stack {str(stack)}')
   image_hashes = ray.get(context['image_hashes'])
