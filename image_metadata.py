@@ -77,6 +77,7 @@ from image_handling import resize_array
 #     Before stacking, the best preview is the single subframe with most stars.
 #     After stacking, the best preview is the post-processed (BXT, etc.) image.
 
+
 def read_image(filename):
   if filename.endswith('.xisf'):
     return file_io.read_xisf_image(filename)
@@ -86,15 +87,17 @@ def read_image(filename):
 
 @ray.remote
 def scatter_compute_image_metadata(context, filenames):
-  print('### scatter_compute_image_metadata')
+  print('Entering scatter_compute_image_metadata()')
   compute_metadata = [compute_image_metadata_ray.bind(f) for f in filenames]
-  return ray.workflow.continuation(store_image_metadata_ray.bind(context, compute_metadata))
+  return ray.workflow.continuation(
+      store_image_metadata_ray.bind(context, compute_metadata))
+
 
 @ray.remote(scheduling_strategy="SPREAD", num_cpus=0.75)
 def compute_image_metadata_ray(filename):
   if not os.path.exists(filename):
     return None
-  
+
   # TODO: Make sure this code doesn't actually repeatedly read the image across
   # the network. It should hit the node's filesystem cache.
   try:
@@ -111,7 +114,9 @@ def compute_image_metadata_ray(filename):
 
     return result
   except Exception as e:
-    print(f'compute_image_metadata_ray() failed for file {filename}, exception {e}')
+    print(
+        f'compute_image_metadata_ray() failed for file {filename}, exception {e}'
+    )
     return None
 
 
@@ -138,7 +143,7 @@ def remove_bad_images(image_hashes, plate_solutions):
 # results from the last time AstroFlow was run.
 @ray.remote
 def store_image_metadata_ray(context, results):
-  print('### store_image_metadata_ray')
+  print('Entering store_image_metadata_ray()')
 
   # TODO: Is this an anti-pattern? Should I wait on the results? I assume that
   # this task won't run until its ancestors have completed, so these results
@@ -149,7 +154,8 @@ def store_image_metadata_ray(context, results):
   fits_headers = ray_diskcache.or_equals(
       'fits_headers', {r['image_hash']: r['fits_header'] for r in results if r})
   plate_solutions = ray_diskcache.or_equals(
-      'plate_solutions', {r['image_hash']: r['plate_solution'] for r in results if r})
+      'plate_solutions',
+      {r['image_hash']: r['plate_solution'] for r in results if r})
 
   return {
       'image_hashes': ray.put(image_hashes),

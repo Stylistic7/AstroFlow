@@ -71,11 +71,6 @@ def make_thumbnail(image_hashes,
                    flat_frame,
                    rotate,
                    width=1200):
-  print(f'### make_thumbnail light_frame is {light_frame}')
-  print(f'### make_thumbnail dark_frame is {dark_frame}')
-  print(f'### make_thumbnail bias_frame is {bias_frame}')
-  print(f'### make_thumbnail flat_frame is {flat_frame}')
-
   cameras = {
       fits_headers[light_frame]['INSTRUME'],
       fits_headers[dark_frame]['INSTRUME'],
@@ -90,7 +85,6 @@ def make_thumbnail(image_hashes,
     light_image = np.rot90(light_image, 2)
 
   if not dark_frame or not bias_frame or not flat_frame:
-    print('### make_thumbnail: warning: no calibration frames')
     return autostretch(light_image)
 
   dark_image = resize_array(read_image(image_hashes[dark_frame]), width)
@@ -185,7 +179,6 @@ def compute_stack_thumbnails(context, stack, width=1200):
         continue
 
       if not made_stack_thumbnail:
-        print('### Writing stack thumbnail image')
         key = ('stack_thumbnail_image', stack.id, stack.content_hash)
         ray_diskcache.set(key, array_to_png(im), keep_in_memory=False)
         print(f'Wrote key {key}')
