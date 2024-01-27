@@ -82,7 +82,6 @@ def make_test_frames(start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
     elif testdata_image:
       filename = os.path.join('testdata', testdata_image) + '.npz'
       image_data = np.load(filename)[testdata_image]
-      image_data = resize_array(image_data, width_pixels)
     else:
       image_data = np.random.random(
           (height_pixels, width_pixels)).astype(np.uint16)

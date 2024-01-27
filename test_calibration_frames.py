@@ -39,33 +39,25 @@ class TestCalibrationFrames(unittest.TestCase):
     with tempfile.TemporaryDirectory() as tmp_dir:
       # There are lights flats from two different cameras. This should result
       # in two stacks, with mutually-exclusive sets of flat frames.
-      make_test_frames(number=15,
+      make_test_frames(number=3,
                        instrument='ASI6200MM Pro',
-                       width_pixels=9576,
-                       height_pixels=6388,
                        project_dir=tmp_dir,
                        testdata_image='sadr_region')
-      make_test_frames(number=23,
-                       instrument='ASI2600MM Pro',
-                       width_pixels=6248,
-                       height_pixels=4176,
-                       project_dir=tmp_dir,
-                       testdata_image='sadr_region')
-      make_test_frames(number=7,
+      make_test_frames(number=5,
                        image_type='Dark',
                        fill_value=100,
                        instrument='ASI6200MM Pro',
                        width_pixels=9576,
                        height_pixels=6388,
                        project_dir=tmp_dir)
-      make_test_frames(number=11,
+      make_test_frames(number=7,
                        image_type='Bias',
                        fill_value=50,
                        instrument='ASI6200MM Pro',
                        width_pixels=9576,
                        height_pixels=6388,
                        project_dir=tmp_dir)
-      make_test_frames(number=19,
+      make_test_frames(number=11,
                        image_type='Flat',
                        fill_value=4096,
                        exposure=1,
@@ -73,7 +65,26 @@ class TestCalibrationFrames(unittest.TestCase):
                        width_pixels=9576,
                        height_pixels=6388,
                        project_dir=tmp_dir)
+
       make_test_frames(number=13,
+                       instrument='ASI2600MM Pro',
+                       project_dir=tmp_dir,
+                       testdata_image='heart_nebula')
+      make_test_frames(number=17,
+                       image_type='Dark',
+                       fill_value=100,
+                       instrument='ASI2600MM Pro',
+                       width_pixels=6248,
+                       height_pixels=4176,
+                       project_dir=tmp_dir)
+      make_test_frames(number=19,
+                       image_type='Bias',
+                       fill_value=50,
+                       instrument='ASI2600MM Pro',
+                       width_pixels=6248,
+                       height_pixels=4176,
+                       project_dir=tmp_dir)
+      make_test_frames(number=23,
                        image_type='Flat',
                        fill_value=4096,
                        exposure=1,
@@ -85,7 +96,7 @@ class TestCalibrationFrames(unittest.TestCase):
       filenames = sorted([
           str(path.absolute()) for path in pathlib.Path(tmp_dir).glob("*.fit*")
       ])
-      self.assertEqual(len(filenames), 88)
+      self.assertEqual(len(filenames), 26 + 72)
 
       image_hashes = ray_diskcache.get('image_hashes', {})
       new_filenames = list(set(filenames) - set(image_hashes.values()))
@@ -97,11 +108,20 @@ class TestCalibrationFrames(unittest.TestCase):
       self.assertEqual(len(stacks), 2)
 
       stack = ray.get(stacks[0])
-      print('### first stack', stack)
-      self.assertEqual(len(stack.light_frames), 15)
-      self.assertEqual(len(stack.dark_frames), 7)
-      self.assertEqual(len(stack.bias_frames), 11)
-      self.assertEqual(len(stack.flat_frames), 19)
+      self.assertEqual(len(stack.light_frames), 3)
+      self.assertEqual(len(stack.dark_frames), 5)
+      self.assertEqual(len(stack.bias_frames), 7)
+      self.assertEqual(len(stack.flat_frames), 11)
+      self.assertTrue(('stack_thumbnail_image', stack.id,
+                       stack.content_hash) in cache)
+      self.assertTrue(('stack_thumbnail_video', stack.id,
+                       stack.content_hash) in cache)
+
+      stack = ray.get(stacks[1])
+      self.assertEqual(len(stack.light_frames), 13)
+      self.assertEqual(len(stack.dark_frames), 17)
+      self.assertEqual(len(stack.bias_frames), 19)
+      self.assertEqual(len(stack.flat_frames), 23)
       self.assertTrue(('stack_thumbnail_image', stack.id,
                        stack.content_hash) in cache)
       self.assertTrue(('stack_thumbnail_video', stack.id,

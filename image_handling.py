@@ -71,6 +71,19 @@ def make_thumbnail(image_hashes,
                    flat_frame,
                    rotate,
                    width=1200):
+  print(f'### make_thumbnail light_frame is {light_frame}')
+  print(f'### make_thumbnail dark_frame is {dark_frame}')
+  print(f'### make_thumbnail bias_frame is {bias_frame}')
+  print(f'### make_thumbnail flat_frame is {flat_frame}')
+
+  cameras = {
+      fits_headers[light_frame]['INSTRUME'],
+      fits_headers[dark_frame]['INSTRUME'],
+      fits_headers[bias_frame]['INSTRUME'], fits_headers[flat_frame]['INSTRUME']
+  }
+  assert len(cameras) == 1, (f"make_thumbnail() given images from more than one"
+                             f"camera: {cameras}")
+
   light_image = resize_array(read_image(image_hashes[light_frame]), width)
 
   if rotate:
