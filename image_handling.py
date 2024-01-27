@@ -144,10 +144,11 @@ def compute_stack_thumbnails(context, stack, width=1200):
                                                    fits_headers)
       dark_frame = stack.dark_frames[0] if len(stack.dark_frames) else None
       rotate = plate_solutions[light_frame].rotation_angle < 0.0
-      im = make_thumbnail(light_frame, dark_frame, flat_frame, rotate)
+      im = make_thumbnail(image_hashes[light_frame], image_hashes.get(dark_frame, None),
+                          image_hashes.get(flat_frame, None), rotate)
 
       print('### type(im()', type(im))
-      if not im:
+      if im is None:
         print(f'### make_thumbnail() failed for {light_frame}')
         continue
 

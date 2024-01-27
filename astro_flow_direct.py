@@ -784,9 +784,6 @@ def main(context):
   # TODO: Maybe just call these "input files" and "output files" or something.
   all_frames = sorted(find_fits_files(context.input_dirs))
 
-  # FIXME remove hack
-  all_frames = all_frames[0:1000]
-
   masters = sorted(find_masters(context.output_dir))
   print(f'Found {len(masters)} masters')
 
