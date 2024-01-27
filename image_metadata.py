@@ -16,7 +16,7 @@ import throughput
 import round_robin
 import new_dependency_graph as dg
 import ray_diskcache
-from image_handling import resize_array, read_image
+from image_handling import resize_array
 
 # TODO: I need to associate dark and flat frames *before* computing thumbnails.
 
@@ -84,31 +84,41 @@ def read_image(filename):
   elif filename.endswith('.fit') or filename.endswith('.fits'):
     return file_io.read_fits_image(filename)
 
+@ray.remote
+def scatter_compute_image_metadata(context, filenames):
+  print('### scatter_compute_image_metadata')
+  compute_metadata = [compute_image_metadata_ray.bind(f) for f in filenames]
+  return ray.workflow.continuation(store_image_metadata_ray.bind(context, compute_metadata))
 
-@ray.remote(scheduling_strategy="SPREAD", num_cpus=0.75, max_retries=5, retry_exceptions=True)
+@ray.remote(scheduling_strategy="SPREAD", num_cpus=0.75)
 def compute_image_metadata_ray(filename):
-  assert os.path.exists(filename)
-
+  if not os.path.exists(filename):
+    return None
+  
   # TODO: Make sure this code doesn't actually repeatedly read the image across
   # the network. It should hit the node's filesystem cache.
-  result = {}
-  image = read_image(filename)
-  result['filename'] = filename
-  result['image_hash'] = xxhash.xxh128(image).hexdigest()
-  result['fits_header'] = file_io.read_fits(filename)
+  try:
+    result = {}
+    image = read_image(filename)
+    result['filename'] = filename
+    result['image_hash'] = xxhash.xxh128(image).hexdigest()
+    result['fits_header'] = file_io.read_fits(filename)
 
-  if result['fits_header']['IMAGETYP'] == 'Light':
-    result['plate_solution'] = plate_solving.solve_field(filename)
-  else:
-    result['plate_solution'] = None
+    if result['fits_header']['IMAGETYP'] == 'Light':
+      result['plate_solution'] = plate_solving.solve_field(filename)
+    else:
+      result['plate_solution'] = None
 
-  # TODO: Put the thumbnail size in a user config.
-  compressed_array = io.BytesIO()
-  np.savez_compressed(compressed_array, resize_array(image, new_width=1200))
-  key = ('image_thumbnail', result['image_hash'])
-  ray_diskcache.set(key, compressed_array.getvalue(), keep_in_memory=False)
+    # TODO: Put the thumbnail size in a user config.
+    compressed_array = io.BytesIO()
+    np.savez_compressed(compressed_array, resize_array(image, new_width=1200))
+    key = ('image_thumbnail', result['image_hash'])
+    ray_diskcache.set(key, compressed_array.getvalue(), keep_in_memory=False)
 
-  return result
+    return result
+  except:
+    print(f'compute_image_metadata_ray() failed for file {filename}')
+    return None
 
 
 # TODO: This is a bit weird. We want to keep unsolvable files in the cache,
@@ -133,24 +143,19 @@ def remove_bad_images(image_hashes, plate_solutions):
 # that writes the context to diskcache. Or, maybe there's a way to get previous
 # results from the last time AstroFlow was run.
 @ray.remote
-def store_image_metadata_ray(results):
-  if not results:
-    return {
-        'image_hashes': ray.put(ray_diskcache.get('image_hashes', {})),
-        'fits_headers': ray.put(ray_diskcache.get('fits_headers', {})),
-        'plate_solutions': ray.put(ray_diskcache.get('plate_solutions', {})),
-    }
+def store_image_metadata_ray(context, results):
+  print('### store_image_metadata_ray')
 
   # TODO: Is this an anti-pattern? Should I wait on the results? I assume that
   # this task won't run until its ancestors have completed, so these results
   # should always be immediately available.
   results = [ray.get(r) for r in results]
   image_hashes = ray_diskcache.or_equals(
-      'image_hashes', {r['image_hash']: r['filename'] for r in results})
+      'image_hashes', {r['image_hash']: r['filename'] for r in results if r})
   fits_headers = ray_diskcache.or_equals(
-      'fits_headers', {r['image_hash']: r['fits_header'] for r in results})
+      'fits_headers', {r['image_hash']: r['fits_header'] for r in results if r})
   plate_solutions = ray_diskcache.or_equals(
-      'plate_solutions', {r['image_hash']: r['plate_solution'] for r in results})
+      'plate_solutions', {r['image_hash']: r['plate_solution'] for r in results if r})
 
   return {
       'image_hashes': ray.put(image_hashes),

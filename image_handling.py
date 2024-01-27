@@ -83,6 +83,7 @@ def scatter_stack_thumbnails(context):
 def _get_image_thumbnail(hash):
   compressed_array = ray_diskcache.get(('image_thumbnail', hash),
                                        keep_in_memory=False)
+  assert compressed_array
   return np.load(io.BytesIO(compressed_array))['arr_0']
 
 
