@@ -16,8 +16,6 @@ import file_io
 from stack import Stack, Status
 import pix
 from cache import cache
-import new_dependency_graph as dg
-from new_dependency_graph import ResultDict
 import step_flat_frame_association
 from output_file import OutputFile
 import spatial_association
@@ -227,8 +225,7 @@ def stack_subframes(context, stack):
       # on the next run. Distinguish the cases where the stack has never been
       # attempted from the cases where it just didn't succeed.
       print(f'### WBPP did not produce any master file.')
-      return (dg.Ran.RAN, (dg.Result.FAILURE,
-                           dict(reason="WBPP did not produce any master file")))
+      return stack
 
     print('filenames', filenames)
     assert len(filenames) == 1
