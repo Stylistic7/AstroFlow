@@ -41,7 +41,7 @@ def _associate_dark_frames(stack, fits_headers):
   stack.camera_configs = camera_configs.get_unique_camera_configs(
       stack.light_frames, fits_headers)
   assert stack.camera_configs
-  print(f'### Stack {stack} has camera configs {stack.camera_configs}')
+  print(f'### Stack has camera configs {stack.camera_configs}')
 
   darks = set()
   for camera, temperature, exposure in stack.camera_configs:
@@ -59,7 +59,7 @@ def _associate_dark_frames(stack, fits_headers):
 
     stack.dark_frames = list(darks)
     if not stack.dark_frames:
-      print(f'### WARNING {stack} has no dark frames')
+      print(f'### WARNING stack has no dark frames')
 
   return stack
 
@@ -79,7 +79,7 @@ def _associate_bias_frames(stack, fits_headers):
                                    lambda f: fits_headers[f]['INSTRUME'])
   biases_for_temperature = _group_by_fn(bias_frames, rounded_temperature)
 
-  print(f'### Stack {stack} has camera configs {stack.camera_configs}')
+  print(f'### Stack has camera configs {stack.camera_configs}')
 
   assert stack
   biases = set()
@@ -90,7 +90,7 @@ def _associate_bias_frames(stack, fits_headers):
   print(f'### Found {len(stack.bias_frames)} matching bias frames')
   stack.bias_frames = list(biases)
   if not stack.bias_frames:
-    print(f'### WARNING {stack} has no bias frames')
+    print(f'### WARNING has no bias frames')
 
   return stack
 
