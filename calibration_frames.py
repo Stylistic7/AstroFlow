@@ -20,6 +20,7 @@ def _associate_dark_frames(stack, fits_headers):
   dark_frames = [
       h for h, header in fits_headers.items() if header['IMAGETYP'] == 'Dark'
   ]
+  print(f'### Found {len(dark_frames)} dark frames in library')
 
   def rounded_temperature(f):
     temperature = fits_headers[f]['CCD-TEMP']
@@ -33,12 +34,14 @@ def _associate_dark_frames(stack, fits_headers):
                                     lambda f: fits_headers[f]['EXPOSURE'])
 
   unique_dark_exposures = sorted(
-      set(f['EXPOSURE'] for f in fits_headers.values()))
+      set(fits_headers[f]['EXPOSURE'] for f in dark_frames))
+  print(f'### Found unique dark exposures {unique_dark_exposures} in library')
 
   assert stack.light_frames
   stack.camera_configs = camera_configs.get_unique_camera_configs(
       stack.light_frames, fits_headers)
   assert stack.camera_configs
+  print(f'### Stack {stack} has camera configs {stack.camera_configs}')
 
   darks = set()
   for camera, temperature, exposure in stack.camera_configs:
@@ -50,10 +53,13 @@ def _associate_dark_frames(stack, fits_headers):
           darks_for_temperature[temperature]) & set(
               darks_for_exposure[dark_exposure])
       if found_darks:
+        print(f'### Found {len(found_darks)} matching dark frames')
         darks |= found_darks
         break
 
     stack.dark_frames = list(darks)
+    if not stack.dark_frames:
+      print(f'### WARNING {stack} has no dark frames')
 
   return stack
 
@@ -62,6 +68,7 @@ def _associate_bias_frames(stack, fits_headers):
   bias_frames = [
       h for h, header in fits_headers.items() if header['IMAGETYP'] == 'Bias'
   ]
+  print(f'### Found {len(bias_frames)} bias frames in library')
 
   def rounded_temperature(f):
     temperature = fits_headers[f]['CCD-TEMP']
@@ -72,13 +79,18 @@ def _associate_bias_frames(stack, fits_headers):
                                    lambda f: fits_headers[f]['INSTRUME'])
   biases_for_temperature = _group_by_fn(bias_frames, rounded_temperature)
 
+  print(f'### Stack {stack} has camera configs {stack.camera_configs}')
+
   assert stack
   biases = set()
   for camera, temperature, _ in stack.camera_configs:
     biases |= set(biases_for_camera[camera]) & set(
         biases_for_temperature[temperature])
 
+  print(f'### Found {len(stack.bias_frames)} matching bias frames')
   stack.bias_frames = list(biases)
+  if not stack.bias_frames:
+    print(f'### WARNING {stack} has no bias frames')
 
   return stack
 
