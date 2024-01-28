@@ -24,6 +24,7 @@ import spatial_association
 import position_string
 import ray_diskcache
 import camera_configs
+import runs
 
 
 def _exposure_time_string(stack):
@@ -84,9 +85,11 @@ def _master_with_id_or_footprint_exits(stack, correct_filename, image_hashes,
       # The id is isomorphic to the filename now.
       xisf = XISF(filename)
       file_meta = xisf.get_file_metadata()
-      key = 'XISF:AstroFlow:StackId'
-      if key in file_meta:
-        if file_meta[key]['value'] == stack_id:
+      stack_id_key = 'XISF:AstroFlow:StackId'
+      stack_content_hash_key = 'XISF:AstroFlow:StackContentHash'
+      if stack_id_key in file_meta and stack_content_hash_key in file_meta:
+        if file_meta[stack_id_key]['value'] == stack.id and file_meta[
+            stack_content_hash_key]['value'] == stack.content_hash:
           print(f'### Found highly-likely master {filename} for '
                 f'stack {stack} by XISF metadata')
           print(f'### Renaming master {filename} to {correct_filename}')
@@ -99,6 +102,7 @@ def _master_with_id_or_footprint_exits(stack, correct_filename, image_hashes,
       iou = a.intersection(b).area() / a.union(b).area()
       return iou
 
+    # TODO: Stop using IoU, and use cosine similarity instead.
     if iou(SphericalPolygon(stack.footprint),
            SphericalPolygon.from_wcs(plate_solutions[hash].header)) > 0.9:
       print(f'### Found highly-likely master {filename} for '
@@ -116,47 +120,57 @@ def _output_filename(stack, dest_path):
   return os.path.join(
       output_dir, f'master_light_{stack.target}_{ra_dec_string}_'
       f'{stack.width_pixels}x{stack.height_pixels}_'
-      f'{stack.image_scale:.02f}_{stack.filter}.xisf')
+      f'{stack.image_scale:.02f}_{stack.rotation_angle:.2f}_'
+      f'{stack.filter}.xisf')
 
 
-@ray.remote
-def should_run(arg):
-  print('### Entering should_run()')
-  image_hashes, fits_headers, plate_solutions, dest_path, stack = arg
+# @ray.remote
+# def should_run(arg):
+#   print('### Entering should_run()')
+#   image_hashes, fits_headers, plate_solutions, dest_path, stack = arg
 
-  if stack.status != Status.READY:
-    return ResultDict(ran=True, run_successors=False)
+#   if stack.status != Status.READY:
+#     return ResultDict(ran=True, run_successors=False)
 
-  dst_filename = _output_filename(stack, dest_path)
-  os.makedirs(os.path.dirname(dst_filename), exist_ok=True)
-  print(f'### step_stack.run dst_filename {dst_filename} exists '
-        f'{os.path.exists(dst_filename)}')
+#   dst_filename = _output_filename(stack, dest_path)
+#   os.makedirs(os.path.dirname(dst_filename), exist_ok=True)
+#   print(f'### step_stack.run dst_filename {dst_filename} exists '
+#         f'{os.path.exists(dst_filename)}')
 
-  # The point of this is to short-circuit stacking when the cache empty, but
-  # the stacks have been done outside of AstroFlow, or the cache has been nuked.
-  # This generally happens when the user first installs AstroFlow.
-  if existing := _master_with_id_or_footprint_exits(stack, dst_filename,
-                                                    image_hashes,
-                                                    plate_solutions):
-    print(f'### Master already exists: {existing}')
-    return ResultDict(ran=True, run_successors=False)
+#   # The point of this is to short-circuit stacking when the cache empty, but
+#   # the stacks have been done outside of AstroFlow, or the cache has been nuked.
+#   # This generally happens when the user first installs AstroFlow.
+#   if existing := _master_with_id_or_footprint_exits(stack, dst_filename,
+#                                                     image_hashes,
+#                                                     plate_solutions):
+#     print(f'### Master already exists: {existing}')
+#     return ResultDict(ran=True, run_successors=False)
 
-  return ResultDict(ran=True, run_successors=True)
+#   return ResultDict(ran=True, run_successors=True)
+
+# def resolve_files(filenames, dest_path, **kwargs):
+#   smart_names = '_'.join([f'{k}_{v}' for k, v in kwargs.items()])
+#   dst_filenames = []
+#   for src_filename in filenames:
+#     filename, ext = os.path.splitext(src_filename)
+#     filename = os.path.basename(filename) + '_' + smart_names + ext
+#     dst_filename = os.path.join(dest_path, filename)
+#     print(f'src_filename {src_filename} symlinked as {dst_filename}')
+#     dst_filenames.append(dst_filename)
+#     # if not os.path.exists(dst_filename):
+#     #   os.symlink(src_filename, dst_filename)
+
+#   return dst_filenames
 
 
-def resolve_files(filenames, dest_path, **kwargs):
-  smart_names = '_'.join([f'{k}_{v}' for k, v in kwargs.items()])
-  dst_filenames = []
-  for src_filename in filenames:
-    filename, ext = os.path.splitext(src_filename)
-    filename = os.path.basename(filename) + '_' + smart_names + ext
-    dst_filename = os.path.join(dest_path, filename)
-    print(f'src_filename {src_filename} symlinked as {dst_filename}')
-    dst_filenames.append(dst_filename)
-    # if not os.path.exists(dst_filename):
-    #   os.symlink(src_filename, dst_filename)
-
-  return dst_filenames
+def symlink_frames(filenames, dest_path, **kwargs):
+  suffix = '_' + '_'.join([f'{k}_{v}'
+                           for k, v in kwargs.items()]) if kwargs else ''
+  for filename in filenames:
+    path = Path(filename)
+    dest_filename = os.path.join(dest_path, f'{path.stem}{suffix}{path.suffix}')
+    print(f'### symlinking {filename} -> {dest_filename}')
+    os.symlink(filename, dest_filename)
 
 
 # TODO: Simplify this for the new dependency graph structure.
@@ -177,18 +191,22 @@ def resolve_files(filenames, dest_path, **kwargs):
 # add_metadata() adds the stack id and content hash to the master (local or remote)
 @ray.remote
 def stack_subframes(context, stack):
-  image_hashes = ray.get(context['image_hashes'])
-  fits_headers = ray.get(context['fits_headers'])
+  image_hashes = ray.get(context.image_hashes)
+  fits_headers = ray.get(context.fits_headers)
 
   with tempfile.TemporaryDirectory() as tmp_dir:
-    # TODO: Don't ever change the user's input files. Instead, use the
-    # "smart naming convention" to put the flat version in the symlinked
-    # frames' names.
-    # step_flat_frame_association.set_flat_versions(stack, image_hashes,
-    #                                               fits_headers)
+    for i, (light_run, flat_run) in enumerate(stack.flat_frame_associations):
+      light_frames = runs.get_frames_for_run(light_run, stack.light_frames,
+                                             fits_headers)
+      flat_frames = runs.get_frames_for_run(flat_run, stack.flat_frames,
+                                            fits_headers)
+      symlink_frames([image_hashes[h] for h in light_frames],
+                     tmp_dir,
+                     FLATVERS=i)
+      symlink_frames([image_hashes[h] for h in flat_frames],
+                     tmp_dir,
+                     FLATVERS=i)
 
-    symlink_frames([image_hashes[h] for h in stack.light_frames], tmp_dir)
-    symlink_frames([image_hashes[h] for h in stack.flat_frames], tmp_dir)
     symlink_frames([image_hashes[h] for h in stack.bias_frames], tmp_dir)
     symlink_frames([image_hashes[h] for h in stack.dark_frames], tmp_dir)
 
@@ -219,7 +237,13 @@ def stack_subframes(context, stack):
         "type": "String",
         "value": stack.id,
     }
+    file_meta["XISF:AstroFlow:StackContentHash"] = {
+        "id": "XISF:AstroFlow:StackContentHash",
+        "type": "String",
+        "value": stack.content_hash,
+    }
 
+    dst_filename = _output_filename(stack, context.output_dir)
     XISF.write(dst_filename,
                image,
                creator_app="AstroFlow",
@@ -228,16 +252,26 @@ def stack_subframes(context, stack):
 
     # shutil.copy(src_filename, dst_filename)
     print('Stacking produced master', dst_filename)
-
-    return (dg.Ran.RAN, (dg.Result.SUCCESS, OutputFile(dst_filename)))
+    return stack
 
 
 @ray.remote(scheduling_strategy="SPREAD")
 def scatter_stack_subframes(context):
-  stacks = ray.get(context['stacks'])
+  image_hashes = ray.get(context.image_hashes)
+  plate_solutions = ray.get(context.plate_solutions)
+  stacks = ray.get(context.stacks)
 
   def artifact_exists(stack):
-    return False
+    dst_filename = _output_filename(stack, context.output_dir)
+    os.makedirs(os.path.dirname(dst_filename), exist_ok=True)
+    print(f'### step_stack.run dst_filename {dst_filename} exists '
+          f'{os.path.exists(dst_filename)}')
+
+    # The point of this is to short-circuit stacking when the cache empty, but
+    # the stacks have been done outside of AstroFlow, or the cache has been nuked.
+    # This generally happens when the user first installs AstroFlow.
+    return _master_with_id_or_footprint_exits(stack, dst_filename, image_hashes,
+                                              plate_solutions)
 
   stacks = [
       stack_subframes.bind(context, stack)
@@ -249,4 +283,5 @@ def scatter_stack_subframes(context):
 
 @ray.remote
 def gather_stack_subframes(context, stacks):
-  return context | dict(stacks=stacks)
+  context.stacks = stacks
+  return context

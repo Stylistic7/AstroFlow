@@ -95,10 +95,12 @@ def run_distance(a, b):
 
 def _associate_flat_frames(stack, fits_headers):
   camera = fits_headers[stack.light_frames[0]]['INSTRUME']
+  filter = fits_headers[stack.light_frames[0]]['FILTER']
 
   flat_frames = [
       h for h, header in fits_headers.items()
-      if header['IMAGETYP'] == 'Flat' and header['INSTRUME'] == camera
+      if header['IMAGETYP'] == 'Flat' and header['INSTRUME'] == camera and
+      header['FILTER'] == filter
   ]
 
   imaging_runs = runs.get_runs(stack.light_frames, fits_headers)
@@ -115,9 +117,11 @@ def _associate_flat_frames(stack, fits_headers):
 
   stack.flat_frame_associations = flat_frame_associations
 
-  stack.flat_frames = runs.get_frames_for_runs(
-      (flat_run for _, flat_run in flat_frame_associations), flat_frames,
-      fits_headers)
+  stack.flat_frames = sorted(
+      set(
+          runs.get_frames_for_runs(
+              (flat_run for _, flat_run in flat_frame_associations),
+              flat_frames, fits_headers)))
 
   return stack
 
@@ -126,11 +130,9 @@ def _associate_flat_frames(stack, fits_headers):
 def associate_calibration_frames(context):
   print(f'Associating calibration frames...')
 
-  # fits_headers = ray_diskcache.get('fits_headers', {})
-  fits_headers = ray.get(context['fits_headers'])
-  plate_solutions = ray.get(context['plate_solutions'])
-
-  stacks = ray.get(context['stacks'])
+  fits_headers = ray.get(context.fits_headers)
+  plate_solutions = ray.get(context.plate_solutions)
+  stacks = ray.get(context.stacks)
 
   output_stacks = {}
   for stack in stacks:
@@ -143,4 +145,5 @@ def associate_calibration_frames(context):
     output_stacks[stack.id] = stack
 
   ray_diskcache.set('stacks', output_stacks)
-  return context | dict(stacks=ray.put(output_stacks))
+  context.stacks = ray.put(output_stacks)
+  return context

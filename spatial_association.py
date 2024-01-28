@@ -241,9 +241,9 @@ def find_components_by_cosine_similarity_ray(
     context, threshold=0.99999, min_component_members=MIN_COMPONENT_MEMBERS):
   print('### find_components_by_cosine_similarity_ray os.getcwd() is',
         os.getcwd())
-  image_hashes = ray.get(context['image_hashes'])
-  fits_headers = ray.get(context['fits_headers'])
-  plate_solutions = ray.get(context['plate_solutions'])
+  image_hashes = ray.get(context.image_hashes)
+  fits_headers = ray.get(context.fits_headers)
+  plate_solutions = ray.get(context.plate_solutions)
 
   plate_solutions = image_metadata.remove_bad_images(image_hashes,
                                                      plate_solutions)
@@ -266,7 +266,8 @@ def find_components_by_cosine_similarity_ray(
   spatial_groups = _find_components(light_frames, centroids, comparison_fn,
                                     plate_solutions, min_component_members)
 
-  return context | dict(spatial_groups=ray.put(spatial_groups))
+  context.spatial_groups = ray.put(spatial_groups)
+  return context
 
 
 def find_components_by_cosine_similarity(

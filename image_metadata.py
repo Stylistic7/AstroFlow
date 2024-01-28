@@ -160,8 +160,8 @@ def store_image_metadata_ray(context, results):
       'plate_solutions',
       {r['image_hash']: r['plate_solution'] for r in results if r})
 
-  return {
-      'image_hashes': ray.put(image_hashes),
-      'fits_headers': ray.put(fits_headers),
-      'plate_solutions': ray.put(plate_solutions),
-  }
+  context.image_hashes = ray.put(image_hashes)
+  context.fits_headers = ray.put(fits_headers)
+  context.plate_solutions = ray.put(plate_solutions)
+
+  return context

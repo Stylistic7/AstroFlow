@@ -12,9 +12,9 @@ import new_dependency_graph as dg
 def identify_stacks_ray(context):
   print('Identifying stacks...')
 
-  fits_headers = ray.get(context['fits_headers'])
-  plate_solutions = ray.get(context['plate_solutions'])
-  spatial_groups = ray.get(context['spatial_groups'])
+  fits_headers = ray.get(context.fits_headers)
+  plate_solutions = ray.get(context.plate_solutions)
+  spatial_groups = ray.get(context.spatial_groups)
 
   stacks = []
   for name, light_frames in spatial_groups:
@@ -35,4 +35,5 @@ def identify_stacks_ray(context):
           stacks.append(stack)
 
   print(f'Identified {len(stacks)} stacks')
-  return context | dict(stacks=ray.put(stacks))
+  context.stacks = ray.put(stacks)
+  return context

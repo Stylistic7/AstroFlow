@@ -130,11 +130,15 @@ class Context:
 
   default_filter: str = None
 
-  # TODO: Move to config.
-  max_frames: int = None
+  image_hashes: dict = None
+  fits_headers: dict = None
+  plate_solutions: dict = None
 
-  all_frames_changed: bool = False
-  config_changed: bool = False
+  spatial_groups: list = None
+
+  stacks: dict = None
+  targets: dict = None
+  mosaics: dict = None
 
 
 # TODO: The adding of new files, and the removing of deleted files, should be
@@ -846,7 +850,7 @@ def main(context):
     pass
 
   print('### Starting execution')
-  result = ray.workflow.run(build_compute_graph.bind(new_filenames),
+  result = ray.workflow.run(build_compute_graph.bind(context, new_filenames),
                             workflow_id='AstroFlow')
   print('### Compute graph is done! Result is', result)
 

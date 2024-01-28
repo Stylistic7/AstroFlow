@@ -133,7 +133,7 @@ def _get_flat_frame_for_light_frame(light_frame, stack, fits_headers):
 
 @ray.remote
 def scatter_stack_thumbnails(context):
-  stacks = ray.get(context['stacks'])
+  stacks = ray.get(context.stacks)
 
   def has_thumbnails(stack):
     keys = [
@@ -158,9 +158,9 @@ def scatter_stack_thumbnails(context):
             retry_exceptions=True)
 def compute_stack_thumbnails(context, stack, width=1200):
   print(f'Entering compute_stack_thumbnails() for stack {str(stack)}')
-  image_hashes = ray.get(context['image_hashes'])
-  fits_headers = ray.get(context['fits_headers'])
-  plate_solutions = ray.get(context['plate_solutions'])
+  image_hashes = ray.get(context.image_hashes)
+  fits_headers = ray.get(context.fits_headers)
+  plate_solutions = ray.get(context.plate_solutions)
 
   # TODO: Split the try into another function.
   try:
@@ -222,7 +222,10 @@ def compute_stack_thumbnails(context, stack, width=1200):
 
 @ray.remote
 def gather_stack_thumbnails(context, stacks):
-  return context | dict(stacks=stacks)
+  stacks = [ray.get(s) for s in stacks]
+  stacks = {s.id: s for s in stacks}
+  context.stacks = ray.put(stacks)
+  return context
 
 
 # # TODO: Compare various ways of getting "the best" thumbnail (preview)

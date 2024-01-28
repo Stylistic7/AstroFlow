@@ -77,6 +77,7 @@ class Stack:
 
   target: str = None
   image_scale: float = None
+  rotation_angle: float = None
   width_pixels: int = None
   height_pixels: int = None
   filter: str = None
@@ -97,6 +98,7 @@ class Stack:
   # TODO: Can these just be removed?
   best_light_frame: str = None
   image_scales_not_all_close: bool = False
+  rotation_angles_not_all_close: bool = False
 
   def __post_init__(self):
     self.light_frames = sorted(self.light_frames)
@@ -119,6 +121,7 @@ class Stack:
     self.store_center(plate_solutions)
     self.store_exposure_time_s(fits_headers)
     self.store_image_scale(plate_solutions)
+    self.store_rotation_angle(plate_solutions)
     self.store_width_height(fits_headers)
     self.store_id(plate_solutions)
     self.store_content_hash()
@@ -204,11 +207,20 @@ class Stack:
     mean = np.mean(image_scales)
     self.image_scale = mean
 
-    # assert np.allclose(
-    #     image_scales, mean, atol=0.01,
-    #     rtol=0), f"image_scales were not all close: {image_scales}"
     self.image_scales_not_all_close = not np.allclose(
         image_scales, mean, rtol=0.02, atol=0)
+
+  def store_rotation_angle(self, plate_solutions):
+    rotation_angles = [
+        p.rotation_angle
+        for f, p in plate_solutions.items()
+        if f in self.light_frames
+    ]
+    mean = np.mean(rotation_angles)
+    self.rotation_angle = mean
+
+    self.rotation_angles_not_all_close = not np.allclose(
+        rotation_angles, mean, rtol=0.02, atol=0)
 
   def store_width_height(self, fits_headers):
     self.width_pixels = fits_headers[self.light_frames[0]]['NAXIS1']

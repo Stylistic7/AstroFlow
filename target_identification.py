@@ -10,8 +10,8 @@ import ray_diskcache
 
 @ray.remote
 def group_stacks_into_targets(context):
-  stacks = ray.get(context['stacks'])
-  plate_solutions = ray.get(context['plate_solutions'])
+  stacks = ray.get(context.stacks)
+  plate_solutions = ray.get(context.plate_solutions)
 
   polygons = {
       s.id:
@@ -20,7 +20,7 @@ def group_stacks_into_targets(context):
       for s in stacks.values()
   }
 
-  # TODO: The IoU is expensive, so check cosine similarity of the center first.
+  # TODO: Stop using IoU, and use cosine similarity instead.
   def comparison_fn(a, b):
     iou = a.intersection(b).area() / a.union(b).area()
     return iou > 0.6
@@ -46,4 +46,5 @@ def group_stacks_into_targets(context):
   # responsibilities. Perhaps separate patterns like this?
   ray_diskcache.set('targets', targets)
 
-  return context | dict(targets=ray.put(targets))
+  context.targets = ray.put(targets)
+  return context

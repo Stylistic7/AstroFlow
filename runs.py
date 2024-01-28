@@ -4,7 +4,8 @@ import itertools
 
 
 def get_runs(frames, fits_headers):
-  if not frames: return []
+  if not frames:
+    return []
   frames = sorted(frames, key=lambda f: fits_headers[f]['DATE-OBS'])
 
   max_gap = datetime.timedelta(hours=1)
@@ -34,14 +35,16 @@ def get_runs(frames, fits_headers):
 
 
 def get_frames_for_run(run, frames, fits_headers):
-  # print(f'### get_frames_for_run run {run} frames {frames}')
+  assert len(frames) == len(set(frames)), "Input contained duplicate frames"
+
   start, end = run
   result = [
       f for f in frames if fits_headers[f]['DATE-OBS'] >= start and
       fits_headers[f]['DATE-OBS'] <= end
   ]
+
   assert None not in result
-  # print(f'### result {result}')
+  assert len(result) == len(set(result)), "Output contained duplicate frames"
   return result
 
 
