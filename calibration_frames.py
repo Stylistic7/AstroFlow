@@ -81,14 +81,18 @@ def _associate_bias_frames(stack, fits_headers):
 
   print(f'### Stack has camera configs {stack.camera_configs}')
 
-  assert stack
   biases = set()
   for camera, temperature, _ in stack.camera_configs:
+    print(f'### Found {len(set(biases_for_camera[camera]))} '
+          f'biases for camera {camera}')
+    print(f'### Found {len(set(biases_for_temperature[temperature]))} '
+          f'biases for temperature {temperature}')
+
     biases |= set(biases_for_camera[camera]) & set(
         biases_for_temperature[temperature])
 
-  print(f'### Found {len(stack.bias_frames)} matching bias frames')
   stack.bias_frames = list(biases)
+  print(f'### Found {len(stack.bias_frames)} matching bias frames')
   if not stack.bias_frames:
     print(f'### WARNING has no bias frames')
 
