@@ -189,10 +189,16 @@ def symlink_frames(filenames, dest_path, **kwargs):
 #   pix.WeightedBatchPreprocessing() (local or remote)
 #
 # add_metadata() adds the stack id and content hash to the master (local or remote)
-@ray.remote
+@ray.remote(scheduling_strategy="SPREAD")
 def stack_subframes(context, stack):
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
+
+  print(f'### Stacking subframes for {stack}')
+  print(f'### Stack has {len(stack.light_frames)} light frames '
+        f'{len(stack.dark_frames)} dark frames '
+        f'{len(stack.bias_frames)} bias frames '
+        f'{len(stack.flat_frames)} flat frames')
 
   with tempfile.TemporaryDirectory() as tmp_dir:
     for i, (light_run, flat_run) in enumerate(stack.flat_frame_associations):
@@ -215,7 +221,7 @@ def stack_subframes(context, stack):
     src_master_dir = os.path.join(tmp_dir, 'master')
     print('tmp_dir contains', os.listdir(tmp_dir))
     filenames = list(
-        str(f) for f in Path(src_master_dir).rglob("*autocrop.xisf"))
+        str(f) for f in Path(src_master_dir).rglob("*drizzle_2x_autocrop.xisf"))
     if not filenames:
       # TODO: Return failure, so the stack won't just be attempted again
       # on the next run. Distinguish the cases where the stack has never been
