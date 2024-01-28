@@ -144,7 +144,7 @@ def scatter_stack_thumbnails(context):
 
   stacks = [
       compute_stack_thumbnails.bind(context, stack)
-      for stack in stacks
+      for stack in stacks.values()
       if not has_thumbnails(stack)
   ]
   return ray.workflow.continuation(gather_stack_thumbnails.bind(
@@ -162,60 +162,65 @@ def compute_stack_thumbnails(context, stack, width=1200):
   fits_headers = ray.get(context['fits_headers'])
   plate_solutions = ray.get(context['plate_solutions'])
 
-  light_frames_by_stars = sorted(stack.light_frames,
-                                 key=lambda f: plate_solutions[f].num_stars,
-                                 reverse=True)
+  # TODO: Split the try into another function.
+  try:
+    light_frames_by_stars = sorted(stack.light_frames,
+                                   key=lambda f: plate_solutions[f].num_stars,
+                                   reverse=True)
 
-  image = resize_array(read_image(image_hashes[light_frames_by_stars[0]]),
-                       width)
-  height, width = image.shape
+    image = resize_array(read_image(image_hashes[light_frames_by_stars[0]]),
+                         width)
+    height, width = image.shape
 
-  height = int(((height + 8 - 1) / 8) * 8)
-  print(f'Creating video of width {width}, height {height} '
-        f'with {len(stack.light_frames)} frames')
+    height = int(((height + 8 - 1) / 8) * 8)
+    print(f'Creating video of width {width}, height {height} '
+          f'with {len(stack.light_frames)} frames')
 
-  with tempfile.TemporaryDirectory() as tmp_dir:
-    fourcc = cv2.VideoWriter_fourcc(*'VP80')
-    video_filename = os.path.join(tmp_dir, 'output.webm')
-    out = cv2.VideoWriter(video_filename, fourcc, 10.0, (width, height), False)
-    made_stack_thumbnail = False
-    for light_frame in light_frames_by_stars:
-      flat_frame = _get_flat_frame_for_light_frame(light_frame, stack,
-                                                   fits_headers)
-      dark_frame = stack.dark_frames[0] if len(stack.dark_frames) else None
-      bias_frame = stack.bias_frames[0] if len(stack.bias_frames) else None
-      rotate = plate_solutions[light_frame].rotation_angle < 0.0
-      try:
-        im = make_thumbnail(image_hashes, fits_headers, light_frame, dark_frame,
-                            bias_frame, flat_frame, rotate)
-      except Exception as e:
-        print(f'make_thumbnail() failed for {image_hashes[light_frame]} '
-              f'due to exception {e}')
-        continue
+    with tempfile.TemporaryDirectory() as tmp_dir:
+      fourcc = cv2.VideoWriter_fourcc(*'VP80')
+      video_filename = os.path.join(tmp_dir, 'output.webm')
+      out = cv2.VideoWriter(video_filename, fourcc, 10.0, (width, height),
+                            False)
+      made_stack_thumbnail = False
+      for light_frame in light_frames_by_stars:
+        flat_frame = _get_flat_frame_for_light_frame(light_frame, stack,
+                                                     fits_headers)
+        dark_frame = stack.dark_frames[0] if len(stack.dark_frames) else None
+        bias_frame = stack.bias_frames[0] if len(stack.bias_frames) else None
+        rotate = plate_solutions[light_frame].rotation_angle < 0.0
+        try:
+          im = make_thumbnail(image_hashes, fits_headers, light_frame,
+                              dark_frame, bias_frame, flat_frame, rotate)
+        except Exception as e:
+          print(f'make_thumbnail() failed for {image_hashes[light_frame]} '
+                f'due to exception {e}')
+          continue
 
-      if not made_stack_thumbnail:
-        key = ('stack_thumbnail_image', stack.id, stack.content_hash)
-        ray_diskcache.set(key, array_to_png(im), keep_in_memory=False)
-        print(f'Wrote key {key}')
-        made_stack_thumbnail = True
+        if not made_stack_thumbnail:
+          key = ('stack_thumbnail_image', stack.id, stack.content_hash)
+          ray_diskcache.set(key, array_to_png(im), keep_in_memory=False)
+          print(f'Wrote key {key}')
+          made_stack_thumbnail = True
 
-      im = (im * 255.0).astype(np.uint8)
-      frame = np.zeros((height, width), dtype=np.uint8)
-      frame[0:im.shape[0], 0:im.shape[1]] = im
+        im = (im * 255.0).astype(np.uint8)
+        frame = np.zeros((height, width), dtype=np.uint8)
+        frame[0:im.shape[0], 0:im.shape[1]] = im
 
-      out.write(frame)
+        out.write(frame)
 
-    out.release()
-    thumbnail_video = open(video_filename, 'rb').read()
+      out.release()
+      thumbnail_video = open(video_filename, 'rb').read()
 
-    key = ('stack_thumbnail_video', stack.id, stack.content_hash)
-    ray_diskcache.set(key, thumbnail_video, keep_in_memory=False)
-    print(f'Wrote key {key}')
+      key = ('stack_thumbnail_video', stack.id, stack.content_hash)
+      ray_diskcache.set(key, thumbnail_video, keep_in_memory=False)
+      print(f'Wrote key {key}')
+  except Exception as e:
+    print(f'### compute_stack_thumbnails failed with exception {e}')
 
-    return stack
+  return stack
 
 
-@ray.remote(resources={'diskcache': 0.001})
+@ray.remote
 def gather_stack_thumbnails(context, stacks):
   return context | dict(stacks=stacks)
 

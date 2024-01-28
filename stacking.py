@@ -176,13 +176,16 @@ def resolve_files(filenames, dest_path, **kwargs):
 #
 # add_metadata() adds the stack id and content hash to the master (local or remote)
 @ray.remote
-def run(stack, image_hashes, fits_headers, plate_solutions, dest_path):
+def stack_subframes(context, stack):
+  image_hashes = ray.get(context['image_hashes'])
+  fits_headers = ray.get(context['fits_headers'])
+
   with tempfile.TemporaryDirectory() as tmp_dir:
     # TODO: Don't ever change the user's input files. Instead, use the
     # "smart naming convention" to put the flat version in the symlinked
     # frames' names.
-    step_flat_frame_association.set_flat_versions(stack, image_hashes,
-                                                  fits_headers)
+    # step_flat_frame_association.set_flat_versions(stack, image_hashes,
+    #                                               fits_headers)
 
     symlink_frames([image_hashes[h] for h in stack.light_frames], tmp_dir)
     symlink_frames([image_hashes[h] for h in stack.flat_frames], tmp_dir)
@@ -227,3 +230,23 @@ def run(stack, image_hashes, fits_headers, plate_solutions, dest_path):
     print('Stacking produced master', dst_filename)
 
     return (dg.Ran.RAN, (dg.Result.SUCCESS, OutputFile(dst_filename)))
+
+
+@ray.remote(scheduling_strategy="SPREAD")
+def scatter_stack_subframes(context):
+  stacks = ray.get(context['stacks'])
+
+  def artifact_exists(stack):
+    return False
+
+  stacks = [
+      stack_subframes.bind(context, stack)
+      for stack in stacks.values()
+      if not artifact_exists(stack)
+  ]
+  return ray.workflow.continuation(gather_stack_subframes.bind(context, stacks))
+
+
+@ray.remote
+def gather_stack_subframes(context, stacks):
+  return context | dict(stacks=stacks)

@@ -128,15 +128,19 @@ def associate_calibration_frames(context):
 
   # fits_headers = ray_diskcache.get('fits_headers', {})
   fits_headers = ray.get(context['fits_headers'])
+  plate_solutions = ray.get(context['plate_solutions'])
+
   stacks = ray.get(context['stacks'])
 
-  output_stacks = []
+  output_stacks = {}
   for stack in stacks:
+    # TODO: Kinda weird that these use different call patterns.
     stack = _associate_dark_frames(stack, fits_headers)
     stack = _associate_bias_frames(stack, fits_headers)
     stack = _associate_flat_frames(stack, fits_headers)
-    output_stacks.append(stack)
+    stack.store_metadata(fits_headers, plate_solutions)
 
-  # ray_diskcache.set('stacks', output_stacks)
+    output_stacks[stack.id] = stack
 
+  ray_diskcache.set('stacks', output_stacks)
   return context | dict(stacks=ray.put(output_stacks))

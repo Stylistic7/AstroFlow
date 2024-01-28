@@ -556,38 +556,6 @@ def compute_stack_metadata(stacks, fits_headers, plate_solutions):
 #                       image_hashes, plate_solutions)
 
 
-# TOOD: Move this into another file, e.g. identify_targets.py.
-def group_stacks_into_targets(stacks, plate_solutions, fits_headers):
-  polygons = {
-      s.id:
-          SphericalPolygon.from_wcs(
-              pyfits.Header(plate_solutions[s.light_frames[0]].header))
-      for s in stacks.values()
-  }
-
-  # TODO: The IoU is expensive, so check cosine similarity of the center first.
-  def comparison_fn(a, b):
-    iou = a.intersection(b).area() / a.union(b).area()
-    return iou > 0.6
-
-  groups = spatial_association.find_groups(polygons.keys(),
-                                           polygons,
-                                           comparison_fn,
-                                           min_component_members=1)
-  print('### Found groups', groups)
-
-  def new_target(stack_ids):
-    center = stacks[stack_ids[0]].center
-    print('### new_target center', center)
-    name = position_string.canonical_target_string(center)
-    target = Target(name=name, stack_ids=stack_ids)
-    target.store_metadata(stacks)
-    return target
-
-  targets = [new_target(g) for g in groups]
-  return {t.id: t for t in targets}
-
-
 def group_targets_into_mosaics(targets):
   print('Identifying mosaics...')
   mosaics = identification.identify_mosiacs(targets, plot=False)
