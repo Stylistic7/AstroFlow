@@ -217,14 +217,9 @@ def compute_stack_thumbnails(context, stack, width=1200):
   except Exception as e:
     print(f'### compute_stack_thumbnails failed with exception {e}')
 
-  return stack
-
 
 @ray.remote
 def gather_stack_thumbnails(context, stacks):
-  stacks = [ray.get(s) for s in stacks]
-  stacks = {s.id: s for s in stacks}
-  context.stacks = ray.put(stacks)
   return context
 
 

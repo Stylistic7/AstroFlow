@@ -4,14 +4,9 @@ from .classes import ShellScriptTask
 from .decorators import PixInsight
 from .context import append_task
 
-# run -x -a=automationMode=true
-#   -a=dir=/tmp/foo -p="outputDirectory,/tmp/foo"
-#   -p="keywords,WyJSSUciLCAiSU5TVFJVTUUiLCAiRklMVEVSIiwgIkZMQVRWRVJTIl0="
-#   "/Applications/PixInsight/src/scripts/WeightedBatchPreprocessing/WeightedBatchPreprocessing.js"
-
 _default_parameters = {
     'outputDirectory': '',
-    'keywords': '["RIG", "INSTRUME", "FILTER", "FLATVERS"]'
+    'keywords': '["INSTRUME", "FILTER", "FLATVERS"]'
 }
 
 

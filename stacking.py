@@ -216,10 +216,13 @@ def stack_subframes(context, stack):
 
     pix.WeightedBatchPreprocessing(dir=tmp_dir, outputDirectory=tmp_dir)
 
-    src_master_dir = os.path.join(tmp_dir, 'master')
-    print('tmp_dir contains', os.listdir(tmp_dir))
+    print('### WBPP master dir contains:')
+    master_dir = os.path.join(tmp_dir, 'master')
+    for f in os.listdir(master_dir):
+      print(f'###   {f}')
+
     filenames = list(
-        str(f) for f in Path(src_master_dir).rglob("*drizzle_2x_autocrop.xisf"))
+        str(f) for f in Path(master_dir).rglob("*drizzle_2x_autocrop.xisf"))
     if not filenames:
       # TODO: Return failure, so the stack won't just be attempted again
       # on the next run. Distinguish the cases where the stack has never been
@@ -253,9 +256,7 @@ def stack_subframes(context, stack):
                image_metadata=ims_meta[0],
                xisf_metadata=file_meta)
 
-    # shutil.copy(src_filename, dst_filename)
     print('Stacking produced master', dst_filename)
-    return stack
 
 
 @ray.remote(scheduling_strategy="SPREAD")
@@ -263,11 +264,12 @@ def scatter_stack_subframes(context):
   image_hashes = ray.get(context.image_hashes)
   plate_solutions = ray.get(context.plate_solutions)
   stacks = ray.get(context.stacks)
+  print(f'### scatter_stack_subframes received {len(stacks)} stacks')
 
   def artifact_exists(stack):
     dst_filename = _output_filename(stack, context.output_dir)
     os.makedirs(os.path.dirname(dst_filename), exist_ok=True)
-    print(f'### step_stack.run dst_filename {dst_filename} exists '
+    print(f'### stack_subframes artifact {dst_filename} exists '
           f'{os.path.exists(dst_filename)}')
 
     # The point of this is to short-circuit stacking when the cache empty, but
@@ -281,10 +283,11 @@ def scatter_stack_subframes(context):
       for stack in stacks.values()
       if not artifact_exists(stack)
   ]
+  print(f'### Scattering {len(stacks)} stacks that need stacking...')
+
   return ray.workflow.continuation(gather_stack_subframes.bind(context, stacks))
 
 
 @ray.remote
 def gather_stack_subframes(context, stacks):
-  context.stacks = stacks
   return context
