@@ -48,68 +48,87 @@ def _exposure_time_string(stack):
 #   but there is no evidence of its provenance.
 
 
-def _master_with_id_or_footprint_exits(stack, correct_filename, image_hashes,
-                                       plate_solutions):
-  print(f'### Entering _master_with_id_or_footprint_exits() for stack {stack}')
-  num_masters = 0
-  for hash, plate_solution in plate_solutions.items():
-    # TODO: There are better ways to identify masters than just the name.
-    # Maybe I should have a generic "File" object that includes its type,
-    # which can be determined more accurately by FITS/XISF metadata.
-    if hash not in image_hashes:
-      continue
+def _scan_masters(path, image_hashes, plate_solutions):
+  masters = {}
+  for filename in Path(path).rglob("master*.xisf"):
+    result = {}
 
-    filename = image_hashes[hash]
-    if not filename:
-      continue
-
-    if not os.path.basename(filename).startswith('master'):
-      continue
-
-    # TODO: Should these all be filtered out in some unified place?
-    print(f'### Found a master called {filename}')
-    if not os.path.exists(filename):
-      continue
-
-    num_masters += 1
     xisf = XISF(filename)
-    ims_meta = xisf.get_images_metadata()
+    file_meta = xisf.get_file_metadata()
 
-    if ims_meta[0]['FITSKeywords']['FILTER'][0]['value'] != stack.filter:
-      continue
+    result['stack_id'] = file_meta.get('XISF:AstroFlow:StackId',
+                                       {}).get('value', None)
+    result['stack_content_hash'] = file_meta.get(
+        'XISF:AstroFlow:StackContentHash', {}).get('value', None)
 
-    try:
-      # TODO: Store and compare the content_hash, in addition to the id.
-      # The id is isomorphic to the filename now.
-      xisf = XISF(filename)
-      file_meta = xisf.get_file_metadata()
-      stack_id_key = 'XISF:AstroFlow:StackId'
-      stack_content_hash_key = 'XISF:AstroFlow:StackContentHash'
-      if stack_id_key in file_meta and stack_content_hash_key in file_meta:
-        if file_meta[stack_id_key]['value'] == stack.id and file_meta[
-            stack_content_hash_key]['value'] == stack.content_hash:
-          print(f'### Found highly-likely master {filename} for '
-                f'stack {stack} by XISF metadata')
-          print(f'### Renaming master {filename} to {correct_filename}')
-          os.rename(filename, correct_filename)
-          return correct_filename
-    except:
-      pass
+    hash = next((h for h, f in image_hashes.items() if f == filename), None)
+    if hash and hash in plate_solutions:
+      result['footprint'] = SphericalPolygon.from_wcs(
+          plate_solutions[hash].header)
+    else:
+      result['footprint'] = None
 
-    def iou(a, b):
-      iou = a.intersection(b).area() / a.union(b).area()
-      return iou
+    masters[filename] = result
 
-    # TODO: Stop using IoU, and use cosine similarity instead.
-    if iou(SphericalPolygon(stack.footprint),
-           SphericalPolygon.from_wcs(plate_solutions[hash].header)) > 0.9:
-      print(f'### Found highly-likely master {filename} for '
-            f'stack {stack} by IoU')
-      print(f'### Renaming master {filename} to {correct_filename}')
-      os.rename(filename, correct_filename)
-      return correct_filename
+  return masters
 
-  print(f'### Inspected {num_masters} masters but none matched')
+
+def _find_matching_master(stack, masters):
+  for filename, metadata in masters.items():
+    if metadata['stack_id'] == stack.id and metadata[
+        'stack_content_hash'] == stack.content_hash:
+      print(f'### Master {filename} matches {stack} by id and content hash')
+      return filename
+
+
+# def _master_with_id_or_footprint_exits(output_dir, stack, correct_filename,
+#                                        image_hashes, plate_solutions):
+#   print(f'### Entering _master_with_id_or_footprint_exits() for stack {stack}')
+#   num_masters = 0
+#   for filename in Path(output_dir).rglob("master*.xisf"):
+#     num_masters += 1
+#     xisf = XISF(filename)
+#     ims_meta = xisf.get_images_metadata()
+
+#     if ims_meta[0]['FITSKeywords']['FILTER'][0]['value'] != stack.filter:
+#       continue
+
+#     try:
+#       xisf = XISF(filename)
+#       file_meta = xisf.get_file_metadata()
+#       stack_id_key = 'XISF:AstroFlow:StackId'
+#       stack_content_hash_key = 'XISF:AstroFlow:StackContentHash'
+#       if stack_id_key in file_meta and stack_content_hash_key in file_meta:
+#         if file_meta[stack_id_key]['value'] == stack.id and file_meta[
+#             stack_content_hash_key]['value'] == stack.content_hash:
+#           print(f'### Found highly-likely master {filename} for '
+#                 f'stack {stack} by XISF metadata')
+
+#           if filename != correct_filename:
+#             print(f'### Renaming master {filename} to {correct_filename}')
+#             os.rename(filename, correct_filename)
+
+#           return correct_filename
+#     except Exception as e:
+#       pass
+
+#     try:
+
+#       # TODO: Maybe use cosine similarity before IoU to speed this up.
+#       if iou(SphericalPolygon(stack.footprint),
+#              SphericalPolygon.from_wcs(plate_solutions[hash].header)) > 0.9:
+#         print(f'### Found highly-likely master {filename} for '
+#               f'stack {stack} by IoU')
+
+#         if filename != correct_filename:
+#           print(f'### Renaming master {filename} to {correct_filename}')
+#           os.rename(filename, correct_filename)
+
+#         return correct_filename
+#     except Exception as e:
+#       pass
+
+#   print(f'### Inspected {num_masters} masters but none matched')
 
 
 def _output_filename(stack, dest_path):
@@ -276,17 +295,25 @@ def scatter_stack_subframes(context):
   stacks = ray.get(context.stacks)
   print(f'### scatter_stack_subframes received {len(stacks)} stacks')
 
-  def artifact_exists(stack):
-    dst_filename = _output_filename(stack, context.output_dir)
-    os.makedirs(os.path.dirname(dst_filename), exist_ok=True)
-    print(f'### stack_subframes artifact {dst_filename} exists '
-          f'{os.path.exists(dst_filename)}')
+  masters = _scan_masters(context.output_dir, image_hashes, plate_solutions)
+  print('### scanned masters:')
+  for filename, metadata in masters.items():
+    print(f'### filename {filename} metadata {metadata}')
 
-    # The point of this is to short-circuit stacking when the cache empty, but
-    # the stacks have been done outside of AstroFlow, or the cache has been nuked.
-    # This generally happens when the user first installs AstroFlow.
-    return _master_with_id_or_footprint_exits(stack, dst_filename, image_hashes,
-                                              plate_solutions)
+  def artifact_exists(stack):
+    matching_master = _find_matching_master(stack, masters)
+    if not matching_master:
+      return False
+
+    print(f'### {stack} has existing artifact {matching_master}')
+
+    correct_filename = _output_filename(stack, context.output_dir)
+    if correct_filename != matching_master:
+      os.makedirs(os.path.dirname(correct_filename), exist_ok=True)
+      os.rename(matching_master, correct_filename)
+      print(f'### Renamed master {matching_master} to {correct_filename}')
+
+    return True
 
   stacks = [
       stack_subframes.bind(context, stack)
