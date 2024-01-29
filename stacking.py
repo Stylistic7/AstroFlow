@@ -118,7 +118,7 @@ def _output_filename(stack, dest_path):
   return os.path.join(
       output_dir, f'master_light_{stack.target}_{ra_dec_string}_'
       f'{stack.width_pixels}x{stack.height_pixels}_'
-      f'{stack.image_scale:.02f}_{stack.rotation_angle:.2f}_'
+      f'{stack.image_scale:.02f}aspp_{stack.rotation_angle:.2f}deg_'
       f'{stack.filter}.xisf')
 
 
@@ -236,32 +236,33 @@ def stack_subframes(context, stack):
       return stack
 
     print('filenames', filenames)
-    assert len(filenames) == 1
-    src_filename = filenames[0]
+    if len(filenames) != 1:
+      print(f'### WARNING: stacking produced {len(filenames)} master files')
 
-    xisf = XISF(src_filename)
-    image = xisf.read_image(0)
-    file_meta = xisf.get_file_metadata()
-    ims_meta = xisf.get_images_metadata()
-    file_meta["XISF:AstroFlow:StackId"] = {
-        "id": "XISF:AstroFlow:StackId",
-        "type": "String",
-        "value": stack.id,
-    }
-    file_meta["XISF:AstroFlow:StackContentHash"] = {
-        "id": "XISF:AstroFlow:StackContentHash",
-        "type": "String",
-        "value": stack.content_hash,
-    }
+    for filename in filenames:
+      xisf = XISF(filename)
+      image = xisf.read_image(0)
+      file_meta = xisf.get_file_metadata()
+      ims_meta = xisf.get_images_metadata()
+      file_meta["XISF:AstroFlow:StackId"] = {
+          "id": "XISF:AstroFlow:StackId",
+          "type": "String",
+          "value": stack.id,
+      }
+      file_meta["XISF:AstroFlow:StackContentHash"] = {
+          "id": "XISF:AstroFlow:StackContentHash",
+          "type": "String",
+          "value": stack.content_hash,
+      }
 
-    dst_filename = _output_filename(stack, context.output_dir)
-    XISF.write(dst_filename,
-               image,
-               creator_app="AstroFlow",
-               image_metadata=ims_meta[0],
-               xisf_metadata=file_meta)
+      dst_filename = _output_filename(stack, context.output_dir)
+      XISF.write(dst_filename,
+                 image,
+                 creator_app="AstroFlow",
+                 image_metadata=ims_meta[0],
+                 xisf_metadata=file_meta)
 
-    print('Stacking produced master', dst_filename)
+      print('Stacking produced master', dst_filename)
 
 
 @ray.remote(scheduling_strategy="SPREAD")
