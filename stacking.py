@@ -193,7 +193,7 @@ def symlink_frames(filenames, dest_path):
 #   pix.WeightedBatchPreprocessing() (local or remote)
 #
 # add_metadata() adds the stack id and content hash to the master (local or remote)
-@ray.remote(scheduling_strategy="SPREAD")
+@ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
 def stack_subframes(context, stack):
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
@@ -239,6 +239,10 @@ def stack_subframes(context, stack):
     if len(filenames) != 1:
       print(f'### WARNING: stacking produced {len(filenames)} master files')
 
+    # TODO: If there are exposures of different durations in the stack, WBPP
+    # will produce multiple masters. Is this desirable? Should the user be
+    # given multiple masters, so they can do HDR downstream? Or should I use
+    # the WBPP exposure tolerance to make a single master?
     for filename in filenames:
       xisf = XISF(filename)
       image = xisf.read_image(0)
