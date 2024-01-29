@@ -160,13 +160,19 @@ def _output_filename(stack, dest_path):
 
 #   return dst_filenames
 
+# def symlink_frames(filenames, dest_path, **kwargs):
+#   suffix = '_' + '_'.join([f'{k}_{v}'
+#                            for k, v in kwargs.items()]) if kwargs else ''
+#   for filename in filenames:
+#     path = Path(filename)
+#     dest_filename = os.path.join(dest_path, f'{path.stem}{suffix}{path.suffix}')
+#     print(f'### symlinking {filename} -> {dest_filename}')
+#     os.symlink(filename, dest_filename)
 
-def symlink_frames(filenames, dest_path, **kwargs):
-  suffix = '_' + '_'.join([f'{k}_{v}'
-                           for k, v in kwargs.items()]) if kwargs else ''
+
+def symlink_frames(filenames, dest_path):
   for filename in filenames:
-    path = Path(filename)
-    dest_filename = os.path.join(dest_path, f'{path.stem}{suffix}{path.suffix}')
+    dest_filename = os.path.join(dest_path, os.path.basename(filename))
     print(f'### symlinking {filename} -> {dest_filename}')
     os.symlink(filename, dest_filename)
 
@@ -200,16 +206,15 @@ def stack_subframes(context, stack):
 
   with tempfile.TemporaryDirectory() as tmp_dir:
     for i, (light_run, flat_run) in enumerate(stack.flat_frame_associations):
+      flatvers_dir = os.path.join(tmp_dir, f'FLATVERS_{i}')
+      os.mkdir(flatvers_dir)
+
       light_frames = runs.get_frames_for_run(light_run, stack.light_frames,
                                              fits_headers)
       flat_frames = runs.get_frames_for_run(flat_run, stack.flat_frames,
                                             fits_headers)
-      symlink_frames([image_hashes[h] for h in light_frames],
-                     tmp_dir,
-                     FLATVERS=i)
-      symlink_frames([image_hashes[h] for h in flat_frames],
-                     tmp_dir,
-                     FLATVERS=i)
+      symlink_frames([image_hashes[h] for h in light_frames], flatvers_dir)
+      symlink_frames([image_hashes[h] for h in flat_frames], flatvers_dir)
 
     symlink_frames([image_hashes[h] for h in stack.bias_frames], tmp_dir)
     symlink_frames([image_hashes[h] for h in stack.dark_frames], tmp_dir)
