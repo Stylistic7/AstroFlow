@@ -224,24 +224,34 @@ def stack_subframes(context, stack):
         f'{len(stack.flat_frames)} flat frames')
 
   with tempfile.TemporaryDirectory() as tmp_dir:
-    for i, (light_run, flat_run) in enumerate(stack.flat_frame_associations):
-      flatvers_dir = os.path.join(tmp_dir, f'FLATVERS_{i}')
-      os.mkdir(flatvers_dir)
+    # TODO: Upgrade this to find and recognize master darks, biases, and flats.
+    # Also automatically generate them for re-use.
+    if stack.flat_frame_associations:
+      for i, (light_run, flat_run) in enumerate(stack.flat_frame_associations):
+        flatvers_dir = os.path.join(tmp_dir, f'FLATVERS_{i}')
+        os.mkdir(flatvers_dir)
 
-      light_frames = runs.get_frames_for_run(light_run, stack.light_frames,
-                                             fits_headers)
-      flat_frames = runs.get_frames_for_run(flat_run, stack.flat_frames,
-                                            fits_headers)
-      symlink_frames([image_hashes[h] for h in light_frames], flatvers_dir)
-      symlink_frames([image_hashes[h] for h in flat_frames], flatvers_dir)
+        light_frames = runs.get_frames_for_run(light_run, stack.light_frames,
+                                               fits_headers)
+        flat_frames = runs.get_frames_for_run(flat_run, stack.flat_frames,
+                                              fits_headers)
+        symlink_frames([image_hashes[h] for h in light_frames], flatvers_dir)
+        symlink_frames([image_hashes[h] for h in flat_frames], flatvers_dir)
+    else:
+      symlink_frames([image_hashes[h] for h in stack.light_frames], tmp_dir)
+      symlink_frames([image_hashes[h] for h in stack.flat_frames], tmp_dir)
 
     symlink_frames([image_hashes[h] for h in stack.bias_frames], tmp_dir)
     symlink_frames([image_hashes[h] for h in stack.dark_frames], tmp_dir)
 
     pix.WeightedBatchPreprocessing(dir=tmp_dir, outputDirectory=tmp_dir)
 
-    print('### WBPP master dir contains:')
     master_dir = os.path.join(tmp_dir, 'master')
+    if not os.path.exists(master_dir):
+      print(f'### WBPP did not produce an output master dir.')
+      return stack
+
+    print('### WBPP master dir contains:')
     for f in os.listdir(master_dir):
       print(f'###   {f}')
 
@@ -308,7 +318,7 @@ def scatter_stack_subframes(context):
     print(f'### {stack} has existing artifact {matching_master}')
 
     correct_filename = _output_filename(stack, context.output_dir)
-    if correct_filename != matching_master:
+    if str(matching_master) != str(correct_filename):
       os.makedirs(os.path.dirname(correct_filename), exist_ok=True)
       os.rename(matching_master, correct_filename)
       print(f'### Renamed master {matching_master} to {correct_filename}')
