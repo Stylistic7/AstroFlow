@@ -79,9 +79,10 @@ from image_handling import resize_array
 
 
 def read_image(filename):
-  if filename.endswith('.xisf'):
+  filename = Path(filename)
+  if filename.suffix.lower() in ['.xisf']:
     return file_io.read_xisf_image(filename)
-  elif filename.endswith('.fit') or filename.endswith('.fits'):
+  elif filename.suffix.lower() in ['.fit', '.fits']:
     return file_io.read_fits_image(filename)
 
 
@@ -98,9 +99,6 @@ def scatter_compute_image_metadata(context, filenames):
             max_retries=5,
             retry_exceptions=True)
 def compute_image_metadata_ray(filename):
-  if not os.path.exists(filename):
-    return None
-
   # TODO: Make sure this code doesn't actually repeatedly read the image across
   # the network. It should hit the node's filesystem cache.
   try:
@@ -117,9 +115,8 @@ def compute_image_metadata_ray(filename):
 
     return result
   except Exception as e:
-    print(
-        f'compute_image_metadata_ray() failed for file {filename}, exception {e}'
-    )
+    print(f'compute_image_metadata_ray() failed for file {filename}, '
+          f'exception {e}')
     return None
 
 

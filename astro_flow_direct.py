@@ -218,14 +218,29 @@ def download(save_dir, default_filter):
                              default_filter)
 
 
+def file_is_acceptable(filename):
+  if filename.suffix.lower() not in ['.fit', '.fits']:
+    return False
+  if 'master' in filename.stem.lower():
+    return False
+  if any(d.lower() in ['master', 'masters'] for d in filename.parts):
+    return False
+  if 'bad' in [d.lower() for d in filename.parts]:
+    return False
+
+  return True
+
+
 def find_fits_files(input_dirs, max_frames=None):
   print('Finding files...')
   all_frames = set()
   for input_dir in input_dirs:
     print(f'Looking for FITS files in directory {input_dir}')
 
-    filenames = list(str(f) for f in Path(input_dir).rglob("*.fit"))
+    filenames = list(
+        str(f) for f in Path(input_dir).rglob("*") if file_is_acceptable(f))
     print(f'Found {len(filenames)} FITS files')
+
     filenames = [
         f for f in filenames
         if not os.path.basename(f).lower().startswith('master')

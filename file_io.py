@@ -43,11 +43,15 @@ def read_fits(filename, print_header=False):
   if 'PANE' in header:
     output['PANE'] = int(header['PANE'])
 
-  # if header['IMAGETYP'] == 'Light' and 'RIG' not in header:
-  #   print(f'WARNING: light frame {filename} did not have RIG keyword')
-
-  # if header['IMAGETYP'] == 'Flat' and 'RIG' not in header:
-  #   print(f'WARNING: flat frame {filename} did not have RIG keyword')
+  if 'IMAGETYP' in header:
+    if 'light' in header['IMAGETYP'].lower():
+      output['IMAGETYP'] = 'Light'
+    elif 'dark' in header['IMAGETYP'].lower():
+      output['IMAGETYP'] = 'Dark'
+    elif 'bias' in header['IMAGETYP'].lower():
+      output['IMAGETYP'] = 'Bias'
+    elif 'flat' in header['IMAGETYP'].lower():
+      output['IMAGETYP'] = 'Flat'
 
   fits.close()
   return output
@@ -76,6 +80,7 @@ def fits_matches(fits_headers, filename, key, value):
 
 
 def group_by_fits_keyword(fits_headers, filenames, fits_keyword):
+
   def key(f):
     assert fits_keyword in fits_headers[
         f], f"File {f} does not have FITS keyword"
@@ -86,12 +91,12 @@ def group_by_fits_keyword(fits_headers, filenames, fits_keyword):
 
 
 def read_xisf_image(filename):
-  xisf = XISF(filename)
+  xisf = XISF(str(filename))
   return xisf.read_image(0).squeeze().astype(np.float32)
 
 
 def read_fits_image(filename):
-  fits = pyfits.open(filename)
+  fits = pyfits.open(str(filename))
   image = fits[0].data.astype(np.float32)
   fits.close()
   return image
