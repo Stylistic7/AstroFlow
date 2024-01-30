@@ -1,24 +1,15 @@
 import os
-import time
 import numpy as np
 from dataclasses import dataclass, field
-import functools
 from spherical_geometry.polygon import SphericalPolygon
 from shapely.geometry import Polygon
 import astropy
-import uuid
 import hashlib
 from enum import Enum, unique
 import xxhash
-
-from cache import cache
-import file_io
-import plate_solving
-import spatial_association
-import mollweide
-import footprints
-
 import matplotlib.pyplot as plt
+
+import footprints
 
 
 def ra_to_hms(ra):
@@ -43,16 +34,6 @@ def hash_file_list(x):
   if x == None:
     return None
   return hash_string(str(sorted(x)))
-
-
-def _min_footprint(footprints):
-  min_ra = np.min([p[0] for f in footprints for p in f])
-  max_ra = np.max([p[0] for f in footprints for p in f])
-  min_dec = np.min([p[1] for f in footprints for p in f])
-  max_dec = np.max([p[1] for f in footprints for p in f])
-
-  return [[min_ra, min_dec], [max_ra, min_dec], [max_ra, max_dec],
-          [min_ra, max_dec]]
 
 
 # TODO: This is a mess right now. Design a better set of statuses.

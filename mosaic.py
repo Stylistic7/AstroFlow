@@ -1,15 +1,10 @@
 import numpy as np
 from dataclasses import dataclass, field
-import functools
 from spherical_geometry.polygon import SphericalPolygon
 from shapely.geometry import Polygon
 import hashlib
 import xxhash
 
-import projection
-import mollweide
-import mercator
-import sinusoidal
 import footprints
 
 

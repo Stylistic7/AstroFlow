@@ -1,12 +1,10 @@
 import numpy as np
 from dataclasses import dataclass, field
-import functools
 import hashlib
 from spherical_geometry.polygon import SphericalPolygon
 from shapely.geometry import Polygon
 import xxhash
 
-import mollweide
 import footprints
 
 
