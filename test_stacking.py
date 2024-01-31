@@ -9,6 +9,7 @@ import ray
 ray.init(
   address='local',
   namespace='AstroFlow',
+  num_cpus=24,
   resources={"diskcache": 1, "PixInsight": 1},
   ignore_reinit_error=True,
   runtime_env={"env_vars": {

@@ -9,6 +9,7 @@ import ray
 ray.init(
   address='local',
   namespace='AstroFlow',
+  num_cpus=24,
   resources={"diskcache": 1},
   ignore_reinit_error=True,
   runtime_env={"env_vars": {
@@ -25,14 +26,40 @@ global_var_actor = ray_diskcache.GlobalVarActor.options(name='ray_diskcache',
 
 import unittest
 import tempfile
-import pathlib
 
 from make_test_frames import make_test_frames
 import ray_diskcache
-from compute_graph import build_compute_graph
+from context import Context
+import file_io
+
+from image_metadata import scatter_compute_image_metadata
+from spatial_association import find_components_by_cosine_similarity_ray
+from stack_identification import identify_stacks_ray
+from calibration_frames import associate_calibration_frames
+from image_handling import scatter_stack_thumbnails
+
+
+@ray.remote
+def _build_compute_graph(new_filenames):
+  context = Context()
+  context.image_hashes = ray.put({})
+  context.fits_headers = ray.put({})
+  context.plate_solutions = ray.put({})
+
+  context = scatter_compute_image_metadata.bind(context, new_filenames)
+  context = find_components_by_cosine_similarity_ray.bind(context)
+  context = identify_stacks_ray.bind(context)
+  context = associate_calibration_frames.bind(context)
+  context = scatter_stack_thumbnails.bind(context)
+
+  return ray.workflow.continuation(context)
 
 
 class TestCalibrationFrames(unittest.TestCase):
+
+  def setUp(self):
+    ray_diskcache.clear()
+    cache.clear()
 
   def test_flats_from_different_camera(self):
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -92,35 +119,31 @@ class TestCalibrationFrames(unittest.TestCase):
                        height_pixels=4176,
                        project_dir=tmp_dir)
 
-      filenames = sorted([
-          str(path.absolute()) for path in pathlib.Path(tmp_dir).glob("*.fit*")
-      ])
+      filenames = file_io.find_files(tmp_dir)
       self.assertEqual(len(filenames), 26 + 72)
 
-      image_hashes = ray_diskcache.get('image_hashes', {})
-      new_filenames = list(set(filenames) - set(image_hashes.values()))
+      context = ray.workflow.run(_build_compute_graph.bind(filenames))
 
-      result = ray.workflow.run(build_compute_graph.bind(new_filenames),
-                                workflow_id='AstroFlow')
-
-      stacks = result['stacks']
+      stacks = ray.get(context.stacks)
       self.assertEqual(len(stacks), 2)
+      stack_iterator = iter(stacks)
 
-      stack = ray.get(stacks[0])
-      self.assertEqual(len(stack.light_frames), 3)
-      self.assertEqual(len(stack.dark_frames), 5)
-      self.assertEqual(len(stack.bias_frames), 7)
-      self.assertEqual(len(stack.flat_frames), 11)
+      # TODO: Don't depend on the order of insertion here.
+      stack = stacks[next(stack_iterator)]
+      self.assertEqual(len(stack.light_frames), 13)
+      self.assertEqual(len(stack.dark_frames), 17)
+      self.assertEqual(len(stack.bias_frames), 19)
+      self.assertEqual(len(stack.flat_frames), 23)
       self.assertTrue(('stack_thumbnail_image', stack.id,
                        stack.content_hash) in cache)
       self.assertTrue(('stack_thumbnail_video', stack.id,
                        stack.content_hash) in cache)
 
-      stack = ray.get(stacks[1])
-      self.assertEqual(len(stack.light_frames), 13)
-      self.assertEqual(len(stack.dark_frames), 17)
-      self.assertEqual(len(stack.bias_frames), 19)
-      self.assertEqual(len(stack.flat_frames), 23)
+      stack = stacks[next(stack_iterator)]
+      self.assertEqual(len(stack.light_frames), 3)
+      self.assertEqual(len(stack.dark_frames), 5)
+      self.assertEqual(len(stack.bias_frames), 7)
+      self.assertEqual(len(stack.flat_frames), 11)
       self.assertTrue(('stack_thumbnail_image', stack.id,
                        stack.content_hash) in cache)
       self.assertTrue(('stack_thumbnail_video', stack.id,
@@ -160,21 +183,15 @@ class TestCalibrationFrames(unittest.TestCase):
                        height_pixels=6388,
                        project_dir=tmp_dir)
 
-      filenames = sorted([
-          str(path.absolute()) for path in pathlib.Path(tmp_dir).glob("*.fit*")
-      ])
+      filenames = file_io.find_files(tmp_dir)
       self.assertEqual(len(filenames), 46)
 
-      image_hashes = ray_diskcache.get('image_hashes', {})
-      new_filenames = list(set(filenames) - set(image_hashes.values()))
+      context = ray.workflow.run(_build_compute_graph.bind(filenames))
 
-      result = ray.workflow.run(build_compute_graph.bind(new_filenames),
-                                workflow_id='AstroFlow')
-
-      stacks = result['stacks']
+      stacks = ray.get(context.stacks)
       self.assertEqual(len(stacks), 1)
-      stack = ray.get(stacks[0])
 
+      stack = stacks[next(iter(stacks))]
       self.assertEqual(len(stack.light_frames), 15)
       self.assertEqual(len(stack.dark_frames), 7)
       self.assertEqual(len(stack.bias_frames), 11)

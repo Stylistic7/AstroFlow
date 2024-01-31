@@ -4,12 +4,11 @@ from dataclasses import dataclass, field
 from spherical_geometry.polygon import SphericalPolygon
 from shapely.geometry import Polygon
 import astropy
-import hashlib
 from enum import Enum, unique
-import xxhash
 import matplotlib.pyplot as plt
 
 import footprints
+from hashing import hash_string, hash_list
 
 
 def ra_to_hms(ra):
@@ -24,15 +23,6 @@ def dec_to_dms(dec):
   minutes, remainder = np.divmod(remainder, 60)
   seconds = remainder
   return f"{degrees:.0f}° {minutes:.0f}' {seconds:.0f}\""
-
-
-# def hash_string(s):
-#   return hashlib.sha256(bytes(s, 'utf-8')).hexdigest()
-
-# def hash_file_list(x):
-#   if x == None:
-#     return None
-#   return hash_string(str(sorted(x)))
 
 
 # TODO: This is a mess right now. Design a better set of statuses.
@@ -129,22 +119,22 @@ class Stack:
     return SphericalPolygon(self.footprint)
 
   def hash_flat_frame_associations(self):
-    hashes = ''
+    associations = []
     for light_run, flat_run in sorted(self.flat_frame_associations):
-      hashes += hash_string(str(light_run)) + '_' + hash_string(str(flat_run))
+      associations.append(
+          hash_string(str(light_run)) + '_' + hash_string(str(flat_run)))
 
-    return hashlib.sha256(bytes(hashes, 'utf-8')).hexdigest()
+    return hash_list(associations)
 
   # TODO: Choose a hash length that's maybe more reasonable than the 64-byte
   # hashes used today. When there are only a few dozen or few thousand entities,
   # the 64-byte hash is almost assuredly unnecessarily long.
   def store_content_hash(self):
-    self.content_hash = hash_string(
-        f'stack_{hash_file_list(self.light_frames)}_'
-        f'{hash_file_list(self.dark_frames)}_'
-        f'{hash_file_list(self.bias_frames)}_'
-        f'{hash_file_list(self.flat_frames)}_'
-        f'{self.hash_flat_frame_associations()}')
+    self.content_hash = hash_string(f'stack_{hash_list(self.light_frames)}_'
+                                    f'{hash_list(self.dark_frames)}_'
+                                    f'{hash_list(self.bias_frames)}_'
+                                    f'{hash_list(self.flat_frames)}_'
+                                    f'{self.hash_flat_frame_associations()}')
 
   def store_id(self, plate_solutions):
     rotation_angle = plate_solutions[self.light_frames[0]].rotation_angle
@@ -156,9 +146,6 @@ class Stack:
               f'Filter {self.filter}')
     print('id string', string)
     self.id = hash_string(string)
-
-  # def __hash__(self):
-  #   return xxhash.xxh64(self.id).intdigest()
 
   def store_center(self, plate_solutions, plot=False):
     assert self.light_frames

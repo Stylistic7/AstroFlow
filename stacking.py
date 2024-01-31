@@ -127,7 +127,7 @@ def stack_files(context, hashes, dest_path, metadata=None):
     metadata = {}
 
   if _CONTENT_HASH_KEY not in metadata:
-    metadata[_CONTENT_HASH_KEY] = hashing.content_hash(hashes)
+    metadata[_CONTENT_HASH_KEY] = hashing.hash_list(hashes)
 
   with tempfile.TemporaryDirectory() as tmp_dir:
     _symlink_frames(filenames, tmp_dir)
