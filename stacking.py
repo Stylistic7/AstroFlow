@@ -98,7 +98,7 @@ def _symlink_stack_frames(stack, image_hashes, fits_headers, dest_path):
   _symlink_frames([image_hashes[h] for h in stack.dark_frames], dest_path)
 
 
-def _add_xisf_metadata(filename, metadata):
+def _add_xisf_metadata(filename, dest_filename, metadata):
   xisf = XISF(filename)
   image = xisf.read_image(0)
   file_meta = xisf.get_file_metadata()
@@ -111,7 +111,7 @@ def _add_xisf_metadata(filename, metadata):
         "value": v,
     }
 
-  XISF.write(filename,
+  XISF.write(dest_filename,
              image,
              creator_app="AstroFlow",
              image_metadata=ims_meta[0],
@@ -146,10 +146,8 @@ def stack_files(context, hashes, dest_path, metadata=None):
     output_filenames = []
     for filename in wbpp_filenames:
       filename = os.path.join(master_dir, wbpp_filenames[0])
-      _add_xisf_metadata(filename, metadata)
-
       dest_filename = os.path.join(dest_path, os.path.basename(filename))
-      os.rename(filename, dest_filename)
+      _add_xisf_metadata(filename, dest_filename, metadata)
       output_filenames.append(dest_filename)
 
     return output_filenames
@@ -199,8 +197,8 @@ def stack_stack(context, stack):
           _STACK_ID_KEY: stack.id,
           _CONTENT_HASH_KEY: stack.content_hash,
       }
-      _add_xisf_metadata(filename, metadata)
-      os.rename(filename, dest_filename)
+      os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
+      _add_xisf_metadata(filename, dest_filename, metadata)
       print('Stacking produced master', dest_filename)
 
 
