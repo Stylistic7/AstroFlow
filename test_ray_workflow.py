@@ -1,33 +1,8 @@
-# yapf: disable
-import os
-os.environ["ASTROFLOW_MOCK_CACHE"] = "true"
-
-from cache import cache
-
-import tempfile
-import ray
-ray.init(
-  address='local',
-  namespace='AstroFlow',
-  num_cpus=24,
-  resources={"diskcache": 1},
-  ignore_reinit_error=True,
-  runtime_env={"env_vars": {
-    "ASTROFLOW_MOCK_CACHE": "true"
-  }},
-  storage=tempfile.TemporaryDirectory().name
-)
-
-import ray_diskcache
-global_var_actor = ray_diskcache.GlobalVarActor.options(name='ray_diskcache',
-                                          namespace='AstroFlow',
-                                          get_if_exists=True).remote()
-# yapf: enable
+import ray_local
 
 import unittest
+import ray
 from typing import List
-import tempfile
-import pathlib
 
 
 class Flight(dict):
@@ -65,13 +40,13 @@ def book_trip(origin: str, dest: str, dates: List[str]) -> Receipt:
   f1 = book_flight.bind(origin, dest, dates[0])
   f2 = book_flight.bind(dest, origin, dates[1])
   hotel = book_hotel.bind(dest, dates)
-  return workflow.continuation(finalize_or_cancel.bind([f1, f2], [hotel]))
+  return ray.workflow.continuation(finalize_or_cancel.bind([f1, f2], [hotel]))
 
 
 class TestDependencyGraph(unittest.TestCase):
 
   def test_simple_graph(self):
-    receipt: Receipt = workflow.run(
+    receipt: Receipt = ray.workflow.run(
         book_trip.bind("OAK", "SAN", ["6/12", "7/5"]))
 
 
