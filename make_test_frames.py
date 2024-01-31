@@ -3,11 +3,25 @@ import astropy.io.fits as pyfits
 import numpy as np
 import datetime
 import random
-import xxhash
 import uuid
+import shutil
+import gzip
 
-from plate_solving import PlateSolution
-from image_handling import resize_array
+import plate_solving
+import file_io
+
+_TESTDATA_TARGETS = {
+    'M42': [
+        'testdata/Light_M42_180.0s_Bin1_2600MM_20231130-233344_0021.fit',
+        'testdata/Light_M42_180.0s_Bin1_2600MM_20231130-234248_0024.fit',
+        'testdata/Light_M42_180.0s_Bin1_2600MM_20231130-234549_0025.fit',
+    ],
+    'NGC7635': [
+        'testdata/Light_NGC7635_300.0s_Bin1_6200MM_H_20231004-213019_0004.fit',
+        'testdata/Light_NGC7635_300.0s_Bin1_6200MM_H_20231004-213521_0005.fit',
+        'testdata/Light_NGC7635_300.0s_Bin1_6200MM_H_20231004-214053_0006.fit',
+    ]
+}
 
 
 def _randomize_dict(input):
@@ -26,39 +40,66 @@ def _add_dither(center, max_distance_deg):
   return ra + distance * np.sin(angle), dec + distance * np.cos(angle)
 
 
-def make_test_frames(start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
-                     number=1,
-                     image_type='Light',
-                     prefix=None,
-                     ids=None,
-                     project_dir=None,
-                     ra=100,
-                     dec=45,
-                     centers=None,
-                     dither=0.01,
-                     focal_length_m=0.35,
-                     pixel_pitch_um=3.76,
-                     instrument='ASI6200MM Pro',
-                     width_pixels=1080,
-                     height_pixels=720,
-                     exposure=300,
-                     filter='H',
-                     fill_value=None,
-                     testdata_image=None,
-                     real_hash=False,
-                     num_stars=100,
-                     image_scale=1.0,
-                     rotation_angle_deg=90.0,
-                     image_hashes=None,
-                     fits_headers=None,
-                     plate_solutions=None):
+def copy_testdata_frames(target_name,
+                         dest_dir,
+                         image_hashes=None,
+                         fits_headers=None,
+                         plate_solutions=None):
+
+  if not image_hashes:
+    image_hashes = {}
+
+  if not fits_headers:
+    fits_headers = {}
+
+  if not plate_solutions:
+    plate_solutions = {}
+
+  for filename in _TESTDATA_TARGETS[target_name]:
+    dest_filename = os.path.join(dest_dir, os.path.basename(filename))
+    with gzip.open(filename + '.gz', 'rb') as f_in:
+      with open(dest_filename, 'wb') as f_out:
+        shutil.copyfileobj(f_in, f_out)
+
+    hash = file_io.hash_of_image_data(dest_filename)
+    image_hashes[hash] = dest_filename
+    fits_headers[hash] = file_io.read_header(dest_filename)
+    plate_solutions[hash] = plate_solving.solve_field(dest_filename)
+
+  return _randomize_dict(image_hashes), _randomize_dict(
+      fits_headers), _randomize_dict(plate_solutions)
+
+
+def make_synthetic_frames(start_datetime=datetime.datetime(
+    2023, 12, 6, 16, 29, 43),
+                          number=1,
+                          image_type='Light',
+                          prefix=None,
+                          ids=None,
+                          dest_dir=None,
+                          ra=100,
+                          dec=45,
+                          centers=None,
+                          dither=0.01,
+                          focal_length_m=0.35,
+                          pixel_pitch_um=3.76,
+                          instrument='ASI6200MM Pro',
+                          width_pixels=1080,
+                          height_pixels=720,
+                          exposure=300,
+                          filter='H',
+                          fill_value=None,
+                          num_stars=100,
+                          image_scale=1.0,
+                          rotation_angle_deg=90.0,
+                          image_hashes=None,
+                          fits_headers=None,
+                          plate_solutions=None):
   if not prefix:
     prefix = str(uuid.uuid4())
 
   number = len(ids) if ids else number
 
-  ras = ra if type(ra) is list else [ra] * number
-  decs = dec if type(dec) is list else [dec] * number
   ids = ids if ids else [f'{prefix}_{i:05}.fit' for i in range(number)]
   centers = centers if centers else [(ra, dec)] * number
 
@@ -73,15 +114,12 @@ def make_test_frames(start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
 
   for i in range(number):
     fits_filename = ids[i]
-    if project_dir:
-      fits_filename = os.path.join(project_dir, fits_filename)
+    if dest_dir:
+      fits_filename = os.path.join(dest_dir, fits_filename)
 
     if fill_value:
       image_data = np.ones(
           (height_pixels, width_pixels), dtype=np.uint16) * fill_value
-    elif testdata_image:
-      filename = os.path.join('testdata', testdata_image) + '.npz'
-      image_data = np.load(filename)[testdata_image]
     else:
       image_data = np.random.random(
           (height_pixels, width_pixels)).astype(np.uint16)
@@ -93,11 +131,7 @@ def make_test_frames(start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
                                     size=image_data.shape,
                                     dtype=image_data.dtype)
 
-    if real_hash or testdata_image:
-      image_hash = xxhash.xxh128(image_data.tobytes()).hexdigest()
-    else:
-      image_hash = 'hash_for_' + fits_filename
-
+    image_hash = 'hash_for_' + fits_filename
     image_hashes[image_hash] = fits_filename
 
     center = _add_dither(centers[i], dither)
@@ -144,14 +178,15 @@ def make_test_frames(start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
     fits_headers[image_hash] = fits_header
 
     if image_type == 'Light':
-      plate_solutions[image_hash] = PlateSolution(
+      plate_solutions[image_hash] = plate_solving.PlateSolution(
           image_filename=fits_filename,
           header=fits_header,
+          num_stars=num_stars,
           center=center,
           image_scale=image_scale,
           rotation_angle=rotation_angle_deg)
 
-    if not project_dir:
+    if not dest_dir:
       continue
 
     hdu = pyfits.PrimaryHDU(image_data)

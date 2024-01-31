@@ -1,36 +1,7 @@
-# yapf: disable
-import os
-os.environ["ASTROFLOW_MOCK_CACHE"] = "true"
+import ray_local
 
-from cache import cache
-
-import tempfile
-import ray
-ray.init(
-  address='local',
-  namespace='AstroFlow',
-  num_cpus=24,
-  resources={"diskcache": 1},
-  ignore_reinit_error=True,
-  runtime_env={"env_vars": {
-    "ASTROFLOW_MOCK_CACHE": "true"
-  }},
-  storage=tempfile.TemporaryDirectory().name
-)
-
-import ray_diskcache
-global_var_actor = ray_diskcache.GlobalVarActor.options(name='ray_diskcache',
-                                          namespace='AstroFlow',
-                                          get_if_exists=True).remote()
-# yapf: enable
-
-import numpy as np
 import unittest
-import tempfile
 import datetime
-
-from spherical_geometry.polygon import SphericalPolygon
-import astropy
 
 from plate_solving import PlateSolution
 import make_test_frames
@@ -39,7 +10,7 @@ import make_test_frames
 class TestMakeTestFrames(unittest.TestCase):
 
   def test_one_perfectly_centered_image(self):
-    image_hashes, fits_headers, plate_solutions = make_test_frames.make_test_frames(
+    image_hashes, fits_headers, plate_solutions = make_test_frames.make_synthetic_frames(
         number=1, prefix='foo', dither=0)
 
     expected_fits_headers = {
@@ -65,24 +36,6 @@ class TestMakeTestFrames(unittest.TestCase):
     }
 
     # TODO: Actually compare these...
-
-  def test_testdata_images(self):
-    image_hashes, fits_headers, plate_solutions = make_test_frames.make_test_frames(
-        number=7,
-        prefix='bubble_nebula',
-        dither=0,
-        testdata_image='bubble_nebula')
-
-    image_hashes, fits_headers, plate_solutions = make_test_frames.make_test_frames(
-        number=11,
-        prefix='sadr_region',
-        dither=0,
-        testdata_image='sadr_region',
-        image_hashes=image_hashes,
-        fits_headers=fits_headers,
-        plate_solutions=plate_solutions)
-
-    self.assertEqual(len(image_hashes), 18)
 
 
 if __name__ == '__main__':
