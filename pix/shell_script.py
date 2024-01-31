@@ -1,4 +1,3 @@
-from dataclasses import dataclass, field
 import tempfile
 import os
 import subprocess
@@ -6,14 +5,16 @@ import time
 import concurrent.futures
 from contextlib import nullcontext
 import os
-import diskcache
-import inspect
-import functools
 import uuid
+import diskcache
+import atexit
 
+# TODO: This prevents a circular import, but could be cleaned up.
 from . import open_images
 
-cache = diskcache.Cache(os.path.join(os.getcwd(), '.cache'))
+# This cache is in the /tmp directory, which is shared among all processes on
+# a node.
+cache = diskcache.Cache('/tmp/AstroFlow/pix_cache')
 
 executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
@@ -29,11 +30,12 @@ def _clear_cache():
 
 def _wait_until_new_instance_is_allowed():
   while True:
+    print('Waiting until another PixInsight process is allowed...')
     with cache.transact():
       pixinsight_blocking_instance = cache.get('pixinsight_blocking_instance',
                                                default=False)
-      too_many_instances_running = len(
-          cache.get('pixinsight_slots', default=[])) >= MAX_INSTANCES
+      too_many_instances_running = len(cache.get('pixinsight_slots',
+                                                 default=[])) >= MAX_INSTANCES
 
       if not pixinsight_blocking_instance and not too_many_instances_running:
         return
@@ -46,8 +48,9 @@ def _start_pixinsight_instance(blocking=False):
     idle_slots = cache.get('pixinsight_idle_slots', [])
     if idle_slots:
       slot = idle_slots.pop()
-      print(f'### Reusing idle slot {slot}')
+      print(f'Reusing idle slot {slot}')
       cache['pixinsight_idle_slots'] = idle_slots
+
       return slot
 
   _wait_until_new_instance_is_allowed()
@@ -76,10 +79,9 @@ def _start_pixinsight_instance(blocking=False):
   ])
   f.add_done_callback(done_callback)
 
-  print(f"Started new PixInsight instance at slot {slot}, "
-        f"cache['pixinsight_slots'] is {cache['pixinsight_slots']}")
+  print(f"Started new PixInsight instance at slot {slot}")
 
-  # FIXME poll -e until the slot is actually running
+  # TODO: poll -e until the slot is actually running
   time.sleep(15)
 
   return slot
@@ -91,7 +93,7 @@ def _slot_is_idle(slot):
     idle_slots = cache.get('pixinsight_idle_slots', [])
     assert slot not in idle_slots
     idle_slots.append(slot)
-    print(f'### Slot {slot} is now idle')
+    print(f'Slot {slot} is now idle')
     cache['pixinsight_idle_slots'] = idle_slots
 
 
@@ -103,7 +105,7 @@ def _save_javascript_file(tmp_dir, task):
       if type(javascript) is list:
         javascript = '\n'.join(javascript)
 
-      print(f'### Writing JavaScript to file {script_filename}')
+      print(f'Writing JavaScript to file {script_filename}')
       print(javascript)
       f.write(javascript)
 
@@ -120,7 +122,7 @@ def _create_run_command(task):
   return f'run -x {arguments} {parameters} "{task.javascript_filename}"'
 
 
-# TODO: Re-use already launched PixInsight instance(s) that are idle.
+# TODO: Maybe allow multiple PixInsight instances.
 def run_script(tasks,
                blocking=True,
                tmp_dir_in=None,
@@ -131,7 +133,6 @@ def run_script(tasks,
 
   with tempfile.TemporaryDirectory() if not tmp_dir_in else nullcontext(
       tmp_dir_in) as tmp_dir:
-    print(f'### run_script() tmp_dir {tmp_dir}')
     sentinel_filename = os.path.join(tmp_dir, 'sentinel.txt')
     script_filename = os.path.join(tmp_dir, 'script.scp')
 
@@ -160,10 +161,19 @@ def run_script(tasks,
     while not os.path.exists(sentinel_filename):
       time.sleep(1)
 
-    # time.sleep(300)
-
     _slot_is_idle(slot)
 
+
+def _stop_pixinsight_instances():
+  for slot in cache['pixinsight_slots']:
+    subprocess.run([
+        '/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight',
+        f'--terminate={slot}'
+    ])
+    _clear_cache()
+
+
+atexit.register(_stop_pixinsight_instances)
 
 if __name__ == '__main__':
   run_script([], blocking=True)
