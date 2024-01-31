@@ -78,14 +78,6 @@ from image_handling import resize_array
 #     After stacking, the best preview is the post-processed (BXT, etc.) image.
 
 
-def read_image(filename):
-  filename = Path(filename)
-  if filename.suffix.lower() in ['.xisf']:
-    return file_io.read_xisf_image(filename)
-  elif filename.suffix.lower() in ['.fit', '.fits']:
-    return file_io.read_fits_image(filename)
-
-
 @ray.remote
 def scatter_compute_image_metadata(context, filenames):
   print('Entering scatter_compute_image_metadata()')
@@ -103,12 +95,11 @@ def compute_image_metadata_ray(filename):
   # the network. It should hit the node's filesystem cache.
   try:
     result = {}
-    image = read_image(filename)
     result['filename'] = filename
-    result['image_hash'] = xxhash.xxh128(image).hexdigest()
-    result['fits_header'] = file_io.read_fits(filename)
+    result['image_hash'] = file_io.hash_of_image_data(filename)
+    result['fits_header'] = file_io.read_header(filename)
 
-    if result['fits_header']['IMAGETYP'] == 'Light':
+    if 'light' in result['fits_header']['IMAGETYP'].lower():
       result['plate_solution'] = plate_solving.solve_field(filename)
     else:
       result['plate_solution'] = None

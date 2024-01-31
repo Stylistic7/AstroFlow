@@ -13,11 +13,27 @@ logger = structlog.get_logger()
 log = logger
 
 
-def find_files(path, pattern):
-  return list(sorted(str(f) for f in Path(path).rglob(pattern)))
+def read_image(filename):
+  filename = Path(filename)
+  if filename.suffix.lower() in ['.xisf']:
+    return read_xisf_image(filename)
+  elif filename.suffix.lower() in ['.fit', '.fits']:
+    return read_fits_image(filename)
 
 
-def read_fits(filename, print_header=False):
+def read_header(filename):
+  filename = Path(filename)
+  if filename.suffix.lower() in ['.xisf']:
+    return read_xisf_header(filename)
+  elif filename.suffix.lower() in ['.fit', '.fits']:
+    return read_fits_header(filename)
+
+
+def find_files(path, pattern='*'):
+  return sorted([str(p.absolute()) for p in Path(path).rglob(pattern)])
+
+
+def read_fits_header(filename, print_header=False):
   fits = pyfits.open(filename)
   header = fits[0].header
 
@@ -57,15 +73,27 @@ def read_fits(filename, print_header=False):
   return output
 
 
+def read_xisf_header(filename):
+  xisf = XISF(filename)
+  file_meta = xisf.get_file_metadata()
+  ims_meta = xisf.get_images_metadata()
+  fits_header = ims_meta[0]['FITSKeywords']
+  return {
+      k: file_meta[k]['value'] for k in file_meta.keys()
+  } | {
+      k: fits_header[k][0]['value'] for k in fits_header.keys()
+  }
+
+
 def hash_of_image_data(filename):
   if os.path.splitext(filename)[-1] in ['.fit', '.fits']:
     fits = pyfits.open(filename)
-    hash = xxhash.xxh128(fits[0].data.tobytes()).hexdigest()
+    hash = xxhash.xxh64(fits[0].data.tobytes()).hexdigest()
     fits.close()
     return hash
   elif os.path.splitext(filename)[-1] == '.xisf':
     xisf = XISF(filename)
-    return xxhash.xxh128(xisf.read_image(0)).hexdigest()
+    return xxhash.xxh64(xisf.read_image(0)).hexdigest()
 
 
 def fits_matches(fits_headers, filename, key, value):
@@ -90,16 +118,16 @@ def group_by_fits_keyword(fits_headers, filenames, fits_keyword):
   return [(k, list(g)) for k, g in itertools.groupby(filenames, key=key)]
 
 
-def read_xisf_image(filename):
-  xisf = XISF(str(filename))
-  return xisf.read_image(0).squeeze().astype(np.float32)
-
-
 def read_fits_image(filename):
   fits = pyfits.open(str(filename))
   image = fits[0].data.astype(np.float32)
   fits.close()
   return image
+
+
+def read_xisf_image(filename):
+  xisf = XISF(str(filename))
+  return xisf.read_image(0).squeeze().astype(np.float32)
 
 
 # TODO: Add a round-trip unit test.

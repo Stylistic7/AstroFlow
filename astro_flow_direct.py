@@ -52,6 +52,7 @@ import ray
 
 import ray_diskcache
 from stack_identification import identify_stacks_ray
+from context import Context
 
 # TODO: Prove that local changes in the Python get propagated to remote nodes
 # even without pushing to git..
@@ -110,35 +111,6 @@ log = logger
 # can easily resume a previous project.
 
 # TODO: Emit mosaic plans in Telescopius format for easy continuation.
-
-
-# Compute graph:
-#
-# TODO: Building up a context object that is "parallel" to the disk cache
-# is an anti-pattern. The only things that might change are:
-#
-# The input files
-# The user config
-#
-# Some steps are conditioned on one, or the other, or both.
-#
-# There should be a way to just skip over
-@dataclass
-class Context:
-  input_dirs: list[str] = field(default_factory=list)
-  output_dir: str = None
-
-  default_filter: str = None
-
-  image_hashes: dict = None
-  fits_headers: dict = None
-  plate_solutions: dict = None
-
-  spatial_groups: list = None
-
-  stacks: dict = None
-  targets: dict = None
-  mosaics: dict = None
 
 
 # TODO: The adding of new files, and the removing of deleted files, should be

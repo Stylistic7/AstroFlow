@@ -27,7 +27,7 @@ def _add_dither(center, max_distance_deg):
 
 
 def make_test_frames(start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
-                     number=10,
+                     number=1,
                      image_type='Light',
                      prefix=None,
                      ids=None,

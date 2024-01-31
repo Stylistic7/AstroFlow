@@ -30,7 +30,6 @@ import pathlib
 from make_test_frames import make_test_frames
 import ray_diskcache
 from compute_graph import build_compute_graph
-import image_handling
 
 
 class TestCalibrationFrames(unittest.TestCase):

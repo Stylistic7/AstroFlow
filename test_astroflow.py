@@ -23,17 +23,13 @@ global_var_actor = ray_diskcache.GlobalVarActor.options(name='ray_diskcache',
                                           get_if_exists=True).remote()
 # yapf: enable
 
-import time
 import unittest
 import tempfile
 import pathlib
 
 from cache import cache
-import file_io
-import image_metadata
 from make_test_frames import make_test_frames
 import new_dependency_graph as dg
-import spatial_association
 import ray_diskcache
 
 from image_metadata import compute_image_metadata_ray, store_image_metadata_ray

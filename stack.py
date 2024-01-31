@@ -26,14 +26,13 @@ def dec_to_dms(dec):
   return f"{degrees:.0f}° {minutes:.0f}' {seconds:.0f}\""
 
 
-def hash_string(s):
-  return hashlib.sha256(bytes(s, 'utf-8')).hexdigest()
+# def hash_string(s):
+#   return hashlib.sha256(bytes(s, 'utf-8')).hexdigest()
 
-
-def hash_file_list(x):
-  if x == None:
-    return None
-  return hash_string(str(sorted(x)))
+# def hash_file_list(x):
+#   if x == None:
+#     return None
+#   return hash_string(str(sorted(x)))
 
 
 # TODO: This is a mess right now. Design a better set of statuses.
@@ -158,8 +157,8 @@ class Stack:
     print('id string', string)
     self.id = hash_string(string)
 
-  def __hash__(self):
-    return xxhash.xxh64(self.id).intdigest()
+  # def __hash__(self):
+  #   return xxhash.xxh64(self.id).intdigest()
 
   def store_center(self, plate_solutions, plot=False):
     assert self.light_frames
