@@ -5,7 +5,6 @@ import numpy as np
 
 import ray_diskcache
 import camera_configs
-from new_dependency_graph import ResultDict
 import runs
 
 
@@ -20,46 +19,41 @@ def _associate_dark_frames(stack, fits_headers):
   dark_frames = [
       h for h, header in fits_headers.items() if header['IMAGETYP'] == 'Dark'
   ]
-  print(f'### Found {len(dark_frames)} dark frames in library')
-
-  def rounded_temperature(f):
-    temperature = fits_headers[f]['CCD-TEMP']
-    multiple = 10.0
-    return int(multiple * round(temperature / multiple))
 
   darks_for_camera = _group_by_fn(dark_frames,
                                   lambda f: fits_headers[f]['INSTRUME'])
-  darks_for_temperature = _group_by_fn(dark_frames, rounded_temperature)
   darks_for_exposure = _group_by_fn(dark_frames,
                                     lambda f: fits_headers[f]['EXPOSURE'])
 
   unique_dark_exposures = sorted(
       set(fits_headers[f]['EXPOSURE'] for f in dark_frames))
-  print(f'### Found unique dark exposures {unique_dark_exposures} in library')
 
   assert stack.light_frames
   stack.camera_configs = camera_configs.get_unique_camera_configs(
       stack.light_frames, fits_headers)
   assert stack.camera_configs
-  print(f'### Stack has camera configs {stack.camera_configs}')
 
   darks = set()
   for camera, temperature, exposure in stack.camera_configs:
+    darks_for_temperature = set(f for f in dark_frames
+                                if abs(fits_headers[f]['CCD-TEMP'] -
+                                       temperature) <= 5)
+
     acceptable_dark_exposures = [
         d for d in unique_dark_exposures if d >= exposure
     ]
+
     for dark_exposure in acceptable_dark_exposures:
-      found_darks = set(darks_for_camera[camera]) & set(
-          darks_for_temperature[temperature]) & set(
+      found_darks = set(
+          darks_for_camera[camera]) & set(darks_for_temperature) & set(
               darks_for_exposure[dark_exposure])
       if found_darks:
-        print(f'### Found {len(found_darks)} matching dark frames')
         darks |= found_darks
         break
 
     stack.dark_frames = list(darks)
     if not stack.dark_frames:
-      print(f'### WARNING stack has no dark frames')
+      print(f'WARNING stack has no dark frames')
 
   return stack
 
@@ -68,33 +62,20 @@ def _associate_bias_frames(stack, fits_headers):
   bias_frames = [
       h for h, header in fits_headers.items() if header['IMAGETYP'] == 'Bias'
   ]
-  print(f'### Found {len(bias_frames)} bias frames in library')
-
-  def rounded_temperature(f):
-    temperature = fits_headers[f]['CCD-TEMP']
-    multiple = 10.0
-    return int(multiple * round(temperature / multiple))
-
   biases_for_camera = _group_by_fn(bias_frames,
                                    lambda f: fits_headers[f]['INSTRUME'])
-  biases_for_temperature = _group_by_fn(bias_frames, rounded_temperature)
-
-  print(f'### Stack has camera configs {stack.camera_configs}')
 
   biases = set()
   for camera, temperature, _ in stack.camera_configs:
-    print(f'### Found {len(set(biases_for_camera[camera]))} '
-          f'biases for camera {camera}')
-    print(f'### Found {len(set(biases_for_temperature[temperature]))} '
-          f'biases for temperature {temperature}')
+    biases_for_temperature = set(f for f in bias_frames
+                                 if abs(fits_headers[f]['CCD-TEMP'] -
+                                        temperature) <= 5)
 
-    biases |= set(biases_for_camera[camera]) & set(
-        biases_for_temperature[temperature])
+    biases |= set(biases_for_camera[camera]) & set(biases_for_temperature)
 
   stack.bias_frames = list(biases)
-  print(f'### Found {len(stack.bias_frames)} matching bias frames')
   if not stack.bias_frames:
-    print(f'### WARNING has no bias frames')
+    print(f'WARNING has no bias frames')
 
   return stack
 

@@ -117,7 +117,8 @@ def _solve_field(filename, arguments):
     wcs_file = Path(dest_filename).with_suffix('.wcs')
     axy_file = Path(dest_filename).with_suffix('.axy')
     if os.path.exists(wcs_file) and os.path.exists(axy_file):
-      wcs_contents = open(wcs_file, 'rb').read()
+      with open(wcs_file, 'rb') as f:
+        wcs_contents = f.read()
       fits = pyfits.open(wcs_file)
       header = simplify_header(fits[0].header)
       try:

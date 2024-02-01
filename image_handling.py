@@ -71,14 +71,6 @@ def make_thumbnail(image_hashes,
                    flat_frame,
                    rotate,
                    width=1200):
-  cameras = {
-      fits_headers[light_frame]['INSTRUME'],
-      fits_headers[dark_frame]['INSTRUME'],
-      fits_headers[bias_frame]['INSTRUME'], fits_headers[flat_frame]['INSTRUME']
-  }
-  assert len(cameras) == 1, (f"make_thumbnail() given images from more than one"
-                             f"camera: {cameras}")
-
   light_image = resize_array(read_image(image_hashes[light_frame]), width)
 
   if rotate:
@@ -114,8 +106,7 @@ def make_thumbnail(image_hashes,
                     out=np.zeros_like(image),
                     where=flat_image != 0)
 
-  image = autostretch(np.clip(image, 0.0, 1.0))
-  return image
+  return autostretch(np.clip(image, 0.0, 1.0))
 
 
 def _get_flat_frame_for_light_frame(light_frame, stack, fits_headers):
@@ -215,7 +206,7 @@ def compute_stack_thumbnails(context, stack, width=1200):
       ray_diskcache.set(key, thumbnail_video, keep_in_memory=False)
       print(f'Wrote key {key}')
   except Exception as e:
-    print(f'### compute_stack_thumbnails failed with exception {e}')
+    print(f'compute_stack_thumbnails failed with exception {e}')
 
 
 @ray.remote
