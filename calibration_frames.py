@@ -223,9 +223,18 @@ def _find_flat_frame_groups(fits_headers):
   groups_to_stack = []
   for camera, frames_for_camera in flats_for_camera.items():
     for filter, frames_for_filter in flats_for_filter.items():
-      for run in runs.get_runs(frames_for_camera, fits_headers):
-        frames_for_run = runs.get_frames_for_run(run, frames_for_camera,
+      frames_for_camera_and_filter = set(frames_for_camera) | set(
+          frames_for_filter)
+      if not frames_for_camera_and_filter:
+        continue
+
+      for run in runs.get_runs(frames_for_camera_and_filter, fits_headers):
+        frames_for_run = runs.get_frames_for_run(run,
+                                                 frames_for_camera_and_filter,
                                                  fits_headers)
+        if not frames_for_run:
+          continue
+
         print(f'### camera {camera} filter {filter} run {run} '
               f'frames {frames_for_run}')
         if not stacking.find_matching_masters(
