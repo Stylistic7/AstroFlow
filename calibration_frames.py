@@ -267,8 +267,9 @@ def scatter_stack_calibration_frames(context):
       for group in _find_flat_frame_groups(fits_headers)
   ]
 
-  return gather_stack_calibration_frames.remote(biases_to_stack +
-                                                darks_to_stack + flats_to_stack)
+  return ray.get(
+      gather_stack_calibration_frames.remote(biases_to_stack + darks_to_stack +
+                                             flats_to_stack))
 
 
 @ray.remote
@@ -278,4 +279,8 @@ def gather_stack_calibration_frames(results):
   # frames). Each stacking operation could (potentially) produce more than one
   # master file, so the result is a list of lists. The list of lists is
   # flattened here.
-  return list(itertools.chain.from_iterable([n for n in ray.get(results)]))
+  results = ray.get(results)
+  print('### gather_stack_calibration_frames results', results)
+  value = list(itertools.chain.from_iterable([n for n in results]))
+  print('### gather_stack_calibration_frames return value', value)
+  return value

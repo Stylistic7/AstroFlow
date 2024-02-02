@@ -23,6 +23,7 @@ import traceback
 
 import ray
 
+import file_io
 import ray_diskcache
 from stack_identification import identify_stacks_ray
 from context import Context
@@ -164,91 +165,6 @@ def download(save_dir, default_filter):
                              default_filter)
 
 
-def file_is_acceptable(filename):
-  if filename.suffix.lower() not in ['.fit', '.fits']:
-    return False
-  if 'master' in filename.stem.lower():
-    return False
-  if any(d.lower() in ['master', 'masters'] for d in filename.parts):
-    return False
-  if 'bad' in [d.lower() for d in filename.parts]:
-    return False
-
-  return True
-
-
-def find_fits_files(input_dirs, max_frames=None):
-  print('Finding files...')
-  all_frames = set()
-  for input_dir in input_dirs:
-    print(f'Looking for FITS files in directory {input_dir}')
-
-    filenames = list(
-        str(f) for f in Path(input_dir).rglob("*") if file_is_acceptable(f))
-    print(f'Found {len(filenames)} FITS files')
-
-    filenames = [
-        f for f in filenames
-        if not os.path.basename(f).lower().startswith('master')
-    ]
-    print(f'Found {len(filenames)} FITS files that are not masters')
-    filenames = [f for f in filenames if 'bad' not in Path(f.lower()).parts]
-    print(f'Found {len(filenames)} FITS files that are not marked bad')
-
-    all_frames |= set(filenames)
-
-  return list(all_frames)
-
-
-# TODO: Update the plate solution if the master file has been changed,
-# e.g. its image hash is different.
-def find_masters(output_dir):
-  print(f'Looking for master XISF files in directory {output_dir}')
-  filenames = list(str(f) for f in Path(output_dir).rglob("*.xisf"))
-  print(f'Found {len(filenames)} XISF files')
-  filenames = [
-      f for f in filenames if os.path.basename(f).lower().startswith('master')
-  ]
-  print(f'Found {len(filenames)} XISF files that are masters')
-
-  return filenames
-
-
-# TODO: Make sure the Python version has stable iteration order for dicts.
-# def sort_by_observation_date(fits_headers):
-#   sorted_keys = sorted(fits_headers.keys(),
-#                        key=lambda h: fits_headers[h]['DATE-OBS'])
-#   output = {}
-#   for key in sorted_keys:
-#     output[key] = fits_headers[key]
-
-#   return output
-
-
-def split_images_by_type(fits_headers):
-  print('Splitting images by type...')
-
-  def image_type(h):
-    return fits_headers[h]['IMAGETYP']
-
-  sorted_hashes = sorted(fits_headers, key=image_type)
-  files = {
-      k: list(g) for k, g in itertools.groupby(sorted_hashes, key=image_type)
-  }
-
-  light_frames = files['Light'] if 'Light' in files else []
-  dark_frames = files['Dark'] if 'Dark' in files else []
-  bias_frames = files['Bias'] if 'Bias' in files else []
-  flat_frames = files['Flat'] if 'Flat' in files else []
-
-  print(f'### Found {len(light_frames)} light frames')
-  print(f'### Found {len(dark_frames)} dark frames')
-  print(f'### Found {len(bias_frames)} bias frames')
-  print(f'### Found {len(flat_frames)} flat frames')
-
-  return light_frames, dark_frames, bias_frames, flat_frames
-
-
 def remove_frames_during_mount_movements(light_frames):
   print('Removing frames during mount movements...')
 
@@ -268,32 +184,6 @@ def assert_all_light_frames_in_stacks(light_frames, stacks):
   # print(f'### {len(light_frames)} light frames, '
   #       f'{len(light_frames_in_stacks)} light frames in stacks')
   assert set(light_frames) == light_frames_in_stacks
-
-
-def process_in_parallel(fn, elements, key_func=lambda x: x):
-  # Find all of the elements that are already in the cache.
-  prev_results = []
-  to_process = []
-  for e in elements:
-    key = (fn.__name__, key_func(e))
-    if key in cache:
-      prev_results.append(cache[key])
-    else:
-      to_process.append(e)
-
-  print(f'process_in_parallel: {len(prev_results)} prev results, '
-        f'{len(to_process)} to process')
-
-  with Pool() as p:
-    new_results = p.map(fn, to_process)
-    for e, r in zip(to_process, new_results):
-      key = (fn.__name__, key_func(e))
-      cache[key] = r
-    return prev_results + new_results
-
-
-def measure_stacks(context):
-  print('Measuring images in stacks...')
 
 
 # TODO: Parallelize this.
@@ -421,40 +311,6 @@ def cartesian_product_lights_and_flats(stacks, flat_frames, image_hashes,
     cache[key] = results
 
 
-# TODO: Only run the automated association once. Or maybe never run it unless
-# the user says to. Or maybe an empty association list just means to use the
-# default, time-based method.
-def associate_flat_frames(stacks, flat_frames, fits_headers):
-  print('Associating flat frames...')
-
-  flats_for_camera = group_by_fn(flat_frames,
-                                 lambda f: fits_headers[f]['INSTRUME'])
-  flats_for_filter = group_by_fn(flat_frames,
-                                 lambda f: fits_headers[f]['FILTER'])
-
-  for stack in stacks:
-    assert stack
-    flats = set()
-    for camera, _, _ in stack.camera_configs:
-      flats |= set(flats_for_camera[camera]) & set(
-          flats_for_filter[stack.filter])
-
-    print(f'Found {len(flats)} flat frames for camera '
-          f'{camera} and filter {stack.filter}')
-
-    step_flat_frame_association.associate_flat_frames_for_stack(
-        stack, flats, fits_headers)
-
-  return stacks
-
-
-def compute_stack_metadata(stacks, fits_headers, plate_solutions):
-  for stack in stacks:
-    stack.store_metadata(fits_headers, plate_solutions)
-
-  return stacks
-
-
 # TODO: Split these into another file.
 #
 # TODO: Generally speaking, all prevew-making operations should take
@@ -519,20 +375,6 @@ def compute_stack_metadata(stacks, fits_headers, plate_solutions):
 
 #       executor.submit(image_handling.make_and_cache_stack_thumbnails, stack,
 #                       image_hashes, plate_solutions)
-
-
-def group_targets_into_mosaics(targets):
-  print('Identifying mosaics...')
-  mosaics = identification.identify_mosiacs(targets, plot=False)
-  mosaics = {m.id: m for m in mosaics}
-  return mosaics
-
-
-def normalize_stacks(stacks):
-  for stack in stacks:
-    stack.normalize()
-
-  return stacks
 
 
 def sanity_check_stacks(stacks, fits_headers):
@@ -696,8 +538,6 @@ def main(context):
     print('### Input directories were not found; refusing to run.')
     return
 
-  # print(ray.get(print_globals.remote()))
-
   # TODO: This is a wart.
   # TODO: Every Ray worker node will need its own cache for this.
   pix._clear_cache()
@@ -716,11 +556,14 @@ def main(context):
   if context.download:
     download(context.input_dirs[0], context.default_filter)
 
-  # TODO: Maybe just call these "input files" and "output files" or something.
-  all_frames = sorted(find_fits_files(context.input_dirs))
+  print('### Looking for files in input dirs', context.input_dirs)
+  print('### Looking for files in output dir', context.output_dir)
+  all_frames = file_io.find_image_files(context.output_dir)
+  for input_dir in context.input_dirs:
+    all_frames.extend(file_io.find_image_files(input_dir))
 
-  masters = sorted(find_masters(context.output_dir))
-  print(f'Found {len(masters)} masters')
+  # FIXME
+  all_frames = all_frames[0:500]
 
   new_filenames = get_new_filenames(all_frames)
   print(f'### Importing {len(new_filenames)} files')
@@ -867,9 +710,6 @@ if __name__ == '__main__':
   args = parser.parse_args()
 
   context = Context()
-
-  # FIXME debug
-  # context.max_frames = 1000
 
   context.input_dirs = [os.path.abspath(i) for i in args.input_dirs]
   context.output_dir = os.path.abspath(args.output_dir)

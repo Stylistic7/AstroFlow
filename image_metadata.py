@@ -67,8 +67,6 @@ import ray_diskcache
 
 @ray.remote
 def scatter_compute_image_metadata(context, filenames):
-  print('### Entering scatter_compute_image_metadata() context', context)
-  print('### Entering scatter_compute_image_metadata() filenames', filenames)
   metadata = ray.get([compute_image_metadata_ray.remote(f) for f in filenames])
 
   image_hashes = ray_diskcache.or_equals(

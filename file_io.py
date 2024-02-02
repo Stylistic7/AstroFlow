@@ -29,8 +29,12 @@ def read_header(filename):
     return read_fits_header(filename)
 
 
-def find_files(path, pattern='*'):
-  return sorted([str(p.absolute()) for p in Path(path).rglob(pattern)])
+def find_image_files(path, pattern='*'):
+  return sorted([
+      str(p.absolute())
+      for p in Path(path).rglob(pattern)
+      if p.suffix.lower() in ['.fit', '.fits', '.xisf']
+  ])
 
 
 def read_fits_header(filename, print_header=False):

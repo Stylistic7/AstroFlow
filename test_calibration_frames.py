@@ -92,7 +92,7 @@ class TestCalibrationFrames(unittest.TestCase):
                             temperature=-20,
                             dest_dir=tmp_dir)
 
-      filenames = file_io.find_files(tmp_dir)
+      filenames = file_io.find_image_files(tmp_dir)
       self.assertEqual(len(filenames), 78)
 
       self.context = ray.get(run_compute_graph.remote(self.context, filenames))
@@ -166,7 +166,7 @@ class TestCalibrationFrames(unittest.TestCase):
                             temperature=-15,
                             dest_dir=tmp_dir)
 
-      filenames = file_io.find_files(tmp_dir)
+      filenames = file_io.find_image_files(tmp_dir)
       self.assertEqual(len(filenames), 39)
 
       self.context = ray.get(run_compute_graph.remote(self.context, filenames))
@@ -200,7 +200,7 @@ class TestCalibrationFrames(unittest.TestCase):
                             temperature=-18,
                             dest_dir=tmp_dir)
 
-      filenames = file_io.find_files(tmp_dir)
+      filenames = file_io.find_image_files(tmp_dir)
       self.assertEqual(len(filenames), 8)
 
       self.context = ray.get(run_compute_graph.remote(self.context, filenames))
@@ -246,12 +246,12 @@ class TestCalibrationFrames(unittest.TestCase):
                             temperature=-10,
                             dest_dir=tmp_dir)
 
-      filenames = file_io.find_files(tmp_dir)
+      filenames = file_io.find_image_files(tmp_dir)
       self.assertEqual(len(filenames), 23)
 
       context = ray.get(run_compute_graph.remote(self.context, filenames))
 
-      output_files = file_io.find_files(context.output_dir)
+      output_files = file_io.find_image_files(context.output_dir)
       self.assertEqual(len(output_files), 3)
 
       fits_headers = ray.get(context.fits_headers)
@@ -269,6 +269,42 @@ class TestCalibrationFrames(unittest.TestCase):
           f for f, h in fits_headers.items() if h['IMAGETYP'] == 'Master Flat'
       ]
       self.assertEqual(len(master_flats), 1)
+
+  def test_multiple_filters_for_flats(self):
+    with tempfile.TemporaryDirectory() as tmp_dir:
+      make_synthetic_frames(number=5,
+                            image_type='Flat',
+                            filter='H',
+                            fill_value=50,
+                            instrument='ZWO ASI6200MM Pro',
+                            width_pixels=9576,
+                            height_pixels=6388,
+                            temperature=-10,
+                            dest_dir=tmp_dir)
+      make_synthetic_frames(number=7,
+                            image_type='Flat',
+                            filter='S',
+                            fill_value=50,
+                            instrument='ZWO ASI6200MM Pro',
+                            width_pixels=9576,
+                            height_pixels=6388,
+                            temperature=-10,
+                            dest_dir=tmp_dir)
+
+      filenames = file_io.find_image_files(tmp_dir)
+      self.assertEqual(len(filenames), 12)
+
+      context = ray.get(run_compute_graph.remote(self.context, filenames))
+
+      output_files = file_io.find_image_files(context.output_dir)
+      self.assertEqual(len(output_files), 2)
+
+      fits_headers = ray.get(context.fits_headers)
+
+      master_flats = [
+          f for f, h in fits_headers.items() if h['IMAGETYP'] == 'Master Flat'
+      ]
+      self.assertEqual(len(master_flats), 2)
 
 
 if __name__ == "__main__":

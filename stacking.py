@@ -5,6 +5,7 @@ import numpy as np
 from xisf import XISF
 from spherical_geometry.polygon import SphericalPolygon
 import ray
+import itertools
 
 import pix
 import position_string
@@ -20,31 +21,6 @@ def _exposure_time_string(stack):
   hours = np.floor(exposure / 3600)
   minutes = np.floor(exposure % 3600 / 60)
   return f'{hours:02.0f}h{minutes:02.0f}m'
-
-
-# TODO: Remove this.
-def _scan_masters(path, image_hashes, plate_solutions):
-  masters = {}
-  for filename in Path(path).rglob("master*.xisf"):
-    result = {}
-
-    xisf = XISF(filename)
-    file_meta = xisf.get_file_metadata()
-
-    result['stack_id'] = file_meta.get(_STACK_ID_KEY, {}).get('value', None)
-    result['stack_content_hash'] = file_meta.get(_CONTENT_HASH_KEY,
-                                                 {}).get('value', None)
-
-    hash = next((h for h, f in image_hashes.items() if f == filename), None)
-    if hash and hash in plate_solutions:
-      result['footprint'] = SphericalPolygon.from_wcs(
-          plate_solutions[hash].header)
-    else:
-      result['footprint'] = None
-
-    masters[filename] = result
-
-  return masters
 
 
 def find_matching_masters(fits_headers, content_hash):
@@ -149,7 +125,7 @@ def stack_files(context, hashes, dest_path, metadata=None):
     master_dir = os.path.join(tmp_dir, 'master')
     if not os.path.exists(master_dir):
       print(f'### WBPP did not produce an output master dir.')
-      return None
+      return []
 
     print('### WBPP master dir contains:')
     wbpp_filenames = os.listdir(master_dir)
@@ -158,7 +134,7 @@ def stack_files(context, hashes, dest_path, metadata=None):
 
     output_filenames = []
     for filename in wbpp_filenames:
-      filename = os.path.join(master_dir, wbpp_filenames[0])
+      filename = os.path.join(master_dir, filename)
       dest_filename = os.path.join(dest_path, os.path.basename(filename))
       _add_xisf_metadata(filename, dest_filename, metadata)
       output_filenames.append(dest_filename)
@@ -181,20 +157,19 @@ def stack_stack(context, stack):
     master_dir = os.path.join(tmp_dir, 'master')
     if not os.path.exists(master_dir):
       print(f'### WBPP did not produce an output master dir.')
-      return stack
+      return []
 
     print('### WBPP master dir contains:')
     for f in os.listdir(master_dir):
       print(f'###   {f}')
 
-    filenames = list(
-        str(f) for f in Path(master_dir).rglob("*drizzle_2x_autocrop.xisf"))
+    filenames = list(str(f) for f in Path(master_dir).rglob("*autocrop.xisf"))
     if not filenames:
       # TODO: Return failure, so the stack won't just be attempted again
       # on the next run. Distinguish the cases where the stack has never been
       # attempted from the cases where it just didn't succeed.
       print(f'### WBPP did not produce any master file.')
-      return stack
+      return []
 
     print('filenames', filenames)
     if len(filenames) != 1:
@@ -204,6 +179,7 @@ def stack_stack(context, stack):
     # will produce multiple masters. Is this desirable? Should the user be
     # given multiple masters, so they can do HDR downstream? Or should I use
     # the WBPP exposure tolerance to make a single master?
+    output_filenames = []
     for filename in filenames:
       dest_filename = _output_filename(stack, context.output_dir)
       metadata = {
@@ -213,27 +189,28 @@ def stack_stack(context, stack):
       os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
       _add_xisf_metadata(filename, dest_filename, metadata)
       print('Stacking produced master', dest_filename)
+      output_filenames.append(dest_filename)
+
+    return output_filenames
 
 
 @ray.remote(scheduling_strategy="SPREAD")
 def scatter_stack_subframes(context):
   image_hashes = ray.get(context.image_hashes)
+  fits_headers = ray.get(context.fits_headers)
   plate_solutions = ray.get(context.plate_solutions)
   stacks = ray.get(context.stacks)
   print(f'### scatter_stack_subframes received {len(stacks)} stacks')
 
-  masters = _scan_masters(context.output_dir, image_hashes, plate_solutions)
-  print('### scanned masters:')
-  for filename, metadata in masters.items():
-    print(f'### filename {filename} metadata {metadata}')
-
   def artifact_exists(stack):
-    matching_master = _find_matching_master(stack, masters)
-    if not matching_master:
+    matching_masters = find_matching_masters(fits_headers, stack.content_hash)
+    if not matching_masters:
       return False
 
-    print(f'### {stack} has existing artifact {matching_master}')
+    print(f'### {stack} has existing artifacts {matching_masters}')
 
+    assert len(matching_masters) == 1
+    matching_master = matching_masters[0]
     correct_filename = _output_filename(stack, context.output_dir)
     if str(matching_master) != str(correct_filename):
       os.makedirs(os.path.dirname(correct_filename), exist_ok=True)
@@ -249,9 +226,18 @@ def scatter_stack_subframes(context):
   ]
   print(f'### Scattering {len(stacks)} stacks that need stacking...')
 
-  return gather_stack_subframes.remote(context, stacks)
+  return ray.get(gather_stack_subframes.remote(stacks))
 
 
 @ray.remote
-def gather_stack_subframes(context, stacks):
-  return context
+def gather_stack_subframes(results):
+  # scatter_stack_subframes() returns a list of lists. The outer list
+  # is over all of the groups that were stacked (e.g. groups of bias or dark
+  # frames). Each stacking operation could (potentially) produce more than one
+  # master file, so the result is a list of lists. The list of lists is
+  # flattened here.
+  results = ray.get(results)
+  print('### gather_stack_subframes results', results)
+  value = list(itertools.chain.from_iterable([n for n in results]))
+  print('### gather_stack_subframes return value', value)
+  return value
