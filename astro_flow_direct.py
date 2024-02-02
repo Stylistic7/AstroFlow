@@ -562,9 +562,6 @@ def main(context):
   for input_dir in context.input_dirs:
     all_frames.extend(file_io.find_image_files(input_dir))
 
-  # FIXME
-  all_frames = all_frames[0:500]
-
   new_filenames = get_new_filenames(all_frames)
   print(f'### Importing {len(new_filenames)} files')
 
