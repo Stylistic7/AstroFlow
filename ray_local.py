@@ -6,9 +6,6 @@
 import os
 os.environ["ASTROFLOW_MOCK_CACHE"] = "true"
 
-from cache import cache
-
-import tempfile
 import ray
 ray.init(
   address='local',
@@ -19,7 +16,6 @@ ray.init(
   runtime_env={"env_vars": {
     "ASTROFLOW_MOCK_CACHE": "true"
   }},
-  storage=tempfile.TemporaryDirectory().name
 )
 
 import ray_diskcache

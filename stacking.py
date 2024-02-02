@@ -22,6 +22,7 @@ def _exposure_time_string(stack):
   return f'{hours:02.0f}h{minutes:02.0f}m'
 
 
+# TODO: Remove this.
 def _scan_masters(path, image_hashes, plate_solutions):
   masters = {}
   for filename in Path(path).rglob("master*.xisf"):
@@ -46,12 +47,11 @@ def _scan_masters(path, image_hashes, plate_solutions):
   return masters
 
 
-def _find_matching_master(stack, masters):
-  for filename, metadata in masters.items():
-    if metadata['stack_id'] == stack.id and metadata[
-        'stack_content_hash'] == stack.content_hash:
-      print(f'### Master {filename} matches {stack} by id and content hash')
-      return filename
+def find_matching_masters(fits_headers, content_hash):
+  return [
+      h for h, header in fits_headers.items() if _CONTENT_HASH_KEY in header and
+      header[_CONTENT_HASH_KEY] == content_hash
+  ]
 
 
 def _output_filename(stack, dest_path):
@@ -77,8 +77,14 @@ def _symlink_stack_frames(stack, image_hashes, fits_headers, dest_path):
         f'{len(stack.bias_frames)} bias frames '
         f'{len(stack.flat_frames)} flat frames')
 
-  # TODO: Upgrade this to find and recognize master darks, biases, and flats.
-  # Also automatically generate them for re-use.
+  master_biases = find_matching_masters(fits_headers,
+                                        hashing.hash_list(stack.bias_frames))
+  master_darks = find_matching_masters(fits_headers,
+                                       hashing.hash_list(stack.dark_frames))
+
+  assert len(master_biases) < 2
+  assert len(master_darks) < 2
+
   if stack.flat_frame_associations:
     for i, (light_run, flat_run) in enumerate(stack.flat_frame_associations):
       flatvers_dir = os.path.join(dest_path, f'FLATVERS_{i}')
@@ -88,14 +94,19 @@ def _symlink_stack_frames(stack, image_hashes, fits_headers, dest_path):
                                              fits_headers)
       flat_frames = runs.get_frames_for_run(flat_run, stack.flat_frames,
                                             fits_headers)
+      master_flats = find_matching_masters(fits_headers,
+                                           hashing.hash_list(flat_frames))
+
       _symlink_frames([image_hashes[h] for h in light_frames], flatvers_dir)
-      _symlink_frames([image_hashes[h] for h in flat_frames], flatvers_dir)
+      _symlink_frames(master_flats, flatvers_dir)
   else:
     _symlink_frames([image_hashes[h] for h in stack.light_frames], dest_path)
-    _symlink_frames([image_hashes[h] for h in stack.flat_frames], dest_path)
+    master_flats = find_matching_masters(fits_headers,
+                                         hashing.hash_list(stack.flat_frames))
+    _symlink_frames(master_flats, dest_path)
 
-  _symlink_frames([image_hashes[h] for h in stack.bias_frames], dest_path)
-  _symlink_frames([image_hashes[h] for h in stack.dark_frames], dest_path)
+  _symlink_frames(master_biases, dest_path)
+  _symlink_frames(master_darks, dest_path)
 
 
 def _add_xisf_metadata(filename, dest_filename, metadata):
@@ -120,6 +131,8 @@ def _add_xisf_metadata(filename, dest_filename, metadata):
 
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
 def stack_files(context, hashes, dest_path, metadata=None):
+  print(f'### Entering stack_files for {len(hashes)} images')
+
   image_hashes = ray.get(context.image_hashes)
   filenames = [image_hashes[h] for h in hashes]
 
@@ -230,13 +243,13 @@ def scatter_stack_subframes(context):
     return True
 
   stacks = [
-      stack_stack.bind(context, stack)
+      stack_stack.remote(context, stack)
       for stack in stacks.values()
       if not artifact_exists(stack)
   ]
   print(f'### Scattering {len(stacks)} stacks that need stacking...')
 
-  return ray.workflow.continuation(gather_stack_subframes.bind(context, stacks))
+  return gather_stack_subframes.remote(context, stacks)
 
 
 @ray.remote

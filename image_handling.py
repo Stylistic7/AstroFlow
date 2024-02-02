@@ -133,13 +133,13 @@ def scatter_stack_thumbnails(context):
     ]
     return all(ray_diskcache.contains(k) for k in keys)
 
-  stacks = [
-      compute_stack_thumbnails.bind(context, stack)
+  ray.get([
+      compute_stack_thumbnails.remote(context, stack)
       for stack in stacks.values()
       if not has_thumbnails(stack)
-  ]
-  return ray.workflow.continuation(gather_stack_thumbnails.bind(
-      context, stacks))
+  ])
+
+  return context
 
 
 # TODO: Put the thumbnail size in a user config.
@@ -207,11 +207,6 @@ def compute_stack_thumbnails(context, stack, width=1200):
       print(f'Wrote key {key}')
   except Exception as e:
     print(f'compute_stack_thumbnails failed with exception {e}')
-
-
-@ray.remote
-def gather_stack_thumbnails(context, stacks):
-  return context
 
 
 # # TODO: Compare various ways of getting "the best" thumbnail (preview)

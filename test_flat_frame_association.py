@@ -5,21 +5,22 @@ import pytz
 import copy
 
 import file_io
-from make_test_frames import make_test_frames
+from make_test_frames import make_synthetic_frames
 import step_flat_frame_association
 from stack import Stack
 import runs
 
 
 class TestFlatFrameAssociation(unittest.TestCase):
+
   def test_same_day(self):
-    _, light_f, light_p = make_test_frames(start_datetime=pytz.utc.localize(
-        datetime.datetime(2023, 7, 3, 0, 0)),
-                                           prefix='light_foo')
-    _, flat_f, flat_p = make_test_frames(start_datetime=pytz.utc.localize(
+    _, light_f, light_p = make_synthetic_frames(
+        start_datetime=pytz.utc.localize(datetime.datetime(2023, 7, 3, 0, 0)),
+        prefix='light_foo')
+    _, flat_f, flat_p = make_synthetic_frames(start_datetime=pytz.utc.localize(
         datetime.datetime(2023, 7, 3, 12, 0)),
-                                         image_type='Flat',
-                                         prefix='flat_foo')
+                                              image_type='Flat',
+                                              prefix='flat_foo')
 
     fits_headers = light_f | flat_f
     plate_solutions = light_p | flat_p
@@ -46,13 +47,13 @@ class TestFlatFrameAssociation(unittest.TestCase):
     self.assertEqual(stack.flat_frame_associations, expected)
 
   def test_prev_day(self):
-    _, light_f, light_p = make_test_frames(start_datetime=pytz.utc.localize(
-        datetime.datetime(2023, 7, 3, 0, 0)),
-                                           prefix='light_foo')
-    _, flat_f, flat_p = make_test_frames(start_datetime=pytz.utc.localize(
+    _, light_f, light_p = make_synthetic_frames(
+        start_datetime=pytz.utc.localize(datetime.datetime(2023, 7, 3, 0, 0)),
+        prefix='light_foo')
+    _, flat_f, flat_p = make_synthetic_frames(start_datetime=pytz.utc.localize(
         datetime.datetime(2023, 7, 2, 0, 0)),
-                                         image_type='Flat',
-                                         prefix='flat_foo')
+                                              image_type='Flat',
+                                              prefix='flat_foo')
 
     fits_headers = light_f | flat_f
     plate_solutions = light_p | flat_p
@@ -79,17 +80,17 @@ class TestFlatFrameAssociation(unittest.TestCase):
     self.assertEqual(stack.flat_frame_associations, expected)
 
   def test_two_flat_days(self):
-    _, light_foo_f, light_foo_p = make_test_frames(
+    _, light_foo_f, light_foo_p = make_synthetic_frames(
         start_datetime=pytz.utc.localize(datetime.datetime(2023, 7, 3, 0, 0)),
         prefix='light_foo')
-    _, flat_foo_f, flat_foo_p = make_test_frames(
+    _, flat_foo_f, flat_foo_p = make_synthetic_frames(
         start_datetime=pytz.utc.localize(datetime.datetime(2023, 7, 2, 0, 0)),
         image_type='Flat',
         prefix='flat_foo')
-    _, light_bar_f, light_bar_p = make_test_frames(
+    _, light_bar_f, light_bar_p = make_synthetic_frames(
         start_datetime=pytz.utc.localize(datetime.datetime(2023, 7, 5, 0, 0)),
         prefix='light_bar')
-    _, flat_bar_f, flat_bar_p = make_test_frames(
+    _, flat_bar_f, flat_bar_p = make_synthetic_frames(
         start_datetime=pytz.utc.localize(datetime.datetime(2023, 7, 6, 0, 0)),
         image_type='Flat',
         prefix='flat_bar')

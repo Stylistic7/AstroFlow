@@ -6,6 +6,9 @@ import numpy as np
 import ray_diskcache
 import camera_configs
 import runs
+import clustering
+import stacking
+import hashing
 
 
 def _group_by_fn(filenames, fn):
@@ -33,11 +36,12 @@ def _associate_dark_frames(stack, fits_headers):
       stack.light_frames, fits_headers)
   assert stack.camera_configs
 
+  # TODO: Make the temperature tolerance a user option.
   darks = set()
   for camera, temperature, exposure in stack.camera_configs:
     darks_for_temperature = set(f for f in dark_frames
                                 if abs(fits_headers[f]['CCD-TEMP'] -
-                                       temperature) <= 5)
+                                       temperature) <= 10)
 
     acceptable_dark_exposures = [
         d for d in unique_dark_exposures if d >= exposure
@@ -144,3 +148,125 @@ def associate_calibration_frames(context):
   ray_diskcache.set('stacks', output_stacks)
   context.stacks = ray.put(output_stacks)
   return context
+
+
+def _find_bias_frame_groups(fits_headers):
+  bias_frames = [
+      h for h, header in fits_headers.items()
+      if header['IMAGETYP'].lower() == 'bias'
+  ]
+  biases_for_camera = _group_by_fn(bias_frames,
+                                   lambda f: fits_headers[f]['INSTRUME'])
+
+  groups_to_stack = []
+  for camera, frames_for_camera in biases_for_camera.items():
+    for run in runs.get_runs(frames_for_camera, fits_headers):
+      frames_for_run = runs.get_frames_for_run(run, frames_for_camera,
+                                               fits_headers)
+      print(f'### camera {camera} run {run} frames {frames_for_run}')
+      # TODO: Make the temperature tolerance a user option.
+      temperature_clusters = clustering.cluster_1d(
+          frames_for_run, epsilon=10, key=lambda h: fits_headers[h]['CCD-TEMP'])
+      print(f'### temperature_clusters', temperature_clusters)
+      for frames_for_temperature in temperature_clusters:
+        if not stacking.find_matching_masters(
+            fits_headers, hashing.hash_list(frames_for_temperature)):
+          groups_to_stack.append(frames_for_temperature)
+
+  print(f'### Found {len(groups_to_stack)} groups of bias frames to stack')
+  return groups_to_stack
+
+
+def _find_dark_frame_groups(fits_headers):
+  dark_frames = [
+      h for h, header in fits_headers.items()
+      if header['IMAGETYP'].lower() == 'dark'
+  ]
+  darks_for_camera = _group_by_fn(dark_frames,
+                                  lambda f: fits_headers[f]['INSTRUME'])
+  darks_for_exposure = _group_by_fn(dark_frames,
+                                    lambda f: fits_headers[f]['EXPOSURE'])
+
+  groups_to_stack = []
+  for camera, frames_for_camera in darks_for_camera.items():
+    for exposure, frames_for_exposure in darks_for_exposure.items():
+      for run in runs.get_runs(frames_for_camera, fits_headers):
+        frames_for_run = runs.get_frames_for_run(run, frames_for_camera,
+                                                 fits_headers)
+        print(f'### camera {camera} exposure {exposure} run {run} '
+              f'frames {frames_for_run}')
+        # TODO: Make the temperature tolerance a user option.
+        temperature_clusters = clustering.cluster_1d(
+            frames_for_run,
+            epsilon=10,
+            key=lambda h: fits_headers[h]['CCD-TEMP'])
+        print(f'### temperature_clusters', temperature_clusters)
+        for frames_for_temperature in temperature_clusters:
+          if not stacking.find_matching_masters(
+              fits_headers, hashing.hash_list(frames_for_temperature)):
+            groups_to_stack.append(frames_for_temperature)
+
+  print(f'### Found {len(groups_to_stack)} groups of dark frames to stack')
+  return groups_to_stack
+
+
+def _find_flat_frame_groups(fits_headers):
+  flat_frames = [
+      h for h, header in fits_headers.items()
+      if header['IMAGETYP'].lower() == 'flat'
+  ]
+  flats_for_camera = _group_by_fn(flat_frames,
+                                  lambda f: fits_headers[f]['INSTRUME'])
+  flats_for_filter = _group_by_fn(flat_frames,
+                                  lambda f: fits_headers[f]['FILTER'])
+
+  groups_to_stack = []
+  for camera, frames_for_camera in flats_for_camera.items():
+    for filter, frames_for_filter in flats_for_filter.items():
+      for run in runs.get_runs(frames_for_camera, fits_headers):
+        frames_for_run = runs.get_frames_for_run(run, frames_for_camera,
+                                                 fits_headers)
+        print(f'### camera {camera} filter {filter} run {run} '
+              f'frames {frames_for_run}')
+        if not stacking.find_matching_masters(
+            fits_headers, hashing.hash_list(frames_for_run)):
+          groups_to_stack.append(frames_for_run)
+
+  print(f'### Found {len(groups_to_stack)} groups of flat frames to stack')
+  return groups_to_stack
+
+
+@ray.remote
+def scatter_stack_calibration_frames(context):
+  print(f'Stacking calibration frames...')
+
+  fits_headers = ray.get(context.fits_headers)
+  print(f'### {len(fits_headers)} fits_headers')
+
+  biases_to_stack = [
+      stacking.stack_files.remote(context, group, context.output_dir)
+      for group in _find_bias_frame_groups(fits_headers)
+  ]
+
+  darks_to_stack = [
+      stacking.stack_files.remote(context, group, context.output_dir)
+      for group in _find_dark_frame_groups(fits_headers)
+  ]
+
+  flats_to_stack = [
+      stacking.stack_files.remote(context, group, context.output_dir)
+      for group in _find_flat_frame_groups(fits_headers)
+  ]
+
+  return gather_stack_calibration_frames.remote(biases_to_stack +
+                                                darks_to_stack + flats_to_stack)
+
+
+@ray.remote
+def gather_stack_calibration_frames(results):
+  # scatter_stack_calibration_frames() returns a list of lists. The outer list
+  # is over all of the groups that were stacked (e.g. groups of bias or dark
+  # frames). Each stacking operation could (potentially) produce more than one
+  # master file, so the result is a list of lists. The list of lists is
+  # flattened here.
+  return list(itertools.chain.from_iterable([n for n in ray.get(results)]))

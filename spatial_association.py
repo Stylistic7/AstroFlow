@@ -1,13 +1,6 @@
-import itertools
-import io
 import os
-from operator import itemgetter
-from collections import Counter
 import numpy as np
-from scipy import linalg
-from sklearn import mixture
 import astropy.io.fits as pyfits
-from shapely.geometry import Polygon
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 import matplotlib.pyplot as plt
@@ -15,13 +8,8 @@ from spherical_geometry.polygon import SphericalPolygon
 import ray
 
 import image_metadata
-import ray_diskcache
-import ngc2000_catalog
 import position_string
 from distance import distance
-import plate_solving
-import distance
-import new_dependency_graph as dg
 
 # TODO: Bring all knobs up here.
 MIN_COMPONENT_MEMBERS = 3
@@ -239,8 +227,8 @@ def _find_components(hashes, values, comparison_fn, plate_solutions,
 @ray.remote
 def find_components_by_cosine_similarity_ray(
     context, threshold=0.99999, min_component_members=MIN_COMPONENT_MEMBERS):
-  print('### find_components_by_cosine_similarity_ray os.getcwd() is',
-        os.getcwd())
+  print('### find_components_by_cosine_similarity_ray context is', context)
+
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
   plate_solutions = ray.get(context.plate_solutions)
@@ -330,9 +318,3 @@ def find_groups_by_fits_header(fits_headers,
 
   return find_groups(centers.keys(), centers, comparison_fn,
                      min_component_members)
-
-
-@ray.remote
-def find_groups_by_fits_header_ray(fits_headers):
-  groups = find_groups_by_fits_header(fits_headers)
-  return dg.ResultDict(ran=True, run_successors=True, result=groups)

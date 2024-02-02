@@ -1,51 +1,24 @@
-from compute_graph import build_compute_graph
+from compute_graph import run_compute_graph
 import ray_diskcache
-import throughput
-import round_robin
 import image_handling
-import image_metadata
-import stacking
-import step_mosaic
-import step_post_process_target
-import step_post_process_stack
 import step_sanity_check_stack
 import step_flat_frame_association
 import step_download_asiair
-import camera_configs
-import dark_and_bias_association
 import autorun_log_analysis
-import spatial_association
-import plate_solving
-import file_io
-import stack_identification
 from mosaics import identification
 from cache import cache
 from mosaic import Mosaic
 from target import Target
 from stack import Stack, Status
-import new_dependency_graph as dg
 import runs
 import pix
-import clustering
-import position_string
 import os
-import time
 import argparse
-from dataclasses import dataclass, field
 from pathlib import Path
 import itertools
 from multiprocessing import Pool
-import functools
-import hashlib
-from collections import defaultdict
-import concurrent.futures
-import datetime
-import pytz
 import numpy as np
 import structlog
-import operator
-from spherical_geometry.polygon import SphericalPolygon
-import astropy.io.fits as pyfits
 import traceback
 
 import ray
@@ -53,6 +26,7 @@ import ray
 import ray_diskcache
 from stack_identification import identify_stacks_ray
 from context import Context
+from compute_graph import run_compute_graph
 
 # TODO: Prove that local changes in the Python get propagated to remote nodes
 # even without pushing to git..
@@ -830,16 +804,10 @@ def main(context):
   # def callback(results):
   #   cache['prev_results'] = results
 
-  try:
-    ray.workflow.delete(workflow_id="AstroFlow")
-    print('Deleted workflow_id AstroFlow')
-  except:
-    pass
-
   print('### Starting execution')
-  result = ray.workflow.run(build_compute_graph.bind(context, new_filenames),
-                            workflow_id='AstroFlow')
-  print('### Compute graph is done! Result is', result)
+  context = ray.get(run_compute_graph.remote(context, new_filenames))
+
+  print('### Compute graph is done! context is', context)
 
   # results = dg.run_graph(graph)
 

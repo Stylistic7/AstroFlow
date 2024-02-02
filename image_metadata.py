@@ -1,22 +1,9 @@
-import os
-import time
-import shutil
-import tempfile
-import xxhash
-import numpy as np
-import concurrent.futures
 import ray
 from pathlib import Path
-import io
 
-from cache import cache
 import file_io
 import plate_solving
-import throughput
-import round_robin
-import new_dependency_graph as dg
 import ray_diskcache
-from image_handling import resize_array
 
 # TODO: I need to associate dark and flat frames *before* computing thumbnails.
 
@@ -80,10 +67,23 @@ from image_handling import resize_array
 
 @ray.remote
 def scatter_compute_image_metadata(context, filenames):
-  print('Entering scatter_compute_image_metadata()')
-  compute_metadata = [compute_image_metadata_ray.bind(f) for f in filenames]
-  return ray.workflow.continuation(
-      store_image_metadata_ray.bind(context, compute_metadata))
+  print('### Entering scatter_compute_image_metadata() context', context)
+  print('### Entering scatter_compute_image_metadata() filenames', filenames)
+  metadata = ray.get([compute_image_metadata_ray.remote(f) for f in filenames])
+
+  image_hashes = ray_diskcache.or_equals(
+      'image_hashes', {r['image_hash']: r['filename'] for r in metadata if r})
+  fits_headers = ray_diskcache.or_equals(
+      'fits_headers', {r['image_hash']: r['fits_header'] for r in metadata if r})
+  plate_solutions = ray_diskcache.or_equals(
+      'plate_solutions',
+      {r['image_hash']: r['plate_solution'] for r in metadata if r})
+
+  context.image_hashes = ray.put(image_hashes)
+  context.fits_headers = ray.put(fits_headers)
+  context.plate_solutions = ray.put(plate_solutions)
+
+  return context
 
 
 @ray.remote(scheduling_strategy="SPREAD",
@@ -126,30 +126,3 @@ def remove_bad_images(image_hashes, plate_solutions):
       image_hashes[h] and 'bad' not in Path(image_hashes[h].lower()).parts and
       type(p) is plate_solving.PlateSolution
   }
-
-
-# TODO: If I pass a context object around, I might be able to get rid of
-# ray_diskcache altogether. There would just be a single node somewhere
-# that writes the context to diskcache. Or, maybe there's a way to get previous
-# results from the last time AstroFlow was run.
-@ray.remote
-def store_image_metadata_ray(context, results):
-  print('Entering store_image_metadata_ray()')
-
-  # TODO: Is this an anti-pattern? Should I wait on the results? I assume that
-  # this task won't run until its ancestors have completed, so these results
-  # should always be immediately available.
-  results = [ray.get(r) for r in results]
-  image_hashes = ray_diskcache.or_equals(
-      'image_hashes', {r['image_hash']: r['filename'] for r in results if r})
-  fits_headers = ray_diskcache.or_equals(
-      'fits_headers', {r['image_hash']: r['fits_header'] for r in results if r})
-  plate_solutions = ray_diskcache.or_equals(
-      'plate_solutions',
-      {r['image_hash']: r['plate_solution'] for r in results if r})
-
-  context.image_hashes = ray.put(image_hashes)
-  context.fits_headers = ray.put(fits_headers)
-  context.plate_solutions = ray.put(plate_solutions)
-
-  return context

@@ -9,28 +9,7 @@ from make_test_frames import make_synthetic_frames, copy_testdata_frames
 import ray_diskcache
 from context import Context
 import file_io
-
-from image_metadata import scatter_compute_image_metadata
-from spatial_association import find_components_by_cosine_similarity_ray
-from stack_identification import identify_stacks_ray
-from calibration_frames import associate_calibration_frames
-from image_handling import scatter_stack_thumbnails
-
-
-@ray.remote
-def _build_compute_graph(new_filenames):
-  context = Context()
-  context.image_hashes = ray.put({})
-  context.fits_headers = ray.put({})
-  context.plate_solutions = ray.put({})
-
-  context = scatter_compute_image_metadata.bind(context, new_filenames)
-  context = find_components_by_cosine_similarity_ray.bind(context)
-  context = identify_stacks_ray.bind(context)
-  context = associate_calibration_frames.bind(context)
-  context = scatter_stack_thumbnails.bind(context)
-
-  return ray.workflow.continuation(context)
+from compute_graph import run_compute_graph
 
 
 class TestCalibrationFrames(unittest.TestCase):
@@ -38,6 +17,18 @@ class TestCalibrationFrames(unittest.TestCase):
   def setUp(self):
     ray_diskcache.clear()
     cache.clear()
+
+    # Start with an empty context.
+    self.context = Context()
+    self.context.image_hashes = ray.put({})
+    self.context.fits_headers = ray.put({})
+    self.context.plate_solutions = ray.put({})
+
+    self.input_dir = tempfile.TemporaryDirectory()
+    self.context.input_dirs.append(self.input_dir.name)
+
+    self.output_dir = tempfile.TemporaryDirectory()
+    self.context.output_dir = self.output_dir.name
 
   def test_flats_from_different_camera(self):
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -104,9 +95,9 @@ class TestCalibrationFrames(unittest.TestCase):
       filenames = file_io.find_files(tmp_dir)
       self.assertEqual(len(filenames), 78)
 
-      context = ray.workflow.run(_build_compute_graph.bind(filenames))
+      self.context = ray.get(run_compute_graph.remote(self.context, filenames))
 
-      stacks = ray.get(context.stacks)
+      stacks = ray.get(self.context.stacks)
       self.assertEqual(len(stacks), 2)
       stack_iterator = iter(stacks)
 
@@ -178,9 +169,9 @@ class TestCalibrationFrames(unittest.TestCase):
       filenames = file_io.find_files(tmp_dir)
       self.assertEqual(len(filenames), 39)
 
-      context = ray.workflow.run(_build_compute_graph.bind(filenames))
+      self.context = ray.get(run_compute_graph.remote(self.context, filenames))
 
-      stacks = ray.get(context.stacks)
+      stacks = ray.get(self.context.stacks)
       self.assertEqual(len(stacks), 1)
 
       stack = stacks[next(iter(stacks))]
@@ -212,9 +203,9 @@ class TestCalibrationFrames(unittest.TestCase):
       filenames = file_io.find_files(tmp_dir)
       self.assertEqual(len(filenames), 8)
 
-      context = ray.workflow.run(_build_compute_graph.bind(filenames))
+      self.context = ray.get(run_compute_graph.remote(self.context, filenames))
 
-      stacks = ray.get(context.stacks)
+      stacks = ray.get(self.context.stacks)
       self.assertEqual(len(stacks), 1)
 
       stack = stacks[next(iter(stacks))]
@@ -227,6 +218,57 @@ class TestCalibrationFrames(unittest.TestCase):
                        stack.content_hash) in cache)
       self.assertTrue(('stack_thumbnail_video', stack.id,
                        stack.content_hash) in cache)
+
+  def test_stack_calibration_frames(self):
+    with tempfile.TemporaryDirectory() as tmp_dir:
+      make_synthetic_frames(number=5,
+                            image_type='Bias',
+                            fill_value=50,
+                            instrument='ZWO ASI6200MM Pro',
+                            width_pixels=9576,
+                            height_pixels=6388,
+                            temperature=-18,
+                            dest_dir=tmp_dir)
+      make_synthetic_frames(number=7,
+                            image_type='Dark',
+                            fill_value=50,
+                            instrument='ZWO ASI6200MM Pro',
+                            width_pixels=9576,
+                            height_pixels=6388,
+                            temperature=-15,
+                            dest_dir=tmp_dir)
+      make_synthetic_frames(number=11,
+                            image_type='Flat',
+                            fill_value=50,
+                            instrument='ZWO ASI6200MM Pro',
+                            width_pixels=9576,
+                            height_pixels=6388,
+                            temperature=-10,
+                            dest_dir=tmp_dir)
+
+      filenames = file_io.find_files(tmp_dir)
+      self.assertEqual(len(filenames), 23)
+
+      context = ray.get(run_compute_graph.remote(self.context, filenames))
+
+      output_files = file_io.find_files(context.output_dir)
+      self.assertEqual(len(output_files), 3)
+
+      fits_headers = ray.get(context.fits_headers)
+      master_biases = [
+          f for f, h in fits_headers.items() if h['IMAGETYP'] == 'Master Bias'
+      ]
+      self.assertEqual(len(master_biases), 1)
+
+      master_darks = [
+          f for f, h in fits_headers.items() if h['IMAGETYP'] == 'Master Dark'
+      ]
+      self.assertEqual(len(master_darks), 1)
+
+      master_flats = [
+          f for f, h in fits_headers.items() if h['IMAGETYP'] == 'Master Flat'
+      ]
+      self.assertEqual(len(master_flats), 1)
 
 
 if __name__ == "__main__":
