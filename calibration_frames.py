@@ -150,6 +150,22 @@ def associate_calibration_frames(context):
   return context
 
 
+# TODO: Make the tolerance controllable by the user.
+def _group_by_temperature(frames, fits_headers, tolerance=10):
+  clusters = clustering.cluster_1d(frames,
+                                   epsilon=tolerance,
+                                   key=lambda h: fits_headers[h]['CCD-TEMP'])
+
+  output = {}
+  for cluster in clusters:
+    mean_temperature = np.mean([fits_headers[h]['CCD-TEMP'] for h in frames])
+    output[mean_temperature] = cluster
+
+  return output
+
+
+# TODO: When there are multiple runs of bias frames for a given camera and
+# temperature, select the run that is closest to the light frames.
 def _find_bias_frame_groups(fits_headers):
   bias_frames = [
       h for h, header in fits_headers.items()
@@ -161,14 +177,16 @@ def _find_bias_frame_groups(fits_headers):
   groups_to_stack = []
   for camera, frames_for_camera in biases_for_camera.items():
     for run in runs.get_runs(frames_for_camera, fits_headers):
-      frames_for_run = runs.get_frames_for_run(run, frames_for_camera,
-                                               fits_headers)
-      print(f'### camera {camera} run {run} frames {frames_for_run}')
-      # TODO: Make the temperature tolerance a user option.
-      temperature_clusters = clustering.cluster_1d(
-          frames_for_run, epsilon=10, key=lambda h: fits_headers[h]['CCD-TEMP'])
-      print(f'### temperature_clusters', temperature_clusters)
-      for frames_for_temperature in temperature_clusters:
+      frames_for_run = runs.get_frames_for_run(run, bias_frames, fits_headers)
+
+      frames = set(frames_for_camera) & set(frames_for_run)
+      if not frames:
+        continue
+
+      for temperature, frames_for_temperature in _group_by_temperature(
+          frames, fits_headers).items():
+        print(f'### camera {camera} run {run} temperature {temperature} '
+              f'frames {frames}')
         if not stacking.find_matching_masters(
             fits_headers, hashing.hash_list(frames_for_temperature)):
           groups_to_stack.append(frames_for_temperature)
@@ -177,6 +195,8 @@ def _find_bias_frame_groups(fits_headers):
   return groups_to_stack
 
 
+# TODO: When there are multiple runs of dark frames for a given camera and
+# temperature, select the run that is closest to the light frames.
 def _find_dark_frame_groups(fits_headers):
   dark_frames = [
       h for h, header in fits_headers.items()
@@ -190,18 +210,18 @@ def _find_dark_frame_groups(fits_headers):
   groups_to_stack = []
   for camera, frames_for_camera in darks_for_camera.items():
     for exposure, frames_for_exposure in darks_for_exposure.items():
-      for run in runs.get_runs(frames_for_camera, fits_headers):
-        frames_for_run = runs.get_frames_for_run(run, frames_for_camera,
-                                                 fits_headers)
-        print(f'### camera {camera} exposure {exposure} run {run} '
-              f'frames {frames_for_run}')
-        # TODO: Make the temperature tolerance a user option.
-        temperature_clusters = clustering.cluster_1d(
-            frames_for_run,
-            epsilon=10,
-            key=lambda h: fits_headers[h]['CCD-TEMP'])
-        print(f'### temperature_clusters', temperature_clusters)
-        for frames_for_temperature in temperature_clusters:
+      for run in runs.get_runs(dark_frames, fits_headers):
+        frames_for_run = runs.get_frames_for_run(run, dark_frames, fits_headers)
+
+        frames = set(frames_for_camera) & set(frames_for_exposure) & set(
+            frames_for_run)
+        if not frames:
+          continue
+
+        for temperature, frames_for_temperature in _group_by_temperature(
+            frames, fits_headers).items():
+          print(f'### camera {camera} exposure {exposure} '
+                f'temperature {temperature} run {run} frames {frames}')
           if not stacking.find_matching_masters(
               fits_headers, hashing.hash_list(frames_for_temperature)):
             groups_to_stack.append(frames_for_temperature)
@@ -217,34 +237,36 @@ def _find_flat_frame_groups(fits_headers):
   ]
   flats_for_camera = _group_by_fn(flat_frames,
                                   lambda f: fits_headers[f]['INSTRUME'])
+  print('### flats_for_camera', flats_for_camera)
   flats_for_filter = _group_by_fn(flat_frames,
                                   lambda f: fits_headers[f]['FILTER'])
+  print('### flats_for_filter', flats_for_filter)
 
   groups_to_stack = []
   for camera, frames_for_camera in flats_for_camera.items():
     for filter, frames_for_filter in flats_for_filter.items():
-      frames_for_camera_and_filter = set(frames_for_camera) | set(
-          frames_for_filter)
-      if not frames_for_camera_and_filter:
-        continue
+      for run in runs.get_runs(flat_frames, fits_headers):
+        frames_for_run = runs.get_frames_for_run(run, flat_frames, fits_headers)
+        print(f'### frames_for_camera {camera}: {frames_for_camera}')
+        print(f'### frames_for_filter {filter}: {frames_for_filter}')
+        print(f'### frames_for_run {run}: {frames_for_run}')
 
-      for run in runs.get_runs(frames_for_camera_and_filter, fits_headers):
-        frames_for_run = runs.get_frames_for_run(run,
-                                                 frames_for_camera_and_filter,
-                                                 fits_headers)
-        if not frames_for_run:
+        frames = set(frames_for_camera) & set(frames_for_filter) & set(
+            frames_for_run)
+        if not frames:
           continue
 
-        print(f'### camera {camera} filter {filter} run {run} '
-              f'frames {frames_for_run}')
-        if not stacking.find_matching_masters(
-            fits_headers, hashing.hash_list(frames_for_run)):
-          groups_to_stack.append(frames_for_run)
+        print(f'### camera {camera} filter {filter} run {run} frames {frames}')
+        if not stacking.find_matching_masters(fits_headers,
+                                              hashing.hash_list(frames)):
+          groups_to_stack.append(frames)
 
   print(f'### Found {len(groups_to_stack)} groups of flat frames to stack')
   return groups_to_stack
 
 
+# TODO: Stacks of darks of different exposures can be tossed into WBPP together
+# to get multiple masters. Same goes for flats with different filters, etc.
 @ray.remote
 def scatter_stack_calibration_frames(context):
   print(f'Stacking calibration frames...')
