@@ -1,6 +1,5 @@
 import ray_local
 
-from make_test_frames import make_test_frames
 import unittest
 import ray
 

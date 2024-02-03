@@ -512,9 +512,7 @@ def sanity_check_stacks(stacks, fits_headers):
 #   return stacks, targets, mosaics
 
 
-def get_new_filenames(filenames):
-  image_hashes = ray_diskcache.get('image_hashes', {})
-  print(f'### Cache contains {len(image_hashes)} image hashes')
+def get_new_filenames(filenames, image_hashes):
 
   def exists_or_none(f):
     if f and os.path.exists(f):
@@ -556,13 +554,22 @@ def main(context):
   if context.download:
     download(context.input_dirs[0], context.default_filter)
 
+  # Load all of the existing metadata into the context before starting the
+  # compute graph.
+  context.image_hashes = ray_diskcache.get('image_hashes', {})
+  context.fits_headers = ray_diskcache.get('fits_headers', {})
+  context.plate_solutions = ray_diskcache.get('plate_solutions', {})
+  print(f'### Cache contained {len(context.image_hashes)} image hashes')
+  print(f'### Cache contained {len(context.fits_headers)} FITS headers')
+  print(f'### Cache contained {len(context.plate_solutions)} plate solutions')
+
   print('### Looking for files in input dirs', context.input_dirs)
   print('### Looking for files in output dir', context.output_dir)
   all_frames = file_io.find_image_files(context.output_dir)
   for input_dir in context.input_dirs:
     all_frames.extend(file_io.find_image_files(input_dir))
 
-  new_filenames = get_new_filenames(all_frames)
+  new_filenames = get_new_filenames(all_frames, context.image_hashes)
   print(f'### Importing {len(new_filenames)} files')
 
   # print(f'### Iterating over {len(mosaics)} mosaics')

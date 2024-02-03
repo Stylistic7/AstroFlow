@@ -41,6 +41,9 @@ class GlobalVarActor:
     return key in cache
 
   def or_equals(self, key, value, default):
+    if not default:
+      default = {}
+
     with cache.transact():
       new_value = self.global_dict.get(key, default) | value
       self.set(key, new_value)
@@ -73,15 +76,11 @@ def contains(key):
   return ray.get(actor.contains.remote(key))
 
 
-def plus_equals(key, value, default=None):
-  if not default:
-    default = 0
+def plus_equals(key, value, default=0):
   actor = ray.get_actor('ray_diskcache', namespace='AstroFlow')
   return ray.get(actor.plus_equals.remote(key, value, default))
 
 
 def or_equals(key, value, default=None):
-  if not default:
-    default = {}
   actor = ray.get_actor('ray_diskcache', namespace='AstroFlow')
   return ray.get(actor.or_equals.remote(key, value, default))
