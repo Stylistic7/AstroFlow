@@ -136,6 +136,7 @@ def stack_files(context, hashes, dest_path, metadata=None):
     for filename in wbpp_filenames:
       filename = os.path.join(master_dir, filename)
       dest_filename = os.path.join(dest_path, os.path.basename(filename))
+      os.makedirs(dest_path, exist_ok=True)
       _add_xisf_metadata(filename, dest_filename, metadata)
       output_filenames.append(dest_filename)
 
@@ -196,9 +197,7 @@ def stack_stack(context, stack):
 
 @ray.remote(scheduling_strategy="SPREAD")
 def scatter_stack_subframes(context):
-  image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
-  plate_solutions = ray.get(context.plate_solutions)
   stacks = ray.get(context.stacks)
   print(f'### scatter_stack_subframes received {len(stacks)} stacks')
 
