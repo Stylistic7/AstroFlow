@@ -105,12 +105,19 @@ def _add_xisf_metadata(filename, dest_filename, metadata):
              xisf_metadata=file_meta)
 
 
+# TODO: This will write a bunch of stacked images to the same filenames,
+# destroying them. Give each kind of calibration stack a unique name.
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
 def stack_files(context, hashes, dest_path, metadata=None):
   print(f'### Entering stack_files for {len(hashes)} images')
 
   image_hashes = ray.get(context.image_hashes)
+  fits_headers = ray.get(context.fits_headers)
+
   filenames = [image_hashes[h] for h in hashes]
+
+  start = min(fits_headers[h]['DATE-OBS'] for h in hashes)
+  suffix = '_' + start.strftime("%Y%m%d_%H%M%S")
 
   if not metadata:
     metadata = {}
@@ -135,7 +142,8 @@ def stack_files(context, hashes, dest_path, metadata=None):
     output_filenames = []
     for filename in wbpp_filenames:
       filename = os.path.join(master_dir, filename)
-      dest_filename = os.path.join(dest_path, os.path.basename(filename))
+      new_filename = Path(filename).stem + suffix + Path(filename).suffix
+      dest_filename = os.path.join(dest_path, new_filename)
       os.makedirs(dest_path, exist_ok=True)
       _add_xisf_metadata(filename, dest_filename, metadata)
       output_filenames.append(dest_filename)

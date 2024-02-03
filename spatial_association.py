@@ -233,8 +233,10 @@ def find_components_by_cosine_similarity_ray(
   fits_headers = ray.get(context.fits_headers)
   plate_solutions = ray.get(context.plate_solutions)
 
+  print('### Before removing plate solutions, len', len(plate_solutions))
   plate_solutions = image_metadata.remove_bad_images(image_hashes,
                                                      plate_solutions)
+  print('### After removing plate solutions, len', len(plate_solutions))
 
   light_frames = [
       h for h, header in fits_headers.items()
