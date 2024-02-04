@@ -19,6 +19,14 @@ class TestClustering(unittest.TestCase):
     clusters = clustering.cluster_discrete(items, key=operator.itemgetter(1))
     self.assertEqual(len(clusters), 2)
 
+  def test_items_in_distribution(self):
+    items = [(0.31, 'c'), (0.32, 'd'), (0.45, 'e'), (0.35, 'f'), (0.40, 'g')]
+    items_to_test = [(0.3, 'i'), (0.28, 'j'), (0.5, 'h'), (0.1, 'a'),
+                     (0.09, 'b')]
+    items_in_distribution = clustering.items_in_distribution(
+        items, items_to_test, max_std_devs=2.0, key=operator.itemgetter(0))
+    self.assertEqual(len(items_in_distribution), 2)
+
 
 if __name__ == "__main__":
   unittest.main()
