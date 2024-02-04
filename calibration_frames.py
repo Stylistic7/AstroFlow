@@ -46,26 +46,30 @@ def _associate_bias_frames(stack, fits_headers):
 
 def _associate_dark_frames(stack, fits_headers):
   # Get the camera and exposure duration of the stack. Make sure the stack is
-  # for a single camera and single exposure duration.
+  # for a single camera. Multiple exposure durations are ok.
+  #
+  # TODO: Think more about how to handle different exposure durations. Some
+  # sources say I can just toss all the exposures into WBPP with a big exposure
+  # tolerance, but I don't know how to control exposure tolerance
+  # programmatically.
   assert stack.light_frames
   assert len(set(fits_headers[f]['INSTRUME'] for f in stack.light_frames)) == 1
-  assert len(set(fits_headers[f]['EXPOSURE'] for f in stack.light_frames)) == 1
   camera = fits_headers[stack.light_frames[0]]['INSTRUME']
   mean_temperature = np.mean(
       [fits_headers[f]['CCD-TEMP'] for f in stack.light_frames])
-  exposure = fits_headers[stack.light_frames[0]]['EXPOSURE']
+  exposures = set(fits_headers[f]['EXPOSURE'] for f in stack.light_frames)
   print(f'### _associate_dark_frames: stack has camera {camera} '
-        f'mean_temperature {mean_temperature} exposure {exposure}')
+        f'mean_temperature {mean_temperature} exposures {exposures}')
 
   # Find all matching dark frames. Dark exposures must be equal in exposure
   # duration to the light frames, or longer if dark scaling is used.
   # TODO: Make dark scaling a user option.
   dark_frames = [
       h for h, header in fits_headers.items()
-      if 'dark' in header['IMAGETYP'].lower() and
-      header['INSTRUME'] == camera and header['EXPOSURE'] >= exposure
+      if 'dark' in header['IMAGETYP'].lower() and header['INSTRUME'] == camera
+      and any(header['EXPOSURE'] >= e for e in exposures)
   ]
-  print(f'### Found {len(dark_frames)} dark frames for camera and exposure')
+  print(f'### Found {len(dark_frames)} dark frames for camera and exposures')
 
   # Select darks with temperatures that are consistent with the distrubution
   # of temperatures of the light frames.
