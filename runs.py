@@ -3,6 +3,16 @@ import pytz
 import itertools
 
 
+def run_time_delta(a, b):
+  start_a, end_a = a
+  midpoint_a = start_a + (end_a - start_a) / 2
+
+  start_b, end_b = b
+  midpoint_b = start_b + (end_b - start_a) / 2
+
+  return abs(midpoint_a - midpoint_b)
+
+
 def get_runs(frames, fits_headers):
   if not frames:
     return []

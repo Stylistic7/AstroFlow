@@ -74,15 +74,15 @@ def _symlink_stack_frames(stack, image_hashes, fits_headers, dest_path):
                                            hashing.hash_list(flat_frames))
 
       _symlink_frames([image_hashes[h] for h in light_frames], flatvers_dir)
-      _symlink_frames(master_flats, flatvers_dir)
+      _symlink_frames([image_hashes[h] for h in master_flats], flatvers_dir)
   else:
     _symlink_frames([image_hashes[h] for h in stack.light_frames], dest_path)
     master_flats = find_matching_masters(fits_headers,
                                          hashing.hash_list(stack.flat_frames))
-    _symlink_frames(master_flats, dest_path)
+    _symlink_frames([image_hashes[h] for h in master_flats], dest_path)
 
-  _symlink_frames(master_biases, dest_path)
-  _symlink_frames(master_darks, dest_path)
+  _symlink_frames([image_hashes[h] for h in master_biases], dest_path)
+  _symlink_frames([image_hashes[h] for h in master_darks], dest_path)
 
 
 def _add_xisf_metadata(filename, dest_filename, metadata):
@@ -172,7 +172,8 @@ def stack_stack(context, stack):
     for f in os.listdir(master_dir):
       print(f'###   {f}')
 
-    filenames = list(str(f) for f in Path(master_dir).rglob("*autocrop.xisf"))
+    filenames = list(
+        str(f) for f in Path(master_dir).rglob("*drizzle_2x_autocrop.xisf"))
     if not filenames:
       # TODO: Return failure, so the stack won't just be attempted again
       # on the next run. Distinguish the cases where the stack has never been

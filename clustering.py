@@ -30,7 +30,11 @@ def cluster_continuous(items, epsilon=0.2, key=lambda x: x):
 def items_in_distribution(items,
                           items_to_test,
                           max_std_devs=2.0,
+                          slop=0.0,
                           key=lambda x: x):
   values = [key(i) for i in items]
   mean, std = np.mean(values), np.std(values)
-  return [i for i in items_to_test if abs(key(i) - mean) / std < max_std_devs]
+  return [
+      i for i in items_to_test
+      if abs(key(i) - mean) <= slop or abs(key(i) - mean) / std <= max_std_devs
+  ]

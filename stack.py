@@ -52,8 +52,6 @@ class Stack:
   height_pixels: int = None
   filter: str = None
 
-  camera_configs = None
-
   light_frames: list = field(default_factory=list)
   dark_frames: list = field(default_factory=list)
   bias_frames: list = field(default_factory=list)
