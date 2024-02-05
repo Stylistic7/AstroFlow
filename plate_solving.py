@@ -183,7 +183,7 @@ def solve_field(filename):
   start_time = time.time()
   for i, arguments in enumerate(trial_arguments):
     result = _solve_field(filename, arguments)
-    if result:
+    if type(result) is PlateSolution:
       end_time = time.time()
       throughput.add_sample('plate_solve', end_time - start_time)
       return result
