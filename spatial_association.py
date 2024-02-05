@@ -245,7 +245,8 @@ def find_components_by_cosine_similarity_ray(
 
   light_frames = [
       h for h, header in fits_headers.items()
-      if h in plate_solutions and header['IMAGETYP'] == 'Light'
+      if h in plate_solutions and 'IMAGETYP' in header and 'light' in
+      header['IMAGETYP'].lower() and 'master' not in header['IMAGETYP'].lower()
   ]
 
   light_frames = sorted(light_frames, key=lambda h: fits_headers[h]['DATE-OBS'])

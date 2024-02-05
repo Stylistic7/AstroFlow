@@ -22,7 +22,9 @@ def _associate_bias_frames(stack, fits_headers):
   # Find all matching bias frames.
   bias_frames = [
       h for h, header in fits_headers.items()
-      if 'bias' in header['IMAGETYP'].lower() and header['INSTRUME'] == camera
+      if {'IMAGETYP', 'INSTRUME', 'CCD-TEMP'} <= set(header) and
+      'bias' in header['IMAGETYP'].lower() and 'master' not in
+      header['IMAGETYP'].lower() and header['INSTRUME'] == camera
   ]
   print(f'### Found {len(bias_frames)} bias frames for camera')
 
@@ -66,8 +68,10 @@ def _associate_dark_frames(stack, fits_headers):
   # TODO: Make dark scaling a user option.
   dark_frames = [
       h for h, header in fits_headers.items()
-      if 'dark' in header['IMAGETYP'].lower() and header['INSTRUME'] == camera
-      and any(header['EXPOSURE'] >= e for e in exposures)
+      if {'IMAGETYP', 'INSTRUME', 'EXPOSURE', 'CCD-TEMP'} <= set(header) and
+      'dark' in header['IMAGETYP'].lower() and 'master' not in
+      header['IMAGETYP'].lower() and header['INSTRUME'] == camera and any(
+          header['EXPOSURE'] >= e for e in exposures)
   ]
   print(f'### Found {len(dark_frames)} dark frames for camera and exposures')
 
@@ -101,8 +105,9 @@ def _associate_flat_frames(stack, fits_headers):
   # Find all matching flat frames.
   flat_frames = [
       h for h, header in fits_headers.items()
-      if 'flat' in header['IMAGETYP'].lower() and
-      header['INSTRUME'] == camera and header['FILTER'] == filter
+      if {'IMAGETYP', 'INSTRUME', 'FILTER'} <= set(header) and 'flat' in
+      header['IMAGETYP'].lower() and 'master' not in header['IMAGETYP'].lower()
+      and header['INSTRUME'] == camera and header['FILTER'] == filter
   ]
 
   # Find runs of light frames and flat frames. Each run of light frames will be
