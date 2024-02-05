@@ -95,9 +95,9 @@ def compute_image_metadata_ray(filename):
     result = {}
     result['filename'] = filename
     result['image_hash'] = file_io.hash_of_image_data(filename)
-    result['fits_header'] = file_io.read_header(filename)
+    result['fits_header'] = header = file_io.read_header(filename)
 
-    if 'light' in result['fits_header']['IMAGETYP'].lower():
+    if 'IMAGETYP' in header and 'light' in header['IMAGETYP'].lower():
       result['plate_solution'] = plate_solving.solve_field(filename)
     else:
       result['plate_solution'] = None
