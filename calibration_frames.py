@@ -201,7 +201,7 @@ def scatter_stack_calibration_frames(context):
   results = [
       stacking.stack_files.remote(context, master, context.output_dir)
       for master in list(bias_masters | dark_masters | flat_masters)
-      if not artifact_exists(master)
+      if master and not artifact_exists(master)
   ]
 
   return ray.get(gather_stack_calibration_frames.remote(results))
