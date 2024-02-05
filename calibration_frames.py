@@ -1,3 +1,4 @@
+import os
 import itertools
 import ray
 import numpy as np
@@ -6,6 +7,7 @@ import ray_diskcache
 import runs
 import clustering
 import stacking
+import hashing
 
 
 def _associate_bias_frames(stack, fits_headers):
@@ -182,10 +184,24 @@ def scatter_stack_calibration_frames(context):
       assert flat_frames
       flat_masters.add(tuple(sorted(flat_frames)))
 
+  # TODO: Unify this with the similar code in stacking.py.
+  def artifact_exists(master):
+    content_hash = hashing.hash_list(master)
+    matching_masters = stacking.find_matching_masters(fits_headers,
+                                                      content_hash)
+    if not matching_masters:
+      return False
+
+    print(f'### Calibration master has existing artifacts {matching_masters}')
+    return True
+
+  # TODO: It's hard to get the correct filename if all you have is the hashes
+  # of a calibration stack. The masters should be in a better directory
+  # structure to begin with, e.g. Calibration/Masters/Bias/ASI6200MM Pro/-10C/.
   results = [
       stacking.stack_files.remote(context, master, context.output_dir)
       for master in list(bias_masters | dark_masters | flat_masters)
-      if len(master)
+      if not artifact_exists(master)
   ]
 
   return ray.get(gather_stack_calibration_frames.remote(results))
