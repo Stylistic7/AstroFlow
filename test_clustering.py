@@ -31,7 +31,7 @@ class TestClustering(unittest.TestCase):
                      (0.09, 'b')]
     items_in_distribution = clustering.items_in_distribution(
         items, items_to_test, max_std_devs=2.0, key=operator.itemgetter(0))
-    self.assertEqual(len(items_in_distribution), 2)
+    self.assertEqual(items_in_distribution, [(0.3, 'i'), (0.28, 'j')])
 
 
 if __name__ == "__main__":
