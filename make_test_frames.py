@@ -42,6 +42,8 @@ def _add_dither(center, max_distance_deg):
 
 def copy_testdata_frames(target_name,
                          dest_dir,
+                         fits_header_overrides=None,
+                         start_datetime=None,
                          image_hashes=None,
                          fits_headers=None,
                          plate_solutions=None):
@@ -55,15 +57,41 @@ def copy_testdata_frames(target_name,
   if not plate_solutions:
     plate_solutions = {}
 
+  if not fits_header_overrides:
+    fits_header_overrides = {}
+
+  date_obs = start_datetime
   for filename in _TESTDATA_TARGETS[target_name]:
-    dest_filename = os.path.join(dest_dir, os.path.basename(filename))
+    dest_filename = os.path.join(dest_dir, str(uuid.uuid4()) + '.fit')
     with gzip.open(filename + '.gz', 'rb') as f_in:
       with open(dest_filename, 'wb') as f_out:
         shutil.copyfileobj(f_in, f_out)
 
+        fits = pyfits.open(dest_filename, mode='update')
+        header = fits[0].header
+        image = fits[0].data
+
+        # Add a small amount of noise so it will have a unique hash.
+        assert image.dtype == np.uint16
+        image += np.random.randint(low=0,
+                                   high=2,
+                                   size=image.shape,
+                                   dtype=image.dtype)
+
+        if date_obs:
+          header['DATE-OBS'] = date_obs.strftime("%Y-%m-%dT%H:%M:%S")
+          date_obs += datetime.timedelta(seconds=int(header['EXPOSURE']) + 1)
+
+        fits.flush()
+        fits.close()
+
     hash = file_io.hash_of_image_data(dest_filename)
     image_hashes[hash] = dest_filename
-    fits_headers[hash] = file_io.read_header(dest_filename)
+
+    header = file_io.read_header(dest_filename)
+    header.update(fits_header_overrides)
+
+    fits_headers[hash] = header
     plate_solutions[hash] = plate_solving.solve_field(dest_filename)
 
   return _randomize_dict(image_hashes), _randomize_dict(
@@ -137,7 +165,7 @@ def make_synthetic_frames(start_datetime=datetime.datetime(
 
     center = _add_dither(centers[i], dither)
 
-    date_obs = start_datetime + i * datetime.timedelta(seconds=exposure + 10)
+    date_obs = start_datetime + i * datetime.timedelta(seconds=exposure + 1)
 
     deg_per_pix = image_scale / 3600.0
 
