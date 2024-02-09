@@ -1,10 +1,18 @@
 import unittest
 import operator
+import datetime
 
 import clustering
 
 
 class TestClustering(unittest.TestCase):
+
+  def test_cluster_discrete(self):
+    items = [('a', '2600'), ('b', '2600'), ('c', '6200'), ('d', '6200')]
+    clusters = clustering.cluster_discrete(items, key=operator.itemgetter(1))
+    self.assertEqual(clusters, [[('a', '2600'),
+                                 ('b', '2600')], [('c', '6200'),
+                                                  ('d', '6200')]])
 
   def test_cluster_continuous(self):
     items = [(0.31, 'c'), (0.32, 'd'), (0.45, 'e'), (0.35, 'f'), (0.40, 'g'),
@@ -16,14 +24,25 @@ class TestClustering(unittest.TestCase):
                                 [(0.31, 'c'), (0.32, 'd'), (0.35, 'f'),
                                  (0.4, 'g'), (0.45, 'e'), (0.5, 'h')]])
 
-  def test_cluster_discrete(self):
-    items = [('a', '2600'), ('b', '2600'), ('c', '6200'), ('d', '6200')]
-    clusters = clustering.cluster_discrete(items, key=operator.itemgetter(1))
-    self.assertEqual(
-        clusters, {
-            '2600': [('a', '2600'), ('b', '2600')],
-            '6200': [('c', '6200'), ('d', '6200')]
-        })
+  def test_cluster_continuous_dates(self):
+    run_0 = [(datetime.datetime(2024, 2, 7, 0, 0, 0) +
+              datetime.timedelta(seconds=300 * i), i) for i in range(5)]
+    run_1 = [(datetime.datetime(2024, 2, 8, 0, 0, 0) +
+              datetime.timedelta(seconds=300 * i), 100 + i) for i in range(5)]
+    clusters = clustering.cluster_continuous(
+        run_0 + run_1,
+        epsilon=datetime.timedelta(minutes=15),
+        key=operator.itemgetter(0))
+    self.assertEqual(clusters, [[(datetime.datetime(2024, 2, 7, 0, 0), 0),
+                                 (datetime.datetime(2024, 2, 7, 0, 5), 1),
+                                 (datetime.datetime(2024, 2, 7, 0, 10), 2),
+                                 (datetime.datetime(2024, 2, 7, 0, 15), 3),
+                                 (datetime.datetime(2024, 2, 7, 0, 20), 4)],
+                                [(datetime.datetime(2024, 2, 8, 0, 0), 100),
+                                 (datetime.datetime(2024, 2, 8, 0, 5), 101),
+                                 (datetime.datetime(2024, 2, 8, 0, 10), 102),
+                                 (datetime.datetime(2024, 2, 8, 0, 15), 103),
+                                 (datetime.datetime(2024, 2, 8, 0, 20), 104)]])
 
   def test_items_in_distribution(self):
     items = [(0.31, 'c'), (0.32, 'd'), (0.45, 'e'), (0.35, 'f'), (0.40, 'g')]

@@ -1,16 +1,15 @@
 import itertools
+import operator
 from collections import defaultdict
 import numpy as np
 
 
-def cluster_discrete(items, key=lambda x: x):
+def cluster_discrete(items, key=operator.itemgetter(1)):
   items = sorted(items, key=key)
-  return defaultdict(list, {
-      k: list(g) for k, g in itertools.groupby(items, key=key)
-  })
+  return [list(g) for _, g in itertools.groupby(items, key=key)]
 
 
-def cluster_continuous(items, epsilon=0.2, key=lambda x: x):
+def cluster_continuous(items, epsilon=0.2, key=operator.itemgetter(1)):
   clusters = []
   items_sorted = sorted(items, key=key)
   curr_point = items_sorted[0]
@@ -31,7 +30,7 @@ def items_in_distribution(items,
                           items_to_test,
                           max_std_devs=2.0,
                           slop=0.0,
-                          key=lambda x: x):
+                          key=operator.itemgetter(1)):
   values = [key(i) for i in items]
   mean, std = np.mean(values), np.std(values)
   return [
