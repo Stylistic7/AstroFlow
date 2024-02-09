@@ -1,10 +1,8 @@
 import os
 import astropy.io.fits as pyfits
 import xxhash
-from functools import lru_cache
 from pathlib import Path
 from dateutil.parser import parse
-import itertools
 import numpy as np
 from xisf import XISF
 import structlog
@@ -109,17 +107,6 @@ def fits_matches(fits_headers, filename, key, value):
       return False
 
   return True
-
-
-def group_by_fits_keyword(fits_headers, filenames, fits_keyword):
-
-  def key(f):
-    assert fits_keyword in fits_headers[
-        f], f"File {f} does not have FITS keyword"
-    return fits_headers[f][fits_keyword]
-
-  filenames = sorted(filenames, key=key)
-  return [(k, list(g)) for k, g in itertools.groupby(filenames, key=key)]
 
 
 def read_fits_image(filename):
