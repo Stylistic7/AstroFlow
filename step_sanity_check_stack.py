@@ -20,21 +20,9 @@ def _check_frame_list(L, name):
   return True
 
 
-# TODO: Put this computation in the Stack.store_metadata() function, so
-# doesn't have to be repeated over and over.
-def _min_footprint(footprints):
-  min_ra = np.min([p[0] for f in footprints for p in f])
-  max_ra = np.max([p[0] for f in footprints for p in f])
-  min_dec = np.min([p[1] for f in footprints for p in f])
-  max_dec = np.max([p[1] for f in footprints for p in f])
-
-  return [[min_ra, min_dec], [max_ra, min_dec], [max_ra, max_dec],
-          [min_ra, max_dec]]
-
-
 # TODO: This should return a SanityCheckFailure exception, which can be
 # stored and passed through prev_results into the UI.
-def run(stack, fits_headers):
+def sanity_check(stack, fits_headers):
   # TODO: Also check that:
   # They all have essentially the same plate solution
 
@@ -46,20 +34,9 @@ def run(stack, fits_headers):
     print(f'Stack is not good: image scales were not all close')
     return False
 
-  if not stack.camera_configs:
-    print(f'Stack is not good: there are no camera configs')
-    return False
-
   if not stack.flat_frame_associations:
     print(f'Stack is not good: there no flat frame associations')
     return False
-
-  cameras = set(cc[0] for cc in stack.camera_configs)
-  if len(cameras) > 1:
-    print(f'Stack is not good: there are multiple cameras: {cameras}')
-    return False
-
-  camera = list(cameras)[0]
 
   if not all(
       _check_frame_list(f, n) for f, n in zip([
@@ -68,20 +45,25 @@ def run(stack, fits_headers):
       ], ['light_frames', 'dark_frames', 'bias_frames', 'flat_frames'])):
     return False
 
+  cameras = set(fits_headers[f]['INSTRUME'] for f in stack.light_frames)
+  if len(cameras) > 1:
+    print(f'Stack is not good: there are multiple cameras: {cameras}')
+    return False
+
+  camera = list(cameras)[0]
+
   if not all(
       file_io.fits_matches(fits_headers, f, ['IMAGETYP', 'INSTRUME', 'FILTER'],
                            ['Light', camera, stack.filter])
       for f in stack.light_frames):
-    print(f'Stack is not good: some light frames had incorrect '
-          f'RIG or FILTER keywords')
+    print(f'Stack is not good: some light frames had incorrect keywords')
     return False
 
   if not all(
       file_io.fits_matches(fits_headers, f, ['IMAGETYP', 'INSTRUME', 'FILTER'],
                            ['Flat', camera, stack.filter])
       for f in stack.flat_frames):
-    print(f'Stack is not good: some flat frames had incorrect '
-          f'RIG or FILTER keywords')
+    print(f'Stack is not good: some flat frames had incorrect keywords')
     return False
 
   if not all(

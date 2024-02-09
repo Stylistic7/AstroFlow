@@ -1,6 +1,5 @@
 import ray
 
-import ray_diskcache
 from image_metadata import scatter_compute_image_metadata
 from spatial_association import find_components_by_cosine_similarity_ray
 from stack_identification import identify_stacks_ray

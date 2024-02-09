@@ -82,6 +82,7 @@ def _copy_fits_files(fits_files, dest_dir):
 
 
 class MountContextManager:
+
   def __init__(self, rig, ip, volume, mount_point):
     self.rig, self.ip, self.volume, self.mount_point = rig, ip, volume, mount_point
 
@@ -100,8 +101,9 @@ class MountContextManager:
 
 
 def _group_subs_by_date(subs):
+
   def date_predicate(sub):
-    utc_dt = file_io.read_fits(sub)['DATE-OBS']
+    utc_dt = file_io.read_fits_header(sub)['DATE-OBS']
     return datetime.datetime(utc_dt.year, utc_dt.month, utc_dt.day)
 
   groups = []
@@ -163,8 +165,8 @@ def run(rig, ip, search_defs, dest_path, default_filter):
         for fits_path in search_def['fits_paths']:
           path = os.path.join(mount_point, fits_path)
           print(f'Copying FITS files from path {path}')
-          min_date = _download_from_rig_grouped_by_date(
-              path, dest_path, rig, default_filter)
+          min_date = _download_from_rig_grouped_by_date(path, dest_path, rig,
+                                                        default_filter)
           total_min_date = min(total_min_date, min_date) if (
               min_date and total_min_date) else min_date
 

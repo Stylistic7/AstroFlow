@@ -539,10 +539,10 @@ def main(context):
   # TODO: Every Ray worker node will need its own cache for this.
   pix._clear_cache()
 
-  control_modes = cache.get('control_modes', {})
-  print('### Control modes are:')
-  for task, mode in control_modes.items():
-    print(f'### task {task} mode {mode}')
+  # control_modes = cache.get('control_modes', {})
+  # print('### Control modes are:')
+  # for task, mode in control_modes.items():
+  #   print(f'### task {task} mode {mode}')
 
   # TODO: Find a more general way to specify the quarantine dir, or at least
   # ask the user to confirm the dir.
@@ -552,6 +552,9 @@ def main(context):
   # TODO: Don't just use the first input directory.
   if context.download:
     download(context.input_dirs[0], context.default_filter)
+
+  # FIXME
+  return
 
   # Load all of the existing metadata into the context before starting the
   # compute graph.
