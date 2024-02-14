@@ -42,12 +42,12 @@ def _add_dither(center, max_distance_deg):
 
 def copy_testdata_frames(target_name,
                          dest_dir,
+                         prefix='',
                          fits_header_overrides=None,
                          start_datetime=None,
                          image_hashes=None,
                          fits_headers=None,
                          plate_solutions=None):
-
   if not image_hashes:
     image_hashes = {}
 
@@ -60,9 +60,12 @@ def copy_testdata_frames(target_name,
   if not fits_header_overrides:
     fits_header_overrides = {}
 
+  if not prefix:
+    prefix = target_name
+
   date_obs = start_datetime
   for filename in _TESTDATA_TARGETS[target_name]:
-    dest_filename = os.path.join(dest_dir, str(uuid.uuid4()) + '.fit')
+    dest_filename = os.path.join(dest_dir, f'{prefix}_{str(uuid.uuid4())}.fit')
     with gzip.open(filename + '.gz', 'rb') as f_in:
       with open(dest_filename, 'wb') as f_out:
         shutil.copyfileobj(f_in, f_out)
