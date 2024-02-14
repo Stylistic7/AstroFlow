@@ -35,14 +35,7 @@ def find_image_files(path, pattern='*'):
   ])
 
 
-def read_fits_header(filename, print_header=False):
-  fits = pyfits.open(filename)
-  header = fits[0].header
-
-  if print_header:
-    for k, v in header.items():
-      print(k, '=', v)
-
+def _normalize_header(header):
   output = dict(header)
 
   if 'EXPOSURE' in header:
@@ -61,15 +54,18 @@ def read_fits_header(filename, print_header=False):
   if 'PANE' in header:
     output['PANE'] = int(header['PANE'])
 
-  if 'IMAGETYP' in header:
-    if 'light' in header['IMAGETYP'].lower():
-      output['IMAGETYP'] = 'Light'
-    elif 'dark' in header['IMAGETYP'].lower():
-      output['IMAGETYP'] = 'Dark'
-    elif 'bias' in header['IMAGETYP'].lower():
-      output['IMAGETYP'] = 'Bias'
-    elif 'flat' in header['IMAGETYP'].lower():
-      output['IMAGETYP'] = 'Flat'
+  return output
+
+
+def read_fits_header(filename, print_header=False):
+  fits = pyfits.open(filename)
+  header = fits[0].header
+
+  if print_header:
+    for k, v in header.items():
+      print(k, '=', v)
+
+  output = _normalize_header(header)
 
   fits.close()
   return output
@@ -80,20 +76,22 @@ def read_xisf_header(filename):
   file_meta = xisf.get_file_metadata()
   ims_meta = xisf.get_images_metadata()
   fits_header = ims_meta[0]['FITSKeywords']
-  return {
+  header = {
       k: file_meta[k]['value'] for k in file_meta.keys()
   } | {
       k: fits_header[k][0]['value'] for k in fits_header.keys()
   }
+  return _normalize_header(header)
 
 
 def hash_of_image_data(filename):
-  if os.path.splitext(filename)[-1] in ['.fit', '.fits']:
+  filename = Path(filename)
+  if filename.suffix.lower() in ['.fit', '.fits']:
     fits = pyfits.open(filename)
     hash = xxhash.xxh64(fits[0].data.tobytes()).hexdigest()
     fits.close()
     return hash
-  elif os.path.splitext(filename)[-1] == '.xisf':
+  elif filename.suffix.lower() in ['.xisf']:
     xisf = XISF(filename)
     return xxhash.xxh64(xisf.read_image(0)).hexdigest()
 
