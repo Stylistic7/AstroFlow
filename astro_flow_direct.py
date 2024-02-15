@@ -536,11 +536,6 @@ def main(context):
   # TODO: Every Ray worker node will need its own cache for this.
   pix._clear_cache()
 
-  # control_modes = cache.get('control_modes', {})
-  # print('### Control modes are:')
-  # for task, mode in control_modes.items():
-  #   print(f'### task {task} mode {mode}')
-
   # TODO: Find a more general way to specify the quarantine dir, or at least
   # ask the user to confirm the dir.
   quarantine_dir = os.path.join(context.input_dirs[0],
@@ -549,9 +544,6 @@ def main(context):
   # TODO: Don't just use the first input directory.
   if context.download:
     download(context.input_dirs[0], context.default_filter)
-
-  # FIXME
-  return
 
   # Load all of the existing metadata into the context before starting the
   # compute graph.
@@ -606,73 +598,12 @@ def main(context):
 
   # print(f'### Created {len(toplevel_tasks)} toplevel tasks')
 
-  # TODO: This is the place to setup control modes, or to read them from the
-  # user interface.
-  # control_modes |= {('stack_subframes', s.id): dg.ControlMode.DISABLED
-  #                   for s in stacks.values()}
-  # control_modes |= {('post_process_stack', s.id): dg.ControlMode.DISABLED
-  #                   for s in stacks.values()}
-  # control_modes |= {('post_process_target', t.id): dg.ControlMode.DISABLED
-  #                   for t in targets.values()}
-  # control_modes |= {('post_process_mosaic', m.id): dg.ControlMode.DISABLED
-  #                   for m in mosaics.values()}
-  # control_modes |= {('make_mosaic_preview', m.id): dg.ControlMode.AUTO
-  #                   for m in mosaics.values()}
-
-  # control_modes |= {('stack_subframes', '298749827439823'): ControlMode.FORCE}
-  # control_modes |= {('stack_subframes', stack.id): dg.ControlMode.DISABLED
-  #                  for stack in stacks if stack.status == Status.NOT_READY}
-  # control_modes |= {('stack_subframes', s.id): dg.ControlMode.FORCE
-  #                  for s in stacks.values() if 'IC1805' in s.target}
-  # control_modes |= {('stack_subframes', s.id): dg.ControlMode.FORCE
-  #                  for s in stacks.values()}
-  # control_modes |= {('stack_subframes', s.id): dg.ControlMode.DISABLED
-  #                   for s in stacks.values()}
-  # control_modes |= {('stack_subframes', s.id): dg.ControlMode.FORCE
-  #                   for s in stacks.values()}
-  # control_modes |= {('post_process_stack', s.id): dg.ControlMode.DISABLED
-  #                   for s in stacks.values() if 'IC1848' not in s.target}
-  # control_modes |= {('post_process_target', t.id): dg.ControlMode.DISABLED
-  #                   for t in targets.values() if 'IC1848' not in t.name}
-  # control_modes |= {('post_process_stack', s.id): dg.ControlMode.DISABLED
-  #                   for s in stacks.values()}
-  # control_modes |= {('post_process_target', t.id): dg.ControlMode.DISABLED
-  #                   for t in targets.values()}
-  # control_modes |= {('post_process_mosaic', m.id): dg.ControlMode.FORCE
-  #                   for m in mosaics.values() if 'IC1848' not in m.name}
-  # control_modes |= {('post_process_stack', m.id): dg.ControlMode.FORCE
-  #                   for m in stacks.values()}
-  # control_modes |= {('post_process_mosaic', m.id): dg.ControlMode.FORCE
-  #                   for m in mosaics.values() if 'IC410' in m.name}
-
-  # print('control_modes are', control_modes)
-
-  # def callback(results):
-  #   cache['prev_results'] = results
-
   print('### Starting execution')
   context = ray.get(run_compute_graph.remote(context, new_filenames))
 
   print('### Compute graph is done! context is', context)
 
-  # results = dg.run_graph(graph)
-
-  # with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-  #   results = graph.run(executor, control_modes, cache.get('prev_results', {}),
-  #                       callback)
-
-  # for t, r in results.items():
-  #   print(f'### results contained task {t}')
-
-  # TODO: Provide a better API for getting the result for a given task.
-  # stacks = next(
-  #     r for n, r in results.items() if n == identify_stacks_ray).result
-  # print('### Stacks are')
-  # for s in stacks:
-  #   print('###', s)
-
   # TODO: Close all subordinate PixInsight instances.
-  print('### Compute graph is done!')
 
 
 if __name__ == '__main__':
