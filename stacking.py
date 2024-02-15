@@ -3,15 +3,11 @@ import os
 from pathlib import Path
 import numpy as np
 from xisf import XISF
-from spherical_geometry.polygon import SphericalPolygon
 import ray
-import itertools
 from graphlib import TopologicalSorter
 
 import pix
 import position_string
-import runs
-from hashing import hash_list
 from image_metadata import scatter_compute_image_metadata
 
 _STACK_ID_KEY = 'XISF:AstroFlow:StackId'
@@ -33,10 +29,7 @@ def find_matching_masters(fits_headers, content_hash):
 
 
 def _output_filename(stack, fits_headers, dest_path):
-  hashes = [
-      f for run in stack.runs for f in run.frames if f in fits_headers and
-      'master' not in fits_headers[f]['IMAGETYP'].lower()
-  ]
+  hashes = [f for run in stack.runs for f in run.frames]
   start = min(fits_headers[f]['DATE-OBS'] for f in hashes)
   start = start.strftime("%Y%m%d_%H%M%S")
 
@@ -50,6 +43,10 @@ def _output_filename(stack, fits_headers, dest_path):
     return os.path.join(
         output_dir, f'master_dark_{stack.camera}_'
         f'{stack.mean_temperature:.0f}C_{stack.exposure_s}s_{start}.xisf')
+  elif all(fits_headers[f]['IMAGETYP'] == 'Flat' for f in hashes):
+    output_dir = os.path.join(dest_path, 'Stacks', 'Calibration', 'masters')
+    return os.path.join(
+        output_dir, f'master_flat_{stack.camera}_{stack.filter}_{start}.xisf')
   else:
     output_dir = os.path.join(dest_path, 'Stacks', stack.target, 'masters')
     ra_dec_string = position_string.ra_dec_string(*stack.center)
@@ -64,46 +61,6 @@ def _symlink_frames(filenames, dest_path):
     dest_filename = os.path.join(dest_path, os.path.basename(filename))
     print(f'### symlinking {filename} -> {dest_filename}')
     os.symlink(filename, dest_filename)
-
-
-def _symlink_stack_frames(stack, image_hashes, fits_headers, dest_path):
-  _symlink_frames([image_hashes[h] for h in hashes], dest_path)
-
-  # print(f'### Stack has {len(stack.light_frames)} light frames '
-  #       f'{len(stack.dark_frames)} dark frames '
-  #       f'{len(stack.bias_frames)} bias frames '
-  #       f'{len(stack.flat_frames)} flat frames')
-
-  # master_biases = find_matching_masters(fits_headers,
-  #                                       hashing.hash_list(stack.bias_frames))
-  # master_darks = find_matching_masters(fits_headers,
-  #                                      hashing.hash_list(stack.dark_frames))
-
-  # assert len(master_biases) < 2
-  # assert len(master_darks) < 2
-
-  # if stack.flat_frame_associations:
-  #   for i, (light_run, flat_run) in enumerate(stack.flat_frame_associations):
-  #     flatvers_dir = os.path.join(dest_path, f'FLATVERS_{i}')
-  #     os.mkdir(flatvers_dir)
-
-  #     light_frames = runs.get_frames_for_run(light_run, stack.light_frames,
-  #                                            fits_headers)
-  #     flat_frames = runs.get_frames_for_run(flat_run, stack.flat_frames,
-  #                                           fits_headers)
-  #     master_flats = find_matching_masters(fits_headers,
-  #                                          hashing.hash_list(flat_frames))
-
-  #     _symlink_frames([image_hashes[h] for h in light_frames], flatvers_dir)
-  #     _symlink_frames([image_hashes[h] for h in master_flats], flatvers_dir)
-  # else:
-  #   _symlink_frames([image_hashes[h] for h in stack.light_frames], dest_path)
-  #   master_flats = find_matching_masters(fits_headers,
-  #                                        hashing.hash_list(stack.flat_frames))
-  #   _symlink_frames([image_hashes[h] for h in master_flats], dest_path)
-
-  # _symlink_frames([image_hashes[h] for h in master_biases], dest_path)
-  # _symlink_frames([image_hashes[h] for h in master_darks], dest_path)
 
 
 def _add_xisf_metadata(filename, dest_filename, metadata):
@@ -144,11 +101,19 @@ def stack_files(context, stack, dest_path, metadata=None):
     metadata[_CONTENT_HASH_KEY] = stack.hash()
 
   with tempfile.TemporaryDirectory() as tmp_dir:
-    for run in stack.runs:
+    for i, run in enumerate(stack.runs):
+      run_dir = os.path.join(tmp_dir, f'RUN_{i}')
+      os.makedirs(run_dir, exist_ok=True)
+
       # TODO: What about files that aren't in image_hashes?
-      filenames = [image_hashes[f] for f in run.frames if f in image_hashes]
-      assert len(filenames) == len(run.frames), "Some images could not be found"
-      _symlink_frames(filenames, tmp_dir)
+      filenames = [
+          image_hashes[f]
+          for f in run.frames + run.stack_dependencies
+          if f in image_hashes
+      ]
+      assert len(filenames) == len(
+          run.frames + run.stack_dependencies), "Some images could not be found"
+      _symlink_frames(filenames, run_dir)
 
     pix.WeightedBatchPreprocessing(dir=tmp_dir, outputDirectory=tmp_dir)
 

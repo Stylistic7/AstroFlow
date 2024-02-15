@@ -4,10 +4,7 @@ from .classes import ShellScriptTask
 from .decorators import PixInsight
 from .context import append_task
 
-_default_parameters = {
-    'outputDirectory': '',
-    'keywords': '["INSTRUME", "FILTER", "FLATVERS"]'
-}
+_default_parameters = {'outputDirectory': '', 'keywords': '["RUN"]'}
 
 
 @PixInsight

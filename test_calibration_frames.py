@@ -48,61 +48,6 @@ class TestCalibrationFrames(unittest.TestCase):
     self.output_dir = tempfile.TemporaryDirectory()
     self.context.output_dir = self.output_dir.name
 
-  def test_graph_deduping(self):
-    # Two stacks of light frames reference the same run of dark frames. The
-    # resulting graph should only stack the dark frames a single time.
-    stacks = {
-        '3165c12c4d80b725':
-            Stack(content=[
-                '970c85ee1413163c', '003d8a1bcf974c3a', '8c3bf6de8b55ba47',
-                'bb88995e6ab2ae5e'
-            ],
-                  target='Bubble nebula',
-                  camera='ZWO ASI6200MM Pro',
-                  width_pixels=9576,
-                  height_pixels=6388,
-                  center=[350.1837925526666, 61.2228262114],
-                  image_scale=0.37865701608658453,
-                  rotation_angle=1.550228574764928,
-                  filter='H'),
-        '1aee6139d0a38377':
-            Stack(content=[
-                '0b13fe0696493f55', '5a376716357a25b3', 'b87d01581ade8955',
-                'bb88995e6ab2ae5e'
-            ],
-                  target='Bubble nebula',
-                  camera='ZWO ASI6200MM Pro',
-                  width_pixels=9576,
-                  height_pixels=6388,
-                  center=[350.18379320500003, 61.22282625533334],
-                  image_scale=0.3786571622160017,
-                  rotation_angle=1.550228487094306,
-                  filter='H'),
-        'bb88995e6ab2ae5e':
-            Stack(content=[
-                'e6e8a019ba492166', 'c5c7fa505a8b8843', 'c7d1ea8769016684',
-                'e3ddfb1021d68615', '247d702b1d0b5d9c', '1fbd5df68447baf4',
-                '82d09397bcbaa145'
-            ],
-                  target=None,
-                  camera='ZWO ASI6200MM Pro',
-                  width_pixels=9576,
-                  height_pixels=6388,
-                  center=None,
-                  image_scale=None,
-                  rotation_angle=None,
-                  filter=None)
-    }
-
-    graph = construct_graph(stacks)
-    print('### graph', graph)
-
-    to_run = group_parallel_tasks(graph)
-    print('### to_run', to_run)
-    self.assertEqual(
-        to_run,
-        [['bb88995e6ab2ae5e'], ['3165c12c4d80b725', '1aee6139d0a38377']])
-
   def test_stack_dependency_graph(self):
     # These runs of dark and bias frames will be used by both runs of light
     # frames.
