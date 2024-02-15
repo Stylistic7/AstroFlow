@@ -14,10 +14,7 @@ from stack import Stack, Run, FrameHash
 
 
 def _new_stack(name, light_frames, fits_headers, plate_solutions):
-  print('### Making stack with light_frames', light_frames)
-
   flattened = list(itertools.chain.from_iterable([k for k in light_frames]))
-  print('### flattened', flattened)
 
   camera = next(iter(set(fits_headers[f]['INSTRUME'] for f in flattened)))
   filter = next(iter(set(fits_headers[f]['FILTER'] for f in flattened)))
@@ -38,7 +35,6 @@ def _new_stack(name, light_frames, fits_headers, plate_solutions):
   projected_footprints = footprints.all_projections(SphericalPolygon(footprint))
 
   new_runs = [Run(frames=[FrameHash(h) for h in run]) for run in light_frames]
-  print('### new_runs', new_runs)
 
   return Stack(runs=new_runs,
                target=name,
@@ -66,28 +62,23 @@ def identify_stacks_ray(context):
   stacks = []
   for name, light_frames in spatial_groups:
     scales = [(f, plate_solutions[f].image_scale) for f in light_frames]
-    print('### scales', scales)
     for scale_cluster in clustering.cluster_continuous(scales, epsilon=0.2):
       scale_frames, _ = zip(*scale_cluster)
       cameras = [(f, fits_headers[f]['INSTRUME']) for f in scale_frames]
-      print('### cameras', cameras)
       for camera_cluster in clustering.cluster_discrete(cameras):
         camera_frames, cameras = zip(*camera_cluster)
         assert len(set(cameras)) == 1
         rotation_angles = [
             (f, plate_solutions[f].rotation_angle) for f in camera_frames
         ]
-        print('### rotation_angles', rotation_angles)
         for rotation_cluster in clustering.cluster_continuous(rotation_angles,
                                                               epsilon=5.0):
           rotation_frames, _ = zip(*rotation_cluster)
           filters = [(f, fits_headers[f]['FILTER']) for f in rotation_frames]
-          print('### filters', filters)
           for filter_cluster in clustering.cluster_discrete(filters):
             filter_frames, filters = zip(*filter_cluster)
             assert len(set(filters)) == 1
             date_obs = [(f, fits_headers[f]['DATE-OBS']) for f in filter_frames]
-            print('### date_obs', date_obs)
             light_frames = {}
             for run in clustering.cluster_continuous(
                 date_obs, epsilon=datetime.timedelta(minutes=15)):

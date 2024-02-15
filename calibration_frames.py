@@ -7,9 +7,8 @@ import clustering
 from stack import Stack, Run, FrameHash
 
 
-# TODO: Flat frames need to be bias / dark corrected too!
 def _associate(stack, image_type, fits_headers, stack_dependencies=None):
-  print(f'### Entering _associate for {stack}')
+  print(f'Entering _associate() for {stack}')
 
   if not stack_dependencies:
     stack_dependencies = []
@@ -36,7 +35,7 @@ def _associate(stack, image_type, fits_headers, stack_dependencies=None):
         header['IMAGETYP'] == image_type and header['INSTRUME'] == stack.camera
     ]
     if not cal_frames:
-      print(f'### WARNING: Could not find any {image_type} calibration frames')
+      print(f'WARNING: Could not find any {image_type} calibration frames')
       continue
 
     # Maybe select the calibration frames that have exactly the same exposure
@@ -52,7 +51,7 @@ def _associate(stack, image_type, fits_headers, stack_dependencies=None):
           if fits_headers[f]['EXPOSURE'] == selected_exposure
       ]
       if not cal_frames:
-        print(f'### WARNING: Could not find any calibration frames '
+        print(f'WARNING: Could not find any calibration frames '
               f'for exposure {exposure}')
         continue
 
@@ -65,7 +64,7 @@ def _associate(stack, image_type, fits_headers, stack_dependencies=None):
           f for f in cal_frames if fits_headers[f]['FILTER'] == filter
       ]
       if not cal_frames:
-        print(f'### WARNING: Could not find any calibration frames '
+        print(f'WARNING: Could not find any calibration frames '
               f'for filter {filter}')
         continue
 
@@ -82,7 +81,7 @@ def _associate(stack, image_type, fits_headers, stack_dependencies=None):
                                                     slop=5)
       cal_frames = [f for f, _ in cal_frames]
       if not cal_frames:
-        print(f'### WARNING: Could not find any calibration frames '
+        print(f'WARNING: Could not find any calibration frames '
               f'for mean temperature {np.mean(light_frame_temps)}')
         continue
 
@@ -96,7 +95,6 @@ def _associate(stack, image_type, fits_headers, stack_dependencies=None):
     # Create a new Stack containing one Run of calibration frames. If the same
     # Stack is found multiple times, it will be automatically de-duped by its
     # content hash.
-    print('### cal_frames', cal_frames)
     new_run = Run(frames=[FrameHash(h) for h in cal_frames],
                   stack_dependencies=stack_dependencies)
     new_stack = Stack(runs=[new_run],
@@ -149,11 +147,6 @@ def associate_calibration_frames(context):
     output_stacks.append(stack)
 
   stacks = {s.hash(): s for s in output_stacks}
-
-  print(f'### associate_calibration_frames created {len(stacks)} stacks')
-  for content_hash, stack in stacks.items():
-    print('###', content_hash, stack)
-    print(f'###   Runs: {stack.runs}')
 
   ray_diskcache.set('stacks', stacks)
   context.stacks = ray.put(stacks)

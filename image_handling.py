@@ -3,23 +3,12 @@ from numpy import abs, minimum, maximum, median
 import cv2
 import os
 import tempfile
-from multiprocessing import Pool
 import ray
 
 import ray_diskcache
-from cache import cache
-import file_io
-import runs
-import hashing
+from file_io import read_image
 
 MIN_STAR_FRACTION = 0.5
-
-
-def read_image(filename):
-  if filename.endswith('.xisf'):
-    return file_io.read_xisf_image(filename)
-  elif filename.endswith('.fit') or filename.endswith('.fits'):
-    return file_io.read_fits_image(filename)
 
 
 def resize_array(array, new_width):
@@ -30,7 +19,7 @@ def resize_array(array, new_width):
 
 
 def autostretch(image):
-  # FIXME what max to use here?
+  # TODO: what max to use here?
   image = image.astype(np.float32) / 65536.0
 
   curve = 1.0
@@ -58,8 +47,8 @@ def array_to_png(array):
 def make_thumbnail(image_hashes,
                    fits_headers,
                    light_frame,
-                   dark_frame,
                    bias_frame,
+                   dark_frame,
                    flat_frame,
                    rotate,
                    width=1200):
@@ -101,19 +90,6 @@ def make_thumbnail(image_hashes,
   return autostretch(np.clip(image, 0.0, 1.0))
 
 
-# def _get_flat_frame_for_light_frame(light_frame, stack, fits_headers):
-#   for light_run, flat_run in stack.flat_frame_associations:
-#     light_frames = runs.get_frames_for_run(light_run, stack.light_frames,
-#                                            fits_headers)
-#     if light_frame not in light_frames:
-#       continue
-
-#     flat_frames = runs.get_frames_for_run(flat_run, stack.flat_frames,
-#                                           fits_headers)
-#     if flat_frames:
-#       return flat_frames[0]
-
-
 @ray.remote
 def scatter_stack_thumbnails(context):
   stacks = ray.get(context.stacks)
@@ -134,6 +110,43 @@ def scatter_stack_thumbnails(context):
   return context
 
 
+def _get_master_or_first_image_in_stack(hash, stacks, fits_headers):
+  if hash in fits_headers:
+    return hash
+  elif hash in stacks:
+    return stacks[hash].runs[0].frames[0]
+
+
+def _get_calibrations(stack, stacks, fits_headers):
+  # Iterate over the stack's runs, noting the appropriate calibration masters
+  # for each light frame.
+  calibrations = {}
+  for run in stack.runs:
+    # Find the master bias, dark, and flat frame in the run's dependencies. If
+    # the masters haven't been stacked yet, just use the first image in the
+    # stack.
+    dependencies = [
+        _get_master_or_first_image_in_stack(d, stacks, fits_headers)
+        for d in run.stack_dependencies
+    ]
+    bias_frame = next(
+        (d for d in dependencies if fits_headers[d]['IMAGETYP'] == 'Bias'),
+        None)
+    dark_frame = next(
+        (d for d in dependencies if fits_headers[d]['IMAGETYP'] == 'Dark'),
+        None)
+    flat_frame = next(
+        (d for d in dependencies if fits_headers[d]['IMAGETYP'] == 'Flat'),
+        None)
+
+    for light_frame in run.frames:
+      calibrations[light_frame] = dict(bias_frame=bias_frame,
+                                       dark_frame=dark_frame,
+                                       flat_frame=flat_frame)
+
+  return calibrations
+
+
 # TODO: Put the thumbnail size in a user config.
 @ray.remote(scheduling_strategy="SPREAD",
             num_cpus=0.75,
@@ -144,120 +157,76 @@ def compute_stack_thumbnails(context, stack, width=1200):
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
   plate_solutions = ray.get(context.plate_solutions)
+  stacks = ray.get(context.stacks)
 
-  # TODO: User masters when available.
-  light_frames = [
-      f for run in stack.runs for f in run.frames
-      if f in fits_headers and fits_headers[f]['IMAGETYP'] == 'Light'
-  ]
-  dark_frames = [
-      f for run in stack.runs for f in run.frames
-      if f in fits_headers and fits_headers[f]['IMAGETYP'] == 'Dark'
-  ]
-  bias_frames = [
-      f for run in stack.runs for f in run.frames
-      if f in fits_headers and fits_headers[f]['IMAGETYP'] == 'Bias'
-  ]
-  flat_frames = [
-      f for run in stack.runs for f in run.frames
-      if f in fits_headers and fits_headers[f]['IMAGETYP'] == 'Flat'
-  ]
+  # Don't make previews for calibration stacks.
+  light_frames = [f for run in stack.runs for f in run.frames]
+  if not all(fits_headers[f]['IMAGETYP'] == 'Light' for f in light_frames):
+    print(f'Ignoring {stack} because it is not composed entirely '
+          f'of light frames.')
+    return
 
-  # TODO: Split the try into another function.
-  try:
-    light_frames_by_stars = sorted(light_frames,
-                                   key=lambda f: plate_solutions[f].num_stars,
-                                   reverse=True)
+  calibrations = _get_calibrations(stack, stacks, fits_headers)
 
-    image = resize_array(read_image(image_hashes[light_frames_by_stars[0]]),
-                         width)
-    height, width = image.shape
+  # Now sort all the light frames (no matter which run they're from) by the
+  # number of stars. The better images should be in front.
+  light_frames_by_stars = sorted(light_frames,
+                                 key=lambda f: plate_solutions[f].num_stars,
+                                 reverse=True)
 
-    height = int(((height + 8 - 1) / 8) * 8)
-    print(f'Creating video of width {width}, height {height} '
-          f'with {len(light_frames)} frames')
+  # Cache the calibration images so they're only read once.
+  calibration_images = {}
 
-    with tempfile.TemporaryDirectory() as tmp_dir:
-      fourcc = cv2.VideoWriter_fourcc(*'VP80')
-      video_filename = os.path.join(tmp_dir, 'output.webm')
-      out = cv2.VideoWriter(video_filename, fourcc, 10.0, (width, height),
-                            False)
-      made_stack_thumbnail = False
-      for light_frame in light_frames_by_stars:
-        # flat_frame = _get_flat_frame_for_light_frame(light_frame, stack,
-        #                                              fits_headers)
-        flat_frame = flat_frames[0] if len(flat_frames) else None
-        dark_frame = dark_frames[0] if len(dark_frames) else None
-        bias_frame = bias_frames[0] if len(bias_frames) else None
-        rotate = plate_solutions[light_frame].rotation_angle < 0.0
-        try:
-          im = make_thumbnail(image_hashes, fits_headers, light_frame,
-                              dark_frame, bias_frame, flat_frame, rotate)
-        except Exception as e:
-          print(f'make_thumbnail() failed for {image_hashes[light_frame]} '
-                f'due to exception {e}')
-          continue
+  def get_calibration_image(hash):
+    if not hash:
+      return None
+    elif hash in calibration_images:
+      return calibration_images[hash]
+    else:
+      image = read_image(image_hashes[hash])
+      calibration_images[hash] = image
+      return image
 
-        if not made_stack_thumbnail:
-          key = ('stack_thumbnail_image', stack.hash())
-          ray_diskcache.set(key, array_to_png(im), keep_in_memory=False)
-          print(f'Wrote key {key}')
-          made_stack_thumbnail = True
+  image = resize_array(read_image(image_hashes[light_frames_by_stars[0]]),
+                       width)
+  height, width = image.shape
 
-        im = (im * 255.0).astype(np.uint8)
-        frame = np.zeros((height, width), dtype=np.uint8)
-        frame[0:im.shape[0], 0:im.shape[1]] = im
+  height = int(((height + 8 - 1) / 8) * 8)
+  print(f'Creating video of width {width}, height {height} '
+        f'with {len(light_frames)} frames')
 
-        out.write(frame)
+  with tempfile.TemporaryDirectory() as tmp_dir:
+    fourcc = cv2.VideoWriter_fourcc(*'VP80')
+    video_filename = os.path.join(tmp_dir, 'output.webm')
+    out = cv2.VideoWriter(video_filename, fourcc, 10.0, (width, height), False)
+    made_stack_thumbnail = False
+    for light_frame in light_frames_by_stars:
+      rotate = plate_solutions[light_frame].rotation_angle < 0.0
 
-      out.release()
-      thumbnail_video = open(video_filename, 'rb').read()
+      bias_frame = get_calibration_image(
+          calibrations[light_frame]['bias_frame'])
+      dark_frame = get_calibration_image(
+          calibrations[light_frame]['dark_frame'])
+      flat_frame = get_calibration_image(
+          calibrations[light_frame]['flat_frame'])
+      im = make_thumbnail(image_hashes, fits_headers, light_frame, bias_frame,
+                          dark_frame, flat_frame, rotate)
 
-      key = ('stack_thumbnail_video', stack.hash())
-      ray_diskcache.set(key, thumbnail_video, keep_in_memory=False)
-      print(f'Wrote key {key}')
-  except Exception as e:
-    print(f'compute_stack_thumbnails failed with exception {e}')
+      if not made_stack_thumbnail:
+        key = ('stack_thumbnail_image', stack.hash())
+        ray_diskcache.set(key, array_to_png(im), keep_in_memory=False)
+        print(f'Wrote key {key}')
+        made_stack_thumbnail = True
 
+      im = (im * 255.0).astype(np.uint8)
+      frame = np.zeros((height, width), dtype=np.uint8)
+      frame[0:im.shape[0], 0:im.shape[1]] = im
 
-# # TODO: Compare various ways of getting "the best" thumbnail (preview)
-# # image for a stack: highest std, greatest star count, etc.
-# #
-# # Make a library for picking / sorting images by quality.
-# def make_and_cache_stack_thumbnails(stack,
-#                                     image_hashes,
-#                                     plate_solutions,
-#                                     width=1200):
-#   height, width = resize_array(
-#       file_io.read_fits_image(image_hashes[stack.light_frames[0]]),
-#       width).shape
+      out.write(frame)
 
-#   height = int(((height + 8 - 1) / 8) * 8)
-#   print(f'Creating video of width {width}, height {height} '
-#         f'with {len(stack.light_frames)} frames')
+    out.release()
+    thumbnail_video = open(video_filename, 'rb').read()
 
-#   with tempfile.TemporaryDirectory() as tmp_dir:
-#     fourcc = cv2.VideoWriter_fourcc(*'VP80')
-#     video_filename = os.path.join(tmp_dir, 'output.webm')
-#     out = cv2.VideoWriter(video_filename, fourcc, 10.0, (width, height), False)
-
-#     light_frames_by_stars = sorted(stack.light_frames,
-#                                    key=lambda f: plate_solutions[f].num_stars,
-#                                    reverse=True)
-#     thumbnail_image = array_to_png(
-#         cache[('thumbnail_image', light_frames_by_stars[0])])
-
-#     for i, hash in enumerate(light_frames_by_stars):
-#       im = cache[('thumbnail_image', hash)]
-#       im = (im * 255.0).astype(np.uint8)
-
-#       frame = np.zeros((height, width), dtype=np.uint8)
-#       frame[0:im.shape[0], 0:im.shape[1]] = im
-
-#       out.write(frame)
-
-#     out.release()
-#     thumbnail_video = open(video_filename, 'rb').read()
-
-#     cache[('stack_thumbnail_image', stack.id)] = thumbnail_image
-#     cache[('stack_thumbnail_video', stack.id)] = thumbnail_video
+    key = ('stack_thumbnail_video', stack.hash())
+    ray_diskcache.set(key, thumbnail_video, keep_in_memory=False)
+    print(f'Wrote key {key}')

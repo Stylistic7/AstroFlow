@@ -91,9 +91,6 @@ def stack_files(context, stack, dest_path, metadata=None):
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
 
-  for h, f in image_hashes.items():
-    print(f'### hash {h} -> filename {f}')
-
   if not metadata:
     metadata = {}
 
@@ -181,7 +178,7 @@ def scatter_stack_subframes(context):
     results = ray.get([
         stack_files.remote(context, stacks[s], context.output_dir)
         for s in task_group
-        if not find_matching_masters(fits_headers, s.hash())
+        if not find_matching_masters(fits_headers, stacks[s].hash())
     ])
     print('### results', results)
     context = ray.get(scatter_compute_image_metadata.remote(context, results))
