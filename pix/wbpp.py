@@ -4,7 +4,7 @@ from .classes import ShellScriptTask
 from .decorators import PixInsight
 from .context import append_task
 
-_default_parameters = {'outputDirectory': '', 'keywords': '["RUN"]'}
+_default_parameters = {'outputDirectory': ''}
 
 
 @PixInsight
@@ -15,11 +15,9 @@ def WeightedBatchPreprocessing(dir, **kwargs):
   arguments = {
       'automationMode': 'true',
       'dir': dir,
-      'smartNamingOverride': 'true'
+      'smartNamingOverride': 'true',
+      'keywords': 'RUN',
   }
-
-  parameters['keywords'] = base64.b64encode(
-      parameters['keywords'].encode()).decode()
 
   append_task(
       ShellScriptTask(javascript_filename=javascript_filename,
