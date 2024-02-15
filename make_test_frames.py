@@ -1,6 +1,7 @@
 import os
 import astropy.io.fits as pyfits
 import numpy as np
+from scipy import signal
 import datetime
 import random
 import uuid
@@ -38,6 +39,22 @@ def _add_dither(center, max_distance_deg):
   angle = np.random.uniform(0.0, 2.0 * np.pi)
 
   return ra + distance * np.sin(angle), dec + distance * np.cos(angle)
+
+
+def _make_flat_frame(height_pixels, width_pixels, std=None):
+  if not std:
+    std = width_pixels / 2.0
+
+  gkern1d = signal.gaussian(width_pixels, std=std).reshape(width_pixels, 1)
+  img = np.outer(gkern1d, gkern1d)
+
+  bottom = int((width_pixels - height_pixels) / 2)
+  top = bottom + height_pixels
+  img = img[bottom:top, 0:width_pixels]
+
+  img *= 32768
+
+  return img.astype(np.uint16)
 
 
 def copy_testdata_frames(target_name,
@@ -152,7 +169,9 @@ def make_synthetic_frames(start_datetime=datetime.datetime(
     if dest_dir:
       fits_filename = os.path.join(dest_dir, fits_filename)
 
-    if fill_value:
+    if image_type == 'Flat':
+      image_data = _make_flat_frame(height_pixels, width_pixels)
+    elif fill_value:
       image_data = np.ones(
           (height_pixels, width_pixels), dtype=np.uint16) * fill_value
     else:
