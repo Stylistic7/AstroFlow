@@ -1,24 +1,16 @@
-from xisf import XISF
-import astropy.io.fits as pyfits
 import numpy as np
 from numpy import abs, minimum, maximum, median
 import cv2
 import os
-import io
-from shapely.geometry import Polygon
 import tempfile
 from multiprocessing import Pool
-from functools import partial
-import traceback
 import ray
-import operator
-import functools
 
 import ray_diskcache
 from cache import cache
 import file_io
 import runs
-from new_dependency_graph import ResultDict
+import hashing
 
 MIN_STAR_FRACTION = 0.5
 
@@ -109,17 +101,17 @@ def make_thumbnail(image_hashes,
   return autostretch(np.clip(image, 0.0, 1.0))
 
 
-def _get_flat_frame_for_light_frame(light_frame, stack, fits_headers):
-  for light_run, flat_run in stack.flat_frame_associations:
-    light_frames = runs.get_frames_for_run(light_run, stack.light_frames,
-                                           fits_headers)
-    if light_frame not in light_frames:
-      continue
+# def _get_flat_frame_for_light_frame(light_frame, stack, fits_headers):
+#   for light_run, flat_run in stack.flat_frame_associations:
+#     light_frames = runs.get_frames_for_run(light_run, stack.light_frames,
+#                                            fits_headers)
+#     if light_frame not in light_frames:
+#       continue
 
-    flat_frames = runs.get_frames_for_run(flat_run, stack.flat_frames,
-                                          fits_headers)
-    if flat_frames:
-      return flat_frames[0]
+#     flat_frames = runs.get_frames_for_run(flat_run, stack.flat_frames,
+#                                           fits_headers)
+#     if flat_frames:
+#       return flat_frames[0]
 
 
 @ray.remote
@@ -128,8 +120,8 @@ def scatter_stack_thumbnails(context):
 
   def has_thumbnails(stack):
     keys = [
-        ('stack_thumbnail_image', stack.id, stack.content_hash),
-        ('stack_thumbnail_video', stack.id, stack.content_hash),
+        ('stack_thumbnail_image', stack.hash()),
+        ('stack_thumbnail_video', stack.hash()),
     ]
     return all(ray_diskcache.contains(k) for k in keys)
 
@@ -153,9 +145,27 @@ def compute_stack_thumbnails(context, stack, width=1200):
   fits_headers = ray.get(context.fits_headers)
   plate_solutions = ray.get(context.plate_solutions)
 
+  # TODO: User masters when available.
+  light_frames = [
+      f for run in stack.runs for f in run.frames
+      if f in fits_headers and fits_headers[f]['IMAGETYP'] == 'Light'
+  ]
+  dark_frames = [
+      f for run in stack.runs for f in run.frames
+      if f in fits_headers and fits_headers[f]['IMAGETYP'] == 'Dark'
+  ]
+  bias_frames = [
+      f for run in stack.runs for f in run.frames
+      if f in fits_headers and fits_headers[f]['IMAGETYP'] == 'Bias'
+  ]
+  flat_frames = [
+      f for run in stack.runs for f in run.frames
+      if f in fits_headers and fits_headers[f]['IMAGETYP'] == 'Flat'
+  ]
+
   # TODO: Split the try into another function.
   try:
-    light_frames_by_stars = sorted(stack.light_frames,
+    light_frames_by_stars = sorted(light_frames,
                                    key=lambda f: plate_solutions[f].num_stars,
                                    reverse=True)
 
@@ -165,7 +175,7 @@ def compute_stack_thumbnails(context, stack, width=1200):
 
     height = int(((height + 8 - 1) / 8) * 8)
     print(f'Creating video of width {width}, height {height} '
-          f'with {len(stack.light_frames)} frames')
+          f'with {len(light_frames)} frames')
 
     with tempfile.TemporaryDirectory() as tmp_dir:
       fourcc = cv2.VideoWriter_fourcc(*'VP80')
@@ -174,10 +184,11 @@ def compute_stack_thumbnails(context, stack, width=1200):
                             False)
       made_stack_thumbnail = False
       for light_frame in light_frames_by_stars:
-        flat_frame = _get_flat_frame_for_light_frame(light_frame, stack,
-                                                     fits_headers)
-        dark_frame = stack.dark_frames[0] if len(stack.dark_frames) else None
-        bias_frame = stack.bias_frames[0] if len(stack.bias_frames) else None
+        # flat_frame = _get_flat_frame_for_light_frame(light_frame, stack,
+        #                                              fits_headers)
+        flat_frame = flat_frames[0] if len(flat_frames) else None
+        dark_frame = dark_frames[0] if len(dark_frames) else None
+        bias_frame = bias_frames[0] if len(bias_frames) else None
         rotate = plate_solutions[light_frame].rotation_angle < 0.0
         try:
           im = make_thumbnail(image_hashes, fits_headers, light_frame,
@@ -188,7 +199,7 @@ def compute_stack_thumbnails(context, stack, width=1200):
           continue
 
         if not made_stack_thumbnail:
-          key = ('stack_thumbnail_image', stack.id, stack.content_hash)
+          key = ('stack_thumbnail_image', stack.hash())
           ray_diskcache.set(key, array_to_png(im), keep_in_memory=False)
           print(f'Wrote key {key}')
           made_stack_thumbnail = True
@@ -202,7 +213,7 @@ def compute_stack_thumbnails(context, stack, width=1200):
       out.release()
       thumbnail_video = open(video_filename, 'rb').read()
 
-      key = ('stack_thumbnail_video', stack.id, stack.content_hash)
+      key = ('stack_thumbnail_video', stack.hash())
       ray_diskcache.set(key, thumbnail_video, keep_in_memory=False)
       print(f'Wrote key {key}')
   except Exception as e:

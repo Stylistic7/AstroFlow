@@ -1,5 +1,5 @@
 import os
-import diskcache
+import diskcache  # type: ignore
 
 if 'ASTROFLOW_MOCK_CACHE' in os.environ:
   print('### Using test cache')

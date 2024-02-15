@@ -83,6 +83,8 @@ def copy_testdata_frames(target_name,
 
         if date_obs:
           header['DATE-OBS'] = date_obs.strftime("%Y-%m-%dT%H:%M:%S")
+          print('### copy_testdata_frames overwrote DATE-OBS to',
+                header['DATE-OBS'])
           date_obs += datetime.timedelta(seconds=int(header['EXPOSURE']) + 1)
 
         fits.flush()
@@ -92,6 +94,7 @@ def copy_testdata_frames(target_name,
     image_hashes[hash] = dest_filename
 
     header = file_io.read_header(dest_filename)
+    print('### copy_testdata_frames DATE-OBS on disk is', header['DATE-OBS'])
     header.update(fits_header_overrides)
 
     fits_headers[hash] = header

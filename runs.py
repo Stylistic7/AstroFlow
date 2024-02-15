@@ -13,12 +13,11 @@ def run_time_delta(a, b):
   return abs(midpoint_a - midpoint_b)
 
 
-def get_runs(frames, fits_headers):
+def get_runs(frames, fits_headers, max_gap=datetime.timedelta(minutes=15)):
   if not frames:
     return []
   frames = sorted(frames, key=lambda f: fits_headers[f]['DATE-OBS'])
 
-  max_gap = datetime.timedelta(hours=1)
   runs = []
   prev_date_obs = pytz.utc.localize(datetime.datetime.min)
   run_start = None

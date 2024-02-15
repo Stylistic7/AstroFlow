@@ -2,12 +2,14 @@ import os
 import itertools
 import ray
 import numpy as np
+import datetime
 
 import ray_diskcache
 import runs
 import clustering
 import stacking
 import hashing
+from stack import Stack, Run, FrameHash
 
 # 1. Cluster by lists of FITS headers:
 #
@@ -75,20 +77,47 @@ import hashing
 
 
 def _associate_bias_frames(stack, fits_headers):
-  bias_frames = [
-      f for f, header in fits_headers.items()
-      if header['IMAGETYP'] == 'Bias' and header['INSTRUME'] == stack.camera
-  ]
-  light_frames = [(f, fits_headers[f]['CCD-TEMP'])
-                  for f in stack.content
-                  if fits_headers[f]['IMAGETYP'] == 'Light']
-  bias_frames = [(f, fits_headers[f]['CCD-TEMP']) for f in bias_frames]
-  bias_frames = clustering.items_in_distribution(light_frames,
-                                                 bias_frames,
-                                                 slop=5)
-  print('### bias_frames', bias_frames)
+  print(f'### Entering _associate_bias_frames stack {stack}')
+  output_stacks = [stack]
+  for run in stack.runs:
+    light_frames = run.frames
+    assert all(fits_headers[f]['IMAGETYP'] == 'Light' for f in light_frames)
+    light_runs = runs.get_runs(light_frames, fits_headers)
+    assert len(light_runs) == 1
+    light_run = light_runs[0]
 
-  return stack
+    bias_frames = [
+        f for f, header in fits_headers.items()
+        if header['IMAGETYP'] == 'Bias' and header['INSTRUME'] == stack.camera
+    ]
+    light_frame_temps = [(f, fits_headers[f]['CCD-TEMP']) for f in light_frames]
+
+    bias_frames = [(f, fits_headers[f]['CCD-TEMP']) for f in bias_frames]
+    bias_frames = clustering.items_in_distribution(light_frame_temps,
+                                                   bias_frames,
+                                                   slop=5)
+    bias_frames = [f for f, _ in bias_frames]
+
+    bias_runs = runs.get_runs(bias_frames, fits_headers)
+    bias_run = bias_runs[np.argmin(
+        [runs.run_time_delta(light_run, bias_run) for bias_run in bias_runs])]
+    bias_frames = runs.get_frames_for_run(bias_run, bias_frames, fits_headers)
+
+    print('### bias_frames', bias_frames)
+    new_run = Run(frames=[FrameHash(h) for h in bias_frames])
+
+    mean_temperature = np.mean(
+        [fits_headers[f]['CCD-TEMP'] for f in bias_frames])
+
+    bias_stack = Stack(runs=[new_run],
+                       camera=stack.camera,
+                       mean_temperature=mean_temperature,
+                       width_pixels=stack.width_pixels,
+                       height_pixels=stack.height_pixels)
+    run.stack_dependencies.append(bias_stack.hash())
+    output_stacks.append(bias_stack)
+
+  return output_stacks
 
 
 # TODO: Should bias and dark frames also be grouped into runs, and then the
@@ -245,74 +274,85 @@ def associate_calibration_frames(context):
   plate_solutions = ray.get(context.plate_solutions)
   stacks = ray.get(context.stacks)
 
-  output_stacks = {}
+  # At this point, stacks is just a list of stacks. The final content hashes
+  # are not known yet, because the calibration frames aren't associated yet.
+  output_stacks = []
   for stack in stacks:
-    # TODO: Kinda weird that these use different call patterns.
-    stack = _associate_bias_frames(stack, fits_headers)
+    # TODO: There will be lots of duplicates here; does it matter?
+    stacks = _associate_bias_frames(stack, fits_headers)
+    print(f'### _associate_bias_frames returned {len(stacks)} stacks')
+    output_stacks.extend(stacks)
+
     # stack = _associate_dark_frames(stack, fits_headers)
     # stack = _associate_flat_frames(stack, fits_headers)
     # stack.store_metadata(fits_headers, plate_solutions)
 
-    output_stacks[stack.id] = stack
+  stacks = {s.hash(): s for s in output_stacks}
 
-  ray_diskcache.set('stacks', output_stacks)
-  context.stacks = ray.put(output_stacks)
+  print(f'### associate_calibration_frames created {len(stacks)} stacks')
+  for content_hash, stack in stacks.items():
+    print('###', content_hash, stack)
+    print(f'###   Runs: {stack.runs}')
+
+  ray_diskcache.set('stacks', stacks)
+  context.stacks = ray.put(stacks)
   return context
 
 
 # TODO: Stacks of darks of different exposures can be tossed into WBPP together
 # to get multiple masters. Same goes for flats with different filters, etc.
-@ray.remote
-def scatter_stack_calibration_frames(context):
-  print(f'Stacking calibration frames...')
+# @ray.remote
+# def scatter_stack_calibration_frames(context):
+#   print(f'Stacking calibration frames...')
 
-  fits_headers = ray.get(context.fits_headers)
-  stacks = ray.get(context.stacks)
-  print('### scatter_stack_calibration_frames: stacks', stacks)
+#   fits_headers = ray.get(context.fits_headers)
+#   stacks = ray.get(context.stacks)
+#   print('### scatter_stack_calibration_frames: stacks', stacks)
 
-  bias_masters = set(
-      tuple(sorted(stack.bias_frames)) for stack in stacks.values())
-  dark_masters = set(
-      tuple(sorted(stack.dark_frames)) for stack in stacks.values())
+#   results = []
 
-  flat_masters = set()
-  for stack in stacks.values():
-    for _, flat_run in stack.flat_frame_associations:
-      flat_frames = runs.get_frames_for_run(flat_run, stack.flat_frames,
-                                            fits_headers)
-      assert flat_frames
-      flat_masters.add(tuple(sorted(flat_frames)))
+# bias_masters = set(
+#     tuple(sorted(stack.bias_frames)) for stack in stacks.values())
+# dark_masters = set(
+#     tuple(sorted(stack.dark_frames)) for stack in stacks.values())
 
-  # TODO: Unify this with the similar code in stacking.py.
-  def artifact_exists(master):
-    content_hash = hashing.hash_list(master)
-    matching_masters = stacking.find_matching_masters(fits_headers,
-                                                      content_hash)
-    if not matching_masters:
-      return False
+# flat_masters = set()
+# for stack in stacks.values():
+#   for _, flat_run in stack.flat_frame_associations:
+#     flat_frames = runs.get_frames_for_run(flat_run, stack.flat_frames,
+#                                           fits_headers)
+#     assert flat_frames
+#     flat_masters.add(tuple(sorted(flat_frames)))
 
-    print(f'### Calibration master has existing artifacts {matching_masters}')
-    return True
+# # TODO: Unify this with the similar code in stacking.py.
+# def artifact_exists(master):
+#   content_hash = hashing.hash_list(master)
+#   matching_masters = stacking.find_matching_masters(fits_headers,
+#                                                     content_hash)
+#   if not matching_masters:
+#     return False
 
-  # TODO: It's hard to get the correct filename if all you have is the hashes
-  # of a calibration stack. The masters should be in a better directory
-  # structure to begin with, e.g. Calibration/Masters/Bias/ASI6200MM Pro/-10C/.
-  results = [
-      stacking.stack_files.remote(context, master, context.output_dir)
-      for master in list(bias_masters | dark_masters | flat_masters)
-      if master and not artifact_exists(master)
-  ]
+#   print(f'### Calibration master has existing artifacts {matching_masters}')
+#   return True
 
-  return ray.get(gather_stack_calibration_frames.remote(results))
+# # TODO: It's hard to get the correct filename if all you have is the hashes
+# # of a calibration stack. The masters should be in a better directory
+# # structure to begin with, e.g. Calibration/Masters/Bias/ASI6200MM Pro/-10C/.
+# results = [
+#     stacking.stack_files.remote(context, master, context.output_dir)
+#     for master in list(bias_masters | dark_masters | flat_masters)
+#     if master and not artifact_exists(master)
+# ]
 
+# return ray.get(gather_stack_calibration_frames.remote(results))
 
-@ray.remote
-def gather_stack_calibration_frames(results):
-  # scatter_stack_calibration_frames() returns a list of lists. The outer list
-  # is over all of the groups that were stacked (e.g. groups of bias or dark
-  # frames). Each stacking operation could (potentially) produce more than one
-  # master file, so the result is a list of lists. The list of lists is
-  # flattened here.
-  results = ray.get(results)
-  value = list(itertools.chain.from_iterable([n for n in results]))
-  return value
+# @ray.remote
+# def gather_stack_calibration_frames(results):
+#   # scatter_stack_calibration_frames() returns a list of lists. The outer list
+#   # is over all of the groups that were stacked (e.g. groups of bias or dark
+#   # frames). Each stacking operation could (potentially) produce more than one
+#   # master file, so the result is a list of lists. The list of lists is
+#   # flattened here.
+#   results = ray.get(results)
+#   value = list(itertools.chain.from_iterable([n for n in results]))
+#   return value

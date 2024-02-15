@@ -3,47 +3,44 @@ import datetime
 import numpy as np
 from spherical_geometry.polygon import SphericalPolygon
 import astropy
+import itertools
 
-from stack import Stack
+import stack
 import clustering
 from hashing import hash_string
 import units
 import footprints
+from stack import Stack, Run, FrameHash
 
 
 def _new_stack(name, light_frames, fits_headers, plate_solutions):
-  print('### Making stack with frames', light_frames)
-  camera = next(iter(set(fits_headers[f]['INSTRUME'] for f in light_frames)))
-  filter = next(iter(set(fits_headers[f]['FILTER'] for f in light_frames)))
-  width_pixels = next(iter(set(
-      fits_headers[f]['NAXIS1'] for f in light_frames)))
-  height_pixels = next(
-      iter(set(fits_headers[f]['NAXIS2'] for f in light_frames)))
-  center = np.mean(
-      [p.center for f, p in plate_solutions.items() if f in light_frames],
-      axis=0)
-  image_scale = np.mean(
-      [p.image_scale for f, p in plate_solutions.items() if f in light_frames],
-      axis=0)
-  rotation_angle = np.mean([
-      p.rotation_angle for f, p in plate_solutions.items() if f in light_frames
-  ],
-                           axis=0)
-  id = hash_string(f'RA {units.ra_to_hms(center[0])}, '
-                   f'Dec {units.dec_to_dms(center[1])}, '
-                   f'Rotation {rotation_angle:.2f}, '
-                   f'{width_pixels}x{height_pixels}, '
-                   f'{image_scale:.2f}"/px, '
-                   f'Filter {filter}')
+  print('### Making stack with light_frames', light_frames)
 
+  flattened = list(itertools.chain.from_iterable([k for k in light_frames]))
+  print('### flattened', flattened)
+
+  camera = next(iter(set(fits_headers[f]['INSTRUME'] for f in flattened)))
+  filter = next(iter(set(fits_headers[f]['FILTER'] for f in flattened)))
+  width_pixels = next(iter(set(fits_headers[f]['NAXIS1'] for f in flattened)))
+  height_pixels = next(iter(set(fits_headers[f]['NAXIS2'] for f in flattened)))
+  center = np.mean(
+      [p.center for f, p in plate_solutions.items() if f in flattened], axis=0)
+  image_scale = np.mean(
+      [p.image_scale for f, p in plate_solutions.items() if f in flattened],
+      axis=0)
+  rotation_angle = np.mean(
+      [p.rotation_angle for f, p in plate_solutions.items() if f in flattened],
+      axis=0)
   footprint = next(
       SphericalPolygon.from_wcs(
           astropy.io.fits.Header(
-              plate_solutions[light_frames[0]].header)).points).tolist()
+              plate_solutions[flattened[0]].header)).points).tolist()
   projected_footprints = footprints.all_projections(SphericalPolygon(footprint))
 
-  return Stack(id=id,
-               content=light_frames,
+  new_runs = [Run(frames=[FrameHash(h) for h in run]) for run in light_frames]
+  print('### new_runs', new_runs)
+
+  return Stack(runs=new_runs,
                target=name,
                camera=camera,
                width_pixels=width_pixels,
@@ -91,11 +88,13 @@ def identify_stacks_ray(context):
             assert len(set(filters)) == 1
             date_obs = [(f, fits_headers[f]['DATE-OBS']) for f in filter_frames]
             print('### date_obs', date_obs)
+            light_frames = {}
             for run in clustering.cluster_continuous(
                 date_obs, epsilon=datetime.timedelta(minutes=15)):
-              light_frames, _ = zip(*run)
-              stacks.append(
-                  _new_stack(name, light_frames, fits_headers, plate_solutions))
+              light_frames_in_run, _ = zip(*run)
+              light_frames[tuple(sorted(light_frames_in_run))] = set()
+            stacks.append(
+                _new_stack(name, light_frames, fits_headers, plate_solutions))
 
   print(f'Identified {len(stacks)} stacks')
   context.stacks = ray.put(stacks)

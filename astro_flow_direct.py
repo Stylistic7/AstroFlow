@@ -2,14 +2,13 @@ from compute_graph import run_compute_graph
 import ray_diskcache
 import image_handling
 import step_sanity_check_stack
-import step_flat_frame_association
 import step_download_asiair
 import autorun_log_analysis
 from mosaics import identification
 from cache import cache
 from mosaic import Mosaic
 from target import Target
-from stack import Stack, Status
+from stack import Stack
 import runs
 import pix
 import os
@@ -375,20 +374,18 @@ def assert_all_light_frames_in_stacks(light_frames, stacks):
 #       executor.submit(image_handling.make_and_cache_stack_thumbnails, stack,
 #                       image_hashes, plate_solutions)
 
+# def sanity_check_stacks(stacks, fits_headers):
+#   print('Sanity-checking stacks...')
+#   for stack in stacks:
+#     # TODO: Print failures in the correct order so the output is reason
+#     if step_sanity_check_stack.run(stack, fits_headers):
+#       print(f'Stack {stack} is good!')
+#       stack.status = Status.READY
+#     else:
+#       print(f'Stack {stack} failed sanity check')
+#       stack.status = Status.NOT_READY
 
-def sanity_check_stacks(stacks, fits_headers):
-  print('Sanity-checking stacks...')
-  for stack in stacks:
-    # TODO: Print failures in the correct order so the output is reason
-    if step_sanity_check_stack.run(stack, fits_headers):
-      print(f'Stack {stack} is good!')
-      stack.status = Status.READY
-    else:
-      print(f'Stack {stack} failed sanity check')
-      stack.status = Status.NOT_READY
-
-  return stacks
-
+#   return stacks
 
 # graph = dg.DependencyGraph()
 
