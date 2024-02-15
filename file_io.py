@@ -1,33 +1,37 @@
-import os
-import astropy.io.fits as pyfits
+import astropy.io.fits as pyfits  # type: ignore
 import xxhash
 from pathlib import Path
 from dateutil.parser import parse
 import numpy as np
-from xisf import XISF
+from xisf import XISF  # type: ignore
 import structlog
+from typing import Optional, Any
 
 logger = structlog.get_logger()
 log = logger
 
 
-def read_image(filename):
-  filename = Path(filename)
-  if filename.suffix.lower() in ['.xisf']:
-    return read_xisf_image(filename)
-  elif filename.suffix.lower() in ['.fit', '.fits']:
-    return read_fits_image(filename)
+def read_image(filename: Path | str) -> Optional[np.ndarray]:
+  path = Path(filename)
+  if path.suffix.lower() in ['.xisf']:
+    return read_xisf_image(path)
+  elif path.suffix.lower() in ['.fit', '.fits']:
+    return read_fits_image(path)
+
+  return None
 
 
-def read_header(filename):
-  filename = Path(filename)
-  if filename.suffix.lower() in ['.xisf']:
-    return read_xisf_header(filename)
-  elif filename.suffix.lower() in ['.fit', '.fits']:
-    return read_fits_header(filename)
+def read_header(filename: Path | str) -> Optional[dict]:
+  path = Path(filename)
+  if path.suffix.lower() in ['.xisf']:
+    return read_xisf_header(path)
+  elif path.suffix.lower() in ['.fit', '.fits']:
+    return read_fits_header(path)
+
+  return None
 
 
-def find_image_files(path, pattern='*'):
+def find_image_files(path: str, pattern: str = '*') -> list:
   return sorted([
       str(p.absolute())
       for p in Path(path).rglob(pattern)
@@ -35,7 +39,7 @@ def find_image_files(path, pattern='*'):
   ])
 
 
-def _normalize_header(header):
+def _normalize_header(header: dict) -> dict:
   output = dict(header)
 
   if 'EXPOSURE' in header:
@@ -57,7 +61,7 @@ def _normalize_header(header):
   return output
 
 
-def read_fits_header(filename, print_header=False):
+def read_fits_header(filename: Path | str, print_header: bool = False) -> dict:
   fits = pyfits.open(filename)
   header = fits[0].header
 
@@ -71,7 +75,7 @@ def read_fits_header(filename, print_header=False):
   return output
 
 
-def read_xisf_header(filename):
+def read_xisf_header(filename: Path | str) -> dict:
   xisf = XISF(filename)
   file_meta = xisf.get_file_metadata()
   ims_meta = xisf.get_images_metadata()
@@ -84,7 +88,7 @@ def read_xisf_header(filename):
   return _normalize_header(header)
 
 
-def hash_of_image_data(filename):
+def hash_of_image_data(filename: Path | str) -> Optional[str]:
   filename = Path(filename)
   if filename.suffix.lower() in ['.fit', '.fits']:
     fits = pyfits.open(filename)
@@ -95,32 +99,36 @@ def hash_of_image_data(filename):
     xisf = XISF(filename)
     return xxhash.xxh64(xisf.read_image(0)).hexdigest()
 
+  return None
 
-def fits_matches(fits_headers, filename, key, value):
+
+def fits_matches(fits_headers: dict[str, dict], filename: Path | str, key: str,
+                 value: Any) -> bool:
   if type(key) == str and type(value) == str:
-    return fits_headers[filename][key] == value
+    return fits_headers[str(filename)][key] == value
 
   for k, v in zip(key, value):
-    if fits_headers[filename][k] != v:
+    if fits_headers[str(filename)][k] != v:
       return False
 
   return True
 
 
-def read_fits_image(filename):
+def read_fits_image(filename: Path | str) -> np.ndarray:
   fits = pyfits.open(str(filename))
   image = fits[0].data.astype(np.float32)
   fits.close()
   return image
 
 
-def read_xisf_image(filename):
+def read_xisf_image(filename: Path | str) -> np.ndarray:
   xisf = XISF(str(filename))
   return xisf.read_image(0).squeeze().astype(np.float32)
 
 
 # TODO: Add a round-trip unit test.
-def convert_xisf_to_fits(xisf_filename, fits_filename):
+def convert_xisf_to_fits(xisf_filename: Path | str,
+                         fits_filename: Path | str) -> None:
   xisf = XISF(xisf_filename)
   image = xisf.read_image(0).squeeze()
   img_meta = xisf.get_images_metadata()[0]
