@@ -49,7 +49,7 @@ class GlobalVarActor:
       self.set(key, new_value)
       return new_value
 
-  def plus_equals(self, key, value, default):
+  def and_equals(self, key, value, default):
     with cache.transact():
       new_value = self.global_dict.get(key, default) + value
       self.set(key, new_value)
@@ -76,9 +76,9 @@ def contains(key):
   return ray.get(actor.contains.remote(key))
 
 
-def plus_equals(key, value, default=0):
+def and_equals(key, value, default=0):
   actor = ray.get_actor('ray_diskcache', namespace='AstroFlow')
-  return ray.get(actor.plus_equals.remote(key, value, default))
+  return ray.get(actor.and_equals.remote(key, value, default))
 
 
 def or_equals(key, value, default=None):

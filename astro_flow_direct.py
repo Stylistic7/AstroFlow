@@ -508,10 +508,12 @@ def assert_all_light_frames_in_stacks(light_frames, stacks):
 #   return stacks, targets, mosaics
 
 
-def get_new_filenames(filenames, image_hashes):
+def get_new_filenames(filenames, context):
+  quarantined_files = context.quarantined_files
+  image_hashes = context.image_hashes
 
   def exists_or_none(f):
-    if f and os.path.exists(f):
+    if f and f not in quarantined_files and f and os.path.exists(f):
       return f
     else:
       return None
@@ -547,9 +549,12 @@ def main(context):
 
   # Load all of the existing metadata into the context before starting the
   # compute graph.
+  context.quarantined_files = ray_diskcache.get('quarantined_files', [])
   context.image_hashes = ray_diskcache.get('image_hashes', {})
   context.fits_headers = ray_diskcache.get('fits_headers', {})
   context.plate_solutions = ray_diskcache.get('plate_solutions', {})
+  print(f'### Cache contained {len(context.quarantined_files)} '
+        f'quarantined files')
   print(f'### Cache contained {len(context.image_hashes)} image hashes')
   print(f'### Cache contained {len(context.fits_headers)} FITS headers')
   print(f'### Cache contained {len(context.plate_solutions)} plate solutions')
@@ -560,7 +565,7 @@ def main(context):
   for input_dir in context.input_dirs:
     all_frames.extend(file_io.find_image_files(input_dir))
 
-  new_filenames = get_new_filenames(all_frames, context.image_hashes)
+  new_filenames = get_new_filenames(all_frames, context)
   print(f'### Importing {len(new_filenames)} files')
 
   # print(f'### Iterating over {len(mosaics)} mosaics')

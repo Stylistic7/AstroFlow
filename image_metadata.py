@@ -75,6 +75,8 @@ def scatter_compute_image_metadata(context, filenames):
 
   metadata = ray.get([compute_image_metadata_ray.remote(f) for f in filenames])
 
+  quarantined_files = ray_diskcache.and_equals('quarantined_files',
+                                               [r for r in metadata if not r])
   image_hashes = ray_diskcache.or_equals(
       'image_hashes', {r['image_hash']: r['filename'] for r in metadata if r})
   fits_headers = ray_diskcache.or_equals(
@@ -83,10 +85,12 @@ def scatter_compute_image_metadata(context, filenames):
       'plate_solutions',
       {r['image_hash']: r['plate_solution'] for r in metadata if r})
 
+  print(f'### Cached {len(quarantined_files)} quarantined_files')
   print(f'### Cached {len(image_hashes)} image_hashes')
   print(f'### Cached {len(fits_headers)} fits_headers')
   print(f'### Cached {len(plate_solutions)} plate_solutions')
 
+  context.quarantined_files = ray.put(quarantined_files)
   context.image_hashes = ray.put(image_hashes)
   context.fits_headers = ray.put(fits_headers)
   context.plate_solutions = ray.put(plate_solutions)
@@ -114,8 +118,6 @@ def compute_image_metadata_ray(filename):
     else:
       result['plate_solution'] = None
 
-    print(f'### compute_image_metadata_ray successful for filename {filename} '
-          f'DATE-OBS is {result["fits_header"]["DATE-OBS"]}')
     return result
   except Exception as e:
     print(f'compute_image_metadata_ray() failed for file {filename}, '

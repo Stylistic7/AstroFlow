@@ -1,6 +1,7 @@
 import ray
 import numpy as np
 
+import file_io
 import ray_diskcache
 import runs
 import clustering
@@ -23,7 +24,7 @@ def _associate(stack, image_type, fits_headers, stack_dependencies=None):
   new_stacks = []
   for run in stack.runs:
     light_frames = run.frames
-    assert all(fits_headers[f]['IMAGETYP'] == 'Light' for f in light_frames)
+    assert all(file_io.is_light_frame(f, fits_headers) for f in light_frames)
     light_runs = runs.get_runs(light_frames, fits_headers)
     assert len(light_runs) == 1
     light_run = light_runs[0]
@@ -73,7 +74,7 @@ def _associate(stack, image_type, fits_headers, stack_dependencies=None):
     # such frames, end early.
     if match_temperature:
       light_frame_temps = [
-          (f, fits_headers[f]['CCD-TEMP']) for f in light_frames
+          (f, float(fits_headers[f]['CCD-TEMP'])) for f in light_frames
       ]
       cal_frame_temps = [(f, fits_headers[f]['CCD-TEMP']) for f in cal_frames]
       cal_frames = clustering.items_in_distribution(light_frame_temps,
@@ -81,8 +82,10 @@ def _associate(stack, image_type, fits_headers, stack_dependencies=None):
                                                     slop=5)
       cal_frames = [f for f, _ in cal_frames]
       if not cal_frames:
-        print(f'WARNING: Could not find any calibration frames '
-              f'for mean temperature {np.mean(light_frame_temps)}')
+        print(
+            f'WARNING: Could not find any calibration frames '
+            f'for mean temperature {np.mean([x[1] for x in light_frame_temps])}'
+        )
         continue
 
     # Select the run of calibration frames that are closest in time to the

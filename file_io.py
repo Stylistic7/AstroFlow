@@ -11,6 +11,46 @@ logger = structlog.get_logger()
 log = logger
 
 
+def is_light_frame(f, fits_headers):
+  image_type = fits_headers[f]['IMAGETYP'].lower()
+  return 'light' in image_type and 'master' not in image_type
+
+
+def is_bias_frame(f, fits_headers):
+  image_type = fits_headers[f]['IMAGETYP'].lower()
+  return 'bias' in image_type and 'master' not in image_type
+
+
+def is_dark_frame(f, fits_headers):
+  image_type = fits_headers[f]['IMAGETYP'].lower()
+  return 'dark' in image_type and 'master' not in image_type
+
+
+def is_flat_frame(f, fits_headers):
+  image_type = fits_headers[f]['IMAGETYP'].lower()
+  return 'flat' in image_type and 'master' not in image_type
+
+
+def is_light_master(f, fits_headers):
+  image_type = fits_headers[f]['IMAGETYP'].lower()
+  return 'light' in image_type and 'master' in image_type
+
+
+def is_bias_master(f, fits_headers):
+  image_type = fits_headers[f]['IMAGETYP'].lower()
+  return 'bias' in image_type and 'master' in image_type
+
+
+def is_dark_master(f, fits_headers):
+  image_type = fits_headers[f]['IMAGETYP'].lower()
+  return 'dark' in image_type and 'master' in image_type
+
+
+def is_flat_master(f, fits_headers):
+  image_type = fits_headers[f]['IMAGETYP'].lower()
+  return 'flat' in image_type and 'master' in image_type
+
+
 def read_image(filename: Path | str) -> Optional[np.ndarray]:
   path = Path(filename)
   if path.suffix.lower() in ['.xisf']:
