@@ -11,6 +11,7 @@ class Context:
   image_hashes: dict = None
   fits_headers: dict = None
   plate_solutions: dict = None
+  quarantined_files: list = None
 
   spatial_groups: list = None
 

@@ -24,7 +24,7 @@ def _associate(stack, image_type, fits_headers, stack_dependencies=None):
   new_stacks = []
   for run in stack.runs:
     light_frames = run.frames
-    assert all(file_io.is_light_frame(f, fits_headers) for f in light_frames)
+    assert all(file_io.is_light_frame(fits_headers[f]) for f in light_frames)
     light_runs = runs.get_runs(light_frames, fits_headers)
     assert len(light_runs) == 1
     light_run = light_runs[0]
@@ -32,7 +32,8 @@ def _associate(stack, image_type, fits_headers, stack_dependencies=None):
     # Find all of the calibration frames in the library that match the given
     # image_type and camera. If there are no such frames, end early.
     cal_frames = [
-        f for f, header in fits_headers.items() if
+        f for f, header in fits_headers.items()
+        if 'IMAGETYP' in header and 'INSTRUME' in header and
         header['IMAGETYP'] == image_type and header['INSTRUME'] == stack.camera
     ]
     if not cal_frames:
@@ -48,8 +49,8 @@ def _associate(stack, image_type, fits_headers, stack_dependencies=None):
       unique_exposures = set(fits_headers[f]['EXPOSURE'] for f in cal_frames)
       selected_exposure = next(e for e in unique_exposures if e >= exposure)
       cal_frames = [
-          f for f in cal_frames
-          if fits_headers[f]['EXPOSURE'] == selected_exposure
+          f for f in cal_frames if 'EXPOSURE' in fits_headers[f] and
+          fits_headers[f]['EXPOSURE'] == selected_exposure
       ]
       if not cal_frames:
         print(f'WARNING: Could not find any calibration frames '
@@ -62,7 +63,8 @@ def _associate(stack, image_type, fits_headers, stack_dependencies=None):
       filter = fits_headers[light_frames[0]]['FILTER']
       assert all(fits_headers[f]['FILTER'] == filter for f in light_frames)
       cal_frames = [
-          f for f in cal_frames if fits_headers[f]['FILTER'] == filter
+          f for f in cal_frames
+          if 'FILTER' in fits_headers[f] and fits_headers[f]['FILTER'] == filter
       ]
       if not cal_frames:
         print(f'WARNING: Could not find any calibration frames '
@@ -73,9 +75,9 @@ def _associate(stack, image_type, fits_headers, stack_dependencies=None):
     # the same approximate distribution as the light frames. If there are no
     # such frames, end early.
     if match_temperature:
-      light_frame_temps = [
-          (f, float(fits_headers[f]['CCD-TEMP'])) for f in light_frames
-      ]
+      light_frame_temps = [(f, float(fits_headers[f]['CCD-TEMP']))
+                           for f in light_frames
+                           if 'CCD-TEMP' in fits_headers[f]]
       cal_frame_temps = [(f, fits_headers[f]['CCD-TEMP']) for f in cal_frames]
       cal_frames = clustering.items_in_distribution(light_frame_temps,
                                                     cal_frame_temps,

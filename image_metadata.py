@@ -69,10 +69,6 @@ _CONTENT_HASH_KEY = 'XISF:AstroFlow:StackContentHash'
 
 @ray.remote
 def scatter_compute_image_metadata(context, filenames):
-  print(f'### scatter_compute_image_metadata on {len(filenames)} files')
-  for f in filenames:
-    print(f'### filename {f}')
-
   metadata = ray.get([compute_image_metadata_ray.remote(f) for f in filenames])
 
   quarantined_files = ray_diskcache.and_equals('quarantined_files',
@@ -85,15 +81,15 @@ def scatter_compute_image_metadata(context, filenames):
       'plate_solutions',
       {r['image_hash']: r['plate_solution'] for r in metadata if r})
 
-  print(f'### Cached {len(quarantined_files)} quarantined_files')
-  print(f'### Cached {len(image_hashes)} image_hashes')
-  print(f'### Cached {len(fits_headers)} fits_headers')
-  print(f'### Cached {len(plate_solutions)} plate_solutions')
-
   context.quarantined_files = ray.put(quarantined_files)
   context.image_hashes = ray.put(image_hashes)
   context.fits_headers = ray.put(fits_headers)
   context.plate_solutions = ray.put(plate_solutions)
+
+  print(f'### Cached {len(quarantined_files)} quarantined_files')
+  print(f'### Cached {len(image_hashes)} image_hashes')
+  print(f'### Cached {len(fits_headers)} fits_headers')
+  print(f'### Cached {len(plate_solutions)} plate_solutions')
 
   return context
 
@@ -113,7 +109,7 @@ def compute_image_metadata_ray(filename):
         _CONTENT_HASH_KEY] if _CONTENT_HASH_KEY in header else file_io.hash_of_image_data(
             filename)
 
-    if 'IMAGETYP' in header and 'light' in header['IMAGETYP'].lower():
+    if file_io.is_light_frame(header):
       result['plate_solution'] = plate_solving.solve_field(filename)
     else:
       result['plate_solution'] = None

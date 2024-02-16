@@ -11,43 +11,66 @@ logger = structlog.get_logger()
 log = logger
 
 
-def is_light_frame(f, fits_headers):
-  image_type = fits_headers[f]['IMAGETYP'].lower()
+def is_light_frame(header: dict) -> bool:
+  if 'IMAGETYP' not in header:
+    return False
+  image_type = header['IMAGETYP'].lower()
   return 'light' in image_type and 'master' not in image_type
 
 
-def is_bias_frame(f, fits_headers):
-  image_type = fits_headers[f]['IMAGETYP'].lower()
+def is_bias_frame(header: dict) -> bool:
+  if 'IMAGETYP' not in header:
+    return False
+  image_type = header['IMAGETYP'].lower()
   return 'bias' in image_type and 'master' not in image_type
 
 
-def is_dark_frame(f, fits_headers):
-  image_type = fits_headers[f]['IMAGETYP'].lower()
+def is_dark_frame(header: dict) -> bool:
+  if 'IMAGETYP' not in header:
+    return False
+  image_type = header['IMAGETYP'].lower()
   return 'dark' in image_type and 'master' not in image_type
 
 
-def is_flat_frame(f, fits_headers):
-  image_type = fits_headers[f]['IMAGETYP'].lower()
+def is_flat_frame(header: dict) -> bool:
+  if 'IMAGETYP' not in header:
+    return False
+  image_type = header['IMAGETYP'].lower()
   return 'flat' in image_type and 'master' not in image_type
 
 
-def is_light_master(f, fits_headers):
-  image_type = fits_headers[f]['IMAGETYP'].lower()
+def is_master(header: dict) -> bool:
+  if 'IMAGETYP' not in header:
+    return False
+  image_type = header['IMAGETYP'].lower()
+  return 'master' in image_type
+
+
+def is_light_master(header: dict) -> bool:
+  if 'IMAGETYP' not in header:
+    return False
+  image_type = header['IMAGETYP'].lower()
   return 'light' in image_type and 'master' in image_type
 
 
-def is_bias_master(f, fits_headers):
-  image_type = fits_headers[f]['IMAGETYP'].lower()
+def is_bias_master(header: dict) -> bool:
+  if 'IMAGETYP' not in header:
+    return False
+  image_type = header['IMAGETYP'].lower()
   return 'bias' in image_type and 'master' in image_type
 
 
-def is_dark_master(f, fits_headers):
-  image_type = fits_headers[f]['IMAGETYP'].lower()
+def is_dark_master(header: dict) -> bool:
+  if 'IMAGETYP' not in header:
+    return False
+  image_type = header['IMAGETYP'].lower()
   return 'dark' in image_type and 'master' in image_type
 
 
-def is_flat_master(f, fits_headers):
-  image_type = fits_headers[f]['IMAGETYP'].lower()
+def is_flat_master(header: dict) -> bool:
+  if 'IMAGETYP' not in header:
+    return False
+  image_type = header['IMAGETYP'].lower()
   return 'flat' in image_type and 'master' in image_type
 
 
@@ -92,7 +115,7 @@ def _normalize_header(header: dict) -> dict:
 
   if 'DATE' in header:
     output['DATE'] = parse(header['DATE']).date()
-  else:
+  elif 'DATE-OBS' in header:
     output['DATE'] = output['DATE-OBS'].date()
 
   if 'PANE' in header:

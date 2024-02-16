@@ -10,6 +10,7 @@ import ray
 import image_metadata
 import position_string
 from distance import distance
+import file_io
 
 # TODO: Bring all knobs up here.
 MIN_COMPONENT_MEMBERS = 3
@@ -245,8 +246,7 @@ def find_components_by_cosine_similarity_ray(
 
   light_frames = [
       h for h, header in fits_headers.items()
-      if h in plate_solutions and 'IMAGETYP' in header and 'light' in
-      header['IMAGETYP'].lower() and 'master' not in header['IMAGETYP'].lower()
+      if h in plate_solutions and file_io.is_light_frame(header)
   ]
 
   light_frames = sorted(light_frames, key=lambda h: fits_headers[h]['DATE-OBS'])

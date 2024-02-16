@@ -6,6 +6,7 @@ import tempfile
 import ray
 
 import ray_diskcache
+import file_io
 from file_io import read_image
 
 MIN_STAR_FRACTION = 0.5
@@ -130,13 +131,13 @@ def _get_calibrations(stack, stacks, fits_headers):
         for d in run.stack_dependencies
     ]
     bias_frame = next(
-        (d for d in dependencies if fits_headers[d]['IMAGETYP'] == 'Bias'),
+        (d for d in dependencies if file_io.is_bias_frame(fits_headers[d])),
         None)
     dark_frame = next(
-        (d for d in dependencies if fits_headers[d]['IMAGETYP'] == 'Dark'),
+        (d for d in dependencies if file_io.is_dark_frame(fits_headers[d])),
         None)
     flat_frame = next(
-        (d for d in dependencies if fits_headers[d]['IMAGETYP'] == 'Flat'),
+        (d for d in dependencies if file_io.is_flat_frame(fits_headers[d])),
         None)
 
     for light_frame in run.frames:
@@ -161,7 +162,7 @@ def compute_stack_thumbnails(context, stack, width=1200):
 
   # Don't make previews for calibration stacks.
   light_frames = [f for run in stack.runs for f in run.frames]
-  if not all(fits_headers[f]['IMAGETYP'] == 'Light' for f in light_frames):
+  if not all(file_io.is_light_frame(fits_headers[f]) for f in light_frames):
     print(f'Ignoring {stack} because it is not composed entirely '
           f'of light frames.')
     return
