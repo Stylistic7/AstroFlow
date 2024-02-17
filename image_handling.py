@@ -92,11 +92,11 @@ def scatter_stack_thumbnails(context):
     ]
     return all(ray_diskcache.contains(k) for k in keys)
 
-  ray.get([
-      compute_stack_thumbnails.remote(context, stack)
-      for stack in stacks.values()
-      if not has_thumbnails(stack)
-  ])
+  to_compute = [s for s in stacks.values() if not has_thumbnails(s)]
+  print(f'### Need to compute thumbnails for {len(to_compute)} stacks')
+
+  ray.get(
+      [compute_stack_thumbnails.remote(context, stack) for stack in to_compute])
 
   return context
 
