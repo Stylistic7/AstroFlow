@@ -108,15 +108,17 @@ def stack_files(context, stack, dest_path, metadata=None):
           for f in run.frames + run.stack_dependencies
           if f in image_hashes
       ]
-      assert len(filenames) == len(
-          run.frames + run.stack_dependencies), "Some images could not be found"
+      if len(filenames) != len(run.frames + run.stack_dependencies):
+        print('### ERROR: Some images could not be found')
+        return []
+
       _symlink_frames(filenames, run_dir)
 
     pix.WeightedBatchPreprocessing(dir=tmp_dir, outputDirectory=tmp_dir)
 
     master_dir = os.path.join(tmp_dir, 'master')
     if not os.path.exists(master_dir):
-      print(f'### WBPP did not produce an output master dir.')
+      print(f'### ERROR: WBPP did not produce an output master dir.')
       return []
 
     print('### WBPP master dir contains:')
