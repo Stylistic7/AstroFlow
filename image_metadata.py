@@ -69,17 +69,24 @@ _CONTENT_HASH_KEY = 'XISF:AstroFlow:StackContentHash'
 
 @ray.remote
 def scatter_compute_image_metadata(context, filenames):
-  metadata = ray.get([compute_image_metadata_ray.remote(f) for f in filenames])
+  waitables = [compute_image_metadata_ray.remote(f) for f in filenames]
+  results = []
+  while len(waitables):
+    done, waitables = ray.wait(waitables)
+    try:
+      results.extend(ray.get(done))
+    except Exception as e:
+      print(f'### compute_image_metadata_ray threw exception {e}')
 
   quarantined_files = ray_diskcache.and_equals('quarantined_files',
-                                               [r for r in metadata if not r])
+                                               [r for r in results if not r])
   image_hashes = ray_diskcache.or_equals(
-      'image_hashes', {r['image_hash']: r['filename'] for r in metadata if r})
+      'image_hashes', {r['image_hash']: r['filename'] for r in results if r})
   fits_headers = ray_diskcache.or_equals(
-      'fits_headers', {r['image_hash']: r['fits_header'] for r in metadata if r})
+      'fits_headers', {r['image_hash']: r['fits_header'] for r in results if r})
   plate_solutions = ray_diskcache.or_equals(
       'plate_solutions',
-      {r['image_hash']: r['plate_solution'] for r in metadata if r})
+      {r['image_hash']: r['plate_solution'] for r in results if r})
 
   context.quarantined_files = ray.put(quarantined_files)
   context.image_hashes = ray.put(image_hashes)

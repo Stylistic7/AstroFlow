@@ -95,8 +95,16 @@ def scatter_stack_thumbnails(context):
   to_compute = [s for s in stacks.values() if not has_thumbnails(s)]
   print(f'### Need to compute thumbnails for {len(to_compute)} stacks')
 
-  ray.get(
-      [compute_stack_thumbnails.remote(context, stack) for stack in to_compute])
+  waitables = [
+      compute_stack_thumbnails.remote(context, stack) for stack in to_compute
+  ]
+
+  while len(waitables):
+    result, waitables = ray.wait(waitables)
+    try:
+      ray.get(result)
+    except Exception as e:
+      print(f'### compute_stack_thumbnails threw exception {e}')
 
   return context
 

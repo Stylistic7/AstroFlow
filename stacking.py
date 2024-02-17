@@ -86,7 +86,6 @@ def _add_xisf_metadata(filename, dest_filename, metadata):
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
 def stack_files(context, stack, dest_path, metadata=None):
   print(f'### Entering stack_files for {stack}')
-  print(f'### runs {stack.runs}')
 
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
@@ -174,11 +173,21 @@ def scatter_stack_subframes(context):
 
   for task_group in parallel_tasks:
     print(f'### Starting {len(task_group)} stack_files tasks in parallel...')
-    results = ray.get([
+
+    waitables = [
         stack_files.remote(context, stacks[s], context.output_dir)
         for s in task_group
         if not find_matching_masters(fits_headers, stacks[s].hash())
-    ])
+    ]
+
+    results = []
+    while len(waitables):
+      done, waitables = ray.wait(waitables)
+      try:
+        results.extend(ray.get(done))
+      except Exception as e:
+        print(f'### stack_files threw exception {e}')
+
     context = ray.get(scatter_compute_image_metadata.remote(context, results))
     print(f'### scatter_compute_image_metadata done for {len(results)} results')
 
