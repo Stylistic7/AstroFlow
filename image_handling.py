@@ -94,7 +94,7 @@ def scatter_stack_thumbnails(context):
 
   ray.get([
       compute_stack_thumbnails.remote(context, stack)
-      for stack in list(stacks.values())[0:10]
+      for stack in stacks.values()
       if not has_thumbnails(stack)
   ])
 
@@ -149,21 +149,18 @@ def compute_stack_thumbnails(context, stack, width=1200):
 
   # Don't make previews for calibration stacks.
   light_frames = [f for run in stack.runs for f in run.frames]
-  print(f'### compute_stack_thumbnails 1')
   if not all(file_io.is_light_frame(fits_headers[f]) for f in light_frames):
     print(f'Ignoring {stack} because it is not composed entirely '
           f'of light frames.')
     return
 
   calibrations = _get_calibrations(stack, stacks, fits_headers)
-  print(f'### compute_stack_thumbnails 2')
 
   # Now sort all the light frames (no matter which run they're from) by the
   # number of stars. The better images should be in front.
   light_frames_by_stars = sorted(light_frames,
                                  key=lambda f: plate_solutions[f].num_stars,
                                  reverse=True)
-  print(f'### compute_stack_thumbnails 3')
 
   # Cache the calibration images so they're only read once.
   calibration_images = {}
@@ -181,7 +178,6 @@ def compute_stack_thumbnails(context, stack, width=1200):
   image = resize_array(read_image(image_hashes[light_frames_by_stars[0]]),
                        width)
   height, width = image.shape
-  print(f'### compute_stack_thumbnails 4')
 
   height = int(((height + 8 - 1) / 8) * 8)
   print(f'Creating video of width {width}, height {height} '
@@ -192,7 +188,6 @@ def compute_stack_thumbnails(context, stack, width=1200):
     video_filename = os.path.join(tmp_dir, 'output.webm')
     out = cv2.VideoWriter(video_filename, fourcc, 10.0, (width, height), False)
     made_stack_thumbnail = False
-    print(f'### compute_stack_thumbnails 5')
     for light_frame in light_frames_by_stars:
       rotate = plate_solutions[light_frame].rotation_angle < 0.0
 
@@ -212,7 +207,6 @@ def compute_stack_thumbnails(context, stack, width=1200):
                            flat_image, rotate)
 
       if not made_stack_thumbnail:
-        print(f'### compute_stack_thumbnails 6')
         key = ('stack_thumbnail_image', stack.hash())
         ray_diskcache.set(key, array_to_png(im), keep_in_memory=False)
         print(f'Wrote key {key}')
@@ -223,7 +217,6 @@ def compute_stack_thumbnails(context, stack, width=1200):
       frame[0:im.shape[0], 0:im.shape[1]] = im
 
       out.write(frame)
-      print(f'### compute_stack_thumbnails 7')
 
     out.release()
     thumbnail_video = open(video_filename, 'rb').read()
