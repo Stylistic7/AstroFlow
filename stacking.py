@@ -136,7 +136,6 @@ def stack_files(context, stack, dest_path, metadata=None):
 
 
 def construct_graph(stacks, fits_headers):
-  print('### construct_graph stacks', stacks)
   graph = {}
   for stack in stacks.values():
     dependencies = []
@@ -170,7 +169,6 @@ def scatter_stack_subframes(context):
   print(f'### scatter_stack_subframes received {len(stacks)} stacks')
 
   parallel_tasks = group_parallel_tasks(construct_graph(stacks, fits_headers))
-  print('### parallel_tasks', parallel_tasks)
 
   for task_group in parallel_tasks:
     print(f'### Starting {len(task_group)} stack_files tasks in parallel...')
@@ -179,7 +177,6 @@ def scatter_stack_subframes(context):
         for s in task_group
         if not find_matching_masters(fits_headers, stacks[s].hash())
     ])
-    print('### results', results)
     context = ray.get(scatter_compute_image_metadata.remote(context, results))
     print(f'### scatter_compute_image_metadata done for {len(results)} results')
 
