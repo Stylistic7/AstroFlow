@@ -45,34 +45,43 @@ def array_to_png(array):
   return png.tobytes()
 
 
-def make_thumbnail(image_hashes,
-                   fits_headers,
-                   light_frame,
-                   bias_frame,
-                   dark_frame,
-                   flat_frame,
-                   rotate,
-                   width=1200):
-  light_image = resize_array(read_image(image_hashes[light_frame]), width)
+def _make_thumbnail(fits_headers, light_frame, light_image, bias_frame,
+                    bias_image, dark_frame, dark_image, flat_frame, flat_image,
+                    rotate):
 
   if rotate:
     light_image = np.rot90(light_image, 2)
 
-  if not dark_frame or not bias_frame or not flat_frame:
-    return autostretch(light_image)
+  assert type(light_frame) is str, f'light_frame {light_frame} is not str'
+  assert type(
+      light_image) is np.ndarray, f'light_image {light_image} is not np.ndarray'
 
-  dark_image = resize_array(read_image(image_hashes[dark_frame]), width)
-  bias_image = resize_array(read_image(image_hashes[bias_frame]), width)
-  flat_image = resize_array(read_image(image_hashes[flat_frame]), width)
+  if bias_frame is not None:
+    assert type(bias_frame) is str, f'bias_frame {bias_frame} is not str'
+    assert type(
+        bias_image) is np.ndarray, f'bias_image {bias_image} is not np.ndarray'
+
+  if dark_frame is not None:
+    assert type(dark_frame) is str, f'dark_frame {dark_frame} is not str'
+    assert type(
+        dark_image) is np.ndarray, f'dark_image {dark_image} is not np.ndarray'
+
+  if flat_frame is not None:
+    assert type(flat_frame) is str, f'flat_frame {flat_frame} is not str'
+    assert type(
+        flat_image) is np.ndarray, f'flat_image {flat_image} is not np.ndarray'
+
+  if not dark_image or not bias_image or not flat_image:
+    return autostretch(light_image)
 
   image_sizes = {
       light_image.shape, dark_image.shape, bias_image.shape, flat_image.shape
   }
-  assert (len(image_sizes) == 1), (
-      f"Shapes don't match: {image_hashes[light_frame]} {light_image.shape}, "
-      f"{image_hashes[dark_frame]} {dark_image.shape}, "
-      f"{image_hashes[bias_frame]} {bias_image.shape}, "
-      f"{image_hashes[flat_frame]} {flat_image.shape}")
+  assert len(image_sizes) == 1, (
+      f"Shapes don't match: light {light_image.shape}, "
+      f"bias {bias_image.shape}, "
+      f"dark {dark_image.shape}, "
+      f"flat {flat_image.shape}")
 
   light_dark_scale = fits_headers[light_frame]['EXPOSURE'] / fits_headers[
       dark_frame]['EXPOSURE']
@@ -149,10 +158,7 @@ def _get_calibrations(stack, stacks, fits_headers):
 
 
 # TODO: Put the thumbnail size in a user config.
-@ray.remote(scheduling_strategy="SPREAD",
-            num_cpus=0.75,
-            max_retries=5,
-            retry_exceptions=True)
+@ray.remote(scheduling_strategy="SPREAD", max_retries=5, retry_exceptions=True)
 def compute_stack_thumbnails(context, stack, width=1200):
   print(f'Entering compute_stack_thumbnails() for stack {str(stack)}')
   image_hashes = ray.get(context.image_hashes)
@@ -184,7 +190,7 @@ def compute_stack_thumbnails(context, stack, width=1200):
     elif hash in calibration_images:
       return calibration_images[hash]
     else:
-      image = read_image(image_hashes[hash])
+      image = resize_array(read_image(image_hashes[hash]), width)
       calibration_images[hash] = image
       return image
 
@@ -204,14 +210,20 @@ def compute_stack_thumbnails(context, stack, width=1200):
     for light_frame in light_frames_by_stars:
       rotate = plate_solutions[light_frame].rotation_angle < 0.0
 
-      bias_frame = get_calibration_image(
-          calibrations[light_frame]['bias_frame'])
-      dark_frame = get_calibration_image(
-          calibrations[light_frame]['dark_frame'])
-      flat_frame = get_calibration_image(
-          calibrations[light_frame]['flat_frame'])
-      im = make_thumbnail(image_hashes, fits_headers, light_frame, bias_frame,
-                          dark_frame, flat_frame, rotate)
+      light_image = resize_array(read_image(image_hashes[light_frame]), width)
+
+      bias_frame = calibrations[light_frame]['bias_frame']
+      bias_image = get_calibration_image(bias_frame)
+
+      dark_frame = calibrations[light_frame]['dark_frame']
+      dark_image = get_calibration_image(dark_frame)
+
+      flat_frame = calibrations[light_frame]['flat_frame']
+      flat_image = get_calibration_image(flat_frame)
+
+      im = _make_thumbnail(fits_headers, light_frame, light_image, bias_frame,
+                           bias_image, dark_frame, dark_image, flat_frame,
+                           flat_image, rotate)
 
       if not made_stack_thumbnail:
         key = ('stack_thumbnail_image', stack.hash())

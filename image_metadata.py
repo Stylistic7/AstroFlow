@@ -94,10 +94,7 @@ def scatter_compute_image_metadata(context, filenames):
   return context
 
 
-@ray.remote(scheduling_strategy="SPREAD",
-            num_cpus=0.75,
-            max_retries=5,
-            retry_exceptions=True)
+@ray.remote(scheduling_strategy="SPREAD", max_retries=5, retry_exceptions=True)
 def compute_image_metadata_ray(filename):
   # TODO: Make sure this code doesn't actually repeatedly read the image across
   # the network. It should hit the node's filesystem cache.

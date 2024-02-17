@@ -168,7 +168,6 @@ def scatter_stack_subframes(context):
   fits_headers = ray.get(context.fits_headers)
   stacks = ray.get(context.stacks)
   print(f'### scatter_stack_subframes received {len(stacks)} stacks')
-  print('### stacks', stacks)
 
   parallel_tasks = group_parallel_tasks(construct_graph(stacks, fits_headers))
   print('### parallel_tasks', parallel_tasks)

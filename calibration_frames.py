@@ -9,8 +9,6 @@ from stack import Stack, Run, FrameHash
 
 
 def _associate(stack, image_type, fits_headers, stack_dependencies=None):
-  print(f'Entering _associate() for {stack}')
-
   if not stack_dependencies:
     stack_dependencies = []
 
