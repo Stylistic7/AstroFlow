@@ -44,12 +44,12 @@ class TestRayDiskcache(unittest.TestCase):
     ray_diskcache.or_equals('foo', {'c': 'd'})
     self.assertEqual(ray_diskcache.get('foo'), {'a': 'b', 'c': 'd'})
 
-  def test_plus_equals(self):
+  def test_and_equals(self):
     ray_diskcache.set('foo', 0)
-    ray_diskcache.plus_equals('foo', 1)
-    ray_diskcache.plus_equals('foo', 1)
-    ray_diskcache.plus_equals('foo', 1)
-    ray_diskcache.plus_equals('foo', 1)
+    ray_diskcache.and_equals('foo', 1)
+    ray_diskcache.and_equals('foo', 1)
+    ray_diskcache.and_equals('foo', 1)
+    ray_diskcache.and_equals('foo', 1)
     self.assertEqual(ray_diskcache.get('foo'), 4)
 
 
