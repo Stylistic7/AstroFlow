@@ -1,7 +1,7 @@
 import os
 import astropy.io.fits as pyfits
 import numpy as np
-from scipy import signal
+from scipy.signal.windows import gaussian
 import datetime
 import random
 import uuid
@@ -45,7 +45,7 @@ def _make_flat_frame(height_pixels, width_pixels, std=None):
   if not std:
     std = width_pixels / 2.0
 
-  gkern1d = signal.gaussian(width_pixels, std=std).reshape(width_pixels, 1)
+  gkern1d = gaussian(width_pixels, std=std).reshape(width_pixels, 1)
   img = np.outer(gkern1d, gkern1d)
 
   bottom = int((width_pixels - height_pixels) / 2)
@@ -100,8 +100,6 @@ def copy_testdata_frames(target_name,
 
         if date_obs:
           header['DATE-OBS'] = date_obs.strftime("%Y-%m-%dT%H:%M:%S")
-          print('### copy_testdata_frames overwrote DATE-OBS to',
-                header['DATE-OBS'])
           date_obs += datetime.timedelta(seconds=int(header['EXPOSURE']) + 1)
 
         fits.flush()
@@ -111,7 +109,6 @@ def copy_testdata_frames(target_name,
     image_hashes[hash] = dest_filename
 
     header = file_io.read_header(dest_filename)
-    print('### copy_testdata_frames DATE-OBS on disk is', header['DATE-OBS'])
     header.update(fits_header_overrides)
 
     fits_headers[hash] = header
@@ -229,7 +226,7 @@ def make_synthetic_frames(start_datetime=datetime.datetime(
         'XPIXSZ': pixel_pitch_um,
         'YPIXSZ': pixel_pitch_um,
     }
-    fits_headers[image_hash] = fits_header
+    fits_headers[image_hash] = file_io._normalize_header(fits_header)
 
     if image_type == 'Light':
       plate_solutions[image_hash] = plate_solving.PlateSolution(
