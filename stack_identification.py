@@ -50,7 +50,7 @@ def _new_stack(name, light_frames, fits_headers, plate_solutions):
 
 
 @ray.remote
-def identify_stacks_ray(context):
+def identify_stacks(context):
   print('Identifying stacks...')
 
   fits_headers = ray.get(context.fits_headers)
@@ -85,7 +85,7 @@ def identify_stacks_ray(context):
               light_frames_in_run, _ = zip(*run)
 
               # TODO: Put the minimum stack size in the UI.
-              if len(light_frames_in_run) < 5:
+              if len(light_frames_in_run) < 3:
                 continue
 
               light_frames[tuple(sorted(light_frames_in_run))] = set()

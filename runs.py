@@ -16,7 +16,7 @@ def run_time_delta(a, b):
 # TODO: Put the minimum stack size in the UI.
 def get_runs(frames,
              fits_headers,
-             min_frames=5,
+             min_frames=3,
              max_gap=datetime.timedelta(minutes=15)):
   if not frames:
     return []
