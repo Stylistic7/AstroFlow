@@ -3,38 +3,31 @@ import sys
 import tempfile
 import os
 from pathlib import Path
-from multiprocessing import Pool
-import astropy.wcs
-import astropy.io.fits as pyfits
+import astropy.wcs  # type: ignore
+import astropy.io.fits as pyfits  # type: ignore
 import warnings
 from dataclasses import dataclass
 import numpy as np
 import traceback
-from xisf import XISF
-import objsize
-import concurrent.futures
-import copy
+from xisf import XISF  # type: ignore
 import time
+from typing import Any
 
-import file_io
 import throughput
 
 
 @dataclass
 class PlateSolution:
-  image_filename: str = None
-  header: dict = None
-  num_stars: int = 0
-  center: list[float] = None
-  image_scale: float = None
-  rotation_angle: float = None
-  footprint: list = None
+  image_filename: str | None = None
+  header: dict | None = None
+  num_stars: int | None = None
+  center: tuple[float, float] | None = None
+  image_scale: float | None = None
+  rotation_angle: float | None = None
+  footprint: list | None = None
 
 
-# TODO: Don't open the WCS file multiple times.
-
-
-def get_footprint(header):
+def get_footprint(header: dict[str, Any]) -> list[float]:
   """Returns a 4x2 array. Order is clockwise starting with the bottom left corner."""
   with warnings.catch_warnings():
     warnings.simplefilter("ignore")
@@ -44,15 +37,15 @@ def get_footprint(header):
     return wcs.calc_footprint(header=header).tolist()
 
 
-def get_center(header):
-  return header['CRVAL1'], header['CRVAL2']
+def get_center(header: dict[str, Any]) -> tuple[float, float]:
+  return float(header['CRVAL1']), float(header['CRVAL2'])
 
 
-def get_rotation_angle(header):
+def get_rotation_angle(header: dict[str, Any]) -> float:
   return np.arctan2(header['CD1_2'], header['CD1_1'])
 
 
-def get_image_scale(header):
+def get_image_scale(header: dict[str, Any]) -> float:
   scale_x = np.linalg.norm(np.array([header['CD1_1'], header['CD2_1']]))
   scale_y = np.linalg.norm(np.array([header['CD1_2'], header['CD2_2']]))
   assert np.isclose(
@@ -61,17 +54,17 @@ def get_image_scale(header):
 
   # The result is in arcseconds per pixel.
   image_scale = scale_x * 3600.0
-  return image_scale
+  return float(image_scale)
 
 
-def get_num_stars(axy_file):
+def get_num_stars(axy_file: Path | str) -> int:
   fits = pyfits.open(axy_file)
   table = fits[1].data
   fits.close()
   return table.shape[0]
 
 
-def simplify_header(header):
+def simplify_header(header: dict[str, Any]) -> dict[str, Any]:
   output_header = {}
   for k in header.keys():
     if 'COMMENT' in k or 'HISTORY' in k:
@@ -81,7 +74,8 @@ def simplify_header(header):
   return output_header
 
 
-def _solve_field(filename, arguments):
+def _solve_field(filename: Path | str,
+                 arguments: list[str]) -> PlateSolution | Exception | None:
   # TODO: Only copy the file to a temp dir once.
   with tempfile.TemporaryDirectory() as temp_dir:
     if os.path.splitext(filename)[-1] in ['.xisf']:
@@ -97,13 +91,12 @@ def _solve_field(filename, arguments):
         for v in values:
           hdu.header[k] = (v['value'], v['comment'])
 
-      dest_filename = os.path.join(temp_dir, os.path.basename(filename))
-      dest_filename = Path(dest_filename).with_suffix('.fits')
+      dest_filename = Path(os.path.join(
+          temp_dir, os.path.basename(filename))).with_suffix('.fits')
 
-      # print(f'Converting XISF to FITS {dest_filename}')
       hdu.writeto(dest_filename, overwrite=True)
     else:
-      dest_filename = os.path.join(temp_dir, os.path.basename(filename))
+      dest_filename = Path(os.path.join(temp_dir, os.path.basename(filename)))
       os.symlink(filename, dest_filename)
 
     try:
@@ -123,7 +116,7 @@ def _solve_field(filename, arguments):
       header = simplify_header(fits[0].header)
       try:
         num_stars = get_num_stars(axy_file)
-        soln = PlateSolution(image_filename=filename,
+        soln = PlateSolution(image_filename=str(filename),
                              header=header,
                              center=get_center(header),
                              image_scale=get_image_scale(header),
