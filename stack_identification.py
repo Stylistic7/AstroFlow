@@ -83,9 +83,16 @@ def identify_stacks_ray(context):
             for run in clustering.cluster_continuous(
                 date_obs, epsilon=datetime.timedelta(minutes=15)):
               light_frames_in_run, _ = zip(*run)
+
+              # TODO: Put the minimum stack size in the UI.
+              if len(light_frames_in_run) < 5:
+                continue
+
               light_frames[tuple(sorted(light_frames_in_run))] = set()
-            stacks.append(
-                _new_stack(name, light_frames, fits_headers, plate_solutions))
+
+            if len(light_frames):
+              stacks.append(
+                  _new_stack(name, light_frames, fits_headers, plate_solutions))
 
   print(f'Identified {len(stacks)} stacks')
   context.stacks = ray.put(stacks)

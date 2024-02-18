@@ -13,6 +13,7 @@ def run_time_delta(a, b):
   return abs(midpoint_a - midpoint_b)
 
 
+# TODO: Put the minimum stack size in the UI.
 def get_runs(frames,
              fits_headers,
              min_frames=5,

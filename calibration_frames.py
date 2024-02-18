@@ -106,6 +106,11 @@ def _associate(stack, image_type, fits_headers, stack_dependencies=None):
     # Select the run of calibration frames that are closest in time to the
     # light frames.
     cal_runs = runs.get_runs(cal_frames, fits_headers)
+    if not len(cal_runs):
+      print(
+          f'WARNING: Could not find any acceptable runs of calibration frames')
+      continue
+
     cal_run = cal_runs[np.argmin(
         [runs.run_time_delta(light_run, cal_run) for cal_run in cal_runs])]
     cal_frames = runs.get_frames_for_run(cal_run, cal_frames, fits_headers)
