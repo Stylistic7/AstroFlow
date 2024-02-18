@@ -64,7 +64,9 @@ def identify_stacks(context):
     scales = [(f, plate_solutions[f].image_scale) for f in light_frames]
     for scale_cluster in clustering.cluster_continuous(scales, epsilon=0.2):
       scale_frames, _ = zip(*scale_cluster)
-      cameras = [(f, fits_headers[f]['INSTRUME']) for f in scale_frames]
+      cameras = [(f, (fits_headers[f]['INSTRUME'], fits_headers[f]['NAXIS1'],
+                      fits_headers[f]['NAXIS2'], fits_headers[f]['XPIXSZ'],
+                      fits_headers[f]['YPIXSZ'])) for f in scale_frames]
       for camera_cluster in clustering.cluster_discrete(cameras):
         camera_frames, cameras = zip(*camera_cluster)
         assert len(set(cameras)) == 1
