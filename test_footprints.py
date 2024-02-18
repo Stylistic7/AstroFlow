@@ -1,28 +1,28 @@
+import ray_local
+
+import ray
 import unittest
-import numpy as np
 import shapely
 from shapely import Polygon
 
-from cache import cache
-from stack import Stack
-from target import Target
-from mosaic import Mosaic
+from context import Context
 from footprints import project_footprint
-from make_test_frames import make_test_frames
-import step_mosaic
+from make_test_frames import make_synthetic_frames
 from mosaics import identification
 from stack_identification import identify_stacks
-from astro_flow_direct import group_stacks_into_targets
+from calibration_frames import associate_calibration_frames
+from target_identification import group_stacks_into_targets
 from spatial_association import find_components_by_cosine_similarity
 import mercator
 
 
 class TestFootprints(unittest.TestCase):
+
   def setUp(self):
     self.proj = mercator.MercatorProjection()
 
   def test_stack(self):
-    image_hashes, fits_headers, plate_solutions = make_test_frames(
+    image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
         number=10,
         prefix='foo',
         ra=180,
@@ -32,13 +32,16 @@ class TestFootprints(unittest.TestCase):
         rotation_angle_deg=0,
         dither=0)
 
-    spatial_components = find_components_by_cosine_similarity(
-        image_hashes.keys(), plate_solutions, fits_headers)
-    stacks = identify_stacks(spatial_components, plate_solutions, fits_headers)
-    stacks = {s.id: s for s in stacks}
+    context = Context(image_hashes=ray.put(image_hashes),
+                      fits_headers=ray.put(fits_headers),
+                      plate_solutions=ray.put(plate_solutions))
 
+    context = ray.get(find_components_by_cosine_similarity.remote(context))
+    context = ray.get(identify_stacks.remote(context))
+
+    stacks = ray.get(context.stacks)
     self.assertEqual(len(stacks), 1)
-    stack = next(iter(stacks.values()))
+    stack = next(iter(stacks))
 
     projected_footprint = project_footprint(stack.footprint_polygon(),
                                             self.proj)
@@ -55,7 +58,7 @@ class TestFootprints(unittest.TestCase):
   def test_target(self):
     # Two stacks with the same footprint, but different image scales. They
     # should be merged into a single target.
-    image_hashes, fits_headers, plate_solutions = make_test_frames(
+    image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
         number=10,
         prefix='foo',
         ra=180,
@@ -65,7 +68,7 @@ class TestFootprints(unittest.TestCase):
         image_scale=1.0,
         width_pixels=10800,
         height_pixels=7200)
-    image_hashes, fits_headers, plate_solutions = make_test_frames(
+    image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
         number=10,
         prefix='bar',
         ra=180,
@@ -79,15 +82,21 @@ class TestFootprints(unittest.TestCase):
         fits_headers=fits_headers,
         plate_solutions=plate_solutions)
 
-    spatial_components = find_components_by_cosine_similarity(
-        image_hashes.keys(), plate_solutions, fits_headers)
-    stacks = identify_stacks(spatial_components, plate_solutions, fits_headers)
-    stacks = {s.id: s for s in stacks}
+    context = Context(image_hashes=ray.put(image_hashes),
+                      fits_headers=ray.put(fits_headers),
+                      plate_solutions=ray.put(plate_solutions))
 
+    context = ray.get(find_components_by_cosine_similarity.remote(context))
+    context = ray.get(identify_stacks.remote(context))
+    context = ray.get(associate_calibration_frames.remote(context))
+    context = ray.get(group_stacks_into_targets.remote(context))
+
+    stacks = ray.get(context.stacks)
     self.assertEqual(len(stacks), 2)
 
-    targets = group_stacks_into_targets(stacks, plate_solutions, fits_headers)
+    targets = ray.get(context.targets)
     self.assertEqual(len(targets), 1)
+
     target = next(iter(targets.values()))
 
     projected_footprint = project_footprint(target.footprint_polygon(),
@@ -104,7 +113,7 @@ class TestFootprints(unittest.TestCase):
 
   def test_mosaic(self):
     # Two stacks that overlap by a degree in RA.
-    image_hashes, fits_headers, plate_solutions = make_test_frames(
+    image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
         number=10,
         prefix='foo',
         ra=180,
@@ -114,7 +123,7 @@ class TestFootprints(unittest.TestCase):
         image_scale=1.0,
         width_pixels=10800,
         height_pixels=7200)
-    image_hashes, fits_headers, plate_solutions = make_test_frames(
+    image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
         number=10,
         prefix='bar',
         ra=182,
@@ -128,14 +137,19 @@ class TestFootprints(unittest.TestCase):
         fits_headers=fits_headers,
         plate_solutions=plate_solutions)
 
-    spatial_components = find_components_by_cosine_similarity(
-        image_hashes.keys(), plate_solutions, fits_headers)
-    stacks = identify_stacks(spatial_components, plate_solutions, fits_headers)
-    stacks = {s.id: s for s in stacks}
+    context = Context(image_hashes=ray.put(image_hashes),
+                      fits_headers=ray.put(fits_headers),
+                      plate_solutions=ray.put(plate_solutions))
 
+    context = ray.get(find_components_by_cosine_similarity.remote(context))
+    context = ray.get(identify_stacks.remote(context))
+    context = ray.get(associate_calibration_frames.remote(context))
+    context = ray.get(group_stacks_into_targets.remote(context))
+
+    stacks = ray.get(context.stacks)
     self.assertEqual(len(stacks), 2)
 
-    targets = group_stacks_into_targets(stacks, plate_solutions, fits_headers)
+    targets = ray.get(context.targets)
     self.assertEqual(len(targets), 2)
 
     mosaics = identification.identify_mosiacs(targets)

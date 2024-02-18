@@ -56,11 +56,11 @@ def ransac(mosaic, debug=False, plot=False, plot_title=None):
 
   if len(mosaic) == 1:
     print('### RANSAC called on a single target')
-    return [t.id for t in mosaic], [(0, 0)]
+    return [t.hash() for t in mosaic], [(0, 0)]
 
   if len(mosaic) == 2:
     print('### RANSAC called with two targets')
-    return [t.id for t in mosaic], [(0, 0), (0, 1)]
+    return [t.hash() for t in mosaic], [(0, 0), (0, 1)]
 
   best_error = np.inf
   best_origin = None
@@ -140,7 +140,7 @@ def ransac(mosaic, debug=False, plot=False, plot_title=None):
     print(f'  tile_indices {i}: {tile_indices}')
     all_tile_indices.append(tuple(tile_indices))
 
-  target_ids = [t.id for t in best_inliers]
+  target_ids = [t.hash() for t in best_inliers]
   print('### ransac returning target_ids', target_ids, 'all_tile_indices',
         all_tile_indices)
   return target_ids, all_tile_indices

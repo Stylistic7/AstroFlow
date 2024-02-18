@@ -6,25 +6,23 @@ import tempfile
 import ray
 from cache import cache
 
-from stack import Stack
 from make_test_frames import make_synthetic_frames, copy_testdata_frames
 import ray_diskcache
 from context import Context
 import file_io
 from compute_graph import run_compute_graph
 from image_metadata import scatter_compute_image_metadata
-from spatial_association import find_components_by_cosine_similarity_ray
-from stack_identification import identify_stacks_ray
+from spatial_association import find_components_by_cosine_similarity
+from stack_identification import identify_stacks
 from calibration_frames import associate_calibration_frames
-from stacking import scatter_stack_subframes, construct_graph, group_parallel_tasks
 
 
 @ray.remote
 def _compute_graph_fragment(context, new_filenames):
   context = ray.get(
       scatter_compute_image_metadata.remote(context, new_filenames))
-  context = ray.get(find_components_by_cosine_similarity_ray.remote(context))
-  context = ray.get(identify_stacks_ray.remote(context))
+  context = ray.get(find_components_by_cosine_similarity.remote(context))
+  context = ray.get(identify_stacks.remote(context))
   context = ray.get(associate_calibration_frames.remote(context))
 
   return context

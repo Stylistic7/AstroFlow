@@ -43,6 +43,8 @@ def _wait_until_new_instance_is_allowed():
     time.sleep(5)
 
 
+# TODO: Make the slot number configurable, including in unit tests (so the
+# unit test won't disturb a simultaneous normal run).
 def _start_pixinsight_instance(blocking=False):
   with cache.transact():
     idle_slots = cache.get('pixinsight_idle_slots', [])

@@ -1,30 +1,17 @@
-from compute_graph import run_compute_graph
-import ray_diskcache
-import image_handling
-import step_sanity_check_stack
-import step_download_asiair
-import autorun_log_analysis
-from mosaics import identification
+import ray
 from cache import cache
-from mosaic import Mosaic
-from target import Target
-from stack import Stack
-import runs
 import pix
 import os
 import argparse
 from pathlib import Path
-import itertools
 from multiprocessing import Pool
-import numpy as np
 import structlog
 import traceback
 
-import ray
-
+import step_download_asiair
+import autorun_log_analysis
 import file_io
 import ray_diskcache
-from stack_identification import identify_stacks_ray
 from context import Context
 from compute_graph import run_compute_graph
 
