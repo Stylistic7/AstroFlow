@@ -36,6 +36,11 @@ class Stack:
   def __post_init__(self):
     self.id = self.hash()
 
+  # TODO: This is messy. associate_calibration_frames() mutates Stacks, but
+  # they should probably be immutable.
+  def store_id(self):
+    self.id = self.hash()
+
   def footprint_polygon(self) -> SphericalPolygon:
     return SphericalPolygon(self.footprint)
 

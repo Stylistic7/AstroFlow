@@ -170,7 +170,10 @@ def associate_calibration_frames(context):
 
     output_stacks.append(stack)
 
-  stacks = {s.hash(): s for s in output_stacks}
+  # TODO: This is messy. associate_calibration_frames() mutates Stacks, but
+  # they should probably be immutable.
+  [s.store_id() for s in output_stacks]
+  stacks = {s.id: s for s in output_stacks}
 
   ray_diskcache.set('stacks', stacks)
   context.stacks = ray.put(stacks)
