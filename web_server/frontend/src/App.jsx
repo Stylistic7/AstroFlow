@@ -19,12 +19,13 @@ import { StyledEngineProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
 import './App.css';
-import { BrowserRouter as Router, Routes, Route} from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
 function App() {
   const isPageVisible = usePageVisibility();
   const timerIdRef = useRef(null);
   const [isPollingEnabled, setIsPollingEnabled] = useState(true);
+  const [dataIsAvailable, setDataIsAvailable] = useState(false);
 
   const [stacks, setStacks] = useState({});
   const [targets, setTargets] = useState({});
@@ -34,7 +35,7 @@ function App() {
 
 
   useEffect(() => {
-    const pollingCallback = () => {
+    const pollingCallback = async () => {
       // Your polling logic here
       console.log('Polling...');
 
@@ -47,18 +48,19 @@ function App() {
       // }
 
       // TODO: Only fetch the constellation polylines ones.
-      fetch('/constellation_polylines').then(res => res.json()).then(c => {
-        setConstellationPolylines(c);  
-      });
-      fetch('/stacks').then(res => res.json()).then(stacks => {
-        setStacks(stacks);  
-      });
-      fetch('/targets').then(res => res.json()).then(targets => {
-        setTargets(targets);  
-      });
-      fetch('/mosaics').then(res => res.json()).then(mosaics => {
-        setMosaics(mosaics);  
-      });
+      let [c, s, t, m] = await Promise.all([
+        fetch('/constellation_polylines').then(r => r.json()),
+        fetch('/stacks').then(r => r.json()),
+        fetch('/targets').then(r => r.json()),
+        fetch('/mosaics').then(r => r.json()),
+      ]);
+
+      setConstellationPolylines(c);
+      setStacks(s);
+      setTargets(t);
+      setMosaics(m);
+
+      setDataIsAvailable(true);
     };
 
     const startPolling = () => {
@@ -83,17 +85,17 @@ function App() {
     };
   }, [isPageVisible, isPollingEnabled]);
 
-  const isEmptyObj = (obj) => {
-    return Object.keys(obj).length === 0 && obj.constructor === Object;
-  };
+  // const isEmptyObj = (obj) => {
+  //   return Object.keys(obj).length === 0 && obj.constructor === Object;
+  // };
 
-  const dataIsAvailable = !isEmptyObj(stacks) && !isEmptyObj(targets) && !isEmptyObj(mosaics);
+  // const dataIsAvailable = !isEmptyObj(stacks) && !isEmptyObj(targets) && !isEmptyObj(mosaics);
 
   const starmap = <Starmap
-          constellation_polylines={constellationPolylines}
-          stacks={stacks}
-          targets={targets}
-          mosaics={mosaics} />;
+    constellation_polylines={constellationPolylines}
+    stacks={stacks}
+    targets={targets}
+    mosaics={mosaics} />;
 
   const fontColor = "#aaa";
 
