@@ -8,7 +8,7 @@ import Typography from '@mui/material/Typography';
 import { CardActionArea } from '@mui/material';
 
 export default function TargetCard({stacks, targets, mosaics, target_id}) {
-  const target = targets[target_id];
+  const target = targets[target_id];  
   const navigate = useNavigate();
 
   let num_columns = 1;

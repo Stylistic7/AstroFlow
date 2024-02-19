@@ -19,16 +19,11 @@ export default function Starmap({
 	const [mosaic, setMosaic] = React.useState(undefined);
 
 	const handleClick = (event) => {
-		// navigate("/mosaic/" + mosaic.id)}
 		console.log('x ' + event.clientX + ', y ' + event.clientY);
 
 		let elements = document.elementsFromPoint(event.clientX, event.clientY);
 		let matching_items = [];
 	  elements.forEach((elt, i) => {
-	    // output.textContent += elt.localName;
-	    // if (i < elements.length - 1) {
-	    //   output.textContent += " < ";
-	    // }
 	    console.log('clicked object ', elt.getAttribute("data"));
 
 	   	const data = elt.getAttribute("data");
@@ -75,21 +70,21 @@ export default function Starmap({
 								style={{pointerEvents: "auto"}}
 							>
 								<g transform="scale(1,-1)">
-									{Object.values(targets).map((target) =>
+									{Object.entries(targets).map(([id, target]) =>
 										<Polyline
 											className="target_polygon"
-											data={['target', target.id]}
+											data={['target', id]}
 											polyline={target.projected_footprint['mollweide_galactic'].coords}
-											key={target.id}
+											key={id}
 											handleClick={event => handleClick(event)}
 										/>
 									)}
-									{Object.values(mosaics).map((mosaic) =>
+									{Object.entries(mosaics).map(([id, mosaic]) =>
 										<Polyline
 											className="mosaic_polygon"
-											data={['mosaic', mosaic.id]}
+											data={['mosaic', id]}
 											polyline={mosaic.projected_footprint['mollweide_galactic'].coords}
-											key={mosaic.id}
+											key={id}
 											handleClick={event => handleClick(event)}
 										/>
 									)}
