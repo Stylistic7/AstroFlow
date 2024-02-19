@@ -18,6 +18,7 @@ class Run:
 
 @dataclass(order=True)
 class Stack:
+  id: str | None = None
   runs: list[Run] = field(default_factory=list)
   target: Optional[str] = None
   camera: Optional[str] = None
@@ -31,6 +32,9 @@ class Stack:
   filter: Optional[str] = None
   footprint: Optional[SphericalPolygon] = None
   projected_footprints: Optional[dict[str, Polygon]] = None
+
+  def __post_init__(self):
+    self.id = self.hash()
 
   def footprint_polygon(self) -> SphericalPolygon:
     return SphericalPolygon(self.footprint)
