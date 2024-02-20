@@ -167,7 +167,7 @@ def run_script(tasks,
 
 
 def _stop_pixinsight_instances():
-  for slot in cache['pixinsight_slots']:
+  for slot in cache.get('pixinsight_slots', []):
     subprocess.run([
         '/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight',
         f'--terminate={slot}'
