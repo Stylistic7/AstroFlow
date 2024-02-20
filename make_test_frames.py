@@ -21,6 +21,26 @@ _TESTDATA_TARGETS = {
         'testdata/Light_NGC7635_300.0s_Bin1_6200MM_H_20231004-213019_0004.fit',
         'testdata/Light_NGC7635_300.0s_Bin1_6200MM_H_20231004-213521_0005.fit',
         'testdata/Light_NGC7635_300.0s_Bin1_6200MM_H_20231004-214053_0006.fit',
+    ],
+    'Orion Pane 1': [
+        'testdata/Light_Orion_Pane 1_300.0s_Bin1_6200MM_H_20231222-210506_0001.fit',
+        'testdata/Light_Orion_Pane 1_300.0s_Bin1_6200MM_H_20231222-211007_0002.fit',
+        'testdata/Light_Orion_Pane 1_300.0s_Bin1_6200MM_H_20231222-211510_0003.fit',
+    ],
+    'Orion Pane 2': [
+        'testdata/Light_Orion_Pane 2_300.0s_Bin1_6200MM_H_20231222-220301_0001.fit',
+        'testdata/Light_Orion_Pane 2_300.0s_Bin1_6200MM_H_20231222-220803_0002.fit',
+        'testdata/Light_Orion_Pane 2_300.0s_Bin1_6200MM_H_20231222-221305_0003.fit',
+    ],
+    'Orion Pane 3': [
+        'testdata/Light_Orion_Pane 3_300.0s_Bin1_6200MM_H_20231222-230116_0001.fit',
+        'testdata/Light_Orion_Pane 3_300.0s_Bin1_6200MM_H_20231222-230618_0002.fit',
+        'testdata/Light_Orion_Pane 3_300.0s_Bin1_6200MM_H_20231222-231120_0003.fit',
+    ],
+    'Orion Pane 4': [
+        'testdata/Light_Orion_Pane 4_300.0s_Bin1_6200MM_H_20231223-001210_0001.fit',
+        'testdata/Light_Orion_Pane 4_300.0s_Bin1_6200MM_H_20231223-001712_0002.fit',
+        'testdata/Light_Orion_Pane 4_300.0s_Bin1_6200MM_H_20231223-002215_0003.fit',
     ]
 }
 
