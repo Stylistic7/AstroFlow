@@ -1,9 +1,13 @@
 import traceback
 import structlog
 from spherical_geometry.polygon import SphericalPolygon
+import ray
+import numpy as np
 
+import ray_diskcache
 from mosaic import Mosaic
 import position_string
+import footprints
 
 from . import ransac
 
@@ -55,7 +59,10 @@ def identify_overlapping_targets(targets):
   return mosaics
 
 
-def identify_mosiacs(targets, plot=False):
+@ray.remote
+def identify_mosiacs(context):
+  targets = ray.get(context.targets)
+
   mosaics = identify_overlapping_targets(targets.values())
   if not mosaics:
     return []
@@ -65,7 +72,7 @@ def identify_mosiacs(targets, plot=False):
   output_mosaics = []
   for mosaic in mosaics:
     target_ids, tile_indices = ransac.ransac(mosaic,
-                                             plot=plot,
+                                             plot=False,
                                              plot_title='foo')
 
     if not target_ids:
@@ -78,15 +85,34 @@ def identify_mosiacs(targets, plot=False):
 
     try:
       output_mosaic = Mosaic()
-      output_mosaic.target_ids = target_ids
-      output_mosaic.tile_indices = tile_indices
-      output_mosaic.store_metadata(targets)
+
+      centers = [targets[id].center for id in target_ids]
+      mean_center = np.mean(centers, axis=0)
+      output_mosaic.center = list(mean_center)
+
       output_mosaic.name = position_string.canonical_target_string(
           output_mosaic.center)
+      output_mosaic.target_ids = target_ids
+      output_mosaic.tile_indices = tile_indices
+      output_mosaic.footprint = next(
+          SphericalPolygon.multi_union([
+              SphericalPolygon(targets[target_id].footprint)
+              for target_id in target_ids
+          ]).points).tolist()
+      output_mosaic.projected_footprint = footprints.all_projections(
+          SphericalPolygon(output_mosaic.footprint))
+
       print(f'Mosaic has name {output_mosaic.name} and id {output_mosaic.id}')
 
       output_mosaics.append(output_mosaic)
     except Exception as e:
       traceback.print_exc()
 
-  return output_mosaics
+  mosaics = {m.hash(): m for m in output_mosaics}
+
+  # TODO: Computing the result and storing the result are two different
+  # responsibilities. Perhaps separate patterns like this?
+  ray_diskcache.set('mosaics', mosaics)
+
+  context.mosaics = ray.put(mosaics)
+  return context

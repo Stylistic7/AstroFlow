@@ -7,6 +7,8 @@ from target_identification import group_stacks_into_targets
 from calibration_frames import associate_calibration_frames
 from image_handling import scatter_stack_thumbnails
 from stacking import scatter_stack_subframes
+from step_mosaic import scatter_merge_mosaics
+from mosaics.identification import identify_mosiacs
 
 
 @ray.remote
@@ -17,7 +19,9 @@ def run_compute_graph(context, new_filenames):
   context = ray.get(identify_stacks.remote(context))
   context = ray.get(associate_calibration_frames.remote(context))
   context = ray.get(group_stacks_into_targets.remote(context))
+  context = ray.get(identify_mosiacs.remote(context))
   context = ray.get(scatter_stack_thumbnails.remote(context))
+  context = ray.get(scatter_merge_mosaics.remote(context, preview=True))
   context = ray.get(scatter_stack_subframes.remote(context))
 
   # TODO: Add a cleanup task that deletes unreferenced stuff from the cache.

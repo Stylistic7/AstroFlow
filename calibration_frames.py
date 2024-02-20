@@ -153,6 +153,7 @@ def associate_calibration_frames(context):
 
   # At this point, stacks is just a list of stacks. The final content hashes
   # are not known yet, because the calibration frames aren't associated yet.
+  # TODO: Maybe parallelize this if it's slow.
   output_stacks = []
   for stack in stacks:
     stack, bias_stacks = _associate(stack, 'Bias', fits_headers)

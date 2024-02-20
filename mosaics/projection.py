@@ -41,16 +41,19 @@ def mosaic_by_coordinates(panel,
   projection_map = np.zeros(ras.shape)
   print(f'### projected_image shape', projected_image.shape)
 
-  # TODO: Must also support XISF files here.
-  ext = os.path.splitext(panel.image_filename)[-1]
-  if ext in ['.fit', '.fits']:
-    header = file_io.read_fits(panel.image_filename)
-    image = file_io.read_fits_image(panel.image_filename)
-  elif ext == '.xisf':
-    xisf = XISF(panel.image_filename)
-    image = xisf.read_image(0).squeeze()
-    img_meta = xisf.get_images_metadata()[0]
-    header = {k: v[0]['value'] for k, v in img_meta['FITSKeywords'].items()}
+  # # TODO: Must also support XISF files here.
+  # ext = os.path.splitext(panel.image_filename)[-1]
+  # if ext in ['.fit', '.fits']:
+  #   header = file_io.read_header(panel.image_filename)
+  #   image = file_io.read_image(panel.image_filename)
+  # elif ext == '.xisf':
+  #   xisf = XISF(panel.image_filename)
+  #   image = xisf.read_image(0).squeeze()
+  #   img_meta = xisf.get_images_metadata()[0]
+  #   header = {k: v[0]['value'] for k, v in img_meta['FITSKeywords'].items()}
+
+  header = file_io.read_header(panel.image_filename)
+  image = file_io.read_image(panel.image_filename)
 
   print(f'### mosaic_by_coordinates image dtype {image.dtype} '
         f'min {np.min(image)} max {np.max(image)}')
@@ -109,8 +112,7 @@ def mosaic_by_coordinates(panel,
 
   trimmed_image = np.zeros(projected_image.shape, np.float32)
   trimmed_image[trim_left:trim_left + trim_width, trim_top:trim_top +
-                trim_height] = projected_image[trim_left:trim_left +
-                                               trim_width,
+                trim_height] = projected_image[trim_left:trim_left + trim_width,
                                                trim_top:trim_top + trim_height]
 
   output_image = trimmed_image

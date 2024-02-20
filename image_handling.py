@@ -146,6 +146,21 @@ def _get_calibrations(stack, stacks, fits_headers):
   return calibrations
 
 
+def get_light_frames_sorted_by_stars(stack, fits_headers, plate_solutions):
+  # Don't make previews for calibration stacks.
+  light_frames = [f for run in stack.runs for f in run.frames]
+  if not all(file_io.is_light_frame(fits_headers[f]) for f in light_frames):
+    print(f'Ignoring {stack} because it is not composed entirely '
+          f'of light frames.')
+    return None
+
+  # Now sort all the light frames (no matter which run they're from) by the
+  # number of stars. The better images should be in front.
+  return sorted(light_frames,
+                key=lambda f: plate_solutions[f].num_stars,
+                reverse=True)
+
+
 # TODO: Put the thumbnail size in a user config.
 @ray.remote(scheduling_strategy="SPREAD", max_retries=5, retry_exceptions=True)
 def compute_stack_thumbnails(context, stack, width=1200):
@@ -166,9 +181,8 @@ def compute_stack_thumbnails(context, stack, width=1200):
 
   # Now sort all the light frames (no matter which run they're from) by the
   # number of stars. The better images should be in front.
-  light_frames_by_stars = sorted(light_frames,
-                                 key=lambda f: plate_solutions[f].num_stars,
-                                 reverse=True)
+  light_frames_by_stars = get_light_frames_sorted_by_stars(
+      stack, fits_headers, plate_solutions)
 
   # Cache the calibration images so they're only read once.
   calibration_images = {}

@@ -7,8 +7,8 @@ import CardMedia from '@mui/material/CardMedia';
 import Typography from '@mui/material/Typography';
 import { CardActionArea } from '@mui/material';
 
-export default function TargetCard({stacks, targets, mosaics, target_id}) {
-  const target = targets[target_id];  
+export default function TargetCard({ stacks, targets, mosaics, target_id }) {
+  const target = targets[target_id];
   const navigate = useNavigate();
 
   let num_columns = 1;
@@ -26,28 +26,29 @@ export default function TargetCard({stacks, targets, mosaics, target_id}) {
       >
         <CardContent>
           <div style={{
-              display: "grid",
-              gridTemplateColumns: `repeat(${num_columns}, 1fr)`,
-              gridColumnGap: "0.5em",
-              gridRowGap: "0.5em",
+            display: "grid",
+            gridTemplateColumns: `repeat(${num_columns}, 1fr)`,
+            gridColumnGap: "0.5em",
+            gridRowGap: "0.5em",
           }}>
             {
               target.stack_ids.map(stack_id => <img
+                key={`stack_thumbnail_image_${stack_id}`}
                 src={`/stack_thumbnail_image/${stack_id}`}
-                style={{width: "100%"}}
+                style={{ width: "100%" }}
               />)
             }
-          </div> 
+          </div>
           <Typography gutterBottom variant="h5" component="div">
             Target {target.name}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-              Stacks: {target.stack_ids.map(stack_id => 
-                stacks[stack_id].filter
-              )}
+            Stacks: {target.stack_ids.map(stack_id =>
+              stacks[stack_id].filter
+            )}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-              Image scale: {stacks[target.stack_ids[0]].image_scale.toFixed(2)}"/px
+            Image scale: {stacks[target.stack_ids[0]].image_scale.toFixed(2)}"/px
           </Typography>
         </CardContent>
       </CardActionArea>
