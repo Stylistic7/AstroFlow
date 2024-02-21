@@ -70,7 +70,7 @@ def identify_mosiacs(context):
 
   print(f'Found {len(mosaics)} mosaics')
 
-  output_mosaics = []
+  output_mosaics = {}
   for mosaic in mosaics:
     target_ids, tile_indices = ransac.ransac(mosaic,
                                              plot=False,
@@ -82,7 +82,7 @@ def identify_mosiacs(context):
 
     print(f'Mosaic composed of {len(target_ids)} targets:')
     for target_id in target_ids:
-      print(f'  {targets[target_id].name}')
+      print(f'  {targets[target_id].name} id {target_id}')
 
     try:
       output_mosaic = Mosaic()
@@ -93,6 +93,7 @@ def identify_mosiacs(context):
 
       output_mosaic.name = position_string.canonical_target_string(
           output_mosaic.center)
+      print('### target_ids', target_ids)
       output_mosaic.target_ids = target_ids
       output_mosaic.tile_indices = tile_indices
       output_mosaic.footprint = next(
@@ -103,17 +104,18 @@ def identify_mosiacs(context):
       output_mosaic.projected_footprint = footprints.all_projections(
           SphericalPolygon(output_mosaic.footprint))
 
-      print(f'Mosaic has name {output_mosaic.name} and id {output_mosaic.id}')
+      # TODO: Mosaic is mutated here, which is awkward. Mosaic objects should
+      # be immutable.
+      output_mosaic.id = output_mosaic.hash()
 
-      output_mosaics.append(output_mosaic)
+      print(f'Mosaic has name {output_mosaic.name} and id {output_mosaic.id}')
+      output_mosaics[output_mosaic.id] = output_mosaic
     except Exception as e:
       traceback.print_exc()
 
-  mosaics = {m.hash(): m for m in output_mosaics}
-
   # TODO: Computing the result and storing the result are two different
   # responsibilities. Perhaps separate patterns like this?
-  ray_diskcache.set('mosaics', mosaics)
+  ray_diskcache.set('mosaics', output_mosaics)
 
-  context.mosaics = ray.put(mosaics)
+  context.mosaics = ray.put(output_mosaics)
   return context

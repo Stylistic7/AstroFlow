@@ -10,8 +10,10 @@ import { CardActionArea } from '@mui/material';
 import MosaicOutline from "./MosaicOutline.jsx";
 
 // TODO: Don't show MosaicCards for "mosaics" with just one panel?
-export default function MosaicCard({stacks, targets, mosaics, mosaic_id}) {
+export default function MosaicCard({ stacks, targets, mosaics, mosaic_id }) {
   const mosaic = mosaics[mosaic_id];
+  console.log('mosaic', mosaic);
+
   const navigate = useNavigate();
 
   const get_filters = () => {
@@ -35,7 +37,7 @@ export default function MosaicCard({stacks, targets, mosaics, mosaic_id}) {
             display: "block",
             margin: "1em",
             position: "relative",
-        }}>
+          }}>
           <img
             src={`/mosaic_preview_image/${mosaic_id}`}
             style={{
