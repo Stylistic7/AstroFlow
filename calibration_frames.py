@@ -1,5 +1,6 @@
 import ray
 import numpy as np
+from copy import copy
 
 import file_io
 import ray_diskcache
@@ -120,7 +121,7 @@ def _associate(stack, image_type, fits_headers, stack_dependencies=None):
     # Stack is found multiple times, it will be automatically de-duped by its
     # content hash.
     new_run = Run(frames=[FrameHash(h) for h in cal_frames],
-                  stack_dependencies=stack_dependencies)
+                  stack_dependencies=copy(stack_dependencies))
     new_stack = Stack(runs=[new_run],
                       camera=stack.camera,
                       width_pixels=stack.width_pixels,
@@ -168,6 +169,9 @@ def associate_calibration_frames(context):
                                     fits_headers,
                                     stack_dependencies=stack_dependencies)
     output_stacks.extend(flat_stacks)
+
+    for run in stack.runs:
+      assert len(run.stack_dependencies) == len(set(run.stack_dependencies))
 
     output_stacks.append(stack)
 
