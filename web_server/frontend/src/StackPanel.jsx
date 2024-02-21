@@ -125,24 +125,24 @@ export default function StackPanel({ stacks, targets, mosaics }) {
 	// TODO: Don't hardcode the font color; use the theme.
 	const fontColor = "#aaa";
 
-	// const fetchHtml = (stack_id) => {
-	// 	fetch(`/get_num_stars_histogram_html/${stack_id}`)
-	// 		.then((response) => {
-	// 			return response.text();
-	// 		})
-	// 		.then((htmlString) => {
-	// 			if (plotRef.current) {
-	// 				if (plotRef.current.children[0]) {
-	// 					plotRef.current.removeChild(plotRef.current.children[0]);
-	// 				}
+	const fetchHtml = (stack_id) => {
+		fetch(`/get_num_stars_histogram_html/${stack_id}`)
+			.then((response) => {
+				return response.text();
+			})
+			.then((htmlString) => {
+				if (plotRef.current) {
+					if (plotRef.current.children[0]) {
+						plotRef.current.removeChild(plotRef.current.children[0]);
+					}
 
-	// 				const fragment = document.createRange().createContextualFragment(htmlString);
-	// 				plotRef.current.append(fragment);
-	// 			}
-	// 		});
-	// }
+					const fragment = document.createRange().createContextualFragment(htmlString);
+					plotRef.current.append(fragment);
+				}
+			});
+	}
 
-	// fetchHtml(stack_id);
+	fetchHtml(stack_id);
 
 	let stack_thumbnail_video_url = `/stack_thumbnail_video/${stack_id}`;
 

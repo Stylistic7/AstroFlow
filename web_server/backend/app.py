@@ -20,6 +20,7 @@ import image_handling
 from cache import cache
 import prev_results
 import dependency_graph as dg
+from plate_solving import PlateSolution
 
 import plotly.express as px
 import plotly.figure_factory as ff
@@ -335,18 +336,21 @@ def plot():
 def get_num_stars_histogram_html(stack_id):
   print(f'Creating num stars histogram for stack id {stack_id}')
   stack = cache['stacks'][stack_id]
-  num_stars = [
-      p.num_stars
-      for k, p in cache['plate_solutions'].items()
-      if k in stack.light_frames
+  plate_solutions = cache['plate_solutions']
+
+  light_frames = [
+      f for r in stack.runs for f in r.frames
+      if f in plate_solutions and type(plate_solutions[f]) is PlateSolution
   ]
+  num_stars = [plate_solutions[f].num_stars for f in light_frames]
   print('num_stars', num_stars)
 
   colors = ['#A56CC1', '#A6ACEC']
+  bin_size = (np.max(num_stars) - np.min(num_stars)) / 10
   fig = ff.create_distplot([num_stars], ['# Stars'],
                            colors=colors,
                            curve_type='normal',
-                           bin_size=20,
+                           bin_size=bin_size,
                            show_rug=False)
 
   # fig.update_layout(title_text='Hist and Curve Plot')
