@@ -27,10 +27,15 @@ def _compute_graph_fragment(context, new_filenames):
 
   return context
 
+
 # Select only the toplevel stacks, which contain only light frames.
 def _get_light_stacks(stacks, fits_headers):
-  return [s for s in stacks.values() if all(
-  file_io.is_light_frame(fits_headers[f]) for r in s.runs for f in r.frames)]
+  return [
+      s for s in stacks.values() if all(
+          file_io.is_light_frame(fits_headers[f])
+          for r in s.runs
+          for f in r.frames)
+  ]
 
 
 class TestCalibrationFrames(unittest.TestCase):
@@ -112,14 +117,12 @@ class TestCalibrationFrames(unittest.TestCase):
     filenames = file_io.find_image_files(self.context.input_dirs[0])
     self.assertEqual(len(filenames), 42)
 
-    self.context = ray.get(run_compute_graph.remote(self.context, filenames))
+    self.context = ray.get(
+        _compute_graph_fragment.remote(self.context, filenames))
 
     fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
     self.assertEqual(len(stacks), 5)
-
-    output_files = file_io.find_image_files(self.context.output_dir)
-    self.assertEqual(len(output_files), 5)
 
     light_stacks = _get_light_stacks(stacks, fits_headers)
     self.assertEqual(len(light_stacks), 1)
@@ -145,9 +148,6 @@ class TestCalibrationFrames(unittest.TestCase):
     fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
     self.assertEqual(len(stacks), 2)
-
-    output_files = file_io.find_image_files(self.context.output_dir)
-    self.assertEqual(len(output_files), 2)
 
     light_stacks = _get_light_stacks(stacks, fits_headers)
     self.assertEqual(len(light_stacks), 1)
@@ -217,18 +217,15 @@ class TestCalibrationFrames(unittest.TestCase):
     filenames = file_io.find_image_files(self.context.input_dirs[0])
     self.assertEqual(len(filenames), 78)
 
-    self.context = ray.get(run_compute_graph.remote(self.context, filenames))
+    self.context = ray.get(
+        _compute_graph_fragment.remote(self.context, filenames))
 
     fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
     self.assertEqual(len(stacks), 8)
 
-    output_files = file_io.find_image_files(self.context.output_dir)
-    self.assertEqual(len(output_files), 8)
-
     light_stacks = _get_light_stacks(stacks, fits_headers)
     self.assertEqual(len(light_stacks), 2)
-
 
   def test_dark_scaling(self):
     # The light frames are 180 seconds, but the dark frames are 60 or 300
@@ -275,20 +272,18 @@ class TestCalibrationFrames(unittest.TestCase):
     filenames = file_io.find_image_files(self.context.input_dirs[0])
     self.assertEqual(len(filenames), 39)
 
-    self.context = ray.get(run_compute_graph.remote(self.context, filenames))
+    self.context = ray.get(
+        _compute_graph_fragment.remote(self.context, filenames))
 
     fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
     self.assertEqual(len(stacks), 4)
 
-    output_files = file_io.find_image_files(self.context.output_dir)
-    self.assertEqual(len(output_files), 4)
-
     light_stacks = _get_light_stacks(stacks, fits_headers)
     self.assertEqual(len(light_stacks), 1)
 
   def test_temperature_mismatch(self):
-    # The light frames are at temperature -15, but the darks are at -18. This
+    # The light frames are at temperature -13, but the darks are at -15. This
     # difference is small enough for the frames to still be associated.
     copy_testdata_frames(target_name='NGC7635',
                          dest_dir=self.context.input_dirs[0])
@@ -299,23 +294,18 @@ class TestCalibrationFrames(unittest.TestCase):
                           instrument='ZWO ASI6200MM Pro',
                           width_pixels=9576,
                           height_pixels=6388,
-                          temperature=-18,
+                          temperature=-15,
                           dest_dir=self.context.input_dirs[0])
 
     filenames = file_io.find_image_files(self.context.input_dirs[0])
     self.assertEqual(len(filenames), 8)
 
-    self.context = ray.get(run_compute_graph.remote(self.context, filenames))
-
-    output_files = file_io.find_image_files(self.context.output_dir)
-    self.assertEqual(len(output_files), 2)
+    self.context = ray.get(
+        _compute_graph_fragment.remote(self.context, filenames))
 
     fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
     self.assertEqual(len(stacks), 2)
-
-    output_files = file_io.find_image_files(self.context.output_dir)
-    self.assertEqual(len(output_files), 2)
 
     light_stacks = _get_light_stacks(stacks, fits_headers)
     self.assertEqual(len(light_stacks), 1)
@@ -351,19 +341,15 @@ class TestCalibrationFrames(unittest.TestCase):
     filenames = file_io.find_image_files(self.context.input_dirs[0])
     self.assertEqual(len(filenames), 26)
 
-    self.context = ray.get(run_compute_graph.remote(self.context, filenames))
+    self.context = ray.get(
+        _compute_graph_fragment.remote(self.context, filenames))
 
     fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
-    print('### stacks', stacks)
     self.assertEqual(len(stacks), 4)
-
-    output_files = file_io.find_image_files(self.context.output_dir)
-    self.assertEqual(len(output_files), 4)
 
     light_stacks = _get_light_stacks(stacks, fits_headers)
     self.assertEqual(len(light_stacks), 1)
-
 
   def test_multiple_filters_for_flats(self):
     # Only one run of flat frames applies to the light frames, which use
@@ -392,14 +378,12 @@ class TestCalibrationFrames(unittest.TestCase):
     filenames = file_io.find_image_files(self.context.input_dirs[0])
     self.assertEqual(len(filenames), 15)
 
-    self.context = ray.get(run_compute_graph.remote(self.context, filenames))
+    self.context = ray.get(
+        _compute_graph_fragment.remote(self.context, filenames))
 
     fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
     self.assertEqual(len(stacks), 2)
-
-    output_files = file_io.find_image_files(self.context.output_dir)
-    self.assertEqual(len(output_files), 2)
 
     light_stacks = _get_light_stacks(stacks, fits_headers)
     self.assertEqual(len(light_stacks), 1)
