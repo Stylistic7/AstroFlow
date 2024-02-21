@@ -65,7 +65,8 @@ def identify_mosiacs(context):
 
   mosaics = identify_overlapping_targets(targets.values())
   if not mosaics:
-    return []
+    context.mosaics = ray.put({})
+    return context
 
   print(f'Found {len(mosaics)} mosaics')
 
