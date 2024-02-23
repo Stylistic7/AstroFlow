@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useReducer } from "react";
 import './Starmap.css';
 
-export default function ExposureDurationWidget({ stack, width }) {
+export default function ExposureDurationWidget({ stack, sx }) {
 	const clock_face = () => {
 		return (
 			<circle
@@ -69,14 +69,8 @@ export default function ExposureDurationWidget({ stack, width }) {
 	// TODO: Make this show the actual good and total exposure times.
 	return (<svg
 		xmlns="http://www.w3.org/2000/svg"
-		style={{
-			position: "absolute",
-			top: "5px",
-			right: "15px",
-			width: "20px",
-			height: "20px"
-		}}
 		viewBox="0 0 2 2"
+		style={sx}
 	>
 		{clock_face()}
 		{wedge(7, "red")}

@@ -18,6 +18,7 @@ import Typography from '@mui/material/Typography';
 
 import HDRImage from "./HDRImage.jsx";
 import TargetPanel from "./TargetPanel.jsx";
+import StackThumbnail from "./StackThumbnail.jsx";
 import "./Starmap.css";
 
 function QuarantineStackDialog({ stack_id }) {
@@ -181,11 +182,13 @@ export default function StackPanel({ stacks, targets, mosaics }) {
 						onClose={handleClose}
 					/>
 				</div>
-				<video width="30%" loop autoPlay muted>
-					<source src={stack_thumbnail_video_url} type="video/mp4" />
-					Your browser does not support the video tag.
-				</video>
-				<div ref={plotRef} width="30%" height="300px" style={{ float: "left" }}></div>
+				<div style={{ maxWidth: "50%" }}>
+					<StackThumbnail
+						key={"StackThumbnail_" + stack_id}
+						stack={stacks[stack_id]}
+					/>
+				</div>
+				<div ref={plotRef} style={{ maxWidth: "30%" }}></div>
 			</div>
 		</>
 	);

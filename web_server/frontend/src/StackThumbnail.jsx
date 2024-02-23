@@ -33,6 +33,11 @@ export default function StackThumbnail({ stack, width, handleClick }) {
 		setVideo(video_ref.current);
 	}, [video_ref]);
 
+	let num_light_frames = 0;
+	for (let run of stack.runs) {
+		num_light_frames += run.frames.length;
+	}
+
 	// TODO: Display the progress bar as red during frames with too few stars.
 	return (
 		<div className="stack_thumbnail"
@@ -47,12 +52,12 @@ export default function StackThumbnail({ stack, width, handleClick }) {
 				style={{
 					pointerEvents: "auto",
 					width: "100%",
-					position: "absolute",
 					top: 0,
 					left: 0,
 				}}
 				onClick={handleClick}
 			/>}
+
 			{show_video && <video
 				loop
 				autoPlay
@@ -60,7 +65,6 @@ export default function StackThumbnail({ stack, width, handleClick }) {
 				ref={video_ref}
 				style={{
 					pointerEvents: "auto",
-					position: "absolute",
 					width: "100%",
 					top: 0,
 					left: 0,
@@ -71,21 +75,18 @@ export default function StackThumbnail({ stack, width, handleClick }) {
 				Your browser does not support the video tag.
 			</video>
 			}
+
 			<div
 				style={{
 					position: "absolute",
-					right: "4em",
-					top: "0.5em",
-					fontSize: "12px"
+					left: "1em",
+					top: "1em",
+					fontSize: "14px"
 				}}
 				onClick={handleClick}
 			>
 				<span style={{ color: "#aaa" }}>
-					{stack.width_pixels} x {stack.height_pixels}
-				</span>
-				&nbsp;
-				<span style={{ color: "#aaa" }}>
-					{stack.image_scale.toFixed(2)}"/px
+					{stack.camera}, {stack.image_scale.toFixed(2)}"/px,
 				</span>
 				&nbsp;
 				<span style={{
@@ -94,28 +95,34 @@ export default function StackThumbnail({ stack, width, handleClick }) {
 					{stack.filter}
 				</span>
 			</div>
+
 			<ExposureDurationWidget
 				key={`exposure_duration_${stack.id}`}
 				stack={stack}
-				width="20px"
+				sx={{
+					position: "absolute",
+					top: "0.3em",
+					right: "0.5em",
+					width: "2em",
+				}}
 			/>
+
 			<div style={{
 				position: "absolute",
-				bottom: "5em",
+				bottom: "0em",
 				left: "0",
 				width: "100%",
 			}}
 			>
 				<div style={{
 					margin: "5px",
-					backgroundColor: "#aaa"
-				}}
-				>
-					{/* <div style={{
+					backgroundColor: "#222"
+				}}>
+					<div style={{
 						height: "0.75em",
-						width: (100.0 * (frameCount % stack.light_frames.length) / stack.light_frames.length) + "%",
-						backgroundColor: "#fff"
-					}}></div> */}
+						width: (100.0 * (frameCount % num_light_frames) / num_light_frames) + "%",
+						backgroundColor: "#ccc"
+					}}></div>
 				</div>
 			</div>
 		</div>

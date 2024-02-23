@@ -48,7 +48,7 @@ export default function TargetPanel({ stacks, targets, mosaics }) {
 			<div style={{
 				display: "grid",
 				gridTemplateColumns: "repeat(4, 1fr)",
-				height: "80vh",
+				maxHeight: "80vh",
 				gap: "1em",
 				marginLeft: "2em",
 				marginRight: "2em",
