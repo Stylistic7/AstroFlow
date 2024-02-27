@@ -22,15 +22,17 @@ traceback.print_stack()
 ray_context = ray.init(address='auto',
                        namespace='AstroFlow',
                        runtime_env={
-                           'working_dir': '/Users/nobody/Projects/AstroFlow',
+                           'working_dir':
+                               '/Users/nobody/Projects/AstroFlow',
                            'excludes': [
+                               '/.cache/',
                                '/.git/',
                                '/web_server/',
                                '/testdata/',
                            ]
                        },
                        ignore_reinit_error=True,
-                       _node_ip_address='192.168.50.3')
+                       _node_ip_address='127.0.0.1')
 
 print('### Ray dashboard:', ray_context.dashboard_url)
 
@@ -496,30 +498,12 @@ def assert_all_light_frames_in_stacks(light_frames, stacks):
 
 
 def get_new_filenames(filenames, context):
-  quarantined_files = context.quarantined_files
   image_hashes = context.image_hashes
-
-  def exists_or_none(f):
-    if f and f not in quarantined_files and f and os.path.exists(f):
-      return f
-    else:
-      return None
-
-  prev_num_missing_files = sum(1 for f in image_hashes.values() if not f)
-  image_hashes = {h: exists_or_none(f) for h, f in image_hashes.items()}
-  num_missing_files = sum(1 for f in image_hashes.values() if not f)
-  print(f'### {num_missing_files - prev_num_missing_files} '
-        f'files have gone missing.')
-
   return list(set(filenames) - set(image_hashes.values()))
 
 
 def main(context):
   log.info('Starting AstroFlow')
-
-  if any(not os.path.exists(d) for d in context.input_dirs):
-    print('### Input directories were not found; refusing to run.')
-    return
 
   # TODO: This is a wart.
   # TODO: Every Ray worker node will need its own cache for this.
