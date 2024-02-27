@@ -9,8 +9,13 @@ import clustering
 from stack import Stack, Run, FrameHash
 
 
-def _associate(stack, image_type, fits_headers, stack_dependencies=None):
-  print(f'### Entering _associate for {stack}')
+def _associate(stack,
+               image_type,
+               fits_headers,
+               stack_dependencies=None,
+               debug=False):
+  if debug:
+    print(f'### Entering _associate for {stack}')
   if not stack_dependencies:
     stack_dependencies = []
 
@@ -29,8 +34,9 @@ def _associate(stack, image_type, fits_headers, stack_dependencies=None):
     assert len(light_runs) == 1
     light_run = light_runs[0]
 
-    print(f'### Associating {image_type} calibration frames to '
-          f'run of {len(light_frames)} light frames')
+    if debug:
+      print(f'### Associating {image_type} calibration frames to '
+            f'run of {len(light_frames)} light frames')
 
     # Find all of the calibration frames in the library that match the given
     # image_type and camera. If there are no such frames, end early.
@@ -41,11 +47,13 @@ def _associate(stack, image_type, fits_headers, stack_dependencies=None):
         header['INSTRUME'] == stack.camera
     ]
     if not cal_frames:
-      print(f'WARNING: Could not find any {image_type} calibration frames')
+      if debug:
+        print(f'WARNING: Could not find any {image_type} calibration frames')
       continue
 
-    print(f'### Selected {len(cal_frames)} {image_type} frames for camera '
-          f'{stack.camera}')
+    if debug:
+      print(f'### Selected {len(cal_frames)} {image_type} frames for camera '
+            f'{stack.camera}')
 
     # Maybe select the calibration frames that have exactly the same exposure
     # as the given light frames, or the next longest exposure. If there are no
@@ -60,11 +68,13 @@ def _associate(stack, image_type, fits_headers, stack_dependencies=None):
           fits_headers[f]['EXPOSURE'] == selected_exposure
       ]
       if not cal_frames:
-        print(f'WARNING: Could not find any calibration frames '
-              f'for exposure {exposure}')
+        if debug:
+          print(f'WARNING: Could not find any calibration frames '
+                f'for exposure {exposure}')
         continue
 
-      print(f'### Selected {len(cal_frames)} {image_type} frames by exposure')
+      if debug:
+        print(f'### Selected {len(cal_frames)} {image_type} frames by exposure')
 
     # Maybe select the calibration frames that have the same filter as the light
     # frames. If there are no such frames, end early.
@@ -76,11 +86,13 @@ def _associate(stack, image_type, fits_headers, stack_dependencies=None):
           if 'FILTER' in fits_headers[f] and fits_headers[f]['FILTER'] == filter
       ]
       if not cal_frames:
-        print(f'WARNING: Could not find any calibration frames '
-              f'for filter {filter}')
+        if debug:
+          print(f'WARNING: Could not find any calibration frames '
+                f'for filter {filter}')
         continue
 
-      print(f'### Selected {len(cal_frames)} {image_type} frames by filter')
+      if debug:
+        print(f'### Selected {len(cal_frames)} {image_type} frames by filter')
 
     # Maybe select the calibration frames that have temperatures that are from
     # the same approximate distribution as the light frames. If there are no
@@ -95,27 +107,33 @@ def _associate(stack, image_type, fits_headers, stack_dependencies=None):
                                                     slop=5)
       cal_frames = [f for f, _ in cal_frames]
       if not cal_frames:
-        print(
-            f'WARNING: Could not find any calibration frames '
-            f'for mean temperature {np.mean([x[1] for x in light_frame_temps])}'
-        )
+        if debug:
+          print(
+              f'WARNING: Could not find any calibration frames '
+              f'for mean temperature {np.mean([x[1] for x in light_frame_temps])}'
+          )
         continue
 
-      print(
-          f'### Selected {len(cal_frames)} {image_type} frames by temperature')
+      if debug:
+        print(
+            f'### Selected {len(cal_frames)} {image_type} frames by temperature'
+        )
 
     # Select the run of calibration frames that are closest in time to the
     # light frames.
     cal_runs = runs.get_runs(cal_frames, fits_headers)
     if not len(cal_runs):
-      print(
-          f'WARNING: Could not find any acceptable runs of calibration frames')
+      if debug:
+        print(
+            f'WARNING: Could not find any acceptable runs of calibration frames'
+        )
       continue
 
     cal_run = cal_runs[np.argmin(
         [runs.run_time_delta(light_run, cal_run) for cal_run in cal_runs])]
     cal_frames = runs.get_frames_for_run(cal_run, cal_frames, fits_headers)
-    print(f'### Selected {len(cal_frames)} {image_type} frames by run')
+    if debug:
+      print(f'### Selected {len(cal_frames)} {image_type} frames by run')
 
     # Create a new Stack containing one Run of calibration frames. If the same
     # Stack is found multiple times, it will be automatically de-duped by its
@@ -139,7 +157,7 @@ def _associate(stack, image_type, fits_headers, stack_dependencies=None):
       new_stack.filter = fits_headers[cal_frames[0]]['FILTER']
 
     # Add the new calibration Stack as a dependency to the given Stack.
-    run.stack_dependencies.append(new_stack.hash())
+    run.stack_dependencies.append(new_stack.make_content_hash())
     new_stacks.append(new_stack)
 
   return stack, new_stacks
@@ -163,7 +181,8 @@ def associate_calibration_frames(context):
     stack, dark_stacks = _associate(stack, 'Dark', fits_headers)
     output_stacks.extend(dark_stacks)
 
-    stack_dependencies = list(set(s.hash() for s in bias_stacks + dark_stacks))
+    stack_dependencies = list(
+        set(s.make_content_hash() for s in bias_stacks + dark_stacks))
     stack, flat_stacks = _associate(stack,
                                     'Flat',
                                     fits_headers,
@@ -177,8 +196,8 @@ def associate_calibration_frames(context):
 
   # TODO: This is messy. associate_calibration_frames() mutates Stacks, but
   # they should probably be immutable.
-  [s.store_id() for s in output_stacks]
-  stacks = {s.id: s for s in output_stacks}
+  [s.__post_init__() for s in output_stacks]
+  stacks = {s.geometric_hash: s for s in output_stacks}
 
   ray_diskcache.set('stacks', stacks)
   context.stacks = ray.put(stacks)
