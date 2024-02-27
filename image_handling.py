@@ -8,6 +8,7 @@ import ray
 import ray_diskcache
 import file_io
 from file_io import read_image
+import subframe_selection
 
 MIN_STAR_FRACTION = 0.5
 
@@ -87,8 +88,8 @@ def scatter_stack_thumbnails(context):
 
   def has_thumbnails(stack):
     keys = [
-        ('stack_thumbnail_image', stack.hash()),
-        ('stack_thumbnail_video', stack.hash()),
+        ('stack_thumbnail_image', stack.geometric_hash),
+        ('stack_thumbnail_video', stack.geometric_hash),
     ]
     return all(ray_diskcache.contains(k) for k in keys)
 
@@ -146,21 +147,6 @@ def _get_calibrations(stack, stacks, fits_headers):
   return calibrations
 
 
-def get_light_frames_sorted_by_stars(stack, fits_headers, plate_solutions):
-  # Don't make previews for calibration stacks.
-  light_frames = [f for run in stack.runs for f in run.frames]
-  if not all(file_io.is_light_frame(fits_headers[f]) for f in light_frames):
-    print(f'Ignoring {stack} because it is not composed entirely '
-          f'of light frames.')
-    return None
-
-  # Now sort all the light frames (no matter which run they're from) by the
-  # number of stars. The better images should be in front.
-  return sorted(light_frames,
-                key=lambda f: plate_solutions[f].num_stars,
-                reverse=True)
-
-
 # TODO: Put the thumbnail size in a user config.
 @ray.remote(scheduling_strategy="SPREAD", max_retries=5, retry_exceptions=True)
 def compute_stack_thumbnails(context, stack, width=1200):
@@ -181,8 +167,8 @@ def compute_stack_thumbnails(context, stack, width=1200):
 
   # Now sort all the light frames (no matter which run they're from) by the
   # number of stars. The better images should be in front.
-  light_frames_by_stars = get_light_frames_sorted_by_stars(
-      stack, fits_headers, plate_solutions)
+  light_frames_by_stars = subframe_selection.get_light_frames_sorted_by_stars(
+      stack, plate_solutions)
 
   # Cache the calibration images so they're only read once.
   calibration_images = {}
@@ -197,8 +183,8 @@ def compute_stack_thumbnails(context, stack, width=1200):
       calibration_images[hash] = image
       return image
 
-  image = resize_array(read_image(image_hashes[light_frames_by_stars[0]]),
-                       width)
+  best_light_frame, _ = light_frames_by_stars[0]
+  image = resize_array(read_image(image_hashes[best_light_frame]), width)
   height, width = image.shape
 
   height = int(((height + 8 - 1) / 8) * 8)
@@ -210,7 +196,7 @@ def compute_stack_thumbnails(context, stack, width=1200):
     video_filename = os.path.join(tmp_dir, 'output.webm')
     out = cv2.VideoWriter(video_filename, fourcc, 10.0, (width, height), False)
     made_stack_thumbnail = False
-    for light_frame in light_frames_by_stars:
+    for light_frame, _ in light_frames_by_stars:
       rotate = plate_solutions[light_frame].rotation_angle < 0.0
 
       light_image = resize_array(read_image(image_hashes[light_frame]), width)
@@ -229,7 +215,7 @@ def compute_stack_thumbnails(context, stack, width=1200):
                            flat_image, rotate)
 
       if not made_stack_thumbnail:
-        key = ('stack_thumbnail_image', stack.hash())
+        key = ('stack_thumbnail_image', stack.geometric_hash)
         ray_diskcache.set(key, array_to_png(im), keep_in_memory=False)
         print(f'Wrote key {key}')
         made_stack_thumbnail = True
@@ -243,6 +229,6 @@ def compute_stack_thumbnails(context, stack, width=1200):
     out.release()
     thumbnail_video = open(video_filename, 'rb').read()
 
-    key = ('stack_thumbnail_video', stack.hash())
+    key = ('stack_thumbnail_video', stack.geometric_hash)
     ray_diskcache.set(key, thumbnail_video, keep_in_memory=False)
     print(f'Wrote key {key}')
