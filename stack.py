@@ -47,6 +47,8 @@ class Stack:
   footprint: Optional[SphericalPolygon] = None
   projected_footprints: Optional[dict[str, Polygon]] = None
 
+  selection_criterion: Optional[tuple[str, float]] = None
+
   def __post_init__(self):
     self.geometric_hash = self.make_geometric_hash()
     self.content_hash = self.make_content_hash()

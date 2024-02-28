@@ -21,6 +21,7 @@ from cache import cache
 import prev_results
 import dependency_graph as dg
 from plate_solving import PlateSolution
+import subframe_selection
 
 import plotly.express as px
 import plotly.figure_factory as ff
@@ -182,6 +183,37 @@ def stack(stack_id):
   return asdict(stacks[stack_id])
 
 
+@app.route('/get_selected_subframes/<stack_id>')
+def get_selected_subframes(stack_id):
+  stack = cache['stacks'][stack_id]
+  plate_solutions = cache['plate_solutions']
+  criterion = subframe_selection.decode_selection_criterion(
+      stack.selection_criterion)
+  return criterion.select_subframes(stack, plate_solutions)
+
+
+@app.route('/get_exposure_duration/<stack_id>')
+def get_exposure_duration(stack_id):
+  stack = cache['stacks'][stack_id]
+  fits_headers = cache['fits_headers']
+
+  light_frames = [f for run in stack.runs for f in run.frames]
+  total_exposure_duration = sum(
+      fits_headers[f]['EXPOSURE'] for f in light_frames)
+
+  plate_solutions = cache['plate_solutions']
+  criterion = subframe_selection.decode_selection_criterion(
+      stack.selection_criterion)
+  light_frames = criterion.select_subframes(stack, plate_solutions)
+  selected_exposure_duration = sum(
+      fits_headers[f]['EXPOSURE'] for f in light_frames)
+
+  return {
+      'total_exposure_duration': total_exposure_duration,
+      'selected_exposure_duration': selected_exposure_duration
+  }
+
+
 @app.route('/trial_flat_corrections/<stack_id>')
 def trial_flat_corrections(stack_id):
   key = ('trial_flat_correction', stack_id)
@@ -332,16 +364,21 @@ def plot():
   return flask.send_file(mem, mimetype='text/html')
 
 
+@app.route('/get_sorted_light_frames/<stack_id>')
+def get_sorted_light_frames(stack_id):
+  stack = cache['stacks'][stack_id]
+  plate_solutions = cache['plate_solutions']
+  return subframe_selection.get_light_frames_sorted_by_stars(
+      stack, plate_solutions)
+
+
 @app.route('/get_num_stars_histogram_html/<stack_id>')
 def get_num_stars_histogram_html(stack_id):
   print(f'Creating num stars histogram for stack id {stack_id}')
   stack = cache['stacks'][stack_id]
   plate_solutions = cache['plate_solutions']
 
-  light_frames = [
-      f for r in stack.runs for f in r.frames
-      if f in plate_solutions and type(plate_solutions[f]) is PlateSolution
-  ]
+  light_frames = [f for run in stack.runs for f in run.frames]
   num_stars = [plate_solutions[f].num_stars for f in light_frames]
   print('num_stars', num_stars)
 

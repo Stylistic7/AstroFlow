@@ -33,6 +33,7 @@ def _new_stack(name, light_frames, fits_headers, plate_solutions):
           astropy.io.fits.Header(
               plate_solutions[flattened[0]].header)).points).tolist()
   projected_footprints = footprints.all_projections(SphericalPolygon(footprint))
+  selection_criterion = ('StarCountFraction', 0.75)
 
   new_runs = [Run(frames=[FrameHash(h) for h in run]) for run in light_frames]
 
@@ -46,7 +47,8 @@ def _new_stack(name, light_frames, fits_headers, plate_solutions):
                rotation_angle=rotation_angle,
                filter=filter,
                footprint=footprint,
-               projected_footprints=projected_footprints)
+               projected_footprints=projected_footprints,
+               selection_criterion=selection_criterion)
 
 
 @ray.remote

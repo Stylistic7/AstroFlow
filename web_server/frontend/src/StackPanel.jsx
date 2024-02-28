@@ -127,6 +127,8 @@ export default function StackPanel({ stacks, targets, mosaics }) {
 	const fontColor = "#aaa";
 
 	const fetchHtml = (stack_id) => {
+		console.log('fetchHtml');
+
 		fetch(`/get_num_stars_histogram_html/${stack_id}`)
 			.then((response) => {
 				return response.text();
@@ -143,7 +145,9 @@ export default function StackPanel({ stacks, targets, mosaics }) {
 			});
 	}
 
-	fetchHtml(stack_id);
+	useEffect(() => {
+		fetchHtml(stack_id);
+	}, []);
 
 	let stack_thumbnail_video_url = `/stack_thumbnail_video/${stack_id}`;
 

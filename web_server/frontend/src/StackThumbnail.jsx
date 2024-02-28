@@ -25,6 +25,35 @@ export default function StackThumbnail({ stack, width, handleClick }) {
 
 	const [frameCount, setFrameCount] = useState(0);
 
+	const [sortedLightFrames, setSortedLightFrames] = React.useState([]);
+	const [selectedSubframes, setSelectedSubframes] = React.useState([]);
+
+	const fetchHtml = (stack_id) => {
+		console.log('fetchHtml');
+
+		fetch(`/get_sorted_light_frames/${stack_id}`)
+			.then((response) => {
+				return response.json();
+			})
+			.then((j) => {
+				console.log('get_sorted_light_frames', j);
+				setSortedLightFrames(j)
+			});
+
+		fetch(`/get_selected_subframes/${stack_id}`)
+			.then((response) => {
+				return response.json();
+			})
+			.then((j) => {
+				console.log('get_selected_subframes', j);
+				setSelectedSubframes(j);
+			});
+	}
+
+	useEffect(() => {
+		fetchHtml(stack.geometric_hash);
+	}, []);
+
 	const [video, setVideo] = useVideoFrames(frameCount => {
 		setFrameCount(frameCount);
 	});
@@ -33,10 +62,13 @@ export default function StackThumbnail({ stack, width, handleClick }) {
 		setVideo(video_ref.current);
 	}, [video_ref]);
 
-	let num_light_frames = 0;
+	let light_frames = [];
 	for (let run of stack.runs) {
-		num_light_frames += run.frames.length;
+		light_frames += run.frames;
 	}
+
+	const currentLightFrame = sortedLightFrames[frameCount];
+	const currentFrameIsSelected = selectedSubframes.indexOf(currentLightFrame) != -1;
 
 	// TODO: Display the progress bar as red during frames with too few stars.
 	return (
@@ -120,8 +152,8 @@ export default function StackThumbnail({ stack, width, handleClick }) {
 				}}>
 					<div style={{
 						height: "0.75em",
-						width: (100.0 * (frameCount % num_light_frames) / num_light_frames) + "%",
-						backgroundColor: "#ccc"
+						width: (100.0 * (frameCount % light_frames.length) / light_frames.length) + "%",
+						backgroundColor: currentFrameIsSelected ? "#ccc" : "#f00"
 					}}></div>
 				</div>
 			</div>
