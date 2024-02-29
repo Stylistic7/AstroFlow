@@ -1,5 +1,6 @@
 from typing import NewType
 import numpy as np
+import copy
 
 
 class StarCountFraction:
@@ -13,10 +14,18 @@ class StarCountFraction:
         stack, plate_solutions)
     _, highest_star_count = light_frames_and_num_stars[0]
 
-    return [
-        f for f, n in light_frames_and_num_stars
-        if n >= self.threshold * highest_star_count
-    ]
+    threshold = self.threshold * highest_star_count
+
+    def select(run):
+      run.frames = [
+          f for f in run.frames if plate_solutions[f].num_stars >= threshold
+      ]
+      return run
+
+    new_stack = copy.copy(stack)
+    new_stack.runs = [select(r) for r in stack.runs]
+
+    return new_stack
 
 
 class StarCountStdDev:
@@ -31,10 +40,18 @@ class StarCountStdDev:
     mean = np.mean(star_counts)
     std_dev = np.std(star_counts)
 
-    return [
-        f for f in light_frames
-        if plate_solutions[f].num_stars >= (mean - self.threshold * std_dev)
-    ]
+    threshold = mean - self.threshold * std_dev
+
+    def select(run):
+      run.frames = [
+          f for f in run.frames if plate_solutions[f].num_stars >= threshold
+      ]
+      return run
+
+    new_stack = copy.copy(stack)
+    new_stack.runs = [select(r) for r in stack.runs]
+
+    return new_stack
 
 
 def decode_selection_criterion(criterion: tuple[str, float]):

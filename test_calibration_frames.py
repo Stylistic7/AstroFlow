@@ -10,7 +10,6 @@ from make_test_frames import make_synthetic_frames, copy_testdata_frames
 import ray_diskcache
 from context import Context
 import file_io
-from compute_graph import run_compute_graph
 from image_metadata import scatter_compute_image_metadata
 from spatial_association import find_components_by_cosine_similarity
 from stack_identification import identify_stacks
