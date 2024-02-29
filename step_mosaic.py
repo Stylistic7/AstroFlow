@@ -12,6 +12,7 @@ from output_file import OutputFile
 
 import file_io
 import image_previews
+import subframe_selection
 import footprints
 import ray_diskcache
 
@@ -50,14 +51,14 @@ def show_image(data):
 
 def _get_preview_panel_for_stack(stack, image_hashes, fits_headers,
                                  plate_solutions):
-  light_frames_by_stars = image_previews.get_light_frames_sorted_by_stars(
-      stack, fits_headers, plate_solutions)
-  best_light_frame = light_frames_by_stars[0]
+  light_frames_by_stars = subframe_selection.get_light_frames_sorted_by_stars(
+      stack, plate_solutions)
+  best_light_frame, _ = light_frames_by_stars[0]
 
   filename = image_hashes[best_light_frame]
   plate_solution = plate_solutions[best_light_frame]
 
-  return classes.Panel(stack_id=stack.id,
+  return classes.Panel(stack_id=stack.hash(),
                        image_filename=filename,
                        plate_solution=plate_solution)
 
@@ -106,7 +107,8 @@ def process_mosaic_per_filter(image_hashes, fits_headers, plate_solutions,
     for target_id, tile_indices in zip(mosaic.target_ids, mosaic.tile_indices):
       target = targets[target_id]
       stack = next((s for s in stacks.values()
-                    if s.filter == filter and s.id in target.stack_ids), None)
+                    if s.filter == filter and s.hash() in target.stack_ids),
+                   None)
       if not stack:
         print(f'### process_mosaic_per_filter failed: there is no stack for '
               f'filter {filter}')

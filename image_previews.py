@@ -87,9 +87,10 @@ def scatter_stack_thumbnails(context):
   stacks = ray.get(context.stacks)
 
   def has_thumbnails(stack):
+    geometric_hash = stack.geometric_hash()
     keys = [
-        ('stack_thumbnail_image', stack.geometric_hash),
-        ('stack_thumbnail_video', stack.geometric_hash),
+        ('stack_thumbnail_image', geometric_hash),
+        ('stack_thumbnail_video', geometric_hash),
     ]
     return all(ray_diskcache.contains(k) for k in keys)
 
@@ -156,6 +157,8 @@ def compute_stack_thumbnails(context, stack, width=1200):
   plate_solutions = ray.get(context.plate_solutions)
   stacks = ray.get(context.stacks)
 
+  geometric_hash = stack.geometric_hash()
+
   # Don't make previews for calibration stacks.
   light_frames = [f for run in stack.runs for f in run.frames]
   if not all(file_io.is_light_frame(fits_headers[f]) for f in light_frames):
@@ -215,7 +218,7 @@ def compute_stack_thumbnails(context, stack, width=1200):
                            flat_image, rotate)
 
       if not made_stack_thumbnail:
-        key = ('stack_thumbnail_image', stack.geometric_hash)
+        key = ('stack_thumbnail_image', geometric_hash)
         ray_diskcache.set(key, array_to_png(im), keep_in_memory=False)
         print(f'Wrote key {key}')
         made_stack_thumbnail = True
@@ -229,6 +232,6 @@ def compute_stack_thumbnails(context, stack, width=1200):
     out.release()
     thumbnail_video = open(video_filename, 'rb').read()
 
-    key = ('stack_thumbnail_video', stack.geometric_hash)
+    key = ('stack_thumbnail_video', geometric_hash)
     ray_diskcache.set(key, thumbnail_video, keep_in_memory=False)
     print(f'Wrote key {key}')

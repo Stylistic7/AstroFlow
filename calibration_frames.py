@@ -157,7 +157,7 @@ def _associate(stack,
       new_stack.filter = fits_headers[cal_frames[0]]['FILTER']
 
     # Add the new calibration Stack as a dependency to the given Stack.
-    run.stack_dependencies.append(new_stack.make_content_hash())
+    run.stack_dependencies.append(new_stack.content_hash())
     new_stacks.append(new_stack)
 
   return stack, new_stacks
@@ -182,7 +182,7 @@ def associate_calibration_frames(context):
     output_stacks.extend(dark_stacks)
 
     stack_dependencies = list(
-        set(s.make_content_hash() for s in bias_stacks + dark_stacks))
+        set(s.content_hash() for s in bias_stacks + dark_stacks))
     stack, flat_stacks = _associate(stack,
                                     'Flat',
                                     fits_headers,
@@ -194,10 +194,7 @@ def associate_calibration_frames(context):
 
     output_stacks.append(stack)
 
-  # TODO: This is messy. associate_calibration_frames() mutates Stacks, but
-  # they should probably be immutable.
-  [s.__post_init__() for s in output_stacks]
-  stacks = {s.geometric_hash: s for s in output_stacks}
+  stacks = {s.hash(): s for s in output_stacks}
 
   ray_diskcache.set('stacks', stacks)
   context.stacks = ray.put(stacks)
