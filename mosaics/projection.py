@@ -13,7 +13,7 @@ from shapely.geometry import Polygon, Point
 import astropy.io.fits as pyfits
 
 import file_io
-import image_handling
+import image_previews
 
 
 def compute_viewbox(plate_solutions):
@@ -60,7 +60,7 @@ def mosaic_by_coordinates(panel,
 
   if autostretch:
     try:
-      image = image_handling.autostretch(image)
+      image = image_previews.autostretch(image)
     except Exception as e:
       print(f'### failed to autostretch, exception {e}')
 

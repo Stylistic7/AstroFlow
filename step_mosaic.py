@@ -11,7 +11,7 @@ import ray
 from output_file import OutputFile
 
 import file_io
-import image_handling
+import image_previews
 import footprints
 import ray_diskcache
 
@@ -50,7 +50,7 @@ def show_image(data):
 
 def _get_preview_panel_for_stack(stack, image_hashes, fits_headers,
                                  plate_solutions):
-  light_frames_by_stars = image_handling.get_light_frames_sorted_by_stars(
+  light_frames_by_stars = image_previews.get_light_frames_sorted_by_stars(
       stack, fits_headers, plate_solutions)
   best_light_frame = light_frames_by_stars[0]
 
@@ -144,7 +144,7 @@ def process_mosaic_per_filter(image_hashes, fits_headers, plate_solutions,
         image = file_io.read_image(p.image_filename)
         output_image = np.maximum(output_image, image)
 
-      return image_handling.array_to_png(output_image)
+      return image_previews.array_to_png(output_image)
     else:
       # TODO: This returns a different type than the branch above.
       output_image = merge_ops.merge_mosaic(panels, output_dir)

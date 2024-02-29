@@ -5,7 +5,7 @@ from spatial_association import find_components_by_cosine_similarity
 from stack_identification import identify_stacks
 from target_identification import group_stacks_into_targets
 from calibration_frames import associate_calibration_frames
-from image_handling import scatter_stack_thumbnails
+from image_previews import scatter_stack_thumbnails
 from stacking import scatter_stack_subframes
 from step_mosaic import scatter_merge_mosaics
 from mosaics.identification import identify_mosiacs
