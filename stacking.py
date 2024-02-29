@@ -9,6 +9,8 @@ from graphlib import TopologicalSorter
 import pix
 import position_string
 from image_metadata import scatter_compute_image_metadata
+import subframe_selection
+import file_io
 
 _STACK_ID_KEY = 'XISF:AstroFlow:StackId'
 _CONTENT_HASH_KEY = 'XISF:AstroFlow:StackContentHash'
@@ -83,18 +85,37 @@ def _add_xisf_metadata(filename, dest_filename, metadata):
              xisf_metadata=file_meta)
 
 
+def is_light_frame_stack(stack, fits_headers):
+  return all(
+      file_io.is_light_frame(fits_headers[f])
+      for run in stack.runs
+      for f in run.frames)
+
+
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
 def stack_files(context, stack, dest_path, metadata=None):
   print(f'### Entering stack_files for {stack}')
 
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
+  plate_solutions = ray.get(context.plate_solutions)
 
   if not metadata:
     metadata = {}
 
-  if _CONTENT_HASH_KEY not in metadata:
-    metadata[_CONTENT_HASH_KEY] = stack.hash()
+  if is_light_frame_stack(stack, fits_headers):
+    num_light_frames_before_selection = len(
+        f for run in stack.runs for f in run.frames)
+    criterion = subframe_selection.decode_selection_criterion(
+        stack.selection_criterion)
+    stack = criterion.select_subframes(stack, plate_solutions)
+    num_light_frames_after_selection = len(
+        f for run in stack.runs for f in run.frames)
+    metadata[_CONTENT_HASH_KEY] = stack.content_hash()
+    print(f'### Selected {num_light_frames_after_selection} light frames '
+          f'from {num_light_frames_before_selection} light frames')
+  else:
+    metadata[_CONTENT_HASH_KEY] = stack.content_hash()
 
   with tempfile.TemporaryDirectory() as tmp_dir:
     for i, run in enumerate(stack.runs):
@@ -136,14 +157,14 @@ def stack_files(context, stack, dest_path, metadata=None):
     return dest_filename
 
 
-def construct_graph(stacks, fits_headers):
+def construct_graph(stacks):
   graph = {}
   for stack in stacks.values():
     dependencies = []
     for run in stack.runs:
       dependencies.extend(list(run.stack_dependencies))
 
-    graph[stack.hash()] = list(set(dependencies))
+    graph[stack.geometric_hash()] = list(set(dependencies))
 
   return graph
 
@@ -169,7 +190,7 @@ def scatter_stack_subframes(context):
   stacks = ray.get(context.stacks)
   print(f'### scatter_stack_subframes received {len(stacks)} stacks')
 
-  parallel_tasks = group_parallel_tasks(construct_graph(stacks, fits_headers))
+  parallel_tasks = group_parallel_tasks(construct_graph(stacks))
 
   for task_group in parallel_tasks:
     print(f'### Starting {len(task_group)} stack_files tasks in parallel...')
