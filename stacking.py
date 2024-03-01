@@ -5,6 +5,8 @@ import numpy as np
 from xisf import XISF
 import ray
 from graphlib import TopologicalSorter
+import errno
+import os
 
 import pix
 import position_string
@@ -60,6 +62,9 @@ def _output_filename(stack, fits_headers, dest_path):
 
 def _symlink_frames(filenames, dest_path):
   for filename in filenames:
+    if not os.path.exists(filename):
+      raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), filename)
+
     dest_filename = os.path.join(dest_path, os.path.basename(filename))
     print(f'### symlinking {filename} -> {dest_filename}')
     os.symlink(filename, dest_filename)
@@ -123,12 +128,12 @@ def stack_files(context, stack, dest_path, metadata=None):
       os.makedirs(run_dir, exist_ok=True)
 
       # TODO: What about files that aren't in image_hashes?
-      filenames = [
-          image_hashes[f]
-          for f in run.frames + run.stack_dependencies
-          if f in image_hashes
-      ]
-      if len(filenames) != len(run.frames + run.stack_dependencies):
+      hashes = run.frames + run.stack_dependencies
+      filenames = [image_hashes.get(h, None) for h in hashes]
+      for h, f in zip(hashes, filenames):
+        print(f'### hash {h} -> filename {f}')
+
+      if None in filenames:
         print('### ERROR: Some images could not be found')
         return []
 
