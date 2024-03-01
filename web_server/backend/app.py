@@ -16,7 +16,7 @@ from base64 import b64encode
 # import astro_flow_direct
 import constellations
 # from astro_flow_direct import Context
-import image_handling
+import image_previews
 from cache import cache
 import prev_results
 import dependency_graph as dg
@@ -189,7 +189,9 @@ def get_selected_subframes(stack_id):
   plate_solutions = cache['plate_solutions']
   criterion = subframe_selection.decode_selection_criterion(
       stack.selection_criterion)
-  return criterion.select_subframes(stack, plate_solutions)
+  stack = criterion.select_subframes(stack, plate_solutions)
+  light_frames = [f for run in stack.runs for f in run.frames]
+  return light_frames
 
 
 @app.route('/get_exposure_duration/<stack_id>')
@@ -302,10 +304,10 @@ def mosaic_image(mosaic_id, filter):
     return Response(status=404)
 
   # TODO: Get the correct color channel.
-  image = image_handling._read_image(obj.output_filenames[0])
-  image = image_handling.resize_array(image, new_width=640)
-  image = image_handling.autostretch(image)
-  image = image_handling.array_to_png(image)
+  image = image_previews._read_image(obj.output_filenames[0])
+  image = image_previews.resize_array(image, new_width=640)
+  image = image_previews.autostretch(image)
+  image = image_previews.array_to_png(image)
   buffer = io.BytesIO()
   buffer.write(image)
   buffer.seek(0)
@@ -346,10 +348,10 @@ def stack_master_image(stack_id):
     print(f'### got stack for {stack_id}')
 
   if stack.master and os.path.exists(stack.master):
-    image = image_handling._read_image(stack.master)
-    image = image_handling.resize_array(image, new_width=640)
-    image = image_handling.autostretch(image)
-    image = image_handling.array_to_png(image)
+    image = image_previews._read_image(stack.master)
+    image = image_previews.resize_array(image, new_width=640)
+    image = image_previews.autostretch(image)
+    image = image_previews.array_to_png(image)
     buffer = io.BytesIO()
     buffer.write(image)
     buffer.seek(0)
