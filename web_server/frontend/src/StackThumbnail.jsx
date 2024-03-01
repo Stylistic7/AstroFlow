@@ -3,7 +3,9 @@ import useVideoFrames from "./useVideoFrames.ts";
 import ExposureDurationWidget from "./ExposureDurationWidget.jsx";
 import './Starmap.css';
 
-export default function StackThumbnail({ stack, width, handleClick }) {
+export default function StackThumbnail({ stacks, stack_id, width, handleClick }) {
+	const stack = stacks[stack_id];
+
 	const color_for_filter = (filter) => {
 		let rgb = {
 			'L': [51, 51, 51],
@@ -51,7 +53,7 @@ export default function StackThumbnail({ stack, width, handleClick }) {
 	}
 
 	useEffect(() => {
-		fetchHtml(stack.geometric_hash);
+		fetchHtml(stack_id);
 	}, []);
 
 	const [video, setVideo] = useVideoFrames(frameCount => {
@@ -79,8 +81,8 @@ export default function StackThumbnail({ stack, width, handleClick }) {
 			}}
 		>
 			{show_image && <img
-				id={stack.id}
-				src={`/stack_thumbnail_image/${stack.id}`}
+				id={stack_id}
+				src={`/stack_thumbnail_image/${stack_id}`}
 				style={{
 					pointerEvents: "auto",
 					width: "100%",
@@ -103,7 +105,7 @@ export default function StackThumbnail({ stack, width, handleClick }) {
 				}}
 				onClick={handleClick}
 			>
-				<source src={`/stack_thumbnail_video/${stack.id}`} type="video/mp4" />
+				<source src={`/stack_thumbnail_video/${stack_id}`} type="video/mp4" />
 				Your browser does not support the video tag.
 			</video>
 			}
@@ -129,7 +131,7 @@ export default function StackThumbnail({ stack, width, handleClick }) {
 			</div>
 
 			<ExposureDurationWidget
-				key={`exposure_duration_${stack.id}`}
+				key={`exposure_duration_${stack_id}`}
 				stack={stack}
 				sx={{
 					position: "absolute",

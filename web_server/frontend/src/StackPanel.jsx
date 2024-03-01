@@ -189,7 +189,8 @@ export default function StackPanel({ stacks, targets, mosaics }) {
 				<div style={{ maxWidth: "50%" }}>
 					<StackThumbnail
 						key={"StackThumbnail_" + stack_id}
-						stack={stacks[stack_id]}
+						stacks={stacks}
+						stack_id={stack_id}
 					/>
 				</div>
 				<div ref={plotRef} style={{ maxWidth: "30%" }}></div>

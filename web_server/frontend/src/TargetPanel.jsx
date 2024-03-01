@@ -56,7 +56,8 @@ export default function TargetPanel({ stacks, targets, mosaics }) {
 				{target.stack_ids.map((stack_id) => (
 					<StackThumbnail
 						key={"StackThumbnail_" + stack_id}
-						stack={stacks[stack_id]}
+						stacks={stacks}
+						stack_id={stack_id}
 						handleClick={event => navigate(`/stack/${stack_id}`)}
 					/>
 				))}
