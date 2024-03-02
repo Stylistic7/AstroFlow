@@ -140,6 +140,7 @@ def _associate(stack,
     # content hash.
     new_run = Run(frames=[FrameHash(h) for h in cal_frames],
                   stack_dependencies=copy(stack_dependencies))
+    assert None not in new_run.stack_dependencies
     new_stack = Stack(runs=[new_run],
                       camera=stack.camera,
                       width_pixels=stack.width_pixels,

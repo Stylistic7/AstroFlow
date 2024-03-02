@@ -88,6 +88,8 @@ def scatter_compute_image_metadata(context, filenames):
       'plate_solutions',
       {r['image_hash']: r['plate_solution'] for r in results if r})
 
+  assert None not in image_hashes.values()
+
   context.quarantined_files = ray.put(quarantined_files)
   context.image_hashes = ray.put(image_hashes)
   context.fits_headers = ray.put(fits_headers)
@@ -103,6 +105,9 @@ def scatter_compute_image_metadata(context, filenames):
 
 @ray.remote(scheduling_strategy="SPREAD", max_retries=5, retry_exceptions=True)
 def compute_image_metadata_ray(filename):
+  print(f'### Entering compute_image_metadata_ray() for {filename}')
+  assert filename
+
   # TODO: Make sure this code doesn't actually repeatedly read the image across
   # the network. It should hit the node's filesystem cache.
   try:
@@ -118,6 +123,7 @@ def compute_image_metadata_ray(filename):
     else:
       result['plate_solution'] = None
 
+    print('### compute_image_metadata_ray() was successful')
     return result
   except Exception as e:
     print(f'compute_image_metadata_ray() failed for file {filename}, '

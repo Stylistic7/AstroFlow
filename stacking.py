@@ -62,6 +62,7 @@ def _output_filename(stack, fits_headers, dest_path):
 
 def _symlink_frames(filenames, dest_path):
   for filename in filenames:
+    assert filename
     if not os.path.exists(filename):
       raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), filename)
 
@@ -110,12 +111,12 @@ def stack_files(context, stack, dest_path, metadata=None):
 
   if is_light_frame_stack(stack, fits_headers):
     num_light_frames_before_selection = len(
-        f for run in stack.runs for f in run.frames)
+        [f for run in stack.runs for f in run.frames])
     criterion = subframe_selection.decode_selection_criterion(
         stack.selection_criterion)
     stack = criterion.select_subframes(stack, plate_solutions)
     num_light_frames_after_selection = len(
-        f for run in stack.runs for f in run.frames)
+        [f for run in stack.runs for f in run.frames])
     metadata[_CONTENT_HASH_KEY] = stack.content_hash()
     print(f'### Selected {num_light_frames_after_selection} light frames '
           f'from {num_light_frames_before_selection} light frames')
@@ -169,7 +170,7 @@ def construct_graph(stacks):
     for run in stack.runs:
       dependencies.extend(list(run.stack_dependencies))
 
-    graph[stack.geometric_hash()] = list(set(dependencies))
+    graph[stack.hash()] = list(set(dependencies))
 
   return graph
 
