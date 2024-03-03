@@ -92,9 +92,13 @@ def identify_stacks(context):
               if len(light_frames_in_run) < 3:
                 continue
 
+              # TODO: This is a run of light frames with no dependencies,
+              # but it is akwardly expressed here.
               light_frames[tuple(sorted(light_frames_in_run))] = set()
 
-            if len(light_frames):
+            flattened = list(
+                itertools.chain.from_iterable([k for k in light_frames]))
+            if len(flattened) >= 3:
               stacks.append(
                   _new_stack(name, light_frames, fits_headers, plate_solutions))
 

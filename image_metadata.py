@@ -114,6 +114,8 @@ def compute_image_metadata_ray(filename):
     result = {}
     result['filename'] = filename
     result['fits_header'] = header = file_io.read_header(filename)
+    # for k, v in result['fits_header'].items():
+    #   print(f'### FITS {k} -> {v}')
     result['image_hash'] = header[
         _CONTENT_HASH_KEY] if _CONTENT_HASH_KEY in header else file_io.hash_of_image_data(
             filename)

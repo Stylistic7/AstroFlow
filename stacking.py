@@ -25,10 +25,12 @@ def _exposure_time_string(stack):
   return f'{hours:02.0f}h{minutes:02.0f}m'
 
 
-def find_matching_masters(fits_headers, content_hash):
+def find_matching_masters(image_hashes, fits_headers, content_hash):
   return [
-      h for h, header in fits_headers.items() if _CONTENT_HASH_KEY in header and
-      header[_CONTENT_HASH_KEY] == content_hash
+      h for h, header in fits_headers.items()
+      if header.get(_CONTENT_HASH_KEY, None) == content_hash and
+      os.path.exists(image_hashes[h]) and file_io.read_header(
+          image_hashes[h]).get(_CONTENT_HASH_KEY, None) == content_hash
   ]
 
 
@@ -117,6 +119,9 @@ def stack_files(context, stack, dest_path, metadata=None):
     stack = criterion.select_subframes(stack, plate_solutions)
     num_light_frames_after_selection = len(
         [f for run in stack.runs for f in run.frames])
+    # TODO: Put this number in the UI.
+    if num_light_frames_after_selection < 3:
+      return []
     metadata[_CONTENT_HASH_KEY] = stack.content_hash()
     print(f'### Selected {num_light_frames_after_selection} light frames '
           f'from {num_light_frames_before_selection} light frames')
@@ -128,16 +133,12 @@ def stack_files(context, stack, dest_path, metadata=None):
       run_dir = os.path.join(tmp_dir, f'RUN_{i}')
       os.makedirs(run_dir, exist_ok=True)
 
-      # TODO: What about files that aren't in image_hashes?
       hashes = run.frames + run.stack_dependencies
-      filenames = [image_hashes.get(h, None) for h in hashes]
+      filenames = [image_hashes[h] for h in hashes]
       for h, f in zip(hashes, filenames):
         print(f'### hash {h} -> filename {f}')
 
-      if None in filenames:
-        print('### ERROR: Some images could not be found')
-        return []
-
+      assert None not in filenames
       _symlink_frames(filenames, run_dir)
 
     pix.WeightedBatchPreprocessing(dir=tmp_dir, outputDirectory=tmp_dir)
@@ -192,6 +193,7 @@ def group_parallel_tasks(graph):
 
 @ray.remote
 def scatter_stack_subframes(context):
+  image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
   stacks = ray.get(context.stacks)
   print(f'### scatter_stack_subframes received {len(stacks)} stacks')
@@ -204,7 +206,8 @@ def scatter_stack_subframes(context):
     waitables = [
         stack_files.remote(context, stacks[s], context.output_dir)
         for s in task_group
-        if not find_matching_masters(fits_headers, stacks[s].hash())
+        if
+        not find_matching_masters(image_hashes, fits_headers, stacks[s].hash())
     ]
 
     results = []
@@ -215,6 +218,7 @@ def scatter_stack_subframes(context):
       except Exception as e:
         print(f'### stack_files threw exception {e}')
 
+    print(f'### Calling scatter_compute_image_metadata with results {results}')
     context = ray.get(scatter_compute_image_metadata.remote(context, results))
     print(f'### scatter_compute_image_metadata done for {len(results)} results')
 
