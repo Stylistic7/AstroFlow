@@ -55,8 +55,12 @@ class Stack:
   # This hash includes runs of frames, e.g. light frames, plus all other stacks
   # that this stack depends on, e.g. stacks of bias and dark frames.
   def content_hash(self) -> str:
-    return hash_list(
-        [tuple(r.frames + r.stack_dependencies) for r in self.runs])
+    all_frames = []
+    for r in self.runs:
+      all_frames.extend(r.frames)
+      all_frames.extend(r.stack_dependencies)
+
+    return hash_list(sorted(all_frames))
 
   def hash(self) -> str:
     geometric_hash = self.geometric_hash()
