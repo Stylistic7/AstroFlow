@@ -159,17 +159,17 @@ def process_mosaic_per_filter(image_hashes, fits_headers, plate_solutions,
 
 
 @ray.remote
-def scatter_merge_mosaics(context, preview=True):
+def scatter_merge_mosaics(context, mode):
   mosaics = ray.get(context.mosaics)
 
   # TODO: Implement.
-  def has_preview(mosaic):
+  def thumbnail_exists(mosaic):
     return False
 
-  to_merge = [m for m in mosaics.values() if not has_preview(m)]
+  to_merge = [m for m in mosaics.values() if not thumbnail_exists(m)]
   print(f'### Need to make previews for {len(to_merge)} mosaics')
 
-  waitables = [merge_mosaic.remote(context, m, preview) for m in to_merge]
+  waitables = [merge_mosaic.remote(context, m, mode) for m in to_merge]
 
   results = []
   while len(waitables):
@@ -183,8 +183,8 @@ def scatter_merge_mosaics(context, preview=True):
 
 
 @ray.remote(scheduling_strategy="SPREAD")
-def merge_mosaic(context, mosaic, preview=False, output_dir=None):
-  print(f'### Entering process_mosaic for mosaic {mosaic} preview {preview}')
+def merge_mosaic(context, mosaic, mode, output_dir=None):
+  print(f'### Entering process_mosaic for mosaic {mosaic} mode {mode}')
 
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
@@ -233,13 +233,13 @@ def merge_mosaic(context, mosaic, preview=False, output_dir=None):
     result = process_mosaic_per_filter(image_hashes, fits_headers,
                                        plate_solutions, mosaic, targets, stacks,
                                        dest_xs, dest_ys, ras, decs, filter,
-                                       preview, output_dir)
+                                       mode, output_dir)
     if result:
       outputs[filter] = result
 
-  print(f'### process_mosaic successful for mosaic {mosaic} preview {preview}')
-  if preview:
-    key = ('mosaic_preview_image', mosaic.id)
+  print(f'### process_mosaic successful for mosaic {mosaic} mode {mode}')
+  if mode == 'subframe':
+    key = ('mosaic_thumbnail_image', 'subframe', mosaic.id)
     ray_diskcache.set(key, outputs, keep_in_memory=False)
 
   return outputs

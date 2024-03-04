@@ -10,6 +10,28 @@ import file_io
 from file_io import read_image
 import subframe_selection
 
+# Every stack is going to have multiple levels of previews. I should disentangle
+# them. There will always be a subrame-based preview. The master-based preview
+# will only be computed after stacking.
+#
+# The subframe-based preview requires calibration inside AstroFlow, but
+# the master-based preview is just a thumbnail of the master image.
+#
+# There will also be post-processed previews. It would be good for the user
+# to scroll through all the different types.
+#
+# The keys in the cache should be distinct:
+#
+# ('stack_subframe_thumbnail_image', 'abc123') = image
+# ('stack_master_thumbnail_image', 'abc123') = image
+# ('stack_postprocessed_thumbnail_image', 'abc123') = image
+#
+# Better:
+#
+# ('stack_thumbnail_image', 'subframe', 'abc123') = image
+# ('stack_thumbnail_image', 'master', 'abc123') = image
+# ('stack_thumbnail_image', 'post_processed', 'abc123') = image
+
 MIN_STAR_FRACTION = 0.5
 
 
@@ -83,13 +105,24 @@ def _make_thumbnail(fits_headers, light_frame, light_image, bias_frame,
 
 
 @ray.remote
-def scatter_stack_thumbnails(context):
+def scatter_stack_thumbnails(context, mode):
+  if mode == 'subframe':
+    context = scatter_stack_subframe_thumbnails(context)
+  elif mode == 'master':
+    print('### not implemented yet')
+  elif mode == 'post_processed':
+    print('### not implemented yet')
+
+  return context
+
+
+def scatter_stack_subframe_thumbnails(context):
   stacks = ray.get(context.stacks)
 
   def has_thumbnails(stack):
     geometric_hash = stack.geometric_hash()
     keys = [
-        ('stack_thumbnail_image', geometric_hash),
+        ('stack_thumbnail_image', 'subframe', geometric_hash),
         ('stack_thumbnail_video', geometric_hash),
     ]
     return all(ray_diskcache.contains(k) for k in keys)
@@ -98,7 +131,8 @@ def scatter_stack_thumbnails(context):
   print(f'### Need to compute thumbnails for {len(to_compute)} stacks')
 
   waitables = [
-      compute_stack_thumbnails.remote(context, stack) for stack in to_compute
+      compute_stack_subframe_thumbnails.remote(context, stack)
+      for stack in to_compute
   ]
 
   while len(waitables):
@@ -106,30 +140,16 @@ def scatter_stack_thumbnails(context):
     try:
       ray.get(result)
     except Exception as e:
-      print(f'### compute_stack_thumbnails threw exception {e}')
+      print(f'### compute_stack_subframe_thumbnails threw exception {e}')
 
   return context
 
 
-def _get_master_or_first_image_in_stack(hash, stacks, fits_headers):
-  if hash in fits_headers:
-    return hash
-  elif hash in stacks:
-    return stacks[hash].runs[0].frames[0]
-
-
 def _get_calibrations(stack, stacks, fits_headers):
-  # Iterate over the stack's runs, noting the appropriate calibration masters
-  # for each light frame.
   calibrations = {}
   for run in stack.runs:
-    # Find the master bias, dark, and flat frame in the run's dependencies. If
-    # the masters haven't been stacked yet, just use the first image in the
-    # stack.
-    dependencies = [
-        _get_master_or_first_image_in_stack(d, stacks, fits_headers)
-        for d in run.stack_dependencies
-    ]
+    # Find the first bias, dark, and flat frame in the run's dependencies.
+    dependencies = [stacks[d].runs[0].frames[0] for d in run.stack_dependencies]
     bias_frame = next(
         (d for d in dependencies if file_io.is_bias_frame(fits_headers[d])),
         None)
@@ -150,8 +170,8 @@ def _get_calibrations(stack, stacks, fits_headers):
 
 # TODO: Put the thumbnail size in a user config.
 @ray.remote(scheduling_strategy="SPREAD", max_retries=5, retry_exceptions=True)
-def compute_stack_thumbnails(context, stack, width=1200):
-  print(f'Entering compute_stack_thumbnails() for stack {str(stack)}')
+def compute_stack_subframe_thumbnails(context, stack, width=1200):
+  print(f'Entering compute_stack_subframe_thumbnails() for stack {str(stack)}')
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
   plate_solutions = ray.get(context.plate_solutions)
@@ -218,7 +238,7 @@ def compute_stack_thumbnails(context, stack, width=1200):
                            flat_image, rotate)
 
       if not made_stack_thumbnail:
-        key = ('stack_thumbnail_image', geometric_hash)
+        key = ('stack_thumbnail_image', 'subframe', geometric_hash)
         ray_diskcache.set(key, array_to_png(im), keep_in_memory=False)
         print(f'Wrote key {key}')
         made_stack_thumbnail = True

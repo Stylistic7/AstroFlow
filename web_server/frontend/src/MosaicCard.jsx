@@ -39,7 +39,7 @@ export default function MosaicCard({ stacks, targets, mosaics, mosaic_id }) {
             position: "relative",
           }}>
           <img
-            src={`/mosaic_preview_image/${mosaic_id}`}
+            src={`/mosaic_thumbnail_image/${mosaic_id}`}
             style={{
               height: "100%",
               maxWidth: "100%",

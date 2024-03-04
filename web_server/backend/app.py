@@ -269,8 +269,10 @@ def tuple_starts_with(t, *values):
 
 @app.route('/stack_thumbnail_image/<stack_id>')
 def stack_thumbnail_image(stack_id):
-  key = next((k for k in cache.iterkeys()
-              if tuple_starts_with(k, 'stack_thumbnail_image', stack_id)), None)
+  key = next(
+      (k for k in cache.iterkeys()
+       if tuple_starts_with(k, 'stack_thumbnail_image', 'subframe', stack_id)),
+      None)
   print(f'### found matching key {key}')
 
   if not key:
@@ -314,9 +316,9 @@ def mosaic_image(mosaic_id, filter):
   return flask.send_file(buffer, mimetype='image/png')
 
 
-@app.route('/mosaic_preview_image_for_filter/<mosaic_id>/<filter>')
-def mosaic_preview_image_for_filter(mosaic_id, filter):
-  result = cache[('mosaic_preview_image', mosaic_id)]
+@app.route('/mosaic_thumbnail_image_for_filter/<mosaic_id>/<filter>')
+def mosaic_thumbnail_image_for_filter(mosaic_id, filter):
+  result = cache[('mosaic_thumbnail_image', 'subframe', mosaic_id)]
   print('### mosaic has filters', result.keys())
   buffer = io.BytesIO()
   buffer.write(result[filter])
@@ -324,9 +326,9 @@ def mosaic_preview_image_for_filter(mosaic_id, filter):
   return flask.send_file(buffer, mimetype='image/png')
 
 
-@app.route('/mosaic_preview_image/<mosaic_id>')
-def mosaic_preview_image(mosaic_id):
-  result = cache[('mosaic_preview_image', mosaic_id)]
+@app.route('/mosaic_thumbnail_image/<mosaic_id>')
+def mosaic_thumbnail_image(mosaic_id):
+  result = cache[('mosaic_thumbnail_image', 'subframe', mosaic_id)]
   for filter in ['H', 'L', 'S', 'O', 'G', 'R', 'B']:
     if filter not in result:
       continue

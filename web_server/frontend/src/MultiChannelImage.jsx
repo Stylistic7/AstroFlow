@@ -50,7 +50,7 @@ export default function MultiChannelImage({ stacks, targets, mosaics, mosaic_id 
   const filters = getFilters();
   const [filter, setFilter] = useState(filters[0]);
 
-  const imageType = "mosaic_preview_image_for_filter";
+  const imageType = "mosaic_thumbnail_image_for_filter";
 
   return (
     <div style={{}}>
