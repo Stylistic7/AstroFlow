@@ -106,17 +106,6 @@ def _make_thumbnail(fits_headers, light_frame, light_image, bias_frame,
 
 @ray.remote
 def scatter_stack_thumbnails(context, mode):
-  if mode == 'subframe':
-    context = scatter_stack_subframe_thumbnails(context)
-  elif mode == 'master':
-    print('### not implemented yet')
-  elif mode == 'post_processed':
-    print('### not implemented yet')
-
-  return context
-
-
-def scatter_stack_subframe_thumbnails(context):
   stacks = ray.get(context.stacks)
 
   def has_thumbnails(stack):
@@ -131,7 +120,7 @@ def scatter_stack_subframe_thumbnails(context):
   print(f'### Need to compute thumbnails for {len(to_compute)} stacks')
 
   waitables = [
-      compute_stack_subframe_thumbnails.remote(context, stack)
+      compute_stack_thumbnails.remote(context, stack, mode)
       for stack in to_compute
   ]
 
@@ -170,7 +159,16 @@ def _get_calibrations(stack, stacks, fits_headers):
 
 # TODO: Put the thumbnail size in a user config.
 @ray.remote(scheduling_strategy="SPREAD", max_retries=5, retry_exceptions=True)
-def compute_stack_subframe_thumbnails(context, stack, width=1200):
+def compute_stack_thumbnails(context, stack, mode, width=1200):
+  if mode == 'subframe':
+    return compute_stack_subframe_thumbnails(context, stack, mode, width)
+  elif mode == 'master':
+    print('### not implemented')
+  elif mode == 'post_processed':
+    print('### not implemented')
+
+
+def compute_stack_subframe_thumbnails(context, stack, mode, width):
   print(f'Entering compute_stack_subframe_thumbnails() for stack {str(stack)}')
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
