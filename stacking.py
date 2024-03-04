@@ -36,30 +36,30 @@ def find_matching_masters(image_hashes, fits_headers, content_hash):
 
 def _output_filename(stack, fits_headers, dest_path):
   hashes = [f for run in stack.runs for f in run.frames]
-  start = min(fits_headers[f]['DATE-OBS'] for f in hashes)
-  start = start.strftime("%Y%m%d_%H%M%S")
 
   if all(fits_headers[f]['IMAGETYP'] == 'Bias' for f in hashes):
     output_dir = os.path.join(dest_path, 'Stacks', 'Calibration', 'masters')
     return os.path.join(
         output_dir, f'master_bias_{stack.camera}_'
-        f'{stack.mean_temperature:.0f}C_{start}.xisf')
+        f'{stack.mean_temperature:.0f}C_{stack.hash()}.xisf')
   elif all(fits_headers[f]['IMAGETYP'] == 'Dark' for f in hashes):
     output_dir = os.path.join(dest_path, 'Stacks', 'Calibration', 'masters')
     return os.path.join(
         output_dir, f'master_dark_{stack.camera}_'
-        f'{stack.mean_temperature:.0f}C_{stack.exposure_s}s_{start}.xisf')
+        f'{stack.mean_temperature:.0f}C_{stack.exposure_s}s_'
+        f'{stack.hash()}.xisf')
   elif all(fits_headers[f]['IMAGETYP'] == 'Flat' for f in hashes):
     output_dir = os.path.join(dest_path, 'Stacks', 'Calibration', 'masters')
     return os.path.join(
-        output_dir, f'master_flat_{stack.camera}_{stack.filter}_{start}.xisf')
+        output_dir,
+        f'master_flat_{stack.camera}_{stack.filter}_{stack.hash()}.xisf')
   else:
     output_dir = os.path.join(dest_path, 'Stacks', stack.target, 'masters')
     ra_dec_string = position_string.ra_dec_string(*stack.center)
     return os.path.join(
         output_dir, f'master_light_{stack.target}_{ra_dec_string}_'
         f'{stack.camera}_{stack.image_scale:.02f}aspp_'
-        f'{stack.rotation_angle:.2f}deg_{stack.filter}_{start}.xisf')
+        f'{stack.rotation_angle:.2f}deg_{stack.filter}_{stack.hash()}.xisf')
 
 
 def _symlink_frames(filenames, dest_path):
