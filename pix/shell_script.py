@@ -91,9 +91,15 @@ def _start_pixinsight_instance(blocking=False):
 
 def _slot_is_idle(slot):
   with cache.transact():
-    assert slot in cache.get('pixinsight_slots', default=[])
+    if slot not in cache.get('pixinsight_slots', default=[]):
+      print(f'### Error: PixInsight slot {slot} exited, but is not in '
+            f'pixinsight_slots')
+
     idle_slots = cache.get('pixinsight_idle_slots', [])
-    assert slot not in idle_slots
+    if slot in idle_slots:
+      print(f'### Error: PixInsight slot {slot} exited, but is in '
+            f'pixinsight_idle_slots')
+
     idle_slots.append(slot)
     print(f'Slot {slot} is now idle')
     cache['pixinsight_idle_slots'] = idle_slots
