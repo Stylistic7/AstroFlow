@@ -201,13 +201,18 @@ def scatter_stack_subframes(context):
 
   parallel_tasks = group_parallel_tasks(construct_graph(stacks))
 
+  # TODO: Implement in the UI.
+  def is_in_shopping_cart(stack):
+    # if stack in shopping_cart.get('to_stack', [])
+    return True
+
   for task_group in parallel_tasks:
     print(f'### Starting {len(task_group)} stack_files tasks in parallel...')
 
     waitables = [
         stack_files.remote(context, stacks[s], context.output_dir)
         for s in task_group
-        if s in shopping_cart.get('to_stack', []) and
+        if is_in_shopping_cart(s) and
         not find_matching_masters(image_hashes, fits_headers, stacks[s].hash())
     ]
 
