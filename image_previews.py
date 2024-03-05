@@ -110,7 +110,7 @@ def scatter_stack_thumbnails(context, mode):
 
   def has_thumbnail(stack):
     geometric_hash = stack.geometric_hash()
-    key = ('stack_thumbnail_image', mode, geometric_hash),
+    key = ('stack_thumbnail_image', mode, geometric_hash)
     return ray_diskcache.contains(key)
 
   to_compute = [s for s in stacks.values() if not has_thumbnail(s)]
