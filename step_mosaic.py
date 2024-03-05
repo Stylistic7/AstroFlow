@@ -81,18 +81,18 @@ def _get_master_panel_for_stack(stack):
   pass
 
 
-def _get_panel_for_stack(stack, image_hashes, fits_headers, plate_solutions,
-                         preview):
-  if preview:
+def _get_panel_for_stack(mode, stack, image_hashes, fits_headers,
+                         plate_solutions):
+  if mode == 'subframe':
     return _get_preview_panel_for_stack(stack, image_hashes, fits_headers,
                                         plate_solutions)
-  else:
+  elif mode == 'stack':
     return _get_master_panel_for_stack(stack)
 
 
-def process_mosaic_per_filter(image_hashes, fits_headers, plate_solutions,
+def process_mosaic_per_filter(mode, image_hashes, fits_headers, plate_solutions,
                               mosaic, targets, stacks, dest_xs, dest_ys, ras,
-                              decs, filter, preview, output_dir):
+                              decs, filter, output_dir):
   if output_dir:
     cm = contextlib.nullcontext(output_dir)
   else:
@@ -114,8 +114,8 @@ def process_mosaic_per_filter(image_hashes, fits_headers, plate_solutions,
               f'filter {filter}')
         continue
 
-      panel = _get_panel_for_stack(stack, image_hashes, fits_headers,
-                                   plate_solutions, preview)
+      panel = _get_panel_for_stack(mode, stack, image_hashes, fits_headers,
+                                   plate_solutions)
       print('### panel', panel)
       panel.tile_indices = tile_indices
       panels.append(panel)
@@ -130,7 +130,7 @@ def process_mosaic_per_filter(image_hashes, fits_headers, plate_solutions,
       print(f'###   {p.image_filename}')
 
     print(f'### Running mosaic_by_coordinates in parallel...')
-    autostretch = preview
+    autostretch = mode == 'subframe'
     with Pool() as p:
       panels = p.starmap(
           projection.mosaic_by_coordinates,
@@ -138,7 +138,7 @@ def process_mosaic_per_filter(image_hashes, fits_headers, plate_solutions,
            for p in panels))
     print(f'### mosaic_by_coordinates is done')
 
-    if preview:
+    if mode == 'subframe':
       # The image returned from read_image() is in [0, 65536].
       output_image = file_io.read_image(panels[0].image_filename)
 
@@ -164,7 +164,8 @@ def scatter_merge_mosaics(context, mode):
 
   # TODO: Implement.
   def thumbnail_exists(mosaic):
-    return False
+    key = ('mosaic_thumbnail_image', mode, mosaic.id)
+    return ray_diskcache.contains(key)
 
   to_merge = [m for m in mosaics.values() if not thumbnail_exists(m)]
   print(f'### Need to make previews for {len(to_merge)} mosaics')
@@ -230,7 +231,7 @@ def merge_mosaic(context, mosaic, mode, output_dir=None):
   # themselves.
   outputs = {}
   for filter in ['H', 'S', 'O', 'L', 'R', 'G', 'B']:
-    result = process_mosaic_per_filter(image_hashes, fits_headers,
+    result = process_mosaic_per_filter(mode, image_hashes, fits_headers,
                                        plate_solutions, mosaic, targets, stacks,
                                        dest_xs, dest_ys, ras, decs, filter,
                                        mode, output_dir)

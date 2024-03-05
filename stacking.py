@@ -195,6 +195,7 @@ def group_parallel_tasks(graph):
 def scatter_stack_subframes(context):
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
+  shopping_cart = ray.get(context.shopping_cart)
   stacks = ray.get(context.stacks)
   print(f'### scatter_stack_subframes received {len(stacks)} stacks')
 
@@ -206,7 +207,7 @@ def scatter_stack_subframes(context):
     waitables = [
         stack_files.remote(context, stacks[s], context.output_dir)
         for s in task_group
-        if
+        if s in shopping_cart.get('to_stack', []) and
         not find_matching_masters(image_hashes, fits_headers, stacks[s].hash())
     ]
 

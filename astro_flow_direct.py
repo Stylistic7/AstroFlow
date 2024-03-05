@@ -524,6 +524,7 @@ def main(context):
   context.image_hashes = ray_diskcache.get('image_hashes', {})
   context.fits_headers = ray_diskcache.get('fits_headers', {})
   context.plate_solutions = ray_diskcache.get('plate_solutions', {})
+  context.shopping_cart = ray.put(ray_diskcache.get('shopping_cart', {}))
   print(f'### Cache contained {len(context.quarantined_files)} '
         f'quarantined files')
   print(f'### Cache contained {len(context.image_hashes)} image hashes')

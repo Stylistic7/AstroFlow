@@ -108,15 +108,12 @@ def _make_thumbnail(fits_headers, light_frame, light_image, bias_frame,
 def scatter_stack_thumbnails(context, mode):
   stacks = ray.get(context.stacks)
 
-  def has_thumbnails(stack):
+  def has_thumbnail(stack):
     geometric_hash = stack.geometric_hash()
-    keys = [
-        ('stack_thumbnail_image', 'subframe', geometric_hash),
-        ('stack_thumbnail_video', geometric_hash),
-    ]
-    return all(ray_diskcache.contains(k) for k in keys)
+    key = ('stack_thumbnail_image', mode, geometric_hash),
+    return ray_diskcache.contains(key)
 
-  to_compute = [s for s in stacks.values() if not has_thumbnails(s)]
+  to_compute = [s for s in stacks.values() if not has_thumbnail(s)]
   print(f'### Need to compute thumbnails for {len(to_compute)} stacks')
 
   waitables = [
@@ -161,14 +158,14 @@ def _get_calibrations(stack, stacks, fits_headers):
 @ray.remote(scheduling_strategy="SPREAD", max_retries=5, retry_exceptions=True)
 def compute_stack_thumbnails(context, stack, mode, width=1200):
   if mode == 'subframe':
-    return compute_stack_subframe_thumbnails(context, stack, mode, width)
+    return compute_stack_subframe_thumbnails(context, stack, width)
   elif mode == 'master':
-    print('### not implemented')
+    return compute_stack_master_thumbnail(context, stack, width)
   elif mode == 'post_processed':
     print('### not implemented')
 
 
-def compute_stack_subframe_thumbnails(context, stack, mode, width):
+def compute_stack_subframe_thumbnails(context, stack, width):
   print(f'Entering compute_stack_subframe_thumbnails() for stack {str(stack)}')
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
@@ -253,3 +250,13 @@ def compute_stack_subframe_thumbnails(context, stack, mode, width):
     key = ('stack_thumbnail_video', geometric_hash)
     ray_diskcache.set(key, thumbnail_video, keep_in_memory=False)
     print(f'Wrote key {key}')
+
+
+def compute_stack_master_thumbnails(context, stack, width):
+  print(f'Entering compute_stack_master_thumbnails() for stack {str(stack)}')
+  image_hashes = ray.get(context.image_hashes)
+  fits_headers = ray.get(context.fits_headers)
+  plate_solutions = ray.get(context.plate_solutions)
+  stacks = ray.get(context.stacks)
+
+  geometric_hash = stack.geometric_hash()
