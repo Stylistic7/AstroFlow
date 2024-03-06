@@ -234,7 +234,7 @@ def merge_mosaic(context, mosaic, mode, output_dir=None):
     result = process_mosaic_per_filter(mode, image_hashes, fits_headers,
                                        plate_solutions, mosaic, targets, stacks,
                                        dest_xs, dest_ys, ras, decs, filter,
-                                       mode, output_dir)
+                                       output_dir)
     if result:
       outputs[filter] = result
 

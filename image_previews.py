@@ -9,6 +9,7 @@ import ray_diskcache
 import file_io
 from file_io import read_image
 import subframe_selection
+import stacking
 
 # Every stack is going to have multiple levels of previews. I should disentangle
 # them. There will always be a subrame-based preview. The master-based preview
@@ -163,6 +164,33 @@ def compute_stack_thumbnails(context, stack, mode, width=1200):
     return compute_stack_master_thumbnail(context, stack, width)
   elif mode == 'post_processed':
     print('### not implemented')
+
+
+def compute_stack_master_thumbnail(context, stack, width):
+  print(f'Entering compute_stack_master_thumbnail() for stack {str(stack)}')
+  image_hashes = ray.get(context.image_hashes)
+  fits_headers = ray.get(context.fits_headers)
+
+  geometric_hash = stack.geometric_hash()
+
+  # Find the master(s).
+  masters = stacking.find_matching_masters(image_hashes, fits_headers,
+                                           geometric_hash)
+  if not masters:
+    return
+
+  if len(masters) > 1:
+    print(f'### Found more than one master with hash {geometric_hash}')
+
+  master = masters[0]
+
+  # Read the master image and autostretch it.
+  image = autostretch(resize_array(read_image(image_hashes[master]), width))
+
+  # Store the thumbnail.
+  key = ('stack_thumbnail_image', 'master', geometric_hash)
+  ray_diskcache.set(key, array_to_png(image), keep_in_memory=False)
+  print(f'Wrote key {key}')
 
 
 def compute_stack_subframe_thumbnails(context, stack, width):
