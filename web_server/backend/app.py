@@ -269,19 +269,36 @@ def tuple_starts_with(t, *values):
 
 @app.route('/stack_thumbnail_image/<stack_id>')
 def stack_thumbnail_image(stack_id):
-  key = next(
-      (k for k in cache.iterkeys()
-       if tuple_starts_with(k, 'stack_thumbnail_image', 'subframe', stack_id)),
-      None)
-  print(f'### found matching key {key}')
+  for mode in ['master', 'subframe']:
+    key = next(
+        (k for k in cache.iterkeys()
+         if tuple_starts_with(k, 'stack_thumbnail_image', mode, stack_id)),
+        None)
 
-  if not key:
-    return Response(status=404)
+    if key:
+      buffer = io.BytesIO()
+      buffer.write(cache[key])
+      buffer.seek(0)
+      return flask.send_file(buffer, mimetype='image/png')
 
-  buffer = io.BytesIO()
-  buffer.write(cache[key])
-  buffer.seek(0)
-  return flask.send_file(buffer, mimetype='image/png')
+  return Response(status=404)
+
+
+# TODO: Maybe expose all of the levels of previews (master, subframe, etc.).
+# @app.route('/stack_thumbnail_image/<mode>/<stack_id>')
+# def stack_thumbnail_image(mode, stack_id):
+#   key = next((k for k in cache.iterkeys()
+#               if tuple_starts_with(k, 'stack_thumbnail_image', mode, stack_id)),
+#              None)
+#   print(f'### found matching key {key}')
+
+#   if not key:
+#     return Response(status=404)
+
+#   buffer = io.BytesIO()
+#   buffer.write(cache[key])
+#   buffer.seek(0)
+#   return flask.send_file(buffer, mimetype='image/png')
 
 
 @app.route('/stack_thumbnail_video/<stack_id>')

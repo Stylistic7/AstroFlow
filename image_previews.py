@@ -107,6 +107,7 @@ def _make_thumbnail(fits_headers, light_frame, light_image, bias_frame,
 
 @ray.remote
 def scatter_stack_thumbnails(context, mode):
+  fits_headers = ray.get(context.fits_headers)
   stacks = ray.get(context.stacks)
 
   def has_thumbnail(stack):
@@ -114,7 +115,9 @@ def scatter_stack_thumbnails(context, mode):
     key = ('stack_thumbnail_image', mode, geometric_hash)
     return ray_diskcache.contains(key)
 
-  to_compute = [s for s in stacks.values() if not has_thumbnail(s)]
+  to_compute = [
+      s for s in stacks.values() if s.geometric_hash() and not has_thumbnail(s)
+  ]
   print(f'### Need to compute thumbnails for {len(to_compute)} stacks')
 
   waitables = [
@@ -127,7 +130,7 @@ def scatter_stack_thumbnails(context, mode):
     try:
       ray.get(result)
     except Exception as e:
-      print(f'### compute_stack_subframe_thumbnails threw exception {e}')
+      print(f'### compute_stack_thumbnails threw exception {e}')
 
   return context
 
@@ -155,32 +158,34 @@ def _get_calibrations(stack, stacks, fits_headers):
   return calibrations
 
 
-# TODO: Put the thumbnail size in a user config.
+# TODO: Put the thumbnail sizes in a user config.
 @ray.remote(scheduling_strategy="SPREAD", max_retries=5, retry_exceptions=True)
-def compute_stack_thumbnails(context, stack, mode, width=1200):
+def compute_stack_thumbnails(context, stack, mode):
   if mode == 'subframe':
-    return compute_stack_subframe_thumbnails(context, stack, width)
+    return compute_stack_subframe_thumbnails(context, stack, width=1200)
   elif mode == 'master':
-    return compute_stack_master_thumbnail(context, stack, width)
+    return compute_stack_master_thumbnail(context, stack, width=2160)
   elif mode == 'post_processed':
     print('### not implemented')
 
 
-def compute_stack_master_thumbnail(context, stack, width):
+def compute_stack_master_thumbnail(context, stack, width=2160):
   print(f'Entering compute_stack_master_thumbnail() for stack {str(stack)}')
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
 
-  geometric_hash = stack.geometric_hash()
+  content_hash = stack.content_hash()
 
   # Find the master(s).
   masters = stacking.find_matching_masters(image_hashes, fits_headers,
-                                           geometric_hash)
+                                           content_hash)
+  print(f'### Found masters {masters}')
+
   if not masters:
     return
 
   if len(masters) > 1:
-    print(f'### Found more than one master with hash {geometric_hash}')
+    print(f'### Found more than one master with hash {content_hash}')
 
   master = masters[0]
 
@@ -188,7 +193,7 @@ def compute_stack_master_thumbnail(context, stack, width):
   image = autostretch(resize_array(read_image(image_hashes[master]), width))
 
   # Store the thumbnail.
-  key = ('stack_thumbnail_image', 'master', geometric_hash)
+  key = ('stack_thumbnail_image', 'master', content_hash)
   ray_diskcache.set(key, array_to_png(image), keep_in_memory=False)
   print(f'Wrote key {key}')
 
@@ -278,13 +283,3 @@ def compute_stack_subframe_thumbnails(context, stack, width):
     key = ('stack_thumbnail_video', geometric_hash)
     ray_diskcache.set(key, thumbnail_video, keep_in_memory=False)
     print(f'Wrote key {key}')
-
-
-def compute_stack_master_thumbnails(context, stack, width):
-  print(f'Entering compute_stack_master_thumbnails() for stack {str(stack)}')
-  image_hashes = ray.get(context.image_hashes)
-  fits_headers = ray.get(context.fits_headers)
-  plate_solutions = ray.get(context.plate_solutions)
-  stacks = ray.get(context.stacks)
-
-  geometric_hash = stack.geometric_hash()
