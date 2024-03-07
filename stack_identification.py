@@ -13,6 +13,13 @@ import footprints
 from stack import Stack, Run, FrameHash
 
 
+def normalize_radians(x):
+  if x < 0.0:
+    return x + np.pi
+  else:
+    return x
+
+
 def _new_stack(name, light_frames, fits_headers, plate_solutions):
   flattened = list(itertools.chain.from_iterable([k for k in light_frames]))
 
@@ -25,9 +32,12 @@ def _new_stack(name, light_frames, fits_headers, plate_solutions):
   image_scale = np.mean(
       [p.image_scale for f, p in plate_solutions.items() if f in flattened],
       axis=0)
-  rotation_angle = np.mean(
-      [p.rotation_angle for f, p in plate_solutions.items() if f in flattened],
-      axis=0)
+  rotation_angle = np.mean([
+      normalize_radians(p.rotation_angle)
+      for f, p in plate_solutions.items()
+      if f in flattened
+  ],
+                           axis=0)
   footprint = next(
       SphericalPolygon.from_wcs(
           astropy.io.fits.Header(
@@ -73,7 +83,8 @@ def identify_stacks(context):
         camera_frames, cameras = zip(*camera_cluster)
         assert len(set(cameras)) == 1
         rotation_angles = [
-            (f, plate_solutions[f].rotation_angle) for f in camera_frames
+            (f, normalize_radians(plate_solutions[f].rotation_angle))
+            for f in camera_frames
         ]
         for rotation_cluster in clustering.cluster_continuous(rotation_angles,
                                                               epsilon=5.0):

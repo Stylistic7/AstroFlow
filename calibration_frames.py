@@ -42,7 +42,7 @@ def _associate(stack,
     # image_type and camera. If there are no such frames, end early.
     cal_frames = [
         f for f, header in fits_headers.items()
-        if not file_io.is_master(header) and 'IMAGETYP' in header and
+        if header and not file_io.is_master(header) and 'IMAGETYP' in header and
         'INSTRUME' in header and header['IMAGETYP'] == image_type and
         header['INSTRUME'] == stack.camera
     ]

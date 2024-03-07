@@ -62,21 +62,23 @@ export default function MosaicPanel({ stacks, targets, mosaics }) {
 	}
 
 	const telescopius = (mosaic) => {
-		let output = "Pane, RA, DEC, Position Angle (East), Pane width (arcmins), Pane height (arcmins), Overlap, Row, Column\n";
+		let output = [<p>Pane, RA, DEC, Position Angle (East), Pane width (arcmins), Pane height (arcmins), Overlap, Row, Column</p>];
 		let pane = 1;
 		for (let i = 0; i < mosaic.target_ids.length; ++i) {
 			let target_id = mosaic.target_ids[i];
 			let [tile_x, tile_y] = mosaic.tile_indices[i];
 
 			let target = targets[target_id];
-			let stack = stacks[target.stack_ids[0]];
+			let stack_id = target.stack_ids[0];
+			let stack = stacks[stack_id];
 
 			let [ra, dec] = stack.center;
 			let rotation_angle = stack.rotation_angle * 180.0 / Math.PI;
+			console.log('stack', stack);
 			let pane_width = stack.image_scale * stack.width_pixels / 60.0;
 			let pane_height = stack.image_scale * stack.height_pixels / 60.0;
 
-			output += `Pane ${pane}, ${ra_to_hms(ra)}, ${dec_to_dms(dec)}, ${rotation_angle.toFixed(1)}, ${pane_width.toFixed(2)}, ${pane_height.toFixed(2)}, 20%, ${tile_x + 1}, ${tile_y + 1}`;
+			output.push(<p>{`Pane ${pane}, ${ra_to_hms(ra)}, ${dec_to_dms(dec)}, ${rotation_angle.toFixed(1)}, ${pane_width.toFixed(2)}, ${pane_height.toFixed(2)}, 20%, ${tile_x + 1}, ${tile_y + 1}`}</p>);
 			pane += 1;
 		}
 

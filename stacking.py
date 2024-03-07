@@ -211,8 +211,8 @@ def scatter_stack_subframes(context):
     waitables = [
         stack_files.remote(context, stacks[s], context.output_dir)
         for s in task_group
-        if is_in_shopping_cart(stacks[s]) and
-        not find_matching_masters(image_hashes, fits_headers, stacks[s].hash())
+        if is_in_shopping_cart(stacks[s]) and not find_matching_masters(
+            image_hashes, fits_headers, stacks[s].content_hash())
     ]
 
     results = []
