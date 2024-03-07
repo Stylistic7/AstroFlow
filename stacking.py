@@ -28,7 +28,7 @@ def _exposure_time_string(stack):
 def find_matching_masters(image_hashes, fits_headers, content_hash):
   return [
       h for h, header in fits_headers.items()
-      if header.get(_CONTENT_HASH_KEY, None) == content_hash and
+      if header and header.get(_CONTENT_HASH_KEY, None) == content_hash and
       os.path.exists(image_hashes[h]) and file_io.read_header(
           image_hashes[h]).get(_CONTENT_HASH_KEY, None) == content_hash
   ]
