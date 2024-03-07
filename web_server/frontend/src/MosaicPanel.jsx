@@ -37,11 +37,7 @@ export default function MosaicPanel({ stacks, targets, mosaics }) {
 
 	// TODO: Add other modes besides AUTO.
 	const runAllTasks = () => {
-		for (let target_id of mosaic.target_ids) {
-			for (let stack_id of targets[target_id].stack_ids) {
-				fetch(`/add_to_run_cart/auto/stack_subframes/${stack_id}`);
-			}
-		}
+		fetch(`/add_mosaic_to_shopping_cart/${params.mosaic_id}`);
 	};
 
 

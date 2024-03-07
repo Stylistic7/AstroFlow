@@ -162,7 +162,6 @@ def process_mosaic_per_filter(mode, image_hashes, fits_headers, plate_solutions,
 def scatter_merge_mosaics(context, mode):
   mosaics = ray.get(context.mosaics)
 
-  # TODO: Implement.
   def thumbnail_exists(mosaic):
     key = ('mosaic_thumbnail_image', mode, mosaic.id)
     return ray_diskcache.contains(key)

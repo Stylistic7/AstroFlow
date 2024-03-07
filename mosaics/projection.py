@@ -36,7 +36,6 @@ def mosaic_by_coordinates(panel,
                           output_dir,
                           autostretch=False):
   print(f'### mosaic_by_coordinates projecting image {panel.image_filename}')
-
   projected_image = np.zeros(ras.shape)
   projection_map = np.zeros(ras.shape)
   print(f'### projected_image shape', projected_image.shape)

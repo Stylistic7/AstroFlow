@@ -94,23 +94,19 @@ def run():
   return Response(status=204)
 
 
-@app.route('/add_to_run_cart/<mode>/<task_name>/<ids>')
-def add_to_run_cart(mode, task_name, ids):
-  mode = {
-      'auto': dg.ControlMode.AUTO,
-      'disabled': dg.ControlMode.DISABLED,
-      'force': dg.ControlMode.FORCE
-  }[mode]
+@app.route('/add_mosaic_to_shopping_cart/<mosaic_id>')
+def add_mosaic_to_shopping_cart(mosaic_id):
+  stacks = test_app.stacks if debug else cache.get('stacks', {})
+  targets = test_app.targets if debug else cache.get('targets', {})
+  mosaics = test_app.mosaics if debug else cache.get('mosaics', {})
+  shopping_cart = test_app.shopping_cart if debug else cache.get(
+      'shopping_cart', [])
 
-  with cache.transact():
-    control_modes = cache.get('control_modes', {})
-    control_modes |= {(task_name, id): mode for id in ids.split(',')}
-    print('control modes are now', control_modes)
-    cache['control_modes'] = control_modes
-
-  run_now.acquire()
-  run_now.notify()
-  run_now.release()
+  stack_ids = [
+      s for t in mosaics[mosaic_id].target_ids for s in targets[t].stack_ids
+  ]
+  shopping_cart.extend([('stack_files', s) for s in stack_ids])
+  cache['shopping_cart'] = shopping_cart
 
   return Response(status=204)
 
