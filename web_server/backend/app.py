@@ -202,7 +202,8 @@ def get_exposure_duration(stack_id):
   plate_solutions = cache['plate_solutions']
   criterion = subframe_selection.decode_selection_criterion(
       stack.selection_criterion)
-  light_frames = criterion.select_subframes(stack, plate_solutions)
+  stack = criterion.select_subframes(stack, plate_solutions)
+  light_frames = [f for run in stack.runs for f in run.frames]
   selected_exposure_duration = sum(
       fits_headers[f]['EXPOSURE'] for f in light_frames)
 

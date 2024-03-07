@@ -29,6 +29,7 @@ export default function StackThumbnail({ stacks, stack_id, width, handleClick })
 
 	const [sortedLightFrames, setSortedLightFrames] = React.useState([]);
 	const [selectedSubframes, setSelectedSubframes] = React.useState([]);
+	const [exposureDuration, setExposureDuration] = React.useState({});
 
 	const fetchHtml = (stack_id) => {
 		console.log('fetchHtml');
@@ -49,6 +50,15 @@ export default function StackThumbnail({ stacks, stack_id, width, handleClick })
 			.then((j) => {
 				console.log('get_selected_subframes', j);
 				setSelectedSubframes(j);
+			});
+
+		fetch(`/get_exposure_duration/${stack_id}`)
+			.then((response) => {
+				return response.json();
+			})
+			.then((j) => {
+				console.log('get_exposure_duration', j);
+				setExposureDuration(j);
 			});
 	}
 
@@ -132,6 +142,8 @@ export default function StackThumbnail({ stacks, stack_id, width, handleClick })
 
 			<ExposureDurationWidget
 				key={`exposure_duration_${stack_id}`}
+				totalExposureDuration={exposureDuration['total_exposure_duration'] / 3600.0}
+				selectedExposureDuration={exposureDuration['selected_exposure_duration'] / 3600.0}
 				stack={stack}
 				sx={{
 					position: "absolute",

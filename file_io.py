@@ -12,6 +12,8 @@ log = logger
 
 
 def is_light_frame(header: dict) -> bool:
+  if not header:
+    return False
   if 'IMAGETYP' not in header:
     return False
   image_type = header['IMAGETYP'].lower()
@@ -19,6 +21,8 @@ def is_light_frame(header: dict) -> bool:
 
 
 def is_bias_frame(header: dict) -> bool:
+  if not header:
+    return False
   if 'IMAGETYP' not in header:
     return False
   image_type = header['IMAGETYP'].lower()
@@ -26,6 +30,8 @@ def is_bias_frame(header: dict) -> bool:
 
 
 def is_dark_frame(header: dict) -> bool:
+  if not header:
+    return False
   if 'IMAGETYP' not in header:
     return False
   image_type = header['IMAGETYP'].lower()
@@ -33,6 +39,8 @@ def is_dark_frame(header: dict) -> bool:
 
 
 def is_flat_frame(header: dict) -> bool:
+  if not header:
+    return False
   if 'IMAGETYP' not in header:
     return False
   image_type = header['IMAGETYP'].lower()
@@ -40,6 +48,8 @@ def is_flat_frame(header: dict) -> bool:
 
 
 def is_master(header: dict) -> bool:
+  if not header:
+    return False
   if 'IMAGETYP' not in header:
     return False
   image_type = header['IMAGETYP'].lower()
@@ -54,6 +64,8 @@ def is_light_master(header: dict) -> bool:
 
 
 def is_bias_master(header: dict) -> bool:
+  if not header:
+    return False
   if 'IMAGETYP' not in header:
     return False
   image_type = header['IMAGETYP'].lower()
@@ -61,6 +73,8 @@ def is_bias_master(header: dict) -> bool:
 
 
 def is_dark_master(header: dict) -> bool:
+  if not header:
+    return False
   if 'IMAGETYP' not in header:
     return False
   image_type = header['IMAGETYP'].lower()
@@ -68,6 +82,8 @@ def is_dark_master(header: dict) -> bool:
 
 
 def is_flat_master(header: dict) -> bool:
+  if not header:
+    return False
   if 'IMAGETYP' not in header:
     return False
   image_type = header['IMAGETYP'].lower()

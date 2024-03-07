@@ -35,6 +35,54 @@ export default function MosaicPanel({ stacks, targets, mosaics }) {
 		return filter_array;
 	}
 
+	const divmod = (y, x) => {
+		let div = Math.trunc(y / x);
+		let rem = y % x;
+
+		return [div, rem];
+	}
+
+	const ra_to_hms = (ra) => {
+		let [hours, hours_remainder] = divmod(ra * 3600, 15 * 3600);
+		let [minutes, minutes_remainder] = divmod(hours_remainder, 15 * 60);
+		let seconds = Math.round(minutes_remainder / 15);
+
+		return `${String(hours).padStart(2, '0')}hr ${String(minutes).padStart(2, '0')}' ${String(seconds).padStart(2, '0')}"`;
+	}
+
+	const dec_to_dms = (dec) => {
+		let negative = dec < 0 ? '-' : '';
+		dec = Math.abs(dec);
+		let [degrees, degrees_remainder] = divmod(dec * 3600, 3600);
+		degrees_remainder = Math.abs(degrees_remainder);
+		let [minutes, seconds] = divmod(degrees_remainder, 60);
+		seconds = Math.round(seconds);
+
+		return `${negative}${String(degrees).padStart(2, '0')}º ${String(minutes).padStart(2, '0')}' ${String(seconds).padStart(2, '0')}"`
+	}
+
+	const telescopius = (mosaic) => {
+		let output = "Pane, RA, DEC, Position Angle (East), Pane width (arcmins), Pane height (arcmins), Overlap, Row, Column\n";
+		let pane = 1;
+		for (let i = 0; i < mosaic.target_ids.length; ++i) {
+			let target_id = mosaic.target_ids[i];
+			let [tile_x, tile_y] = mosaic.tile_indices[i];
+
+			let target = targets[target_id];
+			let stack = stacks[target.stack_ids[0]];
+
+			let [ra, dec] = stack.center;
+			let rotation_angle = stack.rotation_angle * 180.0 / Math.PI;
+			let pane_width = stack.image_scale * stack.width_pixels / 60.0;
+			let pane_height = stack.image_scale * stack.height_pixels / 60.0;
+
+			output += `Pane ${pane}, ${ra_to_hms(ra)}, ${dec_to_dms(dec)}, ${rotation_angle.toFixed(1)}, ${pane_width.toFixed(2)}, ${pane_height.toFixed(2)}, 20%, ${tile_x + 1}, ${tile_y + 1}`;
+			pane += 1;
+		}
+
+		return output;
+	}
+
 	// TODO: Add other modes besides AUTO.
 	const runAllTasks = () => {
 		fetch(`/add_mosaic_to_shopping_cart/${params.mosaic_id}`);
@@ -68,14 +116,20 @@ export default function MosaicPanel({ stacks, targets, mosaics }) {
 			</Breadcrumbs>
 
 			<Typography color="text.primary" margin="0.5em" onClick={runAllTasks}>
+				{telescopius(mosaic)}
+			</Typography>
+
+			<Typography color="text.primary" margin="0.5em" onClick={runAllTasks}>
 				<DirectionsRunIcon sx={{ marginRight: '0.5em' }} onClick={runAllTasks} /> Run all tasks
 			</Typography>
+
 			<MosaicOutline
 				stacks={stacks}
 				targets={targets}
 				mosaics={mosaics}
 				mosaic_id={params.mosaic_id}
 			/>
+
 			<MultiChannelImage
 				stacks={stacks}
 				targets={targets}
