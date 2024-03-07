@@ -78,15 +78,22 @@ def scatter_compute_image_metadata(context, filenames):
     except Exception as e:
       print(f'### compute_image_metadata_ray threw exception {e}')
 
-  quarantined_files = ray_diskcache.and_equals('quarantined_files',
-                                               [r for r in results if not r])
+  def had_exception(result):
+    return 'exception' in result
+
+  quarantined_files = ray_diskcache.and_equals(
+      'quarantined_files', [r['filename'] for r in results if had_exception(r)])
   image_hashes = ray_diskcache.or_equals(
-      'image_hashes', {r['image_hash']: r['filename'] for r in results if r})
-  fits_headers = ray_diskcache.or_equals(
-      'fits_headers', {r['image_hash']: r['fits_header'] for r in results if r})
-  plate_solutions = ray_diskcache.or_equals(
-      'plate_solutions',
-      {r['image_hash']: r['plate_solution'] for r in results if r})
+      'image_hashes',
+      {r['image_hash']: r['filename'] for r in results if not had_exception(r)})
+  fits_headers = ray_diskcache.or_equals('fits_headers', {
+      r['image_hash']: r['fits_header'] for r in results if not had_exception(r)
+  })
+  plate_solutions = ray_diskcache.or_equals('plate_solutions', {
+      r['image_hash']: r['plate_solution']
+      for r in results
+      if not had_exception(r)
+  })
 
   assert None not in image_hashes.values()
 
@@ -114,8 +121,6 @@ def compute_image_metadata_ray(filename):
     result = {}
     result['filename'] = filename
     result['fits_header'] = header = file_io.read_header(filename)
-    # for k, v in result['fits_header'].items():
-    #   print(f'### FITS {k} -> {v}')
     result['image_hash'] = header[
         _CONTENT_HASH_KEY] if _CONTENT_HASH_KEY in header else file_io.hash_of_image_data(
             filename)
@@ -130,7 +135,13 @@ def compute_image_metadata_ray(filename):
   except Exception as e:
     print(f'compute_image_metadata_ray() failed for file {filename}, '
           f'exception {e}')
-    return None
+    return {
+        'filename': filename,
+        'image_hash': None,
+        'fits_header': None,
+        'plate_solution': None,
+        'exception': e
+    }
 
 
 # TODO: This is a bit weird. We want to keep unsolvable files in the cache,

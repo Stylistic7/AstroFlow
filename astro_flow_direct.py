@@ -498,8 +498,9 @@ def assert_all_light_frames_in_stacks(light_frames, stacks):
 
 
 def get_new_filenames(filenames, context):
-  image_hashes = context.image_hashes
-  return list(set(filenames) - set(image_hashes.values()))
+  return list(
+      set(filenames) - set(ray.get(context.image_hashes).values()) -
+      set(ray.get(context.quarantined_files)))
 
 
 def main(context):
@@ -520,16 +521,33 @@ def main(context):
 
   # Load all of the existing metadata into the context before starting the
   # compute graph.
-  context.quarantined_files = ray_diskcache.get('quarantined_files', [])
-  context.image_hashes = ray_diskcache.get('image_hashes', {})
-  context.fits_headers = ray_diskcache.get('fits_headers', {})
-  context.plate_solutions = ray_diskcache.get('plate_solutions', {})
-  context.shopping_cart = ray.put(ray_diskcache.get('shopping_cart', {}))
-  print(f'### Cache contained {len(context.quarantined_files)} '
+  quarantined_files = ray_diskcache.get('quarantined_files', [])
+  image_hashes = ray_diskcache.get('image_hashes', {})
+  fits_headers = ray_diskcache.get('fits_headers', {})
+  plate_solutions = ray_diskcache.get('plate_solutions', {})
+  shopping_cart = ray_diskcache.get('shopping_cart', [])
+  stacks = ray_diskcache.get('stacks', [])
+  targets = ray_diskcache.get('targets', [])
+  mosaics = ray_diskcache.get('mosaics', [])
+
+  print(f'### Cache contained {len(quarantined_files)} '
         f'quarantined files')
-  print(f'### Cache contained {len(context.image_hashes)} image hashes')
-  print(f'### Cache contained {len(context.fits_headers)} FITS headers')
-  print(f'### Cache contained {len(context.plate_solutions)} plate solutions')
+  print(f'### Cache contained {len(image_hashes)} image hashes')
+  print(f'### Cache contained {len(fits_headers)} FITS headers')
+  print(f'### Cache contained {len(plate_solutions)} plate solutions')
+  print(f'### Cache contained {len(shopping_cart)} items in shopping cart')
+  print(f'### Cache contained {len(stacks)} stacks')
+  print(f'### Cache contained {len(targets)} targets')
+  print(f'### Cache contained {len(mosaics)} mosaics')
+
+  context.quarantined_files = ray.put(quarantined_files)
+  context.image_hashes = ray.put(image_hashes)
+  context.fits_headers = ray.put(fits_headers)
+  context.plate_solutions = ray.put(plate_solutions)
+  context.shopping_cart = ray.put(shopping_cart)
+  context.stacks = ray.put(stacks)
+  context.targets = ray.put(targets)
+  context.mosaics = ray.put(mosaics)
 
   print('### Looking for files in input dirs', context.input_dirs)
   print('### Looking for files in output dir', context.output_dir)

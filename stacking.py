@@ -203,8 +203,7 @@ def scatter_stack_subframes(context):
 
   # TODO: Implement in the UI.
   def is_in_shopping_cart(stack):
-    # if stack in shopping_cart.get('to_stack', [])
-    return True
+    return ('stack_files', stack.hash()) in shopping_cart
 
   for task_group in parallel_tasks:
     print(f'### Starting {len(task_group)} stack_files tasks in parallel...')

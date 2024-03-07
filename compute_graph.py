@@ -13,13 +13,14 @@ from mosaics.identification import identify_mosiacs
 
 @ray.remote
 def run_compute_graph(context, new_filenames):
-  context = ray.get(
-      scatter_compute_image_metadata.remote(context, new_filenames))
-  context = ray.get(find_components_by_cosine_similarity.remote(context))
-  context = ray.get(identify_stacks.remote(context))
-  context = ray.get(associate_calibration_frames.remote(context))
-  context = ray.get(group_stacks_into_targets.remote(context))
-  context = ray.get(identify_mosiacs.remote(context))
+  if new_filenames:
+    context = ray.get(
+        scatter_compute_image_metadata.remote(context, new_filenames))
+    context = ray.get(find_components_by_cosine_similarity.remote(context))
+    context = ray.get(identify_stacks.remote(context))
+    context = ray.get(associate_calibration_frames.remote(context))
+    context = ray.get(group_stacks_into_targets.remote(context))
+    context = ray.get(identify_mosiacs.remote(context))
 
   context = ray.get(scatter_stack_thumbnails.remote(context, mode='subframe'))
   context = ray.get(scatter_merge_mosaics.remote(context, mode='subframe'))
