@@ -498,9 +498,9 @@ def assert_all_light_frames_in_stacks(light_frames, stacks):
 
 
 def get_new_filenames(filenames, context):
-  return list(
-      set(filenames) - set(ray.get(context.image_hashes).values()) -
-      set(ray.get(context.quarantined_files)))
+  known_files = ray.get(context.image_hashes).values()
+  quarantined_files = ray.get(context.quarantined_files)
+  return list(set(filenames) - set(known_files) - set(quarantined_files))
 
 
 def main(context):

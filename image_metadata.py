@@ -69,7 +69,7 @@ _CONTENT_HASH_KEY = 'XISF:AstroFlow:StackContentHash'
 
 @ray.remote
 def scatter_compute_image_metadata(context, filenames):
-  waitables = [compute_image_metadata_ray.remote(f) for f in filenames]
+  waitables = [compute_image_metadata_ray.remote(context, f) for f in filenames]
   results = []
   while len(waitables):
     done, waitables = ray.wait(waitables)
@@ -110,10 +110,16 @@ def scatter_compute_image_metadata(context, filenames):
   return context
 
 
+class DuplicateFileException(Exception):
+  pass
+
+
 @ray.remote(scheduling_strategy="SPREAD", max_retries=5, retry_exceptions=True)
-def compute_image_metadata_ray(filename):
+def compute_image_metadata_ray(context, filename):
   print(f'### Entering compute_image_metadata_ray() for {filename}')
   assert filename
+
+  image_hashes = ray.get(context.image_hashes)
 
   # TODO: Make sure this code doesn't actually repeatedly read the image across
   # the network. It should hit the node's filesystem cache.
@@ -124,6 +130,9 @@ def compute_image_metadata_ray(filename):
     result['image_hash'] = header[
         _CONTENT_HASH_KEY] if _CONTENT_HASH_KEY in header else file_io.hash_of_image_data(
             filename)
+
+    if result['image_hash'] in image_hashes:
+      raise DuplicateFileException()
 
     if file_io.is_light_frame(header):
       result['plate_solution'] = plate_solving.solve_field(filename)
