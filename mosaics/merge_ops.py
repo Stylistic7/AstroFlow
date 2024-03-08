@@ -29,8 +29,7 @@ def make_merge_ops(panels, output_dir):
   print(f'Panels are {panels}')
 
   def get_panel(tile_indices):
-    return next(
-        p for p in panels if list(p.tile_indices) == list(tile_indices))
+    return next(p for p in panels if list(p.tile_indices) == list(tile_indices))
 
   merge_ops = []
   level = 0
@@ -95,9 +94,10 @@ def run_photometric_mosaic(merge_op):
   return result
 
 
-# TODO: None should be a valid argument type.
 def merge_mosaic(panels, output_dir):
+  print(f'### Entering merge_mosaic, output_dir {output_dir}')
   for merge_op in make_merge_ops(panels, output_dir):
     output_image = run_photometric_mosaic(merge_op)
+    print(f'### run_photometric_mosaic returned {output_image}')
 
   return output_image

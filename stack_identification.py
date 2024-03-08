@@ -43,6 +43,10 @@ def _new_stack(name, light_frames, fits_headers, plate_solutions):
           astropy.io.fits.Header(
               plate_solutions[flattened[0]].header)).points).tolist()
   projected_footprints = footprints.all_projections(SphericalPolygon(footprint))
+
+  # TODO: The selection criterion needs to be preserved when stacks are
+  # re-computed. Stacks with the same geometric_hash can have their settings
+  # passed on. There may be other settings like this in the future.
   selection_criterion = ('StarCountFraction', 0.75)
 
   new_runs = [Run(frames=[FrameHash(h) for h in run]) for run in light_frames]

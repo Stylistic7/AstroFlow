@@ -340,9 +340,9 @@ def mosaic_thumbnail_image_for_filter(mosaic_id, filter):
   return flask.send_file(buffer, mimetype='image/png')
 
 
-@app.route('/mosaic_thumbnail_image/<mosaic_id>')
-def mosaic_thumbnail_image(mosaic_id):
-  result = cache[('mosaic_thumbnail_image', 'subframe', mosaic_id)]
+@app.route('/mosaic_thumbnail_image/<mode>/<mosaic_id>/<filter>')
+def mosaic_thumbnail_image(mode, mosaic_id, filter):
+  result = cache[('mosaic_thumbnail_image', mode, mosaic_id)]
   for filter in ['H', 'L', 'S', 'O', 'G', 'R', 'B']:
     if filter not in result:
       continue
