@@ -64,9 +64,10 @@ def _get_preview_panel_for_stack(stack, image_hashes, plate_solutions):
                        plate_solution=plate_solution)
 
 
-def _get_master_panel_for_stack(stack, image_hashes, fits_headers):
-  filenames = stacking.find_matching_masters(image_hashes, fits_headers,
-                                             stack.content_hash())
+def _get_master_panel_for_stack(stack, image_hashes, fits_headers,
+                                plate_solutions):
+  filenames = stacking.find_matching_masters(stack, image_hashes, fits_headers,
+                                             plate_solutions)
 
   # TODO: Handle inconsistencies, like multiple masters with the same
   # content hash.
@@ -89,7 +90,8 @@ def _get_panel_for_stack(mode, stack, image_hashes, fits_headers,
   if mode == 'subframe':
     return _get_preview_panel_for_stack(stack, image_hashes, plate_solutions)
   elif mode == 'master':
-    return _get_master_panel_for_stack(stack, image_hashes, fits_headers)
+    return _get_master_panel_for_stack(stack, image_hashes, fits_headers,
+                                       plate_solutions)
 
 
 def process_mosaic_per_filter(mode, image_hashes, fits_headers, plate_solutions,
@@ -148,6 +150,8 @@ def process_mosaic_per_filter(mode, image_hashes, fits_headers, plate_solutions,
 
     if mode == 'subframe':
       # The image returned from read_image() is in [0, 65536].
+      # TODO: These panels are just merged by np.maximum, but there are
+      # certainly better ways (maybe mean of all projected values).
       output_image = file_io.read_image(panels[0].image_filename)
 
       for p in panels[1:]:
@@ -155,11 +159,11 @@ def process_mosaic_per_filter(mode, image_hashes, fits_headers, plate_solutions,
         output_image = np.maximum(output_image, image)
 
       return image_previews.array_to_png(output_image)
-    else:
-      # TODO: This returns a different type than the branch above.
+    elif mode == 'master':
       output_image = merge_ops.merge_mosaic(panels, output_dir)
 
-      merged_mosaic = os.path.join(output_dir, f"merged_mosaic_{filter}.fits")
+      merged_mosaic = os.path.join(output_dir,
+                                   f"merged_mosaic_{mode}_{filter}.fits")
       print(f'Copying final mosaic image to {merged_mosaic}')
       shutil.copy(output_image[0], merged_mosaic)
 
@@ -175,7 +179,7 @@ def scatter_merge_mosaics(context, mode):
     return ray_diskcache.contains(key)
 
   to_merge = [m for m in mosaics.values() if not thumbnail_exists(m)]
-  print(f'### Need to make previews for {len(to_merge)} mosaics')
+  print(f'### Need to make {mode} previews for {len(to_merge)} mosaics')
 
   waitables = [merge_mosaic.remote(context, m, mode) for m in to_merge]
 
@@ -191,8 +195,8 @@ def scatter_merge_mosaics(context, mode):
 
 
 @ray.remote(scheduling_strategy="SPREAD")
-def merge_mosaic(context, mosaic, mode, output_dir=None):
-  print(f'### Entering process_mosaic for mosaic {mosaic} mode {mode}')
+def merge_mosaic(context, mosaic, mode):
+  print(f'### Entering merge_mosaic for mosaic {mosaic} mode {mode}')
 
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
@@ -208,8 +212,11 @@ def merge_mosaic(context, mosaic, mode, output_dir=None):
           f'{len(mosaic.target_ids)} target ids')
     return None
 
-  if output_dir:
-    output_dir = os.path.join(output_dir, 'Mosaics', mosaic.name)
+  # Store merged mosaics on disk for all modes except 'subframe'.
+  if mode == 'subframe':
+    output_dir = None
+  else:
+    output_dir = os.path.join(context.output_dir, 'Mosaics', mosaic.name)
     os.makedirs(output_dir, exist_ok=True)
 
   # Determine the output image shape and resolution, which is a 3D to 2D
@@ -245,9 +252,9 @@ def merge_mosaic(context, mosaic, mode, output_dir=None):
     if result:
       outputs[filter] = result
 
-  print(f'### process_mosaic successful for mosaic {mosaic} mode {mode}')
+  print(f'### merge_mosaic successful for mosaic {mosaic} mode {mode}')
   if mode == 'subframe':
-    key = ('mosaic_thumbnail_image', 'subframe', mosaic.id)
+    key = ('mosaic_thumbnail_image', mode, mosaic.id)
     ray_diskcache.set(key, outputs, keep_in_memory=False)
 
   return outputs

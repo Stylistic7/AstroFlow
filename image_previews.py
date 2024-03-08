@@ -173,12 +173,13 @@ def compute_stack_master_thumbnail(context, stack, width=2160):
   print(f'Entering compute_stack_master_thumbnail() for stack {str(stack)}')
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
+  plate_solutions = ray.get(context.plate_solutions)
 
   content_hash = stack.content_hash()
 
   # Find the master(s).
-  masters = stacking.find_matching_masters(image_hashes, fits_headers,
-                                           content_hash)
+  masters = stacking.find_matching_masters(stack, image_hashes, fits_headers,
+                                           plate_solutions)
   print(f'### Found masters {masters}')
 
   if not masters:

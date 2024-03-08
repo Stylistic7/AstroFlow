@@ -25,7 +25,27 @@ def _exposure_time_string(stack):
   return f'{hours:02.0f}h{minutes:02.0f}m'
 
 
-def find_matching_masters(image_hashes, fits_headers, content_hash):
+# TODO: It's too easy to accidentally use the stack's content hash before
+# subframe selection. Almost no one actually cares about the original
+# stack, though -- they only care about the down-selected stack.
+#
+# Maybe just do down-selection when the stack is created.
+def _get_content_hash_after_subframe_selection(stack, plate_solutions):
+  num_light_frames_before_selection = len(
+      [f for run in stack.runs for f in run.frames])
+  criterion = subframe_selection.decode_selection_criterion(
+      stack.selection_criterion)
+  stack = criterion.select_subframes(stack, plate_solutions)
+  num_light_frames_after_selection = len(
+      [f for run in stack.runs for f in run.frames])
+  print(f'### Selected {num_light_frames_after_selection} light frames '
+        f'from {num_light_frames_before_selection} light frames')
+  return num_light_frames_after_selection, stack.content_hash()
+
+
+def find_matching_masters(stack, image_hashes, fits_headers, plate_solutions):
+  content_hash = _get_content_hash_after_subframe_selection(
+      stack, plate_solutions)
   return [
       h for h, header in fits_headers.items()
       if header and header.get(_CONTENT_HASH_KEY, None) == content_hash and
@@ -112,19 +132,13 @@ def stack_files(context, stack, dest_path, metadata=None):
     metadata = {}
 
   if is_light_frame_stack(stack, fits_headers):
-    num_light_frames_before_selection = len(
-        [f for run in stack.runs for f in run.frames])
-    criterion = subframe_selection.decode_selection_criterion(
-        stack.selection_criterion)
-    stack = criterion.select_subframes(stack, plate_solutions)
-    num_light_frames_after_selection = len(
-        [f for run in stack.runs for f in run.frames])
+    num_light_frames, content_hash = _get_content_hash_after_subframe_selection(
+        stack, plate_solutions)
     # TODO: Put this number in the UI.
-    if num_light_frames_after_selection < 3:
+    if num_light_frames < 3:
       return []
-    metadata[_CONTENT_HASH_KEY] = stack.content_hash()
-    print(f'### Selected {num_light_frames_after_selection} light frames '
-          f'from {num_light_frames_before_selection} light frames')
+
+    metadata[_CONTENT_HASH_KEY] = content_hash
   else:
     metadata[_CONTENT_HASH_KEY] = stack.content_hash()
 
@@ -195,6 +209,7 @@ def group_parallel_tasks(graph):
 def scatter_stack_subframes(context):
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
+  plate_solutions = ray.get(context.plate_solutions)
   shopping_cart = ray.get(context.shopping_cart)
   stacks = ray.get(context.stacks)
   print(f'### scatter_stack_subframes received {len(stacks)} stacks')
@@ -212,7 +227,7 @@ def scatter_stack_subframes(context):
         stack_files.remote(context, stacks[s], context.output_dir)
         for s in task_group
         if is_in_shopping_cart(stacks[s]) and not find_matching_masters(
-            image_hashes, fits_headers, stacks[s].content_hash())
+            stacks[s], image_hashes, fits_headers, plate_solutions)
     ]
 
     results = []
