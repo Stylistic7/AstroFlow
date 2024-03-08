@@ -51,8 +51,7 @@ def show_image(data):
   plt.show()
 
 
-def _get_preview_panel_for_stack(stack, image_hashes, fits_headers,
-                                 plate_solutions):
+def _get_preview_panel_for_stack(stack, image_hashes, plate_solutions):
   light_frames_by_stars = subframe_selection.get_light_frames_sorted_by_stars(
       stack, plate_solutions)
   best_light_frame, _ = light_frames_by_stars[0]
@@ -65,7 +64,7 @@ def _get_preview_panel_for_stack(stack, image_hashes, fits_headers,
                        plate_solution=plate_solution)
 
 
-def _get_master_panel_for_stack(image_hashes, fits_headers, stack):
+def _get_master_panel_for_stack(stack, image_hashes, fits_headers):
   filenames = stacking.find_matching_masters(image_hashes, fits_headers,
                                              stack.content_hash())
 
@@ -88,10 +87,9 @@ def _get_master_panel_for_stack(image_hashes, fits_headers, stack):
 def _get_panel_for_stack(mode, stack, image_hashes, fits_headers,
                          plate_solutions):
   if mode == 'subframe':
-    return _get_preview_panel_for_stack(stack, image_hashes, fits_headers,
-                                        plate_solutions)
+    return _get_preview_panel_for_stack(stack, image_hashes, plate_solutions)
   elif mode == 'master':
-    return _get_master_panel_for_stack(stack)
+    return _get_master_panel_for_stack(stack, image_hashes, fits_headers)
 
 
 def process_mosaic_per_filter(mode, image_hashes, fits_headers, plate_solutions,
