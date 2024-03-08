@@ -10,6 +10,8 @@ import ray
 
 from output_file import OutputFile
 
+import stacking
+import plate_solving
 import file_io
 import image_previews
 import subframe_selection
@@ -63,22 +65,24 @@ def _get_preview_panel_for_stack(stack, image_hashes, fits_headers,
                        plate_solution=plate_solution)
 
 
-# TODO implement
-def _get_master_panel_for_stack(stack):
-  # obj = get_prev_result_object('stack_subframes', stack.id)
-  # if not obj or not obj.filename:
-  #   print(f'### Could not get stack master for {stack}: {obj}')
-  #   return None
+def _get_master_panel_for_stack(image_hashes, fits_headers, stack):
+  filenames = stacking.find_matching_masters(image_hashes, fits_headers,
+                                             stack.content_hash())
 
-  # print(f'### Got {obj.filename} for {stack} with id {stack.id}')
+  # TODO: Handle inconsistencies, like multiple masters with the same
+  # content hash.
+  if len(filenames) != 1:
+    return None
 
-  # plate_solution = plate_solving.solve_field(obj.filename)
+  filename = filenames[0]
+  plate_solution = plate_solving.solve_field(filename)
 
-  # return classes.Panel(stack_id=stack.id,
-  #                      image_filename=obj.filename,
-  #                      plate_solution=plate_solution)
+  if not plate_solution:
+    return None
 
-  pass
+  return classes.Panel(stack_id=stack.hash(),
+                       image_filename=filename,
+                       plate_solution=plate_solution)
 
 
 def _get_panel_for_stack(mode, stack, image_hashes, fits_headers,
@@ -86,7 +90,7 @@ def _get_panel_for_stack(mode, stack, image_hashes, fits_headers,
   if mode == 'subframe':
     return _get_preview_panel_for_stack(stack, image_hashes, fits_headers,
                                         plate_solutions)
-  elif mode == 'stack':
+  elif mode == 'master':
     return _get_master_panel_for_stack(stack)
 
 
@@ -116,6 +120,12 @@ def process_mosaic_per_filter(mode, image_hashes, fits_headers, plate_solutions,
 
       panel = _get_panel_for_stack(mode, stack, image_hashes, fits_headers,
                                    plate_solutions)
+
+      # At least one panel of the give mode (e.g. subframe or master) cannot
+      # be found, so the mosaic can't be merged.
+      if not panel:
+        return None
+
       print('### panel', panel)
       panel.tile_indices = tile_indices
       panels.append(panel)
