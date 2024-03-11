@@ -11,7 +11,6 @@ import os
 import pix
 import position_string
 from image_metadata import scatter_compute_image_metadata
-import subframe_selection
 import file_io
 
 _STACK_ID_KEY = 'XISF:AstroFlow:StackId'
@@ -25,32 +24,12 @@ def _exposure_time_string(stack):
   return f'{hours:02.0f}h{minutes:02.0f}m'
 
 
-# TODO: It's too easy to accidentally use the stack's content hash before
-# subframe selection. Almost no one actually cares about the original
-# stack, though -- they only care about the down-selected stack.
-#
-# Maybe just do down-selection when the stack is created.
-def _get_content_hash_after_subframe_selection(stack, plate_solutions):
-  num_light_frames_before_selection = len(
-      [f for run in stack.runs for f in run.frames])
-  criterion = subframe_selection.decode_selection_criterion(
-      stack.selection_criterion)
-  stack = criterion.select_subframes(stack, plate_solutions)
-  num_light_frames_after_selection = len(
-      [f for run in stack.runs for f in run.frames])
-  print(f'### Selected {num_light_frames_after_selection} light frames '
-        f'from {num_light_frames_before_selection} light frames')
-  return num_light_frames_after_selection, stack.content_hash()
-
-
-def find_matching_masters(stack, image_hashes, fits_headers, plate_solutions):
-  content_hash = _get_content_hash_after_subframe_selection(
-      stack, plate_solutions)
+def find_matching_masters(stack, image_hashes, fits_headers):
   return [
       h for h, header in fits_headers.items()
-      if header and header.get(_CONTENT_HASH_KEY, None) == content_hash and
-      os.path.exists(image_hashes[h]) and file_io.read_header(
-          image_hashes[h]).get(_CONTENT_HASH_KEY, None) == content_hash
+      if header and header.get(_CONTENT_HASH_KEY, None) == stack.content_hash
+      and os.path.exists(image_hashes[h]) and file_io.read_header(
+          image_hashes[h]).get(_CONTENT_HASH_KEY, None) == stack.content_hash
   ]
 
 
@@ -61,25 +40,26 @@ def _output_filename(stack, fits_headers, dest_path):
     output_dir = os.path.join(dest_path, 'Stacks', 'Calibration', 'masters')
     return os.path.join(
         output_dir, f'master_bias_{stack.camera}_'
-        f'{stack.mean_temperature:.0f}C_{stack.hash()}.xisf')
+        f'{stack.mean_temperature:.0f}C_{stack.content_hash}.xisf')
   elif all(fits_headers[f]['IMAGETYP'] == 'Dark' for f in hashes):
     output_dir = os.path.join(dest_path, 'Stacks', 'Calibration', 'masters')
     return os.path.join(
         output_dir, f'master_dark_{stack.camera}_'
         f'{stack.mean_temperature:.0f}C_{stack.exposure_s}s_'
-        f'{stack.hash()}.xisf')
+        f'{stack.content_hash}.xisf')
   elif all(fits_headers[f]['IMAGETYP'] == 'Flat' for f in hashes):
     output_dir = os.path.join(dest_path, 'Stacks', 'Calibration', 'masters')
     return os.path.join(
         output_dir,
-        f'master_flat_{stack.camera}_{stack.filter}_{stack.hash()}.xisf')
+        f'master_flat_{stack.camera}_{stack.filter}_{stack.content_hash}.xisf')
   else:
     output_dir = os.path.join(dest_path, 'Stacks', stack.target, 'masters')
     ra_dec_string = position_string.ra_dec_string(*stack.center)
     return os.path.join(
         output_dir, f'master_light_{stack.target}_{ra_dec_string}_'
         f'{stack.camera}_{stack.image_scale:.02f}aspp_'
-        f'{stack.rotation_angle:.2f}deg_{stack.filter}_{stack.hash()}.xisf')
+        f'{stack.rotation_angle:.2f}deg_{stack.filter}_{stack.content_hash}.xisf'
+    )
 
 
 def _symlink_frames(filenames, dest_path):
@@ -131,16 +111,7 @@ def stack_files(context, stack, dest_path, metadata=None):
   if not metadata:
     metadata = {}
 
-  if is_light_frame_stack(stack, fits_headers):
-    num_light_frames, content_hash = _get_content_hash_after_subframe_selection(
-        stack, plate_solutions)
-    # TODO: Put this number in the UI.
-    if num_light_frames < 3:
-      return []
-
-    metadata[_CONTENT_HASH_KEY] = content_hash
-  else:
-    metadata[_CONTENT_HASH_KEY] = stack.content_hash()
+  metadata[_CONTENT_HASH_KEY] = stack.content_hash
 
   with tempfile.TemporaryDirectory() as tmp_dir:
     for i, run in enumerate(stack.runs):
@@ -185,7 +156,8 @@ def construct_graph(stacks):
     for run in stack.runs:
       dependencies.extend(list(run.stack_dependencies))
 
-    graph[stack.hash()] = list(set(dependencies))
+    # TODO: It's a bit weird to have to include both kinds of hashes here.
+    graph[stack.geometric_hash or stack.content_hash] = list(set(dependencies))
 
   return graph
 
@@ -209,7 +181,6 @@ def group_parallel_tasks(graph):
 def scatter_stack_subframes(context):
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
-  plate_solutions = ray.get(context.plate_solutions)
   shopping_cart = ray.get(context.shopping_cart)
   stacks = ray.get(context.stacks)
   print(f'### scatter_stack_subframes received {len(stacks)} stacks')
@@ -218,7 +189,7 @@ def scatter_stack_subframes(context):
 
   # TODO: Implement in the UI.
   def is_in_shopping_cart(stack):
-    return ('stack_files', stack.hash()) in shopping_cart
+    return ('stack_files', stack.geometric_hash) in shopping_cart
 
   for task_group in parallel_tasks:
     print(f'### Starting {len(task_group)} stack_files tasks in parallel...')
@@ -226,8 +197,8 @@ def scatter_stack_subframes(context):
     waitables = [
         stack_files.remote(context, stacks[s], context.output_dir)
         for s in task_group
-        if is_in_shopping_cart(stacks[s]) and not find_matching_masters(
-            stacks[s], image_hashes, fits_headers, plate_solutions)
+        if is_in_shopping_cart(stacks[s]) and
+        not find_matching_masters(stacks[s], image_hashes, fits_headers)
     ]
 
     results = []

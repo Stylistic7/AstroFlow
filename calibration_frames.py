@@ -7,6 +7,7 @@ import ray_diskcache
 import runs
 import clustering
 from stack import Stack, Run, FrameHash
+import stack_identification
 
 
 def _associate(stack,
@@ -15,9 +16,14 @@ def _associate(stack,
                stack_dependencies=None,
                debug=False):
   if debug:
-    print(f'### Entering _associate for {stack}')
+    print(f'### Entering _associate for {stack} with {len(stack.runs)} runs')
+    for run in stack.runs:
+      print(f'### run {run}')
+
   if not stack_dependencies:
     stack_dependencies = []
+
+  assert None not in stack_dependencies
 
   if image_type == 'Bias':
     match_temperature, match_exposure, match_filter = True, False, False
@@ -29,9 +35,14 @@ def _associate(stack,
   new_stacks = []
   for run in stack.runs:
     light_frames = run.frames
+    if debug:
+      print(f'### run light_frames is {light_frames}')
+    assert light_frames, f'light_frames is {light_frames}'
     assert all(file_io.is_light_frame(fits_headers[f]) for f in light_frames)
     light_runs = runs.get_runs(light_frames, fits_headers)
-    assert len(light_runs) == 1
+    if debug:
+      print(f'### light_runs is {light_runs}')
+    assert len(light_runs) == 1, f'light_runs are {light_runs}'
     light_run = light_runs[0]
 
     if debug:
@@ -141,10 +152,13 @@ def _associate(stack,
     new_run = Run(frames=[FrameHash(h) for h in cal_frames],
                   stack_dependencies=copy(stack_dependencies))
     assert None not in new_run.stack_dependencies
-    new_stack = Stack(runs=[new_run],
-                      camera=stack.camera,
-                      width_pixels=stack.width_pixels,
-                      height_pixels=stack.height_pixels)
+    new_runs = [new_run]
+    new_stack = Stack(
+        content_hash=stack_identification._compute_content_hash(new_runs),
+        runs=new_runs,
+        camera=stack.camera,
+        width_pixels=stack.width_pixels,
+        height_pixels=stack.height_pixels)
 
     # Populate details.
     if match_temperature:
@@ -158,7 +172,7 @@ def _associate(stack,
       new_stack.filter = fits_headers[cal_frames[0]]['FILTER']
 
     # Add the new calibration Stack as a dependency to the given Stack.
-    run.stack_dependencies.append(new_stack.content_hash())
+    run.stack_dependencies.append(new_stack.content_hash)
     new_stacks.append(new_stack)
 
   return stack, new_stacks
@@ -183,7 +197,8 @@ def associate_calibration_frames(context):
     output_stacks.extend(dark_stacks)
 
     stack_dependencies = list(
-        set(s.content_hash() for s in bias_stacks + dark_stacks))
+        set(s.content_hash for s in bias_stacks + dark_stacks))
+    assert None not in stack_dependencies
     stack, flat_stacks = _associate(stack,
                                     'Flat',
                                     fits_headers,
@@ -195,7 +210,8 @@ def associate_calibration_frames(context):
 
     output_stacks.append(stack)
 
-  stacks = {s.hash(): s for s in output_stacks}
+  # TODO: It's a bit weird to have to include both kinds of hashes here.
+  stacks = {s.geometric_hash or s.content_hash: s for s in output_stacks}
 
   ray_diskcache.set('stacks', stacks)
   context.stacks = ray.put(stacks)

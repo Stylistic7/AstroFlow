@@ -14,10 +14,7 @@ def run_time_delta(a, b):
 
 
 # TODO: Put the minimum stack size in the UI.
-def get_runs(frames,
-             fits_headers,
-             min_frames=3,
-             max_gap=datetime.timedelta(minutes=15)):
+def get_runs(frames, fits_headers, max_gap=datetime.timedelta(minutes=15)):
   if not frames:
     return []
   frames = sorted(frames, key=lambda f: fits_headers[f]['DATE-OBS'])
@@ -32,8 +29,7 @@ def get_runs(frames,
       # Save the current run, if there is one.
       if run_start:
         assert frame_count
-        if frame_count >= min_frames:
-          runs.append((run_start, prev_date_obs))
+        runs.append((run_start, prev_date_obs))
 
       # Start a new run.
       run_start = current_date_obs
@@ -43,8 +39,9 @@ def get_runs(frames,
 
     prev_date_obs = current_date_obs
 
-  if frame_count >= min_frames:
-    runs.append((run_start, prev_date_obs))
+  runs.append((run_start, prev_date_obs))
+
+  assert len(runs) >= 1
 
   return runs
 

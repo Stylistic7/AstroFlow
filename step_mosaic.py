@@ -53,21 +53,19 @@ def show_image(data):
 
 def _get_preview_panel_for_stack(stack, image_hashes, plate_solutions):
   light_frames_by_stars = subframe_selection.get_light_frames_sorted_by_stars(
-      stack, plate_solutions)
+      stack.runs, plate_solutions)
   best_light_frame, _ = light_frames_by_stars[0]
 
   filename = image_hashes[best_light_frame]
   plate_solution = plate_solutions[best_light_frame]
 
-  return classes.Panel(stack_id=stack.hash(),
+  return classes.Panel(stack_id=stack.geometric_hash,
                        image_filename=filename,
                        plate_solution=plate_solution)
 
 
-def _get_master_panel_for_stack(stack, image_hashes, fits_headers,
-                                plate_solutions):
-  filenames = stacking.find_matching_masters(stack, image_hashes, fits_headers,
-                                             plate_solutions)
+def _get_master_panel_for_stack(stack, image_hashes, fits_headers):
+  filenames = stacking.find_matching_masters(stack, image_hashes, fits_headers)
 
   # TODO: Handle inconsistencies, like multiple masters with the same
   # content hash.
@@ -80,7 +78,7 @@ def _get_master_panel_for_stack(stack, image_hashes, fits_headers,
   if not plate_solution:
     return None
 
-  return classes.Panel(stack_id=stack.hash(),
+  return classes.Panel(stack_id=stack.geometric_hash,
                        image_filename=filename,
                        plate_solution=plate_solution)
 
@@ -90,8 +88,7 @@ def _get_panel_for_stack(mode, stack, image_hashes, fits_headers,
   if mode == 'subframe':
     return _get_preview_panel_for_stack(stack, image_hashes, plate_solutions)
   elif mode == 'master':
-    return _get_master_panel_for_stack(stack, image_hashes, fits_headers,
-                                       plate_solutions)
+    return _get_master_panel_for_stack(stack, image_hashes, fits_headers)
 
 
 def process_mosaic_per_filter(mode, image_hashes, fits_headers, plate_solutions,
@@ -110,9 +107,10 @@ def process_mosaic_per_filter(mode, image_hashes, fits_headers, plate_solutions,
           f'tile_indices {mosaic.tile_indices}')
     for target_id, tile_indices in zip(mosaic.target_ids, mosaic.tile_indices):
       target = targets[target_id]
-      stack = next((s for s in stacks.values()
-                    if s.filter == filter and s.hash() in target.stack_ids),
-                   None)
+      stack = next(
+          (s for s in stacks.values()
+           if s.filter == filter and s.geometric_hash in target.stack_ids),
+          None)
       if not stack:
         print(f'### process_mosaic_per_filter failed: there is no stack for '
               f'filter {filter}')

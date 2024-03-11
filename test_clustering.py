@@ -52,6 +52,41 @@ class TestClustering(unittest.TestCase):
         items, items_to_test, max_std_devs=2.0, key=operator.itemgetter(0))
     self.assertEqual(items_in_distribution, [(0.3, 'i'), (0.28, 'j')])
 
+  def test_cluster_dates_with_gap(self):
+    dates = [(datetime.datetime(2023, 4, 14, 5, 53, 1, 550185), 1),
+             (datetime.datetime(2023, 4, 14, 6, 16, 35, 498587), 2),
+             (datetime.datetime(2023, 4, 14, 6, 22, 53, 380184), 3),
+             (datetime.datetime(2023, 4, 14, 6, 24, 54, 625657), 4),
+             (datetime.datetime(2023, 4, 14, 6, 27, 21, 381694), 5),
+             (datetime.datetime(2023, 4, 14, 6, 29, 22, 655187), 6),
+             (datetime.datetime(2023, 4, 14, 6, 31, 53, 451560), 7),
+             (datetime.datetime(2023, 4, 14, 6, 33, 54, 638653), 8),
+             (datetime.datetime(2023, 4, 14, 6, 36, 11, 369856), 9),
+             (datetime.datetime(2023, 4, 14, 6, 38, 12, 652277), 10),
+             (datetime.datetime(2023, 4, 14, 6, 40, 41, 366753), 11),
+             (datetime.datetime(2023, 4, 14, 6, 42, 42, 613899), 12),
+             (datetime.datetime(2023, 4, 14, 6, 45, 15, 362782), 13),
+             (datetime.datetime(2023, 4, 14, 6, 47, 16, 562603), 14)]
+    clusters = clustering.cluster_continuous(
+        dates,
+        epsilon=datetime.timedelta(minutes=15),
+        key=operator.itemgetter(0))
+    self.assertEqual(
+        clusters, [[(datetime.datetime(2023, 4, 14, 5, 53, 1, 550185), 1)],
+                   [(datetime.datetime(2023, 4, 14, 6, 16, 35, 498587), 2),
+                    (datetime.datetime(2023, 4, 14, 6, 22, 53, 380184), 3),
+                    (datetime.datetime(2023, 4, 14, 6, 24, 54, 625657), 4),
+                    (datetime.datetime(2023, 4, 14, 6, 27, 21, 381694), 5),
+                    (datetime.datetime(2023, 4, 14, 6, 29, 22, 655187), 6),
+                    (datetime.datetime(2023, 4, 14, 6, 31, 53, 451560), 7),
+                    (datetime.datetime(2023, 4, 14, 6, 33, 54, 638653), 8),
+                    (datetime.datetime(2023, 4, 14, 6, 36, 11, 369856), 9),
+                    (datetime.datetime(2023, 4, 14, 6, 38, 12, 652277), 10),
+                    (datetime.datetime(2023, 4, 14, 6, 40, 41, 366753), 11),
+                    (datetime.datetime(2023, 4, 14, 6, 42, 42, 613899), 12),
+                    (datetime.datetime(2023, 4, 14, 6, 45, 15, 362782), 13),
+                    (datetime.datetime(2023, 4, 14, 6, 47, 16, 562603), 14)]])
+
 
 if __name__ == "__main__":
   unittest.main()

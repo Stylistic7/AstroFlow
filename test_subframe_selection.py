@@ -77,14 +77,50 @@ class TestSubframeSelection(unittest.TestCase):
     self.assertEqual(len(stacks), 1)
     stack = next(iter(stacks))
 
-    light_frames = [f for run in stack.runs for f in run.frames]
-    self.assertEqual(len(light_frames), 10)
-
-    criterion = subframe_selection.StarCountFraction(threshold=0.75)
-    stack = criterion.select_subframes(stack, plate_solutions)
-
+    self.assertEqual(len(stack.runs), 1)
     light_frames = [f for run in stack.runs for f in run.frames]
     self.assertEqual(len(light_frames), 5)
+
+  def test_split_run(self):
+    image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
+        prefix='light',
+        start_datetime=datetime.datetime(2023, 12, 6, 16, 29, 43),
+        number=15,
+        image_type='Light',
+        fill_value=100,
+        instrument='ZWO ASI6200MM Pro',
+        exposure=600,
+        width_pixels=9576,
+        height_pixels=6388,
+        temperature=-15,
+        num_stars=100,
+        dest_dir=self.context.input_dirs[0])
+
+    # The middle frame has too few stars, and should split the run into two.
+    for h, f in image_hashes.items():
+      if f.endswith('_00007.fit'):
+        middle_frame = h
+    print(f'### middle_frame {image_hashes[middle_frame]}')
+    plate_solutions[middle_frame].num_stars = 10
+
+    filenames = file_io.find_image_files(self.context.input_dirs[0])
+    self.assertEqual(len(filenames), 15)
+
+    self.context.image_hashes = ray.put(image_hashes)
+    self.context.fits_headers = ray.put(fits_headers)
+    self.context.plate_solutions = ray.put(plate_solutions)
+
+    self.context = ray.get(
+        find_components_by_cosine_similarity.remote(self.context))
+    self.context = ray.get(identify_stacks.remote(self.context))
+
+    stacks = ray.get(self.context.stacks)
+    self.assertEqual(len(stacks), 1)
+    stack = next(iter(stacks))
+
+    self.assertEqual(len(stack.runs), 2)
+    light_frames = [f for run in stack.runs for f in run.frames]
+    self.assertEqual(len(light_frames), 14)
 
 
 if __name__ == "__main__":
