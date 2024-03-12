@@ -1,3 +1,4 @@
+import ray
 import os
 import numpy as np
 import objsize
@@ -28,6 +29,7 @@ def compute_viewbox(plate_solutions):
 
 
 # TODO: Provide some feedback on progress.
+@ray.remote(scheduling_strategy="SPREAD")
 def mosaic_by_coordinates(panel,
                           dest_xs,
                           dest_ys,

@@ -5,7 +5,6 @@ import psutil
 import numpy as np
 import matplotlib.pyplot as plt
 import contextlib
-from multiprocessing import Pool
 import ray
 
 from output_file import OutputFile
@@ -65,14 +64,15 @@ def _get_preview_panel_for_stack(stack, image_hashes, plate_solutions):
 
 
 def _get_master_panel_for_stack(stack, image_hashes, fits_headers):
-  filenames = stacking.find_matching_masters(stack, image_hashes, fits_headers)
+  hashes = stacking.find_matching_masters(stack, image_hashes, fits_headers)
+  print(f'### _get_master_panel_for_stack found master hashes {hashes}')
 
   # TODO: Handle inconsistencies, like multiple masters with the same
   # content hash.
-  if len(filenames) != 1:
+  if len(hashes) != 1:
     return None
 
-  filename = filenames[0]
+  filename = image_hashes[hashes[0]]
   plate_solution = plate_solving.solve_field(filename)
 
   if not plate_solution:
@@ -91,9 +91,17 @@ def _get_panel_for_stack(mode, stack, image_hashes, fits_headers,
     return _get_master_panel_for_stack(stack, image_hashes, fits_headers)
 
 
-def process_mosaic_per_filter(mode, image_hashes, fits_headers, plate_solutions,
-                              mosaic, targets, stacks, dest_xs, dest_ys, ras,
+@ray.remote(scheduling_strategy="SPREAD")
+def process_mosaic_per_filter(context, mosaic, mode, dest_xs, dest_ys, ras,
                               decs, filter, output_dir):
+  print(f'### Entering process_mosaic_per_filter for {mosaic.name} mode {mode} '
+        f'filter {filter}')
+  image_hashes = ray.get(context.image_hashes)
+  fits_headers = ray.get(context.fits_headers)
+  plate_solutions = ray.get(context.plate_solutions)
+  stacks = ray.get(context.stacks)
+  targets = ray.get(context.targets)
+
   if output_dir:
     cm = contextlib.nullcontext(output_dir)
   else:
@@ -139,12 +147,19 @@ def process_mosaic_per_filter(mode, image_hashes, fits_headers, plate_solutions,
 
     print(f'### Running mosaic_by_coordinates in parallel...')
     autostretch = mode == 'subframe'
-    with Pool() as p:
-      panels = p.starmap(
-          projection.mosaic_by_coordinates,
-          ((p, dest_xs, dest_ys, ras, decs, output_dir, autostretch)
-           for p in panels))
-    print(f'### mosaic_by_coordinates is done')
+
+    waitables = [
+        projection.mosaic_by_coordinates.remote(p, dest_xs, dest_ys, ras, decs,
+                                                output_dir, autostretch)
+        for p in panels
+    ]
+
+    panels = []
+    while len(waitables):
+      result, waitables = ray.wait(waitables)
+      panels.extend(ray.get(result))
+
+    print(f'### mosaic_by_coordinates for {len(panels)} panels is done')
 
     if mode == 'subframe':
       # The image returned from read_image() is in [0, 65536].
@@ -173,6 +188,9 @@ def scatter_merge_mosaics(context, mode):
   mosaics = ray.get(context.mosaics)
 
   def thumbnail_exists(mosaic):
+    # FIXME remove hack
+    return mosaic.id != '560c5551fddcef56'
+
     key = ('mosaic_thumbnail_image', mode, mosaic.id)
     return ray_diskcache.contains(key)
 
@@ -195,12 +213,6 @@ def scatter_merge_mosaics(context, mode):
 @ray.remote(scheduling_strategy="SPREAD")
 def merge_mosaic(context, mosaic, mode):
   print(f'### Entering merge_mosaic for mosaic {mosaic} mode {mode}')
-
-  image_hashes = ray.get(context.image_hashes)
-  fits_headers = ray.get(context.fits_headers)
-  plate_solutions = ray.get(context.plate_solutions)
-  stacks = ray.get(context.stacks)
-  targets = ray.get(context.targets)
 
   proc = psutil.Process()
   print(f'### There are {len(proc.open_files())} open files')
@@ -243,10 +255,13 @@ def merge_mosaic(context, mosaic, mode):
   # themselves.
   outputs = {}
   for filter in ['H', 'S', 'O', 'L', 'R', 'G', 'B']:
-    result = process_mosaic_per_filter(mode, image_hashes, fits_headers,
-                                       plate_solutions, mosaic, targets, stacks,
-                                       dest_xs, dest_ys, ras, decs, filter,
-                                       output_dir)
+    print(f'### Calling process_mosaic_per_filter for mosaic {mosaic.name} '
+          f'mode {mode} filter {filter}')
+    result = ray.get(
+        process_mosaic_per_filter.remote(context, mosaic, mode, dest_xs,
+                                         dest_ys, ras, decs, filter,
+                                         output_dir))
+    print(f'### result {result}')
     if result:
       outputs[filter] = result
 

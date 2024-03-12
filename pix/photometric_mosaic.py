@@ -67,7 +67,7 @@ _default_parameters = {
 @accepts_view_ids
 def PhotometricMosaic(view_ids, **kwargs):
   parameters = _default_parameters | kwargs
-  javascript_filename = "/Applications/PixInsight/src/scripts/JohnMurphy/mosaic/src/AstroFlowPhotometricMosaic.js"
+  javascript_filename = "/Applications/PixInsight/src/scripts/JohnMurphy/PhotometricMosaic/AstroFlowPhotometricMosaic.js"
 
   parameters['referenceView'] = view_ids[0]
   parameters['targetView'] = view_ids[1]
