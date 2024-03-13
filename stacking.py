@@ -93,13 +93,6 @@ def _add_xisf_metadata(filename, dest_filename, metadata):
              xisf_metadata=file_meta)
 
 
-def is_light_frame_stack(stack, fits_headers):
-  return all(
-      file_io.is_light_frame(fits_headers[f])
-      for run in stack.runs
-      for f in run.frames)
-
-
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
 def stack_files(context, stack, dest_path, metadata=None):
   print(f'### Entering stack_files for {stack}')

@@ -122,8 +122,8 @@ def find_components_by_cosine_similarity(
   print('### After removing bad plate solutions, len', len(plate_solutions))
 
   light_frames = [
-      h for h, header in fits_headers.items()
-      if h in plate_solutions and file_io.is_light_frame(header)
+      h for h, header in fits_headers.items() if h in plate_solutions and
+      file_io.is_light_frame(header) and not file_io.is_master(header)
   ]
 
   light_frames = sorted(light_frames, key=lambda h: fits_headers[h]['DATE-OBS'])

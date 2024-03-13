@@ -38,7 +38,9 @@ def _associate(stack,
     if debug:
       print(f'### run light_frames is {light_frames}')
     assert light_frames, f'light_frames is {light_frames}'
-    assert all(file_io.is_light_frame(fits_headers[f]) for f in light_frames)
+    assert all(
+        file_io.is_light_frame(fits_headers[f]) and
+        not file_io.is_master(fits_headers[f]) for f in light_frames)
     light_runs = runs.get_runs(light_frames, fits_headers)
     if debug:
       print(f'### light_runs is {light_runs}')

@@ -6,6 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import contextlib
 import ray
+import objsize
 
 from output_file import OutputFile
 
@@ -63,7 +64,8 @@ def _get_preview_panel_for_stack(stack, image_hashes, plate_solutions):
                        plate_solution=plate_solution)
 
 
-def _get_master_panel_for_stack(stack, image_hashes, fits_headers):
+def _get_master_panel_for_stack(stack, image_hashes, fits_headers,
+                                plate_solutions):
   hashes = stacking.find_matching_masters(stack, image_hashes, fits_headers)
   print(f'### _get_master_panel_for_stack found master hashes {hashes}')
 
@@ -73,10 +75,7 @@ def _get_master_panel_for_stack(stack, image_hashes, fits_headers):
     return None
 
   filename = image_hashes[hashes[0]]
-  plate_solution = plate_solving.solve_field(filename)
-
-  if not plate_solution:
-    return None
+  plate_solution = plate_solutions[hashes[0]]
 
   return classes.Panel(stack_id=stack.geometric_hash,
                        image_filename=filename,
@@ -88,14 +87,16 @@ def _get_panel_for_stack(mode, stack, image_hashes, fits_headers,
   if mode == 'subframe':
     return _get_preview_panel_for_stack(stack, image_hashes, plate_solutions)
   elif mode == 'master':
-    return _get_master_panel_for_stack(stack, image_hashes, fits_headers)
+    return _get_master_panel_for_stack(stack, image_hashes, fits_headers,
+                                       plate_solutions)
 
 
 @ray.remote(scheduling_strategy="SPREAD")
-def process_mosaic_per_filter(context, mosaic, mode, dest_xs, dest_ys, ras,
-                              decs, filter, output_dir):
+def process_mosaic_per_filter(context, mosaic, mode, coordinates, filter,
+                              output_dir):
   print(f'### Entering process_mosaic_per_filter for {mosaic.name} mode {mode} '
         f'filter {filter}')
+
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
   plate_solutions = ray.get(context.plate_solutions)
@@ -111,6 +112,7 @@ def process_mosaic_per_filter(context, mosaic, mode, dest_xs, dest_ys, ras,
     panels = []
     print(f'### process_mosaic_per_filter mosaic name '
           f'{mosaic.name} id {mosaic.id} filter {filter}')
+
     print(f'### process_mosaic_per_filter mosaic '
           f'tile_indices {mosaic.tile_indices}')
     for target_id, tile_indices in zip(mosaic.target_ids, mosaic.tile_indices):
@@ -149,9 +151,8 @@ def process_mosaic_per_filter(context, mosaic, mode, dest_xs, dest_ys, ras,
     autostretch = mode == 'subframe'
 
     waitables = [
-        projection.mosaic_by_coordinates.remote(p, dest_xs, dest_ys, ras, decs,
-                                                output_dir, autostretch)
-        for p in panels
+        projection.mosaic_by_coordinates.remote(p, coordinates, output_dir,
+                                                autostretch) for p in panels
     ]
 
     panels = []
@@ -171,16 +172,19 @@ def process_mosaic_per_filter(context, mosaic, mode, dest_xs, dest_ys, ras,
         image = file_io.read_image(p.image_filename)
         output_image = np.maximum(output_image, image)
 
-      return image_previews.array_to_png(output_image)
+      key = ('mosaic_thumbnail_image', mode, mosaic.id, filter)
+      ray_diskcache.set(key, output_image, keep_in_memory=False)
     elif mode == 'master':
       output_image = merge_ops.merge_mosaic(panels, output_dir)
 
+      # TODO: Store the filename somewhere, too.
       merged_mosaic = os.path.join(output_dir,
                                    f"merged_mosaic_{mode}_{filter}.fits")
       print(f'Copying final mosaic image to {merged_mosaic}')
       shutil.copy(output_image[0], merged_mosaic)
 
-      return OutputFile(merged_mosaic)
+      key = ('mosaic_thumbnail_image', mode, mosaic.id, filter)
+      ray_diskcache.set(key, output_image[0], keep_in_memory=False)
 
 
 @ray.remote
@@ -206,6 +210,8 @@ def scatter_merge_mosaics(context, mode):
       results.extend(ray.get(result))
     except Exception as e:
       print(f'### merge_mosaic threw exception {e}')
+
+  print(f'### scatter_merge_mosaics done, results {results}')
 
   return context
 
@@ -235,7 +241,12 @@ def merge_mosaic(context, mosaic, mode):
   xs, ys = zip(*footprints.project_footprint(mosaic.footprint_polygon(),
                                              proj).exterior.coords)
   x_min, y_min, x_span, y_span = compute_viewbox(list(zip(xs, ys)))
-  num_samples_x = 1000
+
+  if mode == 'subframe':
+    num_samples_x = 1000
+  elif mode == 'master':
+    num_samples_x = 5000
+
   resolution = x_span / num_samples_x
   num_samples_y = int(y_span / resolution)
   xx, yy = np.meshgrid(np.linspace(x_min, x_min + x_span, num_samples_x),
@@ -251,23 +262,24 @@ def merge_mosaic(context, mosaic, mode):
   assert np.max(dest_xs) == dest_width - 1
   assert dest_xs.shape == dest_ys.shape == ras.shape == decs.shape
 
+  dest_xs = ray.put(dest_xs)
+  dest_ys = ray.put(dest_ys)
+  ras = ray.put(ras)
+  decs = ray.put(decs)
+  coordinates = dict(dest_xs=dest_xs, dest_ys=dest_ys, ras=ras, decs=decs)
+
   # TODO: Don't hardcode these filters. Find the set from the images
   # themselves.
-  outputs = {}
-  for filter in ['H', 'S', 'O', 'L', 'R', 'G', 'B']:
-    print(f'### Calling process_mosaic_per_filter for mosaic {mosaic.name} '
-          f'mode {mode} filter {filter}')
-    result = ray.get(
-        process_mosaic_per_filter.remote(context, mosaic, mode, dest_xs,
-                                         dest_ys, ras, decs, filter,
-                                         output_dir))
-    print(f'### result {result}')
-    if result:
-      outputs[filter] = result
+  filters = ['H', 'S', 'O', 'L', 'R', 'G', 'B']
+  waitables = [
+      process_mosaic_per_filter.remote(context, mosaic, mode, coordinates, f,
+                                       output_dir) for f in filters
+  ]
 
-  print(f'### merge_mosaic successful for mosaic {mosaic} mode {mode}')
-  if mode == 'subframe':
-    key = ('mosaic_thumbnail_image', mode, mosaic.id)
-    ray_diskcache.set(key, outputs, keep_in_memory=False)
-
-  return outputs
+  results = []
+  while len(waitables):
+    result, waitables = ray.wait(waitables)
+    try:
+      results.extend(ray.get(result))
+    except Exception as e:
+      print(f'### process_mosaic_per_filter threw exception {e}')

@@ -17,7 +17,7 @@ def is_light_frame(header: dict) -> bool:
   if 'IMAGETYP' not in header:
     return False
   image_type = header['IMAGETYP'].lower()
-  return 'light' in image_type and 'master' not in image_type
+  return 'light' in image_type
 
 
 def is_bias_frame(header: dict) -> bool:
@@ -26,7 +26,7 @@ def is_bias_frame(header: dict) -> bool:
   if 'IMAGETYP' not in header:
     return False
   image_type = header['IMAGETYP'].lower()
-  return 'bias' in image_type and 'master' not in image_type
+  return 'bias' in image_type
 
 
 def is_dark_frame(header: dict) -> bool:
@@ -35,7 +35,7 @@ def is_dark_frame(header: dict) -> bool:
   if 'IMAGETYP' not in header:
     return False
   image_type = header['IMAGETYP'].lower()
-  return 'dark' in image_type and 'master' not in image_type
+  return 'dark' in image_type
 
 
 def is_flat_frame(header: dict) -> bool:
@@ -44,7 +44,7 @@ def is_flat_frame(header: dict) -> bool:
   if 'IMAGETYP' not in header:
     return False
   image_type = header['IMAGETYP'].lower()
-  return 'flat' in image_type and 'master' not in image_type
+  return 'flat' in image_type
 
 
 def is_master(header: dict) -> bool:
@@ -54,40 +54,6 @@ def is_master(header: dict) -> bool:
     return False
   image_type = header['IMAGETYP'].lower()
   return 'master' in image_type
-
-
-def is_light_master(header: dict) -> bool:
-  if 'IMAGETYP' not in header:
-    return False
-  image_type = header['IMAGETYP'].lower()
-  return 'light' in image_type and 'master' in image_type
-
-
-def is_bias_master(header: dict) -> bool:
-  if not header:
-    return False
-  if 'IMAGETYP' not in header:
-    return False
-  image_type = header['IMAGETYP'].lower()
-  return 'bias' in image_type and 'master' in image_type
-
-
-def is_dark_master(header: dict) -> bool:
-  if not header:
-    return False
-  if 'IMAGETYP' not in header:
-    return False
-  image_type = header['IMAGETYP'].lower()
-  return 'dark' in image_type and 'master' in image_type
-
-
-def is_flat_master(header: dict) -> bool:
-  if not header:
-    return False
-  if 'IMAGETYP' not in header:
-    return False
-  image_type = header['IMAGETYP'].lower()
-  return 'flat' in image_type and 'master' in image_type
 
 
 def read_image(filename: Path | str) -> Optional[np.ndarray]:

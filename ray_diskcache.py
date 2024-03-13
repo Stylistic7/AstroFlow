@@ -35,8 +35,6 @@ class GlobalVarActor:
     elif key in self.global_dict:
       del self.global_dict[key]
 
-    return value
-
   def contains(self, key):
     return key in cache
 
@@ -66,12 +64,12 @@ def get(key, default=None, keep_in_memory=True):
 
 def set(key, value, keep_in_memory=True):
   actor = ray.get_actor('ray_diskcache', namespace='AstroFlow')
-  return ray.get(actor.set.remote(key, value, keep_in_memory))
+  ray.get(actor.set.remote(key, value, keep_in_memory))
 
 
 def clear():
   actor = ray.get_actor('ray_diskcache', namespace='AstroFlow')
-  return ray.get(actor.clear.remote())
+  ray.get(actor.clear.remote())
 
 
 def contains(key):

@@ -30,28 +30,17 @@ def compute_viewbox(plate_solutions):
 
 # TODO: Provide some feedback on progress.
 @ray.remote(scheduling_strategy="SPREAD")
-def mosaic_by_coordinates(panel,
-                          dest_xs,
-                          dest_ys,
-                          ras,
-                          decs,
-                          output_dir,
-                          autostretch=False):
+def mosaic_by_coordinates(panel, coordinates, output_dir, autostretch=False):
   print(f'### mosaic_by_coordinates projecting image {panel.image_filename}')
+
+  dest_xs = ray.get(coordinates['dest_xs'])
+  dest_ys = ray.get(coordinates['dest_ys'])
+  ras = ray.get(coordinates['ras'])
+  decs = ray.get(coordinates['decs'])
+
   projected_image = np.zeros(ras.shape)
   projection_map = np.zeros(ras.shape)
   print(f'### projected_image shape', projected_image.shape)
-
-  # # TODO: Must also support XISF files here.
-  # ext = os.path.splitext(panel.image_filename)[-1]
-  # if ext in ['.fit', '.fits']:
-  #   header = file_io.read_header(panel.image_filename)
-  #   image = file_io.read_image(panel.image_filename)
-  # elif ext == '.xisf':
-  #   xisf = XISF(panel.image_filename)
-  #   image = xisf.read_image(0).squeeze()
-  #   img_meta = xisf.get_images_metadata()[0]
-  #   header = {k: v[0]['value'] for k, v in img_meta['FITSKeywords'].items()}
 
   header = file_io.read_header(panel.image_filename)
   image = file_io.read_image(panel.image_filename)
@@ -121,6 +110,7 @@ def mosaic_by_coordinates(panel,
         f'min {np.min(output_image)} max {np.max(output_image)}')
 
   hdu = pyfits.PrimaryHDU(output_image)
+  hdu.header['IMAGETYP'] = 'PlacedMosaic'
   hdu.header['FOCALLEN'] = float(header['FOCALLEN'])
   hdu.header['XPIXSZ'] = float(header['XPIXSZ'])
   hdu.header['YPIXSZ'] = float(header['YPIXSZ'])
