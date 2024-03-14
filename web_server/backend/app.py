@@ -287,7 +287,7 @@ def stack_thumbnail_image(stack_id):
 #   key = next((k for k in cache.iterkeys()
 #               if tuple_starts_with(k, 'stack_thumbnail_image', mode, stack_id)),
 #              None)
-#   print(f'### found matching key {key}')
+#   print(f'found matching key {key}')
 
 #   if not key:
 #     return Response(status=404)
@@ -302,7 +302,7 @@ def stack_thumbnail_image(stack_id):
 def stack_thumbnail_video(stack_id):
   key = next((k for k in cache.iterkeys()
               if tuple_starts_with(k, 'stack_thumbnail_video', stack_id)), None)
-  print(f'### found matching key {key}')
+  print(f'found matching key {key}')
 
   if not key:
     return Response(status=404)
@@ -333,7 +333,7 @@ def mosaic_image(mosaic_id, filter):
 @app.route('/mosaic_thumbnail_image_for_filter/<mosaic_id>/<filter>')
 def mosaic_thumbnail_image_for_filter(mosaic_id, filter):
   result = cache[('mosaic_thumbnail_image', 'subframe', mosaic_id)]
-  print('### mosaic has filters', result.keys())
+  print('mosaic has filters', result.keys())
   buffer = io.BytesIO()
   buffer.write(result[filter])
   buffer.seek(0)
@@ -358,9 +358,9 @@ def stack_master_image(stack_id):
   stack = cache['stacks'][stack_id]
 
   if not stack:
-    print(f'### did not get stack for {stack_id}')
+    print(f'did not get stack for {stack_id}')
   else:
-    print(f'### got stack for {stack_id}')
+    print(f'got stack for {stack_id}')
 
   if stack.master and os.path.exists(stack.master):
     image = image_previews._read_image(stack.master)
@@ -429,7 +429,7 @@ def delete_target(target_id):
     # stack = next(s for s in cache['stacks'] if s.id == stack_id)
     stack = cache['stacks'][stack_id]
     for filename in stack.light_frames:
-      print(f'### Quarantining file {filename}')
+      print(f'Quarantining file {filename}')
       shutil.move(filename, quarantine_dir)
 
   resp = jsonify(success=True)
@@ -444,11 +444,11 @@ def quarantine_stack(stack_id):
   for hash in stack.light_frames:
     filename = image_hashes[hash]
     if filename:
-      print(f'### Quarantining file {filename}')
+      print(f'Quarantining file {filename}')
       shutil.move(filename,
                   os.path.join(quarantine_dir, os.path.basename(filename)))
     else:
-      print(f'### Hash {hash} is not found on disk')
+      print(f'Hash {hash} is not found on disk')
       resp = jsonify(success=False)
 
   resp = jsonify(success=True)

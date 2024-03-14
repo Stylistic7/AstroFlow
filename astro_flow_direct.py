@@ -17,7 +17,7 @@ from compute_graph import run_compute_graph
 
 # TODO: Prove that local changes in the Python get propagated to remote nodes
 # even without pushing to git..
-print('### About to call ray.init')
+print('About to call ray.init')
 traceback.print_stack()
 ray_context = ray.init(address='auto',
                        namespace='AstroFlow',
@@ -34,7 +34,7 @@ ray_context = ray.init(address='auto',
                        ignore_reinit_error=True,
                        _node_ip_address='127.0.0.1')
 
-print('### Ray dashboard:', ray_context.dashboard_url)
+print('Ray dashboard:', ray_context.dashboard_url)
 
 global_var_actor = ray_diskcache.GlobalVarActor.options(
     name='ray_diskcache', namespace='AstroFlow', get_if_exists=True).remote()
@@ -169,7 +169,7 @@ def remove_frames_during_mount_movements(light_frames):
 def assert_all_light_frames_in_stacks(light_frames, stacks):
   file_sets = [set(s.light_frames) for s in stacks]
   light_frames_in_stacks = set().union(*file_sets)
-  # print(f'### {len(light_frames)} light frames, '
+  # print(f'{len(light_frames)} light frames, '
   #       f'{len(light_frames_in_stacks)} light frames in stacks')
   assert set(light_frames) == light_frames_in_stacks
 
@@ -179,8 +179,8 @@ def assert_all_light_frames_in_stacks(light_frames, stacks):
 # TODO: Add tests.
 # def cartesian_product_lights_and_flats(stacks, flat_frames, image_hashes,
 #                                        fits_headers, plate_solutions):
-#   print('### Entering cartesian_product_lights_and_flats')
-#   print('### stacks', stacks)
+#   print('Entering cartesian_product_lights_and_flats')
+#   print('stacks', stacks)
 
 #   flats_for_camera = group_by_fn(flat_frames,
 #                                  lambda f: fits_headers[f]['INSTRUME'])
@@ -192,7 +192,7 @@ def assert_all_light_frames_in_stacks(light_frames, stacks):
 #     if key in cache:
 #       continue
 
-#     print(f'### Computing light x flat Cartestian product for {stack}')
+#     print(f'Computing light x flat Cartestian product for {stack}')
 #     light_runs = runs.get_runs(stack.light_frames, fits_headers)
 #     best_light_frames = [
 #         max(
@@ -204,7 +204,7 @@ def assert_all_light_frames_in_stacks(light_frames, stacks):
 #     ]
 
 #     if not stack.dark_frames:
-#       print(f'  ### Skipping {stack} because it has no dark frames')
+#       print(f'  Skipping {stack} because it has no dark frames')
 #       continue
 
 #     dark_frame = stack.dark_frames[0]
@@ -270,10 +270,10 @@ def assert_all_light_frames_in_stacks(light_frames, stacks):
 #       }
 
 #       for flat_run, flat_frame in zip(flat_runs, average_flats):
-#         print(f'  ### Generating trial flat-correction:')
-#         print(f'    ### light frame {light_frame}')
-#         print(f'    ### dark frame {dark_frame}')
-#         print(f'    ### flat frame {flat_frame}')
+#         print(f'  Generating trial flat-correction:')
+#         print(f'    light frame {light_frame}')
+#         print(f'    dark frame {dark_frame}')
+#         print(f'    flat frame {flat_frame}')
 
 #         flat_frame_image = image_handling.resize_array(
 #             image_handling._read_image(image_hashes[flat_frame]), width)
@@ -295,7 +295,7 @@ def assert_all_light_frames_in_stacks(light_frames, stacks):
 
 #       results.append(result)
 
-#     print(f'  ### Caching result for key', key)
+#     print(f'  Caching result for key', key)
 #     cache[key] = results
 
 # TODO: Split these into another file.
@@ -336,7 +336,7 @@ def assert_all_light_frames_in_stacks(light_frames, stacks):
 #       for light_frame in stack.light_frames:
 #         if ('thumbnail_image', light_frame) in cache:
 #           continue
-#         # print(f'### cache miss on light frame {light_frame}')
+#         # print(f'cache miss on light frame {light_frame}')
 #         flat_frame = image_handling._get_flat_frame_for_light_frame(
 #             light_frame, stack, fits_headers)
 #         dark_frame = stack.dark_frames[0] if len(stack.dark_frames) else None
@@ -416,7 +416,7 @@ def assert_all_light_frames_in_stacks(light_frames, stacks):
 #                         output_dir, upstream_tasks):
 #   @graph.add(*upstream_tasks)
 #   def inner():
-#     print(f'### Post-processing mosaic {mosaic}!')
+#     print(f'Post-processing mosaic {mosaic}!')
 #     return step_mosaic.process_mosaic(image_hashes,
 #                                       plate_solutions,
 #                                       mosaic,
@@ -432,7 +432,7 @@ def assert_all_light_frames_in_stacks(light_frames, stacks):
 #                         stacks):
 #   @graph.add()
 #   def inner():
-#     print(f'### Making preview for mosaic {mosaic}!')
+#     print(f'Making preview for mosaic {mosaic}!')
 #     return step_mosaic.process_mosaic(image_hashes,
 #                                       plate_solutions,
 #                                       mosaic,
@@ -472,9 +472,9 @@ def assert_all_light_frames_in_stacks(light_frames, stacks):
 #   stacks = compute_stack_metadata(stacks, fits_headers, plate_solutions)
 #   stacks = normalize_stacks(stacks)
 
-#   print('### len(stacks)', len(stacks))
+#   print('len(stacks)', len(stacks))
 #   for stack in stacks:
-#     print('### center is', stack.center)
+#     print('center is', stack.center)
 
 #   # TODO: Put these in the dependency graph.
 #   make_image_thumbnails(stacks, image_hashes, plate_solutions, fits_headers)
@@ -530,15 +530,15 @@ def main(context):
   targets = ray_diskcache.get('targets', [])
   mosaics = ray_diskcache.get('mosaics', [])
 
-  print(f'### Cache contained {len(quarantined_files)} '
+  print(f'Cache contained {len(quarantined_files)} '
         f'quarantined files')
-  print(f'### Cache contained {len(image_hashes)} image hashes')
-  print(f'### Cache contained {len(fits_headers)} FITS headers')
-  print(f'### Cache contained {len(plate_solutions)} plate solutions')
-  print(f'### Cache contained {len(shopping_cart)} items in shopping cart')
-  print(f'### Cache contained {len(stacks)} stacks')
-  print(f'### Cache contained {len(targets)} targets')
-  print(f'### Cache contained {len(mosaics)} mosaics')
+  print(f'Cache contained {len(image_hashes)} image hashes')
+  print(f'Cache contained {len(fits_headers)} FITS headers')
+  print(f'Cache contained {len(plate_solutions)} plate solutions')
+  print(f'Cache contained {len(shopping_cart)} items in shopping cart')
+  print(f'Cache contained {len(stacks)} stacks')
+  print(f'Cache contained {len(targets)} targets')
+  print(f'Cache contained {len(mosaics)} mosaics')
 
   context.quarantined_files = ray.put(quarantined_files)
   context.image_hashes = ray.put(image_hashes)
@@ -549,54 +549,54 @@ def main(context):
   context.targets = ray.put(targets)
   context.mosaics = ray.put(mosaics)
 
-  print('### Looking for files in input dirs', context.input_dirs)
-  print('### Looking for files in output dir', context.output_dir)
+  print('Looking for files in input dirs', context.input_dirs)
+  print('Looking for files in output dir', context.output_dir)
   all_frames = file_io.find_image_files(context.output_dir)
   for input_dir in context.input_dirs:
     all_frames.extend(file_io.find_image_files(input_dir))
 
   new_filenames = get_new_filenames(all_frames, context)
-  print(f'### Importing {len(new_filenames)} files')
+  print(f'Importing {len(new_filenames)} files')
 
-  # print(f'### Iterating over {len(mosaics)} mosaics')
+  # print(f'Iterating over {len(mosaics)} mosaics')
   # for mosaic in mosaics.values():
-  #   print(f'###   Entering {mosaic}')
+  #   print(f'  Entering {mosaic}')
   #   graph[step_mosaic.process_mosaic, (mosaic, targets, stacks)] = {}
 
   #   toplevel_tasks.append(
   #       make_mosaic_preview(image_hashes, plate_solutions, mosaic, targets,
   #                           stacks))
 
-  #   print(f'###   Iterating over {len(mosaic.target_ids)} targets')
+  #   print(f'  Iterating over {len(mosaic.target_ids)} targets')
   #   mosaic_tasks = []
   #   for target_id in mosaic.target_ids:
   #     target = targets[target_id]
-  #     print(f'###     Entering {target}')
-  #     print(f'###     Iterating over {len(target.stack_ids)} stacks')
+  #     print(f'    Entering {target}')
+  #     print(f'    Iterating over {len(target.stack_ids)} stacks')
   #     target_tasks = []
   #     for stack_id in target.stack_ids:
   #       stack = stacks[stack_id]
-  #       print(f'###       Entering {stack}')
+  #       print(f'      Entering {stack}')
   #       task_0 = stack_subframes(stack, image_hashes, fits_headers,
   #                                plate_solutions, context.output_dir)
   #       task_1 = post_process_stack(stack, context.output_dir, [task_0])
   #       target_tasks.extend([task_0, task_1])
 
-  #     print(f'###     Created {len(target_tasks)} tasks for target')
+  #     print(f'    Created {len(target_tasks)} tasks for target')
   #     mosaic_tasks.append(
   #         post_process_target(target, stacks, context.output_dir,
   #                             target_tasks))
-  #   print(f'###   Created {len(mosaic_tasks)} tasks for mosaic')
+  #   print(f'  Created {len(mosaic_tasks)} tasks for mosaic')
   #   toplevel_tasks.append(
   #       post_process_mosaic(image_hashes, plate_solutions, mosaic, targets,
   #                           stacks, context.output_dir, mosaic_tasks))
 
-  # print(f'### Created {len(toplevel_tasks)} toplevel tasks')
+  # print(f'Created {len(toplevel_tasks)} toplevel tasks')
 
-  print('### Starting execution')
+  print('Starting execution')
   context = ray.get(run_compute_graph.remote(context, new_filenames))
 
-  print('### Compute graph is done! context is', context)
+  print('Compute graph is done! context is', context)
 
   # TODO: Close all subordinate PixInsight instances.
 

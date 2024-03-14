@@ -16,9 +16,9 @@ def _associate(stack,
                stack_dependencies=None,
                debug=False):
   if debug:
-    print(f'### Entering _associate for {stack} with {len(stack.runs)} runs')
+    print(f'Entering _associate for {stack} with {len(stack.runs)} runs')
     for run in stack.runs:
-      print(f'### run {run}')
+      print(f'run {run}')
 
   if not stack_dependencies:
     stack_dependencies = []
@@ -36,19 +36,19 @@ def _associate(stack,
   for run in stack.runs:
     light_frames = run.frames
     if debug:
-      print(f'### run light_frames is {light_frames}')
+      print(f'run light_frames is {light_frames}')
     assert light_frames, f'light_frames is {light_frames}'
     assert all(
         file_io.is_light_frame(fits_headers[f]) and
         not file_io.is_master(fits_headers[f]) for f in light_frames)
     light_runs = runs.get_runs(light_frames, fits_headers)
     if debug:
-      print(f'### light_runs is {light_runs}')
+      print(f'light_runs is {light_runs}')
     assert len(light_runs) == 1, f'light_runs are {light_runs}'
     light_run = light_runs[0]
 
     if debug:
-      print(f'### Associating {image_type} calibration frames to '
+      print(f'Associating {image_type} calibration frames to '
             f'run of {len(light_frames)} light frames')
 
     # Find all of the calibration frames in the library that match the given
@@ -65,7 +65,7 @@ def _associate(stack,
       continue
 
     if debug:
-      print(f'### Selected {len(cal_frames)} {image_type} frames for camera '
+      print(f'Selected {len(cal_frames)} {image_type} frames for camera '
             f'{stack.camera}')
 
     # Maybe select the calibration frames that have exactly the same exposure
@@ -87,7 +87,7 @@ def _associate(stack,
         continue
 
       if debug:
-        print(f'### Selected {len(cal_frames)} {image_type} frames by exposure')
+        print(f'Selected {len(cal_frames)} {image_type} frames by exposure')
 
     # Maybe select the calibration frames that have the same filter as the light
     # frames. If there are no such frames, end early.
@@ -105,7 +105,7 @@ def _associate(stack,
         continue
 
       if debug:
-        print(f'### Selected {len(cal_frames)} {image_type} frames by filter')
+        print(f'Selected {len(cal_frames)} {image_type} frames by filter')
 
     # Maybe select the calibration frames that have temperatures that are from
     # the same approximate distribution as the light frames. If there are no
@@ -128,9 +128,7 @@ def _associate(stack,
         continue
 
       if debug:
-        print(
-            f'### Selected {len(cal_frames)} {image_type} frames by temperature'
-        )
+        print(f'Selected {len(cal_frames)} {image_type} frames by temperature')
 
     # Select the run of calibration frames that are closest in time to the
     # light frames.
@@ -146,7 +144,7 @@ def _associate(stack,
         [runs.run_time_delta(light_run, cal_run) for cal_run in cal_runs])]
     cal_frames = runs.get_frames_for_run(cal_run, cal_frames, fits_headers)
     if debug:
-      print(f'### Selected {len(cal_frames)} {image_type} frames by run')
+      print(f'Selected {len(cal_frames)} {image_type} frames by run')
 
     # Create a new Stack containing one Run of calibration frames. If the same
     # Stack is found multiple times, it will be automatically de-duped by its

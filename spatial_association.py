@@ -13,7 +13,7 @@ def find_groups(ids,
                 values,
                 comparison_fn,
                 min_component_members=MIN_COMPONENT_MEMBERS) -> list[str]:
-  print(f'### Finding groups among {len(values)} values')
+  print(f'Finding groups among {len(values)} values')
   groups = []
   last_printed_percent_done = 0
   for i, id in enumerate(ids):
@@ -105,21 +105,21 @@ def _make_dict_from_groups(hashes, values, comparison_fn, plate_solutions,
 @ray.remote
 def find_components_by_cosine_similarity(
     context, threshold=0.99999, min_component_members=MIN_COMPONENT_MEMBERS):
-  print('### find_components_by_cosine_similarity context is', context)
+  print('find_components_by_cosine_similarity context is', context)
 
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
   plate_solutions = ray.get(context.plate_solutions)
 
-  print('### Before removing bad plate solutions, len image_hashes',
+  print('Before removing bad plate solutions, len image_hashes',
         len(image_hashes))
-  print('### Before removing bad plate solutions, len fits_headers ',
+  print('Before removing bad plate solutions, len fits_headers ',
         len(fits_headers))
-  print('### Before removing bad plate solutions, len plate_solutions',
+  print('Before removing bad plate solutions, len plate_solutions',
         len(plate_solutions))
   plate_solutions = image_metadata.remove_bad_images(image_hashes,
                                                      plate_solutions)
-  print('### After removing bad plate solutions, len', len(plate_solutions))
+  print('After removing bad plate solutions, len', len(plate_solutions))
 
   light_frames = [
       h for h, header in fits_headers.items() if h in plate_solutions and

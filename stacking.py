@@ -69,7 +69,7 @@ def _symlink_frames(filenames, dest_path):
       raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), filename)
 
     dest_filename = os.path.join(dest_path, os.path.basename(filename))
-    print(f'### symlinking {filename} -> {dest_filename}')
+    print(f'symlinking {filename} -> {dest_filename}')
     os.symlink(filename, dest_filename)
 
 
@@ -95,7 +95,7 @@ def _add_xisf_metadata(filename, dest_filename, metadata):
 
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
 def stack_files(context, stack, dest_path, metadata=None):
-  print(f'### Entering stack_files for {stack}')
+  print(f'Entering stack_files for {stack}')
 
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
@@ -114,7 +114,7 @@ def stack_files(context, stack, dest_path, metadata=None):
       hashes = run.frames + run.stack_dependencies
       filenames = [image_hashes[h] for h in hashes]
       for h, f in zip(hashes, filenames):
-        print(f'### hash {h} -> filename {f}')
+        print(f'hash {h} -> filename {f}')
 
       assert None not in filenames
       _symlink_frames(filenames, run_dir)
@@ -123,19 +123,19 @@ def stack_files(context, stack, dest_path, metadata=None):
 
     master_dir = os.path.join(tmp_dir, 'master')
     if not os.path.exists(master_dir):
-      print(f'### ERROR: WBPP did not produce an output master dir.')
+      print(f'ERROR: WBPP did not produce an output master dir.')
       return []
 
-    print('### WBPP master dir contains:')
+    print('WBPP master dir contains:')
     for f in os.listdir(master_dir):
-      print(f'###   {f}')
+      print(f'  {f}')
 
     wbpp_masters = list(
         str(f.absolute()) for f in Path(master_dir).rglob("master*.xisf"))
     wbpp_masters.sort(key=lambda x: os.path.getmtime(x))
     filename = wbpp_masters[-1]
     dest_filename = _output_filename(stack, fits_headers, dest_path)
-    print(f'### last modified WBPP master {filename} -> {dest_filename}')
+    print(f'last modified WBPP master {filename} -> {dest_filename}')
     os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
     _add_xisf_metadata(filename, dest_filename, metadata)
 
@@ -176,7 +176,7 @@ def scatter_stack_subframes(context):
   fits_headers = ray.get(context.fits_headers)
   shopping_cart = ray.get(context.shopping_cart)
   stacks = ray.get(context.stacks)
-  print(f'### scatter_stack_subframes received {len(stacks)} stacks')
+  print(f'scatter_stack_subframes received {len(stacks)} stacks')
 
   parallel_tasks = group_parallel_tasks(construct_graph(stacks))
 
@@ -185,7 +185,7 @@ def scatter_stack_subframes(context):
     return ('stack_files', stack.geometric_hash) in shopping_cart
 
   for task_group in parallel_tasks:
-    print(f'### Starting {len(task_group)} stack_files tasks in parallel...')
+    print(f'Starting {len(task_group)} stack_files tasks in parallel...')
 
     waitables = [
         stack_files.remote(context, stacks[s], context.output_dir)
@@ -200,10 +200,10 @@ def scatter_stack_subframes(context):
       try:
         results.extend(ray.get(done))
       except Exception as e:
-        print(f'### stack_files threw exception {e}')
+        print(f'stack_files threw exception {e}')
 
-    print(f'### Calling scatter_compute_image_metadata with results {results}')
+    print(f'Calling scatter_compute_image_metadata with results {results}')
     context = ray.get(scatter_compute_image_metadata.remote(context, results))
-    print(f'### scatter_compute_image_metadata done for {len(results)} results')
+    print(f'scatter_compute_image_metadata done for {len(results)} results')
 
   return context

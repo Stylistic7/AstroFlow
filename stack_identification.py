@@ -48,9 +48,9 @@ def _compute_content_hash(runs) -> str:
 
 
 def _new_stack(name, light_frames, fits_headers, plate_solutions):
-  print(f'### Entering _new_stack, light_frames are:')
+  print(f'Entering _new_stack, light_frames are:')
   for run in light_frames:
-    print(f'### run {run}')
+    print(f'run {run}')
     assert len(get_runs(run, fits_headers)) == 1
 
   flattened = list(itertools.chain.from_iterable([k for k in light_frames]))
@@ -87,25 +87,25 @@ def _new_stack(name, light_frames, fits_headers, plate_solutions):
   runs = [Run(frames=[FrameHash(h) for h in run]) for run in light_frames]
 
   for run in runs:
-    assert run.frames, f'### run.frames {run.frames} was Falsey'
-    print(f'### run {run}')
+    assert run.frames, f'run.frames {run.frames} was Falsey'
+    print(f'run {run}')
     assert len(get_runs(run.frames, fits_headers)) == 1
 
-  print('### Before down-selection, len(runs)', len(runs))
+  print('Before down-selection, len(runs)', len(runs))
   num_light_frames_before_selection = len(
       [f for run in runs for f in run.frames])
   criterion = subframe_selection.decode_selection_criterion(selection_criterion)
   runs = criterion.select_subframes(runs, fits_headers, plate_solutions)
-  print('### After down-selection, len(runs)', len(runs))
+  print('After down-selection, len(runs)', len(runs))
 
   for run in runs:
-    assert run.frames, f'### run.frames {run.frames} was Falsey'
-    print(f'### run {run}')
+    assert run.frames, f'run.frames {run.frames} was Falsey'
+    print(f'run {run}')
     assert len(get_runs(run.frames, fits_headers)) == 1
 
   num_light_frames_after_selection = len(
       [f for run in runs for f in run.frames])
-  print(f'### Selected {num_light_frames_after_selection} light frames '
+  print(f'Selected {num_light_frames_after_selection} light frames '
         f'from {num_light_frames_before_selection} light frames')
 
   content_hash = _compute_content_hash(runs)

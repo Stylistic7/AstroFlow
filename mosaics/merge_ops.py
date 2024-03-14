@@ -95,9 +95,9 @@ def run_photometric_mosaic(merge_op):
 
 
 def merge_mosaic(panels, output_dir):
-  print(f'### Entering merge_mosaic, output_dir {output_dir}')
+  print(f'Entering merge_mosaic, output_dir {output_dir}')
   for merge_op in make_merge_ops(panels, output_dir):
     output_image = run_photometric_mosaic(merge_op)
-    print(f'### run_photometric_mosaic returned {output_image}')
+    print(f'run_photometric_mosaic returned {output_image}')
 
   return output_image

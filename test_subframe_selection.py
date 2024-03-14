@@ -100,7 +100,7 @@ class TestSubframeSelection(unittest.TestCase):
     for h, f in image_hashes.items():
       if f.endswith('_00007.fit'):
         middle_frame = h
-    print(f'### middle_frame {image_hashes[middle_frame]}')
+    print(f'middle_frame {image_hashes[middle_frame]}')
     plate_solutions[middle_frame].num_stars = 10
 
     filenames = file_io.find_image_files(self.context.input_dirs[0])

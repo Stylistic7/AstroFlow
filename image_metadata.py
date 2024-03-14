@@ -76,7 +76,7 @@ def scatter_compute_image_metadata(context, filenames):
     try:
       results.extend(ray.get(done))
     except Exception as e:
-      print(f'### compute_image_metadata_ray threw exception {e}')
+      print(f'compute_image_metadata_ray threw exception {e}')
 
   def had_exception(result):
     return 'exception' in result
@@ -102,10 +102,10 @@ def scatter_compute_image_metadata(context, filenames):
   context.fits_headers = ray.put(fits_headers)
   context.plate_solutions = ray.put(plate_solutions)
 
-  print(f'### Cached {len(quarantined_files)} quarantined_files')
-  print(f'### Cached {len(image_hashes)} image_hashes')
-  print(f'### Cached {len(fits_headers)} fits_headers')
-  print(f'### Cached {len(plate_solutions)} plate_solutions')
+  print(f'Cached {len(quarantined_files)} quarantined_files')
+  print(f'Cached {len(image_hashes)} image_hashes')
+  print(f'Cached {len(fits_headers)} fits_headers')
+  print(f'Cached {len(plate_solutions)} plate_solutions')
 
   return context
 
@@ -116,7 +116,7 @@ class DuplicateFileException(Exception):
 
 @ray.remote(scheduling_strategy="SPREAD", max_retries=5, retry_exceptions=True)
 def compute_image_metadata_ray(context, filename):
-  print(f'### Entering compute_image_metadata_ray() for {filename}')
+  print(f'Entering compute_image_metadata_ray() for {filename}')
   assert filename
 
   image_hashes = ray.get(context.image_hashes)
@@ -139,7 +139,7 @@ def compute_image_metadata_ray(context, filename):
     else:
       result['plate_solution'] = None
 
-    print('### compute_image_metadata_ray() was successful')
+    print('compute_image_metadata_ray() was successful')
     return result
   except Exception as e:
     print(f'compute_image_metadata_ray() failed for file {filename}, '

@@ -32,7 +32,7 @@ def compute_viewbox(plate_solutions):
 # TODO: Store these on disk and read them back when unchanged.
 @ray.remote(scheduling_strategy="SPREAD")
 def mosaic_by_coordinates(panel, coordinates, output_dir, autostretch=False):
-  print(f'### mosaic_by_coordinates projecting image {panel.image_filename}')
+  print(f'mosaic_by_coordinates projecting image {panel.image_filename}')
 
   dest_xs = ray.get(coordinates['dest_xs'])
   dest_ys = ray.get(coordinates['dest_ys'])
@@ -41,21 +41,21 @@ def mosaic_by_coordinates(panel, coordinates, output_dir, autostretch=False):
 
   projected_image = np.zeros(ras.shape)
   projection_map = np.zeros(ras.shape)
-  print(f'### projected_image shape', projected_image.shape)
+  print(f'projected_image shape', projected_image.shape)
 
   header = file_io.read_header(panel.image_filename)
   image = file_io.read_image(panel.image_filename)
 
-  print(f'### mosaic_by_coordinates image dtype {image.dtype} '
+  print(f'mosaic_by_coordinates image dtype {image.dtype} '
         f'min {np.min(image)} max {np.max(image)}')
 
   if autostretch:
     try:
       image = image_previews.autostretch(image)
     except Exception as e:
-      print(f'### failed to autostretch, exception {e}')
+      print(f'failed to autostretch, exception {e}')
 
-  print(f'### Image has shape {image.shape} and dtype {image.dtype}')
+  print(f'Image has shape {image.shape} and dtype {image.dtype}')
 
   wcs = WCS(panel.plate_solution.header)
 
@@ -70,8 +70,8 @@ def mosaic_by_coordinates(panel, coordinates, output_dir, autostretch=False):
   assert dest_xs.shape == dest_ys.shape == ras.shape == decs.shape
   footprint_polygon = SphericalPolygon.from_wcs(
       pyfits.Header(panel.plate_solution.header))
-  print(f'### dest_xs.shape {dest_xs.shape} dest_ys.shape {dest_ys.shape}')
-  print(f'### ras.shape {ras.shape} decs.shape {decs.shape}')
+  print(f'dest_xs.shape {dest_xs.shape} dest_ys.shape {dest_ys.shape}')
+  print(f'ras.shape {ras.shape} decs.shape {decs.shape}')
   dest_xs, dest_ys, ras, decs = zip(
       *[(dx, dy, ra, dec)
         for dx, dy, ra, dec in zip(dest_xs.flatten(), dest_ys.flatten(),
@@ -107,7 +107,7 @@ def mosaic_by_coordinates(panel, coordinates, output_dir, autostretch=False):
                                                trim_top:trim_top + trim_height]
 
   output_image = trimmed_image
-  print(f'### mosaic_by_coordinates output_image dtype {output_image.dtype} '
+  print(f'mosaic_by_coordinates output_image dtype {output_image.dtype} '
         f'min {np.min(output_image)} max {np.max(output_image)}')
 
   hdu = pyfits.PrimaryHDU(output_image)
