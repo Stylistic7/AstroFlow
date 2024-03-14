@@ -29,6 +29,7 @@ def compute_viewbox(plate_solutions):
 
 
 # TODO: Provide some feedback on progress.
+# TODO: Store these on disk and read them back when unchanged.
 @ray.remote(scheduling_strategy="SPREAD")
 def mosaic_by_coordinates(panel, coordinates, output_dir, autostretch=False):
   print(f'### mosaic_by_coordinates projecting image {panel.image_filename}')

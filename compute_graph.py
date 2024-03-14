@@ -24,13 +24,12 @@ def run_compute_graph(context, new_filenames):
     context = ray.get(group_stacks_into_targets.remote(context))
     context = ray.get(identify_mosiacs.remote(context))
 
-  # FIXME
-  # context = ray.get(scatter_stack_thumbnails.remote(context, mode='subframe'))
-  # context = ray.get(scatter_merge_mosaics.remote(context, mode='subframe'))
+  context = ray.get(scatter_stack_thumbnails.remote(context, mode='subframe'))
+  context = ray.get(scatter_merge_mosaics.remote(context, mode='subframe'))
 
-  # context = ray.get(scatter_stack_subframes.remote(context))
+  context = ray.get(scatter_stack_subframes.remote(context))
 
-  # context = ray.get(scatter_stack_thumbnails.remote(context, mode='master'))
+  context = ray.get(scatter_stack_thumbnails.remote(context, mode='master'))
   context = ray.get(scatter_merge_mosaics.remote(context, mode='master'))
 
   # TODO: Add a cleanup task that deletes unreferenced stuff from the cache.

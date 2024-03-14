@@ -262,11 +262,10 @@ def merge_mosaic(context, mosaic, mode):
   assert np.max(dest_xs) == dest_width - 1
   assert dest_xs.shape == dest_ys.shape == ras.shape == decs.shape
 
-  dest_xs = ray.put(dest_xs)
-  dest_ys = ray.put(dest_ys)
-  ras = ray.put(ras)
-  decs = ray.put(decs)
-  coordinates = dict(dest_xs=dest_xs, dest_ys=dest_ys, ras=ras, decs=decs)
+  coordinates = dict(dest_xs=ray.put(dest_xs),
+                     dest_ys=ray.put(dest_ys),
+                     ras=ray.put(ras),
+                     decs=ray.put(decs))
 
   # TODO: Don't hardcode these filters. Find the set from the images
   # themselves.
