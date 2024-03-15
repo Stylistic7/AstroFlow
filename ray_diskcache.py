@@ -38,22 +38,22 @@ class GlobalVarActor:
   def contains(self, key):
     return key in cache
 
-  def or_equals(self, key, value, default):
-    if not default:
+  def or_equals(self, key, value, default, keep_in_memory):
+    if default is None:
       default = {}
 
     with cache.transact():
       new_value = self.global_dict.get(key, default) | value
-      self.set(key, new_value)
+      self.set(key, new_value, keep_in_memory)
       return new_value
 
-  def and_equals(self, key, value, default):
-    if not default:
+  def and_equals(self, key, value, default, keep_in_memory):
+    if default is None:
       default = []
 
     with cache.transact():
       new_value = self.global_dict.get(key, default) + value
-      self.set(key, new_value)
+      self.set(key, new_value, keep_in_memory)
       return new_value
 
 
@@ -77,11 +77,11 @@ def contains(key):
   return ray.get(actor.contains.remote(key))
 
 
-def and_equals(key, value, default=None):
+def and_equals(key, value, default=None, keep_in_memory=True):
   actor = ray.get_actor('ray_diskcache', namespace='AstroFlow')
-  return ray.get(actor.and_equals.remote(key, value, default))
+  return ray.get(actor.and_equals.remote(key, value, default, keep_in_memory))
 
 
-def or_equals(key, value, default=None):
+def or_equals(key, value, default=None, keep_in_memory=True):
   actor = ray.get_actor('ray_diskcache', namespace='AstroFlow')
-  return ray.get(actor.or_equals.remote(key, value, default))
+  return ray.get(actor.or_equals.remote(key, value, default, keep_in_memory))
