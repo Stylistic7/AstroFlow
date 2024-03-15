@@ -24,6 +24,8 @@ def _exposure_time_string(stack):
   return f'{hours:02.0f}h{minutes:02.0f}m'
 
 
+# TODO: This function hits every master once for every stack, which grows to
+# be enormous. It should be cached somehow.
 def find_matching_masters(stack, image_hashes, fits_headers):
   return [
       h for h, header in fits_headers.items()

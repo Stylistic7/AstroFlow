@@ -1,9 +1,6 @@
 import os
-import uuid
 import numpy as np
-from mosaic import Mosaic
 import pix
-import plate_solving
 from . import classes
 
 
@@ -31,6 +28,14 @@ def make_merge_ops(panels, output_dir):
   def get_panel(tile_indices):
     return next(p for p in panels if list(p.tile_indices) == list(tile_indices))
 
+  def make_pair_id(pair):
+    panels = [get_panel(p) for p in pair]
+
+    def join_tile_indices(tile_indices):
+      return '_'.join([str(i) for i in tile_indices])
+
+    return '__'.join([join_tile_indices(p.tile_indices) for p in panels])
+
   merge_ops = []
   level = 0
   while len(panels) > 1:
@@ -52,7 +57,8 @@ def make_merge_ops(panels, output_dir):
               classes.Panel(image_filename=get_panel(pair[0]).image_filename,
                             tile_indices=tile_indices))
         elif len(pair) == 2:
-          new_image_id = os.path.join(output_dir, f'merged_{uuid.uuid4()}.fit')
+          new_image_id = os.path.join(output_dir,
+                                      f'merged_{make_pair_id(pair)}.fit')
           new_panels.append(
               classes.Panel(image_filename=new_image_id,
                             tile_indices=tile_indices))
@@ -100,4 +106,5 @@ def merge_mosaic(panels, output_dir):
     output_image = run_photometric_mosaic(merge_op)
     print(f'run_photometric_mosaic returned {output_image}')
 
+  assert output_image
   return output_image

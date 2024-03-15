@@ -1,22 +1,16 @@
 import os
-import tempfile
 import shutil
 import psutil
 import numpy as np
 import matplotlib.pyplot as plt
-import contextlib
 import ray
-import objsize
-
-from output_file import OutputFile
 
 import stacking
-import plate_solving
 import file_io
-import image_previews
 import subframe_selection
 import footprints
 import ray_diskcache
+import image_previews
 
 from projection import compute_viewbox
 import mercator
@@ -24,6 +18,12 @@ import mercator
 from mosaics import classes
 from mosaics import merge_ops
 from mosaics import projection
+
+# TODO: Use a compute graph to represent the construction of mosaics. Each
+# mosaic is composed of channels. Each channel is composed of multiple place
+# tasks, and multiple merge tasks.
+#
+# For large images (e.g. masters), these operations are expensive
 
 
 def _error(center, basis_vectors):
@@ -104,93 +104,101 @@ def process_mosaic_per_filter(context, mosaic, mode, coordinates, filter,
   stacks = ray.get(context.stacks)
   targets = ray.get(context.targets)
 
-  with tempfile.TemporaryDirectory() as temp_dir:
-    panels = []
-    print(f'process_mosaic_per_filter mosaic name '
-          f'{mosaic.name} id {mosaic.id} filter {filter}')
+  panels = []
+  print(f'process_mosaic_per_filter mosaic name '
+        f'{mosaic.name} id {mosaic.id} filter {filter}')
 
-    print(f'process_mosaic_per_filter mosaic '
-          f'tile_indices {mosaic.tile_indices}')
-    for target_id, tile_indices in zip(mosaic.target_ids, mosaic.tile_indices):
-      target = targets[target_id]
-      stack = next(
-          (s for s in stacks.values()
-           if s.filter == filter and s.geometric_hash in target.stack_ids),
-          None)
-      if not stack:
-        print(f'process_mosaic_per_filter failed: there is no stack for '
-              f'filter {filter}')
-        continue
+  print(f'process_mosaic_per_filter mosaic '
+        f'tile_indices {mosaic.tile_indices}')
+  for target_id, tile_indices in zip(mosaic.target_ids, mosaic.tile_indices):
+    target = targets[target_id]
+    stack = next(
+        (s for s in stacks.values()
+         if s.filter == filter and s.geometric_hash in target.stack_ids), None)
+    if not stack:
+      print(f'process_mosaic_per_filter failed: there is no stack for '
+            f'filter {filter}')
+      continue
 
-      panel = _get_panel_for_stack(mode, stack, image_hashes, fits_headers,
-                                   plate_solutions)
+    panel = _get_panel_for_stack(mode, stack, image_hashes, fits_headers,
+                                 plate_solutions)
 
-      # At least one panel of the give mode (e.g. subframe or master) cannot
-      # be found, so the mosaic can't be merged.
-      if not panel:
-        return None
-
-      print('panel', panel)
-      panel.tile_indices = tile_indices
-      panels.append(panel)
-
-    if not panels:
-      print(f'There are no panels for filter {filter}, returning None')
+    # At least one panel of the give mode (e.g. subframe or master) cannot
+    # be found, so the mosaic can't be merged.
+    if not panel:
       return None
 
-    print(f'process_mosaic_per_filter: '
-          f'{len(panels)} panels with filenames:')
-    for p in panels:
-      print(f'  {p.image_filename}')
+    print('panel', panel)
+    panel.tile_indices = tile_indices
+    panels.append(panel)
 
-    print(f'Running mosaic_by_coordinates in parallel...')
-    autostretch = mode == 'subframe'
+  if not panels:
+    print(f'There are no panels for filter {filter}, returning None')
+    return None
 
-    waitables = [
-        projection.mosaic_by_coordinates.remote(p, coordinates, temp_dir,
-                                                autostretch) for p in panels
-    ]
+  print(f'process_mosaic_per_filter: '
+        f'{len(panels)} panels with filenames:')
+  for p in panels:
+    print(f'  {p.image_filename}')
 
-    panels = []
-    while len(waitables):
-      result, waitables = ray.wait(waitables)
-      panels.extend(ray.get(result))
+  print(f'Running mosaic_by_coordinates in parallel...')
+  autostretch = mode == 'subframe'
 
-    print(f'mosaic_by_coordinates for {len(panels)} panels is done')
+  waitables = [
+      projection.mosaic_by_coordinates.remote(p, coordinates, output_dir,
+                                              autostretch) for p in panels
+  ]
 
-    if mode == 'subframe':
-      # The image returned from read_image() is in [0, 65536].
-      # TODO: These panels are just merged by np.maximum, but there are
-      # certainly better ways (maybe mean of all projected values).
-      output_image = file_io.read_image(panels[0].image_filename)
+  panels = []
+  while len(waitables):
+    result, waitables = ray.wait(waitables)
+    panels.extend(ray.get(result))
 
-      for p in panels[1:]:
-        image = file_io.read_image(p.image_filename)
-        output_image = np.maximum(output_image, image)
+  print(f'mosaic_by_coordinates for {len(panels)} panels is done')
 
-      key = ('mosaic_thumbnail_image', mode, mosaic.id, filter)
-      ray_diskcache.set(key, output_image, keep_in_memory=False)
-    elif mode == 'master':
-      output_image = merge_ops.merge_mosaic(panels, temp_dir)
+  if mode == 'subframe':
+    # The image returned from read_image() is in [0, 65536].
+    # TODO: These panels are just merged by np.maximum, but there are
+    # certainly better ways (maybe mean of all projected values).
+    output_image = file_io.read_image(panels[0].image_filename)
 
-      # TODO: Store the filename somewhere, too.
-      merged_mosaic = os.path.join(context.output_dir,
-                                   f"mosaic_{mode}_{filter}.fits")
-      print(f'Copying final mosaic image to {merged_mosaic}')
-      shutil.copy(output_image[0], merged_mosaic)
+    for p in panels[1:]:
+      image = file_io.read_image(p.image_filename)
+      output_image = np.maximum(output_image, image)
 
-      key = ('mosaic_thumbnail_image', mode, mosaic.id, filter)
-      hash = file_io.hash_of_image_data(merged_mosaic)
-      ray_diskcache.set(key, hash)
+    key = ('mosaic_thumbnail_image', mode, mosaic.id, filter)
+    ray_diskcache.set(key,
+                      image_previews.array_to_png(output_image),
+                      keep_in_memory=False)
+  elif mode == 'master':
+    # TODO: Maybe figure out a unified way to store the same conceptual image,
+    # just at increasing levels of quality (subframes -> stacks ->
+    # post-processed).
+    output_image = merge_ops.merge_mosaic(panels, output_dir)
+
+    merged_mosaic = os.path.join(output_dir, f"mosaic_{mode}_{filter}.fit")
+    print(f'Copying final mosaic image to {merged_mosaic}')
+    shutil.copy(output_image[0], merged_mosaic)
+
+    key = ('mosaic_thumbnail_image', mode, mosaic.id, filter)
+    hash = file_io.hash_of_image_data(merged_mosaic)
+    ray_diskcache.set(key, hash)
 
 
 @ray.remote
 def scatter_merge_mosaics(context, mode):
+  image_hashes = ray.get(context.image_hashes)
   mosaics = ray.get(context.mosaics)
 
+  # TODO: Stop calling them "thumbnails" -- maybe "artifacts?"
   def thumbnail_exists(mosaic):
     key = ('mosaic_thumbnail_image', mode, mosaic.id)
-    return ray_diskcache.contains(key)
+    if mode == 'subframe':
+      return ray_diskcache.contains(key)
+    elif mode == 'master':
+      filter_dict = ray_diskcache.get(key, None)
+      return filter_dict and all(
+          os.path.exists(image_hashes[hash]) for hash in filter_dict.values())
 
   to_merge = [m for m in mosaics.values() if not thumbnail_exists(m)]
   print(f'Need to make {mode} previews for {len(to_merge)} mosaics')
@@ -225,7 +233,7 @@ def merge_mosaic(context, mosaic, mode):
   # Store merged mosaics on disk for all modes except 'subframe'.
   if mode == 'subframe':
     output_dir = None
-  else:
+  elif mode == 'master':
     output_dir = os.path.join(context.output_dir, 'Mosaics', mosaic.name)
     os.makedirs(output_dir, exist_ok=True)
 

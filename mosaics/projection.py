@@ -1,17 +1,14 @@
 import ray
 import os
 import numpy as np
-import objsize
-import itertools
-from xisf import XISF
 from astropy.wcs import WCS
 from scipy.interpolate import RegularGridInterpolator
 import largestinteriorrectangle
 import astropy.io.fits as pyfits
-import uuid
 from spherical_geometry.polygon import SphericalPolygon
 from shapely.geometry import Polygon, Point
 import astropy.io.fits as pyfits
+import time
 
 import file_io
 import image_previews
@@ -33,6 +30,7 @@ def compute_viewbox(plate_solutions):
 @ray.remote(scheduling_strategy="SPREAD")
 def mosaic_by_coordinates(panel, coordinates, output_dir, autostretch=False):
   print(f'mosaic_by_coordinates projecting image {panel.image_filename}')
+  start = time.time()
 
   dest_xs = ray.get(coordinates['dest_xs'])
   dest_ys = ray.get(coordinates['dest_ys'])
@@ -88,11 +86,13 @@ def mosaic_by_coordinates(panel, coordinates, output_dir, autostretch=False):
     projected_image[dx, dy] = value
     projection_map[dx, dy] = 128
 
-  print(f'Finished projecting image {panel.image_filename}')
+  end = time.time()
+  print(f'Finished projecting image {panel.image_filename} time {end-start}')
   assert np.count_nonzero(projection_map), "projection failed"
 
   # TODO: This is surprisingly slow, dominating the projection for fine
   # output resolutions.
+  start = time.time()
   trim_top, trim_left, trim_height, trim_width = largestinteriorrectangle.lir(
       projection_map > 0)
   print(f'Trimmed trim_top {trim_top} trim_left {trim_left} trim_height '
@@ -107,8 +107,10 @@ def mosaic_by_coordinates(panel, coordinates, output_dir, autostretch=False):
                                                trim_top:trim_top + trim_height]
 
   output_image = trimmed_image
-  print(f'mosaic_by_coordinates output_image dtype {output_image.dtype} '
-        f'min {np.min(output_image)} max {np.max(output_image)}')
+  end = time.time()
+  print(
+      f'mosaic_by_coordinates output_image dtype {output_image.dtype} '
+      f'min {np.min(output_image)} max {np.max(output_image)} time {end-start}')
 
   hdu = pyfits.PrimaryHDU(output_image)
   hdu.header['IMAGETYP'] = 'PlacedMosaic'
@@ -121,7 +123,9 @@ def mosaic_by_coordinates(panel, coordinates, output_dir, autostretch=False):
   hdu.header['HISTORY'] = f"TrimMosaicTile.left: {trim_left}"
   hdu.header['HISTORY'] = f"TrimMosaicTile.right: {trim_left + trim_width}"
 
-  panel.image_filename = os.path.join(output_dir, f'placed_{uuid.uuid4()}.fit')
+  tile_indices = '_'.join([str(t) for t in panel.tile_indices])
+  panel.image_filename = os.path.join(str(output_dir),
+                                      f'placed_{tile_indices}.fit')
   hdu.writeto(panel.image_filename, overwrite=True)
   print(f'Wrote placed image filename {panel.image_filename}')
 
