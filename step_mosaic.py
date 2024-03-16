@@ -4,6 +4,7 @@ import psutil
 import numpy as np
 import matplotlib.pyplot as plt
 import ray
+import tempfile
 
 import stacking
 import file_io
@@ -11,6 +12,7 @@ import subframe_selection
 import footprints
 import ray_diskcache
 import image_previews
+from hashing import hash_list
 
 from projection import compute_viewbox
 import mercator
@@ -23,7 +25,63 @@ from mosaics import projection
 # mosaic is composed of channels. Each channel is composed of multiple place
 # tasks, and multiple merge tasks.
 #
-# For large images (e.g. masters), these operations are expensive
+# For large images (e.g. masters), these operations are expensive, and the
+# results should be cached.
+#
+# I need to separate out the pieces of the functions below that could identify
+# existing artifacts.
+#
+# The content hash of a stack is well-defined already.
+#
+# The content hash of a single color channel of a mosaic is the hash of the
+# sorted list of the hashes of the stacks.
+#
+# The content hash of an entire mosaic is the hash of the sorted list of the
+# hashes of all its color channels.
+#
+# Altogether, the pseudocode looks like this:
+#
+# scatter_merge_mosaics():
+#   Runs merge_mosaic() in parallel for all mosaics.
+#
+#   merge_mosaic():
+#     Checks to see if filter-level artifacts exist.
+#       cache[('mosaic_thumbnail_image', mode, id, filter)] is a dict:
+#         {'merged': {content_hash, image_filename, image}}
+#       The content_hash has to match. If image_filename is present, it must
+#         exist on disk, e.g. this filename:
+#           merged_mosaic_{mode}_{id}_{filter}_{content_hash}.fit on disk
+#
+#     Creates output directories, if necessary.
+#     Creates the grid of RAs and Decs that images will be placed into.
+#     Runs process_mosaic_per_filter() for each filter in parallel.
+#
+#     process_mosaic_per_filter():
+#       Iterates over the mosaic's tile_indices and makes Panel objects, which
+#         point to specific images on disk.
+#
+#       Checks to see if panel-level artifacts exist.
+#         cache[('mosaic_thumbnail_image', mode, id, filter)] is a dict:
+#           {'panel_0_1': {content_hash, image_filename, image}}
+#         The content_hash has to match. If image_filename is present, it must
+#           exist on disk, e.g. this filename:
+#             placed_{mode}_{id}_{filter}_{tile_indices}_{content_hash}.fit on disk
+#
+#       Runs mosaic_by_coordinates() on all the panels in parallel, placing their
+#         image data in the desired output projection.
+#
+#       mosaic_by_coordinates():
+#         Creates the output image as defined by the given grid of RAs and Decs.
+#         For every pixel in the output, grabs the bilinear interpolation of
+#           pixels in the input image.
+#         Find the largest interior rectangle, and trims all edges to be
+#           axis-aligned.
+#         Writes a FITS file to disk that contains the image and some metadata
+#           required by PhotometricMergeMosaic in PixInsight.
+#
+#       Merges the panels together using either NumPy or PixInsight.
+#       Saves the images either to the cache (for mode 'subframe') or to disk
+#        (for mode 'master' and above).
 
 
 def _error(center, basis_vectors):
@@ -92,6 +150,18 @@ def _get_panel_for_stack(mode, stack, image_hashes, fits_headers,
                                        plate_solutions)
 
 
+# Function pseudocode:
+#
+# Iterates over the mosaic's tile_indices and makes Panel objects, which point
+# to specific images on disk.
+#
+# Runs mosaic_by_coordinates on all the panels in parallel, placing their image
+# data in the desired output projection.
+#
+# Merges the panels together using either NumPy or PixInsight.
+#
+# Saves the images either to the cache (for mode 'subframe') or to disk
+# (for mode 'master' and above).
 @ray.remote(scheduling_strategy="SPREAD")
 def process_mosaic_per_filter(context, mosaic, mode, coordinates, filter,
                               output_dir):
@@ -104,12 +174,30 @@ def process_mosaic_per_filter(context, mosaic, mode, coordinates, filter,
   stacks = ray.get(context.stacks)
   targets = ray.get(context.targets)
 
-  panels = []
-  print(f'process_mosaic_per_filter mosaic name '
-        f'{mosaic.name} id {mosaic.id} filter {filter}')
+  # Checks to see if panel-level artifacts exist.
+  # cache[('mosaic_thumbnail_image', mode, id, filter)] is a dict:
+  #   {'panel_0_1': {content_hash, image_filename, image}}
+  # The content_hash has to match. If image_filename is present, it must
+  #   exist on disk, e.g. this filename:
+  #     placed_{mode}_{id}_{filter}_{tile_indices}_{content_hash}.fit on disk
+  def panel_artifact_exists(panel):
+    stack = next(
+        (s for s in stacks.values()
+         if s.filter == filter and s.geometric_hash in target.stack_ids), None)
+    assert stack
 
-  print(f'process_mosaic_per_filter mosaic '
-        f'tile_indices {mosaic.tile_indices}')
+    key = ('mosaic_thumbnail_image', mode, id, filter)
+    artifacts = ray_diskcache.get(key, {})
+    tile_indices = '_'.join([str(t) for t in panel.tile_indices])
+    panel_artifact = artifacts.get(f'placed_{tile_indices}', {})
+    if panel_artifact.get('content_hash', None) != stack.content_hash:
+      return False
+    if panel.image_filename and not os.path.exists(panel.image_filename):
+      return False
+
+    return True
+
+  panels = []
   for target_id, tile_indices in zip(mosaic.target_ids, mosaic.tile_indices):
     target = targets[target_id]
     stack = next(
@@ -144,9 +232,18 @@ def process_mosaic_per_filter(context, mosaic, mode, coordinates, filter,
   print(f'Running mosaic_by_coordinates in parallel...')
   autostretch = mode == 'subframe'
 
+  to_place = [p for p in panels if not panel_artifact_exists(p)]
+
+  if not to_place:
+    print('### All panels for mosaic {mosaic.name} filter {filter} '
+          f'are up-to-date')
+    return
+  else:
+    print(f'### Need to place images for {len(to_place)} panels')
+
   waitables = [
       projection.mosaic_by_coordinates.remote(p, coordinates, output_dir,
-                                              autostretch) for p in panels
+                                              autostretch) for p in to_place
   ]
 
   panels = []
@@ -185,24 +282,16 @@ def process_mosaic_per_filter(context, mosaic, mode, coordinates, filter,
     ray_diskcache.set(key, hash)
 
 
+# Function pseudocode
+#
+# Checks to see if the toplevel artifacts exist (which is too coarse).
+#
+# Runs merge_mosaic in parallel for all mosaics.
 @ray.remote
 def scatter_merge_mosaics(context, mode):
-  image_hashes = ray.get(context.image_hashes)
   mosaics = ray.get(context.mosaics)
 
-  # TODO: Stop calling them "thumbnails" -- maybe "artifacts?"
-  def thumbnail_exists(mosaic):
-    key = ('mosaic_thumbnail_image', mode, mosaic.id)
-    if mode == 'subframe':
-      return ray_diskcache.contains(key)
-    elif mode == 'master':
-      filter_dict = ray_diskcache.get(key, None)
-      return filter_dict and all(
-          os.path.exists(image_hashes[hash]) for hash in filter_dict.values())
-
-  to_merge = [m for m in mosaics.values() if not thumbnail_exists(m)]
-  print(f'Need to make {mode} previews for {len(to_merge)} mosaics')
-
+  to_merge = [m for m in mosaics.values() if len(m.target_ids) > 1]
   waitables = [merge_mosaic.remote(context, m, mode) for m in to_merge]
 
   results = []
@@ -218,21 +307,65 @@ def scatter_merge_mosaics(context, mode):
   return context
 
 
+# Function pseudocode:
+#
+# Creates output directories, if necessary.
+#
+# Creates the grid of RAs and Decs that images will be placed into.
+#
+# Runs process_mosaic_per_filter for each filter present in the mosaic in
+# parallel.
 @ray.remote(scheduling_strategy="SPREAD")
 def merge_mosaic(context, mosaic, mode):
   print(f'Entering merge_mosaic for mosaic {mosaic} mode {mode}')
+  targets = ray.get(context.targets)
+  stacks = ray.get(context.stacks)
 
   proc = psutil.Process()
   print(f'There are {len(proc.open_files())} open files')
 
-  if len(mosaic.target_ids) < 2:
-    print(f'No processing to do for mosaic with only '
-          f'{len(mosaic.target_ids)} target ids')
-    return None
+  def stacks_for_filter(filter):
+    return [
+        stacks[s]
+        for t in mosaic.target_ids
+        for s in targets[t].stack_ids
+        if stacks[s].filter == filter
+    ]
+
+  def all_panels_have_filter(filter):
+    stacks = stacks_for_filter(filter)
+    return len(stacks) == len(mosaic.target_ids)
+
+  def filter_artifact_exists(filter):
+    stacks = stacks_for_filter(filter)
+    content_hash = hash_list([s.content_hash for s in stacks])
+    key = ('mosaic_thumbnail_image', mode, id, filter)
+    artifacts = ray_diskcache.get(key, {})
+    merged = artifacts.get('merged', {})
+    if merged.get('content_hash', None) != content_hash:
+      return False
+    image_filename = merged.get('image_filename', None)
+    if image_filename and not os.path.exists(image_filename):
+      return False
+
+    return True
+
+  filters = ['H', 'S', 'O', 'L', 'R', 'G', 'B']
+  filters_to_process = [
+      f for f in filters
+      if all_panels_have_filter(f) and not filter_artifact_exists(f)
+  ]
+
+  if not filters_to_process:
+    print(f'All filters for mosaic {mosaic.name} are up-to-date')
+    return
+  else:
+    print(f'### Need to update the following filters: {filters_to_process}')
 
   # Store merged mosaics on disk for all modes except 'subframe'.
   if mode == 'subframe':
-    output_dir = None
+    temp_dir = tempfile.TemporaryDirectory()
+    output_dir = temp_dir.name
   elif mode == 'master':
     output_dir = os.path.join(context.output_dir, 'Mosaics', mosaic.name)
     os.makedirs(output_dir, exist_ok=True)
@@ -271,10 +404,9 @@ def merge_mosaic(context, mosaic, mode):
 
   # TODO: Don't hardcode these filters. Find the set from the images
   # themselves.
-  filters = ['H', 'S', 'O', 'L', 'R', 'G', 'B']
   waitables = [
       process_mosaic_per_filter.remote(context, mosaic, mode, coordinates, f,
-                                       output_dir) for f in filters
+                                       output_dir) for f in filters_to_process
   ]
 
   results = []

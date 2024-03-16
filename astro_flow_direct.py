@@ -596,7 +596,7 @@ def main(context):
   print('Starting execution')
   context = ray.get(run_compute_graph.remote(context, new_filenames))
 
-  print('Compute graph is done! context is', context)
+  print('### Compute graph is done! context is', context)
 
   # TODO: Close all subordinate PixInsight instances.
 

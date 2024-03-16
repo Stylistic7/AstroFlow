@@ -25,6 +25,18 @@ def compute_viewbox(plate_solutions):
   return [min_ra, min_dec, max_ra - min_ra, max_dec - min_dec]
 
 
+# Function pseudocode:
+#
+# Creates the output image as defined by the given grid of RAs and Decs.
+#
+# For every pixel in the output, grabs the bilinear interpolation of pixels in
+# the input image.
+#
+# Find the largest interior rectangle, and trims all edges to be axis-aligned.
+#
+# Writes a FITS file to disk that contains the image and some metadata required
+# by PhotometricMergeMosaic in PixInsight.
+#
 # TODO: Provide some feedback on progress.
 # TODO: Store these on disk and read them back when unchanged.
 @ray.remote(scheduling_strategy="SPREAD")

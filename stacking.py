@@ -30,8 +30,7 @@ def find_matching_masters(stack, image_hashes, fits_headers):
   return [
       h for h, header in fits_headers.items()
       if header and header.get(_CONTENT_HASH_KEY, None) == stack.content_hash
-      and os.path.exists(image_hashes[h]) and file_io.read_header(
-          image_hashes[h]).get(_CONTENT_HASH_KEY, None) == stack.content_hash
+      and os.path.exists(image_hashes[h])
   ]
 
 
