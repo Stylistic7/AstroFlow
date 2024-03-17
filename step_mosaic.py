@@ -218,6 +218,13 @@ def process_mosaic_per_filter(context, mosaic, mode, coordinates, filter,
 
     print('panel', panel)
     panel.tile_indices = tile_indices
+
+    tile_indices_str = '_'.join([str(t) for t in panel.tile_indices])
+    panel.placed_filename = os.path.join(
+        str(output_dir),
+        f'placed_{mode}_{mosaic.id}_{filter}_{tile_indices_str}_'
+        f'{stack.content_hash}.fit')
+
     panels.append(panel)
 
   if not panels:
@@ -242,8 +249,8 @@ def process_mosaic_per_filter(context, mosaic, mode, coordinates, filter,
     print(f'### Need to place images for {len(to_place)} panels')
 
   waitables = [
-      projection.mosaic_by_coordinates.remote(p, coordinates, output_dir,
-                                              autostretch) for p in to_place
+      projection.mosaic_by_coordinates.remote(p, coordinates, autostretch)
+      for p in to_place
   ]
 
   panels = []
@@ -273,12 +280,14 @@ def process_mosaic_per_filter(context, mosaic, mode, coordinates, filter,
     # post-processed).
     output_image = merge_ops.merge_mosaic(panels, output_dir)
 
-    merged_mosaic = os.path.join(output_dir, f"mosaic_{mode}_{filter}.fit")
-    print(f'Copying final mosaic image to {merged_mosaic}')
-    shutil.copy(output_image[0], merged_mosaic)
+    content_hash = hash_list([stacks[p.stack_id].content_hash for p in panels])
+    merged_filename = f"merged_mosaic_{mode}_{mosaic.id}_{filter}_{content_hash}.fit"
+    merged_filename = os.path.join(output_dir, merged_filename)
+    print(f'Copying final mosaic image to {merged_filename}')
+    shutil.copy(output_image[0], merged_filename)
 
     key = ('mosaic_thumbnail_image', mode, mosaic.id, filter)
-    hash = file_io.hash_of_image_data(merged_mosaic)
+    hash = file_io.hash_of_image_data(merged_filename)
     ray_diskcache.set(key, hash)
 
 
@@ -291,7 +300,11 @@ def process_mosaic_per_filter(context, mosaic, mode, coordinates, filter,
 def scatter_merge_mosaics(context, mode):
   mosaics = ray.get(context.mosaics)
 
-  to_merge = [m for m in mosaics.values() if len(m.target_ids) > 1]
+  # FIXME hack
+  to_merge = [
+      m for m in mosaics.values()
+      if len(m.target_ids) > 1 and m.id == '560c5551fddcef56'
+  ]
   waitables = [merge_mosaic.remote(context, m, mode) for m in to_merge]
 
   results = []

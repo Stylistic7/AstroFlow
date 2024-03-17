@@ -7,6 +7,7 @@ import plate_solving
 class Panel:
   stack_id: str = None
   image_filename: str = None
+  placed_filename: str = None
   plate_solution: plate_solving.PlateSolution = None
   tile_indices: list[int] = None
 

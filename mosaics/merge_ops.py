@@ -36,6 +36,8 @@ def make_merge_ops(panels, output_dir):
 
     return '__'.join([join_tile_indices(p.tile_indices) for p in panels])
 
+  # TODO: Do we need to cache merged sub-results? Merging is so fast that
+  # maybe it's not necessary.
   merge_ops = []
   level = 0
   while len(panels) > 1:
@@ -54,18 +56,20 @@ def make_merge_ops(panels, output_dir):
         tile_indices = fill_template(template, i)
         if len(pair) == 1:
           new_panels.append(
-              classes.Panel(image_filename=get_panel(pair[0]).image_filename,
+              classes.Panel(image_filename=get_panel(pair[0]).placed_filename,
                             tile_indices=tile_indices))
         elif len(pair) == 2:
+          # TODO: This needs to be a unique filename, like
+          # merged_master_560c5551fddcef56_B_0_0__0_1_a98afca08fa78b11.fit
           new_image_id = os.path.join(output_dir,
                                       f'merged_{make_pair_id(pair)}.fit')
           new_panels.append(
-              classes.Panel(image_filename=new_image_id,
+              classes.Panel(placed_filename=new_image_id,
                             tile_indices=tile_indices))
           merge_ops.append(
               classes.MergeOp(
                   output_filename=new_image_id,
-                  image_filenames=[get_panel(p).image_filename for p in pair]))
+                  image_filenames=[get_panel(p).placed_filename for p in pair]))
 
     new_panels = []
     if (max_x_index - min_x_index) > (max_y_index - min_y_index):

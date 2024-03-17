@@ -40,7 +40,7 @@ def compute_viewbox(plate_solutions):
 # TODO: Provide some feedback on progress.
 # TODO: Store these on disk and read them back when unchanged.
 @ray.remote(scheduling_strategy="SPREAD")
-def mosaic_by_coordinates(panel, coordinates, output_dir, autostretch=False):
+def mosaic_by_coordinates(panel, coordinates, autostretch=False):
   print(f'mosaic_by_coordinates projecting image {panel.image_filename}')
   start = time.time()
 
@@ -135,10 +135,7 @@ def mosaic_by_coordinates(panel, coordinates, output_dir, autostretch=False):
   hdu.header['HISTORY'] = f"TrimMosaicTile.left: {trim_left}"
   hdu.header['HISTORY'] = f"TrimMosaicTile.right: {trim_left + trim_width}"
 
-  tile_indices = '_'.join([str(t) for t in panel.tile_indices])
-  panel.image_filename = os.path.join(str(output_dir),
-                                      f'placed_{tile_indices}.fit')
-  hdu.writeto(panel.image_filename, overwrite=True)
-  print(f'Wrote placed image filename {panel.image_filename}')
+  hdu.writeto(panel.placed_filename, overwrite=True)
+  print(f'Wrote placed image filename {panel.placed_filename}')
 
   return panel
