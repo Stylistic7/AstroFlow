@@ -13,11 +13,11 @@ from mosaics.identification import identify_mosiacs
 
 @ray.remote
 def run_compute_graph(context, new_filenames):
-  # TODO: Don't do identification unless there are new light frames.
-  # Masters, etc. shouldn't count.
   if new_filenames:
     context = ray.get(
         scatter_compute_image_metadata.remote(context, new_filenames))
+
+  if context.needs_regrouping:
     context = ray.get(find_components_by_cosine_similarity.remote(context))
     context = ray.get(identify_stacks.remote(context))
     context = ray.get(associate_calibration_frames.remote(context))

@@ -13,6 +13,8 @@ class Context:
   plate_solutions: dict = None
   quarantined_files: list = None
 
+  needs_regrouping: bool = False
+
   spatial_groups: list = None
 
   stacks: dict = None

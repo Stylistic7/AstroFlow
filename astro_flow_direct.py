@@ -549,6 +549,9 @@ def main(context):
   context.targets = ray.put(targets)
   context.mosaics = ray.put(mosaics)
 
+  if not stacks:
+    context.needs_regrouping = True
+
   print('Looking for files in input dirs', context.input_dirs)
   print('Looking for files in output dir', context.output_dir)
   all_frames = file_io.find_image_files(context.output_dir)
