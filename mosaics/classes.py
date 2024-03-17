@@ -5,7 +5,10 @@ import plate_solving
 
 @dataclass
 class Panel:
+  mosaic_id: str = None
   stack_id: str = None
+  content_hash: str = None
+  filter: str = None
   image_filename: str = None
   placed_filename: str = None
   plate_solution: plate_solving.PlateSolution = None

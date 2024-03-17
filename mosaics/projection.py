@@ -99,7 +99,8 @@ def mosaic_by_coordinates(panel, coordinates, autostretch=False):
     projection_map[dx, dy] = 128
 
   end = time.time()
-  print(f'Finished projecting image {panel.image_filename} time {end-start}')
+  print(f'Finished projecting image {panel.image_filename} '
+        f'time {end-start:.2f}')
   assert np.count_nonzero(projection_map), "projection failed"
 
   # TODO: This is surprisingly slow, dominating the projection for fine
@@ -120,9 +121,9 @@ def mosaic_by_coordinates(panel, coordinates, autostretch=False):
 
   output_image = trimmed_image
   end = time.time()
-  print(
-      f'mosaic_by_coordinates output_image dtype {output_image.dtype} '
-      f'min {np.min(output_image)} max {np.max(output_image)} time {end-start}')
+  print(f'mosaic_by_coordinates output_image dtype {output_image.dtype} '
+        f'min {np.min(output_image)} max {np.max(output_image)} '
+        f'time {end-start:.2f}')
 
   hdu = pyfits.PrimaryHDU(output_image)
   hdu.header['IMAGETYP'] = 'PlacedMosaic'

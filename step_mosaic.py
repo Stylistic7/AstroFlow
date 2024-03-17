@@ -83,6 +83,11 @@ from mosaics import projection
 #       Saves the images either to the cache (for mode 'subframe') or to disk
 #        (for mode 'master' and above).
 
+# The structure of the cache:
+# cache[('mosaic_thumbnail_image', mode, id, filter)] is a dict:
+#         {'merged': {content_hash, image_filename, image},
+#          'panel_0_1': {content_hash, image_filename, image}}
+
 
 def _error(center, basis_vectors):
   center_in_basis = np.dot(center, basis_vectors)
@@ -118,6 +123,7 @@ def _get_preview_panel_for_stack(stack, image_hashes, plate_solutions):
   plate_solution = plate_solutions[best_light_frame]
 
   return classes.Panel(stack_id=stack.geometric_hash,
+                       content_hash=stack.content_hash,
                        image_filename=filename,
                        plate_solution=plate_solution)
 
@@ -134,9 +140,10 @@ def _get_master_panel_for_stack(stack, image_hashes, fits_headers,
 
   filename = image_hashes[hashes[0]]
   plate_solution = plate_solutions[hashes[0]]
-  assert plate_solution
+  assert plate_solution, f"Image {filename} has plate solution {plate_solution}"
 
   return classes.Panel(stack_id=stack.geometric_hash,
+                       content_hash=stack.content_hash,
                        image_filename=filename,
                        plate_solution=plate_solution)
 
@@ -217,6 +224,8 @@ def process_mosaic_per_filter(context, mosaic, mode, coordinates, filter,
       return None
 
     print('panel', panel)
+    panel.mosaic_id = mosaic.id
+    panel.filter = filter
     panel.tile_indices = tile_indices
 
     tile_indices_str = '_'.join([str(t) for t in panel.tile_indices])
@@ -271,16 +280,24 @@ def process_mosaic_per_filter(context, mosaic, mode, coordinates, filter,
       output_image = np.maximum(output_image, image)
 
     key = ('mosaic_thumbnail_image', mode, mosaic.id, filter)
-    ray_diskcache.set(key,
-                      image_previews.array_to_png(output_image),
-                      keep_in_memory=False)
+    content_hash = hash_list([p.content_hash for p in panels])
+    image_png = image_previews.array_to_png(output_image)
+    artifact_dict = {
+        'merged': {
+            'content_hash': content_hash,
+            'image': image_png
+        }
+    }
+    ray_diskcache.or_equals(key, artifact_dict, keep_in_memory=False)
+    print(f'### Wrote key {key}')
   elif mode == 'master':
     # TODO: Maybe figure out a unified way to store the same conceptual image,
     # just at increasing levels of quality (subframes -> stacks ->
     # post-processed).
-    output_image = merge_ops.merge_mosaic(panels, output_dir)
+    output_image = merge_ops.merge_mosaic(mode, mosaic.id, panels, stacks,
+                                          output_dir)
 
-    content_hash = hash_list([stacks[p.stack_id].content_hash for p in panels])
+    content_hash = hash_list([p.content_hash for p in panels])
     merged_filename = f"merged_mosaic_{mode}_{mosaic.id}_{filter}_{content_hash}.fit"
     merged_filename = os.path.join(output_dir, merged_filename)
     print(f'Copying final mosaic image to {merged_filename}')
@@ -288,7 +305,14 @@ def process_mosaic_per_filter(context, mosaic, mode, coordinates, filter,
 
     key = ('mosaic_thumbnail_image', mode, mosaic.id, filter)
     hash = file_io.hash_of_image_data(merged_filename)
-    ray_diskcache.set(key, hash)
+    artifact_dict = {
+        'merged': {
+            'content_hash': content_hash,
+            'image_hash': hash
+        }
+    }
+    ray_diskcache.or_equals(key, artifact_dict)
+    print(f'### Wrote key {key}')
 
 
 # Function pseudocode
@@ -352,7 +376,7 @@ def merge_mosaic(context, mosaic, mode):
   def filter_artifact_exists(filter):
     stacks = stacks_for_filter(filter)
     content_hash = hash_list([s.content_hash for s in stacks])
-    key = ('mosaic_thumbnail_image', mode, id, filter)
+    key = ('mosaic_thumbnail_image', mode, mosaic.id, filter)
     artifacts = ray_diskcache.get(key, {})
     merged = artifacts.get('merged', {})
     if merged.get('content_hash', None) != content_hash:
@@ -390,6 +414,7 @@ def merge_mosaic(context, mosaic, mode):
                                              proj).exterior.coords)
   x_min, y_min, x_span, y_span = compute_viewbox(list(zip(xs, ys)))
 
+  # TODO: Put this in the UI somewhere.
   if mode == 'subframe':
     num_samples_x = 1000
   elif mode == 'master':

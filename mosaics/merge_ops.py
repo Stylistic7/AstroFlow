@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import pix
+import hashing
 from . import classes
 
 
@@ -22,7 +23,7 @@ def make_pairs(min_index, max_index, template):
   return pairs
 
 
-def make_merge_ops(panels, output_dir):
+def make_merge_ops(mode, mosaic_id, panels, stacks, output_dir):
   print(f'Panels are {panels}')
 
   def get_panel(tile_indices):
@@ -57,14 +58,21 @@ def make_merge_ops(panels, output_dir):
         if len(pair) == 1:
           new_panels.append(
               classes.Panel(image_filename=get_panel(pair[0]).placed_filename,
+                            content_hash=get_panel(pair[0]).content_hash,
                             tile_indices=tile_indices))
         elif len(pair) == 2:
           # TODO: This needs to be a unique filename, like
           # merged_master_560c5551fddcef56_B_0_0__0_1_a98afca08fa78b11.fit
-          new_image_id = os.path.join(output_dir,
-                                      f'merged_{make_pair_id(pair)}.fit')
+          # I am missing the mosaic id and the content hashes of the placed
+          # images.
+          content_hash = hashing.hash_list(
+              [get_panel(p).content_hash for p in pair])
+          new_image_id = os.path.join(
+              output_dir, f'merged_{mode}_{mosaic_id}_'
+              f'{make_pair_id(pair)}_{content_hash}.fit')
           new_panels.append(
               classes.Panel(placed_filename=new_image_id,
+                            content_hash=content_hash,
                             tile_indices=tile_indices))
           merge_ops.append(
               classes.MergeOp(
@@ -104,9 +112,9 @@ def run_photometric_mosaic(merge_op):
   return result
 
 
-def merge_mosaic(panels, output_dir):
+def merge_mosaic(mode, mosaic_id, panels, stacks, output_dir):
   print(f'Entering merge_mosaic, output_dir {output_dir}')
-  for merge_op in make_merge_ops(panels, output_dir):
+  for merge_op in make_merge_ops(mode, mosaic_id, panels, stacks, output_dir):
     output_image = run_photometric_mosaic(merge_op)
     print(f'run_photometric_mosaic returned {output_image}')
 
