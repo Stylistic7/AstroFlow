@@ -298,13 +298,13 @@ def process_mosaic_per_filter(context, mosaic, mode, coordinates, filter,
                                           output_dir)
 
     content_hash = hash_list([p.content_hash for p in panels])
-    merged_filename = f"merged_mosaic_{mode}_{mosaic.id}_{filter}_{content_hash}.fit"
-    merged_filename = os.path.join(output_dir, merged_filename)
-    print(f'Copying final mosaic image to {merged_filename}')
-    shutil.copy(output_image[0], merged_filename)
+    final_filename = f"final_{mode}_{mosaic.id}_{filter}_{content_hash}.fit"
+    final_filename = os.path.join(output_dir, final_filename)
+    print(f'Copying final mosaic image to {final_filename}')
+    shutil.copy(output_image[0], final_filename)
 
     key = ('mosaic_thumbnail_image', mode, mosaic.id, filter)
-    hash = file_io.hash_of_image_data(merged_filename)
+    hash = file_io.hash_of_image_data(final_filename)
     artifact_dict = {
         'merged': {
             'content_hash': content_hash,
@@ -355,6 +355,7 @@ def scatter_merge_mosaics(context, mode):
 @ray.remote(scheduling_strategy="SPREAD")
 def merge_mosaic(context, mosaic, mode):
   print(f'Entering merge_mosaic for mosaic {mosaic} mode {mode}')
+  image_hashes = ray.get(context.image_hashes)
   targets = ray.get(context.targets)
   stacks = ray.get(context.stacks)
 
@@ -378,13 +379,28 @@ def merge_mosaic(context, mosaic, mode):
     content_hash = hash_list([s.content_hash for s in stacks])
     key = ('mosaic_thumbnail_image', mode, mosaic.id, filter)
     artifacts = ray_diskcache.get(key, {})
-    merged = artifacts.get('merged', {})
-    if merged.get('content_hash', None) != content_hash:
-      return False
-    image_filename = merged.get('image_filename', None)
-    if image_filename and not os.path.exists(image_filename):
+
+    if len(artifacts) == 0:
+      print(f"### Filter artifact for mode {mode} mosaic {mosaic} "
+            f"filter {filter} didn't exist")
       return False
 
+    merged = artifacts.get('merged', {})
+    if merged.get('content_hash', None) != content_hash:
+      print(f'### Filter artifact for mode {mode} mosaic {mosaic} '
+            f'filter {filter} has wrong content hash')
+      return False
+
+    image_hash = merged.get('image_hash', None)
+    image_filename = image_hashes.get(image_hash, '')
+    if image_hash and not os.path.exists(image_filename):
+      print(f'### Filter artifact for mode {mode} mosaic {mosaic} '
+            f'filter {filter} has image_hash {image_hash} '
+            f'but the file {image_filename} does not exist')
+      return False
+
+    print(f'### filter artifact exists for mode {mode} mosaic {mosaic} '
+          f'filter {filter} image_hash {image_hash}')
     return True
 
   filters = ['H', 'S', 'O', 'L', 'R', 'G', 'B']

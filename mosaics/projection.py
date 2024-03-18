@@ -126,7 +126,7 @@ def mosaic_by_coordinates(panel, coordinates, autostretch=False):
         f'time {end-start:.2f}')
 
   hdu = pyfits.PrimaryHDU(output_image)
-  hdu.header['IMAGETYP'] = 'PlacedMosaic'
+  hdu.header['IMAGETYP'] = 'PlacedMosaic Master'
   hdu.header['FOCALLEN'] = float(header['FOCALLEN'])
   hdu.header['XPIXSZ'] = float(header['XPIXSZ'])
   hdu.header['YPIXSZ'] = float(header['YPIXSZ'])
