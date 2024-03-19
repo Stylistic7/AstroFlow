@@ -82,6 +82,11 @@ def index():
   return flask.render_template('index.html')
 
 
+@app.route('/photo_sphere_viewer')
+def photo_sphere_viewer():
+  return flask.render_template('photo_sphere_viewer.html')
+
+
 run_now = threading.Condition()
 
 
@@ -332,10 +337,9 @@ def mosaic_image(mosaic_id, filter):
 
 @app.route('/mosaic_thumbnail_image_for_filter/<mosaic_id>/<filter>')
 def mosaic_thumbnail_image_for_filter(mosaic_id, filter):
-  result = cache[('mosaic_thumbnail_image', 'subframe', mosaic_id)]
-  print('mosaic has filters', result.keys())
+  result = cache[('mosaic_thumbnail_image', 'subframe', mosaic_id, filter)]
   buffer = io.BytesIO()
-  buffer.write(result[filter])
+  buffer.write(result['merged']['image'])
   buffer.seek(0)
   return flask.send_file(buffer, mimetype='image/png')
 
