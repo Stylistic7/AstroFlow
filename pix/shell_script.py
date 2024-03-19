@@ -2,7 +2,7 @@ import tempfile
 import os
 import subprocess
 import time
-import concurrent.futures
+import functools
 from contextlib import nullcontext
 import os
 import uuid
@@ -16,9 +16,7 @@ from . import open_images
 # a node.
 cache = diskcache.Cache('/tmp/AstroFlow/pix_cache')
 
-executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-
-MAX_INSTANCES = os.cpu_count()
+MAX_INSTANCES = 1
 
 
 def _clear_cache():
@@ -28,65 +26,41 @@ def _clear_cache():
     cache['pixinsight_idle_slots'] = []
 
 
-def _wait_until_new_instance_is_allowed():
-  while True:
-    print('Waiting until another PixInsight process is allowed...')
-    with cache.transact():
-      pixinsight_blocking_instance = cache.get('pixinsight_blocking_instance',
-                                               default=False)
-      too_many_instances_running = len(cache.get('pixinsight_slots',
-                                                 default=[])) >= MAX_INSTANCES
-
-      if not pixinsight_blocking_instance and not too_many_instances_running:
-        return
-
-    time.sleep(5)
-
-
-# TODO: Make the slot number configurable, including in unit tests (so the
-# unit test won't disturb a simultaneous normal run).
-def _start_pixinsight_instance(blocking=False):
-  with cache.transact():
-    idle_slots = cache.get('pixinsight_idle_slots', [])
-    if idle_slots:
-      slot = idle_slots.pop()
-      print(f'Reusing idle slot {slot}')
-      cache['pixinsight_idle_slots'] = idle_slots
-
-      return slot
-
-  _wait_until_new_instance_is_allowed()
-
-  with cache.transact():
-    slots = cache.get('pixinsight_slots', default=[])
-    print(f'Running PixInsight slots:', slots)
-    slot = max(slots) + 1 if slots else 100
-    cache['pixinsight_slots'] = slots + [slot]
-    if blocking:
-      cache['pixinsight_blocking_instance'] = True
-
-  def done_callback(future):
-    with cache.transact():
-      print(f'PixInsight slot {slot} exited.')
-      slots = cache['pixinsight_slots']
-      slots.remove(slot)
-      cache['pixinsight_slots'] = slots
-      if blocking:
-        cache['pixinsight_blocking_instance'] = False
-
-  f = executor.submit(subprocess.call, [
+def _start_pixinsight_instance(slot):
+  subprocess.Popen([
       '/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight',
       f'-n={slot}', '--no-startup-check-updates', '--no-startup-gui-messages',
       '--no-splash', '--without-printer'
   ])
-  f.add_done_callback(done_callback)
 
   print(f"Started new PixInsight instance at slot {slot}")
 
-  # TODO: poll -e until the slot is actually running
-  time.sleep(15)
+  with cache.transact():
+    slots = cache.get('pixinsight_slots', default=[])
+    assert slot not in slots
+    slots.append(slot)
+    cache['pixinsight_slots'] = slots
+
+    idle_slots = cache.get('pixinsight_idle_slots', [])
+    assert slot not in idle_slots
+    idle_slots.append(slot)
+    cache['pixinsight_idle_slots'] = idle_slots
 
   return slot
+
+
+def _wait_until_slot_is_idle():
+  while True:
+    with cache.transact():
+      idle_slots = cache.get('pixinsight_idle_slots', [])
+      if idle_slots:
+        slot = idle_slots.pop()
+        print(f'Reusing idle slot {slot}')
+        cache['pixinsight_idle_slots'] = idle_slots
+        return slot
+
+    print('Waiting until a PixInsight slot is open...')
+    time.sleep(5)
 
 
 def _slot_is_idle(slot):
@@ -136,8 +110,7 @@ def run_script(tasks,
                tmp_dir_in=None,
                close_after=True,
                sleep_after=False):
-  slot = _start_pixinsight_instance(blocking)
-  print(f'PixInsight is now running in a background process in slot {slot}')
+  slot = _wait_until_slot_is_idle()
 
   with tempfile.TemporaryDirectory() if not tmp_dir_in else nullcontext(
       tmp_dir_in) as tmp_dir:
@@ -181,7 +154,14 @@ def _stop_pixinsight_instances():
     _clear_cache()
 
 
-atexit.register(_stop_pixinsight_instances)
+def start_pixinsight_instances():
+  # At startup, open N instances of PixInsight, and let them run throughout the
+  # entire runtime of AstroFlow.
+  _clear_cache()
+  for slot in range(100, 100 + MAX_INSTANCES):
+    print(f'### Starting PixInsight instance in slot {slot}')
+    _start_pixinsight_instance(slot)
 
-if __name__ == '__main__':
-  run_script([], blocking=True)
+
+# When AstroFlow exits, stop all the instances.
+atexit.register(_stop_pixinsight_instances)

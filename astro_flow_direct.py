@@ -508,7 +508,7 @@ def main(context):
 
   # TODO: This is a wart.
   # TODO: Every Ray worker node will need its own cache for this.
-  pix._clear_cache()
+  pix.start_pixinsight_instances()
 
   # TODO: Find a more general way to specify the quarantine dir, or at least
   # ask the user to confirm the dir.

@@ -1,7 +1,7 @@
 # TODO: Maybe remove this low-level interface?
 # TODO: Exposing FileList is a wart on the API.
 from .classes import ShellScriptTask, FileList, ViewIdList
-from .shell_script import _clear_cache
+from .shell_script import start_pixinsight_instances
 from .abstract_image import AbstractImage
 
 from .decorators import PixInsight
