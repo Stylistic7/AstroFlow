@@ -107,7 +107,6 @@ def _make_thumbnail(fits_headers, light_frame, light_image, bias_frame,
 
 @ray.remote
 def scatter_stack_thumbnails(context, mode):
-  fits_headers = ray.get(context.fits_headers)
   stacks = ray.get(context.stacks)
 
   def has_thumbnail(stack):

@@ -169,7 +169,7 @@ def _get_panel_for_stack(mode, stack, image_hashes, fits_headers,
 #
 # Saves the images either to the cache (for mode 'subframe') or to disk
 # (for mode 'master' and above).
-@ray.remote(scheduling_strategy="SPREAD")
+@ray.remote(scheduling_strategy="SPREAD", num_cpus=0.001)
 def process_mosaic_per_filter(context, mosaic, mode, coordinates, filter,
                               output_dir):
   print(f'Entering process_mosaic_per_filter for {mosaic.name} mode {mode} '
@@ -221,6 +221,9 @@ def process_mosaic_per_filter(context, mosaic, mode, coordinates, filter,
     # At least one panel of the give mode (e.g. subframe or master) cannot
     # be found, so the mosaic can't be merged.
     if not panel:
+      print(f'### At least one panel for mosaic {mosaic} mode {mode} '
+            f'filter {filter} could not be found, so the mosaic channel cannot '
+            f'be merged')
       return None
 
     print('panel', panel)
@@ -323,11 +326,11 @@ def process_mosaic_per_filter(context, mosaic, mode, coordinates, filter,
 @ray.remote
 def scatter_merge_mosaics(context, mode):
   mosaics = ray.get(context.mosaics)
+  shopping_cart = ray_diskcache.get('shopping_cart', [])
 
-  # FIXME hack
   to_merge = [
       m for m in mosaics.values()
-      if len(m.target_ids) > 1 and m.id == '560c5551fddcef56'
+      if ('merge_mosaic', m.id) in shopping_cart and len(m.target_ids) > 1
   ]
   waitables = [merge_mosaic.remote(context, m, mode) for m in to_merge]
 
@@ -352,7 +355,7 @@ def scatter_merge_mosaics(context, mode):
 #
 # Runs process_mosaic_per_filter for each filter present in the mosaic in
 # parallel.
-@ray.remote(scheduling_strategy="SPREAD")
+@ray.remote(scheduling_strategy="SPREAD", num_cpus=0.001)
 def merge_mosaic(context, mosaic, mode):
   print(f'Entering merge_mosaic for mosaic {mosaic} mode {mode}')
   image_hashes = ray.get(context.image_hashes)

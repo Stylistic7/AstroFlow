@@ -26,6 +26,10 @@ def make_pairs(min_index, max_index, template):
 def make_merge_ops(mode, mosaic_id, panels, stacks, output_dir):
   print(f'Panels are {panels}')
 
+  filters = set(p.filter for p in panels)
+  assert len(filters) == 1
+  filter = list(filters)[0]
+
   def get_panel(tile_indices):
     return next(p for p in panels if list(p.tile_indices) == list(tile_indices))
 
@@ -68,7 +72,7 @@ def make_merge_ops(mode, mosaic_id, panels, stacks, output_dir):
           content_hash = hashing.hash_list(
               [get_panel(p).content_hash for p in pair])
           new_image_id = os.path.join(
-              output_dir, f'merged_{mode}_{mosaic_id}_'
+              output_dir, f'merged_{mode}_{mosaic_id}_{filter}_'
               f'{make_pair_id(pair)}_{content_hash}.fit')
           new_panels.append(
               classes.Panel(placed_filename=new_image_id,
