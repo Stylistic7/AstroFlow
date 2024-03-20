@@ -61,6 +61,10 @@ const StyledInputBase = styled(InputBase)(({ theme }) => ({
 }));
 
 export default function PrimarySearchAppBar({ stacks, targets, mosaics }) {
+  console.log('stacks', stacks);
+  console.log('targets', targets);
+  console.log('mosaics', mosaics);
+
   var documents = [{
     "type": "mosaic",
     "name": "Horsehead Nebula Mosaic",
@@ -71,7 +75,7 @@ export default function PrimarySearchAppBar({ stacks, targets, mosaics }) {
     "name": "Orion Nebula Mosaic",
     "text": "Like Solr, but much smaller, and not as bright.",
     "scale": 1.43,
-  },{
+  }, {
     "type": "target",
     "name": "A Target",
     "text": "A JavaScript library for building user interfaces.",
@@ -206,7 +210,7 @@ export default function PrimarySearchAppBar({ stacks, targets, mosaics }) {
           >
             <MenuIcon />
           </IconButton>
-          <img src="/static/images/astroflow_logo_white.png" style={{height: 30}}/>
+          <img src="/static/images/astroflow_logo_white.png" style={{ height: 30 }} />
           <Search>
             <SearchIconWrapper>
               <SearchIcon />

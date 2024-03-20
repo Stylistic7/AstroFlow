@@ -34,9 +34,6 @@ function App() {
   const [targets, setTargets] = useState({});
   const [mosaics, setMosaics] = useState({});
 
-  const [constellationPolylines, setConstellationPolylines] = useState([]);
-
-
   useEffect(() => {
     const pollingCallback = async () => {
       // Your polling logic here
@@ -51,14 +48,12 @@ function App() {
       // }
 
       // TODO: Only fetch the constellation polylines ones.
-      let [c, s, t, m] = await Promise.all([
-        fetch('/constellation_polylines').then(r => r.json()),
+      let [s, t, m] = await Promise.all([
         fetch('/stacks').then(r => r.json()),
         fetch('/targets').then(r => r.json()),
         fetch('/mosaics').then(r => r.json()),
       ]);
 
-      setConstellationPolylines(c);
       setStacks(s);
       setTargets(t);
       setMosaics(m);
@@ -88,45 +83,31 @@ function App() {
     };
   }, [isPageVisible, isPollingEnabled]);
 
-  // const isEmptyObj = (obj) => {
-  //   return Object.keys(obj).length === 0 && obj.constructor === Object;
-  // };
+  const handleReady = (instance) => {
+    fetch('/constellation_polylines')
+      .then(r => r.json())
+      .then((constellation_polylines) => {
+        const markersPlugs = instance.getPlugin(MarkersPlugin);
+        if (!markersPlugs)
+          return;
 
-  // const dataIsAvailable = !isEmptyObj(stacks) && !isEmptyObj(targets) && !isEmptyObj(mosaics);
-
-  // const starmap = <Starmap
-  //   constellation_polylines={constellationPolylines}
-  //   stacks={stacks}
-  //   targets={targets}
-  //   mosaics={mosaics} />;
+        constellation_polylines.map((polyline, index) => {
+          markersPlugs.addMarker({
+            id: "polyline_" + index,
+            polyline: polyline,
+            style: {
+              stroke: 'white',
+              strokeOpacity: '0.5',
+              strokeWidth: '1px',
+            },
+          });
+        });
+      });
+  };
 
   const plugins = [
     [MarkersPlugin, {
-      markers: [
-        {
-          id: "imageLayer2",
-          image: "https://media.istockphoto.com/id/1464113334/photo/labrador-puppy.webp?s=2048x2048&w=is&k=20&c=CdRT4x1GS9T9xfxzs5YM09RUGUWkyfZY4x7T6Murn34=",
-          size: { width: 220, height: 220 },
-          position: { yaw: '130.5deg', pitch: '-0.1deg' },
-          tooltip: "Image embedded in the scene"
-        },
-        {
-          id: 'foobar',
-          polygon: [
-            [6.2208, 0.0906], [0.0443, 0.1028], [0.2322, 0.0849], [0.4531, 0.0387],
-            [0.5022, -0.0056], [0.4587, -0.0396], [0.252, -0.0453], [0.0434, -0.0575],
-            [6.1302, -0.0623], [6.0094, -0.0169], [6.0471, 0.032], [6.2208, 0.0906],
-          ],
-          style: {
-            stroke: 'red',
-            strokeWidth: '2px',
-          },
-          tooltip: {
-            content: 'Mosaic NGC1977',
-            position: 'bottom right',
-          },
-        },
-      ],
+      markers: [],
     }],
   ]
 
@@ -134,11 +115,11 @@ function App() {
     src="/static/images/ESA_Gaia_DR2_AllSky_Brightness_Colour_Cartesian_4000x2000.png"
     height={'100vh'}
     width={"100%"}
-    plugins={plugins}>
+    plugins={plugins}
+    maxFov={140}
+    onReady={handleReady}>
   </ReactPhotoSphereViewer>;
 
-
-  const fontColor = "#aaa";
 
   // TODO: Breadcrumbs should preserve the path the user took to get here,
   // but with some normalization. One example: if the user clicks on a mosaic,

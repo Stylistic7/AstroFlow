@@ -23,17 +23,17 @@ export default function Starmap({
 
 		let elements = document.elementsFromPoint(event.clientX, event.clientY);
 		let matching_items = [];
-	  elements.forEach((elt, i) => {
-	    console.log('clicked object ', elt.getAttribute("data"));
+		elements.forEach((elt, i) => {
+			console.log('clicked object ', elt.getAttribute("data"));
 
-	   	const data = elt.getAttribute("data");
-	    if (data) {
-	    	matching_items.push(data);
-	    }
-	  
-	  });
+			const data = elt.getAttribute("data");
+			if (data) {
+				matching_items.push(data);
+			}
 
-	  navigate(`/disambiguation/${matching_items.join(";")}`);
+		});
+
+		navigate(`/disambiguation/${matching_items.join(";")}`);
 	};
 
 	// TODO: Handle clicks on Stacks.
@@ -67,7 +67,7 @@ export default function Starmap({
 							<svg
 								id="starmap_svg"
 								viewBox="-3.141592653589793 -1.5707963267948966 6.283185307179586 3.141592653589793"
-								style={{pointerEvents: "auto"}}
+								style={{ pointerEvents: "auto" }}
 							>
 								<g transform="scale(1,-1)">
 									{Object.entries(targets).map(([id, target]) =>
