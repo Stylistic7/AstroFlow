@@ -50,7 +50,7 @@ export default function Starmap({
 	const handleReady = (instance) => {
 		fetch('/constellation_polylines')
 			.then(r => r.json())
-			.then((constellation_polylines) => {
+			.then(constellation_polylines => {
 				const markersPlugs = instance.getPlugin(MarkersPlugin);
 				if (!markersPlugs)
 					return;
@@ -66,6 +66,50 @@ export default function Starmap({
 						},
 					});
 				});
+			});
+
+		fetch('/stacks')
+			.then(r => r.json())
+			.then(stacks => {
+				const markersPlugs = instance.getPlugin(MarkersPlugin);
+				if (!markersPlugs)
+					return;
+
+				for (let [id, stack] of Object.entries(stacks)) {
+					if (!stack.projected_footprints) continue;
+
+					markersPlugs.addMarker({
+						id: "stack_" + id,
+						polygon: stack.projected_footprints['galactic']['coords'],
+						style: {
+							stroke: 'rgba(0, 0, 200, 0.5)',
+							strokeOpacity: '0.5',
+							strokeWidth: '2px',
+						},
+					});
+				};
+			});
+
+		fetch('/mosaics')
+			.then(r => r.json())
+			.then(mosaics => {
+				const markersPlugs = instance.getPlugin(MarkersPlugin);
+				if (!markersPlugs)
+					return;
+
+				for (let [id, mosaic] of Object.entries(mosaics)) {
+					if (!mosaic.projected_footprint) continue;
+
+					markersPlugs.addMarker({
+						id: "mosaic_" + id,
+						polygon: mosaic.projected_footprint['galactic']['coords'],
+						style: {
+							stroke: 'rgba(200, 0, 0, 0.8)',
+							strokeOpacity: '0.8',
+							strokeWidth: '4px',
+						},
+					});
+				};
 			});
 	};
 

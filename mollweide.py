@@ -1,19 +1,11 @@
 import numpy as np
-from astropy.coordinates import SkyCoord
 
 from projection import Projection
-
-
-def equatorial_to_galactic(ra, dec):
-  eq = SkyCoord(ra, dec, unit='rad')
-
-  theta = np.radians((180 - eq.galactic.l.value) % 360 - 180)
-  phi = np.radians(eq.galactic.b.value)
-
-  return theta, phi
+from galactic import equatorial_to_galactic
 
 
 class MollweideProjection(Projection):
+
   def __init__(self, lon_0=0, R=45 * np.sqrt(2)):
     self.lon_0 = lon_0
     self.R = R
@@ -46,6 +38,7 @@ class MollweideProjection(Projection):
 
 
 class MollweideGalacticProjection(Projection):
+
   def __init__(self, lon_0=0, R=45 * np.sqrt(2)):
     self.proj = MollweideProjection(lon_0, R)
 

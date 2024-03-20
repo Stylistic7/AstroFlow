@@ -6,6 +6,7 @@ from projection import compute_viewbox
 import mercator
 import sinusoidal
 import mollweide
+import galactic
 
 
 def project_footprint(polygon, projection):
@@ -17,6 +18,7 @@ def project_footprint(polygon, projection):
 
 def all_projections(polygon):
   projections = {
+      'galactic': galactic.GalacticProjection(),
       'mercator': mercator.MercatorProjection(),
       'sinusoidal': sinusoidal.SinusoidalProjection(),
       'mollweide': mollweide.MollweideProjection(),
