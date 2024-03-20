@@ -20,9 +20,6 @@ import CssBaseline from '@mui/material/CssBaseline';
 import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
 import './App.css';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { ReactPhotoSphereViewer } from 'react-photo-sphere-viewer';
-import { MarkersPlugin } from '@photo-sphere-viewer/markers-plugin';
-import "@photo-sphere-viewer/markers-plugin/index.css";
 
 function App() {
   const isPageVisible = usePageVisibility();
@@ -83,44 +80,6 @@ function App() {
     };
   }, [isPageVisible, isPollingEnabled]);
 
-  const handleReady = (instance) => {
-    fetch('/constellation_polylines')
-      .then(r => r.json())
-      .then((constellation_polylines) => {
-        const markersPlugs = instance.getPlugin(MarkersPlugin);
-        if (!markersPlugs)
-          return;
-
-        constellation_polylines.map((polyline, index) => {
-          markersPlugs.addMarker({
-            id: "polyline_" + index,
-            polyline: polyline,
-            style: {
-              stroke: 'white',
-              strokeOpacity: '0.5',
-              strokeWidth: '1px',
-            },
-          });
-        });
-      });
-  };
-
-  const plugins = [
-    [MarkersPlugin, {
-      markers: [],
-    }],
-  ]
-
-  const photo_sphere_viewer = <ReactPhotoSphereViewer
-    src="/static/images/ESA_Gaia_DR2_AllSky_Brightness_Colour_Cartesian_4000x2000.png"
-    height={'100vh'}
-    width={"100%"}
-    plugins={plugins}
-    maxFov={140}
-    onReady={handleReady}>
-  </ReactPhotoSphereViewer>;
-
-
   // TODO: Breadcrumbs should preserve the path the user took to get here,
   // but with some normalization. One example: if the user clicks on a mosaic,
   // and then on a panel, the breadcrumb should reflect that path.
@@ -135,7 +94,11 @@ function App() {
         <LeftDrawer />
         <Router>
           <Routes>
-            <Route exact path="/" element={photo_sphere_viewer} />
+            <Route exact path="/" element={
+              <Starmap
+                stacks={stacks} targets={targets} mosaics={mosaics}
+              />
+            } />
             <Route exact path="/mosaic/:mosaic_id" element={
               dataIsAvailable && <MosaicPanel
                 stacks={stacks} targets={targets} mosaics={mosaics}
