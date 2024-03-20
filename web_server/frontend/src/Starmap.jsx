@@ -14,27 +14,21 @@ export default function Starmap({
 }) {
 	const navigate = useNavigate();
 
-	// const handleClick = (event) => {
-	// 	console.log('x ' + event.clientX + ', y ' + event.clientY);
-
-	// 	let elements = document.elementsFromPoint(event.clientX, event.clientY);
-	// 	let matching_items = [];
-	// 	elements.forEach((elt, i) => {
-	// 		console.log('clicked object ', elt.getAttribute("data"));
-
-	// 		const data = elt.getAttribute("data");
-	// 		if (data) {
-	// 			matching_items.push(data);
-	// 		}
-
-	// 	});
-
-	// 	navigate(`/disambiguation/${matching_items.join(";")}`);
-	// };
-
 	const handleClick = (data: events.ClickEvent & { type: "click"; }) => {
-		console.log(data);
-	}
+		let elements = document.elementsFromPoint(data.data.clientX, data.data.clientY);
+		let matching_items = [];
+		elements.forEach((elt, i) => {
+			let id = elt.getAttribute("id");
+			// TODO: This is ugly. Is there a better way to attach arbitrary
+			// data to the SVG elements used in markers?
+			if (id && id.startsWith("psv-marker-")) {
+				id = id.substring("psv-marker-".length);
+				matching_items.push(id);
+			}
+		});
+
+		navigate(`/disambiguation/${matching_items.join(";")}`);
+	};
 
 	const copyright = <span id="starmap_copyright">
 		&copy; ESA/Gaia/DPAC; CC BY-SA 3.0 IGO. Acknowledgement: A.
@@ -44,6 +38,7 @@ export default function Starmap({
 	const plugins = [
 		[MarkersPlugin, {
 			markers: [],
+			clickEventOnMarker: true
 		}],
 	]
 
@@ -68,24 +63,24 @@ export default function Starmap({
 				});
 			});
 
-		fetch('/stacks')
+		fetch('/targets')
 			.then(r => r.json())
-			.then(stacks => {
+			.then(targets => {
 				const markersPlugs = instance.getPlugin(MarkersPlugin);
 				if (!markersPlugs)
 					return;
 
-				for (let [id, stack] of Object.entries(stacks)) {
-					if (!stack.projected_footprints) continue;
+				for (let [id, target] of Object.entries(targets)) {
+					if (!target.projected_footprint) continue;
 
 					markersPlugs.addMarker({
-						id: "stack_" + id,
-						polygon: stack.projected_footprints['galactic']['coords'],
+						id: "target," + id,
+						polygon: target.projected_footprint['galactic']['coords'],
 						style: {
-							stroke: 'rgba(0, 0, 200, 0.5)',
-							strokeOpacity: '0.5',
-							strokeWidth: '2px',
-						},
+							stroke: 'rgba(0, 0, 255, 0.7)',
+							strokeOpacity: '0.7',
+							strokeWidth: '4px',
+						}
 					});
 				};
 			});
@@ -101,13 +96,13 @@ export default function Starmap({
 					if (!mosaic.projected_footprint) continue;
 
 					markersPlugs.addMarker({
-						id: "mosaic_" + id,
+						id: "mosaic," + id,
 						polygon: mosaic.projected_footprint['galactic']['coords'],
 						style: {
-							stroke: 'rgba(200, 0, 0, 0.8)',
+							stroke: 'rgba(255, 0, 0, 0.8)',
 							strokeOpacity: '0.8',
 							strokeWidth: '4px',
-						},
+						}
 					});
 				};
 			});
@@ -118,6 +113,7 @@ export default function Starmap({
 		height={'100vh'}
 		width={"100%"}
 		plugins={plugins}
+		minFov={10}
 		maxFov={140}
 		onReady={handleReady}
 		onClick={handleClick}>
