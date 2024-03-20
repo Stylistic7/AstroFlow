@@ -20,6 +20,9 @@ import CssBaseline from '@mui/material/CssBaseline';
 import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
 import './App.css';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { ReactPhotoSphereViewer } from 'react-photo-sphere-viewer';
+import { MarkersPlugin } from '@photo-sphere-viewer/markers-plugin';
+import "@photo-sphere-viewer/markers-plugin/index.css";
 
 function App() {
   const isPageVisible = usePageVisibility();
@@ -91,11 +94,49 @@ function App() {
 
   // const dataIsAvailable = !isEmptyObj(stacks) && !isEmptyObj(targets) && !isEmptyObj(mosaics);
 
-  const starmap = <Starmap
-    constellation_polylines={constellationPolylines}
-    stacks={stacks}
-    targets={targets}
-    mosaics={mosaics} />;
+  // const starmap = <Starmap
+  //   constellation_polylines={constellationPolylines}
+  //   stacks={stacks}
+  //   targets={targets}
+  //   mosaics={mosaics} />;
+
+  const plugins = [
+    [MarkersPlugin, {
+      markers: [
+        {
+          id: "imageLayer2",
+          image: "https://media.istockphoto.com/id/1464113334/photo/labrador-puppy.webp?s=2048x2048&w=is&k=20&c=CdRT4x1GS9T9xfxzs5YM09RUGUWkyfZY4x7T6Murn34=",
+          size: { width: 220, height: 220 },
+          position: { yaw: '130.5deg', pitch: '-0.1deg' },
+          tooltip: "Image embedded in the scene"
+        },
+        {
+          id: 'foobar',
+          polygon: [
+            [6.2208, 0.0906], [0.0443, 0.1028], [0.2322, 0.0849], [0.4531, 0.0387],
+            [0.5022, -0.0056], [0.4587, -0.0396], [0.252, -0.0453], [0.0434, -0.0575],
+            [6.1302, -0.0623], [6.0094, -0.0169], [6.0471, 0.032], [6.2208, 0.0906],
+          ],
+          style: {
+            stroke: 'red',
+            strokeWidth: '2px',
+          },
+          tooltip: {
+            content: 'Mosaic NGC1977',
+            position: 'bottom right',
+          },
+        },
+      ],
+    }],
+  ]
+
+  const photo_sphere_viewer = <ReactPhotoSphereViewer
+    src="/static/images/ESA_Gaia_DR2_AllSky_Brightness_Colour_Cartesian_4000x2000.png"
+    height={'100vh'}
+    width={"100%"}
+    plugins={plugins}>
+  </ReactPhotoSphereViewer>;
+
 
   const fontColor = "#aaa";
 
@@ -113,7 +154,7 @@ function App() {
         <LeftDrawer />
         <Router>
           <Routes>
-            <Route exact path="/" element={starmap} />
+            <Route exact path="/" element={photo_sphere_viewer} />
             <Route exact path="/mosaic/:mosaic_id" element={
               dataIsAvailable && <MosaicPanel
                 stacks={stacks} targets={targets} mosaics={mosaics}
