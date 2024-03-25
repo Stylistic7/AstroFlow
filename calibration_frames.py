@@ -9,12 +9,14 @@ import clustering
 from stack import Stack, Run, FrameHash
 import stack_identification
 
+from constants import kMinFramesInStack
+
 
 def _associate(stack,
                image_type,
                fits_headers,
                stack_dependencies=None,
-               debug=False):
+               debug=True):
   if debug:
     print(f'Entering _associate for {stack} with {len(stack.runs)} runs')
     for run in stack.runs:
@@ -87,7 +89,8 @@ def _associate(stack,
         continue
 
       if debug:
-        print(f'Selected {len(cal_frames)} {image_type} frames by exposure')
+        print(f'Selected {len(cal_frames)} {image_type} frames for '
+              'exposure {exposure}')
 
     # Maybe select the calibration frames that have the same filter as the light
     # frames. If there are no such frames, end early.
@@ -105,7 +108,8 @@ def _associate(stack,
         continue
 
       if debug:
-        print(f'Selected {len(cal_frames)} {image_type} frames by filter')
+        print(f'Selected {len(cal_frames)} {image_type} frames for '
+              f'filter {filter}')
 
     # Maybe select the calibration frames that have temperatures that are from
     # the same approximate distribution as the light frames. If there are no
@@ -114,6 +118,7 @@ def _associate(stack,
       light_frame_temps = [(f, float(fits_headers[f]['CCD-TEMP']))
                            for f in light_frames
                            if 'CCD-TEMP' in fits_headers[f]]
+      mean_light_frame_temp = np.mean([x[1] for x in light_frame_temps])
       cal_frame_temps = [(f, fits_headers[f]['CCD-TEMP']) for f in cal_frames]
       cal_frames = clustering.items_in_distribution(light_frame_temps,
                                                     cal_frame_temps,
@@ -121,18 +126,19 @@ def _associate(stack,
       cal_frames = [f for f, _ in cal_frames]
       if not cal_frames:
         if debug:
-          print(
-              f'WARNING: Could not find any calibration frames '
-              f'for mean temperature {np.mean([x[1] for x in light_frame_temps])}'
-          )
+          print(f'WARNING: Could not find any calibration frames '
+                f'for mean temperature {mean_light_frame_temp:.3f} deg C')
         continue
 
       if debug:
-        print(f'Selected {len(cal_frames)} {image_type} frames by temperature')
+        print(f'Selected {len(cal_frames)} {image_type} frames by temperature '
+              f'(average {mean_light_frame_temp:.3f} deg C)')
 
     # Select the run of calibration frames that are closest in time to the
     # light frames.
     cal_runs = runs.get_runs(cal_frames, fits_headers)
+    if debug:
+      print(f'cal_runs is {cal_runs}')
     if not len(cal_runs):
       if debug:
         print(
@@ -149,6 +155,10 @@ def _associate(stack,
     # Create a new Stack containing one Run of calibration frames. If the same
     # Stack is found multiple times, it will be automatically de-duped by its
     # content hash.
+    if len(cal_frames) < kMinFramesInStack:
+      print(f'Run is too short; ignoring it')
+      continue
+
     new_run = Run(frames=[FrameHash(h) for h in cal_frames],
                   stack_dependencies=copy(stack_dependencies))
     assert None not in new_run.stack_dependencies

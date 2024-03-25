@@ -2,6 +2,8 @@ import datetime
 import pytz
 import itertools
 
+from constants import kRunMaxGap
+
 
 def run_time_delta(a, b):
   start_a, end_a = a
@@ -14,7 +16,11 @@ def run_time_delta(a, b):
 
 
 # TODO: Put the minimum stack size in the UI.
-def get_runs(frames, fits_headers, max_gap=datetime.timedelta(minutes=15)):
+# TODO: Put the max_gap in the UI.
+def get_runs(frames,
+             fits_headers,
+             max_gap=datetime.timedelta(minutes=kRunMaxGap),
+             min_size=3):
   if not frames:
     return []
   frames = sorted(frames, key=lambda f: fits_headers[f]['DATE-OBS'])
@@ -29,7 +35,8 @@ def get_runs(frames, fits_headers, max_gap=datetime.timedelta(minutes=15)):
       # Save the current run, if there is one.
       if run_start:
         assert frame_count
-        runs.append((run_start, prev_date_obs))
+        if frame_count >= min_size:
+          runs.append((run_start, prev_date_obs))
 
       # Start a new run.
       run_start = current_date_obs

@@ -15,6 +15,8 @@ import units
 import subframe_selection
 from runs import get_runs
 
+from constants import kRunMaxGap, kMinFramesInStack
+
 
 def normalize_radians(x):
   if x < 0.0:
@@ -91,22 +93,25 @@ def _new_stack(name, light_frames, fits_headers, plate_solutions):
     print(f'run {run}')
     assert len(get_runs(run.frames, fits_headers)) == 1
 
-  print('Before down-selection, len(runs)', len(runs))
   num_light_frames_before_selection = len(
       [f for run in runs for f in run.frames])
+  print(f'Before down-selection, {num_light_frames_before_selection} frames '
+        f'in {len(runs)} runs')
   criterion = subframe_selection.decode_selection_criterion(selection_criterion)
   runs = criterion.select_subframes(runs, fits_headers, plate_solutions)
-  print('After down-selection, len(runs)', len(runs))
+  num_light_frames_after_selection = len(
+      [f for run in runs for f in run.frames])
+  print(f'After down-selection, {num_light_frames_after_selection} frames '
+        f'in {len(runs)} runs')
 
   for run in runs:
     assert run.frames, f'run.frames {run.frames} was Falsey'
     print(f'run {run}')
     assert len(get_runs(run.frames, fits_headers)) == 1
 
-  num_light_frames_after_selection = len(
-      [f for run in runs for f in run.frames])
-  print(f'Selected {num_light_frames_after_selection} light frames '
-        f'from {num_light_frames_before_selection} light frames')
+  # TODO: Put this number in the UI somewhere.
+  if num_light_frames_after_selection < kMinFramesInStack:
+    return None
 
   content_hash = _compute_content_hash(runs)
   assert content_hash
@@ -162,19 +167,17 @@ def identify_stacks(context):
             date_obs = [(f, fits_headers[f]['DATE-OBS']) for f in filter_frames]
             light_frames = {}
             for run in clustering.cluster_continuous(
-                date_obs, epsilon=datetime.timedelta(minutes=15)):
+                date_obs, epsilon=datetime.timedelta(minutes=kRunMaxGap)):
               light_frames_in_run, _ = zip(*run)
 
               # TODO: This is a run of light frames with no dependencies,
               # but it is akwardly expressed here.
               light_frames[tuple(sorted(light_frames_in_run))] = set()
 
-            # TODO: Put the minimum number of frames per stack in the UI.
-            flattened = list(
-                itertools.chain.from_iterable([k for k in light_frames]))
-            if len(flattened) >= 3:
-              stacks.append(
-                  _new_stack(name, light_frames, fits_headers, plate_solutions))
+            new_stack = _new_stack(name, light_frames, fits_headers,
+                                   plate_solutions)
+            if new_stack:
+              stacks.append(new_stack)
 
   print(f'Identified {len(stacks)} stacks')
   context.stacks = ray.put(stacks)

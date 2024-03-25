@@ -94,6 +94,8 @@ def _add_xisf_metadata(filename, dest_filename, metadata):
              xisf_metadata=file_meta)
 
 
+# TODO: Include a timeout so a single bad stack (e.g. one that needs interactive
+# plate-solving help) won't derail a long-running session.
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
 def stack_files(context, stack, dest_path, metadata=None):
   print(f'Entering stack_files for {stack}')
