@@ -95,6 +95,7 @@ def scatter_compute_image_metadata(context, filenames):
       if not had_exception(r)
   })
 
+  assert not any(type(p) is str for p in plate_solutions.values())
   assert None not in image_hashes.values()
 
   context.quarantined_files = ray.put(quarantined_files)
@@ -142,6 +143,7 @@ def compute_image_metadata_ray(context, filename):
 
     if file_io.is_light_frame(header):
       result['plate_solution'] = plate_solving.solve_field(filename)
+      assert type(result['plate_solution']) is not str
     else:
       result['plate_solution'] = None
 

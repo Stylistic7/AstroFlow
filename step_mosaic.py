@@ -140,7 +140,9 @@ def _get_master_panel_for_stack(stack, image_hashes, fits_headers,
 
   filename = image_hashes[hashes[0]]
   plate_solution = plate_solutions[hashes[0]]
-  assert plate_solution, f"Image {filename} has plate solution {plate_solution}"
+  print(f'Found master hash {hashes[0]} filename {filename} '
+        f'plate_solution {plate_solution}')
+  assert plate_solution, f'Image {hashes[0]} {filename} has plate solution {plate_solution}'
 
   return classes.Panel(stack_id=stack.geometric_hash,
                        content_hash=stack.content_hash,
@@ -292,7 +294,8 @@ def process_mosaic_per_filter(context, mosaic, mode, coordinates, filter,
         }
     }
     ray_diskcache.or_equals(key, artifact_dict, keep_in_memory=False)
-    print(f'### Wrote key {key}')
+    print(f'### Wrote key {key} image min {np.min(output_image)} '
+          f'max {np.max(output_image)}')
   elif mode == 'master':
     # TODO: Maybe figure out a unified way to store the same conceptual image,
     # just at increasing levels of quality (subframes -> stacks ->

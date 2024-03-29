@@ -508,6 +508,7 @@ def main(context):
 
   # TODO: This is a wart.
   # TODO: Every Ray worker node will need its own cache for this.
+  # TODO: This doesn't start PixInsight on remote workers.
   pix.start_pixinsight_instances()
 
   # TODO: Find a more general way to specify the quarantine dir, or at least
@@ -529,6 +530,10 @@ def main(context):
   stacks = ray_diskcache.get('stacks', [])
   targets = ray_diskcache.get('targets', [])
   mosaics = ray_diskcache.get('mosaics', [])
+
+  # TODO: Add more comprehensive validation.
+  assert not any(type(p) is str for p in plate_solutions.values())
+  assert None not in image_hashes.values()
 
   print(f'Cache contained {len(quarantined_files)} '
         f'quarantined files')

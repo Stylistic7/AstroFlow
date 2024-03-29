@@ -110,8 +110,6 @@ def _solve_field(filename: Path | str,
     wcs_file = Path(dest_filename).with_suffix('.wcs')
     axy_file = Path(dest_filename).with_suffix('.axy')
     if os.path.exists(wcs_file) and os.path.exists(axy_file):
-      with open(wcs_file, 'rb') as f:
-        wcs_contents = f.read()
       fits = pyfits.open(wcs_file)
       header = simplify_header(fits[0].header)
       try:
@@ -125,6 +123,7 @@ def _solve_field(filename: Path | str,
                              num_stars=num_stars)
         print(f'### Sucessfully plate-solved file {filename}, '
               f'has {num_stars} stars')
+        print(f'### soln is {soln}')
         return soln
       except Exception as e:
         print(f'Could not plate solve file {filename} due to exception')
@@ -134,7 +133,9 @@ def _solve_field(filename: Path | str,
         fits.close()
     else:
       # TODO: Emit warnings through Metaflow's reporting system.
-      # print(f'Could not plate-solve file {filename}')
+      print(f'Could not plate-solve file {filename}')
+      print(ret.stdout)
+      print(ret.stderr)
       return None
 
 
@@ -145,33 +146,39 @@ def solve_field(filename):
   assert filename
 
   # TODO: These options must be exposed to the user.
-  trial_arguments = [[
-      "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
-      "--scale-low", "1.0", "--scale-high", "10.0", "--scale-units", "degwidth",
-      "--guess-scale", "--downsample", "16", "--tweak-order", "4",
-      "--crpix-center", "--no-background-subtraction", "--depth", "10",
-      "--cpulimit", "5"
-  ],
-                     [
-                         "solve-field", "--overwrite", "--no-plots",
-                         "--new-fits", "none", "--scale-low", "0.5",
-                         "--scale-high", "10.0", "--scale-units", "degwidth",
-                         "--guess-scale", "--downsample", "16", "--tweak-order",
-                         "4", "--crpix-center", "--no-background-subtraction",
-                         "--depth", "100", "--cpulimit", "60"
-                     ],
-                     [
-                         "solve-field", "--overwrite", "--no-plots",
-                         "--new-fits", "none", "--downsample", "16",
-                         "--tweak-order", "4", "--crpix-center",
-                         "--no-background-subtraction", "--cpulimit", "120"
-                     ],
-                     [
-                         "solve-field", "--overwrite", "--no-plots",
-                         "--new-fits", "none", "--downsample", "16",
-                         "--tweak-order", "4", "--crpix-center", "--cpulimit",
-                         "120"
-                     ]]
+  trial_arguments = [
+      [
+          "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
+          "--scale-low", "1.0", "--scale-high", "10.0", "--scale-units",
+          "degwidth", "--guess-scale", "--downsample", "16", "--tweak-order",
+          "4", "--crpix-center", "--no-background-subtraction", "--depth", "10",
+          "--cpulimit", "5"
+      ],
+      [
+          "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
+          "--scale-low", "0.5", "--scale-high", "10.0", "--scale-units",
+          "degwidth", "--guess-scale", "--downsample", "16", "--tweak-order",
+          "4", "--crpix-center", "--no-background-subtraction", "--depth",
+          "100", "--cpulimit", "60"
+      ],
+      [
+          "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
+          "--downsample", "16", "--tweak-order", "4", "--crpix-center",
+          "--no-background-subtraction", "--cpulimit", "120"
+      ],
+      [
+          "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
+          "--downsample", "16", "--tweak-order", "4", "--crpix-center",
+          "--cpulimit", "120"
+      ],
+      [
+          "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
+          "--scale-low", "0.5", "--scale-high", "10.0", "--scale-units",
+          "degwidth", "--guess-scale", "--downsample", "4", "--tweak-order",
+          "4", "--crpix-center", "--no-background-subtraction", "--depth",
+          "500", "--cpulimit", "300"
+      ]
+  ]
 
   start_time = time.time()
   for i, arguments in enumerate(trial_arguments):
