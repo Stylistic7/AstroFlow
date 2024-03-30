@@ -53,7 +53,10 @@ def gather(results):
 
 
 @ray.remote
-def mock_produce_file(output_dir, filename, *args):
+def mock_produce_file(context, output_dir, filename, *args):
+  print('context', context)
+  assert context['foo'] == 'bar'
+
   filename = os.path.join(output_dir, filename)
 
   # No work to do.
@@ -65,7 +68,10 @@ def mock_produce_file(output_dir, filename, *args):
 
 
 @ray.remote
-def mock_merge_files(output_dir, filenames):
+def mock_merge_files(context, output_dir, filenames):
+  print('context', context)
+  assert context['foo'] == 'bar'
+
   # No work to do.
   if all(f == None for f in filenames):
     return None
@@ -143,6 +149,8 @@ class TestDependencyGraph(unittest.TestCase):
 
   def test_merge_files(self):
     with tempfile.TemporaryDirectory() as tmp_dir:
+      context = {'foo': 'bar'}
+
       graph = {
           (mock_merge_files, tmp_dir): [
               (mock_produce_file, tmp_dir, f'file_{i}.txt') for i in range(7)
@@ -151,14 +159,14 @@ class TestDependencyGraph(unittest.TestCase):
 
       # None of the files exist on the first run, so the `mock_merge_files`
       # function should do work, and return the filename it wrote.
-      results = run_graph(graph)
+      results = run_graph(graph, context)
       self.assertEqual(len(os.listdir(tmp_dir)), 8)
       self.assertEqual(results[(mock_merge_files, tmp_dir)],
                        os.path.join(tmp_dir, 'merged.txt'))
 
       # On the second run, all of the files exist, so the `mock_merge_files`
       # function should have no work to do, and return None.
-      results = run_graph(graph)
+      results = run_graph(graph, context)
       self.assertEqual(len(os.listdir(tmp_dir)), 8)
       self.assertEqual(results[(mock_merge_files, tmp_dir)], None)
 

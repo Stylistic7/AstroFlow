@@ -45,7 +45,7 @@ def _unpack_node(node):
     return (node, FromAncestors)
 
 
-def run_graph(graph):
+def run_graph(graph, context=None):
   ts = graphlib.TopologicalSorter(graph)
   ts.prepare()
 
@@ -69,11 +69,18 @@ def run_graph(graph):
       return values
 
     def run(node):
+      # TODO: Clean this up.
       task, *args = _unpack_node(node)
       if args == [FromAncestors]:
-        return task.remote(ancestor_results(node))
+        if context is not None:
+          return task.remote(context, ancestor_results(node))
+        else:
+          return task.remote(ancestor_results(node))
       else:
-        return task.remote(*args, ancestor_results(node))
+        if context is not None:
+          return task.remote(context, *args, ancestor_results(node))
+        else:
+          return task.remote(*args, ancestor_results(node))
 
     ref_to_node = {run(node): node for node in to_run}
     remaining_refs = list(ref_to_node.keys())
@@ -90,7 +97,7 @@ def run_graph(graph):
         if type(result) is Graph:
           # TODO: This blocks the parent graph; it should run in parallel
           # with any other runnable tasks in the parent.
-          subgraph_result = run_graph(result)
+          subgraph_result = run_graph(result, context)
           results[node] = ResultDict(subgraph_result)
           ts.done(node)
         else:
