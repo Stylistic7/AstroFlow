@@ -69,11 +69,11 @@ def run_graph(graph):
       return values
 
     def run(node):
-      task, arg = _unpack_node(node)
-      if arg == FromAncestors:
+      task, *args = _unpack_node(node)
+      if args == [FromAncestors]:
         return task.remote(ancestor_results(node))
       else:
-        return task.remote(arg, ancestor_results(node))
+        return task.remote(*args, ancestor_results(node))
 
     ref_to_node = {run(node): node for node in to_run}
     remaining_refs = list(ref_to_node.keys())

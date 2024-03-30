@@ -1,7 +1,9 @@
 import ray_local
 
+import os
 import unittest
 import ray
+import tempfile
 
 from cache import cache
 from new_dependency_graph import Graph, run_graph
@@ -48,6 +50,29 @@ def process(item, *args):
 @ray.remote
 def gather(results):
   return sum(results)
+
+
+@ray.remote
+def mock_produce_file(output_dir, filename, *args):
+  filename = os.path.join(output_dir, filename)
+
+  # No work to do.
+  if os.path.exists(filename):
+    return None
+
+  open(filename, 'w').write('foo')
+  return filename
+
+
+@ray.remote
+def mock_merge_files(output_dir, filenames):
+  # No work to do.
+  if all(f == None for f in filenames):
+    return None
+
+  merged_filename = os.path.join(output_dir, 'merged.txt')
+  open(merged_filename, 'w').write(str(filenames))
+  return merged_filename
 
 
 class TestDependencyGraph(unittest.TestCase):
@@ -115,6 +140,27 @@ class TestDependencyGraph(unittest.TestCase):
     results = run_graph(graph)
 
     self.assertEqual(results[scatter][gather], 21)
+
+  def test_merge_files(self):
+    with tempfile.TemporaryDirectory() as tmp_dir:
+      graph = {
+          (mock_merge_files, tmp_dir): [
+              (mock_produce_file, tmp_dir, f'file_{i}.txt') for i in range(7)
+          ]
+      }
+
+      # None of the files exist on the first run, so the `mock_merge_files`
+      # function should do work, and return the filename it wrote.
+      results = run_graph(graph)
+      self.assertEqual(len(os.listdir(tmp_dir)), 8)
+      self.assertEqual(results[(mock_merge_files, tmp_dir)],
+                       os.path.join(tmp_dir, 'merged.txt'))
+
+      # On the second run, all of the files exist, so the `mock_merge_files`
+      # function should have no work to do, and return None.
+      results = run_graph(graph)
+      self.assertEqual(len(os.listdir(tmp_dir)), 8)
+      self.assertEqual(results[(mock_merge_files, tmp_dir)], None)
 
 
 if __name__ == '__main__':
