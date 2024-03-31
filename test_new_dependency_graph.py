@@ -11,13 +11,11 @@ from new_dependency_graph import Graph, run_graph
 
 @ray.remote
 def my_remote_task(arg, *args):
-  print('running remote task', arg)
   return arg
 
 
 @ray.remote(resources={'diskcache': 0.001})
 def my_local_task(arg, *args):
-  print('running local task', arg)
   return arg
 
 
@@ -65,6 +63,25 @@ def gather(results):
 
 
 @ray.remote
+def scatter_with_context(context, *args):
+  context['processed'] = []
+  return context, Graph(
+      {gather_with_context: [(process_with_context, i) for i in range(7)]})
+
+
+@ray.remote
+def process_with_context(context, item, *args):
+  return context, item
+
+
+@ray.remote
+def gather_with_context(context, results):
+  context['processed'].extend(results)
+  context['sum'] = sum(results)
+  return context, context['sum']
+
+
+@ray.remote
 def mock_produce_file(output_dir, filename, *args):
   filename = os.path.join(output_dir, filename)
 
@@ -85,6 +102,11 @@ def mock_merge_files(output_dir, filenames):
   merged_filename = os.path.join(output_dir, 'merged.txt')
   open(merged_filename, 'w').write(str(filenames))
   return merged_filename
+
+
+@ray.remote
+def fn_with_multiple_inputs(a, b, c, *args):
+  return a + b + c
 
 
 class TestDependencyGraph(unittest.TestCase):
@@ -161,9 +183,26 @@ class TestDependencyGraph(unittest.TestCase):
     context = {'foo': 2, 'bar': 3}
 
     context, results = run_graph(graph, context)
+
     self.assertEqual(context, {'foo': 3, 'bar': 4})
     self.assertEqual(results[increment_foo], 3)
     self.assertEqual(results[increment_bar], 4)
+
+  def test_dynamic_graph_with_context(self):
+    graph = {scatter_with_context: {}}
+    context = {}
+
+    context, results = run_graph(graph, context)
+
+    self.assertEqual(results[scatter_with_context][gather_with_context], 21)
+    self.assertEqual(sorted(context['processed']), [0, 1, 2, 3, 4, 5, 6])
+    self.assertEqual(context['sum'], 21)
+
+  def test_multiple_inputs(self):
+    task = (fn_with_multiple_inputs, 1, 2, 3)
+    graph = {task: {}}
+    results = run_graph(graph)
+    self.assertEqual(results[task], 6)
 
   def test_merge_files(self):
     with tempfile.TemporaryDirectory() as tmp_dir:

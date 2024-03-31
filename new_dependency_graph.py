@@ -12,26 +12,22 @@ class ResultDict(dict):
 
   def __getitem__(self, input):
     if type(input) is tuple:
-      key, input_arg = input
+      key, input_args = input
     else:
-      key, input_arg = input, None
+      key, input_args = input, []
 
     if type(key) is not ray.remote_function.RemoteFunction:
       return self.get(key)
 
     for node, result in self.items():
-      task, arg = _unpack_node(node)
+      task, *args = _unpack_node(node)
       if type(task) is not ray.remote_function.RemoteFunction:
         continue
 
       if (task._function.__module__ == key._function.__module__) and (
           task._function.__name__
-          == key._function.__name__) and (not input_arg or arg == input_arg):
+          == key._function.__name__) and (not input_args or args == input_args):
         return result
-
-
-class FromAncestors:
-  pass
 
 
 class Graph(dict):
@@ -42,7 +38,7 @@ def _unpack_node(node):
   if type(node) is tuple:
     return node
   else:
-    return (node, FromAncestors)
+    return (node,)
 
 
 def run_graph(graph, context=None):
@@ -69,20 +65,16 @@ def run_graph(graph, context=None):
       return values
 
     def run(node):
-      # TODO: Clean this up.
       task, *args = _unpack_node(node)
-      print(f'Running task {task._function.__name__} with args {args} '
-            f'and context {context}')
-      if args == [FromAncestors]:
-        if context is not None:
-          return task.remote(context, ancestor_results(node))
-        else:
-          return task.remote(ancestor_results(node))
-      else:
-        if context is not None:
-          return task.remote(context, *args, ancestor_results(node))
-        else:
-          return task.remote(*args, ancestor_results(node))
+
+      full_args = []
+      if context is not None:
+        full_args.append(context)
+
+      full_args.extend(args)
+      full_args.append(ancestor_results(node))
+
+      return task.remote(*full_args)
 
     ref_to_node = {run(node): node for node in to_run}
     remaining_refs = list(ref_to_node.keys())
@@ -102,7 +94,11 @@ def run_graph(graph, context=None):
         if type(result) is Graph:
           # TODO: This blocks the parent graph; it should run in parallel
           # with any other runnable tasks in the parent.
-          subgraph_result = run_graph(result, context)
+          if context is not None:
+            context, subgraph_result = run_graph(result, context)
+          else:
+            subgraph_result = run_graph(result)
+
           results[node] = ResultDict(subgraph_result)
           ts.done(node)
         else:
