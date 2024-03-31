@@ -71,6 +71,8 @@ def run_graph(graph, context=None):
     def run(node):
       # TODO: Clean this up.
       task, *args = _unpack_node(node)
+      print(f'Running task {task._function.__name__} with args {args} '
+            f'and context {context}')
       if args == [FromAncestors]:
         if context is not None:
           return task.remote(context, ancestor_results(node))
@@ -90,7 +92,10 @@ def run_graph(graph, context=None):
 
       for ref in ready_refs:
         node = ref_to_node[ref]
-        result = ray.get(ref)
+        if context is not None:
+          context, result = ray.get(ref)
+        else:
+          result = ray.get(ref)
 
         # There are two possibilities here: the task can return a result,
         # or a (dynamically-generated) Graph to run as a sub-graph.
@@ -103,5 +108,8 @@ def run_graph(graph, context=None):
         else:
           results[node] = result
           ts.done(node)
+
+  if context is not None:
+    return context, results
 
   return results

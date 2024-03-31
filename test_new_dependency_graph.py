@@ -38,6 +38,18 @@ def my_later_task(ancestor_result):
 
 
 @ray.remote
+def increment_foo(context, *args):
+  context['foo'] += 1
+  return context, context['foo']
+
+
+@ray.remote
+def increment_bar(context, *args):
+  context['bar'] += 1
+  return context, context['bar']
+
+
+@ray.remote
 def scatter(*args):
   return Graph({gather: [(process, i) for i in range(7)]})
 
@@ -53,10 +65,7 @@ def gather(results):
 
 
 @ray.remote
-def mock_produce_file(context, output_dir, filename, *args):
-  print('context', context)
-  assert context['foo'] == 'bar'
-
+def mock_produce_file(output_dir, filename, *args):
   filename = os.path.join(output_dir, filename)
 
   # No work to do.
@@ -68,10 +77,7 @@ def mock_produce_file(context, output_dir, filename, *args):
 
 
 @ray.remote
-def mock_merge_files(context, output_dir, filenames):
-  print('context', context)
-  assert context['foo'] == 'bar'
-
+def mock_merge_files(output_dir, filenames):
   # No work to do.
   if all(f == None for f in filenames):
     return None
@@ -147,10 +153,20 @@ class TestDependencyGraph(unittest.TestCase):
 
     self.assertEqual(results[scatter][gather], 21)
 
+  def test_mutable_context(self):
+    A = increment_foo
+    B = increment_bar
+
+    graph = {B: {A}}
+    context = {'foo': 2, 'bar': 3}
+
+    context, results = run_graph(graph, context)
+    self.assertEqual(context, {'foo': 3, 'bar': 4})
+    self.assertEqual(results[increment_foo], 3)
+    self.assertEqual(results[increment_bar], 4)
+
   def test_merge_files(self):
     with tempfile.TemporaryDirectory() as tmp_dir:
-      context = {'foo': 'bar'}
-
       graph = {
           (mock_merge_files, tmp_dir): [
               (mock_produce_file, tmp_dir, f'file_{i}.txt') for i in range(7)
@@ -159,14 +175,14 @@ class TestDependencyGraph(unittest.TestCase):
 
       # None of the files exist on the first run, so the `mock_merge_files`
       # function should do work, and return the filename it wrote.
-      results = run_graph(graph, context)
+      results = run_graph(graph)
       self.assertEqual(len(os.listdir(tmp_dir)), 8)
       self.assertEqual(results[(mock_merge_files, tmp_dir)],
                        os.path.join(tmp_dir, 'merged.txt'))
 
       # On the second run, all of the files exist, so the `mock_merge_files`
       # function should have no work to do, and return None.
-      results = run_graph(graph, context)
+      results = run_graph(graph)
       self.assertEqual(len(os.listdir(tmp_dir)), 8)
       self.assertEqual(results[(mock_merge_files, tmp_dir)], None)
 
