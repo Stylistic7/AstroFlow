@@ -13,7 +13,8 @@ import autorun_log_analysis
 import file_io
 import ray_diskcache
 from context import Context
-from compute_graph import run_compute_graph
+import compute_graph
+from new_dependency_graph import run_graph
 
 # TODO: Prove that local changes in the Python get propagated to remote nodes
 # even without pushing to git..
@@ -503,18 +504,9 @@ def get_new_filenames(filenames, context):
   return list(set(filenames) - set(known_files) - set(quarantined_files))
 
 
-def main(context):
-  log.info('Starting AstroFlow')
-
-  # TODO: This is a wart.
-  # TODO: Every Ray worker node will need its own cache for this.
-  # TODO: This doesn't start PixInsight on remote workers.
-  pix.start_pixinsight_instances()
-
-  # TODO: Find a more general way to specify the quarantine dir, or at least
-  # ask the user to confirm the dir.
-  quarantine_dir = os.path.join(context.input_dirs[0],
-                                'Bad') if context.quarantine else None
+def populate_context(context):
+  context.cosine_similarity_threshold = 0.99999
+  context.min_component_members = 3
 
   # TODO: Don't just use the first input directory.
   if context.download:
@@ -557,13 +549,31 @@ def main(context):
   if not stacks:
     context.needs_regrouping = True
 
+  return context
+
+
+def main(context):
+  log.info('Starting AstroFlow')
+
+  # TODO: This is a wart.
+  # TODO: Every Ray worker node will need its own cache for this.
+  # TODO: This doesn't start PixInsight on remote workers.
+  pix.start_pixinsight_instances()
+
+  # TODO: Find a more general way to specify the quarantine dir, or at least
+  # ask the user to confirm the dir.
+  quarantine_dir = os.path.join(context.input_dirs[0],
+                                'Bad') if context.quarantine else None
+
+  context = populate_context(context)
+
   print('Looking for files in input dirs', context.input_dirs)
   print('Looking for files in output dir', context.output_dir)
   all_frames = file_io.find_image_files(context.output_dir)
   for input_dir in context.input_dirs:
     all_frames.extend(file_io.find_image_files(input_dir))
 
-  new_filenames = get_new_filenames(all_frames, context)
+  new_filenames = tuple(get_new_filenames(all_frames, context))
   print(f'Importing {len(new_filenames)} files')
 
   # print(f'Iterating over {len(mosaics)} mosaics')
@@ -601,8 +611,20 @@ def main(context):
 
   # print(f'Created {len(toplevel_tasks)} toplevel tasks')
 
-  print('Starting execution')
-  context = ray.get(run_compute_graph.remote(context, new_filenames))
+  print('Starting execution of import_new_files_graph')
+  graph = compute_graph.import_new_files_graph(new_filenames)
+  context, results = run_graph(graph, context)
+
+  print('### len(context.image_hashes)', len(ray.get(context.image_hashes)))
+  print('### len(context.plate_solutions)',
+        len(ray.get(context.plate_solutions)))
+  print('### len(context.fits_headers)', len(ray.get(context.fits_headers)))
+
+  # if context.needs_regrouping:
+  if True:
+    print('Starting execution of regroup_graph')
+    graph = compute_graph.regroup_graph()
+    context, results = run_graph(graph, context)
 
   print('### Compute graph is done! context is', context)
 

@@ -123,7 +123,6 @@ def _solve_field(filename: Path | str,
                              num_stars=num_stars)
         print(f'### Sucessfully plate-solved file {filename}, '
               f'has {num_stars} stars')
-        print(f'### soln is {soln}')
         return soln
       except Exception as e:
         print(f'Could not plate solve file {filename} due to exception')
@@ -134,8 +133,6 @@ def _solve_field(filename: Path | str,
     else:
       # TODO: Emit warnings through Metaflow's reporting system.
       print(f'Could not plate-solve file {filename}')
-      print(ret.stdout)
-      print(ret.stderr)
       return None
 
 

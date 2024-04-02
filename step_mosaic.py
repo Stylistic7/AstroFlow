@@ -190,6 +190,9 @@ def process_mosaic_per_filter(context, mosaic, mode, coordinates, filter,
   #   exist on disk, e.g. this filename:
   #     placed_{mode}_{id}_{filter}_{tile_indices}_{content_hash}.fit on disk
   def panel_artifact_exists(panel):
+    if panel.placed_filename and os.path.exists(panel.placed_filename):
+      return True
+
     stack = next(
         (s for s in stacks.values()
          if s.filter == filter and s.geometric_hash in target.stack_ids), None)
@@ -256,9 +259,8 @@ def process_mosaic_per_filter(context, mosaic, mode, coordinates, filter,
   to_place = [p for p in panels if not panel_artifact_exists(p)]
 
   if not to_place:
-    print('### All panels for mosaic {mosaic.name} filter {filter} '
+    print(f'### All panels for mosaic {mosaic.name} filter {filter} '
           f'are up-to-date')
-    return
   else:
     print(f'### Need to place images for {len(to_place)} panels')
 
@@ -300,6 +302,9 @@ def process_mosaic_per_filter(context, mosaic, mode, coordinates, filter,
     # TODO: Maybe figure out a unified way to store the same conceptual image,
     # just at increasing levels of quality (subframes -> stacks ->
     # post-processed).
+    #
+    # TODO: This merge op sometimes fails, and it means we lose track of all the
+    # placed images.
     output_image = merge_ops.merge_mosaic(mode, mosaic.id, panels, stacks,
                                           output_dir)
 

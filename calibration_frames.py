@@ -225,4 +225,4 @@ def associate_calibration_frames(context):
 
   ray_diskcache.set('stacks', stacks)
   context.stacks = ray.put(stacks)
-  return context
+  return context, None

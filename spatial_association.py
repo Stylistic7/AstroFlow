@@ -103,8 +103,7 @@ def _make_dict_from_groups(hashes, values, comparison_fn, plate_solutions,
 
 
 @ray.remote
-def find_components_by_cosine_similarity(
-    context, threshold=0.99999, min_component_members=MIN_COMPONENT_MEMBERS):
+def find_components_by_cosine_similarity(context):
   print('find_components_by_cosine_similarity context is', context)
 
   image_hashes = ray.get(context.image_hashes)
@@ -134,11 +133,11 @@ def find_components_by_cosine_similarity(
   }
 
   def comparison_fn(a, b):
-    return np.dot(a, b) > threshold
+    return np.dot(a, b) > context.cosine_similarity_threshold
 
   spatial_groups = _make_dict_from_groups(light_frames, centroids,
                                           comparison_fn, plate_solutions,
-                                          min_component_members)
+                                          context.min_component_members)
 
   context.spatial_groups = ray.put(spatial_groups)
-  return context
+  return context, None

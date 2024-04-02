@@ -136,6 +136,7 @@ def mosaic_by_coordinates(panel, coordinates, autostretch=False):
   hdu.header['HISTORY'] = f"TrimMosaicTile.left: {trim_left}"
   hdu.header['HISTORY'] = f"TrimMosaicTile.right: {trim_left + trim_width}"
 
+  # TODO: Is this placed_filename actually checked anywhere?
   hdu.writeto(panel.placed_filename, overwrite=True)
   print(f'Wrote placed image filename {panel.placed_filename}')
 

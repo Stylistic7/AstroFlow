@@ -76,4 +76,4 @@ def group_stacks_into_targets(context):
   ray_diskcache.set('targets', targets)
 
   context.targets = ray.put(targets)
-  return context
+  return context, None

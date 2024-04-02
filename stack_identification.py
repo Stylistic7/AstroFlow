@@ -181,4 +181,4 @@ def identify_stacks(context):
 
   print(f'Identified {len(stacks)} stacks')
   context.stacks = ray.put(stacks)
-  return context
+  return context, None

@@ -20,3 +20,6 @@ class Context:
   stacks: dict = None
   targets: dict = None
   mosaics: dict = None
+
+  cosine_similarity_threshold = None
+  min_component_members = None
