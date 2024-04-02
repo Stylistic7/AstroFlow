@@ -6,7 +6,7 @@ import ray
 import tempfile
 
 from cache import cache
-from new_dependency_graph import Graph, run_graph
+from new_dependency_graph import Graph, ResultDict, run_graph, make_graph_from_list
 
 
 @ray.remote
@@ -26,13 +26,18 @@ def my_task_with_global(arg):
 
 
 @ray.remote
-def my_first_task(*args):
+def my_first_task():
   return 1
 
 
 @ray.remote
 def my_later_task(ancestor_result):
   return ancestor_result + 1
+
+
+@ray.remote
+def my_last_task(ancestor_result):
+  return ancestor_result + 3
 
 
 @ray.remote
@@ -48,7 +53,7 @@ def increment_bar(context):
 
 
 @ray.remote
-def scatter(*args):
+def scatter():
   return Graph({gather: [(process, i) for i in range(7)]})
 
 
@@ -64,9 +69,11 @@ def gather(results):
 
 @ray.remote
 def scatter_with_context(context):
+  s = context.get('starting_value', 0)
   context['processed'] = []
-  return context, Graph(
-      {gather_with_context: [(process_with_context, i) for i in range(7)]})
+  return context, Graph({
+      gather_with_context: [(process_with_context, i) for i in range(s, s + 7)]
+  })
 
 
 @ray.remote
@@ -107,6 +114,39 @@ def mock_merge_files(output_dir, filenames):
 @ray.remote
 def fn_with_multiple_inputs(a, b, c):
   return a + b + c
+
+
+@ray.remote
+def maybe_run_dynamic_graph(should_run):
+  if should_run:
+    return Graph({gather: [(process, i) for i in range(7)]})
+  else:
+    return {}
+
+
+@ray.remote
+def initial_task(context):
+  return context, None
+
+
+@ray.remote
+def start_parallel_scatter(context, starting_value):
+  context['starting_value'] = starting_value
+  return context, Graph({scatter_with_context: {}})
+
+
+def print_results(results, indent=0):
+  for node, result in results.items():
+    if type(node) is tuple:
+      task, *args = node
+    else:
+      task, args = node, []
+
+    if type(result) is not ResultDict:
+      print(f'{" " * indent}{task._function.__name__} {args}: {result}')
+    else:
+      print(f'{" " * indent}{task._function.__name__} {args}:')
+      print_results(result, indent + 2)
 
 
 class TestDependencyGraph(unittest.TestCase):
@@ -169,6 +209,12 @@ class TestDependencyGraph(unittest.TestCase):
     self.assertEqual(results[A], 1)
     self.assertEqual(results[B], 2)
 
+  def test_list_of_tasks(self):
+    graph = make_graph_from_list([my_first_task, my_later_task, my_last_task])
+
+    results = run_graph(graph)
+    self.assertEqual(results[my_last_task], 5)
+
   def test_dynamic_subgraph(self):
     graph = {scatter: {}}
     results = run_graph(graph)
@@ -197,6 +243,36 @@ class TestDependencyGraph(unittest.TestCase):
     self.assertEqual(results[scatter_with_context][gather_with_context], 21)
     self.assertEqual(sorted(context['processed']), [0, 1, 2, 3, 4, 5, 6])
     self.assertEqual(context['sum'], 21)
+
+  def test_parallel_dynamic_graphs_with_context(self):
+    # This test starts two scatter operations with different values stored in
+    # the context object in each operation.
+    graph = {
+        initial_task: {},
+        (start_parallel_scatter, 100): {initial_task},
+        (start_parallel_scatter, 200): {initial_task}
+    }
+
+    context = {}
+    context, results = run_graph(graph, context)
+
+    self.assertEqual(
+        results[(start_parallel_scatter,
+                 100)][scatter_with_context][gather_with_context], 721)
+    self.assertEqual(
+        results[(start_parallel_scatter,
+                 200)][scatter_with_context][gather_with_context], 1421)
+
+  def test_conditional_dynamic_graph(self):
+    dynamic_graph_task = (maybe_run_dynamic_graph, True)
+    graph = {dynamic_graph_task: {}}
+    results = run_graph(graph)
+    self.assertEqual(results[dynamic_graph_task][gather], 21)
+
+    dynamic_graph_task = (maybe_run_dynamic_graph, False)
+    graph = {dynamic_graph_task: {}}
+    results = run_graph(graph)
+    self.assertEqual(results[dynamic_graph_task], {})
 
   def test_multiple_inputs(self):
     task = (fn_with_multiple_inputs, 1, 2, 3)

@@ -42,6 +42,20 @@ def _unpack_node(node):
     return (node,)
 
 
+def make_graph_from_list(tasks):
+  graph = {}
+  prev_task = None
+  for task in tasks:
+    if prev_task:
+      graph[task] = {prev_task}
+    else:
+      graph[task] = {}
+
+    prev_task = task
+
+  return graph
+
+
 def run_graph(graph, context=None):
   ts = graphlib.TopologicalSorter(graph)
   ts.prepare()
