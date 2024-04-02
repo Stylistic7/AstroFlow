@@ -1,5 +1,6 @@
 import graphlib
 import ray
+import inspect
 
 
 class ResultDict(dict):
@@ -56,9 +57,6 @@ def run_graph(graph, context=None):
       # TODO: What happens to tasks that failed or didn't run?
       values = [results[node] for node in graph.get(node, [])]
 
-      if len(values) == 0:
-        return None
-
       if len(values) == 1:
         return values[0]
 
@@ -72,7 +70,10 @@ def run_graph(graph, context=None):
         full_args.append(context)
 
       full_args.extend(args)
-      full_args.append(ancestor_results(node))
+
+      sig = inspect.signature(task._function)
+      if len(sig.parameters) > len(full_args):
+        full_args.append(ancestor_results(node))
 
       return task.remote(*full_args)
 

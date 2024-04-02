@@ -10,17 +10,17 @@ from new_dependency_graph import Graph, run_graph
 
 
 @ray.remote
-def my_remote_task(arg, *args):
+def my_remote_task(arg):
   return arg
 
 
 @ray.remote(resources={'diskcache': 0.001})
-def my_local_task(arg, *args):
+def my_local_task(arg):
   return arg
 
 
 @ray.remote(resources={'diskcache': 0.001})
-def my_task_with_global(arg, *args):
+def my_task_with_global(arg):
   cache['foo'] = cache.get('foo', 0) + 1
   return arg
 
@@ -36,13 +36,13 @@ def my_later_task(ancestor_result):
 
 
 @ray.remote
-def increment_foo(context, *args):
+def increment_foo(context):
   context['foo'] += 1
   return context, context['foo']
 
 
 @ray.remote
-def increment_bar(context, *args):
+def increment_bar(context):
   context['bar'] += 1
   return context, context['bar']
 
@@ -53,7 +53,7 @@ def scatter(*args):
 
 
 @ray.remote
-def process(item, *args):
+def process(item):
   return item
 
 
@@ -63,14 +63,14 @@ def gather(results):
 
 
 @ray.remote
-def scatter_with_context(context, *args):
+def scatter_with_context(context):
   context['processed'] = []
   return context, Graph(
       {gather_with_context: [(process_with_context, i) for i in range(7)]})
 
 
 @ray.remote
-def process_with_context(context, item, *args):
+def process_with_context(context, item):
   return context, item
 
 
@@ -82,7 +82,7 @@ def gather_with_context(context, results):
 
 
 @ray.remote
-def mock_produce_file(output_dir, filename, *args):
+def mock_produce_file(output_dir, filename):
   filename = os.path.join(output_dir, filename)
 
   # No work to do.
@@ -105,7 +105,7 @@ def mock_merge_files(output_dir, filenames):
 
 
 @ray.remote
-def fn_with_multiple_inputs(a, b, c, *args):
+def fn_with_multiple_inputs(a, b, c):
   return a + b + c
 
 
