@@ -69,7 +69,7 @@ _CONTENT_HASH_KEY = 'XISF:AstroFlow:StackContentHash'
 
 
 @ray.remote
-def scatter_compute_image_metadata(context, filenames, *unused):
+def scatter_compute_image_metadata(context, filenames):
   print('scatter_compute_image_metadata', filenames)
 
   graph = Graph({
@@ -79,53 +79,6 @@ def scatter_compute_image_metadata(context, filenames, *unused):
   })
 
   return context, graph
-
-  # waitables = [compute_image_metadata_ray.remote(context, f) for f in filenames]
-  # results = []
-  # while len(waitables):
-  #   done, waitables = ray.wait(waitables)
-  #   try:
-  #     results.extend(ray.get(done))
-  #   except Exception as e:
-  #     print(f'compute_image_metadata_ray threw exception {e}')
-
-  # def had_exception(result):
-  #   return 'exception' in result
-
-  # quarantined_files = ray_diskcache.and_equals(
-  #     'quarantined_files', [r['filename'] for r in results if had_exception(r)])
-  # image_hashes = ray_diskcache.or_equals(
-  #     'image_hashes',
-  #     {r['image_hash']: r['filename'] for r in results if not had_exception(r)})
-  # fits_headers = ray_diskcache.or_equals('fits_headers', {
-  #     r['image_hash']: r['fits_header'] for r in results if not had_exception(r)
-  # })
-  # plate_solutions = ray_diskcache.or_equals('plate_solutions', {
-  #     r['image_hash']: r['plate_solution']
-  #     for r in results
-  #     if not had_exception(r)
-  # })
-
-  # assert not any(type(p) is str for p in plate_solutions.values())
-  # assert None not in image_hashes.values()
-
-  # context.quarantined_files = ray.put(quarantined_files)
-  # context.image_hashes = ray.put(image_hashes)
-  # context.fits_headers = ray.put(fits_headers)
-  # context.plate_solutions = ray.put(plate_solutions)
-
-  # print(f'Cached {len(quarantined_files)} quarantined_files')
-  # print(f'Cached {len(image_hashes)} image_hashes')
-  # print(f'Cached {len(fits_headers)} fits_headers')
-  # print(f'Cached {len(plate_solutions)} plate_solutions')
-
-  # # If any new subframes have been added (e.g. light, dark, bias, or flat
-  # # frames), then they need to be regrouped into stacks, targets, and mosaics.
-  # context.needs_regrouping |= any(not file_io.is_master(r['fits_header'])
-  #                                 for r in results
-  #                                 if not had_exception(r))
-
-  # return context
 
 
 class DuplicateFileException(Exception):

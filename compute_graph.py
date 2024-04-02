@@ -9,41 +9,30 @@ from image_previews import scatter_stack_thumbnails
 from stacking import scatter_stack_subframes
 from step_mosaic import scatter_merge_mosaics
 from mosaics.identification import identify_mosiacs
+from new_dependency_graph import make_graph_from_list
 
 
-def import_new_files_graph(new_filenames):
-  return {(scatter_compute_image_metadata, new_filenames): {}}
+@ray.remote
+def maybe_regroup_graph(context):
+  if context.needs_regrouping:
+    return context, make_graph_from_list([
+        find_components_by_cosine_similarity, identify_stacks,
+        associate_calibration_frames, group_stacks_into_targets,
+        identify_mosiacs
+    ])
+  else:
+    return context, {}
 
 
-def regroup_graph():
-  return {
-      find_components_by_cosine_similarity: {},
-      identify_stacks: {find_components_by_cosine_similarity},
-      associate_calibration_frames: {identify_stacks},
-      group_stacks_into_targets: {associate_calibration_frames},
-      identify_mosiacs: {group_stacks_into_targets}
-  }
-
-  # if new_filenames:
-  #   context = ray.get(
-  #       scatter_compute_image_metadata.remote(context, new_filenames))
-
-  # if context.needs_regrouping:
-  #   context = ray.get(find_components_by_cosine_similarity.remote(context))
-  #   context = ray.get(identify_stacks.remote(context))
-  #   context = ray.get(associate_calibration_frames.remote(context))
-  #   context = ray.get(group_stacks_into_targets.remote(context))
-  #   context = ray.get(identify_mosiacs.remote(context))
-
-  # context = ray.get(scatter_stack_thumbnails.remote(context, mode='subframe'))
-  # context = ray.get(scatter_merge_mosaics.remote(context, mode='subframe'))
-
-  # context = ray.get(scatter_stack_subframes.remote(context))
-
-  # # context = ray.get(scatter_stack_thumbnails.remote(context, mode='master'))
-  # context = ray.get(scatter_merge_mosaics.remote(context, mode='master'))
+# TODO: Implement per-stack, per-target, and per-mosaic post-processing.
+def build_compute_graph(new_filenames):
+  return make_graph_from_list([(scatter_compute_image_metadata, new_filenames),
+                               maybe_regroup_graph,
+                               (scatter_stack_thumbnails, 'subframe'),
+                               (scatter_merge_mosaics, 'subframe'),
+                               scatter_stack_subframes,
+                               (scatter_stack_thumbnails, 'master'),
+                               (scatter_merge_mosaics, 'master')])
 
   # TODO: Add a cleanup task that deletes unreferenced stuff from the cache.
   # Can I use some kind of automatic ref-counting?
-
-  # return context

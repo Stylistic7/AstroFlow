@@ -12,6 +12,7 @@ import pix
 import position_string
 from image_metadata import scatter_compute_image_metadata
 import file_io
+from new_dependency_graph import Graph
 
 _STACK_ID_KEY = 'XISF:AstroFlow:StackId'
 _CONTENT_HASH_KEY = 'XISF:AstroFlow:StackContentHash'
@@ -158,21 +159,6 @@ def construct_graph(stacks):
   return graph
 
 
-def group_parallel_tasks(graph):
-  ts = TopologicalSorter(graph)
-  ts.prepare()
-
-  to_run = []
-  while ts.is_active():
-    to_run_in_parallel = []
-    for node in ts.get_ready():
-      to_run_in_parallel.append(node)
-      ts.done(node)
-    to_run.append(to_run_in_parallel)
-
-  return to_run
-
-
 @ray.remote
 def scatter_stack_subframes(context):
   image_hashes = ray.get(context.image_hashes)
@@ -181,32 +167,20 @@ def scatter_stack_subframes(context):
   stacks = ray.get(context.stacks)
   print(f'scatter_stack_subframes received {len(stacks)} stacks')
 
-  parallel_tasks = group_parallel_tasks(construct_graph(stacks))
-
   # TODO: Implement in the UI.
   def is_in_shopping_cart(stack):
     return ('stack_files', stack.geometric_hash) in shopping_cart
 
-  for task_group in parallel_tasks:
-    print(f'Starting {len(task_group)} stack_files tasks in parallel...')
+  return context, Graph({
+      gather_stack_subframes: [
+          (stack_files, s)
+          for s in stacks.values()
+          if is_in_shopping_cart(s) and
+          not find_matching_masters(s, image_hashes, fits_headers)
+      ]
+  })
 
-    waitables = [
-        stack_files.remote(context, stacks[s], context.output_dir)
-        for s in task_group
-        if is_in_shopping_cart(stacks[s]) and
-        not find_matching_masters(stacks[s], image_hashes, fits_headers)
-    ]
 
-    results = []
-    while len(waitables):
-      done, waitables = ray.wait(waitables)
-      try:
-        results.extend(ray.get(done))
-      except Exception as e:
-        print(f'stack_files threw exception {e}')
-
-    print(f'Calling scatter_compute_image_metadata with results {results}')
-    context = ray.get(scatter_compute_image_metadata.remote(context, results))
-    print(f'scatter_compute_image_metadata done for {len(results)} results')
-
-  return context
+@ray.remote
+def gather_stack_subframes(context):
+  return context, None

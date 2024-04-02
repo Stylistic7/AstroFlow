@@ -23,3 +23,5 @@ class Context:
 
   cosine_similarity_threshold = None
   min_component_members = None
+
+  coordinates = None

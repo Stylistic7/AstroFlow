@@ -10,6 +10,7 @@ import file_io
 from file_io import read_image
 import subframe_selection
 import stacking
+from new_dependency_graph import Graph
 
 # Every stack is going to have multiple levels of previews. I should disentangle
 # them. There will always be a subrame-based preview. The master-based preview
@@ -109,29 +110,11 @@ def _make_thumbnail(fits_headers, light_frame, light_image, bias_frame,
 def scatter_stack_thumbnails(context, mode):
   stacks = ray.get(context.stacks)
 
-  def has_thumbnail(stack):
-    geometric_hash = stack.geometric_hash
-    key = ('stack_thumbnail_image', mode, geometric_hash)
-    return ray_diskcache.contains(key)
-
-  to_compute = [
-      s for s in stacks.values() if s.geometric_hash and not has_thumbnail(s)
-  ]
-  print(f'Need to compute thumbnails for {len(to_compute)} stacks')
-
-  waitables = [
-      compute_stack_thumbnails.remote(context, stack, mode)
-      for stack in to_compute
-  ]
-
-  while len(waitables):
-    result, waitables = ray.wait(waitables)
-    try:
-      ray.get(result)
-    except Exception as e:
-      print(f'compute_stack_thumbnails threw exception {e}')
-
-  return context
+  return context, Graph({
+      gather_stack_thumbnails: [
+          (compute_stack_thumbnails, s, mode) for s in stacks
+      ]
+  })
 
 
 def _get_calibrations(stack, stacks, fits_headers):
@@ -169,18 +152,28 @@ def compute_stack_thumbnails(context, stack, mode):
     print('not implemented')
 
 
-def compute_stack_master_thumbnail(context, stack, width=2160):
-  print(f'Entering compute_stack_master_thumbnail() for stack {str(stack)}')
+def compute_stack_master_thumbnail(context, stack_id, width=2160):
+  stacks = ray.get(context.stacks)
+  stack = stacks[stack_id]
+  print(f'Entering compute_stack_master_thumbnail() for stack {stack}')
+
+  def has_thumbnail(stack):
+    geometric_hash = stack.geometric_hash
+    key = ('stack_thumbnail_image', 'master', geometric_hash)
+    return ray_diskcache.contains(key)
+
+  if has_thumbnail(stack):
+    return context, None
+
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
-  plate_solutions = ray.get(context.plate_solutions)
 
   # Find the master(s).
   masters = stacking.find_matching_masters(stack, image_hashes, fits_headers)
   print(f'Found masters {masters}')
 
   if not masters:
-    return
+    return context, None
 
   if len(masters) > 1:
     print(f'Found more than one master with hash {stack.content_hash}')
@@ -195,13 +188,25 @@ def compute_stack_master_thumbnail(context, stack, width=2160):
   ray_diskcache.set(key, array_to_png(image), keep_in_memory=False)
   print(f'Wrote key {key}')
 
+  return context, key
 
-def compute_stack_subframe_thumbnails(context, stack, width):
-  print(f'Entering compute_stack_subframe_thumbnails() for stack {str(stack)}')
+
+def compute_stack_subframe_thumbnails(context, stack_id, width):
+  stacks = ray.get(context.stacks)
+  stack = stacks[stack_id]
+  print(f'Entering compute_stack_subframe_thumbnails() for stack {stack}')
+
+  def has_thumbnail(stack):
+    geometric_hash = stack.geometric_hash
+    key = ('stack_thumbnail_image', 'subframe', geometric_hash)
+    return ray_diskcache.contains(key)
+
+  if has_thumbnail(stack):
+    return context, None
+
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
   plate_solutions = ray.get(context.plate_solutions)
-  stacks = ray.get(context.stacks)
   print('1')
 
   # Don't make previews for calibration stacks.
@@ -210,7 +215,7 @@ def compute_stack_subframe_thumbnails(context, stack, width):
   if not all(file_io.is_light_frame(fits_headers[f]) for f in light_frames):
     print(f'Ignoring {stack} because it is not composed entirely '
           f'of light frames.')
-    return
+    return context, None
 
   calibrations = _get_calibrations(stack, stacks, fits_headers)
   print('2')
@@ -286,3 +291,10 @@ def compute_stack_subframe_thumbnails(context, stack, width):
     key = ('stack_thumbnail_video', stack.geometric_hash)
     ray_diskcache.set(key, thumbnail_video, keep_in_memory=False)
     print(f'Wrote key {key}')
+
+    return context, key
+
+
+@ray.remote
+def gather_stack_thumbnails(context):
+  return context, None

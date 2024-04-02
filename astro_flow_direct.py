@@ -576,56 +576,9 @@ def main(context):
   new_filenames = tuple(get_new_filenames(all_frames, context))
   print(f'Importing {len(new_filenames)} files')
 
-  # print(f'Iterating over {len(mosaics)} mosaics')
-  # for mosaic in mosaics.values():
-  #   print(f'  Entering {mosaic}')
-  #   graph[step_mosaic.process_mosaic, (mosaic, targets, stacks)] = {}
-
-  #   toplevel_tasks.append(
-  #       make_mosaic_preview(image_hashes, plate_solutions, mosaic, targets,
-  #                           stacks))
-
-  #   print(f'  Iterating over {len(mosaic.target_ids)} targets')
-  #   mosaic_tasks = []
-  #   for target_id in mosaic.target_ids:
-  #     target = targets[target_id]
-  #     print(f'    Entering {target}')
-  #     print(f'    Iterating over {len(target.stack_ids)} stacks')
-  #     target_tasks = []
-  #     for stack_id in target.stack_ids:
-  #       stack = stacks[stack_id]
-  #       print(f'      Entering {stack}')
-  #       task_0 = stack_subframes(stack, image_hashes, fits_headers,
-  #                                plate_solutions, context.output_dir)
-  #       task_1 = post_process_stack(stack, context.output_dir, [task_0])
-  #       target_tasks.extend([task_0, task_1])
-
-  #     print(f'    Created {len(target_tasks)} tasks for target')
-  #     mosaic_tasks.append(
-  #         post_process_target(target, stacks, context.output_dir,
-  #                             target_tasks))
-  #   print(f'  Created {len(mosaic_tasks)} tasks for mosaic')
-  #   toplevel_tasks.append(
-  #       post_process_mosaic(image_hashes, plate_solutions, mosaic, targets,
-  #                           stacks, context.output_dir, mosaic_tasks))
-
-  # print(f'Created {len(toplevel_tasks)} toplevel tasks')
-
-  print('Starting execution of import_new_files_graph')
-  graph = compute_graph.import_new_files_graph(new_filenames)
+  print('### Starting compute graph execution')
+  graph = compute_graph.build_compute_graph(new_filenames)
   context, results = run_graph(graph, context)
-
-  print('### len(context.image_hashes)', len(ray.get(context.image_hashes)))
-  print('### len(context.plate_solutions)',
-        len(ray.get(context.plate_solutions)))
-  print('### len(context.fits_headers)', len(ray.get(context.fits_headers)))
-
-  # if context.needs_regrouping:
-  if True:
-    print('Starting execution of regroup_graph')
-    graph = compute_graph.regroup_graph()
-    context, results = run_graph(graph, context)
-
   print('### Compute graph is done! context is', context)
 
   # TODO: Close all subordinate PixInsight instances.

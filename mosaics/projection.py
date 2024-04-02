@@ -40,10 +40,14 @@ def compute_viewbox(plate_solutions):
 # TODO: Provide some feedback on progress.
 # TODO: Store these on disk and read them back when unchanged.
 @ray.remote(scheduling_strategy="SPREAD")
-def mosaic_by_coordinates(panel, coordinates, autostretch=False):
+def mosaic_by_coordinates(context, panel):
+  # TODO: Pass this through the context.
+  autostretch = False
+
   print(f'mosaic_by_coordinates projecting panel {panel}')
   start = time.time()
 
+  coordinates = context.coordinates
   dest_xs = ray.get(coordinates['dest_xs'])
   dest_ys = ray.get(coordinates['dest_ys'])
   ras = ray.get(coordinates['ras'])
@@ -140,4 +144,4 @@ def mosaic_by_coordinates(panel, coordinates, autostretch=False):
   hdu.writeto(panel.placed_filename, overwrite=True)
   print(f'Wrote placed image filename {panel.placed_filename}')
 
-  return panel
+  return context, panel

@@ -13,6 +13,7 @@ import footprints
 import ray_diskcache
 import image_previews
 from hashing import hash_list
+from new_dependency_graph import Graph
 
 from projection import compute_viewbox
 import mercator
@@ -140,8 +141,7 @@ def _get_master_panel_for_stack(stack, image_hashes, fits_headers,
 
   filename = image_hashes[hashes[0]]
   plate_solution = plate_solutions[hashes[0]]
-  print(f'Found master hash {hashes[0]} filename {filename} '
-        f'plate_solution {plate_solution}')
+  print(f'Found master hash {hashes[0]} filename {filename}')
   assert plate_solution, f'Image {hashes[0]} {filename} has plate solution {plate_solution}'
 
   return classes.Panel(stack_id=stack.geometric_hash,
@@ -172,8 +172,9 @@ def _get_panel_for_stack(mode, stack, image_hashes, fits_headers,
 # Saves the images either to the cache (for mode 'subframe') or to disk
 # (for mode 'master' and above).
 @ray.remote(scheduling_strategy="SPREAD", num_cpus=0.001)
-def process_mosaic_per_filter(context, mosaic, mode, coordinates, filter,
-                              output_dir):
+def process_mosaic_per_filter(context, mosaic_id, mode, filter, output_dir):
+  mosaics = ray.get(context.mosaics)
+  mosaic = mosaics[mosaic_id]
   print(f'Entering process_mosaic_per_filter for {mosaic.name} mode {mode} '
         f'filter {filter}')
 
@@ -191,6 +192,7 @@ def process_mosaic_per_filter(context, mosaic, mode, coordinates, filter,
   #     placed_{mode}_{id}_{filter}_{tile_indices}_{content_hash}.fit on disk
   def panel_artifact_exists(panel):
     if panel.placed_filename and os.path.exists(panel.placed_filename):
+      print(f'Found placed_filename {panel.placed_filename}')
       return True
 
     stack = next(
@@ -207,6 +209,7 @@ def process_mosaic_per_filter(context, mosaic, mode, coordinates, filter,
     if panel.image_filename and not os.path.exists(panel.image_filename):
       return False
 
+    print(f'### Found cached placed image')
     return True
 
   panels = []
@@ -229,7 +232,7 @@ def process_mosaic_per_filter(context, mosaic, mode, coordinates, filter,
       print(f'### At least one panel for mosaic {mosaic} mode {mode} '
             f'filter {filter} could not be found, so the mosaic channel cannot '
             f'be merged')
-      return None
+      return context, None
 
     print('panel', panel)
     panel.mosaic_id = mosaic.id
@@ -246,84 +249,103 @@ def process_mosaic_per_filter(context, mosaic, mode, coordinates, filter,
 
   if not panels:
     print(f'There are no panels for filter {filter}, returning None')
-    return None
+    return context, None
 
   print(f'process_mosaic_per_filter: '
         f'{len(panels)} panels with filenames:')
   for p in panels:
     print(f'  {p.image_filename}')
 
-  print(f'Running mosaic_by_coordinates in parallel...')
+  num_panels = len([p for p in panels if not panel_artifact_exists(p)])
+  print(f'Running mosaic_by_coordinates in parallel for {num_panels} panels...')
   autostretch = mode == 'subframe'
 
-  to_place = [p for p in panels if not panel_artifact_exists(p)]
+  # TODO: This is wrong. I need to return the found artifact if it exists, not
+  # skip the panel entirely. The `gather_mosaic_by_coordinates` must get a
+  # complete list of panels, whether they are generated now or were already
+  # present.
+  graph = Graph({
+      gather_mosaic_by_coordinates: [(projection.mosaic_by_coordinates, p)
+                                     for p in panels
+                                     if not panel_artifact_exists(p)]
+  })
 
-  if not to_place:
-    print(f'### All panels for mosaic {mosaic.name} filter {filter} '
-          f'are up-to-date')
-  else:
-    print(f'### Need to place images for {len(to_place)} panels')
+  return context, graph
 
-  waitables = [
-      projection.mosaic_by_coordinates.remote(p, coordinates, autostretch)
-      for p in to_place
-  ]
+  # to_place = [p for p in panels if not panel_artifact_exists(p)]
 
-  panels = []
-  while len(waitables):
-    result, waitables = ray.wait(waitables)
-    panels.extend(ray.get(result))
+  # if not to_place:
+  #   print(f'### All panels for mosaic {mosaic.name} filter {filter} '
+  #         f'are up-to-date')
+  # else:
+  #   print(f'### Need to place images for {len(to_place)} panels')
 
-  print(f'mosaic_by_coordinates for {len(panels)} panels is done')
+  # waitables = [
+  #     projection.mosaic_by_coordinates.remote(p, coordinates, autostretch)
+  #     for p in to_place
+  # ]
 
-  if mode == 'subframe':
-    # The image returned from read_image() is in [0, 65536].
-    # TODO: These panels are just merged by np.maximum, but there are
-    # certainly better ways (maybe mean of all projected values).
-    output_image = file_io.read_image(panels[0].image_filename)
+  # panels = []
+  # while len(waitables):
+  #   result, waitables = ray.wait(waitables)
+  #   panels.extend(ray.get(result))
 
-    for p in panels[1:]:
-      image = file_io.read_image(p.image_filename)
-      output_image = np.maximum(output_image, image)
+  # if mode == 'subframe':
+  #   # The image returned from read_image() is in [0, 65536].
+  #   # TODO: These panels are just merged by np.maximum, but there are
+  #   # certainly better ways (maybe mean of all projected values).
+  #   output_image = file_io.read_image(panels[0].image_filename)
 
-    key = ('mosaic_thumbnail_image', mode, mosaic.id, filter)
-    content_hash = hash_list([p.content_hash for p in panels])
-    image_png = image_previews.array_to_png(output_image)
-    artifact_dict = {
-        'merged': {
-            'content_hash': content_hash,
-            'image': image_png
-        }
-    }
-    ray_diskcache.or_equals(key, artifact_dict, keep_in_memory=False)
-    print(f'### Wrote key {key} image min {np.min(output_image)} '
-          f'max {np.max(output_image)}')
-  elif mode == 'master':
-    # TODO: Maybe figure out a unified way to store the same conceptual image,
-    # just at increasing levels of quality (subframes -> stacks ->
-    # post-processed).
-    #
-    # TODO: This merge op sometimes fails, and it means we lose track of all the
-    # placed images.
-    output_image = merge_ops.merge_mosaic(mode, mosaic.id, panels, stacks,
-                                          output_dir)
+  #   for p in panels[1:]:
+  #     image = file_io.read_image(p.image_filename)
+  #     output_image = np.maximum(output_image, image)
 
-    content_hash = hash_list([p.content_hash for p in panels])
-    final_filename = f"final_{mode}_{mosaic.id}_{filter}_{content_hash}.fit"
-    final_filename = os.path.join(output_dir, final_filename)
-    print(f'Copying final mosaic image to {final_filename}')
-    shutil.copy(output_image[0], final_filename)
+  #   key = ('mosaic_thumbnail_image', mode, mosaic.id, filter)
+  #   content_hash = hash_list([p.content_hash for p in panels])
+  #   image_png = image_previews.array_to_png(output_image)
+  #   artifact_dict = {
+  #       'merged': {
+  #           'content_hash': content_hash,
+  #           'image': image_png
+  #       }
+  #   }
+  #   ray_diskcache.or_equals(key, artifact_dict, keep_in_memory=False)
+  #   print(f'### Wrote key {key} image min {np.min(output_image)} '
+  #         f'max {np.max(output_image)}')
+  # elif mode == 'master':
+  #   # TODO: Maybe figure out a unified way to store the same conceptual image,
+  #   # just at increasing levels of quality (subframes -> stacks ->
+  #   # post-processed).
+  #   #
+  #   # TODO: This merge op sometimes fails, and it means we lose track of all the
+  #   # placed images.
+  #   output_image = merge_ops.merge_mosaic(mode, mosaic.id, panels, stacks,
+  #                                         output_dir)
 
-    key = ('mosaic_thumbnail_image', mode, mosaic.id, filter)
-    hash = file_io.hash_of_image_data(final_filename)
-    artifact_dict = {
-        'merged': {
-            'content_hash': content_hash,
-            'image_hash': hash
-        }
-    }
-    ray_diskcache.or_equals(key, artifact_dict)
-    print(f'### Wrote key {key}')
+  #   content_hash = hash_list([p.content_hash for p in panels])
+  #   final_filename = f"final_{mode}_{mosaic.id}_{filter}_{content_hash}.fit"
+  #   final_filename = os.path.join(output_dir, final_filename)
+  #   print(f'Copying final mosaic image to {final_filename}')
+  #   shutil.copy(output_image[0], final_filename)
+
+  #   key = ('mosaic_thumbnail_image', mode, mosaic.id, filter)
+  #   hash = file_io.hash_of_image_data(final_filename)
+  #   artifact_dict = {
+  #       'merged': {
+  #           'content_hash': content_hash,
+  #           'image_hash': hash
+  #       }
+  #   }
+  #   ray_diskcache.or_equals(key, artifact_dict)
+  #   print(f'### Wrote key {key}')
+
+  # return context, None
+
+
+@ray.remote
+def gather_mosaic_by_coordinates(context, panels):
+  print(f'### gather_mosaic_by_coordinates panels are {panels}')
+  return context, None
 
 
 # Function pseudocode
@@ -336,23 +358,11 @@ def scatter_merge_mosaics(context, mode):
   mosaics = ray.get(context.mosaics)
   shopping_cart = ray_diskcache.get('shopping_cart', [])
 
-  to_merge = [
-      m for m in mosaics.values()
-      if ('merge_mosaic', m.id) in shopping_cart and len(m.target_ids) > 1
-  ]
-  waitables = [merge_mosaic.remote(context, m, mode) for m in to_merge]
-
-  results = []
-  while len(waitables):
-    result, waitables = ray.wait(waitables)
-    try:
-      results.extend(ray.get(result))
-    except Exception as e:
-      print(f'merge_mosaic threw exception {e}')
-
-  print(f'scatter_merge_mosaics done, results {results}')
-
-  return context
+  return context, Graph({
+      gather_merge_mosaics: [(merge_mosaic, m.id, mode)
+                             for m in mosaics.values()
+                             if ('merge_mosaic', m.id) in shopping_cart]
+  })
 
 
 # Function pseudocode:
@@ -364,7 +374,10 @@ def scatter_merge_mosaics(context, mode):
 # Runs process_mosaic_per_filter for each filter present in the mosaic in
 # parallel.
 @ray.remote(scheduling_strategy="SPREAD", num_cpus=0.001)
-def merge_mosaic(context, mosaic, mode):
+def merge_mosaic(context, mosaic_id, mode):
+  mosaics = ray.get(context.mosaics)
+  mosaic = mosaics[mosaic_id]
+
   print(f'Entering merge_mosaic for mosaic {mosaic} mode {mode}')
   image_hashes = ray.get(context.image_hashes)
   targets = ray.get(context.targets)
@@ -414,6 +427,8 @@ def merge_mosaic(context, mosaic, mode):
           f'filter {filter} image_hash {image_hash}')
     return True
 
+  # TODO: Don't hardcode these filters. Find the set from the images
+  # themselves.
   filters = ['H', 'S', 'O', 'L', 'R', 'G', 'B']
   filters_to_process = [
       f for f in filters
@@ -422,7 +437,7 @@ def merge_mosaic(context, mosaic, mode):
 
   if not filters_to_process:
     print(f'All filters for mosaic {mosaic.name} are up-to-date')
-    return
+    return context, None
   else:
     print(f'### Need to update the following filters: {filters_to_process}')
 
@@ -462,22 +477,23 @@ def merge_mosaic(context, mosaic, mode):
   assert np.max(dest_xs) == dest_width - 1
   assert dest_xs.shape == dest_ys.shape == ras.shape == decs.shape
 
-  coordinates = dict(dest_xs=ray.put(dest_xs),
-                     dest_ys=ray.put(dest_ys),
-                     ras=ray.put(ras),
-                     decs=ray.put(decs))
+  context.coordinates = dict(dest_xs=ray.put(dest_xs),
+                             dest_ys=ray.put(dest_ys),
+                             ras=ray.put(ras),
+                             decs=ray.put(decs))
 
-  # TODO: Don't hardcode these filters. Find the set from the images
-  # themselves.
-  waitables = [
-      process_mosaic_per_filter.remote(context, mosaic, mode, coordinates, f,
-                                       output_dir) for f in filters_to_process
-  ]
+  return context, Graph({
+      gather_process_mosaic_per_filter: [(process_mosaic_per_filter, mosaic.id,
+                                          mode, f, output_dir)
+                                         for f in filters_to_process]
+  })
 
-  results = []
-  while len(waitables):
-    result, waitables = ray.wait(waitables)
-    try:
-      results.extend(ray.get(result))
-    except Exception as e:
-      print(f'process_mosaic_per_filter threw exception {e}')
+
+@ray.remote
+def gather_process_mosaic_per_filter(context):
+  return context, None
+
+
+@ray.remote
+def gather_merge_mosaics(context):
+  return context, None
