@@ -5,7 +5,8 @@ fits_headers = cache['fits_headers']
 plate_solutions = cache['plate_solutions']
 
 # hashes = ['3997920a96aff455', '3f2983b2163de3ea']
-hashes = [k for k, v in plate_solutions.items() if type(v) is str]
+# hashes = [k for k, v in plate_solutions.items() if type(v) is str]
+hashes = list(plate_solutions.keys())[0:100]
 
 for hash in hashes:
   del image_hashes[hash]

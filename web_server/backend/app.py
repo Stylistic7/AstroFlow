@@ -111,6 +111,10 @@ def add_mosaic_to_shopping_cart(mosaic_id):
       s for t in mosaics[mosaic_id].target_ids for s in targets[t].stack_ids
   ]
   shopping_cart.extend([('stack_files', s) for s in stack_ids])
+
+  shopping_cart.append(('merge_mosaic', mosaic_id))
+
+  shopping_cart = list(set(shopping_cart))
   cache['shopping_cart'] = shopping_cart
 
   return Response(status=204)
@@ -337,11 +341,15 @@ def mosaic_image(mosaic_id, filter):
 
 @app.route('/mosaic_thumbnail_image_for_filter/<mosaic_id>/<filter>')
 def mosaic_thumbnail_image_for_filter(mosaic_id, filter):
-  result = cache[('mosaic_thumbnail_image', 'subframe', mosaic_id, filter)]
-  buffer = io.BytesIO()
-  buffer.write(result['merged']['image'])
-  buffer.seek(0)
-  return flask.send_file(buffer, mimetype='image/png')
+  for mode in ['master', 'subframe']:
+    key = ('mosaic_thumbnail_image', mode, mosaic_id, filter)
+    if key in cache:
+      result = cache[key]
+      print('type(result)', type(result))
+      buffer = io.BytesIO()
+      buffer.write(result['merged']['image'])
+      buffer.seek(0)
+      return flask.send_file(buffer, mimetype='image/png')
 
 
 @app.route('/mosaic_thumbnail_image/<mosaic_id>')

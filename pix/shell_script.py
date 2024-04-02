@@ -105,6 +105,9 @@ def _create_run_command(task):
 
 
 # TODO: Maybe allow multiple PixInsight instances.
+# TODO: Add a start sentinel that gets written to disk when the script starts.
+# If, after some timeout, the script hasn't started, kill it and either retry
+# or more on to the next one. Obey Ray's retry mechanism.
 def run_script(tasks,
                blocking=True,
                tmp_dir_in=None,
