@@ -62,9 +62,20 @@ def run_graph(graph, context=None):
 
   results = {}
 
+  num_nodes_run = 0
+
   while ts.is_active():
     to_run = []
     for node in ts.get_ready():
+      task, *args = _unpack_node(node)
+      if hasattr(task, 'artifact'):
+        assert hasattr(task, 'artifact_exists')
+        artifact = task.artifact(*args)
+        if task.artifact_exists(artifact):
+          results[node] = artifact
+          ts.done(node)
+          continue
+
       to_run.append(node)
 
     def ancestor_results(node):
@@ -99,6 +110,8 @@ def run_graph(graph, context=None):
 
       for ref in ready_refs:
         node = ref_to_node[ref]
+        num_nodes_run += 1
+
         if context is not None:
           context, result = ray.get(ref)
         else:
@@ -115,10 +128,12 @@ def run_graph(graph, context=None):
             subgraph_result = run_graph(result)
 
           results[node] = ResultDict(subgraph_result)
-          ts.done(node)
         else:
           results[node] = result
-          ts.done(node)
+
+        ts.done(node)
+
+  results['metadata'] = dict(num_nodes_run=num_nodes_run)
 
   if context is not None:
     return context, results

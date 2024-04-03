@@ -4,6 +4,7 @@ import os
 import unittest
 import ray
 import tempfile
+import functools
 
 from cache import cache
 from new_dependency_graph import Graph, ResultDict, run_graph, make_graph_from_list
@@ -89,7 +90,7 @@ def gather_with_context(context, results):
 
 
 @ray.remote
-def mock_produce_file(output_dir, filename):
+def produce_file(output_dir, filename):
   filename = os.path.join(output_dir, filename)
 
   # No work to do.
@@ -101,7 +102,18 @@ def mock_produce_file(output_dir, filename):
 
 
 @ray.remote
-def mock_merge_files(output_dir, filenames):
+def maybe_produce_file(output_dir, filename):
+  filename = os.path.join(output_dir, filename)
+  open(filename, 'w').write('foo')
+  return filename
+
+
+maybe_produce_file.artifact = lambda o, f: os.path.join(o, f)
+maybe_produce_file.artifact_exists = lambda f: os.path.exists(f)
+
+
+@ray.remote
+def merge_files(output_dir, filenames):
   # No work to do.
   if all(f == None for f in filenames):
     return None
@@ -109,6 +121,17 @@ def mock_merge_files(output_dir, filenames):
   merged_filename = os.path.join(output_dir, 'merged.txt')
   open(merged_filename, 'w').write(str(filenames))
   return merged_filename
+
+
+@ray.remote
+def maybe_merge_files(output_dir, filenames):
+  merged_filename = os.path.join(output_dir, 'merged.txt')
+  open(merged_filename, 'w').write(str(filenames))
+  return merged_filename
+
+
+maybe_merge_files.artifact = lambda o: os.path.join(o, 'merged.txt')
+maybe_merge_files.artifact_exists = lambda f: os.path.exists(f)
 
 
 @ray.remote
@@ -283,23 +306,51 @@ class TestDependencyGraph(unittest.TestCase):
   def test_merge_files(self):
     with tempfile.TemporaryDirectory() as tmp_dir:
       graph = {
-          (mock_merge_files, tmp_dir): [
-              (mock_produce_file, tmp_dir, f'file_{i}.txt') for i in range(7)
+          (merge_files, tmp_dir): [
+              (produce_file, tmp_dir, f'file_{i}.txt') for i in range(7)
           ]
       }
 
-      # None of the files exist on the first run, so the `mock_merge_files`
+      # None of the files exist on the first run, so the `merge_files`
       # function should do work, and return the filename it wrote.
       results = run_graph(graph)
       self.assertEqual(len(os.listdir(tmp_dir)), 8)
-      self.assertEqual(results[(mock_merge_files, tmp_dir)],
+      self.assertEqual(results[(merge_files, tmp_dir)],
                        os.path.join(tmp_dir, 'merged.txt'))
 
-      # On the second run, all of the files exist, so the `mock_merge_files`
+      # On the second run, all of the files exist, so the `merge_files`
       # function should have no work to do, and return None.
       results = run_graph(graph)
       self.assertEqual(len(os.listdir(tmp_dir)), 8)
-      self.assertEqual(results[(mock_merge_files, tmp_dir)], None)
+      self.assertEqual(results[(merge_files, tmp_dir)], None)
+
+  def test_merge_files_with_artifacts(self):
+    with tempfile.TemporaryDirectory() as tmp_dir:
+      graph = {
+          (maybe_merge_files, tmp_dir): [
+              (maybe_produce_file, tmp_dir, f'file_{i}.txt') for i in range(7)
+          ]
+      }
+
+      # None of the files exist on the first run, so the `merge_files`
+      # function should do work, and return the filename it wrote.
+      results = run_graph(graph)
+      self.assertEqual(len(os.listdir(tmp_dir)), 8)
+      self.assertEqual(results[(maybe_merge_files, tmp_dir)],
+                       os.path.join(tmp_dir, 'merged.txt'))
+      self.assertEqual(results['metadata']['num_nodes_run'], 8)
+
+      # On the second run, all of the files exist, so the
+      # `maybe_merge_files` function should have no work to do, and return
+      # None.
+      results = run_graph(graph)
+      self.assertEqual(len(os.listdir(tmp_dir)), 8)
+      self.assertEqual(results[(maybe_merge_files, tmp_dir)],
+                       os.path.join(tmp_dir, 'merged.txt'))
+      self.assertEqual(results['metadata']['num_nodes_run'], 0)
+
+  def test_artifact_exists(self):
+    pass
 
 
 if __name__ == '__main__':
