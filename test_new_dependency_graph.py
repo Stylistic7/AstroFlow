@@ -165,6 +165,10 @@ def print_results(results, indent=0):
     else:
       task, args = node, []
 
+    if type(task) is str:
+      print(f'{" " * indent}{task} = {result}')
+      continue
+
     if type(result) is not ResultDict:
       print(f'{" " * indent}{task._function.__name__} {args}: {result}')
     else:
@@ -183,13 +187,10 @@ class TestDependencyGraph(unittest.TestCase):
     graph = {D: {B, C}, C: {A}, B: {A}}
     results = run_graph(graph)
 
-    expected_results = {
-        (my_remote_task, 'A'): 'A',
-        (my_remote_task, 'C'): 'C',
-        (my_remote_task, 'B'): 'B',
-        (my_remote_task, 'D'): 'D',
-    }
-    self.assertEqual(results, expected_results)
+    self.assertEqual(results[A], 'A')
+    self.assertEqual(results[B], 'B')
+    self.assertEqual(results[C], 'C')
+    self.assertEqual(results[D], 'D')
 
   def test_resources(self):
     A = (my_local_task, 'A')
@@ -200,14 +201,10 @@ class TestDependencyGraph(unittest.TestCase):
     graph = {D: {B, C}, C: {A}, B: {A}}
     results = run_graph(graph)
 
-    expected_results = {
-        (my_local_task, 'A'): 'A',
-        (my_local_task, 'C'): 'C',
-        (my_remote_task, 'B'): 'B',
-        (my_remote_task, 'D'): 'D',
-    }
-
-    self.assertEqual(results, expected_results)
+    self.assertEqual(results[A], 'A')
+    self.assertEqual(results[B], 'B')
+    self.assertEqual(results[C], 'C')
+    self.assertEqual(results[D], 'D')
 
   def test_global_variable(self):
     cache['foo'] = 10
@@ -285,6 +282,9 @@ class TestDependencyGraph(unittest.TestCase):
     self.assertEqual(
         results[(start_parallel_scatter,
                  200)][scatter_with_context][gather_with_context], 1421)
+
+    self.assertEqual(results['num_nodes_run'], 21)
+    self.assertEqual(results['max_parallelism_seen'], 14)
 
   def test_conditional_dynamic_graph(self):
     dynamic_graph_task = (maybe_run_dynamic_graph, True)
