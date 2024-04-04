@@ -8,6 +8,8 @@ class Context:
 
   default_filter: str = None
 
+  cache_keys: list[str | tuple] = None
+
   image_hashes: dict = None
   fits_headers: dict = None
   plate_solutions: dict = None

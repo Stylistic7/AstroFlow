@@ -246,7 +246,7 @@ def process_mosaic_per_filter(context, mosaic_id, mode, filter, output_dir):
 
     image_hash = _get_image_hash_for_stack(stack, mode, image_hashes,
                                            fits_headers, plate_solutions)
-    print(f'### process_mosaic_per_filter got hash {hash} for stack {stack}')
+    print(f'### process_mosaic_per_filter got hash {image_hash} for stack {stack}')
 
     # At least one panel of the give mode (e.g. subframe or master) cannot
     # be found, so the mosaic can't be merged.

@@ -153,16 +153,13 @@ def compute_stack_thumbnails(context, stack, mode):
 
 
 def compute_stack_master_thumbnail(context, stack_id, width=2160):
+  key = ('stack_thumbnail_image', 'master', stack_id)
+  if key in ray.get(context.cache_keys):
+    return context, None
+
   stacks = ray.get(context.stacks)
   stack = stacks[stack_id]
   print(f'Entering compute_stack_master_thumbnail() for stack {stack}')
-
-  def has_thumbnail(stack):
-    key = ('stack_thumbnail_image', 'master', stack.content_hash)
-    return ray_diskcache.contains(key)
-
-  if has_thumbnail(stack):
-    return context, None
 
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
@@ -175,7 +172,7 @@ def compute_stack_master_thumbnail(context, stack_id, width=2160):
     return context, None
 
   if len(masters) > 1:
-    print(f'Found more than one master with hash {stack.content_hash}')
+    print(f'Found more than one master with hash {stack_id}')
 
   master = masters[0]
 
@@ -183,7 +180,6 @@ def compute_stack_master_thumbnail(context, stack_id, width=2160):
   image = autostretch(resize_array(read_image(image_hashes[master]), width))
 
   # Store the thumbnail.
-  key = ('stack_thumbnail_image', 'master', stack.content_hash)
   ray_diskcache.set(key, array_to_png(image), keep_in_memory=False)
   print(f'Wrote key {key}')
 
@@ -191,39 +187,32 @@ def compute_stack_master_thumbnail(context, stack_id, width=2160):
 
 
 def compute_stack_subframe_thumbnails(context, stack_id, width):
+  key = ('stack_thumbnail_image', 'subframe', stack_id)
+  if key in ray.get(context.cache_keys):
+    return context, None
+
   stacks = ray.get(context.stacks)
   stack = stacks[stack_id]
   print(f'Entering compute_stack_subframe_thumbnails() for stack {stack}')
 
-  def has_thumbnail(stack):
-    geometric_hash = stack.geometric_hash
-    key = ('stack_thumbnail_image', 'subframe', geometric_hash)
-    return ray_diskcache.contains(key)
-
-  if has_thumbnail(stack):
-    return context, None
-
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
   plate_solutions = ray.get(context.plate_solutions)
-  print('1')
 
   # Don't make previews for calibration stacks.
   light_frames = [f for run in stack.runs for f in run.frames]
-  print('1a')
   if not all(file_io.is_light_frame(fits_headers[f]) for f in light_frames):
     print(f'Ignoring {stack} because it is not composed entirely '
           f'of light frames.')
+    ray_diskcache.set(key, None)
     return context, None
 
   calibrations = _get_calibrations(stack, stacks, fits_headers)
-  print('2')
 
   # Now sort all the light frames (no matter which run they're from) by the
   # number of stars. The better images should be in front.
   light_frames_by_stars = subframe_selection.get_light_frames_sorted_by_stars(
       stack.runs, plate_solutions)
-  print('3')
 
   # Cache the calibration images so they're only read once.
   calibration_images = {}
@@ -241,7 +230,6 @@ def compute_stack_subframe_thumbnails(context, stack_id, width):
   best_light_frame, _ = light_frames_by_stars[0]
   image = resize_array(read_image(image_hashes[best_light_frame]), width)
   height, width = image.shape
-  print('4')
 
   height = int(((height + 8 - 1) / 8) * 8)
   print(f'Creating video of width {width}, height {height} '
@@ -252,7 +240,6 @@ def compute_stack_subframe_thumbnails(context, stack_id, width):
     video_filename = os.path.join(tmp_dir, 'output.webm')
     out = cv2.VideoWriter(video_filename, fourcc, 10.0, (width, height), False)
     made_stack_thumbnail = False
-    print('5')
     for light_frame, _ in light_frames_by_stars:
       rotate = plate_solutions[light_frame].rotation_angle < 0.0
 
@@ -272,7 +259,7 @@ def compute_stack_subframe_thumbnails(context, stack_id, width):
                            flat_image, rotate)
 
       if not made_stack_thumbnail:
-        key = ('stack_thumbnail_image', 'subframe', stack.geometric_hash)
+        key = ('stack_thumbnail_image', 'subframe', stack_id)
         ray_diskcache.set(key, array_to_png(im), keep_in_memory=False)
         print(f'Wrote key {key}')
         made_stack_thumbnail = True
@@ -286,8 +273,7 @@ def compute_stack_subframe_thumbnails(context, stack_id, width):
     out.release()
     thumbnail_video = open(video_filename, 'rb').read()
 
-    print('6')
-    key = ('stack_thumbnail_video', stack.geometric_hash)
+    key = ('stack_thumbnail_video', stack_id)
     ray_diskcache.set(key, thumbnail_video, keep_in_memory=False)
     print(f'Wrote key {key}')
 

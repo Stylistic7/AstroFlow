@@ -14,6 +14,9 @@ class GlobalVarActor:
     # This doesn't clear the cache; it just reclaims the memory.
     self.global_dict = {}
 
+  def get_keys(self):
+    return list(cache.iterkeys())
+
   def get(self, key, default=None, keep_in_memory=True):
     if key in self.global_dict:
       value = self.global_dict[key]
@@ -55,6 +58,11 @@ class GlobalVarActor:
       new_value = self.global_dict.get(key, default) + value
       self.set(key, new_value, keep_in_memory)
       return new_value
+
+
+def get_keys():
+  actor = ray.get_actor('ray_diskcache', namespace='AstroFlow')
+  return ray.get(actor.get_keys.remote())
 
 
 def get(key, default=None, keep_in_memory=True):

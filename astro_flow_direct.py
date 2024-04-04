@@ -512,6 +512,10 @@ def populate_context(context):
   if context.download:
     download(context.input_dirs[0], context.default_filter)
 
+  # Load all existing cache keys to speed up existence checks.
+  # TODO: Reload this after gather operations.
+  context.cache_keys = ray.put(ray_diskcache.get_keys())
+
   # Load all of the existing metadata into the context before starting the
   # compute graph.
   quarantined_files = ray_diskcache.get('quarantined_files', [])
