@@ -324,34 +324,6 @@ class TestDependencyGraph(unittest.TestCase):
       self.assertEqual(len(os.listdir(tmp_dir)), 8)
       self.assertEqual(results[(merge_files, tmp_dir)], None)
 
-  def test_merge_files_with_artifacts(self):
-    with tempfile.TemporaryDirectory() as tmp_dir:
-      graph = {
-          (maybe_merge_files, tmp_dir): [
-              (maybe_produce_file, tmp_dir, f'file_{i}.txt') for i in range(7)
-          ]
-      }
-
-      # None of the files exist on the first run, so the `merge_files`
-      # function should do work, and return the filename it wrote.
-      results = run_graph(graph)
-      self.assertEqual(len(os.listdir(tmp_dir)), 8)
-      self.assertEqual(results[(maybe_merge_files, tmp_dir)],
-                       os.path.join(tmp_dir, 'merged.txt'))
-      self.assertEqual(results['metadata']['num_nodes_run'], 8)
-
-      # On the second run, all of the files exist, so the
-      # `maybe_merge_files` function should have no work to do, and return
-      # None.
-      results = run_graph(graph)
-      self.assertEqual(len(os.listdir(tmp_dir)), 8)
-      self.assertEqual(results[(maybe_merge_files, tmp_dir)],
-                       os.path.join(tmp_dir, 'merged.txt'))
-      self.assertEqual(results['metadata']['num_nodes_run'], 0)
-
-  def test_artifact_exists(self):
-    pass
-
 
 if __name__ == '__main__':
   unittest.main()

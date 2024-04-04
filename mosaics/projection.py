@@ -44,6 +44,10 @@ def mosaic_by_coordinates(context, panel):
   # TODO: Pass this through the context.
   autostretch = False
 
+  image_hashes = ray.get(context.image_hashes)
+  fits_headers = ray.get(context.fits_headers)
+  plate_solutions = ray.get(context.plate_solutions)
+
   print(f'mosaic_by_coordinates projecting panel {panel}')
   start = time.time()
 
@@ -57,8 +61,11 @@ def mosaic_by_coordinates(context, panel):
   projection_map = np.zeros(ras.shape)
   print(f'projected_image shape', projected_image.shape)
 
-  header = file_io.read_header(panel.image_filename)
-  image = file_io.read_image(panel.image_filename)
+  filename = image_hashes[panel.image_hash]
+  header = fits_headers[panel.image_hash]
+  plate_solution = plate_solutions[panel.image_hash]
+
+  image = file_io.read_image(filename)
 
   print(f'mosaic_by_coordinates image dtype {image.dtype} '
         f'min {np.min(image)} max {np.max(image)}')
@@ -71,7 +78,7 @@ def mosaic_by_coordinates(context, panel):
 
   print(f'Image has shape {image.shape} and dtype {image.dtype}')
 
-  wcs = WCS(panel.plate_solution.header)
+  wcs = WCS(plate_solution.header)
 
   source_height, source_width = image.shape
   interp = RegularGridInterpolator((range(source_height), range(source_width)),
@@ -83,7 +90,7 @@ def mosaic_by_coordinates(context, panel):
   # Filter out points that aren't in this panel's footprint.
   assert dest_xs.shape == dest_ys.shape == ras.shape == decs.shape
   footprint_polygon = SphericalPolygon.from_wcs(
-      pyfits.Header(panel.plate_solution.header))
+      pyfits.Header(plate_solution.header))
   print(f'dest_xs.shape {dest_xs.shape} dest_ys.shape {dest_ys.shape}')
   print(f'ras.shape {ras.shape} decs.shape {decs.shape}')
   dest_xs, dest_ys, ras, decs = zip(
@@ -103,7 +110,7 @@ def mosaic_by_coordinates(context, panel):
     projection_map[dx, dy] = 128
 
   end = time.time()
-  print(f'Finished projecting image {panel.image_filename} '
+  print(f'Finished projecting image {filename} '
         f'time {end-start:.2f}')
   assert np.count_nonzero(projection_map), "projection failed"
 

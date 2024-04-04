@@ -339,6 +339,20 @@ def mosaic_image(mosaic_id, filter):
   return flask.send_file(buffer, mimetype='image/png')
 
 
+@app.route('/mosaic_thumbnail_image/<mode>/<mosaic_id>/<filter>')
+def mosaic_thumbnail_image_complete(mode, mosaic_id, filter):
+  key = ('mosaic_thumbnail_image', mode, mosaic_id, filter)
+  if key in cache:
+    result = cache[key]
+    print('type(result)', type(result))
+    buffer = io.BytesIO()
+    buffer.write(result['merged']['image'])
+    buffer.seek(0)
+    return flask.send_file(buffer, mimetype='image/png')
+
+  return Response(status=404)
+
+
 @app.route('/mosaic_thumbnail_image_for_filter/<mosaic_id>/<filter>')
 def mosaic_thumbnail_image_for_filter(mosaic_id, filter):
   for mode in ['master', 'subframe']:

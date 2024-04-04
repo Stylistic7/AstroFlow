@@ -133,8 +133,6 @@ def run_graph(graph, context=None):
 
         ts.done(node)
 
-  results['metadata'] = dict(num_nodes_run=num_nodes_run)
-
   if context is not None:
     return context, results
 

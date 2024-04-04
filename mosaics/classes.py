@@ -3,15 +3,14 @@ from dataclasses import dataclass
 import plate_solving
 
 
-@dataclass
+@dataclass(frozen=True)
 class Panel:
   mosaic_id: str = None
-  stack_id: str = None
+  geometric_hash: str = None
   content_hash: str = None
   filter: str = None
-  image_filename: str = None
+  image_hash: str = None
   placed_filename: str = None
-  plate_solution: plate_solving.PlateSolution = None
   tile_indices: list[int] = None
 
 

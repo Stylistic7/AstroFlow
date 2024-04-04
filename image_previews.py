@@ -158,8 +158,7 @@ def compute_stack_master_thumbnail(context, stack_id, width=2160):
   print(f'Entering compute_stack_master_thumbnail() for stack {stack}')
 
   def has_thumbnail(stack):
-    geometric_hash = stack.geometric_hash
-    key = ('stack_thumbnail_image', 'master', geometric_hash)
+    key = ('stack_thumbnail_image', 'master', stack.content_hash)
     return ray_diskcache.contains(key)
 
   if has_thumbnail(stack):
