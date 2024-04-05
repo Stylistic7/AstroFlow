@@ -1,6 +1,7 @@
 import graphlib
 import ray
 import inspect
+import copy
 
 
 class Graph(dict):
@@ -42,6 +43,9 @@ class ResultDict(dict):
                                           args == input_args):
         return result
 
+    raise KeyError(f'Key {key._function.__module__}.{key._function.__name__} '
+                   f'input_args {input_args} not found')
+
 
 def make_graph_from_list(tasks):
   graph = {}
@@ -57,97 +61,126 @@ def make_graph_from_list(tasks):
   return graph
 
 
+def print_result_dict(results, indent=0):
+  for node, result in results.items():
+    if type(node) is tuple:
+      task, *args = node
+    else:
+      task, args = node, []
+
+    if type(task) is str:
+      print(f'{" " * indent}{task} = {result}')
+      continue
+
+    if type(result) is not ResultDict:
+      print(f'{" " * indent}{task._function.__name__} {args}: {result}')
+    else:
+      print(f'{" " * indent}{task._function.__name__} {args}:')
+      print_result_dict(result, indent + 2)
+
+
 def run_graph(graph, context=None):
+  use_context = context is not None
   num_nodes_run = 0
   max_parallelism_seen = 0
+  active = []
 
-  graph_for_ts = {}
-  context_for_ts = {}
-  results_for_ts = {}
+  def add_subgraph(graph, parent_ts=None, parent_node=None):
 
-  def add_topological_sorter(graph, context, results):
+    def done_callback(subgraph_ts):
+      if parent_ts is None:
+        return
+
+      parent_ts.done(parent_node)
+      parent_ts.context = subgraph_ts.context
+      parent_ts.results[parent_node] = subgraph_ts.final_result
+      parent_ts.final_result = subgraph_ts.final_result
+
     ts = graphlib.TopologicalSorter(graph)
     ts.prepare()
-    graph_for_ts[ts] = graph
-    context_for_ts[ts] = context
-    results_for_ts[ts] = results
+    ts.done_callback = lambda subgraph_ts=ts: done_callback(subgraph_ts)
+    ts.graph = graph
+    ts.context = context if parent_ts is None else parent_ts.context
+    ts.results = ResultDict()
+    ts.final_result = None
+    active.append(ts)
 
-  results = ResultDict()
-  add_topological_sorter(graph, context, results)
+    return ts
 
-  while any(ts.is_active() for ts in graph_for_ts.keys()):
-    to_run = []
-    for ts, node in [
-        (ts, n) for ts in graph_for_ts.keys() for n in ts.get_ready()
-    ]:
-      task, *args = _unpack_node(node)
-      if hasattr(task, 'artifact'):
-        assert hasattr(task, 'artifact_exists')
-        artifact = task.artifact(*args)
-        if task.artifact_exists(artifact):
-          results[node] = artifact
-          ts.done(node)
-          continue
+  def get_ready_nodes():
+    return [(ts, n) for ts in active for n in ts.get_ready()]
 
-      to_run.append((ts, node))
+  def ancestor_results(ts, node):
+    nodes = ts.graph.get(node, [])
+    values = [ts.results[node] for node in nodes]
 
-    max_parallelism_seen = max(len(to_run), max_parallelism_seen)
+    if len(values) == 0:
+      return None
 
-    def ancestor_results(ts, node):
-      nodes = graph_for_ts[ts].get(node, [])
-      values = [results_for_ts[ts][node] for node in nodes]
-
-      if len(values) == 1:
-        return values[0]
-
+    if len(values) > 1:
       return values
 
-    def run(ts, node):
-      task, *args = _unpack_node(node)
+    return values[0]
 
-      full_args = []
-      if context is not None:
-        full_args.append(context_for_ts[ts])
+  def make_run_fn(ts, node):
+    task, *args = _unpack_node(node)
 
-      full_args.extend(args)
+    full_args = []
+    if use_context:
+      full_args.append(ts.context)
 
-      sig = inspect.signature(task._function)
-      if len(sig.parameters) > len(full_args):
-        full_args.append(ancestor_results(ts, node))
+    full_args.extend(args)
 
-      return task.remote(*full_args)
+    sig = inspect.signature(task._function)
+    if len(sig.parameters) > len(full_args):
+      full_args.append(ancestor_results(ts, node))
 
-    ref_to_ts_and_node = {run(ts, node): (ts, node) for ts, node in to_run}
+    return task.remote(*full_args)
+
+  def delete_finished_subgraphs():
+    for ts in active:
+      if not ts.is_active():
+        if ts.done_callback:
+          ts.done_callback()
+        active.remove(ts)
+
+  toplevel_ts = add_subgraph(graph)
+
+  while active:
+    ready = get_ready_nodes()
+    max_parallelism_seen = max(len(ready), max_parallelism_seen)
+
+    ref_to_ts_and_node = {
+        make_run_fn(ts, node): (ts, node) for ts, node in ready
+    }
     remaining_refs = list(ref_to_ts_and_node.keys())
 
     while len(remaining_refs):
-      ready_refs, remaining_refs = ray.wait(remaining_refs)
+      ready_refs, remaining_refs = ray.wait(remaining_refs, num_returns=1)
+      assert len(ready_refs) == 1
+      ts, node = ref_to_ts_and_node[ready_refs[0]]
+      if use_context:
+        ts.context, result = ray.get(ready_refs[0])
+      else:
+        result = ray.get(ready_refs[0])
 
-      for ref in ready_refs:
-        ts, node = ref_to_ts_and_node[ref]
-        num_nodes_run += 1
+      num_nodes_run += 1
 
-        if context is not None:
-          context_for_ts[ts], result = ray.get(ref)
-          context = context_for_ts[ts]
-        else:
-          result = ray.get(ref)
-
-        # There are two possibilities here: the task can return a result,
-        # or a (dynamically-generated) Graph to run as a sub-graph.
-        if type(result) is Graph:
-          subgraph_results = ResultDict()
-          results_for_ts[ts][node] = subgraph_results
-          add_topological_sorter(result, context, subgraph_results)
-        else:
-          results_for_ts[ts][node] = result
-
+      # There are two possibilities here: the task can return a result,
+      # or a (dynamically-generated) Graph to run as a sub-graph.
+      if type(result) is Graph:
+        add_subgraph(result, ts, node)
+      else:
+        ts.results[node] = result
+        ts.final_result = result
         ts.done(node)
 
-  results['num_nodes_run'] = num_nodes_run
-  results['max_parallelism_seen'] = max_parallelism_seen
+    delete_finished_subgraphs()
 
-  if context is not None:
-    return context, results
+  toplevel_ts.results['num_nodes_run'] = num_nodes_run
+  toplevel_ts.results['max_parallelism_seen'] = max_parallelism_seen
 
-  return results
+  if use_context:
+    return toplevel_ts.context, toplevel_ts.results
+  else:
+    return toplevel_ts.results
