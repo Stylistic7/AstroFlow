@@ -5,26 +5,24 @@ import unittest
 import tempfile
 import ray
 from cache import cache
+import datetime
 
 from make_test_frames import make_synthetic_frames, copy_testdata_frames
 import ray_diskcache
 from context import Context
 import file_io
+from new_dependency_graph import run_graph, make_graph_from_list
 from image_metadata import scatter_compute_image_metadata
 from spatial_association import find_components_by_cosine_similarity
 from stack_identification import identify_stacks
 from calibration_frames import associate_calibration_frames
 
 
-@ray.remote
-def _compute_graph_fragment(context, new_filenames):
-  context = ray.get(
-      scatter_compute_image_metadata.remote(context, new_filenames))
-  context = ray.get(find_components_by_cosine_similarity.remote(context))
-  context = ray.get(identify_stacks.remote(context))
-  context = ray.get(associate_calibration_frames.remote(context))
-
-  return context
+def _build_compute_graph(new_filenames):
+  new_filenames = tuple(new_filenames)
+  return make_graph_from_list([(scatter_compute_image_metadata, new_filenames),
+                               find_components_by_cosine_similarity,
+                               identify_stacks, associate_calibration_frames])
 
 
 # Select only the toplevel stacks, which contain only light frames.
@@ -54,6 +52,12 @@ class TestCalibrationFrames(unittest.TestCase):
 
     self.output_dir = tempfile.TemporaryDirectory()
     self.context.output_dir = self.output_dir.name
+
+    self.context.cosine_similarity_threshold = 0.99999
+    self.context.min_component_members = 3
+    self.context.max_run_gap = datetime.timedelta(minutes=15)
+    self.context.min_frames_in_run = 3
+    self.context.min_frames_in_stack = 3
 
   def test_stack_dependency_graph(self):
     # These runs of dark and bias frames will be used by both runs of light
@@ -116,8 +120,8 @@ class TestCalibrationFrames(unittest.TestCase):
     filenames = file_io.find_image_files(self.context.input_dirs[0])
     self.assertEqual(len(filenames), 42)
 
-    self.context = ray.get(
-        _compute_graph_fragment.remote(self.context, filenames))
+    graph = _build_compute_graph(filenames)
+    self.context, _ = run_graph(graph, self.context)
 
     fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
@@ -141,8 +145,8 @@ class TestCalibrationFrames(unittest.TestCase):
     filenames = file_io.find_image_files(self.context.input_dirs[0])
     self.assertEqual(len(filenames), 8)
 
-    self.context = ray.get(
-        _compute_graph_fragment.remote(self.context, filenames))
+    graph = _build_compute_graph(filenames)
+    self.context, _ = run_graph(graph, self.context)
 
     fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
@@ -216,8 +220,8 @@ class TestCalibrationFrames(unittest.TestCase):
     filenames = file_io.find_image_files(self.context.input_dirs[0])
     self.assertEqual(len(filenames), 78)
 
-    self.context = ray.get(
-        _compute_graph_fragment.remote(self.context, filenames))
+    graph = _build_compute_graph(filenames)
+    self.context, _ = run_graph(graph, self.context)
 
     fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
@@ -271,8 +275,8 @@ class TestCalibrationFrames(unittest.TestCase):
     filenames = file_io.find_image_files(self.context.input_dirs[0])
     self.assertEqual(len(filenames), 39)
 
-    self.context = ray.get(
-        _compute_graph_fragment.remote(self.context, filenames))
+    graph = _build_compute_graph(filenames)
+    self.context, _ = run_graph(graph, self.context)
 
     fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
@@ -299,8 +303,8 @@ class TestCalibrationFrames(unittest.TestCase):
     filenames = file_io.find_image_files(self.context.input_dirs[0])
     self.assertEqual(len(filenames), 8)
 
-    self.context = ray.get(
-        _compute_graph_fragment.remote(self.context, filenames))
+    graph = _build_compute_graph(filenames)
+    self.context, _ = run_graph(graph, self.context)
 
     fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
@@ -340,8 +344,8 @@ class TestCalibrationFrames(unittest.TestCase):
     filenames = file_io.find_image_files(self.context.input_dirs[0])
     self.assertEqual(len(filenames), 26)
 
-    self.context = ray.get(
-        _compute_graph_fragment.remote(self.context, filenames))
+    graph = _build_compute_graph(filenames)
+    self.context, _ = run_graph(graph, self.context)
 
     fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
@@ -377,8 +381,8 @@ class TestCalibrationFrames(unittest.TestCase):
     filenames = file_io.find_image_files(self.context.input_dirs[0])
     self.assertEqual(len(filenames), 15)
 
-    self.context = ray.get(
-        _compute_graph_fragment.remote(self.context, filenames))
+    graph = _build_compute_graph(filenames)
+    self.context, _ = run_graph(graph, self.context)
 
     fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)

@@ -15,8 +15,6 @@ import units
 import subframe_selection
 from runs import get_runs
 
-from constants import kRunMaxGap, kMinFramesInStack
-
 
 def normalize_radians(x):
   if x < 0.0:
@@ -49,11 +47,13 @@ def _compute_content_hash(runs) -> str:
   return hash_list(sorted(all_frames))
 
 
-def _new_stack(name, light_frames, fits_headers, plate_solutions):
+def _new_stack(context, name, light_frames, fits_headers, plate_solutions):
   print(f'Entering _new_stack, light_frames are:')
   for run in light_frames:
     print(f'run {run}')
-    assert len(get_runs(run, fits_headers)) == 1
+    assert len(
+        get_runs(run, fits_headers, context.max_run_gap,
+                 context.min_frames_in_run)) == 1
 
   flattened = list(itertools.chain.from_iterable([k for k in light_frames]))
 
@@ -91,14 +91,17 @@ def _new_stack(name, light_frames, fits_headers, plate_solutions):
   for run in runs:
     assert run.frames, f'run.frames {run.frames} was Falsey'
     print(f'run {run}')
-    assert len(get_runs(run.frames, fits_headers)) == 1
+    assert len(
+        get_runs(run.frames, fits_headers, context.max_run_gap,
+                 context.min_frames_in_run)) == 1
 
   num_light_frames_before_selection = len(
       [f for run in runs for f in run.frames])
   print(f'Before down-selection, {num_light_frames_before_selection} frames '
         f'in {len(runs)} runs')
   criterion = subframe_selection.decode_selection_criterion(selection_criterion)
-  runs = criterion.select_subframes(runs, fits_headers, plate_solutions)
+  runs = criterion.select_subframes(context, runs, fits_headers,
+                                    plate_solutions)
   num_light_frames_after_selection = len(
       [f for run in runs for f in run.frames])
   print(f'After down-selection, {num_light_frames_after_selection} frames '
@@ -107,10 +110,11 @@ def _new_stack(name, light_frames, fits_headers, plate_solutions):
   for run in runs:
     assert run.frames, f'run.frames {run.frames} was Falsey'
     print(f'run {run}')
-    assert len(get_runs(run.frames, fits_headers)) == 1
+    assert len(
+        get_runs(run.frames, fits_headers, context.max_run_gap,
+                 context.min_frames_in_run)) == 1
 
-  # TODO: Put this number in the UI somewhere.
-  if num_light_frames_after_selection < kMinFramesInStack:
+  if num_light_frames_after_selection < context.min_frames_in_stack:
     return None
 
   content_hash = _compute_content_hash(runs)
@@ -134,11 +138,11 @@ def _new_stack(name, light_frames, fits_headers, plate_solutions):
 
 @ray.remote
 def identify_stacks(context):
-  print('Identifying stacks...')
-
   fits_headers = ray.get(context.fits_headers)
   plate_solutions = ray.get(context.plate_solutions)
   spatial_groups = ray.get(context.spatial_groups)
+
+  print(f'Identifying stacks from {len(spatial_groups)} spatial groups...')
 
   # TODO: Maybe implement a version of cluster_continuous() that repeatedly
   # subdivides by independent 1D variables.
@@ -167,14 +171,14 @@ def identify_stacks(context):
             date_obs = [(f, fits_headers[f]['DATE-OBS']) for f in filter_frames]
             light_frames = {}
             for run in clustering.cluster_continuous(
-                date_obs, epsilon=datetime.timedelta(minutes=kRunMaxGap)):
+                date_obs, epsilon=context.max_run_gap):
               light_frames_in_run, _ = zip(*run)
 
               # TODO: This is a run of light frames with no dependencies,
               # but it is akwardly expressed here.
               light_frames[tuple(sorted(light_frames_in_run))] = set()
 
-            new_stack = _new_stack(name, light_frames, fits_headers,
+            new_stack = _new_stack(context, name, light_frames, fits_headers,
                                    plate_solutions)
             if new_stack:
               stacks.append(new_stack)

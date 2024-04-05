@@ -19,11 +19,15 @@ def _make_test_frames(start_datetime, number=10, prefix='foo'):
 
 
 class TestRuns(unittest.TestCase):
+
   def test_get_runs_one_run(self):
     frames, fits_headers = _make_test_frames(
         pytz.utc.localize(datetime.datetime(2023, 7, 3, 0, 0)))
 
-    runs = get_runs(frames, fits_headers)
+    runs = get_runs(frames,
+                    fits_headers,
+                    max_gap=datetime.timedelta(minutes=15),
+                    min_size=3)
 
     expected_runs = [(pytz.utc.localize(datetime.datetime(2023, 7, 3, 0, 0)),
                       pytz.utc.localize(datetime.datetime(2023, 7, 3, 0, 45)))]
@@ -47,7 +51,10 @@ class TestRuns(unittest.TestCase):
     frames.extend(f)
     fits_headers |= h
 
-    runs = get_runs(frames, fits_headers)
+    runs = get_runs(frames,
+                    fits_headers,
+                    max_gap=datetime.timedelta(minutes=15),
+                    min_size=3)
 
     expected_runs = [(pytz.utc.localize(datetime.datetime(2023, 7, 3, 0, 0)),
                       pytz.utc.localize(datetime.datetime(2023, 7, 3, 1, 45)))]
@@ -71,7 +78,10 @@ class TestRuns(unittest.TestCase):
     frames.extend(f)
     fits_headers |= h
 
-    runs = get_runs(frames, fits_headers)
+    runs = get_runs(frames,
+                    fits_headers,
+                    max_gap=datetime.timedelta(minutes=15),
+                    min_size=3)
 
     expected_runs = [(pytz.utc.localize(datetime.datetime(2023, 7, 3, 0, 0)),
                       pytz.utc.localize(datetime.datetime(2023, 7, 3, 0, 45))),

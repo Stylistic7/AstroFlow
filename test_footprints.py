@@ -4,6 +4,7 @@ import ray
 import unittest
 import shapely
 from shapely import Polygon
+import datetime
 
 from context import Context
 from footprints import project_footprint
@@ -14,6 +15,12 @@ from calibration_frames import associate_calibration_frames
 from target_identification import group_stacks_into_targets
 from spatial_association import find_components_by_cosine_similarity
 import mercator
+
+default_context = dict(cosine_similarity_threshold=0.99999,
+                       min_component_members=3,
+                       max_run_gap=datetime.timedelta(minutes=15),
+                       min_frames_in_run=3,
+                       min_frames_in_stack=3)
 
 
 class TestFootprints(unittest.TestCase):
@@ -32,12 +39,13 @@ class TestFootprints(unittest.TestCase):
         rotation_angle_deg=0,
         dither=0)
 
-    context = Context(image_hashes=ray.put(image_hashes),
-                      fits_headers=ray.put(fits_headers),
-                      plate_solutions=ray.put(plate_solutions))
+    context = Context(
+        image_hashes=ray.put(image_hashes),
+        fits_headers=ray.put(fits_headers),
+        plate_solutions=ray.put(plate_solutions)) | default_context
 
-    context = ray.get(find_components_by_cosine_similarity.remote(context))
-    context = ray.get(identify_stacks.remote(context))
+    context, _ = ray.get(find_components_by_cosine_similarity.remote(context))
+    context, _ = ray.get(identify_stacks.remote(context))
 
     stacks = ray.get(context.stacks)
     self.assertEqual(len(stacks), 1)
@@ -82,14 +90,15 @@ class TestFootprints(unittest.TestCase):
         fits_headers=fits_headers,
         plate_solutions=plate_solutions)
 
-    context = Context(image_hashes=ray.put(image_hashes),
-                      fits_headers=ray.put(fits_headers),
-                      plate_solutions=ray.put(plate_solutions))
+    context = Context(
+        image_hashes=ray.put(image_hashes),
+        fits_headers=ray.put(fits_headers),
+        plate_solutions=ray.put(plate_solutions)) | default_context
 
-    context = ray.get(find_components_by_cosine_similarity.remote(context))
-    context = ray.get(identify_stacks.remote(context))
-    context = ray.get(associate_calibration_frames.remote(context))
-    context = ray.get(group_stacks_into_targets.remote(context))
+    context, _ = ray.get(find_components_by_cosine_similarity.remote(context))
+    context, _ = ray.get(identify_stacks.remote(context))
+    context, _ = ray.get(associate_calibration_frames.remote(context))
+    context, _ = ray.get(group_stacks_into_targets.remote(context))
 
     stacks = ray.get(context.stacks)
     self.assertEqual(len(stacks), 2)
@@ -137,14 +146,15 @@ class TestFootprints(unittest.TestCase):
         fits_headers=fits_headers,
         plate_solutions=plate_solutions)
 
-    context = Context(image_hashes=ray.put(image_hashes),
-                      fits_headers=ray.put(fits_headers),
-                      plate_solutions=ray.put(plate_solutions))
+    context = Context(
+        image_hashes=ray.put(image_hashes),
+        fits_headers=ray.put(fits_headers),
+        plate_solutions=ray.put(plate_solutions)) | default_context
 
-    context = ray.get(find_components_by_cosine_similarity.remote(context))
-    context = ray.get(identify_stacks.remote(context))
-    context = ray.get(associate_calibration_frames.remote(context))
-    context = ray.get(group_stacks_into_targets.remote(context))
+    context, _ = ray.get(find_components_by_cosine_similarity.remote(context))
+    context, _ = ray.get(identify_stacks.remote(context))
+    context, _ = ray.get(associate_calibration_frames.remote(context))
+    context, _ = ray.get(group_stacks_into_targets.remote(context))
 
     stacks = ray.get(context.stacks)
     self.assertEqual(len(stacks), 2)
@@ -152,9 +162,11 @@ class TestFootprints(unittest.TestCase):
     targets = ray.get(context.targets)
     self.assertEqual(len(targets), 2)
 
-    mosaics = identification.identify_mosiacs(targets)
+    context, _ = ray.get(identification.identify_mosiacs.remote(context))
+
+    mosaics = ray.get(context.mosaics)
     self.assertEqual(len(mosaics), 1)
-    mosaic = next(iter(mosaics))
+    mosaic = next(iter(mosaics.values()))
 
     projected_footprint = project_footprint(mosaic.footprint_polygon(),
                                             self.proj)

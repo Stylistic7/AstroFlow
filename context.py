@@ -1,8 +1,16 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
+import datetime
 
 
 @dataclass
-class Context:
+class Unionable:
+
+  def __or__(self, other):
+    return self.__class__(**asdict(self) | other)
+
+
+@dataclass
+class Context(Unionable):
   input_dirs: list[str] = field(default_factory=list)
   output_dir: str = None
 
@@ -23,7 +31,11 @@ class Context:
   targets: dict = None
   mosaics: dict = None
 
-  cosine_similarity_threshold = None
-  min_component_members = None
+  cosine_similarity_threshold: float = None
+  min_component_members: int = None
+
+  max_run_gap: datetime.timedelta = None
+  min_frames_in_run: int = None
+  min_frames_in_stack: int = None
 
   coordinates = None

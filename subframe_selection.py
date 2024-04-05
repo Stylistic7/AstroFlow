@@ -7,7 +7,7 @@ from runs import get_runs, get_frames_for_run
 from stack import Stack, Run, FrameHash
 
 
-def _recompute_runs_by_star_count(runs, threshold, fits_headers,
+def _recompute_runs_by_star_count(context, runs, threshold, fits_headers,
                                   plate_solutions):
   assert not any(run.stack_dependencies for run in runs)
 
@@ -17,7 +17,8 @@ def _recompute_runs_by_star_count(runs, threshold, fits_headers,
   return [
       Run(frames=[
           FrameHash(h) for h in get_frames_for_run(run, selected, fits_headers)
-      ]) for run in get_runs(selected, fits_headers)
+      ]) for run in get_runs(selected, fits_headers, context.max_run_gap,
+                             context.min_frames_in_run)
   ]
 
 
@@ -27,14 +28,14 @@ class StarCountFraction:
   def __init__(self, threshold):
     self.threshold = threshold
 
-  def select_subframes(self, runs, fits_headers, plate_solutions):
+  def select_subframes(self, context, runs, fits_headers, plate_solutions):
     light_frames_and_num_stars = get_light_frames_sorted_by_stars(
         runs, plate_solutions)
     _, highest_star_count = light_frames_and_num_stars[0]
 
     threshold = self.threshold * highest_star_count
 
-    return _recompute_runs_by_star_count(runs, threshold, fits_headers,
+    return _recompute_runs_by_star_count(context, runs, threshold, fits_headers,
                                          plate_solutions)
 
 
@@ -44,7 +45,7 @@ class StarCountStdDev:
   def __init__(self, threshold):
     self.threshold = threshold
 
-  def select_subframes(self, runs, fits_headers, plate_solutions):
+  def select_subframes(self, context, runs, fits_headers, plate_solutions):
     light_frames = [f for run in runs for f in run.frames]
     star_counts = [plate_solutions[f].num_stars for f in light_frames]
     mean = np.mean(star_counts)
@@ -52,7 +53,7 @@ class StarCountStdDev:
 
     threshold = mean - self.threshold * std_dev
 
-    return _recompute_runs_by_star_count(runs, threshold, fits_headers,
+    return _recompute_runs_by_star_count(context, runs, threshold, fits_headers,
                                          plate_solutions)
 
 

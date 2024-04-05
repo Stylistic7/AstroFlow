@@ -7,6 +7,7 @@ from pathlib import Path
 from multiprocessing import Pool
 import structlog
 import traceback
+import datetime
 
 import step_download_asiair
 import autorun_log_analysis
@@ -505,8 +506,12 @@ def get_new_filenames(filenames, context):
 
 
 def populate_context(context):
+  # TODO: Put these knobs in the UI.
   context.cosine_similarity_threshold = 0.99999
   context.min_component_members = 3
+  context.max_run_gap = datetime.timedelta(minutes=30)
+  context.min_frames_in_run = 3
+  context.min_frames_in_stack = 3
 
   # TODO: Don't just use the first input directory.
   if context.download:
@@ -577,7 +582,7 @@ def main(context):
   for input_dir in context.input_dirs:
     all_frames.extend(file_io.find_image_files(input_dir))
 
-  new_filenames = tuple(get_new_filenames(all_frames, context))
+  new_filenames = get_new_filenames(all_frames, context)
   print(f'Importing {len(new_filenames)} files')
 
   print('### Starting compute graph execution')

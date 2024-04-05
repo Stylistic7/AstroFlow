@@ -33,6 +33,12 @@ class TestSubframeSelection(unittest.TestCase):
     self.output_dir = tempfile.TemporaryDirectory()
     self.context.output_dir = self.output_dir.name
 
+    self.context.cosine_similarity_threshold = 0.99999
+    self.context.min_component_members = 3
+    self.context.max_run_gap = datetime.timedelta(minutes=15)
+    self.context.min_frames_in_run = 3
+    self.context.min_frames_in_stack = 3
+
   def test_star_count_fraction(self):
     image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
         prefix='light_clear',
@@ -69,9 +75,9 @@ class TestSubframeSelection(unittest.TestCase):
     self.context.fits_headers = ray.put(fits_headers)
     self.context.plate_solutions = ray.put(plate_solutions)
 
-    self.context = ray.get(
+    self.context, _ = ray.get(
         find_components_by_cosine_similarity.remote(self.context))
-    self.context = ray.get(identify_stacks.remote(self.context))
+    self.context, _ = ray.get(identify_stacks.remote(self.context))
 
     stacks = ray.get(self.context.stacks)
     self.assertEqual(len(stacks), 1)
@@ -110,9 +116,9 @@ class TestSubframeSelection(unittest.TestCase):
     self.context.fits_headers = ray.put(fits_headers)
     self.context.plate_solutions = ray.put(plate_solutions)
 
-    self.context = ray.get(
+    self.context, _ = ray.get(
         find_components_by_cosine_similarity.remote(self.context))
-    self.context = ray.get(identify_stacks.remote(self.context))
+    self.context, _ = ray.get(identify_stacks.remote(self.context))
 
     stacks = ray.get(self.context.stacks)
     self.assertEqual(len(stacks), 1)

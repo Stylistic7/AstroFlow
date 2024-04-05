@@ -9,10 +9,9 @@ import clustering
 from stack import Stack, Run, FrameHash
 import stack_identification
 
-from constants import kMinFramesInStack
 
-
-def _associate(stack,
+def _associate(context,
+               stack,
                image_type,
                fits_headers,
                stack_dependencies=None,
@@ -43,7 +42,8 @@ def _associate(stack,
     assert all(
         file_io.is_light_frame(fits_headers[f]) and
         not file_io.is_master(fits_headers[f]) for f in light_frames)
-    light_runs = runs.get_runs(light_frames, fits_headers)
+    light_runs = runs.get_runs(light_frames, fits_headers, context.max_run_gap,
+                               context.min_frames_in_run)
     if debug:
       print(f'light_runs is {light_runs}')
     assert len(light_runs) == 1, f'light_runs are {light_runs}'
@@ -136,7 +136,8 @@ def _associate(stack,
 
     # Select the run of calibration frames that are closest in time to the
     # light frames.
-    cal_runs = runs.get_runs(cal_frames, fits_headers)
+    cal_runs = runs.get_runs(cal_frames, fits_headers, context.max_run_gap,
+                             context.min_frames_in_run)
     if debug:
       print(f'cal_runs is {cal_runs}')
     if not len(cal_runs):
@@ -155,7 +156,7 @@ def _associate(stack,
     # Create a new Stack containing one Run of calibration frames. If the same
     # Stack is found multiple times, it will be automatically de-duped by its
     # content hash.
-    if len(cal_frames) < kMinFramesInStack:
+    if len(cal_frames) < context.min_frames_in_stack:
       print(f'Run is too short; ignoring it')
       continue
 
@@ -200,16 +201,17 @@ def associate_calibration_frames(context):
   # TODO: Maybe parallelize this if it's slow.
   output_stacks = []
   for stack in stacks:
-    stack, bias_stacks = _associate(stack, 'Bias', fits_headers)
+    stack, bias_stacks = _associate(context, stack, 'Bias', fits_headers)
     output_stacks.extend(bias_stacks)
 
-    stack, dark_stacks = _associate(stack, 'Dark', fits_headers)
+    stack, dark_stacks = _associate(context, stack, 'Dark', fits_headers)
     output_stacks.extend(dark_stacks)
 
     stack_dependencies = list(
         set(s.content_hash for s in bias_stacks + dark_stacks))
     assert None not in stack_dependencies
-    stack, flat_stacks = _associate(stack,
+    stack, flat_stacks = _associate(context,
+                                    stack,
                                     'Flat',
                                     fits_headers,
                                     stack_dependencies=stack_dependencies)
