@@ -32,18 +32,21 @@ def my_first_task():
 
 
 @ray.remote
-def my_later_task(ancestor_result):
-  return ancestor_result + 1
+def my_later_task(ancestor_results):
+  assert len(ancestor_results) == 1
+  return ancestor_results[0] + 1
 
 
 @ray.remote
-def my_last_task(ancestor_result):
-  return ancestor_result + 3
+def my_last_task(ancestor_results):
+  assert len(ancestor_results) == 1
+  return ancestor_results[0] + 3
 
 
 @ray.remote
-def my_last_task_with_context(context, ancestor_result):
-  return context, ancestor_result + 3
+def my_last_task_with_context(context, ancestor_results):
+  assert len(ancestor_results) == 1
+  return context, ancestor_results[0] + 3
 
 
 @ray.remote

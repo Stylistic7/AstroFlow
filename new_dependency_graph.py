@@ -48,7 +48,7 @@ class ResultDict(dict):
 
 
 def make_graph_from_list(tasks):
-  graph = {}
+  graph = Graph()
   prev_task = None
   for task in tasks:
     if prev_task:
@@ -88,6 +88,7 @@ def run_graph(graph, context=None):
   def add_subgraph(graph, parent_ts=None, parent_node=None):
 
     def done_callback(subgraph_ts):
+      print(f'### subgraph is done {subgraph_ts.graph}')
       if parent_ts is None:
         return
 
@@ -96,6 +97,7 @@ def run_graph(graph, context=None):
       parent_ts.results[parent_node] = subgraph_ts.final_result
       parent_ts.final_result = subgraph_ts.final_result
 
+    print(f'### creating new subgraph {graph}')
     ts = graphlib.TopologicalSorter(graph)
     ts.prepare()
     ts.done_callback = lambda subgraph_ts=ts: done_callback(subgraph_ts)
@@ -107,23 +109,13 @@ def run_graph(graph, context=None):
 
     return ts
 
-  def get_ready_nodes():
-    return [(ts, n) for ts in active for n in ts.get_ready()]
-
   def ancestor_results(ts, node):
     nodes = ts.graph.get(node, [])
-    values = [ts.results[node] for node in nodes]
-
-    if len(values) == 0:
-      return None
-
-    if len(values) > 1:
-      return values
-
-    return values[0]
+    return [ts.results[node] for node in nodes]
 
   def make_run_fn(ts, node):
     task, *args = _unpack_node(node)
+    print(f'### Making run fn for task {task._function.__name__}')
 
     full_args = []
     if use_context:
@@ -144,9 +136,13 @@ def run_graph(graph, context=None):
           ts.done_callback()
         active.remove(ts)
 
+  def get_ready_nodes():
+    return [(ts, n) for ts in active for n in ts.get_ready()]
+
   toplevel_ts = add_subgraph(graph)
 
   while active:
+    print(f'### top of loop, {len(active)} active graphs')
     ready = get_ready_nodes()
     max_parallelism_seen = max(len(ready), max_parallelism_seen)
 
