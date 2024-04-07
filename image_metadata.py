@@ -70,7 +70,7 @@ _CONTENT_HASH_KEY = 'XISF:AstroFlow:StackContentHash'
 
 @ray.remote
 def scatter_compute_image_metadata(context, filenames):
-  print('scatter_compute_image_metadata', filenames)
+  print('Entering scatter_compute_image_metadata')
 
   graph = Graph({
       gather_compute_image_metadata: [
@@ -127,7 +127,7 @@ def compute_image_metadata_ray(context, filename, *unused):
 
 @ray.remote
 def gather_compute_image_metadata(context, results):
-  print(f'gather_compute_image_metadata results {len(results)}')
+  print(f'Entering gather_compute_image_metadata results {len(results)}')
 
   def had_exception(result):
     return 'exception' in result
@@ -149,14 +149,6 @@ def gather_compute_image_metadata(context, results):
   assert not any(type(p) is str for p in plate_solutions.values())
   assert None not in image_hashes.values()
 
-  # TODO: The problem here is that modifying context here has no effect on
-  # successor tasks.
-  #
-  # The context is passed separately from lists of images, etc. because it is
-  # literally outside the function's immediate arguments.
-  #
-  # It's pretty elegant for a gather operation to write its data to the
-  # diskcache, and then another graph is started with a new context.
   context.quarantined_files = ray.put(quarantined_files)
   context.image_hashes = ray.put(image_hashes)
   context.fits_headers = ray.put(fits_headers)
@@ -172,6 +164,8 @@ def gather_compute_image_metadata(context, results):
   context.needs_regrouping |= any(not file_io.is_master(r['fits_header'])
                                   for r in results
                                   if not had_exception(r))
+
+  print(f'Needs regrouping: {context.needs_regrouping}')
 
   return context, None
 

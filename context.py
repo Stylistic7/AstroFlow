@@ -39,3 +39,6 @@ class Context(Unionable):
   min_frames_in_stack: int = None
 
   coordinates = None
+
+  run_everything: bool = False
+  shopping_cart: list = None

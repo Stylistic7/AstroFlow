@@ -558,6 +558,9 @@ def populate_context(context):
   if not stacks:
     context.needs_regrouping = True
 
+  # TODO: Put this in the UI.
+  context.run_everything = True
+
   return context
 
 

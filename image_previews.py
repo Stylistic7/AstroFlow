@@ -152,6 +152,9 @@ def compute_stack_thumbnails(context, stack, mode):
     print('not implemented')
 
 
+# TODO: This runs on every missing master thumbnail, even if the masters don't
+# exist yet. It takes up time and is unnecessary. Find some way to cache this
+# result or speed it up.
 def compute_stack_master_thumbnail(context, stack_id, width=2160):
   key = ('stack_thumbnail_image', 'master', stack_id)
   if key in ray.get(context.cache_keys):
