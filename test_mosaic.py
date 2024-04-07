@@ -5,32 +5,13 @@ import tempfile
 import datetime
 import ray
 
+import ray_diskcache
 import file_io
 from cache import cache
 from context import Context
 from make_test_frames import copy_testdata_frames
-import ray_diskcache
-from image_metadata import scatter_compute_image_metadata
-from spatial_association import find_components_by_cosine_similarity
-from stack_identification import identify_stacks
-from calibration_frames import associate_calibration_frames
-from target_identification import group_stacks_into_targets
-from mosaics.identification import identify_mosiacs
-from step_mosaic import scatter_merge_mosaics
-
-
-@ray.remote
-def _compute_graph_fragment(context, new_filenames):
-  context = ray.get(
-      scatter_compute_image_metadata.remote(context, new_filenames))
-  context = ray.get(find_components_by_cosine_similarity.remote(context))
-  context = ray.get(identify_stacks.remote(context))
-  context = ray.get(associate_calibration_frames.remote(context))
-  context = ray.get(group_stacks_into_targets.remote(context))
-  context = ray.get(identify_mosiacs.remote(context))
-  context = ray.get(scatter_merge_mosaics.remote(context, mode='subframe'))
-
-  return context
+import compute_graph
+from new_dependency_graph import run_graph
 
 
 class TestMosaic(unittest.TestCase):
@@ -50,6 +31,21 @@ class TestMosaic(unittest.TestCase):
 
     self.output_dir = tempfile.TemporaryDirectory()
     self.context.output_dir = self.output_dir.name
+
+    self.context.cosine_similarity_threshold = 0.99999
+    self.context.min_component_members = 3
+    self.context.max_run_gap = datetime.timedelta(minutes=15)
+    self.context.min_frames_in_run = 3
+    self.context.min_frames_in_stack = 3
+
+    self.context.stacks = ray.put({})
+    self.context.targets = ray.put({})
+    self.context.mosaics = ray.put({})
+
+    self.context.cache_keys = ray.put([])
+
+    self.context.shopping_cart = ray.put({})
+    self.context.run_everything = True
 
   def test_orion_mosaic(self):
     copy_testdata_frames(target_name='Orion Pane 1',
@@ -72,10 +68,11 @@ class TestMosaic(unittest.TestCase):
     filenames = file_io.find_image_files(self.context.input_dirs[0])
     self.assertEqual(len(filenames), 12)
 
-    self.context = ray.get(
-        _compute_graph_fragment.remote(self.context, filenames))
+    graph = compute_graph.build_compute_graph(filenames)
+    self.context, results = run_graph(graph, self.context)
 
     stacks = ray.get(self.context.stacks)
+    print('### stacks', stacks)
 
 
 if __name__ == "__main__":

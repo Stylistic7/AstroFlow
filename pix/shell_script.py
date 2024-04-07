@@ -46,6 +46,9 @@ def _start_pixinsight_instance(slot):
     idle_slots.append(slot)
     cache['pixinsight_idle_slots'] = idle_slots
 
+  # TODO: Poll until the PixInsight instance is reliably responding to pokes.
+  time.sleep(30)
+
   return slot
 
 
@@ -113,6 +116,9 @@ def run_script(tasks,
                tmp_dir_in=None,
                close_after=True,
                sleep_after=False):
+  if not cache.get('pixinsight_slots', default=[]):
+    start_pixinsight_instances()
+
   slot = _wait_until_slot_is_idle()
 
   with tempfile.TemporaryDirectory() if not tmp_dir_in else nullcontext(

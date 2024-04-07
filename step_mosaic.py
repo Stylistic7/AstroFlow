@@ -14,6 +14,7 @@ import ray_diskcache
 import image_previews
 from hashing import hash_list
 from new_dependency_graph import Graph
+from scatter_panels import process_mosaic_per_filter
 
 from projection import compute_viewbox
 import mercator
@@ -156,135 +157,6 @@ def show_image(data):
 #     return _get_master_panel_for_stack(stack, image_hashes, fits_headers,
 #                                        plate_solutions)
 
-
-def _get_image_hash_for_stack(stack, mode, image_hashes, fits_headers,
-                              plate_solutions):
-  if mode == 'subframe':
-    light_frames_by_stars = subframe_selection.get_light_frames_sorted_by_stars(
-        stack.runs, plate_solutions)
-    best_light_frame, _ = light_frames_by_stars[0]
-    return best_light_frame
-  elif mode == 'master':
-    hashes = stacking.find_matching_masters(stack, image_hashes, fits_headers)
-    if len(hashes) != 1:
-      return None
-    return hashes[0]
-
-
-def _placed_image_artifact_exists(panel, mode):
-  if mode == 'subframe':
-    key = ('placed_image', mode, panel.mosaic_id, panel.filter,
-           panel.tile_indices, panel.image_hash)
-    return ray_diskcache.contains(key)
-  elif mode == 'master':
-    return panel.placed_filename and os.path.exists(panel.placed_filename)
-
-
-# Function pseudocode:
-#
-# Iterates over the mosaic's tile_indices and makes Panel objects, which point
-# to specific images on disk.
-#
-# Runs mosaic_by_coordinates on all the panels in parallel, placing their image
-# data in the desired output projection.
-#
-# Merges the panels together using either NumPy or PixInsight.
-#
-# Saves the images either to the cache (for mode 'subframe') or to disk
-# (for mode 'master' and above).
-@ray.remote(scheduling_strategy="SPREAD", num_cpus=0.001)
-def process_mosaic_per_filter(context, mosaic_id, mode, filter, output_dir):
-  mosaics = ray.get(context.mosaics)
-  mosaic = mosaics[mosaic_id]
-  print(f'Entering process_mosaic_per_filter for {mosaic.name} mode {mode} '
-        f'filter {filter}')
-
-  image_hashes = ray.get(context.image_hashes)
-  fits_headers = ray.get(context.fits_headers)
-  plate_solutions = ray.get(context.plate_solutions)
-  stacks = ray.get(context.stacks)
-  targets = ray.get(context.targets)
-
-  #   # Checks to see if panel-level artifacts exist.
-  #   # cache[('mosaic_thumbnail_image', mode, id, filter)] is a dict:
-  #   #   {'panel_0_1': {content_hash, image_filename, image}}
-  #   # The content_hash has to match. If image_filename is present, it must
-  #   #   exist on disk, e.g. this filename:
-  #   #     placed_{mode}_{id}_{filter}_{tile_indices}_{content_hash}.fit on disk
-  #   def panel_artifact_exists(panel):
-  #     if panel.placed_filename and os.path.exists(panel.placed_filename):
-  #       print(f'Found placed_filename {panel.placed_filename}')
-  #       return True
-
-  #     stack = next(
-  #         (s for s in stacks.values()
-  #          if s.filter == filter and s.geometric_hash in target.stack_ids), None)
-  #     assert stack
-
-  #     key = ('mosaic_thumbnail_image', mode, id, filter)
-  #     artifacts = ray_diskcache.get(key, {})
-  #     tile_indices = '_'.join([str(t) for t in panel.tile_indices])
-  #     panel_artifact = artifacts.get(f'placed_{tile_indices}', {})
-  #     if panel_artifact.get('content_hash', None) != stack.content_hash:
-  #       return False
-  #     if panel.image_filename and not os.path.exists(panel.image_filename):
-  #       return False
-
-  #     print(f'### Found cached placed image')
-  #     return True
-
-  panels = []
-  for target_id, tile_indices in zip(mosaic.target_ids, mosaic.tile_indices):
-    target = targets[target_id]
-    stack = next(
-        (s for s in stacks.values()
-         if s.filter == filter and s.geometric_hash in target.stack_ids), None)
-    if not stack:
-      print(f'process_mosaic_per_filter failed: there is no stack for '
-            f'filter {filter}')
-      continue
-
-    image_hash = _get_image_hash_for_stack(stack, mode, image_hashes,
-                                           fits_headers, plate_solutions)
-    print(f'### process_mosaic_per_filter got hash {image_hash} for stack {stack}')
-
-    # At least one panel of the give mode (e.g. subframe or master) cannot
-    # be found, so the mosaic can't be merged.
-    if not image_hash:
-      print(f'### At least one panel for mosaic {mosaic} mode {mode} '
-            f'filter {filter} could not be found, so the mosaic channel cannot '
-            f'be merged')
-      return context, None
-
-    tile_indices_str = '_'.join([str(t) for t in tile_indices])
-    placed_filename = os.path.join(
-        str(output_dir),
-        f'placed_{mode}_{mosaic.id}_{filter}_{tile_indices_str}_'
-        f'{stack.content_hash}.fit')
-
-    panel = classes.Panel(
-        tile_indices=tile_indices,
-        mosaic_id=mosaic.id,
-        filter=filter,
-        geometric_hash=stack.geometric_hash,
-        content_hash=stack.content_hash,
-        image_hash=image_hash,
-        placed_filename=placed_filename,
-    )
-
-    panels.append(panel)
-
-  graph = Graph({
-      gather_mosaic_by_coordinates: [
-          (projection.mosaic_by_coordinates, p)
-          for p in panels
-          if not _placed_image_artifact_exists(p, mode)
-      ]
-  })
-
-  return context, graph
-
-
 #   num_panels = len([p for p in panels if not panel_artifact_exists(p)])
 #   print(f'Running mosaic_by_coordinates in parallel for {num_panels} panels...')
 #   autostretch = mode == 'subframe'
@@ -372,12 +244,6 @@ def process_mosaic_per_filter(context, mosaic_id, mode, filter, output_dir):
 # return context, None
 
 
-@ray.remote
-def gather_mosaic_by_coordinates(context, panels):
-  print(f'### gather_mosaic_by_coordinates panels are {panels}')
-  return context, None
-
-
 # Function pseudocode
 #
 # Checks to see if the toplevel artifacts exist (which is too coarse).
@@ -389,22 +255,17 @@ def scatter_merge_mosaics(context, mode):
   shopping_cart = ray_diskcache.get('shopping_cart', [])
 
   return context, Graph({
-      gather_merge_mosaics: [(merge_mosaic, m.id, mode)
-                             for m in mosaics.values()
-                             if ('merge_mosaic', m.id) in shopping_cart]
+      gather_merge_mosaics: [
+          (merge_mosaic, m.id, mode)
+          for m in mosaics.values()
+          if context.run_everything or ('merge_mosaic', m.id) in shopping_cart
+      ]
   })
 
 
 def _subframe_filter_artifact_exists(mosaic_id, filter, content_hash):
-  key = ('mosaic_thumbnail_image', 'subframe', mosaic_id, filter)
-  merged = ray_diskcache.get(key, None)
-  if merged is None:
-    return False
-
-  if merged.get('content_hash', None) != content_hash:
-    return False
-
-  return True
+  key = ('mosaic_thumbnail_image', 'subframe', mosaic_id, filter, content_hash)
+  return ray_diskcache.contains(key)
 
 
 def _master_filter_artifact_exists(mosaic_id, filter, content_hash):
@@ -493,7 +354,8 @@ def merge_mosaic(context, mosaic_id, mode):
     print(f'All filters for mosaic {mosaic.name} are up-to-date')
     return context, None
   else:
-    print(f'### Need to update the following filters: {filters_to_process}')
+    print(f'### Need to update the following filters: {filters_to_process} '
+          f'for mode {mode}')
 
   # Store merged mosaics on disk for all modes except 'subframe'.
   if mode == 'subframe':

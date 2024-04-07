@@ -16,7 +16,7 @@ from typing import Any
 import throughput
 
 
-@dataclass(frozen=True)
+@dataclass
 class PlateSolution:
   image_filename: str | None = None
   header: dict | None = None

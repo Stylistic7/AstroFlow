@@ -5,12 +5,12 @@ import largestinteriorrectangle
 
 
 def trim_mosaic_tile(xisf_filename):
-  xisf = XISF(filename)
+  xisf = XISF(xisf_filename)
   im = xisf.read_image(0).squeeze()
   epsilon = 1e-5
   top, left, height, width = largestinteriorrectangle.lir(im > epsilon)
-  printf(f'Trimmed {filename} '
-         'top {top} left {left} height {height} width {width}')
+  print(f'Trimmed {xisf_filename} '
+        'top {top} left {left} height {height} width {width}')
 
   blank_im = np.zeros(im.shape)
   blank_im[top:top + height, left:left + width] = im[top:top + height,
@@ -22,9 +22,9 @@ def trim_mosaic_tile(xisf_filename):
 
   fits_meta['HISTORY'] = ("", "TrimMosaicTile.target: " + "foo")
   fits_meta['HISTORY'] = ("", "TrimMosaicTile.top: " + top)
-  fits_meta['HISTORY'] = ("", "TrimMosaicTile.bottom: " + bottom)
+  fits_meta['HISTORY'] = ("", "TrimMosaicTile.bottom: " + (top + height))
   fits_meta['HISTORY'] = ("", "TrimMosaicTile.left: " + left)
-  fits_meta['HISTORY'] = ("", "TrimMosaicTile.right: " + right)
+  fits_meta['HISTORY'] = ("", "TrimMosaicTile.right: " + (left + width))
 
   base, ext = os.path.splitext(output_filename)
   output_filename = f'{base}_trimmed{ext}'

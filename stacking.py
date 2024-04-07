@@ -98,7 +98,9 @@ def _add_xisf_metadata(filename, dest_filename, metadata):
 # TODO: Include a timeout so a single bad stack (e.g. one that needs interactive
 # plate-solving help) won't derail a long-running session.
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
-def stack_files(context, stack, dest_path, metadata=None):
+def stack_files(context, stack_id, metadata=None):
+  stacks = ray.get(context.stacks)
+  stack = stacks[stack_id]
   print(f'Entering stack_files for {stack}')
 
   image_hashes = ray.get(context.image_hashes)
@@ -128,7 +130,7 @@ def stack_files(context, stack, dest_path, metadata=None):
     master_dir = os.path.join(tmp_dir, 'master')
     if not os.path.exists(master_dir):
       print(f'ERROR: WBPP did not produce an output master dir.')
-      return []
+      return context, None
 
     print('WBPP master dir contains:')
     for f in os.listdir(master_dir):
@@ -138,12 +140,12 @@ def stack_files(context, stack, dest_path, metadata=None):
         str(f.absolute()) for f in Path(master_dir).rglob("master*.xisf"))
     wbpp_masters.sort(key=lambda x: os.path.getmtime(x))
     filename = wbpp_masters[-1]
-    dest_filename = _output_filename(stack, fits_headers, dest_path)
+    dest_filename = _output_filename(stack, fits_headers, context.output_dir)
     print(f'last modified WBPP master {filename} -> {dest_filename}')
     os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
     _add_xisf_metadata(filename, dest_filename, metadata)
 
-    return dest_filename
+    return context, dest_filename
 
 
 def construct_graph(stacks):
@@ -168,15 +170,15 @@ def scatter_stack_subframes(context):
   print(f'scatter_stack_subframes received {len(stacks)} stacks')
 
   # TODO: Implement in the UI.
-  def is_in_shopping_cart(stack):
-    return ('stack_files', stack.geometric_hash) in shopping_cart
+  def is_in_shopping_cart(stack_id):
+    return ('stack_files', stacks[stack_id].geometric_hash) in shopping_cart
 
   return context, Graph({
       gather_stack_subframes: [
           (stack_files, s)
-          for s in stacks.values()
-          if is_in_shopping_cart(s) and
-          not find_matching_masters(s, image_hashes, fits_headers)
+          for s in stacks.keys()
+          if (context.run_everything or is_in_shopping_cart(s)) and
+          not find_matching_masters(stacks[s], image_hashes, fits_headers)
       ]
   })
 
