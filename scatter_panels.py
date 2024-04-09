@@ -204,6 +204,11 @@ def _merge_subframe_mosaic(context, panels):
 def gather_mosaic_by_coordinates(context, mode, panels):
   print(f'### gather_mosaic_by_coordinates panels are {panels}')
 
+  num_panels_in = len(panels)
+  panels = [p for p in panels if p is not None]
+  if len(panels) != num_panels_in:
+    print(f'### Placement failed for {num_panels_in - len(panels)} panels')
+
   if mode == 'subframe':
     for panel in panels:
       image = file_io.read_image(panel.placed_filename)

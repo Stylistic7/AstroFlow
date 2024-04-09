@@ -92,11 +92,15 @@ def mosaic_by_coordinates(context, panel):
       pyfits.Header(plate_solution.header))
   print(f'dest_xs.shape {dest_xs.shape} dest_ys.shape {dest_ys.shape}')
   print(f'ras.shape {ras.shape} decs.shape {decs.shape}')
-  dest_xs, dest_ys, ras, decs = zip(
-      *[(dx, dy, ra, dec)
-        for dx, dy, ra, dec in zip(dest_xs.flatten(), dest_ys.flatten(),
-                                   ras.flatten(), decs.flatten())
-        if footprint_polygon.contains_lonlat(ra, dec)])
+  try:
+    dest_xs, dest_ys, ras, decs = zip(
+        *[(dx, dy, ra, dec)
+          for dx, dy, ra, dec in zip(dest_xs.flatten(), dest_ys.flatten(),
+                                     ras.flatten(), decs.flatten())
+          if footprint_polygon.contains_lonlat(ra, dec)])
+  except Exception as e:
+    print(f'### Failed to filter points with exception {e}')
+    return context, None
 
   source_xs, source_ys = wcs.all_world2pix(ras, decs, 1, quiet=True)
 
