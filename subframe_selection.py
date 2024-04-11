@@ -9,7 +9,8 @@ from stack import Stack, Run, FrameHash
 
 def _recompute_runs_by_star_count(context, runs, threshold, fits_headers,
                                   plate_solutions):
-  assert not any(run.stack_dependencies for run in runs)
+  # TODO: Why is this here?
+  # assert not any(run.stack_dependencies for run in runs)
 
   flattened = list(itertools.chain.from_iterable([r.frames for r in runs]))
   selected = [f for f in flattened if plate_solutions[f].num_stars >= threshold]

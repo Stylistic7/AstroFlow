@@ -12,6 +12,7 @@ from dataclasses import asdict
 import shutil
 import threading
 from base64 import b64encode
+import datetime
 
 # import astro_flow_direct
 import constellations
@@ -22,6 +23,7 @@ import prev_results
 import dependency_graph as dg
 from plate_solving import PlateSolution
 import subframe_selection
+from context import Context
 
 import plotly.express as px
 import plotly.figure_factory as ff
@@ -190,29 +192,49 @@ def stack(stack_id):
 
 @app.route('/get_selected_subframes/<stack_id>')
 def get_selected_subframes(stack_id):
+  # TODO: Get the context somewhere -- is it in the cache?
+  context = Context(max_run_gap=datetime.timedelta(minutes=30),
+                    min_frames_in_run=3)
+
   stack = cache['stacks'][stack_id]
+  print('### stack is', stack)
+  fits_headers = cache['fits_headers']
   plate_solutions = cache['plate_solutions']
   criterion = subframe_selection.decode_selection_criterion(
       stack.selection_criterion)
-  stack = criterion.select_subframes(stack, plate_solutions)
-  light_frames = [f for run in stack.runs for f in run.frames]
+  runs = criterion.select_subframes(context, stack.runs, fits_headers,
+                                    plate_solutions)
+  light_frames = [f for run in runs for f in run.frames]
   return light_frames
 
 
 @app.route('/get_exposure_duration/<stack_id>')
 def get_exposure_duration(stack_id):
+  # TODO: Get the context somewhere -- is it in the cache?
+  context = Context(max_run_gap=datetime.timedelta(minutes=30),
+                    min_frames_in_run=3)
+
   stack = cache['stacks'][stack_id]
   fits_headers = cache['fits_headers']
 
   light_frames = [f for run in stack.runs for f in run.frames]
+  print(f'### before subframe selection, there are '
+        f'{len(light_frames)} light frames')
   total_exposure_duration = sum(
       fits_headers[f]['EXPOSURE'] for f in light_frames)
 
+  # TODO: Loading these from the cache on every request is going to be very
+  # slow -- maybe use the ray_diskcache, which holds them in memory?
   plate_solutions = cache['plate_solutions']
+  fits_headers = cache['fits_headers']
   criterion = subframe_selection.decode_selection_criterion(
       stack.selection_criterion)
-  stack = criterion.select_subframes(stack, plate_solutions)
-  light_frames = [f for run in stack.runs for f in run.frames]
+  print('### criterion is', criterion)
+  runs = criterion.select_subframes(context, stack.runs, fits_headers,
+                                    plate_solutions)
+  light_frames = [f for run in runs for f in run.frames]
+  print(f'### after subframe selection, there are '
+        f'{len(light_frames)} light frames')
   selected_exposure_duration = sum(
       fits_headers[f]['EXPOSURE'] for f in light_frames)
 
@@ -412,7 +434,7 @@ def get_sorted_light_frames(stack_id):
   stack = cache['stacks'][stack_id]
   plate_solutions = cache['plate_solutions']
   return subframe_selection.get_light_frames_sorted_by_stars(
-      stack, plate_solutions)
+      stack.runs, plate_solutions)
 
 
 @app.route('/get_num_stars_histogram_html/<stack_id>')
