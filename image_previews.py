@@ -70,6 +70,7 @@ def array_to_png(array):
   return png.tobytes()
 
 
+# TODO: Average flat frames before applying them.
 def _make_thumbnail(fits_headers, light_frame, light_image, bias_frame,
                     bias_image, dark_frame, dark_image, flat_frame, flat_image,
                     rotate):

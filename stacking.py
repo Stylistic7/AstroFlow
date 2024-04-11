@@ -8,6 +8,7 @@ from graphlib import TopologicalSorter
 import errno
 import os
 
+import ray_diskcache
 import pix
 import position_string
 from image_metadata import scatter_compute_image_metadata
@@ -101,6 +102,7 @@ def _add_xisf_metadata(filename, dest_filename, metadata):
 def stack_files(context, stack_id, metadata=None):
   stacks = ray.get(context.stacks)
   stack = stacks[stack_id]
+  key = ('stack_files', stack_id)
   print(f'Entering stack_files for {stack}')
 
   image_hashes = ray.get(context.image_hashes)
@@ -129,7 +131,9 @@ def stack_files(context, stack_id, metadata=None):
 
     master_dir = os.path.join(tmp_dir, 'master')
     if not os.path.exists(master_dir):
-      print(f'ERROR: WBPP did not produce an output master dir.')
+      exception = Exception("WBPP did not produce an output master dir")
+      print(f'Exception {exception}')
+      ray_diskcache.set(key, exception)
       return context, None
 
     print('WBPP master dir contains:')
@@ -145,6 +149,7 @@ def stack_files(context, stack_id, metadata=None):
     os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
     _add_xisf_metadata(filename, dest_filename, metadata)
 
+    ray_diskcache.set(key, stack.content_hash)
     return context, dest_filename
 
 
@@ -178,7 +183,8 @@ def scatter_stack_subframes(context):
           (stack_files, s)
           for s in stacks.keys()
           if (context.run_everything or is_in_shopping_cart(s)) and
-          not find_matching_masters(stacks[s], image_hashes, fits_headers)
+          not find_matching_masters(stacks[s], image_hashes, fits_headers) and
+          type(ray_diskcache.get(('stack_files', s), None)) is not Exception
       ]
   })
 
