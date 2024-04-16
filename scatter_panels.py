@@ -32,9 +32,8 @@ def _get_image_hash_for_stack(stack, mode, image_hashes, fits_headers,
 
 
 def _placed_image_artfiact_key(panel, mode):
-  if mode == 'subframe':
-    return ('placed_image', mode, panel.mosaic_id, panel.filter,
-            panel.tile_indices, panel.image_hash)
+  return ('placed_image', mode, panel.mosaic_id, panel.filter,
+          panel.tile_indices, panel.image_hash)
 
 
 def _placed_image_artifact_exists(panel, mode):
@@ -131,6 +130,7 @@ def process_mosaic_per_filter(context, mosaic_id, mode, filter, output_dir):
 
     panel = classes.Panel(tile_indices=tile_indices,
                           mosaic_id=mosaic.id,
+                          mode=mode,
                           filter=filter,
                           geometric_hash=stack.geometric_hash,
                           content_hash=stack.content_hash,
@@ -148,7 +148,8 @@ def process_mosaic_per_filter(context, mosaic_id, mode, filter, output_dir):
   return context, graph
 
 
-@ray.remote(scheduling_strategy="SPREAD")
+# TODO: Put options to balance CPUs and memory consumption in the UI.
+@ray.remote(scheduling_strategy="SPREAD", num_cpus=1.5)
 def maybe_mosaic_by_coordinates(context, panel, mode):
   if _placed_image_artifact_exists(panel, mode):
     return context, panel
@@ -216,6 +217,12 @@ def gather_mosaic_by_coordinates(context, mode, panels):
       key = _placed_image_artfiact_key(panel, mode)
       ray_diskcache.set(key, image_png, keep_in_memory=False)
       print(f'### Wrote key {key}')
+
+    if mode == 'master':
+      for panel in panels:
+        key = _placed_image_artfiact_key(panel, mode)
+        ray_diskcache.set(key, panel.placed_filename, keep_in_memory=False)
+        print(f'### Wrote key {key}')
 
     return _merge_subframe_mosaic(context, panels)
 

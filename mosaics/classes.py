@@ -8,6 +8,7 @@ class Panel:
   mosaic_id: str = None
   geometric_hash: str = None
   content_hash: str = None
+  mode: str = None
   filter: str = None
   image_hash: str = None
   placed_filename: str = None

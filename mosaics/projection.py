@@ -64,6 +64,14 @@ def mosaic_by_coordinates(context, panel):
   header = fits_headers[panel.image_hash]
   plate_solution = plate_solutions[panel.image_hash]
 
+  if header is None:
+    print(f'Could not place panel {panel} because header was None')
+    return context, None
+
+  if plate_solution is None:
+    print(f'Could not place panel {panel} because plate_solution was None')
+    return context, None
+
   image = file_io.read_image(filename)
 
   print(f'mosaic_by_coordinates image dtype {image.dtype} '
