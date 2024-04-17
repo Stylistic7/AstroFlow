@@ -81,19 +81,7 @@ def copy_testdata_frames(target_name,
                          dest_dir,
                          prefix='',
                          fits_header_overrides=None,
-                         start_datetime=None,
-                         image_hashes=None,
-                         fits_headers=None,
-                         plate_solutions=None):
-  if not image_hashes:
-    image_hashes = {}
-
-  if not fits_headers:
-    fits_headers = {}
-
-  if not plate_solutions:
-    plate_solutions = {}
-
+                         start_datetime=None):
   if not fits_header_overrides:
     fits_header_overrides = {}
 
@@ -124,18 +112,6 @@ def copy_testdata_frames(target_name,
 
         fits.flush()
         fits.close()
-
-    hash = file_io.hash_of_image_data(dest_filename)
-    image_hashes[hash] = dest_filename
-
-    header = file_io.read_header(dest_filename)
-    header.update(fits_header_overrides)
-
-    fits_headers[hash] = header
-    plate_solutions[hash] = plate_solving.solve_field(dest_filename)
-
-  return _randomize_dict(image_hashes), _randomize_dict(
-      fits_headers), _randomize_dict(plate_solutions)
 
 
 def make_synthetic_frames(start_datetime=datetime.datetime(

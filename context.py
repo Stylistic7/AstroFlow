@@ -16,7 +16,7 @@ class Context(Unionable):
 
   default_filter: str = None
 
-  cache_keys: list[str | tuple] = None
+  cache_keys: list[str | tuple] = field(default_factory=list)
 
   image_hashes: dict = None
   fits_headers: dict = None
@@ -41,4 +41,4 @@ class Context(Unionable):
   coordinates = None
 
   run_everything: bool = False
-  shopping_cart: list = None
+  shopping_cart: list = field(default_factory=list)
