@@ -41,6 +41,12 @@ class GlobalVarActor:
   def contains(self, key):
     return key in cache
 
+  def delete(self, key):
+    if key in cache:
+      del cache[key]
+    if key in self.global_dict:
+      del self.global_dict[key]
+
   def or_equals(self, key, value, default, keep_in_memory):
     if default is None:
       default = {}
@@ -83,6 +89,11 @@ def clear():
 def contains(key):
   actor = ray.get_actor('ray_diskcache', namespace='AstroFlow')
   return ray.get(actor.contains.remote(key))
+
+
+def delete(key):
+  actor = ray.get_actor('ray_diskcache', namespace='AstroFlow')
+  return ray.get(actor.delete.remote(key))
 
 
 def and_equals(key, value, default=None, keep_in_memory=True):
