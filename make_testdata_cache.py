@@ -4,6 +4,7 @@ import ray
 import datetime
 import tarfile
 import tempfile
+import shutil
 
 import file_io
 import ray_diskcache
@@ -13,7 +14,7 @@ import compute_graph
 from new_dependency_graph import run_graph
 from context import Context
 
-TESTDATA_CACHE_GZIP_FILENAME = 'testdata/test_mosaic.gz'
+TESTDATA_CACHE_GZIP_FILENAME = 'testdata/cache.gz'
 
 
 def gzip_cache(dest_filename):
@@ -32,6 +33,7 @@ if __name__ == '__main__':
   context.fits_headers = ray.put({})
   context.plate_solutions = ray.put({})
   context.cache_keys = ray.put([])
+  context.quarantined_files = ray.put([])
 
   input_dir = tempfile.TemporaryDirectory()
   context.input_dirs.append(input_dir.name)
@@ -51,21 +53,25 @@ if __name__ == '__main__':
   # contains three images.
   copy_testdata_frames(target_name='Orion Pane 1',
                        start_datetime=datetime.datetime(2024, 2, 5, 16, 29, 43),
-                       dest_dir=input_dir.name)
+                       dest_dir=input_dir.name,
+                       add_noise=False)
   copy_testdata_frames(target_name='Orion Pane 2',
                        start_datetime=datetime.datetime(2024, 2, 5, 17, 29, 43),
-                       dest_dir=input_dir.name)
+                       dest_dir=input_dir.name,
+                       add_noise=False)
   copy_testdata_frames(target_name='Orion Pane 3',
                        start_datetime=datetime.datetime(2024, 2, 5, 18, 29, 43),
-                       dest_dir=input_dir.name)
+                       dest_dir=input_dir.name,
+                       add_noise=False)
   copy_testdata_frames(target_name='Orion Pane 4',
                        start_datetime=datetime.datetime(2024, 2, 5, 19, 29, 43),
-                       dest_dir=input_dir.name)
+                       dest_dir=input_dir.name,
+                       add_noise=False)
 
   # Run the complete compute graph, which may take a long time.
-  filenames = file_io.find_image_files(input_dir.name)
-  graph = compute_graph.build_compute_graph(filenames)
+  graph = compute_graph.build_compute_graph()
   run_graph(graph, context)
 
-  # Store the cache to a tar.gz file on disk.
+  # Copy the output files, and store the cache to a tar.gz file on disk.
+  shutil.copytree(output_dir.name, 'testdata', dirs_exist_ok=True)
   gzip_cache(TESTDATA_CACHE_GZIP_FILENAME)

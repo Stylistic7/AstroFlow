@@ -7,40 +7,41 @@ import random
 import uuid
 import shutil
 import gzip
+import tarfile
 
 import plate_solving
 import file_io
 
 _TESTDATA_TARGETS = {
     'M42': [
-        'testdata/Light_M42_180.0s_Bin1_2600MM_20231130-233344_0021.fit',
-        'testdata/Light_M42_180.0s_Bin1_2600MM_20231130-234248_0024.fit',
-        'testdata/Light_M42_180.0s_Bin1_2600MM_20231130-234549_0025.fit',
+        'Light_M42_180.0s_Bin1_2600MM_20231130-233344_0021.fit',
+        'Light_M42_180.0s_Bin1_2600MM_20231130-234248_0024.fit',
+        'Light_M42_180.0s_Bin1_2600MM_20231130-234549_0025.fit',
     ],
     'NGC7635': [
-        'testdata/Light_NGC7635_300.0s_Bin1_6200MM_H_20231004-213019_0004.fit',
-        'testdata/Light_NGC7635_300.0s_Bin1_6200MM_H_20231004-213521_0005.fit',
-        'testdata/Light_NGC7635_300.0s_Bin1_6200MM_H_20231004-214053_0006.fit',
+        'Light_NGC7635_300.0s_Bin1_6200MM_H_20231004-213019_0004.fit',
+        'Light_NGC7635_300.0s_Bin1_6200MM_H_20231004-213521_0005.fit',
+        'Light_NGC7635_300.0s_Bin1_6200MM_H_20231004-214053_0006.fit',
     ],
     'Orion Pane 1': [
-        'testdata/Light_Orion_Pane 1_300.0s_Bin1_6200MM_H_20231222-210506_0001.fit',
-        'testdata/Light_Orion_Pane 1_300.0s_Bin1_6200MM_H_20231222-211007_0002.fit',
-        'testdata/Light_Orion_Pane 1_300.0s_Bin1_6200MM_H_20231222-211510_0003.fit',
+        'Light_Orion_Pane 1_300.0s_Bin1_6200MM_H_20231222-210506_0001.fit',
+        'Light_Orion_Pane 1_300.0s_Bin1_6200MM_H_20231222-211007_0002.fit',
+        'Light_Orion_Pane 1_300.0s_Bin1_6200MM_H_20231222-211510_0003.fit',
     ],
     'Orion Pane 2': [
-        'testdata/Light_Orion_Pane 2_300.0s_Bin1_6200MM_H_20231222-220301_0001.fit',
-        'testdata/Light_Orion_Pane 2_300.0s_Bin1_6200MM_H_20231222-220803_0002.fit',
-        'testdata/Light_Orion_Pane 2_300.0s_Bin1_6200MM_H_20231222-221305_0003.fit',
+        'Light_Orion_Pane 2_300.0s_Bin1_6200MM_H_20231222-220301_0001.fit',
+        'Light_Orion_Pane 2_300.0s_Bin1_6200MM_H_20231222-220803_0002.fit',
+        'Light_Orion_Pane 2_300.0s_Bin1_6200MM_H_20231222-221305_0003.fit',
     ],
     'Orion Pane 3': [
-        'testdata/Light_Orion_Pane 3_300.0s_Bin1_6200MM_H_20231222-230116_0001.fit',
-        'testdata/Light_Orion_Pane 3_300.0s_Bin1_6200MM_H_20231222-230618_0002.fit',
-        'testdata/Light_Orion_Pane 3_300.0s_Bin1_6200MM_H_20231222-231120_0003.fit',
+        'Light_Orion_Pane 3_300.0s_Bin1_6200MM_H_20231222-230116_0001.fit',
+        'Light_Orion_Pane 3_300.0s_Bin1_6200MM_H_20231222-230618_0002.fit',
+        'Light_Orion_Pane 3_300.0s_Bin1_6200MM_H_20231222-231120_0003.fit',
     ],
     'Orion Pane 4': [
-        'testdata/Light_Orion_Pane 4_300.0s_Bin1_6200MM_H_20231223-001210_0001.fit',
-        'testdata/Light_Orion_Pane 4_300.0s_Bin1_6200MM_H_20231223-001712_0002.fit',
-        'testdata/Light_Orion_Pane 4_300.0s_Bin1_6200MM_H_20231223-002215_0003.fit',
+        'Light_Orion_Pane 4_300.0s_Bin1_6200MM_H_20231223-001210_0001.fit',
+        'Light_Orion_Pane 4_300.0s_Bin1_6200MM_H_20231223-001712_0002.fit',
+        'Light_Orion_Pane 4_300.0s_Bin1_6200MM_H_20231223-002215_0003.fit',
     ]
 }
 
@@ -80,6 +81,7 @@ def _make_flat_frame(height_pixels, width_pixels, std=None):
 def copy_testdata_frames(target_name,
                          dest_dir,
                          prefix='',
+                         add_noise=True,
                          fits_header_overrides=None,
                          start_datetime=None):
   if not fits_header_overrides:
@@ -90,28 +92,29 @@ def copy_testdata_frames(target_name,
 
   date_obs = start_datetime
   for filename in _TESTDATA_TARGETS[target_name]:
-    dest_filename = os.path.join(dest_dir, f'{prefix}_{str(uuid.uuid4())}.fit')
-    with gzip.open(filename + '.gz', 'rb') as f_in:
-      with open(dest_filename, 'wb') as f_out:
-        shutil.copyfileobj(f_in, f_out)
+    tar = tarfile.open('testdata/input_0.tar.gz', "r:gz")
+    tar.extract(filename, dest_dir)
 
-        fits = pyfits.open(dest_filename, mode='update')
-        header = fits[0].header
-        image = fits[0].data
+    dest_filename = os.path.join(dest_dir, filename)
+    print(f'### Extracted filename {dest_filename}')
+    fits = pyfits.open(dest_filename, mode='update')
+    header = fits[0].header
+    image = fits[0].data
 
-        # Add a small amount of noise so it will have a unique hash.
-        assert image.dtype == np.uint16
-        image += np.random.randint(low=0,
-                                   high=2,
-                                   size=image.shape,
-                                   dtype=image.dtype)
+    # Add a small amount of noise so it will have a unique hash.
+    assert image.dtype == np.uint16
+    if add_noise:
+      image += np.random.randint(low=0,
+                                 high=2,
+                                 size=image.shape,
+                                 dtype=image.dtype)
 
-        if date_obs:
-          header['DATE-OBS'] = date_obs.strftime("%Y-%m-%dT%H:%M:%S")
-          date_obs += datetime.timedelta(seconds=int(header['EXPOSURE']) + 1)
+    if date_obs:
+      header['DATE-OBS'] = date_obs.strftime("%Y-%m-%dT%H:%M:%S")
+      date_obs += datetime.timedelta(seconds=int(header['EXPOSURE']) + 1)
 
-        fits.flush()
-        fits.close()
+    fits.flush()
+    fits.close()
 
 
 def make_synthetic_frames(start_datetime=datetime.datetime(
