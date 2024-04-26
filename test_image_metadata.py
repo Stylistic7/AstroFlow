@@ -1,153 +1,134 @@
+import ray_local
+
+import ray
 import glob
 import unittest
 import tempfile
 import random
 import os
 
-import image_metadata
-from make_test_frames import make_test_frames
+import ray_diskcache
+from context import Context
+from image_metadata import scatter_compute_image_metadata
+from make_test_frames import make_synthetic_frames
+from new_dependency_graph import make_graph_from_list, run_graph
 
 
-class TestImageHashes(unittest.TestCase):
+def compute_graph_fragment():
+  return make_graph_from_list([(scatter_compute_image_metadata, 'input')])
+
+
+class TestImageMetadata(unittest.TestCase):
+
+  def setUp(self):
+    ray_diskcache.clear()
+
+    # Start with an empty context.
+    self.context = Context()
+    self.context.image_hashes = ray.put({})
+    self.context.fits_headers = ray.put({})
+    self.context.plate_solutions = ray.put({})
+    self.context.quarantined_files = ray.put([])
+
+    self.input_dir = tempfile.TemporaryDirectory()
+    self.context.input_dirs.append(self.input_dir.name)
+
   def test_existing_files(self):
-    with tempfile.TemporaryDirectory() as tmp_dir:
-      make_test_frames(project_dir=tmp_dir)
+    input_dir = self.context.input_dirs[0]
+    make_synthetic_frames(number=10, exposure=30, dest_dir=input_dir)
 
-      filenames = glob.glob(f'{tmp_dir}/**/*.fit', recursive=True)
-      image_hashes = image_metadata.compute_image_hashes(filenames, {})
-      self.assertEqual(sorted(filenames), sorted(image_hashes.values()))
+    graph = compute_graph_fragment()
+    self.context, results = run_graph(graph, self.context)
 
-  def test_added_files(self):
-    with tempfile.TemporaryDirectory() as tmp_dir:
-      make_test_frames(number=10, project_dir=tmp_dir)
-      filenames = glob.glob(f'{tmp_dir}/**/*.fit', recursive=True)
-      image_hashes = image_metadata.compute_image_hashes(filenames, {})
-      self.assertEqual(len(image_hashes), 10)
-
-      make_test_frames(number=10, project_dir=tmp_dir)
-      filenames = glob.glob(f'{tmp_dir}/**/*.fit', recursive=True)
-      image_hashes = image_metadata.compute_image_hashes(filenames, {})
-      self.assertEqual(len(image_hashes), 20)
-
-  def test_deleted_files(self):
-    with tempfile.TemporaryDirectory() as tmp_dir:
-      make_test_frames(number=20, project_dir=tmp_dir)
-
-      filenames = glob.glob(f'{tmp_dir}/**/*.fit', recursive=True)
-      image_hashes = image_metadata.compute_image_hashes(filenames, {})
-      self.assertEqual(len(image_hashes), 20)
-
-      random.shuffle(filenames)
-      for filename in filenames[:5]:
-        os.remove(filename)
-
-      filenames = glob.glob(f'{tmp_dir}/**/*.fit', recursive=True)
-      image_hashes = image_metadata.compute_image_hashes(
-          filenames, image_hashes)
-      self.assertEqual(len(image_hashes), 20)
-
-      self.assertEqual(sum(1 for f in image_hashes.values() if f), 15)
+    self.assertEqual(results['num_nodes_run'], 2 + 10)
+    filenames = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
+    image_hashes = ray.get(self.context.image_hashes)
+    fits_headers = ray.get(self.context.fits_headers)
+    plate_solutions = ray.get(self.context.plate_solutions)
+    self.assertEqual(len(filenames), 10)
+    self.assertEqual(sorted(filenames), sorted(image_hashes.values()))
+    self.assertTrue(all(f['EXPOSURE'] == 30 for f in fits_headers.values()))
+    self.assertEqual(sorted(plate_solutions.keys()),
+                     sorted(image_hashes.keys()))
 
   def test_moved_files(self):
-    with tempfile.TemporaryDirectory() as tmp_dir:
-      make_test_frames(number=20, project_dir=tmp_dir)
+    input_dir = self.context.input_dirs[0]
+    make_synthetic_frames(number=20, dest_dir=input_dir)
 
-      filenames = glob.glob(f'{tmp_dir}/**/*.fit', recursive=True)
-      image_hashes = image_metadata.compute_image_hashes(filenames, {})
-      self.assertEqual(len(image_hashes), 20)
-      self.assertTrue(all(os.path.exists(f) for f in image_hashes.values()))
+    graph = compute_graph_fragment()
+    self.context, results = run_graph(graph, self.context)
+    self.assertEqual(results['num_nodes_run'], 2 + 20)
+    filenames = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
+    image_hashes = ray.get(self.context.image_hashes)
+    self.assertEqual(sorted(filenames), sorted(image_hashes.values()))
+    self.assertTrue(all(os.path.exists(f) for f in image_hashes.values()))
 
-      new_dir = os.path.join(tmp_dir, 'new_dir')
-      os.mkdir(new_dir)
-      random.shuffle(filenames)
-      for filename in filenames[:5]:
-        os.rename(filename, os.path.join(new_dir, os.path.basename(filename)))
+    new_dir = os.path.join(input_dir, 'new_dir')
+    os.mkdir(new_dir)
+    random.shuffle(filenames)
+    for filename in filenames[:5]:
+      os.rename(filename, os.path.join(new_dir, os.path.basename(filename)))
 
-      filenames = glob.glob(f'{tmp_dir}/**/*.fit', recursive=True)
-      image_hashes = image_metadata.compute_image_hashes(filenames, {})
-      self.assertEqual(len(image_hashes), 20)
-      self.assertTrue(all(os.path.exists(f) for f in image_hashes.values()))
+    graph = compute_graph_fragment()
+    self.context, results = run_graph(graph, self.context)
+    filenames = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
+    image_hashes = ray.get(self.context.image_hashes)
+    self.assertEqual(len(image_hashes), 20)
+    self.assertTrue(all(os.path.exists(f) for f in image_hashes.values()))
 
-      self.assertEqual(sum(1 for f in image_hashes.values() if 'new_dir' in f),
-                       5)
-
-
-class TestFitsHeaders(unittest.TestCase):
-  def test_existing_files(self):
-    with tempfile.TemporaryDirectory() as tmp_dir:
-      make_test_frames(project_dir=tmp_dir, exposure=30)
-
-      filenames = glob.glob(f'{tmp_dir}/**/*.fit', recursive=True)
-      image_hashes = image_metadata.compute_image_hashes(filenames, {})
-      self.assertEqual(sorted(filenames), sorted(image_hashes.values()))
-
-      fits_headers = image_metadata.read_fits_headers(image_hashes, {})
-      self.assertEqual(sorted(fits_headers.keys()),
-                       sorted(image_hashes.keys()))
-
-      self.assertTrue(all(f['EXPOSURE'] == 30 for f in fits_headers.values()))
+    self.assertEqual(sum(1 for f in image_hashes.values() if 'new_dir' in f), 5)
 
   def test_added_files(self):
-    with tempfile.TemporaryDirectory() as tmp_dir:
-      make_test_frames(number=10, project_dir=tmp_dir)
-      filenames = glob.glob(f'{tmp_dir}/**/*.fit', recursive=True)
-      image_hashes = image_metadata.compute_image_hashes(filenames, {})
-      self.assertEqual(len(image_hashes), 10)
-      fits_headers = image_metadata.read_fits_headers(image_hashes, {})
-      self.assertEqual(len(fits_headers), 10)
+    input_dir = self.context.input_dirs[0]
+    make_synthetic_frames(number=10, dest_dir=input_dir)
 
-      make_test_frames(number=10, project_dir=tmp_dir)
-      filenames = glob.glob(f'{tmp_dir}/**/*.fit', recursive=True)
-      image_hashes = image_metadata.compute_image_hashes(filenames, {})
-      self.assertEqual(len(image_hashes), 20)
-      fits_headers = image_metadata.read_fits_headers(image_hashes, {})
-      self.assertEqual(len(fits_headers), 20)
+    graph = compute_graph_fragment()
+    self.context, results = run_graph(graph, self.context)
+    self.assertEqual(results['num_nodes_run'], 2 + 10)
+    filenames = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
+    self.assertEqual(len(filenames), 10)
+    image_hashes = ray.get(self.context.image_hashes)
+    self.assertEqual(len(image_hashes), 10)
+    self.assertEqual(sorted(filenames), sorted(image_hashes.values()))
 
+    make_synthetic_frames(number=10, dest_dir=input_dir)
 
-class TestPlateSolving(unittest.TestCase):
-  def test_existing_files(self):
-    with tempfile.TemporaryDirectory() as tmp_dir:
-      make_test_frames(project_dir=tmp_dir, exposure=30)
+    graph = compute_graph_fragment()
+    self.context, results = run_graph(graph, self.context)
+    self.assertEqual(results['num_nodes_run'], 2 + 10)
+    filenames = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
+    self.assertEqual(len(filenames), 20)
+    image_hashes = ray.get(self.context.image_hashes)
+    self.assertEqual(len(image_hashes), 20)
+    self.assertEqual(sorted(filenames), sorted(image_hashes.values()))
 
-      filenames = glob.glob(f'{tmp_dir}/**/*.fit', recursive=True)
-      image_hashes = image_metadata.compute_image_hashes(filenames, {})
-      self.assertEqual(sorted(filenames), sorted(image_hashes.values()))
+  # TODO: What should be done about deleted files? Maybe nothing, until they
+  # are actually needed by something, e.g. a stacking operation. They might
+  # simply be on removable media, and we should not care until necessary.
+  # def test_deleted_files(self):
+  #   input_dir = self.context.input_dirs[0]
+  #   make_synthetic_frames(number=20, dest_dir=input_dir)
 
-      plate_solutions = image_metadata.plate_solve(image_hashes.keys(),
-                                                   image_hashes, {})
-      self.assertEqual(sorted(plate_solutions.keys()),
-                       sorted(image_hashes.keys()))
+  #   graph = compute_graph_fragment()
+  #   self.context, results = run_graph(graph, self.context)
+  #   self.assertEqual(results['num_nodes_run'], 2 + 20)
+  #   filenames = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
+  #   self.assertEqual(len(filenames), 20)
+  #   image_hashes = ray.get(self.context.image_hashes)
+  #   self.assertEqual(len(image_hashes), 20)
 
-  def test_deleted_files(self):
-    with tempfile.TemporaryDirectory() as tmp_dir:
-      make_test_frames(project_dir=tmp_dir, number=20)
+  #   random.shuffle(filenames)
+  #   for filename in filenames[:5]:
+  #     os.remove(filename)
 
-      filenames = glob.glob(f'{tmp_dir}/**/*.fit', recursive=True)
-      image_hashes = image_metadata.compute_image_hashes(filenames, {})
-      self.assertEqual(len(image_hashes), 20)
-
-      plate_solutions = image_metadata.plate_solve(image_hashes.keys(),
-                                                   image_hashes, {})
-      self.assertEqual(sorted(plate_solutions.keys()),
-                       sorted(image_hashes.keys()))
-
-      random.shuffle(filenames)
-      for filename in filenames[:5]:
-        os.remove(filename)
-
-      # After deleting five files, all of the image hashes should still be in
-      # the `image_hashes` dict, but their filenames should be set to None.
-      filenames = glob.glob(f'{tmp_dir}/**/*.fit', recursive=True)
-      image_hashes = image_metadata.compute_image_hashes(
-          filenames, image_hashes)
-      self.assertEqual(len(image_hashes), 20)
-      self.assertEqual(sum(1 for f in image_hashes.values() if f), 15)
-
-      # The `plate_solutions` dict should be unchanged.
-      plate_solutions = image_metadata.plate_solve(
-          image_hashes.keys(), image_hashes, plate_solutions)
-      self.assertEqual(sorted(plate_solutions.keys()),
-                       sorted(image_hashes.keys()))
+  #   graph = compute_graph_fragment()
+  #   self.context, results = run_graph(graph, self.context)
+  #   self.assertEqual(results['num_nodes_run'], 2)
+  #   filenames = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
+  #   self.assertEqual(len(filenames), 15)
+  #   image_hashes = ray.get(self.context.image_hashes)
+  #   self.assertEqual(len(image_hashes), 20)
+  #   self.assertEqual(sum(1 for f in image_hashes.values() if f), 15)
 
 
 if __name__ == '__main__':

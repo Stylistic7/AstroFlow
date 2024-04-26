@@ -1,5 +1,6 @@
 import ray
 from pathlib import Path
+import os
 
 import file_io
 import plate_solving
@@ -69,12 +70,26 @@ _CONTENT_HASH_KEY = 'XISF:AstroFlow:StackContentHash'
 
 
 @ray.remote
-def scatter_compute_image_metadata(context, filenames):
-  print('Entering scatter_compute_image_metadata')
+def scatter_compute_image_metadata(context, mode):
+  print('Entering scatter_compute_image_metadata, mode', mode)
+
+  directories = {
+      'input': context.input_dirs,
+      'master': [context.output_dir]
+  }[mode]
+
+  filenames = []
+  for dir in directories:
+    filenames.extend(file_io.find_image_files(dir))
+
+  known_files = ray.get(context.image_hashes).values()
+  quarantined_files = ray.get(context.quarantined_files)
+  new_filenames = list(
+      set(filenames) - set(known_files) - set(quarantined_files))
 
   graph = Graph({
       gather_compute_image_metadata: [
-          (compute_image_metadata_ray, f) for f in filenames
+          (compute_image_metadata_ray, f) for f in new_filenames
       ]
   })
 
@@ -103,7 +118,12 @@ def compute_image_metadata_ray(context, filename, *unused):
             filename)
 
     if result['image_hash'] in image_hashes:
-      raise DuplicateFileException()
+      prev_filename = next(
+          f for h, f in image_hashes.items() if h == result['image_hash'])
+      if os.path.exists(prev_filename):
+        raise DuplicateFileException()
+      else:
+        print(f'Filename {prev_filename} has been moved to {filename}')
 
     if file_io.is_light_frame(header):
       result['plate_solution'] = plate_solving.solve_field(filename)

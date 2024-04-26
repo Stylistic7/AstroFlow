@@ -14,9 +14,7 @@ from new_dependency_graph import make_graph_from_list
 
 @ray.remote
 def maybe_regroup_graph(context):
-  print(f'### maybe_regroup_graph, context is {context}')
   if context.needs_regrouping:
-    print('### returning regroup graph')
     return context, make_graph_from_list([
         find_components_by_cosine_similarity, identify_stacks,
         associate_calibration_frames, group_stacks_into_targets,
@@ -27,13 +25,13 @@ def maybe_regroup_graph(context):
 
 
 # TODO: Implement per-stack, per-target, and per-mosaic post-processing.
-def build_compute_graph(new_filenames):
-  new_filenames = tuple(new_filenames)
-  return make_graph_from_list([(scatter_compute_image_metadata, new_filenames),
+def build_compute_graph():
+  return make_graph_from_list([(scatter_compute_image_metadata, 'input'),
                                maybe_regroup_graph,
                                (scatter_stack_thumbnails, 'subframe'),
                                (scatter_merge_mosaics, 'subframe'),
                                scatter_stack_subframes,
+                               (scatter_compute_image_metadata, 'master'),
                                (scatter_stack_thumbnails, 'master'),
                                (scatter_merge_mosaics, 'master')])
 

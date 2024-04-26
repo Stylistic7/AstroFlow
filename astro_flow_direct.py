@@ -499,12 +499,6 @@ def assert_all_light_frames_in_stacks(light_frames, stacks):
 #   return stacks, targets, mosaics
 
 
-def get_new_filenames(filenames, context):
-  known_files = ray.get(context.image_hashes).values()
-  quarantined_files = ray.get(context.quarantined_files)
-  return list(set(filenames) - set(known_files) - set(quarantined_files))
-
-
 def populate_context(context):
   # TODO: Put these knobs in the UI.
   context.cosine_similarity_threshold = 0.99999
@@ -528,9 +522,9 @@ def populate_context(context):
   fits_headers = ray_diskcache.get('fits_headers', {})
   plate_solutions = ray_diskcache.get('plate_solutions', {})
   shopping_cart = ray_diskcache.get('shopping_cart', [])
-  stacks = ray_diskcache.get('stacks', [])
-  targets = ray_diskcache.get('targets', [])
-  mosaics = ray_diskcache.get('mosaics', [])
+  stacks = ray_diskcache.get('stacks', {})
+  targets = ray_diskcache.get('targets', {})
+  mosaics = ray_diskcache.get('mosaics', {})
 
   # TODO: Add more comprehensive validation.
   assert not any(type(p) is str for p in plate_solutions.values())
@@ -572,24 +566,10 @@ def main(context):
   # TODO: This doesn't start PixInsight on remote workers.
   pix.start_pixinsight_instances()
 
-  # TODO: Find a more general way to specify the quarantine dir, or at least
-  # ask the user to confirm the dir.
-  quarantine_dir = os.path.join(context.input_dirs[0],
-                                'Bad') if context.quarantine else None
-
   context = populate_context(context)
 
-  print('Looking for files in input dirs', context.input_dirs)
-  print('Looking for files in output dir', context.output_dir)
-  all_frames = file_io.find_image_files(context.output_dir)
-  for input_dir in context.input_dirs:
-    all_frames.extend(file_io.find_image_files(input_dir))
-
-  new_filenames = get_new_filenames(all_frames, context)
-  print(f'Importing {len(new_filenames)} files')
-
   print('### Starting compute graph execution')
-  graph = compute_graph.build_compute_graph(new_filenames)
+  graph = compute_graph.build_compute_graph()
   context, results = run_graph(graph, context)
   print('### Compute graph is done! context is', context)
 
