@@ -19,6 +19,7 @@ import LayersIcon from '@mui/icons-material/Layers';
 import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import lunr from 'lunr';
+import LeftDrawer from "./LeftDrawer.jsx";
 
 const Search = styled('div')(({ theme }) => ({
   position: 'relative',
@@ -201,15 +202,7 @@ export default function PrimarySearchAppBar({ stacks, targets, mosaics }) {
     <Box sx={{ flexGrow: 1 }}>
       <AppBar position="static">
         <Toolbar>
-          <IconButton
-            size="large"
-            edge="start"
-            color="inherit"
-            aria-label="open drawer"
-            sx={{ mr: 2 }}
-          >
-            <MenuIcon />
-          </IconButton>
+          <LeftDrawer />
           <img src="/static/images/astroflow_logo_white.png" style={{ height: 30 }} />
           <Search>
             <SearchIconWrapper>

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Breadcrumbs from '@mui/material/Breadcrumbs';
 import Link from '@mui/material/Link';
-import LeftDrawer from "./LeftDrawer.jsx";
 import Search from "./Search.jsx";
 import Starmap from "./Starmap.jsx";
 import TargetTable from "./TargetTable.jsx";
@@ -91,7 +90,6 @@ function App() {
       <StyledEngineProvider injectFirst>
         <CssBaseline />
         <Search stacks={stacks} targets={targets} mosaics={mosaics} />
-        <LeftDrawer />
         <Router>
           <Routes>
             <Route exact path="/" element={
