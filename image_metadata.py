@@ -75,7 +75,8 @@ def scatter_compute_image_metadata(context, mode):
 
   directories = {
       'input': context.input_dirs,
-      'master': [context.output_dir]
+      'master': [context.output_dir],
+      'all': context.input_dirs + [context.output_dir],
   }[mode]
 
   filenames = []
@@ -124,46 +125,35 @@ def compute_image_metadata_ray(context, filename, *unused):
         raise DuplicateFileException()
       else:
         print(f'Filename {prev_filename} has been moved to {filename}')
+        return context, result
 
     if file_io.is_light_frame(header):
       result['plate_solution'] = plate_solving.solve_field(filename)
       assert type(result['plate_solution']) is not str
-    else:
-      result['plate_solution'] = None
 
-    print('compute_image_metadata_ray() was successful')
     return context, result
   except Exception as e:
     print(f'compute_image_metadata_ray() failed for file {filename}, '
           f'exception {e}')
-    return context, {
-        'filename': filename,
-        'image_hash': None,
-        'fits_header': None,
-        'plate_solution': None,
-        'exception': e
-    }
+    return context, {'filename': filename, 'exception': e}
 
 
 @ray.remote
 def gather_compute_image_metadata(context, results):
   print(f'Entering gather_compute_image_metadata results {len(results)}')
 
-  def had_exception(result):
-    return 'exception' in result
-
   quarantined_files = ray_diskcache.and_equals(
-      'quarantined_files', [r['filename'] for r in results if had_exception(r)])
+      'quarantined_files', [r['filename'] for r in results if 'exception' in r])
   image_hashes = ray_diskcache.or_equals(
       'image_hashes',
-      {r['image_hash']: r['filename'] for r in results if not had_exception(r)})
-  fits_headers = ray_diskcache.or_equals('fits_headers', {
-      r['image_hash']: r['fits_header'] for r in results if not had_exception(r)
-  })
+      {r['image_hash']: r['filename'] for r in results if 'filename' in r})
+  fits_headers = ray_diskcache.or_equals(
+      'fits_headers',
+      {r['image_hash']: r['fits_header'] for r in results if 'fits_header' in r})
   plate_solutions = ray_diskcache.or_equals('plate_solutions', {
       r['image_hash']: r['plate_solution']
       for r in results
-      if not had_exception(r)
+      if 'plate_solution' in r
   })
 
   assert not any(type(p) is str for p in plate_solutions.values())
@@ -183,7 +173,7 @@ def gather_compute_image_metadata(context, results):
   # frames), then they need to be regrouped into stacks, targets, and mosaics.
   context.needs_regrouping |= any(not file_io.is_master(r['fits_header'])
                                   for r in results
-                                  if not had_exception(r))
+                                  if 'exception' not in r)
 
   print(f'Needs regrouping: {context.needs_regrouping}')
 

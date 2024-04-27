@@ -26,7 +26,7 @@ def maybe_regroup_graph(context):
 
 # TODO: Implement per-stack, per-target, and per-mosaic post-processing.
 def build_compute_graph():
-  return make_graph_from_list([(scatter_compute_image_metadata, 'input'),
+  return make_graph_from_list([(scatter_compute_image_metadata, 'all'),
                                maybe_regroup_graph,
                                (scatter_stack_thumbnails, 'subframe'),
                                (scatter_merge_mosaics, 'subframe'),
