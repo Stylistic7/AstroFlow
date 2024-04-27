@@ -145,16 +145,23 @@ def gather_compute_image_metadata(context, results):
   quarantined_files = ray_diskcache.and_equals(
       'quarantined_files', [r['filename'] for r in results if 'exception' in r])
   image_hashes = ray_diskcache.or_equals(
-      'image_hashes',
-      {r['image_hash']: r['filename'] for r in results if 'filename' in r})
+      'image_hashes', {
+          r['image_hash']: r['filename']
+          for r in results
+          if 'image_hash' in r and 'filename' in r
+      })
   fits_headers = ray_diskcache.or_equals(
-      'fits_headers',
-      {r['image_hash']: r['fits_header'] for r in results if 'fits_header' in r})
-  plate_solutions = ray_diskcache.or_equals('plate_solutions', {
-      r['image_hash']: r['plate_solution']
-      for r in results
-      if 'plate_solution' in r
-  })
+      'fits_headers', {
+          r['image_hash']: r['fits_header']
+          for r in results
+          if 'image_hash' in r and 'fits_header' in r
+      })
+  plate_solutions = ray_diskcache.or_equals(
+      'plate_solutions', {
+          r['image_hash']: r['plate_solution']
+          for r in results
+          if 'image_hash' in r and 'plate_solution' in r
+      })
 
   assert not any(type(p) is str for p in plate_solutions.values())
   assert None not in image_hashes.values()
