@@ -51,6 +51,10 @@ def _find_all_possible_bases(centers):
 #
 # Maybe the first step is to look at every possible triplet of targets, and find
 # all sets of orthogonal basis vectors?
+#
+# TODO: The definition of a mosaic is that the panes are aligned along their
+# long or short axes. This means all their rotation_angles are consistent
+# (at least for mosaics without rotation...).
 def ransac(mosaic, debug=False, plot=False, plot_title=None):
   print(f'Running RANSAC on mosaic with {len(mosaic)} targets')
 

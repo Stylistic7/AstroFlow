@@ -26,6 +26,19 @@ def _exposure_time_string(stack):
   return f'{hours:02.0f}h{minutes:02.0f}m'
 
 
+# TODO: Split these functions out into a new file and unify them.
+def matching_artifacts(image_hashes, fits_headers, content_hash):
+  return [
+      h for h, header in fits_headers.items()
+      if header and header.get(_CONTENT_HASH_KEY, None) == content_hash and
+      os.path.exists(image_hashes[h])
+  ]
+
+
+def artifact_exists(image_hashes, fits_headers, content_hash):
+  return len(matching_artifacts(image_hashes, fits_headers, content_hash))
+
+
 # TODO: This function hits every master once for every stack, which grows to
 # be enormous. It should be cached somehow.
 def find_matching_masters(stack, image_hashes, fits_headers):

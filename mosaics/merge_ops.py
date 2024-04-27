@@ -23,7 +23,7 @@ def make_pairs(min_index, max_index, template):
   return pairs
 
 
-def make_merge_ops(mode, mosaic_id, panels, stacks, output_dir):
+def make_merge_ops(mode, mosaic_id, panels, output_dir):
   print(f'Panels are {panels}')
 
   filters = set(p.filter for p in panels)
@@ -116,9 +116,9 @@ def run_photometric_mosaic(merge_op):
   return result
 
 
-def merge_mosaic(mode, mosaic_id, panels, stacks, output_dir):
+def merge_mosaic(mode, mosaic_id, panels, output_dir):
   print(f'Entering merge_mosaic, output_dir {output_dir}')
-  for merge_op in make_merge_ops(mode, mosaic_id, panels, stacks, output_dir):
+  for merge_op in make_merge_ops(mode, mosaic_id, panels, output_dir):
     output_image = run_photometric_mosaic(merge_op)
     print(f'run_photometric_mosaic returned {output_image}')
 

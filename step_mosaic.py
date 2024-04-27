@@ -254,6 +254,12 @@ def scatter_merge_mosaics(context, mode):
   mosaics = ray.get(context.mosaics)
   shopping_cart = ray_diskcache.get('shopping_cart', [])
 
+  print(f'### Entering scatter_merge_mosaics for {len(mosaics)} mosaics, '
+        f' mode {mode}')
+
+  plate_solutions = ray.get(context.plate_solutions)
+  print('### scatter_merge_mosaics plate_solutions', plate_solutions.keys())
+
   return context, Graph({
       gather_merge_mosaics: [
           (merge_mosaic, m.id, mode)
@@ -266,10 +272,6 @@ def scatter_merge_mosaics(context, mode):
 def _subframe_filter_artifact_exists(mosaic_id, filter, content_hash):
   key = ('mosaic_thumbnail_image', 'subframe', mosaic_id, filter, content_hash)
   return ray_diskcache.contains(key)
-
-
-def _master_filter_artifact_exists(mosaic_id, filter, content_hash):
-  return False
 
 
 # key = ('mosaic_thumbnail_image', mode, mosaic.id, filter)
@@ -319,6 +321,7 @@ def merge_mosaic(context, mosaic_id, mode):
 
   print(f'Entering merge_mosaic for mosaic {mosaic} mode {mode}')
   image_hashes = ray.get(context.image_hashes)
+  fits_headers = ray.get(context.fits_headers)
   targets = ray.get(context.targets)
   stacks = ray.get(context.stacks)
 
@@ -332,15 +335,21 @@ def merge_mosaic(context, mosaic_id, mode):
 
   def all_panels_have_filter(filter):
     stacks = stacks_for_filter(filter)
-    return len(stacks) == len(mosaic.target_ids)
+    result = len(stacks) == len(mosaic.target_ids)
+    print(f'### all_panels_have_filter {filter} = {result}')
+    return result
 
   def filter_artifact_exists(filter):
     stacks = stacks_for_filter(filter)
     content_hash = hash_list([s.content_hash for s in stacks])
     if mode == 'subframe':
-      return _subframe_filter_artifact_exists(mosaic.id, filter, content_hash)
+      result = _subframe_filter_artifact_exists(mosaic.id, filter, content_hash)
     elif mode == 'master':
-      return _master_filter_artifact_exists(mosaic.id, filter, content_hash)
+      result = bool(
+          stacking.artifact_exists(image_hashes, fits_headers, content_hash))
+    print(f'### filter_artifact exists for mode {mode} '
+          f'filter {filter} = {result}')
+    return result
 
   # TODO: Don't hardcode these filters. Find the set from the images
   # themselves.
@@ -351,7 +360,8 @@ def merge_mosaic(context, mosaic_id, mode):
   ]
 
   if not filters_to_process:
-    print(f'All filters for mosaic {mosaic.name} are up-to-date')
+    print(
+        f'### All filters for mosaic {mosaic.name} mode {mode} are up-to-date')
     return context, None
   else:
     print(f'### Need to update the following filters: {filters_to_process} '
