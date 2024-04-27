@@ -502,6 +502,22 @@ def quarantine_stack(stack_id):
   resp = jsonify(success=True)
 
 
+@app.route('/recent')
+def recent():
+  fits_headers = cache['fits_headers']
+  stacks = cache['stacks']
+  targets = cache['targets']
+
+  def last_frame_datetime(target_id):
+    target = targets[target_id]
+    for stack_id in target.stack_ids:
+      stack = stacks[stack_id]
+      for run in stack.runs:
+        return max(fits_headers[h]['DATE-OBS'] for h in run.frames)
+
+  return sorted(targets, key=last_frame_datetime, reverse=True)
+
+
 def run_astroflow_repeatedly():
 
   def ok_to_run():

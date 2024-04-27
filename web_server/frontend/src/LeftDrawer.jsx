@@ -12,6 +12,8 @@ import InboxIcon from '@mui/icons-material/MoveToInbox';
 import MailIcon from '@mui/icons-material/Mail';
 import IconButton from '@mui/material/IconButton';
 import MenuIcon from '@mui/icons-material/Menu';
+import ScheduleIcon from '@mui/icons-material/Schedule';
+import { Schedule } from '@mui/icons-material';
 
 
 export default function LeftDrawer() {
@@ -35,6 +37,14 @@ export default function LeftDrawer() {
       onKeyDown={toggleDrawer(anchor, false)}
     >
       <List>
+        <ListItem key="recent" disablePadding>
+          <ListItemButton>
+            <ListItemIcon>
+              <ScheduleIcon />
+            </ListItemIcon>
+            <ListItemText primary="Recent" />
+          </ListItemButton>
+        </ListItem>
         {['Inbox', 'Starred', 'Send email', 'Drafts'].map((text, index) => (
           <ListItem key={text} disablePadding>
             <ListItemButton>

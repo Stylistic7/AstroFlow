@@ -10,6 +10,7 @@ import MosaicPanel from "./MosaicPanel.jsx";
 import TargetPanel from "./TargetPanel.jsx";
 import StackPanel from "./StackPanel.jsx";
 import DisambiguationPanel from "./DisambiguationPanel.jsx";
+import RecentPanel from "./RecentPanel.jsx";
 import FlatCorrectionPanel from "./FlatCorrectionPanel.jsx";
 import logo from './logo.svg';
 import { usePageVisibility } from './usePageVisibility';
@@ -117,6 +118,11 @@ function App() {
             />
             <Route exact path="/disambiguation/:items" element={
               dataIsAvailable && <DisambiguationPanel
+                stacks={stacks} targets={targets} mosaics={mosaics}
+              />}
+            />
+            <Route exact path="/recent" element={
+              dataIsAvailable && <RecentPanel
                 stacks={stacks} targets={targets} mosaics={mosaics}
               />}
             />
