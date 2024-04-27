@@ -70,6 +70,8 @@ SelectionCriterion = StarCountFraction | StarCountStdDev
 
 
 def get_light_frames_sorted_by_stars(runs, plate_solutions):
+  print(f'### get_light_frames_sorted_by_stars plate_solutions',
+        plate_solutions.keys())
   light_frames = [f for run in runs for f in run.frames]
   light_frames = sorted(light_frames,
                         key=lambda f: plate_solutions[f].num_stars,

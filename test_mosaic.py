@@ -43,16 +43,10 @@ class TestMosaic(unittest.TestCase):
 
     self.input_dir = tempfile.TemporaryDirectory()
     self.context.input_dirs.append(self.input_dir.name)
-    # tar = tarfile.open('testdata/input_0.tar.gz', "r:gz")
-    # tar.extractall(self.input_dir.name)
 
     self.output_dir = tempfile.TemporaryDirectory()
     self.context.output_dir = self.output_dir.name
-    for i in range(3):
-      tar = tarfile.open(f'testdata/output_{i}.tar.gz', "r:gz")
-      tar.extractall(self.output_dir.name)
-    for filename in Path(self.output_dir.name).rglob("*"):
-      print(f'### Extracted output file {filename}')
+    shutil.copytree('testdata/output', self.output_dir.name, dirs_exist_ok=True)
 
     self.context.cosine_similarity_threshold = 0.99999
     self.context.min_component_members = 3
@@ -119,7 +113,7 @@ class TestMosaic(unittest.TestCase):
     graph = compute_graph.build_compute_graph()
     self.context, results = run_graph(graph, self.context)
 
-    shutil.copytree(self.output_dir.name, 'testdata', dirs_exist_ok=True)
+    shutil.copytree(self.output_dir.name, 'testdata/output', dirs_exist_ok=True)
 
     # TODO: What are good criteria for completion? The addition of new filenames
     # and cache keys, no doubt.

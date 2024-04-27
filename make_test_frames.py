@@ -6,8 +6,6 @@ import datetime
 import random
 import uuid
 import shutil
-import gzip
-import tarfile
 
 import plate_solving
 import file_io
@@ -92,11 +90,10 @@ def copy_testdata_frames(target_name,
 
   date_obs = start_datetime
   for filename in _TESTDATA_TARGETS[target_name]:
-    tar = tarfile.open('testdata/input_0.tar.gz', "r:gz")
-    tar.extract(filename, dest_dir)
-
+    src_filename = os.path.join('testdata', 'input', filename)
     dest_filename = os.path.join(dest_dir, filename)
-    print(f'### Extracted filename {dest_filename}')
+    shutil.copy(src_filename, dest_filename)
+    print(f'### Copied filename {dest_filename}')
     fits = pyfits.open(dest_filename, mode='update')
     header = fits[0].header
     image = fits[0].data

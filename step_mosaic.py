@@ -369,9 +369,6 @@ def merge_mosaic(context, mosaic_id, mode):
 
   # Store merged mosaics on disk for all modes except 'subframe'.
   if mode == 'subframe':
-    # TODO: This temp directory goes out of scope when this function exits.
-    # temp_dir = tempfile.TemporaryDirectory()
-    # output_dir = temp_dir.name
     output_dir = tempfile.gettempdir()
   elif mode == 'master':
     output_dir = os.path.join(context.output_dir, 'Mosaics', mosaic.name)

@@ -142,7 +142,13 @@ def _merge_master_mosaic(context, panels):
   mode = 'master'
   filter = panels[0].filter
   mosaic_id = panels[0].mosaic_id
-  output_dir = context.output_dir
+
+  mosaics = ray.get(context.mosaics)
+  mosaic = mosaics[mosaic_id]
+
+  output_dir = os.path.join(context.output_dir, 'Mosaics', mosaic.name)
+  os.makedirs(output_dir, exist_ok=True)
+
   print('### Entering _merge_master_mosaic for mosaic id {mosaic_id}')
   output_image = merge_ops.merge_mosaic(mode, mosaic_id, panels, output_dir)
 
