@@ -47,13 +47,25 @@ def _compute_content_hash(runs) -> str:
   return hash_list(sorted(all_frames))
 
 
-def _new_stack(context, name, light_frames, fits_headers, plate_solutions):
-  print(f'Entering _new_stack, light_frames are:')
-  for run in light_frames:
-    print(f'run {run}')
+def _new_stack(context,
+               name,
+               light_frames,
+               fits_headers,
+               plate_solutions,
+               debug=False):
+
+  def assert_single_run(frames):
     assert len(
-        get_runs(run, fits_headers, context.max_run_gap,
+        get_runs(frames, fits_headers, context.max_run_gap,
                  context.min_frames_in_run)) == 1
+
+  if debug:
+    print(f'Entering _new_stack, light_frames are:')
+
+  for run in light_frames:
+    if debug:
+      print(f'run {run}')
+    assert_single_run(run)
 
   flattened = list(itertools.chain.from_iterable([k for k in light_frames]))
 
@@ -68,6 +80,8 @@ def _new_stack(context, name, light_frames, fits_headers, plate_solutions):
   oldest_image = flattened[0]
 
   center = plate_solutions[oldest_image].center
+  assert list(center)
+
   image_scale = plate_solutions[oldest_image].image_scale
   rotation_angle = normalize_radians(
       plate_solutions[oldest_image].rotation_angle)
@@ -90,29 +104,29 @@ def _new_stack(context, name, light_frames, fits_headers, plate_solutions):
 
   for run in runs:
     assert run.frames, f'run.frames {run.frames} was Falsey'
-    print(f'run {run}')
-    assert len(
-        get_runs(run.frames, fits_headers, context.max_run_gap,
-                 context.min_frames_in_run)) == 1
+    if debug:
+      print(f'run {run}')
+    assert_single_run(run.frames)
 
   num_light_frames_before_selection = len(
       [f for run in runs for f in run.frames])
-  print(f'Before down-selection, {num_light_frames_before_selection} frames '
-        f'in {len(runs)} runs')
+  if debug:
+    print(f'Before down-selection, {num_light_frames_before_selection} frames '
+          f'in {len(runs)} runs')
   criterion = subframe_selection.decode_selection_criterion(selection_criterion)
   runs = criterion.select_subframes(context, runs, fits_headers,
                                     plate_solutions)
   num_light_frames_after_selection = len(
       [f for run in runs for f in run.frames])
-  print(f'After down-selection, {num_light_frames_after_selection} frames '
-        f'in {len(runs)} runs')
+  if debug:
+    print(f'After down-selection, {num_light_frames_after_selection} frames '
+          f'in {len(runs)} runs')
 
   for run in runs:
     assert run.frames, f'run.frames {run.frames} was Falsey'
-    print(f'run {run}')
-    assert len(
-        get_runs(run.frames, fits_headers, context.max_run_gap,
-                 context.min_frames_in_run)) == 1
+    if debug:
+      print(f'run {run}')
+    assert_single_run(run.frames)
 
   if num_light_frames_after_selection < context.min_frames_in_stack:
     return None

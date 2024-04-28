@@ -257,9 +257,6 @@ def scatter_merge_mosaics(context, mode):
   print(f'### Entering scatter_merge_mosaics for {len(mosaics)} mosaics, '
         f' mode {mode}')
 
-  plate_solutions = ray.get(context.plate_solutions)
-  print('### scatter_merge_mosaics plate_solutions', plate_solutions.keys())
-
   return context, Graph({
       gather_merge_mosaics: [
           (merge_mosaic, m.id, mode)

@@ -35,5 +35,6 @@ def build_compute_graph():
                                (scatter_stack_thumbnails, 'master'),
                                (scatter_merge_mosaics, 'master')])
 
-  # TODO: Add a cleanup task that deletes unreferenced stuff from the cache.
-  # Can I use some kind of automatic ref-counting?
+
+# TODO: Add a cleanup task that deletes unreferenced stuff from the cache.
+# Can I use some kind of automatic ref-counting?

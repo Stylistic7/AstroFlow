@@ -17,8 +17,6 @@ def group_stacks_into_targets(context):
   fits_headers = ray.get(context.fits_headers)
   plate_solutions = ray.get(context.plate_solutions)
 
-  print(f'Finding targets out of {len(stacks)} stacks')
-
   def is_light_frame_stack(stack):
     for run in stack.runs:
       if not all(file_io.is_light_frame(fits_headers[f]) for f in run.frames):
@@ -27,16 +25,18 @@ def group_stacks_into_targets(context):
     return True
 
   values = {
-      id: (stack.center,
+      id: (np.asarray(footprints.radec_to_vector(*stack.center)),
            SphericalPolygon.from_wcs(
                pyfits.Header(plate_solutions[stack.runs[0].frames[0]].header))
           ) for id, stack in stacks.items() if is_light_frame_stack(stack)
   }
 
-  def comparison_fn(a, b, threshold=0.99999):
+  print(f'Finding targets out of {len(values)} light-frame stacks')
+
+  def comparison_fn(a, b):
     a_center, a_polygon = a
     b_center, b_polygon = b
-    if np.dot(a_center, b_center) < threshold:
+    if np.dot(a_center, b_center) < context.cosine_similarity_threshold:
       return False
 
     iou = a_polygon.intersection(b_polygon).area() / a_polygon.union(

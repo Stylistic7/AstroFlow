@@ -4,6 +4,7 @@ import ray
 import image_metadata
 import position_string
 import file_io
+import footprints
 
 # TODO: Bring all knobs up here.
 MIN_COMPONENT_MEMBERS = 3
@@ -45,50 +46,6 @@ def find_groups(ids,
   return groups
 
 
-def _lonlat_to_vector(lon, lat, degrees=True):
-  r"""
-    Converts a location on the unit sphere from longitude and
-    latitude to an *x*, *y*, *z* vector.
-
-    Parameters
-    ----------
-    lon, lat : scalars or 1-D arrays
-
-    degrees : bool, optional
-
-       If `True`, (default) *lon* and *lat* are in decimal degrees,
-       otherwise in radians.
-
-    Returns
-    -------
-    x, y, z : tuple of scalars or 1-D arrays of the same length
-
-    Notes
-    -----
-    Where longitude is *l* and latitude is *b*:
-
-    .. math::
-        x = \cos l \cos b
-
-        y = \sin l \cos b
-
-        z = \sin b
-    """
-  lon = np.asanyarray(lon)
-  lat = np.asanyarray(lat)
-
-  if degrees:
-    lon_rad = np.deg2rad(lon)
-    lat_rad = np.deg2rad(lat)
-  else:
-    lon_rad = lon
-    lat_rad = lat
-
-  cos_lat = np.cos(lat_rad)
-
-  return (np.cos(lon_rad) * cos_lat, np.sin(lon_rad) * cos_lat, np.sin(lat_rad))
-
-
 def _make_dict_from_groups(hashes, values, comparison_fn, plate_solutions,
                            min_component_members):
   targets = find_groups(hashes, values, comparison_fn, min_component_members)
@@ -127,7 +84,7 @@ def find_components_by_cosine_similarity(context):
   light_frames = sorted(light_frames, key=lambda h: fits_headers[h]['DATE-OBS'])
 
   centroids = {
-      h: np.asarray(_lonlat_to_vector(*plate_solutions[h].center))
+      h: np.asarray(footprints.radec_to_vector(*plate_solutions[h].center))
       for h in light_frames
   }
 

@@ -60,7 +60,6 @@ def _placed_image_artifact_exists(panel, mode):
 # (for mode 'master' and above).
 @ray.remote(scheduling_strategy="SPREAD", num_cpus=0.001)
 def process_mosaic_per_filter(context, mosaic_id, mode, filter, output_dir):
-  print(f'### process_mosaic_per_filter context is', context)
   mosaics = ray.get(context.mosaics)
   mosaic = mosaics[mosaic_id]
   print(f'Entering process_mosaic_per_filter for {mosaic.name} mode {mode} '
@@ -69,8 +68,6 @@ def process_mosaic_per_filter(context, mosaic_id, mode, filter, output_dir):
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
   plate_solutions = ray.get(context.plate_solutions)
-  print(f'### process_mosaic_per_filter plate_solutions',
-        plate_solutions.keys())
   stacks = ray.get(context.stacks)
   targets = ray.get(context.targets)
 

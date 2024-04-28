@@ -15,7 +15,7 @@ def _associate(context,
                image_type,
                fits_headers,
                stack_dependencies=None,
-               debug=True):
+               debug=False):
   if debug:
     print(f'Entering _associate for {stack} with {len(stack.runs)} runs')
     for run in stack.runs:
