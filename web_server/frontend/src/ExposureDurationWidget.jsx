@@ -67,15 +67,29 @@ export default function ExposureDurationWidget({ totalExposureDuration, selected
 		);
 	};
 
-	// TODO: Make this show the actual good and total exposure times.
-	return (<svg
-		xmlns="http://www.w3.org/2000/svg"
-		viewBox="0 0 2 2"
-		style={sx}
-	>
-		{clock_face()}
-		{wedge(totalExposureDuration, "red")}
-		{wedge(selectedExposureDuration, "blue")}
-		{tick_marks()}
-	</ svg>);
+	function clamp(number, min, max) {
+		return Math.max(min, Math.min(max, number));
+	}
+
+	const elements = [];
+	let numClockFaces = 0;
+	while (totalExposureDuration > 0 || selectedExposureDuration > 0) {
+		elements.push(<svg
+			xmlns="http://www.w3.org/2000/svg"
+			viewBox="0 0 2 2"
+			style={{ ...sx, "right": `${numClockFaces * 2 + 0.5}em` }}
+			key={`key_${numClockFaces}`}
+		>
+			{clock_face()}
+			{wedge(clamp(totalExposureDuration, 0, 11.999), "red")}
+			{wedge(clamp(selectedExposureDuration, 0, 11.999), "blue")}
+			{tick_marks()}
+		</svg >);
+
+		numClockFaces += 1;
+		totalExposureDuration -= 12;
+		selectedExposureDuration -= 12;
+	}
+
+	return <React.Fragment>{elements}</React.Fragment>;
 }

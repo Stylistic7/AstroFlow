@@ -8,7 +8,7 @@ export default function StackThumbnail({ stacks, stack_id, width, handleClick })
 
 	const color_for_filter = (filter) => {
 		let rgb = {
-			'L': [51, 51, 51],
+			'L': [255, 255, 255],
 			'R': [230, 0, 0],
 			'G': [0, 204, 0],
 			'B': [0, 0, 204],
