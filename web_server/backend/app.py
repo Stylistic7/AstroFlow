@@ -465,41 +465,41 @@ def get_num_stars_histogram_html(stack_id):
   return flask.send_file(mem, mimetype='text/html')
 
 
-# TODO: Don't hardcode the quarantine directory.
-quarantine_dir = "/Users/nobody/Projects/Astro/Raw/Bad/"
+@app.route('/quarantine_target/<target_id>')
+def quarantine_target(target_id):
+  target = cache.get('targets', {})[target_id]
+  stacks = cache.get('stacks', {})
+  quarantined_files = cache.get('quarantined_files', [])
 
-
-@app.route('/delete_target/<target_id>')
-def delete_target(target_id):
-  # target = next(t for t in cache['targets'] if t.id == target_id)
-  target = cache['targets'][target_id]
+  num_files_quarantined = 0
   for stack_id in target.stack_ids:
-    # stack = next(s for s in cache['stacks'] if s.id == stack_id)
-    stack = cache['stacks'][stack_id]
-    for filename in stack.light_frames:
-      print(f'Quarantining file {filename}')
-      shutil.move(filename, quarantine_dir)
+    stack = stacks[stack_id]
+    for run in stack.runs:
+      for h in run.frames:
+        quarantined_files.append(h)
+        num_files_quarantined += 1
 
-  resp = jsonify(success=True)
-  return resp
+  print(f'### Quarantined {num_files_quarantined} files')
+  cache['quarantined_files'] = quarantined_files
+
+  return Response(status=204)
 
 
-@app.route('/quaratine_stack/<stack_id>')
+@app.route('/quarantine_stack/<stack_id>')
 def quarantine_stack(stack_id):
-  image_hashes = cache['image_hashes']
   stack = cache['stacks'][stack_id]
+  quarantined_files = cache['quarantined_files']
 
-  for hash in stack.light_frames:
-    filename = image_hashes[hash]
-    if filename:
-      print(f'Quarantining file {filename}')
-      shutil.move(filename,
-                  os.path.join(quarantine_dir, os.path.basename(filename)))
-    else:
-      print(f'Hash {hash} is not found on disk')
-      resp = jsonify(success=False)
+  num_files_quarantined = 0
+  for run in stack.runs:
+    for h in run.frames:
+      quarantined_files.append(h)
+      num_files_quarantined += 1
 
-  resp = jsonify(success=True)
+  print(f'### Quarantined {num_files_quarantined} files')
+  cache['quarantined_files'] = quarantined_files
+
+  return Response(status=204)
 
 
 @app.route('/recent')

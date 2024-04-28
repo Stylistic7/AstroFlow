@@ -116,8 +116,7 @@ def find_components_by_cosine_similarity(context):
         len(fits_headers))
   print('Before removing bad plate solutions, len plate_solutions',
         len(plate_solutions))
-  plate_solutions = image_metadata.remove_bad_images(image_hashes,
-                                                     plate_solutions)
+  plate_solutions = image_metadata.remove_bad_images(context)
   print('After removing bad plate solutions, len', len(plate_solutions))
 
   light_frames = [

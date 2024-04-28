@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useNavigate, useParams } from "react-router-dom";
 import Box from '@mui/material/Box';
 import Drawer from '@mui/material/Drawer';
 import Button from '@mui/material/Button';
@@ -17,6 +18,8 @@ import { Schedule } from '@mui/icons-material';
 
 
 export default function LeftDrawer() {
+  const navigate = useNavigate();
+
   const [state, setState] = React.useState({
     left: false,
   });
@@ -38,7 +41,9 @@ export default function LeftDrawer() {
     >
       <List>
         <ListItem key="recent" disablePadding>
-          <ListItemButton>
+          <ListItemButton
+            onClick={event => navigate(`/recent`)}
+          >
             <ListItemIcon>
               <ScheduleIcon />
             </ListItemIcon>

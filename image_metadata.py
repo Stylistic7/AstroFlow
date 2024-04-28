@@ -176,11 +176,14 @@ def gather_compute_image_metadata(context, results):
   print(f'Cached {len(fits_headers)} fits_headers')
   print(f'Cached {len(plate_solutions)} plate_solutions')
 
+  # TODO: Quarantining files should also cause regrouping.
+  #
   # If any new subframes have been added (e.g. light, dark, bias, or flat
   # frames), then they need to be regrouped into stacks, targets, and mosaics.
-  context.needs_regrouping |= any(not file_io.is_master(r['fits_header'])
-                                  for r in results
-                                  if 'exception' not in r)
+  # context.needs_regrouping |= any(not file_io.is_master(r['fits_header'])
+  #                                 for r in results
+  #                                 if 'exception' not in r)
+  context.needs_regrouping = True
 
   print(f'Needs regrouping: {context.needs_regrouping}')
 
@@ -196,9 +199,13 @@ def gather_compute_image_metadata(context, results):
 # TODO: Report unsolvable images and missing images to the user. Include the
 # cause of failure whenever possible, and provide a solution (e.g. increasing
 # timeout on slow computers).
-def remove_bad_images(image_hashes, plate_solutions):
+def remove_bad_images(context):
+  image_hashes = ray.get(context.image_hashes)
+  plate_solutions = ray.get(context.plate_solutions)
+  quarantined_files = ray.get(context.quarantined_files)
   return {
-      h: p for h, p in plate_solutions.items() if h in image_hashes and
-      image_hashes[h] and 'bad' not in Path(image_hashes[h].lower()).parts and
-      type(p) is plate_solving.PlateSolution
+      h: p
+      for h, p in plate_solutions.items()
+      if h in image_hashes and image_hashes[h] and
+      h not in quarantined_files and type(p) is plate_solving.PlateSolution
   }

@@ -34,7 +34,7 @@ function QuarantineStackDialog({ stack_id }) {
 
 	const handleAgree = () => {
 		console.log('Quarantining stack id ' + stack_id);
-		fetch(`/quaratine_stack/${stack_id}`);
+		fetch(`/quarantine_stack/${stack_id}`);
 		setOpen(false);
 	};
 
@@ -49,7 +49,7 @@ function QuarantineStackDialog({ stack_id }) {
 	return (
 		<React.Fragment>
 			<Typography color="text.primary" margin="0.5em" onClick={handleClickOpen}>
-				<DeleteIcon sx={{ marginRight: '0.5em' }} onClick={handleClickOpen} /> Delete light frames
+				<DeleteIcon sx={{ marginRight: '0.5em' }} onClick={handleClickOpen} /> Quarantine light frames
 			</Typography>
 			<Dialog
 				open={open}
@@ -63,11 +63,12 @@ function QuarantineStackDialog({ stack_id }) {
 				<DialogContent>
 					<DialogContentText id="alert-dialog-description">
 						<p>
-							This will quaratine 5 light frames, but will not affect dark, bias,
+							This will quarantine light frames, but will not affect dark, bias,
 							or flat frames.
 						</p>
 						<p>
-							The quaratined frames will still be on your disk, and you are
+							The quarantined frames will still be on your disk, and will not
+							be moved. AstroFlow will simply note them as quarantined. You are
 							responsible for deleting them, if you desire.
 						</p>
 						<p>

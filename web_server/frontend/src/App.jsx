@@ -90,8 +90,8 @@ function App() {
     <ThemeProvider theme={darkTheme}>
       <StyledEngineProvider injectFirst>
         <CssBaseline />
-        <Search stacks={stacks} targets={targets} mosaics={mosaics} />
         <Router>
+          <Search stacks={stacks} targets={targets} mosaics={mosaics} />
           <Routes>
             <Route exact path="/" element={
               <Starmap

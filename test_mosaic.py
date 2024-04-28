@@ -113,7 +113,7 @@ class TestMosaic(unittest.TestCase):
     graph = compute_graph.build_compute_graph()
     self.context, results = run_graph(graph, self.context)
 
-    shutil.copytree(self.output_dir.name, 'testdata/output', dirs_exist_ok=True)
+    # shutil.copytree(self.output_dir.name, 'testdata/output', dirs_exist_ok=True)
 
     # TODO: What are good criteria for completion? The addition of new filenames
     # and cache keys, no doubt.
