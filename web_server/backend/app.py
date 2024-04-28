@@ -122,6 +122,22 @@ def add_mosaic_to_shopping_cart(mosaic_id):
   return Response(status=204)
 
 
+@app.route('/add_target_to_shopping_cart/<target_id>')
+def add_target_to_shopping_cart(target_id):
+  targets = test_app.targets if debug else cache.get('targets', {})
+  shopping_cart = test_app.shopping_cart if debug else cache.get(
+      'shopping_cart', [])
+
+  shopping_cart.extend([('stack_files', s) for s in targets[target_id].stack_ids
+                       ])
+  shopping_cart.append(('post_process_target', target_id))
+
+  shopping_cart = list(set(shopping_cart))
+  cache['shopping_cart'] = shopping_cart
+
+  return Response(status=204)
+
+
 @app.route('/starmap')
 def starmap():
   return flask.render_template('index.html')
