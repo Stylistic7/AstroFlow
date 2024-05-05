@@ -58,7 +58,7 @@ def _associate(context,
     cal_frames = [
         f for f, header in fits_headers.items()
         if header and not file_io.is_master(header) and 'IMAGETYP' in header and
-        'INSTRUME' in header and header['IMAGETYP'] == image_type and
+        header['IMAGETYP'].lower() == image_type and 'INSTRUME' in header and
         header['INSTRUME'] == stack.camera
     ]
     if not cal_frames:
@@ -261,6 +261,7 @@ def associate_calibration_frames(context):
       if stack.geometric_hash in stacks:
         print_stack('new: ', stack)
         print_stack('previous: ', stacks[stack.geometric_hash])
+        print('### new == previous', stack == stacks[stack.geometric_hash])
         assert False, (
             f'### stack {stack} has non-unique geometric hash; previous stack '
             f'was {stacks[stack.geometric_hash]}')
@@ -271,6 +272,7 @@ def associate_calibration_frames(context):
     if stack.content_hash in stacks:
       print_stack('new: ', stack)
       print_stack('previous: ', stacks[stack.content_hash])
+      print('### new == previous', stack == stacks[stack.content_hash])
       assert False, (
           f'### stack {stack} has non-unique content hash; previous stack was '
           f'{stacks[stack.content_hash]}')

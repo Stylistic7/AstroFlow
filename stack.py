@@ -41,6 +41,13 @@ class Stack:
   def footprint_polygon(self) -> SphericalPolygon:
     return SphericalPolygon(self.footprint)
 
+  def __eq__(self, other):
+    if not isinstance(other, Stack):
+      return False
+
+    return (self.geometric_hash == other.geometric_hash and
+            self.content_hash == other.content_hash)
+
   # TODO: It's important for development and debugging (at least) for stacks
   # composed entirely of bias frames or darks frames to have meaningful string
   # representations.
