@@ -5,6 +5,7 @@ from spherical_geometry.polygon import SphericalPolygon
 import astropy
 import itertools
 
+import ray_diskcache
 import stack
 import clustering
 from hashing import hash_string, hash_list
@@ -28,12 +29,14 @@ def normalize_radians(x):
 # the image width and height, in pixels. It is not defined for stacks that
 # do not contain light frames.
 def _compute_geometric_hash(center, image_scale, rotation_angle, width_pixels,
-                            height_pixels) -> str:
+                            height_pixels, filter) -> str:
   return hash_string(f'RA {units.ra_to_hms(center[0])}, '
                      f'Dec {units.dec_to_dms(center[1])}, '
                      f'Scale {image_scale:.2f}"/px, '
                      f'PA {rotation_angle:.2f}deg,'
-                     f'Width {width_pixels}, Height {height_pixels}')
+                     f'Width {width_pixels}, '
+                     f'Height {height_pixels}, '
+                     f'Filter {filter}')
 
 
 # This hash includes runs of frames, e.g. light frames, plus all other stacks
@@ -87,7 +90,7 @@ def _new_stack(context,
       plate_solutions[oldest_image].rotation_angle)
 
   geometric_hash = _compute_geometric_hash(center, image_scale, rotation_angle,
-                                           width_pixels, height_pixels)
+                                           width_pixels, height_pixels, filter)
 
   footprint = next(
       SphericalPolygon.from_wcs(
@@ -129,6 +132,8 @@ def _new_stack(context,
     assert_single_run(run.frames)
 
   if num_light_frames_after_selection < context.min_frames_in_stack:
+    if debug:
+      print('### Too few frames in stack')
     return None
 
   content_hash = _compute_content_hash(runs)
@@ -160,16 +165,23 @@ def identify_stacks(context):
 
   # TODO: Maybe implement a version of cluster_continuous() that repeatedly
   # subdivides by independent 1D variables.
+  debug_hash = 'cbc3b0f593d8a78f'
   stacks = []
   for name, light_frames in spatial_groups:
     scales = [(f, plate_solutions[f].image_scale) for f in light_frames]
     for scale_cluster in clustering.cluster_continuous(scales, epsilon=0.2):
-      scale_frames, _ = zip(*scale_cluster)
+      scale_frames, scales = zip(*scale_cluster)
+      if debug_hash in scale_frames:
+        print(f'Hash {debug_hash} found in cluster with scales {scales} '
+              f'and frames {scale_frames}')
       cameras = [(f, (fits_headers[f]['INSTRUME'], fits_headers[f]['NAXIS1'],
                       fits_headers[f]['NAXIS2'], fits_headers[f]['XPIXSZ'],
                       fits_headers[f]['YPIXSZ'])) for f in scale_frames]
       for camera_cluster in clustering.cluster_discrete(cameras):
         camera_frames, cameras = zip(*camera_cluster)
+        if debug_hash in camera_frames:
+          print(f'Hash {debug_hash} found in cluster with cameras {cameras} '
+                f'and frames {camera_frames}')
         assert len(set(cameras)) == 1
         rotation_angles = [
             (f, normalize_radians(plate_solutions[f].rotation_angle))
@@ -177,26 +189,47 @@ def identify_stacks(context):
         ]
         for rotation_cluster in clustering.cluster_continuous(rotation_angles,
                                                               epsilon=5.0):
-          rotation_frames, _ = zip(*rotation_cluster)
+          rotation_frames, rotations = zip(*rotation_cluster)
+          if debug_hash in rotation_frames:
+            print(f'Hash {debug_hash} found in cluster with '
+                  f'rotations {rotations} and frames {rotation_frames}')
+
           filters = [(f, fits_headers[f]['FILTER']) for f in rotation_frames]
           for filter_cluster in clustering.cluster_discrete(filters):
             filter_frames, filters = zip(*filter_cluster)
+            if debug_hash in filter_frames:
+              print(f'Hash {debug_hash} found in cluster with '
+                    f'filters {filters} and frames {filter_frames}')
             assert len(set(filters)) == 1
             date_obs = [(f, fits_headers[f]['DATE-OBS']) for f in filter_frames]
             light_frames = {}
+            debug_new_stack = False
             for run in clustering.cluster_continuous(
                 date_obs, epsilon=context.max_run_gap):
               light_frames_in_run, _ = zip(*run)
+              if debug_hash in light_frames_in_run:
+                print(f'Hash {debug_hash} found in run {light_frames_in_run}')
+                debug_new_stack = True
 
               # TODO: This is a run of light frames with no dependencies,
               # but it is akwardly expressed here.
               light_frames[tuple(sorted(light_frames_in_run))] = set()
 
-            new_stack = _new_stack(context, name, light_frames, fits_headers,
-                                   plate_solutions)
+            new_stack = _new_stack(context,
+                                   name,
+                                   light_frames,
+                                   fits_headers,
+                                   plate_solutions,
+                                   debug=debug_new_stack)
             if new_stack:
+              if debug_new_stack:
+                print(f'### Successfully created stack with hash {debug_hash}')
               stacks.append(new_stack)
+            elif debug_new_stack:
+              print('### _new_stack() failed')
 
   print(f'Identified {len(stacks)} stacks')
   context.stacks = ray.put(stacks)
+  ray_diskcache.set('stacks', stacks)
+
   return context, None

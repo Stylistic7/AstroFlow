@@ -26,11 +26,11 @@ def _associate(context,
 
   assert None not in stack_dependencies
 
-  if image_type == 'Bias':
+  if image_type == 'bias':
     match_temperature, match_exposure, match_filter = True, False, False
-  elif image_type == 'Dark':
+  elif image_type == 'dark':
     match_temperature, match_exposure, match_filter = True, True, False
-  elif image_type == 'Flat':
+  elif image_type == 'flat':
     match_temperature, match_exposure, match_filter = False, False, True
 
   new_stacks = []
@@ -196,35 +196,98 @@ def associate_calibration_frames(context):
   fits_headers = ray.get(context.fits_headers)
   stacks = ray.get(context.stacks)
 
+  def assert_frame_in_stacks(stacks, debug_hash):
+    found = False
+    for stack in stacks:
+      assert type(stack) is Stack
+      for run in stack.runs:
+        if debug_hash in run.frames:
+          found = True
+          break
+
+    assert found, f'Debug hash {debug_hash} not found in stacks'
+    print(f'### Debug hash {debug_hash} was found in stacks')
+
+  debug_hash = 'cbc3b0f593d8a78f'
+  assert_frame_in_stacks(stacks, debug_hash)
+
   # At this point, stacks is just a list of stacks. The final content hashes
   # are not known yet, because the calibration frames aren't associated yet.
   # TODO: Maybe parallelize this if it's slow.
   output_stacks = []
   for stack in stacks:
-    stack, bias_stacks = _associate(context, stack, 'Bias', fits_headers)
-    output_stacks.extend(bias_stacks)
+    stack, bias_stacks = _associate(context, stack, 'bias', fits_headers)
+    for bias_stack in bias_stacks:
+      if bias_stack not in output_stacks:
+        output_stacks.append(bias_stack)
 
-    stack, dark_stacks = _associate(context, stack, 'Dark', fits_headers)
-    output_stacks.extend(dark_stacks)
+    stack, dark_stacks = _associate(context, stack, 'dark', fits_headers)
+    for dark_stack in dark_stacks:
+      if dark_stack not in output_stacks:
+        output_stacks.append(dark_stack)
 
     stack_dependencies = list(
         set(s.content_hash for s in bias_stacks + dark_stacks))
     assert None not in stack_dependencies
     stack, flat_stacks = _associate(context,
                                     stack,
-                                    'Flat',
+                                    'flat',
                                     fits_headers,
                                     stack_dependencies=stack_dependencies)
-    output_stacks.extend(flat_stacks)
+    for flat_stack in flat_stacks:
+      if flat_stack not in output_stacks:
+        output_stacks.append(flat_stack)
 
     for run in stack.runs:
       assert len(run.stack_dependencies) == len(set(run.stack_dependencies))
 
+    assert stack not in output_stacks
     output_stacks.append(stack)
 
-  # TODO: It's a bit weird to have to include both kinds of hashes here.
-  stacks = {s.geometric_hash or s.content_hash: s for s in output_stacks}
+  assert_frame_in_stacks(output_stacks, debug_hash)
 
-  ray_diskcache.set('stacks', stacks)
+  def print_stack(prefix, stack):
+    print(f'### {prefix} stack {stack}')
+    for run in stack.runs:
+      print(f'### {prefix} run {run}')
+
+  stacks = {}
+  content_hashes = []
+  geometric_hashes = []
+  for stack in output_stacks:
+    assert stack.content_hash != None
+
+    if stack.geometric_hash != None:
+      if stack.geometric_hash in stacks:
+        print_stack('new: ', stack)
+        print_stack('previous: ', stacks[stack.geometric_hash])
+        assert False, (
+            f'### stack {stack} has non-unique geometric hash; previous stack '
+            f'was {stacks[stack.geometric_hash]}')
+      geometric_hashes.append(stack.geometric_hash)
+      stacks[stack.geometric_hash] = stack
+      continue
+
+    if stack.content_hash in stacks:
+      print_stack('new: ', stack)
+      print_stack('previous: ', stacks[stack.content_hash])
+      assert False, (
+          f'### stack {stack} has non-unique content hash; previous stack was '
+          f'{stacks[stack.content_hash]}')
+    content_hashes.append(stack.content_hash)
+    stacks[stack.content_hash] = stack
+
+  print(f'### There are {len(content_hashes)} unique content hashes')
+  print(f'### There are {len(geometric_hashes)} unique geometric hashes')
+
+  # TODO: It's a bit weird to have to include both kinds of hashes here.
+  # stacks = {s.geometric_hash or s.content_hash: s for s in output_stacks}
+  # assert len(stacks) == len(
+  #     output_stacks), f'{len(output_stacks)} stacks became {len(stacks)} stacks'
+
   context.stacks = ray.put(stacks)
+  ray_diskcache.set('stacks', stacks)
+  assert_frame_in_stacks(stacks.values(), debug_hash)
+  print(f'### Wrote {len(stacks)} stacks into cache')
+
   return context, None

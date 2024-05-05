@@ -518,6 +518,7 @@ def populate_context(context):
   # Load all of the existing metadata into the context before starting the
   # compute graph.
   quarantined_files = ray_diskcache.get('quarantined_files', [])
+  spatial_groups = ray_diskcache.get('spatial_groups', [])
   image_hashes = ray_diskcache.get('image_hashes', {})
   fits_headers = ray_diskcache.get('fits_headers', {})
   plate_solutions = ray_diskcache.get('plate_solutions', {})
@@ -536,6 +537,7 @@ def populate_context(context):
   print(f'Cache contained {len(fits_headers)} FITS headers')
   print(f'Cache contained {len(plate_solutions)} plate solutions')
   print(f'Cache contained {len(shopping_cart)} items in shopping cart')
+  print(f'Cache contained {len(spatial_groups)} spatial groups')
   print(f'Cache contained {len(stacks)} stacks')
   print(f'Cache contained {len(targets)} targets')
   print(f'Cache contained {len(mosaics)} mosaics')
@@ -545,12 +547,15 @@ def populate_context(context):
   context.fits_headers = ray.put(fits_headers)
   context.plate_solutions = ray.put(plate_solutions)
   context.shopping_cart = ray.put(shopping_cart)
+  context.spatial_groups = ray.put(spatial_groups)
   context.stacks = ray.put(stacks)
   context.targets = ray.put(targets)
   context.mosaics = ray.put(mosaics)
 
-  if not stacks:
-    context.needs_regrouping = True
+  # if not stacks:
+  #   context.needs_regrouping = True
+
+  context.needs_regrouping = True
 
   # TODO: Put this in the UI.
   context.run_everything = False

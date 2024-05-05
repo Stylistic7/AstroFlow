@@ -1,8 +1,25 @@
 from cache import cache
 
-image_hashes = cache['image_hashes']
-plate_solutions = cache['plate_solutions']
-stacks = cache['stacks']
+quarantined_files = cache.get('quarantined_files', [])
+spatial_groups = cache.get('spatial_groups', [])
+image_hashes = cache.get('image_hashes', {})
+fits_headers = cache.get('fits_headers', {})
+plate_solutions = cache.get('plate_solutions', {})
+shopping_cart = cache.get('shopping_cart', [])
+stacks = cache.get('stacks', {})
+targets = cache.get('targets', {})
+mosaics = cache.get('mosaics', {})
+
+print(f'Cache contained {len(quarantined_files)} '
+      f'quarantined files')
+print(f'Cache contained {len(image_hashes)} image hashes')
+print(f'Cache contained {len(fits_headers)} FITS headers')
+print(f'Cache contained {len(plate_solutions)} plate solutions')
+print(f'Cache contained {len(shopping_cart)} items in shopping cart')
+print(f'Cache contained {len(spatial_groups)} spatial groups')
+print(f'Cache contained {len(stacks)} stacks')
+print(f'Cache contained {len(targets)} targets')
+print(f'Cache contained {len(mosaics)} mosaics')
 
 
 def trace_filename_fragment(filename_fragment):
@@ -30,12 +47,29 @@ def trace_image_hash(hash):
     print(f'Image hash {hash} has None for plate solution')
     return
 
+  plate_solution = plate_solutions[hash]
   print(f'Image hash {hash} has '
-        f'{plate_solutions[hash].num_stars} stars')
+        f'{plate_solution.num_stars} stars and center {plate_solution.center}')
+
+  found = False
+  spatial_group_name = None
+  for name, hashes in spatial_groups:
+    if hash in hashes:
+      spatial_group_name = name
+      spatial_group_hashes = hashes
+      found = True
+
+  if found:
+    print(f'Image hash {hash} was found in spatial group with '
+          f'name {spatial_group_name} and {len(spatial_group_hashes)} members')
+  else:
+    print(f'Image hash {hash} is not included in any spatial group')
+    return
 
   found = False
   for stack_id, stack in stacks.items():
     for run in stack.runs:
+      print('run.frames', run.frames)
       if hash in run.frames:
         found = True
         break
@@ -47,41 +81,17 @@ def trace_image_hash(hash):
   print(f'Image hash {hash} is in stack {stack}')
 
 
-# filename_fragments = [
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240331-230559_0001.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240331-231934_0002.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240331-232436_0003.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240331-232938_0004.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240331-233440_0005.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240331-234024_0006.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240331-234526_0007.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240331-235027_0008.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240331-235529_0009.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240401-000031_0010.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240401-000604_0011.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240401-001106_0012.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240401-002119_0013.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240401-002621_0014.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240401-003122_0015.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240401-003804_0016.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240401-004305_0017.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240401-004807_0018.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240401-005309_0019.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240401-005811_0020.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240401-010349_0021.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240401-010850_0022.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240401-011352_0023.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240401-011854_0024.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240401-012918_0025.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240401-013448_0026.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240401-013950_0027.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240401-014452_0028.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240401-014954_0029.fit",
-#     "Light_M13_300.0s_Bin1_6200MM_L_20240401-015456_0030.fit",
-# ]
-
 filename_fragments = [
-    "/Volumes/Astro/Processed/Stacks/IC1311/masters/master_light_IC1311_RA_301.60_DEC_41.40_ZWO ASI6200MM Pro_1.44aspp_1.57deg_O_40b41423307e2e88.xisf",
+    'Light_NGC2244_120.0s_Bin1_6200MM_G_20240209-014820_0001.fit',
+    'Light_NGC2244_120.0s_Bin1_6200MM_G_20240209-015022_0002.fit',
+    'Light_NGC2244_120.0s_Bin1_6200MM_G_20240209-015224_0003.fit',
+    'Light_NGC2244_120.0s_Bin1_6200MM_G_20240209-015426_0004.fit',
+    'Light_NGC2244_120.0s_Bin1_6200MM_G_20240209-015628_0005.fit',
+    'Light_NGC2244_120.0s_Bin1_6200MM_G_20240209-015920_0006.fit',
+    'Light_NGC2244_120.0s_Bin1_6200MM_G_20240209-020122_0007.fit',
+    'Light_NGC2244_120.0s_Bin1_6200MM_G_20240209-020324_0008.fit',
+    'Light_NGC2244_120.0s_Bin1_6200MM_G_20240209-020526_0009.fit',
+    'Light_NGC2244_120.0s_Bin1_6200MM_G_20240209-020728_0010.fit',
 ]
 
 for filename_fragment in filename_fragments:

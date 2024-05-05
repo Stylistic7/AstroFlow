@@ -5,15 +5,10 @@ import image_metadata
 import position_string
 import file_io
 import footprints
-
-# TODO: Bring all knobs up here.
-MIN_COMPONENT_MEMBERS = 3
+import ray_diskcache
 
 
-def find_groups(ids,
-                values,
-                comparison_fn,
-                min_component_members=MIN_COMPONENT_MEMBERS) -> list[str]:
+def find_groups(ids, values, comparison_fn, min_component_members) -> list[str]:
   print(f'Finding groups among {len(values)} values')
   groups = []
   last_printed_percent_done = 0
@@ -96,4 +91,7 @@ def find_components_by_cosine_similarity(context):
                                           context.min_component_members)
 
   context.spatial_groups = ray.put(spatial_groups)
+  ray_diskcache.set('spatial_groups', spatial_groups)
+  print(f'### Wrote {len(spatial_groups)} spatial groups into the cache')
+
   return context, None

@@ -453,6 +453,19 @@ def get_sorted_light_frames(stack_id):
       stack.runs, plate_solutions)
 
 
+@app.route('/get_light_frames/<stack_id>')
+def get_light_frames(stack_id):
+  stack = cache['stacks'][stack_id]
+  image_hashes = cache['image_hashes']
+
+  filenames = []
+  for run in stack.runs:
+    for frame in run.frames:
+      filenames.append(image_hashes[frame])
+
+  return filenames
+
+
 @app.route('/get_num_stars_histogram_html/<stack_id>')
 def get_num_stars_histogram_html(stack_id):
   print(f'Creating num stars histogram for stack id {stack_id}')

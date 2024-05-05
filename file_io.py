@@ -87,6 +87,9 @@ def find_image_files(path: str, pattern: str = '*') -> list:
 def _normalize_header(header: dict) -> dict:
   output = dict(header)
 
+  if 'IMAGETYP' in header:
+    output['IMAGETYP'] = header['IMAGETYP'].lower()
+
   if 'EXPOSURE' in header:
     output['EXPOSURE'] = float(header['EXPOSURE'])
   elif 'EXPTIME' in header:
