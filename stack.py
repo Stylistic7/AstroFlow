@@ -2,9 +2,8 @@ from dataclasses import dataclass, field
 from spherical_geometry.polygon import SphericalPolygon  # type: ignore
 from shapely.geometry import Polygon  # type: ignore
 import units
-from hashing import hash_list, hash_string
-import file_io
 
+import datetime
 from typing import NewType, Optional
 
 FrameHash = NewType('FrameHash', str)
@@ -21,6 +20,8 @@ class Run:
 class Stack:
   geometric_hash: str | None = None
   content_hash: str | None = None
+
+  start_date = Optional[datetime.datetime] = None
 
   runs: list[Run] = field(default_factory=list)
   target: Optional[str] = None
