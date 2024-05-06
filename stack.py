@@ -21,7 +21,8 @@ class Stack:
   geometric_hash: str | None = None
   content_hash: str | None = None
 
-  start_date = Optional[datetime.datetime] = None
+  oldest_date = Optional[datetime.datetime]
+  newest_date = Optional[datetime.datetime]
 
   runs: list[Run] = field(default_factory=list)
   target: Optional[str] = None
@@ -61,7 +62,7 @@ class Stack:
               f'RA {units.ra_to_hms(self.center[0])}, '
               f'Dec {units.dec_to_dms(self.center[1])}, '
               f'Scale {self.image_scale:.2f}"/px, '
-              f'PA {self.rotation_angle:.2f}deg,'
+              f'PA {self.rotation_angle:.2f}deg, '
               f'Camera {self.camera}, Filter {self.filter})')
     else:
       return (f'Stack(Content hash {self.content_hash})')

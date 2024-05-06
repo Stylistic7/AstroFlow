@@ -558,7 +558,7 @@ def populate_context(context):
   context.needs_regrouping = True
 
   # TODO: Put this in the UI.
-  context.run_everything = False
+  context.run_everything = True
 
   return context
 

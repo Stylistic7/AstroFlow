@@ -141,7 +141,6 @@ def _new_stack(context,
 
   return Stack(geometric_hash=geometric_hash,
                content_hash=content_hash,
-               start_date=fits_headers[oldest_image]['DATE-OBS'],
                runs=runs,
                target=name,
                camera=camera,
