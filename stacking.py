@@ -13,7 +13,7 @@ import pix
 import position_string
 from image_metadata import scatter_compute_image_metadata
 import file_io
-from new_dependency_graph import Graph
+from new_dependency_graph import Graph, Node
 
 _STACK_ID_KEY = 'XISF:AstroFlow:StackId'
 _CONTENT_HASH_KEY = 'XISF:AstroFlow:StackContentHash'
@@ -166,21 +166,6 @@ def stack_files(context, stack_id, metadata=None):
     return context, dest_filename
 
 
-# TODO This topologically sorts the stacking operations, but this is not
-# included in scatter_stack_subframes() below.
-def construct_graph(stacks):
-  graph = {}
-  for stack in stacks.values():
-    dependencies = []
-    for run in stack.runs:
-      dependencies.extend(list(run.stack_dependencies))
-
-    # TODO: It's a bit weird to have to include both kinds of hashes here.
-    graph[stack.geometric_hash or stack.content_hash] = list(set(dependencies))
-
-  return graph
-
-
 @ray.remote
 def scatter_stack_subframes(context):
   image_hashes = ray.get(context.image_hashes)
@@ -198,17 +183,20 @@ def scatter_stack_subframes(context):
                           key=lambda s: stacks[s].newest_date,
                           reverse=True)
 
-  return context, Graph({
-      gather_stack_subframes: [
-          (stack_files, s)
-          for s in stacks_by_date
-          if (context.run_everything or is_in_shopping_cart(s)) and
-          not find_matching_masters(stacks[s], image_hashes, fits_headers) and
-          type(ray_diskcache.get(('stack_files', s), None)) is not Exception
-      ]
-  })
+  def should_stack(stack_id):
+    return ((context.run_everything or is_in_shopping_cart(stack_id)) and
+            not find_matching_masters(stack, image_hashes, fits_headers) and
+            type(ray_diskcache.get(
+                ('stack_files', stack_id), None)) is not Exception)
 
+  graph = {}
+  for priority, stack_id in enumerate(stacks_by_date):
+    stack = stacks[stack_id]
+    if not should_stack(stack_id):
+      continue
 
-@ray.remote
-def gather_stack_subframes(context):
-  return context, None
+    graph[Node(stack_files, stack_id, priority=priority)] = [
+        (stack_files, d) for run in stack.runs for d in run.stack_dependencies
+    ]
+
+  return context, Graph(graph)
