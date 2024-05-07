@@ -7,7 +7,7 @@ import tempfile
 import functools
 
 from cache import cache
-from new_dependency_graph import Graph, run_graph, make_graph_from_list
+from new_dependency_graph import Graph, Node, run_graph, make_graph_from_list
 
 
 @ray.remote
@@ -33,19 +33,19 @@ def my_first_task():
 
 @ray.remote
 def my_later_task(ancestor_results):
-  assert len(ancestor_results) == 1
+  assert len(ancestor_results) == 1, f'ancestor_results are {ancestor_results}'
   return ancestor_results[0] + 1
 
 
 @ray.remote
 def my_last_task(ancestor_results):
-  assert len(ancestor_results) == 1
+  assert len(ancestor_results) == 1, f'ancestor_results are {ancestor_results}'
   return ancestor_results[0] + 3
 
 
 @ray.remote
 def my_last_task_with_context(context, ancestor_results):
-  assert len(ancestor_results) == 1
+  assert len(ancestor_results) == 1, f'ancestor_results are {ancestor_results}'
   return context, ancestor_results[0] + 3
 
 
@@ -59,6 +59,12 @@ def increment_foo(context):
 def increment_bar(context):
   context['bar'] += 1
   return context, context['bar']
+
+
+@ray.remote
+def set_foo(context, value):
+  context['foo'] = value
+  return context, value
 
 
 @ray.remote
@@ -182,8 +188,8 @@ class TestDependencyGraph(unittest.TestCase):
     self.assertEqual(results[C], 'C')
     self.assertEqual(results[D], 'D')
 
-    self.assertEqual(results['num_nodes_run'], 4)
-    self.assertEqual(results['max_parallelism_seen'], 2)
+    self.assertEqual(results.num_nodes_run, 4)
+    self.assertEqual(results.max_parallelism_seen, 2)
 
   def test_resources(self):
     A = (my_local_task, 'A')
@@ -199,8 +205,8 @@ class TestDependencyGraph(unittest.TestCase):
     self.assertEqual(results[C], 'C')
     self.assertEqual(results[D], 'D')
 
-    self.assertEqual(results['num_nodes_run'], 4)
-    self.assertEqual(results['max_parallelism_seen'], 2)
+    self.assertEqual(results.num_nodes_run, 4)
+    self.assertEqual(results.max_parallelism_seen, 2)
 
   def test_global_variable(self):
     cache['foo'] = 10
@@ -215,8 +221,8 @@ class TestDependencyGraph(unittest.TestCase):
 
     self.assertEqual(cache['foo'], 14)
 
-    self.assertEqual(results['num_nodes_run'], 4)
-    self.assertEqual(results['max_parallelism_seen'], 1)
+    self.assertEqual(results.num_nodes_run, 4)
+    self.assertEqual(results.max_parallelism_seen, 1)
 
   def test_pass_down(self):
     A = my_first_task
@@ -230,8 +236,8 @@ class TestDependencyGraph(unittest.TestCase):
     self.assertEqual(results[B], 2)
     self.assertEqual(results[C], 5)
 
-    self.assertEqual(results['num_nodes_run'], 3)
-    self.assertEqual(results['max_parallelism_seen'], 1)
+    self.assertEqual(results.num_nodes_run, 3)
+    self.assertEqual(results.max_parallelism_seen, 1)
 
   def test_list_of_tasks(self):
     graph = make_graph_from_list([my_first_task, my_later_task, my_last_task])
@@ -239,8 +245,8 @@ class TestDependencyGraph(unittest.TestCase):
     results = run_graph(graph)
     self.assertEqual(results[my_last_task], 5)
 
-    self.assertEqual(results['num_nodes_run'], 3)
-    self.assertEqual(results['max_parallelism_seen'], 1)
+    self.assertEqual(results.num_nodes_run, 3)
+    self.assertEqual(results.max_parallelism_seen, 1)
 
   def test_dynamic_subgraph(self):
     graph = {scatter: {}}
@@ -249,8 +255,8 @@ class TestDependencyGraph(unittest.TestCase):
 
     self.assertEqual(results[scatter], 21)
 
-    self.assertEqual(results['num_nodes_run'], 9)
-    self.assertEqual(results['max_parallelism_seen'], 7)
+    self.assertEqual(results.num_nodes_run, 9)
+    self.assertEqual(results.max_parallelism_seen, 7)
 
   def test_dynamic_subgraph_completion(self):
     # scatter() produces a dynamic subgraph. my_last_task() should run only
@@ -265,8 +271,8 @@ class TestDependencyGraph(unittest.TestCase):
     self.assertEqual(results[scatter], 21)
     self.assertEqual(results[my_last_task], 24)
 
-    self.assertEqual(results['num_nodes_run'], 10)
-    self.assertEqual(results['max_parallelism_seen'], 7)
+    self.assertEqual(results.num_nodes_run, 10)
+    self.assertEqual(results.max_parallelism_seen, 7)
 
   def test_dynamic_subgraph_with_context_completion(self):
     # Same as `test_dynamic_subgraph_completion` but with the addition of
@@ -283,8 +289,8 @@ class TestDependencyGraph(unittest.TestCase):
     self.assertEqual(results[scatter_with_context], 21)
     self.assertEqual(results[my_last_task_with_context], 24)
 
-    self.assertEqual(results['num_nodes_run'], 10)
-    self.assertEqual(results['max_parallelism_seen'], 7)
+    self.assertEqual(results.num_nodes_run, 10)
+    self.assertEqual(results.max_parallelism_seen, 7)
 
   def test_mutable_context(self):
     A = increment_foo
@@ -299,8 +305,8 @@ class TestDependencyGraph(unittest.TestCase):
     self.assertEqual(results[increment_bar], 4)
     self.assertEqual(context, {'foo': 3, 'bar': 4})
 
-    self.assertEqual(results['num_nodes_run'], 2)
-    self.assertEqual(results['max_parallelism_seen'], 1)
+    self.assertEqual(results.num_nodes_run, 2)
+    self.assertEqual(results.max_parallelism_seen, 1)
 
   def test_dynamic_graph_with_context(self):
     graph = {scatter_with_context: {}}
@@ -312,8 +318,8 @@ class TestDependencyGraph(unittest.TestCase):
     self.assertEqual(sorted(context['processed']), [0, 1, 2, 3, 4, 5, 6])
     self.assertEqual(context['sum'], 21)
 
-    self.assertEqual(results['num_nodes_run'], 9)
-    self.assertEqual(results['max_parallelism_seen'], 7)
+    self.assertEqual(results.num_nodes_run, 9)
+    self.assertEqual(results.max_parallelism_seen, 7)
 
   def test_parallel_dynamic_graphs_with_context(self):
     # This test starts two scatter operations with different values stored in
@@ -330,8 +336,8 @@ class TestDependencyGraph(unittest.TestCase):
     self.assertEqual(results[(start_parallel_scatter, 100)], 721)
     self.assertEqual(results[(start_parallel_scatter, 200)], 1421)
 
-    self.assertEqual(results['num_nodes_run'], 21)
-    self.assertEqual(results['max_parallelism_seen'], 14)
+    self.assertEqual(results.num_nodes_run, 21)
+    self.assertEqual(results.max_parallelism_seen, 14)
 
   def test_conditional_dynamic_graph(self):
     dynamic_graph_task = (maybe_run_dynamic_graph, True)
@@ -339,16 +345,16 @@ class TestDependencyGraph(unittest.TestCase):
     results = run_graph(graph)
     self.assertEqual(results[dynamic_graph_task], 21)
 
-    self.assertEqual(results['num_nodes_run'], 9)
-    self.assertEqual(results['max_parallelism_seen'], 7)
+    self.assertEqual(results.num_nodes_run, 9)
+    self.assertEqual(results.max_parallelism_seen, 7)
 
     dynamic_graph_task = (maybe_run_dynamic_graph, False)
     graph = {dynamic_graph_task: {}}
     results = run_graph(graph)
     self.assertEqual(results[dynamic_graph_task], {})
 
-    self.assertEqual(results['num_nodes_run'], 1)
-    self.assertEqual(results['max_parallelism_seen'], 1)
+    self.assertEqual(results.num_nodes_run, 1)
+    self.assertEqual(results.max_parallelism_seen, 1)
 
   def test_multiple_inputs(self):
     task = (fn_with_multiple_inputs, 1, 2, 3)
@@ -356,8 +362,28 @@ class TestDependencyGraph(unittest.TestCase):
     results = run_graph(graph)
     self.assertEqual(results[task], 6)
 
-    self.assertEqual(results['num_nodes_run'], 1)
-    self.assertEqual(results['max_parallelism_seen'], 1)
+    self.assertEqual(results.num_nodes_run, 1)
+    self.assertEqual(results.max_parallelism_seen, 1)
+
+  def test_simple_graph_with_priority(self):
+    # set_foo(20) with priority 1 will run first, followed by set_foo(10).
+    # The final result will be 10 + 1.
+    A = (set_foo, 1)
+    B = Node(set_foo, 10, priority=2)
+    C = Node(set_foo, 20, priority=1)
+    D = increment_foo
+
+    graph = {D: {B, C}, C: {A}, B: {A}}
+    context = {'foo': None}
+    context, results = run_graph(graph, context)
+
+    self.assertEqual(results[A], 1)
+    self.assertEqual(results[B], 10)
+    self.assertEqual(results[C], 20)
+    self.assertEqual(results[D], 11)
+
+    self.assertEqual(results.num_nodes_run, 4)
+    self.assertEqual(results.max_parallelism_seen, 2)
 
   def test_merge_files(self):
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -374,8 +400,8 @@ class TestDependencyGraph(unittest.TestCase):
       self.assertEqual(results[(merge_files, tmp_dir)],
                        os.path.join(tmp_dir, 'merged.txt'))
 
-      self.assertEqual(results['num_nodes_run'], 8)
-      self.assertEqual(results['max_parallelism_seen'], 7)
+      self.assertEqual(results.num_nodes_run, 8)
+      self.assertEqual(results.max_parallelism_seen, 7)
 
       # On the second run, all of the files exist, so the `merge_files`
       # function should have no work to do, and return None.
@@ -383,8 +409,8 @@ class TestDependencyGraph(unittest.TestCase):
       self.assertEqual(len(os.listdir(tmp_dir)), 8)
       self.assertEqual(results[(merge_files, tmp_dir)], None)
 
-      self.assertEqual(results['num_nodes_run'], 8)
-      self.assertEqual(results['max_parallelism_seen'], 7)
+      self.assertEqual(results.num_nodes_run, 8)
+      self.assertEqual(results.max_parallelism_seen, 7)
 
 
 if __name__ == '__main__':

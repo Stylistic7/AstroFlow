@@ -8,11 +8,31 @@ class Graph(dict):
   pass
 
 
+class Node():
+
+  def __init__(self, task, *args, priority=1):
+    self.task = task
+    self.priority = priority
+    self.args = args
+
+  def __eq__(self, other):
+    return (self.task._function.__module__ == other.task._function.__module__
+            and
+            self.task._function.__name__ == other.task._function.__name__ and
+            self.priority == other.priority and self.args == other.args)
+
+  def __hash__(self):
+    return hash((self.task, self.priority, self.args))
+
+
 def _unpack_node(node):
-  if type(node) is tuple:
+
+  if type(node) is Node:
     return node
+  elif type(node) is tuple:
+    return Node(*node)
   else:
-    return (node,)
+    return Node(node)
 
 
 class ResultDict(dict):
@@ -23,28 +43,20 @@ class ResultDict(dict):
   def __getattr__(self, k):
     return self[k]
 
-  def __getitem__(self, input):
-    if type(input) is tuple:
-      key, *input_args = input
-    else:
-      key, input_args = input, []
-
-    if type(key) is not ray.remote_function.RemoteFunction:
+  def __getitem__(self, key):
+    if type(key) is str:
       return self.get(key)
 
-    for node, result in self.items():
-      task, *args = _unpack_node(node)
-      if type(task) is not ray.remote_function.RemoteFunction:
-        continue
+    key = _unpack_node(key)
 
-      if (task._function.__module__ == key._function.__module__) and (
-          task._function.__name__
-          == key._function.__name__) and (input_args is None or
-                                          args == input_args):
+    for node, result in self.items():
+      node = _unpack_node(node)
+      if node == key:
         return result
 
-    raise KeyError(f'Key {key._function.__module__}.{key._function.__name__} '
-                   f'input_args {input_args} not found')
+    raise KeyError(
+        f'Key {key.task._function.__module__}.{key.task._function.__name__} '
+        f'args {key.args} not found')
 
 
 def make_graph_from_list(tasks):
@@ -85,6 +97,12 @@ def run_graph(graph, context=None, debug=False):
   max_parallelism_seen = 0
   active = []
 
+  def canonicalize_graph(graph):
+    output = {}
+    for node, dependents in graph.items():
+      output[_unpack_node(node)] = [_unpack_node(x) for x in dependents]
+    return output
+
   def add_subgraph(graph, parent_ts=None, parent_node=None):
 
     def done_callback(subgraph_ts):
@@ -97,6 +115,8 @@ def run_graph(graph, context=None, debug=False):
       parent_ts.context = subgraph_ts.context
       parent_ts.results[parent_node] = subgraph_ts.final_result
       parent_ts.final_result = subgraph_ts.final_result
+
+    graph = canonicalize_graph(graph)
 
     if debug:
       print(f'creating new subgraph {graph}')
@@ -113,25 +133,26 @@ def run_graph(graph, context=None, debug=False):
     return ts
 
   def ancestor_results(ts, node):
+    node = _unpack_node(node)
     nodes = ts.graph.get(node, [])
     return [ts.results[node] for node in nodes]
 
   def make_run_fn(ts, node):
-    task, *args = _unpack_node(node)
+    node = _unpack_node(node)
     if debug:
-      print(f'Making run fn for task {task._function.__name__}')
+      print(f'Making run fn for task {node.task._function.__name__}')
 
     full_args = []
     if use_context:
       full_args.append(ts.context)
 
-    full_args.extend(args)
+    full_args.extend(node.args)
 
-    sig = inspect.signature(task._function)
+    sig = inspect.signature(node.task._function)
     if len(sig.parameters) > len(full_args):
       full_args.append(ancestor_results(ts, node))
 
-    return task.remote(*full_args)
+    return node.task.remote(*full_args)
 
   def delete_finished_subgraphs():
     for ts in active:
@@ -141,7 +162,9 @@ def run_graph(graph, context=None, debug=False):
         active.remove(ts)
 
   def get_ready_nodes():
-    return [(ts, n) for ts in active for n in ts.get_ready()]
+    return [(ts, n)
+            for ts in active
+            for n in sorted(ts.get_ready(), key=lambda n: n.priority)]
 
   toplevel_ts = add_subgraph(graph)
 
