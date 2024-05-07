@@ -112,7 +112,7 @@ def _add_xisf_metadata(filename, dest_filename, metadata):
 # TODO: Include a timeout so a single bad stack (e.g. one that needs interactive
 # plate-solving help) won't derail a long-running session.
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
-def stack_files(context, stack_id, metadata=None):
+def stack_files(context, stack_id):
   stacks = ray.get(context.stacks)
   stack = stacks[stack_id]
   key = ('stack_files', stack_id)
@@ -120,12 +120,8 @@ def stack_files(context, stack_id, metadata=None):
 
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
-  plate_solutions = ray.get(context.plate_solutions)
 
-  if not metadata:
-    metadata = {}
-
-  metadata[_CONTENT_HASH_KEY] = stack.content_hash
+  metadata = {_CONTENT_HASH_KEY: stack.content_hash}
 
   with tempfile.TemporaryDirectory() as tmp_dir:
     for i, run in enumerate(stack.runs):

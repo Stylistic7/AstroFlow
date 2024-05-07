@@ -148,6 +148,8 @@ def run_graph(graph, context=None, debug=False):
 
     full_args.extend(node.args)
 
+    # TODO: This confuses optional arguments with ancestor results;
+    # maybe there's a cleaner way to do this?
     sig = inspect.signature(node.task._function)
     if len(sig.parameters) > len(full_args):
       full_args.append(ancestor_results(ts, node))
