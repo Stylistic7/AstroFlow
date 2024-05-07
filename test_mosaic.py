@@ -54,9 +54,6 @@ class TestMosaic(unittest.TestCase):
     self.context.min_frames_in_run = 3
     self.context.min_frames_in_stack = 3
 
-    # TODO: The ray.put(ray_diskcache.get()) idiom is weird.
-    self.context.cache_keys = ray.put(ray_diskcache.get_keys())
-
     self.context.shopping_cart = ray.put({})
     self.context.run_everything = True
 

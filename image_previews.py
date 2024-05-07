@@ -110,11 +110,13 @@ def _make_thumbnail(fits_headers, light_frame, light_image, bias_frame,
 @ray.remote
 def scatter_stack_thumbnails(context, mode):
   stacks = ray.get(context.stacks)
+  cache_keys = ray_diskcache.get_keys()
 
   return context, Graph({
-      gather_stack_thumbnails: [
-          (compute_stack_thumbnails, s, mode) for s in stacks
-      ]
+      gather_stack_thumbnails: [(compute_stack_thumbnails, s, mode)
+                                for s in stacks
+                                if ('stack_thumbnail_image', mode,
+                                    s) not in cache_keys]
   })
 
 
@@ -157,10 +159,6 @@ def compute_stack_thumbnails(context, stack, mode):
 # exist yet. It takes up time and is unnecessary. Find some way to cache this
 # result or speed it up.
 def compute_stack_master_thumbnail(context, stack_id, width=2160):
-  key = ('stack_thumbnail_image', 'master', stack_id)
-  if key in ray.get(context.cache_keys):
-    return context, None
-
   stacks = ray.get(context.stacks)
   stack = stacks[stack_id]
   print(f'Entering compute_stack_master_thumbnail() for stack {stack}')
@@ -191,10 +189,6 @@ def compute_stack_master_thumbnail(context, stack_id, width=2160):
 
 
 def compute_stack_subframe_thumbnails(context, stack_id, width):
-  key = ('stack_thumbnail_image', 'subframe', stack_id)
-  if key in ray.get(context.cache_keys):
-    return context, None
-
   stacks = ray.get(context.stacks)
   stack = stacks[stack_id]
   print(f'Entering compute_stack_subframe_thumbnails() for stack {stack}')

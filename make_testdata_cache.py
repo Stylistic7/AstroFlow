@@ -32,7 +32,6 @@ if __name__ == '__main__':
   context.image_hashes = ray.put({})
   context.fits_headers = ray.put({})
   context.plate_solutions = ray.put({})
-  context.cache_keys = ray.put([])
   context.quarantined_files = ray.put([])
 
   input_dir = tempfile.TemporaryDirectory()

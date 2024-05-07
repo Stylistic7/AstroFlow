@@ -16,8 +16,6 @@ class Context(Unionable):
 
   default_filter: str = None
 
-  cache_keys: list[str | tuple] = field(default_factory=list)
-
   image_hashes: dict = None
   fits_headers: dict = None
   plate_solutions: dict = None
