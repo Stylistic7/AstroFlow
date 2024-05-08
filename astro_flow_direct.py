@@ -552,13 +552,8 @@ def populate_context(context):
   context.targets = ray.put(targets)
   context.mosaics = ray.put(mosaics)
 
-  # if not stacks:
-  #   context.needs_regrouping = True
-
-  context.needs_regrouping = True
-
-  # TODO: Put this in the UI.
-  context.run_everything = True
+  if not stacks:
+    context.needs_regrouping = True
 
   return context
 
