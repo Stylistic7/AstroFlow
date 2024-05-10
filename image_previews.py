@@ -182,6 +182,7 @@ def compute_stack_master_thumbnail(context, stack_id, width=2160):
   image = autostretch(resize_array(read_image(image_hashes[master]), width))
 
   # Store the thumbnail.
+  key = ('stack_thumbnail_image', 'master', stack_id)
   ray_diskcache.set(key, array_to_png(image), keep_in_memory=False)
   print(f'Wrote key {key}')
 
@@ -202,6 +203,7 @@ def compute_stack_subframe_thumbnails(context, stack_id, width):
   if not all(file_io.is_light_frame(fits_headers[f]) for f in light_frames):
     print(f'Ignoring {stack} because it is not composed entirely '
           f'of light frames.')
+    key = ('stack_thumbnail_image', 'subframe', stack_id)
     ray_diskcache.set(key, None)
     return context, None
 

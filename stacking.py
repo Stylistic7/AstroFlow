@@ -171,28 +171,34 @@ def scatter_stack_subframes(context):
   print(f'scatter_stack_subframes received {len(stacks)} stacks')
 
   # TODO: Implement in the UI.
-  def is_in_shopping_cart(stack_id):
-    return ('stack_files', stacks[stack_id].geometric_hash) in shopping_cart
+  def should_run(stack_id):
+    return context.run_everything or (
+        'stack_files', stacks[stack_id].geometric_hash) in shopping_cart
+
+  def master_exists(stack_id):
+    return len(
+        find_matching_masters(stacks[stack_id], image_hashes, fits_headers)) > 0
+
+  def previously_had_exception(stack_id):
+    return type(ray_diskcache.get(('stack_files', stack_id), None)) is Exception
 
   # TODO: Put an option in the UI to run most recent first, or oldest first.
   stacks_by_date = sorted(stacks.keys(),
                           key=lambda s: stacks[s].newest_date,
                           reverse=True)
 
-  def should_stack(stack_id):
-    return ((context.run_everything or is_in_shopping_cart(stack_id)) and
-            not find_matching_masters(stack, image_hashes, fits_headers) and
-            type(ray_diskcache.get(
-                ('stack_files', stack_id), None)) is not Exception)
-
   graph = {}
   for priority, stack_id in enumerate(stacks_by_date):
     stack = stacks[stack_id]
-    if not should_stack(stack_id):
+    if not should_run(stack_id) or master_exists(
+        stack_id) or previously_had_exception(stack_id):
       continue
 
     graph[Node(stack_files, stack_id, priority=priority)] = [
-        (stack_files, d) for run in stack.runs for d in run.stack_dependencies
+        (stack_files, d)
+        for run in stack.runs
+        for d in run.stack_dependencies
+        if not master_exists(d) and not previously_had_exception(d)
     ]
 
   return context, Graph(graph)
