@@ -31,20 +31,57 @@ function App() {
   const [targets, setTargets] = useState({});
   const [mosaics, setMosaics] = useState({});
 
+  // useEffect(() => {
+  //   const pollingCallback = async () => {
+  //     // Your polling logic here
+  //     console.log('Polling...');
+
+  //     // // Simulating an API failure in the polling callback
+  //     // const shouldFail = Math.random() < 0.2; // Simulate 20% chance of API failure
+
+  //     // if (shouldFail) {
+  //     //   setIsPollingEnabled(false);
+  //     //   console.log('Polling failed. Stopped polling.');
+  //     // }
+
+  //     // TODO: Only fetch the constellation polylines ones.
+  //     let [s, t, m] = await Promise.all([
+  //       fetch('/stacks').then(r => r.json()),
+  //       fetch('/targets').then(r => r.json()),
+  //       fetch('/mosaics').then(r => r.json()),
+  //     ]);
+
+  //     setStacks(s);
+  //     setTargets(t);
+  //     setMosaics(m);
+
+  //     setDataIsAvailable(true);
+  //   };
+
+  //   const startPolling = () => {
+  //     // pollingCallback(); // To immediately start fetching data
+  //     // Polling every 30 seconds
+  //     timerIdRef.current = setInterval(pollingCallback, 10000);
+  //   };
+
+  //   const stopPolling = () => {
+  //     clearInterval(timerIdRef.current);
+  //   };
+
+  //   if (isPageVisible && isPollingEnabled) {
+  //     pollingCallback();
+  //     startPolling();
+  //   } else {
+  //     stopPolling();
+  //   }
+
+  //   return () => {
+  //     stopPolling();
+  //   };
+  // }, [isPageVisible, isPollingEnabled]);
+
   useEffect(() => {
-    const pollingCallback = async () => {
-      // Your polling logic here
-      console.log('Polling...');
-
-      // // Simulating an API failure in the polling callback
-      // const shouldFail = Math.random() < 0.2; // Simulate 20% chance of API failure
-
-      // if (shouldFail) {
-      //   setIsPollingEnabled(false);
-      //   console.log('Polling failed. Stopped polling.');
-      // }
-
-      // TODO: Only fetch the constellation polylines ones.
+    const loadData = async () => {
       let [s, t, m] = await Promise.all([
         fetch('/stacks').then(r => r.json()),
         fetch('/targets').then(r => r.json()),
@@ -58,27 +95,8 @@ function App() {
       setDataIsAvailable(true);
     };
 
-    const startPolling = () => {
-      // pollingCallback(); // To immediately start fetching data
-      // Polling every 30 seconds
-      timerIdRef.current = setInterval(pollingCallback, 10000);
-    };
-
-    const stopPolling = () => {
-      clearInterval(timerIdRef.current);
-    };
-
-    if (isPageVisible && isPollingEnabled) {
-      pollingCallback();
-      startPolling();
-    } else {
-      stopPolling();
-    }
-
-    return () => {
-      stopPolling();
-    };
-  }, [isPageVisible, isPollingEnabled]);
+    loadData();
+  }, []);
 
   // TODO: Breadcrumbs should preserve the path the user took to get here,
   // but with some normalization. One example: if the user clicks on a mosaic,

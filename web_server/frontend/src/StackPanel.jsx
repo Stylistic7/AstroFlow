@@ -12,6 +12,9 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogTitle from '@mui/material/DialogTitle';
 
+import { trackPromise, usePromiseTracker } from "react-promise-tracker";
+import ClipLoader from "react-spinners/ClipLoader";
+
 import Breadcrumbs from '@mui/material/Breadcrumbs';
 import Link from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
@@ -85,6 +88,12 @@ function QuarantineStackDialog({ stack_id }) {
 	);
 }
 
+const override: CSSProperties = {
+	display: "block",
+	margin: "0 auto",
+	borderColor: "red",
+};
+
 // TODO: The StackPanel should contain the following information:
 // 
 // - status
@@ -113,8 +122,12 @@ export default function StackPanel({ stacks, targets, mosaics }) {
 	const stack_id = params.stack_id;
 	const stack = stacks[stack_id];
 	const plotRef = useRef();
+	const { promiseInProgress } = usePromiseTracker();
 
+	let [color, setColor] = useState("#ffffff");
 	const [open, setOpen] = React.useState(false);
+
+	const [flatRuns, setFlatRuns] = useState();
 
 	const handleClickOpen = () => {
 		setOpen(true);
@@ -127,30 +140,38 @@ export default function StackPanel({ stacks, targets, mosaics }) {
 	// TODO: Don't hardcode the font color; use the theme.
 	const fontColor = "#aaa";
 
-	const fetchHtml = (stack_id) => {
-		console.log('fetchHtml');
+	// const fetchHtml = (stack_id) => {
+	// 	console.log('fetchHtml');
 
-		fetch(`/get_num_stars_histogram_html/${stack_id}`)
-			.then((response) => {
-				return response.text();
-			})
-			.then((htmlString) => {
-				if (plotRef.current) {
-					if (plotRef.current.children[0]) {
-						plotRef.current.removeChild(plotRef.current.children[0]);
-					}
+	// fetch(`/get_num_stars_histogram_html/${stack_id}`)
+	// 	.then((response) => {
+	// 		return response.text();
+	// 	})
+	// 	.then((htmlString) => {
+	// 		if (plotRef.current) {
+	// 			if (plotRef.current.children[0]) {
+	// 				plotRef.current.removeChild(plotRef.current.children[0]);
+	// 			}
 
-					const fragment = document.createRange().createContextualFragment(htmlString);
-					plotRef.current.append(fragment);
-				}
-			});
-	}
+	// 			const fragment = document.createRange().createContextualFragment(htmlString);
+	// 			plotRef.current.append(fragment);
+	// 		}
+	// 	});
+
+	// 	fetch(`/stacks_for_type_and_camera/flat/${stack.camera}`)
+	// }
 
 	useEffect(() => {
-		fetchHtml(stack_id);
+		trackPromise(
+			fetch(`/stacks_for_type_and_camera/flat/${stack.camera}`)
+				.then(r => r.json())
+				.then(j => setFlatRuns(j))
+		);
 	}, []);
 
 	let stack_thumbnail_video_url = `/stack_thumbnail_video/${stack_id}`;
+
+	console.log('promiseInProgress', promiseInProgress);
 
 	return (
 		<>
@@ -194,7 +215,20 @@ export default function StackPanel({ stacks, targets, mosaics }) {
 						stack_id={stack_id}
 					/>
 				</div>
-				<div ref={plotRef} style={{ maxWidth: "30%" }}></div>
+				{/* <div ref={plotRef} style={{ maxWidth: "30%" }}></div> */}
+
+				{promiseInProgress ? (
+					<ClipLoader
+						color={color}
+						loading={promiseInProgress}
+						cssOverride={override}
+						size={150}
+						aria-label="Loading Spinner"
+						data-testid="loader"
+					/>
+				) : (
+					<span>{flatRuns}</span>
+				)}
 			</div>
 		</>
 	);

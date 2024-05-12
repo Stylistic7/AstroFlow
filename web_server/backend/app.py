@@ -547,6 +547,27 @@ def recent():
   return sorted(targets, key=last_frame_datetime, reverse=True)
 
 
+# TODO: Loading stuff from the cache on every endpoint call is very slow.
+@app.route('/stacks_for_type_and_camera/<stack_type>/<camera>')
+def stacks_for_type_and_camera(stack_type, camera):
+  fits_headers = cache['fits_headers']
+  stacks = cache['stacks']
+  stack_ids = []
+  for stack_id, stack in stacks.items():
+    if stack.camera == camera:
+      continue
+
+    this_stack_type = set(fits_headers[f]['IMAGETYP'].lower()
+                          for run in stack.runs
+                          for f in run.frames)
+    assert len(
+        this_stack_type) == 1, f'Stack had multiple types {this_stack_type}'
+    if list(this_stack_type)[0] == stack_type:
+      stack_ids.append(stack_id)
+
+  return stack_ids
+
+
 def run_astroflow_repeatedly():
 
   def ok_to_run():
