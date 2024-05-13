@@ -2,6 +2,7 @@ from typing import NewType
 import numpy as np
 import copy
 import itertools
+import file_io
 
 from hashing import hash_list
 from runs import get_runs, get_frames_for_run
@@ -20,19 +21,16 @@ def _recompute_runs_by_star_count(context, runs, threshold, fits_headers,
   for run in get_runs(selected, fits_headers, context.max_run_gap,
                       context.min_frames_in_run):
     frames = get_frames_for_run(run, selected, fits_headers)
-    output.append(Run(frames=frames, content_hash=hash_list(frames)))
+    assert all(file_io.is_light_frame(fits_headers[f]) for f in frames)
+    exposure_s = sum(fits_headers[h]['EXPOSURE'] for h in frames)
+    output.append(
+        Run(frames=frames,
+            content_hash=hash_list(frames),
+            type='light',
+            num_frames=len(frames),
+            exposure_s=exposure_s))
 
   return output
-
-  # return [
-  #     Run(frames=[
-  #         FrameHash(h)
-  #         for h in get_frames_for_run(run, selected, fits_headers)
-  #     ],
-  #         content_hash=hash_list(run))
-  #     for run in get_runs(selected, fits_headers, context.max_run_gap,
-  #                         context.min_frames_in_run)
-  # ]
 
 
 class StarCountFraction:

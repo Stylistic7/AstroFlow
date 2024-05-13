@@ -15,9 +15,14 @@ StackHash = NewType('StackHash', str)
 class Run:
   content_hash: RunHash | None = None
   frames: list[FrameHash] = field(default_factory=list)
+  num_frames: Optional[int] = None
+  type: Optional[str] = None
+  exposure_s: Optional[int] = None
   stack_dependencies: list[StackHash] = field(default_factory=list)
 
 
+# TODO: Split this into light frame stacks (which have preceding stacks), and
+# calibration stacks (which only have calibration frames).
 @dataclass(order=True)
 class Stack:
   geometric_hash: str | None = None
@@ -26,10 +31,12 @@ class Stack:
   oldest_date = Optional[datetime.datetime]
   newest_date = Optional[datetime.datetime]
 
+  type: Optional[str] = None
   runs: list[Run] = field(default_factory=list)
   target: Optional[str] = None
   camera: Optional[str] = None
   mean_temperature: Optional[float] = None
+  num_frames: Optional[int] = None
   exposure_s: Optional[int] = None
   width_pixels: Optional[int] = None
   height_pixels: Optional[int] = None

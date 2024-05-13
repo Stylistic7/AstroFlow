@@ -160,12 +160,19 @@ def _associate(context,
       print(f'Run is too short; ignoring it')
       continue
 
+    assert all(
+        file_io.is_frame_type(fits_headers[f], image_type) for f in cal_frames)
+
+    exposure_s = sum(fits_headers[f]['EXPOSURE'] for f in cal_frames)
     new_run = Run(frames=[FrameHash(h) for h in cal_frames],
+                  num_frames=len(cal_frames),
+                  exposure_s=exposure_s,
                   stack_dependencies=copy(stack_dependencies))
     assert None not in new_run.stack_dependencies
     new_runs = [new_run]
     new_stack = Stack(
         content_hash=stack_identification._compute_content_hash(new_runs),
+        type=image_type,
         runs=new_runs,
         camera=stack.camera,
         width_pixels=stack.width_pixels,

@@ -5,6 +5,7 @@ from spherical_geometry.polygon import SphericalPolygon
 import astropy
 import itertools
 
+import file_io
 import ray_diskcache
 import stack
 import clustering
@@ -50,12 +51,18 @@ def _compute_content_hash(runs) -> str:
   return hash_list(sorted(all_frames))
 
 
+# TODO: The structure of light_frame_runs is completely nuts here.
 def _new_stack(context,
                name,
-               light_frames,
+               light_frame_runs,
                fits_headers,
                plate_solutions,
                debug=False):
+
+  assert all(
+      file_io.is_light_frame(fits_headers[f])
+      for run in light_frame_runs.keys()
+      for f in run), f'light_frame_runs {light_frame_runs}'
 
   def assert_single_run(frames):
     assert len(
@@ -63,14 +70,14 @@ def _new_stack(context,
                  context.min_frames_in_run)) == 1
 
   if debug:
-    print(f'Entering _new_stack, light_frames are:')
+    print(f'Entering _new_stack, light_frame_runs are:')
 
-  for run in light_frames:
+  for run in light_frame_runs:
     if debug:
       print(f'run {run}')
     assert_single_run(run)
 
-  flattened = list(itertools.chain.from_iterable([k for k in light_frames]))
+  flattened = list(itertools.chain.from_iterable([k for k in light_frame_runs]))
 
   camera = next(iter(set(fits_headers[f]['INSTRUME'] for f in flattened)))
   filter = next(iter(set(fits_headers[f]['FILTER'] for f in flattened)))
@@ -103,11 +110,10 @@ def _new_stack(context,
   # passed on. There may be other settings like this in the future.
   selection_criterion = ('StarCountFraction', 0.75)
 
-  runs = [
-      Run(frames=[FrameHash(h)
-                  for h in run], content_hash=hash_list(run))
-      for run in light_frames
-  ]
+  # At this point in the pipeline, we just need to populate the frames and the
+  # type. The subframe_selection module will down-select the frames and fill in
+  # remaining metadata.
+  runs = [Run(frames=[FrameHash(h) for h in run]) for run in light_frame_runs]
 
   for run in runs:
     assert run.frames, f'run.frames {run.frames} was Falsey'
@@ -143,11 +149,18 @@ def _new_stack(context,
   content_hash = _compute_content_hash(runs)
   assert content_hash
 
+  num_frames = sum(len(run.frames) for run in runs)
+
+  exposure_s = sum(
+      fits_headers[h]['EXPOSURE'] for run in runs for h in run.frames)
+
   return Stack(geometric_hash=geometric_hash,
                content_hash=content_hash,
                runs=runs,
                target=name,
                camera=camera,
+               num_frames=num_frames,
+               exposure_s=exposure_s,
                width_pixels=width_pixels,
                height_pixels=height_pixels,
                center=list(center),
