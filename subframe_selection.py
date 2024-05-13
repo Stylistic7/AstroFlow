@@ -14,21 +14,22 @@ def _recompute_runs_by_star_count(context, runs, threshold, fits_headers,
   # TODO: Why is this here?
   # assert not any(run.stack_dependencies for run in runs)
 
-  flattened = list(itertools.chain.from_iterable([r.frames for r in runs]))
+  flattened = list(
+      itertools.chain.from_iterable([r.frames for r in runs.values()]))
   selected = [f for f in flattened if plate_solutions[f].num_stars >= threshold]
 
-  output = []
+  output = {}
   for run in get_runs(selected, fits_headers, context.max_run_gap,
                       context.min_frames_in_run):
     frames = get_frames_for_run(run, selected, fits_headers)
     assert all(file_io.is_light_frame(fits_headers[f]) for f in frames)
     exposure_s = sum(fits_headers[h]['EXPOSURE'] for h in frames)
-    output.append(
-        Run(frames=frames,
-            content_hash=hash_list(frames),
-            type='light',
-            num_frames=len(frames),
-            exposure_s=exposure_s))
+    content_hash = hash_list(frames)
+    output[content_hash] = Run(frames=frames,
+                               content_hash=content_hash,
+                               type='light',
+                               num_frames=len(frames),
+                               exposure_s=exposure_s)
 
   return output
 
@@ -57,7 +58,7 @@ class StarCountStdDev:
     self.threshold = threshold
 
   def select_subframes(self, context, runs, fits_headers, plate_solutions):
-    light_frames = [f for run in runs for f in run.frames]
+    light_frames = [f for run in runs.values() for f in run.frames]
     star_counts = [plate_solutions[f].num_stars for f in light_frames]
     mean = np.mean(star_counts)
     std_dev = np.std(star_counts)
@@ -80,7 +81,7 @@ SelectionCriterion = StarCountFraction | StarCountStdDev
 
 
 def get_light_frames_sorted_by_stars(runs, plate_solutions):
-  light_frames = [f for run in runs for f in run.frames]
+  light_frames = [f for run in runs.values() for f in run.frames]
   light_frames = sorted(light_frames,
                         key=lambda f: plate_solutions[f].num_stars,
                         reverse=True)

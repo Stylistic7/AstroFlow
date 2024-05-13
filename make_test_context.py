@@ -1,0 +1,35 @@
+import ray_local
+
+import ray
+import tempfile
+import datetime
+
+from cache import cache
+import ray_diskcache
+from context import Context
+
+
+def make_test_context():
+  ray_diskcache.clear()
+  cache.clear()
+
+  # Start with an empty context.
+  context = Context()
+  context.image_hashes = ray.put({})
+  context.fits_headers = ray.put({})
+  context.plate_solutions = ray.put({})
+  context.quarantined_files = ray.put([])
+
+  context.input_dir = tempfile.TemporaryDirectory()
+  context.input_dirs.append(context.input_dir.name)
+
+  context.output_dir = tempfile.TemporaryDirectory()
+  context.output_dir = context.output_dir.name
+
+  context.cosine_similarity_threshold = 0.99999
+  context.min_component_members = 3
+  context.max_run_gap = datetime.timedelta(minutes=15)
+  context.min_frames_in_run = 3
+  context.min_frames_in_stack = 3
+
+  return context

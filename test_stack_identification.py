@@ -11,7 +11,8 @@ default_context = dict(cosine_similarity_threshold=0.99999,
                        min_component_members=3,
                        max_run_gap=datetime.timedelta(minutes=15),
                        min_frames_in_run=3,
-                       min_frames_in_stack=3)
+                       min_frames_in_stack=3,
+                       quarantined_files=ray.put([]))
 
 
 class TestStackIdentification(unittest.TestCase):
@@ -33,7 +34,7 @@ class TestStackIdentification(unittest.TestCase):
 
     stack = stacks[0]
     self.assertEqual(len(stack.runs), 1)
-    self.assertEqual(len(stack.runs[0].frames), 10)
+    self.assertEqual(len(next(iter(stack.runs.values())).frames), 10)
     self.assertEqual(stack.center, [100, 50])
     self.assertEqual(stack.image_scale, 1.0)
 
@@ -64,7 +65,7 @@ class TestStackIdentification(unittest.TestCase):
 
     stack = stacks[0]
     self.assertEqual(len(stack.runs), 1)
-    run = stack.runs[0]
+    run = next(iter(stack.runs.values()))
     self.assertTrue(all('foo' in f for f in run.frames))
     self.assertEqual(len(run.frames), 10)
     self.assertEqual(stack.center, [100, 50])
@@ -72,7 +73,7 @@ class TestStackIdentification(unittest.TestCase):
 
     stack = stacks[1]
     self.assertEqual(len(stack.runs), 1)
-    run = stack.runs[0]
+    run = next(iter(stack.runs.values()))
     self.assertTrue(all('bar' in f for f in run.frames))
     self.assertEqual(len(run.frames), 10)
     self.assertEqual(stack.center, [100, 50])
@@ -117,7 +118,7 @@ class TestStackIdentification(unittest.TestCase):
 
     stack = stacks[0]
     self.assertEqual(len(stack.runs), 1)
-    run = stack.runs[0]
+    run = next(iter(stack.runs.values()))
     self.assertTrue(all('foo' in f for f in run.frames))
     self.assertEqual(len(run.frames), 10)
     self.assertEqual(stack.center, [100, 50])
@@ -127,7 +128,7 @@ class TestStackIdentification(unittest.TestCase):
 
     stack = stacks[1]
     self.assertEqual(len(stack.runs), 1)
-    run = stack.runs[0]
+    run = next(iter(stack.runs.values()))
     self.assertTrue(all('bar' in f for f in run.frames))
     self.assertEqual(len(run.frames), 10)
     self.assertEqual(stack.center, [100, 50])

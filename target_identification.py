@@ -18,7 +18,7 @@ def group_stacks_into_targets(context):
   plate_solutions = ray.get(context.plate_solutions)
 
   def is_light_frame_stack(stack):
-    for run in stack.runs:
+    for run in stack.runs.values():
       if not all(file_io.is_light_frame(fits_headers[f]) for f in run.frames):
         return False
 
@@ -27,7 +27,8 @@ def group_stacks_into_targets(context):
   values = {
       id: (np.asarray(footprints.radec_to_vector(*stack.center)),
            SphericalPolygon.from_wcs(
-               pyfits.Header(plate_solutions[stack.runs[0].frames[0]].header))
+               pyfits.Header(plate_solutions[next(iter(
+                   stack.runs.values())).frames[0]].header))
           ) for id, stack in stacks.items() if is_light_frame_stack(stack)
   }
 

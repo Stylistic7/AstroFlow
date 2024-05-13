@@ -13,31 +13,13 @@ import file_io
 from stack_identification import identify_stacks
 from spatial_association import find_components_by_cosine_similarity
 import subframe_selection
+from make_test_context import make_test_context
 
 
 class TestSubframeSelection(unittest.TestCase):
 
   def setUp(self):
-    ray_diskcache.clear()
-    cache.clear()
-
-    # Start with an empty context.
-    self.context = Context()
-    self.context.image_hashes = ray.put({})
-    self.context.fits_headers = ray.put({})
-    self.context.plate_solutions = ray.put({})
-
-    self.input_dir = tempfile.TemporaryDirectory()
-    self.context.input_dirs.append(self.input_dir.name)
-
-    self.output_dir = tempfile.TemporaryDirectory()
-    self.context.output_dir = self.output_dir.name
-
-    self.context.cosine_similarity_threshold = 0.99999
-    self.context.min_component_members = 3
-    self.context.max_run_gap = datetime.timedelta(minutes=15)
-    self.context.min_frames_in_run = 3
-    self.context.min_frames_in_stack = 3
+    self.context = make_test_context()
 
   def test_star_count_fraction(self):
     image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
@@ -84,7 +66,7 @@ class TestSubframeSelection(unittest.TestCase):
     stack = next(iter(stacks))
 
     self.assertEqual(len(stack.runs), 1)
-    light_frames = [f for run in stack.runs for f in run.frames]
+    light_frames = [f for run in stack.runs.values() for f in run.frames]
     self.assertEqual(len(light_frames), 5)
 
   def test_split_run(self):
@@ -125,7 +107,7 @@ class TestSubframeSelection(unittest.TestCase):
     stack = next(iter(stacks))
 
     self.assertEqual(len(stack.runs), 2)
-    light_frames = [f for run in stack.runs for f in run.frames]
+    light_frames = [f for run in stack.runs.values() for f in run.frames]
     self.assertEqual(len(light_frames), 14)
 
 

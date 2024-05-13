@@ -85,13 +85,10 @@ def copy_testdata_frames(target_name,
   if not fits_header_overrides:
     fits_header_overrides = {}
 
-  if not prefix:
-    prefix = target_name
-
   date_obs = start_datetime
   for filename in _TESTDATA_TARGETS[target_name]:
     src_filename = os.path.join('testdata', 'input', filename)
-    dest_filename = os.path.join(dest_dir, filename)
+    dest_filename = os.path.join(dest_dir, prefix + filename)
     shutil.copy(src_filename, dest_filename)
     print(f'### Copied filename {dest_filename}')
     fits = pyfits.open(dest_filename, mode='update')

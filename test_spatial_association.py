@@ -12,7 +12,8 @@ default_context = dict(cosine_similarity_threshold=0.99999,
                        min_component_members=3,
                        max_run_gap=timedelta(minutes=15),
                        min_frames_in_run=3,
-                       min_frames_in_stack=3)
+                       min_frames_in_stack=3,
+                       quarantined_files=ray.put([]))
 
 
 class TestSpatialAssociation(unittest.TestCase):

@@ -17,6 +17,7 @@ from context import Context
 from make_test_frames import copy_testdata_frames
 import compute_graph
 from new_dependency_graph import run_graph
+from make_test_context import make_test_context
 
 
 class TestMosaic(unittest.TestCase):
@@ -34,28 +35,8 @@ class TestMosaic(unittest.TestCase):
       ray_diskcache.set(key, self.testdata_cache[key])
       print(f'### added ray_diskcache key {key}')
 
-    # Start with an empty context.
-    self.context = Context()
-    self.context.image_hashes = ray.put({})
-    self.context.fits_headers = ray.put({})
-    self.context.plate_solutions = ray.put({})
-    self.context.quarantined_files = ray.put([])
-
-    self.input_dir = tempfile.TemporaryDirectory()
-    self.context.input_dirs.append(self.input_dir.name)
-
-    self.output_dir = tempfile.TemporaryDirectory()
-    self.context.output_dir = self.output_dir.name
-    shutil.copytree('testdata/output', self.output_dir.name, dirs_exist_ok=True)
-
-    self.context.cosine_similarity_threshold = 0.99999
-    self.context.min_component_members = 3
-    self.context.max_run_gap = datetime.timedelta(minutes=15)
-    self.context.min_frames_in_run = 3
-    self.context.min_frames_in_stack = 3
-
-    self.context.shopping_cart = ray.put({})
-    self.context.run_everything = True
+    # # Start with an empty context.
+    self.context = make_test_context()
 
     image_hashes = ray_diskcache.get('image_hashes', {})
     self.context.image_hashes = ray.put(image_hashes)
@@ -97,7 +78,7 @@ class TestMosaic(unittest.TestCase):
 
   def test_all_tasks_already_done(self):
     graph = compute_graph.build_compute_graph()
-    self.context, results = run_graph(graph, self.context)
+    self.context, _ = run_graph(graph, self.context)
 
   def test_everything_after_stacking(self):
     for key in ray_diskcache.get_keys():
@@ -108,7 +89,7 @@ class TestMosaic(unittest.TestCase):
     self.assertEqual(len(filenames), 12)
 
     graph = compute_graph.build_compute_graph()
-    self.context, results = run_graph(graph, self.context)
+    self.context, _ = run_graph(graph, self.context)
 
     # shutil.copytree(self.output_dir.name, 'testdata/output', dirs_exist_ok=True)
 

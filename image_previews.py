@@ -122,7 +122,7 @@ def scatter_stack_thumbnails(context, mode):
 
 def _get_calibrations(stack, stacks, fits_headers):
   calibrations = {}
-  for run in stack.runs:
+  for run in stack.runs.values():
     # Find the first bias, dark, and flat frame in the run's dependencies.
     dependencies = [stacks[d].runs[0].frames[0] for d in run.stack_dependencies]
     bias_frame = next(
@@ -199,7 +199,7 @@ def compute_stack_subframe_thumbnails(context, stack_id, width):
   plate_solutions = ray.get(context.plate_solutions)
 
   # Don't make previews for calibration stacks.
-  light_frames = [f for run in stack.runs for f in run.frames]
+  light_frames = [f for run in stack.runs.values() for f in run.frames]
   if not all(file_io.is_light_frame(fits_headers[f]) for f in light_frames):
     print(f'Ignoring {stack} because it is not composed entirely '
           f'of light frames.')

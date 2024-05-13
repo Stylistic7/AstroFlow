@@ -44,7 +44,7 @@ def _compute_geometric_hash(center, image_scale, rotation_angle, width_pixels,
 # that this stack depends on, e.g. stacks of bias and dark frames.
 def _compute_content_hash(runs) -> str:
   all_frames = []
-  for r in runs:
+  for r in runs.values():
     all_frames.extend(r.frames)
     all_frames.extend(r.stack_dependencies)
 
@@ -113,16 +113,19 @@ def _new_stack(context,
   # At this point in the pipeline, we just need to populate the frames and the
   # type. The subframe_selection module will down-select the frames and fill in
   # remaining metadata.
-  runs = [Run(frames=[FrameHash(h) for h in run]) for run in light_frame_runs]
+  runs = {}
+  for run in light_frame_runs:
+    content_hash = hash_list(run)
+    runs[content_hash] = Run(frames=run)
 
-  for run in runs:
+  for run in runs.values():
     assert run.frames, f'run.frames {run.frames} was Falsey'
     if debug:
       print(f'run {run}')
     assert_single_run(run.frames)
 
   num_light_frames_before_selection = len(
-      [f for run in runs for f in run.frames])
+      [f for run in runs.values() for f in run.frames])
   if debug:
     print(f'Before down-selection, {num_light_frames_before_selection} frames '
           f'in {len(runs)} runs')
@@ -130,12 +133,12 @@ def _new_stack(context,
   runs = criterion.select_subframes(context, runs, fits_headers,
                                     plate_solutions)
   num_light_frames_after_selection = len(
-      [f for run in runs for f in run.frames])
+      [f for run in runs.values() for f in run.frames])
   if debug:
     print(f'After down-selection, {num_light_frames_after_selection} frames '
           f'in {len(runs)} runs')
 
-  for run in runs:
+  for run in runs.values():
     assert run.frames, f'run.frames {run.frames} was Falsey'
     if debug:
       print(f'run {run}')
@@ -149,13 +152,14 @@ def _new_stack(context,
   content_hash = _compute_content_hash(runs)
   assert content_hash
 
-  num_frames = sum(len(run.frames) for run in runs)
+  num_frames = sum(len(run.frames) for run in runs.values())
 
   exposure_s = sum(
-      fits_headers[h]['EXPOSURE'] for run in runs for h in run.frames)
+      fits_headers[h]['EXPOSURE'] for run in runs.values() for h in run.frames)
 
   return Stack(geometric_hash=geometric_hash,
                content_hash=content_hash,
+               type='light',
                runs=runs,
                target=name,
                camera=camera,

@@ -16,11 +16,11 @@ from image_metadata import scatter_compute_image_metadata
 from spatial_association import find_components_by_cosine_similarity
 from stack_identification import identify_stacks
 from calibration_frames import associate_calibration_frames
+from make_test_context import make_test_context
 
 
 def _build_compute_graph(new_filenames):
-  new_filenames = tuple(new_filenames)
-  return make_graph_from_list([(scatter_compute_image_metadata, new_filenames),
+  return make_graph_from_list([(scatter_compute_image_metadata, 'all'),
                                find_components_by_cosine_similarity,
                                identify_stacks, associate_calibration_frames])
 
@@ -30,34 +30,28 @@ def _get_light_stacks(stacks, fits_headers):
   return [
       s for s in stacks.values() if all(
           file_io.is_light_frame(fits_headers[f])
-          for r in s.runs
+          for r in s.runs.values()
           for f in r.frames)
   ]
+
+
+# Check that Stacks and Runs have all the metadata they should have.
+def _check_stacks(stacks):
+  for stack in stacks.values():
+    assert stack.type != None
+    assert stack.num_frames != None
+    assert stack.exposure_s != None
+
+    for run in stack.runs.values():
+      assert run.type != None
+      assert stack.num_frames != None
+      assert stack.exposure_s != None
 
 
 class TestCalibrationFrames(unittest.TestCase):
 
   def setUp(self):
-    ray_diskcache.clear()
-    cache.clear()
-
-    # Start with an empty context.
-    self.context = Context()
-    self.context.image_hashes = ray.put({})
-    self.context.fits_headers = ray.put({})
-    self.context.plate_solutions = ray.put({})
-
-    self.input_dir = tempfile.TemporaryDirectory()
-    self.context.input_dirs.append(self.input_dir.name)
-
-    self.output_dir = tempfile.TemporaryDirectory()
-    self.context.output_dir = self.output_dir.name
-
-    self.context.cosine_similarity_threshold = 0.99999
-    self.context.min_component_members = 3
-    self.context.max_run_gap = datetime.timedelta(minutes=15)
-    self.context.min_frames_in_run = 3
-    self.context.min_frames_in_stack = 3
+    self.context = make_test_context()
 
   def test_stack_dependency_graph(self):
     # These runs of dark and bias frames will be used by both runs of light
@@ -126,6 +120,7 @@ class TestCalibrationFrames(unittest.TestCase):
     fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
     self.assertEqual(len(stacks), 5)
+    _check_stacks(stacks)
 
     light_stacks = _get_light_stacks(stacks, fits_headers)
     self.assertEqual(len(light_stacks), 1)
@@ -151,6 +146,7 @@ class TestCalibrationFrames(unittest.TestCase):
     fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
     self.assertEqual(len(stacks), 2)
+    _check_stacks(stacks)
 
     light_stacks = _get_light_stacks(stacks, fits_headers)
     self.assertEqual(len(light_stacks), 1)
@@ -226,6 +222,7 @@ class TestCalibrationFrames(unittest.TestCase):
     fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
     self.assertEqual(len(stacks), 8)
+    _check_stacks(stacks)
 
     light_stacks = _get_light_stacks(stacks, fits_headers)
     self.assertEqual(len(light_stacks), 2)
@@ -281,6 +278,7 @@ class TestCalibrationFrames(unittest.TestCase):
     fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
     self.assertEqual(len(stacks), 4)
+    _check_stacks(stacks)
 
     light_stacks = _get_light_stacks(stacks, fits_headers)
     self.assertEqual(len(light_stacks), 1)
@@ -309,6 +307,7 @@ class TestCalibrationFrames(unittest.TestCase):
     fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
     self.assertEqual(len(stacks), 2)
+    _check_stacks(stacks)
 
     light_stacks = _get_light_stacks(stacks, fits_headers)
     self.assertEqual(len(light_stacks), 1)
@@ -350,6 +349,7 @@ class TestCalibrationFrames(unittest.TestCase):
     fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
     self.assertEqual(len(stacks), 4)
+    _check_stacks(stacks)
 
     light_stacks = _get_light_stacks(stacks, fits_headers)
     self.assertEqual(len(light_stacks), 1)
@@ -387,6 +387,7 @@ class TestCalibrationFrames(unittest.TestCase):
     fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
     self.assertEqual(len(stacks), 2)
+    _check_stacks(stacks)
 
     light_stacks = _get_light_stacks(stacks, fits_headers)
     self.assertEqual(len(light_stacks), 1)

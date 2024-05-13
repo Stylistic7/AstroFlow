@@ -15,7 +15,7 @@ logger = structlog.get_logger()
 log = logger
 
 
-def identify_overlapping_targets(targets):
+def _identify_overlapping_targets(targets):
   if not targets:
     return []
 
@@ -25,6 +25,10 @@ def identify_overlapping_targets(targets):
   def roughly_same_area(a, b):
     ratio = a.area() / b.area()
     return ratio > 0.9 and ratio < 1.1
+
+  # TODO: Targets should be really be checked that they overlap mostly along
+  # one axis (e.g. the long edge or the short edge), within some amount (say
+  # 5-30%).
 
   # Sort the targets by their center RA.
   targets = list(sorted(targets, key=lambda t: t.center[0]))
@@ -37,9 +41,13 @@ def identify_overlapping_targets(targets):
       all_roughly_same_area = all(
           roughly_same_area(target.footprint_polygon(), m.footprint_polygon())
           for m in mosaic)
+      print('### all_roughly_same_area', all_roughly_same_area)
+
       any_overlap = any(
           overlap(target.footprint_polygon(), m.footprint_polygon())
           for m in mosaic)
+      print('### any_overlap', any_overlap)
+
       if all_roughly_same_area and any_overlap:
         mosaic.append(target)
         found = True
@@ -54,7 +62,9 @@ def identify_overlapping_targets(targets):
            num_grouped_targets=num_grouped_targets,
            num_ungrouped_targets=num_ungrouped_targets)
 
+  print('### before length check, found mosaics', mosaics)
   mosaics = [m for m in mosaics if len(m) > 1]
+  print('### found mosaics', mosaics)
 
   return mosaics
 
@@ -62,9 +72,11 @@ def identify_overlapping_targets(targets):
 @ray.remote
 def identify_mosiacs(context):
   targets = ray.get(context.targets)
+  print(f'### Identifying mosaics from {len(targets)} targets')
 
-  mosaics = identify_overlapping_targets(targets.values())
+  mosaics = _identify_overlapping_targets(targets.values())
   if not mosaics:
+    print('### No overlapping targets found')
     context.mosaics = ray.put({})
     return context, None
 

@@ -8,6 +8,7 @@ import runs
 import clustering
 from stack import Stack, Run, FrameHash
 import stack_identification
+from hashing import hash_list
 
 
 def _associate(context,
@@ -34,7 +35,7 @@ def _associate(context,
     match_temperature, match_exposure, match_filter = False, False, True
 
   new_stacks = []
-  for run in stack.runs:
+  for run in stack.runs.values():
     light_frames = run.frames
     if debug:
       print(f'run light_frames is {light_frames}')
@@ -164,15 +165,20 @@ def _associate(context,
         file_io.is_frame_type(fits_headers[f], image_type) for f in cal_frames)
 
     exposure_s = sum(fits_headers[f]['EXPOSURE'] for f in cal_frames)
+    content_hash = hash_list(cal_frames)
     new_run = Run(frames=[FrameHash(h) for h in cal_frames],
                   num_frames=len(cal_frames),
+                  content_hash=content_hash,
+                  type=image_type,
                   exposure_s=exposure_s,
                   stack_dependencies=copy(stack_dependencies))
     assert None not in new_run.stack_dependencies
-    new_runs = [new_run]
+    new_runs = {content_hash: new_run}
     new_stack = Stack(
         content_hash=stack_identification._compute_content_hash(new_runs),
         type=image_type,
+        num_frames=len(cal_frames),
+        exposure_s=exposure_s,
         runs=new_runs,
         camera=stack.camera,
         width_pixels=stack.width_pixels,
@@ -204,10 +210,13 @@ def associate_calibration_frames(context):
   stacks = ray.get(context.stacks)
 
   def assert_frame_in_stacks(stacks, debug_hash):
+    if debug_hash is None:
+      return
+
     found = False
     for stack in stacks:
       assert type(stack) is Stack
-      for run in stack.runs:
+      for run in stack.runs.values():
         if debug_hash in run.frames:
           found = True
           break
@@ -215,7 +224,7 @@ def associate_calibration_frames(context):
     assert found, f'Debug hash {debug_hash} not found in stacks'
     print(f'### Debug hash {debug_hash} was found in stacks')
 
-  debug_hash = 'cbc3b0f593d8a78f'
+  debug_hash = None
   assert_frame_in_stacks(stacks, debug_hash)
 
   # At this point, stacks is just a list of stacks. The final content hashes
@@ -245,7 +254,7 @@ def associate_calibration_frames(context):
       if flat_stack not in output_stacks:
         output_stacks.append(flat_stack)
 
-    for run in stack.runs:
+    for run in stack.runs.values():
       assert len(run.stack_dependencies) == len(set(run.stack_dependencies))
 
     assert stack not in output_stacks
@@ -255,7 +264,7 @@ def associate_calibration_frames(context):
 
   def print_stack(prefix, stack):
     print(f'### {prefix} stack {stack}')
-    for run in stack.runs:
+    for run in stack.runs.values():
       print(f'### {prefix} run {run}')
 
   stacks = {}
@@ -288,11 +297,6 @@ def associate_calibration_frames(context):
 
   print(f'### There are {len(content_hashes)} unique content hashes')
   print(f'### There are {len(geometric_hashes)} unique geometric hashes')
-
-  # TODO: It's a bit weird to have to include both kinds of hashes here.
-  # stacks = {s.geometric_hash or s.content_hash: s for s in output_stacks}
-  # assert len(stacks) == len(
-  #     output_stacks), f'{len(output_stacks)} stacks became {len(stacks)} stacks'
 
   context.stacks = ray.put(stacks)
   ray_diskcache.set('stacks', stacks)
