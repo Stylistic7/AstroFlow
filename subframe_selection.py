@@ -3,6 +3,7 @@ import numpy as np
 import copy
 import itertools
 
+from hashing import hash_list
 from runs import get_runs, get_frames_for_run
 from stack import Stack, Run, FrameHash
 
@@ -15,12 +16,23 @@ def _recompute_runs_by_star_count(context, runs, threshold, fits_headers,
   flattened = list(itertools.chain.from_iterable([r.frames for r in runs]))
   selected = [f for f in flattened if plate_solutions[f].num_stars >= threshold]
 
-  return [
-      Run(frames=[
-          FrameHash(h) for h in get_frames_for_run(run, selected, fits_headers)
-      ]) for run in get_runs(selected, fits_headers, context.max_run_gap,
-                             context.min_frames_in_run)
-  ]
+  output = []
+  for run in get_runs(selected, fits_headers, context.max_run_gap,
+                      context.min_frames_in_run):
+    frames = get_frames_for_run(run, selected, fits_headers)
+    output.append(Run(frames=frames, content_hash=hash_list(frames)))
+
+  return output
+
+  # return [
+  #     Run(frames=[
+  #         FrameHash(h)
+  #         for h in get_frames_for_run(run, selected, fits_headers)
+  #     ],
+  #         content_hash=hash_list(run))
+  #     for run in get_runs(selected, fits_headers, context.max_run_gap,
+  #                         context.min_frames_in_run)
+  # ]
 
 
 class StarCountFraction:
@@ -70,8 +82,6 @@ SelectionCriterion = StarCountFraction | StarCountStdDev
 
 
 def get_light_frames_sorted_by_stars(runs, plate_solutions):
-  # print(f'### get_light_frames_sorted_by_stars plate_solutions',
-  #       plate_solutions.keys())
   light_frames = [f for run in runs for f in run.frames]
   light_frames = sorted(light_frames,
                         key=lambda f: plate_solutions[f].num_stars,

@@ -209,11 +209,6 @@ def compute_stack_subframe_thumbnails(context, stack_id, width):
 
   calibrations = _get_calibrations(stack, stacks, fits_headers)
 
-  # Now sort all the light frames (no matter which run they're from) by the
-  # number of stars. The better images should be in front.
-  light_frames_by_stars = subframe_selection.get_light_frames_sorted_by_stars(
-      stack.runs, plate_solutions)
-
   # Cache the calibration images so they're only read once.
   calibration_images = {}
 
@@ -226,6 +221,11 @@ def compute_stack_subframe_thumbnails(context, stack_id, width):
       image = resize_array(read_image(image_hashes[hash]), width)
       calibration_images[hash] = image
       return image
+
+  # Now sort all the light frames (no matter which run they're from) by the
+  # number of stars. The better images should be in front.
+  light_frames_by_stars = subframe_selection.get_light_frames_sorted_by_stars(
+      stack.runs, plate_solutions)
 
   best_light_frame, _ = light_frames_by_stars[0]
   image = resize_array(read_image(image_hashes[best_light_frame]), width)

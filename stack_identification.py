@@ -103,7 +103,11 @@ def _new_stack(context,
   # passed on. There may be other settings like this in the future.
   selection_criterion = ('StarCountFraction', 0.75)
 
-  runs = [Run(frames=[FrameHash(h) for h in run]) for run in light_frames]
+  runs = [
+      Run(frames=[FrameHash(h)
+                  for h in run], content_hash=hash_list(run))
+      for run in light_frames
+  ]
 
   for run in runs:
     assert run.frames, f'run.frames {run.frames} was Falsey'

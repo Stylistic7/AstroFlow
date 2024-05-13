@@ -7,11 +7,13 @@ import datetime
 from typing import NewType, Optional
 
 FrameHash = NewType('FrameHash', str)
+RunHash = NewType('RunHash', str)
 StackHash = NewType('StackHash', str)
 
 
 @dataclass
 class Run:
+  content_hash: RunHash | None = None
   frames: list[FrameHash] = field(default_factory=list)
   stack_dependencies: list[StackHash] = field(default_factory=list)
 
