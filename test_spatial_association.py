@@ -63,15 +63,18 @@ class TestSpatialAssociation(unittest.TestCase):
     context, _ = ray.get(find_components_by_cosine_similarity.remote(context))
     groups = ray.get(context.spatial_groups)
 
-    expected_groups = [('IC1318', [
-        file_for_hash['foo_00000.fit'], file_for_hash['foo_00001.fit'],
-        file_for_hash['foo_00002.fit']
-    ]),
-                       ('North America nebula', [
-                           file_for_hash['bar_00000.fit'],
-                           file_for_hash['bar_00001.fit'],
-                           file_for_hash['bar_00002.fit']
-                       ])]
+    expected_groups = [('IC1318',
+                        sorted([
+                            file_for_hash['foo_00000.fit'],
+                            file_for_hash['foo_00001.fit'],
+                            file_for_hash['foo_00002.fit']
+                        ])),
+                       ('North America nebula',
+                        sorted([
+                            file_for_hash['bar_00000.fit'],
+                            file_for_hash['bar_00001.fit'],
+                            file_for_hash['bar_00002.fit']
+                        ]))]
     self.assertEqual(groups, expected_groups)
 
   def test_two_perfect_groups_one_degree_dec(self):
@@ -105,14 +108,16 @@ class TestSpatialAssociation(unittest.TestCase):
     groups = ray.get(context.spatial_groups)
 
     expected_groups = [
-        ('IC1318', [
-            file_for_hash['foo_00000.fit'], file_for_hash['foo_00001.fit'],
-            file_for_hash['foo_00002.fit']
-        ]),
-        ('IC1318', [
-            file_for_hash['bar_00000.fit'], file_for_hash['bar_00001.fit'],
-            file_for_hash['bar_00002.fit']
-        ]),
+        ('IC1318',
+         sorted([
+             file_for_hash['foo_00000.fit'], file_for_hash['foo_00001.fit'],
+             file_for_hash['foo_00002.fit']
+         ])),
+        ('IC1318',
+         sorted([
+             file_for_hash['bar_00000.fit'], file_for_hash['bar_00001.fit'],
+             file_for_hash['bar_00002.fit']
+         ])),
     ]
     self.assertEqual(groups, expected_groups)
 
@@ -149,14 +154,16 @@ class TestSpatialAssociation(unittest.TestCase):
     groups = ray.get(context.spatial_groups)
 
     expected_groups = [
-        ('IC1318', [
-            file_for_hash['foo_00000.fit'], file_for_hash['foo_00001.fit'],
-            file_for_hash['foo_00002.fit']
-        ]),
-        ('IC1318', [
-            file_for_hash['bar_00000.fit'], file_for_hash['bar_00001.fit'],
-            file_for_hash['bar_00002.fit']
-        ]),
+        ('IC1318',
+         sorted([
+             file_for_hash['foo_00000.fit'], file_for_hash['foo_00001.fit'],
+             file_for_hash['foo_00002.fit']
+         ])),
+        ('IC1318',
+         sorted([
+             file_for_hash['bar_00000.fit'], file_for_hash['bar_00001.fit'],
+             file_for_hash['bar_00002.fit']
+         ])),
     ]
     self.assertEqual(groups, expected_groups)
 
@@ -191,14 +198,16 @@ class TestSpatialAssociation(unittest.TestCase):
     groups = ray.get(context.spatial_groups)
 
     expected_groups = [
-        ('IC1318', [
-            file_for_hash['foo_00000.fit'], file_for_hash['foo_00001.fit'],
-            file_for_hash['foo_00002.fit']
-        ]),
-        ('North America nebula', [
-            file_for_hash['bar_00000.fit'], file_for_hash['bar_00001.fit'],
-            file_for_hash['bar_00002.fit']
-        ]),
+        ('IC1318',
+         sorted([
+             file_for_hash['foo_00000.fit'], file_for_hash['foo_00001.fit'],
+             file_for_hash['foo_00002.fit']
+         ])),
+        ('North America nebula',
+         sorted([
+             file_for_hash['bar_00000.fit'], file_for_hash['bar_00001.fit'],
+             file_for_hash['bar_00002.fit']
+         ])),
     ]
     self.assertEqual(groups, expected_groups)
 
