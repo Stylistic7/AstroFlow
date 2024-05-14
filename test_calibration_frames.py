@@ -345,7 +345,7 @@ class TestCalibrationFrames(unittest.TestCase):
     filenames = file_io.find_image_files(self.context.input_dirs[0])
     self.assertEqual(len(filenames), 26)
 
-    graph = _build_compute_graph(filenames)
+    graph = _build_compute_graph()
     self.context, _ = run_graph(graph, self.context)
 
     fits_headers = ray.get(self.context.fits_headers)
@@ -383,7 +383,7 @@ class TestCalibrationFrames(unittest.TestCase):
     filenames = file_io.find_image_files(self.context.input_dirs[0])
     self.assertEqual(len(filenames), 15)
 
-    graph = _build_compute_graph(filenames)
+    graph = _build_compute_graph()
     self.context, _ = run_graph(graph, self.context)
 
     fits_headers = ray.get(self.context.fits_headers)
@@ -431,39 +431,67 @@ class TestCalibrationFrames(unittest.TestCase):
     filenames = file_io.find_image_files(self.context.input_dirs[0])
     self.assertEqual(len(filenames), 15)
 
-    graph = make_graph_from_list([(scatter_compute_image_metadata, 'all')])
-    self.context, _ = run_graph(graph, self.context)
-
-    image_hashes = ray.get(self.context.image_hashes)
-    first_light_run_hash = hash_list(
-        [k for k, v in image_hashes.items() if 'light_run' in v])
-
-    first_flat_run_hash = hash_list(
-        [k for k, v in image_hashes.items() if 'flat_run_0' in v])
-
-    ray_diskcache.set(
-        ('light_run_settings', first_light_run_hash), {
-            'flat':
-                (pytz.utc.localize(datetime.datetime(2023, 11, 6, 16, 29, 43)),
-                 pytz.utc.localize(datetime.datetime(2023, 11, 6, 16, 29, 55)))
-        })
-
+    # Run the graph the first time. It will use the default flat run, which
+    # has prefix `flat_run_1` because it is closer chronologically.
+    print('### Running compute graph for the first time')
     graph = _build_compute_graph()
     self.context, _ = run_graph(graph, self.context)
-
+    image_hashes = ray.get(self.context.image_hashes)
     fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
-    self.assertEqual(len(stacks), 2)
-    _check_stacks(stacks)
+
+    # Look through the stacks, and find the stacks for the two runs of flat
+    # frames.
+    def find_stack(filename_fragment):
+      return next(stack_id for stack_id, stack in stacks.items()
+                  if all(filename_fragment in image_hashes[f]
+                         for run in stack.runs.values()
+                         for f in run.frames))
+
+    first_flat_stack = find_stack('flat_run_0')
+    second_flat_stack = find_stack('flat_run_1')
+    print(f'### first_flat_stack {first_flat_stack}')
+    print(f'### second_flat_stack {second_flat_stack}')
+
+    first_light_run_hash = hash_list(
+        [k for k, v in image_hashes.items() if 'light_run' in v])
+    print(f'### first_light_run_hash', first_light_run_hash)
 
     light_stacks = _get_light_stacks(stacks, fits_headers)
     self.assertEqual(len(light_stacks), 1)
-
     stack = next(iter(light_stacks))
     assert len(stack.runs) == 1
     run = next(iter(stack.runs.values()))
     assert run.content_hash == first_light_run_hash
-    assert run.stack_dependencies == [first_flat_run_hash]
+    assert run.stack_dependencies == {
+        'flat': second_flat_stack
+    }, f'run.stack_dependencies {run.stack_dependencies}'
+
+    # Configure the light run to use the other flat run, which has prefix
+    # `flat_run_0`.
+    ray_diskcache.set(('light_run_settings', first_light_run_hash),
+                      {'flat': first_flat_stack})
+
+    # Run the graph again, with the settings applied.
+    print('### Running compute graph for the second time')
+    graph = _build_compute_graph()
+    self.context, _ = run_graph(graph, self.context)
+    image_hashes = ray.get(self.context.image_hashes)
+    fits_headers = ray.get(self.context.fits_headers)
+    stacks = ray.get(self.context.stacks)
+
+    self.assertEqual(len(stacks), 3)
+    _check_stacks(stacks)
+
+    light_stacks = _get_light_stacks(stacks, fits_headers)
+    self.assertEqual(len(light_stacks), 1)
+    stack = next(iter(light_stacks))
+    assert len(stack.runs) == 1
+    run = next(iter(stack.runs.values()))
+    assert run.content_hash == first_light_run_hash
+    assert run.stack_dependencies == {
+        'flat': first_flat_stack
+    }, f'run.stack_dependencies {run.stack_dependencies}'
 
 
 if __name__ == "__main__":

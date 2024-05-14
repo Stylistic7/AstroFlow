@@ -68,7 +68,6 @@ def _associate_with_run(context,
                         stack,
                         run,
                         image_type,
-                        stack_dependencies,
                         fits_headers,
                         debug=True):
   if debug:
@@ -157,95 +156,97 @@ def _associate_with_run(context,
           f'WARNING: Could not find any acceptable runs of calibration frames')
     return run, None
 
-  # TODO: At this point, we have a list of runs of calibration frames that match
-  # the run of light frames. If the user has already picked one, we should
-  # honor that pick. The stack they chose should exist in the existing dict
-  # of stacks, but needs to be carried forward so it's included in the new
-  # dict of stacks.
-  light_run_hash = hash_list(light_frames)
-  settings_key = ('light_run_settings', light_run_hash)
-  settings = ray_diskcache.get(settings_key, {})
-  if image_type in settings:
-    cal_run = settings[image_type]
-  else:
-    cal_run = cal_runs[np.argmin(
-        [runs.run_time_delta(light_run, cal_run) for cal_run in cal_runs])]
+  closest_chronological_cal_run = cal_runs[np.argmin(
+      [runs.run_time_delta(light_run, cal_run) for cal_run in cal_runs])]
 
-  cal_frames = runs.get_frames_for_run(cal_run, cal_frames, fits_headers)
+  new_stacks = []
+  for cal_run in cal_runs:
+    cal_frames_for_run = runs.get_frames_for_run(cal_run, cal_frames,
+                                                 fits_headers)
+    if debug:
+      print(f'Selected {len(cal_frames_for_run)} {image_type} frames by run')
+
+    # Create a new Stack containing one Run of calibration frames. If the same
+    # Stack is found multiple times, it will be automatically de-duped by its
+    # content hash.
+    if len(cal_frames_for_run) < context.min_frames_in_stack:
+      print(f'Run is too short; ignoring it')
+      return run, None
+
+    assert all(
+        file_io.is_frame_type(fits_headers[f], image_type)
+        for f in cal_frames_for_run)
+
+    # Create a new Stack, composed of a single Run, containing these calibration
+    # frames.
+    exposure_s = sum(fits_headers[f]['EXPOSURE'] for f in cal_frames_for_run)
+    content_hash = hash_list(cal_frames_for_run)
+    new_run = Run(frames=[FrameHash(h) for h in cal_frames_for_run],
+                  num_frames=len(cal_frames_for_run),
+                  content_hash=content_hash,
+                  type=image_type,
+                  exposure_s=exposure_s)
+    new_runs = {content_hash: new_run}
+    content_hash = stack_identification._compute_content_hash(new_runs)
+    new_stack = Stack(content_hash=content_hash,
+                      type=image_type,
+                      num_frames=len(cal_frames_for_run),
+                      exposure_s=exposure_s,
+                      runs=new_runs,
+                      camera=stack.camera,
+                      width_pixels=stack.width_pixels,
+                      height_pixels=stack.height_pixels)
+    print(f'Made new {image_type} calibration stack with '
+          f'content hash {content_hash}')
+
+    # Populate details.
+    # TODO: Shouldn't all stacks have these details?
+    if match_temperature:
+      new_stack.mean_temperature = np.mean(
+          [fits_headers[f]['CCD-TEMP'] for f in cal_frames_for_run])
+
+    if match_exposure:
+      new_stack.exposure_s = fits_headers[cal_frames_for_run[0]]['EXPOSURE']
+
+    if match_filter:
+      new_stack.filter = fits_headers[cal_frames_for_run[0]]['FILTER']
+
+    # Add the new calibration Stack as a dependency to the given Run.
+    if cal_run == closest_chronological_cal_run:
+      run.stack_dependencies[image_type] = new_stack.content_hash
+
+    new_stacks.append(new_stack)
+
+  return run, new_stacks
+
+
+def _associate_with_stack(context, stack, image_type, fits_headers, debug=True):
   if debug:
-    print(f'Selected {len(cal_frames)} {image_type} frames by run')
-
-  # Create a new Stack containing one Run of calibration frames. If the same
-  # Stack is found multiple times, it will be automatically de-duped by its
-  # content hash.
-  if len(cal_frames) < context.min_frames_in_stack:
-    print(f'Run is too short; ignoring it')
-    return run, None
-
-  assert all(
-      file_io.is_frame_type(fits_headers[f], image_type) for f in cal_frames)
-
-  exposure_s = sum(fits_headers[f]['EXPOSURE'] for f in cal_frames)
-  content_hash = hash_list(cal_frames)
-  new_run = Run(frames=[FrameHash(h) for h in cal_frames],
-                num_frames=len(cal_frames),
-                content_hash=content_hash,
-                type=image_type,
-                exposure_s=exposure_s,
-                stack_dependencies=copy(stack_dependencies))
-  assert None not in new_run.stack_dependencies
-  new_runs = {content_hash: new_run}
-  new_stack = Stack(
-      content_hash=stack_identification._compute_content_hash(new_runs),
-      type=image_type,
-      num_frames=len(cal_frames),
-      exposure_s=exposure_s,
-      runs=new_runs,
-      camera=stack.camera,
-      width_pixels=stack.width_pixels,
-      height_pixels=stack.height_pixels)
-
-  # Populate details.
-  if match_temperature:
-    new_stack.mean_temperature = np.mean(
-        [fits_headers[f]['CCD-TEMP'] for f in cal_frames])
-
-  if match_exposure:
-    new_stack.exposure_s = fits_headers[cal_frames[0]]['EXPOSURE']
-
-  if match_filter:
-    new_stack.filter = fits_headers[cal_frames[0]]['FILTER']
-
-  # Add the new calibration Stack as a dependency to the given Stack.
-  run.stack_dependencies.append(new_stack.content_hash)
-
-  return run, new_stack
-
-
-def _associate_with_stack(context,
-                          stack,
-                          image_type,
-                          fits_headers,
-                          stack_dependencies=None,
-                          debug=True):
-  if debug:
-    print(f'Entering _associate_with_stack for {stack} '
+    print(f'Entering _associate_with_stack {image_type} for {stack} '
           f'with {len(stack.runs)} runs')
     for run in stack.runs:
       print(f'run {run}')
 
-  if not stack_dependencies:
-    stack_dependencies = []
-
-  assert None not in stack_dependencies
-
   new_stacks = []
   for run in stack.runs.values():
-    run, new_stack = _associate_with_run(context, stack, run, image_type,
-                                         stack_dependencies, fits_headers,
-                                         debug)
-    if new_stack:
-      new_stacks.append(new_stack)
+    run, new_stacks_for_run = _associate_with_run(context, stack, run,
+                                                  image_type, fits_headers,
+                                                  debug)
+    if new_stacks_for_run:
+      print(f'### Associated {len(new_stacks_for_run)} plausible {image_type} '
+            f'stacks for stack {stack}')
+      for new_stack in new_stacks_for_run:
+        if new_stack not in new_stacks:
+          new_stacks.append(new_stack)
+
+    # TODO: This is called repeatedly for each image type (bias, dark, flat).
+    # It's not a big deal, but maybe points at poor design.
+    print(f'### before settings are applied {run.stack_dependencies}')
+    key = ('light_run_settings', run.content_hash)
+    settings = ray_diskcache.get(key, {})
+    print(f'### found settings for run {run.content_hash}: {settings}')
+    run.stack_dependencies |= settings
+    print(f'### after settings are applied {run.stack_dependencies}')
 
   return stack, new_stacks
 

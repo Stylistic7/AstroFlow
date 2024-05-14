@@ -18,7 +18,7 @@ class Run:
   num_frames: Optional[int] = None
   type: Optional[str] = None
   exposure_s: Optional[int] = None
-  stack_dependencies: list[StackHash] = field(default_factory=list)
+  stack_dependencies: dict[str, StackHash] = field(default_factory=dict)
 
 
 # TODO: Split this into light frame stacks (which have preceding stacks), and
