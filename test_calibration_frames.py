@@ -6,6 +6,7 @@ import tempfile
 import ray
 from cache import cache
 import datetime
+import pytz
 
 from make_test_frames import make_synthetic_frames, copy_testdata_frames
 import ray_diskcache
@@ -17,9 +18,10 @@ from spatial_association import find_components_by_cosine_similarity
 from stack_identification import identify_stacks
 from calibration_frames import associate_calibration_frames
 from make_test_context import make_test_context
+from hashing import hash_list
 
 
-def _build_compute_graph(new_filenames):
+def _build_compute_graph():
   return make_graph_from_list([(scatter_compute_image_metadata, 'all'),
                                find_components_by_cosine_similarity,
                                identify_stacks, associate_calibration_frames])
@@ -114,7 +116,7 @@ class TestCalibrationFrames(unittest.TestCase):
     filenames = file_io.find_image_files(self.context.input_dirs[0])
     self.assertEqual(len(filenames), 42)
 
-    graph = _build_compute_graph(filenames)
+    graph = _build_compute_graph()
     self.context, _ = run_graph(graph, self.context)
 
     fits_headers = ray.get(self.context.fits_headers)
@@ -140,7 +142,7 @@ class TestCalibrationFrames(unittest.TestCase):
     filenames = file_io.find_image_files(self.context.input_dirs[0])
     self.assertEqual(len(filenames), 8)
 
-    graph = _build_compute_graph(filenames)
+    graph = _build_compute_graph()
     self.context, _ = run_graph(graph, self.context)
 
     fits_headers = ray.get(self.context.fits_headers)
@@ -216,7 +218,7 @@ class TestCalibrationFrames(unittest.TestCase):
     filenames = file_io.find_image_files(self.context.input_dirs[0])
     self.assertEqual(len(filenames), 78)
 
-    graph = _build_compute_graph(filenames)
+    graph = _build_compute_graph()
     self.context, _ = run_graph(graph, self.context)
 
     fits_headers = ray.get(self.context.fits_headers)
@@ -272,7 +274,7 @@ class TestCalibrationFrames(unittest.TestCase):
     filenames = file_io.find_image_files(self.context.input_dirs[0])
     self.assertEqual(len(filenames), 39)
 
-    graph = _build_compute_graph(filenames)
+    graph = _build_compute_graph()
     self.context, _ = run_graph(graph, self.context)
 
     fits_headers = ray.get(self.context.fits_headers)
@@ -301,7 +303,7 @@ class TestCalibrationFrames(unittest.TestCase):
     filenames = file_io.find_image_files(self.context.input_dirs[0])
     self.assertEqual(len(filenames), 8)
 
-    graph = _build_compute_graph(filenames)
+    graph = _build_compute_graph()
     self.context, _ = run_graph(graph, self.context)
 
     fits_headers = ray.get(self.context.fits_headers)
@@ -391,6 +393,77 @@ class TestCalibrationFrames(unittest.TestCase):
 
     light_stacks = _get_light_stacks(stacks, fits_headers)
     self.assertEqual(len(light_stacks), 1)
+
+  def test_flat_frame_selection(self):
+    # There are two runs of flat frames, but the user has selected the second
+    # one, which is much more distant chronologically.
+    make_synthetic_frames(prefix='flat_run_0',
+                          number=7,
+                          start_datetime=datetime.datetime(
+                              2023, 11, 6, 16, 29, 43),
+                          image_type='Flat',
+                          fill_value=4096,
+                          exposure=1,
+                          instrument='ZWO ASI6200MM Pro',
+                          width_pixels=9576,
+                          height_pixels=6388,
+                          temperature=-15,
+                          dest_dir=self.context.input_dirs[0])
+    copy_testdata_frames(prefix='light_run',
+                         target_name='NGC7635',
+                         start_datetime=datetime.datetime(
+                             2023, 12, 6, 16, 29, 43),
+                         dest_dir=self.context.input_dirs[0],
+                         add_noise=False)
+    make_synthetic_frames(prefix='flat_run_1',
+                          number=5,
+                          start_datetime=datetime.datetime(
+                              2023, 12, 6, 17, 29, 43),
+                          image_type='Flat',
+                          fill_value=4096,
+                          exposure=1,
+                          instrument='ZWO ASI6200MM Pro',
+                          width_pixels=9576,
+                          height_pixels=6388,
+                          temperature=-15,
+                          dest_dir=self.context.input_dirs[0])
+
+    filenames = file_io.find_image_files(self.context.input_dirs[0])
+    self.assertEqual(len(filenames), 15)
+
+    graph = make_graph_from_list([(scatter_compute_image_metadata, 'all')])
+    self.context, _ = run_graph(graph, self.context)
+
+    image_hashes = ray.get(self.context.image_hashes)
+    first_light_run_hash = hash_list(
+        [k for k, v in image_hashes.items() if 'light_run' in v])
+
+    first_flat_run_hash = hash_list(
+        [k for k, v in image_hashes.items() if 'flat_run_0' in v])
+
+    ray_diskcache.set(
+        ('light_run_settings', first_light_run_hash), {
+            'flat':
+                (pytz.utc.localize(datetime.datetime(2023, 11, 6, 16, 29, 43)),
+                 pytz.utc.localize(datetime.datetime(2023, 11, 6, 16, 29, 55)))
+        })
+
+    graph = _build_compute_graph()
+    self.context, _ = run_graph(graph, self.context)
+
+    fits_headers = ray.get(self.context.fits_headers)
+    stacks = ray.get(self.context.stacks)
+    self.assertEqual(len(stacks), 2)
+    _check_stacks(stacks)
+
+    light_stacks = _get_light_stacks(stacks, fits_headers)
+    self.assertEqual(len(light_stacks), 1)
+
+    stack = next(iter(light_stacks))
+    assert len(stack.runs) == 1
+    run = next(iter(stack.runs.values()))
+    assert run.content_hash == first_light_run_hash
+    assert run.stack_dependencies == [first_flat_run_hash]
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ import datetime
 import random
 import uuid
 import shutil
+import xxhash
 
 import plate_solving
 import file_io
@@ -175,7 +176,8 @@ def make_synthetic_frames(start_datetime=datetime.datetime(
                                     size=image_data.shape,
                                     dtype=image_data.dtype)
 
-    image_hash = 'hash_for_' + fits_filename
+    # image_hash = 'hash_for_' + fits_filename
+    image_hash = xxhash.xxh64(image_data.tobytes()).hexdigest()
     image_hashes[image_hash] = fits_filename
 
     center = _add_dither(centers[i], dither)

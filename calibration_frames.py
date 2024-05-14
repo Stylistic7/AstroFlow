@@ -157,8 +157,20 @@ def _associate_with_run(context,
           f'WARNING: Could not find any acceptable runs of calibration frames')
     return run, None
 
-  cal_run = cal_runs[np.argmin(
-      [runs.run_time_delta(light_run, cal_run) for cal_run in cal_runs])]
+  # TODO: At this point, we have a list of runs of calibration frames that match
+  # the run of light frames. If the user has already picked one, we should
+  # honor that pick. The stack they chose should exist in the existing dict
+  # of stacks, but needs to be carried forward so it's included in the new
+  # dict of stacks.
+  light_run_hash = hash_list(light_frames)
+  settings_key = ('light_run_settings', light_run_hash)
+  settings = ray_diskcache.get(settings_key, {})
+  if image_type in settings:
+    cal_run = settings[image_type]
+  else:
+    cal_run = cal_runs[np.argmin(
+        [runs.run_time_delta(light_run, cal_run) for cal_run in cal_runs])]
+
   cal_frames = runs.get_frames_for_run(cal_run, cal_frames, fits_headers)
   if debug:
     print(f'Selected {len(cal_frames)} {image_type} frames by run')
