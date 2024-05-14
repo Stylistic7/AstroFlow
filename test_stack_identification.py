@@ -1,5 +1,7 @@
-import unittest
+import ray_local
+
 import ray
+import unittest
 import datetime
 
 from context import Context
@@ -60,13 +62,14 @@ class TestStackIdentification(unittest.TestCase):
     context, _ = ray.get(find_components_by_cosine_similarity.remote(context))
     context, _ = ray.get(identify_stacks.remote(context))
 
+    image_hashes = ray.get(context.image_hashes)
     stacks = ray.get(context.stacks)
     self.assertEqual(len(stacks), 2)
 
     stack = stacks[0]
     self.assertEqual(len(stack.runs), 1)
     run = next(iter(stack.runs.values()))
-    self.assertTrue(all('foo' in f for f in run.frames))
+    self.assertTrue(all('foo' in image_hashes[f] for f in run.frames))
     self.assertEqual(len(run.frames), 10)
     self.assertEqual(stack.center, [100, 50])
     self.assertEqual(stack.image_scale, 1.0)
@@ -74,7 +77,7 @@ class TestStackIdentification(unittest.TestCase):
     stack = stacks[1]
     self.assertEqual(len(stack.runs), 1)
     run = next(iter(stack.runs.values()))
-    self.assertTrue(all('bar' in f for f in run.frames))
+    self.assertTrue(all('bar' in image_hashes[f] for f in run.frames))
     self.assertEqual(len(run.frames), 10)
     self.assertEqual(stack.center, [100, 50])
     self.assertEqual(stack.image_scale, 2.0)
@@ -119,7 +122,7 @@ class TestStackIdentification(unittest.TestCase):
     stack = stacks[0]
     self.assertEqual(len(stack.runs), 1)
     run = next(iter(stack.runs.values()))
-    self.assertTrue(all('foo' in f for f in run.frames))
+    self.assertTrue(all('foo' in image_hashes[f] for f in run.frames))
     self.assertEqual(len(run.frames), 10)
     self.assertEqual(stack.center, [100, 50])
     self.assertEqual(stack.width_pixels, 3000)
@@ -129,7 +132,7 @@ class TestStackIdentification(unittest.TestCase):
     stack = stacks[1]
     self.assertEqual(len(stack.runs), 1)
     run = next(iter(stack.runs.values()))
-    self.assertTrue(all('bar' in f for f in run.frames))
+    self.assertTrue(all('bar' in image_hashes[f] for f in run.frames))
     self.assertEqual(len(run.frames), 10)
     self.assertEqual(stack.center, [100, 50])
     self.assertEqual(stack.width_pixels, 6000)
