@@ -28,8 +28,8 @@ class Stack:
   geometric_hash: str | None = None
   content_hash: str | None = None
 
-  oldest_date = Optional[datetime.datetime]
-  newest_date = Optional[datetime.datetime]
+  oldest_date: Optional[datetime.datetime] = None
+  newest_date: Optional[datetime.datetime] = None
 
   type: Optional[str] = None
   runs: list[Run] = field(default_factory=list)

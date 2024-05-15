@@ -179,8 +179,8 @@ def _associate_with_run(context,
 
     # Create a new Stack, composed of a single Run, containing these calibration
     # frames.
-    exposure_s = sum(fits_headers[f]['EXPOSURE'] for f in cal_frames_for_run)
     content_hash = hash_list(cal_frames_for_run)
+    exposure_s = sum(fits_headers[f]['EXPOSURE'] for f in cal_frames_for_run)
     new_run = Run(frames=[FrameHash(h) for h in cal_frames_for_run],
                   num_frames=len(cal_frames_for_run),
                   content_hash=content_hash,

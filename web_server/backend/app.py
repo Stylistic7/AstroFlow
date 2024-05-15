@@ -165,6 +165,11 @@ def stacks():
   return test_app.stacks if debug else cache.get('stacks', {})
 
 
+@app.route('/send_datetime')
+def send_datetime():
+  return {'foo': datetime.datetime(2023, 5, 19, 4, 27, 17, 756893)}
+
+
 @app.route('/targets_for_mosaic/<mosaic_id>')
 def targets_for_mosaic(mosaic_id):
   # mosaic = next(m for m in cache['mosaics'] if m.id == mosaic_id)

@@ -39,7 +39,11 @@ export default function RunPanel({ run, stacks, flatStackIds }) {
             <div><span>Available flat stacks:</span></div>
             <ul>
                 {flatStackIds.map(id =>
-                    <li>{stacks[id].content_hash}: {stacks[id].num_frames} {stacks[id].type} frames</li>)}
+                    <li>{stacks[id].content_hash}:
+                        {stacks[id].num_frames}
+                        {stacks[id].type} frames
+                        {stacks[id].oldest_date}
+                        {stacks[id].newest_date}</li>)}
             </ul>
         </div>
     );
