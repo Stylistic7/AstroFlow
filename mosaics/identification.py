@@ -41,13 +41,9 @@ def _identify_overlapping_targets(targets):
       all_roughly_same_area = all(
           roughly_same_area(target.footprint_polygon(), m.footprint_polygon())
           for m in mosaic)
-      print('### all_roughly_same_area', all_roughly_same_area)
-
       any_overlap = any(
           overlap(target.footprint_polygon(), m.footprint_polygon())
           for m in mosaic)
-      print('### any_overlap', any_overlap)
-
       if all_roughly_same_area and any_overlap:
         mosaic.append(target)
         found = True
@@ -62,9 +58,7 @@ def _identify_overlapping_targets(targets):
            num_grouped_targets=num_grouped_targets,
            num_ungrouped_targets=num_ungrouped_targets)
 
-  print('### before length check, found mosaics', mosaics)
   mosaics = [m for m in mosaics if len(m) > 1]
-  print('### found mosaics', mosaics)
 
   return mosaics
 

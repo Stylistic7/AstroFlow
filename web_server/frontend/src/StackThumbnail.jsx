@@ -75,7 +75,7 @@ export default function StackThumbnail({ stacks, stack_id, width, handleClick })
 	}, [video_ref]);
 
 	let light_frames = [];
-	for (let run of stack.runs) {
+	for (let [key, run] of Object.entries(stack.runs)) {
 		light_frames += run.frames;
 	}
 

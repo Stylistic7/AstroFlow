@@ -14,14 +14,9 @@ import threading
 from base64 import b64encode
 import datetime
 
-# import astro_flow_direct
 import constellations
-# from astro_flow_direct import Context
 import image_previews
 from cache import cache
-import prev_results
-import dependency_graph as dg
-from plate_solving import PlateSolution
 import subframe_selection
 from context import Context
 
@@ -220,7 +215,7 @@ def get_selected_subframes(stack_id):
       stack.selection_criterion)
   runs = criterion.select_subframes(context, stack.runs, fits_headers,
                                     plate_solutions)
-  light_frames = [f for run in runs for f in run.frames]
+  light_frames = [f for run in runs.values() for f in run.frames]
   return light_frames
 
 
@@ -233,7 +228,7 @@ def get_exposure_duration(stack_id):
   stack = cache['stacks'][stack_id]
   fits_headers = cache['fits_headers']
 
-  light_frames = [f for run in stack.runs for f in run.frames]
+  light_frames = [f for run in stack.runs.values() for f in run.frames]
   print(f'### before subframe selection, there are '
         f'{len(light_frames)} light frames')
   total_exposure_duration = sum(
@@ -248,7 +243,7 @@ def get_exposure_duration(stack_id):
   print('### criterion is', criterion)
   runs = criterion.select_subframes(context, stack.runs, fits_headers,
                                     plate_solutions)
-  light_frames = [f for run in runs for f in run.frames]
+  light_frames = [f for run in runs.values() for f in run.frames]
   print(f'### after subframe selection, there are '
         f'{len(light_frames)} light frames')
   selected_exposure_duration = sum(
@@ -459,7 +454,7 @@ def get_light_frames(stack_id):
   image_hashes = cache['image_hashes']
 
   filenames = []
-  for run in stack.runs:
+  for run in stack.runs.values():
     for frame in run.frames:
       filenames.append(image_hashes[frame])
 
@@ -472,7 +467,7 @@ def get_num_stars_histogram_html(stack_id):
   stack = cache['stacks'][stack_id]
   plate_solutions = cache['plate_solutions']
 
-  light_frames = [f for run in stack.runs for f in run.frames]
+  light_frames = [f for run in stack.runs.values() for f in run.frames]
   num_stars = [plate_solutions[f].num_stars for f in light_frames]
   print('num_stars', num_stars)
 
@@ -503,7 +498,7 @@ def quarantine_target(target_id):
   num_files_quarantined = 0
   for stack_id in target.stack_ids:
     stack = stacks[stack_id]
-    for run in stack.runs:
+    for run in stack.runs.values():
       for h in run.frames:
         quarantined_files.append(h)
         num_files_quarantined += 1
@@ -520,7 +515,7 @@ def quarantine_stack(stack_id):
   quarantined_files = cache['quarantined_files']
 
   num_files_quarantined = 0
-  for run in stack.runs:
+  for run in stack.runs.values():
     for h in run.frames:
       quarantined_files.append(h)
       num_files_quarantined += 1
@@ -541,7 +536,7 @@ def recent():
     target = targets[target_id]
     for stack_id in target.stack_ids:
       stack = stacks[stack_id]
-      for run in stack.runs:
+      for run in stack.runs.values():
         return max(fits_headers[h]['DATE-OBS'] for h in run.frames)
 
   return sorted(targets, key=last_frame_datetime, reverse=True)
@@ -558,7 +553,7 @@ def stacks_for_type_and_camera(stack_type, camera):
       continue
 
     this_stack_type = set(fits_headers[f]['IMAGETYP'].lower()
-                          for run in stack.runs
+                          for run in stack.runs.values()
                           for f in run.frames)
     assert len(
         this_stack_type) == 1, f'Stack had multiple types {this_stack_type}'

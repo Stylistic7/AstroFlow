@@ -124,16 +124,13 @@ def _get_calibrations(stack, stacks, fits_headers):
   calibrations = {}
   for run in stack.runs.values():
     # Find the first bias, dark, and flat frame in the run's dependencies.
-    dependencies = [stacks[d].runs[0].frames[0] for d in run.stack_dependencies]
-    bias_frame = next(
-        (d for d in dependencies if file_io.is_bias_frame(fits_headers[d])),
-        None)
-    dark_frame = next(
-        (d for d in dependencies if file_io.is_dark_frame(fits_headers[d])),
-        None)
-    flat_frame = next(
-        (d for d in dependencies if file_io.is_flat_frame(fits_headers[d])),
-        None)
+    bias_frame = dark_frame = flat_frame = None
+    if bias_stack := run.stack_dependencies.get('bias', None):
+      bias_frame = next(iter(stacks[bias_stack].runs.values())).frames[0]
+    if dark_stack := run.stack_dependencies.get('dark', None):
+      dark_frame = next(iter(stacks[dark_stack].runs.values())).frames[0]
+    if flat_stack := run.stack_dependencies.get('flat', None):
+      flat_frame = next(iter(stacks[flat_stack].runs.values())).frames[0]
 
     for light_frame in run.frames:
       calibrations[light_frame] = dict(bias_frame=bias_frame,

@@ -201,7 +201,7 @@ def update_stack_timestamps(context):
     frames = []
     for run in stack.runs.values():
       frames.extend(run.frames)
-      for d in run.stack_dependencies:
+      for d in run.stack_dependencies.values():
         frames.extend(all_frames(stacks[d]))
 
     return frames
