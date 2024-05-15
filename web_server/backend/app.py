@@ -547,20 +547,15 @@ def recent():
 def stacks_for_type_and_camera(stack_type, camera):
   fits_headers = cache['fits_headers']
   stacks = cache['stacks']
-  stack_ids = []
-  for stack_id, stack in stacks.items():
-    if stack.camera == camera:
-      continue
+  return [
+      k for k, s in stacks.items()
+      if s.camera == camera and s.type == stack_type
+  ]
 
-    this_stack_type = set(fits_headers[f]['IMAGETYP'].lower()
-                          for run in stack.runs.values()
-                          for f in run.frames)
-    assert len(
-        this_stack_type) == 1, f'Stack had multiple types {this_stack_type}'
-    if list(this_stack_type)[0] == stack_type:
-      stack_ids.append(stack_id)
 
-  return stack_ids
+@app.route('/run_thumbnail/content_hash')
+def run_thumbnail(content_hash):
+  return 'foo'
 
 
 def run_astroflow_repeatedly():

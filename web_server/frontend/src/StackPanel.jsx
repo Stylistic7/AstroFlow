@@ -22,6 +22,7 @@ import Typography from '@mui/material/Typography';
 import HDRImage from "./HDRImage.jsx";
 import TargetPanel from "./TargetPanel.jsx";
 import StackThumbnail from "./StackThumbnail.jsx";
+import RunPanel from "./RunPanel.jsx";
 import "./Starmap.css";
 
 function QuarantineStackDialog({ stack_id }) {
@@ -127,7 +128,7 @@ export default function StackPanel({ stacks, targets, mosaics }) {
 	let [color, setColor] = useState("#ffffff");
 	const [open, setOpen] = React.useState(false);
 
-	const [flatRuns, setFlatRuns] = useState();
+	const [flatStackIds, setFlatStackIds] = useState([]);
 
 	const handleClickOpen = () => {
 		setOpen(true);
@@ -165,13 +166,14 @@ export default function StackPanel({ stacks, targets, mosaics }) {
 		trackPromise(
 			fetch(`/stacks_for_type_and_camera/flat/${stack.camera}`)
 				.then(r => r.json())
-				.then(j => setFlatRuns(j))
+				.then(j => setFlatStackIds(j))
 		);
 	}, []);
 
 	let stack_thumbnail_video_url = `/stack_thumbnail_video/${stack_id}`;
 
 	console.log('promiseInProgress', promiseInProgress);
+	console.log('Object.values(stack.runs)', Object.values(stack.runs));
 
 	return (
 		<>
@@ -227,7 +229,13 @@ export default function StackPanel({ stacks, targets, mosaics }) {
 						data-testid="loader"
 					/>
 				) : (
-					<span>{flatRuns}</span>
+					Object.values(stack.runs).map(run =>
+						<RunPanel
+							run={run}
+							stacks={stacks}
+							flatStackIds={flatStackIds}
+						/>
+					)
 				)}
 			</div>
 		</>
