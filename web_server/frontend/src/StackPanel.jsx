@@ -231,6 +231,7 @@ export default function StackPanel({ stacks, targets, mosaics }) {
 				) : (
 					Object.values(stack.runs).map(run =>
 						<RunPanel
+							stack_id={stack_id}
 							run={run}
 							stacks={stacks}
 							flatStackIds={flatStackIds}

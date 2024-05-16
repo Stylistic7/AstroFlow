@@ -30,11 +30,12 @@ const override: CSSProperties = {
     borderColor: "red",
 };
 
-export default function RunPanel({ run, stacks, flatStackIds }) {
+export default function RunPanel({ stack_id, run_id, run, stacks, flatStackIds }) {
     console.log('flatStackIds', flatStackIds);
 
     return (
         <div>
+            <div><img src={`/run_thumbnail/${stack_id}/${run.content_hash}`} /></div>
             <div><span>Run: {run.content_hash}</span></div>
             <div><span>Available flat stacks:</span></div>
             <ul>
