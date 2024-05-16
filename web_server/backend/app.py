@@ -3,6 +3,8 @@ import sys
 
 sys.path.append('../..')
 
+import ray_init
+
 import os
 import io
 import numpy as np
@@ -13,7 +15,9 @@ import shutil
 import threading
 from base64 import b64encode
 import datetime
+import ray
 
+import ray_diskcache
 import constellations
 import image_previews
 from cache import cache
@@ -558,9 +562,28 @@ def stacks_for_type_and_camera(stack_type, camera):
   ]
 
 
-@app.route('/run_thumbnail/content_hash')
-def run_thumbnail(content_hash):
-  return 'foo'
+@app.route('/run_thumbnail/<stack_id>/<run_id>')
+def run_thumbnail(stack_id, run_id):
+  stacks = cache['stacks']
+  stack = stacks[stack_id]
+  print('### stack', stack)
+  print('### stack.runs', stack.runs)
+
+  run = stack.runs[run_id]
+  print('### run', run)
+
+  context = Context()
+  context.stacks = ray.put(stacks)
+  context.image_hashes = ray.put(cache['image_hashes'])
+  context.fits_headers = ray.put(cache['fits_headers'])
+  context.plate_solutions = ray.put(cache['plate_solutions'])
+  context, image = ray.get(
+      image_previews.compute_run_thumbnail.remote(context, run))
+
+  buffer = io.BytesIO()
+  buffer.write(image)
+  buffer.seek(0)
+  return flask.send_file(buffer, mimetype='image/png')
 
 
 def run_astroflow_repeatedly():

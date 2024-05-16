@@ -186,6 +186,48 @@ def compute_stack_master_thumbnail(context, stack_id, width=2160):
   return context, key
 
 
+@ray.remote
+def compute_run_thumbnail(context, run):
+  key = ('run_thumbnail', run.content_hash,
+         frozenset(run.stack_dependencies.items()))
+  thumbnail = ray_diskcache.get(key, None)
+  if thumbnail is not None:
+    print('### thumbnail already exists in cache')
+    return context, thumbnail
+
+  stacks = ray.get(context.stacks)
+  image_hashes = ray.get(context.image_hashes)
+  fits_headers = ray.get(context.fits_headers)
+  plate_solutions = ray.get(context.plate_solutions)
+
+  light_frames_by_stars = subframe_selection.get_light_frames_sorted_by_stars(
+      {run.content_hash: run}, plate_solutions)
+  light_frame, _ = light_frames_by_stars[0]
+
+  width = 1200
+  rotate = plate_solutions[light_frame].rotation_angle < 0.0
+  light_image = resize_array(read_image(image_hashes[light_frame]), width)
+
+  def first_frame(stack_id):
+    return next(iter(stacks[stack_id].runs.values())).frames[0]
+
+  bias_frame = first_frame(run.stack_dependencies['bias'])
+  bias_image = resize_array(read_image(image_hashes[bias_frame]), width)
+
+  dark_frame = first_frame(run.stack_dependencies['dark'])
+  dark_image = resize_array(read_image(image_hashes[dark_frame]), width)
+
+  flat_frame = first_frame(run.stack_dependencies['flat'])
+  flat_image = resize_array(read_image(image_hashes[flat_frame]), width)
+
+  thumbnail = _make_thumbnail(fits_headers, light_frame, light_image,
+                              bias_frame, bias_image, dark_frame, dark_image,
+                              flat_frame, flat_image, rotate)
+
+  ray_diskcache.set(key, array_to_png(thumbnail), keep_in_memory=False)
+  return context, thumbnail
+
+
 def compute_stack_subframe_thumbnails(context, stack_id, width):
   stacks = ray.get(context.stacks)
   stack = stacks[stack_id]
