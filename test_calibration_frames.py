@@ -7,6 +7,7 @@ import ray
 from cache import cache
 import datetime
 import pytz
+from dataclasses import asdict
 
 from make_test_frames import make_synthetic_frames, copy_testdata_frames
 import ray_diskcache
@@ -16,7 +17,7 @@ from new_dependency_graph import run_graph, make_graph_from_list
 from image_metadata import scatter_compute_image_metadata
 from spatial_association import find_components_by_cosine_similarity
 from stack_identification import identify_stacks
-from calibration_frames import associate_calibration_frames
+from calibration_frames import associate_calibration_frames, create_calibration_frames, associate_with_runs
 from make_test_context import make_test_context
 from hashing import hash_list
 
@@ -24,7 +25,8 @@ from hashing import hash_list
 def _build_compute_graph():
   return make_graph_from_list([(scatter_compute_image_metadata, 'all'),
                                find_components_by_cosine_similarity,
-                               identify_stacks, associate_calibration_frames])
+                               identify_stacks, create_calibration_frames,
+                               associate_with_runs])
 
 
 # Select only the toplevel stacks, which contain only light frames.
@@ -279,12 +281,13 @@ class TestCalibrationFrames(unittest.TestCase):
 
     fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
-    self.assertEqual(len(stacks), 4)
+    self.assertEqual(len(stacks), 5)
     _check_stacks(stacks)
 
     light_stacks = _get_light_stacks(stacks, fits_headers)
     self.assertEqual(len(light_stacks), 1)
 
+  # TODO: Test temperatures that do and do not match.
   def test_temperature_mismatch(self):
     # The light frames are at temperature -13, but the darks are at -15. This
     # difference is small enough for the frames to still be associated.
@@ -313,6 +316,13 @@ class TestCalibrationFrames(unittest.TestCase):
 
     light_stacks = _get_light_stacks(stacks, fits_headers)
     self.assertEqual(len(light_stacks), 1)
+
+    stack = next(iter(stacks.values()))
+    self.assertEqual(len(stack.runs), 1)
+
+    run = next(iter(stack.runs.values()))
+    self.assertEqual(len(run.frames), 3)
+    self.assertEqual(len(run.stack_dependencies), 1)
 
   def test_stack_calibration_frames(self):
     copy_testdata_frames(target_name='NGC7635',
@@ -388,7 +398,7 @@ class TestCalibrationFrames(unittest.TestCase):
 
     fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
-    self.assertEqual(len(stacks), 2)
+    self.assertEqual(len(stacks), 3)
     _check_stacks(stacks)
 
     light_stacks = _get_light_stacks(stacks, fits_headers)
@@ -492,6 +502,52 @@ class TestCalibrationFrames(unittest.TestCase):
     assert run.stack_dependencies == {
         'flat': first_flat_stack
     }, f'run.stack_dependencies {run.stack_dependencies}'
+
+  def test_generic_grouping(self):
+    copy_testdata_frames(target_name='NGC7635',
+                         dest_dir=self.context.input_dirs[0])
+    make_synthetic_frames(number=5,
+                          image_type='Bias',
+                          fill_value=100,
+                          exposure=1,
+                          filter=None,
+                          instrument='ZWO ASI6200MM Pro',
+                          width_pixels=9576,
+                          height_pixels=6388,
+                          temperature=-15,
+                          dest_dir=self.context.input_dirs[0])
+    make_synthetic_frames(number=7,
+                          image_type='Dark',
+                          fill_value=100,
+                          exposure=60,
+                          filter=None,
+                          instrument='ZWO ASI6200MM Pro',
+                          width_pixels=9576,
+                          height_pixels=6388,
+                          temperature=-15,
+                          dest_dir=self.context.input_dirs[0])
+    make_synthetic_frames(number=11,
+                          image_type='Flat',
+                          fill_value=100,
+                          exposure=2,
+                          instrument='ZWO ASI6200MM Pro',
+                          width_pixels=9576,
+                          height_pixels=6388,
+                          temperature=-15,
+                          dest_dir=self.context.input_dirs[0])
+
+    graph = _build_compute_graph()
+    self.context, _ = run_graph(graph, self.context)
+
+    stacks = ray.get(self.context.stacks)
+    self.assertEqual(len(stacks), 4)
+    _check_stacks(stacks)
+    stack = next(iter(stacks.values()))
+
+    self.assertEqual(len(stack.runs), 1)
+    run = next(iter(stack.runs.values()))
+
+    self.assertEqual(len(run.stack_dependencies), 3)
 
 
 if __name__ == "__main__":

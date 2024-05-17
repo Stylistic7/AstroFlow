@@ -63,7 +63,7 @@ class TestSubframeSelection(unittest.TestCase):
 
     stacks = ray.get(self.context.stacks)
     self.assertEqual(len(stacks), 1)
-    stack = next(iter(stacks))
+    stack = next(iter(stacks.values()))
 
     self.assertEqual(len(stack.runs), 1)
     light_frames = [f for run in stack.runs.values() for f in run.frames]
@@ -104,7 +104,7 @@ class TestSubframeSelection(unittest.TestCase):
 
     stacks = ray.get(self.context.stacks)
     self.assertEqual(len(stacks), 1)
-    stack = next(iter(stacks))
+    stack = next(iter(stacks.values()))
 
     self.assertEqual(len(stack.runs), 2)
     light_frames = [f for run in stack.runs.values() for f in run.frames]

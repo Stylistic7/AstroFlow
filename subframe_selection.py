@@ -23,13 +23,32 @@ def _recompute_runs_by_star_count(context, runs, threshold, fits_headers,
                       context.min_frames_in_run):
     frames = get_frames_for_run(run, selected, fits_headers)
     assert all(file_io.is_light_frame(fits_headers[f]) for f in frames)
-    exposure_s = sum(fits_headers[h]['EXPOSURE'] for h in frames)
+
+    # TODO: Move this into a common place. Use it to fill in the metadata of
+    # both Runs and Stacks.
+    def get_quality(quality):
+      qualities = set(fits_headers[f][quality] for f in frames)
+      assert len(qualities) < 2, f'multiple qualities {qualities}'
+      return next(iter(qualities)) if len(qualities) else None
+
+    camera = get_quality('INSTRUME')
+    exposure_s = get_quality('EXPOSURE')
+    filter = get_quality('FILTER')
+
+    all_dates = sorted(fits_headers[f]['DATE-OBS'] for f in frames)
+    mean_temperature = np.mean([fits_headers[f]['CCD-TEMP'] for f in frames])
+
     content_hash = hash_list(frames)
     output[content_hash] = Run(frames=frames,
                                content_hash=content_hash,
                                type='light',
                                num_frames=len(frames),
-                               exposure_s=exposure_s)
+                               camera=camera,
+                               mean_temperature=mean_temperature,
+                               exposure_s=exposure_s,
+                               filter=filter,
+                               oldest_date=all_dates[0],
+                               newest_date=all_dates[-1])
 
   return output
 

@@ -11,13 +11,21 @@ RunHash = NewType('RunHash', str)
 StackHash = NewType('StackHash', str)
 
 
+# TODO: I'm virtually certain now that Run == Stack, and the only difference
+# between them is how they are composed.
 @dataclass
 class Run:
   content_hash: RunHash | None = None
+  oldest_date: Optional[datetime.datetime] = None
+  newest_date: Optional[datetime.datetime] = None
   frames: list[FrameHash] = field(default_factory=list)
   num_frames: Optional[int] = None
   type: Optional[str] = None
+  camera: Optional[str] = None
+  mean_temperature: Optional[float] = None
+  filter: Optional[str] = None
   exposure_s: Optional[int] = None
+  integration_s: Optional[int] = None
   stack_dependencies: dict[str, StackHash] = field(default_factory=dict)
 
 
@@ -27,10 +35,8 @@ class Run:
 class Stack:
   geometric_hash: str | None = None
   content_hash: str | None = None
-
   oldest_date: Optional[datetime.datetime] = None
   newest_date: Optional[datetime.datetime] = None
-
   type: Optional[str] = None
   runs: list[Run] = field(default_factory=list)
   target: Optional[str] = None
@@ -38,6 +44,7 @@ class Stack:
   mean_temperature: Optional[float] = None
   num_frames: Optional[int] = None
   exposure_s: Optional[int] = None
+  integration_s: Optional[int] = None
   width_pixels: Optional[int] = None
   height_pixels: Optional[int] = None
   center: Optional[list[float]] = None

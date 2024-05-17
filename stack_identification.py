@@ -81,6 +81,7 @@ def _new_stack(context,
 
   camera = next(iter(set(fits_headers[f]['INSTRUME'] for f in flattened)))
   filter = next(iter(set(fits_headers[f]['FILTER'] for f in flattened)))
+  exposure_s = next(iter(set(fits_headers[f]['EXPOSURE'] for f in flattened)))
   width_pixels = next(iter(set(fits_headers[f]['NAXIS1'] for f in flattened)))
   height_pixels = next(iter(set(fits_headers[f]['NAXIS2'] for f in flattened)))
 
@@ -116,7 +117,14 @@ def _new_stack(context,
   runs = {}
   for run in light_frame_runs:
     content_hash = hash_list(run)
-    runs[content_hash] = Run(frames=run)
+    all_dates = sorted(fits_headers[f]['DATE-OBS'] for f in run)
+    runs[content_hash] = Run(frames=run,
+                             content_hash=content_hash,
+                             camera=camera,
+                             exposure_s=exposure_s,
+                             filter=filter,
+                             oldest_date=all_dates[0],
+                             newest_date=all_dates[-1])
 
   for run in runs.values():
     assert run.frames, f'run.frames {run.frames} was Falsey'
@@ -154,8 +162,15 @@ def _new_stack(context,
 
   num_frames = sum(len(run.frames) for run in runs.values())
 
-  exposure_s = sum(
+  # TODO: Separate the concepts of exposure time (one frame) and integration
+  # time (whole stack).
+  exposure_s = fits_headers[flattened[0]]['EXPOSURE']
+  integration_s = sum(
       fits_headers[h]['EXPOSURE'] for run in runs.values() for h in run.frames)
+  # TODO: Add an `all_frames()` function to the unified Stack.
+  mean_temperature = np.mean([
+      fits_headers[h]['CCD-TEMP'] for run in runs.values() for h in run.frames
+  ])
 
   return Stack(geometric_hash=geometric_hash,
                content_hash=content_hash,
@@ -163,8 +178,10 @@ def _new_stack(context,
                runs=runs,
                target=name,
                camera=camera,
+               mean_temperature=mean_temperature,
                num_frames=num_frames,
                exposure_s=exposure_s,
+               integration_s=integration_s,
                width_pixels=width_pixels,
                height_pixels=height_pixels,
                center=list(center),
@@ -187,7 +204,7 @@ def identify_stacks(context):
   # TODO: Maybe implement a version of cluster_continuous() that repeatedly
   # subdivides by independent 1D variables.
   debug_hash = 'cbc3b0f593d8a78f'
-  stacks = []
+  stacks = {}
   for name, light_frames in spatial_groups:
     scales = [(f, plate_solutions[f].image_scale) for f in light_frames]
     for scale_cluster in clustering.cluster_continuous(scales, epsilon=0.2):
@@ -245,7 +262,7 @@ def identify_stacks(context):
             if new_stack:
               if debug_new_stack:
                 print(f'### Successfully created stack with hash {debug_hash}')
-              stacks.append(new_stack)
+              stacks[new_stack.geometric_hash] = new_stack
             elif debug_new_stack:
               print('### _new_stack() failed')
 

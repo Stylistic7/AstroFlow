@@ -34,7 +34,7 @@ class TestStackIdentification(unittest.TestCase):
     stacks = ray.get(context.stacks)
     self.assertEqual(len(stacks), 1)
 
-    stack = stacks[0]
+    stack = list(stacks.values())[0]
     self.assertEqual(len(stack.runs), 1)
     self.assertEqual(len(next(iter(stack.runs.values())).frames), 10)
     self.assertEqual(stack.center, [100, 50])
@@ -66,7 +66,7 @@ class TestStackIdentification(unittest.TestCase):
     stacks = ray.get(context.stacks)
     self.assertEqual(len(stacks), 2)
 
-    stack = stacks[0]
+    stack = list(stacks.values())[0]
     self.assertEqual(len(stack.runs), 1)
     run = next(iter(stack.runs.values()))
     self.assertTrue(all('foo' in image_hashes[f] for f in run.frames))
@@ -74,7 +74,7 @@ class TestStackIdentification(unittest.TestCase):
     self.assertEqual(stack.center, [100, 50])
     self.assertEqual(stack.image_scale, 1.0)
 
-    stack = stacks[1]
+    stack = list(stacks.values())[1]
     self.assertEqual(len(stack.runs), 1)
     run = next(iter(stack.runs.values()))
     self.assertTrue(all('bar' in image_hashes[f] for f in run.frames))
@@ -119,7 +119,7 @@ class TestStackIdentification(unittest.TestCase):
     stacks = ray.get(context.stacks)
     self.assertEqual(len(stacks), 2)
 
-    stack = stacks[0]
+    stack = list(stacks.values())[0]
     self.assertEqual(len(stack.runs), 1)
     run = next(iter(stack.runs.values()))
     self.assertTrue(all('foo' in image_hashes[f] for f in run.frames))
@@ -129,7 +129,7 @@ class TestStackIdentification(unittest.TestCase):
     self.assertEqual(stack.height_pixels, 2000)
     self.assertEqual(stack.image_scale, 1.0)
 
-    stack = stacks[1]
+    stack = list(stacks.values())[1]
     self.assertEqual(len(stack.runs), 1)
     run = next(iter(stack.runs.values()))
     self.assertTrue(all('bar' in image_hashes[f] for f in run.frames))

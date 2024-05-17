@@ -50,7 +50,7 @@ class TestFootprints(unittest.TestCase):
 
     stacks = ray.get(context.stacks)
     self.assertEqual(len(stacks), 1)
-    stack = next(iter(stacks))
+    stack = next(iter(stacks.values()))
 
     projected_footprint = project_footprint(stack.footprint_polygon(),
                                             self.proj)

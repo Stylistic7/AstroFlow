@@ -1,6 +1,7 @@
 import ray
 import numpy as np
 from copy import copy
+import itertools
 
 import file_io
 import ray_diskcache
@@ -11,345 +12,540 @@ import stack_identification
 from hashing import hash_list
 
 
-def _filter_by_exposure(light_frames, cal_frames, fits_headers, debug=True):
-  exposure = fits_headers[light_frames[0]]['EXPOSURE']
-  assert all(fits_headers[f]['EXPOSURE'] == exposure for f in light_frames)
-  unique_exposures = set(fits_headers[f]['EXPOSURE'] for f in cal_frames)
-  selected_exposure = next(e for e in unique_exposures if e >= exposure)
-  cal_frames = [
-      f for f in cal_frames if 'EXPOSURE' in fits_headers[f] and
-      fits_headers[f]['EXPOSURE'] == selected_exposure
-  ]
-  if not cal_frames:
-    if debug:
-      print(f'WARNING: Could not find any calibration frames '
-            f'for exposure {exposure}')
-    return
+@ray.remote
+def create_calibration_frames(context):
+  print(f'Creating calibration frames...')
+  fits_headers = ray.get(context.fits_headers)
 
-  return cal_frames
-
-
-def _filter_by_filter(light_frames, cal_frames, fits_headers, debug=True):
-  filter = fits_headers[light_frames[0]]['FILTER']
-  assert all(fits_headers[f]['FILTER'] == filter for f in light_frames)
-  cal_frames = [
-      f for f in cal_frames
-      if 'FILTER' in fits_headers[f] and fits_headers[f]['FILTER'] == filter
-  ]
-  if not cal_frames:
-    if debug:
-      print(f'WARNING: Could not find any calibration frames '
-            f'for filter {filter}')
-    return
-
-  return cal_frames
-
-
-def _filter_by_temperature(light_frames, cal_frames, fits_headers, debug=True):
-  light_frame_temps = [(f, float(fits_headers[f]['CCD-TEMP']))
-                       for f in light_frames
-                       if 'CCD-TEMP' in fits_headers[f]]
-  mean_light_frame_temp = np.mean([x[1] for x in light_frame_temps])
-  cal_frame_temps = [(f, fits_headers[f]['CCD-TEMP']) for f in cal_frames]
-  cal_frames = clustering.items_in_distribution(light_frame_temps,
-                                                cal_frame_temps,
-                                                slop=5)
-  cal_frames = [f for f, _ in cal_frames]
-  if not cal_frames:
-    if debug:
-      print(f'WARNING: Could not find any calibration frames '
-            f'for mean temperature {mean_light_frame_temp:.3f} deg C')
-    return
-
-  return cal_frames
-
-
-def _associate_with_run(context,
-                        stack,
-                        run,
-                        image_type,
-                        fits_headers,
-                        debug=True):
-  if debug:
-    print(f'Entering _associate_with_run for run {run}')
-
-  if image_type == 'bias':
-    match_temperature, match_exposure, match_filter = True, False, False
-  elif image_type == 'dark':
-    match_temperature, match_exposure, match_filter = True, True, False
-  elif image_type == 'flat':
-    match_temperature, match_exposure, match_filter = False, False, True
-
-  light_frames = run.frames
-  if debug:
-    print(f'run light_frames is {light_frames}')
-  assert light_frames, f'light_frames is {light_frames}'
-  assert all(
-      file_io.is_light_frame(fits_headers[f]) and
-      not file_io.is_master(fits_headers[f]) for f in light_frames)
-  light_runs = runs.get_runs(light_frames, fits_headers, context.max_run_gap,
-                             context.min_frames_in_run)
-  if debug:
-    print(f'light_runs is {light_runs}')
-  assert len(light_runs) == 1, f'light_runs are {light_runs}'
-  light_run = light_runs[0]
-
-  if debug:
-    print(f'Associating {image_type} calibration frames to '
-          f'run of {len(light_frames)} light frames')
-
-  # Find all of the calibration frames in the library that match the given
-  # image_type and camera. If there are no such frames, end early.
   cal_frames = [
       f for f, header in fits_headers.items()
-      if header and not file_io.is_master(header) and 'IMAGETYP' in header and
-      header['IMAGETYP'].lower() == image_type and 'INSTRUME' in header and
-      header['INSTRUME'] == stack.camera
+      if header and not file_io.is_master(header) and 'IMAGETYP' in header
   ]
-  if not cal_frames:
-    if debug:
-      print(f'WARNING: Could not find any {image_type} calibration frames')
-    return run, None
 
-  if debug:
-    print(f'Selected {len(cal_frames)} {image_type} frames for camera '
-          f'{stack.camera}')
+  def group_by_header(key):
 
-  # Maybe select the calibration frames that have exactly the same exposure
-  # as the given light frames, or the next longest exposure. If there are no
-  # such frames, end early.
-  if match_exposure:
-    cal_frames = _filter_by_exposure(light_frames, cal_frames, fits_headers,
-                                     debug)
-    if not cal_frames:
-      print(f'Found no {image_type} calibration frames that match exposure')
-      return run, None
+    def key_fn(f):
+      value = fits_headers[f][key]
+      return value.lower() if type(value) is str else value
 
-  # Maybe select the calibration frames that have the same filter as the light
-  # frames. If there are no such frames, end early.
-  if match_filter:
-    cal_frames = _filter_by_filter(light_frames, cal_frames, fits_headers,
-                                   debug)
-    if not cal_frames:
-      print(f'Found no {image_type} calibration frames that match filter')
-      return run, None
+    frames = [f for f in cal_frames if fits_headers[f].get(key, None) != None]
+    frames = sorted(frames, key=key_fn)
+    return {k: set(g) for k, g in itertools.groupby(frames, key=key_fn)}
 
-  # Maybe select the calibration frames that have temperatures that are from
-  # the same approximate distribution as the light frames. If there are no
-  # such frames, end early.
-  if match_temperature:
-    cal_frames = _filter_by_temperature(light_frames, cal_frames, fits_headers,
-                                        debug)
-    if not cal_frames:
-      print(f'Found no {image_type} calibration frames that match temperature')
-      return run, None
+  def new_stack(frames):
 
-  # Select the run of calibration frames that are closest in time to the
-  # light frames.
-  cal_runs = runs.get_runs(cal_frames, fits_headers, context.max_run_gap,
-                           context.min_frames_in_run)
-  if debug:
-    print(f'cal_runs is {cal_runs}')
-  if not len(cal_runs):
-    if debug:
-      print(
-          f'WARNING: Could not find any acceptable runs of calibration frames')
-    return run, None
+    # TODO: Move this into a common place. Use it to fill in the metadata of
+    # both Runs and Stacks.
+    def get_quality(quality):
+      qualities = set(fits_headers[f][quality] for f in frames)
+      assert len(qualities) < 2, f'multiple qualities {qualities}'
+      return next(iter(qualities)) if len(qualities) else None
 
-  closest_chronological_cal_run = cal_runs[np.argmin(
-      [runs.run_time_delta(light_run, cal_run) for cal_run in cal_runs])]
+    image_type = get_quality('IMAGETYP')
+    camera = get_quality('INSTRUME')
+    width_pixels = get_quality('NAXIS1')
+    height_pixels = get_quality('NAXIS2')
+    exposure_s = get_quality('EXPOSURE')
+    filter = get_quality('FILTER')
 
-  new_stacks = []
-  for cal_run in cal_runs:
-    cal_frames_for_run = runs.get_frames_for_run(cal_run, cal_frames,
-                                                 fits_headers)
-    if debug:
-      print(f'Selected {len(cal_frames_for_run)} {image_type} frames by run')
-
-    # Create a new Stack containing one Run of calibration frames. If the same
-    # Stack is found multiple times, it will be automatically de-duped by its
-    # content hash.
-    if len(cal_frames_for_run) < context.min_frames_in_stack:
-      print(f'Run is too short; ignoring it')
-      return run, None
-
-    assert all(
-        file_io.is_frame_type(fits_headers[f], image_type)
-        for f in cal_frames_for_run)
-
-    # Create a new Stack, composed of a single Run, containing these calibration
-    # frames.
-    content_hash = hash_list(cal_frames_for_run)
-    exposure_s = sum(fits_headers[f]['EXPOSURE'] for f in cal_frames_for_run)
-    new_run = Run(frames=[FrameHash(h) for h in cal_frames_for_run],
-                  num_frames=len(cal_frames_for_run),
+    mean_temperature = np.mean([fits_headers[f]['CCD-TEMP'] for f in frames])
+    content_hash = hash_list(frames)
+    all_dates = sorted(fits_headers[f]['DATE-OBS'] for f in frames)
+    new_run = Run(frames=[FrameHash(h) for h in frames],
+                  num_frames=len(frames),
                   content_hash=content_hash,
                   type=image_type,
+                  camera=camera,
+                  filter=filter,
+                  oldest_date=all_dates[0],
+                  newest_date=all_dates[-1],
                   exposure_s=exposure_s)
     new_runs = {content_hash: new_run}
     content_hash = stack_identification._compute_content_hash(new_runs)
-    new_stack = Stack(content_hash=content_hash,
-                      type=image_type,
-                      num_frames=len(cal_frames_for_run),
-                      exposure_s=exposure_s,
-                      runs=new_runs,
-                      camera=stack.camera,
-                      width_pixels=stack.width_pixels,
-                      height_pixels=stack.height_pixels)
+    stack = Stack(content_hash=content_hash,
+                  type=image_type,
+                  oldest_date=all_dates[0],
+                  newest_date=all_dates[-1],
+                  num_frames=len(frames),
+                  exposure_s=exposure_s,
+                  runs=new_runs,
+                  camera=camera,
+                  mean_temperature=mean_temperature,
+                  filter=filter,
+                  width_pixels=width_pixels,
+                  height_pixels=height_pixels)
     print(f'Made new {image_type} calibration stack with '
           f'content hash {content_hash}')
+    return stack
 
-    # Populate details.
-    # TODO: Shouldn't all stacks have these details?
-    if match_temperature:
-      new_stack.mean_temperature = np.mean(
-          [fits_headers[f]['CCD-TEMP'] for f in cal_frames_for_run])
+  frames_for_image_type = group_by_header('IMAGETYP')
+  frames_for_camera = group_by_header('INSTRUME')
+  frames_for_exposure = group_by_header('EXPOSURE')
+  frames_for_filter = group_by_header('FILTER')
 
-    if match_exposure:
-      new_stack.exposure_s = fits_headers[cal_frames_for_run[0]]['EXPOSURE']
+  stacks = ray_diskcache.get('stacks', [])
+  for camera in frames_for_camera:
+    bias_frames = frames_for_image_type.get(
+        'bias', set()) & frames_for_camera.get(camera, set())
+    for run in runs.get_runs(bias_frames, fits_headers, context.max_run_gap,
+                             context.min_frames_in_run):
+      stack = new_stack(runs.get_frames_for_run(run, bias_frames, fits_headers))
+      stacks[stack.content_hash] = stack
 
-    if match_filter:
-      new_stack.filter = fits_headers[cal_frames_for_run[0]]['FILTER']
+    for exposure in frames_for_exposure:
+      dark_frames = frames_for_image_type.get(
+          'dark', set()) & frames_for_camera.get(
+              camera, set()) & frames_for_exposure.get(exposure, set())
+      for run in runs.get_runs(dark_frames, fits_headers, context.max_run_gap,
+                               context.min_frames_in_run):
+        stack = new_stack(
+            runs.get_frames_for_run(run, dark_frames, fits_headers))
+        stacks[stack.content_hash] = stack
 
-    # Add the new calibration Stack as a dependency to the given Run.
-    if cal_run == closest_chronological_cal_run:
-      run.stack_dependencies[image_type] = new_stack.content_hash
+    for filter in frames_for_filter:
+      flat_frames = frames_for_image_type.get(
+          'flat', set()) & frames_for_camera.get(
+              camera, set()) & frames_for_filter.get(filter, set())
+      for run in runs.get_runs(flat_frames, fits_headers, context.max_run_gap,
+                               context.min_frames_in_run):
+        stack = new_stack(
+            runs.get_frames_for_run(run, flat_frames, fits_headers))
+        stacks[stack.content_hash] = stack
 
-    new_stacks.append(new_stack)
+  context.stacks = ray.put(stacks)
+  ray_diskcache.set('stacks', stacks)
 
-  return run, new_stacks
-
-
-def _associate_with_stack(context, stack, image_type, fits_headers, debug=True):
-  if debug:
-    print(f'Entering _associate_with_stack {image_type} for {stack} '
-          f'with {len(stack.runs)} runs')
-    for run in stack.runs:
-      print(f'run {run}')
-
-  new_stacks = []
-  for run in stack.runs.values():
-    run, new_stacks_for_run = _associate_with_run(context, stack, run,
-                                                  image_type, fits_headers,
-                                                  debug)
-    if new_stacks_for_run:
-      print(f'### Associated {len(new_stacks_for_run)} plausible {image_type} '
-            f'stacks for stack {stack}')
-      for new_stack in new_stacks_for_run:
-        if new_stack not in new_stacks:
-          new_stacks.append(new_stack)
-
-    # TODO: This is called repeatedly for each image type (bias, dark, flat).
-    # It's not a big deal, but maybe points at poor design.
-    print(f'### before settings are applied {run.stack_dependencies}')
-    key = ('light_run_settings', run.content_hash)
-    settings = ray_diskcache.get(key, {})
-    print(f'### found settings for run {run.content_hash}: {settings}')
-    run.stack_dependencies |= settings
-    print(f'### after settings are applied {run.stack_dependencies}')
-
-  return stack, new_stacks
+  return context, None
 
 
+def associate_with_run(stacks, run):
+
+  def is_compatible(image_type, stack):
+    if stack.type != image_type:
+      return False
+
+    if stack.camera != run.camera:
+      return False
+
+    # TODO: Put temperarture temperature compatibility options in the UI.
+    if image_type == 'bias':
+      return abs(stack.mean_temperature - run.mean_temperature) < 5.0
+
+    # TODO: This allows dark scaling. Make this an option in the UI.
+    if image_type == 'dark':
+      return abs(stack.mean_temperature - run.mean_temperature
+                ) < 5.0 and run.exposure_s >= stack.exposure_s
+
+    if image_type == 'flat':
+      return stack.filter == run.filter
+
+    assert False, f'image_type {image_type}'
+
+  def find_closest_stack_chronologically(image_type):
+    compatible_stacks = [
+        s for s in stacks if is_compatible(image_type, stacks[s])
+    ]
+
+    if not compatible_stacks:
+      print(f'### no compatible {image_type} stacks for run {run.content_hash}')
+      return None
+
+    print(f'### Finding closest chronological run from '
+          f'{len(compatible_stacks)} compatible stacks')
+    return compatible_stacks[np.argmin([
+        runs.run_time_delta((run.oldest_date, run.newest_date),
+                            (stacks[s].oldest_date, stacks[s].newest_date))
+        for s in compatible_stacks
+    ])]
+
+  run.stack_dependencies = {}
+  for image_type in ['bias', 'dark', 'flat']:
+    if closest := find_closest_stack_chronologically(image_type):
+      print(f'### closest stack is {closest}')
+      run.stack_dependencies[image_type] = closest
+
+  key = ('light_run_settings', run.content_hash)
+  settings = ray_diskcache.get(key, {})
+  run.stack_dependencies |= settings
+  print(f'### run {run.content_hash} now has dependencies '
+        f'{run.stack_dependencies}')
+
+
+@ray.remote
+def associate_with_runs(context):
+  stacks = ray.get(context.stacks)
+  for stack in stacks.values():
+    if stack.type == 'light':
+      for run in stack.runs.values():
+        associate_with_run(stacks, run)
+
+  context.stacks = ray.put(stacks)
+  ray_diskcache.set('stacks', stacks)
+
+  return context, None
+
+
+# TODO: Remove
 @ray.remote
 def associate_calibration_frames(context):
   print(f'Associating calibration frames...')
 
-  fits_headers = ray.get(context.fits_headers)
-  stacks = ray.get(context.stacks)
-
-  def assert_frame_in_stacks(stacks, debug_hash):
-    if debug_hash is None:
-      return
-
-    found = False
-    for stack in stacks:
-      assert type(stack) is Stack
-      for run in stack.runs.values():
-        if debug_hash in run.frames:
-          found = True
-          break
-
-    assert found, f'Debug hash {debug_hash} not found in stacks'
-    print(f'### Debug hash {debug_hash} was found in stacks')
-
-  debug_hash = None
-  assert_frame_in_stacks(stacks, debug_hash)
-
-  # At this point, stacks is just a list of stacks. The final content hashes
-  # are not known yet, because the calibration frames aren't associated yet.
-  # TODO: Maybe parallelize this if it's slow.
-  output_stacks = []
-  for stack in stacks:
-    stack, bias_stacks = _associate_with_stack(context, stack, 'bias',
-                                               fits_headers)
-    for bias_stack in bias_stacks:
-      if bias_stack not in output_stacks:
-        output_stacks.append(bias_stack)
-
-    stack, dark_stacks = _associate_with_stack(context, stack, 'dark',
-                                               fits_headers)
-    for dark_stack in dark_stacks:
-      if dark_stack not in output_stacks:
-        output_stacks.append(dark_stack)
-
-    stack, flat_stacks = _associate_with_stack(context, stack, 'flat',
-                                               fits_headers)
-    for flat_stack in flat_stacks:
-      if flat_stack not in output_stacks:
-        output_stacks.append(flat_stack)
-
-    stack_dependencies = list(
-        set(s.content_hash for s in bias_stacks + dark_stacks + flat_stacks))
-    assert None not in stack_dependencies
-
-    for run in stack.runs.values():
-      assert len(run.stack_dependencies) == len(set(run.stack_dependencies))
-
-    assert stack not in output_stacks
-    output_stacks.append(stack)
-
-  assert_frame_in_stacks(output_stacks, debug_hash)
-
-  def print_stack(prefix, stack):
-    print(f'### {prefix} stack {stack}')
-    for run in stack.runs.values():
-      print(f'### {prefix} run {run}')
-
-  stacks = {}
-  content_hashes = []
-  geometric_hashes = []
-  for stack in output_stacks:
-    assert stack.content_hash != None
-
-    if stack.geometric_hash != None:
-      if stack.geometric_hash in stacks:
-        print_stack('new: ', stack)
-        print_stack('previous: ', stacks[stack.geometric_hash])
-        print('### new == previous', stack == stacks[stack.geometric_hash])
-        assert False, (
-            f'### stack {stack} has non-unique geometric hash; previous stack '
-            f'was {stacks[stack.geometric_hash]}')
-      geometric_hashes.append(stack.geometric_hash)
-      stacks[stack.geometric_hash] = stack
-      continue
-
-    if stack.content_hash in stacks:
-      print_stack('new: ', stack)
-      print_stack('previous: ', stacks[stack.content_hash])
-      print('### new == previous', stack == stacks[stack.content_hash])
-      assert False, (
-          f'### stack {stack} has non-unique content hash; previous stack was '
-          f'{stacks[stack.content_hash]}')
-    content_hashes.append(stack.content_hash)
-    stacks[stack.content_hash] = stack
-
-  print(f'### There are {len(content_hashes)} unique content hashes')
-  print(f'### There are {len(geometric_hashes)} unique geometric hashes')
-
-  context.stacks = ray.put(stacks)
-  ray_diskcache.set('stacks', stacks)
-  assert_frame_in_stacks(stacks.values(), debug_hash)
-  print(f'### Wrote {len(stacks)} stacks into cache')
-
   return context, None
+
+
+# def _filter_by_exposure(light_frames, cal_frames, fits_headers, debug=True):
+#   exposure = fits_headers[light_frames[0]]['EXPOSURE']
+#   assert all(fits_headers[f]['EXPOSURE'] == exposure for f in light_frames)
+#   unique_exposures = set(fits_headers[f]['EXPOSURE'] for f in cal_frames)
+#   selected_exposure = next(e for e in unique_exposures if e >= exposure)
+#   cal_frames = [
+#       f for f in cal_frames if 'EXPOSURE' in fits_headers[f] and
+#       fits_headers[f]['EXPOSURE'] == selected_exposure
+#   ]
+#   if not cal_frames:
+#     if debug:
+#       print(f'WARNING: Could not find any calibration frames '
+#             f'for exposure {exposure}')
+#     return
+
+#   return cal_frames
+
+# def _filter_by_filter(light_frames, cal_frames, fits_headers, debug=True):
+#   filter = fits_headers[light_frames[0]]['FILTER']
+#   assert all(fits_headers[f]['FILTER'] == filter for f in light_frames)
+#   cal_frames = [
+#       f for f in cal_frames
+#       if 'FILTER' in fits_headers[f] and fits_headers[f]['FILTER'] == filter
+#   ]
+#   if not cal_frames:
+#     if debug:
+#       print(f'WARNING: Could not find any calibration frames '
+#             f'for filter {filter}')
+#     return
+
+#   return cal_frames
+
+# def _filter_by_temperature(light_frames, cal_frames, fits_headers, debug=True):
+#   light_frame_temps = [(f, float(fits_headers[f]['CCD-TEMP']))
+#                        for f in light_frames
+#                        if 'CCD-TEMP' in fits_headers[f]]
+#   mean_light_frame_temp = np.mean([x[1] for x in light_frame_temps])
+#   cal_frame_temps = [(f, fits_headers[f]['CCD-TEMP']) for f in cal_frames]
+#   cal_frames = clustering.items_in_distribution(light_frame_temps,
+#                                                 cal_frame_temps,
+#                                                 slop=5)
+#   cal_frames = [f for f, _ in cal_frames]
+#   if not cal_frames:
+#     if debug:
+#       print(f'WARNING: Could not find any calibration frames '
+#             f'for mean temperature {mean_light_frame_temp:.3f} deg C')
+#     return
+
+#   return cal_frames
+
+# def _associate_with_run(context,
+#                         stack,
+#                         run,
+#                         image_type,
+#                         fits_headers,
+#                         debug=True):
+#   if debug:
+#     print(f'Entering _associate_with_run for run {run}')
+
+#   if image_type == 'bias':
+#     match_temperature, match_exposure, match_filter = True, False, False
+#   elif image_type == 'dark':
+#     match_temperature, match_exposure, match_filter = True, True, False
+#   elif image_type == 'flat':
+#     match_temperature, match_exposure, match_filter = False, False, True
+
+#   light_frames = run.frames
+#   if debug:
+#     print(f'run light_frames is {light_frames}')
+#   assert light_frames, f'light_frames is {light_frames}'
+#   assert all(
+#       file_io.is_light_frame(fits_headers[f]) and
+#       not file_io.is_master(fits_headers[f]) for f in light_frames)
+#   light_runs = runs.get_runs(light_frames, fits_headers, context.max_run_gap,
+#                              context.min_frames_in_run)
+#   if debug:
+#     print(f'light_runs is {light_runs}')
+#   assert len(light_runs) == 1, f'light_runs are {light_runs}'
+#   light_run = light_runs[0]
+
+#   if debug:
+#     print(f'Associating {image_type} calibration frames to '
+#           f'run of {len(light_frames)} light frames')
+
+#   # Find all of the calibration frames in the library that match the given
+#   # image_type and camera. If there are no such frames, end early.
+#   cal_frames = [
+#       f for f, header in fits_headers.items()
+#       if header and not file_io.is_master(header) and 'IMAGETYP' in header and
+#       header['IMAGETYP'].lower() == image_type and 'INSTRUME' in header and
+#       header['INSTRUME'] == stack.camera
+#   ]
+#   if not cal_frames:
+#     if debug:
+#       print(f'WARNING: Could not find any {image_type} calibration frames')
+#     return run, None
+
+#   if debug:
+#     print(f'Selected {len(cal_frames)} {image_type} frames for camera '
+#           f'{stack.camera}')
+
+#   # Maybe select the calibration frames that have exactly the same exposure
+#   # as the given light frames, or the next longest exposure. If there are no
+#   # such frames, end early.
+#   if match_exposure:
+#     cal_frames = _filter_by_exposure(light_frames, cal_frames, fits_headers,
+#                                      debug)
+#     if not cal_frames:
+#       print(f'Found no {image_type} calibration frames that match exposure')
+#       return run, None
+
+#   # Maybe select the calibration frames that have the same filter as the light
+#   # frames. If there are no such frames, end early.
+#   if match_filter:
+#     cal_frames = _filter_by_filter(light_frames, cal_frames, fits_headers,
+#                                    debug)
+#     if not cal_frames:
+#       print(f'Found no {image_type} calibration frames that match filter')
+#       return run, None
+
+#   # Maybe select the calibration frames that have temperatures that are from
+#   # the same approximate distribution as the light frames. If there are no
+#   # such frames, end early.
+#   if match_temperature:
+#     cal_frames = _filter_by_temperature(light_frames, cal_frames, fits_headers,
+#                                         debug)
+#     if not cal_frames:
+#       print(f'Found no {image_type} calibration frames that match temperature')
+#       return run, None
+
+#   # Select the run of calibration frames that are closest in time to the
+#   # light frames.
+#   cal_runs = runs.get_runs(cal_frames, fits_headers, context.max_run_gap,
+#                            context.min_frames_in_run)
+#   if debug:
+#     print(f'cal_runs is {cal_runs}')
+#   if not len(cal_runs):
+#     if debug:
+#       print(
+#           f'WARNING: Could not find any acceptable runs of calibration frames')
+#     return run, None
+
+#   closest_chronological_cal_run = cal_runs[np.argmin(
+#       [runs.run_time_delta(light_run, cal_run) for cal_run in cal_runs])]
+
+#   new_stacks = []
+#   for cal_run in cal_runs:
+#     cal_frames_for_run = runs.get_frames_for_run(cal_run, cal_frames,
+#                                                  fits_headers)
+#     if debug:
+#       print(f'Selected {len(cal_frames_for_run)} {image_type} frames by run')
+
+#     # Create a new Stack containing one Run of calibration frames. If the same
+#     # Stack is found multiple times, it will be automatically de-duped by its
+#     # content hash.
+#     if len(cal_frames_for_run) < context.min_frames_in_stack:
+#       print(f'Run is too short; ignoring it')
+#       return run, None
+
+#     assert all(
+#         file_io.is_frame_type(fits_headers[f], image_type)
+#         for f in cal_frames_for_run)
+
+#     # Create a new Stack, composed of a single Run, containing these calibration
+#     # frames.
+#     content_hash = hash_list(cal_frames_for_run)
+#     exposure_s = sum(fits_headers[f]['EXPOSURE'] for f in cal_frames_for_run)
+#     new_run = Run(frames=[FrameHash(h) for h in cal_frames_for_run],
+#                   num_frames=len(cal_frames_for_run),
+#                   content_hash=content_hash,
+#                   type=image_type,
+#                   exposure_s=exposure_s)
+#     new_runs = {content_hash: new_run}
+#     content_hash = stack_identification._compute_content_hash(new_runs)
+#     new_stack = Stack(content_hash=content_hash,
+#                       type=image_type,
+#                       num_frames=len(cal_frames_for_run),
+#                       exposure_s=exposure_s,
+#                       runs=new_runs,
+#                       camera=stack.camera,
+#                       width_pixels=stack.width_pixels,
+#                       height_pixels=stack.height_pixels)
+#     print(f'Made new {image_type} calibration stack with '
+#           f'content hash {content_hash}')
+
+#     # Populate details.
+#     # TODO: Shouldn't all stacks have these details?
+#     if match_temperature:
+#       new_stack.mean_temperature = np.mean(
+#           [fits_headers[f]['CCD-TEMP'] for f in cal_frames_for_run])
+
+#     if match_exposure:
+#       new_stack.exposure_s = fits_headers[cal_frames_for_run[0]]['EXPOSURE']
+
+#     if match_filter:
+#       new_stack.filter = fits_headers[cal_frames_for_run[0]]['FILTER']
+
+#     # Add the new calibration Stack as a dependency to the given Run.
+#     if cal_run == closest_chronological_cal_run:
+#       run.stack_dependencies[image_type] = new_stack.content_hash
+
+#     new_stacks.append(new_stack)
+
+#   return run, new_stacks
+
+# def _associate_with_stack(context, stack, image_type, fits_headers, debug=True):
+#   if debug:
+#     print(f'Entering _associate_with_stack {image_type} for {stack} '
+#           f'with {len(stack.runs)} runs')
+#     for run in stack.runs:
+#       print(f'run {run}')
+
+#   new_stacks = []
+#   for run in stack.runs.values():
+#     run, new_stacks_for_run = _associate_with_run(context, stack, run,
+#                                                   image_type, fits_headers,
+#                                                   debug)
+#     if new_stacks_for_run:
+#       print(f'### Associated {len(new_stacks_for_run)} plausible {image_type} '
+#             f'stacks for stack {stack}')
+#       for new_stack in new_stacks_for_run:
+#         if new_stack not in new_stacks:
+#           new_stacks.append(new_stack)
+
+#     # TODO: This is the wrong place to apply this overlay. In fact, designing
+#     # it as an overlay is probably the wrong choice. The right place is just
+#     # before selecting calibration stacks for the stacking operation.
+
+#     # A better strategy is that, right before stacking, each run of light
+#     # frames is either paired with the calibration stack in its settings, or,
+#     # if there are none, the default.
+
+#     # I think I've made a mistake. I am trying here to only make stacks out
+#     # of calibration frames that eventually end up as dependencies for output
+#     # stacks. That's not necessary.
+
+#     # I can make stacks of every single run of calibration frames, without any
+#     # concern over how they're used (or not). This is actually necessary,
+#     # because users will want to choose between every possible run.
+
+#     # The compute graph at stacking time will only fill in calibration stacks
+#     # that are used somewhere.
+
+#     # TODO: This is called repeatedly for each image type (bias, dark, flat).
+#     # It's not a big deal, but maybe points at poor design.
+#     print(f'### before settings are applied {run.stack_dependencies}')
+#     key = ('light_run_settings', run.content_hash)
+#     settings = ray_diskcache.get(key, {})
+#     print(f'### found settings for run {run.content_hash}: {settings}')
+#     run.stack_dependencies |= settings
+#     print(f'### after settings are applied {run.stack_dependencies}')
+
+#   return stack, new_stacks
+
+# @ray.remote
+# def associate_calibration_frames(context):
+#   print(f'Associating calibration frames...')
+
+#   fits_headers = ray.get(context.fits_headers)
+#   stacks = ray.get(context.stacks)
+
+#   def assert_frame_in_stacks(stacks, debug_hash):
+#     if debug_hash is None:
+#       return
+
+#     found = False
+#     for stack in stacks:
+#       assert type(stack) is Stack
+#       for run in stack.runs.values():
+#         if debug_hash in run.frames:
+#           found = True
+#           break
+
+#     assert found, f'Debug hash {debug_hash} not found in stacks'
+#     print(f'### Debug hash {debug_hash} was found in stacks')
+
+#   debug_hash = None
+#   assert_frame_in_stacks(stacks, debug_hash)
+
+#   # At this point, stacks is just a list of stacks. The final content hashes
+#   # are not known yet, because the calibration frames aren't associated yet.
+#   # TODO: Maybe parallelize this if it's slow.
+#   output_stacks = []
+#   for stack in stacks:
+#     stack, bias_stacks = _associate_with_stack(context, stack, 'bias',
+#                                                fits_headers)
+#     for bias_stack in bias_stacks:
+#       if bias_stack not in output_stacks:
+#         output_stacks.append(bias_stack)
+
+#     stack, dark_stacks = _associate_with_stack(context, stack, 'dark',
+#                                                fits_headers)
+#     for dark_stack in dark_stacks:
+#       if dark_stack not in output_stacks:
+#         output_stacks.append(dark_stack)
+
+#     stack, flat_stacks = _associate_with_stack(context, stack, 'flat',
+#                                                fits_headers)
+#     for flat_stack in flat_stacks:
+#       if flat_stack not in output_stacks:
+#         output_stacks.append(flat_stack)
+
+#     stack_dependencies = list(
+#         set(s.content_hash for s in bias_stacks + dark_stacks + flat_stacks))
+#     assert None not in stack_dependencies
+
+#     for run in stack.runs.values():
+#       assert len(run.stack_dependencies) == len(set(run.stack_dependencies))
+
+#     assert stack not in output_stacks
+#     output_stacks.append(stack)
+
+#   assert_frame_in_stacks(output_stacks, debug_hash)
+
+#   def print_stack(prefix, stack):
+#     print(f'### {prefix} stack {stack}')
+#     for run in stack.runs.values():
+#       print(f'### {prefix} run {run}')
+
+#   stacks = {}
+#   content_hashes = []
+#   geometric_hashes = []
+#   for stack in output_stacks:
+#     assert stack.content_hash != None
+
+#     if stack.geometric_hash != None:
+#       if stack.geometric_hash in stacks:
+#         print_stack('new: ', stack)
+#         print_stack('previous: ', stacks[stack.geometric_hash])
+#         print('### new == previous', stack == stacks[stack.geometric_hash])
+#         assert False, (
+#             f'### stack {stack} has non-unique geometric hash; previous stack '
+#             f'was {stacks[stack.geometric_hash]}')
+#       geometric_hashes.append(stack.geometric_hash)
+#       stacks[stack.geometric_hash] = stack
+#       continue
+
+#     if stack.content_hash in stacks:
+#       print_stack('new: ', stack)
+#       print_stack('previous: ', stacks[stack.content_hash])
+#       print('### new == previous', stack == stacks[stack.content_hash])
+#       assert False, (
+#           f'### stack {stack} has non-unique content hash; previous stack was '
+#           f'{stacks[stack.content_hash]}')
+#     content_hashes.append(stack.content_hash)
+#     stacks[stack.content_hash] = stack
+
+#   print(f'### There are {len(content_hashes)} unique content hashes')
+#   print(f'### There are {len(geometric_hashes)} unique geometric hashes')
+
+#   context.stacks = ray.put(stacks)
+#   ray_diskcache.set('stacks', stacks)
+#   assert_frame_in_stacks(stacks.values(), debug_hash)
+#   print(f'### Wrote {len(stacks)} stacks into cache')
+
+#   return context, None
