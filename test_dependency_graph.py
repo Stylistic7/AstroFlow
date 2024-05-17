@@ -7,7 +7,7 @@ import tempfile
 import functools
 
 from cache import cache
-from new_dependency_graph import Graph, Node, run_graph, make_graph_from_list
+from dependency_graph import Graph, Node, run_graph, make_graph_from_list
 
 
 @ray.remote

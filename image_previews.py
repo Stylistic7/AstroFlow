@@ -10,7 +10,7 @@ import file_io
 from file_io import read_image
 import subframe_selection
 import stacking
-from new_dependency_graph import Graph
+from dependency_graph import Graph
 
 # Every stack is going to have multiple levels of previews. I should disentangle
 # them. There will always be a subrame-based preview. The master-based preview

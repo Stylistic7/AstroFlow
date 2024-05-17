@@ -6,7 +6,7 @@ import shutil
 import ray_diskcache
 import stacking
 import subframe_selection
-from new_dependency_graph import Graph
+from dependency_graph import Graph
 import image_previews
 import file_io
 from hashing import hash_list

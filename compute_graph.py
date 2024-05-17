@@ -9,7 +9,7 @@ from image_previews import scatter_stack_thumbnails
 from stacking import scatter_stack_subframes
 from step_mosaic import scatter_merge_mosaics
 from mosaics.identification import identify_mosiacs
-from new_dependency_graph import make_graph_from_list
+from dependency_graph import make_graph_from_list
 
 
 @ray.remote

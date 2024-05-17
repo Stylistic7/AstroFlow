@@ -13,7 +13,7 @@ import footprints
 import ray_diskcache
 import image_previews
 from hashing import hash_list
-from new_dependency_graph import Graph
+from dependency_graph import Graph
 from scatter_panels import process_mosaic_per_filter
 
 from projection import compute_viewbox

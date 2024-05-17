@@ -13,7 +13,7 @@ import pix
 import position_string
 from image_metadata import scatter_compute_image_metadata
 import file_io
-from new_dependency_graph import Graph, Node
+from dependency_graph import Graph, Node
 
 _STACK_ID_KEY = 'XISF:AstroFlow:StackId'
 _CONTENT_HASH_KEY = 'XISF:AstroFlow:StackContentHash'

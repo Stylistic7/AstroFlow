@@ -16,7 +16,7 @@ import file_io
 import ray_diskcache
 from context import Context
 import compute_graph
-from new_dependency_graph import run_graph
+from dependency_graph import run_graph
 
 logger = structlog.get_logger()
 log = logger

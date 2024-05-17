@@ -11,7 +11,7 @@ import ray_diskcache
 from context import Context
 from image_metadata import scatter_compute_image_metadata
 from make_test_frames import make_synthetic_frames
-from new_dependency_graph import make_graph_from_list, run_graph
+from dependency_graph import make_graph_from_list, run_graph
 
 
 def compute_graph_fragment():

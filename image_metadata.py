@@ -6,7 +6,7 @@ import itertools
 import file_io
 import plate_solving
 import ray_diskcache
-from new_dependency_graph import Graph
+from dependency_graph import Graph
 
 _CONTENT_HASH_KEY = 'XISF:AstroFlow:StackContentHash'
 

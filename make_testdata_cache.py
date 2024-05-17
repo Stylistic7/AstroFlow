@@ -11,7 +11,7 @@ import ray_diskcache
 from cache import cache
 from make_test_frames import copy_testdata_frames
 import compute_graph
-from new_dependency_graph import run_graph
+from dependency_graph import run_graph
 from context import Context
 
 TESTDATA_CACHE_GZIP_FILENAME = 'testdata/cache.gz'

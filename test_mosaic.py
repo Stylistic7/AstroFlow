@@ -16,7 +16,7 @@ import file_io
 from context import Context
 from make_test_frames import copy_testdata_frames
 import compute_graph
-from new_dependency_graph import run_graph
+from dependency_graph import run_graph
 from make_test_context import make_test_context
 
 
