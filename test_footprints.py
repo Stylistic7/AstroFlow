@@ -6,14 +6,19 @@ import shapely
 from shapely import Polygon
 import datetime
 
+import ray_diskcache
+from dependency_graph import run_graph, make_graph_from_list
 from context import Context
 from footprints import project_footprint
 from make_test_frames import make_synthetic_frames
 from mosaics import identification
 from stack_identification import identify_stacks
-from calibration_frames import associate_calibration_frames
 from target_identification import group_stacks_into_targets
 from spatial_association import find_components_by_cosine_similarity
+from image_metadata import scatter_compute_image_metadata
+from calibration_frames import identify_calibration_stacks, associate_with_stacks
+from make_test_context import make_test_context
+from mosaics.identification import identify_mosiacs
 import mercator
 
 default_context = dict(cosine_similarity_threshold=0.99999,
@@ -24,33 +29,47 @@ default_context = dict(cosine_similarity_threshold=0.99999,
                        quarantined_files=ray.put([]))
 
 
+def _build_compute_graph():
+  return make_graph_from_list([(scatter_compute_image_metadata, 'all'),
+                               find_components_by_cosine_similarity,
+                               identify_stacks, identify_calibration_stacks,
+                               associate_with_stacks, group_stacks_into_targets,
+                               identify_mosiacs])
+
+
 class TestFootprints(unittest.TestCase):
 
   def setUp(self):
+    self.context = make_test_context()
     self.proj = mercator.MercatorProjection()
 
   def test_stack(self):
     image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
-        number=10,
+        number=3,
         prefix='foo',
         ra=180,
         dec=0,
         width_pixels=10800,
         height_pixels=7200,
         rotation_angle_deg=0,
-        dither=0)
+        dither=0,
+        dest_dir=self.context.input_dirs[0])
 
-    context = Context(
-        image_hashes=ray.put(image_hashes),
-        fits_headers=ray.put(fits_headers),
-        plate_solutions=ray.put(plate_solutions)) | default_context
+    # TODO: It's awkward that this has to be done both ways. Maybe split the
+    # image_metadata gather op from the diskcache ops.
+    self.context.image_hashes = ray.put(image_hashes)
+    self.context.fits_headers = ray.put(fits_headers)
+    self.context.plate_solutions = ray.put(plate_solutions)
+    ray_diskcache.set('image_hashes', image_hashes)
+    ray_diskcache.set('fits_headers', fits_headers)
+    ray_diskcache.set('plate_solutions', plate_solutions)
 
-    context, _ = ray.get(find_components_by_cosine_similarity.remote(context))
-    context, _ = ray.get(identify_stacks.remote(context))
+    graph = _build_compute_graph()
+    self.context, _ = run_graph(graph, self.context)
 
-    stacks = ray.get(context.stacks)
-    self.assertEqual(len(stacks), 1)
-    stack = next(iter(stacks.values()))
+    stacks = ray.get(self.context.stacks)
+    self.assertEqual(len(stacks), 2)
+    stack = next(iter(s for s in stacks.values() if s.geometric_hash))
 
     projected_footprint = project_footprint(stack.footprint_polygon(),
                                             self.proj)
@@ -68,7 +87,7 @@ class TestFootprints(unittest.TestCase):
     # Two stacks with the same footprint, but different image scales. They
     # should be merged into a single target.
     image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
-        number=10,
+        number=3,
         prefix='foo',
         ra=180,
         dec=0,
@@ -76,9 +95,10 @@ class TestFootprints(unittest.TestCase):
         dither=0,
         image_scale=1.0,
         width_pixels=10800,
-        height_pixels=7200)
+        height_pixels=7200,
+        dest_dir=self.context.input_dirs[0])
     image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
-        number=10,
+        number=5,
         prefix='bar',
         ra=180,
         dec=0,
@@ -87,24 +107,25 @@ class TestFootprints(unittest.TestCase):
         image_scale=2.0,
         width_pixels=5400,
         height_pixels=3600,
+        dest_dir=self.context.input_dirs[0],
         image_hashes=image_hashes,
         fits_headers=fits_headers,
         plate_solutions=plate_solutions)
 
-    context = Context(
-        image_hashes=ray.put(image_hashes),
-        fits_headers=ray.put(fits_headers),
-        plate_solutions=ray.put(plate_solutions)) | default_context
+    self.context.image_hashes = ray.put(image_hashes)
+    self.context.fits_headers = ray.put(fits_headers)
+    self.context.plate_solutions = ray.put(plate_solutions)
+    ray_diskcache.set('image_hashes', image_hashes)
+    ray_diskcache.set('fits_headers', fits_headers)
+    ray_diskcache.set('plate_solutions', plate_solutions)
 
-    context, _ = ray.get(find_components_by_cosine_similarity.remote(context))
-    context, _ = ray.get(identify_stacks.remote(context))
-    context, _ = ray.get(associate_calibration_frames.remote(context))
-    context, _ = ray.get(group_stacks_into_targets.remote(context))
+    graph = _build_compute_graph()
+    self.context, _ = run_graph(graph, self.context)
 
-    stacks = ray.get(context.stacks)
-    self.assertEqual(len(stacks), 2)
+    stacks = ray.get(self.context.stacks)
+    self.assertEqual(len(stacks), 4)
 
-    targets = ray.get(context.targets)
+    targets = ray.get(self.context.targets)
     self.assertEqual(len(targets), 1)
 
     target = next(iter(targets.values()))
@@ -124,7 +145,7 @@ class TestFootprints(unittest.TestCase):
   def test_mosaic(self):
     # Two stacks that overlap by a degree in RA.
     image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
-        number=10,
+        number=3,
         prefix='foo',
         ra=180,
         dec=0,
@@ -132,9 +153,10 @@ class TestFootprints(unittest.TestCase):
         dither=0,
         image_scale=1.0,
         width_pixels=10800,
-        height_pixels=7200)
+        height_pixels=7200,
+        dest_dir=self.context.input_dirs[0])
     image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
-        number=10,
+        number=5,
         prefix='bar',
         ra=182,
         dec=0,
@@ -143,29 +165,28 @@ class TestFootprints(unittest.TestCase):
         image_scale=1.0,
         width_pixels=10800,
         height_pixels=7200,
+        dest_dir=self.context.input_dirs[0],
         image_hashes=image_hashes,
         fits_headers=fits_headers,
         plate_solutions=plate_solutions)
 
-    context = Context(
-        image_hashes=ray.put(image_hashes),
-        fits_headers=ray.put(fits_headers),
-        plate_solutions=ray.put(plate_solutions)) | default_context
+    self.context.image_hashes = ray.put(image_hashes)
+    self.context.fits_headers = ray.put(fits_headers)
+    self.context.plate_solutions = ray.put(plate_solutions)
+    ray_diskcache.set('image_hashes', image_hashes)
+    ray_diskcache.set('fits_headers', fits_headers)
+    ray_diskcache.set('plate_solutions', plate_solutions)
 
-    context, _ = ray.get(find_components_by_cosine_similarity.remote(context))
-    context, _ = ray.get(identify_stacks.remote(context))
-    context, _ = ray.get(associate_calibration_frames.remote(context))
-    context, _ = ray.get(group_stacks_into_targets.remote(context))
+    graph = _build_compute_graph()
+    self.context, _ = run_graph(graph, self.context)
 
-    stacks = ray.get(context.stacks)
-    self.assertEqual(len(stacks), 2)
+    stacks = ray.get(self.context.stacks)
+    self.assertEqual(len(stacks), 4)
 
-    targets = ray.get(context.targets)
+    targets = ray.get(self.context.targets)
     self.assertEqual(len(targets), 2)
 
-    context, _ = ray.get(identification.identify_mosiacs.remote(context))
-
-    mosaics = ray.get(context.mosaics)
+    mosaics = ray.get(self.context.mosaics)
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
 

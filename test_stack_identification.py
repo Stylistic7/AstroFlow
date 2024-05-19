@@ -17,6 +17,18 @@ default_context = dict(cosine_similarity_threshold=0.99999,
                        quarantined_files=ray.put([]))
 
 
+# TODO: Make these "Stack graph query" functions universal.
+def get_toplevel_stacks(stacks):
+  return [s for s in stacks.values() if s.geometric_hash]
+
+
+def get_content_stacks_of_type(stacks, image_type):
+  return [
+      s for s in stacks.values()
+      if s.image_type == image_type and not s.geometric_hash
+  ]
+
+
 class TestStackIdentification(unittest.TestCase):
 
   def test_one_perfect_stack(self):
@@ -32,13 +44,18 @@ class TestStackIdentification(unittest.TestCase):
     context, _ = ray.get(identify_stacks.remote(context))
 
     stacks = ray.get(context.stacks)
-    self.assertEqual(len(stacks), 1)
+    self.assertEqual(len(stacks), 2)
 
-    stack = list(stacks.values())[0]
-    self.assertEqual(len(stack.runs), 1)
-    self.assertEqual(len(next(iter(stack.runs.values())).frames), 10)
+    toplevel_stacks = get_toplevel_stacks(stacks)
+    self.assertEqual(len(toplevel_stacks), 1)
+    stack = toplevel_stacks[0]
     self.assertEqual(stack.center, [100, 50])
     self.assertEqual(stack.image_scale, 1.0)
+
+    content_stacks = get_content_stacks_of_type(stacks, 'light')
+    self.assertEqual(len(content_stacks), 1)
+    stack = content_stacks[0]
+    self.assertEqual(len(stack.frames), 10)
 
   def test_two_stacks_different_image_scales(self):
     image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
@@ -64,23 +81,23 @@ class TestStackIdentification(unittest.TestCase):
 
     image_hashes = ray.get(context.image_hashes)
     stacks = ray.get(context.stacks)
-    self.assertEqual(len(stacks), 2)
+    self.assertEqual(len(stacks), 4)
 
-    stack = list(stacks.values())[0]
-    self.assertEqual(len(stack.runs), 1)
-    run = next(iter(stack.runs.values()))
-    self.assertTrue(all('foo' in image_hashes[f] for f in run.frames))
-    self.assertEqual(len(run.frames), 10)
+    toplevel_stacks = get_toplevel_stacks(stacks)
+    self.assertEqual(len(toplevel_stacks), 2)
+    stack = toplevel_stacks[0]
     self.assertEqual(stack.center, [100, 50])
     self.assertEqual(stack.image_scale, 1.0)
 
-    stack = list(stacks.values())[1]
-    self.assertEqual(len(stack.runs), 1)
-    run = next(iter(stack.runs.values()))
-    self.assertTrue(all('bar' in image_hashes[f] for f in run.frames))
-    self.assertEqual(len(run.frames), 10)
-    self.assertEqual(stack.center, [100, 50])
-    self.assertEqual(stack.image_scale, 2.0)
+    content_stacks = get_content_stacks_of_type(stacks, 'light')
+    self.assertEqual(len(content_stacks), 2)
+    stack = content_stacks[0]
+    self.assertTrue(all('foo' in image_hashes[f] for f in stack.frames))
+    self.assertEqual(len(stack.frames), 10)
+
+    stack = content_stacks[1]
+    self.assertTrue(all('bar' in image_hashes[f] for f in stack.frames))
+    self.assertEqual(len(stack.frames), 10)
 
   def test_two_stacks_different_image_sizes(self):
     # Note that these two groups have the same generic camera name, which is
@@ -117,27 +134,31 @@ class TestStackIdentification(unittest.TestCase):
     context, _ = ray.get(identify_stacks.remote(context))
 
     stacks = ray.get(context.stacks)
-    self.assertEqual(len(stacks), 2)
+    self.assertEqual(len(stacks), 4)
 
-    stack = list(stacks.values())[0]
-    self.assertEqual(len(stack.runs), 1)
-    run = next(iter(stack.runs.values()))
-    self.assertTrue(all('foo' in image_hashes[f] for f in run.frames))
-    self.assertEqual(len(run.frames), 10)
-    self.assertEqual(stack.center, [100, 50])
-    self.assertEqual(stack.width_pixels, 3000)
-    self.assertEqual(stack.height_pixels, 2000)
-    self.assertEqual(stack.image_scale, 1.0)
+    toplevel_stacks = get_toplevel_stacks(stacks)
+    self.assertEqual(len(toplevel_stacks), 2)
 
-    stack = list(stacks.values())[1]
-    self.assertEqual(len(stack.runs), 1)
-    run = next(iter(stack.runs.values()))
-    self.assertTrue(all('bar' in image_hashes[f] for f in run.frames))
-    self.assertEqual(len(run.frames), 10)
-    self.assertEqual(stack.center, [100, 50])
-    self.assertEqual(stack.width_pixels, 6000)
-    self.assertEqual(stack.height_pixels, 4000)
-    self.assertEqual(stack.image_scale, 1.0)
+    self.assertEqual(toplevel_stacks[0].center, [100, 50])
+    self.assertEqual(toplevel_stacks[0].width_pixels, 3000)
+    self.assertEqual(toplevel_stacks[0].height_pixels, 2000)
+    self.assertEqual(toplevel_stacks[0].image_scale, 1.0)
+
+    self.assertEqual(toplevel_stacks[1].center, [100, 50])
+    self.assertEqual(toplevel_stacks[1].width_pixels, 6000)
+    self.assertEqual(toplevel_stacks[1].height_pixels, 4000)
+    self.assertEqual(toplevel_stacks[1].image_scale, 1.0)
+
+    content_stacks = get_content_stacks_of_type(stacks, 'light')
+    self.assertEqual(len(content_stacks), 2)
+
+    self.assertTrue(
+        all('foo' in image_hashes[f] for f in content_stacks[0].frames))
+    self.assertEqual(len(content_stacks[0].frames), 10)
+
+    self.assertTrue(
+        all('bar' in image_hashes[f] for f in content_stacks[1].frames))
+    self.assertEqual(len(content_stacks[1].frames), 10)
 
 
 if __name__ == '__main__':

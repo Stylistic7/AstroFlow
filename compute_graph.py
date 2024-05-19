@@ -1,10 +1,10 @@
 import ray
 
-from image_metadata import scatter_compute_image_metadata, update_stack_timestamps
+from image_metadata import scatter_compute_image_metadata
 from spatial_association import find_components_by_cosine_similarity
 from stack_identification import identify_stacks
 from target_identification import group_stacks_into_targets
-from calibration_frames import associate_calibration_frames
+from calibration_frames import identify_calibration_stacks, associate_with_stacks
 from image_previews import scatter_stack_thumbnails
 from stacking import scatter_stack_subframes
 from step_mosaic import scatter_merge_mosaics
@@ -17,7 +17,7 @@ def maybe_regroup_graph(context):
   if context.needs_regrouping:
     return context, make_graph_from_list([
         find_components_by_cosine_similarity, identify_stacks,
-        associate_calibration_frames, update_stack_timestamps,
+        identify_calibration_stacks, associate_with_stacks,
         group_stacks_into_targets, identify_mosiacs
     ])
   else:

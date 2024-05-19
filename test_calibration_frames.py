@@ -17,7 +17,7 @@ from dependency_graph import run_graph, make_graph_from_list
 from image_metadata import scatter_compute_image_metadata
 from spatial_association import find_components_by_cosine_similarity
 from stack_identification import identify_stacks
-from calibration_frames import associate_calibration_frames, create_calibration_frames, associate_with_runs
+from calibration_frames import identify_calibration_stacks, associate_with_stacks
 from make_test_context import make_test_context
 from hashing import hash_list
 
@@ -25,31 +25,8 @@ from hashing import hash_list
 def _build_compute_graph():
   return make_graph_from_list([(scatter_compute_image_metadata, 'all'),
                                find_components_by_cosine_similarity,
-                               identify_stacks, create_calibration_frames,
-                               associate_with_runs])
-
-
-# Select only the toplevel stacks, which contain only light frames.
-def _get_light_stacks(stacks, fits_headers):
-  return [
-      s for s in stacks.values() if all(
-          file_io.is_light_frame(fits_headers[f])
-          for r in s.runs.values()
-          for f in r.frames)
-  ]
-
-
-# Check that Stacks and Runs have all the metadata they should have.
-def _check_stacks(stacks):
-  for stack in stacks.values():
-    assert stack.type != None
-    assert stack.num_frames != None
-    assert stack.exposure_s != None
-
-    for run in stack.runs.values():
-      assert run.type != None
-      assert stack.num_frames != None
-      assert stack.exposure_s != None
+                               identify_stacks, identify_calibration_stacks,
+                               associate_with_stacks])
 
 
 class TestCalibrationFrames(unittest.TestCase):
@@ -121,13 +98,11 @@ class TestCalibrationFrames(unittest.TestCase):
     graph = _build_compute_graph()
     self.context, _ = run_graph(graph, self.context)
 
-    fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
-    self.assertEqual(len(stacks), 5)
-    _check_stacks(stacks)
+    self.assertEqual(len(stacks), 7)
 
-    light_stacks = _get_light_stacks(stacks, fits_headers)
-    self.assertEqual(len(light_stacks), 1)
+    light_stacks = [s for s in stacks.values() if s.image_type == 'light']
+    self.assertEqual(len(light_stacks), 3)
 
   def test_one_light_run_one_dark_run(self):
     copy_testdata_frames(target_name='NGC7635',
@@ -147,13 +122,11 @@ class TestCalibrationFrames(unittest.TestCase):
     graph = _build_compute_graph()
     self.context, _ = run_graph(graph, self.context)
 
-    fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
-    self.assertEqual(len(stacks), 2)
-    _check_stacks(stacks)
+    self.assertEqual(len(stacks), 3)
 
-    light_stacks = _get_light_stacks(stacks, fits_headers)
-    self.assertEqual(len(light_stacks), 1)
+    light_stacks = [s for s in stacks.values() if s.image_type == 'light']
+    self.assertEqual(len(light_stacks), 2)
 
   def test_flats_from_different_camera(self):
     # There are lights from two different cameras. This should result
@@ -223,12 +196,13 @@ class TestCalibrationFrames(unittest.TestCase):
     graph = _build_compute_graph()
     self.context, _ = run_graph(graph, self.context)
 
-    fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
-    self.assertEqual(len(stacks), 8)
-    _check_stacks(stacks)
+    self.assertEqual(len(stacks), 10)
 
-    light_stacks = _get_light_stacks(stacks, fits_headers)
+    light_stacks = [
+        s for s in stacks.values()
+        if s.image_type == 'light' and not s.geometric_hash
+    ]
     self.assertEqual(len(light_stacks), 2)
 
   def test_dark_scaling(self):
@@ -279,13 +253,11 @@ class TestCalibrationFrames(unittest.TestCase):
     graph = _build_compute_graph()
     self.context, _ = run_graph(graph, self.context)
 
-    fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
-    self.assertEqual(len(stacks), 5)
-    _check_stacks(stacks)
+    self.assertEqual(len(stacks), 6)
 
-    light_stacks = _get_light_stacks(stacks, fits_headers)
-    self.assertEqual(len(light_stacks), 1)
+    light_stacks = [s for s in stacks.values() if s.image_type == 'light']
+    self.assertEqual(len(light_stacks), 2)
 
   # TODO: Test temperatures that do and do not match.
   def test_temperature_mismatch(self):
@@ -309,20 +281,14 @@ class TestCalibrationFrames(unittest.TestCase):
     graph = _build_compute_graph()
     self.context, _ = run_graph(graph, self.context)
 
-    fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
-    self.assertEqual(len(stacks), 2)
-    _check_stacks(stacks)
+    self.assertEqual(len(stacks), 3)
 
-    light_stacks = _get_light_stacks(stacks, fits_headers)
-    self.assertEqual(len(light_stacks), 1)
-
+    light_stacks = [s for s in stacks.values() if s.image_type == 'light']
+    self.assertEqual(len(light_stacks), 2)
     stack = next(iter(stacks.values()))
-    self.assertEqual(len(stack.runs), 1)
-
-    run = next(iter(stack.runs.values()))
-    self.assertEqual(len(run.frames), 3)
-    self.assertEqual(len(run.stack_dependencies), 1)
+    self.assertEqual(len(stack.frames), 3)
+    self.assertEqual(len(stack.dependencies), 1)
 
   def test_stack_calibration_frames(self):
     copy_testdata_frames(target_name='NGC7635',
@@ -358,13 +324,11 @@ class TestCalibrationFrames(unittest.TestCase):
     graph = _build_compute_graph()
     self.context, _ = run_graph(graph, self.context)
 
-    fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
-    self.assertEqual(len(stacks), 4)
-    _check_stacks(stacks)
+    self.assertEqual(len(stacks), 5)
 
-    light_stacks = _get_light_stacks(stacks, fits_headers)
-    self.assertEqual(len(light_stacks), 1)
+    light_stacks = [s for s in stacks.values() if s.image_type == 'light']
+    self.assertEqual(len(light_stacks), 2)
 
   def test_multiple_filters_for_flats(self):
     # Only one run of flat frames applies to the light frames, which use
@@ -396,16 +360,14 @@ class TestCalibrationFrames(unittest.TestCase):
     graph = _build_compute_graph()
     self.context, _ = run_graph(graph, self.context)
 
-    fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
-    self.assertEqual(len(stacks), 3)
-    _check_stacks(stacks)
+    self.assertEqual(len(stacks), 4)
 
-    light_stacks = _get_light_stacks(stacks, fits_headers)
-    self.assertEqual(len(light_stacks), 1)
+    light_stacks = [s for s in stacks.values() if s.image_type == 'light']
+    self.assertEqual(len(light_stacks), 2)
 
   def test_flat_frame_selection(self):
-    # There are two runs of flat frames, but the user has selected the second
+    # There are two runs of flat frames, but the user has selected the first
     # one, which is much more distant chronologically.
     make_synthetic_frames(prefix='flat_run_0',
                           number=7,
@@ -447,16 +409,15 @@ class TestCalibrationFrames(unittest.TestCase):
     graph = _build_compute_graph()
     self.context, _ = run_graph(graph, self.context)
     image_hashes = ray.get(self.context.image_hashes)
-    fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
 
     # Look through the stacks, and find the stacks for the two runs of flat
     # frames.
     def find_stack(filename_fragment):
-      return next(stack_id for stack_id, stack in stacks.items()
-                  if all(filename_fragment in image_hashes[f]
-                         for run in stack.runs.values()
-                         for f in run.frames))
+      return next(
+          stack_id for stack_id, stack in stacks.items()
+          if stack.frames and all(
+              filename_fragment in image_hashes[f] for f in stack.frames))
 
     first_flat_stack = find_stack('flat_run_0')
     second_flat_stack = find_stack('flat_run_1')
@@ -467,15 +428,16 @@ class TestCalibrationFrames(unittest.TestCase):
         [k for k, v in image_hashes.items() if 'light_run' in v])
     print(f'### first_light_run_hash', first_light_run_hash)
 
-    light_stacks = _get_light_stacks(stacks, fits_headers)
+    light_stacks = [
+        s for s in stacks.values()
+        if s.image_type == 'light' and not s.geometric_hash
+    ]
     self.assertEqual(len(light_stacks), 1)
     stack = next(iter(light_stacks))
-    assert len(stack.runs) == 1
-    run = next(iter(stack.runs.values()))
-    assert run.content_hash == first_light_run_hash
-    assert run.stack_dependencies == {
+    assert stack.content_hash == first_light_run_hash
+    assert stack.dependencies == {
         'flat': second_flat_stack
-    }, f'run.stack_dependencies {run.stack_dependencies}'
+    }, f'stack.dependencies {stack.dependencies}'
 
     # Configure the light run to use the other flat run, which has prefix
     # `flat_run_0`.
@@ -487,21 +449,16 @@ class TestCalibrationFrames(unittest.TestCase):
     graph = _build_compute_graph()
     self.context, _ = run_graph(graph, self.context)
     image_hashes = ray.get(self.context.image_hashes)
-    fits_headers = ray.get(self.context.fits_headers)
     stacks = ray.get(self.context.stacks)
+    self.assertEqual(len(stacks), 4)
 
-    self.assertEqual(len(stacks), 3)
-    _check_stacks(stacks)
-
-    light_stacks = _get_light_stacks(stacks, fits_headers)
-    self.assertEqual(len(light_stacks), 1)
+    light_stacks = [s for s in stacks.values() if s.image_type == 'light']
+    self.assertEqual(len(light_stacks), 2)
     stack = next(iter(light_stacks))
-    assert len(stack.runs) == 1
-    run = next(iter(stack.runs.values()))
-    assert run.content_hash == first_light_run_hash
-    assert run.stack_dependencies == {
+    assert stack.content_hash == first_light_run_hash
+    assert stack.dependencies == {
         'flat': first_flat_stack
-    }, f'run.stack_dependencies {run.stack_dependencies}'
+    }, f'stack.dependencies {stack.dependencies}'
 
   def test_generic_grouping(self):
     copy_testdata_frames(target_name='NGC7635',
@@ -540,14 +497,10 @@ class TestCalibrationFrames(unittest.TestCase):
     self.context, _ = run_graph(graph, self.context)
 
     stacks = ray.get(self.context.stacks)
-    self.assertEqual(len(stacks), 4)
-    _check_stacks(stacks)
+    self.assertEqual(len(stacks), 5)
     stack = next(iter(stacks.values()))
 
-    self.assertEqual(len(stack.runs), 1)
-    run = next(iter(stack.runs.values()))
-
-    self.assertEqual(len(run.stack_dependencies), 3)
+    self.assertEqual(len(stack.dependencies), 3)
 
 
 if __name__ == "__main__":

@@ -12,10 +12,10 @@ import clustering
 from hashing import hash_string, hash_list
 import units
 import footprints
-from stack import Stack, Run, FrameHash
+from stack import Stack, FrameHash
 import units
 import subframe_selection
-from runs import get_runs
+from runs import get_runs, get_frames_for_run
 
 
 def normalize_radians(x):
@@ -25,6 +25,8 @@ def normalize_radians(x):
     return x
 
 
+# TODO: Move this to stack.py?
+#
 # This hash defines the specific area of the sky this stack covers. It
 # includes the center (RA, Dec), the rotation angle, the image scale, and
 # the image width and height, in pixels. It is not defined for stacks that
@@ -40,55 +42,22 @@ def _compute_geometric_hash(center, image_scale, rotation_angle, width_pixels,
                      f'Filter {filter}')
 
 
-# This hash includes runs of frames, e.g. light frames, plus all other stacks
-# that this stack depends on, e.g. stacks of bias and dark frames.
-def _compute_content_hash(runs) -> str:
-  all_frames = []
-  for r in runs.values():
-    all_frames.extend(r.frames)
-    all_frames.extend(r.stack_dependencies)
-
-  return hash_list(sorted(all_frames))
-
-
 # TODO: The structure of light_frame_runs is completely nuts here.
-def _new_stack(context,
-               name,
-               light_frame_runs,
-               fits_headers,
-               plate_solutions,
-               debug=False):
-
-  assert all(
-      file_io.is_light_frame(fits_headers[f])
-      for run in light_frame_runs.keys()
-      for f in run), f'light_frame_runs {light_frame_runs}'
-
-  def assert_single_run(frames):
-    assert len(
-        get_runs(frames, fits_headers, context.max_run_gap,
-                 context.min_frames_in_run)) == 1
-
-  if debug:
-    print(f'Entering _new_stack, light_frame_runs are:')
-
-  for run in light_frame_runs:
-    if debug:
-      print(f'run {run}')
-    assert_single_run(run)
-
-  flattened = list(itertools.chain.from_iterable([k for k in light_frame_runs]))
-
-  camera = next(iter(set(fits_headers[f]['INSTRUME'] for f in flattened)))
-  filter = next(iter(set(fits_headers[f]['FILTER'] for f in flattened)))
-  exposure_s = next(iter(set(fits_headers[f]['EXPOSURE'] for f in flattened)))
-  width_pixels = next(iter(set(fits_headers[f]['NAXIS1'] for f in flattened)))
-  height_pixels = next(iter(set(fits_headers[f]['NAXIS2'] for f in flattened)))
+def _new_stacks(context,
+                name,
+                light_frames,
+                fits_headers,
+                plate_solutions,
+                debug=False):
+  width_pixels = next(iter(set(
+      fits_headers[f]['NAXIS1'] for f in light_frames)))
+  height_pixels = next(
+      iter(set(fits_headers[f]['NAXIS2'] for f in light_frames)))
 
   # Sort the light frames by observation date. The oldest image will be used
   # to compute the hash of the whole stack.
-  flattened = sorted(flattened, key=lambda h: fits_headers[h]['DATE-OBS'])
-  oldest_image = flattened[0]
+  light_frames = sorted(light_frames, key=lambda h: fits_headers[h]['DATE-OBS'])
+  oldest_image = light_frames[0]
 
   center = plate_solutions[oldest_image].center
   assert list(center)
@@ -103,94 +72,37 @@ def _new_stack(context,
   footprint = next(
       SphericalPolygon.from_wcs(
           astropy.io.fits.Header(
-              plate_solutions[flattened[0]].header)).points).tolist()
+              plate_solutions[light_frames[0]].header)).points).tolist()
   projected_footprints = footprints.all_projections(SphericalPolygon(footprint))
 
   # TODO: The selection criterion needs to be preserved when stacks are
   # re-computed. Stacks with the same geometric_hash can have their settings
   # passed on. There may be other settings like this in the future.
   selection_criterion = ('StarCountFraction', 0.75)
+  new_stacks = {}
+  for run in get_runs(light_frames, fits_headers, context.max_run_gap,
+                      context.min_frames_in_run):
+    frames = get_frames_for_run(run, light_frames, fits_headers)
+    assert len(frames)
+    stack = Stack(frames=frames)
+    stack.update_metadata(fits_headers)
+    new_stacks[stack.content_hash] = stack
 
-  # At this point in the pipeline, we just need to populate the frames and the
-  # type. The subframe_selection module will down-select the frames and fill in
-  # remaining metadata.
-  runs = {}
-  for run in light_frame_runs:
-    content_hash = hash_list(run)
-    all_dates = sorted(fits_headers[f]['DATE-OBS'] for f in run)
-    runs[content_hash] = Run(frames=run,
-                             content_hash=content_hash,
-                             camera=camera,
-                             exposure_s=exposure_s,
-                             filter=filter,
-                             oldest_date=all_dates[0],
-                             newest_date=all_dates[-1])
+  # Add a toplevel stack, with the geometric information, that contains all
+  # of the runs of light frames as its contents.
+  stack = Stack(geometric_hash=geometric_hash,
+                contents=list(new_stacks.keys()),
+                target=name,
+                center=list(center),
+                image_scale=image_scale,
+                rotation_angle=rotation_angle,
+                footprint=footprint,
+                projected_footprints=projected_footprints,
+                selection_criterion=selection_criterion)
+  stack.update_metadata(fits_headers, new_stacks)
+  new_stacks[stack.geometric_hash] = stack
 
-  for run in runs.values():
-    assert run.frames, f'run.frames {run.frames} was Falsey'
-    if debug:
-      print(f'run {run}')
-    assert_single_run(run.frames)
-
-  num_light_frames_before_selection = len(
-      [f for run in runs.values() for f in run.frames])
-  if debug:
-    print(f'Before down-selection, {num_light_frames_before_selection} frames '
-          f'in {len(runs)} runs')
-  criterion = subframe_selection.decode_selection_criterion(selection_criterion)
-  runs = criterion.select_subframes(context, runs, fits_headers,
-                                    plate_solutions)
-  num_light_frames_after_selection = len(
-      [f for run in runs.values() for f in run.frames])
-  if debug:
-    print(f'After down-selection, {num_light_frames_after_selection} frames '
-          f'in {len(runs)} runs')
-
-  for run in runs.values():
-    assert run.frames, f'run.frames {run.frames} was Falsey'
-    if debug:
-      print(f'run {run}')
-    assert_single_run(run.frames)
-
-  if num_light_frames_after_selection < context.min_frames_in_stack:
-    if debug:
-      print('### Too few frames in stack')
-    return None
-
-  content_hash = _compute_content_hash(runs)
-  assert content_hash
-
-  num_frames = sum(len(run.frames) for run in runs.values())
-
-  # TODO: Separate the concepts of exposure time (one frame) and integration
-  # time (whole stack).
-  exposure_s = fits_headers[flattened[0]]['EXPOSURE']
-  integration_s = sum(
-      fits_headers[h]['EXPOSURE'] for run in runs.values() for h in run.frames)
-  # TODO: Add an `all_frames()` function to the unified Stack.
-  mean_temperature = np.mean([
-      fits_headers[h]['CCD-TEMP'] for run in runs.values() for h in run.frames
-  ])
-
-  return Stack(geometric_hash=geometric_hash,
-               content_hash=content_hash,
-               type='light',
-               runs=runs,
-               target=name,
-               camera=camera,
-               mean_temperature=mean_temperature,
-               num_frames=num_frames,
-               exposure_s=exposure_s,
-               integration_s=integration_s,
-               width_pixels=width_pixels,
-               height_pixels=height_pixels,
-               center=list(center),
-               image_scale=image_scale,
-               rotation_angle=rotation_angle,
-               filter=filter,
-               footprint=footprint,
-               projected_footprints=projected_footprints,
-               selection_criterion=selection_criterion)
+  return new_stacks
 
 
 @ray.remote
@@ -239,32 +151,13 @@ def identify_stacks(context):
               print(f'Hash {debug_hash} found in cluster with '
                     f'filters {filters} and frames {filter_frames}')
             assert len(set(filters)) == 1
-            date_obs = [(f, fits_headers[f]['DATE-OBS']) for f in filter_frames]
-            light_frames = {}
             debug_new_stack = False
-            for run in clustering.cluster_continuous(
-                date_obs, epsilon=context.max_run_gap):
-              light_frames_in_run, _ = zip(*run)
-              if debug_hash in light_frames_in_run:
-                print(f'Hash {debug_hash} found in run {light_frames_in_run}')
-                debug_new_stack = True
-
-              # TODO: This is a run of light frames with no dependencies,
-              # but it is akwardly expressed here.
-              light_frames[tuple(sorted(light_frames_in_run))] = set()
-
-            new_stack = _new_stack(context,
-                                   name,
-                                   light_frames,
-                                   fits_headers,
-                                   plate_solutions,
-                                   debug=debug_new_stack)
-            if new_stack:
-              if debug_new_stack:
-                print(f'### Successfully created stack with hash {debug_hash}')
-              stacks[new_stack.geometric_hash] = new_stack
-            elif debug_new_stack:
-              print('### _new_stack() failed')
+            stacks |= _new_stacks(context,
+                                  name,
+                                  filter_frames,
+                                  fits_headers,
+                                  plate_solutions,
+                                  debug=debug_new_stack)
 
   print(f'Identified {len(stacks)} stacks')
   context.stacks = ray.put(stacks)

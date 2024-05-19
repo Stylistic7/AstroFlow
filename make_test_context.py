@@ -20,11 +20,11 @@ def make_test_context():
   context.plate_solutions = ray.put({})
   context.quarantined_files = ray.put([])
 
-  context.input_dir = tempfile.TemporaryDirectory()
-  context.input_dirs.append(context.input_dir.name)
+  context.input_dir_obj = tempfile.TemporaryDirectory()
+  context.input_dirs.append(context.input_dir_obj.name)
 
-  context.output_dir = tempfile.TemporaryDirectory()
-  context.output_dir = context.output_dir.name
+  context.output_dir_obj = tempfile.TemporaryDirectory()
+  context.output_dir = context.output_dir_obj.name
 
   context.cosine_similarity_threshold = 0.99999
   context.min_component_members = 3

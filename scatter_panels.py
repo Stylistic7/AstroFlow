@@ -19,11 +19,11 @@ from mosaics import projection
 # API that communicates with the rest of AstroFlow.
 
 
-def _get_image_hash_for_stack(stack, mode, image_hashes, fits_headers,
+def _get_image_hash_for_stack(stack, mode, stacks, image_hashes, fits_headers,
                               plate_solutions):
   if mode == 'subframe':
     light_frames_by_stars = subframe_selection.get_light_frames_sorted_by_stars(
-        stack.runs, plate_solutions)
+        stack.all_frames(stacks), plate_solutions)
     best_light_frame, _ = light_frames_by_stars[0]
     return best_light_frame
   elif mode == 'master':
@@ -82,7 +82,7 @@ def process_mosaic_per_filter(context, mosaic_id, mode, filter, output_dir):
             f'filter {filter}')
       continue
 
-    image_hash = _get_image_hash_for_stack(stack, mode, image_hashes,
+    image_hash = _get_image_hash_for_stack(stack, mode, stacks, image_hashes,
                                            fits_headers, plate_solutions)
     print(
         f'### process_mosaic_per_filter got hash {image_hash} for stack {stack}'

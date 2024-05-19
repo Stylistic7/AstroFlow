@@ -17,19 +17,13 @@ def group_stacks_into_targets(context):
   fits_headers = ray.get(context.fits_headers)
   plate_solutions = ray.get(context.plate_solutions)
 
-  def is_light_frame_stack(stack):
-    for run in stack.runs.values():
-      if not all(file_io.is_light_frame(fits_headers[f]) for f in run.frames):
-        return False
-
-    return True
-
   values = {
       id: (np.asarray(footprints.radec_to_vector(*stack.center)),
            SphericalPolygon.from_wcs(
-               pyfits.Header(plate_solutions[next(iter(
-                   stack.runs.values())).frames[0]].header))
-          ) for id, stack in stacks.items() if is_light_frame_stack(stack)
+               pyfits.Header(
+                   plate_solutions[stack.all_frames(stacks)[0]].header)))
+      for id, stack in stacks.items()
+      if stack.geometric_hash and stack.image_type == 'light'
   }
 
   print(f'Finding targets out of {len(values)} light-frame stacks')

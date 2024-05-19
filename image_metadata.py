@@ -89,6 +89,8 @@ def scatter_compute_image_metadata(context, mode):
   new_filenames = list(
       set(filenames) - set(known_files) - set(quarantined_files))
 
+  print(f'### Computing image metadata for {len(new_filenames)} new filenames')
+
   graph = Graph({
       gather_compute_image_metadata: [
           (compute_image_metadata_ray, f) for f in new_filenames
@@ -187,36 +189,6 @@ def gather_compute_image_metadata(context, results):
   context.needs_regrouping = True
 
   print(f'Needs regrouping: {context.needs_regrouping}')
-
-  return context, None
-
-
-@ray.remote
-def update_stack_timestamps(context):
-  print('### Entering update_stack_timestamps')
-  fits_headers = ray.get(context.fits_headers)
-  stacks = ray.get(context.stacks)
-
-  def all_frames(stack):
-    frames = []
-    for run in stack.runs.values():
-      frames.extend(run.frames)
-      for d in run.stack_dependencies.values():
-        frames.extend(all_frames(stacks[d]))
-
-    return frames
-
-  def update_stack(stack):
-    all_dates = sorted(fits_headers[f]['DATE-OBS'] for f in all_frames(stack))
-    stack.oldest_date, stack.newest_date = all_dates[0], all_dates[-1]
-    print(f'### stack {stack} oldest_date {stack.oldest_date} '
-          f'newest_date {stack.newest_date}')
-    return stack
-
-  stacks = {id: update_stack(stack) for id, stack in stacks.items()}
-
-  context.stacks = ray.put(stacks)
-  ray_diskcache.set('stacks', stacks)
 
   return context, None
 

@@ -113,29 +113,32 @@ def scatter_stack_thumbnails(context, mode):
   cache_keys = ray_diskcache.get_keys()
 
   return context, Graph({
-      gather_stack_thumbnails: [(compute_stack_thumbnails, s, mode)
-                                for s in stacks
-                                if ('stack_thumbnail_image', mode,
-                                    s) not in cache_keys]
+      gather_stack_thumbnails: [
+          (compute_stack_thumbnails, s, mode)
+          for s in stacks
+          if stacks[s].geometric_hash and ('stack_thumbnail_image', mode,
+                                           s) not in cache_keys
+      ]
   })
 
 
-def _get_calibrations(stack, stacks, fits_headers):
-  calibrations = {}
-  for run in stack.runs.values():
-    # Find the first bias, dark, and flat frame in the run's dependencies.
-    bias_frame = dark_frame = flat_frame = None
-    if bias_stack := run.stack_dependencies.get('bias', None):
-      bias_frame = next(iter(stacks[bias_stack].runs.values())).frames[0]
-    if dark_stack := run.stack_dependencies.get('dark', None):
-      dark_frame = next(iter(stacks[dark_stack].runs.values())).frames[0]
-    if flat_stack := run.stack_dependencies.get('flat', None):
-      flat_frame = next(iter(stacks[flat_stack].runs.values())).frames[0]
+def _get_calibrations(stack, stacks):
+  assert stack.geometric_hash
 
-    for light_frame in run.frames:
-      calibrations[light_frame] = dict(bias_frame=bias_frame,
-                                       dark_frame=dark_frame,
-                                       flat_frame=flat_frame)
+  # Find the first bias, dark, and flat frame in the stacks's dependencies.
+  calibrations = {}
+  bias_frame = dark_frame = flat_frame = None
+  if bias_stack := stack.dependencies.get('bias', None):
+    bias_frame = stacks[bias_stack].all_frames(stacks)[0]
+  if dark_stack := stack.dependencies.get('dark', None):
+    dark_frame = stacks[dark_stack].all_frames(stacks)[0]
+  if flat_stack := stack.dependencies.get('flat', None):
+    flat_frame = stacks[flat_stack].all_frames(stacks)[0]
+
+  for light_frame in stack.all_frames(stacks):
+    calibrations[light_frame] = dict(bias_frame=bias_frame,
+                                     dark_frame=dark_frame,
+                                     flat_frame=flat_frame)
 
   print(f'_get_calibrations returning {calibrations}')
   return calibrations
@@ -159,6 +162,8 @@ def compute_stack_master_thumbnail(context, stack_id, width=2160):
   stacks = ray.get(context.stacks)
   stack = stacks[stack_id]
   print(f'Entering compute_stack_master_thumbnail() for stack {stack}')
+
+  assert stack.geometric_hash
 
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
@@ -209,7 +214,7 @@ def compute_run_thumbnail(context, run):
   light_image = resize_array(read_image(image_hashes[light_frame]), width)
 
   def first_frame(stack_id):
-    return next(iter(stacks[stack_id].runs.values())).frames[0]
+    return stacks[stack_id].all_frames(stacks)[0]
 
   bias_frame = first_frame(run.stack_dependencies['bias'])
   bias_image = resize_array(read_image(image_hashes[bias_frame]), width)
@@ -238,7 +243,7 @@ def compute_stack_subframe_thumbnails(context, stack_id, width):
   plate_solutions = ray.get(context.plate_solutions)
 
   # Don't make previews for calibration stacks.
-  light_frames = [f for run in stack.runs.values() for f in run.frames]
+  light_frames = stack.all_frames(stacks)
   if not all(file_io.is_light_frame(fits_headers[f]) for f in light_frames):
     print(f'Ignoring {stack} because it is not composed entirely '
           f'of light frames.')
@@ -246,7 +251,7 @@ def compute_stack_subframe_thumbnails(context, stack_id, width):
     ray_diskcache.set(key, None)
     return context, None
 
-  calibrations = _get_calibrations(stack, stacks, fits_headers)
+  calibrations = _get_calibrations(stack, stacks)
 
   # Cache the calibration images so they're only read once.
   calibration_images = {}
@@ -264,7 +269,7 @@ def compute_stack_subframe_thumbnails(context, stack_id, width):
   # Now sort all the light frames (no matter which run they're from) by the
   # number of stars. The better images should be in front.
   light_frames_by_stars = subframe_selection.get_light_frames_sorted_by_stars(
-      stack.runs, plate_solutions)
+      stack.all_frames(stacks), plate_solutions)
 
   best_light_frame, _ = light_frames_by_stars[0]
   image = resize_array(read_image(image_hashes[best_light_frame]), width)

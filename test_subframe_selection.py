@@ -15,6 +15,10 @@ from spatial_association import find_components_by_cosine_similarity
 import subframe_selection
 from make_test_context import make_test_context
 
+# TODO: These tests don't actually test the subframe selection at all. The
+# stack identification step no longer eliminates bad frames from the stack.
+# Instead, we're going to do subframe selection right before stacking.
+
 
 class TestSubframeSelection(unittest.TestCase):
 
@@ -62,12 +66,9 @@ class TestSubframeSelection(unittest.TestCase):
     self.context, _ = ray.get(identify_stacks.remote(self.context))
 
     stacks = ray.get(self.context.stacks)
-    self.assertEqual(len(stacks), 1)
-    stack = next(iter(stacks.values()))
-
-    self.assertEqual(len(stack.runs), 1)
-    light_frames = [f for run in stack.runs.values() for f in run.frames]
-    self.assertEqual(len(light_frames), 5)
+    self.assertEqual(len(stacks), 2)
+    stack = next(iter(s for s in stacks.values() if s.geometric_hash))
+    self.assertEqual(len(stack.all_frames(stacks)), 10)
 
   def test_split_run(self):
     image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
@@ -103,12 +104,9 @@ class TestSubframeSelection(unittest.TestCase):
     self.context, _ = ray.get(identify_stacks.remote(self.context))
 
     stacks = ray.get(self.context.stacks)
-    self.assertEqual(len(stacks), 1)
-    stack = next(iter(stacks.values()))
-
-    self.assertEqual(len(stack.runs), 2)
-    light_frames = [f for run in stack.runs.values() for f in run.frames]
-    self.assertEqual(len(light_frames), 14)
+    self.assertEqual(len(stacks), 2)
+    stack = next(iter(s for s in stacks.values() if s.geometric_hash))
+    self.assertEqual(len(stack.all_frames(stacks)), 15)
 
 
 if __name__ == "__main__":

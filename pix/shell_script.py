@@ -27,11 +27,14 @@ def _clear_cache():
 
 
 def _start_pixinsight_instance(slot):
+  # This should be start and detach. If it's already started, this
+  # attempt should just exit immediately with no other effect.
   subprocess.Popen([
       '/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight',
       f'-n={slot}', '--no-startup-check-updates', '--no-startup-gui-messages',
       '--no-splash', '--without-printer'
-  ])
+  ],
+                   start_new_session=True)
 
   print(f"Started new PixInsight instance at slot {slot}")
 

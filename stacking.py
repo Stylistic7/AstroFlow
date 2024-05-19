@@ -7,6 +7,7 @@ import ray
 from graphlib import TopologicalSorter
 import errno
 import os
+from dataclasses import asdict
 
 import ray_diskcache
 import pix
@@ -36,7 +37,7 @@ def matching_artifacts(image_hashes, fits_headers, content_hash):
 
 
 def artifact_exists(image_hashes, fits_headers, content_hash):
-  return len(matching_artifacts(image_hashes, fits_headers, content_hash))
+  return len(matching_artifacts(image_hashes, fits_headers, content_hash)) > 0
 
 
 # TODO: This function hits every master once for every stack, which grows to
@@ -49,26 +50,26 @@ def find_matching_masters(stack, image_hashes, fits_headers):
   ]
 
 
-def _output_filename(stack, fits_headers, dest_path):
-  hashes = [f for run in stack.runs for f in run.frames]
+def _output_filename(stack, stacks, fits_headers, dest_path):
+  hashes = stack.all_frames(stacks)
 
-  if all(fits_headers[f]['IMAGETYP'] == 'Bias' for f in hashes):
+  if stack.image_type == 'bias':
     output_dir = os.path.join(dest_path, 'Stacks', 'Calibration', 'masters')
     return os.path.join(
         output_dir, f'master_bias_{stack.camera}_'
         f'{stack.mean_temperature:.0f}C_{stack.content_hash}.xisf')
-  elif all(fits_headers[f]['IMAGETYP'] == 'Dark' for f in hashes):
+  elif stack.image_type == 'dark':
     output_dir = os.path.join(dest_path, 'Stacks', 'Calibration', 'masters')
     return os.path.join(
         output_dir, f'master_dark_{stack.camera}_'
         f'{stack.mean_temperature:.0f}C_{stack.exposure_s}s_'
         f'{stack.content_hash}.xisf')
-  elif all(fits_headers[f]['IMAGETYP'] == 'Flat' for f in hashes):
+  elif stack.image_type == 'flat':
     output_dir = os.path.join(dest_path, 'Stacks', 'Calibration', 'masters')
     return os.path.join(
         output_dir,
         f'master_flat_{stack.camera}_{stack.filter}_{stack.content_hash}.xisf')
-  else:
+  elif stack.image_type == 'light':
     output_dir = os.path.join(dest_path, 'Stacks', stack.target, 'masters')
     ra_dec_string = position_string.ra_dec_string(*stack.center)
     return os.path.join(
@@ -76,6 +77,8 @@ def _output_filename(stack, fits_headers, dest_path):
         f'{stack.camera}_{stack.image_scale:.02f}aspp_'
         f'{stack.rotation_angle:.2f}deg_{stack.filter}_{stack.content_hash}.xisf'
     )
+
+  assert False, f'unknown image_type {stack.image_type}'
 
 
 def _symlink_frames(filenames, dest_path):
@@ -113,22 +116,38 @@ def _add_xisf_metadata(filename, dest_filename, metadata):
 # plate-solving help) won't derail a long-running session.
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
 def stack_files(context, stack_id):
+  assert context.output_dir
+
   stacks = ray.get(context.stacks)
   stack = stacks[stack_id]
   key = ('stack_files', stack_id)
-  print(f'Entering stack_files for {stack}')
+  print(f'Entering stack_files for {asdict(stack)}')
 
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
 
   metadata = {_CONTENT_HASH_KEY: stack.content_hash}
 
+  # TODO: Update this to use the new Stack tree, and add specific tests to
+  # exercise it.
+
+  # TODO: Put subframe selection here.
+
   with tempfile.TemporaryDirectory() as tmp_dir:
-    for i, run in enumerate(stack.runs):
+    hashes = stack.frames + list(stack.dependencies.values())
+    filenames = [image_hashes[h] for h in hashes]
+    for h, f in zip(hashes, filenames):
+      print(f'hash {h} -> filename {f}')
+    assert None not in filenames
+    _symlink_frames(filenames, tmp_dir)
+
+    for i, substack_id in enumerate(stack.contents):
+      substack = stacks[substack_id]
+
       run_dir = os.path.join(tmp_dir, f'RUN_{i}')
       os.makedirs(run_dir, exist_ok=True)
 
-      hashes = run.frames + run.stack_dependencies
+      hashes = substack.frames + list(substack.dependencies.values())
       filenames = [image_hashes[h] for h in hashes]
       for h, f in zip(hashes, filenames):
         print(f'hash {h} -> filename {f}')
@@ -153,7 +172,8 @@ def stack_files(context, stack_id):
         str(f.absolute()) for f in Path(master_dir).rglob("master*.xisf"))
     wbpp_masters.sort(key=lambda x: os.path.getmtime(x))
     filename = wbpp_masters[-1]
-    dest_filename = _output_filename(stack, fits_headers, context.output_dir)
+    dest_filename = _output_filename(stack, stacks, fits_headers,
+                                     context.output_dir)
     print(f'last modified WBPP master {filename} -> {dest_filename}')
     os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
     _add_xisf_metadata(filename, dest_filename, metadata)
@@ -190,15 +210,21 @@ def scatter_stack_subframes(context):
   graph = {}
   for priority, stack_id in enumerate(stacks_by_date):
     stack = stacks[stack_id]
+
+    # TODO: Clarify this.
+    if stack.image_type == 'light' and not stack.geometric_hash:
+      continue
+
     if not should_run(stack_id) or master_exists(
         stack_id) or previously_had_exception(stack_id):
       continue
 
     graph[Node(stack_files, stack_id, priority=priority)] = [
         (stack_files, d)
-        for run in stack.runs
-        for d in run.stack_dependencies
-        if not master_exists(d) and not previously_had_exception(d)
+        for substack in stack.contents
+        for d in stacks[substack].dependencies
+        if stacks[d].image_type != 'light' and master_exists(d) and
+        not previously_had_exception(d)
     ]
 
   return context, Graph(graph)
