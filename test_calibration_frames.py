@@ -20,6 +20,7 @@ from stack_identification import identify_stacks
 from calibration_frames import identify_calibration_stacks, associate_with_stacks
 from make_test_context import make_test_context
 from hashing import hash_list
+from get_stacks import get_toplevel_stacks, get_content_stacks_of_type
 
 
 def _build_compute_graph():
@@ -498,9 +499,14 @@ class TestCalibrationFrames(unittest.TestCase):
 
     stacks = ray.get(self.context.stacks)
     self.assertEqual(len(stacks), 5)
-    stack = next(iter(stacks.values()))
 
-    self.assertEqual(len(stack.dependencies), 3)
+    toplevel_stacks = get_toplevel_stacks(stacks)
+    self.assertEqual(len(toplevel_stacks), 1)
+    stack = toplevel_stacks[0]
+    self.assertEqual(len(stack.contents), 1)
+
+    content_stacks = get_content_stacks_of_type(stacks, 'light')
+    self.assertEqual(len(content_stacks), 1)
 
 
 if __name__ == "__main__":

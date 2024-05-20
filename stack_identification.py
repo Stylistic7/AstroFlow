@@ -75,18 +75,23 @@ def _new_stacks(context,
               plate_solutions[light_frames[0]].header)).points).tolist()
   projected_footprints = footprints.all_projections(SphericalPolygon(footprint))
 
-  # TODO: The selection criterion needs to be preserved when stacks are
-  # re-computed. Stacks with the same geometric_hash can have their settings
-  # passed on. There may be other settings like this in the future.
-  selection_criterion = ('StarCountFraction', 0.75)
   new_stacks = {}
-  for run in get_runs(light_frames, fits_headers, context.max_run_gap,
-                      context.min_frames_in_run):
-    frames = get_frames_for_run(run, light_frames, fits_headers)
-    assert len(frames)
-    stack = Stack(frames=frames)
-    stack.update_metadata(fits_headers)
-    new_stacks[stack.content_hash] = stack
+  exposures = [(f, fits_headers[f]['EXPOSURE']) for f in light_frames]
+  for exposure_cluster in clustering.cluster_continuous(exposures, epsilon=0.1):
+    exposure_frames, exposures = zip(*exposure_cluster)
+    assert len(set(exposures)) == 1
+
+    # TODO: The selection criterion needs to be preserved when stacks are
+    # re-computed. Stacks with the same geometric_hash can have their settings
+    # passed on. There may be other settings like this in the future.
+    selection_criterion = ('StarCountFraction', 0.75)
+    for run in get_runs(exposure_frames, fits_headers, context.max_run_gap,
+                        context.min_frames_in_run):
+      frames = get_frames_for_run(run, exposure_frames, fits_headers)
+      assert len(frames)
+      stack = Stack(frames=frames)
+      stack.update_metadata(fits_headers)
+      new_stacks[stack.content_hash] = stack
 
   # Add a toplevel stack, with the geometric information, that contains all
   # of the runs of light frames as its contents.
@@ -115,6 +120,8 @@ def identify_stacks(context):
 
   # TODO: Maybe implement a version of cluster_continuous() that repeatedly
   # subdivides by independent 1D variables.
+  #
+  # TODO: A 6-deep nested for loop is pretty ugly. Can this be improved?
   debug_hash = 'cbc3b0f593d8a78f'
   stacks = {}
   for name, light_frames in spatial_groups:
@@ -163,4 +170,4 @@ def identify_stacks(context):
   context.stacks = ray.put(stacks)
   ray_diskcache.set('stacks', stacks)
 
-  return context, None
+  return context, None  #

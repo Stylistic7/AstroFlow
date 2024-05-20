@@ -53,18 +53,21 @@ class Stack:
       assert not self.contents
 
     all_frames = self.all_frames(stacks)
-
-    def get_quality(quality):
-      qualities = set(fits_headers[f][quality] for f in all_frames)
-      assert len(qualities) < 2, f'multiple qualities {qualities}'
-      return next(iter(qualities)) if len(qualities) else None
-
     self.content_hash = hash_list(all_frames)
+
+    def get_quality(quality, allow_multiple=False):
+      qualities = set(fits_headers[f].get(quality, None) for f in all_frames)
+      if allow_multiple:
+        return qualities
+      else:
+        assert len(qualities) < 2, f'multiple {quality} qualities {qualities}'
+        return next(iter(qualities)) if len(qualities) else None
+
     self.image_type = get_quality('IMAGETYP')
     self.camera = get_quality('INSTRUME')
     self.width_pixels = get_quality('NAXIS1')
     self.height_pixels = get_quality('NAXIS2')
-    self.exposure_s = get_quality('EXPOSURE')
+    self.exposure_s = get_quality('EXPOSURE', allow_multiple=True)
     self.filter = get_quality('FILTER')
 
     self.integration_s = sum([fits_headers[f]['EXPOSURE'] for f in all_frames])
@@ -99,12 +102,14 @@ class Stack:
               f'Scale {self.image_scale:.2f}"/px, '
               f'PA {self.rotation_angle:.2f} deg, '
               f'Camera {self.camera}, '
-              f'Exposure {self.exposure_s}, '
-              f'Filter {self.filter},'
-              f'Temp {self.mean_temperature:.02f} degC')
+              f'Exposure {self.exposure_s} s, '
+              f'Filter {self.filter}, '
+              f'Temp {self.mean_temperature:.02f} degC '
+              f'Integration {self.integration_s} s')
     else:
       return (f'Content hash {self.content_hash}'
               f'Camera {self.camera}, '
               f'Exposure {self.exposure_s}, '
-              f'Filter {self.filter},'
-              f'Temp {self.mean_temperature:.02f} degC')
+              f'Filter {self.filter}, '
+              f'Temp {self.mean_temperature:.02f} degC '
+              f'Integration {self.integration_s} s')

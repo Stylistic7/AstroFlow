@@ -48,10 +48,13 @@ if __name__ == '__main__':
       'stack_thumbnail_image', 'stack_thumbnail_video'
   ]
 
-  for k in cache:
+  for k in cache.iterkeys():
     # print('looking at key', k)
     if any(a in k for a in allow_list):
       continue
 
-    print('deleting key', k)
-    del cache[k]
+    try:
+      print('deleting key', k)
+      del cache[k]
+    except:
+      pass
