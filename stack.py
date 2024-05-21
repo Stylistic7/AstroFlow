@@ -56,18 +56,25 @@ class Stack:
     self.content_hash = hash_list(all_frames)
 
     def get_quality(quality, allow_multiple=False):
-      qualities = set(fits_headers[f].get(quality, None) for f in all_frames)
+      qualities = list(
+          set(fits_headers[f].get(quality, None) for f in all_frames))
+      if type(qualities[0]) is float and np.all(
+          np.isclose(qualities, qualities[0])):
+        qualities = {qualities[0]}
+
       if allow_multiple:
-        return qualities
+        return set(qualities)
       else:
         assert len(qualities) < 2, f'multiple {quality} qualities {qualities}'
         return next(iter(qualities)) if len(qualities) else None
+
+    allow_multiple_exposures = (self.geometric_hash != None)
 
     self.image_type = get_quality('IMAGETYP')
     self.camera = get_quality('INSTRUME')
     self.width_pixels = get_quality('NAXIS1')
     self.height_pixels = get_quality('NAXIS2')
-    self.exposure_s = get_quality('EXPOSURE', allow_multiple=True)
+    self.exposure_s = get_quality('EXPOSURE', allow_multiple_exposures)
     self.filter = get_quality('FILTER')
 
     self.integration_s = sum([fits_headers[f]['EXPOSURE'] for f in all_frames])

@@ -178,6 +178,8 @@ class TestStackIdentification(unittest.TestCase):
     toplevel_stacks = get_toplevel_stacks(stacks)
     self.assertEqual(len(toplevel_stacks), 1)
     stack = toplevel_stacks[0]
+    print(f'### toplevel_stack {stack}')
+    print(f'### toplevel_stack.contents {stack.contents}')
     self.assertEqual(stack.center, [100, 50])
     self.assertEqual(len(stack.contents), 2)
 
@@ -186,13 +188,13 @@ class TestStackIdentification(unittest.TestCase):
     stack = content_stacks[0]
     self.assertTrue(all('bar' in image_hashes[f] for f in stack.frames))
     self.assertEqual(len(stack.frames), 7)
-    self.assertEqual(stack.exposure_s, {120.0})
+    self.assertEqual(stack.exposure_s, 120.0)
     self.assertEqual(stack.integration_s, 7 * 120)
 
     stack = content_stacks[1]
     self.assertTrue(all('foo' in image_hashes[f] for f in stack.frames))
     self.assertEqual(len(stack.frames), 5)
-    self.assertEqual(stack.exposure_s, {300.0})
+    self.assertEqual(stack.exposure_s, 300.0)
     self.assertEqual(stack.integration_s, 5 * 300)
 
 

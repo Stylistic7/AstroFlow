@@ -77,9 +77,11 @@ def _new_stacks(context,
 
   new_stacks = {}
   exposures = [(f, fits_headers[f]['EXPOSURE']) for f in light_frames]
-  for exposure_cluster in clustering.cluster_continuous(exposures, epsilon=0.1):
+  for exposure_cluster in clustering.cluster_continuous(exposures,
+                                                        epsilon=0.01):
     exposure_frames, exposures = zip(*exposure_cluster)
-    assert len(set(exposures)) == 1
+    assert np.all(np.isclose(exposures, exposures[0])
+                 ), f'exposures {exposures} are clustered, but not all close'
 
     # TODO: The selection criterion needs to be preserved when stacks are
     # re-computed. Stacks with the same geometric_hash can have their settings
