@@ -30,23 +30,42 @@ const override: CSSProperties = {
     borderColor: "red",
 };
 
-export default function RunPanel({ stack_id, stacks, flatStackIds }) {
-    console.log('flatStackIds', flatStackIds);
+export default function RunPanel({ stack_id, stacks, flat_stack_ids }) {
+    const { promiseInProgress } = usePromiseTracker();
+
+    const set_settings = (stack_id, settings) => {
+        console.log('set_settings', stack_id, JSON.stringify(settings));
+        trackPromise(
+            fetch(`/set_stack_settings/${stack_id}`, {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(settings)
+            })
+                .then(r => r.json())
+                .then(j => console.log(j))
+        );
+    };
+
+
+    console.log('flat_stack_ids', flat_stack_ids);
     let stack = stacks[stack_id];
 
     return (
         <div>
             <div><img src={`/stack_thumbnail_image/${stack_id}`} /></div>
-            <div><span>Stack content_hash: {stack.content_hash}</span></div>
+            <div><span>Stack {stack.frames.length} frames, content_hash: {stack.content_hash} flat {stack.dependencies['flat']}</span></div>
             <div><span>Available flat stacks for camera {stack.camera} and filter {stack.filter}:</span></div>
             <ul>
-                {flatStackIds.map(id =>
-                    <li>{stacks[id].content_hash}:&nbsp;
+                {flat_stack_ids.map(id =>
+                    <li><a onClick={() => set_settings(stack_id, { 'flat': id })}>{stacks[id].content_hash}</a>:&nbsp;
                         {stacks[id].frames.length}&nbsp;
                         {stacks[id].image_type} frames&nbsp;
                         {stacks[id].oldest_date}&nbsp;
                         {stacks[id].newest_date}</li>)}
             </ul>
-        </div>
+        </div >
     );
 }

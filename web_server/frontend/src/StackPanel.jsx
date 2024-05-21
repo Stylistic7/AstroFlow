@@ -128,7 +128,7 @@ export default function StackPanel({ stacks, targets, mosaics }) {
 	let [color, setColor] = useState("#ffffff");
 	const [open, setOpen] = React.useState(false);
 
-	const [flatStackIds, setFlatStackIds] = useState([]);
+	const [flat_stack_ids, set_flat_stack_ids] = useState([]);
 
 	const handleClickOpen = () => {
 		setOpen(true);
@@ -166,7 +166,7 @@ export default function StackPanel({ stacks, targets, mosaics }) {
 		trackPromise(
 			fetch(`/flats_for_camera_and_filter/${stack.camera}/${stack.filter}`)
 				.then(r => r.json())
-				.then(j => setFlatStackIds(j))
+				.then(j => set_flat_stack_ids(j))
 		);
 	}, []);
 
@@ -232,7 +232,7 @@ export default function StackPanel({ stacks, targets, mosaics }) {
 						<RunPanel
 							stack_id={stack_id}
 							stacks={stacks}
-							flatStackIds={flatStackIds}
+							flat_stack_ids={flat_stack_ids}
 						/>
 					)
 				)}

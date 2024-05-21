@@ -9,7 +9,7 @@ import os
 import io
 import numpy as np
 import flask
-from flask import jsonify, Response
+from flask import request, jsonify, Response
 from dataclasses import asdict
 import shutil
 import threading
@@ -486,23 +486,21 @@ def flats_for_camera_and_filter(camera, filter):
   ]
 
 
-@app.route('/run_thumbnail/<stack_id>/<run_id>')
-def run_thumbnail(stack_id, run_id):
-  stacks = cache['stacks']
-  stack = stacks[stack_id]
-  print('### stack', stack)
-  print('### stack.runs', stack.runs)
-
-  run = stack.runs[run_id]
-  print('### run', run)
+@app.route('/set_stack_settings/<stack_id>', methods=['POST'])
+def set_stack_settings(stack_id):
+  with cache.transact():
+    key = ('stack_settings', stack_id)
+    settings = cache.get(key, {}) | request.json
+    cache[key] = settings
 
   context = Context()
-  context.stacks = ray.put(stacks)
+  context.stacks = ray.put(cache['stacks'])
   context.image_hashes = ray.put(cache['image_hashes'])
   context.fits_headers = ray.put(cache['fits_headers'])
   context.plate_solutions = ray.put(cache['plate_solutions'])
   context, image = ray.get(
-      image_previews.compute_run_thumbnail.remote(context, run))
+      image_previews.force_compute_stack_thumbnail_image.remote(
+          context, stack_id))
 
   buffer = io.BytesIO()
   buffer.write(image)
