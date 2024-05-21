@@ -30,20 +30,21 @@ const override: CSSProperties = {
     borderColor: "red",
 };
 
-export default function RunPanel({ stack_id, run_id, run, stacks, flatStackIds }) {
+export default function RunPanel({ stack_id, stacks, flatStackIds }) {
     console.log('flatStackIds', flatStackIds);
+    let stack = stacks[stack_id];
 
     return (
         <div>
-            <div><img src={`/run_thumbnail/${stack_id}/${run.content_hash}`} /></div>
-            <div><span>Run: {run.content_hash}</span></div>
-            <div><span>Available flat stacks:</span></div>
+            <div><img src={`/stack_thumbnail_image/${stack_id}`} /></div>
+            <div><span>Stack content_hash: {stack.content_hash}</span></div>
+            <div><span>Available flat stacks for camera {stack.camera} and filter {stack.filter}:</span></div>
             <ul>
                 {flatStackIds.map(id =>
-                    <li>{stacks[id].content_hash}:
-                        {stacks[id].num_frames}
-                        {stacks[id].type} frames
-                        {stacks[id].oldest_date}
+                    <li>{stacks[id].content_hash}:&nbsp;
+                        {stacks[id].frames.length}&nbsp;
+                        {stacks[id].image_type} frames&nbsp;
+                        {stacks[id].oldest_date}&nbsp;
                         {stacks[id].newest_date}</li>)}
             </ul>
         </div>

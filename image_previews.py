@@ -116,8 +116,8 @@ def scatter_stack_thumbnails(context, mode):
       gather_stack_thumbnails: [
           (compute_stack_thumbnails, s, mode)
           for s in stacks
-          if stacks[s].geometric_hash and ('stack_thumbnail_image', mode,
-                                           s) not in cache_keys
+          if stacks[s].image_type == 'light' and ('stack_thumbnail_image', mode,
+                                                  s) not in cache_keys
       ]
   })
 
@@ -125,25 +125,24 @@ def scatter_stack_thumbnails(context, mode):
 # TODO: This function needs to decend into the Stack contents and get
 # calibrations at the lower level.
 def _get_calibrations(stack, stacks):
-  assert stack.geometric_hash
+  assert stack.image_type == 'light'
 
-  # Find the first bias, dark, and flat frame in the stacks's dependencies.
   calibrations = {}
+  bias_frame = dark_frame = flat_frame = None
+  if bias_stack := stack.dependencies.get('bias', None):
+    bias_frame = stacks[bias_stack].frames[0]
+  if dark_stack := stack.dependencies.get('dark', None):
+    dark_frame = stacks[dark_stack].frames[0]
+  if flat_stack := stack.dependencies.get('flat', None):
+    flat_frame = stacks[flat_stack].frames[0]
+
+  for light_frame in stack.frames:
+    calibrations[light_frame] = dict(bias_frame=bias_frame,
+                                     dark_frame=dark_frame,
+                                     flat_frame=flat_frame)
+
   for c in stack.contents:
-    assert stacks[c].image_type == 'light'
-
-    bias_frame = dark_frame = flat_frame = None
-    if bias_stack := stacks[c].dependencies.get('bias', None):
-      bias_frame = stacks[bias_stack].frames[0]
-    if dark_stack := stacks[c].dependencies.get('dark', None):
-      dark_frame = stacks[dark_stack].frames[0]
-    if flat_stack := stacks[c].dependencies.get('flat', None):
-      flat_frame = stacks[flat_stack].frames[0]
-
-    for light_frame in stacks[c].frames:
-      calibrations[light_frame] = dict(bias_frame=bias_frame,
-                                       dark_frame=dark_frame,
-                                       flat_frame=flat_frame)
+    calibrations |= _get_calibrations(stacks[c], stacks)
 
   print(f'_get_calibrations returning {calibrations}')
   return calibrations
@@ -172,8 +171,6 @@ def compute_stack_master_thumbnail(context, stack_id, width=2160):
   stacks = ray.get(context.stacks)
   stack = stacks[stack_id]
   print(f'Entering compute_stack_master_thumbnail() for stack {stack}')
-
-  assert stack.geometric_hash
 
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)

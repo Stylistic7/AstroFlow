@@ -477,13 +477,12 @@ def recent():
 
 
 # TODO: Loading stuff from the cache on every endpoint call is very slow.
-@app.route('/stacks_for_type_and_camera/<stack_type>/<camera>')
-def stacks_for_type_and_camera(stack_type, camera):
-  fits_headers = cache['fits_headers']
+@app.route('/flats_for_camera_and_filter/<camera>/<filter>')
+def flats_for_camera_and_filter(camera, filter):
   stacks = cache['stacks']
   return [
       k for k, s in stacks.items()
-      if s.camera == camera and s.type == stack_type
+      if s.image_type == 'flat' and s.camera == camera and s.filter == filter
   ]
 
 

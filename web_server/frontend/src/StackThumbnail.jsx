@@ -75,8 +75,8 @@ export default function StackThumbnail({ stacks, stack_id, width, handleClick })
 	}, [video_ref]);
 
 	let light_frames = [];
-	for (let [key, run] of Object.entries(stack.runs)) {
-		light_frames += run.frames;
+	for (let c of stack.contents) {
+		light_frames += stacks[c].frames;
 	}
 
 	const currentLightFrame = sortedLightFrames[frameCount];

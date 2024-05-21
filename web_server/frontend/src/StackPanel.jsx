@@ -164,7 +164,7 @@ export default function StackPanel({ stacks, targets, mosaics }) {
 
 	useEffect(() => {
 		trackPromise(
-			fetch(`/stacks_for_type_and_camera/flat/${stack.camera}`)
+			fetch(`/flats_for_camera_and_filter/${stack.camera}/${stack.filter}`)
 				.then(r => r.json())
 				.then(j => setFlatStackIds(j))
 		);
@@ -173,7 +173,6 @@ export default function StackPanel({ stacks, targets, mosaics }) {
 	let stack_thumbnail_video_url = `/stack_thumbnail_video/${stack_id}`;
 
 	console.log('promiseInProgress', promiseInProgress);
-	console.log('Object.values(stack.runs)', Object.values(stack.runs));
 
 	return (
 		<>
@@ -202,7 +201,7 @@ export default function StackPanel({ stacks, targets, mosaics }) {
 			<div style={{ margin: "2px" }}>
 				<div>
 					<Typography color="text.primary" margin="0.5em">
-						Stack contains {stack.runs.length} runs of light frames
+						Stack contains {stack.contents.length} runs of light frames
 					</Typography>
 					<QuarantineStackDialog
 						stack_id={stack_id}
@@ -229,10 +228,9 @@ export default function StackPanel({ stacks, targets, mosaics }) {
 						data-testid="loader"
 					/>
 				) : (
-					Object.values(stack.runs).map(run =>
+					Object.values(stack.contents).map(stack_id =>
 						<RunPanel
 							stack_id={stack_id}
-							run={run}
 							stacks={stacks}
 							flatStackIds={flatStackIds}
 						/>
