@@ -63,7 +63,7 @@ class Stack:
         qualities = {qualities[0]}
 
       if allow_multiple:
-        return set(qualities)
+        return list(qualities)
       else:
         assert len(qualities) < 2, f'multiple {quality} qualities {qualities}'
         return next(iter(qualities)) if len(qualities) else None

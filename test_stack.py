@@ -116,7 +116,7 @@ class TestStack(unittest.TestCase):
     self.assertEqual(toplevel_stack.camera, 'ZWO ASI6200MM Pro')
     self.assertEqual(toplevel_stack.filter, 'H')
     self.assertAlmostEqual(toplevel_stack.mean_temperature, -12.9, places=3)
-    self.assertEqual(toplevel_stack.exposure_s, {300})
+    self.assertEqual(toplevel_stack.exposure_s, [300])
     self.assertEqual(toplevel_stack.integration_s, 3 * 300)
     self.assertEqual(toplevel_stack.width_pixels, 9576)
     self.assertEqual(toplevel_stack.height_pixels, 6388)

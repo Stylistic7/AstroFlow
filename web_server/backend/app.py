@@ -210,60 +210,6 @@ def stack(stack_id):
   return asdict(stacks[stack_id])
 
 
-@app.route('/get_selected_subframes/<stack_id>')
-def get_selected_subframes(stack_id):
-  # TODO: Get the context somewhere -- is it in the cache?
-  context = Context(max_run_gap=datetime.timedelta(minutes=30),
-                    min_frames_in_run=3)
-
-  stack = cache['stacks'][stack_id]
-  print('### stack is', stack)
-  fits_headers = cache['fits_headers']
-  plate_solutions = cache['plate_solutions']
-  criterion = subframe_selection.decode_selection_criterion(
-      stack.selection_criterion)
-  runs = criterion.select_subframes(context, stack.runs, fits_headers,
-                                    plate_solutions)
-  light_frames = [f for run in runs.values() for f in run.frames]
-  return light_frames
-
-
-@app.route('/get_exposure_duration/<stack_id>')
-def get_exposure_duration(stack_id):
-  # TODO: Get the context somewhere -- is it in the cache?
-  context = Context(max_run_gap=datetime.timedelta(minutes=30),
-                    min_frames_in_run=3)
-
-  stack = cache['stacks'][stack_id]
-  fits_headers = cache['fits_headers']
-
-  light_frames = [f for run in stack.runs.values() for f in run.frames]
-  print(f'### before subframe selection, there are '
-        f'{len(light_frames)} light frames')
-  total_exposure_duration = sum(
-      fits_headers[f]['EXPOSURE'] for f in light_frames)
-
-  # TODO: Loading these from the cache on every request is going to be very
-  # slow -- maybe use the ray_diskcache, which holds them in memory?
-  plate_solutions = cache['plate_solutions']
-  fits_headers = cache['fits_headers']
-  criterion = subframe_selection.decode_selection_criterion(
-      stack.selection_criterion)
-  print('### criterion is', criterion)
-  runs = criterion.select_subframes(context, stack.runs, fits_headers,
-                                    plate_solutions)
-  light_frames = [f for run in runs.values() for f in run.frames]
-  print(f'### after subframe selection, there are '
-        f'{len(light_frames)} light frames')
-  selected_exposure_duration = sum(
-      fits_headers[f]['EXPOSURE'] for f in light_frames)
-
-  return {
-      'total_exposure_duration': total_exposure_duration,
-      'selected_exposure_duration': selected_exposure_duration
-  }
-
-
 @app.route('/trial_flat_corrections/<stack_id>')
 def trial_flat_corrections(stack_id):
   key = ('trial_flat_correction', stack_id)
@@ -449,90 +395,67 @@ def plot():
   return flask.send_file(mem, mimetype='text/html')
 
 
-@app.route('/get_sorted_light_frames/<stack_id>')
-def get_sorted_light_frames(stack_id):
-  stack = cache['stacks'][stack_id]
-  plate_solutions = cache['plate_solutions']
-  return subframe_selection.get_light_frames_sorted_by_stars(
-      stack.runs, plate_solutions)
+# @app.route('/get_num_stars_histogram_html/<stack_id>')
+# def get_num_stars_histogram_html(stack_id):
+#   print(f'Creating num stars histogram for stack id {stack_id}')
+#   stack = cache['stacks'][stack_id]
+#   plate_solutions = cache['plate_solutions']
 
+#   light_frames = [f for run in stack.runs.values() for f in run.frames]
+#   num_stars = [plate_solutions[f].num_stars for f in light_frames]
+#   print('num_stars', num_stars)
 
-@app.route('/get_light_frames/<stack_id>')
-def get_light_frames(stack_id):
-  stack = cache['stacks'][stack_id]
-  image_hashes = cache['image_hashes']
+#   colors = ['#A56CC1', '#A6ACEC']
+#   bin_size = (np.max(num_stars) - np.min(num_stars)) / 10
+#   fig = ff.create_distplot([num_stars], ['# Stars'],
+#                            colors=colors,
+#                            curve_type='normal',
+#                            bin_size=bin_size,
+#                            show_rug=False)
 
-  filenames = []
-  for run in stack.runs.values():
-    for frame in run.frames:
-      filenames.append(image_hashes[frame])
+#   # fig.update_layout(title_text='Hist and Curve Plot')
 
-  return filenames
+#   buffer = io.StringIO()
+#   fig.write_html(buffer, full_html=False)
+#   mem = io.BytesIO()
+#   mem.write(buffer.getvalue().encode())
+#   mem.seek(0)
+#   return flask.send_file(mem, mimetype='text/html')
 
+# @app.route('/quarantine_target/<target_id>')
+# def quarantine_target(target_id):
+#   target = cache.get('targets', {})[target_id]
+#   stacks = cache.get('stacks', {})
+#   quarantined_files = cache.get('quarantined_files', [])
 
-@app.route('/get_num_stars_histogram_html/<stack_id>')
-def get_num_stars_histogram_html(stack_id):
-  print(f'Creating num stars histogram for stack id {stack_id}')
-  stack = cache['stacks'][stack_id]
-  plate_solutions = cache['plate_solutions']
+#   num_files_quarantined = 0
+#   for stack_id in target.stack_ids:
+#     stack = stacks[stack_id]
+#     for run in stack.runs.values():
+#       for h in run.frames:
+#         quarantined_files.append(h)
+#         num_files_quarantined += 1
 
-  light_frames = [f for run in stack.runs.values() for f in run.frames]
-  num_stars = [plate_solutions[f].num_stars for f in light_frames]
-  print('num_stars', num_stars)
+#   print(f'### Quarantined {num_files_quarantined} files')
+#   cache['quarantined_files'] = quarantined_files
 
-  colors = ['#A56CC1', '#A6ACEC']
-  bin_size = (np.max(num_stars) - np.min(num_stars)) / 10
-  fig = ff.create_distplot([num_stars], ['# Stars'],
-                           colors=colors,
-                           curve_type='normal',
-                           bin_size=bin_size,
-                           show_rug=False)
+#   return Response(status=204)
 
-  # fig.update_layout(title_text='Hist and Curve Plot')
+# @app.route('/quarantine_stack/<stack_id>')
+# def quarantine_stack(stack_id):
+#   stack = cache['stacks'][stack_id]
+#   quarantined_files = cache['quarantined_files']
 
-  buffer = io.StringIO()
-  fig.write_html(buffer, full_html=False)
-  mem = io.BytesIO()
-  mem.write(buffer.getvalue().encode())
-  mem.seek(0)
-  return flask.send_file(mem, mimetype='text/html')
+#   num_files_quarantined = 0
+#   for run in stack.runs.values():
+#     for h in run.frames:
+#       quarantined_files.append(h)
+#       num_files_quarantined += 1
 
+#   print(f'### Quarantined {num_files_quarantined} files')
+#   cache['quarantined_files'] = quarantined_files
 
-@app.route('/quarantine_target/<target_id>')
-def quarantine_target(target_id):
-  target = cache.get('targets', {})[target_id]
-  stacks = cache.get('stacks', {})
-  quarantined_files = cache.get('quarantined_files', [])
-
-  num_files_quarantined = 0
-  for stack_id in target.stack_ids:
-    stack = stacks[stack_id]
-    for run in stack.runs.values():
-      for h in run.frames:
-        quarantined_files.append(h)
-        num_files_quarantined += 1
-
-  print(f'### Quarantined {num_files_quarantined} files')
-  cache['quarantined_files'] = quarantined_files
-
-  return Response(status=204)
-
-
-@app.route('/quarantine_stack/<stack_id>')
-def quarantine_stack(stack_id):
-  stack = cache['stacks'][stack_id]
-  quarantined_files = cache['quarantined_files']
-
-  num_files_quarantined = 0
-  for run in stack.runs.values():
-    for h in run.frames:
-      quarantined_files.append(h)
-      num_files_quarantined += 1
-
-  print(f'### Quarantined {num_files_quarantined} files')
-  cache['quarantined_files'] = quarantined_files
-
-  return Response(status=204)
+#   return Response(status=204)
 
 
 @app.route('/recent')
@@ -545,8 +468,10 @@ def recent():
     target = targets[target_id]
     for stack_id in target.stack_ids:
       stack = stacks[stack_id]
-      for run in stack.runs.values():
-        return max(fits_headers[h]['DATE-OBS'] for h in run.frames)
+      if stack.geometric_hash == None:
+        continue
+
+      return max(fits_headers[h]['DATE-OBS'] for h in stack.all_frames(stacks))
 
   return sorted(targets, key=last_frame_datetime, reverse=True)
 
