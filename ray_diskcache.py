@@ -1,6 +1,13 @@
 import ray
 from cache import cache
 import traceback
+import os
+
+if 'ASTROFLOW_MOCK_NAMESPACE' in os.environ:
+  namespace = os.environ["ASTROFLOW_MOCK_NAMESPACE"]
+  print(f'### Using mock namespace {namespace}')
+else:
+  namespace = 'AstroFlow'
 
 
 @ray.remote(resources={'diskcache': 0.001})
@@ -67,40 +74,40 @@ class GlobalVarActor:
 
 
 def get_keys():
-  actor = ray.get_actor('ray_diskcache', namespace='AstroFlow')
+  actor = ray.get_actor('ray_diskcache', namespace=namespace)
   return ray.get(actor.get_keys.remote())
 
 
 def get(key, default=None, keep_in_memory=True):
-  actor = ray.get_actor('ray_diskcache', namespace='AstroFlow')
+  actor = ray.get_actor('ray_diskcache', namespace=namespace)
   return ray.get(actor.get.remote(key, default, keep_in_memory))
 
 
 def set(key, value, keep_in_memory=True):
-  actor = ray.get_actor('ray_diskcache', namespace='AstroFlow')
+  actor = ray.get_actor('ray_diskcache', namespace=namespace)
   ray.get(actor.set.remote(key, value, keep_in_memory))
 
 
 def clear():
-  actor = ray.get_actor('ray_diskcache', namespace='AstroFlow')
+  actor = ray.get_actor('ray_diskcache', namespace=namespace)
   ray.get(actor.clear.remote())
 
 
 def contains(key):
-  actor = ray.get_actor('ray_diskcache', namespace='AstroFlow')
+  actor = ray.get_actor('ray_diskcache', namespace=namespace)
   return ray.get(actor.contains.remote(key))
 
 
 def delete(key):
-  actor = ray.get_actor('ray_diskcache', namespace='AstroFlow')
+  actor = ray.get_actor('ray_diskcache', namespace=namespace)
   return ray.get(actor.delete.remote(key))
 
 
 def and_equals(key, value, default=None, keep_in_memory=True):
-  actor = ray.get_actor('ray_diskcache', namespace='AstroFlow')
+  actor = ray.get_actor('ray_diskcache', namespace=namespace)
   return ray.get(actor.and_equals.remote(key, value, default, keep_in_memory))
 
 
 def or_equals(key, value, default=None, keep_in_memory=True):
-  actor = ray.get_actor('ray_diskcache', namespace='AstroFlow')
+  actor = ray.get_actor('ray_diskcache', namespace=namespace)
   return ray.get(actor.or_equals.remote(key, value, default, keep_in_memory))
