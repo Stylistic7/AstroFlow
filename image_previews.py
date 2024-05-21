@@ -122,23 +122,28 @@ def scatter_stack_thumbnails(context, mode):
   })
 
 
+# TODO: This function needs to decend into the Stack contents and get
+# calibrations at the lower level.
 def _get_calibrations(stack, stacks):
   assert stack.geometric_hash
 
   # Find the first bias, dark, and flat frame in the stacks's dependencies.
   calibrations = {}
-  bias_frame = dark_frame = flat_frame = None
-  if bias_stack := stack.dependencies.get('bias', None):
-    bias_frame = stacks[bias_stack].all_frames(stacks)[0]
-  if dark_stack := stack.dependencies.get('dark', None):
-    dark_frame = stacks[dark_stack].all_frames(stacks)[0]
-  if flat_stack := stack.dependencies.get('flat', None):
-    flat_frame = stacks[flat_stack].all_frames(stacks)[0]
+  for c in stack.contents:
+    assert stacks[c].image_type == 'light'
 
-  for light_frame in stack.all_frames(stacks):
-    calibrations[light_frame] = dict(bias_frame=bias_frame,
-                                     dark_frame=dark_frame,
-                                     flat_frame=flat_frame)
+    bias_frame = dark_frame = flat_frame = None
+    if bias_stack := stacks[c].dependencies.get('bias', None):
+      bias_frame = stacks[bias_stack].frames[0]
+    if dark_stack := stacks[c].dependencies.get('dark', None):
+      dark_frame = stacks[dark_stack].frames[0]
+    if flat_stack := stacks[c].dependencies.get('flat', None):
+      flat_frame = stacks[flat_stack].frames[0]
+
+    for light_frame in stacks[c].frames:
+      calibrations[light_frame] = dict(bias_frame=bias_frame,
+                                       dark_frame=dark_frame,
+                                       flat_frame=flat_frame)
 
   print(f'_get_calibrations returning {calibrations}')
   return calibrations
@@ -147,12 +152,17 @@ def _get_calibrations(stack, stacks):
 # TODO: Put the thumbnail sizes in a user config.
 @ray.remote(scheduling_strategy="SPREAD", max_retries=5, retry_exceptions=True)
 def compute_stack_thumbnails(context, stack, mode):
-  if mode == 'subframe':
-    return compute_stack_subframe_thumbnails(context, stack, width=1200)
-  elif mode == 'master':
-    return compute_stack_master_thumbnail(context, stack, width=2160)
-  elif mode == 'post_processed':
-    print('not implemented')
+  try:
+    if mode == 'subframe':
+      return compute_stack_subframe_thumbnails(context, stack, width=1200)
+    elif mode == 'master':
+      return compute_stack_master_thumbnail(context, stack, width=2160)
+    elif mode == 'post_processed':
+      print('not implemented')
+  except TimeoutError as e:
+    # TODO: Implement some kind of system-wide error handling.
+    print(f'### TimeoutError while making {mode} thumbnail for {stack}')
+    return context, None
 
 
 # TODO: This runs on every missing master thumbnail, even if the masters don't
