@@ -14,6 +14,7 @@ ray_context = ray.init(address='auto',
                                '/Users/nobody/Projects/AstroFlow',
                            'excludes': [
                                '/.cache/',
+                               'cache.tar.gz',
                                '/.git/',
                                '/web_server/',
                                '/testdata/',
