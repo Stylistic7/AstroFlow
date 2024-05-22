@@ -1,6 +1,16 @@
 import React, { useState, useEffect, useContext } from "react";
 
 import { trackPromise, usePromiseTracker } from "react-promise-tracker";
+import ClipLoader from "react-spinners/ClipLoader";
+
+import Breadcrumbs from '@mui/material/Breadcrumbs';
+import Link from '@mui/material/Link';
+import Typography from '@mui/material/Typography';
+import CheckIcon from '@mui/icons-material/Check';
+
+import HDRImage from "./HDRImage.jsx";
+import TargetPanel from "./TargetPanel.jsx";
+import StackThumbnail from "./StackThumbnail.jsx";
 import "./Starmap.css";
 import AstroFlowContext from './AstroFlowContext.jsx';
 
@@ -18,14 +28,13 @@ export default function RunPanel({ stack_id, flat_stack_ids }) {
     const { stacks } = useContext(AstroFlowContext);
 
     const { promiseInProgress } = usePromiseTracker();
-    const [stack_dependencies, set_stack_dependencies] = useState({});
+    const [stackSettings, setStackSettings] = useState({});
 
     useEffect(() => {
         fetch(`/get_stack_dependencies/${stack_id}`)
             .then(r => r.json())
-            .then(j => set_stack_dependencies(j))
+            .then(j => setStackSettings(j));
     }, []);
-
 
     const set_settings = (stack_id, settings) => {
         console.log('set_settings', stack_id, JSON.stringify(settings));
@@ -61,18 +70,14 @@ export default function RunPanel({ stack_id, flat_stack_ids }) {
 
     return (
         <div>
-            <div style={{ maxWidth: '75vw' }} >
-                <ImageGallery
-                    items={images}
-                    startIndex={flat_stack_ids.indexOf(stack_dependencies['flat'])}
-                    onSlide={onSlide}
-                /></div>
+            <div><img key={Date.now()} src={`/stack_thumbnail_image/${stack_id}`} /></div>
             <div><span>Stack {stack.frames.length} frames, content_hash: {stack.content_hash} flat {stack.dependencies['flat']}</span></div>
             <div><span>Available flat stacks for camera {stack.camera} and filter {stack.filter}:</span></div>
             <ul>
                 {flat_stack_ids.map(id =>
-                    <li key={id}>
-                        <a onClick={() => set_settings(stack_id, { 'flat': id })}>{stacks[id].content_hash}</a>:&nbsp;
+                    <li>
+                        {stackSettings['flat'] == id ? <CheckIcon /> : null}
+                        <a style={{ cursor: 'pointer' }} onClick={() => set_settings(stack_id, { 'flat': id })}>{stacks[id].content_hash}</a>:&nbsp;
                         {stacks[id].frames.length}&nbsp;
                         {stacks[id].image_type} frames&nbsp;
                         {stacks[id].oldest_date}&nbsp;
