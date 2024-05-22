@@ -78,6 +78,16 @@ def process(item):
 
 
 @ray.remote
+def scatter_raises_exception():
+  return Graph({gather: [(process_raises_exception, i) for i in range(11)]})
+
+
+@ray.remote
+def process_raises_exception(item):
+  raise TimeoutError("oh noes")
+
+
+@ray.remote
 def gather(results):
   return sum(results)
 
@@ -247,6 +257,12 @@ class TestDependencyGraph(unittest.TestCase):
 
     self.assertEqual(results.num_nodes_run, 3)
     self.assertEqual(results.max_parallelism_seen, 1)
+
+  def test_with_exception(self):
+    graph = {scatter_raises_exception: {}}
+
+    results = run_graph(graph)
+    self.assertTrue(isinstance(results[scatter_raises_exception], TypeError))
 
   def test_dynamic_subgraph(self):
     graph = {scatter: {}}

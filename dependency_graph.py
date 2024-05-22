@@ -186,20 +186,26 @@ def run_graph(graph, context=None, debug=False):
       ready_refs, remaining_refs = ray.wait(remaining_refs, num_returns=1)
       assert len(ready_refs) == 1
       ts, node = ref_to_ts_and_node[ready_refs[0]]
-      if use_context:
-        ts.context, result = ray.get(ready_refs[0])
-      else:
-        result = ray.get(ready_refs[0])
 
       num_nodes_run += 1
 
-      # There are two possibilities here: the task can return a result,
-      # or a (dynamically-generated) Graph to run as a sub-graph.
-      if type(result) is Graph:
-        add_subgraph(result, ts, node)
-      else:
-        ts.results[node] = result
-        ts.final_result = result
+      try:
+        if use_context:
+          ts.context, result = ray.get(ready_refs[0])
+        else:
+          result = ray.get(ready_refs[0])
+
+        # There are two possibilities here: the task can return a result,
+        # or a (dynamically-generated) Graph to run as a sub-graph.
+        if type(result) is Graph:
+          add_subgraph(result, ts, node)
+        else:
+          ts.results[node] = result
+          ts.final_result = result
+          ts.done(node)
+      except ray.exceptions.RayTaskError as e:
+        ts.results[node] = e.cause
+        ts.final_result = e.cause
         ts.done(node)
 
     delete_finished_subgraphs()
