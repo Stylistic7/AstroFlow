@@ -263,30 +263,56 @@ def tuple_starts_with(t, *values):
 
 @app.route('/stack_thumbnail_image/<stack_id>')
 def stack_thumbnail_image(stack_id):
-  for mode in ['master', 'subframe']:
-    key = next(
-        (k for k in cache.iterkeys()
-         if tuple_starts_with(k, 'stack_thumbnail_image', mode, stack_id)),
-        None)
+  stack = cache.get('stacks', {}).get(stack_id, None)
+  if not stack:
+    return Response(status=404)
 
-    if key:
-      buffer = io.BytesIO()
-      buffer.write(cache[key])
-      buffer.seek(0)
-      return flask.send_file(buffer, mimetype='image/png')
+  key = ('stack_thumbnail_image', 'master', stack_id)
+  if key in cache:
+    buffer = io.BytesIO()
+    buffer.write(cache[key])
+    buffer.seek(0)
+    return flask.send_file(buffer, mimetype='image/png')
 
-  return Response(status=404)
+  key = ('stack_thumbnail_images', 'subframe', stack_id)
+  if key not in cache:
+    print(f'### key {key} not in cache')
+    return Response(status=404)
+
+  images = cache[key]
+  settings_key = ('stack_settings', stack_id)
+  settings = cache.get(settings_key, {})
+
+  dependencies = stack.dependencies | settings
+  if dependencies['flat'] not in images:
+    print(f"### flat {dependencies['flat']} not in images")
+    return Response(status=404)
+
+  hash = images[dependencies['flat']]
+  key = ('stack_thumbnail_image', hash)
+  if key not in cache:
+    print(f'### key {key} not in cache')
+    return Response(status=404)
+
+  buffer = io.BytesIO()
+  buffer.write(cache[key])
+  buffer.seek(0)
+  return flask.send_file(buffer, mimetype='image/png')
 
 
 @app.route('/stack_thumbnail_images/<stack_id>/<flat_stack_id>')
 def stack_thumbnail_images(stack_id, flat_stack_id):
   key = ('stack_thumbnail_images', 'subframe', stack_id)
-  image = cache.get(key, {}).get(flat_stack_id, None)
-  if not image:
+  hash = cache.get(key, {}).get(flat_stack_id, None)
+  if not hash:
+    return Response(status=404)
+
+  key = ('stack_thumbnail_image', hash)
+  if key not in cache:
     return Response(status=404)
 
   buffer = io.BytesIO()
-  buffer.write(image)
+  buffer.write(cache[key])
   buffer.seek(0)
   return flask.send_file(buffer, mimetype='image/png')
 

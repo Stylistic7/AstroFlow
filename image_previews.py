@@ -7,6 +7,7 @@ import ray
 
 import ray_diskcache
 import file_io
+from hashing import hash_string
 from file_io import read_image
 import subframe_selection
 import stacking
@@ -114,17 +115,15 @@ def scatter_stack_thumbnails(context, mode):
 
   if mode == 'subframe':
     subframe_images = [
-        (compute_stack_subframe_thumbnail_image, id)
+        (compute_stack_subframe_thumbnail_images, id)
         for id, s in stacks.items()
         if s.image_type == 'light' and ('stack_thumbnail_images', 'subframe',
                                         id) not in cache_keys
     ]
-    subframe_videos = [
-        (compute_stack_subframe_thumbnail_video, id)
-        for id, s in stacks.items()
-        if s.image_type == 'light' and s.geometric_hash and
-        ('stack_thumbnail_video', 'subframe', id) not in cache_keys
-    ]
+    subframe_videos = [(compute_stack_subframe_thumbnail_video, id)
+                       for id, s in stacks.items()
+                       if s.image_type == 'light' and s.geometric_hash and
+                       ('stack_thumbnail_video', id) not in cache_keys]
     tasks = subframe_images + subframe_videos
   elif mode == 'master':
     tasks = [(compute_stack_master_thumbnail, id)
@@ -190,7 +189,7 @@ def compute_stack_master_thumbnail(context, stack_id):
                    context.master_thumbnail_width))
 
   # Store the thumbnail.
-  key = ('stack_thumbnail_images', 'master', stack_id)
+  key = ('stack_thumbnail_image', 'master', stack_id)
   ray_diskcache.set(key, array_to_png(image), keep_in_memory=False)
   print(f'Wrote key {key}')
 
@@ -198,7 +197,7 @@ def compute_stack_master_thumbnail(context, stack_id):
 
 
 @ray.remote
-def compute_stack_subframe_thumbnail_image(context, stack_id):
+def compute_stack_subframe_thumbnail_images(context, stack_id):
   stacks = ray.get(context.stacks)
   stack = stacks[stack_id]
   image_hashes = ray.get(context.image_hashes)
@@ -237,13 +236,19 @@ def compute_stack_subframe_thumbnail_image(context, stack_id):
     flat_frame = first_frame(flat_stack_id)
     flat_image = resize_array(read_image(image_hashes[flat_frame]), width)
 
-    thumbnail = _make_thumbnail(fits_headers, light_frame, light_image,
-                                bias_frame, bias_image, dark_frame, dark_image,
-                                flat_frame, flat_image, rotate)
-    images[flat_stack_id] = array_to_png(thumbnail)
+    thumbnail = array_to_png(
+        _make_thumbnail(fits_headers, light_frame, light_image, bias_frame,
+                        bias_image, dark_frame, dark_image, flat_frame,
+                        flat_image, rotate))
+    hash = hash_string(thumbnail)
+    images[flat_stack_id] = hash
+
+    key = ('stack_thumbnail_image', hash)
+    ray_diskcache.set(key, thumbnail, keep_in_memory=False)
+    print(f'### Wrote key {key}')
 
   key = ('stack_thumbnail_images', 'subframe', stack_id)
-  ray_diskcache.set(key, images, keep_in_memory=False)
+  ray_diskcache.set(key, images)
   print(f'### Wrote key {key} with {len(images)} flat-corrected thumbnails')
 
   return context, None

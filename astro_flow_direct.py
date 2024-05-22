@@ -534,8 +534,6 @@ def populate_context(context):
   if not stacks:
     context.needs_regrouping = True
 
-  context.needs_regrouping = True
-
   return context
 
 
