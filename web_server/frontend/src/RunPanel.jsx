@@ -24,6 +24,9 @@ import TargetPanel from "./TargetPanel.jsx";
 import StackThumbnail from "./StackThumbnail.jsx";
 import "./Starmap.css";
 
+import ImageGallery from "react-image-gallery";
+import "react-image-gallery/styles/css/image-gallery.css";
+
 const override: CSSProperties = {
     display: "block",
     margin: "0 auto",
@@ -53,9 +56,17 @@ export default function RunPanel({ stack_id, stacks, flat_stack_ids }) {
     console.log('flat_stack_ids', flat_stack_ids);
     let stack = stacks[stack_id];
 
+    const images = flat_stack_ids.map(flat_stack_id => {
+        return {
+            original: `/stack_thumbnail_images/${stack_id}/${flat_stack_id}`
+        }
+    });
+    console.log('images', images)
+
+
     return (
         <div>
-            <div><img src={`/stack_thumbnail_image/${stack_id}`} /></div>
+            <div><ImageGallery items={images} /></div>
             <div><span>Stack {stack.frames.length} frames, content_hash: {stack.content_hash} flat {stack.dependencies['flat']}</span></div>
             <div><span>Available flat stacks for camera {stack.camera} and filter {stack.filter}:</span></div>
             <ul>

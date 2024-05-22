@@ -278,6 +278,19 @@ def stack_thumbnail_image(stack_id):
   return Response(status=404)
 
 
+@app.route('/stack_thumbnail_images/<stack_id>/<flat_stack_id>')
+def stack_thumbnail_images(stack_id, flat_stack_id):
+  key = ('stack_thumbnail_images', 'subframe', stack_id)
+  image = cache.get(key, {}).get(flat_stack_id, None)
+  if not image:
+    return Response(status=404)
+
+  buffer = io.BytesIO()
+  buffer.write(image)
+  buffer.seek(0)
+  return flask.send_file(buffer, mimetype='image/png')
+
+
 # TODO: Maybe expose all of the levels of previews (master, subframe, etc.).
 # @app.route('/stack_thumbnail_image/<mode>/<stack_id>')
 # def stack_thumbnail_image(mode, stack_id):
@@ -492,20 +505,6 @@ def set_stack_settings(stack_id):
     key = ('stack_settings', stack_id)
     settings = cache.get(key, {}) | request.json
     cache[key] = settings
-
-  context = Context()
-  context.stacks = ray.put(cache['stacks'])
-  context.image_hashes = ray.put(cache['image_hashes'])
-  context.fits_headers = ray.put(cache['fits_headers'])
-  context.plate_solutions = ray.put(cache['plate_solutions'])
-  context, image = ray.get(
-      image_previews.force_compute_stack_thumbnail_image.remote(
-          context, stack_id))
-
-  buffer = io.BytesIO()
-  buffer.write(image)
-  buffer.seek(0)
-  return flask.send_file(buffer, mimetype='image/png')
 
 
 def run_astroflow_repeatedly():
