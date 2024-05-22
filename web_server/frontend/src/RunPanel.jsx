@@ -64,8 +64,8 @@ export default function RunPanel({ stack_id, stacks, flat_stack_ids }) {
     const images = flat_stack_ids.map(flat_stack_id => {
         return {
             flat_stack_id: flat_stack_id,
-            original: `/stack_thumbnail_images/${stack_id}/${flat_stack_id}`,
-            thumbnail: `/stack_thumbnail_images/${stack_id}/${flat_stack_id}`
+            original: `/flat_correction_thumbnails/${stack_id}/${flat_stack_id}`,
+            thumbnail: `/flat_correction_thumbnails/${stack_id}/${flat_stack_id}`
         }
     });
     console.log('images', images)
@@ -88,11 +88,13 @@ export default function RunPanel({ stack_id, stacks, flat_stack_ids }) {
             <div><span>Available flat stacks for camera {stack.camera} and filter {stack.filter}:</span></div>
             <ul>
                 {flat_stack_ids.map(id =>
-                    <li><a onClick={() => set_settings(stack_id, { 'flat': id })}>{stacks[id].content_hash}</a>:&nbsp;
+                    <li key={id}>
+                        <a onClick={() => set_settings(stack_id, { 'flat': id })}>{stacks[id].content_hash}</a>:&nbsp;
                         {stacks[id].frames.length}&nbsp;
                         {stacks[id].image_type} frames&nbsp;
                         {stacks[id].oldest_date}&nbsp;
-                        {stacks[id].newest_date}</li>)}
+                        {stacks[id].newest_date}
+                    </li>)}
             </ul>
         </div >
     );

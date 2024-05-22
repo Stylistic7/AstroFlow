@@ -230,6 +230,7 @@ export default function StackPanel({ stacks, targets, mosaics }) {
 				) : (
 					Object.values(stack.contents).map(stack_id =>
 						<RunPanel
+							key={stack_id}
 							stack_id={stack_id}
 							stacks={stacks}
 							flat_stack_ids={flat_stack_ids}

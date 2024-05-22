@@ -114,22 +114,23 @@ def scatter_stack_thumbnails(context, mode):
   cache_keys = ray_diskcache.get_keys()
 
   if mode == 'subframe':
-    subframe_images = [
-        (compute_stack_subframe_thumbnail_images, id)
-        for id, s in stacks.items()
-        if s.image_type == 'light' and ('stack_thumbnail_images', 'subframe',
-                                        id) not in cache_keys
-    ]
-    subframe_videos = [(compute_stack_subframe_thumbnail_video, id)
+    subframe_images = [(create_flat_correction_thumbnails, id)
                        for id, s in stacks.items()
-                       if s.image_type == 'light' and s.geometric_hash and
-                       ('stack_thumbnail_video', id) not in cache_keys]
+                       if s.image_type == 'light' and not s.geometric_hash and
+                       ('flat_correction_thumbnails', id) not in cache_keys]
+    subframe_videos = [
+        (create_stack_subframe_thumbnails, id)
+        for id, s in stacks.items()
+        if s.image_type == 'light' and s.geometric_hash and
+        ('stack_subframe_thumbnail_image', id) not in cache_keys and
+        ('stack_subframe_thumbnail_video', id) not in cache_keys
+    ]
     tasks = subframe_images + subframe_videos
   elif mode == 'master':
-    tasks = [(compute_stack_master_thumbnail, id)
+    tasks = [(create_stack_master_thumbnail, id)
              for id, s in stacks.items()
              if s.image_type == 'light' and s.geometric_hash and
-             ('stack_thumbnail_image', 'master', id) not in cache_keys]
+             ('stack_master_thumbnail_image', id) not in cache_keys]
 
   return context, Graph({gather: tasks})
 
@@ -163,10 +164,10 @@ def _get_calibrations(stack, stacks):
 # exist yet. It takes up time and is unnecessary. Find some way to cache this
 # result or speed it up.
 @ray.remote
-def compute_stack_master_thumbnail(context, stack_id):
+def create_stack_master_thumbnail(context, stack_id):
   stacks = ray.get(context.stacks)
   stack = stacks[stack_id]
-  print(f'Entering compute_stack_master_thumbnail() for stack {stack}')
+  print(f'Entering create_stack_master_thumbnail() for stack {stack}')
 
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
@@ -189,7 +190,7 @@ def compute_stack_master_thumbnail(context, stack_id):
                    context.master_thumbnail_width))
 
   # Store the thumbnail.
-  key = ('stack_thumbnail_image', 'master', stack_id)
+  key = ('stack_master_thumbnail_image', stack_id)
   ray_diskcache.set(key, array_to_png(image), keep_in_memory=False)
   print(f'Wrote key {key}')
 
@@ -197,15 +198,16 @@ def compute_stack_master_thumbnail(context, stack_id):
 
 
 @ray.remote
-def compute_stack_subframe_thumbnail_images(context, stack_id):
+def create_flat_correction_thumbnails(context, stack_id):
   stacks = ray.get(context.stacks)
   stack = stacks[stack_id]
+  assert not stack.geometric_hash
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
   plate_solutions = ray.get(context.plate_solutions)
 
   light_frames_by_stars = subframe_selection.get_light_frames_sorted_by_stars(
-      stack.all_frames(stacks), plate_solutions)
+      stack.frames, plate_solutions)
   light_frame, _ = light_frames_by_stars[0]
 
   width = context.subframe_thumbnail_width
@@ -219,6 +221,8 @@ def compute_stack_subframe_thumbnail_images(context, stack_id):
   settings = ray_diskcache.get(settings_key, {})
   dependencies = stack.dependencies | settings
 
+  # TODO: These will probably fail for any light stack that doesn't have
+  # calibration images. Add a test case.
   bias_frame = first_frame(dependencies['bias'])
   bias_image = resize_array(read_image(image_hashes[bias_frame]), width)
 
@@ -243,11 +247,11 @@ def compute_stack_subframe_thumbnail_images(context, stack_id):
     hash = hash_string(thumbnail)
     images[flat_stack_id] = hash
 
-    key = ('stack_thumbnail_image', hash)
+    key = ('flat_correction_thumbnail', hash)
     ray_diskcache.set(key, thumbnail, keep_in_memory=False)
     print(f'### Wrote key {key}')
 
-  key = ('stack_thumbnail_images', 'subframe', stack_id)
+  key = ('flat_correction_thumbnails', stack_id)
   ray_diskcache.set(key, images)
   print(f'### Wrote key {key} with {len(images)} flat-corrected thumbnails')
 
@@ -255,10 +259,11 @@ def compute_stack_subframe_thumbnail_images(context, stack_id):
 
 
 @ray.remote
-def compute_stack_subframe_thumbnail_video(context, stack_id):
+def create_stack_subframe_thumbnails(context, stack_id):
   stacks = ray.get(context.stacks)
   stack = stacks[stack_id]
-  print(f'Entering compute_stack_subframe_thumbnail_video() for stack {stack}')
+  assert stack.geometric_hash
+  print(f'Entering create_stack_subframe_thumbnails() for stack {stack}')
 
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
@@ -300,7 +305,7 @@ def compute_stack_subframe_thumbnail_video(context, stack_id):
     fourcc = cv2.VideoWriter_fourcc(*'VP80')
     video_filename = os.path.join(tmp_dir, 'output.webm')
     out = cv2.VideoWriter(video_filename, fourcc, 10.0, (width, height), False)
-    for light_frame, _ in light_frames_by_stars:
+    for i, (light_frame, _) in enumerate(light_frames_by_stars):
       rotate = plate_solutions[light_frame].rotation_angle < 0.0
 
       light_image = resize_array(read_image(image_hashes[light_frame]), width)
@@ -318,6 +323,11 @@ def compute_stack_subframe_thumbnail_video(context, stack_id):
                            bias_image, dark_frame, dark_image, flat_frame,
                            flat_image, rotate)
 
+      if i == 0:
+        key = ('stack_subframe_thumbnail_image', stack_id)
+        ray_diskcache.set(key, array_to_png(im), keep_in_memory=False)
+        print(f'### Wrote key {key}')
+
       im = (im * 255.0).astype(np.uint8)
       frame = np.zeros((height, width), dtype=np.uint8)
       frame[0:im.shape[0], 0:im.shape[1]] = im
@@ -327,7 +337,7 @@ def compute_stack_subframe_thumbnail_video(context, stack_id):
     out.release()
     thumbnail_video = open(video_filename, 'rb').read()
 
-    key = ('stack_thumbnail_video', stack_id)
+    key = ('stack_subframe_thumbnail_video', stack_id)
     ray_diskcache.set(key, thumbnail_video, keep_in_memory=False)
     print(f'### Wrote key {key}')
 

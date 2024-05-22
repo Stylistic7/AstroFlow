@@ -210,29 +210,6 @@ def stack(stack_id):
   return asdict(stacks[stack_id])
 
 
-@app.route('/trial_flat_corrections/<stack_id>')
-def trial_flat_corrections(stack_id):
-  key = ('trial_flat_correction', stack_id)
-  if key not in cache:
-    return Response(status=404)
-
-  results = cache[key]
-  for result in results:
-    result['original_image'] = 'data:image/png;base64,' + b64encode(
-        result['original_image']).decode()
-    for t in result['trial_flat_corrections']:
-      t['corrected_image'] = 'data:image/png;base64,' + b64encode(
-          t['corrected_image']).decode()
-
-  return results
-
-
-@app.route('/flat_frame_associations/<stack_id>')
-def flat_frame_associations(stack_id):
-  stacks = test_app.stacks if debug else cache['stacks']
-  return stacks[stack_id].flat_frame_associations
-
-
 # @app.route('/trial_flat_correction_image/<stack_id>/<index>')
 # def trial_flat_correction_image(stack_id, index):
 #   key = ('trial_flat_correction', stack_id)
@@ -263,51 +240,25 @@ def tuple_starts_with(t, *values):
 
 @app.route('/stack_thumbnail_image/<stack_id>')
 def stack_thumbnail_image(stack_id):
-  stack = cache.get('stacks', {}).get(stack_id, None)
-  if not stack:
-    return Response(status=404)
+  for key in [('stack_master_thumbnail_image', stack_id),
+              ('stack_subframe_thumbnail_image', stack_id)]:
+    if key in cache:
+      buffer = io.BytesIO()
+      buffer.write(cache[key])
+      buffer.seek(0)
+      return flask.send_file(buffer, mimetype='image/png')
 
-  key = ('stack_thumbnail_image', 'master', stack_id)
-  if key in cache:
-    buffer = io.BytesIO()
-    buffer.write(cache[key])
-    buffer.seek(0)
-    return flask.send_file(buffer, mimetype='image/png')
-
-  key = ('stack_thumbnail_images', 'subframe', stack_id)
-  if key not in cache:
-    print(f'### key {key} not in cache')
-    return Response(status=404)
-
-  images = cache[key]
-  settings_key = ('stack_settings', stack_id)
-  settings = cache.get(settings_key, {})
-
-  dependencies = stack.dependencies | settings
-  if dependencies['flat'] not in images:
-    print(f"### flat {dependencies['flat']} not in images")
-    return Response(status=404)
-
-  hash = images[dependencies['flat']]
-  key = ('stack_thumbnail_image', hash)
-  if key not in cache:
-    print(f'### key {key} not in cache')
-    return Response(status=404)
-
-  buffer = io.BytesIO()
-  buffer.write(cache[key])
-  buffer.seek(0)
-  return flask.send_file(buffer, mimetype='image/png')
+  return Response(status=404)
 
 
-@app.route('/stack_thumbnail_images/<stack_id>/<flat_stack_id>')
-def stack_thumbnail_images(stack_id, flat_stack_id):
-  key = ('stack_thumbnail_images', 'subframe', stack_id)
+@app.route('/flat_correction_thumbnails/<stack_id>/<flat_stack_id>')
+def flat_correction_thumbnails(stack_id, flat_stack_id):
+  key = ('flat_correction_thumbnails', stack_id)
   hash = cache.get(key, {}).get(flat_stack_id, None)
   if not hash:
     return Response(status=404)
 
-  key = ('stack_thumbnail_image', hash)
+  key = ('flat_correction_thumbnail', hash)
   if key not in cache:
     return Response(status=404)
 
@@ -336,11 +287,8 @@ def stack_thumbnail_images(stack_id, flat_stack_id):
 
 @app.route('/stack_thumbnail_video/<stack_id>')
 def stack_thumbnail_video(stack_id):
-  key = next((k for k in cache.iterkeys()
-              if tuple_starts_with(k, 'stack_thumbnail_video', stack_id)), None)
-  print(f'found matching key {key}')
-
-  if not key:
+  key = ('stack_thumbnail_video', stack_id)
+  if key not in cache:
     return Response(status=404)
 
   buffer = io.BytesIO()
