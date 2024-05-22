@@ -35,38 +35,55 @@ const override: CSSProperties = {
 
 export default function RunPanel({ stack_id, stacks, flat_stack_ids }) {
     const { promiseInProgress } = usePromiseTracker();
+    const [stack_dependencies, set_stack_dependencies] = useState({});
+
+    useEffect(() => {
+        fetch(`/get_stack_dependencies/${stack_id}`)
+            .then(r => r.json())
+            .then(j => set_stack_dependencies(j))
+    }, []);
+
 
     const set_settings = (stack_id, settings) => {
         console.log('set_settings', stack_id, JSON.stringify(settings));
-        trackPromise(
-            fetch(`/set_stack_settings/${stack_id}`, {
-                method: 'POST',
-                headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(settings)
-            })
-                .then(r => r.json())
-                .then(j => console.log(j))
-        );
+        fetch(`/set_stack_settings/${stack_id}`, {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(settings)
+        })
     };
-
 
     console.log('flat_stack_ids', flat_stack_ids);
     let stack = stacks[stack_id];
 
+    // TODO: The "thumbnail" here is really 1200 pixels wide. Consider
+    // generating some kind of hierarchy of legitimate thumbnails.
     const images = flat_stack_ids.map(flat_stack_id => {
         return {
-            original: `/stack_thumbnail_images/${stack_id}/${flat_stack_id}`
+            flat_stack_id: flat_stack_id,
+            original: `/stack_thumbnail_images/${stack_id}/${flat_stack_id}`,
+            thumbnail: `/stack_thumbnail_images/${stack_id}/${flat_stack_id}`
         }
     });
     console.log('images', images)
 
+    const onSlide = (currentIndex) => {
+        console.log('currentIndex', currentIndex,
+            'flat_stack_id', images[currentIndex].flat_stack_id);
+        set_settings(stack_id, { flat: images[currentIndex].flat_stack_id });
+    };
 
     return (
         <div>
-            <div><ImageGallery items={images} /></div>
+            <div style={{ maxWidth: '75vw' }} >
+                <ImageGallery
+                    items={images}
+                    startIndex={flat_stack_ids.indexOf(stack_dependencies['flat'])}
+                    onSlide={onSlide}
+                /></div>
             <div><span>Stack {stack.frames.length} frames, content_hash: {stack.content_hash} flat {stack.dependencies['flat']}</span></div>
             <div><span>Available flat stacks for camera {stack.camera} and filter {stack.filter}:</span></div>
             <ul>

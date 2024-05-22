@@ -499,12 +499,26 @@ def flats_for_camera_and_filter(camera, filter):
   ]
 
 
+@app.route('/get_stack_dependencies/<stack_id>')
+def get_stack_dependencies(stack_id):
+  stack = cache.get('stacks', {}).get(stack_id, None)
+  if not stack:
+    return Response(status=404)
+
+  key = ('stack_settings', stack_id)
+  settings = cache.get(key, {})
+
+  return stack.dependencies | settings
+
+
 @app.route('/set_stack_settings/<stack_id>', methods=['POST'])
 def set_stack_settings(stack_id):
   with cache.transact():
     key = ('stack_settings', stack_id)
     settings = cache.get(key, {}) | request.json
     cache[key] = settings
+
+  return Response(status=204)
 
 
 def run_astroflow_repeatedly():
