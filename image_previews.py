@@ -116,8 +116,7 @@ def scatter_stack_thumbnails(context, mode):
   if mode == 'subframe':
     subframe_images = [(create_flat_correction_thumbnails, id)
                        for id, s in stacks.items()
-                       if s.image_type == 'light' and not s.geometric_hash and
-                       ('flat_correction_thumbnails', id) not in cache_keys]
+                       if s.image_type == 'light' and not s.geometric_hash]
     subframe_videos = [
         (create_stack_subframe_thumbnails, id)
         for id, s in stacks.items()
@@ -197,10 +196,27 @@ def create_stack_master_thumbnail(context, stack_id):
   return context, key
 
 
+# TODO: Is it only necessary to make the thumbnails for the flat stacks
+# immediately before and immediately after the light frames? I suppose people
+# could make bad flat frames, or confuse them somehow, and want all of the
+# flexibility.
 @ray.remote
 def create_flat_correction_thumbnails(context, stack_id):
   stacks = ray.get(context.stacks)
   stack = stacks[stack_id]
+
+  key = ('flat_correction_thumbnails', stack_id)
+  thumbnails = ray_diskcache.get(key, {})
+
+  flat_stack_ids = [
+      id for id, s in stacks.items()
+      if not s.geometric_hash and s.image_type == 'flat' and
+      s.camera == stack.camera and s.filter == stack.filter
+  ]
+
+  if all(f in thumbnails for f in flat_stack_ids):
+    return context, None
+
   assert not stack.geometric_hash
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
@@ -229,14 +245,10 @@ def create_flat_correction_thumbnails(context, stack_id):
   dark_frame = first_frame(dependencies['dark'])
   dark_image = resize_array(read_image(image_hashes[dark_frame]), width)
 
-  flat_stack_ids = [
-      id for id, s in stacks.items()
-      if not s.geometric_hash and s.image_type == 'flat' and
-      s.camera == stack.camera and s.filter == stack.filter
-  ]
-
-  images = {}
   for flat_stack_id in flat_stack_ids:
+    if flat_stack_id in thumbnails:
+      continue
+
     flat_frame = first_frame(flat_stack_id)
     flat_image = resize_array(read_image(image_hashes[flat_frame]), width)
 
@@ -245,15 +257,15 @@ def create_flat_correction_thumbnails(context, stack_id):
                         bias_image, dark_frame, dark_image, flat_frame,
                         flat_image, rotate))
     hash = hash_string(thumbnail)
-    images[flat_stack_id] = hash
+    thumbnails[flat_stack_id] = hash
 
     key = ('flat_correction_thumbnail', hash)
     ray_diskcache.set(key, thumbnail, keep_in_memory=False)
     print(f'### Wrote key {key}')
 
   key = ('flat_correction_thumbnails', stack_id)
-  ray_diskcache.set(key, images)
-  print(f'### Wrote key {key} with {len(images)} flat-corrected thumbnails')
+  ray_diskcache.set(key, thumbnails)
+  print(f'### Wrote key {key} with {len(thumbnails)} flat-corrected thumbnails')
 
   return context, None
 
