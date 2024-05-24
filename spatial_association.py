@@ -8,6 +8,8 @@ import footprints
 import ray_diskcache
 
 
+# TODO: There is nothing "spatial" about this. It's just a greedy algorithm
+# to group elements that satisfy a predicate.
 def find_groups(ids, values, comparison_fn, min_component_members) -> list[str]:
   print(f'Finding groups among {len(values)} values')
   groups = []

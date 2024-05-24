@@ -1,20 +1,15 @@
 import ray
-import datetime
 import numpy as np
 from spherical_geometry.polygon import SphericalPolygon
 import astropy
-import itertools
 
-import file_io
 import ray_diskcache
-import stack
 import clustering
-from hashing import hash_string, hash_list
+from hashing import hash_string
 import units
 import footprints
 from stack import Stack, FrameHash
 import units
-import subframe_selection
 from runs import get_runs, get_frames_for_run
 
 
@@ -25,8 +20,6 @@ def normalize_radians(x):
     return x
 
 
-# TODO: Move this to stack.py?
-#
 # This hash defines the specific area of the sky this stack covers. It
 # includes the center (RA, Dec), the rotation angle, the image scale, and
 # the image width and height, in pixels. It is not defined for stacks that
@@ -43,12 +36,7 @@ def _compute_geometric_hash(center, image_scale, rotation_angle, width_pixels,
 
 
 # TODO: The structure of light_frame_runs is completely nuts here.
-def _new_stacks(context,
-                name,
-                light_frames,
-                fits_headers,
-                plate_solutions,
-                debug=False):
+def _new_stacks(context, name, light_frames, fits_headers, plate_solutions):
   width_pixels = next(iter(set(
       fits_headers[f]['NAXIS1'] for f in light_frames)))
   height_pixels = next(
@@ -65,6 +53,8 @@ def _new_stacks(context,
   image_scale = plate_solutions[oldest_image].image_scale
   rotation_angle = normalize_radians(
       plate_solutions[oldest_image].rotation_angle)
+
+  filter = fits_headers[oldest_image]['FILTER']
 
   geometric_hash = _compute_geometric_hash(center, image_scale, rotation_angle,
                                            width_pixels, height_pixels, filter)
@@ -160,16 +150,11 @@ def identify_stacks(context):
               print(f'Hash {debug_hash} found in cluster with '
                     f'filters {filters} and frames {filter_frames}')
             assert len(set(filters)) == 1
-            debug_new_stack = False
-            stacks |= _new_stacks(context,
-                                  name,
-                                  filter_frames,
-                                  fits_headers,
-                                  plate_solutions,
-                                  debug=debug_new_stack)
+            stacks |= _new_stacks(context, name, filter_frames, fits_headers,
+                                  plate_solutions)
 
   print(f'Identified {len(stacks)} stacks')
   context.stacks = ray.put(stacks)
   ray_diskcache.set('stacks', stacks)
 
-  return context, None  #
+  return context, None
