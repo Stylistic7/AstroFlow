@@ -1,16 +1,11 @@
-import * as React from 'react';
-import { useNavigate, useParams } from "react-router-dom";
-import PropTypes from 'prop-types';
-
-import Card from '@mui/material/Card';
-import CardContent from '@mui/material/CardContent';
-import CardMedia from '@mui/material/CardMedia';
-import Typography from '@mui/material/Typography';
-import { CardActionArea } from '@mui/material';
+import React, { useContext } from "react";
+import { useNavigate } from "react-router-dom";
 
 import Polyline from "./Polyline.jsx";
+import AstroFlowContext from './AstroFlowContext.jsx';
 
-export default function MosaicOutline({stacks, targets, mosaics, mosaic_id, style={}}) {
+export default function MosaicOutline({ mosaic_id, style = {} }) {
+  const { targets, mosaics } = useContext(AstroFlowContext);
   const mosaic = mosaics[mosaic_id];
   console.log(mosaic);
 

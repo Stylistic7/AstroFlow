@@ -1,15 +1,13 @@
-import * as React from 'react';
+import React, { useContext } from "react";
 import { styled, alpha } from '@mui/material/styles';
 import AppBar from '@mui/material/AppBar';
 import Box from '@mui/material/Box';
 import Toolbar from '@mui/material/Toolbar';
 import IconButton from '@mui/material/IconButton';
-import Typography from '@mui/material/Typography';
 import InputBase from '@mui/material/InputBase';
 import Badge from '@mui/material/Badge';
 import MenuItem from '@mui/material/MenuItem';
 import Menu from '@mui/material/Menu';
-import MenuIcon from '@mui/icons-material/Menu';
 import SearchIcon from '@mui/icons-material/Search';
 import AccountCircle from '@mui/icons-material/AccountCircle';
 import MailIcon from '@mui/icons-material/Mail';
@@ -20,6 +18,8 @@ import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import lunr from 'lunr';
 import LeftDrawer from "./LeftDrawer.jsx";
+import AstroFlowContext from './AstroFlowContext.jsx';
+
 
 const Search = styled('div')(({ theme }) => ({
   position: 'relative',
@@ -61,10 +61,8 @@ const StyledInputBase = styled(InputBase)(({ theme }) => ({
   },
 }));
 
-export default function PrimarySearchAppBar({ stacks, targets, mosaics }) {
-  console.log('stacks', stacks);
-  console.log('targets', targets);
-  console.log('mosaics', mosaics);
+export default function PrimarySearchAppBar() {
+  const { stacks, targets, mosaics } = useContext(AstroFlowContext);
 
   var documents = [{
     "type": "mosaic",

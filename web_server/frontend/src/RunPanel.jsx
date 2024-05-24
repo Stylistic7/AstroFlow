@@ -1,31 +1,12 @@
-import React, { useState, useRef, useEffect, useReducer } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-
-import LayersIcon from '@mui/icons-material/Layers';
-import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import DeleteIcon from '@mui/icons-material/Delete';
-import Button from '@mui/material/Button';
-import Dialog from '@mui/material/Dialog';
-import DialogActions from '@mui/material/DialogActions';
-import DialogContent from '@mui/material/DialogContent';
-import DialogContentText from '@mui/material/DialogContentText';
-import DialogTitle from '@mui/material/DialogTitle';
+import React, { useState, useEffect, useContext } from "react";
 
 import { trackPromise, usePromiseTracker } from "react-promise-tracker";
-import ClipLoader from "react-spinners/ClipLoader";
-
-import Breadcrumbs from '@mui/material/Breadcrumbs';
-import Link from '@mui/material/Link';
-import Typography from '@mui/material/Typography';
-
-import HDRImage from "./HDRImage.jsx";
-import TargetPanel from "./TargetPanel.jsx";
-import StackThumbnail from "./StackThumbnail.jsx";
 import "./Starmap.css";
+import AstroFlowContext from './AstroFlowContext.jsx';
 
 import ImageGallery from "react-image-gallery";
 import "react-image-gallery/styles/css/image-gallery.css";
+
 
 const override: CSSProperties = {
     display: "block",
@@ -33,7 +14,9 @@ const override: CSSProperties = {
     borderColor: "red",
 };
 
-export default function RunPanel({ stack_id, stacks, flat_stack_ids }) {
+export default function RunPanel({ stack_id, flat_stack_ids }) {
+    const { stacks } = useContext(AstroFlowContext);
+
     const { promiseInProgress } = usePromiseTracker();
     const [stack_dependencies, set_stack_dependencies] = useState({});
 

@@ -1,16 +1,18 @@
-import * as React from 'react';
+import React, { useContext } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
-import CardMedia from '@mui/material/CardMedia';
 import Typography from '@mui/material/Typography';
 import { CardActionArea } from '@mui/material';
 
 import MosaicOutline from "./MosaicOutline.jsx";
+import AstroFlowContext from './AstroFlowContext.jsx';
 
 // TODO: Don't show MosaicCards for "mosaics" with just one panel?
-export default function MosaicCard({ stacks, targets, mosaics, mosaic_id }) {
+export default function MosaicCard({ mosaic_id }) {
+  const { stacks, targets, mosaics } = useContext(AstroFlowContext);
+
   const mosaic = mosaics[mosaic_id];
   console.log('mosaic', mosaic);
 

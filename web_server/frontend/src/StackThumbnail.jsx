@@ -1,9 +1,11 @@
-import React, { useState, useRef, useEffect, useReducer } from "react";
+import React, { useState, useRef, useEffect, useContext } from "react";
 import useVideoFrames from "./useVideoFrames.ts";
 import ExposureDurationWidget from "./ExposureDurationWidget.jsx";
 import './Starmap.css';
+import AstroFlowContext from './AstroFlowContext.jsx';
 
-export default function StackThumbnail({ stacks, stack_id, width, handleClick }) {
+export default function StackThumbnail({ stack_id, width, handleClick }) {
+	const { stacks } = useContext(AstroFlowContext);
 	const stack = stacks[stack_id];
 
 	const color_for_filter = (filter) => {

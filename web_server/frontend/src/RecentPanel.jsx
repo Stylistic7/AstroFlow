@@ -1,16 +1,9 @@
-import React, { useState, useRef, useEffect, useReducer } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-
-import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
-import Breadcrumbs from '@mui/material/Breadcrumbs';
-import Link from '@mui/material/Link';
-import Typography from '@mui/material/Typography';
-
-import MosaicCard from "./MosaicCard.jsx";
-import TargetCard from "./TargetCard.jsx";
+import React, { useEffect, useContext } from "react";
 import DisambiguationPanel from "./DisambiguationPanel.jsx";
+import AstroFlowContext from './AstroFlowContext.jsx';
 
-export default function RecentPanel({ stacks, targets, mosaics }) {
+export default function RecentPanel() {
+  const { stacks, targets, mosaics } = useContext(AstroFlowContext);
   const [recent, setRecent] = React.useState(undefined);
 
   const fetchRecent = () => {

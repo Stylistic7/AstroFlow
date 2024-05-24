@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useReducer } from "react";
+import React, { useState, useRef, useEffect, useReducer, useContext } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
@@ -10,11 +10,15 @@ import DirectionsRunIcon from '@mui/icons-material/DirectionsRun';
 import MosaicOutline from "./MosaicOutline.jsx";
 import MultiChannelImage from "./MultiChannelImage.jsx";
 import TargetPanel from "./TargetPanel.jsx";
+import AstroFlowContext from './AstroFlowContext.jsx';
+
 
 import "./Starmap.css";
 
 // TODO: Add "mosaic not found" messages.
-export default function MosaicPanel({ stacks, targets, mosaics }) {
+export default function MosaicPanel() {
+	const { stacks, targets, mosaics } = useContext(AstroFlowContext);
+
 	const params = useParams();
 	const navigate = useNavigate();
 

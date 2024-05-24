@@ -9,8 +9,10 @@ import MosaicPanel from "./MosaicPanel.jsx";
 import TargetPanel from "./TargetPanel.jsx";
 import StackPanel from "./StackPanel.jsx";
 import "./Starmap.css";
+import AstroFlowContext from './AstroFlowContext.jsx';
 
-export default function Popup({ mosaic_id, stack_id, mosaics, targets, stacks, zoomToElement }) {
+export default function Popup({ mosaic_id, stack_id, zoomToElement }) {
+	const { stacks, targets, mosaics } = useContext(AstroFlowContext);
 	const [stack, setStack] = React.useState(undefined);
 
 	if (!mosaic_id) {
@@ -35,14 +37,14 @@ export default function Popup({ mosaic_id, stack_id, mosaics, targets, stacks, z
 
 		return (
 			<Typography
-        sx={{ display: 'flex', alignItems: 'center', color: fontColor }}
-        fontSize={fontSize}
-        color="text.primary"
-      >
-        <LayersIcon sx={{ ml: 0.1, mr: 0.1 }} fontSize={fontSize} />
-        {stack.image_scale.toFixed(2) + '"/px ' + stack.filter}
-      </Typography>
-	   );
+				sx={{ display: 'flex', alignItems: 'center', color: fontColor }}
+				fontSize={fontSize}
+				color="text.primary"
+			>
+				<LayersIcon sx={{ ml: 0.1, mr: 0.1 }} fontSize={fontSize} />
+				{stack.image_scale.toFixed(2) + '"/px ' + stack.filter}
+			</Typography>
+		);
 	};
 
 	const mosaic_or_stack_panel = () => {
@@ -73,30 +75,30 @@ export default function Popup({ mosaic_id, stack_id, mosaics, targets, stacks, z
 	};
 
 	return (
-    <div role="presentation" id="popup" style={{backgroundColor: "#999"}}>
-    	<div style={{margin: "15px"}}>
-	      <Breadcrumbs
-	      	aria-label="breadcrumb"
-	      	fontSize={fontSize}
-	      >
-	        <Link
-	          underline="hover"
-	          sx={{ display: 'flex', alignItems: 'center', color: fontColor }}
-	          style={{pointerEvents: "auto"}}
-	          fontSize={fontSize}
-	          color="inherit"
-	          onClick={(event) => {
-					    setStack(undefined);
-					    event.stopPropagation();
-					  }}
-	        >
-	          <AutoAwesomeMosaicIcon fontSize={fontSize} />
-	          {mosaic.name} Mosaic
-	        </Link>
-	        {stack_breadcrumb()}
-	      </Breadcrumbs>
-	      {mosaic_or_stack_panel()}
-	    </div>
-    </div>
-  );
+		<div role="presentation" id="popup" style={{ backgroundColor: "#999" }}>
+			<div style={{ margin: "15px" }}>
+				<Breadcrumbs
+					aria-label="breadcrumb"
+					fontSize={fontSize}
+				>
+					<Link
+						underline="hover"
+						sx={{ display: 'flex', alignItems: 'center', color: fontColor }}
+						style={{ pointerEvents: "auto" }}
+						fontSize={fontSize}
+						color="inherit"
+						onClick={(event) => {
+							setStack(undefined);
+							event.stopPropagation();
+						}}
+					>
+						<AutoAwesomeMosaicIcon fontSize={fontSize} />
+						{mosaic.name} Mosaic
+					</Link>
+					{stack_breadcrumb()}
+				</Breadcrumbs>
+				{mosaic_or_stack_panel()}
+			</div>
+		</div>
+	);
 }

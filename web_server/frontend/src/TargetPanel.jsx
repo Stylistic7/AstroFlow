@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useReducer } from "react";
+import React, { useContext } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
@@ -15,6 +15,7 @@ import Button from '@mui/material/Button';
 
 import StackThumbnail from "./StackThumbnail.jsx";
 import "./Starmap.css";
+import AstroFlowContext from './AstroFlowContext.jsx';
 
 function QuarantineTargetDialog({ target_id }) {
 	const [open, setOpen] = React.useState(false);
@@ -80,7 +81,9 @@ function QuarantineTargetDialog({ target_id }) {
 	);
 }
 
-export default function TargetPanel({ stacks, targets, mosaics }) {
+export default function TargetPanel() {
+	const { stacks, targets } = useContext(AstroFlowContext);
+
 	const params = useParams();
 	console.log('target_id', params.target_id);
 

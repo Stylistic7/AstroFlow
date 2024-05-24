@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useReducer } from "react";
+import React, { useContext } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
@@ -6,10 +6,13 @@ import Breadcrumbs from '@mui/material/Breadcrumbs';
 import Link from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 
+import AstroFlowContext from './AstroFlowContext.jsx';
 import MosaicCard from "./MosaicCard.jsx";
 import TargetCard from "./TargetCard.jsx";
 
-export default function DisambiguationPanel({ stacks, targets, mosaics, items_in }) {
+export default function DisambiguationPanel({ items_in }) {
+	const { stacks, targets, mosaics } = useContext(AstroFlowContext);
+
 	// const params = useParams();
 	let { items } = useParams();
 	items = items || items_in;

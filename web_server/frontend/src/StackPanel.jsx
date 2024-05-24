@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useReducer } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useContext } from 'react';
 
 import LayersIcon from '@mui/icons-material/Layers';
 import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
@@ -24,6 +25,8 @@ import TargetPanel from "./TargetPanel.jsx";
 import StackThumbnail from "./StackThumbnail.jsx";
 import RunPanel from "./RunPanel.jsx";
 import "./Starmap.css";
+import AstroFlowContext from './AstroFlowContext.jsx';
+
 
 function QuarantineStackDialog({ stack_id }) {
 	const [open, setOpen] = React.useState(false);
@@ -118,7 +121,9 @@ const override: CSSProperties = {
 // - select flat frames
 // - queue the stack for stacking
 // - configure stacking options and post-processing scripts
-export default function StackPanel({ stacks, targets, mosaics }) {
+export default function StackPanel() {
+	const { stacks } = useContext(AstroFlowContext);
+
 	const params = useParams();
 	const stack_id = params.stack_id;
 	const stack = stacks[stack_id];

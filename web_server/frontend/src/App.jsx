@@ -20,6 +20,8 @@ import CssBaseline from '@mui/material/CssBaseline';
 import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
 import './App.css';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { createContext, useContext } from 'react';
+import AstroFlowContext from './AstroFlowContext.jsx';
 
 function App() {
   const isPageVisible = usePageVisibility();
@@ -107,48 +109,37 @@ function App() {
   return (
     <ThemeProvider theme={darkTheme}>
       <StyledEngineProvider injectFirst>
-        <CssBaseline />
-        <Router>
-          <Search stacks={stacks} targets={targets} mosaics={mosaics} />
-          <Routes>
-            <Route exact path="/" element={
-              <Starmap
-                stacks={stacks} targets={targets} mosaics={mosaics}
+        <AstroFlowContext.Provider value={{ stacks, targets, mosaics }}>
+          <CssBaseline />
+          <Router>
+            <Search />
+            <Routes>
+              <Route exact path="/" element={
+                <Starmap />
+              } />
+              <Route exact path="/mosaic/:mosaic_id" element={
+                dataIsAvailable && <MosaicPanel />}
               />
-            } />
-            <Route exact path="/mosaic/:mosaic_id" element={
-              dataIsAvailable && <MosaicPanel
-                stacks={stacks} targets={targets} mosaics={mosaics}
-              />}
-            />
-            <Route exact path="/target/:target_id" element={
-              dataIsAvailable && <TargetPanel
-                stacks={stacks} targets={targets} mosaics={mosaics}
-              />}
-            />
-            <Route exact path="/stack/:stack_id" element={
-              dataIsAvailable && <StackPanel
-                stacks={stacks} targets={targets} mosaics={mosaics}
-              />}
-            />
-            <Route exact path="/flat_correction/:stack_id" element={
-              dataIsAvailable && <FlatCorrectionPanel stacks={stacks} />}
-            />
-            <Route exact path="/disambiguation/:items" element={
-              dataIsAvailable && <DisambiguationPanel
-                stacks={stacks} targets={targets} mosaics={mosaics}
-              />}
-            />
-            <Route exact path="/recent" element={
-              dataIsAvailable && <RecentPanel
-                stacks={stacks} targets={targets} mosaics={mosaics}
-              />}
-            />
-          </Routes>
-        </Router>
-
+              <Route exact path="/target/:target_id" element={
+                dataIsAvailable && <TargetPanel />}
+              />
+              <Route exact path="/stack/:stack_id" element={
+                dataIsAvailable && <StackPanel />}
+              />
+              <Route exact path="/flat_correction/:stack_id" element={
+                dataIsAvailable && <FlatCorrectionPanel stacks={stacks} />}
+              />
+              <Route exact path="/disambiguation/:items" element={
+                dataIsAvailable && <DisambiguationPanel />}
+              />
+              <Route exact path="/recent" element={
+                dataIsAvailable && <RecentPanel />}
+              />
+            </Routes>
+          </Router>
+        </AstroFlowContext.Provider>
       </StyledEngineProvider>
-    </ThemeProvider>
+    </ThemeProvider >
   );
 }
 

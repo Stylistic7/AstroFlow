@@ -1,15 +1,16 @@
-import React, { useState, useEffect } from "react";
+import React, { useContext } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import AutoStackCheckbox from "./AutoStackCheckbox.jsx";
 
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
-import CardMedia from '@mui/material/CardMedia';
 import Typography from '@mui/material/Typography';
 import { CardActionArea, Checkbox, FormGroup, FormControlLabel } from '@mui/material';
+import AstroFlowContext from './AstroFlowContext.jsx';
 
-export default function TargetCard({ stacks, targets, mosaics, target_id }) {
+export default function TargetCard({ target_id }) {
+  const { stacks, targets } = useContext(AstroFlowContext);
   const target = targets[target_id];
   const navigate = useNavigate();
 
