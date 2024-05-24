@@ -1,11 +1,13 @@
-import * as React from 'react';
+import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+
+import AutoStackCheckbox from "./AutoStackCheckbox.jsx";
 
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import CardMedia from '@mui/material/CardMedia';
 import Typography from '@mui/material/Typography';
-import { CardActionArea } from '@mui/material';
+import { CardActionArea, Checkbox, FormGroup, FormControlLabel } from '@mui/material';
 
 export default function TargetCard({ stacks, targets, mosaics, target_id }) {
   const target = targets[target_id];
@@ -30,6 +32,7 @@ export default function TargetCard({ stacks, targets, mosaics, target_id }) {
             gridTemplateColumns: `repeat(${num_columns}, 1fr)`,
             gridColumnGap: "0.5em",
             gridRowGap: "0.5em",
+            marginBottom: "0.5em",
           }}>
             {
               target.stack_ids.map(stack_id => <img
@@ -52,6 +55,10 @@ export default function TargetCard({ stacks, targets, mosaics, target_id }) {
           </Typography>
         </CardContent>
       </CardActionArea>
+      <AutoStackCheckbox
+        object_type="target"
+        object_id={target_id}
+      />
     </Card>
   );
 }

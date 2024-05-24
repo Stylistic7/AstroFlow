@@ -261,7 +261,7 @@ def scatter_merge_mosaics(context, mode):
       gather_merge_mosaics: [
           (merge_mosaic, m.id, mode)
           for m in mosaics.values()
-          if context.run_everything or ('merge_mosaic', m.id) in shopping_cart
+          if context.run_everything or ('mosaic', m.id) in shopping_cart
       ]
   })
 

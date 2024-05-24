@@ -14,7 +14,6 @@ import footprints
 @ray.remote
 def group_stacks_into_targets(context):
   stacks = ray.get(context.stacks)
-  fits_headers = ray.get(context.fits_headers)
   plate_solutions = ray.get(context.plate_solutions)
 
   values = {

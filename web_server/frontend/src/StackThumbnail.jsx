@@ -115,7 +115,7 @@ export default function StackThumbnail({ stacks, stack_id, width, handleClick })
 				}}
 				onClick={handleClick}
 			>
-				<source src={`/stack_thumbnail_video/${stack_id}`} type="video/mp4" />
+				<source src={`/stack_subframe_thumbnail_video/${stack_id}`} type="video/mp4" />
 				Your browser does not support the video tag.
 			</video>
 			}

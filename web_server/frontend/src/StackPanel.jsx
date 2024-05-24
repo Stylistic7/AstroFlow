@@ -170,7 +170,7 @@ export default function StackPanel({ stacks, targets, mosaics }) {
 		);
 	}, []);
 
-	let stack_thumbnail_video_url = `/stack_thumbnail_video/${stack_id}`;
+	let stack_thumbnail_video_url = `/stack_subframe_thumbnail_video/${stack_id}`;
 
 	console.log('promiseInProgress', promiseInProgress);
 
