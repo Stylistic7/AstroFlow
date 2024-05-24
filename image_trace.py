@@ -58,57 +58,75 @@ def trace_image_hash(hash):
       spatial_group_hashes = hashes
       found = True
 
-  if found:
-    print(f'Image hash {hash} was found in spatial group with '
-          f'name {spatial_group_name} and {len(spatial_group_hashes)} members')
-  else:
+  if not found:
     print(f'Image hash {hash} is not included in any spatial group')
+    return
+
+  print(f'Image hash {hash} was found in spatial group with '
+        f'name {spatial_group_name} and {len(spatial_group_hashes)} members')
 
   if hash in stacks:
     print(f'Hash {hash} points to stack {stacks[hash]}')
 
   found = False
   for stack_id, stack in stacks.items():
-    for run in stack.runs:
-      if hash in run.frames:
-        found = True
-        break
+    if hash in stack.frames:
+      found = True
+      break
 
   if not found:
-    print(f"Image hash {hash} is not included in any stack's runs")
-  else:
-    print(f'Image hash {hash} is in a run of stack {stack}')
+    print(f"Image hash {hash} is not included in any stack")
+    return
+
+  print(f'Image hash {hash} is in stack {stack}')
 
   found = False
-  for stack_id, stack in stacks.items():
-    for run in stack.runs:
-      if hash in run.stack_dependencies:
-        found = True
-        break
+  for parent_stack in stacks.values():
+    if stack.content_hash in parent_stack.dependencies.values():
+      found = True
+      break
 
   if not found:
-    print(f"Image hash {hash} is not included in any stack's dependencies")
+    print(f"Stack {stack} is not included in any stack's dependencies")
   else:
-    print(f'Image hash {hash} is a dependency of stack {stack}')
+    print(f'Stack {stack} is a dependency of stack {parent_stack}')
+
+  found = False
+  for containing_stack in stacks.values():
+    if stack.content_hash in containing_stack.contents:
+      found = True
+      break
+
+  if not found:
+    print(f"Stack {stack} is not included in any stack's contents")
+  else:
+    print(f'Stack {stack} is contained by stack {containing_stack}')
+
+  found = False
+  for target in targets.values():
+    if containing_stack.content_hash in target.stack_ids:
+      print(
+          f'Target {target} contains stack {containing_stack} via content hash')
+      found = True
+    if containing_stack.geometric_hash in target.stack_ids:
+      print(
+          f'Target {target} contains stack {containing_stack} via geometric hash'
+      )
+      found = True
+
+  if not found:
+    print(f"Stack {containing_stack} was not contained in any target.")
 
 
 # filename_fragments = [
-#     'Light_NGC2244_120.0s_Bin1_6200MM_G_20240209-014820_0001.fit',
-#     'Light_NGC2244_120.0s_Bin1_6200MM_G_20240209-015022_0002.fit',
-#     'Light_NGC2244_120.0s_Bin1_6200MM_G_20240209-015224_0003.fit',
-#     'Light_NGC2244_120.0s_Bin1_6200MM_G_20240209-015426_0004.fit',
-#     'Light_NGC2244_120.0s_Bin1_6200MM_G_20240209-015628_0005.fit',
-#     'Light_NGC2244_120.0s_Bin1_6200MM_G_20240209-015920_0006.fit',
-#     'Light_NGC2244_120.0s_Bin1_6200MM_G_20240209-020122_0007.fit',
-#     'Light_NGC2244_120.0s_Bin1_6200MM_G_20240209-020324_0008.fit',
-#     'Light_NGC2244_120.0s_Bin1_6200MM_G_20240209-020526_0009.fit',
-#     'Light_NGC2244_120.0s_Bin1_6200MM_G_20240209-020728_0010.fit',
+#     'Light_M16_300.0s_Bin1_6200MM_G_20240523-022520_0002',
 # ]
+filename_fragments = [
+    'Light_M16_300.0s_Bin1_6200MM_B_20240523-030301_0003',
+]
+for filename_fragment in filename_fragments:
+  trace_filename_fragment(filename_fragment)
 
-# for filename_fragment in filename_fragments:
-#   trace_filename_fragment(filename_fragment)
-
-hashes = ['5dfa470f72c02bd9']
-
-for hash in hashes:
-  trace_image_hash(hash)
+# hashes = ['5dfa470f72c02bd9']
+# for hash in hashes:
+#   trace_image_hash(hash)
