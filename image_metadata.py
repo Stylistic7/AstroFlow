@@ -183,11 +183,11 @@ def gather_compute_image_metadata(context, results):
   #
   # If any new subframes have been added (e.g. light, dark, bias, or flat
   # frames), then they need to be regrouped into stacks, targets, and mosaics.
-  context.needs_regrouping |= any(not file_io.is_master(r['fits_header'])
-                                  for r in results
-                                  if 'exception' not in r)
+  context.regroup |= any(not file_io.is_master(r['fits_header'])
+                         for r in results
+                         if 'exception' not in r)
 
-  print(f'Needs regrouping: {context.needs_regrouping}')
+  print(f'Needs regrouping: {context.regroup}')
 
   return context, None
 

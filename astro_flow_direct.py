@@ -532,7 +532,7 @@ def populate_context(context):
   context.mosaics = ray.put(mosaics)
 
   if not stacks:
-    context.needs_regrouping = True
+    context.regroup = True
 
   return context
 
@@ -589,6 +589,11 @@ if __name__ == '__main__':
                       dest='default_filter',
                       action='store',
                       help='Default filter')
+  parser.add_argument('-r',
+                      '--regroup',
+                      dest='regroup',
+                      action='store_true',
+                      help='True to regroup images.')
 
   args = parser.parse_args()
 
@@ -598,6 +603,7 @@ if __name__ == '__main__':
   context.output_dir = os.path.abspath(args.output_dir)
   context.quarantine = args.quarantine
   context.download = args.download
+  context.regroup = args.regroup
   context.default_filter = args.default_filter
 
   cache['context'] = context

@@ -21,7 +21,7 @@ class Context(Unionable):
   plate_solutions: dict = None
   quarantined_files: list = None
 
-  needs_regrouping: bool = False
+  regroup: bool = False
 
   spatial_groups: list = None
 

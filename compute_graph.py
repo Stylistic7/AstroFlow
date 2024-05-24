@@ -14,7 +14,7 @@ from dependency_graph import make_graph_from_list
 
 @ray.remote
 def maybe_regroup_graph(context):
-  if context.needs_regrouping:
+  if context.regroup:
     return context, make_graph_from_list([
         find_components_by_cosine_similarity, identify_stacks,
         identify_calibration_stacks, associate_with_stacks,
