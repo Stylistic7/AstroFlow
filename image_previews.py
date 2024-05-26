@@ -239,11 +239,15 @@ def create_flat_correction_thumbnails(context, stack_id):
 
   # TODO: These will probably fail for any light stack that doesn't have
   # calibration images. Add a test case.
-  bias_frame = first_frame(dependencies['bias'])
-  bias_image = resize_array(read_image(image_hashes[bias_frame]), width)
+  bias_frame = bias_image = None
+  if 'bias' in dependencies:
+    bias_frame = first_frame(dependencies['bias'])
+    bias_image = resize_array(read_image(image_hashes[bias_frame]), width)
 
-  dark_frame = first_frame(dependencies['dark'])
-  dark_image = resize_array(read_image(image_hashes[dark_frame]), width)
+  dark_frame = dark_image = None
+  if 'dark' in dependencies:
+    dark_frame = first_frame(dependencies['dark'])
+    dark_image = resize_array(read_image(image_hashes[dark_frame]), width)
 
   for flat_stack_id in flat_stack_ids:
     if flat_stack_id in thumbnails:
