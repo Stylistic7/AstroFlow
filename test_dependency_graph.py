@@ -62,6 +62,12 @@ def increment_bar(context):
 
 
 @ray.remote
+def increment_baz(context):
+  context['baz'] += 1
+  return context, context['baz']
+
+
+@ray.remote
 def set_foo(context, value):
   context['foo'] = value
   return context, value
@@ -108,6 +114,7 @@ def process_with_context(context, item):
 
 @ray.remote
 def gather_with_context(context, results):
+  print(f'### Entering gather_with_context, results are {results}')
   context['processed'].extend(results)
   context['sum'] = sum(results)
   return context, context['sum']
@@ -427,6 +434,23 @@ class TestDependencyGraph(unittest.TestCase):
 
       self.assertEqual(results.num_nodes_run, 8)
       self.assertEqual(results.max_parallelism_seen, 7)
+
+  def test_duplicate_ancestors(self):
+    # The increment_foo task should only run once, because A1 == A2.
+    A1 = increment_foo
+    A2 = increment_foo
+    B = (process_with_context, 2)
+    C = (process_with_context, 3)
+    D = gather_with_context
+
+    graph = {D: {B, C}, B: {A1}, C: {A2}}
+    context = {'foo': 7, 'processed': []}
+
+    context, results = run_graph(graph, context, debug=True)
+
+    self.assertEqual(context, {'foo': 8, 'processed': [2, 3], 'sum': 5})
+    self.assertEqual(results.num_nodes_run, 4)
+    self.assertEqual(results.max_parallelism_seen, 2)
 
 
 if __name__ == '__main__':

@@ -135,6 +135,9 @@ def run_graph(graph, context=None, debug=False):
   def ancestor_results(ts, node):
     node = _unpack_node(node)
     nodes = ts.graph.get(node, [])
+    if debug:
+      print(f'### Node with task {node.task._function.__name__} has '
+            f'{len(nodes)} ancestors')
     return [ts.results[node] for node in nodes]
 
   def make_run_fn(ts, node):
@@ -171,11 +174,12 @@ def run_graph(graph, context=None, debug=False):
   toplevel_ts = add_subgraph(graph)
 
   while active:
-    if debug:
-      print(f'top of loop, {len(active)} active graphs')
-
     ready = get_ready_nodes()
     max_parallelism_seen = max(len(ready), max_parallelism_seen)
+
+    if debug:
+      print(f'top of loop, {len(active)} active graphs, '
+            f'{len(ready)} ready nodes')
 
     ref_to_ts_and_node = {
         make_run_fn(ts, node): (ts, node) for ts, node in ready
@@ -186,6 +190,9 @@ def run_graph(graph, context=None, debug=False):
       ready_refs, remaining_refs = ray.wait(remaining_refs, num_returns=1)
       assert len(ready_refs) == 1
       ts, node = ref_to_ts_and_node[ready_refs[0]]
+      if debug:
+        unpacked = _unpack_node(node)
+        print(f'Task {unpacked.task._function.__name__} finished')
 
       num_nodes_run += 1
 
@@ -204,6 +211,7 @@ def run_graph(graph, context=None, debug=False):
           ts.final_result = result
           ts.done(node)
       except ray.exceptions.RayTaskError as e:
+        print(f'Node {node} raised exception {e}')
         ts.results[node] = e.cause
         ts.final_result = e.cause
         ts.done(node)
