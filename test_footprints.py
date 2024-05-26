@@ -40,7 +40,7 @@ def _build_compute_graph():
 class TestFootprints(unittest.TestCase):
 
   def setUp(self):
-    self.context = make_test_context()
+    self.context, self.input_dir_obj, self.output_dir_obj = make_test_context()
     self.proj = mercator.MercatorProjection()
 
   def test_stack(self):

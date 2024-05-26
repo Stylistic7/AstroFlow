@@ -36,7 +36,7 @@ class TestMosaic(unittest.TestCase):
       print(f'### added ray_diskcache key {key}')
 
     # # Start with an empty context.
-    self.context = make_test_context()
+    self.context, self.input_dir_obj, self.output_dir_obj = make_test_context()
 
     image_hashes = ray_diskcache.get('image_hashes', {})
     self.context.image_hashes = ray.put(image_hashes)

@@ -23,7 +23,7 @@ from make_test_context import make_test_context
 class TestSubframeSelection(unittest.TestCase):
 
   def setUp(self):
-    self.context = make_test_context()
+    self.context, self.input_dir_obj, self.output_dir_obj = make_test_context()
 
   def test_star_count_fraction(self):
     image_hashes, fits_headers, plate_solutions = make_synthetic_frames(

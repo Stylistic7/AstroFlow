@@ -27,7 +27,7 @@ def _build_compute_graph():
 class TestStack(unittest.TestCase):
 
   def setUp(self):
-    self.context = make_test_context()
+    self.context, self.input_dir_obj, self.output_dir_obj = make_test_context()
 
   def test_all_frames(self):
     stacks = {

@@ -33,7 +33,7 @@ def _build_compute_graph():
 class TestCalibrationFrames(unittest.TestCase):
 
   def setUp(self):
-    self.context = make_test_context()
+    self.context, self.input_dir_obj, self.output_dir_obj = make_test_context()
 
   def test_stack_dependency_graph(self):
     # These runs of dark and bias frames will be used by both runs of light

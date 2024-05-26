@@ -25,7 +25,7 @@ def gzip_cache(dest_filename):
 
 
 if __name__ == '__main__':
-  context = make_test_context()
+  self.context, self.input_dir_obj, self.output_dir_obj = make_test_context()
   context.run_everything = True
 
   # Add four stacks of images that comprise a mosaic of Orion. Each stack
