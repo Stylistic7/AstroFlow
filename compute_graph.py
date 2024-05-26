@@ -32,12 +32,13 @@ def build_processing_graph(context):
   shopping_cart = ray.get(context.shopping_cart)
 
   # TODO: Maybe add prioritization options in the UI.
+  # TODO: Remove duplicates.
   stack_nodes = []
   for type, id in shopping_cart:
     if type == 'stack':
       stack = stacks[id]
       print(f'### stack in shopping cart: {stack}')
-      stack_nodes.append((scatter_stack_subframes, stack_id))
+      stack_nodes.append((scatter_stack_subframes, id))
 
     if type == 'target':
       target = targets[id]
