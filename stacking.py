@@ -9,6 +9,7 @@ import errno
 import os
 from dataclasses import asdict
 
+from shopping_cart import stack_in_shopping_cart
 import ray_diskcache
 import pix
 import position_string
@@ -50,9 +51,7 @@ def find_matching_masters(stack, image_hashes, fits_headers):
   ]
 
 
-def _output_filename(stack, stacks, fits_headers, dest_path):
-  hashes = stack.all_frames(stacks)
-
+def _output_filename(stack, dest_path):
   if stack.image_type == 'bias':
     output_dir = os.path.join(dest_path, 'Stacks', 'Calibration', 'masters')
     return os.path.join(
@@ -120,8 +119,16 @@ def stack_files(context, stack_id):
 
   stacks = ray.get(context.stacks)
   stack = stacks[stack_id]
-  key = ('stack_files', stack_id)
-  print(f'Entering stack_files for {asdict(stack)}')
+  print(f'### Entering stack_files for {asdict(stack)}')
+
+  dest_filename = _output_filename(stack, context.output_dir)
+  os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
+
+  if context.mock_stacking:
+    with open(dest_filename, 'w') as f:
+      f.write('test')
+    print(f'### Mocked stacking, wrote filename {dest_filename}')
+    return context, dest_filename
 
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
@@ -135,6 +142,7 @@ def stack_files(context, stack_id):
 
   with tempfile.TemporaryDirectory() as tmp_dir:
     hashes = stack.frames + list(stack.dependencies.values())
+    print(f'### Stack frames and dependencies: {hashes}')
     filenames = [image_hashes[h] for h in hashes]
     for h, f in zip(hashes, filenames):
       print(f'hash {h} -> filename {f}')
@@ -148,6 +156,7 @@ def stack_files(context, stack_id):
       os.makedirs(run_dir, exist_ok=True)
 
       hashes = substack.frames + list(substack.dependencies.values())
+      print(f'### Substack frames and dependencies: {hashes}')
       filenames = [image_hashes[h] for h in hashes]
       for h, f in zip(hashes, filenames):
         print(f'hash {h} -> filename {f}')
@@ -161,6 +170,7 @@ def stack_files(context, stack_id):
     if not os.path.exists(master_dir):
       exception = Exception("WBPP did not produce an output master dir")
       print(f'Exception {exception}')
+      key = ('stack_files', stack_id)
       ray_diskcache.set(key, exception)
       return context, None
 
@@ -172,59 +182,45 @@ def stack_files(context, stack_id):
         str(f.absolute()) for f in Path(master_dir).rglob("master*.xisf"))
     wbpp_masters.sort(key=lambda x: os.path.getmtime(x))
     filename = wbpp_masters[-1]
-    dest_filename = _output_filename(stack, stacks, fits_headers,
-                                     context.output_dir)
     print(f'last modified WBPP master {filename} -> {dest_filename}')
-    os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
     _add_xisf_metadata(filename, dest_filename, metadata)
 
+    key = ('stack_files', stack_id)
     ray_diskcache.set(key, stack.content_hash)
     return context, dest_filename
 
 
 @ray.remote
-def scatter_stack_subframes(context):
+def scatter_stack_subframes(context, stack_id):
   image_hashes = ray.get(context.image_hashes)
   fits_headers = ray.get(context.fits_headers)
-  shopping_cart = ray.get(context.shopping_cart)
   stacks = ray.get(context.stacks)
-  print(f'scatter_stack_subframes received {len(stacks)} stacks')
-
-  # TODO: Implement in the UI.
-  def should_run(stack_id):
-    return context.run_everything or (
-        'stack_files', stacks[stack_id].geometric_hash) in shopping_cart
+  stack = stacks[stack_id]
+  print(f'scatter_stack_subframes for stack {stack}')
 
   def master_exists(stack_id):
-    return len(
+    result = len(
         find_matching_masters(stacks[stack_id], image_hashes, fits_headers)) > 0
+    return result
 
   def previously_had_exception(stack_id):
     return type(ray_diskcache.get(('stack_files', stack_id), None)) is Exception
 
-  # TODO: Put an option in the UI to run most recent first, or oldest first.
-  stacks_by_date = sorted(stacks.keys(),
-                          key=lambda s: stacks[s].newest_date,
-                          reverse=True)
+  if master_exists(stack_id):
+    return context, {}
+
+  if previously_had_exception(stack_id):
+    return context, {}
 
   graph = {}
-  for priority, stack_id in enumerate(stacks_by_date):
-    stack = stacks[stack_id]
-
-    # TODO: Clarify this.
-    if stack.image_type == 'light' and not stack.geometric_hash:
-      continue
-
-    if not should_run(stack_id) or master_exists(
-        stack_id) or previously_had_exception(stack_id):
-      continue
-
-    graph[Node(stack_files, stack_id, priority=priority)] = [
-        (stack_files, d)
-        for substack in stack.contents
-        for d in stacks[substack].dependencies
-        if stacks[d].image_type != 'light' and master_exists(d) and
-        not previously_had_exception(d)
-    ]
+  metadata_task = (scatter_compute_image_metadata, 'master')
+  graph[metadata_task] = [
+      (stack_files, d)
+      for substack in stack.contents
+      for d in stacks[substack].dependencies.values()
+      if stacks[d].image_type != 'light' and not master_exists(d) and
+      not previously_had_exception(d)
+  ]
+  graph[(stack_files, stack_id)] = {metadata_task}
 
   return context, Graph(graph)

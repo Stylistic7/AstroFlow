@@ -9,11 +9,12 @@ from image_previews import scatter_stack_thumbnails
 from stacking import scatter_stack_subframes
 from step_mosaic import scatter_merge_mosaics
 from mosaics.identification import identify_mosiacs
-from dependency_graph import make_graph_from_list
+from dependency_graph import Graph, make_graph_from_list
+from process_target import gather_stacks
 
 
 @ray.remote
-def maybe_regroup_graph(context):
+def maybe_build_regroup_graph(context):
   if context.regroup:
     return context, make_graph_from_list([
         find_components_by_cosine_similarity, identify_stacks,
@@ -24,13 +25,37 @@ def maybe_regroup_graph(context):
     return context, {}
 
 
-# TODO: Implement per-stack, per-target, and per-mosaic post-processing.
+@ray.remote
+def build_processing_graph(context):
+  stacks = ray.get(context.stacks)
+  targets = ray.get(context.targets)
+  shopping_cart = ray.get(context.shopping_cart)
+
+  # TODO: Maybe add prioritization options in the UI.
+  stack_nodes = []
+  for type, id in shopping_cart:
+    if type == 'stack':
+      stack = stacks[id]
+      print(f'### stack in shopping cart: {stack}')
+      stack_nodes.append((scatter_stack_subframes, stack_id))
+
+    if type == 'target':
+      target = targets[id]
+      print(f'### target in shopping cart: {target}')
+      for stack_id in target.stack_ids:
+        stack_nodes.append((scatter_stack_subframes, stack_id))
+
+  graph = {}
+  graph[gather_stacks] = stack_nodes
+  return context, Graph(graph)
+
+
 def build_compute_graph():
   return make_graph_from_list([(scatter_compute_image_metadata, 'all'),
-                               maybe_regroup_graph,
+                               maybe_build_regroup_graph,
                                (scatter_stack_thumbnails, 'subframe'),
                                (scatter_merge_mosaics, 'subframe'),
-                               scatter_stack_subframes,
+                               build_processing_graph,
                                (scatter_compute_image_metadata, 'master'),
                                (scatter_stack_thumbnails, 'master'),
                                (scatter_merge_mosaics, 'master')])

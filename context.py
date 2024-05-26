@@ -11,6 +11,8 @@ class Unionable:
 
 @dataclass
 class Context(Unionable):
+  mock_stacking: bool = False
+
   input_dirs: list[str] = field(default_factory=list)
   output_dir: str = None
 
