@@ -11,6 +11,7 @@ import TargetPanel from "./TargetPanel.jsx";
 import StackPanel from "./StackPanel.jsx";
 import DisambiguationPanel from "./DisambiguationPanel.jsx";
 import RecentPanel from "./RecentPanel.jsx";
+import SsePanel from "./SsePanel.jsx";
 import FlatCorrectionPanel from "./FlatCorrectionPanel.jsx";
 import logo from './logo.svg';
 import { usePageVisibility } from './usePageVisibility';
@@ -83,6 +84,7 @@ function App() {
   // }, [isPageVisible, isPollingEnabled]);
 
   useEffect(() => {
+    console.log('in App.useEffect');
     const loadData = async () => {
       let [s, t, m] = await Promise.all([
         fetch('/stacks').then(r => r.json()),
@@ -134,6 +136,9 @@ function App() {
               />
               <Route exact path="/recent" element={
                 dataIsAvailable && <RecentPanel />}
+              />
+              <Route exact path="/sse" element={
+                dataIsAvailable && <SsePanel />}
               />
             </Routes>
           </Router>

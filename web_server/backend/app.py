@@ -508,6 +508,32 @@ def set_stack_settings(stack_id):
   return Response(status=204)
 
 
+import time
+
+
+def format_sse(data: str, event=None) -> str:
+  msg = f'data: {data}\n\n'
+  if event is not None:
+    msg = f'event: {event}\n{msg}'
+  return msg
+
+
+@app.route('/stream')
+def stream():
+
+  def eventStream():
+    while True:
+      time.sleep(1.0)
+      s = time.ctime(time.time())
+      data = format_sse(s, 'foo')
+      print('yielding data', data)
+      yield data
+
+  response = Response(eventStream(), mimetype="text/event-stream")
+  response.headers['Access-Control-Allow-Origin'] = '*'
+  return response
+
+
 def run_astroflow_repeatedly():
 
   def ok_to_run():
