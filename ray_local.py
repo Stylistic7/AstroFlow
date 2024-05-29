@@ -3,6 +3,7 @@
 # Ray cluster that has access to both diskcache and PixInsight.
 
 # yapf: disable
+
 import os
 os.environ["ASTROFLOW_MOCK_CACHE"] = "true"
 
@@ -23,7 +24,15 @@ ray.init(
 )
 
 import ray_diskcache
-global_var_actor = ray_diskcache.GlobalVarActor.options(name='ray_diskcache',
-                                          namespace=namespace,
-                                          get_if_exists=True).remote()
+global_var_actor = ray_diskcache.GlobalVarActor.options(
+  name='ray_diskcache',
+  namespace=namespace,
+  get_if_exists=True).remote()
+
+import ray_state_actor
+state_actor = ray_state_actor.StateActor.options(
+  name='ray_state',
+  namespace=namespace,
+  get_if_exists=True).remote()
+
 # yapf: enable

@@ -1,11 +1,15 @@
 import ray_local
 
 import ray
+import os
 import unittest
 import datetime
+from pathlib import Path
 
+from ray_state_actor import dispatch
+import get_stacks
 import file_io
-from compute_graph import build_compute_graph
+from compute_graph import build_compute_graph, build_processing_graph
 from dependency_graph import run_graph
 from make_test_context import make_test_context
 from make_test_frames import make_synthetic_frames, copy_testdata_frames
@@ -14,9 +18,21 @@ from make_test_frames import make_synthetic_frames, copy_testdata_frames
 class TestShoppingCart(unittest.TestCase):
 
   def setUp(self):
-    self.context = make_test_context()
+    self.context, self.input_dir_obj, self.output_dir_obj = make_test_context()
+    self.context.mock_stacking = True
 
-  def test_one_stack_in_shopping_cart(self):
+  def test_shopping_cart(self):
+    state = dispatch(dict(type='add_to_shopping_cart', item=('stack', 'foo')))
+    self.assertEqual(len(state['shopping_cart']), 1)
+
+    state = dispatch(dict(type='add_to_shopping_cart', item=('stack', 'foo')))
+    self.assertEqual(len(state['shopping_cart']), 1)
+
+    state = dispatch(
+        dict(type='remove_from_shopping_cart', item=('stack', 'foo')))
+    self.assertEqual(len(state['shopping_cart']), 0)
+
+  def test_single_compute_graph(self):
     copy_testdata_frames(prefix='light_run_0',
                          target_name='NGC7635',
                          start_datetime=datetime.datetime(
@@ -53,16 +69,33 @@ class TestShoppingCart(unittest.TestCase):
                           dest_dir=self.context.input_dirs[0])
 
     filenames = file_io.find_image_files(self.context.input_dirs[0])
-    self.assertEqual(len(filenames), 42)
+    self.assertEqual(len(filenames), 26)
 
     graph = build_compute_graph()
-    self.context, _ = run_graph(graph, self.context)
+    self.context, results = run_graph(graph, self.context)
+
+    masters = os.listdir(self.context.output_dir)
+    self.assertEqual(len(masters), 0)
 
     stacks = ray.get(self.context.stacks)
-    self.assertEqual(len(stacks), 7)
+    print('### stacks are', stacks)
+    toplevel_stacks = get_stacks.get_toplevel_stacks(stacks)
+    self.assertEqual(len(toplevel_stacks), 1)
+    toplevel_stack = toplevel_stacks[0]
 
-    light_stacks = [s for s in stacks.values() if s.image_type == 'light']
-    self.assertEqual(len(light_stacks), 3)
+    self.context.shopping_cart = ray.put([('stack',
+                                           toplevel_stack.geometric_hash)])
+
+    _, processing_graph = ray.get(build_processing_graph.remote(self.context))
+    print('### processing_graph', processing_graph)
+    self.assertEqual(len(processing_graph), 1)
+
+    graph = build_compute_graph()
+    self.context, results = run_graph(graph, self.context)
+
+    masters = list(Path(self.context.output_dir).rglob('*.xisf'))
+    print('### masters', masters)
+    self.assertEqual(len(masters), 4)
 
 
 if __name__ == "__main__":

@@ -1,1 +1,1 @@
-pip3 install -U pandas plotly flask opencv-python psutil appdirs tensorflow scikit-image scikit-learn pykrige ephem python-statemachine matplotlib objsize python-dateutil xxhash diskcache structlog pytz xisf astropy spherical-geometry shapely largestinteriorrectangle numpy ray pyarrow
+pip3 install -U pandas plotly flask opencv-python psutil appdirs tensorflow scikit-image scikit-learn pykrige ephem python-statemachine matplotlib objsize python-dateutil xxhash diskcache structlog pytz xisf astropy spherical-geometry shapely largestinteriorrectangle numpy ray addict

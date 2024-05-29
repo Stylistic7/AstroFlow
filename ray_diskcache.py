@@ -1,6 +1,5 @@
 import ray
 from cache import cache
-import traceback
 import os
 
 if 'ASTROFLOW_MOCK_NAMESPACE' in os.environ:
