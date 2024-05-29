@@ -50,8 +50,7 @@ class TestNewContext(unittest.TestCase):
   def test_flush_large_object(self):
     large_object = np.random.random((1000, 1000))
 
-    new_context.set('biggie', large_object)
-    new_context.flush('biggie')
+    new_context.set('biggie', large_object, flush=True)
 
     ref_dict = new_context.ref_dict()
     self.assertEqual(len(ref_dict), 0)
@@ -67,3 +66,12 @@ class TestNewContext(unittest.TestCase):
     new_context.foo = {'a': 1}
     new_context.foo |= {'b': 2}
     self.assertEqual(new_context.foo, {'a': 1, 'b': 2})
+
+  def test_and_equals(self):
+    new_context.foo = ['a']
+    new_context.foo += ['b']
+    self.assertEqual(new_context.foo, ['a', 'b'])
+
+  def test_default_value(self):
+    value = new_context.get('non-existent', {'foo': 'bar'})
+    self.assertEqual(value, {'foo': 'bar'})

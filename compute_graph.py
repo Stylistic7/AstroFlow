@@ -1,5 +1,6 @@
 import ray
 
+from new_context import new_context
 from image_metadata import scatter_compute_image_metadata
 from spatial_association import find_components_by_cosine_similarity
 from stack_identification import identify_stacks
@@ -14,22 +15,27 @@ from process_target import gather_stacks
 
 
 @ray.remote
-def maybe_build_regroup_graph(context):
-  if context.regroup:
-    return context, make_graph_from_list([
+def maybe_build_regroup_graph():
+  if new_context.regroup:
+    return make_graph_from_list([
         find_components_by_cosine_similarity, identify_stacks,
         identify_calibration_stacks, associate_with_stacks,
         group_stacks_into_targets, identify_mosiacs
     ])
   else:
-    return context, {}
+    return {}
+
+
+def build_item_processing_graph(item):
+  print(f'### running compute graph for item {item}')
+  return Graph({})
 
 
 @ray.remote
-def build_processing_graph(context):
-  stacks = ray.get(context.stacks)
-  targets = ray.get(context.targets)
-  shopping_cart = ray.get(context.shopping_cart)
+def build_processing_graph():
+  stacks = new_context.stacks
+  targets = new_context.targets
+  shopping_cart = new_context.shopping_cart or []
 
   # TODO: Maybe add prioritization options in the UI.
   # TODO: Remove duplicates.
@@ -48,7 +54,7 @@ def build_processing_graph(context):
 
   graph = {}
   graph[gather_stacks] = stack_nodes
-  return context, Graph(graph)
+  return Graph(graph)
 
 
 def build_compute_graph():

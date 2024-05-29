@@ -7,6 +7,7 @@ import tempfile
 import random
 import os
 
+from new_context import new_context
 import ray_diskcache
 from context import Context
 from image_metadata import scatter_compute_image_metadata
@@ -21,30 +22,29 @@ def compute_graph_fragment():
 class TestImageMetadata(unittest.TestCase):
 
   def setUp(self):
-    ray_diskcache.clear()
+    new_context.clear()
 
     # Start with an empty context.
-    self.context = Context()
-    self.context.image_hashes = ray.put({})
-    self.context.fits_headers = ray.put({})
-    self.context.plate_solutions = ray.put({})
-    self.context.quarantined_files = ray.put([])
+    new_context.image_hashes = {}
+    new_context.fits_headers = {}
+    new_context.plate_solutions = {}
+    new_context.quarantined_files = []
 
     self.input_dir = tempfile.TemporaryDirectory()
-    self.context.input_dirs.append(self.input_dir.name)
+    new_context.input_dirs = [self.input_dir.name]
 
   def test_existing_files(self):
-    input_dir = self.context.input_dirs[0]
+    input_dir = new_context.input_dirs[0]
     make_synthetic_frames(number=10, exposure=30, dest_dir=input_dir)
 
     graph = compute_graph_fragment()
-    self.context, results = run_graph(graph, self.context)
+    results = run_graph(graph)
 
     self.assertEqual(results['num_nodes_run'], 2 + 10)
     filenames = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
-    image_hashes = ray.get(self.context.image_hashes)
-    fits_headers = ray.get(self.context.fits_headers)
-    plate_solutions = ray.get(self.context.plate_solutions)
+    image_hashes = new_context.image_hashes
+    fits_headers = new_context.fits_headers
+    plate_solutions = new_context.plate_solutions
     self.assertEqual(len(filenames), 10)
     self.assertEqual(sorted(filenames), sorted(image_hashes.values()))
     self.assertTrue(all(f['EXPOSURE'] == 30 for f in fits_headers.values()))
@@ -52,14 +52,14 @@ class TestImageMetadata(unittest.TestCase):
                      sorted(image_hashes.keys()))
 
   def test_moved_files(self):
-    input_dir = self.context.input_dirs[0]
+    input_dir = new_context.input_dirs[0]
     make_synthetic_frames(number=20, dest_dir=input_dir)
 
     graph = compute_graph_fragment()
-    self.context, results = run_graph(graph, self.context)
+    results = run_graph(graph)
     self.assertEqual(results['num_nodes_run'], 2 + 20)
     filenames = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
-    image_hashes = ray.get(self.context.image_hashes)
+    image_hashes = new_context.image_hashes
     self.assertEqual(sorted(filenames), sorted(image_hashes.values()))
     self.assertTrue(all(os.path.exists(f) for f in image_hashes.values()))
 
@@ -70,35 +70,35 @@ class TestImageMetadata(unittest.TestCase):
       os.rename(filename, os.path.join(new_dir, os.path.basename(filename)))
 
     graph = compute_graph_fragment()
-    self.context, results = run_graph(graph, self.context)
+    results = run_graph(graph)
     filenames = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
-    image_hashes = ray.get(self.context.image_hashes)
+    image_hashes = new_context.image_hashes
     self.assertEqual(len(image_hashes), 20)
     self.assertTrue(all(os.path.exists(f) for f in image_hashes.values()))
 
     self.assertEqual(sum(1 for f in image_hashes.values() if 'new_dir' in f), 5)
 
   def test_added_files(self):
-    input_dir = self.context.input_dirs[0]
+    input_dir = new_context.input_dirs[0]
     make_synthetic_frames(number=10, dest_dir=input_dir)
 
     graph = compute_graph_fragment()
-    self.context, results = run_graph(graph, self.context)
+    results = run_graph(graph)
     self.assertEqual(results['num_nodes_run'], 2 + 10)
     filenames = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
     self.assertEqual(len(filenames), 10)
-    image_hashes = ray.get(self.context.image_hashes)
+    image_hashes = new_context.image_hashes
     self.assertEqual(len(image_hashes), 10)
     self.assertEqual(sorted(filenames), sorted(image_hashes.values()))
 
     make_synthetic_frames(number=10, dest_dir=input_dir)
 
     graph = compute_graph_fragment()
-    self.context, results = run_graph(graph, self.context)
+    results = run_graph(graph)
     self.assertEqual(results['num_nodes_run'], 2 + 10)
     filenames = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
     self.assertEqual(len(filenames), 20)
-    image_hashes = ray.get(self.context.image_hashes)
+    image_hashes = new_context.image_hashes
     self.assertEqual(len(image_hashes), 20)
     self.assertEqual(sorted(filenames), sorted(image_hashes.values()))
 
@@ -114,7 +114,7 @@ class TestImageMetadata(unittest.TestCase):
   #   self.assertEqual(results['num_nodes_run'], 2 + 20)
   #   filenames = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
   #   self.assertEqual(len(filenames), 20)
-  #   image_hashes = ray.get(self.context.image_hashes)
+  #   image_hashes = new_context.image_hashes
   #   self.assertEqual(len(image_hashes), 20)
 
   #   random.shuffle(filenames)
@@ -126,7 +126,7 @@ class TestImageMetadata(unittest.TestCase):
   #   self.assertEqual(results['num_nodes_run'], 2)
   #   filenames = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
   #   self.assertEqual(len(filenames), 15)
-  #   image_hashes = ray.get(self.context.image_hashes)
+  #   image_hashes = new_context.image_hashes
   #   self.assertEqual(len(image_hashes), 20)
   #   self.assertEqual(sum(1 for f in image_hashes.values() if f), 15)
 

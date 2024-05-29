@@ -3,6 +3,7 @@ import numpy as np
 from spherical_geometry.polygon import SphericalPolygon
 import astropy
 
+from new_context import new_context
 import ray_diskcache
 import clustering
 from hashing import hash_string
@@ -36,7 +37,7 @@ def _compute_geometric_hash(center, image_scale, rotation_angle, width_pixels,
 
 
 # TODO: The structure of light_frame_runs is completely nuts here.
-def _new_stacks(context, name, light_frames, fits_headers, plate_solutions):
+def _new_stacks(name, light_frames, fits_headers, plate_solutions):
   width_pixels = next(iter(set(
       fits_headers[f]['NAXIS1'] for f in light_frames)))
   height_pixels = next(
@@ -77,8 +78,8 @@ def _new_stacks(context, name, light_frames, fits_headers, plate_solutions):
     # re-computed. Stacks with the same geometric_hash can have their settings
     # passed on. There may be other settings like this in the future.
     selection_criterion = ('StarCountFraction', 0.75)
-    for run in get_runs(exposure_frames, fits_headers, context.max_run_gap,
-                        context.min_frames_in_run):
+    for run in get_runs(exposure_frames, fits_headers, new_context.max_run_gap,
+                        new_context.min_frames_in_run):
       frames = get_frames_for_run(run, exposure_frames, fits_headers)
       assert len(frames)
       stack = Stack(frames=frames)
@@ -103,10 +104,10 @@ def _new_stacks(context, name, light_frames, fits_headers, plate_solutions):
 
 
 @ray.remote
-def identify_stacks(context):
-  fits_headers = ray.get(context.fits_headers)
-  plate_solutions = ray.get(context.plate_solutions)
-  spatial_groups = ray.get(context.spatial_groups)
+def identify_stacks():
+  fits_headers = new_context.fits_headers
+  plate_solutions = new_context.plate_solutions
+  spatial_groups = new_context.spatial_groups
 
   print(f'Identifying stacks from {len(spatial_groups)} spatial groups...')
 
@@ -150,11 +151,8 @@ def identify_stacks(context):
               print(f'Hash {debug_hash} found in cluster with '
                     f'filters {filters} and frames {filter_frames}')
             assert len(set(filters)) == 1
-            stacks |= _new_stacks(context, name, filter_frames, fits_headers,
+            stacks |= _new_stacks(name, filter_frames, fits_headers,
                                   plate_solutions)
 
   print(f'Identified {len(stacks)} stacks')
-  context.stacks = ray.put(stacks)
-  ray_diskcache.set('stacks', stacks)
-
-  return context, None
+  new_context.stacks = stacks

@@ -7,35 +7,39 @@ import datetime
 from cache import cache
 import ray_diskcache
 from context import Context
+from new_context import new_context
 
 
 def make_test_context():
   ray_diskcache.clear()
   cache.clear()
+  new_context.clear()
 
-  context = Context()
+  new_context.image_hashes = {}
+  new_context.fits_headers = {}
+  new_context.plate_solutions = {}
+  new_context.quarantined_files = []
 
-  context.image_hashes = ray.put({})
-  context.fits_headers = ray.put({})
-  context.plate_solutions = ray.put({})
-  context.quarantined_files = ray.put([])
+  new_context.stacks = {}
+  new_context.targets = {}
+  new_context.mosaics = {}
 
-  context.stacks = ray.put({})
-  context.targets = ray.put({})
-  context.mosaics = ray.put({})
+  new_context.regroup = False
 
   input_dir_obj = tempfile.TemporaryDirectory()
-  context.input_dirs.append(input_dir_obj.name)
+  new_context.input_dirs = [input_dir_obj.name]
 
   output_dir_obj = tempfile.TemporaryDirectory()
-  context.output_dir = output_dir_obj.name
+  new_context.output_dir = output_dir_obj.name
 
-  context.cosine_similarity_threshold = 0.99999
-  context.min_component_members = 3
-  context.max_run_gap = datetime.timedelta(hours=8)
-  context.min_frames_in_run = 3
-  context.min_frames_in_stack = 3
-  context.subframe_thumbnail_width = 1200
-  context.master_thumbnail_width = 2160
+  new_context.cosine_similarity_threshold = 0.99999
+  new_context.min_component_members = 3
+  new_context.max_run_gap = datetime.timedelta(hours=8)
+  new_context.min_frames_in_run = 3
+  new_context.min_frames_in_stack = 3
+  new_context.subframe_thumbnail_width = 1200
+  new_context.master_thumbnail_width = 2160
 
-  return context, input_dir_obj, output_dir_obj
+  new_context.mock_stacking = True
+
+  return input_dir_obj, output_dir_obj

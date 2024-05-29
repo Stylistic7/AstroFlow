@@ -4,6 +4,7 @@ import ray
 import numpy as np
 
 import file_io
+from new_context import new_context
 import spatial_association
 import position_string
 from target import Target
@@ -12,9 +13,9 @@ import footprints
 
 
 @ray.remote
-def group_stacks_into_targets(context):
-  stacks = ray.get(context.stacks)
-  plate_solutions = ray.get(context.plate_solutions)
+def group_stacks_into_targets():
+  stacks = new_context.stacks
+  plate_solutions = new_context.plate_solutions
 
   values = {
       id: (np.asarray(footprints.radec_to_vector(*stack.center)),
@@ -30,7 +31,7 @@ def group_stacks_into_targets(context):
   def comparison_fn(a, b):
     a_center, a_polygon = a
     b_center, b_polygon = b
-    if np.dot(a_center, b_center) < context.cosine_similarity_threshold:
+    if np.dot(a_center, b_center) < new_context.cosine_similarity_threshold:
       return False
 
     iou = a_polygon.intersection(b_polygon).area() / a_polygon.union(
@@ -67,7 +68,4 @@ def group_stacks_into_targets(context):
 
   # TODO: Computing the result and storing the result are two different
   # responsibilities. Perhaps separate patterns like this?
-  ray_diskcache.set('targets', targets)
-
-  context.targets = ray.put(targets)
-  return context, None
+  new_context.targets = targets

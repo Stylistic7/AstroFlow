@@ -6,6 +6,7 @@ import tempfile
 import ray
 
 import ray_diskcache
+from new_context import new_context
 from context import Context
 from cache import cache
 from make_test_frames import make_synthetic_frames
@@ -23,7 +24,7 @@ from make_test_context import make_test_context
 class TestSubframeSelection(unittest.TestCase):
 
   def setUp(self):
-    self.context, self.input_dir_obj, self.output_dir_obj = make_test_context()
+    self.input_dir_obj, self.output_dir_obj = make_test_context()
 
   def test_star_count_fraction(self):
     image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
@@ -37,7 +38,7 @@ class TestSubframeSelection(unittest.TestCase):
         height_pixels=6388,
         temperature=-15,
         num_stars=100,
-        dest_dir=self.context.input_dirs[0])
+        dest_dir=new_context.input_dirs[0])
     image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
         prefix='light_cloudy',
         start_datetime=datetime.datetime(2023, 12, 6, 16, 59, 43),
@@ -49,23 +50,22 @@ class TestSubframeSelection(unittest.TestCase):
         height_pixels=6388,
         temperature=-15,
         num_stars=10,
-        dest_dir=self.context.input_dirs[0],
+        dest_dir=new_context.input_dirs[0],
         image_hashes=image_hashes,
         fits_headers=fits_headers,
         plate_solutions=plate_solutions)
 
-    filenames = file_io.find_image_files(self.context.input_dirs[0])
+    filenames = file_io.find_image_files(new_context.input_dirs[0])
     self.assertEqual(len(filenames), 10)
 
-    self.context.image_hashes = ray.put(image_hashes)
-    self.context.fits_headers = ray.put(fits_headers)
-    self.context.plate_solutions = ray.put(plate_solutions)
+    new_context.image_hashes = image_hashes
+    new_context.fits_headers = fits_headers
+    new_context.plate_solutions = plate_solutions
 
-    self.context, _ = ray.get(
-        find_components_by_cosine_similarity.remote(self.context))
-    self.context, _ = ray.get(identify_stacks.remote(self.context))
+    ray.get(find_components_by_cosine_similarity.remote())
+    ray.get(identify_stacks.remote())
 
-    stacks = ray.get(self.context.stacks)
+    stacks = new_context.stacks
     self.assertEqual(len(stacks), 2)
     stack = next(iter(s for s in stacks.values() if s.geometric_hash))
     self.assertEqual(len(stack.all_frames(stacks)), 10)
@@ -83,7 +83,7 @@ class TestSubframeSelection(unittest.TestCase):
         height_pixels=6388,
         temperature=-15,
         num_stars=100,
-        dest_dir=self.context.input_dirs[0])
+        dest_dir=new_context.input_dirs[0])
 
     # The middle frame has too few stars, and should split the run into two.
     for h, f in image_hashes.items():
@@ -92,18 +92,17 @@ class TestSubframeSelection(unittest.TestCase):
     print(f'middle_frame {image_hashes[middle_frame]}')
     plate_solutions[middle_frame].num_stars = 10
 
-    filenames = file_io.find_image_files(self.context.input_dirs[0])
+    filenames = file_io.find_image_files(new_context.input_dirs[0])
     self.assertEqual(len(filenames), 15)
 
-    self.context.image_hashes = ray.put(image_hashes)
-    self.context.fits_headers = ray.put(fits_headers)
-    self.context.plate_solutions = ray.put(plate_solutions)
+    new_context.image_hashes = image_hashes
+    new_context.fits_headers = fits_headers
+    new_context.plate_solutions = plate_solutions
 
-    self.context, _ = ray.get(
-        find_components_by_cosine_similarity.remote(self.context))
-    self.context, _ = ray.get(identify_stacks.remote(self.context))
+    ray.get(find_components_by_cosine_similarity.remote())
+    ray.get(identify_stacks.remote())
 
-    stacks = ray.get(self.context.stacks)
+    stacks = new_context.stacks
     self.assertEqual(len(stacks), 2)
     stack = next(iter(s for s in stacks.values() if s.geometric_hash))
     self.assertEqual(len(stack.all_frames(stacks)), 15)

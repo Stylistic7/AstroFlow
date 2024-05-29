@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import ray
 import tempfile
 
+from new_context import new_context
 import stacking
 import file_io
 import subframe_selection
@@ -250,18 +251,18 @@ def show_image(data):
 #
 # Runs merge_mosaic in parallel for all mosaics.
 @ray.remote
-def scatter_merge_mosaics(context, mode):
-  mosaics = ray.get(context.mosaics)
+def scatter_merge_mosaics(mode):
+  mosaics = new_context.mosaics
   shopping_cart = ray_diskcache.get('shopping_cart', [])
 
   print(f'### Entering scatter_merge_mosaics for {len(mosaics)} mosaics, '
         f' mode {mode}')
 
-  return context, Graph({
+  return Graph({
       gather_merge_mosaics: [
           (merge_mosaic, m.id, mode)
           for m in mosaics.values()
-          if context.run_everything or ('mosaic', m.id) in shopping_cart
+          if new_context.run_everything or ('mosaic', m.id) in shopping_cart
       ]
   })
 
@@ -312,15 +313,15 @@ def _subframe_filter_artifact_exists(mosaic_id, filter, content_hash):
 # Runs process_mosaic_per_filter for each filter present in the mosaic in
 # parallel.
 @ray.remote(scheduling_strategy="SPREAD", num_cpus=0.001)
-def merge_mosaic(context, mosaic_id, mode):
-  mosaics = ray.get(context.mosaics)
+def merge_mosaic(mosaic_id, mode):
+  mosaics = new_context.mosaics
   mosaic = mosaics[mosaic_id]
 
   print(f'Entering merge_mosaic for mosaic {mosaic} mode {mode}')
-  image_hashes = ray.get(context.image_hashes)
-  fits_headers = ray.get(context.fits_headers)
-  targets = ray.get(context.targets)
-  stacks = ray.get(context.stacks)
+  image_hashes = new_context.image_hashes
+  fits_headers = new_context.fits_headers
+  targets = new_context.targets
+  stacks = new_context.stacks
 
   def stacks_for_filter(filter):
     return [
@@ -359,7 +360,7 @@ def merge_mosaic(context, mosaic_id, mode):
   if not filters_to_process:
     print(
         f'### All filters for mosaic {mosaic.name} mode {mode} are up-to-date')
-    return context, None
+    return
   else:
     print(f'### Need to update the following filters: {filters_to_process} '
           f'for mode {mode}')
@@ -368,7 +369,7 @@ def merge_mosaic(context, mosaic_id, mode):
   if mode == 'subframe':
     output_dir = tempfile.gettempdir()
   elif mode == 'master':
-    output_dir = os.path.join(context.output_dir, 'Mosaics', mosaic.name)
+    output_dir = os.path.join(new_context.output_dir, 'Mosaics', mosaic.name)
     os.makedirs(output_dir, exist_ok=True)
 
   # Determine the output image shape and resolution, which is a 3D to 2D
@@ -399,12 +400,13 @@ def merge_mosaic(context, mosaic_id, mode):
   assert np.max(dest_xs) == dest_width - 1
   assert dest_xs.shape == dest_ys.shape == ras.shape == decs.shape
 
-  context.coordinates = dict(dest_xs=ray.put(dest_xs),
-                             dest_ys=ray.put(dest_ys),
-                             ras=ray.put(ras),
-                             decs=ray.put(decs))
+  # TODO: This prevents multiple mosaic merges from happening simultaneously.
+  new_context.coordinates = dict(dest_xs=ray.put(dest_xs),
+                                 dest_ys=ray.put(dest_ys),
+                                 ras=ray.put(ras),
+                                 decs=ray.put(decs))
 
-  return context, Graph({
+  return Graph({
       gather_process_mosaic_per_filter: [(process_mosaic_per_filter, mosaic.id,
                                           mode, f, output_dir)
                                          for f in filters_to_process]
@@ -412,10 +414,10 @@ def merge_mosaic(context, mosaic_id, mode):
 
 
 @ray.remote
-def gather_process_mosaic_per_filter(context):
-  return context, None
+def gather_process_mosaic_per_filter():
+  pass
 
 
 @ray.remote
-def gather_merge_mosaics(context):
-  return context, None
+def gather_merge_mosaics():
+  pass

@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import shutil
 
+from new_context import new_context
 import ray_diskcache
 from make_testdata_cache import TESTDATA_CACHE_GZIP_FILENAME
 import file_io
@@ -32,64 +33,46 @@ class TestMosaic(unittest.TestCase):
         os.path.join(self.testdata_cache_directory.name, 'cache'))
     ray_diskcache.clear()
     for key in self.testdata_cache.iterkeys():
-      ray_diskcache.set(key, self.testdata_cache[key])
-      print(f'### added ray_diskcache key {key}')
+      new_context[key] = self.testdata_cache[key]
 
-    # # Start with an empty context.
-    self.context, self.input_dir_obj, self.output_dir_obj = make_test_context()
-
-    image_hashes = ray_diskcache.get('image_hashes', {})
-    self.context.image_hashes = ray.put(image_hashes)
-
-    fits_headers = ray_diskcache.get('fits_headers', {})
-    self.context.fits_headers = ray.put(fits_headers)
-
-    plate_solutions = ray_diskcache.get('plate_solutions', {})
-    self.context.plate_solutions = ray.put(plate_solutions)
-
-    for h, p in plate_solutions.items():
-      print(f'### plate solution exists for '
-            f'filename {image_hashes[h]}')
-
-    self.context.stacks = ray.put(ray_diskcache.get('stacks', {}))
-    self.context.targets = ray.put(ray_diskcache.get('targets', {}))
-    self.context.mosaics = ray.put(ray_diskcache.get('mosaics', {}))
+    # Start with an empty context.
+    self.input_dir_obj, self.output_dir_obj = make_test_context()
 
     copy_testdata_frames(target_name='Orion Pane 1',
                          start_datetime=datetime.datetime(
                              2024, 2, 5, 16, 29, 43),
-                         dest_dir=self.context.input_dirs[0],
+                         dest_dir=new_context.input_dirs[0],
                          add_noise=False)
     copy_testdata_frames(target_name='Orion Pane 2',
                          start_datetime=datetime.datetime(
                              2024, 2, 5, 17, 29, 43),
-                         dest_dir=self.context.input_dirs[0],
+                         dest_dir=new_context.input_dirs[0],
                          add_noise=False)
     copy_testdata_frames(target_name='Orion Pane 3',
                          start_datetime=datetime.datetime(
                              2024, 2, 5, 18, 29, 43),
-                         dest_dir=self.context.input_dirs[0],
+                         dest_dir=new_context.input_dirs[0],
                          add_noise=False)
     copy_testdata_frames(target_name='Orion Pane 4',
                          start_datetime=datetime.datetime(
                              2024, 2, 5, 19, 29, 43),
-                         dest_dir=self.context.input_dirs[0],
+                         dest_dir=new_context.input_dirs[0],
                          add_noise=False)
 
   def test_all_tasks_already_done(self):
     graph = compute_graph.build_compute_graph()
-    self.context, _ = run_graph(graph, self.context)
+    run_graph(graph)
 
   def test_everything_after_stacking(self):
     for key in ray_diskcache.get_keys():
       if 'placed_image' in key or 'mosaic_thumbnail_image' in key:
         ray_diskcache.delete(key)
 
-    filenames = file_io.find_image_files(self.context.input_dirs[0])
+    filenames = file_io.find_image_files(new_context.input_dirs[0])
     self.assertEqual(len(filenames), 12)
 
     graph = compute_graph.build_compute_graph()
-    self.context, _ = run_graph(graph, self.context)
+    run_graph(graph)
 
     # shutil.copytree(self.output_dir.name, 'testdata/output', dirs_exist_ok=True)
 

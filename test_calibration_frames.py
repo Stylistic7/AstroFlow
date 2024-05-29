@@ -11,6 +11,7 @@ from dataclasses import asdict
 
 from make_test_frames import make_synthetic_frames, copy_testdata_frames
 import ray_diskcache
+from new_context import new_context
 from context import Context
 import file_io
 from dependency_graph import run_graph, make_graph_from_list
@@ -33,7 +34,7 @@ def _build_compute_graph():
 class TestCalibrationFrames(unittest.TestCase):
 
   def setUp(self):
-    self.context, self.input_dir_obj, self.output_dir_obj = make_test_context()
+    self.input_dir_obj, self.output_dir_obj = make_test_context()
 
   def test_stack_dependency_graph(self):
     # These runs of dark and bias frames will be used by both runs of light
@@ -46,7 +47,7 @@ class TestCalibrationFrames(unittest.TestCase):
                           width_pixels=9576,
                           height_pixels=6388,
                           temperature=-15,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
     make_synthetic_frames(prefix='bias',
                           number=7,
                           image_type='Bias',
@@ -55,14 +56,14 @@ class TestCalibrationFrames(unittest.TestCase):
                           width_pixels=9576,
                           height_pixels=6388,
                           temperature=-15,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
 
     # The first run of light frames and its associated flats.
     copy_testdata_frames(prefix='light_run_0',
                          target_name='NGC7635',
                          start_datetime=datetime.datetime(
                              2024, 2, 5, 16, 29, 43),
-                         dest_dir=self.context.input_dirs[0])
+                         dest_dir=new_context.input_dirs[0])
     make_synthetic_frames(prefix='flat_run_0',
                           number=11,
                           image_type='Flat',
@@ -73,14 +74,14 @@ class TestCalibrationFrames(unittest.TestCase):
                           width_pixels=9576,
                           height_pixels=6388,
                           temperature=-15,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
 
     # The second run of light frames and its associated flats.
     copy_testdata_frames(prefix='light_run_1',
                          target_name='NGC7635',
                          start_datetime=datetime.datetime(
                              2024, 2, 7, 16, 29, 43),
-                         dest_dir=self.context.input_dirs[0])
+                         dest_dir=new_context.input_dirs[0])
     make_synthetic_frames(prefix='flat_run_1',
                           number=13,
                           image_type='Flat',
@@ -91,15 +92,15 @@ class TestCalibrationFrames(unittest.TestCase):
                           width_pixels=9576,
                           height_pixels=6388,
                           temperature=-15,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
 
-    filenames = file_io.find_image_files(self.context.input_dirs[0])
+    filenames = file_io.find_image_files(new_context.input_dirs[0])
     self.assertEqual(len(filenames), 42)
 
     graph = _build_compute_graph()
-    self.context, _ = run_graph(graph, self.context)
+    run_graph(graph)
 
-    stacks = ray.get(self.context.stacks)
+    stacks = new_context.stacks
     self.assertEqual(len(stacks), 7)
 
     light_stacks = [s for s in stacks.values() if s.image_type == 'light']
@@ -107,7 +108,7 @@ class TestCalibrationFrames(unittest.TestCase):
 
   def test_one_light_run_one_dark_run(self):
     copy_testdata_frames(target_name='NGC7635',
-                         dest_dir=self.context.input_dirs[0])
+                         dest_dir=new_context.input_dirs[0])
     make_synthetic_frames(number=5,
                           image_type='Dark',
                           fill_value=100,
@@ -115,15 +116,15 @@ class TestCalibrationFrames(unittest.TestCase):
                           width_pixels=9576,
                           height_pixels=6388,
                           temperature=-15,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
 
-    filenames = file_io.find_image_files(self.context.input_dirs[0])
+    filenames = file_io.find_image_files(new_context.input_dirs[0])
     self.assertEqual(len(filenames), 8)
 
     graph = _build_compute_graph()
-    self.context, _ = run_graph(graph, self.context)
+    run_graph(graph)
 
-    stacks = ray.get(self.context.stacks)
+    stacks = new_context.stacks
     self.assertEqual(len(stacks), 3)
 
     light_stacks = [s for s in stacks.values() if s.image_type == 'light']
@@ -137,7 +138,7 @@ class TestCalibrationFrames(unittest.TestCase):
     # were taken in November 2023. The stacks should be grouped in
     # chronological order.
     copy_testdata_frames(target_name='NGC7635',
-                         dest_dir=self.context.input_dirs[0])
+                         dest_dir=new_context.input_dirs[0])
     make_synthetic_frames(number=5,
                           image_type='Dark',
                           fill_value=100,
@@ -145,7 +146,7 @@ class TestCalibrationFrames(unittest.TestCase):
                           width_pixels=9576,
                           height_pixels=6388,
                           temperature=-15,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
     make_synthetic_frames(number=7,
                           image_type='Bias',
                           fill_value=50,
@@ -153,7 +154,7 @@ class TestCalibrationFrames(unittest.TestCase):
                           width_pixels=9576,
                           height_pixels=6388,
                           temperature=-15,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
     make_synthetic_frames(number=11,
                           image_type='Flat',
                           fill_value=4096,
@@ -162,9 +163,9 @@ class TestCalibrationFrames(unittest.TestCase):
                           width_pixels=9576,
                           height_pixels=6388,
                           temperature=-15,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
 
-    copy_testdata_frames(target_name='M42', dest_dir=self.context.input_dirs[0])
+    copy_testdata_frames(target_name='M42', dest_dir=new_context.input_dirs[0])
     make_synthetic_frames(number=13,
                           image_type='Dark',
                           fill_value=100,
@@ -172,7 +173,7 @@ class TestCalibrationFrames(unittest.TestCase):
                           width_pixels=6248,
                           height_pixels=4176,
                           temperature=-20,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
     make_synthetic_frames(number=17,
                           image_type='Bias',
                           fill_value=50,
@@ -180,7 +181,7 @@ class TestCalibrationFrames(unittest.TestCase):
                           width_pixels=6248,
                           height_pixels=4176,
                           temperature=-20,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
     make_synthetic_frames(number=19,
                           image_type='Flat',
                           fill_value=4096,
@@ -189,15 +190,15 @@ class TestCalibrationFrames(unittest.TestCase):
                           width_pixels=6248,
                           height_pixels=4176,
                           temperature=-20,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
 
-    filenames = file_io.find_image_files(self.context.input_dirs[0])
+    filenames = file_io.find_image_files(new_context.input_dirs[0])
     self.assertEqual(len(filenames), 78)
 
     graph = _build_compute_graph()
-    self.context, _ = run_graph(graph, self.context)
+    run_graph(graph)
 
-    stacks = ray.get(self.context.stacks)
+    stacks = new_context.stacks
     self.assertEqual(len(stacks), 10)
 
     light_stacks = [
@@ -211,7 +212,7 @@ class TestCalibrationFrames(unittest.TestCase):
     # seconds. AstroFlow should pick the closest darks that are equal to or
     # longer than the lights. One group of dark frames will never be stacked.
     copy_testdata_frames(target_name='NGC7635',
-                         dest_dir=self.context.input_dirs[0])
+                         dest_dir=new_context.input_dirs[0])
     make_synthetic_frames(number=5,
                           image_type='Dark',
                           fill_value=100,
@@ -220,7 +221,7 @@ class TestCalibrationFrames(unittest.TestCase):
                           width_pixels=9576,
                           height_pixels=6388,
                           temperature=-15,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
     make_synthetic_frames(number=7,
                           image_type='Dark',
                           fill_value=100,
@@ -229,7 +230,7 @@ class TestCalibrationFrames(unittest.TestCase):
                           width_pixels=9576,
                           height_pixels=6388,
                           temperature=-15,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
     make_synthetic_frames(number=11,
                           image_type='Bias',
                           fill_value=50,
@@ -237,7 +238,7 @@ class TestCalibrationFrames(unittest.TestCase):
                           width_pixels=9576,
                           height_pixels=6388,
                           temperature=-15,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
     make_synthetic_frames(number=13,
                           image_type='Flat',
                           fill_value=4096,
@@ -246,15 +247,15 @@ class TestCalibrationFrames(unittest.TestCase):
                           width_pixels=9576,
                           height_pixels=6388,
                           temperature=-15,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
 
-    filenames = file_io.find_image_files(self.context.input_dirs[0])
+    filenames = file_io.find_image_files(new_context.input_dirs[0])
     self.assertEqual(len(filenames), 39)
 
     graph = _build_compute_graph()
-    self.context, _ = run_graph(graph, self.context)
+    run_graph(graph)
 
-    stacks = ray.get(self.context.stacks)
+    stacks = new_context.stacks
     self.assertEqual(len(stacks), 6)
 
     light_stacks = [s for s in stacks.values() if s.image_type == 'light']
@@ -265,7 +266,7 @@ class TestCalibrationFrames(unittest.TestCase):
     # The light frames are at temperature -13, but the darks are at -15. This
     # difference is small enough for the frames to still be associated.
     copy_testdata_frames(target_name='NGC7635',
-                         dest_dir=self.context.input_dirs[0])
+                         dest_dir=new_context.input_dirs[0])
     make_synthetic_frames(number=5,
                           image_type='Dark',
                           fill_value=100,
@@ -274,15 +275,15 @@ class TestCalibrationFrames(unittest.TestCase):
                           width_pixels=9576,
                           height_pixels=6388,
                           temperature=-15,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
 
-    filenames = file_io.find_image_files(self.context.input_dirs[0])
+    filenames = file_io.find_image_files(new_context.input_dirs[0])
     self.assertEqual(len(filenames), 8)
 
     graph = _build_compute_graph()
-    self.context, _ = run_graph(graph, self.context)
+    run_graph(graph)
 
-    stacks = ray.get(self.context.stacks)
+    stacks = new_context.stacks
     self.assertEqual(len(stacks), 3)
 
     light_stacks = [s for s in stacks.values() if s.image_type == 'light']
@@ -293,7 +294,7 @@ class TestCalibrationFrames(unittest.TestCase):
 
   def test_stack_calibration_frames(self):
     copy_testdata_frames(target_name='NGC7635',
-                         dest_dir=self.context.input_dirs[0])
+                         dest_dir=new_context.input_dirs[0])
     make_synthetic_frames(number=5,
                           image_type='Bias',
                           fill_value=50,
@@ -301,7 +302,7 @@ class TestCalibrationFrames(unittest.TestCase):
                           width_pixels=9576,
                           height_pixels=6388,
                           temperature=-13,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
     make_synthetic_frames(number=7,
                           image_type='Dark',
                           fill_value=50,
@@ -309,7 +310,7 @@ class TestCalibrationFrames(unittest.TestCase):
                           width_pixels=9576,
                           height_pixels=6388,
                           temperature=-15,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
     make_synthetic_frames(number=11,
                           image_type='Flat',
                           fill_value=50,
@@ -317,15 +318,15 @@ class TestCalibrationFrames(unittest.TestCase):
                           width_pixels=9576,
                           height_pixels=6388,
                           temperature=-17,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
 
-    filenames = file_io.find_image_files(self.context.input_dirs[0])
+    filenames = file_io.find_image_files(new_context.input_dirs[0])
     self.assertEqual(len(filenames), 26)
 
     graph = _build_compute_graph()
-    self.context, _ = run_graph(graph, self.context)
+    run_graph(graph)
 
-    stacks = ray.get(self.context.stacks)
+    stacks = new_context.stacks
     self.assertEqual(len(stacks), 5)
 
     light_stacks = [s for s in stacks.values() if s.image_type == 'light']
@@ -335,7 +336,7 @@ class TestCalibrationFrames(unittest.TestCase):
     # Only one run of flat frames applies to the light frames, which use
     # the H filter.
     copy_testdata_frames(target_name='NGC7635',
-                         dest_dir=self.context.input_dirs[0])
+                         dest_dir=new_context.input_dirs[0])
     make_synthetic_frames(number=5,
                           image_type='Flat',
                           filter='H',
@@ -344,7 +345,7 @@ class TestCalibrationFrames(unittest.TestCase):
                           width_pixels=9576,
                           height_pixels=6388,
                           temperature=-10,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
     make_synthetic_frames(number=7,
                           image_type='Flat',
                           filter='S',
@@ -353,15 +354,15 @@ class TestCalibrationFrames(unittest.TestCase):
                           width_pixels=9576,
                           height_pixels=6388,
                           temperature=-10,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
 
-    filenames = file_io.find_image_files(self.context.input_dirs[0])
+    filenames = file_io.find_image_files(new_context.input_dirs[0])
     self.assertEqual(len(filenames), 15)
 
     graph = _build_compute_graph()
-    self.context, _ = run_graph(graph, self.context)
+    run_graph(graph)
 
-    stacks = ray.get(self.context.stacks)
+    stacks = new_context.stacks
     self.assertEqual(len(stacks), 4)
 
     light_stacks = [s for s in stacks.values() if s.image_type == 'light']
@@ -381,12 +382,12 @@ class TestCalibrationFrames(unittest.TestCase):
                           width_pixels=9576,
                           height_pixels=6388,
                           temperature=-15,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
     copy_testdata_frames(prefix='light_run',
                          target_name='NGC7635',
                          start_datetime=datetime.datetime(
                              2023, 12, 6, 16, 29, 43),
-                         dest_dir=self.context.input_dirs[0],
+                         dest_dir=new_context.input_dirs[0],
                          add_noise=False)
     make_synthetic_frames(prefix='flat_run_1',
                           number=5,
@@ -399,18 +400,17 @@ class TestCalibrationFrames(unittest.TestCase):
                           width_pixels=9576,
                           height_pixels=6388,
                           temperature=-15,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
 
-    filenames = file_io.find_image_files(self.context.input_dirs[0])
+    filenames = file_io.find_image_files(new_context.input_dirs[0])
     self.assertEqual(len(filenames), 15)
 
     # Run the graph the first time. It will use the default flat run, which
     # has prefix `flat_run_1` because it is closer chronologically.
-    print('### Running compute graph for the first time')
     graph = _build_compute_graph()
-    self.context, _ = run_graph(graph, self.context)
-    image_hashes = ray.get(self.context.image_hashes)
-    stacks = ray.get(self.context.stacks)
+    run_graph(graph)
+    image_hashes = new_context.image_hashes
+    stacks = new_context.stacks
 
     # Look through the stacks, and find the stacks for the two runs of flat
     # frames.
@@ -422,12 +422,9 @@ class TestCalibrationFrames(unittest.TestCase):
 
     first_flat_stack = find_stack('flat_run_0')
     second_flat_stack = find_stack('flat_run_1')
-    print(f'### first_flat_stack {first_flat_stack}')
-    print(f'### second_flat_stack {second_flat_stack}')
 
     first_light_run_hash = hash_list(
         [k for k, v in image_hashes.items() if 'light_run' in v])
-    print(f'### first_light_run_hash', first_light_run_hash)
 
     light_stacks = [
         s for s in stacks.values()
@@ -446,11 +443,10 @@ class TestCalibrationFrames(unittest.TestCase):
                       {'flat': first_flat_stack})
 
     # Run the graph again, with the settings applied.
-    print('### Running compute graph for the second time')
     graph = _build_compute_graph()
-    self.context, _ = run_graph(graph, self.context)
-    image_hashes = ray.get(self.context.image_hashes)
-    stacks = ray.get(self.context.stacks)
+    run_graph(graph)
+    image_hashes = new_context.image_hashes
+    stacks = new_context.stacks
     self.assertEqual(len(stacks), 4)
 
     light_stacks = [s for s in stacks.values() if s.image_type == 'light']
@@ -463,7 +459,7 @@ class TestCalibrationFrames(unittest.TestCase):
 
   def test_generic_grouping(self):
     copy_testdata_frames(target_name='NGC7635',
-                         dest_dir=self.context.input_dirs[0])
+                         dest_dir=new_context.input_dirs[0])
     make_synthetic_frames(number=5,
                           image_type='Bias',
                           fill_value=100,
@@ -473,7 +469,7 @@ class TestCalibrationFrames(unittest.TestCase):
                           width_pixels=9576,
                           height_pixels=6388,
                           temperature=-15,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
     make_synthetic_frames(number=7,
                           image_type='Dark',
                           fill_value=100,
@@ -483,7 +479,7 @@ class TestCalibrationFrames(unittest.TestCase):
                           width_pixels=9576,
                           height_pixels=6388,
                           temperature=-15,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
     make_synthetic_frames(number=11,
                           image_type='Flat',
                           fill_value=100,
@@ -492,12 +488,12 @@ class TestCalibrationFrames(unittest.TestCase):
                           width_pixels=9576,
                           height_pixels=6388,
                           temperature=-15,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
 
     graph = _build_compute_graph()
-    self.context, _ = run_graph(graph, self.context)
+    run_graph(graph)
 
-    stacks = ray.get(self.context.stacks)
+    stacks = new_context.stacks
     self.assertEqual(len(stacks), 5)
 
     toplevel_stacks = get_toplevel_stacks(stacks)

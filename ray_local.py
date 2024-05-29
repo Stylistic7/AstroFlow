@@ -23,14 +23,20 @@ ray.init(
   }},
 )
 
-import ray_diskcache
-global_var_actor = ray_diskcache.GlobalVarActor.options(
+from ray_diskcache import GlobalVarActor
+global_var_actor = GlobalVarActor.options(
   name='ray_diskcache',
   namespace=namespace,
   get_if_exists=True).remote()
 
-import ray_state_actor
-state_actor = ray_state_actor.StateActor.options(
+from new_context import NewContextActor
+new_context = NewContextActor.options(
+  name='ray_context',
+  namespace=namespace,
+  get_if_exists=True).remote()
+
+from ray_state_actor import StateActor
+ray_state = StateActor.options(
   name='ray_state',
   namespace=namespace,
   get_if_exists=True).remote()

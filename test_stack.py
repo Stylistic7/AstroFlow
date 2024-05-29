@@ -4,6 +4,7 @@ import ray
 import unittest
 import numpy as np
 
+from new_context import new_context
 from stack import Stack
 from context import Context
 from make_test_context import make_test_context
@@ -27,7 +28,7 @@ def _build_compute_graph():
 class TestStack(unittest.TestCase):
 
   def setUp(self):
-    self.context, self.input_dir_obj, self.output_dir_obj = make_test_context()
+    self.input_dir_obj, self.output_dir_obj = make_test_context()
 
   def test_all_frames(self):
     stacks = {
@@ -55,12 +56,12 @@ class TestStack(unittest.TestCase):
                           height_pixels=6388,
                           temperature=-15,
                           exposure=300,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
 
     graph = _build_compute_graph()
-    self.context, _ = run_graph(graph, self.context)
+    run_graph(graph)
 
-    stacks = ray.get(self.context.stacks)
+    stacks = new_context.stacks
     self.assertEqual(len(stacks), 1)
     stack = next(iter(stacks.values()))
 
@@ -81,7 +82,7 @@ class TestStack(unittest.TestCase):
 
   def test_one_light_one_dark(self):
     copy_testdata_frames(target_name='NGC7635',
-                         dest_dir=self.context.input_dirs[0])
+                         dest_dir=new_context.input_dirs[0])
     make_synthetic_frames(prefix='dark',
                           number=5,
                           image_type='Dark',
@@ -91,12 +92,12 @@ class TestStack(unittest.TestCase):
                           height_pixels=6388,
                           temperature=-10,
                           exposure=300,
-                          dest_dir=self.context.input_dirs[0])
+                          dest_dir=new_context.input_dirs[0])
 
     graph = _build_compute_graph()
-    self.context, _ = run_graph(graph, self.context)
+    run_graph(graph)
 
-    stacks = ray.get(self.context.stacks)
+    stacks = new_context.stacks
     self.assertEqual(len(stacks), 3)
 
     toplevel_stack = next(

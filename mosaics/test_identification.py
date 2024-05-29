@@ -5,6 +5,7 @@ import ray
 import numpy as np
 from spherical_geometry.polygon import SphericalPolygon
 
+from new_context import new_context
 from target import Target
 from mosaic import Mosaic
 from make_test_context import make_test_context
@@ -15,7 +16,7 @@ from . import identification
 class TestMosaicIdentification(unittest.TestCase):
 
   def setUp(self):
-    self.context, self.input_dir_obj, self.output_dir_obj = make_test_context()
+    self.input_dir_obj, self.output_dir_obj = make_test_context()
 
   def test_two_targets(self):
     # These two targets are on the celestial equator, but overlap by one degree
@@ -32,10 +33,9 @@ class TestMosaicIdentification(unittest.TestCase):
                                                            [-1, -1, 1, 1]))
 
     targets = {target0.hash(): target0, target1.hash(): target1}
-    self.context.targets = ray.put(targets)
-    self.context, _ = ray.get(
-        identification.identify_mosiacs.remote(self.context))
-    mosaics = ray.get(self.context.mosaics)
+    new_context.targets = targets
+    ray.get(identification.identify_mosiacs.remote())
+    mosaics = new_context.mosaics
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
 
@@ -70,10 +70,9 @@ class TestMosaicIdentification(unittest.TestCase):
         target2.hash(): target2
     }
 
-    self.context.targets = ray.put(targets)
-    self.context, _ = ray.get(
-        identification.identify_mosiacs.remote(self.context))
-    mosaics = ray.get(self.context.mosaics)
+    new_context.targets = targets
+    ray.get(identification.identify_mosiacs.remote())
+    mosaics = new_context.mosaics
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))

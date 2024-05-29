@@ -5,15 +5,16 @@ import itertools
 
 import file_io
 import ray_diskcache
+from new_context import new_context
 import runs
 from stack import Stack, FrameHash
 from hashing import hash_list
 
 
 @ray.remote
-def identify_calibration_stacks(context):
+def identify_calibration_stacks():
   print(f'Identifying calibration stacks...')
-  fits_headers = ray.get(context.fits_headers)
+  fits_headers = new_context.fits_headers
 
   cal_frames = [
       f for f, header in fits_headers.items()
@@ -44,8 +45,8 @@ def identify_calibration_stacks(context):
   for camera in frames_for_camera:
     bias_frames = frames_for_image_type.get(
         'bias', set()) & frames_for_camera.get(camera, set())
-    for run in runs.get_runs(bias_frames, fits_headers, context.max_run_gap,
-                             context.min_frames_in_run):
+    for run in runs.get_runs(bias_frames, fits_headers, new_context.max_run_gap,
+                             new_context.min_frames_in_run):
       stack = new_stack(runs.get_frames_for_run(run, bias_frames, fits_headers))
       stacks[stack.content_hash] = stack
 
@@ -53,8 +54,9 @@ def identify_calibration_stacks(context):
       dark_frames = frames_for_image_type.get(
           'dark', set()) & frames_for_camera.get(
               camera, set()) & frames_for_exposure.get(exposure, set())
-      for run in runs.get_runs(dark_frames, fits_headers, context.max_run_gap,
-                               context.min_frames_in_run):
+      for run in runs.get_runs(dark_frames, fits_headers,
+                               new_context.max_run_gap,
+                               new_context.min_frames_in_run):
         stack = new_stack(
             runs.get_frames_for_run(run, dark_frames, fits_headers))
         stacks[stack.content_hash] = stack
@@ -63,16 +65,14 @@ def identify_calibration_stacks(context):
       flat_frames = frames_for_image_type.get(
           'flat', set()) & frames_for_camera.get(
               camera, set()) & frames_for_filter.get(filter, set())
-      for run in runs.get_runs(flat_frames, fits_headers, context.max_run_gap,
-                               context.min_frames_in_run):
+      for run in runs.get_runs(flat_frames, fits_headers,
+                               new_context.max_run_gap,
+                               new_context.min_frames_in_run):
         stack = new_stack(
             runs.get_frames_for_run(run, flat_frames, fits_headers))
         stacks[stack.content_hash] = stack
 
-  context.stacks = ray.put(stacks)
-  ray_diskcache.set('stacks', stacks)
-
-  return context, None
+  new_context.stacks = stacks
 
 
 def associate_with_stack(stack, stacks):
@@ -126,13 +126,10 @@ def associate_with_stack(stack, stacks):
 
 
 @ray.remote
-def associate_with_stacks(context):
-  stacks = ray.get(context.stacks)
+def associate_with_stacks():
+  stacks = new_context.stacks
   for stack in stacks.values():
     if stack.image_type == 'light' and stack.frames:
       associate_with_stack(stack, stacks)
 
-  context.stacks = ray.put(stacks)
-  ray_diskcache.set('stacks', stacks)
-
-  return context, None
+  new_context.stacks = stacks

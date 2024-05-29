@@ -7,6 +7,7 @@ import file_io
 import plate_solving
 import ray_diskcache
 from dependency_graph import Graph
+from new_context import new_context
 
 _CONTENT_HASH_KEY = 'XISF:AstroFlow:StackContentHash'
 
@@ -71,23 +72,22 @@ _CONTENT_HASH_KEY = 'XISF:AstroFlow:StackContentHash'
 
 
 @ray.remote
-def scatter_compute_image_metadata(context, mode):
+def scatter_compute_image_metadata(mode):
   print('Entering scatter_compute_image_metadata, mode', mode)
 
   directories = {
-      'input': context.input_dirs,
-      'master': [context.output_dir],
-      'all': context.input_dirs + [context.output_dir],
+      'input': new_context.input_dirs,
+      'master': [new_context.output_dir],
+      'all': new_context.input_dirs + [new_context.output_dir],
   }[mode]
 
   filenames = []
   for dir in directories:
     filenames.extend(file_io.find_image_files(dir))
 
-  known_files = ray.get(context.image_hashes).values()
-  quarantined_files = ray.get(context.quarantined_files)
+  known_files = new_context.image_hashes.values()
   new_filenames = list(
-      set(filenames) - set(known_files) - set(quarantined_files))
+      set(filenames) - set(known_files) - set(new_context.quarantined_files))
 
   print(f'### Computing image metadata for {len(new_filenames)} new filenames')
 
@@ -97,7 +97,7 @@ def scatter_compute_image_metadata(context, mode):
       ]
   })
 
-  return context, graph
+  return graph
 
 
 class DuplicateFileException(Exception):
@@ -105,11 +105,11 @@ class DuplicateFileException(Exception):
 
 
 @ray.remote(scheduling_strategy="SPREAD", max_retries=5, retry_exceptions=True)
-def compute_image_metadata_ray(context, filename, *unused):
+def compute_image_metadata_ray(filename):
   print(f'Entering compute_image_metadata_ray() for {filename}')
   assert filename
 
-  image_hashes = ray.get(context.image_hashes)
+  image_hashes = new_context.image_hashes
 
   # TODO: Make sure this code doesn't actually repeatedly read the image across
   # the network. It should hit the node's filesystem cache.
@@ -128,68 +128,62 @@ def compute_image_metadata_ray(context, filename, *unused):
         raise DuplicateFileException()
       else:
         print(f'Filename {prev_filename} has been moved to {filename}')
-        return context, result
+        return result
 
     if file_io.is_light_frame(header):
       result['plate_solution'] = plate_solving.solve_field(filename)
       assert type(result['plate_solution']) is not str
 
-    return context, result
+    return result
   except Exception as e:
     print(f'compute_image_metadata_ray() failed for file {filename}, '
           f'exception {e}')
-    return context, {'filename': filename, 'exception': e}
+    return {'filename': filename, 'exception': e}
 
 
 @ray.remote
-def gather_compute_image_metadata(context, results):
+def gather_compute_image_metadata(results):
   print(f'Entering gather_compute_image_metadata results {len(results)}')
 
-  quarantined_files = ray_diskcache.and_equals(
-      'quarantined_files', [r['filename'] for r in results if 'exception' in r])
-  image_hashes = ray_diskcache.or_equals(
-      'image_hashes', {
-          r['image_hash']: r['filename']
-          for r in results
-          if 'image_hash' in r and 'filename' in r
-      })
-  fits_headers = ray_diskcache.or_equals(
-      'fits_headers', {
-          r['image_hash']: r['fits_header']
-          for r in results
-          if 'image_hash' in r and 'fits_header' in r
-      })
-  plate_solutions = ray_diskcache.or_equals(
-      'plate_solutions', {
-          r['image_hash']: r['plate_solution']
-          for r in results
-          if 'image_hash' in r and 'plate_solution' in r
-      })
+  new_context.quarantined_files += [
+      r['filename'] for r in results if 'exception' in r
+  ]
+  new_context.image_hashes |= {
+      r['image_hash']: r['filename']
+      for r in results
+      if 'image_hash' in r and 'filename' in r
+  }
+  new_context.fits_headers |= {
+      r['image_hash']: r['fits_header']
+      for r in results
+      if 'image_hash' in r and 'fits_header' in r
+  }
+  new_context.plate_solutions |= {
+      r['image_hash']: r['plate_solution']
+      for r in results
+      if 'image_hash' in r and 'plate_solution' in r
+  }
 
-  assert not any(type(p) is str for p in plate_solutions.values())
-  assert None not in image_hashes.values()
+  assert not any(type(p) is str for p in new_context.plate_solutions.values())
+  assert None not in new_context.image_hashes.values()
 
-  context.quarantined_files = ray.put(quarantined_files)
-  context.image_hashes = ray.put(image_hashes)
-  context.fits_headers = ray.put(fits_headers)
-  context.plate_solutions = ray.put(plate_solutions)
+  print(f'Cached {len(new_context.quarantined_files)} quarantined_files')
+  print(f'Cached {len(new_context.image_hashes)} image_hashes')
+  print(f'Cached {len(new_context.fits_headers)} fits_headers')
+  print(f'Cached {len(new_context.plate_solutions)} plate_solutions')
 
-  print(f'Cached {len(quarantined_files)} quarantined_files')
-  print(f'Cached {len(image_hashes)} image_hashes')
-  print(f'Cached {len(fits_headers)} fits_headers')
-  print(f'Cached {len(plate_solutions)} plate_solutions')
-
+  # TODO: Just make `regroup` this function's return value? Although really
+  # this function is doing more than one thing, maybe break it up.
+  #
   # TODO: Quarantining files should also cause regrouping.
   #
   # If any new subframes have been added (e.g. light, dark, bias, or flat
   # frames), then they need to be regrouped into stacks, targets, and mosaics.
-  context.regroup |= any(not file_io.is_master(r['fits_header'])
-                         for r in results
-                         if 'exception' not in r)
+  new_context.regroup |= any(not file_io.is_master(r['fits_header'])
+                             for r in results
+                             if 'exception' not in r)
 
-  print(f'Needs regrouping: {context.regroup}')
-
-  return context, None
+  print(f'Needs regrouping: {new_context.regroup}')
 
 
 # TODO: This is a bit weird. We want to keep unsolvable files in the cache,
@@ -201,13 +195,11 @@ def gather_compute_image_metadata(context, results):
 # TODO: Report unsolvable images and missing images to the user. Include the
 # cause of failure whenever possible, and provide a solution (e.g. increasing
 # timeout on slow computers).
-def remove_bad_images(context):
-  image_hashes = ray.get(context.image_hashes)
-  plate_solutions = ray.get(context.plate_solutions)
-  quarantined_files = ray.get(context.quarantined_files)
+def remove_bad_images():
   return {
       h: p
-      for h, p in plate_solutions.items()
-      if h in image_hashes and image_hashes[h] and
-      h not in quarantined_files and type(p) is plate_solving.PlateSolution
+      for h, p in new_context.plate_solutions.items()
+      if h in new_context.image_hashes and new_context.image_hashes[h] and
+      h not in new_context.quarantined_files and
+      type(p) is plate_solving.PlateSolution
   }
