@@ -23,6 +23,11 @@ class NewContextActor:
       assert type(self.ref_dict[key]) is ray.ObjectRef
       return self.ref_dict[key]
 
+    if key in cache:
+      value = cache[key]
+      self.ref_dict[key] = ray.put(value)
+      return self.ref_dict[key]
+
   def set(self, key, value):
     assert type(value) is list
     assert len(value) == 1
@@ -40,6 +45,7 @@ class NewContextActor:
 
   def clear(self):
     self.ref_dict.clear()
+    cache.clear()
 
 
 class NewContext:

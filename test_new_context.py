@@ -59,13 +59,11 @@ class TestNewContext(unittest.TestCase):
     self.assertEqual(list(cache.iterkeys()), ['biggie'])
     self.assertEqual(type(cache['biggie']), np.ndarray)
 
+  def test_load_from_cache(self):
+    cache['foo'] = 'bar'
+    self.assertEqual(new_context.foo, 'bar')
 
-def test_load_from_cache(self):
-  cache['foo'] = 'bar'
-  self.assertEqual(new_context.foo, 'bar')
-
-
-def test_or_equals(self):
-  new_context.foo = {'a': 1}
-  new_context.foo |= {'b', 2}
-  self.assertEqual(new_context.foo, {'a': 1, 'b': 2})
+  def test_or_equals(self):
+    new_context.foo = {'a': 1}
+    new_context.foo |= {'b': 2}
+    self.assertEqual(new_context.foo, {'a': 1, 'b': 2})
