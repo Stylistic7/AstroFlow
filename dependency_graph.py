@@ -75,24 +75,21 @@ def make_graph_from_list(tasks):
 
 def print_result_dict(results, indent=0):
   for node, result in results.items():
-    if type(node) is tuple:
-      task, *args = node
-    else:
-      task, args = node, []
+    node = _unpack_node(node)
 
-    if type(task) is str:
-      print(f'{" " * indent}{task} = {result}')
+    if type(node.task) is str:
+      print(f'{" " * indent}{node.task} = {result}')
       continue
 
     if type(result) is not ResultDict:
-      print(f'{" " * indent}{task._function.__name__} {args}: {result}')
+      print(
+          f'{" " * indent}{node.task._function.__name__} {node.args}: {result}')
     else:
-      print(f'{" " * indent}{task._function.__name__} {args}:')
+      print(f'{" " * indent}{node.task._function.__name__} {node.args}:')
       print_result_dict(result, indent + 2)
 
 
-def run_graph(graph, context=None, debug=False):
-  use_context = context is not None
+def run_graph(graph, debug=False):
   num_nodes_run = 0
   max_parallelism_seen = 0
   active = []
@@ -107,25 +104,23 @@ def run_graph(graph, context=None, debug=False):
 
     def done_callback(subgraph_ts):
       if debug:
-        print(f'subgraph is done {subgraph_ts.graph}')
+        print(f'Subgraph is done {subgraph_ts.graph}')
       if parent_ts is None:
         return
 
       parent_ts.done(parent_node)
-      parent_ts.context = subgraph_ts.context
       parent_ts.results[parent_node] = subgraph_ts.final_result
       parent_ts.final_result = subgraph_ts.final_result
 
     graph = canonicalize_graph(graph)
 
     if debug:
-      print(f'creating new subgraph {graph}')
+      print(f'Creating new subgraph {graph}')
 
     ts = graphlib.TopologicalSorter(graph)
     ts.prepare()
     ts.done_callback = lambda subgraph_ts=ts: done_callback(subgraph_ts)
     ts.graph = graph
-    ts.context = context if parent_ts is None else parent_ts.context
     ts.results = ResultDict()
     ts.final_result = None
     active.append(ts)
@@ -136,7 +131,7 @@ def run_graph(graph, context=None, debug=False):
     node = _unpack_node(node)
     nodes = ts.graph.get(node, [])
     if debug:
-      print(f'### Node with task {node.task._function.__name__} has '
+      print(f'Node with task {node.task._function.__name__} has '
             f'{len(nodes)} ancestors')
     return [ts.results[node] for node in nodes]
 
@@ -145,10 +140,8 @@ def run_graph(graph, context=None, debug=False):
     if debug:
       print(f'Making run fn for task {node.task._function.__name__}')
 
+    # TODO: Is this copy necessary?
     full_args = []
-    if use_context:
-      full_args.append(ts.context)
-
     full_args.extend(node.args)
 
     # TODO: This confuses optional arguments with ancestor results;
@@ -178,7 +171,7 @@ def run_graph(graph, context=None, debug=False):
     max_parallelism_seen = max(len(ready), max_parallelism_seen)
 
     if debug:
-      print(f'top of loop, {len(active)} active graphs, '
+      print(f'Top of loop, {len(active)} active graphs, '
             f'{len(ready)} ready nodes')
 
     ref_to_ts_and_node = {
@@ -197,10 +190,7 @@ def run_graph(graph, context=None, debug=False):
       num_nodes_run += 1
 
       try:
-        if use_context:
-          ts.context, result = ray.get(ready_refs[0])
-        else:
-          result = ray.get(ready_refs[0])
+        result = ray.get(ready_refs[0])
 
         # There are two possibilities here: the task can return a result,
         # or a (dynamically-generated) Graph to run as a sub-graph.
@@ -221,7 +211,4 @@ def run_graph(graph, context=None, debug=False):
   toplevel_ts.results['num_nodes_run'] = num_nodes_run
   toplevel_ts.results['max_parallelism_seen'] = max_parallelism_seen
 
-  if use_context:
-    return toplevel_ts.context, toplevel_ts.results
-  else:
-    return toplevel_ts.results
+  return toplevel_ts.results

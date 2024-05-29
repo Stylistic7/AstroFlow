@@ -7,6 +7,7 @@ import tempfile
 import functools
 
 from cache import cache
+from new_context import new_context
 from dependency_graph import Graph, Node, run_graph, make_graph_from_list
 
 
@@ -44,33 +45,33 @@ def my_last_task(ancestor_results):
 
 
 @ray.remote
-def my_last_task_with_context(context, ancestor_results):
+def my_last_task_with_context(ancestor_results):
   assert len(ancestor_results) == 1, f'ancestor_results are {ancestor_results}'
-  return context, ancestor_results[0] + 3
+  return ancestor_results[0] + 3
 
 
 @ray.remote
-def increment_foo(context):
-  context['foo'] += 1
-  return context, context['foo']
+def increment_foo():
+  new_context.foo += 1
+  return new_context.foo
 
 
 @ray.remote
-def increment_bar(context):
-  context['bar'] += 1
-  return context, context['bar']
+def increment_bar():
+  new_context.bar += 1
+  return new_context.bar
 
 
 @ray.remote
-def increment_baz(context):
-  context['baz'] += 1
-  return context, context['baz']
+def increment_baz():
+  new_context.baz += 1
+  return new_context.baz
 
 
 @ray.remote
-def set_foo(context, value):
-  context['foo'] = value
-  return context, value
+def set_foo(value):
+  new_context.foo = value
+  return value
 
 
 @ray.remote
@@ -99,25 +100,17 @@ def gather(results):
 
 
 @ray.remote
-def scatter_with_context(context):
-  s = context.get('starting_value', 0)
-  context['processed'] = []
-  return context, Graph({
-      gather_with_context: [(process_with_context, i) for i in range(s, s + 7)]
-  })
+def scatter_with_context():
+  s = new_context.starting_value or 0
+  new_context.processed = []
+  return Graph({gather_with_context: [(process, i) for i in range(s, s + 7)]})
 
 
 @ray.remote
-def process_with_context(context, item):
-  return context, item
-
-
-@ray.remote
-def gather_with_context(context, results):
-  print(f'### Entering gather_with_context, results are {results}')
-  context['processed'].extend(results)
-  context['sum'] = sum(results)
-  return context, context['sum']
+def gather_with_context(results):
+  new_context.processed += results
+  new_context.sum = sum(results)
+  return new_context.sum
 
 
 @ray.remote
@@ -179,14 +172,8 @@ def maybe_run_dynamic_graph(should_run):
 
 
 @ray.remote
-def initial_task(context):
-  return context, None
-
-
-@ray.remote
-def start_parallel_scatter(context, starting_value):
-  context['starting_value'] = starting_value
-  return context, Graph({scatter_with_context: {}})
+def initial_task():
+  return None
 
 
 class TestDependencyGraph(unittest.TestCase):
@@ -305,9 +292,8 @@ class TestDependencyGraph(unittest.TestCase):
         scatter_with_context: {},
         my_last_task_with_context: {scatter_with_context}
     }
-    context = {}
 
-    context, results = run_graph(graph, context)
+    results = run_graph(graph)
 
     self.assertEqual(results[scatter_with_context], 21)
     self.assertEqual(results[my_last_task_with_context], 24)
@@ -320,47 +306,31 @@ class TestDependencyGraph(unittest.TestCase):
     B = increment_bar
 
     graph = {B: {A}}
-    context = {'foo': 2, 'bar': 3}
 
-    context, results = run_graph(graph, context)
+    new_context.foo = 2
+    new_context.bar = 3
+
+    results = run_graph(graph)
 
     self.assertEqual(results[increment_foo], 3)
     self.assertEqual(results[increment_bar], 4)
-    self.assertEqual(context, {'foo': 3, 'bar': 4})
+    self.assertEqual(new_context.foo, 3)
+    self.assertEqual(new_context.bar, 4)
 
     self.assertEqual(results.num_nodes_run, 2)
     self.assertEqual(results.max_parallelism_seen, 1)
 
   def test_dynamic_graph_with_context(self):
     graph = {scatter_with_context: {}}
-    context = {}
 
-    context, results = run_graph(graph, context)
+    results = run_graph(graph)
 
     self.assertEqual(results[scatter_with_context], 21)
-    self.assertEqual(sorted(context['processed']), [0, 1, 2, 3, 4, 5, 6])
-    self.assertEqual(context['sum'], 21)
+    self.assertEqual(sorted(new_context.processed), [0, 1, 2, 3, 4, 5, 6])
+    self.assertEqual(new_context.sum, 21)
 
     self.assertEqual(results.num_nodes_run, 9)
     self.assertEqual(results.max_parallelism_seen, 7)
-
-  def test_parallel_dynamic_graphs_with_context(self):
-    # This test starts two scatter operations with different values stored in
-    # the context object in each operation.
-    graph = {
-        initial_task: {},
-        (start_parallel_scatter, 100): {initial_task},
-        (start_parallel_scatter, 200): {initial_task}
-    }
-
-    context = {'foo': 'bar'}
-    context, results = run_graph(graph, context)
-
-    self.assertEqual(results[(start_parallel_scatter, 100)], 721)
-    self.assertEqual(results[(start_parallel_scatter, 200)], 1421)
-
-    self.assertEqual(results.num_nodes_run, 21)
-    self.assertEqual(results.max_parallelism_seen, 14)
 
   def test_conditional_dynamic_graph(self):
     dynamic_graph_task = (maybe_run_dynamic_graph, True)
@@ -397,8 +367,8 @@ class TestDependencyGraph(unittest.TestCase):
     D = increment_foo
 
     graph = {D: {B, C}, C: {A}, B: {A}}
-    context = {'foo': None}
-    context, results = run_graph(graph, context)
+
+    results = run_graph(graph)
 
     self.assertEqual(results[A], 1)
     self.assertEqual(results[B], 10)
@@ -439,16 +409,20 @@ class TestDependencyGraph(unittest.TestCase):
     # The increment_foo task should only run once, because A1 == A2.
     A1 = increment_foo
     A2 = increment_foo
-    B = (process_with_context, 2)
-    C = (process_with_context, 3)
+    B = (process, 2)
+    C = (process, 3)
     D = gather_with_context
 
     graph = {D: {B, C}, B: {A1}, C: {A2}}
-    context = {'foo': 7, 'processed': []}
 
-    context, results = run_graph(graph, context, debug=True)
+    new_context.foo = 7
+    new_context.processed = []
 
-    self.assertEqual(context, {'foo': 8, 'processed': [2, 3], 'sum': 5})
+    results = run_graph(graph, debug=True)
+
+    self.assertEqual(new_context.foo, 8)
+    self.assertEqual(sorted(new_context.processed), [2, 3])
+    self.assertEqual(new_context.sum, 5)
     self.assertEqual(results.num_nodes_run, 4)
     self.assertEqual(results.max_parallelism_seen, 2)
 
