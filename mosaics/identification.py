@@ -4,7 +4,7 @@ from spherical_geometry.polygon import SphericalPolygon
 import ray
 import numpy as np
 
-from new_context import new_context
+from context import context
 from mosaic import Mosaic
 import position_string
 import footprints
@@ -65,13 +65,13 @@ def _identify_overlapping_targets(targets):
 
 @ray.remote
 def identify_mosiacs():
-  targets = new_context.targets
+  targets = context.targets
   print(f'### Identifying mosaics from {len(targets)} targets')
 
   mosaics = _identify_overlapping_targets(targets.values())
   if not mosaics:
     print('### No overlapping targets found')
-    new_context.mosaics = {}
+    context.mosaics = {}
     return
 
   print(f'Found {len(mosaics)} mosaics')
@@ -121,4 +121,4 @@ def identify_mosiacs():
 
   # TODO: Computing the result and storing the result are two different
   # responsibilities. Perhaps separate patterns like this?
-  new_context.mosaics = output_mosaics
+  context.mosaics = output_mosaics

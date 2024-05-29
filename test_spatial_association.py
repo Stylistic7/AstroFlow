@@ -5,8 +5,7 @@ from datetime import datetime, timedelta
 import ray
 
 from make_test_context import make_test_context
-from new_context import new_context
-from context import Context
+from context import context
 from make_test_frames import make_synthetic_frames
 from spatial_association import find_components_by_cosine_similarity
 
@@ -18,12 +17,12 @@ class TestSpatialAssociation(unittest.TestCase):
         ra=100, dec=50, prefix='foo', number=10, dither=0)
 
     make_test_context()
-    new_context.image_hashes = image_hashes
-    new_context.fits_headers = fits_headers
-    new_context.plate_solutions = plate_solutions
+    context.image_hashes = image_hashes
+    context.fits_headers = fits_headers
+    context.plate_solutions = plate_solutions
 
     ray.get(find_components_by_cosine_similarity.remote())
-    groups = new_context.spatial_groups
+    groups = context.spatial_groups
 
     expected_groups = [('IC360', list(sorted(image_hashes.keys())))]
     self.assertEqual(groups, expected_groups)
@@ -51,12 +50,12 @@ class TestSpatialAssociation(unittest.TestCase):
     file_for_hash = {v: k for k, v in image_hashes.items()}
 
     make_test_context()
-    new_context.image_hashes = image_hashes
-    new_context.fits_headers = fits_headers
-    new_context.plate_solutions = plate_solutions
+    context.image_hashes = image_hashes
+    context.fits_headers = fits_headers
+    context.plate_solutions = plate_solutions
 
     ray.get(find_components_by_cosine_similarity.remote())
-    groups = new_context.spatial_groups
+    groups = context.spatial_groups
 
     expected_groups = [('IC1318',
                         sorted([
@@ -95,12 +94,12 @@ class TestSpatialAssociation(unittest.TestCase):
     file_for_hash = {v: k for k, v in image_hashes.items()}
 
     make_test_context()
-    new_context.image_hashes = image_hashes
-    new_context.fits_headers = fits_headers
-    new_context.plate_solutions = plate_solutions
+    context.image_hashes = image_hashes
+    context.fits_headers = fits_headers
+    context.plate_solutions = plate_solutions
 
     ray.get(find_components_by_cosine_similarity.remote())
-    groups = new_context.spatial_groups
+    groups = context.spatial_groups
 
     expected_groups = [
         ('IC1318',
@@ -141,12 +140,12 @@ class TestSpatialAssociation(unittest.TestCase):
     file_for_hash = {v: k for k, v in image_hashes.items()}
 
     make_test_context()
-    new_context.image_hashes = image_hashes
-    new_context.fits_headers = fits_headers
-    new_context.plate_solutions = plate_solutions
+    context.image_hashes = image_hashes
+    context.fits_headers = fits_headers
+    context.plate_solutions = plate_solutions
 
     ray.get(find_components_by_cosine_similarity.remote())
-    groups = new_context.spatial_groups
+    groups = context.spatial_groups
 
     expected_groups = [
         ('IC1318',
@@ -185,12 +184,12 @@ class TestSpatialAssociation(unittest.TestCase):
     file_for_hash = {v: k for k, v in image_hashes.items()}
 
     make_test_context()
-    new_context.image_hashes = image_hashes
-    new_context.fits_headers = fits_headers
-    new_context.plate_solutions = plate_solutions
+    context.image_hashes = image_hashes
+    context.fits_headers = fits_headers
+    context.plate_solutions = plate_solutions
 
     ray.get(find_components_by_cosine_similarity.remote())
-    groups = new_context.spatial_groups
+    groups = context.spatial_groups
 
     expected_groups = [
         ('IC1318',
@@ -225,13 +224,13 @@ class TestSpatialAssociation(unittest.TestCase):
     file_for_hash = {v: k for k, v in image_hashes.items()}
 
     make_test_context()
-    new_context.image_hashes = image_hashes
-    new_context.fits_headers = fits_headers
-    new_context.plate_solutions = plate_solutions
-    new_context.min_component_members = 1
+    context.image_hashes = image_hashes
+    context.fits_headers = fits_headers
+    context.plate_solutions = plate_solutions
+    context.min_component_members = 1
 
     ray.get(find_components_by_cosine_similarity.remote())
-    groups = new_context.spatial_groups
+    groups = context.spatial_groups
 
     expected_groups = [('IC1311', [file_for_hash['Pane 0']]),
                        ('IC1318', [file_for_hash['Pane 1']]),

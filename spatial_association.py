@@ -5,7 +5,7 @@ import image_metadata
 import position_string
 import file_io
 import footprints
-from new_context import new_context
+from context import context
 
 
 # TODO: There is nothing "spatial" about this. It's just a greedy algorithm
@@ -56,28 +56,28 @@ def _make_dict_from_groups(hashes, values, comparison_fn, plate_solutions,
   return targets
 
 
-# TODO: Is repeatedly calling new_context __getattr__ slow?
+# TODO: Is repeatedly calling context __getattr__ slow?
 @ray.remote
 def find_components_by_cosine_similarity():
   print('find_components_by_cosine_similarity')
 
   print('Before removing bad plate solutions, len image_hashes',
-        len(new_context.image_hashes))
+        len(context.image_hashes))
   print('Before removing bad plate solutions, len fits_headers ',
-        len(new_context.fits_headers))
+        len(context.fits_headers))
   print('Before removing bad plate solutions, len plate_solutions',
-        len(new_context.plate_solutions))
+        len(context.plate_solutions))
   plate_solutions = image_metadata.remove_bad_images()
   print('After removing bad plate solutions, len', len(plate_solutions))
 
   light_frames = [
-      h for h, header in new_context.fits_headers.items()
+      h for h, header in context.fits_headers.items()
       if h in plate_solutions and file_io.is_light_frame(header) and
       not file_io.is_master(header)
   ]
 
   light_frames = sorted(light_frames,
-                        key=lambda h: new_context.fits_headers[h]['DATE-OBS'])
+                        key=lambda h: context.fits_headers[h]['DATE-OBS'])
 
   centroids = {
       h: np.asarray(footprints.radec_to_vector(*plate_solutions[h].center))
@@ -85,11 +85,11 @@ def find_components_by_cosine_similarity():
   }
 
   def comparison_fn(a, b):
-    return np.dot(a, b) > new_context.cosine_similarity_threshold
+    return np.dot(a, b) > context.cosine_similarity_threshold
 
   spatial_groups = _make_dict_from_groups(light_frames, centroids,
                                           comparison_fn, plate_solutions,
-                                          new_context.min_component_members)
+                                          context.min_component_members)
 
-  new_context.spatial_groups = spatial_groups
+  context.spatial_groups = spatial_groups
   print(f'### Wrote {len(spatial_groups)} spatial groups into the cache')

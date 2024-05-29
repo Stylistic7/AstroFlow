@@ -6,9 +6,8 @@ import shapely
 from shapely import Polygon
 import datetime
 
-from new_context import new_context
+from context import context
 from dependency_graph import run_graph, make_graph_from_list
-from context import Context
 from footprints import project_footprint
 from make_test_frames import make_synthetic_frames
 from mosaics import identification
@@ -46,18 +45,18 @@ class TestFootprints(unittest.TestCase):
         height_pixels=7200,
         rotation_angle_deg=0,
         dither=0,
-        dest_dir=new_context.input_dirs[0])
+        dest_dir=context.input_dirs[0])
 
     # TODO: It's awkward that this has to be done both ways. Maybe split the
     # image_metadata gather op from the diskcache ops.
-    new_context.image_hashes = image_hashes
-    new_context.fits_headers = fits_headers
-    new_context.plate_solutions = plate_solutions
+    context.image_hashes = image_hashes
+    context.fits_headers = fits_headers
+    context.plate_solutions = plate_solutions
 
     graph = _build_compute_graph()
     run_graph(graph)
 
-    stacks = new_context.stacks
+    stacks = context.stacks
     self.assertEqual(len(stacks), 2)
     stack = next(iter(s for s in stacks.values() if s.geometric_hash))
 
@@ -86,7 +85,7 @@ class TestFootprints(unittest.TestCase):
         image_scale=1.0,
         width_pixels=10800,
         height_pixels=7200,
-        dest_dir=new_context.input_dirs[0])
+        dest_dir=context.input_dirs[0])
     image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
         number=5,
         prefix='bar',
@@ -97,22 +96,22 @@ class TestFootprints(unittest.TestCase):
         image_scale=2.0,
         width_pixels=5400,
         height_pixels=3600,
-        dest_dir=new_context.input_dirs[0],
+        dest_dir=context.input_dirs[0],
         image_hashes=image_hashes,
         fits_headers=fits_headers,
         plate_solutions=plate_solutions)
 
-    new_context.image_hashes = image_hashes
-    new_context.fits_headers = fits_headers
-    new_context.plate_solutions = plate_solutions
+    context.image_hashes = image_hashes
+    context.fits_headers = fits_headers
+    context.plate_solutions = plate_solutions
 
     graph = _build_compute_graph()
     run_graph(graph)
 
-    stacks = new_context.stacks
+    stacks = context.stacks
     self.assertEqual(len(stacks), 4)
 
-    targets = new_context.targets
+    targets = context.targets
     self.assertEqual(len(targets), 1)
 
     target = next(iter(targets.values()))
@@ -141,7 +140,7 @@ class TestFootprints(unittest.TestCase):
         image_scale=1.0,
         width_pixels=10800,
         height_pixels=7200,
-        dest_dir=new_context.input_dirs[0])
+        dest_dir=context.input_dirs[0])
     image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
         number=5,
         prefix='bar',
@@ -152,25 +151,25 @@ class TestFootprints(unittest.TestCase):
         image_scale=1.0,
         width_pixels=10800,
         height_pixels=7200,
-        dest_dir=new_context.input_dirs[0],
+        dest_dir=context.input_dirs[0],
         image_hashes=image_hashes,
         fits_headers=fits_headers,
         plate_solutions=plate_solutions)
 
-    new_context.image_hashes = image_hashes
-    new_context.fits_headers = fits_headers
-    new_context.plate_solutions = plate_solutions
+    context.image_hashes = image_hashes
+    context.fits_headers = fits_headers
+    context.plate_solutions = plate_solutions
 
     graph = _build_compute_graph()
     run_graph(graph)
 
-    stacks = new_context.stacks
+    stacks = context.stacks
     self.assertEqual(len(stacks), 4)
 
-    targets = new_context.targets
+    targets = context.targets
     self.assertEqual(len(targets), 2)
 
-    mosaics = new_context.mosaics
+    mosaics = context.mosaics
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
 

@@ -4,7 +4,7 @@ import ray
 import unittest
 import datetime
 
-from new_context import new_context
+from context import context
 from make_test_frames import make_synthetic_frames
 from stack_identification import identify_stacks
 from spatial_association import find_components_by_cosine_similarity
@@ -20,12 +20,12 @@ from get_stacks import get_toplevel_stacks, get_content_stacks_of_type
 
 
 def set_default_context():
-  new_context.cosine_similarity_threshold = 0.99999
-  new_context.min_component_members = 3
-  new_context.max_run_gap = datetime.timedelta(minutes=15)
-  new_context.min_frames_in_run = 3
-  new_context.min_frames_in_stack = 3
-  new_context.quarantined_files = []
+  context.cosine_similarity_threshold = 0.99999
+  context.min_component_members = 3
+  context.max_run_gap = datetime.timedelta(minutes=15)
+  context.min_frames_in_run = 3
+  context.min_frames_in_stack = 3
+  context.quarantined_files = []
 
 
 class TestStackIdentification(unittest.TestCase):
@@ -36,14 +36,14 @@ class TestStackIdentification(unittest.TestCase):
     image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
         ra=100, dec=50, prefix='foo', number=10, dither=0)
 
-    new_context.image_hashes = image_hashes
-    new_context.fits_headers = fits_headers
-    new_context.plate_solutions = plate_solutions
+    context.image_hashes = image_hashes
+    context.fits_headers = fits_headers
+    context.plate_solutions = plate_solutions
 
     ray.get(find_components_by_cosine_similarity.remote())
     ray.get(identify_stacks.remote())
 
-    stacks = new_context.stacks
+    stacks = context.stacks
     self.assertEqual(len(stacks), 2)
 
     toplevel_stacks = get_toplevel_stacks(stacks)
@@ -73,15 +73,15 @@ class TestStackIdentification(unittest.TestCase):
         fits_headers=fits_headers,
         plate_solutions=plate_solutions)
 
-    new_context.image_hashes = image_hashes
-    new_context.fits_headers = fits_headers
-    new_context.plate_solutions = plate_solutions
+    context.image_hashes = image_hashes
+    context.fits_headers = fits_headers
+    context.plate_solutions = plate_solutions
 
     ray.get(find_components_by_cosine_similarity.remote())
     ray.get(identify_stacks.remote())
 
-    image_hashes = new_context.image_hashes
-    stacks = new_context.stacks
+    image_hashes = context.image_hashes
+    stacks = context.stacks
     self.assertEqual(len(stacks), 4)
 
     toplevel_stacks = get_toplevel_stacks(stacks)
@@ -128,14 +128,14 @@ class TestStackIdentification(unittest.TestCase):
         fits_headers=fits_headers,
         plate_solutions=plate_solutions)
 
-    new_context.image_hashes = image_hashes
-    new_context.fits_headers = fits_headers
-    new_context.plate_solutions = plate_solutions
+    context.image_hashes = image_hashes
+    context.fits_headers = fits_headers
+    context.plate_solutions = plate_solutions
 
     ray.get(find_components_by_cosine_similarity.remote())
     ray.get(identify_stacks.remote())
 
-    stacks = new_context.stacks
+    stacks = context.stacks
     self.assertEqual(len(stacks), 4)
 
     toplevel_stacks = get_toplevel_stacks(stacks)
@@ -178,15 +178,15 @@ class TestStackIdentification(unittest.TestCase):
         fits_headers=fits_headers,
         plate_solutions=plate_solutions)
 
-    new_context.image_hashes = image_hashes
-    new_context.fits_headers = fits_headers
-    new_context.plate_solutions = plate_solutions
+    context.image_hashes = image_hashes
+    context.fits_headers = fits_headers
+    context.plate_solutions = plate_solutions
 
     ray.get(find_components_by_cosine_similarity.remote())
     ray.get(identify_stacks.remote())
 
-    image_hashes = new_context.image_hashes
-    stacks = new_context.stacks
+    image_hashes = context.image_hashes
+    stacks = context.stacks
     self.assertEqual(len(stacks), 3)
 
     toplevel_stacks = get_toplevel_stacks(stacks)

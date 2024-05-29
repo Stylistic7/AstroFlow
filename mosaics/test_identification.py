@@ -2,10 +2,10 @@ import unittest
 import ray_local
 
 import ray
+from context import context
 import numpy as np
 from spherical_geometry.polygon import SphericalPolygon
 
-from new_context import new_context
 from target import Target
 from mosaic import Mosaic
 from make_test_context import make_test_context
@@ -33,9 +33,9 @@ class TestMosaicIdentification(unittest.TestCase):
                                                            [-1, -1, 1, 1]))
 
     targets = {target0.hash(): target0, target1.hash(): target1}
-    new_context.targets = targets
+    context.targets = targets
     ray.get(identification.identify_mosiacs.remote())
-    mosaics = new_context.mosaics
+    mosaics = context.mosaics
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
 
@@ -70,9 +70,9 @@ class TestMosaicIdentification(unittest.TestCase):
         target2.hash(): target2
     }
 
-    new_context.targets = targets
+    context.targets = targets
     ray.get(identification.identify_mosiacs.remote())
-    mosaics = new_context.mosaics
+    mosaics = context.mosaics
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))

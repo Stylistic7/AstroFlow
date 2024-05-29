@@ -9,7 +9,7 @@ import errno
 import os
 from dataclasses import asdict
 
-from new_context import new_context
+from context import context
 import pix
 import position_string
 from image_metadata import scatter_compute_image_metadata
@@ -114,22 +114,22 @@ def _add_xisf_metadata(filename, dest_filename, metadata):
 # plate-solving help) won't derail a long-running session.
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
 def stack_files(stack_id):
-  assert new_context.output_dir
+  assert context.output_dir
 
-  stacks = new_context.stacks
+  stacks = context.stacks
   stack = stacks[stack_id]
   print(f'### Entering stack_files for {asdict(stack)}')
 
-  dest_filename = _output_filename(stack, new_context.output_dir)
+  dest_filename = _output_filename(stack, context.output_dir)
   os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
 
-  if new_context.mock_stacking:
+  if context.mock_stacking:
     with open(dest_filename, 'w') as f:
       f.write('test')
     print(f'### Mocked stacking, wrote filename {dest_filename}')
     return dest_filename
 
-  image_hashes = new_context.image_hashes
+  image_hashes = context.image_hashes
 
   metadata = {_CONTENT_HASH_KEY: stack.content_hash}
 
@@ -169,7 +169,7 @@ def stack_files(stack_id):
       exception = Exception("WBPP did not produce an output master dir")
       print(f'Exception {exception}')
       key = ('stack_files', stack_id)
-      new_context.set(key, exception)
+      context.set(key, exception)
       return
 
     print('WBPP master dir contains:')
@@ -184,7 +184,7 @@ def stack_files(stack_id):
     _add_xisf_metadata(filename, dest_filename, metadata)
 
     key = ('stack_files', stack_id)
-    new_context.set(key, stack.content_hash)
+    context.set(key, stack.content_hash)
     return dest_filename
 
 
@@ -192,9 +192,9 @@ def stack_files(stack_id):
 # Users may want to force re-stacking with new external software.
 @ray.remote
 def scatter_stack_subframes(stack_id):
-  image_hashes = new_context.image_hashes
-  fits_headers = new_context.fits_headers
-  stacks = new_context.stacks
+  image_hashes = context.image_hashes
+  fits_headers = context.fits_headers
+  stacks = context.stacks
   stack = stacks[stack_id]
   print(f'scatter_stack_subframes for stack {stack}')
 
@@ -204,7 +204,7 @@ def scatter_stack_subframes(stack_id):
     return result
 
   def previously_had_exception(stack_id):
-    return type(new_context.get(('stack_files', stack_id), None)) is Exception
+    return type(context.get(('stack_files', stack_id), None)) is Exception
 
   if master_exists(stack_id):
     return {}

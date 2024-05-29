@@ -6,7 +6,7 @@ import unittest
 import datetime
 from pathlib import Path
 
-from new_context import new_context
+from context import context
 from ray_state_actor import dispatch
 import get_stacks
 import file_io
@@ -20,7 +20,7 @@ class TestState(unittest.TestCase):
 
   def setUp(self):
     self.input_dir_obj, self.output_dir_obj = make_test_context()
-    new_context.mock_stacking = True
+    context.mock_stacking = True
 
   def test_shopping_cart(self):
     state = dispatch(dict(type='add_to_shopping_cart', item=('stack', 'foo')))
@@ -38,7 +38,7 @@ class TestState(unittest.TestCase):
                          target_name='NGC7635',
                          start_datetime=datetime.datetime(
                              2024, 2, 5, 16, 29, 43),
-                         dest_dir=new_context.input_dirs[0])
+                         dest_dir=context.input_dirs[0])
     make_synthetic_frames(prefix='dark',
                           number=5,
                           image_type='Dark',
@@ -47,7 +47,7 @@ class TestState(unittest.TestCase):
                           width_pixels=9576,
                           height_pixels=6388,
                           temperature=-15,
-                          dest_dir=new_context.input_dirs[0])
+                          dest_dir=context.input_dirs[0])
     make_synthetic_frames(prefix='bias',
                           number=7,
                           image_type='Bias',
@@ -56,7 +56,7 @@ class TestState(unittest.TestCase):
                           width_pixels=9576,
                           height_pixels=6388,
                           temperature=-15,
-                          dest_dir=new_context.input_dirs[0])
+                          dest_dir=context.input_dirs[0])
     make_synthetic_frames(prefix='flat_run_0',
                           number=11,
                           image_type='Flat',
@@ -67,23 +67,23 @@ class TestState(unittest.TestCase):
                           width_pixels=9576,
                           height_pixels=6388,
                           temperature=-15,
-                          dest_dir=new_context.input_dirs[0])
+                          dest_dir=context.input_dirs[0])
 
-    filenames = file_io.find_image_files(new_context.input_dirs[0])
+    filenames = file_io.find_image_files(context.input_dirs[0])
     self.assertEqual(len(filenames), 26)
 
     graph = build_compute_graph()
     run_graph(graph)
 
-    masters = os.listdir(new_context.output_dir)
+    masters = os.listdir(context.output_dir)
     self.assertEqual(len(masters), 0)
 
-    stacks = new_context.stacks
+    stacks = context.stacks
     toplevel_stacks = get_stacks.get_toplevel_stacks(stacks)
     self.assertEqual(len(toplevel_stacks), 1)
     toplevel_stack = toplevel_stacks[0]
 
-    new_context.shopping_cart = [('stack', toplevel_stack.geometric_hash)]
+    context.shopping_cart = [('stack', toplevel_stack.geometric_hash)]
 
     processing_graph = ray.get(build_processing_graph.remote())
     self.assertEqual(len(processing_graph), 1)
@@ -91,7 +91,7 @@ class TestState(unittest.TestCase):
     graph = build_compute_graph()
     run_graph(graph)
 
-    masters = list(Path(new_context.output_dir).rglob('*.xisf'))
+    masters = list(Path(context.output_dir).rglob('*.xisf'))
     self.assertEqual(len(masters), 4)
 
 

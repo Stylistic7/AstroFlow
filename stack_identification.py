@@ -3,7 +3,7 @@ import numpy as np
 from spherical_geometry.polygon import SphericalPolygon
 import astropy
 
-from new_context import new_context
+from context import context
 import clustering
 from hashing import hash_string
 import units
@@ -77,8 +77,8 @@ def _new_stacks(name, light_frames, fits_headers, plate_solutions):
     # re-computed. Stacks with the same geometric_hash can have their settings
     # passed on. There may be other settings like this in the future.
     selection_criterion = ('StarCountFraction', 0.75)
-    for run in get_runs(exposure_frames, fits_headers, new_context.max_run_gap,
-                        new_context.min_frames_in_run):
+    for run in get_runs(exposure_frames, fits_headers, context.max_run_gap,
+                        context.min_frames_in_run):
       frames = get_frames_for_run(run, exposure_frames, fits_headers)
       assert len(frames)
       stack = Stack(frames=frames)
@@ -104,9 +104,9 @@ def _new_stacks(name, light_frames, fits_headers, plate_solutions):
 
 @ray.remote
 def identify_stacks():
-  fits_headers = new_context.fits_headers
-  plate_solutions = new_context.plate_solutions
-  spatial_groups = new_context.spatial_groups
+  fits_headers = context.fits_headers
+  plate_solutions = context.plate_solutions
+  spatial_groups = context.spatial_groups
 
   print(f'Identifying stacks from {len(spatial_groups)} spatial groups...')
 
@@ -154,4 +154,4 @@ def identify_stacks():
                                   plate_solutions)
 
   print(f'Identified {len(stacks)} stacks')
-  new_context.stacks = stacks
+  context.stacks = stacks

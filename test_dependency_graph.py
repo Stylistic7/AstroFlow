@@ -7,7 +7,7 @@ import tempfile
 import functools
 
 from cache import cache
-from new_context import new_context
+from context import context
 from dependency_graph import Graph, Node, run_graph, make_graph_from_list
 
 
@@ -52,25 +52,25 @@ def my_last_task_with_context(ancestor_results):
 
 @ray.remote
 def increment_foo():
-  new_context.foo += 1
-  return new_context.foo
+  context.foo += 1
+  return context.foo
 
 
 @ray.remote
 def increment_bar():
-  new_context.bar += 1
-  return new_context.bar
+  context.bar += 1
+  return context.bar
 
 
 @ray.remote
 def increment_baz():
-  new_context.baz += 1
-  return new_context.baz
+  context.baz += 1
+  return context.baz
 
 
 @ray.remote
 def set_foo(value):
-  new_context.foo = value
+  context.foo = value
   return value
 
 
@@ -101,16 +101,16 @@ def gather(results):
 
 @ray.remote
 def scatter_with_context():
-  s = new_context.starting_value or 0
-  new_context.processed = []
+  s = context.starting_value or 0
+  context.processed = []
   return Graph({gather_with_context: [(process, i) for i in range(s, s + 7)]})
 
 
 @ray.remote
 def gather_with_context(results):
-  new_context.processed += results
-  new_context.sum = sum(results)
-  return new_context.sum
+  context.processed += results
+  context.sum = sum(results)
+  return context.sum
 
 
 @ray.remote
@@ -307,15 +307,15 @@ class TestDependencyGraph(unittest.TestCase):
 
     graph = {B: {A}}
 
-    new_context.foo = 2
-    new_context.bar = 3
+    context.foo = 2
+    context.bar = 3
 
     results = run_graph(graph)
 
     self.assertEqual(results[increment_foo], 3)
     self.assertEqual(results[increment_bar], 4)
-    self.assertEqual(new_context.foo, 3)
-    self.assertEqual(new_context.bar, 4)
+    self.assertEqual(context.foo, 3)
+    self.assertEqual(context.bar, 4)
 
     self.assertEqual(results.num_nodes_run, 2)
     self.assertEqual(results.max_parallelism_seen, 1)
@@ -326,8 +326,8 @@ class TestDependencyGraph(unittest.TestCase):
     results = run_graph(graph)
 
     self.assertEqual(results[scatter_with_context], 21)
-    self.assertEqual(sorted(new_context.processed), [0, 1, 2, 3, 4, 5, 6])
-    self.assertEqual(new_context.sum, 21)
+    self.assertEqual(sorted(context.processed), [0, 1, 2, 3, 4, 5, 6])
+    self.assertEqual(context.sum, 21)
 
     self.assertEqual(results.num_nodes_run, 9)
     self.assertEqual(results.max_parallelism_seen, 7)
@@ -415,14 +415,14 @@ class TestDependencyGraph(unittest.TestCase):
 
     graph = {D: {B, C}, B: {A1}, C: {A2}}
 
-    new_context.foo = 7
-    new_context.processed = []
+    context.foo = 7
+    context.processed = []
 
     results = run_graph(graph, debug=True)
 
-    self.assertEqual(new_context.foo, 8)
-    self.assertEqual(sorted(new_context.processed), [2, 3])
-    self.assertEqual(new_context.sum, 5)
+    self.assertEqual(context.foo, 8)
+    self.assertEqual(sorted(context.processed), [2, 3])
+    self.assertEqual(context.sum, 5)
     self.assertEqual(results.num_nodes_run, 4)
     self.assertEqual(results.max_parallelism_seen, 2)
 

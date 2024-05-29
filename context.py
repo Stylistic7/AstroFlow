@@ -1,44 +1,117 @@
-from dataclasses import dataclass, field, asdict
-import datetime
+import ray
+import os
+from typing import Any
+
+from cache import cache
+
+if 'ASTROFLOW_MOCK_NAMESPACE' in os.environ:
+  namespace = os.environ["ASTROFLOW_MOCK_NAMESPACE"]
+  print(f'### Using mock namespace {namespace}')
+else:
+  namespace = 'AstroFlow'
 
 
-@dataclass
-class Unionable:
+@ray.remote(resources={'diskcache': 0.001})
+class NewContextActor:
 
-  def __or__(self, other):
-    return self.__class__(**asdict(self) | other)
+  def __init__(self):
+    # This dict should ONLY store ObjectRefs.
+    self.ref_dict = {}
+
+  def get(self, key, default_value):
+    if key in self.ref_dict:
+      assert type(self.ref_dict[key]) is ray.ObjectRef
+      return self.ref_dict[key]
+
+    if key in cache:
+      value = cache[key]
+      self.ref_dict[key] = ray.put(value)
+      return self.ref_dict[key]
+
+    self.ref_dict[key] = ray.put(default_value)
+    return self.ref_dict[key]
+
+  def set(self, key, value, flush):
+    assert type(value) is list
+    assert len(value) == 1
+    value = value[0]
+    assert type(value) is ray.ObjectRef, f'type(value) is {type(value)}'
+    if not flush:
+      self.ref_dict[key] = value
+    cache[key] = ray.get(value)
+
+  def contains(self, key):
+    return key in cache
+
+  def flush(self, key):
+    if key in self.ref_dict:
+      del self.ref_dict[key]
+
+  def delete(self, key):
+    if key in self.ref_dict:
+      del self.ref_dict[key]
+
+    if key in cache:
+      del cache[key]
+
+  def ref_dict(self):
+    return self.ref_dict
+
+  def clear(self):
+    self.ref_dict.clear()
+    cache.clear()
+
+  def get_cache_keys(self):
+    return list(cache.iterkeys())
 
 
-@dataclass
-class Context(Unionable):
-  mock_stacking: bool = False
+class NewContext:
 
-  input_dirs: list[str] = field(default_factory=list)
-  output_dir: str = None
+  def get(self, key, default_value=None):
+    actor = ray.get_actor('ray_context', namespace=namespace)
+    maybe_ref = ray.get(actor.get.remote(key, default_value))
+    if maybe_ref:
+      return ray.get(maybe_ref)
 
-  default_filter: str = None
+  def __getattr__(self, key):
+    return self.get(key)
 
-  image_hashes: dict = None
-  fits_headers: dict = None
-  plate_solutions: dict = None
-  quarantined_files: list = None
+  def __getitem__(self, key):
+    return self.get(key)
 
-  regroup: bool = False
+  def set(self, key, value, flush=False):
+    actor = ray.get_actor('ray_context', namespace=namespace)
+    return ray.get(actor.set.remote(key, [ray.put(value)], flush))
 
-  spatial_groups: list = None
+  def __setattr__(self, key, value):
+    return self.set(key, value)
 
-  stacks: dict = None
-  targets: dict = None
-  mosaics: dict = None
+  def __setitem__(self, key, value):
+    return self.set(key, value)
 
-  cosine_similarity_threshold: float = None
-  min_component_members: int = None
+  def ref_dict(self):
+    actor = ray.get_actor('ray_context', namespace=namespace)
+    return ray.get(actor.ref_dict.remote())
 
-  max_run_gap: datetime.timedelta = None
-  min_frames_in_run: int = None
-  min_frames_in_stack: int = None
+  def contains(self, key):
+    actor = ray.get_actor('ray_context', namespace=namespace)
+    return ray.get(actor.contains.remote())
 
-  coordinates = None
+  def delete(self, key):
+    actor = ray.get_actor('ray_context', namespace=namespace)
+    return ray.get(actor.delete.remote())
 
-  run_everything: bool = False
-  shopping_cart: list = field(default_factory=list)
+  def flush(self, key):
+    actor = ray.get_actor('ray_context', namespace=namespace)
+    return ray.get(actor.flush.remote(key))
+
+  def clear(self):
+    actor = ray.get_actor('ray_context', namespace=namespace)
+    return ray.get(actor.clear.remote())
+
+  def get_cache_keys(self):
+    actor = ray.get_actor('ray_context', namespace=namespace)
+    return ray.get(actor.get_cache_keys.remote())
+
+
+context = NewContext()

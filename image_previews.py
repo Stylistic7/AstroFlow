@@ -5,7 +5,7 @@ import os
 import tempfile
 import ray
 
-from new_context import new_context
+from context import context
 import file_io
 from hashing import hash_string
 from file_io import read_image
@@ -110,8 +110,8 @@ def _make_thumbnail(fits_headers, light_frame, light_image, bias_frame,
 
 @ray.remote
 def scatter_stack_thumbnails(mode):
-  stacks = new_context.stacks
-  cache_keys = new_context.get_cache_keys()
+  stacks = context.stacks
+  cache_keys = context.get_cache_keys()
 
   if mode == 'subframe':
     subframe_images = [(create_flat_correction_thumbnails, id)
@@ -164,12 +164,12 @@ def _get_calibrations(stack, stacks):
 # result or speed it up.
 @ray.remote
 def create_stack_master_thumbnail(stack_id):
-  stacks = new_context.stacks
+  stacks = context.stacks
   stack = stacks[stack_id]
   print(f'Entering create_stack_master_thumbnail() for stack {stack}')
 
-  image_hashes = new_context.image_hashes
-  fits_headers = new_context.fits_headers
+  image_hashes = context.image_hashes
+  fits_headers = context.fits_headers
 
   # Find the master(s).
   masters = stacking.find_matching_masters(stack, image_hashes, fits_headers)
@@ -186,11 +186,11 @@ def create_stack_master_thumbnail(stack_id):
   # Read the master image and autostretch it.
   image = autostretch(
       resize_array(read_image(image_hashes[master]),
-                   new_context.master_thumbnail_width))
+                   context.master_thumbnail_width))
 
   # Store the thumbnail.
   key = ('stack_master_thumbnail_image', stack_id)
-  new_context.set(key, array_to_png(image), flush=True)
+  context.set(key, array_to_png(image), flush=True)
   print(f'Wrote key {key}')
 
   return key
@@ -202,11 +202,11 @@ def create_stack_master_thumbnail(stack_id):
 # flexibility.
 @ray.remote
 def create_flat_correction_thumbnails(stack_id):
-  stacks = new_context.stacks
+  stacks = context.stacks
   stack = stacks[stack_id]
 
   key = ('flat_correction_thumbnails', stack_id)
-  thumbnails = new_context.get(key, {})
+  thumbnails = context.get(key, {})
 
   flat_stack_ids = [
       id for id, s in stacks.items()
@@ -218,15 +218,15 @@ def create_flat_correction_thumbnails(stack_id):
     return
 
   assert not stack.geometric_hash
-  image_hashes = new_context.image_hashes
-  fits_headers = new_context.fits_headers
-  plate_solutions = new_context.plate_solutions
+  image_hashes = context.image_hashes
+  fits_headers = context.fits_headers
+  plate_solutions = context.plate_solutions
 
   light_frames_by_stars = subframe_selection.get_light_frames_sorted_by_stars(
       stack.frames, plate_solutions)
   light_frame, _ = light_frames_by_stars[0]
 
-  width = new_context.subframe_thumbnail_width
+  width = context.subframe_thumbnail_width
   rotate = plate_solutions[light_frame].rotation_angle < 0.0
   light_image = resize_array(read_image(image_hashes[light_frame]), width)
 
@@ -234,7 +234,7 @@ def create_flat_correction_thumbnails(stack_id):
     return stacks[stack_id].frames[0]
 
   settings_key = ('stack_settings', stack_id)
-  settings = new_context.settings_key or {}
+  settings = context.settings_key or {}
   dependencies = stack.dependencies | settings
 
   # TODO: These will probably fail for any light stack that doesn't have
@@ -264,24 +264,24 @@ def create_flat_correction_thumbnails(stack_id):
     thumbnails[flat_stack_id] = hash
 
     key = ('flat_correction_thumbnail', hash)
-    new_context.set(key, thumbnail, flush=True)
+    context.set(key, thumbnail, flush=True)
     print(f'### Wrote key {key}')
 
   key = ('flat_correction_thumbnails', stack_id)
-  new_context.set(key, thumbnails, flush=True)
+  context.set(key, thumbnails, flush=True)
   print(f'### Wrote key {key} with {len(thumbnails)} flat-corrected thumbnails')
 
 
 @ray.remote
 def create_stack_subframe_thumbnails(stack_id):
-  stacks = new_context.stacks
+  stacks = context.stacks
   stack = stacks[stack_id]
   print(f'Entering create_stack_subframe_thumbnails() for stack {stack}')
 
-  image_hashes = new_context.image_hashes
-  fits_headers = new_context.fits_headers
-  plate_solutions = new_context.plate_solutions
-  width = new_context.subframe_thumbnail_width
+  image_hashes = context.image_hashes
+  fits_headers = context.fits_headers
+  plate_solutions = context.plate_solutions
+  width = context.subframe_thumbnail_width
 
   # Don't make previews for calibration stacks.
   assert stack.geometric_hash
@@ -338,7 +338,7 @@ def create_stack_subframe_thumbnails(stack_id):
 
       if i == 0:
         key = ('stack_subframe_thumbnail_image', stack_id)
-        new_context.set(key, array_to_png(im), flush=True)
+        context.set(key, array_to_png(im), flush=True)
         print(f'### Wrote key {key}')
 
       im = (im * 255.0).astype(np.uint8)
@@ -351,7 +351,7 @@ def create_stack_subframe_thumbnails(stack_id):
     thumbnail_video = open(video_filename, 'rb').read()
 
     key = ('stack_subframe_thumbnail_video', stack_id)
-    new_context.set(key, thumbnail_video, flush=False)
+    context.set(key, thumbnail_video, flush=False)
     print(f'### Wrote key {key}')
 
 

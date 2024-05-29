@@ -9,12 +9,11 @@ import structlog
 import traceback
 import datetime
 
-from new_context import new_context
+from context import context
 import ray_init
 import step_download_asiair
 import autorun_log_analysis
 import file_io
-from context import Context
 import compute_graph
 from dependency_graph import run_graph
 
@@ -478,36 +477,36 @@ def assert_all_light_frames_in_stacks(light_frames, stacks):
 
 def populate_context():
   # TODO: Put these knobs in the UI.
-  new_context.cosine_similarity_threshold = 0.99999
-  new_context.min_component_members = 3
-  new_context.max_run_gap = datetime.timedelta(hours=8)
-  new_context.min_frames_in_run = 3
-  new_context.min_frames_in_stack = 3
-  new_context.subframe_thumbnail_width = 1200
-  new_context.master_thumbnail_width = 2160
+  context.cosine_similarity_threshold = 0.99999
+  context.min_component_members = 3
+  context.max_run_gap = datetime.timedelta(hours=8)
+  context.min_frames_in_run = 3
+  context.min_frames_in_stack = 3
+  context.subframe_thumbnail_width = 1200
+  context.master_thumbnail_width = 2160
 
   # TODO: Don't just use the first input directory.
-  if new_context.download:
-    download(new_context.input_dirs[0], new_context.default_filter)
+  if context.download:
+    download(context.input_dirs[0], context.default_filter)
 
   # TODO: Add more comprehensive validation.
-  # assert not any(type(p) is str for p in new_context.plate_solutions.values())
-  # assert None not in new_context.image_hashes.values()
+  # assert not any(type(p) is str for p in context.plate_solutions.values())
+  # assert None not in context.image_hashes.values()
 
-  # print(f'Cache contains {len(new_context.quarantined_files)} '
+  # print(f'Cache contains {len(context.quarantined_files)} '
   #       f'quarantined files')
-  # print(f'Cache contains {len(new_context.image_hashes)} image hashes')
-  # print(f'Cache contains {len(new_context.fits_headers)} FITS headers')
-  # print(f'Cache contains {len(new_context.plate_solutions)} plate solutions')
+  # print(f'Cache contains {len(context.image_hashes)} image hashes')
+  # print(f'Cache contains {len(context.fits_headers)} FITS headers')
+  # print(f'Cache contains {len(context.plate_solutions)} plate solutions')
   # print(
-  #     f'Cache contains {len(new_context.shopping_cart)} items in shopping cart')
-  # print(f'Cache contains {len(new_context.spatial_groups)} spatial groups')
-  # print(f'Cache contains {len(new_context.stacks)} stacks')
-  # print(f'Cache contains {len(new_context.targets)} targets')
-  # print(f'Cache contains {len(new_context.mosaics)} mosaics')
+  #     f'Cache contains {len(context.shopping_cart)} items in shopping cart')
+  # print(f'Cache contains {len(context.spatial_groups)} spatial groups')
+  # print(f'Cache contains {len(context.stacks)} stacks')
+  # print(f'Cache contains {len(context.targets)} targets')
+  # print(f'Cache contains {len(context.mosaics)} mosaics')
 
-  if not new_context.stacks:
-    new_context.regroup = True
+  if not context.stacks:
+    context.regroup = True
 
 
 def main(context):

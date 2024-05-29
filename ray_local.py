@@ -23,8 +23,8 @@ ray.init(
   }},
 )
 
-from new_context import NewContextActor
-new_context = NewContextActor.options(
+from context import NewContextActor
+context = NewContextActor.options(
   name='ray_context',
   namespace=namespace,
   get_if_exists=True).remote()

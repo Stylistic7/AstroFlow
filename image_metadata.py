@@ -6,7 +6,7 @@ import itertools
 import file_io
 import plate_solving
 from dependency_graph import Graph
-from new_context import new_context
+from context import context
 
 _CONTENT_HASH_KEY = 'XISF:AstroFlow:StackContentHash'
 
@@ -75,18 +75,18 @@ def scatter_compute_image_metadata(mode):
   print('Entering scatter_compute_image_metadata, mode', mode)
 
   directories = {
-      'input': new_context.input_dirs,
-      'master': [new_context.output_dir],
-      'all': new_context.input_dirs + [new_context.output_dir],
+      'input': context.input_dirs,
+      'master': [context.output_dir],
+      'all': context.input_dirs + [context.output_dir],
   }[mode]
 
   filenames = []
   for dir in directories:
     filenames.extend(file_io.find_image_files(dir))
 
-  known_files = new_context.image_hashes.values()
+  known_files = context.image_hashes.values()
   new_filenames = list(
-      set(filenames) - set(known_files) - set(new_context.quarantined_files))
+      set(filenames) - set(known_files) - set(context.quarantined_files))
 
   print(f'### Computing image metadata for {len(new_filenames)} new filenames')
 
@@ -108,7 +108,7 @@ def compute_image_metadata_ray(filename):
   print(f'Entering compute_image_metadata_ray() for {filename}')
   assert filename
 
-  image_hashes = new_context.image_hashes
+  image_hashes = context.image_hashes
 
   # TODO: Make sure this code doesn't actually repeatedly read the image across
   # the network. It should hit the node's filesystem cache.
@@ -144,32 +144,32 @@ def compute_image_metadata_ray(filename):
 def gather_compute_image_metadata(results):
   print(f'Entering gather_compute_image_metadata results {len(results)}')
 
-  new_context.quarantined_files += [
+  context.quarantined_files += [
       r['filename'] for r in results if 'exception' in r
   ]
-  new_context.image_hashes |= {
+  context.image_hashes |= {
       r['image_hash']: r['filename']
       for r in results
       if 'image_hash' in r and 'filename' in r
   }
-  new_context.fits_headers |= {
+  context.fits_headers |= {
       r['image_hash']: r['fits_header']
       for r in results
       if 'image_hash' in r and 'fits_header' in r
   }
-  new_context.plate_solutions |= {
+  context.plate_solutions |= {
       r['image_hash']: r['plate_solution']
       for r in results
       if 'image_hash' in r and 'plate_solution' in r
   }
 
-  assert not any(type(p) is str for p in new_context.plate_solutions.values())
-  assert None not in new_context.image_hashes.values()
+  assert not any(type(p) is str for p in context.plate_solutions.values())
+  assert None not in context.image_hashes.values()
 
-  print(f'Cached {len(new_context.quarantined_files)} quarantined_files')
-  print(f'Cached {len(new_context.image_hashes)} image_hashes')
-  print(f'Cached {len(new_context.fits_headers)} fits_headers')
-  print(f'Cached {len(new_context.plate_solutions)} plate_solutions')
+  print(f'Cached {len(context.quarantined_files)} quarantined_files')
+  print(f'Cached {len(context.image_hashes)} image_hashes')
+  print(f'Cached {len(context.fits_headers)} fits_headers')
+  print(f'Cached {len(context.plate_solutions)} plate_solutions')
 
   # TODO: Just make `regroup` this function's return value? Although really
   # this function is doing more than one thing, maybe break it up.
@@ -178,13 +178,13 @@ def gather_compute_image_metadata(results):
   #
   # If any new subframes have been added (e.g. light, dark, bias, or flat
   # frames), then they need to be regrouped into stacks, targets, and mosaics.
-  regroup = new_context.regroup or False
+  regroup = context.regroup or False
   regroup |= any(not file_io.is_master(r['fits_header'])
                  for r in results
                  if 'exception' not in r)
 
   print(f'Needs regrouping: {regroup}')
-  new_context.regroup = regroup
+  context.regroup = regroup
 
 
 # TODO: This is a bit weird. We want to keep unsolvable files in the cache,
@@ -199,8 +199,7 @@ def gather_compute_image_metadata(results):
 def remove_bad_images():
   return {
       h: p
-      for h, p in new_context.plate_solutions.items()
-      if h in new_context.image_hashes and new_context.image_hashes[h] and
-      h not in new_context.quarantined_files and
-      type(p) is plate_solving.PlateSolution
+      for h, p in context.plate_solutions.items()
+      if h in context.image_hashes and context.image_hashes[h] and h not in
+      context.quarantined_files and type(p) is plate_solving.PlateSolution
   }
