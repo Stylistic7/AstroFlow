@@ -5,7 +5,6 @@ import image_metadata
 import position_string
 import file_io
 import footprints
-import ray_diskcache
 from new_context import new_context
 
 

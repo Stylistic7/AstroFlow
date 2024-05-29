@@ -40,9 +40,19 @@ class NewContextActor:
       self.ref_dict[key] = value
     cache[key] = ray.get(value)
 
+  def contains(self, key):
+    return key in cache
+
   def flush(self, key):
     if key in self.ref_dict:
       del self.ref_dict[key]
+
+  def delete(self, key):
+    if key in self.ref_dict:
+      del self.ref_dict[key]
+
+    if key in cache:
+      del cache[key]
 
   def ref_dict(self):
     return self.ref_dict
@@ -82,6 +92,14 @@ class NewContext:
   def ref_dict(self):
     actor = ray.get_actor('ray_context', namespace=namespace)
     return ray.get(actor.ref_dict.remote())
+
+  def contains(self, key):
+    actor = ray.get_actor('ray_context', namespace=namespace)
+    return ray.get(actor.contains.remote())
+
+  def delete(self, key):
+    actor = ray.get_actor('ray_context', namespace=namespace)
+    return ray.get(actor.delete.remote())
 
   def flush(self, key):
     actor = ray.get_actor('ray_context', namespace=namespace)

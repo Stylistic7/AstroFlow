@@ -10,7 +10,6 @@ import pytz
 from dataclasses import asdict
 
 from make_test_frames import make_synthetic_frames, copy_testdata_frames
-import ray_diskcache
 from new_context import new_context
 from context import Context
 import file_io
@@ -439,8 +438,8 @@ class TestCalibrationFrames(unittest.TestCase):
 
     # Configure the light run to use the other flat run, which has prefix
     # `flat_run_0`.
-    ray_diskcache.set(('light_run_settings', first_light_run_hash),
-                      {'flat': first_flat_stack})
+    new_context.set(('light_run_settings', first_light_run_hash),
+                    {'flat': first_flat_stack})
 
     # Run the graph again, with the settings applied.
     graph = _build_compute_graph()

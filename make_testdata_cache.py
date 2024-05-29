@@ -8,7 +8,6 @@ import shutil
 
 from new_context import new_context
 import file_io
-import ray_diskcache
 from cache import cache
 from make_test_frames import copy_testdata_frames
 import compute_graph

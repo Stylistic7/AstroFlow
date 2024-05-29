@@ -11,7 +11,6 @@ import stacking
 import file_io
 import subframe_selection
 import footprints
-import ray_diskcache
 import image_previews
 from hashing import hash_list
 from dependency_graph import Graph
@@ -253,7 +252,7 @@ def show_image(data):
 @ray.remote
 def scatter_merge_mosaics(mode):
   mosaics = new_context.mosaics
-  shopping_cart = ray_diskcache.get('shopping_cart', [])
+  shopping_cart = new_context.shopping_cart or []
 
   print(f'### Entering scatter_merge_mosaics for {len(mosaics)} mosaics, '
         f' mode {mode}')
@@ -269,7 +268,7 @@ def scatter_merge_mosaics(mode):
 
 def _subframe_filter_artifact_exists(mosaic_id, filter, content_hash):
   key = ('mosaic_thumbnail_image', 'subframe', mosaic_id, filter, content_hash)
-  return ray_diskcache.contains(key)
+  return new_context.contains(key)
 
 
 # key = ('mosaic_thumbnail_image', mode, mosaic.id, filter)

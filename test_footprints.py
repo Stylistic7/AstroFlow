@@ -7,7 +7,6 @@ from shapely import Polygon
 import datetime
 
 from new_context import new_context
-import ray_diskcache
 from dependency_graph import run_graph, make_graph_from_list
 from context import Context
 from footprints import project_footprint

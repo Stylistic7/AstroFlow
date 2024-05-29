@@ -11,7 +11,6 @@ from pathlib import Path
 import shutil
 
 from new_context import new_context
-import ray_diskcache
 from make_testdata_cache import TESTDATA_CACHE_GZIP_FILENAME
 import file_io
 from context import Context
@@ -31,7 +30,6 @@ class TestMosaic(unittest.TestCase):
     file.close()
     self.testdata_cache = diskcache.Cache(
         os.path.join(self.testdata_cache_directory.name, 'cache'))
-    ray_diskcache.clear()
     for key in self.testdata_cache.iterkeys():
       new_context[key] = self.testdata_cache[key]
 
@@ -64,9 +62,9 @@ class TestMosaic(unittest.TestCase):
     run_graph(graph)
 
   def test_everything_after_stacking(self):
-    for key in ray_diskcache.get_keys():
+    for key in new_context.get_cache_keys():
       if 'placed_image' in key or 'mosaic_thumbnail_image' in key:
-        ray_diskcache.delete(key)
+        new_context.delete(key)
 
     filenames = file_io.find_image_files(new_context.input_dirs[0])
     self.assertEqual(len(filenames), 12)

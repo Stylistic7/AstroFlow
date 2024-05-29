@@ -9,11 +9,11 @@ import structlog
 import traceback
 import datetime
 
+from new_context import new_context
 import ray_init
 import step_download_asiair
 import autorun_log_analysis
 import file_io
-import ray_diskcache
 from context import Context
 import compute_graph
 from dependency_graph import run_graph
@@ -476,65 +476,38 @@ def assert_all_light_frames_in_stacks(light_frames, stacks):
 #   return stacks, targets, mosaics
 
 
-def populate_context(context):
+def populate_context():
   # TODO: Put these knobs in the UI.
-  context.cosine_similarity_threshold = 0.99999
-  context.min_component_members = 3
-  context.max_run_gap = datetime.timedelta(hours=8)
-  context.min_frames_in_run = 3
-  context.min_frames_in_stack = 3
-  context.subframe_thumbnail_width = 1200
-  context.master_thumbnail_width = 2160
+  new_context.cosine_similarity_threshold = 0.99999
+  new_context.min_component_members = 3
+  new_context.max_run_gap = datetime.timedelta(hours=8)
+  new_context.min_frames_in_run = 3
+  new_context.min_frames_in_stack = 3
+  new_context.subframe_thumbnail_width = 1200
+  new_context.master_thumbnail_width = 2160
 
   # TODO: Don't just use the first input directory.
-  if context.download:
-    download(context.input_dirs[0], context.default_filter)
-
-  # Load all existing cache keys to speed up existence checks.
-  # TODO: Reload this after gather operations.
-  context.cache_keys = ray.put(ray_diskcache.get_keys())
-
-  # Load all of the existing metadata into the context before starting the
-  # compute graph.
-  quarantined_files = ray_diskcache.get('quarantined_files', [])
-  spatial_groups = ray_diskcache.get('spatial_groups', [])
-  image_hashes = ray_diskcache.get('image_hashes', {})
-  fits_headers = ray_diskcache.get('fits_headers', {})
-  plate_solutions = ray_diskcache.get('plate_solutions', {})
-  shopping_cart = ray_diskcache.get('shopping_cart', [])
-  stacks = ray_diskcache.get('stacks', {})
-  targets = ray_diskcache.get('targets', {})
-  mosaics = ray_diskcache.get('mosaics', {})
+  if new_context.download:
+    download(new_context.input_dirs[0], new_context.default_filter)
 
   # TODO: Add more comprehensive validation.
-  assert not any(type(p) is str for p in plate_solutions.values())
-  assert None not in image_hashes.values()
+  # assert not any(type(p) is str for p in new_context.plate_solutions.values())
+  # assert None not in new_context.image_hashes.values()
 
-  print(f'Cache contained {len(quarantined_files)} '
-        f'quarantined files')
-  print(f'Cache contained {len(image_hashes)} image hashes')
-  print(f'Cache contained {len(fits_headers)} FITS headers')
-  print(f'Cache contained {len(plate_solutions)} plate solutions')
-  print(f'Cache contained {len(shopping_cart)} items in shopping cart')
-  print(f'Cache contained {len(spatial_groups)} spatial groups')
-  print(f'Cache contained {len(stacks)} stacks')
-  print(f'Cache contained {len(targets)} targets')
-  print(f'Cache contained {len(mosaics)} mosaics')
+  # print(f'Cache contains {len(new_context.quarantined_files)} '
+  #       f'quarantined files')
+  # print(f'Cache contains {len(new_context.image_hashes)} image hashes')
+  # print(f'Cache contains {len(new_context.fits_headers)} FITS headers')
+  # print(f'Cache contains {len(new_context.plate_solutions)} plate solutions')
+  # print(
+  #     f'Cache contains {len(new_context.shopping_cart)} items in shopping cart')
+  # print(f'Cache contains {len(new_context.spatial_groups)} spatial groups')
+  # print(f'Cache contains {len(new_context.stacks)} stacks')
+  # print(f'Cache contains {len(new_context.targets)} targets')
+  # print(f'Cache contains {len(new_context.mosaics)} mosaics')
 
-  context.quarantined_files = ray.put(quarantined_files)
-  context.image_hashes = ray.put(image_hashes)
-  context.fits_headers = ray.put(fits_headers)
-  context.plate_solutions = ray.put(plate_solutions)
-  context.shopping_cart = ray.put(shopping_cart)
-  context.spatial_groups = ray.put(spatial_groups)
-  context.stacks = ray.put(stacks)
-  context.targets = ray.put(targets)
-  context.mosaics = ray.put(mosaics)
-
-  if not stacks:
-    context.regroup = True
-
-  return context
+  if not new_context.stacks:
+    new_context.regroup = True
 
 
 def main(context):

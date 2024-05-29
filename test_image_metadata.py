@@ -8,7 +8,6 @@ import random
 import os
 
 from new_context import new_context
-import ray_diskcache
 from context import Context
 from image_metadata import scatter_compute_image_metadata
 from make_test_frames import make_synthetic_frames

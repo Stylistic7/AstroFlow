@@ -10,7 +10,6 @@ import os
 from dataclasses import asdict
 
 from new_context import new_context
-import ray_diskcache
 import pix
 import position_string
 from image_metadata import scatter_compute_image_metadata
@@ -205,7 +204,7 @@ def scatter_stack_subframes(stack_id):
     return result
 
   def previously_had_exception(stack_id):
-    return type(ray_diskcache.get(('stack_files', stack_id), None)) is Exception
+    return type(new_context.get(('stack_files', stack_id), None)) is Exception
 
   if master_exists(stack_id):
     return {}

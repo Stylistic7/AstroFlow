@@ -3,7 +3,7 @@ import ray
 import os
 import shutil
 
-import ray_diskcache
+from new_context import new_context
 import stacking
 import subframe_selection
 from dependency_graph import Graph
@@ -41,7 +41,7 @@ def _placed_image_artfiact_key(panel, mode):
 def _placed_image_artifact_exists(panel, mode):
   if mode == 'subframe':
     key = _placed_image_artfiact_key(panel, mode)
-    return ray_diskcache.contains(key)
+    return new_context.contains(key)
   elif mode == 'master':
     return panel.placed_filename and os.path.exists(panel.placed_filename)
 
@@ -59,17 +59,17 @@ def _placed_image_artifact_exists(panel, mode):
 # Saves the images either to the cache (for mode 'subframe') or to disk
 # (for mode 'master' and above).
 @ray.remote(scheduling_strategy="SPREAD", num_cpus=0.001)
-def process_mosaic_per_filter(context, mosaic_id, mode, filter, output_dir):
-  mosaics = ray.get(context.mosaics)
+def process_mosaic_per_filter(mosaic_id, mode, filter, output_dir):
+  mosaics = new_context.mosaics
   mosaic = mosaics[mosaic_id]
   print(f'Entering process_mosaic_per_filter for {mosaic.name} mode {mode} '
         f'filter {filter}')
 
-  image_hashes = ray.get(context.image_hashes)
-  fits_headers = ray.get(context.fits_headers)
-  plate_solutions = ray.get(context.plate_solutions)
-  stacks = ray.get(context.stacks)
-  targets = ray.get(context.targets)
+  image_hashes = new_context.image_hashes
+  fits_headers = new_context.fits_headers
+  plate_solutions = new_context.plate_solutions
+  stacks = new_context.stacks
+  targets = new_context.targets
 
   panels = []
   for target_id, tile_indices in zip(mosaic.target_ids, mosaic.tile_indices):
@@ -94,7 +94,7 @@ def process_mosaic_per_filter(context, mosaic_id, mode, filter, output_dir):
       print(f'### At least one panel for mosaic {mosaic} mode {mode} '
             f'filter {filter} could not be found, so the mosaic channel cannot '
             f'be merged')
-      return context, None
+      return
 
     tile_indices_str = '_'.join([str(t) for t in tile_indices])
     placed_filename = os.path.join(
@@ -119,31 +119,30 @@ def process_mosaic_per_filter(context, mosaic_id, mode, filter, output_dir):
       ]
   })
 
-  return context, graph
+  return graph
 
 
 # TODO: Put options to balance CPUs and memory consumption in the UI.
 @ray.remote(scheduling_strategy="SPREAD", num_cpus=1.5)
-def maybe_mosaic_by_coordinates(context, panel, mode):
+def maybe_mosaic_by_coordinates(panel, mode):
   if _placed_image_artifact_exists(panel, mode):
     print('### maybe_mosaic_by_coordinates found placed image artifact '
           f'for panel {panel}')
-    return context, panel
+    return panel
   else:
-    return projection.mosaic_by_coordinates(context, panel)
+    return projection.mosaic_by_coordinates(panel)
 
 
-def _merge_master_mosaic(context, panels):
+def _merge_master_mosaic(panels):
   # TODO: This merge op sometimes fails, and it means we lose track of all the
   # placed images.
   mode = 'master'
   filter = panels[0].filter
   mosaic_id = panels[0].mosaic_id
 
-  mosaics = ray.get(context.mosaics)
-  mosaic = mosaics[mosaic_id]
+  mosaic = new_context.mosaics[mosaic_id]
 
-  output_dir = os.path.join(context.output_dir, 'Mosaics', mosaic.name)
+  output_dir = os.path.join(new_context.output_dir, 'Mosaics', mosaic.name)
   os.makedirs(output_dir, exist_ok=True)
 
   print('### Entering _merge_master_mosaic for mosaic id {mosaic_id}')
@@ -156,11 +155,8 @@ def _merge_master_mosaic(context, panels):
   shutil.copy(output_image[0], final_filename)
 
   key = ('mosaic_thumbnail_image', mode, mosaic_id, filter)
-  hash = file_io.hash_of_image_data(final_filename)
-  ray_diskcache.set(key, content_hash)
+  new_context[key] = content_hash
   print(f'### Wrote key {key}')
-
-  return context, None
 
 
 # TODO: This function only does maximum(), so it's only good for previews.
@@ -180,13 +176,8 @@ def _merge_subframe_mosaic(context, panels):
 
   content_hash = hash_list([p.content_hash for p in panels])
   key = ('mosaic_thumbnail_image', 'subframe', mosaic_id, filter, content_hash)
-
-  if ray_diskcache.contains(key):
-    return context, None
-
-  image_hashes = ray.get(context.image_hashes)
-  mosaics = ray.get(context.mosaics)
-  mosaic = mosaics[mosaic_id]
+  if new_context.contains(key):
+    return
 
   # The image returned from read_image() is in [0, 65536].
   # TODO: These panels are just merged by np.maximum, but there are
@@ -198,15 +189,13 @@ def _merge_subframe_mosaic(context, panels):
     output_image = np.maximum(output_image, image)
 
   image_png = image_previews.array_to_png(output_image)
-  ray_diskcache.set(key, image_png, keep_in_memory=False)
+  new_context.set(key, image_png, flush=True)
   print(f'### Wrote key {key} image min {np.min(output_image)} '
         f'max {np.max(output_image)}')
 
-  return context, None
-
 
 @ray.remote
-def gather_mosaic_by_coordinates(context, mode, panels):
+def gather_mosaic_by_coordinates(mode, panels):
   print(f'### gather_mosaic_by_coordinates panels are {panels}')
 
   num_panels_in = len(panels)
@@ -219,15 +208,15 @@ def gather_mosaic_by_coordinates(context, mode, panels):
       image = file_io.read_image(panel.placed_filename)
       image_png = image_previews.array_to_png(image)
       key = _placed_image_artfiact_key(panel, mode)
-      ray_diskcache.set(key, image_png, keep_in_memory=False)
+      new_context.set(key, image_png, flush=True)
       print(f'### Wrote key {key}')
 
-    return _merge_subframe_mosaic(context, panels)
+    return _merge_subframe_mosaic(panels)
 
   if mode == 'master':
     for panel in panels:
       key = _placed_image_artfiact_key(panel, mode)
-      ray_diskcache.set(key, panel.placed_filename, keep_in_memory=False)
+      new_context[key] = panel.placed_filename
       print(f'### Wrote key {key}')
 
-    return _merge_master_mosaic(context, panels)
+    return _merge_master_mosaic(panels)

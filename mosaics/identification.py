@@ -5,7 +5,6 @@ import ray
 import numpy as np
 
 from new_context import new_context
-import ray_diskcache
 from mosaic import Mosaic
 import position_string
 import footprints

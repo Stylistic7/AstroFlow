@@ -6,7 +6,6 @@ import tempfile
 import ray
 
 from new_context import new_context
-import ray_diskcache
 import file_io
 from hashing import hash_string
 from file_io import read_image

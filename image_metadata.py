@@ -5,7 +5,6 @@ import itertools
 
 import file_io
 import plate_solving
-import ray_diskcache
 from dependency_graph import Graph
 from new_context import new_context
 
@@ -179,11 +178,13 @@ def gather_compute_image_metadata(results):
   #
   # If any new subframes have been added (e.g. light, dark, bias, or flat
   # frames), then they need to be regrouped into stacks, targets, and mosaics.
-  new_context.regroup |= any(not file_io.is_master(r['fits_header'])
-                             for r in results
-                             if 'exception' not in r)
+  regroup = new_context.regroup or False
+  regroup |= any(not file_io.is_master(r['fits_header'])
+                 for r in results
+                 if 'exception' not in r)
 
-  print(f'Needs regrouping: {new_context.regroup}')
+  print(f'Needs regrouping: {regroup}')
+  new_context.regroup = regroup
 
 
 # TODO: This is a bit weird. We want to keep unsolvable files in the cache,

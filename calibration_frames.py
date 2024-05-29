@@ -4,7 +4,6 @@ from copy import copy
 import itertools
 
 import file_io
-import ray_diskcache
 from new_context import new_context
 import runs
 from stack import Stack, FrameHash
@@ -41,7 +40,7 @@ def identify_calibration_stacks():
   frames_for_exposure = group_by_header('EXPOSURE')
   frames_for_filter = group_by_header('FILTER')
 
-  stacks = ray_diskcache.get('stacks', [])
+  stacks = new_context.stacks or {}
   for camera in frames_for_camera:
     bias_frames = frames_for_image_type.get(
         'bias', set()) & frames_for_camera.get(camera, set())
@@ -121,7 +120,7 @@ def associate_with_stack(stack, stacks):
       stack.dependencies[image_type] = closest
 
   key = ('light_run_settings', stack.content_hash)
-  settings = ray_diskcache.get(key, {})
+  settings = new_context[key] or {}
   stack.dependencies |= settings
 
 

@@ -8,7 +8,6 @@ from new_context import new_context
 import spatial_association
 import position_string
 from target import Target
-import ray_diskcache
 import footprints
 
 

@@ -5,7 +5,6 @@ import unittest
 import tempfile
 import ray
 
-import ray_diskcache
 from new_context import new_context
 from context import Context
 from cache import cache

@@ -4,7 +4,6 @@ from spherical_geometry.polygon import SphericalPolygon
 import astropy
 
 from new_context import new_context
-import ray_diskcache
 import clustering
 from hashing import hash_string
 import units

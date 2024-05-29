@@ -5,14 +5,11 @@ import tempfile
 import datetime
 
 from cache import cache
-import ray_diskcache
 from context import Context
 from new_context import new_context
 
 
 def make_test_context():
-  ray_diskcache.clear()
-  cache.clear()
   new_context.clear()
 
   new_context.image_hashes = {}
