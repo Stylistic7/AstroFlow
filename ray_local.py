@@ -2,37 +2,37 @@
 # a test cache (in the working directory), and it starts a new, single-node
 # Ray cluster that has access to both diskcache and PixInsight.
 
-# yapf: disable
-
 import os
+
 os.environ["ASTROFLOW_MOCK_CACHE"] = "true"
 
 import uuid
+
 namespace = str(uuid.uuid4())
 os.environ["ASTROFLOW_MOCK_NAMESPACE"] = namespace
 
 import ray
+from context import ContextActor
+from state_actor import StateActor
+
 ray.init(
-  address='local',
-  namespace=namespace,
-  num_cpus=24,
-  resources={"diskcache": 1, "PixInsight": 1},
-  ignore_reinit_error=True,
-  runtime_env={"env_vars": {
-    "ASTROFLOW_MOCK_CACHE": "true"
-  }},
+    address='local',
+    namespace=namespace,
+    num_cpus=24,
+    resources={
+        "diskcache": 1,
+        "PixInsight": 1
+    },
+    ignore_reinit_error=True,
+    runtime_env={"env_vars": {
+        "ASTROFLOW_MOCK_CACHE": "true"
+    }},
 )
 
-from context import NewContextActor
-context = NewContextActor.options(
-  name='ray_context',
-  namespace=namespace,
-  get_if_exists=True).remote()
+context_actor = ContextActor.options(name='context',
+                                     namespace=namespace,
+                                     get_if_exists=True).remote()
 
-from ray_state_actor import StateActor
-ray_state = StateActor.options(
-  name='ray_state',
-  namespace=namespace,
-  get_if_exists=True).remote()
-
-# yapf: enable
+state_actor = StateActor.options(name='state',
+                                 namespace=namespace,
+                                 get_if_exists=True).remote()

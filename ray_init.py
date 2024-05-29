@@ -1,12 +1,11 @@
 import ray
 import traceback
 
-import ray_state_actor
-import context
+from context import ContextActor
+from state_actor import StateActor
 
 # TODO: Prove that local changes in the Python get propagated to remote nodes
 # even without pushing to git..
-print('About to call ray.init')
 traceback.print_stack()
 ray_context = ray.init(address='auto',
                        namespace='AstroFlow',
@@ -26,9 +25,10 @@ ray_context = ray.init(address='auto',
 
 print('Ray dashboard:', ray_context.dashboard_url)
 
-context_actor = context.NewContextActor.options(name='ray_context',
-                                                namespace='AstroFlow',
-                                                get_if_exists=True).remote()
+context_actor = ContextActor.options(name='context',
+                                     namespace='AstroFlow',
+                                     get_if_exists=True).remote()
 
-ray_state_actor = ray_state_actor.RayStateActor.options(
-    name='ray_state', namespace='AstroFlow', get_if_exists=True).remote()
+state_actor = StateActor.options(name='state',
+                                 namespace='AstroFlow',
+                                 get_if_exists=True).remote()

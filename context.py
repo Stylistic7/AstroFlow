@@ -12,7 +12,7 @@ else:
 
 
 @ray.remote(resources={'diskcache': 0.001})
-class NewContextActor:
+class ContextActor:
 
   def __init__(self):
     # This dict should ONLY store ObjectRefs.
@@ -68,7 +68,7 @@ class NewContextActor:
 class NewContext:
 
   def get(self, key, default_value=None):
-    actor = ray.get_actor('ray_context', namespace=namespace)
+    actor = ray.get_actor('context', namespace=namespace)
     maybe_ref = ray.get(actor.get.remote(key, default_value))
     if maybe_ref:
       return ray.get(maybe_ref)
@@ -80,7 +80,7 @@ class NewContext:
     return self.get(key)
 
   def set(self, key, value, flush=False):
-    actor = ray.get_actor('ray_context', namespace=namespace)
+    actor = ray.get_actor('context', namespace=namespace)
     return ray.get(actor.set.remote(key, [ray.put(value)], flush))
 
   def __setattr__(self, key, value):
@@ -90,27 +90,27 @@ class NewContext:
     return self.set(key, value)
 
   def ref_dict(self):
-    actor = ray.get_actor('ray_context', namespace=namespace)
+    actor = ray.get_actor('context', namespace=namespace)
     return ray.get(actor.ref_dict.remote())
 
   def contains(self, key):
-    actor = ray.get_actor('ray_context', namespace=namespace)
+    actor = ray.get_actor('context', namespace=namespace)
     return ray.get(actor.contains.remote())
 
   def delete(self, key):
-    actor = ray.get_actor('ray_context', namespace=namespace)
+    actor = ray.get_actor('context', namespace=namespace)
     return ray.get(actor.delete.remote())
 
   def flush(self, key):
-    actor = ray.get_actor('ray_context', namespace=namespace)
+    actor = ray.get_actor('context', namespace=namespace)
     return ray.get(actor.flush.remote(key))
 
   def clear(self):
-    actor = ray.get_actor('ray_context', namespace=namespace)
+    actor = ray.get_actor('context', namespace=namespace)
     return ray.get(actor.clear.remote())
 
   def get_cache_keys(self):
-    actor = ray.get_actor('ray_context', namespace=namespace)
+    actor = ray.get_actor('context', namespace=namespace)
     return ray.get(actor.get_cache_keys.remote())
 
 

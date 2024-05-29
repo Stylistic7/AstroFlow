@@ -69,5 +69,5 @@ class StateActor:
 
 
 def dispatch(action):
-  actor = ray.get_actor('ray_state', namespace=namespace)
+  actor = ray.get_actor('state', namespace=namespace)
   return ray.get(actor.dispatch.remote(action))

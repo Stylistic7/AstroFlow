@@ -489,27 +489,27 @@ def populate_context():
   if context.download:
     download(context.input_dirs[0], context.default_filter)
 
+  context.regroup = context.stacks == None
+
   # TODO: Add more comprehensive validation.
   # assert not any(type(p) is str for p in context.plate_solutions.values())
   # assert None not in context.image_hashes.values()
 
-  # print(f'Cache contains {len(context.quarantined_files)} '
-  #       f'quarantined files')
-  # print(f'Cache contains {len(context.image_hashes)} image hashes')
-  # print(f'Cache contains {len(context.fits_headers)} FITS headers')
-  # print(f'Cache contains {len(context.plate_solutions)} plate solutions')
-  # print(
-  #     f'Cache contains {len(context.shopping_cart)} items in shopping cart')
-  # print(f'Cache contains {len(context.spatial_groups)} spatial groups')
-  # print(f'Cache contains {len(context.stacks)} stacks')
-  # print(f'Cache contains {len(context.targets)} targets')
-  # print(f'Cache contains {len(context.mosaics)} mosaics')
-
-  if not context.stacks:
-    context.regroup = True
+  print(f'Cache contains {len(context.quarantined_files or [])} '
+        f'quarantined files')
+  print(f'Cache contains {len(context.image_hashes or {})} image hashes')
+  print(f'Cache contains {len(context.fits_headers or {})} FITS headers')
+  print(f'Cache contains {len(context.plate_solutions or {})} plate solutions')
+  print(
+      f'Cache contains {len(context.shopping_cart or [])} items in shopping cart'
+  )
+  print(f'Cache contains {len(context.spatial_groups or [])} spatial groups')
+  print(f'Cache contains {len(context.stacks or {})} stacks')
+  print(f'Cache contains {len(context.targets or {})} targets')
+  print(f'Cache contains {len(context.mosaics or {})} mosaics')
 
 
-def main(context):
+def main():
   log.info('Starting AstroFlow')
 
   # TODO: This is a wart.
@@ -517,11 +517,11 @@ def main(context):
   # TODO: This doesn't start PixInsight on remote workers.
   pix.start_pixinsight_instances()
 
-  context = populate_context(context)
+  populate_context()
 
   print('### Starting compute graph execution')
   graph = compute_graph.build_compute_graph()
-  context, results = run_graph(graph, context)
+  run_graph(graph)
   print('### Compute graph is done! context is', context)
 
   # TODO: Close all subordinate PixInsight instances.
@@ -569,8 +569,6 @@ if __name__ == '__main__':
 
   args = parser.parse_args()
 
-  context = Context()
-
   context.input_dirs = [os.path.abspath(i) for i in args.input_dirs]
   context.output_dir = os.path.abspath(args.output_dir)
   context.quarantine = args.quarantine
@@ -578,6 +576,4 @@ if __name__ == '__main__':
   context.regroup = args.regroup
   context.default_filter = args.default_filter
 
-  cache['context'] = context
-
-  main(context)
+  main()

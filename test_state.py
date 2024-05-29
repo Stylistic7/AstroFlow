@@ -7,7 +7,7 @@ import datetime
 from pathlib import Path
 
 from context import context
-from ray_state_actor import dispatch
+from state_actor import dispatch
 import get_stacks
 import file_io
 from compute_graph import build_compute_graph, build_processing_graph
