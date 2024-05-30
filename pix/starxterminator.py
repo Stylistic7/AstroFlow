@@ -1,4 +1,7 @@
+from pathlib import Path
+
 from .classes import ShellScriptTask
+from .abstract_image import AbstractImage
 from .context import append_task
 from .processes import execute_on_view_ids
 
@@ -11,10 +14,20 @@ _default_parameters = {
 }
 
 
-def StarXTerminator(view_ids, **kwargs):
+def StarXTerminator(images, **kwargs):
+  view_ids = [i.view_id for i in images]
   append_task(
       ShellScriptTask(javascript=execute_on_view_ids(
           'StarXTerminator', _default_parameters | kwargs, view_ids)))
 
-  output_view_ids = [v + '_stars' for v in view_ids]
-  return output_view_ids
+  def star_filename(original_filename):
+    path = Path(original_filename)
+    return path.parent / (path.stem + '_stars' + path.suffix)
+
+  star_images = [
+      AbstractImage(filename=star_filename(image.filename),
+                    view_id=image.view_id + '_stars',
+                    dirty=True) for image in images
+  ]
+
+  return images, star_images

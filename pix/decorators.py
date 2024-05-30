@@ -36,24 +36,20 @@ def PixInsight():
     # is set, flush them to disk.
     images_to_save = []
     for name, value in frame.f_locals.items():
-      if type(value) is list:
-        if not all(type(x) is AbstractImage for x in value):
-          print(f'### ignoring list variable {name} that does not '
-                f'contain images')
-          continue
+      if type(value) is not list:
+        continue
+
+      if not all(type(x) is AbstractImage for x in value):
+        print(f'### ignoring list variable {name} that does not '
+              f'contain images')
+        continue
 
       images = value
       for image in images:
         if image in images_to_save:
           continue
 
-        if image.filename:
-          assert image.view_id, f'Impossible image {image}'
-
-        if image.view_id:
-          # TODO: Create a new image filename that's an extension of the image
-          # used to create this image.
-          assert image.filename, f'Impossible image {image}'
+        assert image.view_id and image.filename, f'Impossible image {image}'
 
         if image.dirty:
           images_to_save.append(image)
@@ -87,7 +83,7 @@ def PixInsight():
           func_globals.update(context)
 
           # Load the given filenames and turn them into AbstractImages.
-          view_ids = ['foo'] * len(filenames)
+          view_ids = [str(uuid.uuid4()) for f in filenames]
           images = open_images.OpenImages(filenames, view_ids)
 
           sys.settrace(tracer)
