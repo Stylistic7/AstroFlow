@@ -33,6 +33,7 @@ function App() {
   const [stacks, setStacks] = useState({});
   const [targets, setTargets] = useState({});
   const [mosaics, setMosaics] = useState({});
+  const [shoppingCart, setShoppingCart] = useState([]);
 
   // useEffect(() => {
   //   const pollingCallback = async () => {
@@ -86,20 +87,40 @@ function App() {
   useEffect(() => {
     console.log('in App.useEffect');
     const loadData = async () => {
-      let [s, t, m] = await Promise.all([
+      let [s, t, m, cart] = await Promise.all([
         fetch('/stacks').then(r => r.json()),
         fetch('/targets').then(r => r.json()),
         fetch('/mosaics').then(r => r.json()),
+        fetch(`/get_shopping_cart`).then(r => r.json()),
       ]);
 
       setStacks(s);
       setTargets(t);
       setMosaics(m);
+      setShoppingCart(cart);
 
       setDataIsAvailable(true);
     };
 
     loadData();
+
+    // TODO: This removes the hostname's port, which is a little gross.
+    const stream_url = window.location.protocol + '//' + window.location.hostname + '/stream';
+    const sse = new window.EventSource(stream_url);
+    function getRealtimeData(d) {
+      console.log('Reloading data in response to SSE');
+      loadData();
+    }
+    sse.onmessage = e => getRealtimeData(e.data);
+    sse.addEventListener("foo", e => getRealtimeData(e.data));
+    sse.onerror = () => {
+      console.log('sse error');
+      sse.close();
+    }
+    return () => {
+      console.log('closing sse');
+      sse.close();
+    };
   }, []);
 
   // TODO: Breadcrumbs should preserve the path the user took to get here,
@@ -111,7 +132,9 @@ function App() {
   return (
     <ThemeProvider theme={darkTheme}>
       <StyledEngineProvider injectFirst>
-        <AstroFlowContext.Provider value={{ stacks, targets, mosaics }}>
+        <AstroFlowContext.Provider
+          value={{ stacks, targets, mosaics, shoppingCart }}
+        >
           <CssBaseline />
           <Router>
             <Search />

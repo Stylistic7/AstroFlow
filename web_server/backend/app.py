@@ -11,18 +11,17 @@ import numpy as np
 import flask
 from flask import request, jsonify, Response
 from dataclasses import asdict
-import shutil
-import threading
 from base64 import b64encode
 import datetime
 import ray
+from queue import Queue
+from .message_announcer import MessageAnnouncer
 
-import ray_diskcache
+from context import context
+import state_actor
 import constellations
 import image_previews
 from cache import cache
-import subframe_selection
-from context import Context
 
 import plotly.express as px
 import plotly.figure_factory as ff
@@ -88,21 +87,9 @@ def photo_sphere_viewer():
   return flask.render_template('photo_sphere_viewer.html')
 
 
-run_now = threading.Condition()
-
-
-@app.route('/run')
-def run():
-  run_now.acquire()
-  run_now.notify()
-  run_now.release()
-
-  return Response(status=204)
-
-
 @app.route('/get_shopping_cart')
 def get_shopping_cart():
-  return test_app.shopping_cart if debug else cache.get('shopping_cart', [])
+  return context.shopping_cart or []
 
 
 # @app.route('/add_mosaic_to_shopping_cart/<mosaic_id>')
@@ -140,31 +127,29 @@ def get_shopping_cart():
 
 #   return Response(status=204)
 
+# @app.route('/add_to_shopping_cart/<object_type>/<object_id>')
+# def add_to_shopping_cart(object_type, object_id):
+#   with cache.transact():
+#     shopping_cart = test_app.shopping_cart if debug else cache.get(
+#         'shopping_cart', [])
+#     key = (object_type, object_id)
+#     if key not in shopping_cart:
+#       shopping_cart.append(key)
+#       cache['shopping_cart'] = shopping_cart
 
-@app.route('/add_to_shopping_cart/<object_type>/<object_id>')
-def add_to_shopping_cart(object_type, object_id):
-  with cache.transact():
-    shopping_cart = test_app.shopping_cart if debug else cache.get(
-        'shopping_cart', [])
-    key = (object_type, object_id)
-    if key not in shopping_cart:
-      shopping_cart.append(key)
-      cache['shopping_cart'] = shopping_cart
+#   return shopping_cart
 
-  return shopping_cart
+# @app.route('/remove_from_shopping_cart/<object_type>/<object_id>')
+# def remove_from_shopping_cart(object_type, object_id):
+#   with cache.transact():
+#     shopping_cart = test_app.shopping_cart if debug else cache.get(
+#         'shopping_cart', [])
+#     key = (object_type, object_id)
+#     if key in shopping_cart:
+#       shopping_cart.remove(key)
+#       cache['shopping_cart'] = shopping_cart
 
-
-@app.route('/remove_from_shopping_cart/<object_type>/<object_id>')
-def remove_from_shopping_cart(object_type, object_id):
-  with cache.transact():
-    shopping_cart = test_app.shopping_cart if debug else cache.get(
-        'shopping_cart', [])
-    key = (object_type, object_id)
-    if key in shopping_cart:
-      shopping_cart.remove(key)
-      cache['shopping_cart'] = shopping_cart
-
-  return shopping_cart
+#   return shopping_cart
 
 
 @app.route('/starmap')
@@ -518,54 +503,34 @@ def format_sse(data: str, event=None) -> str:
   return msg
 
 
+announcer = MessageAnnouncer()
+
+
 @app.route('/stream')
 def stream():
+  print('### responding to request on /stream')
 
   def eventStream():
+    messages = announcer.listen()
     while True:
-      time.sleep(1.0)
+      event = messages.get()
+      print(f'### got event {event} from queue')
       s = time.ctime(time.time())
-      data = format_sse(s, 'foo')
-      print('yielding data', data)
-      yield data
+      sse = format_sse(s, event)
+      print('### yielding SSE', sse)
+      yield sse
 
   response = Response(eventStream(), mimetype="text/event-stream")
   response.headers['Access-Control-Allow-Origin'] = '*'
   return response
 
 
-def run_astroflow_repeatedly():
-
-  def ok_to_run():
-    with cache.transact():
-      if not cache.get('astroflow_running', False):
-        cache['astroflow_running'] = True
-        return True
-
-    return False
-
-  while True:
-    if ok_to_run():
-      # TODO: An empty context won't work. The user will have to fill stuff in
-      # in the UI before the first run here.
-      print('Running AstroFlow...')
-      # context = cache.get('context', {})
-      # astro_flow_direct.main(context)
-      print('AstroFlow done')
-      cache['astroflow_running'] = False
-    else:
-      print('Cannot run AstroFlow because it is already running')
-
-    print('Waiting 15 minutes to run AstroFlow again...')
-    run_now.acquire()
-    run_now.wait(15 * 60)
-    run_now.release()
+@app.route('/dispatch', methods=['POST'])
+def dispatch():
+  state_actor.dispatch(request.json,
+                       callback=lambda e: announcer.announce('foo'))
+  return Response(status=204)
 
 
 if __name__ == '__main__':
-  cache['astroflow_running'] = False
-
-  thread = threading.Thread(target=run_astroflow_repeatedly)
-  thread.start()
-
   app.run(host='0.0.0.0', port=80)
