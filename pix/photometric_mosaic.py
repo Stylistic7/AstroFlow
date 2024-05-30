@@ -1,7 +1,6 @@
 import os
 
-from .decorators import accepts_view_ids
-from .classes import ShellScriptTask, ViewIdList
+from .classes import ShellScriptTask
 from .context import append_task
 
 # TODO: These parameters must be floats, not strings, so they can be overriden
@@ -64,7 +63,6 @@ _default_parameters = {
 }
 
 
-@accepts_view_ids
 def PhotometricMosaic(view_ids, **kwargs):
   parameters = _default_parameters | kwargs
   javascript_filename = "/Applications/PixInsight/src/scripts/JohnMurphy/PhotometricMosaic/AstroFlowPhotometricMosaic.js"
@@ -78,4 +76,4 @@ def PhotometricMosaic(view_ids, **kwargs):
       ShellScriptTask(javascript_filename=javascript_filename,
                       parameters=parameters))
 
-  return ViewIdList(['Mosaic'])
+  return ['Mosaic']

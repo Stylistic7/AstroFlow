@@ -1,63 +1,61 @@
-from .decorators import accepts_view_ids
-from .classes import ShellScriptTask, ViewIdList
+from .classes import ShellScriptTask
 from .context import append_task
 from .processes import enum, execute_on_view_ids
 
 _default_parameters = {
     'tolerance':
-    1.000,
+        1.000,
     'deviation':
-    0.800,
+        0.800,
     'unbalance':
-    1.800,
+        1.800,
     'minBoxFraction':
-    0.050,
+        0.050,
     'maxBackground':
-    1.0000,
+        1.0000,
     'minBackground':
-    0.0000,
+        0.0000,
     'useBrightnessLimits':
-    False,
+        False,
     'polyDegree':
-    4,
+        4,
     'boxSize':
-    5,
+        5,
     'boxSeparation':
-    5,
+        5,
     'modelImageSampleFormat':
-    enum('AutomaticBackgroundExtractor.prototype.f32'),
+        enum('AutomaticBackgroundExtractor.prototype.f32'),
     'abeDownsample':
-    2.00,
+        2.00,
     'writeSampleBoxes':
-    False,
+        False,
     'justTrySamples':
-    False,
+        False,
     'targetCorrection':
-    enum('AutomaticBackgroundExtractor.prototype.Subtract'),
+        enum('AutomaticBackgroundExtractor.prototype.Subtract'),
     'normalize':
-    False,
+        False,
     'discardModel':
-    True,
+        True,
     'replaceTarget':
-    True,
+        True,
     'correctedImageId':
-    '',
+        '',
     'correctedImageSampleFormat':
-    enum('AutomaticBackgroundExtractor.prototype.SameAsTarget'),
+        enum('AutomaticBackgroundExtractor.prototype.SameAsTarget'),
     'verboseCoefficients':
-    False,
+        False,
     'compareModel':
-    False,
+        False,
     'compareFactor':
-    10.00,
+        10.00,
 }
 
 
-@accepts_view_ids
 def AutomaticBackgroundExtractor(view_ids, **kwargs):
   append_task(
       ShellScriptTask(javascript=execute_on_view_ids(
-          'AutomaticBackgroundExtractor', _default_parameters
-          | kwargs, view_ids)))
+          'AutomaticBackgroundExtractor', _default_parameters |
+          kwargs, view_ids)))
 
-  return ViewIdList(view_ids)
+  return view_ids

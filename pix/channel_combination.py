@@ -1,5 +1,4 @@
-from .decorators import accepts_view_ids
-from .classes import ShellScriptTask, ViewIdList
+from .classes import ShellScriptTask
 from .context import append_task
 from .processes import enum, execute_global
 
@@ -16,13 +15,10 @@ windows[windows.length - 1].currentView.id = "{view_id}";
 
 
 # TODO: None should be a valid return type.
-@accepts_view_ids
 def RenameMostRecentView(view_ids, **kwargs):
+  return view_ids
 
-  return ViewIdList(view_ids)
 
-
-@accepts_view_ids
 def ChannelCombination(view_ids, output_view_id=None, **kwargs):
   # TODO: This is horrifically ugly.
   parameters = _default_parameters | kwargs
@@ -41,4 +37,4 @@ def ChannelCombination(view_ids, output_view_id=None, **kwargs):
   # TODO: ChannelComnbination just creates a new image with a "random" view id.
   # Find some way to either specify the view id, or grab the "most recent" view
   # id from PixInsight.
-  return ViewIdList(["RGB"])
+  return ["RGB"]

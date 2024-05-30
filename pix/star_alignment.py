@@ -1,5 +1,4 @@
-from .decorators import accepts_view_ids
-from .classes import ShellScriptTask, ViewIdList
+from .classes import ShellScriptTask
 from .context import append_task
 from .processes import enum, execute_global
 
@@ -102,7 +101,6 @@ for (let i = 0; i < view_ids.length; ++i) {{
 
 
 # TODO: The reference image is the first view_id, but this is not obvious.
-@accepts_view_ids
 def StarAlignment(view_ids, close_originals=True, **kwargs):
   parameters = _default_parameters | kwargs
   parameters['referenceImage'] = view_ids[0]
@@ -123,4 +121,4 @@ def StarAlignment(view_ids, close_originals=True, **kwargs):
     append_task(ShellScriptTask(javascript=close_views))
 
   output_view_ids = [v + '_registered' for v in view_ids]
-  return ViewIdList(output_view_ids)
+  return output_view_ids

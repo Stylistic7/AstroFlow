@@ -1,7 +1,6 @@
 import os
 
-from .decorators import accepts_filenames
-from .classes import ShellScriptTask, FileList
+from .classes import ShellScriptTask
 from .context import append_task
 
 _default_parameters = {
@@ -32,7 +31,6 @@ _default_parameters = {
 }
 
 
-@accepts_filenames
 def MosaicByCoordinates(filenames, **kwargs):
   parameters = _default_parameters | kwargs
   javascript_filename = "/Applications/PixInsight/src/scripts/AdP/MosaicByCoordinates.js"
@@ -52,4 +50,4 @@ def MosaicByCoordinates(filenames, **kwargs):
       ShellScriptTask(javascript_filename=javascript_filename,
                       parameters=parameters))
 
-  return FileList(output_filenames)
+  return output_filenames

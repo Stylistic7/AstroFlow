@@ -1,5 +1,4 @@
-from .decorators import accepts_view_ids
-from .classes import ShellScriptTask, ViewIdList
+from .classes import ShellScriptTask
 from .context import append_task
 from .processes import enum, execute_on_view_ids
 
@@ -17,11 +16,16 @@ _default_parameters = {
 }
 
 
-@accepts_view_ids
-def BlurXTerminator(view_ids, **kwargs):
-  append_task(
-      ShellScriptTask(
-          javascript=execute_on_view_ids('BlurXTerminator', _default_parameters
-                                         | kwargs, view_ids)))
+def BlurXTerminator(images, **kwargs):
+  print('### Entering BlurXTerminator')
 
-  return ViewIdList(view_ids)
+  view_ids = [i.view_id for i in images]
+  append_task(
+      ShellScriptTask(javascript=execute_on_view_ids(
+          'BlurXTerminator', _default_parameters | kwargs, view_ids)))
+
+  for i in images:
+    i.dirty = True
+
+  print(f'### BlurXTerminator returning {images}')
+  return images

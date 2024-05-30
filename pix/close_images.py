@@ -1,5 +1,4 @@
-from .classes import ShellScriptTask, ViewIdList
-from .decorators import accepts_view_ids
+from .classes import ShellScriptTask
 from .context import append_task
 
 _javascript = """
@@ -21,10 +20,6 @@ for (let i = 0; i < view_ids.length; ++i) {{
 """
 
 
-@accepts_view_ids
 def CloseImages(view_ids, **kwargs):
   print(f'### closing images with view ids {view_ids}')
-  append_task(
-      ShellScriptTask(javascript=_javascript.format(view_ids=view_ids)))
-
-  return ViewIdList([])
+  append_task(ShellScriptTask(javascript=_javascript.format(view_ids=view_ids)))

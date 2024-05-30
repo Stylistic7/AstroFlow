@@ -1,5 +1,4 @@
-from .decorators import accepts_view_ids
-from .classes import ShellScriptTask, ViewIdList
+from .classes import ShellScriptTask
 from .context import append_task
 from .processes import enum, execute_on_view_ids
 
@@ -15,11 +14,9 @@ _default_parameters = {
 }
 
 
-@accepts_view_ids
 def IntegerResample(view_ids, **kwargs):
   append_task(
-      ShellScriptTask(
-          javascript=execute_on_view_ids('IntegerResample', _default_parameters
-                                         | kwargs, view_ids)))
+      ShellScriptTask(javascript=execute_on_view_ids(
+          'IntegerResample', _default_parameters | kwargs, view_ids)))
 
-  return ViewIdList(view_ids)
+  return view_ids

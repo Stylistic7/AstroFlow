@@ -1,78 +1,113 @@
-import os
-import inspect
 import tempfile
 import traceback
 import functools
 import uuid
+import sys
 
 from . import shell_script
-from . import classes
 from . import open_images
+from . import save_images
+from .abstract_image import AbstractImage
 
 
-def accepts_view_ids(fn):
-  @functools.wraps(fn)
-  def wrapped_f(inputs, *args, **kwargs):
-    print(
-        f'### accepts_view_ids called with type {type(inputs)} inputs {inputs}')
-    if type(inputs) is classes.FileList:
-      print('### Inserting OpenImages task')
-      view_ids = ['V' + str(uuid.uuid4()).replace('-', '_') for i in inputs]
-      open_images.OpenImages(inputs, view_ids)
-    elif type(inputs) is classes.ViewIdList:
-      view_ids = inputs
-    else:
-      raise ValueError(f"pix functions must return either FileList or "
-                       f"ViewIdList, not {type(inputs)}")
+def PixInsight():
+  depth = 0
 
-    return fn(view_ids, *args, **kwargs)
+  def tracer(frame, event, arg):
+    nonlocal depth
+    if event == 'call':
+      depth += 1
+      if depth > 1:
+        return None
+      frame.f_trace_lines = False
+      frame.f_trace_opcodes = False
+      return tracer
 
-  wrapped_f.input_type = classes.ArgumentType.VIEW_IDS
-  return wrapped_f
+    print('### f_locals', frame.f_locals)
 
+    # Images that have a filename but no view_id are impossible.
+    #
+    # Images that have no filename but a view_id are a predicament,
+    # because I have no idea what the filename should be. They should also
+    # be impossible. When the AbstractImage is made, it should contain
+    # info about what it was derived from.
+    #
+    # Images that have both filename and view_id are fine. If the dirty bit
+    # is set, flush them to disk.
+    images_to_save = []
+    for name, value in frame.f_locals.items():
+      if type(value) is list:
+        if not all(type(x) is AbstractImage for x in value):
+          print(f'### ignoring list variable {name} that does not '
+                f'contain images')
+          continue
 
-# TODO: Add a save_files task here.
-def accepts_filenames(fn):
-  @functools.wraps(fn)
-  def wrapped_f(*args, **kwargs):
-    return fn(*args, **kwargs)
+      images = value
+      for image in images:
+        if image in images_to_save:
+          continue
 
-  wrapped_f.input_type = classes.ArgumentType.FILENAMES
-  return wrapped_f
+        if image.filename:
+          assert image.view_id, f'Impossible image {image}'
 
+        if image.view_id:
+          # TODO: Create a new image filename that's an extension of the image
+          # used to create this image.
+          assert image.filename, f'Impossible image {image}'
 
-# TODO: Put the PixInsight() wrapper back! Use it to say, e.g.
-# @PixInsight(blocking=False)
-def PixInsight(func):
-  @functools.wraps(func)
-  def decorator(*args, **kwargs):
-    func_globals = func.__globals__
+        if image.dirty:
+          images_to_save.append(image)
 
-    # Save copy of any global values that will be replaced.
-    # saved_values = {
-    #     key: func_globals[key]
-    #     for key in context if key in func_globals
-    # }
-    try:
-      with tempfile.TemporaryDirectory() as tmp_dir:
-        context = dict(tasks=list(), process_number=0)
+    if images_to_save:
+      save_images.SaveImages(images_to_save)
 
-        print(f'### Calling function with tmp_dir {tmp_dir}')
-        context['tmp_dir'] = tmp_dir
-        func_globals.update(context)
+    return tracer
 
-        result = func(*args, **kwargs)
-        print(f"### Shell script is ready, with {len(context['tasks'])} tasks")
-        for task in context['tasks']:
-          print(f'### task {task}')
+  def decorator(func):
 
-        shell_script.run_script(context['tasks'])
-    except Exception as e:
-      traceback.print_exc(e)
+    @functools.wraps(func)
+    def wrapper(filenames, *args, **kwargs):
+      print(f'### Entering wrapper, filenames {filenames} '
+            f'args {args} kwargs {kwargs}')
+      if type(filenames) is not list:
+        filenames = [filenames]
 
-    # finally:
-    #   func_globals.update(saved_values)  # Restore replaced globals.
+      func_globals = func.__globals__
 
-    return result
+      # Save copy of any global values that will be replaced.
+      # saved_values = {
+      #     key: func_globals[key]
+      #     for key in context if key in func_globals
+      # }
+      try:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+          context = dict(tasks=list(), process_number=0)
+
+          context['tmp_dir'] = tmp_dir
+          func_globals.update(context)
+
+          # Load the given filenames and turn them into AbstractImages.
+          view_ids = ['foo'] * len(filenames)
+          images = open_images.OpenImages(filenames, view_ids)
+
+          sys.settrace(tracer)
+          try:
+            print(f'### Calling function with tmp_dir {tmp_dir}')
+            result = func(images, *args, **kwargs)
+          finally:
+            sys.settrace(None)
+
+          print(
+              f"### Shell script is ready, with {len(context['tasks'])} tasks")
+          shell_script.run_script(context['tasks'], dry_run=True)
+      except Exception as e:
+        traceback.print_exc(e)
+
+      # finally:
+      #   func_globals.update(saved_values)  # Restore replaced globals.
+
+      return result
+
+    return wrapper
 
   return decorator

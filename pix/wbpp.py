@@ -7,7 +7,7 @@ from .context import append_task
 _default_parameters = {'outputDirectory': ''}
 
 
-@PixInsight
+@PixInsight()
 def WeightedBatchPreprocessing(dir, **kwargs):
   parameters = _default_parameters | kwargs
   javascript_filename = "/Applications/PixInsight/src/scripts/WeightedBatchPreprocessing/WeightedBatchPreprocessing.js"

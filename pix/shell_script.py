@@ -93,7 +93,7 @@ def _save_javascript_file(tmp_dir, task):
       if type(javascript) is list:
         javascript = '\n'.join(javascript)
 
-      print(f'Writing JavaScript to file {script_filename}')
+      print(f'### Writing JavaScript to file {script_filename}')
       print(javascript)
       f.write(javascript)
 
@@ -118,11 +118,12 @@ def run_script(tasks,
                blocking=True,
                tmp_dir_in=None,
                close_after=True,
-               sleep_after=False):
-  if not cache.get('pixinsight_slots', default=[]):
-    start_pixinsight_instances()
-
-  slot = _wait_until_slot_is_idle()
+               sleep_after=False,
+               dry_run=False):
+  if not dry_run:
+    if not cache.get('pixinsight_slots', default=[]):
+      start_pixinsight_instances()
+    slot = _wait_until_slot_is_idle()
 
   with tempfile.TemporaryDirectory() if not tmp_dir_in else nullcontext(
       tmp_dir_in) as tmp_dir:
@@ -144,17 +145,19 @@ def run_script(tasks,
       print('script is', script)
       f.write(script)
 
-    print(f'Running PixInsight shell script...')
-    ret = subprocess.run([
-        '/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight',
-        f'--execute={slot}:{script_filename}'
-    ]).returncode
-    print(f'--execute returned')
+    if not dry_run:
+      print(f'Running PixInsight shell script...')
+      ret = subprocess.run([
+          '/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight',
+          f'--execute={slot}:{script_filename}'
+      ]).returncode
+      print(f'--execute returned')
 
-    while not os.path.exists(sentinel_filename):
-      time.sleep(1)
+      while not os.path.exists(sentinel_filename):
+        time.sleep(1)
 
-    _slot_is_idle(slot)
+    if not dry_run:
+      _slot_is_idle(slot)
 
 
 def _stop_pixinsight_instances():

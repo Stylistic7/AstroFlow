@@ -1,5 +1,4 @@
-from .classes import ShellScriptTask, FileList
-from .decorators import accepts_view_ids
+from .classes import ShellScriptTask
 from .context import append_task
 
 _javascript = """
@@ -14,10 +13,12 @@ for (let i = 0; i < output_filenames.length; ++i) {{
 """
 
 
-@accepts_view_ids
-def SaveImages(view_ids, output_filenames, **kwargs):
+def SaveImages(images):
+  view_ids = [i.view_id for i in images]
+  filenames = [i.filename for i in images]
+
   append_task(
       ShellScriptTask(javascript=_javascript.format(
-          view_ids=view_ids, output_filenames=output_filenames)))
+          view_ids=view_ids, output_filenames=filenames)))
 
-  return FileList(output_filenames)
+  return images

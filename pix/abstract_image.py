@@ -43,18 +43,9 @@ class JavaScript:
 @dataclass
 class AbstractImage:
   view_id: str = None
-  file_name: str = None
+  filename: str = None
+  dirty: bool = False
 
-  def load_from_disk(self, input_filename):
-    view_id = uuid.uuid4()
-
-    code = """
-      let window = ImageWindow.open("{input_filename}");
-      window[0].show();
-      windows[0].currentView.id = "{view_id}";
-    """
-
-    return JavaScript(code=code, open_views=[view_id])
-
-  def save_to_disk(self, output_dir):
-    pass
+  # def __del__(self):
+  #   print(f'### AbstractImage deleted (view_id {self.view_id} '
+  #         f'filename {self.filename})')

@@ -1,7 +1,6 @@
 import os
 
-from .decorators import accepts_filenames
-from .classes import ShellScriptTask, FileList
+from .classes import ShellScriptTask
 from .context import append_task
 
 # TODO: These parameters must be floats, not strings, so they can be overriden
@@ -57,7 +56,6 @@ _default_parameters = {
 }
 
 
-@accepts_filenames
 def ImageSolver(filenames, **kwargs):
   print('### ImageSolver() filenames are', filenames)
   parameters = _default_parameters | kwargs
@@ -79,13 +77,4 @@ def ImageSolver(filenames, **kwargs):
       ShellScriptTask(javascript_filename=javascript_filename,
                       parameters=parameters))
 
-  return FileList(output_filenames)
-
-
-if __name__ == '__main__':
-  filenames = [
-      '/Users/nobody/Downloads/Veil Pano/master_light_Filamentary_nebula_RA_311_5_DEC_30_2_C11_H_v1_post_registered.xisf',
-      '/Users/nobody/Downloads/Veil Pano/master_light_Filamentary_nebula_RA_313_1_DEC_30_0_C11_H_v1_post_registered.xisf'
-  ]
-
-  run(filenames)
+  return output_filenames
