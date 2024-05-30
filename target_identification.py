@@ -15,6 +15,7 @@ import footprints
 def group_stacks_into_targets():
   stacks = context.stacks
   plate_solutions = context.plate_solutions
+  cosine_similarity_threshold = context.cosine_similarity_threshold
 
   values = {
       id: (np.asarray(footprints.radec_to_vector(*stack.center)),
@@ -30,7 +31,7 @@ def group_stacks_into_targets():
   def comparison_fn(a, b):
     a_center, a_polygon = a
     b_center, b_polygon = b
-    if np.dot(a_center, b_center) < context.cosine_similarity_threshold:
+    if np.dot(a_center, b_center) < cosine_similarity_threshold:
       return False
 
     iou = a_polygon.intersection(b_polygon).area() / a_polygon.union(

@@ -489,7 +489,8 @@ def populate_context():
   if context.download:
     download(context.input_dirs[0], context.default_filter)
 
-  context.regroup = context.stacks == None
+  if context.stacks == None:
+    context.regroup = True
 
   # TODO: Add more comprehensive validation.
   # assert not any(type(p) is str for p in context.plate_solutions.values())

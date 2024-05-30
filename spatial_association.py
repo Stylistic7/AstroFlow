@@ -56,28 +56,33 @@ def _make_dict_from_groups(hashes, values, comparison_fn, plate_solutions,
   return targets
 
 
-# TODO: Is repeatedly calling context __getattr__ slow?
 @ray.remote
 def find_components_by_cosine_similarity():
   print('find_components_by_cosine_similarity')
 
+  # TODO: Repeatedly calling context __getattr__ slow? YES. It's turbo slow.
+  # I don't like having to do all these pre-fetches at the top, though.
+  image_hashes = context.image_hashes
+  fits_headers = context.fits_headers
+  plate_solutions = context.plate_solutions
+  cosine_similarity_threshold = context.cosine_similarity_threshold
+  min_component_members = context.min_component_members
+
   print('Before removing bad plate solutions, len image_hashes',
-        len(context.image_hashes))
+        len(image_hashes))
   print('Before removing bad plate solutions, len fits_headers ',
-        len(context.fits_headers))
+        len(fits_headers))
   print('Before removing bad plate solutions, len plate_solutions',
-        len(context.plate_solutions))
+        len(plate_solutions))
   plate_solutions = image_metadata.remove_bad_images()
   print('After removing bad plate solutions, len', len(plate_solutions))
 
   light_frames = [
-      h for h, header in context.fits_headers.items()
-      if h in plate_solutions and file_io.is_light_frame(header) and
-      not file_io.is_master(header)
+      h for h, header in fits_headers.items() if h in plate_solutions and
+      file_io.is_light_frame(header) and not file_io.is_master(header)
   ]
 
-  light_frames = sorted(light_frames,
-                        key=lambda h: context.fits_headers[h]['DATE-OBS'])
+  light_frames = sorted(light_frames, key=lambda h: fits_headers[h]['DATE-OBS'])
 
   centroids = {
       h: np.asarray(footprints.radec_to_vector(*plate_solutions[h].center))
@@ -85,11 +90,11 @@ def find_components_by_cosine_similarity():
   }
 
   def comparison_fn(a, b):
-    return np.dot(a, b) > context.cosine_similarity_threshold
+    return np.dot(a, b) > cosine_similarity_threshold
 
   spatial_groups = _make_dict_from_groups(light_frames, centroids,
                                           comparison_fn, plate_solutions,
-                                          context.min_component_members)
+                                          min_component_members)
 
   context.spatial_groups = spatial_groups
   print(f'### Wrote {len(spatial_groups)} spatial groups into the cache')

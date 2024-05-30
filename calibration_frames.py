@@ -14,6 +14,8 @@ from hashing import hash_list
 def identify_calibration_stacks():
   print(f'Identifying calibration stacks...')
   fits_headers = context.fits_headers
+  max_run_gap = context.max_run_gap
+  min_frames_in_run = context.min_frames_in_run
 
   cal_frames = [
       f for f, header in fits_headers.items()
@@ -44,8 +46,8 @@ def identify_calibration_stacks():
   for camera in frames_for_camera:
     bias_frames = frames_for_image_type.get(
         'bias', set()) & frames_for_camera.get(camera, set())
-    for run in runs.get_runs(bias_frames, fits_headers, context.max_run_gap,
-                             context.min_frames_in_run):
+    for run in runs.get_runs(bias_frames, fits_headers, max_run_gap,
+                             min_frames_in_run):
       stack = new_stack(runs.get_frames_for_run(run, bias_frames, fits_headers))
       stacks[stack.content_hash] = stack
 
@@ -53,8 +55,8 @@ def identify_calibration_stacks():
       dark_frames = frames_for_image_type.get(
           'dark', set()) & frames_for_camera.get(
               camera, set()) & frames_for_exposure.get(exposure, set())
-      for run in runs.get_runs(dark_frames, fits_headers, context.max_run_gap,
-                               context.min_frames_in_run):
+      for run in runs.get_runs(dark_frames, fits_headers, max_run_gap,
+                               min_frames_in_run):
         stack = new_stack(
             runs.get_frames_for_run(run, dark_frames, fits_headers))
         stacks[stack.content_hash] = stack
@@ -63,8 +65,8 @@ def identify_calibration_stacks():
       flat_frames = frames_for_image_type.get(
           'flat', set()) & frames_for_camera.get(
               camera, set()) & frames_for_filter.get(filter, set())
-      for run in runs.get_runs(flat_frames, fits_headers, context.max_run_gap,
-                               context.min_frames_in_run):
+      for run in runs.get_runs(flat_frames, fits_headers, max_run_gap,
+                               min_frames_in_run):
         stack = new_stack(
             runs.get_frames_for_run(run, flat_frames, fits_headers))
         stacks[stack.content_hash] = stack
