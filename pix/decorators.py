@@ -3,6 +3,7 @@ import traceback
 import functools
 import uuid
 import sys
+from pathlib import Path
 
 from . import shell_script
 from . import open_images
@@ -12,6 +13,11 @@ from .abstract_image import AbstractImage
 
 def _random_view_id():
   return f'View-{uuid.uuid4()}'.replace('-', '_')
+
+
+def _extend_filename(original_filename, string):
+  path = Path(original_filename)
+  return str(path.parent / (path.stem + string + path.suffix))
 
 
 def PixInsight(dry_run=False):
@@ -47,15 +53,22 @@ def PixInsight(dry_run=False):
                                      view_ids)
 
           result = call_with_context(func, images, *args, **kwargs)
+          assert type(result) in [list, tuple]
+          result = [item for sublist in result for item in list(sublist)]
+          assert all(type(x) is AbstractImage for x in result)
+          print(f'### PixInsight function wants to save {len(result)} images')
 
           images_to_save = []
-          for image in context['images_to_save']:
+          for image in result + context['images_to_save']:
             if image in images_to_save:
               continue
 
             assert image.view_id and image.filename, f'Impossible image {image}'
 
             if image.dirty:
+              image.filename = _extend_filename(image.filename,
+                                                '_' + func.__name__)
+              print(f'### will save: {image}')
               images_to_save.append(image)
 
           if images_to_save:

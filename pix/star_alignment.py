@@ -119,30 +119,24 @@ def StarAlignment(images, close_originals=False, **kwargs):
   append_task(
       ShellScriptTask(javascript=execute_global('StarAlignment', parameters)))
 
-  # rename_reference_view = _rename_reference_view.format(
-  #     old_view_id=view_ids[0], new_view_id=view_ids[0] + '_registered')
-  # append_task(ShellScriptTask(javascript=rename_reference_view))
-
-  # if close_originals:
-  #   close_views = _close_views.format(view_ids=view_ids[1:])
-  #   append_task(ShellScriptTask(javascript=close_views))
-
-  # output_view_ids = [v + '_registered' for v in view_ids]
-  # return output_view_ids
+  # StarAlignment leaves the reference filename alone, which is awkward.
+  # Rename it with `_registered` so it looks like the others.
+  rename_reference_view = _rename_reference_view.format(
+      old_view_id=view_ids[0], new_view_id=view_ids[0] + '_registered')
+  append_task(ShellScriptTask(javascript=rename_reference_view))
 
   # TODO: Put this somewhere generally accessible.
   def extend_filename(original_filename, string):
     path = Path(original_filename)
     return str(path.parent / (path.stem + string + path.suffix))
 
-  new_view_ids = [view_ids[0]] + [v + '_registered' for v in view_ids[1:]]
+  output_view_ids = [v + '_registered' for v in view_ids]
   output_images = [
       AbstractImage(filename=extend_filename(image.filename, '_registered'),
                     view_id=view_id,
-                    dirty=True) for view_id, image in zip(new_view_ids, images)
+                    dirty=True)
+      for view_id, image in zip(output_view_ids, images)
   ]
-
-  add_images_to_save(output_images)
 
   print(f'### StarXTerminator returning {output_images}')
   return output_images

@@ -27,17 +27,16 @@ def BlurXTerminator(images, **kwargs):
       ShellScriptTask(javascript=execute_on_view_ids(
           'BlurXTerminator', _default_parameters | kwargs, view_ids)))
 
-  def extend_filename(original_filename, string):
-    path = Path(original_filename)
-    return str(path.parent / (path.stem + string + path.suffix))
+  #   output_images = [
+  #       AbstractImage(filename=extend_filename(image.filename, '_blurx'),
+  #                     view_id=image.view_id,
+  #                     dirty=True) for image in images
+  #   ]
 
-  output_images = [
-      AbstractImage(filename=extend_filename(image.filename, '_blurx'),
-                    view_id=image.view_id,
-                    dirty=True) for image in images
-  ]
+  #   add_images_to_save(output_images)
 
-  add_images_to_save(output_images)
+  for image in images:
+    image.dirty = True
 
-  print(f'### BlurXTerminator returning {output_images}')
-  return output_images
+  print(f'### BlurXTerminator returning {images}')
+  return images
