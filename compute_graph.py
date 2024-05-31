@@ -11,8 +11,13 @@ from stacking import scatter_stack_subframes
 from step_mosaic import scatter_merge_mosaics
 from mosaics.identification import identify_mosiacs
 from dependency_graph import Graph, make_graph_from_list
-from process_target import gather_stacks
+from post_process_target import post_process_target
 from post_process_stack import post_process_stack
+
+
+@ray.remote
+def gather_processing_graph():
+  pass
 
 
 @ray.remote
@@ -33,6 +38,17 @@ def build_stack_subgraph(id):
 
 
 @ray.remote
+def build_target_subgraph(id):
+  target = context.targets[id]
+
+  return Graph({
+      (post_process_target, id): [
+          (post_process_stack, s) for s in target.stack_ids
+      ]
+  })
+
+
+@ray.remote
 def build_processing_graph():
   targets = context.targets
   shopping_cart = context.shopping_cart or []
@@ -43,13 +59,10 @@ def build_processing_graph():
   for type, id in shopping_cart:
     if type == 'stack':
       subgraphs.append((build_stack_subgraph, id))
+    elif type == 'target':
+      subgraphs.append((build_target_subgraph, id))
 
-    if type == 'target':
-      target = targets[id]
-      for id in target.stack_ids:
-        subgraphs.append((build_stack_subgraph, id))
-
-  return Graph({gather_stacks: subgraphs})
+  return Graph({gather_processing_graph: subgraphs})
 
 
 def build_compute_graph():

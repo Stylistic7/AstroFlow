@@ -1,21 +1,45 @@
 import ray
 
-import os
 from pathlib import Path
 from enum import Enum
 from dataclasses import dataclass
-import shutil
 
+import stacking
+from context import context
 import pix
-import config
 from cache import cache
-import dependency_graph as dg
-from output_file import OutputFile
 
 
-@ray.remote
-def gather_stacks(context):
-  return context, None
+@pix.PixInsight()
+def _post_process_target(images):
+  aligned = pix.StarAlignment(images)
+
+
+# TODO: Hash the script used to do the post-processing, and do not repeat
+# the post-processing when a file with that hash already exists.
+@ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
+def post_process_target(target_id):
+  stacks = context.stacks
+  targets = context.targets
+  image_hashes = context.image_hashes
+  fits_headers = context.fits_headers
+
+  target = targets[target_id]
+  print(f'Entering post_process_target for target {target}')
+
+  filenames = []
+  stacks = [stacks[s] for s in target.stack_ids]
+  # TODO: Put the priority order in the UI.
+  for filter in ['L', 'H', 'S', 'O', 'G', 'B', 'R']:
+    matching_stack = next((s for s in stacks if s.filter == filter), None)
+    if matching_stack:
+      # TODO: Use the final file used by stack post-processing.
+      masters = stacking.find_matching_masters(matching_stack, image_hashes,
+                                               fits_headers)
+      assert len(masters) == 1
+      filenames.append(image_hashes[matching_stack[0]])
+
+  _post_process_target(filenames)
 
 
 # # TODO: This is super-specific to my particular setup. If there's confusion about

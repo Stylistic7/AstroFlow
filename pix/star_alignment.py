@@ -1,5 +1,9 @@
+from pathlib import Path
+
+# TODO: Put AbstractImage in classes.py
+from .abstract_image import AbstractImage
 from .classes import ShellScriptTask
-from .context import append_task
+from .context import append_task, add_images_to_save
 from .processes import enum, execute_global
 
 _default_parameters = {
@@ -101,9 +105,12 @@ for (let i = 0; i < view_ids.length; ++i) {{
 
 
 # TODO: The reference image is the first view_id, but this is not obvious.
-def StarAlignment(view_ids, close_originals=True, **kwargs):
+def StarAlignment(images, close_originals=False, **kwargs):
   parameters = _default_parameters | kwargs
-  parameters['referenceImage'] = view_ids[0]
+
+  filenames = [i.filename for i in images]
+  view_ids = [i.view_id for i in images]
+  parameters['referenceImage'] = filenames[0]
 
   # TODO: This is horrifically ugly.
   targets = [f'[true, false, "{v}"]' for v in view_ids[1:]]
@@ -112,13 +119,30 @@ def StarAlignment(view_ids, close_originals=True, **kwargs):
   append_task(
       ShellScriptTask(javascript=execute_global('StarAlignment', parameters)))
 
-  rename_reference_view = _rename_reference_view.format(
-      old_view_id=view_ids[0], new_view_id=view_ids[0] + '_registered')
-  append_task(ShellScriptTask(javascript=rename_reference_view))
+  # rename_reference_view = _rename_reference_view.format(
+  #     old_view_id=view_ids[0], new_view_id=view_ids[0] + '_registered')
+  # append_task(ShellScriptTask(javascript=rename_reference_view))
 
-  if close_originals:
-    close_views = _close_views.format(view_ids=view_ids[1:])
-    append_task(ShellScriptTask(javascript=close_views))
+  # if close_originals:
+  #   close_views = _close_views.format(view_ids=view_ids[1:])
+  #   append_task(ShellScriptTask(javascript=close_views))
 
-  output_view_ids = [v + '_registered' for v in view_ids]
-  return output_view_ids
+  # output_view_ids = [v + '_registered' for v in view_ids]
+  # return output_view_ids
+
+  # TODO: Put this somewhere generally accessible.
+  def extend_filename(original_filename, string):
+    path = Path(original_filename)
+    return str(path.parent / (path.stem + string + path.suffix))
+
+  new_view_ids = [view_ids[0]] + [v + '_registered' for v in view_ids[1:]]
+  output_images = [
+      AbstractImage(filename=extend_filename(image.filename, '_registered'),
+                    view_id=view_id,
+                    dirty=True) for view_id, image in zip(new_view_ids, images)
+  ]
+
+  add_images_to_save(output_images)
+
+  print(f'### StarXTerminator returning {output_images}')
+  return output_images
