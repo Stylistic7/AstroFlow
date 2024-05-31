@@ -106,7 +106,7 @@ def make_merge_ops(mode, mosaic_id, panels, output_dir):
   return merge_ops
 
 
-@pix.PixInsight
+@pix.PixInsight()
 def run_photometric_mosaic(merge_op):
   images = pix.OpenImages(pix.FileList(merge_op.image_filenames),
                           ['placed_0', 'placed_1'])

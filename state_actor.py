@@ -4,7 +4,6 @@ import os
 
 from context import context
 from dependency_graph import Graph, run_graph
-from compute_graph import build_item_processing_graph
 
 if 'ASTROFLOW_MOCK_NAMESPACE' in os.environ:
   namespace = os.environ["ASTROFLOW_MOCK_NAMESPACE"]

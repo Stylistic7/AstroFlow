@@ -24,3 +24,11 @@ def get_tmp_dir():
     frame = frame.f_back
 
   return frame.f_globals['tmp_dir']
+
+
+def add_images_to_save(images):
+  frame = inspect.currentframe()
+  while 'tmp_dir' not in frame.f_globals:
+    frame = frame.f_back
+
+  frame.f_globals['images_to_save'].extend(images)

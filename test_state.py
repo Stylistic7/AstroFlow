@@ -24,14 +24,14 @@ class TestState(unittest.TestCase):
 
   def test_shopping_cart(self):
     state = dispatch(dict(type='add_to_shopping_cart', item=('stack', 'foo')))
-    self.assertEqual(len(state['shopping_cart']), 1)
+    self.assertEqual(len(context.shopping_cart), 1)
 
     state = dispatch(dict(type='add_to_shopping_cart', item=('stack', 'foo')))
-    self.assertEqual(len(state['shopping_cart']), 1)
+    self.assertEqual(len(context.shopping_cart), 1)
 
     state = dispatch(
         dict(type='remove_from_shopping_cart', item=('stack', 'foo')))
-    self.assertEqual(len(state['shopping_cart']), 0)
+    self.assertEqual(len(context.shopping_cart), 0)
 
   def test_single_compute_graph(self):
     copy_testdata_frames(prefix='light_run_0',
@@ -89,6 +89,7 @@ class TestState(unittest.TestCase):
     self.assertEqual(len(processing_graph), 1)
 
     graph = build_compute_graph()
+    print('### graph', graph)
     run_graph(graph)
 
     masters = list(Path(context.output_dir).rglob('*.xisf'))

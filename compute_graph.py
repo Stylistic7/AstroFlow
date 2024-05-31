@@ -12,6 +12,7 @@ from step_mosaic import scatter_merge_mosaics
 from mosaics.identification import identify_mosiacs
 from dependency_graph import Graph, make_graph_from_list
 from process_target import gather_stacks
+from post_process_stack import post_process_stack
 
 
 @ray.remote
@@ -26,35 +27,29 @@ def maybe_build_regroup_graph():
     return {}
 
 
-def build_item_processing_graph(item):
-  print(f'### running compute graph for item {item}')
-  return Graph({})
+@ray.remote
+def build_stack_subgraph(id):
+  return Graph({(post_process_stack, id): {(scatter_stack_subframes, id)}})
 
 
 @ray.remote
 def build_processing_graph():
-  stacks = context.stacks
   targets = context.targets
   shopping_cart = context.shopping_cart or []
 
   # TODO: Maybe add prioritization options in the UI.
   # TODO: Remove duplicates.
-  stack_nodes = []
+  subgraphs = []
   for type, id in shopping_cart:
     if type == 'stack':
-      stack = stacks[id]
-      print(f'### stack in shopping cart: {stack}')
-      stack_nodes.append((scatter_stack_subframes, id))
+      subgraphs.append((build_stack_subgraph, id))
 
     if type == 'target':
       target = targets[id]
-      print(f'### target in shopping cart: {target}')
-      for stack_id in target.stack_ids:
-        stack_nodes.append((scatter_stack_subframes, stack_id))
+      for id in target.stack_ids:
+        subgraphs.append((build_stack_subgraph, id))
 
-  graph = {}
-  graph[gather_stacks] = stack_nodes
-  return Graph(graph)
+  return Graph({gather_stacks: subgraphs})
 
 
 def build_compute_graph():

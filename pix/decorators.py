@@ -10,54 +10,11 @@ from . import save_images
 from .abstract_image import AbstractImage
 
 
-def PixInsight():
-  depth = 0
+def _random_view_id():
+  return f'View-{uuid.uuid4()}'.replace('-', '_')
 
-  def tracer(frame, event, arg):
-    nonlocal depth
-    if event == 'call':
-      depth += 1
-      if depth > 1:
-        return None
-      frame.f_trace_lines = False
-      frame.f_trace_opcodes = False
-      return tracer
 
-    print('### f_locals', frame.f_locals)
-
-    # Images that have a filename but no view_id are impossible.
-    #
-    # Images that have no filename but a view_id are a predicament,
-    # because I have no idea what the filename should be. They should also
-    # be impossible. When the AbstractImage is made, it should contain
-    # info about what it was derived from.
-    #
-    # Images that have both filename and view_id are fine. If the dirty bit
-    # is set, flush them to disk.
-    images_to_save = []
-    for name, value in frame.f_locals.items():
-      if type(value) is not list:
-        continue
-
-      if not all(type(x) is AbstractImage for x in value):
-        print(f'### ignoring list variable {name} that does not '
-              f'contain images')
-        continue
-
-      images = value
-      for image in images:
-        if image in images_to_save:
-          continue
-
-        assert image.view_id and image.filename, f'Impossible image {image}'
-
-        if image.dirty:
-          images_to_save.append(image)
-
-    if images_to_save:
-      save_images.SaveImages(images_to_save)
-
-    return tracer
+def PixInsight(dry_run=False):
 
   def decorator(func):
 
@@ -68,8 +25,6 @@ def PixInsight():
       if type(filenames) is not list:
         filenames = [filenames]
 
-      func_globals = func.__globals__
-
       # Save copy of any global values that will be replaced.
       # saved_values = {
       #     key: func_globals[key]
@@ -77,25 +32,39 @@ def PixInsight():
       # }
       try:
         with tempfile.TemporaryDirectory() as tmp_dir:
-          context = dict(tasks=list(), process_number=0)
+          context = dict(tmp_dir=tmp_dir,
+                         tasks=list(),
+                         images_to_save=[],
+                         process_number=0)
 
-          context['tmp_dir'] = tmp_dir
-          func_globals.update(context)
+          def call_with_context(func, *args, **kwargs):
+            func.__globals__.update(context)
+            return func(*args, **kwargs)
 
           # Load the given filenames and turn them into AbstractImages.
-          view_ids = [str(uuid.uuid4()) for f in filenames]
-          images = open_images.OpenImages(filenames, view_ids)
+          view_ids = [_random_view_id() for f in filenames]
+          images = call_with_context(open_images.OpenImages, filenames,
+                                     view_ids)
 
-          sys.settrace(tracer)
-          try:
-            print(f'### Calling function with tmp_dir {tmp_dir}')
-            result = func(images, *args, **kwargs)
-          finally:
-            sys.settrace(None)
+          result = call_with_context(func, images, *args, **kwargs)
+
+          images_to_save = []
+          for image in context['images_to_save']:
+            if image in images_to_save:
+              continue
+
+            assert image.view_id and image.filename, f'Impossible image {image}'
+
+            if image.dirty:
+              images_to_save.append(image)
+
+          if images_to_save:
+            call_with_context(save_images.SaveImages, images_to_save)
 
           print(
               f"### Shell script is ready, with {len(context['tasks'])} tasks")
-          shell_script.run_script(context['tasks'], dry_run=True)
+          print(f'### image_to_save is', context['images_to_save'])
+          shell_script.run_script(context['tasks'], dry_run=dry_run)
       except Exception as e:
         traceback.print_exc(e)
 

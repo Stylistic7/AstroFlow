@@ -114,6 +114,11 @@ def gather_with_context(results):
 
 
 @ray.remote
+def noop():
+  pass
+
+
+@ray.remote
 def produce_file(output_dir, filename):
   filename = os.path.join(output_dir, filename)
 

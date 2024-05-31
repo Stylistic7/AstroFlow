@@ -14,12 +14,12 @@ from .starxterminator import StarXTerminator
 # write (and share) many such functions, and then just associate them with
 # stacks / targets / mosaics by name. These are legit Python functions, not
 # fragments or other bastardizations.
-@PixInsight()
+@PixInsight(dry_run=True)
 def bxt_only(image):
   deconvolved = BlurXTerminator(image)
 
 
-@PixInsight()
+@PixInsight(dry_run=True)
 def bxt_and_sxt(image):
   deconvolved = BlurXTerminator(image)
   starless, stars = StarXTerminator(deconvolved)

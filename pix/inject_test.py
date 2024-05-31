@@ -12,7 +12,7 @@ from decorators import PixInsight
 #
 # TODO: This code currently literally passes the output of one function to
 # the next, but we need to look at its type and potentially add types in between.
-@PixInsight
+@PixInsight()
 def post_process_target(images):
   images = ImageSolver(images)
   images = AutomaticBackgroundExtractor(images)

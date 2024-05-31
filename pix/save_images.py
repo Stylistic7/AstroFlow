@@ -14,6 +14,7 @@ for (let i = 0; i < output_filenames.length; ++i) {{
 
 
 def SaveImages(images):
+  print(f'### Entering SaveImages {images}')
   view_ids = [i.view_id for i in images]
   filenames = [i.filename for i in images]
 
