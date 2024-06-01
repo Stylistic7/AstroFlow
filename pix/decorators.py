@@ -59,12 +59,20 @@ def PixInsight(dry_run=False):
 
           result = call_with_context(func, images, *args, **kwargs)
           assert type(result) in [list, tuple]
-          result = [item for sublist in result for item in list(sublist)]
-          assert all(type(x) is AbstractImage for x in result)
-          print(f'### PixInsight function wants to save {len(result)} images')
+
+          flattened = []
+          for r in result:
+            if type(r) in [list, tuple]:
+              flattened.extend(list(r))
+            else:
+              flattened.append(r)
+
+          assert all(type(x) is AbstractImage for x in flattened)
+          print(f'### PixInsight function wants to save '
+                f'{len(flattened)} images')
 
           images_to_save = []
-          for image in result + context['images_to_save']:
+          for image in flattened + context['images_to_save']:
             if image in images_to_save:
               continue
 

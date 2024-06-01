@@ -13,6 +13,7 @@ from cache import cache
 @pix.PixInsight()
 def _post_process_target(images):
   aligned = pix.StarAlignment(images)
+  return pix.StarXTerminator(aligned)
 
 
 # TODO: Hash the script used to do the post-processing, and do not repeat

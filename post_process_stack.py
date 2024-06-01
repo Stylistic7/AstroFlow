@@ -28,7 +28,7 @@ def find_matching_file(content_hash, image_hashes, fits_headers):
 
 @pix.PixInsight()
 def _post_process_stack(image):
-  deconvolved = pix.BlurXTerminator(image)
+  return pix.BlurXTerminator(image)
 
 
 # TODO: Hash the script used to do the post-processing, and do not repeat
