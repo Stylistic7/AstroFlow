@@ -45,6 +45,7 @@ class AbstractImage:
   view_id: str = None
   filename: str = None
   dirty: bool = False
+  tag: str = None
 
   # def __del__(self):
   #   print(f'### AbstractImage deleted (view_id {self.view_id} '

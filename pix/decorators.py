@@ -15,9 +15,14 @@ def _random_view_id():
   return f'View-{uuid.uuid4()}'.replace('-', '_')
 
 
-def _extend_filename(original_filename, string):
-  path = Path(original_filename)
-  return str(path.parent / (path.stem + string + path.suffix))
+def _extend_filename(image, funcname):
+  path = Path(image.filename)
+
+  if image.tag:
+    return str(path.parent /
+               (path.stem + '_' + funcname + '_' + image.tag + path.suffix))
+  else:
+    return str(path.parent / (path.stem + '_' + funcname + path.suffix))
 
 
 def PixInsight(dry_run=False):
@@ -66,8 +71,7 @@ def PixInsight(dry_run=False):
             assert image.view_id and image.filename, f'Impossible image {image}'
 
             if image.dirty:
-              image.filename = _extend_filename(image.filename,
-                                                '_' + func.__name__)
+              image.filename = _extend_filename(image, func.__name__)
               print(f'### will save: {image}')
               images_to_save.append(image)
 

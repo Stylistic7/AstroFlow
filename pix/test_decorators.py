@@ -62,9 +62,9 @@ _TESTDATA_TARGETS = {
 }
 
 
-def copy_testdata_frames(target_name, dest_dir, prefix=''):
+def copy_testdata_frames(target_name, dest_dir, prefix='', number=None):
   dest_filenames = []
-  for filename in _TESTDATA_TARGETS[target_name]:
+  for filename in _TESTDATA_TARGETS[target_name][:number]:
     path = os.path.dirname(os.path.realpath(__file__))
     src_filename = os.path.join(path, 'testdata', 'Stacks', target_name,
                                 'masters', filename)
@@ -88,7 +88,7 @@ def bxt_only(images):
   return BlurXTerminator(images)
 
 
-@PixInsight(dry_run=True)
+@PixInsight(dry_run=False)
 def bxt_and_sxt(images):
   deconvolved = BlurXTerminator(images)
   return StarXTerminator(deconvolved)
@@ -98,16 +98,24 @@ class TestDecorators(unittest.TestCase):
 
   def test_bxt_only(self):
     temp_dir = tempfile.TemporaryDirectory()
-    filenames = copy_testdata_frames('IC4701', temp_dir.name)
+    filenames = copy_testdata_frames('IC4701', temp_dir.name, number=1)
     bxt_only(filenames)
 
     # TODO: Test that there are now twice as many images, some with the
     #`_bxt_only` suffix.
 
   def test_bxt_and_sxt(self):
-    temp_dir = tempfile.TemporaryDirectory()
-    filenames = copy_testdata_frames('IC4701', temp_dir.name)
+    # temp_dir = tempfile.TemporaryDirectory()
+    temp_dir = lambda x: x
+    temp_dir.name = '/tmp/foo'
+
+    filenames = copy_testdata_frames('IC4701', temp_dir.name, number=1)
     bxt_and_sxt(filenames)
+
+    print(f'### temp_dir contains:')
+    filenames = os.listdir(temp_dir.name)
+    for filename in filenames:
+      print(f'### filename {filename}')
 
 
 if __name__ == "__main__":

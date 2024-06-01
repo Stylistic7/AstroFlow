@@ -20,14 +20,18 @@ def StarXTerminator(images, **kwargs):
       ShellScriptTask(javascript=execute_on_view_ids(
           'StarXTerminator', _default_parameters | kwargs, view_ids)))
 
-  def extend_filename(original_filename, string):
-    path = Path(original_filename)
-    return path.parent / (path.stem + string + path.suffix)
+  starless_images = [
+      AbstractImage(filename=image.filename,
+                    tag='starless',
+                    view_id=image.view_id,
+                    dirty=True) for image in images
+  ]
 
   star_images = [
-      AbstractImage(filename=extend_filename(image.filename, '_stars'),
+      AbstractImage(filename=image.filename,
+                    tag='stars',
                     view_id=image.view_id + '_stars',
                     dirty=True) for image in images
   ]
 
-  return images, star_images
+  return starless_images, star_images
