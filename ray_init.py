@@ -18,6 +18,7 @@ ray_context = ray.init(address='auto',
                                '/.git/',
                                '/web_server/',
                                '/testdata/',
+                               '/pix/testdata/',
                            ]
                        },
                        ignore_reinit_error=True,
