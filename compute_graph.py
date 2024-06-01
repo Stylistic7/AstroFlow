@@ -34,13 +34,15 @@ def maybe_build_regroup_graph():
 
 @ray.remote
 def build_stack_subgraph(id):
+  stack = context.stacks[id]
+  print(f'### build_stack_subgraph for stack id {stack}')
   return Graph({(post_process_stack, id): {(scatter_stack_subframes, id)}})
 
 
 @ray.remote
 def build_target_subgraph(id):
   target = context.targets[id]
-
+  print(f'### build_target_subgraph for target {target}')
   return Graph({
       (post_process_target, id): [
           (post_process_stack, s) for s in target.stack_ids
@@ -50,13 +52,14 @@ def build_target_subgraph(id):
 
 @ray.remote
 def build_processing_graph():
-  targets = context.targets
   shopping_cart = context.shopping_cart or []
+  print(f'### shopping_cart is {shopping_cart}')
 
   # TODO: Maybe add prioritization options in the UI.
   # TODO: Remove duplicates.
   subgraphs = []
   for type, id in shopping_cart:
+    print(f'### item in shopping_cart: {type} {id}')
     if type == 'stack':
       subgraphs.append((build_stack_subgraph, id))
     elif type == 'target':

@@ -38,7 +38,7 @@ def post_process_target(target_id):
       masters = stacking.find_matching_masters(matching_stack, image_hashes,
                                                fits_headers)
       assert len(masters) == 1
-      filenames.append(image_hashes[matching_stack[0]])
+      filenames.append(image_hashes[masters[0]])
 
   _post_process_target(filenames)
 

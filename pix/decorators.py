@@ -2,7 +2,7 @@ import tempfile
 import traceback
 import functools
 import uuid
-import sys
+import os
 from pathlib import Path
 
 from . import shell_script
@@ -83,13 +83,21 @@ def PixInsight(dry_run=False):
               print(f'### will save: {image}')
               images_to_save.append(image)
 
+          # TODO: This needs to look at the content_hash, not just the file's
+          # existence.
+          all_files_exist = all(
+              os.path.exists(i.filename) for i in images_to_save)
+
           if images_to_save:
             call_with_context(save_images.SaveImages, images_to_save)
 
-          print(
-              f"### Shell script is ready, with {len(context['tasks'])} tasks")
-          print(f'### image_to_save is', context['images_to_save'])
-          shell_script.run_script(context['tasks'], dry_run=dry_run)
+          if not all_files_exist:
+            print(f"### Shell script is ready, with "
+                  f"{len(context['tasks'])} tasks")
+            print(f'### image_to_save is', context['images_to_save'])
+            shell_script.run_script(context['tasks'], dry_run=dry_run)
+          else:
+            print(f'### All output files already exist, refusing to run script')
       except Exception as e:
         traceback.print_exc(e)
 
