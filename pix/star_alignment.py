@@ -105,12 +105,11 @@ for (let i = 0; i < view_ids.length; ++i) {{
 
 
 # TODO: The reference image is the first view_id, but this is not obvious.
-def StarAlignment(images, close_originals=False, **kwargs):
+def StarAlignment(images, **kwargs):
   parameters = _default_parameters | kwargs
 
-  filenames = [i.filename for i in images]
   view_ids = [i.view_id for i in images]
-  parameters['referenceImage'] = filenames[0]
+  parameters['referenceImage'] = view_ids[0]
 
   # TODO: This is horrifically ugly.
   targets = [f'[true, false, "{v}"]' for v in view_ids[1:]]
@@ -125,14 +124,10 @@ def StarAlignment(images, close_originals=False, **kwargs):
       old_view_id=view_ids[0], new_view_id=view_ids[0] + '_registered')
   append_task(ShellScriptTask(javascript=rename_reference_view))
 
-  # TODO: Put this somewhere generally accessible.
-  def extend_filename(original_filename, string):
-    path = Path(original_filename)
-    return str(path.parent / (path.stem + string + path.suffix))
-
   output_view_ids = [v + '_registered' for v in view_ids]
   output_images = [
-      AbstractImage(filename=extend_filename(image.filename, '_registered'),
+      AbstractImage(filename=image.filename,
+                    tag='registered',
                     view_id=view_id,
                     dirty=True)
       for view_id, image in zip(output_view_ids, images)

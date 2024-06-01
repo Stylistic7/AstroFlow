@@ -7,6 +7,7 @@ from .decorators import PixInsight
 from .abstract_image import AbstractImage
 from .blurxterminator import BlurXTerminator
 from .starxterminator import StarXTerminator
+from .star_alignment import StarAlignment
 
 # TODO: Replace AbstractImage with an addict.Dict. Modify OpenFiles so that
 # it optionally reads metadata from the files and populates the Dicts, so that
@@ -88,10 +89,17 @@ def bxt_only(images):
   return BlurXTerminator(images)
 
 
-@PixInsight(dry_run=False)
+@PixInsight(dry_run=True)
 def bxt_and_sxt(images):
   deconvolved = BlurXTerminator(images)
   return StarXTerminator(deconvolved)
+
+
+@PixInsight(dry_run=False)
+def bxt_sxt_align(images):
+  deconvolved = BlurXTerminator(images)
+  aligned = StarAlignment(deconvolved)
+  return StarXTerminator(aligned)
 
 
 class TestDecorators(unittest.TestCase):
@@ -111,6 +119,19 @@ class TestDecorators(unittest.TestCase):
 
     filenames = copy_testdata_frames('IC4701', temp_dir.name, number=1)
     bxt_and_sxt(filenames)
+
+    print(f'### temp_dir contains:')
+    filenames = os.listdir(temp_dir.name)
+    for filename in filenames:
+      print(f'### filename {filename}')
+
+  def test_bxt_sxt_align(self):
+    # temp_dir = tempfile.TemporaryDirectory()
+    temp_dir = lambda x: x
+    temp_dir.name = '/tmp/foo'
+
+    filenames = copy_testdata_frames('IC4701', temp_dir.name, number=3)
+    bxt_sxt_align(filenames)
 
     print(f'### temp_dir contains:')
     filenames = os.listdir(temp_dir.name)
