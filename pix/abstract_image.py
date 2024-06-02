@@ -40,13 +40,13 @@ class JavaScript:
   saved_files: list[str] = field(default_factory=list)
 
 
-@dataclass
-class AbstractImage:
-  view_id: str = None
-  filename: str = None
-  dirty: bool = False
-  tag: str = None
+# @dataclass
+# class AbstractImage:
+#   view_id: str = None
+#   filename: str = None
+#   dirty: bool = False
+#   tag: str = None
 
-  # def __del__(self):
-  #   print(f'### AbstractImage deleted (view_id {self.view_id} '
-  #         f'filename {self.filename})')
+# def __del__(self):
+#   print(f'### AbstractImage deleted (view_id {self.view_id} '
+#         f'filename {self.filename})')

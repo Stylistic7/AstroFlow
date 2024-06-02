@@ -1,8 +1,8 @@
 from pathlib import Path
+from addict import Dict
 
 from .classes import ShellScriptTask
-from .abstract_image import AbstractImage
-from .context import append_task, add_images_to_save
+from .context import append_task, add_debug_images
 from .processes import enum, execute_on_view_ids
 
 _default_parameters = {
@@ -28,11 +28,13 @@ def BlurXTerminator(images, **kwargs):
           'BlurXTerminator', _default_parameters | kwargs, view_ids)))
 
   images = [
-      AbstractImage(filename=image.filename,
-                    tag='blurx',
-                    view_id=image.view_id,
-                    dirty=True) for image in images
+      Dict(filename=image.filename,
+           tag='blurx',
+           view_id=image.view_id,
+           dirty=True) for image in images
   ]
+
+  add_debug_images(images)
 
   print(f'### BlurXTerminator returning {images}')
   return images

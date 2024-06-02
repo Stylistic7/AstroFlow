@@ -1,8 +1,10 @@
 import os
+from addict import Dict
 
 from .classes import ShellScriptTask
-from .context import append_task
-from .abstract_image import AbstractImage
+from .context import append_task, add_debug_images
+from .file_io import read_xisf_header
+from .hashing import get_content_hash
 
 _javascript = """
 var filenames = {filenames};
@@ -16,19 +18,25 @@ for (let i = 0; i < filenames.length; ++i) {{
 """
 
 
-def OpenImages(filenames, view_ids):
-  print(f'### OpenImages called with filenames {filenames} '
-        f'and view_ids {view_ids}')
-  assert len(filenames) == len(view_ids)
-  assert all(
-      os.path.exists(f)
-      for f in filenames), f"Some files do not exist, filenames {filenames}"
+def OpenImages(filenames):
+  print(f'### OpenImages called with filenames {filenames} ')
+
+  # The view ids are just the images' content hashes, with a 'V_' in front to
+  # satisfy PixInsight.
+  content_hashes = [get_content_hash(f) for f in filenames]
+  view_ids = ['V_' + h for h in content_hashes]
+  filters = [read_xisf_header(f).get('FILTER', None) for f in filenames]
 
   append_task(
       ShellScriptTask(javascript=_javascript.format(filenames=filenames,
                                                     view_ids=view_ids)))
 
-  print(f'### OpenImages returning result {view_ids}')
-  return [
-      AbstractImage(filename=f, view_id=v) for f, v in zip(filenames, view_ids)
+  images = [
+      Dict(filename=f, view_id=v, filter=filt)
+      for f, v, filt in zip(filenames, view_ids, filters)
   ]
+
+  add_debug_images(images)
+
+  print('### OpenImages returning images', images)
+  return images

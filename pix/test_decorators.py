@@ -4,15 +4,9 @@ import os
 import shutil
 
 from .decorators import PixInsight
-from .abstract_image import AbstractImage
 from .blurxterminator import BlurXTerminator
 from .starxterminator import StarXTerminator
 from .star_alignment import StarAlignment
-
-# TODO: Replace AbstractImage with an addict.Dict. Modify OpenFiles so that
-# it optionally reads metadata from the files and populates the Dicts, so that
-# users can work with that metdata in Python. `content_hash` and `filter`
-# should obviously be included.
 
 # TODO: Automatically rename images by looking at the stem they have in common.
 # Append the function's name.
@@ -95,7 +89,7 @@ def bxt_and_sxt(images):
   return StarXTerminator(deconvolved)
 
 
-@PixInsight(dry_run=False)
+@PixInsight(dry_run=True)
 def bxt_sxt_align(images):
   deconvolved = BlurXTerminator(images)
   aligned = StarAlignment(deconvolved)
@@ -107,32 +101,42 @@ class TestDecorators(unittest.TestCase):
   def test_bxt_only(self):
     temp_dir = tempfile.TemporaryDirectory()
     filenames = copy_testdata_frames('IC4701', temp_dir.name, number=1)
-    bxt_only(filenames)
+
+    debug_images = bxt_only(filenames)
+    print('### debug_images', debug_images)
 
     # TODO: Test that there are now twice as many images, some with the
     #`_bxt_only` suffix.
 
-  def test_bxt_and_sxt(self):
-    # temp_dir = tempfile.TemporaryDirectory()
-    temp_dir = lambda x: x
-    temp_dir.name = '/tmp/foo'
+    # TODO: Maybe the best way to test these functions is to mock PixInsight.
+    # All of the stuff that computes content hashes and stores them in the
+    # XISF files is in the decorator. The pix functions can also have a
+    # debug option in the context, which will cause them to call
+    # a function like context.add_debug_image() at all important debugging
+    # points. I can probably test everything that matters by just inspecting
+    # those
 
+  def test_bxt_and_sxt(self):
+    temp_dir = tempfile.TemporaryDirectory()
     filenames = copy_testdata_frames('IC4701', temp_dir.name, number=1)
+
+    # TODO: What is the PixInsight function supposed to return to the caller?
+    # A list of the plain filenames produced by the function?
     bxt_and_sxt(filenames)
 
+    # TODO: Check the debug_images for correctness.
     print(f'### temp_dir contains:')
     filenames = os.listdir(temp_dir.name)
     for filename in filenames:
       print(f'### filename {filename}')
 
   def test_bxt_sxt_align(self):
-    # temp_dir = tempfile.TemporaryDirectory()
-    temp_dir = lambda x: x
-    temp_dir.name = '/tmp/foo'
-
+    temp_dir = tempfile.TemporaryDirectory()
     filenames = copy_testdata_frames('IC4701', temp_dir.name, number=3)
+
     bxt_sxt_align(filenames)
 
+    # TODO: Check the debug_images for correctness.
     print(f'### temp_dir contains:')
     filenames = os.listdir(temp_dir.name)
     for filename in filenames:

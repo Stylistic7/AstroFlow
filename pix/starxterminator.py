@@ -1,8 +1,8 @@
 from pathlib import Path
+from addict import Dict
 
 from .classes import ShellScriptTask
-from .abstract_image import AbstractImage
-from .context import append_task
+from .context import append_task, add_debug_images
 from .processes import execute_on_view_ids
 
 _default_parameters = {
@@ -21,17 +21,19 @@ def StarXTerminator(images, **kwargs):
           'StarXTerminator', _default_parameters | kwargs, view_ids)))
 
   starless_images = [
-      AbstractImage(filename=image.filename,
-                    tag='starless',
-                    view_id=image.view_id,
-                    dirty=True) for image in images
+      Dict(filename=image.filename,
+           tag='starless',
+           view_id=image.view_id,
+           dirty=True) for image in images
   ]
+  add_debug_images(starless_images)
 
   star_images = [
-      AbstractImage(filename=image.filename,
-                    tag='stars',
-                    view_id=image.view_id + '_stars',
-                    dirty=True) for image in images
+      Dict(filename=image.filename,
+           tag='stars',
+           view_id=image.view_id + '_stars',
+           dirty=True) for image in images
   ]
+  add_debug_images(star_images)
 
   return starless_images, star_images

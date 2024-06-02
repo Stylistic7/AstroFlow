@@ -90,26 +90,6 @@ def _symlink_frames(filenames, dest_path):
     os.symlink(filename, dest_filename)
 
 
-def _add_xisf_metadata(filename, dest_filename, metadata):
-  xisf = XISF(filename)
-  image = xisf.read_image(0)
-  file_meta = xisf.get_file_metadata()
-  ims_meta = xisf.get_images_metadata()
-
-  for k, v in metadata.items():
-    file_meta[k] = {
-        "id": k,
-        "type": "String",
-        "value": v,
-    }
-
-  XISF.write(dest_filename,
-             image,
-             creator_app="AstroFlow",
-             image_metadata=ims_meta[0],
-             xisf_metadata=file_meta)
-
-
 # TODO: Include a timeout so a single bad stack (e.g. one that needs interactive
 # plate-solving help) won't derail a long-running session.
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
@@ -181,7 +161,7 @@ def stack_files(stack_id):
     wbpp_masters.sort(key=lambda x: os.path.getmtime(x))
     filename = wbpp_masters[-1]
     print(f'last modified WBPP master {filename} -> {dest_filename}')
-    _add_xisf_metadata(filename, dest_filename, metadata)
+    pix.file_io.add_xisf_metadata(filename, dest_filename, metadata)
 
     key = ('stack_files', stack_id)
     context.set(key, stack.content_hash)

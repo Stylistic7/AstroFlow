@@ -1,18 +1,18 @@
 import tempfile
 import traceback
 import functools
-import uuid
 import os
 from pathlib import Path
+import inspect
+from addict import Dict
 
 from . import shell_script
 from . import open_images
 from . import save_images
-from .abstract_image import AbstractImage
+from .file_io import read_xisf_header, add_xisf_metadata
+from .hashing import hash_list, get_content_hash
 
-
-def _random_view_id():
-  return f'View-{uuid.uuid4()}'.replace('-', '_')
+_CONTENT_HASH_KEY = 'XISF:AutoPix:ContentHash'
 
 
 def _extend_filename(image, funcname):
@@ -25,7 +25,8 @@ def _extend_filename(image, funcname):
     return str(path.parent / (path.stem + '_' + funcname + path.suffix))
 
 
-def PixInsight(dry_run=False):
+# TODO: Refactor this function into pieces.
+def PixInsight(dry_run=False, debug=False):
 
   def decorator(func):
 
@@ -36,30 +37,32 @@ def PixInsight(dry_run=False):
       if type(filenames) is not list:
         filenames = [filenames]
 
-      # Save copy of any global values that will be replaced.
-      # saved_values = {
-      #     key: func_globals[key]
-      #     for key in context if key in func_globals
-      # }
+      # The content hash of images produced by this PixInsight function
+      # are composed of the hash of the function's code, the hashes of all
+      # the function's input images, and the output image's view_id.
+      input_image_hashes = [get_content_hash(f) for f in filenames]
+
       try:
         with tempfile.TemporaryDirectory() as tmp_dir:
           context = dict(tmp_dir=tmp_dir,
                          tasks=list(),
                          images_to_save=[],
+                         debug_images=[],
                          process_number=0)
 
           def call_with_context(func, *args, **kwargs):
             func.__globals__.update(context)
             return func(*args, **kwargs)
 
-          # Load the given filenames and turn them into AbstractImages.
-          view_ids = [_random_view_id() for f in filenames]
-          images = call_with_context(open_images.OpenImages, filenames,
-                                     view_ids)
+          # Load the given filenames and their metadata.
+          images = call_with_context(open_images.OpenImages, filenames)
 
+          # Call the decorated PixInsight function.
           result = call_with_context(func, images, *args, **kwargs)
           assert type(result) in [list, tuple]
 
+          # Flatten the list of all the images returned by the decorated
+          # PixInsight function.
           flattened = []
           for r in result:
             if type(r) in [list, tuple]:
@@ -67,10 +70,13 @@ def PixInsight(dry_run=False):
             else:
               flattened.append(r)
 
-          assert all(type(x) is AbstractImage for x in flattened)
+          assert all(type(x) is Dict for x in flattened)
           print(f'### PixInsight function wants to save '
                 f'{len(flattened)} images')
 
+          # Iterate over all the output images produced by the decorated
+          # PixInsight function, and decide which ones actually need to be
+          # saved to disk.
           images_to_save = []
           for image in flattened + context['images_to_save']:
             if image in images_to_save:
@@ -78,31 +84,40 @@ def PixInsight(dry_run=False):
 
             assert image.view_id and image.filename, f'Impossible image {image}'
 
-            if image.dirty:
-              image.filename = _extend_filename(image, func.__name__)
-              print(f'### will save: {image}')
-              images_to_save.append(image)
+            if not image.dirty:
+              continue
 
-          # TODO: This needs to look at the content_hash, not just the file's
-          # existence.
-          all_files_exist = all(
-              os.path.exists(i.filename) for i in images_to_save)
+            image.filename = _extend_filename(image, func.__name__)
+            image.content_hash = hash_list([inspect.getsource(func)] +
+                                           input_image_hashes + [image.view_id])
+
+            if os.path.exists(
+                image.filename) and read_xisf_header(image.filename).get(
+                    _CONTENT_HASH_KEY, None) == image.content_hash:
+              continue
+
+            print(f'### will save: {image}')
+            images_to_save.append(image)
 
           if images_to_save:
             call_with_context(save_images.SaveImages, images_to_save)
 
-          if not all_files_exist:
-            print(f"### Shell script is ready, with "
-                  f"{len(context['tasks'])} tasks")
-            print(f'### image_to_save is', context['images_to_save'])
-            shell_script.run_script(context['tasks'], dry_run=dry_run)
-          else:
-            print(f'### All output files already exist, refusing to run script')
+          print(f"### Shell script is ready, with "
+                f"{len(context['tasks'])} tasks")
+          print(f'### images_to_save is', images_to_save)
+          shell_script.run_script(context['tasks'], dry_run=dry_run)
+
+          if not dry_run:
+            for image in images_to_save:
+              assert os.path.exists(image.filename)
+              add_xisf_metadata(image.filename, image.filename,
+                                image.content_hash)
       except Exception as e:
         traceback.print_exc(e)
 
-      # finally:
-      #   func_globals.update(saved_values)  # Restore replaced globals.
+      # TODO: It's weird to return this instead of the normal content.
+      if debug:
+        return context['debug_images']
 
       return result
 

@@ -1,9 +1,8 @@
 from pathlib import Path
+from addict import Dict
 
-# TODO: Put AbstractImage in classes.py
-from .abstract_image import AbstractImage
 from .classes import ShellScriptTask
-from .context import append_task, add_images_to_save
+from .context import append_task, add_debug_images
 from .processes import enum, execute_global
 
 _default_parameters = {
@@ -126,12 +125,12 @@ def StarAlignment(images, **kwargs):
 
   output_view_ids = [v + '_registered' for v in view_ids]
   output_images = [
-      AbstractImage(filename=image.filename,
-                    tag='registered',
-                    view_id=view_id,
-                    dirty=True)
-      for view_id, image in zip(output_view_ids, images)
+      Dict(filename=image.filename,
+           tag='registered',
+           view_id=view_id,
+           dirty=True) for view_id, image in zip(output_view_ids, images)
   ]
+  add_debug_images(output_images)
 
   print(f'### StarXTerminator returning {output_images}')
   return output_images

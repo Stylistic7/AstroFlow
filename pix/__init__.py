@@ -1,7 +1,6 @@
 # TODO: Maybe remove this low-level interface?
 from .classes import ShellScriptTask
 from .shell_script import start_pixinsight_instances
-from .abstract_image import AbstractImage
 
 from .decorators import PixInsight
 from .context import append_task, get_next_process_number, get_tmp_dir
