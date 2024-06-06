@@ -14,7 +14,7 @@ export default function RecentPanel() {
         return response.json();
       })
       .then((j) => {
-        let recentString = j.map(s => `target,${s}`).join(";");
+        let recentString = j.map(s => `${s[0]},${s[1]}`).join(";");
         console.log('recentString', recentString);
         setRecent(recentString);
       });

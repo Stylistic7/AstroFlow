@@ -15,6 +15,7 @@ from base64 import b64encode
 import datetime
 import ray
 from queue import Queue
+import operator
 from .message_announcer import MessageAnnouncer
 
 from context import context
@@ -448,17 +449,28 @@ def recent():
   fits_headers = cache['fits_headers']
   stacks = cache['stacks']
   targets = cache['targets']
+  mosaics = cache['mosaics']
 
-  def last_frame_datetime(target_id):
-    target = targets[target_id]
-    for stack_id in target.stack_ids:
-      stack = stacks[stack_id]
-      if stack.geometric_hash == None:
-        continue
+  def last_stack_datetime(stack_id):
+    return max(fits_headers[h]['DATE-OBS']
+               for h in stacks[stack_id].all_frames(stacks))
 
-      return max(fits_headers[h]['DATE-OBS'] for h in stack.all_frames(stacks))
+  def last_target_datetime(target_id):
+    return max([last_stack_datetime(s) for s in targets[target_id].stack_ids])
 
-  return sorted(targets, key=last_frame_datetime, reverse=True)
+  def last_mosaic_datetime(mosaic_id):
+    return max([last_target_datetime(t) for t in mosaics[mosaic_id].target_ids])
+
+  targets_and_dates = [
+      (('target', s), last_target_datetime(s)) for s in targets.keys()
+  ]
+  mosaics_and_dates = [
+      (('mosaic', s), last_mosaic_datetime(s)) for s in mosaics.keys()
+  ]
+
+  all_items = targets_and_dates + mosaics_and_dates
+  sorted_items = sorted(all_items, key=operator.itemgetter(1), reverse=True)
+  return [i[0] for i in sorted_items]
 
 
 # TODO: Loading stuff from the cache on every endpoint call is very slow.
