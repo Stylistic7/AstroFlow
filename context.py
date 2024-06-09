@@ -95,7 +95,7 @@ class NewContext:
 
   def contains(self, key):
     actor = ray.get_actor('context', namespace=namespace)
-    return ray.get(actor.contains.remote())
+    return ray.get(actor.contains.remote(key))
 
   def delete(self, key):
     actor = ray.get_actor('context', namespace=namespace)
