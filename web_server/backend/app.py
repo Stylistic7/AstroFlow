@@ -339,6 +339,8 @@ def mosaic_thumbnail_image_for_filter(mosaic_id, filter):
       buffer.seek(0)
       return flask.send_file(buffer, mimetype='image/png')
 
+  return Response(status=404)
+
 
 @app.route('/mosaic_thumbnail_image/<mosaic_id>')
 def mosaic_thumbnail_image(mosaic_id):
@@ -350,6 +352,8 @@ def mosaic_thumbnail_image(mosaic_id):
         buffer.write(cache[key])
         buffer.seek(0)
         return flask.send_file(buffer, mimetype='image/png')
+
+  return Response(status=404)
 
 
 @app.route('/stack_master_image/<stack_id>')
