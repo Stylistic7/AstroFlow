@@ -10,6 +10,7 @@ from shapely.geometry import Polygon, Point
 import astropy.io.fits as pyfits
 import time
 
+from context import context
 import file_io
 import image_previews
 
@@ -39,18 +40,19 @@ def compute_viewbox(plate_solutions):
 #
 # TODO: Provide some feedback on progress.
 # TODO: Store these on disk and read them back when unchanged.
-def mosaic_by_coordinates(context, panel):
+def mosaic_by_coordinates(panel):
   # TODO: Pass this through the context.
   autostretch = False
 
-  image_hashes = ray.get(context.image_hashes)
-  fits_headers = ray.get(context.fits_headers)
-  plate_solutions = ray.get(context.plate_solutions)
+  image_hashes = context.image_hashes
+  fits_headers = context.fits_headers
+  plate_solutions = context.plate_solutions
+
+  coordinates = context.get(('mosaic_coordinates', panel.mosaic_id))
 
   print(f'mosaic_by_coordinates projecting panel {panel}')
   start = time.time()
 
-  coordinates = context.coordinates
   dest_xs = ray.get(coordinates['dest_xs'])
   dest_ys = ray.get(coordinates['dest_ys'])
   ras = ray.get(coordinates['ras'])
@@ -162,4 +164,4 @@ def mosaic_by_coordinates(context, panel):
   hdu.writeto(panel.placed_filename, overwrite=True)
   print(f'Wrote placed image filename {panel.placed_filename}')
 
-  return context, panel
+  return panel

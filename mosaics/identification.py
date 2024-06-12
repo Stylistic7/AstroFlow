@@ -8,6 +8,7 @@ from context import context
 from mosaic import Mosaic
 import position_string
 import footprints
+from hashing import hash_list
 
 from . import ransac
 
@@ -55,9 +56,11 @@ def _identify_overlapping_targets(targets):
   num_grouped_targets = sum(len(m) for m in mosaics)
   num_ungrouped_targets = len(targets) - num_grouped_targets
   log.info('Done grouping overlapping targets',
+           num_mosaics=len(mosaics),
            num_grouped_targets=num_grouped_targets,
            num_ungrouped_targets=num_ungrouped_targets)
 
+  print('### before length check, mosaics', mosaics)
   mosaics = [m for m in mosaics if len(m) > 1]
 
   return mosaics
@@ -93,7 +96,14 @@ def identify_mosiacs():
     try:
       output_mosaic = Mosaic()
 
-      centers = [targets[id].center for id in target_ids]
+      # TODO: Validate all targets here.
+
+      output_mosaic.geometric_hash = hash_list(
+          targets[t].geometric_hash for t in target_ids)
+      output_mosaic.content_hash = hash_list(
+          targets[t].content_hash for t in target_ids)
+
+      centers = [targets[t].center for t in target_ids]
       mean_center = np.mean(centers, axis=0)
       output_mosaic.center = list(mean_center)
 
@@ -110,12 +120,9 @@ def identify_mosiacs():
       output_mosaic.projected_footprint = footprints.all_projections(
           SphericalPolygon(output_mosaic.footprint))
 
-      # TODO: Mosaic is mutated here, which is awkward. Mosaic objects should
-      # be immutable.
-      output_mosaic.id = output_mosaic.hash()
-
-      print(f'Mosaic has name {output_mosaic.name} and id {output_mosaic.id}')
-      output_mosaics[output_mosaic.id] = output_mosaic
+      print(f'Mosaic has name {output_mosaic.name} and '
+            f'id {output_mosaic.geometric_hash}')
+      output_mosaics[output_mosaic.geometric_hash] = output_mosaic
     except Exception as e:
       traceback.print_exc()
 

@@ -313,6 +313,8 @@ def mosaic_image(mosaic_id, filter):
   return flask.send_file(buffer, mimetype='image/png')
 
 
+# TODO: This should look up the mosaic by its id, get its content_hash, and
+# then retrieve the image from the cache.
 @app.route('/mosaic_thumbnail_image/<mode>/<mosaic_id>/<filter>')
 def mosaic_thumbnail_image_complete(mode, mosaic_id, filter):
   key = ('mosaic_thumbnail_image', mode, mosaic_id, filter)

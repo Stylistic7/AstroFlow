@@ -9,6 +9,7 @@ import spatial_association
 import position_string
 from target import Target
 import footprints
+from hashing import hash_list
 
 
 @ray.remote
@@ -55,14 +56,21 @@ def group_stacks_into_targets():
     projected_footprint = footprints.all_projections(
         SphericalPolygon(footprint))
 
+    # TODO: Validate all stacks here.
+
+    geometric_hash = hash_list(stacks[s].geometric_hash for s in stack_ids)
+    content_hash = hash_list(stacks[s].content_hash for s in stack_ids)
+
     return Target(name=name,
+                  geometric_hash=geometric_hash,
+                  content_hash=content_hash,
                   center=center,
                   stack_ids=stack_ids,
                   footprint=footprint,
                   projected_footprint=projected_footprint)
 
   targets = [new_target(g) for g in groups]
-  targets = {t.hash(): t for t in targets}
+  targets = {t.geometric_hash: t for t in targets}
 
   print(f'Found {len(targets)} targets')
 

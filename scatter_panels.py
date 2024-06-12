@@ -99,11 +99,11 @@ def process_mosaic_per_filter(mosaic_id, mode, filter, output_dir):
     tile_indices_str = '_'.join([str(t) for t in tile_indices])
     placed_filename = os.path.join(
         str(output_dir),
-        f'placed_{mode}_{mosaic.id}_{filter}_{tile_indices_str}_'
+        f'placed_{mode}_{mosaic.geometric_hash}_{filter}_{tile_indices_str}_'
         f'{stack.content_hash}.fit')
 
     panel = classes.Panel(tile_indices=tile_indices,
-                          mosaic_id=mosaic.id,
+                          mosaic_id=mosaic.geometric_hash,
                           mode=mode,
                           filter=filter,
                           geometric_hash=stack.geometric_hash,
@@ -161,7 +161,7 @@ def _merge_master_mosaic(panels):
 
 # TODO: This function only does maximum(), so it's only good for previews.
 # Where is the code that calls PMM in PixInsight?
-def _merge_subframe_mosaic(context, panels):
+def _merge_subframe_mosaic(panels):
   print('### Entering _merge_subframe_mosaic, panels are:')
   for panel in panels:
     print('### ', panel)
@@ -174,6 +174,9 @@ def _merge_subframe_mosaic(context, panels):
   mosaic_id = _get_unique([p.mosaic_id for p in panels])
   filter = _get_unique([p.filter for p in panels])
 
+  # TODO: The content_hash is really useful here to avoid duplicating
+  # compute, but there's no way for the web UI to know what the content_hash
+  # is to retrieve the thumbnail image.
   content_hash = hash_list([p.content_hash for p in panels])
   key = ('mosaic_thumbnail_image', 'subframe', mosaic_id, filter, content_hash)
   if context.contains(key):

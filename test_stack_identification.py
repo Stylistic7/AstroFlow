@@ -30,9 +30,10 @@ def set_default_context():
 
 class TestStackIdentification(unittest.TestCase):
 
-  def test_one_perfect_stack(self):
+  def setUp(self):
     set_default_context()
 
+  def test_one_perfect_stack(self):
     image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
         ra=100, dec=50, prefix='foo', number=10, dither=0)
 
@@ -58,8 +59,6 @@ class TestStackIdentification(unittest.TestCase):
     self.assertEqual(len(stack.frames), 10)
 
   def test_two_stacks_different_image_scales(self):
-    set_default_context()
-
     image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
         ra=100, dec=50, prefix='foo', number=10, dither=0)
     image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
@@ -101,8 +100,6 @@ class TestStackIdentification(unittest.TestCase):
     self.assertEqual(len(stack.frames), 10)
 
   def test_two_stacks_different_image_sizes(self):
-    set_default_context()
-
     # Note that these two groups have the same generic camera name, which is
     # typical of some capture software.
     image_hashes, fits_headers, plate_solutions = make_synthetic_frames(

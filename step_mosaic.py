@@ -258,11 +258,10 @@ def scatter_merge_mosaics(mode):
         f' mode {mode}')
 
   return Graph({
-      gather_merge_mosaics: [
-          (merge_mosaic, m.id, mode)
-          for m in mosaics.values()
-          if context.run_everything or ('mosaic', m.id) in shopping_cart
-      ]
+      gather_merge_mosaics: [(merge_mosaic, m.geometric_hash, mode)
+                             for m in mosaics.values()
+                             if mode == 'subframe' or context.run_everything or
+                             ('mosaic', m.geometric_hash) in shopping_cart]
   })
 
 
@@ -340,7 +339,8 @@ def merge_mosaic(mosaic_id, mode):
     stacks = stacks_for_filter(filter)
     content_hash = hash_list([s.content_hash for s in stacks])
     if mode == 'subframe':
-      result = _subframe_filter_artifact_exists(mosaic.id, filter, content_hash)
+      result = _subframe_filter_artifact_exists(mosaic.geometric_hash, filter,
+                                                content_hash)
     elif mode == 'master':
       result = bool(
           stacking.artifact_exists(image_hashes, fits_headers, content_hash))
@@ -399,16 +399,17 @@ def merge_mosaic(mosaic_id, mode):
   assert np.max(dest_xs) == dest_width - 1
   assert dest_xs.shape == dest_ys.shape == ras.shape == decs.shape
 
-  # TODO: This prevents multiple mosaic merges from happening simultaneously.
-  context.coordinates = dict(dest_xs=ray.put(dest_xs),
-                             dest_ys=ray.put(dest_ys),
-                             ras=ray.put(ras),
-                             decs=ray.put(decs))
+  coordinates = dict(dest_xs=ray.put(dest_xs),
+                     dest_ys=ray.put(dest_ys),
+                     ras=ray.put(ras),
+                     decs=ray.put(decs))
+  context.set(('mosaic_coordinates', mosaic_id), coordinates)
 
   return Graph({
-      gather_process_mosaic_per_filter: [(process_mosaic_per_filter, mosaic.id,
-                                          mode, f, output_dir)
-                                         for f in filters_to_process]
+      gather_process_mosaic_per_filter: [
+          (process_mosaic_per_filter, mosaic.geometric_hash, mode, f,
+           output_dir) for f in filters_to_process
+      ]
   })
 
 

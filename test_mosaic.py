@@ -17,6 +17,7 @@ from make_test_frames import copy_testdata_frames
 import compute_graph
 from dependency_graph import run_graph
 from make_test_context import make_test_context
+from hashing import hash_list
 
 
 class TestMosaic(unittest.TestCase):
@@ -75,6 +76,33 @@ class TestMosaic(unittest.TestCase):
 
     # TODO: What are good criteria for completion? The addition of new filenames
     # and cache keys, no doubt.
+
+  def test_subframe_merge_mosaic(self):
+    graph = compute_graph.build_compute_graph()
+    run_graph(graph)
+
+    for k in context.get_cache_keys():
+      print(f'### Cache contains key {k}')
+
+    self.assertTrue(
+        context.contains(('mosaic_thumbnail_image', 'subframe',
+                          '13046244764f740c', 'H', 'c911c2e10ed3bf04')))
+
+  def test_hashes(self):
+    graph = compute_graph.build_compute_graph()
+    run_graph(graph)
+
+    self.assertEqual(len(context.targets), 4)
+
+    self.assertEqual(len(context.mosaics), 1)
+    mosaic = next(iter(context.mosaics.values()))
+
+    self.assertEqual(
+        mosaic.geometric_hash,
+        hash_list([t.geometric_hash for t in context.targets.values()]))
+    self.assertEqual(
+        mosaic.content_hash,
+        hash_list([t.content_hash for t in context.targets.values()]))
 
 
 if __name__ == "__main__":

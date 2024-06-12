@@ -1,17 +1,18 @@
-import numpy as np
 from dataclasses import dataclass, field
+from typing import Optional
+
 from spherical_geometry.polygon import SphericalPolygon
 from shapely.geometry import Polygon
 
 from hashing import hash_list
-import footprints
 
 
 @dataclass(order=True)
 class Mosaic:
-  id: str = None
-
   name: str = None
+
+  content_hash: Optional[str] = None
+  geometric_hash: Optional[str] = None
 
   target_ids: list[str] = field(default_factory=list)
   tile_indices: list[tuple] = field(default_factory=list)
@@ -20,16 +21,12 @@ class Mosaic:
   footprint: SphericalPolygon = None
   projected_footprint: dict[str, Polygon] = None
 
-  def __post_init__(self):
-    self.id = self.hash()
-
-  # TODO: Replace hash with __hash__ everywhere?
-  def hash(self) -> str:
-    return hash_list(self.target_ids)
-
   def footprint_polygon(self):
     return SphericalPolygon(self.footprint)
 
   def __str__(self):
-    return (f'Mosaic(name={self.name}, id={self.id}, '
-            f'{len(self.target_ids)} targets)')
+    return (
+        f'Mosaic(name={self.name}, geometric_hash={self.geometric_hash}, '
+        f'content_hash={self.content_hash}, {len(self.target_ids)} targets)')
+
+  # TODO: Add a valid() method, and assert on it.

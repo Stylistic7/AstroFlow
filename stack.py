@@ -11,6 +11,14 @@ FrameHash = NewType('FrameHash', str)
 StackHash = NewType('StackHash', str)
 
 
+# TODO: Maybe split the geometric stuff out into an abstract class. That way,
+# Stack will really have two subclasses, FrameStack and ContainerStack? These
+# are not good names. They could be two totally separate classes, but it's
+# really nice to look them up in the same dictionary.
+#
+# Stacks made of frames have all of the camera info, but no geometric info.
+# Stacks made of lower-level Stacks have all the camera info, PLUS the
+# geometric info.
 @dataclass
 class Stack:
   content_hash: Optional[str] = None
@@ -120,3 +128,5 @@ class Stack:
               f'Integration {self.integration_s} s, '
               f'Filter {self.filter}, '
               f'Temp {self.mean_temperature:.02f} degC)')
+
+  # TODO: Add a valid() method, and assert on it.

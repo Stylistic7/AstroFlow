@@ -18,6 +18,10 @@ def _post_process_target(images):
 
 # TODO: Hash the script used to do the post-processing, and do not repeat
 # the post-processing when a file with that hash already exists.
+#
+# TODO: The target and mosaic both need "geometric_hashes" that are stable
+# even when more images are added, and also "content_hashes" that indicate
+# when images are added, or scripts are changed.
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
 def post_process_target(target_id):
   stacks = context.stacks
