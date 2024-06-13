@@ -84,9 +84,9 @@ class TestMosaic(unittest.TestCase):
     for k in context.get_cache_keys():
       print(f'### Cache contains key {k}')
 
-    self.assertTrue(
-        context.contains(('mosaic_thumbnail_image', 'subframe',
-                          '13046244764f740c', 'H', 'c911c2e10ed3bf04')))
+    key = ('mosaic_thumbnail_image', 'subframe', '13046244764f740c', 'H',
+           'ac1d2f052e4b1b4c')
+    self.assertTrue(context.contains(key))
 
   def test_hashes(self):
     graph = compute_graph.build_compute_graph()

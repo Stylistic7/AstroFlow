@@ -9,6 +9,7 @@ from spherical_geometry.polygon import SphericalPolygon
 from shapely.geometry import Polygon, Point
 import astropy.io.fits as pyfits
 import time
+from pathlib import Path
 
 from context import context
 import file_io
@@ -49,18 +50,18 @@ def mosaic_by_coordinates(panel):
   plate_solutions = context.plate_solutions
 
   coordinates = context.get(('mosaic_coordinates', panel.mosaic_id))
+  assert coordinates
 
   print(f'mosaic_by_coordinates projecting panel {panel}')
   start = time.time()
 
-  dest_xs = ray.get(coordinates['dest_xs'])
-  dest_ys = ray.get(coordinates['dest_ys'])
-  ras = ray.get(coordinates['ras'])
-  decs = ray.get(coordinates['decs'])
+  dest_xs = coordinates['dest_xs']
+  dest_ys = coordinates['dest_ys']
+  ras = coordinates['ras']
+  decs = coordinates['decs']
 
   projected_image = np.zeros(ras.shape)
   projection_map = np.zeros(ras.shape)
-  print(f'projected_image shape', projected_image.shape)
 
   filename = image_hashes[panel.image_hash]
   header = fits_headers[panel.image_hash]
@@ -68,11 +69,11 @@ def mosaic_by_coordinates(panel):
 
   if header is None:
     print(f'Could not place panel {panel} because header was None')
-    return context, None
+    return
 
   if plate_solution is None:
     print(f'Could not place panel {panel} because plate_solution was None')
-    return context, None
+    return
 
   image = file_io.read_image(filename)
 
@@ -110,7 +111,7 @@ def mosaic_by_coordinates(panel):
           if footprint_polygon.contains_lonlat(ra, dec)])
   except Exception as e:
     print(f'### Failed to filter points with exception {e}')
-    return context, None
+    return
 
   source_xs, source_ys = wcs.all_world2pix(ras, decs, 1, quiet=True)
 

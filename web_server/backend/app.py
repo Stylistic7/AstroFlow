@@ -346,9 +346,13 @@ def mosaic_thumbnail_image_for_filter(mosaic_id, filter):
 
 @app.route('/mosaic_thumbnail_image/<mosaic_id>')
 def mosaic_thumbnail_image(mosaic_id):
+  mosaic = context.mosaics[mosaic_id]
+  print('### mosaic', mosaic)
+
   for mode in ['master', 'subframe']:
     for filter in ['H', 'L', 'S', 'O', 'G', 'R', 'B']:
-      key = ('mosaic_thumbnail_image', mode, mosaic_id, filter)
+      key = ('mosaic_thumbnail_image', mode, mosaic_id, filter,
+             mosaic.content_hash)
       if key in cache:
         buffer = io.BytesIO()
         buffer.write(cache[key])

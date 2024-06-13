@@ -174,12 +174,11 @@ def _merge_subframe_mosaic(panels):
   mosaic_id = _get_unique([p.mosaic_id for p in panels])
   filter = _get_unique([p.filter for p in panels])
 
-  # TODO: The content_hash is really useful here to avoid duplicating
-  # compute, but there's no way for the web UI to know what the content_hash
-  # is to retrieve the thumbnail image.
-  content_hash = hash_list([p.content_hash for p in panels])
-  key = ('mosaic_thumbnail_image', 'subframe', mosaic_id, filter, content_hash)
+  mosaic = context.mosaics[mosaic_id]
+  key = ('mosaic_thumbnail_image', 'subframe', mosaic_id, filter,
+         mosaic.content_hash)
   if context.contains(key):
+    print('### cache already contains key', key)
     return
 
   # The image returned from read_image() is in [0, 65536].
@@ -191,7 +190,8 @@ def _merge_subframe_mosaic(panels):
     image = file_io.read_image(panel.placed_filename)
     output_image = np.maximum(output_image, image)
 
-  image_png = image_previews.array_to_png(output_image)
+  image_png = image_previews.array_to_png(
+      image_previews.autostretch(output_image))
   context.set(key, image_png, flush=True)
   print(f'### Wrote key {key} image min {np.min(output_image)} '
         f'max {np.max(output_image)}')

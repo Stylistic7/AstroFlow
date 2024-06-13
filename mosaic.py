@@ -11,6 +11,8 @@ from hashing import hash_list
 class Mosaic:
   name: str = None
 
+  # TODO: Perhaps rename geometric_hash to "stable_hash", because that's really
+  # its intent.
   content_hash: Optional[str] = None
   geometric_hash: Optional[str] = None
 
