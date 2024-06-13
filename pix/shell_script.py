@@ -16,6 +16,7 @@ from . import open_images
 # a node.
 cache = diskcache.Cache('/tmp/AstroFlow/pix_cache')
 
+STARTING_SLOT_NUMBER = 1
 MAX_INSTANCES = 1
 
 
@@ -172,8 +173,10 @@ def _stop_pixinsight_instances():
 def start_pixinsight_instances():
   # At startup, open N instances of PixInsight, and let them run throughout the
   # entire runtime of AstroFlow.
+  #
+  # TODO: Put the slot number in the UI.
   _clear_cache()
-  for slot in range(100, 100 + MAX_INSTANCES):
+  for slot in range(STARTING_SLOT_NUMBER, STARTING_SLOT_NUMBER + MAX_INSTANCES):
     print(f'### Starting PixInsight instance in slot {slot}')
     _start_pixinsight_instance(slot)
 
