@@ -94,35 +94,41 @@ def identify_mosiacs():
       print(f'  {targets[target_id].name} id {target_id}')
 
     try:
-      output_mosaic = Mosaic()
-
       # TODO: Validate all targets here.
 
-      output_mosaic.geometric_hash = hash_list(
-          targets[t].geometric_hash for t in target_ids)
-      output_mosaic.content_hash = hash_list(
-          targets[t].content_hash for t in target_ids)
+      stable_hash = targets[sorted(
+          target_ids, key=lambda t: targets[t].oldest_date)[0]].stable_hash
+      content_hash = hash_list(targets[t].content_hash for t in target_ids)
+
+      oldest_date = min(targets[t].oldest_date for t in target_ids),
+      newest_date = min(targets[t].newest_date for t in target_ids),
 
       centers = [targets[t].center for t in target_ids]
       mean_center = np.mean(centers, axis=0)
-      output_mosaic.center = list(mean_center)
+      center = list(mean_center)
+      name = position_string.canonical_target_string(center)
 
-      output_mosaic.name = position_string.canonical_target_string(
-          output_mosaic.center)
-      print('### target_ids', target_ids)
-      output_mosaic.target_ids = target_ids
-      output_mosaic.tile_indices = tile_indices
-      output_mosaic.footprint = next(
+      footprint = next(
           SphericalPolygon.multi_union([
               SphericalPolygon(targets[target_id].footprint)
               for target_id in target_ids
           ]).points).tolist()
-      output_mosaic.projected_footprint = footprints.all_projections(
-          SphericalPolygon(output_mosaic.footprint))
+      projected_footprint = footprints.all_projections(
+          SphericalPolygon(footprint))
 
-      print(f'Mosaic has name {output_mosaic.name} and '
-            f'id {output_mosaic.geometric_hash}')
-      output_mosaics[output_mosaic.geometric_hash] = output_mosaic
+      output_mosaic = Mosaic(name=name,
+                             stable_hash=stable_hash,
+                             content_hash=content_hash,
+                             target_ids=target_ids,
+                             tile_indices=tile_indices,
+                             oldest_date=oldest_date,
+                             newest_date=newest_date,
+                             center=center,
+                             footprint=footprint,
+                             projected_footprint=projected_footprint)
+
+      print(f'Mosaic has name {name} and id {stable_hash}')
+      output_mosaics[stable_hash] = output_mosaic
     except Exception as e:
       traceback.print_exc()
 

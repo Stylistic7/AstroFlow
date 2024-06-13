@@ -35,7 +35,7 @@ class Stack:
   width_pixels: Optional[int] = None
   height_pixels: Optional[int] = None
 
-  geometric_hash: Optional[str] = None
+  stable_hash: Optional[str] = None
   contents: list[StackHash] = field(default_factory=list)
   target: Optional[str] = None
   center: Optional[list[float]] = None
@@ -52,7 +52,7 @@ class Stack:
     if stacks == None:
       stacks = {}
 
-    if self.geometric_hash:
+    if self.stable_hash:
       assert self.contents
       assert not self.frames
       assert not self.dependencies
@@ -76,7 +76,7 @@ class Stack:
         assert len(qualities) < 2, f'multiple {quality} qualities {qualities}'
         return next(iter(qualities)) if len(qualities) else None
 
-    allow_multiple_exposures = (self.geometric_hash != None)
+    allow_multiple_exposures = (self.stable_hash != None)
 
     self.image_type = get_quality('IMAGETYP')
     self.camera = get_quality('INSTRUME')
@@ -103,13 +103,12 @@ class Stack:
     if not isinstance(other, Stack):
       return False
 
-    return (self.content_hash
-            == other.content_hash) and (self.geometric_hash
-                                        == other.geometric_hash)
+    return (self.content_hash == other.content_hash) and (self.stable_hash
+                                                          == other.stable_hash)
 
   def __str__(self):
-    if self.geometric_hash:
-      return (f'Stack(Geometric hash {self.geometric_hash}, '
+    if self.stable_hash:
+      return (f'Stack(Geometric hash {self.stable_hash}, '
               f'Content hash {self.content_hash}, '
               f'Target {self.target}, '
               f'RA {units.ra_to_hms(self.center[0])}, '

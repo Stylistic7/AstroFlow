@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Optional
+import datetime
 
 from spherical_geometry.polygon import SphericalPolygon  # type: ignore
 from shapely.geometry import Polygon  # type: ignore
@@ -12,9 +13,12 @@ class Target:
   name: str | None = None
 
   content_hash: Optional[str] = None
-  geometric_hash: Optional[str] = None
+  stable_hash: Optional[str] = None
 
   stack_ids: list[str] = field(default_factory=list)
+
+  oldest_date: Optional[datetime.datetime] = None
+  newest_date: Optional[datetime.datetime] = None
 
   center: list[float] = field(default_factory=list)
   footprint: SphericalPolygon = None

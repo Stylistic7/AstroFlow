@@ -124,7 +124,7 @@ def show_image(data):
 #   filename = image_hashes[best_light_frame]
 #   plate_solution = plate_solutions[best_light_frame]
 
-#   return classes.Panel(stack_id=stack.geometric_hash,
+#   return classes.Panel(stack_id=stack.stable_hash,
 #                        content_hash=stack.content_hash,
 #                        image_filename=filename,
 #                        plate_solution=plate_solution)
@@ -144,7 +144,7 @@ def show_image(data):
 #   print(f'Found master hash {hashes[0]} filename {filename}')
 #   assert plate_solution, f'Image {hashes[0]} {filename} has plate solution {plate_solution}'
 
-#   return classes.Panel(stack_id=stack.geometric_hash,
+#   return classes.Panel(stack_id=stack.stable_hash,
 #                        content_hash=stack.content_hash,
 #                        image_filename=filename,
 #                        plate_solution=plate_solution)
@@ -258,10 +258,10 @@ def scatter_merge_mosaics(mode):
         f' mode {mode}')
 
   return Graph({
-      gather_merge_mosaics: [(merge_mosaic, m.geometric_hash, mode)
+      gather_merge_mosaics: [(merge_mosaic, m.stable_hash, mode)
                              for m in mosaics.values()
                              if mode == 'subframe' or context.run_everything or
-                             ('mosaic', m.geometric_hash) in shopping_cart]
+                             ('mosaic', m.stable_hash) in shopping_cart]
   })
 
 
@@ -339,7 +339,7 @@ def merge_mosaic(mosaic_id, mode):
     stacks = stacks_for_filter(filter)
     content_hash = hash_list([s.content_hash for s in stacks])
     if mode == 'subframe':
-      result = _subframe_filter_artifact_exists(mosaic.geometric_hash, filter,
+      result = _subframe_filter_artifact_exists(mosaic.stable_hash, filter,
                                                 content_hash)
     elif mode == 'master':
       result = bool(
@@ -404,8 +404,8 @@ def merge_mosaic(mosaic_id, mode):
 
   return Graph({
       gather_process_mosaic_per_filter: [
-          (process_mosaic_per_filter, mosaic.geometric_hash, mode, f,
-           output_dir) for f in filters_to_process
+          (process_mosaic_per_filter, mosaic.stable_hash, mode, f, output_dir)
+          for f in filters_to_process
       ]
   })
 

@@ -116,11 +116,11 @@ def scatter_stack_thumbnails(mode):
   if mode == 'subframe':
     subframe_images = [(create_flat_correction_thumbnails, id)
                        for id, s in stacks.items()
-                       if s.image_type == 'light' and not s.geometric_hash]
+                       if s.image_type == 'light' and not s.stable_hash]
     subframe_videos = [
         (create_stack_subframe_thumbnails, id)
         for id, s in stacks.items()
-        if s.image_type == 'light' and s.geometric_hash and
+        if s.image_type == 'light' and s.stable_hash and
         ('stack_subframe_thumbnail_image', id) not in cache_keys and
         ('stack_subframe_thumbnail_video', id) not in cache_keys
     ]
@@ -128,7 +128,7 @@ def scatter_stack_thumbnails(mode):
   elif mode == 'master':
     tasks = [(create_stack_master_thumbnail, id)
              for id, s in stacks.items()
-             if s.image_type == 'light' and s.geometric_hash and
+             if s.image_type == 'light' and s.stable_hash and
              ('stack_master_thumbnail_image', id) not in cache_keys]
 
   return Graph({gather: tasks})
@@ -210,14 +210,14 @@ def create_flat_correction_thumbnails(stack_id):
 
   flat_stack_ids = [
       id for id, s in stacks.items()
-      if not s.geometric_hash and s.image_type == 'flat' and
+      if not s.stable_hash and s.image_type == 'flat' and
       s.camera == stack.camera and s.filter == stack.filter
   ]
 
   if all(f in thumbnails for f in flat_stack_ids):
     return
 
-  assert not stack.geometric_hash
+  assert not stack.stable_hash
   image_hashes = context.image_hashes
   fits_headers = context.fits_headers
   plate_solutions = context.plate_solutions
@@ -284,7 +284,7 @@ def create_stack_subframe_thumbnails(stack_id):
   width = context.subframe_thumbnail_width
 
   # Don't make previews for calibration stacks.
-  assert stack.geometric_hash
+  assert stack.stable_hash
 
   calibrations = _get_calibrations(stack, stacks)
 

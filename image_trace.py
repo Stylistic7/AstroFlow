@@ -108,7 +108,7 @@ def trace_image_hash(hash):
       print(
           f'Target {target} contains stack {containing_stack} via content hash')
       found = True
-    if containing_stack.geometric_hash in target.stack_ids:
+    if containing_stack.stable_hash in target.stack_ids:
       print(
           f'Target {target} contains stack {containing_stack} via geometric hash'
       )

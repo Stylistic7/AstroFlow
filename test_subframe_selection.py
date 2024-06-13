@@ -65,7 +65,7 @@ class TestSubframeSelection(unittest.TestCase):
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 2)
-    stack = next(iter(s for s in stacks.values() if s.geometric_hash))
+    stack = next(iter(s for s in stacks.values() if s.stable_hash))
     self.assertEqual(len(stack.all_frames(stacks)), 10)
 
   def test_split_run(self):
@@ -102,7 +102,7 @@ class TestSubframeSelection(unittest.TestCase):
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 2)
-    stack = next(iter(s for s in stacks.values() if s.geometric_hash))
+    stack = next(iter(s for s in stacks.values() if s.stable_hash))
     self.assertEqual(len(stack.all_frames(stacks)), 15)
 
 

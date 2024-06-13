@@ -99,14 +99,14 @@ class TestStack(unittest.TestCase):
     self.assertEqual(len(stacks), 3)
 
     toplevel_stack = next(
-        stack for stack in stacks.values() if stack.geometric_hash)
+        stack for stack in stacks.values() if stack.stable_hash)
     light_stack = next(
         stack for stack in stacks.values() if stack.image_type == 'light')
     dark_stack = next(
         stack for stack in stacks.values() if stack.image_type == 'dark')
 
     self.assertEqual(toplevel_stack.image_type, 'light')
-    self.assertNotEqual(toplevel_stack.geometric_hash, None)
+    self.assertNotEqual(toplevel_stack.stable_hash, None)
     self.assertNotEqual(toplevel_stack.content_hash, None)
     self.assertEqual(len(toplevel_stack.contents), 1)
     self.assertEqual(len(toplevel_stack.dependencies), 0)
@@ -126,7 +126,7 @@ class TestStack(unittest.TestCase):
     self.assertAlmostEqual(toplevel_stack.rotation_angle, 1.55, places=2)
 
     self.assertEqual(light_stack.image_type, 'light')
-    self.assertEqual(light_stack.geometric_hash, None)
+    self.assertEqual(light_stack.stable_hash, None)
     self.assertNotEqual(light_stack.content_hash, None)
     self.assertEqual(len(light_stack.frames), 3)
     self.assertEqual(len(light_stack.contents), 0)
@@ -143,7 +143,7 @@ class TestStack(unittest.TestCase):
     self.assertEqual(light_stack.height_pixels, 6388)
 
     self.assertEqual(dark_stack.image_type, 'dark')
-    self.assertEqual(dark_stack.geometric_hash, None)
+    self.assertEqual(dark_stack.stable_hash, None)
     self.assertNotEqual(dark_stack.content_hash, None)
     self.assertEqual(len(dark_stack.frames), 5)
     self.assertEqual(len(dark_stack.contents), 0)

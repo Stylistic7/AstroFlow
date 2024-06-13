@@ -24,8 +24,8 @@ def normalize_radians(x):
 # includes the center (RA, Dec), the rotation angle, the image scale, and
 # the image width and height, in pixels. It is not defined for stacks that
 # do not contain light frames.
-def _compute_geometric_hash(center, image_scale, rotation_angle, width_pixels,
-                            height_pixels, filter) -> str:
+def _compute_stable_hash(center, image_scale, rotation_angle, width_pixels,
+                         height_pixels, filter) -> str:
   return hash_string(f'RA {units.ra_to_hms(center[0])}, '
                      f'Dec {units.dec_to_dms(center[1])}, '
                      f'Scale {image_scale:.2f}"/px, '
@@ -56,8 +56,8 @@ def _new_stacks(name, light_frames, fits_headers, plate_solutions):
 
   filter = fits_headers[oldest_image]['FILTER']
 
-  geometric_hash = _compute_geometric_hash(center, image_scale, rotation_angle,
-                                           width_pixels, height_pixels, filter)
+  stable_hash = _compute_stable_hash(center, image_scale, rotation_angle,
+                                     width_pixels, height_pixels, filter)
 
   footprint = next(
       SphericalPolygon.from_wcs(
@@ -74,7 +74,7 @@ def _new_stacks(name, light_frames, fits_headers, plate_solutions):
                  ), f'exposures {exposures} are clustered, but not all close'
 
     # TODO: The selection criterion needs to be preserved when stacks are
-    # re-computed. Stacks with the same geometric_hash can have their settings
+    # re-computed. Stacks with the same stable_hash can have their settings
     # passed on. There may be other settings like this in the future.
     selection_criterion = ('StarCountFraction', 0.75)
     for run in get_runs(exposure_frames, fits_headers, context.max_run_gap,
@@ -87,7 +87,7 @@ def _new_stacks(name, light_frames, fits_headers, plate_solutions):
 
   # Add a toplevel stack, with the geometric information, that contains all
   # of the runs of light frames as its contents.
-  stack = Stack(geometric_hash=geometric_hash,
+  stack = Stack(stable_hash=stable_hash,
                 contents=list(new_stacks.keys()),
                 target=name,
                 center=list(center),
@@ -97,7 +97,7 @@ def _new_stacks(name, light_frames, fits_headers, plate_solutions):
                 projected_footprints=projected_footprints,
                 selection_criterion=selection_criterion)
   stack.update_metadata(fits_headers, new_stacks)
-  new_stacks[stack.geometric_hash] = stack
+  new_stacks[stack.stable_hash] = stack
 
   return new_stacks
 

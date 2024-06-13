@@ -24,7 +24,7 @@ def group_stacks_into_targets():
                pyfits.Header(
                    plate_solutions[stack.all_frames(stacks)[0]].header)))
       for id, stack in stacks.items()
-      if stack.geometric_hash and stack.image_type == 'light'
+      if stack.stable_hash and stack.image_type == 'light'
   }
 
   print(f'Finding targets out of {len(values)} light-frame stacks')
@@ -58,11 +58,14 @@ def group_stacks_into_targets():
 
     # TODO: Validate all stacks here.
 
-    geometric_hash = hash_list(stacks[s].geometric_hash for s in stack_ids)
+    stable_hash = stacks[sorted(
+        stack_ids, key=lambda s: stacks[s].oldest_date)[0]].stable_hash
     content_hash = hash_list(stacks[s].content_hash for s in stack_ids)
 
     return Target(name=name,
-                  geometric_hash=geometric_hash,
+                  stable_hash=stable_hash,
+                  oldest_date=min(stacks[s].oldest_date for s in stack_ids),
+                  newest_date=min(stacks[s].newest_date for s in stack_ids),
                   content_hash=content_hash,
                   center=center,
                   stack_ids=stack_ids,
@@ -70,7 +73,7 @@ def group_stacks_into_targets():
                   projected_footprint=projected_footprint)
 
   targets = [new_target(g) for g in groups]
-  targets = {t.geometric_hash: t for t in targets}
+  targets = {t.stable_hash: t for t in targets}
 
   print(f'Found {len(targets)} targets')
 

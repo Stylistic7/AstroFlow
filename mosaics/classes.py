@@ -6,7 +6,7 @@ import plate_solving
 @dataclass(frozen=True)
 class Panel:
   mosaic_id: str = None
-  geometric_hash: str = None
+  stable_hash: str = None
   content_hash: str = None
   mode: str = None
   filter: str = None

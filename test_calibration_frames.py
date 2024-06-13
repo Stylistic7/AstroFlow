@@ -199,7 +199,7 @@ class TestCalibrationFrames(unittest.TestCase):
 
     light_stacks = [
         s for s in stacks.values()
-        if s.image_type == 'light' and not s.geometric_hash
+        if s.image_type == 'light' and not s.stable_hash
     ]
     self.assertEqual(len(light_stacks), 2)
 
@@ -420,7 +420,7 @@ class TestCalibrationFrames(unittest.TestCase):
 
     light_stacks = [
         s for s in stacks.values()
-        if s.image_type == 'light' and not s.geometric_hash
+        if s.image_type == 'light' and not s.stable_hash
     ]
     self.assertEqual(len(light_stacks), 1)
     stack = next(iter(light_stacks))

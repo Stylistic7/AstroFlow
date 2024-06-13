@@ -58,7 +58,7 @@ class TestFootprints(unittest.TestCase):
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 2)
-    stack = next(iter(s for s in stacks.values() if s.geometric_hash))
+    stack = next(iter(s for s in stacks.values() if s.stable_hash))
 
     projected_footprint = project_footprint(stack.footprint_polygon(),
                                             self.proj)

@@ -24,13 +24,13 @@ class TestTargetIdentification(unittest.TestCase):
     run_graph(graph)
 
     self.assertEqual(len(context.stacks), 2)
-    stack = next(iter([s for s in context.stacks.values() if s.geometric_hash]))
-    self.assertNotEqual(stack.geometric_hash, None)
+    stack = next(iter([s for s in context.stacks.values() if s.stable_hash]))
+    self.assertNotEqual(stack.stable_hash, None)
     self.assertNotEqual(stack.content_hash, None)
 
     self.assertEqual(len(context.targets), 1)
     target = next(iter(context.targets.values()))
-    self.assertEqual(target.geometric_hash, hash_list([stack.geometric_hash]))
+    self.assertEqual(target.stable_hash, stack.stable_hash)
     self.assertEqual(target.content_hash, hash_list([stack.content_hash]))
 
 

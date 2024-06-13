@@ -74,9 +74,9 @@ def process_mosaic_per_filter(mosaic_id, mode, filter, output_dir):
   panels = []
   for target_id, tile_indices in zip(mosaic.target_ids, mosaic.tile_indices):
     target = targets[target_id]
-    stack = next(
-        (s for s in stacks.values()
-         if s.filter == filter and s.geometric_hash in target.stack_ids), None)
+    stack = next((s for s in stacks.values()
+                  if s.filter == filter and s.stable_hash in target.stack_ids),
+                 None)
     if not stack:
       print(f'process_mosaic_per_filter failed: there is no stack for '
             f'filter {filter}')
@@ -99,14 +99,14 @@ def process_mosaic_per_filter(mosaic_id, mode, filter, output_dir):
     tile_indices_str = '_'.join([str(t) for t in tile_indices])
     placed_filename = os.path.join(
         str(output_dir),
-        f'placed_{mode}_{mosaic.geometric_hash}_{filter}_{tile_indices_str}_'
+        f'placed_{mode}_{mosaic.stable_hash}_{filter}_{tile_indices_str}_'
         f'{stack.content_hash}.fit')
 
     panel = classes.Panel(tile_indices=tile_indices,
-                          mosaic_id=mosaic.geometric_hash,
+                          mosaic_id=mosaic.stable_hash,
                           mode=mode,
                           filter=filter,
-                          geometric_hash=stack.geometric_hash,
+                          stable_hash=stack.stable_hash,
                           content_hash=stack.content_hash,
                           image_hash=image_hash,
                           placed_filename=placed_filename)

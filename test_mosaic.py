@@ -84,8 +84,11 @@ class TestMosaic(unittest.TestCase):
     for k in context.get_cache_keys():
       print(f'### Cache contains key {k}')
 
-    key = ('mosaic_thumbnail_image', 'subframe', '13046244764f740c', 'H',
-           'ac1d2f052e4b1b4c')
+    self.assertEqual(len(context.mosaics), 1)
+    mosaic = next(iter(context.mosaics.values()))
+
+    key = ('mosaic_thumbnail_image', 'subframe', mosaic.stable_hash, 'H',
+           mosaic.content_hash)
     self.assertTrue(context.contains(key))
 
   def test_hashes(self):
@@ -97,9 +100,8 @@ class TestMosaic(unittest.TestCase):
     self.assertEqual(len(context.mosaics), 1)
     mosaic = next(iter(context.mosaics.values()))
 
-    self.assertEqual(
-        mosaic.geometric_hash,
-        hash_list([t.geometric_hash for t in context.targets.values()]))
+    self.assertTrue(
+        mosaic.stable_hash in [t.stable_hash for t in context.targets.values()])
     self.assertEqual(
         mosaic.content_hash,
         hash_list([t.content_hash for t in context.targets.values()]))

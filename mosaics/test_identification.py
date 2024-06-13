@@ -1,6 +1,7 @@
 import unittest
 import ray_local
 
+import datetime
 import ray
 from context import context
 import numpy as np
@@ -22,21 +23,25 @@ class TestMosaicIdentification(unittest.TestCase):
     # These two targets are on the celestial equator, but overlap by one degree
     # in right ascension. This is the easiest case to think about.
     target0 = Target(name='foo',
-                     geometric_hash='geometric_foo',
+                     stable_hash='geometric_foo',
                      content_hash='content_foo',
+                     oldest_date=datetime.datetime(2023, 12, 6, 16, 29, 43),
+                     newest_date=datetime.datetime(2024, 1, 6, 16, 29, 43),
                      stack_ids=[1, 2, 3],
                      center=(100, 50),
                      footprint=SphericalPolygon.from_radec([98, 102, 102, 98],
                                                            [-1, -1, 1, 1]))
     target1 = Target(name='bar',
-                     geometric_hash='geometric_bar',
+                     stable_hash='geometric_bar',
                      content_hash='content_bar',
+                     oldest_date=datetime.datetime(2024, 2, 6, 16, 29, 43),
+                     newest_date=datetime.datetime(2024, 3, 6, 16, 29, 43),
                      stack_ids=[4, 5, 6],
                      center=(100, 51),
                      footprint=SphericalPolygon.from_radec([95, 99, 99, 95],
                                                            [-1, -1, 1, 1]))
 
-    targets = {target0.geometric_hash: target0, target1.geometric_hash: target1}
+    targets = {target0.stable_hash: target0, target1.stable_hash: target1}
     context.targets = targets
     ray.get(identification.identify_mosiacs.remote())
     mosaics = context.mosaics
@@ -44,7 +49,7 @@ class TestMosaicIdentification(unittest.TestCase):
     mosaic = next(iter(mosaics.values()))
 
     self.assertEqual(mosaic.target_ids,
-                     [target0.geometric_hash, target1.geometric_hash])
+                     [target0.stable_hash, target1.stable_hash])
     self.assertEqual(mosaic.tile_indices, [(0, 0), (0, 1)])
 
     # The mosaic is 7x2, while the two panels are each 4x2.
@@ -54,31 +59,37 @@ class TestMosaicIdentification(unittest.TestCase):
 
   def test_three_targets(self):
     target0 = Target(name='foo',
-                     geometric_hash='geometric_foo',
+                     stable_hash='geometric_foo',
                      content_hash='content_foo',
+                     oldest_date=datetime.datetime(2023, 12, 6, 16, 29, 43),
+                     newest_date=datetime.datetime(2024, 1, 6, 16, 29, 43),
                      stack_ids=[1, 2, 3],
                      center=(100, 50),
                      footprint=SphericalPolygon.from_radec([98, 102, 102, 98],
                                                            [-1, -1, 1, 1]))
     target1 = Target(name='bar',
-                     geometric_hash='geometric_bar',
+                     stable_hash='geometric_bar',
                      content_hash='content_bar',
+                     oldest_date=datetime.datetime(2024, 2, 6, 16, 29, 43),
+                     newest_date=datetime.datetime(2024, 3, 6, 16, 29, 43),
                      stack_ids=[4, 5, 6],
                      center=(100, 51),
                      footprint=SphericalPolygon.from_radec([95, 99, 99, 95],
                                                            [-1, -1, 1, 1]))
     target2 = Target(name='baz',
-                     geometric_hash='geometric_baz',
+                     stable_hash='geometric_baz',
                      content_hash='content_baz',
+                     oldest_date=datetime.datetime(2024, 4, 6, 16, 29, 43),
+                     newest_date=datetime.datetime(2024, 5, 6, 16, 29, 43),
                      stack_ids=[7, 8, 9],
                      center=(102, 50),
                      footprint=SphericalPolygon.from_radec([95, 99, 99, 95],
                                                            [0, 0, 2, 2]))
 
     targets = {
-        target0.geometric_hash: target0,
-        target1.geometric_hash: target1,
-        target2.geometric_hash: target2
+        target0.stable_hash: target0,
+        target1.stable_hash: target1,
+        target2.stable_hash: target2
     }
 
     context.targets = targets
@@ -87,9 +98,9 @@ class TestMosaicIdentification(unittest.TestCase):
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
-    self.assertEqual(mosaic.target_ids, [
-        target0.geometric_hash, target1.geometric_hash, target2.geometric_hash
-    ])
+    self.assertEqual(
+        mosaic.target_ids,
+        [target0.stable_hash, target1.stable_hash, target2.stable_hash])
     self.assertEqual(mosaic.tile_indices, [(0, 0), (0, 1), (1, 0)])
 
     # The mosaic is 7x2 + 4x1, while the three panels are each 4x2.

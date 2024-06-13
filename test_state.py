@@ -83,7 +83,7 @@ class TestState(unittest.TestCase):
     self.assertEqual(len(toplevel_stacks), 1)
     toplevel_stack = toplevel_stacks[0]
 
-    context.shopping_cart = [('stack', toplevel_stack.geometric_hash)]
+    context.shopping_cart = [('stack', toplevel_stack.stable_hash)]
 
     processing_graph = ray.get(build_processing_graph.remote())
     self.assertEqual(len(processing_graph), 1)
