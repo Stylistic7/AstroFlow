@@ -13,6 +13,10 @@ from cache import cache
 @pix.PixInsight()
 def _post_process_target(images):
   aligned = pix.StarAlignment(images)
+  # TODO: Run ChannelCombination, ImageSolver, SPCC before doing
+  # StarXTerminator.
+  # TODO: ImageSolver must write the target's coordinates into the RGB image
+  # so ImageSolver won't hang.
   return pix.StarXTerminator(aligned)
 
 

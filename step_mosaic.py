@@ -329,10 +329,12 @@ def merge_mosaic(mosaic_id, mode):
         if stacks[s].filter == filter
     ]
 
-  def all_panels_have_filter(filter):
+  def any_panels_have_filter(filter):
     stacks = stacks_for_filter(filter)
-    result = len(stacks) == len(mosaic.target_ids)
-    print(f'### all_panels_have_filter {filter} = {result}')
+    # result = len(stacks) == len(mosaic.target_ids)
+    result = len(stacks) > 0
+    print(f'### any_panels_have_filter mosaic_id {mosaic_id} '
+          f'filter {filter} = {result}')
     return result
 
   def filter_artifact_exists(filter):
@@ -344,7 +346,7 @@ def merge_mosaic(mosaic_id, mode):
     elif mode == 'master':
       result = bool(
           stacking.artifact_exists(image_hashes, fits_headers, content_hash))
-    print(f'### filter_artifact exists for mode {mode} '
+    print(f'### filter_artifact exists for mosaic_id {mosaic_id} mode {mode} '
           f'filter {filter} = {result}')
     return result
 
@@ -353,16 +355,16 @@ def merge_mosaic(mosaic_id, mode):
   filters = ['H', 'S', 'O', 'L', 'R', 'G', 'B']
   filters_to_process = [
       f for f in filters
-      if all_panels_have_filter(f) and not filter_artifact_exists(f)
+      if any_panels_have_filter(f) and not filter_artifact_exists(f)
   ]
 
   if not filters_to_process:
     print(
-        f'### All filters for mosaic {mosaic.name} mode {mode} are up-to-date')
+        f'### All filters for mosaic_id {mosaic_id} mode {mode} are up-to-date')
     return
   else:
     print(f'### Need to update the following filters: {filters_to_process} '
-          f'for mode {mode}')
+          f'for mosaic_id {mosaic_id} mode {mode}')
 
   # Store merged mosaics on disk for all modes except 'subframe'.
   if mode == 'subframe':

@@ -58,11 +58,11 @@ def _placed_image_artifact_exists(panel, mode):
 #
 # Saves the images either to the cache (for mode 'subframe') or to disk
 # (for mode 'master' and above).
-@ray.remote(scheduling_strategy="SPREAD", num_cpus=0.001)
+@ray.remote
 def process_mosaic_per_filter(mosaic_id, mode, filter, output_dir):
   mosaics = context.mosaics
   mosaic = mosaics[mosaic_id]
-  print(f'Entering process_mosaic_per_filter for {mosaic.name} mode {mode} '
+  print(f'Entering process_mosaic_per_filter for {mosaic} mode {mode} '
         f'filter {filter}')
 
   image_hashes = context.image_hashes
