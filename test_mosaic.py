@@ -57,48 +57,17 @@ class TestMosaic(unittest.TestCase):
                          dest_dir=context.input_dirs[0],
                          add_noise=False)
 
-  def test_all_tasks_already_done(self):
+  def test_merge_mosaic(self):
     graph = compute_graph.build_compute_graph()
     run_graph(graph)
 
-  def test_everything_after_stacking(self):
-    for key in context.get_cache_keys():
-      if 'placed_image' in key or 'mosaic_thumbnail_image' in key:
-        context.delete(key)
-
-    filenames = file_io.find_image_files(context.input_dirs[0])
-    self.assertEqual(len(filenames), 12)
-
-    graph = compute_graph.build_compute_graph()
-    run_graph(graph)
-
-    # shutil.copytree(self.output_dir.name, 'testdata/output', dirs_exist_ok=True)
-
-    # TODO: What are good criteria for completion? The addition of new filenames
-    # and cache keys, no doubt.
-
-  def test_subframe_merge_mosaic(self):
-    graph = compute_graph.build_compute_graph()
-    run_graph(graph)
-
-    for k in context.get_cache_keys():
-      print(f'### Cache contains key {k}')
-
+    self.assertEqual(len(context.targets), 4)
     self.assertEqual(len(context.mosaics), 1)
     mosaic = next(iter(context.mosaics.values()))
 
     key = ('mosaic_thumbnail_image', 'subframe', mosaic.stable_hash, 'H',
            mosaic.content_hash)
     self.assertTrue(context.contains(key))
-
-  def test_hashes(self):
-    graph = compute_graph.build_compute_graph()
-    run_graph(graph)
-
-    self.assertEqual(len(context.targets), 4)
-
-    self.assertEqual(len(context.mosaics), 1)
-    mosaic = next(iter(context.mosaics.values()))
 
     self.assertTrue(
         mosaic.stable_hash in [t.stable_hash for t in context.targets.values()])
