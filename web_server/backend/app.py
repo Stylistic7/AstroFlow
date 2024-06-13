@@ -331,13 +331,15 @@ def mosaic_thumbnail_image_complete(mode, mosaic_id, filter):
 
 @app.route('/mosaic_thumbnail_image_for_filter/<mosaic_id>/<filter>')
 def mosaic_thumbnail_image_for_filter(mosaic_id, filter):
+  mosaic = context.mosaics[mosaic_id]
+  print('### mosaic', mosaic)
+
   for mode in ['master', 'subframe']:
-    key = ('mosaic_thumbnail_image', mode, mosaic_id, filter)
+    key = ('mosaic_thumbnail_image', mode, mosaic_id, filter,
+           mosaic.content_hash)
     if key in cache:
-      result = cache[key]
-      print('type(result)', type(result))
       buffer = io.BytesIO()
-      buffer.write(result['merged']['image'])
+      buffer.write(cache[key])
       buffer.seek(0)
       return flask.send_file(buffer, mimetype='image/png')
 
