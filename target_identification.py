@@ -1,4 +1,4 @@
-from spherical_geometry.polygon import SphericalPolygon
+from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon
 import astropy.io.fits as pyfits
 import ray
 import numpy as np
@@ -18,9 +18,16 @@ def group_stacks_into_targets():
   plate_solutions = context.plate_solutions
   cosine_similarity_threshold = context.cosine_similarity_threshold
 
+  def get_spherical_polygon(wcs):
+    footprint = SingleSphericalPolygon.from_wcs(wcs)
+    if not footprint.is_clockwise():
+      footprint = SingleSphericalPolygon(footprint.points[::-1])
+    assert not SphericalPolygon.self_intersect(footprint.points)
+    return footprint
+
   values = {
       id: (np.asarray(footprints.radec_to_vector(*stack.center)),
-           SphericalPolygon.from_wcs(
+           get_spherical_polygon(
                pyfits.Header(
                    plate_solutions[stack.all_frames(stacks)[0]].header)))
       for id, stack in stacks.items()
@@ -48,13 +55,19 @@ def group_stacks_into_targets():
     center = stacks[stack_ids[0]].center
     name = position_string.canonical_target_string(center)
 
-    footprint = next(
-        SphericalPolygon.multi_intersection([
-            SphericalPolygon(stacks[stack_id].footprint)
-            for stack_id in stack_ids
-        ]).points).tolist()
-    projected_footprint = footprints.all_projections(
-        SphericalPolygon(footprint))
+    # TODO: This just uses the first stack's footprint, which is very simple,
+    # but maybe not very precise. The more precise implementation is here in
+    # a comment.
+    # footprint = next(
+    #     SphericalPolygon.multi_intersection([
+    #         SphericalPolygon(stacks[stack_id].footprint)
+    #         for stack_id in stack_ids
+    #     ]).points).tolist()
+    # projected_footprint = footprints.all_projections(
+    #     SphericalPolygon(footprint))
+
+    footprint = stacks[stack_ids[0]].footprint
+    projected_footprint = footprints.all_projections(footprint)
 
     # TODO: Validate all stacks here.
 

@@ -1,6 +1,7 @@
 import traceback
 import structlog
-from spherical_geometry.polygon import SphericalPolygon
+from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon
+from spherical_geometry.vector import lonlat_to_vector
 import ray
 import numpy as np
 
@@ -20,9 +21,6 @@ def _identify_overlapping_targets(targets):
   if not targets:
     return []
 
-  def overlap(a, b):
-    return a.intersection(b).area() > 0
-
   def roughly_same_area(a, b):
     ratio = a.area() / b.area()
     return ratio > 0.9 and ratio < 1.1
@@ -32,26 +30,38 @@ def _identify_overlapping_targets(targets):
   # 5-30%).
 
   # Sort the targets by their center RA.
-  targets = list(sorted(targets, key=lambda t: t.center[0]))
+  target_ids = list(sorted(targets.keys(), key=lambda t: targets[t].center[0]))
   log.info('Identifying overlapping targets', num_targets=len(targets))
 
   mosaics = []
-  for target in targets:
-    found = False
-    for mosaic in mosaics:
-      all_roughly_same_area = all(
-          roughly_same_area(target.footprint_polygon(), m.footprint_polygon())
-          for m in mosaic)
-      any_overlap = any(
-          overlap(target.footprint_polygon(), m.footprint_polygon())
-          for m in mosaic)
-      if all_roughly_same_area and any_overlap:
-        mosaic.append(target)
-        found = True
-        break
+  for target_id in target_ids:
+    matching_mosaic_indices = []
+    for i, mosaic in enumerate(mosaics):
+      compatible_area = roughly_same_area(targets[target_id].footprint,
+                                          targets[mosaic[0]].footprint)
+      compatible_overlap = any(
+          targets[target_id].footprint.intersects_poly(targets[t].footprint)
+          for t in mosaic)
+      if compatible_area and compatible_overlap:
+        matching_mosaic_indices.append(i)
 
-    if not found:
-      mosaics.append([target])
+    if not matching_mosaic_indices:
+      print(f'### Creating new mosaic to contain target_id {target_id}')
+      mosaics.append([target_id])
+    elif len(matching_mosaic_indices) == 1:
+      print(f'### Adding target_id {target_id} to existing mosaic')
+      mosaics[matching_mosaic_indices[0]].append(target_id)
+    elif len(matching_mosaic_indices) > 1:
+      print(f'### Target {targets[target_id]} fits into '
+            f'{len(matching_mosaic_indices)} mosaics')
+      print(f'### Before merging mosaics, there are {len(mosaics)} mosaics')
+      merged_mosaic = [target_id]
+      for i in sorted(matching_mosaic_indices, reverse=True):
+        merged_mosaic.extend(mosaics[i])
+        del mosaics[i]
+      print(f'### Merged mosaic contains {len(merged_mosaic)} targets')
+      mosaics.append(merged_mosaic)
+      print(f'### After merging mosaics, there are {len(mosaics)} mosaics')
 
   num_grouped_targets = sum(len(m) for m in mosaics)
   num_ungrouped_targets = len(targets) - num_grouped_targets
@@ -60,7 +70,6 @@ def _identify_overlapping_targets(targets):
            num_grouped_targets=num_grouped_targets,
            num_ungrouped_targets=num_ungrouped_targets)
 
-  print('### before length check, mosaics', mosaics)
   mosaics = [m for m in mosaics if len(m) > 1]
 
   return mosaics
@@ -71,7 +80,7 @@ def identify_mosiacs():
   targets = context.targets
   print(f'### Identifying mosaics from {len(targets)} targets')
 
-  mosaics = _identify_overlapping_targets(targets.values())
+  mosaics = _identify_overlapping_targets(targets)
   if not mosaics:
     print('### No overlapping targets found')
     context.mosaics = {}
@@ -81,13 +90,18 @@ def identify_mosiacs():
 
   output_mosaics = {}
   for mosaic in mosaics:
-    target_ids, tile_indices = ransac.ransac(mosaic,
-                                             plot=False,
-                                             plot_title='foo')
+    target_ids, tile_indices = ransac.ransac_2d(mosaic,
+                                                targets,
+                                                plot=False,
+                                                plot_title='foo')
 
     if not target_ids:
-      print('RANSAC failed')
-      continue
+      print('ransac_2d failed')
+      target_ids, tile_indices = ransac.ransac_1d(mosaic, targets)
+
+      if not target_ids:
+        print('ransac_1d also failed')
+        continue
 
     print(f'Mosaic composed of {len(target_ids)} targets:')
     for target_id in target_ids:
@@ -108,13 +122,21 @@ def identify_mosiacs():
       center = list(mean_center)
       name = position_string.canonical_target_string(center)
 
-      footprint = next(
-          SphericalPolygon.multi_union([
-              SphericalPolygon(targets[target_id].footprint)
-              for target_id in target_ids
-          ]).points).tolist()
-      projected_footprint = footprints.all_projections(
-          SphericalPolygon(footprint))
+      # This doesn't seem work for polygons with holes in them.
+      # TODO: Consider using multi_union but falling back to convex hull when
+      # it doesn't work?
+      # old_footprint = next(
+      #     SphericalPolygon.multi_union([
+      #         SphericalPolygon(targets[target_id].footprint)
+      #         for target_id in target_ids
+      #     ]).points).tolist()
+
+      all_points = np.concatenate(
+          [targets[target_id].footprint.points for target_id in target_ids])
+
+      # TODO: There's no way to specify an `inside` point here?
+      footprint = SingleSphericalPolygon.convex_hull(all_points)
+      projected_footprint = footprints.all_projections(footprint)
 
       output_mosaic = Mosaic(name=name,
                              stable_hash=stable_hash,

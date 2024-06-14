@@ -101,7 +101,7 @@ def _plot_mosaic(mosaic, plot_title=None):
   plt.title(plot_title)
 
   for target in mosaic:
-    plt.plot(*target.footprint_polygon().exterior.xy, color='black')
+    plt.plot(*target.footprint.exterior.xy, color='black')
     plt.scatter([target.center[0]], [target.center[1]], color='black')
 
   plt.show()
@@ -331,7 +331,6 @@ def merge_mosaic(mosaic_id, mode):
 
   def any_panels_have_filter(filter):
     stacks = stacks_for_filter(filter)
-    # result = len(stacks) == len(mosaic.target_ids)
     result = len(stacks) > 0
     print(f'### any_panels_have_filter mosaic_id {mosaic_id} '
           f'filter {filter} = {result}')
@@ -376,8 +375,8 @@ def merge_mosaic(mosaic_id, mode):
   # Determine the output image shape and resolution, which is a 3D to 2D
   # projection.
   proj = mercator.MercatorProjection()
-  xs, ys = zip(*footprints.project_footprint(mosaic.footprint_polygon(),
-                                             proj).exterior.coords)
+  xs, ys = zip(
+      *footprints.project_footprint(mosaic.footprint, proj).exterior.coords)
   x_min, y_min, x_span, y_span = compute_viewbox(list(zip(xs, ys)))
 
   # TODO: Put this in the UI somewhere.

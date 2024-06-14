@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 import datetime
 
-from spherical_geometry.polygon import SphericalPolygon
+from spherical_geometry.polygon import SingleSphericalPolygon
 from shapely.geometry import Polygon
 
 from hashing import hash_list
@@ -24,11 +24,8 @@ class Mosaic:
   newest_date: Optional[datetime.datetime] = None
 
   center: list[float] = field(default_factory=list)
-  footprint: SphericalPolygon = None
+  footprint: SingleSphericalPolygon = None
   projected_footprint: dict[str, Polygon] = None
-
-  def footprint_polygon(self):
-    return SphericalPolygon(self.footprint)
 
   def __str__(self):
     return (

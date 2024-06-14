@@ -94,10 +94,7 @@ class Stack:
     self.oldest_date = all_dates[0]
     self.newest_date = all_dates[-1]
 
-    # TODO: Update geometric hash here, too.
-
-  def footprint_polygon(self) -> SphericalPolygon:
-    return SphericalPolygon(self.footprint)
+    # TODO: Update stable hash here, too.
 
   def __eq__(self, other):
     if not isinstance(other, Stack):
@@ -108,7 +105,7 @@ class Stack:
 
   def __str__(self):
     if self.stable_hash:
-      return (f'Stack(Geometric hash {self.stable_hash}, '
+      return (f'Stack(Stable hash {self.stable_hash}, '
               f'Content hash {self.content_hash}, '
               f'Target {self.target}, '
               f'RA {units.ra_to_hms(self.center[0])}, '

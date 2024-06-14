@@ -54,7 +54,7 @@ def radec_to_vector(ra, dec, degrees=True):
 
 
 def project_footprint(polygon, projection):
-  ra, dec = next(polygon.to_radec())  # degrees
+  ra, dec = polygon.to_radec()  # degrees
   ra, dec = (np.radians(np.array(x)) for x in (ra, dec))
   x, y = projection.project(ra, dec)
   return Polygon(zip(x, y))

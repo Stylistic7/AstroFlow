@@ -170,19 +170,26 @@ def footprints():
   return [f for _, f, _ in list(plate_solutions.values())]
 
 
+def _remove_keys(D, keys):
+  return {k: v for k, v in asdict(D).items() if k not in keys}
+
+
 @app.route('/mosaics')
 def mosaics():
-  return test_app.mosaics if debug else cache.get('mosaics', {})
+  mosaics = test_app.mosaics if debug else cache.get('mosaics', {})
+  return {k: _remove_keys(v, ['footprint']) for k, v in mosaics.items()}
 
 
 @app.route('/targets')
 def targets():
-  return test_app.targets if debug else cache.get('targets', {})
+  targets = test_app.targets if debug else cache.get('targets', {})
+  return {k: _remove_keys(v, ['footprint']) for k, v in targets.items()}
 
 
 @app.route('/stacks')
 def stacks():
-  return test_app.stacks if debug else cache.get('stacks', {})
+  stacks = test_app.stacks if debug else cache.get('stacks', {})
+  return {k: _remove_keys(v, ['footprint']) for k, v in stacks.items()}
 
 
 @app.route('/send_datetime')

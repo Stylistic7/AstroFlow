@@ -45,6 +45,82 @@ def _find_all_possible_bases(centers):
   return bases
 
 
+def ransac_1d(mosaic, targets):
+  if len(mosaic) == 1:
+    return [targets[t].stable_hash for t in mosaic], [(0, 0)]
+
+  if len(mosaic) == 2:
+    return [targets[t].stable_hash for t in mosaic], [(0, 0), (0, 1)]
+
+  best_error = np.inf
+  best_origin = None
+  best_inliers = []
+  best_basis_vector = None
+
+  centers = np.vstack([targets[t].center for t in mosaic]).T
+  # print(f'centers {centers}')
+
+  for iteration in range(500):
+    # Choose 2 tiles at random. Compute a basis vector from them.
+    random_centers = centers[:,
+                             np.random.
+                             choice(centers.shape[1], 2, replace=False)]
+    origin = random_centers[:, 0]
+    basis_vector = np.asarray(random_centers[:, 1] - origin)
+    # print(f'  basis_vector {basis_vector}')
+
+    inliers = []
+    errors = []
+    for i, center in enumerate(centers.T):
+      # print(f'  center {center}')
+      transformed_center = (center - origin) / np.linalg.norm(basis_vector)
+      # print(f'  transformed center', transformed_center)
+      error = np.linalg.norm(transformed_center - np.round(transformed_center))
+      # print(f'  transformed_center {transformed_center} '
+      #       f'has Euclidean error {error}')
+      if error < 0.3:
+        inliers.append(i)
+        errors.append(error)
+
+    if len(inliers) > len(best_inliers) or (len(inliers) == len(best_inliers)
+                                            and np.mean(errors) < best_error):
+      best_origin = origin
+      best_inliers = inliers
+      best_error = np.mean(errors)
+      best_basis_vector = basis_vector
+
+  if not best_inliers:
+    return [], []
+
+  # print('### done with iteration, best_basis_vector', best_basis_vector)
+  # print('### done with iteration, best_origin', best_origin)
+  all_tile_indices = []
+  for i, center in enumerate(centers.T):
+    if i not in best_inliers:
+      continue
+
+    # print('### center - best_origin', center - best_origin)
+    transformed_center = (center -
+                          best_origin) / np.linalg.norm(best_basis_vector)
+    # print('### transformed_center', transformed_center)
+
+    tile_indices = [int(x) for x in np.round(transformed_center)]
+    # print(f'  tile_indices {i}: {tile_indices}')
+    all_tile_indices.append(tuple(tile_indices))
+
+  min_x = np.min([t[0] for t in all_tile_indices])
+  min_y = np.min([t[1] for t in all_tile_indices])
+  all_tile_indices = [
+      (int(x - min_x), int(y - min_y)) for x, y in all_tile_indices
+  ]
+
+  target_ids = [targets[mosaic[i]].stable_hash for i in best_inliers]
+  print('### ransac_1d returning target_ids', target_ids, 'all_tile_indices',
+        all_tile_indices)
+  assert len(target_ids) == len(all_tile_indices)
+  return target_ids, all_tile_indices
+
+
 # A mosaic here is just a set of images that overlap at least a little. There may
 # be no genuine mosaics here (e.g. none with any regular grid) or there may be
 # several independent mosaics, each on their own independent grids.
@@ -55,31 +131,30 @@ def _find_all_possible_bases(centers):
 # TODO: The definition of a mosaic is that the panes are aligned along their
 # long or short axes. This means all their rotation_angles are consistent
 # (at least for mosaics without rotation...).
-def ransac(mosaic, debug=False, plot=False, plot_title=None):
+def ransac_2d(mosaic, targets, debug=False, plot=False, plot_title=None):
   print(f'Running RANSAC on mosaic with {len(mosaic)} targets')
 
   if len(mosaic) == 1:
     print('### RANSAC called on a single target')
-    return [t.stable_hash for t in mosaic], [(0, 0)]
+    return [targets[t].stable_hash for t in mosaic], [(0, 0)]
 
   if len(mosaic) == 2:
     print('### RANSAC called with two targets')
-    return [t.stable_hash for t in mosaic], [(0, 0), (0, 1)]
+    return [targets[t].stable_hash for t in mosaic], [(0, 0), (0, 1)]
 
   best_error = np.inf
   best_origin = None
   best_inliers = []
   best_basis_vectors = None
 
-  centers = np.vstack([t.center for t in mosaic]).T
+  centers = np.vstack([targets[t].center for t in mosaic]).T
   print(f'centers {centers}')
 
   for iteration in range(500):
-    # print(f'Top of iteration {iteration}')
+    print(f'Top of iteration {iteration}')
 
     # Choose 3 tiles at random. Compute two basis vectors from them.
     # Skip the iteration if the basis vectors aren't (nearly) orthogonal.
-    # TODO: Does this really just always resolve to [[1, 0], [0, 1]]
     random_centers = centers[:,
                              np.random.
                              choice(centers.shape[1], 3, replace=False)]
@@ -101,24 +176,25 @@ def ransac(mosaic, debug=False, plot=False, plot_title=None):
     inliers = []
     errors = []
     for i, center in enumerate(centers.T):
-      # print(f'  center {center}')
-      transformed_center = np.linalg.solve(basis_vectors, center - origin)
-      # print(f'  transformed center', transformed_center)
+      try:
+        transformed_center = np.linalg.solve(basis_vectors, center - origin)
+      except:
+        continue
       error = np.linalg.norm(transformed_center - np.round(transformed_center))
-      # print(f'  transformed_center {transformed_center} '
-      #       f'has Euclidean error {error}')
+      print(f'  center {center} -> transformed center {transformed_center}, '
+            f'error {error}')
       if error < 0.3:
-        inliers.append(mosaic[i])
+        inliers.append(i)
         errors.append(error)
-    # print(f'Found {len(inliers)} inliers')
+    print(f'Found {len(inliers)} inliers')
 
     if len(inliers) > len(best_inliers) or (len(inliers) == len(best_inliers)
-                                            and np.mean(error) < best_error):
+                                            and np.mean(errors) < best_error):
       best_origin = origin
       best_inliers = inliers
       best_error = np.mean(errors)
       best_basis_vectors = basis_vectors
-      # print('UPDATED BEST MODEL')
+      print(f'UPDATED BEST MODEL, inliers {[mosaic[i] for i in inliers]}')
 
   # print('END OF RANSAC')
   # print('best_origin', best_origin)
@@ -132,21 +208,31 @@ def ransac(mosaic, debug=False, plot=False, plot_title=None):
   # print('centers in best basis:')
   all_tile_indices = []
   for i, center in enumerate(centers.T):
+    if i not in best_inliers:
+      continue
+
     transformed_center = np.linalg.solve(best_basis_vectors,
                                          center - best_origin)
     # print(f'  transformed_center {i}: {transformed_center}')
-    error = np.linalg.norm(transformed_center - np.round(transformed_center))
+    # error = np.linalg.norm(transformed_center - np.round(transformed_center))
     # print(f'  transformed_center {transformed_center} '
     #       f'has Euclidean error {error}')
 
     # TODO: Do these need to start at (0, 0) or is (-1, 1) acceptable, too?
     tile_indices = [int(x) for x in np.round(transformed_center)]
-    print(f'  tile_indices {i}: {tile_indices}')
+    # print(f'  tile_indices {i}: {tile_indices}')
     all_tile_indices.append(tuple(tile_indices))
 
-  target_ids = [t.stable_hash for t in best_inliers]
-  print('### ransac returning target_ids', target_ids, 'all_tile_indices',
+  min_x = np.min([t[0] for t in all_tile_indices])
+  min_y = np.min([t[1] for t in all_tile_indices])
+  all_tile_indices = [
+      (int(x - min_x), int(y - min_y)) for x, y in all_tile_indices
+  ]
+
+  target_ids = [targets[mosaic[i]].stable_hash for i in best_inliers]
+  print('### ransac_2d returning target_ids', target_ids, 'all_tile_indices',
         all_tile_indices)
+  assert len(target_ids) == len(all_tile_indices)
   return target_ids, all_tile_indices
 
   # plt.figure()

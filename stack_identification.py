@@ -1,6 +1,6 @@
 import ray
 import numpy as np
-from spherical_geometry.polygon import SphericalPolygon
+from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon
 import astropy
 
 from context import context
@@ -59,11 +59,14 @@ def _new_stacks(name, light_frames, fits_headers, plate_solutions):
   stable_hash = _compute_stable_hash(center, image_scale, rotation_angle,
                                      width_pixels, height_pixels, filter)
 
-  footprint = next(
-      SphericalPolygon.from_wcs(
-          astropy.io.fits.Header(
-              plate_solutions[light_frames[0]].header)).points).tolist()
-  projected_footprints = footprints.all_projections(SphericalPolygon(footprint))
+  # TODO: Unify this WCS stuff and put it somewhere more general.
+  # It's in target_identification and in mosaics/projection.
+  footprint = SingleSphericalPolygon.from_wcs(
+      astropy.io.fits.Header(plate_solutions[light_frames[0]].header))
+  if not footprint.is_clockwise():
+    footprint = SingleSphericalPolygon(footprint.points[::-1])
+  assert not SphericalPolygon.self_intersect(footprint.points)
+  projected_footprints = footprints.all_projections(footprint)
 
   new_stacks = {}
   exposures = [(f, fits_headers[f]['EXPOSURE']) for f in light_frames]

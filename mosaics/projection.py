@@ -5,7 +5,7 @@ from astropy.wcs import WCS
 from scipy.interpolate import RegularGridInterpolator
 import largestinteriorrectangle
 import astropy.io.fits as pyfits
-from spherical_geometry.polygon import SphericalPolygon
+from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon
 from shapely.geometry import Polygon, Point
 import astropy.io.fits as pyfits
 import time
@@ -99,8 +99,11 @@ def mosaic_by_coordinates(panel):
 
   # Filter out points that aren't in this panel's footprint.
   assert dest_xs.shape == dest_ys.shape == ras.shape == decs.shape
-  footprint_polygon = SphericalPolygon.from_wcs(
+  footprint = SingleSphericalPolygon.from_wcs(
       pyfits.Header(plate_solution.header))
+  if not footprint.is_clockwise():
+    footprint = SingleSphericalPolygon(footprint.points[::-1])
+  assert not SphericalPolygon.self_intersect(footprint.points)
   print(f'dest_xs.shape {dest_xs.shape} dest_ys.shape {dest_ys.shape}')
   print(f'ras.shape {ras.shape} decs.shape {decs.shape}')
   try:
@@ -108,7 +111,7 @@ def mosaic_by_coordinates(panel):
         *[(dx, dy, ra, dec)
           for dx, dy, ra, dec in zip(dest_xs.flatten(), dest_ys.flatten(),
                                      ras.flatten(), decs.flatten())
-          if footprint_polygon.contains_lonlat(ra, dec)])
+          if footprint.contains_lonlat(ra, dec)])
   except Exception as e:
     print(f'### Failed to filter points with exception {e}')
     return

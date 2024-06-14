@@ -60,8 +60,7 @@ class TestFootprints(unittest.TestCase):
     self.assertEqual(len(stacks), 2)
     stack = next(iter(s for s in stacks.values() if s.stable_hash))
 
-    projected_footprint = project_footprint(stack.footprint_polygon(),
-                                            self.proj)
+    projected_footprint = project_footprint(stack.footprint, self.proj)
 
     self.assertTrue(
         shapely.equals(
@@ -116,17 +115,18 @@ class TestFootprints(unittest.TestCase):
 
     target = next(iter(targets.values()))
 
-    projected_footprint = project_footprint(target.footprint_polygon(),
-                                            self.proj)
+    projected_footprint = project_footprint(target.footprint, self.proj)
+    print('### projected_footprint', projected_footprint)
 
     self.assertTrue(
-        shapely.equals(
-            projected_footprint,
-            Polygon([(3.1677617688622615, -0.017441585851835084),
-                     (3.1154235383173243, -0.017441585851835084),
-                     (3.1154235383173243, 0.017441585851835202),
-                     (3.1677617688622615, 0.017441585851835202),
-                     (3.1677617688622615, -0.017441585851835084)])))
+        shapely.equals_exact(projected_footprint,
+                             Polygon([(3.1154211159087506, -0.0174440076156626),
+                                      (3.1154211159087506, 0.0174440076156625),
+                                      (3.167764191270835, 0.0174440076156625),
+                                      (3.167764191270835, -0.0174440076156626),
+                                      (3.1154211159087506, -0.0174440076156626)
+                                     ]),
+                             tolerance=1e-5))
 
   def test_mosaic(self):
     # Two stacks that overlap by a degree in RA.
@@ -173,19 +173,20 @@ class TestFootprints(unittest.TestCase):
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
 
-    projected_footprint = project_footprint(mosaic.footprint_polygon(),
-                                            self.proj)
+    projected_footprint = project_footprint(mosaic.footprint, self.proj)
 
     self.assertTrue(
-        shapely.equals(
-            projected_footprint,
-            Polygon([(3.1154211159087506, -0.01744400761566263),
-                     (3.1154211159087506, 0.017444007615662508),
-                     (3.159045946109729, 0.01744732539865246),
-                     (3.202670776310722, 0.017444007615662508),
-                     (3.202670776310722, -0.01744400761566263),
-                     (3.1590459461097176, -0.017447325398652496),
-                     (3.1154211159087506, -0.01744400761566263)])))
+        shapely.equals_exact(projected_footprint,
+                             Polygon([(3.150327700948637, -0.0174440076156626),
+                                      (3.150327700948637, 0.0174440076156625),
+                                      (3.1154211159087506, 0.0174440076156625),
+                                      (3.1154211159087506, -0.0174440076156626),
+                                      (3.202670776310722, -0.0174440076156626),
+                                      (3.202670776310722, 0.0174440076156625),
+                                      (3.167764191270835, 0.0174440076156625),
+                                      (3.150327700948637, -0.0174440076156626)
+                                     ]),
+                             tolerance=1e-5))
 
 
 if __name__ == "__main__":

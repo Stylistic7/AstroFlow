@@ -492,6 +492,9 @@ def populate_context():
   if context.stacks == None:
     context.regroup = True
 
+  if not context.contains('quarantined_files'):
+    context.quarantined_files = []
+
   # TODO: Add more comprehensive validation.
   # assert not any(type(p) is str for p in context.plate_solutions.values())
   # assert None not in context.image_hashes.values()
