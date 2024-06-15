@@ -136,6 +136,8 @@ def identify_mosiacs():
 
       # TODO: There's no way to specify an `inside` point here?
       footprint = SingleSphericalPolygon.convex_hull(all_points)
+      footprint = SingleSphericalPolygon.convex_hull(footprint.points)
+      assert not SphericalPolygon.self_intersect(footprint.points)
       projected_footprint = footprints.all_projections(footprint)
 
       output_mosaic = Mosaic(name=name,

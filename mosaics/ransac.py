@@ -5,7 +5,9 @@ import itertools
 logger = structlog.get_logger()
 log = logger
 
+# TODO: Put these in the UI somewhere.
 ORTHOGONALITY_THRESHOLD = 0.05
+EUCLIDEAN_ERROR_THRESHOLD = 0.15
 
 
 def _find_all_possible_bases(centers):
@@ -78,7 +80,7 @@ def ransac_1d(mosaic, targets):
       error = np.linalg.norm(transformed_center - np.round(transformed_center))
       # print(f'  transformed_center {transformed_center} '
       #       f'has Euclidean error {error}')
-      if error < 0.3:
+      if error < EUCLIDEAN_ERROR_THRESHOLD:
         inliers.append(i)
         errors.append(error)
 
@@ -183,7 +185,7 @@ def ransac_2d(mosaic, targets, debug=False, plot=False, plot_title=None):
       error = np.linalg.norm(transformed_center - np.round(transformed_center))
       print(f'  center {center} -> transformed center {transformed_center}, '
             f'error {error}')
-      if error < 0.3:
+      if error < EUCLIDEAN_ERROR_THRESHOLD:
         inliers.append(i)
         errors.append(error)
     print(f'Found {len(inliers)} inliers')
