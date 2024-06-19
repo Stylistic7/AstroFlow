@@ -4,6 +4,7 @@ from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon
 from spherical_geometry.vector import lonlat_to_vector
 import ray
 import numpy as np
+import random
 
 from context import context
 from mosaic import Mosaic
@@ -137,6 +138,17 @@ def identify_mosiacs():
       # TODO: There's no way to specify an `inside` point here?
       footprint = SingleSphericalPolygon.convex_hull(all_points)
       footprint = SingleSphericalPolygon.convex_hull(footprint.points)
+
+      # TODO: This is turbo weird, but appears to work. Just randomize the
+      # points until the `convex_hull()` operation is successful.
+      for i in range(10):
+        if SphericalPolygon.self_intersect(footprint.points):
+          points = footprint.points
+          random.shuffle(points)
+          footprint = SingleSphericalPolygon.convex_hull(points)
+        else:
+          break
+
       assert not SphericalPolygon.self_intersect(footprint.points)
       projected_footprint = footprints.all_projections(footprint)
 
