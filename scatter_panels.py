@@ -189,6 +189,9 @@ def _merge_subframe_mosaic(panels):
   # TODO: This will fail when new panels are added, and the total output
   # resolution changes. All placed images should automatically be destroyed when
   # the resolution changes.
+  #
+  # TODO: Maybe normalize the median of the image (which should be
+  # approximately the sky background) to some user-supplied value like 0.1.
   for panel in panels[1:]:
     image = file_io.read_image(panel.placed_filename)
     output_image = np.maximum(output_image, image)

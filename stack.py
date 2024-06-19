@@ -118,7 +118,7 @@ class Stack:
               f'Filter {self.filter}, '
               f'Temp {self.mean_temperature:.02f} degC)')
     else:
-      return (f'Content hash {self.content_hash}, '
+      return (f'Stack(Content hash {self.content_hash}, '
               f'Camera {self.camera}, '
               f'Exposure {self.exposure_s}, '
               f'Integration {self.integration_s} s, '

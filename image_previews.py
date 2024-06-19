@@ -205,6 +205,10 @@ def create_flat_correction_thumbnails(stack_id):
   stacks = context.stacks
   stack = stacks[stack_id]
 
+  # There should be many flat correction thumbnails for every stack, one for
+  # each applicable run of flat frames. This key should have a dict for a
+  # value. The keys of the dict are the content hashes of the runs of flat
+  # frames.
   key = ('flat_correction_thumbnails', stack_id)
   thumbnails = context.get(key, {})
 
@@ -215,6 +219,7 @@ def create_flat_correction_thumbnails(stack_id):
   ]
 
   if all(f in thumbnails for f in flat_stack_ids):
+    print(f'### All flat_correction_thumbnails exist for {stack}')
     return
 
   assert not stack.stable_hash
@@ -234,7 +239,7 @@ def create_flat_correction_thumbnails(stack_id):
     return stacks[stack_id].frames[0]
 
   settings_key = ('stack_settings', stack_id)
-  settings = context.settings_key or {}
+  settings = context[settings_key] or {}
   dependencies = stack.dependencies | settings
 
   # TODO: These will probably fail for any light stack that doesn't have

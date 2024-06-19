@@ -70,7 +70,13 @@ export default function RunPanel({ stack_id, flat_stack_ids }) {
 
     return (
         <div>
-            <div><img key={Date.now()} src={`/stack_thumbnail_image/${stack_id}`} /></div>
+            <div style={{ maxWidth: '75vw' }} >
+                <ImageGallery
+                    items={images}
+                    startIndex={flat_stack_ids.indexOf(stackSettings['flat'])}
+                    onSlide={onSlide}
+                />
+            </div>
             <div><span>Stack {stack.frames.length} frames, content_hash: {stack.content_hash} flat {stack.dependencies['flat']}</span></div>
             <div><span>Available flat stacks for camera {stack.camera} and filter {stack.filter}:</span></div>
             <ul>
