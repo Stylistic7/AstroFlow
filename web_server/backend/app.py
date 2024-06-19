@@ -16,6 +16,7 @@ import datetime
 import ray
 from queue import Queue
 import operator
+from spherical_geometry.polygon import SingleSphericalPolygon
 from .message_announcer import MessageAnnouncer
 
 from context import context
@@ -170,26 +171,35 @@ def footprints():
   return [f for _, f, _ in list(plate_solutions.values())]
 
 
-def _remove_keys(D, keys):
-  return {k: v for k, v in asdict(D).items() if k not in keys}
+def _make_json_serializable(D):
+  output = {}
+  for k, v in asdict(D).items():
+    if type(v) is np.ndarray:
+      output[k] = v.tolist()
+    elif type(v) is SingleSphericalPolygon:
+      output[k] = v.points.tolist()
+    else:
+      output[k] = v
+
+  return output
 
 
 @app.route('/mosaics')
 def mosaics():
   mosaics = test_app.mosaics if debug else cache.get('mosaics', {})
-  return {k: _remove_keys(v, ['footprint']) for k, v in mosaics.items()}
+  return {k: _make_json_serializable(v) for k, v in mosaics.items()}
 
 
 @app.route('/targets')
 def targets():
   targets = test_app.targets if debug else cache.get('targets', {})
-  return {k: _remove_keys(v, ['footprint']) for k, v in targets.items()}
+  return {k: _make_json_serializable(v) for k, v in targets.items()}
 
 
 @app.route('/stacks')
 def stacks():
   stacks = test_app.stacks if debug else cache.get('stacks', {})
-  return {k: _remove_keys(v, ['footprint']) for k, v in stacks.items()}
+  return {k: _make_json_serializable(v) for k, v in stacks.items()}
 
 
 @app.route('/send_datetime')

@@ -123,7 +123,7 @@ def process_mosaic_per_filter(mosaic_id, mode, filter, output_dir):
 
 
 # TODO: Put options to balance CPUs and memory consumption in the UI.
-@ray.remote(scheduling_strategy="SPREAD", num_cpus=1.5)
+@ray.remote(scheduling_strategy="SPREAD", num_cpus=1.25)
 def maybe_mosaic_by_coordinates(panel, mode):
   if _placed_image_artifact_exists(panel, mode):
     print('### maybe_mosaic_by_coordinates found placed image artifact '
@@ -186,6 +186,9 @@ def _merge_subframe_mosaic(panels):
   # certainly better ways (maybe mean of all projected values).
   output_image = file_io.read_image(panels[0].placed_filename)
 
+  # TODO: This will fail when new panels are added, and the total output
+  # resolution changes. All placed images should automatically be destroyed when
+  # the resolution changes.
   for panel in panels[1:]:
     image = file_io.read_image(panel.placed_filename)
     output_image = np.maximum(output_image, image)

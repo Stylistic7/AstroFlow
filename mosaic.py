@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Optional
 import datetime
+import numpy as np
 
 from spherical_geometry.polygon import SingleSphericalPolygon
 from shapely.geometry import Polygon
@@ -19,6 +20,8 @@ class Mosaic:
 
   target_ids: list[str] = field(default_factory=list)
   tile_indices: list[tuple] = field(default_factory=list)
+  origin: Optional[np.ndarray] = None
+  basis_vectors: Optional[np.ndarray] = None
 
   oldest_date: Optional[datetime.datetime] = None
   newest_date: Optional[datetime.datetime] = None

@@ -48,19 +48,20 @@ def _find_all_possible_bases(centers):
 
 
 def ransac_1d(mosaic, targets):
-  if len(mosaic) == 1:
-    return [targets[t].stable_hash for t in mosaic], [(0, 0)]
+  assert len(mosaic) >= 2
+
+  centers = np.vstack([targets[t].center for t in mosaic]).T
+  print(f'centers {centers}')
 
   if len(mosaic) == 2:
-    return [targets[t].stable_hash for t in mosaic], [(0, 0), (0, 1)]
+    basis_vector = np.asarray(centers[:, 1] - centers[:, 0])
+    return ([targets[t].stable_hash for t in mosaic], [(0, 0), (0, 1)],
+            centers[:, 0], basis_vector)
 
   best_error = np.inf
   best_origin = None
   best_inliers = []
   best_basis_vector = None
-
-  centers = np.vstack([targets[t].center for t in mosaic]).T
-  # print(f'centers {centers}')
 
   for iteration in range(500):
     # Choose 2 tiles at random. Compute a basis vector from them.
@@ -92,7 +93,7 @@ def ransac_1d(mosaic, targets):
       best_basis_vector = basis_vector
 
   if not best_inliers:
-    return [], []
+    return None, None, None, None
 
   # print('### done with iteration, best_basis_vector', best_basis_vector)
   # print('### done with iteration, best_origin', best_origin)
@@ -120,7 +121,7 @@ def ransac_1d(mosaic, targets):
   print('### ransac_1d returning target_ids', target_ids, 'all_tile_indices',
         all_tile_indices)
   assert len(target_ids) == len(all_tile_indices)
-  return target_ids, all_tile_indices
+  return target_ids, all_tile_indices, best_origin, best_basis_vector
 
 
 # A mosaic here is just a set of images that overlap at least a little. There may
@@ -135,26 +136,18 @@ def ransac_1d(mosaic, targets):
 # (at least for mosaics without rotation...).
 def ransac_2d(mosaic, targets, debug=False, plot=False, plot_title=None):
   print(f'Running RANSAC on mosaic with {len(mosaic)} targets')
+  if len(mosaic) < 3:
+    return None, None, None, None
 
-  if len(mosaic) == 1:
-    print('### RANSAC called on a single target')
-    return [targets[t].stable_hash for t in mosaic], [(0, 0)]
-
-  if len(mosaic) == 2:
-    print('### RANSAC called with two targets')
-    return [targets[t].stable_hash for t in mosaic], [(0, 0), (0, 1)]
+  centers = np.vstack([targets[t].center for t in mosaic]).T
+  print(f'centers {centers}')
 
   best_error = np.inf
   best_origin = None
   best_inliers = []
   best_basis_vectors = None
 
-  centers = np.vstack([targets[t].center for t in mosaic]).T
-  print(f'centers {centers}')
-
   for iteration in range(500):
-    print(f'Top of iteration {iteration}')
-
     # Choose 3 tiles at random. Compute two basis vectors from them.
     # Skip the iteration if the basis vectors aren't (nearly) orthogonal.
     random_centers = centers[:,
@@ -172,6 +165,8 @@ def ransac_2d(mosaic, targets, debug=False, plot=False, plot_title=None):
     # print('dot product of basis vectors', basis_dot)
     if np.abs(basis_dot) > 0.05:
       continue
+
+    print(f'Iteration {iteration} found plausible model')
 
     # Compute the error on all the centers, including only those that are very close
     # to integer coordinates.
@@ -205,7 +200,7 @@ def ransac_2d(mosaic, targets, debug=False, plot=False, plot_title=None):
   # print('best_basis_vectors', best_basis_vectors)
 
   if not best_inliers:
-    return [], []
+    return None, None, None, None
 
   # print('centers in best basis:')
   all_tile_indices = []
@@ -235,7 +230,7 @@ def ransac_2d(mosaic, targets, debug=False, plot=False, plot_title=None):
   print('### ransac_2d returning target_ids', target_ids, 'all_tile_indices',
         all_tile_indices)
   assert len(target_ids) == len(all_tile_indices)
-  return target_ids, all_tile_indices
+  return target_ids, all_tile_indices, best_origin, best_basis_vectors
 
   # plt.figure()
   # plt.title(plot_title)

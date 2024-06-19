@@ -13,6 +13,7 @@ from mosaics.identification import identify_mosiacs
 from dependency_graph import Graph, make_graph_from_list
 from post_process_target import post_process_target
 from post_process_stack import post_process_stack
+from suggestions import make_suggestions
 
 
 @ray.remote
@@ -70,7 +71,7 @@ def build_processing_graph():
 
 def build_compute_graph():
   return make_graph_from_list([(scatter_compute_image_metadata, 'all'),
-                               maybe_build_regroup_graph,
+                               maybe_build_regroup_graph, make_suggestions,
                                (scatter_stack_thumbnails, 'subframe'),
                                (scatter_merge_mosaics, 'subframe'),
                                build_processing_graph,

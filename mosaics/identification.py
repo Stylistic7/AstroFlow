@@ -10,6 +10,7 @@ from mosaic import Mosaic
 import position_string
 import footprints
 from hashing import hash_list
+import units
 
 from . import ransac
 
@@ -90,14 +91,13 @@ def identify_mosiacs():
 
   output_mosaics = {}
   for mosaic in mosaics:
-    target_ids, tile_indices = ransac.ransac_2d(mosaic,
-                                                targets,
-                                                plot=False,
-                                                plot_title='foo')
+    target_ids, tile_indices, origin, basis_vectors = ransac.ransac_2d(
+        mosaic, targets, plot=False, plot_title='foo')
 
     if not target_ids:
       print('ransac_2d failed')
-      target_ids, tile_indices = ransac.ransac_1d(mosaic, targets)
+      target_ids, tile_indices, origin, basis_vectors = ransac.ransac_1d(
+          mosaic, targets)
 
       if not target_ids:
         print('ransac_1d also failed')
@@ -145,13 +145,16 @@ def identify_mosiacs():
                              content_hash=content_hash,
                              target_ids=target_ids,
                              tile_indices=tile_indices,
+                             origin=origin,
+                             basis_vectors=basis_vectors,
                              oldest_date=oldest_date,
                              newest_date=newest_date,
                              center=center,
                              footprint=footprint,
                              projected_footprint=projected_footprint)
 
-      print(f'Mosaic has name {name} and id {stable_hash}')
+      print(f'Mosaic has name {name} stable_hash {stable_hash} and '
+            f'basis_vectors {basis_vectors}')
       output_mosaics[stable_hash] = output_mosaic
     except Exception as e:
       traceback.print_exc()
