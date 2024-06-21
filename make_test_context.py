@@ -34,6 +34,8 @@ def make_test_context():
   context.min_frames_in_stack = 3
   context.subframe_thumbnail_width = 1200
   context.master_thumbnail_width = 2160
+  context.subframe_mosaic_samples = 500
+  context.master_mosaic_samples = 500
 
   context.mock_stacking = True
 

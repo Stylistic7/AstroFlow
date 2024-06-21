@@ -310,7 +310,7 @@ def _subframe_filter_artifact_exists(mosaic_id, filter, content_hash):
 #
 # Runs process_mosaic_per_filter for each filter present in the mosaic in
 # parallel.
-@ray.remote(scheduling_strategy="SPREAD", num_cpus=0.001)
+@ray.remote(scheduling_strategy="SPREAD")
 def merge_mosaic(mosaic_id, mode):
   mosaics = context.mosaics
   mosaic = mosaics[mosaic_id]
@@ -381,9 +381,9 @@ def merge_mosaic(mosaic_id, mode):
 
   # TODO: Put this in the UI somewhere.
   if mode == 'subframe':
-    num_samples_x = 1000
+    num_samples_x = context.subframe_mosaic_samples
   elif mode == 'master':
-    num_samples_x = 5000
+    num_samples_x = context.master_mosaic_samples
 
   resolution = x_span / num_samples_x
   num_samples_y = int(y_span / resolution)

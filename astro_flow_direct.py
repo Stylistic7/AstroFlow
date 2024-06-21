@@ -484,6 +484,8 @@ def populate_context():
   context.min_frames_in_stack = 3
   context.subframe_thumbnail_width = 1200
   context.master_thumbnail_width = 2160
+  context.subframe_mosaic_samples = 1000
+  context.master_mosaic_samples = 5000
 
   # TODO: Don't just use the first input directory.
   if context.download:

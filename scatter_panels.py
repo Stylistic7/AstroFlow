@@ -15,6 +15,13 @@ from mosaics import merge_ops
 from mosaics import classes
 from mosaics import projection
 
+
+def _get_unique(L):
+  s = set(L)
+  assert len(s) == 1, f"list {L} has more than one unique member"
+  return next(iter(s))
+
+
 # TODO: Move as much of this code into the `mosaics` library, and give it a nice
 # API that communicates with the rest of AstroFlow.
 
@@ -137,15 +144,15 @@ def _merge_master_mosaic(panels):
   # TODO: This merge op sometimes fails, and it means we lose track of all the
   # placed images.
   mode = 'master'
-  filter = panels[0].filter
-  mosaic_id = panels[0].mosaic_id
+  mosaic_id = _get_unique([p.mosaic_id for p in panels])
+  filter = _get_unique([p.filter for p in panels])
 
   mosaic = context.mosaics[mosaic_id]
+  print(f'### Entering _merge_master_mosaic for mosaic {mosaic}')
 
   output_dir = os.path.join(context.output_dir, 'Mosaics', mosaic.name)
   os.makedirs(output_dir, exist_ok=True)
 
-  print('### Entering _merge_master_mosaic for mosaic id {mosaic_id}')
   output_image = merge_ops.merge_mosaic(mode, mosaic_id, panels, output_dir)
 
   content_hash = hash_list([p.content_hash for p in panels])
@@ -159,27 +166,22 @@ def _merge_master_mosaic(panels):
   print(f'### Wrote key {key}')
 
 
-# TODO: This function only does maximum(), so it's only good for previews.
-# Where is the code that calls PMM in PixInsight?
 def _merge_subframe_mosaic(panels):
-  print('### Entering _merge_subframe_mosaic, panels are:')
-  for panel in panels:
-    print('### ', panel)
-
-  def _get_unique(L):
-    s = set(L)
-    assert len(s) == 1, f"list {L} has more than one unique member"
-    return next(iter(s))
-
   mosaic_id = _get_unique([p.mosaic_id for p in panels])
   filter = _get_unique([p.filter for p in panels])
 
   mosaic = context.mosaics[mosaic_id]
+  print(f'### Entering _merge_subframe_mosaic for mosaic {mosaic}')
+
   key = ('mosaic_thumbnail_image', 'subframe', mosaic_id, filter,
          mosaic.content_hash)
   if context.contains(key):
     print('### cache already contains key', key)
     return
+
+  def normalize_median(image, target=0.1):
+    image *= (target / np.median(image.astype(np.float32)))
+    return image
 
   # The image returned from read_image() is in [0, 65536].
   # TODO: These panels are just merged by np.maximum, but there are
