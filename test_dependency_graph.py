@@ -4,11 +4,11 @@ import os
 import unittest
 import ray
 import tempfile
-import functools
+import itertools
 
 from cache import cache
 from context import context
-from dependency_graph import Graph, Node, run_graph, make_graph_from_list
+from dependency_graph import Graph, Node, run_graph, make_graph_from_list, print_result_dict
 
 
 @ray.remote
@@ -97,6 +97,29 @@ def process_raises_exception(item):
 @ray.remote
 def gather(results):
   return sum(results)
+
+
+@ray.remote
+def passthrough(results):
+  return results
+
+
+@ray.remote
+def build_subgraph(item):
+  return Graph({passthrough: {(process, item)}})
+
+
+@ray.remote
+def gather_from_subgraphs(results):
+  # Each subgraph returns a list of results. This flattens the list of lists
+  # into a single list.
+  results = list(itertools.chain.from_iterable(results))
+  return sum(results)
+
+
+def scatter_in_subgraphs():
+  return Graph(
+      {gather_from_subgraphs: [(build_subgraph, i) for i in range(13)]})
 
 
 @ray.remote
@@ -438,9 +461,17 @@ class TestDependencyGraph(unittest.TestCase):
     graph = {A: {}, B: {}}
 
     context.foo = 7
-    results = run_graph(graph, debug=True)
+    run_graph(graph)
 
     self.assertEqual(context.foo, 9)
+
+  def test_scatter_in_subgraphs(self):
+    graph = scatter_in_subgraphs()
+
+    results = run_graph(graph)
+
+    self.assertEqual(results[gather_from_subgraphs], 78)
+    self.assertEqual(results.max_parallelism_seen, 13)
 
 
 if __name__ == '__main__':
