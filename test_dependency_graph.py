@@ -431,6 +431,17 @@ class TestDependencyGraph(unittest.TestCase):
     self.assertEqual(results.num_nodes_run, 4)
     self.assertEqual(results.max_parallelism_seen, 2)
 
+  def test_duplicate_nodes(self):
+    A = Node(increment_foo, name='first_foo')
+    B = Node(increment_foo, name='second_foo')
+
+    graph = {A: {}, B: {}}
+
+    context.foo = 7
+    results = run_graph(graph, debug=True)
+
+    self.assertEqual(context.foo, 9)
+
 
 if __name__ == '__main__':
   unittest.main()

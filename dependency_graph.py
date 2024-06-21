@@ -10,8 +10,9 @@ class Graph(dict):
 
 class Node():
 
-  def __init__(self, task, *args, priority=1):
+  def __init__(self, task, *args, name=None, priority=1):
     self.task = task
+    self.name = name
     self.priority = priority
     self.args = args
 
@@ -19,10 +20,11 @@ class Node():
     return (self.task._function.__module__ == other.task._function.__module__
             and
             self.task._function.__name__ == other.task._function.__name__ and
-            self.priority == other.priority and self.args == other.args)
+            self.name == other.name and self.priority == other.priority and
+            self.args == other.args)
 
   def __hash__(self):
-    return hash((self.task, self.priority, self.args))
+    return hash((self.task, self.name, self.priority, self.args))
 
 
 def _unpack_node(node):
