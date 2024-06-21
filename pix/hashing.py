@@ -17,6 +17,7 @@ def hash_list(x):
 
 def get_content_hash(filename):
   """Returns the file's explicit content hash, or the hash of its image data."""
+  print('### get_content_hash', filename)
   assert os.path.exists(filename)
   return read_xisf_header(filename).get(_CONTENT_HASH_KEY,
                                         hash_of_xisf_image_data(filename))
