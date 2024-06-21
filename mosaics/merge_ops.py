@@ -107,19 +107,21 @@ def make_merge_ops(mode, mosaic_id, panels, output_dir):
 
 
 @pix.PixInsight()
-def run_photometric_mosaic(merge_op):
-  images = pix.OpenImages(pix.FileList(merge_op.image_filenames),
-                          ['placed_0', 'placed_1'])
-  merged = pix.PhotometricMosaic(images)
-  result = pix.SaveImages(merged, [merge_op.output_filename])
-
-  return result
+def run_photometric_mosaic(images, output_filename):
+  return pix.PhotometricMosaic(images, output_filename)
 
 
 def merge_mosaic(mode, mosaic_id, panels, output_dir):
   print(f'Entering merge_mosaic, output_dir {output_dir}')
-  for merge_op in make_merge_ops(mode, mosaic_id, panels, output_dir):
-    output_image = run_photometric_mosaic(merge_op)
+  merge_ops = make_merge_ops(mode, mosaic_id, panels, output_dir)
+  assert merge_ops
+  for merge_op in merge_ops:
+    input_filenames = merge_op.image_filenames
+    output_filename = merge_op.output_filename
+    print(f'### Calling run_photometric_mosaic inputs {input_filenames} '
+          f'output {output_filename}')
+    assert all(os.path.exists(i) for i in input_filenames)
+    output_image = run_photometric_mosaic(input_filenames, output_filename)
     print(f'run_photometric_mosaic returned {output_image}')
 
   assert output_image

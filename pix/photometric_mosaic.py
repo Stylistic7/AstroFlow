@@ -1,5 +1,7 @@
 import os
 
+from addict import Dict
+
 from .classes import ShellScriptTask
 from .context import append_task
 
@@ -63,12 +65,14 @@ _default_parameters = {
 }
 
 
-def PhotometricMosaic(view_ids, **kwargs):
+def PhotometricMosaic(images, output_filename, *args, **kwargs):
+  print(f'### Entering PhotometricMosaic, images {images} '
+        f'output_filename {output_filename}')
   parameters = _default_parameters | kwargs
   javascript_filename = "/Applications/PixInsight/src/scripts/JohnMurphy/PhotometricMosaic/AstroFlowPhotometricMosaic.js"
 
-  parameters['referenceView'] = view_ids[0]
-  parameters['targetView'] = view_ids[1]
+  parameters['referenceView'] = images[0].view_id
+  parameters['targetView'] = images[1].view_id
 
   # TODO: The `javascript_filename` thing is long. Maybe there can be two
   # ShellScriptTask types, one that accepts code, and one that accepts a filename.
@@ -76,4 +80,8 @@ def PhotometricMosaic(view_ids, **kwargs):
       ShellScriptTask(javascript_filename=javascript_filename,
                       parameters=parameters))
 
-  return ['Mosaic']
+  return Dict(filename=output_filename,
+              view_id='Mosaic',
+              filter=images[0].filter,
+              explicit_name=True,
+              dirty=True)
