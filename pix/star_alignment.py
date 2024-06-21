@@ -105,6 +105,12 @@ for (let i = 0; i < view_ids.length; ++i) {{
 
 # TODO: The reference image is the first view_id, but this is not obvious.
 def StarAlignment(images, **kwargs):
+  print('### Entering StarAlignment, images', images)
+
+  if len(images) < 2:
+    print('### StarAlignment has no meaning for one image')
+    return images
+
   parameters = _default_parameters | kwargs
 
   view_ids = [i.view_id for i in images]
