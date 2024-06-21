@@ -4,11 +4,10 @@ import os
 import unittest
 import ray
 import tempfile
-import itertools
 
 from cache import cache
 from context import context
-from dependency_graph import Graph, Node, run_graph, make_graph_from_list, print_result_dict
+from dependency_graph import Graph, Node, run_graph, make_graph_from_list
 
 
 @ray.remote
@@ -33,21 +32,18 @@ def my_first_task():
 
 
 @ray.remote
-def my_later_task(ancestor_results):
-  assert len(ancestor_results) == 1, f'ancestor_results are {ancestor_results}'
-  return ancestor_results[0] + 1
+def my_later_task(ancestor_result):
+  return ancestor_result + 1
 
 
 @ray.remote
-def my_last_task(ancestor_results):
-  assert len(ancestor_results) == 1, f'ancestor_results are {ancestor_results}'
-  return ancestor_results[0] + 3
+def my_last_task(ancestor_result):
+  return ancestor_result + 3
 
 
 @ray.remote
-def my_last_task_with_context(ancestor_results):
-  assert len(ancestor_results) == 1, f'ancestor_results are {ancestor_results}'
-  return ancestor_results[0] + 3
+def my_last_task_with_context(ancestor_result):
+  return ancestor_result + 3
 
 
 @ray.remote
@@ -111,9 +107,6 @@ def build_subgraph(item):
 
 @ray.remote
 def gather_from_subgraphs(results):
-  # Each subgraph returns a list of results. This flattens the list of lists
-  # into a single list.
-  results = list(itertools.chain.from_iterable(results))
   return sum(results)
 
 
