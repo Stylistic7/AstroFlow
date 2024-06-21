@@ -7,14 +7,15 @@ from .context import append_task
 _default_parameters = {'outputDirectory': ''}
 
 
-@PixInsight()
-def WeightedBatchPreprocessing(dir, **kwargs):
+def WeightedBatchPreprocessing(unused, *args, **kwargs):
+  print('### Entering WeightedBatchPreprocessing')
+
   parameters = _default_parameters | kwargs
   javascript_filename = "/Applications/PixInsight/src/scripts/WeightedBatchPreprocessing/WeightedBatchPreprocessing.js"
 
   arguments = {
       'automationMode': 'true',
-      'dir': dir,
+      'dir': kwargs['dir'],
       'smartNamingOverride': 'true',
       'keywords': 'RUN',
   }
@@ -23,3 +24,6 @@ def WeightedBatchPreprocessing(dir, **kwargs):
       ShellScriptTask(javascript_filename=javascript_filename,
                       parameters=parameters,
                       arguments=arguments))
+
+  print('### Exiting WeightedBatchPreprocessing')
+  return unused
