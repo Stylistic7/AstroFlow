@@ -118,8 +118,11 @@ def stack_files(stack_id):
   # TODO: Put subframe selection here.
 
   with tempfile.TemporaryDirectory() as tmp_dir:
+    first_hash = None
+    if stack.frames:
+      first_hash = stack.frames[0]
+
     hashes = stack.frames + list(stack.dependencies.values())
-    all_hashes = hashes
     print(f'### Stack frames and dependencies: {hashes}')
     filenames = [image_hashes[h] for h in hashes]
     for h, f in zip(hashes, filenames):
@@ -133,8 +136,10 @@ def stack_files(stack_id):
       run_dir = os.path.join(tmp_dir, f'RUN_{i}')
       os.makedirs(run_dir, exist_ok=True)
 
+      if not first_hash and substack.frames:
+        first_hash = substack.frames[0]
+
       hashes = substack.frames + list(substack.dependencies.values())
-      all_hashes.extend(hashes)
       print(f'### Substack frames and dependencies: {hashes}')
       filenames = [image_hashes[h] for h in hashes]
       for h, f in zip(hashes, filenames):
@@ -144,10 +149,8 @@ def stack_files(stack_id):
       _symlink_frames(filenames, run_dir)
 
     if context.mock_stacking:
-      first_light_frame_hash = next(
-          h for h in all_hashes if file_io.is_light_frame(fits_headers[h]))
       with open(dest_filename, 'w') as f:
-        pix.file_io.convert_fits_to_xisf(image_hashes[first_light_frame_hash],
+        pix.file_io.convert_fits_to_xisf(image_hashes[first_hash],
                                          dest_filename,
                                          add_noise=True,
                                          metadata=metadata)
