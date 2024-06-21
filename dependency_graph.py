@@ -139,9 +139,15 @@ def run_graph(graph, debug=False):
     # Return a scalar result if the node has only a single ancestor; otherwise,
     # return a list.
     if len(nodes) == 1:
-      return ts.results[nodes[0]]
+      results = ts.results[nodes[0]]
     else:
-      return [ts.results[node] for node in nodes]
+      results = [ts.results[node] for node in nodes]
+
+    if debug:
+      print(f'Node with task {node.task._function.__name__} has '
+            f'ancestor results {results}')
+
+    return results
 
   def make_run_fn(ts, node):
     node = _unpack_node(node)
