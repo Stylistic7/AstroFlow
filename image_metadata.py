@@ -1,7 +1,7 @@
 import ray
 from pathlib import Path
 import os
-import itertools
+import traceback
 
 import file_io
 import plate_solving
@@ -103,6 +103,16 @@ class DuplicateFileException(Exception):
   pass
 
 
+@ray.remote
+def compute_image_metadata_for_filenames(filenames):
+  print('Entering compute_image_metadata_for_filenames', filenames)
+  return Graph({
+      gather_compute_image_metadata: [
+          (compute_image_metadata_ray, f) for f in filenames
+      ]
+  })
+
+
 @ray.remote(scheduling_strategy="SPREAD", max_retries=5, retry_exceptions=True)
 def compute_image_metadata_ray(filename):
   print(f'Entering compute_image_metadata_ray() for {filename}')
@@ -131,13 +141,17 @@ def compute_image_metadata_ray(filename):
 
     if file_io.is_light_frame(header):
       result['plate_solution'] = plate_solving.solve_field(filename)
-      assert type(result['plate_solution']) is not str
+    else:
+      print(f'### Skipping plate-solving for filename {filename} '
+            f'because it is not a light frame')
 
     return result
   except Exception as e:
     print(f'compute_image_metadata_ray() failed for file {filename}, '
-          f'exception {e}')
+          f'exception {traceback.format_exc()}')
     return {'filename': filename, 'exception': e}
+  finally:
+    print(f'Exiting compute_image_metadata_ray() for {filename}')
 
 
 @ray.remote
