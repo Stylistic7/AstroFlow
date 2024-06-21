@@ -28,11 +28,19 @@ def _extend_filename(image, funcname):
     return str(path.parent / (path.stem + '_' + funcname + path.suffix))
 
 
-def _extract_filenames(input):
-  if type(input) is list:
-    return [i['filename'] for i in input]
-  else:
-    return input['filename']
+def _normalize_result(result):
+  if type(result) is Dict:
+    return [result]
+
+  if type(result) is list:
+    return result
+
+  if type(result) is tuple:
+    output = []
+    for x in result:
+      output.extend(_normalize_result(x))
+
+    return output
 
 
 # TODO: Refactor this function into pieces.
@@ -60,7 +68,7 @@ def PixInsight(dry_run=False, debug=False):
       try:
         with tempfile.TemporaryDirectory() as tmp_dir:
           context = dict(tmp_dir=tmp_dir,
-                         tasks=list(),
+                         tasks=[],
                          images_to_save=[],
                          debug_images=[],
                          process_number=0)
@@ -74,32 +82,18 @@ def PixInsight(dry_run=False, debug=False):
 
           # Call the decorated PixInsight function.
           print(f'### Calling PixInsight function {func.__name__}')
-          result = call_with_context(func, images, *args, **kwargs)
-          if type(result) is Dict:
-            result = [result]
+          result = _normalize_result(
+              call_with_context(func, images, *args, **kwargs))
           print(f'### PixInsight function {func.__name__} returned correctly, '
                 f'{len(context["tasks"])} tasks, result {result}')
 
           # If the PixInsight function didn't add any tasks, there is nothing
           # to do. The OpenImages task doesn't count.
           if len(context['tasks']) == 1:
-            result = _extract_filenames(result)
+            result = [i['filename'] for i in result]
             print(f'### PixInsight function {func.__name__} made no tasks, '
                   'fwrapper returning {result}')
             return result
-
-          # # Flatten the list of all the images returned by the decorated
-          # # PixInsight function.
-          # flattened = []
-          # for r in result:
-          #   if type(r) is list:
-          #     flattened.extend(list(r))
-          #   else:
-          #     flattened.append(r)
-
-          # assert all(type(x) is Dict for x in flattened)
-          print(f'### PixInsight function {func.__name__} wants to save '
-                f'{len(result)} images')
 
           # Iterate over all the output images produced by the decorated
           # PixInsight function, and decide which ones actually need to be
@@ -117,12 +111,6 @@ def PixInsight(dry_run=False, debug=False):
             image.filename = _extend_filename(image, func.__name__)
             image.content_hash = hash_list([inspect.getsource(func)] +
                                            input_image_hashes + [image.view_id])
-
-            # TODO: Why is this decision being made here?
-            # if os.path.exists(
-            #     image.filename) and read_xisf_header(image.filename).get(
-            #         _CONTENT_HASH_KEY, None) == image.content_hash:
-            #   continue
 
             print(f'### will save: {image}')
             images_to_save.append(image)
@@ -148,7 +136,7 @@ def PixInsight(dry_run=False, debug=False):
       if debug:
         return context['debug_images']
 
-      result = _extract_filenames(result)
+      result = [i['filename'] for i in result]
       print('### wrapper returning, filenames', result)
       return result
 

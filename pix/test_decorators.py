@@ -120,8 +120,6 @@ class TestDecorators(unittest.TestCase):
     temp_dir = tempfile.TemporaryDirectory()
     filenames = copy_testdata_frames('IC4701', temp_dir.name, number=1)
 
-    # TODO: What is the PixInsight function supposed to return to the caller?
-    # A list of the plain filenames produced by the function?
     bxt_and_sxt(filenames)
 
     # TODO: Check the debug_images for correctness.
