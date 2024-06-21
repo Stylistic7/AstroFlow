@@ -45,6 +45,39 @@ def convert_xisf_to_fits(xisf_filename: Path | str,
   hdu.writeto(fits_filename)
 
 
+def convert_fits_to_xisf(fits_filename: Path | str,
+                         xisf_filename: Path | str,
+                         add_noise: bool = False,
+                         metadata: dict | None = None) -> None:
+  fits = pyfits.open(str(fits_filename))
+  header = fits[0].header
+  image = np.expand_dims(fits[0].data, -1)
+  fits.close()
+
+  if add_noise:
+    image += np.random.randint(low=0,
+                               high=2,
+                               size=image.shape,
+                               dtype=image.dtype)
+
+  file_meta = {}
+  if metadata:
+    for k, v in metadata.items():
+      file_meta[k] = {"id": k, "type": "String", "value": v}
+
+  fits_meta = {}
+  for k, v in header.items():
+    fits_meta[k] = [{'value': str(v), 'comment': ''}]
+
+  ims_meta = {'FITSKeywords': fits_meta}
+
+  XISF.write(xisf_filename,
+             image,
+             creator_app="AstroFlow",
+             image_metadata=ims_meta,
+             xisf_metadata=file_meta)
+
+
 def add_xisf_metadata(filename, dest_filename, metadata):
   """Adds the given metadata to the file.
   
@@ -54,6 +87,8 @@ def add_xisf_metadata(filename, dest_filename, metadata):
   image = xisf.read_image(0)
   file_meta = xisf.get_file_metadata()
   ims_meta = xisf.get_images_metadata()
+
+  print('### metadata is', metadata)
 
   for k, v in metadata.items():
     file_meta[k] = {
