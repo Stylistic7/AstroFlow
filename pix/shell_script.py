@@ -121,6 +121,8 @@ def run_script(tasks,
                close_after=True,
                sleep_after=False,
                dry_run=False):
+  assert tasks
+
   if not dry_run:
     if not cache.get('pixinsight_slots', default=[]):
       start_pixinsight_instances()

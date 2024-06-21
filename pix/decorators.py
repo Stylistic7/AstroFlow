@@ -58,8 +58,15 @@ def PixInsight(dry_run=False, debug=False):
           images = call_with_context(open_images.OpenImages, filenames)
 
           # Call the decorated PixInsight function.
+          print('### Calling PixInsight function')
           result = call_with_context(func, images, *args, **kwargs)
           assert type(result) in [list, tuple]
+          print('### PixInsight function returned correctly')
+
+          # If the PixInsight function didn't add any tasks, there is nothing
+          # to do. The OpenImages task doesn't count.
+          if len(context['tasks']) == 1:
+            return
 
           # Flatten the list of all the images returned by the decorated
           # PixInsight function.
@@ -111,7 +118,7 @@ def PixInsight(dry_run=False, debug=False):
             for image in images_to_save:
               assert os.path.exists(image.filename)
               add_xisf_metadata(image.filename, image.filename,
-                                image.content_hash)
+                                {_CONTENT_HASH_KEY: image.content_hash})
       except Exception as e:
         traceback.print_exc(e)
 
