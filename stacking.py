@@ -90,6 +90,11 @@ def _symlink_frames(filenames, dest_path):
     os.symlink(filename, dest_filename)
 
 
+@pix.PixInsight()
+def _run_wbpp(unused, *args, **kwargs):
+  return pix.WeightedBatchPreprocessing(unused, *args, **kwargs)
+
+
 # TODO: Include a timeout so a single bad stack (e.g. one that needs interactive
 # plate-solving help) won't derail a long-running session.
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
@@ -98,19 +103,13 @@ def stack_files(stack_id):
 
   stacks = context.stacks
   stack = stacks[stack_id]
-  print(f'### Entering stack_files for {asdict(stack)}')
+  print(f'### Entering stack_files for {stack}')
 
   dest_filename = _output_filename(stack, context.output_dir)
   os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
 
-  if context.mock_stacking:
-    with open(dest_filename, 'w') as f:
-      f.write('test')
-    print(f'### Mocked stacking, wrote filename {dest_filename}')
-    return dest_filename
-
   image_hashes = context.image_hashes
-
+  fits_headers = context.fits_headers
   metadata = {_CONTENT_HASH_KEY: stack.content_hash}
 
   # TODO: Update this to use the new Stack tree, and add specific tests to
@@ -120,6 +119,7 @@ def stack_files(stack_id):
 
   with tempfile.TemporaryDirectory() as tmp_dir:
     hashes = stack.frames + list(stack.dependencies.values())
+    all_hashes = hashes
     print(f'### Stack frames and dependencies: {hashes}')
     filenames = [image_hashes[h] for h in hashes]
     for h, f in zip(hashes, filenames):
@@ -134,6 +134,7 @@ def stack_files(stack_id):
       os.makedirs(run_dir, exist_ok=True)
 
       hashes = substack.frames + list(substack.dependencies.values())
+      all_hashes.extend(hashes)
       print(f'### Substack frames and dependencies: {hashes}')
       filenames = [image_hashes[h] for h in hashes]
       for h, f in zip(hashes, filenames):
@@ -142,7 +143,21 @@ def stack_files(stack_id):
       assert None not in filenames
       _symlink_frames(filenames, run_dir)
 
-    pix.WeightedBatchPreprocessing(dir=tmp_dir, outputDirectory=tmp_dir)
+    if context.mock_stacking:
+      first_light_frame_hash = next(
+          h for h in all_hashes if file_io.is_light_frame(fits_headers[h]))
+      with open(dest_filename, 'w') as f:
+        pix.file_io.convert_fits_to_xisf(image_hashes[first_light_frame_hash],
+                                         dest_filename,
+                                         add_noise=True,
+                                         metadata=metadata)
+        print(f'### Mocked stacking, wrote filename {dest_filename}')
+        return dest_filename
+
+    print(f'### Running _run_wbpp for stack {stack}')
+    # TODO: Putting [] here for `filenames` is a wart.
+    # pix.WeightedBatchPreprocessing([], dir=tmp_dir, outputDirectory=tmp_dir)
+    _run_wbpp([], dir=tmp_dir, outputDirectory=tmp_dir)
 
     master_dir = os.path.join(tmp_dir, 'master')
     if not os.path.exists(master_dir):
@@ -187,9 +202,11 @@ def scatter_stack_subframes(stack_id):
     return type(context.get(('stack_files', stack_id), None)) is Exception
 
   if master_exists(stack_id):
+    print(f'### stack {stack} master exists')
     return {}
 
   if previously_had_exception(stack_id):
+    print(f'### stack {stack} previously had exception')
     return {}
 
   graph = {}
