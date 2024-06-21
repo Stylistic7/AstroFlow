@@ -41,7 +41,13 @@ def convert_xisf_to_fits(xisf_filename: Path | str,
   hdu = pyfits.PrimaryHDU(image)
   for k, values in fits_meta.items():
     for v in values:
-      hdu.header[k] = (v['value'], v['comment'])
+      try:
+        value = eval(v['value'])
+      except:
+        value = v['value']
+
+      hdu.header[k] = (value, v['comment'])
+
   hdu.writeto(fits_filename)
 
 

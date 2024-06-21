@@ -13,6 +13,7 @@ from xisf import XISF  # type: ignore
 import time
 from typing import Any
 
+import pix
 import throughput
 
 
@@ -79,22 +80,9 @@ def _solve_field(filename: Path | str,
   # TODO: Only copy the file to a temp dir once.
   with tempfile.TemporaryDirectory() as temp_dir:
     if os.path.splitext(filename)[-1] in ['.xisf']:
-      # TODO: Split this out into two round-trippable xisf_to_fits() and
-      # fits_to_xisf() functions.
-      xisf = XISF(filename)
-      image = xisf.read_image(0).squeeze()
-      img_meta = xisf.get_images_metadata()[0]
-      fits_meta = img_meta['FITSKeywords']
-
-      hdu = pyfits.PrimaryHDU(image)
-      for k, values in fits_meta.items():
-        for v in values:
-          hdu.header[k] = (v['value'], v['comment'])
-
       dest_filename = Path(os.path.join(
           temp_dir, os.path.basename(filename))).with_suffix('.fits')
-
-      hdu.writeto(dest_filename, overwrite=True)
+      pix.file_io.convert_xisf_to_fits(filename, dest_filename)
     else:
       dest_filename = Path(os.path.join(temp_dir, os.path.basename(filename)))
       os.symlink(filename, dest_filename)
