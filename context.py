@@ -9,6 +9,7 @@ if 'ASTROFLOW_MOCK_NAMESPACE' in os.environ:
   print(f'### Using mock namespace {namespace}')
 else:
   namespace = 'AstroFlow'
+  print(f'### Using real namespace {namespace}')
 
 
 @ray.remote(resources={'diskcache': 0.001})
@@ -91,7 +92,7 @@ class ContextActor:
     return list(cache.iterkeys())
 
 
-class NewContext:
+class Context:
 
   def get(self, key, default_value=None):
     actor = ray.get_actor('context', namespace=namespace)
@@ -148,4 +149,4 @@ class NewContext:
     return ray.get(actor.get_cache_keys.remote())
 
 
-context = NewContext()
+context = Context()

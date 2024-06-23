@@ -9,7 +9,7 @@ from context import context
 from cache import cache
 
 
-class TestNewContext(unittest.TestCase):
+class TestContext(unittest.TestCase):
 
   def setUp(self):
     context.clear()
