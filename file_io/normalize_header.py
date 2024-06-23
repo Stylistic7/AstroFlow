@@ -7,6 +7,10 @@ def normalize_header(header: dict) -> dict:
     if k in ['COMMENT', 'HISTORY']:
       continue
 
+    if k == 'IMAGETYP':
+      output[k] = v.lower()
+      continue
+
     # Try to coerce the type to a date.
     if 'DATE' in k:
       try:
