@@ -10,6 +10,7 @@ if 'ASTROFLOW_MOCK_NAMESPACE' in os.environ:
   print(f'### Using mock namespace {namespace}')
 else:
   namespace = 'AstroFlow'
+  print(f'### Using real namespace {namespace}')
 
 
 class Action(Dict):

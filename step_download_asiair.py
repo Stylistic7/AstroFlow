@@ -11,6 +11,7 @@ import os
 import astropy.io.fits as pyfits
 
 import file_io
+import file_io.fits_file_io
 import time_util
 
 
@@ -103,7 +104,7 @@ class MountContextManager:
 def _group_subs_by_date(subs):
 
   def date_predicate(sub):
-    utc_dt = file_io.read_fits_header(sub)['DATE-OBS']
+    utc_dt = file_io.fits_file_io.read_fits_header(sub)['DATE-OBS']
     return datetime.datetime(utc_dt.year, utc_dt.month, utc_dt.day)
 
   groups = []
