@@ -41,7 +41,7 @@ def read_xisf_header(filename: Path | str, debug: bool = False) -> dict:
 
 def read_xisf_image(filename: Path | str) -> np.ndarray:
   xisf = XISF(str(filename))
-  return xisf.read_image(0).squeeze()
+  return xisf.read_image(0).squeeze().astype(np.float32)
 
 
 def add_xisf_metadata(filename, dest_filename, metadata):
