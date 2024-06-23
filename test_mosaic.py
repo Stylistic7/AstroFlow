@@ -35,7 +35,6 @@ class TestMosaic(unittest.TestCase):
 
     # Start with an empty context.
     self.input_dir_obj, self.output_dir_obj = make_test_context()
-    context.output_dir = '/tmp/foo'
 
     copy_testdata_frames(target_name='Orion Pane 1',
                          start_datetime=datetime.datetime(
