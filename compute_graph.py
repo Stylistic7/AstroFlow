@@ -2,7 +2,7 @@ import ray
 import itertools
 
 from context import context
-from image_metadata import scatter_compute_image_metadata, compute_image_metadata_for_filenames
+from image_metadata.image_metadata import scatter_compute_image_metadata, compute_image_metadata_for_filenames
 from spatial_association import find_components_by_cosine_similarity
 from stack_identification import identify_stacks
 from target_identification import group_stacks_into_targets
@@ -11,7 +11,7 @@ from image_previews import scatter_stack_thumbnails
 from stacking import scatter_stack_subframes
 from step_mosaic import scatter_merge_mosaics
 from mosaics.identification import identify_mosiacs
-from dependency_graph import Graph, Node, make_graph_from_list
+from dependency_graph import Graph, make_graph_from_list
 from post_process_target import post_process_target
 from post_process_stack import post_process_stack
 from post_process_mosaic import post_process_mosaic
