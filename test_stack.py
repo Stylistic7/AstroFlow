@@ -9,7 +9,7 @@ from stack import Stack
 from make_test_context import make_test_context
 from make_test_frames import make_synthetic_frames, copy_testdata_frames
 from dependency_graph import run_graph, make_graph_from_list
-from image_metadata import scatter_compute_image_metadata
+from image_metadata.image_metadata import scatter_compute_image_metadata
 from spatial_association import find_components_by_cosine_similarity
 from stack_identification import identify_stacks
 from calibration_frames import identify_calibration_stacks, associate_with_stacks
