@@ -3,7 +3,6 @@ import astropy.io.fits as pyfits
 import ray
 import numpy as np
 
-import file_io
 from context import context
 import spatial_association
 import position_string
@@ -14,6 +13,7 @@ from hashing import hash_list
 
 @ray.remote
 def group_stacks_into_targets():
+  print('### Entering group_stacks_into_targets')
   stacks = context.stacks
   plate_solutions = context.plate_solutions
   cosine_similarity_threshold = context.cosine_similarity_threshold
@@ -34,7 +34,7 @@ def group_stacks_into_targets():
       if stack.stable_hash and stack.image_type == 'light'
   }
 
-  print(f'Finding targets out of {len(values)} light-frame stacks')
+  print(f'### Finding targets out of {len(values)} light-frame stacks')
 
   def comparison_fn(a, b):
     a_center, a_polygon = a
@@ -88,7 +88,7 @@ def group_stacks_into_targets():
   targets = [new_target(g) for g in groups]
   targets = {t.stable_hash: t for t in targets}
 
-  print(f'Found {len(targets)} targets')
+  print(f'### Found {len(targets)} targets')
 
   # TODO: Computing the result and storing the result are two different
   # responsibilities. Perhaps separate patterns like this?

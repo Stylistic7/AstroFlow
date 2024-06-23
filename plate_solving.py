@@ -9,11 +9,10 @@ import warnings
 from dataclasses import dataclass
 import numpy as np
 import traceback
-from xisf import XISF  # type: ignore
 import time
 from typing import Any
 
-import pix
+from file_io.conversion import convert_xisf_to_fits
 import throughput
 
 
@@ -82,7 +81,7 @@ def _solve_field(filename: Path | str,
     if os.path.splitext(filename)[-1] in ['.xisf']:
       dest_filename = Path(os.path.join(
           temp_dir, os.path.basename(filename))).with_suffix('.fits')
-      pix.file_io.convert_xisf_to_fits(filename, dest_filename)
+      convert_xisf_to_fits(filename, dest_filename)
     else:
       dest_filename = Path(os.path.join(temp_dir, os.path.basename(filename)))
       os.symlink(filename, dest_filename)

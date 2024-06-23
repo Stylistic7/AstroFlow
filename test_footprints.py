@@ -14,7 +14,7 @@ from mosaics import identification
 from stack_identification import identify_stacks
 from target_identification import group_stacks_into_targets
 from spatial_association import find_components_by_cosine_similarity
-from image_metadata import scatter_compute_image_metadata
+from image_metadata.image_metadata import scatter_compute_image_metadata
 from calibration_frames import identify_calibration_stacks, associate_with_stacks
 from make_test_context import make_test_context
 from mosaics.identification import identify_mosiacs

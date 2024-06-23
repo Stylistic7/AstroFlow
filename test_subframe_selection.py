@@ -8,7 +8,7 @@ import ray
 from context import context
 from cache import cache
 from make_test_frames import make_synthetic_frames
-import file_io
+from file_io.find_image_files import find_image_files
 from stack_identification import identify_stacks
 from spatial_association import find_components_by_cosine_similarity
 import subframe_selection
@@ -53,7 +53,7 @@ class TestSubframeSelection(unittest.TestCase):
         fits_headers=fits_headers,
         plate_solutions=plate_solutions)
 
-    filenames = file_io.find_image_files(context.input_dirs[0])
+    filenames = find_image_files(context.input_dirs[0])
     self.assertEqual(len(filenames), 10)
 
     context.image_hashes = image_hashes
@@ -90,7 +90,7 @@ class TestSubframeSelection(unittest.TestCase):
     print(f'middle_frame {image_hashes[middle_frame]}')
     plate_solutions[middle_frame].num_stars = 10
 
-    filenames = file_io.find_image_files(context.input_dirs[0])
+    filenames = find_image_files(context.input_dirs[0])
     self.assertEqual(len(filenames), 15)
 
     context.image_hashes = image_hashes

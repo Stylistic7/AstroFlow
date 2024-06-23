@@ -9,7 +9,7 @@ import shutil
 import xxhash
 
 import plate_solving
-import file_io
+from file_io.normalize_header import normalize_header
 
 _TESTDATA_TARGETS = {
     'M42': [
@@ -221,7 +221,7 @@ def make_synthetic_frames(start_datetime=datetime.datetime(
         'XPIXSZ': pixel_pitch_um,
         'YPIXSZ': pixel_pitch_um,
     }
-    fits_headers[image_hash] = file_io._normalize_header(fits_header)
+    fits_headers[image_hash] = normalize_header(fits_header)
 
     if image_type == 'Light':
       plate_solutions[image_hash] = plate_solving.PlateSolution(

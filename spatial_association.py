@@ -1,9 +1,9 @@
 import numpy as np
 import ray
 
-import image_metadata
+from image_metadata.remove_bad_images import remove_bad_images
+import image_metadata.image_types as image_types
 import position_string
-import file_io
 import footprints
 from context import context
 
@@ -74,12 +74,12 @@ def find_components_by_cosine_similarity():
         len(fits_headers))
   print('Before removing bad plate solutions, len plate_solutions',
         len(plate_solutions))
-  plate_solutions = image_metadata.remove_bad_images()
+  plate_solutions = remove_bad_images()
   print('After removing bad plate solutions, len', len(plate_solutions))
 
   light_frames = [
       h for h, header in fits_headers.items() if h in plate_solutions and
-      file_io.is_light_frame(header) and not file_io.is_master(header)
+      image_types.is_light_frame(header) and not image_types.is_master(header)
   ]
 
   light_frames = sorted(light_frames, key=lambda h: fits_headers[h]['DATE-OBS'])

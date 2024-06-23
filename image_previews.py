@@ -8,7 +8,7 @@ import ray
 from context import context
 import file_io
 from hashing import hash_string
-from file_io import read_image
+from file_io.generic import read_image
 import subframe_selection
 import stacking
 from dependency_graph import Graph

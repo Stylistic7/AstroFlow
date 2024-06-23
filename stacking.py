@@ -2,22 +2,18 @@ import tempfile
 import os
 from pathlib import Path
 import numpy as np
-from xisf import XISF
 import ray
-from graphlib import TopologicalSorter
 import errno
 import os
-from dataclasses import asdict
 
 from context import context
 import pix
 import position_string
-from image_metadata import scatter_compute_image_metadata
+from image_metadata.image_metadata import compute_image_metadata_for_filenames
 import file_io
-from dependency_graph import Graph, Node
+from dependency_graph import Graph
 
-_STACK_ID_KEY = 'XISF:AstroFlow:StackId'
-_CONTENT_HASH_KEY = 'XISF:AstroFlow:StackContentHash'
+_CONTENT_HASH_KEY = 'CONTHASH'
 
 
 def _exposure_time_string(stack):
@@ -109,8 +105,7 @@ def stack_files(stack_id):
   os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
 
   image_hashes = context.image_hashes
-  fits_headers = context.fits_headers
-  metadata = {_CONTENT_HASH_KEY: stack.content_hash}
+  metadata = {'IMAGETYP': 'Master Light', _CONTENT_HASH_KEY: stack.content_hash}
 
   # TODO: Update this to use the new Stack tree, and add specific tests to
   # exercise it.
@@ -149,13 +144,13 @@ def stack_files(stack_id):
       _symlink_frames(filenames, run_dir)
 
     if context.mock_stacking:
-      with open(dest_filename, 'w') as f:
-        pix.file_io.convert_fits_to_xisf(image_hashes[first_hash],
-                                         dest_filename,
-                                         add_noise=True,
-                                         metadata=metadata)
-        print(f'### Mocked stacking, wrote filename {dest_filename}')
-        return dest_filename
+      file_io.conversion.convert_fits_to_xisf(image_hashes[first_hash],
+                                              dest_filename,
+                                              add_noise=True,
+                                              metadata=metadata)
+      print(f'### Mocked stacking, wrote filename {dest_filename} '
+            f'with metadata {metadata}')
+      return dest_filename
 
     print(f'### Running _run_wbpp for stack {stack}')
     # TODO: Putting [] here for `filenames` is a wart.
@@ -179,7 +174,7 @@ def stack_files(stack_id):
     wbpp_masters.sort(key=lambda x: os.path.getmtime(x))
     filename = wbpp_masters[-1]
     print(f'last modified WBPP master {filename} -> {dest_filename}')
-    pix.file_io.add_xisf_metadata(filename, dest_filename, metadata)
+    file_io.xisf_file_io.add_xisf_metadata(filename, dest_filename, metadata)
 
     key = ('stack_files', stack_id)
     context.set(key, stack.content_hash)
@@ -213,7 +208,7 @@ def scatter_stack_subframes(stack_id):
     return {}
 
   graph = {}
-  metadata_task = (scatter_compute_image_metadata, 'master')
+  metadata_task = compute_image_metadata_for_filenames
   graph[metadata_task] = [
       (stack_files, d)
       for substack in stack.contents

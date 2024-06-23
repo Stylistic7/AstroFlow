@@ -9,7 +9,7 @@ from pathlib import Path
 from context import context
 from state_actor import dispatch
 import get_stacks
-import file_io
+from file_io.find_image_files import find_image_files
 from compute_graph import build_compute_graph, build_processing_graph
 from dependency_graph import run_graph
 from make_test_context import make_test_context
@@ -69,7 +69,7 @@ class TestState(unittest.TestCase):
                           temperature=-15,
                           dest_dir=context.input_dirs[0])
 
-    filenames = file_io.find_image_files(context.input_dirs[0])
+    filenames = find_image_files(context.input_dirs[0])
     self.assertEqual(len(filenames), 26)
 
     graph = build_compute_graph()

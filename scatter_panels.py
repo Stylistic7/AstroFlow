@@ -8,7 +8,7 @@ import stacking
 import subframe_selection
 from dependency_graph import Graph
 import image_previews
-import file_io
+from file_io.generic import read_image
 from hashing import hash_list
 
 from mosaics import merge_ops
@@ -186,7 +186,7 @@ def _merge_subframe_mosaic(panels):
   # The image returned from read_image() is in [0, 65536].
   # TODO: These panels are just merged by np.maximum, but there are
   # certainly better ways (maybe mean of all projected values).
-  output_image = file_io.read_image(panels[0].placed_filename)
+  output_image = read_image(panels[0].placed_filename)
 
   # TODO: This will fail when new panels are added, and the total output
   # resolution changes. All placed images should automatically be destroyed when
@@ -195,7 +195,7 @@ def _merge_subframe_mosaic(panels):
   # TODO: Maybe normalize the median of the image (which should be
   # approximately the sky background) to some user-supplied value like 0.1.
   for panel in panels[1:]:
-    image = file_io.read_image(panel.placed_filename)
+    image = read_image(panel.placed_filename)
     output_image = np.maximum(output_image, image)
 
   image_png = image_previews.array_to_png(
@@ -216,7 +216,7 @@ def gather_mosaic_by_coordinates(mode, panels):
 
   if mode == 'subframe':
     for panel in panels:
-      image = file_io.read_image(panel.placed_filename)
+      image = read_image(panel.placed_filename)
       image_png = image_previews.array_to_png(image)
       key = _placed_image_artfiact_key(panel, mode)
       context.set(key, image_png, flush=True)
