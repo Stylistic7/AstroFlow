@@ -54,6 +54,32 @@ class ContextActor:
     if key in cache:
       del cache[key]
 
+  def and_equals(self, key, value, flush):
+    assert type(value) is list
+    assert len(value) == 1
+    value = value[0]
+    assert type(value) is ray.ObjectRef, f'type(value) is {type(value)}'
+    value = ray.get(value)
+
+    with cache.transact():
+      new_value = cache[key] + value
+      cache[key] = new_value
+      if not flush:
+        self.ref_dict[key] = ray.put(new_value)
+
+  def or_equals(self, key, value, flush):
+    assert type(value) is list
+    assert len(value) == 1
+    value = value[0]
+    assert type(value) is ray.ObjectRef, f'type(value) is {type(value)}'
+    value = ray.get(value)
+
+    with cache.transact():
+      new_value = cache[key] | value
+      cache[key] = new_value
+      if not flush:
+        self.ref_dict[key] = ray.put(new_value)
+
   def ref_dict(self):
     return self.ref_dict
 
@@ -88,6 +114,14 @@ class NewContext:
 
   def __setitem__(self, key, value):
     return self.set(key, value)
+
+  def and_equals(self, key, value, flush=False):
+    actor = ray.get_actor('context', namespace=namespace)
+    return ray.get(actor.and_equals.remote(key, [ray.put(value)], flush))
+
+  def or_equals(self, key, value, flush=False):
+    actor = ray.get_actor('context', namespace=namespace)
+    return ray.get(actor.or_equals.remote(key, [ray.put(value)], flush))
 
   def ref_dict(self):
     actor = ray.get_actor('context', namespace=namespace)

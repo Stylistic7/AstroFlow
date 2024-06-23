@@ -64,12 +64,12 @@ class TestNewContext(unittest.TestCase):
 
   def test_or_equals(self):
     context.foo = {'a': 1}
-    context.foo |= {'b': 2}
+    context.or_equals('foo', {'b': 2})
     self.assertEqual(context.foo, {'a': 1, 'b': 2})
 
   def test_and_equals(self):
     context.foo = ['a']
-    context.foo += ['b']
+    context.and_equals('foo', ['b'])
     self.assertEqual(context.foo, ['a', 'b'])
 
   def test_default_value(self):
