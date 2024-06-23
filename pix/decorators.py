@@ -6,13 +6,12 @@ from pathlib import Path
 import inspect
 from addict import Dict
 
+from file_io.generic import get_content_hash
+from hashing import hash_list
+
 from . import shell_script
 from . import open_images
 from . import save_images
-from .file_io import read_xisf_header, add_xisf_metadata
-from .hashing import hash_list, hash_string, get_content_hash
-
-_CONTENT_HASH_KEY = 'XISF:AutoPix:ContentHash'
 
 
 def _extend_filename(image, funcname):
@@ -58,12 +57,7 @@ def PixInsight(dry_run=False, debug=False):
       # The content hash of images produced by this PixInsight function
       # are composed of the hash of the function's code, the hashes of all
       # the function's input images, and the output image's view_id.
-      #
-      # TODO: This doesn't work for FITS files. Sort out the organization of
-      # the various FITS and XISF file I/O functions, and where they should
-      # live, so they are accessible to both the AutoPix library and AstroFlow.
-      # input_image_hashes = [get_content_hash(f) for f in filenames]
-      input_image_hashes = [hash_string(f) for f in filenames]
+      input_image_hashes = [get_content_hash(f) for f in filenames]
 
       try:
         with tempfile.TemporaryDirectory() as tmp_dir:
