@@ -41,12 +41,11 @@ def convert_fits_to_xisf(fits_filename: Path | str,
                                dtype=image.dtype)
 
   file_meta = {}
-  if metadata:
-    for k, v in metadata.items():
-      file_meta[k] = {"id": k, "type": "String", "value": v}
 
   fits_meta = {}
   for k, v in header.items():
+    fits_meta[k] = [{'value': str(v), 'comment': ''}]
+  for k, v in metadata.items():
     fits_meta[k] = [{'value': str(v), 'comment': ''}]
 
   ims_meta = {'FITSKeywords': fits_meta}
