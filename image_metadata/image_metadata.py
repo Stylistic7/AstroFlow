@@ -117,7 +117,7 @@ def compute_image_metadata_for_filenames(filenames):
 def compute_image_metadata(filename):
   print(f'Entering compute_image_metadata() for {filename}')
 
-  # image_hashes = context.image_hashes
+  image_hashes = context.image_hashes
 
   # TODO: Make sure this code doesn't actually repeatedly read the image across
   # the network. It should hit the node's filesystem cache.
@@ -127,20 +127,20 @@ def compute_image_metadata(filename):
     result['fits_header'] = header = read_header(filename)
     result['image_hash'] = get_content_hash(filename)
 
-    # if result['image_hash'] in image_hashes:
-    #   prev_filename = next(
-    #       f for h, f in image_hashes.items() if h == result['image_hash'])
-    #   if os.path.exists(prev_filename):
-    #     raise DuplicateFileException()
-    #   else:
-    #     print(f'Filename {prev_filename} has been moved to {filename}')
-    #     return result
-
     if image_types.is_light_frame(header):
       result['plate_solution'] = plate_solving.solve_field(filename)
     else:
       print(f'### Skipping plate-solving for filename {filename} '
             f'because it is not a light frame')
+
+    if result['image_hash'] in image_hashes:
+      prev_filename = next(
+          f for h, f in image_hashes.items() if h == result['image_hash'])
+      if os.path.exists(prev_filename):
+        raise DuplicateFileException()
+      else:
+        print(f'Filename {prev_filename} has been moved to {filename}')
+        return result
 
     print(f'compute_image_metadata() succeeded for file {filename}')
     return result
@@ -152,29 +152,41 @@ def compute_image_metadata(filename):
 
 @ray.remote
 def gather_compute_image_metadata(results):
-  print(f'Entering gather_compute_image_metadata results {len(results)}')
+  print(f'### Entering gather_compute_image_metadata results {len(results)}')
   assert all(type(r) is dict for r in results)
+  print('### gather_compute_image_metadata results', results)
 
-  context.and_equals('quarantined_files',
-                     [r['filename'] for r in results if 'exception' in r])
-  context.or_equals(
-      'image_hashes', {
-          r['image_hash']: r['filename']
-          for r in results
-          if 'image_hash' in r and 'filename' in r
-      })
-  context.or_equals(
-      'fits_headers', {
-          r['image_hash']: r['fits_header']
-          for r in results
-          if 'image_hash' in r and 'fits_header' in r
-      })
-  context.or_equals(
-      'plate_solutions', {
-          r['image_hash']: r['plate_solution']
-          for r in results
-          if 'image_hash' in r and 'plate_solution' in r
-      })
+  new_quarantined_files = [r['filename'] for r in results if 'exception' in r]
+  print(f'### new_quarantined_files {len(new_quarantined_files)}')
+  context.and_equals('quarantined_files', new_quarantined_files)
+
+  new_image_hashes = {
+      r['image_hash']: r['filename']
+      for r in results
+      if 'image_hash' in r and 'filename' in r
+  }
+  print(f'### new_image_hashes {len(new_image_hashes)}')
+  assert not any(h in context.image_hashes for h in new_image_hashes.keys())
+  context.or_equals('image_hashes', new_image_hashes)
+
+  new_fits_headers = {
+      r['image_hash']: r['fits_header']
+      for r in results
+      if 'image_hash' in r and 'fits_header' in r
+  }
+  print(f'### new_fits_headers {len(new_fits_headers)}')
+  assert not any(h in context.fits_headers for h in new_fits_headers.keys())
+  context.or_equals('fits_headers', new_fits_headers)
+
+  new_plate_solutions = {
+      r['image_hash']: r['plate_solution']
+      for r in results
+      if 'image_hash' in r and 'plate_solution' in r
+  }
+  print(f'### new_plate_solutions {len(new_plate_solutions)}')
+  assert not any(
+      h in context.plate_solutions for h in new_plate_solutions.keys())
+  context.or_equals('plate_solutions', new_plate_solutions)
 
   assert not any(type(p) is str for p in context.plate_solutions.values())
   assert None not in context.image_hashes.values()
