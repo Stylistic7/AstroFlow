@@ -1,13 +1,11 @@
 import ray
 import numpy as np
-from copy import copy
 import itertools
 
-import file_io
+import image_metadata.image_types as image_types
 from context import context
 import runs
-from stack import Stack, FrameHash
-from hashing import hash_list
+from stack import Stack
 
 
 @ray.remote
@@ -19,7 +17,7 @@ def identify_calibration_stacks():
 
   cal_frames = [
       f for f, header in fits_headers.items()
-      if header and not file_io.is_master(header) and 'IMAGETYP' in header
+      if header and not image_types.is_master(header) and 'IMAGETYP' in header
   ]
 
   def group_by_header(key):
@@ -71,6 +69,8 @@ def identify_calibration_stacks():
             runs.get_frames_for_run(run, flat_frames, fits_headers))
         stacks[stack.content_hash] = stack
 
+  print(f'### identify_calibration_stacks writing {len(stacks)} stacks '
+        f'into the context')
   context.stacks = stacks
 
 
@@ -126,9 +126,11 @@ def associate_with_stack(stack, stacks):
 
 @ray.remote
 def associate_with_stacks():
+  print('### Entering associate_with_stacks')
   stacks = context.stacks
   for stack in stacks.values():
     if stack.image_type == 'light' and stack.frames:
       associate_with_stack(stack, stacks)
 
   context.stacks = stacks
+  print('### Exiting associate_with_stacks')
