@@ -49,16 +49,16 @@ def mosaic_by_coordinates(panel):
   fits_headers = context.fits_headers
   plate_solutions = context.plate_solutions
 
-  coordinates = context.get(('mosaic_coordinates', panel.mosaic_id))
-  assert coordinates
+  viewbox = context.get(('mosaic_viewbox', panel.mosaic_id))
+  assert viewbox
 
   print(f'mosaic_by_coordinates projecting panel {panel}')
   start = time.time()
 
-  dest_xs = coordinates['dest_xs']
-  dest_ys = coordinates['dest_ys']
-  ras = coordinates['ras']
-  decs = coordinates['decs']
+  dest_xs = viewbox['dest_xs']
+  dest_ys = viewbox['dest_ys']
+  ras = viewbox['ras']
+  decs = viewbox['decs']
 
   projected_image = np.zeros(ras.shape)
   projection_map = np.zeros(ras.shape)

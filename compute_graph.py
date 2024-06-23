@@ -9,18 +9,17 @@ from target_identification import group_stacks_into_targets
 from calibration_frames import identify_calibration_stacks, associate_with_stacks
 from image_previews import scatter_stack_thumbnails
 from stacking import scatter_stack_subframes
-from step_mosaic import scatter_merge_mosaics
 from mosaics.identification import identify_mosiacs
 from dependency_graph import Graph, make_graph_from_list
 from post_process_target import post_process_target
 from post_process_stack import post_process_stack
 from post_process_mosaic import post_process_mosaic
 from suggestions import make_suggestions
-from step_mosaic import merge_mosaic
+from step_mosaic import merge_mosaic, build_mosaic_preview_graph
 
 
 @ray.remote
-def gather_processing_graph():
+def gather():
   pass
 
 
@@ -37,9 +36,16 @@ def maybe_build_regroup_graph():
 
 
 @ray.remote
+def build_preview_graph():
+  return make_graph_from_list([
+      (scatter_stack_thumbnails, 'subframe'),
+      (build_mosaic_preview_graph),
+  ])
+
+
+@ray.remote
 def build_stack_subgraph(id):
   stack = context.stacks[id]
-  print(f'### build_stack_subgraph for stack id {stack}')
   # The stacked master filenames are passed along directly here.
   return Graph({(post_process_stack, id): {(scatter_stack_subframes, id)}})
 
@@ -47,7 +53,6 @@ def build_stack_subgraph(id):
 @ray.remote
 def build_target_subgraph(id):
   target = context.targets[id]
-  print(f'### build_target_subgraph for target {target}')
   # The post-processed filenames are passed along directly here.
   return Graph({
       (post_process_target, id): [
@@ -60,14 +65,12 @@ def build_target_subgraph(id):
 @ray.remote
 def flatten_lists(results):
   result = list(itertools.chain.from_iterable(results))
-  print('### flatten_lists returning', result)
   return result
 
 
 @ray.remote
 def build_mosaic_subgraph(id):
   mosaic = context.mosaics[id]
-  print(f'### build_mosaic_subgraph for mosaic {mosaic}')
   # The masters need to be plate solved, etc. before mosaic merge, so there's
   # an explicit task here to get their metadata.
   merge_task = (merge_mosaic, id, 'master')
@@ -80,15 +83,13 @@ def build_mosaic_subgraph(id):
 
 
 @ray.remote
-def build_processing_graph():
+def build_processing_graph_for_shopping_cart():
   shopping_cart = context.shopping_cart or []
-  print(f'### shopping_cart is {shopping_cart}')
 
   # TODO: Maybe add prioritization options in the UI.
   # TODO: Remove duplicates.
   subgraphs = []
   for type, id in shopping_cart:
-    print(f'### item in shopping_cart: {type} {id}')
     if type == 'stack':
       subgraphs.append((build_stack_subgraph, id))
     elif type == 'target':
@@ -96,7 +97,7 @@ def build_processing_graph():
     elif type == 'mosaic':
       subgraphs.append((build_mosaic_subgraph, id))
 
-  return Graph({gather_processing_graph: subgraphs})
+  return Graph({gather: subgraphs})
 
 
 def build_compute_graph():
@@ -104,11 +105,12 @@ def build_compute_graph():
       (scatter_compute_image_metadata, 'all'),
       maybe_build_regroup_graph,
       make_suggestions,
+      build_preview_graph,
       # Compute preview images from subframes (before stacking).
-      (scatter_stack_thumbnails, 'subframe'),
-      (scatter_merge_mosaics, 'subframe'),
+      # (scatter_stack_thumbnails, 'subframe'),
+      # (scatter_merge_mosaics, 'subframe'),
       # This is the heavyweight graph that runs PixInsight and may take days.
-      build_processing_graph,
+      build_processing_graph_for_shopping_cart,
       # Compute previews from masters (after stacking).
       (scatter_compute_image_metadata, 'master'),
       (scatter_stack_thumbnails, 'master'),

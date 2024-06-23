@@ -13,7 +13,7 @@ from hashing import hash_list
 
 from mosaics import merge_ops
 from mosaics import classes
-from mosaics import projection
+from mosaics import placement
 
 
 def _get_unique(L):
@@ -137,7 +137,7 @@ def maybe_mosaic_by_coordinates(panel, mode):
           f'for panel {panel}')
     return panel
   else:
-    return projection.mosaic_by_coordinates(panel)
+    return placement.mosaic_by_coordinates(panel)
 
 
 def _merge_master_mosaic(panels):
