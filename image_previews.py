@@ -45,27 +45,56 @@ def resize_array(array, new_width):
                     interpolation=cv2.INTER_AREA)
 
 
+# See this YouTube video: https://www.youtube.com/watch?v=em9IQzbkBuU
+# which links to this PixelMath stretching:
+# https://drive.google.com/drive/folders/1ZuE8VKlrryofFAGdx-hIH8drrdNZxVCN
 def autostretch(image):
-  # TODO: what max to use here?
-  image = image.astype(np.float32) / 65536.0
+  image = image.astype(np.float32) / 65535.0
 
   curve = 1.0
   stretch = 0.20
+  clip = 2.8
 
+  # the median of the absolute values of the residuals from the data's median
   def mdev(image):
     return median(abs(image - median(image)))
 
-  E1 = minimum(maximum(0.0, median(image) + -2.8 * 1.4826 * mdev(image)), 1.0)
-  E2 = maximum(0.0, (image - E1) / (1 - E1))
+  E1 = np.clip(median(image) + -clip * 1.4826 * mdev(image), 0, 1)
+  E2 = maximum(0, (image - E1) / (1 - E1))
   E3 = median(image) - E1
-  E4 = minimum(1.0, (1.0 / curve))
-  E5 = ((stretch - 1.0) * E3) / ((2.0 * stretch - 1.0) * pow(E3, E4) - stretch)
-  E6 = ((E5 - 1.0) * E2) / ((2.0 * E5 - 1.0) * pow(E2, E4) - E5)
+  E4 = minimum(1, (1 / curve))
+  E5 = np.nan_to_num(
+      ((stretch - 1) * E3) / ((2 * stretch - 1) * pow(E3, E4) - stretch))
+  output = np.nan_to_num(((E5 - 1) * E2) / ((2 * E5 - 1) * pow(E2, E4) - E5))
 
-  return E6
+  assert not np.isnan(output).any(), 'stretched image contains NaN'
+  min, max = np.min(output), np.max(output)
+  assert min >= 0.0 and max <= 1.0, f'stretched image has min {min} max {max}'
+
+  return output
+
+  # E1 = np.clip(median(image) + -2.8 * 1.4826 * mdev(image), 0.0, 1.0)
+  # print('### E1', E1)  # 0
+  # E2 = maximum(0.0, (image - E1) / (1 - E1))
+  # print(f'### E2 min {np.min(E2)}, max {np.max(E2)}')
+  # E3 = median(image) - E1  # 0
+  # print('### E3', E3)
+  # E4 = minimum(1.0, (1.0 / curve))  # 1
+  # print('### E4', E4)
+  # E5 = np.nan_to_num(((stretch - 1.0) * E3) /
+  #                    ((2.0 * stretch - 1.0) * pow(E3, E4) - stretch))  # 0
+  # print('### E5', E5)
+  # E6 = np.nan_to_num(((E5 - 1.0) * E2) / ((2.0 * E5 - 1.0) * pow(E2, E4) - E5))
+  # print('### E6', E6)
+
+  # return np.clip(E6, 0.0, 1.0)
 
 
 def array_to_png(array):
+  assert not np.isnan(array).any(), 'array contains NaN'
+  min, max = np.min(array), np.max(array)
+  assert min >= 0.0 and max <= 1.0, f'array has min {min} max {max}'
+
   array = (array * 255.0).astype(np.uint8)
   _, png = cv2.imencode('.png', array)
   return png.tobytes()
@@ -219,7 +248,7 @@ def create_flat_correction_thumbnails(stack_id):
   ]
 
   if all(f in thumbnails for f in flat_stack_ids):
-    print(f'### All flat_correction_thumbnails exist for {stack}')
+    # print(f'### All flat_correction_thumbnails exist for {stack}')
     return
 
   assert not stack.stable_hash

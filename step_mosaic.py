@@ -111,11 +111,10 @@ def show_image(data):
 def build_mosaic_preview_graph():
   mosaics = context.mosaics
   mode = 'subframe'
-  return Graph({
-      gather_merge_mosaics: [
-          (merge_mosaic, m.stable_hash, mode) for m in mosaics.values()
-      ]
-  })
+
+  # FIXME
+  keys = ['ba9061cd68dbcf83']
+  return Graph({gather_merge_mosaics: [(merge_mosaic, m, mode) for m in keys]})
 
 
 def _subframe_filter_artifact_exists(mosaic_id, filter, content_hash):

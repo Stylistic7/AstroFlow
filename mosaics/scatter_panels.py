@@ -187,19 +187,34 @@ def _merge_subframe_mosaic(panels):
   # TODO: These panels are just merged by np.maximum, but there are
   # certainly better ways (maybe mean of all projected values).
   output_image = read_image(panels[0].placed_filename)
+  print(f'### first mosaic image has min {np.min(output_image)} '
+        f'max {np.max(output_image)}')
 
   # TODO: This will fail when new panels are added, and the total output
-  # resolution changes. All placed images should automatically be destroyed when
-  # the resolution changes.
+  # resolution (viewbox) changes. All placed images should automatically be
+  # destroyed when the viewbox changes.
   #
-  # TODO: Maybe normalize the median of the image (which should be
+  # TODO: Maybe normalize the median of the panels (which should be
   # approximately the sky background) to some user-supplied value like 0.1.
   for panel in panels[1:]:
     image = read_image(panel.placed_filename)
+    print(f'### next mosaic image has min {np.min(image)} '
+          f'max {np.max(image)}')
     output_image = np.maximum(output_image, image)
+    print(f'### maximum has min {np.min(output_image)} '
+          f'max {np.max(output_image)}')
 
-  image_png = image_previews.array_to_png(
-      image_previews.autostretch(output_image))
+  image_png = image_previews.array_to_png(output_image / np.max(output_image))
+  open(f'/Volumes/Astro/tmp/mosaic_{mosaic_id}_{filter}_before_stretching.png',
+       'wb').write(image_png)
+
+  stretched = image_previews.autostretch(output_image)
+  print(f'### stretched has min {np.min(stretched)} '
+        f'max {np.max(stretched)}')
+
+  image_png = image_previews.array_to_png(stretched)
+  open(f'/Volumes/Astro/tmp/mosaic_{mosaic_id}_{filter}_after_stretching.png',
+       'wb').write(image_png)
   context.set(key, image_png, flush=True)
   print(f'### Wrote key {key} image min {np.min(output_image)} '
         f'max {np.max(output_image)}')
@@ -207,7 +222,10 @@ def _merge_subframe_mosaic(panels):
 
 @ray.remote
 def gather_mosaic_by_coordinates(mode, panels):
-  print(f'### gather_mosaic_by_coordinates panels are {panels}')
+  print(f'### Entering gather_mosaic_by_coordinates')
+
+  if type(panels) is not list:
+    panels = [panels]
 
   num_panels_in = len(panels)
   panels = [p for p in panels if p is not None]
@@ -217,7 +235,7 @@ def gather_mosaic_by_coordinates(mode, panels):
   if mode == 'subframe':
     for panel in panels:
       image = read_image(panel.placed_filename)
-      image_png = image_previews.array_to_png(image)
+      image_png = image_previews.array_to_png(image / 65535.0)
       key = _placed_image_artfiact_key(panel, mode)
       context.set(key, image_png, flush=True)
       print(f'### Wrote key {key}')

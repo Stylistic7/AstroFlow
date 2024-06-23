@@ -184,4 +184,5 @@ def start_pixinsight_instances():
 
 
 # When AstroFlow exits, stop all the instances.
-atexit.register(_stop_pixinsight_instances)
+# TODO: Put this option in the UI.
+# atexit.register(_stop_pixinsight_instances)

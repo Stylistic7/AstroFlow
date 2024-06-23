@@ -167,6 +167,12 @@ def mosaic_by_coordinates(panel):
 
   # TODO: Is this placed_filename actually checked anywhere?
   hdu.writeto(panel.placed_filename, overwrite=True)
-  print(f'Wrote placed image filename {panel.placed_filename}')
+  print(f'### Wrote placed image filename {panel.placed_filename}')
+
+  # FIXME
+  tmp_path = os.path.join('/Volumes/Astro/tmp',
+                          os.path.basename(panel.placed_filename))
+  hdu.writeto(tmp_path, overwrite=True)
+  print(f'### Wrote placed image to tmp filename {tmp_path}')
 
   return panel

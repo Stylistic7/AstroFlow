@@ -102,18 +102,17 @@ def build_processing_graph_for_shopping_cart():
 
 def build_compute_graph():
   return make_graph_from_list([
-      (scatter_compute_image_metadata, 'all'),
-      maybe_build_regroup_graph,
-      make_suggestions,
+      # FIXME
+      # (scatter_compute_image_metadata, 'all'),
+      # maybe_build_regroup_graph,
+      # make_suggestions,
       build_preview_graph,
-      # Compute preview images from subframes (before stacking).
-      # (scatter_stack_thumbnails, 'subframe'),
-      # (scatter_merge_mosaics, 'subframe'),
       # This is the heavyweight graph that runs PixInsight and may take days.
-      build_processing_graph_for_shopping_cart,
+      # build_processing_graph_for_shopping_cart,
       # Compute previews from masters (after stacking).
-      (scatter_compute_image_metadata, 'master'),
-      (scatter_stack_thumbnails, 'master'),
+      # FIXME
+      # (scatter_compute_image_metadata, 'master'),
+      # (scatter_stack_thumbnails, 'master'),
       # (scatter_merge_mosaics, 'master')
   ])
 
