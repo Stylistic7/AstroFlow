@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 from context import context
-import file_io
+from file_io.generic import read_image
 import image_previews
 
 
@@ -75,7 +75,7 @@ def mosaic_by_coordinates(panel):
     print(f'Could not place panel {panel} because plate_solution was None')
     return
 
-  image = file_io.read_image(filename)
+  image = read_image(filename)
 
   print(f'mosaic_by_coordinates image dtype {image.dtype} '
         f'min {np.min(image)} max {np.max(image)}')
@@ -154,7 +154,8 @@ def mosaic_by_coordinates(panel):
         f'time {end-start:.2f}')
 
   hdu = pyfits.PrimaryHDU(output_image)
-  hdu.header['IMAGETYP'] = 'PlacedMosaic Master Light'
+  hdu.header['SIMPLE'] = True
+  hdu.header['IMAGETYP'] = 'PlacedMosaic Light'
   hdu.header['FOCALLEN'] = float(header['FOCALLEN'])
   hdu.header['XPIXSZ'] = float(header['XPIXSZ'])
   hdu.header['YPIXSZ'] = float(header['YPIXSZ'])
