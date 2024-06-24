@@ -47,8 +47,13 @@ def resize_array(array, new_width):
 # See this YouTube video: https://www.youtube.com/watch?v=em9IQzbkBuU
 # which links to this PixelMath stretching:
 # https://drive.google.com/drive/folders/1ZuE8VKlrryofFAGdx-hIH8drrdNZxVCN
-def autostretch(image):
-  image = image.astype(np.float32) / 65535.0
+def autostretch(image, debug=False):
+  image = image.astype(np.float32) / np.max(image)
+  unclipped = np.where((image > 0.0) & (image < 1.0))
+  if debug:
+    print(f'### autostretch, input image '
+          f'min {np.min(image)} max {np.max(image)} '
+          f'median {np.median(image[unclipped])}')
 
   curve = 1.0  # 1 = normal stretch, > 1 = arcsin style
   stretch = 0.20  # target background value
@@ -58,43 +63,36 @@ def autostretch(image):
   def mdev(image):
     return median(abs(image - median(image)))
 
-  E1 = np.clip(median(image) + -clip * 1.4826 * mdev(image), 0, 1)
+  E1 = np.clip(
+      median(image[unclipped]) + -clip * 1.4826 * mdev(image[unclipped]), 0, 1)
   E2 = maximum(0, (image - E1) / (1 - E1))
-  E3 = median(image) - E1
+  E3 = median(image[unclipped]) - E1
   E4 = minimum(1, (1 / curve))
   E5 = np.nan_to_num(
       ((stretch - 1) * E3) / ((2 * stretch - 1) * pow(E3, E4) - stretch))
   output = np.nan_to_num(((E5 - 1) * E2) / ((2 * E5 - 1) * pow(E2, E4) - E5))
 
-  assert not np.isnan(output).any(), 'stretched image contains NaN'
-  min, max = np.min(output), np.max(output)
-  assert min >= 0.0 and max <= 1.0, f'stretched image has min {min} max {max}'
+  if debug:
+    print(f'### E1 {E1}')
+    print(f'### E2 {E2}')
+    print(f'### E3 {E3}')
+    print(f'### E4 {E4}')
+    print(f'### E5 {E5}')
 
+  assert not np.isnan(output).any(), 'stretched image contains NaN'
+
+  if debug:
+    print(f'### autostretch, output image '
+          f'min {np.min(output)} max {np.max(output)}')
   return output
 
-  # E1 = np.clip(median(image) + -2.8 * 1.4826 * mdev(image), 0.0, 1.0)
-  # print('### E1', E1)  # 0
-  # E2 = maximum(0.0, (image - E1) / (1 - E1))
-  # print(f'### E2 min {np.min(E2)}, max {np.max(E2)}')
-  # E3 = median(image) - E1  # 0
-  # print('### E3', E3)
-  # E4 = minimum(1.0, (1.0 / curve))  # 1
-  # print('### E4', E4)
-  # E5 = np.nan_to_num(((stretch - 1.0) * E3) /
-  #                    ((2.0 * stretch - 1.0) * pow(E3, E4) - stretch))  # 0
-  # print('### E5', E5)
-  # E6 = np.nan_to_num(((E5 - 1.0) * E2) / ((2.0 * E5 - 1.0) * pow(E2, E4) - E5))
-  # print('### E6', E6)
 
-  # return np.clip(E6, 0.0, 1.0)
-
-
-def array_to_png(array):
+def array_to_png(array, debug=False):
   assert not np.isnan(array).any(), 'array contains NaN'
-  min, max = np.min(array), np.max(array)
-  assert min >= 0.0 and max <= 1.0, f'array has min {min} max {max}'
 
   array = (array * 255.0).astype(np.uint8)
+  if debug:
+    print(f'### array_to_png, array min {np.min(array)} max {np.max(array)}')
   _, png = cv2.imencode('.png', array)
   return png.tobytes()
 

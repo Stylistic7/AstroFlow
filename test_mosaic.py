@@ -69,10 +69,6 @@ class TestMosaic(unittest.TestCase):
                mosaic.content_hash)
     self.assertTrue(context.contains(sii_key))
 
-    # FIXME
-    open('/tmp/foo/mosaic_thumbnail_image.png',
-         'wb').write(context.get(sii_key))
-
   def test_orion_mosaic(self):
     copy_testdata_frames(target_name='Orion Pane 1',
                          start_datetime=datetime.datetime(

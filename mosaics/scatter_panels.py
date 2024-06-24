@@ -26,27 +26,18 @@ def _get_unique(L):
 # API that communicates with the rest of AstroFlow.
 
 
-def _get_image_hash_and_median_for_stack(stack, mode, stacks, image_hashes,
-                                         fits_headers, plate_solutions):
+def _get_image_hash_for_stack(stack, mode, stacks, image_hashes, fits_headers,
+                              plate_solutions):
   if mode == 'subframe':
     light_frames_by_stars = subframe_selection.get_light_frames_sorted_by_stars(
         stack.all_frames(stacks), plate_solutions)
     best_light_frame, _ = light_frames_by_stars[0]
-
-    median = np.median(read_image(image_hashes[best_light_frame]))
-    print(f'### median of {image_hashes[best_light_frame]} is {median}')
-
-    return best_light_frame, median
+    return best_light_frame
   elif mode == 'master':
     hashes = stacking.find_matching_masters(stack, image_hashes, fits_headers)
     if len(hashes) != 1:
       return None
-    hash = hashes[0]
-
-    median = np.median(read_image(image_hashes[hash]))
-    print(f'### median of {image_hashes[hash]} is {median}')
-
-    return hash, median
+    return hashes[0]
 
 
 def _placed_image_artfiact_key(panel, mode):
@@ -98,8 +89,8 @@ def process_mosaic_per_filter(mosaic_id, mode, filter, output_dir):
             f'filter {filter}')
       continue
 
-    image_hash, median = _get_image_hash_and_median_for_stack(
-        stack, mode, stacks, image_hashes, fits_headers, plate_solutions)
+    image_hash = _get_image_hash_for_stack(stack, mode, stacks, image_hashes,
+                                           fits_headers, plate_solutions)
     print(
         f'### process_mosaic_per_filter got hash {image_hash} for stack {stack}'
     )
@@ -125,7 +116,6 @@ def process_mosaic_per_filter(mosaic_id, mode, filter, output_dir):
                           stable_hash=stack.stable_hash,
                           content_hash=stack.content_hash,
                           image_hash=image_hash,
-                          median=median,
                           placed_filename=placed_filename)
 
     panels.append(panel)
@@ -189,39 +179,23 @@ def _merge_subframe_mosaic(panels):
     print('### cache already contains key', key)
     return
 
-  # def _normalize_median(image, target=0.5):
-  #   scale_factor = (target / np.median(image))
-  #   print(f'### _normalize_median median {np.median(image)}, '
-  #         f'scale_factor {scale_factor}')
-  #   image *= scale_factor
-  #   return image
-
   # The image returned from read_image() is in [0, 65536].
   # TODO: These panels are just merged by np.maximum, but there are
   # certainly better ways (maybe mean of all projected values).
-  output_image = read_image(panels[0].placed_filename)
-  print(f'### first mosaic image has min {np.min(output_image)} '
-        f'max {np.max(output_image)}')
+  output_image = image_previews.autostretch(
+      read_image(panels[0].placed_filename))
 
   # TODO: This will fail when new panels are added, and the total output
   # resolution (viewbox) changes. All placed images should automatically be
   # destroyed when the viewbox changes.
-  #
-  # TODO: Maybe normalize the median of the panels (which should be
-  # approximately the sky background) to some user-supplied value like 0.1.
   for panel in panels[1:]:
-    image = read_image(panel.placed_filename)
-    print(f'### next mosaic image has min {np.min(image)} '
-          f'max {np.max(image)}')
-    output_image = np.maximum(output_image, image)
-    print(f'### maximum has min {np.min(output_image)} '
-          f'max {np.max(output_image)}')
+    image = image_previews.autostretch(read_image(panel.placed_filename))
+    overlap = np.where((output_image > 0) & (image > 0))
+    new_output_image = np.maximum(output_image, image)
+    new_output_image[overlap] = (output_image[overlap] + image[overlap]) / 2.0
+    output_image = new_output_image
 
-  stretched = image_previews.autostretch(output_image)
-  print(f'### stretched has min {np.min(stretched)} '
-        f'max {np.max(stretched)}')
-
-  image_png = image_previews.array_to_png(stretched)
+  image_png = image_previews.array_to_png(output_image)
   context.set(key, image_png, flush=True)
   print(f'### Wrote key {key} image min {np.min(output_image)} '
         f'max {np.max(output_image)}')
@@ -242,7 +216,7 @@ def gather_mosaic_by_coordinates(mode, panels):
   if mode == 'subframe':
     for panel in panels:
       image = read_image(panel.placed_filename)
-      image_png = image_previews.array_to_png(image / 65535.0)
+      image_png = image_previews.array_to_png(image / np.max(image))
       key = _placed_image_artfiact_key(panel, mode)
       context.set(key, image_png, flush=True)
       print(f'### Wrote key {key}')

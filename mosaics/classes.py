@@ -11,7 +11,6 @@ class Panel:
   mode: str = None
   filter: str = None
   image_hash: str = None
-  median: float = None
   placed_filename: str = None
   tile_indices: list[int] = None
 
