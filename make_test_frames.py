@@ -41,7 +41,22 @@ _TESTDATA_TARGETS = {
         'Light_Orion_Pane 4_300.0s_Bin1_6200MM_H_20231223-001210_0001.fit',
         'Light_Orion_Pane 4_300.0s_Bin1_6200MM_H_20231223-001712_0002.fit',
         'Light_Orion_Pane 4_300.0s_Bin1_6200MM_H_20231223-002215_0003.fit',
-    ]
+    ],
+    'Sagittarius Pane 1': [
+        'Light_Sag 1_300.0s_Bin1_6200MM_S_20240619-000215_0001.fit',
+        'Light_Sag 1_300.0s_Bin1_6200MM_S_20240619-000717_0002.fit',
+        'Light_Sag 1_300.0s_Bin1_6200MM_S_20240619-001219_0003.fit',
+    ],
+    'Sagittarius Pane 2': [
+        'Light_Sag 2_300.0s_Bin1_6200MM_S_20240619-010605_0001.fit',
+        'Light_Sag 2_300.0s_Bin1_6200MM_S_20240619-011107_0002.fit',
+        'Light_Sag 2_300.0s_Bin1_6200MM_S_20240619-011609_0003.fit',
+    ],
+    'Sagittarius Pane 3': [
+        'Light_Sag 3_300.0s_Bin1_6200MM_S_20240619-022800_0001.fit',
+        'Light_Sag 3_300.0s_Bin1_6200MM_S_20240619-023301_0002.fit',
+        'Light_Sag 3_300.0s_Bin1_6200MM_S_20240619-023803_0003.fit',
+    ],
 }
 
 

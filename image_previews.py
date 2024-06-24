@@ -6,7 +6,6 @@ import tempfile
 import ray
 
 from context import context
-import file_io
 from hashing import hash_string
 from file_io.generic import read_image
 import subframe_selection
@@ -51,11 +50,11 @@ def resize_array(array, new_width):
 def autostretch(image):
   image = image.astype(np.float32) / 65535.0
 
-  curve = 1.0
-  stretch = 0.20
-  clip = 2.8
+  curve = 1.0  # 1 = normal stretch, > 1 = arcsin style
+  stretch = 0.20  # target background value
+  clip = 2.8  # increase to prevent shadow clipping
 
-  # the median of the absolute values of the residuals from the data's median
+  # The median of the absolute values of the residuals from the data's median.
   def mdev(image):
     return median(abs(image - median(image)))
 

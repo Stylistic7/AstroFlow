@@ -109,12 +109,10 @@ def show_image(data):
 
 @ray.remote
 def build_mosaic_preview_graph():
-  mosaics = context.mosaics
   mode = 'subframe'
-
-  # FIXME
-  keys = ['ba9061cd68dbcf83']
-  return Graph({gather_merge_mosaics: [(merge_mosaic, m, mode) for m in keys]})
+  return Graph({
+      gather_merge_mosaics: [(merge_mosaic, m, mode) for m in context.mosaics]
+  })
 
 
 def _subframe_filter_artifact_exists(mosaic_id, filter, content_hash):

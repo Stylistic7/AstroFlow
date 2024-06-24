@@ -36,6 +36,44 @@ class TestMosaic(unittest.TestCase):
     # Start with an empty context.
     self.input_dir_obj, self.output_dir_obj = make_test_context()
 
+  def test_sagittarius_mosaic(self):
+    copy_testdata_frames(target_name='Sagittarius Pane 1',
+                         start_datetime=datetime.datetime(
+                             2024, 2, 5, 16, 29, 43),
+                         dest_dir=context.input_dirs[0],
+                         add_noise=False)
+    copy_testdata_frames(target_name='Sagittarius Pane 2',
+                         start_datetime=datetime.datetime(
+                             2024, 2, 5, 17, 29, 43),
+                         dest_dir=context.input_dirs[0],
+                         add_noise=False)
+    copy_testdata_frames(target_name='Sagittarius Pane 3',
+                         start_datetime=datetime.datetime(
+                             2024, 2, 5, 18, 29, 43),
+                         dest_dir=context.input_dirs[0],
+                         add_noise=False)
+
+    graph = compute_graph.build_compute_graph()
+    run_graph(graph)
+
+    self.assertEqual(len(context.targets), 3)
+    self.assertEqual(len(context.mosaics), 1)
+    mosaic = next(iter(context.mosaics.values()))
+    print(f'### There is one mosaic, {mosaic}')
+
+    ha_key = ('mosaic_thumbnail_image', 'subframe', mosaic.stable_hash, 'H',
+              mosaic.content_hash)
+    self.assertFalse(context.contains(ha_key))
+
+    sii_key = ('mosaic_thumbnail_image', 'subframe', mosaic.stable_hash, 'S',
+               mosaic.content_hash)
+    self.assertTrue(context.contains(sii_key))
+
+    # FIXME
+    open('/tmp/foo/mosaic_thumbnail_image.png',
+         'wb').write(context.get(sii_key))
+
+  def test_orion_mosaic(self):
     copy_testdata_frames(target_name='Orion Pane 1',
                          start_datetime=datetime.datetime(
                              2024, 2, 5, 16, 29, 43),
@@ -57,7 +95,6 @@ class TestMosaic(unittest.TestCase):
                          dest_dir=context.input_dirs[0],
                          add_noise=False)
 
-  def test_merge_mosaic(self):
     # Running the graph the first time, with an empty shopping cart, should
     # produce all the subframe previews for the stacks, targets, and mosaic.
     graph = compute_graph.build_compute_graph()

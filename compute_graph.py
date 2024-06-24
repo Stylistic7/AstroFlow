@@ -24,6 +24,11 @@ def gather():
 
 
 @ray.remote
+def ingest_new_subframes():
+  return make_graph_from_list([(scatter_compute_image_metadata, 'input')])
+
+
+@ray.remote
 def maybe_build_regroup_graph():
   if context.regroup:
     return make_graph_from_list([
@@ -102,17 +107,14 @@ def build_processing_graph_for_shopping_cart():
 
 def build_compute_graph():
   return make_graph_from_list([
-      # FIXME
-      # (scatter_compute_image_metadata, 'all'),
-      # maybe_build_regroup_graph,
-      # make_suggestions,
+      ingest_new_subframes,
+      maybe_build_regroup_graph,
+      make_suggestions,
       build_preview_graph,
       # This is the heavyweight graph that runs PixInsight and may take days.
-      # build_processing_graph_for_shopping_cart,
-      # Compute previews from masters (after stacking).
-      # FIXME
-      # (scatter_compute_image_metadata, 'master'),
-      # (scatter_stack_thumbnails, 'master'),
+      build_processing_graph_for_shopping_cart,
+      (scatter_compute_image_metadata, 'master'),
+      (scatter_stack_thumbnails, 'master'),
       # (scatter_merge_mosaics, 'master')
   ])
 

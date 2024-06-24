@@ -26,18 +26,27 @@ def _get_unique(L):
 # API that communicates with the rest of AstroFlow.
 
 
-def _get_image_hash_for_stack(stack, mode, stacks, image_hashes, fits_headers,
-                              plate_solutions):
+def _get_image_hash_and_median_for_stack(stack, mode, stacks, image_hashes,
+                                         fits_headers, plate_solutions):
   if mode == 'subframe':
     light_frames_by_stars = subframe_selection.get_light_frames_sorted_by_stars(
         stack.all_frames(stacks), plate_solutions)
     best_light_frame, _ = light_frames_by_stars[0]
-    return best_light_frame
+
+    median = np.median(read_image(image_hashes[best_light_frame]))
+    print(f'### median of {image_hashes[best_light_frame]} is {median}')
+
+    return best_light_frame, median
   elif mode == 'master':
     hashes = stacking.find_matching_masters(stack, image_hashes, fits_headers)
     if len(hashes) != 1:
       return None
-    return hashes[0]
+    hash = hashes[0]
+
+    median = np.median(read_image(image_hashes[hash]))
+    print(f'### median of {image_hashes[hash]} is {median}')
+
+    return hash, median
 
 
 def _placed_image_artfiact_key(panel, mode):
@@ -89,8 +98,8 @@ def process_mosaic_per_filter(mosaic_id, mode, filter, output_dir):
             f'filter {filter}')
       continue
 
-    image_hash = _get_image_hash_for_stack(stack, mode, stacks, image_hashes,
-                                           fits_headers, plate_solutions)
+    image_hash, median = _get_image_hash_and_median_for_stack(
+        stack, mode, stacks, image_hashes, fits_headers, plate_solutions)
     print(
         f'### process_mosaic_per_filter got hash {image_hash} for stack {stack}'
     )
@@ -116,6 +125,7 @@ def process_mosaic_per_filter(mosaic_id, mode, filter, output_dir):
                           stable_hash=stack.stable_hash,
                           content_hash=stack.content_hash,
                           image_hash=image_hash,
+                          median=median,
                           placed_filename=placed_filename)
 
     panels.append(panel)
@@ -179,9 +189,12 @@ def _merge_subframe_mosaic(panels):
     print('### cache already contains key', key)
     return
 
-  def normalize_median(image, target=0.1):
-    image *= (target / np.median(image.astype(np.float32)))
-    return image
+  # def _normalize_median(image, target=0.5):
+  #   scale_factor = (target / np.median(image))
+  #   print(f'### _normalize_median median {np.median(image)}, '
+  #         f'scale_factor {scale_factor}')
+  #   image *= scale_factor
+  #   return image
 
   # The image returned from read_image() is in [0, 65536].
   # TODO: These panels are just merged by np.maximum, but there are
@@ -204,17 +217,11 @@ def _merge_subframe_mosaic(panels):
     print(f'### maximum has min {np.min(output_image)} '
           f'max {np.max(output_image)}')
 
-  image_png = image_previews.array_to_png(output_image / np.max(output_image))
-  open(f'/Volumes/Astro/tmp/mosaic_{mosaic_id}_{filter}_before_stretching.png',
-       'wb').write(image_png)
-
   stretched = image_previews.autostretch(output_image)
   print(f'### stretched has min {np.min(stretched)} '
         f'max {np.max(stretched)}')
 
   image_png = image_previews.array_to_png(stretched)
-  open(f'/Volumes/Astro/tmp/mosaic_{mosaic_id}_{filter}_after_stretching.png',
-       'wb').write(image_png)
   context.set(key, image_png, flush=True)
   print(f'### Wrote key {key} image min {np.min(output_image)} '
         f'max {np.max(output_image)}')
