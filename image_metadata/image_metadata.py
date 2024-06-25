@@ -84,7 +84,8 @@ def scatter_compute_image_metadata(mode):
   for dir in directories:
     filenames.extend(find_image_files(dir))
 
-  known_files = context.image_hashes.values()
+  image_hashes = context.image_hashes or {}
+  known_files = image_hashes.values()
   new_filenames = list(
       set(filenames) - set(known_files) - set(context.quarantined_files))
 
@@ -131,7 +132,7 @@ def compute_image_metadata_for_filenames(filenames):
 def compute_image_metadata(filename):
   print(f'Entering compute_image_metadata() for {filename}')
 
-  image_hashes = context.image_hashes
+  image_hashes = context.image_hashes or {}
 
   # TODO: Make sure this code doesn't actually repeatedly read the image across
   # the network. It should hit the node's filesystem cache.
