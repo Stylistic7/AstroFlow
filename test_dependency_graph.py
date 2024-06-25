@@ -264,6 +264,21 @@ class TestDependencyGraph(unittest.TestCase):
     self.assertEqual(results.num_nodes_run, 3)
     self.assertEqual(results.max_parallelism_seen, 1)
 
+  def test_fanout(self):
+    A = my_first_task
+    B = my_later_task
+    C = my_last_task
+
+    graph = {C: {A}, B: {A}}
+    results = run_graph(graph)
+
+    self.assertEqual(results[A], 1)
+    self.assertEqual(results[B], 2)
+    self.assertEqual(results[C], 4)
+
+    self.assertEqual(results.num_nodes_run, 3)
+    self.assertEqual(results.max_parallelism_seen, 2)
+
   def test_list_of_tasks(self):
     graph = make_graph_from_list([my_first_task, my_later_task, my_last_task])
 

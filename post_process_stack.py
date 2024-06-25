@@ -25,7 +25,8 @@ def _post_process_stack(image):
 # TODO: Hash the script used to do the post-processing, and do not repeat
 # the post-processing when a file with that hash already exists.
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
-def post_process_stack(stack_id, filename):
+def post_process_stack(stack_id, input_file):
+  content_hash, filename = input_file
   print(f'post_process_stack, stack_id {stack_id} filename {filename}')
   result = _post_process_stack(filename)
   print(f'post_process_stack, stack_id {stack_id} returning {result}')

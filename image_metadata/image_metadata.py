@@ -169,7 +169,6 @@ def compute_image_metadata(filename):
 def gather_compute_image_metadata(results):
   print(f'### Entering gather_compute_image_metadata results {len(results)}')
   assert all(type(r) is dict for r in results)
-  print('### gather_compute_image_metadata results', results)
 
   new_quarantined_files = [r['filename'] for r in results if 'exception' in r]
   print(f'### new_quarantined_files {len(new_quarantined_files)}')

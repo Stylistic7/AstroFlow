@@ -81,16 +81,15 @@ def build_mosaic_subgraph(id):
   merge_task = (merge_mosaic, id, 'master')
   return Graph({
       (post_process_mosaic, id): {merge_task},
-      merge_task: {compute_image_metadata_for_filenames},
-      compute_image_metadata_for_filenames: {flatten_lists},
+      merge_task: {flatten_lists},
       flatten_lists: [(build_target_subgraph, t) for t in mosaic.target_ids]
   })
 
 
 @ray.remote
-def build_processing_graph_for_shopping_cart():
+def build_main_processing_graph():
   shopping_cart = context.shopping_cart or []
-  print(f'### build_processing_graph_for_shopping_cart {shopping_cart}')
+  print(f'### build_main_processing_graph {shopping_cart}')
 
   # TODO: Maybe add prioritization options in the UI.
   # TODO: Remove duplicates.
@@ -103,7 +102,7 @@ def build_processing_graph_for_shopping_cart():
     elif type == 'mosaic':
       subgraphs.append((build_mosaic_subgraph, id))
 
-  print(f'### build_processing_graph_for_shopping_cart returning '
+  print(f'### build_main_processing_graph returning '
         f'{len(subgraphs)} subgraphs')
   return Graph({gather: subgraphs})
 
@@ -115,7 +114,7 @@ def build_compute_graph():
       make_suggestions,
       build_preview_graph,
       # This is the heavyweight graph that runs PixInsight and may take days.
-      build_processing_graph_for_shopping_cart,
+      build_main_processing_graph,
       (scatter_compute_image_metadata, 'master'),
       # TODO: This is very slow.
       # (scatter_stack_thumbnails, 'master'),

@@ -9,7 +9,6 @@ import os
 from context import context
 import pix
 import position_string
-from image_metadata.image_metadata import compute_image_metadata_for_filenames
 import file_io
 from dependency_graph import Graph
 
@@ -94,30 +93,34 @@ def _run_wbpp(unused, *args, **kwargs):
 # TODO: Include a timeout so a single bad stack (e.g. one that needs interactive
 # plate-solving help) won't derail a long-running session.
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
-def stack_files(stack_id):
+def stack_files(stack_id, input_files):
   assert context.output_dir
+
+  image_hashes = context.image_hashes
+  input_files = dict(input_files)
+
+  def _find_filename(hash):
+    '''Find a file in the global image hashes, or files passed in via graph.'''
+    if hash in image_hashes:
+      filename = image_hashes[hash]
+    elif hash in input_files:
+      filename = input_files[hash]
+
+    assert os.path.exists(filename)
+    return filename
 
   stacks = context.stacks
   stack = stacks[stack_id]
-  print(f'### Entering stack_files for {stack}')
+  print(f'### Entering stack_files for {stack}, '
+        f'input_files {input_files}')
 
   dest_filename = _output_filename(stack, context.output_dir)
-
-  # TODO: This is gross. Many different stacks have the same dependencies, but
-  # they are never considered together in one big graph, where they can be
-  # automatically de-duped.
-  if os.path.exists(dest_filename) and file_io.generic.get_content_hash(
-      dest_filename) == stack.content_hash:
-    print(f'### stacked master {dest_filename} already exists with '
-          f'content hash {stack.content_hash}')
-    return None
-
   os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
 
-  # TODO: This marks all stacks as Master Light, when some are actually bias,
-  # dark, or flat.
-  image_hashes = context.image_hashes
-  metadata = {'IMAGETYP': 'Master Light', _CONTENT_HASH_KEY: stack.content_hash}
+  metadata = {
+      'IMAGETYP': f'Master {stack.image_type}',
+      _CONTENT_HASH_KEY: stack.content_hash
+  }
 
   # TODO: Put subframe selection here.
 
@@ -128,7 +131,7 @@ def stack_files(stack_id):
 
     hashes = stack.frames + list(stack.dependencies.values())
     print(f'### Stack frames and dependencies: {hashes}')
-    filenames = [image_hashes[h] for h in hashes]
+    filenames = [_find_filename(h) for h in hashes]
     for h, f in zip(hashes, filenames):
       print(f'hash {h} -> filename {f}')
     assert None not in filenames
@@ -145,7 +148,7 @@ def stack_files(stack_id):
 
       hashes = substack.frames + list(substack.dependencies.values())
       print(f'### Substack frames and dependencies: {hashes}')
-      filenames = [image_hashes[h] for h in hashes]
+      filenames = [_find_filename(h) for h in hashes]
       for h, f in zip(hashes, filenames):
         print(f'hash {h} -> filename {f}')
 
@@ -159,7 +162,7 @@ def stack_files(stack_id):
                                               metadata=metadata)
       print(f'### Mocked stacking, wrote filename {dest_filename} '
             f'with metadata {metadata}')
-      return dest_filename
+      return stack.content_hash, dest_filename
 
     print(f'### Running _run_wbpp for stack {stack}')
     # TODO: Putting [] here for `filenames` is a wart.
@@ -172,7 +175,7 @@ def stack_files(stack_id):
       print(f'Exception {exception}')
       key = ('stack_files', stack_id)
       context.set(key, exception)
-      return
+      return None, None
 
     print('WBPP master dir contains:')
     for f in os.listdir(master_dir):
@@ -187,7 +190,7 @@ def stack_files(stack_id):
 
     key = ('stack_files', stack_id)
     context.set(key, stack.content_hash)
-    return dest_filename
+    return stack.content_hash, dest_filename
 
 
 # TODO: Should this function ignore the stack if it has already been stacked?
@@ -220,13 +223,11 @@ def scatter_stack_subframes(stack_id):
   # they are never considered together in one big graph, where they can be
   # automatically de-duped.
   graph = {}
-  metadata_task = compute_image_metadata_for_filenames
-  graph[metadata_task] = [
-      (stack_files, d)
-      for substack in stack.contents
-      for d in stacks[substack].dependencies.values()
-      if stacks[d].image_type != 'light' and not master_exists(d) and
-      not previously_had_exception(d)
-  ]
+  graph[(stack_files,
+         stack_id)] = [(stack_files, d)
+                       for substack in stack.contents
+                       for d in stacks[substack].dependencies.values()
+                       if stacks[d].image_type != 'light' and
+                       not master_exists(d) and not previously_had_exception(d)]
 
   return Graph(graph)

@@ -12,7 +12,6 @@ import shutil
 
 from context import context
 from make_testdata_cache import TESTDATA_CACHE_GZIP_FILENAME
-import file_io
 from make_test_frames import copy_testdata_frames
 import compute_graph
 from dependency_graph import run_graph
