@@ -134,7 +134,7 @@ def _make_thumbnail(fits_headers, light_frame, light_image, bias_frame,
   return autostretch(np.clip(image, 0.0, 1.0))
 
 
-@ray.remote
+@ray.remote(resources={'fastest_storage': 0.001})
 def scatter_stack_thumbnails(mode):
   stacks = context.stacks
   cache_keys = context.get_cache_keys()

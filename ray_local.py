@@ -21,6 +21,7 @@ ray.init(
     num_cpus=24,
     resources={
         "diskcache": 1,
+        "fastest_storage": 1,
         "PixInsight": 1
     },
     ignore_reinit_error=True,
