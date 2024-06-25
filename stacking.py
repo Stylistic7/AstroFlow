@@ -102,13 +102,22 @@ def stack_files(stack_id):
   print(f'### Entering stack_files for {stack}')
 
   dest_filename = _output_filename(stack, context.output_dir)
+
+  # TODO: This is gross. Many different stacks have the same dependencies, but
+  # they are never considered together in one big graph, where they can be
+  # automatically de-duped.
+  if os.path.exists(dest_filename) and file_io.generic.get_content_hash(
+      dest_filename) == stack.content_hash:
+    print(f'### stacked master {dest_filename} already exists with '
+          f'content hash {stack.content_hash}')
+    return None
+
   os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
 
+  # TODO: This marks all stacks as Master Light, when some are actually bias,
+  # dark, or flat.
   image_hashes = context.image_hashes
   metadata = {'IMAGETYP': 'Master Light', _CONTENT_HASH_KEY: stack.content_hash}
-
-  # TODO: Update this to use the new Stack tree, and add specific tests to
-  # exercise it.
 
   # TODO: Put subframe selection here.
 
@@ -207,6 +216,9 @@ def scatter_stack_subframes(stack_id):
     print(f'### stack {stack} previously had exception')
     return {}
 
+  # TODO: This is gross. Many different stacks have the same dependencies, but
+  # they are never considered together in one big graph, where they can be
+  # automatically de-duped.
   graph = {}
   metadata_task = compute_image_metadata_for_filenames
   graph[metadata_task] = [
@@ -216,6 +228,5 @@ def scatter_stack_subframes(stack_id):
       if stacks[d].image_type != 'light' and not master_exists(d) and
       not previously_had_exception(d)
   ]
-  graph[(stack_files, stack_id)] = {metadata_task}
 
   return Graph(graph)

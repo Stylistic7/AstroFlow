@@ -16,8 +16,6 @@ def read_image(filename: Path | str) -> Optional[np.ndarray]:
   elif path.suffix.lower() in ['.fit', '.fits']:
     return read_fits_image(path)
 
-  return None
-
 
 def read_header(filename: Path | str) -> Optional[dict]:
   path = Path(filename)
@@ -25,8 +23,6 @@ def read_header(filename: Path | str) -> Optional[dict]:
     return read_xisf_header(path)
   elif path.suffix.lower() in ['.fit', '.fits']:
     return read_fits_header(path)
-
-  return None
 
 
 def hash_of_image_data(filename: Path | str) -> Optional[str]:

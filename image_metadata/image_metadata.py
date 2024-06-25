@@ -88,6 +88,9 @@ def scatter_compute_image_metadata(mode):
   new_filenames = list(
       set(filenames) - set(known_files) - set(context.quarantined_files))
 
+  if not new_filenames:
+    return {}
+
   print(f'### Computing image metadata for {len(new_filenames)} new filenames')
 
   graph = Graph({
@@ -105,6 +108,17 @@ class DuplicateFileException(Exception):
 
 @ray.remote
 def compute_image_metadata_for_filenames(filenames):
+  if type(filenames) is not list:
+    filenames = [filenames]
+
+  filenames = list(set(filenames))
+
+  if None in filenames:
+    filenames.remove(None)
+
+  if not filenames:
+    return {}
+
   print('Entering compute_image_metadata_for_filenames', filenames)
   return Graph({
       gather_compute_image_metadata: [
@@ -165,28 +179,31 @@ def gather_compute_image_metadata(results):
       for r in results
       if 'image_hash' in r and 'filename' in r
   }
-  print(f'### new_image_hashes {len(new_image_hashes)}')
-  assert not any(h in context.image_hashes for h in new_image_hashes.keys())
-  context.or_equals('image_hashes', new_image_hashes)
+  if new_image_hashes:
+    print(f'### new_image_hashes {len(new_image_hashes)}')
+    assert not any(h in context.image_hashes for h in new_image_hashes.keys())
+    context.or_equals('image_hashes', new_image_hashes)
 
   new_fits_headers = {
       r['image_hash']: r['fits_header']
       for r in results
       if 'image_hash' in r and 'fits_header' in r
   }
-  print(f'### new_fits_headers {len(new_fits_headers)}')
-  assert not any(h in context.fits_headers for h in new_fits_headers.keys())
-  context.or_equals('fits_headers', new_fits_headers)
+  if new_fits_headers:
+    print(f'### new_fits_headers {len(new_fits_headers)}')
+    assert not any(h in context.fits_headers for h in new_fits_headers.keys())
+    context.or_equals('fits_headers', new_fits_headers)
 
   new_plate_solutions = {
       r['image_hash']: r['plate_solution']
       for r in results
       if 'image_hash' in r and 'plate_solution' in r
   }
-  print(f'### new_plate_solutions {len(new_plate_solutions)}')
-  assert not any(
-      h in context.plate_solutions for h in new_plate_solutions.keys())
-  context.or_equals('plate_solutions', new_plate_solutions)
+  if new_plate_solutions:
+    print(f'### new_plate_solutions {len(new_plate_solutions)}')
+    assert not any(
+        h in context.plate_solutions for h in new_plate_solutions.keys())
+    context.or_equals('plate_solutions', new_plate_solutions)
 
   assert not any(type(p) is str for p in context.plate_solutions.values())
   assert None not in context.image_hashes.values()

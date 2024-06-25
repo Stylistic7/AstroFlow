@@ -15,17 +15,12 @@ from post_process_target import post_process_target
 from post_process_stack import post_process_stack
 from post_process_mosaic import post_process_mosaic
 from suggestions import make_suggestions
-from step_mosaic import merge_mosaic, build_mosaic_preview_graph
+from step_mosaic import merge_mosaic, build_mosaic_merge_graph
 
 
 @ray.remote
 def gather():
   pass
-
-
-@ray.remote
-def ingest_new_subframes():
-  return make_graph_from_list([(scatter_compute_image_metadata, 'input')])
 
 
 @ray.remote
@@ -44,19 +39,23 @@ def maybe_build_regroup_graph():
 def build_preview_graph():
   return make_graph_from_list([
       (scatter_stack_thumbnails, 'subframe'),
-      (build_mosaic_preview_graph),
+      (build_mosaic_merge_graph, 'subframe'),
   ])
 
 
+# TODO: Many stacks share dependencies. Create a graph such that these
+# dependencies are represented by shared nodes in a graph, then remove the
+# gross check for existing master files in stacking.py.
 @ray.remote
 def build_stack_subgraph(id):
-  stack = context.stacks[id]
+  print(f'### build_stack_subgraph stack_id {id}')
   # The stacked master filenames are passed along directly here.
   return Graph({(post_process_stack, id): {(scatter_stack_subframes, id)}})
 
 
 @ray.remote
 def build_target_subgraph(id):
+  print(f'### build_target_subgraph target_id {id}')
   target = context.targets[id]
   # The post-processed filenames are passed along directly here.
   return Graph({
@@ -75,6 +74,7 @@ def flatten_lists(results):
 
 @ray.remote
 def build_mosaic_subgraph(id):
+  print(f'### build_mosaic_subgraph mosaic_id {id}')
   mosaic = context.mosaics[id]
   # The masters need to be plate solved, etc. before mosaic merge, so there's
   # an explicit task here to get their metadata.
@@ -90,6 +90,7 @@ def build_mosaic_subgraph(id):
 @ray.remote
 def build_processing_graph_for_shopping_cart():
   shopping_cart = context.shopping_cart or []
+  print(f'### build_processing_graph_for_shopping_cart {shopping_cart}')
 
   # TODO: Maybe add prioritization options in the UI.
   # TODO: Remove duplicates.
@@ -102,20 +103,23 @@ def build_processing_graph_for_shopping_cart():
     elif type == 'mosaic':
       subgraphs.append((build_mosaic_subgraph, id))
 
+  print(f'### build_processing_graph_for_shopping_cart returning '
+        f'{len(subgraphs)} subgraphs')
   return Graph({gather: subgraphs})
 
 
 def build_compute_graph():
   return make_graph_from_list([
-      ingest_new_subframes,
+      (scatter_compute_image_metadata, 'input'),
       maybe_build_regroup_graph,
       make_suggestions,
       build_preview_graph,
       # This is the heavyweight graph that runs PixInsight and may take days.
       build_processing_graph_for_shopping_cart,
       (scatter_compute_image_metadata, 'master'),
-      (scatter_stack_thumbnails, 'master'),
-      # (scatter_merge_mosaics, 'master')
+      # TODO: This is very slow.
+      # (scatter_stack_thumbnails, 'master'),
+      (build_mosaic_merge_graph, 'master')
   ])
 
 

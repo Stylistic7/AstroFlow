@@ -108,8 +108,7 @@ def show_image(data):
 
 
 @ray.remote
-def build_mosaic_preview_graph():
-  mode = 'subframe'
+def build_mosaic_merge_graph(mode):
   return Graph({
       gather_merge_mosaics: [(merge_mosaic, m, mode) for m in context.mosaics]
   })
