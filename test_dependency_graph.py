@@ -32,18 +32,18 @@ def my_first_task():
 
 
 @ray.remote
-def my_later_task(ancestor_result):
-  return ancestor_result + 1
+def my_later_task(results):
+  return results[0] + 1
 
 
 @ray.remote
-def my_last_task(ancestor_result):
-  return ancestor_result + 3
+def my_last_task(results):
+  return results[0] + 3
 
 
 @ray.remote
-def my_last_task_with_context(ancestor_result):
-  return ancestor_result + 3
+def my_last_task_with_context(results):
+  return results[0] + 3
 
 
 @ray.remote
@@ -107,7 +107,7 @@ def build_subgraph(item):
 
 @ray.remote
 def gather_from_subgraphs(results):
-  return sum(results)
+  return sum(r[0] for r in results)
 
 
 def scatter_in_subgraphs():

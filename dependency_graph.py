@@ -91,6 +91,27 @@ def print_result_dict(results, indent=0):
       print_result_dict(result, indent + 2)
 
 
+def print_graph(graph):
+  for k, v in graph.items():
+
+    def type_or_value(x):
+      if type(x) in [int, float, str]:
+        return f"'{str(x)}'"
+
+      return str(type(x))
+
+    def tuple_values(tup):
+      return ', '.join([type_or_value(t) for t in tup])
+
+    def to_string(node):
+      node = _unpack_node(node)
+      return f'({node.task._function.__name__}, {tuple_values(node.args)})'
+
+    if type(v) in [list, set]:
+      strings = [to_string(i) for i in v]
+      print(f'{to_string(k)}: [{", ".join(strings)}]')
+
+
 def run_graph(graph, debug=False):
   num_nodes_run = 0
   max_parallelism_seen = 0
@@ -136,18 +157,7 @@ def run_graph(graph, debug=False):
       print(f'Node with task {node.task._function.__name__} has '
             f'{len(nodes)} ancestors')
 
-    # Return a scalar result if the node has only a single ancestor; otherwise,
-    # return a list.
-    if len(nodes) == 1:
-      results = ts.results[nodes[0]]
-    else:
-      results = [ts.results[node] for node in nodes]
-
-    if debug:
-      print(f'Node with task {node.task._function.__name__} has '
-            f'ancestor results {results}')
-
-    return results
+    return [ts.results[node] for node in nodes]
 
   def make_run_fn(ts, node):
     node = _unpack_node(node)
