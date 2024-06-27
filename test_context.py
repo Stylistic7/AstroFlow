@@ -9,6 +9,11 @@ from context import context
 from cache import cache
 
 
+@ray.remote
+def foo():
+  assert context.bar == 123
+
+
 class TestContext(unittest.TestCase):
 
   def setUp(self):
@@ -80,3 +85,7 @@ class TestContext(unittest.TestCase):
     self.assertFalse(context.contains('foo'))
     cache['foo'] = 'bar'
     self.assertTrue(context.contains('foo'))
+
+  def test_remote_fn(self):
+    context.bar = 123
+    ray.get(foo.remote())
