@@ -17,8 +17,8 @@ class Panel:
 
 @dataclass
 class MergeOp:
-  image_filenames: list[str] = None
-  output_filename: str = None
+  input_ids: list[str] = None
+  output_id: str = None
 
 
 @dataclass

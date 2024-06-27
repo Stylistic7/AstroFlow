@@ -1,5 +1,6 @@
 import os
 import numpy as np
+
 import pix
 import hashing
 from . import classes
@@ -21,6 +22,53 @@ def make_pairs(min_index, max_index, template):
     pairs.append([fill_template(template, max_index)])
 
   return pairs
+
+
+def new_make_merge_ops(panels):
+
+  def make_pair_id(level, pair):
+
+    def join_tile_indices(tile_indices):
+      return '_'.join([str(i) for i in tile_indices])
+
+    return str(level) + '__' + '__'.join([join_tile_indices(p) for p in pair])
+
+  def process_pairs(level, pairs, template, new_panels, merge_ops):
+    for i, pair in enumerate(pairs):
+      tile_indices = fill_template(template, i)
+      if len(pair) == 1:
+        new_panels[tile_indices] = panels[pair[0]]
+      elif len(pair) == 2:
+        pair_id = make_pair_id(level, pair)
+        new_panels[tile_indices] = pair_id
+        merge_ops.append(
+            classes.MergeOp(input_ids=[panels[p] for p in pair],
+                            output_id=pair_id))
+
+  level = 0
+  merge_ops = []
+  while len(panels) > 1:
+    xs = [t[0] for t in panels.keys()]
+    ys = [t[1] for t in panels.keys()]
+    min_x_index, max_x_index = np.min(xs), np.max(xs)
+    min_y_index, max_y_index = np.min(ys), np.max(ys)
+
+    new_panels = {}
+    if (max_x_index - min_x_index) > (max_y_index - min_y_index):
+      for y in range(min_y_index, max_y_index + 1):
+        template = (None, y)
+        pairs = make_pairs(min_x_index, max_x_index, template)
+        process_pairs(level, pairs, template, new_panels, merge_ops)
+    else:
+      for x in range(min_x_index, max_x_index + 1):
+        template = (x, None)
+        pairs = make_pairs(min_y_index, max_y_index, template)
+        process_pairs(level, pairs, template, new_panels, merge_ops)
+
+    panels = new_panels
+    level += 1
+
+  return merge_ops
 
 
 def make_merge_ops(mode, mosaic_id, panels, output_dir):
@@ -111,6 +159,7 @@ def run_photometric_mosaic(images, output_filename):
   return pix.PhotometricMosaic(images, output_filename)
 
 
+# TODO: Move this into the main processing graph.
 def merge_mosaic(mode, mosaic_id, panels, output_dir):
   print(f'Entering merge_mosaic, output_dir {output_dir}')
   merge_ops = make_merge_ops(mode, mosaic_id, panels, output_dir)
