@@ -10,67 +10,166 @@ from context import context
 import get_stacks
 from make_test_frames import copy_testdata_frames, make_synthetic_frames
 import compute_graph
-from dependency_graph import run_graph
+from dependency_graph import run_graph, print_graph
 from make_test_context import make_test_context
 
 
-class TestMosaic(unittest.TestCase):
+class TestComputeGraph(unittest.TestCase):
 
   def setUp(self):
     self.input_dir_obj, self.output_dir_obj = make_test_context()
     context.mock_stacking = True
 
+  def test_single_light_stack(self):
+    make_synthetic_frames(prefix='dark',
+                          number=5,
+                          image_type='Dark',
+                          fill_value=100,
+                          instrument='ZWO ASI6200MM Pro',
+                          width_pixels=9576,
+                          height_pixels=6388,
+                          temperature=-15,
+                          dest_dir=context.input_dirs[0])
+    make_synthetic_frames(prefix='bias',
+                          number=7,
+                          image_type='Bias',
+                          fill_value=50,
+                          instrument='ZWO ASI6200MM Pro',
+                          width_pixels=9576,
+                          height_pixels=6388,
+                          temperature=-15,
+                          dest_dir=context.input_dirs[0])
 
-def test_single_compute_graph(self):
-  copy_testdata_frames(prefix='light_run_0',
-                       target_name='NGC7635',
-                       start_datetime=datetime.datetime(2024, 2, 5, 16, 29, 43),
-                       dest_dir=context.input_dirs[0])
-  make_synthetic_frames(prefix='dark',
-                        number=5,
-                        image_type='Dark',
-                        fill_value=100,
-                        instrument='ZWO ASI6200MM Pro',
-                        width_pixels=9576,
-                        height_pixels=6388,
-                        temperature=-15,
-                        dest_dir=context.input_dirs[0])
-  make_synthetic_frames(prefix='bias',
-                        number=7,
-                        image_type='Bias',
-                        fill_value=50,
-                        instrument='ZWO ASI6200MM Pro',
-                        width_pixels=9576,
-                        height_pixels=6388,
-                        temperature=-15,
-                        dest_dir=context.input_dirs[0])
-  make_synthetic_frames(prefix='flat_run_0',
-                        number=11,
-                        image_type='Flat',
-                        start_datetime=datetime.datetime(
-                            2024, 2, 5, 18, 29, 43),
-                        fill_value=50,
-                        instrument='ZWO ASI6200MM Pro',
-                        width_pixels=9576,
-                        height_pixels=6388,
-                        temperature=-15,
-                        dest_dir=context.input_dirs[0])
+    copy_testdata_frames(prefix='light_run_0',
+                         target_name='NGC7635',
+                         start_datetime=datetime.datetime(
+                             2024, 2, 5, 16, 29, 43),
+                         dest_dir=context.input_dirs[0])
+    make_synthetic_frames(prefix='flat_run_0',
+                          number=11,
+                          image_type='Flat',
+                          start_datetime=datetime.datetime(
+                              2024, 2, 5, 18, 29, 43),
+                          fill_value=50,
+                          instrument='ZWO ASI6200MM Pro',
+                          width_pixels=9576,
+                          height_pixels=6388,
+                          temperature=-15,
+                          dest_dir=context.input_dirs[0])
 
-  filenames = find_image_files(context.input_dirs[0])
-  self.assertEqual(len(filenames), 26)
+    copy_testdata_frames(prefix='light_run_1',
+                         target_name='NGC7635',
+                         start_datetime=datetime.datetime(
+                             2024, 3, 5, 16, 29, 43),
+                         dest_dir=context.input_dirs[0])
+    make_synthetic_frames(prefix='flat_run_2',
+                          number=13,
+                          image_type='Flat',
+                          start_datetime=datetime.datetime(
+                              2024, 3, 5, 18, 29, 43),
+                          fill_value=50,
+                          instrument='ZWO ASI6200MM Pro',
+                          width_pixels=9576,
+                          height_pixels=6388,
+                          temperature=-15,
+                          dest_dir=context.input_dirs[0])
 
-  graph = compute_graph.build_compute_graph()
-  run_graph(graph)
+    filenames = find_image_files(context.input_dirs[0])
+    self.assertEqual(len(filenames), 42)
 
-  masters = os.listdir(context.output_dir)
-  self.assertEqual(len(masters), 0)
+    graph = compute_graph.build_compute_graph()
+    run_graph(graph)
 
-  stacks = context.stacks
-  toplevel_stacks = get_stacks.get_toplevel_stacks(stacks)
-  self.assertEqual(len(toplevel_stacks), 1)
-  toplevel_stack = toplevel_stacks[0]
+    masters = os.listdir(context.output_dir)
+    self.assertEqual(len(masters), 0)
 
-  context.shopping_cart = [('stack', toplevel_stack.stable_hash)]
+    stacks = context.stacks
+    toplevel_stacks = get_stacks.get_toplevel_stacks(stacks)
+    self.assertEqual(len(toplevel_stacks), 1)
+    toplevel_stack = toplevel_stacks[0]
 
-  processing_graph = ray.get(compute_graph.build_main_processing_graph.remote())
-  self.assertEqual(len(processing_graph), 1)
+    context.shopping_cart = [('stack', toplevel_stack.stable_hash)]
+
+    processing_graph = ray.get(
+        compute_graph.build_main_processing_graph.remote())
+    print_graph(processing_graph)
+
+    self.assertEqual(len(processing_graph), 2)
+
+  def test_orion_mosaic(self):
+    copy_testdata_frames(target_name='Orion Pane 1',
+                         start_datetime=datetime.datetime(
+                             2024, 2, 5, 16, 29, 43),
+                         dest_dir=context.input_dirs[0],
+                         add_noise=False)
+    copy_testdata_frames(target_name='Orion Pane 2',
+                         start_datetime=datetime.datetime(
+                             2024, 2, 5, 17, 29, 43),
+                         dest_dir=context.input_dirs[0],
+                         add_noise=False)
+    copy_testdata_frames(target_name='Orion Pane 3',
+                         start_datetime=datetime.datetime(
+                             2024, 2, 5, 18, 29, 43),
+                         dest_dir=context.input_dirs[0],
+                         add_noise=False)
+    copy_testdata_frames(target_name='Orion Pane 4',
+                         start_datetime=datetime.datetime(
+                             2024, 2, 5, 19, 29, 43),
+                         dest_dir=context.input_dirs[0],
+                         add_noise=False)
+
+    make_synthetic_frames(prefix='dark',
+                          number=5,
+                          image_type='Dark',
+                          start_datetime=datetime.datetime(
+                              2024, 2, 4, 18, 29, 43),
+                          fill_value=100,
+                          instrument='ZWO ASI6200MM Pro',
+                          width_pixels=9576,
+                          height_pixels=6388,
+                          temperature=-15,
+                          dest_dir=context.input_dirs[0])
+    make_synthetic_frames(prefix='bias',
+                          number=7,
+                          image_type='Bias',
+                          start_datetime=datetime.datetime(
+                              2024, 2, 5, 18, 29, 43),
+                          fill_value=50,
+                          instrument='ZWO ASI6200MM Pro',
+                          width_pixels=9576,
+                          height_pixels=6388,
+                          temperature=-15,
+                          dest_dir=context.input_dirs[0])
+    make_synthetic_frames(prefix='flat',
+                          number=11,
+                          image_type='Flat',
+                          start_datetime=datetime.datetime(
+                              2024, 2, 6, 18, 29, 43),
+                          fill_value=50,
+                          instrument='ZWO ASI6200MM Pro',
+                          width_pixels=9576,
+                          height_pixels=6388,
+                          temperature=-15,
+                          dest_dir=context.input_dirs[0])
+
+    # Running the graph the first time, with an empty shopping cart, should
+    # produce all the subframe previews for the stacks, targets, and mosaic.
+    graph = compute_graph.build_compute_graph()
+    print_graph(graph)
+    run_graph(graph)
+
+    mosaics = context.mosaics
+    self.assertEqual(len(mosaics), 1)
+    mosaic = next(iter(mosaics.values()))
+
+    print(f'### found mosaic {mosaic}')
+    context.shopping_cart = [('mosaic', mosaic.stable_hash)]
+
+    processing_graph = compute_graph.build_main_processing_graph()
+    print('### processing_graph is')
+    print_graph(processing_graph)
+    run_graph(processing_graph)
+
+
+if __name__ == '__main__':
+  unittest.main()

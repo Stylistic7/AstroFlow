@@ -11,7 +11,7 @@ import stacking
 from hashing import hash_list
 from dependency_graph import Graph
 
-from mosaics.scatter_panels import process_mosaic_per_filter
+# from mosaics.scatter_panels import process_mosaic_per_filter
 from mosaics.viewbox import compute_mosaic_viewbox
 
 # TODO: Use a compute graph to represent the construction of mosaics. Each
@@ -81,43 +81,37 @@ from mosaics.viewbox import compute_mosaic_viewbox
 #         {'merged': {content_hash, image_filename, image},
 #          'panel_0_1': {content_hash, image_filename, image}}
 
+# def _error(center, basis_vectors):
+#   center_in_basis = np.dot(center, basis_vectors)
+#   return np.mean(np.abs(center_in_basis - np.round(center_in_basis)), axis=0)
 
-def _error(center, basis_vectors):
-  center_in_basis = np.dot(center, basis_vectors)
-  return np.mean(np.abs(center_in_basis - np.round(center_in_basis)), axis=0)
+# def _plot_mosaic(mosaic, plot_title=None):
+#   plt.figure()
+#   plt.title(plot_title)
 
+#   for target in mosaic:
+#     plt.plot(*target.footprint.exterior.xy, color='black')
+#     plt.scatter([target.center[0]], [target.center[1]], color='black')
 
-def _plot_mosaic(mosaic, plot_title=None):
-  plt.figure()
-  plt.title(plot_title)
+#   plt.show()
 
-  for target in mosaic:
-    plt.plot(*target.footprint.exterior.xy, color='black')
-    plt.scatter([target.center[0]], [target.center[1]], color='black')
+# def show_image(data):
+#   fig = plt.figure(figsize=(10, 10))
+#   ax = plt.Axes(fig, [0., 0., 1., 1.])
+#   ax.set_axis_off()
+#   fig.add_axes(ax)
+#   ax.imshow(data, cmap="gray")
+#   plt.show()
 
-  plt.show()
+# @ray.remote
+# def build_mosaic_merge_graph(mode):
+#   return Graph({
+#       gather_merge_mosaics: [(merge_mosaic, m, mode) for m in context.mosaics]
+#   })
 
-
-def show_image(data):
-  fig = plt.figure(figsize=(10, 10))
-  ax = plt.Axes(fig, [0., 0., 1., 1.])
-  ax.set_axis_off()
-  fig.add_axes(ax)
-  ax.imshow(data, cmap="gray")
-  plt.show()
-
-
-@ray.remote
-def build_mosaic_merge_graph(mode):
-  return Graph({
-      gather_merge_mosaics: [(merge_mosaic, m, mode) for m in context.mosaics]
-  })
-
-
-def _subframe_filter_artifact_exists(mosaic_id, filter, content_hash):
-  key = ('mosaic_thumbnail_image', 'subframe', mosaic_id, filter, content_hash)
-  return context.contains(key)
-
+# def _subframe_filter_artifact_exists(mosaic_id, filter, content_hash):
+#   key = ('mosaic_thumbnail_image', 'subframe', mosaic_id, filter, content_hash)
+#   return context.contains(key)
 
 # Function pseudocode:
 #
@@ -127,84 +121,82 @@ def _subframe_filter_artifact_exists(mosaic_id, filter, content_hash):
 #
 # Runs process_mosaic_per_filter for each filter present in the mosaic in
 # parallel.
-@ray.remote(scheduling_strategy="SPREAD")
-def merge_mosaic(mosaic_id, mode):
-  mosaics = context.mosaics
-  mosaic = mosaics[mosaic_id]
+# @ray.remote(scheduling_strategy="SPREAD")
+# def merge_mosaic(mosaic_id, mode):
+#   mosaics = context.mosaics
+#   mosaic = mosaics[mosaic_id]
 
-  print(f'Entering merge_mosaic for mosaic {mosaic} mode {mode}')
-  image_hashes = context.image_hashes
-  fits_headers = context.fits_headers
-  targets = context.targets
-  stacks = context.stacks
+#   print(f'Entering merge_mosaic for mosaic {mosaic} mode {mode}')
+#   # image_hashes = context.image_hashes
+#   # fits_headers = context.fits_headers
+#   targets = context.targets
+#   stacks = context.stacks
 
-  def stacks_for_filter(filter):
-    return [
-        stacks[s]
-        for t in mosaic.target_ids
-        for s in targets[t].stack_ids
-        if stacks[s].filter == filter
-    ]
+#   def stacks_for_filter(filter):
+#     return [
+#         stacks[s]
+#         for t in mosaic.target_ids
+#         for s in targets[t].stack_ids
+#         if stacks[s].filter == filter
+#     ]
 
-  def any_panels_have_filter(filter):
-    stacks = stacks_for_filter(filter)
-    result = len(stacks) > 0
-    print(f'### any_panels_have_filter mosaic_id {mosaic_id} '
-          f'filter {filter} = {result}')
-    return result
+#   def any_panels_have_filter(filter):
+#     stacks = stacks_for_filter(filter)
+#     result = len(stacks) > 0
+#     print(f'### any_panels_have_filter mosaic_id {mosaic_id} '
+#           f'filter {filter} = {result}')
+#     return result
 
-  def filter_artifact_exists(filter):
-    stacks = stacks_for_filter(filter)
-    content_hash = hash_list([s.content_hash for s in stacks])
-    if mode == 'subframe':
-      result = _subframe_filter_artifact_exists(mosaic.stable_hash, filter,
-                                                content_hash)
-    elif mode == 'master':
-      result = bool(
-          stacking.artifact_exists(image_hashes, fits_headers, content_hash))
-    print(f'### filter_artifact exists for mosaic_id {mosaic_id} mode {mode} '
-          f'filter {filter} = {result}')
-    return result
+#   # def filter_artifact_exists(filter):
+#   #   stacks = stacks_for_filter(filter)
+#   #   content_hash = hash_list([s.content_hash for s in stacks])
+#   #   if mode == 'subframe':
+#   #     result = _subframe_filter_artifact_exists(mosaic.stable_hash, filter,
+#   #                                               content_hash)
+#   #   elif mode == 'master':
+#   #     result = bool(
+#   #         stacking.artifact_exists(image_hashes, fits_headers, content_hash))
+#   #   print(f'### filter_artifact exists for mosaic_id {mosaic_id} mode {mode} '
+#   #         f'filter {filter} = {result}')
+#   #   return result
 
-  # TODO: Don't hardcode these filters. Find the set from the images
-  # themselves.
-  filters = ['H', 'S', 'O', 'L', 'R', 'G', 'B']
-  filters_to_process = [
-      f for f in filters
-      if any_panels_have_filter(f) and not filter_artifact_exists(f)
-  ]
+#   # TODO: Don't hardcode these filters. Find the set from the images
+#   # themselves.
+#   filters = ['H', 'S', 'O', 'L', 'R', 'G', 'B']
+#   filters_to_process = [
+#       f for f in filters if any_panels_have_filter(f)
+#       # and not filter_artifact_exists(f)
+#   ]
 
-  if not filters_to_process:
-    print(
-        f'### All filters for mosaic_id {mosaic_id} mode {mode} are up-to-date')
-    return
-  else:
-    print(f'### Need to update the following filters: {filters_to_process} '
-          f'for mosaic_id {mosaic_id} mode {mode}')
+#   # if not filters_to_process:
+#   #   print(
+#   #       f'### All filters for mosaic_id {mosaic_id} mode {mode} are up-to-date')
+#   #   return
+#   # else:
+#   #   print(f'### Need to update the following filters: {filters_to_process} '
+#   #         f'for mosaic_id {mosaic_id} mode {mode}')
 
-  # Store merged mosaics on disk for all modes except 'subframe'.
-  if mode == 'subframe':
-    output_dir = tempfile.gettempdir()
-  elif mode == 'master':
-    output_dir = os.path.join(context.output_dir, 'Mosaics', mosaic.name)
-    os.makedirs(output_dir, exist_ok=True)
+#   # Store merged mosaics on disk for all modes except 'subframe'.
+#   if mode == 'subframe':
+#     output_dir = tempfile.gettempdir()
+#   elif mode == 'master':
+#     output_dir = os.path.join(context.output_dir, 'Mosaics', mosaic.name)
+#     os.makedirs(output_dir, exist_ok=True)
 
-  viewbox = compute_mosaic_viewbox(mosaic, mode)
-  context.set(('mosaic_viewbox', mosaic.stable_hash), viewbox)
+#   viewbox = compute_mosaic_viewbox(mosaic, mode)
+#   context.set(('mosaic_viewbox', mosaic.stable_hash), viewbox)
 
-  return Graph({
-      gather_process_mosaic_per_filter: [
-          (process_mosaic_per_filter, mosaic.stable_hash, mode, f, output_dir)
-          for f in filters_to_process
-      ]
-  })
+#   return Graph({
+#       gather_process_mosaic_per_filter: [
+#           (process_mosaic_per_filter, mosaic.stable_hash, mode, f, output_dir)
+#           for f in filters_to_process
+#       ]
+#   })
 
+# @ray.remote
+# def gather_process_mosaic_per_filter():
+#   pass
 
-@ray.remote
-def gather_process_mosaic_per_filter():
-  pass
-
-
-@ray.remote
-def gather_merge_mosaics():
-  pass
+# @ray.remote
+# def gather_merge_mosaics():
+#   pass

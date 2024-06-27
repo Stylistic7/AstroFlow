@@ -1,8 +1,9 @@
 import ray
 import itertools
+import os
 
 from context import context
-from image_metadata.image_metadata import scatter_compute_image_metadata, compute_image_metadata_for_filenames
+from image_metadata.image_metadata import scatter_compute_image_metadata
 from spatial_association import find_components_by_cosine_similarity
 from stack_identification import identify_stacks
 from target_identification import group_stacks_into_targets
@@ -10,17 +11,19 @@ from calibration_frames import identify_calibration_stacks, associate_with_stack
 from image_previews import scatter_stack_thumbnails
 from stacking import scatter_stack_subframes
 from mosaics.identification import identify_mosiacs
-from dependency_graph import Graph, make_graph_from_list
+from mosaics.viewbox import compute_mosaic_viewbox
+from mosaics.merge_ops import new_make_merge_ops, merge_images
+from dependency_graph import Graph, make_graph_from_list, print_graph
 from post_process_target import post_process_target
 from post_process_stack import post_process_stack
 from post_process_mosaic import post_process_mosaic
 from suggestions import make_suggestions
-from step_mosaic import merge_mosaic, build_mosaic_merge_graph
+# from step_mosaic import merge_mosaic, build_mosaic_merge_graph
+from stacking import stack_files
 
-
-@ray.remote
-def gather():
-  pass
+# @ray.remote
+# def gather():
+#   pass
 
 
 @ray.remote
@@ -39,72 +42,126 @@ def maybe_build_regroup_graph():
 def build_preview_graph():
   return make_graph_from_list([
       (scatter_stack_thumbnails, 'subframe'),
-      (build_mosaic_merge_graph, 'subframe'),
+      # (build_mosaic_merge_graph, 'subframe'),
   ])
 
 
 # TODO: Many stacks share dependencies. Create a graph such that these
 # dependencies are represented by shared nodes in a graph, then remove the
 # gross check for existing master files in stacking.py.
-@ray.remote
-def build_stack_subgraph(id):
-  print(f'### build_stack_subgraph stack_id {id}')
-  # The stacked master filenames are passed along directly here.
-  return Graph({(post_process_stack, id): {(scatter_stack_subframes, id)}})
+def build_stack_subgraph(stack_id):
+  stacks = context.stacks
+  stack = stacks[stack_id]
+
+  graph = {}
+  graph[(stack_files,
+         stack_id)] = {(stack_files, d)
+                       for substack in stack.contents
+                       for d in stacks[substack].dependencies.values()
+                       if stacks[d].image_type != 'light'}
+  graph[(post_process_stack, stack_id)] = {(stack_files, stack_id)}
+
+  return graph
 
 
-@ray.remote
-def build_target_subgraph(id):
-  print(f'### build_target_subgraph target_id {id}')
-  target = context.targets[id]
-  # The post-processed filenames are passed along directly here.
-  return Graph({
-      (post_process_target, id): [
-          (build_stack_subgraph, s) for s in target.stack_ids
-      ]
-  })
+def build_target_subgraph(target_id):
+  print(f'### build_target_subgraph target_id {target_id}')
+  targets = context.targets
+  target = targets[target_id]
+
+  graph = {}
+  graph[(post_process_target, target_id)] = {
+      (post_process_stack, stack_id) for stack_id in target.stack_ids
+  }
+
+  return graph
 
 
 # TODO: This seems ugly.
-@ray.remote
-def flatten_lists(results):
-  result = list(itertools.chain.from_iterable(results))
-  return result
+# @ray.remote
+# def flatten_lists(results):
+#   result = list(itertools.chain.from_iterable(results))
+#   return result
 
 
-@ray.remote
-def build_mosaic_subgraph(id):
-  print(f'### build_mosaic_subgraph mosaic_id {id}')
-  mosaic = context.mosaics[id]
-  # The masters need to be plate solved, etc. before mosaic merge, so there's
-  # an explicit task here to get their metadata.
-  merge_task = (merge_mosaic, id, 'master')
-  return Graph({
-      (post_process_mosaic, id): {merge_task},
-      merge_task: {flatten_lists},
-      flatten_lists: [(build_target_subgraph, t) for t in mosaic.target_ids]
-  })
+def build_mosaic_subgraph(mosaic_id):
+  print(f'### build_mosaic_subgraph mosaic_id {mosaic_id}')
+  mosaics = context.mosaics
+  mosaic = mosaics[mosaic_id]
+
+  if not post_process_mosaic.should_run('master', mosaic_id):
+    return Graph({})
+
+  panels = {t: i for t, i in zip(mosaic.tile_indices, mosaic.target_ids)}
+  merge_ops = new_make_merge_ops(panels)
+
+  graph = {}
+  merge_ops = [
+      m for m in merge_ops
+      if merge_images.should_run('master', mosaic_id, merge_op)
+  ]
+  graph[(post_process_mosaic, 'master',
+         mosaic_id)] = [(merge_images, 'master', m) for m in merge_ops]
+
+  # graph[(post_process_mosaic, 'master', mosaic_id)] = (merge_mosaic, 'master')
+
+  # viewbox_task = (compute_mosaic_viewbox, mosaic_id, 'master')
+  # for filter, stack_ids in _stacks_for_filters(mosaic_id).items():
+  #   for stack_id in stack_ids:
+  #     graph[(place_panel,
+  #            stack_id)] = [viewbox_task, (post_process_stack, stack_id)]
+
+  # output_dir = os.path.join(context.output_dir, 'Mosaics', mosaic.name)
+  # os.makedirs(output_dir, exist_ok=True)
+  # graph |= _make_merge_ops(mosaic_id, output_dir)
+
+  return Graph(graph)
 
 
-@ray.remote
+def _stacks_for_filters(mosaic_id):
+  mosaics = context.mosaics
+  mosaic = mosaics[mosaic_id]
+  targets = context.targets
+  stacks = context.stacks
+
+  def stacks_for_filter(filter):
+    return [
+        s for t in mosaic.target_ids for s in targets[t].stack_ids
+        if stacks[s].filter == filter
+    ]
+
+  filters = ['H', 'S', 'O', 'L', 'R', 'G', 'B']
+  result = {f: stacks_for_filter(f) for f in filters}
+  return {k: v for k, v in result.items() if v}
+
+
+# TODO: This places an image into a mosaic viewbox.
+def place_panel(panel):
+  pass
+
+
+def _make_merge_ops(mosaic_id, output_dir):
+  return {}
+
+
 def build_main_processing_graph():
   shopping_cart = context.shopping_cart or []
-  print(f'### build_main_processing_graph {shopping_cart}')
+  print(f'### build_main_processing_graph shopping_cart {shopping_cart}')
 
   # TODO: Maybe add prioritization options in the UI.
-  # TODO: Remove duplicates.
-  subgraphs = []
+  graph = {}
   for type, id in shopping_cart:
     if type == 'stack':
-      subgraphs.append((build_stack_subgraph, id))
+      graph |= build_stack_subgraph(id)
     elif type == 'target':
-      subgraphs.append((build_target_subgraph, id))
-    elif type == 'mosaic':
-      subgraphs.append((build_mosaic_subgraph, id))
+      graph |= build_target_subgraph(id)
+    if type == 'mosaic':
+      graph |= build_mosaic_subgraph(id)
 
-  print(f'### build_main_processing_graph returning '
-        f'{len(subgraphs)} subgraphs')
-  return Graph({gather: subgraphs})
+  print(f'### Finished composing main processing graph')
+  print_graph(graph)
+
+  return Graph(graph)
 
 
 def build_compute_graph():
@@ -114,11 +171,11 @@ def build_compute_graph():
       make_suggestions,
       build_preview_graph,
       # This is the heavyweight graph that runs PixInsight and may take days.
-      build_main_processing_graph,
-      (scatter_compute_image_metadata, 'master'),
+      # build_main_processing_graph,
+      # (scatter_compute_image_metadata, 'master'),
       # TODO: This is very slow.
       # (scatter_stack_thumbnails, 'master'),
-      (build_mosaic_merge_graph, 'master')
+      # (build_mosaic_merge_graph, 'master')
   ])
 
 

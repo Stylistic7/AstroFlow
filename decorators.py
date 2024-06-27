@@ -5,7 +5,7 @@ from context import context
 from file_io.generic import get_content_hash
 
 
-def saves_artifacts(artifacts_fn):
+def saves_artifacts(artifacts_fn, debug=True):
 
   def decorator(fn):
 
@@ -15,8 +15,23 @@ def saves_artifacts(artifacts_fn):
       if type(artifacts) is dict:
         for content_hash, filename in artifacts.items():
           filename = os.path.join(context.output_dir, filename)
-          if not os.path.exists(filename) or get_content_hash(
-              filename) != content_hash:
+
+          if hasattr(fn, 'remote'):
+            fn_name = fn._function.__name__
+          else:
+            fn_name = fn.__name__
+
+          if not os.path.exists(filename):
+            if debug:
+              print(f'### should_run fn {fn_name} because '
+                    f'file {filename} does not exist')
+            return True
+
+          if get_content_hash(filename) != content_hash:
+            if debug:
+              print(f'### should_run fn {fn_name} because '
+                    f'file {filename} does not have '
+                    f'content hash {content_hash}')
             return True
 
         return False

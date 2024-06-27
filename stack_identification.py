@@ -117,7 +117,7 @@ def identify_stacks():
   # subdivides by independent 1D variables.
   #
   # TODO: A 6-deep nested for loop is pretty ugly. Can this be improved?
-  debug_hash = 'cbc3b0f593d8a78f'
+  debug_hash = None
   stacks = {}
   for name, light_frames in spatial_groups:
     scales = [(f, plate_solutions[f].image_scale) for f in light_frames]

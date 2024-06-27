@@ -96,6 +96,10 @@ def _run_wbpp(unused, *args, **kwargs):
 def stack_files(stack_id, input_files):
   assert context.output_dir
 
+  stacks = context.stacks
+  stack = stacks[stack_id]
+  print(f'### Entering stack_files for {stack}, input_files {input_files}')
+
   image_hashes = context.image_hashes
   input_files = dict(input_files)
 
@@ -108,11 +112,6 @@ def stack_files(stack_id, input_files):
 
     assert os.path.exists(filename)
     return filename
-
-  stacks = context.stacks
-  stack = stacks[stack_id]
-  print(f'### Entering stack_files for {stack}, '
-        f'input_files {input_files}')
 
   dest_filename = _output_filename(stack, context.output_dir)
   os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
@@ -162,7 +161,9 @@ def stack_files(stack_id, input_files):
                                               metadata=metadata)
       print(f'### Mocked stacking, wrote filename {dest_filename} '
             f'with metadata {metadata}')
-      return stack.content_hash, dest_filename
+      result = stack.content_hash, dest_filename
+      print(f'### stack_files returning result {result}')
+      return result
 
     print(f'### Running _run_wbpp for stack {stack}')
     # TODO: Putting [] here for `filenames` is a wart.
@@ -190,7 +191,9 @@ def stack_files(stack_id, input_files):
 
     key = ('stack_files', stack_id)
     context.set(key, stack.content_hash)
-    return stack.content_hash, dest_filename
+    result = stack.content_hash, dest_filename
+    print(f'### stack_files returning result {result}')
+    return result
 
 
 # TODO: Should this function ignore the stack if it has already been stacked?

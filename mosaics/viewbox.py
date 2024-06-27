@@ -1,3 +1,4 @@
+import ray
 import numpy as np
 
 import mercator
@@ -6,7 +7,10 @@ from context import context
 from projection import compute_viewbox
 
 
-def compute_mosaic_viewbox(mosaic, mode):
+@ray.remote
+def compute_mosaic_viewbox(mosaic_id, mode):
+  mosaic = context.mosaics[mosaic_id]
+
   # Determine the output image shape and resolution, which is a 3D to 2D
   # projection.
   proj = mercator.MercatorProjection()

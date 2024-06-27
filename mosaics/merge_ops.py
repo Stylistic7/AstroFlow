@@ -5,6 +5,11 @@ import pix
 import hashing
 from . import classes
 
+from context import context
+from hashing import hash_list
+from file_io.generic import get_content_hash
+from decorators import saves_artifacts
+
 
 def fill_template(template, value):
   return tuple(value if t is None else t for t in template)
@@ -159,19 +164,31 @@ def run_photometric_mosaic(images, output_filename):
   return pix.PhotometricMosaic(images, output_filename)
 
 
-# TODO: Move this into the main processing graph.
-def merge_mosaic(mode, mosaic_id, panels, output_dir):
-  print(f'Entering merge_mosaic, output_dir {output_dir}')
-  merge_ops = make_merge_ops(mode, mosaic_id, panels, output_dir)
-  assert merge_ops
-  for merge_op in merge_ops:
-    input_filenames = merge_op.image_filenames
-    output_filename = merge_op.output_filename
-    print(f'### Calling run_photometric_mosaic inputs {input_filenames} '
-          f'output {output_filename}')
-    assert all(os.path.exists(i) for i in input_filenames)
-    output_image = run_photometric_mosaic(input_filenames, output_filename)
-    print(f'run_photometric_mosaic returned {output_image}')
+# # TODO: Move this into the main processing graph.
+# def merge_mosaic(mode, mosaic_id, panels, output_dir):
+#   print(f'Entering merge_mosaic, output_dir {output_dir}')
+#   merge_ops = make_merge_ops(mode, mosaic_id, panels, output_dir)
+#   assert merge_ops
+#   for merge_op in merge_ops:
+#     input_filenames = merge_op.image_filenames
+#     output_filename = merge_op.output_filename
+#     print(f'### Calling run_photometric_mosaic inputs {input_filenames} '
+#           f'output {output_filename}')
+#     assert all(os.path.exists(i) for i in input_filenames)
+#     output_image = run_photometric_mosaic(input_filenames, output_filename)
+#     print(f'run_photometric_mosaic returned {output_image}')
 
-  assert output_image
-  return output_image
+#   assert output_image
+#   return output_image
+
+
+def merge_images_artifacts(mode, mosaic_id, merge_op):
+  content_hash = hash_list(
+      get_content_hash(os.path.join(context.output_dir, i))
+      for i in merge_op.input_ids)
+  return {content_hash: f'mosaic_{mosaic_id}_merged_{merge_op.output_id}.fits'}
+
+
+@saves_artifacts(merge_images_artifacts)
+def merge_images(mode, merge_op):
+  pass

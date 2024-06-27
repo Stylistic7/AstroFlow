@@ -22,8 +22,6 @@ def convert_xisf_to_fits(xisf_filename: Path | str,
 
       hdu.header[k] = (value, v['comment'])
 
-  hdu.writeto(fits_filename)
-
 
 def convert_fits_to_xisf(fits_filename: Path | str,
                          xisf_filename: Path | str,
