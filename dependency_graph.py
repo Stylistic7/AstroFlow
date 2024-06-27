@@ -66,9 +66,9 @@ def make_graph_from_list(tasks):
   prev_task = None
   for task in tasks:
     if prev_task:
-      graph[task] = {prev_task}
+      graph[task] = [prev_task]
     else:
-      graph[task] = {}
+      graph[task] = []
 
     prev_task = task
 
@@ -92,6 +92,11 @@ def print_result_dict(results, indent=0):
 
 
 def print_graph(graph):
+  if not graph:
+    print('Compute graph is empty')
+    return
+
+  print(f'Printing compute graph with {len(graph)} edges:')
   for k, v in graph.items():
 
     def type_or_value(x):
@@ -110,6 +115,11 @@ def print_graph(graph):
     if type(v) in [list, set]:
       strings = [to_string(i) for i in v]
       print(f'{to_string(k)}: [{", ".join(strings)}]')
+      continue
+
+    assert False, f'Node dependencies have unsupported type {type(v)}: {v}'
+
+  print('Done printing compute graph')
 
 
 def run_graph(graph, debug=False):
@@ -174,7 +184,10 @@ def run_graph(graph, debug=False):
     if len(sig.parameters) > len(full_args):
       full_args.append(ancestor_results(ts, node))
 
-    return node.task.remote(*full_args)
+    if hasattr(node.task, 'remote'):
+      return node.task.remote(*full_args)
+    else:
+      return node.task(*full_args)
 
   def delete_finished_subgraphs():
     for ts in active:
