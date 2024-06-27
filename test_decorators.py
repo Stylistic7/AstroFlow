@@ -8,7 +8,7 @@ import astropy.io.fits as pyfits  # type: ignore
 
 from make_test_context import make_test_context
 from context import context
-from decorators import saves_files, saves_cache_keys
+from decorators import saves_artifacts
 from hashing import hash_list
 
 
@@ -19,7 +19,7 @@ def foo_artifacts(mosaic_id, filter):
   return {content_hash: f'master_light_{mosaic_id}_{filter}.fit'}
 
 
-@saves_files(foo_artifacts)
+@saves_artifacts(foo_artifacts)
 @ray.remote
 def foo(mosaic_id, filter):
   content_hash, filename = next(iter(foo_artifacts(mosaic_id, filter).items()))
@@ -37,11 +37,21 @@ def bar_artifacts(mosaic_id, filter):
   return [('bar', mosaic_id, filter)]
 
 
-@saves_cache_keys(bar_artifacts)
+@saves_artifacts(bar_artifacts)
 @ray.remote
 def bar(mosaic_id, filter):
   key = next(iter(bar_artifacts(mosaic_id, filter)))
   context[key] = 'bar'
+
+
+def baz_artifacts(mosaic_id, filter):
+  return [('baz', mosaic_id, filter)]
+
+
+@saves_artifacts(baz_artifacts)
+def baz(mosaic_id, filter):
+  key = next(iter(baz_artifacts(mosaic_id, filter)))
+  context[key] = 'baz'
 
 
 class TestDecorators(unittest.TestCase):
@@ -60,6 +70,12 @@ class TestDecorators(unittest.TestCase):
 
     ray.get(bar.remote('abc123', 'H'))
     self.assertFalse(bar.should_run('abc123', 'H'))
+
+  def test_local_function(self):
+    self.assertTrue(baz.should_run('abc123', 'H'))
+
+    baz('abc123', 'H')
+    self.assertFalse(baz.should_run('abc123', 'H'))
 
 
 if __name__ == '__main__':

@@ -5,46 +5,32 @@ from context import context
 from file_io.generic import get_content_hash
 
 
-def saves_files(artifacts_fn):
+def saves_artifacts(artifacts_fn):
 
   def decorator(fn):
 
     def should_run(*args, **kwargs):
       artifacts = artifacts_fn(*args, **kwargs)
-      for content_hash, filename in artifacts.items():
-        filename = os.path.join(context.output_dir, filename)
-        if not os.path.exists(filename) or get_content_hash(
-            filename) != content_hash:
-          return True
 
-      return False
+      if type(artifacts) is dict:
+        for content_hash, filename in artifacts.items():
+          filename = os.path.join(context.output_dir, filename)
+          if not os.path.exists(filename) or get_content_hash(
+              filename) != content_hash:
+            return True
 
-    @wraps(fn)
-    def wrapper(*args, **kwargs):
-      assert False, "Do not call this function directly."
-
-    wrapper.should_run = should_run
-    wrapper.remote = fn.remote
-
-    return wrapper
-
-  return decorator
-
-
-def saves_cache_keys(keys_fn):
-
-  def decorator(fn):
-
-    def should_run(*args, **kwargs):
-      keys = keys_fn(*args, **kwargs)
-      return not all(context.contains(k) for k in keys)
+        return False
+      elif type(artifacts) is list:
+        return not all(context.contains(k) for k in artifacts)
 
     @wraps(fn)
     def wrapper(*args, **kwargs):
-      assert False, "Do not call this function directly."
+      return fn(*args, **kwargs)
 
     wrapper.should_run = should_run
-    wrapper.remote = fn.remote
+
+    if hasattr(fn, 'remote'):
+      wrapper.remote = fn.remote
 
     return wrapper
 
