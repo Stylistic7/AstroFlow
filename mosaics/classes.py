@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from addict import Dict
 
 import plate_solving
 
@@ -15,10 +16,11 @@ class Panel:
   tile_indices: list[int] = None
 
 
+# TODO: Maybe use Artifact as a more strongly-typed Dict.
 @dataclass
 class MergeOp:
-  input_ids: list[str] = None
-  output_id: str = None
+  input_artifacts: list[Dict] = None
+  output_artifact: Dict = None
 
 
 @dataclass

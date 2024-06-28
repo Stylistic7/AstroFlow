@@ -1,5 +1,6 @@
 import os
 import numpy as np
+from addict import Dict
 
 import pix
 import hashing
@@ -45,10 +46,19 @@ def new_make_merge_ops(panels):
         new_panels[tile_indices] = panels[pair[0]]
       elif len(pair) == 2:
         pair_id = make_pair_id(level, pair)
-        new_panels[tile_indices] = pair_id
+        output_content_hash = hash_list(panels[p].content_hash for p in pair)
+        new_panels[tile_indices] = Dict(filename=pair_id,
+                                        content_hash=output_content_hash)
+        print(f'### making merge op for pair {pair}')
+        print(f'### panels[pair[0]] {panels[pair[0]]}')
+        print(f'### panels[pair[1]] {panels[pair[1]]}')
+        # TODO: Maybe use 'id' instead of 'filename' in the artifacts, since
+        # some may be stored in the cache instead of directly on disk.
         merge_ops.append(
-            classes.MergeOp(input_ids=[panels[p] for p in pair],
-                            output_id=pair_id))
+            classes.MergeOp(input_artifacts=[panels[p] for p in pair],
+                            output_artifact=Dict(
+                                filename=pair_id,
+                                content_hash=output_content_hash)))
 
   level = 0
   merge_ops = []
@@ -181,12 +191,27 @@ def run_photometric_mosaic(images, output_filename):
 #   assert output_image
 #   return output_image
 
+# How is this code supposed to know the content_hash of the expected file?
+#
+# The idea is that the "forward pass" should be deterministic, starting from
+# the raw FITS files.
+#
+# I can't pass along just the filenames, because the files don't exist yet.
+# I also have to pass along the content_hashes of the filenames, which...
+# starts to sound like a Panel object.
+#
+# I need to always pass along both the expected filename, AND the expected
+# content_hash.
+
 
 def merge_images_artifacts(mode, mosaic_id, merge_op):
-  content_hash = hash_list(
-      get_content_hash(os.path.join(context.output_dir, i))
-      for i in merge_op.input_ids)
-  return {content_hash: f'mosaic_{mosaic_id}_merged_{merge_op.output_id}.fits'}
+  print(f'### merge_images_artifacts for merge_op {merge_op}')
+  content_hash = hash_list(i.content_hash for i in merge_op.input_artifacts)
+  return [
+      Dict(
+          content_hash=content_hash,
+          filename=f'mosaic_{mosaic_id}_merged_{merge_op.output_artifact}.fits')
+  ]
 
 
 @saves_artifacts(merge_images_artifacts)
