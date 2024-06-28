@@ -20,6 +20,7 @@ from post_process_mosaic import post_process_mosaic
 from suggestions import make_suggestions
 # from step_mosaic import merge_mosaic, build_mosaic_merge_graph
 from stacking import stack_files
+from post_process_stack import post_process_stack_artifacts
 
 # @ray.remote
 # def gather():
@@ -76,32 +77,101 @@ def build_target_subgraph(target_id):
 
   return graph
 
+  # TODO: This seems ugly.
+  # @ray.remote
+  # def flatten_lists(results):
+  #   result = list(itertools.chain.from_iterable(results))
+  #   return result
 
-# TODO: This seems ugly.
-# @ray.remote
-# def flatten_lists(results):
-#   result = list(itertools.chain.from_iterable(results))
-#   return result
+
+# def build_merge_ops_subgraph(mode, mosaic_id, merge_ops):
+#   graph = {}
+#   for merge_op in merge_ops:
+#     if merge_images.should_run(mode, mosaic_id, merge_op):
+#       print(f'### merging_images {merge_op}')
+#       graph[(merge_images, mode, merge_op)] = [
+#           (post_process_stack, a.stack_id) for a in merge_op.input_artifacts
+#       ]
+
+#   return graph
+
+
+def build_mosaic_filter_subgraph(mosaic_id, filter):
+  print(f'### build_mosaic_filter_subgraph '
+        f'mosaic_id {mosaic_id} filter {filter}')
+  stacks = context.stacks
+  targets = context.targets
+  mosaics = context.mosaics
+  mosaic = mosaics[mosaic_id]
+
+  # TODO: What to do if there are multiple stacks for a filter? That's not
+  # really supposed to happen.
+  panels = {}
+  for tile_indices, target_id in zip(mosaic.tile_indices, mosaic.target_ids):
+    stacks_for_filter = [
+        s for s in targets[target_id].stack_ids if stacks[s].filter == filter
+    ]
+    if not stacks_for_filter:
+      continue
+
+    assert len(stacks_for_filter) == 1
+    stack_id = next(iter(stacks_for_filter))
+
+    artifacts = post_process_stack_artifacts(stack_id)
+    assert len(artifacts) == 1
+    artifact = next(iter(artifacts))
+    artifact.stack_id = stack_id
+
+    panels[tile_indices] = artifact
+
+  print(f'### found panels for filter {filter}: {panels}')
+  merge_ops = new_make_merge_ops(panels)
+  print(f'### merge_ops {merge_ops}')
+  return merge_ops
 
 
 def build_mosaic_subgraph(mosaic_id):
   print(f'### build_mosaic_subgraph mosaic_id {mosaic_id}')
+  stacks = context.stacks
+  targets = context.targets
   mosaics = context.mosaics
   mosaic = mosaics[mosaic_id]
 
   if not post_process_mosaic.should_run('master', mosaic_id):
     return Graph({})
 
-  panels = {t: i for t, i in zip(mosaic.tile_indices, mosaic.target_ids)}
-  merge_ops = new_make_merge_ops(panels)
+  # Iterate over the filters in the mosaic.
+  #   Get the stack_ids for all the panels in the mosaic for that filter.
+  #   Get the artifact filenames for all the stacks.
+  #   Compute the merge ops with those artifact filenames.
+  #   Iterate over the merge ops.
+  #     See if the merge op needs to run.
+  #     If any merge op needs to run, keep all of the subsequent merge ops.
+  #
+  # Iterate over the merge ops that need to run.
+  #   See if the post_process_stack operation needs to run for the stacks.
+  #
+  # Iterate over the post_process_stack operations that need to run.
+  #   See if the stack_files operation needs to run.
 
+  # TODO: Iterate over the actual filters in the mosaic.
   graph = {}
-  merge_ops = [
-      m for m in merge_ops
-      if merge_images.should_run('master', mosaic_id, merge_op)
-  ]
-  graph[(post_process_mosaic, 'master',
-         mosaic_id)] = [(merge_images, 'master', m) for m in merge_ops]
+  for filter in ['H', 'S', 'O', 'L', 'R', 'G', 'B']:
+    graph |= build_mosaic_filter_subgraph(mosaic_id, filter)
+
+    # panels = {
+    #     idx: get_stack(t)
+    #     for idx, t in zip(mosaic.tile_indices, mosaic.target_ids)
+    # }
+    # merge_ops = new_make_merge_ops(panels)
+
+    # graph = {}
+    # merge_ops = [
+    #     m for m in merge_ops if merge_images.should_run('master', mosaic_id, m)
+    # ]
+
+    # graph[(post_process_mosaic, 'master',
+    #        mosaic_id)] = [(merge_images, 'master', m) for m in merge_ops]
 
   # graph[(post_process_mosaic, 'master', mosaic_id)] = (merge_mosaic, 'master')
 

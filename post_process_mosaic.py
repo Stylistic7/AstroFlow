@@ -1,4 +1,5 @@
 import ray
+from addict import Dict
 
 from pix import PixInsight
 from context import context
@@ -14,7 +15,10 @@ def post_process_mosaic_artifacts(mode, mosaic_id):
   mosaic = context.mosaics[mosaic_id]
 
   if mode == 'master':
-    return {mosaic.content_hash: f'mosaic_{mosaic_id}_post_processed.fits'}
+    return [
+        Dict(content_hash=mosaic.content_hash,
+             filename=f'mosaic_{mosaic_id}_post_processed.fits')
+    ]
 
 
 @saves_artifacts(post_process_mosaic_artifacts)

@@ -1,6 +1,9 @@
 import ray
 import os
+from addict import Dict
 
+from context import context
+from decorators import saves_artifacts
 import pix
 
 # TODO: Put this some place generally-accessible.
@@ -21,8 +24,20 @@ def _post_process_stack(image):
   return image
 
 
+def post_process_stack_artifacts(stack_id, *args):
+  # FIXME
+  return [
+      Dict(content_hash='abc123',
+           filename=os.path.join(context.output_dir,
+                                 f'stack_{stack_id}_post_processed.fit'))
+  ]
+
+
 # TODO: Hash the script used to do the post-processing, and do not repeat
 # the post-processing when a file with that hash already exists.
+# TODO: This should not need the `input_files` arg; it should get the artifact
+# from stack_files_artifacts() using only the stack_id.
+@saves_artifacts(post_process_stack_artifacts)
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
 def post_process_stack(stack_id, input_files):
   assert len(input_files) == 1

@@ -5,8 +5,8 @@ import os
 import unittest
 import ray
 import astropy.io.fits as pyfits  # type: ignore
-from addict import Dict
 
+from artifact import Artifact
 from make_test_context import make_test_context
 from context import context
 from decorators import saves_artifacts
@@ -18,14 +18,15 @@ from hashing import hash_list
 def foo_artifacts(mosaic_id, filter):
   content_hash = hash_list([mosaic_id, filter])
   return [
-      Dict(content_hash=content_hash,
-           filename=f'master_light_{mosaic_id}_{filter}.fit')
+      Artifact(content_hash=content_hash,
+               filename=f'master_light_{mosaic_id}_{filter}.fit')
   ]
 
 
 @saves_artifacts(foo_artifacts)
 @ray.remote
 def foo(mosaic_id, filter):
+  print('### Running foo')
   artifact = next(iter(foo_artifacts(mosaic_id, filter)))
   filename = os.path.join(context.output_dir,
                           f'master_light_{mosaic_id}_{filter}.fit')
@@ -38,24 +39,27 @@ def foo(mosaic_id, filter):
 
 
 def bar_artifacts(mosaic_id, filter):
-  return [Dict(key=('bar', mosaic_id, filter))]
+  return [Artifact(key=('bar', mosaic_id, filter))]
 
 
 @saves_artifacts(bar_artifacts)
 @ray.remote
 def bar(mosaic_id, filter):
+  print('### Running bar')
   key = next(iter(bar_artifacts(mosaic_id, filter))).key
   context[key] = 'bar'
 
 
 def baz_artifacts(mosaic_id, filter):
-  return [Dict(key=('baz', mosaic_id, filter))]
+  return [Artifact(key=('baz', mosaic_id, filter))]
 
 
 @saves_artifacts(baz_artifacts)
 def baz(mosaic_id, filter):
+  print('### Running baz')
   key = next(iter(baz_artifacts(mosaic_id, filter))).key
   context[key] = 'baz'
+  print(f'### Wrote key {key}')
 
 
 class TestDecorators(unittest.TestCase):

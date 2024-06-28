@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from collections import namedtuple
 from addict import Dict
 
 import plate_solving
@@ -17,7 +18,7 @@ class Panel:
 
 
 # TODO: Maybe use Artifact as a more strongly-typed Dict.
-@dataclass
+@dataclass(frozen=True)
 class MergeOp:
   input_artifacts: list[Dict] = None
   output_artifact: Dict = None

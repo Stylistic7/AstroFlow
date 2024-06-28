@@ -110,7 +110,13 @@ def print_graph(graph):
 
     def to_string(node):
       node = _unpack_node(node)
-      return f'({node.task._function.__name__}, {tuple_values(node.args)})'
+
+      if hasattr(node.task, 'remote'):
+        fn_name = node.task._function.__name__
+      else:
+        fn_name = node.task.__name__
+
+      return f'({fn_name}, {tuple_values(node.args)})'
 
     if type(v) in [list, set]:
       strings = [to_string(i) for i in v]
