@@ -1,7 +1,7 @@
 import ray
 import os
-from addict import Dict
 
+from artifact import Artifact
 from context import context
 from decorators import saves_artifacts
 import pix
@@ -25,11 +25,10 @@ def _post_process_stack(image):
 
 
 def post_process_stack_artifacts(stack_id, *args):
-  # FIXME
+  stacks = context.stacks
   return [
-      Dict(content_hash='abc123',
-           filename=os.path.join(context.output_dir,
-                                 f'stack_{stack_id}_post_processed.fit'))
+      Artifact(content_hash=stacks[stack_id].content_hash,
+               filename=f'stack_{stack_id}_post_processed.fit')
   ]
 
 
@@ -37,8 +36,8 @@ def post_process_stack_artifacts(stack_id, *args):
 # the post-processing when a file with that hash already exists.
 # TODO: This should not need the `input_files` arg; it should get the artifact
 # from stack_files_artifacts() using only the stack_id.
-@saves_artifacts(post_process_stack_artifacts)
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
+@saves_artifacts(post_process_stack_artifacts)
 def post_process_stack(stack_id, input_files):
   assert len(input_files) == 1
   input_file = input_files[0]

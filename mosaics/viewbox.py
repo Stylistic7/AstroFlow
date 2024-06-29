@@ -1,14 +1,35 @@
 import ray
 import numpy as np
 
+from artifact import Artifact
+from decorators import saves_artifacts
 import mercator
 import footprints
 from context import context
 from projection import compute_viewbox
 
+# def compute_viewbox(plate_solutions):
+#   ras = [f[0] for p in plate_solutions for f in p.footprint]
+#   decs = [f[1] for p in plate_solutions for f in p.footprint]
+#   # print(f'got {len(ras)} ras and {len(decs)} decs')
+
+#   min_ra, max_ra = np.min(ras), np.max(ras)
+#   min_dec, max_dec = np.min(decs), np.max(decs)
+
+#   return [min_ra, min_dec, max_ra - min_ra, max_dec - min_dec]
+
+
+def compute_mosaic_viewbox_artifacts(mode, mosaic_id):
+  mosaic = context.mosaics[mosaic_id]
+  return [
+      Artifact(key=('mosaic_viewbox', mode, mosaic_id, mosaic.content_hash))
+  ]
+
 
 @ray.remote
-def compute_mosaic_viewbox(mosaic_id, mode):
+@saves_artifacts(compute_mosaic_viewbox_artifacts)
+def compute_mosaic_viewbox(mode, mosaic_id):
+  print(f'### Entering compute_mosaic_viewbox for mosaic_id {mosaic_id}')
   mosaic = context.mosaics[mosaic_id]
 
   # Determine the output image shape and resolution, which is a 3D to 2D
@@ -39,4 +60,8 @@ def compute_mosaic_viewbox(mosaic_id, mode):
   assert np.max(dest_xs) == dest_width - 1
   assert dest_xs.shape == dest_ys.shape == ras.shape == decs.shape
 
-  return dict(dest_xs=dest_xs, dest_ys=dest_ys, ras=ras, decs=decs)
+  viewbox = dict(dest_xs=dest_xs, dest_ys=dest_ys, ras=ras, decs=decs)
+
+  key = next(iter(compute_mosaic_viewbox_artifacts(mode, mosaic_id))).key
+  context[key] = viewbox
+  print(f'### Wrote key {key}')

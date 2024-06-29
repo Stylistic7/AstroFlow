@@ -6,7 +6,7 @@ from context import context
 from file_io.generic import get_content_hash
 
 
-def saves_artifacts(artifacts_fn, in_test=False, debug=False):
+def saves_artifacts(artifacts_fn, in_test=False, debug=True):
 
   def decorator(fn):
 
@@ -15,7 +15,12 @@ def saves_artifacts(artifacts_fn, in_test=False, debug=False):
       assert type(artifacts) is list
 
       for artifact in artifacts:
-        assert type(artifact) is Artifact
+        assert type(
+            artifact
+        ) is Artifact, f'{fn.__name__} returned type {type(artifact)}'
+
+        assert artifact.filename or artifact.key
+
         if artifact.filename:
           filename = os.path.join(context.output_dir, artifact.filename)
 
@@ -38,6 +43,8 @@ def saves_artifacts(artifacts_fn, in_test=False, debug=False):
                     f'key {artifact.key} does not exist')
             return True
 
+      if debug:
+        print(f'### not running {fn.__name__} artifacts {artifacts}')
       return False
 
     @wraps(fn)

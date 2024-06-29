@@ -12,10 +12,15 @@ class Panel:
   mosaic_id: str = None
   filter: str = None
 
-  # These define the input.
   tile_indices: list[int] = None
+
+  # These define the input image.
   input_filename: str = None
-  # image_hash: str = None
+  image_key: str = None
+  image_hash: str = None
+
+  # These are the stacks ids that this Panel represents.
+  # TODO: Maybe call them `stack_stable_hash` and `stack_content_hash`.
   stable_hash: str = None
   content_hash: str = None
 

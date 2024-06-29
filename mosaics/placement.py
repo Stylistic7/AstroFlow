@@ -11,20 +11,27 @@ import astropy.io.fits as pyfits
 import time
 from pathlib import Path
 
+from file_io.generic import read_header
+from plate_solving import solve_field
+from image_previews import array_to_png
+from decorators import saves_artifacts
+from artifact import Artifact
 from context import context
 from file_io.generic import read_image
 import image_previews
+from .viewbox import compute_mosaic_viewbox_artifacts
 
 
-def compute_viewbox(plate_solutions):
-  ras = [f[0] for p in plate_solutions for f in p.footprint]
-  decs = [f[1] for p in plate_solutions for f in p.footprint]
-  # print(f'got {len(ras)} ras and {len(decs)} decs')
-
-  min_ra, max_ra = np.min(ras), np.max(ras)
-  min_dec, max_dec = np.min(decs), np.max(decs)
-
-  return [min_ra, min_dec, max_ra - min_ra, max_dec - min_dec]
+def mosaic_by_coordinates_artifacts(mode, panel):
+  if mode == 'subframe':
+    key = ('placed_image', panel.mosaic_id, panel.stable_hash,
+           panel.content_hash)
+    return [Artifact(key=key)]
+  elif mode == 'master':
+    return [
+        Artifact(filename=panel.placed_filename,
+                 content_hash=panel.content_hash)
+    ]
 
 
 # Function pseudocode:
@@ -41,15 +48,21 @@ def compute_viewbox(plate_solutions):
 #
 # TODO: Provide some feedback on progress.
 # TODO: Store these on disk and read them back when unchanged.
-def mosaic_by_coordinates(panel):
+@ray.remote
+@saves_artifacts(mosaic_by_coordinates_artifacts)
+def mosaic_by_coordinates(mode, panel):
+  print(f'### Entering mosaic_by_coordinates mode {mode} panel {panel}')
+
   # TODO: Pass this through the context.
-  autostretch = False
+  # autostretch = False
 
   image_hashes = context.image_hashes
   fits_headers = context.fits_headers
   plate_solutions = context.plate_solutions
 
-  viewbox = context.get(('mosaic_viewbox', panel.mosaic_id))
+  viewbox_key = next(
+      iter(compute_mosaic_viewbox_artifacts(mode, panel.mosaic_id))).key
+  viewbox = context.get(viewbox_key)
   assert viewbox
 
   print(f'mosaic_by_coordinates projecting panel {panel}')
@@ -63,9 +76,16 @@ def mosaic_by_coordinates(panel):
   projected_image = np.zeros(ras.shape)
   projection_map = np.zeros(ras.shape)
 
-  filename = image_hashes[panel.image_hash]
-  header = fits_headers[panel.image_hash]
-  plate_solution = plate_solutions[panel.image_hash]
+  if panel.image_hash:
+    filename = image_hashes[panel.image_hash]
+    header = fits_headers[panel.image_hash]
+    plate_solution = plate_solutions[panel.image_hash]
+  else:
+    # TODO: It's a bit weird to do this here. This should all be in a separate
+    # function outside of this file.
+    filename = panel.input_filename
+    header = read_header(filename)
+    plate_solution = solve_field(filename)
 
   if header is None:
     print(f'Could not place panel {panel} because header was None')
@@ -80,11 +100,11 @@ def mosaic_by_coordinates(panel):
   print(f'mosaic_by_coordinates image dtype {image.dtype} '
         f'min {np.min(image)} max {np.max(image)}')
 
-  if autostretch:
-    try:
-      image = image_previews.autostretch(image)
-    except Exception as e:
-      print(f'failed to autostretch, exception {e}')
+  # if autostretch:
+  #   try:
+  #     image = image_previews.autostretch(image)
+  #   except Exception as e:
+  #     print(f'failed to autostretch, exception {e}')
 
   print(f'Image has shape {image.shape} and dtype {image.dtype}')
 
@@ -153,20 +173,25 @@ def mosaic_by_coordinates(panel):
         f'min {np.min(output_image)} max {np.max(output_image)} '
         f'time {end-start:.2f}')
 
-  hdu = pyfits.PrimaryHDU(output_image)
-  hdu.header['SIMPLE'] = True
-  hdu.header['IMAGETYP'] = 'PlacedMosaic Light'
-  hdu.header['FOCALLEN'] = float(header['FOCALLEN'])
-  hdu.header['XPIXSZ'] = float(header['XPIXSZ'])
-  hdu.header['YPIXSZ'] = float(header['YPIXSZ'])
-  hdu.header['HISTORY'] = f"TrimMosaicTile.target: foo"
-  hdu.header['HISTORY'] = f"TrimMosaicTile.top: {trim_top}"
-  hdu.header['HISTORY'] = f"TrimMosaicTile.bottom: {trim_top + trim_height}"
-  hdu.header['HISTORY'] = f"TrimMosaicTile.left: {trim_left}"
-  hdu.header['HISTORY'] = f"TrimMosaicTile.right: {trim_left + trim_width}"
+  if mode == 'subframe':
+    key = next(iter(mosaic_by_coordinates_artifacts(mode, panel))).key
+    context[key] = output_image
+    print(f'### Wrote key {key} of tyoe {type(output_image)}')
+  elif mode == 'master':
+    hdu = pyfits.PrimaryHDU(output_image)
+    hdu.header['SIMPLE'] = True
+    hdu.header['IMAGETYP'] = 'PlacedMosaic Light'
+    hdu.header['FOCALLEN'] = float(header['FOCALLEN'])
+    hdu.header['XPIXSZ'] = float(header['XPIXSZ'])
+    hdu.header['YPIXSZ'] = float(header['YPIXSZ'])
+    hdu.header['HISTORY'] = f"TrimMosaicTile.target: foo"
+    hdu.header['HISTORY'] = f"TrimMosaicTile.top: {trim_top}"
+    hdu.header['HISTORY'] = f"TrimMosaicTile.bottom: {trim_top + trim_height}"
+    hdu.header['HISTORY'] = f"TrimMosaicTile.left: {trim_left}"
+    hdu.header['HISTORY'] = f"TrimMosaicTile.right: {trim_left + trim_width}"
 
-  # TODO: Is this placed_filename actually checked anywhere?
-  hdu.writeto(panel.placed_filename, overwrite=True)
-  print(f'### Wrote placed image filename {panel.placed_filename}')
+    # TODO: Is this placed_filename actually checked anywhere?
+    hdu.writeto(panel.placed_filename, overwrite=True)
+    print(f'### Wrote placed image filename {panel.placed_filename}')
 
   return panel

@@ -194,6 +194,8 @@ def gather_compute_image_metadata(results):
     assert not any(h in context.fits_headers for h in new_fits_headers.keys())
     context.or_equals('fits_headers', new_fits_headers)
 
+  # TODO: This is achingly slow for some reason. Maybe shard all of these
+  # large structures.
   new_plate_solutions = {
       r['image_hash']: r['plate_solution']
       for r in results

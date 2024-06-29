@@ -32,7 +32,7 @@ def make_pairs(min_index, max_index, template):
 
 # TODO: Strongly-type this. Panels is a dictionary from tile indices to
 # Panel objects.
-def make_merge_ops(mode, mosaic_id, panels, from_task):
+def make_merge_ops(mode, mosaic_id, filter, panels, from_task):
   graph = Graph()
   merge_ops = []
 
@@ -53,21 +53,34 @@ def make_merge_ops(mode, mosaic_id, panels, from_task):
         input_0 = panels[pair[0]]
         input_1 = panels[pair[1]]
         content_hash = hash_list(panels[p].content_hash for p in pair)
-        output = Panel(merge_op_id=pair_id, content_hash=content_hash)
+
+        # TODO: This goes outside the artifacts workflow.
+        image_key = ('merged_images', mode, mosaic_id, filter, pair_id,
+                     content_hash)
+
+        output = Panel(mosaic_id=mosaic_id,
+                       filter=filter,
+                       merge_op_id=pair_id,
+                       content_hash=content_hash,
+                       image_key=image_key)
         merge_op = MergeOp(input_artifacts=[input_0, input_1],
                            output_artifact=output)
         merge_task = (merge_images, mode, mosaic_id, input_0, input_1, output)
         from_task[output] = merge_task
         new_panels[tile_indices] = output
         print(f'### making merge op for pair {pair}')
-        print(f'### panels[pair[0]] {panels[pair[0]]}')
-        print(f'### panels[pair[1]] {panels[pair[1]]}')
+        print(f'### input_0 {input_0}')
+        print(f'### input_1 {input_1}')
         merge_ops.append(merge_op)
-        dependencies = []
+        dependencies = set()
         if input_0 in from_task:
-          dependencies.append(from_task[input_0])
+          dependencies.add(from_task[input_0])
+        else:
+          print(f'### panel {input_0} was not in from_task')
         if input_1 in from_task:
-          dependencies.append(from_task[input_1])
+          dependencies.add(from_task[input_1])
+        else:
+          print(f'### panel {input_1} was not in from_task')
         graph[merge_task] = dependencies
 
   level = 0

@@ -93,7 +93,7 @@ class TestMosaic(unittest.TestCase):
     # Running the graph the first time, with an empty shopping cart, should
     # produce all the subframe previews for the stacks, targets, and mosaic.
     graph = compute_graph.build_compute_graph()
-    run_graph(graph)
+    run_graph(graph, debug=True)
 
     self.assertEqual(len(context.targets), 4)
     self.assertEqual(len(context.mosaics), 1)

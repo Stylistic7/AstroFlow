@@ -198,32 +198,32 @@ def _merge_subframe_mosaic(panels):
         f'max {np.max(output_image)}')
 
 
-@ray.remote
-def gather_mosaic_by_coordinates(mode, panels):
-  print(f'### Entering gather_mosaic_by_coordinates')
+# @ray.remote
+# def gather_mosaic_by_coordinates(mode, panels):
+#   print(f'### Entering gather_mosaic_by_coordinates')
 
-  if type(panels) is not list:
-    panels = [panels]
+#   if type(panels) is not list:
+#     panels = [panels]
 
-  num_panels_in = len(panels)
-  panels = [p for p in panels if p is not None]
-  if len(panels) != num_panels_in:
-    print(f'### Placement failed for {num_panels_in - len(panels)} panels')
+#   num_panels_in = len(panels)
+#   panels = [p for p in panels if p is not None]
+#   if len(panels) != num_panels_in:
+#     print(f'### Placement failed for {num_panels_in - len(panels)} panels')
 
-  if mode == 'subframe':
-    for panel in panels:
-      image = read_image(panel.placed_filename)
-      image_png = image_previews.array_to_png(image / np.max(image))
-      key = _placed_image_artfiact_key(panel, mode)
-      context.set(key, image_png, flush=True)
-      print(f'### Wrote key {key}')
+#   if mode == 'subframe':
+#     for panel in panels:
+#       image = read_image(panel.placed_filename)
+#       image_png = image_previews.array_to_png(image / np.max(image))
+#       key = _placed_image_artfiact_key(panel, mode)
+#       context.set(key, image_png, flush=True)
+#       print(f'### Wrote key {key}')
 
-    return _merge_subframe_mosaic(panels)
+#     return _merge_subframe_mosaic(panels)
 
-  if mode == 'master':
-    for panel in panels:
-      key = _placed_image_artfiact_key(panel, mode)
-      context[key] = panel.placed_filename
-      print(f'### Wrote key {key}')
+#   if mode == 'master':
+#     for panel in panels:
+#       key = _placed_image_artfiact_key(panel, mode)
+#       context[key] = panel.placed_filename
+#       print(f'### Wrote key {key}')
 
-    return _merge_master_mosaic(panels)
+#     return _merge_master_mosaic(panels)
