@@ -7,14 +7,23 @@ import plate_solving
 
 @dataclass(frozen=True)
 class Panel:
+  # TODO: Maybe remove these?
+  mode: str = None
   mosaic_id: str = None
+  filter: str = None
+
+  # These define the input.
+  tile_indices: list[int] = None
+  input_filename: str = None
+  # image_hash: str = None
   stable_hash: str = None
   content_hash: str = None
-  mode: str = None
-  filter: str = None
-  image_hash: str = None
+
+  # This defines where the Panel is in the tree of merge ops.
+  merge_op_id: str = None
+
+  # This defines the output.
   placed_filename: str = None
-  tile_indices: list[int] = None
 
 
 # TODO: Maybe use Artifact as a more strongly-typed Dict.

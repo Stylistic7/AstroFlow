@@ -7,8 +7,8 @@ import unittest
 import astropy.io.fits as pyfits  # type: ignore
 from hashing import hash_list
 from make_test_context import make_test_context
-from .merge_ops import Artifact, new_make_merge_ops
-from .classes import MergeOp
+from .merge_ops import Artifact, make_merge_ops
+from .classes import MergeOp, Panel
 from post_process_stack import post_process_stack
 from decorators import saves_artifacts
 from context import context
@@ -17,11 +17,16 @@ from dependency_graph import run_graph, print_graph
 from artifact import Artifact
 
 
-def _make_artifact(id, content_hash=None):
+def _make_panel(id, content_hash=None):
+  stable_hash = f'stable_hash_{id}'
   if content_hash == None:
     content_hash = f'hash_{id}'
-  context.stacks |= {id: Stack(content_hash=content_hash)}
-  return Artifact(filename=id, content_hash=content_hash)
+  context.stacks |= {
+      stable_hash: Stack(stable_hash=stable_hash, content_hash=content_hash)
+  }
+  return Panel(input_filename=id,
+               stable_hash=stable_hash,
+               content_hash=content_hash)
 
 
 def post_process_stack_artifacts(stack_id):
@@ -34,8 +39,8 @@ def post_process_stack_artifacts(stack_id):
 
 # This is a mock that just writes a fake image to disk with the desired
 # content_hash.
-@saves_artifacts(post_process_stack_artifacts)
 @ray.remote
+@saves_artifacts(post_process_stack_artifacts)
 def post_process_stack(stack_id):
   artifact = next(iter(post_process_stack_artifacts(stack_id)))
   filename = os.path.join(context.output_dir, artifact.filename)
@@ -58,48 +63,46 @@ class TestMergeOps(unittest.TestCase):
     self.output_dir_obj.cleanup()
 
   def test_two_panes(self):
-    left = _make_artifact('left')
-    right = _make_artifact('right')
+    left = _make_panel('left')
+    right = _make_panel('right')
     panels = {(0, 0): left, (0, 1): right}
 
     from_task = {
-        artifact: (post_process_stack, artifact.filename)
-        for artifact in panels.values()
+        panel: (post_process_stack, panel.stable_hash)
+        for panel in panels.values()
     }
 
-    merge_ops, graph = new_make_merge_ops('master', 'my_mosaic', panels,
-                                          from_task)
+    merge_ops, graph = make_merge_ops('master', 'my_mosaic', panels, from_task)
 
     self.assertEqual(merge_ops, [
         MergeOp(input_artifacts=[left, right],
-                output_artifact=Artifact(
-                    filename='merged_my_mosaic_0__0_0__0_1.fit',
-                    content_hash=hash_list(['hash_left', 'hash_right'])))
+                output_artifact=Panel(merge_op_id='0__0_0__0_1',
+                                      content_hash=hash_list(
+                                          ['hash_left', 'hash_right'])))
     ])
 
     results = run_graph(graph)
     print('### results', results)
 
   def test_three_linear_panes(self):
-    left = _make_artifact('left')
-    middle = _make_artifact('middle')
-    right = _make_artifact('right')
+    left = _make_panel('left')
+    middle = _make_panel('middle')
+    right = _make_panel('right')
     panels = {(0, 0): left, (0, 1): middle, (0, 2): right}
 
     from_task = {
-        artifact: (post_process_stack, artifact.filename)
-        for artifact in panels.values()
+        panel: (post_process_stack, panel.stable_hash)
+        for panel in panels.values()
     }
 
-    merge_ops, graph = new_make_merge_ops('master', 'my_mosaic', panels,
-                                          from_task)
+    merge_ops, graph = make_merge_ops('master', 'my_mosaic', panels, from_task)
 
-    left_and_middle = Artifact(filename='merged_my_mosaic_0__0_0__0_1.fit',
-                               content_hash=hash_list(
-                                   ['hash_left', 'hash_middle']))
-    final = Artifact(filename='merged_my_mosaic_1__0_0__0_1.fit',
-                     content_hash=hash_list(
-                         [left_and_middle.content_hash, 'hash_right']))
+    left_and_middle = Panel(merge_op_id='0__0_0__0_1',
+                            content_hash=hash_list(['hash_left',
+                                                    'hash_middle']))
+    final = Panel(merge_op_id='1__0_0__0_1',
+                  content_hash=hash_list(
+                      [left_and_middle.content_hash, 'hash_right']))
 
     self.assertEqual(merge_ops, [
         MergeOp(input_artifacts=[left, middle],
@@ -111,10 +114,10 @@ class TestMergeOps(unittest.TestCase):
     print('### results', results)
 
   def test_four_panes(self):
-    top_left = _make_artifact('top_left')
-    top_right = _make_artifact('top_right')
-    bottom_left = _make_artifact('bottom_left')
-    bottom_right = _make_artifact('bottom_right')
+    top_left = _make_panel('top_left')
+    top_right = _make_panel('top_right')
+    bottom_left = _make_panel('bottom_left')
+    bottom_right = _make_panel('bottom_right')
 
     panels = {
         (0, 0): top_left,
@@ -124,22 +127,20 @@ class TestMergeOps(unittest.TestCase):
     }
 
     from_task = {
-        artifact: (post_process_stack, artifact.filename)
-        for artifact in panels.values()
+        panel: (post_process_stack, panel.stable_hash)
+        for panel in panels.values()
     }
 
-    merge_ops, graph = new_make_merge_ops('master', 'my_mosaic', panels,
-                                          from_task)
+    merge_ops, graph = make_merge_ops('master', 'my_mosaic', panels, from_task)
 
-    left = Artifact(filename='merged_my_mosaic_0__0_0__0_1.fit',
-                    content_hash=hash_list(
-                        ['hash_top_left', 'hash_bottom_left']))
-    right = Artifact(filename='merged_my_mosaic_0__1_0__1_1.fit',
-                     content_hash=hash_list(
-                         ['hash_top_right', 'hash_bottom_right']))
-    final = Artifact(filename='merged_my_mosaic_1__0_0__1_0.fit',
-                     content_hash=hash_list(
-                         [left.content_hash, right.content_hash]))
+    left = Panel(merge_op_id='0__0_0__0_1',
+                 content_hash=hash_list(['hash_top_left', 'hash_bottom_left']))
+    right = Panel(merge_op_id='0__1_0__1_1',
+                  content_hash=hash_list(
+                      ['hash_top_right', 'hash_bottom_right']))
+    final = Panel(merge_op_id='1__0_0__1_0',
+                  content_hash=hash_list(
+                      [left.content_hash, right.content_hash]))
 
     self.assertEqual(merge_ops, [
         MergeOp(input_artifacts=[top_left, bottom_left], output_artifact=left),
@@ -155,17 +156,17 @@ class TestMergeOps(unittest.TestCase):
     self.assertEqual(results.max_parallelism_seen, 4)
 
   def test_nine_panes(self):
-    top_left = _make_artifact('top_left')
-    top_middle = _make_artifact('top_middle')
-    top_right = _make_artifact('top_right')
+    top_left = _make_panel('top_left')
+    top_middle = _make_panel('top_middle')
+    top_right = _make_panel('top_right')
 
-    middle_left = _make_artifact('middle_left')
-    middle_middle = _make_artifact('middle_middle')
-    middle_right = _make_artifact('middle_right')
+    middle_left = _make_panel('middle_left')
+    middle_middle = _make_panel('middle_middle')
+    middle_right = _make_panel('middle_right')
 
-    bottom_left = _make_artifact('bottom_left')
-    bottom_middle = _make_artifact('bottom_middle')
-    bottom_right = _make_artifact('bottom_right')
+    bottom_left = _make_panel('bottom_left')
+    bottom_middle = _make_panel('bottom_middle')
+    bottom_right = _make_panel('bottom_right')
 
     panels = {
         (0, 0): top_left,
@@ -180,49 +181,52 @@ class TestMergeOps(unittest.TestCase):
     }
 
     from_task = {
-        artifact: (post_process_stack, artifact.filename)
-        for artifact in panels.values()
+        panel: (post_process_stack, panel.stable_hash)
+        for panel in panels.values()
     }
 
-    merge_ops, graph = new_make_merge_ops('master', 'my_mosaic', panels,
-                                          from_task)
+    merge_ops, graph = make_merge_ops('master', 'my_mosaic', panels, from_task)
 
-    top_left_and_middle_left = Artifact(
-        filename='merged_my_mosaic_0__0_0__0_1.fit',
-        content_hash=hash_list(
-            [top_left.content_hash, middle_left.content_hash]))
-    top_middle_and_middle_middle = Artifact(
-        filename='merged_my_mosaic_0__1_0__1_1.fit',
-        content_hash=hash_list(
-            [top_middle.content_hash, middle_middle.content_hash]))
-    top_right_and_middle_right = Artifact(
-        filename='merged_my_mosaic_0__2_0__2_1.fit',
-        content_hash=hash_list(
-            [top_right.content_hash, middle_right.content_hash]))
-    upper_left_2x2 = Artifact(filename='merged_my_mosaic_1__0_0__1_0.fit',
-                              content_hash=hash_list([
-                                  top_left_and_middle_left.content_hash,
-                                  top_middle_and_middle_middle.content_hash
-                              ]))
-    bottom_left_and_bottom_middle = Artifact(
-        filename='merged_my_mosaic_1__0_1__1_1.fit',
-        content_hash=hash_list(
-            [bottom_left.content_hash, bottom_middle.content_hash]))
+    top_left_and_middle_left = Panel(merge_op_id='0__0_0__0_1',
+                                     content_hash=hash_list([
+                                         top_left.content_hash,
+                                         middle_left.content_hash
+                                     ]))
+    top_middle_and_middle_middle = Panel(merge_op_id='0__1_0__1_1',
+                                         content_hash=hash_list([
+                                             top_middle.content_hash,
+                                             middle_middle.content_hash
+                                         ]))
+    top_right_and_middle_right = Panel(merge_op_id='0__2_0__2_1',
+                                       content_hash=hash_list([
+                                           top_right.content_hash,
+                                           middle_right.content_hash
+                                       ]))
+    upper_left_2x2 = Panel(merge_op_id='1__0_0__1_0',
+                           content_hash=hash_list([
+                               top_left_and_middle_left.content_hash,
+                               top_middle_and_middle_middle.content_hash
+                           ]))
+    bottom_left_and_bottom_middle = Panel(merge_op_id='1__0_1__1_1',
+                                          content_hash=hash_list([
+                                              bottom_left.content_hash,
+                                              bottom_middle.content_hash
+                                          ]))
 
-    left_3x2 = Artifact(filename='merged_my_mosaic_2__0_0__0_1.fit',
-                        content_hash=hash_list([
-                            upper_left_2x2.content_hash,
-                            bottom_left_and_bottom_middle.content_hash
-                        ]))
+    left_3x2 = Panel(merge_op_id='2__0_0__0_1',
+                     content_hash=hash_list([
+                         upper_left_2x2.content_hash,
+                         bottom_left_and_bottom_middle.content_hash
+                     ]))
 
-    right_3x1 = Artifact(filename='merged_my_mosaic_2__1_0__1_1.fit',
-                         content_hash=hash_list([
-                             top_right_and_middle_right.content_hash,
-                             bottom_right.content_hash
-                         ]))
-    final = Artifact(filename='merged_my_mosaic_3__0_0__1_0.fit',
-                     content_hash=hash_list(
-                         [left_3x2.content_hash, right_3x1.content_hash]))
+    right_3x1 = Panel(merge_op_id='2__1_0__1_1',
+                      content_hash=hash_list([
+                          top_right_and_middle_right.content_hash,
+                          bottom_right.content_hash
+                      ]))
+    final = Panel(merge_op_id='3__0_0__1_0',
+                  content_hash=hash_list(
+                      [left_3x2.content_hash, right_3x1.content_hash]))
 
     self.assertEqual(merge_ops, [
         MergeOp(input_artifacts=[top_left, middle_left],
