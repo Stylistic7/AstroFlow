@@ -110,13 +110,7 @@ def print_graph(graph):
 
     def to_string(node):
       node = _unpack_node(node)
-
-      if hasattr(node.task, 'remote'):
-        fn_name = node.task._function.__name__
-      else:
-        fn_name = node.task.__name__
-
-      return f'({fn_name}, {tuple_values(node.args)})'
+      return f'({node.task._function.__name__}, {tuple_values(node.args)})'
 
     if type(v) in [list, set]:
       strings = [to_string(i) for i in v]
@@ -190,10 +184,7 @@ def run_graph(graph, debug=False):
     if len(sig.parameters) > len(full_args):
       full_args.append(ancestor_results(ts, node))
 
-    if hasattr(node.task, 'remote'):
-      return node.task.remote(*full_args)
-    else:
-      return node.task(*full_args)
+    return node.task.remote(*full_args)
 
   def delete_finished_subgraphs():
     for ts in active:
@@ -217,6 +208,7 @@ def run_graph(graph, debug=False):
       print(f'Top of loop, {len(active)} active graphs, '
             f'{len(ready)} ready nodes')
 
+    # This starts all ready tasks in parallel.
     ref_to_ts_and_node = {
         make_run_fn(ts, node): (ts, node) for ts, node in ready
     }

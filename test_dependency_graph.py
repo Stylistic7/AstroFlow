@@ -4,6 +4,7 @@ import os
 import unittest
 import ray
 import tempfile
+import time
 
 from cache import cache
 from context import context
@@ -73,6 +74,11 @@ def set_foo(value):
 @ray.remote
 def scatter():
   return Graph({gather: [(process, i) for i in range(7)]})
+
+
+@ray.remote
+def scatter_huge(count):
+  return Graph({gather: [(process, i) for i in range(count)]})
 
 
 @ray.remote
@@ -480,6 +486,18 @@ class TestDependencyGraph(unittest.TestCase):
 
     self.assertEqual(results[gather_from_subgraphs], 78)
     self.assertEqual(results.max_parallelism_seen, 13)
+
+  def test_overhead(self):
+    count = 1000
+    graph = {(scatter_huge, count): {}}
+
+    start = time.time()
+    results = run_graph(graph)
+    end = time.time()
+    ms_per_fn = 1000.0 * (end - start) / count
+
+    print(f'scatter_huge: each fn took {ms_per_fn} ms')
+    self.assertLess(ms_per_fn, 2.0)
 
 
 if __name__ == '__main__':

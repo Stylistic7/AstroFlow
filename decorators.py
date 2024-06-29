@@ -6,14 +6,9 @@ from context import context
 from file_io.generic import get_content_hash
 
 
-def saves_artifacts(artifacts_fn, debug=True):
+def saves_artifacts(artifacts_fn, in_test=False, debug=False):
 
   def decorator(fn):
-
-    if hasattr(fn, 'remote'):
-      fn_name = fn._function.__name__
-    else:
-      fn_name = fn.__name__
 
     def should_run(*args, **kwargs):
       artifacts = artifacts_fn(*args, **kwargs)
@@ -26,20 +21,20 @@ def saves_artifacts(artifacts_fn, debug=True):
 
           if not os.path.exists(filename):
             if debug:
-              print(f'### should_run fn {fn_name} because '
+              print(f'### should_run fn {fn._function.__name__} because '
                     f'file {filename} does not exist')
             return True
 
           if get_content_hash(filename) != artifact.content_hash:
             if debug:
-              print(f'### should_run fn {fn_name} because '
+              print(f'### should_run fn {fn._function.__name__} because '
                     f'file {filename} does not have '
                     f'content hash {artifact.content_hash}')
             return True
         elif artifact.key:
           if not context.contains(artifact.key):
             if debug:
-              print(f'### should_run fn {fn_name} because '
+              print(f'### should_run fn {fn._function.__name__} because '
                     f'key {artifact.key} does not exist')
             return True
 
@@ -47,12 +42,11 @@ def saves_artifacts(artifacts_fn, debug=True):
 
     @wraps(fn)
     def wrapper(*args, **kwargs):
-      return fn(*args, **kwargs)
+      if should_run(*args, **kwargs):
+        return fn.remote(*args, **kwargs)
 
-    wrapper.should_run = should_run
-
-    if hasattr(fn, 'remote'):
-      wrapper.remote = fn.remote
+    if in_test:
+      wrapper.should_run = should_run
 
     return wrapper
 
