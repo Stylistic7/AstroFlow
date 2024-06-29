@@ -21,20 +21,20 @@ def saves_artifacts(artifacts_fn, in_test=False, debug=False):
 
           if not os.path.exists(filename):
             if debug:
-              print(f'### should_run fn {fn._function.__name__} because '
+              print(f'### should_run fn {fn.__name__} because '
                     f'file {filename} does not exist')
             return True
 
           if get_content_hash(filename) != artifact.content_hash:
             if debug:
-              print(f'### should_run fn {fn._function.__name__} because '
+              print(f'### should_run fn {fn.__name__} because '
                     f'file {filename} does not have '
                     f'content hash {artifact.content_hash}')
             return True
         elif artifact.key:
           if not context.contains(artifact.key):
             if debug:
-              print(f'### should_run fn {fn._function.__name__} because '
+              print(f'### should_run fn {fn.__name__} because '
                     f'key {artifact.key} does not exist')
             return True
 
@@ -43,7 +43,7 @@ def saves_artifacts(artifacts_fn, in_test=False, debug=False):
     @wraps(fn)
     def wrapper(*args, **kwargs):
       if should_run(*args, **kwargs):
-        return fn.remote(*args, **kwargs)
+        return fn(*args, **kwargs)
 
     if in_test:
       wrapper.should_run = should_run

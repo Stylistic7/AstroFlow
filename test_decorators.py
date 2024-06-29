@@ -23,8 +23,8 @@ def foo_artifacts(mosaic_id, filter):
   ]
 
 
-@saves_artifacts(foo_artifacts, in_test=True, debug=True)
 @ray.remote
+@saves_artifacts(foo_artifacts, in_test=True, debug=True)
 def foo(mosaic_id, filter):
   print('### Running foo')
   artifact = next(iter(foo_artifacts(mosaic_id, filter)))
@@ -42,8 +42,8 @@ def bar_artifacts(mosaic_id, filter):
   return [Artifact(key=('bar', mosaic_id, filter))]
 
 
-@saves_artifacts(bar_artifacts, in_test=True, debug=True)
 @ray.remote
+@saves_artifacts(bar_artifacts, in_test=True, debug=True)
 def bar(mosaic_id, filter):
   print('### Running bar')
   key = next(iter(bar_artifacts(mosaic_id, filter))).key
@@ -60,16 +60,16 @@ class TestDecorators(unittest.TestCase):
     self.output_dir_obj.cleanup()
 
   def test_saves_files(self):
-    self.assertTrue(foo.should_run('abc123', 'H'))
+    self.assertTrue(foo._function.should_run('abc123', 'H'))
 
     ray.get(foo.remote('abc123', 'H'))
-    self.assertFalse(foo.should_run('abc123', 'H'))
+    self.assertFalse(foo._function.should_run('abc123', 'H'))
 
   def test_saves_cache_keys(self):
-    self.assertTrue(bar.should_run('abc123', 'H'))
+    self.assertTrue(bar._function.should_run('abc123', 'H'))
 
     ray.get(bar.remote('abc123', 'H'))
-    self.assertFalse(bar.should_run('abc123', 'H'))
+    self.assertFalse(bar._function.should_run('abc123', 'H'))
 
 
 if __name__ == '__main__':
