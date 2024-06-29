@@ -4,6 +4,7 @@ from context import context
 from dependency_graph import Graph
 from post_process_stack import post_process_stack_artifacts
 from image_metadata.image_types import is_light_frame
+from image_previews import array_to_png
 import subframe_selection
 from .classes import Panel
 from .merge_ops import make_merge_ops
@@ -13,6 +14,10 @@ from .placement import mosaic_by_coordinates
 
 def build_mosaic_subgraph(mode, mosaic_id):
   print(f'### build_mosaic_subgraph mode {mode} mosaic_id {mosaic_id}')
+
+  # FIXME
+  if mosaic_id != 'ba9061cd68dbcf83':
+    return Graph()
 
   # TODO: If the final output artifact exists, there's no reason to build the
   # graph.
@@ -90,7 +95,7 @@ def done(mode, mosaic_id, filter, final_key):
   # TODO: This goes outside the artfact framework
   output_key = ('mosaic_thumbnail_image', mode, mosaic_id, filter,
                 mosaic.content_hash)
-  context[output_key] = context[final_key]
+  context[output_key] = array_to_png(context[final_key])
   print(f'### Wrote key {output_key}')
 
 
@@ -131,7 +136,9 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
 
     panels[tile_indices] = panel
 
-  print(f'### found panels for filter {filter}: {panels}')
+  print(f'### found panels for filter {filter}:')
+  for panel in panels:
+    print(f'### panel {panel}')
 
   # TODO: Connect these to either a task that reads the best frame from a stack,
   # or the stacked master, AND the viewbox task.

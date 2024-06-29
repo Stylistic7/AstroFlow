@@ -19,18 +19,21 @@ class ContextActor:
     # This dict should ONLY store ObjectRefs.
     self.ref_dict = {}
 
-  def get(self, key, default_value):
+  def get(self, key, default_value, keep_in_memory):
     if key in self.ref_dict:
       assert type(self.ref_dict[key]) is ray.ObjectRef
       return self.ref_dict[key]
 
     if key in cache:
       value = cache[key]
+    else:
+      value = default_value
+
+    if keep_in_memory:
       self.ref_dict[key] = ray.put(value)
       return self.ref_dict[key]
-
-    self.ref_dict[key] = ray.put(default_value)
-    return self.ref_dict[key]
+    else:
+      return ray.put(value)
 
   def set(self, key, value, flush):
     assert type(value) is list
@@ -94,9 +97,9 @@ class ContextActor:
 
 class Context:
 
-  def get(self, key, default_value=None):
+  def get(self, key, default_value=None, keep_in_memory=True):
     actor = ray.get_actor('context', namespace=namespace)
-    maybe_ref = ray.get(actor.get.remote(key, default_value))
+    maybe_ref = ray.get(actor.get.remote(key, default_value, keep_in_memory))
     if maybe_ref:
       return ray.get(maybe_ref)
 

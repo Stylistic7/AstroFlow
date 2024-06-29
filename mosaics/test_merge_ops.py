@@ -72,7 +72,8 @@ class TestMergeOps(unittest.TestCase):
         for panel in panels.values()
     }
 
-    merge_ops, graph = make_merge_ops('master', 'my_mosaic', panels, from_task)
+    merge_ops, graph = make_merge_ops('master', 'my_mosaic', 'H', panels,
+                                      from_task)
 
     self.assertEqual(merge_ops, [
         MergeOp(input_artifacts=[left, right],
@@ -95,7 +96,8 @@ class TestMergeOps(unittest.TestCase):
         for panel in panels.values()
     }
 
-    merge_ops, graph = make_merge_ops('master', 'my_mosaic', panels, from_task)
+    merge_ops, graph = make_merge_ops('master', 'my_mosaic', 'H', panels,
+                                      from_task)
 
     left_and_middle = Panel(merge_op_id='0__0_0__0_1',
                             content_hash=hash_list(['hash_left',
@@ -131,7 +133,8 @@ class TestMergeOps(unittest.TestCase):
         for panel in panels.values()
     }
 
-    merge_ops, graph = make_merge_ops('master', 'my_mosaic', panels, from_task)
+    merge_ops, graph = make_merge_ops('master', 'my_mosaic', 'H', panels,
+                                      from_task)
 
     left = Panel(merge_op_id='0__0_0__0_1',
                  content_hash=hash_list(['hash_top_left', 'hash_bottom_left']))
@@ -185,7 +188,8 @@ class TestMergeOps(unittest.TestCase):
         for panel in panels.values()
     }
 
-    merge_ops, graph = make_merge_ops('master', 'my_mosaic', panels, from_task)
+    merge_ops, graph = make_merge_ops('master', 'my_mosaic', 'H', panels,
+                                      from_task)
 
     top_left_and_middle_left = Panel(merge_op_id='0__0_0__0_1',
                                      content_hash=hash_list([

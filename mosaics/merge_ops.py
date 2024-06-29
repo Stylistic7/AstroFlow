@@ -44,9 +44,16 @@ def make_merge_ops(mode, mosaic_id, filter, panels, from_task):
     return str(level) + '__' + '__'.join([join_tile_indices(p) for p in pair])
 
   def process_pairs(level, pairs, template, new_panels):
-    for i, pair in enumerate(pairs):
+    for i, pair_in in enumerate(pairs):
+      pair = []
+      for p in pair_in:
+        if p in panels:
+          pair.append(p)
+
       tile_indices = fill_template(template, i)
-      if len(pair) == 1:
+      if len(pair) == 0:
+        continue
+      elif len(pair) == 1:
         new_panels[tile_indices] = panels[pair[0]]
       elif len(pair) == 2:
         pair_id = make_pair_id(level, pair)
