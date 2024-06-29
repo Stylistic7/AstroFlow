@@ -33,16 +33,10 @@ def make_pairs(min_index, max_index, template):
   return pairs
 
 
-def _should_run(node):
-  task, *args = node
-  print(f'### _should_run in merge_ops: task {task} args {args}')
-  return task.should_run(*args)
-
-
 # TODO: Strongly-type this. Panels is a dictionary from tile indices to
 # Artifacts, which are dictionaries of filenames, content hashes, and creator
 # tasks.
-def new_make_merge_ops(mosaic_id, panels, from_task):
+def new_make_merge_ops(mode, mosaic_id, panels, from_task):
   graph = {}
   merge_ops = []
 
@@ -69,23 +63,14 @@ def new_make_merge_ops(mosaic_id, panels, from_task):
         # some may be stored in the cache instead of directly on disk.
         merge_op = classes.MergeOp(input_artifacts=[input_0, input_1],
                                    output_artifact=output)
-        merge_task = (merge_images, 'master', mosaic_id, input_0, input_1,
-                      output)
+        merge_task = (merge_images, mode, mosaic_id, input_0, input_1, output)
         from_task[output] = merge_task
         new_panels[tile_indices] = output
         print(f'### making merge op for pair {pair}')
         print(f'### panels[pair[0]] {panels[pair[0]]}')
         print(f'### panels[pair[1]] {panels[pair[1]]}')
         merge_ops.append(merge_op)
-        if merge_images.should_run('master', mosaic_id, input_0, input_1,
-                                   output):
-          dependencies = []
-          if _should_run(from_task[input_0]):
-            dependencies.append(from_task[input_0])
-          if _should_run(from_task[input_1]):
-            dependencies.append(from_task[input_1])
-          if dependencies:
-            graph[merge_task] = dependencies
+        graph[merge_task] = [from_task[input_0], from_task[input_1]]
 
   level = 0
   while len(panels) > 1:

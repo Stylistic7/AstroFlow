@@ -67,7 +67,8 @@ class TestMergeOps(unittest.TestCase):
         for artifact in panels.values()
     }
 
-    merge_ops, graph = new_make_merge_ops('my_mosaic', panels, from_task)
+    merge_ops, graph = new_make_merge_ops('master', 'my_mosaic', panels,
+                                          from_task)
 
     self.assertEqual(merge_ops, [
         MergeOp(input_artifacts=[left, right],
@@ -90,7 +91,8 @@ class TestMergeOps(unittest.TestCase):
         for artifact in panels.values()
     }
 
-    merge_ops, graph = new_make_merge_ops('my_mosaic', panels, from_task)
+    merge_ops, graph = new_make_merge_ops('master', 'my_mosaic', panels,
+                                          from_task)
 
     left_and_middle = Artifact(filename='merged_my_mosaic_0__0_0__0_1.fit',
                                content_hash=hash_list(
@@ -126,7 +128,8 @@ class TestMergeOps(unittest.TestCase):
         for artifact in panels.values()
     }
 
-    merge_ops, graph = new_make_merge_ops('my_mosaic', panels, from_task)
+    merge_ops, graph = new_make_merge_ops('master', 'my_mosaic', panels,
+                                          from_task)
 
     left = Artifact(filename='merged_my_mosaic_0__0_0__0_1.fit',
                     content_hash=hash_list(
@@ -150,27 +153,6 @@ class TestMergeOps(unittest.TestCase):
     results = run_graph(graph)
     self.assertEqual(results.num_nodes_run, 7)
     self.assertEqual(results.max_parallelism_seen, 4)
-
-    # The second run should not run any operations at all, since all of the
-    # artifacts already exist.
-    print('### Graph with everything up-to-date')
-    merge_ops, graph = new_make_merge_ops('my_mosaic', panels, from_task)
-    print_graph(graph)
-    self.assertEqual(len(graph), 0)
-
-    # Changing the content hash of one of the stacks will cause some of the
-    # merge operations to re-run.
-    top_left = _make_artifact('top_left', 'new content!')
-    print(f'### Stacks with one updated panel: {context.stacks}')
-    panels[(0, 0)] = top_left
-    from_task[top_left] = (post_process_stack, top_left.filename)
-    merge_ops, graph = new_make_merge_ops('my_mosaic', panels, from_task)
-    print('### Graph with one updated panel:')
-    print_graph(graph)
-    self.assertEqual(len(graph), 2)
-    results = run_graph(graph)
-    self.assertEqual(results.num_nodes_run, 3)
-    self.assertEqual(results.max_parallelism_seen, 1)
 
   def test_nine_panes(self):
     top_left = _make_artifact('top_left')
@@ -202,7 +184,8 @@ class TestMergeOps(unittest.TestCase):
         for artifact in panels.values()
     }
 
-    merge_ops, graph = new_make_merge_ops('my_mosaic', panels, from_task)
+    merge_ops, graph = new_make_merge_ops('master', 'my_mosaic', panels,
+                                          from_task)
 
     top_left_and_middle_left = Artifact(
         filename='merged_my_mosaic_0__0_0__0_1.fit',
@@ -266,12 +249,6 @@ class TestMergeOps(unittest.TestCase):
     results = run_graph(graph)
     self.assertEqual(results.num_nodes_run, 8 + 9)
     self.assertEqual(results.max_parallelism_seen, 9)
-
-    # The second run should not run any operations at all, since all of the
-    # artifacts already exist.
-    merge_ops, graph = new_make_merge_ops('my_mosaic', panels, from_task)
-    print_graph(graph)
-    self.assertEqual(len(graph), 0)
 
 
 if __name__ == '__main__':
