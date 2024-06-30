@@ -20,6 +20,10 @@ class TestComputeGraph(unittest.TestCase):
     self.input_dir_obj, self.output_dir_obj = make_test_context()
     context.mock_stacking = True
 
+  def tearDown(self):
+    self.input_dir_obj.cleanup()
+    self.output_dir_obj.cleanup()
+
   def test_single_light_stack(self):
     make_synthetic_frames(prefix='dark',
                           number=5,

@@ -4,9 +4,14 @@ import unittest
 import ray
 import numpy as np
 from objsize import get_deep_size
+import datetime
+import time
 
 from context import context
 from cache import cache
+from make_test_frames import make_synthetic_frames, copy_testdata_frames
+from make_test_context import make_test_context
+from image_metadata.image_types import is_light_frame, is_dark_frame
 
 
 @ray.remote
@@ -89,3 +94,65 @@ class TestContext(unittest.TestCase):
   def test_remote_fn(self):
     context.bar = 123
     ray.get(foo.remote())
+
+  def test_image_metadata(self):
+    make_synthetic_frames(prefix='dark',
+                          number=20,
+                          image_type='Dark',
+                          fill_value=100,
+                          instrument='ZWO ASI6200MM Pro',
+                          width_pixels=9576,
+                          height_pixels=6388,
+                          temperature=-15)
+    make_synthetic_frames(prefix='bias',
+                          number=20,
+                          image_type='Bias',
+                          fill_value=50,
+                          instrument='ZWO ASI6200MM Pro',
+                          width_pixels=9576,
+                          height_pixels=6388,
+                          temperature=-15)
+
+    start_datetime = datetime.datetime(2024, 2, 5, 16, 29, 43)
+    for i in range(10):
+      make_synthetic_frames(prefix=f'light_{i}',
+                            number=10,
+                            start_datetime=start_datetime,
+                            image_type='Light',
+                            fill_value=50,
+                            instrument='ZWO ASI6200MM Pro',
+                            width_pixels=9576,
+                            height_pixels=6388,
+                            temperature=-15)
+      make_synthetic_frames(prefix=f'flat_{i}',
+                            number=10,
+                            start_datetime=start_datetime,
+                            image_type='Flat',
+                            fill_value=50,
+                            instrument='ZWO ASI6200MM Pro',
+                            width_pixels=9576,
+                            height_pixels=6388,
+                            temperature=-15)
+
+      start_datetime += datetime.timedelta(days=1)
+
+    def light_predicate_fn(image):
+      return is_light_frame(image.header)
+
+    def dark_predicate_fn(image):
+      return is_dark_frame(image.header)
+
+    def transform_fn(image):
+      return image.content_hash
+
+    start_time = time.time()
+    data = context.get_image_metadata(light_predicate_fn, transform_fn)
+    end_time = time.time()
+    self.assertEqual(len(data), 100)
+    print('### len(data)', len(data), 'elapsed time', (end_time - start_time))
+
+    start_time = time.time()
+    data = context.get_image_metadata(dark_predicate_fn, transform_fn)
+    end_time = time.time()
+    self.assertEqual(len(data), 20)
+    print('### len(data)', len(data), 'elapsed time', (end_time - start_time))

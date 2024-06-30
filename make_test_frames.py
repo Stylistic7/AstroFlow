@@ -180,12 +180,10 @@ def make_synthetic_frames(start_datetime=datetime.datetime(
                                     high=2,
                                     size=image_data.shape,
                                     dtype=image_data.dtype)
+
     content_hash = xxhash.xxh64(image_data.tobytes()).hexdigest()
-
     center = _add_dither(centers[i], dither)
-
     date_obs = start_datetime + i * datetime.timedelta(seconds=exposure + 1)
-
     deg_per_pix = image_scale / 3600.0
 
     fits_header = {
@@ -238,6 +236,14 @@ def make_synthetic_frames(start_datetime=datetime.datetime(
     else:
       plate_solution = None
 
+    key = ('image_metadata', content_hash)
+    metadata = ImageMetadata(content_hash=content_hash,
+                             filename=fits_filename,
+                             header=header,
+                             plate_solution=plate_solution)
+    context.set(key, metadata, flush=True)
+    print(f'### Wrote key {key}')
+
     if not dest_dir:
       continue
 
@@ -246,11 +252,3 @@ def make_synthetic_frames(start_datetime=datetime.datetime(
       hdu.header[k] = v
     hdu.writeto(fits_filename)
     print(f'### Wrote FITS filename {fits_filename}')
-
-    key = ('image_metadata', content_hash)
-    metadata = ImageMetadata(content_hash=content_hash,
-                             filename=fits_filename,
-                             header=header,
-                             plate_solution=plate_solution)
-    context.set(key, metadata, flush=True)
-    print(f'### Wrote key {key}')

@@ -99,6 +99,16 @@ class ContextActor:
   def get_cache_keys(self):
     return list(cache.iterkeys())
 
+  def get_image_metadata(self, predicate_fn, transform_fn):
+    result = []
+    for key in cache.iterkeys():
+      if type(key) is tuple and key[0] == 'image_metadata':
+        image = cache[key]
+        if predicate_fn(image):
+          result.append(transform_fn(image))
+
+    return result
+
 
 class Context:
 
@@ -156,6 +166,10 @@ class Context:
   def get_cache_keys(self):
     actor = ray.get_actor('context', namespace=namespace)
     return ray.get(actor.get_cache_keys.remote())
+
+  def get_image_metadata(self, predicate_fn, transform_fn):
+    actor = ray.get_actor('context', namespace=namespace)
+    return ray.get(actor.get_image_metadata.remote(predicate_fn, transform_fn))
 
 
 context = Context()
