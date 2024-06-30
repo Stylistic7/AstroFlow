@@ -40,8 +40,13 @@ class ContextActor:
     assert len(value) == 1
     value = value[0]
     assert type(value) is ray.ObjectRef, f'type(value) is {type(value)}'
-    if not flush:
+
+    if flush:
+      if key in self.ref_dict:
+        del self.ref_dict[key]
+    else:
       self.ref_dict[key] = value
+
     cache[key] = ray.get(value)
 
   def contains(self, key):

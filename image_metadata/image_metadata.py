@@ -2,12 +2,12 @@ import ray
 from pathlib import Path
 import os
 import traceback
-from addict import Dict
 
 from cache import cache
 from file_io.find_image_files import find_image_files
 from file_io.generic import read_header, get_content_hash
 import image_metadata.image_types as image_types
+from image_metadata.classes import ImageMetadata
 import plate_solving
 from dependency_graph import Graph
 from context import context
@@ -73,18 +73,18 @@ from context import context
 
 
 def get_all_filenames():
-  return set(context[k]['filename']
+  return set(context[k].filename
              for k in context.get_cache_keys()
-             if 'image_metadata' in k)
+             if type(k) is tuple and k[0] == 'image_metadata')
 
 
 def iterate_over_images():
   # TODO: THis may need to iterate over the lower-level cache.iterkeys()
-  # generator.
-  for k in context.get_cache_keys():
-    if 'image_metada' not in k:
-      continue
-    yield context.get(k)
+  # generator to be truly performant.
+  keys = context.get_cache_keys()
+  for k in keys:
+    if type(k) is tuple and k[0] == 'image_metadata':
+      yield context.get(k, keep_in_memory=False)
 
 
 @ray.remote
@@ -154,22 +154,30 @@ def compute_image_metadata(filename):
   # the network. It should hit the node's filesystem cache.
   try:
     content_hash = get_content_hash(filename)
-    if context.contains(('image_metadata', content_hash)):
-      raise DuplicateFileException()
+    key = ('image_metadata', content_hash)
 
-    result = Dict()
-    result['filename'] = filename
-    result['header'] = header = read_header(filename)
-    result['content_hash'] = content_hash
+    if context.contains(key):
+      prev_filename = context.get(key, keep_in_memory=False).filename
+      print('### prev_filename', prev_filename)
+      if os.path.exists(prev_filename):
+        raise DuplicateFileException()
+      else:
+        print(f'Filename {prev_filename} has been moved to {filename}')
 
+    header = read_header(filename)
     if image_types.is_light_frame(header):
-      result['plate_solution'] = plate_solving.solve_field(filename)
+      plate_solution = plate_solving.solve_field(filename)
     else:
+      plate_solution = None
       print(f'### Skipping plate-solving for filename {filename} '
             f'because it is not a light frame')
 
-    key = ('image_metadata', content_hash)
-    context.set(key, result, flush=True)
+    metadata = ImageMetadata(content_hash=content_hash,
+                             filename=filename,
+                             header=header,
+                             plate_solution=plate_solution)
+
+    context.set(key, metadata, flush=True)
     print(f'### Wrote key {key}')
 
     # if result['image_hash'] in image_hashes:

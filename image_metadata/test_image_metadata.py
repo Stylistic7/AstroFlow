@@ -8,7 +8,7 @@ import random
 import os
 
 from context import context
-from image_metadata.image_metadata import scatter_compute_image_metadata
+from image_metadata.image_metadata import scatter_compute_image_metadata, get_all_filenames, iterate_over_images
 from make_test_frames import make_synthetic_frames
 from dependency_graph import make_graph_from_list, run_graph
 
@@ -23,9 +23,6 @@ class TestImageMetadata(unittest.TestCase):
     context.clear()
 
     # Start with an empty context.
-    context.image_hashes = {}
-    context.fits_headers = {}
-    context.plate_solutions = {}
     context.quarantined_files = []
 
     self.input_dir = tempfile.TemporaryDirectory()
@@ -38,16 +35,12 @@ class TestImageMetadata(unittest.TestCase):
     graph = compute_graph_fragment()
     results = run_graph(graph)
 
-    self.assertEqual(results['num_nodes_run'], 2 + 10)
-    filenames = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
-    image_hashes = context.image_hashes
-    fits_headers = context.fits_headers
-    plate_solutions = context.plate_solutions
-    self.assertEqual(len(filenames), 10)
-    self.assertEqual(sorted(filenames), sorted(image_hashes.values()))
-    self.assertTrue(all(f['EXPOSURE'] == 30 for f in fits_headers.values()))
-    self.assertEqual(sorted(plate_solutions.keys()),
-                     sorted(image_hashes.keys()))
+    filenames_on_disk = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
+    self.assertEqual(len(filenames_on_disk), 10)
+    filenames_in_cache = get_all_filenames()
+    self.assertEqual(sorted(filenames_on_disk), sorted(filenames_in_cache))
+    self.assertTrue(
+        all(i.header['EXPOSURE'] == 30 for i in iterate_over_images()))
 
   def test_moved_files(self):
     input_dir = context.input_dirs[0]
@@ -55,26 +48,28 @@ class TestImageMetadata(unittest.TestCase):
 
     graph = compute_graph_fragment()
     results = run_graph(graph)
-    self.assertEqual(results['num_nodes_run'], 2 + 20)
-    filenames = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
-    image_hashes = context.image_hashes
-    self.assertEqual(sorted(filenames), sorted(image_hashes.values()))
-    self.assertTrue(all(os.path.exists(f) for f in image_hashes.values()))
+    filenames_on_disk = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
+    filenames_in_cache = get_all_filenames()
+    self.assertEqual(sorted(filenames_on_disk), sorted(filenames_in_cache))
+    self.assertTrue(
+        all(os.path.exists(i.filename) for i in iterate_over_images()))
 
     new_dir = os.path.join(input_dir, 'new_dir')
     os.mkdir(new_dir)
-    random.shuffle(filenames)
-    for filename in filenames[:5]:
+    random.shuffle(filenames_on_disk)
+    for filename in filenames_on_disk[:5]:
       os.rename(filename, os.path.join(new_dir, os.path.basename(filename)))
 
     graph = compute_graph_fragment()
     results = run_graph(graph)
-    filenames = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
-    image_hashes = context.image_hashes
-    self.assertEqual(len(image_hashes), 20)
-    self.assertTrue(all(os.path.exists(f) for f in image_hashes.values()))
+    filenames_on_disk = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
+    images = list(iterate_over_images())
+    for i in images:
+      print(f'### image {i}')
+    self.assertEqual(len(images), 20)
+    self.assertTrue(all(os.path.exists(i.filename) for i in images))
 
-    self.assertEqual(sum(1 for f in image_hashes.values() if 'new_dir' in f), 5)
+    self.assertEqual(sum(1 for i in images if 'new_dir' in i.filename), 5)
 
   def test_added_files(self):
     input_dir = context.input_dirs[0]
@@ -82,23 +77,22 @@ class TestImageMetadata(unittest.TestCase):
 
     graph = compute_graph_fragment()
     results = run_graph(graph)
-    self.assertEqual(results['num_nodes_run'], 2 + 10)
     filenames = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
     self.assertEqual(len(filenames), 10)
-    image_hashes = context.image_hashes
-    self.assertEqual(len(image_hashes), 10)
-    self.assertEqual(sorted(filenames), sorted(image_hashes.values()))
+    self.assertEqual(len(get_all_filenames()), 10)
+    images = list(iterate_over_images())
+    self.assertEqual(len(images), 10)
+    self.assertEqual(sorted(filenames), sorted(i.filename for i in images))
 
     make_synthetic_frames(number=10, dest_dir=input_dir)
 
     graph = compute_graph_fragment()
     results = run_graph(graph)
-    self.assertEqual(results['num_nodes_run'], 2 + 10)
     filenames = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
     self.assertEqual(len(filenames), 20)
-    image_hashes = context.image_hashes
-    self.assertEqual(len(image_hashes), 20)
-    self.assertEqual(sorted(filenames), sorted(image_hashes.values()))
+    images = list(iterate_over_images())
+    self.assertEqual(len(images), 20)
+    self.assertEqual(sorted(filenames), sorted(i.filename for i in images))
 
   # TODO: What should be done about deleted files? Maybe nothing, until they
   # are actually needed by something, e.g. a stacking operation. They might

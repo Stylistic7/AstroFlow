@@ -10,9 +10,6 @@ from context import context
 def make_test_context():
   context.clear()
 
-  context.image_hashes = {}
-  context.fits_headers = {}
-  context.plate_solutions = {}
   context.quarantined_files = []
 
   context.stacks = {}

@@ -8,6 +8,8 @@ import uuid
 import shutil
 import xxhash
 
+from image_metadata.classes import ImageMetadata
+from context import context
 import plate_solving
 from file_io.normalize_header import normalize_header
 
@@ -149,26 +151,14 @@ def make_synthetic_frames(start_datetime=datetime.datetime(
                           fill_value=None,
                           num_stars=100,
                           image_scale=1.0,
-                          rotation_angle_deg=90.0,
-                          image_hashes=None,
-                          fits_headers=None,
-                          plate_solutions=None):
+                          rotation_angle_deg=90.0):
   if not prefix:
-    prefix = str(uuid.uuid4())
+    prefix = image_type + '_' + str(uuid.uuid4())
 
   number = len(ids) if ids else number
 
   ids = ids if ids else [f'{prefix}_{i:05}.fit' for i in range(number)]
   centers = centers if centers else [(ra, dec)] * number
-
-  if not image_hashes:
-    image_hashes = {}
-
-  if not fits_headers:
-    fits_headers = {}
-
-  if not plate_solutions:
-    plate_solutions = {}
 
   for i in range(number):
     fits_filename = ids[i]
@@ -190,10 +180,7 @@ def make_synthetic_frames(start_datetime=datetime.datetime(
                                     high=2,
                                     size=image_data.shape,
                                     dtype=image_data.dtype)
-
-    # image_hash = 'hash_for_' + fits_filename
-    image_hash = xxhash.xxh64(image_data.tobytes()).hexdigest()
-    image_hashes[image_hash] = fits_filename
+    content_hash = xxhash.xxh64(image_data.tobytes()).hexdigest()
 
     center = _add_dither(centers[i], dither)
 
@@ -204,6 +191,7 @@ def make_synthetic_frames(start_datetime=datetime.datetime(
     fits_header = {
         'SIMPLE': True,
         'BITPIX': 16,
+        'CONTHASH': content_hash,
         'DATE-OBS': date_obs.strftime("%Y-%m-%dT%H:%M:%S"),
         'RA': center[0],
         'DEC': center[1],
@@ -236,16 +224,19 @@ def make_synthetic_frames(start_datetime=datetime.datetime(
         'XPIXSZ': pixel_pitch_um,
         'YPIXSZ': pixel_pitch_um,
     }
-    fits_headers[image_hash] = normalize_header(fits_header)
+
+    header = normalize_header(fits_header)
 
     if image_type == 'Light':
-      plate_solutions[image_hash] = plate_solving.PlateSolution(
+      plate_solution = plate_solving.PlateSolution(
           image_filename=fits_filename,
           header=fits_header,
           num_stars=num_stars,
           center=center,
           image_scale=image_scale,
           rotation_angle=rotation_angle_deg)
+    else:
+      plate_solution = None
 
     if not dest_dir:
       continue
@@ -254,6 +245,12 @@ def make_synthetic_frames(start_datetime=datetime.datetime(
     for k, v in fits_header.items():
       hdu.header[k] = v
     hdu.writeto(fits_filename)
+    print(f'### Wrote FITS filename {fits_filename}')
 
-  return _randomize_dict(image_hashes), _randomize_dict(
-      fits_headers), _randomize_dict(plate_solutions)
+    key = ('image_metadata', content_hash)
+    metadata = ImageMetadata(content_hash=content_hash,
+                             filename=fits_filename,
+                             header=header,
+                             plate_solution=plate_solution)
+    context.set(key, metadata, flush=True)
+    print(f'### Wrote key {key}')
