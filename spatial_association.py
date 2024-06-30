@@ -1,17 +1,19 @@
 import numpy as np
 import ray
 
-from image_metadata.remove_bad_images import remove_bad_images
 import image_metadata.image_types as image_types
+from image_metadata.image_metadata import get_image_metadata
 import position_string
 import footprints
 from context import context
+import plate_solving
 
 
 # TODO: There is nothing "spatial" about this. It's just a greedy algorithm
 # to group elements that satisfy a predicate.
-def find_groups(ids, values, comparison_fn, min_component_members) -> list[str]:
+def find_groups(values, comparison_fn, min_component_members) -> list[str]:
   print(f'Finding groups among {len(values)} values')
+  ids = values.keys()
   groups = []
   last_printed_percent_done = 0
   for i, id in enumerate(ids):
@@ -43,58 +45,47 @@ def find_groups(ids, values, comparison_fn, min_component_members) -> list[str]:
   return groups
 
 
-def _make_dict_from_groups(hashes, values, comparison_fn, plate_solutions,
-                           min_component_members):
-  targets = find_groups(hashes, values, comparison_fn, min_component_members)
+def _iterate_over_good_images():
+  quarantined_files = context.quarantined_files
 
-  def get_name(target):
-    plate_solution = plate_solutions[target[0]]
-    return position_string.canonical_target_string(plate_solution.center)
-
-  targets = [(get_name(t), list(sorted(t))) for t in targets]
-
-  return targets
+  keys = context.get_cache_keys()
+  for k in keys:
+    if type(k) is tuple and k[0] == 'image_metadata':
+      image = context.get(k, keep_in_memory=False)
+      if image_types.is_light_frame(image.header) and not image_types.is_master(
+          image.header) and image.filename not in quarantined_files and type(
+              image.plate_solution) is plate_solving.PlateSolution:
+        centroid = np.asarray(
+            footprints.radec_to_vector(*image.plate_solution.center))
+        yield image.content_hash, centroid
 
 
 @ray.remote
 def find_components_by_cosine_similarity():
   print('find_components_by_cosine_similarity')
 
-  # TODO: Repeatedly calling context __getattr__ slow? YES. It's turbo slow.
-  # I don't like having to do all these pre-fetches at the top, though.
-  image_hashes = context.image_hashes
-  fits_headers = context.fits_headers
-  plate_solutions = context.plate_solutions
   cosine_similarity_threshold = context.cosine_similarity_threshold
   min_component_members = context.min_component_members
 
-  print('Before removing bad plate solutions, len image_hashes',
-        len(image_hashes))
-  print('Before removing bad plate solutions, len fits_headers ',
-        len(fits_headers))
-  print('Before removing bad plate solutions, len plate_solutions',
-        len(plate_solutions))
-  plate_solutions = remove_bad_images()
-  print('After removing bad plate solutions, len', len(plate_solutions))
+  # TODO: Is there a way to actually use the generator here?
+  hashes_and_centroids = list(_iterate_over_good_images())
+  if not hashes_and_centroids:
+    return {}
 
-  light_frames = [
-      h for h, header in fits_headers.items() if h in plate_solutions and
-      image_types.is_light_frame(header) and not image_types.is_master(header)
-  ]
-
-  light_frames = sorted(light_frames, key=lambda h: fits_headers[h]['DATE-OBS'])
-
-  centroids = {
-      h: np.asarray(footprints.radec_to_vector(*plate_solutions[h].center))
-      for h in light_frames
-  }
+  print('### hashes_and_centroids', hashes_and_centroids)
+  values = {h: c for h, c in hashes_and_centroids}
 
   def comparison_fn(a, b):
     return np.dot(a, b) > cosine_similarity_threshold
 
-  spatial_groups = _make_dict_from_groups(light_frames, centroids,
-                                          comparison_fn, plate_solutions,
-                                          min_component_members)
+  targets = find_groups(values, comparison_fn, min_component_members)
+  print('### find_groups returned', targets)
 
-  context.spatial_groups = spatial_groups
-  print(f'### Wrote {len(spatial_groups)} spatial groups into the cache')
+  def get_name(target):
+    plate_solution = get_image_metadata(target[0]).plate_solution
+    return position_string.canonical_target_string(plate_solution.center)
+
+  targets = [(get_name(t), list(sorted(t))) for t in targets]
+  print('### targets', targets)
+  context.spatial_groups = targets
+  print(f'### Wrote {len(targets)} spatial groups into the cache')

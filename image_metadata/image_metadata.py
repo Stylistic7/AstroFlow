@@ -72,6 +72,12 @@ from context import context
 #     After stacking, the best preview is the post-processed (BXT, etc.) image.
 
 
+def get_image_metadata(content_hash):
+  key = ('image_metadata', content_hash)
+  if context.contains(key):
+    return context.get(key)
+
+
 def get_all_filenames():
   return set(context[k].filename
              for k in context.get_cache_keys()
@@ -85,6 +91,27 @@ def iterate_over_images():
   for k in keys:
     if type(k) is tuple and k[0] == 'image_metadata':
       yield context.get(k, keep_in_memory=False)
+
+
+# TODO: This is a bit weird. We want to keep unsolvable files in the cache,
+# so we don't attempt to re-solve them every run. But we want to filter them
+# out so downstream logic doesn't see them. We also want to ignore plate
+# solutions for images that no longer exist, but ultimately we want to help
+# the user find them.
+#
+# TODO: Report unsolvable images and missing images to the user. Include the
+# cause of failure whenever possible, and provide a solution (e.g. increasing
+# timeout on slow computers).
+def iterate_over_images_with_plate_solutions():
+  quarantined_files = context.quarantined_files
+
+  keys = context.get_cache_keys()
+  for k in keys:
+    if type(k) is tuple and k[0] == 'image_metadata':
+      image = context.get(k, keep_in_memory=False)
+      if image.filename not in quarantined_files and type(
+          image.plate_solution) is plate_solving.PlateSolution:
+        yield image
 
 
 @ray.remote
@@ -261,25 +288,3 @@ def gather_compute_image_metadata(results):
 
   # print(f'Needs regrouping: {regroup}')
   # context.regroup = regroup
-
-
-# TODO: This is a bit weird. We want to keep unsolvable files in the cache,
-# so we don't attempt to re-solve them every run. But we want to filter them
-# out so downstream logic doesn't see them. We also want to ignore plate
-# solutions for images that no longer exist, but ultimately we want to help
-# the user find them.
-#
-# TODO: Report unsolvable images and missing images to the user. Include the
-# cause of failure whenever possible, and provide a solution (e.g. increasing
-# timeout on slow computers).
-def remove_bad_images():
-  image_hashes = context.image_hashes
-  plate_solutions = context.plate_solutions
-  quarantined_files = context.quarantined_files
-
-  return {
-      h: p
-      for h, p in plate_solutions.items()
-      if h in image_hashes and image_hashes[h] and
-      h not in quarantined_files and type(p) is plate_solving.PlateSolution
-  }
