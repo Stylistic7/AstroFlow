@@ -2,7 +2,7 @@ import numpy as np
 import ray
 
 import image_metadata.image_types as image_types
-from image_metadata.image_metadata import get_image_metadata
+from image_metadata.actor import get_metadata
 import position_string
 import footprints
 from context import context
@@ -45,30 +45,27 @@ def find_groups(values, comparison_fn, min_component_members) -> list[str]:
   return groups
 
 
-def _iterate_over_good_images():
-  quarantined_files = context.quarantined_files
-
-  keys = context.get_cache_keys()
-  for k in keys:
-    if type(k) is tuple and k[0] == 'image_metadata':
-      image = context.get(k, keep_in_memory=False)
-      if image_types.is_light_frame(image.header) and not image_types.is_master(
-          image.header) and image.filename not in quarantined_files and type(
-              image.plate_solution) is plate_solving.PlateSolution:
-        centroid = np.asarray(
-            footprints.radec_to_vector(*image.plate_solution.center))
-        yield image.content_hash, centroid
-
-
 @ray.remote
 def find_components_by_cosine_similarity():
   print('find_components_by_cosine_similarity')
 
   cosine_similarity_threshold = context.cosine_similarity_threshold
   min_component_members = context.min_component_members
+  quarantined_files = context.quarantined_files
 
-  # TODO: Is there a way to actually use the generator here?
-  hashes_and_centroids = list(_iterate_over_good_images())
+  def predicate_fn(image):
+    return image_types.is_light_frame(
+        image.header) and not image_types.is_master(
+            image.header) and image.filename not in quarantined_files and type(
+                image.plate_solution) is plate_solving.PlateSolution
+
+  def transform_fn(image):
+    centroid = np.asarray(
+        footprints.radec_to_vector(*image.plate_solution.center))
+    return (image.content_hash, centroid)
+
+  hashes_and_centroids = get_metadata(predicate_fn=predicate_fn,
+                                      transform_fn=transform_fn)
   if not hashes_and_centroids:
     return {}
 
@@ -82,7 +79,7 @@ def find_components_by_cosine_similarity():
   print('### find_groups returned', targets)
 
   def get_name(target):
-    plate_solution = get_image_metadata(target[0]).plate_solution
+    plate_solution = get_metadata([target[0]])[0].plate_solution
     return position_string.canonical_target_string(plate_solution.center)
 
   targets = [(get_name(t), list(sorted(t))) for t in targets]

@@ -10,7 +10,7 @@ from make_test_context import make_test_context
 from orion_mosaic import add_orion_mosaic_images
 from image_metadata.actor import get_metadata, group_by_header, sort_by_header, cluster_by_header
 from make_test_context import make_test_context
-from make_test_frames import make_synthetic_frames, copy_testdata_frames
+from make_test_frames import make_synthetic_frames
 
 
 class TestMetadataActor(unittest.TestCase):
@@ -73,14 +73,16 @@ class TestMetadataActor(unittest.TestCase):
       return image.content_hash
 
     start_time = time.time()
-    result = get_metadata(light_predicate_fn, transform_fn)
+    result = get_metadata(predicate_fn=light_predicate_fn,
+                          transform_fn=transform_fn)
     end_time = time.time()
     self.assertEqual(len(result), 100)
     print('### len(result)', len(result), 'elapsed time',
           (end_time - start_time))
 
     start_time = time.time()
-    result = get_metadata(dark_predicate_fn, transform_fn)
+    result = get_metadata(predicate_fn=dark_predicate_fn,
+                          transform_fn=transform_fn)
     end_time = time.time()
     self.assertEqual(len(result), 20)
     print('### len(result)', len(result), 'elapsed time',
