@@ -15,6 +15,7 @@ if not 'ASTROFLOW_MOCK_NAMESPACE' in os.environ:
   import ray
   from context import ContextActor
   from state_actor import StateActor
+  from image_metadata.actor import MetadataActor
 
   ray.init(
       address='local',
@@ -34,6 +35,11 @@ if not 'ASTROFLOW_MOCK_NAMESPACE' in os.environ:
   context_actor = ContextActor.options(name='context',
                                        namespace=namespace,
                                        get_if_exists=True).remote()
+
+  print(f'### Creating MetadataActor in namespace {namespace}')
+  metadata_actor = MetadataActor.options(name='metadata',
+                                         namespace=namespace,
+                                         get_if_exists=True).remote()
 
   state_actor = StateActor.options(name='state',
                                    namespace=namespace,
