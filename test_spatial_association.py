@@ -5,11 +5,19 @@ import unittest
 from datetime import datetime, timedelta
 import ray
 
-from image_metadata.image_metadata import iterate_over_images
 from make_test_context import make_test_context
 from context import context
 from make_test_frames import make_synthetic_frames
 from spatial_association import find_components_by_cosine_similarity
+from image_metadata.actor import get_metadata
+
+
+def compute_hash_for_filename():
+  return get_metadata(transform_fn=lambda i:
+                      (os.path.basename(i.filename), i.content_hash),
+                      post_fn=lambda images: {
+                          f: h for f, h in images
+                      })
 
 
 class TestSpatialAssociation(unittest.TestCase):
@@ -27,7 +35,7 @@ class TestSpatialAssociation(unittest.TestCase):
     ray.get(find_components_by_cosine_similarity.remote())
     groups = context.spatial_groups
 
-    image_hashes = [i.content_hash for i in iterate_over_images()]
+    image_hashes = get_metadata(transform_fn=lambda i: i.content_hash)
 
     expected_groups = [('IC360', list(sorted(image_hashes)))]
     self.assertEqual(groups, expected_groups)
@@ -55,10 +63,7 @@ class TestSpatialAssociation(unittest.TestCase):
     ray.get(find_components_by_cosine_similarity.remote())
     groups = context.spatial_groups
 
-    hash_for_filename = {
-        os.path.basename(i.filename): i.content_hash
-        for i in iterate_over_images()
-    }
+    hash_for_filename = compute_hash_for_filename()
 
     expected_groups = [('IC1318',
                         sorted([
@@ -94,10 +99,7 @@ class TestSpatialAssociation(unittest.TestCase):
                           dither=0,
                           dest_dir=input_dir)
 
-    hash_for_filename = {
-        os.path.basename(i.filename): i.content_hash
-        for i in iterate_over_images()
-    }
+    hash_for_filename = compute_hash_for_filename()
 
     ray.get(find_components_by_cosine_similarity.remote())
     groups = context.spatial_groups
@@ -143,10 +145,7 @@ class TestSpatialAssociation(unittest.TestCase):
     ray.get(find_components_by_cosine_similarity.remote())
     groups = context.spatial_groups
 
-    hash_for_filename = {
-        os.path.basename(i.filename): i.content_hash
-        for i in iterate_over_images()
-    }
+    hash_for_filename = compute_hash_for_filename()
 
     expected_groups = [
         ('IC1318',
@@ -187,10 +186,7 @@ class TestSpatialAssociation(unittest.TestCase):
     ray.get(find_components_by_cosine_similarity.remote())
     groups = context.spatial_groups
 
-    hash_for_filename = {
-        os.path.basename(i.filename): i.content_hash
-        for i in iterate_over_images()
-    }
+    hash_for_filename = compute_hash_for_filename()
 
     expected_groups = [
         ('North America nebula',
@@ -233,10 +229,7 @@ class TestSpatialAssociation(unittest.TestCase):
     ray.get(find_components_by_cosine_similarity.remote())
     groups = context.spatial_groups
 
-    hash_for_filename = {
-        os.path.basename(i.filename): i.content_hash
-        for i in iterate_over_images()
-    }
+    hash_for_filename = compute_hash_for_filename()
 
     expected_groups = [('IC1311', [hash_for_filename['Pane 0']]),
                        ('IC1318', [hash_for_filename['Pane 1']]),
