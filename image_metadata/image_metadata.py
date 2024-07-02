@@ -78,20 +78,27 @@ def get_image_metadata(content_hash):
     return context.get(key)
 
 
+# def get_all_filenames():
+#   return set(context[k].filename
+#              for k in context.get_cache_keys()
+#              if type(k) is tuple and k[0] == 'image_metadata')
+
+
 def get_all_filenames():
-  return set(context[k].filename
-             for k in context.get_cache_keys()
-             if type(k) is tuple and k[0] == 'image_metadata')
+
+  def transform_fn(image):
+    return image.filename
+
+  return context.get_image_metadata(transform_fn=transform_fn)
 
 
-def iterate_over_images():
-  # TODO: THis may need to iterate over the lower-level cache.iterkeys()
-  # generator to be truly performant.
-  keys = context.get_cache_keys()
-  for k in keys:
-    if type(k) is tuple and k[0] == 'image_metadata':
-      yield context.get(k, keep_in_memory=False)
-
+# def iterate_over_images():
+#   # TODO: THis may need to iterate over the lower-level cache.iterkeys()
+#   # generator to be truly performant.
+#   keys = context.get_cache_keys()
+#   for k in keys:
+#     if type(k) is tuple and k[0] == 'image_metadata':
+#       yield context.get(k, keep_in_memory=False)
 
 # TODO: This is a bit weird. We want to keep unsolvable files in the cache,
 # so we don't attempt to re-solve them every run. But we want to filter them
@@ -102,16 +109,26 @@ def iterate_over_images():
 # TODO: Report unsolvable images and missing images to the user. Include the
 # cause of failure whenever possible, and provide a solution (e.g. increasing
 # timeout on slow computers).
-def iterate_over_images_with_plate_solutions():
+# def iterate_over_images_with_plate_solutions():
+#   quarantined_files = context.quarantined_files
+
+#   keys = context.get_cache_keys()
+#   for k in keys:
+#     if type(k) is tuple and k[0] == 'image_metadata':
+#       image = context.get(k, keep_in_memory=False)
+#       if image.filename not in quarantined_files and type(
+#           image.plate_solution) is plate_solving.PlateSolution:
+#         yield image
+
+
+def get_images_with_good_plate_solutions():
   quarantined_files = context.quarantined_files
 
-  keys = context.get_cache_keys()
-  for k in keys:
-    if type(k) is tuple and k[0] == 'image_metadata':
-      image = context.get(k, keep_in_memory=False)
-      if image.filename not in quarantined_files and type(
-          image.plate_solution) is plate_solving.PlateSolution:
-        yield image
+  def predicate_fn(image):
+    return (image.filename not in quarantined_files and
+            type(image.plate_solution) is plate_solving.PlateSolution)
+
+  return context.get_image_metadata(predicate_fn=predicate_fn)
 
 
 @ray.remote

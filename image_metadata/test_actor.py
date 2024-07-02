@@ -4,10 +4,11 @@ import unittest
 import time
 import datetime
 
+import clustering
 from image_metadata.image_types import is_light_frame, is_dark_frame
 from make_test_context import make_test_context
 from orion_mosaic import add_orion_mosaic_images
-from image_metadata.actor import metadata
+from image_metadata.actor import get_metadata, group_by_header, sort_by_header, cluster_by_header
 from make_test_context import make_test_context
 from make_test_frames import make_synthetic_frames, copy_testdata_frames
 
@@ -72,14 +73,14 @@ class TestMetadataActor(unittest.TestCase):
       return image.content_hash
 
     start_time = time.time()
-    result = metadata.get_metadata(light_predicate_fn, transform_fn)
+    result = get_metadata(light_predicate_fn, transform_fn)
     end_time = time.time()
     self.assertEqual(len(result), 100)
     print('### len(result)', len(result), 'elapsed time',
           (end_time - start_time))
 
     start_time = time.time()
-    result = metadata.get_metadata(dark_predicate_fn, transform_fn)
+    result = get_metadata(dark_predicate_fn, transform_fn)
     end_time = time.time()
     self.assertEqual(len(result), 20)
     print('### len(result)', len(result), 'elapsed time',
@@ -88,11 +89,31 @@ class TestMetadataActor(unittest.TestCase):
   def test_orion_mosaic(self):
     add_orion_mosaic_images()
 
-    result = metadata.get_metadata()
+    result = get_metadata()
     self.assertEqual(len(result), 35)
 
-    result = metadata.group_by_header('IMAGETYP')
+    result = group_by_header('IMAGETYP')
+    print('### result', result)
+    print('### groups', result.keys())
     self.assertEqual(len(result), 4)
+    light_frames = result['light']
+    print('### light_frames', light_frames)
+    self.assertEqual(len(light_frames), 12)
+
+    sorted_result = sort_by_header(light_frames, 'DATE-OBS')
+    print('### sorted_result', sorted_result)
+
+    clustered_result = cluster_by_header(
+        light_frames, 'DATE-OBS', lambda images: clustering.cluster_continuous(
+            images, epsilon=datetime.timedelta(minutes=15)))
+    print('### clustered_result', clustered_result)
+    self.assertEqual(len(clustered_result), 4)
+
+    clustered_result = cluster_by_header(
+        light_frames, 'DATE-OBS', lambda images: clustering.cluster_continuous(
+            images, epsilon=datetime.timedelta(days=2)))
+    print('### clustered_result', clustered_result)
+    self.assertEqual(len(clustered_result), 1)
 
 
 if __name__ == '__main__':
