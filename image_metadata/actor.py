@@ -52,7 +52,6 @@ def get_metadata(input_images=None,
 
 
 def _group_by_header(input_images, key):
-  print(f'### _group_by_header input_images {input_images} key {key}')
 
   def group_by(images):
     key_fn = operator.itemgetter(1)
