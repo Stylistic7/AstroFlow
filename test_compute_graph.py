@@ -5,6 +5,7 @@ import unittest
 import datetime
 import os
 
+from orion_mosaic import add_orion_mosaic_images
 from file_io.find_image_files import find_image_files
 from context import context
 import get_stacks
@@ -100,60 +101,7 @@ class TestComputeGraph(unittest.TestCase):
     self.assertEqual(len(processing_graph), 2)
 
   def test_orion_mosaic(self):
-    copy_testdata_frames(target_name='Orion Pane 1',
-                         start_datetime=datetime.datetime(
-                             2024, 2, 5, 16, 29, 43),
-                         dest_dir=context.input_dirs[0],
-                         add_noise=False)
-    copy_testdata_frames(target_name='Orion Pane 2',
-                         start_datetime=datetime.datetime(
-                             2024, 2, 5, 17, 29, 43),
-                         dest_dir=context.input_dirs[0],
-                         add_noise=False)
-    copy_testdata_frames(target_name='Orion Pane 3',
-                         start_datetime=datetime.datetime(
-                             2024, 2, 5, 18, 29, 43),
-                         dest_dir=context.input_dirs[0],
-                         add_noise=False)
-    copy_testdata_frames(target_name='Orion Pane 4',
-                         start_datetime=datetime.datetime(
-                             2024, 2, 5, 19, 29, 43),
-                         dest_dir=context.input_dirs[0],
-                         add_noise=False)
-
-    make_synthetic_frames(prefix='dark',
-                          number=5,
-                          image_type='Dark',
-                          start_datetime=datetime.datetime(
-                              2024, 2, 4, 18, 29, 43),
-                          fill_value=100,
-                          instrument='ZWO ASI6200MM Pro',
-                          width_pixels=9576,
-                          height_pixels=6388,
-                          temperature=-15,
-                          dest_dir=context.input_dirs[0])
-    make_synthetic_frames(prefix='bias',
-                          number=7,
-                          image_type='Bias',
-                          start_datetime=datetime.datetime(
-                              2024, 2, 5, 18, 29, 43),
-                          fill_value=50,
-                          instrument='ZWO ASI6200MM Pro',
-                          width_pixels=9576,
-                          height_pixels=6388,
-                          temperature=-15,
-                          dest_dir=context.input_dirs[0])
-    make_synthetic_frames(prefix='flat',
-                          number=11,
-                          image_type='Flat',
-                          start_datetime=datetime.datetime(
-                              2024, 2, 6, 18, 29, 43),
-                          fill_value=50,
-                          instrument='ZWO ASI6200MM Pro',
-                          width_pixels=9576,
-                          height_pixels=6388,
-                          temperature=-15,
-                          dest_dir=context.input_dirs[0])
+    add_orion_mosaic_images()
 
     # Running the graph the first time, with an empty shopping cart, should
     # produce all the subframe previews for the stacks, targets, and mosaic.

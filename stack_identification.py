@@ -135,6 +135,9 @@ def identify_stacks():
 
   print(f'Identifying stacks from {len(spatial_groups)} spatial groups...')
 
+  if context.stacks == None:
+    context.stacks = {}
+
   # TODO: Maybe implement a version of cluster_continuous() that repeatedly
   # subdivides by independent 1D variables.
   #

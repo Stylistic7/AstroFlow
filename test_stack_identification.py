@@ -4,11 +4,13 @@ import ray
 import unittest
 import datetime
 
+from make_test_context import make_test_context
 from context import context
 from make_test_frames import make_synthetic_frames
 from stack_identification import identify_stacks
 from spatial_association import find_components_by_cosine_similarity
 from get_stacks import get_toplevel_stacks, get_content_stacks_of_type
+from image_metadata.actor import get_metadata
 
 # TODO: I may need to separate the concepts of the diskcache-based global
 # context, and the context used in a Graph.
@@ -19,19 +21,15 @@ from get_stacks import get_toplevel_stacks, get_content_stacks_of_type
 # What belongs in the local context for the Graph? I'm not sure.
 
 
-def set_default_context():
-  context.cosine_similarity_threshold = 0.99999
-  context.min_component_members = 3
-  context.max_run_gap = datetime.timedelta(minutes=15)
-  context.min_frames_in_run = 3
-  context.min_frames_in_stack = 3
-  context.quarantined_files = []
-
-
 class TestStackIdentification(unittest.TestCase):
 
   def setUp(self):
-    set_default_context()
+    self.input_dir_obj, self.output_dir_obj = make_test_context()
+    context.regroup = True
+
+  def tearDown(self):
+    self.input_dir_obj.cleanup()
+    self.output_dir_obj.cleanup()
 
   def test_one_perfect_stack(self):
     make_synthetic_frames(ra=100, dec=50, prefix='foo', number=10, dither=0)
@@ -65,7 +63,6 @@ class TestStackIdentification(unittest.TestCase):
     ray.get(find_components_by_cosine_similarity.remote())
     ray.get(identify_stacks.remote())
 
-    image_hashes = context.image_hashes
     stacks = context.stacks
     self.assertEqual(len(stacks), 4)
 
@@ -78,11 +75,13 @@ class TestStackIdentification(unittest.TestCase):
     content_stacks = get_content_stacks_of_type(stacks, 'light')
     self.assertEqual(len(content_stacks), 2)
     stack = content_stacks[0]
-    self.assertTrue(all('foo' in image_hashes[f] for f in stack.frames))
+    filenames = get_metadata(stack.frames, transform_fn=lambda i: i.filename)
+    self.assertTrue(all('foo' in f for f in filenames))
     self.assertEqual(len(stack.frames), 10)
 
     stack = content_stacks[1]
-    self.assertTrue(all('bar' in image_hashes[f] for f in stack.frames))
+    filenames = get_metadata(stack.frames, transform_fn=lambda i: i.filename)
+    self.assertTrue(all('bar' in f for f in filenames))
     self.assertEqual(len(stack.frames), 10)
 
   def test_two_stacks_different_image_sizes(self):
@@ -130,8 +129,6 @@ class TestStackIdentification(unittest.TestCase):
     self.assertEqual(len(content_stacks), 2)
 
   def test_multiple_exposures(self):
-    set_default_context()
-
     make_synthetic_frames(ra=100,
                           dec=50,
                           prefix='foo',
@@ -148,7 +145,6 @@ class TestStackIdentification(unittest.TestCase):
     ray.get(find_components_by_cosine_similarity.remote())
     ray.get(identify_stacks.remote())
 
-    image_hashes = context.image_hashes
     stacks = context.stacks
     self.assertEqual(len(stacks), 3)
 
@@ -163,13 +159,15 @@ class TestStackIdentification(unittest.TestCase):
     content_stacks = get_content_stacks_of_type(stacks, 'light')
     self.assertEqual(len(content_stacks), 2)
     stack = content_stacks[0]
-    self.assertTrue(all('bar' in image_hashes[f] for f in stack.frames))
+    filenames = get_metadata(stack.frames, transform_fn=lambda i: i.filename)
+    self.assertTrue(all('bar' in f for f in filenames))
     self.assertEqual(len(stack.frames), 7)
     self.assertEqual(stack.exposure_s, 120.0)
     self.assertEqual(stack.integration_s, 7 * 120)
 
     stack = content_stacks[1]
-    self.assertTrue(all('foo' in image_hashes[f] for f in stack.frames))
+    filenames = get_metadata(stack.frames, transform_fn=lambda i: i.filename)
+    self.assertTrue(all('foo' in f for f in filenames))
     self.assertEqual(len(stack.frames), 5)
     self.assertEqual(stack.exposure_s, 300.0)
     self.assertEqual(stack.integration_s, 5 * 300)
