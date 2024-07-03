@@ -121,12 +121,24 @@ def copy_testdata_frames(target_name,
                                  size=image.shape,
                                  dtype=image.dtype)
 
+    content_hash = xxhash.xxh64(image.tobytes()).hexdigest()
+
     if date_obs:
       header['DATE-OBS'] = date_obs.strftime("%Y-%m-%dT%H:%M:%S")
       date_obs += datetime.timedelta(seconds=int(header['EXPOSURE']) + 1)
 
     fits.flush()
     fits.close()
+
+    plate_solution = plate_solving.solve_field(dest_filename)
+
+    key = ('image_metadata', content_hash)
+    metadata = ImageMetadata(content_hash=content_hash,
+                             filename=dest_filename,
+                             header=normalize_header(header),
+                             plate_solution=plate_solution)
+    context.set(key, metadata, flush=True)
+    print(f'### Wrote key {key}')
 
 
 def make_synthetic_frames(start_datetime=datetime.datetime(
