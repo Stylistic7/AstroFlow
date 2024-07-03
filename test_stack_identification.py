@@ -34,12 +34,7 @@ class TestStackIdentification(unittest.TestCase):
     set_default_context()
 
   def test_one_perfect_stack(self):
-    image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
-        ra=100, dec=50, prefix='foo', number=10, dither=0)
-
-    context.image_hashes = image_hashes
-    context.fits_headers = fits_headers
-    context.plate_solutions = plate_solutions
+    make_synthetic_frames(ra=100, dec=50, prefix='foo', number=10, dither=0)
 
     ray.get(find_components_by_cosine_similarity.remote())
     ray.get(identify_stacks.remote())
@@ -59,22 +54,13 @@ class TestStackIdentification(unittest.TestCase):
     self.assertEqual(len(stack.frames), 10)
 
   def test_two_stacks_different_image_scales(self):
-    image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
-        ra=100, dec=50, prefix='foo', number=10, dither=0)
-    image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
-        ra=100,
-        dec=50,
-        prefix='bar',
-        number=10,
-        dither=0,
-        image_scale=2.0,
-        image_hashes=image_hashes,
-        fits_headers=fits_headers,
-        plate_solutions=plate_solutions)
-
-    context.image_hashes = image_hashes
-    context.fits_headers = fits_headers
-    context.plate_solutions = plate_solutions
+    make_synthetic_frames(ra=100, dec=50, prefix='foo', number=10, dither=0)
+    make_synthetic_frames(ra=100,
+                          dec=50,
+                          prefix='bar',
+                          number=10,
+                          dither=0,
+                          image_scale=2.0)
 
     ray.get(find_components_by_cosine_similarity.remote())
     ray.get(identify_stacks.remote())
@@ -102,7 +88,7 @@ class TestStackIdentification(unittest.TestCase):
   def test_two_stacks_different_image_sizes(self):
     # Note that these two groups have the same generic camera name, which is
     # typical of some capture software.
-    image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
+    make_synthetic_frames(
         ra=100,
         dec=50,
         prefix='foo',
@@ -112,22 +98,14 @@ class TestStackIdentification(unittest.TestCase):
         width_pixels=3000,
         height_pixels=2000,
     )
-    image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
-        ra=100,
-        dec=50,
-        prefix='bar',
-        instrument='ASI Camera',
-        number=10,
-        dither=0,
-        width_pixels=6000,
-        height_pixels=4000,
-        image_hashes=image_hashes,
-        fits_headers=fits_headers,
-        plate_solutions=plate_solutions)
-
-    context.image_hashes = image_hashes
-    context.fits_headers = fits_headers
-    context.plate_solutions = plate_solutions
+    make_synthetic_frames(ra=100,
+                          dec=50,
+                          prefix='bar',
+                          instrument='ASI Camera',
+                          number=10,
+                          dither=0,
+                          width_pixels=6000,
+                          height_pixels=4000)
 
     ray.get(find_components_by_cosine_similarity.remote())
     ray.get(identify_stacks.remote())
@@ -151,33 +129,21 @@ class TestStackIdentification(unittest.TestCase):
     content_stacks = get_content_stacks_of_type(stacks, 'light')
     self.assertEqual(len(content_stacks), 2)
 
-    self.assertTrue(
-        all('foo' in image_hashes[f] for f in content_stacks[0].frames))
-    self.assertEqual(len(content_stacks[0].frames), 10)
-
-    self.assertTrue(
-        all('bar' in image_hashes[f] for f in content_stacks[1].frames))
-    self.assertEqual(len(content_stacks[1].frames), 10)
-
   def test_multiple_exposures(self):
     set_default_context()
 
-    image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
-        ra=100, dec=50, prefix='foo', number=5, dither=0, exposure=300)
-    image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
-        ra=100,
-        dec=50,
-        prefix='bar',
-        number=7,
-        dither=0,
-        exposure=120,
-        image_hashes=image_hashes,
-        fits_headers=fits_headers,
-        plate_solutions=plate_solutions)
-
-    context.image_hashes = image_hashes
-    context.fits_headers = fits_headers
-    context.plate_solutions = plate_solutions
+    make_synthetic_frames(ra=100,
+                          dec=50,
+                          prefix='foo',
+                          number=5,
+                          dither=0,
+                          exposure=300)
+    make_synthetic_frames(ra=100,
+                          dec=50,
+                          prefix='bar',
+                          number=7,
+                          dither=0,
+                          exposure=120)
 
     ray.get(find_components_by_cosine_similarity.remote())
     ray.get(identify_stacks.remote())

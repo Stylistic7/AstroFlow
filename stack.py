@@ -6,6 +6,8 @@ import numpy as np
 import datetime
 from typing import NewType, Optional
 from hashing import hash_list
+from image_metadata.actor import get_metadata
+from context import context
 
 FrameHash = NewType('FrameHash', str)
 StackHash = NewType('StackHash', str)
@@ -45,13 +47,11 @@ class Stack:
   projected_footprints: Optional[dict[str, Polygon]] = None
   selection_criterion: Optional[tuple[str, float]] = None
 
-  def all_frames(self, stacks) -> list[str]:
+  def all_frames(self) -> list[str]:
+    stacks = context.stacks
     return self.frames + [f for s in self.contents for f in stacks[s].frames]
 
-  def update_metadata(self, fits_headers, stacks=None) -> None:
-    if stacks == None:
-      stacks = {}
-
+  def update_metadata(self) -> None:
     if self.stable_hash:
       assert self.contents
       assert not self.frames
@@ -60,12 +60,16 @@ class Stack:
       assert self.frames
       assert not self.contents
 
-    all_frames = self.all_frames(stacks)
+    print(f'### update_metadata, self.frames {self.frames}')
+
+    all_frames = self.all_frames()
+    print(f'### update_metadata, all_frames {all_frames}')
     self.content_hash = hash_list(all_frames)
 
     def get_quality(quality, allow_multiple=False):
       qualities = list(
-          set(fits_headers[f].get(quality, None) for f in all_frames))
+          set(get_metadata(all_frames,
+                           transform_fn=lambda i: i.header[quality])))
       if type(qualities[0]) is float and np.all(
           np.isclose(qualities, qualities[0])):
         qualities = {qualities[0]}
@@ -85,12 +89,13 @@ class Stack:
     self.exposure_s = get_quality('EXPOSURE', allow_multiple_exposures)
     self.filter = get_quality('FILTER')
 
-    self.integration_s = sum([fits_headers[f]['EXPOSURE'] for f in all_frames])
-
+    self.integration_s = sum(
+        get_metadata(all_frames, transform_fn=lambda i: i.header['EXPOSURE']))
     self.mean_temperature = np.mean(
-        [fits_headers[f]['CCD-TEMP'] for f in all_frames])
+        get_metadata(all_frames, transform_fn=lambda i: i.header['CCD-TEMP']))
 
-    all_dates = sorted(fits_headers[f]['DATE-OBS'] for f in all_frames)
+    all_dates = get_metadata(all_frames,
+                             transform_fn=lambda i: i.header['DATE-OBS'])
     self.oldest_date = all_dates[0]
     self.newest_date = all_dates[-1]
 
@@ -119,6 +124,7 @@ class Stack:
               f'Temp {self.mean_temperature:.02f} degC)')
     else:
       return (f'Stack(Content hash {self.content_hash}, '
+              f'Type {self.image_type}, '
               f'Camera {self.camera}, '
               f'Exposure {self.exposure_s}, '
               f'Integration {self.integration_s} s, '

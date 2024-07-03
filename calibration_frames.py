@@ -1,72 +1,64 @@
 import ray
 import numpy as np
-import itertools
 
 import image_metadata.image_types as image_types
 from context import context
-import runs
 from stack import Stack
+from image_metadata.actor import get_metadata, group_by_header, cluster_by_header
+import clustering
 
 
 @ray.remote
 def identify_calibration_stacks():
   print(f'Identifying calibration stacks...')
-  fits_headers = context.fits_headers
-  max_run_gap = context.max_run_gap
-  min_frames_in_run = context.min_frames_in_run
 
-  cal_frames = [
-      f for f, header in fits_headers.items()
-      if header and not image_types.is_master(header) and 'IMAGETYP' in header
-  ]
+  def get_runs(frames):
+    result = cluster_by_header(
+        frames, 'DATE-OBS', lambda images: clustering.cluster_continuous(
+            images, epsilon=context.max_run_gap))
+    return [
+        [x[0] for x in r] for r in result if len(r) >= context.min_frames_in_run
+    ]
 
-  def group_by_header(key):
+  cal_frames = get_metadata(
+      predicate_fn=lambda i: not image_types.is_master(i.header),
+      transform_fn=lambda i: i.content_hash)
+  print('### cal_frames', cal_frames)
 
-    def key_fn(f):
-      value = fits_headers[f][key]
-      return value.lower() if type(value) is str else value
-
-    frames = [f for f in cal_frames if fits_headers[f].get(key, None) != None]
-    frames = sorted(frames, key=key_fn)
-    return {k: set(g) for k, g in itertools.groupby(frames, key=key_fn)}
+  frames_for_image_type = group_by_header(cal_frames, 'IMAGETYP')
+  frames_for_camera = group_by_header(cal_frames, 'INSTRUME')
+  frames_for_exposure = group_by_header(cal_frames, 'EXPOSURE')
+  frames_for_filter = group_by_header(cal_frames, 'FILTER')
 
   def new_stack(frames):
+    print(f'### identify_calibration_stacks.new_stack frames {frames}')
     stack = Stack(frames=frames)
-    stack.update_metadata(fits_headers, stacks)
+    stack.update_metadata()
+    print(f'### identify_calibration_stacks.new_stack stack {stack}')
     return stack
-
-  frames_for_image_type = group_by_header('IMAGETYP')
-  frames_for_camera = group_by_header('INSTRUME')
-  frames_for_exposure = group_by_header('EXPOSURE')
-  frames_for_filter = group_by_header('FILTER')
 
   stacks = context.stacks or {}
   for camera in frames_for_camera:
     bias_frames = frames_for_image_type.get(
         'bias', set()) & frames_for_camera.get(camera, set())
-    for run in runs.get_runs(bias_frames, fits_headers, max_run_gap,
-                             min_frames_in_run):
-      stack = new_stack(runs.get_frames_for_run(run, bias_frames, fits_headers))
+    for run in get_runs(bias_frames):
+      stack = new_stack(run)
       stacks[stack.content_hash] = stack
 
     for exposure in frames_for_exposure:
       dark_frames = frames_for_image_type.get(
           'dark', set()) & frames_for_camera.get(
               camera, set()) & frames_for_exposure.get(exposure, set())
-      for run in runs.get_runs(dark_frames, fits_headers, max_run_gap,
-                               min_frames_in_run):
-        stack = new_stack(
-            runs.get_frames_for_run(run, dark_frames, fits_headers))
+      for run in get_runs(dark_frames):
+        stack = new_stack(run)
         stacks[stack.content_hash] = stack
 
     for filter in frames_for_filter:
       flat_frames = frames_for_image_type.get(
           'flat', set()) & frames_for_camera.get(
               camera, set()) & frames_for_filter.get(filter, set())
-      for run in runs.get_runs(flat_frames, fits_headers, max_run_gap,
-                               min_frames_in_run):
-        stack = new_stack(
-            runs.get_frames_for_run(run, flat_frames, fits_headers))
+      for run in get_runs(flat_frames):
+        stack = new_stack(run)
         stacks[stack.content_hash] = stack
 
   print(f'### identify_calibration_stacks writing {len(stacks)} stacks '
@@ -108,11 +100,21 @@ def associate_with_stack(stack, stacks):
     if not compatible_stacks:
       return None
 
+    def midpoint(a, b):
+      return a + (b - a) / 2
+
     return compatible_stacks[np.argmin([
-        runs.run_time_delta((stack.oldest_date, stack.newest_date),
-                            (stacks[s].oldest_date, stacks[s].newest_date))
+        abs(
+            midpoint(stack.oldest_date, stack.newest_date) -
+            midpoint(stacks[s].oldest_date, stacks[s].newest_date))
         for s in compatible_stacks
     ])]
+
+    # return compatible_stacks[np.argmin([
+    #     runs.run_time_delta((stack.oldest_date, stack.newest_date),
+    #                         (stacks[s].oldest_date, stacks[s].newest_date))
+    #     for s in compatible_stacks
+    # ])]
 
   stack.dependencies = {}
   for image_type in ['bias', 'dark', 'flat']:

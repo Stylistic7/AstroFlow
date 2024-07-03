@@ -41,8 +41,9 @@ class TestStack(unittest.TestCase):
         'stack_baz':
             Stack(content_hash='stack_baz', frames=['g', 'h', 'i']),
     }
+    context.stacks = stacks
 
-    self.assertEqual(sorted(stacks['toplevel_stack'].all_frames(stacks)),
+    self.assertEqual(sorted(stacks['toplevel_stack'].all_frames()),
                      ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'])
 
   def test_one_dark_stack(self):
@@ -96,6 +97,9 @@ class TestStack(unittest.TestCase):
     run_graph(graph)
 
     stacks = context.stacks
+    print('### After running compute graph, stacks are:')
+    for stack in stacks.values():
+      print(f'### {stack}')
     self.assertEqual(len(stacks), 3)
 
     toplevel_stack = next(
