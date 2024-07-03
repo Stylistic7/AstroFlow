@@ -11,6 +11,7 @@ from image_metadata.classes import ImageMetadata
 import plate_solving
 from dependency_graph import Graph
 from context import context
+from image_metadata.actor import get_metadata
 
 # TODO: I need to associate dark and flat frames *before* computing thumbnails.
 
@@ -71,26 +72,10 @@ from context import context
 #     Before stacking, the best preview is the single subframe with most stars.
 #     After stacking, the best preview is the post-processed (BXT, etc.) image.
 
-
-def get_image_metadata(content_hash):
-  key = ('image_metadata', content_hash)
-  if context.contains(key):
-    return context.get(key)
-
-
 # def get_all_filenames():
 #   return set(context[k].filename
 #              for k in context.get_cache_keys()
 #              if type(k) is tuple and k[0] == 'image_metadata')
-
-
-def get_all_filenames():
-
-  def transform_fn(image):
-    return image.filename
-
-  return context.get_image_metadata(transform_fn=transform_fn)
-
 
 # def iterate_over_images():
 #   # TODO: THis may need to iterate over the lower-level cache.iterkeys()
@@ -128,7 +113,7 @@ def get_images_with_good_plate_solutions():
     return (image.filename not in quarantined_files and
             type(image.plate_solution) is plate_solving.PlateSolution)
 
-  return context.get_image_metadata(predicate_fn=predicate_fn)
+  return get_metadata(predicate_fn=predicate_fn)
 
 
 @ray.remote
@@ -145,7 +130,7 @@ def scatter_compute_image_metadata(mode):
   for dir in directories:
     filenames.extend(find_image_files(dir))
 
-  known_files = get_all_filenames()
+  known_files = get_metadata(transform_fn=lambda i: i.filename)
   new_filenames = list(
       set(filenames) - set(known_files) - set(context.quarantined_files))
 
