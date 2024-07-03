@@ -10,6 +10,9 @@ def cluster_discrete(items, key=operator.itemgetter(1)):
 
 
 def cluster_continuous(items, epsilon=0.2, key=operator.itemgetter(1)):
+  if len(items) == 0:
+    return []
+
   clusters = []
   items_sorted = sorted(items, key=key)
   curr_point = items_sorted[0]

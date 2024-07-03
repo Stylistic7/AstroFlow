@@ -23,7 +23,6 @@ def identify_calibration_stacks():
   cal_frames = get_metadata(
       predicate_fn=lambda i: not image_types.is_master(i.header),
       transform_fn=lambda i: i.content_hash)
-  print('### cal_frames', cal_frames)
 
   frames_for_image_type = group_by_header(cal_frames, 'IMAGETYP')
   frames_for_camera = group_by_header(cal_frames, 'INSTRUME')
@@ -31,10 +30,8 @@ def identify_calibration_stacks():
   frames_for_filter = group_by_header(cal_frames, 'FILTER')
 
   def new_stack(frames):
-    print(f'### identify_calibration_stacks.new_stack frames {frames}')
     stack = Stack(frames=frames)
     stack.update_metadata()
-    print(f'### identify_calibration_stacks.new_stack stack {stack}')
     return stack
 
   stacks = context.stacks or {}

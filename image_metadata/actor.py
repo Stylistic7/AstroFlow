@@ -32,7 +32,7 @@ class MetadataActor:
     result = []
     for key in cache.iterkeys():
       if type(key) is tuple and key[0] == 'image_metadata':
-        if input_images and key[1] not in input_images:
+        if input_images is not None and key[1] not in input_images:
           continue
 
         image = cache[key]
@@ -47,6 +47,9 @@ def get_metadata(input_images=None,
                  predicate_fn=lambda x: True,
                  transform_fn=lambda x: x,
                  post_fn=lambda x: x):
+  if input_images is not None and len(input_images) == 0:
+    return []
+
   actor = ray.get_actor('metadata', namespace=namespace)
   return ray.get(
       actor.get_metadata.remote(input_images, predicate_fn, transform_fn,

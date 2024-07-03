@@ -20,6 +20,7 @@ from calibration_frames import identify_calibration_stacks, associate_with_stack
 from make_test_context import make_test_context
 from hashing import hash_list
 from get_stacks import get_toplevel_stacks, get_content_stacks_of_type
+from image_metadata.actor import get_metadata
 
 
 def _build_compute_graph():
@@ -401,22 +402,26 @@ class TestCalibrationFrames(unittest.TestCase):
     # has prefix `flat_run_1` because it is closer chronologically.
     graph = _build_compute_graph()
     run_graph(graph)
-    image_hashes = context.image_hashes
     stacks = context.stacks
 
     # Look through the stacks, and find the stacks for the two runs of flat
     # frames.
     def find_stack(filename_fragment):
-      return next(
-          stack_id for stack_id, stack in stacks.items()
-          if stack.frames and all(
-              filename_fragment in image_hashes[f] for f in stack.frames))
+      for stack_id, stack in stacks.items():
+        if not stack.frames:
+          continue
+
+        filenames = get_metadata(stack.frames,
+                                 transform_fn=lambda i: i.filename)
+        if all(filename_fragment in f for f in filenames):
+          return stack_id
 
     first_flat_stack = find_stack('flat_run_0')
     second_flat_stack = find_stack('flat_run_1')
 
-    first_light_run_hash = hash_list(
-        [k for k, v in image_hashes.items() if 'light_run' in v])
+    light_run = get_metadata(predicate_fn=lambda i: 'light_run' in i.filename,
+                             transform_fn=lambda i: i.content_hash)
+    first_light_run_hash = hash_list(light_run)
 
     light_stacks = [
         s for s in stacks.values()
@@ -437,7 +442,7 @@ class TestCalibrationFrames(unittest.TestCase):
     # Run the graph again, with the settings applied.
     graph = _build_compute_graph()
     run_graph(graph)
-    image_hashes = context.image_hashes
+
     stacks = context.stacks
     self.assertEqual(len(stacks), 4)
 
