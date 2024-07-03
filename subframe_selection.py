@@ -1,4 +1,7 @@
 import numpy as np
+import operator
+
+from image_metadata.actor import get_metadata
 
 
 class StarCountFraction:
@@ -48,9 +51,6 @@ def decode_selection_criterion(criterion: tuple[str, float]):
 SelectionCriterion = StarCountFraction | StarCountStdDev
 
 
-def get_light_frames_sorted_by_stars(light_frames, plate_solutions):
-  light_frames = sorted(light_frames,
-                        key=lambda f: plate_solutions[f].num_stars,
-                        reverse=True)
-
-  return [(f, plate_solutions[f].num_stars) for f in light_frames]
+def get_light_frames_sorted_by_stars(light_frames):
+  metadata = get_metadata(light_frames)
+  return sorted(metadata, key=lambda i: i.plate_solution.num_stars)

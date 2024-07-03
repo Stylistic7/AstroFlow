@@ -98,9 +98,8 @@ def array_to_png(array, debug=False):
 
 
 # TODO: Average flat frames before applying them.
-def _make_thumbnail(fits_headers, light_frame, light_image, bias_frame,
-                    bias_image, dark_frame, dark_image, flat_frame, flat_image,
-                    rotate):
+def _make_thumbnail(light_frame, light_image, bias_frame, bias_image,
+                    dark_frame, dark_image, flat_frame, flat_image, rotate):
 
   if bias_image is None or dark_image is None or flat_image is None:
     return autostretch(light_image)
@@ -114,10 +113,9 @@ def _make_thumbnail(fits_headers, light_frame, light_image, bias_frame,
       f"dark {dark_image.shape}, "
       f"flat {flat_image.shape}")
 
-  light_dark_scale = fits_headers[light_frame]['EXPOSURE'] / fits_headers[
-      dark_frame]['EXPOSURE']
-  flat_dark_scale = fits_headers[flat_frame]['EXPOSURE'] / fits_headers[
-      dark_frame]['EXPOSURE']
+  light_dark_scale = light_frame.header['EXPOSURE'] / dark_frame.header[
+      'EXPOSURE']
+  flat_dark_scale = flat_frame.header['EXPOSURE'] / dark_frame.header['EXPOSURE']
 
   image = (light_image -
            bias_image) - light_dark_scale * (dark_image - bias_image)
@@ -309,36 +307,33 @@ def create_stack_subframe_thumbnails(stack_id):
   stack = stacks[stack_id]
   print(f'Entering create_stack_subframe_thumbnails() for stack {stack}')
 
-  image_hashes = context.image_hashes
-  fits_headers = context.fits_headers
-  plate_solutions = context.plate_solutions
-  width = context.subframe_thumbnail_width
-
   # Don't make previews for calibration stacks.
   assert stack.stable_hash
+
+  width = context.subframe_thumbnail_width
 
   calibrations = _get_calibrations(stack, stacks)
 
   # Cache the calibration images so they're only read once.
   calibration_images = {}
 
-  def get_calibration_image(hash):
-    if not hash:
+  def get_calibration_image(image):
+    if not image:
       return None
-    elif hash in calibration_images:
-      return calibration_images[hash]
+    elif image in calibration_images:
+      return calibration_images[image]
     else:
-      image = resize_array(read_image(image_hashes[hash]), width)
+      image = resize_array(read_image(image.filename), width)
       calibration_images[hash] = image
       return image
 
   # Now sort all the light frames (no matter which run they're from) by the
   # number of stars. The better images should be in front.
   light_frames_by_stars = subframe_selection.get_light_frames_sorted_by_stars(
-      stack.all_frames(stacks), plate_solutions)
+      stack.all_frames())
 
-  best_light_frame, _ = light_frames_by_stars[0]
-  image = resize_array(read_image(image_hashes[best_light_frame]), width)
+  best_light_frame = light_frames_by_stars[0]
+  image = resize_array(read_image(best_light_frame.filename), width)
   height, width = image.shape
 
   height = int(((height + 8 - 1) / 8) * 8)
@@ -349,23 +344,23 @@ def create_stack_subframe_thumbnails(stack_id):
     fourcc = cv2.VideoWriter_fourcc(*'VP80')
     video_filename = os.path.join(tmp_dir, 'output.webm')
     out = cv2.VideoWriter(video_filename, fourcc, 10.0, (width, height), False)
-    for i, (light_frame, _) in enumerate(light_frames_by_stars):
-      rotate = plate_solutions[light_frame].rotation_angle < 0.0
+    for i, light_frame in enumerate(light_frames_by_stars):
+      rotate = light_frame.plate_solution.rotation_angle < 0.0
 
-      light_image = resize_array(read_image(image_hashes[light_frame]), width)
+      light_image = resize_array(read_image(light_frame.filename), width)
 
-      bias_frame = calibrations[light_frame]['bias_frame']
+      bias_frame = calibrations[light_frame.content_hash]['bias_frame']
       bias_image = get_calibration_image(bias_frame)
 
-      dark_frame = calibrations[light_frame]['dark_frame']
+      dark_frame = calibrations[light_frame.content_hash]['dark_frame']
       dark_image = get_calibration_image(dark_frame)
 
-      flat_frame = calibrations[light_frame]['flat_frame']
+      flat_frame = calibrations[light_frame.content_hash]['flat_frame']
       flat_image = get_calibration_image(flat_frame)
 
-      im = _make_thumbnail(fits_headers, light_frame, light_image, bias_frame,
-                           bias_image, dark_frame, dark_image, flat_frame,
-                           flat_image, rotate)
+      im = _make_thumbnail(image, light_image, bias_frame, bias_image,
+                           dark_frame, dark_image, flat_frame, flat_image,
+                           rotate)
 
       if i == 0:
         key = ('stack_subframe_thumbnail_image', stack_id)

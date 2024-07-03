@@ -9,6 +9,7 @@ import position_string
 from target import Target
 import footprints
 from hashing import hash_list
+from image_metadata.actor import get_metadata
 
 
 @ray.remote
@@ -25,14 +26,26 @@ def group_stacks_into_targets():
     assert not SphericalPolygon.self_intersect(footprint.points)
     return footprint
 
+  def center_and_polygon(stack):
+    first_frame = stack.all_frames()[0]
+    plate_solution = get_metadata([first_frame],
+                                  transform_fn=lambda i: i.plate_solution)[0]
+    return (np.asarray(footprints.radec_to_vector(*stack.center)),
+            get_spherical_polygon(pyfits.Header(plate_solution.header)))
+
   values = {
-      id: (np.asarray(footprints.radec_to_vector(*stack.center)),
-           get_spherical_polygon(
-               pyfits.Header(
-                   plate_solutions[stack.all_frames(stacks)[0]].header)))
+      id: center_and_polygon(stack)
       for id, stack in stacks.items()
       if stack.stable_hash and stack.image_type == 'light'
   }
+
+  # values = {
+  #     id: (np.asarray(footprints.radec_to_vector(*stack.center)),
+  #          get_spherical_polygon(
+  #              pyfits.Header(plate_solutions[stack.all_frames()[0]].header)))
+  #     for id, stack in stacks.items()
+  #     if stack.stable_hash and stack.image_type == 'light'
+  # }
 
   print(f'### Finding targets out of {len(values)} light-frame stacks')
 
@@ -46,8 +59,7 @@ def group_stacks_into_targets():
         b_polygon).area()
     return iou > 0.6
 
-  groups = spatial_association.find_groups(values.keys(),
-                                           values,
+  groups = spatial_association.find_groups(values,
                                            comparison_fn,
                                            min_component_members=1)
 

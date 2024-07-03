@@ -16,6 +16,11 @@ class TestTargetIdentification(unittest.TestCase):
 
   def setUp(self):
     self.input_dir_obj, self.output_dir_obj = make_test_context()
+    context.regroup = True
+
+  def tearDown(self):
+    self.input_dir_obj.cleanup()
+    self.output_dir_obj.cleanup()
 
   def test_orion_nebula(self):
     copy_testdata_frames(target_name='M42', dest_dir=context.input_dirs[0])

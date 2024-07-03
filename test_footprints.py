@@ -36,22 +36,15 @@ class TestFootprints(unittest.TestCase):
     self.proj = mercator.MercatorProjection()
 
   def test_stack(self):
-    image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
-        number=3,
-        prefix='foo',
-        ra=180,
-        dec=0,
-        width_pixels=10800,
-        height_pixels=7200,
-        rotation_angle_deg=0,
-        dither=0,
-        dest_dir=context.input_dirs[0])
-
-    # TODO: It's awkward that this has to be done both ways. Maybe split the
-    # image_metadata gather op from the diskcache ops.
-    context.image_hashes = image_hashes
-    context.fits_headers = fits_headers
-    context.plate_solutions = plate_solutions
+    make_synthetic_frames(number=3,
+                          prefix='foo',
+                          ra=180,
+                          dec=0,
+                          width_pixels=10800,
+                          height_pixels=7200,
+                          rotation_angle_deg=0,
+                          dither=0,
+                          dest_dir=context.input_dirs[0])
 
     graph = _build_compute_graph()
     run_graph(graph)
@@ -74,35 +67,26 @@ class TestFootprints(unittest.TestCase):
   def test_target(self):
     # Two stacks with the same footprint, but different image scales. They
     # should be merged into a single target.
-    image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
-        number=3,
-        prefix='foo',
-        ra=180,
-        dec=0,
-        rotation_angle_deg=0,
-        dither=0,
-        image_scale=1.0,
-        width_pixels=10800,
-        height_pixels=7200,
-        dest_dir=context.input_dirs[0])
-    image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
-        number=5,
-        prefix='bar',
-        ra=180,
-        dec=0,
-        rotation_angle_deg=0,
-        dither=0,
-        image_scale=2.0,
-        width_pixels=5400,
-        height_pixels=3600,
-        dest_dir=context.input_dirs[0],
-        image_hashes=image_hashes,
-        fits_headers=fits_headers,
-        plate_solutions=plate_solutions)
-
-    context.image_hashes = image_hashes
-    context.fits_headers = fits_headers
-    context.plate_solutions = plate_solutions
+    make_synthetic_frames(number=3,
+                          prefix='foo',
+                          ra=180,
+                          dec=0,
+                          rotation_angle_deg=0,
+                          dither=0,
+                          image_scale=1.0,
+                          width_pixels=10800,
+                          height_pixels=7200,
+                          dest_dir=context.input_dirs[0])
+    make_synthetic_frames(number=5,
+                          prefix='bar',
+                          ra=180,
+                          dec=0,
+                          rotation_angle_deg=0,
+                          dither=0,
+                          image_scale=2.0,
+                          width_pixels=5400,
+                          height_pixels=3600,
+                          dest_dir=context.input_dirs[0])
 
     graph = _build_compute_graph()
     run_graph(graph)
@@ -130,35 +114,26 @@ class TestFootprints(unittest.TestCase):
 
   def test_mosaic(self):
     # Two stacks that overlap by a degree in RA.
-    image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
-        number=3,
-        prefix='foo',
-        ra=180,
-        dec=0,
-        rotation_angle_deg=0,
-        dither=0,
-        image_scale=1.0,
-        width_pixels=10800,
-        height_pixels=7200,
-        dest_dir=context.input_dirs[0])
-    image_hashes, fits_headers, plate_solutions = make_synthetic_frames(
-        number=5,
-        prefix='bar',
-        ra=182,
-        dec=0,
-        rotation_angle_deg=0,
-        dither=0,
-        image_scale=1.0,
-        width_pixels=10800,
-        height_pixels=7200,
-        dest_dir=context.input_dirs[0],
-        image_hashes=image_hashes,
-        fits_headers=fits_headers,
-        plate_solutions=plate_solutions)
-
-    context.image_hashes = image_hashes
-    context.fits_headers = fits_headers
-    context.plate_solutions = plate_solutions
+    make_synthetic_frames(number=3,
+                          prefix='foo',
+                          ra=180,
+                          dec=0,
+                          rotation_angle_deg=0,
+                          dither=0,
+                          image_scale=1.0,
+                          width_pixels=10800,
+                          height_pixels=7200,
+                          dest_dir=context.input_dirs[0])
+    make_synthetic_frames(number=5,
+                          prefix='bar',
+                          ra=182,
+                          dec=0,
+                          rotation_angle_deg=0,
+                          dither=0,
+                          image_scale=1.0,
+                          width_pixels=10800,
+                          height_pixels=7200,
+                          dest_dir=context.input_dirs[0])
 
     graph = _build_compute_graph()
     run_graph(graph)
