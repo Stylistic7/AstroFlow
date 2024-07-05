@@ -19,6 +19,11 @@ class TestFlatCorrection(unittest.TestCase):
 
   def setUp(self):
     self.input_dir_obj, self.output_dir_obj = make_test_context()
+    context.regroup = True
+
+  def tearDown(self):
+    self.input_dir_obj.cleanup()
+    self.output_dir_obj.cleanup()
 
   def test_one_perfect_stack(self):
     copy_testdata_frames(prefix='light_run',

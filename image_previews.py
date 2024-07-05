@@ -11,6 +11,7 @@ from file_io.generic import read_image
 import subframe_selection
 import stacking
 from dependency_graph import Graph
+from image_metadata.actor import get_metadata, get_metadata_for_stack
 
 # Every stack is going to have multiple levels of previews. I should disentangle
 # them. There will always be a subrame-based preview. The master-based preview
@@ -192,9 +193,6 @@ def create_stack_master_thumbnail(stack_id):
   stack = stacks[stack_id]
   print(f'Entering create_stack_master_thumbnail() for stack {stack}')
 
-  image_hashes = context.image_hashes
-  fits_headers = context.fits_headers
-
   # Find the master(s).
   masters = stacking.find_matching_masters(stack, image_hashes, fits_headers)
   print(f'Found masters {masters}')
@@ -247,17 +245,14 @@ def create_flat_correction_thumbnails(stack_id):
     return
 
   assert not stack.stable_hash
-  image_hashes = context.image_hashes
-  fits_headers = context.fits_headers
-  plate_solutions = context.plate_solutions
 
   light_frames_by_stars = subframe_selection.get_light_frames_sorted_by_stars(
-      stack.frames, plate_solutions)
-  light_frame, _ = light_frames_by_stars[0]
+      stack.frames)
+  light_frame = light_frames_by_stars[0]
 
   width = context.subframe_thumbnail_width
-  rotate = plate_solutions[light_frame].rotation_angle < 0.0
-  light_image = resize_array(read_image(image_hashes[light_frame]), width)
+  rotate = light_frame.plate_solution.rotation_angle < 0.0
+  light_image = resize_array(read_image(light_frame.filename), width)
 
   def first_frame(stack_id):
     return stacks[stack_id].frames[0]
@@ -266,29 +261,30 @@ def create_flat_correction_thumbnails(stack_id):
   settings = context[settings_key] or {}
   dependencies = stack.dependencies | settings
 
+  metadata = get_metadata_for_stack(stack_id)
+
   # TODO: These will probably fail for any light stack that doesn't have
   # calibration images. Add a test case.
   bias_frame = bias_image = None
   if 'bias' in dependencies:
     bias_frame = first_frame(dependencies['bias'])
-    bias_image = resize_array(read_image(image_hashes[bias_frame]), width)
+    bias_image = resize_array(read_image(metadata[bias_frame].filename), width)
 
   dark_frame = dark_image = None
   if 'dark' in dependencies:
     dark_frame = first_frame(dependencies['dark'])
-    dark_image = resize_array(read_image(image_hashes[dark_frame]), width)
+    dark_image = resize_array(read_image(metadata[dark_frame].filename), width)
 
   for flat_stack_id in flat_stack_ids:
     if flat_stack_id in thumbnails:
       continue
 
     flat_frame = first_frame(flat_stack_id)
-    flat_image = resize_array(read_image(image_hashes[flat_frame]), width)
+    flat_image = resize_array(read_image(metadata[flat_frame].filename), width)
 
     thumbnail = array_to_png(
-        _make_thumbnail(fits_headers, light_frame, light_image, bias_frame,
-                        bias_image, dark_frame, dark_image, flat_frame,
-                        flat_image, rotate))
+        _make_thumbnail(light_frame, light_image, bias_frame, bias_image,
+                        dark_frame, dark_image, flat_frame, flat_image, rotate))
     hash = hash_string(thumbnail)
     thumbnails[flat_stack_id] = hash
 
@@ -313,17 +309,19 @@ def create_stack_subframe_thumbnails(stack_id):
   width = context.subframe_thumbnail_width
 
   calibrations = _get_calibrations(stack, stacks)
+  metadata = get_metadata_for_stack(stack_id)
 
   # Cache the calibration images so they're only read once.
   calibration_images = {}
 
-  def get_calibration_image(image):
-    if not image:
+  def get_calibration_image(hash):
+    print(f'### get_calibration_image {hash}')
+    if not hash:
       return None
-    elif image in calibration_images:
-      return calibration_images[image]
+    elif hash in calibration_images:
+      return calibration_images[hash]
     else:
-      image = resize_array(read_image(image.filename), width)
+      image = resize_array(read_image(metadata[hash].filename), width)
       calibration_images[hash] = image
       return image
 
