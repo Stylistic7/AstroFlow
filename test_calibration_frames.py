@@ -34,6 +34,11 @@ class TestCalibrationFrames(unittest.TestCase):
 
   def setUp(self):
     self.input_dir_obj, self.output_dir_obj = make_test_context()
+    context.regroup = True
+
+  def tearDown(self):
+    self.input_dir_obj.cleanup()
+    self.output_dir_obj.cleanup()
 
   def test_stack_dependency_graph(self):
     # These runs of dark and bias frames will be used by both runs of light

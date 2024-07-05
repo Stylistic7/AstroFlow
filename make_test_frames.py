@@ -229,11 +229,13 @@ def make_synthetic_frames(start_datetime=datetime.datetime(
         'NAXIS2': height_pixels,
         'IMAGEW': width_pixels,
         'IMAGEH': height_pixels,
-        'FILTER': filter,
         'FOCALLEN': focal_length_m,
         'XPIXSZ': pixel_pitch_um,
         'YPIXSZ': pixel_pitch_um,
     }
+
+    if image_type.lower() in ['light', 'flat']:
+      fits_header['FILTER'] = filter
 
     header = normalize_header(fits_header)
 

@@ -68,8 +68,13 @@ class Stack:
 
     def get_quality(quality, allow_multiple=False):
       qualities = list(
-          set(get_metadata(all_frames,
+          set(
+              get_metadata(all_frames,
+                           predicate_fn=lambda i: quality in i.header,
                            transform_fn=lambda i: i.header[quality])))
+      if len(qualities) == 0:
+        return None
+
       if type(qualities[0]) is float and np.all(
           np.isclose(qualities, qualities[0])):
         qualities = {qualities[0]}
