@@ -4,9 +4,10 @@ from typing import Any
 import itertools
 import operator
 from functools import singledispatch
-from collections.abc import Iterable, Callable
+from collections.abc import Iterable
 
 from cache import cache
+from context import context
 
 if 'ASTROFLOW_MOCK_NAMESPACE' in os.environ:
   namespace = os.environ["ASTROFLOW_MOCK_NAMESPACE"]
@@ -54,6 +55,35 @@ def get_metadata(input_images=None,
   return ray.get(
       actor.get_metadata.remote(input_images, predicate_fn, transform_fn,
                                 post_fn))
+
+
+# TODO: Maybe unify API with @singledispatch.
+def get_metadata_for_stack(stack_id):
+  stacks = context.stacks
+  stack = stacks[stack_id]
+
+  # Start with all of the stacks included in this stack.
+  hashes = stack.all_frames()
+
+  settings_key = ('stack_settings', stack_id)
+  settings = context[settings_key] or {}
+  dependencies = stack.dependencies | settings
+
+  # Include all the frames from all of the stacks' dependencies (which are
+  # typically calibration stacks).)
+  if 'bias' in dependencies:
+    hashes.extend(stacks[dependencies['bias']].frames)
+  if 'dark' in dependencies:
+    hashes.extend(stacks[dependencies['dark']].frames)
+
+  # Include every known flat calibration stack, just for completeness.
+  for s in stacks.values():
+    if (not s.stable_hash and s.image_type == 'flat' and
+        s.camera == stack.camera and s.filter == stack.filter):
+      hashes.extend(s.frames)
+
+  return get_metadata(
+      hashes, post_fn=lambda images: {i.content_hash: i for i in images})
 
 
 def _group_by_header(input_images, key):
