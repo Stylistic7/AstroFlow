@@ -147,6 +147,7 @@ def make_synthetic_frames(start_datetime=datetime.datetime(
                           image_type='Light',
                           prefix=None,
                           ids=None,
+                          content_hashes=None,
                           dest_dir=None,
                           ra=100,
                           dec=45,
@@ -172,6 +173,8 @@ def make_synthetic_frames(start_datetime=datetime.datetime(
   ids = ids if ids else [f'{prefix}_{i:05}.fit' for i in range(number)]
   centers = centers if centers else [(ra, dec)] * number
 
+  output_filenames = []
+
   for i in range(number):
     fits_filename = ids[i]
     if dest_dir:
@@ -193,7 +196,11 @@ def make_synthetic_frames(start_datetime=datetime.datetime(
                                     size=image_data.shape,
                                     dtype=image_data.dtype)
 
-    content_hash = xxhash.xxh64(image_data.tobytes()).hexdigest()
+    if content_hashes is not None:
+      content_hash = content_hashes[i]
+    else:
+      content_hash = xxhash.xxh64(image_data.tobytes()).hexdigest()
+
     center = _add_dither(centers[i], dither)
     date_obs = start_datetime + i * datetime.timedelta(seconds=exposure + 1)
     deg_per_pix = image_scale / 3600.0
@@ -239,22 +246,11 @@ def make_synthetic_frames(start_datetime=datetime.datetime(
 
     header = normalize_header(fits_header)
 
-    if image_type == 'Light':
-      plate_solution = plate_solving.PlateSolution(
-          image_filename=fits_filename,
-          header=fits_header,
-          num_stars=num_stars,
-          center=center,
-          image_scale=image_scale,
-          rotation_angle=rotation_angle_deg)
-    else:
-      plate_solution = None
-
     key = ('image_metadata', content_hash)
     metadata = ImageMetadata(content_hash=content_hash,
                              filename=fits_filename,
                              header=header,
-                             plate_solution=plate_solution)
+                             plate_solution=None)
     context.set(key, metadata, flush=True)
     print(f'### Wrote key {key}')
 
@@ -265,4 +261,8 @@ def make_synthetic_frames(start_datetime=datetime.datetime(
     for k, v in fits_header.items():
       hdu.header[k] = v
     hdu.writeto(fits_filename)
-    print(f'### Wrote FITS filename {fits_filename}')
+    print(f'### Wrote FITS filename {fits_filename} with '
+          f'content hash {content_hash}')
+    output_filenames.append(fits_filename)
+
+  return output_filenames

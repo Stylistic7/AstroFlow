@@ -10,8 +10,7 @@ import make_test_frames
 class TestMakeTestFrames(unittest.TestCase):
 
   def test_one_perfectly_centered_image(self):
-    image_hashes, fits_headers, plate_solutions = make_test_frames.make_synthetic_frames(
-        number=1, prefix='foo', dither=0)
+    make_test_frames.make_synthetic_frames(number=1, prefix='foo', dither=0)
 
     expected_fits_headers = {
         'foo_00000.fit': {

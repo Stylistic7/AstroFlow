@@ -2,14 +2,11 @@ import os
 import numpy as np
 import ray
 
+from dependency_graph import Graph
 from .classes import MergeOp, Panel
 from .merge_images import merge_images
 from artifact import Artifact
-from context import context
 from hashing import hash_list
-from file_io.generic import get_content_hash
-from decorators import saves_artifacts
-from dependency_graph import Graph, print_graph
 
 
 def fill_template(template, value):
@@ -36,6 +33,10 @@ def make_merge_ops(mode, mosaic_id, filter, panels, from_task):
   graph = Graph()
   merge_ops = []
 
+  print('### make_merge_ops, panels are:')
+  for t, p in panels.items():
+    print(f'### panel {t} => {p}')
+
   def make_pair_id(level, pair):
 
     def join_tile_indices(tile_indices):
@@ -59,20 +60,32 @@ def make_merge_ops(mode, mosaic_id, filter, panels, from_task):
         pair_id = make_pair_id(level, pair)
         input_0 = panels[pair[0]]
         input_1 = panels[pair[1]]
+        print(f'### process_pairs input_0 {input_0}')
+        print(f'### process_pairs input_1 {input_1}')
+        content_hashes = [panels[p].content_hash for p in pair]
+        print(f'### content_hashes {content_hashes}')
         content_hash = hash_list(panels[p].content_hash for p in pair)
 
         # TODO: This goes outside the artifacts workflow.
-        image_key = ('merged_images', mode, mosaic_id, filter, pair_id,
-                     content_hash)
+        if mode == 'subframe':
+          image_key = ('merged_images', mode, mosaic_id, filter, pair_id,
+                       content_hash)
+          output_artifact = Artifact(key=image_key)
+        elif mode == 'master':
+          output_filename = f'merged_{pair_id}.fit'
+          output_artifact = Artifact(filename=output_filename,
+                                     content_hash=content_hash)
 
         output = Panel(mosaic_id=mosaic_id,
                        filter=filter,
-                       merge_op_id=pair_id,
                        content_hash=content_hash,
-                       image_key=image_key)
-        merge_op = MergeOp(input_artifacts=[input_0, input_1],
-                           output_artifact=output)
-        merge_task = (merge_images, mode, mosaic_id, input_0, input_1, output)
+                       merge_op_id=pair_id,
+                       input_artifact=output_artifact)
+        merge_op = MergeOp(
+            input_artifacts=[input_0.input_artifact, input_1.input_artifact],
+            output_artifact=output_artifact)
+        merge_task = (merge_images, mode, mosaic_id, input_0.input_artifact,
+                      input_1.input_artifact, output_artifact)
         from_task[output] = merge_task
         new_panels[tile_indices] = output
         print(f'### making merge op for pair {pair}')

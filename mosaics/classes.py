@@ -1,8 +1,7 @@
 from dataclasses import dataclass
 from collections import namedtuple
-from addict import Dict
 
-import plate_solving
+from artifact import Artifact
 
 
 @dataclass(frozen=True)
@@ -14,10 +13,8 @@ class Panel:
 
   tile_indices: list[int] = None
 
-  # These define the input image.
-  input_filename: str = None
-  image_key: str = None
-  image_hash: str = None
+  # This define the input image.
+  input_artifact: Artifact = None
 
   # These are the stacks ids that this Panel represents.
   # TODO: Maybe call them `stack_stable_hash` and `stack_content_hash`.
@@ -27,15 +24,14 @@ class Panel:
   # This defines where the Panel is in the tree of merge ops.
   merge_op_id: str = None
 
-  # This defines the output.
-  placed_filename: str = None
+  # This defines the output image.
+  output_artifact: Artifact = None
 
 
-# TODO: Maybe use Artifact as a more strongly-typed Dict.
 @dataclass(frozen=True)
 class MergeOp:
-  input_artifacts: list[Dict] = None
-  output_artifact: Dict = None
+  input_artifacts: list[Artifact] = None
+  output_artifact: Artifact = None
 
 
 @dataclass
