@@ -89,7 +89,8 @@ def autostretch(image, debug=False):
 
 
 def array_to_png(array, debug=False):
-  assert not np.isnan(array).any(), 'array contains NaN'
+  if np.issubdtype(array.dtype, np.floating):
+    assert not np.isnan(array).any(), 'array contains NaN'
 
   array = (array * 255.0).astype(np.uint8)
   if debug:

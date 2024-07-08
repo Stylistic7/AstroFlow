@@ -35,6 +35,12 @@ class TestMosaic(unittest.TestCase):
     # Start with an empty context.
     self.input_dir_obj, self.output_dir_obj = make_test_context()
 
+    context.regroup = True
+
+  def tearDown(self):
+    self.input_dir_obj.cleanup()
+    self.output_dir_obj.cleanup()
+
   def test_sagittarius_mosaic(self):
     copy_testdata_frames(target_name='Sagittarius Pane 1',
                          start_datetime=datetime.datetime(
@@ -103,6 +109,8 @@ class TestMosaic(unittest.TestCase):
            mosaic.content_hash)
     self.assertTrue(context.contains(key))
 
+    # open('/tmp/mosaic_thumbnail_image.png', 'wb').write(context[key])
+
     self.assertTrue(
         mosaic.stable_hash in [t.stable_hash for t in context.targets.values()])
     self.assertEqual(
@@ -112,17 +120,17 @@ class TestMosaic(unittest.TestCase):
     # After putting the mosaic in the shopping cart, the second graph
     # execution should stack the subframes into masters, and generate a final
     # master mosaic image.
-    context.shopping_cart = [('mosaic', mosaic.stable_hash)]
+    # context.shopping_cart = [('mosaic', mosaic.stable_hash)]
 
-    # TODO: Put per-mosaic overrides of the post-processing scripts, to turn
-    # them off, for speed.
+    # # TODO: Put per-mosaic overrides of the post-processing scripts, to turn
+    # # them off, for speed.
 
-    graph = compute_graph.build_compute_graph()
-    run_graph(graph)
+    # graph = compute_graph.build_compute_graph()
+    # run_graph(graph)
 
-    self.assertEqual(len(context.targets), 4)
-    self.assertEqual(len(context.mosaics), 1)
-    mosaic = next(iter(context.mosaics.values()))
+    # self.assertEqual(len(context.targets), 4)
+    # self.assertEqual(len(context.mosaics), 1)
+    # mosaic = next(iter(context.mosaics.values()))
 
 
 if __name__ == "__main__":

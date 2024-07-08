@@ -13,25 +13,27 @@ from pathlib import Path
 
 from file_io.generic import read_header
 from plate_solving import solve_field
-from image_previews import array_to_png
+from image_previews import array_to_png, autostretch
 from decorators import saves_artifacts
 from artifact import Artifact
 from context import context
 from file_io.generic import read_image
-import image_previews
 from .viewbox import compute_mosaic_viewbox_artifacts
+from image_metadata.actor import get_metadata
+from artifact import read_artifact_image
 
 
-def mosaic_by_coordinates_artifacts(mode, panel):
+# TODO: This needs to include the hash of the viewbox.
+def mosaic_by_coordinates_artifacts(mode, mosaic_id, stack_id, input_artifact):
   if mode == 'subframe':
-    key = ('placed_image', panel.mosaic_id, panel.stable_hash,
-           panel.content_hash)
+    key = ('placed_image', mosaic_id, stack_id, input_artifact.content_hash)
     return [Artifact(key=key)]
   elif mode == 'master':
-    return [
-        Artifact(filename=panel.placed_filename,
-                 content_hash=panel.content_hash)
-    ]
+    pass
+    # return [
+    #     Artifact(filename=panel.placed_filename,
+    #              content_hash=panel.content_hash)
+    # ]
 
 
 # Function pseudocode:
@@ -50,22 +52,18 @@ def mosaic_by_coordinates_artifacts(mode, panel):
 # TODO: Store these on disk and read them back when unchanged.
 @ray.remote
 @saves_artifacts(mosaic_by_coordinates_artifacts)
-def mosaic_by_coordinates(mode, panel):
-  print(f'### Entering mosaic_by_coordinates mode {mode} panel {panel}')
+def mosaic_by_coordinates(mode, mosaic_id, stack_id, input_artifact):
+  print(f'### Entering mosaic_by_coordinates '
+        f' {mode} {mosaic_id} {stack_id} {input_artifact}')
 
   # TODO: Pass this through the context.
   # autostretch = False
 
-  image_hashes = context.image_hashes
-  fits_headers = context.fits_headers
-  plate_solutions = context.plate_solutions
-
-  viewbox_key = next(
-      iter(compute_mosaic_viewbox_artifacts(mode, panel.mosaic_id))).key
+  viewbox_key = next(iter(compute_mosaic_viewbox_artifacts(mode,
+                                                           mosaic_id))).key
   viewbox = context.get(viewbox_key)
   assert viewbox
 
-  print(f'mosaic_by_coordinates projecting panel {panel}')
   start = time.time()
 
   dest_xs = viewbox['dest_xs']
@@ -76,26 +74,36 @@ def mosaic_by_coordinates(mode, panel):
   projected_image = np.zeros(ras.shape)
   projection_map = np.zeros(ras.shape)
 
-  if panel.image_hash:
-    filename = image_hashes[panel.image_hash]
-    header = fits_headers[panel.image_hash]
-    plate_solution = plate_solutions[panel.image_hash]
-  else:
-    # TODO: It's a bit weird to do this here. This should all be in a separate
-    # function outside of this file.
-    filename = panel.input_filename
-    header = read_header(filename)
-    plate_solution = solve_field(filename)
+  # TODO: It's a bit weird to do this here. This should all be in a separate
+  # function outside of this file.
+  #
+  # TODO: The subframes need to be calibrated before being placed.
+  filename = input_artifact.filename
+  image = read_artifact_image(input_artifact)
+  plate_solution = solve_field(filename)
 
-  if header is None:
-    print(f'Could not place panel {panel} because header was None')
-    return
+  assert image is not None
+  assert plate_solution is not None
+
+  # if panel.image_hash:
+  #   filename = image_hashes[panel.image_hash]
+  #   header = fits_headers[panel.image_hash]
+  #   plate_solution = plate_solutions[panel.image_hash]
+  # else:
+  #   # TODO: It's a bit weird to do this here. This should all be in a separate
+  #   # function outside of this file.
+  #   filename = panel.input_filename
+  #   header = read_header(filename)
+  #   plate_solution = solve_field(filename)
+
+  # if header is None:
+  #   print(f'Could not place panel {panel} because header was None')
+  #   return
 
   if plate_solution is None:
-    print(f'Could not place panel {panel} because plate_solution was None')
+    print(f'Could not place artifact {input_artifact} because plate_solution '
+          f'was None')
     return
-
-  image = read_image(filename)
 
   print(f'mosaic_by_coordinates image dtype {image.dtype} '
         f'min {np.min(image)} max {np.max(image)}')
@@ -174,9 +182,17 @@ def mosaic_by_coordinates(mode, panel):
         f'time {end-start:.2f}')
 
   if mode == 'subframe':
-    key = next(iter(mosaic_by_coordinates_artifacts(mode, panel))).key
+    key = next(
+        iter(
+            mosaic_by_coordinates_artifacts(mode, mosaic_id, stack_id,
+                                            input_artifact))).key
+    print(f'### mosaic_by_coordinates artifact key {key}')
+    assert key is not None
+    filename = '/tmp/foo/' + '_'.join(key) + '.png'
+    open(filename, 'wb').write(array_to_png(autostretch(output_image)))
     context[key] = output_image
-    print(f'### Wrote key {key} of tyoe {type(output_image)}')
+    print(f'### mosaic_by_coordinates wrote key {key} '
+          f'of tyoe {type(output_image)}')
   elif mode == 'master':
     hdu = pyfits.PrimaryHDU(output_image)
     hdu.header['SIMPLE'] = True
@@ -193,5 +209,3 @@ def mosaic_by_coordinates(mode, panel):
     # TODO: Is this placed_filename actually checked anywhere?
     hdu.writeto(panel.placed_filename, overwrite=True)
     print(f'### Wrote placed image filename {panel.placed_filename}')
-
-  return panel

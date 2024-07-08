@@ -122,6 +122,7 @@ def copy_testdata_frames(target_name,
                                  dtype=image.dtype)
 
     content_hash = xxhash.xxh64(image.tobytes()).hexdigest()
+    header['CONTHASH'] = content_hash
 
     if date_obs:
       header['DATE-OBS'] = date_obs.strftime("%Y-%m-%dT%H:%M:%S")

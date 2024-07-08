@@ -39,8 +39,6 @@ def merge_images(mode, mosaic_id, input_0, input_1, output):
   print(f'### merge_images: inputs {input_0}, {input_1}')
   print(f'### merge_images: output {output}')
   if mode == 'subframe':
-    # image_0 = autostretch(context[input_0.key])
-    # image_1 = autostretch(context[input_1.key])
     image_0 = autostretch(read_artifact_image(input_0))
     image_1 = autostretch(read_artifact_image(input_1))
     overlap = np.where((image_0 > 0) & (image_1 > 0))
@@ -53,6 +51,10 @@ def merge_images(mode, mosaic_id, input_0, input_1, output):
     # assert key
 
     key = output.key
+
+    filename = '/tmp/foo/' + '_'.join(key) + '.png'
+    open(filename, 'wb').write(array_to_png(output_image))
+
     context.set(key, output_image, flush=True)
     print(f'### Wrote key {key}')
     return key
