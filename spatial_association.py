@@ -67,6 +67,7 @@ def find_components_by_cosine_similarity():
   hashes_and_centroids = get_metadata(predicate_fn=predicate_fn,
                                       transform_fn=transform_fn)
   if not hashes_and_centroids:
+    print('### hashes_and_centroids was Falsey')
     return {}
 
   print('### hashes_and_centroids', hashes_and_centroids)

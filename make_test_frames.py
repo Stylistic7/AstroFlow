@@ -246,11 +246,22 @@ def make_synthetic_frames(start_datetime=datetime.datetime(
 
     header = normalize_header(fits_header)
 
+    if image_type == 'Light':
+      plate_solution = plate_solving.PlateSolution(
+          image_filename=fits_filename,
+          header=fits_header,
+          num_stars=num_stars,
+          center=center,
+          image_scale=image_scale,
+          rotation_angle=rotation_angle_deg)
+    else:
+      plate_solution = None
+
     key = ('image_metadata', content_hash)
     metadata = ImageMetadata(content_hash=content_hash,
                              filename=fits_filename,
                              header=header,
-                             plate_solution=None)
+                             plate_solution=plate_solution)
     context.set(key, metadata, flush=True)
     print(f'### Wrote key {key}')
 
