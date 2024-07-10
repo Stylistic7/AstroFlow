@@ -76,11 +76,6 @@ class Stack:
       # TODO: What should we do with frames that don't have a FILTER keyword?
       qualities = list(
           set(i.header[quality] for i in metadata if quality in i.header))
-      # qualities = list(
-      #     set(
-      #         get_metadata(all_frames,
-      #                      predicate_fn=lambda i: quality in i.header,
-      #                      transform_fn=lambda i: i.header[quality])))
       if len(qualities) == 0:
         return None
 
@@ -94,7 +89,9 @@ class Stack:
         assert len(qualities) < 2, f'multiple {quality} qualities {qualities}'
         return next(iter(qualities)) if len(qualities) else None
 
-    allow_multiple_exposures = (self.stable_hash != None)
+    # FIXME is this ever dangerous?
+    allow_multiple_exposures = True
+    # allow_multiple_exposures = (self.stable_hash != None)
 
     self.image_type = get_quality('IMAGETYP')
     self.camera = get_quality('INSTRUME')

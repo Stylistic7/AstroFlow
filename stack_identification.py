@@ -50,13 +50,14 @@ def _get_unique(L):
 def _new_stacks(name, metadata):
   start_time = time.time()
 
+  print(f'### _new_stacks metadata type {type(metadata)} len {len(metadata)}')
+
   width_pixels = _get_unique(i.header['NAXIS1'] for i in metadata)
   height_pixels = _get_unique(i.header['NAXIS2'] for i in metadata)
 
   # Sort the light frames by observation date. The oldest image will be used
   # to compute the hash of the whole stack.
-  sorted_metadata = sorted(metadata.values(),
-                           key=lambda i: i.header['DATE-OBS'])
+  sorted_metadata = sorted(metadata, key=lambda i: i.header['DATE-OBS'])
   oldest_image_metadata = sorted_metadata[0]
 
   center = oldest_image_metadata.plate_solution.center
@@ -188,9 +189,9 @@ def identify_stacks():
               print(f'Hash {debug_hash} found in cluster with '
                     f'filters {filters} and frames {filter_frames}')
             assert len(set(filters)) == 1
-            new_stack_metadata = {
-                k: v for k, v in metadata.items() if k in filter_frames
-            }
+            new_stack_metadata = [
+                v for k, v in metadata.items() if k in filter_frames
+            ]
             stacks |= _new_stacks(name, new_stack_metadata)
 
   print(f'Identified {len(stacks)} stacks')

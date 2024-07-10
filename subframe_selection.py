@@ -53,4 +53,6 @@ SelectionCriterion = StarCountFraction | StarCountStdDev
 
 def get_light_frames_sorted_by_stars(light_frames):
   metadata = get_metadata(light_frames)
-  return sorted(metadata, key=lambda i: i.plate_solution.num_stars)
+  return sorted(metadata,
+                key=lambda i: i.plate_solution.num_stars,
+                reverse=True)

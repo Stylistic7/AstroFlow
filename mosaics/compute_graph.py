@@ -3,8 +3,6 @@ import ray
 from artifact import Artifact
 from context import context
 from dependency_graph import Graph
-from post_process_stack import post_process_stack_artifacts
-from image_metadata.image_types import is_light_frame
 from image_previews import array_to_png
 import subframe_selection
 from .classes import Panel
@@ -14,9 +12,6 @@ from .placement import mosaic_by_coordinates
 
 
 def build_mosaic_subgraph(mode, mosaic_id):
-  if mosaic_id != '4475e17d7341cbd0':
-    return {}
-
   print(f'### build_mosaic_subgraph mode {mode} mosaic_id {mosaic_id}')
 
   # TODO: If the final output artifact exists, there's no reason to build the
@@ -126,11 +121,11 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
     if not stacks_for_filter:
       continue
 
-    assert len(stacks_for_filter) == 1
-    stack_id = next(iter(stacks_for_filter))
+    if len(stacks_for_filter) > 1:
+      print(f'### WARNING: Multiple stacks for filter {filter} '
+            f'for target {targets[target_id]}')
 
-    # panel = _make_panel(mode, mosaic_id, filter, tile_indices, stack_id,
-    #                     placed_image_key)
+    stack_id = next(iter(stacks_for_filter))
 
     best_light_frame = _get_best_light_frame(stack_id)
     input_artifact = Artifact(filename=best_light_frame.filename,
@@ -177,20 +172,3 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
     )] = {list(merge_graph.keys())[-1]}
 
   return graph
-
-
-def _stacks_for_filters(mosaic_id):
-  mosaics = context.mosaics
-  mosaic = mosaics[mosaic_id]
-  targets = context.targets
-  stacks = context.stacks
-
-  def stacks_for_filter(filter):
-    return [
-        s for t in mosaic.target_ids for s in targets[t].stack_ids
-        if stacks[s].filter == filter
-    ]
-
-  filters = ['H', 'S', 'O', 'L', 'R', 'G', 'B']
-  result = {f: stacks_for_filter(f) for f in filters}
-  return {k: v for k, v in result.items() if v}

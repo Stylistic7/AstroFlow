@@ -160,32 +160,6 @@ def scatter_stack_thumbnails(mode):
   return Graph({gather: tasks})
 
 
-# TODO: This function needs to decend into the Stack contents and get
-# calibrations at the lower level.
-def _get_calibrations(stack, stacks):
-  assert stack.image_type == 'light'
-
-  calibrations = {}
-  bias_frame = dark_frame = flat_frame = None
-  if bias_stack := stack.dependencies.get('bias', None):
-    bias_frame = stacks[bias_stack].frames[0]
-  if dark_stack := stack.dependencies.get('dark', None):
-    dark_frame = stacks[dark_stack].frames[0]
-  if flat_stack := stack.dependencies.get('flat', None):
-    flat_frame = stacks[flat_stack].frames[0]
-
-  # TODO: THis doesn't include settings.
-  for light_frame in stack.frames:
-    calibrations[light_frame] = dict(bias_frame=bias_frame,
-                                     dark_frame=dark_frame,
-                                     flat_frame=flat_frame)
-
-  for c in stack.contents:
-    calibrations |= _get_calibrations(stacks[c], stacks)
-
-  return calibrations
-
-
 # TODO: This runs on every missing master thumbnail, even if the masters don't
 # exist yet. It takes up time and is unnecessary. Find some way to cache this
 # result or speed it up.
