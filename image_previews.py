@@ -174,6 +174,7 @@ def _get_calibrations(stack, stacks):
   if flat_stack := stack.dependencies.get('flat', None):
     flat_frame = stacks[flat_stack].frames[0]
 
+  # TODO: THis doesn't include settings.
   for light_frame in stack.frames:
     calibrations[light_frame] = dict(bias_frame=bias_frame,
                                      dark_frame=dark_frame,
@@ -255,33 +256,33 @@ def create_flat_correction_thumbnails(stack_id):
   rotate = light_frame.plate_solution.rotation_angle < 0.0
   light_image = resize_array(read_image(light_frame.filename), width)
 
+  metadata = get_metadata_for_stack(stack_id)
+
   def first_frame(stack_id):
-    return stacks[stack_id].frames[0]
+    return metadata[stacks[stack_id].frames[0]]
 
   settings_key = ('stack_settings', stack_id)
   settings = context[settings_key] or {}
   dependencies = stack.dependencies | settings
-
-  metadata = get_metadata_for_stack(stack_id)
 
   # TODO: These will probably fail for any light stack that doesn't have
   # calibration images. Add a test case.
   bias_frame = bias_image = None
   if 'bias' in dependencies:
     bias_frame = first_frame(dependencies['bias'])
-    bias_image = resize_array(read_image(metadata[bias_frame].filename), width)
+    bias_image = resize_array(read_image(bias_frame.filename), width)
 
   dark_frame = dark_image = None
   if 'dark' in dependencies:
     dark_frame = first_frame(dependencies['dark'])
-    dark_image = resize_array(read_image(metadata[dark_frame].filename), width)
+    dark_image = resize_array(read_image(dark_frame.filename), width)
 
   for flat_stack_id in flat_stack_ids:
     if flat_stack_id in thumbnails:
       continue
 
     flat_frame = first_frame(flat_stack_id)
-    flat_image = resize_array(read_image(metadata[flat_frame].filename), width)
+    flat_image = resize_array(read_image(flat_frame.filename), width)
 
     thumbnail = array_to_png(
         _make_thumbnail(light_frame, light_image, bias_frame, bias_image,
@@ -307,23 +308,27 @@ def create_stack_subframe_thumbnails(stack_id):
   # Don't make previews for calibration stacks.
   assert stack.stable_hash
 
+  settings_key = ('stack_settings', stack_id)
+  settings = context[settings_key] or {}
+  dependencies = stack.dependencies | settings
+
   width = context.subframe_thumbnail_width
 
-  calibrations = _get_calibrations(stack, stacks)
   metadata = get_metadata_for_stack(stack_id)
 
   # Cache the calibration images so they're only read once.
-  calibration_images = {}
+  first_images = {}
 
-  def get_calibration_image(hash):
-    print(f'### get_calibration_image {hash}')
-    if not hash:
+  def get_first_image(stack_id):
+    print(f'### get_first_image {stack_id}')
+    if not stack_id:
       return None
-    elif hash in calibration_images:
-      return calibration_images[hash]
+    elif stack_id in first_images:
+      return first_images[stack_id]
     else:
-      image = resize_array(read_image(metadata[hash].filename), width)
-      calibration_images[hash] = image
+      frame = metadata[stacks[stack_id].frames[0]]
+      image = resize_array(read_image(frame.filename), width)
+      first_images[stack_id] = (frame, image)
       return image
 
   # Now sort all the light frames (no matter which run they're from) by the
@@ -348,14 +353,17 @@ def create_stack_subframe_thumbnails(stack_id):
 
       light_image = resize_array(read_image(light_frame.filename), width)
 
-      bias_frame = calibrations[light_frame.content_hash]['bias_frame']
-      bias_image = get_calibration_image(bias_frame)
+      bias_frame = bias_image = None
+      if 'bias' in dependencies:
+        bias_frame, bias_image = get_first_image(dependencies['bias'])
 
-      dark_frame = calibrations[light_frame.content_hash]['dark_frame']
-      dark_image = get_calibration_image(dark_frame)
+      dark_frame = dark_image = None
+      if 'dark' in dependencies:
+        dark_frame, dark_image = get_first_image(dependencies['dark'])
 
-      flat_frame = calibrations[light_frame.content_hash]['flat_frame']
-      flat_image = get_calibration_image(flat_frame)
+      flat_frame = flat_image = None
+      if 'flat' in dependencies:
+        flat_frame, flat_image = get_first_image(dependencies['flat'])
 
       im = _make_thumbnail(image, light_image, bias_frame, bias_image,
                            dark_frame, dark_image, flat_frame, flat_image,

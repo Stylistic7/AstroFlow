@@ -52,7 +52,7 @@ class Stack:
     stacks = context.stacks
     return self.frames + [f for s in self.contents for f in stacks[s].frames]
 
-  def update_metadata(self) -> None:
+  def update_metadata(self, metadata=None) -> None:
     if self.stable_hash:
       assert self.contents
       assert not self.frames
@@ -69,7 +69,8 @@ class Stack:
     # print(f'### update_metadata, all_frames {all_frames}')
     self.content_hash = hash_list(all_frames)
 
-    metadata = get_metadata(all_frames)
+    if metadata is None:
+      metadata = get_metadata(all_frames)
 
     def get_quality(quality, allow_multiple=False):
       # TODO: What should we do with frames that don't have a FILTER keyword?

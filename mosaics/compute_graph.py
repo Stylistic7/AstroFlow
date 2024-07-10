@@ -14,6 +14,9 @@ from .placement import mosaic_by_coordinates
 
 
 def build_mosaic_subgraph(mode, mosaic_id):
+  if mosaic_id != '4475e17d7341cbd0':
+    return {}
+
   print(f'### build_mosaic_subgraph mode {mode} mosaic_id {mosaic_id}')
 
   # TODO: If the final output artifact exists, there's no reason to build the

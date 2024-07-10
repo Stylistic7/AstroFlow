@@ -47,30 +47,18 @@ def _get_unique(L):
 # by this one, is very slow.
 #
 # TODO: This could be parallelized.
-def _new_stacks(name, light_frames):
-  assert light_frames
-
+def _new_stacks(name, metadata):
   start_time = time.time()
-
-  metadata = get_metadata(light_frames)
 
   width_pixels = _get_unique(i.header['NAXIS1'] for i in metadata)
   height_pixels = _get_unique(i.header['NAXIS2'] for i in metadata)
 
-  # width_pixels = _get_unique(
-  #     get_metadata(light_frames, transform_fn=lambda i: i.header['NAXIS1']))
-  # height_pixels = _get_unique(
-  #     get_metadata(light_frames, transform_fn=lambda i: i.header['NAXIS2']))
-
   # Sort the light frames by observation date. The oldest image will be used
   # to compute the hash of the whole stack.
-  # light_frames = sorted(metadata, key=lambda i: i.header['DATE-OBS'])
-  # light_frames = sort_by_header(light_frames, 'DATE-OBS')
-  # oldest_image = light_frames[0]
-  sorted_metadata = sorted(metadata, key=lambda i: i.header['DATE-OBS'])
+  sorted_metadata = sorted(metadata.values(),
+                           key=lambda i: i.header['DATE-OBS'])
   oldest_image_metadata = sorted_metadata[0]
 
-  # oldest_image_metadata = get_metadata([oldest_image])[0]
   center = oldest_image_metadata.plate_solution.center
   assert list(center)
 
@@ -96,9 +84,6 @@ def _new_stacks(name, light_frames):
   exposures = [(i.content_hash, i.header['EXPOSURE'])
                for i in metadata
                if 'EXPOSURE' in i.header]
-  # exposures = get_metadata(light_frames,
-  #                          transform_fn=lambda i:
-  #                          (i.content_hash, i.header['EXPOSURE']))
   for exposure_cluster in clustering.cluster_continuous(exposures,
                                                         epsilon=0.01):
     exposure_frames, exposures = zip(*exposure_cluster)
@@ -109,9 +94,6 @@ def _new_stacks(name, light_frames):
     # re-computed. Stacks with the same stable_hash can have their settings
     # passed on. There may be other settings like this in the future.
     selection_criterion = ('StarCountFraction', 0.75)
-    # runs = cluster_by_header(
-    #     exposure_frames, 'DATE-OBS', lambda images: clustering.
-    #     cluster_continuous(images, epsilon=context.max_run_gap))
     runs = clustering.cluster_continuous([(i.content_hash, i.header['DATE-OBS'])
                                           for i in sorted_metadata
                                           if i.content_hash in exposure_frames],
@@ -121,7 +103,7 @@ def _new_stacks(name, light_frames):
         continue
       run = [x[0] for x in run]
       stack = Stack(frames=run)
-      stack.update_metadata()
+      stack.update_metadata(metadata)
       print(f'### stack_identification._new_stacks made stack {stack}')
       new_stacks[stack.content_hash] = stack
       context.stacks |= {stack.content_hash: stack}
@@ -171,11 +153,6 @@ def identify_stacks():
     metadata = {i.content_hash: i for i in get_metadata(light_frames)}
     scales = [(metadata[k].content_hash, metadata[k].plate_solution.image_scale)
               for k in metadata]
-    # scales = map(lambda i: (i.content_hash, i.plate_solution.image_scale),
-    #              metadata)
-    # scales = get_metadata(light_frames,
-    #                       transform_fn=lambda i:
-    #                       (i.content_hash, i.plate_solution.image_scale))
     for scale_cluster in clustering.cluster_continuous(scales, epsilon=0.2):
       scale_frames, scales = zip(*scale_cluster)
       if debug_hash in scale_frames:
@@ -185,16 +162,6 @@ def identify_stacks():
                   (metadata[k].header['INSTRUME'], metadata[k].header['NAXIS1'],
                    metadata[k].header['NAXIS2'], metadata[k].header['XPIXSZ'],
                    metadata[k].header['YPIXSZ'])) for k in scale_frames]
-      # cameras = map(
-      #     lambda i: (i.content_hash,
-      #                (i.header['INSTRUME'], i.header['NAXIS1'], i.header[
-      #                    'NAXIS2'], i.header['XPIXSZ'], i.header['YPIXSZ'])),
-      #     [metadata[k] for k in scale_frames])
-      # cameras = get_metadata(
-      #     scale_frames,
-      #     transform_fn=lambda i:
-      #     (i.content_hash, (i.header['INSTRUME'], i.header['NAXIS1'], i.header[
-      #         'NAXIS2'], i.header['XPIXSZ'], i.header['YPIXSZ'])))
       for camera_cluster in clustering.cluster_discrete(cameras):
         camera_frames, cameras = zip(*camera_cluster)
         if debug_hash in camera_frames:
@@ -206,15 +173,6 @@ def identify_stacks():
              normalize_radians(metadata[k].plate_solution.rotation_angle))
             for k in camera_frames
         ]
-        # rotation_angles = map(
-        #     lambda i: (i.content_hash,
-        #                normalize_radians(i.plate_solution.rotation_angle)),
-        #     [metadata[k] for k in camera_frames])
-        # rotation_angles = get_metadata(
-        #     predicate_fn=lambda i: i.content_hash in camera_frames,
-        #     transform_fn=lambda i:
-        #     (i.content_hash, normalize_radians(i.plate_solution.rotation_angle)
-        #     ))
         for rotation_cluster in clustering.cluster_continuous(rotation_angles,
                                                               epsilon=5.0):
           rotation_frames, rotations = zip(*rotation_cluster)
@@ -224,18 +182,16 @@ def identify_stacks():
 
           filters = [(metadata[k].content_hash, metadata[k].header['FILTER'])
                      for k in rotation_frames]
-          # filters = map(lambda i: (i.content_hash, i.header['FILTER']),
-          #               [metadata[k] for k in camera_frames])
-          # filters = get_metadata(
-          #     predicate_fn=lambda i: i.content_hash in rotation_frames,
-          #     transform_fn=lambda i: (i.content_hash, i.header['FILTER']))
           for filter_cluster in clustering.cluster_discrete(filters):
             filter_frames, filters = zip(*filter_cluster)
             if debug_hash in filter_frames:
               print(f'Hash {debug_hash} found in cluster with '
                     f'filters {filters} and frames {filter_frames}')
             assert len(set(filters)) == 1
-            stacks |= _new_stacks(name, filter_frames)
+            new_stack_metadata = {
+                k: v for k, v in metadata.items() if k in filter_frames
+            }
+            stacks |= _new_stacks(name, new_stack_metadata)
 
   print(f'Identified {len(stacks)} stacks')
   context.stacks = stacks
