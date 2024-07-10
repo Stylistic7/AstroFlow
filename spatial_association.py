@@ -70,20 +70,17 @@ def find_components_by_cosine_similarity():
     print('### hashes_and_centroids was Falsey')
     return {}
 
-  print('### hashes_and_centroids', hashes_and_centroids)
   values = {h: c for h, c in hashes_and_centroids}
 
   def comparison_fn(a, b):
     return np.dot(a, b) > cosine_similarity_threshold
 
   targets = find_groups(values, comparison_fn, min_component_members)
-  print('### find_groups returned', targets)
 
   def get_name(target):
     plate_solution = get_metadata([target[0]])[0].plate_solution
     return position_string.canonical_target_string(plate_solution.center)
 
   targets = [(get_name(t), list(sorted(t))) for t in targets]
-  print('### targets', targets)
   context.spatial_groups = targets
   print(f'### Wrote {len(targets)} spatial groups into the cache')

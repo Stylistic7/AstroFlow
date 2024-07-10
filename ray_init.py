@@ -3,6 +3,7 @@ import traceback
 
 from context import ContextActor
 from state_actor import StateActor
+from image_metadata.actor import MetadataActor
 
 # TODO: Prove that local changes in the Python get propagated to remote nodes
 # even without pushing to git..
@@ -29,6 +30,10 @@ print('Ray dashboard:', ray_context.dashboard_url)
 context_actor = ContextActor.options(name='context',
                                      namespace='AstroFlow',
                                      get_if_exists=True).remote()
+
+metadata_actor = MetadataActor.options(name='metadata',
+                                       namespace='AstroFlow',
+                                       get_if_exists=True).remote()
 
 state_actor = StateActor.options(name='state',
                                  namespace='AstroFlow',

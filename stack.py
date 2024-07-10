@@ -8,6 +8,7 @@ from typing import NewType, Optional
 from hashing import hash_list
 from image_metadata.actor import get_metadata
 from context import context
+import time
 
 FrameHash = NewType('FrameHash', str)
 StackHash = NewType('StackHash', str)
@@ -60,18 +61,25 @@ class Stack:
       assert self.frames
       assert not self.contents
 
-    print(f'### update_metadata, self.frames {self.frames}')
+    # start_time = time.time()
+
+    # print(f'### update_metadata, self.frames {self.frames}')
 
     all_frames = self.all_frames()
-    print(f'### update_metadata, all_frames {all_frames}')
+    # print(f'### update_metadata, all_frames {all_frames}')
     self.content_hash = hash_list(all_frames)
 
+    metadata = get_metadata(all_frames)
+
     def get_quality(quality, allow_multiple=False):
+      # TODO: What should we do with frames that don't have a FILTER keyword?
       qualities = list(
-          set(
-              get_metadata(all_frames,
-                           predicate_fn=lambda i: quality in i.header,
-                           transform_fn=lambda i: i.header[quality])))
+          set(i.header[quality] for i in metadata if quality in i.header))
+      # qualities = list(
+      #     set(
+      #         get_metadata(all_frames,
+      #                      predicate_fn=lambda i: quality in i.header,
+      #                      transform_fn=lambda i: i.header[quality])))
       if len(qualities) == 0:
         return None
 
@@ -95,16 +103,24 @@ class Stack:
     self.filter = get_quality('FILTER')
 
     self.integration_s = sum(
-        get_metadata(all_frames, transform_fn=lambda i: i.header['EXPOSURE']))
-    self.mean_temperature = np.mean(
-        get_metadata(all_frames, transform_fn=lambda i: i.header['CCD-TEMP']))
+        i.header['EXPOSURE'] for i in metadata if 'EXPOSURE' in i.header)
+    # self.integration_s = sum(
+    #     get_metadata(all_frames, transform_fn=lambda i: i.header['EXPOSURE']))
 
-    all_dates = get_metadata(all_frames,
-                             transform_fn=lambda i: i.header['DATE-OBS'])
-    self.oldest_date = all_dates[0]
-    self.newest_date = all_dates[-1]
+    self.mean_temperature = np.mean([i.header['CCD-TEMP'] for i in metadata])
+    # self.mean_temperature = np.mean(
+    #     get_metadata(all_frames, transform_fn=lambda i: i.header['CCD-TEMP']))
+
+    sorted_metadata = sorted(metadata, key=lambda i: i.header['DATE-OBS'])
+    self.oldest_date = sorted_metadata[0].header['DATE-OBS']
+    self.newest_date = sorted_metadata[-1].header['DATE-OBS']
+    # all_dates = get_metadata(all_frames,
+    #                          transform_fn=lambda i: i.header['DATE-OBS'])
 
     # TODO: Update stable hash here, too.
+
+    # end_time = time.time()
+    # print(f'### update_metadata elapsed time {end_time - start_time:.3f} s')
 
   def __eq__(self, other):
     if not isinstance(other, Stack):
