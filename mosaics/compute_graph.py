@@ -2,7 +2,7 @@ import ray
 
 from artifact import Artifact
 from context import context
-from dependency_graph import Graph
+from dependency_graph import Graph, print_graph
 from image_previews import array_to_png
 import subframe_selection
 from .classes import Panel
@@ -159,7 +159,8 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
   #   print(f'### from_task {k} => {v}')
 
   _, merge_graph = make_merge_ops(mode, mosaic_id, filter, panels, from_task)
-  print(f'### make_merge_ops returned graph {merge_graph}')
+  print(f'### make_merge_ops returned graph:')
+  print_graph(merge_graph)
 
   if merge_graph:
     print(f'### merge_graph has length {len(merge_graph)}')
@@ -169,6 +170,6 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
         mode,
         mosaic_id,
         filter,
-    )] = {list(merge_graph.keys())[-1]}
+    )] = list(merge_graph.keys())
 
   return graph

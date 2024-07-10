@@ -120,17 +120,17 @@ class TestMosaic(unittest.TestCase):
     # After putting the mosaic in the shopping cart, the second graph
     # execution should stack the subframes into masters, and generate a final
     # master mosaic image.
-    # context.shopping_cart = [('mosaic', mosaic.stable_hash)]
+    context.shopping_cart = [('mosaic', mosaic.stable_hash)]
 
-    # # TODO: Put per-mosaic overrides of the post-processing scripts, to turn
-    # # them off, for speed.
+    # TODO: Put per-mosaic overrides of the post-processing scripts, to turn
+    # them off, for speed.
 
-    # graph = compute_graph.build_compute_graph()
-    # run_graph(graph)
+    graph = compute_graph.build_compute_graph()
+    run_graph(graph)
 
-    # self.assertEqual(len(context.targets), 4)
-    # self.assertEqual(len(context.mosaics), 1)
-    # mosaic = next(iter(context.mosaics.values()))
+    self.assertEqual(len(context.targets), 4)
+    self.assertEqual(len(context.mosaics), 1)
+    mosaic = next(iter(context.mosaics.values()))
 
 
 if __name__ == "__main__":
