@@ -140,10 +140,15 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
     placed_image_key = ('placed_image', mosaic_id, stack_id,
                         best_light_frame.content_hash)
     panel = Panel(tile_indices=tile_indices,
+                  content_hash=best_light_frame.content_hash,
                   input_artifact=Artifact(key=placed_image_key))
 
     from_task[panel] = placement_task
     panels[tile_indices] = panel
+
+  if len(panels) == 0:
+    print(f'### no panels found for filter {filter}')
+    return {}
 
   print(f'### found panels for filter {filter}:')
   for tile_indices, panel in panels.items():
@@ -156,6 +161,7 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
   #   print(f'### from_task {k} => {v}')
 
   _, merge_graph = make_merge_ops(mode, mosaic_id, filter, panels, from_task)
+  print(f'### make_merge_ops returned graph {merge_graph}')
 
   if merge_graph:
     print(f'### merge_graph has length {len(merge_graph)}')

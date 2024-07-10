@@ -36,7 +36,6 @@ if not 'ASTROFLOW_MOCK_NAMESPACE' in os.environ:
                                        namespace=namespace,
                                        get_if_exists=True).remote()
 
-  print(f'### Creating MetadataActor in namespace {namespace}')
   metadata_actor = MetadataActor.options(name='metadata',
                                          namespace=namespace,
                                          get_if_exists=True).remote()
