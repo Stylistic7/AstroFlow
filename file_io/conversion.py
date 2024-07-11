@@ -2,6 +2,7 @@ import astropy.io.fits as pyfits  # type: ignore
 from pathlib import Path
 from xisf import XISF  # type: ignore
 import numpy as np
+from typing import Dict, Any, Optional
 
 
 # TODO: Add a round-trip unit test.
@@ -26,7 +27,10 @@ def convert_xisf_to_fits(xisf_filename: Path | str,
 def convert_fits_to_xisf(fits_filename: Path | str,
                          xisf_filename: Path | str,
                          add_noise: bool = False,
-                         metadata: dict | None = None) -> None:
+                         metadata: Optional[Dict] = None) -> None:
+  if metadata is None:
+    metadata = {}
+
   fits = pyfits.open(str(fits_filename))
   header = fits[0].header
   image = np.expand_dims(fits[0].data, -1)
@@ -38,9 +42,9 @@ def convert_fits_to_xisf(fits_filename: Path | str,
                                size=image.shape,
                                dtype=image.dtype)
 
-  file_meta = {}
+  file_meta: Dict[str, Any] = {}
 
-  fits_meta = {}
+  fits_meta: Dict[str, Any] = {}
   for k, v in header.items():
     fits_meta[k] = [{'value': str(v), 'comment': ''}]
   for k, v in metadata.items():

@@ -1,5 +1,5 @@
 import ray
-from addict import Dict
+from addict import Dict  # type: ignore
 import os
 
 from context import context

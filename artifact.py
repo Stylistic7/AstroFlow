@@ -1,44 +1,127 @@
 import os
+import io
 from dataclasses import dataclass
+from typing import Optional, Tuple, Any, Dict
+from functools import singledispatch
+import datetime
+
+import numpy as np
+import astropy.io.fits as pyfits  # type: ignore
 
 from context import context
 from file_io.generic import read_image, read_header
 from file_io.generic import get_content_hash
+from file_io.normalize_header import normalize_header
 
 
-# TODO: Maybe unify this with ImageMetadata, since they contain the same info.
-# This class needs to be hashable, though, since it is often passed through
-# compute graphs.
 @dataclass(frozen=True)
-class Artifact:
-  key: str = None
-  filename: str = None
-  content_hash: str = None
+class FileArtifact:
+  filename: str
+  content_hash: Optional[str | None] = None
 
 
-# TODO: This should maybe raise Exceptions.
+@dataclass(frozen=True)
+class CacheArtifact:
+  key: Tuple[Any]
+  content_hash: Optional[str | None] = None
+
+
+Artifact = FileArtifact | CacheArtifact
+
+
+@singledispatch
+def read_artifact_header(artifact: Artifact):
+  pass
+
+
+@read_artifact_header.register
+def _(artifact: FileArtifact):
+  return read_header(artifact.filename)
+
+
+# TODO: Move file_obj operations into file_io module.
+@read_artifact_header.register
+def _(artifact: CacheArtifact):
+  if not context.contains(artifact.key):
+    raise ValueError(f'Key {artifact.key} not found in context')
+
+  file_obj = io.BytesIO(context.get(artifact.key, keep_in_memory=False))
+
+  fits = pyfits.open(file_obj)
+  header = fits[0].header
+  fits.close()
+
+  return normalize_header(header)
+
+
+@singledispatch
 def read_artifact_image(artifact: Artifact):
-  print(f'### read_artifact_image {artifact}')
+  assert False, f'Bad artifact type {type(artifact)}'
 
-  if artifact.filename:
-    if not os.path.exists(artifact.filename):
-      print(f'### Filename {artifact.filename} does not exist')
-      return
 
-    if artifact.content_hash:
-      content_hash = get_content_hash(artifact.filename)
-      if content_hash == artifact.content_hash:
-        print(f'### Found artifact {artifact.filename}')
-        return read_image(artifact.filename)
-      else:
-        print(f'### File {artifact.filename} had content hash {content_hash} '
-              f'instead of the expected {artifact.content_hash}')
-        return
+@read_artifact_image.register
+def _(artifact: FileArtifact):
+  if artifact.content_hash:
+    content_hash = get_content_hash(artifact.filename)
 
-  elif artifact.key:
-    if context.contains(artifact.key):
-      print(f'### Found artifact {artifact.key}')
-      return context.get(artifact.key, keep_in_memory=False)
+    if content_hash != artifact.content_hash:
+      raise ValueError(
+          f'Filename {artifact.filename} did not have expected content hash '
+          f'{artifact.content_hash}')
+
+  return read_image(artifact.filename)
+
+
+# TODO: Move file_obj operations into file_io module.
+@read_artifact_image.register
+def _(artifact: CacheArtifact):
+  if not context.contains(artifact.key):
+    raise ValueError(f'Key {artifact.key} not found in context')
+
+  file_obj = io.BytesIO(context.get(artifact.key, keep_in_memory=False))
+
+  fits = pyfits.open(file_obj)
+  image = fits[0].data
+  fits.close()
+
+  # TODO: Check content_hash.
+
+  return image
+
+
+@singledispatch
+def write_artifact(artifact: Artifact, header: Dict[str, Any],
+                   image: np.ndarray):
+  assert False, f'Bad artifact type {type(artifact)}'
+
+
+@write_artifact.register
+def _(artifact: FileArtifact, header: Dict[str, Any],
+      image: np.ndarray):
+  hdu = pyfits.PrimaryHDU(image)
+
+  for k, v in header.items():
+    if type(v) is datetime.datetime:
+      hdu.header[k] = v.isoformat()
     else:
-      print(f'### Cache does not contain artifact key {artifact.key}')
-      return
+      hdu.header[k] = v
+
+  hdu.writeto(artifact.filename, overwrite=True)
+
+
+@write_artifact.register
+def _(artifact: CacheArtifact, header: Dict[str, Any],
+      image: np.ndarray):
+  hdu = pyfits.PrimaryHDU(image)
+  print(f'### newly-created hdu.header {hdu.header}')
+
+  for k, v in header.items():
+    if type(v) is datetime.datetime:
+      hdu.header[k] = v.isoformat()
+    else:
+      hdu.header[k] = v
+
+  file_obj = io.BytesIO()
+  hdu.writeto(file_obj)
+
+  context[artifact.key] = file_obj.getvalue()

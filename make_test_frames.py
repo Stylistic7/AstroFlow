@@ -1,7 +1,7 @@
 import os
-import astropy.io.fits as pyfits
+import astropy.io.fits as pyfits  # type: ignore
 import numpy as np
-from scipy.signal.windows import gaussian
+from scipy.signal.windows import gaussian  # type: ignore
 import datetime
 import random
 import uuid

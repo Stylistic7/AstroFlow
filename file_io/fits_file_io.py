@@ -21,7 +21,7 @@ def read_fits_header(filename: Path | str, debug: bool = False) -> dict:
 
 def read_fits_image(filename: Path | str) -> np.ndarray:
   fits = pyfits.open(str(filename))
-  image = fits[0].data.astype(np.float32)
+  image = fits[0].data
   fits.close()
 
   return image
