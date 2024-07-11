@@ -31,6 +31,28 @@ class TestFlatCorrection(unittest.TestCase):
                          start_datetime=datetime.datetime(
                              2024, 2, 5, 16, 29, 43),
                          dest_dir=context.input_dirs[0])
+    make_synthetic_frames(prefix='bias_run_0',
+                          number=5,
+                          image_type='Bias',
+                          start_datetime=datetime.datetime(
+                              2024, 2, 5, 18, 29, 43),
+                          fill_value=50,
+                          instrument='ZWO ASI6200MM Pro',
+                          width_pixels=9576,
+                          height_pixels=6388,
+                          temperature=-20,
+                          dest_dir=context.input_dirs[0])
+    make_synthetic_frames(prefix='dark_run_0',
+                          number=7,
+                          image_type='Dark',
+                          start_datetime=datetime.datetime(
+                              2024, 2, 5, 18, 29, 43),
+                          fill_value=50,
+                          instrument='ZWO ASI6200MM Pro',
+                          width_pixels=9576,
+                          height_pixels=6388,
+                          temperature=-20,
+                          dest_dir=context.input_dirs[0])
     make_synthetic_frames(prefix='flat_run_0',
                           number=11,
                           image_type='Flat',
@@ -64,7 +86,7 @@ class TestFlatCorrection(unittest.TestCase):
         print('key', k, 'has keys', cache[k].keys())
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 4)
+    self.assertEqual(len(stacks), 6)
 
     for stack in stacks.values():
       print(stack)

@@ -112,7 +112,7 @@ def build_compute_graph():
       make_suggestions,
       build_preview_graph,
       # This is the heavyweight graph that runs PixInsight and may take days.
-      # build_main_processing_graph,
+      build_main_processing_graph,
       # (scatter_compute_image_metadata, 'master'),
       # TODO: This is very slow.
       # (scatter_stack_thumbnails, 'master'),

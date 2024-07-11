@@ -29,7 +29,13 @@ def mosaic_by_coordinates_artifacts(mode, mosaic_id, stack_id, input_artifact):
     key = ('placed_image', mosaic_id, stack_id, input_artifact.content_hash)
     return [Artifact(key=key)]
   elif mode == 'master':
-    pass
+    mosaic = context.mosaics[mosaic_id]
+    filename = os.path.join(context.output_dir, 'Mosaics', mosaic.name,
+                            f'placed_{input_artifact.content_hash}.fit')
+    return [
+        Artifact(filename=filename, content_hash=input_artifact.content_hash)
+    ]
+
     # return [
     #     Artifact(filename=panel.placed_filename,
     #              content_hash=panel.content_hash)
