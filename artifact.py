@@ -136,3 +136,38 @@ def _(artifact: CacheArtifact, header: Dict[str, Any],
   hdu.writeto(file_obj)
 
   context[artifact.key] = file_obj.getvalue()
+
+
+@singledispatch
+def artifact_exists(artifact: Artifact):
+  assert False, f'Bad artifact type {type(artifact)}'
+
+
+@artifact_exists.register
+def _(artifact: FileArtifact):
+  if not os.path.exists(artifact.filename):
+    return False
+
+  if artifact.content_hash is not None:
+    if get_content_hash(artifact.filename) != artifact.content_hash:
+      return False
+
+  return True
+
+
+@artifact_exists.register
+def _(artifact: CacheArtifact):
+  if not context.contains(artifact.key):
+    return False
+
+  if artifact.content_hash is not None:
+    file_obj = io.BytesIO(context.get(artifact.key, keep_in_memory=False))
+
+    fits = pyfits.open(file_obj)
+    header = normalize_header(fits[0].header)
+    fits.close()
+
+    if header['CONTHASH'] != artifact.content_hash:
+      return False
+
+  return True
