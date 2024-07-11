@@ -61,12 +61,8 @@ class Stack:
       assert self.frames
       assert not self.contents
 
-    # start_time = time.time()
-
-    # print(f'### update_metadata, self.frames {self.frames}')
-
     all_frames = self.all_frames()
-    # print(f'### update_metadata, all_frames {all_frames}')
+
     self.content_hash = hash_list(all_frames)
 
     if metadata is None:
@@ -89,9 +85,7 @@ class Stack:
         assert len(qualities) < 2, f'multiple {quality} qualities {qualities}'
         return next(iter(qualities)) if len(qualities) else None
 
-    # FIXME is this ever dangerous?
-    allow_multiple_exposures = True
-    # allow_multiple_exposures = (self.stable_hash != None)
+    allow_multiple_exposures = (self.stable_hash != None)
 
     self.image_type = get_quality('IMAGETYP')
     self.camera = get_quality('INSTRUME')
@@ -102,23 +96,14 @@ class Stack:
 
     self.integration_s = sum(
         i.header['EXPOSURE'] for i in metadata if 'EXPOSURE' in i.header)
-    # self.integration_s = sum(
-    #     get_metadata(all_frames, transform_fn=lambda i: i.header['EXPOSURE']))
 
     self.mean_temperature = np.mean([i.header['CCD-TEMP'] for i in metadata])
-    # self.mean_temperature = np.mean(
-    #     get_metadata(all_frames, transform_fn=lambda i: i.header['CCD-TEMP']))
 
     sorted_metadata = sorted(metadata, key=lambda i: i.header['DATE-OBS'])
     self.oldest_date = sorted_metadata[0].header['DATE-OBS']
     self.newest_date = sorted_metadata[-1].header['DATE-OBS']
-    # all_dates = get_metadata(all_frames,
-    #                          transform_fn=lambda i: i.header['DATE-OBS'])
 
     # TODO: Update stable hash here, too.
-
-    # end_time = time.time()
-    # print(f'### update_metadata elapsed time {end_time - start_time:.3f} s')
 
   def __eq__(self, other):
     if not isinstance(other, Stack):

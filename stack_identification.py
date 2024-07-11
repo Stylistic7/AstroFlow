@@ -88,6 +88,8 @@ def _new_stacks(name, metadata):
   for exposure_cluster in clustering.cluster_continuous(exposures,
                                                         epsilon=0.01):
     exposure_frames, exposures = zip(*exposure_cluster)
+    print('### exposure_frames', exposure_frames)
+    print('### exposures', exposures)
     assert np.all(np.isclose(exposures, exposures[0])
                  ), f'exposures {exposures} are clustered, but not all close'
 
@@ -104,7 +106,8 @@ def _new_stacks(name, metadata):
         continue
       run = [x[0] for x in run]
       stack = Stack(frames=run)
-      stack.update_metadata(metadata)
+      stack.update_metadata(
+          [i for i in metadata if i.content_hash in exposure_frames])
       print(f'### stack_identification._new_stacks made stack {stack}')
       new_stacks[stack.content_hash] = stack
       context.stacks |= {stack.content_hash: stack}
