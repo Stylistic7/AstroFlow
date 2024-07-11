@@ -14,6 +14,14 @@ from file_io.generic import get_content_hash
 from file_io.normalize_header import normalize_header
 
 
+class ArtifactNotFoundException(Exception):
+  pass
+
+
+class WrongContentHashException(Exception):
+  pass
+
+
 @dataclass(frozen=True)
 class FileArtifact:
   filename: str
@@ -43,7 +51,7 @@ def _(artifact: FileArtifact):
 @read_artifact_header.register
 def _(artifact: CacheArtifact):
   if not context.contains(artifact.key):
-    raise ValueError(f'Key {artifact.key} not found in context')
+    raise ArtifactNotFoundException(f'Key {artifact.key} not found in context')
 
   file_obj = io.BytesIO(context.get(artifact.key, keep_in_memory=False))
 
@@ -65,7 +73,7 @@ def _(artifact: FileArtifact):
     content_hash = get_content_hash(artifact.filename)
 
     if content_hash != artifact.content_hash:
-      raise ValueError(
+      raise WrongContentHashException(
           f'Filename {artifact.filename} did not have expected content hash '
           f'{artifact.content_hash}')
 
@@ -76,7 +84,7 @@ def _(artifact: FileArtifact):
 @read_artifact_image.register
 def _(artifact: CacheArtifact):
   if not context.contains(artifact.key):
-    raise ValueError(f'Key {artifact.key} not found in context')
+    raise ArtifactNotFoundException(f'Key {artifact.key} not found in context')
 
   file_obj = io.BytesIO(context.get(artifact.key, keep_in_memory=False))
 
@@ -84,7 +92,11 @@ def _(artifact: CacheArtifact):
   image = fits[0].data
   fits.close()
 
-  # TODO: Check content_hash.
+  if artifact.content_hash is not None:
+    if 'CONTHASH' not in fits[0].header or fits[0].header[
+        'CONTHASH'] != artifact.content_hash:
+      raise WrongContentHashException(
+          f'Key {artifact.key} had incorrect content hash')
 
   return image
 
@@ -113,7 +125,6 @@ def _(artifact: FileArtifact, header: Dict[str, Any],
 def _(artifact: CacheArtifact, header: Dict[str, Any],
       image: np.ndarray):
   hdu = pyfits.PrimaryHDU(image)
-  print(f'### newly-created hdu.header {hdu.header}')
 
   for k, v in header.items():
     if type(v) is datetime.datetime:
