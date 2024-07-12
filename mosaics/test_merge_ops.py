@@ -16,7 +16,7 @@ from decorators import saves_artifacts
 from context import context
 from stack import Stack
 from dependency_graph import run_graph, print_graph
-from artifact import CacheArtifact, FileArtifact
+from artifact import CacheArtifact, FileArtifact, write_artifact
 from make_test_frames import make_synthetic_frames
 
 
@@ -46,8 +46,8 @@ def _make_panel(id, content_hash=None, **kwargs):
 def post_process_stack_artifacts(stack_id):
   content_hash = context.stacks[stack_id].content_hash
   return [
-      FileArtifact(content_hash=content_hash,
-                   filename=f'stack_{stack_id}_post_processed.fit')
+      FileArtifact(filename=f'stack_{stack_id}_post_processed.fit',
+                   content_hash=content_hash)
   ]
 
 
@@ -56,15 +56,9 @@ def post_process_stack_artifacts(stack_id):
 @ray.remote
 @saves_artifacts(post_process_stack_artifacts)
 def post_process_stack(stack_id):
+  print(f'### Entering post_process_stack {stack_id}')
   artifact = next(iter(post_process_stack_artifacts(stack_id)))
-  filename = os.path.join(context.output_dir, artifact.filename)
-  image = np.random.random((10, 10))
-  hdu = pyfits.PrimaryHDU(image)
-  hdu.header['CONTHASH'] = context.stacks[stack_id].content_hash
-  hdu.writeto(filename, overwrite=True)
-  print(f'### post_process_stack wrote filename {filename}')
-
-  return filename
+  write_artifact(artifact, np.random.random((10, 10)))
 
 
 class TestMergeOps(unittest.TestCase):
@@ -92,8 +86,8 @@ class TestMergeOps(unittest.TestCase):
     merge_ops, graph = make_merge_ops(mode, mosaic_id, 'H', panels, from_task)
 
     content_hash = hash_list(['hash_left', 'hash_right'])
-    output_artifact = CacheArtifact(key=('merged_images', mode, mosaic_id, 'H',
-                                         '0__0_0__0_1', content_hash))
+    output_artifact = CacheArtifact(
+        ('merged_images', mode, mosaic_id, 'H', '0__0_0__0_1'), content_hash)
     self.assertEqual(merge_ops, [
         MergeOp(input_artifacts=[left.input_artifact, right.input_artifact],
                 output_artifact=output_artifact)
@@ -123,16 +117,16 @@ class TestMergeOps(unittest.TestCase):
 
     # Check first merge op.
     content_hash = hash_list(['hash_left', 'hash_middle'])
-    left_and_middle = CacheArtifact(key=('merged_images', mode, mosaic_id, 'H',
-                                         '0__0_0__0_1', content_hash))
+    left_and_middle = CacheArtifact(
+        ('merged_images', mode, mosaic_id, 'H', '0__0_0__0_1'), content_hash)
     self.assertEqual(merge_ops[0].input_artifacts,
                      [left.input_artifact, middle.input_artifact])
     self.assertEqual(merge_ops[0].output_artifact, left_and_middle)
 
     # Check second merge op.
     content_hash = hash_list([content_hash, 'hash_right'])
-    final = CacheArtifact(key=('merged_images', mode, mosaic_id, 'H',
-                               '1__0_0__0_1', content_hash))
+    final = CacheArtifact(
+        ('merged_images', mode, mosaic_id, 'H', '1__0_0__0_1'), content_hash)
     self.assertEqual(merge_ops[1].input_artifacts,
                      [left_and_middle, right.input_artifact])
     self.assertEqual(merge_ops[1].output_artifact, final)
@@ -168,24 +162,26 @@ class TestMergeOps(unittest.TestCase):
 
     # Check first merge op.
     left_content_hash = hash_list(['hash_top_left', 'hash_bottom_left'])
-    left = CacheArtifact(key=('merged_images', mode, mosaic_id, 'H',
-                              '0__0_0__0_1', left_content_hash))
+    left = CacheArtifact(('merged_images', mode, mosaic_id, 'H', '0__0_0__0_1'),
+                         left_content_hash)
     self.assertEqual(merge_ops[0].input_artifacts,
                      [top_left.input_artifact, bottom_left.input_artifact])
     self.assertEqual(merge_ops[0].output_artifact, left)
 
     # Check second merge op.
     right_content_hash = hash_list(['hash_top_right', 'hash_bottom_right'])
-    right = CacheArtifact(key=('merged_images', mode, mosaic_id, 'H',
-                               '0__1_0__1_1', right_content_hash))
+    right = CacheArtifact(
+        ('merged_images', mode, mosaic_id, 'H', '0__1_0__1_1'),
+        right_content_hash)
     self.assertEqual(merge_ops[1].input_artifacts,
                      [top_right.input_artifact, bottom_right.input_artifact])
     self.assertEqual(merge_ops[1].output_artifact, right)
 
     # Check third merge op.
     final_content_hash = hash_list([left_content_hash, right_content_hash])
-    final = CacheArtifact(key=('merged_images', mode, mosaic_id, 'H',
-                               '1__0_0__1_0', final_content_hash))
+    final = CacheArtifact(
+        ('merged_images', mode, mosaic_id, 'H', '1__0_0__1_0'),
+        final_content_hash)
     self.assertEqual(merge_ops[2].input_artifacts, [left, right])
     self.assertEqual(merge_ops[2].output_artifact, final)
 
@@ -234,9 +230,9 @@ class TestMergeOps(unittest.TestCase):
     # Check first merge op.
     top_left_and_middle_left_content_hash = hash_list(
         ['hash_top_left', 'hash_middle_left'])
-    top_left_and_middle_left = Artifact(
-        key=('merged_images', mode, mosaic_id, 'H', '0__0_0__0_1',
-             top_left_and_middle_left_content_hash))
+    top_left_and_middle_left = CacheArtifact(
+        ('merged_images', mode, mosaic_id, 'H', '0__0_0__0_1'),
+        top_left_and_middle_left_content_hash)
     self.assertEqual(merge_ops[0].input_artifacts,
                      [top_left.input_artifact, middle_left.input_artifact])
     self.assertTrue(type(merge_ops[0].output_artifact), Artifact)
@@ -245,9 +241,9 @@ class TestMergeOps(unittest.TestCase):
     # Check second merge op.
     top_middle_and_middle_middle_content_hash = hash_list(
         ['hash_top_middle', 'hash_middle_middle'])
-    top_middle_and_middle_middle = Artifact(
-        key=('merged_images', mode, mosaic_id, 'H', '0__1_0__1_1',
-             top_middle_and_middle_middle_content_hash))
+    top_middle_and_middle_middle = CacheArtifact(
+        ('merged_images', mode, mosaic_id, 'H', '0__1_0__1_1'),
+        top_middle_and_middle_middle_content_hash)
     self.assertEqual(merge_ops[1].input_artifacts,
                      [top_middle.input_artifact, middle_middle.input_artifact])
     self.assertTrue(type(merge_ops[1].output_artifact), Artifact)
@@ -256,9 +252,9 @@ class TestMergeOps(unittest.TestCase):
     # Check third merge op.
     top_right_and_middle_right_content_hash = hash_list(
         ['hash_top_right', 'hash_middle_right'])
-    top_right_and_middle_right = Artifact(
-        key=('merged_images', mode, mosaic_id, 'H', '0__2_0__2_1',
-             top_right_and_middle_right_content_hash))
+    top_right_and_middle_right = CacheArtifact(
+        ('merged_images', mode, mosaic_id, 'H', '0__2_0__2_1'),
+        top_right_and_middle_right_content_hash)
     self.assertEqual(merge_ops[2].input_artifacts,
                      [top_right.input_artifact, middle_right.input_artifact])
     self.assertTrue(type(merge_ops[2].output_artifact), Artifact)
@@ -269,8 +265,9 @@ class TestMergeOps(unittest.TestCase):
         top_left_and_middle_left_content_hash,
         top_middle_and_middle_middle_content_hash
     ])
-    upper_left_2x2 = Artifact(key=('merged_images', mode, mosaic_id, 'H',
-                                   '1__0_0__1_0', upper_left_2x2_content_hash))
+    upper_left_2x2 = CacheArtifact(
+        ('merged_images', mode, mosaic_id, 'H', '1__0_0__1_0'),
+        upper_left_2x2_content_hash)
     self.assertEqual(merge_ops[3].input_artifacts,
                      [top_left_and_middle_left, top_middle_and_middle_middle])
     self.assertTrue(type(merge_ops[3].output_artifact), Artifact)
@@ -279,9 +276,9 @@ class TestMergeOps(unittest.TestCase):
     # Check fifth merge op.
     bottom_left_and_bottom_middle_content_hash = hash_list(
         ['hash_bottom_left', 'hash_bottom_middle'])
-    bottom_left_and_bottom_middle = Artifact(
-        key=('merged_images', mode, mosaic_id, 'H', '1__0_1__1_1',
-             bottom_left_and_bottom_middle_content_hash))
+    bottom_left_and_bottom_middle = CacheArtifact(
+        ('merged_images', mode, mosaic_id, 'H', '1__0_1__1_1'),
+        bottom_left_and_bottom_middle_content_hash)
     self.assertEqual(merge_ops[4].input_artifacts,
                      [bottom_left.input_artifact, bottom_middle.input_artifact])
     self.assertTrue(type(merge_ops[4].output_artifact), Artifact)
@@ -292,8 +289,9 @@ class TestMergeOps(unittest.TestCase):
     left_3x2_content_hash = hash_list([
         upper_left_2x2_content_hash, bottom_left_and_bottom_middle_content_hash
     ])
-    left_3x2 = Artifact(key=('merged_images', mode, mosaic_id, 'H',
-                             '2__0_0__0_1', left_3x2_content_hash))
+    left_3x2 = CacheArtifact(
+        ('merged_images', mode, mosaic_id, 'H', '2__0_0__0_1'),
+        left_3x2_content_hash)
     self.assertEqual(merge_ops[5].input_artifacts,
                      [upper_left_2x2, bottom_left_and_bottom_middle])
     self.assertTrue(type(merge_ops[5].output_artifact), Artifact)
@@ -302,8 +300,9 @@ class TestMergeOps(unittest.TestCase):
     # Check seventh merge op.
     right_3x1_content_hash = hash_list(
         [top_right_and_middle_right_content_hash, bottom_right.content_hash])
-    right_3x1 = Artifact(key=('merged_images', mode, mosaic_id, 'H',
-                              '2__1_0__1_1', right_3x1_content_hash))
+    right_3x1 = CacheArtifact(
+        ('merged_images', mode, mosaic_id, 'H', '2__1_0__1_1'),
+        right_3x1_content_hash)
     self.assertEqual(merge_ops[6].input_artifacts,
                      [top_right_and_middle_right, bottom_right.input_artifact])
     self.assertTrue(type(merge_ops[6].output_artifact), Artifact)
@@ -312,8 +311,9 @@ class TestMergeOps(unittest.TestCase):
     # Check eighth merge op.
     final_content_hash = hash_list(
         [left_3x2_content_hash, right_3x1_content_hash])
-    final = Artifact(key=('merged_images', mode, mosaic_id, 'H', '3__0_0__1_0',
-                          final_content_hash))
+    final = CacheArtifact(
+        ('merged_images', mode, mosaic_id, 'H', '3__0_0__1_0'),
+        final_content_hash)
     self.assertEqual(merge_ops[7].input_artifacts, [left_3x2, right_3x1])
     self.assertTrue(type(merge_ops[7].output_artifact), Artifact)
     self.assertEqual(merge_ops[7].output_artifact, final)

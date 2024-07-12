@@ -31,8 +31,7 @@ class TestMosaic(unittest.TestCase):
 
       key = ('image', filename)
       content_hash = f'my_silly_hash_{i}'
-      header['CONTHASH'] = content_hash
-      write_artifact(CacheArtifact(key), header, image)
+      write_artifact(CacheArtifact(key, content_hash), image)
 
       cached_image = read_artifact_image(CacheArtifact(key, content_hash))
       self.assertTrue(np.array_equal(image, cached_image))

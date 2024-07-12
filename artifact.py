@@ -69,6 +69,7 @@ def read_artifact_image(artifact: Artifact):
 
 @read_artifact_image.register
 def _(artifact: FileArtifact):
+  print(f'### read_artifact_image artifact {artifact}')
   if artifact.content_hash:
     content_hash = get_content_hash(artifact.filename)
 
@@ -83,6 +84,7 @@ def _(artifact: FileArtifact):
 # TODO: Move file_obj operations into file_io module.
 @read_artifact_image.register
 def _(artifact: CacheArtifact):
+  print(f'### read_artifact_image artifact {artifact}')
   if not context.contains(artifact.key):
     raise ArtifactNotFoundException(f'Key {artifact.key} not found in context')
 
@@ -102,35 +104,48 @@ def _(artifact: CacheArtifact):
 
 
 @singledispatch
-def write_artifact(artifact: Artifact, header: Dict[str, Any],
-                   image: np.ndarray):
+def write_artifact(
+    artifact: Artifact,
+    image: np.ndarray,
+    header: Optional[Dict[str, Any]] = None,
+):
   assert False, f'Bad artifact type {type(artifact)}'
 
 
 @write_artifact.register
-def _(artifact: FileArtifact, header: Dict[str, Any],
-      image: np.ndarray):
+def _(artifact: FileArtifact,
+      image: np.ndarray, header: Optional[Dict[str, Any]] = None):
+  filename = os.path.join(context.output_dir, artifact.filename)
+
   hdu = pyfits.PrimaryHDU(image)
 
-  for k, v in header.items():
-    if type(v) is datetime.datetime:
-      hdu.header[k] = v.isoformat()
-    else:
-      hdu.header[k] = v
+  if header is not None:
+    for k, v in header.items():
+      if type(v) is datetime.datetime:
+        hdu.header[k] = v.isoformat()
+      else:
+        hdu.header[k] = v
 
-  hdu.writeto(artifact.filename, overwrite=True)
+  if artifact.content_hash is not None:
+    hdu.header['CONTHASH'] = artifact.content_hash
+
+  hdu.writeto(filename, overwrite=True)
 
 
 @write_artifact.register
-def _(artifact: CacheArtifact, header: Dict[str, Any],
-      image: np.ndarray):
+def _(artifact: CacheArtifact,
+      image: np.ndarray, header: Optional[Dict[str, Any]] = None):
   hdu = pyfits.PrimaryHDU(image)
 
-  for k, v in header.items():
-    if type(v) is datetime.datetime:
-      hdu.header[k] = v.isoformat()
-    else:
-      hdu.header[k] = v
+  if header is not None:
+    for k, v in header.items():
+      if type(v) is datetime.datetime:
+        hdu.header[k] = v.isoformat()
+      else:
+        hdu.header[k] = v
+
+  if artifact.content_hash is not None:
+    hdu.header['CONTHASH'] = artifact.content_hash
 
   file_obj = io.BytesIO()
   hdu.writeto(file_obj)
@@ -145,11 +160,13 @@ def artifact_exists(artifact: Artifact):
 
 @artifact_exists.register
 def _(artifact: FileArtifact):
-  if not os.path.exists(artifact.filename):
+  filename = os.path.join(context.output_dir, artifact.filename)
+
+  if not os.path.exists(filename):
     return False
 
   if artifact.content_hash is not None:
-    if get_content_hash(artifact.filename) != artifact.content_hash:
+    if get_content_hash(filename) != artifact.content_hash:
       return False
 
   return True
@@ -167,7 +184,7 @@ def _(artifact: CacheArtifact):
     header = normalize_header(fits[0].header)
     fits.close()
 
-    if header['CONTHASH'] != artifact.content_hash:
+    if 'CONTHASH' not in header or header['CONTHASH'] != artifact.content_hash:
       return False
 
   return True

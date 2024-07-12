@@ -5,7 +5,7 @@ import ray
 from dependency_graph import Graph
 from .classes import MergeOp, Panel
 from .merge_images import merge_images
-from artifact import CacheArtifact
+from artifact import CacheArtifact, FileArtifact
 from hashing import hash_list
 
 
@@ -68,13 +68,12 @@ def make_merge_ops(mode, mosaic_id, filter, panels, from_task):
 
         # TODO: This goes outside the artifacts workflow.
         if mode == 'subframe':
-          image_key = ('merged_images', mode, mosaic_id, filter, pair_id,
-                       content_hash)
-          output_artifact = CacheArtifact(key=image_key)
-        elif mode == 'master':
-          output_filename = f'merged_{pair_id}.fit'
-          output_artifact = CacheArtifact(filename=output_filename,
+          output_artifact = CacheArtifact(key=('merged_images', mode, mosaic_id,
+                                               filter, pair_id),
                                           content_hash=content_hash)
+        elif mode == 'master':
+          output_artifact = FileArtifact(filename=f'merged_{pair_id}.fit',
+                                         content_hash=content_hash)
 
         output = Panel(mosaic_id=mosaic_id,
                        filter=filter,
