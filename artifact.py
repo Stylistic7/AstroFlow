@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Optional, Tuple, Any, Dict
 from functools import singledispatch
 import datetime
+from pathlib import Path
 
 import numpy as np
 import astropy.io.fits as pyfits  # type: ignore
@@ -37,9 +38,13 @@ class CacheArtifact:
 Artifact = FileArtifact | CacheArtifact
 
 
+def read_artifact(artifact: Artifact):
+  return read_artifact_image(artifact), read_artifact_header(artifact)
+
+
 @singledispatch
 def read_artifact_header(artifact: Artifact):
-  pass
+  assert False, f'Bad artifact type {type(artifact)}'
 
 
 @read_artifact_header.register
@@ -115,8 +120,6 @@ def write_artifact(
 @write_artifact.register
 def _(artifact: FileArtifact,
       image: np.ndarray, header: Optional[Dict[str, Any]] = None):
-  filename = os.path.join(context.output_dir, artifact.filename)
-
   hdu = pyfits.PrimaryHDU(image)
 
   if header is not None:
@@ -129,7 +132,9 @@ def _(artifact: FileArtifact,
   if artifact.content_hash is not None:
     hdu.header['CONTHASH'] = artifact.content_hash
 
-  hdu.writeto(filename, overwrite=True)
+  Path(artifact.filename).parent.mkdir(parents=True, exist_ok=True)
+  hdu.writeto(artifact.filename, overwrite=True)
+  print(f'### Wrote artifact {artifact}')
 
 
 @write_artifact.register
@@ -160,13 +165,11 @@ def artifact_exists(artifact: Artifact):
 
 @artifact_exists.register
 def _(artifact: FileArtifact):
-  filename = os.path.join(context.output_dir, artifact.filename)
-
-  if not os.path.exists(filename):
+  if not os.path.exists(artifact.filename):
     return False
 
   if artifact.content_hash is not None:
-    if get_content_hash(filename) != artifact.content_hash:
+    if get_content_hash(artifact.filename) != artifact.content_hash:
       return False
 
   return True

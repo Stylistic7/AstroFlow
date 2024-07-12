@@ -20,26 +20,19 @@ from context import context
 from file_io.generic import read_image
 from .viewbox import compute_mosaic_viewbox_artifacts
 from image_metadata.actor import get_metadata
-from artifact import read_artifact_image
+from artifact import read_artifact_image, read_artifact_header, write_artifact, CacheArtifact, FileArtifact
 
 
 # TODO: This needs to include the hash of the viewbox.
 def mosaic_by_coordinates_artifacts(mode, mosaic_id, stack_id, input_artifact):
   if mode == 'subframe':
-    key = ('placed_image', mosaic_id, stack_id, input_artifact.content_hash)
-    return [Artifact(key=key)]
+    key = ('placed_image', mosaic_id, stack_id)
+    return [CacheArtifact(key, input_artifact.content_hash)]
   elif mode == 'master':
     mosaic = context.mosaics[mosaic_id]
     filename = os.path.join(context.output_dir, 'Mosaics', mosaic.name,
                             f'placed_{input_artifact.content_hash}.fit')
-    return [
-        Artifact(filename=filename, content_hash=input_artifact.content_hash)
-    ]
-
-    # return [
-    #     Artifact(filename=panel.placed_filename,
-    #              content_hash=panel.content_hash)
-    # ]
+    return [FileArtifact(filename, input_artifact.content_hash)]
 
 
 # Function pseudocode:
@@ -86,6 +79,7 @@ def mosaic_by_coordinates(mode, mosaic_id, stack_id, input_artifact):
   # TODO: The subframes need to be calibrated before being placed.
   filename = input_artifact.filename
   image = read_artifact_image(input_artifact)
+  header = read_artifact_header(input_artifact)
   plate_solution = solve_field(filename)
 
   assert image is not None
@@ -187,31 +181,47 @@ def mosaic_by_coordinates(mode, mosaic_id, stack_id, input_artifact):
         f'min {np.min(output_image)} max {np.max(output_image)} '
         f'time {end-start:.2f}')
 
+  output_artifact = next(
+      iter(
+          mosaic_by_coordinates_artifacts(mode, mosaic_id, stack_id,
+                                          input_artifact)))
+
   if mode == 'subframe':
-    key = next(
-        iter(
-            mosaic_by_coordinates_artifacts(mode, mosaic_id, stack_id,
-                                            input_artifact))).key
+    key = output_artifact.key
     print(f'### mosaic_by_coordinates artifact key {key}')
     assert key is not None
     filename = '/tmp/foo/' + '_'.join(key) + '.png'
-    open(filename, 'wb').write(array_to_png(autostretch(output_image)))
-    context[key] = output_image
-    print(f'### mosaic_by_coordinates wrote key {key} '
-          f'of tyoe {type(output_image)}')
+    # open(filename, 'wb').write(array_to_png(autostretch(output_image)))
+    # context[key] = output_image
+    # print(f'### mosaic_by_coordinates wrote key {key} '
+    #       f'of tyoe {type(output_image)}')
+    write_artifact(output_artifact, output_image)
   elif mode == 'master':
-    hdu = pyfits.PrimaryHDU(output_image)
-    hdu.header['SIMPLE'] = True
-    hdu.header['IMAGETYP'] = 'PlacedMosaic Light'
-    hdu.header['FOCALLEN'] = float(header['FOCALLEN'])
-    hdu.header['XPIXSZ'] = float(header['XPIXSZ'])
-    hdu.header['YPIXSZ'] = float(header['YPIXSZ'])
-    hdu.header['HISTORY'] = f"TrimMosaicTile.target: foo"
-    hdu.header['HISTORY'] = f"TrimMosaicTile.top: {trim_top}"
-    hdu.header['HISTORY'] = f"TrimMosaicTile.bottom: {trim_top + trim_height}"
-    hdu.header['HISTORY'] = f"TrimMosaicTile.left: {trim_left}"
-    hdu.header['HISTORY'] = f"TrimMosaicTile.right: {trim_left + trim_width}"
+    output_header = {
+        'IMAGETYP': 'PlacedMosaic Light',
+        'FOCALLEN': float(header['FOCALLEN']),
+        'XPIXSZ': float(header['XPIXSZ']),
+        'YPIXSZ': float(header['YPIXSZ']),
+        'HISTORY': f"TrimMosaicTile.target: foo",
+        'HISTORY': f"TrimMosaicTile.top: {trim_top}",
+        'HISTORY': f"TrimMosaicTile.bottom: {trim_top + trim_height}",
+        'HISTORY': f"TrimMosaicTile.left: {trim_left}",
+        'HISTORY': f"TrimMosaicTile.right: {trim_left + trim_width}"
+    }
+    write_artifact(output_artifact, output_image, output_header)
 
-    # TODO: Is this placed_filename actually checked anywhere?
-    hdu.writeto(panel.placed_filename, overwrite=True)
-    print(f'### Wrote placed image filename {panel.placed_filename}')
+    # hdu = pyfits.PrimaryHDU(output_image)
+    # hdu.header['SIMPLE'] = True
+    # hdu.header['IMAGETYP'] = 'PlacedMosaic Light'
+    # hdu.header['FOCALLEN'] = float(header['FOCALLEN'])
+    # hdu.header['XPIXSZ'] = float(header['XPIXSZ'])
+    # hdu.header['YPIXSZ'] = float(header['YPIXSZ'])
+    # hdu.header['HISTORY'] = f"TrimMosaicTile.target: foo"
+    # hdu.header['HISTORY'] = f"TrimMosaicTile.top: {trim_top}"
+    # hdu.header['HISTORY'] = f"TrimMosaicTile.bottom: {trim_top + trim_height}"
+    # hdu.header['HISTORY'] = f"TrimMosaicTile.left: {trim_left}"
+    # hdu.header['HISTORY'] = f"TrimMosaicTile.right: {trim_left + trim_width}"
+
+    # # TODO: Is this placed_filename actually checked anywhere?
+    # hdu.writeto(output_artifact.filename, overwrite=True)
+    # print(f'### Wrote placed image filename {output_artifact.filename}')

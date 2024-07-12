@@ -1,7 +1,7 @@
 import ray
 import numpy as np
 
-from artifact import Artifact
+from artifact import CacheArtifact
 from decorators import saves_artifacts
 import mercator
 import footprints
@@ -22,7 +22,7 @@ from projection import compute_viewbox
 def compute_mosaic_viewbox_artifacts(mode, mosaic_id):
   mosaic = context.mosaics[mosaic_id]
   return [
-      Artifact(key=('mosaic_viewbox', mode, mosaic_id, mosaic.content_hash))
+      CacheArtifact(('mosaic_viewbox', mode, mosaic_id, mosaic.content_hash))
   ]
 
 

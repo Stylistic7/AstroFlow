@@ -105,8 +105,7 @@ class TestMosaic(unittest.TestCase):
     self.assertEqual(len(context.mosaics), 1)
     mosaic = next(iter(context.mosaics.values()))
 
-    key = ('mosaic_thumbnail_image', 'subframe', mosaic.stable_hash, 'H',
-           mosaic.content_hash)
+    key = ('mosaic_thumbnail_image', 'subframe', mosaic.stable_hash, 'H')
     self.assertTrue(context.contains(key))
 
     # open('/tmp/mosaic_thumbnail_image.png', 'wb').write(context[key])
@@ -131,6 +130,10 @@ class TestMosaic(unittest.TestCase):
     self.assertEqual(len(context.targets), 4)
     self.assertEqual(len(context.mosaics), 1)
     mosaic = next(iter(context.mosaics.values()))
+
+    fits_files = list(Path(context.output_dir).rglob('final_merged.fit'))
+    self.assertEqual(len(fits_files), 1)
+    print(f'### Found final merged file {fits_files[0]}')
 
 
 if __name__ == "__main__":

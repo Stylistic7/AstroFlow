@@ -2,6 +2,7 @@ import os
 import numpy as np
 import ray
 
+from context import context
 from dependency_graph import Graph
 from .classes import MergeOp, Panel
 from .merge_images import merge_images
@@ -30,6 +31,8 @@ def make_pairs(min_index, max_index, template):
 # TODO: Strongly-type this. Panels is a dictionary from tile indices to
 # Panel objects.
 def make_merge_ops(mode, mosaic_id, filter, panels, from_task):
+  mosaic = context.mosaics[mosaic_id]
+
   graph = Graph()
   merge_ops = []
 
@@ -68,12 +71,12 @@ def make_merge_ops(mode, mosaic_id, filter, panels, from_task):
 
         # TODO: This goes outside the artifacts workflow.
         if mode == 'subframe':
-          output_artifact = CacheArtifact(key=('merged_images', mode, mosaic_id,
-                                               filter, pair_id),
-                                          content_hash=content_hash)
+          output_artifact = CacheArtifact(
+              ('merged_images', mode, mosaic_id, filter, pair_id), content_hash)
         elif mode == 'master':
-          output_artifact = FileArtifact(filename=f'merged_{pair_id}.fit',
-                                         content_hash=content_hash)
+          filename = os.path.join(context.output_dir, 'Mosaics', mosaic.name,
+                                  f'merged_{pair_id}.fit')
+          output_artifact = FileArtifact(filename, content_hash)
 
         output = Panel(mosaic_id=mosaic_id,
                        filter=filter,

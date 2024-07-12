@@ -1,6 +1,7 @@
 import ray
+import os
 
-from artifact import Artifact
+from artifact import Artifact, CacheArtifact, FileArtifact, read_artifact, write_artifact
 from context import context
 from dependency_graph import Graph, print_graph
 from image_previews import array_to_png
@@ -8,7 +9,7 @@ import subframe_selection
 from .classes import Panel
 from .merge_ops import make_merge_ops
 from .viewbox import compute_mosaic_viewbox
-from .placement import mosaic_by_coordinates
+from .placement import mosaic_by_coordinates, mosaic_by_coordinates_artifacts
 
 
 def build_mosaic_subgraph(mode, mosaic_id):
@@ -63,18 +64,17 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
     stack_id = next(iter(stacks_for_filter))
 
     best_light_frame = _get_best_light_frame(stack_id)
-    input_artifact = Artifact(filename=best_light_frame.filename,
-                              content_hash=best_light_frame.content_hash)
+    input_artifact = FileArtifact(best_light_frame.filename,
+                                  best_light_frame.content_hash)
     placement_task = (mosaic_by_coordinates, mode, mosaic_id, stack_id,
                       input_artifact)
     graph[placement_task] = [viewbox_task]
 
-    # TODO: This goes outside the artifacts workflow.
-    placed_image_key = ('placed_image', mosaic_id, stack_id,
-                        best_light_frame.content_hash)
+    placed_artifact = mosaic_by_coordinates_artifacts(mode, mosaic_id, stack_id,
+                                                      input_artifact)[0]
     panel = Panel(tile_indices=tile_indices,
                   content_hash=best_light_frame.content_hash,
-                  input_artifact=Artifact(key=placed_image_key))
+                  input_artifact=placed_artifact)
 
     from_task[panel] = placement_task
     panels[tile_indices] = panel
@@ -111,24 +111,39 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
 
 
 @ray.remote
-def done(mode, mosaic_id, filter, final_key):
+def done(mode, mosaic_id, filter, final_artifact):
   mosaic = context.mosaics[mosaic_id]
 
-  print(f'Merging {mosaic} mode {mode} is done, final_key is {final_key}')
+  print(f'### Merging {mosaic} mode {mode} is done, '
+        f'final_artifact is {final_artifact}')
 
-  assert type(final_key) is list
-  assert len(final_key) == 1
-  final_key = final_key[0]
+  assert type(final_artifact) is list
+  assert len(final_artifact) == 1
+  final_artifact = final_artifact[0]
 
   # If none of the preceding tasks ran, they will all return None. This is
   # expected, but maybe weird.
-  if final_key is None:
+  if final_artifact is None:
     return
 
-  # assert final_key is not None
+  assert isinstance(final_artifact, Artifact)
 
   # TODO: This goes outside the artfact framework
-  output_key = ('mosaic_thumbnail_image', mode, mosaic_id, filter,
-                mosaic.content_hash)
-  context[output_key] = array_to_png(context[final_key])
-  print(f'### Wrote key {output_key}')
+  # output_key = ('mosaic_thumbnail_image', mode, mosaic_id, filter,
+  #               mosaic.content_hash)
+  # context[output_key] = array_to_png(context[final_key])
+  # print(f'### Wrote key {output_key}')
+
+  if mode == 'subframe':
+    image, header = read_artifact(final_artifact)
+    header['CONTHASH'] = mosaic.content_hash
+    output_artifact = CacheArtifact(
+        ('mosaic_thumbnail_image', mode, mosaic_id, filter))
+    write_artifact(output_artifact, image, header)
+  elif mode == 'master':
+    filename = os.path.join(context.output_dir, 'Mosaics', mosaic.name,
+                            f'final_merged.fit')
+    image, header = read_artifact(final_artifact)
+    header['CONTHASH'] = mosaic.content_hash
+    output_artifact = FileArtifact(filename, mosaic.content_hash)
+    write_artifact(output_artifact, image, header)
