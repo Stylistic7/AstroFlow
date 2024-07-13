@@ -1,7 +1,7 @@
 import ray
 import os
 
-from artifact import Artifact, CacheArtifact, FileArtifact, read_artifact, write_artifact
+from artifact import Artifact, CacheArtifact, FileArtifact, read_artifact, write_artifact, artifact_exists
 from context import context
 from dependency_graph import Graph, print_graph
 from image_previews import array_to_png
@@ -64,8 +64,14 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
     stack_id = next(iter(stacks_for_filter))
 
     best_light_frame = _get_best_light_frame(stack_id)
+    print(f'### best_light_frame', best_light_frame)
     input_artifact = FileArtifact(best_light_frame.filename,
                                   best_light_frame.content_hash)
+
+    # TODO: This assert might be expensive.
+    assert artifact_exists(
+        input_artifact), f'artifact {input_artifact} does not exist'
+
     placement_task = (mosaic_by_coordinates, mode, mosaic_id, stack_id,
                       input_artifact)
     graph[placement_task] = [viewbox_task]

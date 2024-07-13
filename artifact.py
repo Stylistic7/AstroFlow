@@ -77,6 +77,8 @@ def _(artifact: FileArtifact):
   print(f'### read_artifact_image artifact {artifact}')
   if artifact.content_hash:
     content_hash = get_content_hash(artifact.filename)
+    print(f'### read_artifact_image filename {artifact.filename} has '
+          f'content_hash {content_hash}')
 
     if content_hash != artifact.content_hash:
       raise WrongContentHashException(
@@ -169,7 +171,10 @@ def _(artifact: FileArtifact):
     return False
 
   if artifact.content_hash is not None:
-    if get_content_hash(artifact.filename) != artifact.content_hash:
+    content_hash = get_content_hash(artifact.filename)
+    print(f'### filename content_hash {content_hash} '
+          f'artifact content_hash {artifact.content_hash}')
+    if content_hash != artifact.content_hash:
       return False
 
   return True

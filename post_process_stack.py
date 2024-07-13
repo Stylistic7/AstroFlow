@@ -1,7 +1,7 @@
 import ray
 import os
 
-from artifact import Artifact
+from artifact import FileArtifact
 from context import context
 from decorators import saves_artifacts
 import pix
@@ -27,8 +27,8 @@ def _post_process_stack(image):
 def post_process_stack_artifacts(stack_id, *args):
   stacks = context.stacks
   return [
-      Artifact(content_hash=stacks[stack_id].content_hash,
-               filename=f'stack_{stack_id}_post_processed.fit')
+      FileArtifact(f'stack_{stack_id}_post_processed.fit',
+                   stacks[stack_id].content_hash)
   ]
 
 

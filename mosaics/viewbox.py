@@ -62,6 +62,8 @@ def compute_mosaic_viewbox(mode, mosaic_id):
 
   viewbox = dict(dest_xs=dest_xs, dest_ys=dest_ys, ras=ras, decs=decs)
 
+  # TODO: This is sort of abusing the Artifact system. Maybe there can be
+  # another kind of Artifact that is free-form (not FITS image).
   key = next(iter(compute_mosaic_viewbox_artifacts(mode, mosaic_id))).key
   context[key] = viewbox
   print(f'### Wrote key {key}')
