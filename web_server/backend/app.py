@@ -24,6 +24,8 @@ import state_actor
 import constellations
 import image_previews
 from cache import cache
+from artifact import read_artifact_image, CacheArtifact
+from image_previews import array_to_png
 
 import plotly.express as px
 import plotly.figure_factory as ff
@@ -352,11 +354,11 @@ def mosaic_thumbnail_image_for_filter(mosaic_id, filter):
   print('### mosaic', mosaic)
 
   for mode in ['master', 'subframe']:
-    key = ('mosaic_thumbnail_image', mode, mosaic_id, filter,
-           mosaic.content_hash)
+    key = ('mosaic_thumbnail_image', mode, mosaic_id, filter)
     if key in cache:
+      image = read_artifact_image(CacheArtifact(key))
       buffer = io.BytesIO()
-      buffer.write(cache[key])
+      buffer.write(array_to_png(image))
       buffer.seek(0)
       return flask.send_file(buffer, mimetype='image/png')
 
