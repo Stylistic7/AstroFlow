@@ -24,7 +24,7 @@ def _post_process_stack(image):
   return image
 
 
-def post_process_stack_artifacts(stack_id, *args):
+def post_process_stack_artifacts(stack_id):
   stacks = context.stacks
   return [
       FileArtifact(f'stack_{stack_id}_post_processed.fit',
@@ -34,17 +34,12 @@ def post_process_stack_artifacts(stack_id, *args):
 
 # TODO: Hash the script used to do the post-processing, and do not repeat
 # the post-processing when a file with that hash already exists.
-# TODO: This should not need the `input_files` arg; it should get the artifact
-# from stack_files_artifacts() using only the stack_id.
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
 @saves_artifacts(post_process_stack_artifacts)
-def post_process_stack(stack_id, input_files):
-  assert len(input_files) == 1
-  input_file = input_files[0]
-
-  print(f'post_process_stack, stack_id {stack_id} input_file {input_file}')
-  content_hash, filename = input_file
-  print(f'post_process_stack, stack_id {stack_id} filename {filename}')
-  result = _post_process_stack(filename)
-  print(f'post_process_stack, stack_id {stack_id} returning {result}')
-  return result
+def post_process_stack(stack_id):
+  print(f'post_process_stack, stack_id {stack_id}')
+  # content_hash, filename = input_file
+  # print(f'post_process_stack, stack_id {stack_id} filename {filename}')
+  # result = _post_process_stack(filename)
+  # print(f'post_process_stack, stack_id {stack_id} returning {result}')
+  # return result

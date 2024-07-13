@@ -9,7 +9,6 @@ from stack_identification import identify_stacks
 from target_identification import group_stacks_into_targets
 from calibration_frames import identify_calibration_stacks, associate_with_stacks
 from image_previews import scatter_stack_thumbnails
-from stacking import scatter_stack_subframes
 from mosaics.identification import identify_mosiacs
 from mosaics.compute_graph import build_mosaic_subgraph
 from dependency_graph import Graph, make_graph_from_list, print_graph

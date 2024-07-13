@@ -63,8 +63,9 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
 
     stack_id = next(iter(stacks_for_filter))
 
+    # TODO: This artifact is only good for subframe mode. For master mode,
+    # stacks need to be post-processed.
     best_light_frame = _get_best_light_frame(stack_id)
-    print(f'### best_light_frame', best_light_frame)
     input_artifact = FileArtifact(best_light_frame.filename,
                                   best_light_frame.content_hash)
 
@@ -72,6 +73,9 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
     assert artifact_exists(
         input_artifact), f'artifact {input_artifact} does not exist'
 
+    # TODO: In master mode, the placement_task needs to depend on both the
+    # viewbox_task, and also the post_processing task. The post_processing
+    # task in turn depends on the stack_files task.
     placement_task = (mosaic_by_coordinates, mode, mosaic_id, stack_id,
                       input_artifact)
     graph[placement_task] = [viewbox_task]
