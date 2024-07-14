@@ -100,6 +100,8 @@ def _setup_composite_stack(stack_id, tmp_dir):
   stacks = context.stacks
   stack = stacks[stack_id]
 
+  first_filename = None
+
   for i, substack_id in enumerate(stack.contents):
     substack = stacks[substack_id]
 
@@ -108,7 +110,12 @@ def _setup_composite_stack(stack_id, tmp_dir):
 
     hashes = substack.frames + list(substack.dependencies.values())
     filenames = get_metadata(hashes, transform_fn=lambda i: i.filename)
+    if first_filename is None:
+      first_filename = filenames[0]
+
     _symlink_frames(filenames, run_dir)
+
+  return first_filename
 
 
 def _setup_leaf_stack(stack_id, tmp_dir):
@@ -116,6 +123,8 @@ def _setup_leaf_stack(stack_id, tmp_dir):
 
   filenames = get_metadata(stack.frames, transform_fn=lambda i: i.filename)
   _symlink_frames(filenames, tmp_dir)
+
+  return filenames[0]
 
 
 # TODO: Include a timeout so a single bad stack (e.g. one that needs interactive
@@ -134,11 +143,28 @@ def stack_files(stack_id):
 
   assert stack.frames or stack.contents
 
+  metadata = {
+      'IMAGETYP': f'Master {stack.image_type}',
+      'CONTHASH': stack.content_hash
+  }
+
+  dest_filename = _output_filename(stack, context.output_dir)
+  os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
+
   with tempfile.TemporaryDirectory() as tmp_dir:
     if stack.frames:
-      _setup_leaf_stack(stack_id, tmp_dir)
+      first_filename = _setup_leaf_stack(stack_id, tmp_dir)
     else:
-      _setup_composite_stack(stack_id, tmp_dir)
+      first_filename = _setup_composite_stack(stack_id, tmp_dir)
+
+    if context.mock_stacking:
+      file_io.conversion.convert_fits_to_xisf(first_filename,
+                                              dest_filename,
+                                              add_noise=True,
+                                              metadata=metadata)
+      print(f'### Mocked stacking, wrote filename {dest_filename} '
+            f'with metadata {metadata}')
+      return FileArtifact(dest_filename, stack.content_hash)
 
     print(f'### Running _run_wbpp for stack {stack}')
     _run_wbpp([], dir=tmp_dir, outputDirectory=tmp_dir)
@@ -151,16 +177,14 @@ def stack_files(stack_id):
     for f in os.listdir(master_dir):
       print(f'  {f}')
 
-    dest_filename = _output_filename(stack, context.output_dir)
-    os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
-
     wbpp_masters = list(
         str(f.absolute()) for f in Path(master_dir).rglob("master*.xisf"))
     wbpp_masters.sort(key=lambda x: os.path.getmtime(x))
     filename = wbpp_masters[-1]
     print(f'last modified WBPP master {filename} -> {dest_filename}')
-    file_io.xisf_file_io.add_xisf_metadata(
-        filename, dest_filename, {'IMAGETYP': f'Master {stack.image_type}'})
+    file_io.xisf_file_io.add_xisf_metadata(filename, dest_filename, metadata)
+
+    return FileArtifact(dest_filename, stack.content_hash)
 
   # key = ('stack_files', stack_id)
   # context.set(key, stack.content_hash)

@@ -16,6 +16,7 @@ class TestStacking(unittest.TestCase):
   def setUp(self):
     self.input_dir_obj, self.output_dir_obj = make_test_context()
     context.regroup = True
+    context.mock_stacking = True
 
   def tearDown(self):
     self.input_dir_obj.cleanup()
