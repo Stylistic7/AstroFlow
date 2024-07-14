@@ -228,7 +228,8 @@ def create_flat_correction_thumbnails(stack_id):
 
   width = context.subframe_thumbnail_width
   rotate = light_frame.plate_solution.rotation_angle < 0.0
-  light_image = resize_array(read_image(light_frame.filename), width)
+  light_image = (resize_array(read_image(light_frame.filename),
+                              width)).astype(np.float32)
 
   metadata = get_metadata_for_stack(stack_id)
 
@@ -244,19 +245,22 @@ def create_flat_correction_thumbnails(stack_id):
   bias_frame = bias_image = None
   if 'bias' in dependencies:
     bias_frame = first_frame(dependencies['bias'])
-    bias_image = resize_array(read_image(bias_frame.filename), width)
+    bias_image = (resize_array(read_image(bias_frame.filename),
+                               width)).astype(np.float32)
 
   dark_frame = dark_image = None
   if 'dark' in dependencies:
     dark_frame = first_frame(dependencies['dark'])
-    dark_image = resize_array(read_image(dark_frame.filename), width)
+    dark_image = (resize_array(read_image(dark_frame.filename),
+                               width)).astype(np.float32)
 
   for flat_stack_id in flat_stack_ids:
     if flat_stack_id in thumbnails:
       continue
 
     flat_frame = first_frame(flat_stack_id)
-    flat_image = resize_array(read_image(flat_frame.filename), width)
+    flat_image = (resize_array(read_image(flat_frame.filename),
+                               width)).astype(np.float32)
 
     thumbnail = array_to_png(
         _make_thumbnail(light_frame, light_image, bias_frame, bias_image,
