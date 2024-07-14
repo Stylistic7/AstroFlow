@@ -1,6 +1,7 @@
 import ray
 import os
 
+import file_io
 from artifact import FileArtifact
 from context import context
 from decorators import saves_artifacts
@@ -20,26 +21,46 @@ _CONTENT_HASH_KEY = 'XISF:AstroFlow:StackContentHash'
 # TODO: Find a way to disable these during tests.
 @pix.PixInsight()
 def _post_process_stack(image):
-  # return pix.BlurXTerminator(image)
-  return image
+  return pix.BlurXTerminator(image)
 
 
-def post_process_stack_artifacts(stack_id):
-  stacks = context.stacks
-  return [
-      FileArtifact(f'stack_{stack_id}_post_processed.fit',
-                   stacks[stack_id].content_hash)
-  ]
+def post_process_stack_artifacts(stack_id, input_artifacts):
+  stack = context.stacks[stack_id]
+  filename = os.path.join(context.output_dir, 'Stacks', stack.target, 'masters',
+                          f'stack_{stack_id}_post_processed.fit')
+  return [FileArtifact(filename, stack.content_hash)]
 
 
 # TODO: Hash the script used to do the post-processing, and do not repeat
 # the post-processing when a file with that hash already exists.
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
 @saves_artifacts(post_process_stack_artifacts)
-def post_process_stack(stack_id):
-  print(f'post_process_stack, stack_id {stack_id}')
-  # content_hash, filename = input_file
-  # print(f'post_process_stack, stack_id {stack_id} filename {filename}')
-  # result = _post_process_stack(filename)
-  # print(f'post_process_stack, stack_id {stack_id} returning {result}')
-  # return result
+def post_process_stack(stack_id, input_artifacts):
+  print(f'post_process_stack, stack_id {stack_id} '
+        f'input_artifacts {input_artifacts}')
+
+  stack = context.stacks[stack_id]
+
+  # TODO: These assertions should all be handled by the type system.
+  assert type(input_artifacts) is list
+  assert len(input_artifacts) == 1
+  input_artifact = input_artifacts[0]
+  assert type(input_artifact) is FileArtifact
+
+  output_images = _post_process_stack(input_artifact.filename)
+  print('### output_images', output_images)
+  assert type(output_images) is list
+  assert len(output_images) == 1
+  output_image = output_images[0]
+  assert type(output_image) is str
+
+  output_artifacts = post_process_stack_artifacts(stack_id, input_artifacts)
+  assert type(output_artifacts) is list
+  assert len(output_artifacts) == 1
+  output_artifact = output_artifacts[0]
+  assert type(output_artifact) is FileArtifact
+
+  metadata = {'CONTHASH': stack.content_hash}
+  file_io.xisf_file_io.add_xisf_metadata(output_image, output_artifact.filename,
+                                         metadata)
+  print(f'### Wrote post-processed artifact {output_artifact}')
