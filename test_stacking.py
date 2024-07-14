@@ -16,7 +16,7 @@ class TestStacking(unittest.TestCase):
   def setUp(self):
     self.input_dir_obj, self.output_dir_obj = make_test_context()
     context.regroup = True
-    context.mock_stacking = True
+    context.mock_stacking = False
 
   def tearDown(self):
     self.input_dir_obj.cleanup()
@@ -37,13 +37,14 @@ class TestStacking(unittest.TestCase):
     self.assertEqual(len(context.stacks), 2)
     self.assertEqual(len(context.targets), 1)
 
-    for stack_id, stack in context.stacks.items():
-      print(f'### {stack}')
-
     context.shopping_cart = [('stack', '4475e17d7341cbd0')]
 
     graph = build_compute_graph()
     run_graph(graph, debug=True)
+
+    filenames = list(
+        str(f) for f in Path(context.output_dir).rglob("*post_processed.fit"))
+    self.assertEqual(len(filenames), 1)
 
 
 if __name__ == "__main__":
