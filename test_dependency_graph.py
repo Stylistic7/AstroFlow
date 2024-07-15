@@ -326,6 +326,19 @@ class TestDependencyGraph(unittest.TestCase):
     self.assertEqual(results.num_nodes_run, 10)
     self.assertEqual(results.max_parallelism_seen, 7)
 
+  def test_dynamic_subgraph_completion_with_peer(self):
+    context.foo = 13
+
+    graph = {my_last_task: [scatter, increment_foo], scatter: {}}
+    results = run_graph(graph)
+
+    self.assertEqual(context.foo, 14)
+    self.assertEqual(results[scatter], 21)
+    self.assertEqual(results[my_last_task], 24)
+
+    self.assertEqual(results.num_nodes_run, 11)
+    self.assertEqual(results.max_parallelism_seen, 7)
+
   def test_dynamic_subgraph_with_context_completion(self):
     # Same as `test_dynamic_subgraph_completion` but with the addition of
     # context. The context returned by the final node of the dynamic subgraph

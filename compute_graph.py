@@ -10,19 +10,14 @@ from target_identification import group_stacks_into_targets
 from calibration_frames import identify_calibration_stacks, associate_with_stacks
 from image_previews import scatter_stack_thumbnails
 from mosaics.identification import identify_mosiacs
-from mosaics.compute_graph import build_mosaic_subgraph
+from mosaics.mosaic_compute_graph import build_mosaic_subgraph
 from dependency_graph import Graph, make_graph_from_list, print_graph
 from post_process_target import post_process_target
 from post_process_stack import post_process_stack
 from post_process_mosaic import post_process_mosaic
 from suggestions import make_suggestions
-# from step_mosaic import merge_mosaic, build_mosaic_merge_graph
 from stacking import stack_files
 from post_process_stack import post_process_stack_artifacts
-
-# @ray.remote
-# def gather():
-#   pass
 
 
 @ray.remote

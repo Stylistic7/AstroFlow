@@ -36,6 +36,7 @@ class TestMosaic(unittest.TestCase):
     self.input_dir_obj, self.output_dir_obj = make_test_context()
 
     context.regroup = True
+    context.master_mosaic_samples = 1000
 
   def tearDown(self):
     self.input_dir_obj.cleanup()
@@ -134,6 +135,9 @@ class TestMosaic(unittest.TestCase):
     fits_files = list(Path(context.output_dir).rglob('final_merged.fit'))
     self.assertEqual(len(fits_files), 1)
     print(f'### Found final merged file {fits_files[0]}')
+
+    shutil.copy(fits_files[0],
+                os.path.join('/tmp/foo', os.path.basename(fits_files[0])))
 
 
 if __name__ == "__main__":

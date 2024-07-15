@@ -10,6 +10,8 @@ from .classes import Panel
 from .merge_ops import make_merge_ops
 from .viewbox import compute_mosaic_viewbox
 from .placement import mosaic_by_coordinates, mosaic_by_coordinates_artifacts
+from post_process_stack import post_process_stack_artifacts
+import compute_graph as parent_compute_graph
 
 
 def build_mosaic_subgraph(mode, mosaic_id):
@@ -65,9 +67,12 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
 
     # TODO: This artifact is only good for subframe mode. For master mode,
     # stacks need to be post-processed.
-    best_light_frame = _get_best_light_frame(stack_id)
-    input_artifact = FileArtifact(best_light_frame.filename,
-                                  best_light_frame.content_hash)
+    if mode == 'subframe':
+      best_light_frame = _get_best_light_frame(stack_id)
+      input_artifact = FileArtifact(best_light_frame.filename,
+                                    best_light_frame.content_hash)
+    elif mode == 'master':
+      input_artifact = post_process_stack_artifacts(stack_id, None)[0]
 
     # TODO: This assert might be expensive.
     assert artifact_exists(
@@ -78,7 +83,14 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
     # task in turn depends on the stack_files task.
     placement_task = (mosaic_by_coordinates, mode, mosaic_id, stack_id,
                       input_artifact)
-    graph[placement_task] = [viewbox_task]
+
+    if mode == 'subframe':
+      graph[placement_task] = [viewbox_task]
+    elif mode == 'master':
+      graph[placement_task] = [
+          viewbox_task,
+          parent_compute_graph.build_stack_subgraph(stack_id)
+      ]
 
     placed_artifact = mosaic_by_coordinates_artifacts(mode, mosaic_id, stack_id,
                                                       input_artifact)[0]
