@@ -11,9 +11,10 @@ from .merge_ops import make_merge_ops
 from .viewbox import compute_mosaic_viewbox
 from .placement import mosaic_by_coordinates, mosaic_by_coordinates_artifacts
 from post_process_stack import post_process_stack_artifacts
-import compute_graph as parent_compute_graph
+from stack_compute_graph import build_stack_subgraph
 
 
+@ray.remote
 def build_mosaic_subgraph(mode, mosaic_id):
   print(f'### build_mosaic_subgraph mode {mode} mosaic_id {mosaic_id}')
 
@@ -25,7 +26,9 @@ def build_mosaic_subgraph(mode, mosaic_id):
 
   # TODO: Iterate over the actual filters in the mosaic.
   for filter in ['H', 'S', 'O', 'L', 'R', 'G', 'B']:
-    graph |= build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task)
+    graph |= ray.get(
+        build_mosaic_filter_subgraph.remote(mode, mosaic_id, filter,
+                                            viewbox_task))
 
   return graph
 
@@ -38,6 +41,7 @@ def _get_best_light_frame(stack_id):
   return light_frames_by_stars[0]
 
 
+@ray.remote
 def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
   print(f'### build_mosaic_filter_subgraph mode {mode} '
         f'mosaic_id {mosaic_id} filter {filter}')
@@ -74,10 +78,6 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
     elif mode == 'master':
       input_artifact = post_process_stack_artifacts(stack_id, None)[0]
 
-    # TODO: This assert might be expensive.
-    assert artifact_exists(
-        input_artifact), f'artifact {input_artifact} does not exist'
-
     # TODO: In master mode, the placement_task needs to depend on both the
     # viewbox_task, and also the post_processing task. The post_processing
     # task in turn depends on the stack_files task.
@@ -85,17 +85,14 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
                       input_artifact)
 
     if mode == 'subframe':
-      graph[placement_task] = [viewbox_task]
+      graph[placement_task] = {viewbox_task}
     elif mode == 'master':
-      graph[placement_task] = [
-          viewbox_task,
-          parent_compute_graph.build_stack_subgraph(stack_id)
-      ]
+      graph[placement_task] = {viewbox_task, (build_stack_subgraph, stack_id)}
 
     placed_artifact = mosaic_by_coordinates_artifacts(mode, mosaic_id, stack_id,
                                                       input_artifact)[0]
     panel = Panel(tile_indices=tile_indices,
-                  content_hash=best_light_frame.content_hash,
+                  content_hash=placed_artifact.content_hash,
                   input_artifact=placed_artifact)
 
     from_task[panel] = placement_task

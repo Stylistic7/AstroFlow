@@ -128,6 +128,8 @@ class TestMosaic(unittest.TestCase):
     graph = compute_graph.build_compute_graph()
     run_graph(graph)
 
+    shutil.copytree(context.output_dir, '/tmp/foo', dirs_exist_ok=True)
+
     self.assertEqual(len(context.targets), 4)
     self.assertEqual(len(context.mosaics), 1)
     mosaic = next(iter(context.mosaics.values()))
@@ -135,9 +137,6 @@ class TestMosaic(unittest.TestCase):
     fits_files = list(Path(context.output_dir).rglob('final_merged.fit'))
     self.assertEqual(len(fits_files), 1)
     print(f'### Found final merged file {fits_files[0]}')
-
-    shutil.copy(fits_files[0],
-                os.path.join('/tmp/foo', os.path.basename(fits_files[0])))
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ from target_identification import group_stacks_into_targets
 from calibration_frames import identify_calibration_stacks, associate_with_stacks
 from image_previews import scatter_stack_thumbnails
 from mosaics.identification import identify_mosiacs
-from mosaics.mosaic_compute_graph import build_mosaic_subgraph
+from mosaics.compute_graph import build_mosaic_subgraph
 from dependency_graph import Graph, make_graph_from_list, print_graph
 from post_process_target import post_process_target
 from post_process_stack import post_process_stack
@@ -18,6 +18,7 @@ from post_process_mosaic import post_process_mosaic
 from suggestions import make_suggestions
 from stacking import stack_files
 from post_process_stack import post_process_stack_artifacts
+from stack_compute_graph import build_stack_subgraph
 
 
 @ray.remote
@@ -39,7 +40,7 @@ def build_preview_graph():
   graph[stack_thumbnail_task] = []
 
   for mosaic_id in context.mosaics.keys():
-    graph |= build_mosaic_subgraph('subframe', mosaic_id)
+    graph |= ray.get(build_mosaic_subgraph.remote('subframe', mosaic_id))
 
   print('### Finished build_preview_graph, graph is:')
   print_graph(graph)
@@ -47,24 +48,7 @@ def build_preview_graph():
   return graph
 
 
-# TODO: Many stacks share dependencies. Create a graph such that these
-# dependencies are represented by shared nodes in a graph, then remove the
-# gross check for existing master files in stacking.py.
-def build_stack_subgraph(stack_id):
-  stacks = context.stacks
-  stack = stacks[stack_id]
-
-  graph = Graph()
-  graph[(stack_files,
-         stack_id)] = {(stack_files, d)
-                       for substack in stack.contents
-                       for d in stacks[substack].dependencies.values()
-                       if stacks[d].image_type != 'light'}
-  graph[(post_process_stack, stack_id)] = {(stack_files, stack_id)}
-
-  return graph
-
-
+@ray.remote
 def build_target_subgraph(target_id):
   print(f'### build_target_subgraph target_id {target_id}')
   targets = context.targets
@@ -87,11 +71,11 @@ def build_main_processing_graph():
   graph = Graph()
   for type, id in shopping_cart:
     if type == 'stack':
-      graph |= build_stack_subgraph(id)
+      graph |= ray.get(build_stack_subgraph.remote(id))
     elif type == 'target':
-      graph |= build_target_subgraph(id)
+      graph |= ray.get(build_target_subgraph.remote(id))
     if type == 'mosaic':
-      graph |= build_mosaic_subgraph('master', id)
+      graph |= ray.get(build_mosaic_subgraph.remote('master', id))
 
   print(f'### Finished composing main processing graph')
   print_graph(graph)

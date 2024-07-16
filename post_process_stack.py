@@ -27,7 +27,7 @@ def _post_process_stack(image):
 def post_process_stack_artifacts(stack_id, input_artifacts):
   stack = context.stacks[stack_id]
   filename = os.path.join(context.output_dir, 'Stacks', stack.target, 'masters',
-                          f'stack_{stack_id}_post_processed.fit')
+                          f'stack_{stack_id}_post_processed.xisf')
   return [FileArtifact(filename, stack.content_hash)]
 
 
