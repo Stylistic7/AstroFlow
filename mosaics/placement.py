@@ -31,7 +31,7 @@ def mosaic_by_coordinates_artifacts(mode, mosaic_id, stack_id, input_artifact):
   elif mode == 'master':
     mosaic = context.mosaics[mosaic_id]
     filename = os.path.join(context.output_dir, 'Mosaics', mosaic.name,
-                            f'placed_{input_artifact.content_hash}.fit')
+                            f'placed_{mosaic_id}_{stack_id}.fit')
     return [FileArtifact(filename, input_artifact.content_hash)]
 
 

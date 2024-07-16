@@ -5,6 +5,7 @@ import file_io
 from artifact import FileArtifact
 from context import context
 from decorators import saves_artifacts
+from stacking import stack_files_artifacts
 import pix
 
 # TODO: Put this some place generally-accessible.
@@ -24,7 +25,7 @@ def _post_process_stack(image):
   return pix.BlurXTerminator(image)
 
 
-def post_process_stack_artifacts(stack_id, input_artifacts):
+def post_process_stack_artifacts(stack_id):
   stack = context.stacks[stack_id]
   filename = os.path.join(context.output_dir, 'Stacks', stack.target, 'masters',
                           f'stack_{stack_id}_post_processed.xisf')
@@ -35,17 +36,11 @@ def post_process_stack_artifacts(stack_id, input_artifacts):
 # the post-processing when a file with that hash already exists.
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
 @saves_artifacts(post_process_stack_artifacts)
-def post_process_stack(stack_id, input_artifacts):
-  print(f'post_process_stack, stack_id {stack_id} '
-        f'input_artifacts {input_artifacts}')
-
+def post_process_stack(stack_id):
+  print(f'post_process_stack, stack_id {stack_id}')
   stack = context.stacks[stack_id]
 
-  # TODO: These assertions should all be handled by the type system.
-  assert type(input_artifacts) is list
-  assert len(input_artifacts) == 1
-  input_artifact = input_artifacts[0]
-  assert type(input_artifact) is FileArtifact
+  input_artifact = stack_files_artifacts(stack_id)[0]
 
   output_images = _post_process_stack(input_artifact.filename)
   print('### output_images', output_images)
@@ -54,7 +49,7 @@ def post_process_stack(stack_id, input_artifacts):
   output_image = output_images[0]
   assert type(output_image) is str
 
-  output_artifacts = post_process_stack_artifacts(stack_id, input_artifacts)
+  output_artifacts = post_process_stack_artifacts(stack_id)
   assert type(output_artifacts) is list
   assert len(output_artifacts) == 1
   output_artifact = output_artifacts[0]

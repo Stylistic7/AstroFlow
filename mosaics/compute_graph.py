@@ -66,7 +66,6 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
     if len(stacks_for_filter) > 1:
       print(f'### WARNING: Multiple stacks for filter {filter} '
             f'for target {targets[target_id]}')
-
     stack_id = next(iter(stacks_for_filter))
 
     # TODO: This artifact is only good for subframe mode. For master mode,
@@ -76,7 +75,7 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
       input_artifact = FileArtifact(best_light_frame.filename,
                                     best_light_frame.content_hash)
     elif mode == 'master':
-      input_artifact = post_process_stack_artifacts(stack_id, None)[0]
+      input_artifact = post_process_stack_artifacts(stack_id)[0]
 
     # TODO: In master mode, the placement_task needs to depend on both the
     # viewbox_task, and also the post_processing task. The post_processing
@@ -145,14 +144,10 @@ def done(mode, mosaic_id, filter, final_artifact):
   if final_artifact is None:
     return
 
-  assert isinstance(final_artifact, Artifact)
+  assert isinstance(final_artifact,
+                    Artifact), f'final_artifact has type {type(final_artifact)}'
 
   # TODO: This goes outside the artfact framework
-  # output_key = ('mosaic_thumbnail_image', mode, mosaic_id, filter,
-  #               mosaic.content_hash)
-  # context[output_key] = array_to_png(context[final_key])
-  # print(f'### Wrote key {output_key}')
-
   if mode == 'subframe':
     image, header = read_artifact(final_artifact)
     header['CONTHASH'] = mosaic.content_hash
@@ -161,7 +156,7 @@ def done(mode, mosaic_id, filter, final_artifact):
     write_artifact(output_artifact, image, header)
   elif mode == 'master':
     filename = os.path.join(context.output_dir, 'Mosaics', mosaic.name,
-                            f'final_merged.fit')
+                            f'final_merged_{mosaic_id}_{filter}.fit')
     image, header = read_artifact(final_artifact)
     header['CONTHASH'] = mosaic.content_hash
     output_artifact = FileArtifact(filename, mosaic.content_hash)

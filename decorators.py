@@ -3,7 +3,6 @@ from functools import wraps
 
 from artifact import Artifact, artifact_exists
 from context import context
-from file_io.generic import get_content_hash
 
 
 def saves_artifacts(artifacts_fn, in_test=False, debug=True):

@@ -75,7 +75,7 @@ def make_merge_ops(mode, mosaic_id, filter, panels, from_task):
               ('merged_images', mode, mosaic_id, filter, pair_id), content_hash)
         elif mode == 'master':
           filename = os.path.join(context.output_dir, 'Mosaics', mosaic.name,
-                                  f'merged_{pair_id}.fit')
+                                  f'merged_{mosaic_id}_{filter}_{pair_id}.fit')
           output_artifact = FileArtifact(filename, content_hash)
 
         output = Panel(mosaic_id=mosaic_id,
