@@ -8,7 +8,7 @@ from make_test_context import make_test_context
 from context import context
 from compute_graph import build_compute_graph
 from dependency_graph import run_graph
-from make_test_frames import copy_testdata_frames
+from make_test_frames import copy_testdata_frames, make_synthetic_frames
 
 
 class TestStacking(unittest.TestCase):
@@ -28,13 +28,42 @@ class TestStacking(unittest.TestCase):
                              2024, 2, 5, 16, 29, 43),
                          dest_dir=context.input_dirs[0],
                          add_noise=False)
+    make_synthetic_frames(prefix='dark',
+                          number=5,
+                          image_type='Dark',
+                          fill_value=100,
+                          instrument='ZWO ASI6200MM Pro',
+                          width_pixels=9576,
+                          height_pixels=6388,
+                          temperature=-15,
+                          dest_dir=context.input_dirs[0])
+    make_synthetic_frames(prefix='bias',
+                          number=7,
+                          image_type='Bias',
+                          fill_value=50,
+                          instrument='ZWO ASI6200MM Pro',
+                          width_pixels=9576,
+                          height_pixels=6388,
+                          temperature=-15,
+                          dest_dir=context.input_dirs[0])
+    make_synthetic_frames(prefix='flat_run_0',
+                          number=11,
+                          image_type='Flat',
+                          start_datetime=datetime.datetime(
+                              2024, 2, 5, 18, 29, 43),
+                          fill_value=50,
+                          instrument='ZWO ASI6200MM Pro',
+                          width_pixels=9576,
+                          height_pixels=6388,
+                          temperature=-15,
+                          dest_dir=context.input_dirs[0])
 
     # Running the graph the first time, with an empty shopping cart, should
     # produce all the subframe previews for the stack.
     graph = build_compute_graph()
     run_graph(graph, debug=True)
 
-    self.assertEqual(len(context.stacks), 2)
+    self.assertEqual(len(context.stacks), 5)
     self.assertEqual(len(context.targets), 1)
 
     context.shopping_cart = [('stack', '4475e17d7341cbd0')]
@@ -43,7 +72,7 @@ class TestStacking(unittest.TestCase):
     run_graph(graph, debug=True)
 
     filenames = list(
-        str(f) for f in Path(context.output_dir).rglob("*post_processed.fit"))
+        str(f) for f in Path(context.output_dir).rglob("*post_processed.xisf"))
     self.assertEqual(len(filenames), 1)
 
 

@@ -13,6 +13,7 @@ import pix
 import position_string
 import file_io
 from dependency_graph import Graph
+from image_metadata.image_metadata import compute_image_metadata
 from image_metadata.actor import get_metadata
 
 _CONTENT_HASH_KEY = 'CONTHASH'
@@ -96,9 +97,17 @@ def stack_files_artifacts(stack_id: str):
   return [FileArtifact(dest_filename, stack.content_hash)]
 
 
+# TODO: This function should call _setup_leaf_stack for its leaves.
 def _setup_composite_stack(stack_id, tmp_dir):
   stacks = context.stacks
   stack = stacks[stack_id]
+
+  metadata = get_metadata(
+      stack.all_frames(),
+      post_fn=lambda images: {i.content_hash: i for i in images})
+
+  max_num_stars = max([i.plate_solution.num_stars for i in metadata.values()])
+  print(f'### max_num_stars {max_num_stars}')
 
   first_filename = None
 
@@ -108,8 +117,20 @@ def _setup_composite_stack(stack_id, tmp_dir):
     run_dir = os.path.join(tmp_dir, f'RUN_{i}')
     os.makedirs(run_dir, exist_ok=True)
 
-    hashes = substack.frames + list(substack.dependencies.values())
+    # Select only the best subframes.
+    hashes = [
+        h for h in substack.frames
+        if metadata[h].plate_solution.num_stars > 0.75 * max_num_stars
+    ]
+    print(f'### Selected {len(hashes)} out of {len(substack.frames)} subframes')
+
+    # Add any dependent stacks (e.g. calibration stacks).
+    print(f'### dependent stack hashes {substack.dependencies.values()}')
+    hashes += list(substack.dependencies.values())
+
     filenames = get_metadata(hashes, transform_fn=lambda i: i.filename)
+    assert len(hashes) == len(filenames)
+
     if first_filename is None:
       first_filename = filenames[0]
 
@@ -184,129 +205,7 @@ def stack_files(stack_id):
     print(f'last modified WBPP master {filename} -> {dest_filename}')
     file_io.xisf_file_io.add_xisf_metadata(filename, dest_filename, metadata)
 
+    # TODO: This should be in the compute graph, not shoe-horned in here.
+    ray.get(compute_image_metadata.remote(dest_filename))
+
     return FileArtifact(dest_filename, stack.content_hash)
-
-  # key = ('stack_files', stack_id)
-  # context.set(key, stack.content_hash)
-  # result = stack.content_hash, dest_filename
-  # print(f'### stack_files returning result {result}')
-  # return result
-
-  # dest_filename = _output_filename(stack, context.output_dir)
-  # os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
-
-  # metadata = {
-  #     'IMAGETYP': f'Master {stack.image_type}',
-  # }
-
-  # # TODO: Put subframe selection here.
-
-  # with tempfile.TemporaryDirectory() as tmp_dir:
-  #   first_hash = None
-  #   if stack.frames:
-  #     first_hash = stack.frames[0]
-
-  #   hashes = stack.frames + list(stack.dependencies.values())
-  #   print(f'### Stack frames and dependencies: {hashes}')
-  #   filenames = [_find_filename(h) for h in hashes]
-  #   for h, f in zip(hashes, filenames):
-  #     print(f'hash {h} -> filename {f}')
-  #   assert None not in filenames
-  #   _symlink_frames(filenames, tmp_dir)
-
-  #   for i, substack_id in enumerate(stack.contents):
-  #     substack = stacks[substack_id]
-
-  #     run_dir = os.path.join(tmp_dir, f'RUN_{i}')
-  #     os.makedirs(run_dir, exist_ok=True)
-
-  #     if not first_hash and substack.frames:
-  #       first_hash = substack.frames[0]
-
-  #     hashes = substack.frames + list(substack.dependencies.values())
-  #     print(f'### Substack frames and dependencies: {hashes}')
-  #     filenames = [_find_filename(h) for h in hashes]
-  #     for h, f in zip(hashes, filenames):
-  #       print(f'hash {h} -> filename {f}')
-
-  #     assert None not in filenames
-  #     _symlink_frames(filenames, run_dir)
-
-  #   if context.mock_stacking:
-  #     file_io.conversion.convert_fits_to_xisf(image_hashes[first_hash],
-  #                                             dest_filename,
-  #                                             add_noise=True,
-  #                                             metadata=metadata)
-  #     print(f'### Mocked stacking, wrote filename {dest_filename} '
-  #           f'with metadata {metadata}')
-  #     result = stack.content_hash, dest_filename
-  #     print(f'### stack_files returning result {result}')
-  #     return result
-
-  #   print(f'### Running _run_wbpp for stack {stack}')
-  #   # TODO: Putting [] here for `filenames` is a wart.
-  #   # pix.WeightedBatchPreprocessing([], dir=tmp_dir, outputDirectory=tmp_dir)
-  #   _run_wbpp([], dir=tmp_dir, outputDirectory=tmp_dir)
-
-  #   master_dir = os.path.join(tmp_dir, 'master')
-  #   if not os.path.exists(master_dir):
-  #     exception = Exception("WBPP did not produce an output master dir")
-  #     print(f'Exception {exception}')
-  #     key = ('stack_files', stack_id)
-  #     context.set(key, exception)
-  #     return None, None
-
-  #   print('WBPP master dir contains:')
-  #   for f in os.listdir(master_dir):
-  #     print(f'  {f}')
-
-  #   wbpp_masters = list(
-  #       str(f.absolute()) for f in Path(master_dir).rglob("master*.xisf"))
-  #   wbpp_masters.sort(key=lambda x: os.path.getmtime(x))
-  #   filename = wbpp_masters[-1]
-  #   print(f'last modified WBPP master {filename} -> {dest_filename}')
-  #   file_io.xisf_file_io.add_xisf_metadata(filename, dest_filename, metadata)
-
-  #   key = ('stack_files', stack_id)
-  #   context.set(key, stack.content_hash)
-  #   result = stack.content_hash, dest_filename
-  #   print(f'### stack_files returning result {result}')
-  #   return result
-
-
-# TODO: Should this function ignore the stack if it has already been stacked?
-# Users may want to force re-stacking with new external software.
-# @ray.remote
-# def scatter_stack_subframes(stack_id):
-#   stacks = context.stacks
-#   stack = stacks[stack_id]
-#   print(f'scatter_stack_subframes for stack {stack}')
-
-#   def master_exists(stack_id):
-#     result = len(
-#         find_matching_masters(stacks[stack_id], image_hashes, fits_headers)) > 0
-#     return result
-
-#   def previously_had_exception(stack_id):
-#     return type(context.get(('stack_files', stack_id), None)) is Exception
-
-#   if master_exists(stack_id):
-#     print(f'### stack {stack} master exists')
-#     return {}
-
-#   if previously_had_exception(stack_id):
-#     print(f'### stack {stack} previously had exception')
-#     return {}
-
-#   # TODO: This is gross. Many different stacks have the same dependencies, but
-#   # they are never considered together in one big graph, where they can be
-#   # automatically de-duped.
-#   graph = {}
-#   graph[(stack_files,
-#          stack_id)] = [(stack_files, d)
-#                        for substack in stack.contents
-#                        for d in stacks[substack].dependencies.values()
-#                        if stacks[d].image_type != 'light' and
-#                        not master_exists(d) and not previously_had_exception(d)]
-
-#   return Graph(graph)

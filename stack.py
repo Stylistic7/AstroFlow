@@ -9,6 +9,7 @@ from hashing import hash_list
 from image_metadata.actor import get_metadata
 from context import context
 import time
+from copy import copy
 
 FrameHash = NewType('FrameHash', str)
 StackHash = NewType('StackHash', str)
@@ -48,9 +49,16 @@ class Stack:
   projected_footprints: Optional[dict[str, Polygon]] = None
   selection_criterion: Optional[tuple[str, float]] = None
 
-  def all_frames(self) -> list[str]:
+  def all_frames(self, include_dependencies=False) -> list[str]:
     stacks = context.stacks
-    return self.frames + [f for s in self.contents for f in stacks[s].frames]
+    all_frames = copy(self.frames)
+    for substack_id in self.contents:
+      substack = stacks[substack_id]
+      all_frames.extend(substack.frames)
+      if include_dependencies:
+        all_frames.extend(substack.dependencies.values())
+
+    return all_frames
 
   def update_metadata(self, metadata=None) -> None:
     if self.stable_hash:
