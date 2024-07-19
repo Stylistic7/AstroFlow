@@ -37,11 +37,6 @@ def merge_images(mode: str, mosaic_id: str, input_0: Artifact,
     output_image = np.maximum(image_0, image_1)
     output_image[overlap] = (image_0[overlap] + image_1[overlap]) / 2.0
 
-    key = output.key
-
-    filename = '/tmp/foo/' + '_'.join(key) + '.png'
-    open(filename, 'wb').write(array_to_png(output_image))
-
     write_artifact(output, output_image)
     return output
 

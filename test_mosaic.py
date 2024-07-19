@@ -109,8 +109,6 @@ class TestMosaic(unittest.TestCase):
     key = ('mosaic_thumbnail_image', 'subframe', mosaic.stable_hash, 'H')
     self.assertTrue(context.contains(key))
 
-    # open('/tmp/mosaic_thumbnail_image.png', 'wb').write(context[key])
-
     self.assertTrue(
         mosaic.stable_hash in [t.stable_hash for t in context.targets.values()])
     self.assertEqual(
@@ -124,7 +122,7 @@ class TestMosaic(unittest.TestCase):
 
     # TODO: Put per-mosaic overrides of the post-processing scripts, to turn
     # them off, for speed.
-
+    print('### First pass done; starting pass with shopping cart')
     graph = compute_graph.build_compute_graph()
     run_graph(graph)
 
@@ -134,7 +132,7 @@ class TestMosaic(unittest.TestCase):
     self.assertEqual(len(context.mosaics), 1)
     mosaic = next(iter(context.mosaics.values()))
 
-    fits_files = list(Path(context.output_dir).rglob('final_merged.fit'))
+    fits_files = list(Path(context.output_dir).rglob('final_merged*.fit'))
     self.assertEqual(len(fits_files), 1)
     print(f'### Found final merged file {fits_files[0]}')
 

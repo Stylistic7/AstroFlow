@@ -102,6 +102,8 @@ def _setup_composite_stack(stack_id, tmp_dir):
   stacks = context.stacks
   stack = stacks[stack_id]
 
+  all_frames = stack.all_frames()
+  print('### stack.all_frames()', all_frames)
   metadata = get_metadata(
       stack.all_frames(),
       post_fn=lambda images: {i.content_hash: i for i in images})

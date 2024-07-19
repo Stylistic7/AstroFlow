@@ -482,6 +482,8 @@ def populate_context():
   context.subframe_thumbnail_width = 1200
   context.master_thumbnail_width = 2160
   context.subframe_mosaic_samples = 1000
+
+  # TODO: Should be dynamic based on the viewbox size.
   context.master_mosaic_samples = 5000
 
   # TODO: Don't just use the first input directory.

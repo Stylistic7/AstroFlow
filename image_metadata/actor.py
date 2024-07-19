@@ -30,9 +30,11 @@ class MetadataActor:
       transform_fn,
       post_fn,
   ):
+    num_keys = 0
     result = []
     for key in cache.iterkeys():
       if type(key) is tuple and key[0] == 'image_metadata':
+        num_keys += 1
         if input_images is not None and key[1] not in input_images:
           continue
 
@@ -41,8 +43,10 @@ class MetadataActor:
           result.append(transform_fn(image))
 
     if input_images is not None:
-      print(f'### get_metadata {len(input_images)} requested, '
-            f'{len(result)} returned')
+      print(
+          f'### get_metadata {num_keys} found, {len(input_images)} requested, '
+          f'{len(result)} returned')
+      assert len(result) == len(input_images)
 
     return post_fn(result)
 
@@ -77,12 +81,8 @@ def get_metadata_for_stack(stack_id):
   # typically calibration stacks).
   if 'bias' in dependencies:
     hashes.extend(stacks[dependencies['bias']].frames)
-    print(f"### added {len(stacks[dependencies['bias']].frames)} bias frames "
-          f"to hashes; 03eebcd7c879410e present {'03eebcd7c879410e' in hashes}")
   if 'dark' in dependencies:
     hashes.extend(stacks[dependencies['dark']].frames)
-    print(f"### added {len(stacks[dependencies['dark']].frames)} dark frames "
-          f"to hashes; 03eebcd7c879410e present {'03eebcd7c879410e' in hashes}")
 
   # Include every known flat calibration stack, just for completeness.
   for s in stacks.values():
@@ -90,9 +90,6 @@ def get_metadata_for_stack(stack_id):
         s.camera == stack.camera and s.filter == stack.filter):
       hashes.extend(s.frames)
 
-  print(f"### get_metadata_for_stack returning metadata for "
-        f"{len(hashes)} hashes; 03eebcd7c879410e present "
-        f"{'03eebcd7c879410e' in hashes}")
   return get_metadata(
       hashes, post_fn=lambda images: {i.content_hash: i for i in images})
 
