@@ -43,15 +43,21 @@ if __name__ == '__main__':
   #     'stack_thumbnail_image', 'stack_thumbnail_video', 'trial_flat_correction'
   # ]
 
-  allow_list = ['image_metadata']
+  # allow_list = ['image_metadata']
 
+  # for k in cache.iterkeys():
+  #   # print('looking at key', k)
+  #   if any(a in k for a in allow_list):
+  #     continue
+
+  #   try:
+  #     print('deleting key', k)
+  #     del cache[k]
+  #   except:
+  #     pass
+
+  delete_list = ['mosaic_viewbox', 'merged_images']
   for k in cache.iterkeys():
-    # print('looking at key', k)
-    if any(a in k for a in allow_list):
-      continue
-
-    try:
+    if any(d in k for d in delete_list):
       print('deleting key', k)
       del cache[k]
-    except:
-      pass

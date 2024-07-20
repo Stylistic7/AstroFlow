@@ -484,7 +484,7 @@ def populate_context():
   context.subframe_mosaic_samples = 1000
 
   # TODO: Should be dynamic based on the viewbox size.
-  context.master_mosaic_samples = 5000
+  context.master_mosaic_samples = 10000
 
   # TODO: Don't just use the first input directory.
   if context.download:

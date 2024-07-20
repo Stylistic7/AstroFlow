@@ -26,6 +26,23 @@ def mosaic_by_coordinates_artifacts(mode, mosaic_id, stack_id, input_artifact):
     return [FileArtifact(filename, input_artifact.content_hash)]
 
 
+def _compute_ras_decs(mode, viewbox):
+  if mode == 'subframe':
+    num_samples_x = context.subframe_mosaic_samples
+  elif mode == 'master':
+    num_samples_x = context.master_mosaic_samples
+
+  resolution = viewbox.x_span / num_samples_x
+  num_samples_y = int(viewbox.y_span / resolution)
+  xx, yy = np.meshgrid(
+      np.linspace(viewbox.x_min, viewbox.x_min + viewbox.x_span, num_samples_x),
+      np.linspace(viewbox.y_min, viewbox.y_min + viewbox.y_span, num_samples_y))
+  ras, decs = viewbox.projection.unproject(xx, yy)
+  ras, decs = np.degrees(ras), np.degrees(decs)
+
+  return ras, decs
+
+
 # Function pseudocode:
 #
 # Creates the output image as defined by the given grid of RAs and Decs.
@@ -40,7 +57,7 @@ def mosaic_by_coordinates_artifacts(mode, mosaic_id, stack_id, input_artifact):
 #
 # TODO: Provide some feedback on progress.
 # TODO: Store these on disk and read them back when unchanged.
-@ray.remote
+@ray.remote(scheduling_strategy="SPREAD", num_cpus=6)
 @saves_artifacts(mosaic_by_coordinates_artifacts)
 def mosaic_by_coordinates(mode, mosaic_id, stack_id, input_artifact):
   print(f'### Entering mosaic_by_coordinates '
@@ -50,12 +67,6 @@ def mosaic_by_coordinates(mode, mosaic_id, stack_id, input_artifact):
                                                            mosaic_id))).key
   viewbox = context.get(viewbox_key)
   assert viewbox
-
-  # TODO: Remove the dest_x and dest_y fields from the viewbox.
-  ras = viewbox['ras']
-  decs = viewbox['decs']
-
-  projected_image = np.zeros(ras.shape)
 
   # TODO: It's a bit weird to do plate-solving here. This should all be in a
   # separate function outside of this file.
@@ -86,8 +97,14 @@ def mosaic_by_coordinates(mode, mosaic_id, stack_id, input_artifact):
                                    bounds_error=False,
                                    fill_value=np.nan)
 
+  ras, decs = _compute_ras_decs(mode, viewbox)
+  projected_image = np.zeros(ras.shape)
+
   source_xs, source_ys = wcs.all_world2pix(ras, decs, 1, quiet=True)
+  del ras, decs
+
   projected_image = interp((source_ys, source_xs))
+  del source_ys, source_xs
 
   # TODO: This is surprisingly slow, dominating the projection for fine
   # output resolutions.

@@ -2,6 +2,16 @@ from dataclasses import dataclass
 from collections import namedtuple
 
 from artifact import Artifact
+from projection import Projection
+
+
+@dataclass(frozen=True)
+class Viewbox:
+  projection: Projection
+  x_min: float
+  x_span: float
+  y_min: float
+  y_span: float
 
 
 @dataclass(frozen=True)
