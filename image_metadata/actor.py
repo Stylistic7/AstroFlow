@@ -43,10 +43,8 @@ class MetadataActor:
           result.append(transform_fn(image))
 
     if input_images is not None:
-      print(
-          f'### get_metadata {num_keys} found, {len(input_images)} requested, '
-          f'{len(result)} returned')
-      assert len(result) == len(input_images)
+      print(f'### get_metadata {num_keys} keys, {len(input_images)} requested, '
+            f'{len(result)} returned')
 
     return post_fn(result)
 

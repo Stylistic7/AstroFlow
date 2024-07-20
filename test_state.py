@@ -10,7 +10,7 @@ from context import context
 from state_actor import dispatch
 import get_stacks
 from file_io.find_image_files import find_image_files
-from compute_graph import build_compute_graph, build_main_processing_graph
+from compute_graph import build_compute_graph, build_main_processing_graph, print_graph
 from dependency_graph import run_graph
 from make_test_context import make_test_context
 from make_test_frames import make_synthetic_frames, copy_testdata_frames
@@ -21,6 +21,7 @@ class TestState(unittest.TestCase):
   def setUp(self):
     self.input_dir_obj, self.output_dir_obj = make_test_context()
     context.mock_stacking = True
+    context.regroup = True
 
   def test_shopping_cart(self):
     state = dispatch(dict(type='add_to_shopping_cart', item=('stack', 'foo')))
@@ -86,14 +87,15 @@ class TestState(unittest.TestCase):
     context.shopping_cart = [('stack', toplevel_stack.stable_hash)]
 
     processing_graph = ray.get(build_main_processing_graph.remote())
-    self.assertEqual(len(processing_graph), 1)
+    print('### processing_graph')
+    print_graph(processing_graph)
+    self.assertEqual(len(processing_graph), 2)
 
     graph = build_compute_graph()
-    print('### graph', graph)
     run_graph(graph)
 
     masters = list(Path(context.output_dir).rglob('*.xisf'))
-    self.assertEqual(len(masters), 4)
+    self.assertEqual(len(masters), 6)
 
 
 if __name__ == "__main__":

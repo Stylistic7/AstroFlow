@@ -67,12 +67,10 @@ class TestMosaic(unittest.TestCase):
     mosaic = next(iter(context.mosaics.values()))
     print(f'### There is one mosaic, {mosaic}')
 
-    ha_key = ('mosaic_thumbnail_image', 'subframe', mosaic.stable_hash, 'H',
-              mosaic.content_hash)
+    ha_key = ('mosaic_thumbnail_image', 'subframe', mosaic.stable_hash, 'H')
     self.assertFalse(context.contains(ha_key))
 
-    sii_key = ('mosaic_thumbnail_image', 'subframe', mosaic.stable_hash, 'S',
-               mosaic.content_hash)
+    sii_key = ('mosaic_thumbnail_image', 'subframe', mosaic.stable_hash, 'S')
     self.assertTrue(context.contains(sii_key))
 
   def test_orion_mosaic(self):

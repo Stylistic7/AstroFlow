@@ -49,7 +49,7 @@ class Stack:
   projected_footprints: Optional[dict[str, Polygon]] = None
   selection_criterion: Optional[tuple[str, float]] = None
 
-  def all_frames(self, include_dependencies=False) -> list[str]:
+  def all_frames(self, include_dependencies=False) -> list[FrameHash]:
     stacks = context.stacks
     all_frames = copy(self.frames)
     for substack_id in self.contents:

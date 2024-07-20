@@ -6,7 +6,7 @@ import unittest
 import ray
 import astropy.io.fits as pyfits  # type: ignore
 
-from artifact import Artifact
+from artifact import FileArtifact, CacheArtifact
 from make_test_context import make_test_context
 from context import context
 from decorators import saves_artifacts
@@ -16,11 +16,10 @@ from hashing import hash_list
 # This function should not care about where the final output directory is;
 # it is only concerned with the relative path inside that dir.
 def foo_artifacts(mosaic_id, filter):
+  filename = os.path.join(context.output_dir,
+                          f'master_light_{mosaic_id}_{filter}.fit')
   content_hash = hash_list([mosaic_id, filter])
-  return [
-      Artifact(content_hash=content_hash,
-               filename=f'master_light_{mosaic_id}_{filter}.fit')
-  ]
+  return [FileArtifact(filename=filename, content_hash=content_hash)]
 
 
 @ray.remote
@@ -39,7 +38,7 @@ def foo(mosaic_id, filter):
 
 
 def bar_artifacts(mosaic_id, filter):
-  return [Artifact(key=('bar', mosaic_id, filter))]
+  return [CacheArtifact(key=('bar', mosaic_id, filter))]
 
 
 @ray.remote

@@ -20,6 +20,7 @@ class TestComputeGraph(unittest.TestCase):
   def setUp(self):
     self.input_dir_obj, self.output_dir_obj = make_test_context()
     context.mock_stacking = True
+    context.regroup = True
 
   def tearDown(self):
     self.input_dir_obj.cleanup()
@@ -95,31 +96,11 @@ class TestComputeGraph(unittest.TestCase):
 
     context.shopping_cart = [('stack', toplevel_stack.stable_hash)]
 
-    processing_graph = compute_graph.build_main_processing_graph()
+    processing_graph = ray.get(
+        compute_graph.build_main_processing_graph.remote())
     print_graph(processing_graph)
 
     self.assertEqual(len(processing_graph), 2)
-
-  def test_orion_mosaic(self):
-    add_orion_mosaic_images()
-
-    # Running the graph the first time, with an empty shopping cart, should
-    # produce all the subframe previews for the stacks, targets, and mosaic.
-    graph = compute_graph.build_compute_graph()
-    print_graph(graph)
-    run_graph(graph)
-
-    mosaics = context.mosaics
-    self.assertEqual(len(mosaics), 1)
-    mosaic = next(iter(mosaics.values()))
-
-    print(f'### found mosaic {mosaic}')
-    context.shopping_cart = [('mosaic', mosaic.stable_hash)]
-
-    processing_graph = compute_graph.build_main_processing_graph()
-    print('### processing_graph is')
-    print_graph(processing_graph)
-    run_graph(processing_graph)
 
 
 if __name__ == '__main__':

@@ -1,10 +1,13 @@
 import ray_local
 
+import ray
 import unittest
 import time
 import datetime
 
 import clustering
+from dependency_graph import run_graph
+from image_metadata.image_metadata import scatter_compute_image_metadata
 from image_metadata.image_types import is_light_frame, is_dark_frame
 from make_test_context import make_test_context
 from orion_mosaic import add_orion_mosaic_images
@@ -90,6 +93,9 @@ class TestMetadataActor(unittest.TestCase):
 
   def test_orion_mosaic(self):
     add_orion_mosaic_images()
+
+    graph = ray.get(scatter_compute_image_metadata.remote('input'))
+    run_graph(graph)
 
     result = get_metadata()
     self.assertEqual(len(result), 35)

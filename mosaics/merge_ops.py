@@ -31,8 +31,6 @@ def make_pairs(min_index, max_index, template):
 # TODO: Strongly-type this. Panels is a dictionary from tile indices to
 # Panel objects.
 def make_merge_ops(mode, mosaic_id, filter, panels, from_task):
-  mosaic = context.mosaics[mosaic_id]
-
   graph = Graph()
   merge_ops = []
 
@@ -74,6 +72,7 @@ def make_merge_ops(mode, mosaic_id, filter, panels, from_task):
           output_artifact = CacheArtifact(
               ('merged_images', mode, mosaic_id, filter, pair_id), content_hash)
         elif mode == 'master':
+          mosaic = context.mosaics[mosaic_id]
           filename = os.path.join(context.output_dir, 'Mosaics', mosaic.name,
                                   f'merged_{mosaic_id}_{filter}_{pair_id}.fit')
           output_artifact = FileArtifact(filename, content_hash)

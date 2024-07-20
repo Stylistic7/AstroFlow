@@ -126,10 +126,14 @@ def _setup_composite_stack(stack_id, tmp_dir):
     ]
     print(f'### Selected {len(hashes)} out of {len(substack.frames)} subframes')
 
+    if len(hashes) == 0:
+      continue
+
     # Add any dependent stacks (e.g. calibration stacks).
     print(f'### dependent stack hashes {substack.dependencies.values()}')
     hashes += list(substack.dependencies.values())
 
+    print('### hashes are', hashes)
     filenames = get_metadata(hashes, transform_fn=lambda i: i.filename)
     assert len(hashes) == len(filenames)
 
@@ -185,8 +189,12 @@ def stack_files(stack_id):
                                               dest_filename,
                                               add_noise=True,
                                               metadata=metadata)
-      print(f'### Mocked stacking, wrote filename {dest_filename} '
-            f'with metadata {metadata}')
+      print(f'### Mocked stacking, converted filename {first_filename} to '
+            f'filename {dest_filename} with metadata {metadata}')
+
+      # TODO: This should be in the compute graph, not shoe-horned in here.
+      ray.get(compute_image_metadata.remote(dest_filename))
+
       return FileArtifact(dest_filename, stack.content_hash)
 
     print(f'### Running _run_wbpp for stack {stack}')
