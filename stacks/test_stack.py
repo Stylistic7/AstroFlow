@@ -6,14 +6,14 @@ import numpy as np
 
 from context import context
 from stacks import Stack
-from testing.make_test_context import make_test_context
-from testing.make_test_frames import make_synthetic_frames, copy_testdata_frames
+from testing.test_context import make_test_context
+from testing.test_frames import make_synthetic_frames, copy_testdata_frames
 from dependency_graph import run_graph, make_graph_from_list
 from metadata.image_metadata import scatter_compute_image_metadata
 from spatial_association import find_components_by_cosine_similarity
 from stacks.identification import identify_stacks
 from calibration_frames import identify_calibration_stacks, associate_with_stacks
-from testing.make_test_context import make_test_context
+from testing.test_context import make_test_context
 from hashing import hash_list
 
 

@@ -9,7 +9,7 @@ import datetime
 
 import ray_init
 from context import context
-import step_download_asiair
+import download_asiair
 import autorun_log_analysis
 import compute_graph
 from dependency_graph import run_graph

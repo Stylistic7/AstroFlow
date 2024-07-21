@@ -4,13 +4,13 @@ import unittest
 import datetime
 
 from plate_solving import PlateSolution
-import make_test_frames
+from testing.test_frames import make_synthetic_frames
 
 
 class TestMakeTestFrames(unittest.TestCase):
 
   def test_one_perfectly_centered_image(self):
-    make_test_frames.make_synthetic_frames(number=1, prefix='foo', dither=0)
+    make_synthetic_frames(number=1, prefix='foo', dither=0)
 
     expected_fits_headers = {
         'foo_00000.fit': {

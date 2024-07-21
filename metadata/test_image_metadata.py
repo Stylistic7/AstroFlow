@@ -10,7 +10,7 @@ import os
 from context import context
 from metadata.image_metadata import scatter_compute_image_metadata
 from metadata.actor import get_metadata
-from testing.make_test_frames import make_synthetic_frames
+from testing.test_frames import make_synthetic_frames
 from dependency_graph import make_graph_from_list, run_graph
 
 

@@ -11,11 +11,11 @@ from pathlib import Path
 import shutil
 
 from context import context
-from make_testdata_cache import TESTDATA_CACHE_GZIP_FILENAME
-from testing.make_test_frames import copy_testdata_frames
+from testing.testdata_cache import TESTDATA_CACHE_GZIP_FILENAME
+from testing.test_frames import copy_testdata_frames
 import compute_graph
 from dependency_graph import run_graph
-from testing.make_test_context import make_test_context
+from testing.test_context import make_test_context
 from hashing import hash_list
 
 
@@ -23,14 +23,14 @@ class TestMosaic(unittest.TestCase):
 
   def setUp(self):
     # Copy everything from the testdata cache into the Ray cache.
-    self.testdata_cache_directory = tempfile.TemporaryDirectory()
-    file = tarfile.open(TESTDATA_CACHE_GZIP_FILENAME)
-    file.extractall(self.testdata_cache_directory.name)
-    file.close()
-    self.testdata_cache = diskcache.Cache(
-        os.path.join(self.testdata_cache_directory.name, 'cache'))
-    for key in self.testdata_cache.iterkeys():
-      context[key] = self.testdata_cache[key]
+    # self.testdata_cache_directory = tempfile.TemporaryDirectory()
+    # file = tarfile.open(TESTDATA_CACHE_GZIP_FILENAME)
+    # file.extractall(self.testdata_cache_directory.name)
+    # file.close()
+    # self.testdata_cache = diskcache.Cache(
+    #     os.path.join(self.testdata_cache_directory.name, 'cache'))
+    # for key in self.testdata_cache.iterkeys():
+    #   context[key] = self.testdata_cache[key]
 
     # Start with an empty context.
     self.input_dir_obj, self.output_dir_obj = make_test_context()

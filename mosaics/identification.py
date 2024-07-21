@@ -9,7 +9,7 @@ import random
 from context import context
 from mosaic import Mosaic
 import position_string
-import footprints
+from geometry import footprints
 from hashing import hash_list
 import units
 

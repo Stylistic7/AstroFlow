@@ -9,7 +9,7 @@ from context import context
 import clustering
 from hashing import hash_string
 import units
-import footprints
+import geometry.footprints as footprints
 from stacks import Stack, FrameHash
 import units
 from metadata.actor import get_metadata, cluster_by_header, sort_by_header

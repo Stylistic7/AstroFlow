@@ -1,7 +1,7 @@
 import numpy as np
 from astropy.coordinates import SkyCoord
 
-from projection import Projection
+from geometry.projection import Projection
 
 
 def equatorial_to_galactic(ra, dec):

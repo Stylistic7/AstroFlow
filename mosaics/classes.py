@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from collections import namedtuple
 
 from artifact import Artifact
-from projection import Projection
+from geometry.projection import Projection
 
 
 @dataclass(frozen=True)

@@ -4,11 +4,11 @@ import unittest
 import datetime
 from pathlib import Path
 
-from testing.make_test_context import make_test_context
+from testing.test_context import make_test_context
 from context import context
 from compute_graph import build_compute_graph
 from dependency_graph import run_graph
-from testing.make_test_frames import copy_testdata_frames, make_synthetic_frames
+from testing.test_frames import copy_testdata_frames, make_synthetic_frames
 
 
 class TestStacking(unittest.TestCase):

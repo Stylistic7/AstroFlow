@@ -1,7 +1,7 @@
 import numpy as np
 
-from projection import Projection
-from galactic import equatorial_to_galactic
+from geometry.projection import Projection
+from geometry.projections.galactic import equatorial_to_galactic
 
 
 class MollweideProjection(Projection):

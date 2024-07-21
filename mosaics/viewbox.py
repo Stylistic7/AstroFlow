@@ -4,10 +4,10 @@ import numpy as np
 from .classes import Viewbox
 from artifact import CacheArtifact
 from decorators import saves_artifacts
-import mercator
-import footprints
+from geometry.projections import mercator
+import geometry.footprints as footprints
 from context import context
-from projection import compute_viewbox
+from geometry.viewbox import compute_viewbox
 
 # def compute_viewbox(plate_solutions):
 #   ras = [f[0] for p in plate_solutions for f in p.footprint]

@@ -1,9 +1,10 @@
 import numpy as np
 
-from projection import Projection
+from geometry.projection import Projection
 
 
 class MercatorProjection(Projection):
+
   def __init__(self, lon_0=0):
     self.lon_0 = lon_0
 

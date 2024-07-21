@@ -4,7 +4,7 @@ import ray
 import metadata.image_types as image_types
 from metadata.actor import get_metadata
 import position_string
-import footprints
+from geometry import footprints
 from context import context
 import plate_solving
 

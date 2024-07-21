@@ -5,10 +5,10 @@ import unittest
 import datetime
 
 from context import context
-from testing.make_test_frames import copy_testdata_frames
+from testing.test_frames import copy_testdata_frames
 from compute_graph import build_compute_graph
 from dependency_graph import run_graph
-from testing.make_test_context import make_test_context
+from testing.test_context import make_test_context
 from hashing import hash_list
 
 

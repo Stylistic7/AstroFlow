@@ -9,7 +9,7 @@ import datetime
 import pytz
 from dataclasses import asdict
 
-from testing.make_test_frames import make_synthetic_frames, copy_testdata_frames
+from testing.test_frames import make_synthetic_frames, copy_testdata_frames
 from context import context
 from file_io.find_image_files import find_image_files
 from dependency_graph import run_graph, make_graph_from_list
@@ -17,7 +17,7 @@ from metadata.image_metadata import scatter_compute_image_metadata
 from spatial_association import find_components_by_cosine_similarity
 from stacks.identification import identify_stacks
 from calibration_frames import identify_calibration_stacks, associate_with_stacks
-from testing.make_test_context import make_test_context
+from testing.test_context import make_test_context
 from hashing import hash_list
 from get_stacks import get_toplevel_stacks, get_content_stacks_of_type
 from metadata.actor import get_metadata

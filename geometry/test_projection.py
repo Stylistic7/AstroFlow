@@ -2,12 +2,13 @@ import unittest
 import numpy as np
 import matplotlib.pyplot as plt
 
-import mercator
-import mollweide
-import sinusoidal
+from geometry.projections import mercator
+from geometry.projections import mollweide
+from geometry.projections import sinusoidal
 
 
 class TestProjection(unittest.TestCase):
+
   def test_mercator_whole_sphere(self, debug=False):
     proj = mercator.MercatorProjection(lon_0=0)
 

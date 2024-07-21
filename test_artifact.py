@@ -5,8 +5,8 @@ import unittest
 import numpy as np
 
 from context import context
-from testing.make_test_context import make_test_context
-from testing.make_test_frames import copy_testdata_frames
+from testing.test_context import make_test_context
+from testing.test_frames import copy_testdata_frames
 from artifact import FileArtifact, CacheArtifact, ArtifactNotFoundException, WrongContentHashException, read_artifact_header, read_artifact_image, write_artifact
 
 

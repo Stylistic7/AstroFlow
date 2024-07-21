@@ -2,11 +2,8 @@ import numpy as np
 from spherical_geometry.polygon import SphericalPolygon
 from shapely.geometry import Polygon
 
-from projection import compute_viewbox
-import mercator
-import sinusoidal
-import mollweide
-import galactic
+from geometry.viewbox import compute_viewbox
+from geometry.projections import mercator, sinusoidal, mollweide, galactic
 
 
 def radec_to_vector(ra, dec, degrees=True):

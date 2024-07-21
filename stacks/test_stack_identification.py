@@ -4,9 +4,9 @@ import ray
 import unittest
 import datetime
 
-from testing.make_test_context import make_test_context
+from testing.test_context import make_test_context
 from context import context
-from testing.make_test_frames import make_synthetic_frames
+from testing.test_frames import make_synthetic_frames
 from stacks.identification import identify_stacks
 from spatial_association import find_components_by_cosine_similarity
 from get_stacks import get_toplevel_stacks, get_content_stacks_of_type

@@ -2,7 +2,7 @@ import numpy as np
 from numpy import radians, degrees
 import os
 
-from distance import distance
+from geometry.distance import distance
 
 
 def _read_names_catalog():

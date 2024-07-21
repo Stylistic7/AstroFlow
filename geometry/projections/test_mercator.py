@@ -1,12 +1,13 @@
 import unittest
 import numpy as np
 
-import mercator
+from .mercator import MercatorProjection
 
 
 class TestMercatorProjection(unittest.TestCase):
+
   def setUp(self):
-    self.proj = mercator.MercatorProjection()
+    self.proj = MercatorProjection()
 
   def test_meridian(self):
     x, y = self.proj.project(np.pi, 0)

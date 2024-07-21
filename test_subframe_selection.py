@@ -2,17 +2,15 @@ import ray_local
 
 import datetime
 import unittest
-import tempfile
 import ray
 
 from context import context
-from cache import cache
-from testing.make_test_frames import make_synthetic_frames
+from testing.test_context import make_test_context
+from testing.test_frames import make_synthetic_frames
 from file_io.find_image_files import find_image_files
 from stacks.identification import identify_stacks
 from spatial_association import find_components_by_cosine_similarity
 import subframe_selection
-from testing.make_test_context import make_test_context
 from metadata.actor import get_metadata
 
 # TODO: These tests don't actually test the subframe selection at all. The
