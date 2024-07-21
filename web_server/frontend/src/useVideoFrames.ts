@@ -25,18 +25,17 @@ const useVideoFrames = (
         requestVideoFrameCallback: typeof requestAnimationFrame;
         cancelVideoFrameCallback: typeof cancelAnimationFrame;
       };
-      console.log('video', video);
-      console.log('video.requestVideoFrameCallback', video.requestVideoFrameCallback)
-      console.log('vid.requestVideoFrameCallback', vid.requestVideoFrameCallback);
       requestFrame = vid.requestVideoFrameCallback.bind(vid);
       cancelFrame = vid.cancelVideoFrameCallback.bind(vid);
-    } else {
-      console.log('Video element does not support requestVideoFrameCallback');
     }
 
     const callbackFrame = (now: number, metadata?: any) => {
-      const videoTime = metadata?.presentedFrames ?? video.currentTime;
-      // const videoTime = video.getVideoPlaybackQuality().totalVideoFrames;
+      console.log('now', now);
+      console.log('metadata?.mediaTime', metadata?.mediaTime);
+      console.log('video.currentTime', video.currentTime);
+      console.log('metadata', metadata);
+      console.log('video', video);
+      const videoTime = metadata?.mediaTime ?? video.currentTime;
       callbackRef.current(videoTime);
       frameId = requestFrame(callbackFrame);
     };

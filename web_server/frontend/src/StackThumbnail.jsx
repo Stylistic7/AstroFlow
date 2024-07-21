@@ -3,6 +3,7 @@ import useVideoFrames from "./useVideoFrames.ts";
 import ExposureDurationWidget from "./ExposureDurationWidget.jsx";
 import './Starmap.css';
 import AstroFlowContext from './AstroFlowContext.jsx';
+import { light } from "@mui/material/styles/createPalette";
 
 export default function StackThumbnail({ stack_id, width, handleClick }) {
 	const { stacks } = useContext(AstroFlowContext);
@@ -24,52 +25,16 @@ export default function StackThumbnail({ stack_id, width, handleClick }) {
 
 	const show_image = false;
 	const show_video = true;
+	const video_fps = 10;
 
 	const video_ref = useRef();
 
 	const [frameCount, setFrameCount] = useState(0);
 
-	const [sortedLightFrames, setSortedLightFrames] = React.useState([]);
-	const [selectedSubframes, setSelectedSubframes] = React.useState([]);
-	const [exposureDuration, setExposureDuration] = React.useState({});
+	const currentFrameIsSelected = true;
 
-	const fetchHtml = (stack_id) => {
-		console.log('fetchHtml');
-
-		fetch(`/get_sorted_light_frames/${stack_id}`)
-			.then((response) => {
-				return response.json();
-			})
-			.then((j) => {
-				console.log('get_sorted_light_frames', j);
-				setSortedLightFrames(j)
-			});
-
-		fetch(`/get_selected_subframes/${stack_id}`)
-			.then((response) => {
-				return response.json();
-			})
-			.then((j) => {
-				console.log('get_selected_subframes', j);
-				setSelectedSubframes(j);
-			});
-
-		fetch(`/get_exposure_duration/${stack_id}`)
-			.then((response) => {
-				return response.json();
-			})
-			.then((j) => {
-				console.log('get_exposure_duration', j);
-				setExposureDuration(j);
-			});
-	}
-
-	useEffect(() => {
-		fetchHtml(stack_id);
-	}, []);
-
-	const [video, setVideo] = useVideoFrames(frameCount => {
-		setFrameCount(frameCount);
+	const [video, setVideo] = useVideoFrames(mediaTime => {
+		setFrameCount(mediaTime * video_fps);
 	});
 
 	useEffect(() => {
@@ -78,11 +43,8 @@ export default function StackThumbnail({ stack_id, width, handleClick }) {
 
 	let light_frames = [];
 	for (let c of stack.contents) {
-		light_frames += stacks[c].frames;
+		light_frames.push(...stacks[c].frames);
 	}
-
-	const currentLightFrame = sortedLightFrames[frameCount];
-	const currentFrameIsSelected = selectedSubframes.indexOf(currentLightFrame) != -1;
 
 	// TODO: Display the progress bar as red during frames with too few stars.
 	return (
@@ -144,8 +106,8 @@ export default function StackThumbnail({ stack_id, width, handleClick }) {
 
 			<ExposureDurationWidget
 				key={`exposure_duration_${stack_id}`}
-				totalExposureDuration={exposureDuration['total_exposure_duration'] / 3600.0}
-				selectedExposureDuration={exposureDuration['selected_exposure_duration'] / 3600.0}
+				totalExposureDuration={stack.integration_s / 3600.0}
+				selectedExposureDuration={stack.integration_s / 3600.0}
 				stack={stack}
 				sx={{
 					position: "absolute",
@@ -173,6 +135,17 @@ export default function StackThumbnail({ stack_id, width, handleClick }) {
 					}}></div>
 				</div>
 			</div>
+
+			<div style={{
+				position: "absolute",
+				bottom: "5em",
+				left: "0",
+				width: "100%",
+			}}
+			>
+				<span>Frame count {frameCount}</span>
+			</div>
+
 		</div>
 	);
 }
