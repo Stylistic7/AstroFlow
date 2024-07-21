@@ -153,7 +153,6 @@ class TopologicalSorterWithStatus(graphlib.TopologicalSorter):
 
   def get_ready(self):
     ready_nodes = super().get_ready()
-    print('### underlying ts.get_ready()', ready_nodes)
 
     self.ready_nodes = set(ready_nodes)
     self.waiting_nodes -= self.ready_nodes
@@ -163,10 +162,7 @@ class TopologicalSorterWithStatus(graphlib.TopologicalSorter):
   def done(self, node):
     super().done(node)
     self.done_nodes.add(node)
-    print('### node', node, 'is done')
-    if node not in self.ready_nodes:
-      print(f'### node {node} is not in ready_nodes')
-    else:
+    if node in self.ready_nodes:
       self.ready_nodes.remove(node)
 
 
@@ -259,8 +255,6 @@ def run_graph(graph, status_fn=None, debug=False):
     max_parallelism_seen = max(len(ready), max_parallelism_seen)
 
     if status_fn:
-      print(f'### There are {len(active)} active and {len(completed)} '
-            f'completed subgraphs')
       status_fn(get_status())
 
     if debug:
