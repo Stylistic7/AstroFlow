@@ -8,9 +8,9 @@ import random
 import os
 
 from context import context
-from image_metadata.image_metadata import scatter_compute_image_metadata
-from image_metadata.actor import get_metadata
-from make_test_frames import make_synthetic_frames
+from metadata.image_metadata import scatter_compute_image_metadata
+from metadata.actor import get_metadata
+from testing.make_test_frames import make_synthetic_frames
 from dependency_graph import make_graph_from_list, run_graph
 
 

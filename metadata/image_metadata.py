@@ -6,12 +6,12 @@ import traceback
 from cache import cache
 from file_io.find_image_files import find_image_files
 from file_io.generic import read_header, get_content_hash
-import image_metadata.image_types as image_types
-from image_metadata.classes import ImageMetadata
+import metadata.image_types as image_types
+from metadata.classes import ImageMetadata
 import plate_solving
 from dependency_graph import Graph
 from context import context
-from image_metadata.actor import get_metadata
+from metadata.actor import get_metadata
 
 # TODO: I need to associate dark and flat frames *before* computing thumbnails.
 

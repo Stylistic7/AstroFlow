@@ -11,7 +11,7 @@ from .merge_ops import make_merge_ops
 from .viewbox import compute_mosaic_viewbox
 from .placement import mosaic_by_coordinates, mosaic_by_coordinates_artifacts
 from post_process_stack import post_process_stack_artifacts
-from stack_compute_graph import build_stack_subgraph
+from stacks.compute_graph import build_stack_subgraph
 
 
 @ray.remote

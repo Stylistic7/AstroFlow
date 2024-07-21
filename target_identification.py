@@ -9,7 +9,7 @@ import position_string
 from target import Target
 import footprints
 from hashing import hash_list
-from image_metadata.actor import get_metadata
+from metadata.actor import get_metadata
 
 
 @ray.remote

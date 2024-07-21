@@ -3,9 +3,9 @@ import itertools
 import os
 
 from context import context
-from image_metadata.image_metadata import scatter_compute_image_metadata
+from metadata.image_metadata import scatter_compute_image_metadata
 from spatial_association import find_components_by_cosine_similarity
-from stack_identification import identify_stacks
+from stacks.identification import identify_stacks
 from target_identification import group_stacks_into_targets
 from calibration_frames import identify_calibration_stacks, associate_with_stacks
 from image_previews import scatter_stack_thumbnails
@@ -16,9 +16,9 @@ from post_process_target import post_process_target
 from post_process_stack import post_process_stack
 from post_process_mosaic import post_process_mosaic
 from suggestions import make_suggestions
-from stacking import stack_files
+from stacks.stacking import stack_files
 from post_process_stack import post_process_stack_artifacts
-from stack_compute_graph import build_stack_subgraph
+from stacks.compute_graph import build_stack_subgraph
 
 
 @ray.remote

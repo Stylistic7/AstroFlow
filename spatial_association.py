@@ -1,8 +1,8 @@
 import numpy as np
 import ray
 
-import image_metadata.image_types as image_types
-from image_metadata.actor import get_metadata
+import metadata.image_types as image_types
+from metadata.actor import get_metadata
 import position_string
 import footprints
 from context import context

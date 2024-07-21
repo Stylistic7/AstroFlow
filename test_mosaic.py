@@ -12,10 +12,10 @@ import shutil
 
 from context import context
 from make_testdata_cache import TESTDATA_CACHE_GZIP_FILENAME
-from make_test_frames import copy_testdata_frames
+from testing.make_test_frames import copy_testdata_frames
 import compute_graph
 from dependency_graph import run_graph
-from make_test_context import make_test_context
+from testing.make_test_context import make_test_context
 from hashing import hash_list
 
 

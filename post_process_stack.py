@@ -5,7 +5,7 @@ import file_io
 from artifact import FileArtifact
 from context import context
 from decorators import saves_artifacts
-from stacking import stack_files_artifacts
+from stacks.stacking import stack_files_artifacts
 import pix
 
 # TODO: Put this some place generally-accessible.

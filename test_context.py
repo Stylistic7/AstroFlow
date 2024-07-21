@@ -9,9 +9,9 @@ import time
 
 from context import context
 from cache import cache
-from make_test_frames import make_synthetic_frames, copy_testdata_frames
-from make_test_context import make_test_context
-from image_metadata.image_types import is_light_frame, is_dark_frame
+from testing.make_test_frames import make_synthetic_frames, copy_testdata_frames
+from testing.make_test_context import make_test_context
+from metadata.image_types import is_light_frame, is_dark_frame
 
 
 @ray.remote

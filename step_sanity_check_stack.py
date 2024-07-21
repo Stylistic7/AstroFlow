@@ -1,7 +1,7 @@
 import numpy as np
 
 import file_io
-from stack import Stack
+from stacks import Stack
 from cache import cache
 from collections import Counter
 import itertools

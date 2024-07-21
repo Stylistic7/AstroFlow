@@ -9,9 +9,9 @@ from context import context
 from hashing import hash_string
 from file_io.generic import read_image
 import subframe_selection
-import stacking
+from stacks import stacking
 from dependency_graph import Graph
-from image_metadata.actor import get_metadata, get_metadata_for_stack
+from metadata.actor import get_metadata, get_metadata_for_stack
 
 # Every stack is going to have multiple levels of previews. I should disentangle
 # them. There will always be a subrame-based preview. The master-based preview
@@ -132,7 +132,6 @@ def _make_thumbnail(light_frame, light_image, bias_frame, bias_image,
                     where=flat_image != 0)
 
   if rotate:
-    print(f'### _make_thumbnail rotate {rotate}')
     image = np.rot90(image, 2)
 
   return autostretch(np.clip(image, 0.0, 1.0))
@@ -221,7 +220,6 @@ def create_flat_correction_thumbnails(stack_id):
   ]
 
   if all(f in thumbnails for f in flat_stack_ids):
-    # print(f'### All flat_correction_thumbnails exist for {stack}')
     return
 
   assert not stack.stable_hash
@@ -286,7 +284,6 @@ def create_stack_subframe_thumbnails(stack_id):
   stacks = context.stacks
   stack = stacks[stack_id]
   print(f'Entering create_stack_subframe_thumbnails() for stack {stack}')
-  print(f'### stack.contents {stack.contents}')
 
   # Don't make previews for calibration stacks.
   assert stack.stable_hash
@@ -306,7 +303,6 @@ def create_stack_subframe_thumbnails(stack_id):
   first_images = {}
 
   def get_first_image(stack_id):
-    print(f'### get_first_image {stack_id}')
     if not stack_id:
       return None
     elif stack_id in first_images:
@@ -336,7 +332,6 @@ def create_stack_subframe_thumbnails(stack_id):
     out = cv2.VideoWriter(video_filename, fourcc, 10.0, (width, height), False)
     for i, light_frame in enumerate(light_frames_by_stars):
       rotate = light_frame.plate_solution.rotation_angle < 0.0
-      print(f'### video frame {i} light_frame {light_frame} rotate {rotate}')
 
       light_image = resize_array(read_image(light_frame.filename),
                                  width).astype(np.float32)
@@ -352,17 +347,14 @@ def create_stack_subframe_thumbnails(stack_id):
       bias_frame = bias_image = None
       if 'bias' in dependencies:
         bias_frame, bias_image = get_first_image(dependencies['bias'])
-        print(f'### found bias_frame {bias_frame}')
 
       dark_frame = dark_image = None
       if 'dark' in dependencies:
         dark_frame, dark_image = get_first_image(dependencies['dark'])
-        print(f'### found dark_frame {dark_frame}')
 
       flat_frame = flat_image = None
       if 'flat' in dependencies:
         flat_frame, flat_image = get_first_image(dependencies['flat'])
-        print(f'### found flat_frame {flat_frame}')
 
       im = _make_thumbnail(light_frame, light_image, bias_frame, bias_image,
                            dark_frame, dark_image, flat_frame, flat_image,

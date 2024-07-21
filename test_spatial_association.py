@@ -5,11 +5,11 @@ import unittest
 from datetime import datetime, timedelta
 import ray
 
-from make_test_context import make_test_context
+from testing.make_test_context import make_test_context
 from context import context
-from make_test_frames import make_synthetic_frames
+from testing.make_test_frames import make_synthetic_frames
 from spatial_association import find_components_by_cosine_similarity
-from image_metadata.actor import get_metadata
+from metadata.actor import get_metadata
 
 
 def compute_hash_for_filename():

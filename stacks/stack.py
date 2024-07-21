@@ -6,7 +6,7 @@ import numpy as np
 import datetime
 from typing import NewType, Optional
 from hashing import hash_list
-from image_metadata.actor import get_metadata
+from metadata.actor import get_metadata
 from context import context
 import time
 from copy import copy

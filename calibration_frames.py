@@ -1,10 +1,10 @@
 import ray
 import numpy as np
 
-import image_metadata.image_types as image_types
+import metadata.image_types as image_types
 from context import context
-from stack import Stack
-from image_metadata.actor import get_metadata, group_by_header, cluster_by_header
+from stacks import Stack
+from metadata.actor import get_metadata, group_by_header, cluster_by_header
 import clustering
 
 

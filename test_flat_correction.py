@@ -6,9 +6,9 @@ import datetime
 
 from cache import cache
 from context import context
-from make_test_frames import make_synthetic_frames, copy_testdata_frames
-from make_test_context import make_test_context
-from stack_identification import identify_stacks
+from testing.make_test_frames import make_synthetic_frames, copy_testdata_frames
+from testing.make_test_context import make_test_context
+from stacks.identification import identify_stacks
 from spatial_association import find_components_by_cosine_similarity
 from get_stacks import get_toplevel_stacks, get_content_stacks_of_type
 from dependency_graph import run_graph

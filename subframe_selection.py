@@ -1,7 +1,7 @@
 import numpy as np
 import operator
 
-from image_metadata.actor import get_metadata
+from metadata.actor import get_metadata
 
 
 class StarCountFraction:

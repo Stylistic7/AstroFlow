@@ -10,9 +10,9 @@ import clustering
 from hashing import hash_string
 import units
 import footprints
-from stack import Stack, FrameHash
+from stacks import Stack, FrameHash
 import units
-from image_metadata.actor import get_metadata, cluster_by_header, sort_by_header
+from metadata.actor import get_metadata, cluster_by_header, sort_by_header
 
 
 def normalize_radians(x):

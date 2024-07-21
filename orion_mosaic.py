@@ -1,7 +1,7 @@
 import datetime
 
 from context import context
-from make_test_frames import copy_testdata_frames, make_synthetic_frames
+from testing.make_test_frames import copy_testdata_frames, make_synthetic_frames
 
 
 def add_orion_mosaic_images():

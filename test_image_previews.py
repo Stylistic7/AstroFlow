@@ -4,12 +4,12 @@ import datetime
 import unittest
 import datetime
 
-from make_test_frames import make_synthetic_frames, copy_testdata_frames
+from testing.make_test_frames import make_synthetic_frames, copy_testdata_frames
 from context import context
 from compute_graph import build_compute_graph
 from dependency_graph import run_graph
 from file_io.find_image_files import find_image_files
-from make_test_context import make_test_context
+from testing.make_test_context import make_test_context
 
 
 class TestImagePreviews(unittest.TestCase):

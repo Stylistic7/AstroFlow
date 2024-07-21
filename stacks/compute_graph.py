@@ -1,7 +1,7 @@
 import ray
 
 from context import context
-from stacking import stack_files
+from stacks.stacking import stack_files
 from post_process_stack import post_process_stack
 from dependency_graph import Graph
 

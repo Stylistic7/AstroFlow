@@ -4,13 +4,13 @@ import ray
 import unittest
 import datetime
 
-from make_test_context import make_test_context
+from testing.make_test_context import make_test_context
 from context import context
-from make_test_frames import make_synthetic_frames
-from stack_identification import identify_stacks
+from testing.make_test_frames import make_synthetic_frames
+from stacks.identification import identify_stacks
 from spatial_association import find_components_by_cosine_similarity
 from get_stacks import get_toplevel_stacks, get_content_stacks_of_type
-from image_metadata.actor import get_metadata
+from metadata.actor import get_metadata
 
 # TODO: I may need to separate the concepts of the diskcache-based global
 # context, and the context used in a Graph.

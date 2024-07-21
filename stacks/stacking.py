@@ -13,8 +13,8 @@ import pix
 import position_string
 import file_io
 from dependency_graph import Graph
-from image_metadata.image_metadata import compute_image_metadata
-from image_metadata.actor import get_metadata
+from metadata.image_metadata import compute_image_metadata
+from metadata.actor import get_metadata
 
 _CONTENT_HASH_KEY = 'CONTHASH'
 

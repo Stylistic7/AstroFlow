@@ -15,7 +15,7 @@ if not 'ASTROFLOW_MOCK_NAMESPACE' in os.environ:
   import ray
   from context import ContextActor
   from state_actor import StateActor
-  from image_metadata.actor import MetadataActor
+  from metadata.actor import MetadataActor
 
   ray.init(
       address='local',

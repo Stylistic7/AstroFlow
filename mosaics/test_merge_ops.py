@@ -8,16 +8,16 @@ import astropy.io.fits as pyfits  # type: ignore
 from artifact import Artifact
 
 from hashing import hash_list
-from make_test_context import make_test_context
+from testing.make_test_context import make_test_context
 from .merge_ops import make_merge_ops
 from .classes import MergeOp, Panel
 from post_process_stack import post_process_stack
 from decorators import saves_artifacts
 from context import context
-from stack import Stack
+from stacks import Stack
 from dependency_graph import run_graph, print_graph
 from artifact import CacheArtifact, FileArtifact, write_artifact
-from make_test_frames import make_synthetic_frames
+from testing.make_test_frames import make_synthetic_frames
 
 
 def _make_panel(id, content_hash=None, **kwargs):

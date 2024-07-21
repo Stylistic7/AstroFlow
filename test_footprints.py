@@ -9,14 +9,14 @@ import datetime
 from context import context
 from dependency_graph import run_graph, make_graph_from_list
 from footprints import project_footprint
-from make_test_frames import make_synthetic_frames
+from testing.make_test_frames import make_synthetic_frames
 from mosaics import identification
-from stack_identification import identify_stacks
+from stacks.identification import identify_stacks
 from target_identification import group_stacks_into_targets
 from spatial_association import find_components_by_cosine_similarity
-from image_metadata.image_metadata import scatter_compute_image_metadata
+from metadata.image_metadata import scatter_compute_image_metadata
 from calibration_frames import identify_calibration_stacks, associate_with_stacks
-from make_test_context import make_test_context
+from testing.make_test_context import make_test_context
 from mosaics.identification import identify_mosiacs
 import mercator
 

@@ -7,13 +7,13 @@ import ray
 
 from context import context
 from cache import cache
-from make_test_frames import make_synthetic_frames
+from testing.make_test_frames import make_synthetic_frames
 from file_io.find_image_files import find_image_files
-from stack_identification import identify_stacks
+from stacks.identification import identify_stacks
 from spatial_association import find_components_by_cosine_similarity
 import subframe_selection
-from make_test_context import make_test_context
-from image_metadata.actor import get_metadata
+from testing.make_test_context import make_test_context
+from metadata.actor import get_metadata
 
 # TODO: These tests don't actually test the subframe selection at all. The
 # stack identification step no longer eliminates bad frames from the stack.
