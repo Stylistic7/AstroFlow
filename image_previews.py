@@ -104,6 +104,9 @@ def _make_thumbnail(light_frame, light_image, bias_frame, bias_image,
                     dark_frame, dark_image, flat_frame, flat_image, rotate):
 
   if bias_image is None or dark_image is None or flat_image is None:
+    print('### no calibration images')
+    if rotate:
+      light_image = np.rot90(light_image, 2)
     return autostretch(light_image)
 
   image_sizes = {
@@ -129,6 +132,7 @@ def _make_thumbnail(light_frame, light_image, bias_frame, bias_image,
                     where=flat_image != 0)
 
   if rotate:
+    print(f'### _make_thumbnail rotate {rotate}')
     image = np.rot90(image, 2)
 
   return autostretch(np.clip(image, 0.0, 1.0))
@@ -146,9 +150,9 @@ def scatter_stack_thumbnails(mode):
     subframe_videos = [
         (create_stack_subframe_thumbnails, id)
         for id, s in stacks.items()
-        if s.image_type == 'light' and s.stable_hash and
-        ('stack_subframe_thumbnail_image', id) not in cache_keys and
-        ('stack_subframe_thumbnail_video', id) not in cache_keys
+        if s.image_type == 'light' and s.stable_hash and (
+            ('stack_subframe_thumbnail_image', id) not in cache_keys or
+            ('stack_subframe_thumbnail_video', id) not in cache_keys)
     ]
     tasks = subframe_images + subframe_videos
   elif mode == 'master':
@@ -282,13 +286,17 @@ def create_stack_subframe_thumbnails(stack_id):
   stacks = context.stacks
   stack = stacks[stack_id]
   print(f'Entering create_stack_subframe_thumbnails() for stack {stack}')
+  print(f'### stack.contents {stack.contents}')
 
   # Don't make previews for calibration stacks.
   assert stack.stable_hash
 
   settings_key = ('stack_settings', stack_id)
   settings = context[settings_key] or {}
-  dependencies = stack.dependencies | settings
+  # FIXME the dependencies have to be taken from the substacks, e.g. the
+  # light runs. But the sorting by number of stars makes it hard to look up
+  # the substack it belonged to.
+  # dependencies = stack.dependencies | settings
 
   width = context.subframe_thumbnail_width
 
@@ -305,9 +313,9 @@ def create_stack_subframe_thumbnails(stack_id):
       return first_images[stack_id]
     else:
       frame = metadata[stacks[stack_id].frames[0]]
-      image = resize_array(read_image(frame.filename), width)
+      image = resize_array(read_image(frame.filename), width).astype(np.float32)
       first_images[stack_id] = (frame, image)
-      return image
+      return first_images[stack_id]
 
   # Now sort all the light frames (no matter which run they're from) by the
   # number of stars. The better images should be in front.
@@ -328,22 +336,35 @@ def create_stack_subframe_thumbnails(stack_id):
     out = cv2.VideoWriter(video_filename, fourcc, 10.0, (width, height), False)
     for i, light_frame in enumerate(light_frames_by_stars):
       rotate = light_frame.plate_solution.rotation_angle < 0.0
+      print(f'### video frame {i} light_frame {light_frame} rotate {rotate}')
 
-      light_image = resize_array(read_image(light_frame.filename), width)
+      light_image = resize_array(read_image(light_frame.filename),
+                                 width).astype(np.float32)
+
+      # TODO: This feels a little hacky.
+      # FIXME and it isn't working
+      dependencies = settings
+      if substack_id := next(
+          iter(s for s in stack.contents
+               if light_frame.content_hash in stacks[s].frames), None):
+        dependencies = stacks[substack_id].dependencies | settings
 
       bias_frame = bias_image = None
       if 'bias' in dependencies:
         bias_frame, bias_image = get_first_image(dependencies['bias'])
+        print(f'### found bias_frame {bias_frame}')
 
       dark_frame = dark_image = None
       if 'dark' in dependencies:
         dark_frame, dark_image = get_first_image(dependencies['dark'])
+        print(f'### found dark_frame {dark_frame}')
 
       flat_frame = flat_image = None
       if 'flat' in dependencies:
         flat_frame, flat_image = get_first_image(dependencies['flat'])
+        print(f'### found flat_frame {flat_frame}')
 
-      im = _make_thumbnail(image, light_image, bias_frame, bias_image,
+      im = _make_thumbnail(light_frame, light_image, bias_frame, bias_image,
                            dark_frame, dark_image, flat_frame, flat_image,
                            rotate)
 
