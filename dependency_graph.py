@@ -1,7 +1,10 @@
 import graphlib
 import ray
 import inspect
-import copy
+from dataclasses import dataclass, field
+from copy import copy
+from functools import reduce
+from operator import or_
 
 
 class Graph(dict):
@@ -122,10 +125,56 @@ def print_graph(graph):
   print('Done printing compute graph')
 
 
-def run_graph(graph, debug=False):
+@dataclass
+class GraphStatus:
+  done_nodes: set[Node] = field(default_factory=set)
+  ready_nodes: set[Node] = field(default_factory=set)
+  waiting_nodes: set[Node] = field(default_factory=set)
+
+  def __or__(self, rhs):
+    self.done_nodes |= rhs.done_nodes
+    self.ready_nodes |= rhs.ready_nodes
+    self.waiting_nodes |= rhs.waiting_nodes
+
+    return self
+
+
+class TopologicalSorterWithStatus(graphlib.TopologicalSorter):
+
+  def __init__(self, graph):
+    super().__init__(graph)
+
+    self.done_nodes = set()
+    self.ready_nodes = set()
+    self.waiting_nodes = set(graphlib.TopologicalSorter(graph).static_order())
+
+  def get_status(self):
+    return GraphStatus(self.done_nodes, self.ready_nodes, self.waiting_nodes)
+
+  def get_ready(self):
+    ready_nodes = super().get_ready()
+    print('### underlying ts.get_ready()', ready_nodes)
+
+    self.ready_nodes = set(ready_nodes)
+    self.waiting_nodes -= self.ready_nodes
+
+    return ready_nodes
+
+  def done(self, node):
+    super().done(node)
+    self.done_nodes.add(node)
+    print('### node', node, 'is done')
+    if node not in self.ready_nodes:
+      print(f'### node {node} is not in ready_nodes')
+    else:
+      self.ready_nodes.remove(node)
+
+
+def run_graph(graph, status_fn=None, debug=False):
   num_nodes_run = 0
   max_parallelism_seen = 0
   active = []
+  completed = []
 
   def canonicalize_graph(graph):
     output = {}
@@ -150,7 +199,7 @@ def run_graph(graph, debug=False):
     if debug:
       print(f'Creating new subgraph {graph}')
 
-    ts = graphlib.TopologicalSorter(graph)
+    ts = TopologicalSorterWithStatus(graph)
     ts.prepare()
     ts.done_callback = lambda subgraph_ts=ts: done_callback(subgraph_ts)
     ts.graph = graph
@@ -192,17 +241,27 @@ def run_graph(graph, debug=False):
         if ts.done_callback:
           ts.done_callback()
         active.remove(ts)
+        completed.append(ts)
 
   def get_ready_nodes():
     return [(ts, n)
             for ts in active
             for n in sorted(ts.get_ready(), key=lambda n: n.priority)]
 
+  def get_status():
+    return reduce(or_, [ts.get_status() for ts in active + completed],
+                  GraphStatus())
+
   toplevel_ts = add_subgraph(graph)
 
   while active:
     ready = get_ready_nodes()
     max_parallelism_seen = max(len(ready), max_parallelism_seen)
+
+    if status_fn:
+      print(f'### There are {len(active)} active and {len(completed)} '
+            f'completed subgraphs')
+      status_fn(get_status())
 
     if debug:
       print(f'Top of loop, {len(active)} active graphs, '
@@ -242,6 +301,9 @@ def run_graph(graph, debug=False):
         ts.done(node)
 
     delete_finished_subgraphs()
+
+  if status_fn:
+    status_fn(get_status())
 
   toplevel_ts.results['num_nodes_run'] = num_nodes_run
   toplevel_ts.results['max_parallelism_seen'] = max_parallelism_seen

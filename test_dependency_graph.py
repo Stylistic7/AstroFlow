@@ -8,7 +8,7 @@ import time
 
 from cache import cache
 from context import context
-from dependency_graph import Graph, Node, run_graph, make_graph_from_list
+from dependency_graph import Graph, Node, GraphStatus, TopologicalSorterWithStatus, run_graph, make_graph_from_list
 
 
 @ray.remote
@@ -150,39 +150,6 @@ def produce_file(output_dir, filename):
 
   open(filename, 'w').write('foo')
   return filename
-
-
-@ray.remote
-def maybe_produce_file(output_dir, filename):
-  filename = os.path.join(output_dir, filename)
-  open(filename, 'w').write('foo')
-  return filename
-
-
-maybe_produce_file.artifact = lambda o, f: os.path.join(o, f)
-maybe_produce_file.artifact_exists = lambda f: os.path.exists(f)
-
-
-@ray.remote
-def merge_files(output_dir, filenames):
-  # No work to do.
-  if all(f == None for f in filenames):
-    return None
-
-  merged_filename = os.path.join(output_dir, 'merged.txt')
-  open(merged_filename, 'w').write(str(filenames))
-  return merged_filename
-
-
-@ray.remote
-def maybe_merge_files(output_dir, filenames):
-  merged_filename = os.path.join(output_dir, 'merged.txt')
-  open(merged_filename, 'w').write(str(filenames))
-  return merged_filename
-
-
-maybe_merge_files.artifact = lambda o: os.path.join(o, 'merged.txt')
-maybe_merge_files.artifact_exists = lambda f: os.path.exists(f)
 
 
 @ray.remote
@@ -433,33 +400,6 @@ class TestDependencyGraph(unittest.TestCase):
     self.assertEqual(results.num_nodes_run, 4)
     self.assertEqual(results.max_parallelism_seen, 2)
 
-  def test_merge_files(self):
-    with tempfile.TemporaryDirectory() as tmp_dir:
-      graph = {
-          (merge_files, tmp_dir): [
-              (produce_file, tmp_dir, f'file_{i}.txt') for i in range(7)
-          ]
-      }
-
-      # None of the files exist on the first run, so the `merge_files`
-      # function should do work, and return the filename it wrote.
-      results = run_graph(graph)
-      self.assertEqual(len(os.listdir(tmp_dir)), 8)
-      self.assertEqual(results[(merge_files, tmp_dir)],
-                       os.path.join(tmp_dir, 'merged.txt'))
-
-      self.assertEqual(results.num_nodes_run, 8)
-      self.assertEqual(results.max_parallelism_seen, 7)
-
-      # On the second run, all of the files exist, so the `merge_files`
-      # function should have no work to do, and return None.
-      results = run_graph(graph)
-      self.assertEqual(len(os.listdir(tmp_dir)), 8)
-      self.assertEqual(results[(merge_files, tmp_dir)], None)
-
-      self.assertEqual(results.num_nodes_run, 8)
-      self.assertEqual(results.max_parallelism_seen, 7)
-
   def test_duplicate_ancestors(self):
     # The increment_foo task should only run once, because A1 == A2.
     A1 = increment_foo
@@ -511,6 +451,76 @@ class TestDependencyGraph(unittest.TestCase):
 
     print(f'scatter_huge: each fn took {ms_per_fn} ms')
     self.assertLess(ms_per_fn, 2.0)
+
+  def test_graph_with_status(self):
+    graph = {'D': {'B', 'C'}, 'C': {'A'}, 'B': {'A'}}
+    ts = TopologicalSorterWithStatus(graph)
+    ts.prepare()
+
+    ready_nodes = ts.get_ready()
+    self.assertEqual(ready_nodes, ('A',))
+
+    self.assertEqual(ts.ready_nodes, {'A'})
+    self.assertEqual(ts.waiting_nodes, {'B', 'C', 'D'})
+    self.assertEqual(ts.done_nodes, set())
+
+    ts.done('A')
+    self.assertEqual(ts.ready_nodes, set())
+    self.assertEqual(ts.waiting_nodes, {'B', 'C', 'D'})
+    self.assertEqual(ts.done_nodes, {'A'})
+
+    ready_nodes = ts.get_ready()
+    self.assertEqual(set(ready_nodes), {'B', 'C'})
+
+    ts.done('B')
+    self.assertEqual(ts.ready_nodes, {'C'})
+    self.assertEqual(ts.waiting_nodes, {'D'})
+    self.assertEqual(ts.done_nodes, {'A', 'B'})
+
+    ts.done('C')
+    self.assertEqual(ts.ready_nodes, set())
+    self.assertEqual(ts.waiting_nodes, {'D'})
+    self.assertEqual(ts.done_nodes, {'A', 'B', 'C'})
+
+    ready_nodes = ts.get_ready()
+    self.assertEqual(set(ready_nodes), {'D'})
+
+    ts.done('D')
+    self.assertEqual(ts.ready_nodes, set())
+    self.assertEqual(ts.waiting_nodes, set())
+    self.assertEqual(ts.done_nodes, {'A', 'B', 'C', 'D'})
+
+  def test_graph_status_merging(self):
+    status_1 = GraphStatus(waiting_nodes={'foo'}, done_nodes={'baz'})
+    status_2 = GraphStatus(done_nodes={'bar'})
+
+    status = status_1 | status_2
+    self.assertEqual(
+        status,
+        GraphStatus(done_nodes={'bar', 'baz'},
+                    ready_nodes=set(),
+                    waiting_nodes={'foo'}))
+
+  def test_status_fn(self):
+    graph = {scatter: {}}
+
+    final_status = None
+
+    def print_status(status):
+      print('### status', status)
+      nonlocal final_status
+      final_status = status
+
+    results = run_graph(graph, status_fn=print_status)
+
+    self.assertEqual(results[scatter], 21)
+
+    self.assertEqual(results.num_nodes_run, 9)
+    self.assertEqual(results.max_parallelism_seen, 7)
+
+    self.assertEqual(len(final_status.done_nodes), 9)
+    self.assertEqual(len(final_status.ready_nodes), 0)
+    self.assertEqual(len(final_status.waiting_nodes), 0)
 
 
 if __name__ == '__main__':
