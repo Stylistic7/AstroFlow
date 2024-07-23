@@ -3,9 +3,8 @@ import os
 import numpy as np
 from astropy.wcs import WCS
 from scipy.interpolate import RegularGridInterpolator
-import largestinteriorrectangle
-import time
 
+from mosaics.largest_interior_rectangle import largest_interior_rectangle
 from plate_solving import solve_field
 from decorators import saves_artifacts
 from artifact import Artifact
@@ -57,7 +56,7 @@ def _compute_ras_decs(mode, viewbox):
 #
 # TODO: Provide some feedback on progress.
 # TODO: Store these on disk and read them back when unchanged.
-@ray.remote(scheduling_strategy="SPREAD", num_cpus=6)
+@ray.remote(scheduling_strategy="SPREAD", memory=12e9)
 @saves_artifacts(mosaic_by_coordinates_artifacts)
 def mosaic_by_coordinates(mode, mosaic_id, stack_id, input_artifact):
   print(f'### Entering mosaic_by_coordinates '
@@ -80,6 +79,8 @@ def mosaic_by_coordinates(mode, mosaic_id, stack_id, input_artifact):
   assert image is not None
   assert plate_solution is not None
 
+  print(f'### image.nbytes {image.nbytes / 1024 / 1024 / 1024} GB')
+
   if plate_solution is None:
     print(f'Could not place artifact {input_artifact} because plate_solution '
           f'was None')
@@ -90,35 +91,49 @@ def mosaic_by_coordinates(mode, mosaic_id, stack_id, input_artifact):
 
   wcs = WCS(plate_solution.header)
 
+  # TODO: This seems to take up a huge amount of memory with method 'cubic.'
+  # Maybe tiling would reduce the intermediate memory usage.
   source_height, source_width = image.shape
   interp = RegularGridInterpolator((range(source_height), range(source_width)),
                                    image,
                                    method='linear',
                                    bounds_error=False,
                                    fill_value=np.nan)
+  del image
 
   ras, decs = _compute_ras_decs(mode, viewbox)
   projected_image = np.zeros(ras.shape)
 
+  print(f'### ras.nbytes {ras.nbytes / 1024 / 1024 / 1024} GB')
+  print(f'### decs.nbytes {decs.nbytes / 1024 / 1024 / 1024} GB')
+  print(
+      f'### projected_image.nbytes {projected_image.nbytes / 1024 / 1024 / 1024} GB'
+  )
+
+  # TODO: This seems to run single-threaded. Maybe it can be tiled or something.
   source_xs, source_ys = wcs.all_world2pix(ras, decs, 1, quiet=True)
+  print(f'### source_xs.nbytes {source_xs.nbytes / 1024 / 1024 / 1024} GB')
+  print(f'### source_ys.nbytes {source_ys.nbytes / 1024 / 1024 / 1024} GB')
   del ras, decs
 
+  # TODO: This also seems to run single-threaded. Maybe it can be tiled or
+  # something.
   projected_image = interp((source_ys, source_xs))
+  print('### Done projecting image')
   del source_ys, source_xs
 
-  # TODO: This is surprisingly slow, dominating the projection for fine
-  # output resolutions.
-  trim_top, trim_left, trim_height, trim_width = largestinteriorrectangle.lir(
-      projected_image != np.nan)
-  print(f'Trimmed trim_top {trim_top} trim_left {trim_left} trim_height '
-        f'{trim_height} trim_width {trim_width}')
+  trim_top, trim_left, trim_bottom, trim_right = largest_interior_rectangle(
+      projected_image)
+  print(f'Trimmed trim_top {trim_top} trim_left {trim_left} trim_bottom '
+        f'{trim_bottom} trim_right {trim_right}')
 
   projected_image = np.nan_to_num(projected_image)
 
   trimmed_image = np.zeros(projected_image.shape, np.float32)
-  trimmed_image[trim_left:trim_left + trim_width, trim_top:trim_top +
-                trim_height] = projected_image[trim_left:trim_left + trim_width,
-                                               trim_top:trim_top + trim_height]
+  trimmed_image[trim_left:trim_right,
+                trim_top:trim_bottom] = projected_image[trim_left:trim_right,
+                                                        trim_top:trim_bottom]
+  del projected_image
 
   output_image = trimmed_image
   print(f'### mosaic_by_coordinates: trimming '
@@ -140,9 +155,9 @@ def mosaic_by_coordinates(mode, mosaic_id, stack_id, input_artifact):
         'YPIXSZ': float(header['YPIXSZ']),
         'HISTORY': f"TrimMosaicTile.target: foo",
         'HISTORY': f"TrimMosaicTile.top: {trim_top}",
-        'HISTORY': f"TrimMosaicTile.bottom: {trim_top + trim_height}",
+        'HISTORY': f"TrimMosaicTile.bottom: {trim_bottom}",
         'HISTORY': f"TrimMosaicTile.left: {trim_left}",
-        'HISTORY': f"TrimMosaicTile.right: {trim_left + trim_width}"
+        'HISTORY': f"TrimMosaicTile.right: {trim_right}"
     }
     write_artifact(output_artifact, output_image, output_header)
 
