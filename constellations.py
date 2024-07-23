@@ -2,7 +2,7 @@ import csv
 import numpy as np
 import logging
 
-import mollweide
+import geometry.projections.mollweide as mollweide
 
 constellation_line_path = "catalogs/sfa_constellation_lines.csv"
 
