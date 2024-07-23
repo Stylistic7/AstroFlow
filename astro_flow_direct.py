@@ -124,8 +124,8 @@ def download(save_dir, default_filter):
   # are then ready to stack. Stacking and downloading must be done in parallel,
   # though.
   for rig in rigs:
-    step_download_asiair.run(rig['name'], rig['ip'], search_defs, save_dir,
-                             default_filter)
+    download_asiair.run(rig['name'], rig['ip'], search_defs, save_dir,
+                        default_filter)
 
 
 def remove_frames_during_mount_movements(light_frames):
