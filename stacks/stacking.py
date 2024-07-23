@@ -129,16 +129,19 @@ def _setup_composite_stack(stack_id, tmp_dir):
     if len(hashes) == 0:
       continue
 
-    # Add any dependent stacks (e.g. calibration stacks).
-    print(f'### dependent stack hashes {substack.dependencies.values()}')
-    hashes += list(substack.dependencies.values())
-
     print('### hashes are', hashes)
     filenames = get_metadata(hashes, transform_fn=lambda i: i.filename)
     assert len(hashes) == len(filenames)
 
     if first_filename is None:
       first_filename = filenames[0]
+
+    # Add any dependent stacks (e.g. calibration stacks).
+    # FIXME these are not image hashes, they are stacks!
+    print(f'### dependent stack hashes {substack.dependencies.values()}')
+    # hashes += list(substack.dependencies.values())
+    for d in substack.dependencies.values():
+      filenames.append(stack_files_artifacts(d)[0].filename)
 
     _symlink_frames(filenames, run_dir)
 
@@ -216,6 +219,8 @@ def stack_files(stack_id):
     file_io.xisf_file_io.add_xisf_metadata(filename, dest_filename, metadata)
 
     # TODO: This should be in the compute graph, not shoe-horned in here.
+    # It also blocks the entire Ray cluster, because it consumes the entire
+    # PixInsight resource, which is the entire node.
     ray.get(compute_image_metadata.remote(dest_filename))
 
     return FileArtifact(dest_filename, stack.content_hash)
