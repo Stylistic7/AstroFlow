@@ -3,8 +3,9 @@ import os
 import numpy as np
 from astropy.wcs import WCS
 from scipy.interpolate import RegularGridInterpolator
+import largestinteriorrectangle
+import cv2 as cv
 
-from mosaics.largest_interior_rectangle import largest_interior_rectangle
 from plate_solving import solve_field
 from decorators import saves_artifacts
 from artifact import Artifact
@@ -122,10 +123,19 @@ def mosaic_by_coordinates(mode, mosaic_id, stack_id, input_artifact):
   print('### Done projecting image')
   del source_ys, source_xs
 
-  trim_top, trim_left, trim_bottom, trim_right = largest_interior_rectangle(
-      projected_image)
-  print(f'Trimmed trim_top {trim_top} trim_left {trim_left} trim_bottom '
-        f'{trim_bottom} trim_right {trim_right}')
+  grid = projected_image != np.nan
+  cv_grid = grid.astype("uint8") * 255
+  contours, _ = \
+      cv.findContours(cv_grid, cv.RETR_TREE, cv.CHAIN_APPROX_NONE)
+  contour = contours[0][:, 0, :]
+
+  trim_top, trim_left, trim_height, trim_width = largestinteriorrectangle.lir(
+      grid, contour)
+  print(f'Trimmed trim_top {trim_top} trim_left {trim_left} trim_height '
+        f'{trim_height} trim_width {trim_width}')
+
+  trim_bottom = trim_top + trim_height
+  trim_right = trim_left + trim_width
 
   projected_image = np.nan_to_num(projected_image)
 
@@ -133,7 +143,6 @@ def mosaic_by_coordinates(mode, mosaic_id, stack_id, input_artifact):
   trimmed_image[trim_left:trim_right,
                 trim_top:trim_bottom] = projected_image[trim_left:trim_right,
                                                         trim_top:trim_bottom]
-  del projected_image
 
   output_image = trimmed_image
   print(f'### mosaic_by_coordinates: trimming '
