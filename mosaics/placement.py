@@ -5,6 +5,9 @@ from astropy.wcs import WCS
 from scipy.interpolate import RegularGridInterpolator
 import largestinteriorrectangle
 import cv2 as cv
+import psutil
+import time
+import gc
 
 from plate_solving import solve_field
 from decorators import saves_artifacts
@@ -13,27 +16,35 @@ from context import context
 from .viewbox import compute_mosaic_viewbox_artifacts
 from artifact import read_artifact_image, read_artifact_header, write_artifact, CacheArtifact, FileArtifact
 
+_MEMORY_REQUIREMENT = 25769803776
+
 
 # TODO: This needs to include the hash of the viewbox.
-def mosaic_by_coordinates_artifacts(mode, mosaic_id, stack_id, input_artifact):
+def mosaic_by_coordinates_artifacts(mode, mosaic_id, filter, stack_id,
+                                    input_artifact):
   if mode == 'subframe':
     key = ('placed_image', mosaic_id, stack_id)
     return [CacheArtifact(key, input_artifact.content_hash)]
   elif mode == 'master':
     mosaic = context.mosaics[mosaic_id]
     filename = os.path.join(context.output_dir, 'Mosaics', mosaic.name,
-                            f'placed_{mosaic_id}_{stack_id}.fit')
+                            f'placed_{mosaic_id}_{filter}_{stack_id}.fit')
     return [FileArtifact(filename, input_artifact.content_hash)]
 
 
-def _compute_ras_decs(mode, viewbox):
+def _compute_ras_decs(mode, viewbox, multiple=4):
   if mode == 'subframe':
     num_samples_x = context.subframe_mosaic_samples
   elif mode == 'master':
     num_samples_x = context.master_mosaic_samples
 
+  def round_to_nearest_multiple(number):
+    return int(np.ceil(number / multiple) * multiple)
+
+  num_samples_x = round_to_nearest_multiple(num_samples_x)
   resolution = viewbox.x_span / num_samples_x
-  num_samples_y = int(viewbox.y_span / resolution)
+  num_samples_y = round_to_nearest_multiple(viewbox.y_span / resolution)
+
   xx, yy = np.meshgrid(
       np.linspace(viewbox.x_min, viewbox.x_min + viewbox.x_span, num_samples_x),
       np.linspace(viewbox.y_min, viewbox.y_min + viewbox.y_span, num_samples_y))
@@ -41,6 +52,14 @@ def _compute_ras_decs(mode, viewbox):
   ras, decs = np.degrees(ras), np.degrees(decs)
 
   return ras, decs
+
+
+def _reshape_tiles(image, tile_size=(32, 32)):
+  image_height, image_width = image.shape
+  tile_height, tile_width = tile_size
+  tiles = image.reshape(image_height // tile_height, tile_height,
+                        image_width // tile_width, tile_width)
+  return tiles.swapaxes(1, 2)
 
 
 # Function pseudocode:
@@ -57,11 +76,18 @@ def _compute_ras_decs(mode, viewbox):
 #
 # TODO: Provide some feedback on progress.
 # TODO: Store these on disk and read them back when unchanged.
-@ray.remote(scheduling_strategy="SPREAD", memory=12e9)
+@ray.remote(scheduling_strategy="SPREAD")
 @saves_artifacts(mosaic_by_coordinates_artifacts)
-def mosaic_by_coordinates(mode, mosaic_id, stack_id, input_artifact):
+def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact):
   print(f'### Entering mosaic_by_coordinates '
-        f' {mode} {mosaic_id} {stack_id} {input_artifact}')
+        f' {mode} {mosaic_id} {filter} {stack_id} {input_artifact}')
+
+  # Wait a random amount of time, then pause until there's at least 16 GB
+  # of memory available.
+  time.sleep(np.random.randint(1, 5))
+  while psutil.virtual_memory().available < _MEMORY_REQUIREMENT:
+    print('### placement is waiting until more memory is available')
+    time.sleep(5)
 
   viewbox_key = next(iter(compute_mosaic_viewbox_artifacts(mode,
                                                            mosaic_id))).key
@@ -101,27 +127,36 @@ def mosaic_by_coordinates(mode, mosaic_id, stack_id, input_artifact):
                                    bounds_error=False,
                                    fill_value=np.nan)
   del image
+  gc.collect()
 
-  ras, decs = _compute_ras_decs(mode, viewbox)
-  projected_image = np.zeros(ras.shape)
+  multiple = 4
 
+  ras, decs = _compute_ras_decs(mode, viewbox, multiple)
+  projected_image = np.zeros_like(ras)
   print(f'### ras.nbytes {ras.nbytes / 1024 / 1024 / 1024} GB')
   print(f'### decs.nbytes {decs.nbytes / 1024 / 1024 / 1024} GB')
-  print(
-      f'### projected_image.nbytes {projected_image.nbytes / 1024 / 1024 / 1024} GB'
-  )
 
-  # TODO: This seems to run single-threaded. Maybe it can be tiled or something.
-  source_xs, source_ys = wcs.all_world2pix(ras, decs, 1, quiet=True)
-  print(f'### source_xs.nbytes {source_xs.nbytes / 1024 / 1024 / 1024} GB')
-  print(f'### source_ys.nbytes {source_ys.nbytes / 1024 / 1024 / 1024} GB')
-  del ras, decs
+  viewbox_height, viewbox_width = ras.shape
+  tile_height = int(viewbox_height / multiple)
+  tile_width = int(viewbox_width / multiple)
+  print(f'### viewbox_height {viewbox_height} tile_height {tile_height}')
+  print(f'### viewbox_width {viewbox_width} tile_width {tile_width}')
+  ra_tiles = _reshape_tiles(ras, (tile_height, tile_width))
+  dec_tiles = _reshape_tiles(decs, (tile_height, tile_width))
+  projected_image_tiles = _reshape_tiles(projected_image,
+                                         (tile_height, tile_width))
 
-  # TODO: This also seems to run single-threaded. Maybe it can be tiled or
-  # something.
-  projected_image = interp((source_ys, source_xs))
-  print('### Done projecting image')
-  del source_ys, source_xs
+  # TODO: Spread this out with Ray tasks.
+  num_tiles_y, num_tiles_x = ra_tiles.shape[0:2]
+  for tile_y in range(num_tiles_y):
+    for tile_x in range(num_tiles_x):
+      print(f'### tile_y {tile_y} tile_x {tile_x}')
+      source_xs, source_ys = wcs.all_world2pix(ra_tiles[tile_y, tile_x, :, :],
+                                               dec_tiles[tile_y, tile_x, :, :],
+                                               1,
+                                               quiet=True)
+      projected_image_tiles[tile_y, tile_x, :, :] = interp(
+          (source_ys, source_xs))
 
   grid = projected_image != np.nan
   cv_grid = grid.astype("uint8") * 255
@@ -143,6 +178,8 @@ def mosaic_by_coordinates(mode, mosaic_id, stack_id, input_artifact):
   trimmed_image[trim_left:trim_right,
                 trim_top:trim_bottom] = projected_image[trim_left:trim_right,
                                                         trim_top:trim_bottom]
+  del projected_image
+  gc.collect()
 
   output_image = trimmed_image
   print(f'### mosaic_by_coordinates: trimming '
@@ -151,7 +188,7 @@ def mosaic_by_coordinates(mode, mosaic_id, stack_id, input_artifact):
 
   output_artifact = next(
       iter(
-          mosaic_by_coordinates_artifacts(mode, mosaic_id, stack_id,
+          mosaic_by_coordinates_artifacts(mode, mosaic_id, filter, stack_id,
                                           input_artifact)))
 
   if mode == 'subframe':

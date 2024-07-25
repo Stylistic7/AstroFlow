@@ -25,7 +25,9 @@ def build_mosaic_subgraph(mode, mosaic_id):
   graph[viewbox_task] = []
 
   # TODO: Iterate over the actual filters in the mosaic.
-  for filter in ['H', 'S', 'O', 'L', 'R', 'G', 'B']:
+  # for filter in ['H', 'S', 'O', 'L', 'R', 'G', 'B']:
+  # FIXME
+  for filter in ['H']:
     graph |= ray.get(
         build_mosaic_filter_subgraph.remote(mode, mosaic_id, filter,
                                             viewbox_task))
@@ -80,7 +82,7 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
     # TODO: In master mode, the placement_task needs to depend on both the
     # viewbox_task, and also the post_processing task. The post_processing
     # task in turn depends on the stack_files task.
-    placement_task = (mosaic_by_coordinates, mode, mosaic_id, stack_id,
+    placement_task = (mosaic_by_coordinates, mode, mosaic_id, filter, stack_id,
                       input_artifact)
 
     if mode == 'subframe':
@@ -88,7 +90,8 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
     elif mode == 'master':
       graph[placement_task] = {viewbox_task, (build_stack_subgraph, stack_id)}
 
-    placed_artifact = mosaic_by_coordinates_artifacts(mode, mosaic_id, stack_id,
+    placed_artifact = mosaic_by_coordinates_artifacts(mode, mosaic_id, filter,
+                                                      stack_id,
                                                       input_artifact)[0]
     panel = Panel(tile_indices=tile_indices,
                   content_hash=placed_artifact.content_hash,
@@ -141,6 +144,9 @@ def done(mode, mosaic_id, filter, final_artifact):
 
   # If none of the preceding tasks ran, they will all return None. This is
   # expected, but maybe weird.
+  #
+  # TODO: This is not just weird, it's broken. This results in the final
+  # artifact never getting written.
   if final_artifact is None:
     return
 
