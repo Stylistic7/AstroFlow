@@ -5,9 +5,6 @@ from astropy.wcs import WCS
 from scipy.interpolate import RegularGridInterpolator
 import largestinteriorrectangle
 import cv2 as cv
-import psutil
-import time
-import gc
 
 from plate_solving import solve_field
 from decorators import saves_artifacts
@@ -82,13 +79,6 @@ def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact):
   print(f'### Entering mosaic_by_coordinates '
         f' {mode} {mosaic_id} {filter} {stack_id} {input_artifact}')
 
-  # Wait a random amount of time, then pause until there's at least 16 GB
-  # of memory available.
-  time.sleep(np.random.randint(1, 5))
-  while psutil.virtual_memory().available < _MEMORY_REQUIREMENT:
-    print('### placement is waiting until more memory is available')
-    time.sleep(5)
-
   viewbox_key = next(iter(compute_mosaic_viewbox_artifacts(mode,
                                                            mosaic_id))).key
   viewbox = context.get(viewbox_key)
@@ -127,7 +117,6 @@ def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact):
                                    bounds_error=False,
                                    fill_value=np.nan)
   del image
-  gc.collect()
 
   multiple = 4
 
@@ -179,7 +168,6 @@ def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact):
                 trim_top:trim_bottom] = projected_image[trim_left:trim_right,
                                                         trim_top:trim_bottom]
   del projected_image
-  gc.collect()
 
   output_image = trimmed_image
   print(f'### mosaic_by_coordinates: trimming '

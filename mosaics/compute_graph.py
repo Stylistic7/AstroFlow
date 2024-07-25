@@ -25,9 +25,7 @@ def build_mosaic_subgraph(mode, mosaic_id):
   graph[viewbox_task] = []
 
   # TODO: Iterate over the actual filters in the mosaic.
-  # for filter in ['H', 'S', 'O', 'L', 'R', 'G', 'B']:
-  # FIXME
-  for filter in ['H']:
+  for filter in ['H', 'S', 'O', 'L', 'R', 'G', 'B']:
     graph |= ray.get(
         build_mosaic_filter_subgraph.remote(mode, mosaic_id, filter,
                                             viewbox_task))
