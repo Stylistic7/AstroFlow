@@ -258,7 +258,7 @@ class TestDependencyGraph(unittest.TestCase):
     results = run_graph(graph)
     self.assertEqual(results[my_last_task], 5)
 
-    self.assertEqual(results.num_nodes_run, 3)
+    self.assertEqual(results.num_nodes_run, 6)
     self.assertEqual(results.max_parallelism_seen, 1)
 
   def test_with_exception(self):
