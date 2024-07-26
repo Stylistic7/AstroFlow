@@ -6,6 +6,7 @@ from context import context
 
 
 def saves_artifacts(artifacts_fn, in_test=False, debug=True):
+  assert not hasattr(artifacts_fn, 'remote')
 
   def decorator(fn):
 
@@ -31,6 +32,8 @@ def saves_artifacts(artifacts_fn, in_test=False, debug=True):
     def wrapper(*args, **kwargs):
       if should_run(*args, **kwargs):
         return fn(*args, **kwargs)
+      else:
+        return artifacts_fn(*args, **kwargs)
 
     if in_test:
       wrapper.should_run = should_run

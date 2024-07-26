@@ -19,22 +19,22 @@ def foo_artifacts(mosaic_id, filter):
   filename = os.path.join(context.output_dir,
                           f'master_light_{mosaic_id}_{filter}.fit')
   content_hash = hash_list([mosaic_id, filter])
-  return [FileArtifact(filename=filename, content_hash=content_hash)]
+  return [FileArtifact(filename, content_hash)]
 
 
 @ray.remote
 @saves_artifacts(foo_artifacts, in_test=True, debug=True)
 def foo(mosaic_id, filter):
   print('### Running foo')
-  artifact = next(iter(foo_artifacts(mosaic_id, filter)))
-  filename = os.path.join(context.output_dir,
-                          f'master_light_{mosaic_id}_{filter}.fit')
+  context.num_foo_runs += 1
+  output_artifacts = foo_artifacts(mosaic_id, filter)
+  output_artifact = next(iter(output_artifacts))
   image = np.random.random((10, 10))
   hdu = pyfits.PrimaryHDU(image)
-  hdu.header['CONTHASH'] = artifact.content_hash
-  hdu.writeto(filename)
+  hdu.header['CONTHASH'] = output_artifact.content_hash
+  hdu.writeto(output_artifact.filename)
 
-  return filename
+  return output_artifacts
 
 
 def bar_artifacts(mosaic_id, filter):
@@ -45,14 +45,34 @@ def bar_artifacts(mosaic_id, filter):
 @saves_artifacts(bar_artifacts, in_test=True, debug=True)
 def bar(mosaic_id, filter):
   print('### Running bar')
-  key = next(iter(bar_artifacts(mosaic_id, filter))).key
+  context.num_bar_runs += 1
+  output_artifacts = bar_artifacts(mosaic_id, filter)
+  key = next(iter(output_artifacts)).key
   context[key] = 'bar'
+  return output_artifacts
+
+
+def local_fn_artifacts(mosaic_id, filter):
+  return [CacheArtifact(key=('local_fn', mosaic_id, filter))]
+
+
+@saves_artifacts(local_fn_artifacts, in_test=True, debug=True)
+def local_fn(mosaic_id, filter):
+  print('### Running local_fn')
+  context.num_local_fn_runs += 1
+  output_artifacts = local_fn_artifacts(mosaic_id, filter)
+  key = next(iter(output_artifacts)).key
+  context[key] = 'local_fn'
+  return output_artifacts
 
 
 class TestDecorators(unittest.TestCase):
 
   def setUp(self):
     self.input_dir_obj, self.output_dir_obj = make_test_context()
+    context.num_foo_runs = 0
+    context.num_bar_runs = 0
+    context.num_local_fn_runs = 0
 
   def tearDown(self):
     self.input_dir_obj.cleanup()
@@ -69,6 +89,22 @@ class TestDecorators(unittest.TestCase):
 
     ray.get(bar.remote('abc123', 'H'))
     self.assertFalse(bar._function.should_run('abc123', 'H'))
+
+  def test_local_fn(self):
+    local_fn('abc123', 'H')
+    local_fn('abc123', 'H')
+    local_fn('abc123', 'H')
+    local_fn('abc123', 'H')
+
+    self.assertEqual(context.num_local_fn_runs, 1)
+
+  def test_foo_runs_only_once(self):
+    ray.get(foo.remote('abc123', 'H'))
+    ray.get(foo.remote('abc123', 'H'))
+    ray.get(foo.remote('abc123', 'H'))
+    ray.get(foo.remote('abc123', 'H'))
+
+    self.assertEqual(context.num_foo_runs, 1)
 
 
 if __name__ == '__main__':

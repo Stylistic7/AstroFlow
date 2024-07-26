@@ -10,7 +10,7 @@ from .classes import Panel
 from .merge_ops import make_merge_ops
 from .viewbox import compute_mosaic_viewbox
 from .placement import mosaic_by_coordinates, mosaic_by_coordinates_artifacts
-from post_process_stack import post_process_stack_artifacts
+from stacks.post_process_stack import post_process_stack_artifacts
 from stacks.compute_graph import build_stack_subgraph
 
 
@@ -139,15 +139,6 @@ def done(mode, mosaic_id, filter, final_artifact):
   assert type(final_artifact) is list
   assert len(final_artifact) == 1
   final_artifact = final_artifact[0]
-
-  # If none of the preceding tasks ran, they will all return None. This is
-  # expected, but maybe weird.
-  #
-  # TODO: This is not just weird, it's broken. This results in the final
-  # artifact never getting written.
-  if final_artifact is None:
-    return
-
   assert isinstance(final_artifact,
                     Artifact), f'final_artifact has type {type(final_artifact)}'
 

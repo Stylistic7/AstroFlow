@@ -4,12 +4,9 @@ import numpy as np
 import astropy.io.fits as pyfits  # type: ignore
 
 from artifact import Artifact
-from .classes import Panel
 import pix
-from file_io.generic import read_image
-from image_previews import autostretch, array_to_png
+from image_previews import autostretch
 from decorators import saves_artifacts
-from context import context
 from artifact import Artifact, read_artifact_image, write_artifact
 
 

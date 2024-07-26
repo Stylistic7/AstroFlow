@@ -11,13 +11,6 @@ import pix
 # TODO: Put this some place generally-accessible.
 _CONTENT_HASH_KEY = 'XISF:AstroFlow:StackContentHash'
 
-# def find_matching_file(content_hash, image_hashes, fits_headers):
-#   return [
-#       h for h, header in fits_headers.items()
-#       if header and header.get(_CONTENT_HASH_KEY, None) == content_hash and
-#       os.path.exists(image_hashes[h])
-#   ]
-
 
 # TODO: Find a way to disable these during tests.
 @pix.PixInsight()
