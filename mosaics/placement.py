@@ -5,6 +5,7 @@ from astropy.wcs import WCS
 from scipy.interpolate import RegularGridInterpolator
 import largestinteriorrectangle
 import cv2 as cv
+from itertools import product
 
 from plate_solving import solve_field
 from decorators import saves_artifacts
@@ -70,6 +71,17 @@ def _reshape_tiles(image, tile_size=(32, 32)):
 #
 # Writes a FITS file to disk that contains the image and some metadata required
 # by PhotometricMergeMosaic in PixInsight.
+
+
+@ray.remote(scheduling_strategy="SPREAD")
+def place_tile(tile_y, tile_x, wcs, ra_tiles, dec_tiles, interp):
+  ra_tile = ra_tiles[tile_y, tile_x, :, :]
+  dec_tile = dec_tiles[tile_y, tile_x, :, :]
+
+  source_xs, source_ys = wcs.all_world2pix(ra_tile, dec_tile, 1, quiet=True)
+  return tile_y, tile_x, interp((source_ys, source_xs))
+
+
 #
 # TODO: Provide some feedback on progress.
 # TODO: Store these on disk and read them back when unchanged.
@@ -135,17 +147,20 @@ def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact):
   projected_image_tiles = _reshape_tiles(projected_image,
                                          (tile_height, tile_width))
 
-  # TODO: Spread this out with Ray tasks.
   num_tiles_y, num_tiles_x = ra_tiles.shape[0:2]
-  for tile_y in range(num_tiles_y):
-    for tile_x in range(num_tiles_x):
-      print(f'### tile_y {tile_y} tile_x {tile_x}')
-      source_xs, source_ys = wcs.all_world2pix(ra_tiles[tile_y, tile_x, :, :],
-                                               dec_tiles[tile_y, tile_x, :, :],
-                                               1,
-                                               quiet=True)
-      projected_image_tiles[tile_y, tile_x, :, :] = interp(
-          (source_ys, source_xs))
+  wcs_ref = ray.put(wcs)
+  ra_tiles_ref = ray.put(ra_tiles)
+  dec_tiles_ref = ray.put(dec_tiles)
+  interp_ref = ray.put(interp)
+  remaining_refs = [
+      place_tile.remote(tile_y, tile_x, wcs_ref, ra_tiles_ref, dec_tiles_ref,
+                        interp_ref)
+      for tile_y, tile_x in product(range(num_tiles_y), range(num_tiles_x))
+  ]
+  while remaining_refs:
+    ready_refs, remaining_refs = ray.wait(remaining_refs, num_returns=1)
+    tile_y, tile_x, value = ray.get(ready_refs[0])
+    projected_image_tiles[tile_y, tile_x, :, :] = value
 
   grid = projected_image != np.nan
   cv_grid = grid.astype("uint8") * 255
