@@ -9,16 +9,6 @@ import geometry.footprints as footprints
 from context import context
 from geometry.viewbox import compute_viewbox
 
-# def compute_viewbox(plate_solutions):
-#   ras = [f[0] for p in plate_solutions for f in p.footprint]
-#   decs = [f[1] for p in plate_solutions for f in p.footprint]
-#   # print(f'got {len(ras)} ras and {len(decs)} decs')
-
-#   min_ra, max_ra = np.min(ras), np.max(ras)
-#   min_dec, max_dec = np.min(decs), np.max(decs)
-
-#   return [min_ra, min_dec, max_ra - min_ra, max_dec - min_dec]
-
 
 def compute_mosaic_viewbox_artifacts(mode, mosaic_id):
   mosaic = context.mosaics[mosaic_id]
@@ -46,8 +36,6 @@ def compute_mosaic_viewbox(mode, mosaic_id):
                     x_span=x_span,
                     y_span=y_span)
 
-  # TODO: This is sort of abusing the Artifact system. Maybe there can be
-  # another kind of Artifact that is free-form (not FITS image).
   key = next(iter(compute_mosaic_viewbox_artifacts(mode, mosaic_id))).key
   context[key] = viewbox
   print(f'### Wrote key {key}')

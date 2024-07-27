@@ -14,8 +14,6 @@ from context import context
 from .viewbox import compute_mosaic_viewbox_artifacts
 from artifact import read_artifact_image, read_artifact_header, write_artifact, CacheArtifact, FileArtifact
 
-_MEMORY_REQUIREMENT = 25769803776
-
 
 # TODO: This needs to include the hash of the viewbox.
 def mosaic_by_coordinates_artifacts(mode, mosaic_id, filter, stack_id,
