@@ -315,33 +315,15 @@ def stack_subframe_thumbnail_video(stack_id):
   return flask.send_file(buffer, mimetype='video/webm')
 
 
-@app.route('/mosaic_image/<mosaic_id>/<filter>')
-def mosaic_image(mosaic_id, filter):
-  obj = prev_results.get_prev_result_object('post_process_mosaic', mosaic_id)
-  if not obj:
-    return Response(status=404)
-
-  # TODO: Get the correct color channel.
-  image = image_previews._read_image(obj.output_filenames[0])
-  image = image_previews.resize_array(image, new_width=640)
-  image = image_previews.autostretch(image)
-  image = image_previews.array_to_png(image)
-  buffer = io.BytesIO()
-  buffer.write(image)
-  buffer.seek(0)
-  return flask.send_file(buffer, mimetype='image/png')
-
-
 # TODO: This should look up the mosaic by its id, get its content_hash, and
 # then retrieve the image from the cache.
 @app.route('/mosaic_thumbnail_image/<mode>/<mosaic_id>/<filter>')
 def mosaic_thumbnail_image_complete(mode, mosaic_id, filter):
   key = ('mosaic_thumbnail_image', mode, mosaic_id, filter)
   if key in cache:
-    result = cache[key]
-    print('type(result)', type(result))
+    image = read_artifact_image(CacheArtifact(key))
     buffer = io.BytesIO()
-    buffer.write(result['merged']['image'])
+    buffer.write(array_to_png(image))
     buffer.seek(0)
     return flask.send_file(buffer, mimetype='image/png')
 
@@ -372,11 +354,11 @@ def mosaic_thumbnail_image(mosaic_id):
 
   for mode in ['master', 'subframe']:
     for filter in ['H', 'L', 'S', 'O', 'G', 'R', 'B']:
-      key = ('mosaic_thumbnail_image', mode, mosaic_id, filter,
-             mosaic.content_hash)
+      key = ('mosaic_thumbnail_image', mode, mosaic_id, filter)
       if key in cache:
+        image = read_artifact_image(CacheArtifact(key))
         buffer = io.BytesIO()
-        buffer.write(cache[key])
+        buffer.write(array_to_png(image))
         buffer.seek(0)
         return flask.send_file(buffer, mimetype='image/png')
 
@@ -482,8 +464,6 @@ def recent():
   mosaics = cache['mosaics']
 
   def last_stack_datetime(stack_id):
-    # return max(fits_headers[h]['DATE-OBS']
-    #            for h in stacks[stack_id].all_frames(stacks))
     return stacks[stack_id].newest_date
 
   def last_target_datetime(target_id):
