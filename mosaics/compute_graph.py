@@ -129,6 +129,8 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
   return graph
 
 
+# TODO: Pass the output artifact to the make_merge_ops() function and eliminate
+# this function.
 @ray.remote
 def done(mode, mosaic_id, filter, final_artifact):
   mosaic = context.mosaics[mosaic_id]

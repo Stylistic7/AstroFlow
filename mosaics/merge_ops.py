@@ -30,6 +30,8 @@ def make_pairs(min_index, max_index, template):
 
 # TODO: Strongly-type this. Panels is a dictionary from tile indices to
 # Panel objects.
+#
+# TODO: Accept an output artifact here, so we can simplify the graphs.
 def make_merge_ops(mode, mosaic_id, filter, panels, from_task):
   graph = Graph()
   merge_ops = []

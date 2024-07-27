@@ -35,7 +35,7 @@ def merge_images(mode: str, mosaic_id: str, input_0: Artifact,
     output_image[overlap] = (image_0[overlap] + image_1[overlap]) / 2.0
 
     write_artifact(output, output_image)
-    return output
+    return [output]
 
   elif mode == 'master':
     run_photometric_mosaic([input_0.filename, input_1.filename],
@@ -47,4 +47,4 @@ def merge_images(mode: str, mosaic_id: str, input_0: Artifact,
         header['CONTHASH'] = output.content_hash
         hdu.flush()
 
-    return output
+    return [output]
