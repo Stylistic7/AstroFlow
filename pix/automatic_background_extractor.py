@@ -1,3 +1,5 @@
+from addict import Dict
+
 from .classes import ShellScriptTask
 from .context import append_task
 from .processes import enum, execute_on_view_ids
@@ -52,10 +54,18 @@ _default_parameters = {
 }
 
 
-def AutomaticBackgroundExtractor(view_ids, **kwargs):
+def AutomaticBackgroundExtractor(images, **kwargs):
+  view_ids = [i.view_id for i in images]
   append_task(
       ShellScriptTask(javascript=execute_on_view_ids(
           'AutomaticBackgroundExtractor', _default_parameters |
           kwargs, view_ids)))
 
-  return view_ids
+  images = [
+      Dict(filename=image.filename,
+           tag='abe',
+           view_id=image.view_id,
+           dirty=True) for image in images
+  ]
+
+  return images
