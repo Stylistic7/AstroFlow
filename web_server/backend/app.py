@@ -477,14 +477,14 @@ def plot():
 
 @app.route('/recent')
 def recent():
-  fits_headers = cache['fits_headers']
   stacks = cache['stacks']
   targets = cache['targets']
   mosaics = cache['mosaics']
 
   def last_stack_datetime(stack_id):
-    return max(fits_headers[h]['DATE-OBS']
-               for h in stacks[stack_id].all_frames(stacks))
+    # return max(fits_headers[h]['DATE-OBS']
+    #            for h in stacks[stack_id].all_frames(stacks))
+    return stacks[stack_id].newest_date
 
   def last_target_datetime(target_id):
     return max([last_stack_datetime(s) for s in targets[target_id].stack_ids])
