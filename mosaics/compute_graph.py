@@ -138,7 +138,7 @@ def done(mode, mosaic_id, filter, final_artifact):
 
   assert type(final_artifact) is list
   assert len(final_artifact) == 1
-  final_artifact = final_artifact[0]
+  final_artifact = final_artifact[0][0]
   assert isinstance(final_artifact,
                     Artifact), f'final_artifact has type {type(final_artifact)}'
 
