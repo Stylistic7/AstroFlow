@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from copy import copy
 from functools import reduce
 from operator import or_
+from artifact import FileArtifact, CacheArtifact
 
 
 class Graph(dict):
@@ -109,7 +110,7 @@ def print_graph(graph):
   for k, v in graph.items():
 
     def type_or_value(x):
-      if type(x) in [int, float, str]:
+      if type(x) in [int, float, str, FileArtifact, CacheArtifact]:
         return f"'{str(x)}'"
 
       return str(type(x))

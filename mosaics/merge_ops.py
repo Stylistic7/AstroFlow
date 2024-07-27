@@ -67,7 +67,7 @@ def make_merge_ops(mode, mosaic_id, filter, panels, from_task):
         print(f'### process_pairs input_1 {input_1}')
         content_hashes = [panels[p].content_hash for p in pair]
         print(f'### content_hashes {content_hashes}')
-        content_hash = hash_list(panels[p].content_hash for p in pair)
+        content_hash = hash_list(content_hashes)
 
         # TODO: This goes outside the artifacts workflow.
         if mode == 'subframe':

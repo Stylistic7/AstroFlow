@@ -68,8 +68,7 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
             f'for target {targets[target_id]}')
     stack_id = next(iter(stacks_for_filter))
 
-    # TODO: This artifact is only good for subframe mode. For master mode,
-    # stacks need to be post-processed.
+    # TODO: Find a way to streamline all these if-else statements in general.
     if mode == 'subframe':
       best_light_frame = _get_best_light_frame(stack_id)
       input_artifact = FileArtifact(best_light_frame.filename,
@@ -77,9 +76,6 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
     elif mode == 'master':
       input_artifact = post_process_stack_artifacts(stack_id)[0]
 
-    # TODO: In master mode, the placement_task needs to depend on both the
-    # viewbox_task, and also the post_processing task. The post_processing
-    # task in turn depends on the stack_files task.
     placement_task = (mosaic_by_coordinates, mode, mosaic_id, filter, stack_id,
                       input_artifact)
 
@@ -91,6 +87,8 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
     placed_artifact = mosaic_by_coordinates_artifacts(mode, mosaic_id, filter,
                                                       stack_id,
                                                       input_artifact)[0]
+    print(f'### build_mosaic_filter_subgraph placed_artifact '
+          f'is {placed_artifact}')
     panel = Panel(tile_indices=tile_indices,
                   content_hash=placed_artifact.content_hash,
                   input_artifact=placed_artifact)
@@ -105,12 +103,6 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
   print(f'### found panels for filter {filter}:')
   for tile_indices, panel in panels.items():
     print(f'### tile_indices {tile_indices} => panel {panel}')
-
-  # TODO: Connect these to either a task that reads the best frame from a stack,
-  # or the stacked master, AND the viewbox task.
-  # from_task = {p: prev_task for p in panels.values()}
-  # for k, v in from_task.items():
-  #   print(f'### from_task {k} => {v}')
 
   _, merge_graph = make_merge_ops(mode, mosaic_id, filter, panels, from_task)
   print(f'### make_merge_ops returned graph:')

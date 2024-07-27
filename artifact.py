@@ -102,10 +102,12 @@ def _(artifact: CacheArtifact):
   fits.close()
 
   if artifact.content_hash is not None:
-    if 'CONTHASH' not in fits[0].header or fits[0].header[
-        'CONTHASH'] != artifact.content_hash:
+    content_hash = fits[0].header['CONTHASH'] if 'CONTHASH' in fits[
+        0].header else None
+    if content_hash != artifact.content_hash:
       raise WrongContentHashException(
-          f'Key {artifact.key} had incorrect content hash')
+          f'Key {artifact.key} had incorrect content hash '
+          f'{content_hash}, expected {artifact.content_hash}')
 
   return image
 
@@ -158,6 +160,7 @@ def _(artifact: CacheArtifact,
   hdu.writeto(file_obj)
 
   context[artifact.key] = file_obj.getvalue()
+  print(f'### Wrote artifact {artifact}')
 
 
 @singledispatch

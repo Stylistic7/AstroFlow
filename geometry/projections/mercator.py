@@ -19,3 +19,6 @@ class MercatorProjection(Projection):
     lat = 2 * np.arctan(np.exp(y)) - (np.pi / 2)
 
     return lon, lat
+
+  def __repr__(self):
+    return f'MercatorProjection(lon_0={self.lon_0})'

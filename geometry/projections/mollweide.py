@@ -36,6 +36,9 @@ class MollweideProjection(Projection):
 
     return lon, lat
 
+  def __repr__(self):
+    return f'MollweideProjection(lon_0={self.lon_0} R={self.R})'
+
 
 class MollweideGalacticProjection(Projection):
 
@@ -48,3 +51,6 @@ class MollweideGalacticProjection(Projection):
 
   def unproject(self, x, y):
     raise NotImplementedError
+
+  def __repr__(self):
+    return f'MollweideGalacticProjection(lon_0={self.lon_0} R={self.R})'

@@ -13,19 +13,24 @@ from artifact import Artifact
 from context import context
 from .viewbox import compute_mosaic_viewbox_artifacts
 from artifact import read_artifact_image, read_artifact_header, write_artifact, CacheArtifact, FileArtifact
+from hashing import hash_list
 
 
-# TODO: This needs to include the hash of the viewbox.
 def mosaic_by_coordinates_artifacts(mode, mosaic_id, filter, stack_id,
                                     input_artifact):
+  viewbox_artifact = next(
+      iter(compute_mosaic_viewbox_artifacts(mode, mosaic_id)))
+  content_hash = hash_list(
+      [input_artifact.content_hash, viewbox_artifact.content_hash])
+
   if mode == 'subframe':
-    key = ('placed_image', mosaic_id, stack_id)
-    return [CacheArtifact(key, input_artifact.content_hash)]
+    key = ('placed_image', mosaic_id, filter, stack_id)
+    return [CacheArtifact(key, content_hash)]
   elif mode == 'master':
     mosaic = context.mosaics[mosaic_id]
     filename = os.path.join(context.output_dir, 'Mosaics', mosaic.name,
                             f'placed_{mosaic_id}_{filter}_{stack_id}.fit')
-    return [FileArtifact(filename, input_artifact.content_hash)]
+    return [FileArtifact(filename, content_hash)]
 
 
 def _compute_ras_decs(mode, viewbox, multiple=4):
@@ -89,9 +94,10 @@ def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact):
   print(f'### Entering mosaic_by_coordinates '
         f' {mode} {mosaic_id} {filter} {stack_id} {input_artifact}')
 
-  viewbox_key = next(iter(compute_mosaic_viewbox_artifacts(mode,
-                                                           mosaic_id))).key
-  viewbox = context.get(viewbox_key)
+  # TODO: All this Artifact-handling stuff can be streamlined.
+  viewbox_artifact = next(
+      iter(compute_mosaic_viewbox_artifacts(mode, mosaic_id)))
+  viewbox = context.get(viewbox_artifact.key)
   assert viewbox
 
   # TODO: It's a bit weird to do plate-solving here. This should all be in a
@@ -191,6 +197,7 @@ def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact):
       iter(
           mosaic_by_coordinates_artifacts(mode, mosaic_id, filter, stack_id,
                                           input_artifact)))
+  print(f'### placement done; output_artifact is {output_artifact}')
 
   if mode == 'subframe':
     write_artifact(output_artifact, output_image)

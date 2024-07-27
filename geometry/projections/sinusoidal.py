@@ -22,3 +22,6 @@ class SinusoidalProjection(Projection):
     lat = np.where((lat >= -np.pi) & (lat <= np.pi), lat, np.nan)
 
     return lon, lat
+
+  def __repr__(self):
+    return f'SinusoidalProjection(lon_0={self.lon_0})'

@@ -21,3 +21,6 @@ class GalacticProjection(Projection):
 
   def unproject(self, x, y):
     raise NotImplementedError
+
+  def __repr__(self):
+    return f'GalacticProjection'
