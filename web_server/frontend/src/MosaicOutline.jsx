@@ -13,7 +13,7 @@ export default function MosaicOutline({ mosaic_id, style = {} }) {
 
   const projection = 'mercator';
 
-  const strokeWidth = 0.0005;
+  const strokeWidth = 0.0002;
 
   const target_outline_style = {
     stroke: "#5555ee",

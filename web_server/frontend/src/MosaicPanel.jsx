@@ -181,15 +181,17 @@ export default function MosaicPanel() {
 					display: "block",
 					margin: "1em",
 					position: "relative",
+					maxWidth: "75vw",
+					maxHeight: "75vh"
 				}}>
 				<img
 					src={`/${imageType}/${params.mosaic_id}/${filter}`}
 					style={{
-						height: "100%",
-						maxWidth: "100%",
 						display: "block",
 						marginLeft: "auto",
 						marginRight: "auto",
+						maxWidth: "75vw",
+						maxHeight: "75vh"
 					}}
 				/>
 				<MosaicOutline

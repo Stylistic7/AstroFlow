@@ -12,6 +12,7 @@ from .viewbox import compute_mosaic_viewbox
 from .placement import mosaic_by_coordinates, mosaic_by_coordinates_artifacts
 from stacks.post_process_stack import post_process_stack_artifacts
 from stacks.compute_graph import build_stack_subgraph
+from decorators import saves_artifacts
 
 
 @ray.remote
@@ -121,9 +122,24 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
   return graph
 
 
+def done_artifacts(mode, mosaic_id, filter, unused=None):
+  mosaic = context.mosaics[mosaic_id]
+
+  if mode == 'subframe':
+    return [
+        CacheArtifact(('mosaic_thumbnail_image', mode, mosaic_id, filter),
+                      mosaic.content_hash)
+    ]
+  elif mode == 'master':
+    filename = os.path.join(context.output_dir, 'Mosaics', mosaic.name,
+                            f'final_merged_{mosaic_id}_{filter}.fit')
+    return [FileArtifact(filename, mosaic.content_hash)]
+
+
 # TODO: Pass the output artifact to the make_merge_ops() function and eliminate
 # this function.
 @ray.remote
+@saves_artifacts(done_artifacts)
 def done(mode, mosaic_id, filter, final_artifact):
   mosaic = context.mosaics[mosaic_id]
 
@@ -136,17 +152,10 @@ def done(mode, mosaic_id, filter, final_artifact):
   assert isinstance(final_artifact,
                     Artifact), f'final_artifact has type {type(final_artifact)}'
 
-  # TODO: This goes outside the artfact framework
-  if mode == 'subframe':
-    image, header = read_artifact(final_artifact)
-    header['CONTHASH'] = mosaic.content_hash
-    output_artifact = CacheArtifact(
-        ('mosaic_thumbnail_image', mode, mosaic_id, filter))
-    write_artifact(output_artifact, image, header)
-  elif mode == 'master':
-    filename = os.path.join(context.output_dir, 'Mosaics', mosaic.name,
-                            f'final_merged_{mosaic_id}_{filter}.fit')
-    image, header = read_artifact(final_artifact)
-    header['CONTHASH'] = mosaic.content_hash
-    output_artifact = FileArtifact(filename, mosaic.content_hash)
-    write_artifact(output_artifact, image, header)
+  output_artifact = done_artifacts(mode, mosaic_id, filter)[0]
+
+  image, header = read_artifact(final_artifact)
+  header['CONTHASH'] = mosaic.content_hash
+  write_artifact(output_artifact, image, header)
+
+  return [output_artifact]
