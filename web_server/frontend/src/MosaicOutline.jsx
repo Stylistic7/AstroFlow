@@ -38,9 +38,6 @@ export default function MosaicOutline({ mosaic_id, style = {} }) {
       style={{
         pointerEvents: "auto",
         margin: "2px",
-        maxWidth: "100vw",
-        maxHeight: "25vh",
-
         ...style
       }}
     >

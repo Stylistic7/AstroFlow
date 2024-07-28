@@ -23,11 +23,6 @@ export default function MosaicPanel() {
 
 	const mosaic = mosaics[params.mosaic_id];
 
-	const [filter, setFilter] = useState();
-	console.log("filter is", filter);
-
-	const fontColor = "#aaa";
-
 	const get_filters = () => {
 		let filters = new Set();
 		for (let target_id of mosaic.target_ids) {
@@ -40,6 +35,16 @@ export default function MosaicPanel() {
 		console.log('got filters', filter_array);
 		return filter_array;
 	}
+
+	const [filter, setFilter] = useState(get_filters()[0]);
+	console.log("filter is", filter);
+
+	const fontColor = "#aaa";
+
+	const handleSetFilter = f => {
+		console.log('handleSetFilter', f);
+		setFilter(f);
+	};
 
 	const divmod = (y, x) => {
 		let div = Math.trunc(y / x);
@@ -96,6 +101,7 @@ export default function MosaicPanel() {
 		fetch(`/add_mosaic_to_shopping_cart/${params.mosaic_id}`);
 	};
 
+	const imageType = "mosaic_thumbnail_image_for_filter";
 
 	// TODO: Add a dialog box to the "run" button that shows the user what will be
 	// run, and how long it will likely take, and allow them to accept it.
@@ -137,6 +143,16 @@ export default function MosaicPanel() {
 					margin: "1em",
 					position: "relative",
 				}}>
+				<img
+					src={`/${imageType}/${params.mosaic_id}/${filter}`}
+					style={{
+						height: "100%",
+						maxWidth: "100%",
+						display: "block",
+						marginLeft: "auto",
+						marginRight: "auto",
+					}}
+				/>
 				<MosaicOutline
 					stacks={stacks}
 					targets={targets}
@@ -155,22 +171,22 @@ export default function MosaicPanel() {
 						maxHeight: "auto",
 					}}
 				/>
-				<ColorChannelSelector
-					stacks={stacks}
-					targets={targets}
-					mosaics={mosaics}
-					mosaic_id={params.mosaic_id}
-					filter={filter}
-					setFilter={setFilter}
-					style={{
-						height: "100%",
-						maxWidth: "100%",
-						display: "block",
-						marginLeft: "auto",
-						marginRight: "auto",
-					}}
-				/>
 			</div>
+			<ColorChannelSelector
+				stacks={stacks}
+				targets={targets}
+				mosaics={mosaics}
+				mosaic_id={params.mosaic_id}
+				filter={filter}
+				setFilter={handleSetFilter}
+				style={{
+					height: "100%",
+					maxWidth: "100%",
+					display: "block",
+					marginLeft: "auto",
+					marginRight: "auto",
+				}}
+			/>
 		</>
 	);
 }
