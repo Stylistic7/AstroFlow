@@ -182,7 +182,9 @@ export default function MosaicPanel() {
 					margin: "1em",
 					position: "relative",
 					maxWidth: "75vw",
-					maxHeight: "75vh"
+					maxHeight: "75vh",
+					marginLeft: "auto",
+					marginRight: "auto"
 				}}>
 				<img
 					src={`/${imageType}/${params.mosaic_id}/${filter}`}

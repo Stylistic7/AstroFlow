@@ -341,12 +341,16 @@ def mosaic_thumbnail_image_for_filter(mosaic_id, filter):
       mosaic_id,
       filter,
   )))
+  print(f'### artifact {subframe_artifact} '
+        f'exists {artifact_exists(subframe_artifact)}')
 
   master_artifact = next(iter(done_artifacts(
       'master',
       mosaic_id,
       filter,
   )))
+  print(f'### artifact {master_artifact} '
+        f'exists {artifact_exists(master_artifact)}')
 
   for artifact in [master_artifact, subframe_artifact]:
     if artifact_exists(artifact):
