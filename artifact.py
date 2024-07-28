@@ -189,8 +189,12 @@ def _(artifact: CacheArtifact):
     return False
 
   if artifact.content_hash is not None:
-    file_obj = io.BytesIO(context.get(artifact.key, keep_in_memory=False))
+    value = context.get(artifact.key, keep_in_memory=False)
 
+    if type(value) is not bytes:
+      return True
+
+    file_obj = io.BytesIO(value)
     fits = pyfits.open(file_obj)
     header = normalize_header(fits[0].header)
     fits.close()
