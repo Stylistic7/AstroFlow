@@ -6,6 +6,13 @@ import Breadcrumbs from '@mui/material/Breadcrumbs';
 import Link from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 import DirectionsRunIcon from '@mui/icons-material/DirectionsRun';
+import Accordion from '@mui/material/Accordion';
+import AccordionSummary from '@mui/material/AccordionSummary';
+import AccordionDetails from '@mui/material/AccordionDetails';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import { CopyToClipboard } from 'react-copy-to-clipboard';
+import Snackbar from '@mui/material/Snackbar';
+
 
 import MosaicOutline from "./MosaicOutline.jsx";
 import ColorChannelSelector from "./ColorChannelSelector.jsx";
@@ -72,29 +79,44 @@ export default function MosaicPanel() {
 		return `${negative}${String(degrees).padStart(2, '0')}º ${String(minutes).padStart(2, '0')}' ${String(seconds).padStart(2, '0')}"`
 	}
 
-	const telescopius = (mosaic) => {
-		let output = [<p>Pane, RA, DEC, Position Angle (East), Pane width (arcmins), Pane height (arcmins), Overlap, Row, Column</p>];
-		let pane = 1;
-		for (let i = 0; i < mosaic.target_ids.length; ++i) {
-			let target_id = mosaic.target_ids[i];
-			let [tile_x, tile_y] = mosaic.tile_indices[i];
+	const telescopius_pane_line = (mosaic, target_id, pane) => {
+		let [tile_x, tile_y] = mosaic.tile_indices[pane];
+		let target = targets[target_id];
+		let stack_id = target.stack_ids[0];
+		let stack = stacks[stack_id];
+		let [ra, dec] = stack.center;
+		let rotation_angle = stack.rotation_angle * 180.0 / Math.PI;
+		let pane_width = stack.image_scale * stack.width_pixels / 60.0;
+		let pane_height = stack.image_scale * stack.height_pixels / 60.0;
 
-			let target = targets[target_id];
-			let stack_id = target.stack_ids[0];
-			let stack = stacks[stack_id];
+		return `Pane ${pane + 1}, ${ra_to_hms(ra)}, ${dec_to_dms(dec)}, ${rotation_angle.toFixed(1)}, ${pane_width.toFixed(2)}, ${pane_height.toFixed(2)}, 20%, ${tile_x + 1}, ${tile_y + 1}`;
+	};
 
-			let [ra, dec] = stack.center;
-			let rotation_angle = stack.rotation_angle * 180.0 / Math.PI;
-			console.log('stack', stack);
-			let pane_width = stack.image_scale * stack.width_pixels / 60.0;
-			let pane_height = stack.image_scale * stack.height_pixels / 60.0;
+	const [open, setOpen] = useState(false);
 
-			output.push(<p>{`Pane ${pane}, ${ra_to_hms(ra)}, ${dec_to_dms(dec)}, ${rotation_angle.toFixed(1)}, ${pane_width.toFixed(2)}, ${pane_height.toFixed(2)}, 20%, ${tile_x + 1}, ${tile_y + 1}`}</p>);
-			pane += 1;
-		}
+	const telescopius = mosaic => {
+		const header = "Pane, RA, DEC, Position Angle (East), Pane width (arcmins), Pane height (arcmins), Overlap, Row, Column";
+		const text = [header].concat(
+			mosaic.target_ids.map((target_id, pane) =>
+				telescopius_pane_line(mosaic, target_id, pane)
+			)).join('\n');
+		console.log('text', text);
 
-		return output;
-	}
+		return <>
+			<p>
+				{header}<br />
+				{mosaic.target_ids.map((target_id, pane) => <>
+					<span>
+						{telescopius_pane_line(mosaic, target_id, pane)}
+					</span><br />
+				</>)}
+			</p >
+			<CopyToClipboard text={text}
+				onCopy={() => setOpen(true)}>
+				<button>Copy to clipboard with button</button>
+			</CopyToClipboard>
+		</>;
+	};
 
 	// TODO: Add other modes besides AUTO.
 	const runAllTasks = () => {
@@ -129,9 +151,26 @@ export default function MosaicPanel() {
 				</Typography>
 			</Breadcrumbs>
 
-			<Typography color="text.primary" margin="0.5em" onClick={runAllTasks}>
-				{telescopius(mosaic)}
-			</Typography>
+			<Accordion>
+				<AccordionSummary
+					expandIcon={<ExpandMoreIcon />}
+					aria-controls="telescopius-content"
+					id="telescopius-header"
+				>
+					Telescopius
+				</AccordionSummary>
+				<AccordionDetails>
+					{telescopius(mosaic)}
+				</AccordionDetails>
+			</Accordion>
+			<Snackbar
+				anchorOrigin={{ vertical: "top", horizontal: "center" }}
+				open={open}
+				autoHideDuration={5000}
+				onClose={event => setOpen(false)}
+				message="Telescopius text copied"
+				key="telescopius-snackbar"
+			/>
 
 			<Typography color="text.primary" margin="0.5em" onClick={runAllTasks}>
 				<DirectionsRunIcon sx={{ marginRight: '0.5em' }} onClick={runAllTasks} /> Run all tasks
