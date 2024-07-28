@@ -8,10 +8,9 @@ import Typography from '@mui/material/Typography';
 import DirectionsRunIcon from '@mui/icons-material/DirectionsRun';
 
 import MosaicOutline from "./MosaicOutline.jsx";
-import MultiChannelImage from "./MultiChannelImage.jsx";
+import ColorChannelSelector from "./ColorChannelSelector.jsx";
 import TargetPanel from "./TargetPanel.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
-
 
 import "./Starmap.css";
 
@@ -23,6 +22,9 @@ export default function MosaicPanel() {
 	const navigate = useNavigate();
 
 	const mosaic = mosaics[params.mosaic_id];
+
+	const [filter, setFilter] = useState();
+	console.log("filter is", filter);
 
 	const fontColor = "#aaa";
 
@@ -129,19 +131,46 @@ export default function MosaicPanel() {
 				<DirectionsRunIcon sx={{ marginRight: '0.5em' }} onClick={runAllTasks} /> Run all tasks
 			</Typography>
 
-			<MosaicOutline
-				stacks={stacks}
-				targets={targets}
-				mosaics={mosaics}
-				mosaic_id={params.mosaic_id}
-			/>
-
-			<MultiChannelImage
-				stacks={stacks}
-				targets={targets}
-				mosaics={mosaics}
-				mosaic_id={params.mosaic_id}
-			/>
+			<div id="mosaicPanel"
+				style={{
+					display: "block",
+					margin: "1em",
+					position: "relative",
+				}}>
+				<MosaicOutline
+					stacks={stacks}
+					targets={targets}
+					mosaics={mosaics}
+					mosaic_id={params.mosaic_id}
+					style={{
+						display: "block",
+						position: "absolute",
+						left: 0,
+						top: 0,
+						width: "100%",
+						height: "100%",
+						marginLeft: "auto",
+						marginRight: "auto",
+						maxWidth: "auto",
+						maxHeight: "auto",
+					}}
+				/>
+				<ColorChannelSelector
+					stacks={stacks}
+					targets={targets}
+					mosaics={mosaics}
+					mosaic_id={params.mosaic_id}
+					filter={filter}
+					setFilter={setFilter}
+					style={{
+						height: "100%",
+						maxWidth: "100%",
+						display: "block",
+						marginLeft: "auto",
+						marginRight: "auto",
+					}}
+				/>
+			</div>
 		</>
 	);
 }

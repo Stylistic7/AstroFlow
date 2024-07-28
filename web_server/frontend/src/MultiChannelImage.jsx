@@ -66,8 +66,9 @@ export default function MultiChannelImage({ stacks, targets, mosaics, mosaic_id 
       />
       <div
         style={{
-          marginLeft: "auto",
-          marginRight: "auto",
+          width: "100%",
+          display: "flex",
+          justifyContent: "center"
         }}
       >
         {filters.map(f => {
