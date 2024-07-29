@@ -574,6 +574,9 @@ if __name__ == '__main__':
 
   args = parser.parse_args()
 
+  # This is a hack that waits until the ContextActor is actually alive.
+  cache_keys = context.get_cache_keys()
+
   context.input_dirs = [os.path.abspath(i) for i in args.input_dirs]
   context.output_dir = os.path.abspath(args.output_dir)
   context.quarantine = args.quarantine

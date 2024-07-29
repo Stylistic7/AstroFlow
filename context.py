@@ -114,7 +114,11 @@ class Context:
 
   def set(self, key, value, flush=False):
     actor = ray.get_actor('context', namespace=namespace)
-    return ray.get(actor.set.remote(key, [ray.put(value)], flush))
+    # Ray will automatically de-reference values that are passed by value, but
+    # it will not de-reference values inside containers, like lists. This puts
+    # the value in the Ray object store, then passes the ObjectRef unchanged
+    # to the Actor.
+    return ray.get(actor.set.remote(key, [ray.put(value, _owner=actor)], flush))
 
   def __setattr__(self, key, value):
     return self.set(key, value)
