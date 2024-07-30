@@ -1,6 +1,5 @@
 import ray_local
 
-import ray
 import glob
 import unittest
 import tempfile
@@ -67,8 +66,6 @@ class TestImageMetadata(unittest.TestCase):
     results = run_graph(graph)
     filenames_on_disk = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
     images = list(get_metadata())
-    for i in images:
-      print(f'### image {i}')
     self.assertEqual(len(images), 20)
     self.assertTrue(all(os.path.exists(i.filename) for i in images))
 

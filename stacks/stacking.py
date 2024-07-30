@@ -218,9 +218,4 @@ def stack_files(stack_id):
     print(f'last modified WBPP master {filename} -> {dest_filename}')
     file_io.xisf_file_io.add_xisf_metadata(filename, dest_filename, metadata)
 
-    # TODO: This should be in the compute graph, not shoe-horned in here.
-    # It also blocks the entire Ray cluster, because it consumes the entire
-    # PixInsight resource, which is the entire node.
-    ray.get(compute_image_metadata.remote(dest_filename))
-
     return FileArtifact(dest_filename, stack.content_hash)

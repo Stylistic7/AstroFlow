@@ -5,8 +5,6 @@ import time
 import json
 import math
 
-from cache import cache
-
 subframe_selector_script = """
 var P = new SubframeSelector;
 P.routine = SubframeSelector.prototype.MeasureSubframes;

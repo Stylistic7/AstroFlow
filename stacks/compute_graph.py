@@ -3,7 +3,8 @@ import ray
 from context import context
 from stacks.stacking import stack_files
 from stacks.post_process_stack import post_process_stack
-from dependency_graph import Graph
+from dependency_graph import Graph, Node
+from metadata.image_metadata import compute_image_metadata
 
 
 @ray.remote
@@ -11,12 +12,16 @@ def build_stack_subgraph(stack_id):
   stacks = context.stacks
   stack = stacks[stack_id]
 
+  stack_task = (stack_files, stack_id)
+  metadata_task = Node(compute_image_metadata, name=stack_id)
+  post_process_task = (post_process_stack, stack_id)
+
   graph = Graph()
-  graph[(stack_files,
-         stack_id)] = {(stack_files, d)
+  graph[stack_task] = {(stack_files, d)
                        for substack in stack.contents
                        for d in stacks[substack].dependencies.values()
                        if stacks[d].image_type != 'light'}
-  graph[(post_process_stack, stack_id)] = {(stack_files, stack_id)}
+  graph[metadata_task] = {stack_task}
+  graph[post_process_task] = {metadata_task}
 
   return graph

@@ -3,8 +3,9 @@
 # Ray cluster that has access to both diskcache and PixInsight.
 
 import os
+import ray
 
-if not 'ASTROFLOW_MOCK_NAMESPACE' in os.environ:
+if 'ASTROFLOW_MOCK_NAMESPACE' not in os.environ:
   os.environ["ASTROFLOW_MOCK_CACHE"] = "true"
 
   import uuid
@@ -43,3 +44,6 @@ if not 'ASTROFLOW_MOCK_NAMESPACE' in os.environ:
   state_actor = StateActor.options(name='state',
                                    namespace=namespace,
                                    get_if_exists=True).remote()
+
+  # This is a hack that waits until the ContextActor is actually alive.
+  cache_keys = ray.get(context_actor.get_cache_keys.remote())

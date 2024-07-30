@@ -89,7 +89,7 @@ class TestState(unittest.TestCase):
     processing_graph = ray.get(build_main_processing_graph.remote())
     print('### processing_graph')
     print_graph(processing_graph)
-    self.assertEqual(len(processing_graph), 2)
+    self.assertEqual(len(processing_graph), 3)
 
     graph = build_compute_graph()
     run_graph(graph)

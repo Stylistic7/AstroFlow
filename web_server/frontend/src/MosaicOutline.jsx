@@ -3,9 +3,10 @@ import { useNavigate } from "react-router-dom";
 
 import Polyline from "./Polyline.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
+import ExposureDurationWidget from "./ExposureDurationWidget.jsx";
 
 export default function MosaicOutline({ mosaic_id, style = {} }) {
-  const { targets, mosaics } = useContext(AstroFlowContext);
+  const { stacks, targets, mosaics } = useContext(AstroFlowContext);
   const mosaic = mosaics[mosaic_id];
   console.log(mosaic);
 
@@ -41,19 +42,30 @@ export default function MosaicOutline({ mosaic_id, style = {} }) {
         ...style
       }}
     >
-      {mosaic.target_ids.map((target_id) =>
-        <Polyline
-          polyline={targets[target_id].projected_footprint[projection].coords}
-          key={target_id}
-          style={target_outline_style}
-          handleClick={event => navigate(`/target/${target_id}`)}
-        />
-      )}
+      {mosaic.target_ids.map((target_id) => {
+        const stack_id = targets[target_id].stack_ids[0];
+        const stack = stacks[stack_id];
+
+        return <>
+          <Polyline
+            polyline={targets[target_id].projected_footprint[projection].coords}
+            key={target_id}
+            style={target_outline_style}
+            handleClick={event => navigate(`/target/${target_id}`)}
+          />
+          <ExposureDurationWidget
+            key={`exposure_duration_${stack_id}`}
+            totalExposureDuration={stack.integration_s / 3600.0}
+            selectedExposureDuration={stack.integration_s / 3600.0}
+            stack={stack}
+          />
+        </>
+      })}
       <Polyline
         polyline={mosaic.projected_footprint[projection].coords}
         key={mosaic_id}
         style={mosaic_outline_style}
       />
-    </svg>
+    </svg >
   );
 }

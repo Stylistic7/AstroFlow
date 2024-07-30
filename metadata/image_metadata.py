@@ -3,7 +3,8 @@ from pathlib import Path
 import os
 import traceback
 
-from cache import cache
+from artifact import FileArtifact, CacheArtifact, artifact_exists
+from decorators import saves_artifacts
 from file_io.find_image_files import find_image_files
 from file_io.generic import read_header, get_content_hash
 import metadata.image_types as image_types
@@ -108,7 +109,7 @@ def scatter_compute_image_metadata(mode):
 
   graph = Graph({
       gather_compute_image_metadata: [
-          (compute_image_metadata, f) for f in new_filenames
+          (compute_image_metadata, FileArtifact(f)) for f in new_filenames
       ]
   })
 
@@ -120,41 +121,47 @@ class DuplicateFileException(Exception):
 
 
 @ray.remote(scheduling_strategy="SPREAD", max_retries=5, retry_exceptions=True)
-def compute_image_metadata(filename):
-  print(f'Entering compute_image_metadata() for {filename}')
+def compute_image_metadata(artifact):
+  print(f'Entering compute_image_metadata() for {artifact}')
+
+  assert type(artifact) is FileArtifact
 
   # TODO: Make sure this code doesn't actually repeatedly read the image across
   # the network. It should hit the node's filesystem cache.
   try:
-    content_hash = get_content_hash(filename)
+    content_hash = get_content_hash(artifact.filename)
     key = ('image_metadata', content_hash)
+    output_artifact = CacheArtifact(key)
 
-    if context.contains(key):
-      prev_filename = context.get(key, keep_in_memory=False).filename
+    if artifact_exists(output_artifact):
+      prev_filename = context.get(output_artifact.key,
+                                  keep_in_memory=False).filename
       print('### prev_filename', prev_filename)
       if os.path.exists(prev_filename):
         raise DuplicateFileException()
       else:
-        print(f'Filename {prev_filename} has been moved to {filename}')
+        print(f'Filename {prev_filename} has been moved to {artifact.filename}')
 
-    header = read_header(filename)
+    header = read_header(artifact.filename)
     if image_types.is_light_frame(header):
-      plate_solution = plate_solving.solve_field(filename)
+      plate_solution = plate_solving.solve_field(artifact.filename)
     else:
       plate_solution = None
-      print(f'### Skipping plate-solving for filename {filename} '
+      print(f'### Skipping plate-solving for filename {artifact.filename} '
             f'because it is not a light frame')
 
     metadata = ImageMetadata(content_hash=content_hash,
-                             filename=filename,
+                             filename=artifact.filename,
                              header=header,
                              plate_solution=plate_solution)
 
-    context.set(key, metadata, flush=True)
-    print(f'### Wrote key {key}')
+    context.set(output_artifact.key, metadata, flush=True)
+    print(f'### Wrote key {output_artifact.key}')
+
+    return [output_artifact]
 
   except Exception as e:
-    print(f'compute_image_metadata() failed for file {filename}, '
+    print(f'compute_image_metadata() failed for file {artifact.filename}, '
           f'exception {traceback.format_exc()}')
 
 

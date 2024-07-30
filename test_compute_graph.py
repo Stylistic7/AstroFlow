@@ -100,7 +100,7 @@ class TestComputeGraph(unittest.TestCase):
         compute_graph.build_main_processing_graph.remote())
     print_graph(processing_graph)
 
-    self.assertEqual(len(processing_graph), 2)
+    self.assertEqual(len(processing_graph), 3)
 
 
 if __name__ == '__main__':
