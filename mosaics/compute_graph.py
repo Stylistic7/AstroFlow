@@ -13,6 +13,7 @@ from .placement import mosaic_by_coordinates, mosaic_by_coordinates_artifacts
 from stacks.post_process_stack import post_process_stack_artifacts
 from stacks.compute_graph import build_stack_subgraph
 from decorators import saves_artifacts
+from image_previews import resize_array
 
 
 @ray.remote
@@ -124,16 +125,19 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
 
 def done_artifacts(mode, mosaic_id, filter, unused=None):
   mosaic = context.mosaics[mosaic_id]
+  key = ('mosaic_thumbnail_image', mode, mosaic_id, filter)
 
   if mode == 'subframe':
-    return [
-        CacheArtifact(('mosaic_thumbnail_image', mode, mosaic_id, filter),
-                      mosaic.content_hash)
-    ]
+    return [CacheArtifact(key, mosaic.content_hash)]
   elif mode == 'master':
+    # In master mode, we save both the real high-res FITS file on disk, but
+    # also a thumbnail image in the cache.
     filename = os.path.join(context.output_dir, 'Mosaics', mosaic.name,
                             f'final_merged_{mosaic_id}_{filter}.fit')
-    return [FileArtifact(filename, mosaic.content_hash)]
+    return [
+        FileArtifact(filename, mosaic.content_hash),
+        CacheArtifact(key, mosaic.content_hash)
+    ]
 
 
 # TODO: Pass the output artifact to the make_merge_ops() function and eliminate
@@ -152,10 +156,17 @@ def done(mode, mosaic_id, filter, final_artifact):
   assert isinstance(final_artifact,
                     Artifact), f'final_artifact has type {type(final_artifact)}'
 
-  output_artifact = done_artifacts(mode, mosaic_id, filter)[0]
-
   image, header = read_artifact(final_artifact)
-  header['CONTHASH'] = mosaic.content_hash
-  write_artifact(output_artifact, image, header)
 
-  return [output_artifact]
+  output_artifacts = done_artifacts(mode, mosaic_id, filter)
+
+  # TODO: Thumbnails should always be stored as autostretched PNG, for speed.
+  if mode == 'subframe':
+    thumbnail_artifact, = output_artifacts
+    write_artifact(thumbnail_artifact, image, header)
+  elif mode == 'master':
+    file_artifact, thumbnail_artifact = output_artifacts
+    write_artifact(file_artifact, image, header)
+    image = resize_array(image, context.master_thumbnail_width)
+    write_artifact(thumbnail_artifact, image, header)
+    return [file_artifact, thumbnail_artifact]

@@ -22,6 +22,7 @@ from hashing import hash_list
 class TestMosaic(unittest.TestCase):
 
   def setUp(self):
+    # TODO: Remove the testdata cache stuff.
     # Copy everything from the testdata cache into the Ray cache.
     # self.testdata_cache_directory = tempfile.TemporaryDirectory()
     # file = tarfile.open(TESTDATA_CACHE_GZIP_FILENAME)
@@ -104,8 +105,12 @@ class TestMosaic(unittest.TestCase):
     self.assertEqual(len(context.mosaics), 1)
     mosaic = next(iter(context.mosaics.values()))
 
-    key = ('mosaic_thumbnail_image', 'subframe', mosaic.stable_hash, 'H')
-    self.assertTrue(context.contains(key))
+    subframe_key = ('mosaic_thumbnail_image', 'subframe', mosaic.stable_hash,
+                    'H')
+    master_key = ('mosaic_thumbnail_image', 'master', mosaic.stable_hash, 'H')
+
+    self.assertTrue(context.contains(subframe_key))
+    self.assertFalse(context.contains(master_key))
 
     self.assertTrue(
         mosaic.stable_hash in [t.stable_hash for t in context.targets.values()])
@@ -133,6 +138,9 @@ class TestMosaic(unittest.TestCase):
     fits_files = list(Path(context.output_dir).rglob('final_merged*.fit'))
     self.assertEqual(len(fits_files), 1)
     print(f'### Found final merged file {fits_files[0]}')
+
+    self.assertTrue(context.contains(subframe_key))
+    self.assertTrue(context.contains(master_key))
 
 
 if __name__ == "__main__":

@@ -195,9 +195,6 @@ def stack_files(stack_id):
       print(f'### Mocked stacking, converted filename {first_filename} to '
             f'filename {dest_filename} with metadata {metadata}')
 
-      # TODO: This should be in the compute graph, not shoe-horned in here.
-      ray.get(compute_image_metadata.remote(dest_filename))
-
       return FileArtifact(dest_filename, stack.content_hash)
 
     print(f'### Running _run_wbpp for stack {stack}')

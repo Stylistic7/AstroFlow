@@ -124,6 +124,11 @@ class DuplicateFileException(Exception):
 def compute_image_metadata(artifact):
   print(f'Entering compute_image_metadata() for {artifact}')
 
+  # TODO: Handling ancestor_results here is pretty weird.
+  if type(artifact) is list:
+    assert len(artifact) == 1
+    artifact = artifact[0]
+
   assert type(artifact) is FileArtifact
 
   # TODO: Make sure this code doesn't actually repeatedly read the image across

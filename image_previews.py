@@ -163,40 +163,6 @@ def scatter_stack_thumbnails(mode):
   return Graph({gather: tasks})
 
 
-# TODO: This runs on every missing master thumbnail, even if the masters don't
-# exist yet. It takes up time and is unnecessary. Find some way to cache this
-# result or speed it up.
-@ray.remote
-def create_stack_master_thumbnail(stack_id):
-  stacks = context.stacks
-  stack = stacks[stack_id]
-  print(f'Entering create_stack_master_thumbnail() for stack {stack}')
-
-  # Find the master(s).
-  masters = stacking.find_matching_masters(stack, image_hashes, fits_headers)
-  print(f'Found masters {masters}')
-
-  if not masters:
-    return
-
-  if len(masters) > 1:
-    print(f'Found more than one master with hash {stack_id}')
-
-  master = masters[0]
-
-  # Read the master image and autostretch it.
-  image = autostretch(
-      resize_array(read_image(image_hashes[master]),
-                   context.master_thumbnail_width))
-
-  # Store the thumbnail.
-  key = ('stack_master_thumbnail_image', stack_id)
-  context.set(key, array_to_png(image), flush=True)
-  print(f'Wrote key {key}')
-
-  return key
-
-
 # TODO: Is it only necessary to make the thumbnails for the flat stacks
 # immediately before and immediately after the light frames? I suppose people
 # could make bad flat frames, or confuse them somehow, and want all of the

@@ -331,26 +331,14 @@ def mosaic_thumbnail_image_complete(mode, mosaic_id, filter):
   return Response(status=404)
 
 
+# TODO: Thumbnails should always be stored as autostretched PNG, for speed.
 @app.route('/mosaic_thumbnail_image_for_filter/<mosaic_id>/<filter>')
 def mosaic_thumbnail_image_for_filter(mosaic_id, filter):
   mosaic = context.mosaics[mosaic_id]
   print('### mosaic', mosaic)
 
-  subframe_artifact = next(iter(done_artifacts(
-      'subframe',
-      mosaic_id,
-      filter,
-  )))
-  print(f'### artifact {subframe_artifact} '
-        f'exists {artifact_exists(subframe_artifact)}')
-
-  master_artifact = next(iter(done_artifacts(
-      'master',
-      mosaic_id,
-      filter,
-  )))
-  print(f'### artifact {master_artifact} '
-        f'exists {artifact_exists(master_artifact)}')
+  _, master_artifact = done_artifacts('master', mosaic_id, filter)
+  subframe_artifact, = done_artifacts('subframe', mosaic_id, filter)
 
   for artifact in [master_artifact, subframe_artifact]:
     if artifact_exists(artifact):
