@@ -32,6 +32,16 @@ export default function MosaicOutline({ mosaic_id, style = {} }) {
     pointerEvents: "none"
   };
 
+  const middle_coord = coords => {
+    const xs = coords.map(([x, y]) => x);
+    const ys = coords.map(([x, y]) => y);
+
+    return [
+      (Math.min(...xs) + Math.max(...xs)) / 2.0,
+      (Math.min(...ys) + Math.max(...ys)) / 2.0
+    ];
+  }
+
   return (
     <svg
       id="mosaic_svg"
@@ -43,17 +53,27 @@ export default function MosaicOutline({ mosaic_id, style = {} }) {
       }}
     >
       {mosaic.target_ids.map((target_id) => {
+        // TODO: This needs to lookup the stack for a given filter, because the
+        // exposure duration widgets are filter-dependent.
         const stack_id = targets[target_id].stack_ids[0];
         const stack = stacks[stack_id];
+        const coords = targets[target_id].projected_footprint[projection].coords;
+        const [mean_x, mean_y] = middle_coord(coords)
+        const width = 0.005;
+        const height = 0.005;
 
         return <>
           <Polyline
-            polyline={targets[target_id].projected_footprint[projection].coords}
+            polyline={coords}
             key={target_id}
             style={target_outline_style}
             handleClick={event => navigate(`/target/${target_id}`)}
           />
           <ExposureDurationWidget
+            x={mean_x - width / 2}
+            y={mean_y - height / 2}
+            width={width}
+            height={height}
             key={`exposure_duration_${stack_id}`}
             totalExposureDuration={stack.integration_s / 3600.0}
             selectedExposureDuration={stack.integration_s / 3600.0}

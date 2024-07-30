@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useReducer } from "react";
 import './Starmap.css';
 
-export default function ExposureDurationWidget({ totalExposureDuration, selectedExposureDuration, sx }) {
+export default function ExposureDurationWidget({ totalExposureDuration, selectedExposureDuration, sx, ...props }) {
 
 	const clock_face = () => {
 		return (
@@ -79,9 +79,11 @@ export default function ExposureDurationWidget({ totalExposureDuration, selected
 			viewBox="0 0 2 2"
 			style={{ ...sx, "right": `${numClockFaces * 2 + 0.5}em` }}
 			key={`key_${numClockFaces}`}
+			{...props}
 		>
 			{clock_face()}
-			{wedge(clamp(totalExposureDuration, 0, 11.999), "red")}
+			{wedge(clamp(totalExposureDuration, 0, 11.999), "red")
+			}
 			{wedge(clamp(selectedExposureDuration, 0, 11.999), "blue")}
 			{tick_marks()}
 		</svg >);
