@@ -15,6 +15,8 @@ from .viewbox import compute_mosaic_viewbox_artifacts
 from artifact import read_artifact_image, read_artifact_header, write_artifact, CacheArtifact, FileArtifact
 from hashing import hash_list
 
+_MEMORY_REQUIREMENT = 8 * 1024 * 1024 * 1024  # 8 GB
+
 
 def mosaic_by_coordinates_artifacts(mode, mosaic_id, filter, stack_id,
                                     input_artifact):
@@ -88,7 +90,7 @@ def place_tile(tile_y, tile_x, wcs, ra_tiles, dec_tiles, interp):
 #
 # TODO: Provide some feedback on progress.
 # TODO: Store these on disk and read them back when unchanged.
-@ray.remote(scheduling_strategy="SPREAD")
+@ray.remote(scheduling_strategy="SPREAD", memory=_MEMORY_REQUIREMENT)
 @saves_artifacts(mosaic_by_coordinates_artifacts)
 def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact):
   print(f'### Entering mosaic_by_coordinates '
