@@ -5,10 +5,11 @@ import Polyline from "./Polyline.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
 import ExposureDurationWidget from "./ExposureDurationWidget.jsx";
 
-export default function MosaicOutline({ mosaic_id, style = {} }) {
+export default function MosaicOutline({ mosaic_id, filter, style = {} }) {
   const { stacks, targets, mosaics } = useContext(AstroFlowContext);
   const mosaic = mosaics[mosaic_id];
   console.log(mosaic);
+  console.log('filter', filter);
 
   const navigate = useNavigate();
 
@@ -53,9 +54,11 @@ export default function MosaicOutline({ mosaic_id, style = {} }) {
       }}
     >
       {mosaic.target_ids.map((target_id) => {
-        // TODO: This needs to lookup the stack for a given filter, because the
-        // exposure duration widgets are filter-dependent.
-        const stack_id = targets[target_id].stack_ids[0];
+        let stack_id = targets[target_id].stack_ids[0];
+        if (filter) {
+          stack_id = targets[target_id].stack_ids.find((stack_id) => stacks[stack_id].filter == filter);
+        }
+
         const stack = stacks[stack_id];
         const coords = targets[target_id].projected_footprint[projection].coords;
         const [mean_x, mean_y] = middle_coord(coords)
@@ -69,7 +72,7 @@ export default function MosaicOutline({ mosaic_id, style = {} }) {
             style={target_outline_style}
             handleClick={event => navigate(`/target/${target_id}`)}
           />
-          <ExposureDurationWidget
+          {filter && <ExposureDurationWidget
             x={mean_x - width / 2}
             y={mean_y - height / 2}
             width={width}
@@ -78,7 +81,7 @@ export default function MosaicOutline({ mosaic_id, style = {} }) {
             totalExposureDuration={stack.integration_s / 3600.0}
             selectedExposureDuration={stack.integration_s / 3600.0}
             stack={stack}
-          />
+          />}
         </>
       })}
       <Polyline

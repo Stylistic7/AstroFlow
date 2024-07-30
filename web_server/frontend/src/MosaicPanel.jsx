@@ -201,6 +201,7 @@ export default function MosaicPanel() {
 					targets={targets}
 					mosaics={mosaics}
 					mosaic_id={params.mosaic_id}
+					filter={filter}
 					style={{
 						display: "block",
 						position: "absolute",
