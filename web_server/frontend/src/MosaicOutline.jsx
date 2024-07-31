@@ -72,7 +72,7 @@ export default function MosaicOutline({ mosaic_id, filter, style = {} }) {
             style={target_outline_style}
             handleClick={event => navigate(`/target/${target_id}`)}
           />
-          {filter && <ExposureDurationWidget
+          {filter && stack && <ExposureDurationWidget
             x={mean_x - width / 2}
             y={mean_y - height / 2}
             width={width}
