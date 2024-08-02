@@ -1,3 +1,5 @@
+import ray_local
+
 import os
 import astropy.io.fits as pyfits  # type: ignore
 import numpy as np

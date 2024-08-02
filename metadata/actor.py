@@ -9,10 +9,9 @@ from collections.abc import Iterable
 from cache import cache
 from context import context
 
-if 'ASTROFLOW_MOCK_NAMESPACE' in os.environ:
-  namespace = os.environ["ASTROFLOW_MOCK_NAMESPACE"]
-else:
-  namespace = 'AstroFlow'
+
+def _get_namespace():
+  return os.environ.get("ASTROFLOW_MOCK_NAMESPACE", "AstroFlow")
 
 
 @ray.remote(resources={'diskcache': 0.001})
@@ -57,7 +56,7 @@ def get_metadata(input_images=None,
   if input_images is not None and len(input_images) == 0:
     return []
 
-  actor = ray.get_actor('metadata', namespace=namespace)
+  actor = ray.get_actor('metadata', namespace=_get_namespace())
   return ray.get(
       actor.get_metadata.remote(input_images, predicate_fn, transform_fn,
                                 post_fn))

@@ -1,13 +1,12 @@
 import ray
 import os
-from typing import Any
 
+from typing import Any
 from cache import cache
 
-if 'ASTROFLOW_MOCK_NAMESPACE' in os.environ:
-  namespace = os.environ["ASTROFLOW_MOCK_NAMESPACE"]
-else:
-  namespace = 'AstroFlow'
+
+def _get_namespace():
+  return os.environ.get("ASTROFLOW_MOCK_NAMESPACE", "AstroFlow")
 
 
 @ray.remote(resources={'diskcache': 0.001})
@@ -101,7 +100,7 @@ class ContextActor:
 class Context:
 
   def get(self, key, default_value=None, keep_in_memory=True):
-    actor = ray.get_actor('context', namespace=namespace)
+    actor = ray.get_actor('context', namespace=_get_namespace())
     maybe_ref = ray.get(actor.get.remote(key, default_value, keep_in_memory))
     if maybe_ref:
       return ray.get(maybe_ref)
@@ -113,7 +112,7 @@ class Context:
     return self.get(key)
 
   def set(self, key, value, flush=False):
-    actor = ray.get_actor('context', namespace=namespace)
+    actor = ray.get_actor('context', namespace=_get_namespace())
     # Ray will automatically de-reference values that are passed by value, but
     # it will not de-reference values inside containers, like lists. This puts
     # the value in the Ray object store, then passes the ObjectRef unchanged
@@ -127,36 +126,36 @@ class Context:
     return self.set(key, value)
 
   def and_equals(self, key, value, flush=False):
-    actor = ray.get_actor('context', namespace=namespace)
+    actor = ray.get_actor('context', namespace=_get_namespace())
     return ray.get(actor.and_equals.remote(key, [ray.put(value)], flush))
 
   def or_equals(self, key, value, flush=False):
-    actor = ray.get_actor('context', namespace=namespace)
+    actor = ray.get_actor('context', namespace=_get_namespace())
     return ray.get(actor.or_equals.remote(key, [ray.put(value)], flush))
 
   def ref_dict(self):
-    actor = ray.get_actor('context', namespace=namespace)
+    actor = ray.get_actor('context', namespace=_get_namespace())
     return ray.get(actor.ref_dict.remote())
 
   # TODO: Implement "k in context" operation.
   def contains(self, key):
-    actor = ray.get_actor('context', namespace=namespace)
+    actor = ray.get_actor('context', namespace=_get_namespace())
     return ray.get(actor.contains.remote(key))
 
   def delete(self, key):
-    actor = ray.get_actor('context', namespace=namespace)
+    actor = ray.get_actor('context', namespace=_get_namespace())
     return ray.get(actor.delete.remote())
 
   def flush(self, key):
-    actor = ray.get_actor('context', namespace=namespace)
+    actor = ray.get_actor('context', namespace=_get_namespace())
     return ray.get(actor.flush.remote(key))
 
   def clear(self):
-    actor = ray.get_actor('context', namespace=namespace)
+    actor = ray.get_actor('context', namespace=_get_namespace())
     return ray.get(actor.clear.remote())
 
   def get_cache_keys(self):
-    actor = ray.get_actor('context', namespace=namespace)
+    actor = ray.get_actor('context', namespace=_get_namespace())
     return ray.get(actor.get_cache_keys.remote())
 
 

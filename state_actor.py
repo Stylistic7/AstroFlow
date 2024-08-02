@@ -5,12 +5,9 @@ import os
 from context import context
 from dependency_graph import Graph, run_graph
 
-if 'ASTROFLOW_MOCK_NAMESPACE' in os.environ:
-  namespace = os.environ["ASTROFLOW_MOCK_NAMESPACE"]
-  print(f'### Using mock namespace {namespace}')
-else:
-  namespace = 'AstroFlow'
-  print(f'### Using real namespace {namespace}')
+
+def _get_namespace():
+  return os.environ.get("ASTROFLOW_MOCK_NAMESPACE", "AstroFlow")
 
 
 class Action(Dict):
@@ -84,7 +81,7 @@ class StateActor:
 
 
 def dispatch(action, callback=None):
-  actor = ray.get_actor('state', namespace=namespace)
+  actor = ray.get_actor('state', namespace=_get_namespace())
   result = ray.get(actor.dispatch.remote(action))
   if callback:
     print('### Calling callback')
