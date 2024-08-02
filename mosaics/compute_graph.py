@@ -123,7 +123,7 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
   return graph
 
 
-def done_artifacts(mode, mosaic_id, filter, *, ancestor_results):
+def done_artifacts(mode, mosaic_id, filter, *, ancestor_results=None):
   mosaic = context.mosaics[mosaic_id]
   key = ('mosaic_thumbnail_image', mode, mosaic_id, filter)
 
@@ -144,7 +144,7 @@ def done_artifacts(mode, mosaic_id, filter, *, ancestor_results):
 # this function.
 @ray.remote
 @saves_artifacts(done_artifacts)
-def done(mode, mosaic_id, filter, *, ancestor_results):
+def done(mode, mosaic_id, filter, *, ancestor_results=None):
   mosaic = context.mosaics[mosaic_id]
 
   assert type(ancestor_results) is list
