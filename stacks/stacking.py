@@ -12,8 +12,6 @@ from context import context
 import pix
 import position_string
 import file_io
-from dependency_graph import Graph
-from metadata.image_metadata import compute_image_metadata
 from metadata.actor import get_metadata
 
 _CONTENT_HASH_KEY = 'CONTHASH'

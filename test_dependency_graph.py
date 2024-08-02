@@ -33,18 +33,18 @@ def my_first_task():
 
 
 @ray.remote
-def my_later_task(results):
-  return results[0] + 1
+def my_later_task(*, ancestor_results):
+  return ancestor_results[0] + 1
 
 
 @ray.remote
-def my_last_task(results):
-  return results[0] + 3
+def my_last_task(*, ancestor_results):
+  return ancestor_results[0] + 3
 
 
 @ray.remote
-def my_last_task_with_context(results):
-  return results[0] + 3
+def my_last_task_with_context(*, ancestor_results):
+  return ancestor_results[0] + 3
 
 
 @ray.remote
@@ -97,13 +97,13 @@ def process_raises_exception(item):
 
 
 @ray.remote
-def gather(results):
-  return sum(results)
+def gather(*, ancestor_results):
+  return sum(ancestor_results)
 
 
 @ray.remote
-def passthrough(results):
-  return results
+def passthrough(*, ancestor_results):
+  return ancestor_results
 
 
 @ray.remote
@@ -112,8 +112,8 @@ def build_subgraph(item):
 
 
 @ray.remote
-def gather_from_subgraphs(results):
-  return sum(r[0] for r in results)
+def gather_from_subgraphs(*, ancestor_results):
+  return sum(r[0] for r in ancestor_results)
 
 
 def scatter_in_subgraphs():
@@ -129,9 +129,9 @@ def scatter_with_context():
 
 
 @ray.remote
-def gather_with_context(results):
-  context.processed += results
-  context.sum = sum(results)
+def gather_with_context(*, ancestor_results):
+  context.processed += ancestor_results
+  context.sum = sum(ancestor_results)
   return context.sum
 
 

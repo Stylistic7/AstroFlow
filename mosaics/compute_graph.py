@@ -123,7 +123,7 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
   return graph
 
 
-def done_artifacts(mode, mosaic_id, filter, unused=None):
+def done_artifacts(mode, mosaic_id, filter, *, ancestor_results):
   mosaic = context.mosaics[mosaic_id]
   key = ('mosaic_thumbnail_image', mode, mosaic_id, filter)
 
@@ -144,21 +144,23 @@ def done_artifacts(mode, mosaic_id, filter, unused=None):
 # this function.
 @ray.remote
 @saves_artifacts(done_artifacts)
-def done(mode, mosaic_id, filter, final_artifact):
+def done(mode, mosaic_id, filter, *, ancestor_results):
   mosaic = context.mosaics[mosaic_id]
 
+  assert type(ancestor_results) is list
+  assert len(ancestor_results) == 1
+  final_artifact = ancestor_results[0][0]
+  assert isinstance(final_artifact,
+                    Artifact), f'final_artifact has type {type(final_artifact)}'
   print(f'### Merging {mosaic} mode {mode} is done, '
         f'final_artifact is {final_artifact}')
 
-  assert type(final_artifact) is list
-  assert len(final_artifact) == 1
-  final_artifact = final_artifact[0][0]
-  assert isinstance(final_artifact,
-                    Artifact), f'final_artifact has type {type(final_artifact)}'
-
   image, header = read_artifact(final_artifact)
 
-  output_artifacts = done_artifacts(mode, mosaic_id, filter)
+  output_artifacts = done_artifacts(mode,
+                                    mosaic_id,
+                                    filter,
+                                    ancestor_results=None)
 
   # TODO: Thumbnails should always be stored as autostretched PNG, for speed.
   if mode == 'subframe':

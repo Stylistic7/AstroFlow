@@ -200,7 +200,8 @@ def run_graph(graph, status_fn=None, debug=False):
     graph = canonicalize_graph(graph)
 
     if debug:
-      print(f'Creating new subgraph {graph}')
+      print(f'### Creating new subgraph:')
+      print_graph(graph)
 
     ts = TopologicalSorterWithStatus(graph)
     ts.prepare()
@@ -230,13 +231,12 @@ def run_graph(graph, status_fn=None, debug=False):
     full_args = []
     full_args.extend(node.args)
 
-    # TODO: This confuses optional arguments with ancestor results;
-    # maybe there's a cleaner way to do this?
     sig = inspect.signature(node.task._function)
-    if len(sig.parameters) > len(full_args):
-      full_args.append(ancestor_results(ts, node))
-
-    return node.task.remote(*full_args)
+    if 'ancestor_results' in sig.parameters:
+      return node.task.remote(*full_args,
+                              ancestor_results=ancestor_results(ts, node))
+    else:
+      return node.task.remote(*full_args)
 
   def delete_finished_subgraphs():
     for ts in active:

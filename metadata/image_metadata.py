@@ -4,7 +4,6 @@ import os
 import traceback
 
 from artifact import FileArtifact, CacheArtifact, artifact_exists
-from decorators import saves_artifacts
 from file_io.find_image_files import find_image_files
 from file_io.generic import read_header, get_content_hash
 import metadata.image_types as image_types
@@ -85,31 +84,38 @@ def get_images_with_good_plate_solutions():
 
 
 @ray.remote
-def scatter_compute_image_metadata(mode):
-  print('Entering scatter_compute_image_metadata, mode', mode)
+def scatter_compute_image_metadata(mode=None, ancestor_results=None):
+  print('Entering scatter_compute_image_metadata, mode', mode,
+        'ancestor_results', ancestor_results)
 
   directories = {
+      None: [],
       'input': context.input_dirs,
       'master': [context.output_dir],
       'all': context.input_dirs + [context.output_dir],
   }[mode]
 
-  filenames = []
+  if ancestor_results is not None:
+    artifacts = {a[0] for a in ancestor_results}
+  else:
+    artifacts = set()
+
   for dir in directories:
-    filenames.extend(find_image_files(dir))
+    artifacts.update({FileArtifact(f) for f in find_image_files(dir)})
 
-  known_files = get_metadata(transform_fn=lambda i: i.filename)
-  new_filenames = list(
-      set(filenames) - set(known_files) - set(context.quarantined_files))
+  known_artifacts = get_metadata(
+      transform_fn=lambda i: FileArtifact(i.filename))
+  new_artifacts = list(
+      set(artifacts) - set(known_artifacts) -
+      {FileArtifact(f) for f in context.quarantined_files})
 
-  if not new_filenames:
+  if not new_artifacts:
     return {}
 
-  print(f'### Computing image metadata for {len(new_filenames)} new filenames')
-
+  print(f'### Computing image metadata for {len(new_artifacts)} new artifacts')
   graph = Graph({
       gather_compute_image_metadata: [
-          (compute_image_metadata, FileArtifact(f)) for f in new_filenames
+          (compute_image_metadata, a) for a in new_artifacts
       ]
   })
 
@@ -121,15 +127,16 @@ class DuplicateFileException(Exception):
 
 
 @ray.remote(scheduling_strategy="SPREAD", max_retries=5, retry_exceptions=True)
-def compute_image_metadata(artifact):
-  print(f'Entering compute_image_metadata() for {artifact}')
-
-  # TODO: Handling ancestor_results here is pretty weird.
-  if type(artifact) is list:
-    assert len(artifact) == 1
-    artifact = artifact[0]
-
-  assert type(artifact) is FileArtifact
+def compute_image_metadata(artifact=None, *, ancestor_results):
+  print(f'Entering compute_image_metadata() for {artifact} '
+        f'ancestor_results {ancestor_results}')
+  if artifact is not None:
+    assert type(artifact) is FileArtifact
+  elif ancestor_results is not None:
+    assert type(ancestor_results) is list
+    assert len(ancestor_results) == 1
+    assert type(ancestor_results[0]) is FileArtifact
+    artifact = ancestor_results[0]
 
   # TODO: Make sure this code doesn't actually repeatedly read the image across
   # the network. It should hit the node's filesystem cache.
@@ -171,5 +178,5 @@ def compute_image_metadata(artifact):
 
 
 @ray.remote
-def gather_compute_image_metadata(results):
+def gather_compute_image_metadata():
   pass

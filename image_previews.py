@@ -346,5 +346,5 @@ def create_stack_subframe_thumbnails(stack_id):
 
 
 @ray.remote
-def gather(context):
+def gather():
   pass

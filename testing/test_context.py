@@ -1,6 +1,5 @@
 import ray_local
 
-import ray
 import tempfile
 import datetime
 
