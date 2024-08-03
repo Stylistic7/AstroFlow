@@ -5,6 +5,8 @@ import numpy as np
 import ray
 import errno
 import os
+import shutil
+import astropy.io.fits as pyfits  # type: ignore
 
 from decorators import saves_artifacts
 from artifact import FileArtifact
@@ -83,6 +85,25 @@ def _symlink_frames(filenames, dest_path):
     os.symlink(filename, dest_filename)
 
 
+def _copy_frames_with_plate_solution(metadata, dest_path):
+  for frame in metadata.values():
+    filename = frame.filename
+    assert filename
+    if not os.path.exists(filename):
+      raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), filename)
+
+    dest_filename = os.path.join(dest_path, os.path.basename(filename))
+    print(f'copying {filename} -> {dest_filename}')
+    shutil.copyfile(filename, dest_filename)
+
+    if frame.plate_solution:
+      with pyfits.open(str(dest_filename), mode='update') as fits:
+        fits[0].header['RA'] = frame.plate_solution.header['CRVAL1']
+        fits[0].header['DEC'] = frame.plate_solution.header['CRVAL2']
+        for k, v in frame.plate_solution.header.items():
+          fits[0].header[k] = v
+
+
 @pix.PixInsight()
 def _run_wbpp(unused, *args, **kwargs):
   return pix.WeightedBatchPreprocessing(unused, *args, **kwargs)
@@ -106,6 +127,7 @@ def _setup_composite_stack(stack_id, tmp_dir):
       stack.all_frames(),
       post_fn=lambda images: {i.content_hash: i for i in images})
 
+  # TODO: Implement subframe selection in a modular way.
   max_num_stars = max([i.plate_solution.num_stars for i in metadata.values()])
   print(f'### max_num_stars {max_num_stars}')
 
@@ -134,14 +156,14 @@ def _setup_composite_stack(stack_id, tmp_dir):
     if first_filename is None:
       first_filename = filenames[0]
 
-    # Add any dependent stacks (e.g. calibration stacks).
-    # FIXME these are not image hashes, they are stacks!
-    print(f'### dependent stack hashes {substack.dependencies.values()}')
-    # hashes += list(substack.dependencies.values())
-    for d in substack.dependencies.values():
-      filenames.append(stack_files_artifacts(d)[0].filename)
+    _copy_frames_with_plate_solution(metadata, run_dir)
 
-    _symlink_frames(filenames, run_dir)
+    # Add any dependent stacks (e.g. calibration stacks).
+    dependendency_filenames = [
+        stack_files_artifacts(d)[0].filename
+        for d in substack.dependencies.values()
+    ]
+    _symlink_frames(dependendency_filenames, run_dir)
 
   return first_filename
 
@@ -193,7 +215,7 @@ def stack_files(stack_id):
       print(f'### Mocked stacking, converted filename {first_filename} to '
             f'filename {dest_filename} with metadata {metadata}')
 
-      return FileArtifact(dest_filename, stack.content_hash)
+      return [FileArtifact(dest_filename, stack.content_hash)]
 
     print(f'### Running _run_wbpp for stack {stack}')
     _run_wbpp([], dir=tmp_dir, outputDirectory=tmp_dir)
@@ -213,4 +235,4 @@ def stack_files(stack_id):
     print(f'last modified WBPP master {filename} -> {dest_filename}')
     file_io.xisf_file_io.add_xisf_metadata(filename, dest_filename, metadata)
 
-    return FileArtifact(dest_filename, stack.content_hash)
+    return [FileArtifact(dest_filename, stack.content_hash)]
