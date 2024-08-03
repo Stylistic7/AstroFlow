@@ -494,13 +494,13 @@ def populate_context():
     context.regroup = True
 
   if not context.contains('quarantined_files'):
-    context.quarantined_files = []
+    context.quarantined_files = set()
 
   # TODO: Add more comprehensive validation.
   # assert not any(type(p) is str for p in context.plate_solutions.values())
   # assert None not in context.image_hashes.values()
 
-  print(f'Cache contains {len(context.quarantined_files or [])} '
+  print(f'Cache contains {len(context.quarantined_files or set())} '
         f'quarantined files')
   print(f'Cache contains {len(context.image_hashes or {})} image hashes')
   print(f'Cache contains {len(context.fits_headers or {})} FITS headers')

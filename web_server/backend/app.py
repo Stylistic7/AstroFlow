@@ -452,21 +452,23 @@ def plot():
 
 #   return Response(status=204)
 
-# @app.route('/quarantine_stack/<stack_id>')
-# def quarantine_stack(stack_id):
-#   stack = cache['stacks'][stack_id]
-#   quarantined_files = cache['quarantined_files']
+# TODO: All of the uses of the cache in this file have to be replaced by calls
+# to the ContextActor. This also means the "front-door" to AstroFlow is via
+# the website.
 
-#   num_files_quarantined = 0
-#   for run in stack.runs.values():
-#     for h in run.frames:
-#       quarantined_files.append(h)
-#       num_files_quarantined += 1
 
-#   print(f'### Quarantined {num_files_quarantined} files')
-#   cache['quarantined_files'] = quarantined_files
+@app.route('/quarantine_stack/<stack_id>')
+def quarantine_stack(stack_id):
+  stack = cache['stacks'][stack_id]
+  quarantined_files = cache['quarantined_files']
 
-#   return Response(status=204)
+  frames = stack.all_frames()
+  quarantined_files.update(frames)
+  cache['quarantined_files'] = quarantined_files
+
+  print(f'### Quarantined {len(frames)} frames')
+
+  return Response(status=204)
 
 
 @app.route('/recent')

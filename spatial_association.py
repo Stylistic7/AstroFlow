@@ -45,6 +45,8 @@ def find_groups(values, comparison_fn, min_component_members) -> list[str]:
   return groups
 
 
+# TODO: Something in this function is making many calls to get_metadata()
+# with 1 hash, which is slow.
 @ray.remote
 def find_components_by_cosine_similarity():
   print('find_components_by_cosine_similarity')
@@ -55,9 +57,10 @@ def find_components_by_cosine_similarity():
 
   def predicate_fn(image):
     return image_types.is_light_frame(
-        image.header) and not image_types.is_master(
-            image.header) and image.filename not in quarantined_files and type(
-                image.plate_solution) is plate_solving.PlateSolution
+        image.header
+    ) and not image_types.is_master(
+        image.header) and image.content_hash not in quarantined_files and type(
+            image.plate_solution) is plate_solving.PlateSolution
 
   def transform_fn(image):
     centroid = np.asarray(

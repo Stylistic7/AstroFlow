@@ -100,6 +100,8 @@ def scatter_compute_image_metadata(mode=None, ancestor_results=None):
   else:
     artifacts = set()
 
+  # TODO: Don't do anything if the directory's modification time hasn't
+  # changed since the last time it was listed.
   for dir in directories:
     artifacts.update({FileArtifact(f) for f in find_image_files(dir)})
 

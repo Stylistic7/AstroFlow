@@ -55,8 +55,8 @@ function QuarantineStackDialog({ stack_id }) {
 	// go up a level in breadcrumbs.
 	return (
 		<React.Fragment>
-			<Typography color="text.primary" margin="0.5em" onClick={handleClickOpen}>
-				<DeleteIcon sx={{ marginRight: '0.5em' }} onClick={handleClickOpen} /> Quarantine light frames
+			<Typography color="text.primary" margin="0.5em" sx={{ cursor: 'pointer' }} onClick={handleClickOpen}>
+				<DeleteIcon sx={{ marginRight: '0.5em', cursor: 'pointer' }} onClick={handleClickOpen} /> Quarantine light frames
 			</Typography>
 			<Dialog
 				open={open}
