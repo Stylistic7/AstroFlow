@@ -30,9 +30,12 @@ def merge_images(mode: str, mosaic_id: str, input_0: Artifact,
   if mode == 'subframe':
     image_0 = autostretch(read_artifact_image(input_0))
     image_1 = autostretch(read_artifact_image(input_1))
+    assert not np.isnan(np.min(image_0))
+    assert not np.isnan(np.min(image_1))
     overlap = np.where((image_0 > 0) & (image_1 > 0))
     output_image = np.maximum(image_0, image_1)
     output_image[overlap] = (image_0[overlap] + image_1[overlap]) / 2.0
+    assert not np.isnan(np.min(output_image))
 
     write_artifact(output, output_image)
     return [output]

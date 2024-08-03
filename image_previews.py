@@ -1,6 +1,7 @@
 import numpy as np
 from numpy import abs, minimum, maximum, median
 import cv2
+from skimage.transform import resize
 import os
 import tempfile
 import ray
@@ -39,10 +40,14 @@ MIN_STAR_FRACTION = 0.5
 
 
 def resize_array(array, new_width):
+  assert not np.isnan(np.min(array))
   height, width = array.shape
   new_height = (height / width) * new_width
-  return cv2.resize(array, (int(new_width), int(new_height)),
-                    interpolation=cv2.INTER_AREA)
+  result = resize(array, (int(new_height), int(new_width)))
+  assert not np.isnan(
+      np.min(result)
+  ), f"Failed to resize image dtype {array.dtype} min {np.min(array)} max {np.max(array)}"
+  return result
 
 
 # See this YouTube video: https://www.youtube.com/watch?v=em9IQzbkBuU
