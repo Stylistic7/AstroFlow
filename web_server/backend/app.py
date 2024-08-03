@@ -341,12 +341,20 @@ def mosaic_thumbnail_image_for_filter(mosaic_id, filter):
   subframe_artifact, = done_artifacts('subframe', mosaic_id, filter)
 
   for artifact in [master_artifact, subframe_artifact]:
-    if artifact_exists(artifact):
-      image = read_artifact_image(artifact)
-      buffer = io.BytesIO()
-      buffer.write(array_to_png(autostretch(image)))
-      buffer.seek(0)
-      return flask.send_file(buffer, mimetype='image/png')
+    if not artifact_exists(artifact):
+      print('### artifact', artifact, 'did not exist')
+      continue
+
+    print('### sending artifact', artifact)
+    image = read_artifact_image(artifact)
+    image = np.nan_to_num(image)
+    print('### image shape', image.shape, 'dtype', image.dtype, 'min',
+          np.min(image), 'max', np.max(image))
+
+    buffer = io.BytesIO()
+    buffer.write(array_to_png(autostretch(image)))
+    buffer.seek(0)
+    return flask.send_file(buffer, mimetype='image/png')
 
   return Response(status=404)
 
