@@ -1,7 +1,8 @@
 import ray
 import os
+import numpy as np
 
-from artifact import Artifact, CacheArtifact, FileArtifact, read_artifact, write_artifact, artifact_exists
+from artifact import Artifact, CacheArtifact, FileArtifact, read_artifact_image, write_artifact, artifact_exists
 from context import context
 from dependency_graph import Graph, print_graph
 from image_previews import array_to_png
@@ -155,20 +156,22 @@ def done(mode, mosaic_id, filter, *, ancestor_results=None):
   print(f'### Merging {mosaic} mode {mode} is done, '
         f'final_artifact is {final_artifact}')
 
-  image, header = read_artifact(final_artifact)
+  image = read_artifact_image(final_artifact)
+  assert not np.isnan(np.min(image))
 
-  output_artifacts = done_artifacts(mode,
-                                    mosaic_id,
-                                    filter,
-                                    ancestor_results=None)
+  header = {'IMAGETYP': 'FinalMosaic Light'}
+
+  output_artifacts = done_artifacts(mode, mosaic_id, filter)
 
   # TODO: Thumbnails should always be stored as autostretched PNG, for speed.
   if mode == 'subframe':
     thumbnail_artifact, = output_artifacts
     write_artifact(thumbnail_artifact, image, header)
+    return [thumbnail_artifact]
   elif mode == 'master':
     file_artifact, thumbnail_artifact = output_artifacts
     write_artifact(file_artifact, image, header)
     image = resize_array(image, context.master_thumbnail_width)
+    assert not np.isnan(np.min(image))
     write_artifact(thumbnail_artifact, image, header)
     return [file_artifact, thumbnail_artifact]

@@ -133,6 +133,7 @@ def compute_image_metadata(artifact=None, *, ancestor_results):
   if artifact is not None:
     assert type(artifact) is FileArtifact
   elif ancestor_results is not None:
+    ancestor_results = [x for xs in ancestor_results for x in xs]
     assert type(ancestor_results) is list
     assert len(ancestor_results) == 1
     assert type(ancestor_results[0]) is FileArtifact
