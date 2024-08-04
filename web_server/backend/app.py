@@ -457,6 +457,22 @@ def plot():
 # the website.
 
 
+@app.route('/quarantine_target/<target_id>')
+def quarantine_target(target_id):
+  stacks = cache['stacks']
+  target = cache['targets'][target_id]
+  quarantined_files = cache['quarantined_files']
+
+  for stack_id in target.stack_ids:
+    stack = stacks[stack_id]
+    frames = stack.all_frames()
+    quarantined_files.update(frames)
+    cache['quarantined_files'] = quarantined_files
+    print(f'### Quarantined {len(frames)} frames')
+
+  return Response(status=204)
+
+
 @app.route('/quarantine_stack/<stack_id>')
 def quarantine_stack(stack_id):
   stack = cache['stacks'][stack_id]
