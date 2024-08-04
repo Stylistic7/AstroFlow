@@ -45,8 +45,6 @@ def find_groups(values, comparison_fn, min_component_members) -> list[str]:
   return groups
 
 
-# TODO: Something in this function is making many calls to get_metadata()
-# with 1 hash, which is slow.
 @ray.remote
 def find_components_by_cosine_similarity():
   print('find_components_by_cosine_similarity')
@@ -62,18 +60,17 @@ def find_components_by_cosine_similarity():
         image.header) and image.content_hash not in quarantined_files and type(
             image.plate_solution) is plate_solving.PlateSolution
 
-  def transform_fn(image):
-    centroid = np.asarray(
-        footprints.radec_to_vector(*image.plate_solution.center))
-    return (image.content_hash, centroid)
+  def get_centroid(image):
+    return np.asarray(footprints.radec_to_vector(*image.plate_solution.center))
 
-  hashes_and_centroids = get_metadata(predicate_fn=predicate_fn,
-                                      transform_fn=transform_fn)
-  if not hashes_and_centroids:
-    print('### hashes_and_centroids was Falsey')
+  metadata = get_metadata(
+      predicate_fn=predicate_fn,
+      post_fn=lambda images: {i.content_hash: i for i in images})
+  if not metadata:
+    print('### metadata was Falsey')
     return {}
 
-  values = {h: c for h, c in hashes_and_centroids}
+  values = {h: get_centroid(i) for h, i in metadata.items()}
 
   def comparison_fn(a, b):
     return np.dot(a, b) > cosine_similarity_threshold
@@ -81,7 +78,7 @@ def find_components_by_cosine_similarity():
   targets = find_groups(values, comparison_fn, min_component_members)
 
   def get_name(target):
-    plate_solution = get_metadata([target[0]])[0].plate_solution
+    plate_solution = metadata[target[0]].plate_solution
     return position_string.canonical_target_string(plate_solution.center)
 
   targets = [(get_name(t), list(sorted(t))) for t in targets]

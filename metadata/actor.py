@@ -5,6 +5,7 @@ import itertools
 import operator
 from functools import singledispatch
 from collections.abc import Iterable
+from functools import lru_cache
 
 from cache import cache
 from context import context
@@ -48,11 +49,22 @@ class MetadataActor:
     return post_fn(result)
 
 
-# TODO: Maybe implement a version of this that accepts a single str.
 def get_metadata(input_images=None,
                  predicate_fn=lambda x: True,
                  transform_fn=lambda x: x,
                  post_fn=lambda x: x):
+  if input_images is not None:
+    input_images = tuple(input_images)
+
+  return _get_metadata(input_images, predicate_fn, transform_fn, post_fn)
+
+
+# TODO: Maybe implement a version of this that accepts a single str.
+@lru_cache(maxsize=1000000)
+def _get_metadata(input_images=None,
+                  predicate_fn=lambda x: True,
+                  transform_fn=lambda x: x,
+                  post_fn=lambda x: x):
   if input_images is not None and len(input_images) == 0:
     return []
 
