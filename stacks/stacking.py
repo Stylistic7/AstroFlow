@@ -136,9 +136,6 @@ def _setup_composite_stack(stack_id, tmp_dir):
   for i, substack_id in enumerate(stack.contents):
     substack = stacks[substack_id]
 
-    run_dir = os.path.join(tmp_dir, f'RUN_{i}')
-    os.makedirs(run_dir, exist_ok=True)
-
     # Select only the best subframes.
     hashes = [
         h for h in substack.frames
@@ -156,7 +153,11 @@ def _setup_composite_stack(stack_id, tmp_dir):
     if first_filename is None:
       first_filename = filenames[0]
 
-    _copy_frames_with_plate_solution(metadata, run_dir)
+    run_dir = os.path.join(tmp_dir, f'RUN_{i}')
+    os.makedirs(run_dir, exist_ok=True)
+
+    run_metadata = {h: i for h, i in metadata.items() if h in hashes}
+    _copy_frames_with_plate_solution(run_metadata, run_dir)
 
     # Add any dependent stacks (e.g. calibration stacks).
     dependendency_filenames = [
