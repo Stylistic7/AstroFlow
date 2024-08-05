@@ -60,7 +60,7 @@ def _(artifact: CacheArtifact):
 
   file_obj = io.BytesIO(context.get(artifact.key, keep_in_memory=False))
 
-  fits = pyfits.open(file_obj)
+  fits = pyfits.open(file_obj, mmap=False)
   header = fits[0].header
   fits.close()
 
@@ -97,7 +97,7 @@ def _(artifact: CacheArtifact):
 
   file_obj = io.BytesIO(context.get(artifact.key, keep_in_memory=False))
 
-  fits = pyfits.open(file_obj)
+  fits = pyfits.open(file_obj, mmap=False)
   image = fits[0].data
   fits.close()
 
@@ -195,7 +195,7 @@ def _(artifact: CacheArtifact):
       return True
 
     file_obj = io.BytesIO(value)
-    fits = pyfits.open(file_obj)
+    fits = pyfits.open(file_obj, mmap=False)
     header = normalize_header(fits[0].header)
     fits.close()
 

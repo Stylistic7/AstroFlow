@@ -97,7 +97,7 @@ def _copy_frames_with_plate_solution(metadata, dest_path):
     shutil.copyfile(filename, dest_filename)
 
     if frame.plate_solution:
-      with pyfits.open(str(dest_filename), mode='update') as fits:
+      with pyfits.open(str(dest_filename), mode='update', mmap=False) as fits:
         fits[0].header['RA'] = frame.plate_solution.header['CRVAL1']
         fits[0].header['DEC'] = frame.plate_solution.header['CRVAL2']
         for k, v in frame.plate_solution.header.items():

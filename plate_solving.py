@@ -58,7 +58,7 @@ def get_image_scale(header: dict[str, Any]) -> float:
 
 
 def get_num_stars(axy_file: Path | str) -> int:
-  fits = pyfits.open(axy_file)
+  fits = pyfits.open(axy_file, mmap=False)
   table = fits[1].data
   fits.close()
   return table.shape[0]
@@ -97,7 +97,7 @@ def _solve_field(filename: Path | str,
     wcs_file = Path(dest_filename).with_suffix('.wcs')
     axy_file = Path(dest_filename).with_suffix('.axy')
     if os.path.exists(wcs_file) and os.path.exists(axy_file):
-      fits = pyfits.open(wcs_file)
+      fits = pyfits.open(wcs_file, mmap=False)
       header = simplify_header(fits[0].header)
       try:
         num_stars = get_num_stars(axy_file)

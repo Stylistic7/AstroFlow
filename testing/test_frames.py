@@ -113,7 +113,7 @@ def copy_testdata_frames(target_name,
     dest_filename = os.path.join(dest_dir, prefix + filename)
     shutil.copy(src_filename, dest_filename)
     print(f'### Copied filename {dest_filename}')
-    fits = pyfits.open(dest_filename, mode='update')
+    fits = pyfits.open(dest_filename, mode='update', mmap=False)
     header = fits[0].header
     image = fits[0].data
 

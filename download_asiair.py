@@ -53,7 +53,7 @@ def _modify_fits_headers(fits_files, rig, default_filter):
   print(f'Updating FITS headers of {len(fits_files)} files...')
   for filename in fits_files:
     assert os.path.exists(filename)
-    fits = pyfits.open(filename, mode='update')
+    fits = pyfits.open(filename, mode='update', mmap=False)
     dt = time_util.parse_utc_datetime(fits[0].header['DATE-OBS'])
     fits[0].header['RIG'] = rig
     fits[0].header['DATE'] = dt.strftime('%Y-%m-%d')
