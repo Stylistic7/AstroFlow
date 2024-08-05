@@ -44,6 +44,8 @@ def _get_best_light_frame(stack_id):
   return light_frames_by_stars[0]
 
 
+# TODO: Something in this function is making repeated calls to get_metadata()
+# for small lists. Unify them to speed this function up.
 @ray.remote
 def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
   print(f'### build_mosaic_filter_subgraph mode {mode} '

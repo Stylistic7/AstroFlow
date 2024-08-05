@@ -201,7 +201,7 @@ def stack_files(stack_id):
   dest_filename = _output_filename(stack, context.output_dir)
   os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
 
-  with tempfile.TemporaryDirectory() as tmp_dir:
+  with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
     if stack.frames:
       first_filename = _setup_leaf_stack(stack_id, tmp_dir)
     else:
