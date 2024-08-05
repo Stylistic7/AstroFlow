@@ -125,10 +125,12 @@ class Context:
   def __setitem__(self, key, value):
     return self.set(key, value)
 
+  # TODO: Use the Pythonic operator.
   def and_equals(self, key, value, flush=False):
     actor = ray.get_actor('context', namespace=_get_namespace())
     return ray.get(actor.and_equals.remote(key, [ray.put(value)], flush))
 
+  # TODO: Use the Pythonic operator.
   def or_equals(self, key, value, flush=False):
     actor = ray.get_actor('context', namespace=_get_namespace())
     return ray.get(actor.or_equals.remote(key, [ray.put(value)], flush))

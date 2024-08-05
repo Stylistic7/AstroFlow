@@ -144,6 +144,7 @@ def make_synthetic_frames(start_datetime=datetime.datetime(
                           ids=None,
                           content_hashes=None,
                           dest_dir=None,
+                          insert_metadata=True,
                           ra=100,
                           dec=45,
                           centers=None,
@@ -252,13 +253,14 @@ def make_synthetic_frames(start_datetime=datetime.datetime(
     else:
       plate_solution = None
 
-    key = ('image_metadata', content_hash)
-    metadata = ImageMetadata(content_hash=content_hash,
-                             filename=fits_filename,
-                             header=header,
-                             plate_solution=plate_solution)
-    context.set(key, metadata, flush=True)
-    print(f'### Wrote key {key}')
+    if insert_metadata:
+      key = ('image_metadata', content_hash)
+      metadata = ImageMetadata(content_hash=content_hash,
+                               filename=fits_filename,
+                               header=header,
+                               plate_solution=plate_solution)
+      context.set(key, metadata, flush=True)
+      print(f'### Wrote key {key}')
 
     if not dest_dir:
       continue

@@ -17,6 +17,11 @@ from decorators import saves_artifacts
 from image_previews import resize_array
 
 
+# TODO: I need a way of gathering all of the metadata necessary for this entire
+# mosaic at once, and then passing it through the graph. That would speed this
+# function up enormously... but there isn't really a good channel for this
+# potentially large dictionary to get passed through the compute graph, without
+# it also getting replicated across the cluster, etc.
 @ray.remote
 def build_mosaic_subgraph(mode, mosaic_id):
   print(f'### build_mosaic_subgraph mode {mode} mosaic_id {mosaic_id}')

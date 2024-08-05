@@ -5,7 +5,6 @@ import itertools
 import operator
 from functools import singledispatch
 from collections.abc import Iterable
-from functools import lru_cache
 
 from cache import cache
 from context import context
@@ -60,7 +59,6 @@ def get_metadata(input_images=None,
 
 
 # TODO: Maybe implement a version of this that accepts a single str.
-@lru_cache(maxsize=1000000)
 def _get_metadata(input_images=None,
                   predicate_fn=lambda x: True,
                   transform_fn=lambda x: x,

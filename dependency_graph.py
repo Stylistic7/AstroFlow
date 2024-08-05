@@ -179,6 +179,8 @@ def run_graph(graph, status_fn=None, debug=False):
   active = []
   completed = []
 
+  # TODO: Maybe support nodes with one ancestor, like this {done: process},
+  # instead of requiring {done: {process}}.
   def canonicalize_graph(graph):
     output = {}
     for node, dependents in graph.items():
@@ -302,6 +304,9 @@ def run_graph(graph, status_fn=None, debug=False):
         ts.done(node)
 
     delete_finished_subgraphs()
+
+  # All subgraphs, including the given graph, must be done here.
+  assert len(active) == 0
 
   if status_fn:
     status_fn(get_status())

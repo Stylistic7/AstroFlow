@@ -170,8 +170,7 @@ def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact):
 
   grid = projected_image != np.nan
   cv_grid = grid.astype("uint8") * 255
-  contours, _ = \
-      cv.findContours(cv_grid, cv.RETR_TREE, cv.CHAIN_APPROX_NONE)
+  contours, _ = cv.findContours(cv_grid, cv.RETR_TREE, cv.CHAIN_APPROX_NONE)
   contour = contours[0][:, 0, :]
 
   trim_top, trim_left, trim_height, trim_width = largestinteriorrectangle.lir(

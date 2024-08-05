@@ -7,8 +7,9 @@ import random
 import os
 
 from context import context
-from metadata.image_metadata import scatter_compute_image_metadata
+from metadata.image_metadata import scatter_compute_image_metadata, gather_compute_image_metadata
 from metadata.actor import get_metadata
+from testing.test_context import make_test_context
 from testing.test_frames import make_synthetic_frames
 from dependency_graph import make_graph_from_list, run_graph
 
@@ -18,23 +19,26 @@ def get_all_filenames():
 
 
 def compute_graph_fragment():
-  return make_graph_from_list([(scatter_compute_image_metadata, 'input')])
+  return {
+      gather_compute_image_metadata: {(scatter_compute_image_metadata, 'input')}
+  }
 
 
 class TestImageMetadata(unittest.TestCase):
 
   def setUp(self):
-    context.clear()
+    self.input_dir_obj, self.output_dir_obj = make_test_context()
 
-    # Start with an empty context.
-    context.quarantined_files = []
-
-    self.input_dir = tempfile.TemporaryDirectory()
-    context.input_dirs = [self.input_dir.name]
+  def tearDown(self):
+    self.input_dir_obj.cleanup()
+    self.output_dir_obj.cleanup()
 
   def test_existing_files(self):
     input_dir = context.input_dirs[0]
-    make_synthetic_frames(number=10, exposure=30, dest_dir=input_dir)
+    make_synthetic_frames(number=10,
+                          exposure=30,
+                          dest_dir=input_dir,
+                          insert_metadata=False)
 
     graph = compute_graph_fragment()
     results = run_graph(graph)
@@ -47,7 +51,7 @@ class TestImageMetadata(unittest.TestCase):
 
   def test_moved_files(self):
     input_dir = context.input_dirs[0]
-    make_synthetic_frames(number=20, dest_dir=input_dir)
+    make_synthetic_frames(number=20, dest_dir=input_dir, insert_metadata=False)
 
     graph = compute_graph_fragment()
     results = run_graph(graph)
@@ -73,7 +77,10 @@ class TestImageMetadata(unittest.TestCase):
 
   def test_added_files(self):
     input_dir = context.input_dirs[0]
-    make_synthetic_frames(number=10, dest_dir=input_dir)
+    make_synthetic_frames(number=10,
+                          prefix='foo',
+                          dest_dir=input_dir,
+                          insert_metadata=False)
 
     graph = compute_graph_fragment()
     results = run_graph(graph)
@@ -84,7 +91,10 @@ class TestImageMetadata(unittest.TestCase):
     self.assertEqual(len(images), 10)
     self.assertEqual(sorted(filenames), sorted(i.filename for i in images))
 
-    make_synthetic_frames(number=10, dest_dir=input_dir)
+    make_synthetic_frames(number=10,
+                          prefix='bar',
+                          dest_dir=input_dir,
+                          insert_metadata=False)
 
     graph = compute_graph_fragment()
     results = run_graph(graph)

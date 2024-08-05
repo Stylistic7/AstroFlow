@@ -104,12 +104,13 @@ def scatter_compute_image_metadata(mode=None, ancestor_results=None):
   # changed since the last time it was listed.
   for dir in directories:
     artifacts.update({FileArtifact(f) for f in find_image_files(dir)})
+  print('### len(artifacts)', len(artifacts))
 
-  known_artifacts = get_metadata(
-      transform_fn=lambda i: FileArtifact(i.filename))
-  new_artifacts = list(
-      set(artifacts) - set(known_artifacts) -
-      {FileArtifact(f) for f in context.quarantined_files})
+  known_artifacts = set(
+      get_metadata(transform_fn=lambda i: FileArtifact(i.filename)))
+  print('### len(known_artifacts)', len(known_artifacts))
+  quarantined_artifacts = {FileArtifact(f) for f in context.quarantined_files}
+  new_artifacts = artifacts - known_artifacts - quarantined_artifacts
 
   if not new_artifacts:
     return {}
@@ -182,4 +183,5 @@ def compute_image_metadata(artifact=None, *, ancestor_results):
 
 @ray.remote
 def gather_compute_image_metadata():
+  print('### gather_compute_image_metadata')
   pass
