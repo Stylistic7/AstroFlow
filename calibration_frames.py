@@ -72,16 +72,17 @@ def associate_with_stack(stack, stacks):
     if cal_stack.camera != stack.camera:
       return False
 
+    # TODO: Put temperarture temperature compatibility options in the UI.
     good_temperature = abs(cal_stack.mean_temperature -
                            stack.mean_temperature) < 5.0
 
-    # TODO: Put temperarture temperature compatibility options in the UI.
+    # TODO: This allows dark scaling. Make this an option in the UI.
+    good_exposure = cal_stack.exposure_s <= stack.exposure_s
+
     if image_type == 'bias':
       return good_temperature
 
-    # TODO: This allows dark scaling. Make this an option in the UI.
     if image_type == 'dark':
-      good_exposure = cal_stack.exposure_s <= stack.exposure_s
       return good_temperature and good_exposure
 
     if image_type == 'flat':
@@ -106,12 +107,6 @@ def associate_with_stack(stack, stacks):
             midpoint(stacks[s].oldest_date, stacks[s].newest_date))
         for s in compatible_stacks
     ])]
-
-    # return compatible_stacks[np.argmin([
-    #     runs.run_time_delta((stack.oldest_date, stack.newest_date),
-    #                         (stacks[s].oldest_date, stacks[s].newest_date))
-    #     for s in compatible_stacks
-    # ])]
 
   stack.dependencies = {}
   for image_type in ['bias', 'dark', 'flat']:

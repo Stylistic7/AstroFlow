@@ -73,7 +73,9 @@ class Stack:
 
     self.content_hash = hash_list(all_frames)
 
-    if metadata is None:
+    if metadata:
+      metadata = [i for i in metadata if i.content_hash in all_frames]
+    else:
       metadata = get_metadata(all_frames)
 
     def get_quality(quality, allow_multiple=False):

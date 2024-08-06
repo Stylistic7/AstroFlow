@@ -106,8 +106,7 @@ def _new_stacks(name, metadata):
         continue
       run = [x[0] for x in run]
       stack = Stack(frames=run)
-      stack.update_metadata(
-          [i for i in metadata if i.content_hash in exposure_frames])
+      stack.update_metadata(metadata)
       print(f'### stack_identification._new_stacks made stack {stack}')
       new_stacks[stack.content_hash] = stack
       context.stacks |= {stack.content_hash: stack}
