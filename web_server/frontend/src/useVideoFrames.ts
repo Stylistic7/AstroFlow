@@ -5,7 +5,7 @@ type VideoEventListenerMap = {
 };
 
 const useVideoFrames = (
-  frameCallback = (videoTime: number) => {}
+  frameCallback = (videoTime: number) => { }
 ): [HTMLVideoElement | null, React.RefCallback<HTMLVideoElement>] => {
   const [video, setVideo] = useState<HTMLVideoElement | null>(null);
 
@@ -30,11 +30,6 @@ const useVideoFrames = (
     }
 
     const callbackFrame = (now: number, metadata?: any) => {
-      console.log('now', now);
-      console.log('metadata?.mediaTime', metadata?.mediaTime);
-      console.log('video.currentTime', video.currentTime);
-      console.log('metadata', metadata);
-      console.log('video', video);
       const videoTime = metadata?.mediaTime ?? video.currentTime;
       callbackRef.current(videoTime);
       frameId = requestFrame(callbackFrame);

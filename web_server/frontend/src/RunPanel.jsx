@@ -3,14 +3,8 @@ import React, { useState, useEffect, useContext } from "react";
 import { trackPromise, usePromiseTracker } from "react-promise-tracker";
 import ClipLoader from "react-spinners/ClipLoader";
 
-import Breadcrumbs from '@mui/material/Breadcrumbs';
-import Link from '@mui/material/Link';
-import Typography from '@mui/material/Typography';
 import CheckIcon from '@mui/icons-material/Check';
 
-import HDRImage from "./HDRImage.jsx";
-import TargetPanel from "./TargetPanel.jsx";
-import StackThumbnail from "./StackThumbnail.jsx";
 import "./Starmap.css";
 import AstroFlowContext from './AstroFlowContext.jsx';
 
@@ -51,20 +45,34 @@ export default function RunPanel({ stack_id, flat_stack_ids }) {
     console.log('flat_stack_ids', flat_stack_ids);
     let stack = stacks[stack_id];
 
+    const formatDateString = (dateString) => {
+        // Parse the date string into a Date object
+        const date = new Date(dateString);
+
+        // Extract year, month, and day
+        const year = date.getUTCFullYear();
+        const month = String(date.getUTCMonth() + 1).padStart(2, '0'); // Months are 0-indexed
+        const day = String(date.getUTCDate()).padStart(2, '0');
+
+        // Format to "YYYY-MM-DD"
+        return `${year}-${month}-${day}`;
+    };
+
     // TODO: The "thumbnail" here is really 1200 pixels wide. Consider
     // generating some kind of hierarchy of legitimate thumbnails.
     const images = flat_stack_ids.map(flat_stack_id => {
+        console.log('stack.oldest_date', stack.oldest_date);
         return {
             flat_stack_id: flat_stack_id,
             original: `/flat_correction_thumbnails/${stack_id}/${flat_stack_id}`,
-            thumbnail: `/flat_correction_thumbnails/${stack_id}/${flat_stack_id}`
+            thumbnail: `/flat_correction_thumbnails/${stack_id}/${flat_stack_id}`,
+            thumbnailLabel: formatDateString(stacks[flat_stack_id].oldest_date),
+            description: formatDateString(stack.oldest_date),
+            originalTitle: "originalTitle",
         }
     });
-    console.log('images', images)
 
     const onSlide = (currentIndex) => {
-        console.log('currentIndex', currentIndex,
-            'flat_stack_id', images[currentIndex].flat_stack_id);
         set_settings(stack_id, { flat: images[currentIndex].flat_stack_id });
     };
 
