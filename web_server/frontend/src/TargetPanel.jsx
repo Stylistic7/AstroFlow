@@ -1,8 +1,7 @@
 import React, { useContext } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 
 import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
-import Breadcrumbs from '@mui/material/Breadcrumbs';
 import Link from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -13,6 +12,7 @@ import DialogContentText from '@mui/material/DialogContentText';
 import DialogActions from '@mui/material/DialogActions';
 import Button from '@mui/material/Button';
 
+import AstroFlowBreadcrumbs from "./AstroFlowBreadcrumbs.jsx";
 import StackThumbnail from "./StackThumbnail.jsx";
 import "./Starmap.css";
 import AstroFlowContext from './AstroFlowContext.jsx';
@@ -85,6 +85,7 @@ export default function TargetPanel() {
 	const { stacks, targets } = useContext(AstroFlowContext);
 
 	const params = useParams();
+	const location = useLocation();
 	console.log('target_id', params.target_id);
 
 	const target = targets[params.target_id];
@@ -108,27 +109,7 @@ export default function TargetPanel() {
 
 	return (
 		<>
-			<Breadcrumbs aria-label="breadcrumb">
-				<Link
-					href="/"
-					underline="hover"
-					sx={{
-						display: 'flex',
-						alignItems: 'center',
-						color: fontColor,
-						marginLeft: '0.5em',
-						marginRight: '0.5em',
-					}}
-					style={{ pointerEvents: "auto" }}
-					color="inherit"
-				>
-					<AutoAwesomeMosaicIcon sx={{ marginRight: '0.5em' }} />
-					Starmap
-				</Link>
-				<Typography color="text.primary" margin="0.5em">
-					{target.name} Target
-				</Typography>
-			</Breadcrumbs>
+			<AstroFlowBreadcrumbs />
 			<QuarantineTargetDialog
 				target_id={params.target_id}
 				open={open}
@@ -147,7 +128,7 @@ export default function TargetPanel() {
 						key={"StackThumbnail_" + stack_id}
 						stacks={stacks}
 						stack_id={stack_id}
-						handleClick={event => navigate(`/stack/${stack_id}`)}
+						handleClick={event => navigate(`${location.pathname}/stack/${stack_id}`)}
 					/>
 				))}
 			</div>

@@ -1,9 +1,6 @@
 import React, { useState, useRef, useEffect, useReducer, useContext } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 
-import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
-import Breadcrumbs from '@mui/material/Breadcrumbs';
-import Link from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 import DirectionsRunIcon from '@mui/icons-material/DirectionsRun';
 import Accordion from '@mui/material/Accordion';
@@ -13,7 +10,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { CopyToClipboard } from 'react-copy-to-clipboard';
 import Snackbar from '@mui/material/Snackbar';
 
-
+import AstroFlowBreadcrumbs from "./AstroFlowBreadcrumbs.jsx";
 import MosaicOutline from "./MosaicOutline.jsx";
 import ColorChannelSelector from "./ColorChannelSelector.jsx";
 import TargetPanel from "./TargetPanel.jsx";
@@ -26,6 +23,7 @@ export default function MosaicPanel() {
 	const { stacks, targets, mosaics } = useContext(AstroFlowContext);
 
 	const params = useParams();
+	const location = useLocation();
 	const navigate = useNavigate();
 
 	const mosaic = mosaics[params.mosaic_id];
@@ -129,28 +127,7 @@ export default function MosaicPanel() {
 	// run, and how long it will likely take, and allow them to accept it.
 	return (
 		<>
-			<Breadcrumbs aria-label="breadcrumb">
-				<Link
-					href="/"
-					underline="hover"
-					sx={{
-						display: 'flex',
-						alignItems: 'center',
-						color: fontColor,
-						marginLeft: '0.5em',
-						marginRight: '0.5em',
-					}}
-					style={{ pointerEvents: "auto" }}
-					color="inherit"
-				>
-					<AutoAwesomeMosaicIcon sx={{ marginRight: '0.5em' }} />
-					Starmap
-				</Link>
-				<Typography color="text.primary" margin="0.5em">
-					{mosaic.name} Mosaic
-				</Typography>
-			</Breadcrumbs>
-
+			<AstroFlowBreadcrumbs />
 			<Accordion>
 				<AccordionSummary
 					expandIcon={<ExpandMoreIcon />}

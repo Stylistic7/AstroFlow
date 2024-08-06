@@ -1,5 +1,5 @@
 import React, { useContext } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 import Polyline from "./Polyline.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
@@ -12,6 +12,7 @@ export default function MosaicOutline({ mosaic_id, filter, style = {} }) {
   console.log('filter', filter);
 
   const navigate = useNavigate();
+  const location = useLocation();
 
   const projection = 'mercator';
 
@@ -70,7 +71,7 @@ export default function MosaicOutline({ mosaic_id, filter, style = {} }) {
             polyline={coords}
             key={target_id}
             style={target_outline_style}
-            handleClick={event => navigate(`/target/${target_id}`)}
+            handleClick={event => navigate(`${location.pathname}/target/${target_id}`)}
           />
           {filter && stack && <ExposureDurationWidget
             x={mean_x - width / 2}

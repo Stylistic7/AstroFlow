@@ -2,9 +2,6 @@ import React, { useState, useRef, useEffect, useReducer } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useContext } from 'react';
 
-import LayersIcon from '@mui/icons-material/Layers';
-import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import DeleteIcon from '@mui/icons-material/Delete';
 import Button from '@mui/material/Button';
 import Dialog from '@mui/material/Dialog';
@@ -16,12 +13,9 @@ import DialogTitle from '@mui/material/DialogTitle';
 import { trackPromise, usePromiseTracker } from "react-promise-tracker";
 import ClipLoader from "react-spinners/ClipLoader";
 
-import Breadcrumbs from '@mui/material/Breadcrumbs';
-import Link from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 
-import HDRImage from "./HDRImage.jsx";
-import TargetPanel from "./TargetPanel.jsx";
+import AstroFlowBreadcrumbs from "./AstroFlowBreadcrumbs.jsx";
 import StackThumbnail from "./StackThumbnail.jsx";
 import RunPanel from "./RunPanel.jsx";
 import "./Starmap.css";
@@ -122,11 +116,18 @@ const override: CSSProperties = {
 // - queue the stack for stacking
 // - configure stacking options and post-processing scripts
 export default function StackPanel() {
-	const { stacks } = useContext(AstroFlowContext);
+	const { stacks, targets, mosaics } = useContext(AstroFlowContext);
 
 	const params = useParams();
-	const stack_id = params.stack_id;
-	const stack = stacks[stack_id];
+	const mosaic = mosaics[params.mosaic_id];
+	const target = targets[params.target_id];
+	const stack = stacks[params.stack_id];
+
+	console.log('mosaic_id', params.mosaic_id,
+		'target_id', params.target_id,
+		'stack_id', params.stack_id
+	);
+
 	const plotRef = useRef();
 	const { promiseInProgress } = usePromiseTracker();
 
@@ -175,50 +176,29 @@ export default function StackPanel() {
 		);
 	}, []);
 
-	let stack_thumbnail_video_url = `/stack_subframe_thumbnail_video/${stack_id}`;
+	let stack_thumbnail_video_url = `/stack_subframe_thumbnail_video/${params.stack_id}`;
 
 	console.log('promiseInProgress', promiseInProgress);
 
 	return (
 		<>
-			<Breadcrumbs aria-label="breadcrumb">
-				<Link
-					href="/"
-					underline="hover"
-					sx={{
-						display: 'flex',
-						alignItems: 'center',
-						color: fontColor,
-						marginLeft: '0.5em',
-						marginRight: '0.5em',
-					}}
-					style={{ pointerEvents: "auto" }}
-					color="inherit"
-				>
-					<AutoAwesomeMosaicIcon sx={{ marginRight: '0.5em' }} />
-					Starmap
-				</Link>
-				<Typography color="text.primary" margin="0.5em">
-					{stack.target} Stack
-				</Typography>
-			</Breadcrumbs>
-
+			<AstroFlowBreadcrumbs />
 			<div style={{ margin: "2px" }}>
 				<div>
 					<Typography color="text.primary" margin="0.5em">
 						Stack contains {stack.contents.length} runs of light frames
 					</Typography>
 					<QuarantineStackDialog
-						stack_id={stack_id}
+						stack_id={params.stack_id}
 						open={open}
 						onClose={handleClose}
 					/>
 				</div>
 				<div style={{ maxWidth: "50%" }}>
 					<StackThumbnail
-						key={"StackThumbnail_" + stack_id}
+						key={"StackThumbnail_" + params.stack_id}
 						stacks={stacks}
-						stack_id={stack_id}
+						stack_id={params.stack_id}
 					/>
 				</div>
 				{/* <div ref={plotRef} style={{ maxWidth: "30%" }}></div> */}

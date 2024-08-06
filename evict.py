@@ -56,8 +56,20 @@ if __name__ == '__main__':
   #   except:
   #     pass
 
-  delete_list = ['mosaic_viewbox', 'merged_images']
+  def starts_with(big_tuple, small_tuple):
+    # Check if the small_tuple is empty
+    if not small_tuple:
+      return True
+    # Check if the small_tuple is longer than the big_tuple
+    if len(small_tuple) > len(big_tuple):
+      return False
+    # Check if the beginning segment of big_tuple matches small_tuple
+    return big_tuple[:len(small_tuple)] == small_tuple
+
+  delete_list = [
+      ('mosaic_thumbnail_image', 'master'),
+  ]
   for k in cache.iterkeys():
-    if any(d in k for d in delete_list):
+    if any(starts_with(k, d) for d in delete_list):
       print('deleting key', k)
       del cache[k]

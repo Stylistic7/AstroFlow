@@ -1,6 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import Breadcrumbs from '@mui/material/Breadcrumbs';
-import Link from '@mui/material/Link';
 import Search from "./Search.jsx";
 import Starmap from "./Starmap.jsx";
 import TargetTable from "./TargetTable.jsx";
@@ -23,66 +21,16 @@ import './App.css';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { createContext, useContext } from 'react';
 import AstroFlowContext from './AstroFlowContext.jsx';
+import { Stack } from '@mui/material';
 
 function App() {
   const isPageVisible = usePageVisibility();
-  const timerIdRef = useRef(null);
-  const [isPollingEnabled, setIsPollingEnabled] = useState(true);
   const [dataIsAvailable, setDataIsAvailable] = useState(false);
 
   const [stacks, setStacks] = useState({});
   const [targets, setTargets] = useState({});
   const [mosaics, setMosaics] = useState({});
   const [shoppingCart, setShoppingCart] = useState([]);
-
-  // useEffect(() => {
-  //   const pollingCallback = async () => {
-  //     // Your polling logic here
-  //     console.log('Polling...');
-
-  //     // // Simulating an API failure in the polling callback
-  //     // const shouldFail = Math.random() < 0.2; // Simulate 20% chance of API failure
-
-  //     // if (shouldFail) {
-  //     //   setIsPollingEnabled(false);
-  //     //   console.log('Polling failed. Stopped polling.');
-  //     // }
-
-  //     // TODO: Only fetch the constellation polylines ones.
-  //     let [s, t, m] = await Promise.all([
-  //       fetch('/stacks').then(r => r.json()),
-  //       fetch('/targets').then(r => r.json()),
-  //       fetch('/mosaics').then(r => r.json()),
-  //     ]);
-
-  //     setStacks(s);
-  //     setTargets(t);
-  //     setMosaics(m);
-
-  //     setDataIsAvailable(true);
-  //   };
-
-  //   const startPolling = () => {
-  //     // pollingCallback(); // To immediately start fetching data
-  //     // Polling every 30 seconds
-  //     timerIdRef.current = setInterval(pollingCallback, 10000);
-  //   };
-
-  //   const stopPolling = () => {
-  //     clearInterval(timerIdRef.current);
-  //   };
-
-  //   if (isPageVisible && isPollingEnabled) {
-  //     pollingCallback();
-  //     startPolling();
-  //   } else {
-  //     stopPolling();
-  //   }
-
-  //   return () => {
-  //     stopPolling();
-  //   };
-  // }, [isPageVisible, isPollingEnabled]);
 
   useEffect(() => {
     console.log('in App.useEffect');
@@ -142,13 +90,22 @@ function App() {
               <Route exact path="/" element={
                 <Starmap />
               } />
-              <Route exact path="/mosaic/:mosaic_id" element={
-                dataIsAvailable && <MosaicPanel />}
+              <Route exact path="/stack/:stack_id" element={
+                dataIsAvailable && <StackPanel />}
               />
               <Route exact path="/target/:target_id" element={
                 dataIsAvailable && <TargetPanel />}
               />
-              <Route exact path="/stack/:stack_id" element={
+              <Route exact path="/mosaic/:mosaic_id" element={
+                dataIsAvailable && <MosaicPanel />}
+              />
+              <Route exact path="/target/:target_id/stack/:stack_id" element={
+                dataIsAvailable && <StackPanel />}
+              />
+              <Route exact path="/mosaic/:mosaic_id/target/:target_id" element={
+                dataIsAvailable && <TargetPanel />}
+              />
+              <Route exact path="/mosaic/:mosaic_id/target/:target_id/stack/:stack_id" element={
                 dataIsAvailable && <StackPanel />}
               />
               <Route exact path="/flat_correction/:stack_id" element={
