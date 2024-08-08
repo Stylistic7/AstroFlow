@@ -18,6 +18,7 @@ def WeightedBatchPreprocessing(unused, *args, **kwargs):
       'dir': kwargs['dir'],
       'smartNamingOverride': 'true',
       'keywords': 'RUN',
+      'platesolveFallbackManual': 'false',
   }
 
   append_task(
