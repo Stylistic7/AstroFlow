@@ -51,8 +51,12 @@ def decode_selection_criterion(criterion: tuple[str, float]):
 SelectionCriterion = StarCountFraction | StarCountStdDev
 
 
-def get_light_frames_sorted_by_stars(light_frames):
-  metadata = get_metadata(light_frames)
+def get_light_frames_sorted_by_stars(light_frames, metadata=None):
+  if metadata is None:
+    metadata = get_metadata(light_frames)
+  else:
+    metadata = [i for h, i in metadata.items() if h in light_frames]
+
   return sorted(metadata,
                 key=lambda i: i.plate_solution.num_stars,
                 reverse=True)

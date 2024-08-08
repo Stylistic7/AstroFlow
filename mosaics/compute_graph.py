@@ -15,6 +15,7 @@ from stacks.post_process_stack import post_process_stack_artifacts
 from stacks.compute_graph import build_stack_subgraph
 from decorators import saves_artifacts
 from image_previews import resize_array
+from metadata.actor import get_metadata_for_mosaic
 
 
 # TODO: I need a way of gathering all of the metadata necessary for this entire
@@ -41,10 +42,10 @@ def build_mosaic_subgraph(mode, mosaic_id):
   return graph
 
 
-def _get_best_light_frame(stack_id):
+def _get_best_light_frame(stack_id, metadata):
   stack = context.stacks[stack_id]
   light_frames_by_stars = subframe_selection.get_light_frames_sorted_by_stars(
-      stack.all_frames())
+      stack.all_frames(), metadata)
 
   return light_frames_by_stars[0]
 
@@ -59,6 +60,10 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
   targets = context.targets
   mosaics = context.mosaics
   mosaic = mosaics[mosaic_id]
+
+  # Get all of the image metadata for the entire mosaic (which may involve
+  # thousands of individual subframes) all at once.
+  metadata = get_metadata_for_mosaic(mosaic_id)
 
   graph = Graph()
 
@@ -80,7 +85,7 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
 
     # TODO: Find a way to streamline all these if-else statements in general.
     if mode == 'subframe':
-      best_light_frame = _get_best_light_frame(stack_id)
+      best_light_frame = _get_best_light_frame(stack_id, metadata)
       input_artifact = FileArtifact(best_light_frame.filename,
                                     best_light_frame.content_hash)
     elif mode == 'master':

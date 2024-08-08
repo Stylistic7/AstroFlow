@@ -195,16 +195,16 @@ def create_flat_correction_thumbnails(stack_id):
 
   assert not stack.stable_hash
 
+  metadata = get_metadata_for_stack(stack_id)
+
   light_frames_by_stars = subframe_selection.get_light_frames_sorted_by_stars(
-      stack.frames)
+      stack.frames, metadata)
   light_frame = light_frames_by_stars[0]
 
   width = context.subframe_thumbnail_width
   rotate = light_frame.plate_solution.rotation_angle < 0.0
   light_image = (resize_array(read_image(light_frame.filename),
                               width)).astype(np.float32)
-
-  metadata = get_metadata_for_stack(stack_id)
 
   def first_frame(stack_id):
     return metadata[stacks[stack_id].frames[0]]

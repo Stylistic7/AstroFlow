@@ -5,7 +5,7 @@ from artifact import Artifact, artifact_exists
 from context import context
 
 
-def saves_artifacts(artifacts_fn, in_test=False, debug=True):
+def saves_artifacts(artifacts_fn, in_test=False, debug=False):
   assert not hasattr(artifacts_fn, 'remote')
 
   def decorator(fn):
@@ -19,8 +19,9 @@ def saves_artifacts(artifacts_fn, in_test=False, debug=True):
             artifact, Artifact), f'{fn.__name__} returned type {type(artifact)}'
 
         if not artifact_exists(artifact):
-          print(f'### should_run fn {fn.__name__} because artifact '
-                f'{artifact} does not exist')
+          if debug:
+            print(f'### should_run fn {fn.__name__} because artifact '
+                  f'{artifact} does not exist')
           return True
 
       if debug:

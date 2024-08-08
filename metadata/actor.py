@@ -72,40 +72,71 @@ def _get_metadata(input_images=None,
                                 post_fn))
 
 
+# TODO: This needs a LOT more careful testing.
+def _hashes_for_stack(stack_id):
+  stacks = context.stacks
+  stack = stacks[stack_id]
+
+  # Start with all of the stacks included in this stack.
+  hashes = stack.all_frames(include_dependencies=True)
+
+  # TODO: Settings need to be applied in some unified way.
+  settings_key = ('stack_settings', stack_id)
+  settings = context[settings_key] or {}
+  dependencies = stack.dependencies | settings
+
+  # Include all the frames from all of the stacks' dependencies (which are
+  # typically calibration stacks).
+  if 'bias' in dependencies:
+    hashes += stacks[dependencies['bias']].frames
+  if 'dark' in dependencies:
+    hashes += stacks[dependencies['dark']].frames
+
+  # Include every known flat calibration stack, just for completeness.
+  for s in stacks.values():
+    if (not s.stable_hash and s.image_type == 'flat' and
+        s.camera == stack.camera and s.filter == stack.filter):
+      hashes += s.frames
+
+  return hashes
+
+
+# TODO: Maybe unify API with @singledispatch.
+def get_metadata_for_mosaic(mosaic_id):
+  targets = context.targets
+  mosaics = context.mosaics
+
+  mosaic = mosaics[mosaic_id]
+
+  hashes = set()
+  for target_id in mosaic.target_ids:
+    for stack_id in targets[target_id].stack_ids:
+      hashes.update(_hashes_for_stack(stack_id))
+
+  return get_metadata(
+      hashes, post_fn=lambda images: {i.content_hash: i for i in images})
+
+
+# TODO: Maybe unify API with @singledispatch.
+def get_metadata_for_target(target_id):
+  targets = context.targets
+
+  hashes = set()
+  for stack_id in targets[target_id].stack_ids:
+    hashes.update(_hashes_for_stack(stack_id))
+
+  return get_metadata(
+      hashes, post_fn=lambda images: {i.content_hash: i for i in images})
+
+
 # TODO: Maybe unify API with @singledispatch.
 def get_metadata_for_stack(stack_id):
   stacks = context.stacks
   stack = stacks[stack_id]
 
-  def hashes_for_stack(stack_id):
-    stack = stacks[stack_id]
-
-    # Start with all of the stacks included in this stack.
-    hashes = stack.all_frames()
-
-    # TODO: Settings need to be applied in some unified way.
-    settings_key = ('stack_settings', stack_id)
-    settings = context[settings_key] or {}
-    dependencies = stack.dependencies | settings
-
-    # Include all the frames from all of the stacks' dependencies (which are
-    # typically calibration stacks).
-    if 'bias' in dependencies:
-      hashes += stacks[dependencies['bias']].frames
-    if 'dark' in dependencies:
-      hashes += stacks[dependencies['dark']].frames
-
-    # Include every known flat calibration stack, just for completeness.
-    for s in stacks.values():
-      if (not s.stable_hash and s.image_type == 'flat' and
-          s.camera == stack.camera and s.filter == stack.filter):
-        hashes += s.frames
-
-    return hashes
-
-  hashes = hashes_for_stack(stack_id)
+  hashes = _hashes_for_stack(stack_id)
   for substack_id in stack.contents:
-    hashes += hashes_for_stack(substack_id)
+    hashes += _hashes_for_stack(substack_id)
 
   return get_metadata(
       hashes, post_fn=lambda images: {i.content_hash: i for i in images})

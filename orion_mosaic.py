@@ -31,7 +31,8 @@ def add_orion_mosaic_images():
                         instrument='ZWO ASI6200MM Pro',
                         width_pixels=9576,
                         height_pixels=6388,
-                        temperature=-15,
+                        temperature=-20,
+                        exposure=300,
                         dest_dir=context.input_dirs[0])
   make_synthetic_frames(prefix='bias',
                         number=7,
@@ -42,7 +43,8 @@ def add_orion_mosaic_images():
                         instrument='ZWO ASI6200MM Pro',
                         width_pixels=9576,
                         height_pixels=6388,
-                        temperature=-15,
+                        temperature=-20,
+                        exposure=300,
                         dest_dir=context.input_dirs[0])
   make_synthetic_frames(prefix='flat',
                         number=11,
@@ -53,5 +55,6 @@ def add_orion_mosaic_images():
                         instrument='ZWO ASI6200MM Pro',
                         width_pixels=9576,
                         height_pixels=6388,
-                        temperature=-15,
+                        temperature=-20,
+                        exposure=300,
                         dest_dir=context.input_dirs[0])

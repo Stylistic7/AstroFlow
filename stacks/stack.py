@@ -55,8 +55,11 @@ class Stack:
     for substack_id in self.contents:
       substack = stacks[substack_id]
       all_frames.extend(substack.frames)
+      # TODO: This doesn't handle user settings that will override
+      # dependencies.
       if include_dependencies:
-        all_frames.extend(substack.dependencies.values())
+        for dependency_stack_id in substack.dependencies.values():
+          all_frames.extend(stacks[dependency_stack_id].frames)
 
     return all_frames
 
