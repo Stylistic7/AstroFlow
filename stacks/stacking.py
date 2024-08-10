@@ -111,7 +111,6 @@ def _run_wbpp(unused, *args, **kwargs):
 
 def stack_files_artifacts(stack_id: str):
   stack = context.stacks[stack_id]
-  print(f'### stack_files_artifacts for {stack}')
   dest_filename = _output_filename(stack, context.output_dir)
   return [FileArtifact(dest_filename, stack.content_hash)]
 
@@ -122,14 +121,12 @@ def _setup_composite_stack(stack_id, tmp_dir):
   stack = stacks[stack_id]
 
   all_frames = stack.all_frames()
-  print('### stack.all_frames()', all_frames)
   metadata = get_metadata(
       stack.all_frames(),
       post_fn=lambda images: {i.content_hash: i for i in images})
 
   # TODO: Implement subframe selection in a modular way.
   max_num_stars = max([i.plate_solution.num_stars for i in metadata.values()])
-  print(f'### max_num_stars {max_num_stars}')
 
   first_filename = None
 
