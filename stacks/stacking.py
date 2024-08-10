@@ -120,7 +120,6 @@ def _setup_composite_stack(stack_id, tmp_dir):
   stacks = context.stacks
   stack = stacks[stack_id]
 
-  all_frames = stack.all_frames()
   metadata = get_metadata(
       stack.all_frames(),
       post_fn=lambda images: {i.content_hash: i for i in images})
@@ -130,6 +129,7 @@ def _setup_composite_stack(stack_id, tmp_dir):
 
   first_filename = None
 
+  num_frames = 0
   for i, substack_id in enumerate(stack.contents):
     substack = stacks[substack_id]
 
@@ -154,6 +154,7 @@ def _setup_composite_stack(stack_id, tmp_dir):
 
     run_metadata = {h: i for h, i in metadata.items() if h in hashes}
     _copy_frames_with_plate_solution(run_metadata, run_dir)
+    num_frames += len(hashes)
 
     # Add any dependent stacks (e.g. calibration stacks).
     dependendency_filenames = [
@@ -162,7 +163,7 @@ def _setup_composite_stack(stack_id, tmp_dir):
     ]
     _symlink_frames(dependendency_filenames, run_dir)
 
-  return first_filename
+  return first_filename, num_frames
 
 
 def _setup_leaf_stack(stack_id, tmp_dir):
@@ -171,7 +172,7 @@ def _setup_leaf_stack(stack_id, tmp_dir):
   filenames = get_metadata(stack.frames, transform_fn=lambda i: i.filename)
   _symlink_frames(filenames, tmp_dir)
 
-  return filenames[0]
+  return filenames[0], len(filenames)
 
 
 # TODO: Include a timeout so a single bad stack (e.g. one that needs interactive
@@ -200,9 +201,14 @@ def stack_files(stack_id):
 
   with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
     if stack.frames:
-      first_filename = _setup_leaf_stack(stack_id, tmp_dir)
+      first_filename, num_frames = _setup_leaf_stack(stack_id, tmp_dir)
     else:
-      first_filename = _setup_composite_stack(stack_id, tmp_dir)
+      first_filename, num_frames = _setup_composite_stack(stack_id, tmp_dir)
+
+    if num_frames < 3:
+      print(f'### Cannot stack {stack_id} because it contains only '
+            f'{num_frames} selected frames')
+      return [FileArtifact(dest_filename, stack.content_hash)]
 
     if context.mock_stacking:
       file_io.conversion.convert_fits_to_xisf(first_filename,
