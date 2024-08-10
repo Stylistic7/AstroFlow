@@ -27,6 +27,10 @@ from metadata.actor import get_metadata_for_mosaic
 def build_mosaic_subgraph(mode, mosaic_id):
   print(f'### build_mosaic_subgraph mode {mode} mosaic_id {mosaic_id}')
 
+  # Get all of the image metadata for the entire mosaic (which may involve
+  # thousands of individual subframes) all at once.
+  metadata_ref = ray.put(get_metadata_for_mosaic(mosaic_id))
+
   # TODO: If the final output artifact exists, there's no reason to build the
   # graph.
   graph = Graph()
@@ -37,7 +41,7 @@ def build_mosaic_subgraph(mode, mosaic_id):
   for filter in ['H', 'S', 'O', 'L', 'R', 'G', 'B']:
     graph |= ray.get(
         build_mosaic_filter_subgraph.remote(mode, mosaic_id, filter,
-                                            viewbox_task))
+                                            viewbox_task, metadata_ref))
 
   return graph
 
@@ -53,17 +57,14 @@ def _get_best_light_frame(stack_id, metadata):
 # TODO: Something in this function is making repeated calls to get_metadata()
 # for small lists. Unify them to speed this function up.
 @ray.remote
-def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
+def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task,
+                                 metadata):
   print(f'### build_mosaic_filter_subgraph mode {mode} '
         f'mosaic_id {mosaic_id} filter {filter}')
   stacks = context.stacks
   targets = context.targets
   mosaics = context.mosaics
   mosaic = mosaics[mosaic_id]
-
-  # Get all of the image metadata for the entire mosaic (which may involve
-  # thousands of individual subframes) all at once.
-  metadata = get_metadata_for_mosaic(mosaic_id)
 
   graph = Graph()
 
