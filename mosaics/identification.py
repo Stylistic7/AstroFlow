@@ -19,7 +19,10 @@ logger = structlog.get_logger()
 log = logger
 
 
-def _identify_overlapping_targets(targets):
+def _identify_overlapping_targets():
+  stacks = context.stacks
+  targets = context.targets
+
   if not targets:
     return []
 
@@ -44,7 +47,16 @@ def _identify_overlapping_targets(targets):
       compatible_overlap = any(
           targets[target_id].footprint.intersects_poly(targets[t].footprint)
           for t in mosaic)
-      if compatible_area and compatible_overlap:
+      image_scales = [
+          stacks[s].image_scale for t in mosaic for s in targets[t].stack_ids
+      ]
+      # TODO: Image scale is maybe not a requirement for mosaicking. It's a
+      # complex feature that requires complex UI, so leave it out for now.
+      compatible_image_scales = np.allclose(image_scales,
+                                            np.mean(image_scales),
+                                            atol=0.1)
+
+      if compatible_area and compatible_overlap and compatible_image_scales:
         matching_mosaic_indices.append(i)
 
     if not matching_mosaic_indices:
@@ -82,7 +94,7 @@ def identify_mosiacs():
   targets = context.targets
   print(f'### Identifying mosaics from {len(targets)} targets')
 
-  mosaics = _identify_overlapping_targets(targets)
+  mosaics = _identify_overlapping_targets()
   if not mosaics:
     print('### No overlapping targets found')
     context.mosaics = {}
