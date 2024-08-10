@@ -67,7 +67,8 @@ if __name__ == '__main__':
     return big_tuple[:len(small_tuple)] == small_tuple
 
   delete_list = [
-      ('mosaic_thumbnail_image', 'master'),
+      # ('mosaic_thumbnail_image', 'master'),
+      ('stack_settings')
   ]
   for k in cache.iterkeys():
     if any(starts_with(k, d) for d in delete_list):

@@ -91,6 +91,11 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
     elif mode == 'master':
       input_artifact = post_process_stack_artifacts(stack_id)[0]
 
+    if not artifact_exists(input_artifact):
+      print(f'### build_mosaic_filter_subgraph skipping artifact '
+            f'{input_artifact} because it does not exist')
+      continue
+
     placement_task = (mosaic_by_coordinates, mode, mosaic_id, filter, stack_id,
                       input_artifact)
 
@@ -168,12 +173,22 @@ def done(mode, mosaic_id, filter, *, ancestor_results=None):
   print(f'### Merging {mosaic} mode {mode} is done, '
         f'final_artifact is {final_artifact}')
 
+  output_artifacts = done_artifacts(mode, mosaic_id, filter)
+
+  # TODO: This stuff should be standardized and put into the @saves_artifacts
+  # decorator.
+  if not artifact_exists(final_artifact):
+    if mode == 'subframe':
+      thumbnail_artifact, = output_artifacts
+      return [thumbnail_artifact]
+    elif mode == 'master':
+      file_artifact, thumbnail_artifact = output_artifacts
+      return [file_artifact, thumbnail_artifact]
+
   image = read_artifact_image(final_artifact)
   assert not np.isnan(np.min(image))
 
   header = {'IMAGETYP': 'FinalMosaic Light'}
-
-  output_artifacts = done_artifacts(mode, mosaic_id, filter)
 
   # TODO: Thumbnails should always be stored as autostretched PNG, for speed.
   if mode == 'subframe':
