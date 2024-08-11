@@ -507,7 +507,10 @@ class TestDependencyGraph(unittest.TestCase):
     final_status = None
 
     def print_status(status):
-      print('### status', status)
+      # print('### status', status)
+      print(f'### done {len(status.done_nodes)} '
+            f'ready {len(status.ready_nodes)} '
+            f'waiting {len(status.waiting_nodes)}')
       nonlocal final_status
       final_status = status
 

@@ -60,7 +60,7 @@ class ContextActor:
     if key in cache:
       del cache[key]
 
-  def and_equals(self, key, value, flush):
+  def and_equals(self, key, default_value, value, flush):
     assert type(value) is list
     assert len(value) == 1
     value = value[0]
@@ -68,12 +68,13 @@ class ContextActor:
     value = ray.get(value)
 
     with cache.transact():
-      new_value = cache[key] + value
+      new_value = cache.get(key, default_value) + value
       cache[key] = new_value
-      if not flush:
-        self.ref_dict[key] = ray.put(new_value)
 
-  def or_equals(self, key, value, flush):
+    if not flush:
+      self.ref_dict[key] = ray.put(new_value)
+
+  def or_equals(self, key, default_value, value, flush):
     assert type(value) is list
     assert len(value) == 1
     value = value[0]
@@ -81,10 +82,11 @@ class ContextActor:
     value = ray.get(value)
 
     with cache.transact():
-      new_value = cache[key] | value
+      new_value = cache.get(key, default_value) | value
       cache[key] = new_value
-      if not flush:
-        self.ref_dict[key] = ray.put(new_value)
+
+    if not flush:
+      self.ref_dict[key] = ray.put(new_value)
 
   def ref_dict(self):
     return self.ref_dict
@@ -126,14 +128,16 @@ class Context:
     return self.set(key, value)
 
   # TODO: Use the Pythonic operator.
-  def and_equals(self, key, value, flush=False):
+  def and_equals(self, key, value, flush=False, default_value=None):
     actor = ray.get_actor('context', namespace=_get_namespace())
-    return ray.get(actor.and_equals.remote(key, [ray.put(value)], flush))
+    return ray.get(
+        actor.and_equals.remote(key, default_value, [ray.put(value)], flush))
 
   # TODO: Use the Pythonic operator.
-  def or_equals(self, key, value, flush=False):
+  def or_equals(self, key, value, flush=False, default_value=None):
     actor = ray.get_actor('context', namespace=_get_namespace())
-    return ray.get(actor.or_equals.remote(key, [ray.put(value)], flush))
+    return ray.get(
+        actor.or_equals.remote(key, default_value, [ray.put(value)], flush))
 
   def ref_dict(self):
     actor = ray.get_actor('context', namespace=_get_namespace())
