@@ -66,6 +66,12 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task,
   mosaics = context.mosaics
   mosaic = mosaics[mosaic_id]
 
+  # Get all of the image metadata for the entire mosaic (which may involve
+  # thousands of individual subframes) all at once.
+  #
+  # TODO: Move this up to build_mosaic_subgraph() above.
+  metadata = get_metadata_for_mosaic(mosaic_id)
+
   graph = Graph()
 
   # TODO: What to do if there are multiple stacks for a filter? That's not
@@ -92,6 +98,8 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task,
     elif mode == 'master':
       input_artifact = post_process_stack_artifacts(stack_id)[0]
 
+    # TODO: This is wrong; this should connect to code that produces the
+    # stack subgraph...
     if not artifact_exists(input_artifact):
       print(f'### build_mosaic_filter_subgraph skipping artifact '
             f'{input_artifact} because it does not exist')

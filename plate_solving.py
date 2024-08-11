@@ -13,7 +13,7 @@ import time
 from typing import Any
 
 from file_io.conversion import convert_xisf_to_fits
-from throughput import track_performance
+from profiling.decorator import track_performance
 
 
 @dataclass

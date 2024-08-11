@@ -1,11 +1,8 @@
 import ray
-import os
 import time
 from functools import wraps
 from dataclasses import dataclass
-import ipaddress
 
-from cache import cache
 from context import context
 
 
@@ -38,33 +35,3 @@ def track_performance(fn):
     return result
 
   return wrapper
-
-
-def estimate_time(tag, number=1):
-  node_ips = []
-  resources = ray.cluster_resources()
-  for k, v in resources.items():
-    try:
-      _, ip = k.split('node:')
-      ip = ipaddress.ip_address(ip)
-      node_ips.append(str(ip))
-    except:
-      pass
-
-  total_count = 0
-  total_time = 0
-  for node_ip in node_ips:
-    key = ('performance_history', node_ip, tag)
-    history = context.get(key, None)
-    if history is None:
-      continue
-
-    total_time += history.time * history.count
-    total_count += history.count
-
-  if total_count:
-    return number * (total_time / total_count)
-
-
-if __name__ == '__main__':
-  print('foo')

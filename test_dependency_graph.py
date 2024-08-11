@@ -9,7 +9,6 @@ import time
 from cache import cache
 from context import context
 from dependency_graph import Graph, Node, GraphStatus, TopologicalSorterWithStatus, run_graph, make_graph_from_list
-from throughput import track_performance, estimate_time
 
 
 @ray.remote
@@ -83,7 +82,6 @@ def scatter_huge(count):
 
 
 @ray.remote
-@track_performance
 def process(item):
   return item
 
@@ -518,11 +516,6 @@ class TestDependencyGraph(unittest.TestCase):
             f'ready {len(status.ready_nodes)} '
             f'waiting {len(status.waiting_nodes)}')
 
-      if len(status.done_nodes):
-        print(
-            '### estimate_time',
-            estimate_time(function_name_from_node(list(status.done_nodes)[0])))
-
       nonlocal final_status
       final_status = status
 
@@ -536,10 +529,6 @@ class TestDependencyGraph(unittest.TestCase):
     self.assertEqual(len(final_status.done_nodes), 9)
     self.assertEqual(len(final_status.ready_nodes), 0)
     self.assertEqual(len(final_status.waiting_nodes), 0)
-
-    estimated_time = estimate_time('process')
-    print('### estimated time for process() function is', estimated_time)
-    self.assertIsNotNone(estimated_time)
 
 
 if __name__ == '__main__':
