@@ -18,11 +18,6 @@ from image_previews import resize_array
 from metadata.actor import get_metadata_for_mosaic
 
 
-# TODO: I need a way of gathering all of the metadata necessary for this entire
-# mosaic at once, and then passing it through the graph. That would speed this
-# function up enormously... but there isn't really a good channel for this
-# potentially large dictionary to get passed through the compute graph, without
-# it also getting replicated across the cluster, etc.
 @ray.remote
 def build_mosaic_subgraph(mode, mosaic_id):
   print(f'### build_mosaic_subgraph mode {mode} mosaic_id {mosaic_id}')
@@ -54,8 +49,6 @@ def _get_best_light_frame(stack_id, metadata):
   return light_frames_by_stars[0]
 
 
-# TODO: Something in this function is making repeated calls to get_metadata()
-# for small lists. Unify them to speed this function up.
 @ray.remote
 def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task,
                                  metadata):
@@ -65,12 +58,6 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task,
   targets = context.targets
   mosaics = context.mosaics
   mosaic = mosaics[mosaic_id]
-
-  # Get all of the image metadata for the entire mosaic (which may involve
-  # thousands of individual subframes) all at once.
-  #
-  # TODO: Move this up to build_mosaic_subgraph() above.
-  metadata = get_metadata_for_mosaic(mosaic_id)
 
   graph = Graph()
 
