@@ -62,7 +62,8 @@ def estimate_time(tag, number=1):
     total_time += history.time * history.count
     total_count += history.count
 
-  return number * (total_time / total_count)
+  if total_count:
+    return number * (total_time / total_count)
 
 
 if __name__ == '__main__':

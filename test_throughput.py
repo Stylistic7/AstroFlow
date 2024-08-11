@@ -28,6 +28,10 @@ class TestThroughput(unittest.TestCase):
     estimate = estimate_time('long_task', 2)
     self.assertAlmostEqual(estimate, 6.0, 1)
 
+  def test_missing_history(self):
+    estimate = estimate_time('never_executed_task')
+    self.assertEqual(estimate, None)
+
 
 if __name__ == '__main__':
   unittest.main()
