@@ -13,7 +13,7 @@ import time
 from typing import Any
 
 from file_io.conversion import convert_xisf_to_fits
-import throughput
+from throughput import track_performance
 
 
 @dataclass
@@ -126,6 +126,7 @@ def _solve_field(filename: Path | str,
 # TODO: Make a "junk drawer" video that shows everything that can't be plate-
 # solved. The user can look at it and decide whether to improve the solver's
 # settings, or to throw the images away.
+@track_performance
 def solve_field(filename):
   assert filename
 
@@ -164,12 +165,9 @@ def solve_field(filename):
       ]
   ]
 
-  start_time = time.time()
   for i, arguments in enumerate(trial_arguments):
     result = _solve_field(filename, arguments)
     if type(result) is PlateSolution:
-      end_time = time.time()
-      throughput.add_sample('plate_solve', end_time - start_time)
       return result
 
   print(f'Could not plate-solve file {filename}')

@@ -3,6 +3,7 @@ import os
 import time
 from functools import wraps
 from dataclasses import dataclass
+import ipaddress
 
 from cache import cache
 from context import context
@@ -16,7 +17,6 @@ class PerformanceSample:
   time: float
 
   def __add__(self, time):
-    print(f'#### in __add__')
     self.time = (self.time * self.count + time) / (self.count + 1)
     self.count += 1
 
@@ -28,40 +28,41 @@ def track_performance(fn):
   @wraps(fn)
   def wrapper(*args, **kwargs):
     start_time = time.time()
-    fn(*args, **kwargs)
+    result = fn(*args, **kwargs)
     end_time = time.time()
     elapsed_time = end_time - start_time
     node_ip = ray.util.get_node_ip_address()
     key = ('performance_history', node_ip, fn.__name__)
     context.and_equals(key, elapsed_time, default_value=PerformanceSample(0, 0))
 
+    return result
+
   return wrapper
 
 
-# TODO: This needs to upgraded to be "Ray-aware." Tasks run at different
-# speeds on different nodes. How can we account for that in our estimates?
-# We also need to get the Ray worker's IP or hostname to track this.
-def _add_sample(prev_count, prev_mean, time):
-  return (prev_count + 1, (prev_mean * prev_count + time) / (prev_count + 1))
+def estimate_time(tag, number=1):
+  node_ips = []
+  resources = ray.cluster_resources()
+  for k, v in resources.items():
+    try:
+      _, ip = k.split('node:')
+      ip = ipaddress.ip_address(ip)
+      node_ips.append(str(ip))
+    except:
+      pass
 
+  total_count = 0
+  total_time = 0
+  for node_ip in node_ips:
+    key = ('performance_history', node_ip, tag)
+    history = context.get(key, None)
+    if history is None:
+      continue
 
-def add_sample(tag, time):
-  key = ('throughput_history', tag)
-  with cache.transact():
-    prev_count, prev_mean = cache.get(key, (0, 0))
-    cache[key] = _add_sample(prev_count, prev_mean, time)
+    total_time += history.time * history.count
+    total_count += history.count
 
-
-# TODO: This needs to be upgraded to be "Ray-aware". Ray can tell us how many
-# workers there, on which hosts.
-def estimate_time(tag, number=1, parallelism=None):
-  if not parallelism:
-    parallelism = os.cpu_count()
-
-  key = ('throughput_history', tag)
-  _, mean = cache.get(key, (0, 0))
-
-  return mean * number / parallelism
+  return number * (total_time / total_count)
 
 
 if __name__ == '__main__':
