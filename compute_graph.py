@@ -8,12 +8,11 @@ from target_identification import group_stacks_into_targets
 from calibration_frames import identify_calibration_stacks, associate_with_stacks
 from image_previews import scatter_stack_thumbnails
 from mosaics.identification import identify_mosiacs
+from stacks.compute_graph import build_stack_subgraph
+from targets.compute_graph import build_target_subgraph
 from mosaics.compute_graph import build_mosaic_subgraph
 from dependency_graph import Graph, make_graph_from_list, print_graph
-from post_process_target import post_process_target
 from suggestions import make_suggestions
-from stacks.post_process_stack import post_process_stack
-from stacks.compute_graph import build_stack_subgraph
 
 
 @ray.remote
@@ -44,23 +43,13 @@ def build_preview_graph():
 
 
 @ray.remote
-def build_target_subgraph(target_id):
-  print(f'### build_target_subgraph target_id {target_id}')
-  targets = context.targets
-  target = targets[target_id]
-
-  graph = Graph()
-  graph[(post_process_target, target_id)] = {
-      (post_process_stack, stack_id) for stack_id in target.stack_ids
-  }
-
-  return graph
-
-
-@ray.remote
 def build_main_processing_graph():
   shopping_cart = context.shopping_cart or []
   print(f'### build_main_processing_graph shopping_cart {shopping_cart}')
+
+  stacks = context.stacks
+  targets = context.targets
+  mosaics = context.mosaics
 
   # TODO: Maybe add prioritization options in the UI.
   graph = Graph()
