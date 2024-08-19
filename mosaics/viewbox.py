@@ -34,11 +34,15 @@ def compute_mosaic_viewbox_artifacts(mode, mosaic_id):
 
 
 # TODO: The viewbox should include the sampling resolution, too.
+# TODO: Maybe unify the storage and retrieval of artifacts that arent'
+# images, e.g. arbitrary Python objects.
 @ray.remote
 @saves_artifacts(compute_mosaic_viewbox_artifacts)
 def compute_mosaic_viewbox(mode, mosaic_id):
   print(f'### Entering compute_mosaic_viewbox for mosaic_id {mosaic_id}')
   mosaic = context.mosaics[mosaic_id]
-  key = next(iter(compute_mosaic_viewbox_artifacts(mode, mosaic_id))).key
+  artifacts = compute_mosaic_viewbox_artifacts(mode, mosaic_id)
+  key = next(iter(artifacts)).key
   context[key] = _compute_viewbox(mosaic)
   print(f'### Wrote key {key}')
+  return artifacts

@@ -6,6 +6,7 @@ from scipy.interpolate import RegularGridInterpolator
 import largestinteriorrectangle
 import cv2 as cv
 from itertools import product
+from pathlib import Path
 
 from plate_solving import solve_field
 from decorators import saves_artifacts
@@ -114,13 +115,6 @@ def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact):
   assert image is not None
   assert plate_solution is not None
 
-  print(f'### image.nbytes {image.nbytes / 1024 / 1024 / 1024} GB')
-
-  if plate_solution is None:
-    print(f'Could not place artifact {input_artifact} because plate_solution '
-          f'was None')
-    return
-
   print(f'mosaic_by_coordinates: image shape {image.shape} dtype {image.dtype} '
         f'min {np.min(image)} max {np.max(image)}')
 
@@ -194,10 +188,9 @@ def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact):
         f'output_image dtype {output_image.dtype} '
         f'min {np.min(output_image)} max {np.max(output_image)}')
 
-  output_artifact = next(
-      iter(
-          mosaic_by_coordinates_artifacts(mode, mosaic_id, filter, stack_id,
-                                          input_artifact)))
+  output_artifacts = mosaic_by_coordinates_artifacts(mode, mosaic_id, filter,
+                                                     stack_id, input_artifact)
+  output_artifact = next(iter(output_artifacts))
   print(f'### placement done; output_artifact is {output_artifact}')
 
   if mode == 'subframe':
@@ -216,18 +209,20 @@ def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact):
     }
     write_artifact(output_artifact, output_image, output_header)
 
-    # hdu = pyfits.PrimaryHDU(output_image)
-    # hdu.header['SIMPLE'] = True
-    # hdu.header['IMAGETYP'] = 'PlacedMosaic Light'
-    # hdu.header['FOCALLEN'] = float(header['FOCALLEN'])
-    # hdu.header['XPIXSZ'] = float(header['XPIXSZ'])
-    # hdu.header['YPIXSZ'] = float(header['YPIXSZ'])
-    # hdu.header['HISTORY'] = f"TrimMosaicTile.target: foo"
-    # hdu.header['HISTORY'] = f"TrimMosaicTile.top: {trim_top}"
-    # hdu.header['HISTORY'] = f"TrimMosaicTile.bottom: {trim_top + trim_height}"
-    # hdu.header['HISTORY'] = f"TrimMosaicTile.left: {trim_left}"
-    # hdu.header['HISTORY'] = f"TrimMosaicTile.right: {trim_left + trim_width}"
+  return output_artifacts
 
-    # # TODO: Is this placed_filename actually checked anywhere?
-    # hdu.writeto(output_artifact.filename, overwrite=True)
-    # print(f'### Wrote placed image filename {output_artifact.filename}')
+  # hdu = pyfits.PrimaryHDU(output_image)
+  # hdu.header['SIMPLE'] = True
+  # hdu.header['IMAGETYP'] = 'PlacedMosaic Light'
+  # hdu.header['FOCALLEN'] = float(header['FOCALLEN'])
+  # hdu.header['XPIXSZ'] = float(header['XPIXSZ'])
+  # hdu.header['YPIXSZ'] = float(header['YPIXSZ'])
+  # hdu.header['HISTORY'] = f"TrimMosaicTile.target: foo"
+  # hdu.header['HISTORY'] = f"TrimMosaicTile.top: {trim_top}"
+  # hdu.header['HISTORY'] = f"TrimMosaicTile.bottom: {trim_top + trim_height}"
+  # hdu.header['HISTORY'] = f"TrimMosaicTile.left: {trim_left}"
+  # hdu.header['HISTORY'] = f"TrimMosaicTile.right: {trim_left + trim_width}"
+
+  # # TODO: Is this placed_filename actually checked anywhere?
+  # hdu.writeto(output_artifact.filename, overwrite=True)
+  # print(f'### Wrote placed image filename {output_artifact.filename}')

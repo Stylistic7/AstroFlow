@@ -54,3 +54,5 @@ def post_process_stack(stack_id):
   file_io.xisf_file_io.add_xisf_metadata(output_image, output_artifact.filename,
                                          metadata)
   print(f'### Wrote post-processed artifact {output_artifact}')
+
+  return output_artifacts

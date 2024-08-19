@@ -2,7 +2,9 @@ import os
 import ray
 import numpy as np
 import astropy.io.fits as pyfits  # type: ignore
+from pathlib import Path
 
+from context import context
 from artifact import Artifact
 import pix
 from image_previews import autostretch
@@ -28,12 +30,15 @@ def merge_images_with_photometric_mosaic(mode: str, mosaic_id: str,
     return [output]
 
   run_photometric_mosaic([input_0.filename, input_1.filename], output.filename)
+  assert os.path.exists(output.filename)
 
   if output.content_hash:
     with pyfits.open(output.filename, mode='update') as hdu:
       header = hdu[0].header
       header['CONTHASH'] = output.content_hash
       hdu.flush()
+
+  assert artifact_exists(output)
 
   return [output]
 
@@ -69,13 +74,15 @@ def merge_images(mode: str, mosaic_id: str, input_0: Artifact,
   print(f'### merge_images {mode}: inputs {input_0}, {input_1}')
   print(f'### merge_images {mode}: output {output}')
 
-  # TODO: This stuff should be standardized and put into the @saves_artifacts
-  # decorator.
-  if not artifact_exists(input_0) or not artifact_exists(input_1):
-    return [output]
+  assert artifact_exists(input_0), f'Input artifact {input_0} does not exist'
+  assert artifact_exists(input_1), f'Input artifact {input_1} does not exist'
 
   if mode == 'subframe':
-    return merge_images_with_maximum(mode, mosaic_id, input_0, input_1, output)
+    result = merge_images_with_maximum(mode, mosaic_id, input_0, input_1,
+                                       output)
   elif mode == 'master':
-    return merge_images_with_photometric_mosaic.remote(mode, mosaic_id, input_0,
-                                                       input_1, output)
+    result = ray.get(
+        merge_images_with_photometric_mosaic.remote(mode, mosaic_id, input_0,
+                                                    input_1, output))
+
+  return result
