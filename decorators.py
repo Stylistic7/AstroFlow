@@ -12,7 +12,9 @@ def saves_artifacts(artifacts_fn, in_test=False, debug=False):
 
     def should_run(*args, **kwargs):
       artifacts = artifacts_fn(*args, **kwargs)
-      assert type(artifacts) is list
+      assert type(
+          artifacts
+      ) is list, f'artifacts_fn {artifacts_fn.__name__} returned non-list {artifacts}'
 
       for artifact in artifacts:
         assert isinstance(
@@ -32,7 +34,18 @@ def saves_artifacts(artifacts_fn, in_test=False, debug=False):
     @wraps(fn)
     def wrapper(*args, **kwargs):
       if should_run(*args, **kwargs):
-        return fn(*args, **kwargs)
+        result = fn(*args, **kwargs)
+
+        assert result is not None, f'{fn.__name__} returned None'
+        assert type(
+            result) is list, f'{fn.__name__} returned non-list: {result}'
+        assert all(isinstance(r, Artifact) for r in result
+                  ), f'{fn.__name__} returned list of non-Artifacts: {result}'
+        assert all(
+            artifact_exists(a) for a in result
+        ), f'{fn.__name__} returned artifacts that do not exist: {result}'
+
+        return result
       else:
         return artifacts_fn(*args, **kwargs)
 
