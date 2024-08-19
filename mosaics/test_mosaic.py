@@ -1,5 +1,6 @@
 import ray_local
 
+import ray
 import unittest
 import datetime
 from pathlib import Path
@@ -9,9 +10,13 @@ from context import context
 from testing.testdata_cache import TESTDATA_CACHE_GZIP_FILENAME
 from testing.test_frames import copy_testdata_frames
 import compute_graph
-from dependency_graph import run_graph
+from dependency_graph import run_graph, print_graph, matching_nodes
 from testing.test_context import make_test_context
 from hashing import hash_list
+from mosaics.placement import mosaic_by_coordinates
+from mosaics.merge_images import merge_images
+from mosaics.viewbox import compute_mosaic_viewbox
+from image_previews import scatter_stack_thumbnails
 
 
 class TestMosaic(unittest.TestCase):
@@ -94,7 +99,7 @@ class TestMosaic(unittest.TestCase):
     # Running the graph the first time, with an empty shopping cart, should
     # produce all the subframe previews for the stacks, targets, and mosaic.
     graph = compute_graph.build_compute_graph()
-    run_graph(graph, debug=True)
+    run_graph(graph)
 
     self.assertEqual(len(context.targets), 4)
     self.assertEqual(len(context.mosaics), 1)
@@ -113,10 +118,40 @@ class TestMosaic(unittest.TestCase):
         mosaic.content_hash,
         hash_list([t.content_hash for t in context.targets.values()]))
 
+    # Build the preview-generation graph and check its size and contents.
+    preview_graph = ray.get(compute_graph.build_preview_graph.remote())
+    print(f'### preview_graph has len {len(preview_graph)}')
+    print_graph(preview_graph)
+    self.assertEqual(len(preview_graph), 10)
+
+    expected_count = {
+        scatter_stack_thumbnails: 1,
+        compute_mosaic_viewbox: 1,
+        mosaic_by_coordinates: 4,
+        merge_images: 3
+    }
+    for fn, count in expected_count.items():
+      self.assertEqual(len(matching_nodes(preview_graph, fn)), count)
+
     # After putting the mosaic in the shopping cart, the second graph
     # execution should stack the subframes into masters, and generate a final
     # master mosaic image.
     context.shopping_cart = [('mosaic', mosaic.stable_hash)]
+    print('### test_mosaic shopping_cart', context.shopping_cart)
+
+    main_processing_graph = ray.get(
+        compute_graph.build_main_processing_graph.remote())
+    print('### main_processing_graph is:')
+    print_graph(main_processing_graph)
+
+    # expected_count = {
+    #     scatter_stack_thumbnails: 1,
+    #     compute_mosaic_viewbox: 1,
+    #     mosaic_by_coordinates: 4,
+    #     merge_images: 3
+    # }
+    # for fn, count in expected_count.items():
+    #   self.assertEqual(len(matching_nodes(main_processing_graph, fn)), count)
 
     # TODO: Put per-mosaic overrides of the post-processing scripts, to turn
     # them off, for speed.

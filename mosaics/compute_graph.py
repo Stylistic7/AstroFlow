@@ -85,13 +85,6 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task,
     elif mode == 'master':
       input_artifact = post_process_stack_artifacts(stack_id)[0]
 
-    # TODO: This is wrong; this should connect to code that produces the
-    # stack subgraph...
-    if not artifact_exists(input_artifact):
-      print(f'### build_mosaic_filter_subgraph skipping artifact '
-            f'{input_artifact} because it does not exist')
-      continue
-
     placement_task = (mosaic_by_coordinates, mode, mosaic_id, filter, stack_id,
                       input_artifact)
 
