@@ -70,6 +70,16 @@ def done(ancestor_results):
   return ancestor_results[0]
 
 
+def matching_nodes(graph, fn):
+
+  def _matches(node):
+    node = _unpack_node(node)
+    return (node.task._function.__module__ == fn._function.__module__ and
+            node.task._function.__name__ == fn._function.__name__)
+
+  return [node for node in graph if _matches(node)]
+
+
 def make_graph_from_list(tasks):
   graph = Graph()
   prev_done_node = None
