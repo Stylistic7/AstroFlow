@@ -1,4 +1,4 @@
-import ray_local
+from ray_infra import ray_local
 
 import numpy as np
 import os

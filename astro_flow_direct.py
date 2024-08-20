@@ -7,7 +7,7 @@ from multiprocessing import Pool
 import structlog
 import datetime
 
-import ray_init
+from ray_infra import ray_init
 from context import context
 import download_asiair
 import autorun_log_analysis

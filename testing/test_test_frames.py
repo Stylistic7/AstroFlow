@@ -1,4 +1,4 @@
-import ray_local
+from ray_infra import ray_local
 
 import unittest
 import datetime

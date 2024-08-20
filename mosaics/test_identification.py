@@ -1,5 +1,5 @@
 import unittest
-import ray_local
+from ray_infra import ray_local
 
 import datetime
 import ray

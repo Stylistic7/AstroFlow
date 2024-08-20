@@ -3,7 +3,7 @@ import sys
 
 sys.path.append('../..')
 
-import ray_init
+from ray_infra import ray_init
 
 import os
 import io
