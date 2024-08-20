@@ -7,6 +7,7 @@ from context import context
 import numpy as np
 from spherical_geometry.polygon import SingleSphericalPolygon
 
+from stacks import Stack
 from target import Target
 from mosaic import Mosaic
 from testing.test_context import make_test_context
@@ -41,8 +42,20 @@ class TestMosaicIdentification(unittest.TestCase):
                      footprint=SingleSphericalPolygon.from_radec(
                          [95, 99, 99, 95], [-1, -1, 1, 1]))
 
-    targets = {target0.stable_hash: target0, target1.stable_hash: target1}
-    context.targets = targets
+    context.stacks = {
+        1: Stack(image_scale=1),
+        2: Stack(image_scale=1),
+        3: Stack(image_scale=1),
+        4: Stack(image_scale=1),
+        5: Stack(image_scale=1),
+        6: Stack(image_scale=1)
+    }
+
+    context.targets = {
+        target0.stable_hash: target0,
+        target1.stable_hash: target1
+    }
+
     ray.get(identification.identify_mosiacs.remote())
     mosaics = context.mosaics
     self.assertEqual(len(mosaics), 1)
@@ -88,9 +101,24 @@ class TestMosaicIdentification(unittest.TestCase):
                  footprint=SingleSphericalPolygon.from_radec([95, 99, 99, 95],
                                                              [0, 0, 2, 2]))
 
-    targets = {foo.stable_hash: foo, bar.stable_hash: bar, baz.stable_hash: baz}
+    context.stacks = {
+        1: Stack(image_scale=1),
+        2: Stack(image_scale=1),
+        3: Stack(image_scale=1),
+        4: Stack(image_scale=1),
+        5: Stack(image_scale=1),
+        6: Stack(image_scale=1),
+        7: Stack(image_scale=1),
+        8: Stack(image_scale=1),
+        9: Stack(image_scale=1)
+    }
 
-    context.targets = targets
+    context.targets = {
+        foo.stable_hash: foo,
+        bar.stable_hash: bar,
+        baz.stable_hash: baz
+    }
+
     ray.get(identification.identify_mosiacs.remote())
     mosaics = context.mosaics
 
@@ -136,9 +164,24 @@ class TestMosaicIdentification(unittest.TestCase):
                  footprint=SingleSphericalPolygon.from_radec([98, 102, 102, 98],
                                                              [1, 1, 3, 3]))
 
-    targets = {foo.stable_hash: foo, bar.stable_hash: bar, baz.stable_hash: baz}
+    context.stacks = {
+        1: Stack(image_scale=1),
+        2: Stack(image_scale=1),
+        3: Stack(image_scale=1),
+        4: Stack(image_scale=1),
+        5: Stack(image_scale=1),
+        6: Stack(image_scale=1),
+        7: Stack(image_scale=1),
+        8: Stack(image_scale=1),
+        9: Stack(image_scale=1)
+    }
 
-    context.targets = targets
+    context.targets = {
+        foo.stable_hash: foo,
+        bar.stable_hash: bar,
+        baz.stable_hash: baz
+    }
+
     ray.get(identification.identify_mosiacs.remote())
     mosaics = context.mosaics
 
@@ -186,14 +229,28 @@ class TestMosaicIdentification(unittest.TestCase):
                      footprint=SingleSphericalPolygon.from_radec(
                          [96, 100, 100, 96], [-1.5, -1.5, 0.5, 0.5]))
 
-    targets = {
+    context.stacks = {
+        1: Stack(image_scale=1),
+        2: Stack(image_scale=1),
+        3: Stack(image_scale=1),
+        4: Stack(image_scale=1),
+        5: Stack(image_scale=1),
+        6: Stack(image_scale=1),
+        7: Stack(image_scale=1),
+        8: Stack(image_scale=1),
+        9: Stack(image_scale=1),
+        10: Stack(image_scale=1),
+        11: Stack(image_scale=1),
+        12: Stack(image_scale=1)
+    }
+
+    context.targets = {
         foo.stable_hash: foo,
         bar.stable_hash: bar,
         baz.stable_hash: baz,
         outlier.stable_hash: outlier,
     }
 
-    context.targets = targets
     ray.get(identification.identify_mosiacs.remote())
     mosaics = context.mosaics
 
