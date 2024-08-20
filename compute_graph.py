@@ -4,7 +4,7 @@ from context import context
 from metadata.image_metadata import scatter_compute_image_metadata
 from spatial_association import find_components_by_cosine_similarity
 from stacks.identification import identify_stacks
-from targets.target_identification import group_stacks_into_targets
+from targets.identification import group_stacks_into_targets
 from calibration_frames import identify_calibration_stacks, associate_with_stacks
 from image_previews import scatter_stack_thumbnails
 from mosaics.identification import identify_mosiacs

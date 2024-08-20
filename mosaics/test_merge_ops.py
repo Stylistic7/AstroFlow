@@ -11,7 +11,6 @@ from hashing import hash_list
 from testing.test_context import make_test_context
 from .merge_ops import make_merge_ops
 from .classes import MergeOp, Panel
-from stacks import post_process_stack
 from artifacts.decorators import saves_artifacts
 from context import context
 from stacks import Stack
@@ -43,7 +42,7 @@ def _make_panel(id, content_hash=None, **kwargs):
                **kwargs)
 
 
-def post_process_stack_artifacts(stack_id):
+def _post_process_stack_artifacts(stack_id):
   content_hash = context.stacks[stack_id].content_hash
   filename = os.path.join(context.output_dir,
                           f'stack_{stack_id}_post_processed.fit')
@@ -53,11 +52,13 @@ def post_process_stack_artifacts(stack_id):
 # This is a mock that just writes a fake image to disk with the desired
 # content_hash.
 @ray.remote
-@saves_artifacts(post_process_stack_artifacts)
-def post_process_stack(stack_id):
-  print(f'### Entering post_process_stack {stack_id}')
-  artifact = next(iter(post_process_stack_artifacts(stack_id)))
+@saves_artifacts(_post_process_stack_artifacts)
+def _post_process_stack(stack_id):
+  print(f'### Entering _post_process_stack {stack_id}')
+  artifacts = _post_process_stack_artifacts(stack_id)
+  artifact = next(iter(artifacts))
   write_artifact(artifact, np.random.random((10, 10)))
+  return artifacts
 
 
 class TestMergeOps(unittest.TestCase):
@@ -78,7 +79,7 @@ class TestMergeOps(unittest.TestCase):
     panels = {(0, 0): left, (0, 1): right}
 
     from_task = {
-        panel: (post_process_stack, panel.stable_hash)
+        panel: (_post_process_stack, panel.stable_hash)
         for panel in panels.values()
     }
 
@@ -107,7 +108,7 @@ class TestMergeOps(unittest.TestCase):
     panels = {(0, 0): left, (0, 1): middle, (0, 2): right}
 
     from_task = {
-        panel: (post_process_stack, panel.stable_hash)
+        panel: (_post_process_stack, panel.stable_hash)
         for panel in panels.values()
     }
 
@@ -152,7 +153,7 @@ class TestMergeOps(unittest.TestCase):
     }
 
     from_task = {
-        panel: (post_process_stack, panel.stable_hash)
+        panel: (_post_process_stack, panel.stable_hash)
         for panel in panels.values()
     }
 
@@ -219,7 +220,7 @@ class TestMergeOps(unittest.TestCase):
     }
 
     from_task = {
-        panel: (post_process_stack, panel.stable_hash)
+        panel: (_post_process_stack, panel.stable_hash)
         for panel in panels.values()
     }
 

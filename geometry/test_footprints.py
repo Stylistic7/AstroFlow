@@ -4,7 +4,6 @@ import ray
 import unittest
 import shapely
 from shapely import Polygon
-import datetime
 
 from context import context
 from dependency_graph import run_graph, make_graph_from_list
@@ -12,7 +11,7 @@ from geometry.footprints import project_footprint
 from testing.test_frames import make_synthetic_frames
 from mosaics import identification
 from stacks.identification import identify_stacks
-from target_identification import group_stacks_into_targets
+from targets.identification import group_stacks_into_targets
 from spatial_association import find_components_by_cosine_similarity
 from metadata.image_metadata import scatter_compute_image_metadata
 from calibration_frames import identify_calibration_stacks, associate_with_stacks
