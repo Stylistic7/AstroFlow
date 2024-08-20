@@ -6,10 +6,10 @@ import unittest
 import ray
 import astropy.io.fits as pyfits  # type: ignore
 
-from artifact import FileArtifact, CacheArtifact
+from artifacts import FileArtifact, CacheArtifact
 from testing.test_context import make_test_context
 from context import context
-from decorators import saves_artifacts
+from artifacts.decorators import saves_artifacts
 from hashing import hash_list
 
 

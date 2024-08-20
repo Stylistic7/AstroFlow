@@ -6,7 +6,7 @@ from context import context
 from dependency_graph import Graph
 from .classes import MergeOp, Panel
 from .merge_images import merge_images
-from artifact import CacheArtifact, FileArtifact
+from artifacts import CacheArtifact, FileArtifact
 from hashing import hash_list
 
 

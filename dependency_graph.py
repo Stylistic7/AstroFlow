@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from copy import copy
 from functools import reduce
 from operator import or_
-from artifact import FileArtifact, CacheArtifact
+from artifacts import FileArtifact, CacheArtifact
 
 
 class Graph(dict):

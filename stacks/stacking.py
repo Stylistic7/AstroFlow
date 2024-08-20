@@ -8,8 +8,8 @@ import os
 import shutil
 import astropy.io.fits as pyfits  # type: ignore
 
-from decorators import saves_artifacts
-from artifact import FileArtifact
+from artifacts.decorators import saves_artifacts
+from artifacts import FileArtifact
 from context import context
 import pix
 import position_string

@@ -5,18 +5,18 @@ import ray
 import os
 import unittest
 import astropy.io.fits as pyfits  # type: ignore
-from artifact import Artifact
+from artifacts import Artifact
 
 from hashing import hash_list
 from testing.test_context import make_test_context
 from .merge_ops import make_merge_ops
 from .classes import MergeOp, Panel
 from stacks import post_process_stack
-from decorators import saves_artifacts
+from artifacts.decorators import saves_artifacts
 from context import context
 from stacks import Stack
 from dependency_graph import run_graph, print_graph
-from artifact import CacheArtifact, FileArtifact, write_artifact
+from artifacts import CacheArtifact, FileArtifact, write_artifact
 from testing.test_frames import make_synthetic_frames
 
 

@@ -5,11 +5,11 @@ import astropy.io.fits as pyfits  # type: ignore
 from pathlib import Path
 
 from context import context
-from artifact import Artifact
+from artifacts import Artifact
 import pix
 from image_previews import autostretch
-from decorators import saves_artifacts
-from artifact import Artifact, read_artifact_image, write_artifact, artifact_exists
+from artifacts.decorators import saves_artifacts
+from artifacts import Artifact, read_artifact_image, write_artifact, artifact_exists
 
 
 @pix.PixInsight()

@@ -1,10 +1,10 @@
 import ray
 from addict import Dict
 
-from artifact import Artifact
+from artifacts import Artifact
 from pix import PixInsight
 from context import context
-from decorators import saves_artifacts
+from artifacts.decorators import saves_artifacts
 
 
 @PixInsight

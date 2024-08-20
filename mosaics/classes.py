@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from collections import namedtuple
 
-from artifact import Artifact
+from artifacts import Artifact
 from geometry.projection import Projection
 
 

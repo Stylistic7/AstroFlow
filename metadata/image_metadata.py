@@ -3,7 +3,7 @@ from pathlib import Path
 import os
 import traceback
 
-from artifact import FileArtifact, CacheArtifact, artifact_exists
+from artifacts import FileArtifact, CacheArtifact, artifact_exists
 from file_io.find_image_files import find_image_files
 from file_io.generic import read_header, get_content_hash
 import metadata.image_types as image_types

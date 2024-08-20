@@ -2,7 +2,7 @@ import ray
 import os
 import numpy as np
 
-from artifact import Artifact, CacheArtifact, FileArtifact, read_artifact_image, write_artifact, artifact_exists
+from artifacts import Artifact, CacheArtifact, FileArtifact, read_artifact_image, write_artifact, artifact_exists
 from context import context
 from dependency_graph import Graph, print_graph
 from image_previews import array_to_png
@@ -13,7 +13,7 @@ from .viewbox import compute_mosaic_viewbox
 from .placement import mosaic_by_coordinates, mosaic_by_coordinates_artifacts
 from stacks.post_process_stack import post_process_stack_artifacts
 from stacks.compute_graph import build_stack_subgraph
-from decorators import saves_artifacts
+from artifacts.decorators import saves_artifacts
 from image_previews import resize_array
 from metadata.actor import get_metadata_for_mosaic
 

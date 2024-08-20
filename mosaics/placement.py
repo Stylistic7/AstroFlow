@@ -9,11 +9,11 @@ from itertools import product
 from pathlib import Path
 
 from plate_solving import solve_field
-from decorators import saves_artifacts
-from artifact import Artifact
+from artifacts.decorators import saves_artifacts
+from artifacts import Artifact
 from context import context
 from .viewbox import compute_mosaic_viewbox_artifacts
-from artifact import read_artifact_image, read_artifact_header, write_artifact, CacheArtifact, FileArtifact
+from artifacts import read_artifact_image, read_artifact_header, write_artifact, CacheArtifact, FileArtifact
 from hashing import hash_list
 
 _MEMORY_REQUIREMENT = 8 * 1024 * 1024 * 1024  # 8 GB

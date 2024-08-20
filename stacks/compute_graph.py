@@ -7,6 +7,9 @@ from dependency_graph import Graph, Node
 from metadata.image_metadata import compute_image_metadata
 
 
+# TODO: Should these build_*_subgraph functions eliminate nodes that don't
+# need to run? If the final post-processed stack artifact exists, there's
+# no reason to check all of the predecing artifacts.
 @ray.remote
 def build_stack_subgraph(stack_id):
   stacks = context.stacks

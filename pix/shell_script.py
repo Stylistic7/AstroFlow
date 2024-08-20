@@ -85,6 +85,9 @@ def run_script(tasks,
       f.write(script)
 
     if not dry_run:
+      print(f'Forcing PixInsight to the foreground...')
+      # TODO: Implement for MacOS, then check on other platforms.
+
       print(f'Running PixInsight shell script...')
       ret = subprocess.run([
           '/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight',

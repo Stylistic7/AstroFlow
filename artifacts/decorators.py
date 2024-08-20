@@ -1,7 +1,7 @@
 import os
 from functools import wraps
 
-from artifact import Artifact, artifact_exists
+from artifacts import Artifact, artifact_exists
 from context import context
 
 

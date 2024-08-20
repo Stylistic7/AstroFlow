@@ -2,8 +2,8 @@ import ray
 import numpy as np
 
 from .classes import Viewbox
-from artifact import CacheArtifact
-from decorators import saves_artifacts
+from artifacts import CacheArtifact
+from artifacts.decorators import saves_artifacts
 from geometry.projections import mercator
 import geometry.footprints as footprints
 from context import context

@@ -3,9 +3,9 @@ import os
 import inspect
 
 import file_io
-from artifact import FileArtifact
+from artifacts import FileArtifact
 from context import context
-from decorators import saves_artifacts
+from artifacts.decorators import saves_artifacts
 from stacks.stacking import stack_files_artifacts
 import pix
 from hashing import hash_list
