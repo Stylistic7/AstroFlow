@@ -7,7 +7,7 @@ import numpy as np
 import random
 
 from context import context
-from mosaic import Mosaic
+from mosaics import Mosaic
 from catalogs import position_string
 from geometry import footprints
 from hashing import hash_list

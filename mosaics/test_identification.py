@@ -9,7 +9,7 @@ from spherical_geometry.polygon import SingleSphericalPolygon
 
 from stacks import Stack
 from target import Target
-from mosaic import Mosaic
+from mosaics import Mosaic
 from testing.test_context import make_test_context
 
 from . import identification
