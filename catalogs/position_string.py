@@ -1,7 +1,8 @@
-import ngc2000_catalog
+import catalogs.ngc2000_catalog as ngc2000_catalog
 
 
 def ra_dec_string(ra, dec):
+
   def round_to_nearest_tenth(number):
     return int(round(number * 10.0)) / 10.0
 

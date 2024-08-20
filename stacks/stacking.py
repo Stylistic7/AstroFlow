@@ -12,7 +12,7 @@ from artifacts.decorators import saves_artifacts
 from artifacts import FileArtifact
 from context import context
 import pix
-import position_string
+from catalogs import position_string
 import file_io
 from metadata.actor import get_metadata
 

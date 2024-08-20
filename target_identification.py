@@ -5,7 +5,7 @@ import numpy as np
 
 from context import context
 import spatial_association
-import position_string
+from catalogs import position_string
 from target import Target
 import geometry.footprints as footprints
 from hashing import hash_list
