@@ -45,10 +45,9 @@ def _make_panel(id, content_hash=None, **kwargs):
 
 def post_process_stack_artifacts(stack_id):
   content_hash = context.stacks[stack_id].content_hash
-  return [
-      FileArtifact(filename=f'stack_{stack_id}_post_processed.fit',
-                   content_hash=content_hash)
-  ]
+  filename = os.path.join(context.output_dir,
+                          f'stack_{stack_id}_post_processed.fit')
+  return [FileArtifact(filename, content_hash=content_hash)]
 
 
 # This is a mock that just writes a fake image to disk with the desired
