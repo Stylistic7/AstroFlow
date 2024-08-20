@@ -9,8 +9,7 @@ import datetime
 
 from ray_infra import ray_init
 from context import context
-import download_asiair
-import autorun_log_analysis
+from asiair import download_asiair, autorun_log_analysis
 import compute_graph
 from dependency_graph import run_graph
 
