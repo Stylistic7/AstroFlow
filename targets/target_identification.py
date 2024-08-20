@@ -6,7 +6,7 @@ import numpy as np
 from context import context
 import spatial_association
 from catalogs import position_string
-from target import Target
+from targets import Target
 import geometry.footprints as footprints
 from hashing import hash_list
 from metadata.actor import get_metadata

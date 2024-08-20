@@ -2,7 +2,7 @@ import ray
 
 from context import context
 from dependency_graph import Graph
-from post_process_target import post_process_target
+from targets import post_process_target
 from stacks.post_process_stack import post_process_stack
 
 
