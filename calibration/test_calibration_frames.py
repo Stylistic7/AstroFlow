@@ -2,11 +2,9 @@ from ray_infra import ray_local
 
 import datetime
 import unittest
-import tempfile
 import ray
-from cache import cache
+from context import cache
 import datetime
-import pytz
 from dataclasses import asdict
 
 from testing.test_frames import make_synthetic_frames, copy_testdata_frames
@@ -19,7 +17,7 @@ from stacks.identification import identify_stacks
 from calibration import identify_calibration_stacks, associate_with_stacks
 from testing.test_context import make_test_context
 from hashing import hash_list
-from get_stacks import get_toplevel_stacks, get_content_stacks_of_type
+from stacks.get_stacks import get_toplevel_stacks, get_content_stacks_of_type
 from metadata.actor import get_metadata
 
 

@@ -8,7 +8,7 @@ import shutil
 
 from context import context
 import file_io
-from cache import cache
+from context import cache
 from testing.test_frames import copy_testdata_frames
 import compute_graph
 from dependency_graph import run_graph

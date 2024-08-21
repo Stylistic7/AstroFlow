@@ -2,14 +2,13 @@ from ray_infra import ray_local
 
 import ray
 import unittest
-import datetime
 
 from testing.test_context import make_test_context
 from context import context
 from testing.test_frames import make_synthetic_frames
 from stacks.identification import identify_stacks
 from clustering import cluster_by_image_center
-from get_stacks import get_toplevel_stacks, get_content_stacks_of_type
+from stacks.get_stacks import get_toplevel_stacks, get_content_stacks_of_type
 from metadata.actor import get_metadata
 
 # TODO: I may need to separate the concepts of the diskcache-based global

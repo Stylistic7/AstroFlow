@@ -1,6 +1,6 @@
 import os
 
-from cache import cache
+from context import cache
 
 if __name__ == '__main__':
   if 'measurements' in cache:

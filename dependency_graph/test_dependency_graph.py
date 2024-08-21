@@ -6,7 +6,7 @@ import ray
 import tempfile
 import time
 
-from cache import cache
+from context import cache
 from context import context
 from dependency_graph import Graph, Node, GraphStatus, TopologicalSorterWithStatus, run_graph, make_graph_from_list
 

@@ -1,4 +1,4 @@
-from cache import cache
+from context import cache
 
 image_hashes = cache['image_hashes']
 fits_headers = cache['fits_headers']

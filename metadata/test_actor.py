@@ -12,7 +12,7 @@ from dependency_graph import run_graph
 from metadata.image_metadata import scatter_compute_image_metadata
 from metadata.image_types import is_light_frame, is_dark_frame
 from testing.test_context import make_test_context
-from orion_mosaic import add_orion_mosaic_images
+from mosaics.orion_mosaic import add_orion_mosaic_images
 from metadata.actor import get_metadata, get_metadata_for_mosaic, group_by_header, sort_by_header, cluster_by_header
 from testing.test_context import make_test_context
 from testing.test_frames import make_synthetic_frames

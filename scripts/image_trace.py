@@ -1,4 +1,4 @@
-from cache import cache
+from context import cache
 
 quarantined_files = cache.get('quarantined_files', [])
 spatial_groups = cache.get('spatial_groups', [])

@@ -1,4 +1,5 @@
 import ray
+import numpy as np
 
 from context import context
 from hashing import hash_string
@@ -6,7 +7,7 @@ from metadata.actor import get_metadata_for_stack
 import subframe_selection
 from previews.operations import resize_array, array_to_png
 from file_io.generic import read_image
-from previews.stack_thumbnails import _make_thumbnail
+from previews.thumbnail import make_thumbnail
 
 
 # TODO: Is it only necessary to make the thumbnails for the flat stacks
@@ -77,8 +78,13 @@ def create_flat_correction_thumbnails(stack_id):
                                width)).astype(np.float32)
 
     thumbnail = array_to_png(
+<<<<<<< HEAD
         _make_thumbnail(light_frame, light_image, bias_frame, bias_image,
                         dark_frame, dark_image, flat_frame, flat_image, rotate))
+=======
+        make_thumbnail(light_frame, light_image, bias_frame, bias_image,
+                       dark_frame, dark_image, flat_frame, flat_image, rotate))
+>>>>>>> a4a5e53 (Moved lots of code into subdirectories)
     hash = hash_string(thumbnail)
     thumbnails[flat_stack_id] = hash
 

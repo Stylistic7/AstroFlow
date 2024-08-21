@@ -5,10 +5,9 @@ import unittest
 import datetime
 import os
 
-from orion_mosaic import add_orion_mosaic_images
 from file_io.find_image_files import find_image_files
 from context import context
-import get_stacks
+from stacks.get_stacks import get_toplevel_stacks
 from testing.test_frames import copy_testdata_frames, make_synthetic_frames
 import compute_graph
 from dependency_graph import run_graph, print_graph
@@ -90,7 +89,7 @@ class TestComputeGraph(unittest.TestCase):
     self.assertEqual(len(masters), 0)
 
     stacks = context.stacks
-    toplevel_stacks = get_stacks.get_toplevel_stacks(stacks)
+    toplevel_stacks = get_toplevel_stacks(stacks)
     self.assertEqual(len(toplevel_stacks), 1)
     toplevel_stack = toplevel_stacks[0]
 

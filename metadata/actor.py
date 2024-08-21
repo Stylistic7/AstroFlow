@@ -6,7 +6,7 @@ import operator
 from functools import singledispatch
 from collections.abc import Iterable
 
-from cache import cache
+from context import cache
 from context import context
 
 

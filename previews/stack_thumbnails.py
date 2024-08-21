@@ -4,7 +4,9 @@ import os
 import tempfile
 import ray
 
-from previews.operations import resize_array, autostretch, array_to_png
+from previews.operations import resize_array, array_to_png
+from previews.flat_correction import create_flat_correction_thumbnails
+from previews.thumbnail import make_thumbnail
 from context import context
 from file_io.generic import read_image
 import subframe_selection
@@ -39,6 +41,7 @@ from metadata.actor import get_metadata, get_metadata_for_stack
 MIN_STAR_FRACTION = 0.5
 
 
+<<<<<<< HEAD
 # TODO: Average flat frames before applying them.
 def _make_thumbnail(light_frame, light_image, bias_frame, bias_image,
                     dark_frame, dark_image, flat_frame, flat_image, rotate):
@@ -77,6 +80,8 @@ def _make_thumbnail(light_frame, light_image, bias_frame, bias_image,
   return autostretch(np.clip(image, 0.0, 1.0))
 
 
+=======
+>>>>>>> a4a5e53 (Moved lots of code into subdirectories)
 @ray.remote(resources={'fastest_storage': 0.001})
 def scatter_stack_thumbnails(mode):
   stacks = context.stacks
@@ -180,9 +185,15 @@ def create_stack_subframe_thumbnails(stack_id):
       if 'flat' in dependencies:
         flat_frame, flat_image = get_first_image(dependencies['flat'])
 
+<<<<<<< HEAD
       im = _make_thumbnail(light_frame, light_image, bias_frame, bias_image,
                            dark_frame, dark_image, flat_frame, flat_image,
                            rotate)
+=======
+      im = make_thumbnail(light_frame, light_image, bias_frame, bias_image,
+                          dark_frame, dark_image, flat_frame, flat_image,
+                          rotate)
+>>>>>>> a4a5e53 (Moved lots of code into subdirectories)
 
       if i == 0:
         key = ('stack_subframe_thumbnail_image', stack_id)
