@@ -16,7 +16,7 @@ from hashing import hash_list
 from mosaics.placement import mosaic_by_coordinates
 from mosaics.merge_images import merge_images
 from mosaics.viewbox import compute_mosaic_viewbox
-from image_previews import scatter_stack_thumbnails
+from previews import scatter_stack_thumbnails
 
 
 class TestMosaic(unittest.TestCase):

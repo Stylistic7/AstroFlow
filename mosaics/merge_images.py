@@ -7,7 +7,7 @@ from pathlib import Path
 from context import context
 from artifacts import Artifact
 import pix
-from image_previews import autostretch
+from previews import autostretch
 from artifacts.decorators import saves_artifacts
 from artifacts import Artifact, read_artifact_image, write_artifact, artifact_exists
 

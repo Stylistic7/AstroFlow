@@ -4,7 +4,7 @@ import ray
 import numpy as np
 
 from context import context
-import spatial_association
+from clustering import find_groups
 from catalogs import position_string
 from targets import Target
 import geometry.footprints as footprints
@@ -59,9 +59,7 @@ def group_stacks_into_targets():
         b_polygon).area()
     return iou > 0.6
 
-  groups = spatial_association.find_groups(values,
-                                           comparison_fn,
-                                           min_component_members=1)
+  groups = find_groups(values, comparison_fn, min_component_members=1)
 
   def new_target(stack_ids):
     center = stacks[stack_ids[0]].center

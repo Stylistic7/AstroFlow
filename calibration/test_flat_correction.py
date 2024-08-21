@@ -9,7 +9,7 @@ from context import context
 from testing.test_frames import make_synthetic_frames, copy_testdata_frames
 from testing.test_context import make_test_context
 from stacks.identification import identify_stacks
-from spatial_association import find_components_by_cosine_similarity
+from clustering import cluster_by_image_center
 from get_stacks import get_toplevel_stacks, get_content_stacks_of_type
 from dependency_graph import run_graph
 from compute_graph import build_compute_graph

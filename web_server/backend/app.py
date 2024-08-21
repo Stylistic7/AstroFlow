@@ -25,7 +25,7 @@ import constellations
 import image_previews
 from cache import cache
 from artifacts import artifact_exists, read_artifact_image, CacheArtifact
-from image_previews import array_to_png, autostretch
+from previews import array_to_png, autostretch
 from mosaics.compute_graph import done_artifacts
 
 import plotly.express as px

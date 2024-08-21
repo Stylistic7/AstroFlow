@@ -1,18 +1,18 @@
 import numpy as np
-from numpy import abs, minimum, maximum, median
 import cv2
-from skimage.transform import resize
 import os
 import tempfile
 import ray
 
+from previews.operations import resize_array, autostretch, array_to_png
 from context import context
-from hashing import hash_string
 from file_io.generic import read_image
 import subframe_selection
 from stacks import stacking
 from dependency_graph import Graph
 from metadata.actor import get_metadata, get_metadata_for_stack
+
+# TODO: Split this file up into smaller, more specific pieces.
 
 # Every stack is going to have multiple levels of previews. I should disentangle
 # them. There will always be a subrame-based preview. The master-based preview
@@ -37,71 +37,6 @@ from metadata.actor import get_metadata, get_metadata_for_stack
 # ('stack_thumbnail_image', 'post_processed', 'abc123') = image
 
 MIN_STAR_FRACTION = 0.5
-
-
-def resize_array(array, new_width):
-  assert not np.isnan(np.min(array))
-  height, width = array.shape
-  new_height = (height / width) * new_width
-  result = resize(array, (int(new_height), int(new_width)))
-  assert not np.isnan(
-      np.min(result)
-  ), f"Failed to resize image dtype {array.dtype} min {np.min(array)} max {np.max(array)}"
-  return result
-
-
-# See this YouTube video: https://www.youtube.com/watch?v=em9IQzbkBuU
-# which links to this PixelMath stretching:
-# https://drive.google.com/drive/folders/1ZuE8VKlrryofFAGdx-hIH8drrdNZxVCN
-def autostretch(image, debug=False):
-  image = image.astype(np.float32) / np.max(image)
-  unclipped = np.where((image > 0.0) & (image < 1.0))
-  if debug:
-    print(f'### autostretch, input image '
-          f'min {np.min(image)} max {np.max(image)} '
-          f'median {np.median(image[unclipped])}')
-
-  curve = 1.0  # 1 = normal stretch, > 1 = arcsin style
-  stretch = 0.20  # target background value
-  clip = 2.8  # increase to prevent shadow clipping
-
-  # The median of the absolute values of the residuals from the data's median.
-  def mdev(image):
-    return median(abs(image - median(image)))
-
-  E1 = np.clip(
-      median(image[unclipped]) + -clip * 1.4826 * mdev(image[unclipped]), 0, 1)
-  E2 = maximum(0, (image - E1) / (1 - E1))
-  E3 = median(image[unclipped]) - E1
-  E4 = minimum(1, (1 / curve))
-  E5 = np.nan_to_num(
-      ((stretch - 1) * E3) / ((2 * stretch - 1) * pow(E3, E4) - stretch))
-  output = np.nan_to_num(((E5 - 1) * E2) / ((2 * E5 - 1) * pow(E2, E4) - E5))
-
-  if debug:
-    print(f'### E1 {E1}')
-    print(f'### E2 {E2}')
-    print(f'### E3 {E3}')
-    print(f'### E4 {E4}')
-    print(f'### E5 {E5}')
-
-  assert not np.isnan(output).any(), 'stretched image contains NaN'
-
-  if debug:
-    print(f'### autostretch, output image '
-          f'min {np.min(output)} max {np.max(output)}')
-  return output
-
-
-def array_to_png(array, debug=False):
-  if np.issubdtype(array.dtype, np.floating):
-    assert not np.isnan(array).any(), 'array contains NaN'
-
-  array = (array * 255.0).astype(np.uint8)
-  if debug:
-    print(f'### array_to_png, array min {np.min(array)} max {np.max(array)}')
-  _, png = cv2.imencode('.png', array)
-  return png.tobytes()
 
 
 # TODO: Average flat frames before applying them.
@@ -166,88 +101,6 @@ def scatter_stack_thumbnails(mode):
              ('stack_master_thumbnail_image', id) not in cache_keys]
 
   return Graph({gather: tasks})
-
-
-# TODO: Is it only necessary to make the thumbnails for the flat stacks
-# immediately before and immediately after the light frames? I suppose people
-# could make bad flat frames, or confuse them somehow, and want all of the
-# flexibility.
-@ray.remote
-def create_flat_correction_thumbnails(stack_id):
-  stacks = context.stacks
-  stack = stacks[stack_id]
-
-  # There should be many flat correction thumbnails for every stack, one for
-  # each applicable run of flat frames. This key should have a dict for a
-  # value. The keys of the dict are the content hashes of the runs of flat
-  # frames.
-  key = ('flat_correction_thumbnails', stack_id)
-  thumbnails = context.get(key, {})
-
-  flat_stack_ids = [
-      id for id, s in stacks.items()
-      if not s.stable_hash and s.image_type == 'flat' and
-      s.camera == stack.camera and s.filter == stack.filter
-  ]
-
-  if all(f in thumbnails for f in flat_stack_ids):
-    return
-
-  assert not stack.stable_hash
-
-  metadata = get_metadata_for_stack(stack_id)
-
-  light_frames_by_stars = subframe_selection.get_light_frames_sorted_by_stars(
-      stack.frames, metadata)
-  light_frame = light_frames_by_stars[0]
-
-  width = context.subframe_thumbnail_width
-  rotate = light_frame.plate_solution.rotation_angle < 0.0
-  light_image = (resize_array(read_image(light_frame.filename),
-                              width)).astype(np.float32)
-
-  def first_frame(stack_id):
-    return metadata[stacks[stack_id].frames[0]]
-
-  settings_key = ('stack_settings', stack_id)
-  settings = context[settings_key] or {}
-  dependencies = stack.dependencies | settings
-
-  # TODO: These will probably fail for any light stack that doesn't have
-  # calibration images. Add a test case.
-  bias_frame = bias_image = None
-  if 'bias' in dependencies:
-    bias_frame = first_frame(dependencies['bias'])
-    bias_image = (resize_array(read_image(bias_frame.filename),
-                               width)).astype(np.float32)
-
-  dark_frame = dark_image = None
-  if 'dark' in dependencies:
-    dark_frame = first_frame(dependencies['dark'])
-    dark_image = (resize_array(read_image(dark_frame.filename),
-                               width)).astype(np.float32)
-
-  for flat_stack_id in flat_stack_ids:
-    if flat_stack_id in thumbnails:
-      continue
-
-    flat_frame = first_frame(flat_stack_id)
-    flat_image = (resize_array(read_image(flat_frame.filename),
-                               width)).astype(np.float32)
-
-    thumbnail = array_to_png(
-        _make_thumbnail(light_frame, light_image, bias_frame, bias_image,
-                        dark_frame, dark_image, flat_frame, flat_image, rotate))
-    hash = hash_string(thumbnail)
-    thumbnails[flat_stack_id] = hash
-
-    key = ('flat_correction_thumbnail', hash)
-    context.set(key, thumbnail, flush=True)
-    print(f'### Wrote key {key}')
-
-  key = ('flat_correction_thumbnails', stack_id)
-  context.set(key, thumbnails, flush=True)
-  print(f'### Wrote key {key} with {len(thumbnails)} flat-corrected thumbnails')
 
 
 @ray.remote

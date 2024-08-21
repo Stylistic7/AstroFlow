@@ -2,10 +2,13 @@
 # a test cache (in the working directory), and it starts a new, single-node
 # Ray cluster that has access to both diskcache and PixInsight.
 
+print('### Entering module ray_local')
+
 import os
 import ray
 
 if 'ASTROFLOW_MOCK_NAMESPACE' not in os.environ:
+  print('### Setting ASTROFLOW_MOCK_CACHE to true')
   os.environ["ASTROFLOW_MOCK_CACHE"] = "true"
 
   import uuid
@@ -15,7 +18,7 @@ if 'ASTROFLOW_MOCK_NAMESPACE' not in os.environ:
 
   import ray
   from context import ContextActor
-  from state_actor import StateActor
+  from state import StateActor
   from metadata.actor import MetadataActor
 
   ray.init(

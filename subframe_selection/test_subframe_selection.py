@@ -9,7 +9,7 @@ from testing.test_context import make_test_context
 from testing.test_frames import make_synthetic_frames
 from file_io.find_image_files import find_image_files
 from stacks.identification import identify_stacks
-from spatial_association import find_components_by_cosine_similarity
+from clustering import cluster_by_image_center
 import subframe_selection
 from metadata.actor import get_metadata
 
@@ -57,7 +57,7 @@ class TestSubframeSelection(unittest.TestCase):
     filenames = find_image_files(context.input_dirs[0])
     self.assertEqual(len(filenames), 10)
 
-    ray.get(find_components_by_cosine_similarity.remote())
+    ray.get(cluster_by_image_center.remote())
     ray.get(identify_stacks.remote())
 
     stacks = context.stacks
@@ -93,7 +93,7 @@ class TestSubframeSelection(unittest.TestCase):
     filenames = find_image_files(context.input_dirs[0])
     self.assertEqual(len(filenames), 15)
 
-    ray.get(find_components_by_cosine_similarity.remote())
+    ray.get(cluster_by_image_center.remote())
     ray.get(identify_stacks.remote())
 
     stacks = context.stacks

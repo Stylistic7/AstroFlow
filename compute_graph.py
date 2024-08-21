@@ -2,11 +2,11 @@ import ray
 
 from context import context
 from metadata.image_metadata import scatter_compute_image_metadata
-from spatial_association import find_components_by_cosine_similarity
+from clustering import cluster_by_image_center
 from stacks.identification import identify_stacks
 from targets.identification import group_stacks_into_targets
-from calibration_frames import identify_calibration_stacks, associate_with_stacks
-from image_previews import scatter_stack_thumbnails
+from calibration import identify_calibration_stacks, associate_with_stacks
+from previews import scatter_stack_thumbnails
 from mosaics.identification import identify_mosiacs
 from stacks.compute_graph import build_stack_subgraph
 from targets.compute_graph import build_target_subgraph
@@ -19,9 +19,8 @@ from suggestions import make_suggestions
 def maybe_build_regroup_graph():
   if context.regroup:
     return make_graph_from_list([
-        find_components_by_cosine_similarity, identify_stacks,
-        identify_calibration_stacks, associate_with_stacks,
-        group_stacks_into_targets, identify_mosiacs
+        cluster_by_image_center, identify_stacks, identify_calibration_stacks,
+        associate_with_stacks, group_stacks_into_targets, identify_mosiacs
     ])
   else:
     return {}

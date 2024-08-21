@@ -433,7 +433,7 @@ def assert_all_light_frames_in_stacks(light_frames, stacks):
 #   # Remove light frames that don't have good plate solutions.
 #   light_frames = list(set(light_frames).intersection(plate_solutions.keys()))
 
-#   spatial_components = spatial_association.find_components_by_cosine_similarity(
+#   spatial_components = spatial_association.cluster_by_image_center(
 #       light_frames, plate_solutions, fits_headers)
 
 #   stacks = stack_identification.identify_stacks(spatial_components,

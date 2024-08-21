@@ -12,20 +12,20 @@ from testing.test_frames import make_synthetic_frames
 from mosaics import identification
 from stacks.identification import identify_stacks
 from targets.identification import group_stacks_into_targets
-from spatial_association import find_components_by_cosine_similarity
+from clustering import cluster_by_image_center
 from metadata.image_metadata import scatter_compute_image_metadata
-from calibration_frames import identify_calibration_stacks, associate_with_stacks
+from calibration import identify_calibration_stacks, associate_with_stacks
 from testing.test_context import make_test_context
 from mosaics.identification import identify_mosiacs
 from geometry.projections import mercator
 
 
 def _build_compute_graph():
-  return make_graph_from_list([(scatter_compute_image_metadata, 'all'),
-                               find_components_by_cosine_similarity,
-                               identify_stacks, identify_calibration_stacks,
-                               associate_with_stacks, group_stacks_into_targets,
-                               identify_mosiacs])
+  return make_graph_from_list([
+      (scatter_compute_image_metadata, 'all'), cluster_by_image_center,
+      identify_stacks, identify_calibration_stacks, associate_with_stacks,
+      group_stacks_into_targets, identify_mosiacs
+  ])
 
 
 class TestFootprints(unittest.TestCase):

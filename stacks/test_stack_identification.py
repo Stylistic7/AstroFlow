@@ -8,7 +8,7 @@ from testing.test_context import make_test_context
 from context import context
 from testing.test_frames import make_synthetic_frames
 from stacks.identification import identify_stacks
-from spatial_association import find_components_by_cosine_similarity
+from clustering import cluster_by_image_center
 from get_stacks import get_toplevel_stacks, get_content_stacks_of_type
 from metadata.actor import get_metadata
 
@@ -34,7 +34,7 @@ class TestStackIdentification(unittest.TestCase):
   def test_one_perfect_stack(self):
     make_synthetic_frames(ra=100, dec=50, prefix='foo', number=10, dither=0)
 
-    ray.get(find_components_by_cosine_similarity.remote())
+    ray.get(cluster_by_image_center.remote())
     ray.get(identify_stacks.remote())
 
     stacks = context.stacks
@@ -60,7 +60,7 @@ class TestStackIdentification(unittest.TestCase):
                           dither=0,
                           image_scale=2.0)
 
-    ray.get(find_components_by_cosine_similarity.remote())
+    ray.get(cluster_by_image_center.remote())
     ray.get(identify_stacks.remote())
 
     stacks = context.stacks
@@ -106,7 +106,7 @@ class TestStackIdentification(unittest.TestCase):
                           width_pixels=6000,
                           height_pixels=4000)
 
-    ray.get(find_components_by_cosine_similarity.remote())
+    ray.get(cluster_by_image_center.remote())
     ray.get(identify_stacks.remote())
 
     stacks = context.stacks
@@ -142,7 +142,7 @@ class TestStackIdentification(unittest.TestCase):
                           dither=0,
                           exposure=120)
 
-    ray.get(find_components_by_cosine_similarity.remote())
+    ray.get(cluster_by_image_center.remote())
     ray.get(identify_stacks.remote())
 
     stacks = context.stacks

@@ -8,7 +8,7 @@ import ray
 from testing.test_context import make_test_context
 from context import context
 from testing.test_frames import make_synthetic_frames
-from spatial_association import find_components_by_cosine_similarity
+from clustering import cluster_by_image_center
 from metadata.actor import get_metadata
 
 
@@ -32,7 +32,7 @@ class TestSpatialAssociation(unittest.TestCase):
                           dither=0,
                           dest_dir=input_dir)
 
-    ray.get(find_components_by_cosine_similarity.remote())
+    ray.get(cluster_by_image_center.remote())
     groups = context.spatial_groups
 
     image_hashes = get_metadata(transform_fn=lambda i: i.content_hash)
@@ -60,7 +60,7 @@ class TestSpatialAssociation(unittest.TestCase):
                           dither=0,
                           dest_dir=input_dir)
 
-    ray.get(find_components_by_cosine_similarity.remote())
+    ray.get(cluster_by_image_center.remote())
     groups = context.spatial_groups
 
     hash_for_filename = compute_hash_for_filename()
@@ -101,7 +101,7 @@ class TestSpatialAssociation(unittest.TestCase):
 
     hash_for_filename = compute_hash_for_filename()
 
-    ray.get(find_components_by_cosine_similarity.remote())
+    ray.get(cluster_by_image_center.remote())
     groups = context.spatial_groups
 
     expected_groups = [
@@ -142,7 +142,7 @@ class TestSpatialAssociation(unittest.TestCase):
                           rotation_angle_deg=0,
                           dest_dir=input_dir)
 
-    ray.get(find_components_by_cosine_similarity.remote())
+    ray.get(cluster_by_image_center.remote())
     groups = context.spatial_groups
 
     hash_for_filename = compute_hash_for_filename()
@@ -183,7 +183,7 @@ class TestSpatialAssociation(unittest.TestCase):
                           dither=0.1,
                           dest_dir=input_dir)
 
-    ray.get(find_components_by_cosine_similarity.remote())
+    ray.get(cluster_by_image_center.remote())
     groups = context.spatial_groups
 
     hash_for_filename = compute_hash_for_filename()
@@ -226,7 +226,7 @@ class TestSpatialAssociation(unittest.TestCase):
                           dest_dir=input_dir)
 
     context.min_component_members = 1
-    ray.get(find_components_by_cosine_similarity.remote())
+    ray.get(cluster_by_image_center.remote())
     groups = context.spatial_groups
 
     hash_for_filename = compute_hash_for_filename()

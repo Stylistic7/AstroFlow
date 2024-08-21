@@ -46,8 +46,8 @@ def find_groups(values, comparison_fn, min_component_members) -> list[str]:
 
 
 @ray.remote
-def find_components_by_cosine_similarity():
-  print('find_components_by_cosine_similarity')
+def cluster_by_image_center():
+  print('cluster_by_image_center')
 
   cosine_similarity_threshold = context.cosine_similarity_threshold
   min_component_members = context.min_component_members

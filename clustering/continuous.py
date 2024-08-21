@@ -4,11 +4,6 @@ from collections import defaultdict
 import numpy as np
 
 
-def cluster_discrete(items, key=operator.itemgetter(1)):
-  items = sorted(items, key=key)
-  return [list(g) for _, g in itertools.groupby(items, key=key)]
-
-
 def cluster_continuous(items, epsilon=0.2, key=operator.itemgetter(1)):
   if len(items) == 0:
     return []

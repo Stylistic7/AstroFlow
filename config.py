@@ -1,2 +1,0 @@
-TEST_MODE = False
-SUCCESS_IF_FILE_EXISTS = True

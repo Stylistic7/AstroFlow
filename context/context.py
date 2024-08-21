@@ -2,7 +2,8 @@ import ray
 import os
 
 from typing import Any
-from cache import cache
+# TODO: Why can't I just do `from cache import cache`?
+from .cache import cache
 
 
 def _get_namespace():

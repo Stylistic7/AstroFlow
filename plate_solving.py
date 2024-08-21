@@ -9,7 +9,6 @@ import warnings
 from dataclasses import dataclass
 import numpy as np
 import traceback
-import time
 from typing import Any
 
 from file_io.conversion import convert_xisf_to_fits
@@ -90,8 +89,8 @@ def _solve_field(filename: Path | str,
       command = arguments + [dest_filename]
       ret = subprocess.run(command, capture_output=True)
     except Exception as e:
-      # print(f'Could not plate solve file {dest_filename} due to exception')
-      # traceback.print_exc()
+      print(f'Could not plate solve file {dest_filename} due to exception')
+      traceback.print_exc()
       return e
 
     wcs_file = Path(dest_filename).with_suffix('.wcs')
