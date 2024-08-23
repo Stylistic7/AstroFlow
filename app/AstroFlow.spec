@@ -6,7 +6,7 @@ a = Analysis(
     binaries=[],
     datas=[("../web_server/frontend/build", "templates"),
            ("../web_server/backend/static/images", "templates/static/images")],
-    hiddenimports=[],
+    hiddenimports=["yaml"],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

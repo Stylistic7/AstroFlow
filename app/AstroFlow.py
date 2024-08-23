@@ -9,10 +9,15 @@ import webbrowser
 import time
 
 # TODO: The goals here are to:
+#
 # 1. Check for the existence of miniconda. If it is not installed, install it.
 # 2. Check for the existence and correctness of the AstroFlow environment.
 #    If it doesn't exist, or isn't correct, delete it and create it anew.
 # 3. Start the web server and launch the browser.
+# 4. Start the Ray head node.
+#    TODO: Offer options to connect to an existing head node.
+
+# TODO: Prevent launching multiple copies on the same machine.
 
 _ASTROFLOW_URL = 'http://localhost:8080'
 
@@ -37,6 +42,7 @@ else:
 def _log(text_widget, message, color=None):
   text_widget.insert(tk.END, message, color)
   text_widget.yview(tk.END)  # Auto-scroll to the end of the text widget
+  text_widget.update_idletasks()
 
 
 def install_conda(text_widget, root):
@@ -64,9 +70,14 @@ def install_conda(text_widget, root):
   any_failure = False
 
   if not any_failure:
-    _log(text_widget, "AstroFlow conda environment is good!\n", "green")
+    text_widget.after(0, _log, text_widget,
+                      "AstroFlow conda environment is good!\n", "green")
     root.withdraw()
+    start_flask()
+    start_ray_head_node()
+    return
 
+  # Install the Conda environment from scratch.
   # TODO: Make sure this works.
   # TODO: Pull the list of pip packages out somewhere.
   commands = [
@@ -84,13 +95,17 @@ def install_conda(text_widget, root):
       break
 
   if not any_failure:
-    _log(text_widget, "Successfully installed AstroFlow conda environment",
-         "green")
+    text_widget.after(0, _log, text_widget,
+                      "Successfully installed AstroFlow conda environment",
+                      "green")
     root.withdraw()
+    start_flask()
+    start_ray_head_node()
 
 
 def run_command(command, text_widget):
-  _log(text_widget, f"$ {command}\n", "green")
+  # _log(text_widget, f"$ {command}\n", "green")
+  text_widget.after(0, _log, text_widget, f"$ {command}\n", "green")
 
   # Run the command and get the output
   process = subprocess.Popen(command,
@@ -102,17 +117,17 @@ def run_command(command, text_widget):
 
   for line in iter(process.stdout.readline, ""):
     # Insert the output into the Tkinter text widget
-    _log(text_widget, line)
-    text_widget.update_idletasks()  # Ensure the GUI is updated
+    text_widget.after(0, _log, text_widget, line, None)
 
   process.stdout.close()
   process.wait()
 
-  _log(text_widget, "\n")
+  text_widget.after(0, _log, text_widget, "\n", None)
 
   if process.returncode != 0:
-    _log(text_widget, f"command failed with status {process.returncode}\n",
-         "red")
+    text_widget.after(0, _log, text_widget,
+                      f"command failed with status {process.returncode}\n",
+                      "red")
 
   return process.returncode
 
@@ -128,6 +143,33 @@ def start_flask():
   webbrowser.open(_ASTROFLOW_URL)
 
 
+def start_ray_head_node_thread_body():
+  # TODO: This may not work on Windows.
+  command = """source ~/.zshrc && conda activate AstroFlow && ulimit -n 10000 && ray start --head --resources '{"PixInsight": 1, "diskcache": 1, "fastest_storage": 1}'"""
+  subprocess.run(command, shell=True, start_new_session=True)
+
+  # Spin until `ray status` tells us the node is up.
+  while True:
+    print('Calling `ray status`')
+    process = subprocess.Popen(
+        "source ~/.zshrc && conda activate AstroFlow && ray status",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        shell=True,
+        text=True)
+    output = process.communicate()[0]
+    print('ray status output:', output)
+    if "Autoscaler status" in output:
+      print('Ray head node is up')
+      break
+
+    time.sleep(1)
+
+
+def start_ray_head_node():
+  threading.Thread(target=start_ray_head_node_thread_body).start()
+
+
 def reopen_handler():
   webbrowser.open(_ASTROFLOW_URL)
 
@@ -137,6 +179,7 @@ def main():
   root = tk.Tk()
   root.title("AstroFlow Configuration")
 
+  # TODO: Intercept the tkinter CloseApplication event and run `ray stop`.
   root.createcommand("::tk::mac::ReopenApplication", reopen_handler)
 
   # Create a scrolled text widget
@@ -158,10 +201,6 @@ def main():
   # Configure the grid to expand and contract with the window size
   root.grid_columnconfigure(0, weight=1)
   root.grid_rowconfigure(0, weight=1)
-
-  # Start the Flask server in a separate thread; this thread will become the
-  # tkinter main loop.
-  start_flask()
 
   # Start the Tkinter main loop; this blocks until the application is quit.
   root.mainloop()
