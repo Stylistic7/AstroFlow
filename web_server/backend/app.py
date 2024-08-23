@@ -20,9 +20,9 @@ from spherical_geometry.polygon import SingleSphericalPolygon
 from .message_announcer import MessageAnnouncer
 
 from context import context
-import state_actor
-import constellations
-import image_previews
+from state.actor import StateActor
+from catalogs import constellations
+from previews.operations import resize_array, autostretch, array_to_png
 from context import cache
 from artifacts import artifact_exists, read_artifact_image, CacheArtifact
 from previews import array_to_png, autostretch
@@ -377,25 +377,25 @@ def mosaic_thumbnail_image(mosaic_id):
   return Response(status=404)
 
 
-@app.route('/stack_master_image/<stack_id>')
-def stack_master_image(stack_id):
-  # stack = next(s for s in cache['stacks'] if s.id == stack_id)
-  stack = cache['stacks'][stack_id]
+# @app.route('/stack_master_image/<stack_id>')
+# def stack_master_image(stack_id):
+#   # stack = next(s for s in cache['stacks'] if s.id == stack_id)
+#   stack = cache['stacks'][stack_id]
 
-  if not stack:
-    print(f'did not get stack for {stack_id}')
-  else:
-    print(f'got stack for {stack_id}')
+#   if not stack:
+#     print(f'did not get stack for {stack_id}')
+#   else:
+#     print(f'got stack for {stack_id}')
 
-  if stack.master and os.path.exists(stack.master):
-    image = image_previews._read_image(stack.master)
-    image = image_previews.resize_array(image, new_width=640)
-    image = image_previews.autostretch(image)
-    image = image_previews.array_to_png(image)
-    buffer = io.BytesIO()
-    buffer.write(image)
-    buffer.seek(0)
-    return flask.send_file(buffer, mimetype='image/png')
+#   if stack.master and os.path.exists(stack.master):
+#     image = _read_image(stack.master)
+#     image = resize_array(image, new_width=640)
+#     image = autostretch(image)
+#     image = array_to_png(image)
+#     buffer = io.BytesIO()
+#     buffer.write(image)
+#     buffer.seek(0)
+#     return flask.send_file(buffer, mimetype='image/png')
 
 
 @app.route('/get_plot')

@@ -16,12 +16,14 @@ import time
 
 _ASTROFLOW_URL = 'http://localhost:8080'
 
-app = Flask(__name__)
+app = Flask(__name__,
+            template_folder="templates",
+            static_folder="templates/static")
 
 
-@app.route('/')
+@app.route("/")
 def index():
-  return 'AstroFlow online!'
+  return render_template('index.html')
 
 
 if getattr(sys, 'frozen', False):
@@ -66,9 +68,10 @@ def install_conda(text_widget, root):
     root.withdraw()
 
   # TODO: Make sure this works.
+  # TODO: Pull the list of pip packages out somewhere.
   commands = [
       "source ~/.zshrc && conda env update --file environment.yml --prune",
-      "source ~/.zshrc && conda activate AstroFlow && pip3 install spherical-geometry xisf largestinteriorrectangle xxhash",
+      "source ~/.zshrc && conda activate AstroFlow && pip3 install spherical-geometry xisf largestinteriorrectangle xxhash python-statemachine",
       "source ~/.zshrc && conda activate AstroFlow && python3 -m unittest dependency_graph/test_dependency_graph.py"
   ]
 
