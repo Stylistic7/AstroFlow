@@ -7,12 +7,14 @@ from metadata.actor import MetadataActor
 
 # TODO: Prove that local changes in the Python get propagated to remote nodes
 # even without pushing to git..
+#
+# TODO: This hardcoded path to my home dir has to be fixed for the App.
 traceback.print_stack()
 ray_context = ray.init(address='auto',
                        namespace='AstroFlow',
                        runtime_env={
                            'working_dir':
-                               '/Users/nobody/Projects/AstroFlow',
+                               '/Users/nobody/Projects/AstroFlow/core',
                            'excludes': [
                                '/.cache/',
                                'cache.tar.gz',

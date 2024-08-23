@@ -2,10 +2,9 @@ from flask import Flask, render_template, request, session
 import threading
 import webbrowser
 import os
+import subprocess
 
-from web_server import stacks
-
-_ASTROFLOW_URL = 'http://localhost:8080'
+_ASTROFLOW_URL = 'http://localhost:80'
 
 app = Flask(__name__,
             template_folder="templates",
@@ -23,6 +22,9 @@ def start_flask():
 
   # TODO: Isn't this a race condition?
   print('Starting Flask server...')
-  threading.Thread(target=lambda: app.run(
-      host='0.0.0.0', port=8080, debug=True, use_reloader=False)).start()
+  command = """source ~/.zshrc && conda activate AstroFlow && cd core && python3 -m web_server.backend.app"""
+  subprocess.run(command, shell=True, start_new_session=True)
+
+  # TODO: The subprocess above blocks forever, so we need another way to
+  # open the web browser upon success. Maybe polling :80?
   webbrowser.open(_ASTROFLOW_URL)

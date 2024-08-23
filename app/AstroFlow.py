@@ -19,7 +19,7 @@ from flask_control import start_flask
 
 # TODO: Prevent launching multiple copies on the same machine.
 
-_ASTROFLOW_URL = 'http://localhost:8080'
+_ASTROFLOW_URL = 'http://localhost:80'
 
 
 def reopen_handler():
@@ -28,8 +28,7 @@ def reopen_handler():
 
 def start_services():
   # TODO: Let the user choose which Ray cluster to connect to through the UI.
-  start_flask()
-  start_ray_head_node()
+  start_ray_head_node(start_flask)
 
 
 def main():
