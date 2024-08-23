@@ -3,6 +3,8 @@ import threading
 import webbrowser
 import os
 
+from web_server import stacks
+
 _ASTROFLOW_URL = 'http://localhost:8080'
 
 app = Flask(__name__,

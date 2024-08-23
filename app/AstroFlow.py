@@ -6,7 +6,7 @@ import os
 import webbrowser
 from conda import ensure_conda
 from ray_control import start_ray_head_node
-from web_server import start_flask
+from flask_control import start_flask
 
 # TODO: The goals here are to:
 #
