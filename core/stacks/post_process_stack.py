@@ -11,7 +11,7 @@ import pix
 from hashing import hash_list
 
 
-# TODO: Find a way to disable these during tests.
+# TODO: Find a way to disable or mock these these during tests.
 @pix.PixInsight()
 def _post_process_stack(image):
   image = pix.BlurXTerminator(image)

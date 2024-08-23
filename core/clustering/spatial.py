@@ -81,6 +81,6 @@ def cluster_by_image_center():
     plate_solution = metadata[target[0]].plate_solution
     return position_string.canonical_target_string(plate_solution.center)
 
-  targets = [(get_name(t), list(sorted(t))) for t in targets]
+  targets = [(get_name(t), tuple(sorted(t))) for t in targets]
   context.spatial_groups = targets
   print(f'### Wrote {len(targets)} spatial groups into the cache')

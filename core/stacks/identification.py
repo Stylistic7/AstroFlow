@@ -88,8 +88,6 @@ def _new_stacks(name, metadata):
   for exposure_cluster in clustering.cluster_continuous(exposures,
                                                         epsilon=0.01):
     exposure_frames, exposures = zip(*exposure_cluster)
-    print('### exposure_frames', exposure_frames)
-    print('### exposures', exposures)
     assert np.all(np.isclose(exposures, exposures[0])
                  ), f'exposures {exposures} are clustered, but not all close'
 
@@ -106,10 +104,7 @@ def _new_stacks(name, metadata):
         continue
       run = [x[0] for x in run]
       stack = Stack(frames=run)
-      stack.update_metadata(metadata)
-      print(f'### stack_identification._new_stacks made stack {stack}')
       new_stacks[stack.content_hash] = stack
-      context.stacks |= {stack.content_hash: stack}
 
   if not new_stacks:
     return {}
@@ -125,10 +120,7 @@ def _new_stacks(name, metadata):
                 footprint=footprint,
                 projected_footprints=projected_footprints,
                 selection_criterion=selection_criterion)
-  stack.update_metadata()
-  print(f'### stack_identification._new_stacks made toplevel stack {stack}')
   new_stacks[stack.stable_hash] = stack
-  context.stacks |= {stack.stable_hash: stack}
 
   end_time = time.time()
   print(f'### _new_stacks elapsed time {end_time - start_time:.3f} s')
@@ -137,12 +129,7 @@ def _new_stacks(name, metadata):
 
 
 @ray.remote
-def identify_stacks():
-  # TODO: Maybe just pass the spatial groups through the graph.
-  spatial_groups = context.spatial_groups or []
-
-  print(f'Identifying stacks from {len(spatial_groups)} spatial groups...')
-
+def identify_stacks(spatial_group):
   if context.stacks == None:
     context.stacks = {}
 
@@ -150,53 +137,57 @@ def identify_stacks():
   # subdivides by independent 1D variables.
   #
   # TODO: A 6-deep nested for loop is pretty ugly. Can this be improved?
-  #
-  # TODO: Parallelize over spatial groups; they're all independent.
   debug_hash = None
   stacks = {}
-  for name, light_frames in spatial_groups:
-    metadata = {i.content_hash: i for i in get_metadata(light_frames)}
-    scales = [(metadata[k].content_hash, metadata[k].plate_solution.image_scale)
-              for k in metadata]
-    for scale_cluster in clustering.cluster_continuous(scales, epsilon=0.2):
-      scale_frames, scales = zip(*scale_cluster)
-      if debug_hash in scale_frames:
-        print(f'Hash {debug_hash} found in cluster with scales {scales} '
-              f'and frames {scale_frames}')
-      cameras = [(metadata[k].content_hash,
-                  (metadata[k].header['INSTRUME'], metadata[k].header['NAXIS1'],
-                   metadata[k].header['NAXIS2'], metadata[k].header['XPIXSZ'],
-                   metadata[k].header['YPIXSZ'])) for k in scale_frames]
-      for camera_cluster in clustering.cluster_discrete(cameras):
-        camera_frames, cameras = zip(*camera_cluster)
-        if debug_hash in camera_frames:
-          print(f'Hash {debug_hash} found in cluster with cameras {cameras} '
-                f'and frames {camera_frames}')
-        assert len(set(cameras)) == 1
-        rotation_angles = [
-            (metadata[k].content_hash,
-             normalize_radians(metadata[k].plate_solution.rotation_angle))
-            for k in camera_frames
-        ]
-        for rotation_cluster in clustering.cluster_continuous(rotation_angles,
-                                                              epsilon=5.0):
-          rotation_frames, rotations = zip(*rotation_cluster)
-          if debug_hash in rotation_frames:
-            print(f'Hash {debug_hash} found in cluster with '
-                  f'rotations {rotations} and frames {rotation_frames}')
 
-          filters = [(metadata[k].content_hash, metadata[k].header['FILTER'])
-                     for k in rotation_frames]
-          for filter_cluster in clustering.cluster_discrete(filters):
-            filter_frames, filters = zip(*filter_cluster)
-            if debug_hash in filter_frames:
-              print(f'Hash {debug_hash} found in cluster with '
-                    f'filters {filters} and frames {filter_frames}')
-            assert len(set(filters)) == 1
-            new_stack_metadata = [
-                v for k, v in metadata.items() if k in filter_frames
-            ]
-            stacks |= _new_stacks(name, new_stack_metadata)
+  name, light_frames = spatial_group
+  metadata = {i.content_hash: i for i in get_metadata(light_frames)}
+  scales = [(metadata[k].content_hash, metadata[k].plate_solution.image_scale)
+            for k in metadata]
+  for scale_cluster in clustering.cluster_continuous(scales, epsilon=0.2):
+    scale_frames, scales = zip(*scale_cluster)
+    if debug_hash in scale_frames:
+      print(f'Hash {debug_hash} found in cluster with scales {scales} '
+            f'and frames {scale_frames}')
+    cameras = [(metadata[k].content_hash,
+                (metadata[k].header['INSTRUME'], metadata[k].header['NAXIS1'],
+                 metadata[k].header['NAXIS2'], metadata[k].header['XPIXSZ'],
+                 metadata[k].header['YPIXSZ'])) for k in scale_frames]
+    for camera_cluster in clustering.cluster_discrete(cameras):
+      camera_frames, cameras = zip(*camera_cluster)
+      if debug_hash in camera_frames:
+        print(f'Hash {debug_hash} found in cluster with cameras {cameras} '
+              f'and frames {camera_frames}')
+      assert len(set(cameras)) == 1
+      rotation_angles = [
+          (metadata[k].content_hash,
+           normalize_radians(metadata[k].plate_solution.rotation_angle))
+          for k in camera_frames
+      ]
+      for rotation_cluster in clustering.cluster_continuous(rotation_angles,
+                                                            epsilon=5.0):
+        rotation_frames, rotations = zip(*rotation_cluster)
+        if debug_hash in rotation_frames:
+          print(f'Hash {debug_hash} found in cluster with '
+                f'rotations {rotations} and frames {rotation_frames}')
+
+        filters = [(metadata[k].content_hash, metadata[k].header['FILTER'])
+                   for k in rotation_frames]
+        for filter_cluster in clustering.cluster_discrete(filters):
+          filter_frames, filters = zip(*filter_cluster)
+          if debug_hash in filter_frames:
+            print(f'Hash {debug_hash} found in cluster with '
+                  f'filters {filters} and frames {filter_frames}')
+          assert len(set(filters)) == 1
+          new_stack_metadata = [
+              v for k, v in metadata.items() if k in filter_frames
+          ]
+          stacks |= _new_stacks(name, new_stack_metadata)
 
   print(f'Identified {len(stacks)} stacks')
-  context.stacks = stacks
+
+  context.or_equals('stacks', stacks)
+  for stack in stacks.values():
+    stack.update_metadata()
+
+  return stacks

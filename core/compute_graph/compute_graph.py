@@ -16,11 +16,32 @@ from suggestions import make_suggestions
 
 
 @ray.remote
+def gather_identify_stacks(ancestor_results=None):
+  stacks = {}
+  for a in ancestor_results:
+    stacks |= a
+
+  context.stacks = stacks
+
+
+@ray.remote
+def scatter_identify_stacks():
+  graph = Graph({
+      gather_identify_stacks: [
+          (identify_stacks, g) for g in context.spatial_groups
+      ]
+  })
+
+  return graph
+
+
+@ray.remote
 def maybe_build_regroup_graph():
   if context.regroup:
     return make_graph_from_list([
-        cluster_by_image_center, identify_stacks, identify_calibration_stacks,
-        associate_with_stacks, group_stacks_into_targets, identify_mosiacs
+        cluster_by_image_center, scatter_identify_stacks,
+        identify_calibration_stacks, associate_with_stacks,
+        group_stacks_into_targets, identify_mosiacs
     ])
   else:
     return {}
