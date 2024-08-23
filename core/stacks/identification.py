@@ -141,7 +141,8 @@ def identify_stacks(spatial_group):
   stacks = {}
 
   name, light_frames = spatial_group
-  metadata = {i.content_hash: i for i in get_metadata(light_frames)}
+  metadata_list = get_metadata(light_frames)
+  metadata = {i.content_hash: i for i in metadata_list}
   scales = [(metadata[k].content_hash, metadata[k].plate_solution.image_scale)
             for k in metadata]
   for scale_cluster in clustering.cluster_continuous(scales, epsilon=0.2):
@@ -188,6 +189,6 @@ def identify_stacks(spatial_group):
 
   context.or_equals('stacks', stacks)
   for stack in stacks.values():
-    stack.update_metadata()
+    stack.update_metadata(metadata_list)
 
   return stacks

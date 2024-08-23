@@ -8,31 +8,11 @@ from targets.identification import group_stacks_into_targets
 from calibration import identify_calibration_stacks, associate_with_stacks
 from previews import scatter_stack_thumbnails
 from mosaics.identification import identify_mosiacs
-from stacks.compute_graph import build_stack_subgraph
+from stacks.compute_graph import build_stack_subgraph, scatter_identify_stacks
 from targets.compute_graph import build_target_subgraph
 from mosaics.compute_graph import build_mosaic_subgraph
 from dependency_graph import Graph, make_graph_from_list, print_graph
 from suggestions import make_suggestions
-
-
-@ray.remote
-def gather_identify_stacks(ancestor_results=None):
-  stacks = {}
-  for a in ancestor_results:
-    stacks |= a
-
-  context.stacks = stacks
-
-
-@ray.remote
-def scatter_identify_stacks():
-  graph = Graph({
-      gather_identify_stacks: [
-          (identify_stacks, g) for g in context.spatial_groups
-      ]
-  })
-
-  return graph
 
 
 @ray.remote

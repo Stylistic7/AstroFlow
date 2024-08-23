@@ -63,6 +63,7 @@ class Stack:
 
     return all_frames
 
+  # TODO: This accepts metadata as a list, which is awkward.
   def update_metadata(self, metadata=None) -> None:
     if self.stable_hash:
       assert self.contents

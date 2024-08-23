@@ -5,6 +5,27 @@ from stacks.stacking import stack_files
 from stacks.post_process_stack import post_process_stack
 from dependency_graph import Graph, Node
 from metadata.image_metadata import compute_image_metadata
+from stacks.identification import identify_stacks
+
+
+@ray.remote
+def gather_identify_stacks(ancestor_results=None):
+  stacks = {}
+  for a in ancestor_results:
+    stacks |= a
+
+  context.stacks = stacks
+
+
+@ray.remote
+def scatter_identify_stacks():
+  graph = Graph({
+      gather_identify_stacks: [
+          (identify_stacks, g) for g in context.spatial_groups
+      ]
+  })
+
+  return graph
 
 
 # TODO: Should these build_*_subgraph functions eliminate nodes that don't
