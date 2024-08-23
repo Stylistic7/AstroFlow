@@ -19,3 +19,7 @@ dependencies:
   - mergedeep
   - addict
   - async_timeout
+  - plotly
+  - pandas
+  - ephem
+  - statemachine

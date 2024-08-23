@@ -150,6 +150,8 @@ def identify_stacks():
   # subdivides by independent 1D variables.
   #
   # TODO: A 6-deep nested for loop is pretty ugly. Can this be improved?
+  #
+  # TODO: Parallelize over spatial groups; they're all independent.
   debug_hash = None
   stacks = {}
   for name, light_frames in spatial_groups:

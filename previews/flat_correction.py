@@ -78,13 +78,8 @@ def create_flat_correction_thumbnails(stack_id):
                                width)).astype(np.float32)
 
     thumbnail = array_to_png(
-<<<<<<< HEAD
-        _make_thumbnail(light_frame, light_image, bias_frame, bias_image,
-                        dark_frame, dark_image, flat_frame, flat_image, rotate))
-=======
         make_thumbnail(light_frame, light_image, bias_frame, bias_image,
                        dark_frame, dark_image, flat_frame, flat_image, rotate))
->>>>>>> a4a5e53 (Moved lots of code into subdirectories)
     hash = hash_string(thumbnail)
     thumbnails[flat_stack_id] = hash
 

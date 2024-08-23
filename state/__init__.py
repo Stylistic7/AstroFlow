@@ -1,1 +1,1 @@
-from .state_actor import StateActor, dispatch
+from .actor import StateActor, dispatch

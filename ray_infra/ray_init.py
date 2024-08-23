@@ -2,7 +2,7 @@ import ray
 import traceback
 
 from context import ContextActor
-from state_actor import StateActor
+from state.actor import StateActor
 from metadata.actor import MetadataActor
 
 # TODO: Prove that local changes in the Python get propagated to remote nodes
