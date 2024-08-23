@@ -1,8 +1,3 @@
-# if __name__ == '__main__':
-#   import logging
-#   logging.basicConfig(filename='/tmp/myapp.log', level=logging.DEBUG)
-#   logging.debug('This is a debug message')
-
 import tkinter as tk
 from tkinter import scrolledtext
 import subprocess
@@ -18,6 +13,8 @@ import time
 # 2. Check for the existence and correctness of the AstroFlow environment.
 #    If it doesn't exist, or isn't correct, delete it and create it anew.
 # 3. Start the web server and launch the browser.
+
+_ASTROFLOW_URL = 'http://localhost:8080'
 
 app = Flask(__name__)
 
@@ -66,7 +63,7 @@ def install_conda(text_widget, root):
 
   if not any_failure:
     _log(text_widget, "AstroFlow conda environment is good!\n", "green")
-    root.destroy()
+    root.withdraw()
 
   # TODO: Make sure this works.
   commands = [
@@ -86,7 +83,7 @@ def install_conda(text_widget, root):
   if not any_failure:
     _log(text_widget, "Successfully installed AstroFlow conda environment",
          "green")
-    root.destroy()
+    root.withdraw()
 
 
 def run_command(command, text_widget):
@@ -123,14 +120,21 @@ def start_flask():
 
   # TODO: Isn't this a race condition?
   print('Starting Flask server...')
-  webbrowser.open('http://localhost:8080')
-  app.run(host='0.0.0.0', port=8080)
+  threading.Thread(target=lambda: app.run(
+      host='0.0.0.0', port=8080, debug=True, use_reloader=False)).start()
+  webbrowser.open(_ASTROFLOW_URL)
+
+
+def reopen_handler():
+  webbrowser.open(_ASTROFLOW_URL)
 
 
 def main():
   # Create the Tkinter window
   root = tk.Tk()
   root.title("AstroFlow Configuration")
+
+  root.createcommand("::tk::mac::ReopenApplication", reopen_handler)
 
   # Create a scrolled text widget
   text_widget = scrolledtext.ScrolledText(root,
@@ -152,13 +156,12 @@ def main():
   root.grid_columnconfigure(0, weight=1)
   root.grid_rowconfigure(0, weight=1)
 
-  # Start the Tkinter main loop; this blocks until the `install_conda()` function
-  # is done.
-  root.mainloop()
-  root.quit()
-
-  # All the tkinter stuff is done; start the Flask server.
+  # Start the Flask server in a separate thread; this thread will become the
+  # tkinter main loop.
   start_flask()
+
+  # Start the Tkinter main loop; this blocks until the application is quit.
+  root.mainloop()
 
 
 if __name__ == '__main__':
