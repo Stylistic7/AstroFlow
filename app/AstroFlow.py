@@ -6,7 +6,7 @@ import os
 import webbrowser
 from conda import ensure_conda
 from ray_control import start_ray_head_node
-from flask_control import start_flask
+from flask_control import start_flask, stop_flask
 
 # TODO: The goals here are to:
 #
@@ -26,6 +26,13 @@ def reopen_handler():
   webbrowser.open(_ASTROFLOW_URL)
 
 
+def quit_handler():
+  stop_flask()
+
+  # TODO: Maybe stop the Ray head node. The action taken depends on the user's
+  # preferences.
+
+
 def start_services():
   # TODO: Let the user choose which Ray cluster to connect to through the UI.
   start_ray_head_node(start_flask)
@@ -38,6 +45,7 @@ def main():
 
   # TODO: Intercept the tkinter CloseApplication event and run `ray stop`.
   root.createcommand("::tk::mac::ReopenApplication", reopen_handler)
+  root.createcommand("::tk::mac::Quit", quit_handler)
 
   # Create a scrolled text widget
   text_widget = scrolledtext.ScrolledText(root,

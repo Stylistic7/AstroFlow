@@ -4,14 +4,10 @@ a = Analysis(
     ['AstroFlow.py'],
     pathex=[],
     binaries=[],
-    datas=[
-        #     ("../core", "core"),
-        ("../core/web_server/frontend/build",
-         "core/web_server/backend/templates"),
-        ("../core/web_server/frontend/build/static",
-         "core/web_server/backend/static")
-    ],
-    # datas=[],
+    datas=[("../core/web_server/frontend/build",
+            "core/web_server/backend/templates"),
+           ("../core/web_server/frontend/build/static",
+            "core/web_server/backend/static")],
     hiddenimports=["yaml"],
     hookspath=[],
     hooksconfig={},
@@ -24,10 +20,6 @@ pyz = PYZ(a.pure)
 
 # Something like this which can exclude node_modules
 a.datas += Tree('../core', prefix='core', excludes=['node_modules', 'testdata'])
-# a.datas += [("../core/web_server/frontend/build",
-#              "core/web_server/backend/templates"),
-#             ("../core/web_server/frontend/build/static",
-#              "core/web_server/backend/static")]
 
 exe = EXE(
     pyz,
