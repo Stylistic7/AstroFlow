@@ -3,7 +3,7 @@ import os
 import subprocess
 import signal
 
-from base_path import get_base_path
+from core.base_path import get_base_path
 
 _ASTROFLOW_URL = 'http://localhost:80'
 
@@ -14,9 +14,9 @@ def start_flask():
   global process
 
   # TODO: Isn't this a race condition?
-  print('Starting Flask server...')
-  core_path = os.path.join(get_base_path(), "core")
-  command = f"""source ~/.zshrc && conda activate AstroFlow && cd {core_path} && python3 -m web_server.backend.app"""
+  base_path = get_base_path()
+  print(f'Starting Flask server at base path {base_path}...')
+  command = f"""source ~/.zshrc && conda activate AstroFlow && cd {base_path} && python3 -m web_server.backend.app"""
   process = subprocess.Popen(command, shell=True, start_new_session=True)
 
   # TODO: The subprocess above blocks forever, so we need another way to

@@ -3,7 +3,7 @@ import sys
 
 from subprocesses import run_command
 from console import log
-from base_path import get_base_path
+from core.base_path import get_base_path
 
 
 def _check_conda(text_widget):
