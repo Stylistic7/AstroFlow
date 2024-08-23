@@ -1,0 +1,11 @@
+mkdir -p ~/miniconda3
+curl https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh -o ~/miniconda3/miniconda.sh
+bash ~/miniconda3/miniconda.sh -b -u -p ~/miniconda3
+rm -rf ~/miniconda3/miniconda.sh
+
+conda remove -n AstroFlow --all
+
+conda env create -f environment.yml
+conda activate AstroFlow
+
+pip3 install spherical-geometry xisf largestinteriorrectangle xxhash

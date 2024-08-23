@@ -1,0 +1,21 @@
+name: AstroFlow
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy
+  - ray-default
+  - flask
+  - opencv
+  - scikit-image
+  - python-dateutil
+  - pytz
+  - xxhash 
+  - diskcache
+  - structlog
+  - astropy
+  - shapely
+  - mergedeep
+  - addict
+  - async_timeout
