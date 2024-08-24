@@ -5,6 +5,8 @@ import unittest
 
 from testing.test_context import make_test_context
 from context import context
+from dependency_graph import run_graph, make_graph_from_list
+from stacks.compute_graph import scatter_identify_stacks
 from testing.test_frames import make_synthetic_frames
 from stacks.identification import identify_stacks
 from clustering import cluster_by_image_center
@@ -20,6 +22,13 @@ from metadata.actor import get_metadata
 # What belongs in the local context for the Graph? I'm not sure.
 
 
+def compute_graph_fragment():
+  return make_graph_from_list([
+      cluster_by_image_center,
+      scatter_identify_stacks,
+  ])
+
+
 class TestStackIdentification(unittest.TestCase):
 
   def setUp(self):
@@ -33,8 +42,7 @@ class TestStackIdentification(unittest.TestCase):
   def test_one_perfect_stack(self):
     make_synthetic_frames(ra=100, dec=50, prefix='foo', number=10, dither=0)
 
-    ray.get(cluster_by_image_center.remote())
-    ray.get(identify_stacks.remote())
+    run_graph(compute_graph_fragment())
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 2)
@@ -59,8 +67,7 @@ class TestStackIdentification(unittest.TestCase):
                           dither=0,
                           image_scale=2.0)
 
-    ray.get(cluster_by_image_center.remote())
-    ray.get(identify_stacks.remote())
+    run_graph(compute_graph_fragment())
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 4)
@@ -105,8 +112,7 @@ class TestStackIdentification(unittest.TestCase):
                           width_pixels=6000,
                           height_pixels=4000)
 
-    ray.get(cluster_by_image_center.remote())
-    ray.get(identify_stacks.remote())
+    run_graph(compute_graph_fragment())
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 4)
@@ -141,8 +147,7 @@ class TestStackIdentification(unittest.TestCase):
                           dither=0,
                           exposure=120)
 
-    ray.get(cluster_by_image_center.remote())
-    ray.get(identify_stacks.remote())
+    run_graph(compute_graph_fragment())
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 3)
