@@ -60,12 +60,15 @@ def cluster_by_image_center():
         image.header) and image.content_hash not in quarantined_files and type(
             image.plate_solution) is plate_solving.PlateSolution
 
-  def get_centroid(image):
-    return np.asarray(footprints.radec_to_vector(*image.plate_solution.center))
+  def get_centroid(center):
+    return np.asarray(footprints.radec_to_vector(*center))
 
-  metadata = get_metadata(
-      predicate_fn=predicate_fn,
-      post_fn=lambda images: {i.content_hash: i for i in images})
+  metadata = get_metadata(predicate_fn=predicate_fn,
+                          transform_fn=lambda i:
+                          (i.content_hash, i.plate_solution.center),
+                          post_fn=lambda images: {
+                              hash: center for hash, center in images
+                          })
   if not metadata:
     print('### metadata was Falsey')
     return {}
@@ -78,8 +81,7 @@ def cluster_by_image_center():
   targets = find_groups(values, comparison_fn, min_component_members)
 
   def get_name(target):
-    plate_solution = metadata[target[0]].plate_solution
-    return position_string.canonical_target_string(plate_solution.center)
+    return position_string.canonical_target_string(metadata[target[0]])
 
   targets = [(get_name(t), tuple(sorted(t))) for t in targets]
   context.spatial_groups = targets
