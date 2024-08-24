@@ -3,12 +3,13 @@ from ray_infra import ray_local
 import os
 import unittest
 import ray
-import tempfile
 import time
 
-from context import cache
+from context import get_cache
 from context import context
 from dependency_graph import Graph, Node, GraphStatus, TopologicalSorterWithStatus, run_graph, make_graph_from_list
+
+cache = get_cache()
 
 
 @ray.remote
@@ -324,10 +325,7 @@ class TestDependencyGraph(unittest.TestCase):
     self.assertEqual(results.max_parallelism_seen, 7)
 
   def test_mutable_context(self):
-    A = increment_foo
-    B = increment_bar
-
-    graph = {B: {A}}
+    graph = {increment_bar: {increment_foo}}
 
     context.foo = 2
     context.bar = 3
@@ -505,9 +503,6 @@ class TestDependencyGraph(unittest.TestCase):
     graph = {scatter: {}}
 
     final_status = None
-
-    def function_name_from_node(node):
-      return node.task._function.__name__
 
     def print_status(status):
       print('### status', status)

@@ -6,8 +6,10 @@ import operator
 from functools import singledispatch
 from collections.abc import Iterable
 
-from context import cache
+from context import get_cache
 from context import context
+
+cache = get_cache()
 
 
 def _get_namespace():

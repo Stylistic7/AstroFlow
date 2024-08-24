@@ -6,35 +6,62 @@ print('### Entering module ray_local')
 
 import os
 import ray
+import uuid
+import tempfile
+
+
+@ray.remote
+def get_available_resources():
+  return ray.available_resources()
+
+
+# Define the actor responsible for creating and managing the temporary directory
+@ray.remote(resources={'diskcache': 0.001})
+class TempDirManager:
+
+  def __init__(self):
+    # Create the temporary directory when the actor is initialized
+    self.temp_dir = tempfile.mkdtemp()
+    print(f"Temporary directory created: {self.temp_dir}")
+
+  def get_temp_dir(self):
+    return self.temp_dir
+
 
 if 'ASTROFLOW_MOCK_NAMESPACE' not in os.environ:
   print('### Setting ASTROFLOW_MOCK_CACHE to true')
   os.environ["ASTROFLOW_MOCK_CACHE"] = "true"
 
-  import uuid
-
   namespace = str(uuid.uuid4())
   os.environ["ASTROFLOW_MOCK_NAMESPACE"] = namespace
 
-  import ray
+  print(f'### Creating local Ray cluster with namespace {namespace}...')
+  ray.init(address='local',
+           namespace=namespace,
+           resources={
+               "diskcache": 1,
+               "fastest_storage": 1,
+               "PixInsight": 1
+           },
+           ignore_reinit_error=True)
+
+  print("### Cluster resources:", ray.get(get_available_resources.remote()))
+
+  # The TempDirManager just creates a temp directory on the node that has the
+  # `diskcache` resource (usually the head node), and makes that directory
+  # available to every other worker on that node. Think of it as a "singleton"
+  # temp directory. This is only used during testing -- the diskcache is created
+  # in this temp directory.
+  manager = TempDirManager.options(name='temp_dir_manager',
+                                   namespace=namespace,
+                                   get_if_exists=True).remote()
+
+  # This is a hack that waits until the TempDirManager is actually alive.
+  temp_dir = ray.get(manager.get_temp_dir.remote())
+
   from context import ContextActor
   from state import StateActor
   from metadata.actor import MetadataActor
-
-  ray.init(
-      address='local',
-      namespace=namespace,
-      num_cpus=24,
-      resources={
-          "diskcache": 1,
-          "fastest_storage": 1,
-          "PixInsight": 1
-      },
-      ignore_reinit_error=True,
-      runtime_env={"env_vars": {
-          "ASTROFLOW_MOCK_CACHE": "true"
-      }},
-  )
 
   context_actor = ContextActor.options(name='context',
                                        namespace=namespace,
@@ -49,4 +76,4 @@ if 'ASTROFLOW_MOCK_NAMESPACE' not in os.environ:
                                    get_if_exists=True).remote()
 
   # This is a hack that waits until the ContextActor is actually alive.
-  cache_keys = ray.get(context_actor.get_cache_keys.remote())
+  ray.get(context_actor.get_cache_keys.remote())
