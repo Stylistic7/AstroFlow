@@ -48,10 +48,6 @@ def _get_unique(L):
 #
 # TODO: This could be parallelized.
 def _new_stacks(name, metadata):
-  start_time = time.time()
-
-  print(f'### _new_stacks metadata type {type(metadata)} len {len(metadata)}')
-
   width_pixels = _get_unique(i.header['NAXIS1'] for i in metadata)
   height_pixels = _get_unique(i.header['NAXIS2'] for i in metadata)
 
@@ -104,10 +100,13 @@ def _new_stacks(name, metadata):
         continue
       run = [x[0] for x in run]
       stack = Stack(frames=run)
+      stack.update_metadata(metadata)
       new_stacks[stack.content_hash] = stack
 
   if not new_stacks:
     return {}
+
+  context.or_equals('stacks', new_stacks)
 
   # Add a toplevel stack, with the geometric information, that contains all
   # of the runs of light frames as its contents.
@@ -120,14 +119,14 @@ def _new_stacks(name, metadata):
                 footprint=footprint,
                 projected_footprints=projected_footprints,
                 selection_criterion=selection_criterion)
-  new_stacks[stack.stable_hash] = stack
-
-  end_time = time.time()
-  print(f'### _new_stacks elapsed time {end_time - start_time:.3f} s')
-
-  return new_stacks
+  stack.update_metadata(metadata)
+  # new_stacks[stack.stable_hash] = stack
+  context.or_equals('stacks', {stack.stable_hash: stack})
 
 
+# TODO: Cache results for spatial groups. Astrophotographers rarely shoot more
+# than a few different spatial positions in a night anyway. If the hashes of
+# all the light frames are the same, then the resulting stacks are the same.
 @ray.remote
 def identify_stacks(spatial_group):
   if context.stacks == None:
@@ -138,9 +137,10 @@ def identify_stacks(spatial_group):
   #
   # TODO: A 6-deep nested for loop is pretty ugly. Can this be improved?
   debug_hash = None
-  stacks = {}
 
   name, light_frames = spatial_group
+  print(f'### Getting metadata for a spatial group with '
+        f'{len(light_frames)} light frames')
   metadata_list = get_metadata(light_frames)
   metadata = {i.content_hash: i for i in metadata_list}
   scales = [(metadata[k].content_hash, metadata[k].plate_solution.image_scale)
@@ -183,12 +183,4 @@ def identify_stacks(spatial_group):
           new_stack_metadata = [
               v for k, v in metadata.items() if k in filter_frames
           ]
-          stacks |= _new_stacks(name, new_stack_metadata)
-
-  print(f'Identified {len(stacks)} stacks')
-
-  context.or_equals('stacks', stacks)
-  for stack in stacks.values():
-    stack.update_metadata(metadata_list)
-
-  return stacks
+          _new_stacks(name, new_stack_metadata)

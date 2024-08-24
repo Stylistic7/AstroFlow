@@ -10,19 +10,15 @@ from stacks.identification import identify_stacks
 
 @ray.remote
 def gather_identify_stacks(ancestor_results=None):
-  stacks = {}
-  for a in ancestor_results:
-    stacks |= a
-
-  context.stacks = stacks
+  pass
 
 
 @ray.remote
 def scatter_identify_stacks():
   graph = Graph({
-      gather_identify_stacks: [
+      gather_identify_stacks: {
           (identify_stacks, g) for g in context.spatial_groups
-      ]
+      }
   })
 
   return graph

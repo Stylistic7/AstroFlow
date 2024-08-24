@@ -14,9 +14,9 @@ from metadata.actor import get_metadata
 
 @ray.remote
 def group_stacks_into_targets():
-  print('### Entering group_stacks_into_targets')
   stacks = context.stacks
-  plate_solutions = context.plate_solutions
+  print(f'### Entering group_stacks_into_targets for {len(stacks)} stacks')
+
   cosine_similarity_threshold = context.cosine_similarity_threshold
 
   def get_spherical_polygon(wcs):
@@ -26,6 +26,9 @@ def group_stacks_into_targets():
     assert not SphericalPolygon.self_intersect(footprint.points)
     return footprint
 
+  # TODO: This makes many small calls to get_metadata(). It should be able
+  # to re-use the metadata queried for the entire spatial cluster, passed
+  # through function arguments.
   def center_and_polygon(stack):
     first_frame = stack.all_frames()[0]
     plate_solution = get_metadata([first_frame],
