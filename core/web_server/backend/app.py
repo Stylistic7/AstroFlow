@@ -23,7 +23,7 @@ from context import context
 from state.actor import StateActor
 from catalogs import constellations
 from previews.operations import resize_array, autostretch, array_to_png
-from context import cache
+from context import get_cache
 from artifacts import artifact_exists, read_artifact_image, CacheArtifact
 from previews import array_to_png, autostretch
 from mosaics.compute_graph import done_artifacts
@@ -32,6 +32,8 @@ import plotly.express as px
 import plotly.figure_factory as ff
 
 debug = False
+
+cache = get_cache()
 
 
 def get_plot_html():
