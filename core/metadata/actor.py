@@ -19,26 +19,41 @@ def get_metadata_from_diskcache(
 ):
   cache = get_cache()
 
-  num_keys = 0
   result = []
 
-  # TODO: When the user passes in an array of input_images, is there any reason
-  # to iterate over the entire cache? That seems very wasteful.
-  for key in cache.iterkeys():
-    if type(key) is tuple and key[0] == 'image_metadata':
-      num_keys += 1
-      if input_images is not None and key[1] not in input_images:
-        continue
+  def iterate_over_input_images():
+    for input_image in input_images:
+      key = ('image_metadata', input_image)
 
-      image = cache[key]
+      image = cache.get(key, None)
+      assert image is not None
+
       if predicate_fn(image):
         result.append(transform_fn(image))
 
-  if input_images is not None:
-    print(f'### get_metadata {num_keys} keys, {len(input_images)} requested, '
+    print(f'### get_metadata {len(input_images)} requested, '
           f'{len(result)} returned')
 
-  return post_fn(result)
+    return post_fn(result)
+
+  def iterate_over_all_keys():
+    num_keys = 0
+    for key in cache.iterkeys():
+      if type(key) is tuple and key[0] == 'image_metadata':
+        num_keys += 1
+        image = cache[key]
+        if predicate_fn(image):
+          result.append(transform_fn(image))
+
+    print(f'### get_metadata {num_keys} keys, all requested, '
+          f'{len(result)} returned')
+
+    return post_fn(result)
+
+  if input_images is not None:
+    return iterate_over_input_images()
+  else:
+    return iterate_over_all_keys()
 
 
 def get_metadata(input_images=None,

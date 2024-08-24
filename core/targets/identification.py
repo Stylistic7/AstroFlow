@@ -9,13 +9,11 @@ from catalogs import position_string
 from targets import Target
 import geometry.footprints as footprints
 from hashing import hash_list
-from metadata.actor import get_metadata
 
 
 @ray.remote
-def group_stacks_into_targets():
-  stacks = context.stacks
-  print(f'### Entering group_stacks_into_targets for {len(stacks)} stacks')
+def group_stacks_into_targets(spatial_group, ancestor_results):
+  stacks, metadata = ancestor_results[0]
 
   cosine_similarity_threshold = context.cosine_similarity_threshold
 
@@ -31,8 +29,7 @@ def group_stacks_into_targets():
   # through function arguments.
   def center_and_polygon(stack):
     first_frame = stack.all_frames()[0]
-    plate_solution = get_metadata([first_frame],
-                                  transform_fn=lambda i: i.plate_solution)[0]
+    plate_solution = metadata[first_frame].plate_solution
     return (np.asarray(footprints.radec_to_vector(*stack.center)),
             get_spherical_polygon(pyfits.Header(plate_solution.header)))
 
@@ -41,14 +38,6 @@ def group_stacks_into_targets():
       for id, stack in stacks.items()
       if stack.stable_hash and stack.image_type == 'light'
   }
-
-  # values = {
-  #     id: (np.asarray(footprints.radec_to_vector(*stack.center)),
-  #          get_spherical_polygon(
-  #              pyfits.Header(plate_solutions[stack.all_frames()[0]].header)))
-  #     for id, stack in stacks.items()
-  #     if stack.stable_hash and stack.image_type == 'light'
-  # }
 
   print(f'### Finding targets out of {len(values)} light-frame stacks')
 
@@ -105,4 +94,4 @@ def group_stacks_into_targets():
 
   # TODO: Computing the result and storing the result are two different
   # responsibilities. Perhaps separate patterns like this?
-  context.targets = targets
+  context.or_equals('targets', targets)

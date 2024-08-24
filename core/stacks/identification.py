@@ -120,8 +120,10 @@ def _new_stacks(name, metadata):
                 projected_footprints=projected_footprints,
                 selection_criterion=selection_criterion)
   stack.update_metadata(metadata)
-  # new_stacks[stack.stable_hash] = stack
+  new_stacks[stack.stable_hash] = stack
   context.or_equals('stacks', {stack.stable_hash: stack})
+
+  return new_stacks
 
 
 # TODO: Cache results for spatial groups. Astrophotographers rarely shoot more
@@ -176,6 +178,7 @@ def identify_stacks(spatial_group):
       assert len(set(filters)) == 1
       yield filter_frames
 
+  new_stacks = {}
   for scale_frames in scale_clusters():
     for camera_frames in camera_clusters(scale_frames):
       for rotation_frames in rotation_clusters(camera_frames):
@@ -183,4 +186,9 @@ def identify_stacks(spatial_group):
           new_stack_metadata = [
               v for k, v in metadata.items() if k in filter_frames
           ]
-          _new_stacks(name, new_stack_metadata)
+          new_stacks |= _new_stacks(name, new_stack_metadata)
+
+  # This metadata contains all of images for this spatial group, which is
+  # also all that is needed for target identification. Pass it along so
+  # it doesn't have to be requested again.
+  return new_stacks, metadata

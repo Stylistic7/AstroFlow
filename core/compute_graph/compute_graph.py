@@ -7,7 +7,7 @@ from stacks.identification import identify_stacks
 from targets.identification import group_stacks_into_targets
 from calibration import identify_calibration_stacks, associate_with_stacks
 from previews import scatter_stack_thumbnails
-from mosaics.identification import identify_mosiacs
+from mosaics.identification import identify_mosaics
 from stacks.compute_graph import build_stack_subgraph, scatter_identify_stacks
 from targets.compute_graph import build_target_subgraph
 from mosaics.compute_graph import build_mosaic_subgraph
@@ -19,9 +19,8 @@ from suggestions import make_suggestions
 def maybe_build_regroup_graph():
   if context.regroup:
     return make_graph_from_list([
-        cluster_by_image_center, scatter_identify_stacks,
-        identify_calibration_stacks, associate_with_stacks,
-        group_stacks_into_targets, identify_mosiacs
+        cluster_by_image_center, scatter_identify_stacks, associate_with_stacks,
+        identify_mosaics
     ])
   else:
     return {}

@@ -90,7 +90,7 @@ def _identify_overlapping_targets():
 
 
 @ray.remote
-def identify_mosiacs():
+def identify_mosaics():
   targets = context.targets
   print(f'### Identifying mosaics from {len(targets)} targets')
 

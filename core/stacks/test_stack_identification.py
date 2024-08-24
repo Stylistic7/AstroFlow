@@ -13,14 +13,6 @@ from clustering import cluster_by_image_center
 from stacks.get_stacks import get_toplevel_stacks, get_content_stacks_of_type
 from metadata.actor import get_metadata
 
-# TODO: I may need to separate the concepts of the diskcache-based global
-# context, and the context used in a Graph.
-#
-# What belongs in the global context? The stacks, targets, mosaics, and user
-# settings.
-#
-# What belongs in the local context for the Graph? I'm not sure.
-
 
 def compute_graph_fragment():
   return make_graph_from_list([
