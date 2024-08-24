@@ -9,45 +9,36 @@ from collections.abc import Iterable
 from context import get_cache
 from context import context
 
-cache = get_cache()
-
-
-def _get_namespace():
-  return os.environ.get("ASTROFLOW_MOCK_NAMESPACE", "AstroFlow")
-
 
 @ray.remote(resources={'diskcache': 0.001})
-class MetadataActor:
+def get_metadata_from_diskcache(
+    input_images,
+    predicate_fn,
+    transform_fn,
+    post_fn,
+):
+  cache = get_cache()
 
-  def __init__(self):
-    # TODO: Maybe cache queries?
-    # This dict should ONLY store ObjectRefs.
-    self.ref_dict = {}
+  num_keys = 0
+  result = []
 
-  def get_metadata(
-      self,
-      input_images,
-      predicate_fn,
-      transform_fn,
-      post_fn,
-  ):
-    num_keys = 0
-    result = []
-    for key in cache.iterkeys():
-      if type(key) is tuple and key[0] == 'image_metadata':
-        num_keys += 1
-        if input_images is not None and key[1] not in input_images:
-          continue
+  # TODO: When the user passes in an array of input_images, is there any reason
+  # to iterate over the entire cache? That seems very wasteful.
+  for key in cache.iterkeys():
+    if type(key) is tuple and key[0] == 'image_metadata':
+      num_keys += 1
+      if input_images is not None and key[1] not in input_images:
+        continue
 
-        image = cache[key]
-        if predicate_fn(image):
-          result.append(transform_fn(image))
+      image = cache[key]
+      if predicate_fn(image):
+        result.append(transform_fn(image))
 
-    if input_images is not None:
-      print(f'### get_metadata {num_keys} keys, {len(input_images)} requested, '
-            f'{len(result)} returned')
+  if input_images is not None:
+    print(f'### get_metadata {num_keys} keys, {len(input_images)} requested, '
+          f'{len(result)} returned')
 
-    return post_fn(result)
+  return post_fn(result)
 
 
 def get_metadata(input_images=None,
@@ -68,10 +59,9 @@ def _get_metadata(input_images=None,
   if input_images is not None and len(input_images) == 0:
     return []
 
-  actor = ray.get_actor('metadata', namespace=_get_namespace())
   return ray.get(
-      actor.get_metadata.remote(input_images, predicate_fn, transform_fn,
-                                post_fn))
+      get_metadata_from_diskcache.remote(input_images, predicate_fn,
+                                         transform_fn, post_fn))
 
 
 # TODO: This needs a LOT more careful testing.

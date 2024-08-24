@@ -61,15 +61,10 @@ if 'ASTROFLOW_MOCK_NAMESPACE' not in os.environ:
 
   from context import ContextActor
   from state import StateActor
-  from metadata.actor import MetadataActor
 
   context_actor = ContextActor.options(name='context',
                                        namespace=namespace,
                                        get_if_exists=True).remote()
-
-  metadata_actor = MetadataActor.options(name='metadata',
-                                         namespace=namespace,
-                                         get_if_exists=True).remote()
 
   state_actor = StateActor.options(name='state',
                                    namespace=namespace,
