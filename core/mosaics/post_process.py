@@ -9,6 +9,13 @@ from artifacts.decorators import saves_artifacts
 
 @PixInsight
 def _post_process_mosaic(image):
+  # TODO: Run StarXTerminator here
+
+  # Adam Block's "standard" narrowband combination:
+  # Run StarXTerminator on all images
+  # Run LinearFit using the brighest image as reference
+  # Use Narrowband Normalization on the linear fitted images
+
   return image
 
 

@@ -3,7 +3,7 @@ import ray
 from context import context
 from dependency_graph import Graph
 from targets import post_process_target
-from stacks.post_process_stack import post_process_stack
+from stacks.post_process import post_process_stack
 
 
 @ray.remote

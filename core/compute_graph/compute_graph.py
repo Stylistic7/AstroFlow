@@ -3,8 +3,6 @@ import ray
 from context import context
 from metadata.image_metadata import scatter_compute_image_metadata
 from clustering import cluster_by_image_center
-from stacks.identification import identify_stacks
-from targets.identification import group_stacks_into_targets
 from calibration import identify_calibration_stacks, associate_with_stacks
 from previews import scatter_stack_thumbnails
 from mosaics.identification import identify_mosaics
@@ -19,8 +17,8 @@ from suggestions import make_suggestions
 def maybe_build_regroup_graph():
   if context.regroup:
     return make_graph_from_list([
-        cluster_by_image_center, scatter_identify_stacks, associate_with_stacks,
-        identify_mosaics
+        cluster_by_image_center, scatter_identify_stacks,
+        identify_calibration_stacks, associate_with_stacks, identify_mosaics
     ])
   else:
     return {}

@@ -4,12 +4,14 @@ import ray
 import unittest
 import datetime
 
-from context import cache
+from context import get_cache
 from context import context
 from testing.test_frames import make_synthetic_frames, copy_testdata_frames
 from testing.test_context import make_test_context
 from dependency_graph import run_graph
 from compute_graph import build_compute_graph
+
+cache = get_cache()
 
 
 class TestFlatCorrection(unittest.TestCase):

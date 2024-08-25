@@ -8,7 +8,6 @@ from context import context
 from dependency_graph import run_graph, make_graph_from_list
 from stacks.compute_graph import scatter_identify_stacks
 from testing.test_frames import make_synthetic_frames
-from stacks.identification import identify_stacks
 from clustering import cluster_by_image_center
 from stacks.get_stacks import get_toplevel_stacks, get_content_stacks_of_type
 from metadata.actor import get_metadata

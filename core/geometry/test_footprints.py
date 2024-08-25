@@ -9,23 +9,20 @@ from context import context
 from dependency_graph import run_graph, make_graph_from_list
 from geometry.footprints import project_footprint
 from testing.test_frames import make_synthetic_frames
-from mosaics import identification
-from stacks.identification import identify_stacks
-from targets.identification import group_stacks_into_targets
+from stacks.compute_graph import scatter_identify_stacks
 from clustering import cluster_by_image_center
 from metadata.image_metadata import scatter_compute_image_metadata
 from calibration import identify_calibration_stacks, associate_with_stacks
 from testing.test_context import make_test_context
-from mosaics.identification import identify_mosiacs
+from mosaics.identification import identify_mosaics
 from geometry.projections import mercator
 
 
 def _build_compute_graph():
-  return make_graph_from_list([
-      (scatter_compute_image_metadata, 'all'), cluster_by_image_center,
-      identify_stacks, identify_calibration_stacks, associate_with_stacks,
-      group_stacks_into_targets, identify_mosiacs
-  ])
+  return make_graph_from_list([(scatter_compute_image_metadata, 'all'),
+                               cluster_by_image_center, scatter_identify_stacks,
+                               identify_calibration_stacks,
+                               associate_with_stacks, identify_mosaics])
 
 
 class TestFootprints(unittest.TestCase):

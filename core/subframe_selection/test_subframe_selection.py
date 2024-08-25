@@ -8,14 +8,22 @@ from context import context
 from testing.test_context import make_test_context
 from testing.test_frames import make_synthetic_frames
 from file_io.find_image_files import find_image_files
+from stacks.compute_graph import scatter_identify_stacks
 from stacks.identification import identify_stacks
 from clustering import cluster_by_image_center
-import subframe_selection
 from metadata.actor import get_metadata
+from dependency_graph import run_graph, make_graph_from_list
 
 # TODO: These tests don't actually test the subframe selection at all. The
 # stack identification step no longer eliminates bad frames from the stack.
 # Instead, we're going to do subframe selection right before stacking.
+
+
+def compute_graph_fragment():
+  return make_graph_from_list([
+      cluster_by_image_center,
+      scatter_identify_stacks,
+  ])
 
 
 class TestSubframeSelection(unittest.TestCase):
@@ -57,8 +65,7 @@ class TestSubframeSelection(unittest.TestCase):
     filenames = find_image_files(context.input_dirs[0])
     self.assertEqual(len(filenames), 10)
 
-    ray.get(cluster_by_image_center.remote())
-    ray.get(identify_stacks.remote())
+    run_graph(compute_graph_fragment())
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 2)
@@ -93,8 +100,7 @@ class TestSubframeSelection(unittest.TestCase):
     filenames = find_image_files(context.input_dirs[0])
     self.assertEqual(len(filenames), 15)
 
-    ray.get(cluster_by_image_center.remote())
-    ray.get(identify_stacks.remote())
+    run_graph(compute_graph_fragment())
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 2)

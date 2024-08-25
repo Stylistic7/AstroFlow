@@ -1,2 +1,2 @@
 from .context import context, ContextActor
-from .cache import cache, get_cache
+from .cache import get_cache

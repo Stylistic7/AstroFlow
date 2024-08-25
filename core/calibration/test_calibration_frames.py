@@ -10,22 +10,12 @@ from dataclasses import asdict
 from testing.test_frames import make_synthetic_frames, copy_testdata_frames
 from context import context
 from file_io.find_image_files import find_image_files
-from dependency_graph import run_graph, make_graph_from_list
-from metadata.image_metadata import scatter_compute_image_metadata
-from clustering import cluster_by_image_center
-from stacks.identification import identify_stacks
-from calibration import identify_calibration_stacks, associate_with_stacks
-from testing.test_context import make_test_context
+from dependency_graph import run_graph
 from hashing import hash_list
 from stacks.get_stacks import get_toplevel_stacks, get_content_stacks_of_type
 from metadata.actor import get_metadata
-
-
-def _build_compute_graph():
-  return make_graph_from_list([(scatter_compute_image_metadata, 'all'),
-                               cluster_by_image_center, identify_stacks,
-                               identify_calibration_stacks,
-                               associate_with_stacks])
+from compute_graph import build_compute_graph
+from testing.test_context import make_test_context
 
 
 class TestCalibrationFrames(unittest.TestCase):
@@ -99,8 +89,7 @@ class TestCalibrationFrames(unittest.TestCase):
     filenames = find_image_files(context.input_dirs[0])
     self.assertEqual(len(filenames), 42)
 
-    graph = _build_compute_graph()
-    run_graph(graph)
+    run_graph(build_compute_graph())
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 7)
@@ -122,8 +111,7 @@ class TestCalibrationFrames(unittest.TestCase):
     filenames = find_image_files(context.input_dirs[0])
     self.assertEqual(len(filenames), 8)
 
-    graph = _build_compute_graph()
-    run_graph(graph)
+    run_graph(build_compute_graph())
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 3)
@@ -195,8 +183,7 @@ class TestCalibrationFrames(unittest.TestCase):
     filenames = find_image_files(context.input_dirs[0])
     self.assertEqual(len(filenames), 78)
 
-    graph = _build_compute_graph()
-    run_graph(graph)
+    run_graph(build_compute_graph())
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 10)
@@ -251,8 +238,7 @@ class TestCalibrationFrames(unittest.TestCase):
     filenames = find_image_files(context.input_dirs[0])
     self.assertEqual(len(filenames), 39)
 
-    graph = _build_compute_graph()
-    run_graph(graph)
+    run_graph(build_compute_graph())
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 6)
@@ -278,8 +264,7 @@ class TestCalibrationFrames(unittest.TestCase):
     filenames = find_image_files(context.input_dirs[0])
     self.assertEqual(len(filenames), 8)
 
-    graph = _build_compute_graph()
-    run_graph(graph)
+    run_graph(build_compute_graph())
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 3)
@@ -320,8 +305,7 @@ class TestCalibrationFrames(unittest.TestCase):
     filenames = find_image_files(context.input_dirs[0])
     self.assertEqual(len(filenames), 26)
 
-    graph = _build_compute_graph()
-    run_graph(graph)
+    run_graph(build_compute_graph())
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 5)
@@ -355,8 +339,7 @@ class TestCalibrationFrames(unittest.TestCase):
     filenames = find_image_files(context.input_dirs[0])
     self.assertEqual(len(filenames), 15)
 
-    graph = _build_compute_graph()
-    run_graph(graph)
+    run_graph(build_compute_graph())
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 4)
@@ -403,8 +386,8 @@ class TestCalibrationFrames(unittest.TestCase):
 
     # Run the graph the first time. It will use the default flat run, which
     # has prefix `flat_run_1` because it is closer chronologically.
-    graph = _build_compute_graph()
-    run_graph(graph)
+    run_graph(build_compute_graph())
+
     stacks = context.stacks
 
     # Look through the stacks, and find the stacks for the two runs of flat
@@ -443,8 +426,7 @@ class TestCalibrationFrames(unittest.TestCase):
                 {'flat': first_flat_stack})
 
     # Run the graph again, with the settings applied.
-    graph = _build_compute_graph()
-    run_graph(graph)
+    run_graph(build_compute_graph())
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 4)
@@ -489,8 +471,7 @@ class TestCalibrationFrames(unittest.TestCase):
                           temperature=-15,
                           dest_dir=context.input_dirs[0])
 
-    graph = _build_compute_graph()
-    run_graph(graph)
+    run_graph(build_compute_graph())
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 5)

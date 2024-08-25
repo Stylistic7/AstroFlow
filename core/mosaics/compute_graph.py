@@ -11,7 +11,7 @@ from .classes import Panel
 from .merge_ops import make_merge_ops
 from .viewbox import compute_mosaic_viewbox
 from .placement import mosaic_by_coordinates, mosaic_by_coordinates_artifacts
-from stacks.post_process_stack import post_process_stack_artifacts
+from stacks.post_process import post_process_stack_artifacts
 from stacks.compute_graph import build_stack_subgraph
 from artifacts.decorators import saves_artifacts
 from previews import resize_array
@@ -37,6 +37,8 @@ def build_mosaic_subgraph(mode, mosaic_id):
     graph |= ray.get(
         build_mosaic_filter_subgraph.remote(mode, mosaic_id, filter,
                                             viewbox_task, metadata_ref))
+
+  # TODO: Run post-processing here.
 
   return graph
 

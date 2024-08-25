@@ -12,7 +12,7 @@ from targets import Target
 from mosaics import Mosaic
 from testing.test_context import make_test_context
 
-from . import identification
+from mosaics import identification
 
 
 class TestMosaicIdentification(unittest.TestCase):
@@ -56,7 +56,7 @@ class TestMosaicIdentification(unittest.TestCase):
         target1.stable_hash: target1
     }
 
-    ray.get(identification.identify_mosiacs.remote())
+    ray.get(identification.identify_mosaics.remote())
     mosaics = context.mosaics
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
@@ -119,7 +119,7 @@ class TestMosaicIdentification(unittest.TestCase):
         baz.stable_hash: baz
     }
 
-    ray.get(identification.identify_mosiacs.remote())
+    ray.get(identification.identify_mosaics.remote())
     mosaics = context.mosaics
 
     self.assertEqual(len(mosaics), 1)
@@ -182,7 +182,7 @@ class TestMosaicIdentification(unittest.TestCase):
         baz.stable_hash: baz
     }
 
-    ray.get(identification.identify_mosiacs.remote())
+    ray.get(identification.identify_mosaics.remote())
     mosaics = context.mosaics
 
     self.assertEqual(len(mosaics), 1)
@@ -251,7 +251,7 @@ class TestMosaicIdentification(unittest.TestCase):
         outlier.stable_hash: outlier,
     }
 
-    ray.get(identification.identify_mosiacs.remote())
+    ray.get(identification.identify_mosaics.remote())
     mosaics = context.mosaics
 
     self.assertEqual(len(mosaics), 1)

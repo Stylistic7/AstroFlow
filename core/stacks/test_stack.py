@@ -11,17 +11,9 @@ from testing.test_frames import make_synthetic_frames, copy_testdata_frames
 from dependency_graph import run_graph, make_graph_from_list
 from metadata.image_metadata import scatter_compute_image_metadata
 from clustering import cluster_by_image_center
-from stacks.identification import identify_stacks
+from stacks.compute_graph import scatter_identify_stacks
 from calibration import identify_calibration_stacks, associate_with_stacks
 from testing.test_context import make_test_context
-from hashing import hash_list
-
-
-def _build_compute_graph():
-  return make_graph_from_list([(scatter_compute_image_metadata, 'all'),
-                               cluster_by_image_center, identify_stacks,
-                               identify_calibration_stacks,
-                               associate_with_stacks])
 
 
 class TestStack(unittest.TestCase):
@@ -58,7 +50,10 @@ class TestStack(unittest.TestCase):
                           exposure=300,
                           dest_dir=context.input_dirs[0])
 
-    graph = _build_compute_graph()
+    graph = make_graph_from_list([(scatter_compute_image_metadata, 'all'),
+                                  cluster_by_image_center,
+                                  identify_calibration_stacks,
+                                  associate_with_stacks])
     run_graph(graph)
 
     stacks = context.stacks
@@ -93,7 +88,11 @@ class TestStack(unittest.TestCase):
                           exposure=300,
                           dest_dir=context.input_dirs[0])
 
-    graph = _build_compute_graph()
+    graph = make_graph_from_list([
+        (scatter_compute_image_metadata, 'all'), cluster_by_image_center,
+        scatter_identify_stacks, identify_calibration_stacks,
+        associate_with_stacks
+    ])
     run_graph(graph)
 
     stacks = context.stacks
