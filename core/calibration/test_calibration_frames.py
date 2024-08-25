@@ -7,6 +7,7 @@ from context import cache
 import datetime
 from dataclasses import asdict
 
+from stacks import SimpleStack
 from testing.test_frames import make_synthetic_frames, copy_testdata_frames
 from context import context
 from file_io.find_image_files import find_image_files
@@ -394,7 +395,7 @@ class TestCalibrationFrames(unittest.TestCase):
     # frames.
     def find_stack(filename_fragment):
       for stack_id, stack in stacks.items():
-        if not stack.frames:
+        if type(stack) is not SimpleStack:
           continue
 
         filenames = get_metadata(stack.frames,

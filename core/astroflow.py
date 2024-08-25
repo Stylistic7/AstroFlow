@@ -492,6 +492,15 @@ def populate_context():
   if context.stacks == None:
     context.regroup = True
 
+  if context.stacks == None:
+    context.stacks = {}
+
+  if context.targets == None:
+    context.targets = {}
+
+  if context.mosaics == None:
+    context.mosaics = {}
+
   if not context.contains('quarantined_files'):
     context.quarantined_files = set()
 

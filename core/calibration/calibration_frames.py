@@ -3,7 +3,7 @@ import numpy as np
 
 import metadata.image_types as image_types
 from context import context
-from stacks import Stack
+from stacks import SimpleStack
 from metadata.actor import get_metadata, group_by_header, cluster_by_header
 import clustering
 
@@ -30,8 +30,8 @@ def identify_calibration_stacks():
   frames_for_filter = group_by_header(cal_frames, 'FILTER')
 
   def new_stack(frames):
-    stack = Stack(frames=frames)
-    stack.update_metadata()
+    stack = SimpleStack(frames=frames)
+    stack.update_metadata(get_metadata(frames))
     return stack
 
   stacks = context.stacks or {}
@@ -123,7 +123,7 @@ def associate_with_stacks():
   print('### Entering associate_with_stacks')
   stacks = context.stacks
   for stack in stacks.values():
-    if stack.image_type == 'light' and stack.frames:
+    if type(stack) is SimpleStack and stack.image_type == 'light':
       associate_with_stack(stack, stacks)
 
   context.stacks = stacks

@@ -1,1 +1,1 @@
-from .stack import Stack, FrameHash
+from .stack import Stack, FrameHash, SimpleStack, CompositeStack

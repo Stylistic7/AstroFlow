@@ -10,7 +10,7 @@ import clustering
 from hashing import hash_string
 import units
 import geometry.footprints as footprints
-from stacks import Stack, FrameHash
+from stacks import Stack, FrameHash, SimpleStack, CompositeStack
 import units
 from metadata.actor import get_metadata, cluster_by_header, sort_by_header
 
@@ -99,7 +99,7 @@ def _new_stacks(name, metadata):
       if len(run) < context.min_frames_in_run:
         continue
       run = [x[0] for x in run]
-      stack = Stack(frames=run)
+      stack = SimpleStack(frames=run)
       stack.update_metadata(metadata)
       new_stacks[stack.content_hash] = stack
 
@@ -110,15 +110,15 @@ def _new_stacks(name, metadata):
 
   # Add a toplevel stack, with the geometric information, that contains all
   # of the runs of light frames as its contents.
-  stack = Stack(stable_hash=stable_hash,
-                contents=list(new_stacks.keys()),
-                target=name,
-                center=list(center),
-                image_scale=image_scale,
-                rotation_angle=rotation_angle,
-                footprint=footprint,
-                projected_footprints=projected_footprints,
-                selection_criterion=selection_criterion)
+  stack = CompositeStack(stable_hash=stable_hash,
+                         contents=list(new_stacks.keys()),
+                         target=name,
+                         center=list(center),
+                         image_scale=image_scale,
+                         rotation_angle=rotation_angle,
+                         footprint=footprint,
+                         projected_footprints=projected_footprints,
+                         selection_criterion=selection_criterion)
   stack.update_metadata(metadata)
   new_stacks[stack.stable_hash] = stack
   context.or_equals('stacks', {stack.stable_hash: stack})

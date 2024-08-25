@@ -13,7 +13,7 @@ from .merge_ops import make_merge_ops
 from .classes import MergeOp, Panel
 from artifacts.decorators import saves_artifacts
 from context import context
-from stacks import Stack
+from stacks import CompositeStack
 from dependency_graph import run_graph, print_graph
 from artifacts import CacheArtifact, FileArtifact, write_artifact
 from testing.test_frames import make_synthetic_frames
@@ -31,9 +31,9 @@ def _make_panel(id, content_hash=None, **kwargs):
 
   context.stacks |= {
       stable_hash:
-          Stack(stable_hash=stable_hash,
-                content_hash=content_hash,
-                filter=filter)
+          CompositeStack(stable_hash=stable_hash,
+                         content_hash=content_hash,
+                         filter=filter)
   }
   return Panel(input_artifact=FileArtifact(filename=filenames[0],
                                            content_hash=content_hash),

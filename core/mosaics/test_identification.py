@@ -7,7 +7,7 @@ from context import context
 import numpy as np
 from spherical_geometry.polygon import SingleSphericalPolygon
 
-from stacks import Stack
+from stacks import SimpleStack, CompositeStack
 from targets import Target
 from mosaics import Mosaic
 from testing.test_context import make_test_context
@@ -43,12 +43,12 @@ class TestMosaicIdentification(unittest.TestCase):
                          [95, 99, 99, 95], [-1, -1, 1, 1]))
 
     context.stacks = {
-        1: Stack(image_scale=1),
-        2: Stack(image_scale=1),
-        3: Stack(image_scale=1),
-        4: Stack(image_scale=1),
-        5: Stack(image_scale=1),
-        6: Stack(image_scale=1)
+        1: CompositeStack(image_scale=1),
+        2: CompositeStack(image_scale=1),
+        3: CompositeStack(image_scale=1),
+        4: CompositeStack(image_scale=1),
+        5: CompositeStack(image_scale=1),
+        6: CompositeStack(image_scale=1)
     }
 
     context.targets = {
@@ -102,15 +102,15 @@ class TestMosaicIdentification(unittest.TestCase):
                                                              [0, 0, 2, 2]))
 
     context.stacks = {
-        1: Stack(image_scale=1),
-        2: Stack(image_scale=1),
-        3: Stack(image_scale=1),
-        4: Stack(image_scale=1),
-        5: Stack(image_scale=1),
-        6: Stack(image_scale=1),
-        7: Stack(image_scale=1),
-        8: Stack(image_scale=1),
-        9: Stack(image_scale=1)
+        1: CompositeStack(image_scale=1),
+        2: CompositeStack(image_scale=1),
+        3: CompositeStack(image_scale=1),
+        4: CompositeStack(image_scale=1),
+        5: CompositeStack(image_scale=1),
+        6: CompositeStack(image_scale=1),
+        7: CompositeStack(image_scale=1),
+        8: CompositeStack(image_scale=1),
+        9: CompositeStack(image_scale=1)
     }
 
     context.targets = {
@@ -165,15 +165,15 @@ class TestMosaicIdentification(unittest.TestCase):
                                                              [1, 1, 3, 3]))
 
     context.stacks = {
-        1: Stack(image_scale=1),
-        2: Stack(image_scale=1),
-        3: Stack(image_scale=1),
-        4: Stack(image_scale=1),
-        5: Stack(image_scale=1),
-        6: Stack(image_scale=1),
-        7: Stack(image_scale=1),
-        8: Stack(image_scale=1),
-        9: Stack(image_scale=1)
+        1: CompositeStack(image_scale=1),
+        2: CompositeStack(image_scale=1),
+        3: CompositeStack(image_scale=1),
+        4: CompositeStack(image_scale=1),
+        5: CompositeStack(image_scale=1),
+        6: CompositeStack(image_scale=1),
+        7: CompositeStack(image_scale=1),
+        8: CompositeStack(image_scale=1),
+        9: CompositeStack(image_scale=1)
     }
 
     context.targets = {
@@ -230,18 +230,18 @@ class TestMosaicIdentification(unittest.TestCase):
                          [96, 100, 100, 96], [-1.5, -1.5, 0.5, 0.5]))
 
     context.stacks = {
-        1: Stack(image_scale=1),
-        2: Stack(image_scale=1),
-        3: Stack(image_scale=1),
-        4: Stack(image_scale=1),
-        5: Stack(image_scale=1),
-        6: Stack(image_scale=1),
-        7: Stack(image_scale=1),
-        8: Stack(image_scale=1),
-        9: Stack(image_scale=1),
-        10: Stack(image_scale=1),
-        11: Stack(image_scale=1),
-        12: Stack(image_scale=1)
+        1: CompositeStack(image_scale=1),
+        2: CompositeStack(image_scale=1),
+        3: CompositeStack(image_scale=1),
+        4: CompositeStack(image_scale=1),
+        5: CompositeStack(image_scale=1),
+        6: CompositeStack(image_scale=1),
+        7: CompositeStack(image_scale=1),
+        8: CompositeStack(image_scale=1),
+        9: CompositeStack(image_scale=1),
+        10: CompositeStack(image_scale=1),
+        11: CompositeStack(image_scale=1),
+        12: CompositeStack(image_scale=1)
     }
 
     context.targets = {

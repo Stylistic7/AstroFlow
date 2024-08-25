@@ -8,6 +8,7 @@ import os
 import shutil
 import astropy.io.fits as pyfits  # type: ignore
 
+from stacks import SimpleStack
 from artifacts.decorators import saves_artifacts
 from artifacts import FileArtifact
 from context import context
@@ -115,7 +116,7 @@ def stack_files_artifacts(stack_id: str):
   return [FileArtifact(dest_filename, stack.content_hash)]
 
 
-# TODO: This function should call _setup_leaf_stack for its leaves.
+# TODO: This function should call _setup_simple_stack for its leaves.
 def _setup_composite_stack(stack_id, tmp_dir):
   stacks = context.stacks
   stack = stacks[stack_id]
@@ -166,7 +167,7 @@ def _setup_composite_stack(stack_id, tmp_dir):
   return first_filename, num_frames
 
 
-def _setup_leaf_stack(stack_id, tmp_dir):
+def _setup_simple_stack(stack_id, tmp_dir):
   stack = context.stacks[stack_id]
 
   filenames = get_metadata(stack.frames, transform_fn=lambda i: i.filename)
@@ -189,8 +190,6 @@ def stack_files(stack_id):
   stack = stacks[stack_id]
   print(f'### Entering stack_files for {stack}')
 
-  assert stack.frames or stack.contents
-
   metadata = {
       'IMAGETYP': f'Master {stack.image_type}',
       'CONTHASH': stack.content_hash
@@ -200,8 +199,8 @@ def stack_files(stack_id):
   os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
 
   with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
-    if stack.frames:
-      first_filename, num_frames = _setup_leaf_stack(stack_id, tmp_dir)
+    if type(stack) is SimpleStack:
+      first_filename, num_frames = _setup_simple_stack(stack_id, tmp_dir)
     else:
       first_filename, num_frames = _setup_composite_stack(stack_id, tmp_dir)
 

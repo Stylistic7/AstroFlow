@@ -8,6 +8,7 @@ from collections.abc import Iterable
 
 from context import get_cache
 from context import context
+from stacks import SimpleStack
 
 
 @ray.remote(resources={'diskcache': 0.001})
@@ -89,8 +90,12 @@ def _hashes_for_stack(stack_id):
 
   # TODO: Settings need to be applied in some unified way.
   settings_key = ('stack_settings', stack_id)
-  settings = context[settings_key] or {}
-  dependencies = stack.dependencies | settings
+
+  if type(stack) is SimpleStack:
+    settings = context[settings_key] or {}
+    dependencies = stack.dependencies | settings
+  else:
+    dependencies = {}
 
   # Include all the frames from all of the stacks' dependencies (which are
   # typically calibration stacks).
@@ -138,13 +143,7 @@ def get_metadata_for_target(target_id):
 
 # TODO: Maybe unify API with @singledispatch.
 def get_metadata_for_stack(stack_id):
-  stacks = context.stacks
-  stack = stacks[stack_id]
-
   hashes = _hashes_for_stack(stack_id)
-  for substack_id in stack.contents:
-    hashes += _hashes_for_stack(substack_id)
-
   return get_metadata(
       hashes, post_fn=lambda images: {i.content_hash: i for i in images})
 

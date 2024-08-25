@@ -5,7 +5,7 @@ import unittest
 import numpy as np
 
 from context import context
-from stacks import Stack
+from stacks import SimpleStack, CompositeStack
 from testing.test_context import make_test_context
 from testing.test_frames import make_synthetic_frames, copy_testdata_frames
 from dependency_graph import run_graph, make_graph_from_list
@@ -24,14 +24,14 @@ class TestStack(unittest.TestCase):
   def test_all_frames(self):
     stacks = {
         'toplevel_stack':
-            Stack(content_hash='toplevel_stack',
-                  contents=['stack_foo', 'stack_bar', 'stack_baz']),
+            CompositeStack(content_hash='toplevel_stack',
+                           contents=['stack_foo', 'stack_bar', 'stack_baz']),
         'stack_foo':
-            Stack(content_hash='stack_bar', frames=['a', 'b', 'c']),
+            SimpleStack(content_hash='stack_bar', frames=['a', 'b', 'c']),
         'stack_bar':
-            Stack(content_hash='stack_bar', frames=['d', 'e', 'f']),
+            SimpleStack(content_hash='stack_bar', frames=['d', 'e', 'f']),
         'stack_baz':
-            Stack(content_hash='stack_baz', frames=['g', 'h', 'i']),
+            SimpleStack(content_hash='stack_baz', frames=['g', 'h', 'i']),
     }
     context.stacks = stacks
 
@@ -62,12 +62,9 @@ class TestStack(unittest.TestCase):
 
     self.assertNotEqual(stack.content_hash, None)
     self.assertEqual(len(stack.frames), 5)
-    self.assertEqual(len(stack.contents), 0)
-    self.assertEqual(len(stack.dependencies), 0)
     self.assertEqual(stack.image_type, 'dark')
     self.assertNotEqual(stack.oldest_date, None)
     self.assertNotEqual(stack.newest_date, None)
-    self.assertEqual(stack.target, None)
     self.assertEqual(stack.camera, 'ZWO ASI6200MM Pro')
     self.assertEqual(stack.mean_temperature, -15.0)
     self.assertEqual(stack.exposure_s, 300)
@@ -102,7 +99,7 @@ class TestStack(unittest.TestCase):
     self.assertEqual(len(stacks), 3)
 
     toplevel_stack = next(
-        stack for stack in stacks.values() if stack.stable_hash)
+        stack for stack in stacks.values() if type(stack) is CompositeStack)
     light_stack = next(
         stack for stack in stacks.values() if stack.image_type == 'light')
     dark_stack = next(
@@ -112,7 +109,6 @@ class TestStack(unittest.TestCase):
     self.assertNotEqual(toplevel_stack.stable_hash, None)
     self.assertNotEqual(toplevel_stack.content_hash, None)
     self.assertEqual(len(toplevel_stack.contents), 1)
-    self.assertEqual(len(toplevel_stack.dependencies), 0)
     self.assertNotEqual(toplevel_stack.oldest_date, None)
     self.assertNotEqual(toplevel_stack.newest_date, None)
     self.assertEqual(toplevel_stack.camera, 'ZWO ASI6200MM Pro')
@@ -132,12 +128,10 @@ class TestStack(unittest.TestCase):
     self.assertEqual(light_stack.stable_hash, None)
     self.assertNotEqual(light_stack.content_hash, None)
     self.assertEqual(len(light_stack.frames), 3)
-    self.assertEqual(len(light_stack.contents), 0)
     self.assertEqual(light_stack.dependencies,
                      {'dark': dark_stack.content_hash})
     self.assertNotEqual(light_stack.oldest_date, None)
     self.assertNotEqual(light_stack.newest_date, None)
-    self.assertEqual(light_stack.target, None)
     self.assertEqual(light_stack.camera, 'ZWO ASI6200MM Pro')
     self.assertAlmostEqual(light_stack.mean_temperature, -12.9, places=3)
     self.assertEqual(light_stack.exposure_s, 300)
@@ -149,11 +143,9 @@ class TestStack(unittest.TestCase):
     self.assertEqual(dark_stack.stable_hash, None)
     self.assertNotEqual(dark_stack.content_hash, None)
     self.assertEqual(len(dark_stack.frames), 5)
-    self.assertEqual(len(dark_stack.contents), 0)
     self.assertEqual(len(dark_stack.dependencies), 0)
     self.assertNotEqual(dark_stack.oldest_date, None)
     self.assertNotEqual(dark_stack.newest_date, None)
-    self.assertEqual(dark_stack.target, None)
     self.assertEqual(dark_stack.camera, 'ZWO ASI6200MM Pro')
     self.assertEqual(dark_stack.mean_temperature, -10.0)
     self.assertEqual(dark_stack.exposure_s, 300)
