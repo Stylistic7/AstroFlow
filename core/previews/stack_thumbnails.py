@@ -6,13 +6,14 @@ import ray
 
 from previews.operations import resize_array, array_to_png
 from previews.flat_correction import create_flat_correction_thumbnails
-from previews.thumbnail import make_thumbnail
+from previews.calibration import calibrate_image
 from context import context
 from file_io.generic import read_image
 import subframe_selection
 from stacks import stacking
 from dependency_graph import Graph
 from metadata.actor import get_metadata, get_metadata_for_stack
+from previews.operations import autostretch
 
 # TODO: Split this file up into smaller, more specific pieces.
 
@@ -85,21 +86,23 @@ def create_stack_subframe_thumbnails(stack_id):
 
   width = context.subframe_thumbnail_width
 
+  # TODO: Maybe pass along the metadata for the whole spatial group through,
+  # and eliminate yet another call to get_metadata().
   metadata = get_metadata_for_stack(stack_id)
 
   # Cache the calibration images so they're only read once.
-  first_images = {}
+  first_subframes = {}
 
-  def get_first_image(stack_id):
+  def get_first_subframe(stack_id):
     if not stack_id:
       return None
-    elif stack_id in first_images:
-      return first_images[stack_id]
+    elif stack_id in first_subframes:
+      return first_subframes[stack_id]
     else:
       frame = metadata[stacks[stack_id].frames[0]]
       image = resize_array(read_image(frame.filename), width).astype(np.float32)
-      first_images[stack_id] = (frame, image)
-      return first_images[stack_id]
+      first_subframes[stack_id] = (frame, image)
+      return first_subframes[stack_id]
 
   # Now sort all the light frames (no matter which run they're from) by the
   # number of stars. The better images should be in front.
@@ -134,19 +137,20 @@ def create_stack_subframe_thumbnails(stack_id):
 
       bias_frame = bias_image = None
       if 'bias' in dependencies:
-        bias_frame, bias_image = get_first_image(dependencies['bias'])
+        bias_frame, bias_image = get_first_subframe(dependencies['bias'])
 
       dark_frame = dark_image = None
       if 'dark' in dependencies:
-        dark_frame, dark_image = get_first_image(dependencies['dark'])
+        dark_frame, dark_image = get_first_subframe(dependencies['dark'])
 
       flat_frame = flat_image = None
       if 'flat' in dependencies:
-        flat_frame, flat_image = get_first_image(dependencies['flat'])
+        flat_frame, flat_image = get_first_subframe(dependencies['flat'])
 
-      im = make_thumbnail(light_frame, light_image, bias_frame, bias_image,
-                          dark_frame, dark_image, flat_frame, flat_image,
-                          rotate)
+      im = calibrate_image(light_frame, light_image, bias_frame, bias_image,
+                           dark_frame, dark_image, flat_frame, flat_image,
+                           rotate)
+      im = autostretch(np.clip(im, 0.0, 1.0))
 
       if i == 0:
         key = ('stack_subframe_thumbnail_image', stack_id)
