@@ -52,13 +52,13 @@ class ImagingAttributes:
         assert len(qualities) < 2, f'multiple {quality} qualities {qualities}'
         return next(iter(qualities)) if len(qualities) else None
 
-    allow_multiple_exposures = (self.stable_hash != None)
+    # allow_multiple_exposures = (self.stable_hash != None)
 
     self.image_type = get_quality('IMAGETYP')
     self.camera = get_quality('INSTRUME')
     self.width_pixels = get_quality('NAXIS1')
     self.height_pixels = get_quality('NAXIS2')
-    self.exposure_s = get_quality('EXPOSURE', allow_multiple_exposures)
+    self.exposure_s = get_quality('EXPOSURE', allow_multiple=True)
     self.filter = get_quality('FILTER')
 
     self.integration_s = sum(
@@ -84,7 +84,7 @@ class AstrometricAttributes:
 
 @dataclass
 class SimpleStack(ImagingAttributes):
-  stable_hash: Optional[str] = None
+  # stable_hash: Optional[str] = None
   content_hash: Optional[str] = None
   frames: list[FrameHash] = field(default_factory=list)
   dependencies: dict[str, StackHash] = field(default_factory=dict)
@@ -114,8 +114,7 @@ class SimpleStack(ImagingAttributes):
     if not isinstance(other, SimpleStack):
       return False
 
-    return (self.content_hash == other.content_hash) and (self.stable_hash
-                                                          == other.stable_hash)
+    return (self.content_hash == other.content_hash)
 
 
 @dataclass

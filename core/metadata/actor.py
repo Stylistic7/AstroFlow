@@ -106,7 +106,7 @@ def _hashes_for_stack(stack_id):
 
   # Include every known flat calibration stack, just for completeness.
   for s in stacks.values():
-    if (not s.stable_hash and s.image_type == 'flat' and
+    if (type(s) is SimpleStack and s.image_type == 'flat' and
         s.camera == stack.camera and s.filter == stack.filter):
       hashes += s.frames
 

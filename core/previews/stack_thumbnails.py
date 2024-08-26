@@ -10,7 +10,7 @@ from previews.calibration import calibrate_image
 from context import context
 from file_io.generic import read_image
 import subframe_selection
-from stacks import stacking
+from stacks import SimpleStack, CompositeStack
 from dependency_graph import Graph
 from metadata.actor import get_metadata, get_metadata_for_stack
 from previews.operations import autostretch
@@ -50,11 +50,11 @@ def scatter_stack_thumbnails(mode):
   if mode == 'subframe':
     subframe_images = [(create_flat_correction_thumbnails, id)
                        for id, s in stacks.items()
-                       if s.image_type == 'light' and not s.stable_hash]
+                       if type(s) is SimpleStack and s.image_type == 'light']
     subframe_videos = [
         (create_stack_subframe_thumbnails, id)
         for id, s in stacks.items()
-        if s.image_type == 'light' and s.stable_hash and (
+        if type(s) is CompositeStack and s.image_type == 'light' and (
             ('stack_subframe_thumbnail_image', id) not in cache_keys or
             ('stack_subframe_thumbnail_video', id) not in cache_keys)
     ]
@@ -62,7 +62,7 @@ def scatter_stack_thumbnails(mode):
   elif mode == 'master':
     tasks = [(create_stack_master_thumbnail, id)
              for id, s in stacks.items()
-             if s.image_type == 'light' and s.stable_hash and
+             if type(s) is CompositeStack and s.image_type == 'light' and
              ('stack_master_thumbnail_image', id) not in cache_keys]
 
   return Graph({gather: tasks})
@@ -75,7 +75,7 @@ def create_stack_subframe_thumbnails(stack_id):
   print(f'Entering create_stack_subframe_thumbnails() for stack {stack}')
 
   # Don't make previews for calibration stacks.
-  assert stack.stable_hash
+  assert type(stack) is not SimpleStack
 
   settings_key = ('stack_settings', stack_id)
   settings = context[settings_key] or {}

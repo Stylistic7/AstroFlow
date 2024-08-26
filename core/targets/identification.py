@@ -9,6 +9,7 @@ from catalogs import position_string
 from targets import Target
 import geometry.footprints as footprints
 from hashing import hash_list
+from stacks import CompositeStack
 
 
 @ray.remote
@@ -36,7 +37,7 @@ def group_stacks_into_targets(spatial_group, ancestor_results):
   values = {
       id: center_and_polygon(stack)
       for id, stack in stacks.items()
-      if stack.stable_hash and stack.image_type == 'light'
+      if type(stack) is CompositeStack and stack.image_type == 'light'
   }
 
   print(f'### Finding targets out of {len(values)} light-frame stacks')

@@ -2,6 +2,7 @@ import ray
 import numpy as np
 
 from context import context
+from stacks import SimpleStack
 from hashing import hash_string
 from metadata.actor import get_metadata_for_stack
 import subframe_selection
@@ -28,14 +29,14 @@ def create_flat_correction_thumbnails(stack_id):
 
   flat_stack_ids = [
       id for id, s in stacks.items()
-      if not s.stable_hash and s.image_type == 'flat' and
+      if type(s) is SimpleStack and s.image_type == 'flat' and
       s.camera == stack.camera and s.filter == stack.filter
   ]
 
   if all(f in thumbnails for f in flat_stack_ids):
     return
 
-  assert not stack.stable_hash
+  assert type(stack) is SimpleStack
 
   metadata = get_metadata_for_stack(stack_id)
 
