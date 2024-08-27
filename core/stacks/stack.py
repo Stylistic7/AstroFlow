@@ -84,7 +84,6 @@ class AstrometricAttributes:
 
 @dataclass
 class SimpleStack(ImagingAttributes):
-  # stable_hash: Optional[str] = None
   content_hash: Optional[str] = None
   frames: list[FrameHash] = field(default_factory=list)
   dependencies: dict[str, StackHash] = field(default_factory=dict)
