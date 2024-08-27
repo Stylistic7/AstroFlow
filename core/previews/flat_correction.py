@@ -9,6 +9,7 @@ import subframe_selection
 from previews.operations import resize_array, array_to_png
 from file_io.generic import read_image
 from previews.calibration import calibrate_image
+from previews.operations import autostretch
 
 
 # TODO: Is it only necessary to make the thumbnails for the flat stacks
@@ -79,8 +80,10 @@ def create_flat_correction_thumbnails(stack_id):
                                width)).astype(np.float32)
 
     thumbnail = array_to_png(
-        calibrate_image(light_frame, light_image, bias_frame, bias_image,
-                        dark_frame, dark_image, flat_frame, flat_image, rotate))
+        autostretch(
+            calibrate_image(light_frame, light_image, bias_frame, bias_image,
+                            dark_frame, dark_image, flat_frame, flat_image,
+                            rotate)))
     hash = hash_string(thumbnail)
     thumbnails[flat_stack_id] = hash
 
