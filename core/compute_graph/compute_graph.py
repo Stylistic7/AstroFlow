@@ -44,18 +44,23 @@ def build_main_processing_graph():
   shopping_cart = context.shopping_cart or []
   print(f'### build_main_processing_graph shopping_cart {shopping_cart}')
 
-  stacks = context.stacks
-  targets = context.targets
-  mosaics = context.mosaics
-
   # TODO: Maybe add prioritization options in the UI.
   graph = Graph()
   for type, id in shopping_cart:
     if type == 'stack':
+      if id not in context.stacks:
+        print('### WARNING: stack {id} is in shopping cart but does not exist')
+        continue
       graph |= ray.get(build_stack_subgraph.remote(id))
     elif type == 'target':
+      if id not in context.targets:
+        print('### WARNING: target {id} is in shopping cart but does not exist')
+        continue
       graph |= ray.get(build_target_subgraph.remote(id))
     if type == 'mosaic':
+      if id not in context.mosaics:
+        print('### WARNING: mosaic {id} is in shopping cart but does not exist')
+        continue
       graph |= ray.get(build_mosaic_subgraph.remote('master', id))
 
   print(f'### Finished composing main processing graph')
