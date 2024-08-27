@@ -47,13 +47,19 @@ def _identify_overlapping_targets():
       compatible_overlap = any(
           targets[target_id].footprint.intersects_poly(targets[t].footprint)
           for t in mosaic)
-      image_scales = [
+      mosaic_image_scales = [
           stacks[s].image_scale for t in mosaic for s in targets[t].stack_ids
       ]
       # TODO: Image scale is maybe not a requirement for mosaicking. It's a
       # complex feature that requires complex UI, so leave it out for now.
-      compatible_image_scales = np.allclose(image_scales,
-                                            np.mean(image_scales),
+      target_image_scales = [
+          stacks[s].image_scale for s in targets[target_id].stack_ids
+      ]
+      assert np.allclose(target_image_scales,
+                         np.mean(target_image_scales),
+                         atol=0.1)
+      compatible_image_scales = np.allclose(mosaic_image_scales,
+                                            np.mean(target_image_scales),
                                             atol=0.1)
 
       if compatible_area and compatible_overlap and compatible_image_scales:
