@@ -19,8 +19,12 @@ from hashing import hash_list
 _MEMORY_REQUIREMENT = 8 * 1024 * 1024 * 1024  # 8 GB
 
 
-def mosaic_by_coordinates_artifacts(mode, mosaic_id, filter, stack_id,
-                                    input_artifact):
+def mosaic_by_coordinates_artifacts(mode,
+                                    mosaic_id,
+                                    filter,
+                                    stack_id,
+                                    input_artifact,
+                                    metadata_ref=None):
   viewbox_artifact = next(
       iter(compute_mosaic_viewbox_artifacts(mode, mosaic_id)))
   content_hash = hash_list(
@@ -93,7 +97,8 @@ def place_tile(tile_y, tile_x, wcs, ra_tiles, dec_tiles, interp):
 # TODO: Store these on disk and read them back when unchanged.
 @ray.remote(scheduling_strategy="SPREAD", memory=_MEMORY_REQUIREMENT)
 @saves_artifacts(mosaic_by_coordinates_artifacts)
-def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact):
+def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact,
+                          metadata_ref):
   print(f'### Entering mosaic_by_coordinates '
         f' {mode} {mosaic_id} {filter} {stack_id} {input_artifact}')
 
@@ -103,14 +108,12 @@ def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact):
   viewbox = context.get(viewbox_artifact.key)
   assert viewbox
 
-  # TODO: It's a bit weird to do plate-solving here. This should all be in a
-  # separate function outside of this file.
-  #
   # TODO: The subframes need to be calibrated before being placed.
   filename = input_artifact.filename
   image = read_artifact_image(input_artifact)
   header = read_artifact_header(input_artifact)
-  plate_solution = solve_field(filename)
+  metadata = ray.get(metadata_ref[0])
+  plate_solution = metadata[input_artifact.content_hash].plate_solution
 
   assert image is not None
   assert plate_solution is not None
@@ -134,14 +137,10 @@ def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact):
 
   ras, decs = _compute_ras_decs(mode, viewbox, multiple)
   projected_image = np.zeros_like(ras)
-  print(f'### ras.nbytes {ras.nbytes / 1024 / 1024 / 1024} GB')
-  print(f'### decs.nbytes {decs.nbytes / 1024 / 1024 / 1024} GB')
 
   viewbox_height, viewbox_width = ras.shape
   tile_height = int(viewbox_height / multiple)
   tile_width = int(viewbox_width / multiple)
-  print(f'### viewbox_height {viewbox_height} tile_height {tile_height}')
-  print(f'### viewbox_width {viewbox_width} tile_width {tile_width}')
   ra_tiles = _reshape_tiles(ras, (tile_height, tile_width))
   dec_tiles = _reshape_tiles(decs, (tile_height, tile_width))
   projected_image_tiles = _reshape_tiles(projected_image,

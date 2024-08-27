@@ -18,13 +18,16 @@ from previews import resize_array
 from metadata.actor import get_metadata_for_mosaic
 
 
+# TODO: Make sure these are parallelized over all the mosaics.
 @ray.remote
 def build_mosaic_subgraph(mode, mosaic_id):
   print(f'### build_mosaic_subgraph mode {mode} mosaic_id {mosaic_id}')
 
   # Get all of the image metadata for the entire mosaic (which may involve
-  # thousands of individual subframes) all at once.
-  metadata_ref = ray.put(get_metadata_for_mosaic(mosaic_id))
+  # thousands of individual subframes) all at once. Pass it around as an
+  # ObjectRef inside a tuple, which is a Ray convention that prevents it from
+  # being dereferenced until desired.
+  metadata_ref = (ray.put(get_metadata_for_mosaic(mosaic_id)), 0)
 
   # TODO: If the final output artifact exists, there's no reason to build the
   # graph.
@@ -53,13 +56,15 @@ def _get_best_light_frame(stack_id, metadata):
 
 @ray.remote
 def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task,
-                                 metadata):
+                                 metadata_ref):
   print(f'### build_mosaic_filter_subgraph mode {mode} '
         f'mosaic_id {mosaic_id} filter {filter}')
   stacks = context.stacks
   targets = context.targets
   mosaics = context.mosaics
   mosaic = mosaics[mosaic_id]
+
+  metadata = ray.get(metadata_ref[0])
 
   graph = Graph()
 
@@ -88,7 +93,7 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task,
       input_artifact = post_process_stack_artifacts(stack_id)[0]
 
     placement_task = (mosaic_by_coordinates, mode, mosaic_id, filter, stack_id,
-                      input_artifact)
+                      input_artifact, metadata_ref)
 
     if mode == 'subframe':
       graph[placement_task] = {viewbox_task}
