@@ -28,23 +28,32 @@ def group_stacks_into_targets(spatial_group, ancestor_results):
   # TODO: This makes many small calls to get_metadata(). It should be able
   # to re-use the metadata queried for the entire spatial cluster, passed
   # through function arguments.
-  def center_and_polygon(stack):
+  def center_polygon_image_scale(stack):
     first_frame = stack.all_frames()[0]
     plate_solution = metadata[first_frame].plate_solution
     return (np.asarray(footprints.radec_to_vector(*stack.center)),
-            get_spherical_polygon(pyfits.Header(plate_solution.header)))
+            get_spherical_polygon(pyfits.Header(plate_solution.header)),
+            stack.image_scale)
 
   values = {
-      id: center_and_polygon(stack)
+      id: center_polygon_image_scale(stack)
       for id, stack in stacks.items()
       if type(stack) is CompositeStack and stack.image_type == 'light'
   }
 
   print(f'### Finding targets out of {len(values)} light-frame stacks')
 
+  # TODO: Make this IoU threashold a knob in the UI.
+  # TODO: Don't combine stacks with different image scales into the same
+  # target.
   def comparison_fn(a, b):
-    a_center, a_polygon = a
-    b_center, b_polygon = b
+    a_center, a_polygon, a_image_scale = a
+    b_center, b_polygon, b_image_scale = b
+
+    image_scales = a_image_scale, b_image_scale
+    if not np.allclose(image_scales, np.mean(image_scales), atol=0.1):
+      return False
+
     if np.dot(a_center, b_center) < cosine_similarity_threshold:
       return False
 
