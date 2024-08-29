@@ -152,11 +152,17 @@ def compute_image_metadata(artifact=None, *, ancestor_results):
     if artifact_exists(output_artifact):
       prev_filename = context.get(output_artifact.key,
                                   keep_in_memory=False).filename
-      print('### prev_filename', prev_filename)
-      if os.path.exists(prev_filename):
-        raise DuplicateFileException()
+      if prev_filename == artifact.filename:
+        # The given input file just points to an existing known file; nothing
+        # needs to be done.
+        return [output_artifact]
       else:
-        print(f'Filename {prev_filename} has been moved to {artifact.filename}')
+        if os.path.exists(prev_filename):
+          raise DuplicateFileException(
+              f'{prev_filename} and {artifact.filename}')
+        else:
+          print(f'Filename {prev_filename} has been moved to '
+                f'{artifact.filename}')
 
     header = read_header(artifact.filename)
     if image_types.is_light_frame(header):
