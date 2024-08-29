@@ -7,10 +7,10 @@ from context import context
 from dependency_graph import Graph, print_graph
 from previews import array_to_png
 import subframe_selection
-from .classes import Panel
-from .merge_ops import make_merge_ops
-from .viewbox import compute_mosaic_viewbox
-from .placement import mosaic_by_coordinates, mosaic_by_coordinates_artifacts
+from mosaics.classes import Panel
+from mosaics.merge_ops import make_merge_ops
+from mosaics.viewbox import compute_mosaic_viewbox
+from mosaics.placement import mosaic_by_coordinates, mosaic_by_coordinates_artifacts
 from stacks.post_process import post_process_stack_artifacts
 from stacks.compute_graph import build_stack_subgraph
 from artifacts.decorators import saves_artifacts
@@ -91,6 +91,11 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task,
                                     best_light_frame.content_hash)
     elif mode == 'master':
       input_artifact = post_process_stack_artifacts(stack_id)[0]
+
+    if not artifact_exists(input_artifact):
+      print(f'### build_mosaic_filter_subgraph input_artifact '
+            f'{input_artifact} does not exist')
+      continue
 
     placement_task = (mosaic_by_coordinates, mode, mosaic_id, filter, stack_id,
                       input_artifact, metadata_ref)
