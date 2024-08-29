@@ -33,7 +33,6 @@ def post_process_stack_artifacts(stack_id):
 @saves_artifacts(post_process_stack_artifacts)
 def post_process_stack(stack_id):
   print(f'post_process_stack, stack_id {stack_id}')
-  stack = context.stacks[stack_id]
 
   input_artifact = stack_files_artifacts(stack_id)[0]
 

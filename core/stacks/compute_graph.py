@@ -37,15 +37,19 @@ def build_stack_subgraph(stack_id):
   stack = stacks[stack_id]
 
   stack_task = (stack_files, stack_id)
-  metadata_task = Node(compute_image_metadata, name=stack_id)
+  stacking_metadata_task = Node(compute_image_metadata,
+                                name=f'stacking_{stack_id}')
   post_process_task = (post_process_stack, stack_id)
+  post_process_metadata_task = Node(compute_image_metadata,
+                                    name=f'post_process_{stack_id}')
 
   graph = Graph()
   graph[stack_task] = {(stack_files, d)
                        for substack in stack.contents
                        for d in stacks[substack].dependencies.values()
                        if stacks[d].image_type != 'light'}
-  graph[metadata_task] = {stack_task}
-  graph[post_process_task] = {metadata_task}
+  graph[stacking_metadata_task] = {stack_task}
+  graph[post_process_task] = {stacking_metadata_task}
+  graph[post_process_metadata_task] = {post_process_task}
 
   return graph
