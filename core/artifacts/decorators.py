@@ -2,15 +2,25 @@ import os
 from functools import wraps
 
 from artifacts import Artifact, artifact_exists
-from context import context
 
 
-def saves_artifacts(artifacts_fn, in_test=False, debug=False):
+def saves_artifacts(artifacts_fn,
+                    validate_ancestor_results=True,
+                    in_test=False,
+                    debug=False):
   assert not hasattr(artifacts_fn, 'remote')
 
   def decorator(fn):
 
     def should_run(*args, **kwargs):
+      if validate_ancestor_results:
+        if 'ancestor_results' in kwargs:
+          if None in kwargs['ancestor_results']:
+            if debug:
+              print(f"### failed to validate ancestor results "
+                    f"{kwargs['ancestor_results']}")
+            return False
+
       artifacts = artifacts_fn(*args, **kwargs)
       assert type(
           artifacts
@@ -34,20 +44,7 @@ def saves_artifacts(artifacts_fn, in_test=False, debug=False):
     @wraps(fn)
     def wrapper(*args, **kwargs):
       if should_run(*args, **kwargs):
-        result = fn(*args, **kwargs)
-
-        assert result is not None, f'{fn.__name__} returned None'
-        assert type(
-            result) is list, f'{fn.__name__} returned non-list: {result}'
-        assert all(isinstance(r, Artifact) for r in result
-                  ), f'{fn.__name__} returned list of non-Artifacts: {result}'
-        assert all(
-            artifact_exists(a) for a in result
-        ), f'{fn.__name__} returned artifacts that do not exist: {result}'
-
-        return result
-      else:
-        return artifacts_fn(*args, **kwargs)
+        return fn(*args, **kwargs)
 
     if in_test:
       wrapper.should_run = should_run

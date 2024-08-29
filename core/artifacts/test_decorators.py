@@ -37,13 +37,13 @@ def foo(mosaic_id, filter):
   return output_artifacts
 
 
-def bar_artifacts(mosaic_id, filter):
+def bar_artifacts(mosaic_id, filter, *, ancestor_results=None):
   return [CacheArtifact(key=('bar', mosaic_id, filter))]
 
 
 @ray.remote
 @saves_artifacts(bar_artifacts, in_test=True, debug=True)
-def bar(mosaic_id, filter):
+def bar(mosaic_id, filter, *, ancestor_results=None):
   print('### Running bar')
   context.num_bar_runs += 1
   output_artifacts = bar_artifacts(mosaic_id, filter)
@@ -105,6 +105,13 @@ class TestDecorators(unittest.TestCase):
     ray.get(foo.remote('abc123', 'H'))
 
     self.assertEqual(context.num_foo_runs, 1)
+
+  def test_ancestor_results_validation(self):
+    artifacts = ray.get(foo.remote('abc123', 'H'))
+    self.assertTrue(
+        bar._function.should_run('abc123', 'H', ancestor_results=[artifacts]))
+    self.assertFalse(
+        bar._function.should_run('abc123', 'H', ancestor_results=[None]))
 
 
 if __name__ == '__main__':
