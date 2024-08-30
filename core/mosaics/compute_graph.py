@@ -4,7 +4,7 @@ import numpy as np
 
 from artifacts import Artifact, CacheArtifact, FileArtifact, read_artifact_image, write_artifact, artifact_exists
 from context import context
-from dependency_graph import Graph, print_graph
+from dependency_graph import Graph, print_graph, make_graph_from_list
 from previews import array_to_png
 import subframe_selection
 from mosaics.classes import Panel
@@ -18,10 +18,36 @@ from previews import resize_array
 from metadata.actor import get_metadata_for_mosaic
 
 
+@ray.remote
+def done_stacking():
+  pass
+
+
+@ray.remote
+def build_stacks_for_mosaic_subgraph(mode, mosaic_id):
+  print(f'### build_stacks_for_mosaic_subgraph {mode} {mosaic_id}')
+  assert mode == 'master'
+
+  mosaics = context.mosaics
+  targets = context.targets
+
+  stack_tasks = []
+  for target_id in mosaics[mosaic_id].target_ids:
+    for stack_id in targets[target_id].stack_ids:
+      stack_tasks.append((build_stack_subgraph, stack_id))
+
+  graph = Graph()
+  graph[(done_stacking)] = stack_tasks
+
+  return graph
+
+
 # TODO: Make sure these are parallelized over all the mosaics.
 @ray.remote
-def build_mosaic_subgraph(mode, mosaic_id):
-  print(f'### build_mosaic_subgraph mode {mode} mosaic_id {mosaic_id}')
+def build_mosaic_filter_subgraphs(mode, mosaic_id):
+  print(f'### build_mosaic_filter_subgraphs mode {mode} mosaic_id {mosaic_id}')
+
+  # TODO: Run all of the (build_stack_subgraph, stack_id) tasks first.
 
   # Get all of the image metadata for the entire mosaic (which may involve
   # thousands of individual subframes) all at once. Pass it around as an
@@ -44,6 +70,16 @@ def build_mosaic_subgraph(mode, mosaic_id):
   # TODO: Run post-processing here.
 
   return graph
+
+
+@ray.remote
+def build_mosaic_subgraph(mode, mosaic_id):
+  if mode == 'subframe':
+    return ray.get(build_mosaic_filter_subgraphs.remote(mode, mosaic_id))
+  elif mode == 'master':
+    stack_subgraph = (build_stacks_for_mosaic_subgraph, mode, mosaic_id)
+    mosaic_subgraph = (build_mosaic_filter_subgraphs, mode, mosaic_id)
+    return make_graph_from_list([stack_subgraph, mosaic_subgraph])
 
 
 def _get_best_light_frame(stack_id, metadata):
@@ -92,18 +128,9 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task,
     elif mode == 'master':
       input_artifact = post_process_stack_artifacts(stack_id)[0]
 
-    if not artifact_exists(input_artifact):
-      print(f'### build_mosaic_filter_subgraph input_artifact '
-            f'{input_artifact} does not exist')
-      continue
-
     placement_task = (mosaic_by_coordinates, mode, mosaic_id, filter, stack_id,
                       input_artifact, metadata_ref)
-
-    if mode == 'subframe':
-      graph[placement_task] = {viewbox_task}
-    elif mode == 'master':
-      graph[placement_task] = {viewbox_task, (build_stack_subgraph, stack_id)}
+    graph[placement_task] = {viewbox_task}
 
     placed_artifact = mosaic_by_coordinates_artifacts(mode, mosaic_id, filter,
                                                       stack_id,

@@ -8,7 +8,9 @@ from collections.abc import Iterable
 
 from context import get_cache
 from context import context
-from stacks import SimpleStack
+from stacks import hashes_for_stack
+
+# TODO: Rename this file.
 
 
 @ray.remote(resources={'diskcache': 0.001})
@@ -22,12 +24,13 @@ def get_metadata_from_diskcache(
 
   result = []
 
+  # TODO: Rename input_image to hash.
   def iterate_over_input_images():
     for input_image in input_images:
       key = ('image_metadata', input_image)
 
       image = cache.get(key, None)
-      assert image is not None
+      assert image is not None, f'Could not get image metadata for hash {input_image}'
 
       if predicate_fn(image):
         result.append(transform_fn(image))
@@ -80,39 +83,6 @@ def _get_metadata(input_images=None,
                                          transform_fn, post_fn))
 
 
-# TODO: This needs a LOT more careful testing.
-def _hashes_for_stack(stack_id):
-  stacks = context.stacks
-  stack = stacks[stack_id]
-
-  # Start with all of the stacks included in this stack.
-  hashes = stack.all_frames(include_dependencies=True)
-
-  # TODO: Settings need to be applied in some unified way.
-  settings_key = ('stack_settings', stack_id)
-
-  if type(stack) is SimpleStack:
-    settings = context[settings_key] or {}
-    dependencies = stack.dependencies | settings
-  else:
-    dependencies = {}
-
-  # Include all the frames from all of the stacks' dependencies (which are
-  # typically calibration stacks).
-  if 'bias' in dependencies:
-    hashes += stacks[dependencies['bias']].frames
-  if 'dark' in dependencies:
-    hashes += stacks[dependencies['dark']].frames
-
-  # Include every known flat calibration stack, just for completeness.
-  for s in stacks.values():
-    if (type(s) is SimpleStack and s.image_type == 'flat' and
-        s.camera == stack.camera and s.filter == stack.filter):
-      hashes += s.frames
-
-  return hashes
-
-
 # TODO: Maybe unify API with @singledispatch.
 def get_metadata_for_mosaic(mosaic_id):
   targets = context.targets
@@ -123,7 +93,7 @@ def get_metadata_for_mosaic(mosaic_id):
   hashes = set()
   for target_id in mosaic.target_ids:
     for stack_id in targets[target_id].stack_ids:
-      hashes.update(_hashes_for_stack(stack_id))
+      hashes.update(hashes_for_stack(stack_id))
 
   return get_metadata(
       hashes, post_fn=lambda images: {i.content_hash: i for i in images})
@@ -135,7 +105,7 @@ def get_metadata_for_target(target_id):
 
   hashes = set()
   for stack_id in targets[target_id].stack_ids:
-    hashes.update(_hashes_for_stack(stack_id))
+    hashes.update(hashes_for_stack(stack_id))
 
   return get_metadata(
       hashes, post_fn=lambda images: {i.content_hash: i for i in images})
@@ -143,7 +113,7 @@ def get_metadata_for_target(target_id):
 
 # TODO: Maybe unify API with @singledispatch.
 def get_metadata_for_stack(stack_id):
-  hashes = _hashes_for_stack(stack_id)
+  hashes = hashes_for_stack(stack_id)
   return get_metadata(
       hashes, post_fn=lambda images: {i.content_hash: i for i in images})
 

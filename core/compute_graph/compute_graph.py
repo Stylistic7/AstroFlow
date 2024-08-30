@@ -45,6 +45,7 @@ def build_main_processing_graph():
   print(f'### build_main_processing_graph shopping_cart {shopping_cart}')
 
   # TODO: Maybe add prioritization options in the UI.
+  # TODO: Using ray.get() here is a little awkward.
   graph = Graph()
   for type, id in shopping_cart:
     if type == 'stack':
@@ -77,10 +78,6 @@ def build_compute_graph():
       build_preview_graph,
       # This is the heavyweight graph that runs PixInsight and may take days.
       build_main_processing_graph,
-      # (scatter_compute_image_metadata, 'master'),
-      # TODO: This is very slow.
-      # (scatter_stack_thumbnails, 'master'),
-      # (build_mosaic_merge_graph, 'master')
   ])
 
 

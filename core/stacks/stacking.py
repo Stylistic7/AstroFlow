@@ -8,45 +8,15 @@ import os
 import shutil
 import astropy.io.fits as pyfits  # type: ignore
 
-from stacks import SimpleStack
+from stacks import SimpleStack, output_filename, stack_files_artifacts
 from artifacts.decorators import saves_artifacts
 from artifacts import FileArtifact
 from context import context
 import pix
-from catalogs import position_string
 import file_io
 from metadata.actor import get_metadata
 
 _CONTENT_HASH_KEY = 'CONTHASH'
-
-
-def _output_filename(stack, dest_path):
-  if stack.image_type == 'bias':
-    output_dir = os.path.join(dest_path, 'Stacks', 'Calibration', 'masters')
-    return os.path.join(
-        output_dir, f'master_bias_{stack.camera}_'
-        f'{stack.mean_temperature:.0f}C_{stack.content_hash}.xisf')
-  elif stack.image_type == 'dark':
-    output_dir = os.path.join(dest_path, 'Stacks', 'Calibration', 'masters')
-    return os.path.join(
-        output_dir, f'master_dark_{stack.camera}_'
-        f'{stack.mean_temperature:.0f}C_{stack.exposure_s}s_'
-        f'{stack.content_hash}.xisf')
-  elif stack.image_type == 'flat':
-    output_dir = os.path.join(dest_path, 'Stacks', 'Calibration', 'masters')
-    return os.path.join(
-        output_dir,
-        f'master_flat_{stack.camera}_{stack.filter}_{stack.content_hash}.xisf')
-  elif stack.image_type == 'light':
-    output_dir = os.path.join(dest_path, 'Stacks', stack.target, 'masters')
-    ra_dec_string = position_string.ra_dec_string(*stack.center)
-    return os.path.join(
-        output_dir, f'master_light_{stack.target}_{ra_dec_string}_'
-        f'{stack.camera}_{stack.image_scale:.02f}aspp_'
-        f'{stack.rotation_angle:.2f}deg_{stack.filter}_{stack.content_hash}.xisf'
-    )
-
-  assert False, f'unknown image_type {stack.image_type}'
 
 
 def _exposure_time_string(stack):
@@ -108,12 +78,6 @@ def _copy_frames_with_plate_solution(metadata, dest_path):
 @pix.PixInsight()
 def _run_wbpp(unused, *args, **kwargs):
   return pix.WeightedBatchPreprocessing(unused, *args, **kwargs)
-
-
-def stack_files_artifacts(stack_id: str):
-  stack = context.stacks[stack_id]
-  dest_filename = _output_filename(stack, context.output_dir)
-  return [FileArtifact(dest_filename, stack.content_hash)]
 
 
 # TODO: This function should call _setup_simple_stack for its leaves.
@@ -195,7 +159,7 @@ def stack_files(stack_id):
       'CONTHASH': stack.content_hash
   }
 
-  dest_filename = _output_filename(stack, context.output_dir)
+  dest_filename = output_filename(stack, context.output_dir)
   os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
 
   with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:

@@ -6,7 +6,7 @@ import file_io
 from artifacts import FileArtifact
 from context import context
 from artifacts.decorators import saves_artifacts
-from stacks.stacking import stack_files_artifacts
+from stacks.artifacts import stack_files_artifacts
 import pix
 from hashing import hash_list
 

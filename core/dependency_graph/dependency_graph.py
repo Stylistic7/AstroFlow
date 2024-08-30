@@ -80,6 +80,9 @@ def matching_nodes(graph, fn):
   return [node for node in graph if _matches(node)]
 
 
+# TODO: Split stuff like this into other files.
+# TODO: Rename this run_in_series() and create another similar function
+# run_in_parallel().
 def make_graph_from_list(tasks):
   graph = Graph()
   prev_done_node = None
