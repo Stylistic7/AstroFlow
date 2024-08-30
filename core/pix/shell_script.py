@@ -4,6 +4,7 @@ import subprocess
 import time
 from contextlib import nullcontext
 import os
+import sys
 import uuid
 
 _SLOT_NUMBER = 1
@@ -69,25 +70,24 @@ def run_script(tasks,
 
   with tempfile.TemporaryDirectory() if not tmp_dir_in else nullcontext(
       tmp_dir_in) as tmp_dir:
-    sentinel_filename = os.path.join(tmp_dir, 'sentinel.txt')
+    start_sentinel_filename = os.path.join(tmp_dir, 'start_sentinel.txt')
+    end_sentinel_filename = os.path.join(tmp_dir, 'end_sentinel.txt')
     script_filename = os.path.join(tmp_dir, 'script.scp')
 
     tasks = [_save_javascript_file(tmp_dir, t) for t in tasks]
-    script = '\n\n'.join(_create_run_command(t) for t in tasks) + '\n\n'
+    script = f'![echo "start" > {start_sentinel_filename}\n'
+    script += '\n\n'.join(_create_run_command(t) for t in tasks) + '\n\n'
     if close_after:
       script += f'close --force *\n'
     if sleep_after:
       script += f'!sleep 30\n'
-    script += f'![echo "done" > {sentinel_filename}\n'
+    script += f'![echo "end" > {end_sentinel_filename}\n'
 
     with open(script_filename, "w") as f:
       print('script is', script)
       f.write(script)
 
     if not dry_run:
-      print(f'Forcing PixInsight to the foreground...')
-      # TODO: Implement for MacOS, then check on other platforms.
-
       print(f'Running PixInsight shell script...')
       ret = subprocess.run([
           '/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight',
@@ -95,7 +95,18 @@ def run_script(tasks,
       ]).returncode
       print(f'--execute returned')
 
-      while not os.path.exists(sentinel_filename):
+      while not os.path.exists(start_sentinel_filename):
+        # TODO: Bring the PixInsight window to the front on other platforms,
+        # too.
+        print(f'Forcing PixInsight to the foreground...')
+        if sys.platform == 'darwin':
+          subprocess.run(
+              """osascript -e 'tell application "PixInsight" to activate'""",
+              shell=True)
+
+        time.sleep(5)
+
+      while not os.path.exists(end_sentinel_filename):
         time.sleep(1)
 
 
