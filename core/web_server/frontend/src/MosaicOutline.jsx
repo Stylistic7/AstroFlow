@@ -54,7 +54,8 @@ export default function MosaicOutline({ mosaic_id, filter, style = {} }) {
         ...style
       }}
     >
-      {mosaic.target_ids.map((target_id) => {
+      {mosaic.target_ids.map((target_id, index) => {
+        console.log('index', index);
         let stack_id = targets[target_id].stack_ids[0];
         if (filter) {
           stack_id = targets[target_id].stack_ids.find((stack_id) => stacks[stack_id].filter == filter);
@@ -73,6 +74,16 @@ export default function MosaicOutline({ mosaic_id, filter, style = {} }) {
             style={target_outline_style}
             handleClick={event => navigate(`${location.pathname}/target/${target_id}`)}
           />
+          <text
+            x={mean_x - width / 2}
+            y={mean_y - height / 2}
+            textLength={10}
+            fontFamily="Arial"
+            fontSize="0.002"
+            fill="white"
+          >
+            {index + 1}
+          </text>
           {filter && stack && <ExposureDurationWidget
             x={mean_x - width / 2}
             y={mean_y - height / 2}

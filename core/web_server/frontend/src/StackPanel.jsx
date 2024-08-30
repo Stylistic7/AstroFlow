@@ -20,7 +20,7 @@ import StackThumbnail from "./StackThumbnail.jsx";
 import RunPanel from "./RunPanel.jsx";
 import "./Starmap.css";
 import AstroFlowContext from './AstroFlowContext.jsx';
-
+import ImageWithActions from './ImageWithActions';
 
 function QuarantineStackDialog({ stack_id }) {
 	const [open, setOpen] = React.useState(false);
@@ -180,6 +180,12 @@ export default function StackPanel() {
 
 	console.log('promiseInProgress', promiseInProgress);
 
+	const handleQuarantine = () => {
+		console.log(`Quaranting stack ${params.stack_id}`);
+		fetch(`/quarantine_stack/${params.stack_id}`);
+	};
+
+
 	return (
 		<>
 			<AstroFlowBreadcrumbs />
@@ -214,12 +220,17 @@ export default function StackPanel() {
 					/>
 				) : (
 					Object.values(stack.contents).map(stack_id =>
-						<RunPanel
-							key={stack_id}
-							stack_id={stack_id}
-							stacks={stacks}
-							flat_stack_ids={flat_stack_ids}
-						/>
+						<div style={{ padding: '20px' }}>
+							<h1>Image Actions Example</h1>
+							<ImageWithActions onQuarantine={handleQuarantine}>
+								<RunPanel
+									key={stack_id}
+									stack_id={stack_id}
+									stacks={stacks}
+									flat_stack_ids={flat_stack_ids}
+								/>
+							</ImageWithActions>
+						</div>
 					)
 				)}
 			</div>

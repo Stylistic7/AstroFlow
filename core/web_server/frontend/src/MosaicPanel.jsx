@@ -87,6 +87,7 @@ export default function MosaicPanel() {
 		let pane_width = stack.image_scale * stack.width_pixels / 60.0;
 		let pane_height = stack.image_scale * stack.height_pixels / 60.0;
 
+		// TODO: The overlap percent is hardcoded here.
 		return `Pane ${pane + 1}, ${ra_to_hms(ra)}, ${dec_to_dms(dec)}, ${rotation_angle.toFixed(1)}, ${pane_width.toFixed(2)}, ${pane_height.toFixed(2)}, 20%, ${tile_x + 1}, ${tile_y + 1}`;
 	};
 
