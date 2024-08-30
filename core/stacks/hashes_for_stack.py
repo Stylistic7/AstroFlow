@@ -36,9 +36,6 @@ def hashes_for_stack(stack_id):
   # TODO: This also needs to include all masters and post-processed masters.
   for artifact in post_process_stack_artifacts(stack_id):
     if artifact_exists(artifact):
-      print(f'### hashes_for_stack post process artifact {artifact}')
       hashes.append(artifact.content_hash)
-
-  print(f'### hashes for stack {stack_id} are {hashes}')
 
   return hashes

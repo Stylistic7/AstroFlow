@@ -31,13 +31,10 @@ def build_stacks_for_mosaic_subgraph(mode, mosaic_id):
   mosaics = context.mosaics
   targets = context.targets
 
-  stack_tasks = []
-  for target_id in mosaics[mosaic_id].target_ids:
-    for stack_id in targets[target_id].stack_ids:
-      stack_tasks.append((build_stack_subgraph, stack_id))
-
   graph = Graph()
-  graph[(done_stacking)] = stack_tasks
+  graph[done_stacking] = {(build_stack_subgraph, stack_id)
+                          for target_id in mosaics[mosaic_id].target_ids
+                          for stack_id in targets[target_id].stack_ids}
 
   return graph
 
