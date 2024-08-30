@@ -318,21 +318,6 @@ def stack_subframe_thumbnail_video(stack_id):
   return flask.send_file(buffer, mimetype='video/webm')
 
 
-# TODO: This should look up the mosaic by its id, get its content_hash, and
-# then retrieve the image from the cache.
-@app.route('/mosaic_thumbnail_image/<mode>/<mosaic_id>/<filter>')
-def mosaic_thumbnail_image_complete(mode, mosaic_id, filter):
-  key = ('mosaic_thumbnail_image', mode, mosaic_id, filter)
-  if key in cache:
-    image = read_artifact_image(CacheArtifact(key))
-    buffer = io.BytesIO()
-    buffer.write(array_to_png(image))
-    buffer.seek(0)
-    return flask.send_file(buffer, mimetype='image/png')
-
-  return Response(status=404)
-
-
 # TODO: Thumbnails should always be stored as autostretched PNG, for speed.
 @app.route('/mosaic_thumbnail_image_for_filter/<mosaic_id>/<filter>')
 def mosaic_thumbnail_image_for_filter(mosaic_id, filter):
@@ -370,11 +355,7 @@ def mosaic_thumbnail_image(mosaic_id):
     for filter in ['H', 'L', 'S', 'O', 'G', 'R', 'B']:
       key = ('mosaic_thumbnail_image', mode, mosaic_id, filter)
       if key in cache:
-        image = read_artifact_image(CacheArtifact(key))
-        buffer = io.BytesIO()
-        buffer.write(array_to_png(image))
-        buffer.seek(0)
-        return flask.send_file(buffer, mimetype='image/png')
+        return mosaic_thumbnail_image_for_filter(mosaic_id, filter)
 
   return Response(status=404)
 
