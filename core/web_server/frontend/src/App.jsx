@@ -32,15 +32,28 @@ function App() {
   const [mosaics, setMosaics] = useState({});
   const [shoppingCart, setShoppingCart] = useState([]);
 
+  const removeKeys = (obj, keys) => {
+    keys.forEach(key => {
+      delete obj[key];
+    });
+  };
+
   useEffect(() => {
     console.log('in App.useEffect');
     const loadData = async () => {
-      let [s, t, m, cart] = await Promise.all([
+      let [s, t, m, qs, qt, qm, cart] = await Promise.all([
         fetch('/stacks').then(r => r.json()),
         fetch('/targets').then(r => r.json()),
         fetch('/mosaics').then(r => r.json()),
+        fetch('/quarantined_stacks').then(r => r.json()),
+        fetch('/quarantined_targets').then(r => r.json()),
+        fetch('/quarantined_mosaics').then(r => r.json()),
         fetch(`/get_shopping_cart`).then(r => r.json()),
       ]);
+
+      removeKeys(s, qs);
+      removeKeys(t, qt);
+      removeKeys(m, qm);
 
       setStacks(s);
       setTargets(t);

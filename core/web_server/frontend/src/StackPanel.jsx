@@ -180,9 +180,9 @@ export default function StackPanel() {
 
 	console.log('promiseInProgress', promiseInProgress);
 
-	const handleQuarantine = () => {
-		console.log(`Quaranting stack ${params.stack_id}`);
-		fetch(`/quarantine_stack/${params.stack_id}`);
+	const handleQuarantine = (stack_id) => {
+		console.log(`Quaranting stack ${stack_id}`);
+		fetch(`/quarantine_stack/${stack_id}`);
 	};
 
 
@@ -220,9 +220,12 @@ export default function StackPanel() {
 					/>
 				) : (
 					Object.values(stack.contents).map(stack_id =>
-						<div style={{ padding: '20px' }}>
-							<h1>Image Actions Example</h1>
-							<ImageWithActions onQuarantine={handleQuarantine}>
+						stacks[stack_id] && <div style={{ padding: '20px' }}>
+							<ImageWithActions
+								title={`Run of ${stacks[stack_id].frames.length} light frames on ${stack.oldest_date}`}
+								stack_id={stack_id}
+								onQuarantine={handleQuarantine}
+							>
 								<RunPanel
 									key={stack_id}
 									stack_id={stack_id}

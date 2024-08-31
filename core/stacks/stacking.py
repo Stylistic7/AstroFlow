@@ -140,11 +140,11 @@ def _setup_simple_stack(stack_id, tmp_dir):
   return filenames[0], len(filenames)
 
 
-# TODO: Include a timeout so a single bad stack (e.g. one that needs interactive
-# plate-solving help) won't derail a long-running session.
-#
 # TOOD: Implement a @singledispatch version of this that distinguishes leaf
 # from composite stacks.
+#
+# TODO: When a stack fails, keep note of it so it won't be retried for the
+# exact same inputs again.
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
 @saves_artifacts(stack_files_artifacts)
 def stack_files(stack_id):

@@ -416,56 +416,52 @@ def plot():
 #   mem.seek(0)
 #   return flask.send_file(mem, mimetype='text/html')
 
-# @app.route('/quarantine_target/<target_id>')
-# def quarantine_target(target_id):
-#   target = cache.get('targets', {})[target_id]
-#   stacks = cache.get('stacks', {})
-#   quarantined_files = cache.get('quarantined_files', [])
-
-#   num_files_quarantined = 0
-#   for stack_id in target.stack_ids:
-#     stack = stacks[stack_id]
-#     for run in stack.runs.values():
-#       for h in run.frames:
-#         quarantined_files.append(h)
-#         num_files_quarantined += 1
-
-#   print(f'### Quarantined {num_files_quarantined} files')
-#   cache['quarantined_files'] = quarantined_files
-
-#   return Response(status=204)
-
 # TODO: All of the uses of the cache in this file have to be replaced by calls
 # to the ContextActor. This also means the "front-door" to AstroFlow is via
 # the website.
 
 
-@app.route('/quarantine_target/<target_id>')
-def quarantine_target(target_id):
-  stacks = cache['stacks']
-  target = cache['targets'][target_id]
-  quarantined_files = cache['quarantined_files']
+@app.route('/quarantined_stacks')
+def quarantined_stacks():
+  return list(cache.get('quarantined_stacks', set()))
 
-  for stack_id in target.stack_ids:
-    stack = stacks[stack_id]
-    frames = stack.all_frames()
-    quarantined_files.update(frames)
-    cache['quarantined_files'] = quarantined_files
-    print(f'### Quarantined {len(frames)} frames')
 
-  return Response(status=204)
+@app.route('/quarantined_targets')
+def quarantined_targets():
+  return list(cache.get('quarantined_targets', set()))
+
+
+@app.route('/quarantined_mosaics')
+def quarantined_mosaics():
+  return list(cache.get('quarantined_mosaics', set()))
 
 
 @app.route('/quarantine_stack/<stack_id>')
 def quarantine_stack(stack_id):
-  stack = cache['stacks'][stack_id]
-  quarantined_files = cache['quarantined_files']
+  with cache.transact():
+    s = cache.get('quarantined_stacks', set())
+    s.add(stack_id)
+    cache['quarantined_stacks'] = s
 
-  frames = stack.all_frames()
-  quarantined_files.update(frames)
-  cache['quarantined_files'] = quarantined_files
+  return Response(status=204)
 
-  print(f'### Quarantined {len(frames)} frames')
+
+@app.route('/quarantine_target/<target_id>')
+def quarantine_target(target_id):
+  with cache.transact():
+    s = cache.get('quarantined_targets', set())
+    s.add(target_id)
+    cache['quarantined_targets'] = s
+
+  return Response(status=204)
+
+
+@app.route('/quarantine_mosaic/<mosaic_id>')
+def quarantine_mosaic(mosaic_id):
+  with cache.transact():
+    s = cache.get('quarantined_mosaics', set())
+    s.add(mosaic_id)
+    cache['quarantined_mosaics'] = s
 
   return Response(status=204)
 

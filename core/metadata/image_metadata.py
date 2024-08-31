@@ -83,6 +83,8 @@ def get_images_with_good_plate_solutions():
   return get_metadata(predicate_fn=predicate_fn)
 
 
+# TODO: Don't revisit the same failed images over and over, it just takes up
+# time at every startup.
 @ray.remote
 def scatter_compute_image_metadata(mode=None, ancestor_results=None):
   print('Entering scatter_compute_image_metadata, mode', mode,
