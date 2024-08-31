@@ -92,9 +92,10 @@ def place_tile(tile_y, tile_x, wcs, ra_tiles, dec_tiles, interp):
   return tile_y, tile_x, interp((source_ys, source_xs))
 
 
-#
 # TODO: Provide some feedback on progress.
 # TODO: Store these on disk and read them back when unchanged.
+# TODO: Something here is still taking up a huge amount of memory in the Ray
+# object store.
 @ray.remote(scheduling_strategy="SPREAD", memory=_MEMORY_REQUIREMENT)
 @saves_artifacts(mosaic_by_coordinates_artifacts)
 def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact,

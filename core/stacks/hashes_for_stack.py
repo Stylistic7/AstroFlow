@@ -1,5 +1,5 @@
 from context import context
-from stacks import SimpleStack, post_process_stack_artifacts
+from stacks import SimpleStack, CompositeStack, post_process_stack_artifacts
 from artifacts import artifact_exists
 
 
@@ -33,9 +33,9 @@ def hashes_for_stack(stack_id):
         s.camera == stack.camera and s.filter == stack.filter):
       hashes += s.frames
 
-  # TODO: This also needs to include all masters and post-processed masters.
-  for artifact in post_process_stack_artifacts(stack_id):
-    if artifact_exists(artifact):
-      hashes.append(artifact.content_hash)
+  if type(stack) is CompositeStack:
+    for artifact in post_process_stack_artifacts(stack_id):
+      if artifact_exists(artifact):
+        hashes.append(artifact.content_hash)
 
   return hashes
