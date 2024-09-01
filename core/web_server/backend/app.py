@@ -27,6 +27,7 @@ from context import get_cache
 from artifacts import artifact_exists, read_artifact_image, CacheArtifact
 from previews import array_to_png, autostretch
 from mosaics.compute_graph import done_artifacts
+from quarantining import quarantine_stacks, quarantine_targets, quarantine_mosaics
 
 import plotly.express as px
 import plotly.figure_factory as ff
@@ -421,47 +422,41 @@ def plot():
 # the website.
 
 
-@app.route('/quarantined_stacks')
-def quarantined_stacks():
-  return list(cache.get('quarantined_stacks', set()))
-
-
-@app.route('/quarantined_targets')
-def quarantined_targets():
-  return list(cache.get('quarantined_targets', set()))
-
-
-@app.route('/quarantined_mosaics')
-def quarantined_mosaics():
-  return list(cache.get('quarantined_mosaics', set()))
-
-
 @app.route('/quarantine_stack/<stack_id>')
 def quarantine_stack(stack_id):
-  with cache.transact():
-    s = cache.get('quarantined_stacks', set())
-    s.add(stack_id)
-    cache['quarantined_stacks'] = s
+  context.or_equals('quarantined_stacks', {stack_id}, default_value=set())
+
+  ray.get(quarantine_stacks.remote())
+  ray.get(quarantine_targets.remote())
+  ray.get(quarantine_mosaics.remote())
+
+  announcer.announce('reload_data')
 
   return Response(status=204)
 
 
 @app.route('/quarantine_target/<target_id>')
 def quarantine_target(target_id):
-  with cache.transact():
-    s = cache.get('quarantined_targets', set())
-    s.add(target_id)
-    cache['quarantined_targets'] = s
+  context.or_equals('quarantined_targets', {target_id}, default_value=set())
+
+  ray.get(quarantine_stacks.remote())
+  ray.get(quarantine_targets.remote())
+  ray.get(quarantine_mosaics.remote())
+
+  announcer.announce('reload_data')
 
   return Response(status=204)
 
 
 @app.route('/quarantine_mosaic/<mosaic_id>')
 def quarantine_mosaic(mosaic_id):
-  with cache.transact():
-    s = cache.get('quarantined_mosaics', set())
-    s.add(mosaic_id)
-    cache['quarantined_mosaics'] = s
+  context.or_equals('quarantined_mosaics', {mosaic_id}, default_value=set())
+
+  ray.get(quarantine_stacks.remote())
+  ray.get(quarantine_targets.remote())
+  ray.get(quarantine_mosaics.remote())
+
+  announcer.announce('reload_data')
 
   return Response(status=204)
 

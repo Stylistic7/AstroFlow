@@ -30,7 +30,7 @@ const ImageWithActions = ({ children, title, onQuarantine, stack_id }) => {
 
     const confirmQuarantine = () => {
         onQuarantine(stack_id);
-        setIsVisible(false);
+        // setIsVisible(false);
         setOpenDialog(false);
     };
 

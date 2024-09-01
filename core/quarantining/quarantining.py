@@ -7,6 +7,11 @@ from stacks import CompositeStack, SimpleStack
 # is to be able to apply these functions very quickly when the user quarantines
 # something in the UI.
 
+# TODO: The current design of this makes un-quarantining very difficult. Maybe
+# backup the groups before the quarantine operation, so they can be undone.
+# In practical terms, undoing quarantine is much less common, so it's maybe
+# okay if it's a bit difficult, at least for now.
+
 
 @ray.remote
 def quarantine_stacks():
@@ -26,9 +31,11 @@ def quarantine_stacks():
           s for s in stack.contents if s not in quarantined_stacks
       ]
     elif type(stack) is SimpleStack:
-      stack.dependencies = [
-          s for s in stack.dependencies if s not in quarantined_stacks
-      ]
+      stack.dependencies = {
+          t: s
+          for t, s in stack.dependencies.items()
+          if s not in quarantined_stacks
+      }
 
   context.stacks = stacks
 

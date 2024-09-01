@@ -60,13 +60,14 @@ function App() {
 
     // TODO: This removes the hostname's port, which is a little gross.
     const stream_url = window.location.protocol + '//' + window.location.hostname + '/stream';
+    console.log('SSE stream URL:', stream_url);
     const sse = new window.EventSource(stream_url);
     function getRealtimeData(d) {
       console.log('Reloading data in response to SSE');
       loadData();
     }
     sse.onmessage = e => getRealtimeData(e.data);
-    sse.addEventListener("foo", e => getRealtimeData(e.data));
+    sse.addEventListener("reload_data", e => getRealtimeData(e.data));
     sse.onerror = () => {
       console.log('sse error');
       sse.close();
