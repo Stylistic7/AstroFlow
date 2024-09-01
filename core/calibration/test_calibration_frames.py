@@ -115,6 +115,12 @@ class TestCalibrationFrames(unittest.TestCase):
     run_graph(build_compute_graph())
 
     stacks = context.stacks
+    for raw_stack in stacks.values():
+      print('### raw_stack', raw_stack)
+
+    self.assertEqual(len(stacks), 3)
+
+    stacks = context.stacks
     self.assertEqual(len(stacks), 3)
 
     light_stacks = [s for s in stacks.values() if s.image_type == 'light']
@@ -191,7 +197,7 @@ class TestCalibrationFrames(unittest.TestCase):
 
     light_stacks = [
         s for s in stacks.values()
-        if s.image_type == 'light' and not s.stable_hash
+        if s.image_type == 'light' and type(s) is SimpleStack
     ]
     self.assertEqual(len(light_stacks), 2)
 
@@ -412,7 +418,7 @@ class TestCalibrationFrames(unittest.TestCase):
 
     light_stacks = [
         s for s in stacks.values()
-        if s.image_type == 'light' and not s.stable_hash
+        if s.image_type == 'light' and type(s) is SimpleStack
     ]
     self.assertEqual(len(light_stacks), 1)
     stack = next(iter(light_stacks))

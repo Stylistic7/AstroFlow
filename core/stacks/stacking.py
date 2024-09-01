@@ -82,6 +82,10 @@ def _run_wbpp(unused, *args, **kwargs):
 
 # TODO: This function should call _setup_simple_stack for its leaves.
 def _setup_composite_stack(stack_id, tmp_dir):
+  quarantined_stacks = context.quarantined_stacks or set()
+  if stack_id in quarantined_stacks:
+    return None, 0
+
   stacks = context.stacks
   stack = stacks[stack_id]
 
@@ -132,8 +136,11 @@ def _setup_composite_stack(stack_id, tmp_dir):
 
 
 def _setup_simple_stack(stack_id, tmp_dir):
-  stack = context.stacks[stack_id]
+  quarantined_stacks = context.quarantined_stacks or set()
+  if stack_id in quarantined_stacks:
+    return None, 0
 
+  stack = context.stacks[stack_id]
   filenames = get_metadata(stack.frames, transform_fn=lambda i: i.filename)
   _symlink_frames(filenames, tmp_dir)
 
@@ -160,6 +167,12 @@ def stack_files(stack_id):
   }
 
   dest_filename = output_filename(stack, context.output_dir)
+
+  # If the stack has been quarantined, don't do anything.
+  quarantined_stacks = context.quarantined_stacks or set()
+  if stack_id in quarantined_stacks:
+    return [FileArtifact(dest_filename, stack.content_hash)]
+
   os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
 
   with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:

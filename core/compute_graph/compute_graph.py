@@ -11,6 +11,7 @@ from targets.compute_graph import build_target_subgraph
 from mosaics.compute_graph import build_mosaic_subgraph
 from dependency_graph import Graph, make_graph_from_list, print_graph
 from suggestions import make_suggestions
+from quarantining import quarantine_stacks, quarantine_targets, quarantine_mosaics
 
 
 @ray.remote
@@ -18,7 +19,8 @@ def maybe_build_regroup_graph():
   if context.regroup:
     return make_graph_from_list([
         cluster_by_image_center, scatter_identify_stacks,
-        identify_calibration_stacks, associate_with_stacks, identify_mosaics
+        identify_calibration_stacks, associate_with_stacks, quarantine_stacks,
+        quarantine_targets, identify_mosaics, quarantine_mosaics
     ])
   else:
     return {}

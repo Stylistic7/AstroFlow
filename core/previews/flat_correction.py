@@ -5,7 +5,8 @@ from context import context
 from stacks import SimpleStack
 from hashing import hash_string
 from metadata.actor import get_metadata_for_stack
-import subframe_selection
+# TODO: Unify quarantining
+import quarantining
 from previews.operations import resize_array, array_to_png
 from file_io.generic import read_image
 from previews.calibration import calibrate_image
@@ -41,7 +42,7 @@ def create_flat_correction_thumbnails(stack_id):
 
   metadata = get_metadata_for_stack(stack_id)
 
-  light_frames_by_stars = subframe_selection.get_light_frames_sorted_by_stars(
+  light_frames_by_stars = quarantining.get_light_frames_sorted_by_stars(
       stack.frames, metadata)
   light_frame = light_frames_by_stars[0]
 

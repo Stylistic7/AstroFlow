@@ -9,7 +9,8 @@ from previews.flat_correction import create_flat_correction_thumbnails
 from previews.calibration import calibrate_image
 from context import context
 from file_io.generic import read_image
-import subframe_selection
+# TODO: Unify quarantining
+import quarantining
 from stacks import SimpleStack, CompositeStack
 from dependency_graph import Graph
 from metadata.actor import get_metadata, get_metadata_for_stack
@@ -106,7 +107,7 @@ def create_stack_subframe_thumbnails(stack_id):
 
   # Now sort all the light frames (no matter which run they're from) by the
   # number of stars. The better images should be in front.
-  light_frames_by_stars = subframe_selection.get_light_frames_sorted_by_stars(
+  light_frames_by_stars = quarantining.get_light_frames_sorted_by_stars(
       stack.all_frames())
 
   best_light_frame = light_frames_by_stars[0]

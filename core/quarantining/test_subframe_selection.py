@@ -13,6 +13,7 @@ from stacks.identification import identify_stacks
 from clustering import cluster_by_image_center
 from metadata.actor import get_metadata
 from dependency_graph import run_graph, make_graph_from_list
+from stacks import CompositeStack
 
 # TODO: These tests don't actually test the subframe selection at all. The
 # stack identification step no longer eliminates bad frames from the stack.
@@ -69,7 +70,7 @@ class TestSubframeSelection(unittest.TestCase):
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 2)
-    stack = next(iter(s for s in stacks.values() if s.stable_hash))
+    stack = next(iter(s for s in stacks.values() if type(s) is CompositeStack))
     self.assertEqual(len(stack.all_frames()), 10)
 
   def test_split_run(self):
@@ -104,7 +105,7 @@ class TestSubframeSelection(unittest.TestCase):
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 2)
-    stack = next(iter(s for s in stacks.values() if s.stable_hash))
+    stack = next(iter(s for s in stacks.values() if type(s) is CompositeStack))
     self.assertEqual(len(stack.all_frames()), 15)
 
 

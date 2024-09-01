@@ -16,13 +16,8 @@ from calibration import identify_calibration_stacks, associate_with_stacks
 from testing.test_context import make_test_context
 from mosaics.identification import identify_mosaics
 from geometry.projections import mercator
-
-
-def _build_compute_graph():
-  return make_graph_from_list([(scatter_compute_image_metadata, 'all'),
-                               cluster_by_image_center, scatter_identify_stacks,
-                               identify_calibration_stacks,
-                               associate_with_stacks, identify_mosaics])
+from compute_graph import maybe_build_regroup_graph
+from stacks import CompositeStack
 
 
 class TestFootprints(unittest.TestCase):
@@ -30,6 +25,11 @@ class TestFootprints(unittest.TestCase):
   def setUp(self):
     self.input_dir_obj, self.output_dir_obj = make_test_context()
     self.proj = mercator.MercatorProjection()
+    context.regroup = True
+
+  def tearDown(self):
+    self.input_dir_obj.cleanup()
+    self.output_dir_obj.cleanup()
 
   def test_stack(self):
     make_synthetic_frames(number=3,
@@ -42,12 +42,12 @@ class TestFootprints(unittest.TestCase):
                           dither=0,
                           dest_dir=context.input_dirs[0])
 
-    graph = _build_compute_graph()
+    graph = ray.get(maybe_build_regroup_graph.remote())
     run_graph(graph)
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 2)
-    stack = next(iter(s for s in stacks.values() if s.stable_hash))
+    stack = next(iter(s for s in stacks.values() if type(s) is CompositeStack))
 
     projected_footprint = project_footprint(stack.footprint, self.proj)
 
@@ -84,14 +84,14 @@ class TestFootprints(unittest.TestCase):
                           height_pixels=3600,
                           dest_dir=context.input_dirs[0])
 
-    graph = _build_compute_graph()
+    graph = ray.get(maybe_build_regroup_graph.remote())
     run_graph(graph)
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 4)
 
     targets = context.targets
-    self.assertEqual(len(targets), 1)
+    self.assertEqual(len(targets), 2)
 
     target = next(iter(targets.values()))
 
@@ -131,7 +131,7 @@ class TestFootprints(unittest.TestCase):
                           height_pixels=7200,
                           dest_dir=context.input_dirs[0])
 
-    graph = _build_compute_graph()
+    graph = ray.get(maybe_build_regroup_graph.remote())
     run_graph(graph)
 
     stacks = context.stacks

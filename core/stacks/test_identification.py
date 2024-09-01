@@ -11,13 +11,12 @@ from testing.test_frames import make_synthetic_frames
 from clustering import cluster_by_image_center
 from stacks.get_stacks import get_toplevel_stacks, get_content_stacks_of_type
 from metadata.actor import get_metadata
+from quarantining import quarantine_stacks
 
 
 def compute_graph_fragment():
-  return make_graph_from_list([
-      cluster_by_image_center,
-      scatter_identify_stacks,
-  ])
+  return make_graph_from_list(
+      [cluster_by_image_center, scatter_identify_stacks, quarantine_stacks])
 
 
 class TestStackIdentification(unittest.TestCase):
@@ -157,14 +156,14 @@ class TestStackIdentification(unittest.TestCase):
     filenames = get_metadata(stack.frames, transform_fn=lambda i: i.filename)
     self.assertTrue(all('bar' in f for f in filenames))
     self.assertEqual(len(stack.frames), 7)
-    self.assertEqual(stack.exposure_s, 120.0)
+    self.assertEqual(stack.exposure_s, [120.0])
     self.assertEqual(stack.integration_s, 7 * 120)
 
     stack = content_stacks[1]
     filenames = get_metadata(stack.frames, transform_fn=lambda i: i.filename)
     self.assertTrue(all('foo' in f for f in filenames))
     self.assertEqual(len(stack.frames), 5)
-    self.assertEqual(stack.exposure_s, 300.0)
+    self.assertEqual(stack.exposure_s, [300.0])
     self.assertEqual(stack.integration_s, 5 * 300)
 
 

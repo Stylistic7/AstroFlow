@@ -6,7 +6,8 @@ from artifacts import Artifact, CacheArtifact, FileArtifact, read_artifact_image
 from context import context
 from dependency_graph import Graph, print_graph, make_graph_from_list
 from previews import array_to_png
-import subframe_selection
+# TODO: Unify quarantining
+import quarantining
 from mosaics.classes import Panel
 from mosaics.merge_ops import make_merge_ops
 from mosaics.viewbox import compute_mosaic_viewbox
@@ -81,7 +82,7 @@ def build_mosaic_subgraph(mode, mosaic_id):
 
 def _get_best_light_frame(stack_id, metadata):
   stack = context.stacks[stack_id]
-  light_frames_by_stars = subframe_selection.get_light_frames_sorted_by_stars(
+  light_frames_by_stars = quarantining.get_light_frames_sorted_by_stars(
       stack.all_frames(), metadata)
 
   return light_frames_by_stars[0]

@@ -10,6 +10,7 @@ from compute_graph import build_compute_graph
 from dependency_graph import run_graph
 from testing.test_context import make_test_context
 from hashing import hash_list
+from stacks import CompositeStack
 
 
 class TestTargetIdentification(unittest.TestCase):
@@ -29,7 +30,8 @@ class TestTargetIdentification(unittest.TestCase):
     run_graph(graph)
 
     self.assertEqual(len(context.stacks), 2)
-    stack = next(iter([s for s in context.stacks.values() if s.stable_hash]))
+    stack = next(
+        iter([s for s in context.stacks.values() if type(s) is CompositeStack]))
     self.assertNotEqual(stack.stable_hash, None)
     self.assertNotEqual(stack.content_hash, None)
 
