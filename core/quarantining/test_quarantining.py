@@ -30,20 +30,47 @@ class TestQuarantining(unittest.TestCase):
     self.input_dir_obj.cleanup()
     self.output_dir_obj.cleanup()
 
-  def test_simple_stack_quarantining(self):
+  def test_quarantine_toplevel_target(self):
     add_orion_mosaic_images()
-
     run_graph(compute_graph_fragment())
 
     self.assertEqual(len(context.targets), 4)
     self.assertEqual(len(context.mosaics), 1)
 
-    context.quarantine_targets = [next(iter(context.targets))]
+    stacks = [s for s in context.stacks if type(s) is CompositeStack]
+    self.assertTrue(all(len(s.dependencies) == 3 for s in stacks))
 
+    context.quarantined_targets = [next(iter(context.targets))]
     run_graph(compute_graph_fragment())
 
     self.assertEqual(len(context.targets), 3)
     self.assertEqual(len(context.mosaics), 1)
+
+    stacks = [s for s in context.stacks if type(s) is CompositeStack]
+    self.assertTrue(all(len(s.dependencies) == 3 for s in stacks))
+
+  def test_quarantine_calibration_stack(self):
+    add_orion_mosaic_images()
+    run_graph(compute_graph_fragment())
+
+    self.assertEqual(len(context.targets), 4)
+    self.assertEqual(len(context.mosaics), 1)
+
+    stacks = [s for s in context.stacks if type(s) is CompositeStack]
+    self.assertTrue(all(len(s.dependencies) == 3 for s in stacks))
+
+    context.quarantined_stacks = [
+        next(
+            iter(s for s in context.stacks
+                 if context.stacks[s].image_type == 'dark'))
+    ]
+    run_graph(compute_graph_fragment())
+
+    self.assertEqual(len(context.targets), 4)
+    self.assertEqual(len(context.mosaics), 1)
+
+    stacks = [s for s in context.stacks if type(s) is CompositeStack]
+    self.assertTrue(all(len(s.dependencies) == 2 for s in stacks))
 
 
 if __name__ == '__main__':

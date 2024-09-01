@@ -35,6 +35,7 @@ def hashes_for_stack(stack_id):
 
   if type(stack) is CompositeStack:
     for artifact in post_process_stack_artifacts(stack_id):
+      print(f'### hashes_for_stack post process artifact {artifact}')
       if artifact_exists(artifact):
         hashes.append(artifact.content_hash)
 

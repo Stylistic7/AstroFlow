@@ -4,6 +4,7 @@ from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon
 import astropy
 import datetime
 import time
+import objsize
 
 from context import context
 import clustering
@@ -139,8 +140,14 @@ def identify_stacks(spatial_group):
   name, light_frames = spatial_group
   print(f'### Getting metadata for a spatial group with '
         f'{len(light_frames)} light frames')
+
+  start = time.time()
   metadata_list = get_metadata(light_frames)
+  end = time.time()
+  print(f'### get_metadata took {end - start} seconds')
+
   metadata = {i.content_hash: i for i in metadata_list}
+  print(f'### metadata size {objsize.get_deep_size(metadata) / 1024 / 1024} MB')
 
   def scale_clusters():
     scales = [(metadata[k].content_hash, metadata[k].plate_solution.image_scale)
@@ -178,6 +185,7 @@ def identify_stacks(spatial_group):
       assert len(set(filters)) == 1
       yield filter_frames
 
+  start = time.time()
   new_stacks = {}
   for scale_frames in scale_clusters():
     for camera_frames in camera_clusters(scale_frames):
@@ -191,4 +199,6 @@ def identify_stacks(spatial_group):
   # This metadata contains all of images for this spatial group, which is
   # also all that is needed for target identification. Pass it along so
   # it doesn't have to be requested again.
+  end = time.time()
+  print(f'### _new_stacks took {end - start} seconds')
   return new_stacks, metadata

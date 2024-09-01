@@ -1,5 +1,6 @@
 import numpy as np
 import ray
+import objsize
 
 import metadata.image_types as image_types
 from metadata.actor import get_metadata
@@ -72,6 +73,8 @@ def cluster_by_image_center():
   if not metadata:
     print('### metadata was Falsey')
     return {}
+
+  print(f'### metadata size {objsize.get_deep_size(metadata) / 1024 / 1024} MB')
 
   values = {h: get_centroid(i) for h, i in metadata.items()}
 

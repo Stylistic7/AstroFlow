@@ -1,32 +1,77 @@
 import ray
 
 from context import context
+from stacks import CompositeStack, SimpleStack
+
+# TODO: Ensure that all of the actions in this file are idempotent. The goal
+# is to be able to apply these functions very quickly when the user quarantines
+# something in the UI.
 
 
 @ray.remote
 def quarantine_stacks():
-  # TODO: Walk through stacks, and remove quarantined stacks from `contents`
-  # and `dependencies`. Remove quarantined and down-selected images from `frames`.
-  context.stacks = {
+  # Remove all of the quarantined stacks from the dict of stacks.
+  quarantined_stacks = context.quarantined_stacks or set()
+  stacks = {
       stack_id: stack
       for stack_id, stack in context.stacks.items()
-      if stack_id not in (context.quarantine_stacks or set())
+      if stack_id not in quarantined_stacks
   }
+
+  # Go through all of the remaining stacks, and remove the quarantined stacks
+  # from `contents` and `dependencies`.
+  for stack in stacks.values():
+    if type(stack) is CompositeStack:
+      stack.contents = [
+          s for s in stack.contents if s not in quarantined_stacks
+      ]
+    elif type(stack) is SimpleStack:
+      stack.dependencies = [
+          s for s in stack.dependencies if s not in quarantined_stacks
+      ]
+
+  context.stacks = stacks
 
 
 @ray.remote
 def quarantine_targets():
-  context.targets = {
+  quarantined_stacks = context.quarantined_stacks or set()
+  quarantined_targets = context.quarantined_targets or set()
+
+  # Remove all of the quarantined targets from the dict of targets.
+  targets = {
       target_id: target
       for target_id, target in context.targets.items()
-      if target_id not in (context.quarantine_targets or set())
+      if target_id not in quarantined_targets
   }
+
+  # Go through all of the remaining targets, and remove the quarantined stacks
+  # from them.
+  for target in targets.values():
+    target.stack_ids = [
+        s for s in target.stack_ids if s not in quarantined_stacks
+    ]
+
+  context.targets = targets
 
 
 @ray.remote
 def quarantine_mosaics():
-  context.mosaics = {
+  quarantined_targets = context.quarantined_targets or set()
+  quarantined_mosaics = context.quarantined_mosaics or set()
+
+  # Remove all of the quarantined mosaics from the dict of mosaics.
+  mosaics = {
       mosaic_id: mosaic
       for mosaic_id, mosaic in context.mosaics.items()
-      if mosaic_id not in (context.quarantine_mosaics or set())
+      if mosaic_id not in quarantined_mosaics
   }
+
+  # Go through all of the remaining mosaics, and remove the quarantined targets
+  # from them.
+  for mosaic in mosaics.values():
+    mosaic.target_ids = [
+        t for t in mosaic.target_ids if t not in quarantined_targets
+    ]
+
+  context.mosaics = mosaics
