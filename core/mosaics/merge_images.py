@@ -78,11 +78,8 @@ def merge_images(mode: str, mosaic_id: str, input_0: Artifact,
   assert artifact_exists(input_1), f'Input artifact {input_1} does not exist'
 
   if mode == 'subframe':
-    result = merge_images_with_maximum(mode, mosaic_id, input_0, input_1,
-                                       output)
+    return merge_images_with_maximum(mode, mosaic_id, input_0, input_1, output)
   elif mode == 'master':
-    result = ray.get(
+    return ray.get(
         merge_images_with_photometric_mosaic.remote(mode, mosaic_id, input_0,
                                                     input_1, output))
-
-  return result
