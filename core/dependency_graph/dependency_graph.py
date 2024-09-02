@@ -66,7 +66,7 @@ class ResultDict(dict):
 
 
 @ray.remote
-def done(ancestor_results):
+def list_task_done(ancestor_results):
   return ancestor_results[0]
 
 
@@ -87,7 +87,7 @@ def make_graph_from_list(tasks):
   graph = Graph()
   prev_done_node = None
   for i, task in enumerate(tasks):
-    done_node = Node(done, name=f'done_{i}')
+    done_node = Node(list_task_done, name=f'done_{i}')
     graph[done_node] = [task]
 
     if prev_done_node:

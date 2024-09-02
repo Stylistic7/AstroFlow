@@ -158,7 +158,7 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task,
     print(f'### merge_graph has length {len(merge_graph)}')
     graph |= merge_graph
     graph[(
-        done,
+        merge_graph_done,
         mode,
         mosaic_id,
         filter,
@@ -167,7 +167,11 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task,
   return graph
 
 
-def done_artifacts(mode, mosaic_id, filter, *, ancestor_results=None):
+def merge_graph_done_artifacts(mode,
+                               mosaic_id,
+                               filter,
+                               *,
+                               ancestor_results=None):
   mosaic = context.mosaics[mosaic_id]
   key = ('mosaic_thumbnail_image', mode, mosaic_id, filter)
 
@@ -187,8 +191,8 @@ def done_artifacts(mode, mosaic_id, filter, *, ancestor_results=None):
 # TODO: Pass the output artifact to the make_merge_ops() function and eliminate
 # this function.
 @ray.remote
-@saves_artifacts(done_artifacts)
-def done(mode, mosaic_id, filter, *, ancestor_results=None):
+@saves_artifacts(merge_graph_done_artifacts)
+def merge_graph_done(mode, mosaic_id, filter, *, ancestor_results=None):
   mosaic = context.mosaics[mosaic_id]
 
   assert type(ancestor_results) is list
@@ -199,7 +203,7 @@ def done(mode, mosaic_id, filter, *, ancestor_results=None):
   print(f'### Merging {mosaic} mode {mode} is done, '
         f'final_artifact is {final_artifact}')
 
-  output_artifacts = done_artifacts(mode, mosaic_id, filter)
+  output_artifacts = merge_graph_done_artifacts(mode, mosaic_id, filter)
 
   # TODO: This stuff should be standardized and put into the @saves_artifacts
   # decorator.

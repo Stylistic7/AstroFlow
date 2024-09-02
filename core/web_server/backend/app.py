@@ -26,7 +26,7 @@ from previews.operations import resize_array, autostretch, array_to_png
 from context import get_cache
 from artifacts import artifact_exists, read_artifact_image, CacheArtifact
 from previews import array_to_png, autostretch
-from mosaics.compute_graph import done_artifacts
+from mosaics.compute_graph import merge_graph_done_artifacts
 from quarantining import quarantine_stacks, quarantine_targets, quarantine_mosaics
 
 import plotly.express as px
@@ -325,8 +325,8 @@ def mosaic_thumbnail_image_for_filter(mosaic_id, filter):
   mosaic = context.mosaics[mosaic_id]
   print('### mosaic', mosaic)
 
-  _, master_artifact = done_artifacts('master', mosaic_id, filter)
-  subframe_artifact, = done_artifacts('subframe', mosaic_id, filter)
+  _, master_artifact = merge_graph_done_artifacts('master', mosaic_id, filter)
+  subframe_artifact, = merge_graph_done_artifacts('subframe', mosaic_id, filter)
 
   for artifact in [master_artifact, subframe_artifact]:
     if not artifact_exists(artifact):
