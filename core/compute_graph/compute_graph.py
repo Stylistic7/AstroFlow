@@ -19,11 +19,16 @@ def maybe_build_regroup_graph():
   if context.regroup:
     return make_graph_from_list([
         cluster_by_image_center, scatter_identify_stacks,
-        identify_calibration_stacks, associate_with_stacks, quarantine_stacks,
-        quarantine_targets, identify_mosaics, quarantine_mosaics
+        identify_calibration_stacks, associate_with_stacks, identify_mosaics
     ])
   else:
     return {}
+
+
+@ray.remote
+def quarantine():
+  return make_graph_from_list(
+      [quarantine_stacks, quarantine_targets, quarantine_mosaics])
 
 
 @ray.remote
@@ -76,6 +81,7 @@ def build_compute_graph():
   return make_graph_from_list([
       (scatter_compute_image_metadata, 'input'),
       maybe_build_regroup_graph,
+      quarantine,
       make_suggestions,
       build_preview_graph,
       # This is the heavyweight graph that runs PixInsight and may take days.
