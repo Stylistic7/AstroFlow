@@ -159,7 +159,7 @@ def _(artifact: CacheArtifact,
   file_obj = io.BytesIO()
   hdu.writeto(file_obj)
 
-  context[artifact.key] = file_obj.getvalue()
+  context.set(artifact.key, file_obj.getvalue(), flush=True)
   print(f'### Wrote artifact {artifact}')
 
 
