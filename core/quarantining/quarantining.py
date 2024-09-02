@@ -2,6 +2,7 @@ import ray
 
 from context import context
 from stacks import CompositeStack, SimpleStack
+from metadata.actor import get_metadata
 
 # TODO: Ensure that all of the actions in this file are idempotent. The goal
 # is to be able to apply these functions very quickly when the user quarantines
@@ -25,17 +26,27 @@ def quarantine_stacks():
 
   # Go through all of the remaining stacks, and remove the quarantined stacks
   # from `contents` and `dependencies`.
-  for stack in stacks.values():
+  for stack_id, stack in stacks.items():
+    changed = False
+
     if type(stack) is CompositeStack:
+      changed |= any(s in stack.contents for s in quarantined_stacks)
       stack.contents = [
           s for s in stack.contents if s not in quarantined_stacks
       ]
     elif type(stack) is SimpleStack:
+      changed |= any(
+          s in stack.dependencies.values() for s in quarantined_stacks)
       stack.dependencies = {
           t: s
           for t, s in stack.dependencies.items()
           if s not in quarantined_stacks
       }
+
+    # If quarantining changed the stack, recompute its metadata.
+    if changed:
+      print(f'### Quarantining changed stack {stack_id}')
+      stack.update_metadata(get_metadata(stack.all_frames()))
 
   context.stacks = stacks
 
