@@ -20,7 +20,8 @@ import StackThumbnail from "./StackThumbnail.jsx";
 import RunPanel from "./RunPanel.jsx";
 import "./Starmap.css";
 import AstroFlowContext from './AstroFlowContext.jsx';
-import ImageWithActions from './ImageWithActions';
+import ImageWithActions from './ImageWithActions.jsx';
+import { ra_to_hms, dec_to_dms } from './units.js'
 
 function QuarantineStackDialog({ stack_id }) {
 	const [open, setOpen] = React.useState(false);
@@ -193,6 +194,9 @@ export default function StackPanel() {
 				<div>
 					<Typography color="text.primary" margin="0.5em">
 						Stack contains {stack.contents.length} runs of light frames
+					</Typography>
+					<Typography color="text.primary" margin="0.5em">
+						RA {ra_to_hms(stack.center[0])}, Dec {dec_to_dms(stack.center[1])}
 					</Typography>
 					<QuarantineStackDialog
 						stack_id={params.stack_id}
