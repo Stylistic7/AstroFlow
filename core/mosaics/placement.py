@@ -131,7 +131,7 @@ def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact,
                                    image,
                                    method='linear',
                                    bounds_error=False,
-                                   fill_value=np.nan)
+                                   fill_value=0)
   del image
 
   multiple = 4
@@ -162,40 +162,40 @@ def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact,
     tile_y, tile_x, value = ray.get(ready_refs[0])
     projected_image_tiles[tile_y, tile_x, :, :] = value
 
-  grid = projected_image != np.nan
-  cv_grid = grid.astype("uint8") * 255
-  contours, _ = cv.findContours(cv_grid, cv.RETR_TREE, cv.CHAIN_APPROX_NONE)
-  contour = contours[0][:, 0, :]
-
-  trim_top, trim_left, trim_height, trim_width = largestinteriorrectangle.lir(
-      grid, contour)
-  print(f'Trimmed trim_top {trim_top} trim_left {trim_left} trim_height '
-        f'{trim_height} trim_width {trim_width}')
-
-  trim_bottom = trim_top + trim_height
-  trim_right = trim_left + trim_width
-
-  projected_image = np.nan_to_num(projected_image)
-
-  trimmed_image = np.zeros(projected_image.shape, np.float32)
-  trimmed_image[trim_left:trim_right,
-                trim_top:trim_bottom] = projected_image[trim_left:trim_right,
-                                                        trim_top:trim_bottom]
-  del projected_image
-
-  output_image = trimmed_image
-  print(f'### mosaic_by_coordinates: trimming '
-        f'output_image dtype {output_image.dtype} '
-        f'min {np.min(output_image)} max {np.max(output_image)}')
+  print('### projected_image shape', projected_image.shape)
 
   output_artifacts = mosaic_by_coordinates_artifacts(mode, mosaic_id, filter,
                                                      stack_id, input_artifact)
   output_artifact = next(iter(output_artifacts))
-  print(f'### placement done; output_artifact is {output_artifact}')
 
   if mode == 'subframe':
+    output_image = projected_image
     write_artifact(output_artifact, output_image)
   elif mode == 'master':
+    grid = projected_image != 0
+    cv_grid = grid.astype("uint8") * 255
+    contours, _ = cv.findContours(cv_grid, cv.RETR_TREE, cv.CHAIN_APPROX_NONE)
+    contour = contours[0][:, 0, :]
+
+    trim_left, trim_top, trim_width, trim_height = largestinteriorrectangle.lir(
+        grid, contour)
+    print(f'Trimmed trim_top {trim_top} trim_left {trim_left} trim_height '
+          f'{trim_height} trim_width {trim_width}')
+
+    trim_bottom = trim_top + trim_height
+    trim_right = trim_left + trim_width
+
+    if trim_left == 0 and trim_top == 0 and trim_width == projected_image.shape[
+        1] and trim_height == projected_image.shape[0]:
+      assert False, "largestinteriorrectangle matched entire image"
+
+    trimmed_image = np.zeros(projected_image.shape, np.float32)
+    trimmed_image[trim_top:trim_bottom,
+                  trim_left:trim_right] = projected_image[trim_top:trim_bottom,
+                                                          trim_left:trim_right]
+    del projected_image
+    output_image = trimmed_image
+
     output_header = {
         'IMAGETYP': 'PlacedMosaic Light',
         'FOCALLEN': float(header['FOCALLEN']),
@@ -208,6 +208,8 @@ def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact,
         'HISTORY': f"TrimMosaicTile.right: {trim_right}"
     }
     write_artifact(output_artifact, output_image, output_header)
+
+    print(f'### placement done; output_artifact is {output_artifact}')
 
   return output_artifacts
 
