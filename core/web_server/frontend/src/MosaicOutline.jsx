@@ -5,11 +5,16 @@ import Polyline from "./Polyline.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
 import ExposureDurationWidget from "./ExposureDurationWidget.jsx";
 
-export default function MosaicOutline({ mosaic_id, filter, style = {} }) {
+export default function MosaicOutline({
+  mosaic_id,
+  filter,
+  outline_visible = true,
+  index_visible = false,
+  exposure_widget_visible = false,
+  style = {}
+}) {
   const { stacks, targets, mosaics } = useContext(AstroFlowContext);
   const mosaic = mosaics[mosaic_id];
-  console.log(mosaic);
-  console.log('filter', filter);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -68,32 +73,34 @@ export default function MosaicOutline({ mosaic_id, filter, style = {} }) {
         const height = 0.005;
 
         return <>
-          <Polyline
+          {outline_visible && <Polyline
             polyline={coords}
             key={target_id}
             style={target_outline_style}
             handleClick={event => navigate(`${location.pathname}/target/${target_id}`)}
-          />
-          <text
-            x={mean_x - width / 2}
-            y={mean_y - height / 2}
-            textLength={10}
-            fontFamily="Arial"
-            fontSize="0.002"
-            fill="white"
-          >
-            {index + 1}
-          </text>
-          {filter && stack && <ExposureDurationWidget
-            x={mean_x - width / 2}
-            y={mean_y - height / 2}
-            width={width}
-            height={height}
-            key={`exposure_duration_${stack_id}`}
-            totalExposureDuration={stack.integration_s / 3600.0}
-            selectedExposureDuration={stack.integration_s / 3600.0}
-            stack={stack}
           />}
+          <g transform={`translate(${mean_x - width / 2}, ${mean_y - height / 2})`}>
+            {index_visible && <text
+              x="0.002"
+              y="-0.002"
+              fontFamily="Arial"
+              fontSize="0.003"
+              fill="white"
+              letter-spacing="0"
+              text-length="2"
+              text-anchor="middle"
+            >
+              {index + 1}
+            </text>}
+            {exposure_widget_visible && filter && stack && <ExposureDurationWidget
+              width={width}
+              height={height}
+              key={`exposure_duration_${stack_id}`}
+              totalExposureDuration={stack.integration_s / 3600.0}
+              selectedExposureDuration={stack.integration_s / 3600.0}
+              stack={stack}
+            />}
+          </g>
         </>
       })}
       <Polyline

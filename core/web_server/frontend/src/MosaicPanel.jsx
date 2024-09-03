@@ -9,6 +9,7 @@ import AccordionDetails from '@mui/material/AccordionDetails';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { CopyToClipboard } from 'react-copy-to-clipboard';
 import Snackbar from '@mui/material/Snackbar';
+import { Checkbox, FormControlLabel, FormGroup } from '@mui/material';
 
 import AstroFlowBreadcrumbs from "./AstroFlowBreadcrumbs.jsx";
 import MosaicOutline from "./MosaicOutline.jsx";
@@ -28,6 +29,19 @@ export default function MosaicPanel() {
 	const navigate = useNavigate();
 
 	const mosaic = mosaics[params.mosaic_id];
+
+	const [visibility, setVisibility] = useState({
+		outline: true,
+		index: true,
+		clock: true,
+	});
+
+	const handleChange = (event) => {
+		setVisibility({
+			...visibility,
+			[event.target.name]: event.target.checked,
+		});
+	};
 
 	const get_filters = () => {
 		let filters = new Set();
@@ -129,61 +143,99 @@ export default function MosaicPanel() {
 				<DirectionsRunIcon sx={{ marginRight: '0.5em' }} onClick={runAllTasks} /> Run all tasks
 			</Typography>
 
-			<div id="mosaicPanel"
-				style={{
-					display: "block",
-					margin: "1em",
-					position: "relative",
-					maxWidth: "75vw",
-					maxHeight: "75vh",
-					marginLeft: "auto",
-					marginRight: "auto"
-				}}>
-				<img
-					src={`/${imageType}/${params.mosaic_id}/${filter}`}
+			<div style={{ display: 'flex', justifyContent: 'space-between' }}>
+				<div id="mosaicPanel"
 					style={{
 						display: "block",
-						marginLeft: "auto",
-						marginRight: "auto",
+						flex: "1",
+						margin: "1em",
+						position: "relative",
 						maxWidth: "75vw",
-						maxHeight: "75vh"
-					}}
-				/>
-				<MosaicOutline
-					stacks={stacks}
-					targets={targets}
-					mosaics={mosaics}
-					mosaic_id={params.mosaic_id}
-					filter={filter}
-					style={{
-						display: "block",
-						position: "absolute",
-						left: 0,
-						top: 0,
-						width: "100%",
-						height: "100%",
+						maxHeight: "75vh",
 						marginLeft: "auto",
-						marginRight: "auto",
-						maxWidth: "auto",
-						maxHeight: "auto",
-					}}
-				/>
+						marginRight: "auto"
+					}}>
+					<img
+						src={`/${imageType}/${params.mosaic_id}/${filter}`}
+						style={{
+							display: "block",
+							marginLeft: "auto",
+							marginRight: "auto",
+							maxWidth: "75vw",
+							maxHeight: "75vh"
+						}}
+					/>
+					<MosaicOutline
+						stacks={stacks}
+						targets={targets}
+						mosaics={mosaics}
+						mosaic_id={params.mosaic_id}
+						filter={filter}
+						outline_visible={visibility.outline}
+						index_visible={visibility.index}
+						exposure_widget_visible={visibility.clock}
+						style={{
+							display: "block",
+							position: "absolute",
+							left: 0,
+							top: 0,
+							width: "100%",
+							height: "100%",
+							marginLeft: "auto",
+							marginRight: "auto",
+							maxWidth: "auto",
+							maxHeight: "auto",
+						}}
+					/>
+					<ColorChannelSelector
+						stacks={stacks}
+						targets={targets}
+						mosaics={mosaics}
+						mosaic_id={params.mosaic_id}
+						filter={filter}
+						setFilter={handleSetFilter}
+						style={{
+							height: "100%",
+							maxWidth: "100%",
+							display: "block",
+							marginLeft: "auto",
+							marginRight: "auto",
+						}}
+					/>
+				</div>
+				<FormGroup>
+					<FormControlLabel
+						control={
+							<Checkbox
+								checked={visibility.outline}
+								onChange={handleChange}
+								name="outline"
+							/>
+						}
+						label="Outline"
+					/>
+					<FormControlLabel
+						control={
+							<Checkbox
+								checked={visibility.index}
+								onChange={handleChange}
+								name="index"
+							/>
+						}
+						label="Index"
+					/>
+					<FormControlLabel
+						control={
+							<Checkbox
+								checked={visibility.clock}
+								onChange={handleChange}
+								name="clock"
+							/>
+						}
+						label="Clock"
+					/>
+				</FormGroup>
 			</div>
-			<ColorChannelSelector
-				stacks={stacks}
-				targets={targets}
-				mosaics={mosaics}
-				mosaic_id={params.mosaic_id}
-				filter={filter}
-				setFilter={handleSetFilter}
-				style={{
-					height: "100%",
-					maxWidth: "100%",
-					display: "block",
-					marginLeft: "auto",
-					marginRight: "auto",
-				}}
-			/>
 		</>
 	);
 }

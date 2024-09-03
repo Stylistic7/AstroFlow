@@ -20,7 +20,8 @@ import StackThumbnail from "./StackThumbnail.jsx";
 import RunPanel from "./RunPanel.jsx";
 import "./Starmap.css";
 import AstroFlowContext from './AstroFlowContext.jsx';
-import ImageWithActions from './ImageWithActions.jsx';
+import DivWithActions from './DivWithActions.jsx';
+import ActionButtons from './ActionButtons.jsx';
 import { ra_to_hms, dec_to_dms } from './units.js'
 
 function QuarantineStackDialog({ stack_id }) {
@@ -181,11 +182,9 @@ export default function StackPanel() {
 
 	console.log('promiseInProgress', promiseInProgress);
 
-	const handleQuarantine = (stack_id) => {
-		console.log(`Quaranting stack ${stack_id}`);
-		fetch(`/quarantine_stack/${stack_id}`);
-	};
-
+	const actionButtons = () => {
+		return <ActionButtons />
+	}
 
 	return (
 		<>
@@ -225,10 +224,10 @@ export default function StackPanel() {
 				) : (
 					Object.values(stack.contents).map(stack_id =>
 						stacks[stack_id] && <div style={{ padding: '20px' }}>
-							<ImageWithActions
+							<DivWithActions
 								title={`Run of ${stacks[stack_id].frames.length} light frames on ${stack.oldest_date}`}
+								action_buttons={actionButtons()}
 								stack_id={stack_id}
-								onQuarantine={handleQuarantine}
 							>
 								<RunPanel
 									key={stack_id}
@@ -236,7 +235,7 @@ export default function StackPanel() {
 									stacks={stacks}
 									flat_stack_ids={flat_stack_ids}
 								/>
-							</ImageWithActions>
+							</DivWithActions>
 						</div>
 					)
 				)}
