@@ -17,6 +17,8 @@ import ColorChannelSelector from "./ColorChannelSelector.jsx";
 import TargetPanel from "./TargetPanel.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
 import { ra_to_hms, dec_to_dms } from './units.js';
+import DivWithActions from './DivWithActions.jsx';
+import MosaicOutlineActionButtons from './MosaicOutlineActionButtons.jsx';
 
 import "./Starmap.css";
 
@@ -36,10 +38,10 @@ export default function MosaicPanel() {
 		clock: true,
 	});
 
-	const handleChange = (event) => {
+	const handleChange = (name, checked) => {
 		setVisibility({
 			...visibility,
-			[event.target.name]: event.target.checked,
+			[name]: checked,
 		});
 	};
 
@@ -52,17 +54,14 @@ export default function MosaicPanel() {
 		}
 
 		const filter_array = Array.from(filters);
-		console.log('got filters', filter_array);
 		return filter_array;
 	}
 
 	const [filter, setFilter] = useState(get_filters()[0]);
-	console.log("filter is", filter);
 
 	const fontColor = "#aaa";
 
 	const handleSetFilter = f => {
-		console.log('handleSetFilter', f);
 		setFilter(f);
 	};
 
@@ -88,7 +87,6 @@ export default function MosaicPanel() {
 			mosaic.target_ids.map((target_id, pane) =>
 				telescopius_pane_line(mosaic, target_id, pane)
 			)).join('\n');
-		console.log('text', text);
 
 		return <>
 			<p>
@@ -112,6 +110,12 @@ export default function MosaicPanel() {
 	};
 
 	const imageType = "mosaic_thumbnail_image_for_filter";
+
+	const actionButtons = () => {
+		return <MosaicOutlineActionButtons
+			handleChange={handleChange}
+		/>
+	}
 
 	// TODO: Add a dialog box to the "run" button that shows the user what will be
 	// run, and how long it will likely take, and allow them to accept it.
@@ -143,7 +147,9 @@ export default function MosaicPanel() {
 				<DirectionsRunIcon sx={{ marginRight: '0.5em' }} onClick={runAllTasks} /> Run all tasks
 			</Typography>
 
-			<div style={{ display: 'flex', justifyContent: 'space-between' }}>
+			<DivWithActions
+				action_buttons={actionButtons()}
+			>
 				<div id="mosaicPanel"
 					style={{
 						display: "block",
@@ -203,39 +209,7 @@ export default function MosaicPanel() {
 						}}
 					/>
 				</div>
-				<FormGroup>
-					<FormControlLabel
-						control={
-							<Checkbox
-								checked={visibility.outline}
-								onChange={handleChange}
-								name="outline"
-							/>
-						}
-						label="Outline"
-					/>
-					<FormControlLabel
-						control={
-							<Checkbox
-								checked={visibility.index}
-								onChange={handleChange}
-								name="index"
-							/>
-						}
-						label="Index"
-					/>
-					<FormControlLabel
-						control={
-							<Checkbox
-								checked={visibility.clock}
-								onChange={handleChange}
-								name="clock"
-							/>
-						}
-						label="Clock"
-					/>
-				</FormGroup>
-			</div>
+			</DivWithActions>
 		</>
 	);
 }

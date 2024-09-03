@@ -21,7 +21,7 @@ import RunPanel from "./RunPanel.jsx";
 import "./Starmap.css";
 import AstroFlowContext from './AstroFlowContext.jsx';
 import DivWithActions from './DivWithActions.jsx';
-import ActionButtons from './ActionButtons.jsx';
+import StackActionButtons from './StackActionButtons.jsx';
 import { ra_to_hms, dec_to_dms } from './units.js'
 
 function QuarantineStackDialog({ stack_id }) {
@@ -183,7 +183,7 @@ export default function StackPanel() {
 	console.log('promiseInProgress', promiseInProgress);
 
 	const actionButtons = () => {
-		return <ActionButtons />
+		return <StackActionButtons />
 	}
 
 	return (

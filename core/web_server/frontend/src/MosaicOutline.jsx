@@ -60,7 +60,6 @@ export default function MosaicOutline({
       }}
     >
       {mosaic.target_ids.map((target_id, index) => {
-        console.log('index', index);
         let stack_id = targets[target_id].stack_ids[0];
         if (filter) {
           stack_id = targets[target_id].stack_ids.find((stack_id) => stacks[stack_id].filter == filter);
