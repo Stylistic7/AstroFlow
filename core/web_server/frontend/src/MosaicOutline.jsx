@@ -9,8 +9,8 @@ export default function MosaicOutline({
   mosaic_id,
   filter,
   outline_visible = true,
-  index_visible = false,
-  exposure_widget_visible = false,
+  indices_visible = false,
+  exposure_widgets_visible = false,
   style = {}
 }) {
   const { stacks, targets, mosaics } = useContext(AstroFlowContext);
@@ -79,7 +79,7 @@ export default function MosaicOutline({
             handleClick={event => navigate(`${location.pathname}/target/${target_id}`)}
           />}
           <g transform={`translate(${mean_x - width / 2}, ${mean_y - height / 2})`}>
-            {index_visible && <text
+            {indices_visible && <text
               x="0.002"
               y="-0.002"
               fontFamily="Arial"
@@ -91,7 +91,7 @@ export default function MosaicOutline({
             >
               {index + 1}
             </text>}
-            {exposure_widget_visible && filter && stack && <ExposureDurationWidget
+            {exposure_widgets_visible && filter && stack && <ExposureDurationWidget
               width={width}
               height={height}
               key={`exposure_duration_${stack_id}`}

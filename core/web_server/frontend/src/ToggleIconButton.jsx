@@ -13,7 +13,7 @@ const ToggleButton = styled(IconButton)(({ theme, toggled }) => ({
   fontSize: '20px',
 }));
 
-const ToggleIconButton = ({ name, handleChange, defaultValue = false }) => {
+const ToggleIconButton = ({ name, icon, handleChange, defaultValue = false }) => {
   const [toggled, setToggled] = useState(defaultValue);
 
   const handleToggle = (event) => {
@@ -29,7 +29,9 @@ const ToggleIconButton = ({ name, handleChange, defaultValue = false }) => {
       onClick={handleToggle}
       toggled={toggled}
     >
-      <FullscreenIcon sx={{ color: toggled ? 'black' : 'white' }} />
+      {React.cloneElement(icon, {
+        sx: { color: toggled ? 'black' : 'white' },
+      })}
     </ToggleButton>
   );
 };

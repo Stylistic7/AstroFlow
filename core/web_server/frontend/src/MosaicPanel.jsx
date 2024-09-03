@@ -34,8 +34,8 @@ export default function MosaicPanel() {
 
 	const [visibility, setVisibility] = useState({
 		outline: true,
-		index: true,
-		clock: true,
+		indices: true,
+		exposure_widgets: true,
 	});
 
 	const handleChange = (name, checked) => {
@@ -178,8 +178,8 @@ export default function MosaicPanel() {
 						mosaic_id={params.mosaic_id}
 						filter={filter}
 						outline_visible={visibility.outline}
-						index_visible={visibility.index}
-						exposure_widget_visible={visibility.clock}
+						indices_visible={visibility.indices}
+						exposure_widgets_visible={visibility.exposure_widgets}
 						style={{
 							display: "block",
 							position: "absolute",

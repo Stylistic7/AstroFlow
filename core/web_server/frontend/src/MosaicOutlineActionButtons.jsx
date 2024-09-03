@@ -23,17 +23,32 @@ export default function MosaicOutlineActionButtons({ handleChange }) {
   return <>
     <Tooltip title="Show Outline">
       <IconButton color="white">
-        <ToggleIconButton name="outline" defaultValue={true} handleChange={handleChange} />
+        <ToggleIconButton
+          name="outline"
+          icon={<FullscreenIcon />}
+          defaultValue={true}
+          handleChange={handleChange}
+        />
       </IconButton>
     </Tooltip>
     <Tooltip title="Show Panel Indices">
       <IconButton color="white">
-        <LooksOneOutlinedIcon />
+        <ToggleIconButton
+          name="indices"
+          icon={<LooksOneOutlinedIcon />}
+          defaultValue={true}
+          handleChange={handleChange}
+        />
       </IconButton>
     </Tooltip>
     <Tooltip title="Show Exposure Durations">
       <IconButton color="white">
-        <AccessTimeOutlinedIcon />
+        <ToggleIconButton
+          name="exposure_widgets"
+          icon={<AccessTimeOutlinedIcon />}
+          defaultValue={true}
+          handleChange={handleChange}
+        />
       </IconButton>
     </Tooltip>
     <Tooltip title="Show in Finder">
