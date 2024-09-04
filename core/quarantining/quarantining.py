@@ -46,7 +46,18 @@ def quarantine_stacks():
     # If quarantining changed the stack, recompute its metadata.
     if changed:
       print(f'### Quarantining changed stack {stack_id}')
-      stack.update_metadata(get_metadata(stack.all_frames()))
+      all_frames = stack.all_frames()
+      if len(all_frames) == 0:
+        print(f'### Stack {stack_id} is now empty and will be deleted')
+      else:
+        stack.update_metadata(get_metadata(all_frames))
+
+  # Eliminate all stacks that are now empty.
+  stacks = {
+      stack_id: stack
+      for stack_id, stack in stacks.items()
+      if len(stack.all_frames()) > 0
+  }
 
   context.stacks = stacks
 
