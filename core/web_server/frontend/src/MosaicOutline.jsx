@@ -1,5 +1,6 @@
 import React, { useContext } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { styled } from '@mui/system';
 
 import Polyline from "./Polyline.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
@@ -49,8 +50,25 @@ export default function MosaicOutline({
     ];
   }
 
+  const RotatedSvg = styled('svg')({
+    // transform: 'rotate(180deg)',
+    // transformOrigin: 'center',
+    // transform: 'scale(0.87, 1) translate(-60px, 0px)',
+  });
+
+  const handleClick = (event, target_id) => {
+    const link = `${location.pathname}/target/${target_id}`;
+    if (event.ctrlKey || event.metaKey) {
+      // Open in a new tab if Ctrl (Windows/Linux) or Command (Mac) key is held
+      window.open(link, '_blank');
+    } else {
+      // Otherwise, navigate normally
+      navigate(link);
+    }
+  };
+
   return (
-    <svg
+    <RotatedSvg
       id="mosaic_svg"
       viewBox={mosaic.projected_footprint[projection].viewbox.join(" ")}
       style={{
@@ -62,7 +80,8 @@ export default function MosaicOutline({
       {mosaic.target_ids.map((target_id, index) => {
         let stack_id = targets[target_id].stack_ids[0];
         if (filter) {
-          stack_id = targets[target_id].stack_ids.find((stack_id) => stacks[stack_id].filter == filter);
+          stack_id = targets[target_id].stack_ids.find(
+            s => stacks[s].filter == filter);
         }
 
         const stack = stacks[stack_id];
@@ -76,7 +95,7 @@ export default function MosaicOutline({
             polyline={coords}
             key={target_id}
             style={target_outline_style}
-            handleClick={event => navigate(`${location.pathname}/target/${target_id}`)}
+            handleClick={event => handleClick(event, target_id)}
           />}
           <g transform={`translate(${mean_x - width / 2}, ${mean_y - height / 2})`}>
             {indices_visible && <text
@@ -88,6 +107,7 @@ export default function MosaicOutline({
               letter-spacing="0"
               text-length="2"
               text-anchor="middle"
+              style={{ pointerEvents: "none" }}
             >
               {index + 1}
             </text>}
@@ -98,15 +118,16 @@ export default function MosaicOutline({
               totalExposureDuration={stack.integration_s / 3600.0}
               selectedExposureDuration={stack.integration_s / 3600.0}
               stack={stack}
+              style={{ pointerEvents: "none" }}
             />}
           </g>
         </>
       })}
-      <Polyline
+      {outline_visible && <Polyline
         polyline={mosaic.projected_footprint[projection].coords}
         key={mosaic_id}
         style={mosaic_outline_style}
-      />
-    </svg >
+      />}
+    </RotatedSvg >
   );
 }

@@ -4,7 +4,6 @@ import LooksOneOutlinedIcon from '@mui/icons-material/LooksOneOutlined';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import AccessTimeOutlinedIcon from '@mui/icons-material/AccessTimeOutlined';
-import { styled } from '@mui/system';
 
 import ToggleIconButton from './ToggleIconButton.jsx';
 
