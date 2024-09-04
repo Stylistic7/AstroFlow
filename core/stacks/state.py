@@ -1,0 +1,28 @@
+import ray
+
+from context import context
+from stacks import CompositeStack, stack_files_artifacts, post_process_stack_artifacts
+from artifacts import artifact_exists
+
+
+# TODO: Include error messages, exceptions, etc. here to inform the user.
+@ray.remote
+def update_state():
+  print('### Entering update_state')
+  stacks = context.stacks
+
+  for stack_id, stack in stacks.items():
+    if type(stack) is not CompositeStack:
+      continue
+
+    stack.state = {
+        'stack_files':
+            all(artifact_exists(a) for a in stack_files_artifacts(stack_id)),
+        'post_process_stack':
+            all(
+                artifact_exists(a)
+                for a in post_process_stack_artifacts(stack_id))
+    }
+    print(f'### Updated stack state {stack_id} to {stack.state}')
+
+  context.stacks = stacks
