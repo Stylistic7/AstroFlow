@@ -13,6 +13,9 @@ def identify_calibration_stacks():
   print(f'Identifying calibration stacks...')
 
   def get_runs(frames):
+    if not len(frames):
+      return []
+
     result = cluster_by_header(
         frames, 'DATE-OBS', lambda images: clustering.cluster_continuous(
             images, epsilon=context.max_run_gap))
