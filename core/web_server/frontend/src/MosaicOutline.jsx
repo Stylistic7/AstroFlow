@@ -1,5 +1,6 @@
 import React, { useContext } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import { styled } from '@mui/system';
 
 import Polyline from "./Polyline.jsx";
@@ -90,6 +91,8 @@ export default function MosaicOutline({
         const width = 0.005;
         const height = 0.005;
 
+        const no_stack = !stack.state['stack_files'];
+
         return <>
           {outline_visible && <Polyline
             polyline={coords}
@@ -112,6 +115,7 @@ export default function MosaicOutline({
               {index + 1}
             </text>}
             {exposure_widgets_visible && filter && stack && <ExposureDurationWidget
+              x={no_stack ? "-0.0025" : "0"}
               width={width}
               height={height}
               key={`exposure_duration_${stack_id}`}
@@ -119,6 +123,12 @@ export default function MosaicOutline({
               selectedExposureDuration={stack.integration_s / 3600.0}
               stack={stack}
               style={{ pointerEvents: "none" }}
+            />}
+            {no_stack && <ErrorOutlineIcon
+              x="0.0025"
+              y="0"
+              width={width}
+              height={height}
             />}
           </g>
         </>

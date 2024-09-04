@@ -26,7 +26,7 @@ const DivWithActions = ({ children, title, action_buttons }) => {
     if (!isVisible) return null;
 
     return (
-        <div>
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
             {title && <h3>{title}</h3>}
             <DivWithActionsContainer>
                 <div>
