@@ -69,6 +69,8 @@ def scatter_stack_thumbnails(mode):
   return Graph({gather: tasks})
 
 
+# TODO: The thumbnail images and videos need to use the artifact workflow, so
+# they will be regenerated after quarantining, etc.
 @ray.remote
 def create_stack_subframe_thumbnails(stack_id):
   stacks = context.stacks
