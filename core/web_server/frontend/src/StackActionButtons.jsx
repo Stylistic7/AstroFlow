@@ -5,13 +5,12 @@ import { styled } from '@mui/system';
 
 
 export default function StackActionButtons({ stack_id }) {
-  const handleQuarantine = (stack_id) => {
-    // console.log(`Quaranting stack ${stack_id}`);
-    // fetch(`/quarantine_stack/${stack_id}`);
-    alert(`This would quarantine stack ${stack_id}`);
+  const handleQuarantine = () => {
+    console.log(`Quaranting stack ${stack_id}`);
+    fetch(`/quarantine_stack/${stack_id}`);
   };
 
-  const handleShowInFinder = (stack_id) => {
+  const handleShowInFinder = () => {
     alert(`This would show the image at ${stack_id} in Finder.`);
   };
 
