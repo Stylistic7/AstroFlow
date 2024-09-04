@@ -8,24 +8,9 @@ from context import context
 from testing.test_context import make_test_context
 from testing.test_frames import make_synthetic_frames
 from file_io.find_image_files import find_image_files
-from stacks.compute_graph import scatter_identify_stacks
-from stacks.identification import identify_stacks
-from clustering import cluster_by_image_center
-from metadata.actor import get_metadata
-from dependency_graph import run_graph, make_graph_from_list
+from dependency_graph import run_graph
 from stacks import CompositeStack
 from compute_graph import build_compute_graph
-
-# TODO: These tests don't actually test the subframe selection at all. The
-# stack identification step no longer eliminates bad frames from the stack.
-# Instead, we're going to do subframe selection right before stacking.
-
-
-def compute_graph_fragment():
-  return make_graph_from_list([
-      cluster_by_image_center,
-      scatter_identify_stacks,
-  ])
 
 
 class TestSubframeSelection(unittest.TestCase):
@@ -37,77 +22,6 @@ class TestSubframeSelection(unittest.TestCase):
   def tearDown(self):
     self.input_dir_obj.cleanup()
     self.output_dir_obj.cleanup()
-
-  def test_star_count_fraction(self):
-    make_synthetic_frames(prefix='light_clear',
-                          start_datetime=datetime.datetime(
-                              2023, 12, 6, 16, 29, 43),
-                          number=5,
-                          image_type='Light',
-                          fill_value=100,
-                          instrument='ZWO ASI6200MM Pro',
-                          width_pixels=9576,
-                          height_pixels=6388,
-                          temperature=-15,
-                          num_stars=100,
-                          dest_dir=context.input_dirs[0])
-    make_synthetic_frames(prefix='light_cloudy',
-                          start_datetime=datetime.datetime(
-                              2023, 12, 6, 16, 59, 43),
-                          number=5,
-                          image_type='Light',
-                          fill_value=100,
-                          instrument='ZWO ASI6200MM Pro',
-                          width_pixels=9576,
-                          height_pixels=6388,
-                          temperature=-15,
-                          num_stars=10,
-                          dest_dir=context.input_dirs[0])
-
-    filenames = find_image_files(context.input_dirs[0])
-    self.assertEqual(len(filenames), 10)
-
-    run_graph(compute_graph_fragment())
-
-    stacks = context.stacks
-    self.assertEqual(len(stacks), 2)
-    stack = next(iter(s for s in stacks.values() if type(s) is CompositeStack))
-    self.assertEqual(len(stack.all_frames()), 10)
-
-  def test_split_run(self):
-    make_synthetic_frames(prefix='light',
-                          start_datetime=datetime.datetime(
-                              2023, 12, 6, 16, 29, 43),
-                          number=15,
-                          image_type='Light',
-                          fill_value=100,
-                          instrument='ZWO ASI6200MM Pro',
-                          exposure=600,
-                          width_pixels=9576,
-                          height_pixels=6388,
-                          temperature=-15,
-                          num_stars=100,
-                          dest_dir=context.input_dirs[0])
-
-    # The middle frame has too few stars, and should split the run into two.
-    metadata = get_metadata()
-
-    for i in metadata:
-      if i.filename.endswith('_00007.fit'):
-        middle_frame = i
-    print(f'middle_frame {middle_frame.filename}')
-    middle_frame.plate_solution.num_stars = 10
-    context.set(('image_metadata', middle_frame.content_hash), middle_frame)
-
-    filenames = find_image_files(context.input_dirs[0])
-    self.assertEqual(len(filenames), 15)
-
-    run_graph(compute_graph_fragment())
-
-    stacks = context.stacks
-    self.assertEqual(len(stacks), 2)
-    stack = next(iter(s for s in stacks.values() if type(s) is CompositeStack))
-    self.assertEqual(len(stack.all_frames()), 15)
 
   def test_subframe_selection_subgraph(self):
     make_synthetic_frames(prefix='light_clear',
@@ -125,7 +39,7 @@ class TestSubframeSelection(unittest.TestCase):
     make_synthetic_frames(prefix='light_cloudy',
                           start_datetime=datetime.datetime(
                               2023, 12, 6, 16, 59, 43),
-                          number=5,
+                          number=7,
                           image_type='Light',
                           fill_value=100,
                           instrument='ZWO ASI6200MM Pro',
@@ -136,14 +50,17 @@ class TestSubframeSelection(unittest.TestCase):
                           dest_dir=context.input_dirs[0])
 
     filenames = find_image_files(context.input_dirs[0])
-    self.assertEqual(len(filenames), 10)
+    self.assertEqual(len(filenames), 12)
 
     run_graph(build_compute_graph(run_main_processing_graph=False))
 
+    # The max number of stars in the stack is 100. The default 75% acceptance
+    # threshold means that only those frames with more than 75 stars will be
+    # accepted. There are 5 such frames.
     stacks = context.stacks
     self.assertEqual(len(stacks), 2)
     stack = next(iter(s for s in stacks.values() if type(s) is CompositeStack))
-    self.assertEqual(len(stack.all_frames()), 10)
+    self.assertEqual(len(stack.all_frames()), 5)
 
 
 if __name__ == "__main__":

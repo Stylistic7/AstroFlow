@@ -92,25 +92,13 @@ def _setup_composite_stack(stack_id, tmp_dir):
   metadata = get_metadata(
       stack.all_frames(),
       post_fn=lambda images: {i.content_hash: i for i in images})
-
-  # TODO: Implement subframe selection in a modular way.
-  max_num_stars = max([i.plate_solution.num_stars for i in metadata.values()])
+  hashes = metadata.keys()
 
   first_filename = None
 
   num_frames = 0
   for i, substack_id in enumerate(stack.contents):
     substack = stacks[substack_id]
-
-    # Select only the best subframes.
-    hashes = [
-        h for h in substack.frames
-        if metadata[h].plate_solution.num_stars > 0.75 * max_num_stars
-    ]
-    print(f'### Selected {len(hashes)} out of {len(substack.frames)} subframes')
-
-    if len(hashes) == 0:
-      continue
 
     filenames = [i.filename for h, i in metadata.items() if h in hashes]
     assert len(hashes) == len(filenames)
