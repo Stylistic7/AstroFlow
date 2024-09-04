@@ -14,6 +14,7 @@ from clustering import cluster_by_image_center
 from metadata.actor import get_metadata
 from dependency_graph import run_graph, make_graph_from_list
 from stacks import CompositeStack
+from compute_graph import build_compute_graph
 
 # TODO: These tests don't actually test the subframe selection at all. The
 # stack identification step no longer eliminates bad frames from the stack.
@@ -107,6 +108,42 @@ class TestSubframeSelection(unittest.TestCase):
     self.assertEqual(len(stacks), 2)
     stack = next(iter(s for s in stacks.values() if type(s) is CompositeStack))
     self.assertEqual(len(stack.all_frames()), 15)
+
+  def test_subframe_selection_subgraph(self):
+    make_synthetic_frames(prefix='light_clear',
+                          start_datetime=datetime.datetime(
+                              2023, 12, 6, 16, 29, 43),
+                          number=5,
+                          image_type='Light',
+                          fill_value=100,
+                          instrument='ZWO ASI6200MM Pro',
+                          width_pixels=9576,
+                          height_pixels=6388,
+                          temperature=-15,
+                          num_stars=100,
+                          dest_dir=context.input_dirs[0])
+    make_synthetic_frames(prefix='light_cloudy',
+                          start_datetime=datetime.datetime(
+                              2023, 12, 6, 16, 59, 43),
+                          number=5,
+                          image_type='Light',
+                          fill_value=100,
+                          instrument='ZWO ASI6200MM Pro',
+                          width_pixels=9576,
+                          height_pixels=6388,
+                          temperature=-15,
+                          num_stars=10,
+                          dest_dir=context.input_dirs[0])
+
+    filenames = find_image_files(context.input_dirs[0])
+    self.assertEqual(len(filenames), 10)
+
+    run_graph(build_compute_graph(run_main_processing_graph=False))
+
+    stacks = context.stacks
+    self.assertEqual(len(stacks), 2)
+    stack = next(iter(s for s in stacks.values() if type(s) is CompositeStack))
+    self.assertEqual(len(stack.all_frames()), 10)
 
 
 if __name__ == "__main__":
