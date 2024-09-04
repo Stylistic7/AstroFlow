@@ -182,10 +182,6 @@ export default function StackPanel() {
 
 	console.log('promiseInProgress', promiseInProgress);
 
-	const actionButtons = () => {
-		return <StackActionButtons />
-	}
-
 	return (
 		<>
 			<AstroFlowBreadcrumbs />
@@ -226,7 +222,7 @@ export default function StackPanel() {
 						stacks[stack_id] && <div style={{ padding: '20px' }}>
 							<DivWithActions
 								title={`Run of ${stacks[stack_id].frames.length} light frames on ${stack.oldest_date}`}
-								action_buttons={actionButtons()}
+								action_buttons={<StackActionButtons stack_id={stack_id} />}
 								stack_id={stack_id}
 							>
 								<RunPanel
