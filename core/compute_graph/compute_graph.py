@@ -11,7 +11,8 @@ from targets.compute_graph import build_target_subgraph
 from mosaics.compute_graph import build_mosaic_subgraph
 from dependency_graph import Graph, make_graph_from_list, print_graph
 from suggestions import make_suggestions
-from quarantining import quarantine_stacks, quarantine_targets, quarantine_mosaics
+from quarantining import select_subframes, quarantine_stacks, quarantine_targets, quarantine_mosaics
+from stacks.state import update_state
 
 
 @ray.remote
@@ -77,15 +78,23 @@ def build_main_processing_graph():
   return graph
 
 
-def build_compute_graph():
+@ray.remote
+def no_op():
+  pass
+
+
+def build_compute_graph(run_main_processing_graph=True):
   return make_graph_from_list([
       (scatter_compute_image_metadata, 'input'),
       maybe_build_regroup_graph,
       quarantine,
+      select_subframes,
+      update_state,
       make_suggestions,
       build_preview_graph,
       # This is the heavyweight graph that runs PixInsight and may take days.
-      build_main_processing_graph,
+      # TODO: The entire preview graph is not actually done before this runs.
+      build_main_processing_graph if run_main_processing_graph else no_op
   ])
 
 

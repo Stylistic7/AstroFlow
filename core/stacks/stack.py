@@ -72,6 +72,11 @@ class ImagingAttributes:
 
 
 @dataclass
+class AstroFlowStateAttributes:
+  state: dict = field(default_factory=dict)
+
+
+@dataclass
 class AstrometricAttributes:
   target: Optional[str] = None
   center: Optional[list[float]] = None
@@ -83,7 +88,7 @@ class AstrometricAttributes:
 
 
 @dataclass
-class SimpleStack(ImagingAttributes):
+class SimpleStack(ImagingAttributes, AstroFlowStateAttributes):
   content_hash: Optional[str] = None
   frames: list[FrameHash] = field(default_factory=list)
   dependencies: dict[str, StackHash] = field(default_factory=dict)
@@ -117,7 +122,8 @@ class SimpleStack(ImagingAttributes):
 
 
 @dataclass
-class CompositeStack(ImagingAttributes, AstrometricAttributes):
+class CompositeStack(ImagingAttributes, AstrometricAttributes,
+                     AstroFlowStateAttributes):
   stable_hash: Optional[str] = None
   content_hash: Optional[str] = None
   contents: list[StackHash] = field(default_factory=list)
