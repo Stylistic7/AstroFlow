@@ -55,6 +55,39 @@ def copy_testdata_frames(target_name, dest_dir, prefix='', number=None):
   return dest_filenames
 
 
+# TODO: Desired qualities of the API that are not correct yet, and not tested:
+#
+# The `debug` option to the decorator will save all intermediate images, as
+# declared by calling add_debug_images() inside the Tasks.
+#
+# If there is no explicit pix.SaveImages task, images will only be written to
+# the temporary directory. What's the best way to get them out?
+#
+# Users can make it explicit, if they want:
+#
+# @pix.PixInsight()
+# def _post_process_stack(image, filename):
+#   image = pix.BlurXTerminator(image)
+#   image = pix.AutomaticBackgroundExtractor(image)
+#   pix.SaveImages(image, filename)
+#
+# If the function merely returns the image, without an explicit call to
+# SaveImages, what do we do? When the decorator exits, the temporary directory
+# will be deleted.
+#
+# It's also possible -- though maybe awkward -- for the function to return
+# the temp directory object. So the "image" container is really several things:
+#
+# - The temp directory object.
+# - The filename
+# - The view id
+# - Metadata like the filter
+#
+# This guarantees that the filename is valid until the user destroys the image
+# object, which is nice. Evaluating the image object as a string will just
+# return the filename.
+
+
 # This is my best take on the API. The `deconvolved` is not used directly
 # anywhere inside the function, but the tracer should see it and save it to
 # disk after the function is done. End users may have a file where they can
