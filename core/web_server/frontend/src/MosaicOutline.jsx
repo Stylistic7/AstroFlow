@@ -116,8 +116,9 @@ export default function MosaicOutline({
             </text>}
             {exposure_widgets_visible && filter && stack && <ExposureDurationWidget
               x={no_stack ? "-0.0025" : "0"}
-              width={width}
-              height={height}
+              y="0.0004"
+              width={width * 0.85}
+              height={height * 0.85}
               key={`exposure_duration_${stack_id}`}
               totalExposureDuration={stack.integration_s / 3600.0}
               selectedExposureDuration={stack.integration_s / 3600.0}

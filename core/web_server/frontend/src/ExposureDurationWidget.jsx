@@ -8,7 +8,7 @@ export default function ExposureDurationWidget({ totalExposureDuration, selected
 			<circle
 				cx="1" cy="1" r="1"
 				style={{
-					fill: "#aaa",
+					fill: "#333",
 				}}
 			/>
 		);
@@ -26,7 +26,7 @@ export default function ExposureDurationWidget({ totalExposureDuration, selected
 				key={hour}
 				d={`M ${start_x} ${start_y} L ${end_x} ${end_y}`}
 				style={{
-					stroke: "black",
+					stroke: "white",
 					strokeWidth: 0.1,
 				}}
 				clipPath="url(#insideCircleOnly)" />
@@ -46,8 +46,8 @@ export default function ExposureDurationWidget({ totalExposureDuration, selected
 					cx="1" cy="1" r="1"
 					style={{
 						fill: "none",
-						stroke: "black",
-						strokeWidth: 0.2,
+						stroke: "white",
+						strokeWidth: 0.35,
 					}}
 					clipPath="url(#insideCircleOnly)"
 				/>
@@ -82,9 +82,8 @@ export default function ExposureDurationWidget({ totalExposureDuration, selected
 			{...props}
 		>
 			{clock_face()}
-			{wedge(clamp(totalExposureDuration, 0, 11.999), "red")
-			}
-			{wedge(clamp(selectedExposureDuration, 0, 11.999), "blue")}
+			{wedge(clamp(totalExposureDuration, 0, 11.999), "red")}
+			{wedge(clamp(selectedExposureDuration, 0, 11.999), "#4278f5")}
 			{tick_marks()}
 		</svg >);
 
