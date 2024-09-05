@@ -1,4 +1,4 @@
-from .classes import ShellScriptTask
+from .classes import ShellScriptTask, Image
 from .context import append_task
 from .processes import enum, execute_global
 
@@ -14,13 +14,9 @@ windows[windows.length - 1].currentView.id = "{view_id}";
 """
 
 
-# TODO: None should be a valid return type.
-def RenameMostRecentView(view_ids, **kwargs):
-  return view_ids
-
-
-def ChannelCombination(view_ids, output_view_id=None, **kwargs):
+def ChannelCombination(images, output_view_id="RGB", **kwargs):
   # TODO: This is horrifically ugly.
+  view_ids = [i.view_id for i in images]
   parameters = _default_parameters | kwargs
   channels = [f'[true, "{v}"]' for v in view_ids]
   parameters['channels'] = enum(f'[{", ".join(channels)}]')
@@ -29,12 +25,11 @@ def ChannelCombination(view_ids, output_view_id=None, **kwargs):
       ShellScriptTask(
           javascript=execute_global('ChannelCombination', parameters)))
 
-  if output_view_id:
-    append_task(
-        ShellScriptTask(javascript=_rename_javascript.format(
-            view_id=output_view_id)))
+  append_task(
+      ShellScriptTask(javascript=_rename_javascript.format(
+          view_id=output_view_id)))
 
   # TODO: ChannelComnbination just creates a new image with a "random" view id.
   # Find some way to either specify the view id, or grab the "most recent" view
   # id from PixInsight.
-  return ["RGB"]
+  return [Image(view_id=output_view_id, tag=output_view_id, dirty=True)]

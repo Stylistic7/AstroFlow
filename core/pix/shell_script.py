@@ -84,7 +84,7 @@ def run_script(tasks,
     script += f'![echo "end" > {end_sentinel_filename}\n'
 
     with open(script_filename, "w") as f:
-      print('script is', script)
+      print('### toplevel script is', script)
       f.write(script)
 
     if not dry_run:

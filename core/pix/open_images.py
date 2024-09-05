@@ -1,8 +1,7 @@
 import os
-from addict import Dict
 
-from .classes import ShellScriptTask
-from .context import append_task, add_debug_images
+from .classes import Image, ShellScriptTask
+from .context import append_task, add_images_to_save
 
 from file_io.generic import get_content_hash
 
@@ -40,11 +39,11 @@ def OpenImages(filenames):
                                                     view_ids=view_ids)))
 
   images = [
-      Dict(filename=f, view_id=v, filter=filt)
+      Image(filename=f, view_id=v, metadata={'filter': filt})
       for f, v, filt in zip(filenames, view_ids, filters)
   ]
 
-  add_debug_images(images)
+  # add_images_to_save(images)
 
   print('### OpenImages returning images', images)
   return images

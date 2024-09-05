@@ -2,7 +2,7 @@ from pathlib import Path
 from addict import Dict
 
 from .classes import ShellScriptTask
-from .context import append_task, add_debug_images
+from .context import append_task, add_images_to_save
 from .processes import enum, execute_global
 
 _default_parameters = {
@@ -136,7 +136,7 @@ def StarAlignment(images, **kwargs):
            view_id=view_id,
            dirty=True) for view_id, image in zip(output_view_ids, images)
   ]
-  add_debug_images(output_images)
+  add_images_to_save(output_images)
 
   print(f'### StarXTerminator returning {output_images}')
   return output_images

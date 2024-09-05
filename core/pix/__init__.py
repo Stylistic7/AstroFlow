@@ -3,7 +3,7 @@ from .classes import ShellScriptTask
 from .shell_script import start_pixinsight_instances
 
 from .decorators import PixInsight
-from .context import append_task, get_next_process_number, get_tmp_dir
+from .context import append_task, get_next_process_number
 from .open_images import OpenImages
 from .save_images import SaveImages
 from .rename_most_recent_view import RenameMostRecentView

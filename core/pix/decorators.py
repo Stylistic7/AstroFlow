@@ -4,7 +4,6 @@ import functools
 import os
 from pathlib import Path
 import inspect
-from addict import Dict
 
 from file_io.generic import get_content_hash
 from hashing import hash_list
@@ -14,36 +13,8 @@ from . import open_images
 from . import save_images
 
 
-def _extend_filename(image, funcname):
-  if image.get('explicit_name', False):
-    return image.filename
-
-  path = Path(image.filename)
-
-  if image.tag:
-    return str(path.parent /
-               (path.stem + '_' + funcname + '_' + image.tag + path.suffix))
-  else:
-    return str(path.parent / (path.stem + '_' + funcname + path.suffix))
-
-
-def _normalize_result(result):
-  if type(result) is Dict:
-    return [result]
-
-  if type(result) is list:
-    return result
-
-  if type(result) is tuple:
-    output = []
-    for x in result:
-      output.extend(_normalize_result(x))
-
-    return output
-
-
 # TODO: Refactor this function into pieces.
-def PixInsight(dry_run=False, debug=False):
+def PixInsight(dry_run=False):
 
   def decorator(func):
 
@@ -54,85 +25,67 @@ def PixInsight(dry_run=False, debug=False):
       if type(filenames) is not list:
         filenames = [filenames]
 
-      # The content hash of images produced by this PixInsight function
+      # TODO: The content hash of images produced by this PixInsight function
       # are composed of the hash of the function's code, the hashes of all
       # the function's input images, and the output image's view_id.
-      input_image_hashes = [get_content_hash(f) for f in filenames]
+      # input_image_hashes = [get_content_hash(f) for f in filenames]
 
-      try:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-          context = dict(tmp_dir=tmp_dir,
-                         tasks=[],
-                         images_to_save=[],
-                         debug_images=[],
-                         process_number=0)
+      tmp_dir_obj = tempfile.TemporaryDirectory()
+      context = dict(tmp_dir_obj=tmp_dir_obj,
+                     tasks=[],
+                     images_to_save=[],
+                     debug_images=[],
+                     process_number=0)
 
-          def call_with_context(func, *args, **kwargs):
-            func.__globals__.update(context)
-            return func(*args, **kwargs)
+      def normalize_images(results):
+        output = []
+        for result in results:
+          result.tmp_dir_obj = tmp_dir_obj
 
-          # Load the given filenames and their metadata.
-          images = call_with_context(open_images.OpenImages, filenames)
+          if result.filename:
+            result.filename = os.path.join(tmp_dir_obj.name, result.filename)
+          else:
+            result.filename = os.path.join(tmp_dir_obj.name,
+                                           f'{result.tag}.xisf')
 
-          # Call the decorated PixInsight function.
-          print(f'### Calling PixInsight function {func.__name__}')
-          result = _normalize_result(
-              call_with_context(func, images, *args, **kwargs))
-          print(f'### PixInsight function {func.__name__} returned correctly, '
-                f'{len(context["tasks"])} tasks, result {result}')
+          output.append(result)
 
-          # If the PixInsight function didn't add any tasks, there is nothing
-          # to do. The OpenImages task doesn't count.
-          if len(context['tasks']) == 1:
-            result = [i['filename'] for i in result]
-            print(f'### PixInsight function {func.__name__} made no tasks, '
-                  'fwrapper returning {result}')
-            return result
+        return output
 
-          # Iterate over all the output images produced by the decorated
-          # PixInsight function, and decide which ones actually need to be
-          # saved to disk.
-          images_to_save = []
-          for image in result + context['images_to_save']:
-            if image in images_to_save:
-              continue
+      def call_with_context(func, *args, **kwargs):
+        func.__globals__.update(context)
+        return func(*args, **kwargs)
 
-            assert image.view_id and image.filename, f'Impossible image {image}'
+      # Load the given filenames and their metadata.
+      images = call_with_context(open_images.OpenImages, filenames)
 
-            if not image.dirty:
-              continue
+      # Call the decorated PixInsight function.
+      print(f'### Calling PixInsight function {func.__name__}')
+      results = call_with_context(func, images, *args, **kwargs)
+      print(f'### PixInsight function {func.__name__} returned correctly, '
+            f'{len(context["tasks"])} tasks, results {results}')
 
-            image.filename = _extend_filename(image, func.__name__)
-            image.content_hash = hash_list([inspect.getsource(func)] +
-                                           input_image_hashes + [image.view_id])
+      # If the PixInsight function didn't add any tasks, there is nothing
+      # to do. The OpenImages task doesn't count.
+      if len(context['tasks']) == 1:
+        print(f'### PixInsight function {func.__name__} made no tasks, '
+              'fwrapper returning {results}')
+        return results
 
-            print(f'### will save: {image}')
-            images_to_save.append(image)
+      results = normalize_images(results)
+      call_with_context(save_images.SaveImages, results)
 
-          if images_to_save:
-            call_with_context(save_images.SaveImages, images_to_save)
+      # In dry_run mode, just touch all of the files that the tasks claim they
+      # produce. Otherwise, run the script.
+      if dry_run:
+        for result in results:
+          (Path(tmp_dir_obj.name) / result.filename).touch()
+      else:
+        print(f"### Shell script is ready for {func.__name__}, with "
+              f"{len(context['tasks'])} tasks")
+        shell_script.run_script(context['tasks'], dry_run=dry_run)
 
-          print(f"### Shell script is ready for {func.__name__}, with "
-                f"{len(context['tasks'])} tasks")
-          print(f'### images_to_save is', images_to_save)
-          shell_script.run_script(context['tasks'], dry_run=dry_run)
-
-          # TODO: This doesn't work for FITS files.
-          # if not dry_run:
-          #   for image in images_to_save:
-          #     assert os.path.exists(image.filename)
-          #     add_xisf_metadata(image.filename, image.filename,
-          #                       {_CONTENT_HASH_KEY: image.content_hash})
-      except Exception as e:
-        traceback.print_exc(e)
-
-      # TODO: It's weird to return this instead of the normal content.
-      if debug:
-        return context['debug_images']
-
-      result = [i['filename'] for i in result]
-      print('### wrapper returning, filenames', result)
-      return result
+      return results
 
     return wrapper
 

@@ -13,3 +13,16 @@ class ShellScriptTask:
   javascript_filename: str = None
   parameters: dict = field(default_factory=dict)
   arguments: dict = field(default_factory=dict)
+
+
+@dataclass
+class Image:
+  tmp_dir_obj: object = None
+  filename: str = None
+  view_id: str = None
+  tag: str = None
+  metadata: dict = field(default_factory=dict)
+  dirty: bool = False
+
+  def __str__(self):
+    return self.filename

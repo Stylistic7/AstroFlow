@@ -83,5 +83,4 @@ def PhotometricMosaic(images, output_filename, *args, **kwargs):
   return Dict(filename=output_filename,
               view_id='Mosaic',
               filter=images[0].filter,
-              explicit_name=True,
               dirty=True)

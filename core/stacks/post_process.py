@@ -9,6 +9,7 @@ from artifacts.decorators import saves_artifacts
 from stacks.artifacts import stack_files_artifacts
 import pix
 from hashing import hash_list
+from stacks import stack_files_artifacts
 
 
 # TODO: Find a way to disable or mock these these during tests.
@@ -21,10 +22,16 @@ def _post_process_stack(image):
 
 
 def post_process_stack_artifacts(stack_id):
-  stack = context.stacks[stack_id]
-  filename = os.path.join(context.output_dir, 'Stacks', stack.target, 'masters',
-                          f'stack_{stack_id}_post_processed.xisf')
+  artifacts = stack_files_artifacts(stack_id)
+  assert len(artifacts) == 1
+  artifact = next(iter(artifacts))
+  path = artifact.filename
+  filename = path.with_stem(path.stem + "_post_processed")
+
+  # TODO: Should the pix library use the artifact workflow, and compute its
+  # own content hashes?
   script_hash = inspect.getsource(_post_process_stack)
+  stack = context.stacks[stack_id]
   content_hash = hash_list([stack.content_hash, script_hash])
   return [FileArtifact(filename, content_hash)]
 
@@ -49,6 +56,8 @@ def post_process_stack(stack_id):
   output_artifact = output_artifacts[0]
   assert type(output_artifact) is FileArtifact
 
+  # TODO: Should the pix library use the artifact workflow, and compute its
+  # own content hashes?
   metadata = {'CONTHASH': output_artifact.content_hash}
   file_io.xisf_file_io.add_xisf_metadata(output_image, output_artifact.filename,
                                          metadata)
