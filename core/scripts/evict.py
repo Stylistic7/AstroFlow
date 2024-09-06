@@ -68,9 +68,8 @@ if __name__ == '__main__':
     # Check if the beginning segment of big_tuple matches small_tuple
     return big_tuple[:len(small_tuple)] == small_tuple
 
-  delete_list = [
-      ('mosaic_thumbnail_image',),
-  ]
+  delete_list = [('mosaic_thumbnail_image',), ('merged_images',),
+                 ('placed_image',)]
   for k in cache.iterkeys():
     if any(starts_with(k, d) for d in delete_list):
       print('deleting key', k)

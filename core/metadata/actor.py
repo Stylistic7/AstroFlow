@@ -66,6 +66,7 @@ def get_metadata(input_images=None,
                  post_fn=lambda x: x):
   if input_images is not None:
     input_images = tuple(input_images)
+    assert len(input_images) > 0
 
   return _get_metadata(input_images, predicate_fn, transform_fn, post_fn)
 

@@ -16,6 +16,8 @@ def update_state():
       continue
 
     stack.state = {
+        'num_frames':
+            len(stack.all_frames()),
         'stack_files':
             all(artifact_exists(a) for a in stack_files_artifacts(stack_id)),
         'post_process_stack':

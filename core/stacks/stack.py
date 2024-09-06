@@ -71,6 +71,9 @@ class ImagingAttributes:
     self.newest_date = sorted_metadata[-1].header['DATE-OBS']
 
 
+# TODO: Store the best light frame during subframe selection; it will be used
+# in many places, e.g. thumbnailing, and eliminate a lot of unnecessary calls
+# to get_metadata().
 @dataclass
 class AstroFlowStateAttributes:
   state: dict = field(default_factory=dict)
