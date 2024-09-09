@@ -10,7 +10,9 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { CopyToClipboard } from 'react-copy-to-clipboard';
 import Snackbar from '@mui/material/Snackbar';
 import { Checkbox, FormControlLabel, FormGroup } from '@mui/material';
+import { IconButton, Tooltip } from '@mui/material';
 
+import ToggleIconButton from './ToggleIconButton.jsx';
 import MosaicOutline from "./MosaicOutline.jsx";
 import ColorChannelSelector from "./ColorChannelSelector.jsx";
 import TargetPanel from "./TargetPanel.jsx";
@@ -19,19 +21,9 @@ import { ra_to_hms, dec_to_dms } from './units.js';
 import DivWithActions from './DivWithActions.jsx';
 import MosaicOutlineActionButtons from './MosaicOutlineActionButtons.jsx';
 import ImageWithOverlay from "./ImageWithOverlay.jsx";
+import ProcessingActionButtons from "./ProcessingActionButtons.jsx";
 
 import "./Starmap.css";
-
-function RuleOfThirdsOverlay({ width, height }) {
-	return (
-		<svg viewBox={`0 0 ${width} ${height}`}>
-			<line x1="0" y1={height / 3} x2={width} y2={height / 3} stroke="white" strokeWidth="0.5" />
-			<line x1="0" y1={(height / 3) * 2} x2={width} y2={(height / 3) * 2} stroke="white" strokeWidth="0.5" />
-			<line x1={width / 3} y1="0" x2={width / 3} y2={height} stroke="white" strokeWidth="0.5" />
-			<line x1={(width / 3) * 2} y1="0" x2={(width / 3) * 2} y2={height} stroke="white" strokeWidth="0.5" />
-		</svg>
-	);
-}
 
 // TODO: Add "mosaic not found" messages.
 export default function MosaicPanel() {
@@ -117,11 +109,6 @@ export default function MosaicPanel() {
 		</>;
 	};
 
-	// TODO: Add other modes besides AUTO.
-	const runAllTasks = () => {
-		fetch(`/add_mosaic_to_shopping_cart/${params.mosaic_id}`);
-	};
-
 	const imageType = "mosaic_thumbnail_image_for_filter";
 
 	const handleZoomIn = () => {
@@ -132,7 +119,14 @@ export default function MosaicPanel() {
 		setScale(scale * 0.8);
 	}
 
-	const actionButtons = () => {
+	const leftActionButtons = () => {
+		return <ProcessingActionButtons
+			object_type="mosaic"
+			object_id={params.mosaic_id}
+		/>
+	}
+
+	const rightActionButtons = () => {
 		return <MosaicOutlineActionButtons
 			handleChange={handleChange}
 			handleZoomIn={handleZoomIn}
@@ -176,12 +170,18 @@ export default function MosaicPanel() {
 				key="telescopius-snackbar"
 			/>
 
-			<Typography color="text.primary" margin="0.5em" onClick={runAllTasks}>
-				<DirectionsRunIcon sx={{ marginRight: '0.5em' }} onClick={runAllTasks} /> Run all tasks
-			</Typography>
+			<ColorChannelSelector
+				stacks={stacks}
+				targets={targets}
+				mosaics={mosaics}
+				mosaic_id={params.mosaic_id}
+				filter={filter}
+				setFilter={handleSetFilter}
+			/>
 
 			<DivWithActions
-				action_buttons={actionButtons()}
+				left_action_buttons={leftActionButtons()}
+				right_action_buttons={rightActionButtons()}
 			>
 				<div
 					style={{
@@ -196,14 +196,6 @@ export default function MosaicPanel() {
 						overlay={mosaicOutline()}
 					/>
 				</div>
-				<ColorChannelSelector
-					stacks={stacks}
-					targets={targets}
-					mosaics={mosaics}
-					mosaic_id={params.mosaic_id}
-					filter={filter}
-					setFilter={handleSetFilter}
-				/>
 			</DivWithActions>
 		</>
 	);

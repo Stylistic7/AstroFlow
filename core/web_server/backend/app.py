@@ -97,67 +97,29 @@ def photo_sphere_viewer():
 
 @app.route('/get_shopping_cart')
 def get_shopping_cart():
-  return context.shopping_cart or []
+  return list(context.shopping_cart) or []
 
 
-# @app.route('/add_mosaic_to_shopping_cart/<mosaic_id>')
-# def add_mosaic_to_shopping_cart(mosaic_id):
-#   stacks = test_app.stacks if debug else cache.get('stacks', {})
-#   targets = test_app.targets if debug else cache.get('targets', {})
-#   mosaics = test_app.mosaics if debug else cache.get('mosaics', {})
-#   shopping_cart = test_app.shopping_cart if debug else cache.get(
-#       'shopping_cart', [])
+@app.route('/add_to_shopping_cart/<object_type>/<object_id>')
+def add_to_shopping_cart(object_type, object_id):
+  shopping_cart = context.shopping_cart or set()
+  shopping_cart.add((object_type, object_id))
+  context.shopping_cart = shopping_cart
 
-#   stack_ids = [
-#       s for t in mosaics[mosaic_id].target_ids for s in targets[t].stack_ids
-#   ]
-#   shopping_cart.extend([('stack_files', s) for s in stack_ids])
+  print('shopping_cart is now', context.shopping_cart)
 
-#   shopping_cart.append(('merge_mosaic', mosaic_id))
+  return Response(status=204)
 
-#   shopping_cart = list(set(shopping_cart))
-#   cache['shopping_cart'] = shopping_cart
 
-#   return Response(status=204)
+@app.route('/remove_from_shopping_cart/<object_type>/<object_id>')
+def remove_from_shopping_cart(object_type, object_id):
+  shopping_cart = context.shopping_cart or set()
+  shopping_cart.remove((object_type, object_id))
+  context.shopping_cart = shopping_cart
 
-# @app.route('/add_target_to_shopping_cart/<target_id>')
-# def add_target_to_shopping_cart(target_id):
-#   targets = test_app.targets if debug else cache.get('targets', {})
-#   shopping_cart = test_app.shopping_cart if debug else cache.get(
-#       'shopping_cart', [])
+  print('shopping_cart is now', context.shopping_cart)
 
-#   shopping_cart.extend([('stack_files', s) for s in targets[target_id].stack_ids
-#                        ])
-#   shopping_cart.append(('post_process_target', target_id))
-
-#   shopping_cart = list(set(shopping_cart))
-#   cache['shopping_cart'] = shopping_cart
-
-#   return Response(status=204)
-
-# @app.route('/add_to_shopping_cart/<object_type>/<object_id>')
-# def add_to_shopping_cart(object_type, object_id):
-#   with cache.transact():
-#     shopping_cart = test_app.shopping_cart if debug else cache.get(
-#         'shopping_cart', [])
-#     key = (object_type, object_id)
-#     if key not in shopping_cart:
-#       shopping_cart.append(key)
-#       cache['shopping_cart'] = shopping_cart
-
-#   return shopping_cart
-
-# @app.route('/remove_from_shopping_cart/<object_type>/<object_id>')
-# def remove_from_shopping_cart(object_type, object_id):
-#   with cache.transact():
-#     shopping_cart = test_app.shopping_cart if debug else cache.get(
-#         'shopping_cart', [])
-#     key = (object_type, object_id)
-#     if key in shopping_cart:
-#       shopping_cart.remove(key)
-#       cache['shopping_cart'] = shopping_cart
-
-#   return shopping_cart
+  return Response(status=204)
 
 
 @app.route('/starmap')

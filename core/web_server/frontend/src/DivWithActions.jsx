@@ -11,7 +11,16 @@ const DivWithActionsContainer = styled('div')({
 });
 
 // Styled component for the action buttons positioned outside the image
-const ActionButtonsContainer = styled('div')({
+const LeftActionButtonContainer = styled('div')({
+    position: 'absolute',
+    top: 0,
+    left: '-50px', // Adjust this to create space between the image and buttons
+    display: 'flex',
+    flexDirection: 'column',
+});
+
+// Styled component for the action buttons positioned outside the image
+const RightActionButtonContainer = styled('div')({
     position: 'absolute',
     top: 0,
     right: '-50px', // Adjust this to create space between the image and buttons
@@ -19,7 +28,7 @@ const ActionButtonsContainer = styled('div')({
     flexDirection: 'column',
 });
 
-const DivWithActions = ({ children, title, action_buttons }) => {
+const DivWithActions = ({ children, title, left_action_buttons, right_action_buttons }) => {
     const [isVisible, setIsVisible] = useState(true);
     const [openDialog, setOpenDialog] = useState(false);
 
@@ -29,12 +38,15 @@ const DivWithActions = ({ children, title, action_buttons }) => {
         <div style={{ display: 'flex', justifyContent: 'center' }}>
             {title && <h3>{title}</h3>}
             <DivWithActionsContainer>
+                {left_action_buttons && <LeftActionButtonContainer>
+                    {left_action_buttons}
+                </LeftActionButtonContainer>}
                 <div>
                     {children}
                 </div>
-                <ActionButtonsContainer>
-                    {action_buttons}
-                </ActionButtonsContainer>
+                {right_action_buttons && <RightActionButtonContainer>
+                    {right_action_buttons}
+                </RightActionButtonContainer>}
             </DivWithActionsContainer>
         </div>
     );
