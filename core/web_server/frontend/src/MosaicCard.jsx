@@ -28,6 +28,9 @@ export default function MosaicCard({ mosaic_id }) {
     return Array.from(filters).join(", ");
   }
 
+  // TODO: Display the mosaic image and outline using the same structures
+  // used in the MosaicPanel component.
+  //
   // TODO: Figure out how to show just the "best" channel in the Card.
   return (
     <Card>

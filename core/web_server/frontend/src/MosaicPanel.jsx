@@ -49,6 +49,8 @@ export default function MosaicPanel() {
 		exposure_widgets: true,
 	});
 
+	const [scale, setScale] = useState(1.0)
+
 	const handleChange = (name, checked) => {
 		setVisibility({
 			...visibility,
@@ -122,9 +124,19 @@ export default function MosaicPanel() {
 
 	const imageType = "mosaic_thumbnail_image_for_filter";
 
+	const handleZoomIn = () => {
+		setScale(scale * 1.2);
+	}
+
+	const handleZoomOut = () => {
+		setScale(scale * 0.8);
+	}
+
 	const actionButtons = () => {
 		return <MosaicOutlineActionButtons
 			handleChange={handleChange}
+			handleZoomIn={handleZoomIn}
+			handleZoomOut={handleZoomOut}
 		/>
 	}
 
@@ -179,8 +191,8 @@ export default function MosaicPanel() {
 					}}>
 					<ImageWithOverlay
 						src={`/${imageType}/${params.mosaic_id}/${filter}`}
-						alt="foo"
-						scale={1.0}
+						alt="mosaic"
+						scale={scale}
 						overlay={mosaicOutline()}
 					/>
 				</div>

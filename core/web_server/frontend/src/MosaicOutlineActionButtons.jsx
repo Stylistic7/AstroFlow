@@ -4,11 +4,13 @@ import LooksOneOutlinedIcon from '@mui/icons-material/LooksOneOutlined';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import AccessTimeOutlinedIcon from '@mui/icons-material/AccessTimeOutlined';
+import ZoomInIcon from '@mui/icons-material/ZoomIn';
+import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 
 import ToggleIconButton from './ToggleIconButton.jsx';
 
 
-export default function MosaicOutlineActionButtons({ handleChange }) {
+export default function MosaicOutlineActionButtons({ handleChange, handleZoomIn, handleZoomOut }) {
   // const handleQuarantine = (stack_id) => {
   //   // console.log(`Quaranting stack ${stack_id}`);
   //   // fetch(`/quarantine_stack/${stack_id}`);
@@ -20,6 +22,26 @@ export default function MosaicOutlineActionButtons({ handleChange }) {
   // };
 
   return <>
+    <Tooltip title="Zoom In">
+      <IconButton
+        name="zoom_in"
+        color="white"
+        onClick={handleZoomIn}
+      >
+        <ZoomInIcon />
+      </IconButton>
+    </Tooltip>
+    <Tooltip title="Zoom Out">
+      <IconButton
+        name="zoom_out"
+        color="white"
+        onClick={handleZoomOut}
+      >
+        <ZoomOutIcon />
+      </IconButton>
+    </Tooltip>
+    <div style={{ height: "2em" }}></div>
+
     <Tooltip title="Show Outline">
       <IconButton color="white">
         <ToggleIconButton
