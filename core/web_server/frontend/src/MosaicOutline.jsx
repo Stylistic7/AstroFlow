@@ -23,6 +23,8 @@ function NoStackIcon({ x, y, width, height }) {
 export default function MosaicOutline({
   mosaic_id,
   filter,
+  width,
+  height,
   outline_visible = true,
   indices_visible = false,
   exposure_widgets_visible = false,
@@ -84,6 +86,8 @@ export default function MosaicOutline({
   return (
     <RotatedSvg
       id="mosaic_svg"
+      width={width}
+      height={height}
       viewBox={mosaic.projected_footprint[projection].viewbox.join(" ")}
       style={{
         pointerEvents: "auto",

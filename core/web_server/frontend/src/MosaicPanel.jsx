@@ -11,7 +11,6 @@ import { CopyToClipboard } from 'react-copy-to-clipboard';
 import Snackbar from '@mui/material/Snackbar';
 import { Checkbox, FormControlLabel, FormGroup } from '@mui/material';
 
-import AstroFlowBreadcrumbs from "./AstroFlowBreadcrumbs.jsx";
 import MosaicOutline from "./MosaicOutline.jsx";
 import ColorChannelSelector from "./ColorChannelSelector.jsx";
 import TargetPanel from "./TargetPanel.jsx";
@@ -19,8 +18,20 @@ import AstroFlowContext from './AstroFlowContext.jsx';
 import { ra_to_hms, dec_to_dms } from './units.js';
 import DivWithActions from './DivWithActions.jsx';
 import MosaicOutlineActionButtons from './MosaicOutlineActionButtons.jsx';
+import ImageWithOverlay from "./ImageWithOverlay.jsx";
 
 import "./Starmap.css";
+
+function RuleOfThirdsOverlay({ width, height }) {
+	return (
+		<svg viewBox={`0 0 ${width} ${height}`}>
+			<line x1="0" y1={height / 3} x2={width} y2={height / 3} stroke="white" strokeWidth="0.5" />
+			<line x1="0" y1={(height / 3) * 2} x2={width} y2={(height / 3) * 2} stroke="white" strokeWidth="0.5" />
+			<line x1={width / 3} y1="0" x2={width / 3} y2={height} stroke="white" strokeWidth="0.5" />
+			<line x1={(width / 3) * 2} y1="0" x2={(width / 3) * 2} y2={height} stroke="white" strokeWidth="0.5" />
+		</svg>
+	);
+}
 
 // TODO: Add "mosaic not found" messages.
 export default function MosaicPanel() {
@@ -117,11 +128,21 @@ export default function MosaicPanel() {
 		/>
 	}
 
+	const mosaicOutline = () => (props) => {
+		return <MosaicOutline
+			{...props}
+			mosaic_id={params.mosaic_id}
+			filter={filter}
+			outline_visible={visibility.outline}
+			indices_visible={visibility.indices}
+			exposure_widgets_visible={visibility.exposure_widgets}
+		/>;
+	};
+
 	// TODO: Add a dialog box to the "run" button that shows the user what will be
 	// run, and how long it will likely take, and allow them to accept it.
 	return (
 		<>
-			<AstroFlowBreadcrumbs />
 			<Accordion>
 				<AccordionSummary
 					expandIcon={<ExpandMoreIcon />}
@@ -150,65 +171,27 @@ export default function MosaicPanel() {
 			<DivWithActions
 				action_buttons={actionButtons()}
 			>
-				<div id="mosaicPanel"
+				<div
 					style={{
-						display: "block",
-						flex: "1",
-						margin: "1em",
-						position: "relative",
-						maxWidth: "75vw",
-						maxHeight: "75vh",
-						marginLeft: "auto",
-						marginRight: "auto"
+						display: "flex",
+						flexDirection: "row",
+						justifyContent: "center"
 					}}>
-					<img
+					<ImageWithOverlay
 						src={`/${imageType}/${params.mosaic_id}/${filter}`}
-						style={{
-							display: "block",
-							marginLeft: "auto",
-							marginRight: "auto",
-							maxWidth: "75vw",
-							maxHeight: "75vh"
-						}}
-					/>
-					<MosaicOutline
-						stacks={stacks}
-						targets={targets}
-						mosaics={mosaics}
-						mosaic_id={params.mosaic_id}
-						filter={filter}
-						outline_visible={visibility.outline}
-						indices_visible={visibility.indices}
-						exposure_widgets_visible={visibility.exposure_widgets}
-						style={{
-							display: "block",
-							position: "absolute",
-							left: 0,
-							top: 0,
-							width: "100%",
-							height: "100%",
-							marginLeft: "auto",
-							marginRight: "auto",
-							maxWidth: "auto",
-							maxHeight: "auto",
-						}}
-					/>
-					<ColorChannelSelector
-						stacks={stacks}
-						targets={targets}
-						mosaics={mosaics}
-						mosaic_id={params.mosaic_id}
-						filter={filter}
-						setFilter={handleSetFilter}
-						style={{
-							height: "100%",
-							maxWidth: "100%",
-							display: "block",
-							marginLeft: "auto",
-							marginRight: "auto",
-						}}
+						alt="foo"
+						scale={1.0}
+						overlay={mosaicOutline()}
 					/>
 				</div>
+				<ColorChannelSelector
+					stacks={stacks}
+					targets={targets}
+					mosaics={mosaics}
+					mosaic_id={params.mosaic_id}
+					filter={filter}
+					setFilter={handleSetFilter}
+				/>
 			</DivWithActions>
 		</>
 	);

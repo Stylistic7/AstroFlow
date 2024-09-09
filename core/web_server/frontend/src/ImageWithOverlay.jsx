@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import './ImageWithOverlay.css';
 
-const ImageWithOverlay = ({ src, alt, scale = 1 }) => {
+const ImageWithOverlay = ({ src, alt, scale = 1, overlay }) => {
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   const imageRef = useRef(null);
 
@@ -49,13 +49,10 @@ const ImageWithOverlay = ({ src, alt, scale = 1 }) => {
           height: '100%',
         }}
       />
-      {width > 0 && height > 0 && (
-        <svg className="rule-of-thirds-overlay" viewBox={`0 0 ${width} ${height}`}>
-          <line x1="0" y1={height / 3} x2={width} y2={height / 3} stroke="white" strokeWidth="0.5" />
-          <line x1="0" y1={(height / 3) * 2} x2={width} y2={(height / 3) * 2} stroke="white" strokeWidth="0.5" />
-          <line x1={width / 3} y1="0" x2={width / 3} y2={height} stroke="white" strokeWidth="0.5" />
-          <line x1={(width / 3) * 2} y1="0" x2={(width / 3) * 2} y2={height} stroke="white" strokeWidth="0.5" />
-        </svg>
+      {scaledWidth > 0 && scaledHeight > 0 && overlay && (
+        <div className="overlay-container">
+          {overlay({ scaledWidth, scaledHeight })}
+        </div>
       )}
     </div>
   );
