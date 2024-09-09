@@ -3,6 +3,7 @@ import { styled, alpha } from '@mui/material/styles';
 import AppBar from '@mui/material/AppBar';
 import Box from '@mui/material/Box';
 import Toolbar from '@mui/material/Toolbar';
+import AstroFlowBreadcrumbs from "./AstroFlowBreadcrumbs.jsx";
 import IconButton from '@mui/material/IconButton';
 import InputBase from '@mui/material/InputBase';
 import Badge from '@mui/material/Badge';
@@ -19,6 +20,7 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import lunr from 'lunr';
 import LeftDrawer from "./LeftDrawer.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
+import { Breadcrumbs } from "@mui/material";
 
 
 const Search = styled('div')(({ theme }) => ({
@@ -196,9 +198,11 @@ export default function PrimarySearchAppBar() {
     </Menu>
   );
 
+  const Offset = styled('div')(({ theme }) => theme.mixins.toolbar);
+
   return (
     <Box sx={{ flexGrow: 1 }}>
-      <AppBar position="static">
+      <AppBar position="fixed">
         <Toolbar>
           <LeftDrawer />
           <img src="/static/images/astroflow_logo_white.png" style={{ height: 30 }} />
@@ -261,7 +265,10 @@ export default function PrimarySearchAppBar() {
             </IconButton>
           </Box>
         </Toolbar>
+        <AstroFlowBreadcrumbs />
       </AppBar>
+      <Offset />
+      <Breadcrumbs sx={{ padding: "1.4em" }} />
       {renderMobileMenu}
       {renderMenu}
     </Box>

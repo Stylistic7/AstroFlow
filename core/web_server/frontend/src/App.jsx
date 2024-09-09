@@ -21,6 +21,7 @@ import './App.css';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { createContext, useContext } from 'react';
 import AstroFlowContext from './AstroFlowContext.jsx';
+import AstroFlowBreadcrumbs from "./AstroFlowBreadcrumbs.jsx";
 import { Stack } from '@mui/material';
 
 function App() {
@@ -84,6 +85,9 @@ function App() {
   //
   // This could maybe be implemented with "complex but normalized" routes like
   // /mosaic/:mosaic_id/target/:target_id/stack/:stack_id.
+
+  // TODO: It's a little awkward to have to put <Search /> in each of these
+  // routes.
   return (
     <ThemeProvider theme={darkTheme}>
       <StyledEngineProvider injectFirst>
@@ -92,37 +96,66 @@ function App() {
         >
           <CssBaseline />
           <Router>
-            <Search />
             <Routes>
               <Route exact path="/" element={
-                <Starmap />
+                <>
+                  <Search />
+                  <Starmap />
+                </>
               } />
               <Route exact path="/stack/:stack_id" element={
-                dataIsAvailable && <StackPanel />}
+                dataIsAvailable && <>
+                  <Search />
+                  <MosaicPanel />
+                </>}
               />
               <Route exact path="/target/:target_id" element={
-                dataIsAvailable && <TargetPanel />}
+                dataIsAvailable && <>
+                  <Search />
+                  <TargetPanel />
+                </>}
               />
               <Route exact path="/mosaic/:mosaic_id" element={
-                dataIsAvailable && <MosaicPanel />}
+                dataIsAvailable && <>
+                  <Search />
+                  <MosaicPanel />
+                </>}
               />
               <Route exact path="/target/:target_id/stack/:stack_id" element={
-                dataIsAvailable && <StackPanel />}
+                dataIsAvailable && <>
+                  <Search />
+                  <StackPanel />
+                </>}
               />
               <Route exact path="/mosaic/:mosaic_id/target/:target_id" element={
-                dataIsAvailable && <TargetPanel />}
+                dataIsAvailable && <>
+                  <Search />
+                  <TargetPanel />
+                </>}
               />
               <Route exact path="/mosaic/:mosaic_id/target/:target_id/stack/:stack_id" element={
-                dataIsAvailable && <StackPanel />}
+                dataIsAvailable && <>
+                  <Search />
+                  <StackPanel />
+                </>}
               />
               <Route exact path="/flat_correction/:stack_id" element={
-                dataIsAvailable && <FlatCorrectionPanel stacks={stacks} />}
+                dataIsAvailable && <>
+                  <Search />
+                  <FlatCorrectionPanel stacks={stacks} />
+                </>}
               />
               <Route exact path="/disambiguation/:items" element={
-                dataIsAvailable && <DisambiguationPanel />}
+                dataIsAvailable && <>
+                  <Search />
+                  <DisambiguationPanel />
+                </>}
               />
               <Route exact path="/recent" element={
-                dataIsAvailable && <RecentPanel />}
+                dataIsAvailable && <>
+                  <Search />
+                  <RecentPanel />
+                </>}
               />
               <Route exact path="/sse" element={
                 dataIsAvailable && <SsePanel />}

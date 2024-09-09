@@ -1,7 +1,6 @@
 import React, { useContext } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
-import AstroFlowBreadcrumbs from "./AstroFlowBreadcrumbs.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
 import MosaicCard from "./MosaicCard.jsx";
 import TargetCard from "./TargetCard.jsx";
@@ -16,7 +15,6 @@ export default function DisambiguationPanel({ items_in }) {
 
 	return (
 		<>
-			<AstroFlowBreadcrumbs />
 			<div style={{
 				marginLeft: "1em",
 				marginRight: "1em",

@@ -15,7 +15,6 @@ import ClipLoader from "react-spinners/ClipLoader";
 
 import Typography from '@mui/material/Typography';
 
-import AstroFlowBreadcrumbs from "./AstroFlowBreadcrumbs.jsx";
 import StackThumbnail from "./StackThumbnail.jsx";
 import RunPanel from "./RunPanel.jsx";
 import "./Starmap.css";
@@ -184,7 +183,6 @@ export default function StackPanel() {
 
 	return (
 		<>
-			<AstroFlowBreadcrumbs />
 			<div style={{ margin: "2px" }}>
 				<div>
 					<Typography color="text.primary" margin="0.5em">

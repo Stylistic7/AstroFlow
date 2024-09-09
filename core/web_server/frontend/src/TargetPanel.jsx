@@ -12,7 +12,6 @@ import DialogContentText from '@mui/material/DialogContentText';
 import DialogActions from '@mui/material/DialogActions';
 import Button from '@mui/material/Button';
 
-import AstroFlowBreadcrumbs from "./AstroFlowBreadcrumbs.jsx";
 import StackThumbnail from "./StackThumbnail.jsx";
 import "./Starmap.css";
 import AstroFlowContext from './AstroFlowContext.jsx';
@@ -109,7 +108,6 @@ export default function TargetPanel() {
 
 	return (
 		<>
-			<AstroFlowBreadcrumbs />
 			<QuarantineTargetDialog
 				target_id={params.target_id}
 				open={open}

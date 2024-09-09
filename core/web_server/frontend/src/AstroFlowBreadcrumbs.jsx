@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useReducer } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useContext } from 'react';
+import { styled, useTheme } from '@mui/material/styles';
 
 import Breadcrumbs from '@mui/material/Breadcrumbs';
 import LayersIcon from '@mui/icons-material/Layers';
@@ -18,6 +19,7 @@ export default function AstroFlowBreadcrumbs() {
 
     const params = useParams();
     const location = useLocation();
+    const theme = useTheme();
 
     const mosaic = mosaics[params.mosaic_id];
     const target = targets[params.target_id];
@@ -43,7 +45,10 @@ export default function AstroFlowBreadcrumbs() {
     }
 
     return <>
-        <Breadcrumbs aria-label="breadcrumb" sx={{ padding: "10px" }}>
+        <Breadcrumbs aria-label="breadcrumb" sx={{
+            padding: "10px",
+            backgroundColor: theme.palette.background.default,
+        }}>
             <Link
                 href="/"
                 underline="hover"
