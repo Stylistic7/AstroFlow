@@ -85,19 +85,6 @@ export default function RunPanel({ stack_id, flat_stack_ids }) {
                     onSlide={onSlide}
                 />
             </div>
-            <div><span>Stack {stack.frames.length} frames, content_hash: {stack.content_hash} flat {stack.dependencies['flat']}</span></div>
-            <div><span>Available flat stacks for camera {stack.camera} and filter {stack.filter}:</span></div>
-            <ul>
-                {flat_stack_ids.map(id =>
-                    <li>
-                        {stackSettings['flat'] == id ? <CheckIcon /> : null}
-                        <a style={{ cursor: 'pointer' }} onClick={() => set_settings(stack_id, { 'flat': id })}>{stacks[id].content_hash}</a>:&nbsp;
-                        {stacks[id].frames.length}&nbsp;
-                        {stacks[id].image_type} frames&nbsp;
-                        {stacks[id].oldest_date}&nbsp;
-                        {stacks[id].newest_date}
-                    </li>)}
-            </ul>
         </div >
     );
 }

@@ -35,20 +35,22 @@ const DivWithActions = ({ children, title, left_action_buttons, right_action_but
     if (!isVisible) return null;
 
     return (
-        <div style={{ display: 'flex', justifyContent: 'center' }}>
-            {title && <h3>{title}</h3>}
-            <DivWithActionsContainer>
-                {left_action_buttons && <LeftActionButtonContainer>
-                    {left_action_buttons}
-                </LeftActionButtonContainer>}
-                <div>
-                    {children}
-                </div>
-                {right_action_buttons && <RightActionButtonContainer>
-                    {right_action_buttons}
-                </RightActionButtonContainer>}
-            </DivWithActionsContainer>
-        </div>
+        <>
+            {title && <h3 style={{ padding: "0.5em" }}>{title}</h3>}
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <DivWithActionsContainer>
+                    {left_action_buttons && <LeftActionButtonContainer>
+                        {left_action_buttons}
+                    </LeftActionButtonContainer>}
+                    <div>
+                        {children}
+                    </div>
+                    {right_action_buttons && <RightActionButtonContainer>
+                        {right_action_buttons}
+                    </RightActionButtonContainer>}
+                </DivWithActionsContainer>
+            </div>
+        </>
     );
 };
 
