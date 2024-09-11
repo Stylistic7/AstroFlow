@@ -23,6 +23,8 @@ def done_stacking():
   pass
 
 
+# TODO: This should depend on target subgraphs, which will in turn depend on
+# stack subgraphs.
 @ray.remote
 def build_stacks_for_mosaic_subgraph(mode, mosaic_id):
   print(f'### build_stacks_for_mosaic_subgraph {mode} {mosaic_id}')

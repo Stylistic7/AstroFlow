@@ -14,6 +14,13 @@ def gather_identify_stacks(ancestor_results=None):
   pass
 
 
+# TODO: This could probably be simplified.
+#
+# TODO: The spatial groups should include metadata refs, and they should
+# be passed down into identify_stacks().
+#
+# TODO: The stack identification and target identification should be separated
+# for clarity.
 @ray.remote
 def scatter_identify_stacks():
   graph = Graph()

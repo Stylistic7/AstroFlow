@@ -8,10 +8,9 @@ from catalogs import position_string
 from geometry import footprints
 from context import context
 import plate_solving
+from clustering.classes import SpatialGroup
 
 
-# TODO: There is nothing "spatial" about this. It's just a greedy algorithm
-# to group elements that satisfy a predicate.
 def find_groups(values, comparison_fn, min_component_members) -> list[str]:
   print(f'Finding groups among {len(values)} values')
   ids = values.keys()
@@ -64,17 +63,23 @@ def cluster_by_image_center():
   def get_centroid(center):
     return np.asarray(footprints.radec_to_vector(*center))
 
-  metadata = get_metadata(predicate_fn=predicate_fn,
-                          transform_fn=lambda i:
-                          (i.content_hash, i.plate_solution.center),
-                          post_fn=lambda images: {
-                              hash: center for hash, center in images
-                          })
+  # metadata = get_metadata(predicate_fn=predicate_fn,
+  #                         transform_fn=lambda i:
+  #                         (i.content_hash, i.plate_solution.center),
+  #                         post_fn=lambda images: {
+  #                             hash: center for hash, center in images
+  #                         })
+
+  metadata = get_metadata(
+      predicate_fn=predicate_fn,
+      post_fn=lambda images: {i.content_hash: i for i in images})
+
   if not metadata:
     print('### metadata was Falsey')
     return {}
 
-  print(f'### metadata size {objsize.get_deep_size(metadata) / 1024 / 1024} MB')
+  metadata_size_mb = objsize.get_deep_size(metadata) / 1024 / 1024
+  print(f'### cluster_by_image_center metadata size {metadata_size_mb} MB')
 
   values = {h: get_centroid(i) for h, i in metadata.items()}
 
@@ -86,6 +91,17 @@ def cluster_by_image_center():
   def get_name(target):
     return position_string.canonical_target_string(metadata[target[0]])
 
-  targets = [(get_name(t), tuple(sorted(t))) for t in targets]
-  context.spatial_groups = targets
-  print(f'### Wrote {len(targets)} spatial groups into the cache')
+  spatial_groups = []
+  for target in targets:
+    metadata_ref = ray.put({h: i for h, i in metadata if h in target})
+    spatial_groups.append(
+        SpatialGroup(name=get_name(target),
+                     light_frames=tuple(sorted(t)),
+                     metadata_ref=metadata_ref))
+
+  # targets = [(get_name(t), tuple(sorted(t))) for t in targets]
+  context.spatial_groups = spatial_groups
+  print(f'### Wrote {len(spatial_groups)} spatial groups into the cache')
+
+  # TODO: The metadata has already been queried; this function should divide
+  # it up, put it into the object store, and pass along the refs.

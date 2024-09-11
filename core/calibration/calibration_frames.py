@@ -121,6 +121,8 @@ def associate_with_stack(stack, stacks):
   stack.dependencies |= settings
 
 
+# TODO: This should iterate over the stacks within a single spatial group. The
+# spatial group must include the metadata_ref.
 @ray.remote
 def associate_with_stacks():
   print('### Entering associate_with_stacks')

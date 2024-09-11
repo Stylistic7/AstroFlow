@@ -130,6 +130,9 @@ def _new_stacks(name, metadata):
 # TODO: Cache results for spatial groups. Astrophotographers rarely shoot more
 # than a few different spatial positions in a night anyway. If the hashes of
 # all the light frames are the same, then the resulting stacks are the same.
+#
+# TODO: The spatial_group should include a metadata_ref for all of the images
+# in it. The call to get_metadata() should be removed.
 @ray.remote
 def identify_stacks(spatial_group):
   if context.stacks == None:
