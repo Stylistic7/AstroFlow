@@ -22,8 +22,10 @@ def _post_process_target(images):
 # TODO: Hash the script used to do the post-processing, and do not repeat
 # the post-processing when a file with that hash already exists.
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
-def post_process_target(target_id, filenames):
-  print(f'post_process_target, target_id {target_id} filenames {filenames}')
-  result = _post_process_target(filenames)
-  print(f'post_process_target, target_id {target_id} returning {result}')
-  return result
+def post_process_target(target_id, *, ancestor_results):
+  print(
+      f'post_process_target, target_id {target_id} ancestor_results {ancestor_results}'
+  )
+  # result = _post_process_target(ancestor_results)
+  # print(f'post_process_target, target_id {target_id} returning {result}')
+  # return result
