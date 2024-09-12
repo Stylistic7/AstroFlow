@@ -45,6 +45,8 @@ def saves_artifacts(artifacts_fn,
     def wrapper(*args, **kwargs):
       if should_run(*args, **kwargs):
         return fn(*args, **kwargs)
+      else:
+        return artifacts_fn(*args, **kwargs)
 
     if in_test:
       wrapper.should_run = should_run

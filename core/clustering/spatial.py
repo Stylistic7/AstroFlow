@@ -6,7 +6,7 @@ import metadata.image_types as image_types
 from metadata.actor import get_metadata
 from catalogs import position_string
 from geometry import footprints
-from context import context
+from context import context, WriteMode
 import plate_solving
 from clustering.classes import SpatialGroup
 
@@ -53,22 +53,10 @@ def cluster_by_image_center():
   min_component_members = context.min_component_members
   quarantined_files = context.quarantined_files
 
+  # TODO: Put this "main" get_metadata() call into a separate function.
   def predicate_fn(image):
-    return image_types.is_light_frame(
-        image.header
-    ) and not image_types.is_master(
-        image.header) and image.content_hash not in quarantined_files and type(
-            image.plate_solution) is plate_solving.PlateSolution
-
-  def get_centroid(center):
-    return np.asarray(footprints.radec_to_vector(*center))
-
-  # metadata = get_metadata(predicate_fn=predicate_fn,
-  #                         transform_fn=lambda i:
-  #                         (i.content_hash, i.plate_solution.center),
-  #                         post_fn=lambda images: {
-  #                             hash: center for hash, center in images
-  #                         })
+    return not image_types.is_master(
+        image.header) and image.content_hash not in quarantined_files
 
   metadata = get_metadata(
       predicate_fn=predicate_fn,
@@ -81,7 +69,17 @@ def cluster_by_image_center():
   metadata_size_mb = objsize.get_deep_size(metadata) / 1024 / 1024
   print(f'### cluster_by_image_center metadata size {metadata_size_mb} MB')
 
-  values = {h: get_centroid(i) for h, i in metadata.items()}
+  context.set('metadata', metadata, write_mode=WriteMode.MEMORY_ONLY)
+
+  def get_centroid(center):
+    return np.asarray(footprints.radec_to_vector(*center))
+
+  values = {
+      h: get_centroid(i.plate_solution.center)
+      for h, i in metadata.items()
+      if image_types.is_light_frame(i.header) and not image_types.is_master(
+          i.header) and type(i.plate_solution) is plate_solving.PlateSolution
+  }
 
   def comparison_fn(a, b):
     return np.dot(a, b) > cosine_similarity_threshold
@@ -89,19 +87,9 @@ def cluster_by_image_center():
   targets = find_groups(values, comparison_fn, min_component_members)
 
   def get_name(target):
-    return position_string.canonical_target_string(metadata[target[0]])
+    return position_string.canonical_target_string(
+        metadata[target[0]].plate_solution.center)
 
-  spatial_groups = []
-  for target in targets:
-    metadata_ref = ray.put({h: i for h, i in metadata if h in target})
-    spatial_groups.append(
-        SpatialGroup(name=get_name(target),
-                     light_frames=tuple(sorted(t)),
-                     metadata_ref=metadata_ref))
-
-  # targets = [(get_name(t), tuple(sorted(t))) for t in targets]
+  spatial_groups = [(get_name(t), tuple(sorted(t))) for t in targets]
   context.spatial_groups = spatial_groups
   print(f'### Wrote {len(spatial_groups)} spatial groups into the cache')
-
-  # TODO: The metadata has already been queried; this function should divide
-  # it up, put it into the object store, and pass along the refs.

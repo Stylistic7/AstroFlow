@@ -8,7 +8,7 @@ import datetime
 import time
 
 from context import get_cache
-from context import cache, context
+from context import cache, context, WriteMode
 from testing.test_frames import make_synthetic_frames, copy_testdata_frames
 from testing.test_context import make_test_context
 from metadata.image_types import is_light_frame, is_dark_frame
@@ -62,7 +62,7 @@ class TestContext(unittest.TestCase):
   def test_flush_large_object(self):
     large_object = np.random.random((1000, 1000))
 
-    context.set('biggie', large_object, flush=True)
+    context.set('biggie', large_object, write_mode=WriteMode.DISK_ONLY)
 
     ref_dict = context.ref_dict()
     self.assertEqual(len(ref_dict), 0)

@@ -13,7 +13,7 @@ import xxhash
 from dependency_graph import Graph, run_graph
 from metadata.classes import ImageMetadata
 from metadata.image_metadata import compute_image_metadata, gather_compute_image_metadata
-from context import context
+from context import context, WriteMode
 import plate_solving
 from file_io.normalize_header import normalize_header
 
@@ -259,7 +259,7 @@ def make_synthetic_frames(start_datetime=datetime.datetime(
                                filename=fits_filename,
                                header=header,
                                plate_solution=plate_solution)
-      context.set(key, metadata, flush=True)
+      context.set(key, metadata, write_mode=WriteMode.DISK_ONLY)
       print(f'### Wrote key {key}')
 
     if not dest_dir:

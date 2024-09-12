@@ -15,7 +15,6 @@ from stacks.post_process import post_process_stack_artifacts
 from stacks.compute_graph import build_stack_subgraph
 from artifacts.decorators import saves_artifacts
 from previews import resize_array
-from metadata.actor import get_metadata_for_mosaic
 
 
 @ray.remote
@@ -47,13 +46,7 @@ def build_mosaic_filter_subgraphs(mode, mosaic_id):
   print(f'### build_mosaic_filter_subgraphs mode {mode} mosaic_id {mosaic_id}')
 
   # TODO: Run all of the (build_stack_subgraph, stack_id) tasks first.
-
-  # Get all of the image metadata for the entire mosaic (which may involve
-  # thousands of individual subframes) all at once. Pass it around as an
-  # ObjectRef inside a tuple, which is a Ray convention that prevents it from
-  # being dereferenced until desired.
-  metadata_ref = (ray.put(get_metadata_for_mosaic(mosaic_id)), 0)
-
+  #
   # TODO: If the final output artifact exists, there's no reason to build the
   # graph.
   graph = Graph()
@@ -64,7 +57,7 @@ def build_mosaic_filter_subgraphs(mode, mosaic_id):
   for filter in ['H', 'S', 'O', 'L', 'R', 'G', 'B']:
     graph |= ray.get(
         build_mosaic_filter_subgraph.remote(mode, mosaic_id, filter,
-                                            viewbox_task, metadata_ref))
+                                            viewbox_task))
 
   # TODO: Run post-processing here.
 
@@ -81,25 +74,23 @@ def build_mosaic_subgraph(mode, mosaic_id):
     return make_graph_from_list([stack_subgraph, mosaic_subgraph])
 
 
-def _get_best_light_frame(stack_id, metadata):
+def _get_best_light_frame(stack_id):
   stack = context.stacks[stack_id]
   light_frames_by_stars = quarantining.get_light_frames_sorted_by_stars(
-      stack.all_frames(), metadata)
+      stack.all_frames())
 
   return light_frames_by_stars[0]
 
 
 @ray.remote
-def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task,
-                                 metadata_ref):
+def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
   print(f'### build_mosaic_filter_subgraph mode {mode} '
         f'mosaic_id {mosaic_id} filter {filter}')
   stacks = context.stacks
   targets = context.targets
   mosaics = context.mosaics
-  mosaic = mosaics[mosaic_id]
 
-  metadata = ray.get(metadata_ref[0])
+  mosaic = mosaics[mosaic_id]
 
   graph = Graph()
 
@@ -121,14 +112,14 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task,
 
     # TODO: Find a way to streamline all these if-else statements in general.
     if mode == 'subframe':
-      best_light_frame = _get_best_light_frame(stack_id, metadata)
+      best_light_frame = _get_best_light_frame(stack_id)
       input_artifact = FileArtifact(best_light_frame.filename,
                                     best_light_frame.content_hash)
     elif mode == 'master':
       input_artifact = post_process_stack_artifacts(stack_id)[0]
 
     placement_task = (mosaic_by_coordinates, mode, mosaic_id, filter, stack_id,
-                      input_artifact, metadata_ref)
+                      input_artifact)
     graph[placement_task] = {viewbox_task}
 
     placed_artifact = mosaic_by_coordinates_artifacts(mode, mosaic_id, filter,

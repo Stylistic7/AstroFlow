@@ -1,10 +1,12 @@
 import ray
 import numpy as np
+import operator
+import itertools
 
 import metadata.image_types as image_types
 from context import context
 from stacks import SimpleStack
-from metadata.actor import get_metadata, group_by_header, cluster_by_header
+from metadata.actor import get_metadata, cluster_by_header
 import clustering
 
 
@@ -16,6 +18,7 @@ def identify_calibration_stacks():
     if not len(frames):
       return []
 
+    # TODO: Don't use this function, it's too slow.
     result = cluster_by_header(
         frames, 'DATE-OBS', lambda images: clustering.cluster_continuous(
             images, epsilon=context.max_run_gap))
@@ -23,18 +26,23 @@ def identify_calibration_stacks():
         [x[0] for x in r] for r in result if len(r) >= context.min_frames_in_run
     ]
 
-  cal_frames = get_metadata(
-      predicate_fn=lambda i: not image_types.is_master(i.header),
-      transform_fn=lambda i: i.content_hash)
+  def group_by_header(images, key):
+    key_fn = lambda i: i.header[key]
+    images = sorted([i for i in images if key in i.header], key=key_fn)
+    return {
+        k: set(i.content_hash for i in g)
+        for k, g in itertools.groupby(images, key=key_fn)
+    }
 
-  frames_for_image_type = group_by_header(cal_frames, 'IMAGETYP')
-  frames_for_camera = group_by_header(cal_frames, 'INSTRUME')
-  frames_for_exposure = group_by_header(cal_frames, 'EXPOSURE')
-  frames_for_filter = group_by_header(cal_frames, 'FILTER')
+  metadata = context.metadata
+  frames_for_image_type = group_by_header(metadata.values(), 'IMAGETYP')
+  frames_for_camera = group_by_header(metadata.values(), 'INSTRUME')
+  frames_for_exposure = group_by_header(metadata.values(), 'EXPOSURE')
+  frames_for_filter = group_by_header(metadata.values(), 'FILTER')
 
   def new_stack(frames):
     stack = SimpleStack(frames=frames)
-    stack.update_metadata(get_metadata(frames))
+    stack.update_metadata()
     return stack
 
   stacks = context.stacks or {}

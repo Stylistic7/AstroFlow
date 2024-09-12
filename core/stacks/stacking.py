@@ -89,6 +89,7 @@ def _setup_composite_stack(stack_id, tmp_dir):
   stacks = context.stacks
   stack = stacks[stack_id]
 
+  # TODO: Get rid of this get_metadata() call.
   metadata = get_metadata(
       stack.all_frames(),
       post_fn=lambda images: {i.content_hash: i for i in images})
@@ -128,6 +129,7 @@ def _setup_simple_stack(stack_id, tmp_dir):
   if stack_id in quarantined_stacks:
     return None, 0
 
+  # TODO: Get rid of this get_metadata() call.
   stack = context.stacks[stack_id]
   filenames = get_metadata(stack.frames, transform_fn=lambda i: i.filename)
   _symlink_frames(filenames, tmp_dir)
@@ -159,6 +161,8 @@ def stack_files(stack_id):
   # If the stack has been quarantined, don't do anything.
   quarantined_stacks = context.quarantined_stacks or set()
   if stack_id in quarantined_stacks:
+    print(f'### Refusing to stack stack {stack_id} '
+          f'because it has been quarantined')
     return [FileArtifact(dest_filename, stack.content_hash)]
 
   os.makedirs(os.path.dirname(dest_filename), exist_ok=True)

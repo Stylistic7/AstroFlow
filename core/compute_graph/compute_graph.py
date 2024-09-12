@@ -87,6 +87,8 @@ def build_compute_graph(run_main_processing_graph=True):
   return make_graph_from_list([
       (scatter_compute_image_metadata, 'input'),
       maybe_build_regroup_graph,
+      # TODO: Should these really be part of the regroup graph? Or is regrouping
+      # a pure function of the input files, without any user input or settings?
       quarantine,
       select_subframes,
       update_state,

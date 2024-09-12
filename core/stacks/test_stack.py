@@ -50,10 +50,11 @@ class TestStack(unittest.TestCase):
                           exposure=300,
                           dest_dir=context.input_dirs[0])
 
-    graph = make_graph_from_list([(scatter_compute_image_metadata, 'all'),
-                                  cluster_by_image_center,
-                                  identify_calibration_stacks,
-                                  associate_with_stacks])
+    graph = make_graph_from_list([
+        (scatter_compute_image_metadata, 'all'), cluster_by_image_center,
+        scatter_identify_stacks, identify_calibration_stacks,
+        associate_with_stacks
+    ])
     run_graph(graph)
 
     stacks = context.stacks

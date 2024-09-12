@@ -1,5 +1,6 @@
 import ray
 import os
+from enum import Enum
 
 from typing import Any
 # TODO: Why can't I just do `from context import cache`?
@@ -32,6 +33,12 @@ from .cache import get_cache
 #
 # It has a simple API: just a set of Python functions that block until the data
 # has been committed to disk and/or the Ray object store.
+
+
+class WriteMode(Enum):
+  MEMORY_ONLY = 1
+  DISK_ONLY = 2
+  MEMORY_AND_DISK = 3
 
 
 def _get_namespace():
@@ -91,32 +98,34 @@ class ContextActor:
     if key in self.cache:
       del self.cache[key]
 
-  def and_equals(self, key, default_value, value, flush):
+  def and_equals(self, key, default_value, value, write_mode):
     assert type(value) is list
     assert len(value) == 1
     value = value[0]
     assert type(value) is ray.ObjectRef, f'type(value) is {type(value)}'
     value = ray.get(value)
 
-    with self.cache.transact():
-      new_value = self.cache.get(key, default_value) + value
-      self.cache[key] = new_value
+    if write_mode in [WriteMode.DISK_ONLY, WriteMode.MEMORY_AND_DISK]:
+      with self.cache.transact():
+        new_value = self.cache.get(key, default_value) + value
+        self.cache[key] = new_value
 
-    if not flush:
+    if write_mode in [WriteMode.MEMORY_ONLY, WriteMode.MEMORY_AND_DISK]:
       self.ref_dict[key] = ray.put(new_value)
 
-  def or_equals(self, key, default_value, value, flush):
+  def or_equals(self, key, default_value, value, write_mode):
     assert type(value) is list
     assert len(value) == 1
     value = value[0]
     assert type(value) is ray.ObjectRef, f'type(value) is {type(value)}'
     value = ray.get(value)
 
-    with self.cache.transact():
-      new_value = self.cache.get(key, default_value) | value
-      self.cache[key] = new_value
+    if write_mode in [WriteMode.DISK_ONLY, WriteMode.MEMORY_AND_DISK]:
+      with self.cache.transact():
+        new_value = self.cache.get(key, default_value) | value
+        self.cache[key] = new_value
 
-    if not flush:
+    if write_mode in [WriteMode.MEMORY_ONLY, WriteMode.MEMORY_AND_DISK]:
       self.ref_dict[key] = ray.put(new_value)
 
   def ref_dict(self):
@@ -144,13 +153,14 @@ class Context:
   def __getitem__(self, key):
     return self.get(key)
 
-  def set(self, key, value, flush=False):
+  def set(self, key, value, write_mode=WriteMode.MEMORY_AND_DISK):
     actor = ray.get_actor('context', namespace=_get_namespace())
     # Ray will automatically de-reference values that are passed by value, but
     # it will not de-reference values inside containers, like lists. This puts
     # the value in the Ray object store, then passes the ObjectRef unchanged
     # to the Actor.
-    return ray.get(actor.set.remote(key, [ray.put(value, _owner=actor)], flush))
+    return ray.get(
+        actor.set.remote(key, [ray.put(value, _owner=actor)], write_mode))
 
   def __setattr__(self, key, value):
     return self.set(key, value)
@@ -159,16 +169,26 @@ class Context:
     return self.set(key, value)
 
   # TODO: Use the Pythonic operator.
-  def and_equals(self, key, value, flush=False, default_value=None):
+  def and_equals(self,
+                 key,
+                 value,
+                 write_mode=WriteMode.MEMORY_AND_DISK,
+                 default_value=None):
     actor = ray.get_actor('context', namespace=_get_namespace())
     return ray.get(
-        actor.and_equals.remote(key, default_value, [ray.put(value)], flush))
+        actor.and_equals.remote(key, default_value, [ray.put(value)],
+                                write_mode))
 
   # TODO: Use the Pythonic operator.
-  def or_equals(self, key, value, flush=False, default_value=None):
+  def or_equals(self,
+                key,
+                value,
+                write_mode=WriteMode.MEMORY_AND_DISK,
+                default_value=None):
     actor = ray.get_actor('context', namespace=_get_namespace())
     return ray.get(
-        actor.or_equals.remote(key, default_value, [ray.put(value)], flush))
+        actor.or_equals.remote(key, default_value, [ray.put(value)],
+                               write_mode))
 
   def ref_dict(self):
     actor = ray.get_actor('context', namespace=_get_namespace())

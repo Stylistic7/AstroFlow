@@ -13,11 +13,12 @@ from stacks import CompositeStack
 
 
 @ray.remote
-def group_stacks_into_targets(spatial_group, ancestor_results):
+def group_stacks_into_targets(spatial_group, *, ancestor_results):
   if context.targets == None:
     context.targets = {}
 
-  stacks, metadata = ancestor_results[0]
+  stacks = ancestor_results[0]
+  metadata = context.metadata
 
   cosine_similarity_threshold = context.cosine_similarity_threshold
 

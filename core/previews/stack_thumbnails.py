@@ -7,13 +7,12 @@ import ray
 from previews.operations import resize_array, array_to_png
 from previews.flat_correction import create_flat_correction_thumbnails
 from previews.calibration import calibrate_image
-from context import context
+from context import context, WriteMode
 from file_io.generic import read_image
 # TODO: Unify quarantining
 import quarantining
 from stacks import SimpleStack, CompositeStack
 from dependency_graph import Graph
-from metadata.actor import get_metadata, get_metadata_for_stack
 from previews.operations import autostretch
 
 # TODO: Split this file up into smaller, more specific pieces.
@@ -74,6 +73,8 @@ def scatter_stack_thumbnails(mode):
 @ray.remote
 def create_stack_subframe_thumbnails(stack_id):
   stacks = context.stacks
+  metadata = context.metadata
+
   stack = stacks[stack_id]
   print(f'Entering create_stack_subframe_thumbnails() for stack {stack}')
 
@@ -88,10 +89,6 @@ def create_stack_subframe_thumbnails(stack_id):
   # dependencies = stack.dependencies | settings
 
   width = context.subframe_thumbnail_width
-
-  # TODO: Maybe pass along the metadata for the whole spatial group through,
-  # and eliminate yet another call to get_metadata().
-  metadata = get_metadata_for_stack(stack_id)
 
   # Cache the calibration images so they're only read once.
   first_subframes = {}
@@ -157,7 +154,7 @@ def create_stack_subframe_thumbnails(stack_id):
 
       if i == 0:
         key = ('stack_subframe_thumbnail_image', stack_id)
-        context.set(key, array_to_png(im), flush=True)
+        context.set(key, array_to_png(im), write_mode=WriteMode.DISK_ONLY)
         print(f'### Wrote key {key}')
 
       im = (im * 255.0).astype(np.uint8)
@@ -170,7 +167,7 @@ def create_stack_subframe_thumbnails(stack_id):
     thumbnail_video = open(video_filename, 'rb').read()
 
     key = ('stack_subframe_thumbnail_video', stack_id)
-    context.set(key, thumbnail_video, flush=False)
+    context.set(key, thumbnail_video, write_mode=WriteMode.DISK_ONLY)
     print(f'### Wrote key {key}')
 
 

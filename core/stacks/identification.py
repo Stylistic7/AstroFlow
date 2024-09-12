@@ -48,7 +48,9 @@ def _get_unique(L):
 # by this one, is very slow.
 #
 # TODO: This could be parallelized.
-def _new_stacks(name, metadata):
+def _new_stacks(name, frames):
+  metadata = [i for h, i in context.metadata.items() if h in frames]
+
   width_pixels = _get_unique(i.header['NAXIS1'] for i in metadata)
   height_pixels = _get_unique(i.header['NAXIS2'] for i in metadata)
 
@@ -101,7 +103,7 @@ def _new_stacks(name, metadata):
         continue
       run = [x[0] for x in run]
       stack = SimpleStack(frames=run)
-      stack.update_metadata(metadata)
+      stack.update_metadata()
       new_stacks[stack.content_hash] = stack
 
   if not new_stacks:
@@ -120,7 +122,7 @@ def _new_stacks(name, metadata):
                          footprint=footprint,
                          projected_footprints=projected_footprints,
                          selection_criterion=selection_criterion)
-  stack.update_metadata(metadata)
+  stack.update_metadata()
   new_stacks[stack.stable_hash] = stack
   context.or_equals('stacks', {stack.stable_hash: stack})
 
@@ -141,16 +143,7 @@ def identify_stacks(spatial_group):
   # TODO: Maybe implement a version of cluster_continuous() that repeatedly
   # subdivides by independent 1D variables.
   name, light_frames = spatial_group
-  print(f'### Getting metadata for a spatial group with '
-        f'{len(light_frames)} light frames')
-
-  start = time.time()
-  metadata_list = get_metadata(light_frames)
-  end = time.time()
-  print(f'### get_metadata took {end - start} seconds')
-
-  metadata = {i.content_hash: i for i in metadata_list}
-  print(f'### metadata size {objsize.get_deep_size(metadata) / 1024 / 1024} MB')
+  metadata = {h: i for h, i in context.metadata.items() if h in light_frames}
 
   def scale_clusters():
     scales = [(metadata[k].content_hash, metadata[k].plate_solution.image_scale)
@@ -194,14 +187,8 @@ def identify_stacks(spatial_group):
     for camera_frames in camera_clusters(scale_frames):
       for rotation_frames in rotation_clusters(camera_frames):
         for filter_frames in filter_clusters(rotation_frames):
-          new_stack_metadata = [
-              v for k, v in metadata.items() if k in filter_frames
-          ]
-          new_stacks |= _new_stacks(name, new_stack_metadata)
+          new_stacks |= _new_stacks(name, filter_frames)
 
-  # This metadata contains all of images for this spatial group, which is
-  # also all that is needed for target identification. Pass it along so
-  # it doesn't have to be requested again.
   end = time.time()
-  print(f'### _new_stacks took {end - start} seconds')
-  return new_stacks, metadata
+  print(f'### identify_stacks took {end - start} seconds')
+  return new_stacks

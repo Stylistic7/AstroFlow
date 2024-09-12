@@ -2,7 +2,6 @@ import ray
 
 from context import context
 from stacks import CompositeStack, SimpleStack
-from metadata.actor import get_metadata
 
 # TODO: Ensure that all of the actions in this file are idempotent. The goal
 # is to be able to apply these functions very quickly when the user quarantines
@@ -50,7 +49,9 @@ def quarantine_stacks():
       if len(all_frames) == 0:
         print(f'### Stack {stack_id} is now empty and will be deleted')
       else:
-        stack.update_metadata(get_metadata(all_frames))
+        # TODO: This won't work for calibration stacks, but will people actually
+        # quarantine calibration stacks?
+        stack.update_metadata(context.metadata)
 
   # Eliminate all stacks that are now empty.
   stacks = {

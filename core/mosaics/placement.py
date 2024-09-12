@@ -19,12 +19,8 @@ from hashing import hash_list
 _MEMORY_REQUIREMENT = 8 * 1024 * 1024 * 1024  # 8 GB
 
 
-def mosaic_by_coordinates_artifacts(mode,
-                                    mosaic_id,
-                                    filter,
-                                    stack_id,
-                                    input_artifact,
-                                    metadata_ref=None):
+def mosaic_by_coordinates_artifacts(mode, mosaic_id, filter, stack_id,
+                                    input_artifact):
   viewbox_artifact = next(
       iter(compute_mosaic_viewbox_artifacts(mode, mosaic_id)))
   content_hash = hash_list(
@@ -100,8 +96,7 @@ def place_tile(tile_y, tile_x, wcs, ra_tiles, dec_tiles, interp):
 # on disk, where they take up a huge amount of space.
 @ray.remote(scheduling_strategy="SPREAD", memory=_MEMORY_REQUIREMENT)
 @saves_artifacts(mosaic_by_coordinates_artifacts)
-def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact,
-                          metadata_ref):
+def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact):
   print(f'### Entering mosaic_by_coordinates '
         f' {mode} {mosaic_id} {filter} {stack_id} {input_artifact}')
 
@@ -115,7 +110,7 @@ def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact,
   filename = input_artifact.filename
   image = read_artifact_image(input_artifact)
   header = read_artifact_header(input_artifact)
-  metadata = ray.get(metadata_ref[0])
+  metadata = context.metadata
   plate_solution = metadata[input_artifact.content_hash].plate_solution
 
   assert image is not None

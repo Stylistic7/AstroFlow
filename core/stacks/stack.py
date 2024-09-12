@@ -27,13 +27,13 @@ class ImagingAttributes:
   oldest_date: Optional[datetime.datetime] = None
   newest_date: Optional[datetime.datetime] = None
 
-  # TODO: This accepts metadata as a list, which is awkward.
-  def update_metadata(self, metadata) -> None:
+  def update_metadata(self) -> None:
     all_frames = self.all_frames()
     self.content_hash = hash_list(all_frames)
 
-    assert metadata
-    metadata = [i for i in metadata if i.content_hash in all_frames]
+    metadata = [
+        i for i in context.metadata.values() if i.content_hash in all_frames
+    ]
 
     def get_quality(quality, allow_multiple=False):
       # TODO: What should we do with frames that don't have a FILTER keyword?

@@ -119,6 +119,8 @@ def get_metadata_for_stack(stack_id):
       hashes, post_fn=lambda images: {i.content_hash: i for i in images})
 
 
+# TODO: Remove all of the functions below that call get_metadata(), they're
+# just too slow.
 def _group_by_header(input_images, key):
 
   def group_by(images):

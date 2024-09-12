@@ -1,10 +1,9 @@
 import ray
 import numpy as np
 
-from context import context
+from context import context, WriteMode
 from stacks import SimpleStack
 from hashing import hash_string
-from metadata.actor import get_metadata_for_stack
 # TODO: Unify quarantining
 import quarantining
 from previews.operations import resize_array, array_to_png
@@ -20,6 +19,8 @@ from previews.operations import autostretch
 @ray.remote
 def create_flat_correction_thumbnails(stack_id):
   stacks = context.stacks
+  metadata = context.metadata
+
   stack = stacks[stack_id]
 
   # There should be many flat correction thumbnails for every stack, one for
@@ -40,10 +41,8 @@ def create_flat_correction_thumbnails(stack_id):
 
   assert type(stack) is SimpleStack
 
-  metadata = get_metadata_for_stack(stack_id)
-
   light_frames_by_stars = quarantining.get_light_frames_sorted_by_stars(
-      stack.frames, metadata)
+      stack.frames)
   light_frame = light_frames_by_stars[0]
 
   width = context.subframe_thumbnail_width
@@ -89,9 +88,9 @@ def create_flat_correction_thumbnails(stack_id):
     thumbnails[flat_stack_id] = hash
 
     key = ('flat_correction_thumbnail', hash)
-    context.set(key, thumbnail, flush=True)
+    context.set(key, thumbnail, write_mode=WriteMode.DISK_ONLY)
     print(f'### Wrote key {key}')
 
   key = ('flat_correction_thumbnails', stack_id)
-  context.set(key, thumbnails, flush=True)
+  context.set(key, thumbnails, write_mode=WriteMode.DISK_ONLY)
   print(f'### Wrote key {key} with {len(thumbnails)} flat-corrected thumbnails')

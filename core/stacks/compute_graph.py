@@ -4,7 +4,7 @@ from context import context
 from stacks.stacking import stack_files
 from stacks.post_process import post_process_stack
 from dependency_graph import Graph, Node
-from metadata.image_metadata import compute_image_metadata
+from metadata.image_metadata import compute_image_metadata, gather_compute_image_metadata
 from stacks.identification import identify_stacks
 from targets.identification import group_stacks_into_targets
 
@@ -58,5 +58,6 @@ def build_stack_subgraph(stack_id):
   graph[stacking_metadata_task] = {stack_task}
   graph[post_process_task] = {stacking_metadata_task}
   graph[post_process_metadata_task] = {post_process_task}
+  graph[(gather_compute_image_metadata,)] = {post_process_metadata_task}
 
   return graph

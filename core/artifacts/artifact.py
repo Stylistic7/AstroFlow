@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import astropy.io.fits as pyfits  # type: ignore
 
-from context import context
+from context import context, WriteMode
 from file_io.generic import read_image, read_header
 from file_io.generic import get_content_hash
 from file_io.normalize_header import normalize_header
@@ -159,7 +159,7 @@ def _(artifact: CacheArtifact,
   file_obj = io.BytesIO()
   hdu.writeto(file_obj)
 
-  context.set(artifact.key, file_obj.getvalue(), flush=True)
+  context.set(artifact.key, file_obj.getvalue(), write_mode=WriteMode.DISK_ONLY)
   print(f'### Wrote artifact {artifact}')
 
 

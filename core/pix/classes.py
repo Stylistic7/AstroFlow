@@ -20,6 +20,7 @@ class Image:
   tmp_dir_obj: object = None
   filename: str = None
   view_id: str = None
+  filter: str = None
   tag: str = None
   metadata: dict = field(default_factory=dict)
   dirty: bool = False

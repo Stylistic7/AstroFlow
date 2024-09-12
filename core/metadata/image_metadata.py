@@ -10,7 +10,7 @@ import metadata.image_types as image_types
 from metadata.classes import ImageMetadata
 import plate_solving
 from dependency_graph import Graph
-from context import context
+from context import context, WriteMode
 from metadata.actor import get_metadata
 
 # TODO: I need to associate dark and flat frames *before* computing thumbnails.
@@ -73,16 +73,6 @@ from metadata.actor import get_metadata
 #     After stacking, the best preview is the post-processed (BXT, etc.) image.
 
 
-def get_images_with_good_plate_solutions():
-  quarantined_files = context.quarantined_files
-
-  def predicate_fn(image):
-    return (image.filename not in quarantined_files and
-            type(image.plate_solution) is plate_solving.PlateSolution)
-
-  return get_metadata(predicate_fn=predicate_fn)
-
-
 # TODO: Don't revisit the same failed images over and over, it just takes up
 # time at every startup.
 @ray.remote
@@ -106,11 +96,10 @@ def scatter_compute_image_metadata(mode=None, ancestor_results=None):
   # changed since the last time it was listed.
   for dir in directories:
     artifacts.update({FileArtifact(f) for f in find_image_files(dir)})
-  print('### len(artifacts)', len(artifacts))
 
+  # TODO: Eliminate this call to get_metadata().
   known_artifacts = set(
       get_metadata(transform_fn=lambda i: FileArtifact(i.filename)))
-  print('### len(known_artifacts)', len(known_artifacts))
   quarantined_artifacts = {FileArtifact(f) for f in context.quarantined_files}
   new_artifacts = artifacts - known_artifacts - quarantined_artifacts
 
@@ -179,7 +168,7 @@ def compute_image_metadata(artifact=None, *, ancestor_results):
                              header=header,
                              plate_solution=plate_solution)
 
-    context.set(output_artifact.key, metadata, flush=True)
+    context.set(output_artifact.key, metadata, write_mode=WriteMode.DISK_ONLY)
     print(f'### Wrote key {output_artifact.key}')
 
     return [output_artifact]
@@ -191,5 +180,13 @@ def compute_image_metadata(artifact=None, *, ancestor_results):
 
 @ray.remote
 def gather_compute_image_metadata():
-  print('### gather_compute_image_metadata')
-  pass
+  print(f'### gather_compute_image_metadata')
+
+  # TODO: Put this "main" get_metadata() call into a separate function.
+  def predicate_fn(image):
+    return image.content_hash not in context.quarantined_files
+
+  # TODO: This will write the metadata through the cache, wasting some space.
+  context.metadata = get_metadata(
+      predicate_fn=predicate_fn,
+      post_fn=lambda images: {i.content_hash: i for i in images})
