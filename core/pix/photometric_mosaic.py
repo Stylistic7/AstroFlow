@@ -1,9 +1,7 @@
 import os
 
-from addict import Dict
-
-from .classes import ShellScriptTask
-from .context import append_task
+from .classes import ShellScriptTask, Image
+from .context import append_task, add_images_to_save
 
 # TODO: These parameters must be floats, not strings, so they can be overriden
 # by the user.
@@ -80,7 +78,14 @@ def PhotometricMosaic(images, output_filename, *args, **kwargs):
       ShellScriptTask(javascript_filename=javascript_filename,
                       parameters=parameters))
 
-  return Dict(filename=output_filename,
-              view_id='Mosaic',
-              filter=images[0].filter,
-              dirty=True)
+  images = [
+      Image(filename=output_filename,
+            view_id='Mosaic',
+            filter=images[0].filter,
+            dirty=True)
+  ]
+
+  add_images_to_save(images)
+
+  print(f'### PhotometricMosaic returning {images}')
+  return images
