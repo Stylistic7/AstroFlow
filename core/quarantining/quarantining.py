@@ -51,7 +51,7 @@ def quarantine_stacks():
       else:
         # TODO: This won't work for calibration stacks, but will people actually
         # quarantine calibration stacks?
-        stack.update_metadata(context.metadata)
+        stack.update_metadata()
 
   # Eliminate all stacks that are now empty.
   stacks = {
