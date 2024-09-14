@@ -13,10 +13,7 @@ from stacks import CompositeStack
 
 
 @ray.remote
-def group_stacks_into_targets(spatial_group, *, ancestor_results):
-  if context.targets == None:
-    context.targets = {}
-
+def group_stacks_into_targets(ancestor_results):
   stacks = ancestor_results[0]
   metadata = context.metadata
 
@@ -104,8 +101,12 @@ def group_stacks_into_targets(spatial_group, *, ancestor_results):
   targets = [new_target(g) for g in groups]
   targets = {t.stable_hash: t for t in targets}
 
-  print(f'### Found {len(targets)} targets')
+  print(f'### Found {len(targets)} targets: {targets.keys()}')
 
   # TODO: Computing the result and storing the result are two different
   # responsibilities. Perhaps separate patterns like this?
   context.or_equals('targets', targets)
+  print(f'### context.targets contains {len(context.targets)} '
+        f'targets: {context.targets.keys()}')
+
+  return targets

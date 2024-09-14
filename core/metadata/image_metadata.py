@@ -178,6 +178,7 @@ def compute_image_metadata(artifact=None, *, ancestor_results):
           f'exception {traceback.format_exc()}')
 
 
+# TODO: Don't call this for every spatial group, it's very slow.
 @ray.remote
 def gather_compute_image_metadata():
   print(f'### gather_compute_image_metadata')

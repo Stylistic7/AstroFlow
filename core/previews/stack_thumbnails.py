@@ -42,6 +42,8 @@ from previews.operations import autostretch
 MIN_STAR_FRACTION = 0.5
 
 
+# TODO: This needs to use the Artifact workflow, so that it will automatically
+# re-generate previews when stack contents change.
 @ray.remote(resources={'fastest_storage': 0.001})
 def scatter_stack_thumbnails(mode):
   stacks = context.stacks
@@ -108,7 +110,6 @@ def create_stack_subframe_thumbnails(stack_id):
   # number of stars. The better images should be in front.
   light_frames_by_stars = quarantining.get_light_frames_sorted_by_stars(
       stack.all_frames())
-
   best_light_frame = light_frames_by_stars[0]
   image = resize_array(read_image(best_light_frame.filename), width)
   height, width = image.shape

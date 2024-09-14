@@ -90,6 +90,8 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
   targets = context.targets
   mosaics = context.mosaics
 
+  print(f'### build_mosaic_filter_subgraph targets are {targets.keys()}')
+
   mosaic = mosaics[mosaic_id]
 
   graph = Graph()

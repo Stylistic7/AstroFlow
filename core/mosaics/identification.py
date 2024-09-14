@@ -104,7 +104,7 @@ def identify_mosaics():
   if not mosaics:
     print('### No overlapping targets found')
     context.mosaics = {}
-    return
+    return {}
 
   print(f'Found {len(mosaics)} mosaics')
 
@@ -192,3 +192,4 @@ def identify_mosaics():
   # TODO: Computing the result and storing the result are two different
   # responsibilities. Perhaps separate patterns like this?
   context.mosaics = output_mosaics
+  return output_mosaics

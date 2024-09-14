@@ -6,7 +6,7 @@ import unittest
 from context import context
 from testing.test_context import make_test_context
 from stacks import SimpleStack, CompositeStack
-from quarantining import quarantine_stacks
+# from quarantining import quarantine_stacks
 from mosaics.orion_mosaic import add_orion_mosaic_images
 from dependency_graph import Graph, make_graph_from_list, run_graph
 from metadata.image_metadata import scatter_compute_image_metadata
@@ -34,6 +34,8 @@ class TestQuarantining(unittest.TestCase):
     self.assertTrue(all(len(s.dependencies) == 3 for s in stacks))
 
     context.quarantined_targets = [next(iter(context.targets))]
+
+    context.regroup = True
     run_graph(build_compute_graph(run_main_processing_graph=False))
 
     self.assertEqual(len(context.targets), 3)

@@ -5,11 +5,16 @@ from stacks import CompositeStack, stack_files_artifacts, post_process_stack_art
 from artifacts import artifact_exists
 
 
+@ray.remote
+def update_state_new(stack_id):
+  pass
+
+
 # TODO: Include error messages, exceptions, etc. here to inform the user.
 @ray.remote
-def update_state():
+def update_state(ancestor_results):
   print('### Entering update_state')
-  stacks = context.stacks
+  stacks = ancestor_results[0]
 
   for stack_id, stack in stacks.items():
     if type(stack) is not CompositeStack:
@@ -27,4 +32,5 @@ def update_state():
     }
     print(f'### Updated stack state {stack_id} to {stack.state}')
 
-  context.stacks = stacks
+  context.or_equals('stacks', stacks)
+  return stacks

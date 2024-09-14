@@ -6,17 +6,12 @@ import shapely
 from shapely import Polygon
 
 from context import context
-from dependency_graph import run_graph, make_graph_from_list
+from dependency_graph import run_graph
 from geometry.footprints import project_footprint
 from testing.test_frames import make_synthetic_frames
-from stacks.compute_graph import scatter_identify_stacks
-from clustering import cluster_by_image_center
-from metadata.image_metadata import scatter_compute_image_metadata
-from calibration import identify_calibration_stacks, associate_with_stacks
 from testing.test_context import make_test_context
-from mosaics.identification import identify_mosaics
 from geometry.projections import mercator
-from compute_graph import maybe_build_regroup_graph
+from compute_graph import build_compute_graph
 from stacks import CompositeStack
 
 
@@ -42,8 +37,7 @@ class TestFootprints(unittest.TestCase):
                           dither=0,
                           dest_dir=context.input_dirs[0])
 
-    graph = ray.get(maybe_build_regroup_graph.remote())
-    run_graph(graph)
+    run_graph(build_compute_graph(run_main_processing_graph=False))
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 2)
@@ -84,8 +78,7 @@ class TestFootprints(unittest.TestCase):
                           height_pixels=3600,
                           dest_dir=context.input_dirs[0])
 
-    graph = ray.get(maybe_build_regroup_graph.remote())
-    run_graph(graph)
+    run_graph(build_compute_graph(run_main_processing_graph=False))
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 4)
@@ -131,8 +124,7 @@ class TestFootprints(unittest.TestCase):
                           height_pixels=7200,
                           dest_dir=context.input_dirs[0])
 
-    graph = ray.get(maybe_build_regroup_graph.remote())
-    run_graph(graph)
+    run_graph(build_compute_graph(run_main_processing_graph=False))
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 4)

@@ -1,6 +1,5 @@
 import numpy as np
 import ray
-import objsize
 
 import metadata.image_types as image_types
 from metadata.actor import get_metadata
@@ -51,25 +50,8 @@ def cluster_by_image_center():
 
   cosine_similarity_threshold = context.cosine_similarity_threshold
   min_component_members = context.min_component_members
-  quarantined_files = context.quarantined_files
 
-  # TODO: Put this "main" get_metadata() call into a separate function.
-  def predicate_fn(image):
-    return not image_types.is_master(
-        image.header) and image.content_hash not in quarantined_files
-
-  metadata = get_metadata(
-      predicate_fn=predicate_fn,
-      post_fn=lambda images: {i.content_hash: i for i in images})
-
-  if not metadata:
-    print('### metadata was Falsey')
-    return {}
-
-  metadata_size_mb = objsize.get_deep_size(metadata) / 1024 / 1024
-  print(f'### cluster_by_image_center metadata size {metadata_size_mb} MB')
-
-  context.set('metadata', metadata, write_mode=WriteMode.MEMORY_ONLY)
+  metadata = context.metadata
 
   def get_centroid(center):
     return np.asarray(footprints.radec_to_vector(*center))

@@ -14,12 +14,14 @@ from stacks import CompositeStack, SimpleStack
 
 
 @ray.remote
-def quarantine_stacks():
+def quarantine_stacks(ancestor_results):
+  stacks = ancestor_results[0]
+
   # Remove all of the quarantined stacks from the dict of stacks.
   quarantined_stacks = context.quarantined_stacks or set()
   stacks = {
       stack_id: stack
-      for stack_id, stack in context.stacks.items()
+      for stack_id, stack in stacks.items()
       if stack_id not in quarantined_stacks
   }
 
@@ -60,48 +62,56 @@ def quarantine_stacks():
       if len(stack.all_frames()) > 0
   }
 
-  context.stacks = stacks
+  context.or_equals('stacks', stacks)
+  return stacks
 
 
-@ray.remote
-def quarantine_targets():
-  quarantined_stacks = context.quarantined_stacks or set()
-  quarantined_targets = context.quarantined_targets or set()
+# @ray.remote
+# def quarantine_targets():
+#   quarantined_stacks = context.quarantined_stacks or set()
+#   quarantined_targets = context.quarantined_targets or set()
 
-  # Remove all of the quarantined targets from the dict of targets.
-  targets = {
-      target_id: target
-      for target_id, target in context.targets.items()
-      if target_id not in quarantined_targets
-  }
+#   # Remove all of the quarantined targets from the dict of targets.
+#   targets = {
+#       target_id: target
+#       for target_id, target in context.targets.items()
+#       if target_id not in quarantined_targets
+#   }
 
-  # Go through all of the remaining targets, and remove the quarantined stacks
-  # from them.
-  for target in targets.values():
-    target.stack_ids = [
-        s for s in target.stack_ids if s not in quarantined_stacks
-    ]
+#   # Go through all of the remaining targets, and remove the quarantined stacks
+#   # from them.
+#   # TODO: Also remove any stacks that no longer exist in the set of stacks,
+#   # e.g. those that became empty and were deleted.
+#   for target in targets.values():
+#     target.stack_ids = [
+#         s for s in target.stack_ids if s not in quarantined_stacks
+#     ]
 
-  context.targets = targets
+#   # TODO: Delete empty targets
 
+#   context.targets = targets
 
-@ray.remote
-def quarantine_mosaics():
-  quarantined_targets = context.quarantined_targets or set()
-  quarantined_mosaics = context.quarantined_mosaics or set()
+# @ray.remote
+# def quarantine_mosaics():
+#   quarantined_targets = context.quarantined_targets or set()
+#   quarantined_mosaics = context.quarantined_mosaics or set()
 
-  # Remove all of the quarantined mosaics from the dict of mosaics.
-  mosaics = {
-      mosaic_id: mosaic
-      for mosaic_id, mosaic in context.mosaics.items()
-      if mosaic_id not in quarantined_mosaics
-  }
+#   # Remove all of the quarantined mosaics from the dict of mosaics.
+#   # TODO: Also remove any targets that no longer exist in the set of targets,
+#   # e.g. those that became empty and were deleted.
+#   mosaics = {
+#       mosaic_id: mosaic
+#       for mosaic_id, mosaic in context.mosaics.items()
+#       if mosaic_id not in quarantined_mosaics
+#   }
 
-  # Go through all of the remaining mosaics, and remove the quarantined targets
-  # from them.
-  for mosaic in mosaics.values():
-    mosaic.target_ids = [
-        t for t in mosaic.target_ids if t not in quarantined_targets
-    ]
+#   # Go through all of the remaining mosaics, and remove the quarantined targets
+#   # from them.
+#   for mosaic in mosaics.values():
+#     mosaic.target_ids = [
+#         t for t in mosaic.target_ids if t not in quarantined_targets
+#     ]
 
-  context.mosaics = mosaics
+#   # TODO: Delete empty mosaics
+
+#   context.mosaics = mosaics

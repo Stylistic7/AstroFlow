@@ -8,12 +8,9 @@ from context import context
 from stacks import SimpleStack, CompositeStack
 from testing.test_context import make_test_context
 from testing.test_frames import make_synthetic_frames, copy_testdata_frames
-from dependency_graph import run_graph, make_graph_from_list
-from metadata.image_metadata import scatter_compute_image_metadata
-from clustering import cluster_by_image_center
-from stacks.compute_graph import scatter_identify_stacks
-from calibration import identify_calibration_stacks, associate_with_stacks
+from dependency_graph import run_graph
 from testing.test_context import make_test_context
+from compute_graph import build_compute_graph
 
 
 class TestStack(unittest.TestCase):
@@ -50,12 +47,10 @@ class TestStack(unittest.TestCase):
                           exposure=300,
                           dest_dir=context.input_dirs[0])
 
-    graph = make_graph_from_list([
-        (scatter_compute_image_metadata, 'all'), cluster_by_image_center,
-        scatter_identify_stacks, identify_calibration_stacks,
-        associate_with_stacks
-    ])
-    run_graph(graph)
+    context.regroup = True
+    run_graph(
+        build_compute_graph(make_previews=False,
+                            run_main_processing_graph=False))
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 1)
@@ -86,12 +81,10 @@ class TestStack(unittest.TestCase):
                           exposure=300,
                           dest_dir=context.input_dirs[0])
 
-    graph = make_graph_from_list([
-        (scatter_compute_image_metadata, 'all'), cluster_by_image_center,
-        scatter_identify_stacks, identify_calibration_stacks,
-        associate_with_stacks
-    ])
-    run_graph(graph)
+    context.regroup = True
+    run_graph(
+        build_compute_graph(make_previews=False,
+                            run_main_processing_graph=False))
 
     stacks = context.stacks
     print('### After running compute graph, stacks are:')

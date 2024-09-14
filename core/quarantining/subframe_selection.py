@@ -5,6 +5,7 @@ import ray
 from stacks import CompositeStack
 from context import context
 from metadata.image_types import is_light_frame
+from dependency_graph import Graph
 
 
 def get_light_frames_sorted_by_stars(light_frames):
@@ -15,14 +16,30 @@ def get_light_frames_sorted_by_stars(light_frames):
 
 
 @ray.remote
-def select_subframes():
+def delete_empty_stacks():
+  context.stacks = {
+      stack_id: stack
+      for stack_id, stack in context.stacks.items()
+      if len(stack.all_frames()) > 0
+  }
+
+
+@ray.remote
+def scatter_select_subframes():
+  graph = Graph()
+  graph[delete_empty_stacks] = {(select_subframes, stack_id)
+                                for stack_id, stack in context.stacks.items()
+                                if type(stack) is CompositeStack}
+
+
+@ray.remote
+def select_subframes(ancestor_results):
   print('### Entering select_subframes')
+  stacks = ancestor_results[0]
 
   metadata = context.metadata
   assert metadata
 
-  # TODO: This needs to be parallelized.
-  stacks = context.stacks
   for stack_id, stack in stacks.items():
     if type(stack) is not CompositeStack:
       continue
@@ -56,11 +73,5 @@ def select_subframes():
         print(f'### substack {substack_id} is now empty and will be deleted')
         stack.contents.remove(substack_id)
 
-  # Eliminate all stacks that are now empty.
-  stacks = {
-      stack_id: stack
-      for stack_id, stack in stacks.items()
-      if len(stack.all_frames()) > 0
-  }
-
-  context.stacks = stacks
+  context.or_equals('stacks', stacks)
+  return stacks

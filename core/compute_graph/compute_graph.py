@@ -1,35 +1,85 @@
 import ray
+import objsize
 
-from context import context
+from context import context, WriteMode
 from metadata.image_metadata import scatter_compute_image_metadata
 from clustering import cluster_by_image_center
 from calibration import identify_calibration_stacks, associate_with_stacks
 from previews import scatter_stack_thumbnails
 from mosaics.identification import identify_mosaics
-from stacks.compute_graph import build_stack_subgraph, scatter_identify_stacks
+from stacks.compute_graph import build_stack_subgraph
 from targets.compute_graph import build_target_subgraph
+from targets.identification import group_stacks_into_targets
 from mosaics.compute_graph import build_mosaic_subgraph
 from dependency_graph import Graph, make_graph_from_list, print_graph
 from suggestions import make_suggestions
-from quarantining import select_subframes, quarantine_stacks, quarantine_targets, quarantine_mosaics
-from stacks.state import update_state
+from quarantining import quarantine_stacks
+from quarantining.compute_graph import delete_quarantined_targets, delete_quarantined_mosaics
+from quarantining.subframe_selection import select_subframes
+from stacks.identification import identify_stacks
+import metadata.image_types as image_types
+from metadata.actor import get_metadata
+from stacks import update_state
 
 
+@ray.remote
+def load_metadata():
+  quarantined_files = context.quarantined_files or set()
+
+  def predicate_fn(image):
+    return not image_types.is_master(
+        image.header) and image.content_hash not in quarantined_files
+
+  metadata = get_metadata(
+      predicate_fn=predicate_fn,
+      post_fn=lambda images: {i.content_hash: i for i in images})
+
+  metadata_size_mb = objsize.get_deep_size(metadata) / 1024 / 1024
+  print(f'### load_metadata() size {metadata_size_mb} MB')
+
+  context.set('metadata', metadata, write_mode=WriteMode.MEMORY_ONLY)
+
+
+@ray.remote
+def build_spatial_group_graph(g):
+  return make_graph_from_list([(identify_stacks, g), associate_with_stacks,
+                               quarantine_stacks, select_subframes,
+                               update_state, group_stacks_into_targets,
+                               delete_quarantined_targets])
+
+
+@ray.remote
+def gather_spatial_groups():
+  pass
+
+
+# TODO: Don't call build_spatial_group_graph for spatial groups that are cached
+# and unchanged.
+@ray.remote
+def scatter_spatial_groups():
+  graph = Graph()
+  graph[gather_spatial_groups] = {
+      (build_spatial_group_graph, g) for g in context.spatial_groups
+  }
+
+  return graph
+
+
+# TODO: Regrouping has to be done whenever there are new files, or whenever
+# quarantining or (global) subframe selection options change.
 @ray.remote
 def maybe_build_regroup_graph():
   if context.regroup:
+    context.stacks = {}
+    context.targets = {}
+    context.mosaics = {}
+
     return make_graph_from_list([
-        cluster_by_image_center, scatter_identify_stacks,
-        identify_calibration_stacks, associate_with_stacks, identify_mosaics
+        identify_calibration_stacks, cluster_by_image_center,
+        scatter_spatial_groups, identify_mosaics, delete_quarantined_mosaics
     ])
   else:
     return {}
-
-
-@ray.remote
-def quarantine():
-  return make_graph_from_list(
-      [quarantine_stacks, quarantine_targets, quarantine_mosaics])
 
 
 @ray.remote
@@ -78,26 +128,17 @@ def build_main_processing_graph():
   return graph
 
 
-@ray.remote
-def no_op():
-  pass
+def build_compute_graph(make_previews=True, run_main_processing_graph=True):
+  task_list = [(scatter_compute_image_metadata, 'input'), load_metadata,
+               maybe_build_regroup_graph, make_suggestions]
 
+  if make_previews:
+    task_list.append(build_preview_graph)
 
-def build_compute_graph(run_main_processing_graph=True):
-  return make_graph_from_list([
-      (scatter_compute_image_metadata, 'input'),
-      maybe_build_regroup_graph,
-      # TODO: Should these really be part of the regroup graph? Or is regrouping
-      # a pure function of the input files, without any user input or settings?
-      quarantine,
-      select_subframes,
-      update_state,
-      make_suggestions,
-      build_preview_graph,
-      # This is the heavyweight graph that runs PixInsight and may take days.
-      # TODO: The entire preview graph is not actually done before this runs.
-      build_main_processing_graph if run_main_processing_graph else no_op
-  ])
+  if run_main_processing_graph:
+    task_list.append(build_main_processing_graph)
+
+  return make_graph_from_list(task_list)
 
 
 # TODO: Add a cleanup task that deletes unreferenced stuff from the cache.

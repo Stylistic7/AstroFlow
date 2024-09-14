@@ -27,7 +27,7 @@ from context import get_cache
 from artifacts import artifact_exists, read_artifact_image, CacheArtifact
 from previews import array_to_png, autostretch
 from mosaics.compute_graph import merge_graph_done_artifacts
-from quarantining import quarantine_stacks, quarantine_targets, quarantine_mosaics
+from quarantining.compute_graph import delete_quarantined_stacks, delete_quarantined_targets, delete_quarantined_mosaics
 
 import plotly.express as px
 import plotly.figure_factory as ff
@@ -388,9 +388,9 @@ def plot():
 def quarantine_stack(stack_id):
   context.or_equals('quarantined_stacks', {stack_id}, default_value=set())
 
-  ray.get(quarantine_stacks.remote())
-  ray.get(quarantine_targets.remote())
-  ray.get(quarantine_mosaics.remote())
+  context.stacks = ray.get(delete_quarantined_stacks.remote())
+  context.targets = ray.get(delete_quarantined_targets.remote())
+  context.mosaics = ray.get(delete_quarantined_mosaics.remote())
 
   announcer.announce('reload_data')
 
@@ -401,9 +401,9 @@ def quarantine_stack(stack_id):
 def quarantine_target(target_id):
   context.or_equals('quarantined_targets', {target_id}, default_value=set())
 
-  ray.get(quarantine_stacks.remote())
-  ray.get(quarantine_targets.remote())
-  ray.get(quarantine_mosaics.remote())
+  context.stacks = ray.get(delete_quarantined_stacks.remote())
+  context.targets = ray.get(delete_quarantined_targets.remote())
+  context.mosaics = ray.get(delete_quarantined_mosaics.remote())
 
   announcer.announce('reload_data')
 
@@ -414,9 +414,9 @@ def quarantine_target(target_id):
 def quarantine_mosaic(mosaic_id):
   context.or_equals('quarantined_mosaics', {mosaic_id}, default_value=set())
 
-  ray.get(quarantine_stacks.remote())
-  ray.get(quarantine_targets.remote())
-  ray.get(quarantine_mosaics.remote())
+  context.stacks = ray.get(delete_quarantined_stacks.remote())
+  context.targets = ray.get(delete_quarantined_targets.remote())
+  context.mosaics = ray.get(delete_quarantined_mosaics.remote())
 
   announcer.announce('reload_data')
 

@@ -10,6 +10,7 @@ from metadata.actor import get_metadata, cluster_by_header
 import clustering
 
 
+# TODO: Something in here is calling get_metadata() and going slowly.
 @ray.remote
 def identify_calibration_stacks():
   print(f'Identifying calibration stacks...')
@@ -128,16 +129,16 @@ def associate_with_stack(stack, stacks):
   settings = context[key] or {}
   stack.dependencies |= settings
 
+  return stacks
 
-# TODO: This should iterate over the stacks within a single spatial group. The
-# spatial group must include the metadata_ref.
+
 @ray.remote
-def associate_with_stacks():
+def associate_with_stacks(ancestor_results):
+  stacks = ancestor_results[0]
   print('### Entering associate_with_stacks')
-  stacks = context.stacks
   for stack in stacks.values():
     if type(stack) is SimpleStack and stack.image_type == 'light':
-      associate_with_stack(stack, stacks)
+      associate_with_stack(stack, context.stacks)
 
-  context.stacks = stacks
-  print('### Exiting associate_with_stacks')
+  context.or_equals('stacks', stacks)
+  return stacks

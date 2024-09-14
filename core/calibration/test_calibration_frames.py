@@ -276,9 +276,12 @@ class TestCalibrationFrames(unittest.TestCase):
     stacks = context.stacks
     self.assertEqual(len(stacks), 3)
 
-    light_stacks = [s for s in stacks.values() if s.image_type == 'light']
-    self.assertEqual(len(light_stacks), 2)
-    stack = next(iter(stacks.values()))
+    light_stacks = [
+        s for s in stacks.values()
+        if type(s) is SimpleStack and s.image_type == 'light'
+    ]
+    self.assertEqual(len(light_stacks), 1)
+    stack = light_stacks[0]
     self.assertEqual(len(stack.frames), 3)
     self.assertEqual(len(stack.dependencies), 1)
 

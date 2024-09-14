@@ -5,18 +5,11 @@ import unittest
 
 from testing.test_context import make_test_context
 from context import context
-from dependency_graph import run_graph, make_graph_from_list
-from stacks.compute_graph import scatter_identify_stacks
+from dependency_graph import run_graph
 from testing.test_frames import make_synthetic_frames
-from clustering import cluster_by_image_center
 from stacks.get_stacks import get_toplevel_stacks, get_content_stacks_of_type
 from metadata.actor import get_metadata
-from quarantining import quarantine_stacks
-
-
-def compute_graph_fragment():
-  return make_graph_from_list(
-      [cluster_by_image_center, scatter_identify_stacks, quarantine_stacks])
+from compute_graph import build_compute_graph
 
 
 class TestStackIdentification(unittest.TestCase):
@@ -32,7 +25,9 @@ class TestStackIdentification(unittest.TestCase):
   def test_one_perfect_stack(self):
     make_synthetic_frames(ra=100, dec=50, prefix='foo', number=10, dither=0)
 
-    run_graph(compute_graph_fragment())
+    run_graph(
+        build_compute_graph(make_previews=False,
+                            run_main_processing_graph=False))
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 2)
@@ -57,8 +52,9 @@ class TestStackIdentification(unittest.TestCase):
                           dither=0,
                           image_scale=2.0)
 
-    run_graph(compute_graph_fragment())
-
+    run_graph(
+        build_compute_graph(make_previews=False,
+                            run_main_processing_graph=False))
     stacks = context.stacks
     self.assertEqual(len(stacks), 4)
 
@@ -102,7 +98,9 @@ class TestStackIdentification(unittest.TestCase):
                           width_pixels=6000,
                           height_pixels=4000)
 
-    run_graph(compute_graph_fragment())
+    run_graph(
+        build_compute_graph(make_previews=False,
+                            run_main_processing_graph=False))
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 4)
@@ -137,7 +135,9 @@ class TestStackIdentification(unittest.TestCase):
                           dither=0,
                           exposure=120)
 
-    run_graph(compute_graph_fragment())
+    run_graph(
+        build_compute_graph(make_previews=False,
+                            run_main_processing_graph=False))
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 3)
