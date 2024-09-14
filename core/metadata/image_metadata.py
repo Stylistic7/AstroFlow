@@ -154,6 +154,13 @@ def compute_image_metadata(artifact=None, *, ancestor_results):
         else:
           print(f'Filename {prev_filename} has been moved to '
                 f'{artifact.filename}')
+          prev_metadata = context[key]
+          metadata = ImageMetadata(content_hash=content_hash,
+                                   filename=artifact.filename,
+                                   header=prev_metadata.header,
+                                   plate_solution=prev_metadata.plate_solution)
+          context[key] = metadata
+          return [output_artifact]
 
     header = read_header(artifact.filename)
     if image_types.is_light_frame(header):
