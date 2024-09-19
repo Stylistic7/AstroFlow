@@ -107,9 +107,6 @@ def run_graph(graph, status_fn=None, debug=False):
     ready = get_ready_nodes()
     max_parallelism_seen = max(len(ready), max_parallelism_seen)
 
-    if status_fn:
-      status_fn(get_status())
-
     if debug:
       print(f'Top of loop, {len(active)} active graphs, '
             f'{len(ready)} ready nodes')
@@ -128,6 +125,9 @@ def run_graph(graph, status_fn=None, debug=False):
         print(f'Task {node.task._function.__name__} finished')
 
       num_nodes_run += 1
+
+      if status_fn:
+        status_fn(get_status())
 
       try:
         result = ray.get(ready_refs[0])

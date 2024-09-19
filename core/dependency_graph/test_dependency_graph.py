@@ -442,7 +442,7 @@ class TestDependencyGraph(unittest.TestCase):
 
   def test_overhead(self):
     count = 1000
-    graph = {(scatter_huge, count): {}}
+    graph = Graph({(scatter_huge, count): {}})
 
     start = time.time()
     results = run_graph(graph)

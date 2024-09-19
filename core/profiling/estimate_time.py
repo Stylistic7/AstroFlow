@@ -1,5 +1,6 @@
 import ray
 import ipaddress
+import numpy as np
 
 from context import context
 
@@ -19,12 +20,9 @@ def estimate_time(tag, number=1):
   total_time = 0
   for node_ip in node_ips:
     key = ('performance_history', node_ip, tag)
-    history = context.get(key, None)
-    if history is None:
-      continue
-
-    total_time += history.time * history.count
-    total_count += history.count
+    if history := context.get(key, None):
+      total_time += np.mean(history) * len(history)
+      total_count += len(history)
 
   if total_count:
     return number * (total_time / total_count)

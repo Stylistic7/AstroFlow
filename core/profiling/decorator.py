@@ -5,21 +5,13 @@ from dataclasses import dataclass
 
 from context import context
 
-
-# After running hundreds of thousands of tasks, these are going to get
-# unweildy.
-@dataclass
-class PerformanceSample:
-  count: int
-  time: float
-
-  def __add__(self, time):
-    self.time = (self.time * self.count + time) / (self.count + 1)
-    self.count += 1
-
-    return self
+_MAX_PERFORMANCE_SAMPLES = 20
 
 
+# TODO: Nodes need to be identified by something more stable and reliable than
+# IP address. Many users' IP addresses change daily or even hourly. Eventually,
+# some kind of authentication system will keep track of users. Maybe MAC
+# address is a good choice.
 def track_performance(fn):
 
   @wraps(fn)
@@ -30,7 +22,12 @@ def track_performance(fn):
     elapsed_time = end_time - start_time
     node_ip = ray.util.get_node_ip_address()
     key = ('performance_history', node_ip, fn.__name__)
-    context.and_equals(key, elapsed_time, default_value=PerformanceSample(0, 0))
+
+    # Keep only the last N samples.
+    history = context[key] or []
+    history = history[-_MAX_PERFORMANCE_SAMPLES - 1:]
+    history.append(elapsed_time)
+    context[key] = history
 
     return result
 
