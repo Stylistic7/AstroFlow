@@ -23,6 +23,7 @@ import { createContext, useContext } from 'react';
 import AstroFlowContext from './AstroFlowContext.jsx';
 import AstroFlowBreadcrumbs from "./AstroFlowBreadcrumbs.jsx";
 import { Stack } from '@mui/material';
+import ProgressComponent from './ProgressComponent.jsx';
 
 function App() {
   const isPageVisible = usePageVisibility();
@@ -32,6 +33,7 @@ function App() {
   const [targets, setTargets] = useState({});
   const [mosaics, setMosaics] = useState({});
   const [shoppingCart, setShoppingCart] = useState([]);
+  const [computeGraphStatus, setComputeGraphStatus] = useState({});
 
   const removeKeys = (obj, keys) => {
     keys.forEach(key => {
@@ -69,6 +71,7 @@ function App() {
     }
     sse.onmessage = e => getRealtimeData(e.data);
     sse.addEventListener("reload_data", e => getRealtimeData(e.data));
+    sse.addEventListener("compute_graph_status", e => setComputeGraphStatus(JSON.parse(e.data)));
     sse.onerror = () => {
       console.log('sse error');
       sse.close();
@@ -92,7 +95,7 @@ function App() {
     <ThemeProvider theme={darkTheme}>
       <StyledEngineProvider injectFirst>
         <AstroFlowContext.Provider
-          value={{ stacks, targets, mosaics, shoppingCart }}
+          value={{ stacks, targets, mosaics, shoppingCart, computeGraphStatus }}
         >
           <CssBaseline />
           <Router>
@@ -159,6 +162,9 @@ function App() {
               />
               <Route exact path="/sse" element={
                 dataIsAvailable && <SsePanel />}
+              />
+              <Route exact path="/progress" element={
+                <ProgressComponent />}
               />
             </Routes>
           </Router>

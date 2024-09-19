@@ -33,6 +33,7 @@ from quarantining.compute_graph import delete_quarantined_stacks, delete_quarant
 from astroflow import populate_context
 from compute_graph import build_compute_graph
 from dependency_graph import run_graph
+from profiling.estimate_time import estimate_time
 
 import plotly.express as px
 import plotly.figure_factory as ff
@@ -529,21 +530,45 @@ def dispatch():
 
 @app.route('/run_graph')
 def run_compute_graph():
-  populate_context()
-  graph = build_compute_graph(regroup=False,
-                              make_previews=False,
-                              run_main_processing_graph=False)
 
   def status_fn(status):
-    status_dict = {
-        'num_ready_nodes': len(status.ready_nodes),
-        'num_waiting_nodes': len(status.waiting_nodes),
-        'num_done_nodes': len(status.done_nodes)
-    }
-
     print(f'### status_fn called {len(status.ready_nodes)} ready nodes, '
           f'{len(status.waiting_nodes)} waiting nodes, '
           f'{len(status.done_nodes)} done nodes')
+
+    def function_name_from_node(node):
+      return node.task._function.__name__
+
+    total_estimated_time = 0
+    for node in status.ready_nodes | status.waiting_nodes:
+      if estimated_time := estimate_time(function_name_from_node(node)):
+        total_estimated_time += estimated_time
+
+    status_dict = {}
+    for node in status.ready_nodes | status.waiting_nodes:
+      name = function_name_from_node(node)
+      if name not in status_dict:
+        status_dict[name] = {
+            'total_number': 1,
+            'remaining_number': 1,
+            'estimated_time': 0
+        }
+      else:
+        status_dict[name]['total_number'] += 1
+        status_dict[name]['remaining_number'] += 1
+
+    for node in status.done_nodes:
+      name = function_name_from_node(node)
+      if name not in status_dict:
+        status_dict[name] = {
+            'total_number': 1,
+            'remaining_number': 0,
+            'estimated_time': 0
+        }
+      else:
+        status_dict[name]['total_number'] += 1
+
+    # TODO: Fill in estimated times for each type of process.
 
     announcer.announce('compute_graph_status', json.dumps(status_dict))
 
@@ -551,6 +576,10 @@ def run_compute_graph():
       print('### Compute graph is done!')
 
   print('### Running compute graph!')
+  populate_context()
+  graph = build_compute_graph(regroup=True,
+                              make_previews=True,
+                              run_main_processing_graph=True)
   thread = threading.Thread(target=run_graph, args=(graph, status_fn))
   thread.daemon = True
   thread.start()
