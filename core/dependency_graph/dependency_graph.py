@@ -4,14 +4,13 @@ from copy import copy
 from functools import reduce
 from operator import or_
 
-from dependency_graph import Graph, GraphStatus, Node, ResultDict, TopologicalSorterWithStatus, _unpack_node
+from dependency_graph import Graph, GraphStatus, ResultDict, TopologicalSorterWithStatus, canonicalize_node
 from .debugging import print_graph
 
 
 def matching_nodes(graph, fn):
 
   def _matches(node):
-    node = _unpack_node(node)
     return (node.task._function.__module__ == fn._function.__module__ and
             node.task._function.__name__ == fn._function.__name__)
 
@@ -27,9 +26,11 @@ def run_graph(graph, status_fn=None, debug=False):
   # TODO: Maybe support nodes with one ancestor, like this {done: process},
   # instead of requiring {done: {process}}.
   def canonicalize_graph(graph):
-    output = {}
+    output = Graph({})
     for node, dependents in graph.items():
-      output[_unpack_node(node)] = [_unpack_node(x) for x in dependents]
+      output[canonicalize_node(node)] = {
+          canonicalize_node(x) for x in dependents
+      }
     return output
 
   def add_subgraph(graph, parent_ts=None, parent_node=None):
@@ -61,7 +62,6 @@ def run_graph(graph, status_fn=None, debug=False):
     return ts
 
   def ancestor_results(ts, node):
-    node = _unpack_node(node)
     nodes = ts.graph.get(node, [])
     if debug:
       print(f'Node with task {node.task._function.__name__} has '
@@ -70,7 +70,6 @@ def run_graph(graph, status_fn=None, debug=False):
     return [ts.results[node] for node in nodes]
 
   def make_run_fn(ts, node):
-    node = _unpack_node(node)
     if debug:
       print(f'Making run fn for task {node.task._function.__name__}')
 
@@ -126,8 +125,7 @@ def run_graph(graph, status_fn=None, debug=False):
       assert len(ready_refs) == 1
       ts, node = ref_to_ts_and_node[ready_refs[0]]
       if debug:
-        unpacked = _unpack_node(node)
-        print(f'Task {unpacked.task._function.__name__} finished')
+        print(f'Task {node.task._function.__name__} finished')
 
       num_nodes_run += 1
 

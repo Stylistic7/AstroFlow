@@ -1,11 +1,9 @@
-from dependency_graph import Graph, GraphStatus, Node, ResultDict, TopologicalSorterWithStatus, _unpack_node
+from dependency_graph import ResultDict
 from artifacts import FileArtifact, CacheArtifact
 
 
 def print_result_dict(results, indent=0):
   for node, result in results.items():
-    node = _unpack_node(node)
-
     if type(node.task) is str:
       print(f'{" " * indent}{node.task} = {result}')
       continue
@@ -36,7 +34,6 @@ def print_graph(graph):
       return ', '.join([type_or_value(t) for t in tup])
 
     def to_string(node):
-      node = _unpack_node(node)
       return f'({node.task._function.__name__}, {tuple_values(node.args)})'
 
     if type(v) in [list, set]:

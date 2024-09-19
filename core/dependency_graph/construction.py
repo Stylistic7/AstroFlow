@@ -1,6 +1,6 @@
 import ray
 
-from dependency_graph import Graph, GraphStatus, Node, ResultDict, TopologicalSorterWithStatus, _unpack_node
+from dependency_graph import Graph, Node
 
 
 @ray.remote
@@ -8,9 +8,6 @@ def list_task_done(ancestor_results):
   return ancestor_results[0]
 
 
-# TODO: Split stuff like this into other files.
-# TODO: Rename this run_in_series() and create another similar function
-# run_in_parallel().
 def make_graph_from_list(tasks):
   graph = Graph({})
   prev_done_node = None

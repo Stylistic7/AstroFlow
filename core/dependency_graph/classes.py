@@ -3,6 +3,16 @@ from dataclasses import dataclass, field
 import graphlib
 
 
+def canonicalize_node(node):
+
+  if isinstance(node, Node):
+    return node
+  elif isinstance(node, tuple):
+    return Node(*node)
+  else:
+    return Node(node)
+
+
 class Node():
 
   def __init__(self, task, *args, name=None, priority=1):
@@ -20,18 +30,6 @@ class Node():
 
   def __hash__(self):
     return hash((self.task, self.name, self.priority, self.args))
-
-
-# TODO: This needs to be made more explicit, moves into its own file. This is
-# only used to improve user ergonomics, right?
-def _unpack_node(node):
-
-  if type(node) is Node:
-    return node
-  elif type(node) is tuple:
-    return Node(*node)
-  else:
-    return Node(node)
 
 
 class Graph(dict):
@@ -91,10 +89,10 @@ class ResultDict(dict):
     if type(key) is str:
       return self.get(key)
 
-    key = _unpack_node(key)
+    key = canonicalize_node(key)
 
     for node, result in self.items():
-      node = _unpack_node(node)
+      # node = canonicalize_node(node)
       if node == key:
         return result
 
