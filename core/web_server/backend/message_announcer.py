@@ -11,9 +11,9 @@ class MessageAnnouncer:
     self.listeners.append(q)
     return q
 
-  def announce(self, msg):
+  def announce(self, event, data=None):
     for i in reversed(range(len(self.listeners))):
       try:
-        self.listeners[i].put_nowait(msg)
+        self.listeners[i].put_nowait((event, data))
       except queue.Full:
         del self.listeners[i]

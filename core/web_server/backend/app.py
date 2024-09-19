@@ -17,8 +17,10 @@ import ray
 from queue import Queue
 import operator
 from spherical_geometry.polygon import SingleSphericalPolygon
-from .message_announcer import MessageAnnouncer
+import threading
+import json
 
+from .message_announcer import MessageAnnouncer
 from context import context
 from state.actor import StateActor
 from catalogs import constellations
@@ -28,6 +30,9 @@ from artifacts import artifact_exists, read_artifact_image, CacheArtifact
 from previews import array_to_png, autostretch
 from mosaics.compute_graph import merge_graph_done_artifacts
 from quarantining.compute_graph import delete_quarantined_stacks, delete_quarantined_targets, delete_quarantined_mosaics
+from astroflow import populate_context
+from compute_graph import build_compute_graph
+from dependency_graph import run_graph
 
 import plotly.express as px
 import plotly.figure_factory as ff
@@ -485,11 +490,11 @@ def set_stack_settings(stack_id):
 import time
 
 
-def format_sse(data: str, event=None) -> str:
-  msg = f'data: {data}\n\n'
-  if event is not None:
-    msg = f'event: {event}\n{msg}'
-  return msg
+def format_sse(event, data=None) -> str:
+  msg = f'event: {event}\n'
+  if data:
+    msg += f'data: {data}\n'
+  return msg + '\n'
 
 
 announcer = MessageAnnouncer()
@@ -502,10 +507,11 @@ def stream():
   def eventStream():
     messages = announcer.listen()
     while True:
-      event = messages.get()
+      event, data = messages.get()
       print(f'### got event {event} from queue')
-      s = time.ctime(time.time())
-      sse = format_sse(s, event)
+      if data == None:
+        data = time.ctime(time.time())
+      sse = format_sse(event, data)
       print('### yielding SSE', sse)
       yield sse
 
@@ -518,6 +524,37 @@ def stream():
 def dispatch():
   state_actor.dispatch(request.json,
                        callback=lambda e: announcer.announce('foo'))
+  return Response(status=204)
+
+
+@app.route('/run_graph')
+def run_compute_graph():
+  populate_context()
+  graph = build_compute_graph(regroup=False,
+                              make_previews=False,
+                              run_main_processing_graph=False)
+
+  def status_fn(status):
+    status_dict = {
+        'num_ready_nodes': len(status.ready_nodes),
+        'num_waiting_nodes': len(status.waiting_nodes),
+        'num_done_nodes': len(status.done_nodes)
+    }
+
+    print(f'### status_fn called {len(status.ready_nodes)} ready nodes, '
+          f'{len(status.waiting_nodes)} waiting nodes, '
+          f'{len(status.done_nodes)} done nodes')
+
+    announcer.announce('compute_graph_status', json.dumps(status_dict))
+
+    if len(status.ready_nodes) == 0 and len(status.waiting_nodes) == 0:
+      print('### Compute graph is done!')
+
+  print('### Running compute graph!')
+  thread = threading.Thread(target=run_graph, args=(graph, status_fn))
+  thread.daemon = True
+  thread.start()
+
   return Response(status=204)
 
 

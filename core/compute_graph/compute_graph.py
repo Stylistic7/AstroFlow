@@ -68,18 +68,11 @@ def scatter_spatial_groups():
 # TODO: Regrouping has to be done whenever there are new files, or whenever
 # quarantining or (global) subframe selection options change.
 @ray.remote
-def maybe_build_regroup_graph():
-  if context.regroup:
-    context.stacks = {}
-    context.targets = {}
-    context.mosaics = {}
-
-    return make_graph_from_list([
-        identify_calibration_stacks, cluster_by_image_center,
-        scatter_spatial_groups, identify_mosaics, delete_quarantined_mosaics
-    ])
-  else:
-    return {}
+def build_regroup_graph():
+  return make_graph_from_list([
+      identify_calibration_stacks, cluster_by_image_center,
+      scatter_spatial_groups, identify_mosaics, delete_quarantined_mosaics
+  ])
 
 
 @ray.remote
@@ -128,9 +121,18 @@ def build_main_processing_graph():
   return graph
 
 
-def build_compute_graph(make_previews=True, run_main_processing_graph=True):
-  task_list = [(scatter_compute_image_metadata, 'input'), load_metadata,
-               maybe_build_regroup_graph, make_suggestions]
+def build_compute_graph(regroup=False,
+                        make_previews=True,
+                        run_main_processing_graph=True):
+  task_list = [(scatter_compute_image_metadata, 'input'), load_metadata]
+
+  if regroup:
+    context.stacks = {}
+    context.targets = {}
+    context.mosaics = {}
+    task_list.append(build_regroup_graph)
+
+  task_list.append(make_suggestions)
 
   if make_previews:
     task_list.append(build_preview_graph)
