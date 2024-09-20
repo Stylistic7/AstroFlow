@@ -10,9 +10,11 @@ from targets import Target
 import geometry.footprints as footprints
 from hashing import hash_list
 from stacks import CompositeStack
+from profiling import track_performance
 
 
 @ray.remote
+@track_performance
 def group_stacks_into_targets(ancestor_results):
   stacks = ancestor_results[0]
   metadata = context.metadata

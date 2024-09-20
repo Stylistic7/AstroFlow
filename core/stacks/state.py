@@ -3,6 +3,7 @@ import ray
 from context import context
 from stacks import CompositeStack, stack_files_artifacts, post_process_stack_artifacts
 from artifacts import artifact_exists
+from profiling import track_performance
 
 
 @ray.remote
@@ -12,6 +13,7 @@ def update_state_new(stack_id):
 
 # TODO: Include error messages, exceptions, etc. here to inform the user.
 @ray.remote
+@track_performance
 def update_state(ancestor_results):
   print('### Entering update_state')
   stacks = ancestor_results[0]

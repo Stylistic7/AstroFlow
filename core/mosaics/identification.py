@@ -12,6 +12,7 @@ from catalogs import position_string
 from geometry import footprints
 from hashing import hash_list
 import units
+from profiling import track_performance
 
 from . import ransac
 
@@ -96,6 +97,7 @@ def _identify_overlapping_targets():
 
 
 @ray.remote
+@track_performance
 def identify_mosaics():
   targets = context.targets
   print(f'### Identifying mosaics from {len(targets)} targets')

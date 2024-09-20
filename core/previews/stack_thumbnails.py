@@ -14,6 +14,7 @@ import quarantining
 from stacks import SimpleStack, CompositeStack
 from dependency_graph import Graph
 from previews.operations import autostretch
+from profiling import track_performance
 
 # TODO: Split this file up into smaller, more specific pieces.
 
@@ -73,6 +74,7 @@ def scatter_stack_thumbnails(mode):
 # TODO: The thumbnail images and videos need to use the artifact workflow, so
 # they will be regenerated after quarantining, etc.
 @ray.remote
+@track_performance
 def create_stack_subframe_thumbnails(stack_id):
   stacks = context.stacks
   metadata = context.metadata

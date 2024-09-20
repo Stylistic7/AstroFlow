@@ -15,6 +15,7 @@ from context import context
 import pix
 import file_io
 from metadata.actor import get_metadata
+from profiling import track_performance
 
 _CONTENT_HASH_KEY = 'CONTHASH'
 
@@ -143,6 +144,7 @@ def _setup_simple_stack(stack_id, tmp_dir):
 # TODO: When a stack fails, keep note of it so it won't be retried for the
 # exact same inputs again.
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
+@track_performance
 @saves_artifacts(stack_files_artifacts)
 def stack_files(stack_id):
   assert context.output_dir

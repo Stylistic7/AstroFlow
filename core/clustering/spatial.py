@@ -8,6 +8,7 @@ from geometry import footprints
 from context import context, WriteMode
 import plate_solving
 from clustering.classes import SpatialGroup
+from profiling import track_performance
 
 
 def find_groups(values, comparison_fn, min_component_members) -> list[str]:
@@ -45,6 +46,7 @@ def find_groups(values, comparison_fn, min_component_members) -> list[str]:
 
 
 @ray.remote
+@track_performance
 def cluster_by_image_center():
   print('cluster_by_image_center')
 

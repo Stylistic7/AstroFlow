@@ -10,6 +10,7 @@ import pix
 from previews import autostretch
 from artifacts.decorators import saves_artifacts
 from artifacts import Artifact, read_artifact_image, write_artifact, artifact_exists
+from profiling import track_performance
 
 
 @pix.PixInsight()
@@ -68,6 +69,7 @@ def merge_images_artifacts(mode: str, mosaic_id: str, input_0: Artifact,
 # TODO: Make sure that every Ray task that calls a @PixInsight function also
 # consumes a PixInsight resource.
 @ray.remote
+@track_performance
 @saves_artifacts(merge_images_artifacts)
 def merge_images(mode: str, mosaic_id: str, input_0: Artifact,
                  input_1: Artifact, output: Artifact):

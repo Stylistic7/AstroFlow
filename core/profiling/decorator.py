@@ -20,7 +20,10 @@ def track_performance(fn):
     result = fn(*args, **kwargs)
     end_time = time.time()
     elapsed_time = end_time - start_time
+
     node_ip = ray.util.get_node_ip_address()
+
+    print(f'### Function {fn.__name__} took {elapsed_time} s on {node_ip}')
     key = ('performance_history', node_ip, fn.__name__)
 
     # Keep only the last N samples.

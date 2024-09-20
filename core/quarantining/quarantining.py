@@ -2,6 +2,7 @@ import ray
 
 from context import context
 from stacks import CompositeStack, SimpleStack
+from profiling import track_performance
 
 # TODO: Ensure that all of the actions in this file are idempotent. The goal
 # is to be able to apply these functions very quickly when the user quarantines
@@ -14,6 +15,7 @@ from stacks import CompositeStack, SimpleStack
 
 
 @ray.remote
+@track_performance
 def quarantine_stacks(ancestor_results):
   stacks = ancestor_results[0]
 

@@ -14,6 +14,7 @@ import geometry.footprints as footprints
 from stacks import Stack, FrameHash, SimpleStack, CompositeStack
 import units
 from metadata.actor import get_metadata, cluster_by_header, sort_by_header
+from profiling import track_performance
 
 
 def normalize_radians(x):
@@ -136,7 +137,12 @@ def _new_stacks(name, frames):
 # TODO: The spatial_group should include a metadata_ref for all of the images
 # in it. The call to get_metadata() should be removed.
 @ray.remote
+@track_performance
 def identify_stacks(spatial_group):
+  name, frames = spatial_group
+  print(f'### identify_stacks running for '
+        f'spatial group {name} of length {len(frames)}')
+
   if context.stacks == None:
     context.stacks = {}
 

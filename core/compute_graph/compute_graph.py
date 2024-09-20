@@ -20,9 +20,11 @@ from stacks.identification import identify_stacks
 import metadata.image_types as image_types
 from metadata.actor import get_metadata
 from stacks import update_state
+from profiling import track_performance
 
 
 @ray.remote
+@track_performance
 def load_metadata():
   quarantined_files = context.quarantined_files or set()
 
@@ -42,6 +44,9 @@ def load_metadata():
 
 @ray.remote
 def build_spatial_group_graph(g):
+  name, frames = g
+  print(f'### build_spatial_group_graph running for '
+        f'spatial group {name} of length {len(frames)}')
   return make_graph_from_list([(identify_stacks, g), associate_with_stacks,
                                quarantine_stacks, select_subframes,
                                update_state, group_stacks_into_targets,

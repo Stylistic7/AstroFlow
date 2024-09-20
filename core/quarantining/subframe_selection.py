@@ -6,6 +6,7 @@ from stacks import CompositeStack
 from context import context
 from metadata.image_types import is_light_frame
 from dependency_graph import Graph
+from profiling import track_performance
 
 
 def get_light_frames_sorted_by_stars(light_frames):
@@ -33,6 +34,7 @@ def scatter_select_subframes():
 
 
 @ray.remote
+@track_performance
 def select_subframes(ancestor_results):
   print('### Entering select_subframes')
   stacks = ancestor_results[0]

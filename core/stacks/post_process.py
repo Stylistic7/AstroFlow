@@ -10,6 +10,7 @@ from artifacts.decorators import saves_artifacts
 from stacks.artifacts import stack_files_artifacts
 import pix
 from hashing import hash_list
+from profiling import track_performance
 
 
 # TODO: Find a way to disable or mock these these during tests.
@@ -39,6 +40,7 @@ def post_process_stack_artifacts(stack_id):
 
 
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
+@track_performance
 @saves_artifacts(post_process_stack_artifacts)
 def post_process_stack(stack_id):
   print(f'post_process_stack, stack_id {stack_id}')
