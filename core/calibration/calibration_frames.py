@@ -6,23 +6,23 @@ import itertools
 import metadata.image_types as image_types
 from context import context
 from stacks import SimpleStack
-from metadata.actor import get_metadata, cluster_by_header
 import clustering
+from profiling import track_performance
 
 
-# TODO: Something in here is calling get_metadata() and going slowly.
 @ray.remote
+@track_performance
 def identify_calibration_stacks():
   print(f'Identifying calibration stacks...')
+
+  metadata = context.metadata
 
   def get_runs(frames):
     if not len(frames):
       return []
 
-    # TODO: Don't use this function, it's too slow.
-    result = cluster_by_header(
-        frames, 'DATE-OBS', lambda images: clustering.cluster_continuous(
-            images, epsilon=context.max_run_gap))
+    items = [(h, metadata[h].header['DATE-OBS']) for h in frames]
+    result = clustering.cluster_continuous(items, epsilon=context.max_run_gap)
     return [
         [x[0] for x in r] for r in result if len(r) >= context.min_frames_in_run
     ]
@@ -35,7 +35,6 @@ def identify_calibration_stacks():
         for k, g in itertools.groupby(images, key=key_fn)
     }
 
-  metadata = context.metadata
   frames_for_image_type = group_by_header(metadata.values(), 'IMAGETYP')
   frames_for_camera = group_by_header(metadata.values(), 'INSTRUME')
   frames_for_exposure = group_by_header(metadata.values(), 'EXPOSURE')
@@ -133,6 +132,7 @@ def associate_with_stack(stack, stacks):
 
 
 @ray.remote
+@track_performance
 def associate_with_stacks(ancestor_results):
   stacks = ancestor_results[0]
   print('### Entering associate_with_stacks')
