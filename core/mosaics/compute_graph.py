@@ -15,6 +15,7 @@ from stacks.post_process import post_process_stack_artifacts
 from stacks.compute_graph import build_stack_subgraph
 from artifacts.decorators import saves_artifacts
 from previews import resize_array
+from profiling import track_performance
 
 
 @ray.remote
@@ -83,6 +84,7 @@ def _get_best_light_frame(stack_id, metadata):
 
 
 @ray.remote
+@track_performance
 def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
   print(f'### build_mosaic_filter_subgraph mode {mode} '
         f'mosaic_id {mosaic_id} filter {filter}')
@@ -90,8 +92,6 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
   targets = context.targets
   mosaics = context.mosaics
   metadata = context.metadata
-
-  print(f'### build_mosaic_filter_subgraph targets are {targets.keys()}')
 
   mosaic = mosaics[mosaic_id]
 

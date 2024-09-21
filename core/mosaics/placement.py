@@ -15,6 +15,7 @@ from context import context
 from .viewbox import compute_mosaic_viewbox_artifacts
 from artifacts import read_artifact_image, read_artifact_header, write_artifact, CacheArtifact, FileArtifact
 from hashing import hash_list
+from profiling import track_performance
 
 _MEMORY_REQUIREMENT = 8 * 1024 * 1024 * 1024  # 8 GB
 
@@ -95,6 +96,7 @@ def place_tile(tile_y, tile_x, wcs, ra_tiles, dec_tiles, interp):
 # TODO: Placement is perhaps fast enough to not bother storing placed images
 # on disk, where they take up a huge amount of space.
 @ray.remote(scheduling_strategy="SPREAD", memory=_MEMORY_REQUIREMENT)
+@track_performance
 @saves_artifacts(mosaic_by_coordinates_artifacts)
 def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact):
   print(f'### Entering mosaic_by_coordinates '
