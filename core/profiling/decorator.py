@@ -28,8 +28,7 @@ def track_performance(fn):
 
     # Keep only the last N samples.
     history = context[key] or []
-    history = history[-_MAX_PERFORMANCE_SAMPLES - 1:]
-    history.append(elapsed_time)
+    history = history[-(_MAX_PERFORMANCE_SAMPLES - 1):] + [elapsed_time]
     context[key] = history
 
     return result
