@@ -32,8 +32,7 @@ from mosaics.compute_graph import merge_graph_done_artifacts
 from quarantining.compute_graph import delete_quarantined_stacks, delete_quarantined_targets, delete_quarantined_mosaics
 from astroflow import populate_context
 from compute_graph import build_compute_graph
-from dependency_graph import run_graph
-from profiling.estimate_time import estimate_time
+from dependency_graph import run_graph, graph_status_to_progress
 
 import plotly.express as px
 import plotly.figure_factory as ff
@@ -531,6 +530,8 @@ def dispatch():
 compute_graph_status = {}
 
 
+# TODO: Make sure a second graph can't be started when one is already in
+# progress.
 @app.route('/run_graph')
 def run_compute_graph():
 
@@ -539,52 +540,7 @@ def run_compute_graph():
   def status_fn(status):
     global compute_graph_status
 
-    print(f'### status_fn called {len(status.ready_nodes)} ready nodes, '
-          f'{len(status.waiting_nodes)} waiting nodes, '
-          f'{len(status.done_nodes)} done nodes')
-
-    def function_name_from_node(node):
-      return node.task._function.__name__
-
-    status_dict = {}
-    for node in status.ready_nodes | status.waiting_nodes:
-      name = function_name_from_node(node)
-      estimated_time = estimate_time(name)
-      if estimated_time is None:
-        continue
-
-      if name not in status_dict:
-        status_dict[name] = {
-            'total_number': 1,
-            'remaining_number': 1,
-            'estimated_time': estimated_time
-        }
-      else:
-        status_dict[name]['total_number'] += 1
-        status_dict[name]['remaining_number'] += 1
-        status_dict[name]['estimated_time'] = status_dict[name][
-            'remaining_number'] * estimated_time
-
-    for node in status.done_nodes:
-      name = function_name_from_node(node)
-      estimated_time = estimate_time(name)
-      if estimated_time is None:
-        continue
-
-      if name not in status_dict:
-        status_dict[name] = {
-            'total_number': 1,
-            'remaining_number': 0,
-            'estimated_time': 0
-        }
-      else:
-        status_dict[name]['total_number'] += 1
-
-    for name in status_dict.keys():
-      if status_dict[name]['remaining_number'] == 0:
-        status_dict[name]['estimated_time'] = 0
-
-    compute_graph_status = status_dict
+    compute_graph_status = graph_status_to_progress(status)
     announcer.announce('compute_graph_status')
 
     if len(status.ready_nodes) == 0 and len(status.waiting_nodes) == 0:
