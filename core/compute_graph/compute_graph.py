@@ -129,9 +129,16 @@ def build_compute_graph(regroup=False,
   task_list = [(scatter_compute_image_metadata, 'input'), load_metadata]
 
   if regroup:
-    context.stacks = {}
-    context.targets = {}
-    context.mosaics = {}
+    # TODO: This is too heavy-handed. I should only delete objects that
+    # belong to each spatial group, and only after demonstrating that the
+    # images in that group have changed. On the other hand, the only time
+    # we'll ever end up with old, stale keys in these dicts is if images
+    # are quarantined such that the oldest image in a stack changes. But
+    # if regrouping always happens before quarantining, then we should never
+    # end up with stale objects.
+    # context.stacks = {}
+    # context.targets = {}
+    # context.mosaics = {}
     task_list.append(build_regroup_graph)
 
   task_list.append(make_suggestions)
