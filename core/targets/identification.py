@@ -108,7 +108,5 @@ def group_stacks_into_targets(ancestor_results):
   # TODO: Computing the result and storing the result are two different
   # responsibilities. Perhaps separate patterns like this?
   context.or_equals('targets', targets)
-  print(f'### context.targets contains {len(context.targets)} '
-        f'targets: {context.targets.keys()}')
 
   return targets

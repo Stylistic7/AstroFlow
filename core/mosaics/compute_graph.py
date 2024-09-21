@@ -74,10 +74,10 @@ def build_mosaic_subgraph(mode, mosaic_id):
     return make_graph_from_list([stack_subgraph, mosaic_subgraph])
 
 
-def _get_best_light_frame(stack_id):
+def _get_best_light_frame(stack_id, metadata):
   stack = context.stacks[stack_id]
   light_frames_by_stars = quarantining.get_light_frames_sorted_by_stars(
-      stack.all_frames())
+      stack.all_frames(), metadata)
 
   return light_frames_by_stars[0]
 
@@ -89,6 +89,7 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
   stacks = context.stacks
   targets = context.targets
   mosaics = context.mosaics
+  metadata = context.metadata
 
   print(f'### build_mosaic_filter_subgraph targets are {targets.keys()}')
 
@@ -114,7 +115,7 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
 
     # TODO: Find a way to streamline all these if-else statements in general.
     if mode == 'subframe':
-      best_light_frame = _get_best_light_frame(stack_id)
+      best_light_frame = _get_best_light_frame(stack_id, metadata)
       input_artifact = FileArtifact(best_light_frame.filename,
                                     best_light_frame.content_hash)
     elif mode == 'master':
