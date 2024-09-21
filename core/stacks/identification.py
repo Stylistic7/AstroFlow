@@ -49,15 +49,15 @@ def _get_unique(L):
 # by this one, is very slow.
 #
 # TODO: This could be parallelized.
-def _new_stacks(name, frames):
-  metadata = [i for h, i in context.metadata.items() if h in frames]
+def _new_stacks(name, frames, metadata):
+  metadata_list = [i for h, i in metadata.items() if h in frames]
 
-  width_pixels = _get_unique(i.header['NAXIS1'] for i in metadata)
-  height_pixels = _get_unique(i.header['NAXIS2'] for i in metadata)
+  width_pixels = _get_unique(i.header['NAXIS1'] for i in metadata_list)
+  height_pixels = _get_unique(i.header['NAXIS2'] for i in metadata_list)
 
   # Sort the light frames by observation date. The oldest image will be used
   # to compute the hash of the whole stack.
-  sorted_metadata = sorted(metadata, key=lambda i: i.header['DATE-OBS'])
+  sorted_metadata = sorted(metadata_list, key=lambda i: i.header['DATE-OBS'])
   oldest_image_metadata = sorted_metadata[0]
 
   center = oldest_image_metadata.plate_solution.center
@@ -83,7 +83,7 @@ def _new_stacks(name, frames):
 
   new_stacks = {}
   exposures = [(i.content_hash, i.header['EXPOSURE'])
-               for i in metadata
+               for i in metadata_list
                if 'EXPOSURE' in i.header]
   for exposure_cluster in clustering.cluster_continuous(exposures,
                                                         epsilon=0.01):
@@ -99,12 +99,13 @@ def _new_stacks(name, frames):
                                           for i in sorted_metadata
                                           if i.content_hash in exposure_frames],
                                          epsilon=context.max_run_gap)
+
     for run in runs:
       if len(run) < context.min_frames_in_run:
         continue
       run = [x[0] for x in run]
       stack = SimpleStack(frames=run)
-      stack.update_metadata()
+      stack.update_metadata(metadata)
       new_stacks[stack.content_hash] = stack
 
   if not new_stacks:
@@ -123,7 +124,7 @@ def _new_stacks(name, frames):
                          footprint=footprint,
                          projected_footprints=projected_footprints,
                          selection_criterion=selection_criterion)
-  stack.update_metadata()
+  stack.update_metadata(metadata)
   new_stacks[stack.stable_hash] = stack
   context.or_equals('stacks', {stack.stable_hash: stack})
 
@@ -193,7 +194,7 @@ def identify_stacks(spatial_group):
     for camera_frames in camera_clusters(scale_frames):
       for rotation_frames in rotation_clusters(camera_frames):
         for filter_frames in filter_clusters(rotation_frames):
-          new_stacks |= _new_stacks(name, filter_frames)
+          new_stacks |= _new_stacks(name, filter_frames, metadata)
 
   end = time.time()
   print(f'### identify_stacks took {end - start} seconds')

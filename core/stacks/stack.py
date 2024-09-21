@@ -27,13 +27,14 @@ class ImagingAttributes:
   oldest_date: Optional[datetime.datetime] = None
   newest_date: Optional[datetime.datetime] = None
 
-  def update_metadata(self) -> None:
+  def update_metadata(self, metadata=None) -> None:
+    if metadata == None:
+      metadata = context.metadata
+
     all_frames = self.all_frames()
     self.content_hash = hash_list(all_frames)
 
-    metadata = [
-        i for i in context.metadata.values() if i.content_hash in all_frames
-    ]
+    metadata = [i for i in metadata.values() if i.content_hash in all_frames]
 
     def get_quality(quality, allow_multiple=False):
       # TODO: What should we do with frames that don't have a FILTER keyword?
