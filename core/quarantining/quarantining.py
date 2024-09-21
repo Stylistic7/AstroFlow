@@ -19,6 +19,8 @@ from profiling import track_performance
 def quarantine_stacks(ancestor_results):
   stacks = ancestor_results[0]
 
+  metadata = context.metadata
+
   # Remove all of the quarantined stacks from the dict of stacks.
   quarantined_stacks = context.quarantined_stacks or set()
   stacks = {
@@ -55,7 +57,7 @@ def quarantine_stacks(ancestor_results):
       else:
         # TODO: This won't work for calibration stacks, but will people actually
         # quarantine calibration stacks?
-        stack.update_metadata()
+        stack.update_metadata(metadata)
 
   # Eliminate all stacks that are now empty.
   stacks = {

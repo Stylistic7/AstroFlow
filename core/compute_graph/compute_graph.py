@@ -44,7 +44,6 @@ def load_metadata():
 
 @ray.remote
 def build_spatial_group_graph(g):
-  name, frames = g
   return make_graph_from_list([(identify_stacks, g), associate_with_stacks,
                                quarantine_stacks, select_subframes,
                                update_state, group_stacks_into_targets,

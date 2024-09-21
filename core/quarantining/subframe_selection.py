@@ -9,8 +9,8 @@ from dependency_graph import Graph
 from profiling import track_performance
 
 
-def get_light_frames_sorted_by_stars(light_frames):
-  metadata = [i for h, i in context.metadata.items() if h in light_frames]
+def get_light_frames_sorted_by_stars(light_frames, metadata):
+  metadata = [i for h, i in metadata.items() if h in light_frames]
   return sorted(metadata,
                 key=lambda i: i.plate_solution.num_stars,
                 reverse=True)
@@ -49,7 +49,8 @@ def select_subframes(ancestor_results):
     light_frames = stack.all_frames(include_dependencies=False)
     assert all(is_light_frame(metadata[f].header) for f in light_frames)
 
-    sorted_light_frames = get_light_frames_sorted_by_stars(light_frames)
+    sorted_light_frames = get_light_frames_sorted_by_stars(
+        light_frames, metadata)
     highest_star_count = sorted_light_frames[0].plate_solution.num_stars
 
     print(f'### Best light frame for stack {stack_id} '
