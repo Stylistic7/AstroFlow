@@ -25,7 +25,7 @@ def run_graph(graph, status_fn=None, debug=False):
   max_parallelism_seen = 0
   active = []
   completed = []
-  last_status_time = time.time()
+  last_status_time = 0
 
   # TODO: Maybe support nodes with one ancestor, like this {done: process},
   # instead of requiring {done: {process}}.
@@ -130,6 +130,14 @@ def run_graph(graph, status_fn=None, debug=False):
 
       num_nodes_run += 1
 
+      # Maybe call the user's status_fn, but rate limit the frequency of these
+      # calls, which may be expensive.
+      current_time = time.time()
+      if status_fn and current_time > (last_status_time +
+                                       MIN_STATUS_UPDATE_INTERVAL_SECS):
+        status_fn(get_status())
+        last_status_time = current_time
+
       try:
         result = ray.get(ready_refs[0])
 
@@ -146,12 +154,6 @@ def run_graph(graph, status_fn=None, debug=False):
         ts.results[node] = e.cause
         ts.final_result = e.cause
         ts.done(node)
-
-      current_time = time.time()
-      if status_fn and current_time > (last_status_time +
-                                       MIN_STATUS_UPDATE_INTERVAL_SECS):
-        status_fn(get_status())
-        last_status_time = current_time
 
     delete_finished_subgraphs()
 
