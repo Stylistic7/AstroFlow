@@ -539,26 +539,31 @@ def run_compute_graph():
     def function_name_from_node(node):
       return node.task._function.__name__
 
-    total_estimated_time = 0
-    for node in status.ready_nodes | status.waiting_nodes:
-      if estimated_time := estimate_time(function_name_from_node(node)):
-        total_estimated_time += estimated_time
-
     status_dict = {}
     for node in status.ready_nodes | status.waiting_nodes:
       name = function_name_from_node(node)
+      estimated_time = estimate_time(name)
+      if estimated_time is None:
+        continue
+
       if name not in status_dict:
         status_dict[name] = {
             'total_number': 1,
             'remaining_number': 1,
-            'estimated_time': 0
+            'estimated_time': estimated_time
         }
       else:
         status_dict[name]['total_number'] += 1
         status_dict[name]['remaining_number'] += 1
+        status_dict[name]['estimated_time'] = status_dict[name][
+            'remaining_number'] * estimated_time
 
     for node in status.done_nodes:
       name = function_name_from_node(node)
+      estimated_time = estimate_time(name)
+      if estimated_time is None:
+        continue
+
       if name not in status_dict:
         status_dict[name] = {
             'total_number': 1,
@@ -568,7 +573,9 @@ def run_compute_graph():
       else:
         status_dict[name]['total_number'] += 1
 
-    # TODO: Fill in estimated times for each type of process.
+    for name in status_dict.keys():
+      if status_dict[name]['remaining_number'] == 0:
+        status_dict[name]['estimated_time'] = 0
 
     announcer.announce('compute_graph_status', json.dumps(status_dict))
 
@@ -579,7 +586,8 @@ def run_compute_graph():
   populate_context()
   graph = build_compute_graph(regroup=True,
                               make_previews=True,
-                              run_main_processing_graph=True)
+                              run_main_processing_graph=False)
+
   thread = threading.Thread(target=run_graph, args=(graph, status_fn))
   thread.daemon = True
   thread.start()
