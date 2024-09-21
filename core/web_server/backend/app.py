@@ -548,7 +548,12 @@ def run_compute_graph():
 
   print('### Running compute graph!')
   populate_context()
-  graph = build_compute_graph(regroup=True,
+
+  # TODO: Put these in the UI.
+  context.input_dirs = ['/Volumes/Astro/Raw', 'Volumes/Astro2/Raw']
+  context.output_dir = '/Volumes/Astro/Processed'
+
+  graph = build_compute_graph(regroup=False,
                               make_previews=True,
                               run_main_processing_graph=False)
 
