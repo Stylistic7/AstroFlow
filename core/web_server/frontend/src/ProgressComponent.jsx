@@ -49,7 +49,7 @@ const ProgressComponent = () => {
       {/* Overall Progress Bar */}
       <Box onClick={handleClick} sx={{ flexGrow: 1, cursor: 'pointer' }}>
         <Typography variant="body2" color="textSecondary" align="center">
-          Progress: {formatTime(totalRemainingTime)} remaining
+          Running: {formatTime(totalRemainingTime)} remaining
         </Typography>
         <LinearProgress variant="determinate" value={overallProgress} />
       </Box>
@@ -68,17 +68,18 @@ const ProgressComponent = () => {
       >
         {/* Direct display of detailed process info */}
         <Box sx={{ p: 2 }}>
-          <Typography variant="h6" gutterBottom>
-            Detailed Process Progress
-          </Typography>
           {/* Loop through sorted processes */}
           {processEntries.map(([processName, data]) => {
+            if (data.remaining_number == 0) {
+              return;
+            }
+
             const progress = ((data.total_number - data.remaining_number) / data.total_number) * 100;
             return (
               <Box key={processName} sx={{ mb: 2, width: '100%' }}>
                 {/* Process Name as Title */}
                 <Typography variant="subtitle1" gutterBottom>
-                  {processName}
+                  Process "{processName}" ({data.total_number - data.remaining_number} / {data.total_number})
                 </Typography>
                 <Typography variant="body1">Remaining Time: {formatTime(data.estimated_time)}</Typography>
                 <Box display="flex" alignItems="center">
