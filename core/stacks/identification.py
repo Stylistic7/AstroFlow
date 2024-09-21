@@ -188,7 +188,6 @@ def identify_stacks(spatial_group):
       assert len(set(filters)) == 1
       yield filter_frames
 
-  start = time.time()
   new_stacks = {}
   for scale_frames in scale_clusters():
     for camera_frames in camera_clusters(scale_frames):
@@ -196,6 +195,4 @@ def identify_stacks(spatial_group):
         for filter_frames in filter_clusters(rotation_frames):
           new_stacks |= _new_stacks(name, filter_frames, metadata)
 
-  end = time.time()
-  print(f'### identify_stacks took {end - start} seconds')
   return new_stacks

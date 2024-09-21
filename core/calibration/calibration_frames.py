@@ -42,7 +42,7 @@ def identify_calibration_stacks():
 
   def new_stack(frames):
     stack = SimpleStack(frames=frames)
-    stack.update_metadata()
+    stack.update_metadata(metadata)
     return stack
 
   stacks = context.stacks or {}
@@ -135,7 +135,6 @@ def associate_with_stack(stack, stacks):
 @track_performance
 def associate_with_stacks(ancestor_results):
   stacks = ancestor_results[0]
-  print('### Entering associate_with_stacks')
   for stack in stacks.values():
     if type(stack) is SimpleStack and stack.image_type == 'light':
       associate_with_stack(stack, context.stacks)
