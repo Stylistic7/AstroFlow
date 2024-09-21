@@ -1,4 +1,4 @@
-from dependency_graph import ResultDict
+from dependency_graph import ResultDict, canonicalize_node
 from artifacts import FileArtifact, CacheArtifact
 
 
@@ -34,6 +34,7 @@ def print_graph(graph):
       return ', '.join([type_or_value(t) for t in tup])
 
     def to_string(node):
+      node = canonicalize_node(node)
       return f'({node.task._function.__name__}, {tuple_values(node.args)})'
 
     if type(v) in [list, set]:
