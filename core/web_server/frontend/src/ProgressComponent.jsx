@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useReducer, useContext } from "react";
-import { LinearProgress, Accordion, AccordionSummary, AccordionDetails, Typography, Box } from '@mui/material';
+import { Box, Typography, LinearProgress, Menu, Accordion, AccordionSummary, AccordionDetails } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
 import AstroFlowContext from './AstroFlowContext.jsx';
@@ -14,50 +14,64 @@ const formatTime = (seconds) => {
 
 const ProgressComponent = () => {
   const { computeGraphStatus } = useContext(AstroFlowContext);
+  const [anchorEl, setAnchorEl] = useState(null);
 
   let processEntries = Object.entries(computeGraphStatus);
 
   // Sort processes by estimated time in descending order (most significant first)
-  processEntries = processEntries.sort(
-    (a, b) => b[1].estimated_time - a[1].estimated_time
-  );
+  processEntries = processEntries.sort((a, b) => b[1].estimated_time - a[1].estimated_time);
 
   // Calculate the total remaining time
-  const totalRemainingTime = processEntries.reduce(
-    (acc, [key, value]) => acc + value.estimated_time, 0
-  );
+  const totalRemainingTime = processEntries.reduce((acc, [key, value]) => acc + value.estimated_time, 0);
+
+  if (totalRemainingTime == 0) {
+    return <Typography variant="body2" color="textSecondary" align="center" sx={{ padding: '1em' }}>
+      Idle
+    </Typography>
+  }
 
   // Calculate overall progress percentage
-  const totalItems = processEntries.reduce(
-    (acc, [key, value]) => acc + value.total_number, 0
-  );
-  const remainingItems = processEntries.reduce(
-    (acc, [key, value]) => acc + value.remaining_number, 0
-  );
+  const totalItems = processEntries.reduce((acc, [key, value]) => acc + value.total_number, 0);
+  const remainingItems = processEntries.reduce((acc, [key, value]) => acc + value.remaining_number, 0);
   const overallProgress = ((totalItems - remainingItems) / totalItems) * 100;
 
+  // Handle menu open/close
+  const handleClick = (event) => {
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleClose = () => {
+    setAnchorEl(null);
+  };
+
   return (
-    <Box sx={{ width: '100%', p: 2 }}>
+    <Box sx={{ padding: '1em' }}>
       {/* Overall Progress Bar */}
-      <Typography variant="h6">Overall Progress</Typography>
-      <Box display="flex" alignItems="center">
-        <Box sx={{ width: '100%', mr: 1 }}>
-          <LinearProgress variant="determinate" value={overallProgress} />
-        </Box>
-        <Box>
-          <Typography variant="body2" color="textSecondary">
-            {formatTime(totalRemainingTime)} remaining
-          </Typography>
-        </Box>
+      <Box onClick={handleClick} sx={{ flexGrow: 1, cursor: 'pointer' }}>
+        <Typography variant="body2" color="textSecondary" align="center">
+          Progress: {formatTime(totalRemainingTime)} remaining
+        </Typography>
+        <LinearProgress variant="determinate" value={overallProgress} />
       </Box>
 
-      {/* Single Accordion for all processes */}
-      <Accordion>
-        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-          <Typography variant="h6">Detailed Process Progress</Typography>
-        </AccordionSummary>
-        <AccordionDetails>
-          {/* Loop through all processes */}
+      {/* Menu that shows detailed process info directly when progress bar is clicked */}
+      <Menu
+        anchorEl={anchorEl}
+        open={Boolean(anchorEl)}
+        onClose={handleClose}
+        PaperProps={{
+          style: {
+            width: '100%',
+            maxWidth: '400px'
+          }
+        }}
+      >
+        {/* Direct display of detailed process info */}
+        <Box sx={{ p: 2 }}>
+          <Typography variant="h6" gutterBottom>
+            Detailed Process Progress
+          </Typography>
+          {/* Loop through sorted processes */}
           {processEntries.map(([processName, data]) => {
             const progress = ((data.total_number - data.remaining_number) / data.total_number) * 100;
             return (
@@ -80,8 +94,8 @@ const ProgressComponent = () => {
               </Box>
             );
           })}
-        </AccordionDetails>
-      </Accordion>
+        </Box>
+      </Menu>
     </Box>
   );
 };

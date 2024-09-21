@@ -21,6 +21,7 @@ import lunr from 'lunr';
 import LeftDrawer from "./LeftDrawer.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
 import { Breadcrumbs } from "@mui/material";
+import ProgressComponent from './ProgressComponent.jsx';
 
 
 const Search = styled('div')(({ theme }) => ({
@@ -216,6 +217,7 @@ export default function PrimarySearchAppBar() {
             />
           </Search>
           <Box sx={{ flexGrow: 1 }} />
+          <ProgressComponent />
           <Box sx={{ display: { xs: 'none', md: 'flex' } }}>
             <IconButton size="large" aria-label="show 4 new mails" color="inherit">
               <Badge badgeContent={Object.keys(stacks).length} color="error">
