@@ -15,7 +15,12 @@ const formatTime = (seconds) => {
 const ProgressComponent = () => {
   const { computeGraphStatus } = useContext(AstroFlowContext);
 
-  const processEntries = Object.entries(computeGraphStatus);
+  let processEntries = Object.entries(computeGraphStatus);
+
+  // Sort processes by estimated time in descending order (most significant first)
+  processEntries = processEntries.sort(
+    (a, b) => b[1].estimated_time - a[1].estimated_time
+  );
 
   // Calculate the total remaining time
   const totalRemainingTime = processEntries.reduce(

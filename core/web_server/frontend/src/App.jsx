@@ -35,15 +35,10 @@ function App() {
   const [shoppingCart, setShoppingCart] = useState([]);
   const [computeGraphStatus, setComputeGraphStatus] = useState({});
 
-  const removeKeys = (obj, keys) => {
-    keys.forEach(key => {
-      delete obj[key];
-    });
-  };
-
   useEffect(() => {
     console.log('in App.useEffect');
-    const loadData = async () => {
+
+    const loadObjectData = async () => {
       let [s, t, m, cart] = await Promise.all([
         fetch('/stacks').then(r => r.json()),
         fetch('/targets').then(r => r.json()),
@@ -59,23 +54,32 @@ function App() {
       setDataIsAvailable(true);
     };
 
-    loadData();
+    loadObjectData();
+
+    const loadComputeGraphStatus = async () => {
+      let [s] = await Promise.all([
+        fetch('/compute_graph_status').then(r => r.json()),
+      ]);
+
+      setComputeGraphStatus(s);
+    };
+
+    loadComputeGraphStatus();
 
     // TODO: This removes the hostname's port, which is a little gross.
     const stream_url = window.location.protocol + '//' + window.location.hostname + '/stream';
     console.log('SSE stream URL:', stream_url);
     const sse = new window.EventSource(stream_url);
-    function getRealtimeData(d) {
-      console.log('Reloading data in response to SSE');
-      loadData();
-    }
-    sse.onmessage = e => getRealtimeData(e.data);
-    sse.addEventListener("reload_data", e => getRealtimeData(e.data));
-    sse.addEventListener("compute_graph_status", e => setComputeGraphStatus(JSON.parse(e.data)));
+
+    sse.onmessage = e => loadObjectData();
+    sse.addEventListener("reload_data", e => loadObjectData());
+    sse.addEventListener("compute_graph_status", e => loadComputeGraphStatus());
+
     sse.onerror = () => {
       console.log('sse error');
       sse.close();
     }
+
     return () => {
       console.log('closing sse');
       sse.close();

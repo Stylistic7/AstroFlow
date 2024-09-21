@@ -528,10 +528,17 @@ def dispatch():
   return Response(status=204)
 
 
+compute_graph_status = {}
+
+
 @app.route('/run_graph')
 def run_compute_graph():
 
+  # TODO: Pull all of this transform code out into a separate module and test
+  # it properly.
   def status_fn(status):
+    global compute_graph_status
+
     print(f'### status_fn called {len(status.ready_nodes)} ready nodes, '
           f'{len(status.waiting_nodes)} waiting nodes, '
           f'{len(status.done_nodes)} done nodes')
@@ -577,7 +584,8 @@ def run_compute_graph():
       if status_dict[name]['remaining_number'] == 0:
         status_dict[name]['estimated_time'] = 0
 
-    announcer.announce('compute_graph_status', json.dumps(status_dict))
+    compute_graph_status = status_dict
+    announcer.announce('compute_graph_status')
 
     if len(status.ready_nodes) == 0 and len(status.waiting_nodes) == 0:
       print('### Compute graph is done!')
@@ -593,6 +601,11 @@ def run_compute_graph():
   thread.start()
 
   return Response(status=204)
+
+
+@app.route('/compute_graph_status')
+def get_compute_graph_status():
+  return compute_graph_status
 
 
 if __name__ == '__main__':
