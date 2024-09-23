@@ -21,7 +21,7 @@ def estimate_time(tag, number=1):
   for node_ip in node_ips:
     key = ('performance_history', node_ip, tag)
     if history := context.get(key, None):
-      total_time += np.mean(history) * len(history)
+      total_time += np.sum(history)
       total_count += len(history)
 
   if total_count:

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from context import context
 
-_MAX_PERFORMANCE_SAMPLES = 20
+_MAX_PERFORMANCE_SAMPLES = 100
 
 
 # TODO: Nodes need to be identified by something more stable and reliable than
