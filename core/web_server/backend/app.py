@@ -550,10 +550,10 @@ def run_compute_graph():
   populate_context()
 
   # TODO: Put these in the UI.
-  context.input_dirs = ['/Volumes/Astro/Raw', 'Volumes/Astro2/Raw']
+  context.input_dirs = ['/Volumes/Astro/Raw', '/Volumes/Astro2/Raw']
   context.output_dir = '/Volumes/Astro/Processed'
 
-  graph = build_compute_graph(regroup=False,
+  graph = build_compute_graph(regroup=True,
                               make_previews=True,
                               run_main_processing_graph=False)
 
