@@ -40,8 +40,8 @@ def post_process_stack_artifacts(stack_id):
 
 
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
-@track_performance
 @saves_artifacts(post_process_stack_artifacts)
+@track_performance
 def post_process_stack(stack_id):
   print(f'post_process_stack, stack_id {stack_id}')
 

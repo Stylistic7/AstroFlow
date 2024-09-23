@@ -144,8 +144,8 @@ def _setup_simple_stack(stack_id, tmp_dir):
 # TODO: When a stack fails, keep note of it so it won't be retried for the
 # exact same inputs again.
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
-@track_performance
 @saves_artifacts(stack_files_artifacts)
+@track_performance
 def stack_files(stack_id):
   assert context.output_dir
 

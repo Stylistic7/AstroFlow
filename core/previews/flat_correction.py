@@ -10,18 +10,22 @@ from previews.operations import resize_array, array_to_png
 from file_io.generic import read_image
 from previews.calibration import calibrate_image
 from previews.operations import autostretch
+from profiling import track_performance
 
 
 # TODO: Is it only necessary to make the thumbnails for the flat stacks
 # immediately before and immediately after the light frames? I suppose people
 # could make bad flat frames, or confuse them somehow, and want all of the
 # flexibility.
+#
+# TODO: Use the artifact workflow.
 @ray.remote
+@track_performance
 def create_flat_correction_thumbnails(stack_id):
   stacks = context.stacks
-  metadata = context.metadata
-
   stack = stacks[stack_id]
+  assert isinstance(stack, SimpleStack)
+  assert stack.frames, f'### stack has no frames: {stack}'
 
   # There should be many flat correction thumbnails for every stack, one for
   # each applicable run of flat frames. This key should have a dict for a
@@ -39,10 +43,9 @@ def create_flat_correction_thumbnails(stack_id):
   if all(f in thumbnails for f in flat_stack_ids):
     return
 
-  assert type(stack) is SimpleStack
-
+  metadata = context.metadata
   light_frames_by_stars = quarantining.get_light_frames_sorted_by_stars(
-      stack.frames)
+      stack.frames, metadata)
   light_frame = light_frames_by_stars[0]
 
   width = context.subframe_thumbnail_width

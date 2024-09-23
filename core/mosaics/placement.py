@@ -90,17 +90,25 @@ def place_tile(tile_y, tile_x, wcs, ra_tiles, dec_tiles, interp):
 
 
 # TODO: Provide some feedback on progress.
+#
 # TODO: Store these on disk and read them back when unchanged.
+#
 # TODO: Something here is still taking up a huge amount of memory in the Ray
 # object store.
+#
 # TODO: Placement is perhaps fast enough to not bother storing placed images
 # on disk, where they take up a huge amount of space.
+#
+# TODO: Differentiate the runtime of this function in subframe and master
+# modes.
 @ray.remote(scheduling_strategy="SPREAD", memory=_MEMORY_REQUIREMENT)
-@track_performance
 @saves_artifacts(mosaic_by_coordinates_artifacts)
+@track_performance
 def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact):
   print(f'### Entering mosaic_by_coordinates '
         f' {mode} {mosaic_id} {filter} {stack_id} {input_artifact}')
+
+  metadata = context.metadata
 
   # TODO: All this Artifact-handling stuff can be streamlined.
   viewbox_artifact = next(
@@ -109,10 +117,8 @@ def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact):
   assert viewbox
 
   # TODO: The subframes need to be calibrated before being placed.
-  filename = input_artifact.filename
   image = read_artifact_image(input_artifact)
   header = read_artifact_header(input_artifact)
-  metadata = context.metadata
   plate_solution = metadata[input_artifact.content_hash].plate_solution
 
   assert image is not None
