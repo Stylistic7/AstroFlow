@@ -95,7 +95,9 @@ def scatter_compute_image_metadata(mode=None, ancestor_results=None):
   # TODO: Don't do anything if the directory's modification time hasn't
   # changed since the last time it was listed.
   for dir in directories:
-    artifacts.update({FileArtifact(f) for f in find_image_files(dir)})
+    artifacts_for_dir = {FileArtifact(f) for f in find_image_files(dir)}
+    print(f'### Directory {dir} contains {len(artifacts_for_dir)} files')
+    artifacts.update(artifacts_for_dir)
 
   # TODO: Eliminate this call to get_metadata().
   known_artifacts = set(

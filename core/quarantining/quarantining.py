@@ -60,11 +60,14 @@ def quarantine_stacks(ancestor_results):
         stack.update_metadata(metadata)
 
   # Eliminate all stacks that are now empty.
+  num_stacks_before = len(stacks)
   stacks = {
       stack_id: stack
       for stack_id, stack in stacks.items()
       if len(stack.all_frames()) > 0
   }
+  if len(stacks) > num_stacks_before:
+    print(f'### Eliminated {len(stacks) - num_stacks_before} empty stacks')
 
   context.or_equals('stacks', stacks)
   return stacks

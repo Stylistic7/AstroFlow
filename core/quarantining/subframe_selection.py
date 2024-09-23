@@ -10,7 +10,9 @@ from profiling import track_performance
 
 
 def get_light_frames_sorted_by_stars(light_frames, metadata):
+  assert light_frames
   metadata = [i for h, i in metadata.items() if h in light_frames]
+  assert metadata
   return sorted(metadata,
                 key=lambda i: i.plate_solution.num_stars,
                 reverse=True)

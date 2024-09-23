@@ -99,6 +99,7 @@ class SimpleStack(ImagingAttributes, AstroFlowStateAttributes):
 
   def all_frames(self, include_dependencies=False):
     stacks = context.stacks
+    assert self.frames
     all_frames = copy(self.frames)
 
     # TODO: This doesn't handle user settings that will override

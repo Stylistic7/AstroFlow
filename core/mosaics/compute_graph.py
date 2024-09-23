@@ -77,8 +77,12 @@ def build_mosaic_subgraph(mode, mosaic_id):
 
 def _get_best_light_frame(stack_id, metadata):
   stack = context.stacks[stack_id]
+
+  all_frames = stack.all_frames()
+  assert all_frames
+
   light_frames_by_stars = quarantining.get_light_frames_sorted_by_stars(
-      stack.all_frames(), metadata)
+      all_frames, metadata)
 
   return light_frames_by_stars[0]
 
