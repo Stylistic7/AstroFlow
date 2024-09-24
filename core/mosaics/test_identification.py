@@ -42,14 +42,14 @@ class TestMosaicIdentification(unittest.TestCase):
                      footprint=SingleSphericalPolygon.from_radec(
                          [95, 99, 99, 95], [-1, -1, 1, 1]))
 
-    context.stacks = {i: CompositeStack(image_scale=1) for i in range(6)}
-    context.targets = {
+    context.grouped_stacks = {i: CompositeStack(image_scale=1) for i in range(6)}
+    context.grouped_targets = {
         target0.stable_hash: target0,
         target1.stable_hash: target1
     }
 
     ray.get(identification.identify_mosaics.remote())
-    mosaics = context.mosaics
+    mosaics = context.grouped_mosaics
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
 
@@ -93,15 +93,15 @@ class TestMosaicIdentification(unittest.TestCase):
                  footprint=SingleSphericalPolygon.from_radec([95, 99, 99, 95],
                                                              [0, 0, 2, 2]))
 
-    context.stacks = {i: CompositeStack(image_scale=1) for i in range(9)}
-    context.targets = {
+    context.grouped_stacks = {i: CompositeStack(image_scale=1) for i in range(9)}
+    context.grouped_targets = {
         foo.stable_hash: foo,
         bar.stable_hash: bar,
         baz.stable_hash: baz
     }
 
     ray.get(identification.identify_mosaics.remote())
-    mosaics = context.mosaics
+    mosaics = context.grouped_mosaics
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
@@ -145,15 +145,15 @@ class TestMosaicIdentification(unittest.TestCase):
                  footprint=SingleSphericalPolygon.from_radec([98, 102, 102, 98],
                                                              [1, 1, 3, 3]))
 
-    context.stacks = {i: CompositeStack(image_scale=1) for i in range(9)}
-    context.targets = {
+    context.grouped_stacks = {i: CompositeStack(image_scale=1) for i in range(9)}
+    context.grouped_targets = {
         foo.stable_hash: foo,
         bar.stable_hash: bar,
         baz.stable_hash: baz
     }
 
     ray.get(identification.identify_mosaics.remote())
-    mosaics = context.mosaics
+    mosaics = context.grouped_mosaics
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
@@ -199,8 +199,10 @@ class TestMosaicIdentification(unittest.TestCase):
                      footprint=SingleSphericalPolygon.from_radec(
                          [96, 100, 100, 96], [-1.5, -1.5, 0.5, 0.5]))
 
-    context.stacks = {i: CompositeStack(image_scale=1) for i in range(12)}
-    context.targets = {
+    context.grouped_stacks = {
+        i: CompositeStack(image_scale=1) for i in range(12)
+    }
+    context.grouped_targets = {
         foo.stable_hash: foo,
         bar.stable_hash: bar,
         baz.stable_hash: baz,
@@ -208,7 +210,7 @@ class TestMosaicIdentification(unittest.TestCase):
     }
 
     ray.get(identification.identify_mosaics.remote())
-    mosaics = context.mosaics
+    mosaics = context.grouped_mosaics
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
@@ -247,14 +249,14 @@ class TestMosaicIdentification(unittest.TestCase):
                                [0.47687137, -0.5960087, 0.64603973]]),
                      np.array([0.47176113, -0.62623935, 0.62069777])))
 
-    context.stacks = {i: CompositeStack(image_scale=1) for i in range(6)}
-    context.targets = {
+    context.grouped_stacks = {i: CompositeStack(image_scale=1) for i in range(6)}
+    context.grouped_targets = {
         foo.stable_hash: foo,
         bar.stable_hash: bar,
     }
 
     ray.get(identification.identify_mosaics.remote())
-    mosaics = context.mosaics
+    mosaics = context.grouped_mosaics
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))

@@ -5,8 +5,11 @@ from context import context
 
 # TODO: These don't belong in the compute_graph.py file
 @ray.remote
-def delete_quarantined_stacks(ancestor_results):
-  stacks = ancestor_results[0]
+def quarantine_stacks():
+  stacks = context.grouped_stacks
+  if not stacks:
+    return {}
+
   quarantined_stacks = context.quarantined_stacks or set()
   return {
       stack_id: stack
@@ -16,8 +19,11 @@ def delete_quarantined_stacks(ancestor_results):
 
 
 @ray.remote
-def delete_quarantined_targets(ancestor_results):
-  targets = ancestor_results[0]
+def quarantine_targets():
+  targets = context.grouped_targets
+  if not targets:
+    return {}
+
   quarantined_targets = context.quarantined_targets or set()
   return {
       target_id: target
@@ -27,8 +33,11 @@ def delete_quarantined_targets(ancestor_results):
 
 
 @ray.remote
-def delete_quarantined_mosaics(ancestor_results):
-  mosaics = ancestor_results[0]
+def quarantine_mosaics():
+  mosaics = context.grouped_mosaics
+  if not mosaics:
+    return {}
+
   quarantined_mosaics = context.quarantined_mosaics or set()
   return {
       mosaic_id: mosaic

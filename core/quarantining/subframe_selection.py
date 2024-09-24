@@ -40,7 +40,6 @@ def scatter_select_subframes():
 def select_subframes(ancestor_results):
   print('### Entering select_subframes')
   stacks = ancestor_results[0]
-
   metadata = context.metadata
   assert metadata
 
@@ -48,7 +47,7 @@ def select_subframes(ancestor_results):
     if type(stack) is not CompositeStack:
       continue
 
-    light_frames = stack.all_frames(include_dependencies=False)
+    light_frames = stack.all_frames(stacks, include_dependencies=False)
     assert all(is_light_frame(metadata[f].header) for f in light_frames)
 
     sorted_light_frames = get_light_frames_sorted_by_stars(
@@ -78,5 +77,4 @@ def select_subframes(ancestor_results):
         print(f'### substack {substack_id} is now empty and will be deleted')
         stack.contents.remove(substack_id)
 
-  context.or_equals('stacks', stacks)
   return stacks

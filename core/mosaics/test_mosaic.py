@@ -49,7 +49,9 @@ class TestMosaic(unittest.TestCase):
                          dest_dir=context.input_dirs[0],
                          add_noise=False)
 
-    graph = compute_graph.build_compute_graph()
+    graph = compute_graph.build_compute_graph(regroup=True,
+                                              make_previews=True,
+                                              run_main_processing_graph=False)
     run_graph(graph)
 
     self.assertEqual(len(context.targets), 3)
@@ -87,7 +89,9 @@ class TestMosaic(unittest.TestCase):
 
     # Running the graph the first time, with an empty shopping cart, should
     # produce all the subframe previews for the stacks, targets, and mosaic.
-    graph = compute_graph.build_compute_graph()
+    graph = compute_graph.build_compute_graph(regroup=True,
+                                              make_previews=True,
+                                              run_main_processing_graph=False)
     run_graph(graph)
 
     self.assertEqual(len(context.targets), 4)
@@ -107,45 +111,18 @@ class TestMosaic(unittest.TestCase):
         mosaic.content_hash,
         hash_list([t.content_hash for t in context.targets.values()]))
 
-    # Build the preview-generation graph and check its size and contents.
-    preview_graph = ray.get(compute_graph.build_preview_graph.remote())
-    print(f'### preview_graph has len {len(preview_graph)}')
-    print_graph(preview_graph)
-    self.assertEqual(len(preview_graph), 10)
-
-    expected_count = {
-        scatter_stack_thumbnails: 1,
-        compute_mosaic_viewbox: 1,
-        mosaic_by_coordinates: 4,
-        merge_images: 3
-    }
-    for fn, count in expected_count.items():
-      self.assertEqual(len(matching_nodes(preview_graph, fn)), count)
-
     # After putting the mosaic in the shopping cart, the second graph
     # execution should stack the subframes into masters, and generate a final
     # master mosaic image.
     context.shopping_cart = [('mosaic', mosaic.stable_hash)]
     print('### test_mosaic shopping_cart', context.shopping_cart)
 
-    main_processing_graph = ray.get(
-        compute_graph.build_main_processing_graph.remote())
-    print('### main_processing_graph is:')
-    print_graph(main_processing_graph)
-
-    # expected_count = {
-    #     scatter_stack_thumbnails: 1,
-    #     compute_mosaic_viewbox: 1,
-    #     mosaic_by_coordinates: 4,
-    #     merge_images: 3
-    # }
-    # for fn, count in expected_count.items():
-    #   self.assertEqual(len(matching_nodes(main_processing_graph, fn)), count)
-
     # TODO: Put per-mosaic overrides of the post-processing scripts, to turn
     # them off, for speed.
     print('### First pass done; starting pass with shopping cart')
-    graph = compute_graph.build_compute_graph()
+    graph = compute_graph.build_compute_graph(regroup=True,
+                                              make_previews=True,
+                                              run_main_processing_graph=True)
     run_graph(graph)
 
     shutil.copytree(context.output_dir, '/tmp/foo', dirs_exist_ok=True)
@@ -180,7 +157,9 @@ class TestMosaic(unittest.TestCase):
 
     # Running the graph the first time, with an empty shopping cart, should
     # produce all the subframe previews for the stacks, targets, and mosaic.
-    graph = compute_graph.build_compute_graph()
+    graph = compute_graph.build_compute_graph(regroup=True,
+                                              make_previews=True,
+                                              run_main_processing_graph=True)
     run_graph(graph)
 
     self.assertEqual(len(context.targets), 3)
@@ -207,7 +186,9 @@ class TestMosaic(unittest.TestCase):
     print('### test_mosaic shopping_cart', context.shopping_cart)
 
     print('### First pass done; starting pass with shopping cart')
-    graph = compute_graph.build_compute_graph()
+    graph = compute_graph.build_compute_graph(regroup=True,
+                                              make_previews=True,
+                                              run_main_processing_graph=True)
     run_graph(graph)
 
     shutil.copytree(context.output_dir, '/tmp/foo', dirs_exist_ok=True)

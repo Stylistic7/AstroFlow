@@ -26,7 +26,8 @@ class TestStackIdentification(unittest.TestCase):
     make_synthetic_frames(ra=100, dec=50, prefix='foo', number=10, dither=0)
 
     run_graph(
-        build_compute_graph(make_previews=False,
+        build_compute_graph(regroup=True,
+                            make_previews=False,
                             run_main_processing_graph=False))
 
     stacks = context.stacks
@@ -53,7 +54,8 @@ class TestStackIdentification(unittest.TestCase):
                           image_scale=2.0)
 
     run_graph(
-        build_compute_graph(make_previews=False,
+        build_compute_graph(regroup=True,
+                            make_previews=False,
                             run_main_processing_graph=False))
     stacks = context.stacks
     self.assertEqual(len(stacks), 4)
@@ -99,7 +101,8 @@ class TestStackIdentification(unittest.TestCase):
                           height_pixels=4000)
 
     run_graph(
-        build_compute_graph(make_previews=False,
+        build_compute_graph(regroup=True,
+                            make_previews=False,
                             run_main_processing_graph=False))
 
     stacks = context.stacks
@@ -136,7 +139,8 @@ class TestStackIdentification(unittest.TestCase):
                           exposure=120)
 
     run_graph(
-        build_compute_graph(make_previews=False,
+        build_compute_graph(regroup=True,
+                            make_previews=False,
                             run_main_processing_graph=False))
 
     stacks = context.stacks

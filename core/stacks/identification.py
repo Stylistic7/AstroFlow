@@ -45,8 +45,6 @@ def _get_unique(L):
   return next(iter(s))
 
 
-# TODO: The repeated calls to get_metadata() here, and in functions called
-# by this one, is very slow.
 #
 # TODO: This could be parallelized.
 def _new_stacks(name, frames, metadata):
@@ -105,13 +103,13 @@ def _new_stacks(name, frames, metadata):
         continue
       run = [x[0] for x in run]
       stack = SimpleStack(frames=run)
-      stack.update_metadata(metadata)
+      stack.update_metadata(new_stacks, metadata)
       new_stacks[stack.content_hash] = stack
 
   if not new_stacks:
     return {}
 
-  context.or_equals('stacks', new_stacks)
+  context.or_equals('grouped_stacks', new_stacks)
 
   # Add a toplevel stack, with the geometric information, that contains all
   # of the runs of light frames as its contents.
@@ -124,9 +122,9 @@ def _new_stacks(name, frames, metadata):
                          footprint=footprint,
                          projected_footprints=projected_footprints,
                          selection_criterion=selection_criterion)
-  stack.update_metadata(metadata)
+  stack.update_metadata(new_stacks, metadata)
   new_stacks[stack.stable_hash] = stack
-  context.or_equals('stacks', {stack.stable_hash: stack})
+  context.or_equals('grouped_stacks', {stack.stable_hash: stack})
 
   return new_stacks
 
@@ -137,6 +135,8 @@ def _new_stacks(name, frames, metadata):
 #
 # TODO: The spatial_group should include a metadata_ref for all of the images
 # in it. The call to get_metadata() should be removed.
+#
+# TODO: This is spilling huge amounts of memory, making it very slow.
 @ray.remote
 @track_performance
 def identify_stacks(spatial_group):

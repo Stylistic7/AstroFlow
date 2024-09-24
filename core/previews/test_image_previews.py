@@ -83,7 +83,9 @@ class TestImagePreviews(unittest.TestCase):
     filenames = find_image_files(context.input_dirs[0])
     self.assertEqual(len(filenames), 42)
 
-    graph = build_compute_graph()
+    graph = build_compute_graph(regroup=True,
+                                make_previews=True,
+                                run_main_processing_graph=False)
     run_graph(graph)
 
     stacks = context.stacks

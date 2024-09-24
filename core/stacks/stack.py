@@ -27,11 +27,18 @@ class ImagingAttributes:
   oldest_date: Optional[datetime.datetime] = None
   newest_date: Optional[datetime.datetime] = None
 
-  def update_metadata(self, metadata=None) -> None:
+  # TODO: The `stacks` argument here is used to select between `grouped_stacks`,
+  # which are the raw stacks computed from the files on disk, before any user
+  # input, and `stacks`, after quarantining and subframe selection. This is not
+  # very elegant, and could be improved.
+  def update_metadata(self, stacks=None, metadata=None) -> None:
+    if stacks == None:
+      stacks = context.stacks
+
     if metadata == None:
       metadata = context.metadata
 
-    all_frames = self.all_frames()
+    all_frames = self.all_frames(stacks)
     self.content_hash = hash_list(all_frames)
 
     metadata = [i for i in metadata.values() if i.content_hash in all_frames]
@@ -97,8 +104,10 @@ class SimpleStack(ImagingAttributes, AstroFlowStateAttributes):
   frames: list[FrameHash] = field(default_factory=list)
   dependencies: dict[str, StackHash] = field(default_factory=dict)
 
-  def all_frames(self, include_dependencies=False):
-    stacks = context.stacks
+  def all_frames(self, stacks=None, include_dependencies=False):
+    if stacks is None:
+      stacks = context.stacks
+
     assert self.frames
     all_frames = copy(self.frames)
 
@@ -133,12 +142,16 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
   content_hash: Optional[str] = None
   contents: list[StackHash] = field(default_factory=list)
 
-  def all_frames(self, include_dependencies=False) -> list[FrameHash]:
-    stacks = context.stacks
+  def all_frames(self,
+                 stacks=None,
+                 include_dependencies=False) -> list[FrameHash]:
+    if stacks is None:
+      stacks = context.stacks
+
     all_frames = []
     for substack_id in self.contents:
       substack = stacks[substack_id]
-      all_frames.extend(substack.all_frames(include_dependencies))
+      all_frames.extend(substack.all_frames(stacks, include_dependencies))
 
     return all_frames
 

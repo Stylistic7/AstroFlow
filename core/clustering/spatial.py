@@ -54,6 +54,7 @@ def cluster_by_image_center():
   min_component_members = context.min_component_members
 
   metadata = context.metadata
+  assert metadata
 
   def get_centroid(center):
     return np.asarray(footprints.radec_to_vector(*center))

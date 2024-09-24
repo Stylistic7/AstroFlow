@@ -82,7 +82,9 @@ class TestComputeGraph(unittest.TestCase):
     filenames = find_image_files(context.input_dirs[0])
     self.assertEqual(len(filenames), 42)
 
-    graph = compute_graph.build_compute_graph()
+    graph = compute_graph.build_compute_graph(regroup=True,
+                                              make_previews=False,
+                                              run_main_processing_graph=False)
     run_graph(graph)
 
     masters = os.listdir(context.output_dir)
@@ -99,7 +101,7 @@ class TestComputeGraph(unittest.TestCase):
         compute_graph.build_main_processing_graph.remote())
     print_graph(processing_graph)
 
-    self.assertEqual(len(processing_graph), 4)
+    self.assertEqual(len(processing_graph), 5)
 
 
 if __name__ == '__main__':

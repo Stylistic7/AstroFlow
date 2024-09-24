@@ -2,8 +2,9 @@ import numpy as np
 
 
 # TODO: Average flat frames before applying them.
-def calibrate_image(light_frame, light_image, bias_frame, bias_image,
-                    dark_frame, dark_image, flat_frame, flat_image, rotate):
+def calibrate_image(light_metadata, light_image, bias_metadata, bias_image,
+                    dark_metadata, dark_image, flat_metadata, flat_image,
+                    rotate):
 
   if bias_image is None or dark_image is None or flat_image is None:
     print('### no calibration images')
@@ -20,9 +21,10 @@ def calibrate_image(light_frame, light_image, bias_frame, bias_image,
       f"dark {dark_image.shape}, "
       f"flat {flat_image.shape}")
 
-  light_dark_scale = light_frame.header['EXPOSURE'] / dark_frame.header[
+  light_dark_scale = light_metadata.header['EXPOSURE'] / dark_metadata.header[
       'EXPOSURE']
-  flat_dark_scale = flat_frame.header['EXPOSURE'] / dark_frame.header['EXPOSURE']
+  flat_dark_scale = flat_metadata.header['EXPOSURE'] / dark_metadata.header[
+      'EXPOSURE']
 
   image = (light_image -
            bias_image) - light_dark_scale * (dark_image - bias_image)

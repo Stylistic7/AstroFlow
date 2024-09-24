@@ -111,7 +111,7 @@ def create_stack_subframe_thumbnails(stack_id):
   # Now sort all the light frames (no matter which run they're from) by the
   # number of stars. The better images should be in front.
   light_frames_by_stars = quarantining.get_light_frames_sorted_by_stars(
-      stack.all_frames())
+      stack.all_frames(), metadata)
   best_light_frame = light_frames_by_stars[0]
   image = resize_array(read_image(best_light_frame.filename), width)
   height, width = image.shape

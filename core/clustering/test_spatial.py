@@ -10,6 +10,9 @@ from context import context
 from testing.test_frames import make_synthetic_frames
 from clustering import cluster_by_image_center
 from metadata.actor import get_metadata
+from dependency_graph import Graph, make_graph_from_list, run_graph
+from metadata.image_metadata import scatter_compute_image_metadata
+from compute_graph.compute_graph import load_metadata
 
 
 def compute_hash_for_filename():
@@ -18,6 +21,11 @@ def compute_hash_for_filename():
                       post_fn=lambda images: {
                           f: h for f, h in images
                       })
+
+
+def compute_graph_fragment():
+  return make_graph_from_list([(scatter_compute_image_metadata, 'input'),
+                               load_metadata, cluster_by_image_center])
 
 
 class TestSpatialAssociation(unittest.TestCase):
@@ -32,9 +40,9 @@ class TestSpatialAssociation(unittest.TestCase):
                           dither=0,
                           dest_dir=input_dir)
 
-    ray.get(cluster_by_image_center.remote())
-    groups = context.spatial_groups
+    run_graph(compute_graph_fragment())
 
+    groups = context.spatial_groups
     image_hashes = get_metadata(transform_fn=lambda i: i.content_hash)
 
     expected_groups = [('IC360', tuple(sorted(image_hashes)))]
@@ -60,9 +68,9 @@ class TestSpatialAssociation(unittest.TestCase):
                           dither=0,
                           dest_dir=input_dir)
 
-    ray.get(cluster_by_image_center.remote())
-    groups = context.spatial_groups
+    run_graph(compute_graph_fragment())
 
+    groups = context.spatial_groups
     hash_for_filename = compute_hash_for_filename()
 
     expected_groups = [('IC1318',
@@ -101,10 +109,10 @@ class TestSpatialAssociation(unittest.TestCase):
                           dither=0,
                           dest_dir=input_dir)
 
-    hash_for_filename = compute_hash_for_filename()
+    run_graph(compute_graph_fragment())
 
-    ray.get(cluster_by_image_center.remote())
     groups = context.spatial_groups
+    hash_for_filename = compute_hash_for_filename()
 
     expected_groups = [
         ('IC1318',
@@ -146,9 +154,9 @@ class TestSpatialAssociation(unittest.TestCase):
                           rotation_angle_deg=0,
                           dest_dir=input_dir)
 
-    ray.get(cluster_by_image_center.remote())
-    groups = context.spatial_groups
+    run_graph(compute_graph_fragment())
 
+    groups = context.spatial_groups
     hash_for_filename = compute_hash_for_filename()
 
     expected_groups = [
@@ -189,9 +197,9 @@ class TestSpatialAssociation(unittest.TestCase):
                           dither=0.1,
                           dest_dir=input_dir)
 
-    ray.get(cluster_by_image_center.remote())
-    groups = context.spatial_groups
+    run_graph(compute_graph_fragment())
 
+    groups = context.spatial_groups
     hash_for_filename = compute_hash_for_filename()
 
     expected_groups = [
@@ -234,9 +242,10 @@ class TestSpatialAssociation(unittest.TestCase):
                           dest_dir=input_dir)
 
     context.min_component_members = 1
-    ray.get(cluster_by_image_center.remote())
-    groups = context.spatial_groups
 
+    run_graph(compute_graph_fragment())
+
+    groups = context.spatial_groups
     hash_for_filename = compute_hash_for_filename()
 
     expected_groups = [('IC1311', (hash_for_filename['Pane 0'],)),

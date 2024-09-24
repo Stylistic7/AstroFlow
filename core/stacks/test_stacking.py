@@ -60,7 +60,9 @@ class TestStacking(unittest.TestCase):
 
     # Running the graph the first time, with an empty shopping cart, should
     # produce all the subframe previews for the stack.
-    graph = build_compute_graph()
+    graph = build_compute_graph(regroup=True,
+                                make_previews=True,
+                                run_main_processing_graph=True)
     run_graph(graph, debug=True)
 
     self.assertEqual(len(context.stacks), 5)

@@ -188,6 +188,8 @@ def compute_image_metadata(artifact=None, *, ancestor_results):
 
 
 # TODO: Don't call this for every spatial group, it's very slow.
+#
+# TODO: Replace this with the `load_metadata()` function.
 @ray.remote
 def gather_compute_image_metadata():
   print(f'### gather_compute_image_metadata')

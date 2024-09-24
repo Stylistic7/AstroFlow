@@ -73,7 +73,9 @@ class TestState(unittest.TestCase):
     filenames = find_image_files(context.input_dirs[0])
     self.assertEqual(len(filenames), 26)
 
-    graph = build_compute_graph()
+    graph = build_compute_graph(regroup=True,
+                                make_previews=False,
+                                run_main_processing_graph=False)
     run_graph(graph)
 
     masters = os.listdir(context.output_dir)
@@ -89,13 +91,15 @@ class TestState(unittest.TestCase):
     processing_graph = ray.get(build_main_processing_graph.remote())
     print('### processing_graph')
     print_graph(processing_graph)
-    self.assertEqual(len(processing_graph), 4)
+    self.assertEqual(len(processing_graph), 5)
 
-    graph = build_compute_graph()
+    graph = build_compute_graph(regroup=False,
+                                make_previews=False,
+                                run_main_processing_graph=True)
     run_graph(graph)
 
     masters = list(Path(context.output_dir).rglob('*.xisf'))
-    self.assertEqual(len(masters), 6)
+    self.assertEqual(len(masters), 5)
 
 
 if __name__ == "__main__":

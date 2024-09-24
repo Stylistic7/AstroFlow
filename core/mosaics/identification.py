@@ -21,8 +21,8 @@ log = logger
 
 
 def _identify_overlapping_targets():
-  stacks = context.stacks
-  targets = context.targets
+  stacks = context.grouped_stacks
+  targets = context.grouped_targets
 
   if not targets:
     return []
@@ -99,13 +99,13 @@ def _identify_overlapping_targets():
 @ray.remote
 @track_performance
 def identify_mosaics():
-  targets = context.targets
+  targets = context.grouped_targets
   print(f'### Identifying mosaics from {len(targets)} targets')
 
   mosaics = _identify_overlapping_targets()
   if not mosaics:
     print('### No overlapping targets found')
-    context.mosaics = {}
+    context.grouped_mosaics = {}
     return {}
 
   print(f'Found {len(mosaics)} mosaics')
@@ -193,5 +193,5 @@ def identify_mosaics():
 
   # TODO: Computing the result and storing the result are two different
   # responsibilities. Perhaps separate patterns like this?
-  context.mosaics = output_mosaics
+  context.grouped_mosaics = output_mosaics
   return output_mosaics

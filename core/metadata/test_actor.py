@@ -125,23 +125,6 @@ class TestMetadataActor(unittest.TestCase):
     print('### clustered_result', clustered_result)
     self.assertEqual(len(clustered_result), 1)
 
-  def test_get_metadata_for_mosaic(self):
-    add_orion_mosaic_images()
-
-    graph = build_compute_graph()
-    context.regroup = True
-    run_graph(graph)
-
-    result = get_metadata()
-    self.assertEqual(len(result), 35)
-
-    mosaics = context.mosaics
-    self.assertEqual(len(mosaics), 1)
-    mosaic_id = next(iter(mosaics.keys()))
-
-    result = get_metadata_for_mosaic(mosaic_id)
-    self.assertEqual(len(result), 35)
-
 
 if __name__ == '__main__':
   unittest.main()

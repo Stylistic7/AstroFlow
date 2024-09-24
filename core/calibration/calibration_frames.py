@@ -45,7 +45,7 @@ def identify_calibration_stacks():
     stack.update_metadata(metadata)
     return stack
 
-  stacks = context.stacks or {}
+  stacks = {}
   for camera in frames_for_camera:
     bias_frames = frames_for_image_type.get(
         'bias', set()) & frames_for_camera.get(camera, set())
@@ -71,7 +71,7 @@ def identify_calibration_stacks():
 
   print(f'### identify_calibration_stacks writing {len(stacks)} stacks '
         f'into the context')
-  context.stacks = stacks
+  context.or_equals('grouped_stacks', stacks)
 
 
 def associate_with_stack(stack, stacks):
@@ -128,16 +128,18 @@ def associate_with_stack(stack, stacks):
   settings = context[key] or {}
   stack.dependencies |= settings
 
-  return stacks
+  return stack
 
 
 @ray.remote
 @track_performance
 def associate_with_stacks(ancestor_results):
   stacks = ancestor_results[0]
+  print(f'### associate_with_stacks for {len(stacks)} stacks')
   for stack in stacks.values():
     if type(stack) is SimpleStack and stack.image_type == 'light':
-      associate_with_stack(stack, context.stacks)
+      stacks[stack.content_hash] = associate_with_stack(stack,
+                                                        context.grouped_stacks)
 
-  context.or_equals('stacks', stacks)
+  print(f'### associate_with_stacks returning stacks {stacks}')
   return stacks

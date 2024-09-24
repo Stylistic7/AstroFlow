@@ -32,8 +32,9 @@ class TestStack(unittest.TestCase):
     }
     context.stacks = stacks
 
-    self.assertEqual(sorted(stacks['toplevel_stack'].all_frames()),
-                     ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'])
+    self.assertEqual(
+        sorted(stacks['toplevel_stack'].all_frames(stacks=context.stacks)),
+        ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'])
 
   def test_one_dark_stack(self):
     make_synthetic_frames(prefix='dark',
@@ -49,7 +50,8 @@ class TestStack(unittest.TestCase):
 
     context.regroup = True
     run_graph(
-        build_compute_graph(make_previews=False,
+        build_compute_graph(regroup=True,
+                            make_previews=False,
                             run_main_processing_graph=False))
 
     stacks = context.stacks
@@ -83,7 +85,8 @@ class TestStack(unittest.TestCase):
 
     context.regroup = True
     run_graph(
-        build_compute_graph(make_previews=False,
+        build_compute_graph(regroup=True,
+                            make_previews=False,
                             run_main_processing_graph=False))
 
     stacks = context.stacks

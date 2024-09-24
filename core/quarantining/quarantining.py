@@ -16,9 +16,8 @@ from profiling import track_performance
 
 @ray.remote
 @track_performance
-def quarantine_stacks(ancestor_results):
-  stacks = ancestor_results[0]
-
+def quarantine_stacks(stack_id):
+  stacks = context.grouped_stacks
   metadata = context.metadata
 
   # Remove all of the quarantined stacks from the dict of stacks.
@@ -51,25 +50,24 @@ def quarantine_stacks(ancestor_results):
     # If quarantining changed the stack, recompute its metadata.
     if changed:
       print(f'### Quarantining changed stack {stack_id}')
-      all_frames = stack.all_frames()
+      all_frames = stack.all_frames(stacks)
       if len(all_frames) == 0:
         print(f'### Stack {stack_id} is now empty and will be deleted')
       else:
         # TODO: This won't work for calibration stacks, but will people actually
         # quarantine calibration stacks?
-        stack.update_metadata(metadata)
+        stack.update_metadata(stacks, metadata)
 
   # Eliminate all stacks that are now empty.
   num_stacks_before = len(stacks)
   stacks = {
       stack_id: stack
       for stack_id, stack in stacks.items()
-      if len(stack.all_frames()) > 0
+      if len(stack.all_frames(stacks)) > 0
   }
   if len(stacks) > num_stacks_before:
     print(f'### Eliminated {len(stacks) - num_stacks_before} empty stacks')
 
-  context.or_equals('stacks', stacks)
   return stacks
 
 
