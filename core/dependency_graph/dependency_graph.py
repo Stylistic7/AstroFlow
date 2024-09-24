@@ -20,7 +20,10 @@ def matching_nodes(graph, fn):
   return [node for node in graph if _matches(node)]
 
 
-def run_graph(graph, status_fn=None, debug=False):
+def run_graph(graph,
+              status_fn=None,
+              status_interval=MIN_STATUS_UPDATE_INTERVAL_SECS,
+              debug=False):
   num_nodes_run = 0
   max_parallelism_seen = 0
   active = []
@@ -133,8 +136,7 @@ def run_graph(graph, status_fn=None, debug=False):
       # Maybe call the user's status_fn, but rate limit the frequency of these
       # calls, which may be expensive.
       current_time = time.time()
-      if status_fn and current_time > (last_status_time +
-                                       MIN_STATUS_UPDATE_INTERVAL_SECS):
+      if status_fn and current_time > (last_status_time + status_interval):
         status_fn(get_status())
         last_status_time = current_time
 

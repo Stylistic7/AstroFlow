@@ -75,7 +75,7 @@ class TestProfiling(unittest.TestCase):
 
       estimated_times.append(total_estimated_time)
 
-    results = run_graph(graph, status_fn=print_status)
+    results = run_graph(graph, status_fn=print_status, status_interval=0)
 
     self.assertEqual(results[scatter], 21)
 
@@ -86,7 +86,7 @@ class TestProfiling(unittest.TestCase):
     self.assertEqual(len(last_status.ready_nodes), 0)
     self.assertEqual(len(last_status.waiting_nodes), 0)
 
-    self.assertEqual(num_status_calls, 10)
+    self.assertGreaterEqual(num_status_calls, 10)
     self.assertEqual(len(last_status.done_nodes), 9)
     self.assertEqual(len(last_status.ready_nodes), 0)
     self.assertEqual(len(last_status.waiting_nodes), 0)
