@@ -7,7 +7,9 @@ dependencies:
   - numpy
   - ray-default
   - flask
+  - libopencv
   - opencv
+  - py-opencv
   - scikit-image
   - python-dateutil
   - pytz
@@ -22,3 +24,4 @@ dependencies:
   - plotly
   - pandas
   - ephem
+  - matplotlib
