@@ -29,7 +29,6 @@ from context import get_cache
 from artifacts import artifact_exists, read_artifact_image, CacheArtifact
 from previews import array_to_png, autostretch
 from mosaics.compute_graph import merge_graph_done_artifacts
-from quarantining.compute_graph import delete_quarantined_stacks, delete_quarantined_targets, delete_quarantined_mosaics
 from astroflow import populate_context
 from compute_graph import build_compute_graph
 from dependency_graph import run_graph, graph_status_to_progress
@@ -393,9 +392,10 @@ def plot():
 def quarantine_stack(stack_id):
   context.or_equals('quarantined_stacks', {stack_id}, default_value=set())
 
-  context.stacks = ray.get(delete_quarantined_stacks.remote())
-  context.targets = ray.get(delete_quarantined_targets.remote())
-  context.mosaics = ray.get(delete_quarantined_mosaics.remote())
+  # TODO: Re-run the compute graph without regrouping.
+  # context.stacks = ray.get(delete_quarantined_stacks.remote())
+  # context.targets = ray.get(delete_quarantined_targets.remote())
+  # context.mosaics = ray.get(delete_quarantined_mosaics.remote())
 
   announcer.announce('reload_data')
 
@@ -406,9 +406,10 @@ def quarantine_stack(stack_id):
 def quarantine_target(target_id):
   context.or_equals('quarantined_targets', {target_id}, default_value=set())
 
-  context.stacks = ray.get(delete_quarantined_stacks.remote())
-  context.targets = ray.get(delete_quarantined_targets.remote())
-  context.mosaics = ray.get(delete_quarantined_mosaics.remote())
+  # TODO: Re-run the compute graph without regrouping.
+  # context.stacks = ray.get(delete_quarantined_stacks.remote())
+  # context.targets = ray.get(delete_quarantined_targets.remote())
+  # context.mosaics = ray.get(delete_quarantined_mosaics.remote())
 
   announcer.announce('reload_data')
 
@@ -419,9 +420,10 @@ def quarantine_target(target_id):
 def quarantine_mosaic(mosaic_id):
   context.or_equals('quarantined_mosaics', {mosaic_id}, default_value=set())
 
-  context.stacks = ray.get(delete_quarantined_stacks.remote())
-  context.targets = ray.get(delete_quarantined_targets.remote())
-  context.mosaics = ray.get(delete_quarantined_mosaics.remote())
+  # TODO: Re-run the compute graph without regrouping.
+  # context.stacks = ray.get(delete_quarantined_stacks.remote())
+  # context.targets = ray.get(delete_quarantined_targets.remote())
+  # context.mosaics = ray.get(delete_quarantined_mosaics.remote())
 
   announcer.announce('reload_data')
 
