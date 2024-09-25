@@ -81,6 +81,10 @@ def identify_calibration_stacks():
 @track_performance
 def associate_with_stack(ancestor_results):
   stack = ancestor_results[0]
+
+  if stack is None:
+    return None
+
   assert isinstance(stack, CompositeStack)
 
   stacks = context.grouped_stacks

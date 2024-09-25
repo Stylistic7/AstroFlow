@@ -41,6 +41,9 @@ def select_subframes(ancestor_results):
   print('### Entering select_subframes')
   stack = ancestor_results[0]
 
+  if stack is None:
+    return None
+
   if type(stack) is not CompositeStack:
     return stack
 

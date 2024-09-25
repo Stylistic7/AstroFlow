@@ -1,2 +1,2 @@
 from .subframe_selection import scatter_select_subframes, get_light_frames_sorted_by_stars
-from .quarantining import quarantine_stacks
+from .quarantining import apply_quarantine_to_stack

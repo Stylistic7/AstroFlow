@@ -13,7 +13,7 @@ from targets.identification import group_stacks_into_targets
 from mosaics.compute_graph import build_mosaic_subgraph
 from dependency_graph import Graph, make_graph_from_list, print_graph
 from suggestions import make_suggestions
-from quarantining import quarantine_stacks
+from quarantining import apply_quarantine_to_stack
 from quarantining.compute_graph import quarantine_targets, quarantine_mosaics
 from quarantining.subframe_selection import select_subframes
 from stacks.identification import identify_stacks
@@ -95,14 +95,25 @@ def store_mosaics(ancestor_results):
 # dict, passing it through graph arguments. If the stack is quarantined, or
 # becomes empty after subframe selection, it will not make it into the final
 # `stacks` dict.
+#
+# `apply_quarantine_to_stack()` is applied to a single Stack, and either returns
+# that Stack, modified, or None.
+#
+# `select_subframes()` is applied to the single Stack (or None), and either
+# returns that Stack, modified, or None.
+#
+# `associate_with_stack()` is applied to the single Stack (or None), and returns
+# a dict containing the Stack, plus the calibration Stacks that it depends on,
+# or None.
 @ray.remote
 def build_stack_user_settings_subgraph(stack_id):
-  return make_graph_from_list([(quarantine_stacks, stack_id), select_subframes,
-                               associate_with_stack])
+  return make_graph_from_list([(apply_quarantine_to_stack, stack_id),
+                               select_subframes, associate_with_stack])
 
 
 @ray.remote
 def gather_stack_user_settings(ancestor_results):
+  ancestor_results = [a for a in ancestor_results if a is not None]
   stacks = {k: v for d in ancestor_results for k, v in d.items()}
   context.or_equals('stacks', stacks, default_value={})
   print(f'### gather_stack_user_settings: Stored {len(stacks)} stacks; '
@@ -111,6 +122,9 @@ def gather_stack_user_settings(ancestor_results):
 
 # This graph takes the objects grouped by `build_regroup_graph()` and applies
 # user settings (quarantine and subframe selection) on top of them.
+#
+# TODO: Pass SimpleStacks through `build_stack_user_settings_subgraph()` too.
+# Flat-frame stacks could be quarantined, for example.
 @ray.remote
 def build_apply_stack_user_settings_subgraph():
   stacks = context.grouped_stacks
