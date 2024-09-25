@@ -126,7 +126,7 @@ def _solve_field(filename: Path | str,
 # solved. The user can look at it and decide whether to improve the solver's
 # settings, or to throw the images away.
 @track_performance
-def solve_field(filename):
+def solve_field(filename: Path | str) -> PlateSolution | None:
   assert filename
 
   # TODO: These options must be exposed to the user.
