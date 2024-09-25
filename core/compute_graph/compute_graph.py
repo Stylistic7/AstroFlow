@@ -4,7 +4,7 @@ import objsize
 from context import context, WriteMode
 from metadata.image_metadata import scatter_compute_image_metadata
 from clustering import cluster_by_image_center
-from calibration import identify_calibration_stacks, associate_with_stacks
+from calibration import identify_calibration_stacks, associate_with_stack
 from previews import scatter_stack_thumbnails
 from mosaics.identification import identify_mosaics
 from stacks.compute_graph import build_stack_subgraph
@@ -19,7 +19,7 @@ from quarantining.subframe_selection import select_subframes
 from stacks.identification import identify_stacks
 import metadata.image_types as image_types
 from metadata.actor import get_metadata
-from stacks import update_state, validate_stacks
+from stacks import update_state, validate_stacks, CompositeStack
 from profiling import track_performance
 
 
@@ -76,14 +76,6 @@ def build_regroup_graph():
 
 
 @ray.remote
-def store_stacks(ancestor_results):
-  stacks = ancestor_results[0]
-  context.or_equals('stacks', stacks, default_value={})
-  print(f'### store_stacks: Stored {len(stacks)} stacks; '
-        f'total is now {len(context.stacks)}')
-
-
-@ray.remote
 def store_targets(ancestor_results):
   targets = ancestor_results[0]
   context.or_equals('targets', targets, default_value={})
@@ -106,22 +98,28 @@ def store_mosaics(ancestor_results):
 @ray.remote
 def build_stack_user_settings_subgraph(stack_id):
   return make_graph_from_list([(quarantine_stacks, stack_id), select_subframes,
-                               associate_with_stacks, store_stacks])
+                               associate_with_stack])
 
 
 @ray.remote
-def gather_stack_user_settings():
-  pass
+def gather_stack_user_settings(ancestor_results):
+  stacks = {k: v for d in ancestor_results for k, v in d.items()}
+  context.or_equals('stacks', stacks, default_value={})
+  print(f'### gather_stack_user_settings: Stored {len(stacks)} stacks; '
+        f'total is now {len(context.stacks)}')
 
 
 # This graph takes the objects grouped by `build_regroup_graph()` and applies
 # user settings (quarantine and subframe selection) on top of them.
 @ray.remote
 def build_apply_stack_user_settings_subgraph():
+  stacks = context.grouped_stacks
+
   graph = Graph()
   graph[gather_stack_user_settings] = {
       (build_stack_user_settings_subgraph, stack_id)
-      for stack_id in context.grouped_stacks.keys()
+      for stack_id in stacks.keys()
+      if isinstance(stacks[stack_id], CompositeStack)
   }
 
   return graph

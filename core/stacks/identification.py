@@ -45,8 +45,6 @@ def _get_unique(L):
   return next(iter(s))
 
 
-#
-# TODO: This could be parallelized.
 def _new_stacks(name, frames, metadata):
   metadata_list = [i for h, i in metadata.items() if h in frames]
 
@@ -109,8 +107,6 @@ def _new_stacks(name, frames, metadata):
   if not new_stacks:
     return {}
 
-  context.or_equals('grouped_stacks', new_stacks)
-
   # Add a toplevel stack, with the geometric information, that contains all
   # of the runs of light frames as its contents.
   stack = CompositeStack(stable_hash=stable_hash,
@@ -124,7 +120,6 @@ def _new_stacks(name, frames, metadata):
                          selection_criterion=selection_criterion)
   stack.update_metadata(new_stacks, metadata)
   new_stacks[stack.stable_hash] = stack
-  context.or_equals('grouped_stacks', {stack.stable_hash: stack})
 
   return new_stacks
 
@@ -195,4 +190,5 @@ def identify_stacks(spatial_group):
         for filter_frames in filter_clusters(rotation_frames):
           new_stacks |= _new_stacks(name, filter_frames, metadata)
 
+  context.or_equals('grouped_stacks', new_stacks)
   return new_stacks

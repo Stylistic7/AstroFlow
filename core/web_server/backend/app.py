@@ -555,7 +555,8 @@ def run_compute_graph():
   context.input_dirs = ['/Volumes/Astro/Raw', '/Volumes/Astro2/Raw']
   context.output_dir = '/Volumes/Astro/Processed'
 
-  graph = build_compute_graph(regroup=True,
+  # TODO: Determine `regroup` automatically.
+  graph = build_compute_graph(regroup=False,
                               make_previews=True,
                               run_main_processing_graph=False)
 

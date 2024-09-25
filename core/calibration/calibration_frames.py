@@ -5,7 +5,7 @@ import itertools
 
 import metadata.image_types as image_types
 from context import context
-from stacks import SimpleStack
+from stacks import SimpleStack, CompositeStack
 import clustering
 from profiling import track_performance
 
@@ -73,8 +73,17 @@ def identify_calibration_stacks():
         f'into the context')
   context.or_equals('grouped_stacks', stacks)
 
+  # TODO: This is awkward.
+  context.or_equals('stacks', stacks)
 
-def associate_with_stack(stack, stacks):
+
+@ray.remote
+@track_performance
+def associate_with_stack(ancestor_results):
+  stack = ancestor_results[0]
+  assert isinstance(stack, CompositeStack)
+
+  stacks = context.grouped_stacks
 
   def is_compatible(image_type, cal_stack):
     if cal_stack.image_type != image_type:
@@ -119,27 +128,24 @@ def associate_with_stack(stack, stacks):
         for s in compatible_stacks
     ])]
 
-  stack.dependencies = {}
-  for image_type in ['bias', 'dark', 'flat']:
-    if closest := find_closest_stack_chronologically(image_type):
-      stack.dependencies[image_type] = closest
+  output = {stack.stable_hash: stack}
+  for substack_id in stack.contents:
+    substack = stacks[substack_id]
 
-  key = ('light_run_settings', stack.content_hash)
-  settings = context[key] or {}
-  stack.dependencies |= settings
+    substack.dependencies = {}
+    for image_type in ['bias', 'dark', 'flat']:
+      if closest := find_closest_stack_chronologically(image_type):
+        substack.dependencies[image_type] = closest
 
-  return stack
+    print(f'### Substack {substack} has dependencies {substack.dependencies}')
 
+    key = ('light_run_settings', substack.content_hash)
+    settings = context[key] or {}
+    substack.dependencies |= settings
 
-@ray.remote
-@track_performance
-def associate_with_stacks(ancestor_results):
-  stacks = ancestor_results[0]
-  print(f'### associate_with_stacks for {len(stacks)} stacks')
-  for stack in stacks.values():
-    if type(stack) is SimpleStack and stack.image_type == 'light':
-      stacks[stack.content_hash] = associate_with_stack(stack,
-                                                        context.grouped_stacks)
+    print(f'### Stack {substack} has dependencies '
+          f'{substack.dependencies} after applying settings')
 
-  print(f'### associate_with_stacks returning stacks {stacks}')
-  return stacks
+    output[substack.content_hash] = substack
+
+  return output

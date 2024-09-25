@@ -7,7 +7,6 @@ def calibrate_image(light_metadata, light_image, bias_metadata, bias_image,
                     rotate):
 
   if bias_image is None or dark_image is None or flat_image is None:
-    print('### no calibration images')
     if rotate:
       light_image = np.rot90(light_image, 2)
     return light_image

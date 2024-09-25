@@ -14,61 +14,53 @@ from profiling import track_performance
 # okay if it's a bit difficult, at least for now.
 
 
+# TODO: This is supposed to run just on a single stack but it actually running
+# on every stack.
 @ray.remote
 @track_performance
 def quarantine_stacks(stack_id):
   stacks = context.grouped_stacks
-  metadata = context.metadata
+  stack = stacks[stack_id]
 
-  # Remove all of the quarantined stacks from the dict of stacks.
   quarantined_stacks = context.quarantined_stacks or set()
-  stacks = {
-      stack_id: stack
-      for stack_id, stack in stacks.items()
-      if stack_id not in quarantined_stacks
-  }
+  changed = False
+  if type(stack) is CompositeStack:
+    changed = any(s in quarantined_stacks for s in stack.contents)
+    stack.contents = [s for s in stack.contents if s not in quarantined_stacks]
+  elif type(stack) is SimpleStack:
+    changed = any(s in quarantined_stacks for s in stack.dependencies.values())
+    stack.dependencies = {
+        t: s
+        for t, s in stack.dependencies.items()
+        if s not in quarantined_stacks
+    }
 
-  # Go through all of the remaining stacks, and remove the quarantined stacks
-  # from `contents` and `dependencies`.
-  for stack_id, stack in stacks.items():
-    changed = False
+  if not changed:
+    return stack
 
-    if type(stack) is CompositeStack:
-      changed |= any(s in stack.contents for s in quarantined_stacks)
-      stack.contents = [
-          s for s in stack.contents if s not in quarantined_stacks
-      ]
-    elif type(stack) is SimpleStack:
-      changed |= any(
-          s in stack.dependencies.values() for s in quarantined_stacks)
-      stack.dependencies = {
-          t: s
-          for t, s in stack.dependencies.items()
-          if s not in quarantined_stacks
-      }
-
-    # If quarantining changed the stack, recompute its metadata.
-    if changed:
-      print(f'### Quarantining changed stack {stack_id}')
-      all_frames = stack.all_frames(stacks)
-      if len(all_frames) == 0:
-        print(f'### Stack {stack_id} is now empty and will be deleted')
-      else:
-        # TODO: This won't work for calibration stacks, but will people actually
-        # quarantine calibration stacks?
-        stack.update_metadata(stacks, metadata)
+  # If quarantining changed the stack, recompute its metadata. (This is
+  # potentially slow, so don't do it unless necessary).)
+  print(f'### Quarantining changed stack {stack_id}')
+  if len(stack.all_frames(stacks)) == 0:
+    print(f'### Stack {stack_id} is now empty and will be deleted')
+    return None
+  else:
+    # TODO: This won't work for calibration stacks, but will people actually
+    # quarantine calibration stacks?
+    stack.update_metadata(stacks)
+    return stack
 
   # Eliminate all stacks that are now empty.
-  num_stacks_before = len(stacks)
-  stacks = {
-      stack_id: stack
-      for stack_id, stack in stacks.items()
-      if len(stack.all_frames(stacks)) > 0
-  }
-  if len(stacks) > num_stacks_before:
-    print(f'### Eliminated {len(stacks) - num_stacks_before} empty stacks')
+  # num_stacks_before = len(stacks)
+  # stacks = {
+  #     stack_id: stack
+  #     for stack_id, stack in stacks.items()
+  #     if len(stack.all_frames(stacks)) > 0
+  # }
+  # if len(stacks) > num_stacks_before:
+  #   print(f'### Eliminated {len(stacks) - num_stacks_before} empty stacks')
 
-  return stacks
+  # return stacks
 
 
 # @ray.remote

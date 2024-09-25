@@ -443,6 +443,9 @@ class TestCalibrationFrames(unittest.TestCase):
                              transform_fn=lambda i: i.content_hash)
     first_light_run_hash = hash_list(light_run)
 
+    for stack in stacks.values():
+      print(f'### raw_stack {stack}')
+
     light_stacks = [
         s for s in stacks.values()
         if s.image_type == 'light' and type(s) is SimpleStack
@@ -468,8 +471,11 @@ class TestCalibrationFrames(unittest.TestCase):
     stacks = context.stacks
     self.assertEqual(len(stacks), 4)
 
-    light_stacks = [s for s in stacks.values() if s.image_type == 'light']
-    self.assertEqual(len(light_stacks), 2)
+    light_stacks = [
+        s for s in stacks.values()
+        if s.image_type == 'light' and type(s) is SimpleStack
+    ]
+    self.assertEqual(len(light_stacks), 1)
     stack = next(iter(light_stacks))
     assert stack.content_hash == first_light_run_hash
     assert stack.dependencies == {

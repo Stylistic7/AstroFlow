@@ -151,6 +151,7 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
     all_frames = []
     for substack_id in self.contents:
       substack = stacks[substack_id]
+      assert isinstance(substack, SimpleStack)
       all_frames.extend(substack.all_frames(stacks, include_dependencies))
 
     return all_frames

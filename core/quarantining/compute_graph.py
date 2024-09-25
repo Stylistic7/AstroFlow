@@ -21,6 +21,7 @@ def quarantine_stacks():
 @ray.remote
 def quarantine_targets():
   targets = context.grouped_targets
+  print(f'### quarantine_targets {len(targets)} grouped targets')
   if not targets:
     return {}
 
@@ -35,6 +36,7 @@ def quarantine_targets():
 @ray.remote
 def quarantine_mosaics():
   mosaics = context.grouped_mosaics
+  print(f'### quarantine_targets {len(mosaics)} grouped targets')
   if not mosaics:
     return {}
 
