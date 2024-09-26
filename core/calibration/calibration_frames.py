@@ -2,10 +2,11 @@ import ray
 import numpy as np
 import operator
 import itertools
+from dataclasses import replace
 
 import metadata.image_types as image_types
 from context import context
-from stacks import SimpleStack, CompositeStack
+from stacks import SimpleStack, CompositeStack, StacksDict
 import clustering
 from profiling import track_performance
 
@@ -41,7 +42,7 @@ def identify_calibration_stacks():
   frames_for_filter = group_by_header(metadata.values(), 'FILTER')
 
   def new_stack(frames):
-    stack = SimpleStack(frames, metadata)
+    stack = SimpleStack.from_frames(frames, metadata)
     return stack
 
   stacks = {}
@@ -131,24 +132,15 @@ def associate_with_stack(ancestor_results):
         for s in compatible_stacks
     ])]
 
-  output = {stack.stable_hash: stack}
-  for substack_id in stack.contents:
-    substack = stacks[substack_id]
-
-    substack.dependencies = {}
+  new_contents = StacksDict()
+  for substack in stack.contents.values():
+    dependencies = {}
     for image_type in ['bias', 'dark', 'flat']:
       if closest := find_closest_stack_chronologically(image_type):
-        substack.dependencies[image_type] = closest
+        dependencies[image_type] = closest
 
-    print(f'### Substack {substack} has dependencies {substack.dependencies}')
+    print(f'### Substack {substack} has dependencies {dependencies}')
+    new_stack = replace(substack, dependencies=dependencies)
+    new_contents[new_stack.content_hash] = new_stack
 
-    key = ('light_run_settings', substack.content_hash)
-    settings = context[key] or {}
-    substack.dependencies |= settings
-
-    print(f'### Stack {substack} has dependencies '
-          f'{substack.dependencies} after applying settings')
-
-    output[substack.content_hash] = substack
-
-  return output
+  return replace(stack, contents=new_contents)

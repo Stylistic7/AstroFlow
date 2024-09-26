@@ -15,78 +15,11 @@ from metadata import MetadataDict
 from stacks import StacksDict
 
 
-def normalize_radians(x: float) -> float:
+def _normalize_radians(x: float) -> float:
   if x < 0.0:
     return x + np.pi
   else:
     return x
-
-
-def _new_stacks(name: str, frames: list[FrameHash],
-                metadata: MetadataDict) -> StacksDict:
-  metadata_list = [i for h, i in metadata.items() if h in frames]
-
-  # Sort the light frames by observation date. The oldest image will be used
-  # to compute the hash of the whole stack.
-  sorted_metadata = sorted(metadata_list, key=lambda i: i.header['DATE-OBS'])
-  oldest_image_metadata = sorted_metadata[0]
-
-  assert oldest_image_metadata.plate_solution
-  center = oldest_image_metadata.plate_solution.center
-
-  image_scale = oldest_image_metadata.plate_solution.image_scale
-  rotation_angle = normalize_radians(
-      oldest_image_metadata.plate_solution.rotation_angle)
-
-  # TODO: Unify this WCS stuff and put it somewhere more general.
-  # It's in target_identification and in mosaics/projection.
-  footprint = SingleSphericalPolygon.from_wcs(
-      astropy.io.fits.Header(oldest_image_metadata.plate_solution.header))
-  if not footprint.is_clockwise():
-    footprint = SingleSphericalPolygon(footprint.points[::-1])
-  assert not SphericalPolygon.self_intersect(footprint.points)
-  projected_footprints = footprints.all_projections(footprint)
-
-  new_stacks: StacksDict = {}
-  exposures = [(i.content_hash, i.header['EXPOSURE'])
-               for i in metadata_list
-               if 'EXPOSURE' in i.header]
-  for exposure_cluster in clustering.cluster_continuous(exposures,
-                                                        epsilon=0.01):
-    exposure_frames, exposures = zip(*exposure_cluster)
-    assert np.all(np.isclose(exposures, exposures[0])
-                 ), f'exposures {exposures} are clustered, but not all close'
-
-    runs = clustering.cluster_continuous([(i.content_hash, i.header['DATE-OBS'])
-                                          for i in sorted_metadata
-                                          if i.content_hash in exposure_frames],
-                                         epsilon=context.max_run_gap)
-
-    for run in runs:
-      if len(run) < context.min_frames_in_run:
-        continue
-      run = [x[0] for x in run]
-      stack = SimpleStack(run, metadata)
-      new_stacks[stack.content_hash] = stack
-
-  if not new_stacks:
-    return {}
-
-  # Add a toplevel stack, with the geometric information, that contains all
-  # of the runs of light frames as its contents.
-  imaging_attributes = ImagingAttributes(frames, metadata)
-  astrometric_attributes = AstrometricAttributes(
-      target=name,
-      center=list(center),
-      image_scale=image_scale,
-      rotation_angle=rotation_angle,
-      footprint=footprint,
-      projected_footprints=projected_footprints)
-  stack = CompositeStack(list(new_stacks.keys()), imaging_attributes,
-                         astrometric_attributes)
-  new_stacks[stack.stable_hash] = stack
-
-  return new_stacks
 
 
 # TODO: Cache results for spatial groups. Astrophotographers rarely shoot more
@@ -100,6 +33,7 @@ def _new_stacks(name: str, frames: list[FrameHash],
 @ray.remote
 @track_performance
 def identify_stacks(spatial_group):
+  # TODO: Don't pass along the name here.
   name, frames = spatial_group
   print(f'### identify_stacks running for '
         f'spatial group {name} of length {len(frames)}')
@@ -132,7 +66,7 @@ def identify_stacks(spatial_group):
   def rotation_clusters(frames):
     rotation_angles = [
         (metadata[k].content_hash,
-         normalize_radians(metadata[k].plate_solution.rotation_angle))
+         _normalize_radians(metadata[k].plate_solution.rotation_angle))
         for k in frames
     ]
     for cluster in clustering.cluster_continuous(rotation_angles, epsilon=5.0):
@@ -153,7 +87,13 @@ def identify_stacks(spatial_group):
     for camera_frames in camera_clusters(scale_frames):
       for rotation_frames in rotation_clusters(camera_frames):
         for filter_frames in filter_clusters(rotation_frames):
-          new_stacks |= _new_stacks(name, filter_frames, metadata)
+          new_stack = CompositeStack.from_frames(filter_frames, metadata)
+          new_stacks[new_stack.stable_hash] = new_stack
+
+  print(f'### identify_stacks done, writing {len(new_stacks)} '
+        f'stacks into grouped_stacks')
+  for stack in new_stacks.values():
+    print(f'### identified stack {stack}')
 
   context.or_equals('grouped_stacks', new_stacks)
   return new_stacks

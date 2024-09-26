@@ -8,7 +8,6 @@ from collections.abc import Iterable
 
 from context import get_cache
 from context import context
-from stacks import hashes_for_stack
 
 # TODO: Rename this file.
 
@@ -82,41 +81,6 @@ def _get_metadata(input_images=None,
   return ray.get(
       get_metadata_from_diskcache.remote(input_images, predicate_fn,
                                          transform_fn, post_fn))
-
-
-# TODO: Maybe unify API with @singledispatch.
-def get_metadata_for_mosaic(mosaic_id):
-  targets = context.targets
-  mosaics = context.mosaics
-
-  mosaic = mosaics[mosaic_id]
-
-  hashes = set()
-  for target_id in mosaic.target_ids:
-    for stack_id in targets[target_id].stack_ids:
-      hashes.update(hashes_for_stack(stack_id))
-
-  return get_metadata(
-      hashes, post_fn=lambda images: {i.content_hash: i for i in images})
-
-
-# TODO: Maybe unify API with @singledispatch.
-def get_metadata_for_target(target_id):
-  targets = context.targets
-
-  hashes = set()
-  for stack_id in targets[target_id].stack_ids:
-    hashes.update(hashes_for_stack(stack_id))
-
-  return get_metadata(
-      hashes, post_fn=lambda images: {i.content_hash: i for i in images})
-
-
-# TODO: Maybe unify API with @singledispatch.
-def get_metadata_for_stack(stack_id):
-  hashes = hashes_for_stack(stack_id)
-  return get_metadata(
-      hashes, post_fn=lambda images: {i.content_hash: i for i in images})
 
 
 # TODO: Remove all of the functions below that call get_metadata(), they're

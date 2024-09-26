@@ -44,14 +44,12 @@ def select_subframes(ancestor_results):
   if stack is None:
     return None
 
-  if type(stack) is not CompositeStack:
-    return stack
+  assert isinstance(stack, CompositeStack)
 
-  stacks = context.grouped_stacks
   metadata = context.metadata
   assert metadata
 
-  light_frames = stack.all_frames(stacks)
+  light_frames = stack.all_frames()
   assert light_frames, f'### stack {repr(stack)} has zero frames'
   assert all(is_light_frame(metadata[f].header) for f in light_frames)
 
@@ -70,13 +68,4 @@ def select_subframes(ancestor_results):
   print(f'### Selected {len(selected_light_frames)} light frames '
         f'out of {len(sorted_light_frames)}')
 
-  # TODO: Go through all of the stack's `contents` and remove light frames
-  # from all of the substacks.
-  for substack_id in stack.contents:
-    substack = stacks[substack_id]
-    substack.frames = [s for s in substack.frames if s in selected_light_frames]
-    if len(substack.frames) == 0:
-      print(f'### substack {substack_id} is now empty and will be deleted')
-      stack.contents.remove(substack_id)
-
-  return stack
+  return CompositeStack.from_frames(selected_light_frames, metadata)

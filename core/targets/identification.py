@@ -32,7 +32,7 @@ def group_stacks_into_targets(ancestor_results):
   # to re-use the metadata queried for the entire spatial cluster, passed
   # through function arguments.
   def center_polygon_image_scale(stack):
-    first_frame = stack.all_frames(stacks)[0]
+    first_frame = stack.all_frames()[0]
     plate_solution = metadata[first_frame].plate_solution
     return (np.asarray(footprints.radec_to_vector(*stack.center)),
             get_spherical_polygon(pyfits.Header(plate_solution.header)),

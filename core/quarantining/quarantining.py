@@ -1,7 +1,8 @@
 import ray
+from dataclasses import replace
 
 from context import context
-from stacks import CompositeStack, SimpleStack
+from stacks import CompositeStack, SimpleStack, FrameHash, ImagingAttributes
 from profiling import track_performance
 
 # TODO: Ensure that all of the actions in this file are idempotent. The goal
@@ -14,6 +15,39 @@ from profiling import track_performance
 # okay if it's a bit difficult, at least for now.
 
 
+def _apply_to_simple_stack(stack: SimpleStack) -> SimpleStack:
+  quarantined_stacks = context.quarantined_stacks or set()
+
+  new_dependencies = {
+      t: s for t, s in stack.dependencies.items() if s not in quarantined_stacks
+  }
+  if new_dependencies == stack.dependencies:
+    return stack
+
+  return replace(stack, dependencies=new_dependencies)
+
+
+def _apply_to_composite_stack(stack: CompositeStack) -> CompositeStack:
+  stacks = context.grouped_stacks
+  quarantined_stacks = context.quarantined_stacks or set()
+
+  new_contents = {
+      h: s for h, s in stack.contents.items() if h not in quarantined_stacks
+  }
+  if new_contents == stack.contents:
+    return stack
+
+  all_frames = []
+  for substack in stack.contents.values():
+    all_frames.extend(substack.frames)
+
+  attributes = ImagingAttributes.from_frames(all_frames) | {
+      'contents': new_contents
+  }
+
+  return replace(stack, **attributes)
+
+
 # TODO: Pass the stack through directly, rather than the stack_id. This
 # is a better separation of concerns.
 @ray.remote
@@ -22,30 +56,7 @@ def apply_quarantine_to_stack(stack_id):
   stacks = context.grouped_stacks
   stack = stacks[stack_id]
 
-  quarantined_stacks = context.quarantined_stacks or set()
-  changed = False
   if type(stack) is CompositeStack:
-    changed = any(s in quarantined_stacks for s in stack.contents)
-    stack.contents = [s for s in stack.contents if s not in quarantined_stacks]
+    return _apply_to_composite_stack(stack)
   elif type(stack) is SimpleStack:
-    changed = any(s in quarantined_stacks for s in stack.dependencies.values())
-    stack.dependencies = {
-        t: s
-        for t, s in stack.dependencies.items()
-        if s not in quarantined_stacks
-    }
-
-  if not changed:
-    return stack
-
-  # If quarantining changed the stack, recompute its metadata. (This is
-  # potentially slow, so don't do it unless necessary).)
-  print(f'### Quarantining changed stack {stack_id}')
-  if len(stack.all_frames(stacks)) == 0:
-    print(f'### Stack {stack_id} is now empty and will be deleted')
-    return None
-  else:
-    # TODO: This won't work for calibration stacks, but will people actually
-    # quarantine calibration stacks?
-    stack.update_metadata(stacks)
-    return stack
+    return _apply_to_simple_stack(stack)

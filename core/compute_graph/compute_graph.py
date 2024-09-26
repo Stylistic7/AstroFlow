@@ -113,8 +113,7 @@ def build_stack_user_settings_subgraph(stack_id):
 
 @ray.remote
 def gather_stack_user_settings(ancestor_results):
-  ancestor_results = [a for a in ancestor_results if a is not None]
-  stacks = {k: v for d in ancestor_results for k, v in d.items()}
+  stacks = {a.stable_hash: a for a in ancestor_results if a is not None}
   context.or_equals('stacks', stacks, default_value={})
   print(f'### gather_stack_user_settings: Stored {len(stacks)} stacks; '
         f'total is now {len(context.stacks)}')
