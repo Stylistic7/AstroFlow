@@ -11,3 +11,6 @@ class ImageMetadata:
   filename: str
   header: dict
   plate_solution: Optional[PlateSolution] = None
+
+
+MetadataDict = dict[str, ImageMetadata]

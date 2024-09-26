@@ -51,7 +51,7 @@ def select_subframes(ancestor_results):
   metadata = context.metadata
   assert metadata
 
-  light_frames = stack.all_frames(stacks, include_dependencies=False)
+  light_frames = stack.all_frames(stacks)
   assert light_frames, f'### stack {repr(stack)} has zero frames'
   assert all(is_light_frame(metadata[f].header) for f in light_frames)
 

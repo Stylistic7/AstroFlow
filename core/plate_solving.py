@@ -17,13 +17,13 @@ from profiling.decorator import track_performance
 
 @dataclass
 class PlateSolution:
-  image_filename: str | None = None
-  header: dict | None = None
-  num_stars: int | None = None
-  center: tuple[float, float] | None = None
-  image_scale: float | None = None
-  rotation_angle: float | None = None
-  footprint: list | None = None
+  image_filename: str
+  header: dict
+  num_stars: int
+  center: tuple[float, float]
+  image_scale: float
+  rotation_angle: float
+  footprint: list
 
 
 def get_footprint(header: dict[str, Any]) -> list[float]:

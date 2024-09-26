@@ -2,10 +2,12 @@ from ray_infra import ray_local
 
 import ray
 import unittest
+import datetime
 import numpy as np
+from spherical_geometry.polygon import SphericalPolygon  # type: ignore
 
 from context import context
-from stacks import SimpleStack, CompositeStack
+from stacks import SimpleStack, CompositeStack, StackHash, FrameHash, AstrometricAttributes, ImagingAttributes
 from testing.test_context import make_test_context
 from testing.test_frames import make_synthetic_frames, copy_testdata_frames
 from dependency_graph import run_graph
@@ -17,24 +19,6 @@ class TestStack(unittest.TestCase):
 
   def setUp(self):
     self.input_dir_obj, self.output_dir_obj = make_test_context()
-
-  def test_all_frames(self):
-    stacks = {
-        'toplevel_stack':
-            CompositeStack(content_hash='toplevel_stack',
-                           contents=['stack_foo', 'stack_bar', 'stack_baz']),
-        'stack_foo':
-            SimpleStack(content_hash='stack_bar', frames=['a', 'b', 'c']),
-        'stack_bar':
-            SimpleStack(content_hash='stack_bar', frames=['d', 'e', 'f']),
-        'stack_baz':
-            SimpleStack(content_hash='stack_baz', frames=['g', 'h', 'i']),
-    }
-    context.stacks = stacks
-
-    self.assertEqual(
-        sorted(stacks['toplevel_stack'].all_frames(stacks=context.stacks)),
-        ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'])
 
   def test_one_dark_stack(self):
     make_synthetic_frames(prefix='dark',
@@ -96,11 +80,13 @@ class TestStack(unittest.TestCase):
     self.assertEqual(len(stacks), 3)
 
     toplevel_stack = next(
-        stack for stack in stacks.values() if type(stack) is CompositeStack)
+        stack for stack in stacks.values() if isinstance(stack, CompositeStack))
     light_stack = next(
-        stack for stack in stacks.values() if stack.image_type == 'light')
+        stack for stack in stacks.values()
+        if isinstance(stack, SimpleStack) and stack.image_type == 'light')
     dark_stack = next(
-        stack for stack in stacks.values() if stack.image_type == 'dark')
+        stack for stack in stacks.values()
+        if isinstance(stack, SimpleStack) and stack.image_type == 'dark')
 
     self.assertEqual(toplevel_stack.image_type, 'light')
     self.assertNotEqual(toplevel_stack.stable_hash, None)

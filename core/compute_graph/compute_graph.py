@@ -25,7 +25,7 @@ from profiling import track_performance
 
 @ray.remote
 @track_performance
-def load_metadata():
+def load_metadata() -> None:
   quarantined_files = context.quarantined_files or set()
 
   def predicate_fn(image):

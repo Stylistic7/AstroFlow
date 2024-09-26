@@ -1,72 +1,42 @@
 import ray
 import numpy as np
-from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon
-import astropy
-import datetime
-import time
-import objsize
+from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon  # type: ignore
+import astropy  # type: ignore
 
 from context import context
 import clustering
 from hashing import hash_string
 import units
 import geometry.footprints as footprints
-from stacks import Stack, FrameHash, SimpleStack, CompositeStack
+from stacks import FrameHash, SimpleStack, CompositeStack, AstrometricAttributes, ImagingAttributes
 import units
-from metadata.actor import get_metadata, cluster_by_header, sort_by_header
 from profiling import track_performance
+from metadata import MetadataDict
+from stacks import StacksDict
 
 
-def normalize_radians(x):
+def normalize_radians(x: float) -> float:
   if x < 0.0:
     return x + np.pi
   else:
     return x
 
 
-# This hash defines the specific area of the sky this stack covers. It
-# includes the center (RA, Dec), the rotation angle, the image scale, and
-# the image width and height, in pixels. It is not defined for stacks that
-# do not contain light frames.
-def _compute_stable_hash(center, image_scale, rotation_angle, width_pixels,
-                         height_pixels, filter) -> str:
-  return hash_string(f'RA {units.ra_to_hms(center[0])}, '
-                     f'Dec {units.dec_to_dms(center[1])}, '
-                     f'Scale {image_scale:.2f}"/px, '
-                     f'PA {rotation_angle:.2f}deg,'
-                     f'Width {width_pixels}, '
-                     f'Height {height_pixels}, '
-                     f'Filter {filter}')
-
-
-def _get_unique(L):
-  s = set(L)
-  assert len(s) == 1, f"list {L} has more than one unique member"
-  return next(iter(s))
-
-
-def _new_stacks(name, frames, metadata):
+def _new_stacks(name: str, frames: list[FrameHash],
+                metadata: MetadataDict) -> StacksDict:
   metadata_list = [i for h, i in metadata.items() if h in frames]
-
-  width_pixels = _get_unique(i.header['NAXIS1'] for i in metadata_list)
-  height_pixels = _get_unique(i.header['NAXIS2'] for i in metadata_list)
 
   # Sort the light frames by observation date. The oldest image will be used
   # to compute the hash of the whole stack.
   sorted_metadata = sorted(metadata_list, key=lambda i: i.header['DATE-OBS'])
   oldest_image_metadata = sorted_metadata[0]
 
+  assert oldest_image_metadata.plate_solution
   center = oldest_image_metadata.plate_solution.center
-  assert list(center)
 
   image_scale = oldest_image_metadata.plate_solution.image_scale
   rotation_angle = normalize_radians(
       oldest_image_metadata.plate_solution.rotation_angle)
-
-  filter = oldest_image_metadata.header['FILTER']
-
-  stable_hash = _compute_stable_hash(center, image_scale, rotation_angle,
-                                     width_pixels, height_pixels, filter)
 
   # TODO: Unify this WCS stuff and put it somewhere more general.
   # It's in target_identification and in mosaics/projection.
@@ -77,7 +47,7 @@ def _new_stacks(name, frames, metadata):
   assert not SphericalPolygon.self_intersect(footprint.points)
   projected_footprints = footprints.all_projections(footprint)
 
-  new_stacks = {}
+  new_stacks: StacksDict = {}
   exposures = [(i.content_hash, i.header['EXPOSURE'])
                for i in metadata_list
                if 'EXPOSURE' in i.header]
@@ -87,10 +57,6 @@ def _new_stacks(name, frames, metadata):
     assert np.all(np.isclose(exposures, exposures[0])
                  ), f'exposures {exposures} are clustered, but not all close'
 
-    # TODO: The selection criterion needs to be preserved when stacks are
-    # re-computed. Stacks with the same stable_hash can have their settings
-    # passed on. There may be other settings like this in the future.
-    selection_criterion = ('StarCountFraction', 0.75)
     runs = clustering.cluster_continuous([(i.content_hash, i.header['DATE-OBS'])
                                           for i in sorted_metadata
                                           if i.content_hash in exposure_frames],
@@ -100,8 +66,7 @@ def _new_stacks(name, frames, metadata):
       if len(run) < context.min_frames_in_run:
         continue
       run = [x[0] for x in run]
-      stack = SimpleStack(frames=run)
-      stack.update_metadata(new_stacks, metadata)
+      stack = SimpleStack(run, metadata)
       new_stacks[stack.content_hash] = stack
 
   if not new_stacks:
@@ -109,16 +74,16 @@ def _new_stacks(name, frames, metadata):
 
   # Add a toplevel stack, with the geometric information, that contains all
   # of the runs of light frames as its contents.
-  stack = CompositeStack(stable_hash=stable_hash,
-                         contents=list(new_stacks.keys()),
-                         target=name,
-                         center=list(center),
-                         image_scale=image_scale,
-                         rotation_angle=rotation_angle,
-                         footprint=footprint,
-                         projected_footprints=projected_footprints,
-                         selection_criterion=selection_criterion)
-  stack.update_metadata(new_stacks, metadata)
+  imaging_attributes = ImagingAttributes(frames, metadata)
+  astrometric_attributes = AstrometricAttributes(
+      target=name,
+      center=list(center),
+      image_scale=image_scale,
+      rotation_angle=rotation_angle,
+      footprint=footprint,
+      projected_footprints=projected_footprints)
+  stack = CompositeStack(list(new_stacks.keys()), imaging_attributes,
+                         astrometric_attributes)
   new_stacks[stack.stable_hash] = stack
 
   return new_stacks

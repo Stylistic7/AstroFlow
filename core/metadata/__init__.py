@@ -1,1 +1,1 @@
-from .classes import ImageMetadata
+from .classes import ImageMetadata, MetadataDict

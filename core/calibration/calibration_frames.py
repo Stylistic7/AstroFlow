@@ -41,8 +41,7 @@ def identify_calibration_stacks():
   frames_for_filter = group_by_header(metadata.values(), 'FILTER')
 
   def new_stack(frames):
-    stack = SimpleStack(frames=frames)
-    stack.update_metadata(metadata)
+    stack = SimpleStack(frames, metadata)
     return stack
 
   stacks = {}
