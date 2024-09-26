@@ -7,7 +7,7 @@ from context import cache
 import datetime
 from dataclasses import asdict
 
-from stacks import SimpleStack
+from stacks import SimpleStack, CompositeStack
 from testing.test_frames import make_synthetic_frames, copy_testdata_frames
 from context import context
 from file_io.find_image_files import find_image_files
@@ -96,10 +96,10 @@ class TestCalibrationFrames(unittest.TestCase):
                             run_main_processing_graph=False))
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 7)
+    self.assertEqual(len(stacks), 5)
 
     light_stacks = [s for s in stacks.values() if s.image_type == 'light']
-    self.assertEqual(len(light_stacks), 3)
+    self.assertEqual(len(light_stacks), 1)
 
   def test_one_light_run_one_dark_run(self):
     copy_testdata_frames(target_name='NGC7635', dest_dir=context.input_dirs[0])
@@ -121,16 +121,10 @@ class TestCalibrationFrames(unittest.TestCase):
                             run_main_processing_graph=False))
 
     stacks = context.stacks
-    for raw_stack in stacks.values():
-      print('### raw_stack', raw_stack)
-
-    self.assertEqual(len(stacks), 3)
-
-    stacks = context.stacks
-    self.assertEqual(len(stacks), 3)
+    self.assertEqual(len(stacks), 2)
 
     light_stacks = [s for s in stacks.values() if s.image_type == 'light']
-    self.assertEqual(len(light_stacks), 2)
+    self.assertEqual(len(light_stacks), 1)
 
   def test_flats_from_different_camera(self):
     # There are lights from two different cameras. This should result
@@ -202,11 +196,11 @@ class TestCalibrationFrames(unittest.TestCase):
                             run_main_processing_graph=False))
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 10)
+    self.assertEqual(len(stacks), 8)
 
     light_stacks = [
         s for s in stacks.values()
-        if s.image_type == 'light' and type(s) is SimpleStack
+        if s.image_type == 'light' and type(s) is CompositeStack
     ]
     self.assertEqual(len(light_stacks), 2)
 
@@ -260,10 +254,10 @@ class TestCalibrationFrames(unittest.TestCase):
                             run_main_processing_graph=False))
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 6)
+    self.assertEqual(len(stacks), 5)
 
     light_stacks = [s for s in stacks.values() if s.image_type == 'light']
-    self.assertEqual(len(light_stacks), 2)
+    self.assertEqual(len(light_stacks), 1)
 
   # TODO: Test temperatures that do and do not match.
   def test_temperature_mismatch(self):
@@ -289,16 +283,18 @@ class TestCalibrationFrames(unittest.TestCase):
                             run_main_processing_graph=False))
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 3)
+    self.assertEqual(len(stacks), 2)
 
     light_stacks = [
         s for s in stacks.values()
-        if type(s) is SimpleStack and s.image_type == 'light'
+        if type(s) is CompositeStack and s.image_type == 'light'
     ]
     self.assertEqual(len(light_stacks), 1)
     stack = light_stacks[0]
-    self.assertEqual(len(stack.frames), 3)
-    self.assertEqual(len(stack.dependencies), 1)
+    self.assertEqual(len(stack.contents), 1)
+    substack = next(iter(stack.contents.values()))
+    self.assertEqual(len(substack.frames), 3)
+    self.assertEqual(len(substack.dependencies), 1)
 
   def test_stack_calibration_frames(self):
     copy_testdata_frames(target_name='NGC7635', dest_dir=context.input_dirs[0])
@@ -336,10 +332,10 @@ class TestCalibrationFrames(unittest.TestCase):
                             run_main_processing_graph=False))
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 5)
+    self.assertEqual(len(stacks), 4)
 
     light_stacks = [s for s in stacks.values() if s.image_type == 'light']
-    self.assertEqual(len(light_stacks), 2)
+    self.assertEqual(len(light_stacks), 1)
 
   def test_multiple_filters_for_flats(self):
     # Only one run of flat frames applies to the light frames, which use
@@ -373,10 +369,10 @@ class TestCalibrationFrames(unittest.TestCase):
                             run_main_processing_graph=False))
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 4)
+    self.assertEqual(len(stacks), 3)
 
     light_stacks = [s for s in stacks.values() if s.image_type == 'light']
-    self.assertEqual(len(light_stacks), 2)
+    self.assertEqual(len(light_stacks), 1)
 
   def test_flat_frame_selection(self):
     # There are two runs of flat frames, but the user has selected the first
@@ -439,27 +435,19 @@ class TestCalibrationFrames(unittest.TestCase):
     first_flat_stack = find_stack('flat_run_0')
     second_flat_stack = find_stack('flat_run_1')
 
-    light_run = get_metadata(predicate_fn=lambda i: 'light_run' in i.filename,
-                             transform_fn=lambda i: i.content_hash)
-    first_light_run_hash = hash_list(light_run)
-
-    for stack in stacks.values():
-      print(f'### raw_stack {stack}')
-
     light_stacks = [
         s for s in stacks.values()
-        if s.image_type == 'light' and type(s) is SimpleStack
+        if s.image_type == 'light' and type(s) is CompositeStack
     ]
     self.assertEqual(len(light_stacks), 1)
     stack = next(iter(light_stacks))
-    assert stack.content_hash == first_light_run_hash
-    assert stack.dependencies == {
-        'flat': second_flat_stack
-    }, f'stack.dependencies {stack.dependencies}'
+    self.assertEqual(len(stack.contents), 1)
+    substack = next(iter(stack.contents.values()))
+    self.assertEqual(substack.dependencies, {'flat': second_flat_stack})
 
     # Configure the light run to use the other flat run, which has prefix
     # `flat_run_0`.
-    context.set(('light_run_settings', first_light_run_hash),
+    context.set(('stack_settings', substack.content_hash),
                 {'flat': first_flat_stack})
 
     # Run the graph again, with the settings applied.
@@ -469,18 +457,16 @@ class TestCalibrationFrames(unittest.TestCase):
                             run_main_processing_graph=False))
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 4)
+    self.assertEqual(len(stacks), 3)
 
     light_stacks = [
         s for s in stacks.values()
-        if s.image_type == 'light' and type(s) is SimpleStack
+        if s.image_type == 'light' and type(s) is CompositeStack
     ]
     self.assertEqual(len(light_stacks), 1)
     stack = next(iter(light_stacks))
-    assert stack.content_hash == first_light_run_hash
-    assert stack.dependencies == {
-        'flat': first_flat_stack
-    }, f'stack.dependencies {stack.dependencies}'
+    substack = next(iter(stack.contents.values()))
+    self.assertEqual(substack.dependencies, {'flat': first_flat_stack})
 
   def test_generic_grouping(self):
     copy_testdata_frames(target_name='NGC7635', dest_dir=context.input_dirs[0])
@@ -520,15 +506,12 @@ class TestCalibrationFrames(unittest.TestCase):
                             run_main_processing_graph=False))
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 5)
+    self.assertEqual(len(stacks), 4)
 
     toplevel_stacks = get_toplevel_stacks(stacks)
     self.assertEqual(len(toplevel_stacks), 1)
     stack = toplevel_stacks[0]
     self.assertEqual(len(stack.contents), 1)
-
-    content_stacks = get_content_stacks_of_type(stacks, 'light')
-    self.assertEqual(len(content_stacks), 1)
 
 
 if __name__ == "__main__":

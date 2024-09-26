@@ -65,10 +65,13 @@ class TestStacking(unittest.TestCase):
                                 run_main_processing_graph=True)
     run_graph(graph, debug=True)
 
-    self.assertEqual(len(context.stacks), 5)
+    self.assertEqual(len(context.stacks), 4)
     self.assertEqual(len(context.targets), 1)
 
-    context.shopping_cart = [('stack', '4475e17d7341cbd0')]
+    for stack in context.stacks.values():
+      print(f'### stack {stack}')
+
+    context.shopping_cart = [('stack', 'e1f7d909ac125ebe')]
 
     graph = build_compute_graph()
     run_graph(graph, debug=True)

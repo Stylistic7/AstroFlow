@@ -89,10 +89,10 @@ class TestImagePreviews(unittest.TestCase):
     run_graph(graph)
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 7)
+    self.assertEqual(len(stacks), 5)
 
     light_stacks = [s for s in stacks.values() if s.image_type == 'light']
-    self.assertEqual(len(light_stacks), 3)
+    self.assertEqual(len(light_stacks), 1)
 
     keys = context.get_cache_keys()
     for k in keys:
@@ -102,10 +102,10 @@ class TestImagePreviews(unittest.TestCase):
     # actually applied correctly (e.g. the subtraction has been done).
     self.assertTrue(
         context.contains(
-            ('stack_subframe_thumbnail_image', '8e3471f8f0666240')))
+            ('stack_subframe_thumbnail_image', 'cb70a9a1b6627216')))
     self.assertTrue(
         context.contains(
-            ('stack_subframe_thumbnail_video', '8e3471f8f0666240')))
+            ('stack_subframe_thumbnail_video', 'cb70a9a1b6627216')))
 
 
 if __name__ == "__main__":

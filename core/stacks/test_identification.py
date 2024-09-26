@@ -31,17 +31,16 @@ class TestStackIdentification(unittest.TestCase):
                             run_main_processing_graph=False))
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 2)
+    self.assertEqual(len(stacks), 1)
 
     toplevel_stacks = get_toplevel_stacks(stacks)
     self.assertEqual(len(toplevel_stacks), 1)
-    stack = toplevel_stacks[0]
-    self.assertEqual(stack.center, [100, 50])
-    self.assertEqual(stack.image_scale, 1.0)
+    toplevel_stack = toplevel_stacks[0]
+    self.assertEqual(toplevel_stack.center, [100, 50])
+    self.assertEqual(toplevel_stack.image_scale, 1.0)
 
-    content_stacks = get_content_stacks_of_type(stacks, 'light')
-    self.assertEqual(len(content_stacks), 1)
-    stack = content_stacks[0]
+    self.assertEqual(len(toplevel_stack.contents), 1)
+    stack = next(iter(toplevel_stack.contents.values()))
     self.assertEqual(len(stack.frames), 10)
 
   def test_two_stacks_different_image_scales(self):
@@ -58,25 +57,22 @@ class TestStackIdentification(unittest.TestCase):
                             make_previews=False,
                             run_main_processing_graph=False))
     stacks = context.stacks
-    self.assertEqual(len(stacks), 4)
+    self.assertEqual(len(stacks), 2)
 
     toplevel_stacks = get_toplevel_stacks(stacks)
     self.assertEqual(len(toplevel_stacks), 2)
+
     stack = toplevel_stacks[0]
-    self.assertEqual(stack.center, [100, 50])
-    self.assertEqual(stack.image_scale, 1.0)
-
-    content_stacks = get_content_stacks_of_type(stacks, 'light')
-    self.assertEqual(len(content_stacks), 2)
-    stack = content_stacks[0]
-    filenames = get_metadata(stack.frames, transform_fn=lambda i: i.filename)
+    frames = stack.all_frames()
+    filenames = get_metadata(frames, transform_fn=lambda i: i.filename)
     self.assertTrue(all('foo' in f for f in filenames))
-    self.assertEqual(len(stack.frames), 10)
+    self.assertEqual(len(frames), 10)
 
-    stack = content_stacks[1]
-    filenames = get_metadata(stack.frames, transform_fn=lambda i: i.filename)
+    stack = toplevel_stacks[1]
+    frames = stack.all_frames()
+    filenames = get_metadata(frames, transform_fn=lambda i: i.filename)
     self.assertTrue(all('bar' in f for f in filenames))
-    self.assertEqual(len(stack.frames), 10)
+    self.assertEqual(len(frames), 10)
 
   def test_two_stacks_different_image_sizes(self):
     # Note that these two groups have the same generic camera name, which is
@@ -106,23 +102,24 @@ class TestStackIdentification(unittest.TestCase):
                             run_main_processing_graph=False))
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 4)
+    self.assertEqual(len(stacks), 2)
 
-    toplevel_stacks = get_toplevel_stacks(stacks)
+    toplevel_stacks = context.stacks
     self.assertEqual(len(toplevel_stacks), 2)
 
-    self.assertEqual(toplevel_stacks[0].center, [100, 50])
-    self.assertEqual(toplevel_stacks[0].width_pixels, 3000)
-    self.assertEqual(toplevel_stacks[0].height_pixels, 2000)
-    self.assertEqual(toplevel_stacks[0].image_scale, 1.0)
+    keys = sorted(toplevel_stacks.keys())
 
-    self.assertEqual(toplevel_stacks[1].center, [100, 50])
-    self.assertEqual(toplevel_stacks[1].width_pixels, 6000)
-    self.assertEqual(toplevel_stacks[1].height_pixels, 4000)
-    self.assertEqual(toplevel_stacks[1].image_scale, 1.0)
+    stack = toplevel_stacks[keys[0]]
+    self.assertEqual(stack.center, [100, 50])
+    self.assertEqual(stack.width_pixels, 3000)
+    self.assertEqual(stack.height_pixels, 2000)
+    self.assertEqual(stack.image_scale, 1.0)
 
-    content_stacks = get_content_stacks_of_type(stacks, 'light')
-    self.assertEqual(len(content_stacks), 2)
+    stack = toplevel_stacks[keys[1]]
+    self.assertEqual(stack.center, [100, 50])
+    self.assertEqual(stack.width_pixels, 6000)
+    self.assertEqual(stack.height_pixels, 4000)
+    self.assertEqual(stack.image_scale, 1.0)
 
   def test_multiple_exposures(self):
     make_synthetic_frames(ra=100,
@@ -144,26 +141,24 @@ class TestStackIdentification(unittest.TestCase):
                             run_main_processing_graph=False))
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 3)
+    self.assertEqual(len(stacks), 1)
 
     toplevel_stacks = get_toplevel_stacks(stacks)
     self.assertEqual(len(toplevel_stacks), 1)
-    stack = toplevel_stacks[0]
-    print(f'### toplevel_stack {stack}')
-    print(f'### toplevel_stack.contents {stack.contents}')
-    self.assertEqual(stack.center, [100, 50])
-    self.assertEqual(len(stack.contents), 2)
+    toplevel_stack = toplevel_stacks[0]
+    print(f'### toplevel_stack {toplevel_stack}')
+    print(f'### toplevel_stack.contents {toplevel_stack.contents}')
+    self.assertEqual(toplevel_stack.center, [100, 50])
+    self.assertEqual(len(toplevel_stack.contents), 2)
 
-    content_stacks = get_content_stacks_of_type(stacks, 'light')
-    self.assertEqual(len(content_stacks), 2)
-    stack = content_stacks[0]
+    stack = list(toplevel_stack.contents.values())[0]
     filenames = get_metadata(stack.frames, transform_fn=lambda i: i.filename)
     self.assertTrue(all('bar' in f for f in filenames))
     self.assertEqual(len(stack.frames), 7)
     self.assertEqual(stack.exposure_s, [120.0])
     self.assertEqual(stack.integration_s, 7 * 120)
 
-    stack = content_stacks[1]
+    stack = list(toplevel_stack.contents.values())[1]
     filenames = get_metadata(stack.frames, transform_fn=lambda i: i.filename)
     self.assertTrue(all('foo' in f for f in filenames))
     self.assertEqual(len(stack.frames), 5)

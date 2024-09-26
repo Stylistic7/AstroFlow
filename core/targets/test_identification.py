@@ -31,7 +31,7 @@ class TestTargetIdentification(unittest.TestCase):
                                 run_main_processing_graph=False)
     run_graph(graph)
 
-    self.assertEqual(len(context.stacks), 2)
+    self.assertEqual(len(context.stacks), 1)
     stack = next(
         iter([s for s in context.stacks.values() if type(s) is CompositeStack]))
     self.assertNotEqual(stack.stable_hash, None)

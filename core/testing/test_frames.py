@@ -1,6 +1,7 @@
 from ray_infra import ray_local
 
 import os
+from spherical_geometry.polygon import SphericalPolygon  # type: ignore
 import astropy.io.fits as pyfits  # type: ignore
 import numpy as np
 from scipy.signal.windows import gaussian  # type: ignore
@@ -249,7 +250,9 @@ def make_synthetic_frames(start_datetime=datetime.datetime(
           num_stars=num_stars,
           center=center,
           image_scale=image_scale,
-          rotation_angle=rotation_angle_deg)
+          rotation_angle=rotation_angle_deg,
+          footprint=SphericalPolygon.from_cone(0.0, 90.0, 1.0),
+      )
     else:
       plate_solution = None
 

@@ -87,7 +87,7 @@ class TestFlatCorrection(unittest.TestCase):
         print('key', k, 'has keys', cache[k].keys())
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 6)
+    self.assertEqual(len(stacks), 5)
 
     for stack in stacks.values():
       print(stack)

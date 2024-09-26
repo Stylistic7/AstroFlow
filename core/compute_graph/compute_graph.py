@@ -1,5 +1,6 @@
 import ray
 import objsize
+from dataclasses import replace
 
 from context import context, WriteMode
 from metadata.image_metadata import scatter_compute_image_metadata
@@ -91,6 +92,23 @@ def store_mosaics(ancestor_results):
         f'total is now {len(context.mosaics)}')
 
 
+# TODO: Move this somewhere more appropriate.
+@ray.remote
+def apply_settings(ancestor_results):
+  stack = ancestor_results[0]
+  assert isinstance(stack, CompositeStack)
+
+  new_contents = {}
+  for substack in stack.contents.values():
+    settings_key = ('stack_settings', substack.content_hash)
+    settings = context[settings_key] or {}
+    dependencies = substack.dependencies | settings
+    new_substack = replace(substack, dependencies=dependencies)
+    new_contents[new_substack.content_hash] = new_substack
+
+  return replace(stack, contents=new_contents)
+
+
 # This graph applies user settings to a single stack in the `grouped_stacks`
 # dict, passing it through graph arguments. If the stack is quarantined, or
 # becomes empty after subframe selection, it will not make it into the final
@@ -108,7 +126,8 @@ def store_mosaics(ancestor_results):
 @ray.remote
 def build_stack_user_settings_subgraph(stack_id):
   return make_graph_from_list([(apply_quarantine_to_stack, stack_id),
-                               select_subframes, associate_with_stack])
+                               select_subframes, associate_with_stack,
+                               apply_settings])
 
 
 @ray.remote

@@ -133,10 +133,10 @@ def create_stack_subframe_thumbnails(stack_id):
       # TODO: This feels a little hacky.
       # FIXME and it isn't working
       dependencies = {}
-      if substack_id := next(
-          iter(s for s in stack.contents
-               if light_frame.content_hash in stacks[s].frames), None):
-        dependencies = stacks[substack_id].dependencies
+      if substack := next(
+          iter(s for s in stack.contents.values()
+               if light_frame.content_hash in s.frames), None):
+        dependencies = substack.dependencies
 
       bias_frame = bias_image = None
       if 'bias' in dependencies:
@@ -152,7 +152,7 @@ def create_stack_subframe_thumbnails(stack_id):
 
       if bias_frame is None or dark_frame is None or flat_frame is None:
         print(f'### create_stack_subframe_thumbnails light frame '
-              f'{light_frame.content_hash} from stack {stacks[substack_id]} '
+              f'{light_frame.content_hash} from stack {substack} '
               f'is missing some calibration images: {dependencies}')
 
       im = calibrate_image(light_frame, light_image, bias_frame, bias_image,

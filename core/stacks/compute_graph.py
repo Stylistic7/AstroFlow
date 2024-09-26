@@ -24,8 +24,8 @@ def build_stack_subgraph(stack_id):
 
   graph = Graph()
   graph[stack_task] = {(stack_files, d)
-                       for substack in stack.contents
-                       for d in stacks[substack].dependencies.values()
+                       for substack in stack.contents.values()
+                       for d in substack.dependencies.values()
                        if stacks[d].image_type != 'light'}
   graph[stacking_metadata_task] = {stack_task}
   graph[post_process_task] = {stacking_metadata_task}

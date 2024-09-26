@@ -87,21 +87,15 @@ def _setup_composite_stack(stack_id, tmp_dir):
   if stack_id in quarantined_stacks:
     return None, 0
 
+  metadata = context.metadata
   stacks = context.stacks
   stack = stacks[stack_id]
-
-  # TODO: Get rid of this get_metadata() call.
-  metadata = get_metadata(
-      stack.all_frames(),
-      post_fn=lambda images: {i.content_hash: i for i in images})
-  hashes = metadata.keys()
+  hashes = stack.all_frames()
 
   first_filename = None
 
   num_frames = 0
-  for i, substack_id in enumerate(stack.contents):
-    substack = stacks[substack_id]
-
+  for i, substack in enumerate(stack.contents.values()):
     filenames = [i.filename for h, i in metadata.items() if h in hashes]
     assert len(hashes) == len(filenames)
 
