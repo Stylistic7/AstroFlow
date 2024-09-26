@@ -1,80 +1,80 @@
 from dataclasses import dataclass, field
+from abc import ABC, abstractmethod
 from spherical_geometry.polygon import SphericalPolygon  # type: ignore
 from shapely.geometry import Polygon  # type: ignore
 import units
 import numpy as np
 import datetime
-from typing import NewType, Optional
+from typing import NewType, Any
 from hashing import hash_list
 from context import context
+from metadata import ImageMetadata
 import time
 from copy import copy
 
 FrameHash = NewType('FrameHash', str)
 StackHash = NewType('StackHash', str)
 
+Stacks = dict[str, Stack]
+
 
 @dataclass
 class ImagingAttributes:
-  image_type: Optional[str] = None
-  camera: Optional[str] = None
-  filter: Optional[str] = None
-  mean_temperature: Optional[float] = None
-  exposure_s: Optional[int] = None
-  integration_s: Optional[int] = None
-  width_pixels: Optional[int] = None
-  height_pixels: Optional[int] = None
-  oldest_date: Optional[datetime.datetime] = None
-  newest_date: Optional[datetime.datetime] = None
+  image_type: str
+  camera: str
+  filter: str
+  mean_temperature: float
+  exposure_s: list[int]
+  integration_s: int
+  width_pixels: int
+  height_pixels: int
+  oldest_date: datetime.datetime
+  newest_date: datetime.datetime
+
+  @abstractmethod
+  def all_frames(self, stacks: Stacks) -> list[FrameHash]:
+    pass
 
   # TODO: The `stacks` argument here is used to select between `grouped_stacks`,
   # which are the raw stacks computed from the files on disk, before any user
   # input, and `stacks`, after quarantining and subframe selection. This is not
   # very elegant, and could be improved.
-  def update_metadata(self, stacks=None, metadata=None) -> None:
-    if stacks == None:
-      stacks = context.stacks
-
-    if metadata == None:
-      metadata = context.metadata
+  def update_metadata(self,
+                      stacks: Stacks | None = None,
+                      metadata: dict[str, ImageMetadata] | None = None) -> None:
+    stacks = stacks or {}
+    metadata = metadata or context.metadata
 
     all_frames = self.all_frames(stacks)
     self.content_hash = hash_list(all_frames)
 
-    metadata = [i for i in metadata.values() if i.content_hash in all_frames]
+    metadata_list = [
+        i for i in metadata.values() if i.content_hash in all_frames
+    ]
 
-    def get_quality(quality, allow_multiple=False):
-      # TODO: What should we do with frames that don't have a FILTER keyword?
-      qualities = list(
-          set(i.header[quality] for i in metadata if quality in i.header))
-      if len(qualities) == 0:
-        return None
+    def get_unique_quality(key: str) -> Any:
+      values = list(set(
+          i.header[key] for i in metadata_list if key in i.header))
+      assert len(values) == 1
+      return values[0]
 
-      if type(qualities[0]) is float and np.all(
-          np.isclose(qualities, qualities[0])):
-        qualities = {qualities[0]}
+    def get_quality_set(key: str) -> list[Any]:
+      return list(set(i.header[key] for i in metadata_list if key in i.header))
 
-      if allow_multiple:
-        return list(qualities)
-      else:
-        assert len(qualities) < 2, f'multiple {quality} qualities {qualities}'
-        return next(iter(qualities)) if len(qualities) else None
-
-    # allow_multiple_exposures = (self.stable_hash != None)
-
-    self.image_type = get_quality('IMAGETYP')
-    self.camera = get_quality('INSTRUME')
-    self.width_pixels = get_quality('NAXIS1')
-    self.height_pixels = get_quality('NAXIS2')
-    self.exposure_s = get_quality('EXPOSURE', allow_multiple=True)
-    self.filter = get_quality('FILTER')
+    self.image_type = get_unique_quality('IMAGETYP')
+    self.camera = get_unique_quality('INSTRUME')
+    self.width_pixels = get_unique_quality('NAXIS1')
+    self.height_pixels = get_unique_quality('NAXIS2')
+    self.exposure_s = get_quality_set('EXPOSURE')
+    self.filter = get_unique_quality('FILTER')
 
     self.integration_s = sum(
-        i.header['EXPOSURE'] for i in metadata if 'EXPOSURE' in i.header)
+        i.header['EXPOSURE'] for i in metadata_list if 'EXPOSURE' in i.header)
 
-    self.mean_temperature = np.mean([i.header['CCD-TEMP'] for i in metadata])
+    self.mean_temperature = np.mean(
+        [i.header['CCD-TEMP'] for i in metadata_list])
 
-    sorted_metadata = sorted(metadata, key=lambda i: i.header['DATE-OBS'])
+    sorted_metadata = sorted(metadata_list, key=lambda i: i.header['DATE-OBS'])
     self.oldest_date = sorted_metadata[0].header['DATE-OBS']
     self.newest_date = sorted_metadata[-1].header['DATE-OBS']
 
@@ -84,27 +84,29 @@ class ImagingAttributes:
 # to get_metadata().
 @dataclass
 class AstroFlowStateAttributes:
-  state: dict = field(default_factory=dict)
+  state: dict
 
 
 @dataclass
 class AstrometricAttributes:
-  target: Optional[str] = None
-  center: Optional[list[float]] = None
-  image_scale: Optional[float] = None
-  rotation_angle: Optional[float] = None
-  footprint: Optional[SphericalPolygon] = None
-  projected_footprints: Optional[dict[str, Polygon]] = None
-  selection_criterion: Optional[tuple[str, float]] = None
+  target: str
+  center: list[float]
+  image_scale: float
+  rotation_angle: float
+  footprint: SphericalPolygon
+  projected_footprints: dict[str, Polygon]
+  selection_criterion: tuple[str, float]
 
 
 @dataclass
 class SimpleStack(ImagingAttributes, AstroFlowStateAttributes):
-  content_hash: Optional[str] = None
-  frames: list[FrameHash] = field(default_factory=list)
-  dependencies: dict[str, StackHash] = field(default_factory=dict)
+  content_hash: str
+  frames: list[FrameHash]
+  dependencies: dict[str, StackHash]
 
-  def all_frames(self, stacks=None, include_dependencies=False):
+  def all_frames(self,
+                 stacks: Stacks,
+                 include_dependencies: bool = False) -> list[FrameHash]:
     if stacks is None:
       stacks = context.stacks
 
@@ -115,11 +117,13 @@ class SimpleStack(ImagingAttributes, AstroFlowStateAttributes):
     # dependencies.
     if include_dependencies:
       for dependency_stack_id in self.dependencies.values():
-        all_frames.extend(stacks[dependency_stack_id].frames)
+        dependency_stack = stacks[dependency_stack_id]
+        assert isinstance(dependency_stack, SimpleStack)
+        all_frames.extend(dependency_stack.frames)
 
     return all_frames
 
-  def __str__(self):
+  def __str__(self) -> str:
     return (f'Stack(Content hash {self.content_hash}, '
             f'Type {self.image_type}, '
             f'Camera {self.camera}, '
@@ -128,9 +132,9 @@ class SimpleStack(ImagingAttributes, AstroFlowStateAttributes):
             f'Filter {self.filter}, '
             f'Temp {self.mean_temperature:.02f} degC)')
 
-  def __eq__(self, other):
+  def __eq__(self, other: object) -> bool:
     if not isinstance(other, SimpleStack):
-      return False
+      return NotImplemented
 
     return (self.content_hash == other.content_hash)
 
@@ -138,15 +142,14 @@ class SimpleStack(ImagingAttributes, AstroFlowStateAttributes):
 @dataclass
 class CompositeStack(ImagingAttributes, AstrometricAttributes,
                      AstroFlowStateAttributes):
-  stable_hash: Optional[str] = None
-  content_hash: Optional[str] = None
-  contents: list[StackHash] = field(default_factory=list)
+  stable_hash: str
+  content_hash: str
+  contents: list[StackHash]
 
   def all_frames(self,
-                 stacks=None,
-                 include_dependencies=False) -> list[FrameHash]:
-    if stacks is None:
-      stacks = context.stacks
+                 stacks: Stacks,
+                 include_dependencies: bool = False) -> list[FrameHash]:
+    stacks = stacks or context.stacks
 
     all_frames = []
     for substack_id in self.contents:
@@ -156,7 +159,7 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
 
     return all_frames
 
-  def __str__(self):
+  def __str__(self) -> str:
     return (f'Stack(Stable hash {self.stable_hash}, '
             f'Content hash {self.content_hash}, '
             f'Target {self.target}, '
@@ -170,9 +173,9 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
             f'Filter {self.filter}, '
             f'Temp {self.mean_temperature:.02f} degC)')
 
-  def __eq__(self, other):
+  def __eq__(self, other: object) -> bool:
     if not isinstance(other, CompositeStack):
-      return False
+      return NotImplemented
 
     return (self.content_hash == other.content_hash) and (self.stable_hash
                                                           == other.stable_hash)
