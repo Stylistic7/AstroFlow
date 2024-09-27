@@ -152,3 +152,5 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
 
 
 Stack = SimpleStack | CompositeStack
+
+CompositeStacksDict = dict[str, CompositeStack]

@@ -10,5 +10,3 @@ from .astrometric_attributes import AstrometricAttributes
 from .imaging_attributes import ImagingAttributes
 from .state_attributes import AstroFlowStateAttributes
 from .types import StackHash, FrameHash
-
-CompositeStacksDict = dict[str, CompositeStack]

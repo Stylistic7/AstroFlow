@@ -3,7 +3,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from context import context
-from stacks import CompositeStack, CompositeStacksDict, stack_files_artifacts, post_process_stack_artifacts
+from stacks.composite_stack import CompositeStack, CompositeStacksDict
+from stacks import stack_files_artifacts, post_process_stack_artifacts
 from artifacts import artifact_exists
 from profiling import track_performance
 

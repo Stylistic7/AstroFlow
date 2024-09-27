@@ -9,11 +9,11 @@ import clustering
 from hashing import hash_string
 import units
 import geometry.footprints as footprints
-from stacks import FrameHash, SimpleStack, CompositeStack, AstrometricAttributes, ImagingAttributes
+from stacks.composite_stack import CompositeStack, CompositeStacksDict
+from stacks import FrameHash, AstrometricAttributes, ImagingAttributes
 import units
 from profiling import track_performance
 from metadata import MetadataDict
-from stacks import SimpleStacksDict, CompositeStacksDict
 
 
 def _normalize_radians(x: float) -> float:
