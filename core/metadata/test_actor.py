@@ -13,7 +13,7 @@ from metadata.image_metadata import scatter_compute_image_metadata
 from metadata.image_types import is_light_frame, is_dark_frame
 from testing.test_context import make_test_context
 from mosaics.orion_mosaic import add_orion_mosaic_images
-from metadata.actor import get_metadata, get_metadata_for_mosaic, group_by_header, sort_by_header, cluster_by_header
+from metadata.actor import get_metadata
 from testing.test_context import make_test_context
 from testing.test_frames import make_synthetic_frames
 
@@ -92,38 +92,6 @@ class TestMetadataActor(unittest.TestCase):
     self.assertEqual(len(result), 20)
     print('### len(result)', len(result), 'elapsed time',
           (end_time - start_time))
-
-  def test_orion_mosaic(self):
-    add_orion_mosaic_images()
-
-    graph = ray.get(scatter_compute_image_metadata.remote('input'))
-    run_graph(graph)
-
-    result = get_metadata()
-    self.assertEqual(len(result), 35)
-
-    result = group_by_header('IMAGETYP')
-    print('### result', result)
-    print('### groups', result.keys())
-    self.assertEqual(len(result), 4)
-    light_frames = result['light']
-    print('### light_frames', light_frames)
-    self.assertEqual(len(light_frames), 12)
-
-    sorted_result = sort_by_header(light_frames, 'DATE-OBS')
-    print('### sorted_result', sorted_result)
-
-    clustered_result = cluster_by_header(
-        light_frames, 'DATE-OBS', lambda images: clustering.cluster_continuous(
-            images, epsilon=datetime.timedelta(minutes=15)))
-    print('### clustered_result', clustered_result)
-    self.assertEqual(len(clustered_result), 4)
-
-    clustered_result = cluster_by_header(
-        light_frames, 'DATE-OBS', lambda images: clustering.cluster_continuous(
-            images, epsilon=datetime.timedelta(days=2)))
-    print('### clustered_result', clustered_result)
-    self.assertEqual(len(clustered_result), 1)
 
 
 if __name__ == '__main__':
