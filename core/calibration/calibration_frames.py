@@ -6,7 +6,7 @@ from dataclasses import replace
 
 import metadata.image_types as image_types
 from context import context
-from stacks import SimpleStack, CompositeStack, StacksDict
+from stacks import SimpleStack, CompositeStack, SimpleStacksDict
 import clustering
 from profiling import track_performance
 
@@ -132,7 +132,7 @@ def associate_with_stack(ancestor_results):
         for s in compatible_stacks
     ])]
 
-  new_contents = StacksDict()
+  new_contents = SimpleStacksDict()
   for substack in stack.contents.values():
     dependencies = {}
     for image_type in ['bias', 'dark', 'flat']:

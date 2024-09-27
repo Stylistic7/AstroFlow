@@ -1,68 +1,25 @@
-from dataclasses import dataclass, asdict, replace
-import units
+from dataclasses import dataclass, asdict
+from typing import Any
+
 import numpy as np
 from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon  # type: ignore
 import astropy  # type: ignore
 
+import units
 from hashing import hash_list, hash_string
-from metadata import MetadataDict
 from context import context
-import clustering
-import geometry.footprints as footprints
-from catalogs import position_string
-
-# TODO: Clean up these imports.
-from stacks.astrometric_attributes import AstrometricAttributes
+from stacks.simple_stack import SimpleStack
 from stacks.imaging_attributes import ImagingAttributes
-from stacks.types import FrameHash, StackHash
+from stacks.state_attributes import AstroFlowStateAttributes
+from stacks.astrometric_attributes import AstrometricAttributes
+from stacks.types import FrameHash
+from metadata import MetadataDict
+from catalogs import position_string
+import geometry.footprints as footprints
+import clustering
+from plate_solving import PlateSolution
 
-StacksDict = dict[str, 'Stack']
-
-
-# TODO: Store the best light frame during subframe selection; it will be used
-# in many places, e.g. thumbnailing, and eliminate a lot of unnecessary calls
-# to get_metadata().
-@dataclass(frozen=True)
-class AstroFlowStateAttributes:
-  state: dict
-
-
-@dataclass(frozen=True)
-class SimpleStack(ImagingAttributes, AstroFlowStateAttributes):
-  content_hash: str
-  frames: list[FrameHash]
-  dependencies: dict[str, StackHash]
-
-  @classmethod
-  def from_frames(cls,
-                  frames: list[FrameHash],
-                  metadata: MetadataDict | None = None):
-    metadata = metadata or context.metadata
-    imaging_attributes = ImagingAttributes.from_frames(frames, metadata)
-
-    attributes = asdict(imaging_attributes) | {
-        'content_hash': hash_list(frames),
-        'frames': frames,
-        'dependencies': {},
-        'state': {}
-    }
-
-    return cls(**attributes)
-
-  def __str__(self) -> str:
-    return (f'Stack(Content hash {self.content_hash}, '
-            f'Type {self.image_type}, '
-            f'Camera {self.camera}, '
-            f'Exposure {self.exposure_s}, '
-            f'Integration {self.integration_s} s, '
-            f'Filter {self.filter}, '
-            f'Temp {self.mean_temperature:.02f} degC)')
-
-  def __eq__(self, other: object) -> bool:
-    if not isinstance(other, SimpleStack):
-      return NotImplemented
-
-    return (self.content_hash == other.content_hash)
+SimpleStacksDict = dict[str, SimpleStack]
 
 
 def _normalize_radians(x: float) -> float:
@@ -77,7 +34,7 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
                      AstroFlowStateAttributes):
   stable_hash: str
   content_hash: str
-  contents: StacksDict
+  contents: SimpleStacksDict
 
   @classmethod
   def from_frames(cls,
@@ -87,8 +44,9 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
 
     metadata_list = [i for h, i in metadata.items() if h in frames]
 
-    name = position_string.canonical_target_string(
-        metadata[frames[0]].plate_solution.center)
+    plate_solution = metadata[frames[0]].plate_solution
+    assert isinstance(plate_solution, PlateSolution)
+    name = position_string.canonical_target_string(plate_solution.center)
 
     # Sort the light frames by observation date. The oldest image will be used
     # to compute the hash of the whole stack.
@@ -111,7 +69,7 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
     assert not SphericalPolygon.self_intersect(footprint.points)
     projected_footprints = footprints.all_projections(footprint)
 
-    contents = StacksDict()
+    contents = SimpleStacksDict()
     exposures = [(i.content_hash, i.header['EXPOSURE'])
                  for i in metadata_list
                  if 'EXPOSURE' in i.header]
@@ -143,7 +101,9 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
         footprint=footprint,
         projected_footprints=projected_footprints)
 
-    attributes = asdict(imaging_attributes) | asdict(astrometric_attributes) | {
+    attributes: dict[str, Any] = asdict(imaging_attributes) | asdict(
+        astrometric_attributes
+    ) | {
         'contents':
             contents,
         'content_hash':
@@ -162,7 +122,7 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
 
     return cls(**attributes)
 
-  def all_frames(self):
+  def all_frames(self) -> list[FrameHash]:
     all_frames = []
     for c in self.contents.values():
       all_frames.extend(c.frames)

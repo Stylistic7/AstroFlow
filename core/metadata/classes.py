@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Optional
 
 from plate_solving import PlateSolution
 
@@ -10,7 +9,7 @@ class ImageMetadata:
   content_hash: str
   filename: str
   header: dict
-  plate_solution: Optional[PlateSolution] = None
+  plate_solution: PlateSolution | None = None
 
 
 MetadataDict = dict[str, ImageMetadata]

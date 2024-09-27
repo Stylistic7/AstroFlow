@@ -15,35 +15,6 @@ from testing.test_context import make_test_context
 from compute_graph import build_compute_graph
 
 
-def _make_composite_stack(content_hash: StackHash,
-                          contents: list[StackHash]) -> CompositeStack:
-  imaging_attributes = ImagingAttributes(
-      image_type='light',
-      camera='ZWO ASI6200MM Pro',
-      filter=None,
-      mean_temperature=-20.0,
-      exposure_s=300.0,
-      integration_s=1500.0,
-      width_pixels=9576,
-      height_pixels=6488,
-      oldest_date=datetime.datetime(2024, 2, 5, 16, 29, 43),
-      newest_date=datetime.datetime(2024, 2, 5, 17, 29, 43),
-  )
-  astrometric_attributes = AstrometricAttributes(
-      target='target',
-      center=(50, 50),
-      image_scale=1.0,
-      rotation_angle=0.0,
-      footprint=SphericalPolygon.from_cone(0.0, 90.0, 1.0),
-      projected_footprints={},
-  )
-  return CompositeStack(contents, imaging_attributes, astrometric_attributes)
-
-
-def _make_simple_stack(frames: list[FrameHash]) -> SimpleStack:
-  return SimpleStack(frames)
-
-
 class TestStack(unittest.TestCase):
 
   def setUp(self):
