@@ -5,7 +5,7 @@ import diskcache  # type: ignore
 from pathlib import Path
 
 
-def _create_cache():
+def _create_cache() -> diskcache.Cache:
   if 'ASTROFLOW_MOCK_CACHE' in os.environ:
     namespace = os.environ.get("ASTROFLOW_MOCK_NAMESPACE", "AstroFlow")
     print(f'### Using test cache in namespace {namespace}')
@@ -26,7 +26,7 @@ def _create_cache():
 cache = None
 
 
-def get_cache():
+def get_cache() -> diskcache.Cache:
   global cache
 
   if cache == None:

@@ -41,20 +41,23 @@ class WriteMode(Enum):
   MEMORY_AND_DISK = 3
 
 
-def _get_namespace():
+def _get_namespace() -> str:
   return os.environ.get("ASTROFLOW_MOCK_NAMESPACE", "AstroFlow")
 
 
 @ray.remote(resources={'diskcache': 0.001})
 class ContextActor:
 
-  def __init__(self):
+  ref_dict: dict[str, ray.ObjectRef]
+
+  def __init__(self) -> None:
     self.cache = get_cache()
 
     # This dict should ONLY store ObjectRefs.
     self.ref_dict = {}
 
-  def get(self, key, default_value, keep_in_memory):
+  def get(self, key: str, default_value: Any,
+          keep_in_memory: bool) -> ray.ObjectRef:
     if key in self.ref_dict:
       assert type(self.ref_dict[key]) is ray.ObjectRef
       return self.ref_dict[key]
@@ -70,7 +73,7 @@ class ContextActor:
     else:
       return ray.put(value)
 
-  def set(self, key, value, flush):
+  def set(self, key: str, value: Any, flush: bool) -> None:
     assert type(value) is list
     assert len(value) == 1
     value = value[0]
@@ -84,21 +87,22 @@ class ContextActor:
 
     self.cache[key] = ray.get(value)
 
-  def contains(self, key):
+  def contains(self, key: str) -> bool:
     return key in self.cache
 
-  def flush(self, key):
+  def flush(self, key: str) -> None:
     if key in self.ref_dict:
       del self.ref_dict[key]
 
-  def delete(self, key):
+  def delete(self, key: str) -> None:
     if key in self.ref_dict:
       del self.ref_dict[key]
 
     if key in self.cache:
       del self.cache[key]
 
-  def and_equals(self, key, default_value, value, write_mode):
+  def and_equals(self, key: str, default_value: Any, value: Any,
+                 write_mode: WriteMode) -> None:
     assert type(value) is list
     assert len(value) == 1
     value = value[0]
@@ -113,7 +117,8 @@ class ContextActor:
     if write_mode in [WriteMode.MEMORY_ONLY, WriteMode.MEMORY_AND_DISK]:
       self.ref_dict[key] = ray.put(new_value)
 
-  def or_equals(self, key, default_value, value, write_mode):
+  def or_equals(self, key: str, default_value: Any, value: Any,
+                write_mode: WriteMode) -> None:
     assert type(value) is list
     assert len(value) == 1
     value = value[0]
@@ -128,32 +133,35 @@ class ContextActor:
     if write_mode in [WriteMode.MEMORY_ONLY, WriteMode.MEMORY_AND_DISK]:
       self.ref_dict[key] = ray.put(new_value)
 
-  def ref_dict(self):
-    return self.ref_dict
-
-  def clear(self):
+  def clear(self) -> None:
     self.ref_dict.clear()
     self.cache.clear()
 
-  def get_cache_keys(self):
+  def get_cache_keys(self) -> list:
     return list(self.cache.iterkeys())
 
 
 class Context:
 
-  def get(self, key, default_value=None, keep_in_memory=True):
+  def get(self,
+          key: str,
+          default_value: Any = None,
+          keep_in_memory: bool = True) -> Any:
     actor = ray.get_actor('context', namespace=_get_namespace())
     maybe_ref = ray.get(actor.get.remote(key, default_value, keep_in_memory))
     if maybe_ref:
       return ray.get(maybe_ref)
 
-  def __getattr__(self, key):
+  def __getattr__(self, key: str) -> Any:
     return self.get(key)
 
-  def __getitem__(self, key):
+  def __getitem__(self, key: str) -> Any:
     return self.get(key)
 
-  def set(self, key, value, write_mode=WriteMode.MEMORY_AND_DISK):
+  def set(self,
+          key: str,
+          value: Any,
+          write_mode: WriteMode = WriteMode.MEMORY_AND_DISK) -> Any:
     actor = ray.get_actor('context', namespace=_get_namespace())
     # Ray will automatically de-reference values that are passed by value, but
     # it will not de-reference values inside containers, like lists. This puts
@@ -162,18 +170,18 @@ class Context:
     return ray.get(
         actor.set.remote(key, [ray.put(value, _owner=actor)], write_mode))
 
-  def __setattr__(self, key, value):
+  def __setattr__(self, key: str, value: Any) -> Any:
     return self.set(key, value)
 
-  def __setitem__(self, key, value):
+  def __setitem__(self, key: str, value: Any) -> Any:
     return self.set(key, value)
 
   # TODO: Use the Pythonic operator.
   def and_equals(self,
-                 key,
-                 value,
-                 write_mode=WriteMode.MEMORY_AND_DISK,
-                 default_value=None):
+                 key: str,
+                 value: Any,
+                 write_mode: WriteMode = WriteMode.MEMORY_AND_DISK,
+                 default_value: Any = None) -> Any:
     actor = ray.get_actor('context', namespace=_get_namespace())
     return ray.get(
         actor.and_equals.remote(key, default_value, [ray.put(value)],
@@ -181,37 +189,33 @@ class Context:
 
   # TODO: Use the Pythonic operator.
   def or_equals(self,
-                key,
-                value,
-                write_mode=WriteMode.MEMORY_AND_DISK,
-                default_value=None):
+                key: str,
+                value: Any,
+                write_mode: WriteMode = WriteMode.MEMORY_AND_DISK,
+                default_value: Any = None) -> Any:
     actor = ray.get_actor('context', namespace=_get_namespace())
     return ray.get(
         actor.or_equals.remote(key, default_value, [ray.put(value)],
                                write_mode))
 
-  def ref_dict(self):
-    actor = ray.get_actor('context', namespace=_get_namespace())
-    return ray.get(actor.ref_dict.remote())
-
   # TODO: Implement "k in context" operation.
-  def contains(self, key):
+  def contains(self, key: str) -> bool:
     actor = ray.get_actor('context', namespace=_get_namespace())
     return ray.get(actor.contains.remote(key))
 
-  def delete(self, key):
+  def delete(self, key: str) -> None:
     actor = ray.get_actor('context', namespace=_get_namespace())
-    return ray.get(actor.delete.remote())
+    ray.get(actor.delete.remote(key))
 
-  def flush(self, key):
+  def flush(self, key: str) -> None:
     actor = ray.get_actor('context', namespace=_get_namespace())
-    return ray.get(actor.flush.remote(key))
+    ray.get(actor.flush.remote(key))
 
-  def clear(self):
+  def clear(self) -> None:
     actor = ray.get_actor('context', namespace=_get_namespace())
-    return ray.get(actor.clear.remote())
+    ray.get(actor.clear.remote())
 
-  def get_cache_keys(self):
+  def get_cache_keys(self) -> list[str]:
     actor = ray.get_actor('context', namespace=_get_namespace())
     return ray.get(actor.get_cache_keys.remote())
 
