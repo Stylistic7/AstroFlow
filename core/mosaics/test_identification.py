@@ -11,6 +11,7 @@ from stacks import SimpleStack, CompositeStack
 from targets import Target
 from mosaics import Mosaic
 from testing.test_context import make_test_context
+from testing.test_stacks import make_composite_stack
 
 from mosaics import identification
 
@@ -42,7 +43,9 @@ class TestMosaicIdentification(unittest.TestCase):
                      footprint=SingleSphericalPolygon.from_radec(
                          [95, 99, 99, 95], [-1, -1, 1, 1]))
 
-    context.grouped_stacks = {i: CompositeStack(image_scale=1) for i in range(6)}
+    context.grouped_stacks = {
+        i: make_composite_stack(image_scale=1) for i in range(6)
+    }
     context.grouped_targets = {
         target0.stable_hash: target0,
         target1.stable_hash: target1
@@ -93,7 +96,9 @@ class TestMosaicIdentification(unittest.TestCase):
                  footprint=SingleSphericalPolygon.from_radec([95, 99, 99, 95],
                                                              [0, 0, 2, 2]))
 
-    context.grouped_stacks = {i: CompositeStack(image_scale=1) for i in range(9)}
+    context.grouped_stacks = {
+        i: make_composite_stack(image_scale=1) for i in range(9)
+    }
     context.grouped_targets = {
         foo.stable_hash: foo,
         bar.stable_hash: bar,
@@ -145,7 +150,9 @@ class TestMosaicIdentification(unittest.TestCase):
                  footprint=SingleSphericalPolygon.from_radec([98, 102, 102, 98],
                                                              [1, 1, 3, 3]))
 
-    context.grouped_stacks = {i: CompositeStack(image_scale=1) for i in range(9)}
+    context.grouped_stacks = {
+        i: make_composite_stack(image_scale=1) for i in range(9)
+    }
     context.grouped_targets = {
         foo.stable_hash: foo,
         bar.stable_hash: bar,
@@ -200,7 +207,7 @@ class TestMosaicIdentification(unittest.TestCase):
                          [96, 100, 100, 96], [-1.5, -1.5, 0.5, 0.5]))
 
     context.grouped_stacks = {
-        i: CompositeStack(image_scale=1) for i in range(12)
+        i: make_composite_stack(image_scale=1) for i in range(12)
     }
     context.grouped_targets = {
         foo.stable_hash: foo,
@@ -249,7 +256,9 @@ class TestMosaicIdentification(unittest.TestCase):
                                [0.47687137, -0.5960087, 0.64603973]]),
                      np.array([0.47176113, -0.62623935, 0.62069777])))
 
-    context.grouped_stacks = {i: CompositeStack(image_scale=1) for i in range(6)}
+    context.grouped_stacks = {
+        i: make_composite_stack(image_scale=1) for i in range(6)
+    }
     context.grouped_targets = {
         foo.stable_hash: foo,
         bar.stable_hash: bar,
