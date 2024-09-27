@@ -3,6 +3,7 @@ import numpy as np
 from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon  # type: ignore
 import astropy  # type: ignore
 
+from typing import Iterator
 from context import context
 import clustering
 from hashing import hash_string
@@ -12,7 +13,7 @@ from stacks import FrameHash, SimpleStack, CompositeStack, AstrometricAttributes
 import units
 from profiling import track_performance
 from metadata import MetadataDict
-from stacks import StacksDict
+from stacks import SimpleStacksDict, CompositeStacksDict
 
 
 def _normalize_radians(x: float) -> float:
@@ -32,28 +33,25 @@ def _normalize_radians(x: float) -> float:
 # TODO: This is spilling huge amounts of memory, making it very slow.
 @ray.remote
 @track_performance
-def identify_stacks(spatial_group):
-  # TODO: Don't pass along the name here.
-  name, frames = spatial_group
-  print(f'### identify_stacks running for '
-        f'spatial group {name} of length {len(frames)}')
+def identify_stacks(light_frames: list[FrameHash]) -> CompositeStacksDict:
+  print(f'### identify_stacks running for spatial group of '
+        f'length {len(light_frames)}')
 
   if context.stacks == None:
     context.stacks = {}
 
   # TODO: Maybe implement a version of cluster_continuous() that repeatedly
   # subdivides by independent 1D variables.
-  name, light_frames = spatial_group
   metadata = {h: i for h, i in context.metadata.items() if h in light_frames}
 
-  def scale_clusters():
+  def scale_clusters() -> Iterator[list[FrameHash]]:
     scales = [(metadata[k].content_hash, metadata[k].plate_solution.image_scale)
               for k in metadata]
     for cluster in clustering.cluster_continuous(scales, epsilon=0.2):
       scale_frames, _ = zip(*cluster)
       yield scale_frames
 
-  def camera_clusters(frames):
+  def camera_clusters(frames: list[FrameHash]) -> Iterator[list[FrameHash]]:
     cameras = [(metadata[k].content_hash,
                 (metadata[k].header['INSTRUME'], metadata[k].header['NAXIS1'],
                  metadata[k].header['NAXIS2'], metadata[k].header['XPIXSZ'],
@@ -63,7 +61,7 @@ def identify_stacks(spatial_group):
       assert len(set(cameras)) == 1
       yield frames
 
-  def rotation_clusters(frames):
+  def rotation_clusters(frames: list[FrameHash]) -> Iterator[list[FrameHash]]:
     rotation_angles = [
         (metadata[k].content_hash,
          _normalize_radians(metadata[k].plate_solution.rotation_angle))
@@ -73,7 +71,7 @@ def identify_stacks(spatial_group):
       frames, _ = zip(*cluster)
       yield frames
 
-  def filter_clusters(frames):
+  def filter_clusters(frames: list[FrameHash]) -> Iterator[list[FrameHash]]:
     filters = [
         (metadata[k].content_hash, metadata[k].header['FILTER']) for k in frames
     ]

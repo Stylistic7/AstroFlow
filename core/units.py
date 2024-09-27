@@ -1,14 +1,14 @@
 import numpy as np
 
 
-def ra_to_hms(ra):
+def ra_to_hms(ra: float) -> str:
   hours, remainder = np.divmod(ra * 3600, 15 * 3600)
   minutes, remainder = np.divmod(remainder, 15 * 60)
   seconds = remainder / 15
   return f'{hours:.0f}h {minutes:.0f}m {seconds:.0f}s'
 
 
-def dec_to_dms(dec):
+def dec_to_dms(dec: float) -> str:
   degrees, remainder = np.divmod(dec * 3600, 3600)
   minutes, remainder = np.divmod(remainder, 60)
   seconds = remainder

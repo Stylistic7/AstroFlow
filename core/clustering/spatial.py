@@ -69,12 +69,13 @@ def cluster_by_image_center():
   def comparison_fn(a, b):
     return np.dot(a, b) > cosine_similarity_threshold
 
-  targets = find_groups(values, comparison_fn, min_component_members)
+  spatial_groups = find_groups(values, comparison_fn, min_component_members)
 
-  def get_name(target):
-    return position_string.canonical_target_string(
-        metadata[target[0]].plate_solution.center)
+  # def get_name(target):
+  #   return position_string.canonical_target_string(
+  #       metadata[target[0]].plate_solution.center)
 
-  spatial_groups = [(get_name(t), tuple(sorted(t))) for t in targets]
+  # spatial_groups = [(get_name(t), tuple(sorted(t))) for t in targets]
+
   context.spatial_groups = spatial_groups
   print(f'### Wrote {len(spatial_groups)} spatial groups into the cache')

@@ -1,11 +1,11 @@
 import numpy as np
 from numpy import radians, degrees
-import os
+from typing import Any
 
 from geometry.distance import distance
 
 
-def _read_names_catalog():
+def _read_names_catalog() -> list[dict[str, Any]]:
   entries = []
   with open('catalogs/names.dat') as f:
     for line in f.readlines():
@@ -18,13 +18,13 @@ def _read_names_catalog():
   return entries
 
 
-def _read_ngc2000_catalog():
+def _read_ngc2000_catalog() -> list[dict[str, Any]]:
   names = _read_names_catalog()
 
   entries = []
   with open('catalogs/ngc2000.dat') as f:
     for line in f.readlines():
-      entry = {}
+      entry: dict[str, Any] = {}
       entry['id'] = line[0:5].strip()
       entry['type'] = line[6:9].strip()
       entry['ra_string'] = line[10:17].strip()
@@ -70,7 +70,11 @@ def _read_ngc2000_catalog():
   return entries
 
 
-def _find_best_object_by_size(ra, dec):
+DistanceAndEntry = tuple[float, dict[str, Any] | None]
+
+
+# TODO: This return type is terrible.
+def _find_best_object_by_size(ra: float, dec: float) -> DistanceAndEntry:
   # Sort the objects by descending radius.
   entries = sorted(_read_ngc2000_catalog(),
                    key=lambda x: x['radius'],
@@ -102,7 +106,9 @@ def _find_best_object_by_size(ra, dec):
   return best_distance, best_entry
 
 
-def _find_best_object_by_distance(ra, dec):
+def _find_best_object_by_distance(ra: float, dec: float) -> DistanceAndEntry:
+  entries = _read_ngc2000_catalog()
+
   best_distance = np.inf
   best_entry = None
   for entry in entries:
@@ -115,8 +121,7 @@ def _find_best_object_by_distance(ra, dec):
   return best_distance, best_entry
 
 
-# @cache.memoize(tag='ngc2000_catalog')
-def find_best_object(ra, dec):
+def find_best_object(ra: float, dec: float) -> DistanceAndEntry:
   distance, entry = _find_best_object_by_size(ra, dec)
   if entry:
     return distance, entry
