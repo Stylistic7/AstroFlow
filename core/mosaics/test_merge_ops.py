@@ -17,6 +17,7 @@ from stacks import CompositeStack
 from dependency_graph import run_graph, print_graph
 from artifacts import CacheArtifact, FileArtifact, write_artifact
 from testing.test_frames import make_synthetic_frames
+from testing.test_stacks import make_composite_stack
 
 
 def _make_panel(id, content_hash=None, **kwargs):
@@ -31,9 +32,9 @@ def _make_panel(id, content_hash=None, **kwargs):
 
   context.stacks |= {
       stable_hash:
-          CompositeStack(stable_hash=stable_hash,
-                         content_hash=content_hash,
-                         filter=filter)
+          make_composite_stack(stable_hash=stable_hash,
+                               content_hash=content_hash,
+                               filter=filter)
   }
   return Panel(input_artifact=FileArtifact(filename=filenames[0],
                                            content_hash=content_hash),

@@ -45,7 +45,7 @@ class TestSpatialAssociation(unittest.TestCase):
     groups = context.spatial_groups
     image_hashes = get_metadata(transform_fn=lambda i: i.content_hash)
 
-    expected_groups = [('IC360', tuple(sorted(image_hashes)))]
+    expected_groups = [tuple(sorted(image_hashes))]
     self.assertEqual(groups, expected_groups)
 
   def test_two_perfect_groups_one_hour_ra(self):
@@ -73,20 +73,20 @@ class TestSpatialAssociation(unittest.TestCase):
     groups = context.spatial_groups
     hash_for_filename = compute_hash_for_filename()
 
-    expected_groups = [('IC1318',
-                        tuple(
-                            sorted([
-                                hash_for_filename['foo_00000.fit'],
-                                hash_for_filename['foo_00001.fit'],
-                                hash_for_filename['foo_00002.fit']
-                            ]))),
-                       ('North America nebula',
-                        tuple(
-                            sorted([
-                                hash_for_filename['bar_00000.fit'],
-                                hash_for_filename['bar_00001.fit'],
-                                hash_for_filename['bar_00002.fit']
-                            ])))]
+    expected_groups = [
+        tuple(
+            sorted([
+                hash_for_filename['foo_00000.fit'],
+                hash_for_filename['foo_00001.fit'],
+                hash_for_filename['foo_00002.fit']
+            ])),
+        tuple(
+            sorted([
+                hash_for_filename['bar_00000.fit'],
+                hash_for_filename['bar_00001.fit'],
+                hash_for_filename['bar_00002.fit']
+            ]))
+    ]
     self.assertEqual(sorted(groups), sorted(expected_groups))
 
   def test_two_perfect_groups_one_degree_dec(self):
@@ -115,20 +115,18 @@ class TestSpatialAssociation(unittest.TestCase):
     hash_for_filename = compute_hash_for_filename()
 
     expected_groups = [
-        ('IC1318',
-         tuple(
-             sorted([
-                 hash_for_filename['foo_00000.fit'],
-                 hash_for_filename['foo_00001.fit'],
-                 hash_for_filename['foo_00002.fit']
-             ]))),
-        ('IC1318',
-         tuple(
-             sorted([
-                 hash_for_filename['bar_00000.fit'],
-                 hash_for_filename['bar_00001.fit'],
-                 hash_for_filename['bar_00002.fit']
-             ]))),
+        tuple(
+            sorted([
+                hash_for_filename['foo_00000.fit'],
+                hash_for_filename['foo_00001.fit'],
+                hash_for_filename['foo_00002.fit']
+            ])),
+        tuple(
+            sorted([
+                hash_for_filename['bar_00000.fit'],
+                hash_for_filename['bar_00001.fit'],
+                hash_for_filename['bar_00002.fit']
+            ])),
     ]
     self.assertEqual(sorted(groups), sorted(expected_groups))
 
@@ -160,20 +158,18 @@ class TestSpatialAssociation(unittest.TestCase):
     hash_for_filename = compute_hash_for_filename()
 
     expected_groups = [
-        ('IC1318',
-         tuple(
-             sorted([
-                 hash_for_filename['bar_00000.fit'],
-                 hash_for_filename['bar_00001.fit'],
-                 hash_for_filename['bar_00002.fit']
-             ]))),
-        ('IC1318',
-         tuple(
-             sorted([
-                 hash_for_filename['foo_00000.fit'],
-                 hash_for_filename['foo_00001.fit'],
-                 hash_for_filename['foo_00002.fit']
-             ]))),
+        tuple(
+            sorted([
+                hash_for_filename['bar_00000.fit'],
+                hash_for_filename['bar_00001.fit'],
+                hash_for_filename['bar_00002.fit']
+            ])),
+        tuple(
+            sorted([
+                hash_for_filename['foo_00000.fit'],
+                hash_for_filename['foo_00001.fit'],
+                hash_for_filename['foo_00002.fit']
+            ])),
     ]
     self.assertEqual(sorted(groups), sorted(expected_groups))
 
@@ -203,20 +199,18 @@ class TestSpatialAssociation(unittest.TestCase):
     hash_for_filename = compute_hash_for_filename()
 
     expected_groups = [
-        ('North America nebula',
-         tuple(
-             sorted([
-                 hash_for_filename['bar_00000.fit'],
-                 hash_for_filename['bar_00001.fit'],
-                 hash_for_filename['bar_00002.fit']
-             ]))),
-        ('IC1318',
-         tuple(
-             sorted([
-                 hash_for_filename['foo_00000.fit'],
-                 hash_for_filename['foo_00001.fit'],
-                 hash_for_filename['foo_00002.fit']
-             ]))),
+        tuple(
+            sorted([
+                hash_for_filename['bar_00000.fit'],
+                hash_for_filename['bar_00001.fit'],
+                hash_for_filename['bar_00002.fit']
+            ])),
+        tuple(
+            sorted([
+                hash_for_filename['foo_00000.fit'],
+                hash_for_filename['foo_00001.fit'],
+                hash_for_filename['foo_00002.fit']
+            ])),
     ]
     self.assertEqual(sorted(groups), sorted(expected_groups))
 
@@ -248,10 +242,10 @@ class TestSpatialAssociation(unittest.TestCase):
     groups = context.spatial_groups
     hash_for_filename = compute_hash_for_filename()
 
-    expected_groups = [('IC1311', (hash_for_filename['Pane 0'],)),
-                       ('IC1318', (hash_for_filename['Pane 1'],)),
-                       ('IC1318', (hash_for_filename['Pane 2'],)),
-                       ('IC1318', (hash_for_filename['Pane 3'],)),
-                       ('IC1318', (hash_for_filename['Pane 4'],)),
-                       ('IC1318', (hash_for_filename['Pane 5'],))]
+    expected_groups = [(hash_for_filename['Pane 0'],),
+                       (hash_for_filename['Pane 1'],),
+                       (hash_for_filename['Pane 2'],),
+                       (hash_for_filename['Pane 3'],),
+                       (hash_for_filename['Pane 4'],),
+                       (hash_for_filename['Pane 5'],)]
     self.assertEqual(sorted(groups), sorted(expected_groups))

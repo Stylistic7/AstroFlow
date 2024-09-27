@@ -43,7 +43,7 @@ class TestFootprints(unittest.TestCase):
                             run_main_processing_graph=False))
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 2)
+    self.assertEqual(len(stacks), 1)
     stack = next(iter(s for s in stacks.values() if type(s) is CompositeStack))
 
     projected_footprint = project_footprint(stack.footprint, self.proj)
@@ -87,7 +87,7 @@ class TestFootprints(unittest.TestCase):
                             run_main_processing_graph=False))
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 4)
+    self.assertEqual(len(stacks), 2)
 
     targets = context.targets
     self.assertEqual(len(targets), 2)
@@ -136,7 +136,7 @@ class TestFootprints(unittest.TestCase):
                             run_main_processing_graph=False))
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 4)
+    self.assertEqual(len(stacks), 2)
 
     targets = context.targets
     self.assertEqual(len(targets), 2)

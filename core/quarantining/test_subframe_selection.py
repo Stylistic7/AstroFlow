@@ -61,12 +61,13 @@ class TestSubframeSelection(unittest.TestCase):
     # threshold means that only those frames with more than 75 stars will be
     # accepted. There are 5 such frames.
     stacks = context.stacks
-    self.assertEqual(len(stacks), 2)
-    stack = next(iter(s for s in stacks.values() if type(s) is CompositeStack))
-    print(f'### test_subframe_selection_subgraph stack is {repr(stack)}')
-    print(
-        f'### test_subframe_selection_subgraph substack is {repr(stacks[stack.contents[0]])}'
-    )
+    self.assertEqual(len(stacks), 1)
+    stack = list(stacks.values())[0]
+    # stack = next(iter(s for s in stacks.values() if type(s) is CompositeStack))
+    # print(f'### test_subframe_selection_subgraph stack is {repr(stack)}')
+    # print(
+    #     f'### test_subframe_selection_subgraph substack is {repr(stacks[stack.contents[0]])}'
+    # )
     self.assertEqual(len(stack.all_frames()), 5)
 
 
