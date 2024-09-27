@@ -1,5 +1,6 @@
 import numpy as np
 import ray
+from typing import Sequence
 
 import metadata.image_types as image_types
 from metadata.actor import get_metadata
@@ -47,7 +48,7 @@ def find_groups(values, comparison_fn, min_component_members) -> list[str]:
 
 @ray.remote
 @track_performance
-def cluster_by_image_center():
+def cluster_by_image_center() -> None:
   print('cluster_by_image_center')
 
   cosine_similarity_threshold = context.cosine_similarity_threshold
@@ -56,7 +57,7 @@ def cluster_by_image_center():
   metadata = context.metadata
   assert metadata
 
-  def get_centroid(center):
+  def get_centroid(center: Sequence[float]) -> np.ndarray:
     return np.asarray(footprints.radec_to_vector(*center))
 
   values = {
@@ -66,16 +67,11 @@ def cluster_by_image_center():
           i.header) and type(i.plate_solution) is plate_solving.PlateSolution
   }
 
-  def comparison_fn(a, b):
+  def comparison_fn(a: float, b: float) -> bool:
     return np.dot(a, b) > cosine_similarity_threshold
 
   spatial_groups = find_groups(values, comparison_fn, min_component_members)
-
-  # def get_name(target):
-  #   return position_string.canonical_target_string(
-  #       metadata[target[0]].plate_solution.center)
-
-  # spatial_groups = [(get_name(t), tuple(sorted(t))) for t in targets]
+  spatial_groups = [tuple(sorted(g)) for g in spatial_groups]
 
   context.spatial_groups = spatial_groups
   print(f'### Wrote {len(spatial_groups)} spatial groups into the cache')
