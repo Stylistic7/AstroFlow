@@ -23,6 +23,10 @@ class WrongContentHashException(Exception):
   pass
 
 
+Key = tuple[str, ...]
+Header = dict[str, Any]
+
+
 @dataclass(frozen=True)
 class FileArtifact:
   filename: str
@@ -31,12 +35,11 @@ class FileArtifact:
 
 @dataclass(frozen=True)
 class CacheArtifact:
-  key: Tuple[Any]
+  key: Key
   content_hash: str
 
 
 Artifact = FileArtifact | CacheArtifact
-Header = dict[str, Any]
 
 
 def read_artifact(artifact: Artifact) -> tuple[np.ndarray, Header]:

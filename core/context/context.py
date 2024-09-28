@@ -41,7 +41,7 @@ class WriteMode(Enum):
   MEMORY_AND_DISK = 3
 
 
-Key = str | tuple[str]
+Key = str | tuple[str, ...]
 
 
 def _get_namespace() -> str:
