@@ -26,35 +26,36 @@ class WrongContentHashException(Exception):
 @dataclass(frozen=True)
 class FileArtifact:
   filename: str
-  content_hash: Optional[str | None] = None
+  content_hash: str
 
 
 @dataclass(frozen=True)
 class CacheArtifact:
   key: Tuple[Any]
-  content_hash: Optional[str | None] = None
+  content_hash: str
 
 
 Artifact = FileArtifact | CacheArtifact
+Header = dict[str, Any]
 
 
-def read_artifact(artifact: Artifact):
+def read_artifact(artifact: Artifact) -> tuple[np.ndarray, Header]:
   return read_artifact_image(artifact), read_artifact_header(artifact)
 
 
 @singledispatch
-def read_artifact_header(artifact: Artifact):
+def read_artifact_header(artifact: Artifact) -> Header:
   assert False, f'Bad artifact type {type(artifact)}'
 
 
 @read_artifact_header.register
-def _(artifact: FileArtifact):
+def _(artifact: FileArtifact) -> Header:
   return read_header(artifact.filename)
 
 
 # TODO: Move file_obj operations into file_io module.
 @read_artifact_header.register
-def _(artifact: CacheArtifact):
+def _(artifact: CacheArtifact) -> Header:
   if not context.contains(artifact.key):
     raise ArtifactNotFoundException(f'Key {artifact.key} not found in context')
 
@@ -68,12 +69,12 @@ def _(artifact: CacheArtifact):
 
 
 @singledispatch
-def read_artifact_image(artifact: Artifact):
+def read_artifact_image(artifact: Artifact) -> np.ndarray:
   assert False, f'Bad artifact type {type(artifact)}'
 
 
 @read_artifact_image.register
-def _(artifact: FileArtifact):
+def _(artifact: FileArtifact) -> np.ndarray:
   print(f'### read_artifact_image artifact {artifact}')
   if artifact.content_hash:
     content_hash = get_content_hash(artifact.filename)
@@ -90,7 +91,7 @@ def _(artifact: FileArtifact):
 
 # TODO: Move file_obj operations into file_io module.
 @read_artifact_image.register
-def _(artifact: CacheArtifact):
+def _(artifact: CacheArtifact) -> np.ndarray:
   print(f'### read_artifact_image artifact {artifact}')
   if not context.contains(artifact.key):
     raise ArtifactNotFoundException(f'Key {artifact.key} not found in context')
@@ -117,13 +118,13 @@ def write_artifact(
     artifact: Artifact,
     image: np.ndarray,
     header: Optional[Dict[str, Any]] = None,
-):
+) -> None:
   assert False, f'Bad artifact type {type(artifact)}'
 
 
 @write_artifact.register
 def _(artifact: FileArtifact,
-      image: np.ndarray, header: Optional[Dict[str, Any]] = None):
+      image: np.ndarray, header: Optional[Dict[str, Any]] = None) -> None:
   hdu = pyfits.PrimaryHDU(image)
 
   if header is not None:
@@ -143,7 +144,7 @@ def _(artifact: FileArtifact,
 
 @write_artifact.register
 def _(artifact: CacheArtifact,
-      image: np.ndarray, header: Optional[Dict[str, Any]] = None):
+      image: np.ndarray, header: Optional[Dict[str, Any]] = None) -> None:
   hdu = pyfits.PrimaryHDU(image)
 
   if header is not None:
@@ -164,12 +165,12 @@ def _(artifact: CacheArtifact,
 
 
 @singledispatch
-def artifact_exists(artifact: Artifact):
+def artifact_exists(artifact: Artifact) -> bool:
   assert False, f'Bad artifact type {type(artifact)}'
 
 
 @artifact_exists.register
-def _(artifact: FileArtifact):
+def _(artifact: FileArtifact) -> bool:
   if not os.path.exists(artifact.filename):
     return False
 
@@ -184,7 +185,7 @@ def _(artifact: FileArtifact):
 
 
 @artifact_exists.register
-def _(artifact: CacheArtifact):
+def _(artifact: CacheArtifact) -> bool:
   if not context.contains(artifact.key):
     return False
 

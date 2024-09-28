@@ -1,55 +1,43 @@
 import os
 from functools import wraps
+from typing import Callable, TypeVar, Any, ParamSpec
 
-from artifacts import Artifact, artifact_exists
+from artifacts import Artifact, FileArtifact, CacheArtifact, artifact_exists
+
+ArtifactList = list[Artifact]
+ArtifactFn = Callable[..., list[Artifact]]
+
+P = ParamSpec("P")
 
 
-def saves_artifacts(artifacts_fn,
-                    validate_ancestor_results=True,
-                    in_test=False,
-                    debug=False):
+def should_run(artifacts_fn: ArtifactFn, *args: Any, **kwargs: Any) -> bool:
+  artifacts: list[Artifact] = artifacts_fn(*args, **kwargs)
+  assert type(
+      artifacts
+  ) is list, f'artifacts_fn {artifacts_fn.__name__} returned non-list {artifacts}'
+
+  for artifact in artifacts:
+    assert isinstance(artifact, (FileArtifact, CacheArtifact))
+
+    if not artifact_exists(artifact):
+      return True
+
+  return False
+
+
+def saves_artifacts(
+    artifacts_fn: ArtifactFn
+) -> Callable[[Callable[P, ArtifactList]], Callable[P, ArtifactList]]:
   assert not hasattr(artifacts_fn, 'remote')
 
-  def decorator(fn):
-
-    def should_run(*args, **kwargs):
-      if validate_ancestor_results:
-        if 'ancestor_results' in kwargs:
-          if None in kwargs['ancestor_results']:
-            if debug:
-              print(f"### failed to validate ancestor results "
-                    f"{kwargs['ancestor_results']}")
-            return False
-
-      artifacts = artifacts_fn(*args, **kwargs)
-      assert type(
-          artifacts
-      ) is list, f'artifacts_fn {artifacts_fn.__name__} returned non-list {artifacts}'
-
-      for artifact in artifacts:
-        assert isinstance(
-            artifact, Artifact), f'{fn.__name__} returned type {type(artifact)}'
-
-        if not artifact_exists(artifact):
-          if debug:
-            print(f'### should_run fn {fn.__name__} because artifact '
-                  f'{artifact} does not exist')
-          return True
-
-      if debug:
-        print(f'### not running {fn.__name__} artifacts {artifacts}')
-
-      return False
+  def decorator(fn: Callable[P, ArtifactList]) -> Callable[P, ArtifactList]:
 
     @wraps(fn)
-    def wrapper(*args, **kwargs):
-      if should_run(*args, **kwargs):
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> ArtifactList:
+      if should_run(artifacts_fn, *args, **kwargs):
         return fn(*args, **kwargs)
       else:
         return artifacts_fn(*args, **kwargs)
-
-    if in_test:
-      wrapper.should_run = should_run
 
     return wrapper
 

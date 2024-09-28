@@ -75,6 +75,9 @@ from metadata.actor import get_metadata
 
 # TODO: Don't revisit the same failed images over and over, it just takes up
 # time at every startup.
+#
+# TODO: Don't use FileArtifacts here. At this point, files are just paths
+# on disk.
 @ray.remote
 def scatter_compute_image_metadata(mode=None, ancestor_results=None):
   print('Entering scatter_compute_image_metadata, mode', mode,
@@ -95,14 +98,16 @@ def scatter_compute_image_metadata(mode=None, ancestor_results=None):
   # TODO: Don't do anything if the directory's modification time hasn't
   # changed since the last time it was listed.
   for dir in directories:
-    artifacts_for_dir = {FileArtifact(f) for f in find_image_files(dir)}
+    artifacts_for_dir = {FileArtifact(f, None) for f in find_image_files(dir)}
     print(f'### Directory {dir} contains {len(artifacts_for_dir)} files')
     artifacts.update(artifacts_for_dir)
 
   # TODO: Eliminate this call to get_metadata().
   known_artifacts = set(
-      get_metadata(transform_fn=lambda i: FileArtifact(i.filename)))
-  quarantined_artifacts = {FileArtifact(f) for f in context.quarantined_files}
+      get_metadata(transform_fn=lambda i: FileArtifact(i.filename, None)))
+  quarantined_artifacts = {
+      FileArtifact(f, None) for f in context.quarantined_files
+  }
   new_artifacts = artifacts - known_artifacts - quarantined_artifacts
 
   if not new_artifacts:
@@ -140,7 +145,7 @@ def compute_image_metadata(artifact=None, *, ancestor_results):
   try:
     content_hash = get_content_hash(artifact.filename)
     key = ('image_metadata', content_hash)
-    output_artifact = CacheArtifact(key)
+    output_artifact = CacheArtifact(key, None)
 
     if artifact_exists(output_artifact):
       prev_filename = context.get(output_artifact.key,

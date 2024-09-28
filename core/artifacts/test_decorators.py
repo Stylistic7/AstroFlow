@@ -9,7 +9,7 @@ import astropy.io.fits as pyfits  # type: ignore
 from artifacts import FileArtifact, CacheArtifact
 from testing.test_context import make_test_context
 from context import context
-from artifacts.decorators import saves_artifacts
+from artifacts.decorators import saves_artifacts, should_run
 from hashing import hash_list
 
 
@@ -23,7 +23,7 @@ def foo_artifacts(mosaic_id, filter):
 
 
 @ray.remote
-@saves_artifacts(foo_artifacts, in_test=True, debug=True)
+@saves_artifacts(foo_artifacts)
 def foo(mosaic_id, filter):
   print('### Running foo')
   context.num_foo_runs += 1
@@ -38,11 +38,11 @@ def foo(mosaic_id, filter):
 
 
 def bar_artifacts(mosaic_id, filter, *, ancestor_results=None):
-  return [CacheArtifact(key=('bar', mosaic_id, filter))]
+  return [CacheArtifact(key=('bar', mosaic_id, filter), content_hash='bar')]
 
 
 @ray.remote
-@saves_artifacts(bar_artifacts, in_test=True, debug=True)
+@saves_artifacts(bar_artifacts)
 def bar(mosaic_id, filter, *, ancestor_results=None):
   print('### Running bar')
   context.num_bar_runs += 1
@@ -53,10 +53,12 @@ def bar(mosaic_id, filter, *, ancestor_results=None):
 
 
 def local_fn_artifacts(mosaic_id, filter):
-  return [CacheArtifact(key=('local_fn', mosaic_id, filter))]
+  return [
+      CacheArtifact(key=('local_fn', mosaic_id, filter), content_hash='foo')
+  ]
 
 
-@saves_artifacts(local_fn_artifacts, in_test=True, debug=True)
+@saves_artifacts(local_fn_artifacts)
 def local_fn(mosaic_id, filter):
   print('### Running local_fn')
   context.num_local_fn_runs += 1
@@ -79,16 +81,16 @@ class TestDecorators(unittest.TestCase):
     self.output_dir_obj.cleanup()
 
   def test_saves_files(self):
-    self.assertTrue(foo._function.should_run('abc123', 'H'))
+    self.assertTrue(should_run(foo_artifacts, 'abc123', 'H'))
 
     ray.get(foo.remote('abc123', 'H'))
-    self.assertFalse(foo._function.should_run('abc123', 'H'))
+    self.assertFalse(should_run(foo_artifacts, 'abc123', 'H'))
 
   def test_saves_cache_keys(self):
-    self.assertTrue(bar._function.should_run('abc123', 'H'))
+    self.assertTrue(should_run(bar_artifacts, 'abc123', 'H'))
 
     ray.get(bar.remote('abc123', 'H'))
-    self.assertFalse(bar._function.should_run('abc123', 'H'))
+    self.assertFalse(should_run(bar_artifacts, 'abc123', 'H'))
 
   def test_local_fn(self):
     local_fn('abc123', 'H')
@@ -105,13 +107,6 @@ class TestDecorators(unittest.TestCase):
     ray.get(foo.remote('abc123', 'H'))
 
     self.assertEqual(context.num_foo_runs, 1)
-
-  def test_ancestor_results_validation(self):
-    artifacts = ray.get(foo.remote('abc123', 'H'))
-    self.assertTrue(
-        bar._function.should_run('abc123', 'H', ancestor_results=[artifacts]))
-    self.assertFalse(
-        bar._function.should_run('abc123', 'H', ancestor_results=[None]))
 
 
 if __name__ == '__main__':

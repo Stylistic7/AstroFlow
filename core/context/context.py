@@ -41,6 +41,9 @@ class WriteMode(Enum):
   MEMORY_AND_DISK = 3
 
 
+Key = str | tuple[str]
+
+
 def _get_namespace() -> str:
   return os.environ.get("ASTROFLOW_MOCK_NAMESPACE", "AstroFlow")
 
@@ -48,7 +51,7 @@ def _get_namespace() -> str:
 @ray.remote(resources={'diskcache': 0.001})
 class ContextActor:
 
-  ref_dict: dict[str, ray.ObjectRef]
+  ref_dict: dict[Key, ray.ObjectRef]
 
   def __init__(self) -> None:
     self.cache = get_cache()
@@ -56,7 +59,7 @@ class ContextActor:
     # This dict should ONLY store ObjectRefs.
     self.ref_dict = {}
 
-  def get(self, key: str, default_value: Any,
+  def get(self, key: Key, default_value: Any,
           keep_in_memory: bool) -> ray.ObjectRef:
     if key in self.ref_dict:
       assert type(self.ref_dict[key]) is ray.ObjectRef
@@ -73,7 +76,7 @@ class ContextActor:
     else:
       return ray.put(value)
 
-  def set(self, key: str, value: Any, flush: bool) -> None:
+  def set(self, key: Key, value: Any, flush: bool) -> None:
     assert type(value) is list
     assert len(value) == 1
     value = value[0]
@@ -87,21 +90,21 @@ class ContextActor:
 
     self.cache[key] = ray.get(value)
 
-  def contains(self, key: str) -> bool:
+  def contains(self, key: Key) -> bool:
     return key in self.cache
 
-  def flush(self, key: str) -> None:
+  def flush(self, key: Key) -> None:
     if key in self.ref_dict:
       del self.ref_dict[key]
 
-  def delete(self, key: str) -> None:
+  def delete(self, key: Key) -> None:
     if key in self.ref_dict:
       del self.ref_dict[key]
 
     if key in self.cache:
       del self.cache[key]
 
-  def and_equals(self, key: str, default_value: Any, value: Any,
+  def and_equals(self, key: Key, default_value: Any, value: Any,
                  write_mode: WriteMode) -> None:
     assert type(value) is list
     assert len(value) == 1
@@ -117,7 +120,7 @@ class ContextActor:
     if write_mode in [WriteMode.MEMORY_ONLY, WriteMode.MEMORY_AND_DISK]:
       self.ref_dict[key] = ray.put(new_value)
 
-  def or_equals(self, key: str, default_value: Any, value: Any,
+  def or_equals(self, key: Key, default_value: Any, value: Any,
                 write_mode: WriteMode) -> None:
     assert type(value) is list
     assert len(value) == 1
@@ -144,7 +147,7 @@ class ContextActor:
 class Context:
 
   def get(self,
-          key: str,
+          key: Key,
           default_value: Any = None,
           keep_in_memory: bool = True) -> Any:
     actor = ray.get_actor('context', namespace=_get_namespace())
@@ -152,14 +155,14 @@ class Context:
     if maybe_ref:
       return ray.get(maybe_ref)
 
-  def __getattr__(self, key: str) -> Any:
+  def __getattr__(self, key: Key) -> Any:
     return self.get(key)
 
-  def __getitem__(self, key: str) -> Any:
+  def __getitem__(self, key: Key) -> Any:
     return self.get(key)
 
   def set(self,
-          key: str,
+          key: Key,
           value: Any,
           write_mode: WriteMode = WriteMode.MEMORY_AND_DISK) -> Any:
     actor = ray.get_actor('context', namespace=_get_namespace())
@@ -170,15 +173,15 @@ class Context:
     return ray.get(
         actor.set.remote(key, [ray.put(value, _owner=actor)], write_mode))
 
-  def __setattr__(self, key: str, value: Any) -> Any:
+  def __setattr__(self, key: Key, value: Any) -> Any:
     return self.set(key, value)
 
-  def __setitem__(self, key: str, value: Any) -> Any:
+  def __setitem__(self, key: Key, value: Any) -> Any:
     return self.set(key, value)
 
   # TODO: Use the Pythonic operator.
   def and_equals(self,
-                 key: str,
+                 key: Key,
                  value: Any,
                  write_mode: WriteMode = WriteMode.MEMORY_AND_DISK,
                  default_value: Any = None) -> Any:
@@ -189,7 +192,7 @@ class Context:
 
   # TODO: Use the Pythonic operator.
   def or_equals(self,
-                key: str,
+                key: Key,
                 value: Any,
                 write_mode: WriteMode = WriteMode.MEMORY_AND_DISK,
                 default_value: Any = None) -> Any:
@@ -199,15 +202,15 @@ class Context:
                                write_mode))
 
   # TODO: Implement "k in context" operation.
-  def contains(self, key: str) -> bool:
+  def contains(self, key: Key) -> bool:
     actor = ray.get_actor('context', namespace=_get_namespace())
     return ray.get(actor.contains.remote(key))
 
-  def delete(self, key: str) -> None:
+  def delete(self, key: Key) -> None:
     actor = ray.get_actor('context', namespace=_get_namespace())
     ray.get(actor.delete.remote(key))
 
-  def flush(self, key: str) -> None:
+  def flush(self, key: Key) -> None:
     actor = ray.get_actor('context', namespace=_get_namespace())
     ray.get(actor.flush.remote(key))
 
