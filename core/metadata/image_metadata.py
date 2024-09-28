@@ -75,9 +75,6 @@ from metadata.actor import get_metadata
 
 # TODO: Don't revisit the same failed images over and over, it just takes up
 # time at every startup.
-#
-# TODO: Don't use FileArtifacts here. At this point, files are just paths
-# on disk.
 @ray.remote
 def scatter_compute_image_metadata(mode=None, ancestor_results=None):
   print('Entering scatter_compute_image_metadata, mode', mode,
@@ -90,33 +87,27 @@ def scatter_compute_image_metadata(mode=None, ancestor_results=None):
       'all': context.input_dirs + [context.output_dir],
   }[mode]
 
-  if ancestor_results is not None:
-    artifacts = {a[0] for a in ancestor_results}
-  else:
-    artifacts = set()
+  filenames = ancestor_results or set()
 
   # TODO: Don't do anything if the directory's modification time hasn't
   # changed since the last time it was listed.
   for dir in directories:
-    artifacts_for_dir = {FileArtifact(f, None) for f in find_image_files(dir)}
+    artifacts_for_dir = set(find_image_files(dir))
     print(f'### Directory {dir} contains {len(artifacts_for_dir)} files')
-    artifacts.update(artifacts_for_dir)
+    filenames.update(artifacts_for_dir)
 
   # TODO: Eliminate this call to get_metadata().
-  known_artifacts = set(
-      get_metadata(transform_fn=lambda i: FileArtifact(i.filename, None)))
-  quarantined_artifacts = {
-      FileArtifact(f, None) for f in context.quarantined_files
-  }
-  new_artifacts = artifacts - known_artifacts - quarantined_artifacts
+  known_filenames = set(get_metadata(transform_fn=lambda i: i.filename))
+  quarantined_files = context.quarantined_files or set()
+  new_filenames = filenames - known_filenames - quarantined_files
 
-  if not new_artifacts:
+  if not new_filenames:
     return {}
 
-  print(f'### Computing image metadata for {len(new_artifacts)} new artifacts')
+  print(f'### Computing image metadata for {len(new_filenames)} new artifacts')
   graph = Graph({
       gather_compute_image_metadata: [
-          (compute_image_metadata, a) for a in new_artifacts
+          (compute_image_metadata, f) for f in new_filenames
       ]
   })
 
@@ -128,67 +119,61 @@ class DuplicateFileException(Exception):
 
 
 @ray.remote(scheduling_strategy="SPREAD", max_retries=5, retry_exceptions=True)
-def compute_image_metadata(artifact=None, *, ancestor_results):
-  print(f'Entering compute_image_metadata() for {artifact} '
+def compute_image_metadata(filename=None, *, ancestor_results):
+  print(f'Entering compute_image_metadata() for {filename} '
         f'ancestor_results {ancestor_results}')
-  if artifact is not None:
-    assert type(artifact) is FileArtifact
-  elif ancestor_results is not None:
-    ancestor_results = [x for xs in ancestor_results for x in xs]
+  if filename is None and ancestor_results is not None:
     assert type(ancestor_results) is list
     assert len(ancestor_results) == 1
-    assert type(ancestor_results[0]) is FileArtifact
-    artifact = ancestor_results[0]
+    assert isinstance(ancestor_results[0], FileArtifact)
+    filename = ancestor_results[0].filename
 
   # TODO: Make sure this code doesn't actually repeatedly read the image across
   # the network. It should hit the node's filesystem cache.
   try:
-    content_hash = get_content_hash(artifact.filename)
+    content_hash = get_content_hash(filename)
     key = ('image_metadata', content_hash)
-    output_artifact = CacheArtifact(key, None)
 
-    if artifact_exists(output_artifact):
-      prev_filename = context.get(output_artifact.key,
-                                  keep_in_memory=False).filename
-      if prev_filename == artifact.filename:
+    if context.contains(key):
+      prev_filename = context.get(key, keep_in_memory=False).filename
+      if prev_filename == filename:
         # The given input file just points to an existing known file; nothing
         # needs to be done.
-        return [output_artifact]
+        return
       else:
         if os.path.exists(prev_filename):
-          raise DuplicateFileException(
-              f'{prev_filename} and {artifact.filename}')
+          raise DuplicateFileException(f'{prev_filename} and {filename}')
         else:
           print(f'Filename {prev_filename} has been moved to '
-                f'{artifact.filename}')
+                f'{filename}')
           prev_metadata = context[key]
           metadata = ImageMetadata(content_hash=content_hash,
-                                   filename=artifact.filename,
+                                   filename=filename,
                                    header=prev_metadata.header,
                                    plate_solution=prev_metadata.plate_solution)
           context[key] = metadata
-          return [output_artifact]
+          return
 
-    header = read_header(artifact.filename)
+    header = read_header(filename)
     if image_types.is_light_frame(header):
-      plate_solution = plate_solving.solve_field(artifact.filename)
+      plate_solution = plate_solving.solve_field(filename)
     else:
       plate_solution = None
-      print(f'### Skipping plate-solving for filename {artifact.filename} '
+      print(f'### Skipping plate-solving for filename {filename} '
             f'because it is not a light frame')
 
     metadata = ImageMetadata(content_hash=content_hash,
-                             filename=artifact.filename,
+                             filename=filename,
                              header=header,
                              plate_solution=plate_solution)
 
-    context.set(output_artifact.key, metadata, write_mode=WriteMode.DISK_ONLY)
-    print(f'### Wrote key {output_artifact.key}')
+    context.set(key, metadata, write_mode=WriteMode.DISK_ONLY)
+    print(f'### Wrote key {key}')
 
-    return [output_artifact]
+    return
 
   except Exception as e:
-    print(f'compute_image_metadata() failed for file {artifact.filename}, '
+    print(f'compute_image_metadata() failed for file {filename}, '
           f'exception {traceback.format_exc()}')
 
 
