@@ -42,6 +42,7 @@ class WriteMode(Enum):
 
 
 Key = str | tuple[str, ...]
+RefDict = dict[Key, ray.ObjectRef]
 
 
 def _get_namespace() -> str:
@@ -51,7 +52,7 @@ def _get_namespace() -> str:
 @ray.remote(resources={'diskcache': 0.001})
 class ContextActor:
 
-  ref_dict: dict[Key, ray.ObjectRef]
+  ref_dict: RefDict
 
   def __init__(self) -> None:
     self.cache = get_cache()
@@ -136,6 +137,9 @@ class ContextActor:
     if write_mode in [WriteMode.MEMORY_ONLY, WriteMode.MEMORY_AND_DISK]:
       self.ref_dict[key] = ray.put(new_value)
 
+  def ref_dict(self) -> RefDict:
+    return self.ref_dict
+
   def clear(self) -> None:
     self.ref_dict.clear()
     self.cache.clear()
@@ -205,6 +209,10 @@ class Context:
   def contains(self, key: Key) -> bool:
     actor = ray.get_actor('context', namespace=_get_namespace())
     return ray.get(actor.contains.remote(key))
+
+  def ref_dict(self) -> RefDict:
+    actor = ray.get_actor('context', namespace=_get_namespace())
+    return ray.get(actor.ref_dict.remote())
 
   def delete(self, key: Key) -> None:
     actor = ray.get_actor('context', namespace=_get_namespace())
