@@ -26,8 +26,8 @@ class TestMosaic(unittest.TestCase):
 
     for i, filename in enumerate(filenames):
       full_path = os.path.join(context.input_dirs[0], filename)
-      header = read_artifact_header(FileArtifact(full_path))
-      image = read_artifact_image(FileArtifact(full_path))
+      header = read_artifact_header(FileArtifact(full_path, None))
+      image = read_artifact_image(FileArtifact(full_path, None))
 
       key = ('image', filename)
       content_hash = f'my_silly_hash_{i}'
