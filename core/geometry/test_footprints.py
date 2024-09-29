@@ -2,8 +2,8 @@ from ray_infra import ray_local
 
 import ray
 import unittest
-import shapely
-from shapely import Polygon
+import shapely  # type: ignore
+from shapely import Polygon  # type: ignore
 
 from context import context
 from dependency_graph import run_graph
@@ -17,16 +17,16 @@ from stacks import CompositeStack
 
 class TestFootprints(unittest.TestCase):
 
-  def setUp(self):
+  def setUp(self) -> None:
     self.input_dir_obj, self.output_dir_obj = make_test_context()
     self.proj = mercator.MercatorProjection()
     context.regroup = True
 
-  def tearDown(self):
+  def tearDown(self) -> None:
     self.input_dir_obj.cleanup()
     self.output_dir_obj.cleanup()
 
-  def test_stack(self):
+  def test_stack(self) -> None:
     make_synthetic_frames(number=3,
                           prefix='foo',
                           ra=180,
@@ -57,7 +57,7 @@ class TestFootprints(unittest.TestCase):
                      (3.167764191270835, -0.01744400761566263),
                      (3.1154211159087506, -0.01744400761566263)])))
 
-  def test_target(self):
+  def test_target(self) -> None:
     # Two stacks with the same footprint, but different image scales. They
     # should be merged into a single target.
     make_synthetic_frames(number=3,
@@ -107,7 +107,7 @@ class TestFootprints(unittest.TestCase):
                                      ]),
                              tolerance=1e-5))
 
-  def test_mosaic(self):
+  def test_mosaic(self) -> None:
     # Two stacks that overlap by a degree in RA.
     make_synthetic_frames(number=3,
                           prefix='foo',

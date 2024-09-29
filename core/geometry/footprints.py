@@ -1,12 +1,16 @@
 import numpy as np
-from spherical_geometry.polygon import SphericalPolygon
-from shapely.geometry import Polygon
+from spherical_geometry.polygon import SphericalPolygon  # type: ignore
+from shapely.geometry import Polygon  # type: ignore
+from typing import Any
 
+from geometry import Radians, Degrees
+from geometry.projection import Projection
 from geometry.viewbox import compute_viewbox
 from geometry.projections import mercator, sinusoidal, mollweide, galactic
 
 
-def radec_to_vector(ra, dec, degrees=True):
+def radec_to_vector(ra: Degrees,
+                    dec: Degrees) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
   r"""
     Converts a location on the unit sphere from ragitude and
     decitude to an *x*, *y*, *z* vector.
@@ -38,27 +42,25 @@ def radec_to_vector(ra, dec, degrees=True):
   ra = np.asanyarray(ra)
   dec = np.asanyarray(dec)
 
-  if degrees:
-    ra_rad = np.deg2rad(ra)
-    dec_rad = np.deg2rad(dec)
-  else:
-    ra_rad = ra
-    dec_rad = dec
+  ra_rad = np.deg2rad(ra)
+  dec_rad = np.deg2rad(dec)
 
   cos_dec = np.cos(dec_rad)
 
   return (np.cos(ra_rad) * cos_dec, np.sin(ra_rad) * cos_dec, np.sin(dec_rad))
 
 
-def project_footprint(polygon, projection):
+def project_footprint(polygon: SphericalPolygon,
+                      projection: Projection) -> Polygon:
   ra, dec = polygon.to_radec()  # degrees
   ra, dec = (np.radians(np.array(x)) for x in (ra, dec))
   x, y = projection.project(ra, dec)
   return Polygon(zip(x, y))
 
 
-def all_projections(polygon):
-  projections = {
+# TODO: Strongly type this result.
+def all_projections(polygon: SphericalPolygon) -> dict[str, dict[str, Any]]:
+  projections: dict[str, Projection] = {
       'galactic': galactic.GalacticProjection(),
       'mercator': mercator.MercatorProjection(),
       'sinusoidal': sinusoidal.SinusoidalProjection(),
@@ -66,7 +68,7 @@ def all_projections(polygon):
       'mollweide_galactic': mollweide.MollweideGalacticProjection(R=1),
   }
 
-  result = {}
+  result: dict[str, dict[str, Any]] = {}
   for name, proj in projections.items():
     coords = list(project_footprint(polygon, proj).exterior.coords)
     result[name] = {'coords': coords, 'viewbox': compute_viewbox(coords)}

@@ -9,7 +9,7 @@ from geometry.projections import sinusoidal
 
 class TestProjection(unittest.TestCase):
 
-  def test_mercator_whole_sphere(self, debug=False):
+  def test_mercator_whole_sphere(self, debug: bool = False) -> None:
     proj = mercator.MercatorProjection(lon_0=0)
 
     # The Mercator projection projects the entire sphere to the xy plane bounded
@@ -34,7 +34,7 @@ class TestProjection(unittest.TestCase):
 
       plt.show()
 
-  def test_sinusoidal_whole_sphere(self, debug=False):
+  def test_sinusoidal_whole_sphere(self, debug: bool = False) -> None:
     proj = sinusoidal.SinusoidalProjection(lon_0=np.pi)
 
     # The sinusoidal projection projects the entire sphere to the xy plane,
@@ -56,7 +56,7 @@ class TestProjection(unittest.TestCase):
 
       plt.show()
 
-  def test_mollweide_whole_sphere(self, debug=False):
+  def test_mollweide_whole_sphere(self, debug: bool = False) -> None:
     R = 1
     proj = mollweide.MollweideProjection(R=R, lon_0=np.pi)
 

@@ -1,7 +1,9 @@
 import numpy as np
 
 
-def compute_viewbox(points):
+# TODO: Define a Viewbox type.
+def compute_viewbox(
+    points: list[tuple[float, float]]) -> tuple[float, float, float, float]:
   xs = [p[0] for p in points]
   ys = [p[1] for p in points]
   x_min, x_max = np.min(xs), np.max(xs)
