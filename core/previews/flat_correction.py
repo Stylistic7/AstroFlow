@@ -8,7 +8,7 @@ from hashing import hash_list
 import quarantining
 from previews.operations import resize_array, array_to_png
 from file_io.generic import read_image
-from previews import PreviewHash
+from previews.types import PreviewHash
 from previews.calibration import calibrate_image
 from previews.operations import autostretch
 from profiling import track_performance

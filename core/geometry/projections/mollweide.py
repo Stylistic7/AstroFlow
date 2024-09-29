@@ -41,6 +41,10 @@ class MollweideProjection(Projection):
               lat: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     ...
 
+  @overload
+  def project(self, lon: Radians, lat: Radians) -> tuple[Radians, Radians]:
+    ...
+
   def project(self, lon: Radians,
               lat: Radians) -> tuple[PixelCoordinate, PixelCoordinate]:
     theta = self._solve_theta(lat)
@@ -90,9 +94,13 @@ class MollweideGalacticProjection(Projection):
               lat: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     ...
 
+  @overload
   def project(self, lon: Radians,
               lat: Radians) -> tuple[PixelCoordinate, PixelCoordinate]:
-    assert isinstance(lon, float) and isinstance(lat, float)
+    ...
+
+  def project(self, lon: Radians,
+              lat: Radians) -> tuple[PixelCoordinate, PixelCoordinate]:
     theta, phi = equatorial_to_galactic(lon, lat)
     return self.proj.project(theta, phi)
 

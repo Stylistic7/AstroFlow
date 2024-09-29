@@ -21,6 +21,10 @@ class SinusoidalProjection(Projection):
               lat: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     ...
 
+  @overload
+  def project(self, lon: Radians, lat: Radians) -> tuple[Radians, Radians]:
+    ...
+
   def project(self, lon: Radians,
               lat: Radians) -> tuple[PixelCoordinate, PixelCoordinate]:
     x = (lon - self.lon_0) * np.cos(lat)

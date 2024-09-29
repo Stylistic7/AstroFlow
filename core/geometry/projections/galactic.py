@@ -17,6 +17,12 @@ def equatorial_to_galactic(ra: np.ndarray,
   ...
 
 
+@overload
+def equatorial_to_galactic(ra: Radians,
+                           dec: Radians) -> tuple[Radians, Radians]:
+  ...
+
+
 def equatorial_to_galactic(ra: Radians,
                            dec: Radians) -> tuple[Radians, Radians]:
   eq = SkyCoord(ra, dec, unit='rad')
@@ -39,8 +45,12 @@ class GalacticProjection(Projection):
               lat: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     ...
 
+  @overload
+  def project(self, lon: Radians,
+              lat: Radians) -> tuple[Radians, Radians]:
+    ...
+
   def project(self, lon: Radians, lat: Radians) -> tuple[Radians, Radians]:
-    assert isinstance(lon, float) and isinstance(lat, float)
     return equatorial_to_galactic(lon, lat)
 
   @overload

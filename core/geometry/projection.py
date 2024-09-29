@@ -1,11 +1,11 @@
 import numpy as np
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from typing import Any, overload
 
 from geometry import PixelCoordinate, Radians
 
 
-class Projection:
+class Projection(ABC):
 
   @abstractmethod
   @overload
@@ -23,15 +23,18 @@ class Projection:
                 y: PixelCoordinate) -> tuple[Radians, Radians]:
     pass
 
-  @abstractmethod
   @overload
   def project(self, lon: float, lat: float) -> tuple[float, float]:
     ...
 
-  @abstractmethod
   @overload
   def project(self, lon: np.ndarray,
               lat: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    ...
+
+  @overload
+  def project(self, lon: Radians,
+              lat: Radians) -> tuple[PixelCoordinate, PixelCoordinate]:
     ...
 
   @abstractmethod
