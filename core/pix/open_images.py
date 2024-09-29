@@ -1,6 +1,6 @@
 import os
 
-from .classes import Image, ShellScriptTask
+from .classes import Image, ShellScriptTask, ImageList, FilenameList
 from .context import append_task, add_images_to_save
 
 from file_io.generic import get_content_hash
@@ -17,7 +17,7 @@ for (let i = 0; i < filenames.length; ++i) {{
 """
 
 
-def OpenImages(filenames):
+def OpenImages(filenames: FilenameList) -> ImageList:
   print(f'### OpenImages called with filenames {filenames} ')
 
   # The view ids are just the images' content hashes, with a 'V_' in front to

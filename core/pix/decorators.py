@@ -1,10 +1,12 @@
 import tempfile
-import traceback
 import functools
 import os
 from pathlib import Path
-import inspect
 
+from typing import Callable, Any, cast
+
+from pix import Image
+from pix.classes import PixInsightFn, FilenameList, ImageList
 from file_io.generic import get_content_hash
 from hashing import hash_list
 
@@ -14,16 +16,15 @@ from . import save_images
 
 
 # TODO: Refactor this function into pieces.
-def PixInsight(dry_run=False):
+def PixInsight(dry_run: bool = False) -> Callable[[PixInsightFn], PixInsightFn]:
 
-  def decorator(func):
+  def decorator(func: PixInsightFn) -> PixInsightFn:
 
     @functools.wraps(func)
-    def wrapper(filenames, *args, **kwargs):
+    def wrapper(filenames: FilenameList, *args: Any,
+                **kwargs: Any) -> ImageList:
       print(f'### Entering wrapper, filenames {filenames} '
             f'args {args} kwargs {kwargs}')
-      if type(filenames) is not list:
-        filenames = [filenames]
 
       # TODO: The content hash of images produced by this PixInsight function
       # are composed of the hash of the function's code, the hashes of all
@@ -37,7 +38,7 @@ def PixInsight(dry_run=False):
                      debug_images=[],
                      process_number=0)
 
-      def normalize_images(results):
+      def normalize_images(results: list[Image]) -> list[Image]:
         output = []
         for result in results:
           result.tmp_dir_obj = tmp_dir_obj
@@ -52,7 +53,8 @@ def PixInsight(dry_run=False):
 
         return output
 
-      def call_with_context(func, *args, **kwargs):
+      def call_with_context(func: Callable[..., ImageList], *args: Any,
+                            **kwargs: Any) -> ImageList:
         func.__globals__.update(context)
         return func(*args, **kwargs)
 
@@ -60,15 +62,18 @@ def PixInsight(dry_run=False):
       images = call_with_context(open_images.OpenImages, filenames)
 
       # Call the decorated PixInsight function.
-      print(f'### Calling PixInsight function {func.__name__}')
+      func_name = cast(Callable, func).__name__
+      print(f'### Calling PixInsight function {func_name}')
+
       results = call_with_context(func, images, *args, **kwargs)
-      print(f'### PixInsight function {func.__name__} returned correctly, '
+      assert isinstance(context['tasks'], list)
+      print(f'### PixInsight function {func_name} returned correctly, '
             f'{len(context["tasks"])} tasks, results {results}')
 
       # If the PixInsight function didn't add any tasks, there is nothing
       # to do. The OpenImages task doesn't count.
       if len(context['tasks']) == 1:
-        print(f'### PixInsight function {func.__name__} made no tasks, '
+        print(f'### PixInsight function {func_name} made no tasks, '
               'fwrapper returning {results}')
         return results
 
@@ -81,7 +86,7 @@ def PixInsight(dry_run=False):
         for result in results:
           (Path(tmp_dir_obj.name) / result.filename).touch()
       else:
-        print(f"### Shell script is ready for {func.__name__}, with "
+        print(f"### Shell script is ready for {func_name}, with "
               f"{len(context['tasks'])} tasks")
         shell_script.run_script(context['tasks'], dry_run=dry_run)
 

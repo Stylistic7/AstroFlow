@@ -3,14 +3,17 @@ import os
 import subprocess
 import time
 from contextlib import nullcontext
+from typing import ContextManager, cast
 import os
 import sys
 import uuid
 
-_SLOT_NUMBER = 1
+from pix import ShellScriptTask
+
+_SLOT_NUMBER: int = 1
 
 
-def _start_pixinsight_instance(slot):
+def _start_pixinsight_instance(slot: int) -> int:
   # This should be start and detach. If it's already started, this
   # attempt should just exit immediately with no other effect.
   subprocess.Popen([
@@ -28,7 +31,8 @@ def _start_pixinsight_instance(slot):
   return slot
 
 
-def _save_javascript_file(tmp_dir, task):
+def _save_javascript_file(tmp_dir: str,
+                          task: ShellScriptTask) -> ShellScriptTask:
   if task.javascript and not task.javascript_filename:
     script_filename = os.path.join(tmp_dir, f'{uuid.uuid4()}.js')
     with open(script_filename, "w") as f:
@@ -45,7 +49,7 @@ def _save_javascript_file(tmp_dir, task):
   return task
 
 
-def _create_run_command(task):
+def _create_run_command(task: ShellScriptTask) -> str:
   arguments = ' '.join(
       f'-a="{name}={value}"' for name, value in task.arguments.items())
   parameters = ' '.join(
@@ -57,19 +61,18 @@ def _create_run_command(task):
 # TODO: Add a start sentinel that gets written to disk when the script starts.
 # If, after some timeout, the script hasn't started, kill it and either retry
 # or more on to the next one. Obey Ray's retry mechanism.
-def run_script(tasks,
-               blocking=True,
-               tmp_dir_in=None,
-               close_after=True,
-               sleep_after=False,
-               dry_run=False):
+def run_script(tasks: list[ShellScriptTask],
+               tmp_dir_in: str | None = None,
+               close_after: bool = True,
+               sleep_after: bool = False,
+               dry_run: bool = False) -> None:
   assert tasks
 
   if not dry_run:
     start_pixinsight_instances()
 
-  with tempfile.TemporaryDirectory() if not tmp_dir_in else nullcontext(
-      tmp_dir_in) as tmp_dir:
+  with (tempfile.TemporaryDirectory() if tmp_dir_in is None else cast(
+      ContextManager, nullcontext(tmp_dir_in))) as tmp_dir:
     start_sentinel_filename = os.path.join(tmp_dir, 'start_sentinel.txt')
     end_sentinel_filename = os.path.join(tmp_dir, 'end_sentinel.txt')
     script_filename = os.path.join(tmp_dir, 'script.scp')
@@ -110,7 +113,7 @@ def run_script(tasks,
         time.sleep(1)
 
 
-def start_pixinsight_instances():
+def start_pixinsight_instances() -> None:
   # At startup, open N instances of PixInsight, and let them run throughout the
   # entire runtime of AstroFlow.
   _start_pixinsight_instance(_SLOT_NUMBER)

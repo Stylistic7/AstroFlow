@@ -3,17 +3,29 @@ import os
 import uuid
 from pathlib import Path
 
+from pix import ShellScriptTask, Image
 
-def append_task(task):
+
+def append_task(task: ShellScriptTask) -> None:
   frame = inspect.currentframe()
+
+  assert frame is not None
+  assert frame.f_globals is not None
+  assert frame.f_back is not None
+
   while 'tasks' not in frame.f_globals:
     frame = frame.f_back
 
   frame.f_globals['tasks'].append(task)
 
 
-def get_next_process_number():
+def get_next_process_number() -> int:
   frame = inspect.currentframe()
+
+  assert frame is not None
+  assert frame.f_globals is not None
+  assert frame.f_back is not None
+
   while 'process_number' not in frame.f_globals:
     frame = frame.f_back
 
@@ -32,7 +44,7 @@ def get_next_process_number():
 #   return os.path.join(get_tmp_dir_obj().name, f'{uuid.uuid4()}.xisf')
 
 
-def extend_filename(image, funcname):
+def extend_filename(image: Image, funcname: str) -> str:
   path = Path(image.filename)
 
   if image.tag:
@@ -44,8 +56,13 @@ def extend_filename(image, funcname):
 
 # TODO: Using `tmp_dir` this way is akward. I should find a more specific way
 # to detect the decorator's frame.
-def add_images_to_save(images):
+def add_images_to_save(images: list[Image]) -> None:
   frame = inspect.currentframe()
+
+  assert frame is not None
+  assert frame.f_globals is not None
+  assert frame.f_back is not None
+
   while 'tmp_dir_obj' not in frame.f_globals:
     frame = frame.f_back
 

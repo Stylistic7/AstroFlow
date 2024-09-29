@@ -1,6 +1,6 @@
 import os
 from functools import wraps
-from typing import Callable, TypeVar, Any, ParamSpec
+from typing import Callable, Any, ParamSpec
 
 from artifacts import Artifact, FileArtifact, CacheArtifact, artifact_exists
 

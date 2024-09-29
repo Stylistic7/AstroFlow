@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Protocol, Any
 
 
 class ArgumentType(Enum):
@@ -27,3 +28,14 @@ class Image:
 
   def __str__(self):
     return self.filename
+
+
+ImageList = list[Image]
+FilenameList = list[str]
+
+
+class PixInsightFn(Protocol):
+
+  def __call__(self, filenames: FilenameList, *args: Any,
+               **kwargs: Any) -> ImageList:
+    ...
