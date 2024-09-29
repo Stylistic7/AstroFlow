@@ -4,7 +4,7 @@ import inspect
 from pathlib import Path
 
 import file_io
-from artifacts import FileArtifact
+from artifacts import Artifact, FileArtifact
 from context import context
 from artifacts.decorators import saves_artifacts
 from stacks.artifacts import stack_files_artifacts
@@ -17,14 +17,14 @@ from profiling import track_performance
 # TODO: Don't save two copies of the post-processed images, because they take
 # up huge amounts of disk space.
 @pix.PixInsight()
-def _post_process_stack(image):
+def _post_process_stack(image: pix.Image) -> pix.Image:
   image = pix.BlurXTerminator(image)
   image = pix.AutomaticBackgroundExtractor(image)
 
   return image
 
 
-def post_process_stack_artifacts(stack_id):
+def post_process_stack_artifacts(stack_id: str) -> list[Artifact]:
   artifacts = stack_files_artifacts(stack_id)
   assert len(artifacts) == 1
   artifact = next(iter(artifacts))
@@ -36,13 +36,13 @@ def post_process_stack_artifacts(stack_id):
   script_hash = inspect.getsource(_post_process_stack)
   stack = context.stacks[stack_id]
   content_hash = hash_list([stack.content_hash, script_hash])
-  return [FileArtifact(filename, content_hash)]
+  return [FileArtifact(str(filename), content_hash)]
 
 
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
 @saves_artifacts(post_process_stack_artifacts)
 @track_performance
-def post_process_stack(stack_id):
+def post_process_stack(stack_id: str) -> list[Artifact]:
   print(f'post_process_stack, stack_id {stack_id}')
 
   input_artifact = stack_files_artifacts(stack_id)[0]
@@ -56,6 +56,7 @@ def post_process_stack(stack_id):
   # TODO: Should the pix library use the artifact workflow, and compute its
   # own content hashes?
   metadata = {'CONTHASH': output_artifact.content_hash}
+  assert isinstance(output_artifact, FileArtifact)
   file_io.xisf_file_io.add_xisf_metadata(output_filename,
                                          output_artifact.filename, metadata)
   print(f'### Wrote post-processed artifact {output_artifact}')

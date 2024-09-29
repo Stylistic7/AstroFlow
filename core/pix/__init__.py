@@ -1,5 +1,5 @@
 # TODO: Maybe remove this low-level interface?
-from .classes import ShellScriptTask
+from .classes import ShellScriptTask, Image
 from .shell_script import start_pixinsight_instances
 
 from .decorators import PixInsight

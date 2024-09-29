@@ -27,6 +27,7 @@ Key = tuple[str, ...]
 Header = dict[str, Any]
 
 
+# TODO: Use Path for filename.
 @dataclass(frozen=True)
 class FileArtifact:
   filename: str
