@@ -4,7 +4,7 @@ from skimage.transform import resize
 import cv2
 
 
-def resize_array(array, new_width):
+def resize_array(array: np.ndarray, new_width: int) -> np.ndarray:
   assert not np.isnan(np.min(array))
   height, width = array.shape
   new_height = (height / width) * new_width
@@ -18,7 +18,7 @@ def resize_array(array, new_width):
 # See this YouTube video: https://www.youtube.com/watch?v=em9IQzbkBuU
 # which links to this PixelMath stretching:
 # https://drive.google.com/drive/folders/1ZuE8VKlrryofFAGdx-hIH8drrdNZxVCN
-def autostretch(image, debug=False):
+def autostretch(image: np.ndarray, debug: bool = False) -> np.ndarray:
   image = image.astype(np.float32) / np.max(image)
   unclipped = np.where((image > 0.0) & (image < 1.0))
   if debug:
@@ -31,7 +31,7 @@ def autostretch(image, debug=False):
   clip = 2.8  # increase to prevent shadow clipping
 
   # The median of the absolute values of the residuals from the data's median.
-  def mdev(image):
+  def mdev(image: np.ndarray) -> float:
     return median(abs(image - median(image)))
 
   E1 = np.clip(
@@ -58,7 +58,7 @@ def autostretch(image, debug=False):
   return output
 
 
-def array_to_png(array, debug=False):
+def array_to_png(array: np.ndarray, debug: bool = False) -> bytes:
   if np.issubdtype(array.dtype, np.floating):
     assert not np.isnan(array).any(), 'array contains NaN'
 
