@@ -1,15 +1,20 @@
+from typing import Any
+
+from dependency_graph import Node, GraphStatus
 from profiling.estimate_time import estimate_time
 
 
 # This function takes lists of ready, waiting, and done nodes from the
 # dependency graph, and collates them into a dict of processes, described by
 # their total number, remaining number, and estimated remaining time.
-def graph_status_to_progress(status):
+#
+# TODO: Strongly-type the output.
+def graph_status_to_progress(status: GraphStatus) -> dict[str, Any]:
   print(f'### status has {len(status.ready_nodes)} ready nodes, '
         f'{len(status.waiting_nodes)} waiting nodes, '
         f'{len(status.done_nodes)} done nodes')
 
-  def function_name_from_node(node):
+  def function_name_from_node(node: Node) -> str:
     return node.task._function.__name__
 
   status_dict = {}

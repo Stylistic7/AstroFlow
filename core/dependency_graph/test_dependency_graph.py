@@ -454,7 +454,7 @@ class TestDependencyGraph(unittest.TestCase):
 
   def test_graph_with_status(self):
     graph = Graph({'D': {'B', 'C'}, 'C': {'A'}, 'B': {'A'}})
-    ts = TopologicalSorterWithStatus(graph)
+    ts = TopologicalSorterWithStatus(graph, done_callback=None)
     ts.prepare()
 
     ready_nodes = ts.get_ready()

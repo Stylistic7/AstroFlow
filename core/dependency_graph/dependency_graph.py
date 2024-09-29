@@ -4,79 +4,87 @@ from copy import copy
 from functools import reduce
 from operator import or_
 import time
+from ray.remote_function import RemoteFunction
+from typing import Callable, Any
 
-from dependency_graph import Graph, GraphStatus, ResultDict, TopologicalSorterWithStatus, canonicalize_node
+from dependency_graph import Node, Graph, CanonicalGraph, GraphStatus, ResultDict, TopologicalSorterWithStatus, canonicalize_node
 from .debugging import print_graph
 
-MIN_STATUS_UPDATE_INTERVAL_SECS = 5
+MIN_STATUS_UPDATE_INTERVAL_SECS: float = 5.0
+
+StatusFn = Callable[[GraphStatus], Any]
 
 
-def matching_nodes(graph, fn):
+def matching_nodes(graph: CanonicalGraph, fn: RemoteFunction) -> list[Node]:
 
-  def _matches(node):
+  def _matches(node: Node) -> bool:
     return (node.task._function.__module__ == fn._function.__module__ and
             node.task._function.__name__ == fn._function.__name__)
 
   return [node for node in graph if _matches(node)]
 
 
-def run_graph(graph,
-              status_fn=None,
-              status_interval=MIN_STATUS_UPDATE_INTERVAL_SECS,
-              debug=False):
-  num_nodes_run = 0
-  max_parallelism_seen = 0
-  active = []
-  completed = []
-  last_status_time = 0
+def run_graph(graph: Graph,
+              status_fn: StatusFn | None = None,
+              status_interval: float = MIN_STATUS_UPDATE_INTERVAL_SECS,
+              debug: bool = False) -> ResultDict:
+  num_nodes_run: int = 0
+  max_parallelism_seen: int = 0
+  active: list[TopologicalSorterWithStatus] = []
+  completed: list[TopologicalSorterWithStatus] = []
+  last_status_time: float = 0
 
   # TODO: Maybe support nodes with one ancestor, like this {done: process},
   # instead of requiring {done: {process}}.
-  def canonicalize_graph(graph):
-    output = Graph({})
+  def canonicalize_graph(graph: Graph) -> CanonicalGraph:
+    output = CanonicalGraph({})
     for node, dependents in graph.items():
       output[canonicalize_node(node)] = {
           canonicalize_node(x) for x in dependents
       }
     return output
 
-  def add_subgraph(graph, parent_ts=None, parent_node=None):
+  def add_subgraph(
+      graph: Graph,
+      parent_ts: TopologicalSorterWithStatus | None = None,
+      parent_node: Node | None = None) -> TopologicalSorterWithStatus:
 
-    def done_callback(subgraph_ts):
+    def done_callback(subgraph_ts: TopologicalSorterWithStatus) -> None:
       if debug:
         print(f'Subgraph is done {subgraph_ts.graph}')
       if parent_ts is None:
         return
 
-      parent_ts.done(parent_node)
-      parent_ts.results[parent_node] = subgraph_ts.final_result
+      if parent_node is not None:
+        parent_ts.done(parent_node)
+        parent_ts.results[parent_node] = subgraph_ts.final_result
+
       parent_ts.final_result = subgraph_ts.final_result
 
-    graph = canonicalize_graph(graph)
+    canonical_graph = canonicalize_graph(graph)
 
     if debug:
       print(f'### Creating new subgraph:')
-      print_graph(graph)
+      print_graph(canonical_graph)
 
-    ts = TopologicalSorterWithStatus(graph)
+    dc: Callable[[], None] = lambda: done_callback(ts)
+    ts: TopologicalSorterWithStatus = TopologicalSorterWithStatus(
+        canonical_graph, done_callback=dc)
     ts.prepare()
-    ts.done_callback = lambda subgraph_ts=ts: done_callback(subgraph_ts)
-    ts.graph = graph
-    ts.results = ResultDict()
-    ts.final_result = None
     active.append(ts)
 
     return ts
 
-  def ancestor_results(ts, node):
-    nodes = ts.graph.get(node, [])
+  def ancestor_results(ts: TopologicalSorterWithStatus,
+                       node: Node) -> list[Any]:
+    nodes: set[Node] = ts.graph.get(node, set())
     if debug:
       print(f'Node with task {node.task._function.__name__} has '
             f'{len(nodes)} ancestors')
 
     return [ts.results[node] for node in nodes]
 
-  def make_run_fn(ts, node):
+  def make_run_fn(ts: TopologicalSorterWithStatus, node: Node) -> Any:
     if debug:
       print(f'Making run fn for task {node.task._function.__name__}')
 
@@ -91,7 +99,7 @@ def run_graph(graph,
     else:
       return node.task.remote(*full_args)
 
-  def delete_finished_subgraphs():
+  def delete_finished_subgraphs() -> None:
     for ts in active:
       if not ts.is_active():
         if ts.done_callback:
@@ -99,12 +107,12 @@ def run_graph(graph,
         active.remove(ts)
         completed.append(ts)
 
-  def get_ready_nodes():
+  def get_ready_nodes() -> list[tuple[TopologicalSorterWithStatus, Node]]:
     return [(ts, n)
             for ts in active
             for n in sorted(ts.get_ready(), key=lambda n: n.priority)]
 
-  def get_status():
+  def get_status() -> GraphStatus:
     return reduce(or_, [ts.get_status() for ts in active + completed],
                   GraphStatus())
 
@@ -165,7 +173,7 @@ def run_graph(graph,
   if status_fn:
     status_fn(get_status())
 
-  toplevel_ts.results['num_nodes_run'] = num_nodes_run
-  toplevel_ts.results['max_parallelism_seen'] = max_parallelism_seen
+  toplevel_ts.results.num_nodes_run = num_nodes_run
+  toplevel_ts.results.max_parallelism_seen = max_parallelism_seen
 
   return toplevel_ts.results
