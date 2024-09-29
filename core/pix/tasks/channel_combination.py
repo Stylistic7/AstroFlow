@@ -1,6 +1,8 @@
-from .classes import ShellScriptTask, Image
-from .context import append_task
-from .processes import enum, execute_global
+from typing import Any
+
+from pix.classes import ShellScriptTask, Image, ImageList
+from pix.context import append_task
+from pix.processes import enum, execute_global
 
 _default_parameters = {
     'colorSpace': enum('ChannelCombination.prototype.RGB'),
@@ -14,7 +16,9 @@ windows[windows.length - 1].currentView.id = "{view_id}";
 """
 
 
-def ChannelCombination(images, output_view_id="RGB", **kwargs):
+def ChannelCombination(images: ImageList,
+                       output_view_id: str = "RGB",
+                       **kwargs: Any) -> ImageList:
   # TODO: This is horrifically ugly.
   view_ids = [i.view_id for i in images]
   parameters = _default_parameters | kwargs

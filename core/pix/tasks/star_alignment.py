@@ -1,9 +1,9 @@
 from pathlib import Path
-from addict import Dict
+from typing import Any, cast
 
-from .classes import ShellScriptTask
-from .context import append_task, add_images_to_save
-from .processes import enum, execute_global
+from pix.classes import ShellScriptTask, ImageList, Image
+from pix.context import append_task, add_images_to_save
+from pix.processes import enum, execute_global
 
 _default_parameters = {
     'structureLayers': 5,
@@ -104,7 +104,7 @@ for (let i = 0; i < view_ids.length; ++i) {{
 
 
 # TODO: The reference image is the first view_id, but this is not obvious.
-def StarAlignment(images, **kwargs):
+def StarAlignment(images: ImageList, **kwargs: Any) -> ImageList:
   print('### Entering StarAlignment, images', images)
 
   if len(images) < 2:
@@ -113,7 +113,8 @@ def StarAlignment(images, **kwargs):
 
   parameters = _default_parameters | kwargs
 
-  view_ids = [i.view_id for i in images]
+  assert all(i.view_id is not None for i in images)
+  view_ids = [cast(str, i.view_id) for i in images]
   parameters['referenceImage'] = view_ids[0]
 
   # TODO: This is horrifically ugly.
@@ -131,10 +132,10 @@ def StarAlignment(images, **kwargs):
 
   output_view_ids = [v + '_registered' for v in view_ids]
   output_images = [
-      Dict(filename=image.filename,
-           tag='registered',
-           view_id=view_id,
-           dirty=True) for view_id, image in zip(output_view_ids, images)
+      Image(filename=image.filename,
+            tag='registered',
+            view_id=view_id,
+            dirty=True) for view_id, image in zip(output_view_ids, images)
   ]
   add_images_to_save(output_images)
 

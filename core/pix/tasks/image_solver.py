@@ -1,7 +1,8 @@
 import os
+from typing import Any
 
-from .classes import ShellScriptTask
-from .context import append_task
+from pix.classes import ShellScriptTask, FilenameList, ImageList
+from pix.context import append_task
 
 # TODO: These parameters must be floats, not strings, so they can be overriden
 # by the user.
@@ -56,7 +57,7 @@ _default_parameters = {
 }
 
 
-def ImageSolver(filenames, **kwargs):
+def ImageSolver(filenames: FilenameList, **kwargs: Any) -> ImageList:
   print('### ImageSolver() filenames are', filenames)
   parameters = _default_parameters | kwargs
   javascript_filename = "/Applications/PixInsight/src/scripts/AdP/ImageSolver.js"
@@ -77,4 +78,5 @@ def ImageSolver(filenames, **kwargs):
       ShellScriptTask(javascript_filename=javascript_filename,
                       parameters=parameters))
 
-  return output_filenames
+  # return output_filenames
+  return []

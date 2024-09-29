@@ -1,13 +1,13 @@
 import base64
+from typing import Any
 
-from .classes import ShellScriptTask
-from .decorators import PixInsight
-from .context import append_task
+from pix.classes import ShellScriptTask, ImageList
+from pix.context import append_task
 
 _default_parameters = {'outputDirectory': ''}
 
 
-def WeightedBatchPreprocessing(unused, *args, **kwargs):
+def WeightedBatchPreprocessing(unused: ImageList, **kwargs: Any) -> ImageList:
   print('### Entering WeightedBatchPreprocessing')
 
   parameters = _default_parameters | kwargs

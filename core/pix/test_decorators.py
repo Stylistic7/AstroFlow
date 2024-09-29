@@ -3,11 +3,8 @@ import tempfile
 import os
 import shutil
 
-from .decorators import PixInsight
-from .blurxterminator import BlurXTerminator
-from .starxterminator import StarXTerminator
-from .star_alignment import StarAlignment
-from .channel_combination import ChannelCombination
+from pix.decorators import PixInsight
+from pix.tasks import BlurXTerminator, StarXTerminator, StarAlignment, ChannelCombination
 
 # TODO: Automatically rename images by looking at the stem they have in common.
 # Append the function's name.

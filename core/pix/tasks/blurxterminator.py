@@ -1,8 +1,8 @@
-from pathlib import Path
+from typing import Any, cast
 
-from .classes import Image, ShellScriptTask
-from .context import append_task, add_images_to_save
-from .processes import enum, execute_on_view_ids
+from pix.classes import Image, ShellScriptTask, ImageList
+from pix.context import append_task, add_images_to_save
+from pix.processes import enum, execute_on_view_ids
 
 _default_parameters = {
     'ai_file': 'BlurXTerminator.4.mlpackage',
@@ -18,10 +18,11 @@ _default_parameters = {
 }
 
 
-def BlurXTerminator(images, **kwargs):
+def BlurXTerminator(images: ImageList, **kwargs: Any) -> ImageList:
   print('### Entering BlurXTerminator')
 
-  view_ids = [i.view_id for i in images]
+  assert all(i.view_id is not None for i in images)
+  view_ids = [cast(str, i.view_id) for i in images]
   append_task(
       ShellScriptTask(javascript=execute_on_view_ids(
           'BlurXTerminator', _default_parameters | kwargs, view_ids)))

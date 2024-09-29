@@ -1,7 +1,8 @@
 import os
+from typing import Any, cast
 
-from .classes import ShellScriptTask
-from .context import append_task
+from pix.classes import ShellScriptTask, ImageList
+from pix.context import append_task
 
 _default_parameters = {
     'engine_files': '""',
@@ -31,10 +32,12 @@ _default_parameters = {
 }
 
 
-def MosaicByCoordinates(filenames, **kwargs):
+def MosaicByCoordinates(images: ImageList, **kwargs: Any) -> ImageList:
   parameters = _default_parameters | kwargs
   javascript_filename = "/Applications/PixInsight/src/scripts/AdP/MosaicByCoordinates.js"
 
+  assert all(i.filename is not None for i in images)
+  filenames = [cast(str, i.filename) for i in images]
   output_filenames = [
       f'{os.path.splitext(f)[0]}_registered.xisf' for f in filenames
   ]
@@ -50,4 +53,5 @@ def MosaicByCoordinates(filenames, **kwargs):
       ShellScriptTask(javascript_filename=javascript_filename,
                       parameters=parameters))
 
-  return output_filenames
+  # return output_filenames
+  return []

@@ -1,5 +1,5 @@
-from .classes import ShellScriptTask
-from .context import append_task
+from pix.classes import ShellScriptTask, ImageList
+from pix.context import append_task
 
 _javascript = """
 var view_ids = {view_ids};
@@ -13,7 +13,7 @@ for (let i = 0; i < output_filenames.length; ++i) {{
 """
 
 
-def SaveImages(images):
+def SaveImages(images: ImageList) -> ImageList:
   print(f'### Entering SaveImages {images}')
   view_ids = [i.view_id for i in images]
   filenames = [i.filename for i in images]

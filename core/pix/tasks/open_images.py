@@ -1,7 +1,7 @@
 import os
 
-from .classes import Image, ShellScriptTask, ImageList, FilenameList
-from .context import append_task, add_images_to_save
+from pix.classes import Image, ShellScriptTask, ImageList, FilenameList
+from pix.context import append_task, add_images_to_save
 
 from file_io.generic import get_content_hash
 

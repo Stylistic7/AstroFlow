@@ -10,24 +10,21 @@ class ArgumentType(Enum):
 
 @dataclass
 class ShellScriptTask:
-  javascript: str = None
-  javascript_filename: str = None
+  javascript: str | None = None
+  javascript_filename: str | None = None
   parameters: dict = field(default_factory=dict)
   arguments: dict = field(default_factory=dict)
 
 
 @dataclass
 class Image:
-  tmp_dir_obj: object = None
-  filename: str = None
-  view_id: str = None
-  filter: str = None
-  tag: str = None
+  tmp_dir_obj: object | None = None
+  filename: str | None = None
+  view_id: str | None = None
+  filter: str | None = None
+  tag: str | None = None
   metadata: dict = field(default_factory=dict)
   dirty: bool = False
-
-  def __str__(self):
-    return self.filename
 
 
 ImageList = list[Image]

@@ -1,8 +1,8 @@
-from pathlib import Path
+from typing import Any, cast
 
-from .classes import ShellScriptTask, Image
-from .context import append_task, add_images_to_save
-from .processes import execute_on_view_ids
+from pix.classes import ShellScriptTask, Image, ImageList
+from pix.context import append_task, add_images_to_save
+from pix.processes import execute_on_view_ids
 
 _default_parameters = {
     # TODO: Make this cross-platform.
@@ -13,8 +13,10 @@ _default_parameters = {
 }
 
 
-def StarXTerminator(images, **kwargs):
-  view_ids = [i.view_id for i in images]
+def StarXTerminator(images: ImageList, **kwargs: Any) -> ImageList:
+  assert all(i.view_id is not None for i in images)
+  view_ids = [cast(str, i.view_id) for i in images]
+
   append_task(
       ShellScriptTask(javascript=execute_on_view_ids(
           'StarXTerminator', _default_parameters | kwargs, view_ids)))

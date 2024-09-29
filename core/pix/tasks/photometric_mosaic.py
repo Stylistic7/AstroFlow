@@ -1,7 +1,7 @@
-import os
+from typing import Any
 
-from .classes import ShellScriptTask, Image
-from .context import append_task, add_images_to_save
+from pix.classes import ShellScriptTask, Image, ImageList
+from pix.context import append_task, add_images_to_save
 
 # TODO: These parameters must be floats, not strings, so they can be overriden
 # by the user.
@@ -63,7 +63,8 @@ _default_parameters = {
 }
 
 
-def PhotometricMosaic(images, output_filename, *args, **kwargs):
+def PhotometricMosaic(images: ImageList, output_filename: str,
+                      **kwargs: Any) -> ImageList:
   print(f'### Entering PhotometricMosaic, images {images} '
         f'output_filename {output_filename}')
   parameters = _default_parameters | kwargs

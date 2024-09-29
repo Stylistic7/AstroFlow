@@ -8,7 +8,7 @@ import os
 import sys
 import uuid
 
-from pix import ShellScriptTask
+from pix.classes import ShellScriptTask
 
 _SLOT_NUMBER: int = 1
 
@@ -36,13 +36,9 @@ def _save_javascript_file(tmp_dir: str,
   if task.javascript and not task.javascript_filename:
     script_filename = os.path.join(tmp_dir, f'{uuid.uuid4()}.js')
     with open(script_filename, "w") as f:
-      javascript = task.javascript
-      if type(javascript) is list:
-        javascript = '\n'.join(javascript)
-
       print(f'### Writing JavaScript to file {script_filename}')
-      print(javascript)
-      f.write(javascript)
+      print(task.javascript)
+      f.write(task.javascript)
 
     task.javascript_filename = script_filename
 

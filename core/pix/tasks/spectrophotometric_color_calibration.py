@@ -1,6 +1,8 @@
-from .classes import ShellScriptTask
-from .context import append_task
-from .processes import enum, execute_on_view_ids
+from typing import Any, cast
+
+from pix.classes import ShellScriptTask, ImageList
+from pix.context import append_task
+from pix.processes import enum, execute_on_view_ids
 
 # TODO: Select parameters for this from the user's camera metadata.
 _default_parameters = {
@@ -113,10 +115,14 @@ _default_parameters = {
 }
 
 
-def SpectrophotometricColorCalibration(view_ids, **kwargs):
+def SpectrophotometricColorCalibration(images: ImageList,
+                                       **kwargs: Any) -> ImageList:
+  assert all(i.view_id is not None for i in images)
+  view_ids = [cast(str, i.view_id) for i in images]
+
   append_task(
       ShellScriptTask(javascript=execute_on_view_ids(
           'SpectrophotometricColorCalibration', _default_parameters |
           kwargs, view_ids)))
 
-  return view_ids
+  return images

@@ -3,7 +3,7 @@ import os
 import uuid
 from pathlib import Path
 
-from pix import ShellScriptTask, Image
+from pix.classes import ShellScriptTask, Image
 
 
 def append_task(task: ShellScriptTask) -> None:
@@ -45,6 +45,7 @@ def get_next_process_number() -> int:
 
 
 def extend_filename(image: Image, funcname: str) -> str:
+  assert image.filename is not None
   path = Path(image.filename)
 
   if image.tag:

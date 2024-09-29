@@ -5,14 +5,12 @@ from pathlib import Path
 
 from typing import Callable, Any, cast
 
-from pix import Image
-from pix.classes import PixInsightFn, FilenameList, ImageList
+from pix.classes import PixInsightFn, FilenameList, ImageList, Image
 from file_io.generic import get_content_hash
 from hashing import hash_list
 
-from . import shell_script
-from . import open_images
-from . import save_images
+from pix.shell_script import run_script
+from pix.tasks import OpenImages, SaveImages
 
 
 # TODO: Refactor this function into pieces.
@@ -59,7 +57,7 @@ def PixInsight(dry_run: bool = False) -> Callable[[PixInsightFn], PixInsightFn]:
         return func(*args, **kwargs)
 
       # Load the given filenames and their metadata.
-      images = call_with_context(open_images.OpenImages, filenames)
+      images = call_with_context(OpenImages, filenames)
 
       # Call the decorated PixInsight function.
       func_name = cast(Callable, func).__name__
@@ -78,17 +76,18 @@ def PixInsight(dry_run: bool = False) -> Callable[[PixInsightFn], PixInsightFn]:
         return results
 
       results = normalize_images(results)
-      call_with_context(save_images.SaveImages, results)
+      call_with_context(SaveImages, results)
 
       # In dry_run mode, just touch all of the files that the tasks claim they
       # produce. Otherwise, run the script.
       if dry_run:
         for result in results:
+          assert result.filename is not None
           (Path(tmp_dir_obj.name) / result.filename).touch()
       else:
         print(f"### Shell script is ready for {func_name}, with "
               f"{len(context['tasks'])} tasks")
-        shell_script.run_script(context['tasks'], dry_run=dry_run)
+        run_script(context['tasks'], dry_run=dry_run)
 
       return results
 
