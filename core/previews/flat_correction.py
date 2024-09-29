@@ -2,15 +2,17 @@ import ray
 import numpy as np
 
 from context import context, WriteMode
-from stacks import SimpleStack
-from hashing import hash_string
+from stacks import SimpleStack, StackHash
+from hashing import hash_list
 # TODO: Unify quarantining
 import quarantining
 from previews.operations import resize_array, array_to_png
 from file_io.generic import read_image
+from previews import PreviewHash
 from previews.calibration import calibrate_image
 from previews.operations import autostretch
 from profiling import track_performance
+from metadata import ImageMetadata
 
 
 # TODO: Is it only necessary to make the thumbnails for the flat stacks
@@ -21,7 +23,7 @@ from profiling import track_performance
 # TODO: Use the artifact workflow.
 @ray.remote
 @track_performance
-def create_flat_correction_thumbnails(stack_id):
+def create_flat_correction_thumbnails(stack_id: StackHash) -> None:
   stacks = context.stacks
   stack = stacks[stack_id]
   assert isinstance(stack, SimpleStack)
@@ -53,7 +55,7 @@ def create_flat_correction_thumbnails(stack_id):
   light_image = (resize_array(read_image(light_frame.filename),
                               width)).astype(np.float32)
 
-  def first_frame(stack_id):
+  def first_frame(stack_id: StackHash) -> ImageMetadata:
     return metadata[stacks[stack_id].frames[0]]
 
   settings_key = ('stack_settings', stack_id)
@@ -87,12 +89,12 @@ def create_flat_correction_thumbnails(stack_id):
             calibrate_image(light_frame, light_image, bias_frame, bias_image,
                             dark_frame, dark_image, flat_frame, flat_image,
                             rotate)))
-    hash = hash_string(thumbnail)
+    hash = PreviewHash(hash_list([stack_id, flat_stack_id]))
     thumbnails[flat_stack_id] = hash
 
-    key = ('flat_correction_thumbnail', hash)
-    context.set(key, thumbnail, write_mode=WriteMode.DISK_ONLY)
-    print(f'### Wrote key {key}')
+    thumbnail_key = ('flat_correction_thumbnail', hash)
+    context.set(thumbnail_key, thumbnail, write_mode=WriteMode.DISK_ONLY)
+    print(f'### Wrote key {thumbnail_key}')
 
   key = ('flat_correction_thumbnails', stack_id)
   context.set(key, thumbnails, write_mode=WriteMode.DISK_ONLY)

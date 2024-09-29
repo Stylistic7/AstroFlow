@@ -3,7 +3,12 @@ import cv2
 import os
 import tempfile
 import ray
+from enum import StrEnum
+from typing import cast
+from ray.remote_function import RemoteFunction
 
+from stacks import StackHash, FrameHash
+from metadata import ImageMetadata
 from previews.operations import resize_array, array_to_png
 from previews.flat_correction import create_flat_correction_thumbnails
 from previews.calibration import calibrate_image
@@ -12,7 +17,7 @@ from file_io.generic import read_image
 # TODO: Unify quarantining
 import quarantining
 from stacks import SimpleStack, CompositeStack
-from dependency_graph import Graph
+from dependency_graph import Graph, TaskDescriptor
 from previews.operations import autostretch
 from profiling import track_performance
 
@@ -40,42 +45,49 @@ from profiling import track_performance
 # ('stack_thumbnail_image', 'master', 'abc123') = image
 # ('stack_thumbnail_image', 'post_processed', 'abc123') = image
 
-MIN_STAR_FRACTION = 0.5
+
+class QualityLevel(StrEnum):
+  SUBFRAME = "subframe"
+  MASTER = "master"
 
 
 # TODO: This needs to use the Artifact workflow, so that it will automatically
 # re-generate previews when stack contents change.
 @ray.remote(resources={'fastest_storage': 0.001})
-def scatter_stack_thumbnails(mode):
+def scatter_stack_thumbnails(mode: QualityLevel) -> Graph:
   stacks = context.stacks
   cache_keys = context.get_cache_keys()
 
+  tasks: list[TaskDescriptor] = list()
+
   if mode == 'subframe':
-    subframe_images = [(create_flat_correction_thumbnails, id)
-                       for id, s in stacks.items()
-                       if type(s) is SimpleStack and s.image_type == 'light']
-    subframe_videos = [
+    tasks.extend([(create_flat_correction_thumbnails, id)
+                  for id, s in stacks.items()
+                  if type(s) is SimpleStack and s.image_type == 'light'])
+    tasks.extend([
         (create_stack_subframe_thumbnails, id)
         for id, s in stacks.items()
         if type(s) is CompositeStack and s.image_type == 'light' and (
             ('stack_subframe_thumbnail_image', id) not in cache_keys or
             ('stack_subframe_thumbnail_video', id) not in cache_keys)
-    ]
-    tasks = subframe_images + subframe_videos
+    ])
   elif mode == 'master':
-    tasks = [(create_stack_master_thumbnail, id)
-             for id, s in stacks.items()
-             if type(s) is CompositeStack and s.image_type == 'light' and
-             ('stack_master_thumbnail_image', id) not in cache_keys]
+    # TODO: Implement
+    pass
 
-  return Graph({gather: tasks})
+    # tasks = [(create_stack_master_thumbnail, id)
+    #          for id, s in stacks.items()
+    #          if type(s) is CompositeStack and s.image_type == 'light' and
+    #          ('stack_master_thumbnail_image', id) not in cache_keys]
+
+  return Graph({cast(RemoteFunction, gather): tasks})
 
 
 # TODO: The thumbnail images and videos need to use the artifact workflow, so
 # they will be regenerated after quarantining, etc.
 @ray.remote
 @track_performance
-def create_stack_subframe_thumbnails(stack_id):
+def create_stack_subframe_thumbnails(stack_id: StackHash) -> None:
   stacks = context.stacks
   metadata = context.metadata
 
@@ -95,9 +107,10 @@ def create_stack_subframe_thumbnails(stack_id):
   width = context.subframe_thumbnail_width
 
   # Cache the calibration images so they're only read once.
-  first_subframes = {}
+  first_subframes: dict[StackHash, tuple[ImageMetadata, np.ndarray] | None] = {}
 
-  def get_first_subframe(stack_id):
+  def get_first_subframe(
+      stack_id: StackHash) -> tuple[ImageMetadata, np.ndarray] | None:
     if not stack_id:
       return None
     elif stack_id in first_subframes:
@@ -121,7 +134,7 @@ def create_stack_subframe_thumbnails(stack_id):
         f'with {len(light_frames_by_stars)} frames')
 
   with tempfile.TemporaryDirectory() as tmp_dir:
-    fourcc = cv2.VideoWriter_fourcc(*'VP80')
+    fourcc = cv2.VideoWriter_fourcc(*'VP80')  # type: ignore
     video_filename = os.path.join(tmp_dir, 'output.webm')
     out = cv2.VideoWriter(video_filename, fourcc, 10.0, (width, height), False)
     for i, light_frame in enumerate(light_frames_by_stars):
@@ -140,15 +153,21 @@ def create_stack_subframe_thumbnails(stack_id):
 
       bias_frame = bias_image = None
       if 'bias' in dependencies:
-        bias_frame, bias_image = get_first_subframe(dependencies['bias'])
+        result = get_first_subframe(dependencies['bias'])
+        assert result is not None
+        bias_frame, bias_image = result
 
       dark_frame = dark_image = None
       if 'dark' in dependencies:
-        dark_frame, dark_image = get_first_subframe(dependencies['dark'])
+        result = get_first_subframe(dependencies['dark'])
+        assert result is not None
+        dark_frame, dark_image = result
 
       flat_frame = flat_image = None
       if 'flat' in dependencies:
-        flat_frame, flat_image = get_first_subframe(dependencies['flat'])
+        result = get_first_subframe(dependencies['flat'])
+        assert result is not None
+        flat_frame, flat_image = result
 
       if bias_frame is None or dark_frame is None or flat_frame is None:
         print(f'### create_stack_subframe_thumbnails light frame '
@@ -180,5 +199,5 @@ def create_stack_subframe_thumbnails(stack_id):
 
 
 @ray.remote
-def gather():
+def gather() -> None:
   pass
