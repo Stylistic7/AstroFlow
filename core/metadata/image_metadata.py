@@ -123,6 +123,7 @@ def compute_image_metadata(filename=None, *, ancestor_results):
   print(f'Entering compute_image_metadata() for {filename} '
         f'ancestor_results {ancestor_results}')
   if filename is None and ancestor_results is not None:
+    ancestor_results = [x for xs in ancestor_results for x in xs]
     assert type(ancestor_results) is list
     assert len(ancestor_results) == 1
     assert isinstance(ancestor_results[0], FileArtifact)
