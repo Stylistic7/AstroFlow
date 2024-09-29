@@ -1,6 +1,6 @@
 import numpy as np
 import ray
-from typing import Sequence
+from typing import Sequence, Callable, Any, TypeVar
 
 import metadata.image_types as image_types
 from metadata.actor import get_metadata
@@ -11,12 +11,16 @@ import plate_solving
 from clustering.classes import SpatialGroup
 from profiling import track_performance
 
+ComparisonFn = Callable[[float, float], bool]
+T = TypeVar('T')
 
-def find_groups(values, comparison_fn, min_component_members) -> list[str]:
+
+def find_groups(values: dict[T, Any], comparison_fn: ComparisonFn,
+                min_component_members: int) -> list[list[T]]:
   print(f'Finding groups among {len(values)} values')
   ids = values.keys()
-  groups = []
-  last_printed_percent_done = 0
+  groups: list[list[T]] = []
+  last_printed_percent_done: float = 0
   for i, id in enumerate(ids):
     found = False
     value = values[id]
@@ -70,8 +74,8 @@ def cluster_by_image_center() -> None:
   def comparison_fn(a: float, b: float) -> bool:
     return np.dot(a, b) > cosine_similarity_threshold
 
-  spatial_groups = find_groups(values, comparison_fn, min_component_members)
-  spatial_groups = [tuple(sorted(g)) for g in spatial_groups]
+  groups = find_groups(values, comparison_fn, min_component_members)
+  groups_as_tuples = [tuple(sorted(g)) for g in groups]
 
-  context.spatial_groups = spatial_groups
-  print(f'### Wrote {len(spatial_groups)} spatial groups into the cache')
+  context.spatial_groups = groups_as_tuples
+  print(f'### Wrote {len(groups_as_tuples)} spatial groups into the cache')
