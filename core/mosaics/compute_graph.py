@@ -1,32 +1,37 @@
 import ray
 import os
 import numpy as np
+from typing import Any
 
 from artifacts import Artifact, CacheArtifact, FileArtifact, read_artifact_image, write_artifact, artifact_exists
 from context import context
-from dependency_graph import Graph, print_graph, make_graph_from_list
+from dependency_graph import Graph, TaskDescriptor, print_graph, make_graph_from_list
 # TODO: Unify quarantining
 import quarantining
+from metadata import ImageMetadata
+from mosaics.types import MosaicHash
 from mosaics.classes import Panel
 from mosaics.merge_ops import make_merge_ops
 from mosaics.viewbox import compute_mosaic_viewbox
 from mosaics.placement import mosaic_by_coordinates, mosaic_by_coordinates_artifacts
 from stacks.post_process import post_process_stack_artifacts
 from stacks.compute_graph import build_stack_subgraph
+from stacks.types import StackHash, FrameHash
 from artifacts.decorators import saves_artifacts
-from previews import resize_array
+from previews import resize_array, QualityLevel
 from profiling import track_performance
 
 
 @ray.remote
-def done_stacking():
+def done_stacking() -> None:
   pass
 
 
 # TODO: This should depend on target subgraphs, which will in turn depend on
 # stack subgraphs.
 @ray.remote
-def build_stacks_for_mosaic_subgraph(mode, mosaic_id):
+def build_stacks_for_mosaic_subgraph(mode: QualityLevel,
+                                     mosaic_id: MosaicHash) -> Graph:
   print(f'### build_stacks_for_mosaic_subgraph {mode} {mosaic_id}')
   assert mode == 'master'
 
@@ -43,7 +48,8 @@ def build_stacks_for_mosaic_subgraph(mode, mosaic_id):
 
 # TODO: Make sure these are parallelized over all the mosaics.
 @ray.remote
-def build_mosaic_filter_subgraphs(mode, mosaic_id):
+def build_mosaic_filter_subgraphs(mode: QualityLevel,
+                                  mosaic_id: MosaicHash) -> Graph:
   print(f'### build_mosaic_filter_subgraphs mode {mode} mosaic_id {mosaic_id}')
 
   # TODO: Run all of the (build_stack_subgraph, stack_id) tasks first.
@@ -66,16 +72,19 @@ def build_mosaic_filter_subgraphs(mode, mosaic_id):
 
 
 @ray.remote
-def build_mosaic_subgraph(mode, mosaic_id):
-  if mode == 'subframe':
+def build_mosaic_subgraph(mode: QualityLevel, mosaic_id: MosaicHash) -> Graph:
+  if mode == QualityLevel.SUBFRAME:
     return ray.get(build_mosaic_filter_subgraphs.remote(mode, mosaic_id))
-  elif mode == 'master':
+  elif mode == QualityLevel.MASTER:
     stack_subgraph = (build_stacks_for_mosaic_subgraph, mode, mosaic_id)
     mosaic_subgraph = (build_mosaic_filter_subgraphs, mode, mosaic_id)
     return make_graph_from_list([stack_subgraph, mosaic_subgraph])
 
+  raise ValueError(f'Unknown quality level {mode}')
 
-def _get_best_light_frame(stack_id, metadata):
+
+def _get_best_light_frame(stack_id: StackHash,
+                          metadata: ImageMetadata) -> FrameHash:
   stack = context.stacks[stack_id]
 
   all_frames = stack.all_frames()
@@ -89,7 +98,9 @@ def _get_best_light_frame(stack_id, metadata):
 
 @ray.remote
 @track_performance
-def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
+def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic_id: MosaicHash,
+                                 filter: str,
+                                 viewbox_task: TaskDescriptor) -> Graph:
   print(f'### build_mosaic_filter_subgraph mode {mode} '
         f'mosaic_id {mosaic_id} filter {filter}')
   stacks = context.stacks
@@ -166,11 +177,8 @@ def build_mosaic_filter_subgraph(mode, mosaic_id, filter, viewbox_task):
   return graph
 
 
-def merge_graph_done_artifacts(mode,
-                               mosaic_id,
-                               filter,
-                               *,
-                               ancestor_results=None):
+def merge_graph_done_artifacts(mode: QualityLevel, mosaic_id: MosaicHash,
+                               filter: str) -> list[Artifact]:
   mosaic = context.mosaics[mosaic_id]
   key = ('mosaic_thumbnail_image', mode, mosaic_id, filter)
 
@@ -191,7 +199,8 @@ def merge_graph_done_artifacts(mode,
 # this function.
 @ray.remote
 @saves_artifacts(merge_graph_done_artifacts)
-def merge_graph_done(mode, mosaic_id, filter, *, ancestor_results=None):
+def merge_graph_done(mode: QualityLevel, mosaic_id: MosaicHash, filter: str,
+                     ancestor_results: dict[str, Any]) -> list[Artifact]:
   mosaic = context.mosaics[mosaic_id]
 
   assert type(ancestor_results) is list
