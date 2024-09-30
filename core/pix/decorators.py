@@ -12,6 +12,47 @@ from hashing import hash_list
 from pix.shell_script import run_script
 from pix.tasks import OpenImages, SaveImages
 
+# Some philosophy here:
+#
+# There are at least two intended use cases:
+#
+# - A PixInsight function that is plugged into AstroFlow. AstroFlow will be
+#   responsible for opening the images before calling the function, and
+#   saving the images to disk after calling the function. An example of
+#   this use case is:
+#
+#     @PixInsight()
+#     def foo(images: ImageList) -> ImageList:
+#       return BlurXTerminator(images)
+#
+#   The @PixInsight decorator will maintain a temporary directory, so the
+#   user never needs to worry about where the files come from or go; they only
+#   need to worry about what operations are performed.
+#
+# - A PixInsight function that is run independently, e.g. from a script outside
+#   of AstroFlow. The user will probably pass filenames in and filenames out,
+#   with intermediate steps just kept in memory in PixInsight.
+#
+#   An example for this use case is:
+#
+#     @PixInsight()
+#     def foo(filenames_in: FilenameList, filenames_out: FilenameList) -> None:
+#       images = OpenImages(filenames_in)
+#       images = BlurXTerminator(images)
+#       SaveImages(images, filenames_out)
+#
+# The @PixInsight decorator really only has one job: it collects the JavaScript
+# and shell script code emitted by each step in the wrapped function, and
+# handles dipatching code to PixInsight and waiting for completion.
+#
+# All of the file-opening and file-saving stuff is outside of that core job.
+#
+# The file-opening and file-saving code ultimately has to end up included in
+# the JavaScripts and shell scripts run inside PixInsight, though, so it does
+# make sense for the decorator to handle it, too. Or maybe there can be two
+# distinct decorators that share a lot of code. Or maybe the decorator can
+# select its behavior by matching the function's signature.
+
 
 # TODO: Refactor this function into pieces.
 def PixInsight(dry_run: bool = False) -> Callable[[PixInsightFn], PixInsightFn]:

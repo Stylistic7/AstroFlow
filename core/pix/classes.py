@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Protocol, Any
+from typing import Protocol, Any, overload, TypeAlias, Callable
+
+# TODO: Rename the `classes.py` files to `types.py`
 
 
 class ArgumentType(Enum):
@@ -30,9 +32,15 @@ class Image:
 ImageList = list[Image]
 FilenameList = list[str]
 
+# class PixInsightFn(Protocol):
 
-class PixInsightFn(Protocol):
+#   @overload
+#   def __call__(self, filenames: FilenameList) -> ImageList:
+#     ...
 
-  def __call__(self, filenames: FilenameList, *args: Any,
-               **kwargs: Any) -> ImageList:
-    ...
+#   @overload
+#   def __call__(self, filenames: FilenameList, *args: Any,
+#                **kwargs: Any) -> ImageList:
+#     ...
+
+PixInsightFn: TypeAlias = Callable[..., Any]

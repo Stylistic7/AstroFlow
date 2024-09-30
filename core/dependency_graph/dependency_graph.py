@@ -14,6 +14,8 @@ MIN_STATUS_UPDATE_INTERVAL_SECS: float = 5.0
 
 StatusFn = Callable[[GraphStatus], Any]
 
+# TODO: Make a type alias for AncestorResults
+
 
 def matching_nodes(graph: CanonicalGraph,
                    fn: GenericRemoteFunction) -> list[Node]:

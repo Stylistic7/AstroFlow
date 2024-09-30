@@ -2,7 +2,9 @@ import unittest
 import tempfile
 import os
 import shutil
+from typing import Any
 
+from pix.classes import FilenameList, ImageList
 from pix.decorators import PixInsight
 from pix.tasks import BlurXTerminator, StarXTerminator, StarAlignment, ChannelCombination
 
@@ -37,7 +39,11 @@ _TESTDATA_TARGETS = {
 }
 
 
-def copy_testdata_frames(target_name, dest_dir, prefix='', number=None):
+# TODO: Use Path everywhere instead of str.
+def copy_testdata_frames(target_name: str,
+                         dest_dir: str,
+                         prefix: str = '',
+                         number: int | None = None) -> list[str]:
   dest_filenames = []
   for filename in _TESTDATA_TARGETS[target_name][:number]:
     path = os.path.dirname(os.path.realpath(__file__))
@@ -92,25 +98,25 @@ def copy_testdata_frames(target_name, dest_dir, prefix='', number=None):
 # stacks / targets / mosaics by name. These are legit Python functions, not
 # fragments or other bastardizations.
 @PixInsight()
-def bxt_only(images):
+def bxt_only(images: ImageList) -> ImageList:
   return BlurXTerminator(images)
 
 
 @PixInsight()
-def bxt_and_sxt(images):
+def bxt_and_sxt(images: ImageList) -> ImageList:
   deconvolved = BlurXTerminator(images)
   return StarXTerminator(deconvolved)
 
 
 @PixInsight()
-def bxt_align_sxt(images):
+def bxt_align_sxt(images: ImageList) -> ImageList:
   deconvolved = BlurXTerminator(images)
   aligned = StarAlignment(deconvolved)
   return StarXTerminator(aligned)
 
 
 @PixInsight()
-def channel_combination(images):
+def channel_combination(images: ImageList) -> ImageList:
   aligned = StarAlignment(images)
   return ChannelCombination(aligned)
 
