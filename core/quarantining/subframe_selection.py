@@ -2,7 +2,7 @@ import numpy as np
 import operator
 import ray
 
-from stacks import CompositeStack
+from stacks.composite_stack import CompositeStack
 from context import context
 from metadata.image_types import is_light_frame
 from dependency_graph import Graph

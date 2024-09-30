@@ -2,7 +2,8 @@ import ray
 import numpy as np
 
 from context import context, WriteMode
-from stacks import SimpleStack, StackHash
+from stacks.types import StackHash
+from stacks.simple_stack import SimpleStack
 from hashing import hash_list
 # TODO: Unify quarantining
 import quarantining
@@ -12,7 +13,7 @@ from previews.types import PreviewHash
 from previews.calibration import calibrate_image
 from previews.operations import autostretch
 from profiling import track_performance
-from metadata import ImageMetadata
+from metadata.classes import ImageMetadata
 
 
 # TODO: Is it only necessary to make the thumbnails for the flat stacks

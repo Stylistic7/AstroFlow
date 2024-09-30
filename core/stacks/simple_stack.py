@@ -5,7 +5,7 @@ from context import context
 from stacks.types import FrameHash, DependenciesDict
 from stacks.imaging_attributes import ImagingAttributes
 from stacks.state_attributes import AstroFlowStateAttributes
-from metadata import MetadataDict
+from metadata.classes import MetadataDict
 from hashing import hash_list
 
 

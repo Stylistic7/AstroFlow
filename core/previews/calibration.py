@@ -1,6 +1,6 @@
 import numpy as np
 
-from metadata import ImageMetadata
+from metadata.classes import ImageMetadata
 
 
 # TODO: Average flat frames before applying them.

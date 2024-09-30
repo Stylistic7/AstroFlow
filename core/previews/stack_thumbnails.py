@@ -3,20 +3,21 @@ import cv2
 import os
 import tempfile
 import ray
-from enum import StrEnum
 from typing import cast
 from ray.remote_function import RemoteFunction
 
-from stacks import StackHash, FrameHash
-from metadata import ImageMetadata
+from stacks.types import StackHash
+from metadata.classes import ImageMetadata
 from previews.operations import resize_array, array_to_png
 from previews.flat_correction import create_flat_correction_thumbnails
 from previews.calibration import calibrate_image
+from previews.types import QualityLevel
 from context import context, WriteMode
 from file_io.generic import read_image
 # TODO: Unify quarantining
 import quarantining
-from stacks import SimpleStack, CompositeStack
+from stacks.simple_stack import SimpleStack
+from stacks.composite_stack import CompositeStack
 from dependency_graph import Graph, TaskDescriptor
 from previews.operations import autostretch
 from profiling import track_performance
@@ -44,11 +45,6 @@ from profiling import track_performance
 # ('stack_thumbnail_image', 'subframe', 'abc123') = image
 # ('stack_thumbnail_image', 'master', 'abc123') = image
 # ('stack_thumbnail_image', 'post_processed', 'abc123') = image
-
-
-class QualityLevel(StrEnum):
-  SUBFRAME = "subframe"
-  MASTER = "master"
 
 
 # TODO: This needs to use the Artifact workflow, so that it will automatically

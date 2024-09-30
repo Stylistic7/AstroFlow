@@ -13,10 +13,10 @@ from stacks.imaging_attributes import ImagingAttributes
 from stacks.state_attributes import AstroFlowStateAttributes
 from stacks.astrometric_attributes import AstrometricAttributes
 from stacks.types import FrameHash
-from metadata import MetadataDict
+from metadata.classes import MetadataDict
 from catalogs import position_string
 import geometry.footprints as footprints
-import clustering
+from clustering.continuous import cluster_continuous
 from plate_solving import PlateSolution
 
 SimpleStacksDict = dict[str, SimpleStack]
@@ -73,17 +73,15 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
     exposures = [(i.content_hash, i.header['EXPOSURE'])
                  for i in metadata_list
                  if 'EXPOSURE' in i.header]
-    for exposure_cluster in clustering.cluster_continuous(exposures,
-                                                          epsilon=0.01):
+    for exposure_cluster in cluster_continuous(exposures, epsilon=0.01):
       exposure_frames, exposures = zip(*exposure_cluster)
       assert np.all(np.isclose(exposures, exposures[0])
                    ), f'exposures {exposures} are clustered, but not all close'
 
-      runs = clustering.cluster_continuous(
-          [(i.content_hash, i.header['DATE-OBS'])
-           for i in sorted_metadata
-           if i.content_hash in exposure_frames],
-          epsilon=context.max_run_gap)
+      runs = cluster_continuous([(i.content_hash, i.header['DATE-OBS'])
+                                 for i in sorted_metadata
+                                 if i.content_hash in exposure_frames],
+                                epsilon=context.max_run_gap)
 
       for run in runs:
         if len(run) < context.min_frames_in_run:

@@ -2,7 +2,9 @@ import ray
 from dataclasses import replace
 
 from context import context
-from stacks import CompositeStack, SimpleStack, FrameHash, ImagingAttributes
+from stacks.composite_stack import CompositeStack
+from stacks.simple_stack import SimpleStack
+from stacks.imaging_attributes import ImagingAttributes
 from profiling import track_performance
 
 # TODO: Ensure that all of the actions in this file are idempotent. The goal

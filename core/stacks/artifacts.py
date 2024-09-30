@@ -1,7 +1,8 @@
 import os
 
 from context import context
-from stacks import SimpleStack, CompositeStack
+from stacks.simple_stack import SimpleStack
+from stacks.composite_stack import CompositeStack
 from artifacts import FileArtifact
 from catalogs import position_string
 
