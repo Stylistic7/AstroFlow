@@ -4,10 +4,10 @@ from copy import copy
 from functools import reduce
 from operator import or_
 import time
-from ray.remote_function import RemoteFunction
 from typing import Callable, Any
+from ray.remote_function import RemoteFunction
 
-from dependency_graph import Node, Graph, CanonicalGraph, GraphStatus, ResultDict, TopologicalSorterWithStatus, canonicalize_node
+from dependency_graph import Node, Graph, CanonicalGraph, GraphStatus, ResultDict, TopologicalSorterWithStatus, GenericRemoteFunction, canonicalize_graph
 from .debugging import print_graph
 
 MIN_STATUS_UPDATE_INTERVAL_SECS: float = 5.0
@@ -15,9 +15,12 @@ MIN_STATUS_UPDATE_INTERVAL_SECS: float = 5.0
 StatusFn = Callable[[GraphStatus], Any]
 
 
-def matching_nodes(graph: CanonicalGraph, fn: RemoteFunction) -> list[Node]:
+def matching_nodes(graph: CanonicalGraph,
+                   fn: GenericRemoteFunction) -> list[Node]:
 
   def _matches(node: Node) -> bool:
+    assert isinstance(fn, RemoteFunction)
+    assert isinstance(node.task, RemoteFunction)
     return (node.task._function.__module__ == fn._function.__module__ and
             node.task._function.__name__ == fn._function.__name__)
 
@@ -33,16 +36,6 @@ def run_graph(graph: Graph,
   active: list[TopologicalSorterWithStatus] = []
   completed: list[TopologicalSorterWithStatus] = []
   last_status_time: float = 0
-
-  # TODO: Maybe support nodes with one ancestor, like this {done: process},
-  # instead of requiring {done: {process}}.
-  def canonicalize_graph(graph: Graph) -> CanonicalGraph:
-    output = CanonicalGraph({})
-    for node, dependents in graph.items():
-      output[canonicalize_node(node)] = {
-          canonicalize_node(x) for x in dependents
-      }
-    return output
 
   def add_subgraph(
       graph: Graph,
@@ -79,6 +72,7 @@ def run_graph(graph: Graph,
                        node: Node) -> list[Any]:
     nodes: set[Node] = ts.graph.get(node, set())
     if debug:
+      assert isinstance(node.task, RemoteFunction)
       print(f'Node with task {node.task._function.__name__} has '
             f'{len(nodes)} ancestors')
 
@@ -86,12 +80,14 @@ def run_graph(graph: Graph,
 
   def make_run_fn(ts: TopologicalSorterWithStatus, node: Node) -> Any:
     if debug:
+      assert isinstance(node.task, RemoteFunction)
       print(f'Making run fn for task {node.task._function.__name__}')
 
     # TODO: Is this copy necessary?
     full_args = []
     full_args.extend(node.args)
 
+    assert isinstance(node.task, RemoteFunction)
     sig = inspect.signature(node.task._function)
     if 'ancestor_results' in sig.parameters:
       return node.task.remote(*full_args,
@@ -137,6 +133,7 @@ def run_graph(graph: Graph,
       assert len(ready_refs) == 1
       ts, node = ref_to_ts_and_node[ready_refs[0]]
       if debug:
+        assert isinstance(node.task, RemoteFunction)
         print(f'Task {node.task._function.__name__} finished')
 
       num_nodes_run += 1

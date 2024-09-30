@@ -1,19 +1,26 @@
-from typing import Any, Callable, Sequence, Type, TypeAlias, Tuple
+from typing import Any, Callable, Union, TypeAlias, Tuple, Iterable
 from dataclasses import dataclass, field
 import graphlib
 
 from ray.remote_function import RemoteFunction
+from ray._private.worker import RemoteFunctionNoArgs, RemoteFunction0, RemoteFunction1, RemoteFunction2, RemoteFunction3, RemoteFunction4, RemoteFunction5, RemoteFunction6
+
+GenericRemoteFunction: TypeAlias = (RemoteFunction | RemoteFunctionNoArgs |
+                                    RemoteFunction0 | RemoteFunction1 |
+                                    RemoteFunction2 | RemoteFunction3 |
+                                    RemoteFunction4 | RemoteFunction5 |
+                                    RemoteFunction6)
 
 
 class Node():
 
-  task: RemoteFunction
+  task: GenericRemoteFunction
   name: str | None
   priority: int
   args: Any
 
   def __init__(self,
-               task: RemoteFunction,
+               task: GenericRemoteFunction,
                *args: Any,
                name: str | None = None,
                priority: int = 1) -> None:
@@ -24,6 +31,8 @@ class Node():
 
   def __eq__(self, other: Any) -> bool:
     assert isinstance(other, Node)
+    assert isinstance(self.task, RemoteFunction)
+    assert isinstance(other.task, RemoteFunction)
     return (self.task._function.__module__ == other.task._function.__module__
             and
             self.task._function.__name__ == other.task._function.__name__ and
@@ -34,8 +43,20 @@ class Node():
     return hash((self.task, self.name, self.priority, self.args))
 
 
-RemoteFunctionTuple: TypeAlias = Tuple[RemoteFunction, ...]
-TaskDescriptor: TypeAlias = Node | RemoteFunction | RemoteFunctionTuple
+RemoteFunctionTuple: TypeAlias = Union[tuple[GenericRemoteFunction,
+                                             Any], tuple[GenericRemoteFunction,
+                                                         Any, Any],
+                                       tuple[GenericRemoteFunction, Any, Any,
+                                             Any], tuple[GenericRemoteFunction,
+                                                         Any, Any, Any, Any],
+                                       tuple[GenericRemoteFunction, Any, Any,
+                                             Any, Any, Any],
+                                       tuple[GenericRemoteFunction, Any, Any,
+                                             Any, Any, Any, Any],
+                                       tuple[GenericRemoteFunction, Any, Any,
+                                             Any, Any, Any, Any, Any]]
+
+TaskDescriptor: TypeAlias = Node | GenericRemoteFunction | RemoteFunctionTuple
 
 
 def canonicalize_node(task: TaskDescriptor) -> Node:
@@ -49,12 +70,21 @@ def canonicalize_node(task: TaskDescriptor) -> Node:
     return Node(task)
 
 
-class Graph(dict[TaskDescriptor, Sequence[TaskDescriptor]]):
+class Graph(dict[TaskDescriptor, Iterable[TaskDescriptor]]):
   pass
 
 
 class CanonicalGraph(dict[Node, set[Node]]):
   pass
+
+
+# TODO: Maybe support nodes with one ancestor, like this {done: process},
+# instead of requiring {done: {process}}.
+def canonicalize_graph(graph: Graph) -> CanonicalGraph:
+  output = CanonicalGraph({})
+  for node, dependents in graph.items():
+    output[canonicalize_node(node)] = {canonicalize_node(x) for x in dependents}
+  return output
 
 
 @dataclass
@@ -82,10 +112,7 @@ class ResultDict(dict[Node, Any]):
   def __getattr__(self, node: Any) -> Any:
     return self[node]
 
-  def __getitem__(self, node: Node) -> Any | None:
-    if type(node) is str:
-      return self.get(node)
-
+  def __getitem__(self, node: Any) -> Any | None:
     node = canonicalize_node(node)
 
     for result_node, result in self.items():

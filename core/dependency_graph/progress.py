@@ -1,5 +1,7 @@
 from typing import Any
 
+from ray.remote_function import RemoteFunction
+
 from dependency_graph import Node, GraphStatus
 from profiling.estimate_time import estimate_time
 
@@ -15,6 +17,7 @@ def graph_status_to_progress(status: GraphStatus) -> dict[str, Any]:
         f'{len(status.done_nodes)} done nodes')
 
   def function_name_from_node(node: Node) -> str:
+    assert isinstance(node.task, RemoteFunction)
     return node.task._function.__name__
 
   status_dict = {}

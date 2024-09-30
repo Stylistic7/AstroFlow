@@ -1,5 +1,7 @@
 from typing import Any
 
+from ray.remote_function import RemoteFunction
+
 from dependency_graph import Graph, CanonicalGraph, Node, ResultDict, canonicalize_node
 from artifacts import FileArtifact, CacheArtifact
 
@@ -10,6 +12,7 @@ def print_result_dict(results: ResultDict, indent: int = 0) -> None:
       print(f'{" " * indent}{node.task} = {result}')
       continue
 
+    assert isinstance(node.task, RemoteFunction)
     if type(result) is not ResultDict:
       print(
           f'{" " * indent}{node.task._function.__name__} {node.args}: {result}')
@@ -37,6 +40,7 @@ def print_graph(graph: CanonicalGraph) -> None:
 
     def to_string(node: Node) -> str:
       node = canonicalize_node(node)
+      assert isinstance(node.task, RemoteFunction)
       return f'({node.task._function.__name__}, {tuple_values(node.args)})'
 
     if type(v) in [list, set]:

@@ -1,6 +1,7 @@
 import ray
-import objsize
+import objsize  # type: ignore
 from dataclasses import replace
+from typing import Any
 
 from context import context, WriteMode
 from metadata.image_metadata import scatter_compute_image_metadata
@@ -19,8 +20,9 @@ from quarantining.compute_graph import quarantine_targets, quarantine_mosaics
 from quarantining.subframe_selection import select_subframes
 from stacks.identification import identify_stacks
 import metadata.image_types as image_types
+from metadata import ImageMetadata
 from metadata.actor import get_metadata
-from stacks import update_state, validate_stacks, CompositeStack
+from stacks import update_state, validate_stacks, CompositeStack, FrameHash, StackHash
 from profiling import track_performance
 
 
@@ -29,7 +31,7 @@ from profiling import track_performance
 def load_metadata() -> None:
   quarantined_files = context.quarantined_files or set()
 
-  def predicate_fn(image):
+  def predicate_fn(image: ImageMetadata) -> bool:
     return not image_types.is_master(
         image.header) and image.content_hash not in quarantined_files
 
@@ -44,19 +46,19 @@ def load_metadata() -> None:
 
 
 @ray.remote
-def build_spatial_group_graph(g):
+def build_spatial_group_graph(g: tuple[FrameHash]) -> Graph:
   return make_graph_from_list([(identify_stacks, g), group_stacks_into_targets])
 
 
 @ray.remote
-def gather_spatial_groups():
+def gather_spatial_groups() -> None:
   pass
 
 
 # TODO: Don't call build_spatial_group_graph for spatial groups that are cached
 # and unchanged.
 @ray.remote
-def scatter_spatial_groups():
+def scatter_spatial_groups() -> Graph:
   graph = Graph()
   graph[gather_spatial_groups] = {
       (build_spatial_group_graph, g) for g in context.spatial_groups
@@ -71,13 +73,13 @@ def scatter_spatial_groups():
 #
 # TODO: Regrouping has to be done whenever there are new files.
 @ray.remote
-def build_regroup_graph():
+def build_regroup_graph() -> Graph:
   return make_graph_from_list(
       [cluster_by_image_center, scatter_spatial_groups, identify_mosaics])
 
 
 @ray.remote
-def store_targets(ancestor_results):
+def store_targets(ancestor_results: list[Any]) -> Graph:
   targets = ancestor_results[0]
   context.or_equals('targets', targets, default_value={})
   print(f'### store_targets: Stored {len(targets)} targets; '
@@ -85,7 +87,7 @@ def store_targets(ancestor_results):
 
 
 @ray.remote
-def store_mosaics(ancestor_results):
+def store_mosaics(ancestor_results: list[Any]) -> Graph:
   mosaics = ancestor_results[0]
   context.or_equals('mosaics', mosaics, default_value={})
   print(f'### store_mosaics: Stored {len(mosaics)} mosaics; '
@@ -94,7 +96,7 @@ def store_mosaics(ancestor_results):
 
 # TODO: Move this somewhere more appropriate.
 @ray.remote
-def apply_settings(ancestor_results):
+def apply_settings(ancestor_results: list[Any]) -> Graph:
   stack = ancestor_results[0]
   assert isinstance(stack, CompositeStack)
 
@@ -124,14 +126,14 @@ def apply_settings(ancestor_results):
 # a dict containing the Stack, plus the calibration Stacks that it depends on,
 # or None.
 @ray.remote
-def build_stack_user_settings_subgraph(stack_id):
+def build_stack_user_settings_subgraph(stack_id: StackHash) -> Graph:
   return make_graph_from_list([(apply_quarantine_to_stack, stack_id),
                                select_subframes, associate_with_stack,
                                apply_settings])
 
 
 @ray.remote
-def gather_stack_user_settings(ancestor_results):
+def gather_stack_user_settings(ancestor_results: list[Any]) -> None:
   stacks = {a.stable_hash: a for a in ancestor_results if a is not None}
   context.or_equals('stacks', stacks, default_value={})
   print(f'### gather_stack_user_settings: Stored {len(stacks)} stacks; '
@@ -144,7 +146,7 @@ def gather_stack_user_settings(ancestor_results):
 # TODO: Pass SimpleStacks through `build_stack_user_settings_subgraph()` too.
 # Flat-frame stacks could be quarantined, for example.
 @ray.remote
-def build_apply_stack_user_settings_subgraph():
+def build_apply_stack_user_settings_subgraph() -> Graph:
   stacks = context.grouped_stacks
 
   graph = Graph()
@@ -158,7 +160,7 @@ def build_apply_stack_user_settings_subgraph():
 
 
 @ray.remote
-def build_preview_graph():
+def build_preview_graph() -> Graph:
   graph = Graph()
   stack_thumbnail_task = (scatter_stack_thumbnails, 'subframe')
   graph[stack_thumbnail_task] = []
@@ -173,7 +175,7 @@ def build_preview_graph():
 
 
 @ray.remote
-def build_main_processing_graph():
+def build_main_processing_graph() -> Graph:
   shopping_cart = context.shopping_cart or []
   print(f'### build_main_processing_graph shopping_cart {shopping_cart}')
 
@@ -203,9 +205,9 @@ def build_main_processing_graph():
   return graph
 
 
-def build_compute_graph(regroup=False,
-                        make_previews=True,
-                        run_main_processing_graph=True):
+def build_compute_graph(regroup: bool = False,
+                        make_previews: bool = True,
+                        run_main_processing_graph: bool = True) -> Graph:
   task_list = [(scatter_compute_image_metadata, 'input'), load_metadata]
 
   # The regroup graph only looks at light frames only, and ignores calibration
