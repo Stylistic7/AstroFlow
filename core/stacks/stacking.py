@@ -7,46 +7,21 @@ import errno
 import os
 import shutil
 import astropy.io.fits as pyfits  # type: ignore
+from typing import Any
 
-from stacks import SimpleStack, output_filename, stack_files_artifacts
+from stacks import SimpleStack, StackHash, FrameHash, output_filename, stack_files_artifacts
 from artifacts.decorators import saves_artifacts
-from artifacts import FileArtifact
+from artifacts import FileArtifact, Artifact
 from context import context
-import pix
+from pix import PixInsight, FilenameList
+from pix.tasks import WeightedBatchPreprocessing
 import file_io
+from metadata import MetadataDict
 from metadata.actor import get_metadata
 from profiling import track_performance
 
-_CONTENT_HASH_KEY = 'CONTHASH'
 
-
-def _exposure_time_string(stack):
-  exposure = stack.exposure_time_s
-  hours = np.floor(exposure / 3600)
-  minutes = np.floor(exposure % 3600 / 60)
-  return f'{hours:02.0f}h{minutes:02.0f}m'
-
-
-# TODO: Split these functions out into a new file and unify them.
-def matching_artifacts(image_hashes, fits_headers, content_hash):
-  return [
-      h for h, header in fits_headers.items()
-      if header and header.get(_CONTENT_HASH_KEY, None) == content_hash and
-      os.path.exists(image_hashes[h])
-  ]
-
-
-# TODO: This function hits every master once for every stack, which grows to
-# be enormous. It should be cached somehow.
-def find_matching_masters(stack, image_hashes, fits_headers):
-  return [
-      h for h, header in fits_headers.items()
-      if header and header.get(_CONTENT_HASH_KEY, None) == stack.content_hash
-      and os.path.exists(image_hashes[h])
-  ]
-
-
-def _symlink_frames(filenames, dest_path):
+def _symlink_frames(filenames: list[str], dest_path: str) -> None:
   for filename in filenames:
     assert filename
     if not os.path.exists(filename):
@@ -57,7 +32,8 @@ def _symlink_frames(filenames, dest_path):
     os.symlink(filename, dest_filename)
 
 
-def _copy_frames_with_plate_solution(metadata, dest_path):
+def _copy_frames_with_plate_solution(metadata: MetadataDict,
+                                     dest_path: str) -> None:
   for frame in metadata.values():
     filename = frame.filename
     assert filename
@@ -76,13 +52,14 @@ def _copy_frames_with_plate_solution(metadata, dest_path):
           fits[0].header[k] = v
 
 
-@pix.PixInsight()
-def _run_wbpp(unused, *args, **kwargs):
-  return pix.WeightedBatchPreprocessing(unused, *args, **kwargs)
+@PixInsight()
+def _run_wbpp(unused: FilenameList, *args: Any, **kwargs: Any) -> Any:
+  return WeightedBatchPreprocessing(unused, *args, **kwargs)
 
 
 # TODO: This function should call _setup_simple_stack for its leaves.
-def _setup_composite_stack(stack_id, tmp_dir):
+def _setup_composite_stack(stack_id: StackHash,
+                           tmp_dir: str) -> tuple[str | None, int]:
   quarantined_stacks = context.quarantined_stacks or set()
   if stack_id in quarantined_stacks:
     return None, 0
@@ -119,7 +96,8 @@ def _setup_composite_stack(stack_id, tmp_dir):
   return first_filename, num_frames
 
 
-def _setup_simple_stack(stack_id, tmp_dir):
+def _setup_simple_stack(stack_id: StackHash,
+                        tmp_dir: str) -> tuple[str | None, int]:
   quarantined_stacks = context.quarantined_stacks or set()
   if stack_id in quarantined_stacks:
     return None, 0
@@ -140,7 +118,7 @@ def _setup_simple_stack(stack_id, tmp_dir):
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
 @saves_artifacts(stack_files_artifacts)
 @track_performance
-def stack_files(stack_id):
+def stack_files(stack_id: StackHash) -> list[Artifact]:
   assert context.output_dir
 
   stacks = context.stacks
