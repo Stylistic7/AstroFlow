@@ -1,9 +1,9 @@
 import ray
-from pathlib import Path
 import os
 import traceback
+from typing import Any
 
-from artifacts import FileArtifact, CacheArtifact, artifact_exists
+from artifacts import FileArtifact
 from file_io.find_image_files import find_image_files
 from file_io.generic import read_header, get_content_hash
 import metadata.image_types as image_types
@@ -12,6 +12,7 @@ import plate_solving
 from dependency_graph import Graph
 from context import context, WriteMode
 from metadata.actor import get_metadata
+from previews import QualityLevel
 
 # TODO: I need to associate dark and flat frames *before* computing thumbnails.
 
@@ -76,7 +77,8 @@ from metadata.actor import get_metadata
 # TODO: Don't revisit the same failed images over and over, it just takes up
 # time at every startup.
 @ray.remote
-def scatter_compute_image_metadata(mode=None, ancestor_results=None):
+def scatter_compute_image_metadata(mode: QualityLevel,
+                                   ancestor_results: list[Any]) -> Graph:
   print('Entering scatter_compute_image_metadata, mode', mode,
         'ancestor_results', ancestor_results)
 
@@ -87,7 +89,8 @@ def scatter_compute_image_metadata(mode=None, ancestor_results=None):
       'all': context.input_dirs + [context.output_dir],
   }[mode]
 
-  filenames = ancestor_results or set()
+  filenames_in: list[str] = ancestor_results or list()
+  filenames: set[str] = set(filenames_in)
 
   # TODO: Don't do anything if the directory's modification time hasn't
   # changed since the last time it was listed.
@@ -102,7 +105,7 @@ def scatter_compute_image_metadata(mode=None, ancestor_results=None):
   new_filenames = filenames - known_filenames - quarantined_files
 
   if not new_filenames:
-    return {}
+    return Graph({})
 
   print(f'### Computing image metadata for {len(new_filenames)} new artifacts')
   graph = Graph({
@@ -119,7 +122,7 @@ class DuplicateFileException(Exception):
 
 
 @ray.remote(scheduling_strategy="SPREAD", max_retries=5, retry_exceptions=True)
-def compute_image_metadata(filename=None, *, ancestor_results):
+def compute_image_metadata(filename: str, ancestor_results: list[Any]) -> None:
   print(f'Entering compute_image_metadata() for {filename} '
         f'ancestor_results {ancestor_results}')
   if filename is None and ancestor_results is not None:
@@ -182,11 +185,11 @@ def compute_image_metadata(filename=None, *, ancestor_results):
 #
 # TODO: Replace this with the `load_metadata()` function.
 @ray.remote
-def gather_compute_image_metadata():
+def gather_compute_image_metadata() -> None:
   print(f'### gather_compute_image_metadata')
 
   # TODO: Put this "main" get_metadata() call into a separate function.
-  def predicate_fn(image):
+  def predicate_fn(image: ImageMetadata) -> bool:
     return image.content_hash not in context.quarantined_files
 
   # TODO: This will write the metadata through the cache, wasting some space.

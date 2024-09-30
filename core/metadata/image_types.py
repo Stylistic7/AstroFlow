@@ -44,6 +44,8 @@ def is_frame_type(header: dict, type: str) -> bool:
   elif type == 'flat':
     return is_flat_frame(header)
 
+  raise ValueError(f'Unknown image type {type}')
+
 
 def is_master(header: dict) -> bool:
   if not header:
