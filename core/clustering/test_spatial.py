@@ -15,7 +15,7 @@ from metadata.image_metadata import scatter_compute_image_metadata
 from compute_graph.compute_graph import load_metadata
 
 
-def compute_hash_for_filename():
+def compute_hash_for_filename() -> dict[str, str]:
   return get_metadata(transform_fn=lambda i:
                       (os.path.basename(i.filename), i.content_hash),
                       post_fn=lambda images: {
@@ -23,14 +23,14 @@ def compute_hash_for_filename():
                       })
 
 
-def compute_graph_fragment():
+def compute_graph_fragment() -> Graph:
   return make_graph_from_list([(scatter_compute_image_metadata, 'input'),
                                load_metadata, cluster_by_image_center])
 
 
 class TestSpatialAssociation(unittest.TestCase):
 
-  def test_one_perfect_group(self):
+  def test_one_perfect_group(self) -> None:
     self.input_dir_obj, self.output_dir_obj = make_test_context()
     input_dir = context.input_dirs[0]
     make_synthetic_frames(ra=100,
@@ -48,7 +48,7 @@ class TestSpatialAssociation(unittest.TestCase):
     expected_groups = [tuple(sorted(image_hashes))]
     self.assertEqual(groups, expected_groups)
 
-  def test_two_perfect_groups_one_hour_ra(self):
+  def test_two_perfect_groups_one_hour_ra(self) -> None:
     self.input_dir_obj, self.output_dir_obj = make_test_context()
     input_dir = context.input_dirs[0]
 
@@ -89,7 +89,7 @@ class TestSpatialAssociation(unittest.TestCase):
     ]
     self.assertEqual(sorted(groups), sorted(expected_groups))
 
-  def test_two_perfect_groups_one_degree_dec(self):
+  def test_two_perfect_groups_one_degree_dec(self) -> None:
     self.input_dir_obj, self.output_dir_obj = make_test_context()
     input_dir = context.input_dirs[0]
 
@@ -130,7 +130,7 @@ class TestSpatialAssociation(unittest.TestCase):
     ]
     self.assertEqual(sorted(groups), sorted(expected_groups))
 
-  def test_two_perfect_groups_half_degree_dec(self):
+  def test_two_perfect_groups_half_degree_dec(self) -> None:
     self.input_dir_obj, self.output_dir_obj = make_test_context()
     input_dir = context.input_dirs[0]
 
@@ -173,7 +173,7 @@ class TestSpatialAssociation(unittest.TestCase):
     ]
     self.assertEqual(sorted(groups), sorted(expected_groups))
 
-  def test_two_noisy_groups(self):
+  def test_two_noisy_groups(self) -> None:
     self.input_dir_obj, self.output_dir_obj = make_test_context()
     input_dir = context.input_dirs[0]
 
@@ -214,7 +214,7 @@ class TestSpatialAssociation(unittest.TestCase):
     ]
     self.assertEqual(sorted(groups), sorted(expected_groups))
 
-  def test_sadr_pano(self):
+  def test_sadr_pano(self) -> None:
     print('Entering test_sadr_pano')
 
     self.input_dir_obj, self.output_dir_obj = make_test_context()

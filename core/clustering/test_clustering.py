@@ -7,16 +7,18 @@ import clustering
 
 class TestClustering(unittest.TestCase):
 
-  def test_cluster_discrete(self):
-    items = [('a', '2600'), ('b', '2600'), ('c', '6200'), ('d', '6200')]
+  def test_cluster_discrete(self) -> None:
+    items: list[tuple[str, str]] = [('a', '2600'), ('b', '2600'), ('c', '6200'),
+                                    ('d', '6200')]
     clusters = clustering.cluster_discrete(items, key=operator.itemgetter(1))
     self.assertEqual(clusters, [[('a', '2600'),
                                  ('b', '2600')], [('c', '6200'),
                                                   ('d', '6200')]])
 
-  def test_cluster_continuous(self):
-    items = [(0.31, 'c'), (0.32, 'd'), (0.45, 'e'), (0.35, 'f'), (0.40, 'g'),
-             (0.5, 'h'), (0.1, 'a'), (0.09, 'b')]
+  def test_cluster_continuous(self) -> None:
+    items: list[tuple[float, str]] = [(0.31, 'c'), (0.32, 'd'), (0.45, 'e'),
+                                      (0.35, 'f'), (0.40, 'g'), (0.5, 'h'),
+                                      (0.1, 'a'), (0.09, 'b')]
     clusters = clustering.cluster_continuous(items,
                                              epsilon=0.2,
                                              key=operator.itemgetter(0))
@@ -24,7 +26,7 @@ class TestClustering(unittest.TestCase):
                                 [(0.31, 'c'), (0.32, 'd'), (0.35, 'f'),
                                  (0.4, 'g'), (0.45, 'e'), (0.5, 'h')]])
 
-  def test_cluster_continuous_dates(self):
+  def test_cluster_continuous_dates(self) -> None:
     run_0 = [(datetime.datetime(2024, 2, 7, 0, 0, 0) +
               datetime.timedelta(seconds=300 * i), i) for i in range(5)]
     run_1 = [(datetime.datetime(2024, 2, 8, 0, 0, 0) +
@@ -44,15 +46,16 @@ class TestClustering(unittest.TestCase):
                                  (datetime.datetime(2024, 2, 8, 0, 15), 103),
                                  (datetime.datetime(2024, 2, 8, 0, 20), 104)]])
 
-  def test_items_in_distribution(self):
-    items = [(0.31, 'c'), (0.32, 'd'), (0.45, 'e'), (0.35, 'f'), (0.40, 'g')]
+  def test_items_in_distribution(self) -> None:
+    items: list[tuple[float, str]] = [(0.31, 'c'), (0.32, 'd'), (0.45, 'e'),
+                                      (0.35, 'f'), (0.40, 'g')]
     items_to_test = [(0.3, 'i'), (0.28, 'j'), (0.5, 'h'), (0.1, 'a'),
                      (0.09, 'b')]
     items_in_distribution = clustering.items_in_distribution(
         items, items_to_test, max_std_devs=2.0, key=operator.itemgetter(0))
     self.assertEqual(items_in_distribution, [(0.3, 'i'), (0.28, 'j')])
 
-  def test_cluster_dates_with_gap(self):
+  def test_cluster_dates_with_gap(self) -> None:
     dates = [(datetime.datetime(2023, 4, 14, 5, 53, 1, 550185), 1),
              (datetime.datetime(2023, 4, 14, 6, 16, 35, 498587), 2),
              (datetime.datetime(2023, 4, 14, 6, 22, 53, 380184), 3),
