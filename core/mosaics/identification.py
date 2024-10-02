@@ -1,18 +1,19 @@
 import traceback
 import structlog
-from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon
-from spherical_geometry.vector import lonlat_to_vector
+from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon  # type: ignore
 import ray
 import numpy as np
 import random
 
 from context import context
 from mosaics import Mosaic
+from mosaics.types import MosaicHash
 from catalogs import position_string
 from geometry import footprints
 from hashing import hash_list
 import units
 from profiling import track_performance
+from targets.types import TargetHash
 
 from . import ransac
 
@@ -20,14 +21,14 @@ logger = structlog.get_logger()
 log = logger
 
 
-def _identify_overlapping_targets():
+def _identify_overlapping_targets() -> list[list[TargetHash]]:
   stacks = context.grouped_stacks
   targets = context.grouped_targets
 
   if not targets:
     return []
 
-  def roughly_same_area(a, b):
+  def roughly_same_area(a: SphericalPolygon, b: SphericalPolygon) -> bool:
     ratio = a.area() / b.area()
     return ratio > 0.9 and ratio < 1.1
 
@@ -39,7 +40,7 @@ def _identify_overlapping_targets():
   target_ids = list(sorted(targets.keys(), key=lambda t: targets[t].center[0]))
   log.info('Identifying overlapping targets', num_targets=len(targets))
 
-  mosaics = []
+  mosaics: list[list[TargetHash]] = []
   for target_id in target_ids:
     matching_mosaic_indices = []
     for i, mosaic in enumerate(mosaics):
@@ -98,7 +99,7 @@ def _identify_overlapping_targets():
 
 @ray.remote
 @track_performance
-def identify_mosaics():
+def identify_mosaics() -> dict[MosaicHash, Mosaic]:
   targets = context.grouped_targets
   print(f'### Identifying mosaics from {len(targets)} targets')
 
@@ -112,33 +113,31 @@ def identify_mosaics():
 
   output_mosaics = {}
   for mosaic in mosaics:
-    target_ids, tile_indices, origin, basis_vectors = ransac.ransac_2d(
-        mosaic, targets, plot=False, plot_title='foo')
-
-    if not target_ids:
+    result = ransac.ransac_2d(mosaic, targets)
+    if result is None:
       print('ransac_2d failed')
-      target_ids, tile_indices, origin, basis_vectors = ransac.ransac_1d(
-          mosaic, targets)
-
-      if not target_ids:
+      result = ransac.ransac_1d(mosaic, targets)
+      if result is None:
         print('ransac_1d also failed')
         continue
 
-    print(f'Mosaic composed of {len(target_ids)} targets:')
-    for target_id in target_ids:
+    print(f'Mosaic composed of {len(result.target_ids)} targets:')
+    for target_id in result.target_ids:
       print(f'  {targets[target_id].name} id {target_id}')
 
     try:
       # TODO: Validate all targets here.
 
       stable_hash = targets[sorted(
-          target_ids, key=lambda t: targets[t].oldest_date)[0]].stable_hash
-      content_hash = hash_list(targets[t].content_hash for t in target_ids)
+          result.target_ids,
+          key=lambda t: targets[t].oldest_date)[0]].stable_hash
+      content_hash = hash_list(
+          targets[t].content_hash for t in result.target_ids)
 
-      oldest_date = min(targets[t].oldest_date for t in target_ids),
-      newest_date = min(targets[t].newest_date for t in target_ids),
+      oldest_date = min(targets[t].oldest_date for t in result.target_ids)
+      newest_date = min(targets[t].newest_date for t in result.target_ids)
 
-      centers = [targets[t].center for t in target_ids]
+      centers = [targets[t].center for t in result.target_ids]
       mean_center = np.mean(centers, axis=0)
       center = list(mean_center)
       name = position_string.canonical_target_string(center)
@@ -149,11 +148,12 @@ def identify_mosaics():
       # old_footprint = next(
       #     SphericalPolygon.multi_union([
       #         SphericalPolygon(targets[target_id].footprint)
-      #         for target_id in target_ids
+      #         for target_id in result.target_ids
       #     ]).points).tolist()
 
-      all_points = np.concatenate(
-          [targets[target_id].footprint.points for target_id in target_ids])
+      all_points = np.concatenate([
+          targets[target_id].footprint.points for target_id in result.target_ids
+      ])
 
       # TODO: There's no way to specify an `inside` point here?
       footprint = SingleSphericalPolygon.convex_hull(all_points)
@@ -175,10 +175,10 @@ def identify_mosaics():
       output_mosaic = Mosaic(name=name,
                              stable_hash=stable_hash,
                              content_hash=content_hash,
-                             target_ids=target_ids,
-                             tile_indices=tile_indices,
-                             origin=origin,
-                             basis_vectors=basis_vectors,
+                             target_ids=result.target_ids,
+                             tile_indices=result.tile_indices,
+                             origin=result.origin,
+                             basis_vectors=result.basis_vectors,
                              oldest_date=oldest_date,
                              newest_date=newest_date,
                              center=center,
@@ -186,7 +186,7 @@ def identify_mosaics():
                              projected_footprint=projected_footprint)
 
       print(f'Mosaic has name {name} stable_hash {stable_hash} and '
-            f'basis_vectors {basis_vectors}')
+            f'basis_vectors {result.basis_vectors}')
       output_mosaics[stable_hash] = output_mosaic
     except Exception as e:
       traceback.print_exc()

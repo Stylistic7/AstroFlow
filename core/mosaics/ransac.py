@@ -1,6 +1,12 @@
 import numpy as np
 import structlog
 import itertools
+from typing import Any, cast
+from dataclasses import dataclass
+
+from targets.target import Target
+from targets.types import TargetHash
+from mosaics.types import TileIndices
 
 logger = structlog.get_logger()
 log = logger
@@ -10,44 +16,16 @@ ORTHOGONALITY_THRESHOLD = 0.05
 EUCLIDEAN_ERROR_THRESHOLD = 0.15
 
 
-def _find_all_possible_bases(centers):
-  bases = []
-  for combo in itertools.permutations(centers, 3):
-    print('### combo', combo)
-    origin = combo[0]
-    print('### origin', origin)
-    basis_vectors = np.asarray([combo[1] - origin, combo[2] - origin])
-    print('### basis_vectors before normalizing', basis_vectors)
-    basis_vectors = basis_vectors / np.linalg.norm(basis_vectors, axis=0)
-    print('### basis_vectors after normalizing', basis_vectors)
-
-    def flip_vector(v):
-      if any(x < 0 for x in v):
-        return -1 * v
-
-      return v
-
-    basis_vectors = np.vstack([flip_vector(v) for v in basis_vectors])
-    print('### basis_vectors after flipping', basis_vectors)
-
-    basis_dot = np.dot(basis_vectors[0], basis_vectors[1]) / (
-        np.linalg.norm(basis_vectors[0]) * np.linalg.norm(basis_vectors[1]))
-    if np.abs(basis_dot) <= ORTHOGONALITY_THRESHOLD:
-      print('### found valid basis', basis_vectors)
-      if any(
-          np.array_equal(np.sort(b.flat), np.sort(basis_vectors.flat))
-          for b in bases):
-        print('### basis already in bases')
-        continue
-
-      bases.append(basis_vectors)
-
-  print(f'### found {len(bases)} bases')
-  print(bases)
-  return bases
+@dataclass(frozen=True)
+class RansacResult:
+  target_ids: list[TargetHash]
+  tile_indices: list[TileIndices]
+  origin: np.ndarray
+  basis_vectors: np.ndarray
 
 
-def ransac_1d(mosaic, targets):
+def ransac_1d(mosaic: list[TargetHash],
+              targets: dict[TargetHash, Target]) -> RansacResult | None:
   assert len(mosaic) >= 2
 
   centers = np.vstack([targets[t].center for t in mosaic]).T
@@ -55,13 +33,13 @@ def ransac_1d(mosaic, targets):
 
   if len(mosaic) == 2:
     basis_vector = np.asarray(centers[:, 1] - centers[:, 0])
-    return ([targets[t].stable_hash for t in mosaic], [(0, 0), (0, 1)],
-            centers[:, 0], basis_vector)
+    return RansacResult([targets[t].stable_hash for t in mosaic],
+                        [(0, 0), (0, 1)], centers[:, 0], basis_vector)
 
   best_error = np.inf
-  best_origin = None
-  best_inliers = []
-  best_basis_vector = None
+  best_origin = np.zeros((2))
+  best_inliers: list[int] = []
+  best_basis_vector = np.zeros((2))
 
   for iteration in range(500):
     # Choose 2 tiles at random. Compute a basis vector from them.
@@ -93,11 +71,11 @@ def ransac_1d(mosaic, targets):
       best_basis_vector = basis_vector
 
   if not best_inliers:
-    return None, None, None, None
+    return None
 
   # print('### done with iteration, best_basis_vector', best_basis_vector)
   # print('### done with iteration, best_origin', best_origin)
-  all_tile_indices = []
+  all_tile_indices: list[TileIndices] = []
   for i, center in enumerate(centers.T):
     if i not in best_inliers:
       continue
@@ -107,9 +85,10 @@ def ransac_1d(mosaic, targets):
                           best_origin) / np.linalg.norm(best_basis_vector)
     # print('### transformed_center', transformed_center)
 
-    tile_indices = [int(x) for x in np.round(transformed_center)]
+    tile_indices = cast(TileIndices,
+                        tuple(int(x) for x in np.round(transformed_center)))
     # print(f'  tile_indices {i}: {tile_indices}')
-    all_tile_indices.append(tuple(tile_indices))
+    all_tile_indices.append(tile_indices)
 
   min_x = np.min([t[0] for t in all_tile_indices])
   min_y = np.min([t[1] for t in all_tile_indices])
@@ -121,7 +100,8 @@ def ransac_1d(mosaic, targets):
   print('### ransac_1d returning target_ids', target_ids, 'all_tile_indices',
         all_tile_indices)
   assert len(target_ids) == len(all_tile_indices)
-  return target_ids, all_tile_indices, best_origin, best_basis_vector
+  return RansacResult(target_ids, all_tile_indices, best_origin,
+                      best_basis_vector)
 
 
 # A mosaic here is just a set of images that overlap at least a little. There may
@@ -134,17 +114,18 @@ def ransac_1d(mosaic, targets):
 # TODO: The definition of a mosaic is that the panes are aligned along their
 # long or short axes. This means all their rotation_angles are consistent
 # (at least for mosaics without rotation...).
-def ransac_2d(mosaic, targets, debug=False, plot=False, plot_title=None):
+def ransac_2d(mosaic: list[TargetHash],
+              targets: dict[TargetHash, Target]) -> RansacResult | None:
   print(f'Running RANSAC on mosaic with {len(mosaic)} targets')
   if len(mosaic) < 3:
-    return None, None, None, None
+    return None
 
   centers = np.vstack([targets[t].center for t in mosaic]).T
   print(f'centers {centers}')
 
   best_error = np.inf
   best_origin = None
-  best_inliers = []
+  best_inliers: list[int] = []
   best_basis_vectors = None
 
   for iteration in range(500):
@@ -200,7 +181,7 @@ def ransac_2d(mosaic, targets, debug=False, plot=False, plot_title=None):
   # print('best_basis_vectors', best_basis_vectors)
 
   if not best_inliers:
-    return None, None, None, None
+    return None
 
   # print('centers in best basis:')
   all_tile_indices = []
@@ -208,6 +189,7 @@ def ransac_2d(mosaic, targets, debug=False, plot=False, plot_title=None):
     if i not in best_inliers:
       continue
 
+    assert best_basis_vectors is not None
     transformed_center = np.linalg.solve(best_basis_vectors,
                                          center - best_origin)
     # print(f'  transformed_center {i}: {transformed_center}')
@@ -216,9 +198,10 @@ def ransac_2d(mosaic, targets, debug=False, plot=False, plot_title=None):
     #       f'has Euclidean error {error}')
 
     # TODO: Do these need to start at (0, 0) or is (-1, 1) acceptable, too?
-    tile_indices = [int(x) for x in np.round(transformed_center)]
+    tile_indices = cast(TileIndices,
+                        tuple(int(x) for x in np.round(transformed_center)))
     # print(f'  tile_indices {i}: {tile_indices}')
-    all_tile_indices.append(tuple(tile_indices))
+    all_tile_indices.append(tile_indices)
 
   min_x = np.min([t[0] for t in all_tile_indices])
   min_y = np.min([t[1] for t in all_tile_indices])
@@ -230,42 +213,8 @@ def ransac_2d(mosaic, targets, debug=False, plot=False, plot_title=None):
   print('### ransac_2d returning target_ids', target_ids, 'all_tile_indices',
         all_tile_indices)
   assert len(target_ids) == len(all_tile_indices)
-  return target_ids, all_tile_indices, best_origin, best_basis_vectors
-
-  # plt.figure()
-  # plt.title(plot_title)
-
-  # # Draw the basis vectors.
-  # for i, basis_vector in enumerate(best_basis_vectors.T):
-  #   # print('plotting basis_vector', basis_vector)
-  #   # print('best_origin[0]', best_origin[0])
-  #   # print('best_origin[1]', best_origin[1])
-  #   plt.plot([best_origin[0], best_origin[0] + basis_vector[0]],
-  #            [best_origin[1], best_origin[1] + basis_vector[1]],
-  #            label=f"Basis vector {i}",
-  #            linewidth=5,
-  #            color=f"C{i + 2}")
-
-  # # Plot the centers of the N x M grid.
-  # # points = []
-  # # for x in range(np.max(integral_centers, axis=0)):
-  # #   for y in range(np.max(integral_centers, axis=1)):
-  # #     points.append(best_origin + x * best_basis_vectors[:, 0] +
-  # #                   y * best_basis_vectors[:, 1])
-  # # xs, ys = [p[0] for p in points], [p[1] for p in points]
-  # # plt.scatter(xs, ys, color='red')
-
-  # if plot:
-  #   for target in best_inliers:
-  #     plt.plot(*target.footprint_polygon().exterior.xy, color='black')
-  #     plt.scatter([target.center[0]], [target.center[1]], color='black')
-
-  #   outliers = [s for s in mosaic if s not in best_inliers]
-  #   print(f'There are {len(outliers)} outliers')
-  #   for target in outliers:
-  #     plt.plot(*target.footprint_polygon().exterior.xy, color='#dddddd')
-  #     plt.scatter([target.center[0]], [target.center[1]], color='#dddddd')
-
-  #   plt.show()
-
-  # return best_inliers
+  assert all_tile_indices is not None
+  assert best_origin is not None
+  assert best_basis_vectors is not None
+  return RansacResult(target_ids, all_tile_indices, best_origin,
+                      best_basis_vectors)

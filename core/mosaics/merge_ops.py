@@ -1,22 +1,30 @@
 import os
 import numpy as np
 import ray
+from typing import Any, TypeAlias
 
 from context import context
-from dependency_graph import Graph
+from dependency_graph import Graph, TaskDescriptor
 from .classes import MergeOp, Panel
 from .merge_images import merge_images
-from artifacts import CacheArtifact, FileArtifact
+from artifacts import CacheArtifact, FileArtifact, Artifact
 from hashing import hash_list
+from previews import QualityLevel
+from mosaics.types import MosaicHash, Template, TileIndices, Pair
 
 
-def fill_template(template, value):
-  return tuple(value if t is None else t for t in template)
+# TODO: Can these types be made more specific?
+def fill_template(template: Template, value: int) -> TileIndices:
+  x, y = template
+  result: TileIndices = (x if x is not None else value,
+                         y if y is not None else value)
+  return result
 
 
 # TODO: pairs is a misnomer, because the end of an odd-length axis is a single
 # panel.
-def make_pairs(min_index, max_index, template):
+def make_pairs(min_index: int, max_index: int,
+               template: Template) -> list[Pair]:
   pairs = [[fill_template(template, i),
             fill_template(template, i + 1)]
            for i in list(range(min_index, max_index, 2))]
@@ -32,7 +40,10 @@ def make_pairs(min_index, max_index, template):
 # Panel objects.
 #
 # TODO: Accept an output artifact here, so we can simplify the graphs.
-def make_merge_ops(mode, mosaic_id, filter, panels, from_task):
+def make_merge_ops(
+    mode: QualityLevel, mosaic_id: MosaicHash, filter: str,
+    panels: dict[TileIndices, Panel],
+    from_task: dict[Panel, TaskDescriptor]) -> tuple[list[MergeOp], Graph]:
   graph = Graph()
   merge_ops = []
 
@@ -40,14 +51,15 @@ def make_merge_ops(mode, mosaic_id, filter, panels, from_task):
   for t, p in panels.items():
     print(f'### panel {t} => {p}')
 
-  def make_pair_id(level, pair):
+  def make_pair_id(level: int, pair: Pair) -> str:
 
-    def join_tile_indices(tile_indices):
+    def join_tile_indices(tile_indices: TileIndices) -> str:
       return '_'.join([str(i) for i in tile_indices])
 
     return str(level) + '__' + '__'.join([join_tile_indices(p) for p in pair])
 
-  def process_pairs(level, pairs, template, new_panels):
+  def process_pairs(level: int, pairs: list[Any], template: Template,
+                    new_panels: dict[TileIndices, Panel]) -> None:
     for i, pair_in in enumerate(pairs):
       pair = []
       for p in pair_in:
@@ -70,19 +82,18 @@ def make_merge_ops(mode, mosaic_id, filter, panels, from_task):
         content_hash = hash_list(content_hashes)
 
         # TODO: This goes outside the artifacts workflow.
-        if mode == 'subframe':
+        output_artifact: Artifact
+        if mode == QualityLevel.SUBFRAME:
           output_artifact = CacheArtifact(
               ('merged_images', mode, mosaic_id, filter, pair_id), content_hash)
-        elif mode == 'master':
+        elif mode == QualityLevel.MASTER:
           mosaic = context.mosaics[mosaic_id]
           filename = os.path.join(context.output_dir, 'Mosaics', mosaic.name,
                                   f'merged_{mosaic_id}_{filter}_{pair_id}.fit')
           output_artifact = FileArtifact(filename, content_hash)
 
-        output = Panel(mosaic_id=mosaic_id,
-                       filter=filter,
+        output = Panel(tile_indices=tile_indices,
                        content_hash=content_hash,
-                       merge_op_id=pair_id,
                        input_artifact=output_artifact)
         merge_op = MergeOp(
             input_artifacts=[input_0.input_artifact, input_1.input_artifact],
@@ -113,16 +124,18 @@ def make_merge_ops(mode, mosaic_id, filter, panels, from_task):
     min_x_index, max_x_index = np.min(xs), np.max(xs)
     min_y_index, max_y_index = np.min(ys), np.max(ys)
 
-    new_panels = {}
+    new_panels: dict[TileIndices, Panel] = {}
     if (max_x_index - min_x_index) > (max_y_index - min_y_index):
       for y in range(min_y_index, max_y_index + 1):
-        template = (None, y)
+        template: Template = (None, y)
         pairs = make_pairs(min_x_index, max_x_index, template)
+        print('### pairs', pairs)
         process_pairs(level, pairs, template, new_panels)
     else:
       for x in range(min_x_index, max_x_index + 1):
         template = (x, None)
         pairs = make_pairs(min_y_index, max_y_index, template)
+        print('### pairs', pairs)
         process_pairs(level, pairs, template, new_panels)
 
     panels = new_panels

@@ -1,7 +1,6 @@
 import numpy as np
 
 
-# TODO: Define a Viewbox type.
 def compute_viewbox(
     points: list[tuple[float, float]]) -> tuple[float, float, float, float]:
   xs = [p[0] for p in points]

@@ -2,16 +2,19 @@ import ray
 import numpy as np
 
 from .classes import Viewbox
-from artifacts import CacheArtifact
+from artifacts import CacheArtifact, Artifact
 from artifacts.decorators import saves_artifacts
 from geometry.projections import mercator
 import geometry.footprints as footprints
 from context import context
 from geometry.viewbox import compute_viewbox
 from hashing import hash_list, hash_string
+from mosaics.mosaic import Mosaic
+from previews import QualityLevel
+from mosaics.types import MosaicHash
 
 
-def _compute_viewbox(mosaic):
+def _compute_viewbox(mosaic: Mosaic) -> Viewbox:
   # TODO: Put this in the UI somewhere.
   proj = mercator.MercatorProjection()
 
@@ -26,7 +29,8 @@ def _compute_viewbox(mosaic):
                  y_span=y_span)
 
 
-def compute_mosaic_viewbox_artifacts(mode, mosaic_id):
+def compute_mosaic_viewbox_artifacts(mode: QualityLevel,
+                                     mosaic_id: MosaicHash) -> list[Artifact]:
   mosaic = context.mosaics[mosaic_id]
   viewbox = _compute_viewbox(mosaic)
   content_hash = hash_list([mosaic.content_hash, hash_string(repr(viewbox))])
@@ -38,11 +42,14 @@ def compute_mosaic_viewbox_artifacts(mode, mosaic_id):
 # images, e.g. arbitrary Python objects.
 @ray.remote
 @saves_artifacts(compute_mosaic_viewbox_artifacts)
-def compute_mosaic_viewbox(mode, mosaic_id):
+def compute_mosaic_viewbox(mode: QualityLevel,
+                           mosaic_id: MosaicHash) -> list[Artifact]:
   print(f'### Entering compute_mosaic_viewbox for mosaic_id {mosaic_id}')
   mosaic = context.mosaics[mosaic_id]
   artifacts = compute_mosaic_viewbox_artifacts(mode, mosaic_id)
-  key = next(iter(artifacts)).key
+  artifact = next(iter(artifacts))
+  assert isinstance(artifact, CacheArtifact)
+  key = artifact.key
   context[key] = _compute_viewbox(mosaic)
   print(f'### Wrote key {key}')
   return artifacts

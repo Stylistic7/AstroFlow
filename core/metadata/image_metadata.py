@@ -122,7 +122,8 @@ class DuplicateFileException(Exception):
 
 
 @ray.remote(scheduling_strategy="SPREAD", max_retries=5, retry_exceptions=True)
-def compute_image_metadata(filename: str, ancestor_results: list[Any]) -> None:
+def compute_image_metadata(filename: str | None = None,
+                           ancestor_results: list[Any] | None = None) -> None:
   print(f'Entering compute_image_metadata() for {filename} '
         f'ancestor_results {ancestor_results}')
   if filename is None and ancestor_results is not None:

@@ -8,7 +8,7 @@ from context import context
 from dependency_graph import Graph, TaskDescriptor, print_graph, make_graph_from_list
 # TODO: Unify quarantining
 import quarantining
-from metadata import ImageMetadata
+from metadata.classes import ImageMetadata
 from mosaics.types import MosaicHash
 from mosaics.classes import Panel
 from mosaics.merge_ops import make_merge_ops
@@ -84,7 +84,7 @@ def build_mosaic_subgraph(mode: QualityLevel, mosaic_id: MosaicHash) -> Graph:
 
 
 def _get_best_light_frame(stack_id: StackHash,
-                          metadata: ImageMetadata) -> FrameHash:
+                          metadata: ImageMetadata) -> ImageMetadata:
   stack = context.stacks[stack_id]
 
   all_frames = stack.all_frames()
@@ -110,12 +110,12 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic_id: MosaicHash,
 
   mosaic = mosaics[mosaic_id]
 
-  graph = Graph()
+  graph = Graph({})
 
   # TODO: What to do if there are multiple stacks for a filter? That's not
   # really supposed to happen.
-  panels = {}
-  from_task = {}
+  panels: dict[str, Panel] = {}
+  from_task: dict[Panel, TaskDescriptor] = {}
   for tile_indices, target_id in zip(mosaic.tile_indices, mosaic.target_ids):
     stacks_for_filter = [
         s for s in targets[target_id].stack_ids if stacks[s].filter == filter
@@ -129,11 +129,12 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic_id: MosaicHash,
     stack_id = next(iter(stacks_for_filter))
 
     # TODO: Find a way to streamline all these if-else statements in general.
-    if mode == 'subframe':
+    input_artifact: Artifact
+    if mode == QualityLevel.SUBFRAME:
       best_light_frame = _get_best_light_frame(stack_id, metadata)
       input_artifact = FileArtifact(best_light_frame.filename,
                                     best_light_frame.content_hash)
-    elif mode == 'master':
+    elif mode == QualityLevel.MASTER:
       input_artifact = post_process_stack_artifacts(stack_id)[0]
 
     placement_task = (mosaic_by_coordinates, mode, mosaic_id, filter, stack_id,
@@ -154,7 +155,7 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic_id: MosaicHash,
 
   if len(panels) == 0:
     print(f'### no panels found for filter {filter}')
-    return {}
+    return Graph({})
 
   print(f'### found panels for filter {filter}:')
   for tile_indices, panel in panels.items():
@@ -177,14 +178,15 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic_id: MosaicHash,
   return graph
 
 
-def merge_graph_done_artifacts(mode: QualityLevel, mosaic_id: MosaicHash,
-                               filter: str) -> list[Artifact]:
+def merge_graph_done_artifacts(
+    mode: QualityLevel, mosaic_id: MosaicHash, filter: str,
+    ancestor_results: dict[str, Any]) -> list[Artifact]:
   mosaic = context.mosaics[mosaic_id]
   key = ('mosaic_thumbnail_image', mode, mosaic_id, filter)
 
-  if mode == 'subframe':
+  if mode == QualityLevel.SUBFRAME:
     return [CacheArtifact(key, mosaic.content_hash)]
-  elif mode == 'master':
+  elif mode == QualityLevel.MASTER:
     # In master mode, we save both the real high-res FITS file on disk, but
     # also a thumbnail image in the cache.
     filename = os.path.join(context.output_dir, 'Mosaics', mosaic.name,
@@ -194,13 +196,16 @@ def merge_graph_done_artifacts(mode: QualityLevel, mosaic_id: MosaicHash,
         CacheArtifact(key, mosaic.content_hash)
     ]
 
+  raise ValueError(f'Uknown quality level {mode}')
+
 
 # TODO: Pass the output artifact to the make_merge_ops() function and eliminate
 # this function.
 @ray.remote
 @saves_artifacts(merge_graph_done_artifacts)
-def merge_graph_done(mode: QualityLevel, mosaic_id: MosaicHash, filter: str,
-                     ancestor_results: dict[str, Any]) -> list[Artifact]:
+def merge_graph_done(
+    mode: QualityLevel, mosaic_id: MosaicHash, filter: str,
+    ancestor_results: list[list[FileArtifact]]) -> list[Artifact]:
   mosaic = context.mosaics[mosaic_id]
 
   assert type(ancestor_results) is list
@@ -211,15 +216,16 @@ def merge_graph_done(mode: QualityLevel, mosaic_id: MosaicHash, filter: str,
   print(f'### Merging {mosaic} mode {mode} is done, '
         f'final_artifact is {final_artifact}')
 
-  output_artifacts = merge_graph_done_artifacts(mode, mosaic_id, filter)
+  output_artifacts = merge_graph_done_artifacts(mode, mosaic_id, filter,
+                                                ancestor_results)
 
   # TODO: This stuff should be standardized and put into the @saves_artifacts
   # decorator.
   if not artifact_exists(final_artifact):
-    if mode == 'subframe':
+    if mode == QualityLevel.SUBFRAME:
       thumbnail_artifact, = output_artifacts
       return [thumbnail_artifact]
-    elif mode == 'master':
+    elif mode == QualityLevel.MASTER:
       file_artifact, thumbnail_artifact = output_artifacts
       return [file_artifact, thumbnail_artifact]
 
@@ -229,14 +235,16 @@ def merge_graph_done(mode: QualityLevel, mosaic_id: MosaicHash, filter: str,
   header = {'IMAGETYP': 'FinalMosaic Light'}
 
   # TODO: Thumbnails should always be stored as autostretched PNG, for speed.
-  if mode == 'subframe':
+  if mode == QualityLevel.SUBFRAME:
     thumbnail_artifact, = output_artifacts
     write_artifact(thumbnail_artifact, image, header)
     return [thumbnail_artifact]
-  elif mode == 'master':
+  elif mode == QualityLevel.MASTER:
     file_artifact, thumbnail_artifact = output_artifacts
     write_artifact(file_artifact, image, header)
     image = resize_array(image, context.master_thumbnail_width)
     assert not np.isnan(np.min(image))
     write_artifact(thumbnail_artifact, image, header)
     return [file_artifact, thumbnail_artifact]
+
+  raise ValueError(f'Uknown quality level {mode}')

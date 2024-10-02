@@ -6,23 +6,25 @@ from spherical_geometry.polygon import SingleSphericalPolygon  # type: ignore
 from shapely.geometry import Polygon  # type: ignore
 
 from hashing import hash_list
+from targets.types import TargetHash
+from stacks.types import StackHash
 
 
 @dataclass(order=True)
 class Target:
-  name: str | None = None
+  name: str
 
-  content_hash: Optional[str] = None
-  stable_hash: Optional[str] = None
+  content_hash: str
+  stable_hash: TargetHash
 
-  stack_ids: list[str] = field(default_factory=list)
+  stack_ids: list[StackHash]
 
-  oldest_date: Optional[datetime.datetime] = None
-  newest_date: Optional[datetime.datetime] = None
+  oldest_date: datetime.datetime
+  newest_date: datetime.datetime
 
-  center: list[float] = field(default_factory=list)
-  footprint: SingleSphericalPolygon = None
-  projected_footprint: dict[str, Polygon] | None = None
+  center: list[float]
+  footprint: SingleSphericalPolygon
+  projected_footprint: dict[str, Polygon]
 
   def __str__(self):
     return (f'Target(name={self.name}, {len(self.stack_ids)} stacks)')

@@ -21,18 +21,18 @@ from previews import scatter_stack_thumbnails
 
 class TestMosaic(unittest.TestCase):
 
-  def setUp(self):
+  def setUp(self) -> None:
     # Start with an empty context.
     self.input_dir_obj, self.output_dir_obj = make_test_context()
 
     context.regroup = True
     context.master_mosaic_samples = 1000
 
-  def tearDown(self):
+  def tearDown(self) -> None:
     self.input_dir_obj.cleanup()
     self.output_dir_obj.cleanup()
 
-  def test_sagittarius_mosaic(self):
+  def test_sagittarius_mosaic(self) -> None:
     copy_testdata_frames(target_name='Sagittarius Pane 1',
                          start_datetime=datetime.datetime(
                              2024, 2, 5, 16, 29, 43),
@@ -65,7 +65,7 @@ class TestMosaic(unittest.TestCase):
     sii_key = ('mosaic_thumbnail_image', 'subframe', mosaic.stable_hash, 'S')
     self.assertTrue(context.contains(sii_key))
 
-  def test_orion_mosaic(self):
+  def test_orion_mosaic(self) -> None:
     copy_testdata_frames(target_name='Orion Pane 1',
                          start_datetime=datetime.datetime(
                              2024, 2, 5, 16, 29, 43),
@@ -91,7 +91,7 @@ class TestMosaic(unittest.TestCase):
     # produce all the subframe previews for the stacks, targets, and mosaic.
     graph = compute_graph.build_compute_graph(regroup=True,
                                               make_previews=True,
-                                              run_main_processing_graph=False)
+                                              run_main_processing_graph=True)
     run_graph(graph)
 
     self.assertEqual(len(context.targets), 4)
@@ -138,7 +138,7 @@ class TestMosaic(unittest.TestCase):
     self.assertTrue(context.contains(subframe_key))
     self.assertTrue(context.contains(master_key))
 
-  def test_orion_mosaic_with_missing_panel(self):
+  def test_orion_mosaic_with_missing_panel(self) -> None:
     copy_testdata_frames(target_name='Orion Pane 1',
                          start_datetime=datetime.datetime(
                              2024, 2, 5, 16, 29, 43),

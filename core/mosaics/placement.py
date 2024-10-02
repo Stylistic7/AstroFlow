@@ -1,12 +1,13 @@
 import ray
 import os
 import numpy as np
-from astropy.wcs import WCS
-from scipy.interpolate import RegularGridInterpolator
-import largestinteriorrectangle
+from astropy.wcs import WCS  # type: ignore
+from scipy.interpolate import RegularGridInterpolator  # type: ignore
+import largestinteriorrectangle  # type: ignore
 import cv2 as cv
 from itertools import product
 from pathlib import Path
+from typing import Any
 
 from plate_solving import solve_field
 from artifacts.decorators import saves_artifacts
@@ -16,34 +17,43 @@ from .viewbox import compute_mosaic_viewbox_artifacts
 from artifacts import read_artifact_image, read_artifact_header, write_artifact, CacheArtifact, FileArtifact
 from hashing import hash_list
 from profiling import track_performance
+from previews import QualityLevel
+from mosaics.types import MosaicHash
+from mosaics.classes import Viewbox
+from stacks.types import StackHash
 
 _MEMORY_REQUIREMENT = 8 * 1024 * 1024 * 1024  # 8 GB
 
 
-def mosaic_by_coordinates_artifacts(mode, mosaic_id, filter, stack_id,
-                                    input_artifact):
+def mosaic_by_coordinates_artifacts(mode: QualityLevel, mosaic_id: MosaicHash,
+                                    filter: str, stack_id: StackHash,
+                                    input_artifact: Artifact) -> list[Artifact]:
   viewbox_artifact = next(
       iter(compute_mosaic_viewbox_artifacts(mode, mosaic_id)))
   content_hash = hash_list(
       [input_artifact.content_hash, viewbox_artifact.content_hash])
 
-  if mode == 'subframe':
+  if mode == QualityLevel.SUBFRAME:
     key = ('placed_image', mosaic_id, filter, stack_id)
     return [CacheArtifact(key, content_hash)]
-  elif mode == 'master':
+  elif mode == QualityLevel.MASTER:
     mosaic = context.mosaics[mosaic_id]
     filename = os.path.join(context.output_dir, 'Mosaics', mosaic.name,
                             f'placed_{mosaic_id}_{filter}_{stack_id}.fit')
     return [FileArtifact(filename, content_hash)]
 
+  raise ValueError(f'Unknown quality level {mode}')
 
-def _compute_ras_decs(mode, viewbox, multiple=4):
-  if mode == 'subframe':
+
+def _compute_ras_decs(mode: QualityLevel,
+                      viewbox: Viewbox,
+                      multiple: int = 4) -> tuple[np.ndarray, np.ndarray]:
+  if mode == QualityLevel.SUBFRAME:
     num_samples_x = context.subframe_mosaic_samples
-  elif mode == 'master':
+  elif mode == QualityLevel.MASTER:
     num_samples_x = context.master_mosaic_samples
 
-  def round_to_nearest_multiple(number):
+  def round_to_nearest_multiple(number: float) -> int:
     return int(np.ceil(number / multiple) * multiple)
 
   num_samples_x = round_to_nearest_multiple(num_samples_x)
@@ -59,7 +69,8 @@ def _compute_ras_decs(mode, viewbox, multiple=4):
   return ras, decs
 
 
-def _reshape_tiles(image, tile_size=(32, 32)):
+def _reshape_tiles(
+    image: np.ndarray, tile_size: tuple[int, int] = (32, 32)) -> np.ndarray:
   image_height, image_width = image.shape
   tile_height, tile_width = tile_size
   tiles = image.reshape(image_height // tile_height, tile_height,
@@ -81,7 +92,9 @@ def _reshape_tiles(image, tile_size=(32, 32)):
 
 
 @ray.remote(scheduling_strategy="SPREAD")
-def place_tile(tile_y, tile_x, wcs, ra_tiles, dec_tiles, interp):
+def place_tile(tile_y: int, tile_x: int, wcs: Any, ra_tiles: np.ndarray,
+               dec_tiles: np.ndarray,
+               interp: RegularGridInterpolator) -> tuple[int, int, np.ndarray]:
   ra_tile = ra_tiles[tile_y, tile_x, :, :]
   dec_tile = dec_tiles[tile_y, tile_x, :, :]
 
@@ -104,7 +117,9 @@ def place_tile(tile_y, tile_x, wcs, ra_tiles, dec_tiles, interp):
 @ray.remote(scheduling_strategy="SPREAD", memory=_MEMORY_REQUIREMENT)
 @saves_artifacts(mosaic_by_coordinates_artifacts)
 @track_performance
-def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact):
+def mosaic_by_coordinates(mode: QualityLevel, mosaic_id: MosaicHash,
+                          filter: str, stack_id: StackHash,
+                          input_artifact: Artifact) -> list[Artifact]:
   print(f'### Entering mosaic_by_coordinates '
         f' {mode} {mosaic_id} {filter} {stack_id} {input_artifact}')
 
@@ -113,6 +128,7 @@ def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact):
   # TODO: All this Artifact-handling stuff can be streamlined.
   viewbox_artifact = next(
       iter(compute_mosaic_viewbox_artifacts(mode, mosaic_id)))
+  assert isinstance(viewbox_artifact, CacheArtifact)
   viewbox = context.get(viewbox_artifact.key)
   assert viewbox
 
@@ -173,10 +189,10 @@ def mosaic_by_coordinates(mode, mosaic_id, filter, stack_id, input_artifact):
                                                      stack_id, input_artifact)
   output_artifact = next(iter(output_artifacts))
 
-  if mode == 'subframe':
+  if mode == QualityLevel.SUBFRAME:
     output_image = projected_image
     write_artifact(output_artifact, output_image)
-  elif mode == 'master':
+  elif mode == QualityLevel.MASTER:
     grid = projected_image != 0
     cv_grid = grid.astype("uint8") * 255
     contours, _ = cv.findContours(cv_grid, cv.RETR_TREE, cv.CHAIN_APPROX_NONE)

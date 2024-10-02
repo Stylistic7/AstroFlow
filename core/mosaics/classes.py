@@ -16,42 +16,28 @@ class Viewbox:
 
 @dataclass(frozen=True)
 class Panel:
-  # TODO: Maybe remove these?
-  mode: str = None
-  mosaic_id: str = None
-  filter: str = None
-
-  tile_indices: list[int] = None
+  tile_indices: tuple[int, int]
 
   # This define the input image.
-  input_artifact: Artifact = None
+  input_artifact: Artifact
 
-  # These are the stacks ids that this Panel represents.
-  # TODO: Maybe call them `stack_stable_hash` and `stack_content_hash`.
-  stable_hash: str = None
-  content_hash: str = None
-
-  # This defines where the Panel is in the tree of merge ops.
-  merge_op_id: str = None
-
-  # This defines the output image.
-  output_artifact: Artifact = None
+  # This is the stacks id that this Panel represents.
+  content_hash: str
 
 
 @dataclass(frozen=True)
 class MergeOp:
-  input_artifacts: list[Artifact] = None
-  output_artifact: Artifact = None
+  input_artifacts: list[Artifact]
+  output_artifact: Artifact
 
 
 @dataclass
 class MosaicDimensions:
-  width: int = None
-  height: int = None
-  min_ra: float = None
-  ra_span: float = None
-  min_dec: float = None
-  dec_span: float = None
-  ra_resolution: float = None
-  dec_resolution: float = None
-  # world_positions: list = None
+  width: int
+  height: int
+  min_ra: float
+  ra_span: float
+  min_dec: float
+  dec_span: float
+  ra_resolution: float
+  dec_resolution: float
