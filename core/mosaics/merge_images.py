@@ -7,15 +7,17 @@ from pathlib import Path
 from context import context
 from artifacts import Artifact
 import pix
+from pix.decorators import PixInsight
+from pix.tasks import PhotometricMosaic
 from previews import autostretch
 from artifacts.decorators import saves_artifacts
 from artifacts import Artifact, read_artifact_image, write_artifact, artifact_exists
 from profiling import track_performance
 
 
-@pix.PixInsight()
+@PixInsight()
 def run_photometric_mosaic(images, output_filename):
-  return pix.PhotometricMosaic(images, output_filename)
+  return PhotometricMosaic(images, output_filename)
 
 
 @ray.remote(resources={'PixInsight': 1})

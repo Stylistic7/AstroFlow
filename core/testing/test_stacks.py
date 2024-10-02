@@ -5,10 +5,11 @@ from dataclasses import asdict
 from spherical_geometry.polygon import SphericalPolygon  # type: ignore
 
 from stacks.composite_stack import CompositeStack
-from stacks import AstrometricAttributes, ImagingAttributes
+from stacks.astrometric_attributes import AstrometricAttributes
+from stacks.imaging_attributes import ImagingAttributes
 
 
-def make_composite_stack(**kwargs: dict[str, Any]) -> CompositeStack:
+def make_composite_stack(**kwargs: Any) -> CompositeStack:
   imaging_attributes = asdict(
       ImagingAttributes(
           image_type='light',

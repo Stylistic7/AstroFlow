@@ -6,7 +6,8 @@ from dataclasses import replace
 
 import metadata.image_types as image_types
 from context import context
-from stacks import SimpleStack, CompositeStack, SimpleStacksDict
+from stacks.simple_stack import SimpleStack
+from stacks.composite_stack import CompositeStack, SimpleStacksDict
 import clustering
 from profiling import track_performance
 

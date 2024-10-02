@@ -5,9 +5,10 @@ import datetime
 import ray
 from context import context
 import numpy as np
-from spherical_geometry.polygon import SingleSphericalPolygon
+from spherical_geometry.polygon import SingleSphericalPolygon  # type: ignore
 
-from stacks import SimpleStack, CompositeStack
+from stacks.simple_stack import SimpleStack
+from stacks.composite_stack import CompositeStack
 from targets import Target
 from mosaics import Mosaic
 from testing.test_context import make_test_context
@@ -18,10 +19,10 @@ from mosaics import identification
 
 class TestMosaicIdentification(unittest.TestCase):
 
-  def setUp(self):
+  def setUp(self) -> None:
     self.input_dir_obj, self.output_dir_obj = make_test_context()
 
-  def test_two_targets(self):
+  def test_two_targets(self) -> None:
     # These two targets are on the celestial equator, but overlap by one degree
     # in right ascension. This is the easiest case to think about.
     target0 = Target(name='foo',
@@ -29,8 +30,8 @@ class TestMosaicIdentification(unittest.TestCase):
                      content_hash='content_foo',
                      oldest_date=datetime.datetime(2023, 12, 6, 16, 29, 43),
                      newest_date=datetime.datetime(2024, 1, 6, 16, 29, 43),
-                     stack_ids=[0, 1, 2],
-                     center=(100, 50),
+                     stack_ids=['0', '1', '2'],
+                     center=[100, 50],
                      footprint=SingleSphericalPolygon.from_radec(
                          [98, 102, 102, 98], [-1, -1, 1, 1]))
     target1 = Target(name='bar',
@@ -38,13 +39,14 @@ class TestMosaicIdentification(unittest.TestCase):
                      content_hash='content_bar',
                      oldest_date=datetime.datetime(2024, 2, 6, 16, 29, 43),
                      newest_date=datetime.datetime(2024, 3, 6, 16, 29, 43),
-                     stack_ids=[3, 4, 5],
-                     center=(100, 51),
+                     stack_ids=['3', '4', '5'],
+                     center=[100, 51],
                      footprint=SingleSphericalPolygon.from_radec(
                          [95, 99, 99, 95], [-1, -1, 1, 1]))
 
     context.grouped_stacks = {
-        i: make_composite_stack(image_scale=1) for i in range(6)
+        str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
+        for i in range(6)
     }
     context.grouped_targets = {
         target0.stable_hash: target0,
@@ -67,14 +69,14 @@ class TestMosaicIdentification(unittest.TestCase):
     # ratio = mosaic.footprint.area() / sum(target_areas)
     # self.assertTrue(np.isclose(ratio, (7 * 2) / (4 * 2 + 4 * 2), atol=1e-3))
 
-  def test_three_targets(self):
+  def test_three_targets(self) -> None:
     foo = Target(name='foo',
                  stable_hash='geometric_foo',
                  content_hash='content_foo',
                  oldest_date=datetime.datetime(2023, 12, 6, 16, 29, 43),
                  newest_date=datetime.datetime(2024, 1, 6, 16, 29, 43),
-                 stack_ids=[0, 1, 2],
-                 center=(100, 0),
+                 stack_ids=['0', '1', '2'],
+                 center=[100, 0],
                  footprint=SingleSphericalPolygon.from_radec([98, 102, 102, 98],
                                                              [-1, -1, 1, 1]))
     bar = Target(name='bar',
@@ -82,8 +84,8 @@ class TestMosaicIdentification(unittest.TestCase):
                  content_hash='content_bar',
                  oldest_date=datetime.datetime(2024, 2, 6, 16, 29, 43),
                  newest_date=datetime.datetime(2024, 3, 6, 16, 29, 43),
-                 stack_ids=[3, 4, 5],
-                 center=(97, 0),
+                 stack_ids=['3', '4', '5'],
+                 center=[97, 0],
                  footprint=SingleSphericalPolygon.from_radec([95, 99, 99, 95],
                                                              [-1, -1, 1, 1]))
     baz = Target(name='baz',
@@ -91,13 +93,14 @@ class TestMosaicIdentification(unittest.TestCase):
                  content_hash='content_baz',
                  oldest_date=datetime.datetime(2024, 4, 6, 16, 29, 43),
                  newest_date=datetime.datetime(2024, 5, 6, 16, 29, 43),
-                 stack_ids=[6, 7, 8],
-                 center=(97, 1),
+                 stack_ids=['6', '7', '8'],
+                 center=[97, 1],
                  footprint=SingleSphericalPolygon.from_radec([95, 99, 99, 95],
                                                              [0, 0, 2, 2]))
 
     context.grouped_stacks = {
-        i: make_composite_stack(image_scale=1) for i in range(9)
+        str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
+        for i in range(9)
     }
     context.grouped_targets = {
         foo.stable_hash: foo,
@@ -121,14 +124,14 @@ class TestMosaicIdentification(unittest.TestCase):
     # ratio = mosaic.footprint.area() / sum(target_areas)
     # self.assertTrue(np.isclose(ratio, (7 * 2 + 4 * 1) / (3 * 4 * 2), atol=1e-3))
 
-  def test_three_out_of_order_targets(self):
+  def test_three_out_of_order_targets(self) -> None:
     foo = Target(name='foo',
                  stable_hash='geometric_foo',
                  content_hash='content_foo',
                  oldest_date=datetime.datetime(2023, 12, 6, 16, 29, 43),
                  newest_date=datetime.datetime(2024, 1, 6, 16, 29, 43),
-                 stack_ids=[0, 1, 2],
-                 center=(100, 1),
+                 stack_ids=['0', '1', '2'],
+                 center=[100, 1],
                  footprint=SingleSphericalPolygon.from_radec([98, 102, 102, 98],
                                                              [0, 0, 2, 2]))
     bar = Target(name='bar',
@@ -136,8 +139,8 @@ class TestMosaicIdentification(unittest.TestCase):
                  content_hash='content_bar',
                  oldest_date=datetime.datetime(2024, 4, 6, 16, 29, 43),
                  newest_date=datetime.datetime(2024, 5, 6, 16, 29, 43),
-                 stack_ids=[6, 7, 8],
-                 center=(100, 3),
+                 stack_ids=['6', '7', '8'],
+                 center=[100, 3],
                  footprint=SingleSphericalPolygon.from_radec([98, 102, 102, 98],
                                                              [2, 2, 4, 4]))
     baz = Target(name='baz',
@@ -145,13 +148,14 @@ class TestMosaicIdentification(unittest.TestCase):
                  content_hash='content_baz',
                  oldest_date=datetime.datetime(2024, 2, 6, 16, 29, 43),
                  newest_date=datetime.datetime(2024, 3, 6, 16, 29, 43),
-                 stack_ids=[3, 4, 5],
-                 center=(100, 2),
+                 stack_ids=['3', '4', '5'],
+                 center=[100, 2],
                  footprint=SingleSphericalPolygon.from_radec([98, 102, 102, 98],
                                                              [1, 1, 3, 3]))
 
     context.grouped_stacks = {
-        i: make_composite_stack(image_scale=1) for i in range(9)
+        str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
+        for i in range(9)
     }
     context.grouped_targets = {
         foo.stable_hash: foo,
@@ -168,14 +172,14 @@ class TestMosaicIdentification(unittest.TestCase):
                      [foo.stable_hash, bar.stable_hash, baz.stable_hash])
     self.assertEqual(mosaic.tile_indices, [(0, 0), (0, 2), (0, 1)])
 
-  def test_three_targets_and_an_outlier(self):
+  def test_three_targets_and_an_outlier(self) -> None:
     foo = Target(name='foo',
                  stable_hash='geometric_foo',
                  content_hash='content_foo',
                  oldest_date=datetime.datetime(2023, 12, 6, 16, 29, 43),
                  newest_date=datetime.datetime(2024, 1, 6, 16, 29, 43),
-                 stack_ids=[0, 1, 2],
-                 center=(100, 0),
+                 stack_ids=['0', '1', '2'],
+                 center=[100, 0],
                  footprint=SingleSphericalPolygon.from_radec([98, 102, 102, 98],
                                                              [-1, -1, 1, 1]))
     bar = Target(name='bar',
@@ -183,8 +187,8 @@ class TestMosaicIdentification(unittest.TestCase):
                  content_hash='content_bar',
                  oldest_date=datetime.datetime(2024, 2, 6, 16, 29, 43),
                  newest_date=datetime.datetime(2024, 3, 6, 16, 29, 43),
-                 stack_ids=[3, 4, 5],
-                 center=(97, 0),
+                 stack_ids=['3', '4', '5'],
+                 center=[97, 0],
                  footprint=SingleSphericalPolygon.from_radec([95, 99, 99, 95],
                                                              [-1, -1, 1, 1]))
     baz = Target(name='baz',
@@ -192,8 +196,8 @@ class TestMosaicIdentification(unittest.TestCase):
                  content_hash='content_baz',
                  oldest_date=datetime.datetime(2024, 4, 6, 16, 29, 43),
                  newest_date=datetime.datetime(2024, 5, 6, 16, 29, 43),
-                 stack_ids=[6, 7, 8],
-                 center=(97, 1),
+                 stack_ids=['6', '7', '8'],
+                 center=[97, 1],
                  footprint=SingleSphericalPolygon.from_radec([95, 99, 99, 95],
                                                              [0, 0, 2, 2]))
     outlier = Target(name='outlier',
@@ -201,13 +205,14 @@ class TestMosaicIdentification(unittest.TestCase):
                      content_hash='content_outlier',
                      oldest_date=datetime.datetime(2024, 6, 6, 16, 29, 43),
                      newest_date=datetime.datetime(2024, 7, 6, 16, 29, 43),
-                     stack_ids=[9, 10, 11],
-                     center=(98, -0.5),
+                     stack_ids=['9', '10', '11'],
+                     center=[98, -0.5],
                      footprint=SingleSphericalPolygon.from_radec(
                          [96, 100, 100, 96], [-1.5, -1.5, 0.5, 0.5]))
 
     context.grouped_stacks = {
-        i: make_composite_stack(image_scale=1) for i in range(12)
+        str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
+        for i in range(12)
     }
     context.grouped_targets = {
         foo.stable_hash: foo,
@@ -225,14 +230,14 @@ class TestMosaicIdentification(unittest.TestCase):
                      [bar.stable_hash, baz.stable_hash, foo.stable_hash])
     self.assertEqual(mosaic.tile_indices, [(0, 0), (0, 1), (1, 0)])
 
-  def test_ic1318(self):
+  def test_ic1318(self) -> None:
     foo = Target(name='foo',
                  stable_hash='geometric_foo',
                  content_hash='content_foo',
                  oldest_date=datetime.datetime(2023, 12, 6, 16, 29, 43),
                  newest_date=datetime.datetime(2024, 1, 6, 16, 29, 43),
-                 stack_ids=[1, 2, 3],
-                 center=(100, 0),
+                 stack_ids=['1', '2', '3'],
+                 center=[100, 0],
                  footprint=SingleSphericalPolygon(
                      np.array([[0.45603681, -0.56689475, 0.6860472],
                                [0.48206283, -0.60210192, 0.6364658],
@@ -246,8 +251,8 @@ class TestMosaicIdentification(unittest.TestCase):
                  content_hash='content_bar',
                  oldest_date=datetime.datetime(2024, 2, 6, 16, 29, 43),
                  newest_date=datetime.datetime(2024, 3, 6, 16, 29, 43),
-                 stack_ids=[3, 4, 5],
-                 center=(97, 0),
+                 stack_ids=['3', '4', '5'],
+                 center=[97, 0],
                  footprint=SingleSphericalPolygon(
                      np.array([[0.47687137, -0.5960087, 0.64603973],
                                [0.50124499, -0.62906976, 0.59415881],
@@ -257,7 +262,8 @@ class TestMosaicIdentification(unittest.TestCase):
                      np.array([0.47176113, -0.62623935, 0.62069777])))
 
     context.grouped_stacks = {
-        i: make_composite_stack(image_scale=1) for i in range(6)
+        str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
+        for i in range(6)
     }
     context.grouped_targets = {
         foo.stable_hash: foo,

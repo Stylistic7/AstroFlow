@@ -9,14 +9,17 @@ import shutil
 import astropy.io.fits as pyfits  # type: ignore
 from typing import Any
 
-from stacks import SimpleStack, StackHash, FrameHash, output_filename, stack_files_artifacts
+from stacks.artifacts import output_filename, stack_files_artifacts
+from stacks.simple_stack import SimpleStack
+from stacks.composite_stack import CompositeStack
+from stacks.types import StackHash, FrameHash
 from artifacts.decorators import saves_artifacts
 from artifacts import FileArtifact, Artifact
 from context import context
 from pix import PixInsight, FilenameList
 from pix.tasks import WeightedBatchPreprocessing
 import file_io
-from metadata import MetadataDict
+from metadata.classes import MetadataDict
 from metadata.actor import get_metadata
 from profiling import track_performance
 

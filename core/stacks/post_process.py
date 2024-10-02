@@ -9,6 +9,9 @@ from context import context
 from artifacts.decorators import saves_artifacts
 from stacks.artifacts import stack_files_artifacts
 import pix
+from pix.decorators import PixInsight
+from pix.tasks import BlurXTerminator, AutomaticBackgroundExtractor
+from pix.classes import Image
 from hashing import hash_list
 from profiling import track_performance
 
@@ -16,10 +19,10 @@ from profiling import track_performance
 # TODO: Find a way to disable or mock these these during tests.
 # TODO: Don't save two copies of the post-processed images, because they take
 # up huge amounts of disk space.
-@pix.PixInsight()
-def _post_process_stack(image: pix.Image) -> pix.Image:
-  image = pix.BlurXTerminator(image)
-  image = pix.AutomaticBackgroundExtractor(image)
+@PixInsight()
+def _post_process_stack(image: Image) -> Image:
+  image = BlurXTerminator(image)
+  image = AutomaticBackgroundExtractor(image)
 
   return image
 
@@ -47,7 +50,7 @@ def post_process_stack(stack_id: str) -> list[Artifact]:
 
   input_artifact = stack_files_artifacts(stack_id)[0]
 
-  output_images = _post_process_stack(input_artifact.filename)
+  output_images = _post_process_stack([input_artifact.filename])
   output_filename = next(iter(output_images)).filename
 
   output_artifacts = post_process_stack_artifacts(stack_id)

@@ -9,7 +9,7 @@ from catalogs import position_string
 from targets import Target
 import geometry.footprints as footprints
 from hashing import hash_list
-from stacks import CompositeStack
+from stacks.composite_stack import CompositeStack
 from profiling import track_performance
 
 

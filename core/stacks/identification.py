@@ -1,19 +1,12 @@
 import ray
 import numpy as np
-from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon  # type: ignore
-import astropy  # type: ignore
 
 from typing import Iterator
 from context import context
 import clustering
-from hashing import hash_string
-import units
-import geometry.footprints as footprints
 from stacks.composite_stack import CompositeStack, CompositeStacksDict
-from stacks import FrameHash, AstrometricAttributes, ImagingAttributes
-import units
+from stacks.types import FrameHash
 from profiling import track_performance
-from metadata import MetadataDict
 
 
 def _normalize_radians(x: float) -> float:
