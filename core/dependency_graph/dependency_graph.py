@@ -8,7 +8,7 @@ from typing import Callable, Any
 from ray.remote_function import RemoteFunction
 
 from dependency_graph import Node, Graph, CanonicalGraph, GraphStatus, ResultDict, TopologicalSorterWithStatus, GenericRemoteFunction, canonicalize_graph
-from .debugging import print_graph
+from .debugging import print_graph, node_to_string
 
 MIN_STATUS_UPDATE_INTERVAL_SECS: float = 5.0
 
@@ -92,8 +92,12 @@ def run_graph(graph: Graph,
     assert isinstance(node.task, RemoteFunction)
     sig = inspect.signature(node.task._function)
     if 'ancestor_results' in sig.parameters:
-      return node.task.remote(*full_args,
-                              ancestor_results=ancestor_results(ts, node))
+      try:
+        return node.task.remote(*full_args,
+                                ancestor_results=ancestor_results(ts, node))
+      except Exception as e:
+        print(f'### node {node_to_string(node)} raised exception {e}')
+        raise e
     else:
       return node.task.remote(*full_args)
 
