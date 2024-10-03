@@ -1,10 +1,11 @@
 import os
 
+from artifacts import Artifact, FileArtifact
 from context import context
 from stacks.simple_stack import SimpleStack
 from stacks.composite_stack import CompositeStack
-from artifacts import FileArtifact
 from catalogs import position_string
+from stacks.types import StackHash
 
 
 def output_filename(stack: SimpleStack | CompositeStack, dest_path: str) -> str:
@@ -36,7 +37,7 @@ def output_filename(stack: SimpleStack | CompositeStack, dest_path: str) -> str:
   assert False, f'unknown image_type {stack.image_type}'
 
 
-def stack_files_artifacts(stack_id: str) -> list[FileArtifact]:
+def stack_files_artifacts(stack_id: StackHash) -> list[Artifact]:
   stack = context.stacks[stack_id]
   dest_filename = output_filename(stack, context.output_dir)
   return [FileArtifact(dest_filename, stack.content_hash)]

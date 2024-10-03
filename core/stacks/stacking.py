@@ -16,7 +16,7 @@ from stacks.types import StackHash, FrameHash
 from artifacts.decorators import saves_artifacts
 from artifacts import FileArtifact, Artifact
 from context import context
-from pix import PixInsight, FilenameList
+from pix import PixInsight, ImageList
 from pix.tasks import WeightedBatchPreprocessing
 import file_io
 from metadata.classes import MetadataDict
@@ -56,7 +56,7 @@ def _copy_frames_with_plate_solution(metadata: MetadataDict,
 
 
 @PixInsight()
-def _run_wbpp(unused: FilenameList, *args: Any, **kwargs: Any) -> Any:
+def _run_wbpp(unused: ImageList, *args: Any, **kwargs: Any) -> Any:
   return WeightedBatchPreprocessing(unused, *args, **kwargs)
 
 
@@ -89,10 +89,14 @@ def _setup_composite_stack(stack_id: StackHash,
     _copy_frames_with_plate_solution(run_metadata, run_dir)
     num_frames += len(hashes)
 
+    def get_dependency_filename(stack_id: StackHash) -> str:
+      artifact = stack_files_artifacts(stack_id)[0]
+      assert isinstance(artifact, FileArtifact)
+      return artifact.filename
+
     # Add any dependent stacks (e.g. calibration stacks).
     dependendency_filenames = [
-        stack_files_artifacts(d)[0].filename
-        for d in substack.dependencies.values()
+        get_dependency_filename(d) for d in substack.dependencies.values()
     ]
     _symlink_frames(dependendency_filenames, run_dir)
 
@@ -147,7 +151,7 @@ def stack_files(stack_id: StackHash) -> list[Artifact]:
   with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
     if type(stack) is SimpleStack:
       first_filename, num_frames = _setup_simple_stack(stack_id, tmp_dir)
-    else:
+    elif type(stack) is CompositeStack:
       first_filename, num_frames = _setup_composite_stack(stack_id, tmp_dir)
 
     if num_frames < 3:
@@ -156,6 +160,7 @@ def stack_files(stack_id: StackHash) -> list[Artifact]:
       return [FileArtifact(dest_filename, stack.content_hash)]
 
     if context.mock_stacking:
+      assert first_filename is not None
       file_io.conversion.convert_fits_to_xisf(first_filename,
                                               dest_filename,
                                               add_noise=True,

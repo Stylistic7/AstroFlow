@@ -8,10 +8,11 @@ from artifacts import Artifact, FileArtifact
 from context import context
 from artifacts.decorators import saves_artifacts
 from stacks.artifacts import stack_files_artifacts
+from stacks.types import StackHash
 import pix
 from pix.decorators import PixInsight
 from pix.tasks import BlurXTerminator, AutomaticBackgroundExtractor
-from pix.classes import Image
+from pix.classes import ImageList
 from hashing import hash_list
 from profiling import track_performance
 
@@ -20,17 +21,18 @@ from profiling import track_performance
 # TODO: Don't save two copies of the post-processed images, because they take
 # up huge amounts of disk space.
 @PixInsight()
-def _post_process_stack(image: Image) -> Image:
-  image = BlurXTerminator(image)
-  image = AutomaticBackgroundExtractor(image)
+def _post_process_stack(images: ImageList) -> ImageList:
+  images = BlurXTerminator(images)
+  images = AutomaticBackgroundExtractor(images)
 
-  return image
+  return images
 
 
-def post_process_stack_artifacts(stack_id: str) -> list[Artifact]:
+def post_process_stack_artifacts(stack_id: StackHash) -> list[Artifact]:
   artifacts = stack_files_artifacts(stack_id)
   assert len(artifacts) == 1
   artifact = next(iter(artifacts))
+  assert isinstance(artifact, FileArtifact)
   path = Path(artifact.filename)
   filename = path.with_stem(path.stem + "_post_processed")
 
@@ -45,7 +47,7 @@ def post_process_stack_artifacts(stack_id: str) -> list[Artifact]:
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
 @saves_artifacts(post_process_stack_artifacts)
 @track_performance
-def post_process_stack(stack_id: str) -> list[Artifact]:
+def post_process_stack(stack_id: StackHash) -> list[Artifact]:
   print(f'post_process_stack, stack_id {stack_id}')
 
   input_artifact = stack_files_artifacts(stack_id)[0]

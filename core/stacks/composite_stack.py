@@ -78,16 +78,17 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
       assert np.all(np.isclose(exposures, exposures[0])
                    ), f'exposures {exposures} are clustered, but not all close'
 
-      runs = cluster_continuous([(i.content_hash, i.header['DATE-OBS'])
-                                 for i in sorted_metadata
-                                 if i.content_hash in exposure_frames],
-                                epsilon=context.max_run_gap)
+      runs = cluster_continuous(
+          [(FrameHash(i.content_hash), i.header['DATE-OBS'])
+           for i in sorted_metadata
+           if i.content_hash in exposure_frames],
+          epsilon=context.max_run_gap)
 
       for run in runs:
         if len(run) < context.min_frames_in_run:
           continue
-        run = [x[0] for x in run]
-        new_stack = SimpleStack.from_frames(run, metadata)
+        frames = [x[0] for x in run]
+        new_stack = SimpleStack.from_frames(frames, metadata)
         contents[new_stack.content_hash] = new_stack
 
     imaging_attributes = ImagingAttributes.from_frames(frames, metadata)

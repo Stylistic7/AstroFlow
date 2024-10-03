@@ -14,15 +14,15 @@ from testing.test_context import make_test_context
 
 class TestImagePreviews(unittest.TestCase):
 
-  def setUp(self):
+  def setUp(self) -> None:
     self.input_dir_obj, self.output_dir_obj = make_test_context()
     context.regroup = True
 
-  def tearDown(self):
+  def tearDown(self) -> None:
     self.input_dir_obj.cleanup()
     self.output_dir_obj.cleanup()
 
-  def test_stack_dependency_graph(self):
+  def test_stack_dependency_graph(self) -> None:
     # These runs of dark and bias frames will be used by both runs of light
     # frames.
     make_synthetic_frames(prefix='dark',

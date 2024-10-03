@@ -1,6 +1,7 @@
 import ray
 
 from context import context
+from stacks.types import StackHash
 from stacks.stacking import stack_files
 from stacks.post_process import post_process_stack
 from dependency_graph import Graph, Node
@@ -11,7 +12,7 @@ from metadata.image_metadata import compute_image_metadata, gather_compute_image
 # need to run? If the final post-processed stack artifact exists, there's
 # no reason to check all of the predecing artifacts.
 @ray.remote
-def build_stack_subgraph(stack_id):
+def build_stack_subgraph(stack_id: StackHash) -> Graph:
   stacks = context.stacks
   stack = stacks[stack_id]
 
@@ -22,7 +23,7 @@ def build_stack_subgraph(stack_id):
   post_process_metadata_task = Node(compute_image_metadata,
                                     name=f'post_process_{stack_id}')
 
-  graph = Graph()
+  graph = Graph({})
   graph[stack_task] = {(stack_files, d)
                        for substack in stack.contents.values()
                        for d in substack.dependencies.values()
@@ -30,6 +31,6 @@ def build_stack_subgraph(stack_id):
   graph[stacking_metadata_task] = {stack_task}
   graph[post_process_task] = {stacking_metadata_task}
   graph[post_process_metadata_task] = {post_process_task}
-  graph[(gather_compute_image_metadata,)] = {post_process_metadata_task}
+  graph[gather_compute_image_metadata] = {post_process_metadata_task}
 
   return graph
