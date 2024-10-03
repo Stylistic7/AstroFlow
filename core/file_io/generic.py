@@ -33,6 +33,7 @@ def hash_of_image_data(filename: Path | str) -> str:
   return xxhash.xxh64(read_image(filename).tobytes()).hexdigest()
 
 
+# TODO: Strongly-type content hashes.
 def get_content_hash(filename: Path | str) -> str:
   header = read_header(filename)
   if _CONTENT_HASH_KEY in header:

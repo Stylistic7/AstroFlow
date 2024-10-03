@@ -136,6 +136,7 @@ def compute_image_metadata(filename: str | None = None,
   # TODO: Make sure this code doesn't actually repeatedly read the image across
   # the network. It should hit the node's filesystem cache.
   try:
+    assert filename is not None
     content_hash = get_content_hash(filename)
     key = ('image_metadata', content_hash)
 

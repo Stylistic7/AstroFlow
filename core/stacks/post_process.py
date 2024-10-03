@@ -52,6 +52,7 @@ def post_process_stack(stack_id: StackHash) -> list[Artifact]:
 
   input_artifact = stack_files_artifacts(stack_id)[0]
 
+  assert isinstance(input_artifact, FileArtifact)
   output_images = _post_process_stack([input_artifact.filename])
   output_filename = next(iter(output_images)).filename
 

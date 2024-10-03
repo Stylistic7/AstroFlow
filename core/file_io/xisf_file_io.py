@@ -1,6 +1,7 @@
 import numpy as np
 from pathlib import Path
 from xisf import XISF  # type: ignore
+from typing import Any
 
 from file_io.normalize_header import normalize_header
 
@@ -11,7 +12,7 @@ def read_xisf_header(filename: Path | str, debug: bool = False) -> dict:
   ims_meta = xisf.get_images_metadata()
   assert len(ims_meta) == 1
 
-  def _eval(value):
+  def _eval(value: Any) -> Any:
     try:
       return eval(value)
     except:
@@ -44,7 +45,8 @@ def read_xisf_image(filename: Path | str) -> np.ndarray:
   return xisf.read_image(0).squeeze().astype(np.float32)
 
 
-def add_xisf_metadata(filename, dest_filename, metadata):
+def add_xisf_metadata(filename: Path | str, dest_filename: Path | str,
+                      metadata: dict[str, Any]) -> None:
   """Adds the given metadata to the file.
   
   filename and dest_filename can be the same.
