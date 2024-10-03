@@ -21,7 +21,7 @@ class Mosaic:
   target_ids: list[TargetHash]
   tile_indices: list[TileIndices]
   origin: np.ndarray
-  basis_vectors: Optional[np.ndarray]
+  basis_vectors: np.ndarray
 
   oldest_date: Optional[datetime.datetime]
   newest_date: Optional[datetime.datetime]

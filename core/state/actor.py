@@ -1,12 +1,15 @@
 import ray
 from addict import Dict  # type: ignore
 import os
+from typing import Any, Callable, TypeVar
 
 from context import context
 from dependency_graph import Graph, run_graph
 
+T = TypeVar('T')
 
-def _get_namespace():
+
+def _get_namespace() -> str:
   return os.environ.get("ASTROFLOW_MOCK_NAMESPACE", "AstroFlow")
 
 
@@ -18,7 +21,8 @@ class State(Dict):
   pass
 
 
-def _add_to_shopping_cart(state, action):
+def _add_to_shopping_cart(state: State,
+                          action: Action) -> tuple[State, list[Action]]:
   if not context.shopping_cart:
     context.shopping_cart = []
 
@@ -30,7 +34,8 @@ def _add_to_shopping_cart(state, action):
   return state, []
 
 
-def _remove_from_shopping_cart(state, action):
+def _remove_from_shopping_cart(state: State,
+                               action: Action) -> tuple[State, list[Action]]:
   if not context.shopping_cart:
     context.shopping_cart = []
 
@@ -50,10 +55,10 @@ def _remove_from_shopping_cart(state, action):
 @ray.remote(resources={'diskcache': 0.001})
 class StateActor:
 
-  def __init__(self):
+  def __init__(self) -> None:
     self.state = Dict()
 
-  def dispatch(self, action):
+  def dispatch(self, action: Action) -> dict[str, Any]:
     print(f'### handling action {action}')
     action = Dict(action)
 
@@ -80,7 +85,7 @@ class StateActor:
     return self.state.to_dict()
 
 
-def dispatch(action, callback=None):
+def dispatch(action: Action, callback: Callable[..., T] | None = None) -> T:
   actor = ray.get_actor('state', namespace=_get_namespace())
   result = ray.get(actor.dispatch.remote(action))
   if callback:

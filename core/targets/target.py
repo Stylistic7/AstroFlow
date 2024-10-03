@@ -26,7 +26,7 @@ class Target:
   footprint: SingleSphericalPolygon
   projected_footprint: dict[str, Polygon]
 
-  def __str__(self):
+  def __str__(self) -> str:
     return (f'Target(name={self.name}, {len(self.stack_ids)} stacks)')
 
   # TODO: Add a valid() method, and assert on it.

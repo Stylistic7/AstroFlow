@@ -134,6 +134,7 @@ def create_stack_subframe_thumbnails(stack_id: StackHash) -> None:
     video_filename = os.path.join(tmp_dir, 'output.webm')
     out = cv2.VideoWriter(video_filename, fourcc, 10.0, (width, height), False)
     for i, light_frame in enumerate(light_frames_by_stars):
+      assert light_frame.plate_solution is not None
       rotate = light_frame.plate_solution.rotation_angle < 0.0
 
       light_image = resize_array(read_image(light_frame.filename),

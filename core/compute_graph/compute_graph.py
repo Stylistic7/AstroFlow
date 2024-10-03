@@ -15,7 +15,7 @@ from targets.compute_graph import build_target_subgraph
 from targets.identification import group_stacks_into_targets
 from targets.types import TargetHash
 from mosaics.compute_graph import build_mosaic_subgraph
-from dependency_graph import Graph, make_graph_from_list, print_graph
+from dependency_graph import Graph, TaskDescriptor, make_graph_from_list
 from suggestions import make_suggestions
 from quarantining import apply_quarantine_to_stack
 from quarantining.compute_graph import quarantine_targets, quarantine_mosaics
@@ -213,7 +213,8 @@ def build_main_processing_graph() -> Graph:
 def build_compute_graph(regroup: bool = False,
                         make_previews: bool = True,
                         run_main_processing_graph: bool = True) -> Graph:
-  task_list = [(scatter_compute_image_metadata, 'input'), load_metadata]
+  task_list: list[TaskDescriptor] = [(scatter_compute_image_metadata, 'input'),
+                                     load_metadata]
 
   # The regroup graph only looks at light frames only, and ignores calibration
   # frames. All of its findings are written into the given `grouped_*` keys.

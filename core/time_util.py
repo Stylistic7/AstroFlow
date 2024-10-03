@@ -1,13 +1,13 @@
-import ephem
+import ephem  # type: ignore
 import datetime
 from dateutil.parser import parse
-import pytz
+import pytz  # type: ignore
 
 kSanFranciscoLat = 37.7749
 kSanFranciscoLon = -122.4194
 
 
-def parse_local_datetime(s):
+def parse_local_datetime(s: str) -> datetime.datetime:
   local = pytz.timezone("America/Los_Angeles")
   naive = parse(s)
   local_dt = local.localize(naive, is_dst=None)
@@ -15,18 +15,19 @@ def parse_local_datetime(s):
   return utc_dt
 
 
-def parse_utc_datetime(s):
+def parse_utc_datetime(s: str) -> datetime.datetime:
   return pytz.utc.localize(parse(s))
 
 
-def period_overlap(p1, p2):
+def period_overlap(p1: tuple[datetime.datetime, datetime.datetime],
+                   p2: tuple[datetime.datetime, datetime.datetime]) -> float:
   latest_start = max(p1[0], p2[0])
   earliest_end = min(p1[1], p2[1])
   delta = (earliest_end - latest_start).total_seconds()
   return max(0, delta)
 
 
-def get_next_twilight_time():
+def get_next_twilight_time() -> datetime.date:
   observer = ephem.Observer()
   observer.date = datetime.datetime.now()
   observer.lat = str(
@@ -50,7 +51,7 @@ def get_next_twilight_time():
   return pytz.utc.localize(twilight.datetime())
 
 
-def before_twilight(margin_minutes=30):
+def before_twilight(margin_minutes: float = 30) -> bool:
   twilight_dt = get_next_twilight_time()
   print('Next astronomical twilight starts at', twilight_dt, 'UTC')
   twilight_dt += datetime.timedelta(minutes=margin_minutes)

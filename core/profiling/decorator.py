@@ -2,20 +2,24 @@ import ray
 import time
 from functools import wraps
 from dataclasses import dataclass
+from typing import ParamSpec, Callable, TypeVar
 
 from context import context
 
 _MAX_PERFORMANCE_SAMPLES = 100
+
+P = ParamSpec("P")
+R = TypeVar("R")
 
 
 # TODO: Nodes need to be identified by something more stable and reliable than
 # IP address. Many users' IP addresses change daily or even hourly. Eventually,
 # some kind of authentication system will keep track of users. Maybe MAC
 # address is a good choice.
-def track_performance(fn):
+def track_performance(fn: Callable[P, R]) -> Callable[P, R]:
 
   @wraps(fn)
-  def wrapper(*args, **kwargs):
+  def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
     start_time = time.time()
     result = fn(*args, **kwargs)
     end_time = time.time()

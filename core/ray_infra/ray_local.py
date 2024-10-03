@@ -8,10 +8,11 @@ import os
 import ray
 import uuid
 import tempfile
+from typing import Any
 
 
 @ray.remote
-def get_available_resources():
+def get_available_resources() -> Any:
   return ray.available_resources()
 
 
@@ -19,12 +20,12 @@ def get_available_resources():
 @ray.remote(resources={'diskcache': 0.001})
 class TempDirManager:
 
-  def __init__(self):
+  def __init__(self) -> None:
     # Create the temporary directory when the actor is initialized
     self.temp_dir = tempfile.mkdtemp()
     print(f"Temporary directory created: {self.temp_dir}")
 
-  def get_temp_dir(self):
+  def get_temp_dir(self) -> str:
     return self.temp_dir
 
 
@@ -54,7 +55,7 @@ if 'ASTROFLOW_MOCK_NAMESPACE' not in os.environ:
   # in this temp directory.
   manager = TempDirManager.options(name='temp_dir_manager',
                                    namespace=namespace,
-                                   get_if_exists=True).remote()
+                                   get_if_exists=True).remote()  # type: ignore
 
   # This is a hack that waits until the TempDirManager is actually alive.
   temp_dir = ray.get(manager.get_temp_dir.remote())
@@ -62,13 +63,13 @@ if 'ASTROFLOW_MOCK_NAMESPACE' not in os.environ:
   from context import ContextActor
   from state import StateActor
 
-  context_actor = ContextActor.options(name='context',
-                                       namespace=namespace,
-                                       get_if_exists=True).remote()
+  context_actor = ContextActor.options(
+      name='context', namespace=namespace,
+      get_if_exists=True).remote()  # type: ignore
 
   state_actor = StateActor.options(name='state',
                                    namespace=namespace,
-                                   get_if_exists=True).remote()
+                                   get_if_exists=True).remote()  # type: ignore
 
   # This is a hack that waits until the ContextActor is actually alive.
   ray.get(context_actor.get_cache_keys.remote())

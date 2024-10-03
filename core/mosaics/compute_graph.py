@@ -63,9 +63,10 @@ def build_mosaic_filter_subgraphs(mode: QualityLevel,
 
   # TODO: Iterate over the actual filters in the mosaic.
   for filter in ['H', 'S', 'O', 'L', 'R', 'G', 'B']:
-    graph |= ray.get(
+    subgraph = ray.get(
         build_mosaic_filter_subgraph.remote(mode, mosaic_id, filter,
                                             viewbox_task))
+    graph |= subgraph
 
   # TODO: Run post-processing here.
 

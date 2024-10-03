@@ -6,7 +6,8 @@ import datetime
 from context import context
 
 
-def make_test_context():
+def make_test_context(
+) -> tuple[tempfile.TemporaryDirectory, tempfile.TemporaryDirectory]:
   context.clear()
 
   context.quarantined_files = []

@@ -77,7 +77,7 @@ from previews import QualityLevel
 # TODO: Don't revisit the same failed images over and over, it just takes up
 # time at every startup.
 @ray.remote
-def scatter_compute_image_metadata(mode: QualityLevel,
+def scatter_compute_image_metadata(mode: str,
                                    ancestor_results: list[Any]) -> Graph:
   print('Entering scatter_compute_image_metadata, mode', mode,
         'ancestor_results', ancestor_results)

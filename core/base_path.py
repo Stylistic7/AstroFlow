@@ -2,7 +2,7 @@ import sys
 import os
 
 
-def get_base_path():
+def get_base_path() -> str:
   if getattr(sys, 'frozen', False):
     # If the application is frozen (running as a standalone executable)
     return os.path.join(sys._MEIPASS, 'core')

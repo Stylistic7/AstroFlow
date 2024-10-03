@@ -52,6 +52,7 @@ def create_flat_correction_thumbnails(stack_id: StackHash) -> None:
   light_frame = light_frames_by_stars[0]
 
   width = context.subframe_thumbnail_width
+  assert light_frame.plate_solution is not None
   rotate = light_frame.plate_solution.rotation_angle < 0.0
   light_image = (resize_array(read_image(light_frame.filename),
                               width)).astype(np.float32)

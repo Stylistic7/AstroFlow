@@ -137,7 +137,7 @@ class ContextActor:
     if write_mode in [WriteMode.MEMORY_ONLY, WriteMode.MEMORY_AND_DISK]:
       self.ref_dict[key] = ray.put(new_value)
 
-  def ref_dict(self) -> RefDict:
+  def get_ref_dict(self) -> RefDict:
     return self.ref_dict
 
   def clear(self) -> None:
@@ -210,9 +210,9 @@ class Context:
     actor = ray.get_actor('context', namespace=_get_namespace())
     return ray.get(actor.contains.remote(key))
 
-  def ref_dict(self) -> RefDict:
+  def get_ref_dict(self) -> RefDict:
     actor = ray.get_actor('context', namespace=_get_namespace())
-    return ray.get(actor.ref_dict.remote())
+    return ray.get(actor.get_ref_dict.remote())
 
   def delete(self, key: Key) -> None:
     actor = ray.get_actor('context', namespace=_get_namespace())

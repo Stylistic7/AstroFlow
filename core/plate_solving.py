@@ -171,8 +171,3 @@ def solve_field(filename: Path | str) -> PlateSolution | None:
 
   print(f'Could not plate-solve file {filename}')
   return None
-
-
-if __name__ == '__main__':
-  soln = solve_field(sys.argv[1])
-  print(soln.footprint)

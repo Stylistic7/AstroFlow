@@ -2,9 +2,10 @@ import ray
 
 from context import context
 import units
+from mosaics.mosaic import Mosaic
 
 
-def find_missing_tiles(mosaic):
+def find_missing_tiles(mosaic: Mosaic) -> None:
   max_x = max(t[0] for t in mosaic.tile_indices)
   max_y = max(t[1] for t in mosaic.tile_indices)
   print('max_x', max_x, 'max_y', max_y)
@@ -18,7 +19,7 @@ def find_missing_tiles(mosaic):
 
 
 @ray.remote
-def make_suggestions():
+def make_suggestions() -> None:
   print('### Entering make_suggestions')
   for mosaic in context.mosaics.values():
     find_missing_tiles(mosaic)

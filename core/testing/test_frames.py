@@ -6,17 +6,17 @@ import astropy.io.fits as pyfits  # type: ignore
 import numpy as np
 from scipy.signal.windows import gaussian  # type: ignore
 import datetime
-import random
 import uuid
 import shutil
 import xxhash
+from typing import Any
 
-from dependency_graph import Graph, run_graph
+from dependency_graph import run_graph
 from metadata.classes import ImageMetadata
-from metadata.image_metadata import compute_image_metadata, gather_compute_image_metadata
 from context import context, WriteMode
 import plate_solving
 from file_io.normalize_header import normalize_header
+from geometry import Degrees
 
 _TESTDATA_TARGETS = {
     'M42': [
@@ -67,15 +67,8 @@ _TESTDATA_TARGETS = {
 }
 
 
-def _randomize_dict(input):
-  randomized = {}
-  for k, v in sorted(input.items(), key=lambda x: random.random()):
-    randomized[k] = v
-
-  return randomized
-
-
-def _add_dither(center, max_distance_deg):
+def _add_dither(center: tuple[float, float],
+                max_distance_deg: Degrees) -> tuple[float, float]:
   ra, dec = center
   distance = np.random.uniform(0.0, max_distance_deg)
   angle = np.random.uniform(0.0, 2.0 * np.pi)
@@ -83,8 +76,10 @@ def _add_dither(center, max_distance_deg):
   return ra + distance * np.sin(angle), dec + distance * np.cos(angle)
 
 
-def _make_flat_frame(height_pixels, width_pixels, std=None):
-  if not std:
+def _make_flat_frame(height_pixels: int,
+                     width_pixels: int,
+                     std: float | None = None) -> np.ndarray:
+  if std is not None:
     std = width_pixels / 2.0
 
   gkern1d = gaussian(width_pixels, std=std).reshape(width_pixels, 1)
@@ -99,12 +94,13 @@ def _make_flat_frame(height_pixels, width_pixels, std=None):
   return img.astype(np.uint16)
 
 
-def copy_testdata_frames(target_name,
-                         dest_dir,
-                         prefix='',
-                         add_noise=True,
-                         fits_header_overrides=None,
-                         start_datetime=None):
+def copy_testdata_frames(
+    target_name: str,
+    dest_dir: str,
+    prefix: str = '',
+    add_noise: bool = True,
+    fits_header_overrides: dict[str, Any] | None = None,
+    start_datetime: datetime.datetime | None = None) -> None:
   if not fits_header_overrides:
     fits_header_overrides = {}
 
@@ -137,38 +133,37 @@ def copy_testdata_frames(target_name,
     fits.close()
 
 
-def make_synthetic_frames(start_datetime=datetime.datetime(
+def make_synthetic_frames(start_datetime: datetime.datetime = datetime.datetime(
     2023, 12, 6, 16, 29, 43),
-                          number=1,
-                          image_type='Light',
-                          prefix=None,
-                          ids=None,
-                          content_hashes=None,
-                          dest_dir=None,
-                          insert_metadata=True,
-                          ra=100,
-                          dec=45,
-                          centers=None,
-                          dither=0.01,
-                          focal_length_m=0.35,
-                          pixel_pitch_um=3.76,
-                          instrument='ZWO ASI6200MM Pro',
-                          width_pixels=1080,
-                          height_pixels=720,
-                          temperature=-20,
-                          exposure=300,
-                          filter='H',
-                          fill_value=None,
-                          num_stars=100,
-                          image_scale=1.0,
-                          rotation_angle_deg=90.0):
-  if not prefix:
+                          number: int = 1,
+                          image_type: str = 'Light',
+                          prefix: str | None = None,
+                          ids: list[str] | None = None,
+                          content_hashes: list[str] | None = None,
+                          dest_dir: str | None = None,
+                          insert_metadata: bool = True,
+                          ra: float = 100,
+                          dec: float = 45,
+                          centers: list[tuple[float, float]] | None = None,
+                          dither: float = 0.01,
+                          focal_length_m: float = 0.35,
+                          pixel_pitch_um: float = 3.76,
+                          instrument: str = 'ZWO ASI6200MM Pro',
+                          width_pixels: int = 1080,
+                          height_pixels: int = 720,
+                          temperature: float = -20,
+                          exposure: int = 300,
+                          filter: str = 'H',
+                          fill_value: Any | None = None,
+                          num_stars: int = 100,
+                          image_scale: float = 1.0,
+                          rotation_angle_deg: float = 90.0) -> list[str]:
+  if prefix is not None:
     prefix = image_type + '_' + str(uuid.uuid4())
 
   number = len(ids) if ids else number
 
   ids = ids if ids else [f'{prefix}_{i:05}.fit' for i in range(number)]
-  centers = centers if centers else [(ra, dec)] * number
 
   output_filenames = []
 
@@ -198,7 +193,8 @@ def make_synthetic_frames(start_datetime=datetime.datetime(
     else:
       content_hash = xxhash.xxh64(image_data.tobytes()).hexdigest()
 
-    center = _add_dither(centers[i], dither)
+    centers_or = centers if centers else [(ra, dec)] * number
+    center = _add_dither(centers_or[i], dither)
     date_obs = start_datetime + i * datetime.timedelta(seconds=exposure + 1)
     deg_per_pix = image_scale / 3600.0
 
@@ -265,7 +261,7 @@ def make_synthetic_frames(start_datetime=datetime.datetime(
       context.set(key, metadata, write_mode=WriteMode.DISK_ONLY)
       print(f'### Wrote key {key}')
 
-    if not dest_dir:
+    if dest_dir is not None:
       continue
 
     hdu = pyfits.PrimaryHDU(image_data)

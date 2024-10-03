@@ -51,7 +51,7 @@ class TestContext(unittest.TestCase):
     context.biggie = large_object
     assert type(context.biggie) is np.ndarray
 
-    ref_dict = context.ref_dict()
+    ref_dict = context.get_ref_dict()
     self.assertEqual(len(ref_dict), 1)
     self.assertTrue(all(type(v) is ray.ObjectRef for v in ref_dict.values()))
     self.assertLess(get_deep_size(ref_dict), 1000)
@@ -64,7 +64,7 @@ class TestContext(unittest.TestCase):
 
     context.set('biggie', large_object, write_mode=WriteMode.DISK_ONLY)
 
-    ref_dict = context.ref_dict()
+    ref_dict = context.get_ref_dict()
     self.assertEqual(len(ref_dict), 0)
 
     self.assertEqual(list(cache.iterkeys()), ['biggie'])
