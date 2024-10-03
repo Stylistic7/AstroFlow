@@ -12,6 +12,7 @@ from context import context
 from asiair import download_asiair, autorun_log_analysis
 import compute_graph
 from dependency_graph import run_graph
+from pix.shell_script import start_pixinsight_instances
 
 logger = structlog.get_logger()
 log = logger
@@ -528,7 +529,7 @@ def main():
   # TODO: This is a wart.
   # TODO: Every Ray worker node will need its own cache for this.
   # TODO: This doesn't start PixInsight on remote workers.
-  pix.start_pixinsight_instances()
+  start_pixinsight_instances()
 
   populate_context()
 
