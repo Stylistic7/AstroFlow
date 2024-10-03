@@ -5,9 +5,8 @@ import itertools
 from dataclasses import replace
 from datetime import datetime
 
-from metadata.classes import ImageMetadata
+from metadata.classes import ImageMetadata, FrameHash
 from context import context
-from stacks.types import StackHash, FrameHash
 from stacks.simple_stack import SimpleStack
 from stacks.composite_stack import CompositeStack, SimpleStacksDict
 import clustering

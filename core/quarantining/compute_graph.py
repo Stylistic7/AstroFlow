@@ -1,11 +1,18 @@
 import ray
 
 from context import context
+from stacks.simple_stack import SimpleStack
+from stacks.composite_stack import CompositeStack
+from targets.types import TargetHash
+from targets.target import Target
+from mosaics.types import MosaicHash
+from mosaics.mosaic import Mosaic
 
 
 # TODO: These don't belong in the compute_graph.py file
+# TODO: Maybe SimpleStacks and CompositeStacks should be in separate dicts.
 @ray.remote
-def quarantine_stacks():
+def quarantine_stacks() -> dict[str, SimpleStack | CompositeStack]:
   stacks = context.grouped_stacks
   if not stacks:
     return {}
@@ -19,7 +26,7 @@ def quarantine_stacks():
 
 
 @ray.remote
-def quarantine_targets():
+def quarantine_targets() -> dict[TargetHash, Target]:
   targets = context.grouped_targets
   print(f'### quarantine_targets {len(targets)} grouped targets')
   if not targets:
@@ -34,7 +41,7 @@ def quarantine_targets():
 
 
 @ray.remote
-def quarantine_mosaics():
+def quarantine_mosaics() -> dict[MosaicHash, Mosaic]:
   mosaics = context.grouped_mosaics
   print(f'### quarantine_targets {len(mosaics)} grouped targets')
   if not mosaics:

@@ -1,6 +1,9 @@
 from dataclasses import dataclass
+from typing import NewType
 
 from plate_solving import PlateSolution
+
+FrameHash = NewType('FrameHash', str)
 
 
 # TODO: Maybe unify this with Artifact, since they contain the same info.
@@ -12,4 +15,4 @@ class ImageMetadata:
   plate_solution: PlateSolution | None = None
 
 
-MetadataDict = dict[str, ImageMetadata]
+MetadataDict = dict[FrameHash, ImageMetadata]

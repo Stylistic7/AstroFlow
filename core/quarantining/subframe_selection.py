@@ -5,39 +5,26 @@ import ray
 from stacks.composite_stack import CompositeStack
 from context import context
 from metadata.image_types import is_light_frame
-from dependency_graph import Graph
+from metadata.classes import ImageMetadata, MetadataDict, FrameHash
 from profiling import track_performance
 
 
-def get_light_frames_sorted_by_stars(light_frames, metadata):
+def get_light_frames_sorted_by_stars(
+    light_frames: list[FrameHash],
+    metadata: MetadataDict) -> list[ImageMetadata]:
   assert light_frames
-  metadata = [i for h, i in metadata.items() if h in light_frames]
-  assert metadata
-  return sorted(metadata,
-                key=lambda i: i.plate_solution.num_stars,
+  metadata_list = [i for h, i in metadata.items() if h in light_frames]
+  assert metadata_list
+  return sorted(metadata_list,
+                key=lambda i: i.plate_solution.num_stars
+                if i.plate_solution is not None else 0,
                 reverse=True)
 
 
 @ray.remote
-def delete_empty_stacks():
-  context.stacks = {
-      stack_id: stack
-      for stack_id, stack in context.stacks.items()
-      if len(stack.all_frames()) > 0
-  }
-
-
-@ray.remote
-def scatter_select_subframes():
-  graph = Graph()
-  graph[delete_empty_stacks] = {(select_subframes, stack_id)
-                                for stack_id, stack in context.stacks.items()
-                                if type(stack) is CompositeStack}
-
-
-@ray.remote
 @track_performance
-def select_subframes(ancestor_results):
+def select_subframes(
+    ancestor_results: list[CompositeStack]) -> CompositeStack | None:
   print('### Entering select_subframes')
   stack = ancestor_results[0]
 
@@ -54,6 +41,7 @@ def select_subframes(ancestor_results):
   assert all(is_light_frame(metadata[f].header) for f in light_frames)
 
   sorted_light_frames = get_light_frames_sorted_by_stars(light_frames, metadata)
+  assert sorted_light_frames[0].plate_solution is not None
   highest_star_count = sorted_light_frames[0].plate_solution.num_stars
 
   print(f'### Best light frame for stack {stack} '

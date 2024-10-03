@@ -8,7 +8,7 @@ from context import context
 from dependency_graph import Graph, TaskDescriptor, print_graph, make_graph_from_list
 # TODO: Unify quarantining
 import quarantining
-from metadata.classes import ImageMetadata
+from metadata.classes import ImageMetadata, MetadataDict
 from mosaics.types import MosaicHash
 from mosaics.classes import Panel
 from mosaics.merge_ops import make_merge_ops
@@ -17,7 +17,7 @@ from mosaics.placement import mosaic_by_coordinates, mosaic_by_coordinates_artif
 from mosaics.types import TileIndices
 from stacks.post_process import post_process_stack_artifacts
 from stacks.compute_graph import build_stack_subgraph
-from stacks.types import StackHash, FrameHash
+from stacks.types import StackHash
 from artifacts.decorators import saves_artifacts
 from previews import resize_array, QualityLevel
 from profiling import track_performance
@@ -85,7 +85,7 @@ def build_mosaic_subgraph(mode: QualityLevel, mosaic_id: MosaicHash) -> Graph:
 
 
 def _get_best_light_frame(stack_id: StackHash,
-                          metadata: ImageMetadata) -> ImageMetadata:
+                          metadata: MetadataDict) -> ImageMetadata:
   stack = context.stacks[stack_id]
 
   all_frames = stack.all_frames()

@@ -4,8 +4,7 @@ from typing import Any
 import numpy as np
 
 from context import context
-from metadata.classes import MetadataDict
-from stacks.types import FrameHash
+from metadata.classes import MetadataDict, FrameHash
 
 
 @dataclass(frozen=True)

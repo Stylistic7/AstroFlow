@@ -12,7 +12,7 @@ from typing import Any
 from stacks.artifacts import output_filename, stack_files_artifacts
 from stacks.simple_stack import SimpleStack
 from stacks.composite_stack import CompositeStack
-from stacks.types import StackHash, FrameHash
+from stacks.types import StackHash
 from artifacts.decorators import saves_artifacts
 from artifacts import FileArtifact, Artifact
 from context import context

@@ -7,16 +7,12 @@ from pathlib import Path
 import shutil
 
 from context import context
-from testing.testdata_cache import TESTDATA_CACHE_GZIP_FILENAME
 from testing.test_frames import copy_testdata_frames
 import compute_graph
-from dependency_graph import run_graph, print_graph, matching_nodes
+from dependency_graph import run_graph
 from testing.test_context import make_test_context
 from hashing import hash_list
-from mosaics.placement import mosaic_by_coordinates
-from mosaics.merge_images import merge_images
-from mosaics.viewbox import compute_mosaic_viewbox
-from previews import scatter_stack_thumbnails
+from previews.types import QualityLevel
 
 
 class TestMosaic(unittest.TestCase):
@@ -59,10 +55,12 @@ class TestMosaic(unittest.TestCase):
     mosaic = next(iter(context.mosaics.values()))
     print(f'### There is one mosaic, {mosaic}')
 
-    ha_key = ('mosaic_thumbnail_image', 'subframe', mosaic.stable_hash, 'H')
+    ha_key = ('mosaic_thumbnail_image', QualityLevel.SUBFRAME,
+              mosaic.stable_hash, 'H')
     self.assertFalse(context.contains(ha_key))
 
-    sii_key = ('mosaic_thumbnail_image', 'subframe', mosaic.stable_hash, 'S')
+    sii_key = ('mosaic_thumbnail_image', QualityLevel.SUBFRAME,
+               mosaic.stable_hash, 'S')
     self.assertTrue(context.contains(sii_key))
 
   def test_orion_mosaic(self) -> None:
@@ -98,9 +96,10 @@ class TestMosaic(unittest.TestCase):
     self.assertEqual(len(context.mosaics), 1)
     mosaic = next(iter(context.mosaics.values()))
 
-    subframe_key = ('mosaic_thumbnail_image', 'subframe', mosaic.stable_hash,
-                    'H')
-    master_key = ('mosaic_thumbnail_image', 'master', mosaic.stable_hash, 'H')
+    subframe_key = ('mosaic_thumbnail_image', QualityLevel.SUBFRAME,
+                    mosaic.stable_hash, 'H')
+    master_key = ('mosaic_thumbnail_image', QualityLevel.MASTER,
+                  mosaic.stable_hash, 'H')
 
     self.assertTrue(context.contains(subframe_key))
     self.assertFalse(context.contains(master_key))
@@ -166,9 +165,10 @@ class TestMosaic(unittest.TestCase):
     self.assertEqual(len(context.mosaics), 1)
     mosaic = next(iter(context.mosaics.values()))
 
-    subframe_key = ('mosaic_thumbnail_image', 'subframe', mosaic.stable_hash,
-                    'H')
-    master_key = ('mosaic_thumbnail_image', 'master', mosaic.stable_hash, 'H')
+    subframe_key = ('mosaic_thumbnail_image', QualityLevel.SUBFRAME,
+                    mosaic.stable_hash, 'H')
+    master_key = ('mosaic_thumbnail_image', QualityLevel.MASTER,
+                  mosaic.stable_hash, 'H')
 
     self.assertTrue(context.contains(subframe_key))
     self.assertFalse(context.contains(master_key))

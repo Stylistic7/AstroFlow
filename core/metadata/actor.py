@@ -2,8 +2,7 @@ import ray
 from typing import Any, Callable
 
 from context import get_cache
-from stacks.types import FrameHash
-from metadata.classes import ImageMetadata
+from metadata.classes import FrameHash, ImageMetadata
 
 # TODO: Rename this file.
 

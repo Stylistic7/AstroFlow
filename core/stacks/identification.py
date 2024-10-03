@@ -5,7 +5,7 @@ from typing import Iterator
 from context import context
 import clustering
 from stacks.composite_stack import CompositeStack, CompositeStacksDict
-from stacks.types import FrameHash
+from metadata.classes import FrameHash
 from profiling import track_performance
 
 

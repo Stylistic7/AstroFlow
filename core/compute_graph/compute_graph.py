@@ -22,10 +22,10 @@ from quarantining.compute_graph import quarantine_targets, quarantine_mosaics
 from quarantining.subframe_selection import select_subframes
 from stacks.identification import identify_stacks
 import metadata.image_types as image_types
-from metadata.classes import ImageMetadata
+from metadata.classes import ImageMetadata, FrameHash
 from metadata.actor import get_metadata
 from stacks.composite_stack import CompositeStack
-from stacks.types import FrameHash, StackHash
+from stacks.types import StackHash
 from stacks.validation import validate_stacks
 from profiling import track_performance
 from mosaics.types import MosaicHash

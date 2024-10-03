@@ -1,10 +1,11 @@
 import ray
-from dataclasses import replace
+from dataclasses import replace, asdict
 
 from context import context
 from stacks.composite_stack import CompositeStack
 from stacks.simple_stack import SimpleStack
 from stacks.imaging_attributes import ImagingAttributes
+from stacks.types import StackHash
 from profiling import track_performance
 
 # TODO: Ensure that all of the actions in this file are idempotent. The goal
@@ -30,7 +31,6 @@ def _apply_to_simple_stack(stack: SimpleStack) -> SimpleStack:
 
 
 def _apply_to_composite_stack(stack: CompositeStack) -> CompositeStack:
-  stacks = context.grouped_stacks
   quarantined_stacks = context.quarantined_stacks or set()
 
   new_contents = {
@@ -43,7 +43,7 @@ def _apply_to_composite_stack(stack: CompositeStack) -> CompositeStack:
   for substack in stack.contents.values():
     all_frames.extend(substack.frames)
 
-  attributes = ImagingAttributes.from_frames(all_frames) | {
+  attributes = asdict(ImagingAttributes.from_frames(all_frames)) | {
       'contents': new_contents
   }
 
@@ -54,7 +54,8 @@ def _apply_to_composite_stack(stack: CompositeStack) -> CompositeStack:
 # is a better separation of concerns.
 @ray.remote
 @track_performance
-def apply_quarantine_to_stack(stack_id):
+def apply_quarantine_to_stack(
+    stack_id: StackHash) -> SimpleStack | CompositeStack:
   stacks = context.grouped_stacks
   stack = stacks[stack_id]
 
@@ -62,3 +63,5 @@ def apply_quarantine_to_stack(stack_id):
     return _apply_to_composite_stack(stack)
   elif type(stack) is SimpleStack:
     return _apply_to_simple_stack(stack)
+
+  raise ValueError(f'Stack {stack} is of unknown type')

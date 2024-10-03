@@ -12,8 +12,7 @@ from stacks.simple_stack import SimpleStack
 from stacks.imaging_attributes import ImagingAttributes
 from stacks.state_attributes import AstroFlowStateAttributes
 from stacks.astrometric_attributes import AstrometricAttributes
-from stacks.types import FrameHash
-from metadata.classes import MetadataDict
+from metadata.classes import MetadataDict, FrameHash
 from catalogs import position_string
 import geometry.footprints as footprints
 from clustering.continuous import cluster_continuous
