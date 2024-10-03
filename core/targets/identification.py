@@ -1,5 +1,6 @@
-from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon
-import astropy.io.fits as pyfits
+from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon  # type: ignore
+import astropy.io.fits as pyfits  # type: ignore
+import astropy.wcs.WCS as WCS  # type: ignore
 import ray
 import numpy as np
 
@@ -7,31 +8,33 @@ from context import context
 from clustering import find_groups
 from catalogs import position_string
 from targets import Target
+from targets.types import TargetHash
 import geometry.footprints as footprints
 from hashing import hash_list
 from stacks.composite_stack import CompositeStack
 from profiling import track_performance
+from stacks.types import StackHash
 
 
 @ray.remote
 @track_performance
-def group_stacks_into_targets(ancestor_results):
+def group_stacks_into_targets(
+    ancestor_results: list[dict[StackHash, CompositeStack]]
+) -> dict[TargetHash, Target]:
   stacks = ancestor_results[0]
   metadata = context.metadata
 
   cosine_similarity_threshold = context.cosine_similarity_threshold
 
-  def get_spherical_polygon(wcs):
+  def get_spherical_polygon(wcs: WCS) -> SphericalPolygon:
     footprint = SingleSphericalPolygon.from_wcs(wcs)
     if not footprint.is_clockwise():
       footprint = SingleSphericalPolygon(footprint.points[::-1])
     assert not SphericalPolygon.self_intersect(footprint.points)
     return footprint
 
-  # TODO: This makes many small calls to get_metadata(). It should be able
-  # to re-use the metadata queried for the entire spatial cluster, passed
-  # through function arguments.
-  def center_polygon_image_scale(stack):
+  def center_polygon_image_scale(
+      stack: CompositeStack) -> tuple[np.ndarray, SphericalPolygon, float]:
     first_frame = stack.all_frames()[0]
     plate_solution = metadata[first_frame].plate_solution
     return (np.asarray(footprints.radec_to_vector(*stack.center)),
@@ -49,7 +52,8 @@ def group_stacks_into_targets(ancestor_results):
   # TODO: Make this IoU threashold a knob in the UI.
   # TODO: Don't combine stacks with different image scales into the same
   # target.
-  def comparison_fn(a, b):
+  def comparison_fn(a: tuple[np.ndarray, SphericalPolygon, float],
+                    b: tuple[np.ndarray, SphericalPolygon, float]) -> bool:
     a_center, a_polygon, a_image_scale = a
     b_center, b_polygon, b_image_scale = b
 
@@ -66,7 +70,7 @@ def group_stacks_into_targets(ancestor_results):
 
   groups = find_groups(values, comparison_fn, min_component_members=1)
 
-  def new_target(stack_ids):
+  def new_target(stack_ids: list[StackHash]) -> Target:
     center = stacks[stack_ids[0]].center
     name = position_string.canonical_target_string(center)
 
@@ -86,8 +90,8 @@ def group_stacks_into_targets(ancestor_results):
 
     # TODO: Validate all stacks here.
 
-    stable_hash = stacks[sorted(
-        stack_ids, key=lambda s: stacks[s].oldest_date)[0]].stable_hash
+    stable_hash = TargetHash(stacks[sorted(
+        stack_ids, key=lambda s: stacks[s].oldest_date)[0]].stable_hash)
     content_hash = hash_list(stacks[s].content_hash for s in stack_ids)
 
     return Target(name=name,
@@ -100,8 +104,8 @@ def group_stacks_into_targets(ancestor_results):
                   footprint=footprint,
                   projected_footprint=projected_footprint)
 
-  targets = [new_target(g) for g in groups]
-  targets = {t.stable_hash: t for t in targets}
+  targets_list = [new_target(g) for g in groups]
+  targets = {t.stable_hash: t for t in targets_list}
 
   print(f'### Found {len(targets)} targets: {targets.keys()}')
 

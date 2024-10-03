@@ -11,8 +11,8 @@ import plate_solving
 from clustering.classes import SpatialGroup
 from profiling import track_performance
 
-ComparisonFn = Callable[[float, float], bool]
 T = TypeVar('T')
+ComparisonFn = Callable[[T, T], bool]
 
 
 def find_groups(values: dict[T, Any], comparison_fn: ComparisonFn,

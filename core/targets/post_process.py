@@ -1,11 +1,15 @@
 import ray
+from typing import Any
 
-import pix
+from artifacts import Artifact
+from pix.decorators import PixInsight
+from pix.classes import ImageList
+from targets.types import TargetHash
 
 
 # TODO: Find a way to disable these during tests.
-@pix.PixInsight()
-def _post_process_target(images):
+@PixInsight()
+def _post_process_target(images: ImageList) -> ImageList:
   # print('### Entering _post_process_target')
   # aligned = pix.StarAlignment(images)
   # print('### pix.StarAlignment returned', aligned)
@@ -22,10 +26,11 @@ def _post_process_target(images):
 # TODO: Hash the script used to do the post-processing, and do not repeat
 # the post-processing when a file with that hash already exists.
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
-def post_process_target(target_id, *, ancestor_results):
+def post_process_target(target_id: TargetHash,
+                        ancestor_results: list[Any]) -> list[Artifact]:
   print(
       f'post_process_target, target_id {target_id} ancestor_results {ancestor_results}'
   )
-  # result = _post_process_target(ancestor_results)
-  # print(f'post_process_target, target_id {target_id} returning {result}')
-  # return result
+  result = _post_process_target(ancestor_results)
+  print(f'post_process_target, target_id {target_id} returning {result}')
+  return result
