@@ -1,4 +1,5 @@
-from stacks import SimpleStack, CompositeStack
+from stacks.simple_stack import SimpleStack
+from stacks.composite_stack import CompositeStack
 
 
 # TODO: Make these "Stack graph query" functions universal.

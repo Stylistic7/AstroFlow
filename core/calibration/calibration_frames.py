@@ -3,9 +3,11 @@ import numpy as np
 import operator
 import itertools
 from dataclasses import replace
+from datetime import datetime
 
-import metadata.image_types as image_types
+from metadata.classes import ImageMetadata
 from context import context
+from stacks.types import StackHash, FrameHash
 from stacks.simple_stack import SimpleStack
 from stacks.composite_stack import CompositeStack, SimpleStacksDict
 import clustering
@@ -14,12 +16,12 @@ from profiling import track_performance
 
 @ray.remote
 @track_performance
-def identify_calibration_stacks():
+def identify_calibration_stacks() -> None:
   print(f'Identifying calibration stacks...')
 
   metadata = context.metadata
 
-  def get_runs(frames):
+  def get_runs(frames: set[FrameHash]) -> list[list[FrameHash]]:
     if not len(frames):
       return []
 
@@ -29,12 +31,13 @@ def identify_calibration_stacks():
         [x[0] for x in r] for r in result if len(r) >= context.min_frames_in_run
     ]
 
-  def group_by_header(images, key):
+  def group_by_header(images: list[ImageMetadata],
+                      key: str) -> dict[str, set[FrameHash]]:
     key_fn = lambda i: i.header[key]
-    images = sorted([i for i in images if key in i.header], key=key_fn)
+    sorted_images = sorted([i for i in images if key in i.header], key=key_fn)
     return {
-        k: set(i.content_hash for i in g)
-        for k, g in itertools.groupby(images, key=key_fn)
+        k: set(FrameHash(i.content_hash) for i in g)
+        for k, g in itertools.groupby(sorted_images, key=key_fn)
     }
 
   frames_for_image_type = group_by_header(metadata.values(), 'IMAGETYP')
@@ -42,17 +45,17 @@ def identify_calibration_stacks():
   frames_for_exposure = group_by_header(metadata.values(), 'EXPOSURE')
   frames_for_filter = group_by_header(metadata.values(), 'FILTER')
 
-  def new_stack(frames):
+  def new_stack(frames: list[FrameHash]) -> SimpleStack:
     stack = SimpleStack.from_frames(frames, metadata)
     return stack
 
-  stacks = {}
+  stacks: dict[StackHash, SimpleStack] = {}
   for camera in frames_for_camera:
     bias_frames = frames_for_image_type.get(
         'bias', set()) & frames_for_camera.get(camera, set())
     for run in get_runs(bias_frames):
       stack = new_stack(run)
-      stacks[stack.content_hash] = stack
+      stacks[StackHash(stack.content_hash)] = stack
 
     for exposure in frames_for_exposure:
       dark_frames = frames_for_image_type.get(
@@ -60,7 +63,7 @@ def identify_calibration_stacks():
               camera, set()) & frames_for_exposure.get(exposure, set())
       for run in get_runs(dark_frames):
         stack = new_stack(run)
-        stacks[stack.content_hash] = stack
+        stacks[StackHash(stack.content_hash)] = stack
 
     for filter in frames_for_filter:
       flat_frames = frames_for_image_type.get(
@@ -68,7 +71,7 @@ def identify_calibration_stacks():
               camera, set()) & frames_for_filter.get(filter, set())
       for run in get_runs(flat_frames):
         stack = new_stack(run)
-        stacks[stack.content_hash] = stack
+        stacks[StackHash(stack.content_hash)] = stack
 
   print(f'### identify_calibration_stacks writing {len(stacks)} stacks '
         f'into the context')
@@ -80,7 +83,8 @@ def identify_calibration_stacks():
 
 @ray.remote
 @track_performance
-def associate_with_stack(ancestor_results):
+def associate_with_stack(
+    ancestor_results: list[CompositeStack]) -> CompositeStack | None:
   stack = ancestor_results[0]
 
   if stack is None:
@@ -90,7 +94,7 @@ def associate_with_stack(ancestor_results):
 
   stacks = context.grouped_stacks
 
-  def is_compatible(image_type, cal_stack):
+  def is_compatible(image_type: str, cal_stack: SimpleStack) -> bool:
     if cal_stack.image_type != image_type:
       return False
 
@@ -115,7 +119,7 @@ def associate_with_stack(ancestor_results):
 
     assert False, f'image_type {image_type}'
 
-  def find_closest_stack_chronologically(image_type):
+  def find_closest_stack_chronologically(image_type: str) -> SimpleStack | None:
     compatible_stacks = [
         s for s in stacks if is_compatible(image_type, stacks[s])
     ]
@@ -123,14 +127,14 @@ def associate_with_stack(ancestor_results):
     if not compatible_stacks:
       return None
 
-    def midpoint(a, b):
+    def midpoint(a: datetime, b: datetime) -> datetime:
       return a + (b - a) / 2
 
     return compatible_stacks[np.argmin([
         abs(
             midpoint(stack.oldest_date, stack.newest_date) -
-            midpoint(stacks[s].oldest_date, stacks[s].newest_date))
-        for s in compatible_stacks
+            midpoint(stacks[s].oldest_date, stacks[s].newest_date)).
+        total_seconds() for s in compatible_stacks
     ])]
 
   new_contents = SimpleStacksDict()

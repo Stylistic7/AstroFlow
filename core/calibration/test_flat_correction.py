@@ -16,15 +16,15 @@ cache = get_cache()
 
 class TestFlatCorrection(unittest.TestCase):
 
-  def setUp(self):
+  def setUp(self) -> None:
     self.input_dir_obj, self.output_dir_obj = make_test_context()
     context.regroup = True
 
-  def tearDown(self):
+  def tearDown(self) -> None:
     self.input_dir_obj.cleanup()
     self.output_dir_obj.cleanup()
 
-  def test_one_perfect_stack(self):
+  def test_one_perfect_stack(self) -> None:
     copy_testdata_frames(prefix='light_run',
                          target_name='NGC7635',
                          start_datetime=datetime.datetime(

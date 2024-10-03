@@ -7,7 +7,9 @@ from context import cache
 import datetime
 from dataclasses import asdict
 
-from stacks import SimpleStack, CompositeStack
+from stacks.simple_stack import SimpleStack
+from stacks.composite_stack import CompositeStack
+from stacks.types import StackHash
 from testing.test_frames import make_synthetic_frames, copy_testdata_frames
 from context import context
 from file_io.find_image_files import find_image_files
@@ -21,15 +23,15 @@ from testing.test_context import make_test_context
 
 class TestCalibrationFrames(unittest.TestCase):
 
-  def setUp(self):
+  def setUp(self) -> None:
     self.input_dir_obj, self.output_dir_obj = make_test_context()
     context.regroup = True
 
-  def tearDown(self):
+  def tearDown(self) -> None:
     self.input_dir_obj.cleanup()
     self.output_dir_obj.cleanup()
 
-  def test_stack_dependency_graph(self):
+  def test_stack_dependency_graph(self) -> None:
     # These runs of dark and bias frames will be used by both runs of light
     # frames.
     make_synthetic_frames(prefix='dark',
@@ -101,7 +103,7 @@ class TestCalibrationFrames(unittest.TestCase):
     light_stacks = [s for s in stacks.values() if s.image_type == 'light']
     self.assertEqual(len(light_stacks), 1)
 
-  def test_one_light_run_one_dark_run(self):
+  def test_one_light_run_one_dark_run(self) -> None:
     copy_testdata_frames(target_name='NGC7635', dest_dir=context.input_dirs[0])
     make_synthetic_frames(number=5,
                           image_type='Dark',
@@ -126,7 +128,7 @@ class TestCalibrationFrames(unittest.TestCase):
     light_stacks = [s for s in stacks.values() if s.image_type == 'light']
     self.assertEqual(len(light_stacks), 1)
 
-  def test_flats_from_different_camera(self):
+  def test_flats_from_different_camera(self) -> None:
     # There are lights from two different cameras. This should result
     # in two stacks, with mutually-exclusive sets of flat frames.
     #
@@ -204,7 +206,7 @@ class TestCalibrationFrames(unittest.TestCase):
     ]
     self.assertEqual(len(light_stacks), 2)
 
-  def test_dark_scaling(self):
+  def test_dark_scaling(self) -> None:
     # The light frames are 180 seconds, but the dark frames are 60 or 300
     # seconds. AstroFlow should pick the closest darks that are equal to or
     # longer than the lights. One group of dark frames will never be stacked.
@@ -260,7 +262,7 @@ class TestCalibrationFrames(unittest.TestCase):
     self.assertEqual(len(light_stacks), 1)
 
   # TODO: Test temperatures that do and do not match.
-  def test_temperature_mismatch(self):
+  def test_temperature_mismatch(self) -> None:
     # The light frames are at temperature -13, but the darks are at -15. This
     # difference is small enough for the frames to still be associated.
     copy_testdata_frames(target_name='NGC7635', dest_dir=context.input_dirs[0])
@@ -296,7 +298,7 @@ class TestCalibrationFrames(unittest.TestCase):
     self.assertEqual(len(substack.frames), 3)
     self.assertEqual(len(substack.dependencies), 1)
 
-  def test_stack_calibration_frames(self):
+  def test_stack_calibration_frames(self) -> None:
     copy_testdata_frames(target_name='NGC7635', dest_dir=context.input_dirs[0])
     make_synthetic_frames(number=5,
                           image_type='Bias',
@@ -337,7 +339,7 @@ class TestCalibrationFrames(unittest.TestCase):
     light_stacks = [s for s in stacks.values() if s.image_type == 'light']
     self.assertEqual(len(light_stacks), 1)
 
-  def test_multiple_filters_for_flats(self):
+  def test_multiple_filters_for_flats(self) -> None:
     # Only one run of flat frames applies to the light frames, which use
     # the H filter.
     copy_testdata_frames(target_name='NGC7635', dest_dir=context.input_dirs[0])
@@ -374,7 +376,7 @@ class TestCalibrationFrames(unittest.TestCase):
     light_stacks = [s for s in stacks.values() if s.image_type == 'light']
     self.assertEqual(len(light_stacks), 1)
 
-  def test_flat_frame_selection(self):
+  def test_flat_frame_selection(self) -> None:
     # There are two runs of flat frames, but the user has selected the first
     # one, which is much more distant chronologically.
     make_synthetic_frames(prefix='flat_run_0',
@@ -422,7 +424,7 @@ class TestCalibrationFrames(unittest.TestCase):
 
     # Look through the stacks, and find the stacks for the two runs of flat
     # frames.
-    def find_stack(filename_fragment):
+    def find_stack(filename_fragment: str) -> StackHash | None:
       for stack_id, stack in stacks.items():
         if type(stack) is not SimpleStack:
           continue
@@ -432,8 +434,12 @@ class TestCalibrationFrames(unittest.TestCase):
         if all(filename_fragment in f for f in filenames):
           return stack_id
 
+      return None
+
     first_flat_stack = find_stack('flat_run_0')
+    self.assertNotEqual(first_flat_stack, None)
     second_flat_stack = find_stack('flat_run_1')
+    self.assertNotEqual(second_flat_stack, None)
 
     light_stacks = [
         s for s in stacks.values()
@@ -468,7 +474,7 @@ class TestCalibrationFrames(unittest.TestCase):
     substack = next(iter(stack.contents.values()))
     self.assertEqual(substack.dependencies, {'flat': first_flat_stack})
 
-  def test_generic_grouping(self):
+  def test_generic_grouping(self) -> None:
     copy_testdata_frames(target_name='NGC7635', dest_dir=context.input_dirs[0])
     make_synthetic_frames(number=5,
                           image_type='Bias',
