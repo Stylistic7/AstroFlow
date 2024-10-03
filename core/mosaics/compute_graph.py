@@ -14,6 +14,7 @@ from mosaics.classes import Panel
 from mosaics.merge_ops import make_merge_ops
 from mosaics.viewbox import compute_mosaic_viewbox
 from mosaics.placement import mosaic_by_coordinates, mosaic_by_coordinates_artifacts
+from mosaics.types import TileIndices
 from stacks.post_process import post_process_stack_artifacts
 from stacks.compute_graph import build_stack_subgraph
 from stacks.types import StackHash, FrameHash
@@ -114,7 +115,7 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic_id: MosaicHash,
 
   # TODO: What to do if there are multiple stacks for a filter? That's not
   # really supposed to happen.
-  panels: dict[str, Panel] = {}
+  panels: dict[TileIndices, Panel] = {}
   from_task: dict[Panel, TaskDescriptor] = {}
   for tile_indices, target_id in zip(mosaic.tile_indices, mosaic.target_ids):
     stacks_for_filter = [
@@ -162,8 +163,6 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic_id: MosaicHash,
     print(f'### tile_indices {tile_indices} => panel {panel}')
 
   _, merge_graph = make_merge_ops(mode, mosaic_id, filter, panels, from_task)
-  print(f'### make_merge_ops returned graph:')
-  print_graph(merge_graph)
 
   if merge_graph:
     print(f'### merge_graph has length {len(merge_graph)}')
@@ -180,7 +179,7 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic_id: MosaicHash,
 
 def merge_graph_done_artifacts(
     mode: QualityLevel, mosaic_id: MosaicHash, filter: str,
-    ancestor_results: dict[str, Any]) -> list[Artifact]:
+    ancestor_results: list[list[Artifact]]) -> list[Artifact]:
   mosaic = context.mosaics[mosaic_id]
   key = ('mosaic_thumbnail_image', mode, mosaic_id, filter)
 
@@ -203,16 +202,17 @@ def merge_graph_done_artifacts(
 # this function.
 @ray.remote
 @saves_artifacts(merge_graph_done_artifacts)
-def merge_graph_done(
-    mode: QualityLevel, mosaic_id: MosaicHash, filter: str,
-    ancestor_results: list[list[FileArtifact]]) -> list[Artifact]:
+def merge_graph_done(mode: QualityLevel, mosaic_id: MosaicHash, filter: str,
+                     ancestor_results: list[list[Artifact]]) -> list[Artifact]:
   mosaic = context.mosaics[mosaic_id]
 
   assert type(ancestor_results) is list
   assert len(ancestor_results) == 1
   final_artifact = ancestor_results[0][0]
-  assert isinstance(final_artifact,
-                    Artifact), f'final_artifact has type {type(final_artifact)}'
+  assert isinstance(
+      final_artifact,
+      (FileArtifact,
+       CacheArtifact)), f'final_artifact has type {type(final_artifact)}'
   print(f'### Merging {mosaic} mode {mode} is done, '
         f'final_artifact is {final_artifact}')
 

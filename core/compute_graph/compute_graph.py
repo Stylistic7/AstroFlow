@@ -8,10 +8,12 @@ from metadata.image_metadata import scatter_compute_image_metadata
 from clustering import cluster_by_image_center
 from calibration import identify_calibration_stacks, associate_with_stack
 from previews import scatter_stack_thumbnails
+from previews.types import QualityLevel
 from mosaics.identification import identify_mosaics
 from stacks.compute_graph import build_stack_subgraph
 from targets.compute_graph import build_target_subgraph
 from targets.identification import group_stacks_into_targets
+from targets.types import TargetHash
 from mosaics.compute_graph import build_mosaic_subgraph
 from dependency_graph import Graph, make_graph_from_list, print_graph
 from suggestions import make_suggestions
@@ -26,6 +28,7 @@ from stacks.composite_stack import CompositeStack
 from stacks.types import FrameHash, StackHash
 from stacks.validation import validate_stacks
 from profiling import track_performance
+from mosaics.types import MosaicHash
 
 
 @ray.remote
@@ -61,7 +64,7 @@ def gather_spatial_groups() -> None:
 # and unchanged.
 @ray.remote
 def scatter_spatial_groups() -> Graph:
-  graph = Graph()
+  graph = Graph({})
   graph[gather_spatial_groups] = {
       (build_spatial_group_graph, g) for g in context.spatial_groups
   }
@@ -81,7 +84,7 @@ def build_regroup_graph() -> Graph:
 
 
 @ray.remote
-def store_targets(ancestor_results: list[Any]) -> Graph:
+def store_targets(ancestor_results: list[Any]) -> None:
   targets = ancestor_results[0]
   context.or_equals('targets', targets, default_value={})
   print(f'### store_targets: Stored {len(targets)} targets; '
@@ -89,7 +92,7 @@ def store_targets(ancestor_results: list[Any]) -> Graph:
 
 
 @ray.remote
-def store_mosaics(ancestor_results: list[Any]) -> Graph:
+def store_mosaics(ancestor_results: list[Any]) -> None:
   mosaics = ancestor_results[0]
   context.or_equals('mosaics', mosaics, default_value={})
   print(f'### store_mosaics: Stored {len(mosaics)} mosaics; '
@@ -98,7 +101,7 @@ def store_mosaics(ancestor_results: list[Any]) -> Graph:
 
 # TODO: Move this somewhere more appropriate.
 @ray.remote
-def apply_settings(ancestor_results: list[Any]) -> Graph:
+def apply_settings(ancestor_results: list[CompositeStack]) -> CompositeStack:
   stack = ancestor_results[0]
   assert isinstance(stack, CompositeStack)
 
@@ -151,7 +154,7 @@ def gather_stack_user_settings(ancestor_results: list[Any]) -> None:
 def build_apply_stack_user_settings_subgraph() -> Graph:
   stacks = context.grouped_stacks
 
-  graph = Graph()
+  graph = Graph({})
   graph[gather_stack_user_settings] = {
       (build_stack_user_settings_subgraph, stack_id)
       for stack_id in stacks.keys()
@@ -163,15 +166,14 @@ def build_apply_stack_user_settings_subgraph() -> Graph:
 
 @ray.remote
 def build_preview_graph() -> Graph:
-  graph = Graph()
-  stack_thumbnail_task = (scatter_stack_thumbnails, 'subframe')
+  graph = Graph({})
+  stack_thumbnail_task = (scatter_stack_thumbnails, QualityLevel.SUBFRAME)
   graph[stack_thumbnail_task] = []
 
   for mosaic_id in context.mosaics.keys():
-    graph |= ray.get(build_mosaic_subgraph.remote('subframe', mosaic_id))
-
-  print('### Finished build_preview_graph, graph is:')
-  print_graph(graph)
+    subgraph = ray.get(
+        build_mosaic_subgraph.remote(QualityLevel.SUBFRAME, mosaic_id))
+    graph |= subgraph
 
   return graph
 
@@ -183,26 +185,27 @@ def build_main_processing_graph() -> Graph:
 
   # TODO: Maybe add prioritization options in the UI.
   # TODO: Using ray.get() here is a little awkward.
-  graph = Graph()
+  graph = Graph({})
   for type, id in shopping_cart:
     if type == 'stack':
       if id not in context.stacks:
         print('### WARNING: stack {id} is in shopping cart but does not exist')
         continue
-      graph |= ray.get(build_stack_subgraph.remote(id))
+      subgraph = ray.get(build_stack_subgraph.remote(id))
+      graph |= subgraph
     elif type == 'target':
       if id not in context.targets:
         print('### WARNING: target {id} is in shopping cart but does not exist')
         continue
-      graph |= ray.get(build_target_subgraph.remote(id))
+      subgraph = ray.get(build_target_subgraph.remote(TargetHash(id)))
+      graph |= subgraph
     if type == 'mosaic':
       if id not in context.mosaics:
         print('### WARNING: mosaic {id} is in shopping cart but does not exist')
         continue
-      graph |= ray.get(build_mosaic_subgraph.remote('master', id))
-
-  print(f'### Finished composing main processing graph')
-  print_graph(graph)
+      subgraph = ray.get(
+          build_mosaic_subgraph.remote(QualityLevel.MASTER, MosaicHash(id)))
+      graph |= subgraph
 
   return graph
 
