@@ -21,7 +21,6 @@ class Panel:
   # This define the input image.
   input_artifact: Artifact
 
-  # This is the stacks id that this Panel represents.
   content_hash: str
 
 

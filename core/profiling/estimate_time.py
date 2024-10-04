@@ -5,7 +5,7 @@ import numpy as np
 from context import context
 
 
-def estimate_time(tag: str, number: int = 1) -> float:
+def estimate_time(tag: str, number: int = 1) -> float | None:
   node_ips = []
   resources = ray.cluster_resources()
   for k, v in resources.items():
@@ -27,4 +27,4 @@ def estimate_time(tag: str, number: int = 1) -> float:
   if total_count:
     return number * (total_time / total_count)
 
-  return 0
+  return None

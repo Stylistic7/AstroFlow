@@ -16,6 +16,39 @@ ORTHOGONALITY_THRESHOLD = 0.05
 EUCLIDEAN_ERROR_THRESHOLD = 0.15
 
 
+def _find_all_possible_bases(centers):
+  bases = []
+  for combo in itertools.permutations(centers, 3):
+    print('### combo', combo)
+    origin = combo[0]
+    print('### origin', origin)
+    basis_vectors = np.asarray([combo[1] - origin, combo[2] - origin])
+    print('### basis_vectors before normalizing', basis_vectors)
+    basis_vectors = basis_vectors / np.linalg.norm(basis_vectors, axis=0)
+    print('### basis_vectors after normalizing', basis_vectors)
+
+    def flip_vector(v):
+      if any(x < 0 for x in v):
+        return -1 * v
+      return v
+
+    basis_vectors = np.vstack([flip_vector(v) for v in basis_vectors])
+    print('### basis_vectors after flipping', basis_vectors)
+    basis_dot = np.dot(basis_vectors[0], basis_vectors[1]) / (
+        np.linalg.norm(basis_vectors[0]) * np.linalg.norm(basis_vectors[1]))
+    if np.abs(basis_dot) <= ORTHOGONALITY_THRESHOLD:
+      print('### found valid basis', basis_vectors)
+      if any(
+          np.array_equal(np.sort(b.flat), np.sort(basis_vectors.flat))
+          for b in bases):
+        print('### basis already in bases')
+        continue
+      bases.append(basis_vectors)
+  print(f'### found {len(bases)} bases')
+  print(bases)
+  return bases
+
+
 @dataclass(frozen=True)
 class RansacResult:
   target_ids: list[TargetHash]

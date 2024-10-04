@@ -6,22 +6,26 @@ import os
 import unittest
 import astropy.io.fits as pyfits  # type: ignore
 from artifacts import Artifact
+from typing import Any
 
 from hashing import hash_list
 from testing.test_context import make_test_context
 from .merge_ops import make_merge_ops
+from mosaics.types import TileIndices
 from .classes import MergeOp, Panel
 from artifacts.decorators import saves_artifacts
 from context import context
-from stacks import CompositeStack
+from stacks.composite_stack import CompositeStack
 from dependency_graph import run_graph, print_graph
 from artifacts import CacheArtifact, FileArtifact, write_artifact
 from testing.test_frames import make_synthetic_frames
 from testing.test_stacks import make_composite_stack
 
 
-def _make_panel(id, content_hash=None, **kwargs):
-  stable_hash = f'stable_hash_{id}'
+def _make_panel(id: str,
+                tile_indices: TileIndices,
+                content_hash: str | None = None,
+                **kwargs: dict[str, Any]) -> Panel:
   if content_hash == None:
     content_hash = f'hash_{id}'
 
@@ -31,15 +35,15 @@ def _make_panel(id, content_hash=None, **kwargs):
   assert len(filenames) == 1
 
   context.stacks |= {
-      stable_hash:
-          make_composite_stack(stable_hash=stable_hash,
+      content_hash:
+          make_composite_stack(stable_hash=content_hash,
                                content_hash=content_hash,
                                filter=filter)
   }
   return Panel(input_artifact=FileArtifact(filename=filenames[0],
                                            content_hash=content_hash),
-               stable_hash=stable_hash,
                content_hash=content_hash,
+               tile_indices=tile_indices,
                **kwargs)
 
 
@@ -64,23 +68,23 @@ def _post_process_stack(stack_id):
 
 class TestMergeOps(unittest.TestCase):
 
-  def setUp(self):
+  def setUp(self) -> None:
     self.input_dir_obj, self.output_dir_obj = make_test_context()
 
-  def tearDown(self):
+  def tearDown(self) -> None:
     self.input_dir_obj.cleanup()
     self.output_dir_obj.cleanup()
 
-  def test_two_panes(self):
+  def test_two_panes(self) -> None:
     mode = 'subframe'
     mosaic_id = 'my_mosaic'
 
-    left = _make_panel('left')
-    right = _make_panel('right')
+    left = _make_panel('left', (0, 0))
+    right = _make_panel('right', (0, 1))
     panels = {(0, 0): left, (0, 1): right}
 
     from_task = {
-        panel: (_post_process_stack, panel.stable_hash)
+        panel: (_post_process_stack, panel.content_hash)
         for panel in panels.values()
     }
 
@@ -99,17 +103,17 @@ class TestMergeOps(unittest.TestCase):
 
     # TODO: Check for presence of final artifact in cache.
 
-  def test_three_linear_panes(self):
+  def test_three_linear_panes(self) -> None:
     mode = 'subframe'
     mosaic_id = 'my_mosaic'
 
-    left = _make_panel('left')
-    middle = _make_panel('middle')
-    right = _make_panel('right')
+    left = _make_panel('left', (0, 0))
+    middle = _make_panel('middle', (0, 1))
+    right = _make_panel('right', (0, 2))
     panels = {(0, 0): left, (0, 1): middle, (0, 2): right}
 
     from_task = {
-        panel: (_post_process_stack, panel.stable_hash)
+        panel: (_post_process_stack, panel.content_hash)
         for panel in panels.values()
     }
 
@@ -137,14 +141,14 @@ class TestMergeOps(unittest.TestCase):
 
     # TODO: Check for presence of final artifact in cache.
 
-  def test_four_panes(self):
+  def test_four_panes(self) -> None:
     mode = 'subframe'
     mosaic_id = 'my_mosaic'
 
-    top_left = _make_panel('top_left')
-    top_right = _make_panel('top_right')
-    bottom_left = _make_panel('bottom_left')
-    bottom_right = _make_panel('bottom_right')
+    top_left = _make_panel('top_left', (0, 0))
+    top_right = _make_panel('top_right', (0, 1))
+    bottom_left = _make_panel('bottom_left', (1, 0))
+    bottom_right = _make_panel('bottom_right', (1, 1))
 
     panels = {
         (0, 0): top_left,
@@ -154,7 +158,7 @@ class TestMergeOps(unittest.TestCase):
     }
 
     from_task = {
-        panel: (_post_process_stack, panel.stable_hash)
+        panel: (_post_process_stack, panel.content_hash)
         for panel in panels.values()
     }
 
@@ -192,21 +196,21 @@ class TestMergeOps(unittest.TestCase):
     self.assertEqual(results.num_nodes_run, 7)
     self.assertEqual(results.max_parallelism_seen, 4)
 
-  def test_nine_panes(self):
+  def test_nine_panes(self) -> None:
     mode = 'subframe'
     mosaic_id = 'my_mosaic'
 
-    top_left = _make_panel('top_left')
-    top_middle = _make_panel('top_middle')
-    top_right = _make_panel('top_right')
+    top_left = _make_panel('top_left', (0, 0))
+    top_middle = _make_panel('top_middle', (0, 1))
+    top_right = _make_panel('top_right', (0, 2))
 
-    middle_left = _make_panel('middle_left')
-    middle_middle = _make_panel('middle_middle')
-    middle_right = _make_panel('middle_right')
+    middle_left = _make_panel('middle_left', (1, 0))
+    middle_middle = _make_panel('middle_middle', (1, 1))
+    middle_right = _make_panel('middle_right', (1, 2))
 
-    bottom_left = _make_panel('bottom_left')
-    bottom_middle = _make_panel('bottom_middle')
-    bottom_right = _make_panel('bottom_right')
+    bottom_left = _make_panel('bottom_left', (2, 0))
+    bottom_middle = _make_panel('bottom_middle', (2, 1))
+    bottom_right = _make_panel('bottom_right', (2, 2))
 
     panels = {
         (0, 0): top_left,
@@ -221,7 +225,7 @@ class TestMergeOps(unittest.TestCase):
     }
 
     from_task = {
-        panel: (_post_process_stack, panel.stable_hash)
+        panel: (_post_process_stack, panel.content_hash)
         for panel in panels.values()
     }
 

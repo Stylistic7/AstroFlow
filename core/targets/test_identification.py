@@ -10,7 +10,7 @@ from compute_graph import build_compute_graph
 from dependency_graph import run_graph
 from testing.test_context import make_test_context
 from hashing import hash_list
-from stacks import CompositeStack
+from stacks.composite_stack import CompositeStack
 
 
 class TestTargetIdentification(unittest.TestCase):

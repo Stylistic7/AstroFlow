@@ -1,7 +1,7 @@
 import re
 import datetime
-import pytz
-from statemachine import StateMachine, State
+import pytz  # type: ignore
+from statemachine import StateMachine, State  # type: ignore
 from dateutil.parser import parse
 from pathlib import Path
 import os
@@ -21,7 +21,7 @@ class AutorunLogStateMachine(StateMachine):
   start_settling = running.to(settling) | settling.to.itself(internal=True)
   end_settling = settling.to(running) | running.to.itself(internal=True)
 
-  def __init__(self):
+  def __init__(self) -> None:
     self.settling_periods_ = []
     self.settling_start_ = None
 
@@ -37,7 +37,7 @@ class AutorunLogStateMachine(StateMachine):
     self.settling_periods_.append((self.settling_start_, d))
 
 
-def load_autorun_log_file(filename):
+def load_autorun_log_file(filename: str):
   assert os.path.exists(filename)
 
   autorun_start_regex = re.compile('(.*) \[Autorun\|Begin\]')
@@ -69,7 +69,7 @@ def load_autorun_log_file(filename):
   return g.settling_periods()
 
 
-def load_autorun_log_files(path):
+def load_autorun_log_files(path: str):
   settling_periods = []
   for filename in list(Path(path).rglob('Autorun_Log*')):
     if 'CHN' in str(filename):
@@ -108,5 +108,6 @@ def remove_frames_during_explicit_settling_periods(light_frames,
 def remove_frames_during_settling(light_frames, tolerance=0.0, trim_end=0.0):
   settling_periods = load_autorun_log_files(os.path.commonpath(light_frames))
   print(f'Found {len(settling_periods)} settling periods in log files.')
-  return remove_frames_during_explicit_settling_periods(
-      light_frames, settling_periods, tolerance, trim_end)
+  return remove_frames_during_explicit_settling_periods(light_frames,
+                                                        settling_periods,
+                                                        tolerance, trim_end)

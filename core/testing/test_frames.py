@@ -79,7 +79,7 @@ def _add_dither(center: tuple[float, float],
 def _make_flat_frame(height_pixels: int,
                      width_pixels: int,
                      std: float | None = None) -> np.ndarray:
-  if std is not None:
+  if std is None:
     std = width_pixels / 2.0
 
   gkern1d = gaussian(width_pixels, std=std).reshape(width_pixels, 1)
@@ -158,7 +158,7 @@ def make_synthetic_frames(start_datetime: datetime.datetime = datetime.datetime(
                           num_stars: int = 100,
                           image_scale: float = 1.0,
                           rotation_angle_deg: float = 90.0) -> list[str]:
-  if prefix is not None:
+  if prefix is None:
     prefix = image_type + '_' + str(uuid.uuid4())
 
   number = len(ids) if ids else number
@@ -169,7 +169,7 @@ def make_synthetic_frames(start_datetime: datetime.datetime = datetime.datetime(
 
   for i in range(number):
     fits_filename = ids[i]
-    if dest_dir:
+    if dest_dir is not None:
       fits_filename = os.path.join(dest_dir, fits_filename)
 
     if image_type == 'Flat':
@@ -261,7 +261,7 @@ def make_synthetic_frames(start_datetime: datetime.datetime = datetime.datetime(
       context.set(key, metadata, write_mode=WriteMode.DISK_ONLY)
       print(f'### Wrote key {key}')
 
-    if dest_dir is not None:
+    if dest_dir is None:
       continue
 
     hdu = pyfits.PrimaryHDU(image_data)

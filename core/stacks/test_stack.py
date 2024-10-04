@@ -2,12 +2,11 @@ from ray_infra import ray_local
 
 import ray
 import unittest
-import datetime
 import numpy as np
-from spherical_geometry.polygon import SphericalPolygon  # type: ignore
 
 from context import context
-from stacks import SimpleStack, CompositeStack, StackHash, FrameHash, AstrometricAttributes, ImagingAttributes
+from stacks.simple_stack import SimpleStack
+from stacks.composite_stack import CompositeStack
 from testing.test_context import make_test_context
 from testing.test_frames import make_synthetic_frames, copy_testdata_frames
 from dependency_graph import run_graph

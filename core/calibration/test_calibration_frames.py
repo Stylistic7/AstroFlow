@@ -431,6 +431,7 @@ class TestCalibrationFrames(unittest.TestCase):
 
         filenames = get_metadata(stack.frames,
                                  transform_fn=lambda i: i.filename)
+        print(f'### stack {stack} frames {stack.frames} filenames {filenames}')
         if all(filename_fragment in f for f in filenames):
           return stack_id
 

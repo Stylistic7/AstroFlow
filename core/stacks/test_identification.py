@@ -62,13 +62,16 @@ class TestStackIdentification(unittest.TestCase):
     toplevel_stacks = get_toplevel_stacks(stacks)
     self.assertEqual(len(toplevel_stacks), 2)
 
-    stack = toplevel_stacks[0]
+    for stack in toplevel_stacks:
+      print(f'### toplevel stack {stack}')
+
+    stack = stacks['7898d3a177188b69']
     frames = stack.all_frames()
     filenames = get_metadata(frames, transform_fn=lambda i: i.filename)
     self.assertTrue(all('foo' in f for f in filenames))
     self.assertEqual(len(frames), 10)
 
-    stack = toplevel_stacks[1]
+    stack = stacks['eb283047432debf3']
     frames = stack.all_frames()
     filenames = get_metadata(frames, transform_fn=lambda i: i.filename)
     self.assertTrue(all('bar' in f for f in filenames))

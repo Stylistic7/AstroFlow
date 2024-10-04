@@ -12,7 +12,7 @@ from testing.test_frames import make_synthetic_frames
 from testing.test_context import make_test_context
 from geometry.projections import mercator
 from compute_graph import build_compute_graph
-from stacks import CompositeStack
+from stacks.composite_stack import CompositeStack
 
 
 class TestFootprints(unittest.TestCase):
