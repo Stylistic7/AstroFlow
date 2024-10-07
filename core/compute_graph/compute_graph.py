@@ -24,7 +24,7 @@ from stacks.identification import identify_stacks
 import metadata.image_types as image_types
 from metadata.classes import ImageMetadata, FrameHash
 from metadata.actor import get_metadata
-from stacks.composite_stack import CompositeStack
+from stacks.composite_stack import CompositeStack, CompositeStacksDict
 from stacks.types import StackHash
 from stacks.validation import validate_stacks
 from profiling import track_performance
@@ -52,7 +52,8 @@ def load_metadata() -> None:
 
 @ray.remote
 def build_spatial_group_graph(g: tuple[FrameHash]) -> Graph:
-  return make_graph_from_list([(identify_stacks, g), group_stacks_into_targets])
+  return make_graph_from_list([(identify_stacks, g), validate_stacks,
+                               group_stacks_into_targets])
 
 
 @ray.remote
@@ -103,7 +104,11 @@ def store_mosaics(ancestor_results: list[Any]) -> None:
 @ray.remote
 def apply_settings(ancestor_results: list[CompositeStack]) -> CompositeStack:
   stack = ancestor_results[0]
-  assert isinstance(stack, CompositeStack)
+  if stack is None:
+    return None
+
+  assert isinstance(stack,
+                    CompositeStack), f'Object {stack} is not a CompositeStack'
 
   new_contents = {}
   for substack in stack.contents.values():
@@ -138,11 +143,14 @@ def build_stack_user_settings_subgraph(stack_id: StackHash) -> Graph:
 
 
 @ray.remote
-def gather_stack_user_settings(ancestor_results: list[Any]) -> None:
+def gather_stack_user_settings(
+    ancestor_results: list[Any]) -> CompositeStacksDict:
   stacks = {a.stable_hash: a for a in ancestor_results if a is not None}
   context.or_equals('stacks', stacks, default_value={})
   print(f'### gather_stack_user_settings: Stored {len(stacks)} stacks; '
         f'total is now {len(context.stacks)}')
+
+  return stacks
 
 
 # This graph takes the objects grouped by `build_regroup_graph()` and applies
@@ -155,11 +163,11 @@ def build_apply_stack_user_settings_subgraph() -> Graph:
   stacks = context.grouped_stacks
 
   graph = Graph({})
-  graph[gather_stack_user_settings] = {
-      (build_stack_user_settings_subgraph, stack_id)
-      for stack_id in stacks.keys()
-      if isinstance(stacks[stack_id], CompositeStack)
-  }
+  graph[validate_stacks] = {gather_stack_user_settings}
+  graph[gather_stack_user_settings] = {(build_stack_user_settings_subgraph,
+                                        stack_id)
+                                       for stack_id, stack in stacks.items()
+                                       if isinstance(stack, CompositeStack)}
 
   return graph
 
@@ -238,7 +246,7 @@ def build_compute_graph(regroup: bool = False,
   # on disk, and transform them into the final objects seen by the rest of
   # the graph.
   task_list.append(build_apply_stack_user_settings_subgraph)
-  task_list.append(validate_stacks)
+  # task_list.append(validate_stacks)
 
   task_list.append(quarantine_targets)
   task_list.append(store_targets)
