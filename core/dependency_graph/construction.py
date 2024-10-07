@@ -1,5 +1,6 @@
 import ray
 from ray.remote_function import RemoteFunction
+from uuid import uuid4
 
 from typing import Any, cast
 
@@ -13,14 +14,7 @@ def list_task_done(ancestor_results: list[Any]) -> Any:
 
 def make_graph_from_list(tasks: list[TaskDescriptor]) -> Graph:
   graph = Graph({})
-  prev_done_node = None
-  for i, task in enumerate(tasks):
-    done_node = Node(cast(RemoteFunction, list_task_done), name=f'done_{i}')
-    graph[done_node] = [task]
-
-    if prev_done_node:
-      graph[task] = [prev_done_node]
-
-    prev_done_node = done_node
+  for i in range(len(tasks) - 1):
+    graph[tasks[i + 1]] = {tasks[i]}
 
   return graph
