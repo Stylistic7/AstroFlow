@@ -78,8 +78,10 @@ def identify_stacks(light_frames: list[FrameHash]) -> CompositeStacksDict:
     for camera_frames in camera_clusters(scale_frames):
       for rotation_frames in rotation_clusters(camera_frames):
         for filter_frames in filter_clusters(rotation_frames):
-          new_stack = CompositeStack.from_frames(filter_frames, metadata)
-          new_stacks[new_stack.stable_hash] = new_stack
+          if filter_frames:
+            new_stack = CompositeStack.from_frames(filter_frames, metadata)
+            if new_stack:
+              new_stacks[new_stack.stable_hash] = new_stack
 
   print(f'### identify_stacks done, writing {len(new_stacks)} '
         f'stacks into grouped_stacks')

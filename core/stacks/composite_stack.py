@@ -1,5 +1,5 @@
 from dataclasses import dataclass, asdict
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon  # type: ignore
@@ -36,9 +36,13 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
   contents: SimpleStacksDict
 
   @classmethod
-  def from_frames(cls,
-                  frames: list[FrameHash],
-                  metadata: MetadataDict | None = None) -> 'CompositeStack':
+  def from_frames(
+      cls,
+      frames: list[FrameHash],
+      metadata: MetadataDict | None = None) -> Optional['CompositeStack']:
+    if not frames:
+      return None
+
     metadata = metadata or context.metadata
 
     metadata_list = [i for h, i in metadata.items() if h in frames]
@@ -89,6 +93,9 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
         frames = [x[0] for x in run]
         new_stack = SimpleStack.from_frames(frames, metadata)
         contents[new_stack.content_hash] = new_stack
+
+    if not contents:
+      return None
 
     imaging_attributes = ImagingAttributes.from_frames(frames, metadata)
     astrometric_attributes = AstrometricAttributes(

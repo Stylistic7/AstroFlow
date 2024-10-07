@@ -24,8 +24,9 @@ class ImagingAttributes:
   def from_frames(cls,
                   frames: list[FrameHash],
                   metadata: MetadataDict | None = None) -> 'ImagingAttributes':
-    metadata = metadata or context.metadata
+    assert frames
 
+    metadata = metadata or context.metadata
     metadata_list = [i for i in metadata.values() if i.content_hash in frames]
 
     def get_unique_quality(key: str, allow_empty: bool = False) -> Any:

@@ -31,7 +31,9 @@ def select_subframes(
   if stack is None:
     return None
 
-  assert isinstance(stack, CompositeStack)
+  assert isinstance(
+      stack, CompositeStack
+  ), f'### Object {stack} of type {type(stack)} is not CompositeStack'
 
   metadata = context.metadata
   assert metadata

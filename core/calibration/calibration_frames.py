@@ -90,7 +90,9 @@ def associate_with_stack(
   if stack is None:
     return None
 
-  assert isinstance(stack, CompositeStack)
+  assert isinstance(
+      stack, CompositeStack
+  ), f'### Object {stack} of type {type(stack)} is not CompositeStack'
 
   stacks = context.grouped_stacks
 
