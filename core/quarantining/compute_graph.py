@@ -1,5 +1,7 @@
 import ray
 
+from dataclasses import replace
+
 from context import context
 from stacks.simple_stack import SimpleStack
 from stacks.composite_stack import CompositeStack
@@ -32,12 +34,22 @@ def quarantine_targets() -> dict[TargetHash, Target]:
   if not targets:
     return {}
 
+  quarantined_stacks = context.quarantined_stacks or set()
   quarantined_targets = context.quarantined_targets or set()
-  return {
-      target_id: target
-      for target_id, target in targets.items()
-      if target_id not in quarantined_targets
-  }
+
+  output_targets = {}
+  for target_id, target in targets.items():
+    if target_id in quarantined_targets:
+      continue
+
+    stack_ids = [s for s in target.stack_ids if s not in quarantined_stacks]
+    if not stack_ids:
+      continue
+
+    target = replace(target, stack_ids=stack_ids)
+    output_targets[target_id] = target
+
+  return output_targets
 
 
 @ray.remote

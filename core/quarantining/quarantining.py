@@ -7,6 +7,7 @@ from stacks.simple_stack import SimpleStack
 from stacks.imaging_attributes import ImagingAttributes
 from stacks.types import StackHash
 from profiling import track_performance
+from metadata.classes import MetadataDict
 
 # TODO: Ensure that all of the actions in this file are idempotent. The goal
 # is to be able to apply these functions very quickly when the user quarantines
@@ -30,38 +31,39 @@ def _apply_to_simple_stack(stack: SimpleStack) -> SimpleStack:
   return replace(stack, dependencies=new_dependencies)
 
 
-def _apply_to_composite_stack(stack: CompositeStack) -> CompositeStack:
+# TODO: Pass the stack through directly, rather than the stack_id. This
+# is a better separation of concerns.
+@ray.remote
+@track_performance
+def apply_quarantine_to_stack(stack_id: StackHash) -> CompositeStack:
+  stacks = context.grouped_stacks
+  stack = stacks[stack_id]
+
+  assert isinstance(
+      stack, CompositeStack
+  ), f'### Object {stack} of type {type(stack)} is not CompositeStack'
+
+  metadata = context.metadata
   quarantined_stacks = context.quarantined_stacks or set()
 
   new_contents = {
       h: s for h, s in stack.contents.items() if h not in quarantined_stacks
   }
-  if new_contents == stack.contents:
-    return stack
+
+  for substack_id, substack in new_contents.items():
+    new_dependencies = {
+        t: s
+        for t, s in substack.dependencies.items()
+        if s not in quarantined_stacks
+    }
+    new_contents[substack_id] = replace(substack, dependencies=new_dependencies)
 
   all_frames = []
-  for substack in stack.contents.values():
+  for substack in new_contents.values():
     all_frames.extend(substack.frames)
 
-  attributes = asdict(ImagingAttributes.from_frames(all_frames)) | {
-      'contents': new_contents
-  }
+  if not all_frames:
+    return None
 
-  return replace(stack, **attributes)
-
-
-# TODO: Pass the stack through directly, rather than the stack_id. This
-# is a better separation of concerns.
-@ray.remote
-@track_performance
-def apply_quarantine_to_stack(
-    stack_id: StackHash) -> SimpleStack | CompositeStack:
-  stacks = context.grouped_stacks
-  stack = stacks[stack_id]
-
-  if type(stack) is CompositeStack:
-    return _apply_to_composite_stack(stack)
-  elif type(stack) is SimpleStack:
-    return _apply_to_simple_stack(stack)
-
-  raise ValueError(f'Stack {stack} is of unknown type')
+  attributes = asdict(ImagingAttributes.from_frames(all_frames, metadata))
+  return replace(stack, contents=new_contents, **attributes)
