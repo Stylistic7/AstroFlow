@@ -30,3 +30,6 @@ class Target:
     return (f'Target(name={self.name}, {len(self.stack_ids)} stacks)')
 
   # TODO: Add a valid() method, and assert on it.
+
+
+TargetsDict = dict[TargetHash, Target]

@@ -13,6 +13,7 @@ from mosaics.identification import identify_mosaics
 from stacks.compute_graph import build_stack_subgraph
 from targets.compute_graph import build_target_subgraph
 from targets.identification import group_stacks_into_targets
+from targets.validation import validate_targets
 from targets.types import TargetHash
 from mosaics.compute_graph import build_mosaic_subgraph
 from dependency_graph import Graph, TaskDescriptor, make_graph_from_list
@@ -29,6 +30,7 @@ from stacks.types import StackHash
 from stacks.validation import validate_stacks
 from profiling import track_performance
 from mosaics.types import MosaicHash
+from mosaics.validation import validate_mosaics
 
 
 @ray.remote
@@ -107,6 +109,7 @@ def apply_settings(ancestor_results: list[CompositeStack]) -> CompositeStack:
   if stack is None:
     return None
 
+  print(f'### apply_settings for stack {stack}')
   assert isinstance(stack,
                     CompositeStack), f'Object {stack} is not a CompositeStack'
 
@@ -146,6 +149,7 @@ def build_stack_user_settings_subgraph(stack_id: StackHash) -> Graph:
 def gather_stack_user_settings(
     ancestor_results: list[Any]) -> CompositeStacksDict:
   stacks = {a.stable_hash: a for a in ancestor_results if a is not None}
+  print(f'### gather_stack_user_settings stack ids are {stacks.keys()}')
   context.or_equals('stacks', stacks, default_value={})
   print(f'### gather_stack_user_settings: Stored {len(stacks)} stacks; '
         f'total is now {len(context.stacks)}')
@@ -246,12 +250,13 @@ def build_compute_graph(regroup: bool = False,
   # on disk, and transform them into the final objects seen by the rest of
   # the graph.
   task_list.append(build_apply_stack_user_settings_subgraph)
-  # task_list.append(validate_stacks)
 
   task_list.append(quarantine_targets)
+  task_list.append(validate_targets)
   task_list.append(store_targets)
 
   task_list.append(quarantine_mosaics)
+  task_list.append(validate_mosaics)
   task_list.append(store_mosaics)
 
   task_list.append(make_suggestions)

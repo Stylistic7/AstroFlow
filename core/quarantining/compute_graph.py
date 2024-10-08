@@ -29,6 +29,7 @@ def quarantine_stacks() -> dict[str, SimpleStack | CompositeStack]:
 
 @ray.remote
 def quarantine_targets() -> dict[TargetHash, Target]:
+  stacks = context.stacks
   targets = context.grouped_targets
   print(f'### quarantine_targets {len(targets)} grouped targets')
   if not targets:
@@ -42,7 +43,10 @@ def quarantine_targets() -> dict[TargetHash, Target]:
     if target_id in quarantined_targets:
       continue
 
-    stack_ids = [s for s in target.stack_ids if s not in quarantined_stacks]
+    stack_ids = [
+        s for s in target.stack_ids
+        if s in stacks and s not in quarantined_stacks
+    ]
     if not stack_ids:
       continue
 
@@ -54,14 +58,33 @@ def quarantine_targets() -> dict[TargetHash, Target]:
 
 @ray.remote
 def quarantine_mosaics() -> dict[MosaicHash, Mosaic]:
+  targets = context.targets
   mosaics = context.grouped_mosaics
-  print(f'### quarantine_targets {len(mosaics)} grouped targets')
+  print(f'### quarantine_mosaics {len(mosaics)} grouped mosaics')
   if not mosaics:
     return {}
 
+  quarantined_targets = context.quarantined_targets or set()
   quarantined_mosaics = context.quarantined_mosaics or set()
-  return {
-      mosaic_id: mosaic
-      for mosaic_id, mosaic in mosaics.items()
-      if mosaic_id not in quarantined_mosaics
-  }
+  print(f'### quarantined_targets {quarantined_targets}')
+  print(f'### quarantined_mosaics {quarantined_mosaics}')
+
+  output_mosaics = {}
+  for mosaic_id, mosaic in mosaics.items():
+    if mosaic_id in quarantined_mosaics:
+      continue
+
+    new_target_ids, new_tile_indices = [], []
+    for target_id, tile_indices in zip(mosaic.target_ids, mosaic.tile_indices):
+      if target_id not in targets or target_id in quarantined_targets:
+        continue
+
+      new_target_ids.append(target_id)
+      new_tile_indices.append(tile_indices)
+
+    mosaic = replace(mosaic,
+                     target_ids=new_target_ids,
+                     tile_indices=new_tile_indices)
+    output_mosaics[mosaic_id] = mosaic
+
+  return output_mosaics
