@@ -12,6 +12,7 @@ from stacks.simple_stack import SimpleStack
 from stacks.imaging_attributes import ImagingAttributes
 from stacks.state_attributes import AstroFlowStateAttributes
 from stacks.astrometric_attributes import AstrometricAttributes
+from stacks.types import StackHash
 from metadata.classes import MetadataDict, FrameHash
 from catalogs import position_string
 import geometry.footprints as footprints
@@ -39,6 +40,7 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
   def from_frames(
       cls,
       frames: list[FrameHash],
+      stable_hash: StackHash | None = None,
       metadata: MetadataDict | None = None) -> Optional['CompositeStack']:
     if not frames:
       return None
@@ -106,24 +108,24 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
         footprint=footprint,
         projected_footprints=projected_footprints)
 
-    attributes: dict[str, Any] = asdict(imaging_attributes) | asdict(
-        astrometric_attributes
-    ) | {
-        'contents':
-            contents,
-        'content_hash':
-            hash_list(list(contents.keys())),
-        'stable_hash':
-            hash_string(
-                f'RA {units.ra_to_hms(astrometric_attributes.center[0])}, '
-                f'Dec {units.dec_to_dms(astrometric_attributes.center[1])}, '
-                f'Scale {astrometric_attributes.image_scale:.2f}"/px, '
-                f'PA {astrometric_attributes.rotation_angle:.2f}deg,'
-                f'Width {imaging_attributes.width_pixels}, '
-                f'Height {imaging_attributes.height_pixels}, '
-                f'Filter {filter}'),
-        'state': {},
-    }
+    if stable_hash is None:
+      stable_hash = hash_string(
+          f'RA {units.ra_to_hms(astrometric_attributes.center[0])}, '
+          f'Dec {units.dec_to_dms(astrometric_attributes.center[1])}, '
+          f'Scale {astrometric_attributes.image_scale:.2f}"/px, '
+          f'PA {astrometric_attributes.rotation_angle:.2f}deg,'
+          f'Width {imaging_attributes.width_pixels}, '
+          f'Height {imaging_attributes.height_pixels}, '
+          f'Filter {filter}')
+
+    attributes: dict[
+        str,
+        Any] = asdict(imaging_attributes) | asdict(astrometric_attributes) | {
+            'contents': contents,
+            'content_hash': hash_list(list(contents.keys())),
+            'stable_hash': stable_hash,
+            'state': {},
+        }
 
     return cls(**attributes)
 
