@@ -90,6 +90,7 @@ def associate_with_stack(
   if stack is None:
     return None
 
+  print(f'### associate_with_stack for stack {stack}')
   assert isinstance(
       stack, CompositeStack
   ), f'### Object {stack} of type {type(stack)} is not CompositeStack'

@@ -39,6 +39,7 @@ def apply_quarantine_to_stack(stack_id: StackHash) -> CompositeStack:
   stacks = context.grouped_stacks
   stack = stacks[stack_id]
 
+  print(f'### apply_quarantine_to_stack for stack {stack}')
   assert isinstance(
       stack, CompositeStack
   ), f'### Object {stack} of type {type(stack)} is not CompositeStack'

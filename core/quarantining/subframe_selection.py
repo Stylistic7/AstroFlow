@@ -31,6 +31,7 @@ def select_subframes(
   if stack is None:
     return None
 
+  print(f'### select_subframes for stack {stack}')
   assert isinstance(
       stack, CompositeStack
   ), f'### Object {stack} of type {type(stack)} is not CompositeStack'
@@ -58,4 +59,6 @@ def select_subframes(
   print(f'### Selected {len(selected_light_frames)} light frames '
         f'out of {len(sorted_light_frames)}')
 
-  return CompositeStack.from_frames(selected_light_frames, metadata)
+  return CompositeStack.from_frames(selected_light_frames,
+                                    stable_hash=stack.stable_hash,
+                                    metadata=metadata)
