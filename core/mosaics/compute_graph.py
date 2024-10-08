@@ -179,8 +179,10 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic_id: MosaicHash,
 
 
 def merge_graph_done_artifacts(
-    mode: QualityLevel, mosaic_id: MosaicHash, filter: str,
-    ancestor_results: list[list[Artifact]]) -> list[Artifact]:
+    mode: QualityLevel,
+    mosaic_id: MosaicHash,
+    filter: str,
+    ancestor_results: list[list[Artifact]] | None = None) -> list[Artifact]:
   mosaic = context.mosaics[mosaic_id]
   key = ('mosaic_thumbnail_image', mode, mosaic_id, filter)
 
