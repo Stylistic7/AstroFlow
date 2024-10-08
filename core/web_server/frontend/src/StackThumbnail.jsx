@@ -44,9 +44,8 @@ export default function StackThumbnail({ stack_id, width, handleClick }) {
 	if (!stack) return null;
 
 	let light_frames = [];
-	for (let c of stack.contents) {
-		if (!stacks[c]) continue;
-		light_frames.push(...stacks[c].frames);
+	for (const substack of Object.values(stack.contents)) {
+		light_frames.push(...substack.frames);
 	}
 
 	// TODO: Display the progress bar as red during frames with too few stars.
