@@ -37,14 +37,9 @@ def _apply_to_simple_stack(stack: SimpleStack) -> SimpleStack:
 # is a better separation of concerns.
 @ray.remote
 @track_performance
-def apply_quarantine_to_stack(stack_id: StackHash) -> CompositeStack:
+def apply_quarantine_to_stack(
+    stack_ids: list[StackHash]) -> list[CompositeStack]:
   stacks = context.grouped_stacks
-  stack = stacks[stack_id]
-
-  print(f'### apply_quarantine_to_stack for stack {stack}')
-  assert isinstance(
-      stack, CompositeStack
-  ), f'### Object {stack} of type {type(stack)} is not CompositeStack'
 
   start_time = time.time()
   metadata = context.metadata
@@ -52,31 +47,44 @@ def apply_quarantine_to_stack(stack_id: StackHash) -> CompositeStack:
   elapsed_time = end_time - start_time
   print(f'### metadata = context.metadata took {elapsed_time:.3f}')
 
-  quarantined_stacks = context.quarantined_stacks or set()
+  print(f'### apply_quarantine_to_stack running on {len(stack_ids)} stack ids')
+  output = []
+  for stack_id in stack_ids:
+    stack = stacks[stack_id]
 
-  new_contents = {
-      h: s for h, s in stack.contents.items() if h not in quarantined_stacks
-  }
+    print(f'### apply_quarantine_to_stack for stack {stack}')
+    assert isinstance(
+        stack, CompositeStack
+    ), f'### Object {stack} of type {type(stack)} is not CompositeStack'
 
-  for substack_id, substack in new_contents.items():
-    new_dependencies = {
-        t: s
-        for t, s in substack.dependencies.items()
-        if s not in quarantined_stacks
+    quarantined_stacks = context.quarantined_stacks or set()
+
+    new_contents = {
+        h: s for h, s in stack.contents.items() if h not in quarantined_stacks
     }
-    new_contents[substack_id] = replace(substack, dependencies=new_dependencies)
 
-  all_frames = []
-  for substack in new_contents.values():
-    all_frames.extend(substack.frames)
+    for substack_id, substack in new_contents.items():
+      new_dependencies = {
+          t: s
+          for t, s in substack.dependencies.items()
+          if s not in quarantined_stacks
+      }
+      new_contents[substack_id] = replace(substack,
+                                          dependencies=new_dependencies)
 
-  if not all_frames:
-    return None
+    all_frames = []
+    for substack in new_contents.values():
+      all_frames.extend(substack.frames)
 
-  start_time = time.time()
-  attributes = asdict(ImagingAttributes.from_frames(all_frames, metadata))
-  end_time = time.time()
-  elapsed_time = end_time - start_time
-  print(f'### ImagingAttributes.from_frames took {elapsed_time:.3f}')
+    if not all_frames:
+      continue
 
-  return replace(stack, contents=new_contents, **attributes)
+    start_time = time.time()
+    attributes = asdict(ImagingAttributes.from_frames(all_frames, metadata))
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    print(f'### ImagingAttributes.from_frames took {elapsed_time:.3f}')
+
+    output.append(replace(stack, contents=new_contents, **attributes))
+
+  return output

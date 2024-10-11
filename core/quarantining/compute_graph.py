@@ -1,4 +1,5 @@
 import ray
+import os
 
 from dataclasses import replace
 from typing import Any
@@ -20,7 +21,6 @@ from targets.target import Target
 from mosaics.mosaic import Mosaic
 
 
-# TODO: These don't belong in the compute_graph.py file
 # TODO: Maybe SimpleStacks and CompositeStacks should be in separate dicts.
 @ray.remote
 def quarantine_stacks() -> dict[str, SimpleStack | CompositeStack]:
@@ -100,24 +100,31 @@ def quarantine_mosaics() -> dict[MosaicHash, Mosaic]:
 
 
 @ray.remote
-def apply_settings(ancestor_results: list[CompositeStack]) -> CompositeStack:
-  stack = ancestor_results[0]
-  if stack is None:
-    return None
+def apply_settings(
+    ancestor_results: list[list[CompositeStack]]) -> list[CompositeStack]:
+  stacks = ancestor_results[0]
 
-  print(f'### apply_settings for stack {stack}')
-  assert isinstance(stack,
-                    CompositeStack), f'Object {stack} is not a CompositeStack'
+  print(f'### apply_settings running on {len(stacks)} stacks')
+  output = []
+  for stack in stacks:
+    if stack is None:
+      continue
 
-  new_contents = {}
-  for substack in stack.contents.values():
-    settings_key = ('stack_settings', substack.content_hash)
-    settings = context[settings_key] or {}
-    dependencies = substack.dependencies | settings
-    new_substack = replace(substack, dependencies=dependencies)
-    new_contents[new_substack.content_hash] = new_substack
+    print(f'### apply_settings for stack {stack}')
+    assert isinstance(stack,
+                      CompositeStack), f'Object {stack} is not a CompositeStack'
 
-  return replace(stack, contents=new_contents)
+    new_contents = {}
+    for substack in stack.contents.values():
+      settings_key = ('stack_settings', substack.content_hash)
+      settings = context[settings_key] or {}
+      dependencies = substack.dependencies | settings
+      new_substack = replace(substack, dependencies=dependencies)
+      new_contents[new_substack.content_hash] = new_substack
+
+    output.append(replace(stack, contents=new_contents))
+
+  return output
 
 
 # This graph applies user settings to a single stack in the `grouped_stacks`
@@ -144,8 +151,8 @@ def apply_settings(ancestor_results: list[CompositeStack]) -> CompositeStack:
 #
 # Maybe the best thing to do is pass the metadata ref around?
 @ray.remote
-def build_stack_user_settings_subgraph(stack_id: StackHash) -> Graph:
-  return make_graph_from_list([(apply_quarantine_to_stack, stack_id),
+def build_stack_user_settings_subgraph(stack_ids: list[StackHash]) -> Graph:
+  return make_graph_from_list([(apply_quarantine_to_stack, stack_ids),
                                select_subframes, associate_with_stack,
                                apply_settings])
 
@@ -153,7 +160,9 @@ def build_stack_user_settings_subgraph(stack_id: StackHash) -> Graph:
 @ray.remote
 def gather_stack_user_settings(
     ancestor_results: list[Any]) -> CompositeStacksDict:
-  stacks = {a.stable_hash: a for a in ancestor_results if a is not None}
+  flat_list = [item for sublist in ancestor_results for item in sublist]
+  assert None not in flat_list
+  stacks = {a.stable_hash: a for a in flat_list}
   print(f'### gather_stack_user_settings stack ids are {stacks.keys()}')
   context.stacks = stacks
   print(f'### gather_stack_user_settings: Stored {len(stacks)} stacks; '
@@ -187,11 +196,20 @@ def store_mosaics(ancestor_results: list[Any]) -> None:
 def build_apply_stack_user_settings_subgraph() -> Graph:
   stacks = context.grouped_stacks
 
+  stack_ids = [
+      s for s in stacks.keys() if isinstance(stacks[s], CompositeStack)
+  ]
+  stack_id_groups = [
+      stack_ids[i::os.cpu_count()] for i in range(os.cpu_count())
+  ]
+  stack_id_groups = [tuple(group) for group in stack_id_groups]
+  print(f'### Groups stacks into {len(stack_id_groups)} groups')
+  print(f'### First group {stack_id_groups[0]}')
+
   graph = Graph({})
-  graph[gather_stack_user_settings] = {(build_stack_user_settings_subgraph,
-                                        stack_id)
-                                       for stack_id, stack in stacks.items()
-                                       if isinstance(stack, CompositeStack)}
+  graph[gather_stack_user_settings] = {
+      (build_stack_user_settings_subgraph, group) for group in stack_id_groups
+  }
   graph[validate_stacks] = {gather_stack_user_settings}
   graph[quarantine_targets] = {validate_stacks}
   graph[validate_targets] = {quarantine_targets}

@@ -84,71 +84,77 @@ def identify_calibration_stacks() -> None:
 @ray.remote
 @track_performance
 def associate_with_stack(
-    ancestor_results: list[CompositeStack]) -> CompositeStack | None:
-  stack = ancestor_results[0]
+    ancestor_results: list[list[CompositeStack]]) -> list[CompositeStack]:
+  stacks = ancestor_results[0]
 
-  if stack is None:
-    return None
+  print(f'### select_subframes running on {len(stacks)} stacks')
+  output = []
+  for stack in stacks:
+    if stack is None:
+      continue
 
-  print(f'### associate_with_stack for stack {stack}')
-  assert isinstance(
-      stack, CompositeStack
-  ), f'### Object {stack} of type {type(stack)} is not CompositeStack'
+    print(f'### associate_with_stack for stack {stack}')
+    assert isinstance(
+        stack, CompositeStack
+    ), f'### Object {stack} of type {type(stack)} is not CompositeStack'
 
-  stacks = context.grouped_stacks
+    stacks = context.grouped_stacks
 
-  def is_compatible(image_type: str, cal_stack: SimpleStack) -> bool:
-    if cal_stack.image_type != image_type:
-      return False
+    def is_compatible(image_type: str, cal_stack: SimpleStack) -> bool:
+      if cal_stack.image_type != image_type:
+        return False
 
-    if cal_stack.camera != stack.camera:
-      return False
+      if cal_stack.camera != stack.camera:
+        return False
 
-    # TODO: Put temperarture temperature compatibility options in the UI.
-    good_temperature = abs(cal_stack.mean_temperature -
-                           stack.mean_temperature) < 5.0
+      # TODO: Put temperarture temperature compatibility options in the UI.
+      good_temperature = abs(cal_stack.mean_temperature -
+                             stack.mean_temperature) < 5.0
 
-    # TODO: This allows dark scaling. Make this an option in the UI.
-    good_exposure = cal_stack.exposure_s <= stack.exposure_s
+      # TODO: This allows dark scaling. Make this an option in the UI.
+      good_exposure = cal_stack.exposure_s <= stack.exposure_s
 
-    if image_type == 'bias':
-      return good_temperature
+      if image_type == 'bias':
+        return good_temperature
 
-    if image_type == 'dark':
-      return good_temperature and good_exposure
+      if image_type == 'dark':
+        return good_temperature and good_exposure
 
-    if image_type == 'flat':
-      return cal_stack.filter == stack.filter
+      if image_type == 'flat':
+        return cal_stack.filter == stack.filter
 
-    assert False, f'image_type {image_type}'
+      assert False, f'image_type {image_type}'
 
-  def find_closest_stack_chronologically(image_type: str) -> SimpleStack | None:
-    compatible_stacks = [
-        s for s in stacks if is_compatible(image_type, stacks[s])
-    ]
+    def find_closest_stack_chronologically(
+        image_type: str) -> SimpleStack | None:
+      compatible_stacks = [
+          s for s in stacks if is_compatible(image_type, stacks[s])
+      ]
 
-    if not compatible_stacks:
-      return None
+      if not compatible_stacks:
+        return None
 
-    def midpoint(a: datetime, b: datetime) -> datetime:
-      return a + (b - a) / 2
+      def midpoint(a: datetime, b: datetime) -> datetime:
+        return a + (b - a) / 2
 
-    return compatible_stacks[np.argmin([
-        abs(
-            midpoint(stack.oldest_date, stack.newest_date) -
-            midpoint(stacks[s].oldest_date, stacks[s].newest_date)).
-        total_seconds() for s in compatible_stacks
-    ])]
+      return compatible_stacks[np.argmin([
+          abs(
+              midpoint(stack.oldest_date, stack.newest_date) -
+              midpoint(stacks[s].oldest_date, stacks[s].newest_date)).
+          total_seconds() for s in compatible_stacks
+      ])]
 
-  new_contents = SimpleStacksDict()
-  for substack in stack.contents.values():
-    dependencies = {}
-    for image_type in ['bias', 'dark', 'flat']:
-      if closest := find_closest_stack_chronologically(image_type):
-        dependencies[image_type] = closest
+    new_contents = SimpleStacksDict()
+    for substack in stack.contents.values():
+      dependencies = {}
+      for image_type in ['bias', 'dark', 'flat']:
+        if closest := find_closest_stack_chronologically(image_type):
+          dependencies[image_type] = closest
 
-    print(f'### Substack {substack} has dependencies {dependencies}')
-    new_stack = replace(substack, dependencies=dependencies)
-    new_contents[new_stack.content_hash] = new_stack
+      print(f'### Substack {substack} has dependencies {dependencies}')
+      new_stack = replace(substack, dependencies=dependencies)
+      new_contents[new_stack.content_hash] = new_stack
 
-  return replace(stack, contents=new_contents)
+    output.append(replace(stack, contents=new_contents))
+
+  return output
