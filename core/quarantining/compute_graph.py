@@ -1,13 +1,22 @@
 import ray
 
 from dataclasses import replace
+from typing import Any
 
-from context import context
-from stacks.simple_stack import SimpleStack
-from stacks.composite_stack import CompositeStack
+from context import context, WriteMode
+from calibration import associate_with_stack
+from targets.validation import validate_targets
 from targets.types import TargetHash
-from targets.target import Target
+from dependency_graph import Graph, make_graph_from_list
+from quarantining import apply_quarantine_to_stack
+from quarantining.subframe_selection import select_subframes
+from stacks.simple_stack import SimpleStack
+from stacks.composite_stack import CompositeStack, CompositeStacksDict
+from stacks.types import StackHash
+from stacks.validation import validate_stacks
 from mosaics.types import MosaicHash
+from mosaics.validation import validate_mosaics
+from targets.target import Target
 from mosaics.mosaic import Mosaic
 
 
@@ -88,3 +97,107 @@ def quarantine_mosaics() -> dict[MosaicHash, Mosaic]:
     output_mosaics[mosaic_id] = mosaic
 
   return output_mosaics
+
+
+@ray.remote
+def apply_settings(ancestor_results: list[CompositeStack]) -> CompositeStack:
+  stack = ancestor_results[0]
+  if stack is None:
+    return None
+
+  print(f'### apply_settings for stack {stack}')
+  assert isinstance(stack,
+                    CompositeStack), f'Object {stack} is not a CompositeStack'
+
+  new_contents = {}
+  for substack in stack.contents.values():
+    settings_key = ('stack_settings', substack.content_hash)
+    settings = context[settings_key] or {}
+    dependencies = substack.dependencies | settings
+    new_substack = replace(substack, dependencies=dependencies)
+    new_contents[new_substack.content_hash] = new_substack
+
+  return replace(stack, contents=new_contents)
+
+
+# This graph applies user settings to a single stack in the `grouped_stacks`
+# dict, passing it through graph arguments. If the stack is quarantined, or
+# becomes empty after subframe selection, it will not make it into the final
+# `stacks` dict.
+#
+# `apply_quarantine_to_stack()` is applied to a single Stack, and either returns
+# that Stack, modified, or None.
+#
+# `select_subframes()` is applied to the single Stack (or None), and either
+# returns that Stack, modified, or None.
+#
+# `associate_with_stack()` is applied to the single Stack (or None), and returns
+# a dict containing the Stack, plus the calibration Stacks that it depends on,
+# or None.
+#
+# TODO: This is very slow right now, despite running in parallel. These
+# functions all retrieve metadata from the context, which takes more than a
+# second:
+#
+# apply_quarantine_to_stack()
+# select_subframes()
+#
+# Maybe the best thing to do is pass the metadata ref around?
+@ray.remote
+def build_stack_user_settings_subgraph(stack_id: StackHash) -> Graph:
+  return make_graph_from_list([(apply_quarantine_to_stack, stack_id),
+                               select_subframes, associate_with_stack,
+                               apply_settings])
+
+
+@ray.remote
+def gather_stack_user_settings(
+    ancestor_results: list[Any]) -> CompositeStacksDict:
+  stacks = {a.stable_hash: a for a in ancestor_results if a is not None}
+  print(f'### gather_stack_user_settings stack ids are {stacks.keys()}')
+  context.stacks = stacks
+  print(f'### gather_stack_user_settings: Stored {len(stacks)} stacks; '
+        f'total is now {len(context.stacks)}')
+
+  return stacks
+
+
+@ray.remote
+def store_targets(ancestor_results: list[Any]) -> None:
+  targets = ancestor_results[0]
+  context.targets = targets
+  print(f'### store_targets: Stored {len(targets)} targets; '
+        f'total is now {len(context.targets)}')
+
+
+@ray.remote
+def store_mosaics(ancestor_results: list[Any]) -> None:
+  mosaics = ancestor_results[0]
+  context.mosaics = mosaics
+  print(f'### store_mosaics: Stored {len(mosaics)} mosaics; '
+        f'total is now {len(context.mosaics)}')
+
+
+# This graph takes the objects grouped by `build_regroup_graph()` and applies
+# user settings (quarantine and subframe selection) on top of them.
+#
+# TODO: Pass SimpleStacks through `build_stack_user_settings_subgraph()` too.
+# Flat-frame stacks could be quarantined, for example.
+@ray.remote
+def build_apply_stack_user_settings_subgraph() -> Graph:
+  stacks = context.grouped_stacks
+
+  graph = Graph({})
+  graph[gather_stack_user_settings] = {(build_stack_user_settings_subgraph,
+                                        stack_id)
+                                       for stack_id, stack in stacks.items()
+                                       if isinstance(stack, CompositeStack)}
+  graph[validate_stacks] = {gather_stack_user_settings}
+  graph[quarantine_targets] = {validate_stacks}
+  graph[validate_targets] = {quarantine_targets}
+  graph[store_targets] = {validate_targets}
+  graph[quarantine_mosaics] = {store_targets}
+  graph[validate_mosaics] = {quarantine_mosaics}
+  graph[store_mosaics] = {validate_mosaics}
+
+  return graph

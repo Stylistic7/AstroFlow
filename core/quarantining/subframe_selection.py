@@ -1,6 +1,7 @@
 import numpy as np
 import operator
 import ray
+import os
 
 from stacks.composite_stack import CompositeStack
 from context import context

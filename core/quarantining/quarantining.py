@@ -1,5 +1,7 @@
 import ray
 from dataclasses import replace, asdict
+import time
+import os
 
 from context import context
 from stacks.composite_stack import CompositeStack
@@ -44,7 +46,12 @@ def apply_quarantine_to_stack(stack_id: StackHash) -> CompositeStack:
       stack, CompositeStack
   ), f'### Object {stack} of type {type(stack)} is not CompositeStack'
 
+  start_time = time.time()
   metadata = context.metadata
+  end_time = time.time()
+  elapsed_time = end_time - start_time
+  print(f'### metadata = context.metadata took {elapsed_time:.3f}')
+
   quarantined_stacks = context.quarantined_stacks or set()
 
   new_contents = {
@@ -66,5 +73,10 @@ def apply_quarantine_to_stack(stack_id: StackHash) -> CompositeStack:
   if not all_frames:
     return None
 
+  start_time = time.time()
   attributes = asdict(ImagingAttributes.from_frames(all_frames, metadata))
+  end_time = time.time()
+  elapsed_time = end_time - start_time
+  print(f'### ImagingAttributes.from_frames took {elapsed_time:.3f}')
+
   return replace(stack, contents=new_contents, **attributes)
