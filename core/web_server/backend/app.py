@@ -32,6 +32,9 @@ from mosaics.compute_graph import merge_graph_done_artifacts
 from astroflow import populate_context
 from compute_graph import build_compute_graph
 from dependency_graph import run_graph, graph_status_to_progress
+from previews import QualityLevel
+from quarantining.compute_graph import build_apply_stack_user_settings_subgraph
+from compute_graph.compute_graph import load_metadata
 
 import plotly.express as px
 import plotly.figure_factory as ff
@@ -39,6 +42,20 @@ import plotly.figure_factory as ff
 debug = False
 
 cache = get_cache()
+
+announcer = MessageAnnouncer()
+
+
+# TODO: Pull all of this transform code out into a separate module and test
+# it properly.
+def status_fn(status):
+  global compute_graph_status
+
+  compute_graph_status = graph_status_to_progress(status)
+  announcer.announce('compute_graph_status')
+
+  if len(status.ready_nodes) == 0 and len(status.waiting_nodes) == 0:
+    print('### Compute graph is done!')
 
 
 def get_plot_html():
@@ -291,8 +308,10 @@ def mosaic_thumbnail_image_for_filter(mosaic_id, filter):
   mosaic = context.mosaics[mosaic_id]
   print('### mosaic', mosaic)
 
-  _, master_artifact = merge_graph_done_artifacts('master', mosaic_id, filter)
-  subframe_artifact, = merge_graph_done_artifacts('subframe', mosaic_id, filter)
+  _, master_artifact = merge_graph_done_artifacts(QualityLevel.MASTER,
+                                                  mosaic_id, filter)
+  subframe_artifact, = merge_graph_done_artifacts(QualityLevel.SUBFRAME,
+                                                  mosaic_id, filter)
 
   for artifact in [master_artifact, subframe_artifact]:
     if not artifact_exists(artifact):
@@ -318,7 +337,7 @@ def mosaic_thumbnail_image(mosaic_id):
   mosaic = context.mosaics[mosaic_id]
   print('### mosaic', mosaic)
 
-  for mode in ['master', 'subframe']:
+  for mode in [QualityLevel.MASTER, QualityLevel.SUBFRAME]:
     for filter in ['H', 'L', 'S', 'O', 'G', 'R', 'B']:
       key = ('mosaic_thumbnail_image', mode, mosaic_id, filter)
       if key in cache:
@@ -392,12 +411,16 @@ def plot():
 def quarantine_stack(stack_id):
   context.or_equals('quarantined_stacks', {stack_id}, default_value=set())
 
-  # TODO: Re-run the compute graph without regrouping.
-  # context.stacks = ray.get(delete_quarantined_stacks.remote())
-  # context.targets = ray.get(delete_quarantined_targets.remote())
-  # context.mosaics = ray.get(delete_quarantined_mosaics.remote())
+  graph = ray.get(build_apply_stack_user_settings_subgraph.remote())
 
-  announcer.announce('reload_data')
+  thread = threading.Thread(target=run_graph,
+                            args=(graph,),
+                            kwargs={
+                                'status_fn': status_fn,
+                                'debug': False
+                            })
+  thread.daemon = True
+  thread.start()
 
   return Response(status=204)
 
@@ -406,12 +429,16 @@ def quarantine_stack(stack_id):
 def quarantine_target(target_id):
   context.or_equals('quarantined_targets', {target_id}, default_value=set())
 
-  # TODO: Re-run the compute graph without regrouping.
-  # context.stacks = ray.get(delete_quarantined_stacks.remote())
-  # context.targets = ray.get(delete_quarantined_targets.remote())
-  # context.mosaics = ray.get(delete_quarantined_mosaics.remote())
+  graph = ray.get(build_apply_stack_user_settings_subgraph.remote())
 
-  announcer.announce('reload_data')
+  thread = threading.Thread(target=run_graph,
+                            args=(graph,),
+                            kwargs={
+                                'status_fn': status_fn,
+                                'debug': False
+                            })
+  thread.daemon = True
+  thread.start()
 
   return Response(status=204)
 
@@ -420,12 +447,16 @@ def quarantine_target(target_id):
 def quarantine_mosaic(mosaic_id):
   context.or_equals('quarantined_mosaics', {mosaic_id}, default_value=set())
 
-  # TODO: Re-run the compute graph without regrouping.
-  # context.stacks = ray.get(delete_quarantined_stacks.remote())
-  # context.targets = ray.get(delete_quarantined_targets.remote())
-  # context.mosaics = ray.get(delete_quarantined_mosaics.remote())
+  graph = ray.get(build_apply_stack_user_settings_subgraph.remote())
 
-  announcer.announce('reload_data')
+  thread = threading.Thread(target=run_graph,
+                            args=(graph,),
+                            kwargs={
+                                'status_fn': status_fn,
+                                'debug': False
+                            })
+  thread.daemon = True
+  thread.start()
 
   return Response(status=204)
 
@@ -499,9 +530,6 @@ def format_sse(event, data=None) -> str:
   return msg + '\n'
 
 
-announcer = MessageAnnouncer()
-
-
 @app.route('/stream')
 def stream():
   print('### responding to request on /stream')
@@ -534,21 +562,12 @@ compute_graph_status = {}
 
 # TODO: Make sure a second graph can't be started when one is already in
 # progress.
+#
+# TODO: Something in here is causing `download_asiair()` to be called and
+# preventing this from returning a response immediately.
 @app.route('/run_graph')
 def run_compute_graph():
 
-  # TODO: Pull all of this transform code out into a separate module and test
-  # it properly.
-  def status_fn(status):
-    global compute_graph_status
-
-    compute_graph_status = graph_status_to_progress(status)
-    announcer.announce('compute_graph_status')
-
-    if len(status.ready_nodes) == 0 and len(status.waiting_nodes) == 0:
-      print('### Compute graph is done!')
-
-  print('### Running compute graph!')
   populate_context()
 
   # TODO: Put these in the UI.
@@ -560,7 +579,13 @@ def run_compute_graph():
                               make_previews=True,
                               run_main_processing_graph=False)
 
-  thread = threading.Thread(target=run_graph, args=(graph, status_fn))
+  print('### Running compute graph!')
+  thread = threading.Thread(target=run_graph,
+                            args=(graph,),
+                            kwargs={
+                                'status_fn': status_fn,
+                                'debug': False
+                            })
   thread.daemon = True
   thread.start()
 
