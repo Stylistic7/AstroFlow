@@ -19,7 +19,7 @@ from mosaics.compute_graph import build_mosaic_subgraph
 from dependency_graph import Graph, TaskDescriptor, make_graph_from_list
 from suggestions import make_suggestions
 from quarantining import apply_quarantine_to_stack
-from quarantining.compute_graph import quarantine_targets, quarantine_mosaics
+from quarantining.compute_graph import build_apply_stack_user_settings_subgraph, quarantine_targets, quarantine_mosaics
 from quarantining.subframe_selection import select_subframes
 from stacks.identification import identify_stacks
 import metadata.image_types as image_types
@@ -155,25 +155,6 @@ def gather_stack_user_settings(
         f'total is now {len(context.stacks)}')
 
   return stacks
-
-
-# This graph takes the objects grouped by `build_regroup_graph()` and applies
-# user settings (quarantine and subframe selection) on top of them.
-#
-# TODO: Pass SimpleStacks through `build_stack_user_settings_subgraph()` too.
-# Flat-frame stacks could be quarantined, for example.
-@ray.remote
-def build_apply_stack_user_settings_subgraph() -> Graph:
-  stacks = context.grouped_stacks
-
-  graph = Graph({})
-  graph[validate_stacks] = {gather_stack_user_settings}
-  graph[gather_stack_user_settings] = {(build_stack_user_settings_subgraph,
-                                        stack_id)
-                                       for stack_id, stack in stacks.items()
-                                       if isinstance(stack, CompositeStack)}
-
-  return graph
 
 
 @ray.remote
