@@ -13,7 +13,6 @@ from mosaics.identification import identify_mosaics
 from stacks.compute_graph import build_stack_subgraph
 from targets.compute_graph import build_target_subgraph
 from targets.identification import group_stacks_into_targets
-from targets.validation import validate_targets
 from targets.types import TargetHash
 from mosaics.compute_graph import build_mosaic_subgraph
 from dependency_graph import Graph, TaskDescriptor, make_graph_from_list
@@ -30,7 +29,6 @@ from stacks.types import StackHash
 from stacks.validation import validate_stacks
 from profiling import track_performance
 from mosaics.types import MosaicHash
-from mosaics.validation import validate_mosaics
 
 
 @ray.remote
@@ -88,18 +86,14 @@ def build_regroup_graph() -> Graph:
 
 @ray.remote
 def store_targets(ancestor_results: list[Any]) -> None:
-  targets = ancestor_results[0]
-  context.or_equals('targets', targets, default_value={})
-  print(f'### store_targets: Stored {len(targets)} targets; '
-        f'total is now {len(context.targets)}')
+  context.targets = ancestor_results[0]
+  print(f'### store_targets: Stored {len(context.targets)} targets')
 
 
 @ray.remote
 def store_mosaics(ancestor_results: list[Any]) -> None:
-  mosaics = ancestor_results[0]
-  context.or_equals('mosaics', mosaics, default_value={})
-  print(f'### store_mosaics: Stored {len(mosaics)} mosaics; '
-        f'total is now {len(context.mosaics)}')
+  context.mosaics = ancestor_results[0]
+  print(f'### store_mosaics: Stored {len(context.mosaics)} mosaics')
 
 
 # TODO: Move this somewhere more appropriate.
@@ -221,24 +215,10 @@ def build_compute_graph(regroup: bool = False,
   # TODO: Don't do this unless there are new calibration frames.
   task_list.append(identify_calibration_stacks)
 
-  # These begin each run empty, and are populated below by the `store_*`
-  # functions, after user settings are applied.
-  context.stacks = {}
-  context.targets = {}
-  context.mosaics = {}
-
   # The tasks that follow consume the raw objects computed from the files
   # on disk, and transform them into the final objects seen by the rest of
   # the graph.
   task_list.append(build_apply_stack_user_settings_subgraph)
-
-  task_list.append(quarantine_targets)
-  task_list.append(validate_targets)
-  task_list.append(store_targets)
-
-  task_list.append(quarantine_mosaics)
-  task_list.append(validate_mosaics)
-  task_list.append(store_mosaics)
 
   task_list.append(make_suggestions)
 

@@ -165,8 +165,7 @@ def gather_stack_user_settings(
   stacks = {a.stable_hash: a for a in flat_list}
   print(f'### gather_stack_user_settings stack ids are {stacks.keys()}')
   context.stacks = stacks
-  print(f'### gather_stack_user_settings: Stored {len(stacks)} stacks; '
-        f'total is now {len(context.stacks)}')
+  print(f'### gather_stack_user_settings: Stored {len(context.stacks)} stacks')
 
   return stacks
 
