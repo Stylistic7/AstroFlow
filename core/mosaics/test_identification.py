@@ -3,7 +3,7 @@ from ray_infra import ray_local
 
 import datetime
 import ray
-from context import context
+from context import context, get_cache
 import numpy as np
 from spherical_geometry.polygon import SingleSphericalPolygon  # type: ignore
 
@@ -15,6 +15,7 @@ from targets.types import TargetHash
 from mosaics import Mosaic
 from testing.test_context import make_test_context
 from testing.test_stacks import make_composite_stack
+from testing.testdata_cache import copy_testdata_into_cache
 
 from mosaics import identification
 
@@ -324,6 +325,17 @@ class TestMosaicIdentification(unittest.TestCase):
 
     self.assertEqual(mosaic.target_ids, [bar.stable_hash, foo.stable_hash])
     self.assertEqual(mosaic.tile_indices, [(0, 0), (0, 1)])
+
+  def test_big_cygnus_pano(self) -> None:
+    cache = get_cache()
+    copy_testdata_into_cache()
+
+    ray.get(identification.identify_mosaics.remote(debug=True))
+    mosaics = context.grouped_mosaics
+
+    self.assertEqual(len(mosaics), 1)
+    mosaic = next(iter(mosaics.values()))
+    print('### mosaic', mosaic)
 
 
 if __name__ == "__main__":

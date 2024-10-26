@@ -14,6 +14,7 @@ from hashing import hash_list
 import units
 from profiling import track_performance
 from targets.types import TargetHash
+from mosaics.debugging import plot_ransac_result
 
 from . import ransac
 
@@ -93,13 +94,15 @@ def _identify_overlapping_targets() -> list[list[TargetHash]]:
            num_ungrouped_targets=num_ungrouped_targets)
 
   mosaics = [m for m in mosaics if len(m) > 1]
+  for mosaic in mosaics:
+    print('### Group of overlapping targets:', mosaic)
 
   return mosaics
 
 
 @ray.remote
 @track_performance
-def identify_mosaics() -> dict[MosaicHash, Mosaic]:
+def identify_mosaics(debug: bool = False) -> dict[MosaicHash, Mosaic]:
   targets = context.grouped_targets
   print(f'### Identifying mosaics from {len(targets)} targets')
 
@@ -120,6 +123,9 @@ def identify_mosaics() -> dict[MosaicHash, Mosaic]:
       if result is None:
         print('ransac_1d also failed')
         continue
+
+    if debug:
+      plot_ransac_result(mosaic, result)
 
     print(f'Mosaic composed of {len(result.target_ids)} targets:')
     for target_id in result.target_ids:
