@@ -40,14 +40,16 @@ def copy_testdata_into_cache():
 
 
 def copy_all_mosaic_data(cache, testdata_cache, mosaic_id):
-  mosaic = cache['mosaics'][mosaic_id]
-  testdata_cache['mosaics'] = {mosaic_id: mosaic}
-  testdata_cache['targets'] = {
-      target_id: cache['targets'][target_id] for target_id in mosaic.target_ids
+  mosaic = cache['grouped_mosaics'][mosaic_id]
+  testdata_cache['grouped_mosaics'] = {mosaic_id: mosaic}
+  testdata_cache['grouped_targets'] = {
+      target_id: cache['grouped_targets'][target_id]
+      for target_id in mosaic.target_ids
   }
-  testdata_cache['stacks'] = {
-      stack_id: cache['stacks'][stack_id] for target_id in mosaic.target_ids
-      for stack_id in cache['targets'][target_id].stack_ids
+  testdata_cache['grouped_stacks'] = {
+      stack_id: cache['grouped_stacks'][stack_id]
+      for target_id in mosaic.target_ids
+      for stack_id in cache['grouped_targets'][target_id].stack_ids
   }
 
   print(f'Copied data for mosaic {mosaic_id}')
@@ -55,12 +57,6 @@ def copy_all_mosaic_data(cache, testdata_cache, mosaic_id):
 
 if __name__ == '__main__':
   cache = get_cache()
-
-  stacks = cache['stacks']
-  targets = cache['targets']
-  mosaics = cache['mosaics']
-
-  print(f'len(mosaics) {len(mosaics)}')
 
   testdata_cache_dir = tempfile.TemporaryDirectory()
   testdata_cache = diskcache.Cache(testdata_cache_dir.name)
