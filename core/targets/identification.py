@@ -3,6 +3,8 @@ import astropy.io.fits as pyfits  # type: ignore
 from astropy.wcs import WCS  # type: ignore
 import ray
 import numpy as np
+from dataclasses import fields, asdict
+from typing import Any
 
 from context import context
 from clustering import find_groups
@@ -12,6 +14,7 @@ from targets.types import TargetHash
 import geometry.footprints as footprints
 from hashing import hash_list
 from stacks.composite_stack import CompositeStack
+from stacks.astrometric_attributes import AstrometricAttributes
 from profiling import track_performance
 from stacks.types import StackHash
 
@@ -71,9 +74,6 @@ def group_stacks_into_targets(
   groups = find_groups(values, comparison_fn, min_component_members=1)
 
   def new_target(stack_ids: list[StackHash]) -> Target:
-    center = stacks[stack_ids[0]].center
-    name = position_string.canonical_target_string(center)
-
     # TODO: This just uses the first stack's footprint, which is very simple,
     # but maybe not very precise. The more precise implementation is here in
     # a comment.
@@ -85,24 +85,28 @@ def group_stacks_into_targets(
     # projected_footprint = footprints.all_projections(
     #     SphericalPolygon(footprint))
 
-    footprint = stacks[stack_ids[0]].footprint
-    projected_footprint = footprints.all_projections(footprint)
-
     # TODO: Validate all stacks here.
 
     stable_hash = TargetHash(stacks[sorted(
         stack_ids, key=lambda s: stacks[s].oldest_date)[0]].stable_hash)
     content_hash = hash_list(stacks[s].content_hash for s in stack_ids)
 
-    return Target(name=name,
-                  stable_hash=stable_hash,
-                  oldest_date=min(stacks[s].oldest_date for s in stack_ids),
-                  newest_date=min(stacks[s].newest_date for s in stack_ids),
-                  content_hash=content_hash,
-                  center=center,
-                  stack_ids=stack_ids,
-                  footprint=footprint,
-                  projected_footprint=projected_footprint)
+    target_attributes: dict[str, Any] = {
+        'stable_hash': stable_hash,
+        'oldest_date': min(stacks[s].oldest_date for s in stack_ids),
+        'newest_date': min(stacks[s].newest_date for s in stack_ids),
+        'content_hash': content_hash,
+        'stack_ids': stack_ids
+    }
+
+    astrometric_attributes: dict[str, Any] = {
+        f.name: getattr(stacks[stack_ids[0]], f.name)
+        for f in fields(AstrometricAttributes)
+    }
+
+    attributes = target_attributes | astrometric_attributes
+
+    return Target(**attributes)
 
   targets_list = [new_target(g) for g in groups]
   targets = {t.stable_hash: t for t in targets_list}

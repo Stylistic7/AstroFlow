@@ -8,12 +8,11 @@ from shapely.geometry import Polygon  # type: ignore
 from hashing import hash_list
 from targets.types import TargetHash
 from stacks.types import StackHash
+from stacks.astrometric_attributes import AstrometricAttributes
 
 
-@dataclass(order=True)
-class Target:
-  name: str
-
+@dataclass(order=True, frozen=True)
+class Target(AstrometricAttributes):
   content_hash: str
   stable_hash: TargetHash
 
@@ -21,10 +20,6 @@ class Target:
 
   oldest_date: datetime.datetime
   newest_date: datetime.datetime
-
-  center: list[float]
-  footprint: SingleSphericalPolygon
-  projected_footprint: dict[str, Polygon]
 
   def __str__(self) -> str:
     return (f'Target(name={self.name}, {len(self.stack_ids)} stacks)')
