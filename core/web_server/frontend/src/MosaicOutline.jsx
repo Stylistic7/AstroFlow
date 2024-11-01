@@ -88,7 +88,7 @@ export default function MosaicOutline({
       id="mosaic_svg"
       width={width}
       height={height}
-      viewBox={mosaic.projected_footprint[projection].viewbox.join(" ")}
+      viewBox={mosaic.projected_footprints[projection].viewbox.join(" ")}
       style={{
         pointerEvents: "auto",
         margin: "2px",
@@ -103,7 +103,7 @@ export default function MosaicOutline({
         }
 
         const stack = stacks[stack_id];
-        const coords = targets[target_id].projected_footprint[projection].coords;
+        const coords = targets[target_id].projected_footprints[projection].coords;
         const [mean_x, mean_y] = middle_coord(coords)
         const width = 0.005;
         const height = 0.005;
@@ -165,7 +165,7 @@ export default function MosaicOutline({
         </>
       })}
       {outline_visible && <Polyline
-        polyline={mosaic.projected_footprint[projection].coords}
+        polyline={mosaic.projected_footprints[projection].coords}
         key={mosaic_id}
         style={mosaic_outline_style}
       />}

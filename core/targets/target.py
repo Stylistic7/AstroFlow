@@ -22,7 +22,7 @@ class Target(AstrometricAttributes):
   newest_date: datetime.datetime
 
   def __str__(self) -> str:
-    return (f'Target(name={self.name}, {len(self.stack_ids)} stacks)')
+    return (f'Target(target={self.target}, {len(self.stack_ids)} stacks)')
 
   # TODO: Add a valid() method, and assert on it.
 

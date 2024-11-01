@@ -44,9 +44,9 @@ def plot_ransac_result(mosaic: list[TargetHash],
     center = projection.project(ra, dec)
 
     print(f'### center is {center}')
-    print(f'### mercator is', target.projected_footprint['mercator']['coords'])
+    print(f'### mercator is', target.projected_footprints['mercator']['coords'])
 
-    x, y = zip(*target.projected_footprint['mercator']['coords'])
+    x, y = zip(*target.projected_footprints['mercator']['coords'])
     plt.plot(x, y, color=color)
     plt.scatter([center[0]], [center[1]], color=color)
 

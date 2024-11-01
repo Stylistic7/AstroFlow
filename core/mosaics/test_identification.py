@@ -1,6 +1,7 @@
 import unittest
 from ray_infra import ray_local
 
+from dataclasses import asdict
 import datetime
 import ray
 from context import context, get_cache
@@ -39,7 +40,7 @@ class TestMosaicIdentification(unittest.TestCase):
                      center=[100, 50],
                      footprint=SingleSphericalPolygon.from_radec(
                          [98, 102, 102, 98], [-1, -1, 1, 1]),
-                     projected_footprint={})
+                     projected_footprints={})
     target1 = Target(name='bar',
                      stable_hash=TargetHash('geometric_bar'),
                      content_hash='content_bar',
@@ -51,7 +52,7 @@ class TestMosaicIdentification(unittest.TestCase):
                      center=[100, 51],
                      footprint=SingleSphericalPolygon.from_radec(
                          [95, 99, 99, 95], [-1, -1, 1, 1]),
-                     projected_footprint={})
+                     projected_footprints={})
 
     context.grouped_stacks = {
         str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
@@ -90,7 +91,7 @@ class TestMosaicIdentification(unittest.TestCase):
                  center=[100, 0],
                  footprint=SingleSphericalPolygon.from_radec([98, 102, 102, 98],
                                                              [-1, -1, 1, 1]),
-                 projected_footprint={})
+                 projected_footprints={})
     bar = Target(name='bar',
                  stable_hash=TargetHash('geometric_bar'),
                  content_hash='content_bar',
@@ -102,7 +103,7 @@ class TestMosaicIdentification(unittest.TestCase):
                  center=[97, 0],
                  footprint=SingleSphericalPolygon.from_radec([95, 99, 99, 95],
                                                              [-1, -1, 1, 1]),
-                 projected_footprint={})
+                 projected_footprints={})
     baz = Target(name='baz',
                  stable_hash=TargetHash('geometric_baz'),
                  content_hash='content_baz',
@@ -114,7 +115,7 @@ class TestMosaicIdentification(unittest.TestCase):
                  center=[97, 1],
                  footprint=SingleSphericalPolygon.from_radec([95, 99, 99, 95],
                                                              [0, 0, 2, 2]),
-                 projected_footprint={})
+                 projected_footprints={})
 
     context.grouped_stacks = {
         str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
@@ -154,7 +155,7 @@ class TestMosaicIdentification(unittest.TestCase):
                  center=[100, 1],
                  footprint=SingleSphericalPolygon.from_radec([98, 102, 102, 98],
                                                              [0, 0, 2, 2]),
-                 projected_footprint={})
+                 projected_footprints={})
     bar = Target(name='bar',
                  stable_hash=TargetHash('geometric_bar'),
                  content_hash='content_bar',
@@ -166,7 +167,7 @@ class TestMosaicIdentification(unittest.TestCase):
                  center=[100, 3],
                  footprint=SingleSphericalPolygon.from_radec([98, 102, 102, 98],
                                                              [2, 2, 4, 4]),
-                 projected_footprint={})
+                 projected_footprints={})
     baz = Target(name='baz',
                  stable_hash=TargetHash('geometric_baz'),
                  content_hash='content_baz',
@@ -178,7 +179,7 @@ class TestMosaicIdentification(unittest.TestCase):
                  center=[100, 2],
                  footprint=SingleSphericalPolygon.from_radec([98, 102, 102, 98],
                                                              [1, 1, 3, 3]),
-                 projected_footprint={})
+                 projected_footprints={})
 
     context.grouped_stacks = {
         str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
@@ -211,7 +212,7 @@ class TestMosaicIdentification(unittest.TestCase):
                  center=[100, 0],
                  footprint=SingleSphericalPolygon.from_radec([98, 102, 102, 98],
                                                              [-1, -1, 1, 1]),
-                 projected_footprint={})
+                 projected_footprints={})
     bar = Target(name='bar',
                  stable_hash=TargetHash('geometric_bar'),
                  content_hash='content_bar',
@@ -223,7 +224,7 @@ class TestMosaicIdentification(unittest.TestCase):
                  center=[97, 0],
                  footprint=SingleSphericalPolygon.from_radec([95, 99, 99, 95],
                                                              [-1, -1, 1, 1]),
-                 projected_footprint={})
+                 projected_footprints={})
     baz = Target(name='baz',
                  stable_hash=TargetHash('geometric_baz'),
                  content_hash='content_baz',
@@ -235,7 +236,7 @@ class TestMosaicIdentification(unittest.TestCase):
                  center=[97, 1],
                  footprint=SingleSphericalPolygon.from_radec([95, 99, 99, 95],
                                                              [0, 0, 2, 2]),
-                 projected_footprint={})
+                 projected_footprints={})
     outlier = Target(
         name='outlier',
         stable_hash=TargetHash('geometric_outlier'),
@@ -248,7 +249,7 @@ class TestMosaicIdentification(unittest.TestCase):
         center=[98, -0.5],
         footprint=SingleSphericalPolygon.from_radec([96, 100, 100, 96],
                                                     [-1.5, -1.5, 0.5, 0.5]),
-        projected_footprint={})
+        projected_footprints={})
 
     context.grouped_stacks = {
         str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
@@ -287,7 +288,7 @@ class TestMosaicIdentification(unittest.TestCase):
                                [0.420705, -0.59334582, 0.68625654],
                                [0.45603681, -0.56689475, 0.6860472]]),
                      np.array([0.45175641, -0.59818691, 0.66188259])),
-                 projected_footprint={})
+                 projected_footprints={})
 
     bar = Target(name='bar',
                  stable_hash=TargetHash('geometric_bar'),
@@ -305,7 +306,7 @@ class TestMosaicIdentification(unittest.TestCase):
                                [0.44152953, -0.62243363, 0.64624148],
                                [0.47687137, -0.5960087, 0.64603973]]),
                      np.array([0.47176113, -0.62623935, 0.62069777])),
-                 projected_footprint={})
+                 projected_footprints={})
 
     context.grouped_stacks = {
         str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
@@ -331,12 +332,39 @@ class TestMosaicIdentification(unittest.TestCase):
     copy_testdata_into_cache()
 
     ray.get(identification.identify_mosaics.remote(debug=True))
+    targets = context.grouped_targets
     mosaics = context.grouped_mosaics
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
     print('### mosaic', mosaic)
 
+    target_a = targets['463edef05b214da9']
+    target_b = targets['e163f2b56b9a02aa']
+
+    print(f'### target_a', asdict(target_a))
+
+    self.assertFalse(identification.compatible_overlap(target_a, target_b))
+
+
+#   def test_compatible_overlap(self) -> None:
+#     a = SingleSphericalPolygon(
+#         np.array([[0.45603681, -0.56689475, 0.6860472],
+#                   [0.48206283, -0.60210192, 0.6364658],
+#                   [0.44676643, -0.62853698, 0.63666398],
+#                   [0.420705, -0.59334582, 0.68625654],
+#                   [0.45603681, -0.56689475, 0.6860472]]),
+#         np.array([0.45175641, -0.59818691, 0.66188259]))
+
+#     b = SingleSphericalPolygon(
+#         np.array([[0.47687137, -0.5960087, 0.64603973],
+#                   [0.50124499, -0.62906976, 0.59415881],
+#                   [0.46588868, -0.65547604, 0.59438951],
+#                   [0.44152953, -0.62243363, 0.64624148],
+#                   [0.47687137, -0.5960087, 0.64603973]]),
+#         np.array([0.47176113, -0.62623935, 0.62069777]))
+
+#     self.assertFalse(identification.compatible_overlap(a, b))
 
 if __name__ == "__main__":
   unittest.main()

@@ -28,7 +28,7 @@ class Mosaic:
 
   center: list[float]
   footprint: SingleSphericalPolygon
-  projected_footprint: dict[str, Polygon]
+  projected_footprints: dict[str, Polygon]
 
   def __str__(self) -> str:
     return (
