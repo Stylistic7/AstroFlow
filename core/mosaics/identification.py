@@ -180,9 +180,6 @@ def find_strips(target_ids: list[TargetHash],
             targets[target_id]) != Overlap.INCOMPATIBLE:
           output_strip.append(target_id)
 
-    if debug:
-      plot_mosaic(output_strip, title=f'Output strip #{len(strips)}')
-
     return output_strip
 
   output_strips = []
@@ -293,9 +290,6 @@ def identify_mosaics(debug: bool = False) -> dict[MosaicHash, Mosaic]:
     assert mosaic
     mosaic = list(sorted(mosaic, key=lambda t: targets[t].center[0]))
 
-    if debug:
-      plot_mosaic(mosaic, title=f'Mosaic')
-
     try:
       # TODO: Validate all targets here.
 
@@ -320,12 +314,19 @@ def identify_mosaics(debug: bool = False) -> dict[MosaicHash, Mosaic]:
       #         for target_id in mosaic
       #     ]).points).tolist()
 
-      all_points = np.concatenate(
-          [targets[target_id].footprint.points for target_id in mosaic])
+      strips = find_strips(mosaic)
+      print('### strips', strips)
+      target_ids = []
+      tile_indices = []
+      for i, strip in enumerate(strips):
+        for j, target_id in enumerate(strip):
+          target_ids.append(target_id)
+          tile_indices.append((i, j))
 
-      # TODO: There's no way to specify an `inside` point here?
-      footprint = SingleSphericalPolygon.convex_hull(all_points)
-      footprint = SingleSphericalPolygon.convex_hull(footprint.points)
+      all_points = [
+          targets[target_id].footprint.points[:-1] for target_id in mosaic
+      ]
+      footprint = SingleSphericalPolygon.convex_hull(np.concatenate(all_points))
 
       # TODO: This is turbo weird, but appears to work. Just randomize the
       # points until the `convex_hull()` operation is successful.
@@ -337,37 +338,24 @@ def identify_mosaics(debug: bool = False) -> dict[MosaicHash, Mosaic]:
         else:
           break
 
-      assert not SphericalPolygon.self_intersect(footprint.points)
+      # assert not SphericalPolygon.self_intersect(footprint.points)
       projected_footprints = footprints.all_projections(footprint)
 
-      strips = find_strips(mosaic)
-      print('### strips', strips)
-      target_ids = []
-      tile_indices = []
-      for i, strip in enumerate(strips):
-        for j, target_id in enumerate(strip):
-          target_ids.append(target_id)
-          tile_indices.append((i, j))
-
-      output_mosaic = Mosaic(
-          name=name,
-          stable_hash=stable_hash,
-          content_hash=content_hash,
-          target_ids=target_ids,
-          tile_indices=tile_indices,
-          #  origin=result.origin,
-          origin=np.asarray(0),
-          # basis_vectors=result.basis_vectors,
-          basis_vectors=np.asarray(0),
-          oldest_date=oldest_date,
-          newest_date=newest_date,
-          center=center,
-          footprint=footprint,
-          projected_footprints=projected_footprints)
+      output_mosaic = Mosaic(name=name,
+                             stable_hash=stable_hash,
+                             content_hash=content_hash,
+                             target_ids=target_ids,
+                             tile_indices=tile_indices,
+                             oldest_date=oldest_date,
+                             newest_date=newest_date,
+                             center=center,
+                             footprint=footprint,
+                             projected_footprints=projected_footprints)
       print(f'### Made output_mosaic {output_mosaic}')
 
-      # print(f'Mosaic has name {name} stable_hash {stable_hash} and '
-      #       f'basis_vectors {result.basis_vectors}')
+      if debug:
+        plot_mosaic(output_mosaic, title=f'Mosaic')
+
       output_mosaics[stable_hash] = output_mosaic
     except Exception as e:
       traceback.print_exc()
