@@ -75,10 +75,7 @@ def identify_calibration_stacks() -> None:
 
   print(f'### identify_calibration_stacks writing {len(stacks)} stacks '
         f'into the context')
-  context.or_equals('grouped_stacks', stacks)
-
-  # TODO: This is awkward.
-  context.or_equals('stacks', stacks)
+  context.calibration_stacks = stacks
 
 
 @ray.remote

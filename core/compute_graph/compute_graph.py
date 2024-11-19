@@ -206,6 +206,7 @@ def build_compute_graph(regroup: bool = False,
   # The regroup graph only looks at light frames only, and ignores calibration
   # frames. All of its findings are written into the given `grouped_*` keys.
   if regroup:
+    context.calibration_stacks = {}
     context.grouped_stacks = {}
     context.grouped_targets = {}
     context.grouped_mosaics = {}

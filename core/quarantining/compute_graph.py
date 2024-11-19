@@ -171,6 +171,14 @@ def gather_stack_user_settings(
 
 
 @ray.remote
+def store_calibration_stacks() -> None:
+  calibration_stacks = context.calibration_stacks
+  context.or_equals('stacks', calibration_stacks)
+  print(f'### store_calibration_stacks: Stored '
+        f'{len(calibration_stacks)} calibration stacks')
+
+
+@ray.remote
 def store_targets(ancestor_results: list[Any]) -> None:
   targets = ancestor_results[0]
   context.targets = targets
@@ -210,7 +218,8 @@ def build_apply_stack_user_settings_subgraph() -> Graph:
       (build_stack_user_settings_subgraph, group) for group in stack_id_groups
   }
   graph[validate_stacks] = {gather_stack_user_settings}
-  graph[quarantine_targets] = {validate_stacks}
+  graph[store_calibration_stacks] = {validate_stacks}
+  graph[quarantine_targets] = {store_calibration_stacks}
   graph[validate_targets] = {quarantine_targets}
   graph[store_targets] = {validate_targets}
   graph[quarantine_mosaics] = {store_targets}
