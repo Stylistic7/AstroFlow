@@ -2,42 +2,21 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from context import context
-from mosaics.ransac import RansacResult
+from mosaics import identification
 from targets.types import TargetHash
 from geometry.projections.mercator import MercatorProjection
 
 
-def plot_ransac_result(mosaic: list[TargetHash],
-                       result: RansacResult,
-                       plot_title: str = 'RANSAC Result') -> None:
+def plot_mosaic(mosaic: list[TargetHash], title: str = 'Mosaic') -> None:
   targets = context.grouped_targets
 
   plt.figure()
-  plt.title(plot_title)
+  plt.title(title)
 
-  print('### basis_vectors', result.basis_vectors)
-
-  # Draw the basis vectors.
-  for i, basis_vector in enumerate(result.basis_vectors.T):
-    plt.plot([result.origin[0], result.origin[0] + basis_vector[0]],
-             [result.origin[1], result.origin[1] + basis_vector[1]],
-             label=f"Basis vector {i}",
-             linewidth=5,
-             color=f"C{i + 2}")
-
-  # Plot the centers of the N x M grid.
-  # points = []
-  # for x in range(np.max(integral_centers, axis=0)):
-  #   for y in range(np.max(integral_centers, axis=1)):
-  #     points.append(origin + x * basis_vectors[:, 0] +
-  #                   y * basis_vectors[:, 1])
-  # xs, ys = [p[0] for p in points], [p[1] for p in points]
-  # plt.scatter(xs, ys, color='red')
-
-  for target_id in mosaic:
+  for i, target_id in enumerate(mosaic):
     target = targets[target_id]
 
-    color = 'black' if target_id in result.target_ids else '#dddddd'
+    color = 'black'
 
     projection = MercatorProjection()
     ra, dec = (np.radians(np.array(x)) for x in target.center)
@@ -46,8 +25,22 @@ def plot_ransac_result(mosaic: list[TargetHash],
     print(f'### center is {center}')
     print(f'### mercator is', target.projected_footprints['mercator']['coords'])
 
+    overlapping_targets = [
+        tid for tid in mosaic if identification.targets_compatible_overlap(
+            targets[target_id], targets[tid]) !=
+        identification.Overlap.INCOMPATIBLE
+    ]
+    print(
+        f'### overlapping_targets for target {target_id} are {overlapping_targets}'
+    )
+
     x, y = zip(*target.projected_footprints['mercator']['coords'])
     plt.plot(x, y, color=color)
+    plt.text(center[0],
+             center[1],
+             f'{i}: {target.stable_hash}, {len(overlapping_targets)}',
+             fontsize=12,
+             color='blue')
     plt.scatter([center[0]], [center[1]], color=color)
 
   plt.show()

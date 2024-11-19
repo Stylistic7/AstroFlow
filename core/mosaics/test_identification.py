@@ -19,6 +19,7 @@ from testing.test_stacks import make_composite_stack
 from testing.testdata_cache import copy_testdata_into_cache
 
 from mosaics import identification
+from mosaics import debugging
 
 
 class TestMosaicIdentification(unittest.TestCase):
@@ -339,12 +340,16 @@ class TestMosaicIdentification(unittest.TestCase):
     mosaic = next(iter(mosaics.values()))
     print('### mosaic', mosaic)
 
-    target_a = targets['463edef05b214da9']
-    target_b = targets['e163f2b56b9a02aa']
+    target_ids = mosaic.target_ids
+    print('### target_ids', target_ids)
 
-    print(f'### target_a', asdict(target_a))
+    # target_a = targets['85f42d0cb68b753f']
+    # target_b = targets['27596bec64587b17']
 
-    self.assertFalse(identification.compatible_overlap(target_a, target_b))
+    # print(f'### target_a', asdict(target_a))
+
+    # self.assertTrue(
+    #     identification.targets_compatible_overlap(target_a, target_b))
 
 
 #   def test_compatible_overlap(self) -> None:

@@ -63,7 +63,7 @@ if __name__ == '__main__':
   testdata_cache.clear()
   print(f'Opened testdata cache in dir {testdata_cache_dir.name}')
 
-  copy_all_mosaic_data(cache, testdata_cache, '390cdaf04d588c91')
+  copy_all_mosaic_data(cache, testdata_cache, 'f6e0dd33f4386a15')
 
   # Copy the output files, and store the cache to a tar.gz file on disk.
   # shutil.copytree(context.output_dir, 'testdata', dirs_exist_ok=True)
