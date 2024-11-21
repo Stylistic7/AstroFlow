@@ -1,5 +1,6 @@
 import ray
 import numpy as np
+from spherical_geometry import great_circle_arc, vector
 
 from .classes import Viewbox
 from artifacts import CacheArtifact, Artifact
@@ -8,6 +9,7 @@ from geometry.projections import mercator
 import geometry.footprints as footprints
 from context import context
 from geometry.viewbox import compute_viewbox
+from geometry.polygons import project_polygon
 from hashing import hash_list, hash_string
 from mosaics.mosaic import Mosaic
 from previews import QualityLevel
@@ -18,8 +20,7 @@ def _compute_viewbox(mosaic: Mosaic) -> Viewbox:
   # TODO: Put this in the UI somewhere.
   proj = mercator.MercatorProjection()
 
-  xs, ys = zip(
-      *footprints.project_footprint(mosaic.footprint, proj).exterior.coords)
+  xs, ys = project_polygon(mosaic.footprint, proj)
   x_min, y_min, x_span, y_span = compute_viewbox(list(zip(xs, ys)))
 
   return Viewbox(projection=proj,

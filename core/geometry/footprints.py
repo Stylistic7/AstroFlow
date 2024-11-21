@@ -6,6 +6,7 @@ from typing import Any
 from geometry import Radians, Degrees
 from geometry.projection import Projection
 from geometry.viewbox import compute_viewbox
+from geometry.polygons import project_polygon
 from geometry.projections import mercator, sinusoidal, mollweide, galactic
 
 
@@ -50,14 +51,6 @@ def radec_to_vector(ra: Degrees,
   return (np.cos(ra_rad) * cos_dec, np.sin(ra_rad) * cos_dec, np.sin(dec_rad))
 
 
-def project_footprint(polygon: SphericalPolygon,
-                      projection: Projection) -> Polygon:
-  ra, dec = polygon.to_radec()  # degrees
-  ra, dec = (np.radians(np.array(x)) for x in (ra, dec))
-  x, y = projection.project(ra, dec)
-  return Polygon(zip(x, y))
-
-
 # TODO: Strongly type this result.
 def all_projections(polygon: SphericalPolygon) -> dict[str, dict[str, Any]]:
   projections: dict[str, Projection] = {
@@ -70,7 +63,8 @@ def all_projections(polygon: SphericalPolygon) -> dict[str, dict[str, Any]]:
 
   result: dict[str, dict[str, Any]] = {}
   for name, proj in projections.items():
-    coords = list(project_footprint(polygon, proj).exterior.coords)
+    xs, ys = project_polygon(polygon, proj)
+    coords = list(zip(xs, ys))
     result[name] = {'coords': coords, 'viewbox': compute_viewbox(coords)}
 
   return result

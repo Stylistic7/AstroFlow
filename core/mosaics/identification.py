@@ -145,7 +145,7 @@ def targets_compatible_overlap(a: Target,
 
 
 def find_strips(target_ids: list[TargetHash],
-                debug: bool = False) -> list[list[TargetHash]]:
+                debug: bool = True) -> list[list[TargetHash]]:
   targets = context.grouped_targets
 
   strips = []
@@ -157,16 +157,21 @@ def find_strips(target_ids: list[TargetHash],
           Overlap.LONG_EDGE for tid in strip):
         strip.append(target_id)
 
+    if debug:
+      print(f'### Found strip {strip}')
     strips.append(strip)
 
     target_ids = [t for t in target_ids if t not in strip]
 
   def order_strip(strip):
     strip = list(sorted(strip, key=lambda t: targets[t].center[0]))
-    end_target_id = None
+    end_target_id = strip[0]
     for target_id in strip:
-      if sum(1 for tid in strip if targets_compatible_overlap(
-          targets[target_id], targets[tid]) != Overlap.INCOMPATIBLE) == 1:
+      overlap_count = sum(1 for tid in strip if targets_compatible_overlap(
+          targets[target_id], targets[tid]) != Overlap.INCOMPATIBLE)
+      if debug:
+        print(f'### target {target_id} has overlap_count {overlap_count}')
+      if overlap_count == 1:
         end_target_id = target_id
         break
 

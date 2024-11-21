@@ -6,29 +6,18 @@ from spherical_geometry import great_circle_arc, vector
 from context import context
 from mosaics import identification, Mosaic
 from geometry.projection import Projection
+from geometry.polygons import project_polygon
 from targets.types import TargetHash
 from geometry.projections.mercator import MercatorProjection
 from geometry.projections.sinusoidal import SinusoidalProjection
 from geometry.projections.mollweide import MollweideProjection
 
 
-def _draw_polygon(p: SphericalPolygon,
+def _draw_polygon(polygon: SphericalPolygon,
                   projection: Projection,
                   color: str = 'black') -> None:
-  points = list(p.points)
-
-  for A, B in zip(points[0:-1], points[1:]):
-    length = np.rad2deg(great_circle_arc.length(A, B))
-    if not np.isfinite(length):
-      length = 2
-    interpolated = great_circle_arc.interpolate(A, B, length * 4)
-    ra, dec = vector.vector_to_radec(interpolated[:, 0],
-                                     interpolated[:, 1],
-                                     interpolated[:, 2],
-                                     degrees=False)
-
-    x, y = projection.project(ra, dec)
-    plt.plot(x, y, color=color)
+  x, y = project_polygon(polygon, projection)
+  plt.plot(x, y, color=color)
 
 
 def plot_mosaic(mosaic: Mosaic, title: str = 'Mosaic') -> None:
