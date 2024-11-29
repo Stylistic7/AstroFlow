@@ -6,6 +6,8 @@ import diskcache
 import os
 
 from context import get_cache
+from stacks.simple_stack import SimpleStack
+from stacks.composite_stack import CompositeStack
 
 TESTDATA_CACHE_GZIP_FILENAME = 'testdata/cache.tar.gz'
 
@@ -40,19 +42,35 @@ def copy_testdata_into_cache():
 
 
 def copy_all_mosaic_data(cache, testdata_cache, mosaic_id):
-  mosaic = cache['grouped_mosaics'][mosaic_id]
-  testdata_cache['grouped_mosaics'] = {mosaic_id: mosaic}
+  stacks = cache['grouped_stacks']
+  targets = cache['grouped_targets']
+  mosaics = cache['grouped_mosaics']
+
+  mosaic = mosaics[mosaic_id]
+  testdata_mosaics = {mosaic_id: mosaic}
   testdata_cache['grouped_targets'] = {
-      target_id: cache['grouped_targets'][target_id]
-      for target_id in mosaic.target_ids
+      target_id: targets[target_id] for target_id in mosaic.target_ids
   }
+  stack_ids = [
+      stack_id for target_id in mosaic.target_ids
+      for stack_id in targets[target_id].stack_ids
+  ]
   testdata_cache['grouped_stacks'] = {
-      stack_id: cache['grouped_stacks'][stack_id]
-      for target_id in mosaic.target_ids
-      for stack_id in cache['grouped_targets'][target_id].stack_ids
+      stack_id: stacks[stack_id] for stack_id in stack_ids
   }
 
-  print(f'Copied data for mosaic {mosaic_id}')
+  for stack_id in stack_ids:
+    stack = stacks[stack_id]
+    assert isinstance(stack, CompositeStack)
+    for substack in stack.contents.values():
+      assert isinstance(substack, SimpleStack)
+      for frame_hash in substack.frames:
+        key = ('image_metadata', frame_hash)
+        testdata_cache[key] = cache[key]
+
+  print(f'Copied keys for mosaic {mosaic_id}:')
+  for key in testdata_cache.iterkeys():
+    print(f'  {key}')
 
 
 if __name__ == '__main__':
@@ -63,7 +81,7 @@ if __name__ == '__main__':
   testdata_cache.clear()
   print(f'Opened testdata cache in dir {testdata_cache_dir.name}')
 
-  copy_all_mosaic_data(cache, testdata_cache, 'f6e0dd33f4386a15')
+  copy_all_mosaic_data(cache, testdata_cache, 'b1c2c11588a866ac')
 
   # Copy the output files, and store the cache to a tar.gz file on disk.
   # shutil.copytree(context.output_dir, 'testdata', dirs_exist_ok=True)
