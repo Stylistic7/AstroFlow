@@ -23,6 +23,12 @@ def node_to_string(node: Node) -> str:
   return f'({node.task._function.__name__}, {_tuple_values(node.args)})'
 
 
+def node_to_string_tuple(node: Node) -> str:
+  node = canonicalize_node(node)
+  assert isinstance(node.task, RemoteFunction)
+  return (node.task._function.__name__, *[str(x) for x in node.args])
+
+
 def print_result_dict(results: ResultDict, indent: int = 0) -> None:
   for node, result in results.items():
     if type(node.task) is str:

@@ -6,9 +6,10 @@ from operator import or_
 import time
 from typing import Callable, Any
 from ray.remote_function import RemoteFunction
+import structlog
 
 from dependency_graph import Node, Graph, CanonicalGraph, GraphStatus, ResultDict, TopologicalSorterWithStatus, GenericRemoteFunction, canonicalize_graph
-from .debugging import print_graph, node_to_string
+from .debugging import print_graph, node_to_string, node_to_string_tuple
 
 MIN_STATUS_UPDATE_INTERVAL_SECS: float = 5.0
 
