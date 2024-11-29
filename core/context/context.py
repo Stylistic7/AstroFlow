@@ -49,7 +49,9 @@ def _get_namespace() -> str:
   return os.environ.get("ASTROFLOW_MOCK_NAMESPACE", "AstroFlow")
 
 
-@ray.remote(resources={'diskcache': 0.001})
+@ray.remote(resources={'diskcache': 0.001},
+            max_restarts=-1,
+            max_task_retries=-1)
 class ContextActor:
 
   ref_dict: RefDict
