@@ -43,6 +43,9 @@ class TestLogging(unittest.TestCase):
     graph = Graph({D: {B, C}, C: {A}, B: {A}})
     results, logs = run_graph(graph)
 
+    context.last_run_results = results
+    context.last_run_logs = logs
+
     self.assertEqual(results[A], 'A')
     self.assertEqual(results[B], 'B')
     self.assertEqual(results[C], 'C')

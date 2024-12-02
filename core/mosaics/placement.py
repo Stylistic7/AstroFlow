@@ -21,6 +21,7 @@ from previews import QualityLevel
 from mosaics.types import MosaicHash
 from mosaics.classes import Viewbox
 from stacks.types import StackHash
+from dependency_graph.logging import capture_logs
 
 _MEMORY_REQUIREMENT = 8 * 1024 * 1024 * 1024  # 8 GB
 
@@ -115,8 +116,9 @@ def place_tile(tile_y: int, tile_x: int, wcs: Any, ra_tiles: np.ndarray,
 # TODO: Differentiate the runtime of this function in subframe and master
 # modes.
 @ray.remote(scheduling_strategy="SPREAD", memory=_MEMORY_REQUIREMENT)
-@saves_artifacts(mosaic_by_coordinates_artifacts)
+@capture_logs
 @track_performance
+@saves_artifacts(mosaic_by_coordinates_artifacts)
 def mosaic_by_coordinates(mode: QualityLevel, mosaic_id: MosaicHash,
                           filter: str, stack_id: StackHash,
                           input_artifact: Artifact) -> list[Artifact]:
@@ -200,7 +202,8 @@ def mosaic_by_coordinates(mode: QualityLevel, mosaic_id: MosaicHash,
 
     trim_left, trim_top, trim_width, trim_height = largestinteriorrectangle.lir(
         grid, contour)
-    print(f'Trimmed trim_top {trim_top} trim_left {trim_left} trim_height '
+    print(f'Trimmed {output_artifact.content_hash} '
+          f'trim_top {trim_top} trim_left {trim_left} trim_height '
           f'{trim_height} trim_width {trim_width}')
 
     trim_bottom = trim_top + trim_height
@@ -217,6 +220,8 @@ def mosaic_by_coordinates(mode: QualityLevel, mosaic_id: MosaicHash,
     del projected_image
     output_image = trimmed_image
 
+    # TODO: This overwrites the HISTORY key, so it doesn't actually work. So
+    # maybe the header doesn't have to include the TrimMosaicTile values anyway.
     output_header = {
         'IMAGETYP': 'PlacedMosaic Light',
         'FOCALLEN': float(header['FOCALLEN']),

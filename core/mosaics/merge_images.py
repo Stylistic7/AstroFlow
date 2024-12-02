@@ -16,6 +16,7 @@ from artifacts import Artifact, read_artifact_image, write_artifact, artifact_ex
 from profiling import track_performance
 from previews import QualityLevel
 from mosaics.types import MosaicHash
+from dependency_graph.logging import capture_logs
 
 
 @PixInsight()
@@ -81,6 +82,7 @@ def merge_images_artifacts(mode: QualityLevel, mosaic_id: MosaicHash,
 # TODO: Make sure that every Ray task that calls a @PixInsight function also
 # consumes a PixInsight resource.
 @ray.remote
+@capture_logs
 @track_performance
 @saves_artifacts(merge_images_artifacts)
 def merge_images(mode: QualityLevel, mosaic_id: MosaicHash, input_0: Artifact,
