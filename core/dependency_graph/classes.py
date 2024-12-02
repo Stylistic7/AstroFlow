@@ -123,6 +123,19 @@ class ResultDict(dict[Node, Any]):
         f'Key {node.task._function.__module__}.{node.task._function.__name__} '
         f'args {node.args} not found')
 
+  def flatten(self) -> dict[Node, Any]:
+    output = {}
+
+    def process(r: ResultDict) -> None:
+      for node, value in r.items():
+        if isinstance(value, ResultDict):
+          process(value)
+        else:
+          output[node] = value
+
+    process(self)
+    return output
+
 
 DoneCallback = Callable[[], None]
 

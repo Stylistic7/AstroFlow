@@ -122,8 +122,8 @@ def place_tile(tile_y: int, tile_x: int, wcs: Any, ra_tiles: np.ndarray,
 def mosaic_by_coordinates(mode: QualityLevel, mosaic_id: MosaicHash,
                           filter: str, stack_id: StackHash,
                           input_artifact: Artifact) -> list[Artifact]:
-  print(f'### Entering mosaic_by_coordinates '
-        f' {mode} {mosaic_id} {filter} {stack_id} {input_artifact}')
+  log.info(f'### Entering mosaic_by_coordinates '
+           f' {mode} {mosaic_id} {filter} {stack_id} {input_artifact}')
 
   metadata = context.metadata
 
@@ -142,8 +142,9 @@ def mosaic_by_coordinates(mode: QualityLevel, mosaic_id: MosaicHash,
   assert image is not None
   assert plate_solution is not None
 
-  print(f'mosaic_by_coordinates: image shape {image.shape} dtype {image.dtype} '
-        f'min {np.min(image)} max {np.max(image)}')
+  log.info(
+      f'mosaic_by_coordinates: image shape {image.shape} dtype {image.dtype} '
+      f'min {np.min(image)} max {np.max(image)}')
 
   wcs = WCS(plate_solution.header)
 
@@ -185,7 +186,7 @@ def mosaic_by_coordinates(mode: QualityLevel, mosaic_id: MosaicHash,
     tile_y, tile_x, value = ray.get(ready_refs[0])
     projected_image_tiles[tile_y, tile_x, :, :] = value
 
-  print('### projected_image shape', projected_image.shape)
+  log.info('### projected_image shape', projected_image.shape)
 
   output_artifacts = mosaic_by_coordinates_artifacts(mode, mosaic_id, filter,
                                                      stack_id, input_artifact)
@@ -202,9 +203,9 @@ def mosaic_by_coordinates(mode: QualityLevel, mosaic_id: MosaicHash,
 
     trim_left, trim_top, trim_width, trim_height = largestinteriorrectangle.lir(
         grid, contour)
-    print(f'Trimmed {output_artifact.content_hash} '
-          f'trim_top {trim_top} trim_left {trim_left} trim_height '
-          f'{trim_height} trim_width {trim_width}')
+    log.info(f'Trimmed {output_artifact.content_hash} '
+             f'trim_top {trim_top} trim_left {trim_left} trim_height '
+             f'{trim_height} trim_width {trim_width}')
 
     trim_bottom = trim_top + trim_height
     trim_right = trim_left + trim_width
@@ -235,7 +236,7 @@ def mosaic_by_coordinates(mode: QualityLevel, mosaic_id: MosaicHash,
     }
     write_artifact(output_artifact, output_image, output_header)
 
-    print(f'### placement done; output_artifact is {output_artifact}')
+    log.info(f'### placement done; output_artifact is {output_artifact}')
 
   return output_artifacts
 
