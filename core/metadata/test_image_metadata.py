@@ -41,7 +41,7 @@ class TestImageMetadata(unittest.TestCase):
                           insert_metadata=False)
 
     graph = compute_graph_fragment()
-    results = run_graph(graph)
+    run_graph(graph)
 
     filenames_on_disk = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
     self.assertEqual(len(filenames_on_disk), 10)
@@ -54,7 +54,7 @@ class TestImageMetadata(unittest.TestCase):
     make_synthetic_frames(number=20, dest_dir=input_dir, insert_metadata=False)
 
     graph = compute_graph_fragment()
-    results = run_graph(graph)
+    run_graph(graph)
     filenames_on_disk = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
     filenames_in_cache = get_all_filenames()
     self.assertEqual(sorted(filenames_on_disk), sorted(filenames_in_cache))
@@ -67,7 +67,7 @@ class TestImageMetadata(unittest.TestCase):
       os.rename(filename, os.path.join(new_dir, os.path.basename(filename)))
 
     graph = compute_graph_fragment()
-    results = run_graph(graph)
+    run_graph(graph)
     filenames_on_disk = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
     images = list(get_metadata())
     self.assertEqual(len(images), 20)
@@ -83,7 +83,7 @@ class TestImageMetadata(unittest.TestCase):
                           insert_metadata=False)
 
     graph = compute_graph_fragment()
-    results = run_graph(graph)
+    run_graph(graph)
     filenames = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
     self.assertEqual(len(filenames), 10)
     self.assertEqual(len(get_all_filenames()), 10)
@@ -97,7 +97,7 @@ class TestImageMetadata(unittest.TestCase):
                           insert_metadata=False)
 
     graph = compute_graph_fragment()
-    results = run_graph(graph)
+    run_graph(graph)
     filenames = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
     self.assertEqual(len(filenames), 20)
     images = list(get_metadata())

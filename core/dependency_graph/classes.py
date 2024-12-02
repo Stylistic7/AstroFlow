@@ -135,6 +135,7 @@ class TopologicalSorterWithStatus(graphlib.TopologicalSorter):
   graph: CanonicalGraph
   done_callback: DoneCallback | None
   results: ResultDict
+  logs: ResultDict
   final_result: Any
 
   def __init__(self,
@@ -145,6 +146,7 @@ class TopologicalSorterWithStatus(graphlib.TopologicalSorter):
     self.graph = graph
     self.done_callback = done_callback
     self.results = ResultDict()
+    self.logs = ResultDict()
     self.final_result = None
 
     self.done_nodes = set()

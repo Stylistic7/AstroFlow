@@ -190,7 +190,7 @@ class TestDependencyGraph(unittest.TestCase):
     D = (my_remote_task, 'D')
 
     graph = Graph({D: {B, C}, C: {A}, B: {A}})
-    results = run_graph(graph)
+    results, _ = run_graph(graph)
 
     self.assertEqual(results[A], 'A')
     self.assertEqual(results[B], 'B')
@@ -207,7 +207,7 @@ class TestDependencyGraph(unittest.TestCase):
     D = (my_remote_task, 'D')
 
     graph = Graph({D: {B, C}, C: {A}, B: {A}})
-    results = run_graph(graph)
+    results, _ = run_graph(graph)
 
     self.assertEqual(results[A], 'A')
     self.assertEqual(results[B], 'B')
@@ -226,7 +226,7 @@ class TestDependencyGraph(unittest.TestCase):
     D = (my_task_with_global, 'D')
 
     graph = Graph({D: {C}, C: {B}, B: {A}})
-    results = run_graph(graph)
+    results, _ = run_graph(graph)
 
     self.assertEqual(cache['foo'], 14)
 
@@ -239,7 +239,7 @@ class TestDependencyGraph(unittest.TestCase):
     C = my_last_task
 
     graph = Graph({C: {B}, B: {A}})
-    results = run_graph(graph)
+    results, _ = run_graph(graph)
 
     self.assertEqual(results[A], 1)
     self.assertEqual(results[B], 2)
@@ -254,7 +254,7 @@ class TestDependencyGraph(unittest.TestCase):
     C = my_last_task
 
     graph = Graph({C: {A}, B: {A}})
-    results = run_graph(graph)
+    results, _ = run_graph(graph)
 
     self.assertEqual(results[A], 1)
     self.assertEqual(results[B], 2)
@@ -266,7 +266,7 @@ class TestDependencyGraph(unittest.TestCase):
   def test_list_of_tasks(self) -> None:
     graph = make_graph_from_list([my_first_task, my_later_task, my_last_task])
 
-    results = run_graph(graph)
+    results, _ = run_graph(graph)
     self.assertEqual(results[my_last_task], 5)
 
     self.assertEqual(results.num_nodes_run, 3)
@@ -275,14 +275,14 @@ class TestDependencyGraph(unittest.TestCase):
   def test_with_exception(self) -> None:
     graph = Graph({scatter_raises_exception: {}})
 
-    results = run_graph(graph)
+    results, _ = run_graph(graph)
     print('### test_with_exception', results[scatter_raises_exception])
     self.assertTrue(isinstance(results[scatter_raises_exception], TypeError))
 
   def test_dynamic_subgraph(self) -> None:
     graph = Graph({scatter: {}})
 
-    results = run_graph(graph)
+    results, _ = run_graph(graph)
 
     self.assertEqual(results[scatter], 21)
 
@@ -297,7 +297,7 @@ class TestDependencyGraph(unittest.TestCase):
     # should be transparently handled by the runtime. my_last_task() should
     # see the result of gather().
     graph = Graph({scatter: {}, my_last_task: {scatter}})
-    results = run_graph(graph)
+    results, _ = run_graph(graph)
 
     self.assertEqual(results[scatter], 21)
     self.assertEqual(results[my_last_task], 24)
@@ -309,7 +309,7 @@ class TestDependencyGraph(unittest.TestCase):
     context.foo = 13
 
     graph = Graph({my_last_task: [scatter, increment_foo], scatter: {}})
-    results = run_graph(graph)
+    results, _ = run_graph(graph)
 
     self.assertEqual(context.foo, 14)
     self.assertEqual(results[scatter], 21)
@@ -327,7 +327,7 @@ class TestDependencyGraph(unittest.TestCase):
         my_last_task_with_context: {scatter_with_context}
     })
 
-    results = run_graph(graph)
+    results, _ = run_graph(graph)
 
     self.assertEqual(results[scatter_with_context], 21)
     self.assertEqual(results[my_last_task_with_context], 24)
@@ -341,7 +341,7 @@ class TestDependencyGraph(unittest.TestCase):
     context.foo = 2
     context.bar = 3
 
-    results = run_graph(graph)
+    results, _ = run_graph(graph)
 
     self.assertEqual(results[increment_foo], 3)
     self.assertEqual(results[increment_bar], 4)
@@ -354,7 +354,7 @@ class TestDependencyGraph(unittest.TestCase):
   def test_dynamic_graph_with_context(self) -> None:
     graph = Graph({scatter_with_context: {}})
 
-    results = run_graph(graph)
+    results, _ = run_graph(graph)
 
     self.assertEqual(results[scatter_with_context], 21)
     self.assertEqual(sorted(context.processed), [0, 1, 2, 3, 4, 5, 6])
@@ -366,7 +366,7 @@ class TestDependencyGraph(unittest.TestCase):
   def test_conditional_dynamic_graph(self) -> None:
     dynamic_graph_task = (maybe_run_dynamic_graph, True)
     graph = Graph({dynamic_graph_task: {}})
-    results = run_graph(graph)
+    results, _ = run_graph(graph)
     self.assertEqual(results[dynamic_graph_task], 21)
 
     self.assertEqual(results.num_nodes_run, 9)
@@ -374,7 +374,7 @@ class TestDependencyGraph(unittest.TestCase):
 
     dynamic_graph_task = (maybe_run_dynamic_graph, False)
     graph = Graph({dynamic_graph_task: {}})
-    results = run_graph(graph)
+    results, _ = run_graph(graph)
     self.assertEqual(results[dynamic_graph_task], None)
 
     self.assertEqual(results.num_nodes_run, 1)
@@ -383,7 +383,7 @@ class TestDependencyGraph(unittest.TestCase):
   def test_multiple_inputs(self) -> None:
     task = (fn_with_multiple_inputs, 1, 2, 3)
     graph = Graph({task: {}})
-    results = run_graph(graph)
+    results, _ = run_graph(graph)
     self.assertEqual(results[task], 6)
 
     self.assertEqual(results.num_nodes_run, 1)
@@ -399,7 +399,7 @@ class TestDependencyGraph(unittest.TestCase):
 
     graph = Graph({D: {B, C}, C: {A}, B: {A}})
 
-    results = run_graph(graph)
+    results, _ = run_graph(graph)
 
     self.assertEqual(results[A], 1)
     self.assertEqual(results[B], 10)
@@ -422,7 +422,7 @@ class TestDependencyGraph(unittest.TestCase):
     context.foo = 7
     context.processed = []
 
-    results = run_graph(graph, debug=True)
+    results, _ = run_graph(graph, debug=True)
 
     self.assertEqual(context.foo, 8)
     self.assertEqual(sorted(context.processed), [2, 3])
@@ -444,7 +444,7 @@ class TestDependencyGraph(unittest.TestCase):
   def test_scatter_in_subgraphs(self) -> None:
     graph = scatter_in_subgraphs()
 
-    results = run_graph(graph)
+    results, _ = run_graph(graph)
 
     self.assertEqual(results[gather_from_subgraphs], 78)
     self.assertEqual(results.max_parallelism_seen, 13)
@@ -454,7 +454,7 @@ class TestDependencyGraph(unittest.TestCase):
     graph = Graph({(scatter_huge, count): {}})
 
     start = time.time()
-    results = run_graph(graph)
+    results, _ = run_graph(graph)
     end = time.time()
     ms_per_fn = 1000.0 * (end - start) / count
 
@@ -533,7 +533,7 @@ class TestDependencyGraph(unittest.TestCase):
       nonlocal final_status
       final_status = status
 
-    results = run_graph(graph, status_fn=print_status)
+    results, _ = run_graph(graph, status_fn=print_status)
 
     self.assertEqual(results[scatter], 21)
 

@@ -98,8 +98,7 @@ class TestMergeOps(unittest.TestCase):
                 output_artifact=output_artifact)
     ])
 
-    results = run_graph(graph)
-    print('### results', results)
+    run_graph(graph)
 
     # TODO: Check for presence of final artifact in cache.
 
@@ -136,8 +135,7 @@ class TestMergeOps(unittest.TestCase):
                      [left_and_middle, right.input_artifact])
     self.assertEqual(merge_ops[1].output_artifact, final)
 
-    results = run_graph(graph)
-    print('### results', results)
+    run_graph(graph)
 
     # TODO: Check for presence of final artifact in cache.
 
@@ -192,7 +190,7 @@ class TestMergeOps(unittest.TestCase):
 
     # The first run should produce all the intermediate files.
     self.assertEqual(len(graph), 3)
-    results = run_graph(graph)
+    results, _ = run_graph(graph)
     self.assertEqual(results.num_nodes_run, 7)
     self.assertEqual(results.max_parallelism_seen, 4)
 
@@ -325,7 +323,7 @@ class TestMergeOps(unittest.TestCase):
 
     # The first run should produce all the intermediate files.
     self.assertEqual(len(graph), 8)
-    results = run_graph(graph)
+    results, _ = run_graph(graph)
     self.assertEqual(results.num_nodes_run, 8 + 9)
     self.assertEqual(results.max_parallelism_seen, 9)
 

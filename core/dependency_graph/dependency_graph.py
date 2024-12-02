@@ -9,6 +9,7 @@ from ray.remote_function import RemoteFunction
 import structlog
 
 from dependency_graph import Node, Graph, CanonicalGraph, GraphStatus, ResultDict, TopologicalSorterWithStatus, GenericRemoteFunction, canonicalize_graph
+from dependency_graph.logging import LogContainer
 from .debugging import print_graph, node_to_string, node_to_string_tuple
 
 MIN_STATUS_UPDATE_INTERVAL_SECS: float = 5.0
@@ -155,17 +156,24 @@ def run_graph(graph: Graph,
       try:
         result = ray.get(ready_refs[0])
 
+        # If the function captured logs, split them off the returned result.
+        log = []
+        if isinstance(result, tuple) and isinstance(result[0], LogContainer):
+          log, result = result
+
         # There are two possibilities here: the task can return a result,
         # or a (dynamically-generated) Graph to run as a sub-graph.
         if isinstance(result, Graph):
           add_subgraph(result, ts, node)
         else:
           ts.results[node] = result
+          ts.logs[node] = log
           ts.final_result = result
           ts.done(node)
       except ray.exceptions.RayTaskError as e:
         print(f'Node {node} raised exception {e}')
         ts.results[node] = e.cause
+        ts.logs[node] = []
         ts.final_result = e.cause
         ts.done(node)
 
@@ -180,4 +188,4 @@ def run_graph(graph: Graph,
   toplevel_ts.results.num_nodes_run = num_nodes_run
   toplevel_ts.results.max_parallelism_seen = max_parallelism_seen
 
-  return toplevel_ts.results
+  return toplevel_ts.results, toplevel_ts.logs
