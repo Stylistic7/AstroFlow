@@ -332,7 +332,7 @@ class TestMosaicIdentification(unittest.TestCase):
     cache = get_cache()
     copy_testdata_into_cache()
 
-    ray.get(identification.identify_mosaics.remote(debug=True))
+    ray.get(identification.identify_mosaics.remote(debug=False))
     targets = context.grouped_targets
     mosaics = context.grouped_mosaics
 

@@ -32,6 +32,7 @@ from mosaics.compute_graph import merge_graph_done_artifacts
 from astroflow import populate_context
 from compute_graph import build_compute_graph
 from dependency_graph import run_graph, graph_status_to_progress
+from dependency_graph.debugging import node_to_string
 from previews import QualityLevel
 from quarantining.compute_graph import build_apply_stack_user_settings_subgraph
 from compute_graph.compute_graph import load_metadata
@@ -577,10 +578,25 @@ def run_compute_graph():
   # TODO: Determine `regroup` automatically.
   graph = build_compute_graph(regroup=False,
                               make_previews=True,
-                              run_main_processing_graph=False)
+                              run_main_processing_graph=True)
+
+  def _run_graph(*args, **kwargs):
+    # TODO: Perhaps the results and logs should be saved incrementally,
+    # whenever a node finishes?
+    results, logs = run_graph(*args, **kwargs)
+
+    print('### Writing graph results and logs into context')
+    context.last_run_results = {
+        node_to_string(node): result
+        for node, result in results.flatten().items()
+    }
+
+    context.last_run_logs = {
+        node_to_string(node): log for node, log in logs.flatten().items()
+    }
 
   print('### Running compute graph!')
-  thread = threading.Thread(target=run_graph,
+  thread = threading.Thread(target=_run_graph,
                             args=(graph,),
                             kwargs={
                                 'status_fn': status_fn,
@@ -595,6 +611,11 @@ def run_compute_graph():
 @app.route('/compute_graph_status')
 def get_compute_graph_status():
   return compute_graph_status
+
+
+@app.route('/last_run_logs')
+def get_last_run_logs():
+  return context.last_run_logs or {}
 
 
 if __name__ == '__main__':
