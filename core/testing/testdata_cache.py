@@ -29,16 +29,15 @@ def copy_testdata_into_cache():
     tar.extractall(path=testdata_cache_dir.name)
 
   testdata_cache = diskcache.Cache(testdata_cache_dir.name)
-  print(f'### testdata_cache has keys {list(testdata_cache.iterkeys())}')
 
   cache = get_cache()
   num_copied = 0
   for key in testdata_cache.iterkeys():
-    print(f'### Copied key {key} into cache')
+    print(f'Copied key {key} into cache')
     cache[key] = testdata_cache[key]
     num_copied += 1
 
-  print(f'Copied {num_copied} keys from testdata cache')
+  print(f'### Copied {num_copied} keys from testdata cache')
 
 
 def copy_all_mosaic_data(cache, testdata_cache, mosaic_id):
