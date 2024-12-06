@@ -75,7 +75,7 @@ class TestProfiling(unittest.TestCase):
 
       estimated_times.append(total_estimated_time)
 
-    results = run_graph(graph, status_fn=print_status, status_interval=0)
+    results, _ = run_graph(graph, status_fn=print_status, status_interval=0)
 
     self.assertEqual(results[scatter], 21)
 
