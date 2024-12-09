@@ -212,7 +212,7 @@ class TestMosaicIdentification(unittest.TestCase):
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
     self.assertEqual(mosaic.target_ids,
-                     [bar.stable_hash, foo.stable_hash, baz.stable_hash])
+                     [bar.stable_hash, baz.stable_hash, foo.stable_hash])
     self.assertEqual(mosaic.tile_indices, [(0, 0), (0, 1), (0, 2)])
 
   def test_three_targets_and_an_outlier(self) -> None:

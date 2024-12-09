@@ -25,11 +25,12 @@ log = logger
 
 
 class Overlap(Enum):
-  NON_OVERLAPPING = 1
-  INCOMPATIBLE = 2
-  LONG_EDGE = 3
-  SHORT_EDGE = 4
-  CORNER = 5
+  IDENTICAL = 1
+  NON_OVERLAPPING = 2
+  INCOMPATIBLE = 3
+  LONG_EDGE = 4
+  SHORT_EDGE = 5
+  CORNER = 6
 
 
 def roughly_same_area(a: SingleSphericalPolygon,
@@ -43,18 +44,19 @@ def roughly_same_image_scale(a: float, b: float) -> bool:
   return ratio > 0.9 and ratio < 1.1
 
 
-def mosaics_are_compatible(
-    a: set[TargetHash],
-    b: set[TargetHash],
-    allowed_overlaps=[
-        Overlap.NON_OVERLAPPING, Overlap.LONG_EDGE, Overlap.SHORT_EDGE,
-        Overlap.CORNER
-    ]
-) -> bool:
+def mosaics_are_compatible(a: set[TargetHash],
+                           b: set[TargetHash],
+                           allowed_overlaps,
+                           debug: bool = False) -> bool:
   targets = context.grouped_targets
 
-  # The two mosaics can be merged together if every target in `a` overlaps
-  # either compatibly or not at all with every target in `b`.
+  # The two mosaics can be merged together if:
+  #
+  # - all of the targets have compatible image scales and areas
+  # - at least one target in `a` overlaps LONG_EDGE or SHORT_EDGE with a
+  #   a target in `b`.
+  # - none of the targets in `a` overlap INCOMPATIBLE with any targets in `b`.
+  num_good_overlaps = 0
   for a_tid in a:
     for b_tid in b:
       if not roughly_same_image_scale(targets[a_tid].image_scale,
@@ -65,16 +67,19 @@ def mosaics_are_compatible(
                                targets[b_tid].footprint):
         return False
 
-      if targets_overlap(targets[a_tid],
-                         targets[b_tid]) not in allowed_overlaps:
+      overlap = targets_overlap(targets[a_tid], targets[b_tid], debug)
+      if overlap is Overlap.INCOMPATIBLE:
         return False
 
-  return True
+      if overlap in allowed_overlaps:
+        num_good_overlaps += 1
+
+  return num_good_overlaps > 0
 
 
 def targets_overlap(a: Target, b: Target, debug: bool = False) -> bool:
   if a.stable_hash == b.stable_hash:
-    return Overlap.INCOMPATIBLE
+    return Overlap.IDENTICAL
 
   if debug:
     print(f'### targets_overlap {a.stable_hash} and {b.stable_hash}')
@@ -199,20 +204,21 @@ def targets_overlap(a: Target, b: Target, debug: bool = False) -> bool:
 
 def group_targets(
     target_ids: list[TargetHash],
-    allowed_overlaps=[
-        Overlap.NON_OVERLAPPING, Overlap.LONG_EDGE, Overlap.SHORT_EDGE,
-        Overlap.CORNER
-    ]
+    allowed_overlaps,
+    debug: bool = False,
 ) -> list[set[TargetHash]]:
   mosaics = []
   for target_id in target_ids:
     compatible_mosaics = []
 
     for mosaic in mosaics:
-      if mosaics_are_compatible([target_id], mosaic, allowed_overlaps):
+      if mosaics_are_compatible([target_id], mosaic, allowed_overlaps, debug):
         compatible_mosaics.append(mosaic)
 
     if compatible_mosaics:
+      if debug:
+        print(f'### target {target_id} will be merged with '
+              f'existing mosaics {compatible_mosaics}')
       merged_mosaic = {target_id}
       for mosaic in compatible_mosaics:
         merged_mosaic = merged_mosaic.union(mosaic)
@@ -224,38 +230,50 @@ def group_targets(
   return mosaics
 
 
-# TODO: This algorithm is very similar to the algorithm above for finding
-# mosaics in the first place. Unify them.
 def find_strips(target_ids: list[TargetHash],
                 debug: bool = False) -> list[list[TargetHash]]:
   targets = context.grouped_targets
 
   target_ids = list(sorted(target_ids, key=lambda t: targets[t].center[0]))
 
-  strips = group_targets(
-      target_ids, allowed_overlaps=[Overlap.NON_OVERLAPPING, Overlap.LONG_EDGE])
+  strips = group_targets(target_ids, allowed_overlaps=[Overlap.LONG_EDGE])
+  if debug:
+    for i, strip in enumerate(strips):
+      print(f'### Strip {i} is {strip}')
 
   def order_strip(strip):
+    strip_length = len(strip)
     strip = list(sorted(strip, key=lambda t: targets[t].center[0]))
-    end_target_id = strip[0]
+
+    if len(strip) < 3:
+      return strip
+
+    end_target_id = None
     for target_id in strip:
       overlap_count = sum(1 for tid in strip if targets_overlap(
-          targets[target_id], targets[tid]) != Overlap.INCOMPATIBLE)
+          targets[target_id], targets[tid]) == Overlap.LONG_EDGE)
       if debug:
         print(f'### target {target_id} has overlap_count {overlap_count}')
       if overlap_count == 1:
+        if debug:
+          print(f'### chose {target_id} for the end of the strip')
         end_target_id = target_id
         break
 
     assert end_target_id
 
     output_strip = [end_target_id]
-    while len(output_strip) < len(strip):
+    strip.remove(end_target_id)
+    while len(output_strip) < strip_length:
       for target_id in strip:
         if targets_overlap(targets[output_strip[-1]],
-                           targets[target_id]) != Overlap.INCOMPATIBLE:
+                           targets[target_id]) == Overlap.LONG_EDGE:
+          if debug:
+            print(f'### added {target_id} to strip')
           output_strip.append(target_id)
+          strip.remove(target_id)
 
+    assert len(output_strip) == strip_length
     return output_strip
 
   output_strips = []
@@ -269,7 +287,8 @@ def find_strips(target_ids: list[TargetHash],
   return output_strips
 
 
-def _identify_overlapping_targets() -> list[list[TargetHash]]:
+def _identify_overlapping_targets(
+    debug: bool = False) -> list[list[TargetHash]]:
   stacks = context.grouped_stacks
   targets = context.grouped_targets
 
@@ -280,7 +299,10 @@ def _identify_overlapping_targets() -> list[list[TargetHash]]:
   target_ids = list(sorted(targets.keys(), key=lambda t: targets[t].center[0]))
   log.info('Identifying overlapping targets', num_targets=len(targets))
 
-  mosaics = group_targets(target_ids)
+  mosaics = group_targets(
+      target_ids,
+      allowed_overlaps=[Overlap.LONG_EDGE, Overlap.SHORT_EDGE],
+      debug=debug)
 
   num_grouped_targets = sum(len(m) for m in mosaics)
   num_ungrouped_targets = len(targets) - num_grouped_targets
@@ -302,7 +324,7 @@ def identify_mosaics(debug: bool = False) -> dict[MosaicHash, Mosaic]:
   targets = context.grouped_targets
   print(f'### Identifying mosaics from {len(targets)} targets')
 
-  mosaics = _identify_overlapping_targets()
+  mosaics = _identify_overlapping_targets(debug)
   if not mosaics:
     print('### No overlapping targets found')
     context.grouped_mosaics = {}
