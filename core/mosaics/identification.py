@@ -44,11 +44,12 @@ def roughly_same_image_scale(a: float, b: float) -> bool:
   return ratio > 0.9 and ratio < 1.1
 
 
-def mosaics_are_compatible(a: set[TargetHash],
-                           b: set[TargetHash],
-                           allowed_overlaps,
-                           debug: bool = False) -> bool:
+def target_compatible_with_mosaic(target_id: TargetHash,
+                                  mosaic: set[TargetHash],
+                                  allowed_overlaps,
+                                  debug: bool = False) -> bool:
   targets = context.grouped_targets
+  target = targets[target_id]
 
   # The two mosaics can be merged together if:
   #
@@ -57,22 +58,20 @@ def mosaics_are_compatible(a: set[TargetHash],
   #   a target in `b`.
   # - none of the targets in `a` overlap INCOMPATIBLE with any targets in `b`.
   num_good_overlaps = 0
-  for a_tid in a:
-    for b_tid in b:
-      if not roughly_same_image_scale(targets[a_tid].image_scale,
-                                      targets[b_tid].image_scale):
-        return False
+  for tid in mosaic:
+    if not roughly_same_image_scale(target.image_scale,
+                                    targets[tid].image_scale):
+      return False
 
-      if not roughly_same_area(targets[a_tid].footprint,
-                               targets[b_tid].footprint):
-        return False
+    if not roughly_same_area(target.footprint, targets[tid].footprint):
+      return False
 
-      overlap = targets_overlap(targets[a_tid], targets[b_tid], debug)
-      if overlap is Overlap.INCOMPATIBLE:
-        return False
+    overlap = targets_overlap(target, targets[tid], debug)
+    if overlap is Overlap.INCOMPATIBLE:
+      return False
 
-      if overlap in allowed_overlaps:
-        num_good_overlaps += 1
+    if overlap in allowed_overlaps:
+      num_good_overlaps += 1
 
   return num_good_overlaps > 0
 
@@ -212,7 +211,8 @@ def group_targets(
     compatible_mosaics = []
 
     for mosaic in mosaics:
-      if mosaics_are_compatible([target_id], mosaic, allowed_overlaps, debug):
+      if target_compatible_with_mosaic(target_id, mosaic, allowed_overlaps,
+                                       debug):
         compatible_mosaics.append(mosaic)
 
     if compatible_mosaics:
