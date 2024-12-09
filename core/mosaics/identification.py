@@ -25,25 +25,69 @@ log = logger
 
 
 class Overlap(Enum):
-  INCOMPATIBLE = 1
-  LONG_EDGE = 2
-  SHORT_EDGE = 3
+  NON_OVERLAPPING = 1
+  INCOMPATIBLE = 2
+  LONG_EDGE = 3
+  SHORT_EDGE = 4
+  CORNER = 5
 
 
-def targets_compatible_overlap(a: Target,
-                               b: Target,
-                               debug: bool = False) -> bool:
+def roughly_same_area(a: SingleSphericalPolygon,
+                      b: SingleSphericalPolygon) -> bool:
+  ratio = a.area() / b.area()
+  return ratio > 0.9 and ratio < 1.1
+
+
+def roughly_same_image_scale(a: float, b: float) -> bool:
+  ratio = a / b
+  return ratio > 0.9 and ratio < 1.1
+
+
+def mosaics_are_compatible(
+    a: set[TargetHash],
+    b: set[TargetHash],
+    allowed_overlaps=[
+        Overlap.NON_OVERLAPPING, Overlap.LONG_EDGE, Overlap.SHORT_EDGE,
+        Overlap.CORNER
+    ]
+) -> bool:
+  targets = context.grouped_targets
+
+  # The two mosaics can be merged together if every target in `a` overlaps
+  # either compatibly or not at all with every target in `b`.
+  for a_tid in a:
+    for b_tid in b:
+      if not roughly_same_image_scale(targets[a_tid].image_scale,
+                                      targets[b_tid].image_scale):
+        return False
+
+      if not roughly_same_area(targets[a_tid].footprint,
+                               targets[b_tid].footprint):
+        return False
+
+      if targets_overlap(targets[a_tid],
+                         targets[b_tid]) not in allowed_overlaps:
+        return False
+
+  return True
+
+
+def targets_overlap(a: Target, b: Target, debug: bool = False) -> bool:
   if a.stable_hash == b.stable_hash:
     return Overlap.INCOMPATIBLE
 
+  if debug:
+    print(f'### targets_overlap {a.stable_hash} and {b.stable_hash}')
+
   if not a.footprint.intersects_poly(b.footprint):
-    return Overlap.INCOMPATIBLE
+    if debug:
+      print(f'targets {a.stable_hash} and {b.stable_hash} do not intersect')
+    return Overlap.NON_OVERLAPPING
 
   # TODO: Don't bother checking intersection of targets that are very far
   # apart on the sky?
 
   if debug:
-    print(f'### targets_compatible_overlap {a.stable_hash} and {b.stable_hash}')
     print(f'a.stable_hash', a.stable_hash)
     print(f'b.stable_hash', b.stable_hash)
     print(f'a.rotation_angle {np.degrees(a.rotation_angle)} degrees')
@@ -81,10 +125,14 @@ def targets_compatible_overlap(a: Target,
   # Compute the length of the long and short edges of the intersection of the
   # two polygons.
   intersection_polygons = a.footprint.intersection(b.footprint).polygons
-  if len(intersection_polygons) != 1:
+  if len(intersection_polygons) == 0:
+    return Overlap.NON_OVERLAPPING
+
+  if len(intersection_polygons) > 1:
     if debug:
-      print(f'targets {a.stable_hash} and {b.stable_hash} do not intersect')
-    return Overlap.INCOMPATIBLE
+      print(f'targets {a.stable_hash} and {b.stable_hash}'
+            f'have {len(intersection_polygons)} intersection polygons')
+      return Overlap.INCOMPATIBLE
 
   intersection = SingleSphericalPolygon.convex_hull(
       intersection_polygons[0].points)
@@ -92,82 +140,106 @@ def targets_compatible_overlap(a: Target,
     print(f'could not find rectangular convex hull of intersection')
     return Overlap.INCOMPATIBLE
 
+  if intersection.area() > 12:
+    if debug:
+      print(
+          f'### intersection had to be inverted, area is {intersection.area()}')
+    intersection = intersection.invert_polygon()
+
   intersection_short_edge, intersection_long_edge = compute_edge_lengths(
       intersection)
   a_fraction = intersection.area() / a.footprint.area()
   b_fraction = intersection.area() / b.footprint.area()
 
+  long_edge_fraction = intersection_long_edge / frame_long_edge
+  short_edge_fraction = intersection_short_edge / frame_short_edge
+
   if debug:
+    print(f'intersection.area() {intersection.area()}')
     print(f'intersection_short_edge {intersection_short_edge}')
     print(f'intersection_long_edge {intersection_long_edge}')
+    print(f'long_edge_fraction {long_edge_fraction}')
+    print(f'short_edge_fraction {short_edge_fraction}')
+    print(f'intersection aspect ratio '
+          f'{intersection_long_edge / intersection_short_edge}')
     print(f'intersection / a area {a_fraction}')
     print(f'intersection / b area {b_fraction}')
 
-  if a_fraction < 0.1 or a_fraction > 0.3:
-    return Overlap.INCOMPATIBLE
-  if b_fraction < 0.1 or b_fraction > 0.3:
-    return Overlap.INCOMPATIBLE
-
-  aspect_ratio = intersection_long_edge / intersection_short_edge
-
-  if debug:
-    print(f'aspect_ratio {aspect_ratio}')
-
-  if aspect_ratio < 3:
-    return Overlap.INCOMPATIBLE
-
-  # To figure out whether the pair is oriented horizontally or vertically,
-  # look at the longest edge of the intersection. If it roughly matches the
-  # short edge, then the pair is oriented vertically, joined by their short
-  # edges.
+  # For orientation LONG_EDGE, the intersection's long edge is similar to the
+  # frame's long edge. The intersection's short edge is much shorter than
+  # the frame's short edge.
+  #
+  # For orientation SHORT_EDGE, the intersection's long edge is similar to the
+  # frame's short edge. The intersection's short edge is much shorter than
+  # the frame's long edge.
   def error(a, b):
     return abs(a - b) / a
 
-  long_edge_error = error(frame_long_edge, intersection_long_edge)
-  short_edge_error = error(frame_short_edge, intersection_long_edge)
-
-  if long_edge_error > 0.2 and short_edge_error > 0.2:
+  if error(intersection_long_edge, frame_long_edge) < 0.25 and (
+      intersection_short_edge / frame_short_edge) < 0.3:
+    orientation = Overlap.LONG_EDGE
+  elif error(intersection_long_edge, frame_short_edge) < 0.25 and (
+      intersection_short_edge / frame_long_edge) < 0.3:
+    orientation = Overlap.SHORT_EDGE
+  elif (intersection_long_edge / frame_long_edge) < 0.3 and (
+      intersection_short_edge / frame_short_edge) < 0.3:
+    orientation = Overlap.CORNER
+  else:
     if debug:
       print(f'targets {a.stable_hash} and {b.stable_hash} '
-            f'have unclear orientation long_edge_error {long_edge_error} '
-            f'short_edge_error {short_edge_error}')
+            f'have unclear orientation')
     return Overlap.INCOMPATIBLE
 
-  orientation = (Overlap.LONG_EDGE
-                 if long_edge_error < short_edge_error else Overlap.SHORT_EDGE)
   if debug:
-    print(f'long_edge_error {long_edge_error}')
-    print(f'short_edge_error {short_edge_error}')
     print(f'orientation {orientation}')
     print(f'targets are compatible with orientation {orientation}')
 
   return orientation
 
 
+def group_targets(
+    target_ids: list[TargetHash],
+    allowed_overlaps=[
+        Overlap.NON_OVERLAPPING, Overlap.LONG_EDGE, Overlap.SHORT_EDGE,
+        Overlap.CORNER
+    ]
+) -> list[set[TargetHash]]:
+  mosaics = []
+  for target_id in target_ids:
+    compatible_mosaics = []
+
+    for mosaic in mosaics:
+      if mosaics_are_compatible([target_id], mosaic, allowed_overlaps):
+        compatible_mosaics.append(mosaic)
+
+    if compatible_mosaics:
+      merged_mosaic = {target_id}
+      for mosaic in compatible_mosaics:
+        merged_mosaic = merged_mosaic.union(mosaic)
+      mosaics = [c for c in mosaics if c not in compatible_mosaics]
+      mosaics.append(merged_mosaic)
+    else:
+      mosaics.append({target_id})
+
+  return mosaics
+
+
+# TODO: This algorithm is very similar to the algorithm above for finding
+# mosaics in the first place. Unify them.
 def find_strips(target_ids: list[TargetHash],
-                debug: bool = True) -> list[list[TargetHash]]:
+                debug: bool = False) -> list[list[TargetHash]]:
   targets = context.grouped_targets
 
-  strips = []
-  while target_ids:
-    strip = [target_ids[0]]
-    for target_id in target_ids:
-      if any(
-          targets_compatible_overlap(targets[target_id], targets[tid]) ==
-          Overlap.LONG_EDGE for tid in strip):
-        strip.append(target_id)
+  target_ids = list(sorted(target_ids, key=lambda t: targets[t].center[0]))
 
-    if debug:
-      print(f'### Found strip {strip}')
-    strips.append(strip)
-
-    target_ids = [t for t in target_ids if t not in strip]
+  strips = group_targets(
+      target_ids, allowed_overlaps=[Overlap.NON_OVERLAPPING, Overlap.LONG_EDGE])
 
   def order_strip(strip):
     strip = list(sorted(strip, key=lambda t: targets[t].center[0]))
     end_target_id = strip[0]
     for target_id in strip:
-      overlap_count = sum(1 for tid in strip if targets_compatible_overlap(
+      overlap_count = sum(1 for tid in strip if targets_overlap(
           targets[target_id], targets[tid]) != Overlap.INCOMPATIBLE)
       if debug:
         print(f'### target {target_id} has overlap_count {overlap_count}')
@@ -180,9 +252,8 @@ def find_strips(target_ids: list[TargetHash],
     output_strip = [end_target_id]
     while len(output_strip) < len(strip):
       for target_id in strip:
-        if targets_compatible_overlap(
-            targets[output_strip[-1]],
-            targets[target_id]) != Overlap.INCOMPATIBLE:
+        if targets_overlap(targets[output_strip[-1]],
+                           targets[target_id]) != Overlap.INCOMPATIBLE:
           output_strip.append(target_id)
 
     return output_strip
@@ -205,62 +276,11 @@ def _identify_overlapping_targets() -> list[list[TargetHash]]:
   if not targets:
     return []
 
-  def roughly_same_area(a: SphericalPolygon, b: SphericalPolygon) -> bool:
-    ratio = a.area() / b.area()
-    return ratio > 0.9 and ratio < 1.1
-
-  # TODO: Targets should be really be checked that they overlap mostly along
-  # one axis (e.g. the long edge or the short edge), within some amount (say
-  # 5-30%).
-
   # Sort the targets by their center RA.
   target_ids = list(sorted(targets.keys(), key=lambda t: targets[t].center[0]))
   log.info('Identifying overlapping targets', num_targets=len(targets))
 
-  mosaics: list[list[TargetHash]] = []
-  for target_id in target_ids:
-    matching_mosaic_indices = []
-    for i, mosaic in enumerate(mosaics):
-      compatible_area = roughly_same_area(targets[target_id].footprint,
-                                          targets[mosaic[0]].footprint)
-      compatible_overlap = any(
-          targets_compatible_overlap(targets[target_id], targets[t]) !=
-          Overlap.INCOMPATIBLE for t in mosaic)
-      mosaic_image_scales = [
-          stacks[s].image_scale for t in mosaic for s in targets[t].stack_ids
-      ]
-      # TODO: Image scale is maybe not a requirement for mosaicking. It's a
-      # complex feature that requires complex UI, so leave it out for now.
-      target_image_scales = [
-          stacks[s].image_scale for s in targets[target_id].stack_ids
-      ]
-      assert np.allclose(target_image_scales,
-                         np.mean(target_image_scales),
-                         atol=0.1)
-      compatible_image_scales = np.allclose(mosaic_image_scales,
-                                            np.mean(target_image_scales),
-                                            atol=0.1)
-
-      if compatible_area and compatible_overlap and compatible_image_scales:
-        matching_mosaic_indices.append(i)
-
-    if not matching_mosaic_indices:
-      print(f'### Creating new mosaic to contain target_id {target_id}')
-      mosaics.append([target_id])
-    elif len(matching_mosaic_indices) == 1:
-      print(f'### Adding target_id {target_id} to existing mosaic')
-      mosaics[matching_mosaic_indices[0]].append(target_id)
-    elif len(matching_mosaic_indices) > 1:
-      print(f'### Target {targets[target_id]} fits into '
-            f'{len(matching_mosaic_indices)} mosaics')
-      print(f'### Before merging mosaics, there are {len(mosaics)} mosaics')
-      merged_mosaic = [target_id]
-      for i in sorted(matching_mosaic_indices, reverse=True):
-        merged_mosaic.extend(mosaics[i])
-        del mosaics[i]
-      print(f'### Merged mosaic contains {len(merged_mosaic)} targets')
-      mosaics.append(merged_mosaic)
-      print(f'### After merging mosaics, there are {len(mosaics)} mosaics')
+  mosaics = group_targets(target_ids)
 
   num_grouped_targets = sum(len(m) for m in mosaics)
   num_ungrouped_targets = len(targets) - num_grouped_targets
@@ -319,7 +339,7 @@ def identify_mosaics(debug: bool = False) -> dict[MosaicHash, Mosaic]:
       #         for target_id in mosaic
       #     ]).points).tolist()
 
-      strips = find_strips(mosaic)
+      strips = find_strips(mosaic, debug)
       print('### strips', strips)
       target_ids = []
       tile_indices = []
@@ -328,10 +348,17 @@ def identify_mosaics(debug: bool = False) -> dict[MosaicHash, Mosaic]:
           target_ids.append(target_id)
           tile_indices.append((i, j))
 
+      for target_id in mosaic:
+        print(f'### Target {target_id} '
+              f'has {len(targets[target_id].footprint.points)} points')
+
       all_points = [
           targets[target_id].footprint.points[:-1] for target_id in mosaic
       ]
-      footprint = SingleSphericalPolygon.convex_hull(np.concatenate(all_points))
+      all_points = np.concatenate(all_points)
+      print(f'### Mosaic composed of {len(mosaic)} targets '
+            f'and {all_points.shape} points')
+      footprint = SingleSphericalPolygon.convex_hull(all_points)
 
       # TODO: This is turbo weird, but appears to work. Just randomize the
       # points until the `convex_hull()` operation is successful.
@@ -341,6 +368,8 @@ def identify_mosaics(debug: bool = False) -> dict[MosaicHash, Mosaic]:
           random.shuffle(points)
           footprint = SingleSphericalPolygon.convex_hull(points)
         else:
+          print(f'### convex_hull successful after {i} iterations '
+                f'with {len(footprint.points)} points')
           break
 
       # assert not SphericalPolygon.self_intersect(footprint.points)

@@ -4,7 +4,7 @@ from typing import Any, Callable
 from context import get_cache
 from metadata.classes import FrameHash, ImageMetadata
 
-# TODO: Rename this file.
+# TODO: Remove this actor.
 
 
 @ray.remote(resources={'diskcache': 0.001})

@@ -42,19 +42,17 @@ def plot_mosaic(mosaic: Mosaic, title: str = 'Mosaic') -> None:
 
     overlapping_targets = [
         tid for tid in mosaic.target_ids
-        if identification.targets_compatible_overlap(targets[target_id],
-                                                     targets[tid]) !=
+        if identification.targets_overlap(targets[target_id], targets[tid]) !=
         identification.Overlap.INCOMPATIBLE
     ]
-    print(
-        f'### overlapping_targets for target {target_id} are {overlapping_targets}'
-    )
+    print(f'### overlapping_targets for target {target_id} '
+          f'are {overlapping_targets}')
 
     _draw_polygon(target.footprint, projection, color='blue')
     plt.text(
         center[0],
         center[1],
-        f'{tile_indices[0]}, {tile_indices[1]}: {len(overlapping_targets)}',
+        f'{tile_indices[0]}, {tile_indices[1]}; {target_id}; {len(overlapping_targets)}',
         fontsize=12,
         color='blue')
     plt.scatter([center[0]], [center[1]], color='black')

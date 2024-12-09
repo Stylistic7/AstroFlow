@@ -41,6 +41,5 @@ def make_composite_stack(**kwargs: Any) -> CompositeStack:
 
   attributes = (imaging_attributes | astrometric_attributes |
                 composite_stack_attributes | kwargs)
-  print('### attributes', attributes)
 
   return CompositeStack(**attributes)
