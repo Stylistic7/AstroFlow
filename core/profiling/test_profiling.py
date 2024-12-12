@@ -24,7 +24,7 @@ def process(item):
 
 
 @ray.remote
-def gather(*, ancestor_results):
+def gather(*ancestor_results):
   return sum(ancestor_results)
 
 
