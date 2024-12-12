@@ -2,6 +2,7 @@ import ray
 import os
 import traceback
 from typing import Any
+from pathlib import Path
 
 from artifacts import FileArtifact
 from file_io.find_image_files import find_image_files
@@ -77,11 +78,8 @@ from previews import QualityLevel
 # TODO: Don't revisit the same failed images over and over, it just takes up
 # time at every startup.
 @ray.remote
-def scatter_compute_image_metadata(mode: str,
-                                   ancestor_results: list[Any]) -> Graph:
-  print('Entering scatter_compute_image_metadata, mode', mode,
-        'ancestor_results', ancestor_results)
-
+def scatter_compute_image_metadata(mode: str, *filenames_in:
+                                   list[Path]) -> Graph:
   directories = {
       None: [],
       'input': context.input_dirs,
@@ -89,7 +87,6 @@ def scatter_compute_image_metadata(mode: str,
       'all': context.input_dirs + [context.output_dir],
   }[mode]
 
-  filenames_in: list[str] = ancestor_results or list()
   filenames: set[str] = set(filenames_in)
 
   # TODO: Don't do anything if the directory's modification time hasn't
@@ -122,17 +119,7 @@ class DuplicateFileException(Exception):
 
 
 @ray.remote(scheduling_strategy="SPREAD", max_retries=5, retry_exceptions=True)
-def compute_image_metadata(filename: str | None = None,
-                           ancestor_results: list[Any] | None = None) -> None:
-  print(f'Entering compute_image_metadata() for {filename} '
-        f'ancestor_results {ancestor_results}')
-  if filename is None and ancestor_results is not None:
-    ancestor_results = [x for xs in ancestor_results for x in xs]
-    assert type(ancestor_results) is list
-    assert len(ancestor_results) == 1
-    assert isinstance(ancestor_results[0], FileArtifact)
-    filename = ancestor_results[0].filename
-
+def compute_image_metadata(filename: Path) -> None:
   # TODO: Make sure this code doesn't actually repeatedly read the image across
   # the network. It should hit the node's filesystem cache.
   try:
