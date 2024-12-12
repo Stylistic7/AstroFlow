@@ -75,7 +75,7 @@ def run_graph(graph: Graph,
 
   def ancestor_results(ts: TopologicalSorterWithStatus,
                        node: Node) -> list[Any]:
-    nodes: set[Node] = ts.graph.get(node, set())
+    nodes: list[Node] = ts.graph.get(node, list())
     if debug:
       assert isinstance(node.task, RemoteFunction)
       print(f'Node with task {node.task._function.__name__} has '
@@ -88,21 +88,26 @@ def run_graph(graph: Graph,
       assert isinstance(node.task, RemoteFunction)
       print(f'Making run fn for task {node.task._function.__name__}')
 
-    # TODO: Is this copy necessary?
-    full_args = []
-    full_args.extend(node.args)
+    assert isinstance(
+        node.task, RemoteFunction
+    ), f'node.task has type {type(node.task)} but must have type RemoteFunction'
 
-    assert isinstance(node.task, RemoteFunction)
+    results = ancestor_results(ts, node)
     sig = inspect.signature(node.task._function)
-    if 'ancestor_results' in sig.parameters:
-      try:
-        return node.task.remote(*full_args,
-                                ancestor_results=ancestor_results(ts, node))
-      except Exception as e:
-        print(f'### node {node_to_string(node)} raised exception {e}')
-        raise e
+
+    if len(sig.parameters) == len(node.args):
+      if debug:
+        print(
+            f'### Calling task {node.task._function.__name__} '
+            f'with signature {str(sig)} with only {len(results)} immediate args'
+        )
+      return node.task.remote(*node.args)
     else:
-      return node.task.remote(*full_args)
+      if debug:
+        print(f'### Calling task {node.task._function.__name__} '
+              f'with signature {str(sig)} with {len(node.args)} immediate args '
+              f'and {len(results)} positional ancestor args')
+      return node.task.remote(*node.args, *results)
 
   def delete_finished_subgraphs() -> None:
     for ts in active:
@@ -191,4 +196,4 @@ def run_graph(graph: Graph,
   toplevel_ts.results.num_nodes_run = num_nodes_run
   toplevel_ts.results.max_parallelism_seen = max_parallelism_seen
 
-  return toplevel_ts.results, toplevel_ts.logs
+  return toplevel_ts.results, toplevel_ts.logs  #

@@ -74,7 +74,7 @@ class Graph(dict[TaskDescriptor, Iterable[TaskDescriptor]]):
   pass
 
 
-class CanonicalGraph(dict[Node, set[Node]]):
+class CanonicalGraph(dict[Node, list[Node]]):
   pass
 
 
@@ -83,7 +83,7 @@ class CanonicalGraph(dict[Node, set[Node]]):
 def canonicalize_graph(graph: Graph) -> CanonicalGraph:
   output = CanonicalGraph({})
   for node, dependents in graph.items():
-    output[canonicalize_node(node)] = {canonicalize_node(x) for x in dependents}
+    output[canonicalize_node(node)] = [canonicalize_node(x) for x in dependents]
   return output
 
 

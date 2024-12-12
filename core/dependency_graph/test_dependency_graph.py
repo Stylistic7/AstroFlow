@@ -37,19 +37,18 @@ def my_first_task() -> int:
 
 
 @ray.remote
-def my_later_task(ancestor_results: list[int]) -> int:
-  return ancestor_results[0] + 1
+def my_later_task(i: int) -> int:
+  return i + 1
 
 
 @ray.remote
-def my_last_task(ancestor_results: list[int]) -> int:
-  print('### my_last_task ancestor_results', ancestor_results)
-  return ancestor_results[0] + 3
+def my_last_task(i: int) -> int:
+  return i + 3
 
 
 @ray.remote
-def my_last_task_with_context(ancestor_results: list[int]) -> int:
-  return ancestor_results[0] + 3
+def my_last_task_with_context(i: int) -> int:
+  return i + 3
 
 
 @ray.remote
@@ -108,12 +107,13 @@ def process_raises_exception(item: T) -> None:
 
 
 @ray.remote
-def gather(ancestor_results: list[int]) -> int:
+def gather(*ancestor_results: list[int]) -> int:
+  print(f'### ancestor_results {ancestor_results}')
   return sum(ancestor_results)
 
 
 @ray.remote
-def passthrough(ancestor_results: list[T]) -> list[T]:
+def passthrough(*ancestor_results: list[T]) -> list[T]:
   return ancestor_results
 
 
@@ -123,7 +123,7 @@ def build_subgraph(item: T) -> Graph:
 
 
 @ray.remote
-def gather_from_subgraphs(ancestor_results: list[list[int]]) -> int:
+def gather_from_subgraphs(*ancestor_results: list[list[int]]) -> int:
   return sum(r[0] for r in ancestor_results)
 
 
@@ -140,7 +140,7 @@ def scatter_with_context() -> Graph:
 
 
 @ray.remote
-def gather_with_context(ancestor_results: list[int]) -> int:
+def gather_with_context(*ancestor_results: list[int]) -> int:
   context.processed += ancestor_results
   context.sum = sum(ancestor_results)
   return context.sum
@@ -308,12 +308,15 @@ class TestDependencyGraph(unittest.TestCase):
   def test_dynamic_subgraph_completion_with_peer(self) -> None:
     context.foo = 13
 
-    graph = Graph({my_last_task: [scatter, increment_foo], scatter: {}})
+    graph = Graph({gather: [scatter, increment_foo], scatter: {}})
     results, _ = run_graph(graph)
 
+    # scatter returns 21, increment_foo returns 14.
     self.assertEqual(context.foo, 14)
     self.assertEqual(results[scatter], 21)
-    self.assertEqual(results[my_last_task], 24)
+
+    # gather adds the results of scatter and increment_foo to get 35.
+    self.assertEqual(results[gather], 35)
 
     self.assertEqual(results.num_nodes_run, 11)
     self.assertEqual(results.max_parallelism_seen, 7)
