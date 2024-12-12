@@ -80,11 +80,8 @@ def identify_calibration_stacks() -> None:
 
 @ray.remote
 @track_performance
-def associate_with_stack(
-    ancestor_results: list[list[CompositeStack]]) -> list[CompositeStack]:
-  stacks = ancestor_results[0]
-
-  print(f'### select_subframes running on {len(stacks)} stacks')
+def associate_with_stack(stacks: list[CompositeStack]) -> list[CompositeStack]:
+  print(f'### associate_with_stack running on {len(stacks)} stacks')
   output = []
   for stack in stacks:
     cal_stacks = context.calibration_stacks

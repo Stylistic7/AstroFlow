@@ -6,10 +6,7 @@ from stacks.composite_stack import CompositeStack, CompositeStacksDict
 
 
 @ray.remote
-def validate_stacks(ancestor_results: list[CompositeStacksDict]) -> None:
-  print(f'### Entering validate_stacks')
-  stacks = ancestor_results[0]
-
+def validate_stacks(stacks: CompositeStacksDict) -> None:
   for stack_id, stack in stacks.items():
     # if isinstance(stack, SimpleStack):
     #   assert len(stack.frames), f'### Stack {stack} has no frames'

@@ -118,39 +118,6 @@ def apply_settings(ancestor_results: list[CompositeStack]) -> CompositeStack:
   return replace(stack, contents=new_contents)
 
 
-# This graph applies user settings to a single stack in the `grouped_stacks`
-# dict, passing it through graph arguments. If the stack is quarantined, or
-# becomes empty after subframe selection, it will not make it into the final
-# `stacks` dict.
-#
-# `apply_quarantine_to_stack()` is applied to a single Stack, and either returns
-# that Stack, modified, or None.
-#
-# `select_subframes()` is applied to the single Stack (or None), and either
-# returns that Stack, modified, or None.
-#
-# `associate_with_stack()` is applied to the single Stack (or None), and returns
-# a dict containing the Stack, plus the calibration Stacks that it depends on,
-# or None.
-@ray.remote
-def build_stack_user_settings_subgraph(stack_id: StackHash) -> Graph:
-  return make_graph_from_list([(apply_quarantine_to_stack, stack_id),
-                               select_subframes, associate_with_stack,
-                               apply_settings])
-
-
-@ray.remote
-def gather_stack_user_settings(
-    ancestor_results: list[Any]) -> CompositeStacksDict:
-  stacks = {a.stable_hash: a for a in ancestor_results if a is not None}
-  print(f'### gather_stack_user_settings stack ids are {stacks.keys()}')
-  context.or_equals('stacks', stacks, default_value={})
-  print(f'### gather_stack_user_settings: Stored {len(stacks)} stacks; '
-        f'total is now {len(context.stacks)}')
-
-  return stacks
-
-
 @ray.remote
 def build_preview_graph() -> Graph:
   graph = Graph({})

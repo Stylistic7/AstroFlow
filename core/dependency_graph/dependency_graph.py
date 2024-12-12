@@ -95,19 +95,25 @@ def run_graph(graph: Graph,
     results = ancestor_results(ts, node)
     sig = inspect.signature(node.task._function)
 
-    if len(sig.parameters) == len(node.args):
-      if debug:
-        print(
-            f'### Calling task {node.task._function.__name__} '
-            f'with signature {str(sig)} with only {len(results)} immediate args'
-        )
-      return node.task.remote(*node.args)
-    else:
-      if debug:
-        print(f'### Calling task {node.task._function.__name__} '
+    try:
+      if len(sig.parameters) == len(node.args):
+        if debug:
+          print(
+              f'### Calling task {node.task._function.__name__} '
+              f'with signature {str(sig)} with only {len(results)} immediate args'
+          )
+        return node.task.remote(*node.args)
+      else:
+        if debug:
+          print(
+              f'### Calling task {node.task._function.__name__} '
               f'with signature {str(sig)} with {len(node.args)} immediate args '
               f'and {len(results)} positional ancestor args')
-      return node.task.remote(*node.args, *results)
+        return node.task.remote(*node.args, *results)
+    except Exception as e:
+      print(f'Received exception while trying to call '
+            f'task {node.task._function.__name__}')
+      raise e
 
   def delete_finished_subgraphs() -> None:
     for ts in active:

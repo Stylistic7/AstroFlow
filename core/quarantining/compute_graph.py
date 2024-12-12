@@ -17,8 +17,8 @@ from stacks.types import StackHash
 from stacks.validation import validate_stacks
 from mosaics.types import MosaicHash
 from mosaics.validation import validate_mosaics
-from targets.target import Target
-from mosaics.mosaic import Mosaic
+from targets.target import Target, TargetsDict
+from mosaics.mosaic import Mosaic, MosaicsDict
 
 
 # TODO: Maybe SimpleStacks and CompositeStacks should be in separate dicts.
@@ -100,10 +100,7 @@ def quarantine_mosaics() -> dict[MosaicHash, Mosaic]:
 
 
 @ray.remote
-def apply_settings(
-    ancestor_results: list[list[CompositeStack]]) -> list[CompositeStack]:
-  stacks = ancestor_results[0]
-
+def apply_settings(stacks: list[CompositeStack]) -> list[CompositeStack]:
   print(f'### apply_settings running on {len(stacks)} stacks')
   output = []
   for stack in stacks:
@@ -152,6 +149,7 @@ def apply_settings(
 # Maybe the best thing to do is pass the metadata ref around?
 @ray.remote
 def build_stack_user_settings_subgraph(stack_ids: list[StackHash]) -> Graph:
+  print(f'### build_stack_user_settings_subgraph stack_ids {stack_ids}')
   return make_graph_from_list([(apply_quarantine_to_stack, stack_ids),
                                select_subframes, associate_with_stack,
                                apply_settings])
@@ -159,10 +157,9 @@ def build_stack_user_settings_subgraph(stack_ids: list[StackHash]) -> Graph:
 
 @ray.remote
 def gather_stack_user_settings(
-    ancestor_results: list[Any]) -> CompositeStacksDict:
-  flat_list = [item for sublist in ancestor_results for item in sublist]
-  assert None not in flat_list
-  stacks = {a.stable_hash: a for a in flat_list}
+    *stacks_in: list[CompositeStack]) -> CompositeStacksDict:
+  stacks = [item for sublist in stacks_in for item in sublist]
+  stacks = {a.stable_hash: a for a in stacks}
   print(f'### gather_stack_user_settings stack ids are {stacks.keys()}')
   context.stacks = stacks
   print(f'### gather_stack_user_settings: Stored {len(context.stacks)} stacks')
@@ -179,16 +176,14 @@ def store_calibration_stacks() -> None:
 
 
 @ray.remote
-def store_targets(ancestor_results: list[Any]) -> None:
-  targets = ancestor_results[0]
+def store_targets(targets: TargetsDict) -> None:
   context.targets = targets
   print(f'### store_targets: Stored {len(targets)} targets; '
         f'total is now {len(context.targets)}')
 
 
 @ray.remote
-def store_mosaics(ancestor_results: list[Any]) -> None:
-  mosaics = ancestor_results[0]
+def store_mosaics(mosaics: MosaicsDict) -> None:
   context.mosaics = mosaics
   print(f'### store_mosaics: Stored {len(mosaics)} mosaics; '
         f'total is now {len(context.mosaics)}')
@@ -214,9 +209,10 @@ def build_apply_stack_user_settings_subgraph() -> Graph:
   print(f'### First group {stack_id_groups[0]}')
 
   graph = Graph({})
-  graph[gather_stack_user_settings] = {
-      (build_stack_user_settings_subgraph, group) for group in stack_id_groups
-  }
+  graph[gather_stack_user_settings] = {(build_stack_user_settings_subgraph,
+                                        group)
+                                       for group in stack_id_groups
+                                       if len(group)}
   graph[validate_stacks] = {gather_stack_user_settings}
   graph[store_calibration_stacks] = {validate_stacks}
   graph[quarantine_targets] = {store_calibration_stacks}

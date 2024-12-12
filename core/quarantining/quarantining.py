@@ -39,6 +39,7 @@ def _apply_to_simple_stack(stack: SimpleStack) -> SimpleStack:
 @track_performance
 def apply_quarantine_to_stack(
     stack_ids: list[StackHash]) -> list[CompositeStack]:
+  print(f'### apply_quarantine_to_stack running on stack_ids {stack_ids}')
   stacks = context.grouped_stacks
 
   start_time = time.time()
@@ -47,7 +48,6 @@ def apply_quarantine_to_stack(
   elapsed_time = end_time - start_time
   print(f'### metadata = context.metadata took {elapsed_time:.3f}')
 
-  print(f'### apply_quarantine_to_stack running on {len(stack_ids)} stack ids')
   output = []
   for stack_id in stack_ids:
     stack = stacks[stack_id]
@@ -87,4 +87,5 @@ def apply_quarantine_to_stack(
 
     output.append(replace(stack, contents=new_contents, **attributes))
 
+  print(f'### apply_quarantine_to_stack returning {len(output)} stacks')
   return output

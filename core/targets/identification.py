@@ -22,9 +22,7 @@ from stacks.types import StackHash
 @ray.remote
 @track_performance
 def group_stacks_into_targets(
-    ancestor_results: list[dict[StackHash, CompositeStack]]
-) -> dict[TargetHash, Target]:
-  stacks = ancestor_results[0]
+    stacks: dict[StackHash, CompositeStack]) -> dict[TargetHash, Target]:
   metadata = context.metadata
 
   cosine_similarity_threshold = context.cosine_similarity_threshold
