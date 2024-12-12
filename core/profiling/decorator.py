@@ -31,6 +31,8 @@ def track_performance(fn: Callable[P, R]) -> Callable[P, R]:
     key = ('performance_history', node_ip, fn.__name__)
 
     # Keep only the last N samples.
+    # TODO: This might be slow, since every node has to hit the ContextActor,
+    # no matter how fast it is.
     history = context[key] or []
     history = history[-(_MAX_PERFORMANCE_SAMPLES - 1):] + [elapsed_time]
     context[key] = history
