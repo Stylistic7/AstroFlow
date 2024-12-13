@@ -87,15 +87,13 @@ def associate_with_stack(
   print(f'### select_subframes running on {len(stacks)} stacks')
   output = []
   for stack in stacks:
-    if stack is None:
-      continue
+    cal_stacks = context.calibration_stacks
 
-    print(f'### associate_with_stack for stack {stack}')
+    print(f'### associate_with_stack {len(cal_stacks)} cal stacks '
+          f'for stack {stack}')
     assert isinstance(
         stack, CompositeStack
     ), f'### Object {stack} of type {type(stack)} is not CompositeStack'
-
-    stacks = context.grouped_stacks
 
     def is_compatible(image_type: str, cal_stack: SimpleStack) -> bool:
       if cal_stack.image_type != image_type:
@@ -125,7 +123,7 @@ def associate_with_stack(
     def find_closest_stack_chronologically(
         image_type: str) -> SimpleStack | None:
       compatible_stacks = [
-          s for s in stacks if is_compatible(image_type, stacks[s])
+          s for s in cal_stacks if is_compatible(image_type, cal_stacks[s])
       ]
 
       if not compatible_stacks:
@@ -137,7 +135,7 @@ def associate_with_stack(
       return compatible_stacks[np.argmin([
           abs(
               midpoint(stack.oldest_date, stack.newest_date) -
-              midpoint(stacks[s].oldest_date, stacks[s].newest_date)).
+              midpoint(cal_stacks[s].oldest_date, cal_stacks[s].newest_date)).
           total_seconds() for s in compatible_stacks
       ])]
 
