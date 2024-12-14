@@ -40,32 +40,48 @@ def copy_testdata_into_cache():
   print(f'### Copied {num_copied} keys from testdata cache')
 
 
-def copy_all_mosaic_data(cache, testdata_cache, mosaic_id):
+def copy_all_stack_data(cache, testdata_cache, stack_id):
   stacks = cache['grouped_stacks']
+
+  testdata_cache['grouped_stacks'] |= {stack_id: stacks[stack_id]}
+
+  stack = stacks[stack_id]
+  assert isinstance(stack, CompositeStack)
+  for substack in stack.contents.values():
+    assert isinstance(substack, SimpleStack)
+    for frame_hash in substack.frames:
+      key = ('image_metadata', frame_hash)
+      testdata_cache[key] = cache[key]
+
+
+def copy_image(cache, testdata_cache, content_hash, target_dir):
+  key = ('image_metadata', content_hash)
+  testdata_cache[key] = cache[key]
+
+  source_filename = cache[key].filename
+  os.makedirs(target_dir, exist_ok=True)
+  shutil.copy(source_filename, target_dir)
+  print(f'### Copied file {source_filename} to {target_dir}')
+
+
+def copy_all_mosaic_data(cache, testdata_cache, mosaic_id):
   targets = cache['grouped_targets']
   mosaics = cache['grouped_mosaics']
 
   mosaic = mosaics[mosaic_id]
-  testdata_mosaics = {mosaic_id: mosaic}
-  testdata_cache['grouped_targets'] = {
+
+  testdata_cache['grouped_mosaics'] |= {mosaic_id: mosaic}
+
+  testdata_cache['grouped_targets'] |= {
       target_id: targets[target_id] for target_id in mosaic.target_ids
   }
+
   stack_ids = [
       stack_id for target_id in mosaic.target_ids
       for stack_id in targets[target_id].stack_ids
   ]
-  testdata_cache['grouped_stacks'] = {
-      stack_id: stacks[stack_id] for stack_id in stack_ids
-  }
-
   for stack_id in stack_ids:
-    stack = stacks[stack_id]
-    assert isinstance(stack, CompositeStack)
-    for substack in stack.contents.values():
-      assert isinstance(substack, SimpleStack)
-      for frame_hash in substack.frames:
-        key = ('image_metadata', frame_hash)
-        testdata_cache[key] = cache[key]
+    copy_all_stack_data(cache, testdata_cache, stack_id)
 
   print(f'Copied keys for mosaic {mosaic_id}:')
   for key in testdata_cache.iterkeys():
@@ -78,9 +94,15 @@ if __name__ == '__main__':
   testdata_cache_dir = tempfile.TemporaryDirectory()
   testdata_cache = diskcache.Cache(testdata_cache_dir.name)
   testdata_cache.clear()
+  testdata_cache['grouped_stacks'] = {}
+  testdata_cache['grouped_targets'] = {}
+  testdata_cache['grouped_mosaics'] = {}
   print(f'Opened testdata cache in dir {testdata_cache_dir.name}')
 
   copy_all_mosaic_data(cache, testdata_cache, 'b1c2c11588a866ac')
+  copy_all_stack_data(cache, testdata_cache, '2c71f4db63b27773')
+  copy_image(cache, testdata_cache, '187b447aad352e0f',
+             'testdata/Stacks/IC1318/masters')
 
   # Copy the output files, and store the cache to a tar.gz file on disk.
   # shutil.copytree(context.output_dir, 'testdata', dirs_exist_ok=True)
