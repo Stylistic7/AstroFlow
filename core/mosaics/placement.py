@@ -8,12 +8,13 @@ import cv2 as cv
 from itertools import product
 from pathlib import Path
 from typing import Any
+import structlog
 
 from plate_solving import solve_field
 from artifacts.decorators import saves_artifacts
 from artifacts import Artifact
 from context import context
-from .viewbox import compute_mosaic_viewbox_artifacts
+# from .viewbox import compute_mosaic_viewbox_artifacts
 from artifacts import read_artifact_image, read_artifact_header, write_artifact, CacheArtifact, FileArtifact
 from hashing import hash_list
 from profiling import track_performance
@@ -22,28 +23,11 @@ from mosaics.types import MosaicHash
 from mosaics.classes import Viewbox
 from stacks.types import StackHash
 from dependency_graph.logging import capture_logs
+from dependency_graph.astroflow_node import AstroFlowNode
 
 _MEMORY_REQUIREMENT = 8 * 1024 * 1024 * 1024  # 8 GB
 
-
-def mosaic_by_coordinates_artifacts(mode: QualityLevel, mosaic_id: MosaicHash,
-                                    filter: str, stack_id: StackHash,
-                                    input_artifact: Artifact) -> list[Artifact]:
-  viewbox_artifact = next(
-      iter(compute_mosaic_viewbox_artifacts(mode, mosaic_id)))
-  content_hash = hash_list(
-      [input_artifact.content_hash, viewbox_artifact.content_hash])
-
-  if mode == QualityLevel.SUBFRAME:
-    key = ('placed_image', mosaic_id, filter, stack_id)
-    return [CacheArtifact(key, content_hash)]
-  elif mode == QualityLevel.MASTER:
-    mosaic = context.mosaics[mosaic_id]
-    filename = os.path.join(context.output_dir, 'Mosaics', mosaic.name,
-                            f'placed_{mosaic_id}_{filter}_{stack_id}.fit')
-    return [FileArtifact(filename, content_hash)]
-
-  raise ValueError(f'Unknown quality level {mode}')
+log = structlog.get_logger()
 
 
 def _compute_ras_decs(mode: QualityLevel,
@@ -79,19 +63,6 @@ def _reshape_tiles(
   return tiles.swapaxes(1, 2)
 
 
-# Function pseudocode:
-#
-# Creates the output image as defined by the given grid of RAs and Decs.
-#
-# For every pixel in the output, grabs the bilinear interpolation of pixels in
-# the input image.
-#
-# Find the largest interior rectangle, and trims all edges to be axis-aligned.
-#
-# Writes a FITS file to disk that contains the image and some metadata required
-# by PhotometricMergeMosaic in PixInsight.
-
-
 @ray.remote(scheduling_strategy="SPREAD")
 def place_tile(tile_y: int, tile_x: int, wcs: Any, ra_tiles: np.ndarray,
                dec_tiles: np.ndarray,
@@ -103,48 +74,47 @@ def place_tile(tile_y: int, tile_x: int, wcs: Any, ra_tiles: np.ndarray,
   return tile_y, tile_x, interp((source_ys, source_xs))
 
 
+def _trim_image(projected_image):
+  grid = projected_image != 0
+  cv_grid = grid.astype("uint8") * 255
+  contours, _ = cv.findContours(cv_grid, cv.RETR_TREE, cv.CHAIN_APPROX_NONE)
+  contour = contours[0][:, 0, :]
+
+  trim_left, trim_top, trim_width, trim_height = largestinteriorrectangle.lir(
+      grid, contour)
+  log.info(f'trim_top {trim_top} trim_left {trim_left} trim_height '
+           f'{trim_height} trim_width {trim_width}')
+
+  trim_bottom = trim_top + trim_height
+  trim_right = trim_left + trim_width
+
+  if trim_left == 0 and trim_top == 0 and trim_width == projected_image.shape[
+      1] and trim_height == projected_image.shape[0]:
+    assert False, "largestinteriorrectangle matched entire image"
+
+  trimmed_image = np.zeros(projected_image.shape, np.float32)
+  trimmed_image[trim_top:trim_bottom,
+                trim_left:trim_right] = projected_image[trim_top:trim_bottom,
+                                                        trim_left:trim_right]
+  return trimmed_image
+
+
 # TODO: Provide some feedback on progress.
-#
-# TODO: Store these on disk and read them back when unchanged.
-#
-# TODO: Something here is still taking up a huge amount of memory in the Ray
-# object store.
 #
 # TODO: Placement is perhaps fast enough to not bother storing placed images
 # on disk, where they take up a huge amount of space.
 #
 # TODO: Differentiate the runtime of this function in subframe and master
 # modes.
-@ray.remote(scheduling_strategy="SPREAD", memory=_MEMORY_REQUIREMENT)
-@capture_logs
-@track_performance
-@saves_artifacts(mosaic_by_coordinates_artifacts)
-def mosaic_by_coordinates(mode: QualityLevel, mosaic_id: MosaicHash,
-                          filter: str, stack_id: StackHash,
-                          input_artifact: Artifact) -> list[Artifact]:
-  log.info(f'### Entering mosaic_by_coordinates '
-           f' {mode} {mosaic_id} {filter} {stack_id} {input_artifact}')
-
-  metadata = context.metadata
-
-  # TODO: All this Artifact-handling stuff can be streamlined.
-  viewbox_artifact = next(
-      iter(compute_mosaic_viewbox_artifacts(mode, mosaic_id)))
-  assert isinstance(viewbox_artifact, CacheArtifact)
-  viewbox = context.get(viewbox_artifact.key)
-  assert viewbox
-
+@AstroFlowNode(memory=_MEMORY_REQUIREMENT)
+def place_image(mode: QualityLevel, input_artifact: Artifact,
+                viewbox: Viewbox) -> list[Artifact]:
   # TODO: The subframes need to be calibrated before being placed.
   image = read_artifact_image(input_artifact)
-  header = read_artifact_header(input_artifact)
-  plate_solution = metadata[input_artifact.content_hash].plate_solution
+  plate_solution = context.metadata[input_artifact.content_hash].plate_solution
 
-  assert image is not None
-  assert plate_solution is not None
-
-  log.info(
-      f'mosaic_by_coordinates: image shape {image.shape} dtype {image.dtype} '
-      f'min {np.min(image)} max {np.max(image)}')
+  log.info(f'place_image: image shape {image.shape} dtype {image.dtype} '
+           f'min {np.min(image)} max {np.max(image)}')
 
   wcs = WCS(plate_solution.header)
 
@@ -186,72 +156,8 @@ def mosaic_by_coordinates(mode: QualityLevel, mosaic_id: MosaicHash,
     tile_y, tile_x, value = ray.get(ready_refs[0])
     projected_image_tiles[tile_y, tile_x, :, :] = value
 
-  log.info('### projected_image shape', projected_image.shape)
+  log.info(f'### projected_image shape {projected_image.shape}')
+  log.info(
+      f'### projected_image count nonzero {np.count_nonzero(projected_image)}')
 
-  output_artifacts = mosaic_by_coordinates_artifacts(mode, mosaic_id, filter,
-                                                     stack_id, input_artifact)
-  output_artifact = next(iter(output_artifacts))
-
-  if mode == QualityLevel.SUBFRAME:
-    output_image = projected_image
-    write_artifact(output_artifact, output_image)
-  elif mode == QualityLevel.MASTER:
-    grid = projected_image != 0
-    cv_grid = grid.astype("uint8") * 255
-    contours, _ = cv.findContours(cv_grid, cv.RETR_TREE, cv.CHAIN_APPROX_NONE)
-    contour = contours[0][:, 0, :]
-
-    trim_left, trim_top, trim_width, trim_height = largestinteriorrectangle.lir(
-        grid, contour)
-    log.info(f'Trimmed {output_artifact.content_hash} '
-             f'trim_top {trim_top} trim_left {trim_left} trim_height '
-             f'{trim_height} trim_width {trim_width}')
-
-    trim_bottom = trim_top + trim_height
-    trim_right = trim_left + trim_width
-
-    if trim_left == 0 and trim_top == 0 and trim_width == projected_image.shape[
-        1] and trim_height == projected_image.shape[0]:
-      assert False, "largestinteriorrectangle matched entire image"
-
-    trimmed_image = np.zeros(projected_image.shape, np.float32)
-    trimmed_image[trim_top:trim_bottom,
-                  trim_left:trim_right] = projected_image[trim_top:trim_bottom,
-                                                          trim_left:trim_right]
-    del projected_image
-    output_image = trimmed_image
-
-    # TODO: This overwrites the HISTORY key, so it doesn't actually work. So
-    # maybe the header doesn't have to include the TrimMosaicTile values anyway.
-    output_header = {
-        'IMAGETYP': 'PlacedMosaic Light',
-        'FOCALLEN': float(header['FOCALLEN']),
-        'XPIXSZ': float(header['XPIXSZ']),
-        'YPIXSZ': float(header['YPIXSZ']),
-        'HISTORY': f"TrimMosaicTile.target: foo",
-        'HISTORY': f"TrimMosaicTile.top: {trim_top}",
-        'HISTORY': f"TrimMosaicTile.bottom: {trim_bottom}",
-        'HISTORY': f"TrimMosaicTile.left: {trim_left}",
-        'HISTORY': f"TrimMosaicTile.right: {trim_right}"
-    }
-    write_artifact(output_artifact, output_image, output_header)
-
-    log.info(f'### placement done; output_artifact is {output_artifact}')
-
-  return output_artifacts
-
-  # hdu = pyfits.PrimaryHDU(output_image)
-  # hdu.header['SIMPLE'] = True
-  # hdu.header['IMAGETYP'] = 'PlacedMosaic Light'
-  # hdu.header['FOCALLEN'] = float(header['FOCALLEN'])
-  # hdu.header['XPIXSZ'] = float(header['XPIXSZ'])
-  # hdu.header['YPIXSZ'] = float(header['YPIXSZ'])
-  # hdu.header['HISTORY'] = f"TrimMosaicTile.target: foo"
-  # hdu.header['HISTORY'] = f"TrimMosaicTile.top: {trim_top}"
-  # hdu.header['HISTORY'] = f"TrimMosaicTile.bottom: {trim_top + trim_height}"
-  # hdu.header['HISTORY'] = f"TrimMosaicTile.left: {trim_left}"
-  # hdu.header['HISTORY'] = f"TrimMosaicTile.right: {trim_left + trim_width}"
-
-  # # TODO: Is this placed_filename actually checked anywhere?
-  # hdu.writeto(output_artifact.filename, overwrite=True)
-  # print(f'### Wrote placed image filename {output_artifact.filename}')
+  return _trim_image(projected_image)
