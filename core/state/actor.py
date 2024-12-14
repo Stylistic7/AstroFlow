@@ -1,5 +1,4 @@
 import ray
-from addict import Dict  # type: ignore
 import os
 from typing import Any, Callable, TypeVar
 
@@ -13,11 +12,11 @@ def _get_namespace() -> str:
   return os.environ.get("ASTROFLOW_MOCK_NAMESPACE", "AstroFlow")
 
 
-class Action(Dict):
+class Action(dict):
   pass
 
 
-class State(Dict):
+class State(dict):
   pass
 
 
@@ -28,7 +27,7 @@ def _add_to_shopping_cart(state: State,
 
   if action.item not in context.shopping_cart:
     context.shopping_cart += [action.item]
-    new_action = Dict(type='run_processing_graph', item=action.item)
+    new_action = dict(type='run_processing_graph', item=action.item)
     return state, [new_action]
 
   return state, []
@@ -56,11 +55,11 @@ def _remove_from_shopping_cart(state: State,
 class StateActor:
 
   def __init__(self) -> None:
-    self.state = Dict()
+    self.state = dict()
 
   def dispatch(self, action: Action) -> dict[str, Any]:
     print(f'### handling action {action}')
-    action = Dict(action)
+    action = dict(action)
 
     match action.type:
       case 'add_to_shopping_cart':
@@ -82,7 +81,7 @@ class StateActor:
     for action in new_actions:
       self.dispatch(action)
 
-    return self.state.to_dict()
+    return self.state
 
 
 def dispatch(action: Action, callback: Callable[..., T] | None = None) -> T:
