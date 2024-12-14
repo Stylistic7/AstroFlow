@@ -37,8 +37,7 @@ def load_metadata() -> None:
   quarantined_files = context.quarantined_files or set()
 
   def predicate_fn(image: ImageMetadata) -> bool:
-    return not image_types.is_master(
-        image.header) and image.content_hash not in quarantined_files
+    return image.content_hash not in quarantined_files
 
   metadata = get_metadata(
       predicate_fn=predicate_fn,
@@ -82,40 +81,6 @@ def scatter_spatial_groups() -> Graph:
 def build_regroup_graph() -> Graph:
   return make_graph_from_list(
       [cluster_by_image_center, scatter_spatial_groups, identify_mosaics])
-
-
-@ray.remote
-def store_targets(ancestor_results: list[Any]) -> None:
-  context.targets = ancestor_results[0]
-  print(f'### store_targets: Stored {len(context.targets)} targets')
-
-
-@ray.remote
-def store_mosaics(ancestor_results: list[Any]) -> None:
-  context.mosaics = ancestor_results[0]
-  print(f'### store_mosaics: Stored {len(context.mosaics)} mosaics')
-
-
-# TODO: Move this somewhere more appropriate.
-@ray.remote
-def apply_settings(ancestor_results: list[CompositeStack]) -> CompositeStack:
-  stack = ancestor_results[0]
-  if stack is None:
-    return None
-
-  print(f'### apply_settings for stack {stack}')
-  assert isinstance(stack,
-                    CompositeStack), f'Object {stack} is not a CompositeStack'
-
-  new_contents = {}
-  for substack in stack.contents.values():
-    settings_key = ('stack_settings', substack.content_hash)
-    settings = context[settings_key] or {}
-    dependencies = substack.dependencies | settings
-    new_substack = replace(substack, dependencies=dependencies)
-    new_contents[new_substack.content_hash] = new_substack
-
-  return replace(stack, contents=new_contents)
 
 
 @ray.remote

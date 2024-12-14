@@ -87,7 +87,7 @@ def associate_with_stack(stacks: list[CompositeStack]) -> list[CompositeStack]:
     cal_stacks = context.calibration_stacks
 
     print(f'### associate_with_stack {len(cal_stacks)} cal stacks '
-          f'for stack {stack}')
+          f'with stack {stack}')
     assert isinstance(
         stack, CompositeStack
     ), f'### Object {stack} of type {type(stack)} is not CompositeStack'
