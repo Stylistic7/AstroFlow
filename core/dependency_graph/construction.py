@@ -8,8 +8,8 @@ from dependency_graph import Graph, Node, TaskDescriptor
 
 
 @ray.remote
-def list_task_done(ancestor_results: list[Any]) -> Any:
-  return ancestor_results[0]
+def list_task_done(x: Any) -> Any:
+  return x
 
 
 def make_graph_from_list(tasks: list[TaskDescriptor]) -> Graph:

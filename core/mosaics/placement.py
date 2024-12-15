@@ -9,6 +9,7 @@ from itertools import product
 from pathlib import Path
 from typing import Any
 import structlog
+import astropy.io.fits as pyfits  # type: ignore
 
 from plate_solving import solve_field
 from artifacts.decorators import saves_artifacts
@@ -21,6 +22,7 @@ from profiling import track_performance
 from previews import QualityLevel
 from mosaics.types import MosaicHash
 from mosaics.classes import Viewbox
+from mosaics.types import TileIndices
 from stacks.types import StackHash
 from dependency_graph.logging import capture_logs
 from dependency_graph.astroflow_node import AstroFlowNode
@@ -107,7 +109,8 @@ def _trim_image(projected_image):
 # TODO: Differentiate the runtime of this function in subframe and master
 # modes.
 @AstroFlowNode(memory=_MEMORY_REQUIREMENT)
-def place_image(mode: QualityLevel, input_artifact: Artifact,
+def place_image(mode: QualityLevel, mosaic_id: MosaicHash,
+                tile_indices: TileIndices, input_artifact: Artifact,
                 viewbox: Viewbox) -> list[Artifact]:
   # TODO: The subframes need to be calibrated before being placed.
   image = read_artifact_image(input_artifact)
@@ -160,4 +163,17 @@ def place_image(mode: QualityLevel, input_artifact: Artifact,
   log.info(
       f'### projected_image count nonzero {np.count_nonzero(projected_image)}')
 
-  return _trim_image(projected_image)
+  # TODO: Don't keep two copies of the huge image
+  # projected_image = _trim_image(projected_image)
+
+  if mode == QualityLevel.SUBFRAME:
+    return projected_image
+  elif mode == QualityLevel.MASTER:
+    tile_indices_str = '_'.join(str(i) for i in tile_indices)
+    filename = Path(context.output_dir) / Path(
+        f'placed_image_{mosaic_id}_{tile_indices_str}.fits')
+    hdu = pyfits.PrimaryHDU(projected_image)
+    filename.parent.mkdir(parents=True, exist_ok=True)
+    hdu.writeto(str(filename), overwrite=True)
+    print(f'### Wrote filename {filename}')
+    return filename

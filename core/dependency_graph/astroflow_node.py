@@ -37,10 +37,12 @@ def AstroFlowNode(resources=None, memory=None):
     def _store_result(result, content_hash):
       key = (fn.__name__, content_hash)
       context[key] = result
+      print(f'### stored result with key {key}')
 
       if isinstance(result, Path):
         with pyfits.open(str(result), mode='update', mmap=False) as fits:
           fits[0].header['CONTHASH'] = content_hash
+        print(f'### Updated filename {result} with content hash {content_hash}')
 
     @ray.remote(scheduling_strategy="SPREAD",
                 resources=resources,

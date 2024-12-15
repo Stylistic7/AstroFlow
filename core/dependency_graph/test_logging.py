@@ -42,7 +42,7 @@ def process(item: T) -> T:
 
 @ray.remote
 @capture_logs
-def gather(ancestor_results: list[int]) -> int:
+def gather(*ancestor_results: list[int]) -> int:
   result = sum(ancestor_results)
   log.info(f'gather result {result}')
   return result

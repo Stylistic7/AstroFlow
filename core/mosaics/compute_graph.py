@@ -13,7 +13,7 @@ from mosaics.types import MosaicHash
 from mosaics.classes import Panel
 from mosaics.merge_ops import make_merge_ops
 from mosaics.viewbox import compute_mosaic_viewbox
-from mosaics.placement import mosaic_by_coordinates, mosaic_by_coordinates_artifacts
+from mosaics.placement import place_image
 from mosaics.types import TileIndices
 from stacks.post_process import post_process_stack_artifacts
 from stacks.compute_graph import build_stack_subgraph
@@ -178,11 +178,9 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic_id: MosaicHash,
   return graph
 
 
-def merge_graph_done_artifacts(
-    mode: QualityLevel,
-    mosaic_id: MosaicHash,
-    filter: str,
-    ancestor_results: list[list[Artifact]] | None = None) -> list[Artifact]:
+def merge_graph_done_artifacts(mode: QualityLevel, mosaic_id: MosaicHash,
+                               filter: str,
+                               final_artifact: Artifact) -> list[Artifact]:
   mosaic = context.mosaics[mosaic_id]
   key = ('mosaic_thumbnail_image', mode, mosaic_id, filter)
 
@@ -206,12 +204,9 @@ def merge_graph_done_artifacts(
 @ray.remote
 @saves_artifacts(merge_graph_done_artifacts)
 def merge_graph_done(mode: QualityLevel, mosaic_id: MosaicHash, filter: str,
-                     ancestor_results: list[list[Artifact]]) -> list[Artifact]:
+                     final_artifact: Artifact) -> list[Artifact]:
   mosaic = context.mosaics[mosaic_id]
 
-  assert type(ancestor_results) is list
-  assert len(ancestor_results) == 1
-  final_artifact = ancestor_results[0][0]
   assert isinstance(
       final_artifact,
       (FileArtifact,
@@ -220,7 +215,7 @@ def merge_graph_done(mode: QualityLevel, mosaic_id: MosaicHash, filter: str,
         f'final_artifact is {final_artifact}')
 
   output_artifacts = merge_graph_done_artifacts(mode, mosaic_id, filter,
-                                                ancestor_results)
+                                                final_artifact)
 
   # TODO: This stuff should be standardized and put into the @saves_artifacts
   # decorator.

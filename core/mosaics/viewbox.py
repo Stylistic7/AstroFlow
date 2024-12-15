@@ -17,7 +17,14 @@ from mosaics.types import MosaicHash
 from dependency_graph.astroflow_node import AstroFlowNode
 
 
-def _compute_viewbox(mosaic: Mosaic) -> Viewbox:
+# TODO: The viewbox should include the sampling resolution, too.
+# TODO: Maybe unify the storage and retrieval of artifacts that arent'
+# images, e.g. arbitrary Python objects.
+@AstroFlowNode()
+def compute_mosaic_viewbox(mosaic_id: MosaicHash) -> list[Artifact]:
+  print(f'### Entering compute_mosaic_viewbox for mosaic_id {mosaic_id}')
+  mosaic = context.mosaics[mosaic_id]
+
   # TODO: Put this in the UI somewhere.
   proj = mercator.MercatorProjection()
 
@@ -29,31 +36,3 @@ def _compute_viewbox(mosaic: Mosaic) -> Viewbox:
                  y_min=y_min,
                  x_span=x_span,
                  y_span=y_span)
-
-
-# def compute_mosaic_viewbox_artifacts(mode: QualityLevel,
-#                                      mosaic_id: MosaicHash) -> list[Artifact]:
-#   mosaic = context.mosaics[mosaic_id]
-#   viewbox = _compute_viewbox(mosaic)
-#   content_hash = hash_list([mosaic.content_hash, hash_string(repr(viewbox))])
-#   return [CacheArtifact(('mosaic_viewbox', mode, mosaic_id), content_hash)]
-
-
-# TODO: The viewbox should include the sampling resolution, too.
-# TODO: Maybe unify the storage and retrieval of artifacts that arent'
-# images, e.g. arbitrary Python objects.
-# @ray.remote
-# @saves_artifacts(compute_mosaic_viewbox_artifacts)
-@AstroFlowNode()
-def compute_mosaic_viewbox(mode: QualityLevel,
-                           mosaic_id: MosaicHash) -> list[Artifact]:
-  print(f'### Entering compute_mosaic_viewbox for mosaic_id {mosaic_id}')
-  mosaic = context.mosaics[mosaic_id]
-  # artifacts = compute_mosaic_viewbox_artifacts(mode, mosaic_id)
-  # artifact = next(iter(artifacts))
-  # assert isinstance(artifact, CacheArtifact)
-  # key = artifact.key
-  # context[key] = _compute_viewbox(mosaic)
-  # print(f'### Wrote key {key}')
-  # return artifacts
-  return _compute_viewbox(mosaic)

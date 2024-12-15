@@ -7,6 +7,7 @@ import ray
 from context import context, get_cache
 import numpy as np
 from spherical_geometry.polygon import SingleSphericalPolygon  # type: ignore
+from pathlib import Path
 
 from stacks.types import StackHash
 from stacks.simple_stack import SimpleStack
@@ -24,6 +25,7 @@ from previews.types import QualityLevel
 from artifacts import CacheArtifact, FileArtifact
 from compute_graph.compute_graph import load_metadata
 from mosaics.viewbox import compute_mosaic_viewbox, Viewbox
+from mosaics.types import TileIndices
 
 
 class TestPlacement(unittest.TestCase):
@@ -44,20 +46,27 @@ class TestPlacement(unittest.TestCase):
     print('### metadata.keys()', context.metadata.keys())
     print('### mosaics.keys()', context.mosaics.keys())
 
-    mode = QualityLevel.MASTER
     mosaic_id = 'b1c2c11588a866ac'
     filter = 'H'
     stack_id = '2c71f4db63b27773'
     content_hash = '187b447aad352e0f'
+    tile_indices = TileIndices((0, 0))
     input_artifact = FileArtifact(
         'testdata/Stacks/IC1318/masters/master_light_IC1318_RA_306.20_DEC_35.00_ZWO ASI6200MM Pro_2.21aspp_1.55deg_H_187b447aad352e0f.xisf',
         content_hash)
 
-    log, viewbox = ray.get(compute_mosaic_viewbox.remote(mode, mosaic_id))
+    log, viewbox = ray.get(compute_mosaic_viewbox.remote(mosaic_id))
     self.assertTrue(isinstance(viewbox, Viewbox))
 
-    log, image = ray.get(place_image.remote(mode, input_artifact, viewbox))
-    self.assertTrue(isinstance(image, np.ndarray))
+    log, result = ray.get(
+        place_image.remote(QualityLevel.SUBFRAME, mosaic_id, tile_indices,
+                           input_artifact, viewbox))
+    self.assertTrue(isinstance(result, np.ndarray))
+
+    log, result = ray.get(
+        place_image.remote(QualityLevel.MASTER, mosaic_id, tile_indices,
+                           input_artifact, viewbox))
+    self.assertTrue(isinstance(result, Path))
 
 
 if __name__ == "__main__":
