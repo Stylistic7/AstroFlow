@@ -98,17 +98,19 @@ def run_graph(graph: Graph,
     try:
       if len(sig.parameters) == len(node.args):
         if debug:
-          print(
-              f'### Calling task {node.task._function.__name__} '
-              f'with signature {str(sig)} with only {len(results)} immediate args'
-          )
+          immediate_types = [type(x) for x in node.args]
+          print(f'### Calling task {node.task._function.__name__} '
+                f'with signature {str(sig)} with immediate args '
+                f'of types {immediate_types} and no ancestor args')
         return node.task.remote(*node.args)
       else:
         if debug:
-          print(
-              f'### Calling task {node.task._function.__name__} '
-              f'with signature {str(sig)} with {len(node.args)} immediate args '
-              f'and {len(results)} positional ancestor args')
+          immediate_types = [type(x) for x in node.args]
+          ancestor_types = [type(x) for x in results]
+          print(f'### Calling task {node.task._function.__name__} '
+                f'with signature {str(sig)} with immediate args of '
+                f'types {immediate_types} and ancestor args with '
+                f'types {ancestor_types}')
         return node.task.remote(*node.args, *results)
     except Exception as e:
       print(f'Received exception while trying to call '
