@@ -1,4 +1,4 @@
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, fields
 from typing import Any, Optional
 
 import numpy as np
@@ -6,7 +6,7 @@ from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon 
 import astropy  # type: ignore
 
 import units
-from hashing import hash_list, hash_string
+from hashing import hash_list, hash_string, make_hashable
 from context import context
 from stacks.simple_stack import SimpleStack
 from stacks.imaging_attributes import ImagingAttributes
@@ -149,6 +149,10 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
             f'Integration {self.integration_s} s, '
             f'Filter {self.filter}, '
             f'Temp {self.mean_temperature:.02f} degC)')
+
+  def __hash__(self):
+    return hash(
+        tuple(make_hashable(getattr(self, f.name)) for f in fields(self)))
 
   def __eq__(self, other: object) -> bool:
     if not isinstance(other, CompositeStack):
