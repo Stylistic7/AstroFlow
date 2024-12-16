@@ -119,7 +119,7 @@ class DuplicateFileException(Exception):
 
 
 @ray.remote(scheduling_strategy="SPREAD", max_retries=5, retry_exceptions=True)
-def compute_image_metadata(filename: Path) -> None:
+def compute_image_metadata(filename: Path) -> Path:
   # TODO: Make sure this code doesn't actually repeatedly read the image across
   # the network. It should hit the node's filesystem cache.
   try:
@@ -132,7 +132,7 @@ def compute_image_metadata(filename: Path) -> None:
       if prev_filename == filename:
         # The given input file just points to an existing known file; nothing
         # needs to be done.
-        return
+        return filename
       else:
         if os.path.exists(prev_filename):
           raise DuplicateFileException(f'{prev_filename} and {filename}')
@@ -145,7 +145,7 @@ def compute_image_metadata(filename: Path) -> None:
                                    header=prev_metadata.header,
                                    plate_solution=prev_metadata.plate_solution)
           context[key] = metadata
-          return
+          return filename
 
     header = read_header(filename)
     if image_types.is_light_frame(header):
@@ -163,7 +163,7 @@ def compute_image_metadata(filename: Path) -> None:
     context.set(key, metadata, write_mode=WriteMode.DISK_ONLY)
     print(f'### Wrote key {key}')
 
-    return
+    return filename
 
   except Exception as e:
     print(f'compute_image_metadata() failed for file {filename}, '
