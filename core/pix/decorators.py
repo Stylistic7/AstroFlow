@@ -62,7 +62,10 @@ def PixInsight(dry_run: bool = False) -> Callable[[PixInsightFn], PixInsightFn]:
     @functools.wraps(func)
     def wrapper(filenames: FilenameList, *args: Any,
                 **kwargs: Any) -> ImageList:
-      print(f'### Entering wrapper, filenames {filenames} '
+      func_name = cast(Callable, func).__name__
+
+      filenames = [str(f) for f in filenames]
+      print(f'### Entering wrapper for {func_name}, filenames {filenames} '
             f'args {args} kwargs {kwargs}')
 
       # TODO: The content hash of images produced by this PixInsight function
@@ -101,7 +104,6 @@ def PixInsight(dry_run: bool = False) -> Callable[[PixInsightFn], PixInsightFn]:
       images = call_with_context(OpenImages, filenames)
 
       # Call the decorated PixInsight function.
-      func_name = cast(Callable, func).__name__
       print(f'### Calling PixInsight function {func_name}')
 
       results = call_with_context(func, images, *args, **kwargs)
