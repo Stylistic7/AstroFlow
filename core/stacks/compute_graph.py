@@ -16,21 +16,20 @@ def build_stack_subgraph(stack_id: StackHash) -> Graph:
   stacks = context.stacks
   stack = stacks[stack_id]
 
-  stack_task = (stack_files, stack_id)
+  stack_task = (stack_files, stack)
   stacking_metadata_task = Node(compute_image_metadata,
                                 name=f'stacking_{stack_id}')
-  post_process_task = (post_process_stack, stack_id)
   post_process_metadata_task = Node(compute_image_metadata,
                                     name=f'post_process_{stack_id}')
 
   graph = Graph({})
-  graph[stack_task] = {(stack_files, d)
+  graph[stack_task] = {(stack_files, stacks[d])
                        for substack in stack.contents.values()
                        for d in substack.dependencies.values()
                        if stacks[d].image_type != 'light'}
   graph[stacking_metadata_task] = {stack_task}
-  graph[post_process_task] = {stacking_metadata_task}
-  graph[post_process_metadata_task] = {post_process_task}
+  graph[post_process_stack] = {stacking_metadata_task}
+  graph[post_process_metadata_task] = {post_process_stack}
   graph[gather_compute_image_metadata] = {post_process_metadata_task}
 
   return graph

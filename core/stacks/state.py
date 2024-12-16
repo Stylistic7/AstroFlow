@@ -12,10 +12,8 @@ from profiling import track_performance
 # TODO: Include error messages, exceptions, etc. here to inform the user.
 @ray.remote
 @track_performance
-def update_state(ancestor_results: list[Any]) -> CompositeStacksDict:
+def update_state(stacks: CompositeStacksDict) -> CompositeStacksDict:
   print('### Entering update_state')
-  stacks = ancestor_results[0]
-
   output_stacks = CompositeStacksDict()
   for stack_id, stack in stacks.items():
     if type(stack) is not CompositeStack:

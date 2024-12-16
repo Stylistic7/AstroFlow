@@ -11,7 +11,7 @@ from typing import Any
 
 from stacks.artifacts import output_filename, stack_files_artifacts
 from stacks.simple_stack import SimpleStack
-from stacks.composite_stack import CompositeStack
+from stacks.composite_stack import Stack, CompositeStack
 from stacks.types import StackHash
 from artifacts.decorators import saves_artifacts
 from artifacts import FileArtifact, Artifact
@@ -22,6 +22,7 @@ import file_io
 from metadata.classes import MetadataDict
 from metadata.actor import get_metadata
 from profiling import track_performance
+from dependency_graph.astroflow_node import AstroFlowNode
 
 
 def _symlink_frames(filenames: list[str], dest_path: str) -> None:
@@ -61,15 +62,9 @@ def _run_wbpp(unused: ImageList, *args: Any, **kwargs: Any) -> Any:
 
 
 # TODO: This function should call _setup_simple_stack for its leaves.
-def _setup_composite_stack(stack_id: StackHash,
+def _setup_composite_stack(stack: Stack,
                            tmp_dir: str) -> tuple[str | None, int]:
-  quarantined_stacks = context.quarantined_stacks or set()
-  if stack_id in quarantined_stacks:
-    return None, 0
-
   metadata = context.metadata
-  stacks = context.stacks
-  stack = stacks[stack_id]
   hashes = stack.all_frames()
 
   first_filename = None
@@ -103,14 +98,9 @@ def _setup_composite_stack(stack_id: StackHash,
   return first_filename, num_frames
 
 
-def _setup_simple_stack(stack_id: StackHash,
-                        tmp_dir: str) -> tuple[str | None, int]:
-  quarantined_stacks = context.quarantined_stacks or set()
-  if stack_id in quarantined_stacks:
-    return None, 0
-
+def _setup_simple_stack(stack: Stack, tmp_dir: str) -> tuple[str | None, int]:
   # TODO: Get rid of this get_metadata() call.
-  stack = context.stacks[stack_id]
+  # stack = context.stacks[stack_id]
   filenames = get_metadata(stack.frames, transform_fn=lambda i: i.filename)
   _symlink_frames(filenames, tmp_dir)
 
@@ -122,42 +112,26 @@ def _setup_simple_stack(stack_id: StackHash,
 #
 # TODO: When a stack fails, keep note of it so it won't be retried for the
 # exact same inputs again.
-@ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
-@saves_artifacts(stack_files_artifacts)
-@track_performance
-def stack_files(stack_id: StackHash) -> list[Artifact]:
+@AstroFlowNode(resources={'PixInsight': 1})
+def stack_files(stack: Stack) -> Path:
   assert context.output_dir
-
-  stacks = context.stacks
-  stack = stacks[stack_id]
   print(f'### Entering stack_files for {stack}')
 
-  metadata = {
-      'IMAGETYP': f'Master {stack.image_type}',
-      'CONTHASH': stack.content_hash
-  }
+  metadata = {'IMAGETYP': f'Master {stack.image_type}'}
 
   dest_filename = output_filename(stack, context.output_dir)
-
-  # If the stack has been quarantined, don't do anything.
-  quarantined_stacks = context.quarantined_stacks or set()
-  if stack_id in quarantined_stacks:
-    print(f'### Refusing to stack stack {stack_id} '
-          f'because it has been quarantined')
-    return [FileArtifact(dest_filename, stack.content_hash)]
-
   os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
 
   with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
     if type(stack) is SimpleStack:
-      first_filename, num_frames = _setup_simple_stack(stack_id, tmp_dir)
+      first_filename, num_frames = _setup_simple_stack(stack, tmp_dir)
     elif type(stack) is CompositeStack:
-      first_filename, num_frames = _setup_composite_stack(stack_id, tmp_dir)
+      first_filename, num_frames = _setup_composite_stack(stack, tmp_dir)
 
     if num_frames < 3:
-      print(f'### Cannot stack {stack_id} because it contains only '
+      print(f'### Cannot stack {stack} because it contains only '
             f'{num_frames} selected frames')
-      return [FileArtifact(dest_filename, stack.content_hash)]
+      return dest_filename
 
     if context.mock_stacking:
       assert first_filename is not None
@@ -168,7 +142,7 @@ def stack_files(stack_id: StackHash) -> list[Artifact]:
       print(f'### Mocked stacking, converted filename {first_filename} to '
             f'filename {dest_filename} with metadata {metadata}')
 
-      return [FileArtifact(dest_filename, stack.content_hash)]
+      return dest_filename
 
     print(f'### Running _run_wbpp for stack {stack}')
     _run_wbpp([], dir=tmp_dir, outputDirectory=tmp_dir)
@@ -188,4 +162,4 @@ def stack_files(stack_id: StackHash) -> list[Artifact]:
     print(f'last modified WBPP master {filename} -> {dest_filename}')
     file_io.xisf_file_io.add_xisf_metadata(filename, dest_filename, metadata)
 
-    return [FileArtifact(dest_filename, stack.content_hash)]
+    return dest_filename

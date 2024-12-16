@@ -69,7 +69,7 @@ class TestStacking(unittest.TestCase):
     self.assertEqual(len(context.targets), 1)
 
     for stack in context.stacks.values():
-      print(f'### stack {stack}')
+      print(f'### stack {stack} type {type(stack)}')
 
     context.shopping_cart = [('stack', 'e1f7d909ac125ebe')]
 
