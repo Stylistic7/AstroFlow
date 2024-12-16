@@ -9,6 +9,7 @@ import astropy.io.fits as pyfits  # type: ignore
 from context import context
 from artifacts import FileArtifact, artifact_exists
 from hashing import hash_list
+from dependency_graph import Graph
 from dependency_graph.logging import capture_logs
 from profiling import track_performance
 from file_io.xisf_file_io import add_xisf_metadata
@@ -16,6 +17,7 @@ from file_io.xisf_file_io import add_xisf_metadata
 log = structlog.get_logger()
 
 
+# TODO: Hide logs behind debug flag.
 def AstroFlowNode(resources=None, memory=None):
 
   if resources == None:
@@ -36,6 +38,9 @@ def AstroFlowNode(resources=None, memory=None):
         return True
 
     def _store_result(result, content_hash):
+      if isinstance(result, Graph):
+        return
+
       key = (fn.__name__, content_hash)
       context[key] = result
       print(f'### stored result {type(result)} with key {key}')

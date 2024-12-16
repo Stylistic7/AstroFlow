@@ -9,7 +9,6 @@ def hash_string(x: Any) -> str:
 
 
 def hash_list(x: Any) -> str:
-  # return xxhash.xxh64(str(sorted(set(iter(x))))).hexdigest()
   return xxhash.xxh64(str(list(x))).hexdigest()
 
 
