@@ -9,19 +9,15 @@ import shutil
 import astropy.io.fits as pyfits  # type: ignore
 from typing import Any
 
-from stacks.artifacts import output_filename, stack_files_artifacts
+from stacks.artifacts import output_filename
 from stacks.simple_stack import SimpleStack
 from stacks.composite_stack import Stack, CompositeStack
-from stacks.types import StackHash
-from artifacts.decorators import saves_artifacts
-from artifacts import FileArtifact, Artifact
 from context import context
 from pix import PixInsight, ImageList
 from pix.tasks import WeightedBatchPreprocessing
 import file_io
 from metadata.classes import MetadataDict
 from metadata.actor import get_metadata
-from profiling import track_performance
 from dependency_graph.astroflow_node import AstroFlowNode
 
 
@@ -65,6 +61,7 @@ def _run_wbpp(unused: ImageList, *args: Any, **kwargs: Any) -> Any:
 def _setup_composite_stack(stack: Stack,
                            tmp_dir: str) -> tuple[str | None, int]:
   metadata = context.metadata
+  stacks = context.stacks
   hashes = stack.all_frames()
 
   first_filename = None
@@ -84,14 +81,9 @@ def _setup_composite_stack(stack: Stack,
     _copy_frames_with_plate_solution(run_metadata, run_dir)
     num_frames += len(hashes)
 
-    def get_dependency_filename(stack_id: StackHash) -> str:
-      artifact = stack_files_artifacts(stack_id)[0]
-      assert isinstance(artifact, FileArtifact)
-      return artifact.filename
-
     # Add any dependent stacks (e.g. calibration stacks).
     dependendency_filenames = [
-        get_dependency_filename(d) for d in substack.dependencies.values()
+        output_filename(stacks[d]) for d in substack.dependencies.values()
     ]
     _symlink_frames(dependendency_filenames, run_dir)
 
@@ -100,7 +92,6 @@ def _setup_composite_stack(stack: Stack,
 
 def _setup_simple_stack(stack: Stack, tmp_dir: str) -> tuple[str | None, int]:
   # TODO: Get rid of this get_metadata() call.
-  # stack = context.stacks[stack_id]
   filenames = get_metadata(stack.frames, transform_fn=lambda i: i.filename)
   _symlink_frames(filenames, tmp_dir)
 

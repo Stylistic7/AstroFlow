@@ -3,8 +3,9 @@ from dataclasses import replace
 from typing import Any
 
 from context import context
+from stacks.artifacts import output_filename
 from stacks.composite_stack import CompositeStack, CompositeStacksDict
-from stacks import stack_files_artifacts, post_process_stack_artifacts
+from stacks import post_process_stack_artifacts
 from artifacts import artifact_exists
 from profiling import track_performance
 
@@ -25,9 +26,7 @@ def update_state(stacks: CompositeStacksDict) -> CompositeStacksDict:
             'num_frames':
                 len(stack.all_frames()),
             'stack_files':
-                all(
-                    artifact_exists(a) for a in stack_files_artifacts(stack_id)
-                ),
+                all(artifact_exists(a) for a in output_filename(stack_id)),
             'post_process_stack':
                 all(
                     artifact_exists(a)

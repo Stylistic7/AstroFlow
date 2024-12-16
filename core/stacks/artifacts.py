@@ -10,7 +10,10 @@ from stacks.types import StackHash
 
 
 def output_filename(stack: SimpleStack | CompositeStack,
-                    dest_path: str) -> Path:
+                    dest_path: str | None = None) -> Path:
+  if dest_path is None:
+    dest_path = context.output_dir
+
   if isinstance(stack, SimpleStack) and stack.image_type == 'bias':
     output_dir = os.path.join(dest_path, 'Stacks', 'Calibration', 'masters')
     return Path(
@@ -42,9 +45,3 @@ def output_filename(stack: SimpleStack | CompositeStack,
         ))
 
   assert False, f'unknown image_type {stack.image_type}'
-
-
-def stack_files_artifacts(stack_id: StackHash) -> list[Artifact]:
-  stack = context.stacks[stack_id]
-  dest_filename = output_filename(stack, context.output_dir)
-  return [FileArtifact(dest_filename, stack.content_hash)]
