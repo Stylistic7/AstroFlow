@@ -79,22 +79,23 @@ class ContextActor:
     else:
       return ray.put(value)
 
-  def set(self, key: Key, value: Any, flush: bool) -> None:
+  def set(self, key: Key, value: Any, write_mode: WriteMode) -> None:
     assert type(value) is list
     assert len(value) == 1
     value = value[0]
     assert type(value) is ray.ObjectRef, f'type(value) is {type(value)}'
 
-    if flush:
+    if write_mode == WriteMode.DISK_ONLY:
       if key in self.ref_dict:
         del self.ref_dict[key]
     else:
       self.ref_dict[key] = value
 
-    self.cache[key] = ray.get(value)
+    if write_mode != WriteMode.MEMORY_ONLY:
+      self.cache[key] = ray.get(value)
 
   def contains(self, key: Key) -> bool:
-    return key in self.cache
+    return key in self.cache or key in self.ref_dict
 
   def flush(self, key: Key) -> None:
     if key in self.ref_dict:
@@ -155,7 +156,7 @@ class Context:
   def get(self,
           key: Key,
           default_value: Any = None,
-          keep_in_memory: bool = True) -> Any:
+          keep_in_memory: bool = False) -> Any:
     actor = ray.get_actor('context', namespace=_get_namespace())
     maybe_ref = ray.get(actor.get.remote(key, default_value, keep_in_memory))
     if maybe_ref:

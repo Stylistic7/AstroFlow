@@ -64,8 +64,13 @@ def compute_mosaic_viewbox(mosaic_id: MosaicHash,
 
 
 @AstroFlowNode()
-def create_image() -> np.ndarray:
+def create_small_image() -> np.ndarray:
   return np.ones((100, 100))
+
+
+@AstroFlowNode()
+def consume_small_image(image) -> Any:
+  return image.shape
 
 
 @AstroFlowNode()
@@ -106,9 +111,20 @@ def maybe_run_dynamic_graph(should_run: bool) -> Graph:
 def build_place_image_compute_graph() -> Graph:
   return Graph({
       place_image: [
-          create_image, (compute_mosaic_viewbox, 'abc123', QualityLevel.MASTER)
+          create_small_image,
+          (compute_mosaic_viewbox, 'abc123', QualityLevel.MASTER)
       ]
   })
+
+
+@AstroFlowNode(return_key=True)
+def create_large_image(shape: tuple[int]) -> Any:
+  return np.ones(shape)
+
+
+@AstroFlowNode()
+def consume_large_image(key) -> Any:
+  return context[key].shape
 
 
 @AstroFlowNode()
@@ -124,7 +140,7 @@ def associate_calibration(stack: CompositeStack) -> CompositeStack:
   return replace(stack, contents=new_contents)
 
 
-class TestDecorators(unittest.TestCase):
+class TestAstroFlowNode(unittest.TestCase):
 
   def setUp(self) -> None:
     self.input_dir_obj, self.output_dir_obj = make_test_context()
@@ -216,3 +232,29 @@ class TestDecorators(unittest.TestCase):
         context.contains(('associate_calibration', 'b832696d8732f5d6')))
     self.assertEqual(results.num_nodes_run, 1)
     self.assertEqual(context.associate_calibration_runs, 1)
+
+  def test_small_image(self) -> None:
+    graph = Graph({consume_small_image: {create_small_image}})
+    results, _ = run_graph(graph, debug=True)
+
+    self.assertEqual(results[consume_small_image], (100, 100))
+
+    num_matches = 0
+    for k in context.get_ref_dict().keys():
+      if isinstance(k, tuple) and k[0] == 'create_small_image':
+        num_matches += 1
+
+    self.assertEqual(num_matches, 1)
+
+  def test_large_image(self) -> None:
+    graph = Graph({consume_large_image: {(create_large_image, (2000, 1000))}})
+    results, _ = run_graph(graph, debug=True)
+
+    self.assertEqual(results[consume_large_image], (2000, 1000))
+
+    num_matches = 0
+    for k in context.get_ref_dict().keys():
+      if isinstance(k, tuple) and k[0] == 'create_large_image':
+        num_matches += 1
+
+    self.assertEqual(num_matches, 0)
