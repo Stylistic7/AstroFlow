@@ -11,6 +11,7 @@ from artifacts import FileArtifact, artifact_exists
 from hashing import hash_list
 from dependency_graph.logging import capture_logs
 from profiling import track_performance
+from file_io.xisf_file_io import add_xisf_metadata
 
 log = structlog.get_logger()
 
@@ -37,12 +38,19 @@ def AstroFlowNode(resources=None, memory=None):
     def _store_result(result, content_hash):
       key = (fn.__name__, content_hash)
       context[key] = result
-      print(f'### stored result with key {key}')
+      print(f'### stored result {type(result)} with key {key}')
 
+      # TODO: Clean this up.
       if isinstance(result, Path):
-        with pyfits.open(str(result), mode='update', mmap=False) as fits:
-          fits[0].header['CONTHASH'] = content_hash
-        print(f'### Updated filename {result} with content hash {content_hash}')
+        if result.suffix.lower() in ['.xisf']:
+          add_xisf_metadata(result, result, {'CONTHASH': content_hash})
+          print(f'### Updated XISF filename {result} with '
+                f'content hash {content_hash}')
+        elif result.suffix.lower() in ['.fit', '.fits']:
+          with pyfits.open(str(result), mode='update', mmap=False) as fits:
+            fits[0].header['CONTHASH'] = content_hash
+          print(f'### Updated FITS filename {result} with '
+                f'content hash {content_hash}')
 
     @ray.remote(scheduling_strategy="SPREAD",
                 resources=resources,
