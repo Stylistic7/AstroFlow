@@ -40,7 +40,12 @@ class Node():
             self.args == other.args)
 
   def __hash__(self) -> int:
-    return hash((self.task, self.name, self.priority, self.args))
+    return hash((self.task._function.__module__, self.task._function.__name__,
+                 self.name, self.priority, self.args))
+
+  def __str__(self):
+    return (f"{self.task._function.__module__}.{self.task._function.__name__}"
+            f"{str(self.args)} name='{self.name}' priority={self.priority}")
 
 
 RemoteFunctionTuple: TypeAlias = Union[tuple[GenericRemoteFunction,
@@ -75,7 +80,21 @@ class Graph(dict[TaskDescriptor, Iterable[TaskDescriptor]]):
 
 
 class CanonicalGraph(dict[Node, list[Node]]):
-  pass
+
+  def __eq__(self, other):
+    if len(self) != len(other):
+      return False
+
+    for k in self.keys():
+      if k not in other:
+        return False
+      if type(self[k]) != type(other[k]):
+        return False
+      for vs, vo in zip(self[k], other[k]):
+        if vs != vo:
+          return False
+
+    return True
 
 
 # TODO: Maybe support nodes with one ancestor, like this {done: process},

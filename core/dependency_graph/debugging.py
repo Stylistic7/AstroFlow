@@ -20,7 +20,18 @@ def _tuple_values(tup: tuple) -> str:
 def node_to_string(node: Node) -> str:
   node = canonicalize_node(node)
   assert isinstance(node.task, RemoteFunction)
-  return f'({node.task._function.__name__}, {_tuple_values(node.args)})'
+
+  if node.name:
+    string = f'Node({node.task._function.__name__}'
+    if node.args:
+      string += f', {_tuple_values(node.args)}'
+    string += f", name='{node.name}')"
+    return string
+
+  string = f'({node.task._function.__name__}'
+  if node.args:
+    string += f', {_tuple_values(node.args)})'
+  return string
 
 
 def node_to_string_tuple(node: Node) -> str:
