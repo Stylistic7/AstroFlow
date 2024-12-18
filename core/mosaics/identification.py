@@ -241,6 +241,8 @@ def find_strips(target_ids: list[TargetHash],
     for i, strip in enumerate(strips):
       print(f'### Strip {i} is {strip}')
 
+  # TODO: Maybe use this same algorithm to order the strips themselves to make
+  # sure the output strips can be merged with PhotometricMergeMosaic.
   def order_strip(strip):
     strip_length = len(strip)
     strip = list(sorted(strip, key=lambda t: targets[t].center[0]))
@@ -402,6 +404,7 @@ def identify_mosaics(debug: bool = False) -> dict[MosaicHash, Mosaic]:
                              content_hash=content_hash,
                              target_ids=target_ids,
                              tile_indices=tile_indices,
+                             strips=strips,
                              oldest_date=oldest_date,
                              newest_date=newest_date,
                              center=center,
