@@ -27,10 +27,7 @@ def _post_process_target(images: ImageList) -> ImageList:
 # the post-processing when a file with that hash already exists.
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
 def post_process_target(target_id: TargetHash,
-                        ancestor_results: list[Any]) -> list[Artifact]:
-  print(
-      f'post_process_target, target_id {target_id} ancestor_results {ancestor_results}'
-  )
-  result = _post_process_target(ancestor_results)
+                        images: ImageList) -> list[Artifact]:
+  result = _post_process_target(images)
   print(f'post_process_target, target_id {target_id} returning {result}')
   return result
