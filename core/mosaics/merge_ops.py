@@ -11,6 +11,8 @@ from artifacts import CacheArtifact, FileArtifact, Artifact
 from hashing import hash_list
 from previews import QualityLevel
 from mosaics.types import MosaicHash, Template, TileIndices, Pair
+from mosaics.mosaic import Mosaic
+from dependency_graph.astroflow_node import AstroFlowNode
 
 
 # TODO: Can these types be made more specific?
@@ -36,20 +38,34 @@ def make_pairs(min_index: int, max_index: int,
   return pairs
 
 
-# TODO: Strongly-type this. Panels is a dictionary from tile indices to
-# Panel objects.
+# Ultimately, all the matters here is the output Graph. In the new dependency
+# graph structure, it could be something like this:
 #
-# TODO: Accept an output artifact here, so we can simplify the graphs.
-def make_merge_ops(
-    mode: QualityLevel, mosaic_id: MosaicHash, filter: str,
-    panels: dict[TileIndices, Panel],
-    from_task: dict[Panel, TaskDescriptor]) -> tuple[list[MergeOp], Graph]:
+# def make_merge_graph(mode, mosaic_id, filter, tile_indices, *images):
+#   ...
+#
+# Where the graph is constructed something like this:
+#
+# Graph({(make_merge_graph, mode, mosaic_id, filter, mosaic.tile_indices): [
+#   (post_process_stack, stack_id) for stack_id in mosaic.stack_ids
+# ]})
+
+
+@AstroFlowNode()
+def make_merge_ops(mode: QualityLevel, mosaic: Mosaic, filter: str,
+                   *placed_images: list[Any]) -> Graph:
   graph = Graph()
   merge_ops = []
 
-  print('### make_merge_ops, panels are:')
-  for t, p in panels.items():
-    print(f'### panel {t} => {p}')
+  assert len(mosaic.tile_indices) == len(placed_images)
+  # panels = [
+  #     Panel(tile_indices=t, image=i)
+  #     for t, i in zip(mosaic.tile_indices, placed_images)
+  # ]
+  panels = {
+      t: Panel(tile_indices=t, image=i)
+      for t, i in zip(mosaic.tile_indices, placed_images)
+  }
 
   def make_pair_id(level: int, pair: Pair) -> str:
 
@@ -77,45 +93,43 @@ def make_merge_ops(
         input_1 = panels[pair[1]]
         print(f'### process_pairs input_0 {input_0}')
         print(f'### process_pairs input_1 {input_1}')
-        content_hashes = [panels[p].content_hash for p in pair]
-        print(f'### content_hashes {content_hashes}')
-        content_hash = hash_list(content_hashes)
+        # content_hashes = [panels[p].content_hash for p in pair]
+        # print(f'### content_hashes {content_hashes}')
+        # content_hash = hash_list(content_hashes)
 
-        # TODO: This goes outside the artifacts workflow.
-        output_artifact: Artifact
-        if mode == QualityLevel.SUBFRAME:
-          output_artifact = CacheArtifact(
-              ('merged_images', mode, mosaic_id, filter, pair_id), content_hash)
-        elif mode == QualityLevel.MASTER:
-          mosaic = context.mosaics[mosaic_id]
-          filename = os.path.join(context.output_dir, 'Mosaics', mosaic.name,
-                                  f'merged_{mosaic_id}_{filter}_{pair_id}.fit')
-          output_artifact = FileArtifact(filename, content_hash)
+        output_image = "foo.fits"
 
-        output = Panel(tile_indices=tile_indices,
-                       content_hash=content_hash,
-                       input_artifact=output_artifact)
-        merge_op = MergeOp(
-            input_artifacts=[input_0.input_artifact, input_1.input_artifact],
-            output_artifact=output_artifact)
-        merge_task = (merge_images, mode, mosaic_id, input_0.input_artifact,
-                      input_1.input_artifact, output_artifact)
-        from_task[output] = merge_task
+        # if mode == QualityLevel.SUBFRAME:
+        #   output_image = CacheArtifact(
+        #       ('merged_images', mode, mosaic.stable_hash, filter, pair_id),
+        #       mosaic.content_hash)
+        # elif mode == QualityLevel.MASTER:
+        #   output_image = os.path.join(
+        #       context.output_dir, 'Mosaics', mosaic.name,
+        #       f'merged_{mosaic.stable_hash}_{filter}_{pair_id}.fit')
+
+        # TODO: Is there any reason to have both the MergeOps and also the
+        # merge_images tasks in a Graph?
+        output = Panel(tile_indices=tile_indices, image=output_image)
+        merge_op = MergeOp(input_images=[input_0.image, input_1.image],
+                           output_image=output_image)
+        merge_ops.append(merge_op)
+        merge_task = (merge_images, mode, mosaic.stable_hash, input_0.image,
+                      input_1.image, output_image)
         new_panels[tile_indices] = output
         print(f'### making merge op for pair {pair}')
         print(f'### input_0 {input_0}')
         print(f'### input_1 {input_1}')
-        merge_ops.append(merge_op)
-        dependencies = set()
-        if input_0 in from_task:
-          dependencies.add(from_task[input_0])
-        else:
-          print(f'### panel {input_0} was not in from_task')
-        if input_1 in from_task:
-          dependencies.add(from_task[input_1])
-        else:
-          print(f'### panel {input_1} was not in from_task')
-        graph[merge_task] = dependencies
+        # dependencies = set()
+        # if input_0 in from_task:
+        #   dependencies.add(from_task[input_0])
+        # else:
+        #   print(f'### panel {input_0} was not in from_task')
+        # if input_1 in from_task:
+        #   dependencies.add(from_task[input_1])
+        # else:
+        #   print(f'### panel {input_1} was not in from_task')
+        # graph[merge_task] = dependencies
 
   level = 0
   while len(panels) > 1:

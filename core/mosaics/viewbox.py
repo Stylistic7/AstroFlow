@@ -14,16 +14,13 @@ from hashing import hash_list, hash_string
 from mosaics.mosaic import Mosaic
 from previews import QualityLevel
 from mosaics.types import MosaicHash
-from dependency_graph.astroflow_node import AstroFlowNode
 
 
 # TODO: The viewbox should include the sampling resolution, too.
 # TODO: Maybe unify the storage and retrieval of artifacts that arent'
 # images, e.g. arbitrary Python objects.
-@AstroFlowNode()
-def compute_mosaic_viewbox(mosaic_id: MosaicHash) -> list[Artifact]:
-  print(f'### Entering compute_mosaic_viewbox for mosaic_id {mosaic_id}')
-  mosaic = context.mosaics[mosaic_id]
+def compute_mosaic_viewbox(mosaic: Mosaic) -> list[Artifact]:
+  print(f'### Entering compute_mosaic_viewbox for mosaic {Mosaic}')
 
   # TODO: Put this in the UI somewhere.
   proj = mercator.MercatorProjection()

@@ -20,6 +20,7 @@ from artifacts import read_artifact_image, read_artifact_header, write_artifact,
 from hashing import hash_list
 from profiling import track_performance
 from previews import QualityLevel
+from mosaics.mosaic import Mosaic
 from mosaics.types import MosaicHash
 from mosaics.classes import Viewbox
 from mosaics.types import TileIndices
@@ -108,10 +109,10 @@ def _trim_image(projected_image):
 #
 # TODO: Differentiate the runtime of this function in subframe and master
 # modes.
-@AstroFlowNode(memory=_MEMORY_REQUIREMENT)
-def place_image(mode: QualityLevel, mosaic_id: MosaicHash,
-                tile_indices: TileIndices, input_artifact: Artifact,
-                viewbox: Viewbox) -> list[Artifact]:
+@AstroFlowNode(memory=_MEMORY_REQUIREMENT, return_key=True)
+def place_image(mode: QualityLevel, mosaic: Mosaic, tile_indices: TileIndices,
+                viewbox: Viewbox,
+                input_artifact: Artifact) -> np.ndarray | Path:
   # TODO: The subframes need to be calibrated before being placed.
   image = read_artifact_image(input_artifact)
   plate_solution = context.metadata[input_artifact.content_hash].plate_solution
@@ -170,8 +171,8 @@ def place_image(mode: QualityLevel, mosaic_id: MosaicHash,
     return projected_image
   elif mode == QualityLevel.MASTER:
     tile_indices_str = '_'.join(str(i) for i in tile_indices)
-    filename = Path(context.output_dir) / Path(
-        f'placed_image_{mosaic_id}_{tile_indices_str}.fits')
+    filename = Path(context.output_dir) / 'Mosaics' / mosaic.name / Path(
+        f'placed_image_{mosaic.stable_hash}_{tile_indices_str}.fits')
     hdu = pyfits.PrimaryHDU(projected_image)
     filename.parent.mkdir(parents=True, exist_ok=True)
     hdu.writeto(str(filename), overwrite=True)

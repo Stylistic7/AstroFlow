@@ -7,11 +7,13 @@ import unittest
 import astropy.io.fits as pyfits  # type: ignore
 from artifacts import Artifact
 from typing import Any
+from pathlib import Path
 
 from hashing import hash_list
 from testing.test_context import make_test_context
 from .merge_ops import make_merge_ops
 from mosaics.types import TileIndices
+from mosaics.mosaic import Mosaic
 from .classes import MergeOp, Panel
 from artifacts.decorators import saves_artifacts
 from context import context
@@ -40,11 +42,7 @@ def _make_panel(id: str,
                                content_hash=content_hash,
                                filter=filter)
   }
-  return Panel(input_artifact=FileArtifact(filename=filenames[0],
-                                           content_hash=content_hash),
-               content_hash=content_hash,
-               tile_indices=tile_indices,
-               **kwargs)
+  return Panel(tile_indices=tile_indices, image=filenames[0], **kwargs)
 
 
 def _post_process_stack_artifacts(stack_id):
@@ -81,21 +79,39 @@ class TestMergeOps(unittest.TestCase):
 
     left = _make_panel('left', (0, 0))
     right = _make_panel('right', (0, 1))
-    panels = {(0, 0): left, (0, 1): right}
+    # panels = {(0, 0): left, (0, 1): right}
+    placed_images = [Path("placed_left.fits"), Path("placed_right.fits")]
 
-    from_task = {
-        panel: (_post_process_stack, panel.content_hash)
-        for panel in panels.values()
-    }
+    mosaic = Mosaic(name='two_pane',
+                    content_hash='content_abc123',
+                    stable_hash=mosaic_id,
+                    target_ids=None,
+                    tile_indices=[TileIndices((0, 0)),
+                                  TileIndices((0, 1))],
+                    oldest_date=None,
+                    newest_date=None,
+                    center=None,
+                    footprint=None,
+                    projected_footprints=None)
 
-    merge_ops, graph = make_merge_ops(mode, mosaic_id, 'H', panels, from_task)
+    # from_task = {
+    #     panel: (_post_process_stack, panel.content_hash)
+    #     for panel in panels.values()
+    # }
 
-    content_hash = hash_list(['hash_left', 'hash_right'])
-    output_artifact = CacheArtifact(
-        ('merged_images', mode, mosaic_id, 'H', '0__0_0__0_1'), content_hash)
+    logs, (merge_ops, graph) = ray.get(
+        make_merge_ops.remote(mode, mosaic, 'H', *placed_images))
+
+    for merge_op in merge_ops:
+      print(f'### merge_op {merge_op}')
+
+    # content_hash = hash_list(['hash_left', 'hash_right'])
+    # output_artifact = CacheArtifact(
+    #     ('merged_images', mode, mosaic_id, 'H', '0__0_0__0_1'), content_hash)
+    output_image = 'foo.fits'
     self.assertEqual(merge_ops, [
-        MergeOp(input_artifacts=[left.input_artifact, right.input_artifact],
-                output_artifact=output_artifact)
+        MergeOp(input_images=[left.image, right.image],
+                output_image=output_image)
     ])
 
     run_graph(graph)
@@ -222,12 +238,13 @@ class TestMergeOps(unittest.TestCase):
         (2, 2): bottom_right,
     }
 
-    from_task = {
-        panel: (_post_process_stack, panel.content_hash)
-        for panel in panels.values()
-    }
+    # from_task = {
+    #     panel: (_post_process_stack, panel.content_hash)
+    #     for panel in panels.values()
+    # }
 
-    merge_ops, graph = make_merge_ops(mode, mosaic_id, 'H', panels, from_task)
+    merge_ops, graph = ray.get(
+        make_merge_ops.remote(mode, mosaic_id, 'H', panels))
     self.assertEqual(len(merge_ops), 8)
 
     # Check first merge op.

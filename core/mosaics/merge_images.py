@@ -29,7 +29,7 @@ def run_photometric_mosaic(images: ImageList,
 def merge_images_with_photometric_mosaic(mode: QualityLevel,
                                          mosaic_id: MosaicHash,
                                          input_0: Artifact, input_1: Artifact,
-                                         output: Artifact) -> list[Artifact]:
+                                         output: Artifact) -> Artifact:
   image_0 = autostretch(read_artifact_image(input_0))
   image_1 = autostretch(read_artifact_image(input_1))
   assert not np.isnan(np.min(image_0))
@@ -52,12 +52,12 @@ def merge_images_with_photometric_mosaic(mode: QualityLevel,
 
   assert artifact_exists(output)
 
-  return [output]
+  return output
 
 
 def merge_images_with_maximum(mode: QualityLevel, mosaic_id: MosaicHash,
                               input_0: Artifact, input_1: Artifact,
-                              output: Artifact) -> list[Artifact]:
+                              output: Artifact) -> Artifact:
   image_0 = autostretch(read_artifact_image(input_0))
   image_1 = autostretch(read_artifact_image(input_1))
   assert not np.isnan(np.min(image_0))
@@ -69,24 +69,24 @@ def merge_images_with_maximum(mode: QualityLevel, mosaic_id: MosaicHash,
 
   write_artifact(output, output_image)
 
-  return [output]
+  return output
 
 
 def merge_images_artifacts(mode: QualityLevel, mosaic_id: MosaicHash,
                            input_0: Artifact, input_1: Artifact,
-                           output: Artifact) -> list[Artifact]:
+                           output: Artifact) -> Artifact:
   print('### merge_images_artifacts, output', output)
-  return [output]
+  return output
 
 
 # TODO: Make sure that every Ray task that calls a @PixInsight function also
 # consumes a PixInsight resource.
 @ray.remote
+@saves_artifacts(merge_images_artifacts)
 @capture_logs
 @track_performance
-@saves_artifacts(merge_images_artifacts)
 def merge_images(mode: QualityLevel, mosaic_id: MosaicHash, input_0: Artifact,
-                 input_1: Artifact, output: Artifact) -> list[Artifact]:
+                 input_1: Artifact, output: Artifact) -> Artifact:
   print(f'### merge_images {mode}: inputs {input_0}, {input_1}')
   print(f'### merge_images {mode}: output {output}')
 
