@@ -82,9 +82,12 @@ def identify_calibration_stacks() -> None:
 @track_performance
 def associate_with_stack(stacks: list[CompositeStack]) -> list[CompositeStack]:
   print(f'### associate_with_stack running on {len(stacks)} stacks')
+  cal_stacks = context.calibration_stacks
+
   output = []
   for stack in stacks:
-    cal_stacks = context.calibration_stacks
+    if stack is None:
+      continue
 
     print(f'### associate_with_stack {len(cal_stacks)} cal stacks '
           f'with stack {stack}')
@@ -143,7 +146,7 @@ def associate_with_stack(stacks: list[CompositeStack]) -> list[CompositeStack]:
         if closest := find_closest_stack_chronologically(image_type):
           dependencies[image_type] = closest
 
-      print(f'### Substack {substack} has dependencies {dependencies}')
+      # print(f'### Substack {substack} has dependencies {dependencies}')
       new_stack = replace(substack, dependencies=dependencies)
       new_contents[new_stack.content_hash] = new_stack
 
