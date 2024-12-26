@@ -46,7 +46,7 @@ def apply_quarantine_to_stack(
   metadata = context.metadata
   end_time = time.time()
   elapsed_time = end_time - start_time
-  print(f'### metadata = context.metadata took {elapsed_time:.3f}')
+  print(f'### metadata = context.metadata took {elapsed_time:.3f} s')
 
   output = []
   for stack_id in stack_ids:
@@ -79,12 +79,7 @@ def apply_quarantine_to_stack(
     if not all_frames:
       continue
 
-    start_time = time.time()
     attributes = asdict(ImagingAttributes.from_frames(all_frames, metadata))
-    end_time = time.time()
-    elapsed_time = end_time - start_time
-    print(f'### ImagingAttributes.from_frames took {elapsed_time:.3f}')
-
     output.append(replace(stack, contents=new_contents, **attributes))
 
   print(f'### apply_quarantine_to_stack returning {len(output)} stacks')
