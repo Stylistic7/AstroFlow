@@ -17,6 +17,8 @@ from profiling import track_performance
 from previews import QualityLevel
 from mosaics.types import MosaicHash
 from dependency_graph.logging import capture_logs
+from dependency_graph.astroflow_node import AstroFlowNode
+from mosaics import Mosaic
 
 
 @PixInsight()
@@ -26,9 +28,7 @@ def run_photometric_mosaic(images: ImageList,
 
 
 @ray.remote(resources={'PixInsight': 1})
-def merge_images_with_photometric_mosaic(mode: QualityLevel,
-                                         mosaic_id: MosaicHash,
-                                         input_0: Artifact, input_1: Artifact,
+def merge_images_with_photometric_mosaic(input_0: Artifact, input_1: Artifact,
                                          output: Artifact) -> Artifact:
   image_0 = autostretch(read_artifact_image(input_0))
   image_1 = autostretch(read_artifact_image(input_1))
@@ -55,8 +55,7 @@ def merge_images_with_photometric_mosaic(mode: QualityLevel,
   return output
 
 
-def merge_images_with_maximum(mode: QualityLevel, mosaic_id: MosaicHash,
-                              input_0: Artifact, input_1: Artifact,
+def merge_images_with_maximum(input_0: Artifact, input_1: Artifact,
                               output: Artifact) -> Artifact:
   image_0 = autostretch(read_artifact_image(input_0))
   image_1 = autostretch(read_artifact_image(input_1))
@@ -72,21 +71,18 @@ def merge_images_with_maximum(mode: QualityLevel, mosaic_id: MosaicHash,
   return output
 
 
-def merge_images_artifacts(mode: QualityLevel, mosaic_id: MosaicHash,
-                           input_0: Artifact, input_1: Artifact,
-                           output: Artifact) -> Artifact:
-  print('### merge_images_artifacts, output', output)
-  return output
+# def merge_images_artifacts(mode: QualityLevel, mosaic_id: MosaicHash,
+#                            input_0: Artifact, input_1: Artifact,
+#                            output: Artifact) -> Artifact:
+#   print('### merge_images_artifacts, output', output)
+#   return output
 
 
 # TODO: Make sure that every Ray task that calls a @PixInsight function also
 # consumes a PixInsight resource.
-@ray.remote
-@saves_artifacts(merge_images_artifacts)
-@capture_logs
-@track_performance
-def merge_images(mode: QualityLevel, mosaic_id: MosaicHash, input_0: Artifact,
-                 input_1: Artifact, output: Artifact) -> Artifact:
+@AstroFlowNode()
+def merge_images(mode: QualityLevel, input_0: Artifact, input_1: Artifact,
+                 output: Artifact) -> Artifact:
   print(f'### merge_images {mode}: inputs {input_0}, {input_1}')
   print(f'### merge_images {mode}: output {output}')
 
@@ -94,10 +90,9 @@ def merge_images(mode: QualityLevel, mosaic_id: MosaicHash, input_0: Artifact,
   assert artifact_exists(input_1), f'Input artifact {input_1} does not exist'
 
   if mode == 'subframe':
-    return merge_images_with_maximum(mode, mosaic_id, input_0, input_1, output)
+    return merge_images_with_maximum(input_0, input_1, output)
   elif mode == 'master':
     return ray.get(
-        merge_images_with_photometric_mosaic.remote(mode, mosaic_id, input_0,
-                                                    input_1, output))
+        merge_images_with_photometric_mosaic.remote(input_0, input_1, output))
 
   raise ValueError(f'Unknown quality level {mode}')

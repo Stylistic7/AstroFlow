@@ -25,6 +25,7 @@ from artifacts.decorators import saves_artifacts
 from previews import resize_array, QualityLevel
 from profiling import track_performance
 from dependency_graph.astroflow_node import AstroFlowNode
+from targets import Target
 
 
 @ray.remote
@@ -123,21 +124,20 @@ def get_best_light_frame_for_stack(stack: CompositeStack,
 
 
 @AstroFlowNode()
-def get_best_light_frame_for_target(target_id: TargetHash,
+def get_best_light_frame_for_target(target: Target,
                                     filter: str) -> FileArtifact | None:
   stacks = context.stacks
-  targets = context.targets
   metadata = context.metadata
 
   stacks_for_filter = [
-      s for s in targets[target_id].stack_ids if stacks[s].filter == filter
+      s for s in target.stack_ids if stacks[s].filter == filter
   ]
   if not stacks_for_filter:
     return None
 
   if len(stacks_for_filter) > 1:
     print(f'### WARNING: Multiple stacks for filter {filter} '
-          f'for target {targets[target_id]}')
+          f'for target {target}')
   stack_id = next(iter(stacks_for_filter))
 
   print(f'### Found stack_id {stack_id} for filter {filter}')
@@ -147,11 +147,11 @@ def get_best_light_frame_for_target(target_id: TargetHash,
 
 
 @AstroFlowNode()
-def build_placement_subgraph(mode: QualityLevel, mosaic: Mosaic,
-                             target_id: TargetHash, filter: str,
-                             tile_indices: TileIndices, viewbox: Viewbox):
+def build_placement_subgraph(mode: QualityLevel, mosaic: Mosaic, target: Target,
+                             filter: str, tile_indices: TileIndices,
+                             viewbox: Viewbox):
   return make_graph_from_list([
-      (get_best_light_frame_for_target, target_id, filter),
+      (get_best_light_frame_for_target, target, filter),
       (place_image, mode, mosaic, tile_indices, viewbox)
   ])
 
@@ -159,6 +159,8 @@ def build_placement_subgraph(mode: QualityLevel, mosaic: Mosaic,
 @AstroFlowNode()
 def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
                                  filter: str, viewbox: Viewbox) -> Graph:
+  targets = context.targets
+
   print(f'### build_mosaic_filter_subgraph mode {mode} '
         f'mosaic {mosaic} filter {filter}')
 
@@ -182,13 +184,13 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
   for strip_index, strip in enumerate(mosaic.strips):
     for i, target_id in enumerate(strip):
       if i == 0:
-        prev_task = (build_placement_subgraph, mode, mosaic, target_id, filter,
-                     TileIndices((strip_index, i)), viewbox)
+        prev_task = (build_placement_subgraph, mode, mosaic, targets[target_id],
+                     filter, TileIndices((strip_index, i)), viewbox)
       else:
-        merge_task = Node(merge_images, name=f'merge_{target_id}')
+        merge_task = Node(merge_images, mode, name=f'merge_{target_id}')
         graph[merge_task] = [
             prev_task,
-            (build_placement_subgraph, mode, mosaic, target_id, filter,
+            (build_placement_subgraph, mode, mosaic, targets[target_id], filter,
              TileIndices((strip_index, i)), viewbox)
         ]
         prev_task = merge_task
@@ -200,11 +202,12 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
   #   merge(merge_strips_1, merge_l) -> final
   for i, strip in enumerate(mosaic.strips):
     if i == 0:
-      prev_task = Node(merge_images, name=f'merge_{strip[-1]}')
+      prev_task = Node(merge_images, mode, name=f'merge_{strip[-1]}')
     else:
-      merge_task = Node(merge_images, name=f'merge_strip_{i}')
+      merge_task = Node(merge_images, mode, name=f'merge_strip_{i}')
       graph[merge_task] = [
-          prev_task, Node(merge_images, name=f'merge_{strip[-1]}')
+          prev_task,
+          Node(merge_images, mode, name=f'merge_{strip[-1]}')
       ]
       prev_task = merge_task
 
