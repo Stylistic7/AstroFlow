@@ -196,7 +196,7 @@ def store_mosaics(mosaics: MosaicsDict) -> None:
 # Flat-frame stacks could be quarantined, for example.
 @ray.remote
 def build_apply_stack_user_settings_subgraph() -> Graph:
-  stacks = context.grouped_stacks
+  stacks = context.grouped_stacks or {}
 
   stack_ids = [
       s for s in stacks.keys() if isinstance(stacks[s], CompositeStack)
