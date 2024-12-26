@@ -108,7 +108,6 @@ def process_raises_exception(item: T) -> None:
 
 @ray.remote
 def gather(*ancestor_results: list[int]) -> int:
-  print(f'### ancestor_results {ancestor_results}')
   return sum(ancestor_results)
 
 
@@ -181,6 +180,16 @@ def initial_task() -> None:
   return None
 
 
+@ray.remote
+def create_list() -> list[int]:
+  return [1, 2, 3]
+
+
+@ray.remote
+def consume_list(L) -> int:
+  return sum(L)
+
+
 class TestDependencyGraph(unittest.TestCase):
 
   def test_simple_graph(self) -> None:
@@ -246,6 +255,16 @@ class TestDependencyGraph(unittest.TestCase):
     self.assertEqual(results[C], 5)
 
     self.assertEqual(results.num_nodes_run, 3)
+    self.assertEqual(results.max_parallelism_seen, 1)
+
+  def test_pass_down_lists(self) -> None:
+    graph = make_graph_from_list([create_list, consume_list])
+    results, _ = run_graph(graph)
+
+    self.assertEqual(results[create_list], [1, 2, 3])
+    self.assertEqual(results[consume_list], 6)
+
+    self.assertEqual(results.num_nodes_run, 2)
     self.assertEqual(results.max_parallelism_seen, 1)
 
   def test_fanout(self) -> None:
