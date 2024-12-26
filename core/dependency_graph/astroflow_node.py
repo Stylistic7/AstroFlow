@@ -52,7 +52,11 @@ log = structlog.get_logger()
 
 
 # TODO: Hide logs behind debug flag.
-def AstroFlowNode(resources=None, memory=None, return_key=False):
+def AstroFlowNode(resources=None,
+                  memory=None,
+                  always_run=True,
+                  cache_result=True,
+                  return_key=False):
 
   if resources == None:
     resources = {}
@@ -106,12 +110,15 @@ def AstroFlowNode(resources=None, memory=None, return_key=False):
                args=args,
                kwargs=kwargs)
 
+      if not cache_result:
+        return fn(*args, **kwargs)
+
       kwargs_list = list(kwargs.items())
       content_hash = hash_list([source, *args, *kwargs_list])
       key = (fn.__name__, content_hash)
       print(f'### key {key}')
 
-      if _result_exists(content_hash):
+      if not always_run and _result_exists(content_hash):
         print(f'### Not running fn {fn.__name__} because result exists')
         return key if return_key else context[key]
       else:
