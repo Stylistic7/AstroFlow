@@ -17,10 +17,10 @@ from stacks.composite_stack import CompositeStack
 from stacks.astrometric_attributes import AstrometricAttributes
 from profiling import track_performance
 from stacks.types import StackHash
+from dependency_graph.astroflow_node import AstroFlowNode
 
 
-@ray.remote
-@track_performance
+@AstroFlowNode()
 def group_stacks_into_targets(
     stacks: dict[StackHash, CompositeStack]) -> dict[TargetHash, Target]:
   metadata = context.metadata
