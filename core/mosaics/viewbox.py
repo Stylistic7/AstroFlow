@@ -19,8 +19,9 @@ from mosaics.types import MosaicHash
 # TODO: The viewbox should include the sampling resolution, too.
 # TODO: Maybe unify the storage and retrieval of artifacts that arent'
 # images, e.g. arbitrary Python objects.
-def compute_mosaic_viewbox(mosaic: Mosaic) -> list[Artifact]:
-  print(f'### Entering compute_mosaic_viewbox for mosaic {Mosaic}')
+def compute_mosaic_viewbox(mosaic_id: MosaicHash) -> list[Artifact]:
+  mosaic = context.mosaics[mosaic_id]
+  print(f'### Entering compute_mosaic_viewbox for mosaic {mosaic}')
 
   # TODO: Put this in the UI somewhere.
   proj = mercator.MercatorProjection()

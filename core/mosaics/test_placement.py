@@ -55,18 +55,20 @@ class TestPlacement(unittest.TestCase):
         'testdata/Stacks/IC1318/masters/master_light_IC1318_RA_306.20_DEC_35.00_ZWO ASI6200MM Pro_2.21aspp_1.55deg_H_187b447aad352e0f.xisf',
         content_hash)
 
-    log, viewbox = ray.get(compute_mosaic_viewbox.remote(mosaic_id))
+    # mosaic = context.mosaics[mosaic_id]
+
+    viewbox = compute_mosaic_viewbox(mosaic_id)
     self.assertTrue(isinstance(viewbox, Viewbox))
 
     log, result = ray.get(
         place_image.remote(QualityLevel.SUBFRAME, mosaic_id, tile_indices,
-                           input_artifact, viewbox))
-    self.assertTrue(isinstance(result, np.ndarray))
+                           viewbox, input_artifact))
+    self.assertTrue(isinstance(context[result], np.ndarray))
 
     log, result = ray.get(
         place_image.remote(QualityLevel.MASTER, mosaic_id, tile_indices,
-                           input_artifact, viewbox))
-    self.assertTrue(isinstance(result, Path))
+                           viewbox, input_artifact))
+    self.assertTrue(isinstance(context[result], Path))
 
 
 if __name__ == "__main__":

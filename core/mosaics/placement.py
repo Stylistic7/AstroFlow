@@ -110,9 +110,11 @@ def _trim_image(projected_image):
 # TODO: Differentiate the runtime of this function in subframe and master
 # modes.
 @AstroFlowNode(memory=_MEMORY_REQUIREMENT, return_key=True)
-def place_image(mode: QualityLevel, mosaic: Mosaic, tile_indices: TileIndices,
-                viewbox: Viewbox,
+def place_image(mode: QualityLevel, mosaic_id: MosaicHash,
+                tile_indices: TileIndices, viewbox: Viewbox,
                 input_artifact: Artifact) -> np.ndarray | Path:
+  mosaic = context.mosaics[mosaic_id]
+
   # TODO: The subframes need to be calibrated before being placed.
   image = read_artifact_image(input_artifact)
   plate_solution = context.metadata[input_artifact.content_hash].plate_solution
