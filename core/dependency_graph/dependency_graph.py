@@ -34,7 +34,7 @@ def matching_nodes(graph: CanonicalGraph,
 def run_graph(graph: Graph,
               status_fn: StatusFn | None = None,
               status_interval: float = MIN_STATUS_UPDATE_INTERVAL_SECS,
-              debug: bool = False) -> ResultDict:
+              debug: bool = False) -> tuple[ResultDict, ResultDict]:
   num_nodes_run: int = 0
   max_parallelism_seen: int = 0
   active: list[TopologicalSorterWithStatus] = []
@@ -187,7 +187,7 @@ def run_graph(graph: Graph,
           ts.final_result = result
           ts.done(node)
       except ray.exceptions.RayTaskError as e:
-        print(f'Node {node} raised exception {e}')
+        print(f'Node {node_to_string(node)} raised exception {e}')
         ts.results[node] = e.cause
         ts.logs[node] = []
         ts.final_result = e.cause
@@ -204,4 +204,4 @@ def run_graph(graph: Graph,
   toplevel_ts.results.num_nodes_run = num_nodes_run
   toplevel_ts.results.max_parallelism_seen = max_parallelism_seen
 
-  return toplevel_ts.results, toplevel_ts.logs  #
+  return toplevel_ts.results, toplevel_ts.logs

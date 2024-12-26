@@ -25,7 +25,7 @@ def get_light_frames_sorted_by_stars(
 @ray.remote
 @track_performance
 def select_subframes(stacks: list[CompositeStack]) -> list[CompositeStack]:
-  print(f'### Entering select_subframes stacks {stacks}')
+  print(f'### Entering select_subframes')
   metadata = context.metadata
   assert metadata
 
