@@ -19,6 +19,7 @@ from profiling import track_performance
 from targets.types import TargetHash
 from targets.target import Target
 from mosaics.debugging import plot_mosaic
+from dependency_graph.astroflow_node import AstroFlowNode
 
 logger = structlog.get_logger()
 log = logger
@@ -320,8 +321,7 @@ def _identify_overlapping_targets(
   return mosaics
 
 
-@ray.remote
-@track_performance
+@AstroFlowNode()
 def identify_mosaics(debug: bool = False) -> dict[MosaicHash, Mosaic]:
   targets = context.grouped_targets
   print(f'### Identifying mosaics from {len(targets)} targets')
