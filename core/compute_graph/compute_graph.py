@@ -29,10 +29,10 @@ from stacks.types import StackHash
 from stacks.validation import validate_stacks
 from profiling import track_performance
 from mosaics.types import MosaicHash
+from dependency_graph.astroflow_node import AstroFlowNode
 
 
-@ray.remote
-@track_performance
+@AstroFlowNode(cache_result=False)
 def load_metadata() -> None:
   quarantined_files = context.quarantined_files or set()
 
@@ -84,15 +84,20 @@ def build_regroup_graph() -> Graph:
 
 
 @ray.remote
+def preview_graph_done() -> None:
+  pass
+
+
+@ray.remote
 def build_preview_graph() -> Graph:
   graph = Graph({})
   stack_thumbnail_task = (scatter_stack_thumbnails, QualityLevel.SUBFRAME)
   graph[stack_thumbnail_task] = []
 
-  for mosaic_id in context.mosaics.keys():
-    subgraph = ray.get(
-        build_mosaic_subgraph.remote(QualityLevel.SUBFRAME, mosaic_id))
-    graph |= subgraph
+  subgraphs = []
+  for mosaic in context.mosaics.values():
+    subgraphs.append((build_mosaic_subgraph, QualityLevel.SUBFRAME, mosaic))
+  graph[preview_graph_done] = subgraphs
 
   return graph
 
