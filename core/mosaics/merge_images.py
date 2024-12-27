@@ -5,7 +5,7 @@ import astropy.io.fits as pyfits  # type: ignore
 from pathlib import Path
 
 from context import context
-from artifacts import Artifact, FileArtifact
+from artifacts import Artifact, FileArtifact, CacheArtifact
 import pix
 from pix.classes import ImageList, FilenameList
 from pix.decorators import PixInsight
@@ -28,35 +28,30 @@ def run_photometric_mosaic(images: ImageList,
 
 
 @ray.remote(resources={'PixInsight': 1})
-def merge_images_with_photometric_mosaic(input_0: Artifact, input_1: Artifact,
-                                         output: Artifact) -> Artifact:
+def merge_images_with_photometric_mosaic(input_0: Artifact,
+                                         input_1: Artifact) -> Artifact:
+  assert isinstance(input_0, FileArtifact)
+  assert isinstance(input_1, FileArtifact)
+
   image_0 = autostretch(read_artifact_image(input_0))
   image_1 = autostretch(read_artifact_image(input_1))
   assert not np.isnan(np.min(image_0))
   assert not np.isnan(np.min(image_1))
   overlap = np.where((image_0 > 0) & (image_1 > 0))
-  if not np.count_nonzero(overlap):
-    return [output]
+  assert np.count_nonzero(overlap)
 
-  assert isinstance(input_0, FileArtifact)
-  assert isinstance(input_1, FileArtifact)
-  assert isinstance(output, FileArtifact)
-  run_photometric_mosaic([input_0.filename, input_1.filename], output.filename)
-  assert os.path.exists(output.filename)
+  output_filename = Path(
+      context.output_dir
+  ) / 'Mosaics' / f'merged_{input_0.content_hash}_{input_1.content_hash}.xisf'
 
-  if output.content_hash:
-    with pyfits.open(output.filename, mode='update') as hdu:
-      header = hdu[0].header
-      header['CONTHASH'] = output.content_hash
-      hdu.flush()
+  run_photometric_mosaic([input_0.filename, input_1.filename], output_filename)
 
-  assert artifact_exists(output)
-
-  return output
+  assert os.path.exists(output_filename)
+  return output_filename
 
 
-def merge_images_with_maximum(input_0: Artifact, input_1: Artifact,
-                              output: Artifact) -> Artifact:
+def merge_images_with_maximum(input_0: CacheArtifact,
+                              input_1: CacheArtifact) -> np.ndarray:
   image_0 = autostretch(read_artifact_image(input_0))
   image_1 = autostretch(read_artifact_image(input_1))
   assert not np.isnan(np.min(image_0))
@@ -66,33 +61,24 @@ def merge_images_with_maximum(input_0: Artifact, input_1: Artifact,
   output_image[overlap] = (image_0[overlap] + image_1[overlap]) / 2.0
   assert not np.isnan(np.min(output_image))
 
-  write_artifact(output, output_image)
-
-  return output
-
-
-# def merge_images_artifacts(mode: QualityLevel, mosaic_id: MosaicHash,
-#                            input_0: Artifact, input_1: Artifact,
-#                            output: Artifact) -> Artifact:
-#   print('### merge_images_artifacts, output', output)
-#   return output
+  return output_image
 
 
 # TODO: Make sure that every Ray task that calls a @PixInsight function also
 # consumes a PixInsight resource.
-@AstroFlowNode()
-def merge_images(mode: QualityLevel, input_0: Artifact, input_1: Artifact,
-                 output: Artifact) -> Artifact:
+#
+# TODO: The @AstroFlowNode hides content hashes from functions that return
+# np.ndarray or Path; perhaps it should also hide content hashes from functions
+# that receive them?
+@AstroFlowNode(unpack_artifacts=False)
+def merge_images(mode: QualityLevel, input_0: Artifact,
+                 input_1: Artifact) -> Artifact:
   print(f'### merge_images {mode}: inputs {input_0}, {input_1}')
-  print(f'### merge_images {mode}: output {output}')
-
-  assert artifact_exists(input_0), f'Input artifact {input_0} does not exist'
-  assert artifact_exists(input_1), f'Input artifact {input_1} does not exist'
 
   if mode == 'subframe':
-    return merge_images_with_maximum(input_0, input_1, output)
+    return merge_images_with_maximum(input_0, input_1)
   elif mode == 'master':
-    return ray.get(
-        merge_images_with_photometric_mosaic.remote(input_0, input_1, output))
+    return ray.get(merge_images_with_photometric_mosaic.remote(
+        input_0, input_1))
 
   raise ValueError(f'Unknown quality level {mode}')
