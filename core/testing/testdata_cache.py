@@ -103,6 +103,8 @@ if __name__ == '__main__':
   copy_all_stack_data(cache, testdata_cache, '2c71f4db63b27773')
   copy_image(cache, testdata_cache, '187b447aad352e0f',
              'testdata/Stacks/IC1318/masters')
+  copy_image(cache, testdata_cache, '7b418a55a19518f2',
+             'testdata/Stacks/IC1318/masters')
 
   # Copy the output files, and store the cache to a tar.gz file on disk.
   # shutil.copytree(context.output_dir, 'testdata', dirs_exist_ok=True)
