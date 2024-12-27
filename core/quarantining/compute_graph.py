@@ -4,6 +4,7 @@ import os
 from dataclasses import replace
 from typing import Any
 
+from dependency_graph.astroflow_node import AstroFlowNode
 from context import context, WriteMode
 from calibration import associate_with_stack
 from targets.validation import validate_targets
@@ -22,7 +23,7 @@ from mosaics.mosaic import Mosaic, MosaicsDict
 
 
 # TODO: Maybe SimpleStacks and CompositeStacks should be in separate dicts.
-@ray.remote
+@AstroFlowNode()
 def quarantine_stacks() -> dict[str, SimpleStack | CompositeStack]:
   stacks = context.grouped_stacks
   if not stacks:
@@ -36,7 +37,7 @@ def quarantine_stacks() -> dict[str, SimpleStack | CompositeStack]:
   }
 
 
-@ray.remote
+@AstroFlowNode()
 def quarantine_targets() -> dict[TargetHash, Target]:
   stacks = context.stacks
   targets = context.grouped_targets
@@ -65,7 +66,7 @@ def quarantine_targets() -> dict[TargetHash, Target]:
   return output_targets
 
 
-@ray.remote
+@AstroFlowNode()
 def quarantine_mosaics() -> dict[MosaicHash, Mosaic]:
   targets = context.targets
   mosaics = context.grouped_mosaics
@@ -99,7 +100,7 @@ def quarantine_mosaics() -> dict[MosaicHash, Mosaic]:
   return output_mosaics
 
 
-@ray.remote
+@AstroFlowNode()
 def apply_settings(stacks: list[CompositeStack]) -> list[CompositeStack]:
   print(f'### apply_settings running on {len(stacks)} stacks')
   output = []
@@ -121,6 +122,7 @@ def apply_settings(stacks: list[CompositeStack]) -> list[CompositeStack]:
 
     output.append(replace(stack, contents=new_contents))
 
+  print(f'### apply_settings returning {len(output)} stacks')
   return output
 
 
@@ -147,7 +149,7 @@ def apply_settings(stacks: list[CompositeStack]) -> list[CompositeStack]:
 # select_subframes()
 #
 # Maybe the best thing to do is pass the metadata ref around?
-@ray.remote
+@AstroFlowNode()
 def build_stack_user_settings_subgraph(stack_ids: list[StackHash]) -> Graph:
   print(f'### build_stack_user_settings_subgraph stack_ids {stack_ids}')
   return make_graph_from_list([(apply_quarantine_to_stack, stack_ids),
@@ -155,7 +157,7 @@ def build_stack_user_settings_subgraph(stack_ids: list[StackHash]) -> Graph:
                                apply_settings])
 
 
-@ray.remote
+@AstroFlowNode()
 def gather_stack_user_settings(
     *stacks_in: list[CompositeStack]) -> CompositeStacksDict:
   stacks = [item for sublist in stacks_in for item in sublist]
@@ -167,7 +169,7 @@ def gather_stack_user_settings(
   return stacks
 
 
-@ray.remote
+@AstroFlowNode()
 def store_calibration_stacks() -> None:
   calibration_stacks = context.calibration_stacks
   context.or_equals('stacks', calibration_stacks)
@@ -175,14 +177,14 @@ def store_calibration_stacks() -> None:
         f'{len(calibration_stacks)} calibration stacks')
 
 
-@ray.remote
+@AstroFlowNode()
 def store_targets(targets: TargetsDict) -> None:
   context.targets = targets
   print(f'### store_targets: Stored {len(targets)} targets; '
         f'total is now {len(context.targets)}')
 
 
-@ray.remote
+@AstroFlowNode()
 def store_mosaics(mosaics: MosaicsDict) -> None:
   context.mosaics = mosaics
   print(f'### store_mosaics: Stored {len(mosaics)} mosaics; '
@@ -194,8 +196,9 @@ def store_mosaics(mosaics: MosaicsDict) -> None:
 #
 # TODO: Pass SimpleStacks through `build_stack_user_settings_subgraph()` too.
 # Flat-frame stacks could be quarantined, for example.
-@ray.remote
+@AstroFlowNode()
 def build_apply_stack_user_settings_subgraph() -> Graph:
+  # TODO: This is empty when the preceding tasks don't run.
   stacks = context.grouped_stacks or {}
 
   stack_ids = [
@@ -205,7 +208,7 @@ def build_apply_stack_user_settings_subgraph() -> Graph:
       stack_ids[i::os.cpu_count()] for i in range(os.cpu_count())
   ]
   stack_id_groups = [tuple(group) for group in stack_id_groups]
-  print(f'### Groups stacks into {len(stack_id_groups)} groups')
+  print(f'### Grouped {len(stacks)} stacks into {len(stack_id_groups)} groups')
   print(f'### First group {stack_id_groups[0]}')
 
   graph = Graph({})

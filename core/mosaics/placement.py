@@ -110,6 +110,9 @@ def _trim_image(projected_image):
 #
 # TODO: Differentiate the runtime of this function in subframe and master
 # modes.
+#
+# TODO: Perhaps don't save these results, since they are so huge, and
+# are now relatively fast to compute.
 @AstroFlowNode(memory=_MEMORY_REQUIREMENT)
 def place_image(mode: QualityLevel, mosaic: Mosaic, tile_indices: TileIndices,
                 viewbox: Viewbox, filename: Path) -> np.ndarray | Path:

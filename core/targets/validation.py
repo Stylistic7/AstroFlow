@@ -2,9 +2,10 @@ import ray
 
 from context import context
 from targets.target import TargetsDict
+from dependency_graph.astroflow_node import AstroFlowNode
 
 
-@ray.remote
+@AstroFlowNode()
 def validate_targets(targets: TargetsDict) -> None:
   stacks = context.stacks
   for target_id, target in targets.items():
