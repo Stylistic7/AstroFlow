@@ -11,6 +11,7 @@ from typing import Any
 import structlog
 import astropy.io.fits as pyfits  # type: ignore
 
+from file_io.generic import get_content_hash, read_image
 from plate_solving import solve_field
 from artifacts.decorators import saves_artifacts
 from artifacts import Artifact
@@ -109,13 +110,14 @@ def _trim_image(projected_image):
 #
 # TODO: Differentiate the runtime of this function in subframe and master
 # modes.
-@AstroFlowNode(memory=_MEMORY_REQUIREMENT, return_key=True)
+@AstroFlowNode(memory=_MEMORY_REQUIREMENT)
 def place_image(mode: QualityLevel, mosaic: Mosaic, tile_indices: TileIndices,
-                viewbox: Viewbox,
-                input_artifact: Artifact) -> np.ndarray | Path:
+                viewbox: Viewbox, filename: Path) -> np.ndarray | Path:
   # TODO: The subframes need to be calibrated before being placed.
-  image = read_artifact_image(input_artifact)
-  plate_solution = context.metadata[input_artifact.content_hash].plate_solution
+  print(f'### place_image: filename {filename}')
+  image = read_image(filename)
+  content_hash = get_content_hash(filename)
+  plate_solution = context.metadata[content_hash].plate_solution
 
   log.info(f'place_image: image shape {image.shape} dtype {image.dtype} '
            f'min {np.min(image)} max {np.max(image)}')

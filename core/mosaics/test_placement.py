@@ -9,6 +9,7 @@ import numpy as np
 from spherical_geometry.polygon import SingleSphericalPolygon  # type: ignore
 from pathlib import Path
 
+from artifacts.artifact import unpack_artifact
 from stacks.types import StackHash
 from stacks.simple_stack import SimpleStack
 from stacks.composite_stack import CompositeStack
@@ -51,9 +52,7 @@ class TestPlacement(unittest.TestCase):
     stack_id = '2c71f4db63b27773'
     content_hash = '187b447aad352e0f'
     tile_indices = TileIndices((0, 0))
-    input_artifact = FileArtifact(
-        'testdata/Stacks/IC1318/masters/master_light_IC1318_RA_306.20_DEC_35.00_ZWO ASI6200MM Pro_2.21aspp_1.55deg_H_187b447aad352e0f.xisf',
-        content_hash)
+    filename = 'testdata/Stacks/IC1318/masters/master_light_IC1318_RA_306.20_DEC_35.00_ZWO ASI6200MM Pro_2.21aspp_1.55deg_H_187b447aad352e0f.xisf'
 
     mosaic = context.mosaics[mosaic_id]
 
@@ -62,13 +61,14 @@ class TestPlacement(unittest.TestCase):
 
     log, result = ray.get(
         place_image.remote(QualityLevel.SUBFRAME, mosaic, tile_indices, viewbox,
-                           input_artifact))
-    self.assertTrue(isinstance(context[result], np.ndarray))
+                           filename))
+    print('### result', result)
+    self.assertTrue(isinstance(unpack_artifact(result), np.ndarray))
 
     log, result = ray.get(
         place_image.remote(QualityLevel.MASTER, mosaic, tile_indices, viewbox,
-                           input_artifact))
-    self.assertTrue(isinstance(context[result], Path))
+                           filename))
+    self.assertTrue(isinstance(unpack_artifact(result), Path))
 
 
 if __name__ == "__main__":
