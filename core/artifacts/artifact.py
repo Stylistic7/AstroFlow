@@ -37,10 +37,28 @@ class FileArtifact:
 @dataclass(frozen=True)
 class CacheArtifact:
   key: Key
-  content_hash: str
+  content_hash: str | None = None
 
 
 Artifact = FileArtifact | CacheArtifact
+
+
+def unpack_artifact(artifact):
+  if isinstance(artifact, FileArtifact):
+    if artifact.content_hash:
+      content_hash = get_content_hash(artifact.filename)
+      if content_hash != artifact.content_hash:
+        raise WrongContentHashException(
+            f'Filename {artifact.filename} did not have expected content hash '
+            f'{artifact.content_hash}')
+    return artifact.filename
+  elif isinstance(artifact, CacheArtifact):
+    if not context.contains(artifact.key):
+      raise ArtifactNotFoundException(
+          f'Key {artifact.key} not found in context')
+    return context[artifact.key]
+  else:
+    return artifact
 
 
 def read_artifact(artifact: Artifact) -> tuple[np.ndarray, Header]:
@@ -193,6 +211,8 @@ def _(artifact: CacheArtifact) -> bool:
   if not context.contains(artifact.key):
     return False
 
+  # TODO: Consider removing support for saving FITS inside the cache; it
+  # generally makes more sense to save these to disk.
   if artifact.content_hash is not None:
     value = context.get(artifact.key, keep_in_memory=False)
 

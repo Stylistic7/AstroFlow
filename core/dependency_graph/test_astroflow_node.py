@@ -15,6 +15,7 @@ from artifacts import Artifact, FileArtifact, CacheArtifact, artifact_exists
 from testing.test_context import make_test_context
 from context import context
 from artifacts.decorators import saves_artifacts, should_run
+from artifacts.artifact import unpack_artifact
 from mosaics.types import MosaicHash
 from mosaics.classes import Viewbox
 from previews import QualityLevel
@@ -117,14 +118,14 @@ def build_place_image_compute_graph() -> Graph:
   })
 
 
-@AstroFlowNode(return_key=True)
-def create_large_image(shape: tuple[int]) -> Any:
+@AstroFlowNode(keep_in_memory=False)
+def create_large_image(shape: tuple[int]) -> np.ndarray:
   return np.ones(shape)
 
 
 @AstroFlowNode()
-def consume_large_image(key) -> Any:
-  return context[key].shape
+def consume_large_image(image) -> Any:
+  return image.shape
 
 
 @AstroFlowNode()
@@ -157,9 +158,9 @@ class TestAstroFlowNode(unittest.TestCase):
     graph = Graph({C: {B}, B: {A}})
     results, _ = run_graph(graph)
 
-    self.assertEqual(results[A], 1)
-    self.assertEqual(results[B], 2)
-    self.assertEqual(results[C], 3)
+    self.assertEqual(unpack_artifact(results[A]), 1)
+    self.assertEqual(unpack_artifact(results[B]), 2)
+    self.assertEqual(unpack_artifact(results[C]), 3)
 
     self.assertEqual(results.num_nodes_run, 3)
     self.assertEqual(results.max_parallelism_seen, 1)
@@ -168,7 +169,7 @@ class TestAstroFlowNode(unittest.TestCase):
     graph = build_place_image_compute_graph()
     results, logs = run_graph(graph)
 
-    filename = results[place_image]
+    filename = unpack_artifact(results[place_image])
     image = read_fits_image(filename)
 
     expected_image = np.zeros((200, 200))
@@ -180,7 +181,7 @@ class TestAstroFlowNode(unittest.TestCase):
     dynamic_graph_task = (maybe_run_dynamic_graph, True)
     graph = Graph({dynamic_graph_task: {}})
     results, _ = run_graph(graph)
-    self.assertEqual(results[dynamic_graph_task], 21)
+    self.assertEqual(unpack_artifact(results[dynamic_graph_task]), 21)
 
     self.assertEqual(results.num_nodes_run, 9)
     self.assertEqual(results.max_parallelism_seen, 7)
@@ -188,7 +189,7 @@ class TestAstroFlowNode(unittest.TestCase):
     dynamic_graph_task = (maybe_run_dynamic_graph, False)
     graph = Graph({dynamic_graph_task: {}})
     results, _ = run_graph(graph)
-    self.assertEqual(results[dynamic_graph_task], None)
+    self.assertEqual(unpack_artifact(results[dynamic_graph_task]), None)
 
     self.assertEqual(results.num_nodes_run, 1)
     self.assertEqual(results.max_parallelism_seen, 1)
@@ -237,7 +238,7 @@ class TestAstroFlowNode(unittest.TestCase):
     graph = Graph({consume_small_image: {create_small_image}})
     results, _ = run_graph(graph, debug=True)
 
-    self.assertEqual(results[consume_small_image], (100, 100))
+    self.assertEqual(unpack_artifact(results[consume_small_image]), (100, 100))
 
     num_matches = 0
     for k in context.get_ref_dict().keys():
@@ -250,7 +251,8 @@ class TestAstroFlowNode(unittest.TestCase):
     graph = Graph({consume_large_image: {(create_large_image, (2000, 1000))}})
     results, _ = run_graph(graph, debug=True)
 
-    self.assertEqual(results[consume_large_image], (2000, 1000))
+    self.assertEqual(unpack_artifact(results[consume_large_image]),
+                     (2000, 1000))
 
     num_matches = 0
     for k in context.get_ref_dict().keys():

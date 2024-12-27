@@ -8,7 +8,9 @@ import astropy.io.fits as pyfits  # type: ignore
 from dataclasses import dataclass
 
 from context import context, WriteMode
-from artifacts import FileArtifact, artifact_exists
+from artifacts import Artifact, FileArtifact, CacheArtifact, artifact_exists
+from artifacts.artifact import unpack_artifact
+from file_io.generic import get_content_hash
 from hashing import hash_list
 from dependency_graph import Graph
 from dependency_graph.logging import capture_logs
@@ -17,46 +19,21 @@ from file_io.xisf_file_io import add_xisf_metadata
 
 log = structlog.get_logger()
 
-# What are the cases that need to be handled?
-#
-# Function returns a Filename(...)
-# context[(fn_name, content_hash)] = Filename(...)
-# wrapper returns Filename directly
-#
-# Function returns a LargeObject(...)
-# context[(fn_name, content_hash)] = large_object, unwrapped
-# wrapper returns key (fn_name, content_hash)
-#   ...this is the problem: how does the wrapper know the object was a
-#      a LargeObject? All it knows is that the key exists, but not what
-#      kind of object it was.
-#
-#   I don't want to return LargeObjects to the user, because that leaks the
-#   API out to every caller.
-#
-# Function returns a small object, naked
-# context[(fn_name, content_hash)] = small_object
-# wrapper returns small_object
 
-# I can put returns_large_objects=True in the decorator params, and then the
-# decorator will store anything returned by the function as a large object,
-# and will always return keys instead of the large objects. This is gross
-# for functions that return either Filename or large object, though.
-#
-# I could just have a return_key=True param, and then any downstream user just
-# knows they have to retrieve the value with context[key]. Everything is
-# constitent and obvious at least.
+class ArtifactNotFoundException(Exception):
+  pass
 
-# @dataclass(frozen=True)
-# class LargeObject():
-#   object: Any
+
+class WrongContentHashException(Exception):
+  pass
 
 
 # TODO: Hide logs behind debug flag.
 def AstroFlowNode(resources=None,
                   memory=None,
-                  always_run=True,
+                  always_run=False,
                   cache_result=True,
-                  return_key=False):
+                  keep_in_memory=True):
 
   if resources == None:
     resources = {}
@@ -77,14 +54,7 @@ def AstroFlowNode(resources=None,
 
     def _store_result(result, content_hash):
       if isinstance(result, Graph):
-        return
-
-      key = (fn.__name__, content_hash)
-      write_mode = (WriteMode.DISK_ONLY
-                    if return_key else WriteMode.MEMORY_AND_DISK)
-      context.set(key, result, write_mode)
-      print(f'### stored result {type(result)} with key {key} with '
-            f'write mode {write_mode}')
+        return result
 
       # TODO: Clean this up.
       if isinstance(result, Path):
@@ -98,6 +68,36 @@ def AstroFlowNode(resources=None,
           print(f'### Updated FITS filename {result} with '
                 f'content hash {content_hash}')
 
+        return FileArtifact(result, content_hash)
+
+      key = (fn.__name__, content_hash)
+      write_mode = (WriteMode.MEMORY_AND_DISK
+                    if keep_in_memory else WriteMode.DISK_ONLY)
+      context.set(key, result, write_mode)
+      print(f'### stored result {type(result)} with key {key} with '
+            f'write mode {write_mode}')
+      return CacheArtifact(key)
+
+    # This decorator accepts arguments that may include FileArtifacts and / or
+    # CacheArtifacts. These are "unpacked" to the contained Path or arbitrary
+    # object. The content hashes of Paths (files on disk) are checked. The
+    # content hashes should never leak out of the decorator.
+    #
+    # The decorator wraps whatever the function returns in an Artifact, also.
+    # If the function returns a Path, the file's header is updated with the
+    # content hash, and the Path is returned inside a FileArtifact.
+    #
+    # For all other objects, their value is written into the context, and a
+    # CacheArtifact is returned.
+    #
+    # When these functions are composed into compute graphs, the artifacts are
+    # handled transparently. The user code never has to worry about content
+    # hashes, and sees the arguments as just Paths, or whatever arbitrary
+    # Python objects are returned by the functions.
+    #
+    # TODO: @capture_logs and @track_performance are misplaced here. They should
+    # only run when the wrapped function runs. Maybe they should be folded inot
+    # this single decorator.
     @ray.remote(scheduling_strategy="SPREAD",
                 resources=resources,
                 memory=memory)
@@ -110,8 +110,11 @@ def AstroFlowNode(resources=None,
                args=args,
                kwargs=kwargs)
 
+      unpacked_args = [unpack_artifact(a) for a in args]
+      unpacked_kwargs = {k: unpack_artifact(v) for k, v in kwargs.items()}
+
       if not cache_result:
-        return fn(*args, **kwargs)
+        return fn(*unpacked_args, **unpacked_kwargs)
 
       kwargs_list = list(kwargs.items())
       content_hash = hash_list([source, *args, *kwargs_list])
@@ -120,12 +123,11 @@ def AstroFlowNode(resources=None,
 
       if not always_run and _result_exists(content_hash):
         print(f'### Not running fn {fn.__name__} because result exists')
-        return key if return_key else context[key]
+        return CacheArtifact(key)
       else:
         print(f'### Running fn {fn.__name__}')
-        result = fn(*args, **kwargs)
-        _store_result(result, content_hash)
-        return key if return_key else result
+        result = fn(*unpacked_args, **unpacked_kwargs)
+        return _store_result(result, content_hash)
 
     return wrapper
 
