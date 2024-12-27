@@ -13,7 +13,7 @@ from dependency_graph import Graph, make_graph_from_list
 from quarantining import apply_quarantine_to_stack
 from quarantining.subframe_selection import select_subframes
 from stacks.simple_stack import SimpleStack
-from stacks.composite_stack import CompositeStack, CompositeStacksDict
+from stacks.composite_stack import CompositeStack, CompositeStacksDict, SimpleStacksDict
 from stacks.types import StackHash
 from stacks.validation import validate_stacks
 from mosaics.types import MosaicHash
@@ -163,28 +163,32 @@ def gather_stack_user_settings(
   stacks = [item for sublist in stacks_in for item in sublist]
   stacks = {a.stable_hash: a for a in stacks}
   print(f'### gather_stack_user_settings stack ids are {stacks.keys()}')
-  context.stacks = stacks
-  print(f'### gather_stack_user_settings: Stored {len(context.stacks)} stacks')
-
   return stacks
 
 
-@AstroFlowNode()
-def store_calibration_stacks() -> None:
-  calibration_stacks = context.calibration_stacks
+@AstroFlowNode(always_run=True)
+def store_calibration_stacks(calibration_stacks: SimpleStacksDict) -> None:
   context.or_equals('stacks', calibration_stacks)
   print(f'### store_calibration_stacks: Stored '
-        f'{len(calibration_stacks)} calibration stacks')
+        f'{len(calibration_stacks)} calibration stacks; '
+        f'total is now {len(context.stacks)}')
 
 
-@AstroFlowNode()
+@AstroFlowNode(always_run=True)
+def store_stacks(stacks: CompositeStacksDict) -> None:
+  context.or_equals('stacks', stacks)
+  print(f'### store_stacks: Stored {len(stacks)} stacks; '
+        f'total is now {len(context.stacks)}')
+
+
+@AstroFlowNode(always_run=True)
 def store_targets(targets: TargetsDict) -> None:
   context.targets = targets
   print(f'### store_targets: Stored {len(targets)} targets; '
         f'total is now {len(context.targets)}')
 
 
-@AstroFlowNode()
+@AstroFlowNode(always_run=True)
 def store_mosaics(mosaics: MosaicsDict) -> None:
   context.mosaics = mosaics
   print(f'### store_mosaics: Stored {len(mosaics)} mosaics; '
@@ -217,8 +221,8 @@ def build_apply_stack_user_settings_subgraph() -> Graph:
                                        for group in stack_id_groups
                                        if len(group)}
   graph[validate_stacks] = {gather_stack_user_settings}
-  graph[store_calibration_stacks] = {validate_stacks}
-  graph[quarantine_targets] = {store_calibration_stacks}
+  graph[store_stacks] = {validate_stacks}
+  graph[quarantine_targets] = {store_stacks}
   graph[validate_targets] = {quarantine_targets}
   graph[store_targets] = {validate_targets}
   graph[quarantine_mosaics] = {store_targets}

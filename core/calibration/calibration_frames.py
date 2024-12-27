@@ -16,7 +16,7 @@ from profiling import track_performance
 
 @ray.remote
 @track_performance
-def identify_calibration_stacks() -> None:
+def identify_calibration_stacks() -> SimpleStacksDict:
   print(f'Identifying calibration stacks...')
 
   metadata = context.metadata
@@ -73,9 +73,7 @@ def identify_calibration_stacks() -> None:
         stack = new_stack(run)
         stacks[StackHash(stack.content_hash)] = stack
 
-  print(f'### identify_calibration_stacks writing {len(stacks)} stacks '
-        f'into the context')
-  context.calibration_stacks = stacks
+  return stacks
 
 
 @ray.remote
