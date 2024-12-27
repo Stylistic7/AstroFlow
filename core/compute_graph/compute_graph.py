@@ -18,7 +18,7 @@ from mosaics.compute_graph import build_mosaic_subgraph
 from dependency_graph import Graph, TaskDescriptor, make_graph_from_list
 from suggestions import make_suggestions
 from quarantining import apply_quarantine_to_stack
-from quarantining.compute_graph import build_apply_stack_user_settings_subgraph, quarantine_targets, quarantine_mosaics
+from quarantining.compute_graph import build_apply_stack_user_settings_subgraph, quarantine_targets, quarantine_mosaics, store_calibration_stacks
 from quarantining.subframe_selection import select_subframes
 from stacks.identification import identify_stacks
 import metadata.image_types as image_types
@@ -102,35 +102,38 @@ def build_preview_graph() -> Graph:
   return graph
 
 
+@AstroFlowNode()
+def main_processing_graph_done() -> None:
+  pass
+
+
 @ray.remote
 def build_main_processing_graph() -> Graph:
+  mosaics = context.mosaics
   shopping_cart = context.shopping_cart or []
   print(f'### build_main_processing_graph shopping_cart {shopping_cart}')
 
   # TODO: Maybe add prioritization options in the UI.
-  # TODO: Using ray.get() here is a little awkward.
   graph = Graph({})
+  tasks = []
   for type, id in shopping_cart:
     if type == 'stack':
       if id not in context.stacks:
         print('### WARNING: stack {id} is in shopping cart but does not exist')
         continue
-      subgraph = ray.get(build_stack_subgraph.remote(id))
-      graph |= subgraph
+      tasks.append((build_stack_subgraph, id))
     elif type == 'target':
       if id not in context.targets:
         print('### WARNING: target {id} is in shopping cart but does not exist')
         continue
-      subgraph = ray.get(build_target_subgraph.remote(TargetHash(id)))
-      graph |= subgraph
+      tasks.append((build_target_subgraph, id))
     if type == 'mosaic':
       if id not in context.mosaics:
         print('### WARNING: mosaic {id} is in shopping cart but does not exist')
         continue
-      subgraph = ray.get(
-          build_mosaic_subgraph.remote(QualityLevel.MASTER, MosaicHash(id)))
-      graph |= subgraph
+      tasks.append((build_mosaic_subgraph, QualityLevel.MASTER, mosaics[id]))
 
+  graph[main_processing_graph_done] = tasks
   return graph
 
 
@@ -143,6 +146,11 @@ def build_compute_graph(regroup: bool = False,
   # The regroup graph only looks at light frames only, and ignores calibration
   # frames. All of its findings are written into the given `grouped_*` keys.
   if regroup:
+    # TODO: The @AstroFlowNode decorator works with values passed down through
+    # the dependency graph as return values and arguments. These context-based
+    # values are basically "side effects." When the decorator doesn't run
+    # the functions, these side effects don't happen.
+    #
     context.calibration_stacks = {}
     context.grouped_stacks = {}
     context.grouped_targets = {}
@@ -152,6 +160,7 @@ def build_compute_graph(regroup: bool = False,
   # This looks only at calibration frames.
   # TODO: Don't do this unless there are new calibration frames.
   task_list.append(identify_calibration_stacks)
+  task_list.append(store_calibration_stacks)
 
   # The tasks that follow consume the raw objects computed from the files
   # on disk, and transform them into the final objects seen by the rest of
