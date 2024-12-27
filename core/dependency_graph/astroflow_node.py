@@ -32,6 +32,8 @@ class WrongContentHashException(Exception):
 def AstroFlowNode(resources=None,
                   memory=None,
                   always_run=False,
+                  update_header=True,
+                  unpack_artifacts=True,
                   cache_result=True,
                   keep_in_memory=True):
 
@@ -57,7 +59,7 @@ def AstroFlowNode(resources=None,
         return result
 
       # TODO: Clean this up.
-      if isinstance(result, Path):
+      if update_header and isinstance(result, Path):
         if result.suffix.lower() in ['.xisf']:
           add_xisf_metadata(result, result, {'CONTHASH': content_hash})
           print(f'### Updated XISF filename {result} with '
@@ -110,11 +112,12 @@ def AstroFlowNode(resources=None,
                args=args,
                kwargs=kwargs)
 
-      unpacked_args = [unpack_artifact(a) for a in args]
-      unpacked_kwargs = {k: unpack_artifact(v) for k, v in kwargs.items()}
+      if unpack_artifacts:
+        args = [unpack_artifact(a) for a in args]
+        kwargs = {k: unpack_artifact(v) for k, v in kwargs.items()}
 
       if not cache_result:
-        return fn(*unpacked_args, **unpacked_kwargs)
+        return fn(*args, **kwargs)
 
       kwargs_list = list(kwargs.items())
       content_hash = hash_list([source, *args, *kwargs_list])
@@ -126,7 +129,7 @@ def AstroFlowNode(resources=None,
         return CacheArtifact(key)
       else:
         print(f'### Running fn {fn.__name__}')
-        result = fn(*unpacked_args, **unpacked_kwargs)
+        result = fn(*args, **kwargs)
         return _store_result(result, content_hash)
 
     return wrapper
