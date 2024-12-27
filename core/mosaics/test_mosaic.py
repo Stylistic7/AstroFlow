@@ -121,18 +121,18 @@ class TestMosaic(unittest.TestCase):
                                               run_main_processing_graph=True)
     run_graph(graph)
 
-    # shutil.copytree(context.output_dir, '/tmp/foo', dirs_exist_ok=True)
+    shutil.copytree(context.output_dir, '/tmp/foo', dirs_exist_ok=True)
 
-    # self.assertEqual(len(context.targets), 4)
-    # self.assertEqual(len(context.mosaics), 1)
-    # mosaic = next(iter(context.mosaics.values()))
+    self.assertEqual(len(context.targets), 4)
+    self.assertEqual(len(context.mosaics), 1)
+    mosaic = next(iter(context.mosaics.values()))
 
-    # fits_files = list(Path(context.output_dir).rglob('final_merged*.fit'))
-    # self.assertEqual(len(fits_files), 1)
-    # print(f'### Found final merged file {fits_files[0]}')
+    fits_files = list(Path(context.output_dir).rglob('final_merged*.fit'))
+    self.assertEqual(len(fits_files), 1)
+    print(f'### Found final merged file {fits_files[0]}')
 
-    # self.assertTrue(context.contains(subframe_key))
-    # self.assertTrue(context.contains(master_key))
+    self.assertTrue(context.contains(subframe_key))
+    self.assertTrue(context.contains(master_key))
 
   def test_orion_mosaic_with_missing_panel(self) -> None:
     copy_testdata_frames(target_name='Orion Pane 1',

@@ -28,6 +28,7 @@ from previews import resize_array, QualityLevel
 from profiling import track_performance
 from dependency_graph.astroflow_node import AstroFlowNode
 from targets import Target
+from file_io.generic import read_image
 
 
 @AstroFlowNode()
@@ -39,16 +40,19 @@ def mosaic_done(*ancestor_results) -> None:
 # just stored in "findable locations" that do not depend on content hashes.
 @AstroFlowNode()
 def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
-                               image: np.ndarray) -> None:
-  print(f'### store_mosaic_color_channel: filter {filter} image {type(image)}')
+                               input: Any) -> None:
+  print(f'### store_mosaic_color_channel: filter {filter} input {type(input)}')
+  key = ('mosaic_thumbnail_image', mode, mosaic.stable_hash, filter)
 
   if mode == QualityLevel.SUBFRAME:
-    key = ('mosaic_thumbnail_image', mode, mosaic.stable_hash, filter)
-    context.set(key, image, write_mode=WriteMode.DISK_ONLY)
+    context.set(key, input, write_mode=WriteMode.DISK_ONLY)
     print(f'### store_mosaic_color_channel wrote key {key}')
   elif mode == QualityLevel.MASTER:
-    filename = os.path.join(context.output_dir, 'Mosaics', mosaic.name,
-                            f'final_merged_{mosaic.stable_hash}_{filter}.fit')
+    image = read_image(input)
+    context.set(key, input, write_mode=WriteMode.DISK_ONLY)
+    filename = Path(
+        context.output_dir
+    ) / 'Mosaics' / mosaic.name / f'final_merged_{mosaic.stable_hash}_{filter}.fit'
     hdu = pyfits.PrimaryHDU(image)
     filename.parent.mkdir(parents=True, exist_ok=True)
     hdu.writeto(str(filename), overwrite=True)

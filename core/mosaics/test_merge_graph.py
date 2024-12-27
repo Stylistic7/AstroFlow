@@ -3,9 +3,10 @@ from ray_infra import ray_local
 import ray
 import unittest
 
-from context import context
+from context import context, get_cache
 from dependency_graph.debugging import Graph, Node, print_graph
 from dependency_graph.classes import canonicalize_graph
+from dependency_graph import run_graph
 from testing.test_context import make_test_context
 from mosaics.mosaic import Mosaic
 from mosaics.placement import place_image
@@ -14,6 +15,10 @@ from mosaics.compute_graph import build_mosaic_filter_subgraph, build_placement_
 from mosaics.types import TileIndices
 from previews import QualityLevel
 from targets import Target
+from testing.testdata_cache import copy_testdata_into_cache
+from mosaics.viewbox import compute_mosaic_viewbox, Viewbox
+from mosaics import identification
+from compute_graph.compute_graph import load_metadata
 
 
 # TODO: Put this somewhere generally-accessible.

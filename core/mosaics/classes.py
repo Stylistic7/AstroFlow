@@ -17,17 +17,13 @@ class Viewbox:
 @dataclass(frozen=True)
 class Panel:
   tile_indices: tuple[int, int]
-
-  # This define the input image.
-  input_artifact: Artifact
-
-  content_hash: str
+  image: Artifact
 
 
 @dataclass(frozen=True)
 class MergeOp:
-  input_artifacts: list[Artifact]
-  output_artifact: Artifact
+  input_images: list[Artifact]
+  output_image: Artifact
 
 
 @dataclass
