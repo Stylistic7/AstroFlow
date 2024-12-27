@@ -118,21 +118,7 @@ def _(artifact: CacheArtifact) -> np.ndarray:
   if not context.contains(artifact.key):
     raise ArtifactNotFoundException(f'Key {artifact.key} not found in context')
 
-  file_obj = io.BytesIO(context.get(artifact.key, keep_in_memory=False))
-
-  fits = pyfits.open(file_obj, mmap=False)
-  image = fits[0].data
-  fits.close()
-
-  if artifact.content_hash is not None:
-    content_hash = fits[0].header['CONTHASH'] if 'CONTHASH' in fits[
-        0].header else None
-    if content_hash != artifact.content_hash:
-      raise WrongContentHashException(
-          f'Key {artifact.key} had incorrect content hash '
-          f'{content_hash}, expected {artifact.content_hash}')
-
-  return image
+  return context[artifact.key]
 
 
 @singledispatch
@@ -164,28 +150,6 @@ def _(artifact: FileArtifact,
   print(f'### Wrote artifact {artifact}')
 
 
-@write_artifact.register
-def _(artifact: CacheArtifact,
-      image: np.ndarray, header: Optional[Dict[str, Any]] = None) -> None:
-  hdu = pyfits.PrimaryHDU(image)
-
-  if header is not None:
-    for k, v in header.items():
-      if type(v) is datetime.datetime:
-        hdu.header[k] = v.isoformat()
-      else:
-        hdu.header[k] = v
-
-  if artifact.content_hash is not None:
-    hdu.header['CONTHASH'] = artifact.content_hash
-
-  file_obj = io.BytesIO()
-  hdu.writeto(file_obj)
-
-  context.set(artifact.key, file_obj.getvalue(), write_mode=WriteMode.DISK_ONLY)
-  print(f'### Wrote artifact {artifact}')
-
-
 @singledispatch
 def artifact_exists(artifact: Artifact) -> bool:
   assert False, f'Bad artifact type {type(artifact)}'
@@ -208,23 +172,4 @@ def _(artifact: FileArtifact) -> bool:
 
 @artifact_exists.register
 def _(artifact: CacheArtifact) -> bool:
-  if not context.contains(artifact.key):
-    return False
-
-  # TODO: Consider removing support for saving FITS inside the cache; it
-  # generally makes more sense to save these to disk.
-  if artifact.content_hash is not None:
-    value = context.get(artifact.key, keep_in_memory=False)
-
-    if type(value) is not bytes:
-      return True
-
-    file_obj = io.BytesIO(value)
-    fits = pyfits.open(file_obj, mmap=False)
-    header = normalize_header(fits[0].header)
-    fits.close()
-
-    if 'CONTHASH' not in header or header['CONTHASH'] != artifact.content_hash:
-      return False
-
-  return True
+  return context.contains(artifact.key)
