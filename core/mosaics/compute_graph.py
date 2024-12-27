@@ -15,7 +15,6 @@ from mosaics.types import MosaicHash
 from mosaics.classes import Panel, Viewbox
 from mosaics.merge_images import merge_images
 from mosaics.mosaic import Mosaic
-from mosaics.merge_ops import make_merge_ops
 from mosaics.viewbox import compute_mosaic_viewbox
 from mosaics.placement import place_image
 from mosaics.types import TileIndices
