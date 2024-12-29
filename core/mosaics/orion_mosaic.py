@@ -4,23 +4,31 @@ from context import context
 from testing.test_frames import copy_testdata_frames, make_synthetic_frames
 
 
-def add_orion_mosaic_images():
-  copy_testdata_frames(target_name='Orion Pane 1',
-                       start_datetime=datetime.datetime(2024, 2, 5, 16, 29, 43),
-                       dest_dir=context.input_dirs[0],
-                       add_noise=False)
-  copy_testdata_frames(target_name='Orion Pane 2',
-                       start_datetime=datetime.datetime(2024, 2, 5, 17, 29, 43),
-                       dest_dir=context.input_dirs[0],
-                       add_noise=False)
-  copy_testdata_frames(target_name='Orion Pane 3',
-                       start_datetime=datetime.datetime(2024, 2, 5, 18, 29, 43),
-                       dest_dir=context.input_dirs[0],
-                       add_noise=False)
-  copy_testdata_frames(target_name='Orion Pane 4',
-                       start_datetime=datetime.datetime(2024, 2, 5, 19, 29, 43),
-                       dest_dir=context.input_dirs[0],
-                       add_noise=False)
+def add_orion_mosaic_images(panes=[1, 2, 3, 4]):
+  if 1 in panes:
+    copy_testdata_frames(target_name='Orion Pane 1',
+                         start_datetime=datetime.datetime(
+                             2024, 2, 5, 16, 29, 43),
+                         dest_dir=context.input_dirs[0],
+                         add_noise=False)
+  if 2 in panes:
+    copy_testdata_frames(target_name='Orion Pane 2',
+                         start_datetime=datetime.datetime(
+                             2024, 2, 5, 17, 29, 43),
+                         dest_dir=context.input_dirs[0],
+                         add_noise=False)
+  if 3 in panes:
+    copy_testdata_frames(target_name='Orion Pane 3',
+                         start_datetime=datetime.datetime(
+                             2024, 2, 5, 18, 29, 43),
+                         dest_dir=context.input_dirs[0],
+                         add_noise=False)
+  if 4 in panes:
+    copy_testdata_frames(target_name='Orion Pane 4',
+                         start_datetime=datetime.datetime(
+                             2024, 2, 5, 19, 29, 43),
+                         dest_dir=context.input_dirs[0],
+                         add_noise=False)
 
   make_synthetic_frames(prefix='dark',
                         number=5,

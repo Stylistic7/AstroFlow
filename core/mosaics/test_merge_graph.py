@@ -118,6 +118,49 @@ class TestMergeGraph(unittest.TestCase):
     self.assertEqual(canonicalize_graph(graph),
                      canonicalize_graph(expected_graph))
 
+  def test_three_panes(self) -> None:
+    mode = QualityLevel.SUBFRAME
+    filter = 'H'
+    viewbox = None
+
+    mosaic = Mosaic(name='three_panes',
+                    content_hash='content_abc123',
+                    stable_hash='mosaic_abc123',
+                    target_ids=['a', 'b', 'c'],
+                    tile_indices=None,
+                    strips=[['a'], ['b', 'c']],
+                    oldest_date=None,
+                    newest_date=None,
+                    center=None,
+                    footprint=None,
+                    projected_footprints=None)
+
+    context.targets = targets = {
+        'a': make_test_target(target='a'),
+        'b': make_test_target(target='b'),
+        'c': make_test_target(target='c'),
+    }
+
+    log, graph = ray.get(
+        build_mosaic_filter_subgraph.remote(mode, mosaic, filter, viewbox))
+
+    expected_graph = Graph({
+        Node(merge_images, mode, name='merge_c'): [
+            (build_placement_subgraph, mode, mosaic, targets['b'], filter,
+             TileIndices((1, 0)), viewbox),
+            (build_placement_subgraph, mode, mosaic, targets['c'], filter,
+             TileIndices((1, 1)), viewbox)
+        ],
+        Node(merge_images, mode, name='merge_strip_1'): [
+            (build_placement_subgraph, mode, mosaic, targets['a'], filter,
+             TileIndices((0, 0)), viewbox),
+            Node(merge_images, mode, name='merge_c')
+        ]
+    })
+
+    self.assertEqual(canonicalize_graph(graph),
+                     canonicalize_graph(expected_graph))
+
   def test_orion_mosaic(self) -> None:
     add_orion_mosaic_images()
 
@@ -159,6 +202,49 @@ class TestMergeGraph(unittest.TestCase):
         Node(merge_images, mode, name='merge_strip_1'): [
             Node(merge_images, mode, name='merge_3871323c8756dead'),
             Node(merge_images, mode, name='merge_9ed89ccd9f10cc09')
+        ]
+    })
+
+    self.assertEqual(canonicalize_graph(graph),
+                     canonicalize_graph(expected_graph))
+
+  def test_orion_mosaic_missing_panel(self) -> None:
+    add_orion_mosaic_images(panes=[1, 2, 3])
+
+    # Running the graph the first time, with an empty shopping cart, should
+    # produce all the subframe previews for the stacks, targets, and mosaic.
+    graph = compute_graph.build_compute_graph(regroup=True,
+                                              make_previews=True,
+                                              run_main_processing_graph=True)
+    run_graph(graph)
+
+    targets = context.targets
+    self.assertEqual(len(targets), 3)
+    self.assertEqual(len(context.mosaics), 1)
+    mosaic = next(iter(context.mosaics.values()))
+
+    self.assertEqual(
+        mosaic.strips,
+        [['3ef21a508ef46b36'], ['e1f7d909ac125ebe', '3871323c8756dead']])
+
+    mode = QualityLevel.SUBFRAME
+    filter = 'H'
+    viewbox = None
+
+    log, graph = ray.get(
+        build_mosaic_filter_subgraph.remote(mode, mosaic, filter, viewbox))
+
+    expected_graph = Graph({
+        Node(merge_images, mode, name='merge_3871323c8756dead'): [
+            (build_placement_subgraph, mode, mosaic,
+             targets['e1f7d909ac125ebe'], filter, TileIndices((1, 0)), viewbox),
+            (build_placement_subgraph, mode, mosaic,
+             targets['3871323c8756dead'], filter, TileIndices((1, 1)), viewbox)
+        ],
+        Node(merge_images, mode, name='merge_strip_1'): [
+            (build_placement_subgraph, mode, mosaic,
+             targets['3ef21a508ef46b36'], filter, TileIndices((0, 0)), viewbox),
+            Node(merge_images, mode, name='merge_3871323c8756dead')
         ]
     })
 

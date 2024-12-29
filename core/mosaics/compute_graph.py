@@ -142,7 +142,7 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
   targets = context.targets
 
   print(f'### build_mosaic_filter_subgraph mode {mode} '
-        f'mosaic {mosaic} filter {filter}')
+        f'mosaic {mosaic} filter {filter} strips {mosaic.strips}')
 
   # For strip index 0:
   #   merge(place_a, place_b) -> merge_b
@@ -180,9 +180,9 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
   # For a mosaic with three strips:
   #   merge(merge_d, merge_h) -> merge_strips_1
   #   merge(merge_strips_1, merge_l) -> final
-  for i, strip in enumerate(mosaic.strips):
+  for i, (strip, strip_task) in enumerate(zip(mosaic.strips, strip_tasks)):
     if i == 0:
-      prev_task = Node(merge_images, mode, name=f'merge_{strip[-1]}')
+      prev_task = strip_task
     else:
       merge_task = Node(merge_images, mode, name=f'merge_strip_{i}')
       graph[merge_task] = [
