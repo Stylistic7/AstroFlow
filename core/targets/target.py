@@ -22,11 +22,16 @@ class Target(AstrometricAttributes):
   newest_date: datetime.datetime
 
   def __str__(self) -> str:
-    return (f'Target(target={self.target}, {len(self.stack_ids)} stacks)')
+    return (f'Target(target={self.target}, stable_hash={self.stable_hash}, '
+            f'content_hash={self.content_hash}, {len(self.stack_ids)} stacks)')
 
   def __hash__(self):
     return hash(
         tuple(make_hashable(getattr(self, f.name)) for f in fields(self)))
+
+  def __eq__(self, other) -> bool:
+    return (self.stable_hash == other.stable_hash and
+            self.content_hash == other.content_hash)
 
   # TODO: Add a valid() method, and assert on it.
 

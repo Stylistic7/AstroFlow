@@ -3,18 +3,10 @@ from typing import Any
 from ray.remote_function import RemoteFunction
 
 from dependency_graph import Graph, CanonicalGraph, Node, ResultDict, canonicalize_node
-from artifacts import FileArtifact, CacheArtifact
-
-
-def _type_or_value(x: Any) -> str:
-  if type(x) in [int, float, str, FileArtifact, CacheArtifact]:
-    return f"'{str(x)}'"
-
-  return str(type(x))
 
 
 def _tuple_values(tup: tuple) -> str:
-  return ', '.join([_type_or_value(t) for t in tup])
+  return ', '.join([str(t) for t in tup])
 
 
 def node_to_string(node: Node) -> str:

@@ -12,6 +12,10 @@ GenericRemoteFunction: TypeAlias = (RemoteFunction | RemoteFunctionNoArgs |
                                     RemoteFunction6)
 
 
+def _tuple_values(tup: tuple) -> str:
+  return ', '.join([str(t) for t in tup])
+
+
 class Node():
 
   task: GenericRemoteFunction
@@ -44,8 +48,10 @@ class Node():
                  self.name, self.priority, self.args))
 
   def __str__(self):
-    return (f"{self.task._function.__module__}.{self.task._function.__name__}"
-            f"{str(self.args)} name='{self.name}' priority={self.priority}")
+    return (
+        f"Node({self.task._function.__module__}.{self.task._function.__name__}"
+        f"({_tuple_values(self.args)}) name='{self.name}' "
+        f"priority={self.priority})")
 
 
 RemoteFunctionTuple: TypeAlias = Union[tuple[GenericRemoteFunction,
