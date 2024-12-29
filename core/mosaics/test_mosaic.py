@@ -13,6 +13,7 @@ from dependency_graph import run_graph
 from testing.test_context import make_test_context
 from hashing import hash_list
 from previews.types import QualityLevel
+from mosaics.orion_mosaic import add_orion_mosaic_images
 
 
 class TestMosaic(unittest.TestCase):
@@ -64,26 +65,7 @@ class TestMosaic(unittest.TestCase):
     self.assertTrue(context.contains(sii_key))
 
   def test_orion_mosaic(self) -> None:
-    copy_testdata_frames(target_name='Orion Pane 1',
-                         start_datetime=datetime.datetime(
-                             2024, 2, 5, 16, 29, 43),
-                         dest_dir=context.input_dirs[0],
-                         add_noise=False)
-    copy_testdata_frames(target_name='Orion Pane 2',
-                         start_datetime=datetime.datetime(
-                             2024, 2, 5, 17, 29, 43),
-                         dest_dir=context.input_dirs[0],
-                         add_noise=False)
-    copy_testdata_frames(target_name='Orion Pane 3',
-                         start_datetime=datetime.datetime(
-                             2024, 2, 5, 18, 29, 43),
-                         dest_dir=context.input_dirs[0],
-                         add_noise=False)
-    copy_testdata_frames(target_name='Orion Pane 4',
-                         start_datetime=datetime.datetime(
-                             2024, 2, 5, 19, 29, 43),
-                         dest_dir=context.input_dirs[0],
-                         add_noise=False)
+    add_orion_mosaic_images()
 
     # Running the graph the first time, with an empty shopping cart, should
     # produce all the subframe previews for the stacks, targets, and mosaic.
