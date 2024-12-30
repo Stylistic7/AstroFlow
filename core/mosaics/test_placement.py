@@ -38,10 +38,6 @@ class TestPlacement(unittest.TestCase):
     cache = get_cache()
     copy_testdata_into_cache()
 
-    context.stacks = context.grouped_stacks
-    context.targets = context.grouped_targets
-    context.mosaics = context.grouped_mosaics
-
     ray.get(load_metadata.remote())
 
     print('### metadata.keys()', context.metadata.keys())
