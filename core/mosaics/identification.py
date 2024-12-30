@@ -49,7 +49,7 @@ def target_compatible_with_mosaic(target_id: TargetHash,
                                   mosaic: set[TargetHash],
                                   allowed_overlaps,
                                   debug: bool = False) -> bool:
-  targets = context.grouped_targets
+  targets = context.targets
   target = targets[target_id]
 
   # The two mosaics can be merged together if:
@@ -233,7 +233,7 @@ def group_targets(
 
 def find_strips(target_ids: list[TargetHash],
                 debug: bool = False) -> list[list[TargetHash]]:
-  targets = context.grouped_targets
+  targets = context.targets
 
   target_ids = list(sorted(target_ids, key=lambda t: targets[t].center[0]))
 
@@ -292,8 +292,8 @@ def find_strips(target_ids: list[TargetHash],
 
 def _identify_overlapping_targets(
     debug: bool = False) -> list[list[TargetHash]]:
-  stacks = context.grouped_stacks
-  targets = context.grouped_targets
+  stacks = context.stacks
+  targets = context.targets
 
   if not targets:
     return []
@@ -323,13 +323,13 @@ def _identify_overlapping_targets(
 
 @AstroFlowNode()
 def identify_mosaics(debug: bool = False) -> dict[MosaicHash, Mosaic]:
-  targets = context.grouped_targets
+  targets = context.targets
   print(f'### Identifying mosaics from {len(targets)} targets')
 
   mosaics = _identify_overlapping_targets(debug)
   if not mosaics:
     print('### No overlapping targets found')
-    context.grouped_mosaics = {}
+    context.mosaics = {}
     return {}
 
   print(f'Found {len(mosaics)} mosaics')
@@ -421,5 +421,5 @@ def identify_mosaics(debug: bool = False) -> dict[MosaicHash, Mosaic]:
 
   # TODO: Computing the result and storing the result are two different
   # responsibilities. Perhaps separate patterns like this?
-  context.grouped_mosaics = output_mosaics
+  context.mosaics = output_mosaics
   return output_mosaics

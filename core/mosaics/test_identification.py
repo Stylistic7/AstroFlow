@@ -59,14 +59,14 @@ class TestMosaicIdentification(unittest.TestCase):
                                                              [-1, -1, 1, 1]),
                  projected_footprints={})
 
-    context.grouped_stacks = {
+    context.stacks = {
         str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
         for i in range(6)
     }
-    context.grouped_targets = {foo.stable_hash: foo, bar.stable_hash: bar}
+    context.targets = {foo.stable_hash: foo, bar.stable_hash: bar}
 
     ray.get(identification.identify_mosaics.remote())
-    mosaics = context.grouped_mosaics
+    mosaics = context.mosaics
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
 
@@ -126,18 +126,18 @@ class TestMosaicIdentification(unittest.TestCase):
                      [95, 99, 99, 95], [0.5, 0.5, 2.5, 2.5], center=[97, 1.5]),
                  projected_footprints={})
 
-    context.grouped_stacks = {
+    context.stacks = {
         str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
         for i in range(9)
     }
-    context.grouped_targets = {
+    context.targets = {
         foo.stable_hash: foo,
         bar.stable_hash: bar,
         baz.stable_hash: baz
     }
 
     ray.get(identification.identify_mosaics.remote())
-    mosaics = context.grouped_mosaics
+    mosaics = context.mosaics
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
@@ -196,18 +196,18 @@ class TestMosaicIdentification(unittest.TestCase):
                      [98.02, 102.02, 102.02, 98.02], [1.5, 1.5, 3.5, 3.5]),
                  projected_footprints={})
 
-    context.grouped_stacks = {
+    context.stacks = {
         str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
         for i in range(9)
     }
-    context.grouped_targets = {
+    context.targets = {
         foo.stable_hash: foo,
         bar.stable_hash: bar,
         baz.stable_hash: baz
     }
 
     ray.get(identification.identify_mosaics.remote())
-    mosaics = context.grouped_mosaics
+    mosaics = context.mosaics
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
@@ -274,11 +274,11 @@ class TestMosaicIdentification(unittest.TestCase):
                                                     [-1.5, -1.5, 0.5, 0.5]),
         projected_footprints={})
 
-    context.grouped_stacks = {
+    context.stacks = {
         str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
         for i in range(12)
     }
-    context.grouped_targets = {
+    context.targets = {
         foo.stable_hash: foo,
         bar.stable_hash: bar,
         baz.stable_hash: baz,
@@ -286,12 +286,12 @@ class TestMosaicIdentification(unittest.TestCase):
     }
 
     ray.get(identification.identify_mosaics.remote())
-    mosaics = context.grouped_mosaics
+    mosaics = context.mosaics
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
     self.assertEqual(mosaic.target_ids,
-                     [bar.stable_hash, baz.stable_hash, foo.stable_hash])
+                     [baz.stable_hash, bar.stable_hash, foo.stable_hash])
     self.assertEqual(mosaic.tile_indices, [(0, 0), (0, 1), (1, 0)])
 
   def test_ic1318(self) -> None:
@@ -335,17 +335,17 @@ class TestMosaicIdentification(unittest.TestCase):
                      np.array([0.47176113, -0.62623935, 0.62069777])),
                  projected_footprints={})
 
-    context.grouped_stacks = {
+    context.stacks = {
         str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
         for i in range(6)
     }
-    context.grouped_targets = {
+    context.targets = {
         foo.stable_hash: foo,
         bar.stable_hash: bar,
     }
 
     ray.get(identification.identify_mosaics.remote())
-    mosaics = context.grouped_mosaics
+    mosaics = context.mosaics
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
@@ -355,12 +355,10 @@ class TestMosaicIdentification(unittest.TestCase):
     self.assertEqual(mosaic.tile_indices, [(0, 0), (1, 0)])
 
   def test_big_cygnus_pano(self) -> None:
-    cache = get_cache()
     copy_testdata_into_cache()
 
     ray.get(identification.identify_mosaics.remote())
-    targets = context.grouped_targets
-    mosaics = context.grouped_mosaics
+    mosaics = context.mosaics
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
