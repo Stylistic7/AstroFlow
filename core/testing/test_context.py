@@ -12,12 +12,6 @@ def make_test_context(
 
   context.quarantined_files = []
 
-  context.stacks = {}
-  context.targets = {}
-  context.mosaics = {}
-
-  context.regroup = False
-
   input_dir_obj = tempfile.TemporaryDirectory()
   context.input_dirs = [input_dir_obj.name]
 

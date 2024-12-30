@@ -39,6 +39,14 @@ def copy_testdata_into_cache():
 
   print(f'### Copied {num_copied} keys from testdata cache')
 
+  # TODO: These are a hack. Remove these when the testdata is refreshed next.
+  cache['stacks'] = testdata_cache['grouped_stacks']
+  cache['targets'] = testdata_cache['grouped_targets']
+  cache['mosaics'] = testdata_cache['grouped_mosaics']
+  print(f"### Copied {len(cache['stacks'])} stacks from testdata cache")
+  print(f"### Copied {len(cache['targets'])} targets from testdata cache")
+  print(f"### Copied {len(cache['mosaics'])} mosaics from testdata cache")
+
 
 def copy_all_stack_data(cache, testdata_cache, stack_id):
   stacks = cache['grouped_stacks']
