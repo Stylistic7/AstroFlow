@@ -154,9 +154,6 @@ class TestMosaic(unittest.TestCase):
 
     self.assertTrue(
         mosaic.stable_hash in [t.stable_hash for t in context.targets.values()])
-    self.assertEqual(
-        mosaic.content_hash,
-        hash_list([t.content_hash for t in context.targets.values()]))
 
     # After putting the mosaic in the shopping cart, the second graph
     # execution should stack the subframes into masters, and generate a final

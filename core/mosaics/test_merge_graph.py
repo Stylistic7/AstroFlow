@@ -57,6 +57,49 @@ class TestMergeGraph(unittest.TestCase):
     self.input_dir_obj.cleanup()
     self.output_dir_obj.cleanup()
 
+  def test_three_by_one(self) -> None:
+    mode = QualityLevel.SUBFRAME
+    filter = 'H'
+    viewbox = None
+
+    mosaic = Mosaic(name='three_by_one',
+                    content_hash='content_abc123',
+                    stable_hash='mosaic_abc123',
+                    target_ids=['a', 'b', 'c'],
+                    tile_indices=None,
+                    strips=[['a'], ['b'], ['c']],
+                    oldest_date=None,
+                    newest_date=None,
+                    center=None,
+                    footprint=None,
+                    projected_footprints=None)
+
+    context.targets = targets = {
+        'a': make_test_target(target='a'),
+        'b': make_test_target(target='b'),
+        'c': make_test_target(target='c'),
+    }
+
+    log, graph = ray.get(
+        build_mosaic_filter_subgraph.remote(mode, mosaic, filter, viewbox))
+    print_graph(graph)
+
+    expected_graph = Graph({
+        Node(merge_images, mode, name='merge_strip_1'): [
+            (build_placement_subgraph, mode, mosaic, targets['a'], filter,
+             TileIndices((0, 0)), viewbox),
+            (build_placement_subgraph, mode, mosaic, targets['b'], filter,
+             TileIndices((1, 0)), viewbox)
+        ],
+        Node(merge_images, mode, name='merge_strip_2'): [
+            Node(merge_images, mode, name='merge_strip_1'),
+            (build_placement_subgraph, mode, mosaic, targets['c'], filter,
+             TileIndices((2, 0)), viewbox)
+        ],
+    })
+    self.assertEqual(canonicalize_graph(graph),
+                     canonicalize_graph(expected_graph))
+
   def test_two_by_three(self) -> None:
     mode = QualityLevel.SUBFRAME
     filter = 'H'

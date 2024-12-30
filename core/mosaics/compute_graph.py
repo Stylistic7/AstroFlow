@@ -164,31 +164,26 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
   for strip_index, strip in enumerate(mosaic.strips):
     for i, target_id in enumerate(strip):
       if i == 0:
-        prev_task = (build_placement_subgraph, mode, mosaic, targets[target_id],
-                     filter, TileIndices((strip_index, i)), viewbox)
+        prev_task = Node(build_placement_subgraph, mode, mosaic,
+                         targets[target_id], filter,
+                         TileIndices((strip_index, i)), viewbox)
       else:
         merge_task = Node(merge_images, mode, name=f'merge_{target_id}')
         graph[merge_task] = [
             prev_task,
-            (build_placement_subgraph, mode, mosaic, targets[target_id], filter,
-             TileIndices((strip_index, i)), viewbox)
+            Node(build_placement_subgraph, mode, mosaic, targets[target_id],
+                 filter, TileIndices((strip_index, i)), viewbox)
         ]
         prev_task = merge_task
 
     strip_tasks.append(prev_task)
 
-  # For a mosaic with three strips:
-  #   merge(merge_d, merge_h) -> merge_strips_1
-  #   merge(merge_strips_1, merge_l) -> final
-  for i, (strip, strip_task) in enumerate(zip(mosaic.strips, strip_tasks)):
+  for i in range(len(mosaic.strips)):
     if i == 0:
-      prev_task = strip_task
+      prev_task = strip_tasks[0]
     else:
       merge_task = Node(merge_images, mode, name=f'merge_strip_{i}')
-      graph[merge_task] = [
-          prev_task,
-          Node(merge_images, mode, name=f'merge_{strip[-1]}')
-      ]
+      graph[merge_task] = [prev_task, strip_tasks[i]]
       prev_task = merge_task
 
   return graph
