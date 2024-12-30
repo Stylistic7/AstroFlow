@@ -77,5 +77,5 @@ def cluster_by_image_center() -> None:
   groups = find_groups(values, comparison_fn, min_component_members)
   groups_as_tuples = [tuple(sorted(g)) for g in groups]
 
-  context.spatial_groups = groups_as_tuples
-  print(f'### Wrote {len(groups_as_tuples)} spatial groups into the cache')
+  print(f'### Returning {len(groups_as_tuples)} spatial groups')
+  return groups_as_tuples

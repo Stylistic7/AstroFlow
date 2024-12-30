@@ -40,9 +40,9 @@ class TestSpatialAssociation(unittest.TestCase):
                           dither=0,
                           dest_dir=input_dir)
 
-    run_graph(compute_graph_fragment())
+    results, _ = run_graph(compute_graph_fragment())
+    groups = results[cluster_by_image_center]
 
-    groups = context.spatial_groups
     image_hashes = get_metadata(transform_fn=lambda i: i.content_hash)
 
     expected_groups = [tuple(sorted(image_hashes))]
@@ -68,9 +68,9 @@ class TestSpatialAssociation(unittest.TestCase):
                           dither=0,
                           dest_dir=input_dir)
 
-    run_graph(compute_graph_fragment())
+    results, _ = run_graph(compute_graph_fragment())
+    groups = results[cluster_by_image_center]
 
-    groups = context.spatial_groups
     hash_for_filename = compute_hash_for_filename()
 
     expected_groups = [
@@ -109,9 +109,9 @@ class TestSpatialAssociation(unittest.TestCase):
                           dither=0,
                           dest_dir=input_dir)
 
-    run_graph(compute_graph_fragment())
+    results, _ = run_graph(compute_graph_fragment())
+    groups = results[cluster_by_image_center]
 
-    groups = context.spatial_groups
     hash_for_filename = compute_hash_for_filename()
 
     expected_groups = [
@@ -152,9 +152,9 @@ class TestSpatialAssociation(unittest.TestCase):
                           rotation_angle_deg=0,
                           dest_dir=input_dir)
 
-    run_graph(compute_graph_fragment())
+    results, _ = run_graph(compute_graph_fragment())
+    groups = results[cluster_by_image_center]
 
-    groups = context.spatial_groups
     hash_for_filename = compute_hash_for_filename()
 
     expected_groups = [
@@ -193,9 +193,9 @@ class TestSpatialAssociation(unittest.TestCase):
                           dither=0.1,
                           dest_dir=input_dir)
 
-    run_graph(compute_graph_fragment())
+    results, _ = run_graph(compute_graph_fragment())
+    groups = results[cluster_by_image_center]
 
-    groups = context.spatial_groups
     hash_for_filename = compute_hash_for_filename()
 
     expected_groups = [
@@ -237,9 +237,9 @@ class TestSpatialAssociation(unittest.TestCase):
 
     context.min_component_members = 1
 
-    run_graph(compute_graph_fragment())
+    results, _ = run_graph(compute_graph_fragment())
+    groups = results[cluster_by_image_center]
 
-    groups = context.spatial_groups
     hash_for_filename = compute_hash_for_filename()
 
     expected_groups = [(hash_for_filename['Pane 0'],),
