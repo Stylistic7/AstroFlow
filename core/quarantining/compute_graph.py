@@ -20,12 +20,12 @@ from mosaics.types import MosaicHash
 from mosaics.validation import validate_mosaics
 from targets.target import Target, TargetsDict
 from mosaics.mosaic import Mosaic, MosaicsDict
+from quarantining.settings import Settings, StackSettings
 
 
-# TODO: Maybe SimpleStacks and CompositeStacks should be in separate dicts.
-@AstroFlowNode()
-def quarantine_stacks() -> dict[str, SimpleStack | CompositeStack]:
-  stacks = context.grouped_stacks
+@AstroFlowNode(always_run=True)
+def quarantine_stacks() -> SimpleStacksDict | CompositeStacksDict:
+  stacks = context.stacks
   if not stacks:
     return {}
 
@@ -37,11 +37,12 @@ def quarantine_stacks() -> dict[str, SimpleStack | CompositeStack]:
   }
 
 
-@AstroFlowNode()
+# TODO: This should be made functional.
+@AstroFlowNode(always_run=True)
 def quarantine_targets() -> dict[TargetHash, Target]:
   stacks = context.stacks
-  targets = context.grouped_targets
-  print(f'### quarantine_targets {len(targets)} grouped targets')
+  targets = context.targets
+  print(f'### quarantine_targets {len(targets)} targets')
   if not targets:
     return {}
 
@@ -51,6 +52,7 @@ def quarantine_targets() -> dict[TargetHash, Target]:
   output_targets = {}
   for target_id, target in targets.items():
     if target_id in quarantined_targets:
+      print(f'### removing quarantined target {target_id}')
       continue
 
     stack_ids = [
@@ -66,11 +68,11 @@ def quarantine_targets() -> dict[TargetHash, Target]:
   return output_targets
 
 
-@AstroFlowNode()
+@AstroFlowNode(always_run=True)
 def quarantine_mosaics() -> dict[MosaicHash, Mosaic]:
   targets = context.targets
-  mosaics = context.grouped_mosaics
-  print(f'### quarantine_mosaics {len(mosaics)} grouped mosaics')
+  mosaics = context.mosaics
+  print(f'### quarantine_mosaics {len(mosaics)} mosaics')
   if not mosaics:
     return {}
 
@@ -100,9 +102,15 @@ def quarantine_mosaics() -> dict[MosaicHash, Mosaic]:
   return output_mosaics
 
 
+# TODO: This doesn't work because it depends on stuff in the context, not
+# just on its inputs.
+#
+# TODO: Move this into a new file.
 @AstroFlowNode()
-def apply_settings(stacks: list[CompositeStack]) -> list[CompositeStack]:
+def apply_settings(settings: Settings,
+                   stacks: list[CompositeStack]) -> list[CompositeStack]:
   print(f'### apply_settings running on {len(stacks)} stacks')
+  print(f'### apply_settings settings {settings}')
   output = []
   for stack in stacks:
     if stack is None:
@@ -114,9 +122,12 @@ def apply_settings(stacks: list[CompositeStack]) -> list[CompositeStack]:
 
     new_contents = {}
     for substack in stack.contents.values():
-      settings_key = ('stack_settings', substack.content_hash)
-      settings = context[settings_key] or {}
-      dependencies = substack.dependencies | settings
+      # settings_key = ('stack_settings', substack.content_hash)
+      # settings = context[settings_key] or {}
+      substack_settings = settings.stack_settings.get(
+          substack.content_hash, StackSettings()).dependencies
+      print(f'### got settings {settings} for substack {substack}')
+      dependencies = substack.dependencies | substack_settings
       new_substack = replace(substack, dependencies=dependencies)
       new_contents[new_substack.content_hash] = new_substack
 
@@ -150,16 +161,18 @@ def apply_settings(stacks: list[CompositeStack]) -> list[CompositeStack]:
 #
 # Maybe the best thing to do is pass the metadata ref around?
 @AstroFlowNode()
-def build_stack_user_settings_subgraph(stack_ids: list[StackHash]) -> Graph:
+def build_stack_user_settings_subgraph(stack_ids: list[StackHash],
+                                       settings: Settings) -> Graph:
   print(f'### build_stack_user_settings_subgraph stack_ids {stack_ids}')
   return make_graph_from_list([(apply_quarantine_to_stack, stack_ids),
                                select_subframes, associate_with_stack,
-                               apply_settings])
+                               (apply_settings, settings)])
 
 
 @AstroFlowNode()
 def gather_stack_user_settings(
     *stacks_in: list[CompositeStack]) -> CompositeStacksDict:
+  print(f'### gather_stack_user_settings stacks_in {stacks_in}')
   stacks = [item for sublist in stacks_in for item in sublist]
   stacks = {a.stable_hash: a for a in stacks}
   print(f'### gather_stack_user_settings stack ids are {stacks.keys()}')
@@ -168,6 +181,7 @@ def gather_stack_user_settings(
 
 @AstroFlowNode(always_run=True)
 def store_calibration_stacks(calibration_stacks: SimpleStacksDict) -> None:
+  context.calibration_stacks = calibration_stacks
   context.or_equals('stacks', calibration_stacks)
   print(f'### store_calibration_stacks: Stored '
         f'{len(calibration_stacks)} calibration stacks; '
@@ -179,6 +193,9 @@ def store_stacks(stacks: CompositeStacksDict) -> None:
   context.or_equals('stacks', stacks)
   print(f'### store_stacks: Stored {len(stacks)} stacks; '
         f'total is now {len(context.stacks)}')
+  for stack in context.stacks.values():
+    print(f'### store_stacks stack {stack}')
+  return stacks
 
 
 @AstroFlowNode(always_run=True)
@@ -201,9 +218,11 @@ def store_mosaics(mosaics: MosaicsDict) -> None:
 # TODO: Pass SimpleStacks through `build_stack_user_settings_subgraph()` too.
 # Flat-frame stacks could be quarantined, for example.
 @AstroFlowNode()
-def build_apply_stack_user_settings_subgraph() -> Graph:
+def build_apply_stack_user_settings_subgraph(settings: Settings) -> Graph:
+  print(f'### build_apply_stack_user_settings_subgraph settings {settings}')
+
   # TODO: This is empty when the preceding tasks don't run.
-  stacks = context.grouped_stacks or {}
+  stacks = context.stacks or {}
 
   stack_ids = [
       s for s in stacks.keys() if isinstance(stacks[s], CompositeStack)
@@ -217,7 +236,7 @@ def build_apply_stack_user_settings_subgraph() -> Graph:
 
   graph = Graph({})
   graph[gather_stack_user_settings] = {(build_stack_user_settings_subgraph,
-                                        group)
+                                        group, settings)
                                        for group in stack_id_groups
                                        if len(group)}
   graph[validate_stacks] = {gather_stack_user_settings}

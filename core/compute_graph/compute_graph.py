@@ -31,6 +31,7 @@ from profiling import track_performance
 from mosaics.types import MosaicHash
 from dependency_graph.astroflow_node import AstroFlowNode
 from targets import Target
+from quarantining.settings import Settings
 
 
 @AstroFlowNode(cache_result=False)
@@ -171,7 +172,8 @@ def build_compute_graph(regroup: bool = False,
   # The tasks that follow consume the raw objects computed from the files
   # on disk, and transform them into the final objects seen by the rest of
   # the graph.
-  task_list.append(build_apply_stack_user_settings_subgraph)
+  settings = context.settings or Settings()
+  task_list.append((build_apply_stack_user_settings_subgraph, settings))
 
   task_list.append(make_suggestions)
 

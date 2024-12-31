@@ -142,6 +142,8 @@ def associate_with_stack(stacks: list[CompositeStack]) -> list[CompositeStack]:
       dependencies = {}
       for image_type in ['bias', 'dark', 'flat']:
         if closest := find_closest_stack_chronologically(image_type):
+          print(f'### associated {image_type} cal stack {closest} '
+                f'with stack {stack}')
           dependencies[image_type] = closest
 
       # print(f'### Substack {substack} has dependencies {dependencies}')

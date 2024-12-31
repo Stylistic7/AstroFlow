@@ -19,6 +19,7 @@ from stacks.get_stacks import get_toplevel_stacks, get_content_stacks_of_type
 from metadata.actor import get_metadata
 from compute_graph import build_compute_graph
 from testing.test_context import make_test_context
+from quarantining.settings import Settings, StackSettings
 
 
 class TestCalibrationFrames(unittest.TestCase):
@@ -439,8 +440,10 @@ class TestCalibrationFrames(unittest.TestCase):
 
     first_flat_stack = find_stack('flat_run_0')
     self.assertNotEqual(first_flat_stack, None)
+    print(f'### first_flat_stack {first_flat_stack}')
     second_flat_stack = find_stack('flat_run_1')
     self.assertNotEqual(second_flat_stack, None)
+    print(f'### second_flat_stack {second_flat_stack}')
 
     light_stacks = [
         s for s in stacks.values()
@@ -454,8 +457,11 @@ class TestCalibrationFrames(unittest.TestCase):
 
     # Configure the light run to use the other flat run, which has prefix
     # `flat_run_0`.
-    context.set(('stack_settings', substack.content_hash),
-                {'flat': first_flat_stack})
+    context.settings = Settings(
+        stack_settings={
+            substack.content_hash:
+                StackSettings(dependencies={'flat': first_flat_stack})
+        })
 
     # Run the graph again, with the settings applied.
     run_graph(
