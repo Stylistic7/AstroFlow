@@ -82,10 +82,5 @@ def identify_stacks(light_frames: list[FrameHash]) -> CompositeStacksDict:
             if new_stack:
               new_stacks[new_stack.stable_hash] = new_stack
 
-  print(f'### identify_stacks done, writing {len(new_stacks)} '
-        f'stacks into grouped_stacks')
-  for stack in new_stacks.values():
-    print(f'### identified stack {stack}')
-
-  context.or_equals('grouped_stacks', new_stacks)
+  print(f'### identify_stacks done, returning {len(new_stacks)} stacks')
   return new_stacks

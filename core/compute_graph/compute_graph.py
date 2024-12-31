@@ -18,7 +18,7 @@ from mosaics.compute_graph import build_mosaic_subgraph
 from dependency_graph import Graph, TaskDescriptor, make_graph_from_list
 from suggestions import make_suggestions
 from quarantining import apply_quarantine_to_stack
-from quarantining.compute_graph import build_apply_stack_user_settings_subgraph, quarantine_targets, quarantine_mosaics, store_calibration_stacks
+from quarantining.compute_graph import store_stacks, store_targets, store_mosaics, build_apply_stack_user_settings_subgraph, quarantine_targets, quarantine_mosaics, store_calibration_stacks
 from quarantining.subframe_selection import select_subframes
 from stacks.identification import identify_stacks
 import metadata.image_types as image_types
@@ -30,6 +30,7 @@ from stacks.validation import validate_stacks
 from profiling import track_performance
 from mosaics.types import MosaicHash
 from dependency_graph.astroflow_node import AstroFlowNode
+from targets import Target
 
 
 @AstroFlowNode(cache_result=False)
@@ -49,24 +50,27 @@ def load_metadata() -> None:
   context.set('metadata', metadata, write_mode=WriteMode.MEMORY_ONLY)
 
 
-@ray.remote
+@AstroFlowNode()
 def build_spatial_group_graph(g: tuple[FrameHash]) -> Graph:
   return make_graph_from_list([(identify_stacks, g), validate_stacks,
-                               group_stacks_into_targets])
+                               store_stacks, group_stacks_into_targets])
 
 
-@ray.remote
-def gather_spatial_groups() -> None:
-  pass
+@AstroFlowNode()
+def gather_spatial_groups(*targets_in: list[Target]) -> None:
+  print(f'### gather_spatial_groups targets_in {targets_in}')
+  targets = {key: value for d in targets_in for key, value in d.items()}
+  print(f'### gather_spatial_groups target ids are {targets.keys()}')
+  return targets
 
 
 # TODO: Don't call build_spatial_group_graph for spatial groups that are cached
 # and unchanged.
-@ray.remote
-def scatter_spatial_groups() -> Graph:
+@AstroFlowNode()
+def scatter_spatial_groups(spatial_groups) -> Graph:
   graph = Graph({})
   graph[gather_spatial_groups] = {
-      (build_spatial_group_graph, g) for g in context.spatial_groups
+      (build_spatial_group_graph, g) for g in spatial_groups
   }
 
   return graph
@@ -77,18 +81,20 @@ def scatter_spatial_groups() -> Graph:
 # results produced by this graph.
 #
 # TODO: Regrouping has to be done whenever there are new files.
-@ray.remote
+@AstroFlowNode()
 def build_regroup_graph() -> Graph:
-  return make_graph_from_list(
-      [cluster_by_image_center, scatter_spatial_groups, identify_mosaics])
+  return make_graph_from_list([
+      cluster_by_image_center, scatter_spatial_groups, store_targets,
+      identify_mosaics, store_mosaics
+  ])
 
 
-@ray.remote
+@AstroFlowNode()
 def preview_graph_done() -> None:
   pass
 
 
-@ray.remote
+@AstroFlowNode()
 def build_preview_graph() -> Graph:
   graph = Graph({})
   stack_thumbnail_task = (scatter_stack_thumbnails, QualityLevel.SUBFRAME)
@@ -107,7 +113,7 @@ def main_processing_graph_done() -> None:
   pass
 
 
-@ray.remote
+@AstroFlowNode()
 def build_main_processing_graph() -> Graph:
   mosaics = context.mosaics
   shopping_cart = context.shopping_cart or []
@@ -152,9 +158,9 @@ def build_compute_graph(regroup: bool = False,
     # the functions, these side effects don't happen.
     #
     context.calibration_stacks = {}
-    context.grouped_stacks = {}
-    context.grouped_targets = {}
-    context.grouped_mosaics = {}
+    context.stacks = {}
+    context.targets = {}
+    context.mosaics = {}
     task_list.append(build_regroup_graph)
 
   # This looks only at calibration frames.

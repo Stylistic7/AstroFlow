@@ -21,7 +21,7 @@ def _draw_polygon(polygon: SphericalPolygon,
 
 
 def plot_mosaic(mosaic: Mosaic, title: str = 'Mosaic') -> None:
-  targets = context.grouped_targets
+  targets = context.targets
 
   plt.figure()
   plt.title(title)

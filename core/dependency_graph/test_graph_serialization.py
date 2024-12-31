@@ -26,13 +26,9 @@ class TestGraphSerialization(unittest.TestCase):
     ray.get(load_metadata.remote())
 
     ray.get(identification.identify_mosaics.remote(debug=False))
-    stacks = context.grouped_stacks
-    targets = context.grouped_targets
-    mosaics = context.grouped_mosaics
-
-    context.stacks = stacks
-    context.targets = targets
-    context.mosaics = mosaics
+    stacks = context.stacks
+    targets = context.targets
+    mosaics = context.mosaics
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
@@ -41,8 +37,8 @@ class TestGraphSerialization(unittest.TestCase):
     target_ids = mosaic.target_ids
     print('### target_ids', target_ids)
 
-    graph = ray.get(
-        build_mosaic_subgraph.remote(QualityLevel.SUBFRAME, mosaic.stable_hash))
+    _, graph = ray.get(
+        build_mosaic_subgraph.remote(QualityLevel.SUBFRAME, mosaic))
 
     serialized = pickle_graph(graph)
 

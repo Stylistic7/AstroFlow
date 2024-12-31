@@ -13,16 +13,16 @@ from targets import Target
 from targets.types import TargetHash
 import geometry.footprints as footprints
 from hashing import hash_list
-from stacks.composite_stack import CompositeStack
+from stacks.composite_stack import CompositeStack, CompositeStacksDict
 from stacks.astrometric_attributes import AstrometricAttributes
 from profiling import track_performance
 from stacks.types import StackHash
 from dependency_graph.astroflow_node import AstroFlowNode
+from targets.target import Target, TargetsDict
 
 
 @AstroFlowNode()
-def group_stacks_into_targets(
-    stacks: dict[StackHash, CompositeStack]) -> dict[TargetHash, Target]:
+def group_stacks_into_targets(stacks: CompositeStacksDict) -> TargetsDict:
   metadata = context.metadata
 
   cosine_similarity_threshold = context.cosine_similarity_threshold
@@ -110,9 +110,4 @@ def group_stacks_into_targets(
   targets = {t.stable_hash: t for t in targets_list}
 
   print(f'### Found {len(targets)} targets: {targets.keys()}')
-
-  # TODO: Computing the result and storing the result are two different
-  # responsibilities. Perhaps separate patterns like this?
-  context.or_equals('grouped_targets', targets)
-
   return targets

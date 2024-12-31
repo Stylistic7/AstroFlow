@@ -97,11 +97,11 @@ class TestComputeGraph(unittest.TestCase):
 
     context.shopping_cart = [('stack', toplevel_stack.stable_hash)]
 
-    processing_graph = ray.get(
+    logs, processing_graph = ray.get(
         compute_graph.build_main_processing_graph.remote())
     print_graph(processing_graph)
 
-    self.assertEqual(len(processing_graph), 5)
+    self.assertEqual(len(processing_graph), 1)
 
 
 if __name__ == '__main__':

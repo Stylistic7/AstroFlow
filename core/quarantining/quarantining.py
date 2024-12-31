@@ -40,7 +40,7 @@ def _apply_to_simple_stack(stack: SimpleStack) -> SimpleStack:
 def apply_quarantine_to_stack(
     stack_ids: list[StackHash]) -> list[CompositeStack]:
   print(f'### apply_quarantine_to_stack running on stack_ids {stack_ids}')
-  stacks = context.grouped_stacks
+  stacks = context.stacks
 
   start_time = time.time()
   metadata = context.metadata
