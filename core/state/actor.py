@@ -25,9 +25,9 @@ def _add_to_shopping_cart(state: State,
   if not context.shopping_cart:
     context.shopping_cart = []
 
-  if action.item not in context.shopping_cart:
-    context.shopping_cart += [action.item]
-    new_action = dict(type='run_processing_graph', item=action.item)
+  if action['item'] not in context.shopping_cart:
+    context.shopping_cart += [action['item']]
+    new_action = dict(type='run_processing_graph', item=action['item'])
     return state, [new_action]
 
   return state, []
@@ -38,12 +38,12 @@ def _remove_from_shopping_cart(state: State,
   if not context.shopping_cart:
     context.shopping_cart = []
 
-  print(f'### _remove_from_shopping_cart item {action.item}')
+  print(f'### _remove_from_shopping_cart item {action["item"]}')
   print(f'### current shopping cart is {context.shopping_cart}')
-  if action.item in context.shopping_cart:
+  if action['item'] in context.shopping_cart:
     # TODO: Is there a cleaner way to do this? Can I use the -= operator?
     new_shopping_cart = context.shopping_cart
-    new_shopping_cart.remove(action.item)
+    new_shopping_cart.remove(action['item'])
     context.shopping_cart = new_shopping_cart
 
   # TODO: Consider canceling running graphs when items are removed from
@@ -61,7 +61,7 @@ class StateActor:
     print(f'### handling action {action}')
     action = dict(action)
 
-    match action.type:
+    match action['type']:
       case 'add_to_shopping_cart':
         self.state, new_actions = _add_to_shopping_cart(self.state, action)
 
@@ -72,7 +72,7 @@ class StateActor:
       # started asynchronously.
       case 'run_processing_graph':
         print('### Pretending to run processing graph')
-        # run_graph(build_item_processing_graph(action.item))
+        # run_graph(build_item_processing_graph(action['item']))
         new_actions = []
 
       case _:

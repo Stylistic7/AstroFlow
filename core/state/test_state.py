@@ -88,10 +88,10 @@ class TestState(unittest.TestCase):
 
     context.shopping_cart = [('stack', toplevel_stack.stable_hash)]
 
-    processing_graph = ray.get(build_main_processing_graph.remote())
+    _, processing_graph = ray.get(build_main_processing_graph.remote())
     print('### processing_graph')
     print_graph(processing_graph)
-    self.assertEqual(len(processing_graph), 5)
+    self.assertEqual(len(processing_graph), 1)
 
     graph = build_compute_graph(regroup=False,
                                 make_previews=False,
