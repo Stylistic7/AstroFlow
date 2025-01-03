@@ -24,6 +24,7 @@ import AstroFlowContext from './AstroFlowContext.jsx';
 import AstroFlowBreadcrumbs from "./AstroFlowBreadcrumbs.jsx";
 import { Stack } from '@mui/material';
 import ProgressComponent from './ProgressComponent.jsx';
+import WorkflowGraph from './WorkflowGraph.jsx';
 
 function App() {
   const isPageVisible = usePageVisibility();
@@ -169,6 +170,9 @@ function App() {
               />
               <Route exact path="/progress" element={
                 <ProgressComponent />}
+              />
+              <Route exact path="/workflow_graph" element={
+                <WorkflowGraph />}
               />
             </Routes>
           </Router>

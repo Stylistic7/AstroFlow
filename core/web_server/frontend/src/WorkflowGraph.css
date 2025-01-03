@@ -1,0 +1,23 @@
+ai-dag-scaffold {
+  width: 1200px;
+  height: 800px;
+  background: white;
+}
+
+.App {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.example-wrapper {
+  padding: 8px;
+  border-radius: 6px;
+  background: #efefef;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}

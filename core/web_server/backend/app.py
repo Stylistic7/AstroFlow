@@ -28,7 +28,6 @@ from previews.operations import resize_array, autostretch, array_to_png
 from context import get_cache
 from artifacts import artifact_exists, read_artifact_image, CacheArtifact
 from previews import array_to_png, autostretch
-from mosaics.compute_graph import merge_graph_done_artifacts
 from astroflow import populate_context
 from compute_graph import build_compute_graph
 from dependency_graph import run_graph, graph_status_to_progress
@@ -124,7 +123,7 @@ def get_shopping_cart():
 
 @app.route('/add_to_shopping_cart/<object_type>/<object_id>')
 def add_to_shopping_cart(object_type, object_id):
-  shopping_cart = context.shopping_cart or set()
+  shopping_cart = set(context.shopping_cart) or set()
   shopping_cart.add((object_type, object_id))
   context.shopping_cart = shopping_cart
 
@@ -135,7 +134,7 @@ def add_to_shopping_cart(object_type, object_id):
 
 @app.route('/remove_from_shopping_cart/<object_type>/<object_id>')
 def remove_from_shopping_cart(object_type, object_id):
-  shopping_cart = context.shopping_cart or set()
+  shopping_cart = set(context.shopping_cart) or set()
   shopping_cart.remove((object_type, object_id))
   context.shopping_cart = shopping_cart
 
@@ -306,29 +305,29 @@ def stack_subframe_thumbnail_video(stack_id):
 # TODO: Thumbnails should always be stored as autostretched PNG, for speed.
 @app.route('/mosaic_thumbnail_image_for_filter/<mosaic_id>/<filter>')
 def mosaic_thumbnail_image_for_filter(mosaic_id, filter):
-  mosaic = context.mosaics[mosaic_id]
-  print('### mosaic', mosaic)
+  # mosaic = context.mosaics[mosaic_id]
+  # print('### mosaic', mosaic)
 
-  _, master_artifact = merge_graph_done_artifacts(QualityLevel.MASTER,
-                                                  mosaic_id, filter)
-  subframe_artifact, = merge_graph_done_artifacts(QualityLevel.SUBFRAME,
-                                                  mosaic_id, filter)
+  # _, master_artifact = merge_graph_done_artifacts(QualityLevel.MASTER,
+  #                                                 mosaic_id, filter)
+  # subframe_artifact, = merge_graph_done_artifacts(QualityLevel.SUBFRAME,
+  #                                                 mosaic_id, filter)
 
-  for artifact in [master_artifact, subframe_artifact]:
-    if not artifact_exists(artifact):
-      print('### artifact', artifact, 'did not exist')
-      continue
+  # for artifact in [master_artifact, subframe_artifact]:
+  #   if not artifact_exists(artifact):
+  #     print('### artifact', artifact, 'did not exist')
+  #     continue
 
-    print('### sending artifact', artifact)
-    image = read_artifact_image(artifact)
-    image = np.nan_to_num(image)
-    print('### image shape', image.shape, 'dtype', image.dtype, 'min',
-          np.min(image), 'max', np.max(image))
+  #   print('### sending artifact', artifact)
+  #   image = read_artifact_image(artifact)
+  #   image = np.nan_to_num(image)
+  #   print('### image shape', image.shape, 'dtype', image.dtype, 'min',
+  #         np.min(image), 'max', np.max(image))
 
-    buffer = io.BytesIO()
-    buffer.write(array_to_png(autostretch(image)))
-    buffer.seek(0)
-    return flask.send_file(buffer, mimetype='image/png')
+  #   buffer = io.BytesIO()
+  #   buffer.write(array_to_png(autostretch(image)))
+  #   buffer.seek(0)
+  #   return flask.send_file(buffer, mimetype='image/png')
 
   return Response(status=404)
 
@@ -576,7 +575,7 @@ def run_compute_graph():
   context.output_dir = '/Volumes/Astro/Processed'
 
   # TODO: Determine `regroup` automatically.
-  graph = build_compute_graph(regroup=False,
+  graph = build_compute_graph(regroup=True,
                               make_previews=True,
                               run_main_processing_graph=True)
 
