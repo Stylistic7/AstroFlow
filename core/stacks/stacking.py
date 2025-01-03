@@ -62,6 +62,7 @@ def _setup_composite_stack(stack: Stack,
                            tmp_dir: str) -> tuple[str | None, int]:
   metadata = context.metadata
   stacks = context.stacks
+  calibration_stacks = context.calibration_stacks
   hashes = stack.all_frames()
 
   first_filename = None
@@ -83,7 +84,8 @@ def _setup_composite_stack(stack: Stack,
 
     # Add any dependent stacks (e.g. calibration stacks).
     dependendency_filenames = [
-        output_filename(stacks[d]) for d in substack.dependencies.values()
+        output_filename(calibration_stacks[d])
+        for d in substack.dependencies.values()
     ]
     _symlink_frames(dependendency_filenames, run_dir)
 

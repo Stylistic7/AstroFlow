@@ -29,6 +29,7 @@ class WrongContentHashException(Exception):
 
 
 # TODO: Hide logs behind debug flag.
+# TODO: cache_result and always_run are maybe the same thing?
 def AstroFlowNode(resources=None,
                   memory=None,
                   always_run=False,

@@ -14,6 +14,7 @@ from dependency_graph import Graph
 from context import context, WriteMode
 from metadata.actor import get_metadata
 from previews import QualityLevel
+from dependency_graph.astroflow_node import AstroFlowNode
 
 # TODO: I need to associate dark and flat frames *before* computing thumbnails.
 
@@ -118,7 +119,9 @@ class DuplicateFileException(Exception):
   pass
 
 
-@ray.remote(scheduling_strategy="SPREAD", max_retries=5, retry_exceptions=True)
+# TODO: What's the best approach for making this functional? I should remove
+# the side-effect (saving to the context).
+@AstroFlowNode()
 def compute_image_metadata(filename: Path) -> Path:
   # TODO: Make sure this code doesn't actually repeatedly read the image across
   # the network. It should hit the node's filesystem cache.
