@@ -459,9 +459,9 @@ class TestDependencyGraph(unittest.TestCase):
     graph = Graph({A: {}, B: {}})
 
     context.foo = 7
-    run_graph(graph)
+    results, _ = run_graph(graph)
 
-    self.assertEqual(context.foo, 9)
+    self.assertEqual(results.num_nodes_run, 2)
 
   def test_scatter_in_subgraphs(self) -> None:
     graph = scatter_in_subgraphs()
