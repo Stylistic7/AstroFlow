@@ -34,23 +34,26 @@ function App() {
   const [targets, setTargets] = useState({});
   const [mosaics, setMosaics] = useState({});
   const [shoppingCart, setShoppingCart] = useState([]);
+  const [computeGraph, setComputeGraph] = useState({});
   const [computeGraphStatus, setComputeGraphStatus] = useState({});
 
   useEffect(() => {
     console.log('in App.useEffect');
 
     const loadObjectData = async () => {
-      let [s, t, m, cart] = await Promise.all([
+      let [s, t, m, cart, cg] = await Promise.all([
         fetch('/stacks').then(r => r.json()),
         fetch('/targets').then(r => r.json()),
         fetch('/mosaics').then(r => r.json()),
         fetch(`/get_shopping_cart`).then(r => r.json()),
+        fetch('/compute_graph').then(r => r.json()),
       ]);
 
       setStacks(s);
       setTargets(t);
       setMosaics(m);
       setShoppingCart(cart);
+      setComputeGraph(cg);
 
       setDataIsAvailable(true);
     };
@@ -100,7 +103,7 @@ function App() {
     <ThemeProvider theme={darkTheme}>
       <StyledEngineProvider injectFirst>
         <AstroFlowContext.Provider
-          value={{ stacks, targets, mosaics, shoppingCart, computeGraphStatus }}
+          value={{ stacks, targets, mosaics, shoppingCart, computeGraph, computeGraphStatus }}
         >
           <CssBaseline />
           <Router>
@@ -172,7 +175,7 @@ function App() {
                 <ProgressComponent />}
               />
               <Route exact path="/workflow_graph" element={
-                <WorkflowGraph />}
+                dataIsAvailable && <WorkflowGraph />}
               />
             </Routes>
           </Router>

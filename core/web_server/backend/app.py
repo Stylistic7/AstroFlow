@@ -607,6 +607,31 @@ def run_compute_graph():
   return Response(status=204)
 
 
+@app.route('/compute_graph')
+def get_compute_graph():
+  return {
+      "state": {
+          "BQ": {
+              "displayName": "Load Metadata",
+              "state": "SKIPPED",
+              "description": "ai_model_data",
+              "icon": {
+                  "text": "LM",
+                  "iconColors": "inverted"
+              }
+          }
+      },
+      "skeleton": [{
+          "id": "BQ",
+          "type": "execution",
+          "next": [{
+              "id": "Transforms",
+              "type": "execution"
+          }]
+      }]
+  }
+
+
 @app.route('/compute_graph_status')
 def get_compute_graph_status():
   return compute_graph_status

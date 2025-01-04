@@ -1,4 +1,6 @@
-import React from 'react';
+import React, { useContext } from "react";
+
+import AstroFlowContext from './AstroFlowContext.jsx';
 
 // Zone.js is required before importing the Workflow Graph
 import 'zone.js';
@@ -25,37 +27,9 @@ const DEFAULT_LAYOUT_OPTIONS: LayoutOptions = {
   nodeSeparation: NODE_HORIZONTAL_SPACING,
 };
 
-const fakeGraph = JSON.parse(
-  `
-  {
-    "state": {
-      "BQ": {
-        "displayName": "Load Metadata",
-        "state": "SUCCEEDED",
-        "description": "ai_model_data",
-        "icon": {
-          "text": "MD",
-          "iconColors": "inverted"
-        }
-      }
-    },
-    "skeleton": [
-      {
-        "id": "BQ",
-        "type": "execution",
-        "next": [
-          {
-            "id": "Transforms",
-            "type": "execution"
-          }
-        ]
-      }
-    ]
-  }
-  `
-)
+export default function WorkflowGraph() {
+  const { computeGraph } = useContext(AstroFlowContext);
 
-function WorkflowGraph() {
   const graphRef = React.useRef();
 
   React.useEffect(() => {
@@ -75,7 +49,7 @@ function WorkflowGraph() {
         selectedNode: null,
         zoom: 1,
         loading: false,
-        dagSpec: { skeleton: fakeGraph.skeleton, meta: fakeGraph.state },
+        dagSpec: { skeleton: computeGraph.skeleton, meta: computeGraph.state },
         optimizeForOrm: false,
         followNode: null,
         layout: DEFAULT_LAYOUT_OPTIONS,
@@ -101,5 +75,3 @@ function WorkflowGraph() {
     </div>
   );
 }
-
-export default WorkflowGraph;
