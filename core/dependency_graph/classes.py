@@ -178,10 +178,12 @@ class TopologicalSorterWithStatus(graphlib.TopologicalSorter):
 
   def __init__(self,
                graph: CanonicalGraph,
+               parent_node: Node | None = None,
                done_callback: DoneCallback | None = None) -> None:
     super().__init__(graph)
 
     self.graph = graph
+    self.parent_node = parent_node
     self.done_callback = done_callback
     self.results = ResultDict()
     self.logs = ResultDict()

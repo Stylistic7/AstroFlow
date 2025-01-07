@@ -10,11 +10,13 @@ import structlog
 
 from dependency_graph import Node, Graph, CanonicalGraph, GraphStatus, ResultDict, TopologicalSorterWithStatus, GenericRemoteFunction, canonicalize_graph
 from dependency_graph.logging import LogContainer
+from dependency_graph.workflow_graph_adapter import WorkflowGraph, to_workflow_graph
 from .debugging import print_graph, node_to_string, node_to_string_tuple
 
 MIN_STATUS_UPDATE_INTERVAL_SECS: float = 5.0
 
 StatusFn = Callable[[GraphStatus], Any]
+WorkflowGraphFn = Callable[[WorkflowGraph], Any]
 
 # TODO: Make a type alias for AncestorResults
 
@@ -33,12 +35,12 @@ def matching_nodes(graph: CanonicalGraph,
 
 def run_graph(graph: Graph,
               status_fn: StatusFn | None = None,
+              workflow_graph_fn: WorkflowGraphFn | None = None,
               status_interval: float = MIN_STATUS_UPDATE_INTERVAL_SECS,
               debug: bool = False) -> tuple[ResultDict, ResultDict]:
   num_nodes_run: int = 0
   max_parallelism_seen: int = 0
-  active: list[TopologicalSorterWithStatus] = []
-  completed: list[TopologicalSorterWithStatus] = []
+  subgraphs: list[TopologicalSorterWithStatus] = []
   last_status_time: float = 0
 
   def add_subgraph(
@@ -67,9 +69,9 @@ def run_graph(graph: Graph,
 
     dc: Callable[[], None] = lambda: done_callback(ts)
     ts: TopologicalSorterWithStatus = TopologicalSorterWithStatus(
-        canonical_graph, done_callback=dc)
+        canonical_graph, parent_node, done_callback=dc)
     ts.prepare()
-    active.append(ts)
+    subgraphs.append(ts)
 
     return ts
 
@@ -117,30 +119,33 @@ def run_graph(graph: Graph,
             f'task {node.task._function.__name__}')
       raise e
 
-  def delete_finished_subgraphs() -> None:
-    for ts in active:
+  def handle_finished_subgraphs() -> None:
+    for ts in subgraphs:
       if not ts.is_active():
         if ts.done_callback:
           ts.done_callback()
-        active.remove(ts)
-        completed.append(ts)
+          ts.done_callback = None
 
   def get_ready_nodes() -> list[tuple[TopologicalSorterWithStatus, Node]]:
+    active = [ts for ts in subgraphs if ts.is_active()]
     return [(ts, n)
             for ts in active
             for n in sorted(ts.get_ready(), key=lambda n: n.priority)]
 
   def get_status() -> GraphStatus:
-    return reduce(or_, [ts.get_status() for ts in active + completed],
-                  GraphStatus())
+    return reduce(or_, [ts.get_status() for ts in subgraphs], GraphStatus())
+
+  def get_workflow_graph() -> WorkflowGraph:
+    return to_workflow_graph(subgraphs)
 
   toplevel_ts = add_subgraph(graph)
 
-  while active:
+  while any(ts.is_active() for ts in subgraphs):
     ready = get_ready_nodes()
     max_parallelism_seen = max(len(ready), max_parallelism_seen)
 
     if debug:
+      active = [ts for ts in subgraphs if ts.is_active()]
       print(f'Top of loop, {len(active)} active graphs, '
             f'{len(ready)} ready nodes')
 
@@ -163,8 +168,11 @@ def run_graph(graph: Graph,
       # Maybe call the user's status_fn, but rate limit the frequency of these
       # calls, which may be expensive.
       current_time = time.time()
-      if status_fn and current_time > (last_status_time + status_interval):
-        status_fn(get_status())
+      if current_time > (last_status_time + status_interval):
+        if status_fn:
+          status_fn(get_status())
+        if workflow_graph_fn:
+          workflow_graph_fn(get_workflow_graph())
         last_status_time = current_time
 
       try:
@@ -193,13 +201,16 @@ def run_graph(graph: Graph,
         ts.final_result = e.cause
         ts.done(node)
 
-    delete_finished_subgraphs()
+    handle_finished_subgraphs()
 
   # All subgraphs, including the given graph, must be done here.
-  assert len(active) == 0
+  assert not any(ts.is_active() for ts in subgraphs)
 
+  # Call the callbacks one last time.
   if status_fn:
     status_fn(get_status())
+  if workflow_graph_fn:
+    workflow_graph_fn(get_workflow_graph())
 
   toplevel_ts.results.num_nodes_run = num_nodes_run
   toplevel_ts.results.max_parallelism_seen = max_parallelism_seen

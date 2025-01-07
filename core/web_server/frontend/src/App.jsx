@@ -26,6 +26,7 @@ import { Stack } from '@mui/material';
 import ProgressComponent from './ProgressComponent.jsx';
 import WorkflowGraph from './WorkflowGraph.jsx';
 
+
 function App() {
   const isPageVisible = usePageVisibility();
   const [dataIsAvailable, setDataIsAvailable] = useState(false);
@@ -175,7 +176,7 @@ function App() {
                 <ProgressComponent />}
               />
               <Route exact path="/workflow_graph" element={
-                dataIsAvailable && <WorkflowGraph />}
+                dataIsAvailable && <WorkflowGraph theme={darkTheme} />}
               />
             </Routes>
           </Router>

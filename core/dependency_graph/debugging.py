@@ -20,10 +20,10 @@ def node_to_string(node: Node) -> str:
     string += f", name='{node.name}')"
     return string
 
-  string = f'({node.task._function.__name__}'
   if node.args:
-    string += f', {_tuple_values(node.args)})'
-  return string
+    return f'({node.task._function.__name__}, {_tuple_values(node.args)})'
+  else:
+    return f'{node.task._function.__name__}'
 
 
 def node_to_string_tuple(node: Node) -> str:

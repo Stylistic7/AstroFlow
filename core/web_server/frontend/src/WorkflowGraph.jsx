@@ -10,6 +10,7 @@ import { WorkflowGraphProps, Logger, RankerAlgorithim, LayoutOptions, RankDirect
 
 // Import and register the google-workflow-graph web component
 import '@google/workflow-graph/web-component/registerWorkflowGraphWebComponent';
+// import './registerWorkflowGraphWebComponent.js';
 
 import './WorkflowGraph.css';
 
@@ -27,7 +28,7 @@ const DEFAULT_LAYOUT_OPTIONS: LayoutOptions = {
   nodeSeparation: NODE_HORIZONTAL_SPACING,
 };
 
-export default function WorkflowGraph() {
+export default function WorkflowGraph({ theme }) {
   const { computeGraph } = useContext(AstroFlowContext);
 
   const graphRef = React.useRef();
@@ -54,7 +55,7 @@ export default function WorkflowGraph() {
         followNode: null,
         layout: DEFAULT_LAYOUT_OPTIONS,
         hoveredEdge: undefined,
-        logger: logger
+        logger: logger,
       }
 
       Object.assign(graphComponent, props);
@@ -71,6 +72,7 @@ export default function WorkflowGraph() {
     <div className="WorkflowGraph">
       <div className="example-wrapper">
         <google-workflow-graph ref={graphRef}></google-workflow-graph>
+        <workflow-graph-color-theme-loader />
       </div>
     </div>
   );

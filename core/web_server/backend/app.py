@@ -35,6 +35,7 @@ from dependency_graph.debugging import node_to_string
 from previews import QualityLevel
 from quarantining.compute_graph import build_apply_stack_user_settings_subgraph
 from compute_graph.compute_graph import load_metadata
+from stacks.compute_graph import build_stack_subgraph
 
 import plotly.express as px
 import plotly.figure_factory as ff
@@ -610,25 +611,111 @@ def run_compute_graph():
 @app.route('/compute_graph')
 def get_compute_graph():
   return {
-      "state": {
-          "BQ": {
-              "displayName": "Load Metadata",
-              "state": "SKIPPED",
-              "description": "ai_model_data",
-              "icon": {
-                  "text": "LM",
-                  "iconColors": "inverted"
+      'skeleton': [
+          {
+              "edgeLabel": "SUB-DAG 2",
+              "id": "sub2",
+              "type": "group",
+              "definition": [{
+                  "id": "Scan Texts",
+                  "type": "execution",
+                  "next": [{
+                      "id": "Text Logs",
+                      "type": "artifact"
+                  }]
+              }, {
+                  "id": "Label Execution Logs",
+                  "type": "execution",
+                  "next": [{
+                      "id": "Execution Logs",
+                      "type": "artifact",
+                  }]
+              }],
+              "next": [{
+                  "id": "Send via APIs",
+                  "type": "execution"
+              }]
+          },
+          {
+              'id': '3117593921912447883',
+              'type': 'execution',
+              "next": [{
+                  "id": "sub2",
+                  "type": "group"
+              }]
+          },
+          {
+              "id":
+                  "Text2",
+              "type":
+                  "artifact",
+              "next": [{
+                  "edgeLabel": "obtuse-edge",
+                  "id": "sub2",
+                  "type": "group"
+              }]
+          },
+      ],
+      'state': {
+          '3117593921912447883': {
+              'displayName': 'scatter_compute_image_metadata',
+              'description': 'scatter_compute_image_metadata',
+              'icon': {
+                  'text': 'SCIM',
+                  'iconColors': 'inverted'
+              }
+          },
+          "sub2": {
+              "state":
+                  "RUNNING",
+              "hasControlNode":
+                  True,
+              "displayName":
+                  "Log Ingestion (sub2)",
+              "description":
+                  "A simple subdag that shows edge-snapping logic above it",
+              "groupMeta": {
+                  "Text Logs": {
+                      "state": "NO_STATE_RUNTIME",
+                      "icon": {
+                          "name": "logs",
+                          "iconset": "shell",
+                          "size": "small"
+                      }
+                  },
+                  "Execution Logs": {
+                      "state": "NO_STATE_RUNTIME",
+                      "icon": {
+                          "name": "logs",
+                          "iconset": "shell",
+                          "size": "small"
+                      }
+                  },
+                  "Scan Texts": {
+                      "state":
+                          "SUCCEEDED",
+                      "artifactRefs": [{
+                          "id": "Text",
+                          "path": []
+                      }, {
+                          "id": "Text2",
+                          "path": []
+                      }]
+                  },
+                  "Label Execution Logs": {
+                      "state":
+                          "RUNNING",
+                      "artifactRefs": [{
+                          "id": "Text",
+                          "path": []
+                      }, {
+                          "id": "Entities",
+                          "path": []
+                      }]
+                  }
               }
           }
-      },
-      "skeleton": [{
-          "id": "BQ",
-          "type": "execution",
-          "next": [{
-              "id": "Transforms",
-              "type": "execution"
-          }]
-      }]
+      }
   }
 
 
