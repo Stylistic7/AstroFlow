@@ -59,7 +59,6 @@ def build_spatial_group_graph(g: tuple[FrameHash]) -> Graph:
 
 @AstroFlowNode()
 def gather_spatial_groups(*targets_in: list[Target]) -> None:
-  print(f'### gather_spatial_groups targets_in {targets_in}')
   targets = {key: value for d in targets_in for key, value in d.items()}
   print(f'### gather_spatial_groups target ids are {targets.keys()}')
   return targets

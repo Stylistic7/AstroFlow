@@ -182,8 +182,9 @@ def run_graph(graph: Graph,
         log = []
         if isinstance(result, tuple) and isinstance(result[0], LogContainer):
           log, result = result
-          print(f'### node {node_to_string(node)} produced '
-                f'a log of length {len(log)}')
+          if debug:
+            print(f'### node {node_to_string(node)} produced '
+                  f'a log of length {len(log)}')
 
         # There are two possibilities here: the task can return a result,
         # or a (dynamically-generated) Graph to run as a sub-graph.

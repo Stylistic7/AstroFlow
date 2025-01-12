@@ -116,7 +116,7 @@ def apply_settings(settings: Settings,
     if stack is None:
       continue
 
-    print(f'### apply_settings for stack {stack}')
+    print(f'### apply_settings for stack {stack.stable_hash}')
     assert isinstance(stack,
                       CompositeStack), f'Object {stack} is not a CompositeStack'
 
@@ -126,7 +126,7 @@ def apply_settings(settings: Settings,
       # settings = context[settings_key] or {}
       substack_settings = settings.stack_settings.get(
           substack.content_hash, StackSettings()).dependencies
-      print(f'### got settings {settings} for substack {substack}')
+      print(f'### got settings {settings} for substack {substack.content_hash}')
       dependencies = substack.dependencies | substack_settings
       new_substack = replace(substack, dependencies=dependencies)
       new_contents[new_substack.content_hash] = new_substack
@@ -172,7 +172,6 @@ def build_stack_user_settings_subgraph(stack_ids: list[StackHash],
 @AstroFlowNode()
 def gather_stack_user_settings(
     *stacks_in: list[CompositeStack]) -> CompositeStacksDict:
-  print(f'### gather_stack_user_settings stacks_in {stacks_in}')
   stacks = [item for sublist in stacks_in for item in sublist]
   stacks = {a.stable_hash: a for a in stacks}
   print(f'### gather_stack_user_settings stack ids are {stacks.keys()}')
