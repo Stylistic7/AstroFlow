@@ -45,6 +45,7 @@ def roughly_same_image_scale(a: float, b: float) -> bool:
   return ratio > 0.9 and ratio < 1.1
 
 
+@ray.remote
 def target_compatible_with_mosaic(target_id: TargetHash,
                                   mosaic: set[TargetHash],
                                   allowed_overlaps,
@@ -209,12 +210,15 @@ def group_targets(
 ) -> list[set[TargetHash]]:
   mosaics = []
   for target_id in target_ids:
-    compatible_mosaics = []
-
-    for mosaic in mosaics:
-      if target_compatible_with_mosaic(target_id, mosaic, allowed_overlaps,
-                                       debug):
-        compatible_mosaics.append(mosaic)
+    # Find mosaics that are compatible with the current target, in parallel.
+    results = ray.get([
+        target_compatible_with_mosaic.remote(target_id, mosaic,
+                                             allowed_overlaps, debug)
+        for mosaic in mosaics
+    ])
+    compatible_mosaics = [
+        mosaic for mosaic, match in zip(mosaics, results) if match
+    ]
 
     if compatible_mosaics:
       if debug:
