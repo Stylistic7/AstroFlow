@@ -116,12 +116,12 @@ class TestIPFSDiscoveryAndDownload(unittest.TestCase):
 
   def tearDown(self):
     # Clean up temporary files and processes
-    shutil.rmtree(self.temp_dir_A)
-    shutil.rmtree(self.temp_dir_B)
     self.node_A_process.terminate()
     self.node_B_process.terminate()
     self.node_A_process.wait()
     self.node_B_process.wait()
+    shutil.rmtree(self.temp_dir_A)
+    shutil.rmtree(self.temp_dir_B)
 
   def test_ipfs_nodes_interaction(self):
     api_A = "http://127.0.0.1:5501"
