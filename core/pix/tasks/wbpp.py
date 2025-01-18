@@ -11,7 +11,7 @@ def WeightedBatchPreprocessing(unused: ImageList, **kwargs: Any) -> ImageList:
   print('### Entering WeightedBatchPreprocessing')
 
   parameters = _default_parameters | kwargs
-  javascript_filename = "/Applications/PixInsight/src/scripts/WeightedBatchPreprocessing/WeightedBatchPreprocessing.js"
+  javascript_filename = "/Applications/PixInsight/src/scripts/BatchPreprocessing/WBPP.js"
 
   arguments = {
       'automationMode': 'true',
