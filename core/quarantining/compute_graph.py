@@ -23,7 +23,7 @@ from mosaics.mosaic import Mosaic, MosaicsDict
 from quarantining.settings import Settings, StackSettings
 
 
-@AstroFlowNode(always_run=True)
+@AstroFlowNode(cache_result=False)
 def quarantine_stacks() -> SimpleStacksDict | CompositeStacksDict:
   stacks = context.stacks
   if not stacks:
@@ -38,7 +38,7 @@ def quarantine_stacks() -> SimpleStacksDict | CompositeStacksDict:
 
 
 # TODO: This should be made functional.
-@AstroFlowNode(always_run=True)
+@AstroFlowNode(cache_result=False)
 def quarantine_targets() -> dict[TargetHash, Target]:
   stacks = context.stacks
   targets = context.targets
@@ -68,7 +68,7 @@ def quarantine_targets() -> dict[TargetHash, Target]:
   return output_targets
 
 
-@AstroFlowNode(always_run=True)
+@AstroFlowNode(cache_result=False)
 def quarantine_mosaics() -> dict[MosaicHash, Mosaic]:
   targets = context.targets
   mosaics = context.mosaics
@@ -178,7 +178,7 @@ def gather_stack_user_settings(
   return stacks
 
 
-@AstroFlowNode(always_run=True)
+@AstroFlowNode(cache_result=False)
 def store_calibration_stacks(calibration_stacks: SimpleStacksDict) -> None:
   context.calibration_stacks = calibration_stacks
   context.or_equals('stacks', calibration_stacks)
@@ -187,7 +187,7 @@ def store_calibration_stacks(calibration_stacks: SimpleStacksDict) -> None:
         f'total is now {len(context.stacks)}')
 
 
-@AstroFlowNode(always_run=True)
+@AstroFlowNode(cache_result=False)
 def store_stacks(stacks: CompositeStacksDict) -> None:
   context.or_equals('stacks', stacks)
   print(f'### store_stacks: Stored {len(stacks)} stacks; '
@@ -197,14 +197,14 @@ def store_stacks(stacks: CompositeStacksDict) -> None:
   return stacks
 
 
-@AstroFlowNode(always_run=True)
+@AstroFlowNode(cache_result=False)
 def store_targets(targets: TargetsDict) -> None:
   context.targets = targets
   print(f'### store_targets: Stored {len(targets)} targets; '
         f'total is now {len(context.targets)}')
 
 
-@AstroFlowNode(always_run=True)
+@AstroFlowNode(cache_result=False)
 def store_mosaics(mosaics: MosaicsDict) -> None:
   context.mosaics = mosaics
   print(f'### store_mosaics: Stored {len(mosaics)} mosaics; '

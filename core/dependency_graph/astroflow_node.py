@@ -29,13 +29,11 @@ class WrongContentHashException(Exception):
 
 
 # TODO: Hide logs behind debug flag.
-# TODO: cache_result and always_run are maybe the same thing?
 def AstroFlowNode(resources=None,
                   memory=None,
-                  always_run=False,
                   update_header=True,
                   unpack_artifacts=True,
-                  cache_result=True,
+                  cache_result=False,
                   keep_in_memory=True):
 
   if resources == None:
@@ -125,7 +123,7 @@ def AstroFlowNode(resources=None,
       key = (fn.__name__, content_hash)
       print(f'### key {key}')
 
-      if not always_run and _result_exists(content_hash):
+      if _result_exists(content_hash):
         print(f'### Not running fn {fn.__name__} because result exists')
         return CacheArtifact(key)
       else:
