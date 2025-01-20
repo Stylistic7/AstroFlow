@@ -49,6 +49,8 @@ def AstroFlowNode(resources=None,
 
       result = context[key]
       if isinstance(result, Path):
+        print(
+            f'### Checking that file {result} has content hash {content_hash}')
         return artifact_exists(FileArtifact(result, content_hash))
       else:
         return True
@@ -57,8 +59,12 @@ def AstroFlowNode(resources=None,
       if isinstance(result, Graph):
         return result
 
+      key = (fn.__name__, content_hash)
+
       # TODO: Clean this up.
       if update_header and isinstance(result, Path):
+        context.set(key, result)
+
         if result.suffix.lower() in ['.xisf']:
           add_xisf_metadata(result, result, {'CONTHASH': content_hash})
           print(f'### Updated XISF filename {result} with '
@@ -71,7 +77,6 @@ def AstroFlowNode(resources=None,
 
         return FileArtifact(result, content_hash)
 
-      key = (fn.__name__, content_hash)
       write_mode = (WriteMode.MEMORY_AND_DISK
                     if keep_in_memory else WriteMode.DISK_ONLY)
       context.set(key, result, write_mode)
@@ -124,10 +129,12 @@ def AstroFlowNode(resources=None,
       print(f'### key {key}')
 
       if _result_exists(content_hash):
-        print(f'### Not running fn {fn.__name__} because result exists')
+        print(f'### Not running fn {fn.__name__} producing content '
+              f'hash {content_hash} because result exists')
         return CacheArtifact(key)
       else:
-        print(f'### Running fn {fn.__name__}')
+        print(f'### Running fn {fn.__name__} producing content '
+              f'hash {content_hash} because result does not exist')
         result = fn(*args, **kwargs)
         return _store_result(result, content_hash)
 

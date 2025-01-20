@@ -158,6 +158,7 @@ def artifact_exists(artifact: Artifact) -> bool:
 @artifact_exists.register
 def _(artifact: FileArtifact) -> bool:
   if not os.path.exists(artifact.filename):
+    print(f'### filename {artifact.filename} does not exist')
     return False
 
   if artifact.content_hash is not None:

@@ -74,8 +74,9 @@ def consume_small_image(image) -> Any:
   return image.shape
 
 
-@AstroFlowNode()
+@AstroFlowNode(cache_result=True)
 def place_image(image: np.ndarray, viewbox: Viewbox) -> Path:
+  context.place_image_runs = (context.place_image_runs or 0) + 1
   projected_image = np.zeros((viewbox.x_span, viewbox.y_span))
 
   height, width = image.shape
@@ -118,7 +119,7 @@ def build_place_image_compute_graph() -> Graph:
   })
 
 
-@AstroFlowNode(keep_in_memory=False)
+@AstroFlowNode(cache_result=True, keep_in_memory=False)
 def create_large_image(shape: tuple[int]) -> np.ndarray:
   return np.ones(shape)
 
@@ -260,3 +261,12 @@ class TestAstroFlowNode(unittest.TestCase):
         num_matches += 1
 
     self.assertEqual(num_matches, 0)
+
+  def test_skip_existing_file(self) -> None:
+    graph = build_place_image_compute_graph()
+    run_graph(graph)
+    self.assertEqual(context.place_image_runs, 1)
+
+    graph = build_place_image_compute_graph()
+    run_graph(graph)
+    self.assertEqual(context.place_image_runs, 1)
