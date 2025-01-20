@@ -7,7 +7,8 @@ from typing import Dict, Any, Optional
 
 # TODO: Add a round-trip unit test.
 def convert_xisf_to_fits(xisf_filename: Path | str,
-                         fits_filename: Path | str) -> None:
+                         fits_filename: Path | str,
+                         metadata: Optional[Dict] = None) -> None:
   xisf = XISF(xisf_filename)
   image = xisf.read_image(0).squeeze()
   img_meta = xisf.get_images_metadata()[0]
@@ -22,6 +23,10 @@ def convert_xisf_to_fits(xisf_filename: Path | str,
         value = v['value']
 
       hdu.header[k] = (value, v['comment'])
+
+  if metadata is not None:
+    for k, v in metadata.items():
+      hdu.header[k] = v
 
   hdu.writeto(fits_filename, overwrite=True)
 
