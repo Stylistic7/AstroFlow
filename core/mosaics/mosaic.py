@@ -6,7 +6,7 @@ import numpy as np
 from spherical_geometry.polygon import SingleSphericalPolygon  # type: ignore
 from shapely.geometry import Polygon  # type: ignore
 
-from hashing import make_hashable
+from hashing import make_hashable, hash_dataclass
 from targets.types import TargetHash
 from mosaics.types import TileIndices, MosaicHash
 
@@ -35,8 +35,7 @@ class Mosaic:
         f'content_hash={self.content_hash}, {len(self.target_ids)} targets)')
 
   def __hash__(self) -> int:
-    return hash(
-        tuple(make_hashable(getattr(self, f.name)) for f in fields(self)))
+    return hash_dataclass(self)
 
   def __eq__(self, other) -> bool:
     return (self.stable_hash == other.stable_hash and

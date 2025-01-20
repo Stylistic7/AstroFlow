@@ -5,7 +5,7 @@ import datetime
 from spherical_geometry.polygon import SingleSphericalPolygon  # type: ignore
 from shapely.geometry import Polygon  # type: ignore
 
-from hashing import make_hashable
+from hashing import hash_dataclass
 from targets.types import TargetHash
 from stacks.types import StackHash
 from stacks.astrometric_attributes import AstrometricAttributes
@@ -25,9 +25,8 @@ class Target(AstrometricAttributes):
     return (f'Target(target={self.target}, stable_hash={self.stable_hash}, '
             f'content_hash={self.content_hash}, {len(self.stack_ids)} stacks)')
 
-  def __hash__(self):
-    return hash(
-        tuple(make_hashable(getattr(self, f.name)) for f in fields(self)))
+  def __hash__(self) -> int:
+    return hash_dataclass(self)
 
   def __eq__(self, other) -> bool:
     return (self.stable_hash == other.stable_hash and

@@ -6,7 +6,7 @@ from stacks.types import DependenciesDict
 from stacks.imaging_attributes import ImagingAttributes
 from stacks.state_attributes import AstroFlowStateAttributes
 from metadata.classes import MetadataDict, FrameHash
-from hashing import hash_list, make_hashable
+from hashing import hash_list, hash_dataclass
 
 
 @dataclass(frozen=True)
@@ -41,8 +41,7 @@ class SimpleStack(ImagingAttributes, AstroFlowStateAttributes):
             f'Temp {self.mean_temperature:.02f} degC)')
 
   def __hash__(self):
-    return hash(
-        tuple(make_hashable(getattr(self, f.name)) for f in fields(self)))
+    return hash_dataclass(self)
 
   def __eq__(self, other: object) -> bool:
     if not isinstance(other, SimpleStack):

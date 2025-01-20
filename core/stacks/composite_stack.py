@@ -6,7 +6,7 @@ from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon 
 import astropy  # type: ignore
 
 import units
-from hashing import hash_list, hash_string, make_hashable
+from hashing import hash_list, hash_dataclass, hash_string, hash_dict_int
 from context import context
 from stacks.simple_stack import SimpleStack
 from stacks.imaging_attributes import ImagingAttributes
@@ -19,7 +19,11 @@ import geometry.footprints as footprints
 from clustering.continuous import cluster_continuous
 from plate_solving import PlateSolution
 
-SimpleStacksDict = dict[str, SimpleStack]
+
+class SimpleStacksDict(dict[str, SimpleStack]):
+
+  def __hash__(self):
+    return hash_dict_int(self)
 
 
 def _normalize_radians(x: float) -> float:
@@ -151,8 +155,7 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
             f'Temp {self.mean_temperature:.02f} degC)')
 
   def __hash__(self):
-    return hash(
-        tuple(make_hashable(getattr(self, f.name)) for f in fields(self)))
+    return hash_dataclass(self)
 
   def __eq__(self, other: object) -> bool:
     if not isinstance(other, CompositeStack):

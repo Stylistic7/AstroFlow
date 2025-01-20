@@ -67,11 +67,12 @@ _TESTDATA_TARGETS = {
 }
 
 
-def _add_dither(center: tuple[float, float],
+def _add_dither(rng: np.random._generator.Generator, center: tuple[float,
+                                                                   float],
                 max_distance_deg: Degrees) -> tuple[float, float]:
   ra, dec = center
-  distance = np.random.uniform(0.0, max_distance_deg)
-  angle = np.random.uniform(0.0, 2.0 * np.pi)
+  distance = rng.uniform(0.0, max_distance_deg)
+  angle = rng.uniform(0.0, 2.0 * np.pi)
 
   return ra + distance * np.sin(angle), dec + distance * np.cos(angle)
 
@@ -99,10 +100,14 @@ def copy_testdata_frames(
     dest_dir: str,
     prefix: str = '',
     add_noise: bool = True,
+    random_seed: int | None = None,
     fits_header_overrides: dict[str, Any] | None = None,
     start_datetime: datetime.datetime | None = None) -> None:
   if not fits_header_overrides:
     fits_header_overrides = {}
+
+  random_seed = abs(xxhash.xxh64(str([random_seed, prefix])).intdigest())
+  rng = np.random.default_rng(seed=random_seed)
 
   date_obs = start_datetime
   for filename in _TESTDATA_TARGETS[target_name]:
@@ -117,10 +122,7 @@ def copy_testdata_frames(
     # Add a small amount of noise so it will have a unique hash.
     assert image.dtype == np.uint16
     if add_noise:
-      image += np.random.randint(low=0,
-                                 high=2,
-                                 size=image.shape,
-                                 dtype=image.dtype)
+      image += rng.integers(low=0, high=2, size=image.shape, dtype=image.dtype)
 
     content_hash = xxhash.xxh64(image.tobytes()).hexdigest()
     header['CONTHASH'] = content_hash
@@ -155,6 +157,8 @@ def make_synthetic_frames(start_datetime: datetime.datetime = datetime.datetime(
                           exposure: int = 300,
                           filter: str = 'H',
                           fill_value: Any | None = None,
+                          add_noise: bool = True,
+                          random_seed: int | None = None,
                           num_stars: int = 100,
                           image_scale: float = 1.0,
                           rotation_angle_deg: float = 90.0) -> list[str]:
@@ -165,8 +169,11 @@ def make_synthetic_frames(start_datetime: datetime.datetime = datetime.datetime(
 
   ids = ids if ids else [f'{prefix}_{i:05}.fit' for i in range(number)]
 
-  output_filenames = []
+  random_seed = abs(
+      xxhash.xxh64(str([random_seed, image_type, prefix])).intdigest())
+  rng = np.random.default_rng(seed=random_seed)
 
+  output_filenames = []
   for i in range(number):
     fits_filename = ids[i]
     if dest_dir is not None:
@@ -178,15 +185,17 @@ def make_synthetic_frames(start_datetime: datetime.datetime = datetime.datetime(
       image_data = np.ones(
           (height_pixels, width_pixels), dtype=np.uint16) * fill_value
     else:
-      image_data = np.random.random(
-          (height_pixels, width_pixels)).astype(np.uint16)
+      image_data = rng.integers(100,
+                                size=(height_pixels, width_pixels),
+                                dtype=np.uint16)
 
     # Add a small amount of noise so it will have a unique hash.
-    assert image_data.dtype == np.uint16
-    image_data += np.random.randint(low=0,
-                                    high=2,
-                                    size=image_data.shape,
-                                    dtype=image_data.dtype)
+    if add_noise:
+      assert image_data.dtype == np.uint16
+      image_data += rng.integers(low=0,
+                                 high=2,
+                                 size=image_data.shape,
+                                 dtype=image_data.dtype)
 
     if content_hashes is not None:
       content_hash = content_hashes[i]
@@ -194,7 +203,7 @@ def make_synthetic_frames(start_datetime: datetime.datetime = datetime.datetime(
       content_hash = xxhash.xxh64(image_data.tobytes()).hexdigest()
 
     centers_or = centers if centers else [(ra, dec)] * number
-    center = _add_dither(centers_or[i], dither)
+    center = _add_dither(rng, centers_or[i], dither)
     date_obs = start_datetime + i * datetime.timedelta(seconds=exposure + 1)
     deg_per_pix = image_scale / 3600.0
 
