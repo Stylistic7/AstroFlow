@@ -567,6 +567,20 @@ class TestDependencyGraph(unittest.TestCase):
     self.assertEqual(len(final_status.ready_nodes), 0)
     self.assertEqual(len(final_status.waiting_nodes), 0)
 
+  def test_trace(self) -> None:
+    dynamic_graph_task = (maybe_run_dynamic_graph, True)
+    graph = Graph({dynamic_graph_task: {}})
+    results, _ = run_graph(graph, trace=True)
+    self.assertEqual(results[dynamic_graph_task], 21)
+
+    self.assertEqual(results.num_nodes_run, 9)
+    self.assertEqual(results.max_parallelism_seen, 7)
+
+    for i in range(7):
+      self.assertTrue(Node(process, i) in results.trace)
+      self.assertLess(results.trace.index(Node(process, i)),
+                      results.trace.index(Node(gather)))
+
 
 if __name__ == '__main__':
   unittest.main()

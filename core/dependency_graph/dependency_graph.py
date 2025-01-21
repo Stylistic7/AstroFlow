@@ -37,11 +37,13 @@ def run_graph(graph: Graph,
               status_fn: StatusFn | None = None,
               workflow_graph_fn: WorkflowGraphFn | None = None,
               status_interval: float = MIN_STATUS_UPDATE_INTERVAL_SECS,
+              trace: bool = False,
               debug: bool = False) -> tuple[ResultDict, ResultDict]:
   num_nodes_run: int = 0
   max_parallelism_seen: int = 0
   subgraphs: list[TopologicalSorterWithStatus] = []
   last_status_time: float = 0
+  trace_list = []
 
   def add_subgraph(
       graph: Graph,
@@ -159,6 +161,8 @@ def run_graph(graph: Graph,
       ready_refs, remaining_refs = ray.wait(remaining_refs, num_returns=1)
       assert len(ready_refs) == 1
       ts, node = ref_to_ts_and_node[ready_refs[0]]
+      if trace:
+        trace_list.append(node)
       if debug:
         assert isinstance(node.task, RemoteFunction)
         print(f'Task {node.task._function.__name__} finished')
@@ -215,5 +219,8 @@ def run_graph(graph: Graph,
 
   toplevel_ts.results.num_nodes_run = num_nodes_run
   toplevel_ts.results.max_parallelism_seen = max_parallelism_seen
+
+  if trace:
+    toplevel_ts.results.trace = trace_list
 
   return toplevel_ts.results, toplevel_ts.logs
