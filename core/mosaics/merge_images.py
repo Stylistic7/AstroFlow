@@ -19,6 +19,8 @@ from mosaics.types import MosaicHash
 from dependency_graph.logging import capture_logs
 from dependency_graph.astroflow_node import AstroFlowNode
 from mosaics import Mosaic
+from file_io.generic import read_image, get_content_hash
+from dependency_graph import Graph
 
 
 @PixInsight()
@@ -27,14 +29,15 @@ def run_photometric_mosaic(images: ImageList,
   return PhotometricMosaic(images, output_filename)
 
 
-@ray.remote(resources={'PixInsight': 1})
-def merge_images_with_photometric_mosaic(input_0: Artifact,
-                                         input_1: Artifact) -> Artifact:
-  assert isinstance(input_0, FileArtifact)
-  assert isinstance(input_1, FileArtifact)
+# TODO: Consider what to name these images, since the AstroFlowNode decorator
+# handles all of the content hashes now.
+# TODO: Turn caching on.
+@AstroFlowNode(resources={'PixInsight': 1})
+def merge_images_with_photometric_mosaic(input_0: Path, input_1: Path) -> Path:
+  print(f'### merge_images_with_photometric_mosaic {input_0} {input_1}')
 
-  image_0 = autostretch(read_artifact_image(input_0))
-  image_1 = autostretch(read_artifact_image(input_1))
+  image_0 = autostretch(read_image(input_0))
+  image_1 = autostretch(read_image(input_1))
   assert not np.isnan(np.min(image_0))
   assert not np.isnan(np.min(image_1))
   overlap = np.where((image_0 > 0) & (image_1 > 0))
@@ -42,9 +45,9 @@ def merge_images_with_photometric_mosaic(input_0: Artifact,
 
   output_filename = Path(
       context.output_dir
-  ) / 'Mosaics' / f'merged_{input_0.content_hash}_{input_1.content_hash}.xisf'
+  ) / 'Mosaics' / f'merged_{get_content_hash(input_0)}_{get_content_hash(input_1)}.xisf'
 
-  run_photometric_mosaic([input_0.filename, input_1.filename], output_filename)
+  run_photometric_mosaic([input_0, input_1], output_filename)
 
   assert os.path.exists(output_filename)
   return output_filename
@@ -71,10 +74,14 @@ def merge_images_with_maximum(image_0: np.ndarray,
 @AstroFlowNode(unpack_artifacts=False)
 def merge_images(mode: QualityLevel, input_0: np.ndarray | Path,
                  input_1: np.ndarray | Path) -> np.ndarray | Path:
+  print(f'### merge images {type(input_0)} {type(input_1)}')
+
+  # TODO: This is really ugly...
   if mode == 'subframe':
     return merge_images_with_maximum(input_0, input_1)
   elif mode == 'master':
-    return ray.get(merge_images_with_photometric_mosaic.remote(
-        input_0, input_1))
+    _, result = ray.get(
+        merge_images_with_photometric_mosaic.remote(input_0, input_1))
+    return result
 
   raise ValueError(f'Unknown quality level {mode}')

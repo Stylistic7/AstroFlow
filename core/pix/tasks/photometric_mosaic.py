@@ -1,4 +1,5 @@
 from typing import Any
+import os
 
 from pix.classes import ShellScriptTask, Image, ImageList
 from pix.context import append_task, add_images_to_save

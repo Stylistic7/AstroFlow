@@ -1,5 +1,4 @@
 import ray
-import objsize  # type: ignore
 from dataclasses import replace
 from typing import Any
 
@@ -26,23 +25,7 @@ from dependency_graph.astroflow_node import AstroFlowNode
 from targets import Target
 from quarantining.settings import Settings, StackSettings
 from stacks.customization import build_customize_graph
-
-
-@AstroFlowNode(cache_result=False)
-def load_metadata() -> None:
-  quarantined_files = context.quarantined_files or set()
-
-  def predicate_fn(image: ImageMetadata) -> bool:
-    return image.content_hash not in quarantined_files
-
-  metadata = get_metadata(
-      predicate_fn=predicate_fn,
-      post_fn=lambda images: {i.content_hash: i for i in images})
-
-  metadata_size_mb = objsize.get_deep_size(metadata) / 1024 / 1024
-  print(f'### load_metadata() size {metadata_size_mb} MB')
-
-  context.set('metadata', metadata, write_mode=WriteMode.MEMORY_ONLY)
+from metadata.image_metadata import load_metadata
 
 
 @AstroFlowNode()
@@ -188,8 +171,8 @@ def build_compute_graph(regroup: bool = False,
   if make_previews:
     task_list.append(build_preview_graph)
 
-  # if run_main_processing_graph:
-  #   task_list.append(build_main_processing_graph)
+  if run_main_processing_graph:
+    task_list.append(build_main_processing_graph)
 
   graph = make_graph_from_list(task_list)
 

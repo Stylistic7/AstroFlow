@@ -8,7 +8,7 @@ from stacks.composite_stack import CompositeStack, SimpleStacksDict
 from stacks.post_process import post_process_stack
 from dependency_graph import Graph, Node, make_graph_from_list
 from dependency_graph.astroflow_node import AstroFlowNode
-from metadata.image_metadata import compute_image_metadata, gather_compute_image_metadata
+from metadata.image_metadata import compute_image_metadata, load_metadata
 from quarantining.settings import Settings, StackSettings
 from calibration import identify_calibration_stacks, associate_with_stack
 from quarantining.compute_graph import store_calibration_stacks, apply_settings
@@ -41,18 +41,21 @@ def build_stacking_subgraph(stack: CustomizedStack) -> Graph:
   graph[stacking_metadata_task] = {stack_task}
   graph[post_process_stack] = {stacking_metadata_task}
   graph[post_process_metadata_task] = {post_process_stack}
-  graph[gather_compute_image_metadata] = {post_process_metadata_task}
+  graph[load_metadata] = {post_process_metadata_task}
 
   return graph
 
 
-# This function accepts a stack that is fresh from regrouping.
-# TODO: This is perhaps the best granularity for ETAs.
 @AstroFlowNode()
-def get_stack_image(mode: QualityLevel, stack: CompositeStack) -> Path:
+def get_stack_subframe_image(stack: CompositeStack) -> Path:
+  light_frames_by_stars = get_light_frames_sorted_by_stars(stack.all_frames())
+  best_light_frame = light_frames_by_stars[0]
+  return best_light_frame.filename
+
+
+@AstroFlowNode()
+def get_stack_image(mode: QualityLevel, stack: CompositeStack) -> Graph:
   if mode == QualityLevel.SUBFRAME:
-    light_frames_by_stars = get_light_frames_sorted_by_stars(stack.all_frames())
-    best_light_frame = light_frames_by_stars[0]
-    return best_light_frame.filename
-  elif mode == QualityLevel.MASTER:
-    return build_stacking_subgraph(stack)
+    return Graph({(get_stack_subframe_image, stack): {}})
+  else:
+    return Graph({(stack_files, stack): {(build_stacking_subgraph, stack)}})

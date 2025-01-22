@@ -3,6 +3,7 @@ import os
 import traceback
 from typing import Any
 from pathlib import Path
+import objsize  # type: ignore
 
 from artifacts import FileArtifact
 from file_io.find_image_files import find_image_files
@@ -106,11 +107,8 @@ def scatter_compute_image_metadata(mode: str, *filenames_in:
     return Graph({})
 
   print(f'### Computing image metadata for {len(new_filenames)} new artifacts')
-  graph = Graph({
-      gather_compute_image_metadata: [
-          (compute_image_metadata, f) for f in new_filenames
-      ]
-  })
+  graph = Graph(
+      {load_metadata: [(compute_image_metadata, f) for f in new_filenames]})
 
   return graph
 
@@ -173,22 +171,18 @@ def compute_image_metadata(filename: Path) -> Path:
           f'exception {traceback.format_exc()}')
 
 
-# TODO: This needs to be killed with fire.
-#
-# TODO: Don't call this for every spatial group, it's very slow.
-#
-# TODO: Replace this with the `load_metadata()` function.
-@AstroFlowNode()
-def gather_compute_image_metadata(*filenames) -> None:
-  print(f'### gather_compute_image_metadata')
+@AstroFlowNode(cache_result=False)
+def load_metadata() -> None:
+  quarantined_files = context.quarantined_files or set()
 
-  # # TODO: Put this "main" get_metadata() call into a separate function.
-  # def predicate_fn(image: ImageMetadata) -> bool:
-  #   return image.content_hash not in context.quarantined_files
+  def predicate_fn(image: ImageMetadata) -> bool:
+    return image.content_hash not in quarantined_files
 
-  # # TODO: This will write the metadata through the cache, wasting some space.
-  # context.metadata = get_metadata(
-  #     predicate_fn=predicate_fn,
-  #     post_fn=lambda images: {i.content_hash: i for i in images})
+  metadata = get_metadata(
+      predicate_fn=predicate_fn,
+      post_fn=lambda images: {i.content_hash: i for i in images})
 
-  # return filenames
+  metadata_size_mb = objsize.get_deep_size(metadata) / 1024 / 1024
+  print(f'### load_metadata() size {metadata_size_mb} MB')
+
+  context.set('metadata', metadata, write_mode=WriteMode.MEMORY_ONLY)

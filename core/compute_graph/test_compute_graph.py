@@ -21,7 +21,10 @@ class TestComputeGraph(unittest.TestCase):
 
   def setUp(self):
     self.input_dir_obj, self.output_dir_obj = make_test_context()
-    context.mock_stacking = True
+
+    # TODO: Expand this to just mock PixInsight in general. These test cases
+    # inspect the compute graph itself, not the outputs.
+    # context.mock_stacking = True
 
   def tearDown(self):
     self.input_dir_obj.cleanup()
@@ -113,9 +116,10 @@ class TestComputeGraph(unittest.TestCase):
       self.assertEqual(node.task._function.__name__, expected_name)
 
   def test_orion_mosaic(self) -> None:
-    # This test uses a random seed because it checks the specific values of
-    # hashes, so all of the frames will have predictable contents.
     add_orion_mosaic_images()
+
+    # TODO: Run this graph twice, and check which tasks disappear from the
+    # trace due to caching.
     results, _ = run_graph(build_compute_graph(regroup=True,
                                                make_previews=True,
                                                run_main_processing_graph=False),
@@ -126,6 +130,19 @@ class TestComputeGraph(unittest.TestCase):
     self.assertEqual(len(context.targets), 4)
     self.assertEqual(len(context.mosaics), 1)
 
+    # TODO: Add some expectations of what's in the trace, what order, etc.
+    for node in results.trace:
+      print('### trace', node_to_string(node))
+
+    mosaic = next(iter(context.mosaics.values()))
+    context.shopping_cart = [('mosaic', mosaic.stable_hash)]
+
+    results, _ = run_graph(build_compute_graph(regroup=True,
+                                               make_previews=True,
+                                               run_main_processing_graph=True),
+                           trace=True)
+
+    # TODO: Add some expectations of what's in the trace, what order, etc.
     for node in results.trace:
       print('### trace', node_to_string(node))
 
