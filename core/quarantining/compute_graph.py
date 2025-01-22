@@ -106,35 +106,17 @@ def quarantine_mosaics() -> dict[MosaicHash, Mosaic]:
 # just on its inputs.
 #
 # TODO: Move this into a new file.
-@AstroFlowNode()
-def apply_settings(settings: Settings,
-                   stacks: list[CompositeStack]) -> list[CompositeStack]:
-  print(f'### apply_settings running on {len(stacks)} stacks')
-  print(f'### apply_settings settings {settings}')
-  output = []
-  for stack in stacks:
-    if stack is None:
-      continue
+def apply_settings(stack: CompositeStack,
+                   stack_settings: StackSettings) -> CompositeStack:
+  print(f'### apply_settings {stack_settings} for stack {stack.stable_hash}')
+  new_contents = {}
+  for substack in stack.contents.values():
+    substack_settings = stack_settings.dependencies
+    dependencies = substack.dependencies | substack_settings
+    new_substack = replace(substack, dependencies=dependencies)
+    new_contents[new_substack.content_hash] = new_substack
 
-    print(f'### apply_settings for stack {stack.stable_hash}')
-    assert isinstance(stack,
-                      CompositeStack), f'Object {stack} is not a CompositeStack'
-
-    new_contents = {}
-    for substack in stack.contents.values():
-      # settings_key = ('stack_settings', substack.content_hash)
-      # settings = context[settings_key] or {}
-      substack_settings = settings.stack_settings.get(
-          substack.content_hash, StackSettings()).dependencies
-      print(f'### got settings {settings} for substack {substack.content_hash}')
-      dependencies = substack.dependencies | substack_settings
-      new_substack = replace(substack, dependencies=dependencies)
-      new_contents[new_substack.content_hash] = new_substack
-
-    output.append(replace(stack, contents=new_contents))
-
-  print(f'### apply_settings returning {len(output)} stacks')
-  return output
+  return replace(stack, contents=new_contents)
 
 
 # This graph applies user settings to a single stack in the `grouped_stacks`
@@ -189,26 +171,28 @@ def store_calibration_stacks(calibration_stacks: SimpleStacksDict) -> None:
 
 @AstroFlowNode(cache_result=False)
 def store_stacks(stacks: CompositeStacksDict) -> None:
-  context.or_equals('stacks', stacks)
+  context.or_equals('grouped_stacks', stacks)
   print(f'### store_stacks: Stored {len(stacks)} stacks; '
-        f'total is now {len(context.stacks)}')
-  for stack in context.stacks.values():
+        f'total is now {len(context.grouped_stacks)}')
+  for stack in context.grouped_stacks.values():
     print(f'### store_stacks stack {stack}')
   return stacks
 
 
 @AstroFlowNode(cache_result=False)
 def store_targets(targets: TargetsDict) -> None:
-  context.targets = targets
+  context.grouped_targets = targets
   print(f'### store_targets: Stored {len(targets)} targets; '
-        f'total is now {len(context.targets)}')
+        f'total is now {len(context.grouped_targets)}')
+  return targets
 
 
 @AstroFlowNode(cache_result=False)
 def store_mosaics(mosaics: MosaicsDict) -> None:
-  context.mosaics = mosaics
+  context.grouped_mosaics = mosaics
   print(f'### store_mosaics: Stored {len(mosaics)} mosaics; '
-        f'total is now {len(context.mosaics)}')
+        f'total is now {len(context.grouped_mosaics)}')
+  return mosaics
 
 
 # This graph takes the objects grouped by `build_regroup_graph()` and applies
@@ -216,35 +200,35 @@ def store_mosaics(mosaics: MosaicsDict) -> None:
 #
 # TODO: Pass SimpleStacks through `build_stack_user_settings_subgraph()` too.
 # Flat-frame stacks could be quarantined, for example.
-@AstroFlowNode()
-def build_apply_stack_user_settings_subgraph(settings: Settings) -> Graph:
-  print(f'### build_apply_stack_user_settings_subgraph settings {settings}')
+# @AstroFlowNode()
+# def build_apply_stack_user_settings_subgraph(settings: Settings) -> Graph:
+#   print(f'### build_apply_stack_user_settings_subgraph settings {settings}')
 
-  # TODO: This is empty when the preceding tasks don't run.
-  stacks = context.stacks or {}
+#   # TODO: This is empty when the preceding tasks don't run.
+#   stacks = context.stacks or {}
 
-  stack_ids = [
-      s for s in stacks.keys() if isinstance(stacks[s], CompositeStack)
-  ]
-  stack_id_groups = [
-      stack_ids[i::os.cpu_count()] for i in range(os.cpu_count())
-  ]
-  stack_id_groups = [tuple(group) for group in stack_id_groups]
-  print(f'### Grouped {len(stacks)} stacks into {len(stack_id_groups)} groups')
-  print(f'### First group {stack_id_groups[0]}')
+#   stack_ids = [
+#       s for s in stacks.keys() if isinstance(stacks[s], CompositeStack)
+#   ]
+#   stack_id_groups = [
+#       stack_ids[i::os.cpu_count()] for i in range(os.cpu_count())
+#   ]
+#   stack_id_groups = [tuple(group) for group in stack_id_groups]
+#   print(f'### Grouped {len(stacks)} stacks into {len(stack_id_groups)} groups')
+#   print(f'### First group {stack_id_groups[0]}')
 
-  graph = Graph({})
-  graph[gather_stack_user_settings] = {(build_stack_user_settings_subgraph,
-                                        group, settings)
-                                       for group in stack_id_groups
-                                       if len(group)}
-  graph[validate_stacks] = {gather_stack_user_settings}
-  graph[store_stacks] = {validate_stacks}
-  graph[quarantine_targets] = {store_stacks}
-  graph[validate_targets] = {quarantine_targets}
-  graph[store_targets] = {validate_targets}
-  graph[quarantine_mosaics] = {store_targets}
-  graph[validate_mosaics] = {quarantine_mosaics}
-  graph[store_mosaics] = {validate_mosaics}
+#   graph = Graph({})
+#   graph[gather_stack_user_settings] = {(build_stack_user_settings_subgraph,
+#                                         group, settings)
+#                                        for group in stack_id_groups
+#                                        if len(group)}
+#   graph[validate_stacks] = {gather_stack_user_settings}
+#   graph[store_stacks] = {validate_stacks}
+#   graph[quarantine_targets] = {store_stacks}
+#   graph[validate_targets] = {quarantine_targets}
+#   graph[store_targets] = {validate_targets}
+#   graph[quarantine_mosaics] = {store_targets}
+#   graph[validate_mosaics] = {quarantine_mosaics}
+#   graph[store_mosaics] = {validate_mosaics}
 
-  return graph
+#   return graph

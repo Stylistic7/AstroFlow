@@ -13,6 +13,9 @@ class Viewbox:
   y_min: float
   y_span: float
 
+  def __str__(self):
+    return 'Viewbox'
+
 
 @dataclass(frozen=True)
 class Panel:

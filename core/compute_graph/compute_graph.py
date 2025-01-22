@@ -6,32 +6,26 @@ from typing import Any
 from context import context, WriteMode
 from metadata.image_metadata import scatter_compute_image_metadata
 from clustering import cluster_by_image_center
-from calibration import identify_calibration_stacks, associate_with_stack
+from calibration import identify_calibration_stacks
 from previews import scatter_stack_thumbnails
 from previews.types import QualityLevel
 from mosaics.identification import identify_mosaics
-from stacks.compute_graph import build_stack_subgraph
+from stacks.compute_graph import build_stacking_subgraph
 from targets.compute_graph import build_target_subgraph
 from targets.identification import group_stacks_into_targets
-from targets.types import TargetHash
 from mosaics.compute_graph import build_mosaic_subgraph
 from dependency_graph import Graph, TaskDescriptor, make_graph_from_list
-from suggestions import make_suggestions
-from quarantining import apply_quarantine_to_stack
-from quarantining.compute_graph import store_stacks, store_targets, store_mosaics, build_apply_stack_user_settings_subgraph, quarantine_targets, quarantine_mosaics, store_calibration_stacks
-from quarantining.subframe_selection import select_subframes
+from quarantining.compute_graph import store_stacks, store_targets, store_mosaics, store_calibration_stacks
 from stacks.identification import identify_stacks
 import metadata.image_types as image_types
 from metadata.classes import ImageMetadata, FrameHash
 from metadata.actor import get_metadata
-from stacks.composite_stack import CompositeStack, CompositeStacksDict
-from stacks.types import StackHash
+from stacks.composite_stack import CompositeStack, SimpleStacksDict
 from stacks.validation import validate_stacks
-from profiling import track_performance
-from mosaics.types import MosaicHash
 from dependency_graph.astroflow_node import AstroFlowNode
 from targets import Target
-from quarantining.settings import Settings
+from quarantining.settings import Settings, StackSettings
+from stacks.customization import build_customize_graph
 
 
 @AstroFlowNode(cache_result=False)
@@ -96,16 +90,14 @@ def preview_graph_done() -> None:
 
 @AstroFlowNode()
 def build_preview_graph() -> Graph:
-  graph = Graph({})
-  stack_thumbnail_task = (scatter_stack_thumbnails, QualityLevel.SUBFRAME)
-  graph[stack_thumbnail_task] = []
+  tasks = []
 
-  subgraphs = []
+  tasks.append((scatter_stack_thumbnails, QualityLevel.SUBFRAME))
+
   for mosaic in context.mosaics.values():
-    subgraphs.append((build_mosaic_subgraph, QualityLevel.SUBFRAME, mosaic))
-  graph[preview_graph_done] = subgraphs
+    tasks.append((build_mosaic_subgraph, QualityLevel.SUBFRAME, mosaic))
 
-  return graph
+  return Graph({preview_graph_done: tasks})
 
 
 @AstroFlowNode()
@@ -115,9 +107,30 @@ def main_processing_graph_done() -> None:
 
 @AstroFlowNode()
 def build_main_processing_graph() -> Graph:
+  stacks = context.stacks
+  calibration_stacks = context.calibration_stacks
+  targets = context.targets
   mosaics = context.mosaics
+  settings = context.settings or Settings()
   shopping_cart = context.shopping_cart or []
   print(f'### build_main_processing_graph shopping_cart {shopping_cart}')
+
+  visited_stacks = set()
+  visited_targets = set()
+  visited_mosaics = set()
+
+  def _visit_stack(stack_hash):
+    visited_stacks.add(stack_hash)
+
+  def _visit_target(target_hash):
+    visited_targets.add(target_hash)
+    for stack in targets[target_hash].stack_ids:
+      _visit_stack(stack)
+
+  def _visit_mosaic(mosaic_hash):
+    visited_mosaics.add(mosaic_hash)
+    for target in mosaics[mosaic_hash].target_ids:
+      _visit_target(target)
 
   # TODO: Maybe add prioritization options in the UI.
   graph = Graph({})
@@ -127,17 +140,20 @@ def build_main_processing_graph() -> Graph:
       if id not in context.stacks:
         print('### WARNING: stack {id} is in shopping cart but does not exist')
         continue
-      tasks.append((build_stack_subgraph, id))
+      tasks.append((build_stacking_subgraph, stacks[id]))
+      _visit_stack(id)
     elif type == 'target':
       if id not in context.targets:
         print('### WARNING: target {id} is in shopping cart but does not exist')
         continue
       tasks.append((build_target_subgraph, id))
+      _visit_target(id)
     if type == 'mosaic':
       if id not in context.mosaics:
         print('### WARNING: mosaic {id} is in shopping cart but does not exist')
         continue
       tasks.append((build_mosaic_subgraph, QualityLevel.MASTER, mosaics[id]))
+      _visit_mosaic(id)
 
   graph[main_processing_graph_done] = tasks
   return graph
@@ -146,8 +162,8 @@ def build_main_processing_graph() -> Graph:
 def build_compute_graph(regroup: bool = False,
                         make_previews: bool = True,
                         run_main_processing_graph: bool = True) -> Graph:
-  task_list: list[TaskDescriptor] = [(scatter_compute_image_metadata, 'input'),
-                                     load_metadata]
+  task_list: list[TaskDescriptor] = [(scatter_compute_image_metadata, 'input')]
+  task_list.append(load_metadata)
 
   # The regroup graph only looks at light frames only, and ignores calibration
   # frames. All of its findings are written into the given `grouped_*` keys.
@@ -158,31 +174,26 @@ def build_compute_graph(regroup: bool = False,
     # the functions, these side effects don't happen.
     #
     context.calibration_stacks = {}
-    context.stacks = {}
-    context.targets = {}
-    context.mosaics = {}
+    context.grouped_stacks = {}
+    context.grouped_targets = {}
+    context.grouped_mosaics = {}
     task_list.append(build_regroup_graph)
 
-  # This looks only at calibration frames.
   # TODO: Don't do this unless there are new calibration frames.
   task_list.append(identify_calibration_stacks)
   task_list.append(store_calibration_stacks)
 
-  # The tasks that follow consume the raw objects computed from the files
-  # on disk, and transform them into the final objects seen by the rest of
-  # the graph.
-  settings = context.settings or Settings()
-  task_list.append((build_apply_stack_user_settings_subgraph, settings))
-
-  task_list.append(make_suggestions)
+  task_list.append(build_customize_graph)
 
   if make_previews:
     task_list.append(build_preview_graph)
 
-  if run_main_processing_graph:
-    task_list.append(build_main_processing_graph)
+  # if run_main_processing_graph:
+  #   task_list.append(build_main_processing_graph)
 
-  return make_graph_from_list(task_list)
+  graph = make_graph_from_list(task_list)
+
+  return graph
 
 
 # TODO: Add a cleanup task that deletes unreferenced stuff from the cache.

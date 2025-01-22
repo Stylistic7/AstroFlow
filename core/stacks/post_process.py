@@ -2,6 +2,7 @@ import ray
 from pathlib import Path
 import shutil
 
+from context import context
 from pix.decorators import PixInsight
 from pix.tasks import BlurXTerminator, AutomaticBackgroundExtractor
 from pix.classes import ImageList
@@ -17,14 +18,17 @@ def _post_process_stack(images: ImageList) -> ImageList:
   return images
 
 
-@AstroFlowNode(resources={'PixInsight': 1})
+@AstroFlowNode(cache_result=True, resources={'PixInsight': 1})
 def post_process_stack(master: Path) -> Path:
   print(f'### post_process_stack, master {master}')
 
-  results = _post_process_stack([master])
+  if context.mock_stacking:
+    output_filename = master
+  else:
+    results = _post_process_stack([master])
+    output_filename = next(iter(results)).filename
 
-  output_filename = next(iter(results)).filename
   final_filename = master.with_stem(master.stem + "_post_processed")
   shutil.copy(output_filename, final_filename)
 
-  return final_filename
+  return Path(final_filename)

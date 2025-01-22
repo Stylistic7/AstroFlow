@@ -10,6 +10,7 @@ from enum import Enum
 
 from context import context
 from mosaics import Mosaic
+from mosaics.mosaic import MosaicsDict
 from mosaics.types import MosaicHash
 from catalogs import position_string
 from geometry import footprints
@@ -20,6 +21,10 @@ from targets.types import TargetHash
 from targets.target import Target
 from mosaics.debugging import plot_mosaic
 from dependency_graph.astroflow_node import AstroFlowNode
+from targets.target import TargetsDict
+
+# TODO: Make the functions in this file functional (e.g. pass TargetsDict into
+# them, vs. relying on context).
 
 logger = structlog.get_logger()
 log = logger
@@ -50,7 +55,7 @@ def target_compatible_with_mosaic(target_id: TargetHash,
                                   mosaic: set[TargetHash],
                                   allowed_overlaps,
                                   debug: bool = False) -> bool:
-  targets = context.targets
+  targets = context.grouped_targets
   target = targets[target_id]
 
   # The two mosaics can be merged together if:
@@ -237,7 +242,7 @@ def group_targets(
 
 def find_strips(target_ids: list[TargetHash],
                 debug: bool = False) -> list[list[TargetHash]]:
-  targets = context.targets
+  targets = context.grouped_targets
 
   target_ids = list(sorted(target_ids, key=lambda t: targets[t].center[0]))
 
@@ -296,9 +301,7 @@ def find_strips(target_ids: list[TargetHash],
 
 def _identify_overlapping_targets(
     debug: bool = False) -> list[list[TargetHash]]:
-  stacks = context.stacks
-  targets = context.targets
-
+  targets = context.grouped_targets
   if not targets:
     return []
 
@@ -326,15 +329,15 @@ def _identify_overlapping_targets(
 
 
 @AstroFlowNode()
-def identify_mosaics(debug: bool = False) -> dict[MosaicHash, Mosaic]:
-  targets = context.targets
+def identify_mosaics(*targets_in,
+                     debug: bool = False) -> dict[MosaicHash, Mosaic]:
+  targets = context.grouped_targets
   print(f'### Identifying mosaics from {len(targets)} targets')
 
   mosaics = _identify_overlapping_targets(debug)
   if not mosaics:
     print('### No overlapping targets found')
-    context.mosaics = {}
-    return {}
+    return MosaicsDict()
 
   print(f'Found {len(mosaics)} mosaics')
 
@@ -423,7 +426,4 @@ def identify_mosaics(debug: bool = False) -> dict[MosaicHash, Mosaic]:
     except Exception as e:
       traceback.print_exc()
 
-  # TODO: Computing the result and storing the result are two different
-  # responsibilities. Perhaps separate patterns like this?
-  context.mosaics = output_mosaics
   return output_mosaics

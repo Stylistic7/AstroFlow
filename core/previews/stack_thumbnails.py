@@ -6,6 +6,7 @@ import ray
 from typing import cast
 from ray.remote_function import RemoteFunction
 
+from dependency_graph.astroflow_node import AstroFlowNode
 from stacks.types import StackHash
 from metadata.classes import ImageMetadata
 from previews.operations import resize_array, array_to_png
@@ -49,7 +50,7 @@ from profiling import track_performance
 
 # TODO: This needs to use the Artifact workflow, so that it will automatically
 # re-generate previews when stack contents change.
-@ray.remote(resources={'fastest_storage': 0.001})
+@AstroFlowNode(resources={'fastest_storage': 0.001})
 def scatter_stack_thumbnails(mode: QualityLevel) -> Graph:
   stacks = context.stacks
   cache_keys = context.get_cache_keys()
@@ -81,13 +82,11 @@ def scatter_stack_thumbnails(mode: QualityLevel) -> Graph:
 
 # TODO: The thumbnail images and videos need to use the artifact workflow, so
 # they will be regenerated after quarantining, etc.
-@ray.remote
-@track_performance
-def create_stack_subframe_thumbnails(stack_id: StackHash) -> None:
+@AstroFlowNode(cache_result=True)
+def create_stack_subframe_thumbnails(stack: CompositeStack) -> None:
   stacks = context.stacks
   metadata = context.metadata
 
-  stack = stacks[stack_id]
   print(f'Entering create_stack_subframe_thumbnails() for stack {stack}')
 
   # Don't make previews for calibration stacks.
@@ -120,7 +119,7 @@ def create_stack_subframe_thumbnails(stack_id: StackHash) -> None:
   # Now sort all the light frames (no matter which run they're from) by the
   # number of stars. The better images should be in front.
   light_frames_by_stars = quarantining.get_light_frames_sorted_by_stars(
-      stack.all_frames(), metadata)
+      stack.all_frames())
   best_light_frame = light_frames_by_stars[0]
   image = resize_array(read_image(best_light_frame.filename), width)
   height, width = image.shape
@@ -177,7 +176,11 @@ def create_stack_subframe_thumbnails(stack_id: StackHash) -> None:
       im = autostretch(np.clip(im, 0.0, 1.0))
 
       if i == 0:
-        key = ('stack_subframe_thumbnail_image', stack_id)
+        key = ('stack_subframe_thumbnail_image', stack.stable_hash)
+        context.set(key, im, write_mode=WriteMode.DISK_ONLY)
+        print(f'### Wrote key {key}')
+
+        key = ('stack_subframe_thumbnail_image_png', stack.stable_hash)
         context.set(key, array_to_png(im), write_mode=WriteMode.DISK_ONLY)
         print(f'### Wrote key {key}')
 
@@ -190,9 +193,11 @@ def create_stack_subframe_thumbnails(stack_id: StackHash) -> None:
     out.release()
     thumbnail_video = open(video_filename, 'rb').read()
 
-    key = ('stack_subframe_thumbnail_video', stack_id)
+    key = ('stack_subframe_thumbnail_video', stack.stable_hash)
     context.set(key, thumbnail_video, write_mode=WriteMode.DISK_ONLY)
     print(f'### Wrote key {key}')
+
+  return best_light_frame.filename
 
 
 @ray.remote

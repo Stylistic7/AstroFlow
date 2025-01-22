@@ -12,6 +12,7 @@ from typing import Any
 from stacks.artifacts import output_filename
 from stacks.simple_stack import SimpleStack
 from stacks.composite_stack import Stack, CompositeStack
+from stacks.customization import CustomizedStack
 from context import context
 from pix import PixInsight, ImageList
 from pix.tasks import WeightedBatchPreprocessing
@@ -118,7 +119,7 @@ def stack_files(stack: Stack) -> Path:
   with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
     if type(stack) is SimpleStack:
       first_filename, num_frames = _setup_simple_stack(stack, tmp_dir)
-    elif type(stack) is CompositeStack:
+    elif type(stack) is CustomizedStack:
       first_filename, num_frames = _setup_composite_stack(stack, tmp_dir)
 
     if num_frames < 3:

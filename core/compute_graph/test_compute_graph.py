@@ -11,7 +11,10 @@ from stacks.get_stacks import get_toplevel_stacks
 from testing.test_frames import copy_testdata_frames, make_synthetic_frames
 import compute_graph
 from dependency_graph import run_graph, print_graph
+from dependency_graph.debugging import node_to_string
 from testing.test_context import make_test_context
+from mosaics.orion_mosaic import add_orion_mosaic_images
+from compute_graph import build_compute_graph
 
 
 class TestComputeGraph(unittest.TestCase):
@@ -19,7 +22,6 @@ class TestComputeGraph(unittest.TestCase):
   def setUp(self):
     self.input_dir_obj, self.output_dir_obj = make_test_context()
     context.mock_stacking = True
-    context.regroup = True
 
   def tearDown(self):
     self.input_dir_obj.cleanup()
@@ -90,18 +92,42 @@ class TestComputeGraph(unittest.TestCase):
     masters = os.listdir(context.output_dir)
     self.assertEqual(len(masters), 0)
 
-    stacks = context.stacks
-    toplevel_stacks = get_toplevel_stacks(stacks)
+    toplevel_stacks = get_toplevel_stacks(context.stacks)
     self.assertEqual(len(toplevel_stacks), 1)
-    toplevel_stack = toplevel_stacks[0]
+    toplevel_stack = next(iter(toplevel_stacks))
 
     context.shopping_cart = [('stack', toplevel_stack.stable_hash)]
 
-    logs, processing_graph = ray.get(
-        compute_graph.build_main_processing_graph.remote())
-    print_graph(processing_graph)
+    _, graph = ray.get(compute_graph.build_main_processing_graph.remote())
+    print_graph(graph)
+    results, _ = run_graph(graph, trace=True)
 
-    self.assertEqual(len(processing_graph), 1)
+    expected_names = [
+        "build_stack_subgraph", "customize_stack",
+        "create_stack_subframe_thumbnails", "build_stacking_subgraph",
+        "stack_files", "compute_image_metadata", "post_process_stack",
+        "compute_image_metadata", "gather_compute_image_metadata",
+        "main_processing_graph_done"
+    ]
+    for node, expected_name in zip(results.trace, expected_names):
+      self.assertEqual(node.task._function.__name__, expected_name)
+
+  def test_orion_mosaic(self) -> None:
+    # This test uses a random seed because it checks the specific values of
+    # hashes, so all of the frames will have predictable contents.
+    add_orion_mosaic_images()
+    results, _ = run_graph(build_compute_graph(regroup=True,
+                                               make_previews=True,
+                                               run_main_processing_graph=False),
+                           trace=True)
+
+    self.assertEqual(len(context.stacks), 4)
+    self.assertEqual(len(context.calibration_stacks), 3)
+    self.assertEqual(len(context.targets), 4)
+    self.assertEqual(len(context.mosaics), 1)
+
+    for node in results.trace:
+      print('### trace', node_to_string(node))
 
 
 if __name__ == '__main__':

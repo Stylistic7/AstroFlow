@@ -32,7 +32,7 @@ class SimpleStack(ImagingAttributes, AstroFlowStateAttributes):
     return cls(**attributes)
 
   def __str__(self) -> str:
-    return (f'Stack(Content hash {self.content_hash}, '
+    return (f'SimpleStack(Content hash {self.content_hash}, '
             f'Type {self.image_type}, '
             f'Camera {self.camera}, '
             f'Exposure {self.exposure_s}, '

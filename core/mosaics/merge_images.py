@@ -50,10 +50,8 @@ def merge_images_with_photometric_mosaic(input_0: Artifact,
   return output_filename
 
 
-def merge_images_with_maximum(input_0: CacheArtifact,
-                              input_1: CacheArtifact) -> np.ndarray:
-  image_0 = autostretch(read_artifact_image(input_0))
-  image_1 = autostretch(read_artifact_image(input_1))
+def merge_images_with_maximum(image_0: np.ndarray,
+                              image_1: np.ndarray) -> np.ndarray:
   assert not np.isnan(np.min(image_0))
   assert not np.isnan(np.min(image_1))
   overlap = np.where((image_0 > 0) & (image_1 > 0))
@@ -71,10 +69,8 @@ def merge_images_with_maximum(input_0: CacheArtifact,
 # np.ndarray or Path; perhaps it should also hide content hashes from functions
 # that receive them?
 @AstroFlowNode(unpack_artifacts=False)
-def merge_images(mode: QualityLevel, input_0: Artifact,
-                 input_1: Artifact) -> Artifact:
-  print(f'### merge_images {mode}: inputs {input_0}, {input_1}')
-
+def merge_images(mode: QualityLevel, input_0: np.ndarray | Path,
+                 input_1: np.ndarray | Path) -> np.ndarray | Path:
   if mode == 'subframe':
     return merge_images_with_maximum(input_0, input_1)
   elif mode == 'master':

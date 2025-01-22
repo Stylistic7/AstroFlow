@@ -173,18 +173,22 @@ def compute_image_metadata(filename: Path) -> Path:
           f'exception {traceback.format_exc()}')
 
 
+# TODO: This needs to be killed with fire.
+#
 # TODO: Don't call this for every spatial group, it's very slow.
 #
 # TODO: Replace this with the `load_metadata()` function.
-@ray.remote
-def gather_compute_image_metadata() -> None:
+@AstroFlowNode()
+def gather_compute_image_metadata(*filenames) -> None:
   print(f'### gather_compute_image_metadata')
 
-  # TODO: Put this "main" get_metadata() call into a separate function.
-  def predicate_fn(image: ImageMetadata) -> bool:
-    return image.content_hash not in context.quarantined_files
+  # # TODO: Put this "main" get_metadata() call into a separate function.
+  # def predicate_fn(image: ImageMetadata) -> bool:
+  #   return image.content_hash not in context.quarantined_files
 
-  # TODO: This will write the metadata through the cache, wasting some space.
-  context.metadata = get_metadata(
-      predicate_fn=predicate_fn,
-      post_fn=lambda images: {i.content_hash: i for i in images})
+  # # TODO: This will write the metadata through the cache, wasting some space.
+  # context.metadata = get_metadata(
+  #     predicate_fn=predicate_fn,
+  #     post_fn=lambda images: {i.content_hash: i for i in images})
+
+  # return filenames

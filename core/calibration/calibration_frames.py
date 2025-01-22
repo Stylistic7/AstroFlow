@@ -5,6 +5,7 @@ import itertools
 from dataclasses import replace
 from datetime import datetime
 
+from dependency_graph.astroflow_node import AstroFlowNode
 from metadata.classes import ImageMetadata, FrameHash
 from context import context
 from stacks.types import StackHash
@@ -14,8 +15,7 @@ import clustering
 from profiling import track_performance
 
 
-@ray.remote
-@track_performance
+@AstroFlowNode()
 def identify_calibration_stacks() -> SimpleStacksDict:
   print(f'Identifying calibration stacks...')
 
@@ -49,7 +49,7 @@ def identify_calibration_stacks() -> SimpleStacksDict:
     stack = SimpleStack.from_frames(frames, metadata)
     return stack
 
-  stacks: dict[StackHash, SimpleStack] = {}
+  stacks = SimpleStacksDict()
   for camera in frames_for_camera:
     bias_frames = frames_for_image_type.get(
         'bias', set()) & frames_for_camera.get(camera, set())
@@ -76,80 +76,70 @@ def identify_calibration_stacks() -> SimpleStacksDict:
   return stacks
 
 
-@ray.remote
-@track_performance
-def associate_with_stack(stacks: list[CompositeStack]) -> list[CompositeStack]:
-  print(f'### associate_with_stack running on {len(stacks)} stacks')
-  cal_stacks = context.calibration_stacks
+# TODO: Don't overwrite existing customizations.
+def associate_with_stack(stack: CompositeStack,
+                         cal_stacks: SimpleStacksDict) -> CompositeStack:
+  print(f'### associate_with_stack {len(cal_stacks)} cal stacks '
+        f'with stack {stack}')
 
-  output = []
-  for stack in stacks:
-    if stack is None:
-      continue
+  def is_compatible(image_type: str, cal_stack: SimpleStack) -> bool:
+    if cal_stack.image_type != image_type:
+      return False
 
-    print(f'### associate_with_stack {len(cal_stacks)} cal stacks '
-          f'with stack {stack}')
-    assert isinstance(
-        stack, CompositeStack
-    ), f'### Object {stack} of type {type(stack)} is not CompositeStack'
+    if cal_stack.camera != stack.camera:
+      return False
 
-    def is_compatible(image_type: str, cal_stack: SimpleStack) -> bool:
-      if cal_stack.image_type != image_type:
-        return False
+    # TODO: Put temperarture temperature compatibility options in the UI.
+    good_temperature = abs(cal_stack.mean_temperature -
+                           stack.mean_temperature) < 5.0
 
-      if cal_stack.camera != stack.camera:
-        return False
+    # TODO: This allows dark scaling. Make this an option in the UI.
+    good_exposure = cal_stack.exposure_s <= stack.exposure_s
 
-      # TODO: Put temperarture temperature compatibility options in the UI.
-      good_temperature = abs(cal_stack.mean_temperature -
-                             stack.mean_temperature) < 5.0
+    if image_type == 'bias':
+      return good_temperature
 
-      # TODO: This allows dark scaling. Make this an option in the UI.
-      good_exposure = cal_stack.exposure_s <= stack.exposure_s
+    if image_type == 'dark':
+      return good_temperature and good_exposure
 
-      if image_type == 'bias':
-        return good_temperature
+    if image_type == 'flat':
+      return cal_stack.filter == stack.filter
 
-      if image_type == 'dark':
-        return good_temperature and good_exposure
+    assert False, f'image_type {image_type}'
 
-      if image_type == 'flat':
-        return cal_stack.filter == stack.filter
+  def find_closest_stack_chronologically(image_type: str) -> SimpleStack | None:
+    compatible_stacks = [
+        s for s in cal_stacks if is_compatible(image_type, cal_stacks[s])
+    ]
 
-      assert False, f'image_type {image_type}'
+    if not compatible_stacks:
+      return None
 
-    def find_closest_stack_chronologically(
-        image_type: str) -> SimpleStack | None:
-      compatible_stacks = [
-          s for s in cal_stacks if is_compatible(image_type, cal_stacks[s])
-      ]
+    def midpoint(a: datetime, b: datetime) -> datetime:
+      return a + (b - a) / 2
 
-      if not compatible_stacks:
-        return None
+    return compatible_stacks[np.argmin([
+        abs(
+            midpoint(stack.oldest_date, stack.newest_date) -
+            midpoint(cal_stacks[s].oldest_date, cal_stacks[s].newest_date)).
+        total_seconds() for s in compatible_stacks
+    ])]
 
-      def midpoint(a: datetime, b: datetime) -> datetime:
-        return a + (b - a) / 2
-
-      return compatible_stacks[np.argmin([
-          abs(
-              midpoint(stack.oldest_date, stack.newest_date) -
-              midpoint(cal_stacks[s].oldest_date, cal_stacks[s].newest_date)).
-          total_seconds() for s in compatible_stacks
-      ])]
-
-    new_contents = SimpleStacksDict()
-    for substack in stack.contents.values():
-      dependencies = {}
-      for image_type in ['bias', 'dark', 'flat']:
+  new_contents = SimpleStacksDict()
+  for substack in stack.contents.values():
+    dependencies = substack.dependencies
+    print(
+        f'### before associating, substack {substack} has dependencies {dependencies}'
+    )
+    for image_type in ['bias', 'dark', 'flat']:
+      if image_type not in dependencies:
         if closest := find_closest_stack_chronologically(image_type):
           print(f'### associated {image_type} cal stack {closest} '
-                f'with stack {stack}')
+                f'with substack {substack}')
           dependencies[image_type] = closest
 
-      # print(f'### Substack {substack} has dependencies {dependencies}')
-      new_stack = replace(substack, dependencies=dependencies)
-      new_contents[new_stack.content_hash] = new_stack
+    # print(f'### Substack {substack} has dependencies {dependencies}')
+    new_stack = replace(substack, dependencies=dependencies)
+    new_contents[new_stack.content_hash] = new_stack
 
-    output.append(replace(stack, contents=new_contents))
-
-  return output
+  return replace(stack, contents=new_contents)

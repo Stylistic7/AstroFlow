@@ -58,8 +58,7 @@ def cluster_by_image_center() -> None:
   cosine_similarity_threshold = context.cosine_similarity_threshold
   min_component_members = context.min_component_members
 
-  metadata = context.metadata
-  assert metadata
+  metadata = context.metadata or {}
 
   def get_centroid(center: Sequence[float]) -> np.ndarray:
     return np.asarray(footprints.radec_to_vector(*center))

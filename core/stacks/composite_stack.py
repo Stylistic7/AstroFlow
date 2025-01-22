@@ -25,6 +25,9 @@ class SimpleStacksDict(dict[str, SimpleStack]):
   def __hash__(self):
     return hash_dict_int(self)
 
+  def __str__(self):
+    return f'SimpleStacksDict({len(self)})'
+
 
 def _normalize_radians(x: float) -> float:
   if x < 0.0:
@@ -141,7 +144,7 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
     return all_frames
 
   def __str__(self) -> str:
-    return (f'Stack(Stable hash {self.stable_hash}, '
+    return (f'CompositeStack(Stable hash {self.stable_hash}, '
             f'Content hash {self.content_hash}, '
             f'Target {self.target}, '
             f'RA {units.ra_to_hms(self.center[0])}, '

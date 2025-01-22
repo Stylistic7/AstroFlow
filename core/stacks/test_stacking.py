@@ -2,11 +2,12 @@ from ray_infra import ray_local
 
 import unittest
 import datetime
+import ray
 from pathlib import Path
 
 from testing.test_context import make_test_context
 from context import context
-from compute_graph import build_compute_graph
+from compute_graph.compute_graph import build_compute_graph
 from dependency_graph import run_graph
 from testing.test_frames import copy_testdata_frames, make_synthetic_frames
 
@@ -67,6 +68,10 @@ class TestStacking(unittest.TestCase):
 
     self.assertEqual(len(context.stacks), 4)
     self.assertEqual(len(context.targets), 1)
+
+    filenames = list(
+        str(f) for f in Path(context.output_dir).rglob("*post_processed.xisf"))
+    self.assertEqual(len(filenames), 0)
 
     for stack in context.stacks.values():
       print(f'### stack {stack} type {type(stack)}')
