@@ -42,6 +42,11 @@ def my_later_task(i: int) -> int:
 
 
 @ray.remote
+def my_task_with_kwargs(*ancestor_results, debug=True) -> int:
+  return sum(ancestor_results)
+
+
+@ray.remote
 def my_last_task(i: int) -> int:
   return i + 3
 
@@ -256,6 +261,12 @@ class TestDependencyGraph(unittest.TestCase):
 
     self.assertEqual(results.num_nodes_run, 3)
     self.assertEqual(results.max_parallelism_seen, 1)
+
+  def test_pass_down_with_kwargs(self) -> None:
+    graph = Graph({my_task_with_kwargs: {my_first_task}})
+    results, _ = run_graph(graph)
+
+    self.assertEqual(results[my_task_with_kwargs], 1)
 
   def test_pass_down_lists(self) -> None:
     graph = make_graph_from_list([create_list, consume_list])
