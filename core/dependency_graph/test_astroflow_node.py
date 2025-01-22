@@ -64,7 +64,7 @@ def compute_mosaic_viewbox(mosaic_id: MosaicHash,
                  y_span=200)
 
 
-@AstroFlowNode()
+@AstroFlowNode(cache_result=True)
 def create_small_image() -> np.ndarray:
   return np.ones((100, 100))
 
@@ -106,8 +106,16 @@ def gather(*ancestor_results: list[int]) -> int:
 def maybe_run_dynamic_graph(should_run: bool) -> Graph:
   if should_run:
     return Graph({gather: [(process, i) for i in range(7)]})
-  else:
-    return Graph({})
+
+
+@AstroFlowNode()
+def done(x: Any) -> Any:
+  return x
+
+
+@AstroFlowNode(cache_result=True, debug=True)
+def build_subgraph(number: int) -> Graph:
+  return Graph({gather: [(process, i) for i in range(number)]})
 
 
 def build_place_image_compute_graph() -> Graph:
@@ -194,6 +202,24 @@ class TestAstroFlowNode(unittest.TestCase):
 
     self.assertEqual(results.num_nodes_run, 1)
     self.assertEqual(results.max_parallelism_seen, 1)
+
+  def test_cached_subgraph(self) -> None:
+    # The first time this graph is run, the build_subgraph task will run,
+    # and produce a subgraph which will then run.
+    graph = Graph({done: {(build_subgraph, 11)}})
+    results, _ = run_graph(graph)
+    print('### FIRST RUN')
+    print_result_dict(results)
+    self.assertEqual(results[done], 55)
+
+    # The second time it is run, the decorator should see that build_subgraph()
+    # was already called with the same arguments. That means all its work has
+    # already been done, so the decorator should return None (instead of a
+    # Graph).
+    print('### SECOND RUN')
+    results, _ = run_graph(graph)
+    print_result_dict(results)
+    self.assertEqual(results[done], None)
 
   def test_hash_stability(self) -> None:
     copy_testdata_frames(target_name='Orion Pane 1',

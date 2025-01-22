@@ -34,7 +34,8 @@ def AstroFlowNode(resources=None,
                   update_header=True,
                   unpack_artifacts=True,
                   cache_result=False,
-                  keep_in_memory=True):
+                  keep_in_memory=True,
+                  debug=False):
 
   if resources == None:
     resources = {}
@@ -49,17 +50,26 @@ def AstroFlowNode(resources=None,
 
       result = context[key]
       if isinstance(result, Path):
-        print(
-            f'### Checking that file {result} has content hash {content_hash}')
+        if debug:
+          print(
+              f'### Checking that file {result} has content hash {content_hash}'
+          )
         return artifact_exists(FileArtifact(result, content_hash))
       else:
         return True
 
     def _store_result(result, content_hash):
-      if isinstance(result, Graph):
-        return result
-
       key = (fn.__name__, content_hash)
+
+      # Graphs are a special case. When a function returns a Graph, it
+      # represents some computation that needs to be done. If the function
+      # and its arguments have been seen before, it means that computation has
+      # already run. Instead of serializing the Graph, we store the value None.
+      # The next time the function is called, None will be returned, instead
+      # of a Graph.
+      if isinstance(result, Graph):
+        context.set(key, None, WriteMode.MEMORY_AND_DISK)
+        return result
 
       # TODO: Clean this up.
       if update_header and isinstance(result, Path):
@@ -67,21 +77,24 @@ def AstroFlowNode(resources=None,
 
         if result.suffix.lower() in ['.xisf']:
           add_xisf_metadata(result, result, {'CONTHASH': content_hash})
-          print(f'### Updated XISF filename {result} with '
-                f'content hash {content_hash}')
+          if debug:
+            print(f'### Updated XISF filename {result} with '
+                  f'content hash {content_hash}')
         elif result.suffix.lower() in ['.fit', '.fits']:
           with pyfits.open(str(result), mode='update', mmap=False) as fits:
             fits[0].header['CONTHASH'] = content_hash
-          print(f'### Updated FITS filename {result} with '
-                f'content hash {content_hash}')
+          if debug:
+            print(f'### Updated FITS filename {result} with '
+                  f'content hash {content_hash}')
 
         return FileArtifact(result, content_hash)
 
       write_mode = (WriteMode.MEMORY_AND_DISK
                     if keep_in_memory else WriteMode.DISK_ONLY)
       context.set(key, result, write_mode)
-      print(f'### stored result {type(result)} with key {key} with '
-            f'write mode {write_mode}')
+      if debug:
+        print(f'### stored result {type(result)} with key {key} with '
+              f'write mode {write_mode}')
       return CacheArtifact(key)
 
     # This decorator accepts arguments that may include FileArtifacts and / or
@@ -126,15 +139,18 @@ def AstroFlowNode(resources=None,
       kwargs_list = list(kwargs.items())
       content_hash = hash_list([source, *args, *kwargs_list])
       key = (fn.__name__, content_hash)
-      print(f'### key {key}')
+      if debug:
+        print(f'### key {key}')
 
       if _result_exists(content_hash):
-        print(f'### Not running fn {fn.__name__} producing content '
-              f'hash {content_hash} because result exists')
+        if debug:
+          print(f'### Not running fn {fn.__name__} producing content '
+                f'hash {content_hash} because result exists')
         return CacheArtifact(key)
       else:
-        print(f'### Running fn {fn.__name__} producing content '
-              f'hash {content_hash} because result does not exist')
+        if debug:
+          print(f'### Running fn {fn.__name__} producing content '
+                f'hash {content_hash} because result does not exist')
         result = fn(*args, **kwargs)
         return _store_result(result, content_hash)
 
