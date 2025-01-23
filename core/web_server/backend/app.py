@@ -3,7 +3,7 @@ import sys
 
 sys.path.append('../..')
 
-from ray_infra import ray_init
+# from ray_infra import ray_init
 
 import os
 import io
@@ -13,7 +13,7 @@ from flask import request, jsonify, Response
 from dataclasses import asdict
 from base64 import b64encode
 import datetime
-import ray
+# import ray
 from queue import Queue
 import operator
 from spherical_geometry.polygon import SingleSphericalPolygon
@@ -21,7 +21,7 @@ import threading
 import json
 
 from .message_announcer import MessageAnnouncer
-from context import context
+from core.context import context
 from state.actor import StateActor
 from catalogs import constellations
 from previews.operations import resize_array, autostretch, array_to_png
@@ -407,59 +407,56 @@ def plot():
 # to the ContextActor. This also means the "front-door" to AstroFlow is via
 # the website.
 
+# @app.route('/quarantine_stack/<stack_id>')
+# def quarantine_stack(stack_id):
+#   context.or_equals('quarantined_stacks', {stack_id}, default_value=set())
 
-@app.route('/quarantine_stack/<stack_id>')
-def quarantine_stack(stack_id):
-  context.or_equals('quarantined_stacks', {stack_id}, default_value=set())
+#   graph = ray.get(build_apply_stack_user_settings_subgraph.remote())
 
-  graph = ray.get(build_apply_stack_user_settings_subgraph.remote())
+#   thread = threading.Thread(target=run_graph,
+#                             args=(graph,),
+#                             kwargs={
+#                                 'status_fn': status_fn,
+#                                 'debug': False
+#                             })
+#   thread.daemon = True
+#   thread.start()
 
-  thread = threading.Thread(target=run_graph,
-                            args=(graph,),
-                            kwargs={
-                                'status_fn': status_fn,
-                                'debug': False
-                            })
-  thread.daemon = True
-  thread.start()
+#   return Response(status=204)
 
-  return Response(status=204)
+# @app.route('/quarantine_target/<target_id>')
+# def quarantine_target(target_id):
+#   context.or_equals('quarantined_targets', {target_id}, default_value=set())
 
+#   graph = ray.get(build_apply_stack_user_settings_subgraph.remote())
 
-@app.route('/quarantine_target/<target_id>')
-def quarantine_target(target_id):
-  context.or_equals('quarantined_targets', {target_id}, default_value=set())
+#   thread = threading.Thread(target=run_graph,
+#                             args=(graph,),
+#                             kwargs={
+#                                 'status_fn': status_fn,
+#                                 'debug': False
+#                             })
+#   thread.daemon = True
+#   thread.start()
 
-  graph = ray.get(build_apply_stack_user_settings_subgraph.remote())
+#   return Response(status=204)
 
-  thread = threading.Thread(target=run_graph,
-                            args=(graph,),
-                            kwargs={
-                                'status_fn': status_fn,
-                                'debug': False
-                            })
-  thread.daemon = True
-  thread.start()
+# @app.route('/quarantine_mosaic/<mosaic_id>')
+# def quarantine_mosaic(mosaic_id):
+#   context.or_equals('quarantined_mosaics', {mosaic_id}, default_value=set())
 
-  return Response(status=204)
+#   graph = ray.get(build_apply_stack_user_settings_subgraph.remote())
 
+#   thread = threading.Thread(target=run_graph,
+#                             args=(graph,),
+#                             kwargs={
+#                                 'status_fn': status_fn,
+#                                 'debug': False
+#                             })
+#   thread.daemon = True
+#   thread.start()
 
-@app.route('/quarantine_mosaic/<mosaic_id>')
-def quarantine_mosaic(mosaic_id):
-  context.or_equals('quarantined_mosaics', {mosaic_id}, default_value=set())
-
-  graph = ray.get(build_apply_stack_user_settings_subgraph.remote())
-
-  thread = threading.Thread(target=run_graph,
-                            args=(graph,),
-                            kwargs={
-                                'status_fn': status_fn,
-                                'debug': False
-                            })
-  thread.daemon = True
-  thread.start()
-
-  return Response(status=204)
+#   return Response(status=204)
 
 
 @app.route('/recent')
