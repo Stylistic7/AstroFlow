@@ -16,8 +16,7 @@ class TestStacking(unittest.TestCase):
 
   def setUp(self):
     self.input_dir_obj, self.output_dir_obj = make_test_context()
-    context.regroup = True
-    context.mock_stacking = False
+    context.mock_pixinsight = False
 
   def tearDown(self):
     self.input_dir_obj.cleanup()
@@ -66,7 +65,8 @@ class TestStacking(unittest.TestCase):
                                 run_main_processing_graph=True)
     run_graph(graph, debug=True)
 
-    self.assertEqual(len(context.stacks), 4)
+    self.assertEqual(len(context.stacks), 1)
+    self.assertEqual(len(context.calibration_stacks), 3)
     self.assertEqual(len(context.targets), 1)
 
     filenames = list(

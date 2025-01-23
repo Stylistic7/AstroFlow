@@ -80,8 +80,11 @@ def merge_images(mode: QualityLevel, input_0: np.ndarray | Path,
   if mode == 'subframe':
     return merge_images_with_maximum(input_0, input_1)
   elif mode == 'master':
-    _, result = ray.get(
-        merge_images_with_photometric_mosaic.remote(input_0, input_1))
-    return result
+    if context.mock_pixinsight:
+      return input_0
+    else:
+      _, result = ray.get(
+          merge_images_with_photometric_mosaic.remote(input_0, input_1))
+      return result
 
   raise ValueError(f'Unknown quality level {mode}')

@@ -127,7 +127,7 @@ def stack_files(stack: Stack) -> Path:
             f'{num_frames} selected frames')
       return dest_filename
 
-    if context.mock_stacking:
+    if context.mock_pixinsight:
       assert first_filename is not None
       file_io.conversion.convert_fits_to_xisf(first_filename,
                                               dest_filename,

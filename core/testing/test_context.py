@@ -28,6 +28,6 @@ def make_test_context(
   context.subframe_mosaic_samples = 500
   context.master_mosaic_samples = 500
 
-  context.mock_stacking = True
+  context.mock_pixinsight = True
 
   return input_dir_obj, output_dir_obj

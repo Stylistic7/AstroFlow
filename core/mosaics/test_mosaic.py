@@ -22,7 +22,7 @@ class TestMosaic(unittest.TestCase):
     # Start with an empty context.
     self.input_dir_obj, self.output_dir_obj = make_test_context()
 
-    context.regroup = True
+    context.mock_pixinsight = False
     context.master_mosaic_samples = 1000
 
   def tearDown(self) -> None:

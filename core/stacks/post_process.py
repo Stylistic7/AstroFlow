@@ -22,7 +22,7 @@ def _post_process_stack(images: ImageList) -> ImageList:
 def post_process_stack(master: Path) -> Path:
   print(f'### post_process_stack, master {master}')
 
-  if context.mock_stacking:
+  if context.mock_pixinsight:
     output_filename = master
   else:
     results = _post_process_stack([master])
