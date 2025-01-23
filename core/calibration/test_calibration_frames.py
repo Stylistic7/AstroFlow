@@ -99,7 +99,8 @@ class TestCalibrationFrames(unittest.TestCase):
                             run_main_processing_graph=False))
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 5)
+    self.assertEqual(len(stacks), 1)
+    self.assertEqual(len(context.calibration_stacks), 4)
 
     light_stacks = [s for s in stacks.values() if s.image_type == 'light']
     self.assertEqual(len(light_stacks), 1)
@@ -124,7 +125,8 @@ class TestCalibrationFrames(unittest.TestCase):
                             run_main_processing_graph=False))
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 2)
+    self.assertEqual(len(stacks), 1)
+    self.assertEqual(len(context.calibration_stacks), 1)
 
     light_stacks = [s for s in stacks.values() if s.image_type == 'light']
     self.assertEqual(len(light_stacks), 1)
@@ -199,11 +201,12 @@ class TestCalibrationFrames(unittest.TestCase):
                             run_main_processing_graph=False))
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 8)
+    self.assertEqual(len(stacks), 2)
+    self.assertEqual(len(context.calibration_stacks), 6)
 
     light_stacks = [
         s for s in stacks.values()
-        if s.image_type == 'light' and type(s) is CompositeStack
+        if s.image_type == 'light' and isinstance(s, CompositeStack)
     ]
     self.assertEqual(len(light_stacks), 2)
 
@@ -257,7 +260,8 @@ class TestCalibrationFrames(unittest.TestCase):
                             run_main_processing_graph=False))
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 5)
+    self.assertEqual(len(stacks), 1)
+    self.assertEqual(len(context.calibration_stacks), 4)
 
     light_stacks = [s for s in stacks.values() if s.image_type == 'light']
     self.assertEqual(len(light_stacks), 1)
@@ -286,11 +290,12 @@ class TestCalibrationFrames(unittest.TestCase):
                             run_main_processing_graph=False))
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 2)
+    self.assertEqual(len(stacks), 1)
+    self.assertEqual(len(context.calibration_stacks), 1)
 
     light_stacks = [
         s for s in stacks.values()
-        if type(s) is CompositeStack and s.image_type == 'light'
+        if isinstance(s, CompositeStack) and s.image_type == 'light'
     ]
     self.assertEqual(len(light_stacks), 1)
     stack = light_stacks[0]
@@ -335,7 +340,8 @@ class TestCalibrationFrames(unittest.TestCase):
                             run_main_processing_graph=False))
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 4)
+    self.assertEqual(len(stacks), 1)
+    self.assertEqual(len(context.calibration_stacks), 3)
 
     light_stacks = [s for s in stacks.values() if s.image_type == 'light']
     self.assertEqual(len(light_stacks), 1)
@@ -372,7 +378,8 @@ class TestCalibrationFrames(unittest.TestCase):
                             run_main_processing_graph=False))
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 3)
+    self.assertEqual(len(stacks), 1)
+    self.assertEqual(len(context.calibration_stacks), 2)
 
     light_stacks = [s for s in stacks.values() if s.image_type == 'light']
     self.assertEqual(len(light_stacks), 1)
@@ -425,9 +432,9 @@ class TestCalibrationFrames(unittest.TestCase):
 
     # Look through the stacks, and find the stacks for the two runs of flat
     # frames.
-    def find_stack(filename_fragment: str) -> StackHash | None:
-      for stack_id, stack in stacks.items():
-        if type(stack) is not SimpleStack:
+    def find_cal_stack(filename_fragment: str) -> StackHash | None:
+      for stack_id, stack in context.calibration_stacks.items():
+        if not isinstance(stack, SimpleStack):
           continue
 
         filenames = get_metadata(stack.frames,
@@ -438,16 +445,16 @@ class TestCalibrationFrames(unittest.TestCase):
 
       return None
 
-    first_flat_stack = find_stack('flat_run_0')
+    first_flat_stack = find_cal_stack('flat_run_0')
     self.assertNotEqual(first_flat_stack, None)
     print(f'### first_flat_stack {first_flat_stack}')
-    second_flat_stack = find_stack('flat_run_1')
+    second_flat_stack = find_cal_stack('flat_run_1')
     self.assertNotEqual(second_flat_stack, None)
     print(f'### second_flat_stack {second_flat_stack}')
 
     light_stacks = [
-        s for s in stacks.values()
-        if s.image_type == 'light' and type(s) is CompositeStack
+        s for s in context.stacks.values()
+        if s.image_type == 'light' and isinstance(s, CompositeStack)
     ]
     self.assertEqual(len(light_stacks), 1)
     stack = next(iter(light_stacks))
@@ -470,14 +477,16 @@ class TestCalibrationFrames(unittest.TestCase):
                             run_main_processing_graph=False))
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 3)
+    self.assertEqual(len(stacks), 1)
+    self.assertEqual(len(context.calibration_stacks), 2)
 
     light_stacks = [
         s for s in stacks.values()
-        if s.image_type == 'light' and type(s) is CompositeStack
+        if s.image_type == 'light' and isinstance(s, CompositeStack)
     ]
     self.assertEqual(len(light_stacks), 1)
     stack = next(iter(light_stacks))
+    self.assertEqual(len(stack.contents), 1)
     substack = next(iter(stack.contents.values()))
     self.assertEqual(substack.dependencies, {'flat': first_flat_stack})
 
@@ -519,7 +528,8 @@ class TestCalibrationFrames(unittest.TestCase):
                             run_main_processing_graph=False))
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 4)
+    self.assertEqual(len(stacks), 1)
+    self.assertEqual(len(context.calibration_stacks), 3)
 
     toplevel_stacks = get_toplevel_stacks(stacks)
     self.assertEqual(len(toplevel_stacks), 1)

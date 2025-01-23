@@ -44,7 +44,8 @@ class TestFootprints(unittest.TestCase):
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 1)
-    stack = next(iter(s for s in stacks.values() if type(s) is CompositeStack))
+    stack = next(
+        iter(s for s in stacks.values() if isinstance(s, CompositeStack)))
 
     x, y = project_polygon(stack.footprint, self.proj)
     projected_footprint = Polygon(zip(x, y))

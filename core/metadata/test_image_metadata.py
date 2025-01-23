@@ -7,7 +7,7 @@ import random
 import os
 
 from context import context
-from metadata.image_metadata import scatter_compute_image_metadata, gather_compute_image_metadata
+from metadata.image_metadata import scatter_compute_image_metadata, load_metadata
 from metadata.actor import get_metadata
 from testing.test_context import make_test_context
 from testing.test_frames import make_synthetic_frames
@@ -19,9 +19,7 @@ def get_all_filenames():
 
 
 def compute_graph_fragment():
-  return {
-      gather_compute_image_metadata: {(scatter_compute_image_metadata, 'input')}
-  }
+  return {load_metadata: {(scatter_compute_image_metadata, 'input')}}
 
 
 class TestImageMetadata(unittest.TestCase):

@@ -33,7 +33,9 @@ class TestTargetIdentification(unittest.TestCase):
 
     self.assertEqual(len(context.stacks), 1)
     stack = next(
-        iter([s for s in context.stacks.values() if type(s) is CompositeStack]))
+        iter([
+            s for s in context.stacks.values() if isinstance(s, CompositeStack)
+        ]))
     self.assertNotEqual(stack.stable_hash, None)
     self.assertNotEqual(stack.content_hash, None)
 

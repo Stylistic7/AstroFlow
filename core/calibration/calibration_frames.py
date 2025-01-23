@@ -76,9 +76,8 @@ def identify_calibration_stacks() -> SimpleStacksDict:
   return stacks
 
 
-# TODO: Don't overwrite existing customizations.
-def associate_with_stack(stack: CompositeStack,
-                         cal_stacks: SimpleStacksDict) -> CompositeStack:
+def associate_with_stack(stack: CompositeStack) -> CompositeStack:
+  cal_stacks = context.calibration_stacks
   print(f'### associate_with_stack {len(cal_stacks)} cal stacks '
         f'with stack {stack}')
 
@@ -126,20 +125,17 @@ def associate_with_stack(stack: CompositeStack,
     ])]
 
   new_contents = SimpleStacksDict()
-  for substack in stack.contents.values():
-    dependencies = substack.dependencies
-    print(
-        f'### before associating, substack {substack} has dependencies {dependencies}'
-    )
+  for content_hash, substack in stack.contents.items():
+    new_dependencies = substack.dependencies
     for image_type in ['bias', 'dark', 'flat']:
-      if image_type not in dependencies:
+      if image_type not in new_dependencies:
         if closest := find_closest_stack_chronologically(image_type):
           print(f'### associated {image_type} cal stack {closest} '
                 f'with substack {substack}')
-          dependencies[image_type] = closest
+          new_dependencies[image_type] = closest
 
-    # print(f'### Substack {substack} has dependencies {dependencies}')
-    new_stack = replace(substack, dependencies=dependencies)
-    new_contents[new_stack.content_hash] = new_stack
+    new_substack = replace(substack, dependencies=new_dependencies)
+    new_contents[content_hash] = new_substack
 
-  return replace(stack, contents=new_contents)
+  new_stack = replace(stack, contents=new_contents)
+  return new_stack

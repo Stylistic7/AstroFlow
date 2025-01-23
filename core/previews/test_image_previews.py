@@ -89,7 +89,8 @@ class TestImagePreviews(unittest.TestCase):
     run_graph(graph)
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 5)
+    self.assertEqual(len(stacks), 1)
+    self.assertEqual(len(context.calibration_stacks), 4)
 
     light_stacks = [s for s in stacks.values() if s.image_type == 'light']
     self.assertEqual(len(light_stacks), 1)

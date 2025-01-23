@@ -22,10 +22,6 @@ class TestComputeGraph(unittest.TestCase):
   def setUp(self):
     self.input_dir_obj, self.output_dir_obj = make_test_context()
 
-    # TODO: Expand this to just mock PixInsight in general. These test cases
-    # inspect the compute graph itself, not the outputs.
-    # context.mock_stacking = True
-
   def tearDown(self):
     self.input_dir_obj.cleanup()
     self.output_dir_obj.cleanup()
@@ -90,7 +86,10 @@ class TestComputeGraph(unittest.TestCase):
     graph = compute_graph.build_compute_graph(regroup=True,
                                               make_previews=False,
                                               run_main_processing_graph=False)
-    run_graph(graph)
+    results, _ = run_graph(graph, trace=True)
+
+    for node in results.trace:
+      print('### trace', node_to_string(node))
 
     masters = os.listdir(context.output_dir)
     self.assertEqual(len(masters), 0)
@@ -105,8 +104,11 @@ class TestComputeGraph(unittest.TestCase):
     print_graph(graph)
     results, _ = run_graph(graph, trace=True)
 
+    for node in results.trace:
+      print('### trace', node_to_string(node))
+
     expected_names = [
-        "build_stack_subgraph", "customize_stack",
+        "build_stacking_subgraph", "customize_stack",
         "create_stack_subframe_thumbnails", "build_stacking_subgraph",
         "stack_files", "compute_image_metadata", "post_process_stack",
         "compute_image_metadata", "gather_compute_image_metadata",

@@ -38,7 +38,7 @@ class TestHashing(unittest.TestCase):
                             make_previews=False,
                             run_main_processing_graph=False))
 
-    self.assertEqual(len(context.stacks), 4)
+    self.assertEqual(len(context.stacks), 1)
     self.assertEqual(len(context.calibration_stacks), 3)
     self.assertEqual(len(context.targets), 1)
     self.assertEqual(len(context.mosaics), 0)
@@ -55,7 +55,7 @@ class TestHashing(unittest.TestCase):
 
     # The Python hash of a Stack goes through `hash_dataclass()`, and should
     # be stable across Python sessions.
-    self.assertEqual(hash(light_stack), 1890771923370192638)
+    self.assertEqual(hash(light_stack), 1348472393932099899)
 
     # The Python hash of a SimpleStacksDict goes through `hash_dict_int()`,
     # and should be stable across Python sessions.
