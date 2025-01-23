@@ -102,23 +102,6 @@ def quarantine_mosaics() -> dict[MosaicHash, Mosaic]:
   return output_mosaics
 
 
-# TODO: This doesn't work because it depends on stuff in the context, not
-# just on its inputs.
-#
-# TODO: Move this into a new file.
-def apply_settings(stack: CompositeStack,
-                   stack_settings: StackSettings) -> CompositeStack:
-  print(f'### apply_settings {stack_settings} for stack {stack.stable_hash}')
-  new_contents = {}
-  for substack in stack.contents.values():
-    substack_settings = stack_settings.dependencies
-    dependencies = substack.dependencies | substack_settings
-    new_substack = replace(substack, dependencies=dependencies)
-    new_contents[new_substack.content_hash] = new_substack
-
-  return replace(stack, contents=new_contents)
-
-
 # This graph applies user settings to a single stack in the `grouped_stacks`
 # dict, passing it through graph arguments. If the stack is quarantined, or
 # becomes empty after subframe selection, it will not make it into the final
