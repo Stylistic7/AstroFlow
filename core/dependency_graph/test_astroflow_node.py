@@ -137,7 +137,7 @@ def consume_large_image(image) -> Any:
   return image.shape
 
 
-@AstroFlowNode()
+@AstroFlowNode(cache_result=True)
 def associate_calibration(stack: CompositeStack) -> CompositeStack:
   context.associate_calibration_runs += 1
 
@@ -248,7 +248,7 @@ class TestAstroFlowNode(unittest.TestCase):
     # The `associate_calibration` node should run the first time.
     results, _ = run_graph(graph, debug=True)
     self.assertTrue(
-        context.contains(('associate_calibration', 'b832696d8732f5d6')))
+        context.contains(('associate_calibration', 'a4e3acedc0353985')))
     self.assertEqual(results.num_nodes_run, 1)
     self.assertEqual(context.associate_calibration_runs, 1)
 
@@ -257,7 +257,7 @@ class TestAstroFlowNode(unittest.TestCase):
     # run the underlying wrapped function.
     results, _ = run_graph(graph, debug=True)
     self.assertTrue(
-        context.contains(('associate_calibration', 'b832696d8732f5d6')))
+        context.contains(('associate_calibration', 'a4e3acedc0353985')))
     self.assertEqual(results.num_nodes_run, 1)
     self.assertEqual(context.associate_calibration_runs, 1)
 
