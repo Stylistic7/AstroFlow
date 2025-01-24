@@ -112,12 +112,12 @@ def photo_sphere_viewer():
 
 @app.route('/get_shopping_cart')
 def get_shopping_cart():
-  return list(context.shopping_cart) or []
+  return list(context.shopping_cart or set())
 
 
 @app.route('/add_to_shopping_cart/<object_type>/<object_id>')
 def add_to_shopping_cart(object_type, object_id):
-  shopping_cart = set(context.shopping_cart) or set()
+  shopping_cart = context.shopping_cart or set()
   shopping_cart.add((object_type, object_id))
   context.shopping_cart = shopping_cart
 
@@ -128,7 +128,7 @@ def add_to_shopping_cart(object_type, object_id):
 
 @app.route('/remove_from_shopping_cart/<object_type>/<object_id>')
 def remove_from_shopping_cart(object_type, object_id):
-  shopping_cart = set(context.shopping_cart) or set()
+  shopping_cart = context.shopping_cart or set()
   shopping_cart.remove((object_type, object_id))
   context.shopping_cart = shopping_cart
 
@@ -567,7 +567,7 @@ def run_compute_graph():
 
   # TODO: Determine `regroup` automatically.
   graph = build_compute_graph(regroup=True,
-                              make_previews=True,
+                              make_previews=False,
                               run_main_processing_graph=True)
 
   def _run_graph(*args, **kwargs):
