@@ -76,24 +76,24 @@ class TestFlatCorrection(unittest.TestCase):
                           dest_dir=context.input_dirs[0])
 
     graph = build_compute_graph(regroup=True,
-                                make_previews=False,
+                                make_previews=True,
                                 run_main_processing_graph=False)
     run_graph(graph)
-
-    for k in cache.iterkeys():
-      print(k)
-      if 'flat_correction_thumbnails' in k:
-        print('type(cache[k])', type(cache[k]))
-        print('key', k, 'has keys', cache[k].keys())
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 1)
     self.assertEqual(len(context.calibration_stacks), 4)
 
-    for stack in stacks.values():
-      print(stack)
+    flat_stack_ids = [
+        id for id, s in context.calibration_stacks.items()
+        if s.image_type == 'flat'
+    ]
 
-    # key = ('flat_correction_thumbnails', stack.stable_hash)
+    stack = next(iter(stacks.values()))
+    for substack_id in stack.contents:
+      for flat_stack_id in flat_stack_ids:
+        key = ('flat_correction_thumbnail', substack_id, flat_stack_id)
+        self.assertTrue(context.contains(key))
 
 
 if __name__ == '__main__':

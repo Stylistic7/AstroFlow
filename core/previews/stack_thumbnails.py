@@ -11,7 +11,7 @@ from stacks.types import StackHash
 from metadata.classes import ImageMetadata
 from previews.operations import resize_array, array_to_png
 from previews.flat_correction import create_flat_correction_thumbnails
-from previews.calibration import calibrate_image
+from previews.calibration import calibrate_subframe
 from previews.types import QualityLevel
 from context import context, WriteMode
 from file_io.generic import read_image
@@ -84,35 +84,12 @@ def scatter_stack_thumbnails(mode: QualityLevel) -> Graph:
   return Graph({cast(RemoteFunction, gather): tasks})
 
 
-# TODO: The thumbnail images and videos need to use the artifact workflow, so
-# they will be regenerated after quarantining, etc.
-@AstroFlowNode(cache_result=True)
+# TODO: Cache this.
+@AstroFlowNode()
 def create_stack_subframe_thumbnails(stack: CompositeStack) -> None:
-  stacks = context.stacks
-  calibration_stacks = context.calibration_stacks
-  metadata = context.metadata
-
   print(f'Entering create_stack_subframe_thumbnails() for stack {stack}')
 
-  # Don't make previews for calibration stacks.
-  assert type(stack) is not SimpleStack
-
   width = context.subframe_thumbnail_width
-
-  # Cache the calibration images so they're only read once.
-  first_subframes: dict[StackHash, tuple[ImageMetadata, np.ndarray] | None] = {}
-
-  def get_first_subframe(
-      stack_id: StackHash) -> tuple[ImageMetadata, np.ndarray] | None:
-    if not stack_id:
-      return None
-    elif stack_id in first_subframes:
-      return first_subframes[stack_id]
-    else:
-      frame = metadata[calibration_stacks[stack_id].frames[0]]
-      image = resize_array(read_image(frame.filename), width).astype(np.float32)
-      first_subframes[stack_id] = (frame, image)
-      return first_subframes[stack_id]
 
   # Now sort all the light frames (no matter which run they're from) by the
   # number of stars. The better images should be in front.
@@ -131,46 +108,13 @@ def create_stack_subframe_thumbnails(stack: CompositeStack) -> None:
     video_filename = os.path.join(tmp_dir, 'output.webm')
     out = cv2.VideoWriter(video_filename, fourcc, 10.0, (width, height), False)
     for i, light_frame in enumerate(light_frames_by_stars):
-      assert light_frame.plate_solution is not None
-      rotate = light_frame.plate_solution.rotation_angle < 0.0
-
-      light_image = resize_array(read_image(light_frame.filename),
-                                 width).astype(np.float32)
-
-      # TODO: This feels a little hacky.
-      # FIXME and it isn't working
       dependencies = {}
       if substack := next(
           iter(s for s in stack.contents.values()
                if light_frame.content_hash in s.frames), None):
         dependencies = substack.dependencies
 
-      bias_frame = bias_image = None
-      if 'bias' in dependencies:
-        result = get_first_subframe(dependencies['bias'])
-        assert result is not None
-        bias_frame, bias_image = result
-
-      dark_frame = dark_image = None
-      if 'dark' in dependencies:
-        result = get_first_subframe(dependencies['dark'])
-        assert result is not None
-        dark_frame, dark_image = result
-
-      flat_frame = flat_image = None
-      if 'flat' in dependencies:
-        result = get_first_subframe(dependencies['flat'])
-        assert result is not None
-        flat_frame, flat_image = result
-
-      if bias_frame is None or dark_frame is None or flat_frame is None:
-        print(f'### create_stack_subframe_thumbnails light frame '
-              f'{light_frame.content_hash} from stack {substack} '
-              f'is missing some calibration images: {dependencies}')
-
-      im = calibrate_image(light_frame, light_image, bias_frame, bias_image,
-                           dark_frame, dark_image, flat_frame, flat_image,
-                           rotate)
+      im = calibrate_subframe(light_frame, dependencies, width)
       im = autostretch(np.clip(im, 0.0, 1.0))
 
       if i == 0:

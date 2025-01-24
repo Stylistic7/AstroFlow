@@ -1,6 +1,13 @@
 import numpy as np
+from functools import cache
 
+from context import context
 from metadata.classes import ImageMetadata
+from stacks.simple_stack import SimpleStack
+from stacks.types import StackHash
+from previews.operations import resize_array
+from file_io.generic import read_image
+from metadata.classes import FrameHash
 
 
 # TODO: Average flat frames before applying them.
@@ -51,3 +58,34 @@ def calibrate_image(light_metadata: ImageMetadata | None,
     image = np.rot90(image, 2)
 
   return image
+
+
+@cache
+def get_subframe_for_calibration_stack(
+    stack_id: StackHash, width: int) -> tuple[ImageMetadata, np.ndarray]:
+  if stack_id == None:
+    return None, None
+
+  frame = context.metadata[context.calibration_stacks[stack_id].frames[0]]
+  image = resize_array(read_image(frame.filename), width).astype(np.float32)
+  return frame, image
+
+
+def calibrate_subframe(light_frame: ImageMetadata,
+                       dependencies: dict[str,
+                                          StackHash], width: int) -> np.ndarray:
+  assert light_frame.plate_solution is not None
+  rotate = light_frame.plate_solution.rotation_angle < 0.0
+
+  light_image = resize_array(read_image(light_frame.filename),
+                             width).astype(np.float32)
+
+  bias_frame, bias_image = get_subframe_for_calibration_stack(
+      dependencies.get('bias', None), width)
+  dark_frame, dark_image = get_subframe_for_calibration_stack(
+      dependencies.get('dark', None), width)
+  flat_frame, flat_image = get_subframe_for_calibration_stack(
+      dependencies.get('flat', None), width)
+
+  return calibrate_image(light_frame, light_image, bias_frame, bias_image,
+                         dark_frame, dark_image, flat_frame, flat_image, rotate)
