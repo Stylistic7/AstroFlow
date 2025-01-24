@@ -27,6 +27,10 @@ class TestMosaicIdentification(unittest.TestCase):
   def setUp(self) -> None:
     self.input_dir_obj, self.output_dir_obj = make_test_context()
 
+  def tearDown(self):
+    self.input_dir_obj.cleanup()
+    self.output_dir_obj.cleanup()
+
   def test_two_targets(self) -> None:
     # These two targets are on the celestial equator, but overlap by one degree
     # in right ascension. This is the easiest case to think about.
@@ -286,9 +290,10 @@ class TestMosaicIdentification(unittest.TestCase):
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
-    self.assertEqual(mosaic.target_ids,
-                     [bar.stable_hash, baz.stable_hash, foo.stable_hash])
-    self.assertEqual(mosaic.tile_indices, [(0, 0), (0, 1), (1, 0)])
+
+    self.assertEqual(len(mosaic.strips), 2)
+    self.assertCountEqual(mosaic.strips[0], [bar.stable_hash, baz.stable_hash])
+    self.assertCountEqual(mosaic.strips[1], [foo.stable_hash])
 
   def test_ic1318(self) -> None:
     foo = Target(target='foo',
