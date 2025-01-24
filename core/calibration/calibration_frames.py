@@ -81,19 +81,20 @@ def associate_with_stack(stack: CompositeStack) -> CompositeStack:
   print(f'### associate_with_stack {len(cal_stacks)} cal stacks '
         f'with stack {stack}')
 
-  def is_compatible(image_type: str, cal_stack: SimpleStack) -> bool:
+  def is_compatible(substack: SimpleStack, image_type: str,
+                    cal_stack: SimpleStack) -> bool:
     if cal_stack.image_type != image_type:
       return False
 
-    if cal_stack.camera != stack.camera:
+    if cal_stack.camera != substack.camera:
       return False
 
     # TODO: Put temperarture temperature compatibility options in the UI.
     good_temperature = abs(cal_stack.mean_temperature -
-                           stack.mean_temperature) < 5.0
+                           substack.mean_temperature) < 5.0
 
     # TODO: This allows dark scaling. Make this an option in the UI.
-    good_exposure = cal_stack.exposure_s <= stack.exposure_s
+    good_exposure = cal_stack.exposure_s <= substack.exposure_s
 
     if image_type == 'bias':
       return good_temperature
@@ -102,13 +103,15 @@ def associate_with_stack(stack: CompositeStack) -> CompositeStack:
       return good_temperature and good_exposure
 
     if image_type == 'flat':
-      return cal_stack.filter == stack.filter
+      return cal_stack.filter == substack.filter
 
     assert False, f'image_type {image_type}'
 
-  def find_closest_stack_chronologically(image_type: str) -> SimpleStack | None:
+  def find_closest_stack_chronologically(substack: SimpleStack,
+                                         image_type: str) -> SimpleStack | None:
     compatible_stacks = [
-        s for s in cal_stacks if is_compatible(image_type, cal_stacks[s])
+        s for s in cal_stacks
+        if is_compatible(substack, image_type, cal_stacks[s])
     ]
 
     if not compatible_stacks:
@@ -119,7 +122,7 @@ def associate_with_stack(stack: CompositeStack) -> CompositeStack:
 
     return compatible_stacks[np.argmin([
         abs(
-            midpoint(stack.oldest_date, stack.newest_date) -
+            midpoint(substack.oldest_date, substack.newest_date) -
             midpoint(cal_stacks[s].oldest_date, cal_stacks[s].newest_date)).
         total_seconds() for s in compatible_stacks
     ])]
@@ -129,7 +132,7 @@ def associate_with_stack(stack: CompositeStack) -> CompositeStack:
     new_dependencies = substack.dependencies
     for image_type in ['bias', 'dark', 'flat']:
       if image_type not in new_dependencies:
-        if closest := find_closest_stack_chronologically(image_type):
+        if closest := find_closest_stack_chronologically(substack, image_type):
           print(f'### associated {image_type} cal stack {closest} '
                 f'with substack {substack}')
           new_dependencies[image_type] = closest

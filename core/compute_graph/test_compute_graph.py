@@ -68,7 +68,7 @@ class TestComputeGraph(unittest.TestCase):
                          start_datetime=datetime.datetime(
                              2024, 3, 5, 16, 29, 43),
                          dest_dir=context.input_dirs[0])
-    make_synthetic_frames(prefix='flat_run_2',
+    make_synthetic_frames(prefix='flat_run_1',
                           number=13,
                           image_type='Flat',
                           start_datetime=datetime.datetime(
@@ -91,6 +91,22 @@ class TestComputeGraph(unittest.TestCase):
     for node in results.trace:
       print('### trace', node_to_string(node))
 
+    expected_names = [
+        "scatter_compute_image_metadata", "compute_image_metadata",
+        "compute_image_metadata", "compute_image_metadata",
+        "compute_image_metadata", "compute_image_metadata",
+        "compute_image_metadata", "load_metadata", "load_metadata",
+        "build_regroup_graph", "cluster_by_image_center",
+        "scatter_spatial_groups", "build_spatial_group_graph",
+        "identify_stacks", "validate_stacks", "store_stacks",
+        "group_stacks_into_targets", "gather_spatial_groups", "store_targets",
+        "identify_mosaics", "store_mosaics", "identify_calibration_stacks",
+        "store_calibration_stacks", "build_customize_graph",
+        "scatter_customize_targets", "scatter_customize_mosaics",
+        "scatter_customize_stacks", "customize_stack",
+        "gather_customize_stacks", "customization_done"
+    ]
+
     masters = os.listdir(context.output_dir)
     self.assertEqual(len(masters), 0)
 
@@ -108,10 +124,9 @@ class TestComputeGraph(unittest.TestCase):
       print('### trace', node_to_string(node))
 
     expected_names = [
-        "build_stacking_subgraph", "customize_stack",
-        "create_stack_subframe_thumbnails", "build_stacking_subgraph",
-        "stack_files", "compute_image_metadata", "post_process_stack",
-        "compute_image_metadata", "gather_compute_image_metadata",
+        "build_stacking_subgraph", "stack_files", "stack_files", "stack_files",
+        "stack_files", "stack_files", "compute_image_metadata",
+        "post_process_stack", "compute_image_metadata", "load_metadata",
         "main_processing_graph_done"
     ]
     for node, expected_name in zip(results.trace, expected_names):
