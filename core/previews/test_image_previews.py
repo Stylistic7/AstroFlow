@@ -94,6 +94,8 @@ class TestImagePreviews(unittest.TestCase):
 
     light_stacks = [s for s in stacks.values() if s.image_type == 'light']
     self.assertEqual(len(light_stacks), 1)
+    stack = next(iter(light_stacks))
+    print(f'### stack {stack}')
 
     keys = context.get_cache_keys()
     for k in keys:
@@ -102,11 +104,9 @@ class TestImagePreviews(unittest.TestCase):
     # TODO: More testing is needed, to make sure the calibration frames are
     # actually applied correctly (e.g. the subtraction has been done).
     self.assertTrue(
-        context.contains(
-            ('stack_subframe_thumbnail_image', 'cb70a9a1b6627216')))
+        context.contains(('stack_subframe_thumbnail_image', stack.stable_hash)))
     self.assertTrue(
-        context.contains(
-            ('stack_subframe_thumbnail_video', 'cb70a9a1b6627216')))
+        context.contains(('stack_subframe_thumbnail_video', stack.stable_hash)))
 
 
 if __name__ == "__main__":

@@ -53,21 +53,25 @@ from profiling import track_performance
 @AstroFlowNode(resources={'fastest_storage': 0.001})
 def scatter_stack_thumbnails(mode: QualityLevel) -> Graph:
   stacks = context.stacks
-  cache_keys = context.get_cache_keys()
+  print(f'### scatter_stack_thumbnails for {len(stacks)} stacks')
 
   tasks: list[TaskDescriptor] = list()
 
   if mode == 'subframe':
-    tasks.extend([(create_flat_correction_thumbnails, id)
-                  for id, s in stacks.items()
-                  if type(s) is SimpleStack and s.image_type == 'light'])
-    tasks.extend([
-        (create_stack_subframe_thumbnails, id)
-        for id, s in stacks.items()
-        if type(s) is CompositeStack and s.image_type == 'light' and (
-            ('stack_subframe_thumbnail_image', id) not in cache_keys or
-            ('stack_subframe_thumbnail_video', id) not in cache_keys)
-    ])
+    for stack in context.stacks.values():
+      tasks.append((create_stack_subframe_thumbnails, stack))
+      tasks.append((create_flat_correction_thumbnails, stack))
+
+    # tasks.extend([(create_flat_correction_thumbnails, id)
+    #               for id, s in stacks.items()
+    #               if isinstance(s, SimpleStack) and s.image_type == 'light'])
+    # tasks.extend([
+    #     (create_stack_subframe_thumbnails, id)
+    #     for id, s in stacks.items()
+    #     if isinstance(s, CompositeStack) and s.image_type == 'light' and
+    #     (not context.contains(('stack_subframe_thumbnail_image', id)) or
+    #      not context.contains(('stack_subframe_thumbnail_video', id)))
+    # ])
   elif mode == 'master':
     # TODO: Implement
     pass
@@ -85,19 +89,13 @@ def scatter_stack_thumbnails(mode: QualityLevel) -> Graph:
 @AstroFlowNode(cache_result=True)
 def create_stack_subframe_thumbnails(stack: CompositeStack) -> None:
   stacks = context.stacks
+  calibration_stacks = context.calibration_stacks
   metadata = context.metadata
 
   print(f'Entering create_stack_subframe_thumbnails() for stack {stack}')
 
   # Don't make previews for calibration stacks.
   assert type(stack) is not SimpleStack
-
-  # settings_key = ('stack_settings', stack_id)
-  # settings = context[settings_key] or {}
-  # FIXME the dependencies have to be taken from the substacks, e.g. the
-  # light runs. But the sorting by number of stars makes it hard to look up
-  # the substack it belonged to.
-  # dependencies = stack.dependencies | settings
 
   width = context.subframe_thumbnail_width
 
@@ -111,7 +109,7 @@ def create_stack_subframe_thumbnails(stack: CompositeStack) -> None:
     elif stack_id in first_subframes:
       return first_subframes[stack_id]
     else:
-      frame = metadata[stacks[stack_id].frames[0]]
+      frame = metadata[calibration_stacks[stack_id].frames[0]]
       image = resize_array(read_image(frame.filename), width).astype(np.float32)
       first_subframes[stack_id] = (frame, image)
       return first_subframes[stack_id]

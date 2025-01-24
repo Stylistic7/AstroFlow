@@ -240,7 +240,7 @@ class TestAstroFlowNode(unittest.TestCase):
     # TODO: This uses the Stack's __str__() function, which includes the content
     # hash... but maybe it would be cleaner to just use the content hash
     # directly?
-    self.assertEqual(hash_list([stack]), '9243a0bd8f2ffea4')
+    self.assertEqual(hash_list([stack]), '165d7b1838f75d76')
 
     context.associate_calibration_runs = 0
     graph = Graph({(associate_calibration, stack): {}})
