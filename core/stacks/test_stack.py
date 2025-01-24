@@ -19,6 +19,10 @@ class TestStack(unittest.TestCase):
   def setUp(self):
     self.input_dir_obj, self.output_dir_obj = make_test_context()
 
+  def tearDown(self):
+    self.input_dir_obj.cleanup()
+    self.output_dir_obj.cleanup()
+
   def test_one_dark_stack(self):
     make_synthetic_frames(prefix='dark',
                           number=5,
@@ -36,7 +40,7 @@ class TestStack(unittest.TestCase):
                             make_previews=False,
                             run_main_processing_graph=False))
 
-    stacks = context.stacks
+    stacks = context.calibration_stacks
     self.assertEqual(len(stacks), 1)
     stack = next(iter(stacks.values()))
 
@@ -71,17 +75,15 @@ class TestStack(unittest.TestCase):
                             run_main_processing_graph=False))
 
     stacks = context.stacks
-    print('### After running compute graph, stacks are:')
-    for stack in stacks.values():
-      print(f'### {stack}')
-    self.assertEqual(len(stacks), 2)
+    self.assertEqual(len(stacks), 1)
+    self.assertEqual(len(context.calibration_stacks), 1)
 
     toplevel_stack = next(
         stack for stack in stacks.values() if isinstance(stack, CompositeStack))
     self.assertEqual(len(toplevel_stack.contents), 1)
     light_stack = next(iter(toplevel_stack.contents.values()))
     dark_stack = next(
-        stack for stack in stacks.values()
+        stack for stack in context.calibration_stacks.values()
         if isinstance(stack, SimpleStack) and stack.image_type == 'dark')
 
     self.assertEqual(toplevel_stack.image_type, 'light')
