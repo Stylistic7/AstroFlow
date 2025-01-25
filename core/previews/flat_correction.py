@@ -9,7 +9,7 @@ from customization.subframe_selection import get_light_frames_sorted_by_stars
 
 
 @AstroFlowNode(cache_result=True)
-def create_flat_correction_thumbnails(stack: CustomizedStack) -> Graph:
+def create_flat_correction_thumbnails(stack: CustomizedStack) -> None:
   calibration_stacks = context.calibration_stacks
 
   flat_stack_ids = [

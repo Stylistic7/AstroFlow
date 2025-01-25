@@ -197,6 +197,13 @@ class Context:
         actor.and_equals.remote(key, default_value, [ray.put(value)],
                                 write_mode))
 
+  def plus_equals(self,
+                  key: Key,
+                  value: Any,
+                  write_mode: WriteMode = WriteMode.MEMORY_AND_DISK,
+                  default_value: Any = None):
+    return self.and_equals(self, key, value, write_mode, default_value)
+
   # TODO: Use the Pythonic operator.
   def or_equals(self,
                 key: Key,

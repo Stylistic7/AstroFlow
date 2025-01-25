@@ -44,6 +44,7 @@ def AstroFlowNode(resources=None,
     def _result_exists(content_hash):
       key = (fn.__name__, content_hash)
       if not context.contains(key):
+        print(f'### context does not contain key {key}')
         return False
 
       result = context[key]
@@ -52,9 +53,10 @@ def AstroFlowNode(resources=None,
           print(
               f'### Checking that file {result} has content hash {content_hash}'
           )
-        return artifact_exists(FileArtifact(result, content_hash))
-      else:
-        return True
+        if not artifact_exists(FileArtifact(result, content_hash)):
+          return False
+
+      return True
 
     def _store_result(result, content_hash):
       key = (fn.__name__, content_hash)
@@ -93,7 +95,7 @@ def AstroFlowNode(resources=None,
       if debug:
         print(f'### stored result {type(result)} with key {key} with '
               f'write mode {write_mode}')
-      return CacheArtifact(key)
+      return result
 
     # This decorator accepts arguments that may include FileArtifacts and / or
     # CacheArtifacts. These are "unpacked" to the contained Path or arbitrary
@@ -144,7 +146,7 @@ def AstroFlowNode(resources=None,
         if debug:
           print(f'### Not running fn {fn.__name__} producing content '
                 f'hash {content_hash} because result exists')
-        return CacheArtifact(key)
+        return context[key]
       else:
         if debug:
           print(f'### Running fn {fn.__name__} producing content '

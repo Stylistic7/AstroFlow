@@ -19,8 +19,7 @@ from previews import QualityLevel
 from testing import make_test_context, copy_testdata_frames
 
 from artifacts.artifact import unpack_artifact
-from mosaics.types import MosaicHash
-from mosaics.classes import Viewbox
+from mosaics.types import MosaicHash, Viewbox
 from geometry.projections import mercator
 from dependency_graph.astroflow_node import AstroFlowNode
 from dependency_graph.debugging import print_result_dict
@@ -74,7 +73,8 @@ def consume_small_image(image) -> Any:
 
 @AstroFlowNode(cache_result=True)
 def place_image(image: np.ndarray, viewbox: Viewbox) -> Path:
-  context.place_image_runs = (context.place_image_runs or 0) + 1
+  # context.place_image_runs = (context.place_image_runs or 0) + 1
+  context.and_equals('place_image_runs', 1, default_value=0)
   projected_image = np.zeros((viewbox.x_span, viewbox.y_span))
 
   height, width = image.shape
@@ -91,6 +91,8 @@ def place_image(image: np.ndarray, viewbox: Viewbox) -> Path:
 
 @AstroFlowNode()
 def process(item: T) -> T:
+  # context.process_runs = (context.process_runs or 0) + 1
+  context.and_equals('process_runs', 1, default_value=0)
   return item
 
 
@@ -137,7 +139,7 @@ def consume_large_image(image) -> Any:
 
 @AstroFlowNode(cache_result=True)
 def associate_calibration(stack: CompositeStack) -> CompositeStack:
-  context.associate_calibration_runs += 1
+  context.and_equals('associate_calibration_runs', 1, default_value=0)
 
   new_contents = SimpleStacksDict()
   for substack in stack.contents.values():
@@ -205,9 +207,11 @@ class TestAstroFlowNode(unittest.TestCase):
     # The first time this graph is run, the build_subgraph task will run,
     # and produce a subgraph which will then run.
     graph = Graph({done: {(build_subgraph, 11)}})
+    context.process_runs = 0
     results, _ = run_graph(graph)
     print('### FIRST RUN')
     print_result_dict(results)
+    self.assertEqual(context.process_runs, 11)
     self.assertEqual(results[done], 55)
 
     # The second time it is run, the decorator should see that build_subgraph()
@@ -215,8 +219,10 @@ class TestAstroFlowNode(unittest.TestCase):
     # already been done, so the decorator should return None (instead of a
     # Graph).
     print('### SECOND RUN')
+    context.process_runs = 0
     results, _ = run_graph(graph)
     print_result_dict(results)
+    self.assertEqual(context.process_runs, 0)
     self.assertEqual(results[done], None)
 
   def test_hash_stability(self) -> None:
@@ -246,7 +252,7 @@ class TestAstroFlowNode(unittest.TestCase):
     # The `associate_calibration` node should run the first time.
     results, _ = run_graph(graph, debug=True)
     self.assertTrue(
-        context.contains(('associate_calibration', 'a4e3acedc0353985')))
+        context.contains(('associate_calibration', '16f4bf397edafc07')))
     self.assertEqual(results.num_nodes_run, 1)
     self.assertEqual(context.associate_calibration_runs, 1)
 
@@ -255,7 +261,7 @@ class TestAstroFlowNode(unittest.TestCase):
     # run the underlying wrapped function.
     results, _ = run_graph(graph, debug=True)
     self.assertTrue(
-        context.contains(('associate_calibration', 'a4e3acedc0353985')))
+        context.contains(('associate_calibration', '16f4bf397edafc07')))
     self.assertEqual(results.num_nodes_run, 1)
     self.assertEqual(context.associate_calibration_runs, 1)
 
