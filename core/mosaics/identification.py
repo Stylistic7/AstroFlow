@@ -8,14 +8,11 @@ import random
 from enum import Enum
 
 from context import context
-from mosaics import Mosaic
-from mosaics.mosaic import MosaicsDict
-from mosaics.types import MosaicHash
+from mosaics.types import Mosaic, MosaicHash, MosaicsDict
 from catalogs import position_string
 from geometry import footprints
 from hashing import hash_list
-from targets.types import TargetHash
-from targets.target import Target
+from targets.types import TargetHash, Target
 from mosaics.debugging import plot_mosaic
 from dependency_graph.astroflow_node import AstroFlowNode
 

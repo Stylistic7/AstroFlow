@@ -10,15 +10,15 @@ from file_io.find_image_files import find_image_files
 from context import context
 from stacks.get_stacks import get_toplevel_stacks
 from testing.test_frames import copy_testdata_frames, make_synthetic_frames
-import compute_graph
-from dependency_graph import Node, run_graph, print_graph
+from dependency_graph import Node, run_graph
 from dependency_graph.debugging import node_to_string
 from testing.test_context import make_test_context
 from mosaics.orion_mosaic import add_orion_mosaic_images
-from compute_graph import build_compute_graph
+from compute_graph.compute_graph import build_compute_graph
 from metadata.image_metadata import compute_image_metadata, load_metadata
-from stacks.customization import customize_stack
+from customization.compute_graph import customize_stack
 from stacks.stacking import stack_files
+from compute_graph.compute_graph import build_compute_graph
 
 
 def find_compatible_nodes(trace: list[Node], template: Any) -> list[int]:
@@ -101,9 +101,9 @@ class TestComputeGraph(unittest.TestCase):
     filenames = find_image_files(context.input_dirs[0])
     self.assertEqual(len(filenames), 42)
 
-    graph = compute_graph.build_compute_graph(regroup=True,
-                                              make_previews=False,
-                                              run_main_processing_graph=False)
+    graph = build_compute_graph(regroup=True,
+                                make_previews=False,
+                                run_main_processing_graph=False)
     results, _ = run_graph(graph, trace=True)
 
     print('### First run of graph:')
@@ -145,6 +145,9 @@ class TestComputeGraph(unittest.TestCase):
 
     # There should be one composite stack, and four calibration stacks.
     self.assertEqual(len(context.stacks), 1)
+    self.assertEqual(len(context.calibration_stacks), 4)
+    self.assertEqual(len(context.targets), 1)
+    self.assertEqual(len(context.mosaics), 0)
     toplevel_stacks = get_toplevel_stacks(context.stacks)
     self.assertEqual(len(toplevel_stacks), 1)
     self.assertEqual(len(context.calibration_stacks), 4)

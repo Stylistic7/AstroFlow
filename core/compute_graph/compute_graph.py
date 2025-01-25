@@ -11,16 +11,49 @@ from previews.types import QualityLevel
 from mosaics.identification import identify_mosaics
 from stacks.compute_graph import build_stacking_subgraph
 from targets.compute_graph import build_target_subgraph
+from targets.types import TargetsDict
 from targets.identification import group_stacks_into_targets
 from mosaics.compute_graph import build_mosaic_subgraph
 from dependency_graph import Graph, TaskDescriptor, make_graph_from_list
-from quarantining.compute_graph import store_stacks, store_targets, store_mosaics, store_calibration_stacks
 from stacks.identification import identify_stacks
-import metadata.image_types as image_types
-from stacks.composite_stack import CompositeStacksDict
+from stacks.composite_stack import CompositeStacksDict, SimpleStacksDict
 from stacks.validation import validate_stacks
 from dependency_graph.astroflow_node import AstroFlowNode
-from stacks.customization import build_customize_graph
+from customization.compute_graph import build_customize_graph
+from mosaics.types import MosaicsDict
+
+
+@AstroFlowNode(cache_result=False)
+def store_calibration_stacks(calibration_stacks: SimpleStacksDict) -> None:
+  context.calibration_stacks = calibration_stacks
+  print(f'### store_calibration_stacks: Stored '
+        f'{len(calibration_stacks)} calibration stacks; '
+        f'total is now {len(context.calibration_stacks)}')
+  return calibration_stacks
+
+
+@AstroFlowNode(cache_result=False)
+def store_stacks(stacks: CompositeStacksDict) -> None:
+  context.grouped_stacks = stacks
+  print(f'### store_stacks: Stored '
+        f'{len(stacks)} stacks; total is now {len(context.grouped_stacks)}')
+  return stacks
+
+
+@AstroFlowNode(cache_result=False)
+def store_targets(targets: TargetsDict) -> None:
+  context.grouped_targets = targets
+  print(f'### store_targets: Stored {len(targets)} targets; '
+        f'total is now {len(context.grouped_targets)}')
+  return targets
+
+
+@AstroFlowNode(cache_result=False)
+def store_mosaics(mosaics: MosaicsDict) -> None:
+  context.grouped_mosaics = mosaics
+  print(f'### store_mosaics: Stored {len(mosaics)} mosaics; '
+        f'total is now {len(context.grouped_mosaics)}')
+  return mosaics
 
 
 @AstroFlowNode()

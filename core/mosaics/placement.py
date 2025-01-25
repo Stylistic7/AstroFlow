@@ -12,21 +12,9 @@ import structlog
 import astropy.io.fits as pyfits  # type: ignore
 
 from file_io.generic import get_content_hash, read_image
-from plate_solving import solve_field
-from artifacts.decorators import saves_artifacts
-from artifacts import Artifact
 from context import context
-# from .viewbox import compute_mosaic_viewbox_artifacts
-from artifacts import read_artifact_image, read_artifact_header, write_artifact, CacheArtifact, FileArtifact
-from hashing import hash_list
-from profiling import track_performance
 from previews import QualityLevel
-from mosaics.mosaic import Mosaic
-from mosaics.types import MosaicHash
-from mosaics.classes import Viewbox
-from mosaics.types import TileIndices
-from stacks.types import StackHash
-from dependency_graph.logging import capture_logs
+from mosaics.types import Mosaic, Viewbox, TileIndices
 from dependency_graph.astroflow_node import AstroFlowNode
 
 _MEMORY_REQUIREMENT = 8 * 1024 * 1024 * 1024  # 8 GB

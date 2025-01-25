@@ -3,12 +3,10 @@ import operator
 import ray
 import os
 
-from dependency_graph.astroflow_node import AstroFlowNode
 from stacks.composite_stack import CompositeStack
 from context import context
 from metadata.image_types import is_light_frame
-from metadata.classes import ImageMetadata, MetadataDict, FrameHash
-from profiling import track_performance
+from metadata.classes import ImageMetadata, FrameHash
 
 
 def get_light_frames_sorted_by_stars(

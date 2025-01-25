@@ -1,19 +1,10 @@
 import ray
-import numpy as np
-from spherical_geometry import great_circle_arc, vector
 
-from .classes import Viewbox
-from artifacts import CacheArtifact, Artifact
-from artifacts.decorators import saves_artifacts
+from mosaics.types import Mosaic, Viewbox
+from artifacts import Artifact
 from geometry.projections import mercator
-import geometry.footprints as footprints
-from context import context
 from geometry.viewbox import compute_viewbox
 from geometry.polygons import project_polygon
-from hashing import hash_list, hash_string
-from mosaics.mosaic import Mosaic
-from previews import QualityLevel
-from mosaics.types import MosaicHash
 
 
 # TODO: The viewbox should include the sampling resolution, too.

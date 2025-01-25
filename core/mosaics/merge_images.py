@@ -1,26 +1,15 @@
 import os
 import ray
 import numpy as np
-import astropy.io.fits as pyfits  # type: ignore
 from pathlib import Path
 
 from context import context
-from artifacts import Artifact, FileArtifact, CacheArtifact
-import pix
-from pix.classes import ImageList, FilenameList
+from pix.classes import ImageList
 from pix.decorators import PixInsight
 from pix.tasks import PhotometricMosaic
-from previews import autostretch
-from artifacts.decorators import saves_artifacts
-from artifacts import Artifact, read_artifact_image, write_artifact, artifact_exists
-from profiling import track_performance
-from previews import QualityLevel
-from mosaics.types import MosaicHash
-from dependency_graph.logging import capture_logs
+from previews import QualityLevel, autostretch
 from dependency_graph.astroflow_node import AstroFlowNode
-from mosaics import Mosaic
 from file_io.generic import read_image, get_content_hash
-from dependency_graph import Graph
 
 
 @PixInsight()

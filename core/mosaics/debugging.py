@@ -1,16 +1,13 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon  # type: ignore
-from spherical_geometry import great_circle_arc, vector
+from spherical_geometry.polygon import SphericalPolygon  # type: ignore
 
 from context import context
-from mosaics import identification, Mosaic
+from mosaics import identification
+from mosaics.types import Mosaic
 from geometry.projection import Projection
 from geometry.polygons import project_polygon
-from targets.types import TargetHash
 from geometry.projections.mercator import MercatorProjection
-from geometry.projections.sinusoidal import SinusoidalProjection
-from geometry.projections.mollweide import MollweideProjection
 
 
 def _draw_polygon(polygon: SphericalPolygon,

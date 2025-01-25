@@ -9,16 +9,15 @@ from context import context, WriteMode
 from dependency_graph import Graph, Node, make_graph_from_list
 # TODO: Unify quarantining
 import quarantining
-from mosaics.classes import Viewbox
 from mosaics.merge_images import merge_images
-from mosaics.mosaic import Mosaic
+from mosaics.types import Mosaic, Viewbox
 from mosaics.viewbox import compute_mosaic_viewbox
 from mosaics.placement import place_image
 from mosaics.types import TileIndices
 from stacks.compute_graph import get_stack_image
 from previews import QualityLevel
 from dependency_graph.astroflow_node import AstroFlowNode
-from targets import Target
+from targets.types import Target
 from file_io.generic import read_image
 
 

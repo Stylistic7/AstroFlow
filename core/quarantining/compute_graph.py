@@ -6,11 +6,11 @@ from typing import Any
 
 from dependency_graph.astroflow_node import AstroFlowNode
 from context import context
+from targets.target import Target
 from targets.types import TargetHash
-from stacks.composite_stack import CompositeStack, CompositeStacksDict, SimpleStacksDict
+from stacks.composite_stack import CompositeStacksDict, SimpleStacksDict
 from mosaics.types import MosaicHash
-from targets.target import Target, TargetsDict
-from mosaics.mosaic import Mosaic, MosaicsDict
+from mosaics.mosaic import Mosaic
 
 
 @AstroFlowNode(cache_result=False)
@@ -90,45 +90,3 @@ def quarantine_mosaics() -> dict[MosaicHash, Mosaic]:
     output_mosaics[mosaic_id] = mosaic
 
   return output_mosaics
-
-
-@AstroFlowNode()
-def gather_stack_user_settings(
-    *stacks_in: list[CompositeStack]) -> CompositeStacksDict:
-  stacks = [item for sublist in stacks_in for item in sublist]
-  stacks = {a.stable_hash: a for a in stacks}
-  print(f'### gather_stack_user_settings stack ids are {stacks.keys()}')
-  return stacks
-
-
-@AstroFlowNode(cache_result=False)
-def store_calibration_stacks(calibration_stacks: SimpleStacksDict) -> None:
-  context.calibration_stacks = calibration_stacks
-  print(f'### store_calibration_stacks: Stored '
-        f'{len(calibration_stacks)} calibration stacks; '
-        f'total is now {len(context.calibration_stacks)}')
-  return calibration_stacks
-
-
-@AstroFlowNode(cache_result=False)
-def store_stacks(stacks: CompositeStacksDict) -> None:
-  context.grouped_stacks = stacks
-  print(f'### store_stacks: Stored '
-        f'{len(stacks)} stacks; total is now {len(context.grouped_stacks)}')
-  return stacks
-
-
-@AstroFlowNode(cache_result=False)
-def store_targets(targets: TargetsDict) -> None:
-  context.grouped_targets = targets
-  print(f'### store_targets: Stored {len(targets)} targets; '
-        f'total is now {len(context.grouped_targets)}')
-  return targets
-
-
-@AstroFlowNode(cache_result=False)
-def store_mosaics(mosaics: MosaicsDict) -> None:
-  context.grouped_mosaics = mosaics
-  print(f'### store_mosaics: Stored {len(mosaics)} mosaics; '
-        f'total is now {len(context.grouped_mosaics)}')
-  return mosaics

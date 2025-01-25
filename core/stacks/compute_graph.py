@@ -8,9 +8,9 @@ from stacks.post_process import post_process_stack
 from dependency_graph import Graph, Node
 from dependency_graph.astroflow_node import AstroFlowNode
 from metadata.image_metadata import compute_image_metadata, load_metadata
-from stacks.customization import CustomizedStack
+from customization.types import CustomizedStack
+from customization.subframe_selection import get_light_frames_sorted_by_stars
 from previews import QualityLevel
-from quarantining.subframe_selection import get_light_frames_sorted_by_stars
 
 
 # This function accepts a fully customized stack, after settings and calibration

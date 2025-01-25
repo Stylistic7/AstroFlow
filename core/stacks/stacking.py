@@ -12,7 +12,7 @@ from typing import Any
 from stacks.artifacts import output_filename
 from stacks.simple_stack import SimpleStack
 from stacks.composite_stack import Stack, CompositeStack
-from stacks.customization import CustomizedStack
+from customization.types import CustomizedStack
 from context import context
 from pix import PixInsight, ImageList
 from pix.tasks import WeightedBatchPreprocessing

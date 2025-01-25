@@ -1,17 +1,13 @@
 from dataclasses import replace
 
 from context import context
+from dependency_graph import Graph
 from stacks.composite_stack import CompositeStack
 from calibration import associate_with_stack
 from dependency_graph.astroflow_node import AstroFlowNode
-from quarantining.settings import StackSettings
-from quarantining.subframe_selection import select_subframes
-from dependency_graph import Graph
-from quarantining.settings import Settings, StackSettings
-
-
-class CustomizedStack(CompositeStack):
-  pass
+from customization.subframe_selection import select_subframes
+from customization.settings import Settings, StackSettings
+from customization.types import CustomizedStack
 
 
 def apply_settings(stack: CompositeStack) -> CompositeStack:

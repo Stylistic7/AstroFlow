@@ -2,27 +2,16 @@ import ray
 import numpy as np
 
 from context import context, WriteMode
-from stacks.types import StackHash
-from stacks.simple_stack import SimpleStack
-from stacks.composite_stack import SimpleStacksDict
-from hashing import hash_list
-# TODO: Unify quarantining
-import quarantining
-from previews.operations import resize_array, array_to_png
-from file_io.generic import read_image
-from previews.types import PreviewHash
+from previews.operations import array_to_png
 from previews.calibration import calibrate_subframe
 from previews.operations import autostretch
-from profiling import track_performance
-from metadata.classes import ImageMetadata
 from dependency_graph.astroflow_node import AstroFlowNode
 from dependency_graph import Graph
-from stacks.customization import CustomizedStack
-from quarantining.settings import StackSettings
+from customization.types import CustomizedStack
+from customization.subframe_selection import get_light_frames_sorted_by_stars
 
 
-# TODO: Pass stack directly and cache this.
-@AstroFlowNode()
+@AstroFlowNode(cache_result=True)
 def create_flat_correction_thumbnails(stack: CustomizedStack) -> Graph:
   calibration_stacks = context.calibration_stacks
 
@@ -33,8 +22,7 @@ def create_flat_correction_thumbnails(stack: CustomizedStack) -> Graph:
 
   for substack in stack.contents.values():
     # TODO Maybe unify this operation, since it's done everywhere.
-    light_frames_by_stars = quarantining.get_light_frames_sorted_by_stars(
-        substack.frames)
+    light_frames_by_stars = get_light_frames_sorted_by_stars(substack.frames)
     light_frame = light_frames_by_stars[0]
 
     width = context.subframe_thumbnail_width
