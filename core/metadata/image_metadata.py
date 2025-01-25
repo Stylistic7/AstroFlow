@@ -101,9 +101,6 @@ def scatter_compute_image_metadata(mode: str, *filenames_in:
   quarantined_files = context.quarantined_files or set()
   new_filenames = filenames - known_filenames - quarantined_files
 
-  if not new_filenames:
-    return Graph({})
-
   print(f'### Computing image metadata for {len(new_filenames)} new artifacts')
   graph = Graph(
       {load_metadata: [(compute_image_metadata, f) for f in new_filenames]})
@@ -183,4 +180,4 @@ def load_metadata() -> None:
   metadata_size_mb = objsize.get_deep_size(metadata) / 1024 / 1024
   print(f'### load_metadata() size {metadata_size_mb} MB')
 
-  context.set('metadata', metadata, write_mode=WriteMode.MEMORY_ONLY)
+  context.metadata = metadata
