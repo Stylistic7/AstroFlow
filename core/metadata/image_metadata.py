@@ -180,4 +180,4 @@ def load_metadata() -> None:
   metadata_size_mb = objsize.get_deep_size(metadata) / 1024 / 1024
   print(f'### load_metadata() size {metadata_size_mb} MB')
 
-  context.metadata = metadata
+  context.set('metadata', metadata, write_mode=WriteMode.MEMORY_ONLY)

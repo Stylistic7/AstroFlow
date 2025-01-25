@@ -1,4 +1,5 @@
 from dataclasses import replace
+import time
 
 from stacks.composite_stack import CompositeStack
 from context import context
@@ -8,7 +9,11 @@ from metadata.classes import ImageMetadata, FrameHash
 
 def get_light_frames_sorted_by_stars(
     light_frames: list[FrameHash]) -> list[ImageMetadata]:
+  start_time = time.time()
   metadata = context.metadata
+  end_time = time.time()
+  elapsed_time = end_time - start_time
+  print(f'### loading metadata took {elapsed_time:.3f} s')
 
   assert light_frames
   metadata_list = [i for h, i in metadata.items() if h in light_frames]
@@ -20,6 +25,9 @@ def get_light_frames_sorted_by_stars(
 
 
 def select_subframes(stack: CompositeStack) -> CompositeStack:
+  # TODO: This is really slow, probably just because the metadata has to be
+  # loaded for every stack. Profile / speed this up; it should just be ray.get()
+  # on an object ref, which should be fast?
   metadata = context.metadata
 
   print(f'### select_subframes for stack {stack}')
