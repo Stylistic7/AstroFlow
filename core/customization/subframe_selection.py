@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from stacks.composite_stack import CompositeStack
 from context import context
 from metadata.image_types import is_light_frame
@@ -21,10 +23,6 @@ def select_subframes(stack: CompositeStack) -> CompositeStack:
   metadata = context.metadata
 
   print(f'### select_subframes for stack {stack}')
-  assert isinstance(
-      stack, CompositeStack
-  ), f'### Object {stack} of type {type(stack)} is not CompositeStack'
-
   light_frames = stack.all_frames()
   assert light_frames, f'### stack {repr(stack)} has zero frames'
   assert all(is_light_frame(metadata[f].header) for f in light_frames)
@@ -47,5 +45,10 @@ def select_subframes(stack: CompositeStack) -> CompositeStack:
   print(f'### Selected {len(selected_light_frames)} light frames '
         f'out of {len(sorted_light_frames)}')
 
-  return CompositeStack.from_frames(selected_light_frames,
-                                    stable_hash=stack.stable_hash)
+  new_contents = {}
+  for content_hash, substack in stack.contents.items():
+    if new_frames := [f for f in substack.frames if f in selected_light_frames]:
+      new_substack = replace(substack, frames=new_frames)
+      new_contents[content_hash] = new_substack
+
+  return replace(stack, contents=new_contents)

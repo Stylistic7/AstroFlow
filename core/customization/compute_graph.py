@@ -41,10 +41,8 @@ def scatter_customize_stacks() -> Graph:
 @AstroFlowNode()
 def customize_stack(stack: CompositeStack) -> CustomizedStack:
   stack = associate_with_stack(stack)
+  stack = select_subframes(stack)
   stack = apply_settings(stack)
-
-  # TODO: Bug fix: subframe selection blows away associations...
-  # stack = select_subframes(stack)
 
   return CustomizedStack(**stack.__dict__)
 

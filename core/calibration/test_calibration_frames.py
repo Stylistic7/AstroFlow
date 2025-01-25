@@ -15,14 +15,13 @@ from file_io.find_image_files import find_image_files
 from dependency_graph import run_graph
 from stacks.get_stacks import get_toplevel_stacks
 from metadata.actor import get_metadata
-from quarantining.settings import Settings, StackSettings
+from customization.settings import Settings, StackSettings
 
 
 class TestCalibrationFrames(unittest.TestCase):
 
   def setUp(self) -> None:
     self.input_dir_obj, self.output_dir_obj = make_test_context()
-    context.regroup = True
 
   def tearDown(self) -> None:
     self.input_dir_obj.cleanup()
