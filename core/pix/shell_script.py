@@ -7,26 +7,46 @@ from typing import ContextManager, cast
 import os
 import sys
 import uuid
+import re
 
 from pix.classes import ShellScriptTask
 
+_PIXINSIGHT_EXECUTABLE = "/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight"
 _SLOT_NUMBER: int = 1
+
+
+def _find_running_pixinsight_instances() -> dict[int, int]:
+  command = [_PIXINSIGHT_EXECUTABLE, "-e"]
+  result = subprocess.run(command, text=True, capture_output=True, check=True)
+  output = result.stdout
+
+  slot_pid_map = {}
+  lines = output.splitlines()
+
+  # Look for lines with the slot and pid information
+  for line in lines:
+    match = re.match(r"^\s*(\d+)\s+(\d+)$", line)
+    if match:
+      slot = int(match.group(1))
+      pid = int(match.group(2))
+      slot_pid_map[slot] = pid
+
+  return slot_pid_map
 
 
 def _start_pixinsight_instance(slot: int) -> int:
   # This should be start and detach. If it's already started, this
   # attempt should just exit immediately with no other effect.
   subprocess.Popen([
-      '/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight',
-      f'-n={slot}', '--no-startup-check-updates', '--no-startup-gui-messages',
-      '--no-splash', '--without-printer'
+      _PIXINSIGHT_EXECUTABLE, f'-n={slot}', '--no-startup-check-updates',
+      '--no-startup-gui-messages', '--no-splash', '--without-printer'
   ],
                    start_new_session=True)
 
   print(f"Started new PixInsight instance at slot {slot}")
 
-  # TODO: Poll until the PixInsight instance is reliably responding to pokes.
-  time.sleep(30)
+  while slot not in _find_running_pixinsight_instances():
+    time.sleep(5)
 
   return slot
 
@@ -65,7 +85,8 @@ def run_script(tasks: list[ShellScriptTask],
   assert tasks
 
   if not dry_run:
-    start_pixinsight_instances()
+    if _SLOT_NUMBER not in _find_running_pixinsight_instances():
+      _start_pixinsight_instance()
 
   with (tempfile.TemporaryDirectory() if tmp_dir_in is None else cast(
       ContextManager, nullcontext(tmp_dir_in))) as tmp_dir:
@@ -89,8 +110,7 @@ def run_script(tasks: list[ShellScriptTask],
     if not dry_run:
       print(f'Running PixInsight shell script...')
       ret = subprocess.run([
-          '/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight',
-          f'--execute={_SLOT_NUMBER}:{script_filename}'
+          _PIXINSIGHT_EXECUTABLE, f'--execute={_SLOT_NUMBER}:{script_filename}'
       ]).returncode
       print(f'--execute returned')
 
@@ -107,9 +127,3 @@ def run_script(tasks: list[ShellScriptTask],
 
       while not os.path.exists(end_sentinel_filename):
         time.sleep(1)
-
-
-def start_pixinsight_instances() -> None:
-  # At startup, open N instances of PixInsight, and let them run throughout the
-  # entire runtime of AstroFlow.
-  _start_pixinsight_instance(_SLOT_NUMBER)
