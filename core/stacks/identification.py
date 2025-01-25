@@ -28,9 +28,6 @@ def identify_stacks(light_frames: list[FrameHash]) -> CompositeStacksDict:
   print(f'### identify_stacks running for spatial group of '
         f'length {len(light_frames)}')
 
-  if context.stacks == None:
-    context.stacks = {}
-
   # TODO: Maybe implement a version of cluster_continuous() that repeatedly
   # subdivides by independent 1D variables.
   metadata = {h: i for h, i in context.metadata.items() if h in light_frames}

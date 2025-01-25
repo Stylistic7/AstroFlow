@@ -19,7 +19,7 @@ from stacks.identification import identify_stacks
 import metadata.image_types as image_types
 from metadata.classes import ImageMetadata, FrameHash
 from metadata.actor import get_metadata
-from stacks.composite_stack import CompositeStack, SimpleStacksDict
+from stacks.composite_stack import CompositeStack, SimpleStacksDict, CompositeStacksDict
 from stacks.validation import validate_stacks
 from dependency_graph.astroflow_node import AstroFlowNode
 from targets import Target
@@ -27,28 +27,34 @@ from quarantining.settings import Settings, StackSettings
 from stacks.customization import build_customize_graph
 from metadata.image_metadata import load_metadata
 
+# @AstroFlowNode()
+# def build_spatial_group_graph(g: tuple[FrameHash]) -> Graph:
+#   return make_graph_from_list([(identify_stacks, g), validate_stacks,
+#                                store_stacks, group_stacks_into_targets])
+
+# @AstroFlowNode()
+# def gather_spatial_groups(*targets_in: list[Target]) -> None:
+#   targets = {key: value for d in targets_in for key, value in d.items()}
+#   print(f'### gather_spatial_groups target ids are {targets.keys()}')
+#   return targets
+
 
 @AstroFlowNode()
-def build_spatial_group_graph(g: tuple[FrameHash]) -> Graph:
-  return make_graph_from_list([(identify_stacks, g), validate_stacks,
-                               store_stacks, group_stacks_into_targets])
-
-
-@AstroFlowNode()
-def gather_spatial_groups(*targets_in: list[Target]) -> None:
-  targets = {key: value for d in targets_in for key, value in d.items()}
-  print(f'### gather_spatial_groups target ids are {targets.keys()}')
-  return targets
+def gather_spatial_groups(*stacks_in: list[CompositeStacksDict]) -> None:
+  stacks = {key: value for d in stacks_in for key, value in d.items()}
+  print(f'### gather_spatial_groups returning {len(stacks)} stacks')
+  return stacks
 
 
 # TODO: Don't call build_spatial_group_graph for spatial groups that are cached
 # and unchanged.
 @AstroFlowNode()
 def scatter_spatial_groups(spatial_groups) -> Graph:
-  graph = Graph({})
-  graph[gather_spatial_groups] = {
-      (build_spatial_group_graph, g) for g in spatial_groups
-  }
+  graph = Graph({
+      gather_spatial_groups: {(identify_stacks, g) for g in spatial_groups},
+      validate_stacks: {gather_spatial_groups},
+      store_stacks: {validate_stacks}
+  })
 
   return graph
 
@@ -61,8 +67,8 @@ def scatter_spatial_groups(spatial_groups) -> Graph:
 @AstroFlowNode()
 def build_regroup_graph() -> Graph:
   return make_graph_from_list([
-      cluster_by_image_center, scatter_spatial_groups, store_targets,
-      identify_mosaics, store_mosaics
+      cluster_by_image_center, scatter_spatial_groups,
+      group_stacks_into_targets, store_targets, identify_mosaics, store_mosaics
   ])
 
 

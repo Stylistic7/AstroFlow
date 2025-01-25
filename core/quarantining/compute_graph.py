@@ -146,19 +146,17 @@ def gather_stack_user_settings(
 @AstroFlowNode(cache_result=False)
 def store_calibration_stacks(calibration_stacks: SimpleStacksDict) -> None:
   context.calibration_stacks = calibration_stacks
-  context.or_equals('calibration_stacks', calibration_stacks, default_value={})
   print(f'### store_calibration_stacks: Stored '
         f'{len(calibration_stacks)} calibration stacks; '
         f'total is now {len(context.calibration_stacks)}')
+  return calibration_stacks
 
 
 @AstroFlowNode(cache_result=False)
 def store_stacks(stacks: CompositeStacksDict) -> None:
-  context.or_equals('grouped_stacks', stacks, default_value={})
-  print(f'### store_stacks: Stored {len(stacks)} stacks; '
-        f'total is now {len(context.grouped_stacks)}')
-  for stack in context.grouped_stacks.values():
-    print(f'### store_stacks stack {stack}')
+  context.grouped_stacks = stacks
+  print(f'### store_stacks: Stored '
+        f'{len(stacks)} stacks; total is now {len(context.grouped_stacks)}')
   return stacks
 
 

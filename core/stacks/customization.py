@@ -73,8 +73,8 @@ def customization_done() -> None:
 @AstroFlowNode()
 def build_customize_graph() -> Graph:
   return Graph({
-      customization_done: {
+      customization_done: [
           scatter_customize_stacks, scatter_customize_targets,
           scatter_customize_mosaics
-      }
+      ]
   })
