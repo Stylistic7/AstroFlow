@@ -1,13 +1,13 @@
 from ray_infra import ray_local
 
-import ray
 import unittest
 
+from compute_graph import build_compute_graph
 from context import context
-from testing.test_context import make_test_context
+from testing import make_test_context
+
 from stacks.composite_stack import CompositeStack
 from mosaics.orion_mosaic import add_orion_mosaic_images
-from compute_graph import build_compute_graph
 
 
 class TestQuarantining(unittest.TestCase):

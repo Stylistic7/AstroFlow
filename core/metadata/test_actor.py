@@ -4,11 +4,10 @@ import unittest
 import time
 import datetime
 
+from testing import make_test_context, make_synthetic_frames
+
 from metadata.image_types import is_light_frame, is_dark_frame
-from testing.test_context import make_test_context
 from metadata.actor import get_metadata
-from testing.test_context import make_test_context
-from testing.test_frames import make_synthetic_frames
 
 
 class TestMetadataActor(unittest.TestCase):

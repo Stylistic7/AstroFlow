@@ -6,11 +6,11 @@ import random
 import os
 
 from context import context
+from dependency_graph import run_graph
+from test_context import make_test_context, make_synthetic_frames
+
 from metadata.image_metadata import scatter_compute_image_metadata, load_metadata
 from metadata.actor import get_metadata
-from testing.test_context import make_test_context
-from testing.test_frames import make_synthetic_frames
-from dependency_graph import run_graph
 
 
 def get_all_filenames():

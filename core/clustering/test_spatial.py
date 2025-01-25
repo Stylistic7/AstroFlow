@@ -3,12 +3,12 @@ from ray_infra import ray_local
 import os
 import unittest
 from datetime import datetime, timedelta
-import ray
 
-from testing.test_context import make_test_context
-from context import context
-from testing.test_frames import make_synthetic_frames
 from clustering import cluster_by_image_center
+from context import context
+from testing import make_test_context
+
+from testing.test_frames import make_synthetic_frames
 from metadata.actor import get_metadata
 from dependency_graph import Graph, make_graph_from_list, run_graph
 from metadata.image_metadata import scatter_compute_image_metadata

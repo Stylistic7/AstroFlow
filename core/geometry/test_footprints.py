@@ -4,13 +4,14 @@ import unittest
 import shapely  # type: ignore
 from shapely import Polygon  # type: ignore
 
+from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import run_graph
+
 from geometry.polygons import project_polygon
 from testing.test_frames import make_synthetic_frames
 from testing.test_context import make_test_context
 from geometry.projections import mercator
-from compute_graph import build_compute_graph
 from stacks.composite_stack import CompositeStack
 
 

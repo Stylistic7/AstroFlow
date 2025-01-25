@@ -81,6 +81,9 @@ def scatter_spatial_groups(spatial_groups) -> Graph:
 # results produced by this graph.
 #
 # TODO: Regrouping has to be done whenever there are new files.
+#
+# TODO: Move group_stacks_into_targets() back into the parallel path over
+# spatial groups.
 @AstroFlowNode()
 def build_regroup_graph() -> Graph:
   return make_graph_from_list([

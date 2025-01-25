@@ -4,7 +4,7 @@ import unittest
 import datetime
 
 from plate_solving import PlateSolution
-from testing.test_frames import make_synthetic_frames
+from testing import make_synthetic_frames
 
 
 class TestMakeTestFrames(unittest.TestCase):

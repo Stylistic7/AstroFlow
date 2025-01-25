@@ -2,14 +2,12 @@ from ray_infra import ray_local
 
 import unittest
 import datetime
-import ray
 from pathlib import Path
 
-from testing.test_context import make_test_context
-from context import context
-from compute_graph.compute_graph import build_compute_graph
 from dependency_graph import run_graph
-from testing.test_frames import copy_testdata_frames, make_synthetic_frames
+from compute_graph import build_compute_graph
+from context import context
+from testing import make_test_context, copy_testdata_frames, make_synthetic_frames
 
 
 class TestStacking(unittest.TestCase):

@@ -2,13 +2,13 @@ from ray_infra import ray_local
 
 import unittest
 
-from testing.test_context import make_test_context
+from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import run_graph
-from testing.test_frames import make_synthetic_frames
+from testing import make_test_context, make_synthetic_frames
+
 from stacks.get_stacks import get_toplevel_stacks
 from metadata.actor import get_metadata
-from compute_graph import build_compute_graph
 
 
 class TestStackIdentification(unittest.TestCase):

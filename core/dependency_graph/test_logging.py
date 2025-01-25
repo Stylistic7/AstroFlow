@@ -5,9 +5,9 @@ import unittest
 import ray
 import structlog
 
-from context import get_cache
-from context import context
+from context import context, get_cache
 from dependency_graph import Graph, run_graph
+
 from dependency_graph.logging import capture_logs
 from dependency_graph.debugging import node_to_string
 

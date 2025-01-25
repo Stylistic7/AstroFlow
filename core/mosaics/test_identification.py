@@ -7,12 +7,11 @@ from context import context
 import numpy as np
 from spherical_geometry.polygon import SingleSphericalPolygon  # type: ignore
 
+from testing import make_test_context, make_composite_stack, copy_testdata_into_cache
+
 from stacks.types import StackHash
 from targets.types import Target, TargetHash
-from testing.test_context import make_test_context
-from testing.test_stacks import make_composite_stack
-from testing.testdata_cache import copy_testdata_into_cache
-from mosaics import identification
+from mosaics.identification import identify_mosaics
 
 
 class TestMosaicIdentification(unittest.TestCase):
@@ -62,7 +61,7 @@ class TestMosaicIdentification(unittest.TestCase):
     }
     context.grouped_targets = {foo.stable_hash: foo, bar.stable_hash: bar}
 
-    _, mosaics = ray.get(identification.identify_mosaics.remote())
+    _, mosaics = ray.get(identify_mosaics.remote())
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
 
@@ -132,7 +131,7 @@ class TestMosaicIdentification(unittest.TestCase):
         baz.stable_hash: baz
     }
 
-    _, mosaics = ray.get(identification.identify_mosaics.remote())
+    _, mosaics = ray.get(identify_mosaics.remote())
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
@@ -201,7 +200,7 @@ class TestMosaicIdentification(unittest.TestCase):
         baz.stable_hash: baz
     }
 
-    _, mosaics = ray.get(identification.identify_mosaics.remote())
+    _, mosaics = ray.get(identify_mosaics.remote())
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
@@ -279,7 +278,7 @@ class TestMosaicIdentification(unittest.TestCase):
         outlier.stable_hash: outlier,
     }
 
-    _, mosaics = ray.get(identification.identify_mosaics.remote())
+    _, mosaics = ray.get(identify_mosaics.remote())
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
@@ -338,7 +337,7 @@ class TestMosaicIdentification(unittest.TestCase):
         bar.stable_hash: bar,
     }
 
-    _, mosaics = ray.get(identification.identify_mosaics.remote())
+    _, mosaics = ray.get(identify_mosaics.remote())
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
@@ -350,7 +349,7 @@ class TestMosaicIdentification(unittest.TestCase):
   def test_big_cygnus_pano(self) -> None:
     copy_testdata_into_cache()
 
-    _, mosaics = ray.get(identification.identify_mosaics.remote())
+    _, mosaics = ray.get(identify_mosaics.remote())
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))

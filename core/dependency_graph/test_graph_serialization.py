@@ -3,14 +3,14 @@ from ray_infra import ray_local
 import unittest
 import ray
 
-from context import get_cache
-from context import context
+from context import context, get_cache
+from previews import QualityLevel
+
+from mosaics.identification import identify_mosaics
 from compute_graph.compute_graph import load_metadata
 from dependency_graph.serialization import pickle_graph
 from testing.testdata_cache import copy_testdata_into_cache
-from mosaics import identification
 from mosaics.compute_graph import build_mosaic_subgraph
-from previews import QualityLevel
 
 
 class TestGraphSerialization(unittest.TestCase):
@@ -21,7 +21,7 @@ class TestGraphSerialization(unittest.TestCase):
 
     ray.get(load_metadata.remote())
 
-    ray.get(identification.identify_mosaics.remote(debug=False))
+    ray.get(identify_mosaics.remote(debug=False))
     stacks = context.stacks
     targets = context.targets
     mosaics = context.mosaics

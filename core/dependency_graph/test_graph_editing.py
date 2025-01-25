@@ -1,11 +1,12 @@
 from ray_infra import ray_local
 
-from typing import TypeVar, Any
+from typing import TypeVar
 import unittest
 import ray
 
 from context import get_cache
 from dependency_graph import Graph, run_graph, print_graph
+
 from dependency_graph.editing import replace_task
 from dependency_graph.debugging import print_graph
 

@@ -6,8 +6,7 @@ import unittest
 import ray
 import time
 
-from context import get_cache
-from context import context
+from context import context, get_cache
 from dependency_graph import Graph, Node, GraphStatus, TopologicalSorterWithStatus, canonicalize_graph, run_graph, make_graph_from_list
 
 cache = get_cache()

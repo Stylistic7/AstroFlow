@@ -7,9 +7,10 @@ import structlog
 import pprint
 
 import compute_graph
-from testing.test_context import make_test_context
 from context import get_cache
 from dependency_graph import Graph, run_graph
+from testing import make_test_context
+
 from dependency_graph.logging import capture_logs
 from mosaics.orion_mosaic import add_orion_mosaic_images
 

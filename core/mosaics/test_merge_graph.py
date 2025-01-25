@@ -3,19 +3,20 @@ from ray_infra import ray_local
 import ray
 import unittest
 
+from compute_graph import build_compute_graph
 from context import context
+from previews import QualityLevel
+from targets import Target
+from testing import make_test_context
+
 from dependency_graph.debugging import Graph, Node, print_graph
 from dependency_graph.classes import canonicalize_graph
 from dependency_graph import run_graph
-from testing.test_context import make_test_context
 from mosaics.mosaic import Mosaic
 from mosaics.merge_images import merge_images
 from mosaics.compute_graph import build_mosaic_filter_subgraph, build_placement_subgraph
 from mosaics.types import TileIndices
-from previews import QualityLevel
-from targets import Target
 from mosaics.orion_mosaic import add_orion_mosaic_images
-from compute_graph.compute_graph import build_compute_graph
 
 
 # TODO: Put this somewhere generally-accessible.

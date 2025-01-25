@@ -6,9 +6,9 @@ from context import context, get_cache
 import numpy as np
 from pathlib import Path
 
+from testing import make_test_context, copy_testdata_into_cache
+
 from artifacts.artifact import unpack_artifact
-from testing.test_context import make_test_context
-from testing.testdata_cache import copy_testdata_into_cache
 from mosaics.placement import place_image
 from previews.types import QualityLevel
 from compute_graph.compute_graph import load_metadata

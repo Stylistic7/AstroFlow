@@ -2,11 +2,12 @@ from ray_infra import ray_local
 
 import unittest
 
-from testing.test_context import make_test_context
+from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import run_graph
+from testing import make_test_context
+
 from stacks.composite_stack import CompositeStack, SimpleStacksDict
-from compute_graph import build_compute_graph
 from mosaics.orion_mosaic import add_orion_mosaic_images
 
 

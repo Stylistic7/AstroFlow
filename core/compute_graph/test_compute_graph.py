@@ -6,19 +6,19 @@ import datetime
 import os
 from typing import Any
 
-from file_io.find_image_files import find_image_files
+from compute_graph import build_compute_graph
 from context import context
-from stacks.get_stacks import get_toplevel_stacks
-from testing.test_frames import copy_testdata_frames, make_synthetic_frames
 from dependency_graph import Node, run_graph
+from testing import make_test_context, copy_testdata_frames, make_synthetic_frames
+
+from file_io.find_image_files import find_image_files
+from stacks.get_stacks import get_toplevel_stacks
 from dependency_graph.debugging import node_to_string
-from testing.test_context import make_test_context
 from mosaics.orion_mosaic import add_orion_mosaic_images
 from compute_graph.compute_graph import build_compute_graph
 from metadata.image_metadata import compute_image_metadata, load_metadata
 from customization.compute_graph import customize_stack
 from stacks.stacking import stack_files
-from compute_graph.compute_graph import build_compute_graph
 
 
 def find_compatible_nodes(trace: list[Node], template: Any) -> list[int]:

@@ -11,21 +11,21 @@ import structlog
 from dataclasses import replace
 import datetime
 
-from testing.test_context import make_test_context
+from compute_graph import build_compute_graph
 from context import context
+from dependency_graph import Graph, run_graph
+from hashing import hash_list
+from previews import QualityLevel
+from testing import make_test_context, copy_testdata_frames
+
 from artifacts.artifact import unpack_artifact
 from mosaics.types import MosaicHash
 from mosaics.classes import Viewbox
-from previews import QualityLevel
 from geometry.projections import mercator
 from dependency_graph.astroflow_node import AstroFlowNode
-from dependency_graph import Graph, run_graph
 from dependency_graph.debugging import print_result_dict
 from file_io.fits_file_io import read_fits_image
 from stacks.composite_stack import CompositeStack, SimpleStacksDict
-from testing.test_frames import copy_testdata_frames
-from compute_graph import build_compute_graph
-from hashing import hash_list
 
 log = structlog.get_logger()
 

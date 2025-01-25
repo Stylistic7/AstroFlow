@@ -3,14 +3,13 @@ from ray_infra import ray_local
 import unittest
 import numpy as np
 
+from compute_graph import build_compute_graph
 from context import context
+from dependency_graph import run_graph
+from testing import make_test_context, make_synthetic_frames, copy_testdata_frames
+
 from stacks.simple_stack import SimpleStack
 from stacks.composite_stack import CompositeStack
-from testing.test_context import make_test_context
-from testing.test_frames import make_synthetic_frames, copy_testdata_frames
-from dependency_graph import run_graph
-from testing.test_context import make_test_context
-from compute_graph import build_compute_graph
 
 
 class TestStack(unittest.TestCase):
