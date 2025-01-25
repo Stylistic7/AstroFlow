@@ -3,24 +3,19 @@ from ray_infra import ray_local
 import ray
 import unittest
 
-from context import context, get_cache
+from context import context
 from dependency_graph.debugging import Graph, Node, print_graph
 from dependency_graph.classes import canonicalize_graph
 from dependency_graph import run_graph
 from testing.test_context import make_test_context
 from mosaics.mosaic import Mosaic
-from mosaics.placement import place_image
 from mosaics.merge_images import merge_images
 from mosaics.compute_graph import build_mosaic_filter_subgraph, build_placement_subgraph
 from mosaics.types import TileIndices
 from previews import QualityLevel
 from targets import Target
-from testing.testdata_cache import copy_testdata_into_cache
-from mosaics.viewbox import compute_mosaic_viewbox, Viewbox
-from mosaics import identification
-from compute_graph.compute_graph import load_metadata
 from mosaics.orion_mosaic import add_orion_mosaic_images
-import compute_graph
+from compute_graph.compute_graph import build_compute_graph
 
 
 # TODO: Put this somewhere generally-accessible.
@@ -209,9 +204,9 @@ class TestMergeGraph(unittest.TestCase):
 
     # Running the graph the first time, with an empty shopping cart, should
     # produce all the subframe previews for the stacks, targets, and mosaic.
-    graph = compute_graph.build_compute_graph(regroup=True,
-                                              make_previews=True,
-                                              run_main_processing_graph=True)
+    graph = build_compute_graph(regroup=True,
+                                make_previews=True,
+                                run_main_processing_graph=True)
     run_graph(graph)
 
     targets = context.targets
@@ -256,9 +251,9 @@ class TestMergeGraph(unittest.TestCase):
 
     # Running the graph the first time, with an empty shopping cart, should
     # produce all the subframe previews for the stacks, targets, and mosaic.
-    graph = compute_graph.build_compute_graph(regroup=True,
-                                              make_previews=True,
-                                              run_main_processing_graph=True)
+    graph = build_compute_graph(regroup=True,
+                                make_previews=True,
+                                run_main_processing_graph=True)
     run_graph(graph)
 
     targets = context.targets

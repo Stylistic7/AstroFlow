@@ -1,13 +1,12 @@
 from ray_infra import ray_local
 
-import ray
 import unittest
 
 from testing.test_context import make_test_context
 from context import context
 from dependency_graph import run_graph
 from testing.test_frames import make_synthetic_frames
-from stacks.get_stacks import get_toplevel_stacks, get_content_stacks_of_type
+from stacks.get_stacks import get_toplevel_stacks
 from metadata.actor import get_metadata
 from compute_graph import build_compute_graph
 

@@ -2,7 +2,7 @@ from typing import Any
 
 from ray.remote_function import RemoteFunction
 
-from dependency_graph import Graph, CanonicalGraph, Node, ResultDict, canonicalize_node
+from dependency_graph import CanonicalGraph, Node, ResultDict, canonicalize_node
 
 
 def _tuple_values(tup: tuple) -> str:

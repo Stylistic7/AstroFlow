@@ -1,7 +1,6 @@
 import ray
 import time
 from functools import wraps
-from dataclasses import dataclass
 from typing import ParamSpec, Callable, TypeVar
 
 from context import context

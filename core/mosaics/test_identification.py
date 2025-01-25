@@ -1,25 +1,18 @@
 import unittest
 from ray_infra import ray_local
 
-from dataclasses import asdict
 import datetime
 import ray
-from context import context, get_cache
+from context import context
 import numpy as np
 from spherical_geometry.polygon import SingleSphericalPolygon  # type: ignore
 
 from stacks.types import StackHash
-from stacks.simple_stack import SimpleStack
-from stacks.composite_stack import CompositeStack
-from targets import Target
-from targets.types import TargetHash
-from mosaics import Mosaic
+from targets.types import Target, TargetHash
 from testing.test_context import make_test_context
 from testing.test_stacks import make_composite_stack
 from testing.testdata_cache import copy_testdata_into_cache
-
 from mosaics import identification
-from mosaics import debugging
 
 
 class TestMosaicIdentification(unittest.TestCase):

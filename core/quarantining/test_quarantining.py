@@ -5,12 +5,8 @@ import unittest
 
 from context import context
 from testing.test_context import make_test_context
-from stacks.simple_stack import SimpleStack
 from stacks.composite_stack import CompositeStack
-# from quarantining import quarantine_stacks
 from mosaics.orion_mosaic import add_orion_mosaic_images
-from dependency_graph import Graph, make_graph_from_list, run_graph
-from metadata.image_metadata import scatter_compute_image_metadata
 from compute_graph import build_compute_graph
 
 

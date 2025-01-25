@@ -5,12 +5,10 @@ from functools import wraps
 import structlog
 from typing import Any
 import astropy.io.fits as pyfits  # type: ignore
-from dataclasses import dataclass
 
 from context import context, WriteMode
-from artifacts import Artifact, FileArtifact, CacheArtifact, artifact_exists
+from artifacts import FileArtifact, CacheArtifact, artifact_exists
 from artifacts.artifact import unpack_artifact
-from file_io.generic import get_content_hash
 from hashing import hash_list
 from dependency_graph import Graph
 from dependency_graph.logging import capture_logs

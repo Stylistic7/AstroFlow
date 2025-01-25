@@ -1,6 +1,5 @@
 import ray
 from dataclasses import replace
-from typing import Any
 
 from context import context
 from stacks.artifacts import output_filename

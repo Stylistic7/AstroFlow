@@ -1,18 +1,9 @@
 import structlog
 import functools
 
-from typing import Any, NewType
-
-from dependency_graph import Node
-from dependency_graph.debugging import node_to_string_tuple
-
 
 class LogContainer(list):
   pass
-
-
-import structlog
-import functools
 
 
 def capture_logs(func):

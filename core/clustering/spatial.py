@@ -3,12 +3,9 @@ import ray
 from typing import Sequence, Callable, Any, TypeVar
 
 import metadata.image_types as image_types
-from metadata.actor import get_metadata
-from catalogs import position_string
 from geometry import footprints
-from context import context, WriteMode
+from context import context
 import plate_solving
-from clustering.classes import SpatialGroup
 from profiling import track_performance
 
 T = TypeVar('T')

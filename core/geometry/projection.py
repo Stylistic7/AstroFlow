@@ -1,6 +1,6 @@
 import numpy as np
 from abc import ABC, abstractmethod
-from typing import Any, overload
+from typing import overload
 
 from geometry import PixelCoordinate, Radians
 

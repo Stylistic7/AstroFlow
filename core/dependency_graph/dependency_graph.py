@@ -1,6 +1,5 @@
 import ray
 import inspect
-from copy import copy
 from functools import reduce
 from operator import or_
 import time

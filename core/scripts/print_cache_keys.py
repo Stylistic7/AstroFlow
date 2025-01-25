@@ -1,5 +1,3 @@
-import os
-
 from context import cache
 
 if __name__ == '__main__':

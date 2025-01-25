@@ -1,29 +1,16 @@
-import unittest
 from ray_infra import ray_local
 
-from dataclasses import asdict
-import datetime
+import unittest
 import ray
 from context import context, get_cache
 import numpy as np
-from spherical_geometry.polygon import SingleSphericalPolygon  # type: ignore
 from pathlib import Path
 
 from artifacts.artifact import unpack_artifact
-from stacks.types import StackHash
-from stacks.simple_stack import SimpleStack
-from stacks.composite_stack import CompositeStack
-from targets import Target
-from targets.types import TargetHash
-from mosaics import Mosaic
 from testing.test_context import make_test_context
-from testing.test_stacks import make_composite_stack
 from testing.testdata_cache import copy_testdata_into_cache
-from mosaics import identification
-from mosaics import debugging
 from mosaics.placement import place_image
 from previews.types import QualityLevel
-from artifacts import CacheArtifact, FileArtifact
 from compute_graph.compute_graph import load_metadata
 from mosaics.viewbox import compute_mosaic_viewbox, Viewbox
 from mosaics.types import TileIndices

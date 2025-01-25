@@ -1,5 +1,4 @@
 import ray
-import os
 import numpy as np
 from astropy.wcs import WCS  # type: ignore
 from scipy.interpolate import RegularGridInterpolator  # type: ignore

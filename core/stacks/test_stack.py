@@ -1,6 +1,5 @@
 from ray_infra import ray_local
 
-import ray
 import unittest
 import numpy as np
 

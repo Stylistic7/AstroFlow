@@ -1,8 +1,7 @@
 from typing import NewType, TypeAlias
-from dataclasses import dataclass, fields
+from dataclasses import dataclass
 from typing import Optional
 import datetime
-import numpy as np
 
 from spherical_geometry.polygon import SingleSphericalPolygon  # type: ignore
 from shapely.geometry import Polygon  # type: ignore

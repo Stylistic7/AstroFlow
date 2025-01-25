@@ -2,10 +2,7 @@ from ray_infra import ray_local
 
 import datetime
 import unittest
-import ray
-from context import cache
 import datetime
-from dataclasses import asdict
 
 from stacks.simple_stack import SimpleStack
 from stacks.composite_stack import CompositeStack
@@ -14,8 +11,7 @@ from testing.test_frames import make_synthetic_frames, copy_testdata_frames
 from context import context
 from file_io.find_image_files import find_image_files
 from dependency_graph import run_graph
-from hashing import hash_list
-from stacks.get_stacks import get_toplevel_stacks, get_content_stacks_of_type
+from stacks.get_stacks import get_toplevel_stacks
 from metadata.actor import get_metadata
 from compute_graph import build_compute_graph
 from testing.test_context import make_test_context

@@ -1,5 +1,4 @@
 import ray
-from addict import Dict
 
 from artifacts import Artifact
 from pix import PixInsight

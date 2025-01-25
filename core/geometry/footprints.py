@@ -1,9 +1,8 @@
 import numpy as np
 from spherical_geometry.polygon import SphericalPolygon  # type: ignore
-from shapely.geometry import Polygon  # type: ignore
 from typing import Any
 
-from geometry import Radians, Degrees
+from geometry import Degrees
 from geometry.projection import Projection
 from geometry.viewbox import compute_viewbox
 from geometry.polygons import project_polygon

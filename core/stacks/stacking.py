@@ -1,8 +1,6 @@
 import tempfile
 import os
 from pathlib import Path
-import numpy as np
-import ray
 import errno
 import os
 import shutil
@@ -11,7 +9,7 @@ from typing import Any
 
 from stacks.artifacts import output_filename
 from stacks.simple_stack import SimpleStack
-from stacks.composite_stack import Stack, CompositeStack
+from stacks.composite_stack import Stack
 from customization.types import CustomizedStack
 from context import context
 from pix import PixInsight, ImageList

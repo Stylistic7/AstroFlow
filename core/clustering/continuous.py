@@ -1,6 +1,6 @@
 import operator
 import numpy as np
-from typing import Any, Callable, TypeVar, TypeAlias, Union, Protocol
+from typing import Any, Callable, TypeVar, Protocol
 
 T = TypeVar('T')
 

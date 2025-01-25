@@ -1,7 +1,6 @@
 from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon  # type: ignore
 import astropy.io.fits as pyfits  # type: ignore
 from astropy.wcs import WCS  # type: ignore
-import ray
 import numpy as np
 from dataclasses import fields
 from typing import Any

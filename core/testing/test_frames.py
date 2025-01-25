@@ -11,7 +11,6 @@ import shutil
 import xxhash
 from typing import Any
 
-from dependency_graph import run_graph
 from metadata.classes import ImageMetadata
 from context import context, WriteMode
 import plate_solving

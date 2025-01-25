@@ -1,12 +1,10 @@
 import os
 from pathlib import Path
 
-from artifacts import Artifact, FileArtifact
 from context import context
 from stacks.simple_stack import SimpleStack
 from stacks.composite_stack import CompositeStack
 from catalogs import position_string
-from stacks.types import StackHash
 
 
 def output_filename(stack: SimpleStack | CompositeStack,

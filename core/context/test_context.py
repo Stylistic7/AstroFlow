@@ -4,14 +4,9 @@ import unittest
 import ray
 import numpy as np
 from objsize import get_deep_size
-import datetime
-import time
 
 from context import get_cache
 from context import cache, context, WriteMode
-from testing.test_frames import make_synthetic_frames, copy_testdata_frames
-from testing.test_context import make_test_context
-from metadata.image_types import is_light_frame, is_dark_frame
 
 cache = get_cache()
 

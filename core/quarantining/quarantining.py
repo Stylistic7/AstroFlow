@@ -1,15 +1,12 @@
 import ray
 from dataclasses import replace, asdict
 import time
-import os
 
 from context import context
 from stacks.composite_stack import CompositeStack
-from stacks.simple_stack import SimpleStack
 from stacks.imaging_attributes import ImagingAttributes
 from stacks.types import StackHash
 from profiling import track_performance
-from metadata.classes import MetadataDict
 
 # TODO: Ensure that all of the actions in this file are idempotent. The goal
 # is to be able to apply these functions very quickly when the user quarantines

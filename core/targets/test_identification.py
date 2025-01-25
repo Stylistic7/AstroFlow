@@ -1,8 +1,6 @@
 from ray_infra import ray_local
 
-import ray
 import unittest
-import datetime
 
 from context import context
 from testing.test_frames import copy_testdata_frames

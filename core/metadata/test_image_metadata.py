@@ -2,7 +2,6 @@ from ray_infra import ray_local
 
 import glob
 import unittest
-import tempfile
 import random
 import os
 

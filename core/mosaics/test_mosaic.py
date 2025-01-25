@@ -1,6 +1,5 @@
 from ray_infra import ray_local
 
-import ray
 import unittest
 import datetime
 from pathlib import Path
@@ -8,12 +7,11 @@ import shutil
 
 from context import context
 from testing.test_frames import copy_testdata_frames
-import compute_graph
 from dependency_graph import run_graph
 from testing.test_context import make_test_context
-from hashing import hash_list
 from previews.types import QualityLevel
 from mosaics.orion_mosaic import add_orion_mosaic_images
+from compute_graph.compute_graph import build_compute_graph
 
 
 class TestMosaic(unittest.TestCase):
@@ -46,9 +44,9 @@ class TestMosaic(unittest.TestCase):
                          dest_dir=context.input_dirs[0],
                          add_noise=False)
 
-    graph = compute_graph.build_compute_graph(regroup=True,
-                                              make_previews=True,
-                                              run_main_processing_graph=False)
+    graph = build_compute_graph(regroup=True,
+                                make_previews=True,
+                                run_main_processing_graph=False)
     run_graph(graph)
 
     self.assertEqual(len(context.targets), 3)
@@ -69,9 +67,9 @@ class TestMosaic(unittest.TestCase):
 
     # Running the graph the first time, with an empty shopping cart, should
     # produce all the subframe previews for the stacks, targets, and mosaic.
-    graph = compute_graph.build_compute_graph(regroup=True,
-                                              make_previews=True,
-                                              run_main_processing_graph=True)
+    graph = build_compute_graph(regroup=True,
+                                make_previews=True,
+                                run_main_processing_graph=True)
     run_graph(graph)
 
     self.assertEqual(len(context.targets), 4)
@@ -98,9 +96,9 @@ class TestMosaic(unittest.TestCase):
     # TODO: Put per-mosaic overrides of the post-processing scripts, to turn
     # them off, for speed.
     print('### First pass done; starting pass with shopping cart')
-    graph = compute_graph.build_compute_graph(regroup=True,
-                                              make_previews=True,
-                                              run_main_processing_graph=True)
+    graph = build_compute_graph(regroup=True,
+                                make_previews=True,
+                                run_main_processing_graph=True)
     run_graph(graph)
 
     shutil.copytree(context.output_dir, '/tmp/foo', dirs_exist_ok=True)
@@ -135,9 +133,9 @@ class TestMosaic(unittest.TestCase):
 
     # Running the graph the first time, with an empty shopping cart, should
     # produce all the subframe previews for the stacks, targets, and mosaic.
-    graph = compute_graph.build_compute_graph(regroup=True,
-                                              make_previews=True,
-                                              run_main_processing_graph=True)
+    graph = build_compute_graph(regroup=True,
+                                make_previews=True,
+                                run_main_processing_graph=True)
     run_graph(graph)
 
     self.assertEqual(len(context.targets), 3)
@@ -162,9 +160,9 @@ class TestMosaic(unittest.TestCase):
     print('### test_mosaic shopping_cart', context.shopping_cart)
 
     print('### First pass done; starting pass with shopping cart')
-    graph = compute_graph.build_compute_graph(regroup=True,
-                                              make_previews=True,
-                                              run_main_processing_graph=True)
+    graph = build_compute_graph(regroup=True,
+                                make_previews=True,
+                                run_main_processing_graph=True)
     run_graph(graph)
 
     shutil.copytree(context.output_dir, '/tmp/foo', dirs_exist_ok=True)

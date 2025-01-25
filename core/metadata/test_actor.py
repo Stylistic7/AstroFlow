@@ -1,18 +1,11 @@
 from ray_infra import ray_local
 
-import ray
 import unittest
 import time
 import datetime
 
-from context import context
-from compute_graph import build_compute_graph
-import clustering
-from dependency_graph import run_graph
-from metadata.image_metadata import scatter_compute_image_metadata
 from metadata.image_types import is_light_frame, is_dark_frame
 from testing.test_context import make_test_context
-from mosaics.orion_mosaic import add_orion_mosaic_images
 from metadata.actor import get_metadata
 from testing.test_context import make_test_context
 from testing.test_frames import make_synthetic_frames

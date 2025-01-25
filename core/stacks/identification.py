@@ -1,4 +1,3 @@
-import ray
 import numpy as np
 
 from typing import Iterator

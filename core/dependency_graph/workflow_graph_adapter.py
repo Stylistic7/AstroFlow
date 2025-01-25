@@ -1,4 +1,4 @@
-from dependency_graph import Graph, CanonicalGraph, Node, ResultDict, TopologicalSorterWithStatus, canonicalize_node
+from dependency_graph import Node, TopologicalSorterWithStatus, canonicalize_node
 from dependency_graph.debugging import node_to_string
 
 
