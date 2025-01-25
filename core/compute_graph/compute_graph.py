@@ -2,7 +2,7 @@ import ray
 from dataclasses import replace
 from typing import Any
 
-from context import context, WriteMode
+from context import context
 from metadata.image_metadata import scatter_compute_image_metadata
 from clustering import cluster_by_image_center
 from calibration import identify_calibration_stacks
@@ -17,26 +17,10 @@ from dependency_graph import Graph, TaskDescriptor, make_graph_from_list
 from quarantining.compute_graph import store_stacks, store_targets, store_mosaics, store_calibration_stacks
 from stacks.identification import identify_stacks
 import metadata.image_types as image_types
-from metadata.classes import ImageMetadata, FrameHash
-from metadata.actor import get_metadata
-from stacks.composite_stack import CompositeStack, SimpleStacksDict, CompositeStacksDict
+from stacks.composite_stack import CompositeStacksDict
 from stacks.validation import validate_stacks
 from dependency_graph.astroflow_node import AstroFlowNode
-from targets import Target
-from quarantining.settings import Settings, StackSettings
 from stacks.customization import build_customize_graph
-from metadata.image_metadata import load_metadata
-
-# @AstroFlowNode()
-# def build_spatial_group_graph(g: tuple[FrameHash]) -> Graph:
-#   return make_graph_from_list([(identify_stacks, g), validate_stacks,
-#                                store_stacks, group_stacks_into_targets])
-
-# @AstroFlowNode()
-# def gather_spatial_groups(*targets_in: list[Target]) -> None:
-#   targets = {key: value for d in targets_in for key, value in d.items()}
-#   print(f'### gather_spatial_groups target ids are {targets.keys()}')
-#   return targets
 
 
 @AstroFlowNode()
@@ -97,10 +81,8 @@ def main_processing_graph_done() -> None:
 @AstroFlowNode()
 def build_main_processing_graph() -> Graph:
   stacks = context.stacks
-  calibration_stacks = context.calibration_stacks
   targets = context.targets
   mosaics = context.mosaics
-  settings = context.settings or Settings()
   shopping_cart = context.shopping_cart or []
   print(f'### build_main_processing_graph shopping_cart {shopping_cart}')
 

@@ -5,7 +5,6 @@ from typing import Any
 from pathlib import Path
 import objsize  # type: ignore
 
-from artifacts import FileArtifact
 from file_io.find_image_files import find_image_files
 from file_io.generic import read_header, get_content_hash
 import metadata.image_types as image_types
@@ -14,7 +13,6 @@ import plate_solving
 from dependency_graph import Graph
 from context import context, WriteMode
 from metadata.actor import get_metadata
-from previews import QualityLevel
 from dependency_graph.astroflow_node import AstroFlowNode
 
 # TODO: I need to associate dark and flat frames *before* computing thumbnails.

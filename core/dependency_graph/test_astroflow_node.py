@@ -11,10 +11,8 @@ import structlog
 from dataclasses import replace
 import datetime
 
-from artifacts import Artifact, FileArtifact, CacheArtifact, artifact_exists
 from testing.test_context import make_test_context
 from context import context
-from artifacts.decorators import saves_artifacts, should_run
 from artifacts.artifact import unpack_artifact
 from mosaics.types import MosaicHash
 from mosaics.classes import Viewbox

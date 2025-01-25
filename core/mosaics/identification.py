@@ -5,7 +5,6 @@ from spherical_geometry import great_circle_arc
 import ray
 import numpy as np
 import random
-from dataclasses import asdict
 from enum import Enum
 
 from context import context
@@ -15,13 +14,10 @@ from mosaics.types import MosaicHash
 from catalogs import position_string
 from geometry import footprints
 from hashing import hash_list
-import units
-from profiling import track_performance
 from targets.types import TargetHash
 from targets.target import Target
 from mosaics.debugging import plot_mosaic
 from dependency_graph.astroflow_node import AstroFlowNode
-from targets.target import TargetsDict
 
 # TODO: Make the functions in this file functional (e.g. pass TargetsDict into
 # them, vs. relying on context).

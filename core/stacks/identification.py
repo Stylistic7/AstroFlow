@@ -6,7 +6,6 @@ from context import context
 import clustering
 from stacks.composite_stack import CompositeStack, CompositeStacksDict
 from metadata.classes import FrameHash
-from profiling import track_performance
 from dependency_graph.astroflow_node import AstroFlowNode
 
 

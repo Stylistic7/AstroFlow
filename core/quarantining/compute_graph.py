@@ -5,22 +5,12 @@ from dataclasses import replace
 from typing import Any
 
 from dependency_graph.astroflow_node import AstroFlowNode
-from context import context, WriteMode
-from calibration import associate_with_stack
-from targets.validation import validate_targets
+from context import context
 from targets.types import TargetHash
-from dependency_graph import Graph, make_graph_from_list
-from quarantining import apply_quarantine_to_stack
-from quarantining.subframe_selection import select_subframes
-from stacks.simple_stack import SimpleStack
 from stacks.composite_stack import CompositeStack, CompositeStacksDict, SimpleStacksDict
-from stacks.types import StackHash
-from stacks.validation import validate_stacks
 from mosaics.types import MosaicHash
-from mosaics.validation import validate_mosaics
 from targets.target import Target, TargetsDict
 from mosaics.mosaic import Mosaic, MosaicsDict
-from quarantining.settings import Settings, StackSettings
 
 
 @AstroFlowNode(cache_result=False)
@@ -102,38 +92,6 @@ def quarantine_mosaics() -> dict[MosaicHash, Mosaic]:
   return output_mosaics
 
 
-# This graph applies user settings to a single stack in the `grouped_stacks`
-# dict, passing it through graph arguments. If the stack is quarantined, or
-# becomes empty after subframe selection, it will not make it into the final
-# `stacks` dict.
-#
-# `apply_quarantine_to_stack()` is applied to a single Stack, and either returns
-# that Stack, modified, or None.
-#
-# `select_subframes()` is applied to the single Stack (or None), and either
-# returns that Stack, modified, or None.
-#
-# `associate_with_stack()` is applied to the single Stack (or None), and returns
-# a dict containing the Stack, plus the calibration Stacks that it depends on,
-# or None.
-#
-# TODO: This is very slow right now, despite running in parallel. These
-# functions all retrieve metadata from the context, which takes more than a
-# second:
-#
-# apply_quarantine_to_stack()
-# select_subframes()
-#
-# Maybe the best thing to do is pass the metadata ref around?
-@AstroFlowNode()
-def build_stack_user_settings_subgraph(stack_ids: list[StackHash],
-                                       settings: Settings) -> Graph:
-  print(f'### build_stack_user_settings_subgraph stack_ids {stack_ids}')
-  return make_graph_from_list([(apply_quarantine_to_stack, stack_ids),
-                               select_subframes, associate_with_stack,
-                               (apply_settings, settings)])
-
-
 @AstroFlowNode()
 def gather_stack_user_settings(
     *stacks_in: list[CompositeStack]) -> CompositeStacksDict:
@@ -174,42 +132,3 @@ def store_mosaics(mosaics: MosaicsDict) -> None:
   print(f'### store_mosaics: Stored {len(mosaics)} mosaics; '
         f'total is now {len(context.grouped_mosaics)}')
   return mosaics
-
-
-# This graph takes the objects grouped by `build_regroup_graph()` and applies
-# user settings (quarantine and subframe selection) on top of them.
-#
-# TODO: Pass SimpleStacks through `build_stack_user_settings_subgraph()` too.
-# Flat-frame stacks could be quarantined, for example.
-# @AstroFlowNode()
-# def build_apply_stack_user_settings_subgraph(settings: Settings) -> Graph:
-#   print(f'### build_apply_stack_user_settings_subgraph settings {settings}')
-
-#   # TODO: This is empty when the preceding tasks don't run.
-#   stacks = context.stacks or {}
-
-#   stack_ids = [
-#       s for s in stacks.keys() if isinstance(stacks[s], CompositeStack)
-#   ]
-#   stack_id_groups = [
-#       stack_ids[i::os.cpu_count()] for i in range(os.cpu_count())
-#   ]
-#   stack_id_groups = [tuple(group) for group in stack_id_groups]
-#   print(f'### Grouped {len(stacks)} stacks into {len(stack_id_groups)} groups')
-#   print(f'### First group {stack_id_groups[0]}')
-
-#   graph = Graph({})
-#   graph[gather_stack_user_settings] = {(build_stack_user_settings_subgraph,
-#                                         group, settings)
-#                                        for group in stack_id_groups
-#                                        if len(group)}
-#   graph[validate_stacks] = {gather_stack_user_settings}
-#   graph[store_stacks] = {validate_stacks}
-#   graph[quarantine_targets] = {store_stacks}
-#   graph[validate_targets] = {quarantine_targets}
-#   graph[store_targets] = {validate_targets}
-#   graph[quarantine_mosaics] = {store_targets}
-#   graph[validate_mosaics] = {quarantine_mosaics}
-#   graph[store_mosaics] = {validate_mosaics}
-
-#   return graph
