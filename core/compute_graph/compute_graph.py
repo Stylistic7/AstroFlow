@@ -146,7 +146,6 @@ def build_compute_graph(regroup: bool = False,
                         make_previews: bool = True,
                         run_main_processing_graph: bool = True) -> Graph:
   task_list: list[TaskDescriptor] = [(scatter_compute_image_metadata, 'input')]
-  task_list.append(load_metadata)
 
   # The regroup graph only looks at light frames only, and ignores calibration
   # frames. All of its findings are written into the given `grouped_*` keys.

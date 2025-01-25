@@ -43,6 +43,15 @@ class Node():
             self.name == other.name and self.priority == other.priority and
             self.args == other.args)
 
+  def compatible_with(self, other) -> bool:
+    other = canonicalize_node(other)
+
+    return (self.task._function.__module__ == other.task._function.__module__
+            and
+            self.task._function.__name__ == other.task._function.__name__ and
+            self.name == other.name and self.priority == other.priority and
+            all(a == b for a, b in zip(self.args, other.args)))
+
   def __hash__(self) -> int:
     return hash((self.task._function.__module__, self.task._function.__name__,
                  self.name, self.priority, self.args))

@@ -79,7 +79,7 @@ from dependency_graph.astroflow_node import AstroFlowNode
 
 # TODO: Don't revisit the same failed images over and over, it just takes up
 # time at every startup.
-@ray.remote
+@AstroFlowNode()
 def scatter_compute_image_metadata(mode: str, *filenames_in:
                                    list[Path]) -> Graph:
   directories = {
