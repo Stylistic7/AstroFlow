@@ -17,8 +17,8 @@ from file_io.generic import read_image
 
 
 @AstroFlowNode()
-def mosaic_done(*ancestor_results) -> None:
-  pass
+def mosaic_done(mode: QualityLevel, mosaic: Mosaic) -> None:
+  print(f'### mosaic_done mode {mode} mosaid {mosaic}')
 
 
 # TODO: What's supposed to happen with these final artifacts? I guess they're
@@ -68,7 +68,7 @@ def build_mosaic_subgraph(mode: QualityLevel, mosaic: Mosaic) -> Graph:
                           viewbox)]
     store_tasks.append(store_task)
 
-  graph[mosaic_done] = store_tasks
+  graph[(mosaic_done, mode, mosaic)] = store_tasks
 
   return graph
 
@@ -96,8 +96,12 @@ def build_placement_subgraph(mode: QualityLevel, mosaic: Mosaic, target: Target,
                              viewbox: Viewbox):
   if stack := _get_stack_for_filter(target, filter):
     return make_graph_from_list([(get_stack_image, mode, stack),
-                                 (place_image, mode, mosaic, tile_indices,
-                                  viewbox)])
+                                 Node(place_image,
+                                      mode,
+                                      mosaic,
+                                      tile_indices,
+                                      viewbox,
+                                      priority=3)])
 
 
 @AstroFlowNode()
@@ -128,17 +132,28 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
   for strip_index, strip in enumerate(mosaic.strips):
     for i, target_id in enumerate(strip):
       if i == 0:
-        prev_task = Node(build_placement_subgraph, mode, mosaic,
-                         targets[target_id], filter,
-                         TileIndices((strip_index, i)), viewbox)
+        prev_task = Node(build_placement_subgraph,
+                         mode,
+                         mosaic,
+                         targets[target_id],
+                         filter,
+                         TileIndices((strip_index, i)),
+                         viewbox,
+                         priority=2)
       else:
         merge_task = Node(merge_images,
                           mode,
                           name=f'merge_{mosaic.stable_hash}_{target_id}')
         graph[merge_task] = [
             prev_task,
-            Node(build_placement_subgraph, mode, mosaic, targets[target_id],
-                 filter, TileIndices((strip_index, i)), viewbox)
+            Node(build_placement_subgraph,
+                 mode,
+                 mosaic,
+                 targets[target_id],
+                 filter,
+                 TileIndices((strip_index, i)),
+                 viewbox,
+                 priority=2)
         ]
         prev_task = merge_task
 
