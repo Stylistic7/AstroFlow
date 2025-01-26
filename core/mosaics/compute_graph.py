@@ -132,7 +132,9 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
                          targets[target_id], filter,
                          TileIndices((strip_index, i)), viewbox)
       else:
-        merge_task = Node(merge_images, mode, name=f'merge_{target_id}')
+        merge_task = Node(merge_images,
+                          mode,
+                          name=f'merge_{mosaic.stable_hash}_{target_id}')
         graph[merge_task] = [
             prev_task,
             Node(build_placement_subgraph, mode, mosaic, targets[target_id],
@@ -146,7 +148,9 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
     if i == 0:
       prev_task = strip_tasks[0]
     else:
-      merge_task = Node(merge_images, mode, name=f'merge_strip_{i}')
+      merge_task = Node(merge_images,
+                        mode,
+                        name=f'merge_{mosaic.stable_hash}_strip_{i}')
       graph[merge_task] = [prev_task, strip_tasks[i]]
       prev_task = merge_task
 
