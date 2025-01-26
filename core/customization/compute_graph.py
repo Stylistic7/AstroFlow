@@ -38,6 +38,7 @@ def scatter_customize_stacks() -> Graph:
 
 
 # TODO: Add tests in test_customization.py
+# TODO: Pass in the StackSettings and cache this.
 @AstroFlowNode()
 def customize_stack(stack: CompositeStack) -> CustomizedStack:
   stack = associate_with_stack(stack)

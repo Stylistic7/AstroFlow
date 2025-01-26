@@ -33,7 +33,7 @@ def scatter_stack_thumbnails(mode: QualityLevel) -> Graph:
     # TODO: Implement
     pass
 
-  return Graph({gather: tasks})
+  return Graph({gather_stack_thumbnails: tasks})
 
 
 @AstroFlowNode(cache_result=True)
@@ -93,5 +93,5 @@ def create_stack_subframe_thumbnails(stack: CompositeStack) -> None:
 
 
 @AstroFlowNode()
-def gather() -> None:
+def gather_stack_thumbnails() -> None:
   pass

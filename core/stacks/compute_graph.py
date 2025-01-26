@@ -42,6 +42,7 @@ def build_stacking_subgraph(stack: CustomizedStack) -> Graph:
 def get_stack_subframe_image(stack: CompositeStack) -> Path:
   light_frames_by_stars = get_light_frames_sorted_by_stars(stack.all_frames())
   best_light_frame = light_frames_by_stars[0]
+  print(f'### get_stack_subframe_image returning {best_light_frame.filename}')
   return best_light_frame.filename
 
 

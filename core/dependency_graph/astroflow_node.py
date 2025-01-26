@@ -44,15 +44,14 @@ def AstroFlowNode(resources=None,
     def _result_exists(content_hash):
       key = (fn.__name__, content_hash)
       if not context.contains(key):
-        print(f'### context does not contain key {key}')
+        print(f'### Node {fn.__name__}: context does not contain key {key}')
         return False
 
       result = context[key]
       if isinstance(result, Path):
         if debug:
-          print(
-              f'### Checking that file {result} has content hash {content_hash}'
-          )
+          print(f'### Node {fn.__name__}: checking that file {result} has '
+                f'content hash {content_hash}')
         if not artifact_exists(FileArtifact(result, content_hash)):
           return False
 
@@ -78,14 +77,14 @@ def AstroFlowNode(resources=None,
         if result.suffix.lower() in ['.xisf']:
           add_xisf_metadata(result, result, {'CONTHASH': content_hash})
           if debug:
-            print(f'### Updated XISF filename {result} with '
-                  f'content hash {content_hash}')
+            print(f'### Node {fn.__name__}: updated XISF filename {result} '
+                  f'with content hash {content_hash}')
         elif result.suffix.lower() in ['.fit', '.fits']:
           with pyfits.open(str(result), mode='update', mmap=False) as fits:
             fits[0].header['CONTHASH'] = content_hash
           if debug:
-            print(f'### Updated FITS filename {result} with '
-                  f'content hash {content_hash}')
+            print(f'### Node {fn.__name__}: uupdated FITS filename {result} '
+                  f'with content hash {content_hash}')
 
         return FileArtifact(result, content_hash)
 
@@ -93,8 +92,8 @@ def AstroFlowNode(resources=None,
                     if keep_in_memory else WriteMode.DISK_ONLY)
       context.set(key, result, write_mode)
       if debug:
-        print(f'### stored result {type(result)} with key {key} with '
-              f'write mode {write_mode}')
+        print(f'### Node {fn.__name__}: stored result {type(result)} '
+              f'with key {key} and write mode {write_mode}')
       return result
 
     # This decorator accepts arguments that may include FileArtifacts and / or
@@ -140,17 +139,17 @@ def AstroFlowNode(resources=None,
       content_hash = hash_list([source, *args, *kwargs_list])
       key = (fn.__name__, content_hash)
       if debug:
-        print(f'### key {key}')
+        print(f'### Node {fn.__name__}: key {key}')
 
       if _result_exists(content_hash):
         if debug:
-          print(f'### Not running fn {fn.__name__} producing content '
-                f'hash {content_hash} because result exists')
+          print(f'### Node {fn.__name__}: not running fn {fn.__name__} '
+                f'producing content hash {content_hash} because result exists')
         return context[key]
       else:
         if debug:
-          print(f'### Running fn {fn.__name__} producing content '
-                f'hash {content_hash} because result does not exist')
+          print(f'### Node {fn.__name__}: running fn {fn.__name__} producing '
+                f'content hash {content_hash} because result does not exist')
         result = fn(*args, **kwargs)
         return _store_result(result, content_hash)
 
