@@ -56,14 +56,19 @@ def merge_images_with_maximum(image_0: np.ndarray,
 
 # TODO: Make sure that every Ray task that calls a @PixInsight function also
 # consumes a PixInsight resource.
-#
-# TODO: The @AstroFlowNode hides content hashes from functions that return
-# np.ndarray or Path; perhaps it should also hide content hashes from functions
-# that receive them?
 @AstroFlowNode(unpack_artifacts=False)
 def merge_images(mode: QualityLevel, input_0: np.ndarray | Path,
                  input_1: np.ndarray | Path) -> np.ndarray | Path:
   print(f'### merge images {type(input_0)} {type(input_1)}')
+
+  if input_0 is None and input_1 is None:
+    return None
+
+  if input_0 is not None and input_1 is None:
+    return input_0
+
+  if input_0 is None and input_1 is not None:
+    return input_1
 
   # TODO: This is really ugly...
   if mode == 'subframe':

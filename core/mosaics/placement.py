@@ -90,17 +90,9 @@ def _trim_image(projected_image):
   return trimmed_image
 
 
-# TODO: Provide some feedback on progress.
-#
-# TODO: Placement is perhaps fast enough to not bother storing placed images
-# on disk, where they take up a huge amount of space.
-#
 # TODO: Differentiate the runtime of this function in subframe and master
 # modes.
-#
-# TODO: Perhaps don't save these results, since they are so huge, and
-# are now relatively fast to compute.
-@AstroFlowNode(memory=_MEMORY_REQUIREMENT)
+@AstroFlowNode(memory=_MEMORY_REQUIREMENT, keep_in_memory=False, debug=True)
 def place_image(mode: QualityLevel, mosaic: Mosaic, tile_indices: TileIndices,
                 viewbox: Viewbox, filename: Path) -> np.ndarray | Path:
   # TODO: The subframes need to be calibrated before being placed.
@@ -109,8 +101,8 @@ def place_image(mode: QualityLevel, mosaic: Mosaic, tile_indices: TileIndices,
   content_hash = get_content_hash(filename)
   plate_solution = context.metadata[content_hash].plate_solution
 
-  log.info(f'place_image: image shape {image.shape} dtype {image.dtype} '
-           f'min {np.min(image)} max {np.max(image)}')
+  print(f'### place_image: image shape {image.shape} dtype {image.dtype} '
+        f'min {np.min(image)} max {np.max(image)}')
 
   wcs = WCS(plate_solution.header)
 
@@ -152,14 +144,15 @@ def place_image(mode: QualityLevel, mosaic: Mosaic, tile_indices: TileIndices,
     tile_y, tile_x, value = ray.get(ready_refs[0])
     projected_image_tiles[tile_y, tile_x, :, :] = value
 
-  log.info(f'### projected_image shape {projected_image.shape}')
-  log.info(
+  print(f'### projected_image shape {projected_image.shape}')
+  print(
       f'### projected_image count nonzero {np.count_nonzero(projected_image)}')
 
   # TODO: Don't keep two copies of the huge image
   # projected_image = _trim_image(projected_image)
 
   if mode == QualityLevel.SUBFRAME:
+    print(f'### place_image returning image shape {projected_image.shape}')
     return projected_image
   elif mode == QualityLevel.MASTER:
     tile_indices_str = '_'.join(str(i) for i in tile_indices)
@@ -170,3 +163,5 @@ def place_image(mode: QualityLevel, mosaic: Mosaic, tile_indices: TileIndices,
     hdu.writeto(str(filename), overwrite=True)
     print(f'### Wrote filename {filename}')
     return filename
+  else:
+    assert False, f"### Unknown mode {mode}"
