@@ -53,6 +53,7 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
       return None
 
     metadata = metadata or context.metadata
+    assert metadata
 
     metadata_list = [i for h, i in metadata.items() if h in frames]
 
@@ -99,8 +100,8 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
       for run in runs:
         if len(run) < context.min_frames_in_run:
           continue
-        frames = [x[0] for x in run]
-        new_stack = SimpleStack.from_frames(frames, metadata)
+        run_frames = [x[0] for x in run]
+        new_stack = SimpleStack.from_frames(run_frames, metadata)
         contents[new_stack.content_hash] = new_stack
 
     if not contents:
@@ -142,6 +143,13 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
       all_frames.extend(c.frames)
 
     return all_frames
+
+  def all_metadata(self) -> MetadataDict:
+    all_metadata = {}
+    for c in self.contents.values():
+      all_metadata |= c.metadata
+
+    return all_metadata
 
   def __str__(self) -> str:
     return (f'CompositeStack(Stable hash {self.stable_hash}, '

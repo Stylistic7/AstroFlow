@@ -8,38 +8,19 @@ from metadata.classes import ImageMetadata, FrameHash
 
 
 def get_light_frames_sorted_by_stars(
-    light_frames: list[FrameHash]) -> list[ImageMetadata]:
-  start_time = time.time()
-  metadata = context.metadata
-  end_time = time.time()
-  elapsed_time = end_time - start_time
-  print(f'### loading metadata took {elapsed_time:.3f} s')
-
-  assert light_frames
-  metadata_list = [i for h, i in metadata.items() if h in light_frames]
-  assert metadata_list
-  return sorted(metadata_list,
-                key=lambda i: i.plate_solution.num_stars
-                if i.plate_solution is not None else 0,
+    stack: CompositeStack) -> list[ImageMetadata]:
+  metadata = stack.all_metadata()
+  assert all(f in metadata for f in stack.all_frames())
+  return sorted(metadata,
+                key=lambda i: metadata[i].plate_solution.num_stars,
                 reverse=True)
 
 
 def select_subframes(stack: CompositeStack) -> CompositeStack:
-  # TODO: This is really slow, probably just because the metadata has to be
-  # loaded for every stack. Profile / speed this up; it should just be ray.get()
-  # on an object ref, which should be fast?
-  metadata = context.metadata
-
   print(f'### select_subframes for stack {stack}')
-  light_frames = stack.all_frames()
-  assert light_frames, f'### stack {repr(stack)} has zero frames'
-  assert all(is_light_frame(metadata[f].header) for f in light_frames)
-
-  # TODO: See how fast get_light_frames_sorted_by_stars() is, and maybe
-  # cache it somehow.
-  sorted_light_frames = get_light_frames_sorted_by_stars(light_frames)
-  assert sorted_light_frames[0].plate_solution is not None
-  highest_star_count = sorted_light_frames[0].plate_solution.num_stars
+  metadata = stack.all_metadata()
+  sorted_light_frames = get_light_frames_sorted_by_stars(stack)
+  highest_star_count = metadata[sorted_light_frames[0]].plate_solution.num_stars
 
   print(f'### Best light frame for stack {stack} '
         f'has {highest_star_count} stars')
@@ -47,7 +28,7 @@ def select_subframes(stack: CompositeStack) -> CompositeStack:
   # TODO: Implement real selection methods, accessible through the UI.
   threshold = 0.75 * highest_star_count
   selected_light_frames = [
-      f for f in light_frames
+      f for f in stack.all_frames()
       if metadata[f].plate_solution.num_stars >= threshold
   ]
   print(f'### Selected {len(selected_light_frames)} light frames '
@@ -56,7 +37,8 @@ def select_subframes(stack: CompositeStack) -> CompositeStack:
   new_contents = {}
   for content_hash, substack in stack.contents.items():
     if new_frames := [f for f in substack.frames if f in selected_light_frames]:
-      new_substack = replace(substack, frames=new_frames)
+      new_metadata = {h: m for h, m in metadata.items() if h in new_frames}
+      new_substack = replace(substack, frames=new_frames, metadata=new_metadata)
       new_contents[content_hash] = new_substack
 
   return replace(stack, contents=new_contents)

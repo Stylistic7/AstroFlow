@@ -44,8 +44,9 @@ def create_stack_subframe_thumbnails(stack: CompositeStack) -> None:
 
   # Now sort all the light frames (no matter which run they're from) by the
   # number of stars. The better images should be in front.
-  light_frames_by_stars = get_light_frames_sorted_by_stars(stack.all_frames())
-  best_light_frame = light_frames_by_stars[0]
+  metadata = stack.all_metadata()
+  light_frames_by_stars = get_light_frames_sorted_by_stars(stack)
+  best_light_frame = metadata[light_frames_by_stars[0]]
   image = resize_array(read_image(best_light_frame.filename), width)
   height, width = image.shape
 
@@ -58,6 +59,7 @@ def create_stack_subframe_thumbnails(stack: CompositeStack) -> None:
     video_filename = os.path.join(tmp_dir, 'output.webm')
     out = cv2.VideoWriter(video_filename, fourcc, 10.0, (width, height), False)
     for i, light_frame in enumerate(light_frames_by_stars):
+      light_frame = metadata[light_frame]
       dependencies = {}
       if substack := next(
           iter(s for s in stack.contents.values()

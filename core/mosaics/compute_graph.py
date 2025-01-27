@@ -25,12 +25,13 @@ def mosaic_done(mode: QualityLevel, mosaic: Mosaic) -> None:
 # just stored in "findable locations" that do not depend on content hashes.
 @AstroFlowNode()
 def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
-                               input: Any) -> None:
-  print(f'### store_mosaic_color_channel: filter {filter} input {type(input)}')
+                               input: Path) -> None:
+  print(f'### store_mosaic_color_channel: filter {filter} input {input}')
   key = ('mosaic_thumbnail_image', mode, mosaic.stable_hash, filter)
 
   if mode == QualityLevel.SUBFRAME:
-    context.set(key, input, write_mode=WriteMode.DISK_ONLY)
+    image = read_image(input)
+    context.set(key, image, write_mode=WriteMode.DISK_ONLY)
     print(f'### store_mosaic_color_channel wrote key {key}')
   elif mode == QualityLevel.MASTER:
     image = read_image(input)
@@ -64,8 +65,14 @@ def build_mosaic_subgraph(mode: QualityLevel, mosaic: Mosaic) -> Graph:
   store_tasks = []
   for filter in filters:
     store_task = (store_mosaic_color_channel, mode, mosaic, filter)
-    graph[store_task] = [(build_mosaic_filter_subgraph, mode, mosaic, filter,
-                          viewbox)]
+    graph[store_task] = [
+        Node(build_mosaic_filter_subgraph,
+             mode,
+             mosaic,
+             filter,
+             viewbox,
+             priority=2)
+    ]
     store_tasks.append(store_task)
 
   graph[(mosaic_done, mode, mosaic)] = store_tasks
@@ -143,6 +150,7 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
       else:
         merge_task = Node(merge_images,
                           mode,
+                          mosaic,
                           name=f'merge_{mosaic.stable_hash}_{target_id}')
         graph[merge_task] = [
             prev_task,
@@ -165,6 +173,7 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
     else:
       merge_task = Node(merge_images,
                         mode,
+                        mosaic,
                         name=f'merge_{mosaic.stable_hash}_strip_{i}')
       graph[merge_task] = [prev_task, strip_tasks[i]]
       prev_task = merge_task

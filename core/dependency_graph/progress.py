@@ -1,4 +1,5 @@
 from typing import Any
+from collections import Counter
 
 from ray.remote_function import RemoteFunction
 
@@ -17,8 +18,10 @@ def graph_status_to_progress(status: GraphStatus) -> dict[str, Any]:
         f'{len(status.waiting_nodes)} waiting nodes, '
         f'{len(status.done_nodes)} done nodes')
 
-  for node in status.ready_nodes:
-    print(f'### ready node: {node_to_string(node)}')
+  task_counts = Counter(
+      node.task._function.__name__ for node in status.ready_nodes)
+  print('### ready nodes: ' +
+        ', '.join(f"'{task}': {count}" for task, count in task_counts.items()))
 
   def function_name_from_node(node: Node) -> str:
     assert isinstance(node.task, RemoteFunction)
