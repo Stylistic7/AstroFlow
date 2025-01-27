@@ -34,7 +34,7 @@ def _find_running_pixinsight_instances() -> dict[int, int]:
   return slot_pid_map
 
 
-def _start_pixinsight_instance(slot: int) -> int:
+def _start_pixinsight_instance(slot: int = _SLOT_NUMBER) -> int:
   # This should be start and detach. If it's already started, this
   # attempt should just exit immediately with no other effect.
   subprocess.Popen([

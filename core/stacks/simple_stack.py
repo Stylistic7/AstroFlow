@@ -13,6 +13,7 @@ from hashing import hash_list, hash_dataclass
 class SimpleStack(ImagingAttributes, AstroFlowStateAttributes):
   content_hash: str
   frames: list[FrameHash]
+  metadata: MetadataDict
   dependencies: DependenciesDict
 
   @classmethod
@@ -22,9 +23,13 @@ class SimpleStack(ImagingAttributes, AstroFlowStateAttributes):
     metadata = metadata or context.metadata
     imaging_attributes = ImagingAttributes.from_frames(frames, metadata)
 
+    frame_metadata = {h: i for h, i in metadata.items() if h in frames}
+    assert frame_metadata
+
     attributes: dict[str, Any] = asdict(imaging_attributes) | {
         'content_hash': hash_list(frames),
         'frames': frames,
+        'metadata': frame_metadata,
         'dependencies': DependenciesDict(),
         'state': {}
     }

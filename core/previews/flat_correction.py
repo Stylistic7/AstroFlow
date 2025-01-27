@@ -17,10 +17,11 @@ def create_flat_correction_thumbnails(stack: CustomizedStack) -> None:
       s.camera == stack.camera and s.filter == stack.filter
   ]
 
+  light_frames_by_stars = get_light_frames_sorted_by_stars(stack)
+
   for substack in stack.contents.values():
-    # TODO Maybe unify this operation, since it's done everywhere.
-    light_frames_by_stars = get_light_frames_sorted_by_stars(substack.frames)
-    light_frame = light_frames_by_stars[0]
+    light_frame = stack.all_metadata()[next(
+        l for l in light_frames_by_stars if l in substack.frames)]
 
     width = context.subframe_thumbnail_width
 
