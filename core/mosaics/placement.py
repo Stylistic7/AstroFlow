@@ -151,17 +151,16 @@ def place_image(mode: QualityLevel, mosaic: Mosaic, tile_indices: TileIndices,
   # TODO: Don't keep two copies of the huge image
   # projected_image = _trim_image(projected_image)
 
-  if mode == QualityLevel.SUBFRAME:
-    print(f'### place_image returning image shape {projected_image.shape}')
-    return projected_image
-  elif mode == QualityLevel.MASTER:
-    tile_indices_str = '_'.join(str(i) for i in tile_indices)
-    filename = Path(context.output_dir) / 'Mosaics' / mosaic.name / Path(
-        f'placed_image_{mosaic.stable_hash}_{tile_indices_str}.fits')
-    hdu = pyfits.PrimaryHDU(projected_image)
-    filename.parent.mkdir(parents=True, exist_ok=True)
-    hdu.writeto(str(filename), overwrite=True)
-    print(f'### Wrote filename {filename}')
-    return filename
-  else:
-    assert False, f"### Unknown mode {mode}"
+  # if mode == QualityLevel.SUBFRAME:
+  #   print(f'### place_image returning image shape {projected_image.shape}')
+  #   return projected_image
+  # elif mode == QualityLevel.MASTER:
+
+  tile_indices_str = '_'.join(str(i) for i in tile_indices)
+  filename = Path(context.output_dir) / 'Mosaics' / mosaic.name / Path(
+      f'placed_image_{mode}_{mosaic.stable_hash}_{tile_indices_str}.fits')
+  hdu = pyfits.PrimaryHDU(projected_image)
+  filename.parent.mkdir(parents=True, exist_ok=True)
+  hdu.writeto(str(filename), overwrite=True)
+  print(f'### Wrote filename {filename}')
+  return filename
