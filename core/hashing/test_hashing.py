@@ -44,11 +44,11 @@ class TestHashing(unittest.TestCase):
     self.assertEqual(light_stack.stable_hash, 'e1f7d909ac125ebe')
     self.assertEqual(light_stack.content_hash, 'f1043e9116d4f750')
 
-    # The Python hash of a Stack goes through `hash_dataclass()`, and should
-    # be stable across Python sessions.
-    self.assertEqual(hash(light_stack), 1348472393932099899)
+    # The Python hash of a Stack is just an integer representation of its
+    # content hash, which should be stable across Python sessions.
+    self.assertEqual(hash(light_stack), 1247087795776248668)
 
     # The Python hash of a SimpleStacksDict goes through `hash_dict_int()`,
     # and should be stable across Python sessions.
     self.assertTrue(isinstance(context.calibration_stacks, SimpleStacksDict))
-    self.assertEqual(hash(context.calibration_stacks), 760237515229308854)
+    self.assertEqual(hash(context.calibration_stacks), 8491763175273508945)

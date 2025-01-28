@@ -1,4 +1,4 @@
-from dataclasses import dataclass, asdict, fields
+from dataclasses import dataclass, asdict
 from typing import Any, Optional
 
 import numpy as np
@@ -6,9 +6,9 @@ from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon 
 import astropy  # type: ignore
 
 import units
-from hashing import hash_list, hash_dataclass, hash_string, hash_dict_int
+from hashing import hash_list, hash_string, hash_list_int
 from context import context
-from stacks.simple_stack import SimpleStack
+from stacks.simple_stack import SimpleStack, SimpleStacksDict
 from stacks.imaging_attributes import ImagingAttributes
 from stacks.state_attributes import AstroFlowStateAttributes
 from stacks.astrometric_attributes import AstrometricAttributes
@@ -18,15 +18,6 @@ from catalogs import position_string
 import geometry.footprints as footprints
 from clustering.continuous import cluster_continuous
 from plate_solving import PlateSolution
-
-
-class SimpleStacksDict(dict[str, SimpleStack]):
-
-  def __hash__(self):
-    return hash_dict_int(self)
-
-  def __str__(self):
-    return f'SimpleStacksDict({len(self)})'
 
 
 def _normalize_radians(x: float) -> float:
@@ -166,7 +157,7 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
             f'Temp {self.mean_temperature:.02f} degC)')
 
   def __hash__(self):
-    return hash_dataclass(self)
+    return hash_list_int([self.content_hash])
 
   def __eq__(self, other: object) -> bool:
     if not isinstance(other, CompositeStack):
@@ -176,6 +167,13 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
                                                           == other.stable_hash)
 
 
-Stack = SimpleStack | CompositeStack
+class CompositeStacksDict(dict[str, CompositeStack]):
 
-CompositeStacksDict = dict[str, CompositeStack]
+  def __hash__(self):
+    return hash_list_int([self[k].content_hash for k in sorted(self.keys())])
+
+  def __str__(self):
+    return f'SimpleStacksDict({len(self)})'
+
+
+Stack = SimpleStack | CompositeStack
