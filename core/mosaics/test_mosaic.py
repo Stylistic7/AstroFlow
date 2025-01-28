@@ -20,7 +20,7 @@ class TestMosaic(unittest.TestCase):
     # Start with an empty context.
     self.input_dir_obj, self.output_dir_obj = make_test_context()
 
-    context.mock_pixinsight = False
+    context.mock_pixinsight = True
     context.master_mosaic_samples = 1000
 
   def tearDown(self) -> None:
@@ -107,7 +107,7 @@ class TestMosaic(unittest.TestCase):
     self.assertEqual(len(context.mosaics), 1)
     mosaic = next(iter(context.mosaics.values()))
 
-    fits_files = list(Path(context.output_dir).rglob('final_merged*.fit'))
+    fits_files = list(Path(context.output_dir).rglob('final_merged*.fits'))
     self.assertEqual(len(fits_files), 1)
     print(f'### Found final merged file {fits_files[0]}')
 

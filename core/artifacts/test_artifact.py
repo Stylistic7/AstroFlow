@@ -4,10 +4,8 @@ import os
 import unittest
 import numpy as np
 
-from context import context
 from testing.test_context import make_test_context
-from testing.test_frames import copy_testdata_frames
-from artifacts import FileArtifact, CacheArtifact, ArtifactNotFoundException, WrongContentHashException, read_artifact_header, read_artifact_image, write_artifact
+from artifacts import FileArtifact, CacheArtifact, ArtifactNotFoundException, read_artifact_header
 
 
 class TestMosaic(unittest.TestCase):
@@ -21,7 +19,7 @@ class TestMosaic(unittest.TestCase):
 
   def test_missing_files(self) -> None:
     for i in range(5):
-      full_path = f'/my_image_{i}.fit'
+      full_path = f'/my_image_{i}.fits'
       with self.assertRaises(FileNotFoundError):
         header = read_artifact_header(FileArtifact(full_path, 'foo'))
 

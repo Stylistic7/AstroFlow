@@ -18,7 +18,7 @@ from hashing import hash_list
 # it is only concerned with the relative path inside that dir.
 def foo_artifacts(mosaic_id: str, filter: str) -> list[Artifact]:
   filename = os.path.join(context.output_dir,
-                          f'master_light_{mosaic_id}_{filter}.fit')
+                          f'master_light_{mosaic_id}_{filter}.fits')
   content_hash = hash_list([mosaic_id, filter])
   return [FileArtifact(filename, content_hash)]
 

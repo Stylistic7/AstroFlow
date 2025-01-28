@@ -82,7 +82,7 @@ def merge_images(mode: QualityLevel, mosaic: Mosaic, input_0: Path,
 
     output_filename = Path(
         context.output_dir
-    ) / 'Mosaics' / mosaic.name / f'merged_subframe_{get_content_hash(input_0)}_{get_content_hash(input_1)}.fit'
+    ) / 'Mosaics' / mosaic.name / f'merged_subframe_{get_content_hash(input_0)}_{get_content_hash(input_1)}.fits'
 
     hdu = pyfits.PrimaryHDU(image)
     output_filename.parent.mkdir(parents=True, exist_ok=True)

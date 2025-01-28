@@ -166,7 +166,7 @@ def make_synthetic_frames(start_datetime: datetime.datetime = datetime.datetime(
 
   number = len(ids) if ids else number
 
-  ids = ids if ids else [f'{prefix}_{i:05}.fit' for i in range(number)]
+  ids = ids if ids else [f'{prefix}_{i:05}.fits' for i in range(number)]
 
   random_seed = abs(
       xxhash.xxh64(str([random_seed, image_type, prefix])).intdigest())
