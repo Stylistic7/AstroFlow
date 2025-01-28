@@ -7,7 +7,7 @@ import os
 
 from context import context
 from dependency_graph import run_graph
-from test_context import make_test_context, make_synthetic_frames
+from testing import make_test_context, make_synthetic_frames
 
 from metadata.image_metadata import scatter_compute_image_metadata, load_metadata
 from metadata.actor import get_metadata
@@ -40,7 +40,7 @@ class TestImageMetadata(unittest.TestCase):
     graph = compute_graph_fragment()
     run_graph(graph)
 
-    filenames_on_disk = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
+    filenames_on_disk = glob.glob(f'{input_dir}/**/*.fit?', recursive=True)
     self.assertEqual(len(filenames_on_disk), 10)
     filenames_in_cache = get_all_filenames()
     self.assertEqual(sorted(filenames_on_disk), sorted(filenames_in_cache))
@@ -52,7 +52,7 @@ class TestImageMetadata(unittest.TestCase):
 
     graph = compute_graph_fragment()
     run_graph(graph)
-    filenames_on_disk = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
+    filenames_on_disk = glob.glob(f'{input_dir}/**/*.fit?', recursive=True)
     filenames_in_cache = get_all_filenames()
     self.assertEqual(sorted(filenames_on_disk), sorted(filenames_in_cache))
     self.assertTrue(all(os.path.exists(i.filename) for i in get_metadata()))
@@ -65,7 +65,7 @@ class TestImageMetadata(unittest.TestCase):
 
     graph = compute_graph_fragment()
     run_graph(graph)
-    filenames_on_disk = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
+    filenames_on_disk = glob.glob(f'{input_dir}/**/*.fit?', recursive=True)
     images = list(get_metadata())
     self.assertEqual(len(images), 20)
     self.assertTrue(all(os.path.exists(i.filename) for i in images))
@@ -81,7 +81,7 @@ class TestImageMetadata(unittest.TestCase):
 
     graph = compute_graph_fragment()
     run_graph(graph)
-    filenames = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
+    filenames = glob.glob(f'{input_dir}/**/*.fit?', recursive=True)
     self.assertEqual(len(filenames), 10)
     self.assertEqual(len(get_all_filenames()), 10)
     images = list(get_metadata())
@@ -95,7 +95,7 @@ class TestImageMetadata(unittest.TestCase):
 
     graph = compute_graph_fragment()
     run_graph(graph)
-    filenames = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
+    filenames = glob.glob(f'{input_dir}/**/*.fit?', recursive=True)
     self.assertEqual(len(filenames), 20)
     images = list(get_metadata())
     self.assertEqual(len(images), 20)

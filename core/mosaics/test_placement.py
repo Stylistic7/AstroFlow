@@ -11,7 +11,7 @@ from testing import make_test_context, copy_testdata_into_cache
 from artifacts.artifact import unpack_artifact
 from mosaics.placement import place_image
 from previews.types import QualityLevel
-from compute_graph.compute_graph import load_metadata
+from metadata.image_metadata import load_metadata
 from mosaics.viewbox import compute_mosaic_viewbox, Viewbox
 from mosaics.types import TileIndices
 

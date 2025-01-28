@@ -12,7 +12,6 @@ from testing.test_frames import make_synthetic_frames
 from metadata.actor import get_metadata
 from dependency_graph import Graph, make_graph_from_list, run_graph
 from metadata.image_metadata import scatter_compute_image_metadata
-from compute_graph.compute_graph import load_metadata
 
 
 def compute_hash_for_filename() -> dict[str, str]:
@@ -25,13 +24,19 @@ def compute_hash_for_filename() -> dict[str, str]:
 
 def compute_graph_fragment() -> Graph:
   return make_graph_from_list([(scatter_compute_image_metadata, 'input'),
-                               load_metadata, cluster_by_image_center])
+                               cluster_by_image_center])
 
 
 class TestSpatialAssociation(unittest.TestCase):
 
-  def test_one_perfect_group(self) -> None:
+  def setUp(self):
     self.input_dir_obj, self.output_dir_obj = make_test_context()
+
+  def tearDown(self):
+    self.input_dir_obj.cleanup()
+    self.output_dir_obj.cleanup()
+
+  def test_one_perfect_group(self) -> None:
     input_dir = context.input_dirs[0]
     make_synthetic_frames(ra=100,
                           dec=50,
@@ -49,7 +54,6 @@ class TestSpatialAssociation(unittest.TestCase):
     self.assertEqual(groups, expected_groups)
 
   def test_two_perfect_groups_one_hour_ra(self) -> None:
-    self.input_dir_obj, self.output_dir_obj = make_test_context()
     input_dir = context.input_dirs[0]
 
     start_datetime = datetime(2023, 12, 6, 16, 29, 43)
@@ -76,21 +80,20 @@ class TestSpatialAssociation(unittest.TestCase):
     expected_groups = [
         tuple(
             sorted([
-                hash_for_filename['foo_00000.fit'],
-                hash_for_filename['foo_00001.fit'],
-                hash_for_filename['foo_00002.fit']
+                hash_for_filename['foo_00000.fits'],
+                hash_for_filename['foo_00001.fits'],
+                hash_for_filename['foo_00002.fits']
             ])),
         tuple(
             sorted([
-                hash_for_filename['bar_00000.fit'],
-                hash_for_filename['bar_00001.fit'],
-                hash_for_filename['bar_00002.fit']
+                hash_for_filename['bar_00000.fits'],
+                hash_for_filename['bar_00001.fits'],
+                hash_for_filename['bar_00002.fits']
             ]))
     ]
     self.assertEqual(sorted(groups), sorted(expected_groups))
 
   def test_two_perfect_groups_one_degree_dec(self) -> None:
-    self.input_dir_obj, self.output_dir_obj = make_test_context()
     input_dir = context.input_dirs[0]
 
     start_datetime = datetime(2023, 12, 6, 16, 29, 43)
@@ -117,21 +120,20 @@ class TestSpatialAssociation(unittest.TestCase):
     expected_groups = [
         tuple(
             sorted([
-                hash_for_filename['foo_00000.fit'],
-                hash_for_filename['foo_00001.fit'],
-                hash_for_filename['foo_00002.fit']
+                hash_for_filename['foo_00000.fits'],
+                hash_for_filename['foo_00001.fits'],
+                hash_for_filename['foo_00002.fits']
             ])),
         tuple(
             sorted([
-                hash_for_filename['bar_00000.fit'],
-                hash_for_filename['bar_00001.fit'],
-                hash_for_filename['bar_00002.fit']
+                hash_for_filename['bar_00000.fits'],
+                hash_for_filename['bar_00001.fits'],
+                hash_for_filename['bar_00002.fits']
             ])),
     ]
     self.assertEqual(sorted(groups), sorted(expected_groups))
 
   def test_two_perfect_groups_half_degree_dec(self) -> None:
-    self.input_dir_obj, self.output_dir_obj = make_test_context()
     input_dir = context.input_dirs[0]
 
     start_datetime = datetime(2023, 12, 6, 16, 29, 43)
@@ -160,21 +162,20 @@ class TestSpatialAssociation(unittest.TestCase):
     expected_groups = [
         tuple(
             sorted([
-                hash_for_filename['bar_00000.fit'],
-                hash_for_filename['bar_00001.fit'],
-                hash_for_filename['bar_00002.fit']
+                hash_for_filename['bar_00000.fits'],
+                hash_for_filename['bar_00001.fits'],
+                hash_for_filename['bar_00002.fits']
             ])),
         tuple(
             sorted([
-                hash_for_filename['foo_00000.fit'],
-                hash_for_filename['foo_00001.fit'],
-                hash_for_filename['foo_00002.fit']
+                hash_for_filename['foo_00000.fits'],
+                hash_for_filename['foo_00001.fits'],
+                hash_for_filename['foo_00002.fits']
             ])),
     ]
     self.assertEqual(sorted(groups), sorted(expected_groups))
 
   def test_two_noisy_groups(self) -> None:
-    self.input_dir_obj, self.output_dir_obj = make_test_context()
     input_dir = context.input_dirs[0]
 
     start_datetime = datetime(2023, 12, 6, 16, 29, 43)
@@ -201,15 +202,15 @@ class TestSpatialAssociation(unittest.TestCase):
     expected_groups = [
         tuple(
             sorted([
-                hash_for_filename['bar_00000.fit'],
-                hash_for_filename['bar_00001.fit'],
-                hash_for_filename['bar_00002.fit']
+                hash_for_filename['bar_00000.fits'],
+                hash_for_filename['bar_00001.fits'],
+                hash_for_filename['bar_00002.fits']
             ])),
         tuple(
             sorted([
-                hash_for_filename['foo_00000.fit'],
-                hash_for_filename['foo_00001.fit'],
-                hash_for_filename['foo_00002.fit']
+                hash_for_filename['foo_00000.fits'],
+                hash_for_filename['foo_00001.fits'],
+                hash_for_filename['foo_00002.fits']
             ])),
     ]
     self.assertEqual(sorted(groups), sorted(expected_groups))
@@ -217,7 +218,6 @@ class TestSpatialAssociation(unittest.TestCase):
   def test_sadr_pano(self) -> None:
     print('Entering test_sadr_pano')
 
-    self.input_dir_obj, self.output_dir_obj = make_test_context()
     input_dir = context.input_dirs[0]
 
     centers = [
