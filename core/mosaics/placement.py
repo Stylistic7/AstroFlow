@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 import structlog
 import astropy.io.fits as pyfits  # type: ignore
+from objsize import get_deep_size
 
 from file_io.generic import get_content_hash, read_image
 from context import context
@@ -16,7 +17,8 @@ from previews import QualityLevel
 from mosaics.types import Mosaic, Viewbox, TileIndices
 from dependency_graph.astroflow_node import AstroFlowNode
 
-_MEMORY_REQUIREMENT = 8 * 1024 * 1024 * 1024  # 8 GB
+_PLACE_IMAGE_MEMORY_REQUIREMENT = 4 * 1024 * 1024 * 1024  # 4 GB
+_PLACE_TILE_MEMORY_REQUIREMENT = 1 * 1024 * 1024 * 1024  # 1 GB
 
 log = structlog.get_logger()
 
@@ -54,7 +56,7 @@ def _reshape_tiles(
   return tiles.swapaxes(1, 2)
 
 
-@ray.remote(scheduling_strategy="SPREAD")
+@ray.remote(memory=_PLACE_TILE_MEMORY_REQUIREMENT, scheduling_strategy="SPREAD")
 def place_tile(tile_y: int, tile_x: int, wcs: Any, ra_tiles: np.ndarray,
                dec_tiles: np.ndarray,
                interp: RegularGridInterpolator) -> tuple[int, int, np.ndarray]:
@@ -92,7 +94,7 @@ def _trim_image(projected_image):
 
 # TODO: Differentiate the runtime of this function in subframe and master
 # modes.
-@AstroFlowNode(memory=_MEMORY_REQUIREMENT, keep_in_memory=False, debug=True)
+@AstroFlowNode(memory=_PLACE_IMAGE_MEMORY_REQUIREMENT, debug=True)
 def place_image(mode: QualityLevel, mosaic: Mosaic, tile_indices: TileIndices,
                 viewbox: Viewbox, filename: Path) -> np.ndarray | Path:
   # TODO: The subframes need to be calibrated before being placed.
@@ -143,6 +145,7 @@ def place_image(mode: QualityLevel, mosaic: Mosaic, tile_indices: TileIndices,
     ready_refs, remaining_refs = ray.wait(remaining_refs, num_returns=1)
     tile_y, tile_x, value = ray.get(ready_refs[0])
     projected_image_tiles[tile_y, tile_x, :, :] = value
+    del value
 
   print(f'### projected_image shape {projected_image.shape}')
   print(
@@ -150,11 +153,6 @@ def place_image(mode: QualityLevel, mosaic: Mosaic, tile_indices: TileIndices,
 
   # TODO: Don't keep two copies of the huge image
   # projected_image = _trim_image(projected_image)
-
-  # if mode == QualityLevel.SUBFRAME:
-  #   print(f'### place_image returning image shape {projected_image.shape}')
-  #   return projected_image
-  # elif mode == QualityLevel.MASTER:
 
   tile_indices_str = '_'.join(str(i) for i in tile_indices)
   filename = Path(context.output_dir) / 'Mosaics' / mosaic.name / Path(
