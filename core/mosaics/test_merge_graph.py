@@ -79,16 +79,35 @@ class TestMergeGraph(unittest.TestCase):
     print_graph(graph)
 
     expected_graph = Graph({
-        Node(merge_images, mode, name='merge_mosaic_abc123_strip_1'): [
-            (build_placement_subgraph, mode, mosaic, targets['a'], filter,
-             TileIndices((0, 0)), viewbox),
-            (build_placement_subgraph, mode, mosaic, targets['b'], filter,
-             TileIndices((1, 0)), viewbox)
+        Node(merge_images, mode, mosaic, name='merge_mosaic_abc123_strip_1'): [
+            Node(build_placement_subgraph,
+                 mode,
+                 mosaic,
+                 targets['a'],
+                 filter,
+                 TileIndices((0, 0)),
+                 viewbox,
+                 priority=2),
+            Node(build_placement_subgraph,
+                 mode,
+                 mosaic,
+                 targets['b'],
+                 filter,
+                 TileIndices((1, 0)),
+                 viewbox,
+                 priority=2)
         ],
-        Node(merge_images, mode, name='merge_mosaic_abc123_strip_2'): [
-            Node(merge_images, mode, name='merge_mosaic_abc123_strip_1'),
-            (build_placement_subgraph, mode, mosaic, targets['c'], filter,
-             TileIndices((2, 0)), viewbox)
+        Node(merge_images, mode, mosaic, name='merge_mosaic_abc123_strip_2'): [
+            Node(merge_images, mode, mosaic,
+                 name='merge_mosaic_abc123_strip_1'),
+            Node(build_placement_subgraph,
+                 mode,
+                 mosaic,
+                 targets['c'],
+                 filter,
+                 TileIndices((2, 0)),
+                 viewbox,
+                 priority=2)
         ],
     })
     self.assertEqual(canonicalize_graph(graph),
@@ -125,31 +144,67 @@ class TestMergeGraph(unittest.TestCase):
     print_graph(graph)
 
     expected_graph = Graph({
-        Node(merge_images, mode, name='merge_mosaic_abc123_b'): [
-            (build_placement_subgraph, mode, mosaic, targets['a'], filter,
-             TileIndices((0, 0)), viewbox),
-            (build_placement_subgraph, mode, mosaic, targets['b'], filter,
-             TileIndices((0, 1)), viewbox)
+        Node(merge_images, mode, mosaic, name='merge_mosaic_abc123_b'): [
+            Node(build_placement_subgraph,
+                 mode,
+                 mosaic,
+                 targets['a'],
+                 filter,
+                 TileIndices((0, 0)),
+                 viewbox,
+                 priority=2),
+            Node(build_placement_subgraph,
+                 mode,
+                 mosaic,
+                 targets['b'],
+                 filter,
+                 TileIndices((0, 1)),
+                 viewbox,
+                 priority=2)
         ],
-        Node(merge_images, mode, name='merge_mosaic_abc123_c'): [
-            Node(merge_images, mode, name='merge_mosaic_abc123_b'),
-            (build_placement_subgraph, mode, mosaic, targets['c'], filter,
-             TileIndices((0, 2)), viewbox)
+        Node(merge_images, mode, mosaic, name='merge_mosaic_abc123_c'): [
+            Node(merge_images, mode, mosaic, name='merge_mosaic_abc123_b'),
+            Node(build_placement_subgraph,
+                 mode,
+                 mosaic,
+                 targets['c'],
+                 filter,
+                 TileIndices((0, 2)),
+                 viewbox,
+                 priority=2)
         ],
-        Node(merge_images, mode, name='merge_mosaic_abc123_e'): [
-            (build_placement_subgraph, mode, mosaic, targets['d'], filter,
-             TileIndices((1, 0)), viewbox),
-            (build_placement_subgraph, mode, mosaic, targets['e'], filter,
-             TileIndices((1, 1)), viewbox)
+        Node(merge_images, mode, mosaic, name='merge_mosaic_abc123_e'): [
+            Node(build_placement_subgraph,
+                 mode,
+                 mosaic,
+                 targets['d'],
+                 filter,
+                 TileIndices((1, 0)),
+                 viewbox,
+                 priority=2),
+            Node(build_placement_subgraph,
+                 mode,
+                 mosaic,
+                 targets['e'],
+                 filter,
+                 TileIndices((1, 1)),
+                 viewbox,
+                 priority=2)
         ],
-        Node(merge_images, mode, name='merge_mosaic_abc123_f'): [
-            Node(merge_images, mode, name='merge_mosaic_abc123_e'),
-            (build_placement_subgraph, mode, mosaic, targets['f'], filter,
-             TileIndices((1, 2)), viewbox)
+        Node(merge_images, mode, mosaic, name='merge_mosaic_abc123_f'): [
+            Node(merge_images, mode, mosaic, name='merge_mosaic_abc123_e'),
+            Node(build_placement_subgraph,
+                 mode,
+                 mosaic,
+                 targets['f'],
+                 filter,
+                 TileIndices((1, 2)),
+                 viewbox,
+                 priority=2)
         ],
-        Node(merge_images, mode, name='merge_mosaic_abc123_strip_1'): [
-            Node(merge_images, mode, name='merge_mosaic_abc123_c'),
-            Node(merge_images, mode, name='merge_mosaic_abc123_f')
+        Node(merge_images, mode, mosaic, name='merge_mosaic_abc123_strip_1'): [
+            Node(merge_images, mode, mosaic, name='merge_mosaic_abc123_c'),
+            Node(merge_images, mode, mosaic, name='merge_mosaic_abc123_f')
         ]
     })
     self.assertEqual(canonicalize_graph(graph),
@@ -182,16 +237,34 @@ class TestMergeGraph(unittest.TestCase):
         build_mosaic_filter_subgraph.remote(mode, mosaic, filter, viewbox))
 
     expected_graph = Graph({
-        Node(merge_images, mode, name='merge_mosaic_abc123_c'): [
-            (build_placement_subgraph, mode, mosaic, targets['b'], filter,
-             TileIndices((1, 0)), viewbox),
-            (build_placement_subgraph, mode, mosaic, targets['c'], filter,
-             TileIndices((1, 1)), viewbox)
+        Node(merge_images, mode, mosaic, name='merge_mosaic_abc123_c'): [
+            Node(build_placement_subgraph,
+                 mode,
+                 mosaic,
+                 targets['b'],
+                 filter,
+                 TileIndices((1, 0)),
+                 viewbox,
+                 priority=2),
+            Node(build_placement_subgraph,
+                 mode,
+                 mosaic,
+                 targets['c'],
+                 filter,
+                 TileIndices((1, 1)),
+                 viewbox,
+                 priority=2)
         ],
-        Node(merge_images, mode, name='merge_mosaic_abc123_strip_1'): [
-            (build_placement_subgraph, mode, mosaic, targets['a'], filter,
-             TileIndices((0, 0)), viewbox),
-            Node(merge_images, mode, name='merge_mosaic_abc123_c')
+        Node(merge_images, mode, mosaic, name='merge_mosaic_abc123_strip_1'): [
+            Node(build_placement_subgraph,
+                 mode,
+                 mosaic,
+                 targets['a'],
+                 filter,
+                 TileIndices((0, 0)),
+                 viewbox,
+                 priority=2),
+            Node(merge_images, mode, mosaic, name='merge_mosaic_abc123_c')
         ]
     })
 
@@ -222,30 +295,62 @@ class TestMergeGraph(unittest.TestCase):
 
     log, graph = ray.get(
         build_mosaic_filter_subgraph.remote(mode, mosaic, filter, viewbox))
+    print_graph(graph)
 
     expected_graph = Graph({
         Node(merge_images,
              mode,
+             mosaic,
              name=f'merge_{mosaic.stable_hash}_3871323c8756dead'): [
-            (build_placement_subgraph, mode, mosaic,
-             targets['e1f7d909ac125ebe'], filter, TileIndices((0, 0)), viewbox),
-            (build_placement_subgraph, mode, mosaic,
-             targets['3871323c8756dead'], filter, TileIndices((0, 1)), viewbox)
+            Node(build_placement_subgraph,
+                 mode,
+                 mosaic,
+                 targets['e1f7d909ac125ebe'],
+                 filter,
+                 TileIndices((0, 0)),
+                 viewbox,
+                 priority=2),
+            Node(build_placement_subgraph,
+                 mode,
+                 mosaic,
+                 targets['3871323c8756dead'],
+                 filter,
+                 TileIndices((0, 1)),
+                 viewbox,
+                 priority=2)
         ],
         Node(merge_images,
              mode,
+             mosaic,
              name=f'merge_{mosaic.stable_hash}_9ed89ccd9f10cc09'): [
-            (build_placement_subgraph, mode, mosaic,
-             targets['3ef21a508ef46b36'], filter, TileIndices((1, 0)), viewbox),
-            (build_placement_subgraph, mode, mosaic,
-             targets['9ed89ccd9f10cc09'], filter, TileIndices((1, 1)), viewbox)
+            Node(build_placement_subgraph,
+                 mode,
+                 mosaic,
+                 targets['3ef21a508ef46b36'],
+                 filter,
+                 TileIndices((1, 0)),
+                 viewbox,
+                 priority=2),
+            Node(build_placement_subgraph,
+                 mode,
+                 mosaic,
+                 targets['9ed89ccd9f10cc09'],
+                 filter,
+                 TileIndices((1, 1)),
+                 viewbox,
+                 priority=2)
         ],
-        Node(merge_images, mode, name=f'merge_{mosaic.stable_hash}_strip_1'): [
+        Node(merge_images,
+             mode,
+             mosaic,
+             name=f'merge_{mosaic.stable_hash}_strip_1'): [
             Node(merge_images,
                  mode,
+                 mosaic,
                  name=f'merge_{mosaic.stable_hash}_3871323c8756dead'),
             Node(merge_images,
                  mode,
+                 mosaic,
                  name=f'merge_{mosaic.stable_hash}_9ed89ccd9f10cc09')
         ]
     })
@@ -267,6 +372,7 @@ class TestMergeGraph(unittest.TestCase):
     self.assertEqual(len(targets), 2)
     self.assertEqual(len(context.mosaics), 1)
     mosaic = next(iter(context.mosaics.values()))
+    print('### mosaic', mosaic)
 
     self.assertEqual(mosaic.strips,
                      [['e1f7d909ac125ebe'], ['3ef21a508ef46b36']])
@@ -277,13 +383,29 @@ class TestMergeGraph(unittest.TestCase):
 
     log, graph = ray.get(
         build_mosaic_filter_subgraph.remote(mode, mosaic, filter, viewbox))
+    print_graph(graph)
 
     expected_graph = Graph({
-        Node(merge_images, mode, name=f'merge_{mosaic.stable_hash}_strip_1'): [
-            (build_placement_subgraph, mode, mosaic,
-             targets['e1f7d909ac125ebe'], filter, TileIndices((0, 0)), viewbox),
-            (build_placement_subgraph, mode, mosaic,
-             targets['3ef21a508ef46b36'], filter, TileIndices((1, 0)), viewbox),
+        Node(merge_images,
+             mode,
+             mosaic,
+             name=f'merge_{mosaic.stable_hash}_strip_1'): [
+            Node(build_placement_subgraph,
+                 mode,
+                 mosaic,
+                 targets['e1f7d909ac125ebe'],
+                 filter,
+                 TileIndices((0, 0)),
+                 viewbox,
+                 priority=2),
+            Node(build_placement_subgraph,
+                 mode,
+                 mosaic,
+                 targets['3ef21a508ef46b36'],
+                 filter,
+                 TileIndices((1, 0)),
+                 viewbox,
+                 priority=2),
         ]
     })
 
@@ -317,11 +439,24 @@ class TestMergeGraph(unittest.TestCase):
     expected_graph = Graph({
         Node(merge_images,
              mode,
+             mosaic,
              name=f'merge_{mosaic.stable_hash}_3871323c8756dead'): [
-            (build_placement_subgraph, mode, mosaic,
-             targets['e1f7d909ac125ebe'], filter, TileIndices((0, 0)), viewbox),
-            (build_placement_subgraph, mode, mosaic,
-             targets['3871323c8756dead'], filter, TileIndices((0, 1)), viewbox)
+            Node(build_placement_subgraph,
+                 mode,
+                 mosaic,
+                 targets['e1f7d909ac125ebe'],
+                 filter,
+                 TileIndices((0, 0)),
+                 viewbox,
+                 priority=2),
+            Node(build_placement_subgraph,
+                 mode,
+                 mosaic,
+                 targets['3871323c8756dead'],
+                 filter,
+                 TileIndices((0, 1)),
+                 viewbox,
+                 priority=2)
         ],
     })
 
@@ -357,17 +492,40 @@ class TestMergeGraph(unittest.TestCase):
     expected_graph = Graph({
         Node(merge_images,
              mode,
+             mosaic,
              name=f'merge_{mosaic.stable_hash}_3871323c8756dead'): [
-            (build_placement_subgraph, mode, mosaic,
-             targets['e1f7d909ac125ebe'], filter, TileIndices((1, 0)), viewbox),
-            (build_placement_subgraph, mode, mosaic,
-             targets['3871323c8756dead'], filter, TileIndices((1, 1)), viewbox)
+            Node(build_placement_subgraph,
+                 mode,
+                 mosaic,
+                 targets['e1f7d909ac125ebe'],
+                 filter,
+                 TileIndices((1, 0)),
+                 viewbox,
+                 priority=2),
+            Node(build_placement_subgraph,
+                 mode,
+                 mosaic,
+                 targets['3871323c8756dead'],
+                 filter,
+                 TileIndices((1, 1)),
+                 viewbox,
+                 priority=2)
         ],
-        Node(merge_images, mode, name=f'merge_{mosaic.stable_hash}_strip_1'): [
-            (build_placement_subgraph, mode, mosaic,
-             targets['3ef21a508ef46b36'], filter, TileIndices((0, 0)), viewbox),
+        Node(merge_images,
+             mode,
+             mosaic,
+             name=f'merge_{mosaic.stable_hash}_strip_1'): [
+            Node(build_placement_subgraph,
+                 mode,
+                 mosaic,
+                 targets['3ef21a508ef46b36'],
+                 filter,
+                 TileIndices((0, 0)),
+                 viewbox,
+                 priority=2),
             Node(merge_images,
                  mode,
+                 mosaic,
                  name=f'merge_{mosaic.stable_hash}_3871323c8756dead')
         ]
     })
