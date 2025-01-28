@@ -98,6 +98,8 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
     if not contents:
       return None
 
+    content_hash = hash_list(sorted(contents.keys()))
+
     imaging_attributes = ImagingAttributes.from_frames(frames, metadata)
     astrometric_attributes = AstrometricAttributes(
         target=name,
@@ -121,7 +123,7 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
         str,
         Any] = asdict(imaging_attributes) | asdict(astrometric_attributes) | {
             'contents': contents,
-            'content_hash': hash_list(list(contents.keys())),
+            'content_hash': content_hash,
             'stable_hash': stable_hash,
             'state': {},
         }

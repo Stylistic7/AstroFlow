@@ -28,8 +28,10 @@ class SimpleStack(ImagingAttributes, AstroFlowStateAttributes):
     frame_metadata = {h: i for h, i in metadata.items() if h in frames}
     assert frame_metadata
 
+    content_hash = hash_list(sorted(frames))
+
     attributes: dict[str, Any] = asdict(imaging_attributes) | {
-        'content_hash': hash_list(frames),
+        'content_hash': content_hash,
         'frames': frames,
         'metadata': frame_metadata,
         'dependencies': DependenciesDict(),
@@ -47,7 +49,7 @@ class SimpleStack(ImagingAttributes, AstroFlowStateAttributes):
             f'Filter {self.filter}, '
             f'Temp {self.mean_temperature:.02f} degC)')
 
-  def __hash__(self):
+  def __hash__(self) -> int:
     return hash_list_int([self.content_hash])
 
   def __eq__(self, other: object) -> bool:

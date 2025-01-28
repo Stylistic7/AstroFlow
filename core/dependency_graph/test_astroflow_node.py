@@ -81,7 +81,7 @@ def place_image(image: np.ndarray, viewbox: Viewbox) -> Path:
   projected_image[0:width, 0:height] = image
 
   hdu = pyfits.PrimaryHDU(projected_image)
-  filename = Path(context.output_dir) / "foo.fit"
+  filename = Path(context.output_dir) / "foo.fits"
   filename.parent.mkdir(parents=True, exist_ok=True)
   hdu.writeto(filename, overwrite=True)
   print(f'### Wrote filename {filename}')
@@ -240,11 +240,8 @@ class TestAstroFlowNode(unittest.TestCase):
     stacks = context.stacks
     self.assertEqual(len(stacks), 1)
     stack = next(iter(stacks.values()))
-
-    # TODO: This uses the Stack's __str__() function, which includes the content
-    # hash... but maybe it would be cleaner to just use the content hash
-    # directly?
-    self.assertEqual(hash_list([stack]), '165d7b1838f75d76')
+    self.assertEqual(stack.content_hash, 'abe2b7c2b0774fd4')
+    self.assertEqual(hash(stack), 8574396508814116701)
 
     context.associate_calibration_runs = 0
     graph = Graph({(associate_calibration, stack): {}})
@@ -252,7 +249,7 @@ class TestAstroFlowNode(unittest.TestCase):
     # The `associate_calibration` node should run the first time.
     results, _ = run_graph(graph, debug=True)
     self.assertTrue(
-        context.contains(('associate_calibration', '16f4bf397edafc07')))
+        context.contains(('associate_calibration', 'db2274bda5acc1cf')))
     self.assertEqual(results.num_nodes_run, 1)
     self.assertEqual(context.associate_calibration_runs, 1)
 
@@ -261,7 +258,7 @@ class TestAstroFlowNode(unittest.TestCase):
     # run the underlying wrapped function.
     results, _ = run_graph(graph, debug=True)
     self.assertTrue(
-        context.contains(('associate_calibration', '16f4bf397edafc07')))
+        context.contains(('associate_calibration', 'db2274bda5acc1cf')))
     self.assertEqual(results.num_nodes_run, 1)
     self.assertEqual(context.associate_calibration_runs, 1)
 

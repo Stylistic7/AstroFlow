@@ -51,4 +51,4 @@ class TestHashing(unittest.TestCase):
     # The Python hash of a SimpleStacksDict goes through `hash_dict_int()`,
     # and should be stable across Python sessions.
     self.assertTrue(isinstance(context.calibration_stacks, SimpleStacksDict))
-    self.assertEqual(hash(context.calibration_stacks), 8491763175273508945)
+    self.assertEqual(hash(context.calibration_stacks), 3869814240498371864)

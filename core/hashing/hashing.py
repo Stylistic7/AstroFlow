@@ -9,12 +9,21 @@ def hash_string(x: Any) -> str:
   return xxhash.xxh64(x).hexdigest()
 
 
-def hash_list(x: Any) -> str:
-  return xxhash.xxh64(str(list(x))).hexdigest()
+def _maybe_use_content_hash(x):
+  if hasattr(x, 'content_hash'):
+    return x.content_hash
+  else:
+    return make_hashable(x)
 
 
-def hash_list_int(x: Any) -> int:
-  return xxhash.xxh64(str(list(x))).intdigest()
+def hash_list(L: Any) -> str:
+  L = [_maybe_use_content_hash(x) for x in L]
+  return xxhash.xxh64(str(L)).hexdigest()
+
+
+def hash_list_int(L: Any) -> int:
+  L = [_maybe_use_content_hash(x) for x in L]
+  return xxhash.xxh64(str(L)).intdigest()
 
 
 def hash_dict_int(x: dict) -> int:
