@@ -94,9 +94,12 @@ def _trim_image(projected_image):
 
 # TODO: Differentiate the runtime of this function in subframe and master
 # modes.
-@AstroFlowNode(memory=_PLACE_IMAGE_MEMORY_REQUIREMENT, debug=True)
+@AstroFlowNode(memory=_PLACE_IMAGE_MEMORY_REQUIREMENT,
+               cache_result=True,
+               debug=True)
 def place_image(mode: QualityLevel, mosaic: Mosaic, tile_indices: TileIndices,
-                viewbox: Viewbox, filename: Path) -> np.ndarray | Path:
+                filter: str, viewbox: Viewbox,
+                filename: Path) -> np.ndarray | Path:
   # TODO: The subframes need to be calibrated before being placed.
   print(f'### place_image: filename {filename}')
   image = read_image(filename)
@@ -156,7 +159,8 @@ def place_image(mode: QualityLevel, mosaic: Mosaic, tile_indices: TileIndices,
 
   tile_indices_str = '_'.join(str(i) for i in tile_indices)
   filename = Path(context.output_dir) / 'Mosaics' / mosaic.name / Path(
-      f'placed_image_{mode}_{mosaic.stable_hash}_{tile_indices_str}.fits')
+      f'placed_image_{mode}_{mosaic.stable_hash}_{tile_indices_str}_{filter}.fits'
+  )
   hdu = pyfits.PrimaryHDU(projected_image)
   filename.parent.mkdir(parents=True, exist_ok=True)
   hdu.writeto(str(filename), overwrite=True)

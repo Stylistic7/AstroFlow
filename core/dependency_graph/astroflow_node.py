@@ -83,7 +83,7 @@ def AstroFlowNode(resources=None,
           with pyfits.open(str(result), mode='update', mmap=False) as fits:
             fits[0].header['CONTHASH'] = content_hash
           if debug:
-            print(f'### Node {fn.__name__}: uupdated FITS filename {result} '
+            print(f'### Node {fn.__name__}: updated FITS filename {result} '
                   f'with content hash {content_hash}')
 
         return FileArtifact(result, content_hash)

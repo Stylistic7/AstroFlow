@@ -59,7 +59,7 @@ def merge_images_with_maximum(image_0: np.ndarray,
 
 # TODO: Make sure that every Ray task that calls a @PixInsight function also
 # consumes a PixInsight resource.
-@AstroFlowNode(unpack_artifacts=False)
+@AstroFlowNode(cache_result=True)
 def merge_images(mode: QualityLevel, mosaic: Mosaic, input_0: Path,
                  input_1: Path) -> Path:
   print(f'### merge images {input_0} {input_1}')

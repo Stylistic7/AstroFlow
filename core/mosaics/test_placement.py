@@ -43,14 +43,14 @@ class TestPlacement(unittest.TestCase):
     self.assertTrue(isinstance(viewbox, Viewbox))
 
     log, result = ray.get(
-        place_image.remote(QualityLevel.SUBFRAME, mosaic, tile_indices, viewbox,
-                           filename))
+        place_image.remote(QualityLevel.SUBFRAME, mosaic, tile_indices, filter,
+                           viewbox, filename))
     print('### result', result)
     self.assertTrue(isinstance(unpack_artifact(result), np.ndarray))
 
     log, result = ray.get(
-        place_image.remote(QualityLevel.MASTER, mosaic, tile_indices, viewbox,
-                           filename))
+        place_image.remote(QualityLevel.MASTER, mosaic, tile_indices, filter,
+                           viewbox, filename))
     self.assertTrue(isinstance(unpack_artifact(result), Path))
 
 

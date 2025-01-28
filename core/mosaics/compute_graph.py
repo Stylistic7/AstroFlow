@@ -107,6 +107,7 @@ def build_placement_subgraph(mode: QualityLevel, mosaic: Mosaic, target: Target,
                                       mode,
                                       mosaic,
                                       tile_indices,
+                                      filter,
                                       viewbox,
                                       priority=3)])
 
