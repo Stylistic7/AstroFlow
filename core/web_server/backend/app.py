@@ -28,7 +28,7 @@ from astroflow import populate_context
 from compute_graph import build_compute_graph
 from dependency_graph import run_graph, graph_status_to_progress
 from dependency_graph.debugging import node_to_string
-from previews import QualityLevel
+from previews import QualityLevel, autostretch, array_to_png
 
 import plotly.express as px
 import plotly.figure_factory as ff
@@ -299,29 +299,18 @@ def stack_subframe_thumbnail_video(stack_id):
 # TODO: Thumbnails should always be stored as autostretched PNG, for speed.
 @app.route('/mosaic_thumbnail_image_for_filter/<mosaic_id>/<filter>')
 def mosaic_thumbnail_image_for_filter(mosaic_id, filter):
-  # mosaic = context.mosaics[mosaic_id]
-  # print('### mosaic', mosaic)
+  master_key = ('mosaic_thumbnail_image', QualityLevel.MASTER, mosaic_id,
+                filter)
+  subframe_key = ('mosaic_thumbnail_image', QualityLevel.SUBFRAME, mosaic_id,
+                  filter)
 
-  # _, master_artifact = merge_graph_done_artifacts(QualityLevel.MASTER,
-  #                                                 mosaic_id, filter)
-  # subframe_artifact, = merge_graph_done_artifacts(QualityLevel.SUBFRAME,
-  #                                                 mosaic_id, filter)
-
-  # for artifact in [master_artifact, subframe_artifact]:
-  #   if not artifact_exists(artifact):
-  #     print('### artifact', artifact, 'did not exist')
-  #     continue
-
-  #   print('### sending artifact', artifact)
-  #   image = read_artifact_image(artifact)
-  #   image = np.nan_to_num(image)
-  #   print('### image shape', image.shape, 'dtype', image.dtype, 'min',
-  #         np.min(image), 'max', np.max(image))
-
-  #   buffer = io.BytesIO()
-  #   buffer.write(array_to_png(autostretch(image)))
-  #   buffer.seek(0)
-  #   return flask.send_file(buffer, mimetype='image/png')
+  for key in [master_key, subframe_key]:
+    if context.contains(key):
+      image = context[key]
+      buffer = io.BytesIO()
+      buffer.write(array_to_png(autostretch(image)))
+      buffer.seek(0)
+      return flask.send_file(buffer, mimetype='image/png')
 
   return Response(status=404)
 
@@ -566,8 +555,8 @@ def run_compute_graph():
   context.output_dir = '/Volumes/Astro/Processed'
 
   # TODO: Determine `regroup` automatically.
-  graph = build_compute_graph(regroup=True,
-                              make_previews=False,
+  graph = build_compute_graph(regroup=False,
+                              make_previews=True,
                               run_main_processing_graph=True)
 
   def _run_graph(*args, **kwargs):
