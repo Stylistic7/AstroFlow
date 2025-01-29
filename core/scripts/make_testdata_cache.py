@@ -82,7 +82,7 @@ if __name__ == '__main__':
 
   copy_all_mosaic_data(cache, testdata_cache, 'b1c2c11588a866ac')
   copy_all_stack_data(cache, testdata_cache, '2c71f4db63b27773')
-  copy_image(cache, testdata_cache, '187b447aad352e0f',
+  copy_image(cache, testdata_cache, '6a941ee93e7f3f5f',
              'testdata/Stacks/IC1318/masters')
   copy_image(cache, testdata_cache, '7b418a55a19518f2',
              'testdata/Stacks/IC1318/masters')

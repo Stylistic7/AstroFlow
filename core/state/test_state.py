@@ -21,6 +21,10 @@ class TestState(unittest.TestCase):
   def setUp(self):
     self.input_dir_obj, self.output_dir_obj = make_test_context()
 
+  def tearDown(self) -> None:
+    self.input_dir_obj.cleanup()
+    self.output_dir_obj.cleanup()
+
   def test_shopping_cart(self):
     state = dispatch(dict(type='add_to_shopping_cart', item=('stack', 'foo')))
     self.assertEqual(len(context.shopping_cart), 1)

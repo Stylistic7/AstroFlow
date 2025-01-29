@@ -2,7 +2,7 @@ import ray
 
 from context import context
 import units
-from mosaics.mosaic import Mosaic
+from mosaics.types import Mosaic
 
 
 def find_missing_tiles(mosaic: Mosaic) -> None:

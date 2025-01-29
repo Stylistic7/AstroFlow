@@ -9,7 +9,7 @@ from pathlib import Path
 from testing import make_test_context, copy_testdata_into_cache
 
 from artifacts.artifact import unpack_artifact
-from mosaics.placement import place_image
+from mosaics.placement import place_small_image, place_large_image
 from previews.types import QualityLevel
 from metadata.image_metadata import load_metadata
 from mosaics.viewbox import compute_mosaic_viewbox, Viewbox
@@ -43,14 +43,14 @@ class TestPlacement(unittest.TestCase):
     self.assertTrue(isinstance(viewbox, Viewbox))
 
     log, result = ray.get(
-        place_image.remote(QualityLevel.SUBFRAME, mosaic, tile_indices, filter,
-                           viewbox, filename))
+        place_small_image.remote(QualityLevel.SUBFRAME, mosaic, tile_indices,
+                                 filter, viewbox, filename))
     print('### result', result)
     self.assertTrue(isinstance(unpack_artifact(result), np.ndarray))
 
     log, result = ray.get(
-        place_image.remote(QualityLevel.MASTER, mosaic, tile_indices, filter,
-                           viewbox, filename))
+        place_large_image.remote(QualityLevel.MASTER, mosaic, tile_indices,
+                                 filter, viewbox, filename))
     self.assertTrue(isinstance(unpack_artifact(result), Path))
 
 
