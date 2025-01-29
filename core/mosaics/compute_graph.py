@@ -7,7 +7,7 @@ from dependency_graph import Graph, Node, make_graph_from_list
 from mosaics.merge_images import merge_images
 from mosaics.types import Mosaic, Viewbox
 from mosaics.viewbox import compute_mosaic_viewbox
-from mosaics.placement import place_image
+from mosaics.placement import place_small_image, place_large_image
 from mosaics.types import TileIndices
 from stacks.compute_graph import get_stack_image
 from previews import QualityLevel
@@ -97,13 +97,14 @@ def _get_stack_for_filter(target: Target, filter: str):
   return stacks[stack_id]
 
 
-@AstroFlowNode()
+@AstroFlowNode(num_cpus=0.5)
 def build_placement_subgraph(mode: QualityLevel, mosaic: Mosaic, target: Target,
                              filter: str, tile_indices: TileIndices,
                              viewbox: Viewbox):
+  place_image_fn = place_large_image if mode == QualityLevel.MASTER else place_small_image
   if stack := _get_stack_for_filter(target, filter):
     return make_graph_from_list([(get_stack_image, mode, stack),
-                                 Node(place_image,
+                                 Node(place_image_fn,
                                       mode,
                                       mosaic,
                                       tile_indices,
@@ -112,7 +113,7 @@ def build_placement_subgraph(mode: QualityLevel, mosaic: Mosaic, target: Target,
                                       priority=3)])
 
 
-@AstroFlowNode()
+@AstroFlowNode(num_cpus=0.5)
 def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
                                  filter: str, viewbox: Viewbox) -> Graph:
   targets = context.targets

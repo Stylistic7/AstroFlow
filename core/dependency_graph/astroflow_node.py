@@ -28,6 +28,7 @@ class WrongContentHashException(Exception):
 
 # TODO: Hide logs behind debug flag.
 def AstroFlowNode(resources=None,
+                  num_cpus=1,
                   memory=None,
                   update_header=True,
                   unpack_artifacts=True,
@@ -118,6 +119,7 @@ def AstroFlowNode(resources=None,
     # this single decorator.
     @ray.remote(scheduling_strategy="SPREAD",
                 resources=resources,
+                num_cpus=num_cpus,
                 memory=memory)
     @capture_logs
     @track_performance

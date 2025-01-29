@@ -92,37 +92,35 @@ def _trim_image(projected_image):
   return trimmed_image
 
 
-# TODO: Differentiate the runtime of this function in subframe and master
-# modes.
-@AstroFlowNode(memory=_PLACE_IMAGE_MEMORY_REQUIREMENT,
-               cache_result=True,
-               debug=True)
-def place_image(mode: QualityLevel, mosaic: Mosaic, tile_indices: TileIndices,
-                filter: str, viewbox: Viewbox,
-                filename: Path) -> np.ndarray | Path:
+def _get_wcs(filename: Path):
   # TODO: The subframes need to be calibrated before being placed.
-  print(f'### place_image: filename {filename}')
-  image = read_image(filename)
   content_hash = get_content_hash(filename)
   plate_solution = context.metadata[content_hash].plate_solution
+  return WCS(plate_solution.header)
+
+
+def _make_interpolator(filename: Path):
+  # TODO: The subframes need to be calibrated before being placed.
+  image = read_image(filename)
 
   print(f'### place_image: image shape {image.shape} dtype {image.dtype} '
         f'min {np.min(image)} max {np.max(image)}')
 
-  wcs = WCS(plate_solution.header)
-
   # TODO: This seems to take up a huge amount of memory with method 'cubic.'
   # Maybe tiling would reduce the intermediate memory usage.
   source_height, source_width = image.shape
-  interp = RegularGridInterpolator((range(source_height), range(source_width)),
-                                   image,
-                                   method='linear',
-                                   bounds_error=False,
-                                   fill_value=0)
-  del image
+  return RegularGridInterpolator((range(source_height), range(source_width)),
+                                 image,
+                                 method='linear',
+                                 bounds_error=False,
+                                 fill_value=0)
 
-  multiple = 4
 
+def _project_in_tiles(mode: QualityLevel,
+                      viewbox: Viewbox,
+                      interp: RegularGridInterpolator,
+                      wcs: WCS,
+                      multiple=4):
   ras, decs = _compute_ras_decs(mode, viewbox, multiple)
   projected_image = np.zeros_like(ras)
 
@@ -150,13 +148,12 @@ def place_image(mode: QualityLevel, mosaic: Mosaic, tile_indices: TileIndices,
     projected_image_tiles[tile_y, tile_x, :, :] = value
     del value
 
-  print(f'### projected_image shape {projected_image.shape}')
-  print(
-      f'### projected_image count nonzero {np.count_nonzero(projected_image)}')
+  return projected_image
 
-  # TODO: Don't keep two copies of the huge image
-  # projected_image = _trim_image(projected_image)
 
+def _save_image_to_file(mode: QualityLevel, mosaic: Mosaic,
+                        tile_indices: TileIndices, filter: str,
+                        projected_image: np.ndarray) -> Path:
   tile_indices_str = '_'.join(str(i) for i in tile_indices)
   filename = Path(context.output_dir) / 'Mosaics' / mosaic.name / Path(
       f'placed_image_{mode}_{mosaic.stable_hash}_{tile_indices_str}_{filter}.fits'
@@ -166,3 +163,34 @@ def place_image(mode: QualityLevel, mosaic: Mosaic, tile_indices: TileIndices,
   hdu.writeto(str(filename), overwrite=True)
   print(f'### Wrote filename {filename}')
   return filename
+
+
+@AstroFlowNode(cache_result=True, memory=_PLACE_IMAGE_MEMORY_REQUIREMENT)
+def place_large_image(mode: QualityLevel, mosaic: Mosaic,
+                      tile_indices: TileIndices, filter: str, viewbox: Viewbox,
+                      filename: Path) -> Path:
+  wcs = _get_wcs(filename)
+  interp = _make_interpolator(filename)
+
+  projected_image = _project_in_tiles(mode, viewbox, interp, wcs)
+
+  # TODO: Don't keep two copies of the huge image
+  # projected_image = _trim_image(projected_image)
+
+  return _save_image_to_file(mode, mosaic, tile_indices, filter,
+                             projected_image)
+
+
+@AstroFlowNode(cache_result=True, debug=True)
+def place_small_image(mode: QualityLevel, mosaic: Mosaic,
+                      tile_indices: TileIndices, filter: str, viewbox: Viewbox,
+                      filename: Path) -> Path:
+  wcs = _get_wcs(filename)
+  interp = _make_interpolator(filename)
+
+  ras, decs = _compute_ras_decs(mode, viewbox, multiple=1)
+  source_xs, source_ys = wcs.all_world2pix(ras, decs, 1, quiet=True)
+  projected_image = interp((source_ys, source_xs))
+
+  return _save_image_to_file(mode, mosaic, tile_indices, filter,
+                             projected_image)
