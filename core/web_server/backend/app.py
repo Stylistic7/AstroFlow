@@ -19,6 +19,7 @@ import operator
 from spherical_geometry.polygon import SingleSphericalPolygon
 import threading
 import json
+from pathlib import Path
 
 from .message_announcer import MessageAnnouncer
 from context import context
@@ -29,6 +30,8 @@ from compute_graph import build_compute_graph
 from dependency_graph import run_graph, graph_status_to_progress
 from dependency_graph.debugging import node_to_string
 from previews import QualityLevel, autostretch, array_to_png
+
+from file_io.generic import read_image
 
 import plotly.express as px
 import plotly.figure_factory as ff
@@ -307,6 +310,8 @@ def mosaic_thumbnail_image_for_filter(mosaic_id, filter):
   for key in [master_key, subframe_key]:
     if context.contains(key):
       image = context[key]
+      if isinstance(image, Path):
+        image = read_image(image)
       buffer = io.BytesIO()
       buffer.write(array_to_png(autostretch(image)))
       buffer.seek(0)
@@ -471,7 +476,7 @@ def recent():
 # TODO: Loading stuff from the cache on every endpoint call is very slow.
 @app.route('/flats_for_camera_and_filter/<camera>/<filter>')
 def flats_for_camera_and_filter(camera, filter):
-  stacks = cache['stacks']
+  stacks = cache['calibration_stacks']
   return [
       k for k, s in stacks.items()
       if s.image_type == 'flat' and s.camera == camera and s.filter == filter
