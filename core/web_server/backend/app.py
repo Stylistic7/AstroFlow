@@ -14,12 +14,11 @@ from dataclasses import asdict
 from base64 import b64encode
 import datetime
 # import ray
-from queue import Queue
 import operator
 from spherical_geometry.polygon import SingleSphericalPolygon
 import threading
-import json
 from pathlib import Path
+from dataclasses import replace
 
 from .message_announcer import MessageAnnouncer
 from context import context
@@ -31,6 +30,7 @@ from dependency_graph import run_graph, graph_status_to_progress
 from dependency_graph.debugging import node_to_string
 from previews import QualityLevel, autostretch, array_to_png
 
+from stacks.composite_stack import CompositeStack
 from file_io.generic import read_image
 
 import plotly.express as px
@@ -164,6 +164,8 @@ def _make_json_serializable(D):
       output[k] = v.tolist()
     elif type(v) is SingleSphericalPolygon:
       output[k] = v.points.tolist()
+    elif type(v) is None:
+      continue
     else:
       output[k] = v
 
@@ -185,7 +187,17 @@ def targets():
 @app.route('/stacks')
 def stacks():
   stacks = test_app.stacks if debug else cache.get('stacks', {})
-  return {k: _make_json_serializable(v) for k, v in stacks.items()}
+
+  def remove_metadata(stack: CompositeStack):
+    return replace(
+        stack,
+        contents={
+            h: replace(s, metadata=None) for h, s in stack.contents.items()
+        })
+
+  stacks = {h: remove_metadata(s) for h, s in stacks.items()}
+
+  return {k: _make_json_serializable(s) for k, s in stacks.items()}
 
 
 @app.route('/send_datetime')
@@ -257,10 +269,11 @@ def tuple_starts_with(t, *values):
   return True
 
 
+# TODO: Decide which thumbnail format to use, and just use one.
 @app.route('/stack_thumbnail_image/<stack_id>')
 def stack_thumbnail_image(stack_id):
   for key in [('stack_master_thumbnail_image', stack_id),
-              ('stack_subframe_thumbnail_image', stack_id)]:
+              ('stack_subframe_thumbnail_image_png', stack_id)]:
     if key in cache:
       buffer = io.BytesIO()
       buffer.write(cache[key])
@@ -562,7 +575,7 @@ def run_compute_graph():
   # TODO: Determine `regroup` automatically.
   graph = build_compute_graph(regroup=False,
                               make_previews=True,
-                              run_main_processing_graph=True)
+                              run_main_processing_graph=False)
 
   def _run_graph(*args, **kwargs):
     # TODO: Perhaps the results and logs should be saved incrementally,
