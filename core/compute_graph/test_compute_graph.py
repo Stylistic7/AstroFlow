@@ -120,8 +120,8 @@ class TestComputeGraph(unittest.TestCase):
         "group_stacks_into_targets", "store_targets", "identify_mosaics",
         "store_mosaics", "identify_calibration_stacks",
         "quarantine_calibration_stacks", "store_calibration_stacks",
-        "build_customize_graph", "scatter_customize_stacks",
-        "scatter_customize_mosaics", "scatter_customize_targets",
+        "build_customize_graph", "scatter_customize_mosaics",
+        "scatter_customize_targets", "scatter_customize_stacks",
         "customize_stack", "gather_customize_stacks", "customization_done"
     ]
 
@@ -169,8 +169,8 @@ class TestComputeGraph(unittest.TestCase):
         "store_targets", "identify_mosaics", "store_mosaics",
         "identify_calibration_stacks", "quarantine_calibration_stacks",
         "store_calibration_stacks", "build_customize_graph",
-        "scatter_customize_stacks", "scatter_customize_mosaics",
-        "scatter_customize_targets", "customize_stack",
+        "scatter_customize_mosaics", "scatter_customize_targets",
+        "scatter_customize_stacks", "customize_stack",
         "gather_customize_stacks", "customization_done"
     ]
 
@@ -198,8 +198,8 @@ class TestComputeGraph(unittest.TestCase):
         "scatter_compute_image_metadata", "load_metadata",
         "identify_calibration_stacks", "quarantine_calibration_stacks",
         "store_calibration_stacks", "build_customize_graph",
-        "scatter_customize_stacks", "scatter_customize_targets",
-        "scatter_customize_mosaics", "customize_stack",
+        "scatter_customize_mosaics", "scatter_customize_stacks",
+        "scatter_customize_targets", "customize_stack",
         "gather_customize_stacks", "customization_done", "build_preview_graph",
         "scatter_stack_thumbnails", "create_flat_correction_thumbnails",
         "create_stack_subframe_thumbnails", "gather_stack_thumbnails",

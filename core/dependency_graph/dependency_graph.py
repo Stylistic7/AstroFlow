@@ -128,11 +128,18 @@ def run_graph(graph: Graph,
           ts.done_callback()
           ts.done_callback = None
 
+  # TODO: Consider embellishing this to force graphs like foo: [bar, baz] to
+  # actually run bar, and then baz. At present, the ordering is not honored,
+  # but the sort below at least makes the order deterministic.
   def get_ready_nodes() -> list[tuple[TopologicalSorterWithStatus, Node]]:
     active = [ts for ts in subgraphs if ts.is_active()]
-    return [(ts, n)
-            for ts in active
-            for n in sorted(ts.get_ready(), key=lambda n: n.priority)]
+    return [
+        (ts, n)
+        for ts in active
+        for n in sorted(ts.get_ready(),
+                        key=lambda n: (n.priority, n.task._function.__module__,
+                                       n.task._function.__name__))
+    ]
 
   def get_status() -> GraphStatus:
     return reduce(or_, [ts.get_status() for ts in subgraphs], GraphStatus())
