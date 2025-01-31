@@ -21,6 +21,7 @@ from stacks.validation import validate_stacks
 from dependency_graph.astroflow_node import AstroFlowNode
 from customization.compute_graph import build_customize_graph
 from mosaics.types import MosaicsDict
+from quarantining.quarantining import quarantine_calibration_stacks
 
 
 @AstroFlowNode(cache_result=False)
@@ -187,6 +188,7 @@ def build_compute_graph(regroup: bool = False,
 
   # TODO: Don't do this unless there are new calibration frames.
   task_list.append(identify_calibration_stacks)
+  task_list.append(quarantine_calibration_stacks)
   task_list.append(store_calibration_stacks)
 
   task_list.append(build_customize_graph)

@@ -3,7 +3,7 @@ from dependency_graph.astroflow_node import AstroFlowNode
 
 
 @AstroFlowNode()
-def validate_stacks(stacks: CompositeStacksDict) -> None:
+def validate_stacks(stacks: CompositeStacksDict) -> CompositeStacksDict:
   print(f'#### validate_stacks validating {len(stacks)} stacks')
   for stack_id, stack in stacks.items():
     assert stack.contents, (f'### Stack {stack} has bad '

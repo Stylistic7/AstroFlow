@@ -8,6 +8,7 @@ from dependency_graph.astroflow_node import AstroFlowNode
 from customization.subframe_selection import select_subframes
 from customization.settings import Settings, StackSettings
 from customization.types import CustomizedStack
+from quarantining.quarantining import apply_quarantine
 
 
 def apply_settings(stack: CompositeStack) -> CompositeStack:
@@ -30,19 +31,24 @@ def gather_customize_stacks(*stacks) -> None:
 
 @AstroFlowNode()
 def scatter_customize_stacks() -> Graph:
+  quarantined_stacks = context.quarantined_stacks or []
+
   tasks = []
-  for stack in context.grouped_stacks.values():
-    tasks.append((customize_stack, stack))
+  for stack_id, stack in context.grouped_stacks.items():
+    if stack_id not in quarantined_stacks:
+      tasks.append((customize_stack, stack))
 
   return Graph({gather_customize_stacks: tasks})
 
 
 # TODO: Add tests in test_customization.py
 # TODO: Pass in the StackSettings and cache this.
+# TODO: Pass in the quarantined_stacks and cache this.
 @AstroFlowNode()
 def customize_stack(stack: CompositeStack) -> CustomizedStack:
   stack = associate_with_stack(stack)
   stack = select_subframes(stack)
+  stack = apply_quarantine(stack)
   stack = apply_settings(stack)
 
   return CustomizedStack(**stack.__dict__)
@@ -51,13 +57,23 @@ def customize_stack(stack: CompositeStack) -> CustomizedStack:
 @AstroFlowNode()
 def scatter_customize_targets() -> None:
   # TODO: Implement real customization features.
-  context.targets = context.grouped_targets
+  quarantined_targets = context.quarantined_targets or []
+  context.targets = {
+      id: t
+      for id, t in context.grouped_targets.items()
+      if id not in quarantined_targets
+  }
 
 
 @AstroFlowNode()
 def scatter_customize_mosaics(*mosaics) -> None:
   # TODO: Implement real customization features.
-  context.mosaics = context.grouped_mosaics
+  quarantined_mosaics = context.quarantined_mosaics or []
+  context.mosaics = {
+      id: t
+      for id, t in context.grouped_mosaics.items()
+      if id not in quarantined_mosaics
+  }
 
 
 @AstroFlowNode()

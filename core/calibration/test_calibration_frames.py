@@ -2,7 +2,6 @@ from ray_infra import ray_local
 
 import datetime
 import unittest
-import datetime
 
 from compute_graph import build_compute_graph
 from testing import make_test_context, make_synthetic_frames, copy_testdata_frames
