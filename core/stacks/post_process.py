@@ -1,5 +1,6 @@
 from pathlib import Path
 import shutil
+import os
 
 from context import context
 from pix.decorators import PixInsight
@@ -21,7 +22,7 @@ def _post_process_stack(images: ImageList) -> ImageList:
 def post_process_stack(master: Path) -> Path:
   print(f'### post_process_stack, master {master}')
 
-  if context.mock_pixinsight:
+  if os.environ.get('MOCK_PIXINSIGHT'):
     output_filename = master
   else:
     results = _post_process_stack([master])

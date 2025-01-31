@@ -91,7 +91,7 @@ def merge_images(mode: QualityLevel, mosaic: Mosaic, input_0: Path,
     return output_filename
 
   elif mode == 'master':
-    if context.mock_pixinsight:
+    if os.environ.get('MOCK_PIXINSIGHT'):
       return input_0
     else:
       _, result = ray.get(

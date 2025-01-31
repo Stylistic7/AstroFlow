@@ -2,6 +2,7 @@ from ray_infra import ray_local
 
 import tempfile
 import datetime
+import os
 
 from context import context
 
@@ -27,7 +28,5 @@ def make_test_context(
   context.master_thumbnail_width = 2160
   context.subframe_mosaic_samples = 500
   context.master_mosaic_samples = 500
-
-  context.mock_pixinsight = True
 
   return input_dir_obj, output_dir_obj

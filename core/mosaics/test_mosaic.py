@@ -19,8 +19,6 @@ class TestMosaic(unittest.TestCase):
   def setUp(self) -> None:
     # Start with an empty context.
     self.input_dir_obj, self.output_dir_obj = make_test_context()
-
-    context.mock_pixinsight = True
     context.master_mosaic_samples = 1000
 
   def tearDown(self) -> None:

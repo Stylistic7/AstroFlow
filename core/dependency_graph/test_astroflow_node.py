@@ -71,7 +71,7 @@ def consume_small_image(image) -> Any:
   return image.shape
 
 
-@AstroFlowNode(cache_result=True)
+@AstroFlowNode(cache_result=True, debug=True)
 def place_image(image: np.ndarray, viewbox: Viewbox) -> Path:
   # context.place_image_runs = (context.place_image_runs or 0) + 1
   context.and_equals('place_image_runs', 1, default_value=0)
