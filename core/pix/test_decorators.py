@@ -124,6 +124,9 @@ def channel_combination(images: ImageList) -> ImageList:
 class TestDecorators(unittest.TestCase):
 
   def test_bxt_only(self):
+    if os.environ.get('MOCK_PIXINSIGHT'):
+      return
+
     temp_dir = tempfile.TemporaryDirectory()
     filenames = copy_testdata_frames('IC4701', temp_dir.name, number=1)
 
@@ -134,6 +137,9 @@ class TestDecorators(unittest.TestCase):
     self.assertCountEqual(filenames, ['blurx.xisf'])
 
   def test_bxt_and_sxt(self):
+    if os.environ.get('MOCK_PIXINSIGHT'):
+      return
+
     temp_dir = tempfile.TemporaryDirectory()
     filenames = copy_testdata_frames('IC4701', temp_dir.name, number=1)
 
@@ -144,6 +150,9 @@ class TestDecorators(unittest.TestCase):
     self.assertCountEqual(filenames, ['stars.xisf', 'starless.xisf'])
 
   def test_bxt_align_sxt(self):
+    if os.environ.get('MOCK_PIXINSIGHT'):
+      return
+
     temp_dir = tempfile.TemporaryDirectory()
     filenames = copy_testdata_frames('IC4701', temp_dir.name, number=3)
 
@@ -154,6 +163,9 @@ class TestDecorators(unittest.TestCase):
     self.assertCountEqual(filenames, ['stars.xisf', 'starless.xisf'])
 
   def test_channel_combination(self):
+    if os.environ.get('MOCK_PIXINSIGHT'):
+      return
+
     temp_dir = tempfile.TemporaryDirectory()
     filenames = copy_testdata_frames('IC4701', temp_dir.name, number=3)
 

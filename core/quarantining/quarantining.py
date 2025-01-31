@@ -4,18 +4,18 @@ import time
 
 from context import context
 from dependency_graph.astroflow_node import AstroFlowNode
-from stacks.composite_stack import CompositeStack, CompositeStacksDict
+from stacks.composite_stack import CompositeStack
+from stacks.simple_stack import SimpleStacksDict
 from stacks.imaging_attributes import ImagingAttributes
 from stacks.types import StackHash
 
 
 @AstroFlowNode()
-def quarantine_calibration_stacks(
-    stacks: CompositeStacksDict) -> CompositeStacksDict:
-  quarantined_calibration_stacks = context.quarantined_calibration_stacks or {}
-  return {
+def quarantine_calibration_stacks(stacks: SimpleStacksDict) -> SimpleStacksDict:
+  quarantined_calibration_stacks = context.quarantined_calibration_stacks or []
+  return SimpleStacksDict({
       h: s for h, s in stacks.items() if h not in quarantined_calibration_stacks
-  }
+  })
 
 
 # TODO: Ensure that all of the actions in this file are idempotent. The goal

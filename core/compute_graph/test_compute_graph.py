@@ -115,11 +115,11 @@ class TestComputeGraph(unittest.TestCase):
         "compute_image_metadata", "compute_image_metadata",
         "compute_image_metadata", "compute_image_metadata",
         "compute_image_metadata", "load_metadata", "build_regroup_graph",
-        "cluster_by_image_center", "scatter_spatial_groups",
-        "build_spatial_group_graph", "identify_stacks", "validate_stacks",
-        "store_stacks", "group_stacks_into_targets", "gather_spatial_groups",
-        "store_targets", "identify_mosaics", "store_mosaics",
-        "identify_calibration_stacks", "store_calibration_stacks",
+        "cluster_by_image_center", "scatter_spatial_groups", "identify_stacks",
+        "gather_spatial_groups", "validate_stacks", "store_stacks",
+        "group_stacks_into_targets", "store_targets", "identify_mosaics",
+        "store_mosaics", "identify_calibration_stacks",
+        "quarantine_calibration_stacks", "store_calibration_stacks",
         "build_customize_graph", "scatter_customize_stacks",
         "scatter_customize_mosaics", "scatter_customize_targets",
         "customize_stack", "gather_customize_stacks", "customization_done"
@@ -162,15 +162,16 @@ class TestComputeGraph(unittest.TestCase):
       print('### trace', node_to_string(node))
 
     expected_task_names = [
-        "scatter_compute_image_metadata", "build_regroup_graph",
-        "cluster_by_image_center", "scatter_spatial_groups",
-        "build_spatial_group_graph", "identify_stacks", "validate_stacks",
-        "store_stacks", "group_stacks_into_targets", "gather_spatial_groups",
+        "scatter_compute_image_metadata", "load_metadata",
+        "build_regroup_graph", "cluster_by_image_center",
+        "scatter_spatial_groups", "identify_stacks", "gather_spatial_groups",
+        "validate_stacks", "store_stacks", "group_stacks_into_targets",
         "store_targets", "identify_mosaics", "store_mosaics",
-        "identify_calibration_stacks", "store_calibration_stacks",
-        "build_customize_graph", "scatter_customize_stacks",
-        "scatter_customize_mosaics", "scatter_customize_targets",
-        "customize_stack", "gather_customize_stacks", "customization_done"
+        "identify_calibration_stacks", "quarantine_calibration_stacks",
+        "store_calibration_stacks", "build_customize_graph",
+        "scatter_customize_stacks", "scatter_customize_mosaics",
+        "scatter_customize_targets", "customize_stack",
+        "gather_customize_stacks", "customization_done"
     ]
 
     for node, expected_name in zip(results.trace, expected_task_names):
@@ -178,15 +179,15 @@ class TestComputeGraph(unittest.TestCase):
 
     self.assertEqual(
         len(find_compatible_nodes(results.trace, compute_image_metadata)), 0)
-    self.assertEqual(len(find_compatible_nodes(results.trace, load_metadata)),
-                     0)
+    self.assertEqual(
+        len(find_compatible_nodes(results.trace, compute_image_metadata)), 0)
     self.assertEqual(len(find_compatible_nodes(results.trace, customize_stack)),
                      1)
 
     context.shopping_cart = [('stack', toplevel_stack.stable_hash)]
-    graph = compute_graph.build_compute_graph(regroup=False,
-                                              make_previews=True,
-                                              run_main_processing_graph=True)
+    graph = build_compute_graph(regroup=False,
+                                make_previews=True,
+                                run_main_processing_graph=True)
     results, _ = run_graph(graph, trace=True)
 
     print('### First run of graph with previews and main processing:')
@@ -194,17 +195,19 @@ class TestComputeGraph(unittest.TestCase):
       print('### trace', node_to_string(node))
 
     expected_names = [
-        "scatter_compute_image_metadata", "identify_calibration_stacks",
+        "scatter_compute_image_metadata", "load_metadata",
+        "identify_calibration_stacks", "quarantine_calibration_stacks",
         "store_calibration_stacks", "build_customize_graph",
-        "scatter_customize_stacks", "scatter_customize_mosaics",
-        "scatter_customize_targets", "customize_stack",
+        "scatter_customize_stacks", "scatter_customize_targets",
+        "scatter_customize_mosaics", "customize_stack",
         "gather_customize_stacks", "customization_done", "build_preview_graph",
         "scatter_stack_thumbnails", "create_flat_correction_thumbnails",
-        "create_stack_subframe_thumbnails", "gather", "preview_graph_done",
-        "build_main_processing_graph", "build_stacking_subgraph", "stack_files",
-        "stack_files", "stack_files", "stack_files", "stack_files",
-        "compute_image_metadata", "post_process_stack",
-        "compute_image_metadata", "load_metadata", "main_processing_graph_done"
+        "create_stack_subframe_thumbnails", "gather_stack_thumbnails",
+        "preview_graph_done", "build_main_processing_graph",
+        "build_stacking_subgraph", "stack_files", "stack_files", "stack_files",
+        "stack_files", "stack_files", "compute_image_metadata",
+        "post_process_stack", "compute_image_metadata", "load_metadata",
+        "main_processing_graph_done"
     ]
     for node, expected_name in zip(results.trace, expected_names):
       self.assertEqual(node.task._function.__name__, expected_name)

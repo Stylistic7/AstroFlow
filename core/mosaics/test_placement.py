@@ -32,10 +32,8 @@ class TestPlacement(unittest.TestCase):
 
     mosaic_id = 'b1c2c11588a866ac'
     filter = 'H'
-    stack_id = '2c71f4db63b27773'
-    content_hash = '187b447aad352e0f'
     tile_indices = TileIndices((0, 0))
-    filename = 'testdata/Stacks/IC1318/masters/master_light_IC1318_RA_306.20_DEC_35.00_ZWO ASI6200MM Pro_2.21aspp_1.55deg_H_187b447aad352e0f.xisf'
+    filename = 'testdata/Stacks/IC1318/masters/master_light_IC1318_RA_306.20_DEC_35.00_ZWO ASI6200MM Pro_2.21aspp_1.55deg_H_3bd18a01cedf3c6b.xisf'
 
     mosaic = context.mosaics[mosaic_id]
 
@@ -46,7 +44,7 @@ class TestPlacement(unittest.TestCase):
         place_small_image.remote(QualityLevel.SUBFRAME, mosaic, tile_indices,
                                  filter, viewbox, filename))
     print('### result', result)
-    self.assertTrue(isinstance(unpack_artifact(result), np.ndarray))
+    self.assertTrue(isinstance(unpack_artifact(result), Path))
 
     log, result = ray.get(
         place_large_image.remote(QualityLevel.MASTER, mosaic, tile_indices,
