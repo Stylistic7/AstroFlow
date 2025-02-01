@@ -32,6 +32,7 @@ function App() {
   const [dataIsAvailable, setDataIsAvailable] = useState(false);
 
   const [stacks, setStacks] = useState({});
+  const [calibrationStacks, setCalibrationStacks] = useState({});
   const [targets, setTargets] = useState({});
   const [mosaics, setMosaics] = useState({});
   const [shoppingCart, setShoppingCart] = useState([]);
@@ -42,8 +43,9 @@ function App() {
     console.log('in App.useEffect');
 
     const loadObjectData = async () => {
-      let [s, t, m, cart, cg] = await Promise.all([
+      let [s, c, t, m, cart, cg] = await Promise.all([
         fetch('/stacks').then(r => r.json()),
+        fetch('/calibration_stacks').then(r => r.json()),
         fetch('/targets').then(r => r.json()),
         fetch('/mosaics').then(r => r.json()),
         fetch(`/get_shopping_cart`).then(r => r.json()),
@@ -51,6 +53,7 @@ function App() {
       ]);
 
       setStacks(s);
+      setCalibrationStacks(c);
       setTargets(t);
       setMosaics(m);
       setShoppingCart(cart);
@@ -104,7 +107,7 @@ function App() {
     <ThemeProvider theme={darkTheme}>
       <StyledEngineProvider injectFirst>
         <AstroFlowContext.Provider
-          value={{ stacks, targets, mosaics, shoppingCart, computeGraph, computeGraphStatus }}
+          value={{ stacks, calibrationStacks, targets, mosaics, shoppingCart, computeGraph, computeGraphStatus }}
         >
           <CssBaseline />
           <Router>

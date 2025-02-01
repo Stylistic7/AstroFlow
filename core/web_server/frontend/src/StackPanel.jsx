@@ -216,17 +216,15 @@ export default function StackPanel() {
 						data-testid="loader"
 					/>
 				) : (
-					Object.values(stack.contents).map(stack_id =>
-						stacks[stack_id] && <div style={{ padding: '20px' }}>
+					Object.values(stack.contents).map(substack =>
+						<div style={{ padding: '20px' }}>
 							<DivWithActions
-								title={`Run of ${stacks[stack_id].frames.length} light frames on ${stack.oldest_date}`}
-								action_buttons={<StackActionButtons stack_id={stack_id} />}
-								stack_id={stack_id}
+								title={`Run of ${substack.frames.length} light frames on ${stack.oldest_date}`}
+								action_buttons={<StackActionButtons stack_id={substack.content_hash} />}
 							>
 								<RunPanel
-									key={stack_id}
-									stack_id={stack_id}
-									stacks={stacks}
+									key={substack.content_hash}
+									stack={substack}
 									flat_stack_ids={flat_stack_ids}
 								/>
 							</DivWithActions>

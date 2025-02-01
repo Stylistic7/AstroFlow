@@ -200,6 +200,16 @@ def stacks():
   return {k: _make_json_serializable(s) for k, s in stacks.items()}
 
 
+@app.route('/calibration_stacks')
+def calibration_stacks():
+  calibration_stacks = cache.get('calibration_stacks', {})
+  calibration_stacks = {
+      h: replace(s, metadata=None) for h, s in calibration_stacks.items()
+  }
+
+  return {k: _make_json_serializable(s) for k, s in calibration_stacks.items()}
+
+
 @app.route('/send_datetime')
 def send_datetime():
   return {'foo': datetime.datetime(2023, 5, 19, 4, 27, 17, 756893)}
@@ -285,12 +295,7 @@ def stack_thumbnail_image(stack_id):
 
 @app.route('/flat_correction_thumbnails/<stack_id>/<flat_stack_id>')
 def flat_correction_thumbnails(stack_id, flat_stack_id):
-  key = ('flat_correction_thumbnails', stack_id)
-  hash = cache.get(key, {}).get(flat_stack_id, None)
-  if not hash:
-    return Response(status=404)
-
-  key = ('flat_correction_thumbnail', hash)
+  key = ('flat_correction_thumbnail', stack_id, flat_stack_id)
   if key not in cache:
     return Response(status=404)
 
@@ -573,7 +578,7 @@ def run_compute_graph():
   context.output_dir = '/Volumes/Astro/Processed'
 
   # TODO: Determine `regroup` automatically.
-  graph = build_compute_graph(regroup=False,
+  graph = build_compute_graph(regroup=True,
                               make_previews=True,
                               run_main_processing_graph=False)
 

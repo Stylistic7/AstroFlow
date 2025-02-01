@@ -18,17 +18,11 @@ const override: CSSProperties = {
     borderColor: "red",
 };
 
-export default function RunPanel({ stack_id, flat_stack_ids }) {
-    const { stacks } = useContext(AstroFlowContext);
-
+export default function RunPanel({ stack, flat_stack_ids }) {
+    const { calibrationStacks } = useContext(AstroFlowContext);
     const { promiseInProgress } = usePromiseTracker();
-    const [stackSettings, setStackSettings] = useState({});
 
-    useEffect(() => {
-        fetch(`/get_stack_dependencies/${stack_id}`)
-            .then(r => r.json())
-            .then(j => setStackSettings(j));
-    }, []);
+    let stack_id = stack.content_hash;
 
     const set_settings = (stack_id, settings) => {
         console.log('set_settings', stack_id, JSON.stringify(settings));
@@ -43,7 +37,6 @@ export default function RunPanel({ stack_id, flat_stack_ids }) {
     };
 
     console.log('flat_stack_ids', flat_stack_ids);
-    let stack = stacks[stack_id];
 
     const formatDateString = (dateString) => {
         // Parse the date string into a Date object
@@ -66,7 +59,7 @@ export default function RunPanel({ stack_id, flat_stack_ids }) {
             flat_stack_id: flat_stack_id,
             original: `/flat_correction_thumbnails/${stack_id}/${flat_stack_id}`,
             thumbnail: `/flat_correction_thumbnails/${stack_id}/${flat_stack_id}`,
-            thumbnailLabel: formatDateString(stacks[flat_stack_id].oldest_date),
+            thumbnailLabel: formatDateString(calibrationStacks[flat_stack_id].oldest_date),
             description: formatDateString(stack.oldest_date),
             originalTitle: "originalTitle",
         }
@@ -81,7 +74,7 @@ export default function RunPanel({ stack_id, flat_stack_ids }) {
             <div style={{ maxWidth: '75vw' }} >
                 <ImageGallery
                     items={images}
-                    startIndex={flat_stack_ids.indexOf(stackSettings['flat'])}
+                    startIndex={flat_stack_ids.indexOf(stack.dependencies['flat'])}
                     onSlide={onSlide}
                 />
             </div>
