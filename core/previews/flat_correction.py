@@ -26,9 +26,12 @@ def create_flat_correction_thumbnails(stack: CustomizedStack) -> None:
     width = context.subframe_thumbnail_width
 
     for flat_stack_id in flat_stack_ids:
+      dependencies = substack.dependencies.copy()
+      dependencies['flat'] = flat_stack_id
+
       thumbnail = array_to_png(
-          autostretch(
-              calibrate_subframe(light_frame, substack.dependencies, width)))
+          autostretch(calibrate_subframe(light_frame, dependencies, width)))
+
       thumbnail_key = ('flat_correction_thumbnail', substack.content_hash,
                        flat_stack_id)
       context.set(thumbnail_key, thumbnail, write_mode=WriteMode.DISK_ONLY)
