@@ -75,8 +75,8 @@ def merge_images(mode: QualityLevel, mosaic: Mosaic, input_0: Path,
 
   # TODO: This is really ugly...
   if mode == 'subframe':
-    image_0 = read_image(input_0)
-    image_1 = read_image(input_1)
+    image_0 = autostretch(read_image(input_0))
+    image_1 = autostretch(read_image(input_1))
 
     image = merge_images_with_maximum(image_0, image_1)
 
