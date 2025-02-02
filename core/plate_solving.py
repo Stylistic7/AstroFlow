@@ -12,7 +12,6 @@ import traceback
 from typing import Any
 
 from file_io.conversion import convert_xisf_to_fits
-from profiling.decorator import track_performance
 
 
 @dataclass
@@ -74,7 +73,8 @@ def simplify_header(header: dict[str, Any]) -> dict[str, Any]:
 
 
 def _solve_field(filename: Path | str,
-                 arguments: list[str]) -> PlateSolution | Exception | None:
+                 arguments: list[str],
+                 debug: bool = False) -> PlateSolution | Exception | None:
   # TODO: Only copy the file to a temp dir once.
   with tempfile.TemporaryDirectory() as temp_dir:
     if os.path.splitext(filename)[-1] in ['.xisf']:
@@ -87,7 +87,13 @@ def _solve_field(filename: Path | str,
 
     try:
       command = arguments + [dest_filename]
+      if debug:
+        print('### command ' + ' '.join([str(i) for i in command]))
+
       ret = subprocess.run(command, capture_output=True)
+
+      if debug:
+        print(ret.stdout.decode('utf-8'))
     except Exception as e:
       print(f'Could not plate solve file {dest_filename} due to exception')
       traceback.print_exc()
@@ -125,8 +131,8 @@ def _solve_field(filename: Path | str,
 # TODO: Make a "junk drawer" video that shows everything that can't be plate-
 # solved. The user can look at it and decide whether to improve the solver's
 # settings, or to throw the images away.
-@track_performance
-def solve_field(filename: Path | str) -> PlateSolution | None:
+def solve_field(filename: Path | str,
+                debug: bool = False) -> PlateSolution | None:
   assert filename
 
   # TODO: These options must be exposed to the user.
@@ -165,9 +171,13 @@ def solve_field(filename: Path | str) -> PlateSolution | None:
   ]
 
   for i, arguments in enumerate(trial_arguments):
-    result = _solve_field(filename, arguments)
+    result = _solve_field(filename, arguments, debug)
     if type(result) is PlateSolution:
       return result
 
   print(f'Could not plate-solve file {filename}')
   return None
+
+
+if __name__ == '__main__':
+  solve_field(sys.argv[1], debug=True)
