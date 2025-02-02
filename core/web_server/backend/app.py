@@ -3,7 +3,7 @@ import sys
 
 sys.path.append('../..')
 
-# from ray_infra import ray_init
+from ray_infra import ray_init
 
 import os
 import io
@@ -24,7 +24,6 @@ from .message_announcer import MessageAnnouncer
 from context import context
 from catalogs import constellations
 from context import get_cache
-from astroflow import populate_context
 from compute_graph import build_compute_graph
 from dependency_graph import run_graph, graph_status_to_progress
 from dependency_graph.debugging import node_to_string
@@ -561,6 +560,17 @@ def dispatch():
 
 
 compute_graph_status = {}
+
+
+def populate_context():
+  # TODO: Put these knobs in the UI.
+  context.cosine_similarity_threshold = 0.99999
+  context.min_component_members = 3
+  context.max_run_gap = datetime.timedelta(hours=8)
+  context.min_frames_in_run = 3
+  context.min_frames_in_stack = 3
+  context.subframe_thumbnail_width = 1200
+  context.master_thumbnail_width = 2160
 
 
 # TODO: Make sure a second graph can't be started when one is already in

@@ -146,57 +146,6 @@ def assert_all_light_frames_in_stacks(light_frames, stacks):
   assert set(light_frames) == light_frames_in_stacks
 
 
-def populate_context():
-  # TODO: Put these knobs in the UI.
-  context.cosine_similarity_threshold = 0.99999
-  context.min_component_members = 3
-  context.max_run_gap = datetime.timedelta(hours=8)
-  context.min_frames_in_run = 3
-  context.min_frames_in_stack = 3
-  context.subframe_thumbnail_width = 1200
-  context.master_thumbnail_width = 2160
-  context.subframe_mosaic_samples = 1000
-
-  # TODO: Should be dynamic based on the viewbox size.
-  context.master_mosaic_samples = 10000
-
-  # TODO: Don't just use the first input directory.
-  if context.download:
-    download(context.input_dirs[0], context.default_filter)
-
-  if context.stacks == None:
-    context.regroup = True
-
-  if context.stacks == None:
-    context.stacks = {}
-
-  if context.targets == None:
-    context.targets = {}
-
-  if context.mosaics == None:
-    context.mosaics = {}
-
-  if not context.contains('quarantined_files'):
-    context.quarantined_files = set()
-
-  # TODO: Add more comprehensive validation.
-  # assert not any(type(p) is str for p in context.plate_solutions.values())
-  # assert None not in context.image_hashes.values()
-
-  print(f'Cache contains {len(context.quarantined_files or set())} '
-        f'quarantined files')
-  print(f'Cache contains {len(context.image_hashes or {})} image hashes')
-  print(f'Cache contains {len(context.fits_headers or {})} FITS headers')
-  print(f'Cache contains {len(context.plate_solutions or {})} plate solutions')
-  print(
-      f'Cache contains {len(context.shopping_cart or [])} items in shopping cart'
-  )
-  print(f'Cache contains {len(context.spatial_groups or [])} spatial groups')
-  print(f'Cache contains {len(context.stacks or {})} stacks')
-  print(f'Cache contains {len(context.targets or {})} targets')
-  print(f'Cache contains {len(context.mosaics or {})} mosaics')
-
-
 # def main():
 #   log.info('Starting AstroFlow')
 
