@@ -44,7 +44,7 @@ def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
     hdu.writeto(str(filename), overwrite=True)
 
 
-@AstroFlowNode()
+@AstroFlowNode(cache_result=True)
 def build_mosaic_subgraph(mode: QualityLevel, mosaic: Mosaic) -> Graph:
   print(f'### build_mosaic_subgraph mode {mode} for mosaic {mosaic}')
   viewbox = compute_mosaic_viewbox(mode, mosaic)
