@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import NewType
 
+from hashing import hash_list_int
 from plate_solving import PlateSolution
 
 FrameHash = NewType('FrameHash', str)
@@ -15,4 +16,10 @@ class ImageMetadata:
   plate_solution: PlateSolution | None = None
 
 
-MetadataDict = dict[FrameHash, ImageMetadata]
+class MetadataDict(dict[FrameHash, ImageMetadata]):
+
+  def __hash__(self):
+    return hash_list_int(sorted(self.keys()))
+
+  def __str__(self):
+    return f'MetadataDict({len(self)})'

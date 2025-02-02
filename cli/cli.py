@@ -1,6 +1,7 @@
 import argparse
 import sys
 import os
+import ray
 
 # TODO: This feels hacky.
 sys.path.insert(
@@ -8,8 +9,10 @@ sys.path.insert(
 
 from ray_infra import ray_init
 from context import context
-from compute_graph import build_compute_graph
-from dependency_graph import run_graph
+from compute_graph import build_regroup_graph
+from dependency_graph import Graph, run_graph
+from dependency_graph.astroflow_node import delete_cached_result
+from metadata.image_metadata import scatter_compute_image_metadata
 
 
 def merge_mosaic(args):
@@ -19,20 +22,21 @@ def merge_mosaic(args):
     print(f"Additional arguments for merge mosaic: {args.additional}")
 
 
-def regroup_inputs(args):
+def regroup_inputs(args, force=False):
   # Handle the "regroup inputs" command
   print("Regrouping inputs")
   if args.additional:
     print(f"Additional arguments for regroup inputs: {args.additional}")
 
+  if force:
+    delete_cached_result(build_regroup_graph)
+
   # TODO: Put these in the UI.
   context.input_dirs = ['/Volumes/Astro/Raw', '/Volumes/Astro2/Raw']
   context.output_dir = '/Volumes/Astro/Processed'
 
-  # TODO: Determine `regroup` automatically.
-  graph = build_compute_graph(regroup=True,
-                              make_previews=False,
-                              run_main_processing_graph=False)
+  graph = Graph(
+      {build_regroup_graph: {(scatter_compute_image_metadata, 'input')}})
 
   results, logs = run_graph(graph)
 
@@ -59,6 +63,10 @@ def main():
 
   # 'regroup inputs' command
   inputs_parser = regroup_subparsers.add_parser("inputs", help="Regroup inputs")
+  inputs_parser.add_argument("-f",
+                             "--force",
+                             action="store_true",
+                             help="Force operation")
   inputs_parser.add_argument("--additional",
                              help="Additional arguments for regroup",
                              nargs="*")
@@ -70,7 +78,7 @@ def main():
   if args.command == "merge" and args.subcommand == "mosaic":
     merge_mosaic(args)
   elif args.command == "regroup" and args.subcommand == "inputs":
-    regroup_inputs(args)
+    regroup_inputs(args, force=args.force)
   else:
     print("Unknown command or subcommand")
     parser.print_help()

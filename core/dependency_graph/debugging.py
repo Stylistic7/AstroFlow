@@ -9,7 +9,7 @@ def _tuple_values(tup: tuple) -> str:
   return ', '.join([str(t) for t in tup])
 
 
-def node_to_string(node: Node) -> str:
+def node_to_string(node: Node, exclude_args: bool = False) -> str:
   node = canonicalize_node(node)
   assert isinstance(node.task, RemoteFunction)
 
@@ -20,7 +20,7 @@ def node_to_string(node: Node) -> str:
     string += f", name='{node.name}')"
     return string
 
-  if node.args:
+  if node.args and not exclude_args:
     return f'({node.task._function.__name__}, {_tuple_values(node.args)})'
   else:
     return f'{node.task._function.__name__}'

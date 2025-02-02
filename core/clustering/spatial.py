@@ -3,10 +3,11 @@ import ray
 from typing import Sequence, Callable, Any, TypeVar
 
 import metadata.image_types as image_types
+from metadata.classes import MetadataDict
 from geometry import footprints
 from context import context
 import plate_solving
-from profiling import track_performance
+from dependency_graph.astroflow_node import AstroFlowNode
 
 T = TypeVar('T')
 ComparisonFn = Callable[[T, T], bool]
@@ -47,15 +48,12 @@ def find_groups(values: dict[T, Any], comparison_fn: ComparisonFn,
   return groups
 
 
-@ray.remote
-@track_performance
-def cluster_by_image_center() -> None:
+@AstroFlowNode()
+def cluster_by_image_center(metadata: MetadataDict) -> None:
   print('cluster_by_image_center')
 
   cosine_similarity_threshold = context.cosine_similarity_threshold
   min_component_members = context.min_component_members
-
-  metadata = context.metadata or {}
 
   def get_centroid(center: Sequence[float]) -> np.ndarray:
     return np.asarray(footprints.radec_to_vector(*center))

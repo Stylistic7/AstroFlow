@@ -43,15 +43,15 @@ def AstroFlowNode(resources=None,
     source = inspect.getsource(fn)
 
     def _result_exists(content_hash):
-      key = (fn.__name__, content_hash)
+      key = (fn.__qualname__, content_hash)
       if not context.contains(key):
-        print(f'### Node {fn.__name__}: context does not contain key {key}')
+        print(f'### Node {fn.__qualname__}: context does not contain key {key}')
         return False
 
       result = context[key]
       if isinstance(result, Path):
         if debug:
-          print(f'### Node {fn.__name__}: checking that file {result} has '
+          print(f'### Node {fn.__qualname__}: checking that file {result} has '
                 f'content hash {content_hash}')
         if not artifact_exists(FileArtifact(result, content_hash)):
           return False
@@ -126,7 +126,7 @@ def AstroFlowNode(resources=None,
     @wraps(fn)
     def wrapper(*args, **kwargs) -> Any:
       log.info("function_entry",
-               function_name=fn.__name__,
+               function_name=fn.__qualname__,
                args=args,
                kwargs=kwargs)
 
@@ -139,22 +139,32 @@ def AstroFlowNode(resources=None,
 
       kwargs_list = list(kwargs.items())
       content_hash = hash_list([source, *args, *kwargs_list])
-      key = (fn.__name__, content_hash)
+      key = (fn.__qualname__, content_hash)
       if debug:
-        print(f'### Node {fn.__name__}: key {key}')
+        print(f'### Node {fn.__qualname__}: key {key}')
 
       if _result_exists(content_hash):
         if debug:
-          print(f'### Node {fn.__name__}: not running fn {fn.__name__} '
+          print(f'### Node {fn.__qualname__}: not running fn {fn.__qualname__} '
                 f'producing content hash {content_hash} because result exists')
         return context[key]
       else:
         if debug:
-          print(f'### Node {fn.__name__}: running fn {fn.__name__} producing '
-                f'content hash {content_hash} because result does not exist')
+          print(
+              f'### Node {fn.__qualname__}: running fn {fn.__qualname__} producing '
+              f'content hash {content_hash} because result does not exist')
         result = fn(*args, **kwargs)
         return _store_result(result, content_hash)
 
     return wrapper
 
   return decorator
+
+
+def delete_cached_result(fn):
+  name = fn._function.__qualname__
+  print(f'### delete_cached_result for fn {name}')
+  for key in context.get_cache_keys():
+    if type(key) is tuple and key[0] == name:
+      context.delete(key)
+      print(f'### deleted cached result for fn {name}')

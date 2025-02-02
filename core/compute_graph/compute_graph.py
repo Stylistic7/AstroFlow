@@ -4,6 +4,7 @@ from typing import Any
 
 from context import context
 from metadata.image_metadata import scatter_compute_image_metadata
+from metadata.classes import MetadataDict
 from clustering import cluster_by_image_center
 from calibration import identify_calibration_stacks
 from previews import scatter_stack_thumbnails
@@ -85,12 +86,12 @@ def scatter_spatial_groups(spatial_groups) -> Graph:
 #
 # TODO: Move group_stacks_into_targets() back into the parallel path over
 # spatial groups.
-@AstroFlowNode()
-def build_regroup_graph() -> Graph:
-  return make_graph_from_list([
-      cluster_by_image_center, scatter_spatial_groups,
-      group_stacks_into_targets, store_targets, identify_mosaics, store_mosaics
-  ])
+@AstroFlowNode(cache_result=True)
+def build_regroup_graph(metadata: MetadataDict) -> Graph:
+  return make_graph_from_list([(cluster_by_image_center, metadata),
+                               scatter_spatial_groups,
+                               group_stacks_into_targets, store_targets,
+                               identify_mosaics, store_mosaics])
 
 
 @AstroFlowNode()

@@ -8,7 +8,7 @@ import objsize  # type: ignore
 from file_io.find_image_files import find_image_files
 from file_io.generic import read_header, get_content_hash
 import metadata.image_types as image_types
-from metadata.classes import ImageMetadata
+from metadata.classes import ImageMetadata, MetadataDict
 import plate_solving
 from dependency_graph import Graph
 from context import context, WriteMode
@@ -167,17 +167,19 @@ def compute_image_metadata(filename: Path) -> Path:
 
 
 @AstroFlowNode(cache_result=False)
-def load_metadata() -> None:
+def load_metadata() -> MetadataDict:
   quarantined_files = context.quarantined_files or set()
 
   def predicate_fn(image: ImageMetadata) -> bool:
     return image.content_hash not in quarantined_files
 
-  metadata = get_metadata(
-      predicate_fn=predicate_fn,
-      post_fn=lambda images: {i.content_hash: i for i in images})
+  metadata = MetadataDict(
+      get_metadata(predicate_fn=predicate_fn,
+                   post_fn=lambda images: {i.content_hash: i for i in images}))
 
   metadata_size_mb = objsize.get_deep_size(metadata) / 1024 / 1024
   print(f'### load_metadata() size {metadata_size_mb} MB')
 
   context.set('metadata', metadata, write_mode=WriteMode.MEMORY_ONLY)
+
+  return metadata
