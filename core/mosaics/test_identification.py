@@ -26,7 +26,7 @@ class TestMosaicIdentification(unittest.TestCase):
   def test_two_targets(self) -> None:
     # These two targets are on the celestial equator, but overlap by one degree
     # in right ascension. This is the easiest case to think about.
-    foo = Target(target='foo',
+    foo = Target(name='foo',
                  stable_hash=TargetHash('geometric_foo'),
                  content_hash='content_foo',
                  oldest_date=datetime.datetime(2023, 12, 6, 16, 29, 43),
@@ -40,7 +40,7 @@ class TestMosaicIdentification(unittest.TestCase):
                  footprint=SingleSphericalPolygon.from_radec([98, 102, 102, 98],
                                                              [-1, -1, 1, 1]),
                  projected_footprints={})
-    bar = Target(target='bar',
+    bar = Target(name='bar',
                  stable_hash=TargetHash('geometric_bar'),
                  content_hash='content_bar',
                  oldest_date=datetime.datetime(2024, 2, 6, 16, 29, 43),
@@ -61,7 +61,7 @@ class TestMosaicIdentification(unittest.TestCase):
     }
     context.grouped_targets = {foo.stable_hash: foo, bar.stable_hash: bar}
 
-    _, mosaics = ray.get(identify_mosaics.remote())
+    _, mosaics = ray.get(identify_mosaics.remote(context.grouped_targets))
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
 
@@ -76,7 +76,7 @@ class TestMosaicIdentification(unittest.TestCase):
     # self.assertTrue(np.isclose(ratio, (7 * 2) / (4 * 2 + 4 * 2), atol=1e-3))
 
   def test_three_targets(self) -> None:
-    foo = Target(target='foo',
+    foo = Target(name='foo',
                  stable_hash=TargetHash('geometric_foo'),
                  content_hash='content_foo',
                  oldest_date=datetime.datetime(2023, 12, 6, 16, 29, 43),
@@ -91,7 +91,7 @@ class TestMosaicIdentification(unittest.TestCase):
                      [98.01, 102.01, 102.01, 98.01], [-1, -1, 1, 1],
                      center=[100.01, 0]),
                  projected_footprints={})
-    bar = Target(target='bar',
+    bar = Target(name='bar',
                  stable_hash=TargetHash('geometric_bar'),
                  content_hash='content_bar',
                  oldest_date=datetime.datetime(2024, 2, 6, 16, 29, 43),
@@ -106,7 +106,7 @@ class TestMosaicIdentification(unittest.TestCase):
                      [95.01, 99.01, 99.01, 95.01], [-1, -1, 1, 1],
                      center=[97.01, 0]),
                  projected_footprints={})
-    baz = Target(target='baz',
+    baz = Target(name='baz',
                  stable_hash=TargetHash('geometric_baz'),
                  content_hash='content_baz',
                  oldest_date=datetime.datetime(2024, 4, 6, 16, 29, 43),
@@ -131,7 +131,7 @@ class TestMosaicIdentification(unittest.TestCase):
         baz.stable_hash: baz
     }
 
-    _, mosaics = ray.get(identify_mosaics.remote())
+    _, mosaics = ray.get(identify_mosaics.remote(context.grouped_targets))
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
@@ -147,7 +147,7 @@ class TestMosaicIdentification(unittest.TestCase):
     # self.assertTrue(np.isclose(ratio, (7 * 2 + 4 * 1) / (3 * 4 * 2), atol=1e-3))
 
   def test_three_out_of_order_targets(self) -> None:
-    foo = Target(target='foo',
+    foo = Target(name='foo',
                  stable_hash=TargetHash('geometric_foo'),
                  content_hash='content_foo',
                  oldest_date=datetime.datetime(2023, 12, 6, 16, 29, 43),
@@ -161,7 +161,7 @@ class TestMosaicIdentification(unittest.TestCase):
                  footprint=SingleSphericalPolygon.from_radec(
                      [98.01, 102.01, 102.01, 98.01], [0, 0, 2, 2]),
                  projected_footprints={})
-    bar = Target(target='bar',
+    bar = Target(name='bar',
                  stable_hash=TargetHash('geometric_bar'),
                  content_hash='content_bar',
                  oldest_date=datetime.datetime(2024, 4, 6, 16, 29, 43),
@@ -175,7 +175,7 @@ class TestMosaicIdentification(unittest.TestCase):
                  footprint=SingleSphericalPolygon.from_radec([98, 102, 102, 98],
                                                              [3, 3, 5, 5]),
                  projected_footprints={})
-    baz = Target(target='baz',
+    baz = Target(name='baz',
                  stable_hash=TargetHash('geometric_baz'),
                  content_hash='content_baz',
                  oldest_date=datetime.datetime(2024, 2, 6, 16, 29, 43),
@@ -200,7 +200,7 @@ class TestMosaicIdentification(unittest.TestCase):
         baz.stable_hash: baz
     }
 
-    _, mosaics = ray.get(identify_mosaics.remote())
+    _, mosaics = ray.get(identify_mosaics.remote(context.grouped_targets))
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
@@ -209,7 +209,7 @@ class TestMosaicIdentification(unittest.TestCase):
     self.assertEqual(mosaic.tile_indices, [(0, 0), (0, 1), (0, 2)])
 
   def test_three_targets_and_an_outlier(self) -> None:
-    foo = Target(target='foo',
+    foo = Target(name='foo',
                  stable_hash=TargetHash('geometric_foo'),
                  content_hash='content_foo',
                  oldest_date=datetime.datetime(2023, 12, 6, 16, 29, 43),
@@ -223,7 +223,7 @@ class TestMosaicIdentification(unittest.TestCase):
                  footprint=SingleSphericalPolygon.from_radec([98, 102, 102, 98],
                                                              [-1, -1, 1, 1]),
                  projected_footprints={})
-    bar = Target(target='bar',
+    bar = Target(name='bar',
                  stable_hash=TargetHash('geometric_bar'),
                  content_hash='content_bar',
                  oldest_date=datetime.datetime(2024, 2, 6, 16, 29, 43),
@@ -237,7 +237,7 @@ class TestMosaicIdentification(unittest.TestCase):
                  footprint=SingleSphericalPolygon.from_radec([95, 99, 99, 95],
                                                              [-1, -1, 1, 1]),
                  projected_footprints={})
-    baz = Target(target='baz',
+    baz = Target(name='baz',
                  stable_hash=TargetHash('geometric_baz'),
                  content_hash='content_baz',
                  oldest_date=datetime.datetime(2024, 4, 6, 16, 29, 43),
@@ -252,7 +252,7 @@ class TestMosaicIdentification(unittest.TestCase):
                      [95, 99, 99, 95], [0.5, 0.5, 2.5, 2.5]),
                  projected_footprints={})
     outlier = Target(
-        target='outlier',
+        name='outlier',
         stable_hash=TargetHash('geometric_outlier'),
         content_hash='content_outlier',
         oldest_date=datetime.datetime(2024, 6, 6, 16, 29, 43),
@@ -278,7 +278,7 @@ class TestMosaicIdentification(unittest.TestCase):
         outlier.stable_hash: outlier,
     }
 
-    _, mosaics = ray.get(identify_mosaics.remote())
+    _, mosaics = ray.get(identify_mosaics.remote(context.grouped_targets))
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
@@ -288,7 +288,7 @@ class TestMosaicIdentification(unittest.TestCase):
     self.assertCountEqual(mosaic.strips[1], [foo.stable_hash])
 
   def test_ic1318(self) -> None:
-    foo = Target(target='foo',
+    foo = Target(name='foo',
                  stable_hash=TargetHash('geometric_foo'),
                  content_hash='content_foo',
                  oldest_date=datetime.datetime(2023, 12, 6, 16, 29, 43),
@@ -308,7 +308,7 @@ class TestMosaicIdentification(unittest.TestCase):
                      np.array([0.45175641, -0.59818691, 0.66188259])),
                  projected_footprints={})
 
-    bar = Target(target='bar',
+    bar = Target(name='bar',
                  stable_hash=TargetHash('geometric_bar'),
                  content_hash='content_bar',
                  oldest_date=datetime.datetime(2024, 2, 6, 16, 29, 43),
@@ -337,7 +337,7 @@ class TestMosaicIdentification(unittest.TestCase):
         bar.stable_hash: bar,
     }
 
-    _, mosaics = ray.get(identify_mosaics.remote())
+    _, mosaics = ray.get(identify_mosaics.remote(context.grouped_targets))
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
@@ -349,7 +349,7 @@ class TestMosaicIdentification(unittest.TestCase):
   def test_big_cygnus_pano(self) -> None:
     copy_testdata_into_cache()
 
-    _, mosaics = ray.get(identify_mosaics.remote())
+    _, mosaics = ray.get(identify_mosaics.remote(context.grouped_targets))
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))

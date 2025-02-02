@@ -18,7 +18,7 @@ from targets.types import Target
 
 
 # TODO: Put this somewhere generally-accessible.
-def make_test_target(target,
+def make_test_target(name,
                      center=[0, 0],
                      image_scale=1.0,
                      rotation_angle=0,
@@ -29,7 +29,7 @@ def make_test_target(target,
                      stack_ids=[],
                      oldest_date=None,
                      newest_date=None) -> Target:
-  return Target(target=target,
+  return Target(name=name,
                 center=center,
                 image_scale=image_scale,
                 rotation_angle=rotation_angle,
@@ -65,13 +65,15 @@ class TestMergeGraph(unittest.TestCase):
                     oldest_date=None,
                     newest_date=None,
                     center=None,
+                    image_scale=1,
+                    rotation_angle=0,
                     footprint=None,
                     projected_footprints=None)
 
     context.targets = targets = {
-        'a': make_test_target(target='a'),
-        'b': make_test_target(target='b'),
-        'c': make_test_target(target='c'),
+        'a': make_test_target('a'),
+        'b': make_test_target('b'),
+        'c': make_test_target('c'),
     }
 
     log, graph = ray.get(
@@ -127,16 +129,18 @@ class TestMergeGraph(unittest.TestCase):
                     oldest_date=None,
                     newest_date=None,
                     center=None,
+                    image_scale=1,
+                    rotation_angle=0,
                     footprint=None,
                     projected_footprints=None)
 
     context.targets = targets = {
-        'a': make_test_target(target='a'),
-        'b': make_test_target(target='b'),
-        'c': make_test_target(target='c'),
-        'd': make_test_target(target='d'),
-        'e': make_test_target(target='e'),
-        'f': make_test_target(target='f')
+        'a': make_test_target('a'),
+        'b': make_test_target('b'),
+        'c': make_test_target('c'),
+        'd': make_test_target('d'),
+        'e': make_test_target('e'),
+        'f': make_test_target('f')
     }
 
     log, graph = ray.get(
@@ -224,13 +228,15 @@ class TestMergeGraph(unittest.TestCase):
                     oldest_date=None,
                     newest_date=None,
                     center=None,
+                    image_scale=1,
+                    rotation_angle=0,
                     footprint=None,
                     projected_footprints=None)
 
     context.targets = targets = {
-        'a': make_test_target(target='a'),
-        'b': make_test_target(target='b'),
-        'c': make_test_target(target='c'),
+        'a': make_test_target('a'),
+        'b': make_test_target('b'),
+        'c': make_test_target('c'),
     }
 
     log, graph = ray.get(

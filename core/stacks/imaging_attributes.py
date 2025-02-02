@@ -17,8 +17,6 @@ class ImagingAttributes:
   integration_s: int
   width_pixels: int
   height_pixels: int
-  oldest_date: datetime.datetime
-  newest_date: datetime.datetime
 
   @classmethod
   def from_frames(cls,
@@ -52,10 +50,5 @@ class ImagingAttributes:
 
     mean_temperature = np.mean([i.header['CCD-TEMP'] for i in metadata_list])
 
-    sorted_metadata = sorted(metadata_list, key=lambda i: i.header['DATE-OBS'])
-    oldest_date = sorted_metadata[0].header['DATE-OBS']
-    newest_date = sorted_metadata[-1].header['DATE-OBS']
-
     return cls(image_type, camera, filter, mean_temperature, exposure_s,
-               integration_s, width_pixels, height_pixels, oldest_date,
-               newest_date)
+               integration_s, width_pixels, height_pixels)

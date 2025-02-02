@@ -97,7 +97,7 @@ class TestStack(unittest.TestCase):
     self.assertEqual(toplevel_stack.integration_s, 3 * 300)
     self.assertEqual(toplevel_stack.width_pixels, 9576)
     self.assertEqual(toplevel_stack.height_pixels, 6388)
-    self.assertEqual(toplevel_stack.target, 'Bubble nebula')
+    self.assertEqual(toplevel_stack.name, 'Bubble nebula')
     self.assertTrue(
         np.allclose(toplevel_stack.center, [350.183329899, 61.2229195667]))
     self.assertAlmostEqual(toplevel_stack.image_scale, 0.38, places=2)

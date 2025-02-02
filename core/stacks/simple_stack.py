@@ -3,6 +3,7 @@ from typing import Any
 
 from context import context
 from stacks.types import StackHash
+from stacks.chronology_attributes import ChronologyAttributes
 from stacks.imaging_attributes import ImagingAttributes
 from stacks.state_attributes import AstroFlowStateAttributes
 from metadata.classes import MetadataDict, FrameHash
@@ -12,7 +13,8 @@ DependenciesDict = dict[str, StackHash]
 
 
 @dataclass(frozen=True)
-class SimpleStack(ImagingAttributes, AstroFlowStateAttributes):
+class SimpleStack(ChronologyAttributes, ImagingAttributes,
+                  AstroFlowStateAttributes):
   content_hash: str
   frames: list[FrameHash]
   metadata: MetadataDict
@@ -23,6 +25,7 @@ class SimpleStack(ImagingAttributes, AstroFlowStateAttributes):
                   frames: list[FrameHash],
                   metadata: MetadataDict | None = None) -> 'SimpleStack':
     metadata = metadata or context.metadata
+    chronology_attributes = ChronologyAttributes.from_frames(frames, metadata)
     imaging_attributes = ImagingAttributes.from_frames(frames, metadata)
 
     frame_metadata = {h: i for h, i in metadata.items() if h in frames}
@@ -30,13 +33,15 @@ class SimpleStack(ImagingAttributes, AstroFlowStateAttributes):
 
     content_hash = hash_list(sorted(frames))
 
-    attributes: dict[str, Any] = asdict(imaging_attributes) | {
-        'content_hash': content_hash,
-        'frames': frames,
-        'metadata': frame_metadata,
-        'dependencies': DependenciesDict(),
-        'state': {}
-    }
+    attributes: dict[
+        str,
+        Any] = asdict(chronology_attributes) | asdict(imaging_attributes) | {
+            'content_hash': content_hash,
+            'frames': frames,
+            'metadata': frame_metadata,
+            'dependencies': DependenciesDict(),
+            'state': {}
+        }
 
     return cls(**attributes)
 

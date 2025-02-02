@@ -58,7 +58,8 @@ def compute_mosaic_viewbox(mosaic_id: MosaicHash,
                  x_min=0,
                  y_min=0,
                  x_span=200,
-                 y_span=200)
+                 y_span=200,
+                 resolution_aspp=1)
 
 
 @AstroFlowNode(cache_result=True)

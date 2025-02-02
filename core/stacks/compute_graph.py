@@ -38,6 +38,7 @@ def build_stacking_subgraph(stack: CustomizedStack) -> Graph:
   return graph
 
 
+# TODO: Calibrate the subframe returned here.s
 @AstroFlowNode()
 def get_stack_subframe_image(stack: CompositeStack) -> Path:
   light_frames_by_stars = get_light_frames_sorted_by_stars(stack)

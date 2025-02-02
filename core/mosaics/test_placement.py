@@ -30,6 +30,7 @@ class TestPlacement(unittest.TestCase):
     print('### metadata.keys()', context.metadata.keys())
     print('### mosaics.keys()', context.mosaics.keys())
 
+    mode = QualityLevel.MASTER
     mosaic_id = 'b1c2c11588a866ac'
     filter = 'H'
     tile_indices = TileIndices((0, 0))
@@ -37,7 +38,7 @@ class TestPlacement(unittest.TestCase):
 
     mosaic = context.mosaics[mosaic_id]
 
-    viewbox = compute_mosaic_viewbox(mosaic)
+    viewbox = compute_mosaic_viewbox(mode, mosaic)
     self.assertTrue(isinstance(viewbox, Viewbox))
 
     log, result = ray.get(

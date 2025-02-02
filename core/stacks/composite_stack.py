@@ -12,6 +12,7 @@ from stacks.simple_stack import SimpleStack, SimpleStacksDict
 from stacks.imaging_attributes import ImagingAttributes
 from stacks.state_attributes import AstroFlowStateAttributes
 from stacks.astrometric_attributes import AstrometricAttributes
+from stacks.chronology_attributes import ChronologyAttributes
 from stacks.types import StackHash
 from metadata.classes import MetadataDict, FrameHash
 from catalogs import position_string
@@ -29,7 +30,7 @@ def _normalize_radians(x: float) -> float:
 
 @dataclass(frozen=True)
 class CompositeStack(ImagingAttributes, AstrometricAttributes,
-                     AstroFlowStateAttributes):
+                     ChronologyAttributes, AstroFlowStateAttributes):
   stable_hash: str
   content_hash: str
   contents: SimpleStacksDict
@@ -100,9 +101,10 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
 
     content_hash = hash_list(sorted(contents.keys()))
 
+    chronology_attributes = ChronologyAttributes.from_frames(frames, metadata)
     imaging_attributes = ImagingAttributes.from_frames(frames, metadata)
     astrometric_attributes = AstrometricAttributes(
-        target=name,
+        name=name,
         center=list(center),
         image_scale=image_scale,
         rotation_angle=rotation_angle,
@@ -119,9 +121,8 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
           f'Height {imaging_attributes.height_pixels}, '
           f'Filter {filter}')
 
-    attributes: dict[
-        str,
-        Any] = asdict(imaging_attributes) | asdict(astrometric_attributes) | {
+    attributes: dict[str, Any] = asdict(chronology_attributes) | asdict(
+        imaging_attributes) | asdict(astrometric_attributes) | {
             'contents': contents,
             'content_hash': content_hash,
             'stable_hash': stable_hash,
@@ -147,7 +148,7 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
   def __str__(self) -> str:
     return (f'CompositeStack(Stable hash {self.stable_hash}, '
             f'Content hash {self.content_hash}, '
-            f'Target {self.target}, '
+            f'Target {self.name}, '
             f'RA {units.ra_to_hms(self.center[0])}, '
             f'Dec {units.dec_to_dms(self.center[1])}, '
             f'Scale {self.image_scale:.2f}"/px, '

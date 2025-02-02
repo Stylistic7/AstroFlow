@@ -6,7 +6,7 @@ from shapely.geometry import Polygon  # type: ignore
 
 @dataclass(frozen=True)
 class AstrometricAttributes:
-  target: str
+  name: str
   center: list[float]
   image_scale: float
   rotation_angle: float

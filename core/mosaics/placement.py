@@ -23,13 +23,9 @@ _PLACE_TILE_MEMORY_REQUIREMENT = 1 * 1024 * 1024 * 1024  # 1 GB
 log = structlog.get_logger()
 
 
-def _compute_ras_decs(mode: QualityLevel,
-                      viewbox: Viewbox,
+def _compute_ras_decs(viewbox: Viewbox,
                       multiple: int = 4) -> tuple[np.ndarray, np.ndarray]:
-  if mode == QualityLevel.SUBFRAME:
-    num_samples_x = context.subframe_mosaic_samples
-  elif mode == QualityLevel.MASTER:
-    num_samples_x = context.master_mosaic_samples
+  num_samples_x = viewbox.x_span * 3600.0 / viewbox.resolution_aspp
 
   def round_to_nearest_multiple(number: float) -> int:
     return int(np.ceil(number / multiple) * multiple)
@@ -116,12 +112,11 @@ def _make_interpolator(filename: Path):
                                  fill_value=0)
 
 
-def _project_in_tiles(mode: QualityLevel,
-                      viewbox: Viewbox,
+def _project_in_tiles(viewbox: Viewbox,
                       interp: RegularGridInterpolator,
                       wcs: WCS,
                       multiple=4):
-  ras, decs = _compute_ras_decs(mode, viewbox, multiple)
+  ras, decs = _compute_ras_decs(viewbox, multiple)
   projected_image = np.zeros_like(ras)
 
   viewbox_height, viewbox_width = ras.shape
@@ -172,7 +167,7 @@ def place_large_image(mode: QualityLevel, mosaic: Mosaic,
   wcs = _get_wcs(filename)
   interp = _make_interpolator(filename)
 
-  projected_image = _project_in_tiles(mode, viewbox, interp, wcs)
+  projected_image = _project_in_tiles(viewbox, interp, wcs)
 
   # TODO: Don't keep two copies of the huge image
   # projected_image = _trim_image(projected_image)
@@ -188,7 +183,7 @@ def place_small_image(mode: QualityLevel, mosaic: Mosaic,
   wcs = _get_wcs(filename)
   interp = _make_interpolator(filename)
 
-  ras, decs = _compute_ras_decs(mode, viewbox, multiple=1)
+  ras, decs = _compute_ras_decs(viewbox, multiple=1)
   source_xs, source_ys = wcs.all_world2pix(ras, decs, 1, quiet=True)
   projected_image = interp((source_ys, source_xs))
 

@@ -1,20 +1,25 @@
 import traceback
 import structlog
 from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon  # type: ignore
+from spherical_geometry.vector import vector_to_lonlat
 from spherical_geometry import great_circle_arc
 import ray
 import numpy as np
 import random
 from enum import Enum
+from typing import Any
+from dataclasses import asdict
 
 from context import context
 from mosaics.types import Mosaic, MosaicHash, MosaicsDict
 from catalogs import position_string
 from geometry import footprints
 from hashing import hash_list
-from targets.types import TargetHash, Target
+from targets.types import TargetHash, Target, TargetsDict
 from mosaics.debugging import plot_mosaic
 from dependency_graph.astroflow_node import AstroFlowNode
+from stacks.astrometric_attributes import AstrometricAttributes
+from stacks.chronology_attributes import ChronologyAttributes
 
 # TODO: Make the functions in this file functional (e.g. pass TargetsDict into
 # them, vs. relying on context).
@@ -322,9 +327,8 @@ def _identify_overlapping_targets(
 
 
 @AstroFlowNode()
-def identify_mosaics(*targets_in,
+def identify_mosaics(targets: TargetsDict,
                      debug: bool = False) -> dict[MosaicHash, Mosaic]:
-  targets = context.grouped_targets
   print(f'### Identifying mosaics from {len(targets)} targets')
 
   mosaics = _identify_overlapping_targets(debug)
@@ -349,10 +353,8 @@ def identify_mosaics(*targets_in,
       oldest_date = min(targets[t].oldest_date for t in mosaic)
       newest_date = min(targets[t].newest_date for t in mosaic)
 
-      centers = [targets[t].center for t in mosaic]
-      mean_center = np.mean(centers, axis=0)
-      center = list(mean_center)
-      name = position_string.canonical_target_string(center)
+      image_scale = np.mean([targets[t].image_scale for t in mosaic])
+      rotation_angle = np.mean([targets[t].rotation_angle for t in mosaic])
 
       # This doesn't seem work for polygons with holes in them.
       # TODO: Consider using multi_union but falling back to convex hull when
@@ -399,17 +401,28 @@ def identify_mosaics(*targets_in,
       # assert not SphericalPolygon.self_intersect(footprint.points)
       projected_footprints = footprints.all_projections(footprint)
 
-      output_mosaic = Mosaic(name=name,
-                             stable_hash=stable_hash,
-                             content_hash=content_hash,
-                             target_ids=target_ids,
-                             tile_indices=tile_indices,
-                             strips=strips,
-                             oldest_date=oldest_date,
-                             newest_date=newest_date,
-                             center=center,
-                             footprint=footprint,
-                             projected_footprints=projected_footprints)
+      center = vector_to_lonlat(*np.mean(footprint.points, axis=0))
+      name = position_string.canonical_target_string(center)
+
+      chronology_attributes = ChronologyAttributes(oldest_date, newest_date)
+      astrometric_attributes = AstrometricAttributes(
+          name=name,
+          center=list(center),
+          image_scale=image_scale,
+          rotation_angle=rotation_angle,
+          footprint=footprint,
+          projected_footprints=projected_footprints)
+
+      attributes: dict[str, Any] = asdict(chronology_attributes) | asdict(
+          astrometric_attributes) | {
+              'stable_hash': stable_hash,
+              'content_hash': content_hash,
+              'target_ids': target_ids,
+              'tile_indices': tile_indices,
+              'strips': strips,
+          }
+
+      output_mosaic = Mosaic(**attributes)
       print(f'### Made output_mosaic {output_mosaic}')
 
       if debug:

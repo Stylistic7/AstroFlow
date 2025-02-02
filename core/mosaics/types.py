@@ -10,6 +10,8 @@ from artifacts import Artifact
 from geometry.projection import Projection
 from hashing import hash_dataclass
 from targets.types import TargetHash
+from stacks.astrometric_attributes import AstrometricAttributes
+from stacks.chronology_attributes import ChronologyAttributes
 
 Template: TypeAlias = tuple[int | None, int | None]
 TileIndices: TypeAlias = tuple[int, int]
@@ -19,22 +21,13 @@ MosaicHash = NewType('MosaicHash', str)
 
 
 @dataclass(order=True, frozen=True)
-class Mosaic:
-  name: str
-
+class Mosaic(AstrometricAttributes, ChronologyAttributes):
   content_hash: str
   stable_hash: MosaicHash
 
   target_ids: list[TargetHash]
   tile_indices: list[TileIndices]
   strips: list[list[TargetHash]]
-
-  oldest_date: Optional[datetime.datetime]
-  newest_date: Optional[datetime.datetime]
-
-  center: list[float]
-  footprint: SingleSphericalPolygon
-  projected_footprints: dict[str, Polygon]
 
   def __str__(self) -> str:
     return (
@@ -61,6 +54,7 @@ class Viewbox:
   x_span: float
   y_min: float
   y_span: float
+  resolution_aspp: float
 
   def __str__(self):
     return 'Viewbox'
