@@ -104,7 +104,7 @@ def _setup_simple_stack(stack: Stack, tmp_dir: str) -> tuple[str | None, int]:
 #
 # TODO: When a stack fails, keep note of it so it won't be retried for the
 # exact same inputs again.
-@AstroFlowNode(cache_result=True, resources={'PixInsight': 1})
+@AstroFlowNode(cache_result=True, debug=True, resources={'PixInsight': 1})
 def stack_files(stack: Stack) -> Path:
   assert context.output_dir
   print(f'### Entering stack_files for {stack}')
@@ -112,6 +112,16 @@ def stack_files(stack: Stack) -> Path:
   metadata = {'IMAGETYP': f'Master {stack.image_type}'}
 
   dest_filename = output_filename(stack, context.output_dir)
+
+  # TODO: This is kind of dangerous, because the output filename only depends
+  # on the stack's own content hash -- the hash used by AstroFlowNode is more
+  # complete and includes this function's code, for example.
+  if context.dangerously_accept_existing_files and os.path.exists(
+      dest_filename):
+    print(f'### Dangerously skipping stacking because '
+          f'file {dest_filename} already exists')
+    return dest_filename
+
   os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
 
   with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
