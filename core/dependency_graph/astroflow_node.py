@@ -5,6 +5,7 @@ from functools import wraps
 import structlog
 from typing import Any
 import astropy.io.fits as pyfits  # type: ignore
+import os
 
 from context import context, WriteMode
 from artifacts import FileArtifact, CacheArtifact, artifact_exists
@@ -28,16 +29,34 @@ class WrongContentHashException(Exception):
   pass
 
 
+def compute_content_hash(fn, *args, **kwargs) -> str:
+  source = inspect.getsource(fn)
+  kwargs_list = sorted(kwargs.items())
+  return hash_list([source, *args, *kwargs_list])
+
+
+def delete_cached_result(node):
+  node = canonicalize_node(node)
+  print(f'### delete_cached_result for node {node_to_string(node)}')
+  content_hash = compute_content_hash(node.task._function, *node.args)
+  name = node.task._function.__name__
+  context.delete((name, content_hash))
+
+
 def _result_exists(fn, content_hash, debug=False):
-  key = (fn.__qualname__, content_hash)
+  if context.ignore_cached_results:
+    return False
+
+  key = (fn.__name__, content_hash)
   if not context.contains(key):
-    print(f'### Node {fn.__qualname__}: context does not contain key {key}')
+    if debug:
+      print(f'### Node {fn.__name__}: context does not contain key {key}')
     return False
 
   result = context[key]
   if isinstance(result, Path):
     if debug:
-      print(f'### Node {fn.__qualname__}: checking that file {result} has '
+      print(f'### Node {fn.__name__}: checking that file {result} has '
             f'content hash {content_hash}')
     if not artifact_exists(FileArtifact(result, content_hash)):
       return False
@@ -45,9 +64,30 @@ def _result_exists(fn, content_hash, debug=False):
   return True
 
 
-def _store_result(fn, result, content_hash, update_header, keep_in_memory,
-                  debug):
+def _update_header(fn, path, content_hash, debug=False):
+  if path.suffix.lower() in ['.xisf']:
+    add_xisf_metadata(path, path, {'CONTHASH': content_hash})
+    if debug:
+      print(f'### Node {fn.__name__}: updated XISF filename {path} '
+            f'with content hash {content_hash}')
+  elif path.suffix.lower() in ['.fit', '.fits']:
+    with pyfits.open(str(path), mode='update', mmap=False) as fits:
+      fits[0].header['CONTHASH'] = content_hash
+    if debug:
+      print(f'### Node {fn.__name__}: updated FITS filename {path} '
+            f'with content hash {content_hash}')
+
+
+def _store_result(fn,
+                  result,
+                  content_hash,
+                  update_header,
+                  keep_in_memory,
+                  debug=False):
   key = (fn.__name__, content_hash)
+
+  write_mode = (WriteMode.MEMORY_AND_DISK
+                if keep_in_memory else WriteMode.DISK_ONLY)
 
   # Graphs are a special case. When a function returns a Graph, it
   # represents some computation that needs to be done. If the function
@@ -60,25 +100,16 @@ def _store_result(fn, result, content_hash, update_header, keep_in_memory,
     return result
 
   # TODO: Clean this up.
-  if update_header and isinstance(result, Path):
-    context.set(key, result)
+  if isinstance(result, Path):
+    if update_header:
+      _update_header(fn, result, content_hash, debug)
 
-    if result.suffix.lower() in ['.xisf']:
-      add_xisf_metadata(result, result, {'CONTHASH': content_hash})
-      if debug:
-        print(f'### Node {fn.__name__}: updated XISF filename {result} '
-              f'with content hash {content_hash}')
-    elif result.suffix.lower() in ['.fit', '.fits']:
-      with pyfits.open(str(result), mode='update', mmap=False) as fits:
-        fits[0].header['CONTHASH'] = content_hash
-      if debug:
-        print(f'### Node {fn.__name__}: updated FITS filename {result} '
-              f'with content hash {content_hash}')
-
+    context.set(key, result, write_mode)
+    if debug:
+      print(f'### Node {fn.__name__}: stored result {type(result)} '
+            f'with key {key} and write mode {write_mode}')
     return FileArtifact(result, content_hash)
 
-  write_mode = (WriteMode.MEMORY_AND_DISK
-                if keep_in_memory else WriteMode.DISK_ONLY)
   context.set(key, result, write_mode)
   if debug:
     print(f'### Node {fn.__name__}: stored result {type(result)} '
@@ -86,13 +117,6 @@ def _store_result(fn, result, content_hash, update_header, keep_in_memory,
   return result
 
 
-def compute_content_hash(fn, *args, **kwargs) -> str:
-  source = inspect.getsource(fn)
-  kwargs_list = list(kwargs.items())
-  return hash_list([source, *args, *kwargs_list])
-
-
-# TODO: Hide logs behind debug flag.
 def AstroFlowNode(resources=None,
                   num_cpus=1,
                   memory=None,
@@ -101,7 +125,6 @@ def AstroFlowNode(resources=None,
                   cache_result=False,
                   keep_in_memory=True,
                   debug=False):
-
   if resources == None:
     resources = {}
 
@@ -135,7 +158,7 @@ def AstroFlowNode(resources=None,
     @wraps(fn)
     def wrapper(*args, **kwargs) -> Any:
       log.info("function_entry",
-               function_name=fn.__qualname__,
+               function_name=fn.__name__,
                args=args,
                kwargs=kwargs)
 
@@ -147,20 +170,19 @@ def AstroFlowNode(resources=None,
         return fn(*args, **kwargs)
 
       content_hash = compute_content_hash(fn, *args, **kwargs)
-      key = (fn.__qualname__, content_hash)
+      key = (fn.__name__, content_hash)
       if debug:
-        print(f'### Node {fn.__qualname__}: key {key}')
+        print(f'### Node {fn.__name__}: key {key}')
 
       if _result_exists(fn, content_hash, debug):
         if debug:
-          print(f'### Node {fn.__qualname__}: not running fn {fn.__qualname__} '
+          print(f'### Node {fn.__name__}: not running fn {fn.__name__} '
                 f'producing content hash {content_hash} because result exists')
         return context[key]
       else:
         if debug:
-          print(
-              f'### Node {fn.__qualname__}: running fn {fn.__qualname__} producing '
-              f'content hash {content_hash} because result does not exist')
+          print(f'### Node {fn.__name__}: running fn {fn.__name__} producing '
+                f'content hash {content_hash} because result does not exist')
         result = fn(*args, **kwargs)
         return _store_result(fn, result, content_hash, update_header,
                              keep_in_memory, debug)
@@ -168,11 +190,3 @@ def AstroFlowNode(resources=None,
     return wrapper
 
   return decorator
-
-
-def delete_cached_result(node):
-  node = canonicalize_node(node)
-  print(f'### delete_cached_result for node {node_to_string(node)}')
-  content_hash = compute_content_hash(node.task._function, *node.args)
-  name = node.task._function.__qualname__
-  context.delete((name, content_hash))
