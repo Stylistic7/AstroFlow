@@ -97,6 +97,7 @@ def _get_stack_for_filter(target: Target, filter: str):
   return stacks[stack_id]
 
 
+# TODO: This function seems to be slow for some reason.
 @AstroFlowNode(num_cpus=0.5)
 def build_placement_subgraph(mode: QualityLevel, mosaic: Mosaic, target: Target,
                              filter: str, tile_indices: TileIndices,

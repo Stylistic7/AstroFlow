@@ -78,20 +78,30 @@ def scatter_spatial_groups(spatial_groups) -> Graph:
   return graph
 
 
-# This graph depends only on the images that are on disk; it doesn't apply any
-# user settings or quarantines. Those are applied later as transforms on the
-# results produced by this graph.
-#
-# TODO: Regrouping has to be done whenever there are new files.
-#
+@AstroFlowNode()
+def regroup_graph_done() -> None:
+  pass
+
+
 # TODO: Move group_stacks_into_targets() back into the parallel path over
 # spatial groups.
 @AstroFlowNode(cache_result=True)
 def build_regroup_graph(metadata: MetadataDict) -> Graph:
-  return make_graph_from_list([(cluster_by_image_center, metadata),
-                               scatter_spatial_groups,
-                               group_stacks_into_targets, store_targets,
-                               identify_mosaics, store_mosaics])
+  context.calibration_stacks = {}
+  context.grouped_stacks = {}
+  context.grouped_targets = {}
+  context.grouped_mosaics = {}
+
+  return Graph({
+      scatter_spatial_groups: {(cluster_by_image_center, metadata)},
+      group_stacks_into_targets: {scatter_spatial_groups},
+      store_targets: {group_stacks_into_targets},
+      identify_mosaics: {store_targets},
+      store_mosaics: {identify_mosaics},
+      quarantine_calibration_stacks: {identify_calibration_stacks},
+      store_calibration_stacks: {quarantine_calibration_stacks},
+      regroup_graph_done: {store_mosaics, store_calibration_stacks},
+  })
 
 
 @AstroFlowNode()
@@ -176,21 +186,7 @@ def build_compute_graph(regroup: bool = False,
   # The regroup graph only looks at light frames only, and ignores calibration
   # frames. All of its findings are written into the given `grouped_*` keys.
   if regroup:
-    # TODO: The @AstroFlowNode decorator works with values passed down through
-    # the dependency graph as return values and arguments. These context-based
-    # values are basically "side effects." When the decorator doesn't run
-    # the functions, these side effects don't happen.
-    #
-    context.calibration_stacks = {}
-    context.grouped_stacks = {}
-    context.grouped_targets = {}
-    context.grouped_mosaics = {}
     task_list.append(build_regroup_graph)
-
-  # TODO: Don't do this unless there are new calibration frames.
-  task_list.append(identify_calibration_stacks)
-  task_list.append(quarantine_calibration_stacks)
-  task_list.append(store_calibration_stacks)
 
   task_list.append(build_customize_graph)
 
