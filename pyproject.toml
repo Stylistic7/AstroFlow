@@ -7,7 +7,7 @@ name = "astroflow"
 version = "0.1"
 
 [tool.setuptools.packages.find]
-include = ["astroflow"]
+include = ["cli", "core"]
 
 [project.scripts]
-astroflow = "astroflow.cli:main"
+astroflow = "cli:main"
