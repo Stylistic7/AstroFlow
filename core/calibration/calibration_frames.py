@@ -90,7 +90,7 @@ def associate_with_stack(stack: CompositeStack) -> CompositeStack:
 
     # TODO: Put temperarture temperature compatibility options in the UI.
     good_temperature = abs(cal_stack.mean_temperature -
-                           substack.mean_temperature) < 5.0
+                           substack.mean_temperature) < 10.0
 
     # TODO: This allows dark scaling. Make this an option in the UI.
     good_exposure = cal_stack.exposure_s <= substack.exposure_s
