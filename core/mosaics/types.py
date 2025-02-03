@@ -54,31 +54,20 @@ class Viewbox:
   x_span: float
   y_min: float
   y_span: float
-  resolution_aspp: float
 
   def __str__(self):
     return 'Viewbox'
 
-
-@dataclass(frozen=True)
-class Panel:
-  tile_indices: tuple[int, int]
-  image: Artifact
+  def __hash__(self) -> int:
+    return hash_dataclass(self)
 
 
 @dataclass(frozen=True)
-class MergeOp:
-  input_images: list[Artifact]
-  output_image: Artifact
+class Tiling:
+  num_tiles_y: int
+  num_tiles_x: int
+  tile_height: int
+  tile_width: int
 
-
-@dataclass
-class MosaicDimensions:
-  width: int
-  height: int
-  min_ra: float
-  ra_span: float
-  min_dec: float
-  dec_span: float
-  ra_resolution: float
-  dec_resolution: float
+  def __hash__(self) -> int:
+    return hash_dataclass(self)

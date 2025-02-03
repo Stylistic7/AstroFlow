@@ -22,13 +22,20 @@ def _post_process_stack(images: ImageList) -> ImageList:
 def post_process_stack(master: Path) -> Path:
   print(f'### post_process_stack, master {master}')
 
+  final_filename = master.with_stem(master.stem + "_post_processed")
+
+  if context.dangerously_accept_existing_files and os.path.exists(
+      final_filename):
+    print(f'### Dangerously skipping post-processing because '
+          f'file {final_filename} already exists')
+    return Path(final_filename)
+
   if os.environ.get('MOCK_PIXINSIGHT'):
     output_filename = master
   else:
     results = _post_process_stack([master])
     output_filename = next(iter(results)).filename
 
-  final_filename = master.with_stem(master.stem + "_post_processed")
   shutil.copy(output_filename, final_filename)
 
   return Path(final_filename)

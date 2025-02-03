@@ -9,58 +9,69 @@ from pathlib import Path
 from typing import Any
 import structlog
 import astropy.io.fits as pyfits  # type: ignore
-from objsize import get_deep_size
 
 from file_io.generic import get_content_hash, read_image
 from context import context
 from previews import QualityLevel
-from mosaics.types import Mosaic, Viewbox, TileIndices
+from mosaics.types import Mosaic, Viewbox, TileIndices, Tiling
 from dependency_graph.astroflow_node import AstroFlowNode
 
-_PLACE_IMAGE_MEMORY_REQUIREMENT = 4 * 1024 * 1024 * 1024  # 4 GB
-_PLACE_TILE_MEMORY_REQUIREMENT = 1 * 1024 * 1024 * 1024  # 1 GB
+_PLACE_IMAGE_MEMORY_REQUIREMENT = 12 * 1024 * 1024 * 1024  # 12 GB
+_PLACE_TILE_MEMORY_REQUIREMENT = 0.25 * 1024 * 1024 * 1024  # 256 MB
 
 log = structlog.get_logger()
 
 
-def _compute_ras_decs(viewbox: Viewbox,
-                      multiple: int = 4) -> tuple[np.ndarray, np.ndarray]:
-  num_samples_x = viewbox.x_span * 3600.0 / viewbox.resolution_aspp
+def round_to_nearest_multiple(number: float, multiple: int) -> int:
+  return int(np.ceil(number / multiple) * multiple)
 
-  def round_to_nearest_multiple(number: float) -> int:
+
+def _compute_tiling(mode: QualityLevel, mosaic: Mosaic,
+                    viewbox: Viewbox) -> Tiling:
+  tile_width = 4096
+  tile_height = 4096
+
+  def round_to_nearest_multiple(number: float, multiple: int) -> int:
     return int(np.ceil(number / multiple) * multiple)
 
-  num_samples_x = round_to_nearest_multiple(num_samples_x)
+  num_samples_x = np.degrees(viewbox.x_span) / (
+      mosaic.image_scale / 3600) if mode == QualityLevel.MASTER else 1500
+  num_samples_x = round_to_nearest_multiple(num_samples_x, multiple=tile_width)
+
   resolution = viewbox.x_span / num_samples_x
-  num_samples_y = round_to_nearest_multiple(viewbox.y_span / resolution)
+  num_samples_y = round_to_nearest_multiple(viewbox.y_span / resolution,
+                                            multiple=tile_height)
 
-  xx, yy = np.meshgrid(
-      np.linspace(viewbox.x_min, viewbox.x_min + viewbox.x_span, num_samples_x),
-      np.linspace(viewbox.y_min, viewbox.y_min + viewbox.y_span, num_samples_y))
-  ras, decs = viewbox.projection.unproject(xx, yy)
-  ras, decs = np.degrees(ras), np.degrees(decs)
+  print(f'### _compute_tiling image_scale {mosaic.image_scale} '
+        f'num_samples_y {num_samples_y} num_samples_x {num_samples_x}')
 
-  return ras, decs
-
-
-def _reshape_tiles(
-    image: np.ndarray, tile_size: tuple[int, int] = (32, 32)) -> np.ndarray:
-  image_height, image_width = image.shape
-  tile_height, tile_width = tile_size
-  tiles = image.reshape(image_height // tile_height, tile_height,
-                        image_width // tile_width, tile_width)
-  return tiles.swapaxes(1, 2)
+  num_tiles_y = int(np.ceil(num_samples_y / tile_height))
+  num_tiles_x = int(np.ceil(num_samples_x / tile_width))
+  return Tiling(num_tiles_y, num_tiles_x, tile_height, tile_width)
 
 
 @ray.remote(memory=_PLACE_TILE_MEMORY_REQUIREMENT, scheduling_strategy="SPREAD")
-def place_tile(tile_y: int, tile_x: int, wcs: Any, ra_tiles: np.ndarray,
-               dec_tiles: np.ndarray,
+def place_tile(viewbox: Viewbox, tiling: Tiling, tile_y: int, tile_x: int,
+               wcs: Any,
                interp: RegularGridInterpolator) -> tuple[int, int, np.ndarray]:
-  ra_tile = ra_tiles[tile_y, tile_x, :, :]
-  dec_tile = dec_tiles[tile_y, tile_x, :, :]
+  y_step = viewbox.y_span / (tiling.num_tiles_y * tiling.tile_height)
+  x_step = viewbox.x_span / (tiling.num_tiles_x * tiling.tile_width)
 
-  source_xs, source_ys = wcs.all_world2pix(ra_tile, dec_tile, 1, quiet=True)
-  return tile_y, tile_x, interp((source_ys, source_xs))
+  tile_y_min = viewbox.y_min + tile_y * tiling.tile_height * y_step
+  tile_y_max = tile_y_min + tiling.tile_height * y_step
+  ys = np.linspace(tile_y_min, tile_y_max, tiling.tile_height, endpoint=False)
+
+  tile_x_min = viewbox.x_min + tile_x * tiling.tile_width * x_step
+  tile_x_max = tile_x_min + tiling.tile_width * x_step
+  xs = np.linspace(tile_x_min, tile_x_max, tiling.tile_width, endpoint=False)
+
+  xx, yy = np.meshgrid(xs, ys, indexing="xy")
+  ras, decs = viewbox.projection.unproject(xx, yy)
+  ras, decs = np.degrees(ras), np.degrees(decs)
+
+  source_xs, source_ys = wcs.all_world2pix(ras, decs, 1, quiet=True)
+  tile_data = interp((source_ys, source_xs)).astype(np.float32)
+  return tile_y, tile_x, tile_data
 
 
 def _trim_image(projected_image):
@@ -112,36 +123,28 @@ def _make_interpolator(filename: Path):
                                  fill_value=0)
 
 
-def _project_in_tiles(viewbox: Viewbox,
-                      interp: RegularGridInterpolator,
-                      wcs: WCS,
-                      multiple=4):
-  ras, decs = _compute_ras_decs(viewbox, multiple)
-  projected_image = np.zeros_like(ras)
-
-  viewbox_height, viewbox_width = ras.shape
-  tile_height = int(viewbox_height / multiple)
-  tile_width = int(viewbox_width / multiple)
-  ra_tiles = _reshape_tiles(ras, (tile_height, tile_width))
-  dec_tiles = _reshape_tiles(decs, (tile_height, tile_width))
-  projected_image_tiles = _reshape_tiles(projected_image,
-                                         (tile_height, tile_width))
-
-  num_tiles_y, num_tiles_x = ra_tiles.shape[0:2]
+def _project_in_tiles(viewbox: Viewbox, tiling: Tiling,
+                      interp: RegularGridInterpolator, wcs: WCS):
   wcs_ref = ray.put(wcs)
-  ra_tiles_ref = ray.put(ra_tiles)
-  dec_tiles_ref = ray.put(dec_tiles)
+
+  num_samples_y = tiling.num_tiles_y * tiling.tile_height
+  num_samples_x = tiling.num_tiles_x * tiling.tile_width
+  projected_image = np.zeros((num_samples_y, num_samples_x), dtype=np.float32)
+
   interp_ref = ray.put(interp)
   remaining_refs = [
-      place_tile.remote(tile_y, tile_x, wcs_ref, ra_tiles_ref, dec_tiles_ref,
-                        interp_ref)
-      for tile_y, tile_x in product(range(num_tiles_y), range(num_tiles_x))
+      place_tile.remote(viewbox, tiling, tile_y, tile_x, wcs_ref, interp_ref)
+      for tile_y, tile_x in product(range(tiling.num_tiles_y),
+                                    range(tiling.num_tiles_x))
   ]
   while remaining_refs:
     ready_refs, remaining_refs = ray.wait(remaining_refs, num_returns=1)
-    tile_y, tile_x, value = ray.get(ready_refs[0])
-    projected_image_tiles[tile_y, tile_x, :, :] = value
-    del value
+    tile_y, tile_x, tile_data = ray.get(ready_refs[0])
+    tile_y_idx = tile_y * tiling.tile_height
+    tile_x_idx = tile_x * tiling.tile_width
+
+    projected_image[tile_y_idx:tile_y_idx + tiling.tile_height,
+                    tile_x_idx:tile_x_idx + tiling.tile_width] = tile_data
 
   return projected_image
 
@@ -167,7 +170,8 @@ def place_large_image(mode: QualityLevel, mosaic: Mosaic,
   wcs = _get_wcs(filename)
   interp = _make_interpolator(filename)
 
-  projected_image = _project_in_tiles(viewbox, interp, wcs)
+  tiling = _compute_tiling(mode, mosaic, viewbox)
+  projected_image = _project_in_tiles(viewbox, tiling, interp, wcs)
 
   # TODO: Don't keep two copies of the huge image
   # projected_image = _trim_image(projected_image)
@@ -183,9 +187,13 @@ def place_small_image(mode: QualityLevel, mosaic: Mosaic,
   wcs = _get_wcs(filename)
   interp = _make_interpolator(filename)
 
-  ras, decs = _compute_ras_decs(viewbox, multiple=1)
-  source_xs, source_ys = wcs.all_world2pix(ras, decs, 1, quiet=True)
-  projected_image = interp((source_ys, source_xs))
+  num_samples_x = 1500
+  resolution = viewbox.x_span / num_samples_x
+  num_samples_y = int(viewbox.y_span / resolution)
+
+  tiling = Tiling(1, 1, num_samples_y, num_samples_x)
+
+  projected_image = _project_in_tiles(viewbox, tiling, interp, wcs)
 
   return _save_image_to_file(mode, mosaic, tile_indices, filter,
                              projected_image)

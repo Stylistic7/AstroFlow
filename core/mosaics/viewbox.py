@@ -1,4 +1,5 @@
 import ray
+import numpy as np
 
 from mosaics.types import Mosaic, Viewbox
 from artifacts import Artifact
@@ -15,10 +16,6 @@ def compute_mosaic_viewbox(mode: QualityLevel,
                            mosaic: Mosaic) -> list[Artifact]:
   print(f'### Entering compute_mosaic_viewbox for mosaic {mosaic}')
 
-  # FIXME The spatial resolution should really be something like 4x the
-  # original image's aspp for subframe mode, and
-  resolution_aspp = 1.0 if mode == QualityLevel.MASTER else 4.0
-
   # TODO: Put this in the UI somewhere.
   proj = mercator.MercatorProjection()
 
@@ -29,5 +26,4 @@ def compute_mosaic_viewbox(mode: QualityLevel,
                  x_min=x_min,
                  y_min=y_min,
                  x_span=x_span,
-                 y_span=y_span,
-                 resolution_aspp=resolution_aspp)
+                 y_span=y_span)
