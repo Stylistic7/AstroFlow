@@ -15,6 +15,7 @@ from mosaics.compute_graph import build_mosaic_subgraph
 from dependency_graph import Graph, run_graph
 from dependency_graph.astroflow_node import delete_cached_result
 from metadata.image_metadata import load_metadata, scatter_compute_image_metadata
+from customization.compute_graph import build_customize_graph
 
 
 def merge_mosaic(args):
@@ -33,7 +34,9 @@ def merge_mosaic(args):
       task = (build_mosaic_subgraph, QualityLevel(mode), mosaic)
       if args.force:
         delete_cached_result(task)
-      graph[task] = {load_metadata}
+      graph[task] = {build_customize_graph}
+
+  graph[build_customize_graph] = {load_metadata}
 
   run_graph(graph)
 
