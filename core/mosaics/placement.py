@@ -16,8 +16,9 @@ from previews import QualityLevel
 from mosaics.types import Mosaic, Viewbox, TileIndices, Tiling
 from dependency_graph.astroflow_node import AstroFlowNode
 
+_TILE_SIZE = 2048  # pixels
 _PLACE_IMAGE_MEMORY_REQUIREMENT = 12 * 1024 * 1024 * 1024  # 12 GB
-_PLACE_TILE_MEMORY_REQUIREMENT = 0.25 * 1024 * 1024 * 1024  # 256 MB
+_PLACE_TILE_MEMORY_REQUIREMENT = 128 * 1024 * 1024  # 128 MB
 
 log = structlog.get_logger()
 
@@ -28,8 +29,8 @@ def round_to_nearest_multiple(number: float, multiple: int) -> int:
 
 def _compute_tiling(mode: QualityLevel, mosaic: Mosaic,
                     viewbox: Viewbox) -> Tiling:
-  tile_width = 4096
-  tile_height = 4096
+  tile_width = _TILE_SIZE
+  tile_height = _TILE_SIZE
 
   def round_to_nearest_multiple(number: float, multiple: int) -> int:
     return int(np.ceil(number / multiple) * multiple)
