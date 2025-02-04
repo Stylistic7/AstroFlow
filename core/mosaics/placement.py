@@ -1,3 +1,4 @@
+import os
 import ray
 import numpy as np
 from astropy.wcs import WCS  # type: ignore
@@ -9,6 +10,8 @@ from pathlib import Path
 from typing import Any
 import structlog
 import astropy.io.fits as pyfits  # type: ignore
+from astropy.coordinates import SkyCoord  # type: ignore
+from astropy import units as u  # type: ignore
 
 from file_io.generic import get_content_hash, read_image
 from context import context
@@ -52,25 +55,47 @@ def _compute_tiling(mode: QualityLevel, mosaic: Mosaic,
 
 
 @ray.remote(memory=_PLACE_TILE_MEMORY_REQUIREMENT, scheduling_strategy="SPREAD")
-def place_tile(viewbox: Viewbox, tiling: Tiling, tile_y: int, tile_x: int,
+def place_tile(viewbox: Viewbox,
+               tiling: Tiling,
+               tile_y: int,
+               tile_x: int,
                wcs: Any,
-               interp: RegularGridInterpolator) -> tuple[int, int, np.ndarray]:
+               interp: RegularGridInterpolator,
+               skip_empty: bool = False) -> tuple[int, int, np.ndarray]:
   y_step = viewbox.y_span / (tiling.num_tiles_y * tiling.tile_height)
   x_step = viewbox.x_span / (tiling.num_tiles_x * tiling.tile_width)
 
   tile_y_min = viewbox.y_min + tile_y * tiling.tile_height * y_step
   tile_y_max = tile_y_min + tiling.tile_height * y_step
-  ys = np.linspace(tile_y_min, tile_y_max, tiling.tile_height, endpoint=False)
 
   tile_x_min = viewbox.x_min + tile_x * tiling.tile_width * x_step
   tile_x_max = tile_x_min + tiling.tile_width * x_step
-  xs = np.linspace(tile_x_min, tile_x_max, tiling.tile_width, endpoint=False)
 
+  if skip_empty:
+    # Compute the four corner points in RA/Dec.
+    corners_x = [tile_x_min, tile_x_max, tile_x_min, tile_x_max]
+    corners_y = [tile_y_min, tile_y_min, tile_y_max, tile_y_max]
+    ras, decs = viewbox.projection.unproject(np.array(corners_x),
+                                             np.array(corners_y))
+    ras, decs = np.degrees(ras), np.degrees(decs)
+
+    # If none of the corners of this tile fall inside the source image's
+    # footprint, this tile can be skipped.
+    inside_footprint = [
+        wcs.footprint_contains(SkyCoord(ra * u.deg, dec * u.deg, frame="icrs"))
+        for ra, dec in zip(ras, decs)
+    ]
+    if not any(inside_footprint):
+      return tile_y, tile_x, None
+
+  # Compute the RA, Dec of all the tile's pixels.
+  ys = np.linspace(tile_y_min, tile_y_max, tiling.tile_height, endpoint=False)
+  xs = np.linspace(tile_x_min, tile_x_max, tiling.tile_width, endpoint=False)
   xx, yy = np.meshgrid(xs, ys, indexing="xy")
   ras, decs = viewbox.projection.unproject(xx, yy)
   ras, decs = np.degrees(ras), np.degrees(decs)
 
-  source_xs, source_ys = wcs.all_world2pix(ras, decs, 1, quiet=True)
+  source_xs, source_ys = wcs.all_world2pix(ras, decs, 0, quiet=True)
   tile_data = interp((source_ys, source_xs)).astype(np.float32)
   return tile_y, tile_x, tile_data
 
@@ -124,8 +149,11 @@ def _make_interpolator(filename: Path):
                                  fill_value=0)
 
 
-def _project_in_tiles(viewbox: Viewbox, tiling: Tiling,
-                      interp: RegularGridInterpolator, wcs: WCS):
+def _project_in_tiles(viewbox: Viewbox,
+                      tiling: Tiling,
+                      interp: RegularGridInterpolator,
+                      wcs: WCS,
+                      skip_empty: bool = False):
   wcs_ref = ray.put(wcs)
 
   num_samples_y = tiling.num_tiles_y * tiling.tile_height
@@ -134,16 +162,19 @@ def _project_in_tiles(viewbox: Viewbox, tiling: Tiling,
 
   interp_ref = ray.put(interp)
   remaining_refs = [
-      place_tile.remote(viewbox, tiling, tile_y, tile_x, wcs_ref, interp_ref)
+      place_tile.remote(viewbox, tiling, tile_y, tile_x, wcs_ref, interp_ref,
+                        skip_empty)
       for tile_y, tile_x in product(range(tiling.num_tiles_y),
                                     range(tiling.num_tiles_x))
   ]
   while remaining_refs:
     ready_refs, remaining_refs = ray.wait(remaining_refs, num_returns=1)
     tile_y, tile_x, tile_data = ray.get(ready_refs[0])
+    if tile_data is None:
+      continue
+
     tile_y_idx = tile_y * tiling.tile_height
     tile_x_idx = tile_x * tiling.tile_width
-
     projected_image[tile_y_idx:tile_y_idx + tiling.tile_height,
                     tile_x_idx:tile_x_idx + tiling.tile_width] = tile_data
 
@@ -168,14 +199,20 @@ def _save_image_to_file(mode: QualityLevel, mosaic: Mosaic,
 def place_large_image(mode: QualityLevel, mosaic: Mosaic,
                       tile_indices: TileIndices, filter: str, viewbox: Viewbox,
                       filename: Path) -> Path:
+  # if context.dangerously_accept_existing_files and os.path.exists(filename):
+  #   print(f'### Dangerously skipping place_large_image because '
+  #         f'file {filename} already exists')
+  #   return filename
+
   wcs = _get_wcs(filename)
   interp = _make_interpolator(filename)
-
   tiling = _compute_tiling(mode, mosaic, viewbox)
-  projected_image = _project_in_tiles(viewbox, tiling, interp, wcs)
-
-  # TODO: Don't keep two copies of the huge image
-  # projected_image = _trim_image(projected_image)
+  projected_image = _project_in_tiles(viewbox,
+                                      tiling,
+                                      interp,
+                                      wcs,
+                                      skip_empty=True)
+  projected_image = _trim_image(projected_image)
 
   return _save_image_to_file(mode, mosaic, tile_indices, filter,
                              projected_image)
@@ -194,7 +231,11 @@ def place_small_image(mode: QualityLevel, mosaic: Mosaic,
 
   tiling = Tiling(1, 1, num_samples_y, num_samples_x)
 
-  projected_image = _project_in_tiles(viewbox, tiling, interp, wcs)
+  projected_image = _project_in_tiles(viewbox,
+                                      tiling,
+                                      interp,
+                                      wcs,
+                                      skip_empty=False)
 
   return _save_image_to_file(mode, mosaic, tile_indices, filter,
                              projected_image)
