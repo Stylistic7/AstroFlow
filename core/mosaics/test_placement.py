@@ -14,6 +14,7 @@ from previews.types import QualityLevel
 from metadata.image_metadata import load_metadata
 from mosaics.viewbox import compute_mosaic_viewbox, Viewbox
 from mosaics.types import TileIndices
+from testing.test_stacks import make_composite_stack
 
 
 class TestPlacement(unittest.TestCase):
@@ -37,19 +38,20 @@ class TestPlacement(unittest.TestCase):
     filename = 'testdata/Stacks/IC1318/masters/master_light_IC1318_RA_306.20_DEC_35.00_ZWO ASI6200MM Pro_2.21aspp_1.55deg_H_3bd18a01cedf3c6b.xisf'
 
     mosaic = context.mosaics[mosaic_id]
+    stack = make_composite_stack(content_hash='stack_abc123')
 
     viewbox = compute_mosaic_viewbox(mode, mosaic)
     self.assertTrue(isinstance(viewbox, Viewbox))
 
     log, result = ray.get(
-        place_small_image.remote(QualityLevel.SUBFRAME, mosaic, tile_indices,
-                                 filter, viewbox, filename))
+        place_small_image.remote(QualityLevel.SUBFRAME, mosaic, stack,
+                                 tile_indices, filter, viewbox, filename))
     print('### result', result)
     self.assertTrue(isinstance(unpack_artifact(result), Path))
 
     log, result = ray.get(
-        place_large_image.remote(QualityLevel.MASTER, mosaic, tile_indices,
-                                 filter, viewbox, filename))
+        place_large_image.remote(QualityLevel.MASTER, mosaic, stack,
+                                 tile_indices, filter, viewbox, filename))
     self.assertTrue(isinstance(unpack_artifact(result), Path))
 
 

@@ -18,6 +18,7 @@ from context import context
 from previews import QualityLevel
 from mosaics.types import Mosaic, Viewbox, TileIndices, Tiling
 from dependency_graph.astroflow_node import AstroFlowNode
+from stacks.composite_stack import CompositeStack
 
 _TILE_SIZE = 2048  # pixels
 _PLACE_IMAGE_MEMORY_REQUIREMENT = 12 * 1024 * 1024 * 1024  # 12 GB
@@ -182,12 +183,12 @@ def _project_in_tiles(viewbox: Viewbox,
 
 
 def _save_image_to_file(mode: QualityLevel, mosaic: Mosaic,
-                        tile_indices: TileIndices, filter: str,
-                        projected_image: np.ndarray) -> Path:
+                        stack: CompositeStack, tile_indices: TileIndices,
+                        filter: str, projected_image: np.ndarray) -> Path:
   tile_indices_str = '_'.join(str(i) for i in tile_indices)
   filename = Path(context.output_dir) / 'Mosaics' / mosaic.name / Path(
-      f'placed_image_{mode}_{mosaic.stable_hash}_{tile_indices_str}_{filter}.fits'
-  )
+      f'placed_image_{mode}_{mosaic.stable_hash}_{stack.stable_hash}_'
+      f'{tile_indices_str}_{filter}.fits')
   hdu = pyfits.PrimaryHDU(projected_image)
   filename.parent.mkdir(parents=True, exist_ok=True)
   hdu.writeto(str(filename), overwrite=True)
@@ -196,7 +197,7 @@ def _save_image_to_file(mode: QualityLevel, mosaic: Mosaic,
 
 
 @AstroFlowNode(cache_result=True, memory=_PLACE_IMAGE_MEMORY_REQUIREMENT)
-def place_large_image(mode: QualityLevel, mosaic: Mosaic,
+def place_large_image(mode: QualityLevel, mosaic: Mosaic, stack: CompositeStack,
                       tile_indices: TileIndices, filter: str, viewbox: Viewbox,
                       filename: Path) -> Path:
   # if context.dangerously_accept_existing_files and os.path.exists(filename):
@@ -214,12 +215,12 @@ def place_large_image(mode: QualityLevel, mosaic: Mosaic,
                                       skip_empty=True)
   projected_image = _trim_image(projected_image)
 
-  return _save_image_to_file(mode, mosaic, tile_indices, filter,
+  return _save_image_to_file(mode, mosaic, stack, tile_indices, filter,
                              projected_image)
 
 
 @AstroFlowNode(cache_result=True, debug=True)
-def place_small_image(mode: QualityLevel, mosaic: Mosaic,
+def place_small_image(mode: QualityLevel, mosaic: Mosaic, stack: CompositeStack,
                       tile_indices: TileIndices, filter: str, viewbox: Viewbox,
                       filename: Path) -> Path:
   wcs = _get_wcs(filename)
@@ -237,5 +238,5 @@ def place_small_image(mode: QualityLevel, mosaic: Mosaic,
                                       wcs,
                                       skip_empty=False)
 
-  return _save_image_to_file(mode, mosaic, tile_indices, filter,
+  return _save_image_to_file(mode, mosaic, stack, tile_indices, filter,
                              projected_image)

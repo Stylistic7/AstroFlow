@@ -37,6 +37,10 @@ def output_filename(stack: SimpleStack | CompositeStack,
   elif isinstance(stack, CompositeStack) and stack.image_type == 'light':
     output_dir = os.path.join(dest_path, 'Stacks', stack.name, 'masters')
     ra_dec_string = position_string.ra_dec_string(*stack.center)
+    # TOOD: Should this use the stack's content_hash or stable_hash? Using the
+    # content hash means keeping a lot of older (obsolete) copies of the stack
+    # as it changes. On the other hand, the stack artifact is small (not much
+    # bigger than a subframe) but requires a lot of computation to generate.
     return Path(
         os.path.join(
             output_dir, f'master_light_{stack.name}_{ra_dec_string}_'
