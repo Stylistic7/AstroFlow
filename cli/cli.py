@@ -2,6 +2,7 @@ import argparse
 import sys
 import os
 import ray
+import datetime
 
 # TODO: This feels hacky.
 sys.path.insert(
@@ -13,14 +14,18 @@ from compute_graph import build_regroup_graph
 from previews.types import QualityLevel
 from mosaics.compute_graph import build_mosaic_subgraph
 from dependency_graph import Graph, run_graph
-from dependency_graph.astroflow_node import delete_cached_result
+from dependency_graph.astroflow_node import AstroFlowNode, delete_cached_result
 from metadata.image_metadata import load_metadata, scatter_compute_image_metadata
 from customization.compute_graph import build_customize_graph
 
 
+@AstroFlowNode()
+def command_done() -> None:
+  pass
+
+
 def merge_mosaic(args):
   print(f"Merging mosaic with ID: {args.mosaic_id} mode {args.mode}")
-  mosaic = context.mosaics[args.mosaic_id]
 
   # TODO: Consider various forms of "forcing":
   # - Just deleting the toplevel graph result
@@ -28,17 +33,19 @@ def merge_mosaic(args):
   context.ignore_cached_results = args.force
   context.dangerously_accept_existing_files = args.force
 
-  graph = Graph({})
+  run_graph(Graph({build_customize_graph: {load_metadata}}))
+
+  mosaic = context.mosaics[args.mosaic_id]
+
+  tasks = []
   for mode in ['subframe', 'master']:
     if args.mode in ['all', mode]:
       task = (build_mosaic_subgraph, QualityLevel(mode), mosaic)
+      tasks.append(task)
       if args.force:
         delete_cached_result(task)
-      graph[task] = {build_customize_graph}
 
-  graph[build_customize_graph] = {load_metadata}
-
-  run_graph(graph)
+  run_graph(Graph({command_done: tasks}))
 
 
 def regroup(args):
@@ -61,6 +68,17 @@ def regroup(args):
   })
 
   results, logs = run_graph(graph)
+
+
+def populate_context():
+  # TODO: Put these knobs in the UI.
+  context.cosine_similarity_threshold = 0.99999
+  context.min_component_members = 3
+  context.max_run_gap = datetime.timedelta(hours=8)
+  context.min_frames_in_run = 3
+  context.min_frames_in_stack = 3
+  context.subframe_thumbnail_width = 1200
+  context.master_thumbnail_width = 2160
 
 
 def main():
@@ -91,7 +109,7 @@ def main():
       "regroup_type",
       choices=["input", "master", "all"],
       nargs="?",
-      default="all",
+      default="input",
       help="Type of regrouping: input, master, or all (default: all)")
   regroup_parser.add_argument("-f",
                               "--force",
@@ -100,6 +118,8 @@ def main():
 
   # Parse the arguments
   args = parser.parse_args()
+
+  populate_context()
 
   # Handle the parsed arguments
   if args.command == "merge" and args.subcommand == "mosaic":
