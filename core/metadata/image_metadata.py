@@ -77,6 +77,9 @@ from dependency_graph.astroflow_node import AstroFlowNode
 
 # TODO: Don't revisit the same failed images over and over, it just takes up
 # time at every startup.
+#
+# TODO: Add a task that checks that input and output directories exist. Many
+# tasks cannot run without them.
 @AstroFlowNode()
 def scatter_compute_image_metadata(mode: str, *filenames_in:
                                    list[Path]) -> Graph:
@@ -176,6 +179,12 @@ def load_metadata() -> MetadataDict:
   metadata = MetadataDict(
       get_metadata(predicate_fn=predicate_fn,
                    post_fn=lambda images: {i.content_hash: i for i in images}))
+
+  num_files_before = len(metadata)
+  metadata = {h: m for h, m in metadata.items() if os.path.exists(m.filename)}
+  num_files_after = len(metadata)
+  print(f'### excluded {num_files_before - num_files_after} files '
+        f'that do not exist')
 
   metadata_size_mb = objsize.get_deep_size(metadata) / 1024 / 1024
   print(f'### load_metadata() size {metadata_size_mb} MB')

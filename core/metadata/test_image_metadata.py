@@ -18,7 +18,7 @@ def get_all_filenames():
 
 
 def compute_graph_fragment():
-  return {load_metadata: {(scatter_compute_image_metadata, 'input')}}
+  return {(scatter_compute_image_metadata, 'input'): {}}
 
 
 class TestImageMetadata(unittest.TestCase):
@@ -101,33 +101,26 @@ class TestImageMetadata(unittest.TestCase):
     self.assertEqual(len(images), 20)
     self.assertEqual(sorted(filenames), sorted(i.filename for i in images))
 
-  # TODO: What should be done about deleted files? Maybe nothing, until they
-  # are actually needed by something, e.g. a stacking operation. They might
-  # simply be on removable media, and we should not care until necessary.
-  # def test_deleted_files(self):
-  #   input_dir = self.context.input_dirs[0]
-  #   make_synthetic_frames(number=20, dest_dir=input_dir)
+  def test_deleted_files(self):
+    input_dir = context.input_dirs[0]
+    make_synthetic_frames(number=20, dest_dir=input_dir)
+    filenames = glob.glob(f'{input_dir}/**/*.fit?', recursive=True)
+    self.assertEqual(len(filenames), 20)
 
-  #   graph = compute_graph_fragment()
-  #   self.context, results = run_graph(graph, self.context)
-  #   self.assertEqual(results['num_nodes_run'], 2 + 20)
-  #   filenames = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
-  #   self.assertEqual(len(filenames), 20)
-  #   image_hashes = context.image_hashes
-  #   self.assertEqual(len(image_hashes), 20)
+    graph = compute_graph_fragment()
+    run_graph(graph)
+    self.assertEqual(len(context.metadata), 20)
 
-  #   random.shuffle(filenames)
-  #   for filename in filenames[:5]:
-  #     os.remove(filename)
+    random.shuffle(filenames)
+    for filename in filenames[:5]:
+      os.remove(filename)
 
-  #   graph = compute_graph_fragment()
-  #   self.context, results = run_graph(graph, self.context)
-  #   self.assertEqual(results['num_nodes_run'], 2)
-  #   filenames = glob.glob(f'{input_dir}/**/*.fit', recursive=True)
-  #   self.assertEqual(len(filenames), 15)
-  #   image_hashes = context.image_hashes
-  #   self.assertEqual(len(image_hashes), 20)
-  #   self.assertEqual(sum(1 for f in image_hashes.values() if f), 15)
+    filenames = glob.glob(f'{input_dir}/**/*.fit?', recursive=True)
+    self.assertEqual(len(filenames), 15)
+
+    graph = compute_graph_fragment()
+    run_graph(graph)
+    self.assertEqual(len(context.metadata), 15)
 
 
 if __name__ == '__main__':

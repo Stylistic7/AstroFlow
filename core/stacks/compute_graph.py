@@ -33,6 +33,9 @@ def build_stacking_subgraph(stack: CustomizedStack) -> Graph:
   graph[stacking_metadata_task] = {stack_task}
   graph[post_process_stack] = {stacking_metadata_task}
   graph[post_process_metadata_task] = {post_process_stack}
+  # TODO: This ends up calling load_metadata dozens of times, which is
+  # unnecessarily slow -- but the slowdown is hidden when the result of this
+  # function is cached.
   graph[load_metadata] = {post_process_metadata_task}
 
   return graph
