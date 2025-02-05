@@ -28,13 +28,6 @@ def merge_images_with_photometric_mosaic(mosaic: Mosaic, input_0: Path,
                                          input_1: Path) -> Path:
   print(f'### merge_images_with_photometric_mosaic {input_0} {input_1}')
 
-  # image_0 = autostretch(read_image(input_0))
-  # image_1 = autostretch(read_image(input_1))
-  # assert not np.isnan(np.min(image_0))
-  # assert not np.isnan(np.min(image_1))
-  # overlap = np.where((image_0 > 0) & (image_1 > 0))
-  # assert np.count_nonzero(overlap)
-
   output_filename = Path(
       context.output_dir
   ) / 'Mosaics' / mosaic.name / f'merged_master_{get_content_hash(input_0)}_{get_content_hash(input_1)}.xisf'
