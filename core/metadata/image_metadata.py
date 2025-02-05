@@ -128,7 +128,7 @@ def compute_image_metadata(filename: Path) -> Path:
 
     if context.contains(key):
       prev_filename = context.get(key, keep_in_memory=False).filename
-      if prev_filename == filename:
+      if Path(prev_filename) == Path(filename):
         # The given input file just points to an existing known file; nothing
         # needs to be done.
         return filename
@@ -181,7 +181,9 @@ def load_metadata() -> MetadataDict:
                    post_fn=lambda images: {i.content_hash: i for i in images}))
 
   num_files_before = len(metadata)
-  metadata = {h: m for h, m in metadata.items() if os.path.exists(m.filename)}
+  metadata = MetadataDict({
+      h: m for h, m in metadata.items() if os.path.exists(m.filename)
+  })
   num_files_after = len(metadata)
   print(f'### excluded {num_files_before - num_files_after} files '
         f'that do not exist')
