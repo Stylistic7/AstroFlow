@@ -14,3 +14,4 @@ from .fast_rotation import FastRotation
 from .photometric_mosaic import PhotometricMosaic
 from .channel_combination import ChannelCombination
 from .spectrophotometric_color_calibration import SpectrophotometricColorCalibration
+from .gradient_correction import GradientCorrection

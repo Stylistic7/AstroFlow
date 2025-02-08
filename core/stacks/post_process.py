@@ -4,22 +4,24 @@ import os
 
 from context import context
 from pix.decorators import PixInsight
-from pix.tasks import BlurXTerminator, AutomaticBackgroundExtractor
+from pix.tasks import BlurXTerminator, GradientCorrection
 from pix.classes import ImageList
 from dependency_graph.astroflow_node import AstroFlowNode
+from customization.types import CustomizedStack
+from stacks.artifacts import output_filename
 
 
-# TODO: Find a way to disable or mock these these during tests.
 @PixInsight()
 def _post_process_stack(images: ImageList) -> ImageList:
   images = BlurXTerminator(images)
-  images = AutomaticBackgroundExtractor(images)
+  images = GradientCorrection(images)
 
   return images
 
 
 @AstroFlowNode(cache_result=True, resources={'PixInsight': 1})
-def post_process_stack(master: Path) -> Path:
+def post_process_stack(stack: CustomizedStack) -> Path:
+  master = output_filename(stack)
   print(f'### post_process_stack, master {master}')
 
   final_filename = master.with_stem(master.stem + "_post_processed")
@@ -31,11 +33,11 @@ def post_process_stack(master: Path) -> Path:
     return Path(final_filename)
 
   if os.environ.get('MOCK_PIXINSIGHT'):
-    output_filename = master
+    post_processed = master
   else:
     results = _post_process_stack([master])
-    output_filename = next(iter(results)).filename
+    post_processed = next(iter(results)).filename
 
-  shutil.copy(output_filename, final_filename)
+  shutil.copy(post_processed, final_filename)
 
   return Path(final_filename)
