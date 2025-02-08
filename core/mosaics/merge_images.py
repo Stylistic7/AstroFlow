@@ -3,21 +3,44 @@ import ray
 import numpy as np
 from pathlib import Path
 import astropy.io.fits as pyfits  # type: ignore
+from xisf import XISF  # type: ignore
 
 from context import context
 from pix.classes import ImageList
 from pix.decorators import PixInsight
 from pix.tasks import PhotometricMosaic
 from mosaics.types import Mosaic
+from mosaics.placement import trim_image
 from previews import QualityLevel, autostretch
 from dependency_graph.astroflow_node import AstroFlowNode
 from file_io.generic import read_image, get_content_hash
+
+_TRIM_IMAGE_MEMORY_REQUIREMENT = 12 * 1024 * 1024 * 1024  # 12 GB
 
 
 @PixInsight()
 def run_photometric_mosaic(images: ImageList,
                            output_filename: str) -> ImageList:
   return PhotometricMosaic(images, output_filename)
+
+
+@AstroFlowNode(memory=_TRIM_IMAGE_MEMORY_REQUIREMENT)
+def trim_xisf_image(filename: Path) -> Path:
+  xisf = XISF(filename)
+  file_meta = xisf.get_file_metadata()
+  file_meta
+  ims_meta = xisf.get_images_metadata()
+  ims_meta
+  im_data = xisf.read_image(0)
+  im_data = np.expand_dims(trim_image(np.squeeze(im_data)), -1)
+  XISF.write(filename,
+             im_data,
+             creator_app="AstroFlow",
+             image_metadata=ims_meta[0],
+             xisf_metadata=file_meta,
+             codec='zstd',
+             shuffle=True)
+  return filename
 
 
 # TODO: Consider what to name these images, since the AstroFlowNode decorator
@@ -33,7 +56,6 @@ def merge_images_with_photometric_mosaic(mosaic: Mosaic, input_0: Path,
   ) / 'Mosaics' / mosaic.name / f'merged_master_{get_content_hash(input_0)}_{get_content_hash(input_1)}.xisf'
 
   run_photometric_mosaic([input_0, input_1], output_filename)
-
   assert os.path.exists(output_filename)
   return output_filename
 

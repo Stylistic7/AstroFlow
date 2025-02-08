@@ -101,7 +101,7 @@ def place_tile(viewbox: Viewbox,
   return tile_y, tile_x, tile_data
 
 
-def _trim_image(projected_image):
+def trim_image(projected_image):
   grid = projected_image != 0
   cv_grid = grid.astype("uint8") * 255
   contours, _ = cv.findContours(cv_grid, cv.RETR_TREE, cv.CHAIN_APPROX_NONE)
@@ -129,6 +129,7 @@ def _trim_image(projected_image):
 def _get_wcs(filename: Path):
   # TODO: The subframes need to be calibrated before being placed.
   content_hash = get_content_hash(filename)
+  print(f'### _get_wcs: filename {filename} has content_hash {content_hash}')
   plate_solution = context.metadata[content_hash].plate_solution
   return WCS(plate_solution.header)
 
@@ -213,7 +214,7 @@ def place_large_image(mode: QualityLevel, mosaic: Mosaic, stack: CompositeStack,
                                       interp,
                                       wcs,
                                       skip_empty=True)
-  projected_image = _trim_image(projected_image)
+  projected_image = trim_image(projected_image)
 
   return _save_image_to_file(mode, mosaic, stack, tile_indices, filter,
                              projected_image)

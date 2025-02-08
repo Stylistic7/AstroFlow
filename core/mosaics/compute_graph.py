@@ -4,7 +4,7 @@ import astropy.io.fits as pyfits  # type: ignore
 
 from context import context, WriteMode
 from dependency_graph import Graph, Node, make_graph_from_list
-from mosaics.merge_images import merge_images
+from mosaics.merge_images import merge_images, trim_xisf_image
 from mosaics.types import Mosaic, Viewbox
 from mosaics.viewbox import compute_mosaic_viewbox
 from mosaics.placement import place_small_image, place_large_image
@@ -123,6 +123,9 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
   print(f'### build_mosaic_filter_subgraph mode {mode} '
         f'mosaic {mosaic} filter {filter} strips {mosaic.strips}')
 
+  # TODO: Why does this work?
+  strips = [reversed(s) for s in mosaic.strips]
+
   # For strip index 0:
   #   merge(place_a, place_b) -> merge_b
   #   merge(merge_b, place_c) -> merge_c
@@ -140,7 +143,7 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
   graph = Graph()
   strip_tasks = []
   prev_task = None
-  for strip_index, strip in enumerate(mosaic.strips):
+  for strip_index, strip in enumerate(strips):
     for i, target_id in enumerate(strip):
       if i == 0:
         prev_task = Node(build_placement_subgraph,
@@ -156,6 +159,8 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
                           mode,
                           mosaic,
                           name=f'merge_{mosaic.stable_hash}_{target_id}')
+        trim_task = Node(trim_xisf_image,
+                         name=f'trim_merge_{mosaic.stable_hash}_{target_id}')
         graph[merge_task] = [
             prev_task,
             Node(build_placement_subgraph,
@@ -167,11 +172,12 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
                  viewbox,
                  priority=2)
         ]
-        prev_task = merge_task
+        graph[trim_task] = [merge_task]
+        prev_task = trim_task
 
     strip_tasks.append(prev_task)
 
-  for i in range(len(mosaic.strips)):
+  for i in range(len(strips)):
     if i == 0:
       prev_task = strip_tasks[0]
     else:
