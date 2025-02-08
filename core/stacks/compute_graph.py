@@ -23,6 +23,7 @@ def build_stacking_subgraph(stack: CustomizedStack) -> Graph:
   stack_task = (stack_files, stack)
   stacking_metadata_task = Node(compute_image_metadata,
                                 name=f'stacking_{stack.stable_hash}')
+  post_process_task = Node(post_process_stack, stack)
   post_process_metadata_task = Node(compute_image_metadata,
                                     name=f'post_process_{stack.stable_hash}')
 
@@ -31,12 +32,8 @@ def build_stacking_subgraph(stack: CustomizedStack) -> Graph:
                        for d in substack.dependencies.values()}
 
   graph[stacking_metadata_task] = {stack_task}
-  graph[post_process_stack] = {stacking_metadata_task}
-  graph[post_process_metadata_task] = {post_process_stack}
-  # TODO: This ends up calling load_metadata dozens of times, which is
-  # unnecessarily slow -- but the slowdown is hidden when the result of this
-  # function is cached.
-  graph[load_metadata] = {post_process_metadata_task}
+  graph[post_process_task] = {stacking_metadata_task}
+  graph[post_process_metadata_task] = {post_process_task}
 
   return graph
 
@@ -55,4 +52,6 @@ def get_stack_image(mode: QualityLevel, stack: CompositeStack) -> Graph:
   if mode == QualityLevel.SUBFRAME:
     return Graph({(get_stack_subframe_image, stack): {}})
   else:
-    return Graph({(stack_files, stack): {(build_stacking_subgraph, stack)}})
+    return Graph({
+        (post_process_stack, stack): {(build_stacking_subgraph, stack)}
+    })
