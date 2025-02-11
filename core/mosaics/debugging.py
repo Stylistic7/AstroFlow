@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from spherical_geometry.polygon import SphericalPolygon  # type: ignore
+from shapely import Polygon  # type: ignore
 
 from context import context
 from mosaics import identification
@@ -10,9 +11,14 @@ from geometry.polygons import project_polygon
 from geometry.projections.mercator import MercatorProjection
 
 
-def _draw_polygon(polygon: SphericalPolygon,
-                  projection: Projection,
-                  color: str = 'black') -> None:
+def draw_polygon(polygon: Polygon, color: str = 'black') -> None:
+  x, y = zip(*polygon.exterior.coords)
+  plt.plot(x, y, color=color)
+
+
+def draw_spherical_polygon(polygon: SphericalPolygon,
+                           projection: Projection,
+                           color: str = 'black') -> None:
   x, y = project_polygon(polygon, projection)
   plt.plot(x, y, color=color)
 
@@ -45,7 +51,7 @@ def plot_mosaic(mosaic: Mosaic, title: str = 'Mosaic') -> None:
     print(f'### overlapping_targets for target {target_id} '
           f'are {overlapping_targets}')
 
-    _draw_polygon(target.footprint, projection, color='blue')
+    draw_spherical_polygon(target.footprint, projection, color='blue')
     plt.text(
         center[0],
         center[1],
@@ -54,6 +60,6 @@ def plot_mosaic(mosaic: Mosaic, title: str = 'Mosaic') -> None:
         color='blue')
     plt.scatter([center[0]], [center[1]], color='black')
 
-  _draw_polygon(mosaic.footprint, projection, color='red')
+  draw_spherical_polygon(mosaic.footprint, projection, color='red')
 
   plt.show()
