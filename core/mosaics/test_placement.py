@@ -38,7 +38,8 @@ class TestPlacement(unittest.TestCase):
     filename = 'testdata/Stacks/IC1318/masters/master_light_IC1318_RA_306.20_DEC_35.00_ZWO ASI6200MM Pro_2.21aspp_1.55deg_H_3bd18a01cedf3c6b.xisf'
 
     mosaic = context.mosaics[mosaic_id]
-    stack = make_composite_stack(content_hash='stack_abc123')
+    target = context.targets[mosaic.target_ids[0]]
+    stack = context.stacks[target.stack_ids[0]]
 
     viewbox = compute_mosaic_viewbox(mode, mosaic)
     self.assertTrue(isinstance(viewbox, Viewbox))
@@ -46,7 +47,6 @@ class TestPlacement(unittest.TestCase):
     log, result = ray.get(
         place_small_image.remote(QualityLevel.SUBFRAME, mosaic, stack,
                                  tile_indices, filter, viewbox, filename))
-    print('### result', result)
     self.assertTrue(isinstance(unpack_artifact(result), Path))
 
     log, result = ray.get(

@@ -50,24 +50,26 @@ MosaicsDict = dict[MosaicHash, Mosaic]
 @dataclass(frozen=True)
 class Viewbox:
   projection: Projection
-  x_min: float
-  x_span: float
-  y_min: float
-  y_span: float
+
+  x_min: float  # radians
+  x_span: float  # radians
+
+  y_min: float  # radians
+  y_span: float  # radians
+
+  resolution: float  # radians per pixel
+
+  num_pixels_y: int
+  num_pixels_x: int
+
+  num_tiles_y: int
+  num_tiles_x: int
+
+  tile_height: int
+  tile_width: int
 
   def __str__(self):
     return 'Viewbox'
-
-  def __hash__(self) -> int:
-    return hash_dataclass(self)
-
-
-@dataclass(frozen=True)
-class Tiling:
-  num_tiles_y: int
-  num_tiles_x: int
-  tile_height: int
-  tile_width: int
 
   def __hash__(self) -> int:
     return hash_dataclass(self)
