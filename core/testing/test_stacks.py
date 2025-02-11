@@ -20,7 +20,7 @@ def make_composite_stack(**kwargs: Any) -> CompositeStack:
       ImagingAttributes(
           image_type='light',
           camera='ZWO ASI6200MM Pro',
-          filter=None,
+          filter='H',
           mean_temperature=-20.0,
           exposure_s=300.0,
           integration_s=1500.0,

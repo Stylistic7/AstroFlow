@@ -3,11 +3,13 @@ from pathlib import Path
 import astropy.io.fits as pyfits  # type: ignore
 
 from context import context, WriteMode
+from customization.types import CustomizedStack
 from dependency_graph import Graph, Node, make_graph_from_list
-from mosaics.merge_images import merge_images, trim_xisf_image
+from mosaics.merge_images import merge_images
 from mosaics.types import Mosaic, Viewbox
 from mosaics.viewbox import compute_mosaic_viewbox
 from mosaics.placement import place_small_image, place_large_image
+from mosaics.trimming import trim_xisf_image, project_to_viewbox
 from mosaics.types import TileIndices
 from stacks.compute_graph import get_stack_image
 from previews import QualityLevel
@@ -99,20 +101,19 @@ def _get_stack_for_filter(target: Target, filter: str):
 
 # TODO: This function seems to be slow for some reason.
 @AstroFlowNode(num_cpus=0.5)
-def build_placement_subgraph(mode: QualityLevel, mosaic: Mosaic, target: Target,
-                             filter: str, tile_indices: TileIndices,
-                             viewbox: Viewbox):
+def build_placement_subgraph(mode: QualityLevel, mosaic: Mosaic,
+                             stack: CustomizedStack, filter: str,
+                             tile_indices: TileIndices, viewbox: Viewbox):
   place_image_fn = place_large_image if mode == QualityLevel.MASTER else place_small_image
-  if stack := _get_stack_for_filter(target, filter):
-    return make_graph_from_list([(get_stack_image, mode, stack),
-                                 Node(place_image_fn,
-                                      mode,
-                                      mosaic,
-                                      stack,
-                                      tile_indices,
-                                      filter,
-                                      viewbox,
-                                      priority=3)])
+  return make_graph_from_list([(get_stack_image, mode, stack),
+                               Node(place_image_fn,
+                                    mode,
+                                    mosaic,
+                                    stack,
+                                    tile_indices,
+                                    filter,
+                                    viewbox,
+                                    priority=3)])
 
 
 @AstroFlowNode(num_cpus=0.5)
@@ -122,9 +123,6 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
 
   print(f'### build_mosaic_filter_subgraph mode {mode} '
         f'mosaic {mosaic} filter {filter} strips {mosaic.strips}')
-
-  # TODO: Why does this work?
-  strips = [reversed(s) for s in mosaic.strips]
 
   # For strip index 0:
   #   merge(place_a, place_b) -> merge_b
@@ -143,30 +141,40 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
   graph = Graph()
   strip_tasks = []
   prev_task = None
-  for strip_index, strip in enumerate(strips):
+  for strip_index, strip in enumerate(mosaic.strips):
+    strip_poly = None
     for i, target_id in enumerate(strip):
+      # TODO: This should maybe be a hard failure in master mode.
+      if not (stack := _get_stack_for_filter(targets[target_id], filter)):
+        continue
+
       if i == 0:
+        strip_poly = project_to_viewbox(stack.footprint, viewbox)
         prev_task = Node(build_placement_subgraph,
                          mode,
                          mosaic,
-                         targets[target_id],
+                         stack,
                          filter,
                          TileIndices((strip_index, i)),
                          viewbox,
                          priority=2)
       else:
+        strip_poly = strip_poly.union(
+            project_to_viewbox(stack.footprint, viewbox))
         merge_task = Node(merge_images,
                           mode,
                           mosaic,
-                          name=f'merge_{mosaic.stable_hash}_{target_id}')
+                          name=f'merge_{mosaic.stable_hash}_{target_id}',
+                          priority=2)
         trim_task = Node(trim_xisf_image,
+                         strip_poly,
                          name=f'trim_merge_{mosaic.stable_hash}_{target_id}')
         graph[merge_task] = [
             prev_task,
             Node(build_placement_subgraph,
                  mode,
                  mosaic,
-                 targets[target_id],
+                 stack,
                  filter,
                  TileIndices((strip_index, i)),
                  viewbox,
@@ -174,10 +182,11 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
         ]
         graph[trim_task] = [merge_task]
         prev_task = trim_task
+        # prev_task = merge_task
 
     strip_tasks.append(prev_task)
 
-  for i in range(len(strips)):
+  for i in range(len(mosaic.strips)):
     if i == 0:
       prev_task = strip_tasks[0]
     else:

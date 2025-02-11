@@ -10,37 +10,15 @@ from pix.classes import ImageList
 from pix.decorators import PixInsight
 from pix.tasks import PhotometricMosaic
 from mosaics.types import Mosaic
-from mosaics.placement import trim_image
 from previews import QualityLevel, autostretch
 from dependency_graph.astroflow_node import AstroFlowNode
 from file_io.generic import read_image, get_content_hash
-
-_TRIM_IMAGE_MEMORY_REQUIREMENT = 12 * 1024 * 1024 * 1024  # 12 GB
 
 
 @PixInsight()
 def run_photometric_mosaic(images: ImageList,
                            output_filename: str) -> ImageList:
   return PhotometricMosaic(images, output_filename)
-
-
-@AstroFlowNode(memory=_TRIM_IMAGE_MEMORY_REQUIREMENT)
-def trim_xisf_image(filename: Path) -> Path:
-  xisf = XISF(filename)
-  file_meta = xisf.get_file_metadata()
-  file_meta
-  ims_meta = xisf.get_images_metadata()
-  ims_meta
-  im_data = xisf.read_image(0)
-  im_data = np.expand_dims(trim_image(np.squeeze(im_data)), -1)
-  XISF.write(filename,
-             im_data,
-             creator_app="AstroFlow",
-             image_metadata=ims_meta[0],
-             xisf_metadata=file_meta,
-             codec='zstd',
-             shuffle=True)
-  return filename
 
 
 # TODO: Consider what to name these images, since the AstroFlowNode decorator
@@ -72,8 +50,6 @@ def merge_images_with_maximum(image_0: np.ndarray,
   return output_image
 
 
-# TODO: Make sure that every Ray task that calls a @PixInsight function also
-# consumes a PixInsight resource.
 @AstroFlowNode(cache_result=True)
 def merge_images(mode: QualityLevel, mosaic: Mosaic, input_0: Path,
                  input_1: Path) -> Path:

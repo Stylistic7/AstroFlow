@@ -8,6 +8,7 @@ from context import context
 from previews import QualityLevel
 from testing import make_test_context
 
+from customization.types import CustomizedStack
 from dependency_graph import Graph, Node, print_graph, run_graph, canonicalize_graph
 from mosaics.types import Mosaic
 from mosaics.merge_images import merge_images
@@ -15,6 +16,7 @@ from mosaics.compute_graph import build_mosaic_filter_subgraph, build_placement_
 from mosaics.types import TileIndices
 from mosaics.orion_mosaic import add_orion_mosaic_images
 from targets.types import Target
+from testing.test_stacks import make_composite_stack
 
 
 # TODO: Put this somewhere generally-accessible.
@@ -71,9 +73,15 @@ class TestMergeGraph(unittest.TestCase):
                     projected_footprints=None)
 
     context.targets = targets = {
-        'a': make_test_target('a'),
-        'b': make_test_target('b'),
-        'c': make_test_target('c'),
+        'a': make_test_target('a', stack_ids=['a']),
+        'b': make_test_target('b', stack_ids=['b']),
+        'c': make_test_target('c', stack_ids=['c']),
+    }
+
+    context.stacks = stacks = {
+        'a': make_composite_stack(stable_hash='a'),
+        'b': make_composite_stack(stable_hash='b'),
+        'c': make_composite_stack(stable_hash='c'),
     }
 
     log, graph = ray.get(
@@ -85,7 +93,7 @@ class TestMergeGraph(unittest.TestCase):
             Node(build_placement_subgraph,
                  mode,
                  mosaic,
-                 targets['a'],
+                 stacks['a'],
                  filter,
                  TileIndices((0, 0)),
                  viewbox,
@@ -93,7 +101,7 @@ class TestMergeGraph(unittest.TestCase):
             Node(build_placement_subgraph,
                  mode,
                  mosaic,
-                 targets['b'],
+                 stacks['b'],
                  filter,
                  TileIndices((1, 0)),
                  viewbox,
@@ -105,7 +113,7 @@ class TestMergeGraph(unittest.TestCase):
             Node(build_placement_subgraph,
                  mode,
                  mosaic,
-                 targets['c'],
+                 stacks['c'],
                  filter,
                  TileIndices((2, 0)),
                  viewbox,
@@ -135,12 +143,21 @@ class TestMergeGraph(unittest.TestCase):
                     projected_footprints=None)
 
     context.targets = targets = {
-        'a': make_test_target('a'),
-        'b': make_test_target('b'),
-        'c': make_test_target('c'),
-        'd': make_test_target('d'),
-        'e': make_test_target('e'),
-        'f': make_test_target('f')
+        'a': make_test_target('a', stack_ids=['a']),
+        'b': make_test_target('b', stack_ids=['b']),
+        'c': make_test_target('c', stack_ids=['c']),
+        'd': make_test_target('d', stack_ids=['d']),
+        'e': make_test_target('e', stack_ids=['e']),
+        'f': make_test_target('f', stack_ids=['f'])
+    }
+
+    context.stacks = stacks = {
+        'a': make_composite_stack(stable_hash='a'),
+        'b': make_composite_stack(stable_hash='b'),
+        'c': make_composite_stack(stable_hash='c'),
+        'd': make_composite_stack(stable_hash='d'),
+        'e': make_composite_stack(stable_hash='e'),
+        'f': make_composite_stack(stable_hash='f')
     }
 
     log, graph = ray.get(
@@ -152,7 +169,7 @@ class TestMergeGraph(unittest.TestCase):
             Node(build_placement_subgraph,
                  mode,
                  mosaic,
-                 targets['a'],
+                 stacks['a'],
                  filter,
                  TileIndices((0, 0)),
                  viewbox,
@@ -160,7 +177,7 @@ class TestMergeGraph(unittest.TestCase):
             Node(build_placement_subgraph,
                  mode,
                  mosaic,
-                 targets['b'],
+                 stacks['b'],
                  filter,
                  TileIndices((0, 1)),
                  viewbox,
@@ -171,7 +188,7 @@ class TestMergeGraph(unittest.TestCase):
             Node(build_placement_subgraph,
                  mode,
                  mosaic,
-                 targets['c'],
+                 stacks['c'],
                  filter,
                  TileIndices((0, 2)),
                  viewbox,
@@ -181,7 +198,7 @@ class TestMergeGraph(unittest.TestCase):
             Node(build_placement_subgraph,
                  mode,
                  mosaic,
-                 targets['d'],
+                 stacks['d'],
                  filter,
                  TileIndices((1, 0)),
                  viewbox,
@@ -189,7 +206,7 @@ class TestMergeGraph(unittest.TestCase):
             Node(build_placement_subgraph,
                  mode,
                  mosaic,
-                 targets['e'],
+                 stacks['e'],
                  filter,
                  TileIndices((1, 1)),
                  viewbox,
@@ -200,7 +217,7 @@ class TestMergeGraph(unittest.TestCase):
             Node(build_placement_subgraph,
                  mode,
                  mosaic,
-                 targets['f'],
+                 stacks['f'],
                  filter,
                  TileIndices((1, 2)),
                  viewbox,
@@ -234,9 +251,15 @@ class TestMergeGraph(unittest.TestCase):
                     projected_footprints=None)
 
     context.targets = targets = {
-        'a': make_test_target('a'),
-        'b': make_test_target('b'),
-        'c': make_test_target('c'),
+        'a': make_test_target('a', stack_ids=['a']),
+        'b': make_test_target('b', stack_ids=['b']),
+        'c': make_test_target('c', stack_ids=['c']),
+    }
+
+    context.stacks = stacks = {
+        'a': make_composite_stack(stable_hash='a'),
+        'b': make_composite_stack(stable_hash='b'),
+        'c': make_composite_stack(stable_hash='c'),
     }
 
     log, graph = ray.get(
@@ -247,7 +270,7 @@ class TestMergeGraph(unittest.TestCase):
             Node(build_placement_subgraph,
                  mode,
                  mosaic,
-                 targets['b'],
+                 stacks['b'],
                  filter,
                  TileIndices((1, 0)),
                  viewbox,
@@ -255,7 +278,7 @@ class TestMergeGraph(unittest.TestCase):
             Node(build_placement_subgraph,
                  mode,
                  mosaic,
-                 targets['c'],
+                 stacks['c'],
                  filter,
                  TileIndices((1, 1)),
                  viewbox,
@@ -265,7 +288,7 @@ class TestMergeGraph(unittest.TestCase):
             Node(build_placement_subgraph,
                  mode,
                  mosaic,
-                 targets['a'],
+                 stacks['a'],
                  filter,
                  TileIndices((0, 0)),
                  viewbox,
@@ -287,6 +310,7 @@ class TestMergeGraph(unittest.TestCase):
                                 run_main_processing_graph=True)
     run_graph(graph)
 
+    stacks = context.stacks
     targets = context.targets
     self.assertEqual(len(targets), 4)
     self.assertEqual(len(context.mosaics), 1)
@@ -311,7 +335,7 @@ class TestMergeGraph(unittest.TestCase):
             Node(build_placement_subgraph,
                  mode,
                  mosaic,
-                 targets['e1f7d909ac125ebe'],
+                 stacks['e1f7d909ac125ebe'],
                  filter,
                  TileIndices((0, 0)),
                  viewbox,
@@ -319,7 +343,7 @@ class TestMergeGraph(unittest.TestCase):
             Node(build_placement_subgraph,
                  mode,
                  mosaic,
-                 targets['3871323c8756dead'],
+                 stacks['3871323c8756dead'],
                  filter,
                  TileIndices((0, 1)),
                  viewbox,
@@ -332,7 +356,7 @@ class TestMergeGraph(unittest.TestCase):
             Node(build_placement_subgraph,
                  mode,
                  mosaic,
-                 targets['3ef21a508ef46b36'],
+                 stacks['3ef21a508ef46b36'],
                  filter,
                  TileIndices((1, 0)),
                  viewbox,
@@ -340,7 +364,7 @@ class TestMergeGraph(unittest.TestCase):
             Node(build_placement_subgraph,
                  mode,
                  mosaic,
-                 targets['9ed89ccd9f10cc09'],
+                 stacks['9ed89ccd9f10cc09'],
                  filter,
                  TileIndices((1, 1)),
                  viewbox,
@@ -374,6 +398,7 @@ class TestMergeGraph(unittest.TestCase):
                                 run_main_processing_graph=True)
     run_graph(graph)
 
+    stacks = context.stacks
     targets = context.targets
     self.assertEqual(len(targets), 2)
     self.assertEqual(len(context.mosaics), 1)
@@ -399,7 +424,7 @@ class TestMergeGraph(unittest.TestCase):
             Node(build_placement_subgraph,
                  mode,
                  mosaic,
-                 targets['e1f7d909ac125ebe'],
+                 stacks['e1f7d909ac125ebe'],
                  filter,
                  TileIndices((0, 0)),
                  viewbox,
@@ -407,7 +432,7 @@ class TestMergeGraph(unittest.TestCase):
             Node(build_placement_subgraph,
                  mode,
                  mosaic,
-                 targets['3ef21a508ef46b36'],
+                 stacks['3ef21a508ef46b36'],
                  filter,
                  TileIndices((1, 0)),
                  viewbox,
@@ -428,6 +453,7 @@ class TestMergeGraph(unittest.TestCase):
                                 run_main_processing_graph=True)
     run_graph(graph)
 
+    stacks = context.stacks
     targets = context.targets
     self.assertEqual(len(targets), 2)
     self.assertEqual(len(context.mosaics), 1)
@@ -450,7 +476,7 @@ class TestMergeGraph(unittest.TestCase):
             Node(build_placement_subgraph,
                  mode,
                  mosaic,
-                 targets['e1f7d909ac125ebe'],
+                 stacks['e1f7d909ac125ebe'],
                  filter,
                  TileIndices((0, 0)),
                  viewbox,
@@ -458,7 +484,7 @@ class TestMergeGraph(unittest.TestCase):
             Node(build_placement_subgraph,
                  mode,
                  mosaic,
-                 targets['3871323c8756dead'],
+                 stacks['3871323c8756dead'],
                  filter,
                  TileIndices((0, 1)),
                  viewbox,
@@ -479,6 +505,7 @@ class TestMergeGraph(unittest.TestCase):
                                 run_main_processing_graph=True)
     run_graph(graph)
 
+    stacks = context.stacks
     targets = context.targets
     self.assertEqual(len(targets), 3)
     self.assertEqual(len(context.mosaics), 1)
@@ -503,7 +530,7 @@ class TestMergeGraph(unittest.TestCase):
             Node(build_placement_subgraph,
                  mode,
                  mosaic,
-                 targets['e1f7d909ac125ebe'],
+                 stacks['e1f7d909ac125ebe'],
                  filter,
                  TileIndices((1, 0)),
                  viewbox,
@@ -511,7 +538,7 @@ class TestMergeGraph(unittest.TestCase):
             Node(build_placement_subgraph,
                  mode,
                  mosaic,
-                 targets['3871323c8756dead'],
+                 stacks['3871323c8756dead'],
                  filter,
                  TileIndices((1, 1)),
                  viewbox,
@@ -524,7 +551,7 @@ class TestMergeGraph(unittest.TestCase):
             Node(build_placement_subgraph,
                  mode,
                  mosaic,
-                 targets['3ef21a508ef46b36'],
+                 stacks['3ef21a508ef46b36'],
                  filter,
                  TileIndices((0, 0)),
                  viewbox,
