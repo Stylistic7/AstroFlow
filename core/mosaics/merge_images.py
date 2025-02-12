@@ -54,6 +54,10 @@ def merge_images_with_maximum(image_0: np.ndarray,
 def merge_images(mode: QualityLevel, mosaic: Mosaic, input_0: Path,
                  input_1: Path) -> Path:
   print(f'### merge images {input_0} {input_1}')
+  print(f'### merge_images type(input_0) {type(input_0)}')
+  print(f'### merge_images type(input_1) {type(input_1)}')
+  print(f'### merge_images Path(input_0) {Path(input_0)}')
+  print(f'### merge_images Path(input_1) {Path(input_1)}')
 
   if input_0 is None and input_1 is None:
     return None

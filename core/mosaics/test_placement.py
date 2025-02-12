@@ -9,12 +9,11 @@ from pathlib import Path
 from testing import make_test_context, copy_testdata_into_cache
 
 from artifacts.artifact import unpack_artifact
-from mosaics.placement import place_small_image, place_large_image
+from mosaics.placement import place_image
 from previews.types import QualityLevel
 from metadata.image_metadata import load_metadata
 from mosaics.viewbox import compute_mosaic_viewbox, Viewbox
 from mosaics.types import TileIndices
-from testing.test_stacks import make_composite_stack
 
 
 class TestPlacement(unittest.TestCase):
@@ -42,16 +41,12 @@ class TestPlacement(unittest.TestCase):
     stack = context.stacks[target.stack_ids[0]]
 
     viewbox = compute_mosaic_viewbox(mode, mosaic)
+    mask = None
     self.assertTrue(isinstance(viewbox, Viewbox))
 
     log, result = ray.get(
-        place_small_image.remote(QualityLevel.SUBFRAME, mosaic, stack,
-                                 tile_indices, filter, viewbox, filename))
-    self.assertTrue(isinstance(unpack_artifact(result), Path))
-
-    log, result = ray.get(
-        place_large_image.remote(QualityLevel.MASTER, mosaic, stack,
-                                 tile_indices, filter, viewbox, filename))
+        place_image.remote(QualityLevel.SUBFRAME, mosaic, stack, tile_indices,
+                           filter, viewbox, mask, filename))
     self.assertTrue(isinstance(unpack_artifact(result), Path))
 
 

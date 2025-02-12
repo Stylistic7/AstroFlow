@@ -82,9 +82,9 @@ def _setup_composite_stack(stack: Stack,
     num_frames += len(hashes)
 
     # Add any dependent stacks (e.g. calibration stacks).
+    dependencies = substack.dependencies | {'flat': '40200993d60fe76b'}
     dependendency_filenames = [
-        output_filename(calibration_stacks[d])
-        for d in substack.dependencies.values()
+        output_filename(calibration_stacks[d]) for d in dependencies.values()
     ]
     _symlink_frames(dependendency_filenames, run_dir)
 

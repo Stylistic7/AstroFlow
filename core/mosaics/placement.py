@@ -10,14 +10,14 @@ import structlog
 from astropy.coordinates import SkyCoord  # type: ignore
 from astropy import units as u  # type: ignore
 from xisf import XISF  # type: ignore
-from shapely import Polygon  # type: ignore
+from shapely import box  # type: ignore
 
 from customization.types import CustomizedStack
 from file_io.generic import get_content_hash, read_image
 from context import context
 from previews import QualityLevel
 from mosaics.types import Mosaic, Viewbox, TileIndices
-from mosaics.trimming import project_to_viewbox, trim_image, draw_polygon, largest_interior_rectangle
+from mosaics.trimming import trim_image
 from dependency_graph.astroflow_node import AstroFlowNode
 from stacks.composite_stack import CompositeStack
 
@@ -157,9 +157,9 @@ def _save_image_to_file(mode: QualityLevel, mosaic: Mosaic,
 
 
 @AstroFlowNode(cache_result=True, memory=_PLACE_IMAGE_MEMORY_REQUIREMENT)
-def place_large_image(mode: QualityLevel, mosaic: Mosaic,
-                      stack: CustomizedStack, tile_indices: TileIndices,
-                      filter: str, viewbox: Viewbox, filename: Path) -> Path:
+def place_image(mode: QualityLevel, mosaic: Mosaic, stack: CustomizedStack,
+                tile_indices: TileIndices, filter: str, viewbox: Viewbox,
+                mask: box, filename: Path) -> Path:
   # if context.dangerously_accept_existing_files and os.path.exists(filename):
   #   print(f'### Dangerously skipping place_large_image because '
   #         f'file {filename} already exists')
@@ -168,22 +168,7 @@ def place_large_image(mode: QualityLevel, mosaic: Mosaic,
   wcs = _get_wcs(filename)
   interp = _make_interpolator(filename)
   image = _project_in_tiles(viewbox, interp, wcs, skip_empty=True)
-  polygon = project_to_viewbox(stack.footprint, viewbox)
-  box = largest_interior_rectangle(polygon)
-  image = trim_image(image, box)
-  # draw_polygon(image, polygon)
-  # draw_polygon(image, Polygon(box))
+  if mask:
+    image = trim_image(image, mask)
 
   return _save_image_to_file(mode, mosaic, stack, tile_indices, filter, image)
-
-
-@AstroFlowNode(cache_result=True, debug=True)
-def place_small_image(mode: QualityLevel, mosaic: Mosaic,
-                      stack: CustomizedStack, tile_indices: TileIndices,
-                      filter: str, viewbox: Viewbox, filename: Path) -> Path:
-  wcs = _get_wcs(filename)
-  interp = _make_interpolator(filename)
-  projected_image = _project_in_tiles(viewbox, interp, wcs, skip_empty=False)
-
-  return _save_image_to_file(mode, mosaic, stack, tile_indices, filter,
-                             projected_image)

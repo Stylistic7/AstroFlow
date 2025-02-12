@@ -63,8 +63,8 @@ def merge_mosaic(args):
   # TODO: Consider various forms of "forcing":
   # - Just deleting the toplevel graph result
   # - Ignoring all cached results
-  # context.ignore_cached_results = args.force
-  # context.dangerously_accept_existing_files = args.force
+  context.ignore_cached_results = args.force
+  context.dangerously_accept_existing_files = args.force
 
   run_graph(Graph({build_customize_graph: {load_metadata}}))
 
@@ -75,8 +75,8 @@ def merge_mosaic(args):
     if args.mode in ['all', mode]:
       task = (build_mosaic_subgraph, QualityLevel(mode), mosaic)
       tasks.append(task)
-      if args.force:
-        delete_cached_result(task)
+      # if args.force:
+      delete_cached_result(task)
 
   run_graph(Graph({command_done: tasks}))
 
