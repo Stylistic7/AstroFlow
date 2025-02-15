@@ -1,6 +1,6 @@
 import numpy as np
 from pathlib import Path
-from xisf import XISF  # type: ignore
+from my_xisf import XISF  # type: ignore
 from typing import Any
 
 from file_io.normalize_header import normalize_header

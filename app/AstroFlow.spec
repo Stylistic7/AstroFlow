@@ -1,14 +1,29 @@
 # -*- mode: python ; coding: utf-8 -*-
+#
+# Run with: pyinstaller -y AstroFlow.spec
+
+import sys ; sys.setrecursionlimit(sys.getrecursionlimit() * 5)
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files
+
+hidden_imports = collect_submodules("ray") + collect_submodules("spherical_geometry") + collect_submodules("xisf")
+hidden_imports += ["diskcache", "graphlib", "objsize", "plotly", "shapely",
+                   "skimage", "skimage.transform", "spherical_geometry",
+                   "structlog", "xisf", "xxhash", "yaml"]
+
+ray_datas = collect_data_files("ray") + collect_data_files("xisf")
 
 a = Analysis(
     ['AstroFlow.py'],
     pathex=[],
     binaries=[],
-    datas=[("../core/web_server/frontend/build",
-            "core/web_server/backend/templates"),
+    datas=ray_datas + [("../core/web_server/frontend/build",
+            "core/web_server/templates"),
            ("../core/web_server/frontend/build/static",
-            "core/web_server/backend/static")],
-    hiddenimports=["yaml"],
+            "core/web_server/static"),
+           ("../core/web_server/backend/static/",
+            "core/web_server/static"),
+           ("/Users/nobody/AstroFlow_venv/bin/ray", "bin")],
+    hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -19,7 +34,7 @@ a = Analysis(
 pyz = PYZ(a.pure)
 
 # Something like this which can exclude node_modules
-a.datas += Tree('../core', prefix='core', excludes=['node_modules', 'testdata'])
+a.datas += Tree('../core', prefix='', excludes=['node_modules', 'testdata'])
 
 exe = EXE(
     pyz,

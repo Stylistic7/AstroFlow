@@ -1,14 +1,17 @@
 import ray
+import os
 
 from context import ContextActor
 from state.actor import StateActor
 from base_path import get_base_path
 
+working_dir = f'{get_base_path()}/core'
+
 ray_context = ray.init(address='auto',
                        namespace='AstroFlow',
                        runtime_env={
                            'working_dir':
-                               get_base_path(),
+                               working_dir,
                            'excludes': [
                                '/.cache/',
                                'cache.tar.gz',

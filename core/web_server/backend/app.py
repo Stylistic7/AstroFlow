@@ -3,7 +3,8 @@ import sys
 
 sys.path.append('../..')
 
-from ray_infra import ray_init
+# Don't connect to Ray until instructed to by the user.
+# from ray_infra import ray_init
 
 import os
 import io
@@ -87,7 +88,16 @@ def get_plot_html():
 
 
 # Create the application.
-app = flask.Flask(__name__, template_folder='./templates')
+# app = flask.Flask(__name__, template_folder='./templates')
+
+from base_path import get_base_path
+
+base_path = get_base_path()
+print(f'### base_path {base_path}')
+
+app = flask.Flask(__name__,
+                  template_folder=f'{base_path}/core/web_server/templates',
+                  static_folder=f'{base_path}/core/web_server/static')
 
 
 # TODO: Move computations into new files.
@@ -742,4 +752,5 @@ def get_last_run_logs():
 
 
 if __name__ == '__main__':
+  print('### Starting AstroFlow web server...')
   app.run(host='0.0.0.0', port=80)

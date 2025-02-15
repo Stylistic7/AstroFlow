@@ -1,10 +1,14 @@
 import csv
 import numpy as np
 import logging
+import os
 
 import geometry.projections.mollweide as mollweide
 
-constellation_line_path = "catalogs/sfa_constellation_lines.csv"
+script_dir = os.path.dirname(os.path.abspath(__file__))
+constellation_line_path = os.path.join(script_dir,
+                                       'sfa_constellation_lines.csv')
+# constellation_line_path = "catalogs/sfa_constellation_lines.csv"
 
 
 def _read_constellation_csv():
