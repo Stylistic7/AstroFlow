@@ -2,6 +2,7 @@ import webbrowser
 import sys
 import tkinter as tk
 from tkinter import scrolledtext
+import Quartz
 
 # from homebrew import ensure_homebrew
 from subprocesses import SubprocessManager
@@ -17,17 +18,15 @@ from ray_control import start_ray_head_node
 _ASTROFLOW_URL = 'http://localhost:80'
 
 
+def is_option_key_pressed():
+  """Check if the Option (⌥) key is currently held down."""
+  flags = Quartz.CGEventSourceFlagsState(
+      Quartz.kCGEventSourceStateHIDSystemState)
+  return bool(flags & Quartz.kCGEventFlagMaskAlternate)
+
+
 def open_web_ui(unused):
   webbrowser.open(_ASTROFLOW_URL)
-
-
-def reopen_handler():
-  webbrowser.open(_ASTROFLOW_URL)
-
-
-def quit_handler():
-  # TODO: Implement
-  pass
 
 
 class RedirectText:
@@ -50,9 +49,15 @@ def main():
   root.deiconify()
   root.lift()
 
+  def reopen_handler():
+    if is_option_key_pressed():
+      root.lift()
+    else:
+      webbrowser.open(_ASTROFLOW_URL)
+
   # TODO: Intercept the tkinter CloseApplication event and run `ray stop`.
   root.createcommand("::tk::mac::ReopenApplication", reopen_handler)
-  root.createcommand("::tk::mac::Quit", quit_handler)
+  root.createcommand("::tk::mac::Quit", root.quit)
 
   # Create a scrolled text widget
   text_widget = scrolledtext.ScrolledText(root,
