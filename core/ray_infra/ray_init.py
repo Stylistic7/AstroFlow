@@ -1,5 +1,4 @@
 import ray
-import os
 
 from context import ContextActor
 from state.actor import StateActor
@@ -21,8 +20,7 @@ ray_context = ray.init(address='auto',
                                '/pix/testdata/',
                            ]
                        },
-                       ignore_reinit_error=True,
-                       _node_ip_address='127.0.0.1')
+                       ignore_reinit_error=True)
 
 print('Ray dashboard:', ray_context.dashboard_url)
 

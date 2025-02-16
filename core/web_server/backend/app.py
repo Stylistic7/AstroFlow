@@ -3,8 +3,8 @@ import sys
 
 sys.path.append('../..')
 
-# Don't connect to Ray until instructed to by the user.
-# from ray_infra import ray_init
+# TODO: Don't connect to Ray until instructed to by the user.
+from ray_infra import ray_init
 
 import os
 import io
