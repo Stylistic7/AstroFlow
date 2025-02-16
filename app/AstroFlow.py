@@ -1,14 +1,11 @@
 import webbrowser
 import sys
-import runpy
 import tkinter as tk
 from tkinter import scrolledtext
-import threading
 
 # from homebrew import ensure_homebrew
-from console import log
+from subprocesses import SubprocessManager
 from ray_control import start_ray_head_node
-from flask_control import start_flask, stop_flask
 
 # TODO: The goals here are to:
 # 1. Start the web server and launch the browser.
@@ -20,32 +17,38 @@ from flask_control import start_flask, stop_flask
 _ASTROFLOW_URL = 'http://localhost:80'
 
 
+def open_web_ui(unused):
+  webbrowser.open(_ASTROFLOW_URL)
+
+
 def reopen_handler():
   webbrowser.open(_ASTROFLOW_URL)
 
 
 def quit_handler():
-  stop_flask()
-
-  # TODO: Maybe stop the Ray head node. The action taken depends on the user's
-  # preferences.
+  # TODO: Implement
+  pass
 
 
-def start_services(text_widget, root):
-  # TODO: Let the user choose which Ray cluster to connect to through the UI.
-  text_widget.after(0, log, text_widget, "Starting Ray head node...", None)
-  ray_process = start_ray_head_node()
+class RedirectText:
 
-  text_widget.after(0, log, text_widget, "Starting Flask server...", None)
-  flask_process = start_flask()
+  def __init__(self, text_widget):
+    self.text_widget = text_widget
 
-  return [ray_process, flask_process]
+  def write(self, string):
+    self.text_widget.insert(tk.END, string)
+    self.text_widget.see(tk.END)
+
+  def flush(self):
+    pass
 
 
 def main():
   # Create the Tkinter window
   root = tk.Tk()
   root.title("AstroFlow Configuration")
+  root.deiconify()
+  root.lift()
 
   # TODO: Intercept the tkinter CloseApplication event and run `ray stop`.
   root.createcommand("::tk::mac::ReopenApplication", reopen_handler)
@@ -63,39 +66,21 @@ def main():
 
   text_widget.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
 
-  # Start the command automatically
-  threading.Thread(target=start_services, args=(text_widget, root),
-                   daemon=True).start()
-
-  # processes = start_services(text_widget)
-  # for process in processes:
-  #   process.wait()
+  text_widget.insert(tk.END, f"sys.argv is {sys.argv}\n", "red")
+  text_widget.see(tk.END)  # Auto-scroll
 
   # Configure the grid to expand and contract with the window size
   root.grid_columnconfigure(0, weight=1)
   root.grid_rowconfigure(0, weight=1)
 
-  # Start the Tkinter main loop; this blocks until the application is quit.
+  sys.stdout = RedirectText(text_widget)  # Redirect stdout
+
+  manager = SubprocessManager(root, text_widget)
+  start_ray_head_node(manager)
+
+  root.protocol("WM_DELETE_WINDOW", manager.stop_all)  # Stop processes on close
   root.mainloop()
 
 
 if __name__ == '__main__':
-  if "--subprocess" in sys.argv:
-    print("Running as a subprocess.")
-    runpy.run_module("web_server.backend.app",
-                     run_name="__main__",
-                     alter_sys=True)
-
-  else:
-    print('### Starting AstroFlow...')
-
-    # processes = start_services()
-
-    # webbrowser.open(_ASTROFLOW_URL)
-
-    # for process in processes:
-    #   process.wait()
-
-    main()
-
-    print('### AstroFlow done')
+  main()

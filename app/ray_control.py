@@ -1,35 +1,29 @@
-import subprocess
-import threading
 import time
 import os
 
 from base_path import get_base_path
+from flask_control import start_flask
 
 
-def start_ray_head_node():
+def start_ray_head_node(manager):
+  # TODO: Check for an existing Ray cluster.
+  # TODO: Put controls in the UI.
   base_path = get_base_path()
-  print(f'Starting Ray head node at base path {base_path}...')
   ray_path = os.path.join(base_path, 'bin', 'ray')
-
-  # TODO: This may not work on Windows.
   resources = """'{"PixInsight": 1, "diskcache": 1, "fastest_storage": 1}'"""
   command = f"""ulimit -n 10000 && {ray_path} start --head --resources {resources}"""
-  ray_process = subprocess.Popen(command, shell=True, start_new_session=True)
+  manager.start_process(command)
 
-  # Spin until `ray status` tells us the node is up.
-  while True:
-    print('Calling `ray status`')
-    process = subprocess.Popen(f"{ray_path} status",
-                               stdout=subprocess.PIPE,
-                               stderr=subprocess.STDOUT,
-                               shell=True,
-                               text=True)
-    output = process.communicate()[0]
-    print('ray status output:', output)
-    if "Autoscaler status" in output:
-      print('Ray head node is up')
-      break
+  def maybe_start_flask_server(ray_status_output):
+    if "Autoscaler status" in ray_status_output:
+      print('Ray head node is up; starting web server...')
+      start_flask()
+    else:
+      time.sleep(1)
+      check_ray_status()
 
-    time.sleep(1)
+  def check_ray_status():
+    command = f"{ray_path} status"
+    manager.start_process(command, done_callback=maybe_start_flask_server)
 
-  return ray_process
+  check_ray_status()

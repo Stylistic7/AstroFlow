@@ -751,6 +751,6 @@ def get_last_run_logs():
   return context.last_run_logs or {}
 
 
-if __name__ == '__main__':
-  print('### Starting AstroFlow web server...')
-  app.run(host='0.0.0.0', port=80)
+# if __name__ == '__main__':
+#   print('### Starting AstroFlow web server...')
+#   app.run(host='0.0.0.0', port=80)

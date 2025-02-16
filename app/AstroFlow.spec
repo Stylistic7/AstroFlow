@@ -6,9 +6,9 @@ import sys ; sys.setrecursionlimit(sys.getrecursionlimit() * 5)
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
 hidden_imports = collect_submodules("ray") + collect_submodules("spherical_geometry") + collect_submodules("xisf")
-hidden_imports += ["diskcache", "graphlib", "objsize", "plotly", "shapely",
-                   "skimage", "skimage.transform", "spherical_geometry",
-                   "structlog", "xisf", "xxhash", "yaml"]
+hidden_imports += ["diskcache", "flask", "graphlib", "objsize", "plotly",
+                   "shapely", "skimage", "skimage.transform",
+                   "spherical_geometry", "structlog", "xisf", "xxhash", "yaml"]
 
 ray_datas = collect_data_files("ray") + collect_data_files("xisf")
 
