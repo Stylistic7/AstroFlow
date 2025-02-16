@@ -2,6 +2,7 @@
 #
 # Run with: pyinstaller -y AstroFlow.spec
 
+import os
 import sys ; sys.setrecursionlimit(sys.getrecursionlimit() * 5)
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
@@ -14,7 +15,7 @@ ray_datas = collect_data_files("ray") + collect_data_files("xisf")
 
 a = Analysis(
     ['AstroFlow.py'],
-    pathex=[],
+    pathex=[os.path.abspath('../core')],
     binaries=[],
     datas=ray_datas + [("../core/web_server/frontend/build",
             "core/web_server/templates"),
@@ -34,7 +35,7 @@ a = Analysis(
 pyz = PYZ(a.pure)
 
 # Something like this which can exclude node_modules
-a.datas += Tree('../core', prefix='', excludes=['node_modules', 'testdata'])
+a.datas += Tree(os.path.abspath('../core'), prefix='core', excludes=['node_modules', 'testdata'])
 
 exe = EXE(
     pyz,
