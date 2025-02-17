@@ -1,12 +1,13 @@
 from dataclasses import dataclass
 import datetime
-from typing import Any
-import numpy as np
+from typing import Any, Sequence
+from beartype import beartype
 
 from context import context
 from metadata.classes import MetadataDict, FrameHash
 
 
+@beartype
 @dataclass(frozen=True)
 class ChronologyAttributes:
   oldest_date: datetime.datetime
@@ -15,7 +16,7 @@ class ChronologyAttributes:
   @classmethod
   def from_frames(
       cls,
-      frames: list[FrameHash],
+      frames: Sequence[FrameHash],
       metadata: MetadataDict | None = None) -> 'ChronologyAttributes':
     assert frames
 

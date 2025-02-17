@@ -1,10 +1,11 @@
 import numpy as np
+from beartype import beartype
 
 from typing import Iterator
 from context import context
 import clustering
 from stacks.composite_stack import CompositeStack, CompositeStacksDict
-from metadata.classes import FrameHash
+from metadata.classes import FrameHash, MetadataDict
 from dependency_graph.astroflow_node import AstroFlowNode
 
 
@@ -28,16 +29,21 @@ def identify_stacks(light_frames: list[FrameHash]) -> CompositeStacksDict:
 
   # TODO: Maybe implement a version of cluster_continuous() that repeatedly
   # subdivides by independent 1D variables.
-  metadata = {h: i for h, i in context.metadata.items() if h in light_frames}
+  metadata = MetadataDict({
+      h: i for h, i in context.metadata.items() if h in light_frames
+  })
 
-  def scale_clusters() -> Iterator[list[FrameHash]]:
+  @beartype
+  def scale_clusters() -> Iterator[tuple[FrameHash, ...]]:
     scales = [(metadata[k].content_hash, metadata[k].plate_solution.image_scale)
               for k in metadata]
     for cluster in clustering.cluster_continuous(scales, epsilon=0.2):
       scale_frames, _ = zip(*cluster)
       yield scale_frames
 
-  def camera_clusters(frames: list[FrameHash]) -> Iterator[list[FrameHash]]:
+  @beartype
+  def camera_clusters(
+      frames: tuple[FrameHash, ...]) -> Iterator[tuple[FrameHash, ...]]:
     cameras = [(metadata[k].content_hash,
                 (metadata[k].header['INSTRUME'], metadata[k].header['NAXIS1'],
                  metadata[k].header['NAXIS2'], metadata[k].header['XPIXSZ'],
@@ -47,7 +53,9 @@ def identify_stacks(light_frames: list[FrameHash]) -> CompositeStacksDict:
       assert len(set(cameras)) == 1
       yield frames
 
-  def rotation_clusters(frames: list[FrameHash]) -> Iterator[list[FrameHash]]:
+  @beartype
+  def rotation_clusters(
+      frames: tuple[FrameHash, ...]) -> Iterator[tuple[FrameHash, ...]]:
     rotation_angles = [
         (metadata[k].content_hash,
          _normalize_radians(metadata[k].plate_solution.rotation_angle))
@@ -57,7 +65,9 @@ def identify_stacks(light_frames: list[FrameHash]) -> CompositeStacksDict:
       frames, _ = zip(*cluster)
       yield frames
 
-  def filter_clusters(frames: list[FrameHash]) -> Iterator[list[FrameHash]]:
+  @beartype
+  def filter_clusters(
+      frames: tuple[FrameHash, ...]) -> Iterator[tuple[FrameHash, ...]]:
     filters = [
         (metadata[k].content_hash, metadata[k].header['FILTER']) for k in frames
     ]

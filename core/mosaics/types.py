@@ -1,10 +1,6 @@
 from typing import NewType, TypeAlias
 from dataclasses import dataclass
-from typing import Optional
-import datetime
-
-from spherical_geometry.polygon import SingleSphericalPolygon  # type: ignore
-from shapely.geometry import Polygon  # type: ignore
+from beartype import beartype
 
 from artifacts import Artifact
 from geometry.projection import Projection
@@ -16,10 +12,12 @@ from stacks.chronology_attributes import ChronologyAttributes
 Template: TypeAlias = tuple[int | None, int | None]
 TileIndices: TypeAlias = tuple[int, int]
 Pair: TypeAlias = list[TileIndices]
+Strip: TypeAlias = list[TargetHash]
 
 MosaicHash = NewType('MosaicHash', str)
 
 
+@beartype
 @dataclass(order=True, frozen=True)
 class Mosaic(AstrometricAttributes, ChronologyAttributes):
   content_hash: str
@@ -27,7 +25,7 @@ class Mosaic(AstrometricAttributes, ChronologyAttributes):
 
   target_ids: list[TargetHash]
   tile_indices: list[TileIndices]
-  strips: list[list[TargetHash]]
+  strips: list[Strip]
 
   def __str__(self) -> str:
     return (
@@ -47,6 +45,7 @@ class Mosaic(AstrometricAttributes, ChronologyAttributes):
 MosaicsDict = dict[MosaicHash, Mosaic]
 
 
+@beartype
 @dataclass(frozen=True)
 class Viewbox:
   projection: Projection

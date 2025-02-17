@@ -7,11 +7,12 @@ import ray
 import numpy as np
 import random
 from enum import Enum
-from typing import Any
+from typing import Any, Sequence
 from dataclasses import asdict
+from beartype import beartype
 
 from context import context
-from mosaics.types import Mosaic, MosaicHash, MosaicsDict
+from mosaics.types import Mosaic, MosaicHash, MosaicsDict, Strip
 from catalogs import position_string
 from geometry import footprints
 from hashing import hash_list
@@ -238,8 +239,9 @@ def group_targets(
   return mosaics
 
 
+@beartype
 def find_strips(target_ids: list[TargetHash],
-                debug: bool = False) -> list[list[TargetHash]]:
+                debug: bool = False) -> list[Strip]:
   targets = context.grouped_targets
 
   target_ids = list(sorted(target_ids, key=lambda t: targets[t].center[0]))
@@ -251,7 +253,8 @@ def find_strips(target_ids: list[TargetHash],
 
   # TODO: Maybe use this same algorithm to order the strips themselves to make
   # sure the output strips can be merged with PhotometricMergeMosaic.
-  def order_strip(strip):
+  @beartype
+  def order_strip(strip: set[TargetHash]) -> Strip:
     strip_length = len(strip)
     strip = list(sorted(strip, key=lambda t: targets[t].center[0]))
 
@@ -284,7 +287,7 @@ def find_strips(target_ids: list[TargetHash],
           strip.remove(target_id)
 
     assert len(output_strip) == strip_length
-    return output_strip
+    return Strip(output_strip)
 
   output_strips = []
   for strip in strips:

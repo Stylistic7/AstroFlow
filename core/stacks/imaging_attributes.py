@@ -1,26 +1,28 @@
 from dataclasses import dataclass
-import datetime
 from typing import Any
 import numpy as np
+from beartype import beartype
+from collections.abc import Iterable
 
 from context import context
 from metadata.classes import MetadataDict, FrameHash
 
 
+@beartype
 @dataclass(frozen=True)
 class ImagingAttributes:
   image_type: str
   camera: str
   filter: str | None
   mean_temperature: float
-  exposure_s: list[int]
-  integration_s: int
+  exposure_s: list[float]
+  integration_s: float
   width_pixels: int
   height_pixels: int
 
   @classmethod
   def from_frames(cls,
-                  frames: list[FrameHash],
+                  frames: Iterable[FrameHash],
                   metadata: MetadataDict | None = None) -> 'ImagingAttributes':
     assert frames
 
