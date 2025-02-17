@@ -5,7 +5,7 @@ from functools import wraps
 import structlog
 from typing import Any
 import astropy.io.fits as pyfits  # type: ignore
-import os
+from beartype import beartype
 
 from context import context, WriteMode
 from artifacts import FileArtifact, CacheArtifact, artifact_exists
@@ -45,6 +45,7 @@ def delete_cached_result(node):
 
 def _result_exists(fn, content_hash, debug=False):
   if context.ignore_cached_results:
+    print(f'### Node {fn.__name__}: ignoring cached results')
     return False
 
   key = (fn.__name__, content_hash)

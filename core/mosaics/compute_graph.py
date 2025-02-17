@@ -47,7 +47,7 @@ def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
     hdu.writeto(str(filename), overwrite=True)
 
 
-@AstroFlowNode(cache_result=True)
+@AstroFlowNode()
 def build_mosaic_subgraph(mode: QualityLevel, mosaic: Mosaic) -> Graph:
   print(f'### build_mosaic_subgraph mode {mode} for mosaic {mosaic}')
   viewbox = compute_mosaic_viewbox(mode, mosaic)
@@ -136,7 +136,7 @@ def compute_mask(strip: list[TargetHash], viewbox: Viewbox) -> box:
   return largest_interior_rectangle(strip_poly)
 
 
-@AstroFlowNode(cache_result=True)
+@AstroFlowNode(cache_result=True, debug=True)
 def compute_mosaic_masks(mosaic: Mosaic, viewbox: Viewbox) -> list[box]:
   return [compute_mask(strip, viewbox) for strip in mosaic.strips]
 
@@ -157,7 +157,7 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
         f'mosaic {mosaic} filter {filter} strips {mosaic.strips}')
 
   # TODO: Why does this work?
-  strips = [reversed(s) for s in mosaic.strips]
+  strips = [list(reversed(s)) for s in mosaic.strips]
 
   # For strip index 0:
   #   merge(place_a, place_b) -> merge_b
@@ -180,7 +180,10 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
     for i, target_id in enumerate(strip):
       # TODO: This should maybe be a hard failure in master mode.
       if not (stack := _get_stack_for_filter(targets[target_id], filter)):
-        continue
+        print(f'### Failed to find stack for '
+              f'target {targets[target_id]} filter {filter}')
+        if mode == QualityLevel.MASTER:
+          return None
 
       if i == 0:
         prev_task = Node(build_placement_subgraph,
@@ -212,6 +215,7 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
         ]
         prev_task = merge_task
 
+    assert prev_task is not None, f'strips are {strips}'
     strip_tasks.append(prev_task)
 
   for i in range(len(strips)):
