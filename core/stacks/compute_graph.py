@@ -34,6 +34,7 @@ def build_stacking_subgraph(stack: CustomizedStack) -> Graph:
   graph[stacking_metadata_task] = {stack_task}
   graph[post_process_task] = {stacking_metadata_task}
   graph[post_process_metadata_task] = {post_process_task}
+  graph[load_metadata] = {post_process_metadata_task}
 
   return graph
 
