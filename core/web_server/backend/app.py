@@ -95,9 +95,12 @@ from base_path import get_base_path
 base_path = get_base_path()
 print(f'### base_path {base_path}')
 
-app = flask.Flask(__name__,
-                  template_folder=f'{base_path}/core/web_server/templates',
-                  static_folder=f'{base_path}/core/web_server/static')
+if getattr(sys, 'frozen', False):
+  app = flask.Flask(__name__,
+                    template_folder=f'{base_path}/core/web_server/templates',
+                    static_folder=f'{base_path}/core/web_server/static')
+else:
+  app = flask.Flask(__name__, template_folder='./templates')
 
 
 # TODO: Move computations into new files.
@@ -334,7 +337,7 @@ def mosaic_thumbnail_image_for_filter(mosaic_id, filter):
   subframe_key = ('mosaic_thumbnail_image', QualityLevel.SUBFRAME, mosaic_id,
                   filter)
 
-  for key in [master_key, subframe_key]:
+  for key in [subframe_key]:
     if context.contains(key):
       image = context[key]
       if isinstance(image, Path):
@@ -597,10 +600,14 @@ def run_compute_graph():
   context.input_dirs = ['/Volumes/Astro/Raw', '/Volumes/Astro2/Raw']
   context.output_dir = '/Volumes/Astro/Processed'
 
+  # TODO: Put these in the UI.
+  context.ignore_cached_results = False
+  context.dangerously_accept_existing_files = True
+
   # TODO: Determine `regroup` automatically.
-  graph = build_compute_graph(regroup=True,
+  graph = build_compute_graph(regroup=False,
                               make_previews=True,
-                              run_main_processing_graph=False)
+                              run_main_processing_graph=True)
 
   def _run_graph(*args, **kwargs):
     # TODO: Perhaps the results and logs should be saved incrementally,
@@ -751,6 +758,6 @@ def get_last_run_logs():
   return context.last_run_logs or {}
 
 
-# if __name__ == '__main__':
-#   print('### Starting AstroFlow web server...')
-#   app.run(host='0.0.0.0', port=80)
+if __name__ == '__main__':
+  print('### Starting AstroFlow web server...')
+  app.run(host='0.0.0.0', port=80)

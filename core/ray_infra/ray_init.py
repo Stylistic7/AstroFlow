@@ -5,6 +5,7 @@ from state.actor import StateActor
 from base_path import get_base_path
 
 working_dir = f'{get_base_path()}/core'
+print(f'### calling ray.init() with working_dir {working_dir}')
 
 ray_context = ray.init(address='auto',
                        namespace='AstroFlow',

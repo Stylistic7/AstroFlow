@@ -1,5 +1,6 @@
 import sys
 import os
+from pathlib import Path
 
 
 def get_base_path() -> str:
@@ -8,4 +9,4 @@ def get_base_path() -> str:
     return sys._MEIPASS
   else:
     # If the application is running in a development environment
-    return os.path.dirname(os.path.abspath(__file__))
+    return Path(__file__).resolve().parent.parent
