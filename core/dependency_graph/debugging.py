@@ -13,17 +13,16 @@ def node_to_string(node: Node, exclude_args: bool = False) -> str:
   node = canonicalize_node(node)
   assert isinstance(node.task, RemoteFunction)
 
-  if node.name:
-    string = f'Node({node.task._function.__name__}'
-    if node.args:
-      string += f', {_tuple_values(node.args)}'
-    string += f", name='{node.name}')"
-    return string
-
+  string = f'Node(fn={node.task._function.__name__}'
   if node.args and not exclude_args:
-    return f'({node.task._function.__name__}, {_tuple_values(node.args)})'
-  else:
-    return f'{node.task._function.__name__}'
+    string += f', args={_tuple_values(node.args)}'
+  if node.name:
+    string += f", name='{node.name}'"
+  if node.priority:
+    string += f", priority={node.priority}"
+  string += ')'
+
+  return string
 
 
 def node_to_string_tuple(node: Node) -> str:

@@ -141,6 +141,22 @@ def run_graph(graph: Graph,
                                        n.task._function.__name__))
     ]
 
+  def print_ready_nodes(ready) -> None:
+    print(f'### Sorted ready nodes ({len(ready)}):')
+    last_node_string = None
+    num_duplicates = 0
+    for ts, node in ready:
+      node_string = node_to_string(node, exclude_args=True)
+      if node_string == last_node_string:
+        num_duplicates += 1
+        continue
+      else:
+        if last_node_string is not None:
+          print(f'###   {last_node_string} x{num_duplicates}')
+        last_node_string = node_string
+        num_duplicates = 1
+    print(f'###   {last_node_string} x{num_duplicates}')
+
   def get_status() -> GraphStatus:
     return reduce(or_, [ts.get_status() for ts in subgraphs], GraphStatus())
 
@@ -151,6 +167,9 @@ def run_graph(graph: Graph,
 
   while any(ts.is_active() for ts in subgraphs):
     ready = get_ready_nodes()
+    if debug:
+      print_ready_nodes(ready)
+
     max_parallelism_seen = max(len(ready), max_parallelism_seen)
 
     if debug:

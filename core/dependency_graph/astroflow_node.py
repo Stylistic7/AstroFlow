@@ -157,6 +157,7 @@ def AstroFlowNode(resources=None,
     @capture_logs
     @track_performance
     @wraps(fn)
+    @beartype
     def wrapper(*args, **kwargs) -> Any:
       log.info("function_entry",
                function_name=fn.__name__,
