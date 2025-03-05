@@ -50,7 +50,7 @@ def merge_images_with_maximum(image_0: np.ndarray,
   return output_image
 
 
-@AstroFlowNode(cache_result=True)
+@AstroFlowNode()
 def merge_images(mode: QualityLevel, mosaic: Mosaic, input_0: Path,
                  input_1: Path) -> Path:
   print(f'### merge images {input_0} {input_1}')
@@ -83,14 +83,14 @@ def merge_images(mode: QualityLevel, mosaic: Mosaic, input_0: Path,
     output_filename.parent.mkdir(parents=True, exist_ok=True)
     hdu.writeto(str(output_filename), overwrite=True)
 
-    return output_filename
-
   elif mode == 'master':
     if os.environ.get('MOCK_PIXINSIGHT'):
       return input_0
     else:
-      _, result = ray.get(
+      _, output_filename = ray.get(
           merge_images_with_photometric_mosaic.remote(mosaic, input_0, input_1))
-      return result
 
-  raise ValueError(f'Unknown quality level {mode}')
+  os.remove(input_0)
+  os.remove(input_1)
+
+  return output_filename
