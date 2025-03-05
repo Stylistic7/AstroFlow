@@ -29,6 +29,9 @@ def mosaic_done(mode: QualityLevel, mosaic: Mosaic) -> None:
 @AstroFlowNode()
 def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
                                input: Path) -> None:
+  if input is None:
+    return
+
   print(f'### store_mosaic_color_channel: filter {filter} input {input}')
   key = ('mosaic_thumbnail_image', mode, mosaic.stable_hash, filter)
 
@@ -70,12 +73,8 @@ def build_mosaic_subgraph(mode: QualityLevel, mosaic: Mosaic) -> Graph:
   store_tasks = []
   for filter in filters:
     store_task = (store_mosaic_color_channel, mode, mosaic, filter)
-    filter_subgraph_task = Node(build_mosaic_filter_subgraph,
-                                mode,
-                                mosaic,
-                                filter,
-                                viewbox,
-                                priority=2)
+    filter_subgraph_task = Node(build_mosaic_filter_subgraph, mode, mosaic,
+                                filter, viewbox)
     graph[store_task] = {filter_subgraph_task}
     graph[filter_subgraph_task] = {mask_task}
     store_tasks.append(store_task)
@@ -110,15 +109,8 @@ def build_placement_subgraph(mode: QualityLevel, mosaic: Mosaic,
                              mask: box):
   # TODO: Integrate the stack mask here too.
   return make_graph_from_list([(get_stack_image, mode, stack),
-                               Node(place_image,
-                                    mode,
-                                    mosaic,
-                                    stack,
-                                    tile_indices,
-                                    filter,
-                                    viewbox,
-                                    mask,
-                                    priority=3)])
+                               Node(place_image, mode, mosaic, stack,
+                                    tile_indices, filter, viewbox, mask)])
 
 
 def compute_mask(strip: list[TargetHash], viewbox: Viewbox) -> box:
@@ -175,8 +167,8 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
   #   merge(merge_k, place_l) -> merge_l
   graph = Graph()
   strip_tasks = []
-  prev_task = None
   for strip_index, (strip, mask) in enumerate(zip(strips, masks)):
+    prev_task = None
     for i, target_id in enumerate(strip):
       # TODO: This should maybe be a hard failure in master mode.
       if not (stack := _get_stack_for_filter(targets[target_id], filter)):
@@ -186,33 +178,19 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
           return None
 
       if i == 0:
-        prev_task = Node(build_placement_subgraph,
-                         mode,
-                         mosaic,
-                         stack,
-                         filter,
-                         TileIndices((strip_index, i)),
-                         viewbox,
-                         mask,
-                         priority=2)
+        prev_task = Node(build_placement_subgraph, mode, mosaic, stack, filter,
+                         TileIndices((strip_index, i)), viewbox, mask)
       else:
+        placement_task = Node(build_placement_subgraph, mode,
+                              mosaic, stack, filter,
+                              TileIndices((strip_index, i)), viewbox, mask)
         merge_task = Node(merge_images,
                           mode,
                           mosaic,
-                          name=f'merge_{mosaic.stable_hash}_{target_id}',
-                          priority=2)
-        graph[merge_task] = [
-            prev_task,
-            Node(build_placement_subgraph,
-                 mode,
-                 mosaic,
-                 stack,
-                 filter,
-                 TileIndices((strip_index, i)),
-                 viewbox,
-                 mask,
-                 priority=2)
-        ]
+                          name=f'merge_{mosaic.stable_hash}_{target_id}')
+        if prev_task is not None:
+          graph[placement_task] = [prev_task]
+        graph[merge_task] = [prev_task, placement_task]
         prev_task = merge_task
 
     assert prev_task is not None, f'strips are {strips}'
