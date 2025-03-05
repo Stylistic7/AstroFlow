@@ -21,7 +21,7 @@ from mosaics.trimming import trim_image
 from dependency_graph.astroflow_node import AstroFlowNode
 from stacks.composite_stack import CompositeStack
 
-_PLACE_IMAGE_MEMORY_REQUIREMENT = 4 * 1024 * 1024 * 1024  # 4 GB
+_PLACE_IMAGE_MEMORY_REQUIREMENT = 6 * 1024 * 1024 * 1024  # 6 GB
 _PLACE_TILE_MEMORY_REQUIREMENT = 128 * 1024 * 1024  # 128 MB
 
 log = structlog.get_logger()
@@ -156,7 +156,7 @@ def _save_image_to_file(mode: QualityLevel, mosaic: Mosaic,
   return filename
 
 
-@AstroFlowNode(cache_result=True, memory=_PLACE_IMAGE_MEMORY_REQUIREMENT)
+@AstroFlowNode(memory=_PLACE_IMAGE_MEMORY_REQUIREMENT)
 def place_image(mode: QualityLevel, mosaic: Mosaic, stack: CustomizedStack,
                 tile_indices: TileIndices, filter: str, viewbox: Viewbox,
                 mask: box, filename: Path) -> Path:
@@ -164,6 +164,10 @@ def place_image(mode: QualityLevel, mosaic: Mosaic, stack: CustomizedStack,
   #   print(f'### Dangerously skipping place_large_image because '
   #         f'file {filename} already exists')
   #   return filename
+
+  print(
+      f'### place_image {mode} mosaic {mosaic.stable_hash} filename {filename}')
+  assert filename, f"place_image: bad filename {filename}"
 
   wcs = _get_wcs(filename)
   interp = _make_interpolator(filename)
