@@ -171,7 +171,10 @@ def place_image(mode: QualityLevel, mosaic: Mosaic, stack: CustomizedStack,
 
   wcs = _get_wcs(filename)
   interp = _make_interpolator(filename)
-  image = _project_in_tiles(viewbox, interp, wcs, skip_empty=True)
+
+  skip_empty = mode == QualityLevel.MASTER
+  image = _project_in_tiles(viewbox, interp, wcs, skip_empty=skip_empty)
+
   if mask:
     image = trim_image(image, mask)
 

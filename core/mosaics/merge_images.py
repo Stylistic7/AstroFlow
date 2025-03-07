@@ -50,6 +50,7 @@ def merge_images_with_maximum(image_0: np.ndarray,
   return output_image
 
 
+# TODO: Cache these results.
 @AstroFlowNode()
 def merge_images(mode: QualityLevel, mosaic: Mosaic, input_0: Path,
                  input_1: Path) -> Path:

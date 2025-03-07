@@ -16,7 +16,7 @@ _TILE_SIZE = 2048  # pixels
 # images, e.g. arbitrary Python objects.
 def compute_mosaic_viewbox(mode: QualityLevel,
                            mosaic: Mosaic) -> list[Artifact]:
-  print(f'### Entering compute_mosaic_viewbox for mosaic {mosaic}')
+  print(f'### Entering compute_mosaic_viewbox for mosaic {mosaic} mode {mode}')
 
   def round_to_nearest_multiple(number: float, multiple: int) -> int:
     return int(np.ceil(number / multiple) * multiple)
@@ -33,7 +33,7 @@ def compute_mosaic_viewbox(mode: QualityLevel,
   # mosaic's image scale, given in degrees per pixel. In subframe mode, make
   # a thumbnail-sized image.
   num_pixels_x = x_span / np.deg2rad(
-      mosaic.image_scale / 3600) if mode == QualityLevel.MASTER else 1500
+      mosaic.image_scale / 3600) if mode == QualityLevel.MASTER else 2048
 
   # Round the number of pixels up to a multiple of the tile size.
   num_pixels_x = round_to_nearest_multiple(num_pixels_x, multiple=_TILE_SIZE)

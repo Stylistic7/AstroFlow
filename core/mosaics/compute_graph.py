@@ -67,7 +67,7 @@ def build_mosaic_subgraph(mode: QualityLevel, mosaic: Mosaic) -> Graph:
       filters.add(stacks[stack_id].filter)
   filters = tuple(filters)
 
-  mask_task = (compute_mosaic_masks, mosaic, viewbox)
+  mask_task = (compute_mosaic_masks, mode, mosaic, viewbox)
 
   graph = Graph()
   store_tasks = []
@@ -129,8 +129,10 @@ def compute_mask(strip: list[TargetHash], viewbox: Viewbox) -> box:
 
 
 @AstroFlowNode(cache_result=True, debug=True)
-def compute_mosaic_masks(mosaic: Mosaic, viewbox: Viewbox) -> list[box]:
-  return [compute_mask(strip, viewbox) for strip in mosaic.strips]
+def compute_mosaic_masks(mode: QualityLevel, mosaic: Mosaic,
+                         viewbox: Viewbox) -> list[box]:
+  if mode == QualityLevel.MASTER:
+    return [compute_mask(strip, viewbox) for strip in mosaic.strips]
 
 
 @AstroFlowNode(cache_result=True)
@@ -142,7 +144,7 @@ def compute_target_mask(target: Target, viewbox: Viewbox) -> box:
 @AstroFlowNode()
 def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
                                  filter: str, viewbox: Viewbox,
-                                 masks: list[box]) -> Graph:
+                                 masks: list[box] | None) -> Graph:
   targets = context.targets
 
   print(f'### build_mosaic_filter_subgraph mode {mode} '
@@ -150,6 +152,9 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
 
   # TODO: Why does this work?
   strips = [list(reversed(s)) for s in mosaic.strips]
+
+  if masks is None:
+    masks = [None] * len(strips)
 
   # For strip index 0:
   #   merge(place_a, place_b) -> merge_b
