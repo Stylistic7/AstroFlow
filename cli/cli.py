@@ -47,6 +47,19 @@ def regroup(args):
   results, logs = run_graph(graph)
 
 
+def make_preview(args):
+  print(f"### Making preview for {args.object_type} {args.object_id}")
+
+  if args.object_type == 'mosaic':
+    mosaic_task = (build_mosaic_subgraph, QualityLevel.SUBFRAME,
+                   context.mosaics[args.object_id])
+    graph = Graph({command_done: {mosaic_task}, mosaic_task: {load_metadata}})
+  else:
+    print(f"Unsupported object_type {args.object_type}")
+
+  run_graph(graph)
+
+
 def stack(args):
   print(f"### Stacking stack with id {args.stack_id}")
   stack = context.stacks[args.stack_id]
@@ -110,6 +123,15 @@ def main():
                               action="store_true",
                               help="Force regrouping")
 
+  # 'preview' command
+  preview_parser = subparsers.add_parser("preview", help="Generate previews")
+  preview_parser.add_argument("object_type",
+                              choices=["stack", "target", "mosaic"],
+                              nargs="?",
+                              help="Type of object: stack, target, or mosaic")
+  preview_parser.add_argument(
+      "object_id", help="ID of the object for which to generate previews")
+
   # 'stack' command
   stack_parser = subparsers.add_parser("stack", help="Stack images")
   stack_parser.add_argument("stack_id", help="ID of the stack to stack")
@@ -144,6 +166,8 @@ def main():
   # Handle the parsed arguments
   if args.command == "regroup":
     regroup(args)
+  elif args.command == 'preview':
+    make_preview(args)
   elif args.command == 'stack':
     stack(args)
   elif args.command == "merge" and args.subcommand == "mosaic":
