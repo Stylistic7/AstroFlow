@@ -62,14 +62,15 @@ def _setup_composite_stack(stack: Stack,
   metadata = context.metadata
   stacks = context.stacks
   calibration_stacks = context.calibration_stacks
-  hashes = stack.all_frames()
 
   first_filename = None
 
   num_frames = 0
   for i, substack in enumerate(stack.contents.values()):
-    filenames = [i.filename for h, i in metadata.items() if h in hashes]
-    assert len(hashes) == len(filenames)
+    filenames = [
+        i.filename for h, i in metadata.items() if h in substack.frames
+    ]
+    assert len(substack.frames) == len(filenames)
 
     if first_filename is None:
       first_filename = filenames[0]
@@ -77,9 +78,9 @@ def _setup_composite_stack(stack: Stack,
     run_dir = os.path.join(tmp_dir, f'RUN_{i}')
     os.makedirs(run_dir, exist_ok=True)
 
-    run_metadata = {h: i for h, i in metadata.items() if h in hashes}
+    run_metadata = {h: i for h, i in metadata.items() if h in substack.frames}
     _copy_frames_with_plate_solution(run_metadata, run_dir)
-    num_frames += len(hashes)
+    num_frames += len(substack.frames)
 
     # Add any dependent stacks (e.g. calibration stacks).
     dependencies = substack.dependencies | {'flat': '40200993d60fe76b'}
