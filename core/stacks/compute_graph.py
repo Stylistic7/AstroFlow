@@ -42,6 +42,7 @@ def build_stacking_subgraph(stack: CustomizedStack) -> Graph:
 # TODO: Calibrate the subframe returned here.s
 @AstroFlowNode()
 def get_stack_subframe_image(stack: CompositeStack) -> Path:
+  assert stack is not None
   light_frames_by_stars = get_light_frames_sorted_by_stars(stack)
   best_light_frame = stack.all_metadata()[light_frames_by_stars[0]]
   print(f'### get_stack_subframe_image returning {best_light_frame.filename}')
@@ -50,6 +51,7 @@ def get_stack_subframe_image(stack: CompositeStack) -> Path:
 
 @AstroFlowNode()
 def get_stack_image(mode: QualityLevel, stack: CompositeStack) -> Graph:
+  assert stack is not None
   if mode == QualityLevel.SUBFRAME:
     return Graph({(get_stack_subframe_image, stack): {}})
   else:

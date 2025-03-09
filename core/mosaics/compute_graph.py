@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 from pathlib import Path
 import astropy.io.fits as pyfits  # type: ignore
 from shapely import box  # type: ignore
@@ -28,7 +28,7 @@ def mosaic_done(mode: QualityLevel, mosaic: Mosaic) -> None:
 # just stored in "findable locations" that do not depend on content hashes.
 @AstroFlowNode()
 def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
-                               input: Path) -> None:
+                               input: Path) -> Optional[Path]:
   if input is None:
     return
 
@@ -39,6 +39,7 @@ def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
     image = read_image(input)
     context.set(key, image, write_mode=WriteMode.DISK_ONLY)
     print(f'### store_mosaic_color_channel wrote key {key}')
+    return None
   elif mode == QualityLevel.MASTER:
     image = read_image(input)
     context.set(key, input, write_mode=WriteMode.DISK_ONLY)
@@ -48,6 +49,7 @@ def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
     hdu = pyfits.PrimaryHDU(image)
     filename.parent.mkdir(parents=True, exist_ok=True)
     hdu.writeto(str(filename), overwrite=True)
+    return filename
 
 
 @AstroFlowNode()
@@ -108,6 +110,7 @@ def build_placement_subgraph(mode: QualityLevel, mosaic: Mosaic,
                              tile_indices: TileIndices, viewbox: Viewbox,
                              mask: box):
   # TODO: Integrate the stack mask here too.
+  assert stack is not None
   return make_graph_from_list([(get_stack_image, mode, stack),
                                Node(place_image, mode, mosaic, stack,
                                     tile_indices, filter, viewbox, mask)])
@@ -141,17 +144,47 @@ def compute_target_mask(target: Target, viewbox: Viewbox) -> box:
       project_to_viewbox(target.footprint, viewbox))
 
 
+def get_stacks_for_filter(mode: QualityLevel, mosaic: Mosaic, filter: str):
+  targets = context.targets
+
+  # TODO: Why does this work?
+  strips = [list(reversed(s)) for s in mosaic.strips]
+
+  strip_stack_ids = []
+  for strip in strips:
+    stack_ids = []
+    for i, target_id in enumerate(strip):
+      if not (stack := _get_stack_for_filter(targets[target_id], filter)):
+        print(f'### Failed to find stack for '
+              f'target {targets[target_id]} filter {filter}')
+        if mode == QualityLevel.MASTER:
+          return None
+
+      if stack is not None:
+        stack_ids.append(stack.stable_hash)
+
+    if len(stack_ids) > 0:
+      strip_stack_ids.append(stack_ids)
+
+  if len(strip_stack_ids) > 0:
+    return strip_stack_ids
+
+
 @AstroFlowNode()
 def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
                                  filter: str, viewbox: Viewbox,
                                  masks: list[box] | None) -> Graph:
-  targets = context.targets
+  stacks = context.stacks
 
   print(f'### build_mosaic_filter_subgraph mode {mode} '
         f'mosaic {mosaic} filter {filter} strips {mosaic.strips}')
 
   # TODO: Why does this work?
   strips = [list(reversed(s)) for s in mosaic.strips]
+
+  strips = get_stacks_for_filter(mode, mosaic, filter)
+  if strips is None:
+    return None
 
   if masks is None:
     masks = [None] * len(strips)
@@ -174,14 +207,8 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
   strip_tasks = []
   for strip_index, (strip, mask) in enumerate(zip(strips, masks)):
     prev_task = None
-    for i, target_id in enumerate(strip):
-      # TODO: This should maybe be a hard failure in master mode.
-      if not (stack := _get_stack_for_filter(targets[target_id], filter)):
-        print(f'### Failed to find stack for '
-              f'target {targets[target_id]} filter {filter}')
-        if mode == QualityLevel.MASTER:
-          return None
-
+    for i, stack_id in enumerate(strip):
+      stack = stacks[stack_id]
       if i == 0:
         prev_task = Node(build_placement_subgraph, mode, mosaic, stack, filter,
                          TileIndices((strip_index, i)), viewbox, mask)
@@ -192,7 +219,7 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
         merge_task = Node(merge_images,
                           mode,
                           mosaic,
-                          name=f'merge_{mosaic.stable_hash}_{target_id}')
+                          name=f'merge_{mosaic.stable_hash}_{stack_id}')
         if prev_task is not None:
           graph[placement_task] = [prev_task]
         graph[merge_task] = [prev_task, placement_task]
