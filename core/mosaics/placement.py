@@ -117,7 +117,8 @@ def _project_in_tiles(viewbox: Viewbox,
                       skip_empty: bool = False):
   wcs_ref = ray.put(wcs)
 
-  projected_image = np.zeros((viewbox.num_pixels_y, viewbox.num_pixels_x),
+  projected_image = np.zeros((viewbox.num_tiles_y * viewbox.tile_height,
+                              viewbox.num_tiles_x * viewbox.tile_width),
                              dtype=np.float32)
 
   interp_ref = ray.put(interp)
@@ -138,7 +139,7 @@ def _project_in_tiles(viewbox: Viewbox,
     projected_image[tile_y_idx:tile_y_idx + viewbox.tile_height,
                     tile_x_idx:tile_x_idx + viewbox.tile_width] = tile_data
 
-  return projected_image
+  return projected_image[0:viewbox.num_pixels_y, 0:viewbox.num_pixels_x]
 
 
 def _save_image_to_file(mode: QualityLevel, mosaic: Mosaic,

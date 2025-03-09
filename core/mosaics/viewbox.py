@@ -34,6 +34,7 @@ def compute_mosaic_viewbox(mode: QualityLevel,
   # a thumbnail-sized image.
   num_pixels_x = x_span / np.deg2rad(
       mosaic.image_scale / 3600) if mode == QualityLevel.MASTER else 2048
+  finished_pixels_x = int(np.ceil(num_pixels_x))
 
   # Round the number of pixels up to a multiple of the tile size.
   num_pixels_x = round_to_nearest_multiple(num_pixels_x, multiple=_TILE_SIZE)
@@ -43,6 +44,7 @@ def compute_mosaic_viewbox(mode: QualityLevel,
 
   # Compute the number of pixels in the y-axis, using the same resolution.
   num_pixels_y = y_span / resolution
+  finished_pixels_y = int(np.ceil(num_pixels_y))
   num_pixels_y = round_to_nearest_multiple(num_pixels_y, multiple=_TILE_SIZE)
 
   num_tiles_y = int(np.ceil(num_pixels_y / _TILE_SIZE))
@@ -58,8 +60,8 @@ def compute_mosaic_viewbox(mode: QualityLevel,
                  y_min=y_min,
                  y_span=y_span,
                  resolution=resolution,
-                 num_pixels_y=num_pixels_y,
-                 num_pixels_x=num_pixels_x,
+                 num_pixels_y=finished_pixels_y,
+                 num_pixels_x=finished_pixels_x,
                  num_tiles_y=num_tiles_y,
                  num_tiles_x=num_tiles_x,
                  tile_height=_TILE_SIZE,
