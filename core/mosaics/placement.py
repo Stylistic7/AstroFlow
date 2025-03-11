@@ -5,7 +5,7 @@ from astropy.wcs import WCS  # type: ignore
 from scipy.interpolate import RegularGridInterpolator  # type: ignore
 from itertools import product
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict
 import structlog
 from astropy.coordinates import SkyCoord  # type: ignore
 from astropy import units as u  # type: ignore
@@ -149,10 +149,14 @@ def _save_image_to_file(mode: QualityLevel, mosaic: Mosaic,
   filename = Path(context.output_dir) / 'Mosaics' / mosaic.name / Path(
       f'placed_image_{mode}_{mosaic.stable_hash}_{stack.stable_hash}_'
       f'{tile_indices_str}_{filter}.xisf')
-  # hdu = pyfits.PrimaryHDU(image)
   filename.parent.mkdir(parents=True, exist_ok=True)
-  # hdu.writeto(str(filename), overwrite=True)
-  XISF.write(filename, np.expand_dims(image, -1), creator_app="AstroFlow")
+  fits_meta: Dict[str, Any] = {}
+  fits_meta['FILTER'] = [{'value': str(filter), 'comment': ''}]
+  ims_meta = {'FITSKeywords': fits_meta}
+  XISF.write(filename,
+             np.expand_dims(image, -1),
+             creator_app="AstroFlow",
+             image_metadata=ims_meta)
   print(f'### Wrote filename {filename}')
   return filename
 

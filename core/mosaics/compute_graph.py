@@ -6,10 +6,12 @@ from shapely import box  # type: ignore
 from context import context, WriteMode
 from customization.types import CustomizedStack
 from dependency_graph import Graph, Node, make_graph_from_list
+from file_io.conversion import convert_xisf_to_fits
 from mosaics.merge_images import merge_images
 from mosaics.types import Mosaic, Viewbox
 from mosaics.viewbox import compute_mosaic_viewbox
 from mosaics.placement import place_image
+from mosaics.post_process import post_process_mosaic
 from mosaics.trimming import project_to_viewbox, largest_interior_rectangle
 from mosaics.types import TileIndices
 from stacks.compute_graph import get_stack_image
@@ -19,14 +21,9 @@ from targets.types import Target, TargetHash
 from file_io.generic import read_image
 
 
-@AstroFlowNode()
-def mosaic_done(mode: QualityLevel, mosaic: Mosaic) -> None:
-  print(f'### mosaic_done mode {mode} mosaid {mosaic}')
-
-
 # TODO: What's supposed to happen with these final artifacts? I guess they're
 # just stored in "findable locations" that do not depend on content hashes.
-@AstroFlowNode()
+@AstroFlowNode(cache_result=True)
 def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
                                input: Path) -> Optional[Path]:
   if input is None:
@@ -41,15 +38,13 @@ def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
     print(f'### store_mosaic_color_channel wrote key {key}')
     return None
   elif mode == QualityLevel.MASTER:
-    image = read_image(input)
     context.set(key, input, write_mode=WriteMode.DISK_ONLY)
     filename = Path(
         context.output_dir
     ) / 'Mosaics' / mosaic.name / f'final_merged_{mosaic.stable_hash}_{filter}.fits'
-    hdu = pyfits.PrimaryHDU(image)
     filename.parent.mkdir(parents=True, exist_ok=True)
-    hdu.writeto(str(filename), overwrite=True)
-    return filename
+    convert_xisf_to_fits(input, filename)
+    return [filter, filename]
 
 
 @AstroFlowNode()
@@ -81,7 +76,7 @@ def build_mosaic_subgraph(mode: QualityLevel, mosaic: Mosaic) -> Graph:
     graph[filter_subgraph_task] = {mask_task}
     store_tasks.append(store_task)
 
-  graph[(mosaic_done, mode, mosaic)] = store_tasks
+  graph[(post_process_mosaic, mode, mosaic)] = store_tasks
 
   return graph
 
