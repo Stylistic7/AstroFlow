@@ -1,0 +1,22 @@
+from pathlib import Path
+
+from context import context
+from mosaics.types import Mosaic
+from pix.classes import ImageList
+from pix.decorators import PixInsight
+from pix.tasks import SaveAs
+from dependency_graph.astroflow_node import AstroFlowNode
+
+
+@PixInsight()
+def save_as_png(images: ImageList) -> ImageList:
+  output_filenames = [Path(i.filename).with_suffix('.png') for i in images]
+  return SaveAs(images, output_filenames)
+
+
+@AstroFlowNode()
+def save_as_tiles(mosaic: Mosaic, filter: str) -> None:
+  filename = Path(
+      context.output_dir
+  ) / 'Mosaics' / mosaic.name / f'final_merged_{mosaic.stable_hash}_{filter}.fits'
+  save_as_png([filename])

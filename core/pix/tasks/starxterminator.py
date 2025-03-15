@@ -8,8 +8,8 @@ _default_parameters = {
     # TODO: Make this cross-platform.
     'ai_file': '/Applications/PixInsight/library/StarXTerminator.11.mlmodel',
     'stars': True,
-    'unscreen': True,
-    'overlap': 0.50,
+    'unscreen': False,
+    'overlap': 0.20,
 }
 
 

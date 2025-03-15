@@ -4,6 +4,8 @@
   "private": true,
   "proxy": "http://localhost:80/",
   "dependencies": {
+    "@blueprintjs/core": "^5.17.5",
+    "@blueprintjs/icons": "^5.19.1",
     "@emotion/react": "^11.11.1",
     "@emotion/styled": "^11.11.0",
     "@google/workflow-graph": "^0.1.2",

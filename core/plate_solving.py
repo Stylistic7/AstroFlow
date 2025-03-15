@@ -136,6 +136,7 @@ def solve_field(filename: Path | str,
   assert filename
 
   # TODO: These options must be exposed to the user.
+  # TODO: Add --radius 2 and see if that speeds things up.
   trial_arguments = [
       [
           "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",

@@ -102,6 +102,7 @@ def PixInsight(dry_run: bool = False) -> Callable[[PixInsightFn], PixInsightFn]:
 
       # Load the given filenames and their metadata.
       images = call_with_context(OpenImages, filenames)
+      context['images'] = images
 
       # Call the decorated PixInsight function.
       print(f'### Calling PixInsight function {func_name}')

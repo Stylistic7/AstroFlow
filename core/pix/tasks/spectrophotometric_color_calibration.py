@@ -53,7 +53,7 @@ _default_parameters = {
     'limitMagnitude':
         12.00,
     'autoLimitMagnitude':
-        True,
+        False,
     'targetSourceCount':
         8000,
     'psfStructureLayers':

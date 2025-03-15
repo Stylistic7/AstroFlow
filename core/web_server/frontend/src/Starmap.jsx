@@ -132,12 +132,13 @@ export default function Starmap() {
 
 	return <ReactPhotoSphereViewer
 		src="/static/images/ESA_Gaia_DR2_AllSky_Brightness_Colour_Cartesian_4000x2000.png"
-		height={'100vh'}
-		width={"100%"}
+		bottom="0"
+		height="90vh"
+		width="100%"
 		plugins={plugins}
 		minFov={10}
 		maxFov={140}
 		onReady={handleReady}
-		onClick={handleClick}>
-	</ReactPhotoSphereViewer>;
+		onClick={handleClick} >
+	</ReactPhotoSphereViewer >;
 }
