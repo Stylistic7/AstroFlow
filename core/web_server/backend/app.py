@@ -4,8 +4,9 @@ import sys
 sys.path.append('../..')
 
 # TODO: Don't connect to Ray until instructed to by the user.
-from ray_infra import ray_init
+# from ray_infra import ray_init
 
+import ray
 import os
 import io
 import numpy as np
@@ -751,6 +752,73 @@ def get_compute_graph():
 @app.route('/compute_graph_status')
 def get_compute_graph_status():
   return compute_graph_status
+
+
+@app.route('/ray_status')
+def ray_status():
+  """Returns the current Ray cluster status."""
+  try:
+    nodes = ray.nodes()
+    cluster_resources = ray.cluster_resources()
+  except:
+    return jsonify({
+        "healthyNodes":
+            0,
+        "unhealthyNodes":
+            0,
+        "totalCPUs":
+            0,
+        "totalRAM":
+            0,
+        "nodes": [],
+        "error":
+            "Ray is not running. Start a head node to initialize the cluster."
+    })
+
+  healthy_nodes = sum(1 for node in nodes if node["Alive"])
+  unhealthy_nodes = len(nodes) - healthy_nodes
+
+  total_cpus = int(cluster_resources.get("CPU", 0))
+  total_ram = int(cluster_resources.get("memory", 0) /
+                  1e9)  # Convert bytes to GB
+
+  node_list = []
+  for node in nodes:
+    ip = node["NodeManagerAddress"]
+    health = "healthy" if node["Alive"] else "unhealthy"
+    cpus = int(node["Resources"].get("CPU", 0))
+    ram = int(node["Resources"].get("memory", 0) / 1e9)  # Convert bytes to GB
+    message = None
+
+    # Check for node failure reasons (if any)
+    if not node["Alive"]:
+      message = "Unknown failure"
+      if "NodeID" in node:
+        failure_reason = node.get("MetricsExportError", None)
+        if failure_reason:
+          message = failure_reason
+
+    node_list.append({
+        "ip": ip,
+        "health": health,
+        "cpus": cpus,
+        "ram": ram,
+        "message": message
+    })
+
+  return jsonify({
+      "healthyNodes": healthy_nodes,
+      "unhealthyNodes": unhealthy_nodes,
+      "totalCPUs": total_cpus,
+      "totalRAM": total_ram,
+      "nodes": node_list
+  })
+
+
+@app.route('/publish_ray_status')
+def publish_ray_status():
+  announcer.announce('ray_status')
+  return Response(status=200)
 
 
 @app.route('/last_run_logs')

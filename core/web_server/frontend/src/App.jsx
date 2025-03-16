@@ -38,6 +38,7 @@ function App() {
   const [shoppingCart, setShoppingCart] = useState([]);
   const [computeGraph, setComputeGraph] = useState({});
   const [computeGraphStatus, setComputeGraphStatus] = useState({});
+  const [rayStatus, setRayStatus] = useState({});
 
   useEffect(() => {
     console.log('in App.useEffect');
@@ -72,7 +73,18 @@ function App() {
       setComputeGraphStatus(s);
     };
 
+    const loadRayStatus = async () => {
+      console.log('loadRayStatus');
+
+      let [s] = await Promise.all([
+        fetch('/ray_status').then(r => r.json()),
+      ]);
+
+      setRayStatus(s);
+    };
+
     loadComputeGraphStatus();
+    loadRayStatus();
 
     // TODO: This removes the hostname's port, which is a little gross.
     const stream_url = window.location.protocol + '//' + window.location.hostname + '/stream';
@@ -82,6 +94,7 @@ function App() {
     sse.onmessage = e => loadObjectData();
     sse.addEventListener("reload_data", e => loadObjectData());
     sse.addEventListener("compute_graph_status", e => loadComputeGraphStatus());
+    sse.addEventListener("ray_status", e => loadRayStatus());
 
     sse.onerror = () => {
       console.log('sse error');
@@ -107,7 +120,7 @@ function App() {
     <ThemeProvider theme={darkTheme}>
       <StyledEngineProvider injectFirst>
         <AstroFlowContext.Provider
-          value={{ stacks, calibrationStacks, targets, mosaics, shoppingCart, computeGraph, computeGraphStatus }}
+          value={{ stacks, calibrationStacks, targets, mosaics, shoppingCart, computeGraph, computeGraphStatus, rayStatus }}
         >
           <CssBaseline />
           <Router>

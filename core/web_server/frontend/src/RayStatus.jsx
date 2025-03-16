@@ -1,0 +1,90 @@
+import React, { useState, useContext } from "react";
+import {
+  Box,
+  Menu,
+  MenuItem,
+  Typography,
+  IconButton,
+  List,
+  ListItem,
+  ListItemText,
+  Switch,
+  Divider,
+} from "@mui/material";
+import { ExpandMore, ExpandLess, Circle } from "@mui/icons-material";
+import AstroFlowContext from './AstroFlowContext.jsx';
+
+const RayStatus: React.FC = () => {
+  const { rayStatus } = useContext(AstroFlowContext);
+  console.log("rayStatus", rayStatus, Object.keys(rayStatus).length);
+
+  const [anchorEl, setAnchorEl] = useState(null);
+  // const [isHeadNode, setIsHeadNode] = useState(() => {
+  //   return localStorage.getItem("ray-head-node") === "true";
+  // });
+  const [isHeadNode, setIsHeadNode] = useState(false);
+
+  if (Object.keys(rayStatus).length == 0) {
+    return <Typography variant="body2" color="textSecondary" align="center" sx={{ padding: '1em' }}>
+      No Cluster
+    </Typography>
+  }
+
+  const toggleHeadNode = () => {
+    const newHeadState = !isHeadNode;
+    setIsHeadNode(newHeadState);
+    localStorage.setItem("ray-head-node", newHeadState.toString());
+
+    // If necessary, you can trigger an update in context here
+  };
+
+  return (
+    <>
+      {/* Toolbar Status Box */}
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          cursor: "pointer",
+          padding: "8px",
+          bgcolor: rayStatus.unhealthyNodes > 0 ? "error.light" : "success.light",
+          borderRadius: "8px",
+        }}
+        onClick={(event) => setAnchorEl(event.currentTarget)}
+      >
+        <Typography variant="body2" sx={{ mr: 1 }}>
+          {rayStatus.healthyNodes} / {rayStatus.healthyNodes + rayStatus.unhealthyNodes} Nodes
+        </Typography>
+        <Typography variant="body2" sx={{ mr: 1 }}>
+          {rayStatus.totalCPUs} CPUs, {Math.round(rayStatus.totalRAM)} GB RAM
+        </Typography>
+        <IconButton size="small">{anchorEl ? <ExpandLess /> : <ExpandMore />}</IconButton>
+      </Box>
+
+      {/* Dropdown Menu */}
+      <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={() => setAnchorEl(null)}>
+        <List dense>
+          {rayStatus.nodes.map((node, index) => (
+            <ListItem key={index}>
+              <Circle sx={{ fontSize: 10, color: node.health === "healthy" ? "green" : "red", mr: 1 }} />
+              <ListItemText
+                primary={`${node.ip} - ${node.cpus} CPUs, ${Math.round(node.ram)} GB RAM`}
+                secondary={node.health === "unhealthy" ? node.message : ""}
+                sx={{ color: node.health === "unhealthy" ? "error.main" : "text.primary" }}
+              />
+            </ListItem>
+          ))}
+        </List>
+        <Divider />
+        <MenuItem>
+          <Typography variant="body2" sx={{ flexGrow: 1 }}>
+            Run Ray Head Node on this Machine
+          </Typography>
+          <Switch checked={isHeadNode} onChange={toggleHeadNode} />
+        </MenuItem>
+      </Menu>
+    </>
+  );
+};
+
+export default RayStatus;

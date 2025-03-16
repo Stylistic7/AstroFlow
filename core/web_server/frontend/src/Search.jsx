@@ -22,6 +22,7 @@ import LeftDrawer from "./LeftDrawer.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
 import { Breadcrumbs } from "@mui/material";
 import ProgressComponent from './ProgressComponent.jsx';
+import RayStatus from './RayStatus.jsx';
 
 
 const Search = styled('div')(({ theme }) => ({
@@ -217,6 +218,7 @@ export default function PrimarySearchAppBar() {
             />
           </Search>
           <Box sx={{ flexGrow: 1 }} />
+          <RayStatus />
           <ProgressComponent />
           <Box sx={{ display: { xs: 'none', md: 'flex' } }}>
             <IconButton size="large" aria-label="show 4 new mails" color="inherit">
