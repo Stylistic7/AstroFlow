@@ -36,4 +36,4 @@ def StarXTerminator(images: ImageList, **kwargs: Any) -> ImageList:
 
   add_images_to_save(output_images)
 
-  return output_images
+  return ImageList(output_images)

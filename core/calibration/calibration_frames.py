@@ -72,6 +72,7 @@ def identify_calibration_stacks() -> SimpleStacksDict:
         stack = new_stack(run)
         stacks[StackHash(stack.content_hash)] = stack
 
+  print(f'### calibration_stacks keys {stacks.keys()}')
   return stacks
 
 

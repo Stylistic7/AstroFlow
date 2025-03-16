@@ -60,8 +60,8 @@ def _run_wbpp(unused: ImageList, *args: Any, **kwargs: Any) -> Any:
 def _setup_composite_stack(stack: Stack,
                            tmp_dir: str) -> tuple[str | None, int]:
   metadata = context.metadata
-  stacks = context.stacks
   calibration_stacks = context.calibration_stacks
+  print(f'### calibration_stacks keys {calibration_stacks.keys()}')
 
   first_filename = None
 
@@ -83,9 +83,9 @@ def _setup_composite_stack(stack: Stack,
     num_frames += len(substack.frames)
 
     # Add any dependent stacks (e.g. calibration stacks).
-    dependencies = substack.dependencies | {'flat': '40200993d60fe76b'}
     dependendency_filenames = [
-        output_filename(calibration_stacks[d]) for d in dependencies.values()
+        output_filename(calibration_stacks[d])
+        for d in substack.dependencies.values()
     ]
     _symlink_frames(dependendency_filenames, run_dir)
 

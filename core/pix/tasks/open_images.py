@@ -30,10 +30,10 @@ def OpenImages(filenames: FilenameList) -> ImageList:
       ShellScriptTask(javascript=_javascript.format(filenames=filenames,
                                                     view_ids=view_ids)))
 
-  images = [
+  images = ImageList([
       Image(filename=f, view_id=v, filter=filt)
       for f, v, filt in zip(filenames, view_ids, filters)
-  ]
+  ])
 
   # add_images_to_save(images)
 

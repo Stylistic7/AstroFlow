@@ -22,7 +22,7 @@ def make_composite_stack(**kwargs: Any) -> CompositeStack:
           camera='ZWO ASI6200MM Pro',
           filter='H',
           mean_temperature=-20.0,
-          exposure_s=300.0,
+          exposure_s=[300.0],
           integration_s=1500.0,
           width_pixels=9576,
           height_pixels=6488,
@@ -30,7 +30,7 @@ def make_composite_stack(**kwargs: Any) -> CompositeStack:
   astrometric_attributes = asdict(
       AstrometricAttributes(
           name='name',
-          center=(50, 50),
+          center=[50.0, 50.0],
           image_scale=1.0,
           rotation_angle=0.0,
           footprint=SphericalPolygon.from_cone(0.0, 90.0, 1.0),

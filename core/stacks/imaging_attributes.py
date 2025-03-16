@@ -44,11 +44,13 @@ class ImagingAttributes:
     camera = get_unique_quality('INSTRUME')
     width_pixels = get_unique_quality('NAXIS1')
     height_pixels = get_unique_quality('NAXIS2')
-    exposure_s = get_quality_set('EXPOSURE')
+    exposure_s = [float(e) for e in get_quality_set('EXPOSURE')]
     filter = get_unique_quality('FILTER', allow_empty=True)
 
-    integration_s = sum(
-        i.header['EXPOSURE'] for i in metadata_list if 'EXPOSURE' in i.header)
+    integration_s = float(
+        sum(i.header['EXPOSURE']
+            for i in metadata_list
+            if 'EXPOSURE' in i.header))
 
     mean_temperature = np.mean([i.header['CCD-TEMP'] for i in metadata_list])
 

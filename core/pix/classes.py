@@ -29,7 +29,22 @@ class Image:
   dirty: bool = False
 
 
-ImageList = list[Image]
+class ImageList(list[Image]):
+
+  def __getitem__(self, filter: str) -> Image | None:
+    return next(iter(i for i in self if i.filter == filter), None)
+
+  # def __contains__(self, filters: str) -> Image | None:
+  #   return next(iter(i for i in self if i.filter == filter), None) is not None
+
+  def channels(self, filters: str) -> list[Image]:
+    result = [self[f] for f in filters]
+    if None in result:
+      return None
+    else:
+      return result
+
+
 FilenameList = list[str]
 
 # class PixInsightFn(Protocol):

@@ -36,4 +36,5 @@ def ChannelCombination(images: ImageList,
   # TODO: ChannelComnbination just creates a new image with a "random" view id.
   # Find some way to either specify the view id, or grab the "most recent" view
   # id from PixInsight.
-  return [Image(view_id=output_view_id, tag=output_view_id, dirty=True)]
+  return ImageList(
+      [Image(view_id=output_view_id, tag=output_view_id, dirty=True)])

@@ -14,9 +14,9 @@ from catalogs import position_string
 
 def _normalize_radians(x: float) -> float:
   if x < 0.0:
-    return x + np.pi
+    return float(x + np.pi)
   else:
-    return x
+    return float(x)
 
 
 @beartype

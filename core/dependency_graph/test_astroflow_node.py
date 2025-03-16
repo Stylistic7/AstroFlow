@@ -55,11 +55,17 @@ def my_task_with_many_ancestors(i: int, *ancestor_results: list[Any]) -> int:
 def compute_mosaic_viewbox(mosaic_id: MosaicHash,
                            mode: QualityLevel) -> Viewbox:
   return Viewbox(projection=mercator.MercatorProjection(),
-                 x_min=0,
-                 y_min=0,
-                 x_span=200,
-                 y_span=200,
-                 resolution_aspp=1)
+                 x_min=0.0,
+                 y_min=0.0,
+                 x_span=200.0,
+                 y_span=200.0,
+                 resolution=1.0,
+                 num_pixels_x=1000,
+                 num_pixels_y=1000,
+                 num_tiles_x=10,
+                 num_tiles_y=10,
+                 tile_width=1000,
+                 tile_height=100)
 
 
 @AstroFlowNode(cache_result=True)
@@ -76,7 +82,7 @@ def consume_small_image(image) -> Any:
 def place_image(image: np.ndarray, viewbox: Viewbox) -> Path:
   # context.place_image_runs = (context.place_image_runs or 0) + 1
   context.and_equals('place_image_runs', 1, default_value=0)
-  projected_image = np.zeros((viewbox.x_span, viewbox.y_span))
+  projected_image = np.zeros((int(viewbox.x_span), int(viewbox.y_span)))
 
   height, width = image.shape
   projected_image[0:width, 0:height] = image
