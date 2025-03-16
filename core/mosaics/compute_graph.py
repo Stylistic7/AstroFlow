@@ -142,11 +142,8 @@ def compute_target_mask(target: Target, viewbox: Viewbox) -> box:
 def get_stacks_for_filter(mode: QualityLevel, mosaic: Mosaic, filter: str):
   targets = context.targets
 
-  # TODO: Why does this work?
-  strips = [list(reversed(s)) for s in mosaic.strips]
-
   strip_stack_ids = []
-  for strip in strips:
+  for strip in mosaic.strips:
     stack_ids = []
     for i, target_id in enumerate(strip):
       if not (stack := _get_stack_for_filter(targets[target_id], filter)):
@@ -173,9 +170,6 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
 
   print(f'### build_mosaic_filter_subgraph mode {mode} '
         f'mosaic {mosaic} filter {filter} strips {mosaic.strips}')
-
-  # TODO: Why does this work?
-  strips = [list(reversed(s)) for s in mosaic.strips]
 
   strips = get_stacks_for_filter(mode, mosaic, filter)
   if strips is None:

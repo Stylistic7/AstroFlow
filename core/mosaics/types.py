@@ -24,7 +24,6 @@ class Mosaic(AstrometricAttributes, ChronologyAttributes):
   stable_hash: MosaicHash
 
   target_ids: list[TargetHash]
-  tile_indices: list[TileIndices]
   strips: list[Strip]
 
   def __str__(self) -> str:

@@ -421,7 +421,7 @@ def identify_mosaics(targets: TargetsDict,
               'stable_hash': stable_hash,
               'content_hash': content_hash,
               'target_ids': target_ids,
-              'tile_indices': tile_indices,
+              # 'tile_indices': tile_indices,
               'strips': strips,
           }
 
