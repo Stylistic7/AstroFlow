@@ -1,3 +1,3 @@
 brew install python@3.11
 python3.11 -m venv ~/AstroFlow_venv
-~/AstroFlow_venv/bin/pip3 install numpy ray flask liblapack libopencv opencv-python scikit-image python-dateutil pytz xxhash  diskcache structlog astropy shapely mergedeep addict async_timeout plotly pandas ephem matplotlib spherical-geometry xisf largestinteriorrectangle xxhash python-statemachine objsize requests h5py
+~/AstroFlow_venv/bin/pip3 install numpy ray flask liblapack libopencv opencv-python scikit-image python-dateutil pytz xxhash  diskcache structlog astropy shapely mergedeep addict async_timeout plotly pandas ephem matplotlib spherical-geometry xisf largestinteriorrectangle xxhash python-statemachine objsize requests h5py colorama psutil pyobjc setproctitle beartype

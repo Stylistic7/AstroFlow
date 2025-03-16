@@ -6,18 +6,23 @@ import os
 import sys ; sys.setrecursionlimit(sys.getrecursionlimit() * 5)
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
-hidden_imports = collect_submodules("ray") + collect_submodules("spherical_geometry") + collect_submodules("xisf")
+hidden_imports = collect_submodules("ray")
+hidden_imports += collect_submodules("spherical_geometry")
+hidden_imports += collect_submodules("xisf")
+hidden_imports += collect_submodules("tkinter")
 hidden_imports += ["diskcache", "flask", "graphlib", "objsize", "plotly",
                    "shapely", "skimage", "skimage.transform",
-                   "spherical_geometry", "structlog", "xisf", "xxhash", "yaml"]
+                   "spherical_geometry", "structlog", "tkinter", "_tkinter",
+                   "xisf", "xxhash", "yaml"]
+print(f'### hidden_imports {hidden_imports}')
 
-ray_datas = collect_data_files("ray") + collect_data_files("xisf")
+datas = collect_data_files("tkinter") + collect_data_files("ray") + collect_data_files("xisf")
 
 a = Analysis(
     ['AstroFlow.py'],
     pathex=[os.path.abspath('../core')],
     binaries=[],
-    datas=ray_datas + [("../core/web_server/frontend/build",
+    datas=datas + [("../core/web_server/frontend/build",
             "core/web_server/templates"),
            ("../core/web_server/frontend/build/static",
             "core/web_server/static"),

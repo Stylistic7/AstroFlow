@@ -12,6 +12,7 @@ def start_ray_head_node(manager):
   ray_path = os.path.join(base_path, 'bin', 'ray')
   resources = """'{"PixInsight": 1, "diskcache": 1, "fastest_storage": 1}'"""
   command = f"""ulimit -n 10000 && {ray_path} start --head --resources {resources}"""
+  print(f'### Starting Ray head node with command "{command}"')
   manager.start_process(command)
 
   def maybe_start_flask_server(ray_status_output):
