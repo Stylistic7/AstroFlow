@@ -13,6 +13,7 @@ from context import context
 from compute_graph import build_regroup_graph
 from previews.types import QualityLevel
 from mosaics.compute_graph import build_mosaic_subgraph
+from mosaics.post_process import post_process_mosaic
 from stacks.compute_graph import build_stacking_subgraph
 from dependency_graph import Graph, run_graph
 from dependency_graph.astroflow_node import AstroFlowNode, delete_cached_result
@@ -94,6 +95,19 @@ def merge_mosaic(args):
   run_graph(Graph({command_done: tasks}))
 
 
+def post_process(args):
+  print(f"### Post-processing {args.object_type} {args.object_id}")
+
+  if args.object_type == 'mosaic':
+    mosaic_task = (post_process_mosaic, QualityLevel.MASTER,
+                   context.mosaics[args.object_id])
+    graph = Graph({command_done: {mosaic_task}, mosaic_task: {load_metadata}})
+  else:
+    print(f"Unsupported object_type {args.object_type}")
+
+  run_graph(graph)
+
+
 def populate_context():
   # TODO: Put these knobs in the UI.
   context.cosine_similarity_threshold = 0.99999
@@ -158,6 +172,17 @@ def main():
                              action="store_true",
                              help="Force merging")
 
+  # 'post_process' command
+  post_process_parser = subparsers.add_parser("post_process",
+                                              help="Post-process object")
+  post_process_parser.add_argument(
+      "object_type",
+      choices=["stack", "target", "mosaic"],
+      nargs="?",
+      help="Type of object: stack, target, or mosaic")
+  post_process_parser.add_argument("object_id",
+                                   help="ID of the object to post-processs")
+
   # Parse the arguments
   args = parser.parse_args()
 
@@ -172,6 +197,8 @@ def main():
     stack(args)
   elif args.command == "merge" and args.subcommand == "mosaic":
     merge_mosaic(args)
+  elif args.command == "post_process":
+    post_process(args)
   else:
     print("Unknown command or subcommand")
     parser.print_help()
