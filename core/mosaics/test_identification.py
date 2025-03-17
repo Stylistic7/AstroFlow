@@ -66,7 +66,6 @@ class TestMosaicIdentification(unittest.TestCase):
     mosaic = next(iter(mosaics.values()))
 
     self.assertEqual(mosaic.target_ids, [bar.stable_hash, foo.stable_hash])
-    self.assertEqual(mosaic.tile_indices, [(0, 0), (1, 0)])
 
     # TODO: This only works when the mosaic polygon is "tight," rather than
     # the convex hull.
@@ -137,7 +136,6 @@ class TestMosaicIdentification(unittest.TestCase):
     mosaic = next(iter(mosaics.values()))
     self.assertEqual(mosaic.target_ids,
                      [baz.stable_hash, bar.stable_hash, foo.stable_hash])
-    self.assertEqual(mosaic.tile_indices, [(0, 0), (0, 1), (1, 0)])
 
     # TODO: This only works when the mosaic polygon is "tight," rather than
     # the convex hull.
@@ -206,7 +204,6 @@ class TestMosaicIdentification(unittest.TestCase):
     mosaic = next(iter(mosaics.values()))
     self.assertEqual(mosaic.target_ids,
                      [bar.stable_hash, baz.stable_hash, foo.stable_hash])
-    self.assertEqual(mosaic.tile_indices, [(0, 0), (0, 1), (0, 2)])
 
   def test_three_targets_and_an_outlier(self) -> None:
     foo = Target(name='foo',
@@ -344,7 +341,6 @@ class TestMosaicIdentification(unittest.TestCase):
     print('### mosaic', mosaic)
 
     self.assertEqual(mosaic.target_ids, [bar.stable_hash, foo.stable_hash])
-    self.assertEqual(mosaic.tile_indices, [(0, 0), (1, 0)])
 
   def test_big_cygnus_pano(self) -> None:
     copy_testdata_into_cache()

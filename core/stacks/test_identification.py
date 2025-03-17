@@ -22,7 +22,12 @@ class TestStackIdentification(unittest.TestCase):
     self.output_dir_obj.cleanup()
 
   def test_one_perfect_stack(self):
-    make_synthetic_frames(ra=100, dec=50, prefix='foo', number=10, dither=0)
+    make_synthetic_frames(ra=100,
+                          dec=50,
+                          prefix='foo',
+                          number=10,
+                          dither=0,
+                          dest_dir=context.input_dirs[0])
 
     run_graph(
         build_compute_graph(regroup=True,
@@ -43,13 +48,19 @@ class TestStackIdentification(unittest.TestCase):
     self.assertEqual(len(stack.frames), 10)
 
   def test_two_stacks_different_image_scales(self):
-    make_synthetic_frames(ra=100, dec=50, prefix='foo', number=10, dither=0)
+    make_synthetic_frames(ra=100,
+                          dec=50,
+                          prefix='foo',
+                          number=10,
+                          dither=0,
+                          dest_dir=context.input_dirs[0])
     make_synthetic_frames(ra=100,
                           dec=50,
                           prefix='bar',
                           number=10,
                           dither=0,
-                          image_scale=2.0)
+                          image_scale=2.0,
+                          dest_dir=context.input_dirs[0])
 
     run_graph(
         build_compute_graph(regroup=True,
@@ -79,16 +90,15 @@ class TestStackIdentification(unittest.TestCase):
   def test_two_stacks_different_image_sizes(self):
     # Note that these two groups have the same generic camera name, which is
     # typical of some capture software.
-    make_synthetic_frames(
-        ra=100,
-        dec=50,
-        prefix='foo',
-        instrument='ASI Camera',
-        number=10,
-        dither=0,
-        width_pixels=3000,
-        height_pixels=2000,
-    )
+    make_synthetic_frames(ra=100,
+                          dec=50,
+                          prefix='foo',
+                          instrument='ASI Camera',
+                          number=10,
+                          dither=0,
+                          width_pixels=3000,
+                          height_pixels=2000,
+                          dest_dir=context.input_dirs[0])
     make_synthetic_frames(ra=100,
                           dec=50,
                           prefix='bar',
@@ -96,7 +106,8 @@ class TestStackIdentification(unittest.TestCase):
                           number=10,
                           dither=0,
                           width_pixels=6000,
-                          height_pixels=4000)
+                          height_pixels=4000,
+                          dest_dir=context.input_dirs[0])
 
     run_graph(
         build_compute_graph(regroup=True,
@@ -129,13 +140,15 @@ class TestStackIdentification(unittest.TestCase):
                           prefix='foo',
                           number=5,
                           dither=0,
-                          exposure=300)
+                          exposure=300,
+                          dest_dir=context.input_dirs[0])
     make_synthetic_frames(ra=100,
                           dec=50,
                           prefix='bar',
                           number=7,
                           dither=0,
-                          exposure=120)
+                          exposure=120,
+                          dest_dir=context.input_dirs[0])
 
     run_graph(
         build_compute_graph(regroup=True,
