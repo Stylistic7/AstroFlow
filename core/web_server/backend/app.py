@@ -21,6 +21,7 @@ from spherical_geometry.polygon import SingleSphericalPolygon
 import threading
 from pathlib import Path
 from dataclasses import replace
+from zeroconf import Zeroconf, ServiceBrowser
 
 from .message_announcer import MessageAnnouncer
 from context import context
@@ -30,6 +31,7 @@ from compute_graph import build_compute_graph
 from dependency_graph import run_graph, graph_status_to_progress
 from dependency_graph.debugging import node_to_string
 from previews import QualityLevel, autostretch, array_to_png
+from astroflow_zeroconf import AstroFlowZeroconf, AstroFlowListener
 
 from stacks.composite_stack import CompositeStack
 from file_io.generic import read_image
@@ -826,6 +828,44 @@ def get_last_run_logs():
   return context.last_run_logs or {}
 
 
-if __name__ == '__main__':
+def flask_thread_body():
   print('### Starting AstroFlow web server...')
   app.run(host='0.0.0.0', port=80)
+
+
+def start_flask():
+  flask_thread = threading.Thread(target=flask_thread_body)
+  flask_thread.start()
+
+
+if __name__ == '__main__':
+  # print('### Starting AstroFlow web server...')
+  # app.run(host='0.0.0.0', port=80)
+  start_flask()
+
+  astroflow_zc = AstroFlowZeroconf(instance_name="AstroFlow-Node1")
+
+  # Update when the user starts a Ray head node
+  astroflow_zc.update_state(is_ray_head=True)
+
+  # Update when shared filesystem volumes change
+  astroflow_zc.update_state(mounted_volumes=["/mnt/data", "/astro"])
+
+  zeroconf = Zeroconf()
+  listener = AstroFlowListener()
+  browser = ServiceBrowser(zeroconf, "_astroflow._tcp.local.", listener)
+
+  print("Listening for AstroFlow instances on the network...")
+
+  try:
+    while True:
+      print("Current AstroFlow instances on the network:")
+      for instance in listener.get_instances():
+        print(instance)
+      time.sleep(5)
+  except KeyboardInterrupt:
+    print("Stopping service discovery...")
+    zeroconf.close()
+
+  # When the instance is shutting down
+  astroflow_zc.close()

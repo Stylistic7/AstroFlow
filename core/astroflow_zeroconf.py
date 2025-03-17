@@ -1,0 +1,106 @@
+from dataclasses import dataclass, field
+from zeroconf import Zeroconf, ServiceInfo, ServiceListener
+import socket
+import json
+
+
+@dataclass
+class AstroFlowZeroconf:
+  instance_name: str
+  port: int = 6379
+  is_ray_head: bool = False
+  mounted_volumes: list[str] = field(default_factory=list)
+  zeroconf: Zeroconf = field(init=False, repr=False)
+  service_info: ServiceInfo | None = field(default=None, init=False, repr=False)
+
+  def __post_init__(self):
+    """Initialize Zeroconf and register the service."""
+    self.zeroconf = Zeroconf()
+    self.service_name = f"{self.instance_name}._astroflow._tcp.local."
+    self.register_service()  # Initial registration
+
+  def get_ip(self) -> str:
+    """Retrieve the local machine's LAN IP address."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+      s.connect(("8.8.8.8", 80))
+      ip = s.getsockname()[0]
+    except Exception:
+      ip = "127.0.0.1"
+    finally:
+      s.close()
+    return ip
+
+  def register_service(self):
+    """Registers or updates the AstroFlow instance on the network."""
+    properties = {
+        "ray_head": "yes" if self.is_ray_head else "no",
+        "mounted_volumes": json.dumps(self.mounted_volumes),
+    }
+
+    info = ServiceInfo("_astroflow._tcp.local.",
+                       self.service_name,
+                       addresses=[socket.inet_aton(self.get_ip())],
+                       port=self.port,
+                       properties=properties)
+
+    if self.service_info:
+      self.zeroconf.unregister_service(self.service_info)  # Remove old service
+    self.zeroconf.register_service(info)  # Register updated service
+    self.service_info = info  # Store latest service info
+
+    print(
+        f"Updated AstroFlow instance: {self.service_name} ({self.get_ip()}:{self.port})"
+    )
+    print(
+        f"New state -> Ray Head: {self.is_ray_head}, Mounted Volumes: {self.mounted_volumes}"
+    )
+
+  def update_state(self,
+                   is_ray_head: bool | None = None,
+                   mounted_volumes: list[str] | None = None):
+    """Call this function when the state changes."""
+    if is_ray_head is not None:
+      self.is_ray_head = is_ray_head
+    if mounted_volumes is not None:
+      self.mounted_volumes = mounted_volumes
+    self.register_service()  # Re-register with updated state
+
+  def close(self):
+    """Unregister the service and clean up Zeroconf."""
+    if self.service_info:
+      self.zeroconf.unregister_service(self.service_info)
+    self.zeroconf.close()
+
+
+class AstroFlowListener(ServiceListener):
+
+  def __init__(self):
+    self.instances = {}  # Store discovered instances
+
+  def add_service(self, zc, type, name):
+    info = zc.get_service_info(type, name)
+    if info:
+      ip = info.parsed_addresses()[0]
+      status = {
+          "name":
+              name,
+          "ip":
+              ip,
+          "ray_head":
+              info.properties.get(b"ray_head", b"no").decode(),
+          "mounted_volumes":
+              json.loads(
+                  info.properties.get(b"mounted_volumes", b"[]").decode()),
+      }
+      self.instances[name] = status
+      print(f"Discovered AstroFlow instance: {status}")
+
+  def remove_service(self, zc, type, name):
+    if name in self.instances:
+      del self.instances[name]
+      print(f"AstroFlow instance {name} removed")
+
+  def get_instances(self):
+    """Returns a list of all currently discovered AstroFlow instances."""
+    return list(self.instances.values())
