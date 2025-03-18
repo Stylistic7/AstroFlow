@@ -61,15 +61,10 @@ if 'ASTROFLOW_MOCK_NAMESPACE' not in os.environ:
   temp_dir = ray.get(manager.get_temp_dir.remote())
 
   from context import ContextActor
-  from state import StateActor
 
   context_actor = ContextActor.options(
       name='context', namespace=namespace,
       get_if_exists=True).remote()  # type: ignore
-
-  state_actor = StateActor.options(name='state',
-                                   namespace=namespace,
-                                   get_if_exists=True).remote()  # type: ignore
 
   # This is a hack that waits until the ContextActor is actually alive.
   ray.get(context_actor.get_cache_keys.remote())

@@ -75,8 +75,9 @@ class AstroFlowZeroconf:
 
 class AstroFlowListener(ServiceListener):
 
-  def __init__(self):
+  def __init__(self, dispatch_fn):
     self.instances = {}  # Store discovered instances
+    self.dispatch_fn = dispatch_fn
 
   def add_service(self, zc, type, name):
     info = zc.get_service_info(type, name)
@@ -96,11 +97,45 @@ class AstroFlowListener(ServiceListener):
       self.instances[name] = status
       print(f"Discovered AstroFlow instance: {status}")
 
+      self.dispatch_fn(
+          dict(type='update_zeroconf_services', instances=self.instances))
+
   def remove_service(self, zc, type, name):
     if name in self.instances:
       del self.instances[name]
       print(f"AstroFlow instance {name} removed")
 
+      self.dispatch_fn(
+          dict(type='update_zeroconf_services', instances=self.instances))
+
   def get_instances(self):
     """Returns a list of all currently discovered AstroFlow instances."""
     return list(self.instances.values())
+
+
+# astroflow_zc = AstroFlowZeroconf(instance_name=get_unique_instance_name())
+
+# # Update when the user starts a Ray head node
+# astroflow_zc.update_state(is_ray_head=True)
+
+# # Update when shared filesystem volumes change
+# astroflow_zc.update_state(mounted_volumes=["/mnt/data", "/astro"])
+
+# zeroconf = Zeroconf()
+# listener = AstroFlowListener()
+# browser = ServiceBrowser(zeroconf, "_astroflow._tcp.local.", listener)
+
+# print("Listening for AstroFlow instances on the network...")
+
+# try:
+#   while True:
+#     print("Current AstroFlow instances on the network:")
+#     for instance in listener.get_instances():
+#       print(instance)
+#     time.sleep(5)
+# except KeyboardInterrupt:
+#   print("Stopping service discovery...")
+#   zeroconf.close()
+
+# # When the instance is shutting down
+# astroflow_zc.close()

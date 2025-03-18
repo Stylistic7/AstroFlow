@@ -25,6 +25,9 @@ class TestState(unittest.TestCase):
     self.input_dir_obj.cleanup()
     self.output_dir_obj.cleanup()
 
+  def test_startup_not_head_node(self):
+    state = dispatch(dict(type='foo'))
+
   def test_shopping_cart(self):
     state = dispatch(dict(type='add_to_shopping_cart', item=('stack', 'foo')))
     self.assertEqual(len(context.shopping_cart), 1)

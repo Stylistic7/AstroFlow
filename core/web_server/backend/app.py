@@ -7,22 +7,20 @@ sys.path.append('../..')
 # from ray_infra import ray_init
 
 import ray
-import os
 import io
 import numpy as np
 import flask
 from flask import request, jsonify, Response
 from dataclasses import asdict
-from base64 import b64encode
 import datetime
-# import ray
 import operator
 from spherical_geometry.polygon import SingleSphericalPolygon
 import threading
 from pathlib import Path
 from dataclasses import replace
-from zeroconf import Zeroconf, ServiceBrowser
+import queue
 
+from state import get_state
 from .message_announcer import MessageAnnouncer
 from context import context
 from catalogs import constellations
@@ -31,7 +29,6 @@ from compute_graph import build_compute_graph
 from dependency_graph import run_graph, graph_status_to_progress
 from dependency_graph.debugging import node_to_string
 from previews import QualityLevel, autostretch, array_to_png
-from astroflow_zeroconf import AstroFlowZeroconf, AstroFlowListener
 
 from stacks.composite_stack import CompositeStack
 from file_io.generic import read_image
@@ -99,11 +96,17 @@ base_path = get_base_path()
 print(f'### base_path {base_path}')
 
 if getattr(sys, 'frozen', False):
+  print('App is frozen')
   app = flask.Flask(__name__,
                     template_folder=f'{base_path}/core/web_server/templates',
                     static_folder=f'{base_path}/core/web_server/static')
 else:
-  app = flask.Flask(__name__, template_folder='./templates')
+  print('App is not frozen')
+  app = flask.Flask(
+      __name__,
+      template_folder=f'{base_path}/core/web_server/frontend/build',
+      static_folder=f'{base_path}/core/web_server/frontend/build/static',
+  )
 
 
 # TODO: Move computations into new files.
@@ -130,7 +133,7 @@ def photo_sphere_viewer():
 
 @app.route('/get_shopping_cart')
 def get_shopping_cart():
-  return list(context.shopping_cart or set())
+  return list(context.get('shopping_cart', set()))
 
 
 @app.route('/add_to_shopping_cart/<object_type>/<object_id>')
@@ -189,19 +192,19 @@ def _make_json_serializable(D):
 
 @app.route('/mosaics')
 def mosaics():
-  mosaics = test_app.mosaics if debug else cache.get('mosaics', {})
+  mosaics = context.get('mosaics', {})
   return {k: _make_json_serializable(v) for k, v in mosaics.items()}
 
 
 @app.route('/targets')
 def targets():
-  targets = test_app.targets if debug else cache.get('targets', {})
+  targets = context.get('targets', {})
   return {k: _make_json_serializable(v) for k, v in targets.items()}
 
 
 @app.route('/stacks')
 def stacks():
-  stacks = test_app.stacks if debug else cache.get('stacks', {})
+  stacks = context.get('stacks', {})
 
   def remove_metadata(stack: CompositeStack):
     return replace(
@@ -217,7 +220,7 @@ def stacks():
 
 @app.route('/calibration_stacks')
 def calibration_stacks():
-  calibration_stacks = cache.get('calibration_stacks', {})
+  calibration_stacks = context.get('calibration_stacks', {})
   calibration_stacks = {
       h: replace(s, metadata=None) for h, s in calibration_stacks.items()
   }
@@ -232,27 +235,25 @@ def send_datetime():
 
 @app.route('/targets_for_mosaic/<mosaic_id>')
 def targets_for_mosaic(mosaic_id):
-  # mosaic = next(m for m in cache['mosaics'] if m.id == mosaic_id)
-  mosaic = cache['mosaics'][mosaic_id]
-  return [t for t in cache['targets'] if t.name in mosaic.target_ids]
+  mosaic = context.mosaics[mosaic_id]
+  return [t for t in context.targets if t.name in mosaic.target_ids]
 
 
 @app.route('/stacks_for_target/<target>')
 def stacks_for_target(target):
-  return [s for s in cache['stacks'] if s.target == target]
+  return [s for s in context.stacks if s.target == target]
 
 
 @app.route('/target/<target_id>')
 def target(target_id):
-  targets = test_app.targets if debug else cache['targets']
+  targets = test_app.targets if debug else context.targets
   print(f"Looking for target_id '{target_id}'")
-  # return asdict(next(t for t in targets if t.name == target_id))
   return asdict(targets[target_id])
 
 
 @app.route('/target_polygon_points/<target_id>')
 def target_polygon_points(target_id):
-  targets = test_app.targets if debug else cache['targets']
+  targets = test_app.targets if debug else context.targets
   print(f"Looking for target_id '{target_id}'")
   # target = next(t for t in targets if t.name == target_id)
   target = targets[target_id]
@@ -261,7 +262,7 @@ def target_polygon_points(target_id):
 
 @app.route('/stack/<stack_id>')
 def stack(stack_id):
-  stacks = test_app.stacks if debug else cache['stacks']
+  stacks = test_app.stacks if debug else context.stacks
   print(f"Looking for stack_id '{stack_id}'")
   return asdict(stacks[stack_id])
 
@@ -341,8 +342,8 @@ def mosaic_thumbnail_image_for_filter(mosaic_id, filter):
                   filter)
 
   for key in [subframe_key]:
-    if context.contains(key):
-      image = context[key]
+    if cache.contains(key):
+      image = cache[key]
       if isinstance(image, Path):
         image = read_image(image)
       buffer = io.BytesIO()
@@ -369,8 +370,8 @@ def mosaic_thumbnail_image(mosaic_id):
 
 # @app.route('/stack_master_image/<stack_id>')
 # def stack_master_image(stack_id):
-#   # stack = next(s for s in cache['stacks'] if s.id == stack_id)
-#   stack = cache['stacks'][stack_id]
+#   # stack = next(s for s in context.stacks if s.id == stack_id)
+#   stack = context.stacks[stack_id]
 
 #   if not stack:
 #     print(f'did not get stack for {stack_id}')
@@ -399,7 +400,7 @@ def plot():
 # @app.route('/get_num_stars_histogram_html/<stack_id>')
 # def get_num_stars_histogram_html(stack_id):
 #   print(f'Creating num stars histogram for stack id {stack_id}')
-#   stack = cache['stacks'][stack_id]
+#   stack = context.stacks[stack_id]
 #   plate_solutions = cache['plate_solutions']
 
 #   light_frames = [f for run in stack.runs.values() for f in run.frames]
@@ -481,9 +482,9 @@ def plot():
 
 @app.route('/recent')
 def recent():
-  stacks = cache['stacks']
-  targets = cache['targets']
-  mosaics = cache['mosaics']
+  stacks = context.stacks
+  targets = context.targets
+  mosaics = context.mosaics
 
   def last_stack_datetime(stack_id):
     return stacks[stack_id].newest_date
@@ -518,25 +519,24 @@ def flats_for_camera_and_filter(camera, filter):
 
 @app.route('/get_stack_dependencies/<stack_id>')
 def get_stack_dependencies(stack_id):
-  stack = cache.get('stacks', {}).get(stack_id, None)
+  stack = context.get('stacks', {}).get(stack_id, None)
   if not stack:
     return Response(status=404)
 
   key = ('stack_settings', stack_id)
-  settings = cache.get(key, {})
+  settings = context.get(key, {})
 
   return stack.dependencies | settings
 
 
-@app.route('/set_stack_settings/<stack_id>', methods=['POST'])
-def set_stack_settings(stack_id):
-  with cache.transact():
-    key = ('stack_settings', stack_id)
-    settings = cache.get(key, {}) | request.json
-    cache[key] = settings
+# @app.route('/set_stack_settings/<stack_id>', methods=['POST'])
+# def set_stack_settings(stack_id):
+#   with cache.transact():
+#     key = ('stack_settings', stack_id)
+#     settings = cache.get(key, {}) | request.json
+#     cache[key] = settings
 
-  return Response(status=204)
-
+#   return Response(status=204)
 
 import time
 
@@ -555,8 +555,11 @@ def stream():
   def eventStream():
     messages = announcer.listen()
     while True:
-      event, data = messages.get()
-      print(f'### got event {event} from queue')
+      try:
+        event, data = messages.get(timeout=5)  # Avoid indefinite blocking
+      except queue.Empty:
+        # Send a heartbeat every 5 seconds if no new messages arrive
+        event, data = "heartbeat", f"keep-alive"
       if data == None:
         data = time.ctime(time.time())
       sse = format_sse(event, data)
@@ -565,6 +568,9 @@ def stream():
 
   response = Response(eventStream(), mimetype="text/event-stream")
   response.headers['Access-Control-Allow-Origin'] = '*'
+  response.headers['Connection'] = 'keep-alive'
+  response.headers['Cache-Control'] = 'no-cache'
+
   return response
 
 
@@ -825,7 +831,7 @@ def publish_ray_status():
 
 @app.route('/last_run_logs')
 def get_last_run_logs():
-  return context.last_run_logs or {}
+  return cache['last_run_logs'] or {}
 
 
 def flask_thread_body():
@@ -838,34 +844,7 @@ def start_flask():
   flask_thread.start()
 
 
-if __name__ == '__main__':
-  # print('### Starting AstroFlow web server...')
-  # app.run(host='0.0.0.0', port=80)
-  start_flask()
-
-  astroflow_zc = AstroFlowZeroconf(instance_name="AstroFlow-Node1")
-
-  # Update when the user starts a Ray head node
-  astroflow_zc.update_state(is_ray_head=True)
-
-  # Update when shared filesystem volumes change
-  astroflow_zc.update_state(mounted_volumes=["/mnt/data", "/astro"])
-
-  zeroconf = Zeroconf()
-  listener = AstroFlowListener()
-  browser = ServiceBrowser(zeroconf, "_astroflow._tcp.local.", listener)
-
-  print("Listening for AstroFlow instances on the network...")
-
-  try:
-    while True:
-      print("Current AstroFlow instances on the network:")
-      for instance in listener.get_instances():
-        print(instance)
-      time.sleep(5)
-  except KeyboardInterrupt:
-    print("Stopping service discovery...")
-    zeroconf.close()
-
-  # When the instance is shutting down
-  astroflow_zc.close()
+# if __name__ == '__main__':
+#   # print('### Starting AstroFlow web server...')
+#   # app.run(host='0.0.0.0', port=80)
+#   start_flask()
