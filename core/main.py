@@ -2,6 +2,7 @@ import webbrowser
 import sys
 import socket
 import os
+import hashlib
 
 from state import enqueue_action, main_event_loop, AstroFlowZeroconf, AstroFlowListener
 from context import get_cache
@@ -10,13 +11,14 @@ from context import get_cache
 def get_unique_instance_name():
   hostname = socket.gethostname()
   pid = os.getpid()
-  return f"AstroFlow-{hostname}-{pid}"
+  unique_string = f"AstroFlow-{hostname}-{pid}"
+  short_hash = hashlib.md5(
+      unique_string.encode()).hexdigest()[:6]  # 6-char hash
+  return f"AstroFlow-{short_hash}"
 
 
 def main():
   astroflow_zc = AstroFlowZeroconf(instance_name=get_unique_instance_name())
-  astroflow_zc.update_state(is_ray_head=True)
-
   listener = AstroFlowListener(enqueue_action)
 
   enqueue_action(dict(type='start_flask'))

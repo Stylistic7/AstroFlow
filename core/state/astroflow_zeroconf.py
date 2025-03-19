@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from zeroconf import Zeroconf, ServiceInfo, ServiceListener, ServiceBrowser
+from zeroconf import Zeroconf, ServiceInfo, ServiceListener
 import socket
 import json
 import time
@@ -8,7 +8,7 @@ import time
 @dataclass
 class AstroFlowZeroconf:
   instance_name: str
-  port: int = 6379
+  port: int = 80
   is_ray_head: bool = False
   mounted_volumes: list[str] = field(default_factory=list)
   zeroconf: Zeroconf = field(init=False, repr=False)
@@ -41,21 +41,18 @@ class AstroFlowZeroconf:
 
     info = ServiceInfo("_astroflow._tcp.local.",
                        self.service_name,
-                       addresses=[socket.inet_aton(self.get_ip())],
+                       addresses=[socket.inet_aton("127.0.0.1")],
                        port=self.port,
-                       properties=properties)
+                       properties=properties,
+                       server="Worker-M1-MacBook-Pro-5.local.")
 
     if self.service_info:
       self.zeroconf.unregister_service(self.service_info)  # Remove old service
+
     self.zeroconf.register_service(info)  # Register updated service
     self.service_info = info  # Store latest service info
-
-    print(
-        f"Updated AstroFlow instance: {self.service_name} ({self.get_ip()}:{self.port})"
-    )
-    print(
-        f"New state -> Ray Head: {self.is_ray_head}, Mounted Volumes: {self.mounted_volumes}"
-    )
+    print(f'Registering AstroFlow service: '
+          f'{self.instance_name} on {self.get_ip()}')
 
   def update_state(self,
                    is_ray_head: bool | None = None,
@@ -115,40 +112,3 @@ class AstroFlowListener(ServiceListener):
   def get_instances(self):
     """Returns a list of all currently discovered AstroFlow instances."""
     return list(self.instances.values())
-
-
-# astroflow_zc = AstroFlowZeroconf(instance_name=get_unique_instance_name())
-
-# # Update when the user starts a Ray head node
-# astroflow_zc.update_state(is_ray_head=True)
-
-# # Update when shared filesystem volumes change
-# astroflow_zc.update_state(mounted_volumes=["/mnt/data", "/astro"])
-
-# zeroconf = Zeroconf()
-# listener = AstroFlowListener()
-# browser = ServiceBrowser(zeroconf, "_astroflow._tcp.local.", listener)
-
-# print("Listening for AstroFlow instances on the network...")
-
-# try:
-#   while True:
-#     print("Current AstroFlow instances on the network:")
-#     for instance in listener.get_instances():
-#       print(instance)
-#     time.sleep(5)
-# except KeyboardInterrupt:
-#   print("Stopping service discovery...")
-#   zeroconf.close()
-
-# # When the instance is shutting down
-# astroflow_zc.close()
-
-if __name__ == '__main__':
-  zeroconf = Zeroconf()
-  listener = AstroFlowListener(None)
-  browser = ServiceBrowser(zeroconf, "_astroflow._tcp.local.", listener)
-
-  while True:
-    print(listener.get_instances())
-    time.sleep(5)
