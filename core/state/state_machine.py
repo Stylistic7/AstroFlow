@@ -4,6 +4,8 @@ from typing import Any, Callable, TypeVar
 import queue
 
 from context import context, get_cache
+from ray_infra import connect_to_ray_cluster
+from state.ray_control import start_ray_head_node, start_ray_subordinate_node, stop_ray_node
 
 T = TypeVar('T')
 
@@ -40,10 +42,12 @@ def _start_ray_head_node(state: State,
   if 'ray_head_node_process' in state:
     return state, []
 
-  from state.ray_control import start_ray_head_node
   state['ray_head_node_process'] = start_ray_head_node()
+
   from web_server.backend.app import announcer
   announcer.announce('ray_status')
+
+  connect_to_ray_cluster()
 
   return state, []
 
@@ -53,7 +57,6 @@ def _stop_ray_head_node(state: State,
   if 'ray_head_node_process' not in state:
     return state, []
 
-  from state.ray_control import stop_ray_node
   stop_ray_node()
   del state['ray_head_node_proces']
 
@@ -66,27 +69,19 @@ def _update_zeroconf_services(state: State,
   if cache['ray_head_node_enabled']:
     return state, []
 
+  if 'ray_subordinate_node_process' in state:
+    return state, []
+
   instance = next(iter(action['instances'].values()))
   print(f'### connecting to head node described by instance {instance}')
-  from state.ray_control import start_ray_subordinate_node
   state['ray_head_node_process'] = start_ray_subordinate_node(instance['ip'])
+
   from web_server.backend.app import announcer
   announcer.announce('ray_status')
 
-  # {
-  #     'AstroFlow-98b601._astroflow._tcp.local.': {
-  #         'name': 'AstroFlow-98b601._astroflow._tcp.local.',
-  #         'ip': '192.168.4.137',
-  #         'ray_head': 'no',
-  #         'mounted_volumes': []
-  #     },
-  #     'AstroFlow-30c66f._astroflow._tcp.local.': {
-  #         'name': 'AstroFlow-30c66f._astroflow._tcp.local.',
-  #         'ip': '192.168.4.137',
-  #         'ray_head': 'no',
-  #         'mounted_volumes': []
-  #     }
-  # }
+  connect_to_ray_cluster()
+
+  return state, []
 
 
 def _start_ray_subordinate_node(state: State,

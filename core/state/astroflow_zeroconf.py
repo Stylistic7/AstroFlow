@@ -105,7 +105,7 @@ class AstroFlowListener(ServiceListener):
       del self.instances[name]
       print(f"AstroFlow instance {name} removed")
 
-      if self.dispatch_fn:
+      if self.dispatch_fn and self.instances:
         self.dispatch_fn(
             dict(type='update_zeroconf_services', instances=self.instances))
 
