@@ -564,7 +564,6 @@ def stream():
       if data == None:
         data = time.ctime(time.time())
       sse = format_sse(event, data)
-      print('### yielding SSE', sse)
       yield sse
 
   response = Response(eventStream(), mimetype="text/event-stream")
@@ -615,7 +614,7 @@ def run_compute_graph():
   context.dangerously_accept_existing_files = True
 
   # TODO: Determine `regroup` automatically.
-  graph = build_compute_graph(regroup=False,
+  graph = build_compute_graph(regroup=True,
                               make_previews=False,
                               run_main_processing_graph=True)
 
