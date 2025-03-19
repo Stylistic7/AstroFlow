@@ -15,6 +15,8 @@ def get_unique_instance_name():
 
 def main():
   astroflow_zc = AstroFlowZeroconf(instance_name=get_unique_instance_name())
+  astroflow_zc.update_state(is_ray_head=True)
+
   listener = AstroFlowListener(enqueue_action)
 
   enqueue_action(dict(type='start_flask'))

@@ -1,7 +1,8 @@
 from dataclasses import dataclass, field
-from zeroconf import Zeroconf, ServiceInfo, ServiceListener
+from zeroconf import Zeroconf, ServiceInfo, ServiceListener, ServiceBrowser
 import socket
 import json
+import time
 
 
 @dataclass
@@ -81,6 +82,7 @@ class AstroFlowListener(ServiceListener):
 
   def add_service(self, zc, type, name):
     info = zc.get_service_info(type, name)
+    print(f'### add_service {info}')
     if info:
       ip = info.parsed_addresses()[0]
       status = {
@@ -97,16 +99,18 @@ class AstroFlowListener(ServiceListener):
       self.instances[name] = status
       print(f"Discovered AstroFlow instance: {status}")
 
-      self.dispatch_fn(
-          dict(type='update_zeroconf_services', instances=self.instances))
+      if self.dispatch_fn:
+        self.dispatch_fn(
+            dict(type='update_zeroconf_services', instances=self.instances))
 
   def remove_service(self, zc, type, name):
     if name in self.instances:
       del self.instances[name]
       print(f"AstroFlow instance {name} removed")
 
-      self.dispatch_fn(
-          dict(type='update_zeroconf_services', instances=self.instances))
+      if self.dispatch_fn:
+        self.dispatch_fn(
+            dict(type='update_zeroconf_services', instances=self.instances))
 
   def get_instances(self):
     """Returns a list of all currently discovered AstroFlow instances."""
@@ -139,3 +143,12 @@ class AstroFlowListener(ServiceListener):
 
 # # When the instance is shutting down
 # astroflow_zc.close()
+
+if __name__ == '__main__':
+  zeroconf = Zeroconf()
+  listener = AstroFlowListener(None)
+  browser = ServiceBrowser(zeroconf, "_astroflow._tcp.local.", listener)
+
+  while True:
+    print(listener.get_instances())
+    time.sleep(5)
