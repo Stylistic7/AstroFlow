@@ -1,4 +1,4 @@
-import React, { useState, useContext } from "react";
+import React, { useState, useContext, useEffect } from "react";
 import {
   Box,
   Menu,
@@ -19,24 +19,32 @@ const RayStatus: React.FC = () => {
   console.log("rayStatus", rayStatus, Object.keys(rayStatus).length);
 
   const [anchorEl, setAnchorEl] = useState(null);
-  // const [isHeadNode, setIsHeadNode] = useState(() => {
-  //   return localStorage.getItem("ray-head-node") === "true";
-  // });
   const [isHeadNode, setIsHeadNode] = useState(false);
+
+  useEffect(() => {
+    fetch('/ray_head_node_enabled')
+      .then(r => r.json())
+      .then(j => setIsHeadNode(j.enabled))
+      .catch(console.error);
+  }, []);
+
+  const toggleHeadNode = () => {
+    const newHeadState = !isHeadNode;
+    setIsHeadNode(newHeadState);
+    fetch('/ray_head_node_enabled', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ enabled: newHeadState.toString() })
+    })
+  };
 
   if (Object.keys(rayStatus).length == 0) {
     return <Typography variant="body2" color="textSecondary" align="center" sx={{ padding: '1em' }}>
       No Cluster
     </Typography>
   }
-
-  const toggleHeadNode = () => {
-    const newHeadState = !isHeadNode;
-    setIsHeadNode(newHeadState);
-    localStorage.setItem("ray-head-node", newHeadState.toString());
-
-    // If necessary, you can trigger an update in context here
-  };
 
   return (
     <>

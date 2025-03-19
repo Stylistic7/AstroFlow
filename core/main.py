@@ -4,6 +4,7 @@ import socket
 import os
 
 from state import enqueue_action, main_event_loop, AstroFlowZeroconf, AstroFlowListener
+from context import get_cache
 
 
 def get_unique_instance_name():
@@ -15,7 +16,13 @@ def get_unique_instance_name():
 def main():
   astroflow_zc = AstroFlowZeroconf(instance_name=get_unique_instance_name())
   listener = AstroFlowListener(enqueue_action)
+
   enqueue_action(dict(type='start_flask'))
+
+  cache = get_cache()
+  if cache.get('ray_head_node_enabled', False):
+    enqueue_action(dict(type='start_ray_head_node'))
+
   main_event_loop()
 
 

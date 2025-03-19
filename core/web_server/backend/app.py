@@ -19,8 +19,9 @@ import threading
 from pathlib import Path
 from dataclasses import replace
 import queue
+from distutils.util import strtobool
 
-from state import get_state
+from state import enqueue_action
 from .message_announcer import MessageAnnouncer
 from context import context
 from catalogs import constellations
@@ -832,6 +833,37 @@ def publish_ray_status():
 @app.route('/last_run_logs')
 def get_last_run_logs():
   return cache['last_run_logs'] or {}
+
+
+@app.route('/ray_head_node_enabled', methods=['GET', 'POST'])
+def ray_head_node_enabled():
+  if request.method == 'POST':
+    print(f'### ray_head_node_enabled method {request.method}')
+
+    data = request.get_json() or request.form
+    enabled_str = data.get('enabled')
+
+    if enabled_str is None:
+      return jsonify({'error': 'Missing "enabled" parameter'}), 400
+
+    try:
+      ray_head_node_enabled = bool(strtobool(enabled_str))
+    except ValueError:
+      return jsonify({'error': 'Invalid boolean value'}), 400
+
+    print(f'### setting ray_head_node_enabled {ray_head_node_enabled}')
+    cache['ray_head_node_enabled'] = ray_head_node_enabled
+
+    if ray_head_node_enabled:
+      enqueue_action(dict(type='start_ray_head_node'))
+    else:
+      enqueue_action(dict(type='stop_ray_head_node'))
+
+    print('### Response to /ray_head_node_enabled done')
+    return Response(status=200)
+
+  # GET request: return the current value
+  return jsonify({'enabled': cache.get('ray_head_node_enabled', False)})
 
 
 def flask_thread_body():

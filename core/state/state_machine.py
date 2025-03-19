@@ -37,7 +37,27 @@ class State(dict):
 
 def _start_ray_head_node(state: State,
                          action: Action) -> tuple[State, list[Action]]:
-  pass
+  if 'ray_head_node_process' in state:
+    return state, []
+
+  from state.ray_control import start_ray_head_node
+  state['ray_head_node_process'] = start_ray_head_node()
+  from web_server.backend.app import announcer
+  announcer.announce('ray_status')
+
+  return state, []
+
+
+def _stop_ray_head_node(state: State,
+                        action: Action) -> tuple[State, list[Action]]:
+  if 'ray_head_node_process' not in state:
+    return state, []
+
+  from state.ray_control import stop_ray_node
+  stop_ray_node()
+  del state['ray_head_node_proces']
+
+  return state, []
 
 
 def _start_ray_subordinate_node(state: State,
@@ -111,6 +131,12 @@ def dispatch(action: Action) -> dict[str, Any]:
 
     case 'start_flask':
       _state, new_actions = _start_flask(_state, action)
+
+    case 'start_ray_head_node':
+      _state, new_actions = _start_ray_head_node(_state, action)
+
+    case 'stop_ray_head_node':
+      _state, new_actions = _stop_ray_head_node(_state, action)
 
     case _:
       raise ValueError(f'Invalid action {action}')
