@@ -8,7 +8,7 @@ import time
 @dataclass
 class AstroFlowZeroconf:
   instance_name: str
-  port: int = 80
+  port: int = 6379
   is_ray_head: bool = False
   mounted_volumes: list[str] = field(default_factory=list)
   zeroconf: Zeroconf = field(init=False, repr=False)
@@ -18,7 +18,6 @@ class AstroFlowZeroconf:
     """Initialize Zeroconf and register the service."""
     self.zeroconf = Zeroconf()
     self.service_name = f"{self.instance_name}._astroflow._tcp.local."
-    self.register_service()  # Initial registration
 
   def get_ip(self) -> str:
     """Retrieve the local machine's LAN IP address."""
@@ -39,12 +38,13 @@ class AstroFlowZeroconf:
         "mounted_volumes": json.dumps(self.mounted_volumes),
     }
 
+    hostname = socket.gethostname()
     info = ServiceInfo("_astroflow._tcp.local.",
                        self.service_name,
-                       addresses=[socket.inet_aton("127.0.0.1")],
+                       addresses=[socket.inet_aton(self.get_ip())],
                        port=self.port,
                        properties=properties,
-                       server="Worker-M1-MacBook-Pro-5.local.")
+                       server=hostname)
 
     if self.service_info:
       self.zeroconf.unregister_service(self.service_info)  # Remove old service

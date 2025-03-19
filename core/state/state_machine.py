@@ -3,7 +3,7 @@ import os
 from typing import Any, Callable, TypeVar
 import queue
 
-from context import context
+from context import context, get_cache
 
 T = TypeVar('T')
 
@@ -58,6 +58,35 @@ def _stop_ray_head_node(state: State,
   del state['ray_head_node_proces']
 
   return state, []
+
+
+def _update_zeroconf_services(state: State,
+                              action: Action) -> tuple[State, list[Action]]:
+  cache = get_cache()
+  if cache['ray_head_node_enabled']:
+    return state, []
+
+  instance = next(iter(action['instances'].values()))
+  print(f'### connecting to head node described by instance {instance}')
+  from state.ray_control import start_ray_subordinate_node
+  state['ray_head_node_process'] = start_ray_subordinate_node(instance['ip'])
+  from web_server.backend.app import announcer
+  announcer.announce('ray_status')
+
+  # {
+  #     'AstroFlow-98b601._astroflow._tcp.local.': {
+  #         'name': 'AstroFlow-98b601._astroflow._tcp.local.',
+  #         'ip': '192.168.4.137',
+  #         'ray_head': 'no',
+  #         'mounted_volumes': []
+  #     },
+  #     'AstroFlow-30c66f._astroflow._tcp.local.': {
+  #         'name': 'AstroFlow-30c66f._astroflow._tcp.local.',
+  #         'ip': '192.168.4.137',
+  #         'ray_head': 'no',
+  #         'mounted_volumes': []
+  #     }
+  # }
 
 
 def _start_ray_subordinate_node(state: State,
@@ -126,8 +155,7 @@ def dispatch(action: Action) -> dict[str, Any]:
       # run_graph(build_item_processing_graph(action['item']))
 
     case 'update_zeroconf_services':
-      print('### Updating zeroconf services:')
-      print(action['instances'])
+      _state, new_actions = _update_zeroconf_services(_state, action)
 
     case 'start_flask':
       _state, new_actions = _start_flask(_state, action)
