@@ -1,6 +1,7 @@
-from typing import Any, Callable, Union, TypeAlias, Tuple, Iterable
+from typing import Any, Callable, Union, TypeAlias, Iterable
 from dataclasses import dataclass, field
-import graphlib
+from graphlib import TopologicalSorter
+from collections import defaultdict
 
 from ray.remote_function import RemoteFunction
 from ray._private.worker import RemoteFunctionNoArgs, RemoteFunction0, RemoteFunction1, RemoteFunction2, RemoteFunction3, RemoteFunction4, RemoteFunction5, RemoteFunction6
@@ -123,14 +124,14 @@ def canonicalize_graph(graph: Graph) -> CanonicalGraph:
 
 @dataclass
 class GraphStatus:
-  done_nodes: set[Node] = field(default_factory=set)
-  ready_nodes: set[Node] = field(default_factory=set)
-  waiting_nodes: set[Node] = field(default_factory=set)
+  done_nodes: list[Node] = field(default_factory=list)
+  ready_nodes: list[Node] = field(default_factory=list)
+  waiting_nodes: list[Node] = field(default_factory=list)
 
-  def __or__(self, rhs: 'GraphStatus') -> 'GraphStatus':
-    self.done_nodes |= rhs.done_nodes
-    self.ready_nodes |= rhs.ready_nodes
-    self.waiting_nodes |= rhs.waiting_nodes
+  def __add__(self, rhs: 'GraphStatus') -> 'GraphStatus':
+    self.done_nodes += rhs.done_nodes
+    self.ready_nodes += rhs.ready_nodes
+    self.waiting_nodes += rhs.waiting_nodes
 
     return self
 
@@ -174,48 +175,61 @@ class ResultDict(dict[Node, Any]):
 DoneCallback = Callable[[], None]
 
 
-class TopologicalSorterWithStatus(graphlib.TopologicalSorter):
-  done_nodes: set[Node]
-  ready_nodes: set[Node]
-  waiting_nodes: set[Node]
-
-  graph: CanonicalGraph
-  done_callback: DoneCallback | None
-  results: ResultDict
-  logs: ResultDict
-  final_result: Any
+class TopologicalSorterWithStatus:
 
   def __init__(self,
                graph: CanonicalGraph,
                parent_node: Node | None = None,
                done_callback: DoneCallback | None = None) -> None:
-    super().__init__(graph)
-
-    self.graph = graph
     self.parent_node = parent_node
     self.done_callback = done_callback
     self.results = ResultDict()
     self.logs = ResultDict()
     self.final_result = None
 
-    self.done_nodes = set()
-    self.ready_nodes = set()
-    self.waiting_nodes = set(graphlib.TopologicalSorter(graph).static_order())
+    self.graph = defaultdict(set)
+    self.done_nodes = list()
+    self._ts = None
+
+    if graph:
+      for node, dependencies in graph.items():
+        self.add(node, *dependencies)
+
+  def add(self, node: Any, *dependencies: Iterable[Any]):
+    self.graph[node].update(dependencies)
+    for dep in dependencies:
+      self.graph.setdefault(dep, set())  # ensure all nodes are registered
+
+  def prepare(self):
+    self._ts = TopologicalSorter(self.graph)
+    self._ts.prepare()
+
+  def is_active(self) -> bool:
+    return self._ts.is_active()
+
+  def get_ready(self):
+    return self._ts.get_ready()
+
+  def done(self, node: Any):
+    self._ts.done(node)
+    self.done_nodes.append(node)
+
+  def peek_ready(self) -> list:
+    return [
+        node for node, deps in self.graph.items()
+        if node not in self.done_nodes and all(
+            dep in self.done_nodes for dep in deps)
+    ]
+
+  def peek_waiting(self) -> list:
+    return [
+        node for node, deps in self.graph.items()
+        if node not in self.done_nodes and any(
+            dep not in self.done_nodes for dep in deps)
+    ]
+
+  def peek_done(self) -> list:
+    return list(self.done_nodes)
 
   def get_status(self) -> GraphStatus:
-    return GraphStatus(self.done_nodes, self.ready_nodes, self.waiting_nodes)
-
-  def get_ready(self) -> Tuple[Any, ...]:
-    ready_nodes = super().get_ready()
-
-    self.ready_nodes = set(ready_nodes)
-    self.waiting_nodes -= self.ready_nodes
-
-    return ready_nodes
-
-  def done(self, *nodes: Any) -> None:
-    for node in nodes:
-      super().done(node)
-      self.done_nodes.add(node)
-      if node in self.ready_nodes:
-        self.ready_nodes.remove(node)
+    return GraphStatus(self.peek_done(), self.peek_ready(), self.peek_waiting())

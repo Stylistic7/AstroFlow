@@ -1,7 +1,7 @@
 import ray
 import inspect
 from functools import reduce
-from operator import or_
+from operator import add
 import time
 from typing import Callable, Any
 from objsize import get_deep_size
@@ -158,7 +158,7 @@ def run_graph(graph: Graph,
     print(f'###   {last_node_string} x{num_duplicates}')
 
   def get_status() -> GraphStatus:
-    return reduce(or_, [ts.get_status() for ts in subgraphs], GraphStatus())
+    return reduce(add, [ts.get_status() for ts in subgraphs], GraphStatus())
 
   def get_workflow_graph() -> WorkflowGraph:
     return to_workflow_graph(subgraphs)
@@ -171,6 +171,7 @@ def run_graph(graph: Graph,
       print_ready_nodes(ready)
 
     max_parallelism_seen = max(len(ready), max_parallelism_seen)
+    print(f'### launching {len(ready)} nodes in parallel')
 
     if debug:
       active = [ts for ts in subgraphs if ts.is_active()]
@@ -184,61 +185,64 @@ def run_graph(graph: Graph,
     remaining_refs = list(ref_to_ts_and_node.keys())
 
     while len(remaining_refs):
-      ready_refs, remaining_refs = ray.wait(remaining_refs, num_returns=1)
-      assert len(ready_refs) == 1
-      ts, node = ref_to_ts_and_node[ready_refs[0]]
-      if trace:
-        trace_list.append(node)
-      if debug:
-        assert isinstance(node.task, RemoteFunction)
-        print(f'Task {node.task._function.__name__} finished')
+      ready_refs, remaining_refs = ray.wait(remaining_refs,
+                                            num_returns=min(
+                                                1000, len(remaining_refs)))
 
-      num_nodes_run += 1
+      for ready_ref in ready_refs:
+        ts, node = ref_to_ts_and_node[ready_ref]
+        if trace:
+          trace_list.append(node)
+        if debug:
+          assert isinstance(node.task, RemoteFunction)
+          print(f'Task {node.task._function.__name__} finished')
 
-      # Maybe call the user's status_fn, but rate limit the frequency of these
-      # calls, which may be expensive.
-      current_time = time.time()
-      if current_time > (last_status_time + status_interval):
-        if status_fn:
-          status_fn(get_status())
-        if workflow_graph_fn:
-          workflow_graph_fn(get_workflow_graph())
-        last_status_time = current_time
+        num_nodes_run += 1
 
-      try:
-        result = ray.get(ready_refs[0])
+        # Maybe call the user's status_fn, but rate limit the frequency of these
+        # calls, which may be expensive.
+        current_time = time.time()
+        if current_time > (last_status_time + status_interval):
+          if status_fn:
+            status_fn(get_status())
+          if workflow_graph_fn:
+            workflow_graph_fn(get_workflow_graph())
+          last_status_time = current_time
 
-        # If the function captured logs, split them off the returned result.
-        log = []
-        if isinstance(result, tuple) and isinstance(result[0], LogContainer):
-          log, result = result
-          if debug:
+        try:
+          result = ray.get(ready_ref)
+
+          # If the function captured logs, split them off the returned result.
+          log = []
+          if isinstance(result, tuple) and isinstance(result[0], LogContainer):
+            log, result = result
+            if debug:
+              print(
+                  f'### node {node_to_string(node, exclude_args=True)} produced '
+                  f'a log of length {len(log)}')
+
+          if (result_size_mb := get_deep_size(result) / 1024 /
+              1024) > _RESULT_SIZE_WARNING_THRESHOLD_MB:
             print(
-                f'### node {node_to_string(node, exclude_args=True)} produced '
-                f'a log of length {len(log)}')
+                f'### WARNING: node {node_to_string(node, exclude_args=True)} produced '
+                f'large object of type {type(result)} and '
+                f'size {result_size_mb:.3f} MB')
 
-        if (result_size_mb := get_deep_size(result) / 1024 /
-            1024) > _RESULT_SIZE_WARNING_THRESHOLD_MB:
-          print(
-              f'### WARNING: node {node_to_string(node, exclude_args=True)} produced '
-              f'large object of type {type(result)} and '
-              f'size {result_size_mb:.3f} MB')
-
-        # There are two possibilities here: the task can return a result,
-        # or a (dynamically-generated) Graph to run as a sub-graph.
-        if isinstance(result, Graph):
-          add_subgraph(result, ts, node)
-        else:
-          ts.results[node] = result
-          ts.logs[node] = log
-          ts.final_result = result
+          # There are two possibilities here: the task can return a result,
+          # or a (dynamically-generated) Graph to run as a sub-graph.
+          if isinstance(result, Graph):
+            add_subgraph(result, ts, node)
+          else:
+            ts.results[node] = result
+            ts.logs[node] = log
+            ts.final_result = result
+            ts.done(node)
+        except ray.exceptions.RayTaskError as e:
+          print(f'Node {node_to_string(node)} raised exception {e}')
+          ts.results[node] = e.cause
+          ts.logs[node] = []
+          ts.final_result = e.cause
           ts.done(node)
-      except ray.exceptions.RayTaskError as e:
-        print(f'Node {node_to_string(node)} raised exception {e}')
-        ts.results[node] = e.cause
-        ts.logs[node] = []
-        ts.final_result = e.cause
-        ts.done(node)
 
     handle_finished_subgraphs()
 

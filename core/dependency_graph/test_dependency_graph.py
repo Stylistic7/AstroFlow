@@ -8,6 +8,7 @@ import time
 
 from context import context, get_cache
 from dependency_graph import Graph, Node, GraphStatus, TopologicalSorterWithStatus, canonicalize_graph, run_graph, make_graph_from_list
+from dependency_graph.debugging import node_to_string
 
 cache = get_cache()
 
@@ -192,6 +193,22 @@ def create_list() -> list[int]:
 @ray.remote
 def consume_list(L) -> int:
   return sum(L)
+
+
+@ray.remote
+def build_recursive_graph(max_depth: int, width: int, depth: int = 1) -> Graph:
+  if depth == max_depth:
+    return Graph({gather: [(process, i) for i in range(7)]})
+  else:
+    return Graph({
+        gather: [
+            Node(build_recursive_graph,
+                 max_depth,
+                 width,
+                 depth + 1,
+                 name=f'{depth}_{i}') for i in range(width)
+        ]
+    })
 
 
 class TestDependencyGraph(unittest.TestCase):
@@ -504,51 +521,54 @@ class TestDependencyGraph(unittest.TestCase):
                                      done_callback=None)
     ts.prepare()
 
+    print(f'### ready {ts.peek_ready()} '
+          f'waiting {ts.peek_waiting()} done {ts.peek_done()}')
+
     ready_nodes = ts.get_ready()
     self.assertEqual(ready_nodes, (A,))
 
-    self.assertEqual(ts.ready_nodes, {A})
-    self.assertEqual(ts.waiting_nodes, {B, C, D})
-    self.assertEqual(ts.done_nodes, set())
+    self.assertCountEqual(ts.peek_ready(), {A})
+    self.assertCountEqual(ts.peek_waiting(), {B, C, D})
+    self.assertCountEqual(ts.peek_done(), set())
 
     ts.done(A)
-    self.assertEqual(ts.ready_nodes, set())
-    self.assertEqual(ts.waiting_nodes, {B, C, D})
-    self.assertEqual(ts.done_nodes, {A})
+    self.assertCountEqual(ts.peek_ready(), {B, C})
+    self.assertCountEqual(ts.peek_waiting(), {D})
+    self.assertCountEqual(ts.peek_done(), {A})
 
     ready_nodes = ts.get_ready()
     self.assertEqual(set(ready_nodes), {B, C})
 
     ts.done(B)
-    self.assertEqual(ts.ready_nodes, {C})
-    self.assertEqual(ts.waiting_nodes, {D})
-    self.assertEqual(ts.done_nodes, {A, B})
+    self.assertCountEqual(ts.peek_ready(), {C})
+    self.assertCountEqual(ts.peek_waiting(), {D})
+    self.assertCountEqual(ts.peek_done(), {A, B})
 
     ts.done(C)
-    self.assertEqual(ts.ready_nodes, set())
-    self.assertEqual(ts.waiting_nodes, {D})
-    self.assertEqual(ts.done_nodes, {A, B, C})
+    self.assertCountEqual(ts.peek_ready(), {D})
+    self.assertCountEqual(ts.peek_waiting(), set())
+    self.assertCountEqual(ts.peek_done(), {A, B, C})
 
     ready_nodes = ts.get_ready()
     self.assertEqual(set(ready_nodes), {D})
 
     ts.done(D)
-    self.assertEqual(ts.ready_nodes, set())
-    self.assertEqual(ts.waiting_nodes, set())
-    self.assertEqual(ts.done_nodes, {A, B, C, D})
+    self.assertCountEqual(ts.peek_ready(), set())
+    self.assertCountEqual(ts.peek_waiting(), set())
+    self.assertCountEqual(ts.peek_done(), {A, B, C, D})
 
   def test_graph_status_merging(self) -> None:
-    status_1 = GraphStatus(waiting_nodes={Node(increment_foo)},
-                           done_nodes={Node(increment_baz)})
-    status_2 = GraphStatus(done_nodes={Node(increment_bar)})
+    status_1 = GraphStatus(waiting_nodes=[Node(increment_foo)],
+                           done_nodes=[Node(increment_baz)])
+    status_2 = GraphStatus(done_nodes=[Node(increment_bar)])
 
-    status = status_1 | status_2
+    status = status_1 + status_2
     self.assertEqual(
         status,
-        GraphStatus(done_nodes={Node(increment_bar),
-                                Node(increment_baz)},
-                    ready_nodes=set(),
-                    waiting_nodes={Node(increment_foo)}))
+        GraphStatus(done_nodes=[Node(increment_baz),
+                                Node(increment_bar)],
+                    ready_nodes=list(),
+                    waiting_nodes=[Node(increment_foo)]))
 
   def test_status_fn(self) -> None:
     graph = Graph({scatter: {}})
@@ -590,6 +610,30 @@ class TestDependencyGraph(unittest.TestCase):
       self.assertTrue(Node(process, i) in results.trace)
       self.assertLess(results.trace.index(Node(process, i)),
                       results.trace.index(Node(gather)))
+
+  def test_recursive_graph(self) -> None:
+    dynamic_graph_task = (build_recursive_graph, 5, 10)
+    graph = Graph({dynamic_graph_task: {}})
+
+    final_status = None
+
+    def print_status(status: GraphStatus) -> None:
+      print(f'### done {len(status.done_nodes)} '
+            f'ready {len(status.ready_nodes)} '
+            f'waiting {len(status.waiting_nodes)}')
+
+      nonlocal final_status
+      final_status = status
+
+    results, _ = run_graph(graph, status_fn=print_status)
+
+    self.assertEqual(results.num_nodes_run, len(final_status.done_nodes))
+    self.assertEqual(len(final_status.ready_nodes), 0)
+    self.assertEqual(len(final_status.waiting_nodes), 0)
+
+    self.assertEqual(results.num_nodes_run, 1 + 10 + 100 + 1000 + 10000 +
+                     10000 * 8 + 1000 + 100 + 10 + 1)  # depth 5
+    self.assertEqual(results.max_parallelism_seen, 70000)  # depth 5
 
 
 if __name__ == '__main__':
