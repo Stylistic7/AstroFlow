@@ -28,7 +28,7 @@ def graph_status_to_progress(status: GraphStatus) -> dict[str, Any]:
     return node.task._function.__name__
 
   status_dict = {}
-  for node in status.ready_nodes | status.waiting_nodes:
+  for node in status.ready_nodes + status.waiting_nodes:
     name = function_name_from_node(node)
     estimated_time = estimate_time(name)
     if estimated_time is None:
