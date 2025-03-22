@@ -80,7 +80,7 @@ from dependency_graph.astroflow_node import AstroFlowNode
 #
 # TODO: Add a task that checks that input and output directories exist. Many
 # tasks cannot run without them.
-@AstroFlowNode()
+@AstroFlowNode(resources={'fastest_storage': 0.001})
 def scatter_compute_image_metadata(mode: str, *filenames_in:
                                    list[Path]) -> Graph:
   directories = {
@@ -117,7 +117,7 @@ class DuplicateFileException(Exception):
 
 # TODO: What's the best approach for making this functional? I should remove
 # the side-effect (saving to the context).
-@AstroFlowNode()
+@AstroFlowNode(resources={'fastest_storage': 0.001})
 def compute_image_metadata(filename: Path) -> Path:
   # TODO: Make sure this code doesn't actually repeatedly read the image across
   # the network. It should hit the node's filesystem cache.
