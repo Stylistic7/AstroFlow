@@ -14,7 +14,6 @@ class FlaskThread(threading.Thread):
     self.host = host
     self.port = port
     self.server = None
-    self._stop_event = threading.Event()  # Used to signal the thread to stop
 
   def run(self):
     """Starts the Flask server inside the thread."""
@@ -26,6 +25,4 @@ class FlaskThread(threading.Thread):
     """Stops the Flask server gracefully."""
     if self.server:
       self.server.shutdown()
-    self._stop_event.set()  # Signal the thread to stop
-    self.join()  # Ensure thread exits before continuing
     print("Flask server stopped.")

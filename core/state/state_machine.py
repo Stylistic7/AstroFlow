@@ -1,11 +1,12 @@
-import ray
 import os
-from typing import Any, Callable, TypeVar
+from typing import Any, TypeVar
 import queue
 
 from context import context, get_cache
 from ray_infra import connect_to_ray_cluster
 from state.ray_control import start_ray_head_node, start_ray_subordinate_node, stop_ray_node
+from state.astroflow_zeroconf import AstroFlowZeroconf
+from state.types import State, Action
 
 T = TypeVar('T')
 
@@ -29,37 +30,57 @@ def _get_namespace() -> str:
   return os.environ.get("ASTROFLOW_MOCK_NAMESPACE", "AstroFlow")
 
 
-class Action(dict):
-  pass
+def _init(state: State, action: Action) -> tuple[State, list[Action]]:
+  new_actions = []
+
+  new_actions.append(Action(type='start_flask'))
+  new_actions.append(Action(type='start_zeroconf'))
+
+  cache = get_cache()
+  if cache['ray_head_node_enabled']:
+    new_actions.append(Action(type='start_ray_head_node'))
+    new_actions.append(Action(type='advertise_zeroconf'))
+
+  return state, new_actions
 
 
-class State(dict):
-  pass
+def _start_zeroconf(state: State, action: Action) -> tuple[State, list[Action]]:
+  assert 'zeroconf' not in state
+  state['zeroconf'] = AstroFlowZeroconf(enqueue_action)
+  return state, []
+
+
+def _advertise_zeroconf(state: State,
+                        action: Action) -> tuple[State, list[Action]]:
+  state['zeroconf'].update_state(is_ray_head=True)
+  return state, []
+
+
+def _stop_zeroconf(state: State, action: Action) -> tuple[State, list[Action]]:
+  print("Stopping service discovery...")
+  state['zeroconf'].close()
+  return state, []
 
 
 def _start_ray_head_node(state: State,
                          action: Action) -> tuple[State, list[Action]]:
-  if 'ray_head_node_process' in state:
-    return state, []
-
-  state['ray_head_node_process'] = start_ray_head_node()
+  assert 'ray_process' not in state
+  state['ray_process'] = start_ray_head_node()
 
   from web_server.backend.app import announcer
   announcer.announce('ray_status')
 
   connect_to_ray_cluster()
 
-  return state, []
+  return state, [Action(type='advertise_zeroconf')]
 
 
-def _stop_ray_head_node(state: State,
-                        action: Action) -> tuple[State, list[Action]]:
-  if 'ray_head_node_process' not in state:
+def _stop_ray_node(state: State, action: Action) -> tuple[State, list[Action]]:
+  if 'ray_process' not in state:
     return state, []
 
   stop_ray_node()
-  del state['ray_head_node_proces']
-
+  del state['ray_process']
   return state, []
 
 
@@ -69,12 +90,13 @@ def _update_zeroconf_services(state: State,
   if cache['ray_head_node_enabled']:
     return state, []
 
-  if 'ray_subordinate_node_process' in state:
+  if 'ray_process' in state:
     return state, []
 
+  # TODO: This should be a follow-on action.
   instance = next(iter(action['instances'].values()))
   print(f'### connecting to head node described by instance {instance}')
-  state['ray_head_node_process'] = start_ray_subordinate_node(instance['ip'])
+  state['ray_process'] = start_ray_subordinate_node(instance['ip'])
 
   from web_server.backend.app import announcer
   announcer.announce('ray_status')
@@ -93,9 +115,23 @@ def _start_flask(state: State, action: Action) -> tuple[State, list[Action]]:
   from state.flask_control import FlaskThread
   server_thread = FlaskThread()
   server_thread.start()
-  state['flask_server_thread'] = server_thread
+  state['flask_thread'] = server_thread
 
   return state, []
+
+
+def _stop_flask(state: State, action: Action) -> tuple[State, list[Action]]:
+  if 'flask_thread' not in state:
+    return state, []
+
+  state['flask_thread'].stop()
+  del state['flask_thread']
+
+  return state, []
+
+
+def _quit(state: State, action: Action) -> tuple[State, list[Action]]:
+  return state, [Action(type='stop_ray_node'), Action(type='stop_flask')]
 
 
 def _add_to_shopping_cart(state: State,
@@ -137,6 +173,18 @@ def dispatch(action: Action) -> dict[str, Any]:
   new_actions = []
 
   match action['type']:
+    case 'init':
+      _state, new_actions = _init(_state, action)
+
+    case 'start_zeroconf':
+      _state, new_actions = _start_zeroconf(_state, action)
+
+    case 'advertise_zeroconf':
+      _state, new_actions = _advertise_zeroconf(_state, action)
+
+    case 'stop_zeroconf':
+      _state, new_actions = _stop_zeroconf(_state, action)
+
     case 'add_to_shopping_cart':
       _state, new_actions = _add_to_shopping_cart(_state, action)
 
@@ -155,11 +203,17 @@ def dispatch(action: Action) -> dict[str, Any]:
     case 'start_flask':
       _state, new_actions = _start_flask(_state, action)
 
+    case 'stop_flask':
+      _state, new_actions = _stop_flask(_state, action)
+
     case 'start_ray_head_node':
       _state, new_actions = _start_ray_head_node(_state, action)
 
-    case 'stop_ray_head_node':
-      _state, new_actions = _stop_ray_head_node(_state, action)
+    case 'stop_ray_node':
+      _state, new_actions = _stop_ray_node(_state, action)
+
+    case 'quit':
+      _state, new_actions = _quit(_state, action)
 
     case _:
       raise ValueError(f'Invalid action {action}')
@@ -175,7 +229,30 @@ def enqueue_action(action):
 
 
 def main_event_loop():
-  while True:
-    action = _action_queue.get()
-    dispatch(action)
-    _action_queue.task_done()
+  quit_received = False
+
+  try:
+    while True:
+      try:
+        action = _action_queue.get()
+      except KeyboardInterrupt:
+        print("Ctrl-C detected — enqueuing 'quit' action")
+        _action_queue.put({'type': 'quit'})
+        continue
+
+      try:
+        if action.get("type") == "quit":
+          quit_received = True
+
+        dispatch(action)
+      finally:
+        _action_queue.task_done()
+
+      if quit_received and _action_queue.empty():
+        break
+
+  except Exception as e:
+    print(f"Unexpected error: {e}")
+    raise
+
+  print("Graceful shutdown complete.")
