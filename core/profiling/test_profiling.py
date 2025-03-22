@@ -7,29 +7,27 @@ import numpy as np
 
 from context import context
 from dependency_graph import Graph, run_graph
+from dependency_graph.astroflow_node import AstroFlowNode
 from profiling.estimate_time import estimate_time
-from profiling.decorator import track_performance
 
 
-@ray.remote
+@AstroFlowNode()
 def scatter():
   return Graph({gather: [(process, i) for i in range(7)]})
 
 
-@ray.remote
-@track_performance
+@AstroFlowNode(track_performance=True)
 def process(item):
   time.sleep(2)
   return item
 
 
-@ray.remote
+@AstroFlowNode()
 def gather(*ancestor_results):
   return sum(ancestor_results)
 
 
-@ray.remote
-@track_performance
+@AstroFlowNode(track_performance=True)
 def long_task(sleep_time):
   time.sleep(sleep_time)
 
@@ -69,7 +67,7 @@ class TestProfiling(unittest.TestCase):
       last_status = status
 
       total_estimated_time = 0
-      for node in status.ready_nodes | status.waiting_nodes:
+      for node in status.ready_nodes + status.waiting_nodes:
         if estimated_time := estimate_time(function_name_from_node(node)):
           total_estimated_time += estimated_time
 

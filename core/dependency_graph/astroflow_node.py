@@ -6,19 +6,21 @@ import structlog
 from typing import Any
 import astropy.io.fits as pyfits  # type: ignore
 from beartype import beartype
+import time
 
 from context import context, WriteMode
-from artifacts import FileArtifact, CacheArtifact, artifact_exists
+from artifacts import FileArtifact, artifact_exists
 from artifacts.artifact import unpack_artifact
 from hashing import hash_list
 from dependency_graph import Graph
 from dependency_graph.logging import capture_logs
 from dependency_graph.classes import canonicalize_node
 from dependency_graph.debugging import node_to_string
-from profiling import track_performance
 from file_io.xisf_file_io import add_xisf_metadata
 
 log = structlog.get_logger()
+
+_MAX_PERFORMANCE_SAMPLES = 100
 
 
 class ArtifactNotFoundException(Exception):
@@ -118,6 +120,20 @@ def _store_result(fn,
   return result
 
 
+def _update_performance(fn_name, elapsed_time):
+  node_ip = ray.util.get_node_ip_address()
+
+  print(f'### Function {fn_name} took {elapsed_time:.3f} s on {node_ip}')
+  key = ('performance_history', node_ip, fn_name)
+
+  # Keep only the last N samples.
+  # TODO: This might be slow, since every node has to hit the ContextActor,
+  # no matter how fast it is.
+  history = context.get(key, [])
+  history = history[-(_MAX_PERFORMANCE_SAMPLES - 1):] + [elapsed_time]
+  context[key] = history
+
+
 def AstroFlowNode(resources=None,
                   num_cpus=1,
                   memory=None,
@@ -125,6 +141,7 @@ def AstroFlowNode(resources=None,
                   unpack_artifacts=True,
                   cache_result=False,
                   keep_in_memory=True,
+                  track_performance=False,
                   debug=False):
   if resources == None:
     resources = {}
@@ -155,7 +172,6 @@ def AstroFlowNode(resources=None,
                 num_cpus=num_cpus,
                 memory=memory)
     @capture_logs
-    @track_performance
     @wraps(fn)
     @beartype
     def wrapper(*args, **kwargs) -> Any:
@@ -169,7 +185,11 @@ def AstroFlowNode(resources=None,
         kwargs = {k: unpack_artifact(v) for k, v in kwargs.items()}
 
       if not cache_result:
-        return fn(*args, **kwargs)
+        start_time = time.time()
+        result = fn(*args, **kwargs)
+        if track_performance:
+          _update_performance(fn.__name__, time.time() - start_time)
+        return result
 
       content_hash = compute_content_hash(fn, *args, **kwargs)
       key = (fn.__name__, content_hash)
@@ -185,7 +205,13 @@ def AstroFlowNode(resources=None,
         if debug:
           print(f'### Node {fn.__name__}: running fn {fn.__name__} producing '
                 f'content hash {content_hash} because result does not exist')
+
+        start_time = time.time()
         result = fn(*args, **kwargs)
+
+        if track_performance:
+          _update_performance(fn.__nane__, time.time() - start_time)
+
         return _store_result(fn, result, content_hash, update_header,
                              keep_in_memory, debug)
 

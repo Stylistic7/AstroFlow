@@ -5,16 +5,15 @@ import ray
 import time
 
 from dependency_graph import Graph, run_graph, graph_status_to_progress
-from profiling import track_performance
+from dependency_graph.astroflow_node import AstroFlowNode
 
 
-@ray.remote
+@AstroFlowNode()
 def gather():
   pass
 
 
-@ray.remote
-@track_performance
+@AstroFlowNode(track_performance=True, debug=True)
 def process(runtime, i):
   time.sleep(runtime)
 
@@ -32,7 +31,6 @@ class TestProgress(unittest.TestCase):
       nonlocal counter
 
       progress = graph_status_to_progress(status)
-      print('### progress', progress)
 
       if counter == 0:
         return
