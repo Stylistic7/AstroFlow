@@ -610,11 +610,11 @@ def run_compute_graph():
   context.output_dir = '/Volumes/Astro/Processed'
 
   # TODO: Put these in the UI.
-  context.ignore_cached_results = True
-  context.dangerously_accept_existing_files = True
+  context.ignore_cached_results = False
+  context.dangerously_accept_existing_files = False
 
   # TODO: Determine `regroup` automatically.
-  graph = build_compute_graph(regroup=True,
+  graph = build_compute_graph(regroup=False,
                               make_previews=False,
                               run_main_processing_graph=True)
 
@@ -634,12 +634,13 @@ def run_compute_graph():
     }
 
   print('### Running compute graph!')
-  thread = threading.Thread(target=_run_graph,
-                            args=(graph,),
-                            kwargs={
-                                'status_fn': status_fn,
-                                'debug': False
-                            })
+  thread = threading.Thread(
+      target=_run_graph,
+      args=(graph,),
+      kwargs={
+          # 'status_fn': status_fn,
+          'debug': False
+      })
   thread.daemon = True
   thread.start()
 

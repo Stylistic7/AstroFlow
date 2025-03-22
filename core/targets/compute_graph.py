@@ -1,12 +1,12 @@
 import ray
 
 from dependency_graph import Graph
-from targets.types import TargetHash
+from targets.types import Target
 
 
 @ray.remote
-def build_target_subgraph(target_id: TargetHash) -> Graph:
-  print(f'### build_target_subgraph target_id {target_id}')
+def build_target_subgraph(target: Target) -> Graph:
+  print(f'### build_target_subgraph target {target}')
   # targets = context.targets
   # target = targets[target_id]
 

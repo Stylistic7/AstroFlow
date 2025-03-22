@@ -171,7 +171,6 @@ def run_graph(graph: Graph,
       print_ready_nodes(ready)
 
     max_parallelism_seen = max(len(ready), max_parallelism_seen)
-    print(f'### launching {len(ready)} nodes in parallel')
 
     if debug:
       active = [ts for ts in subgraphs if ts.is_active()]

@@ -1,5 +1,6 @@
 from typing import Any
 from collections import Counter
+import time
 
 from ray.remote_function import RemoteFunction
 
@@ -13,7 +14,9 @@ from profiling.estimate_time import estimate_time
 # their total number, remaining number, and estimated remaining time.
 #
 # TODO: Strongly-type the output.
+# TODO: This is way too slow, for some reason.
 def graph_status_to_progress(status: GraphStatus) -> dict[str, Any]:
+  start_time = time.time()
   print(f'### status has {len(status.ready_nodes)} ready nodes, '
         f'{len(status.waiting_nodes)} waiting nodes, '
         f'{len(status.done_nodes)} done nodes')
@@ -65,4 +68,5 @@ def graph_status_to_progress(status: GraphStatus) -> dict[str, Any]:
     if status_dict[name]['remaining_number'] == 0:
       status_dict[name]['estimated_time'] = 0
 
+  print(f'### graph_status_to_progress took {time.time() - start_time} s')
   return status_dict

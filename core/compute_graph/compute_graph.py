@@ -134,45 +134,25 @@ def build_main_processing_graph() -> Graph:
   shopping_cart = context.shopping_cart or []
   print(f'### build_main_processing_graph shopping_cart {shopping_cart}')
 
-  visited_stacks = set()
-  visited_targets = set()
-  visited_mosaics = set()
-
-  def _visit_stack(stack_hash):
-    visited_stacks.add(stack_hash)
-
-  def _visit_target(target_hash):
-    visited_targets.add(target_hash)
-    for stack in targets[target_hash].stack_ids:
-      _visit_stack(stack)
-
-  def _visit_mosaic(mosaic_hash):
-    visited_mosaics.add(mosaic_hash)
-    for target in mosaics[mosaic_hash].target_ids:
-      _visit_target(target)
-
   # TODO: Maybe add prioritization options in the UI.
   graph = Graph({})
   tasks = []
   for type, id in shopping_cart:
     if type == 'stack':
-      if id not in context.stacks:
+      if id not in stacks:
         print('### WARNING: stack {id} is in shopping cart but does not exist')
         continue
       tasks.append((build_stacking_subgraph, stacks[id]))
-      _visit_stack(id)
     elif type == 'target':
-      if id not in context.targets:
+      if id not in targets:
         print('### WARNING: target {id} is in shopping cart but does not exist')
         continue
-      tasks.append((build_target_subgraph, id))
-      _visit_target(id)
+      tasks.append((build_target_subgraph, targets[id]))
     if type == 'mosaic':
-      if id not in context.mosaics:
+      if id not in mosaics:
         print('### WARNING: mosaic {id} is in shopping cart but does not exist')
         continue
       tasks.append((build_mosaic_subgraph, QualityLevel.MASTER, mosaics[id]))
-      _visit_mosaic(id)
 
   graph[main_processing_graph_done] = tasks
   return graph
