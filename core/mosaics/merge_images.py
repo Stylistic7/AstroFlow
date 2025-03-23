@@ -25,7 +25,7 @@ def run_photometric_mosaic(images: ImageList,
 # TODO: Consider what to name these images, since the AstroFlowNode decorator
 # handles all of the content hashes now.
 # TODO: Turn caching on.
-@AstroFlowNode(resources={'PixInsight': 1})
+@AstroFlowNode(resources={'PixInsight': 1}, track_performance=True)
 def merge_images_with_photometric_mosaic(mosaic: Mosaic, input_0: Path,
                                          input_1: Path) -> Path:
   print(f'### merge_images_with_photometric_mosaic {input_0} {input_1}')

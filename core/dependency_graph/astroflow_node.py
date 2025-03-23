@@ -164,9 +164,8 @@ def AstroFlowNode(resources=None,
     # hashes, and sees the arguments as just Paths, or whatever arbitrary
     # Python objects are returned by the functions.
     #
-    # TODO: @capture_logs and @track_performance are misplaced here. They should
-    # only run when the wrapped function runs. Maybe they should be folded inot
-    # this single decorator.
+    # TODO: @capture_logs is misplaced here. It should only run when the wrapped
+    # function runs. Maybe it should be folded into this single decorator.
     @ray.remote(scheduling_strategy="SPREAD",
                 resources=resources,
                 num_cpus=num_cpus,
@@ -210,7 +209,7 @@ def AstroFlowNode(resources=None,
         result = fn(*args, **kwargs)
 
         if track_performance:
-          _update_performance(fn.__nane__, time.time() - start_time)
+          _update_performance(fn.__name__, time.time() - start_time)
 
         return _store_result(fn, result, content_hash, update_header,
                              keep_in_memory, debug)

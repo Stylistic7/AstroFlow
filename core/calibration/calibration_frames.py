@@ -14,7 +14,7 @@ from stacks.composite_stack import CompositeStack, SimpleStacksDict
 import clustering
 
 
-@AstroFlowNode()
+@AstroFlowNode(track_performance=True)
 def identify_calibration_stacks() -> SimpleStacksDict:
   print(f'Identifying calibration stacks...')
 

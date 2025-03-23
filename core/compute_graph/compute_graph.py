@@ -134,6 +134,9 @@ def build_main_processing_graph() -> Graph:
   shopping_cart = context.shopping_cart or []
   print(f'### build_main_processing_graph shopping_cart {shopping_cart}')
 
+  # FIXME
+  shopping_cart = [('stack', i) for i in stacks.keys()]
+
   # TODO: Maybe add prioritization options in the UI.
   graph = Graph({})
   tasks = []

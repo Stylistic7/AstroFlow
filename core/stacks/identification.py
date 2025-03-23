@@ -22,7 +22,7 @@ def _normalize_radians(x: float) -> float:
 #
 # TODO: The spatial_group should include a metadata_ref for all of the images
 # in it. The call to get_metadata() should be removed.
-@AstroFlowNode()
+@AstroFlowNode(track_performance=True)
 def identify_stacks(light_frames: list[FrameHash]) -> CompositeStacksDict:
   print(f'### identify_stacks running for spatial group of '
         f'length {len(light_frames)}')

@@ -16,7 +16,7 @@ from stacks.types import StackHash
 from dependency_graph.astroflow_node import AstroFlowNode
 
 
-@AstroFlowNode()
+@AstroFlowNode(track_performance=True)
 def group_stacks_into_targets(stacks: CompositeStacksDict) -> TargetsDict:
   metadata = context.metadata
 

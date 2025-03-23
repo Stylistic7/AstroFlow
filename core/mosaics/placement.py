@@ -161,7 +161,7 @@ def _save_image_to_file(mode: QualityLevel, mosaic: Mosaic,
   return filename
 
 
-@AstroFlowNode(memory=_PLACE_IMAGE_MEMORY_REQUIREMENT)
+@AstroFlowNode(memory=_PLACE_IMAGE_MEMORY_REQUIREMENT, track_performance=True)
 def place_image(mode: QualityLevel, mosaic: Mosaic, stack: CustomizedStack,
                 tile_indices: TileIndices, filter: str, viewbox: Viewbox,
                 mask: box, filename: Path) -> Path:

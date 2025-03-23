@@ -329,7 +329,7 @@ def _identify_overlapping_targets(
   return mosaics
 
 
-@AstroFlowNode()
+@AstroFlowNode(track_performance=True)
 def identify_mosaics(targets: TargetsDict,
                      debug: bool = False) -> dict[MosaicHash, Mosaic]:
   print(f'### Identifying mosaics from {len(targets)} targets')

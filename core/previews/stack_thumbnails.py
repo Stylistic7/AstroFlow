@@ -36,7 +36,7 @@ def scatter_stack_thumbnails(mode: QualityLevel) -> Graph:
   return Graph({gather_stack_thumbnails: tasks})
 
 
-@AstroFlowNode(cache_result=True)
+@AstroFlowNode(cache_result=True, track_performance=True)
 def create_stack_subframe_thumbnails(stack: CompositeStack) -> None:
   print(f'Entering create_stack_subframe_thumbnails() for stack {stack}')
 

@@ -117,7 +117,7 @@ class DuplicateFileException(Exception):
 
 # TODO: What's the best approach for making this functional? I should remove
 # the side-effect (saving to the context).
-@AstroFlowNode(resources={'fastest_storage': 0.001})
+@AstroFlowNode(resources={'fastest_storage': 0.001}, track_performance=True)
 def compute_image_metadata(filename: Path) -> Path:
   # TODO: Make sure this code doesn't actually repeatedly read the image across
   # the network. It should hit the node's filesystem cache.

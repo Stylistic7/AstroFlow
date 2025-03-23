@@ -6,12 +6,10 @@ from stacks.artifacts import output_filename
 from stacks.composite_stack import CompositeStack, CompositeStacksDict
 from stacks import post_process_stack_artifacts
 from artifacts import artifact_exists
-from profiling import track_performance
 
 
 # TODO: Include error messages, exceptions, etc. here to inform the user.
 @ray.remote
-@track_performance
 def update_state(stacks: CompositeStacksDict) -> CompositeStacksDict:
   print('### Entering update_state')
   output_stacks = CompositeStacksDict()

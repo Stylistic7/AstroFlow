@@ -8,7 +8,7 @@ from customization.types import CustomizedStack
 from customization.subframe_selection import get_light_frames_sorted_by_stars
 
 
-@AstroFlowNode(cache_result=True)
+@AstroFlowNode(cache_result=True, track_performance=True)
 def create_flat_correction_thumbnails(stack: CustomizedStack) -> None:
   calibration_stacks = context.calibration_stacks
 
