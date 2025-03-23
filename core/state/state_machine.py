@@ -37,7 +37,7 @@ def _init(state: State, action: Action) -> tuple[State, list[Action]]:
   new_actions.append(Action(type='start_zeroconf'))
 
   cache = get_cache()
-  if cache['ray_head_node_enabled']:
+  if cache.get('ray_head_node_enabled', False):
     new_actions.append(Action(type='start_ray_head_node'))
     new_actions.append(Action(type='advertise_zeroconf'))
 
@@ -87,7 +87,7 @@ def _stop_ray_node(state: State, action: Action) -> tuple[State, list[Action]]:
 def _update_zeroconf_services(state: State,
                               action: Action) -> tuple[State, list[Action]]:
   cache = get_cache()
-  if cache['ray_head_node_enabled']:
+  if cache.get('ray_head_node_enabled', False):
     return state, []
 
   if 'ray_process' in state:
