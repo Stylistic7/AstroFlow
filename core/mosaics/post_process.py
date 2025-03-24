@@ -11,7 +11,7 @@ from previews import QualityLevel
 from mosaics.types import Mosaic
 
 
-@PixInsight()
+@PixInsight(slots=[1])
 def _post_process_mosaic(images: ImageList, mosaic: Mosaic,
                          output_filename: Path):
   print(f'### _post_process_mosaic mosaic {mosaic} images {images}')

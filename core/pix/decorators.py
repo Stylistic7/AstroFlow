@@ -55,7 +55,8 @@ from pix.tasks import OpenImages, SaveImages
 
 
 # TODO: Refactor this function into pieces.
-def PixInsight(dry_run: bool = False) -> Callable[[PixInsightFn], PixInsightFn]:
+def PixInsight(
+    slots: list[int] | None = None) -> Callable[[PixInsightFn], PixInsightFn]:
 
   def decorator(func: PixInsightFn) -> PixInsightFn:
 
@@ -106,7 +107,6 @@ def PixInsight(dry_run: bool = False) -> Callable[[PixInsightFn], PixInsightFn]:
 
       # Call the decorated PixInsight function.
       print(f'### Calling PixInsight function {func_name}')
-
       results = call_with_context(func, images, *args, **kwargs)
       assert isinstance(context['tasks'], list)
       print(f'### PixInsight function {func_name} returned correctly, '
@@ -122,16 +122,9 @@ def PixInsight(dry_run: bool = False) -> Callable[[PixInsightFn], PixInsightFn]:
       results = normalize_images(results)
       call_with_context(SaveImages, results)
 
-      # In dry_run mode, just touch all of the files that the tasks claim they
-      # produce. Otherwise, run the script.
-      if dry_run:
-        for result in results:
-          assert result.filename is not None
-          (Path(tmp_dir_obj.name) / result.filename).touch()
-      else:
-        print(f"### Shell script is ready for {func_name}, with "
-              f"{len(context['tasks'])} tasks")
-        run_script(context['tasks'], dry_run=dry_run)
+      print(f"### Shell script is ready for {func_name}, with "
+            f"{len(context['tasks'])} tasks")
+      run_script(context['tasks'], slots=slots)
 
       return results
 

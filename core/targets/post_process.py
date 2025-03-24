@@ -8,7 +8,7 @@ from targets.types import TargetHash
 
 
 # TODO: Find a way to disable these during tests.
-@PixInsight()
+@PixInsight(slots=[1])
 def _post_process_target(images: ImageList) -> ImageList:
   # print('### Entering _post_process_target')
   # aligned = pix.StarAlignment(images)

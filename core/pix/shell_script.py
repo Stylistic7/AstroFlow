@@ -8,11 +8,16 @@ import os
 import sys
 import uuid
 import re
+from contextlib import contextmanager
+from diskcache import Lock
 
+# TODO: Maybe inject this somewhere so pix can stay independent.
+from context import get_cache
 from pix.classes import ShellScriptTask
 
+# Put these in the UI somewhere.
 _PIXINSIGHT_EXECUTABLE = "/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight"
-_SLOT_NUMBER: int = 1
+_DEFAULT_SLOTS: list[int] = [2, 1]
 
 
 def _find_running_pixinsight_instances() -> dict[int, int]:
@@ -34,7 +39,7 @@ def _find_running_pixinsight_instances() -> dict[int, int]:
   return slot_pid_map
 
 
-def _start_pixinsight_instance(slot: int = _SLOT_NUMBER) -> int:
+def _start_pixinsight_instance(slot: int) -> int:
   # This should be start and detach. If it's already started, this
   # attempt should just exit immediately with no other effect.
   subprocess.Popen([
@@ -73,50 +78,88 @@ def _create_run_command(task: ShellScriptTask) -> str:
   return f'run -x {arguments} {parameters} "{task.javascript_filename}"'
 
 
+def _cleanup_stale_locks(cache, prefix="pixinsight-slot-"):
+  for key in cache.iterkeys():
+    if isinstance(key, str) and key.startswith(prefix):
+      del cache[key]
+
+
+cache = get_cache()
+_cleanup_stale_locks(cache)
+
+
+@contextmanager
+def _acquire_slot(slots=None):
+  if slots is None:
+    slots = _DEFAULT_SLOTS
+
+  pid = os.getpid()
+
+  while True:
+    for slot in slots:
+      key = f"pixinsight-slot-{slot}"
+
+      acquired = False
+      with cache.transact():
+        if key not in cache:
+          cache[key] = pid
+          acquired = True
+
+      if acquired:
+        try:
+          yield slot
+        finally:
+          del cache[key]
+        return
+
+    # All slots were taken — back off briefly
+    time.sleep(1)
+
+
 # TODO: Maybe allow multiple PixInsight instances.
 # TODO: Add a start sentinel that gets written to disk when the script starts.
 # If, after some timeout, the script hasn't started, kill it and either retry
 # or more on to the next one. Obey Ray's retry mechanism.
 def run_script(tasks: list[ShellScriptTask],
+               slots: list[int] | None = None,
                tmp_dir_in: str | None = None,
                close_after: bool = True,
-               sleep_after: bool = False,
-               dry_run: bool = False) -> None:
+               sleep_after: bool = False) -> None:
   assert tasks
 
-  if not dry_run:
-    if _SLOT_NUMBER not in _find_running_pixinsight_instances():
-      _start_pixinsight_instance()
+  with _acquire_slot(slots) as slot:
+    assert slot is not None
+    _start_pixinsight_instance(slot)
 
-  with (tempfile.TemporaryDirectory() if tmp_dir_in is None else cast(
-      ContextManager, nullcontext(tmp_dir_in))) as tmp_dir:
-    start_sentinel_filename = os.path.join(tmp_dir, 'start_sentinel.txt')
-    end_sentinel_filename = os.path.join(tmp_dir, 'end_sentinel.txt')
-    script_filename = os.path.join(tmp_dir, 'script.scp')
+    with (tempfile.TemporaryDirectory() if tmp_dir_in is None else cast(
+        ContextManager, nullcontext(tmp_dir_in))) as tmp_dir:
+      start_sentinel_filename = os.path.join(tmp_dir, 'start_sentinel.txt')
+      end_sentinel_filename = os.path.join(tmp_dir, 'end_sentinel.txt')
+      script_filename = os.path.join(tmp_dir, 'script.scp')
 
-    tasks = [_save_javascript_file(tmp_dir, t) for t in tasks]
-    script = f'![echo "start" > {start_sentinel_filename}\n'
-    script += '\n\n'.join(_create_run_command(t) for t in tasks) + '\n\n'
-    if close_after:
-      script += f'close --force *\n'
-    if sleep_after:
-      script += f'!sleep 30\n'
-    script += f'![echo "end" > {end_sentinel_filename}\n'
+      tasks = [_save_javascript_file(tmp_dir, t) for t in tasks]
+      script = f'![echo "start" > {start_sentinel_filename}\n'
+      script += '\n\n'.join(_create_run_command(t) for t in tasks) + '\n\n'
+      if close_after:
+        script += f'close --force *\n'
+      if sleep_after:
+        script += f'!sleep 30\n'
+      script += f'![echo "end" > {end_sentinel_filename}\n'
 
-    with open(script_filename, "w") as f:
-      print('### toplevel script is', script)
-      f.write(script)
+      with open(script_filename, "w") as f:
+        print('### toplevel script is', script)
+        f.write(script)
 
-    if not dry_run:
       print(f'Running PixInsight shell script...')
-      ret = subprocess.run([
-          _PIXINSIGHT_EXECUTABLE, f'--execute={_SLOT_NUMBER}:{script_filename}'
-      ]).returncode
+      ret = subprocess.run(
+          [_PIXINSIGHT_EXECUTABLE,
+           f'--execute={slot}:{script_filename}']).returncode
       print(f'--execute returned')
 
       while not os.path.exists(start_sentinel_filename):
         # TODO: Bring the PixInsight window to the front on other platforms,
         # too.
+        # TODO: Does this work with any / all slots?
         print(f'Forcing PixInsight to the foreground...')
         if sys.platform == 'darwin':
           subprocess.run(
@@ -125,5 +168,5 @@ def run_script(tasks: list[ShellScriptTask],
 
         time.sleep(5)
 
-      while not os.path.exists(end_sentinel_filename):
-        time.sleep(1)
+        while not os.path.exists(end_sentinel_filename):
+          time.sleep(1)

@@ -132,10 +132,11 @@ def build_main_processing_graph() -> Graph:
   targets = context.targets
   mosaics = context.mosaics
   shopping_cart = context.shopping_cart or []
-  print(f'### build_main_processing_graph shopping_cart {shopping_cart}')
 
   # FIXME
   shopping_cart = [('stack', i) for i in stacks.keys()]
+
+  print(f'### build_main_processing_graph shopping_cart {shopping_cart}')
 
   # TODO: Maybe add prioritization options in the UI.
   graph = Graph({})

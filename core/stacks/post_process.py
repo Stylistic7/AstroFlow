@@ -11,7 +11,7 @@ from customization.types import CustomizedStack
 from stacks.artifacts import output_filename
 
 
-@PixInsight()
+@PixInsight(slots=[1])
 def _post_process_stack(images: ImageList) -> ImageList:
   images = BlurXTerminator(images)
   images = GradientCorrection(images)
