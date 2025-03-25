@@ -30,6 +30,7 @@ from compute_graph import build_compute_graph
 from dependency_graph import run_graph, graph_status_to_progress
 from dependency_graph.debugging import node_to_string
 from previews import QualityLevel, autostretch, array_to_png
+from web_server.backend.tiles import tiles_bp
 
 from stacks.composite_stack import CompositeStack
 from file_io.generic import read_image
@@ -48,6 +49,9 @@ announcer = MessageAnnouncer()
 # it properly.
 def status_fn(status):
   global compute_graph_status
+  print(f'### status_fn {len(status.ready_nodes)} ready '
+        f'{len(status.waiting_nodes)} waiting '
+        f'{len(status.done_nodes)} done')
 
   compute_graph_status = graph_status_to_progress(status)
   announcer.announce('compute_graph_status')
@@ -88,9 +92,6 @@ def get_plot_html():
   return buffer.getvalue()
 
 
-# Create the application.
-# app = flask.Flask(__name__, template_folder='./templates')
-
 from base_path import get_base_path
 
 base_path = get_base_path()
@@ -108,6 +109,8 @@ else:
       template_folder=f'{base_path}/core/web_server/frontend/build',
       static_folder=f'{base_path}/core/web_server/frontend/build/static',
   )
+
+app.register_blueprint(tiles_bp)
 
 
 # TODO: Move computations into new files.
@@ -610,12 +613,13 @@ def run_compute_graph():
   context.output_dir = '/Volumes/Astro/Processed'
 
   # TODO: Put these in the UI.
-  context.ignore_cached_results = False
-  context.dangerously_accept_existing_files = False
+
+  context.ignore_cached_results = True
+  context.dangerously_accept_existing_files = True
 
   # TODO: Determine `regroup` automatically.
-  graph = build_compute_graph(regroup=False,
-                              make_previews=False,
+  graph = build_compute_graph(regroup=True,
+                              make_previews=True,
                               run_main_processing_graph=True)
 
   def _run_graph(*args, **kwargs):
@@ -634,13 +638,12 @@ def run_compute_graph():
     }
 
   print('### Running compute graph!')
-  thread = threading.Thread(
-      target=_run_graph,
-      args=(graph,),
-      kwargs={
-          # 'status_fn': status_fn,
-          'debug': False
-      })
+  thread = threading.Thread(target=_run_graph,
+                            args=(graph,),
+                            kwargs={
+                                'status_fn': status_fn,
+                                'debug': False
+                            })
   thread.daemon = True
   thread.start()
 
