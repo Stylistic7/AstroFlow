@@ -1,72 +1,130 @@
-import { useEffect, useState } from 'react';
-import { Texture } from 'pixi.js';
-import { Stage, Container, Sprite } from '@pixi/react';
+import { useEffect, useRef } from 'react';
+import * as PIXI from 'pixi.js';
+import { Stage, useApp } from '@pixi/react';
 import { useParams } from 'react-router-dom';
+import { Viewport } from 'pixi-viewport';
+
+if (!PIXI.EventSystem.prototype.__astroflow_patched__) {
+  const original = PIXI.EventSystem.prototype.mapPositionToPoint;
+  PIXI.EventSystem.prototype.mapPositionToPoint = function (point, x, y) {
+    if (!this.domElement || !this.domElement.isConnected) return;
+    return original.call(this, point, x, y);
+  };
+  PIXI.EventSystem.prototype.__astroflow_patched__ = true;
+}
+
 
 const TILE_SIZE = 256;
 
-const TileViewer = ({ maxZoom = 5, minZoom = 0 }) => {
+const TileViewer = ({ maxZoom = 3 }) => {
   const { imageHash } = useParams();
-
-  if (!imageHash) return null;
+  const worldWidth = TILE_SIZE * Math.pow(2, maxZoom);
+  const worldHeight = TILE_SIZE * Math.pow(2, maxZoom);
 
   return (
-    <Stage width={800} height={600} options={{ background: 0x000000 }}>
-      <Container>
-        <TileLayer imageHash={imageHash} maxZoom={maxZoom} minZoom={minZoom} />
-      </Container>
+    <Stage
+      width={800}
+      height={600}
+      options={{ backgroundColor: 0x222222 }}
+    >
+      <ImperativeViewport
+        imageHash={imageHash}
+        worldWidth={worldWidth}
+        worldHeight={worldHeight}
+        maxZoom={maxZoom}
+      />
     </Stage>
   );
 };
 
-const TileLayer = ({ imageHash, maxZoom, minZoom }) => {
-  const [tiles, setTiles] = useState([]);
+const ImperativeViewport = ({ imageHash, worldWidth, worldHeight, maxZoom }) => {
+  const app = useApp();
+  const viewportRef = useRef(null);
+  const spritesRef = useRef({});
 
   useEffect(() => {
-    const z = maxZoom;
-    const xStart = 0;
-    const yStart = 0;
-    const xEnd = Math.ceil(800 / TILE_SIZE);
-    const yEnd = Math.ceil(600 / TILE_SIZE);
+    if (!app.renderer.view || !app.renderer.events?.rootBoundary) return;
 
-    const newTiles = [];
+    const rafId = requestAnimationFrame(() => {
+      const viewport = new Viewport({
+        screenWidth: app.renderer.width,
+        screenHeight: app.renderer.height,
+        worldWidth,
+        worldHeight,
+        events: app.renderer.events,
+        interaction: app.renderer.plugins.interaction,
+        passiveWheel: false,
+      });
 
-    for (let x = xStart; x < xEnd; x++) {
-      for (let y = yStart; y < yEnd; y++) {
-        const url = `/tiles/${imageHash}/${z}/${x}/${y}.png`;
-        newTiles.push({ url, x, y });
-      }
-    }
+      viewport.drag().pinch().decelerate();
+      setTimeout(() => viewport.wheel(), 1000); // ✅ Delay wheel activation to avoid crash
 
-    setTiles(newTiles);
-  }, [imageHash, maxZoom]);
+      viewport.clampZoom({ minScale: 0.5, maxScale: 4 });
+      viewport.moveCenter(worldWidth / 2, worldHeight / 2);
 
-  return (
-    <>
-      {tiles.map(({ url, x, y }) => (
-        <SpriteTile key={url} url={url} x={x * TILE_SIZE} y={y * TILE_SIZE} />
-      ))}
-    </>
-  );
-};
+      viewportRef.current = viewport;
+      app.stage.addChild(viewport);
 
-const SpriteTile = ({ url, x, y }) => {
-  const [texture, setTexture] = useState(null);
+      const updateTiles = () => {
+        const z = maxZoom;
+        const bounds = viewport.getVisibleBounds();
+        const xStart = Math.floor(bounds.x / TILE_SIZE);
+        const yStart = Math.floor(bounds.y / TILE_SIZE);
+        const xEnd = Math.ceil((bounds.x + bounds.width) / TILE_SIZE);
+        const yEnd = Math.ceil((bounds.y + bounds.height) / TILE_SIZE);
 
-  useEffect(() => {
-    let isMounted = true;
-    Texture.fromURL(url)
-      .then((tex) => {
-        if (isMounted) setTexture(tex);
-      })
-      .catch(() => { });
+        const newKeys = new Set();
+
+        for (let x = xStart; x < xEnd; x++) {
+          for (let y = yStart; y < yEnd; y++) {
+            const key = `${z}/${x}/${y}`;
+            newKeys.add(key);
+
+            if (!spritesRef.current[key]) {
+              const url = `/tiles/${imageHash}/${z}/${x}/${y}.png`;
+              PIXI.Texture.fromURL(url).then((texture) => {
+                const sprite = new PIXI.Sprite(texture);
+                sprite.x = x * TILE_SIZE;
+                sprite.y = y * TILE_SIZE;
+                sprite.width = TILE_SIZE;
+                sprite.height = TILE_SIZE;
+                viewport.addChild(sprite);
+                spritesRef.current[key] = sprite;
+              }).catch((err) => {
+                console.warn(`Failed to load tile: ${url}`, err);
+              });
+            }
+          }
+        }
+
+        for (const key in spritesRef.current) {
+          if (!newKeys.has(key)) {
+            const sprite = spritesRef.current[key];
+            viewport.removeChild(sprite);
+            sprite.destroy();
+            delete spritesRef.current[key];
+          }
+        }
+      };
+
+      updateTiles();
+      viewport.on('moved-end', updateTiles);
+      viewport.on('zoomed-end', updateTiles);
+
+      // Cleanup
+      return () => {
+        viewport.destroy();
+        Object.values(spritesRef.current).forEach((sprite) => sprite.destroy());
+        spritesRef.current = {};
+      };
+    });
+
     return () => {
-      isMounted = false;
+      cancelAnimationFrame(rafId);
     };
-  }, [url]);
+  }, [app, imageHash, maxZoom, worldWidth, worldHeight]);
 
-  if (!texture) return null;
-  return <Sprite texture={texture} x={x} y={y} width={TILE_SIZE} height={TILE_SIZE} />;
+  return null;
 };
 
 export default TileViewer;
