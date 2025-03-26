@@ -1,9 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Search from "./Search.jsx";
 import Starmap from "./Starmap.jsx";
-import TargetTable from "./TargetTable.jsx";
-import StackTable from "./StackTable.jsx";
-import MosaicTable from "./MosaicTable.jsx";
 import MosaicPanel from "./MosaicPanel.jsx";
 import TargetPanel from "./TargetPanel.jsx";
 import StackPanel from "./StackPanel.jsx";
@@ -25,6 +22,7 @@ import AstroFlowBreadcrumbs from "./AstroFlowBreadcrumbs.jsx";
 import { Stack } from '@mui/material';
 import ProgressComponent from './ProgressComponent.jsx';
 import WorkflowGraph from './WorkflowGraph.jsx';
+import TileViewer from './TileViewer.jsx';
 
 
 function App() {
@@ -178,6 +176,9 @@ function App() {
                   <Search />
                   <DisambiguationPanel />
                 </>}
+              />
+              <Route exact path="/tile_viewer/:imageHash" element={
+                <TileViewer />}
               />
               <Route exact path="/recent" element={
                 dataIsAvailable && <>
