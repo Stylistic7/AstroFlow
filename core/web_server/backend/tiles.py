@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import tifffile
 from PIL import Image
-from flask import Blueprint, send_file, abort
+from flask import Blueprint, send_file, abort, jsonify
 
 from context import context
 from stacks.artifacts import output_filename
@@ -84,6 +84,19 @@ def get_cached_image(stack_id: StackHash):
         "last_used": now,
     }
     return handle
+
+
+@tiles_bp.route('/tile_metadata/<image_hash>')
+def tile_metadata(image_hash):
+  source = get_cached_image(image_hash)
+  meta = source.getMetadata()
+  return jsonify({
+      'width': meta['sizeX'],
+      'height': meta['sizeY'],
+      'tileWidth': meta['tileWidth'],
+      'tileHeight': meta['tileHeight'],
+      'maxZoom': meta['levels'] - 1
+  })
 
 
 @tiles_bp.route("/tiles/<stack_id>/<int:z>/<int:x>/<int:y>.png")

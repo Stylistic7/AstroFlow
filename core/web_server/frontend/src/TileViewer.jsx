@@ -76,6 +76,19 @@ const ImperativeViewport = ({ imageHash, imageWidth, imageHeight, worldWidth, wo
       viewportRef.current = viewport;
       app.stage.addChild(viewport);
 
+      const updateClamp = () => {
+        const scale = viewport.scale.x;
+        const halfWidth = (screenWidth / scale) / 2;
+        const halfHeight = (screenHeight / scale) / 2;
+
+        viewport.clamp({
+          left: -halfWidth,
+          right: imageWidth + halfWidth,
+          top: -halfHeight,
+          bottom: imageHeight + halfHeight,
+        });
+      };
+
       const updateTiles = () => {
         const scale = viewport.scale.x;
         const pixelsPerScreenPixel = 1 / scale;
@@ -119,6 +132,8 @@ const ImperativeViewport = ({ imageHash, imageWidth, imageHeight, worldWidth, wo
               });
           }
         }
+
+        updateClamp();
       };
 
       updateTiles();

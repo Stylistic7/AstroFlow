@@ -178,7 +178,10 @@ function App() {
                 </>}
               />
               <Route exact path="/tile_viewer/:imageHash" element={
-                <TileViewer />}
+                <>
+                  <Search />
+                  <TileViewer />
+                </>}
               />
               <Route exact path="/recent" element={
                 dataIsAvailable && <>
