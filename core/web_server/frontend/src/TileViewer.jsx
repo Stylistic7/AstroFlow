@@ -6,8 +6,9 @@ import { Viewport } from 'pixi-viewport';
 
 const TILE_SIZE = 256;
 
-const TileViewer = () => {
-  const { imageHash } = useParams();
+const TileViewer = ({ imageHash: imageHashProp }) => {
+  const { imageHash: imageHashParam } = useParams();
+  const imageHash = imageHashProp ?? imageHashParam;
   const [metadata, setMetadata] = useState(null);
 
   useEffect(() => {
