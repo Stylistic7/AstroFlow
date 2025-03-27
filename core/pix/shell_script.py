@@ -21,22 +21,25 @@ _DEFAULT_SLOTS: list[int] = [1]
 
 
 def _find_running_pixinsight_instances() -> dict[int, int]:
-  command = [_PIXINSIGHT_EXECUTABLE, "-e"]
-  result = subprocess.run(command, text=True, capture_output=True, check=True)
-  output = result.stdout
+  try:
+    command = [_PIXINSIGHT_EXECUTABLE, "-e"]
+    result = subprocess.run(command, text=True, capture_output=True, check=True)
+    output = result.stdout
 
-  slot_pid_map = {}
-  lines = output.splitlines()
+    slot_pid_map = {}
+    lines = output.splitlines()
 
-  # Look for lines with the slot and pid information
-  for line in lines:
-    match = re.match(r"^\s*(\d+)\s+(\d+)$", line)
-    if match:
-      slot = int(match.group(1))
-      pid = int(match.group(2))
-      slot_pid_map[slot] = pid
+    # Look for lines with the slot and pid information
+    for line in lines:
+      match = re.match(r"^\s*(\d+)\s+(\d+)$", line)
+      if match:
+        slot = int(match.group(1))
+        pid = int(match.group(2))
+        slot_pid_map[slot] = pid
 
-  return slot_pid_map
+    return slot_pid_map
+  except:
+    return []
 
 
 def _start_pixinsight_instance(slot: int) -> int:
