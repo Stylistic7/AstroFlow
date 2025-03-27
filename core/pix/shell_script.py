@@ -17,7 +17,7 @@ from pix.classes import ShellScriptTask
 
 # Put these in the UI somewhere.
 _PIXINSIGHT_EXECUTABLE = "/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight"
-_DEFAULT_SLOTS: list[int] = [2, 1]
+_DEFAULT_SLOTS: list[int] = [1]
 
 
 def _find_running_pixinsight_instances() -> dict[int, int]:

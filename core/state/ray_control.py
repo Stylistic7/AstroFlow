@@ -16,7 +16,7 @@ def start_ray_head_node():
   # TODO: Check for an existing Ray head node.
   ray_path = get_bin_dir() / 'ray'
   # TODO: Put these resources in the UI.
-  resources = """'{"PixInsight": 2, "diskcache": 1, "fastest_storage": 1}'"""
+  resources = """'{"PixInsight": 1, "diskcache": 1, "fastest_storage": 1}'"""
   command = f"""ulimit -n 10000 && {ray_path} start --head --resources {resources}"""
   print(f'### Starting Ray head node with command "{command}"')
   process = subprocess.Popen(
@@ -53,7 +53,7 @@ def get_ip() -> str:
 def start_ray_subordinate_node(head_node_address):
   ray_path = get_bin_dir() / 'ray'
   # TODO: Put these resources in the UI.
-  resources = """'{"PixInsight": 2}'"""
+  resources = """'{"PixInsight": 1}'"""
   command = f"""ulimit -n 10000 && {ray_path} start --address {head_node_address}:6379 --node-ip-address {get_ip()} --resources {resources}"""
   print(f'### Starting Ray subordinate node with command "{command}"')
   process = subprocess.Popen(
