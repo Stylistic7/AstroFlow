@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useContext } from 'react';
 
 import DeleteIcon from '@mui/icons-material/Delete';
+import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
@@ -22,6 +23,7 @@ import AstroFlowContext from './AstroFlowContext.jsx';
 import DivWithActions from './DivWithActions.jsx';
 import StackActionButtons from './StackActionButtons.jsx';
 import { ra_to_hms, dec_to_dms } from './units.js'
+import TileViewer from './TileViewer.jsx';
 
 function QuarantineStackDialog({ stack_id }) {
 	const [open, setOpen] = React.useState(false);
@@ -204,6 +206,9 @@ export default function StackPanel() {
 						stack_id={params.stack_id}
 					/>
 				</div>
+				<Box sx={{ width: '75vw', height: '75vh', border: '1px solid #444' }}>
+					<TileViewer imageHash={params.stack_id} />
+				</Box>
 				{/* <div ref={plotRef} style={{ maxWidth: "30%" }}></div> */}
 
 				{promiseInProgress ? (

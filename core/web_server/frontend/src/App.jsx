@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import Box from '@mui/material/Box';
 import Search from "./Search.jsx";
 import Starmap from "./Starmap.jsx";
 import MosaicPanel from "./MosaicPanel.jsx";
@@ -132,7 +133,7 @@ function App() {
               <Route exact path="/stack/:stack_id" element={
                 dataIsAvailable && <>
                   <Search />
-                  <MosaicPanel />
+                  <StackPanel />
                 </>}
               />
               <Route exact path="/target/:target_id" element={
@@ -178,10 +179,9 @@ function App() {
                 </>}
               />
               <Route exact path="/tile_viewer/:imageHash" element={
-                <>
-                  <Search />
+                <Box sx={{ width: '100vw', height: '100vh' }}>
                   <TileViewer />
-                </>}
+                </Box>}
               />
               <Route exact path="/recent" element={
                 dataIsAvailable && <>
