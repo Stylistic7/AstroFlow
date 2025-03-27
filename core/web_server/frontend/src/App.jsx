@@ -24,6 +24,7 @@ import { Stack } from '@mui/material';
 import ProgressComponent from './ProgressComponent.jsx';
 import WorkflowGraph from './WorkflowGraph.jsx';
 import TileViewer from './TileViewer.jsx';
+import StackViewer from './StackViewer.jsx';
 
 
 function App() {
@@ -180,7 +181,8 @@ function App() {
               />
               <Route exact path="/tile_viewer/:imageHash" element={
                 <Box sx={{ width: '100vw', height: '100vh' }}>
-                  <TileViewer />
+                  {/* <TileViewer /> */}
+                  <StackViewer />
                 </Box>}
               />
               <Route exact path="/recent" element={
