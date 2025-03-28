@@ -6,6 +6,7 @@ import time
 from typing import Callable, Any
 from objsize import get_deep_size
 from ray.remote_function import RemoteFunction
+import numpy as np
 
 from dependency_graph import Node, Graph, CanonicalGraph, GraphStatus, ResultDict, TopologicalSorterWithStatus, GenericRemoteFunction, canonicalize_graph
 from dependency_graph.logging import LogContainer
@@ -184,9 +185,8 @@ def run_graph(graph: Graph,
     remaining_refs = list(ref_to_ts_and_node.keys())
 
     while len(remaining_refs):
-      ready_refs, remaining_refs = ray.wait(remaining_refs,
-                                            num_returns=min(
-                                                1000, len(remaining_refs)))
+      ready_refs, remaining_refs = ray.wait(
+          remaining_refs, num_returns=int(np.ceil(len(remaining_refs) / 10)))
 
       for ready_ref in ready_refs:
         ts, node = ref_to_ts_and_node[ready_ref]
