@@ -200,8 +200,6 @@ export default function PrimarySearchAppBar() {
     </Menu>
   );
 
-  const Offset = styled('div')(({ theme }) => theme.mixins.toolbar);
-
   return (
     <Box sx={{ flexGrow: 1 }}>
       <AppBar position="fixed">
@@ -269,10 +267,10 @@ export default function PrimarySearchAppBar() {
             </IconButton>
           </Box>
         </Toolbar>
-        <AstroFlowBreadcrumbs />
+        <Box>
+          <AstroFlowBreadcrumbs />
+        </Box>
       </AppBar>
-      <Offset />
-      <Breadcrumbs sx={{ padding: "1.4em" }} />
       {renderMobileMenu}
       {renderMenu}
     </Box>

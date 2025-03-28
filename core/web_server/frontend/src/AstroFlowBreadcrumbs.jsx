@@ -46,7 +46,7 @@ export default function AstroFlowBreadcrumbs() {
 
     return <>
         <Breadcrumbs aria-label="breadcrumb" sx={{
-            padding: "10px",
+            padding: "12px",
             backgroundColor: theme.palette.background.default,
         }}>
             <Link
@@ -127,7 +127,7 @@ export default function AstroFlowBreadcrumbs() {
                 color="inherit"
             >
                 <LayersIcon sx={{ marginRight: '0.5em' }} />
-                Stack "{stack.target}"
+                Stack "{stack.name}"
             </Link>}
         </Breadcrumbs>
     </>;

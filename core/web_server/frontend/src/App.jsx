@@ -4,7 +4,6 @@ import Search from "./Search.jsx";
 import Starmap from "./Starmap.jsx";
 import MosaicPanel from "./MosaicPanel.jsx";
 import TargetPanel from "./TargetPanel.jsx";
-import StackPanel from "./StackPanel.jsx";
 import DisambiguationPanel from "./DisambiguationPanel.jsx";
 import RecentPanel from "./RecentPanel.jsx";
 import SsePanel from "./SsePanel.jsx";
@@ -25,6 +24,7 @@ import ProgressComponent from './ProgressComponent.jsx';
 import WorkflowGraph from './WorkflowGraph.jsx';
 import TileViewer from './TileViewer.jsx';
 import StackViewer from './StackViewer.jsx';
+import AppLayout from './AppLayout.jsx';
 
 
 function App() {
@@ -126,71 +126,63 @@ function App() {
           <Router>
             <Routes>
               <Route exact path="/" element={
-                <>
-                  <Search />
+                <AppLayout>
                   <Starmap />
-                </>
+                </AppLayout>
               } />
               <Route exact path="/stack/:stack_id" element={
-                dataIsAvailable && <>
-                  <Search />
-                  <StackPanel />
-                </>}
-              />
+                dataIsAvailable &&
+                <AppLayout>
+                  <StackViewer />
+                </AppLayout>
+              } />
               <Route exact path="/target/:target_id" element={
-                dataIsAvailable && <>
-                  <Search />
+                dataIsAvailable &&
+                <AppLayout>
                   <TargetPanel />
-                </>}
-              />
+                </AppLayout>
+              } />
               <Route exact path="/mosaic/:mosaic_id" element={
-                dataIsAvailable && <>
-                  <Search />
+                dataIsAvailable &&
+                <AppLayout>
                   <MosaicPanel />
-                </>}
-              />
+                </AppLayout>
+              } />
               <Route exact path="/target/:target_id/stack/:stack_id" element={
-                dataIsAvailable && <>
-                  <Search />
-                  <StackPanel />
-                </>}
-              />
+                dataIsAvailable &&
+                <AppLayout>
+                  <StackViewer />
+                </AppLayout>
+              } />
               <Route exact path="/mosaic/:mosaic_id/target/:target_id" element={
-                dataIsAvailable && <>
-                  <Search />
+                dataIsAvailable &&
+                <AppLayout>
                   <TargetPanel />
-                </>}
+                </AppLayout>}
               />
               <Route exact path="/mosaic/:mosaic_id/target/:target_id/stack/:stack_id" element={
-                dataIsAvailable && <>
-                  <Search />
-                  <StackPanel />
-                </>}
-              />
-              <Route exact path="/flat_correction/:stack_id" element={
-                dataIsAvailable && <>
-                  <Search />
-                  <FlatCorrectionPanel stacks={stacks} />
-                </>}
-              />
+                dataIsAvailable &&
+                <AppLayout>
+                  <StackViewer />
+                </AppLayout>
+              } />
               <Route exact path="/disambiguation/:items" element={
-                dataIsAvailable && <>
-                  <Search />
+                dataIsAvailable &&
+                <AppLayout>
                   <DisambiguationPanel />
-                </>}
-              />
+                </AppLayout>
+              } />
               <Route exact path="/tile_viewer/:imageHash" element={
                 <Box sx={{ width: '100vw', height: '100vh' }}>
-                  {/* <TileViewer /> */}
-                  <StackViewer />
-                </Box>}
-              />
+                  <TileViewer />
+                </Box>
+              } />
               <Route exact path="/recent" element={
-                dataIsAvailable && <>
-                  <Search />
+                dataIsAvailable &&
+                <AppLayout>
                   <RecentPanel />
-                </>}
-              />
+                </AppLayout>
+              } />
               <Route exact path="/sse" element={
                 dataIsAvailable && <SsePanel />}
               />

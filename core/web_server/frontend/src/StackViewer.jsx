@@ -8,7 +8,7 @@ import StackTabs from './StackTabs.jsx';
 
 const StackViewer = () => {
   const { stacks } = useContext(AstroFlowContext);
-  const { imageHash: stack_id } = useParams();
+  const { stack_id } = useParams();
   const stack = stacks?.[stack_id];
 
   if (!stacks || Object.keys(stacks).length === 0) {
@@ -25,7 +25,7 @@ const StackViewer = () => {
   }
 
   return (
-    <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <StackHeader stack={stack} stack_id={stack_id} />
       <StackTabs stack={stack} stack_id={stack_id} />
     </Box>

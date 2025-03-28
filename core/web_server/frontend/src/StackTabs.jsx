@@ -41,7 +41,7 @@ const StackTabs = ({ stack, stack_id }) => {
         minHeight: 0,
       }}
     >
-      <Box sx={{ backgroundColor: 'rgba(255,255,255,0.05)', px: 2, pt: 1 }}>
+      <Box sx={{ backgroundColor: 'rgba(255,255,255,0.05)', px: 2 }}>
         <Tabs
           value={tabIndex}
           onChange={(_e, newIndex) => setTabIndex(newIndex)}
