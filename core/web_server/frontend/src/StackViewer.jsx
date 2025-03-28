@@ -7,6 +7,7 @@ import {
   IconButton,
   Paper,
   Divider,
+  CircularProgress,
   useTheme,
 } from '@mui/material';
 import { useParams } from 'react-router-dom';
@@ -28,6 +29,7 @@ const StackViewer = () => {
   const [tabIndex, setTabIndex] = useState(0);
   const [selectedFlatsByRun, setSelectedFlatsByRun] = useState({});
   const [flatIds, setFlatIds] = useState([]);
+  const [tileViewerAvailable, setTileViewerAvailable] = useState(true);
   const videoRef = useRef(null);
 
   const stack = stacks?.[stack_id];
@@ -48,7 +50,30 @@ const StackViewer = () => {
     fetchFlats();
   }, [camera, filter]);
 
-  if (!stack) return <Typography>Stack not found: {stack_id}</Typography>;
+  useEffect(() => {
+    const checkTile = async () => {
+      try {
+        const res = await fetch(`/tiles/${stack_id}/0/0/0.png`, { method: 'HEAD' });
+        setTileViewerAvailable(res.ok);
+      } catch (err) {
+        setTileViewerAvailable(false);
+      }
+    };
+    if (stack_id) checkTile();
+  }, [stack_id]);
+
+  if (!stacks || Object.keys(stacks).length === 0) {
+    return (
+      <Box sx={{ p: 3, display: 'flex', alignItems: 'center', gap: 2 }}>
+        <CircularProgress size={24} />
+        <Typography>Loading stack data…</Typography>
+      </Box>
+    );
+  }
+
+  if (!stack) {
+    return <Typography>Stack not found: {stack_id}</Typography>;
+  }
 
   const runs = Object.entries(stack.contents || {}).map(([runId, run]) => ({ id: runId, ...run }));
 
@@ -68,7 +93,7 @@ const StackViewer = () => {
 
   return (
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: 'background.default' }}>
-      <Paper elevation={3} sx={{ p: 2, m: 2 }}>
+      <Paper elevation={3} sx={{ p: 2 }}> {/* removed m: 2 to eliminate black gap */}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <Box>
             <Typography variant="h5" gutterBottom>
@@ -123,7 +148,13 @@ const StackViewer = () => {
         <Box sx={{ flex: 1, overflow: tabIndex === 2 ? 'auto' : 'hidden', p: 3, minHeight: 0 }}>
           {tabIndex === 0 && (
             <Box sx={{ height: '100%', overflow: 'hidden' }}>
-              <TileViewer imageHash={stack_id} />
+              {tileViewerAvailable ? (
+                <TileViewer imageHash={stack_id} />
+              ) : (
+                <Typography align="center" variant="h6" sx={{ mt: 10 }}>
+                  This stack has not been integrated yet.
+                </Typography>
+              )}
             </Box>
           )}
 
@@ -175,7 +206,8 @@ const StackViewer = () => {
                             key={flatId}
                             onClick={() => handleSelectFlat(run.id, flatId)}
                             sx={{
-                              border: isSelected ? '4px solid #2196f3' : '2px solid transparent',
+                              border: '2px solid transparent',
+                              outline: isSelected ? '2px solid #2196f3' : 'none',
                               borderRadius: 2,
                               cursor: 'pointer',
                               flexShrink: 0,
