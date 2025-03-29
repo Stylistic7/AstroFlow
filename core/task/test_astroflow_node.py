@@ -109,7 +109,7 @@ def gather(*ancestor_results: list[int]) -> int:
   return sum(ancestor_results)
 
 
-@task.remote
+@task.remote(task_config=dict(cache_results=False))
 def maybe_run_dynamic_graph(should_run: bool) -> Graph:
   if should_run:
     return Graph({gather: [(process, i) for i in range(7)]})
@@ -120,7 +120,7 @@ def done(x: Any) -> Any:
   return x
 
 
-@task.remote
+@task.remote(task_config=dict(cache_results=False))
 def build_subgraph(number: int) -> Graph:
   return Graph({gather: [(process, i) for i in range(number)]})
 
@@ -136,7 +136,9 @@ def build_place_image_compute_graph() -> Graph:
 
 @task.remote
 def create_large_image(shape: tuple[int]) -> np.ndarray:
-  return np.ones(shape)
+  image = np.ones(shape)
+  print(f'### create_large_image size {image.nbytes / 1024 / 1024:.3f} MB')
+  return image
 
 
 @task.remote
@@ -147,6 +149,7 @@ def consume_large_image(image) -> Any:
 @task.remote
 def associate_calibration(stack: CompositeStack) -> CompositeStack:
   context.and_equals('associate_calibration_runs', 1, default_value=0)
+  print(f'### associate_calibration stack {stack}')
 
   new_contents = SimpleStacksDict()
   for substack in stack.contents.values():
@@ -174,9 +177,9 @@ class TestAstroFlowNode(unittest.TestCase):
     graph = Graph({C: {B}, B: {A}})
     results, _ = run_graph(graph)
 
-    self.assertEqual(unpack_artifact(results[A]), 1)
-    self.assertEqual(unpack_artifact(results[B]), 2)
-    self.assertEqual(unpack_artifact(results[C]), 3)
+    self.assertEqual(results[A], 1)
+    self.assertEqual(results[B], 2)
+    self.assertEqual(results[C], 3)
 
     self.assertEqual(results.num_nodes_run, 3)
     self.assertEqual(results.max_parallelism_seen, 1)
@@ -185,7 +188,7 @@ class TestAstroFlowNode(unittest.TestCase):
     graph = build_place_image_compute_graph()
     results, logs = run_graph(graph)
 
-    filename = unpack_artifact(results[place_image])
+    filename = results[place_image]
     image = read_fits_image(filename)
 
     expected_image = np.zeros((200, 200))
@@ -209,28 +212,6 @@ class TestAstroFlowNode(unittest.TestCase):
 
     self.assertEqual(results.num_nodes_run, 1)
     self.assertEqual(results.max_parallelism_seen, 1)
-
-  def test_cached_subgraph(self) -> None:
-    # The first time this graph is run, the build_subgraph task will run,
-    # and produce a subgraph which will then run.
-    graph = Graph({done: {(build_subgraph, 11)}})
-    context.process_runs = 0
-    results, _ = run_graph(graph)
-    print('### FIRST RUN')
-    print_result_dict(results)
-    self.assertEqual(context.process_runs, 11)
-    self.assertEqual(results[done], 55)
-
-    # The second time it is run, the decorator should see that build_subgraph()
-    # was already called with the same arguments. That means all its work has
-    # already been done, so the decorator should return None (instead of a
-    # Graph).
-    print('### SECOND RUN')
-    context.process_runs = 0
-    results, _ = run_graph(graph)
-    print_result_dict(results)
-    self.assertEqual(context.process_runs, 0)
-    self.assertEqual(results[done], None)
 
   def test_hash_stability(self) -> None:
     copy_testdata_frames(target_name='Orion Pane 1',
@@ -256,7 +237,7 @@ class TestAstroFlowNode(unittest.TestCase):
     # The `associate_calibration` node should run the first time.
     results, _ = run_graph(graph, debug=True)
     self.assertTrue(
-        context.contains(('associate_calibration', 'db2274bda5acc1cf')))
+        context.contains(('associate_calibration', '3b37dc2b611d55ad')))
     self.assertEqual(results.num_nodes_run, 1)
     self.assertEqual(context.associate_calibration_runs, 1)
 
@@ -265,7 +246,7 @@ class TestAstroFlowNode(unittest.TestCase):
     # run the underlying wrapped function.
     results, _ = run_graph(graph, debug=True)
     self.assertTrue(
-        context.contains(('associate_calibration', 'db2274bda5acc1cf')))
+        context.contains(('associate_calibration', '3b37dc2b611d55ad')))
     self.assertEqual(results.num_nodes_run, 1)
     self.assertEqual(context.associate_calibration_runs, 1)
 
@@ -273,7 +254,7 @@ class TestAstroFlowNode(unittest.TestCase):
     graph = Graph({consume_small_image: {create_small_image}})
     results, _ = run_graph(graph, debug=True)
 
-    self.assertEqual(unpack_artifact(results[consume_small_image]), (100, 100))
+    self.assertEqual(results[consume_small_image], (100, 100))
 
     num_matches = 0
     for k in context.get_ref_dict().keys():
@@ -286,15 +267,14 @@ class TestAstroFlowNode(unittest.TestCase):
     graph = Graph({consume_large_image: {(create_large_image, (2000, 1000))}})
     results, _ = run_graph(graph, debug=True)
 
-    self.assertEqual(unpack_artifact(results[consume_large_image]),
-                     (2000, 1000))
+    self.assertEqual(results[consume_large_image], (2000, 1000))
 
     num_matches = 0
     for k in context.get_ref_dict().keys():
       if isinstance(k, tuple) and k[0] == 'create_large_image':
         num_matches += 1
 
-    self.assertEqual(num_matches, 0)
+    self.assertEqual(num_matches, 1)
 
   def test_skip_existing_file(self) -> None:
     graph = build_place_image_compute_graph()

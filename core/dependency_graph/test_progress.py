@@ -5,15 +5,15 @@ import ray
 import time
 
 from dependency_graph import Graph, run_graph, graph_status_to_progress
-from dependency_graph.astroflow_node import AstroFlowNode
+from task.astroflow_node import task
 
 
-@AstroFlowNode()
+@task.remote
 def gather():
   pass
 
 
-@AstroFlowNode(track_performance=True, debug=True)
+@task.remote
 def process(runtime, i):
   time.sleep(runtime)
 

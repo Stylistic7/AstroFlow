@@ -1,7 +1,5 @@
 from typing import Any
 
-from ray.remote_function import RemoteFunction
-
 from dependency_graph import CanonicalGraph, Node, ResultDict, canonicalize_node
 
 
@@ -11,7 +9,6 @@ def _tuple_values(tup: tuple) -> str:
 
 def node_to_string(node: Node, exclude_args: bool = False) -> str:
   node = canonicalize_node(node)
-  assert isinstance(node.task, RemoteFunction)
 
   string = f'Node(fn={node.task._function.__name__}'
   if node.args and not exclude_args:
@@ -27,7 +24,6 @@ def node_to_string(node: Node, exclude_args: bool = False) -> str:
 
 def node_to_string_tuple(node: Node) -> str:
   node = canonicalize_node(node)
-  assert isinstance(node.task, RemoteFunction)
   return (node.task._function.__name__, *[str(x) for x in node.args])
 
 
@@ -37,7 +33,6 @@ def print_result_dict(results: ResultDict, indent: int = 0) -> None:
       print(f'{" " * indent}{node.task} = {result}')
       continue
 
-    assert isinstance(node.task, RemoteFunction)
     if type(result) is not ResultDict:
       print(
           f'{" " * indent}{node.task._function.__name__} {node.args}: {result}')

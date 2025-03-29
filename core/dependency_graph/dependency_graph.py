@@ -12,6 +12,7 @@ from dependency_graph import Node, Graph, CanonicalGraph, GraphStatus, ResultDic
 from dependency_graph.logging import LogContainer
 from dependency_graph.workflow_graph_adapter import WorkflowGraph, to_workflow_graph
 from .debugging import print_graph, node_to_string
+from task.task import NodeResult
 
 _MIN_STATUS_UPDATE_INTERVAL_SECS: float = 5.0
 _RESULT_SIZE_WARNING_THRESHOLD_MB: int = 10
@@ -26,8 +27,6 @@ def matching_nodes(graph: CanonicalGraph,
                    fn: GenericRemoteFunction) -> list[Node]:
 
   def _matches(node: Node) -> bool:
-    assert isinstance(fn, RemoteFunction)
-    assert isinstance(node.task, RemoteFunction)
     return (node.task._function.__module__ == fn._function.__module__ and
             node.task._function.__name__ == fn._function.__name__)
 
@@ -82,7 +81,6 @@ def run_graph(graph: Graph,
                        node: Node) -> list[Any]:
     nodes: list[Node] = ts.graph.get(node, list())
     if debug:
-      assert isinstance(node.task, RemoteFunction)
       print(f'Node with task {node.task._function.__name__} has '
             f'{len(nodes)} ancestors')
 
@@ -90,12 +88,7 @@ def run_graph(graph: Graph,
 
   def make_run_fn(ts: TopologicalSorterWithStatus, node: Node) -> Any:
     if debug:
-      assert isinstance(node.task, RemoteFunction)
       print(f'Making run fn for task {node.task._function.__name__}')
-
-    assert isinstance(
-        node.task, RemoteFunction
-    ), f'node.task has type {type(node.task)} but must have type RemoteFunction'
 
     results = ancestor_results(ts, node)
     sig = inspect.signature(node.task._function)
@@ -193,7 +186,6 @@ def run_graph(graph: Graph,
         if trace:
           trace_list.append(node)
         if debug:
-          assert isinstance(node.task, RemoteFunction)
           print(f'Task {node.task._function.__name__} finished')
 
         num_nodes_run += 1
@@ -219,6 +211,10 @@ def run_graph(graph: Graph,
               print(
                   f'### node {node_to_string(node, exclude_args=True)} produced '
                   f'a log of length {len(log)}')
+
+          # TODO: Do something with the exception, if any.
+          if isinstance(result, NodeResult):
+            result = result.unwrap()
 
           if (result_size_mb := get_deep_size(result) / 1024 /
               1024) > _RESULT_SIZE_WARNING_THRESHOLD_MB:

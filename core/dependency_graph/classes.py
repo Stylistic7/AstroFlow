@@ -36,8 +36,6 @@ class Node():
 
   def __eq__(self, other: Any) -> bool:
     assert isinstance(other, Node)
-    assert isinstance(self.task, RemoteFunction)
-    assert isinstance(other.task, RemoteFunction)
     return (self.task._function.__module__ == other.task._function.__module__
             and
             self.task._function.__name__ == other.task._function.__name__ and

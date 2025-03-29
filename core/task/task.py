@@ -1,12 +1,14 @@
 import ray
 import time
 import xxhash
-import dill
+import io
 import pickle
 import inspect
 from pathlib import Path
 from functools import wraps
 from typing import Any, Callable, Optional, Protocol, get_origin, TypeVar, Generic, runtime_checkable
+
+from hashing import hash_list
 
 # --- Constants ---
 _MAX_PERFORMANCE_SAMPLES = 100
@@ -86,9 +88,9 @@ class NodeResult:
 # --- Utilities ---
 
 
-def compute_call_hash(serialized_func: bytes, args: tuple, kwargs: dict) -> str:
-  payload = pickle.dumps((serialized_func, args, kwargs))
-  return xxhash.xxh64(payload).hexdigest()
+def _compute_content_hash(serialized_func: bytes, *args, **kwargs) -> str:
+  kwargs_list = sorted(kwargs.items())
+  return hash_list([serialized_func, *args, *kwargs_list])
 
 
 def _bind_args(func: Callable, args: tuple, kwargs: dict,
@@ -116,8 +118,8 @@ def _is_valid_cached_path(path: Path, call_hash: str,
 def _try_get_cached_result(
     func_name: str, call_hash: str, cache: CacheProtocol,
     content_hash: ContentHashProtocol) -> Optional[NodeResult]:
-  if call_hash in cache:
-    cached_result = cache[call_hash]
+  if (func_name, call_hash) in cache:
+    cached_result = cache[(func_name, call_hash)]
     if isinstance(cached_result.value, Path):
       if _is_valid_cached_path(cached_result.value, call_hash, content_hash):
         debug_print(f"[cache hit] {func_name} -> {call_hash}")
@@ -130,11 +132,11 @@ def _try_get_cached_result(
   return None
 
 
-def _store_result(call_hash: str, result: NodeResult, cache: CacheProtocol,
-                  content_hash: ContentHashProtocol):
+def _store_result(fn_name: str, call_hash: str, result: NodeResult,
+                  cache: CacheProtocol, content_hash: ContentHashProtocol):
   debug_print(
       f"[store result] hash={call_hash}, type={type(result.value).__name__}")
-  cache[call_hash] = result
+  cache[(fn_name, call_hash)] = result
   if isinstance(result.value, Path) and result.value.exists():
     content_hash.set(result.value, call_hash)
 
@@ -163,10 +165,19 @@ def _execute(func: Callable, bound: inspect.BoundArguments, call_hash: str,
     result_wrapper = NodeResult(value=result)
     _update_performance(fn_name, elapsed, cache)
     if cache_results:
-      _store_result(call_hash, result_wrapper, cache, content_hash)
+      _store_result(fn_name, call_hash, result_wrapper, cache, content_hash)
     return result_wrapper
   except Exception as e:
     return NodeResult.from_exception(e)
+
+
+def _hash_func_simple(func):
+  code = func.__code__
+  m = xxhash.xxh64()
+  attrs = [code.co_code, code.co_consts, code.co_varnames]
+  for attr in attrs:
+    m.update(str(attr).encode())
+  return m.hexdigest()
 
 
 # --- Decorator factory ---
@@ -180,13 +191,14 @@ def make_task_decorator(cache: CacheProtocol,
     def decorator(func: Callable):
       cache_results = True if task_config is None else task_config.get(
           "cache_results", True)
-      serialized_func = dill.dumps(func)
+      serialized_func = _hash_func_simple(func)
 
       @wraps(func)
       def wrapper(*args, injected_context: Optional[dict] = None, **kwargs):
         debug_print(f"[call] local: {func.__name__}")
         bound = _bind_args(func, args, kwargs, injected_context)
-        call_hash = compute_call_hash(serialized_func, bound.args, bound.kwargs)
+        call_hash = _compute_content_hash(serialized_func, *bound.args,
+                                          **bound.kwargs)
         debug_print(f"[hash] local: {func.__name__} -> {call_hash}")
 
         if cache_results:
@@ -211,13 +223,14 @@ def make_task_decorator(cache: CacheProtocol,
     cache_results = task_config.get("cache_results", True)
 
     def decorator(func: Callable):
-      serialized_func = dill.dumps(func)
+      serialized_func = _hash_func_simple(func)
 
       @wraps(func)
       def wrapped_for_ray(*args, **kwargs):
         debug_print(f"[execute] remote: {func.__name__}")
         bound = _bind_args(func, args, kwargs, injected_context=None)
-        call_hash = compute_call_hash(serialized_func, bound.args, bound.kwargs)
+        call_hash = _compute_content_hash(func.__name__, serialized_func,
+                                          *bound.args, **bound.kwargs)
         debug_print(f"[hash] remote-exec: {func.__name__} -> {call_hash}")
         return _execute(func, bound, call_hash, cache, content_hash,
                         func.__name__, cache_results)
@@ -231,7 +244,8 @@ def make_task_decorator(cache: CacheProtocol,
                          **kwargs):
         debug_print(f"[call] remote: {func.__name__}")
         bound = _bind_args(func, args, kwargs, injected_context)
-        call_hash = compute_call_hash(serialized_func, bound.args, bound.kwargs)
+        call_hash = _compute_content_hash(func.__name__, serialized_func,
+                                          *bound.args, **bound.kwargs)
         debug_print(f"[hash] remote-call: {func.__name__} -> {call_hash}")
 
         if cache_results:
@@ -247,6 +261,7 @@ def make_task_decorator(cache: CacheProtocol,
       remote_wrapper.options = ray_func.options
       remote_wrapper._original = func
       remote_wrapper._is_task = True
+      remote_wrapper._function = func
       return remote_wrapper
 
     if callable(_func):
