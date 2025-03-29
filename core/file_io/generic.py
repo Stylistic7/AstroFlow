@@ -1,9 +1,10 @@
 import numpy as np
 from pathlib import Path
 import xxhash
+import astropy.io.fits as pyfits  # type: ignore
 
 from file_io.fits_file_io import read_fits_header, read_fits_image
-from file_io.xisf_file_io import read_xisf_header, read_xisf_image
+from file_io.xisf_file_io import read_xisf_header, read_xisf_image, add_xisf_metadata
 
 _CONTENT_HASH_KEY = 'CONTHASH'
 
@@ -39,3 +40,11 @@ def get_content_hash(filename: Path | str) -> str:
     return header[_CONTENT_HASH_KEY]
   else:
     return hash_of_image_data(filename)
+
+
+def set_content_hash(path, content_hash):
+  if path.suffix.lower() in ['.xisf']:
+    add_xisf_metadata(path, path, {'CONTHASH': content_hash})
+  elif path.suffix.lower() in ['.fit', '.fits']:
+    with pyfits.open(str(path), mode='update', mmap=False) as fits:
+      fits[0].header['CONTHASH'] = content_hash
