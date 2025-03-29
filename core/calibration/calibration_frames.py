@@ -5,7 +5,7 @@ import itertools
 from dataclasses import replace
 from datetime import datetime
 
-from dependency_graph.astroflow_node import AstroFlowNode
+from task.astroflow_node import task
 from metadata.classes import ImageMetadata, FrameHash
 from context import context
 from stacks.types import StackHash
@@ -14,7 +14,7 @@ from stacks.composite_stack import CompositeStack, SimpleStacksDict
 import clustering
 
 
-@AstroFlowNode(track_performance=True)
+@task.remote
 def identify_calibration_stacks() -> SimpleStacksDict:
   print(f'Identifying calibration stacks...')
 

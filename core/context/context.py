@@ -218,7 +218,10 @@ class Context:
         actor.or_equals.remote(key, default_value, [ray.put(value)],
                                write_mode))
 
-  # TODO: Implement "k in context" operation.
+  def __contains__(self, key: Key) -> bool:
+    actor = ray.get_actor('context', namespace=_get_namespace())
+    return ray.get(actor.contains.remote(key))
+
   def contains(self, key: Key) -> bool:
     actor = ray.get_actor('context', namespace=_get_namespace())
     return ray.get(actor.contains.remote(key))

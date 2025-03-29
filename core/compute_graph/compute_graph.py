@@ -19,13 +19,13 @@ from dependency_graph import Graph, TaskDescriptor, make_graph_from_list
 from stacks.identification import identify_stacks
 from stacks.composite_stack import CompositeStacksDict, SimpleStacksDict
 from stacks.validation import validate_stacks
-from dependency_graph.astroflow_node import AstroFlowNode
+from task.astroflow_node import task
 from customization.compute_graph import build_customize_graph
 from mosaics.types import MosaicsDict
 from quarantining.quarantining import quarantine_calibration_stacks
 
 
-@AstroFlowNode(cache_result=False)
+@task.remote(task_config=dict(cache=False))
 def store_calibration_stacks(calibration_stacks: SimpleStacksDict) -> None:
   context.calibration_stacks = calibration_stacks
   print(f'### store_calibration_stacks: Stored '
@@ -34,7 +34,7 @@ def store_calibration_stacks(calibration_stacks: SimpleStacksDict) -> None:
   return calibration_stacks
 
 
-@AstroFlowNode(cache_result=False)
+@task.remote(task_config=dict(cache=False))
 def store_stacks(stacks: CompositeStacksDict) -> None:
   context.grouped_stacks = stacks
   print(f'### store_stacks: Stored '
@@ -42,7 +42,7 @@ def store_stacks(stacks: CompositeStacksDict) -> None:
   return stacks
 
 
-@AstroFlowNode(cache_result=False)
+@task.remote(task_config=dict(cache=False))
 def store_targets(targets: TargetsDict) -> None:
   context.grouped_targets = targets
   print(f'### store_targets: Stored {len(targets)} targets; '
@@ -50,7 +50,7 @@ def store_targets(targets: TargetsDict) -> None:
   return targets
 
 
-@AstroFlowNode(cache_result=False)
+@task.remote(task_config=dict(cache=False))
 def store_mosaics(mosaics: MosaicsDict) -> None:
   context.grouped_mosaics = mosaics
   print(f'### store_mosaics: Stored {len(mosaics)} mosaics; '
@@ -58,7 +58,7 @@ def store_mosaics(mosaics: MosaicsDict) -> None:
   return mosaics
 
 
-@AstroFlowNode()
+@task.remote
 def gather_spatial_groups(*stacks_in: list[CompositeStacksDict]) -> None:
   stacks = {key: value for d in stacks_in for key, value in d.items()}
   print(f'### gather_spatial_groups returning {len(stacks)} stacks')
@@ -67,7 +67,7 @@ def gather_spatial_groups(*stacks_in: list[CompositeStacksDict]) -> None:
 
 # TODO: Don't call build_spatial_group_graph for spatial groups that are cached
 # and unchanged.
-@AstroFlowNode()
+@task.remote
 def scatter_spatial_groups(spatial_groups) -> Graph:
   graph = Graph({
       gather_spatial_groups: {(identify_stacks, g) for g in spatial_groups},
@@ -78,14 +78,14 @@ def scatter_spatial_groups(spatial_groups) -> Graph:
   return graph
 
 
-@AstroFlowNode()
+@task.remote
 def regroup_graph_done() -> None:
   pass
 
 
 # TODO: Move group_stacks_into_targets() back into the parallel path over
 # spatial groups.
-@AstroFlowNode(cache_result=True)
+@task.remote
 def build_regroup_graph(metadata: MetadataDict) -> Graph:
   context.calibration_stacks = {}
   context.grouped_stacks = {}
@@ -104,12 +104,12 @@ def build_regroup_graph(metadata: MetadataDict) -> Graph:
   })
 
 
-@AstroFlowNode()
+@task.remote
 def preview_graph_done() -> None:
   pass
 
 
-@AstroFlowNode()
+@task.remote
 def build_preview_graph() -> Graph:
   tasks = []
 
@@ -121,12 +121,12 @@ def build_preview_graph() -> Graph:
   return Graph({preview_graph_done: tasks})
 
 
-@AstroFlowNode()
+@task.remote
 def main_processing_graph_done() -> None:
   pass
 
 
-@AstroFlowNode()
+@task.remote
 def build_main_processing_graph() -> Graph:
   stacks = context.stacks
   targets = context.targets
@@ -135,6 +135,7 @@ def build_main_processing_graph() -> Graph:
 
   # FIXME
   shopping_cart = [('stack', i) for i in stacks.keys()]
+  # shopping_cart += [('mosaic', 'b1c2c11588a866ac')]
 
   print(f'### build_main_processing_graph shopping_cart {shopping_cart}')
 

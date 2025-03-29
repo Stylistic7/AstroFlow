@@ -7,7 +7,7 @@ from metadata.classes import MetadataDict
 from geometry import footprints
 from context import context
 import plate_solving
-from dependency_graph.astroflow_node import AstroFlowNode
+from task.astroflow_node import task
 
 T = TypeVar('T')
 ComparisonFn = Callable[[T, T], bool]
@@ -48,7 +48,7 @@ def find_groups(values: dict[T, Any], comparison_fn: ComparisonFn,
   return groups
 
 
-@AstroFlowNode()
+@task.remote
 def cluster_by_image_center(metadata: MetadataDict) -> None:
   print('cluster_by_image_center')
 
