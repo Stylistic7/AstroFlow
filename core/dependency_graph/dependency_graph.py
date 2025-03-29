@@ -5,14 +5,12 @@ from operator import add
 import time
 from typing import Callable, Any
 from objsize import get_deep_size
-from ray.remote_function import RemoteFunction
 import numpy as np
 
 from dependency_graph import Node, Graph, CanonicalGraph, GraphStatus, ResultDict, TopologicalSorterWithStatus, GenericRemoteFunction, canonicalize_graph
 from dependency_graph.logging import LogContainer
 from dependency_graph.workflow_graph_adapter import WorkflowGraph, to_workflow_graph
 from .debugging import print_graph, node_to_string
-from task.task import NodeResult
 
 _MIN_STATUS_UPDATE_INTERVAL_SECS: float = 5.0
 _RESULT_SIZE_WARNING_THRESHOLD_MB: int = 10
@@ -211,10 +209,6 @@ def run_graph(graph: Graph,
               print(
                   f'### node {node_to_string(node, exclude_args=True)} produced '
                   f'a log of length {len(log)}')
-
-          # TODO: Do something with the exception, if any.
-          if isinstance(result, NodeResult):
-            result = result.unwrap()
 
           if (result_size_mb := get_deep_size(result) / 1024 /
               1024) > _RESULT_SIZE_WARNING_THRESHOLD_MB:

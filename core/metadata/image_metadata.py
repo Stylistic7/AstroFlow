@@ -169,7 +169,7 @@ def compute_image_metadata(filename: Path) -> Path:
           f'exception {traceback.format_exc()}')
 
 
-@task.remote(task_config=dict(cache_results=False))
+@task.remote(cache=False)
 def load_metadata() -> MetadataDict:
   quarantined_files = context.quarantined_files or set()
 

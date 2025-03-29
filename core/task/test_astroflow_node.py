@@ -109,7 +109,7 @@ def gather(*ancestor_results: list[int]) -> int:
   return sum(ancestor_results)
 
 
-@task.remote(task_config=dict(cache_results=False))
+@task.remote
 def maybe_run_dynamic_graph(should_run: bool) -> Graph:
   if should_run:
     return Graph({gather: [(process, i) for i in range(7)]})
@@ -120,7 +120,7 @@ def done(x: Any) -> Any:
   return x
 
 
-@task.remote(task_config=dict(cache_results=False))
+@task.remote
 def build_subgraph(number: int) -> Graph:
   return Graph({gather: [(process, i) for i in range(number)]})
 

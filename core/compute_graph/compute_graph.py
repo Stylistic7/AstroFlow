@@ -25,7 +25,7 @@ from mosaics.types import MosaicsDict
 from quarantining.quarantining import quarantine_calibration_stacks
 
 
-@task.remote(task_config=dict(cache=False))
+@task.remote(cache=False)
 def store_calibration_stacks(calibration_stacks: SimpleStacksDict) -> None:
   context.calibration_stacks = calibration_stacks
   print(f'### store_calibration_stacks: Stored '
@@ -34,7 +34,7 @@ def store_calibration_stacks(calibration_stacks: SimpleStacksDict) -> None:
   return calibration_stacks
 
 
-@task.remote(task_config=dict(cache=False))
+@task.remote(cache=False)
 def store_stacks(stacks: CompositeStacksDict) -> None:
   context.grouped_stacks = stacks
   print(f'### store_stacks: Stored '
@@ -42,7 +42,7 @@ def store_stacks(stacks: CompositeStacksDict) -> None:
   return stacks
 
 
-@task.remote(task_config=dict(cache=False))
+@task.remote(cache=False)
 def store_targets(targets: TargetsDict) -> None:
   context.grouped_targets = targets
   print(f'### store_targets: Stored {len(targets)} targets; '
@@ -50,7 +50,7 @@ def store_targets(targets: TargetsDict) -> None:
   return targets
 
 
-@task.remote(task_config=dict(cache=False))
+@task.remote(cache=False)
 def store_mosaics(mosaics: MosaicsDict) -> None:
   context.grouped_mosaics = mosaics
   print(f'### store_mosaics: Stored {len(mosaics)} mosaics; '
@@ -135,7 +135,7 @@ def build_main_processing_graph() -> Graph:
 
   # FIXME
   shopping_cart = [('stack', i) for i in stacks.keys()]
-  # shopping_cart += [('mosaic', 'b1c2c11588a866ac')]
+  shopping_cart += [('mosaic', 'b1c2c11588a866ac')]
 
   print(f'### build_main_processing_graph shopping_cart {shopping_cart}')
 
