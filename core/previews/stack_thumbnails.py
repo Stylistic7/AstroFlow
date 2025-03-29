@@ -3,7 +3,7 @@ import cv2
 import os
 import tempfile
 
-from dependency_graph.astroflow_node import AstroFlowNode
+from task.astroflow_node import task
 from previews.operations import resize_array, array_to_png
 from previews.flat_correction import create_flat_correction_thumbnails
 from previews.calibration import calibrate_subframe
@@ -18,7 +18,7 @@ from customization.subframe_selection import get_light_frames_sorted_by_stars
 
 # TODO: This needs to use the Artifact workflow, so that it will automatically
 # re-generate previews when stack contents change.
-@AstroFlowNode(resources={'fastest_storage': 0.001})
+@task.remote(resources={'fastest_storage': 0.001})
 def scatter_stack_thumbnails(mode: QualityLevel) -> Graph:
   stacks = context.stacks
   print(f'### scatter_stack_thumbnails for {len(stacks)} stacks')
@@ -36,7 +36,7 @@ def scatter_stack_thumbnails(mode: QualityLevel) -> Graph:
   return Graph({gather_stack_thumbnails: tasks})
 
 
-@AstroFlowNode(cache_result=True, track_performance=True)
+@task.remote
 def create_stack_subframe_thumbnails(stack: CompositeStack) -> None:
   print(f'Entering create_stack_subframe_thumbnails() for stack {stack}')
 
@@ -94,6 +94,6 @@ def create_stack_subframe_thumbnails(stack: CompositeStack) -> None:
   return best_light_frame.filename
 
 
-@AstroFlowNode()
+@task.remote
 def gather_stack_thumbnails() -> None:
   pass

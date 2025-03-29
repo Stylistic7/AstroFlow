@@ -6,7 +6,7 @@ from pix import PixInsight
 from pix.classes import ImageList
 from pix.tasks import ChannelCombination, SpectrophotometricColorCalibration, ImageSolver, StarXTerminator, LinearFit
 from context import context
-from dependency_graph.astroflow_node import AstroFlowNode
+from task.astroflow_node import task
 from previews import QualityLevel
 from mosaics.types import Mosaic
 
@@ -39,7 +39,7 @@ def _post_process_mosaic(images: ImageList, mosaic: Mosaic,
   return []
 
 
-@AstroFlowNode(resources={'PixInsight': 1})
+@task.remote(resources={'PixInsight': 1})
 def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> None:
   print(f'### Entering post_process_mosaic for mosaic {mosaic}')
 

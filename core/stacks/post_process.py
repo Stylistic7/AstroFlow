@@ -6,7 +6,7 @@ from context import context
 from pix.decorators import PixInsight
 from pix.tasks import BlurXTerminator, GradientCorrection
 from pix.classes import ImageList
-from dependency_graph.astroflow_node import AstroFlowNode
+from task.astroflow_node import task
 from customization.types import CustomizedStack
 from stacks.artifacts import output_filename
 
@@ -19,7 +19,7 @@ def _post_process_stack(images: ImageList) -> ImageList:
   return images
 
 
-@AstroFlowNode(cache_result=True, resources={'PixInsight': 1})
+@task.remote(resources={'PixInsight': 1})
 def post_process_stack(stack: CustomizedStack) -> Path:
   master = output_filename(stack)
   print(f'### post_process_stack, master {master}')

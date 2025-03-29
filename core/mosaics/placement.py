@@ -18,7 +18,7 @@ from context import context
 from previews import QualityLevel
 from mosaics.types import Mosaic, Viewbox, TileIndices
 from mosaics.trimming import trim_image
-from dependency_graph.astroflow_node import AstroFlowNode
+from task.astroflow_node import task
 from stacks.composite_stack import CompositeStack
 
 _PLACE_IMAGE_MEMORY_REQUIREMENT = 6 * 1024 * 1024 * 1024  # 6 GB
@@ -161,7 +161,7 @@ def _save_image_to_file(mode: QualityLevel, mosaic: Mosaic,
   return filename
 
 
-@AstroFlowNode(memory=_PLACE_IMAGE_MEMORY_REQUIREMENT, track_performance=True)
+@task.remote(memory=_PLACE_IMAGE_MEMORY_REQUIREMENT)
 def place_image(mode: QualityLevel, mosaic: Mosaic, stack: CustomizedStack,
                 tile_indices: TileIndices, filter: str, viewbox: Viewbox,
                 mask: box, filename: Path) -> Path:

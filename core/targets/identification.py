@@ -13,10 +13,10 @@ from hashing import hash_list
 from stacks.composite_stack import CompositeStack, CompositeStacksDict
 from stacks.astrometric_attributes import AstrometricAttributes
 from stacks.types import StackHash
-from dependency_graph.astroflow_node import AstroFlowNode
+from task.astroflow_node import task
 
 
-@AstroFlowNode(track_performance=True)
+@task.remote
 def group_stacks_into_targets(stacks: CompositeStacksDict) -> TargetsDict:
   metadata = context.metadata
 

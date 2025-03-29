@@ -12,7 +12,7 @@ from pix.decorators import PixInsight
 from pix.tasks import PhotometricMosaic
 from mosaics.types import Mosaic
 from previews import QualityLevel, autostretch
-from dependency_graph.astroflow_node import AstroFlowNode
+from task.astroflow_node import task
 from file_io.generic import read_image, get_content_hash
 
 
@@ -25,7 +25,7 @@ def run_photometric_mosaic(images: ImageList,
 # TODO: Consider what to name these images, since the AstroFlowNode decorator
 # handles all of the content hashes now.
 # TODO: Turn caching on.
-@AstroFlowNode(resources={'PixInsight': 1}, track_performance=True)
+@task.remote(resources={'PixInsight': 1})
 def merge_images_with_photometric_mosaic(mosaic: Mosaic, input_0: Path,
                                          input_1: Path) -> Path:
   print(f'### merge_images_with_photometric_mosaic {input_0} {input_1}')
@@ -52,7 +52,7 @@ def merge_images_with_maximum(image_0: np.ndarray,
 
 
 # TODO: Cache these results.
-@AstroFlowNode()
+@task.remote
 def merge_images(mode: QualityLevel, mosaic: Mosaic, input_0: Path,
                  input_1: Path) -> Path:
   print(f'### merge images {input_0} {input_1}')

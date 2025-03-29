@@ -5,7 +5,7 @@ from stacks.stacking import stack_files
 from stacks.composite_stack import CompositeStack
 from stacks.post_process import post_process_stack
 from dependency_graph import Graph, Node
-from dependency_graph.astroflow_node import AstroFlowNode
+from task.astroflow_node import task
 from metadata.image_metadata import compute_image_metadata, load_metadata
 from customization.types import CustomizedStack
 from customization.subframe_selection import get_light_frames_sorted_by_stars
@@ -14,7 +14,7 @@ from previews import QualityLevel
 
 # This function accepts a fully customized stack, after settings and calibration
 # frames have been associated.
-@AstroFlowNode(cache_result=True)
+@task.remote
 def build_stacking_subgraph(stack: CustomizedStack) -> Graph:
   calibration_stacks = context.calibration_stacks
 
@@ -40,7 +40,7 @@ def build_stacking_subgraph(stack: CustomizedStack) -> Graph:
 
 
 # TODO: Calibrate the subframe returned here.s
-@AstroFlowNode()
+@task.remote
 def get_stack_subframe_image(stack: CompositeStack) -> Path:
   assert stack is not None
   light_frames_by_stars = get_light_frames_sorted_by_stars(stack)
@@ -49,7 +49,7 @@ def get_stack_subframe_image(stack: CompositeStack) -> Path:
   return best_light_frame.filename
 
 
-@AstroFlowNode()
+@task.remote
 def get_stack_image(mode: QualityLevel, stack: CompositeStack) -> Graph:
   assert stack is not None
   if mode == QualityLevel.SUBFRAME:

@@ -17,7 +17,7 @@ from pix.tasks import WeightedBatchPreprocessing
 import file_io
 from metadata.classes import MetadataDict
 from metadata.actor import get_metadata
-from dependency_graph.astroflow_node import AstroFlowNode
+from task.astroflow_node import task
 
 
 def _symlink_frames(filenames: list[str], dest_path: str) -> None:
@@ -105,9 +105,7 @@ def _setup_simple_stack(stack: Stack, tmp_dir: str) -> tuple[str | None, int]:
 #
 # TODO: When a stack fails, keep note of it so it won't be retried for the
 # exact same inputs again.
-@AstroFlowNode(cache_result=True,
-               track_performance=True,
-               resources={'PixInsight': 1})
+@task.remote(resources={'PixInsight': 1})
 def stack_files(stack: Stack) -> Path:
   assert context.output_dir
   print(f'### Entering stack_files for {stack}')

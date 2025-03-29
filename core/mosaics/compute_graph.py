@@ -16,14 +16,14 @@ from mosaics.trimming import project_to_viewbox, largest_interior_rectangle
 from mosaics.types import TileIndices
 from stacks.compute_graph import get_stack_image
 from previews import QualityLevel
-from dependency_graph.astroflow_node import AstroFlowNode
+from task.astroflow_node import task
 from targets.types import Target, TargetHash
 from file_io.generic import read_image
 
 
 # TODO: What's supposed to happen with these final artifacts? I guess they're
 # just stored in "findable locations" that do not depend on content hashes.
-@AstroFlowNode(cache_result=True)
+@task.remote
 def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
                                input: Path) -> Optional[Path]:
   if input is None:
@@ -47,7 +47,7 @@ def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
     return [filter, filename]
 
 
-@AstroFlowNode()
+@task.remote
 def build_mosaic_subgraph(mode: QualityLevel, mosaic: Mosaic) -> Graph:
   print(f'### build_mosaic_subgraph mode {mode} for mosaic {mosaic}')
   viewbox = compute_mosaic_viewbox(mode, mosaic)
@@ -99,7 +99,7 @@ def _get_stack_for_filter(target: Target, filter: str):
 
 
 # TODO: This function seems to be slow for some reason.
-@AstroFlowNode(num_cpus=0.5)
+@task.remote(num_cpus=0.5)
 def build_placement_subgraph(mode: QualityLevel, mosaic: Mosaic,
                              stack: CustomizedStack, filter: str,
                              tile_indices: TileIndices, viewbox: Viewbox,
@@ -126,14 +126,14 @@ def compute_mask(strip: list[TargetHash], viewbox: Viewbox) -> box:
   return largest_interior_rectangle(strip_poly)
 
 
-@AstroFlowNode(cache_result=True, debug=True)
+@task.remote
 def compute_mosaic_masks(mode: QualityLevel, mosaic: Mosaic,
                          viewbox: Viewbox) -> list[box]:
   if mode == QualityLevel.MASTER:
     return [compute_mask(strip, viewbox) for strip in mosaic.strips]
 
 
-@AstroFlowNode(cache_result=True)
+@task.remote
 def compute_target_mask(target: Target, viewbox: Viewbox) -> box:
   return largest_interior_rectangle(
       project_to_viewbox(target.footprint, viewbox))
@@ -162,7 +162,7 @@ def get_stacks_for_filter(mode: QualityLevel, mosaic: Mosaic, filter: str):
     return strip_stack_ids
 
 
-@AstroFlowNode()
+@task.remote
 def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
                                  filter: str, viewbox: Viewbox,
                                  masks: list[box] | None) -> Graph:

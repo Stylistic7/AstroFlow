@@ -1,6 +1,6 @@
 from dataclasses import replace
 
-from dependency_graph.astroflow_node import AstroFlowNode
+from task.astroflow_node import task
 from context import context
 from targets.target import Target
 from targets.types import TargetHash
@@ -9,7 +9,7 @@ from mosaics.types import MosaicHash
 from mosaics.mosaic import Mosaic
 
 
-@AstroFlowNode(cache_result=False)
+@task.remote(task_config=dict(cache=False))
 def quarantine_stacks() -> SimpleStacksDict | CompositeStacksDict:
   stacks = context.stacks
   if not stacks:
@@ -24,7 +24,7 @@ def quarantine_stacks() -> SimpleStacksDict | CompositeStacksDict:
 
 
 # TODO: This should be made functional.
-@AstroFlowNode(cache_result=False)
+@task.remote(task_config=dict(cache=False))
 def quarantine_targets() -> dict[TargetHash, Target]:
   stacks = context.stacks
   targets = context.targets
@@ -54,7 +54,7 @@ def quarantine_targets() -> dict[TargetHash, Target]:
   return output_targets
 
 
-@AstroFlowNode(cache_result=False)
+@task.remote(task_config=dict(cache=False))
 def quarantine_mosaics() -> dict[MosaicHash, Mosaic]:
   targets = context.targets
   mosaics = context.mosaics

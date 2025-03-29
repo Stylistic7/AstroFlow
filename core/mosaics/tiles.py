@@ -5,7 +5,7 @@ from mosaics.types import Mosaic
 from pix.classes import ImageList
 from pix.decorators import PixInsight
 from pix.tasks import SaveAs
-from dependency_graph.astroflow_node import AstroFlowNode
+from task.astroflow_node import task
 
 
 @PixInsight()
@@ -14,7 +14,7 @@ def save_as_png(images: ImageList) -> ImageList:
   return SaveAs(images, output_filenames)
 
 
-@AstroFlowNode()
+@task.remote
 def save_as_tiles(mosaic: Mosaic, filter: str) -> None:
   filename = Path(
       context.output_dir

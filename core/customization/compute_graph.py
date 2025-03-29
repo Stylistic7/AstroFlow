@@ -4,7 +4,7 @@ from context import context
 from dependency_graph import Graph
 from stacks.composite_stack import CompositeStack
 from calibration import associate_with_stack
-from dependency_graph.astroflow_node import AstroFlowNode
+from task.astroflow_node import task
 from customization.subframe_selection import select_subframes
 from customization.settings import Settings, StackSettings
 from customization.types import CustomizedStack
@@ -24,12 +24,12 @@ def apply_settings(stack: CompositeStack) -> CompositeStack:
   return replace(stack, contents=new_contents)
 
 
-@AstroFlowNode()
+@task.remote
 def gather_customize_stacks(*stacks) -> None:
   context.stacks = {s.stable_hash: s for s in stacks}
 
 
-@AstroFlowNode()
+@task.remote
 def scatter_customize_stacks() -> Graph:
   quarantined_stacks = context.quarantined_stacks or []
 
@@ -44,7 +44,7 @@ def scatter_customize_stacks() -> Graph:
 # TODO: Add tests in test_customization.py
 # TODO: Pass in the StackSettings and cache this.
 # TODO: Pass in the quarantined_stacks and cache this.
-@AstroFlowNode()
+@task.remote
 def customize_stack(stack: CompositeStack) -> CustomizedStack:
   stack = associate_with_stack(stack)
   stack = select_subframes(stack)
@@ -54,7 +54,7 @@ def customize_stack(stack: CompositeStack) -> CustomizedStack:
   return CustomizedStack(**stack.__dict__)
 
 
-@AstroFlowNode()
+@task.remote
 def scatter_customize_targets() -> None:
   # TODO: Implement real customization features.
   quarantined_targets = context.quarantined_targets or []
@@ -65,7 +65,7 @@ def scatter_customize_targets() -> None:
   }
 
 
-@AstroFlowNode()
+@task.remote
 def scatter_customize_mosaics(*mosaics) -> None:
   # TODO: Implement real customization features.
   quarantined_mosaics = context.quarantined_mosaics or []
@@ -76,12 +76,12 @@ def scatter_customize_mosaics(*mosaics) -> None:
   }
 
 
-@AstroFlowNode()
+@task.remote
 def customization_done() -> None:
   pass
 
 
-@AstroFlowNode()
+@task.remote
 def build_customize_graph() -> Graph:
   return Graph({
       customization_done: [

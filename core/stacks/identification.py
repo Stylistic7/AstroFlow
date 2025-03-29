@@ -6,7 +6,7 @@ from context import context
 import clustering
 from stacks.composite_stack import CompositeStack, CompositeStacksDict
 from metadata.classes import FrameHash, MetadataDict
-from dependency_graph.astroflow_node import AstroFlowNode
+from task.astroflow_node import task
 
 
 def _normalize_radians(x: float) -> float:
@@ -22,7 +22,7 @@ def _normalize_radians(x: float) -> float:
 #
 # TODO: The spatial_group should include a metadata_ref for all of the images
 # in it. The call to get_metadata() should be removed.
-@AstroFlowNode(track_performance=True)
+@task.remote
 def identify_stacks(light_frames: list[FrameHash]) -> CompositeStacksDict:
   print(f'### identify_stacks running for spatial group of '
         f'length {len(light_frames)}')

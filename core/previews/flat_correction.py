@@ -2,13 +2,13 @@ from context import context, WriteMode
 from previews.operations import array_to_png
 from previews.calibration import calibrate_subframe
 from previews.operations import autostretch
-from dependency_graph.astroflow_node import AstroFlowNode
+from task.astroflow_node import task
 from dependency_graph import Graph
 from customization.types import CustomizedStack
 from customization.subframe_selection import get_light_frames_sorted_by_stars
 
 
-@AstroFlowNode(cache_result=True, track_performance=True)
+@task.remote
 def create_flat_correction_thumbnails(stack: CustomizedStack) -> None:
   calibration_stacks = context.calibration_stacks
 

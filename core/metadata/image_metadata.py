@@ -13,7 +13,7 @@ import plate_solving
 from dependency_graph import Graph
 from context import context, WriteMode
 from metadata.actor import get_metadata
-from dependency_graph.astroflow_node import AstroFlowNode
+from task.astroflow_node import task
 
 # TODO: I need to associate dark and flat frames *before* computing thumbnails.
 
@@ -80,7 +80,7 @@ from dependency_graph.astroflow_node import AstroFlowNode
 #
 # TODO: Add a task that checks that input and output directories exist. Many
 # tasks cannot run without them.
-@AstroFlowNode(resources={'fastest_storage': 0.001})
+@task.remote(resources={'fastest_storage': 0.001})
 def scatter_compute_image_metadata(mode: str, *filenames_in:
                                    list[Path]) -> Graph:
   directories = {
@@ -117,7 +117,7 @@ class DuplicateFileException(Exception):
 
 # TODO: What's the best approach for making this functional? I should remove
 # the side-effect (saving to the context).
-@AstroFlowNode(resources={'fastest_storage': 0.001}, track_performance=True)
+@task.remote(resources={'fastest_storage': 0.001})
 def compute_image_metadata(filename: Path) -> Path:
   # TODO: Make sure this code doesn't actually repeatedly read the image across
   # the network. It should hit the node's filesystem cache.
@@ -169,7 +169,7 @@ def compute_image_metadata(filename: Path) -> Path:
           f'exception {traceback.format_exc()}')
 
 
-@AstroFlowNode(cache_result=False)
+@task.remote(task_config=dict(cache_results=False))
 def load_metadata() -> MetadataDict:
   quarantined_files = context.quarantined_files or set()
 

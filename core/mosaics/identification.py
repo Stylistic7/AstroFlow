@@ -6,7 +6,6 @@ from spherical_geometry import great_circle_arc
 import ray
 import numpy as np
 import random
-from enum import Enum
 from typing import Any, Sequence
 from dataclasses import asdict
 from beartype import beartype
@@ -18,7 +17,8 @@ from geometry import footprints
 from hashing import hash_list
 from targets.types import TargetHash, Target, TargetsDict
 from mosaics.debugging import plot_mosaic
-from dependency_graph.astroflow_node import AstroFlowNode
+from mosaics.overlap import Overlap
+from task.astroflow_node import task
 from stacks.astrometric_attributes import AstrometricAttributes
 from stacks.chronology_attributes import ChronologyAttributes
 
@@ -27,15 +27,6 @@ from stacks.chronology_attributes import ChronologyAttributes
 
 logger = structlog.get_logger()
 log = logger
-
-
-class Overlap(Enum):
-  IDENTICAL = 1
-  NON_OVERLAPPING = 2
-  INCOMPATIBLE = 3
-  LONG_EDGE = 4
-  SHORT_EDGE = 5
-  CORNER = 6
 
 
 def roughly_same_area(a: SingleSphericalPolygon,
@@ -52,7 +43,7 @@ def roughly_same_image_scale(a: float, b: float) -> bool:
 @ray.remote
 def target_compatible_with_mosaic(target_id: TargetHash,
                                   mosaic: set[TargetHash],
-                                  allowed_overlaps,
+                                  allowed_overlaps: list[Overlap],
                                   debug: bool = False) -> bool:
   targets = context.grouped_targets
   target = targets[target_id]
@@ -329,7 +320,7 @@ def _identify_overlapping_targets(
   return mosaics
 
 
-@AstroFlowNode(track_performance=True)
+@task.remote
 def identify_mosaics(targets: TargetsDict,
                      debug: bool = False) -> dict[MosaicHash, Mosaic]:
   print(f'### Identifying mosaics from {len(targets)} targets')

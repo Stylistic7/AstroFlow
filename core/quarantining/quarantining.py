@@ -3,14 +3,14 @@ from dataclasses import replace, asdict
 import time
 
 from context import context
-from dependency_graph.astroflow_node import AstroFlowNode
+from task.astroflow_node import task
 from stacks.composite_stack import CompositeStack
 from stacks.simple_stack import SimpleStacksDict
 from stacks.imaging_attributes import ImagingAttributes
 from stacks.types import StackHash
 
 
-@AstroFlowNode()
+@task.remote
 def quarantine_calibration_stacks(stacks: SimpleStacksDict) -> SimpleStacksDict:
   quarantined_calibration_stacks = context.quarantined_calibration_stacks or []
   return SimpleStacksDict({

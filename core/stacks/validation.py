@@ -1,8 +1,8 @@
 from stacks.composite_stack import CompositeStacksDict
-from dependency_graph.astroflow_node import AstroFlowNode
+from task.astroflow_node import task
 
 
-@AstroFlowNode()
+@task.remote
 def validate_stacks(stacks: CompositeStacksDict) -> CompositeStacksDict:
   print(f'#### validate_stacks validating {len(stacks)} stacks')
   for stack_id, stack in stacks.items():

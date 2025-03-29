@@ -2,10 +2,10 @@ import ray
 
 from context import context
 from mosaics.mosaic import MosaicsDict
-from dependency_graph.astroflow_node import AstroFlowNode
+from task.astroflow_node import task
 
 
-@AstroFlowNode()
+@task.remote
 def validate_mosaics(mosaics: MosaicsDict) -> None:
   print(f'### Entering validate_mosaics')
   targets = context.targets
