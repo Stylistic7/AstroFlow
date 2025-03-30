@@ -237,7 +237,7 @@ class TestAstroFlowNode(unittest.TestCase):
     # The `associate_calibration` node should run the first time.
     results, _ = run_graph(graph, debug=True)
     self.assertTrue(
-        context.contains(('associate_calibration', '3b37dc2b611d55ad')))
+        context.contains(('associate_calibration', 'ad0cfe8637b60c98')))
     self.assertEqual(results.num_nodes_run, 1)
     self.assertEqual(context.associate_calibration_runs, 1)
 
@@ -246,7 +246,7 @@ class TestAstroFlowNode(unittest.TestCase):
     # run the underlying wrapped function.
     results, _ = run_graph(graph, debug=True)
     self.assertTrue(
-        context.contains(('associate_calibration', '3b37dc2b611d55ad')))
+        context.contains(('associate_calibration', 'ad0cfe8637b60c98')))
     self.assertEqual(results.num_nodes_run, 1)
     self.assertEqual(context.associate_calibration_runs, 1)
 

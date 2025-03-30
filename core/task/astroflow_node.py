@@ -1,19 +1,16 @@
-import ray
-import inspect
 from pathlib import Path
-from functools import wraps
 import structlog
 from typing import Any
-import astropy.io.fits as pyfits  # type: ignore
-import time
+from dataclasses import replace
 
 from context import context
 from file_io.generic import get_content_hash, set_content_hash
 from task.task import make_task_decorator, ContentHashProtocol
+from task.content_hashed import ContentHashed
+from hashing import hash_list
+from dependency_graph import Graph
 
 log = structlog.get_logger()
-
-_MAX_PERFORMANCE_SAMPLES = 100
 
 
 class ArtifactNotFoundException(Exception):
@@ -24,13 +21,33 @@ class WrongContentHashException(Exception):
   pass
 
 
-class ImageFileContentHash(ContentHashProtocol):
-
-  def get(self, path: Path) -> str:
-    return get_content_hash(path)
-
-  def set(self, path: Path, content_hash: str) -> None:
-    set_content_hash(path, content_hash)
+def call_hasher(serialized_func: bytes, *args, **kwargs) -> str:
+  kwargs_list = sorted(kwargs.items())
+  return hash_list([serialized_func, *args, *kwargs_list])
 
 
-task = make_task_decorator(cache=context, content_hash=ImageFileContentHash())
+class ContentHasher(ContentHashProtocol):
+
+  def has(self, obj: Any) -> bool:
+    return isinstance(obj, (Path, ContentHashed))
+
+  def get(self, obj: Any) -> str:
+    if isinstance(obj, Path):
+      return get_content_hash(obj)
+    elif isinstance(obj, ContentHashed):
+      return obj.content_hash
+
+  def set(self, obj: Any, content_hash: str) -> Any:
+    if isinstance(obj, Path):
+      set_content_hash(obj, content_hash)
+      return obj
+    elif isinstance(obj, ContentHashed):
+      return replace(obj, content_hash=content_hash)
+    else:
+      return obj
+
+
+task = make_task_decorator(cache=context,
+                           content_hasher=ContentHasher(),
+                           call_hasher=call_hasher,
+                           no_cache_types=[Graph])
