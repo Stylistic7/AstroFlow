@@ -120,7 +120,7 @@ def run_graph(graph: Graph,
           ts.done_callback()
           ts.done_callback = None
 
-  # TODO: Consider embellishing this to force graphs like foo: [bar, baz] to
+  # TODO: Consider embellishing this to force graphs like {foo: [bar, baz]} to
   # actually run bar, and then baz. At present, the ordering is not honored,
   # but the sort below at least makes the order deterministic.
   def get_ready_nodes() -> list[tuple[TopologicalSorterWithStatus, Node]]:

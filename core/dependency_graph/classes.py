@@ -172,6 +172,8 @@ class ResultDict(dict[Node, Any]):
 
 DoneCallback = Callable[[], None]
 
+from collections import defaultdict
+
 
 class TopologicalSorterWithStatus:
 
@@ -185,7 +187,7 @@ class TopologicalSorterWithStatus:
     self.logs = ResultDict()
     self.final_result = None
 
-    self.graph = defaultdict(set)
+    self.graph = defaultdict(list)
     self.done_nodes = list()
     self._ts = None
 
@@ -194,9 +196,14 @@ class TopologicalSorterWithStatus:
         self.add(node, *dependencies)
 
   def add(self, node: Any, *dependencies: Iterable[Any]):
-    self.graph[node].update(dependencies)
+    # Preserve dependency order and avoid duplicates
+    seen = set(self.graph[node])
     for dep in dependencies:
-      self.graph.setdefault(dep, set())  # ensure all nodes are registered
+      if dep not in seen:
+        self.graph[node].append(dep)
+        seen.add(dep)
+      if dep not in self.graph:
+        self.graph[dep] = []
 
   def prepare(self):
     self._ts = TopologicalSorter(self.graph)
