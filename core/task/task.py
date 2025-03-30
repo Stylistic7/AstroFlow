@@ -3,11 +3,10 @@ import time
 import xxhash
 import inspect
 import pickle
-from pathlib import Path
+import dataclasses
 from functools import wraps
 from typing import Any, Callable, Optional, Protocol, get_origin, TypeVar, Generic, runtime_checkable, List, Type
 
-# --- Constants ---
 _MAX_PERFORMANCE_SAMPLES = 100
 DEBUG_TASKS = False
 
@@ -15,9 +14,6 @@ DEBUG_TASKS = False
 def debug_print(*args, **kwargs):
   if DEBUG_TASKS:
     print(*args, **kwargs)
-
-
-# --- Protocols ---
 
 
 @runtime_checkable
@@ -39,10 +35,13 @@ class CacheProtocol(Protocol):
 @runtime_checkable
 class ContentHashProtocol(Protocol):
 
-  def get(self, path: Path) -> str:
+  def has(self, obj: Any) -> bool:
     ...
 
-  def set(self, path: Path, content_hash: str) -> None:
+  def get(self, obj: Any) -> str:
+    ...
+
+  def set(self, obj: Any, content_hash: str) -> Any:
     ...
 
 
@@ -52,9 +51,6 @@ class Injected(Generic[TypeVar('T')]):
 
 class MissingInjectedValueError(Exception):
   pass
-
-
-# --- Utilities ---
 
 
 def serialize_function(func: Callable) -> bytes:
@@ -84,15 +80,6 @@ def _bind_args(func: Callable, args: tuple, kwargs: dict,
   return bound
 
 
-def _is_valid_cached_path(path: Path, call_hash: str,
-                          content_hash: ContentHashProtocol) -> bool:
-  try:
-    return path.exists() and content_hash.get(path) == call_hash
-  except Exception as e:
-    debug_print(f"[cache check error] {path}: {e}")
-    return False
-
-
 def _update_performance(fn_name: str, elapsed_time: float,
                         cache: CacheProtocol):
   try:
@@ -106,11 +93,8 @@ def _update_performance(fn_name: str, elapsed_time: float,
     debug_print(f"[perf] failed for {fn_name}: {e}")
 
 
-# --- Decorator factory ---
-
-
 def make_task_decorator(cache: CacheProtocol,
-                        content_hash: ContentHashProtocol,
+                        content_hasher: ContentHashProtocol,
                         call_hasher: Optional[Callable[[bytes, Any],
                                                        str]] = None,
                         no_cache_types: Optional[List[Type]] = None):
@@ -133,12 +117,8 @@ def make_task_decorator(cache: CacheProtocol,
         cache_key = (func.__name__, call_hash)
         if self.cache_results and cache_key in cache:
           cached_result = cache[cache_key]
-          if isinstance(cached_result, Path):
-            if _is_valid_cached_path(cached_result, call_hash, content_hash):
-              debug_print(f"[cache hit remote] {func.__name__}")
-              return cached_result
-          else:
-            debug_print(f"[cache hit remote] {func.__name__}")
+          if (not content_hasher.has(cached_result) or
+              content_hasher.get(cached_result) == call_hash):
             return cached_result
 
         start = time.perf_counter()
@@ -148,9 +128,8 @@ def make_task_decorator(cache: CacheProtocol,
         _update_performance(func.__name__, elapsed, cache)
 
         if self.cache_results and not isinstance(result, no_cache_types):
+          result = content_hasher.set(result, call_hash)
           cache[cache_key] = result
-          if isinstance(result, Path) and result.exists():
-            content_hash.set(result, call_hash)
 
         return result
 

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from PIL import Image
 import tempfile
-import time
+from typing import Any
 
 from context import context
 from task.task import make_task_decorator, Injected
@@ -13,18 +13,24 @@ from hashing import hash_list
 from dependency_graph import Graph
 
 
-class SidecarHash:
+class SidecarHasher:
 
-  def get(self, path: Path) -> str:
-    with open(path.with_suffix('.hash'), 'r') as f:
-      content_hash = f.read()
-      print(f'got hash {content_hash}')
-      return content_hash
+  def has(self, obj: Any) -> bool:
+    return isinstance(obj, Path)
 
-  def set(self, path: Path, content_hash: str):
-    print(f'setting hash {content_hash} for path {path}')
-    with open(path.with_suffix('.hash'), 'w') as f:
-      f.write(content_hash)
+  def get(self, obj: Any) -> str:
+    if isinstance(obj, Path):
+      with open(obj.with_suffix('.hash'), 'r') as f:
+        content_hash = f.read()
+        print(f'got hash {content_hash}')
+        return content_hash
+
+  def set(self, obj: Any, content_hash: str) -> Any:
+    print(f'setting hash {content_hash} for obj {obj}')
+    if isinstance(obj, Path):
+      with open(obj.with_suffix('.hash'), 'w') as f:
+        f.write(content_hash)
+    return obj
 
 
 def _compute_content_hash(serialized_func: bytes, *args, **kwargs) -> str:
@@ -32,7 +38,7 @@ def _compute_content_hash(serialized_func: bytes, *args, **kwargs) -> str:
   return hash_list([serialized_func, *args, *kwargs_list])
 
 
-sidecar = SidecarHash()
+sidecar = SidecarHasher()
 task_with_context = make_task_decorator(context,
                                         sidecar,
                                         call_hasher=_compute_content_hash,
@@ -55,6 +61,17 @@ def consume_large_image_remote(path: Path) -> None:
   context.num_consume_large_image_runs = context.num_consume_large_image_runs + 1
   with Image.open(path) as img:
     print(f'img.size {img.size}')
+
+
+@task_with_context.remote
+def fail_remote() -> int:
+  raise ValueError("intentional failure")
+
+
+@task_with_context.remote
+def make_graph_remote() -> Graph:
+  context.num_graph_runs = context.num_graph_runs + 1
+  return Graph()
 
 
 class TestTask(unittest.TestCase):
@@ -94,35 +111,37 @@ class TestTask(unittest.TestCase):
       self.assertEqual(context.num_make_large_image_runs, 1)
       self.assertEqual(context.num_consume_large_image_runs, 1)
 
-  # def test_update_performance_actor_latency(self):
-  #   fn_name = "expensive_task"
-  #   n = 1000
-  #   samples = []
+  def test_exception_handling(self):
+    with self.assertRaises(ray.exceptions.RayTaskError) as cm:
+      ray.get(fail_remote.remote())
 
-  #   # Clear any previous performance data
-  #   context[("performance_history", "127.0.0.1", fn_name)] = []
+    self.assertIn("intentional failure", str(cm.exception))
 
-  #   for _ in range(n):
-  #     t0 = time.perf_counter()
-  #     _update_performance(fn_name, 0.123, context)
-  #     t1 = time.perf_counter()
-  #     samples.append(t1 - t0)
+  def test_excluded_from_cache(self):
+    context.num_graph_runs = 0
 
-  #   avg_time = sum(samples) / len(samples)
-  #   worst_time = max(samples)
-  #   best_time = min(samples)
+    ray.get(make_graph_remote.remote())
+    ray.get(make_graph_remote.remote())
 
-  #   print(f"\n_update_performance() over {n} calls:")
-  #   print(f"  average: {avg_time:.6f} sec")
-  #   print(f"  best:    {best_time:.6f} sec")
-  #   print(f"  worst:   {worst_time:.6f} sec")
+    # Should have run both times since Graph is excluded from cache
+    self.assertEqual(context.num_graph_runs, 2)
 
-  #   # You can set a generous upper bound depending on expectations
-  #   self.assertLess(avg_time, 0.01, "Average performance tracking too slow")
+  def test_performance_tracking(self):
+    from ray.util import get_node_ip_address
 
+    context.num_make_large_image_runs = 0
+    fn_name = "make_large_image_remote"
+    node_ip = get_node_ip_address()
+    perf_key = ('performance_history', node_ip, fn_name)
 
-# TODO: Add tests of exception handling.
+    context[perf_key] = []
 
-# TODO: Add tests of excluding Graphs
+    with tempfile.TemporaryDirectory() as output_dir:
+      injected_context = {"output_dir": Path(output_dir)}
+      ray.get(
+          make_large_image_remote.remote((50, 50),
+                                         injected_context=injected_context))
 
-# TODO: Add tests of performance measurement.
+    history = context.get(perf_key, [])
+    self.assertTrue(len(history) > 0)
+    self.assertIsInstance(history[0], float)
