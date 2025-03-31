@@ -14,6 +14,7 @@ from dependency_graph import Graph
 from context import context, WriteMode
 from metadata.actor import get_metadata
 from task.astroflow_node import task
+from hashing import hash_list
 
 # TODO: I need to associate dark and flat frames *before* computing thumbnails.
 
@@ -192,5 +193,7 @@ def load_metadata() -> MetadataDict:
   print(f'### load_metadata() size {metadata_size_mb} MB')
 
   context.set('metadata', metadata, write_mode=WriteMode.MEMORY_ONLY)
+
+  print(f'load_metadata metadata hash {hash_list([metadata])}')
 
   return metadata

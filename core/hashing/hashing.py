@@ -36,9 +36,10 @@ def hash_dataclass(x: Any) -> int:
 
 def make_hashable(value: Any) -> Any:
   if isinstance(value, dict):
-    return tuple(sorted((k, make_hashable(v)) for k, v in value.items()))
+    return tuple(
+        sorted((k, _maybe_use_content_hash(v)) for k, v in value.items()))
   elif isinstance(value, (list, set)):
-    return tuple(make_hashable(v) for v in value)
+    return tuple(_maybe_use_content_hash(v) for v in value)
   elif isinstance(value, frozenset):
     return tuple(sorted(value))
   else:

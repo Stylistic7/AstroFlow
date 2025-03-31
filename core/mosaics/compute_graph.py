@@ -47,6 +47,7 @@ def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
     return [filter, filename]
 
 
+# TODO: Make this a pure function.
 @task.remote
 def build_mosaic_subgraph(mode: QualityLevel, mosaic: Mosaic) -> Graph:
   print(f'### build_mosaic_subgraph mode {mode} for mosaic {mosaic}')
@@ -162,6 +163,7 @@ def get_stacks_for_filter(mode: QualityLevel, mosaic: Mosaic, filter: str):
     return strip_stack_ids
 
 
+# TODO: Make this a pure function.
 @task.remote
 def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
                                  filter: str, viewbox: Viewbox,

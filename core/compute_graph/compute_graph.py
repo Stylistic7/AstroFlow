@@ -24,6 +24,8 @@ from customization.compute_graph import build_customize_graph
 from mosaics.types import MosaicsDict
 from quarantining.quarantining import quarantine_calibration_stacks
 
+from hashing import hash_list
+
 
 @task.remote(cache=False)
 def store_calibration_stacks(calibration_stacks: SimpleStacksDict) -> None:
@@ -87,11 +89,7 @@ def regroup_graph_done() -> None:
 # spatial groups.
 @task.remote
 def build_regroup_graph(metadata: MetadataDict) -> Graph:
-  context.calibration_stacks = {}
-  context.grouped_stacks = {}
-  context.grouped_targets = {}
-  context.grouped_mosaics = {}
-
+  print(f'build_regroup_graph metadata hash {hash_list([metadata])}')
   return Graph({
       scatter_spatial_groups: {(cluster_by_image_center, metadata)},
       group_stacks_into_targets: {scatter_spatial_groups},
@@ -134,8 +132,8 @@ def build_main_processing_graph() -> Graph:
   shopping_cart = context.shopping_cart or []
 
   # FIXME
-  shopping_cart = [('stack', i) for i in stacks.keys()]
-  shopping_cart += [('mosaic', 'b1c2c11588a866ac')]
+  # shopping_cart = [('stack', i) for i in stacks.keys()]
+  shopping_cart += [('mosaic', '75a1da6463e118e6')]
 
   print(f'### build_main_processing_graph shopping_cart {shopping_cart}')
 
@@ -163,23 +161,15 @@ def build_main_processing_graph() -> Graph:
   return graph
 
 
-def build_compute_graph(regroup: bool = False,
-                        make_previews: bool = True,
-                        run_main_processing_graph: bool = True) -> Graph:
+def build_compute_graph() -> Graph:
   task_list: list[TaskDescriptor] = [(scatter_compute_image_metadata, 'input')]
 
   # The regroup graph only looks at light frames only, and ignores calibration
   # frames. All of its findings are written into the given `grouped_*` keys.
-  if regroup:
-    task_list.append(build_regroup_graph)
-
+  task_list.append(build_regroup_graph)
   task_list.append(build_customize_graph)
-
-  if make_previews:
-    task_list.append(build_preview_graph)
-
-  if run_main_processing_graph:
-    task_list.append(build_main_processing_graph)
+  task_list.append(build_preview_graph)
+  task_list.append(build_main_processing_graph)
 
   graph = make_graph_from_list(task_list)
 

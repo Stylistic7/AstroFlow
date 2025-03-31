@@ -8,6 +8,7 @@ from geometry import footprints
 from context import context
 import plate_solving
 from task.astroflow_node import task
+from hashing import hash_list
 
 T = TypeVar('T')
 ComparisonFn = Callable[[T, T], bool]
@@ -50,7 +51,7 @@ def find_groups(values: dict[T, Any], comparison_fn: ComparisonFn,
 
 @task.remote
 def cluster_by_image_center(metadata: MetadataDict) -> None:
-  print('cluster_by_image_center')
+  print(f'cluster_by_image_center metadata hash {hash_list([metadata])}')
 
   cosine_similarity_threshold = context.cosine_similarity_threshold
   min_component_members = context.min_component_members
