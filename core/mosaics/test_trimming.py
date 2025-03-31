@@ -68,7 +68,8 @@ class TestTrimming(unittest.TestCase):
 
     draw_spherical_polygon(mosaic.footprint, projection, color='red')
 
-    plt.show()
+    # TODO: Write a real test with an assertion.
+    # plt.show()
 
 
 if __name__ == "__main__":
