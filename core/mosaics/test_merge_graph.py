@@ -92,7 +92,7 @@ class TestMergeGraph(unittest.TestCase):
         'c': make_composite_stack(stable_hash='c'),
     }
 
-    log, graph = ray.get(
+    graph = ray.get(
         build_mosaic_filter_subgraph.remote(mode, mosaic, filter, viewbox,
                                             masks))
     print_graph(graph)
@@ -151,7 +151,7 @@ class TestMergeGraph(unittest.TestCase):
         'f': make_composite_stack(stable_hash='f')
     }
 
-    log, graph = ray.get(
+    graph = ray.get(
         build_mosaic_filter_subgraph.remote(mode, mosaic, filter, viewbox,
                                             masks))
     print_graph(graph)
@@ -224,7 +224,7 @@ class TestMergeGraph(unittest.TestCase):
         'c': make_composite_stack(stable_hash='c'),
     }
 
-    _, graph = ray.get(
+    graph = ray.get(
         build_mosaic_filter_subgraph.remote(mode, mosaic, filter, viewbox,
                                             masks))
     print_graph(graph)
@@ -272,40 +272,40 @@ class TestMergeGraph(unittest.TestCase):
     self.assertEqual(len(context.mosaics), 1)
     mosaic = next(iter(context.mosaics.values()))
 
-    self.assertEqual(mosaic.strips, [['e1f7d909ac125ebe', '3871323c8756dead'],
-                                     ['3ef21a508ef46b36', '9ed89ccd9f10cc09']])
+    self.assertEqual(mosaic.strips, [['2e5e69b75efbc277', '15a294ac14d63dea'],
+                                     ['1101452f8cf2f9ff', '6d9f6be3ffab0f22']])
 
     mode = QualityLevel.SUBFRAME
     filter = 'H'
     viewbox = None
     masks = None
 
-    _, graph = ray.get(
+    graph = ray.get(
         build_mosaic_filter_subgraph.remote(mode, mosaic, filter, viewbox,
                                             masks))
     print_graph(graph)
 
     place_0_0 = Node(build_placement_subgraph, mode,
-                     mosaic, stacks['e1f7d909ac125ebe'], filter,
+                     mosaic, stacks['2e5e69b75efbc277'], filter,
                      TileIndices((0, 0)), viewbox, None)
     place_0_1 = Node(build_placement_subgraph, mode,
-                     mosaic, stacks['3871323c8756dead'], filter,
+                     mosaic, stacks['15a294ac14d63dea'], filter,
                      TileIndices((0, 1)), viewbox, None)
     place_1_0 = Node(build_placement_subgraph, mode,
-                     mosaic, stacks['3ef21a508ef46b36'], filter,
+                     mosaic, stacks['1101452f8cf2f9ff'], filter,
                      TileIndices((1, 0)), viewbox, None)
     place_1_1 = Node(build_placement_subgraph, mode,
-                     mosaic, stacks['9ed89ccd9f10cc09'], filter,
+                     mosaic, stacks['6d9f6be3ffab0f22'], filter,
                      TileIndices((1, 1)), viewbox, None)
 
     merge_0_0__0_1 = Node(merge_images,
                           mode,
                           mosaic,
-                          name=f'merge_{mosaic.stable_hash}_3871323c8756dead')
+                          name=f'merge_{mosaic.stable_hash}_15a294ac14d63dea')
     merge_1_0__1_1 = Node(merge_images,
                           mode,
                           mosaic,
-                          name=f'merge_{mosaic.stable_hash}_9ed89ccd9f10cc09')
+                          name=f'merge_{mosaic.stable_hash}_6d9f6be3ffab0f22')
     final_merge = Node(merge_images,
                        mode,
                        mosaic,
@@ -337,17 +337,16 @@ class TestMergeGraph(unittest.TestCase):
     self.assertEqual(len(targets), 2)
     self.assertEqual(len(context.mosaics), 1)
     mosaic = next(iter(context.mosaics.values()))
-    print('### mosaic', mosaic)
 
     self.assertEqual(mosaic.strips,
-                     [['e1f7d909ac125ebe'], ['3ef21a508ef46b36']])
+                     [['2e5e69b75efbc277'], ['1101452f8cf2f9ff']])
 
     mode = QualityLevel.SUBFRAME
     filter = 'H'
     viewbox = None
     masks = None
 
-    log, graph = ray.get(
+    graph = ray.get(
         build_mosaic_filter_subgraph.remote(mode, mosaic, filter, viewbox,
                                             masks))
     print_graph(graph)
@@ -358,10 +357,10 @@ class TestMergeGraph(unittest.TestCase):
              mosaic,
              name=f'merge_{mosaic.stable_hash}_strip_1'): [
             Node(build_placement_subgraph,
-                 mode, mosaic, stacks['e1f7d909ac125ebe'], filter,
+                 mode, mosaic, stacks['2e5e69b75efbc277'], filter,
                  TileIndices((0, 0)), viewbox, None),
             Node(build_placement_subgraph,
-                 mode, mosaic, stacks['3ef21a508ef46b36'], filter,
+                 mode, mosaic, stacks['1101452f8cf2f9ff'], filter,
                  TileIndices((1, 0)), viewbox, None),
         ]
     })
@@ -385,28 +384,28 @@ class TestMergeGraph(unittest.TestCase):
     self.assertEqual(len(context.mosaics), 1)
     mosaic = next(iter(context.mosaics.values()))
 
-    self.assertEqual(mosaic.strips, [['e1f7d909ac125ebe', '3871323c8756dead']])
+    self.assertEqual(mosaic.strips, [['2e5e69b75efbc277', '15a294ac14d63dea']])
 
     mode = QualityLevel.SUBFRAME
     filter = 'H'
     viewbox = None
     masks = None
 
-    _, graph = ray.get(
+    graph = ray.get(
         build_mosaic_filter_subgraph.remote(mode, mosaic, filter, viewbox,
                                             masks))
     print_graph(graph)
 
     place_0_0 = Node(build_placement_subgraph, mode,
-                     mosaic, stacks['e1f7d909ac125ebe'], filter,
+                     mosaic, stacks['2e5e69b75efbc277'], filter,
                      TileIndices((0, 0)), viewbox, None)
     place_0_1 = Node(build_placement_subgraph, mode,
-                     mosaic, stacks['3871323c8756dead'], filter,
+                     mosaic, stacks['15a294ac14d63dea'], filter,
                      TileIndices((0, 1)), viewbox, None)
     merge = Node(merge_images,
                  mode,
                  mosaic,
-                 name=f'merge_{mosaic.stable_hash}_3871323c8756dead')
+                 name=f'merge_{mosaic.stable_hash}_15a294ac14d63dea')
 
     expected_graph = Graph({
         place_0_1: [place_0_0],
@@ -434,31 +433,31 @@ class TestMergeGraph(unittest.TestCase):
 
     self.assertEqual(
         mosaic.strips,
-        [['3ef21a508ef46b36'], ['e1f7d909ac125ebe', '3871323c8756dead']])
+        [['1101452f8cf2f9ff'], ['2e5e69b75efbc277', '15a294ac14d63dea']])
 
     mode = QualityLevel.SUBFRAME
     filter = 'H'
     viewbox = None
     masks = None
 
-    _, graph = ray.get(
+    graph = ray.get(
         build_mosaic_filter_subgraph.remote(mode, mosaic, filter, viewbox,
                                             masks))
     print_graph(graph)
 
     place_0_0 = Node(build_placement_subgraph, mode,
-                     mosaic, stacks['3ef21a508ef46b36'], filter,
+                     mosaic, stacks['1101452f8cf2f9ff'], filter,
                      TileIndices((0, 0)), viewbox, None)
     place_1_0 = Node(build_placement_subgraph, mode,
-                     mosaic, stacks['e1f7d909ac125ebe'], filter,
+                     mosaic, stacks['2e5e69b75efbc277'], filter,
                      TileIndices((1, 0)), viewbox, None)
     place_1_1 = Node(build_placement_subgraph, mode,
-                     mosaic, stacks['3871323c8756dead'], filter,
+                     mosaic, stacks['15a294ac14d63dea'], filter,
                      TileIndices((1, 1)), viewbox, None)
     merge_1_0__1_1 = Node(merge_images,
                           mode,
                           mosaic,
-                          name=f'merge_{mosaic.stable_hash}_3871323c8756dead')
+                          name=f'merge_{mosaic.stable_hash}_15a294ac14d63dea')
     final_merge = Node(merge_images,
                        mode,
                        mosaic,

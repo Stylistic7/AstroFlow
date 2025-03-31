@@ -1,15 +1,19 @@
 from dataclasses import dataclass
 import datetime
 from typing import Any, Sequence
+from typing import Generic, TypeVar
 from beartype import beartype
 
 from context import context
 from metadata.classes import MetadataDict, FrameHash
 
+_HashType = TypeVar("_HashType", bound=str)
+
 
 @beartype
 @dataclass(frozen=True)
-class ChronologyAttributes:
+class ChronologyAttributes(Generic[_HashType]):
+  stable_hash: _HashType
   oldest_date: datetime.datetime
   newest_date: datetime.datetime
 
@@ -27,4 +31,7 @@ class ChronologyAttributes:
     oldest_date = sorted_metadata[0].header['DATE-OBS']
     newest_date = sorted_metadata[-1].header['DATE-OBS']
 
-    return cls(oldest_date, newest_date)
+    # The stable hash is just the content hash of the oldest frame.
+    stable_hash = sorted_metadata[0].content_hash
+
+    return cls(stable_hash, oldest_date, newest_date)

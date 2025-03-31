@@ -13,6 +13,7 @@ from stacks.chronology_attributes import ChronologyAttributes
 def make_composite_stack(**kwargs: Any) -> CompositeStack:
   chronology_attributes = asdict(
       ChronologyAttributes(
+          stable_hash='stable_hash',
           oldest_date=datetime.datetime(2024, 2, 5, 16, 29, 43),
           newest_date=datetime.datetime(2024, 2, 5, 17, 29, 43),
       ))
@@ -36,12 +37,7 @@ def make_composite_stack(**kwargs: Any) -> CompositeStack:
           footprint=SphericalPolygon.from_cone(0.0, 90.0, 1.0),
           projected_footprints={},
       ))
-  composite_stack_attributes = {
-      'stable_hash': 'stable_hash',
-      'content_hash': 'content_hash',
-      'contents': [],
-      'state': {}
-  }
+  composite_stack_attributes = {'contents': [], 'state': {}}
 
   attributes = (chronology_attributes | imaging_attributes |
                 astrometric_attributes | composite_stack_attributes | kwargs)

@@ -1,4 +1,4 @@
-from dataclasses import dataclass, asdict, fields
+from dataclasses import dataclass, asdict
 from typing import Any
 
 from context import context
@@ -8,23 +8,22 @@ from stacks.imaging_attributes import ImagingAttributes
 from stacks.state_attributes import AstroFlowStateAttributes
 from metadata.classes import MetadataDict, FrameHash
 from hashing import hash_list, hash_list_int
+from task.content_hashed import ContentHashed
 
 DependenciesDict = dict[str, StackHash]
 
 
 @dataclass(frozen=True)
-class SimpleStack(ChronologyAttributes, ImagingAttributes,
-                  AstroFlowStateAttributes):
-  content_hash: str
+class SimpleStack(ContentHashed, ChronologyAttributes[StackHash],
+                  ImagingAttributes, AstroFlowStateAttributes):
+  stable_hash: StackHash
   frames: list[FrameHash]
   metadata: MetadataDict
   dependencies: DependenciesDict
 
   @classmethod
-  def from_frames(cls,
-                  frames: list[FrameHash],
-                  metadata: MetadataDict | None = None) -> 'SimpleStack':
-    metadata = metadata or context.metadata
+  def from_frames(cls, frames: list[FrameHash],
+                  metadata: MetadataDict) -> 'SimpleStack':
     chronology_attributes = ChronologyAttributes.from_frames(frames, metadata)
     imaging_attributes = ImagingAttributes.from_frames(frames, metadata)
 

@@ -40,7 +40,6 @@ class TestTargetIdentification(unittest.TestCase):
     self.assertEqual(len(context.targets), 1)
     target = next(iter(context.targets.values()))
     self.assertEqual(target.stable_hash, stack.stable_hash)
-    self.assertEqual(target.content_hash, hash_list([stack.content_hash]))
 
 
 if __name__ == '__main__':

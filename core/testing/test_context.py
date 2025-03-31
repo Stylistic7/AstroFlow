@@ -27,6 +27,5 @@ def make_test_context(
   context.subframe_thumbnail_width = 1200
   context.master_thumbnail_width = 2160
   context.subframe_mosaic_samples = 500
-  context.master_mosaic_samples = 500
 
   return input_dir_obj, output_dir_obj

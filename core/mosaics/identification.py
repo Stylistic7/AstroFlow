@@ -398,7 +398,8 @@ def identify_mosaics(targets: TargetsDict,
       center = vector_to_lonlat(*np.mean(footprint.points, axis=0))
       name = position_string.canonical_target_string(center)
 
-      chronology_attributes = ChronologyAttributes(oldest_date, newest_date)
+      chronology_attributes = ChronologyAttributes(stable_hash, oldest_date,
+                                                   newest_date)
       astrometric_attributes = AstrometricAttributes(
           name=name,
           center=list(center),

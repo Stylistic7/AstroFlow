@@ -75,13 +75,13 @@ class TestStackIdentification(unittest.TestCase):
     for stack in toplevel_stacks:
       print(f'### toplevel stack {stack}')
 
-    stack = stacks['7898d3a177188b69']
+    stack = stacks['963b3bad57928528']
     frames = stack.all_frames()
     filenames = get_metadata(frames, transform_fn=lambda i: i.filename)
     self.assertTrue(all('foo' in f for f in filenames))
     self.assertEqual(len(frames), 10)
 
-    stack = stacks['eb283047432debf3']
+    stack = stacks['31520d846ae3463d']
     frames = stack.all_frames()
     filenames = get_metadata(frames, transform_fn=lambda i: i.filename)
     self.assertTrue(all('bar' in f for f in filenames))
@@ -124,14 +124,14 @@ class TestStackIdentification(unittest.TestCase):
 
     stack = toplevel_stacks[keys[0]]
     self.assertEqual(stack.center, [100, 50])
-    self.assertEqual(stack.width_pixels, 3000)
-    self.assertEqual(stack.height_pixels, 2000)
+    self.assertEqual(stack.width_pixels, 6000)
+    self.assertEqual(stack.height_pixels, 4000)
     self.assertEqual(stack.image_scale, 1.0)
 
     stack = toplevel_stacks[keys[1]]
     self.assertEqual(stack.center, [100, 50])
-    self.assertEqual(stack.width_pixels, 6000)
-    self.assertEqual(stack.height_pixels, 4000)
+    self.assertEqual(stack.width_pixels, 3000)
+    self.assertEqual(stack.height_pixels, 2000)
     self.assertEqual(stack.image_scale, 1.0)
 
   def test_multiple_exposures(self):

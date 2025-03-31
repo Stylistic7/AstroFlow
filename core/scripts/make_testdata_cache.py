@@ -80,8 +80,8 @@ if __name__ == '__main__':
   testdata_cache['grouped_mosaics'] = {}
   print(f'Opened testdata cache in dir {testdata_cache_dir.name}')
 
-  copy_all_mosaic_data(cache, testdata_cache, 'b1c2c11588a866ac')
-  copy_all_stack_data(cache, testdata_cache, '2c71f4db63b27773')
+  copy_all_mosaic_data(cache, testdata_cache, '75a1da6463e118e6')
+  copy_all_stack_data(cache, testdata_cache, '8768e9be7664d771')
   copy_image(cache, testdata_cache, '6a941ee93e7f3f5f',
              'testdata/Stacks/IC1318/masters')
   copy_image(cache, testdata_cache, '7b418a55a19518f2',

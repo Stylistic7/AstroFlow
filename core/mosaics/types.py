@@ -8,6 +8,7 @@ from hashing import hash_dataclass
 from targets.types import TargetHash
 from stacks.astrometric_attributes import AstrometricAttributes
 from stacks.chronology_attributes import ChronologyAttributes
+from task.content_hashed import ContentHashed
 
 Template: TypeAlias = tuple[int | None, int | None]
 TileIndices: TypeAlias = tuple[int, int]
@@ -19,10 +20,9 @@ MosaicHash = NewType('MosaicHash', str)
 
 @beartype
 @dataclass(order=True, frozen=True)
-class Mosaic(AstrometricAttributes, ChronologyAttributes):
-  content_hash: str
+class Mosaic(ContentHashed, AstrometricAttributes,
+             ChronologyAttributes[MosaicHash]):
   stable_hash: MosaicHash
-
   target_ids: list[TargetHash]
   strips: list[Strip]
 
@@ -46,7 +46,7 @@ MosaicsDict = dict[MosaicHash, Mosaic]
 
 @beartype
 @dataclass(frozen=True)
-class Viewbox:
+class Viewbox(ContentHashed):
   projection: Projection
 
   x_min: float  # radians

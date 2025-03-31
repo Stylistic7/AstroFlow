@@ -70,10 +70,8 @@ class TestStacking(unittest.TestCase):
         str(f) for f in Path(context.output_dir).rglob("*post_processed.xisf"))
     self.assertEqual(len(filenames), 0)
 
-    for stack in context.stacks.values():
-      print(f'### stack {stack} type {type(stack)}')
-
-    context.shopping_cart = [('stack', 'e1f7d909ac125ebe')]
+    stack_id = next(iter(context.stacks))
+    context.shopping_cart = [('stack', stack_id)]
 
     graph = build_compute_graph()
     run_graph(graph, debug=True)

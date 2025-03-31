@@ -6,15 +6,15 @@ from hashing import hash_dataclass
 from stacks.types import StackHash
 from stacks.astrometric_attributes import AstrometricAttributes
 from stacks.chronology_attributes import ChronologyAttributes
+from task.content_hashed import ContentHashed
 
 TargetHash = NewType('TargetHash', str)
 
 
 @dataclass(order=True, frozen=True)
-class Target(AstrometricAttributes, ChronologyAttributes):
-  content_hash: str
+class Target(ContentHashed, AstrometricAttributes,
+             ChronologyAttributes[TargetHash]):
   stable_hash: TargetHash
-
   stack_ids: list[StackHash]
 
   def __str__(self) -> str:

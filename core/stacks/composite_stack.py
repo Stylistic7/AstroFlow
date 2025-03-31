@@ -13,27 +13,18 @@ from stacks.chronology_attributes import ChronologyAttributes
 from stacks.types import StackHash
 from metadata.classes import MetadataDict, FrameHash
 from clustering.continuous import cluster_continuous
+from task.content_hashed import ContentHashed
 
 
 @dataclass(frozen=True)
-class CompositeStack(ImagingAttributes, AstrometricAttributes,
-                     ChronologyAttributes, AstroFlowStateAttributes):
-  stable_hash: str
-  content_hash: str
+class CompositeStack(ContentHashed, ImagingAttributes, AstrometricAttributes,
+                     ChronologyAttributes[StackHash], AstroFlowStateAttributes):
+  stable_hash: StackHash
   contents: SimpleStacksDict
 
   @classmethod
-  def from_frames(
-      cls,
-      frames: Sequence[FrameHash],
-      stable_hash: StackHash | None = None,
-      metadata: MetadataDict | None = None) -> Optional['CompositeStack']:
-    if not frames:
-      return None
-
-    metadata = metadata or context.metadata
-    assert metadata
-
+  def from_frames(cls, frames: Sequence[FrameHash],
+                  metadata: MetadataDict) -> Optional['CompositeStack']:
     metadata_list = [i for h, i in metadata.items() if h in frames]
 
     # Sort the light frames by observation date. The oldest image will be used
@@ -71,21 +62,10 @@ class CompositeStack(ImagingAttributes, AstrometricAttributes,
     imaging_attributes = ImagingAttributes.from_frames(frames, metadata)
     astrometric_attributes = AstrometricAttributes.from_frames(frames, metadata)
 
-    if stable_hash is None:
-      stable_hash = hash_string(
-          f'RA {units.ra_to_hms(astrometric_attributes.center[0])}, '
-          f'Dec {units.dec_to_dms(astrometric_attributes.center[1])}, '
-          f'Scale {astrometric_attributes.image_scale:.2f}"/px, '
-          f'PA {astrometric_attributes.rotation_angle:.2f}deg,'
-          f'Width {imaging_attributes.width_pixels}, '
-          f'Height {imaging_attributes.height_pixels}, '
-          f'Filter {filter}')
-
     attributes: dict[str, Any] = asdict(chronology_attributes) | asdict(
         imaging_attributes) | asdict(astrometric_attributes) | {
             'contents': contents,
             'content_hash': content_hash,
-            'stable_hash': stable_hash,
             'state': {},
         }
 

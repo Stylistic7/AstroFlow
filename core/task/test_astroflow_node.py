@@ -3,7 +3,6 @@ from ray_infra import ray_local
 import numpy as np
 import os
 import unittest
-import ray
 from typing import TypeVar, Any
 import astropy.io.fits as pyfits  # type: ignore
 from pathlib import Path
@@ -14,7 +13,6 @@ import datetime
 from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import Graph, run_graph
-from hashing import hash_list
 from previews import QualityLevel
 from testing import make_test_context, copy_testdata_frames
 
@@ -22,7 +20,6 @@ from artifacts.artifact import unpack_artifact
 from mosaics.types import MosaicHash, Viewbox
 from geometry.projections import mercator
 from task.astroflow_node import task
-from dependency_graph.debugging import print_result_dict
 from file_io.fits_file_io import read_fits_image
 from stacks.composite_stack import CompositeStack, SimpleStacksDict
 
@@ -228,8 +225,8 @@ class TestAstroFlowNode(unittest.TestCase):
     stacks = context.stacks
     self.assertEqual(len(stacks), 1)
     stack = next(iter(stacks.values()))
-    self.assertEqual(stack.content_hash, 'abe2b7c2b0774fd4')
-    self.assertEqual(hash(stack), 8574396508814116701)
+    self.assertEqual(stack.content_hash, 'c7e3df79bb593fe5')
+    self.assertEqual(hash(stack), 1507345702431796835)
 
     context.associate_calibration_runs = 0
     graph = Graph({(associate_calibration, stack): {}})
@@ -237,7 +234,7 @@ class TestAstroFlowNode(unittest.TestCase):
     # The `associate_calibration` node should run the first time.
     results, _ = run_graph(graph, debug=True)
     self.assertTrue(
-        context.contains(('associate_calibration', 'ad0cfe8637b60c98')))
+        context.contains(('associate_calibration', '9e7b06bf71e279f1')))
     self.assertEqual(results.num_nodes_run, 1)
     self.assertEqual(context.associate_calibration_runs, 1)
 
@@ -246,7 +243,7 @@ class TestAstroFlowNode(unittest.TestCase):
     # run the underlying wrapped function.
     results, _ = run_graph(graph, debug=True)
     self.assertTrue(
-        context.contains(('associate_calibration', 'ad0cfe8637b60c98')))
+        context.contains(('associate_calibration', '9e7b06bf71e279f1')))
     self.assertEqual(results.num_nodes_run, 1)
     self.assertEqual(context.associate_calibration_runs, 1)
 
