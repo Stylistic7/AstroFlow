@@ -1,6 +1,8 @@
 from dataclasses import dataclass
+from typing import NewType
+from task.task import ContentHash
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class ContentHashed:
-  content_hash: str = ''
+  content_hash: ContentHash = ''

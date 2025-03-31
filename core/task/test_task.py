@@ -8,7 +8,7 @@ import tempfile
 from typing import Any
 
 from context import context
-from task.task import make_task_decorator, Injected
+from task.task import make_task_decorator, Injected, ContentHash
 from hashing import hash_list
 from dependency_graph import Graph
 
@@ -18,14 +18,14 @@ class SidecarHasher:
   def has(self, obj: Any) -> bool:
     return isinstance(obj, Path)
 
-  def get(self, obj: Any) -> str:
+  def get(self, obj: Any) -> ContentHash:
     if isinstance(obj, Path):
       with open(obj.with_suffix('.hash'), 'r') as f:
         content_hash = f.read()
         print(f'got hash {content_hash}')
         return content_hash
 
-  def set(self, obj: Any, content_hash: str) -> Any:
+  def set(self, obj: Any, content_hash: ContentHash) -> Any:
     print(f'setting hash {content_hash} for obj {obj}')
     if isinstance(obj, Path):
       with open(obj.with_suffix('.hash'), 'w') as f:
@@ -38,9 +38,9 @@ def _compute_content_hash(serialized_func: bytes, *args, **kwargs) -> str:
   return hash_list([serialized_func, *args, *kwargs_list])
 
 
-sidecar = SidecarHasher()
-task_with_context = make_task_decorator(context,
-                                        sidecar,
+sidecar_hasher = SidecarHasher()
+task_with_context = make_task_decorator(cache=context,
+                                        content_hasher=sidecar_hasher,
                                         call_hasher=_compute_content_hash,
                                         no_cache_types=[Graph])
 

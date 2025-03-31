@@ -3,17 +3,10 @@ import time
 import xxhash
 import inspect
 import pickle
-import dataclasses
 from functools import wraps
-from typing import Any, Callable, Optional, Protocol, get_origin, TypeVar, Generic, runtime_checkable, List, Type
+from typing import Any, NewType, Callable, Optional, Protocol, get_origin, TypeVar, Generic, runtime_checkable, List, Type
 
 _MAX_PERFORMANCE_SAMPLES = 100
-DEBUG_TASKS = False
-
-
-def debug_print(*args, **kwargs):
-  if DEBUG_TASKS:
-    print(*args, **kwargs)
 
 
 @runtime_checkable
@@ -32,16 +25,19 @@ class CacheProtocol(Protocol):
     ...
 
 
+ContentHash = NewType('ContentHash', str)
+
+
 @runtime_checkable
 class ContentHashProtocol(Protocol):
 
   def has(self, obj: Any) -> bool:
     ...
 
-  def get(self, obj: Any) -> str:
+  def get(self, obj: Any) -> ContentHash:
     ...
 
-  def set(self, obj: Any, content_hash: str) -> Any:
+  def set(self, obj: Any, content_hash: ContentHash) -> Any:
     ...
 
 
@@ -82,24 +78,25 @@ def _bind_args(func: Callable, args: tuple, kwargs: dict,
 
 def _update_performance(fn_name: str, elapsed_time: float,
                         cache: CacheProtocol):
-  try:
-    node_ip = ray.util.get_node_ip_address()
-    key = ('performance_history', node_ip, fn_name)
-    history = cache.get(key, [])
-    history = history[-(_MAX_PERFORMANCE_SAMPLES - 1):] + [elapsed_time]
-    cache[key] = history
-    debug_print(f"[perf] {fn_name} ran in {elapsed_time:.3f}s on {node_ip}")
-  except Exception as e:
-    debug_print(f"[perf] failed for {fn_name}: {e}")
+  node_ip = ray.util.get_node_ip_address()
+  key = ('performance_history', node_ip, fn_name)
+  history = cache.get(key, [])
+  history = history[-(_MAX_PERFORMANCE_SAMPLES - 1):] + [elapsed_time]
+  cache[key] = history
 
 
 def make_task_decorator(cache: CacheProtocol,
                         content_hasher: ContentHashProtocol,
                         call_hasher: Optional[Callable[[bytes, Any],
                                                        str]] = None,
-                        no_cache_types: Optional[List[Type]] = None):
+                        no_cache_types: Optional[List[Type]] = None,
+                        debug=False):
   call_hasher = call_hasher or default_call_hasher
   no_cache_types = tuple(no_cache_types or [])
+
+  def debug_print(*args, **kwargs):
+    if debug:
+      print(*args, **kwargs)
 
   class TaskDecorator:
 
@@ -119,8 +116,10 @@ def make_task_decorator(cache: CacheProtocol,
           cached_result = cache[cache_key]
           if (not content_hasher.has(cached_result) or
               content_hasher.get(cached_result) == call_hash):
+            debug_print(f'cache hit: fn {func.__name__}')
             return cached_result
 
+        debug_print(f'cache miss: fn {func.__name__}')
         start = time.perf_counter()
         result = func(*bound.args, **bound.kwargs)
         elapsed = time.perf_counter() - start
@@ -129,9 +128,13 @@ def make_task_decorator(cache: CacheProtocol,
 
         if self.cache_results and not isinstance(result, no_cache_types):
           result = content_hasher.set(result, call_hash)
+          debug_print(f'store result: fn {func.__name__} result {result}')
           cache[cache_key] = result
 
         return result
+
+      inner.__name__ = func.__name__
+      inner.__qualname__ = func.__qualname__
 
       ray_remote_callable = ray.remote(
           **self.ray_opts)(inner) if self.ray_opts else ray.remote(inner)
