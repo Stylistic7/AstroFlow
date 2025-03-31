@@ -6,6 +6,8 @@ import pickle
 from functools import wraps
 from typing import Any, NewType, Callable, Optional, Protocol, get_origin, TypeVar, Generic, runtime_checkable, List, Type
 
+from hashing import hash_list
+
 _MAX_PERFORMANCE_SAMPLES = 100
 
 
@@ -49,17 +51,12 @@ class MissingInjectedValueError(Exception):
   pass
 
 
-def serialize_function(func: Callable) -> bytes:
-  code = func.__code__
-  m = xxhash.xxh64()
-  attrs = [code.co_code, code.co_consts, code.co_varnames]
-  for attr in attrs:
-    m.update(str(attr).encode())
-  return m.digest()
+def hash_source_code(func: Callable) -> bytes:
+  return xxhash.xxh64(inspect.getsource(func)).hexdigest()
 
 
-def default_call_hasher(serialized_func: bytes, *args, **kwargs) -> str:
-  data = pickle.dumps((serialized_func, args, sorted(kwargs.items())))
+def default_call_hasher(fn_hash: bytes, *args, **kwargs) -> str:
+  data = pickle.dumps((fn_hash, args, sorted(kwargs.items())))
   return xxhash.xxh64(data).hexdigest()
 
 
@@ -90,7 +87,7 @@ def make_task_decorator(cache: CacheProtocol,
                         call_hasher: Optional[Callable[[bytes, Any],
                                                        str]] = None,
                         no_cache_types: Optional[List[Type]] = None,
-                        debug=False):
+                        debug=True):
   call_hasher = call_hasher or default_call_hasher
   no_cache_types = tuple(no_cache_types or [])
 
@@ -105,30 +102,32 @@ def make_task_decorator(cache: CacheProtocol,
       self.ray_opts = ray_opts
 
     def __call__(self, func: Callable):
-      serialized_func = serialize_function(func)
+      fn_hash = hash_source_code(func)
 
       def inner(*args, injected_context: Optional[dict] = None, **kwargs):
         bound = _bind_args(func, args, kwargs, injected_context)
-        call_hash = call_hasher(serialized_func, *bound.args, **bound.kwargs)
+        call_hash = call_hasher(fn_hash, *bound.args, **bound.kwargs)
 
         cache_key = (func.__name__, call_hash)
         if self.cache_results and cache_key in cache:
           cached_result = cache[cache_key]
           if (not content_hasher.has(cached_result) or
               content_hasher.get(cached_result) == call_hash):
-            debug_print(f'cache hit: fn {func.__name__}')
+            debug_print(f'cache hit: {cache_key}')
             return cached_result
 
-        debug_print(f'cache miss: fn {func.__name__}')
+        debug_print(f'cache miss: {cache_key}' if self.
+                    cache_results else f'never cache: {cache_key}')
         start = time.perf_counter()
         result = func(*bound.args, **bound.kwargs)
         elapsed = time.perf_counter() - start
 
         _update_performance(func.__name__, elapsed, cache)
 
-        if self.cache_results and not isinstance(result, no_cache_types):
+        if self.cache_results and not isinstance(
+            result, no_cache_types) and not isinstance(result, Exception):
           result = content_hasher.set(result, call_hash)
-          debug_print(f'store result: fn {func.__name__} result {result}')
+          debug_print(f'store result: {cache_key} result type {type(result)}')
           cache[cache_key] = result
 
         return result
