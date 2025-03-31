@@ -1,10 +1,11 @@
-import ray
+import os
 from pathlib import Path
 from astropy.time import Time
+import shutil
 
 from pix import PixInsight
 from pix.classes import ImageList
-from pix.tasks import ChannelCombination, SpectrophotometricColorCalibration, ImageSolver, StarXTerminator, LinearFit
+from pix.tasks import ChannelCombination, SpectrophotometricColorCalibration, ImageSolver, StarXTerminator, LinearFit, SaveImagesAs
 from context import context
 from task.astroflow_node import task
 from previews import QualityLevel
@@ -35,6 +36,9 @@ def _post_process_mosaic(images: ImageList, mosaic: Mosaic,
     s, o = LinearFit([s, o], h)
     narrowband = ChannelCombination([s, h, o], 'SHO')
 
+  # TODO: Supply multiple output filenames.
+  SaveImagesAs([narrowband], [output_filename])
+
   # TODO: Return list or tuples of images
   return []
 
@@ -61,4 +65,7 @@ def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> None:
       context.output_dir
   ) / 'Mosaics' / mosaic.name / f'final_merged_{mosaic.stable_hash}_post_processed.fits'
 
-  _post_process_mosaic(images, mosaic, output_filename)
+  if os.environ.get('MOCK_PIXINSIGHT'):
+    shutil.copy(images[0], output_filename)
+  else:
+    _post_process_mosaic(images, mosaic, output_filename)
