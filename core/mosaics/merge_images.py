@@ -55,11 +55,7 @@ def merge_images_with_maximum(image_0: np.ndarray,
 @task.remote
 def merge_images(mode: QualityLevel, mosaic: Mosaic, input_0: Path,
                  input_1: Path) -> Path:
-  print(f'### merge images {input_0} {input_1}')
-  print(f'### merge_images type(input_0) {type(input_0)}')
-  print(f'### merge_images type(input_1) {type(input_1)}')
-  print(f'### merge_images Path(input_0) {Path(input_0)}')
-  print(f'### merge_images Path(input_1) {Path(input_1)}')
+  print(f'### merge images mode {mode} {input_0} {input_1}')
 
   if input_0 is None and input_1 is None:
     return None
@@ -94,7 +90,7 @@ def merge_images(mode: QualityLevel, mosaic: Mosaic, input_0: Path,
     if os.environ.get('MOCK_PIXINSIGHT'):
       return input_0
     else:
-      _, output_filename = ray.get(
+      output_filename = ray.get(
           merge_images_with_photometric_mosaic.remote(mosaic, input_0, input_1))
 
   os.remove(input_0)

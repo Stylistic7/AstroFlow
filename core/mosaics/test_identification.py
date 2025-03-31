@@ -61,7 +61,7 @@ class TestMosaicIdentification(unittest.TestCase):
     }
     context.grouped_targets = {foo.stable_hash: foo, bar.stable_hash: bar}
 
-    _, mosaics = ray.get(identify_mosaics.remote(context.grouped_targets))
+    mosaics = ray.get(identify_mosaics.remote(context.grouped_targets))
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
 
@@ -130,7 +130,7 @@ class TestMosaicIdentification(unittest.TestCase):
         baz.stable_hash: baz
     }
 
-    _, mosaics = ray.get(identify_mosaics.remote(context.grouped_targets))
+    mosaics = ray.get(identify_mosaics.remote(context.grouped_targets))
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
@@ -198,7 +198,7 @@ class TestMosaicIdentification(unittest.TestCase):
         baz.stable_hash: baz
     }
 
-    _, mosaics = ray.get(identify_mosaics.remote(context.grouped_targets))
+    mosaics = ray.get(identify_mosaics.remote(context.grouped_targets))
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
@@ -275,7 +275,7 @@ class TestMosaicIdentification(unittest.TestCase):
         outlier.stable_hash: outlier,
     }
 
-    _, mosaics = ray.get(identify_mosaics.remote(context.grouped_targets))
+    mosaics = ray.get(identify_mosaics.remote(context.grouped_targets))
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
@@ -334,7 +334,7 @@ class TestMosaicIdentification(unittest.TestCase):
         bar.stable_hash: bar,
     }
 
-    _, mosaics = ray.get(identify_mosaics.remote(context.grouped_targets))
+    mosaics = ray.get(identify_mosaics.remote(context.grouped_targets))
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
@@ -345,7 +345,7 @@ class TestMosaicIdentification(unittest.TestCase):
   def test_big_cygnus_pano(self) -> None:
     copy_testdata_into_cache()
 
-    _, mosaics = ray.get(identify_mosaics.remote(context.grouped_targets))
+    mosaics = ray.get(identify_mosaics.remote(context.grouped_targets))
 
     self.assertEqual(len(mosaics), 1)
     mosaic = next(iter(mosaics.values()))
