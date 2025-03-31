@@ -345,8 +345,8 @@ def mosaic_thumbnail_image_for_filter(mosaic_id, filter):
   subframe_key = ('mosaic_thumbnail_image', QualityLevel.SUBFRAME, mosaic_id,
                   filter)
 
-  for key in [subframe_key]:
-    if cache.contains(key):
+  for key in [master_key, subframe_key]:
+    if key in cache:
       image = cache[key]
       if isinstance(image, Path):
         image = read_image(image)
@@ -613,14 +613,10 @@ def run_compute_graph():
   context.output_dir = '/Volumes/Astro/Processed'
 
   # TODO: Put these in the UI.
-
   context.ignore_cached_results = True
   context.dangerously_accept_existing_files = True
 
-  # TODO: Determine `regroup` automatically.
-  graph = build_compute_graph(regroup=True,
-                              make_previews=True,
-                              run_main_processing_graph=True)
+  graph = build_compute_graph()
 
   def _run_graph(*args, **kwargs):
     # TODO: Perhaps the results and logs should be saved incrementally,
