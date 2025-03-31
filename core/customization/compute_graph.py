@@ -11,8 +11,7 @@ from customization.types import CustomizedStack
 from quarantining.quarantining import apply_quarantine
 
 
-def apply_settings(stack: CompositeStack) -> CompositeStack:
-  settings = context.settings or Settings()
+def apply_settings(stack: CompositeStack, settings: Settings) -> CompositeStack:
   new_contents = {}
   for content_hash, substack in stack.contents.items():
     substack_settings = settings.stack_settings.get(substack.content_hash,
@@ -32,11 +31,12 @@ def gather_customize_stacks(*stacks) -> None:
 @task.remote
 def scatter_customize_stacks() -> Graph:
   quarantined_stacks = context.quarantined_stacks or []
+  settings = context.settings or Settings()
 
   tasks = []
   for stack_id, stack in context.grouped_stacks.items():
     if stack_id not in quarantined_stacks:
-      tasks.append((customize_stack, stack))
+      tasks.append((customize_stack, stack, settings))
 
   return Graph({gather_customize_stacks: tasks})
 
@@ -45,18 +45,20 @@ def scatter_customize_stacks() -> Graph:
 # TODO: Pass in the StackSettings and cache this.
 # TODO: Pass in the quarantined_stacks and cache this.
 @task.remote
-def customize_stack(stack: CompositeStack) -> CustomizedStack:
+def customize_stack(stack: CompositeStack,
+                    settings: Settings) -> CustomizedStack:
   stack = associate_with_stack(stack)
   stack = select_subframes(stack)
   stack = apply_quarantine(stack)
-  stack = apply_settings(stack)
+  stack = apply_settings(stack, settings)
 
   return CustomizedStack(**stack.__dict__)
 
 
-@task.remote
+# TODO: Implement real customization features.
+# TODO: Make this a pure function.
+@task.remote(cache=False)
 def scatter_customize_targets() -> None:
-  # TODO: Implement real customization features.
   quarantined_targets = context.quarantined_targets or []
   context.targets = {
       id: t
@@ -65,9 +67,10 @@ def scatter_customize_targets() -> None:
   }
 
 
-@task.remote
+# TODO: Implement real customization features.
+# TODO: Make this a pure function.
+@task.remote(cache=False)
 def scatter_customize_mosaics(*mosaics) -> None:
-  # TODO: Implement real customization features.
   quarantined_mosaics = context.quarantined_mosaics or []
   context.mosaics = {
       id: t
