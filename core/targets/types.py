@@ -1,8 +1,7 @@
 from typing import NewType
 from dataclasses import dataclass
-import datetime
 
-from hashing import hash_dataclass
+from hashing import hash_dataclass, hash_list_int
 from stacks.types import StackHash
 from stacks.astrometric_attributes import AstrometricAttributes
 from stacks.chronology_attributes import ChronologyAttributes
@@ -31,4 +30,10 @@ class Target(ContentHashed, AstrometricAttributes,
   # TODO: Add a valid() method, and assert on it.
 
 
-TargetsDict = dict[TargetHash, Target]
+class TargetsDict(dict[TargetHash, Target]):
+
+  def __hash__(self):
+    return hash_list_int([self[k].content_hash for k in sorted(self.keys())])
+
+  def __str__(self):
+    return f'SimpleStacksDict({len(self)})'

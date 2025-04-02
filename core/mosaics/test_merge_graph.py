@@ -14,7 +14,7 @@ from customization.types import CustomizedStack
 from dependency_graph import Graph, Node, print_graph, run_graph, canonicalize_graph
 from mosaics.types import Mosaic
 from mosaics.merge_images import merge_images
-from mosaics.compute_graph import build_mosaic_filter_subgraph, build_placement_subgraph
+from mosaics.compute_graph import build_mosaic_filter_subgraph, build_placement_subgraph, get_stacks_for_filter
 from mosaics.types import TileIndices
 from mosaics.orion_mosaic import add_orion_mosaic_images
 from targets.types import Target
@@ -92,9 +92,11 @@ class TestMergeGraph(unittest.TestCase):
         'c': make_composite_stack(stable_hash='c'),
     }
 
+    strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
+
     graph = ray.get(
-        build_mosaic_filter_subgraph.remote(mode, mosaic, filter, viewbox,
-                                            masks))
+        build_mosaic_filter_subgraph.remote(mode, mosaic, strips, stacks,
+                                            filter, viewbox, masks))
     print_graph(graph)
 
     expected_graph = Graph({
@@ -133,7 +135,7 @@ class TestMergeGraph(unittest.TestCase):
                     footprint=_FOOTPRINT,
                     projected_footprints={})
 
-    context.targets = {
+    context.targets = targets = {
         'a': make_test_target('a', stack_ids=['a']),
         'b': make_test_target('b', stack_ids=['b']),
         'c': make_test_target('c', stack_ids=['c']),
@@ -151,9 +153,11 @@ class TestMergeGraph(unittest.TestCase):
         'f': make_composite_stack(stable_hash='f')
     }
 
+    strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
+
     graph = ray.get(
-        build_mosaic_filter_subgraph.remote(mode, mosaic, filter, viewbox,
-                                            masks))
+        build_mosaic_filter_subgraph.remote(mode, mosaic, strips, stacks,
+                                            filter, viewbox, masks))
     print_graph(graph)
 
     place_a = Node(build_placement_subgraph, mode, mosaic, stacks['a'], filter,
@@ -212,7 +216,7 @@ class TestMergeGraph(unittest.TestCase):
                     footprint=_FOOTPRINT,
                     projected_footprints={})
 
-    context.targets = {
+    context.targets = targets = {
         'a': make_test_target('a', stack_ids=['a']),
         'b': make_test_target('b', stack_ids=['b']),
         'c': make_test_target('c', stack_ids=['c']),
@@ -224,9 +228,11 @@ class TestMergeGraph(unittest.TestCase):
         'c': make_composite_stack(stable_hash='c'),
     }
 
+    strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
+
     graph = ray.get(
-        build_mosaic_filter_subgraph.remote(mode, mosaic, filter, viewbox,
-                                            masks))
+        build_mosaic_filter_subgraph.remote(mode, mosaic, strips, stacks,
+                                            filter, viewbox, masks))
     print_graph(graph)
 
     place_a = Node(build_placement_subgraph, mode, mosaic, stacks['a'], filter,
@@ -261,9 +267,7 @@ class TestMergeGraph(unittest.TestCase):
 
     # Running the graph the first time, with an empty shopping cart, should
     # produce all the subframe previews for the stacks, targets, and mosaic.
-    graph = build_compute_graph(regroup=True,
-                                make_previews=True,
-                                run_main_processing_graph=True)
+    graph = build_compute_graph()
     run_graph(graph)
 
     stacks = context.stacks
@@ -280,9 +284,11 @@ class TestMergeGraph(unittest.TestCase):
     viewbox = None
     masks = None
 
+    strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
+
     graph = ray.get(
-        build_mosaic_filter_subgraph.remote(mode, mosaic, filter, viewbox,
-                                            masks))
+        build_mosaic_filter_subgraph.remote(mode, mosaic, strips, stacks,
+                                            filter, viewbox, masks))
     print_graph(graph)
 
     place_0_0 = Node(build_placement_subgraph, mode,
@@ -327,9 +333,7 @@ class TestMergeGraph(unittest.TestCase):
 
     # Running the graph the first time, with an empty shopping cart, should
     # produce all the subframe previews for the stacks, targets, and mosaic.
-    graph = build_compute_graph(regroup=True,
-                                make_previews=True,
-                                run_main_processing_graph=True)
+    graph = build_compute_graph()
     run_graph(graph)
 
     stacks = context.stacks
@@ -346,9 +350,11 @@ class TestMergeGraph(unittest.TestCase):
     viewbox = None
     masks = None
 
+    strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
+
     graph = ray.get(
-        build_mosaic_filter_subgraph.remote(mode, mosaic, filter, viewbox,
-                                            masks))
+        build_mosaic_filter_subgraph.remote(mode, mosaic, strips, stacks,
+                                            filter, viewbox, masks))
     print_graph(graph)
 
     expected_graph = Graph({
@@ -373,9 +379,7 @@ class TestMergeGraph(unittest.TestCase):
 
     # Running the graph the first time, with an empty shopping cart, should
     # produce all the subframe previews for the stacks, targets, and mosaic.
-    graph = build_compute_graph(regroup=True,
-                                make_previews=True,
-                                run_main_processing_graph=True)
+    graph = build_compute_graph()
     run_graph(graph)
 
     stacks = context.stacks
@@ -391,9 +395,11 @@ class TestMergeGraph(unittest.TestCase):
     viewbox = None
     masks = None
 
+    strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
+
     graph = ray.get(
-        build_mosaic_filter_subgraph.remote(mode, mosaic, filter, viewbox,
-                                            masks))
+        build_mosaic_filter_subgraph.remote(mode, mosaic, strips, stacks,
+                                            filter, viewbox, masks))
     print_graph(graph)
 
     place_0_0 = Node(build_placement_subgraph, mode,
@@ -420,9 +426,7 @@ class TestMergeGraph(unittest.TestCase):
 
     # Running the graph the first time, with an empty shopping cart, should
     # produce all the subframe previews for the stacks, targets, and mosaic.
-    graph = build_compute_graph(regroup=True,
-                                make_previews=True,
-                                run_main_processing_graph=True)
+    graph = build_compute_graph()
     run_graph(graph)
 
     stacks = context.stacks
@@ -440,9 +444,11 @@ class TestMergeGraph(unittest.TestCase):
     viewbox = None
     masks = None
 
+    strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
+
     graph = ray.get(
-        build_mosaic_filter_subgraph.remote(mode, mosaic, filter, viewbox,
-                                            masks))
+        build_mosaic_filter_subgraph.remote(mode, mosaic, strips, stacks,
+                                            filter, viewbox, masks))
     print_graph(graph)
 
     place_0_0 = Node(build_placement_subgraph, mode,

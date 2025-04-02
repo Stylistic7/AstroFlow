@@ -15,9 +15,11 @@ from mosaics.post_process import post_process_mosaic
 from mosaics.trimming import project_to_viewbox, largest_interior_rectangle
 from mosaics.types import TileIndices
 from stacks.compute_graph import get_stack_image
+from stacks.composite_stack import CompositeStacksDict
+from stacks.types import StackHash
 from previews import QualityLevel
 from task.astroflow_node import task
-from targets.types import Target, TargetHash
+from targets.types import TargetsDict, Target, TargetHash
 from file_io.generic import read_image
 
 
@@ -47,32 +49,56 @@ def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
     return [filter, filename]
 
 
-# TODO: Make this a pure function.
+def targets_for_mosaic(mosaic: Mosaic, targets: TargetsDict) -> TargetsDict:
+  '''Returns only the targets included in the mosaic.'''
+  return TargetsDict(
+      {target_id: targets[target_id] for target_id in mosaic.target_ids})
+
+
+def stacks_for_mosaic(mosaic: Mosaic, stacks: CompositeStacksDict,
+                      targets: TargetsDict) -> CompositeStacksDict:
+  '''Returns only the stacks included in the mosaic.'''
+  return CompositeStacksDict({
+      stack_id: stacks[stack_id] for target_id in mosaic.target_ids
+      for stack_id in targets[target_id].stack_ids
+  })
+
+
 @task.remote
-def build_mosaic_subgraph(mode: QualityLevel, mosaic: Mosaic) -> Graph:
+def build_mosaic_subgraph(mode: QualityLevel, mosaic: Mosaic,
+                          stacks: CompositeStacksDict,
+                          targets: TargetsDict) -> Graph:
   print(f'### build_mosaic_subgraph mode {mode} for mosaic {mosaic}')
   viewbox = compute_mosaic_viewbox(mode, mosaic)
+  assert targets
+  assert stacks
 
-  stacks = context.stacks
-  targets = context.targets
-
-  print(f'### build_mosaic_subgraph {len(stacks)} stacks')
-  print(f'### build_mosaic_subgraph {len(targets)} targets')
-
-  filters = set()
-  for target_id in mosaic.target_ids:
-    for stack_id in targets[target_id].stack_ids:
-      filters.add(stacks[stack_id].filter)
-  filters = tuple(filters)
+  filters = set(stack.filter for stack in stacks.values())
 
   mask_task = (compute_mosaic_masks, mode, mosaic, viewbox)
 
   graph = Graph()
   store_tasks = []
   for filter in filters:
+    strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
+    print(f'### strips for filter {filter} {strips}')
+
+    if mode == QualityLevel.SUBFRAME:
+      # In subframe mode, missing panels are allowed. Just remove them from
+      # the strips.
+      strips = tuple(
+          tuple(s for s in strip if s is not None) for strip in strips)
+      strips = tuple(s for s in strips if len(s))
+    else:
+      # In master mode, missing panels are not allowed; skip the filter.
+      if any(None in strip for strip in strips):
+        print(f'### Skipping mosaic {mosaic} filter {filter} because '
+              f'some stacks are missing')
+        continue
+
     store_task = (store_mosaic_color_channel, mode, mosaic, filter)
     filter_subgraph_task = Node(build_mosaic_filter_subgraph, mode, mosaic,
-                                filter, viewbox)
+                                strips, stacks, filter, viewbox)
     graph[store_task] = {filter_subgraph_task}
     graph[filter_subgraph_task] = {mask_task}
     store_tasks.append(store_task)
@@ -80,23 +106,6 @@ def build_mosaic_subgraph(mode: QualityLevel, mosaic: Mosaic) -> Graph:
   graph[(post_process_mosaic, mode, mosaic)] = store_tasks
 
   return graph
-
-
-def _get_stack_for_filter(target: Target, filter: str):
-  stacks = context.stacks
-
-  stacks_for_filter = [
-      s for s in target.stack_ids if stacks[s].filter == filter
-  ]
-  if not stacks_for_filter:
-    return None
-
-  if len(stacks_for_filter) > 1:
-    print(f'### WARNING: Multiple stacks for filter {filter} '
-          f'for target {target}')
-
-  stack_id = next(iter(stacks_for_filter))
-  return stacks[stack_id]
 
 
 # TODO: This function seems to be slow for some reason.
@@ -140,42 +149,31 @@ def compute_target_mask(target: Target, viewbox: Viewbox) -> box:
       project_to_viewbox(target.footprint, viewbox))
 
 
-def get_stacks_for_filter(mode: QualityLevel, mosaic: Mosaic, filter: str):
-  targets = context.targets
+def get_stacks_for_filter(
+    mosaic: Mosaic, filter: str, targets: TargetsDict,
+    stacks: CompositeStacksDict) -> Optional[list[list[StackHash]]]:
+  '''Returns the mosaics strips with target hashes replaced by stack hashes.'''
 
-  strip_stack_ids = []
-  for strip in mosaic.strips:
-    stack_ids = []
-    for i, target_id in enumerate(strip):
-      if not (stack := _get_stack_for_filter(targets[target_id], filter)):
-        print(f'### Failed to find stack for '
-              f'target {targets[target_id]} filter {filter}')
-        if mode == QualityLevel.MASTER:
-          return None
+  def get_stack_for_target(target_id: TargetHash) -> StackHash:
+    for stack_id in targets[target_id].stack_ids:
+      if stacks[stack_id].filter == filter:
+        return stack_id
 
-      if stack is not None:
-        stack_ids.append(stack.stable_hash)
+  def get_stacks_for_strip(strip: list[TargetHash]) -> list[StackHash]:
+    return tuple(get_stack_for_target(target_id) for target_id in strip)
 
-    if len(stack_ids) > 0:
-      strip_stack_ids.append(stack_ids)
-
-  if len(strip_stack_ids) > 0:
-    return strip_stack_ids
+  return tuple(get_stacks_for_strip(strip) for strip in mosaic.strips)
 
 
-# TODO: Make this a pure function.
 @task.remote
 def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
-                                 filter: str, viewbox: Viewbox,
+                                 strips: list[list[StackHash]],
+                                 stacks: CompositeStacksDict, filter: str,
+                                 viewbox: Viewbox,
                                  masks: list[box] | None) -> Graph:
-  stacks = context.stacks
 
   print(f'### build_mosaic_filter_subgraph mode {mode} '
         f'mosaic {mosaic} filter {filter} strips {mosaic.strips}')
-
-  strips = get_stacks_for_filter(mode, mosaic, filter)
-  if strips is None:
-    return None
 
   if masks is None:
     masks = [None] * len(strips)
@@ -199,6 +197,15 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
   for strip_index, (strip, mask) in enumerate(zip(strips, masks)):
     prev_task = None
     for i, stack_id in enumerate(strip):
+      # Missing stacks are acceptable, except in MASTER mode.
+      if stack_id is None:
+        if mode == QualityLevel.MASTER:
+          print(f'### build_mosaic_filter_subgraph returning None because a '
+                f'stack for filter {filter} was not found')
+          return None
+        else:
+          continue
+
       stack = stacks[stack_id]
       if i == 0:
         prev_task = Node(build_placement_subgraph, mode, mosaic, stack, filter,
