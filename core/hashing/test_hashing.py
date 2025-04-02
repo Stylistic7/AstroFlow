@@ -24,10 +24,7 @@ class TestHashing(unittest.TestCase):
     # This test uses a random seed because it checks the specific values of
     # hashes, so all of the frames will have predictable contents.
     add_orion_mosaic_images(panes=[1], random_seed=123)
-    run_graph(
-        build_compute_graph(regroup=True,
-                            make_previews=False,
-                            run_main_processing_graph=False))
+    run_graph(build_compute_graph())
 
     self.assertEqual(len(context.stacks), 1)
     self.assertEqual(len(context.calibration_stacks), 3)
@@ -42,11 +39,11 @@ class TestHashing(unittest.TestCase):
     # The image data should be predictable, because `random_seed` was provided
     # above.
     self.assertEqual(light_stack.stable_hash, '7825680a0bef1d88')
-    self.assertEqual(light_stack.content_hash, 'eed95152b1f9e018')
+    self.assertEqual(light_stack.content_hash, '409a606f632cbe23')
 
     # The Python hash of a Stack is just an integer representation of its
     # content hash, which should be stable across Python sessions.
-    self.assertEqual(hash(light_stack), 1616568165188765779)
+    self.assertEqual(hash(light_stack), 7095785728963045726)
 
     # The Python hash of a SimpleStacksDict goes through `hash_dict_int()`,
     # and should be stable across Python sessions.
