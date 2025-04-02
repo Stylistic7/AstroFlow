@@ -72,9 +72,7 @@ class TestFlatCorrection(unittest.TestCase):
                           temperature=-20,
                           dest_dir=context.input_dirs[0])
 
-    graph = build_compute_graph(regroup=True,
-                                make_previews=True,
-                                run_main_processing_graph=False)
+    graph = build_compute_graph()
     run_graph(graph)
 
     stacks = context.stacks

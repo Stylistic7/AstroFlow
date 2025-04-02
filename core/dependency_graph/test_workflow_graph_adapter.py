@@ -160,9 +160,7 @@ class TestWorkflowGraphAdapter(unittest.TestCase):
 
     # Running the graph the first time, with an empty shopping cart, should
     # produce all the subframe previews for the stacks, targets, and mosaic.
-    graph = compute_graph.build_compute_graph(regroup=True,
-                                              make_previews=True,
-                                              run_main_processing_graph=True)
+    graph = compute_graph.build_compute_graph()
 
     def workflow_graph_fn(workflow_graph):
       print('### workflow_graph_fn called with', workflow_graph)

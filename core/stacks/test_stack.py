@@ -33,10 +33,7 @@ class TestStack(unittest.TestCase):
                           exposure=300,
                           dest_dir=context.input_dirs[0])
 
-    run_graph(
-        build_compute_graph(regroup=True,
-                            make_previews=False,
-                            run_main_processing_graph=False))
+    run_graph(build_compute_graph())
 
     stacks = context.calibration_stacks
     self.assertEqual(len(stacks), 1)
@@ -67,10 +64,7 @@ class TestStack(unittest.TestCase):
                           exposure=300,
                           dest_dir=context.input_dirs[0])
 
-    run_graph(
-        build_compute_graph(regroup=True,
-                            make_previews=False,
-                            run_main_processing_graph=False))
+    run_graph(build_compute_graph())
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 1)

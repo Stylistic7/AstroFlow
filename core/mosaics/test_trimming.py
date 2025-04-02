@@ -2,7 +2,6 @@ from ray_infra import ray_local
 
 import matplotlib.pyplot as plt
 import unittest
-import shapely  # type: ignore
 from shapely import Polygon  # type: ignore
 
 from compute_graph import build_compute_graph
@@ -11,12 +10,10 @@ from dependency_graph import run_graph
 
 from mosaics.trimming import largest_interior_rectangle
 from mosaics.orion_mosaic import add_orion_mosaic_images
-from mosaics.debugging import draw_polygon, draw_spherical_polygon
+from mosaics.debugging import draw_spherical_polygon
 from geometry.polygons import project_polygon
-from testing.test_frames import make_synthetic_frames
 from testing.test_context import make_test_context
 from geometry.projections import mercator
-from stacks.composite_stack import CompositeStack
 
 
 class TestTrimming(unittest.TestCase):
@@ -31,10 +28,7 @@ class TestTrimming(unittest.TestCase):
   def test_orion_mosaic(self) -> None:
     add_orion_mosaic_images(panes=[1, 2])
 
-    run_graph(
-        build_compute_graph(regroup=True,
-                            make_previews=False,
-                            run_main_processing_graph=False))
+    run_graph(build_compute_graph())
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 2)

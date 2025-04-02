@@ -58,10 +58,7 @@ class TestQuarantining(unittest.TestCase):
                           temperature=-15,
                           dest_dir=context.input_dirs[0])
 
-    run_graph(
-        build_compute_graph(regroup=True,
-                            make_previews=False,
-                            run_main_processing_graph=False))
+    run_graph(build_compute_graph())
 
     self.assertEqual(len(context.stacks), 1)
     self.assertEqual(len(context.targets), 1)
@@ -69,10 +66,7 @@ class TestQuarantining(unittest.TestCase):
 
   def test_quarantine_toplevel_target(self):
     add_orion_mosaic_images()
-    run_graph(
-        build_compute_graph(regroup=True,
-                            make_previews=False,
-                            run_main_processing_graph=False))
+    run_graph(build_compute_graph())
 
     self.assertEqual(len(context.targets), 4)
     self.assertEqual(len(context.mosaics), 1)
@@ -82,10 +76,7 @@ class TestQuarantining(unittest.TestCase):
 
     context.quarantined_targets = [next(iter(context.targets))]
 
-    run_graph(
-        build_compute_graph(regroup=True,
-                            make_previews=False,
-                            run_main_processing_graph=False))
+    run_graph(build_compute_graph())
 
     self.assertEqual(len(context.targets), 3)
     self.assertEqual(len(context.mosaics), 1)
@@ -95,10 +86,7 @@ class TestQuarantining(unittest.TestCase):
 
   def test_quarantine_calibration_stack(self):
     add_orion_mosaic_images()
-    run_graph(
-        build_compute_graph(regroup=True,
-                            make_previews=False,
-                            run_main_processing_graph=False))
+    run_graph(build_compute_graph())
 
     self.assertEqual(len(context.targets), 4)
     self.assertEqual(len(context.mosaics), 1)
@@ -111,10 +99,7 @@ class TestQuarantining(unittest.TestCase):
             iter(s for s in context.calibration_stacks
                  if context.calibration_stacks[s].image_type == 'dark'))
     ]
-    run_graph(
-        build_compute_graph(regroup=True,
-                            make_previews=False,
-                            run_main_processing_graph=False))
+    run_graph(build_compute_graph())
 
     self.assertEqual(len(context.targets), 4)
     self.assertEqual(len(context.mosaics), 1)

@@ -29,10 +29,7 @@ class TestStackIdentification(unittest.TestCase):
                           dither=0,
                           dest_dir=context.input_dirs[0])
 
-    run_graph(
-        build_compute_graph(regroup=True,
-                            make_previews=False,
-                            run_main_processing_graph=False))
+    run_graph(build_compute_graph())
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 1)
@@ -62,10 +59,7 @@ class TestStackIdentification(unittest.TestCase):
                           image_scale=2.0,
                           dest_dir=context.input_dirs[0])
 
-    run_graph(
-        build_compute_graph(regroup=True,
-                            make_previews=False,
-                            run_main_processing_graph=False))
+    run_graph(build_compute_graph())
     stacks = context.stacks
     self.assertEqual(len(stacks), 2)
 
@@ -109,10 +103,7 @@ class TestStackIdentification(unittest.TestCase):
                           height_pixels=4000,
                           dest_dir=context.input_dirs[0])
 
-    run_graph(
-        build_compute_graph(regroup=True,
-                            make_previews=False,
-                            run_main_processing_graph=False))
+    run_graph(build_compute_graph())
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 2)
@@ -150,10 +141,7 @@ class TestStackIdentification(unittest.TestCase):
                           exposure=120,
                           dest_dir=context.input_dirs[0])
 
-    run_graph(
-        build_compute_graph(regroup=True,
-                            make_previews=False,
-                            run_main_processing_graph=False))
+    run_graph(build_compute_graph())
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 1)
