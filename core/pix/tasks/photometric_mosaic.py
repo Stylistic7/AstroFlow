@@ -80,14 +80,9 @@ def PhotometricMosaic(images: ImageList, output_filename: str,
       ShellScriptTask(javascript_filename=javascript_filename,
                       parameters=parameters))
 
-  images = [
+  return ImageList([
       Image(filename=output_filename,
             view_id='Mosaic',
             filter=images[0].filter,
             dirty=True)
-  ]
-
-  add_images_to_save(images)
-
-  print(f'### PhotometricMosaic returning {images}')
-  return images
+  ])
