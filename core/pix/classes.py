@@ -31,18 +31,16 @@ class Image:
 
 class ImageList(list[Image]):
 
-  def __getitem__(self, filter: str) -> Image | None:
-    return next(iter(i for i in self if i.filter == filter), None)
+  def __getitem__(self, key: int | str) -> Image | None:
+    if isinstance(key, int):
+      return super().__getitem__(key)
+    return next((i for i in self if i.filter == key), None)
 
   # def __contains__(self, filters: str) -> Image | None:
   #   return next(iter(i for i in self if i.filter == filter), None) is not None
 
   def channels(self, filters: str) -> list[Image]:
-    result = [self[f] for f in filters]
-    if None in result:
-      return None
-    else:
-      return result
+    return [self[f] for f in filters]
 
 
 FilenameList = list[str]
