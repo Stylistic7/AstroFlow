@@ -11,6 +11,7 @@ from pix.classes import ImageList
 from pix.decorators import PixInsight
 from pix.tasks import PhotometricMosaic
 from mosaics.types import Mosaic
+from mosaics.artifacts import merged_filename
 from previews import QualityLevel, autostretch
 from task.astroflow_node import task
 from file_io.generic import read_image, get_content_hash
@@ -29,11 +30,9 @@ def run_photometric_mosaic(images: ImageList,
 def merge_images_with_photometric_mosaic(mosaic: Mosaic, input_0: Path,
                                          input_1: Path) -> Path:
   print(f'### merge_images_with_photometric_mosaic {input_0} {input_1}')
-
-  output_filename = Path(
-      context.output_dir
-  ) / 'Mosaics' / mosaic.name / f'merged_master_{get_content_hash(input_0)}_{get_content_hash(input_1)}.xisf'
-
+  output_filename = merged_filename(mosaic, QualityLevel.MASTER,
+                                    get_content_hash(input_0),
+                                    get_content_hash(input_1))
   run_photometric_mosaic([input_0, input_1], output_filename)
   assert os.path.exists(output_filename)
   return output_filename
@@ -77,10 +76,8 @@ def merge_images(mode: QualityLevel, mosaic: Mosaic, input_0: Path,
 
     image = merge_images_with_maximum(image_0, image_1)
 
-    output_filename = Path(
-        context.output_dir
-    ) / 'Mosaics' / mosaic.name / f'merged_subframe_{get_content_hash(input_0)}_{get_content_hash(input_1)}.fits'
-
+    output_filename = merged_filename(mosaic, mode, get_content_hash(input_0),
+                                      get_content_hash(input_1))
     hdu = pyfits.PrimaryHDU(image)
     hdu.header['FILTER'] = filter
     output_filename.parent.mkdir(parents=True, exist_ok=True)

@@ -18,6 +18,7 @@ from context import context
 from previews import QualityLevel
 from mosaics.types import Mosaic, Viewbox, TileIndices
 from mosaics.trimming import trim_image
+from mosaics.artifacts import placed_filename
 from task.astroflow_node import task
 from stacks.composite_stack import CompositeStack
 
@@ -145,10 +146,7 @@ def _project_in_tiles(viewbox: Viewbox,
 def _save_image_to_file(mode: QualityLevel, mosaic: Mosaic,
                         stack: CompositeStack, tile_indices: TileIndices,
                         filter: str, image: np.ndarray) -> Path:
-  tile_indices_str = '_'.join(str(i) for i in tile_indices)
-  filename = Path(context.output_dir) / 'Mosaics' / mosaic.name / Path(
-      f'placed_image_{mode}_{mosaic.stable_hash}_{stack.stable_hash}_'
-      f'{tile_indices_str}_{filter}.xisf')
+  filename = placed_filename(mosaic, mode, stack, tile_indices, filter)
   filename.parent.mkdir(parents=True, exist_ok=True)
   fits_meta: Dict[str, Any] = {}
   fits_meta['FILTER'] = [{'value': str(filter), 'comment': ''}]
