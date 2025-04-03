@@ -93,7 +93,4 @@ def merge_images(mode: QualityLevel, mosaic: Mosaic, input_0: Path,
       output_filename = ray.get(
           merge_images_with_photometric_mosaic.remote(mosaic, input_0, input_1))
 
-  os.remove(input_0)
-  os.remove(input_1)
-
   return output_filename

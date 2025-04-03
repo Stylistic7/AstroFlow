@@ -14,6 +14,7 @@ from mosaics.placement import place_image
 from mosaics.post_process import post_process_mosaic
 from mosaics.trimming import project_to_viewbox, largest_interior_rectangle
 from mosaics.types import TileIndices
+from mosaics.artifacts import output_filename
 from stacks.compute_graph import get_stack_image
 from stacks.composite_stack import CompositeStacksDict
 from stacks.types import StackHash
@@ -25,7 +26,7 @@ from file_io.generic import read_image
 
 # TODO: What's supposed to happen with these final artifacts? I guess they're
 # just stored in "findable locations" that do not depend on content hashes.
-@task.remote
+@task.remote(cache=False)
 def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
                                input: Path) -> Optional[Path]:
   if input is None:
@@ -41,9 +42,7 @@ def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
     return None
   elif mode == QualityLevel.MASTER:
     context.set(key, input, write_mode=WriteMode.DISK_ONLY)
-    filename = Path(
-        context.output_dir
-    ) / 'Mosaics' / mosaic.name / f'final_merged_{mosaic.stable_hash}_{filter}.fits'
+    filename = output_filename(mosaic, filter)
     filename.parent.mkdir(parents=True, exist_ok=True)
     convert_xisf_to_fits(input, filename)
     return [filter, filename]

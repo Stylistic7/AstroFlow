@@ -10,6 +10,7 @@ from context import context
 from task.astroflow_node import task
 from previews import QualityLevel
 from mosaics.types import Mosaic
+from mosaics.artifacts import output_filename as mosaic_output_filename
 
 
 @PixInsight(slots=[1])
@@ -56,10 +57,7 @@ def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> None:
       filters.add(context.stacks[stack_id].filter)
   filters = tuple(filters)
 
-  images = [
-      Path(context.output_dir) / 'Mosaics' / mosaic.name /
-      f'final_merged_{mosaic.stable_hash}_{filter}.fits' for filter in filters
-  ]
+  images = [mosaic_output_filename(mosaic, filter) for filter in filters]
 
   output_filename = Path(
       context.output_dir
