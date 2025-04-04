@@ -9,11 +9,11 @@ from typing import Any, Dict
 import structlog
 from astropy.coordinates import SkyCoord  # type: ignore
 from astropy import units as u  # type: ignore
-from xisf import XISF  # type: ignore
 from shapely import box  # type: ignore
 
 from customization.types import CustomizedStack
 from file_io.generic import get_content_hash, read_image
+from file_io.tiff_file_io import write_tiff_image
 from context import context
 from previews import QualityLevel
 from mosaics.types import Mosaic, Viewbox, TileIndices
@@ -147,14 +147,7 @@ def _save_image_to_file(mode: QualityLevel, mosaic: Mosaic,
                         stack: CompositeStack, tile_indices: TileIndices,
                         filter: str, image: np.ndarray) -> Path:
   filename = placed_filename(mosaic, mode, stack, tile_indices, filter)
-  filename.parent.mkdir(parents=True, exist_ok=True)
-  fits_meta: Dict[str, Any] = {}
-  fits_meta['FILTER'] = [{'value': str(filter), 'comment': ''}]
-  ims_meta = {'FITSKeywords': fits_meta}
-  XISF.write(filename,
-             np.expand_dims(image, -1),
-             creator_app="AstroFlow",
-             image_metadata=ims_meta)
+  write_tiff_image(filename, image, {'FILTER': filter})
   print(f'### Wrote filename {filename}')
   return filename
 

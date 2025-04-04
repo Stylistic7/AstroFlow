@@ -1,12 +1,11 @@
+import numpy as np
 from typing import Any, Optional
 from pathlib import Path
-import astropy.io.fits as pyfits  # type: ignore
 from shapely import box  # type: ignore
 
 from context import context, WriteMode
 from customization.types import CustomizedStack
 from dependency_graph import Graph, Node, make_graph_from_list
-from file_io.conversion import convert_xisf_to_fits
 from mosaics.merge_images import merge_images
 from mosaics.types import Mosaic, Viewbox
 from mosaics.viewbox import compute_mosaic_viewbox
@@ -22,6 +21,8 @@ from previews import QualityLevel
 from task.astroflow_node import task
 from targets.types import TargetsDict, Target, TargetHash
 from file_io.generic import read_image
+from file_io.tiff_file_io import write_tiff_image
+from previews import autostretch
 
 
 # TODO: What's supposed to happen with these final artifacts? I guess they're
@@ -35,16 +36,22 @@ def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
   print(f'### store_mosaic_color_channel: filter {filter} input {input}')
   key = ('mosaic_thumbnail_image', mode, mosaic.stable_hash, filter)
 
+  image = read_image(input)
+
   if mode == QualityLevel.SUBFRAME:
-    image = read_image(input)
     context.set(key, image, write_mode=WriteMode.DISK_ONLY)
     print(f'### store_mosaic_color_channel wrote key {key}')
-    return None
   elif mode == QualityLevel.MASTER:
-    context.set(key, input, write_mode=WriteMode.DISK_ONLY)
+    context.set(key, image, write_mode=WriteMode.DISK_ONLY)
+
     filename = output_filename(mosaic, filter)
-    filename.parent.mkdir(parents=True, exist_ok=True)
-    convert_xisf_to_fits(input, filename)
+    write_tiff_image(filename, image, {'FILTER': filter})
+
+    autostretched = (autostretch(image) * 255.0).astype(np.uint8)
+    write_tiff_image(filename.with_stem(filename.stem + "_autostretched"),
+                     autostretched, {'FILTER': filter},
+                     tile=(256, 256))
+
     return [filter, filename]
 
 

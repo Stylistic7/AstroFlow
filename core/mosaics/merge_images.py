@@ -3,10 +3,10 @@ import ray
 import numpy as np
 from pathlib import Path
 import astropy.io.fits as pyfits  # type: ignore
-from xisf import XISF  # type: ignore
+import tifffile
 
 from context import context
-from file_io.generic import read_header
+from file_io.generic import read_header, read_image
 from pix.classes import ImageList
 from pix.decorators import PixInsight
 from pix.tasks import PhotometricMosaic
@@ -15,6 +15,7 @@ from mosaics.artifacts import merged_filename
 from previews import QualityLevel, autostretch
 from task.astroflow_node import task
 from file_io.generic import read_image, get_content_hash
+from file_io.tiff_file_io import update_tiff_header, write_tiff_image
 
 
 @PixInsight()
@@ -28,14 +29,14 @@ def run_photometric_mosaic(images: ImageList,
 # TODO: Turn caching on.
 @task.remote(resources={'PixInsight': 1})
 def merge_images_with_photometric_mosaic(mosaic: Mosaic, input_0: Path,
-                                         input_1: Path) -> Path:
+                                         input_1: Path, filter: str) -> Path:
   print(f'### merge_images_with_photometric_mosaic {input_0} {input_1}')
-  output_filename = merged_filename(mosaic, QualityLevel.MASTER,
-                                    get_content_hash(input_0),
-                                    get_content_hash(input_1))
-  run_photometric_mosaic([input_0, input_1], output_filename)
-  assert os.path.exists(output_filename)
-  return output_filename
+  filename = merged_filename(mosaic, QualityLevel.MASTER,
+                             get_content_hash(input_0),
+                             get_content_hash(input_1))
+  run_photometric_mosaic([input_0, input_1], filename)
+  assert os.path.exists(filename)
+  return filename
 
 
 def merge_images_with_maximum(image_0: np.ndarray,
@@ -65,29 +66,30 @@ def merge_images(mode: QualityLevel, mosaic: Mosaic, input_0: Path,
   if input_0 is None and input_1 is not None:
     return input_1
 
+  print(f'### merge_images input_0 header {read_header(input_0)}')
+  print(f'### merge_images input_1 header {read_header(input_1)}')
+
+  filters = set(read_header(i)['FILTER'] for i in [input_0, input_1])
+  assert len(filters) == 1
+  filter = next(iter(filters))
+
   # TODO: This is really ugly...
   if mode == 'subframe':
     image_0 = autostretch(read_image(input_0))
     image_1 = autostretch(read_image(input_1))
 
-    filters = set(read_header(i)['FILTER'] for i in [input_0, input_1])
-    assert len(filters) == 1
-    filter = next(iter(filters))
-
     image = merge_images_with_maximum(image_0, image_1)
 
     output_filename = merged_filename(mosaic, mode, get_content_hash(input_0),
                                       get_content_hash(input_1))
-    hdu = pyfits.PrimaryHDU(image)
-    hdu.header['FILTER'] = filter
-    output_filename.parent.mkdir(parents=True, exist_ok=True)
-    hdu.writeto(str(output_filename), overwrite=True)
+    write_tiff_image(output_filename, image, {'FILTER': filter})
 
   elif mode == 'master':
     if os.environ.get('MOCK_PIXINSIGHT'):
       return input_0
     else:
       output_filename = ray.get(
-          merge_images_with_photometric_mosaic.remote(mosaic, input_0, input_1))
+          merge_images_with_photometric_mosaic.remote(mosaic, input_0, input_1,
+                                                      filter))
 
   return output_filename
