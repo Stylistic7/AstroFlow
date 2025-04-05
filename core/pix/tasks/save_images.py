@@ -5,30 +5,46 @@ _javascript = """
 var view_ids = {view_ids};
 var output_filenames = {output_filenames};
 
-function saveWithProperFormat(window, filename) {
-    let ext = filename.toLowerCase().split('.').pop();
+function saveCompressedTiff(window, filename) {{
+    let fileFormat = new FileFormat("TIFF");
+    let f = new FileFormatInstance(fileFormat);
+    if (f.isNull)
+        throw new Error("Unable to create FileFormatInstance for TIFF");
 
-    if (ext === 'tif' || ext === 'tiff') {
-        let tiff = new TIFFFormat();
-        let io = new ImageOptions();
-        io.compression = TIFFCompression_ZIP;
-        io.bitsPerSample = 32;
-        io.sampleFormat = SampleFormat_Float;
-        tiff.save(window.mainView.image, filename, io);
-    } else if (ext === 'xisf') {
-        let xisf = new XISFFormat();
-        let io = new ImageOptions();
-        io.compression = true;  // Uses default codec (e.g., ZLib)
-        xisf.save(window.mainView.image, filename, io);
-    } else {
-        throw new Error("Unsupported extension: " + ext);
-    }
-}
+    let description = new ImageDescription();
+    description.bitsPerSample = 32;  // Set 32-bit per sample
+    description.ieeefpSampleFormat = true;  // Enable floating-point sample format
+    description.compression = true;
+
+    if (!f.create(filename, "zip-compression")) {{
+        throw new Error("Unable to create file: " + filePath);
+    }}
+
+    if (!f.setOptions(description)) {{
+        throw new Error("Unable to set image options for 32-bit IEEE floating point.");
+    }}
+
+    let img = window.mainView.image;  // Retrieve the actual Image object
+
+    if (!f.writeImage(img)) {{
+        throw new Error("Failed to write image: " + filePath);
+    }}
+
+    f.close();
+    console.writeln("Image saved as 32-bit IEEE floating-point TIFF: " + filename);
+}}
 
 for (let i = 0; i < output_filenames.length; ++i) {{
   console.writeln('Saving view ' + view_ids[i] + ' to filename ' + output_filenames[i]);
   let window = View.viewById(view_ids[i]).window;
-  saveWithProperFormat(window, output_filenames[i]);
+  let ext = filename.toLowerCase().split('.').pop();
+  if (ext === 'tif' || ext === 'tiff') {{
+    saveCompressedTiff(window, output_filenames[i]);
+  }} else if (ext === 'xisf') {{
+    window.saveAs(output_filenames[i], false, false, true, false);
+  }} else {{
+    throw new Error("Unsupported extension: " + ext);
+  }}
 }}
 """
 
