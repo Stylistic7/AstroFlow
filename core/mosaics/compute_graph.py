@@ -36,6 +36,7 @@ def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
   print(f'### store_mosaic_color_channel: filter {filter} input {input}')
   key = ('mosaic_thumbnail_image', mode, mosaic.stable_hash, filter)
 
+  # TODO: Can the input image simply be renamed?
   image = read_image(input)
 
   if mode == QualityLevel.SUBFRAME:

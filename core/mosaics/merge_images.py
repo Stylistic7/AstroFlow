@@ -35,7 +35,8 @@ def merge_images_with_photometric_mosaic(mosaic: Mosaic, input_0: Path,
                              get_content_hash(input_0),
                              get_content_hash(input_1))
   run_photometric_mosaic([input_0, input_1], filename)
-  assert os.path.exists(filename)
+  assert os.path.exists(filename), f'file not found: {filename}'
+  update_tiff_header(filename, {'FILTER': filter})
   return filename
 
 
