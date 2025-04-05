@@ -9,7 +9,7 @@ from file_io.normalize_header import normalize_header
 
 def read_tiff_header(filename: Path) -> dict:
   with tifffile.TiffFile(filename) as tiff:
-    metadata = tiff.pages[0].description
+    metadata = tiff.pages[0].description or '{}'
     return normalize_header(json.loads(metadata))
 
 

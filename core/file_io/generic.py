@@ -49,9 +49,9 @@ def get_content_hash(filename: Path | str) -> str:
 
 def set_content_hash(path, content_hash):
   if path.suffix.lower() in ['.xisf']:
-    add_xisf_metadata(path, path, {'CONTHASH': content_hash})
+    add_xisf_metadata(path, path, {_CONTENT_HASH_KEY: content_hash})
   elif path.suffix.lower() in ['.fit', '.fits']:
     with pyfits.open(str(path), mode='update', mmap=False) as fits:
-      fits[0].header['CONTHASH'] = content_hash
+      fits[0].header[_CONTENT_HASH_KEY] = content_hash
   elif path.suffix.lower() in ['.tiff', '.tif']:
-    update_tiff_header(path, {'content_hash': content_hash})
+    update_tiff_header(path, {_CONTENT_HASH_KEY: content_hash})

@@ -111,13 +111,16 @@ def make_task_decorator(cache: CacheProtocol,
         cache_key = (func.__name__, call_hash)
         if self.cache_results and cache_key in cache:
           cached_result = cache[cache_key]
-          if (not content_hasher.has(cached_result) or
-              content_hasher.get(cached_result) == call_hash):
+          content_hash = content_hasher.get(cached_result)
+          if not content_hasher.has(cached_result) or content_hash == call_hash:
             debug_print(f'cache hit: {cache_key}')
             return cached_result
+          else:
+            debug_print(f'cache miss (mismatch {content_hash}): {cache_key}')
+        else:
+          debug_print(f'cache miss: {cache_key}' if self.
+                      cache_results else f'never cache: {cache_key}')
 
-        debug_print(f'cache miss: {cache_key}' if self.
-                    cache_results else f'never cache: {cache_key}')
         start = time.perf_counter()
         result = func(*bound.args, **bound.kwargs)
         elapsed = time.perf_counter() - start
