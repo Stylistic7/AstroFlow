@@ -35,13 +35,14 @@ function saveCompressedTiff(window, filename) {{
 }}
 
 for (let i = 0; i < output_filenames.length; ++i) {{
-  console.writeln('Saving view ' + view_ids[i] + ' to filename ' + output_filenames[i]);
+  let filename = output_filenames[i];
+  console.writeln('Saving view ' + view_ids[i] + ' to filename ' + filename);
   let window = View.viewById(view_ids[i]).window;
   let ext = filename.toLowerCase().split('.').pop();
   if (ext === 'tif' || ext === 'tiff') {{
-    saveCompressedTiff(window, output_filenames[i]);
+    saveCompressedTiff(window, filename);
   }} else if (ext === 'xisf') {{
-    window.saveAs(output_filenames[i], false, false, true, false);
+    window.saveAs(filename, false, false, true, false);
   }} else {{
     throw new Error("Unsupported extension: " + ext);
   }}
