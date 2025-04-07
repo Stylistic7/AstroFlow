@@ -13,11 +13,12 @@ from shapely import box  # type: ignore
 
 from customization.types import CustomizedStack
 from file_io.generic import get_content_hash, read_image
+from file_io.types import FitsFilePath, TiffFilePath, WithSidecar
 from file_io.tiff_file_io import write_tiff_image
 from context import context
 from previews import QualityLevel
 from mosaics.types import Mosaic, Viewbox, TileIndices
-from mosaics.trimming import trim_image
+from mosaics.trimming import trim_image, project_to_viewbox, largest_interior_rectangle
 from mosaics.artifacts import placed_filename
 from task.astroflow_node import task
 from stacks.composite_stack import CompositeStack
@@ -149,7 +150,7 @@ def _save_image_to_file(mode: QualityLevel, mosaic: Mosaic,
   filename = placed_filename(mosaic, mode, stack, tile_indices, filter)
   write_tiff_image(filename, image, {'FILTER': filter})
   print(f'### Wrote filename {filename}')
-  return filename
+  return WithSidecar(TiffFilePath(filename))
 
 
 @task.remote(memory=_PLACE_IMAGE_MEMORY_REQUIREMENT)
@@ -171,6 +172,11 @@ def place_image(mode: QualityLevel, mosaic: Mosaic, stack: CustomizedStack,
   skip_empty = mode == QualityLevel.MASTER
   image = _project_in_tiles(viewbox, interp, wcs, skip_empty=skip_empty)
 
+  # Trim the image to its own largest interior rectangle.
+  box = largest_interior_rectangle(project_to_viewbox(stack.footprint, viewbox))
+  image = trim_image(image, box)
+
+  # Maybe trim the image again to the provided mask.
   if mask:
     image = trim_image(image, mask)
 

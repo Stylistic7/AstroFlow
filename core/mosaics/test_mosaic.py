@@ -98,9 +98,9 @@ class TestMosaic(unittest.TestCase):
     self.assertEqual(len(context.mosaics), 1)
     mosaic = next(iter(context.mosaics.values()))
 
-    tiff_files = list(Path(context.output_dir).rglob('final_merged*.tiff'))
-    self.assertEqual(len(tiff_files), 2)
-    print(f'### Found final merged file {tiff_files[0]}')
+    xisf_files = list(Path(context.output_dir).rglob('final_merged*.xisf'))
+    self.assertEqual(len(xisf_files), 2)
+    print(f'### Found final merged file {xisf_files[0]}')
 
     self.assertTrue(context.contains(subframe_key))
     self.assertTrue(context.contains(master_key))

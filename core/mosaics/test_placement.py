@@ -31,7 +31,7 @@ class TestPlacement(unittest.TestCase):
     print('### mosaics.keys()', context.mosaics.keys())
 
     mode = QualityLevel.MASTER
-    mosaic_id = 'b1c2c11588a866ac'
+    mosaic_id = '75a1da6463e118e6'
     filter = 'H'
     tile_indices = TileIndices((0, 0))
     filename = 'testdata/Stacks/IC1318/masters/master_light_IC1318_RA_306.20_DEC_35.00_ZWO ASI6200MM Pro_2.21aspp_1.55deg_H_3bd18a01cedf3c6b.xisf'

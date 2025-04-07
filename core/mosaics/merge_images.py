@@ -15,7 +15,9 @@ from mosaics.artifacts import merged_filename
 from previews import QualityLevel, autostretch
 from task.astroflow_node import task
 from file_io.generic import read_image, get_content_hash
-from file_io.tiff_file_io import update_tiff_header, write_tiff_image
+from file_io.tiff_file_io import write_tiff_image
+from file_io.xisf_file_io import update_xisf_header
+from file_io.types import WithSidecar, XisfFilePath
 
 
 @PixInsight()
@@ -36,8 +38,8 @@ def merge_images_with_photometric_mosaic(mosaic: Mosaic, input_0: Path,
                              get_content_hash(input_1))
   run_photometric_mosaic([input_0, input_1], filename)
   assert os.path.exists(filename), f'file not found: {filename}'
-  update_tiff_header(filename, {'FILTER': filter})
-  return filename
+  # update_xisf_header(filename, {'FILTER': filter})
+  return WithSidecar(XisfFilePath(filename))
 
 
 def merge_images_with_maximum(image_0: np.ndarray,
