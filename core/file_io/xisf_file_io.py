@@ -45,8 +45,7 @@ def read_xisf_image(filename: Path | str) -> np.ndarray:
   return xisf.read_image(0).squeeze().astype(np.float32)
 
 
-def add_xisf_metadata(filename: Path | str, dest_filename: Path | str,
-                      metadata: dict[str, Any]) -> None:
+def update_xisf_header(filename: Path | str, metadata: dict[str, Any]) -> None:
   """Adds the given metadata to the file.
   
   filename and dest_filename can be the same.
@@ -60,7 +59,9 @@ def add_xisf_metadata(filename: Path | str, dest_filename: Path | str,
   for k, v in metadata.items():
     fits_header[k] = [{'value': str(v), 'comment': ''}]
 
-  XISF.write(dest_filename,
+  del xisf
+
+  XISF.write(filename,
              image,
              creator_app="AstroFlow",
              image_metadata=ims_meta[0],

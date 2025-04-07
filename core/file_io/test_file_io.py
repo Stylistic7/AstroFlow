@@ -5,16 +5,20 @@ import numpy as np
 import os
 import tempfile
 import unittest
+import shutil
+from pathlib import Path
 
-import file_io.fits_file_io as fits_file_io
-import file_io.xisf_file_io as xisf_file_io
+from file_io.types import FitsFilePath, XisfFilePath, WithSidecar
+from file_io.generic import read_header, read_image, update_header, get_content_hash, set_content_hash
 
 
 class TestFileIO(unittest.TestCase):
 
   def test_read_fits(self):
-    filename = 'testdata/input/Light_Orion_Pane 1_300.0s_Bin1_6200MM_H_20231222-210506_0001.fit'
-    header = fits_file_io.read_fits_header(filename, debug=True)
+    filename = FitsFilePath(
+        'testdata/input/Light_Orion_Pane 1_300.0s_Bin1_6200MM_H_20231222-210506_0001.fit'
+    )
+    header = read_header(filename)
 
     self.assertEqual(type(header['IMAGETYP']), str)
     self.assertEqual(header['NAXIS'], 2)
@@ -23,13 +27,15 @@ class TestFileIO(unittest.TestCase):
     self.assertEqual(type(header['EXPTIME']), float)
     self.assertEqual(type(header['DATE-OBS']), datetime.datetime)
 
-    image = fits_file_io.read_fits_image(filename)
+    image = read_image(filename)
     self.assertEqual(image.shape, (6388, 9576))
     self.assertEqual(image.dtype, np.uint16)
 
   def test_read_xisf(self):
-    filename = 'testdata/output/Stacks/Great Nebula in Orion/masters/master_light_Great Nebula in Orion_RA_82.70_DEC_-5.60_ZWO ASI6200MM Pro_2.21aspp_1.57deg_H_77ade5e8fa458f7f.xisf'
-    header = xisf_file_io.read_xisf_header(filename, debug=True)
+    filename = XisfFilePath(
+        'testdata/output/Stacks/Great Nebula in Orion/masters/master_light_Great Nebula in Orion_RA_82.70_DEC_-5.60_ZWO ASI6200MM Pro_2.21aspp_1.57deg_H_77ade5e8fa458f7f.xisf'
+    )
+    header = read_header(filename)
 
     self.assertEqual(type(header['IMAGETYP']), str)
     self.assertEqual(header['NAXIS'], 2)
@@ -38,22 +44,41 @@ class TestFileIO(unittest.TestCase):
     self.assertEqual(type(header['EXPTIME']), float)
     self.assertEqual(type(header['DATE-OBS']), datetime.datetime)
 
-    image = xisf_file_io.read_xisf_image(filename)
+    image = read_image(filename)
     print(image.shape, image.dtype)
     self.assertEqual(image.shape, (12772, 19148))
     self.assertEqual(image.dtype, np.float32)
 
   def test_add_xisf_metadata(self):
-    input_filename = 'testdata/output/Stacks/Great Nebula in Orion/masters/master_light_Great Nebula in Orion_RA_82.70_DEC_-5.60_ZWO ASI6200MM Pro_2.21aspp_1.57deg_H_77ade5e8fa458f7f.xisf'
+    input_filename = XisfFilePath(
+        'testdata/output/Stacks/Great Nebula in Orion/masters/master_light_Great Nebula in Orion_RA_82.70_DEC_-5.60_ZWO ASI6200MM Pro_2.21aspp_1.57deg_H_77ade5e8fa458f7f.xisf'
+    )
     with tempfile.TemporaryDirectory() as temp_dir:
-      output_filename = os.path.join(temp_dir, 'foo.xisf')
-      xisf_file_io.add_xisf_metadata(input_filename, output_filename, {
-          'CONTHASH': 'foo',
-          'FLOATVAL': 1.234
-      })
-      header = xisf_file_io.read_xisf_header(output_filename, debug=True)
+      output_filename = XisfFilePath(os.path.join(temp_dir, 'foo.xisf'))
+      shutil.copy(input_filename, output_filename)
+      update_header(output_filename, {'CONTHASH': 'foo', 'FLOATVAL': 1.234})
+      header = read_header(output_filename)
       self.assertEqual(header['CONTHASH'], 'foo')
       self.assertEqual(header['FLOATVAL'], 1.234)
+
+  def test_sidecar(self):
+    input_filename = Path(
+        'testdata/output/Stacks/Great Nebula in Orion/masters/master_light_Great Nebula in Orion_RA_82.70_DEC_-5.60_ZWO ASI6200MM Pro_2.21aspp_1.57deg_H_77ade5e8fa458f7f.xisf'
+    )
+    with tempfile.TemporaryDirectory() as temp_dir:
+      output_file = WithSidecar(XisfFilePath(os.path.join(temp_dir,
+                                                          'foo.xisf')))
+      shutil.copy(input_filename, output_file.path)
+      set_content_hash(output_file, 'foo')
+
+      sidecar_path = output_file.path.with_suffix(".json")
+      self.assertTrue(os.path.exists(sidecar_path))
+
+      update_header(output_file, {'FLOATVAL': 1.234})
+      header = read_header(output_file)
+      self.assertEqual(header['FLOATVAL'], 1.234)
+
+      self.assertEqual(get_content_hash(output_file), 'foo')
 
 
 if __name__ == '__main__':
