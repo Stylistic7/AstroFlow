@@ -1,13 +1,10 @@
 import tempfile
 import functools
 import os
-from pathlib import Path
 
 from typing import Callable, Any, cast
 
 from pix.classes import PixInsightFn, FilenameList, ImageList, Image
-from file_io.generic import get_content_hash
-from hashing import hash_list
 
 from pix.shell_script import run_script
 from pix.tasks import OpenImages, SaveImages
@@ -66,8 +63,6 @@ def PixInsight(
       func_name = cast(Callable, func).__name__
 
       filenames = [str(f) for f in filenames]
-      print(f'### Entering wrapper for {func_name}, filenames {filenames} '
-            f'args {args} kwargs {kwargs}')
 
       # TODO: The content hash of images produced by this PixInsight function
       # are composed of the hash of the function's code, the hashes of all

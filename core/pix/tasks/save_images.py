@@ -17,7 +17,7 @@ function saveCompressedTiff(window, filename) {{
     description.compression = true;
 
     if (!f.create(filename, "zip-compression")) {{
-        throw new Error("Unable to create file: " + filePath);
+        throw new Error("Unable to create file: " + filename);
     }}
 
     if (!f.setOptions(description)) {{
@@ -27,7 +27,7 @@ function saveCompressedTiff(window, filename) {{
     let img = window.mainView.image;  // Retrieve the actual Image object
 
     if (!f.writeImage(img)) {{
-        throw new Error("Failed to write image: " + filePath);
+        throw new Error("Failed to write image: " + filename);
     }}
 
     f.close();
@@ -42,7 +42,7 @@ for (let i = 0; i < output_filenames.length; ++i) {{
   if (ext === 'tif' || ext === 'tiff') {{
     saveCompressedTiff(window, filename);
   }} else if (ext === 'xisf') {{
-    window.saveAs(filename, false, false, true, false);
+    window.saveAs(filename, false, false, true, false, "compression-codec lz4hc+sh");
   }} else {{
     throw new Error("Unsupported extension: " + ext);
   }}
