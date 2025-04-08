@@ -1,3 +1,7 @@
+from typing import Optional
+from pathlib import Path
+import os
+
 from pix.classes import ShellScriptTask, ImageList
 from pix.context import append_task
 
@@ -16,7 +20,7 @@ function saveCompressedTiff(window, filename) {{
     description.ieeefpSampleFormat = true;  // Enable floating-point sample format
     description.compression = true;
 
-    if (!f.create(filename, "zip-compression")) {{
+    if (!f.create(filename, "{tiff_output_hint}")) {{
         throw new Error("Unable to create file: " + filename);
     }}
 
@@ -42,7 +46,7 @@ for (let i = 0; i < output_filenames.length; ++i) {{
   if (ext === 'tif' || ext === 'tiff') {{
     saveCompressedTiff(window, filename);
   }} else if (ext === 'xisf') {{
-    window.saveAs(filename, false, false, true, false, "compression-codec lz4hc+sh");
+    window.saveAs(filename, false, false, true, false, "{xisf_output_hint}");
   }} else {{
     throw new Error("Unsupported extension: " + ext);
   }}
@@ -50,13 +54,23 @@ for (let i = 0; i < output_filenames.length; ++i) {{
 """
 
 
-def SaveImages(images: ImageList) -> ImageList:
+def SaveImages(images: ImageList,
+               output_filenames: Optional[list[Path]] = None,
+               compression: bool = True) -> ImageList:
   print(f'### Entering SaveImages {images}')
   view_ids = [i.view_id for i in images]
-  filenames = [i.filename for i in images]
+
+  if output_filenames is None:
+    output_filenames = [i.filename for i in images]
+  else:
+    output_filenames = [os.fspath(f) for f in output_filenames]
 
   append_task(
       ShellScriptTask(javascript=_javascript.format(
-          view_ids=view_ids, output_filenames=filenames)))
+          view_ids=view_ids,
+          output_filenames=output_filenames,
+          tiff_output_hint='zip-compression' if compression else '',
+          xisf_output_hint='compression-codec lz4hc+sh' if compression else ''))
+  )
 
   return images

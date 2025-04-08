@@ -62,7 +62,7 @@ def PixInsight(
                 **kwargs: Any) -> ImageList:
       func_name = cast(Callable, func).__name__
 
-      filenames = [str(f) for f in filenames]
+      filenames = [os.fspath(f) for f in filenames]
 
       # TODO: The content hash of images produced by this PixInsight function
       # are composed of the hash of the function's code, the hashes of all

@@ -6,7 +6,7 @@ import shutil
 from file_io.types import XisfFilePath
 from pix import PixInsight
 from pix.classes import ImageList
-from pix.tasks import ChannelCombination, SpectrophotometricColorCalibration, ImageSolver, StarXTerminator, LinearFit, SaveImagesAs
+from pix.tasks import ChannelCombination, SpectrophotometricColorCalibration, ImageSolver, StarXTerminator, LinearFit, SaveImages
 from context import context
 from task.astroflow_node import task
 from previews import QualityLevel
@@ -39,7 +39,7 @@ def _post_process_mosaic(images: ImageList, mosaic: Mosaic,
     narrowband = ChannelCombination([s, h, o], 'SHO')
 
   # TODO: Supply multiple output filenames.
-  SaveImagesAs([narrowband], [output_filename])
+  SaveImages([narrowband], [output_filename])
 
   # TODO: Return list or tuples of images
   return []
