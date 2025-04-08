@@ -51,61 +51,64 @@ def _(wrapped: WithSidecar[Path]) -> np.ndarray:
 
 
 @singledispatch
-def read_header(filename: Path) -> np.ndarray:
+def read_header(filename: Path) -> dict[str, Any]:
   # TODO: When all files are strongly-typed, this should throw an exception.
   return read_header(classify_by_extension(filename))
 
 
 @read_header.register
-def _(filename: FitsFilePath) -> np.ndarray:
+def _(filename: FitsFilePath) -> dict[str, Any]:
   return read_fits_header(filename)
 
 
 @read_header.register
-def _(filename: XisfFilePath) -> np.ndarray:
+def _(filename: XisfFilePath) -> dict[str, Any]:
   return read_xisf_header(filename)
 
 
 @read_header.register
-def _(filename: TiffFilePath) -> np.ndarray:
+def _(filename: TiffFilePath) -> dict[str, Any]:
   return read_tiff_header(filename)
 
 
 @read_header.register(WithSidecar)
-def _(wrapped: WithSidecar[Path]) -> np.ndarray:
-  # TODO: Maybe try to read from the wrapped path first, and then merge the
-  # sidecar contents into it?
+def _(wrapped: WithSidecar[Path]) -> dict[str, Any]:
+  try:
+    image_metadata = read_header(wrapped.path)
+  except:
+    image_metadata = {}
+
   sidecar_path = wrapped.path.with_suffix(".json")
 
   with open(sidecar_path, "r") as f:
-    metadata = json.load(f)
+    sidecar_metadata = json.load(f)
 
-  return metadata
+  return image_metadata | sidecar_metadata
 
 
 @singledispatch
-def update_header(filename: Path, metadata: dict[str, Any]) -> np.ndarray:
+def update_header(filename: Path, metadata: dict[str, Any]) -> dict[str, Any]:
   # TODO: When all files are strongly-typed, this should throw an exception.
   return update_header(classify_by_extension(filename), metadata)
 
 
 @update_header.register
-def _(filename: FitsFilePath, metadata: dict[str, Any]) -> np.ndarray:
+def _(filename: FitsFilePath, metadata: dict[str, Any]) -> dict[str, Any]:
   return update_fits_header(filename, metadata)
 
 
 @update_header.register
-def _(filename: XisfFilePath, metadata: dict[str, Any]) -> np.ndarray:
+def _(filename: XisfFilePath, metadata: dict[str, Any]) -> dict[str, Any]:
   return update_xisf_header(filename, metadata)
 
 
 @update_header.register
-def _(filename: TiffFilePath, metadata: dict[str, Any]) -> np.ndarray:
+def _(filename: TiffFilePath, metadata: dict[str, Any]) -> dict[str, Any]:
   return update_tiff_header(filename, metadata)
 
 
 @update_header.register(WithSidecar)
-def _(wrapped: WithSidecar[Path], metadata_in: dict[str, Any]) -> np.ndarray:
+def _(wrapped: WithSidecar[Path], metadata_in: dict[str, Any]) -> dict[str, Any]:
   sidecar_path = wrapped.path.with_suffix(".json")
 
   try:
@@ -129,31 +132,31 @@ def hash_of_image_data(filename: Path | str) -> str:
 
 
 @singledispatch
-def get_content_hash(filename: Path) -> np.ndarray:
+def get_content_hash(filename: Path) -> str:
   # TODO: When all files are strongly-typed, this should throw an exception.
   return get_content_hash(classify_by_extension(filename))
 
 
 @get_content_hash.register
-def _(filename: FitsFilePath) -> np.ndarray:
+def _(filename: FitsFilePath) -> str:
   return read_header(filename).get(_CONTENT_HASH_KEY,
                                    hash_of_image_data(filename))
 
 
 @get_content_hash.register
-def _(filename: XisfFilePath) -> np.ndarray:
+def _(filename: XisfFilePath) -> str:
   return read_header(filename).get(_CONTENT_HASH_KEY,
                                    hash_of_image_data(filename))
 
 
 @get_content_hash.register
-def _(filename: TiffFilePath) -> np.ndarray:
+def _(filename: TiffFilePath) -> str:
   return read_header(filename).get(_CONTENT_HASH_KEY,
                                    hash_of_image_data(filename))
 
 
 @get_content_hash.register(WithSidecar)
-def _(wrapped: WithSidecar[Path]) -> np.ndarray:
+def _(wrapped: WithSidecar[Path]) -> str:
   sidecar_path = wrapped.path.with_suffix(".json")
 
   with open(sidecar_path, "r") as f:
@@ -163,28 +166,28 @@ def _(wrapped: WithSidecar[Path]) -> np.ndarray:
 
 
 @singledispatch
-def set_content_hash(filename: Path, content_hash: str) -> np.ndarray:
+def set_content_hash(filename: Path, content_hash: str) -> None:
   # TODO: When all files are strongly-typed, this should throw an exception.
-  return set_content_hash(classify_by_extension(filename), content_hash)
+  set_content_hash(classify_by_extension(filename), content_hash)
 
 
 @set_content_hash.register
-def _(filename: FitsFilePath, content_hash: str) -> np.ndarray:
+def _(filename: FitsFilePath, content_hash: str) -> None:
   update_fits_header(filename, {_CONTENT_HASH_KEY: content_hash})
 
 
 @set_content_hash.register
-def _(filename: XisfFilePath, content_hash: str) -> np.ndarray:
+def _(filename: XisfFilePath, content_hash: str) -> None:
   update_xisf_header(filename, {_CONTENT_HASH_KEY: content_hash})
 
 
 @set_content_hash.register
-def _(filename: TiffFilePath, content_hash: str) -> np.ndarray:
+def _(filename: TiffFilePath, content_hash: str) -> None:
   update_tiff_header(filename, {_CONTENT_HASH_KEY: content_hash})
 
 
 @set_content_hash.register(WithSidecar)
-def _(wrapped: WithSidecar[Path], content_hash: str) -> np.ndarray:
+def _(wrapped: WithSidecar[Path], content_hash: str) -> None:
   sidecar_path = wrapped.path.with_suffix(".json")
 
   try:
