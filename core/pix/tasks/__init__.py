@@ -1,6 +1,5 @@
 from .open_images import OpenImages
 from .save_images import SaveImages
-from .save_images_as import SaveImagesAs
 from .close_images import CloseImages
 from .image_solver import ImageSolver
 from .automatic_background_extractor import AutomaticBackgroundExtractor
