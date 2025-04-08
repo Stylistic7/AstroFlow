@@ -16,6 +16,12 @@ def output_filename(mosaic: Mosaic, filter: str) -> Path:
           f'final_merged_{mosaic.stable_hash}_{filter}.xisf'))
 
 
+def tile_filename(mosaic: Mosaic, filter: str) -> Path:
+  filename = Path(output_filename(mosaic, filter))
+  return filename.with_stem(filename.stem +
+                            '_autostretched').with_suffix('.tiff')
+
+
 def merged_filename(mosaic: Mosaic, mode: QualityLevel, hash_0: ContentHash,
                     hash_1: ContentHash) -> Path:
   if mode == QualityLevel.SUBFRAME:

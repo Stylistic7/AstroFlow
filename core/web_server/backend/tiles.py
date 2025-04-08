@@ -6,13 +6,12 @@ import large_image
 from pathlib import Path
 import numpy as np
 import tifffile
-from PIL import Image
 from flask import Blueprint, send_file, abort, jsonify
 
 from context import context
-from stacks.artifacts import output_filename
-from stacks.types import StackHash
-from file_io.xisf_file_io import read_xisf_image
+from stacks.artifacts import output_filename as stack_output_filename
+from mosaics.artifacts import tile_filename as mosaic_output_filename
+from file_io.generic import read_image
 from previews import autostretch
 
 # Settings
@@ -27,19 +26,14 @@ _cache_lock = threading.Lock()
 tiles_bp = Blueprint("tiles", __name__)
 
 
-def convert_xisf_to_tiff(xisf_path: Path, temp_path: Path):
-  """Read .xisf image and save to .tif"""
-  arr = autostretch(read_xisf_image(xisf_path))
+def convert_to_tiff(path: Path, temp_path: Path):
+  """Read image and save to .tif"""
+  arr = autostretch(read_image(path))
   arr = (arr * 255.0).astype(np.uint8)
-  tifffile.imwrite(temp_path,
-                   arr,
-                   dtype=arr.dtype,
-                   tile=(256, 256),
-                   bigtiff=True,
-                   compression='deflate')
+  tifffile.imwrite(temp_path, arr, tile=(256, 256), compression='deflate')
 
 
-def get_cached_image(stack_id: StackHash):
+def get_image(object_type: str, object_id: str):
   """Get a large_image handle from the cached TIFF, generating it if needed."""
   now = time.time()
   with _cache_lock:
@@ -61,34 +55,35 @@ def get_cached_image(stack_id: StackHash):
         print(f"Error deleting temp file: {e}")
 
     # Reuse if already in cache
-    if stack_id in _image_cache:
-      _image_cache[stack_id]["last_used"] = now
-      return _image_cache[stack_id]["handle"]
+    key = (object_type, object_id)
+    if key in _image_cache:
+      _image_cache[key]["last_used"] = now
+      return _image_cache[key]["handle"]
 
-    # Else, convert from .xisf and cache
-    xisf_path = output_filename(context.stacks[stack_id])
-    if not xisf_path.exists():
-      print(f"XISF not found: {xisf_path}")
+    # TODO: Use post-processed stack image?
+    if object_type == 'stack':
+      path = stack_output_filename(context.stacks[object_id])
+    elif object_type == 'mosaic':
+      path = mosaic_output_filename(context.mosaics[object_id], filter='H')
+
+    path = os.fspath(path)
+    if not os.path.exists(path):
+      print(f"Path not found: {path}")
       return None
 
-    temp_path = TILE_CACHE_DIR / f"{stack_id}.tif"
-    if not temp_path.exists():
-      print(f"Converting {xisf_path} to {temp_path}...")
-      convert_xisf_to_tiff(xisf_path, temp_path)
-
-    print(f"Opening file {temp_path} with large_image...")
-    handle = large_image.open(temp_path, plugin='vips')
-    _image_cache[stack_id] = {
+    print(f"Opening file {path} with large_image...")
+    handle = large_image.open(path, plugin='vips')
+    _image_cache[key] = {
         "handle": handle,
-        "temp_path": temp_path,
+        "path": path,
         "last_used": now,
     }
     return handle
 
 
-@tiles_bp.route('/tile_metadata/<image_hash>')
-def tile_metadata(image_hash):
-  source = get_cached_image(image_hash)
+@tiles_bp.route('/tile_metadata/<object_type>/<object_id>')
+def tile_metadata(object_type, object_id):
+  source = get_image(object_type, object_id)
   meta = source.getMetadata()
   return jsonify({
       'width': meta['sizeX'],
@@ -99,9 +94,9 @@ def tile_metadata(image_hash):
   })
 
 
-@tiles_bp.route("/tiles/<stack_id>/<int:z>/<int:x>/<int:y>.png")
-def serve_tile(stack_id, z, x, y):
-  source = get_cached_image(stack_id)
+@tiles_bp.route("/tile/<object_type>/<object_id>/<int:z>/<int:x>/<int:y>.png")
+def serve_tile(object_type, object_id, z, x, y):
+  source = get_image(object_type, object_id)
   if source is None:
     return abort(404)
 
@@ -109,5 +104,5 @@ def serve_tile(stack_id, z, x, y):
     tile_data = source.getTile(x, y, z, encoding='PNG')
     return send_file(io.BytesIO(tile_data), mimetype="image/png")
   except Exception as e:
-    print(f"Error serving tile for {stack_id}: {e}")
+    print(f"Error serving tile for {object_type, object_id}: {e}")
     return abort(500)

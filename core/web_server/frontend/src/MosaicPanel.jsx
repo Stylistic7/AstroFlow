@@ -71,7 +71,10 @@ export default function MosaicPanel() {
 	};
 
 	const telescopius_pane_line = (mosaic, target_id, pane) => {
-		let [tile_x, tile_y] = mosaic.tile_indices[pane];
+		// TODO: Fix the tile indices.
+		// let [tile_x, tile_y] = mosaic.tile_indices[pane];
+		let tile_x = 1;
+		let tile_y = 1;
 		let target = targets[target_id];
 		let stack_id = target.stack_ids[0];
 		let stack = stacks[stack_id];
@@ -157,9 +160,9 @@ export default function MosaicPanel() {
 				>
 					Telescopius
 				</AccordionSummary>
-				<AccordionDetails>
+				{/* <AccordionDetails>
 					{telescopius(mosaic)}
-				</AccordionDetails>
+				</AccordionDetails> */}
 			</Accordion>
 			<Snackbar
 				anchorOrigin={{ vertical: "top", horizontal: "center" }}

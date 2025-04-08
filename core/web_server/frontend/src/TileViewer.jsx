@@ -6,8 +6,9 @@ import { Viewport } from 'pixi-viewport';
 
 const TILE_SIZE = 256;
 
-const TileViewer = ({ imageHash: imageHashProp }) => {
-  const { imageHash: imageHashParam } = useParams();
+const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp }) => {
+  const { objectType: objectTypeParam, imageHash: imageHashParam } = useParams();
+  const objectType = objectTypeProp ?? objectTypeParam;
   const imageHash = imageHashProp ?? imageHashParam;
   const [metadata, setMetadata] = useState(null);
   const containerRef = useRef(null);
@@ -24,10 +25,10 @@ const TileViewer = ({ imageHash: imageHashProp }) => {
   }, []);
 
   useEffect(() => {
-    fetch(`/tile_metadata/${imageHash}`)
+    fetch(`/tile_metadata/${objectType}/${imageHash}`)
       .then((res) => res.json())
       .then((meta) => setMetadata(meta));
-  }, [imageHash]);
+  }, [objectType, imageHash]);
 
   if (!metadata || !containerRef.current) return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />;
 
@@ -46,6 +47,7 @@ const TileViewer = ({ imageHash: imageHashProp }) => {
         style={{ width: '100%', height: '100%' }}
       >
         <ImperativeViewport
+          objectType={objectType}
           imageHash={imageHash}
           imageWidth={metadata.width}
           imageHeight={metadata.height}
@@ -58,7 +60,7 @@ const TileViewer = ({ imageHash: imageHashProp }) => {
   );
 };
 
-const ImperativeViewport = ({ imageHash, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom }) => {
+const ImperativeViewport = ({ objectType, imageHash, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom }) => {
   const app = useApp();
   const viewportRef = useRef(null);
   const spritesRef = useRef({});
@@ -130,7 +132,7 @@ const ImperativeViewport = ({ imageHash, imageWidth, imageHeight, worldWidth, wo
           const key = `${bestZ}/${x}/${y}`;
           if (spritesRef.current[key]) continue;
 
-          const url = `/tiles/${imageHash}/${bestZ}/${x}/${y}.png`;
+          const url = `/tile/${objectType}/${imageHash}/${bestZ}/${x}/${y}.png`;
           PIXI.Texture.fromURL(url)
             .then((texture) => {
               const sprite = new PIXI.Sprite(texture);

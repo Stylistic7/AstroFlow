@@ -14,7 +14,7 @@ from mosaics.placement import place_image
 from mosaics.post_process import post_process_mosaic
 from mosaics.trimming import project_to_viewbox, largest_interior_rectangle
 from mosaics.types import TileIndices
-from mosaics.artifacts import output_filename
+from mosaics.artifacts import output_filename, tile_filename
 from stacks.compute_graph import get_stack_image
 from stacks.composite_stack import CompositeStacksDict
 from stacks.types import StackHash
@@ -54,9 +54,7 @@ def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
 
     image = read_image(filename)
     autostretched = (autostretch(image) * 255.0).astype(np.uint8)
-    filename = Path(filename)
-    filename = filename.with_stem(filename.stem +
-                                  '_autostretched').with_suffix('.tiff')
+    filename = tile_filename(mosaic, filter)
     write_tiff_image(filename,
                      autostretched, {'FILTER': filter},
                      tile=(256, 256))

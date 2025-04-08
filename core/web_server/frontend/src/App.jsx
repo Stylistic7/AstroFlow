@@ -172,7 +172,7 @@ function App() {
                   <DisambiguationPanel />
                 </AppLayout>
               } />
-              <Route exact path="/tile_viewer/:imageHash" element={
+              <Route exact path="/tile_viewer/:objectType/:imageHash" element={
                 <Box sx={{ width: '100vw', height: '100vh' }}>
                   <TileViewer />
                 </Box>
