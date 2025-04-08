@@ -23,10 +23,17 @@ from targets.types import TargetsDict, Target, TargetHash
 from file_io.generic import read_image
 from file_io.tiff_file_io import write_tiff_image
 from previews import autostretch
+from pix.decorators import PixInsight
+from pix.classes import ImageList
+from pix.tasks import SaveImages
 
 
-# TODO: What's supposed to happen with these final artifacts? I guess they're
-# just stored in "findable locations" that do not depend on content hashes.
+@PixInsight()
+def save_uncompressed(images: ImageList, output_filenames: list[Path]):
+  SaveImages(images, output_filenames, compression=False)
+  return []
+
+
 @task.remote(cache=False)
 def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
                                input: Path) -> Optional[Path]:
@@ -36,24 +43,22 @@ def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
   print(f'### store_mosaic_color_channel: filter {filter} input {input}')
   key = ('mosaic_thumbnail_image', mode, mosaic.stable_hash, filter)
 
-  # TODO: Can the input image simply be renamed?
-  image = read_image(input)
-
   if mode == QualityLevel.SUBFRAME:
+    image = read_image(input)
     context.set(key, image, write_mode=WriteMode.DISK_ONLY)
     print(f'### store_mosaic_color_channel wrote key {key}')
   elif mode == QualityLevel.MASTER:
-    context.set(key, image, write_mode=WriteMode.DISK_ONLY)
-
     filename = output_filename(mosaic, filter)
-    write_tiff_image(filename, image, {'FILTER': filter})
+    save_uncompressed([input], [filename])
 
+    image = read_image(filename)
     autostretched = (autostretch(image) * 255.0).astype(np.uint8)
+    filename = Path(filename)
     write_tiff_image(filename.with_stem(filename.stem + "_autostretched"),
                      autostretched, {'FILTER': filter},
                      tile=(256, 256))
 
-    return [filter, filename]
+    return [filter, input]
 
 
 def targets_for_mosaic(mosaic: Mosaic, targets: TargetsDict) -> TargetsDict:
