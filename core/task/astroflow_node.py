@@ -1,7 +1,7 @@
-from pathlib import Path
 import structlog
 from typing import Any
 from dataclasses import replace
+import os
 
 from context import context
 from file_io.generic import get_content_hash, set_content_hash
@@ -26,7 +26,7 @@ class ContentHasher(ContentHashProtocol):
 
   def get(self, obj: Any) -> ContentHash:
     if isinstance(obj, ContentHashable):
-      if obj.exists():
+      if os.path.exists(obj):
         return ContentHash(get_content_hash(obj))
     elif isinstance(obj, ContentHashed):
       return obj.content_hash
