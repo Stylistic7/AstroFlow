@@ -27,14 +27,12 @@ def make_composite_stack(**kwargs: Any) -> CompositeStack:
           height_pixels=6488,
       ))
   astrometric_attributes = asdict(
-      AstrometricAttributes(
-          name='name',
-          center=[50.0, 50.0],
-          image_scale=1.0,
-          rotation_angle=0.0,
-          footprint=SphericalPolygon.from_cone(0.0, 90.0, 1.0),
-          projected_footprints={},
-      ))
+      AstrometricAttributes(name='name',
+                            center=[50.0, 50.0],
+                            image_scale=1.0,
+                            rotation_angle=0.0,
+                            footprint=SphericalPolygon.from_cone(
+                                0.0, 90.0, 1.0)))
   composite_stack_attributes = {'contents': [], 'state': {}}
 
   attributes = (chronology_attributes | imaging_attributes |

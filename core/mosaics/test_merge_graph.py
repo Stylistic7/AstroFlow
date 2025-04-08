@@ -10,7 +10,6 @@ from context import context
 from previews import QualityLevel
 from testing import make_test_context
 
-from customization.types import CustomizedStack
 from dependency_graph import Graph, Node, print_graph, run_graph, canonicalize_graph
 from mosaics.types import Mosaic
 from mosaics.merge_images import merge_images
@@ -33,7 +32,6 @@ def make_test_target(name,
                      image_scale=1.0,
                      rotation_angle=0.0,
                      footprint=None,
-                     projected_footprints=None,
                      content_hash='content_hash',
                      stable_hash='stable_hash',
                      stack_ids=[],
@@ -44,7 +42,6 @@ def make_test_target(name,
                 image_scale=image_scale,
                 rotation_angle=rotation_angle,
                 footprint=footprint,
-                projected_footprints=projected_footprints,
                 content_hash=content_hash,
                 stable_hash=stable_hash,
                 stack_ids=stack_ids,
@@ -77,8 +74,7 @@ class TestMergeGraph(unittest.TestCase):
                     center=[0.0, 0.0],
                     image_scale=1.0,
                     rotation_angle=0.0,
-                    footprint=_FOOTPRINT,
-                    projected_footprints={})
+                    footprint=_FOOTPRINT)
 
     context.targets = targets = {
         'a': make_test_target('a', stack_ids=['a']),
@@ -132,8 +128,7 @@ class TestMergeGraph(unittest.TestCase):
                     center=[0.0, 0.0],
                     image_scale=1.0,
                     rotation_angle=0.0,
-                    footprint=_FOOTPRINT,
-                    projected_footprints={})
+                    footprint=_FOOTPRINT)
 
     context.targets = targets = {
         'a': make_test_target('a', stack_ids=['a']),
@@ -213,8 +208,7 @@ class TestMergeGraph(unittest.TestCase):
                     center=[0.0, 0.0],
                     image_scale=1.0,
                     rotation_angle=0.0,
-                    footprint=_FOOTPRINT,
-                    projected_footprints={})
+                    footprint=_FOOTPRINT)
 
     context.targets = targets = {
         'a': make_test_target('a', stack_ids=['a']),

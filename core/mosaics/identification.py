@@ -391,9 +391,6 @@ def identify_mosaics(targets: TargetsDict,
                 f'with {len(footprint.points)} points')
           break
 
-      # assert not SphericalPolygon.self_intersect(footprint.points)
-      projected_footprints = footprints.all_projections(footprint)
-
       center = vector_to_lonlat(*np.mean(footprint.points, axis=0))
       name = position_string.canonical_target_string(center)
 
@@ -404,8 +401,7 @@ def identify_mosaics(targets: TargetsDict,
           center=list(center),
           image_scale=image_scale,
           rotation_angle=rotation_angle,
-          footprint=footprint,
-          projected_footprints=projected_footprints)
+          footprint=footprint)
 
       attributes: dict[str, Any] = asdict(chronology_attributes) | asdict(
           astrometric_attributes) | {

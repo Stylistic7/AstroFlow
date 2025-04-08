@@ -8,7 +8,6 @@ from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon 
 
 from context import context
 from metadata.classes import MetadataDict, FrameHash
-import geometry.footprints as footprints
 from catalogs import position_string
 
 
@@ -27,7 +26,6 @@ class AstrometricAttributes:
   image_scale: float
   rotation_angle: float
   footprint: SingleSphericalPolygon
-  projected_footprints: dict[str, Any]  # TODO: Strongly-type this.
 
   @classmethod
   def from_frames(
@@ -57,7 +55,5 @@ class AstrometricAttributes:
     if not footprint.is_clockwise():
       footprint = SingleSphericalPolygon(footprint.points[::-1])
     assert not SphericalPolygon.self_intersect(footprint.points)
-    projected_footprints = footprints.all_projections(footprint)
 
-    return cls(name, center, image_scale, rotation_angle, footprint,
-               projected_footprints)
+    return cls(name, center, image_scale, rotation_angle, footprint)

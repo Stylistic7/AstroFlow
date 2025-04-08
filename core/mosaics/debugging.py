@@ -33,15 +33,11 @@ def plot_mosaic(mosaic: Mosaic, title: str = 'Mosaic') -> None:
     target = targets[target_id]
     tile_indices = mosaic.tile_indices[i]
 
-    projection_name = 'mercator'
     projection = MercatorProjection()
 
     ra, dec = (np.radians(np.array(x)) for x in target.center)
     center = projection.project(ra, dec)
-
     print(f'### center is {center}')
-    # print(f'### mercator is',
-    #       target.projected_footprints[projection_name]['coords'])
 
     overlapping_targets = [
         tid for tid in mosaic.target_ids
