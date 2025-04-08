@@ -6,7 +6,7 @@ from context import context
 from task.astroflow_node import task
 from stacks.composite_stack import CompositeStack
 from stacks.simple_stack import SimpleStacksDict
-from stacks.imaging_attributes import ImagingAttributes
+from attributes import ImagingAttributes
 from stacks.types import StackHash
 
 

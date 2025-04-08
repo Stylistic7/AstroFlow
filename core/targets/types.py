@@ -3,8 +3,7 @@ from dataclasses import dataclass
 
 from hashing import hash_dataclass, hash_list_int
 from stacks.types import StackHash
-from stacks.astrometric_attributes import AstrometricAttributes
-from stacks.chronology_attributes import ChronologyAttributes
+from attributes import AstrometricAttributes, ChronologyAttributes
 from task.content_hashed import ContentHashed
 
 TargetHash = NewType('TargetHash', str)

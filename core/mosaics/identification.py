@@ -19,8 +19,7 @@ from targets.types import TargetHash, Target, TargetsDict
 from mosaics.debugging import plot_mosaic
 from mosaics.overlap import Overlap
 from task.astroflow_node import task
-from stacks.astrometric_attributes import AstrometricAttributes
-from stacks.chronology_attributes import ChronologyAttributes
+from attributes import AstrometricAttributes, ChronologyAttributes
 
 # TODO: Make the functions in this file functional (e.g. pass TargetsDict into
 # them, vs. relying on context).

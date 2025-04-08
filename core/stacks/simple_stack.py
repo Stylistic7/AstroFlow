@@ -1,11 +1,8 @@
 from dataclasses import dataclass, asdict
 from typing import Any
 
-from context import context
 from stacks.types import StackHash
-from stacks.chronology_attributes import ChronologyAttributes
-from stacks.imaging_attributes import ImagingAttributes
-from stacks.state_attributes import AstroFlowStateAttributes
+from attributes import AstroFlowStateAttributes, ChronologyAttributes, ImagingAttributes
 from metadata.classes import MetadataDict, FrameHash
 from hashing import hash_list, hash_list_int
 from task.content_hashed import ContentHashed

@@ -11,7 +11,7 @@ from targets.types import Target, TargetHash, TargetsDict
 import geometry.footprints as footprints
 from hashing import hash_list
 from stacks.composite_stack import CompositeStack, CompositeStacksDict
-from stacks.astrometric_attributes import AstrometricAttributes
+from attributes import AstrometricAttributes
 from stacks.types import StackHash
 from task.astroflow_node import task
 

@@ -5,9 +5,7 @@ from dataclasses import asdict
 from spherical_geometry.polygon import SphericalPolygon  # type: ignore
 
 from stacks.composite_stack import CompositeStack
-from stacks.astrometric_attributes import AstrometricAttributes
-from stacks.imaging_attributes import ImagingAttributes
-from stacks.chronology_attributes import ChronologyAttributes
+from attributes import AstrometricAttributes, ChronologyAttributes, ImagingAttributes
 
 
 def make_composite_stack(**kwargs: Any) -> CompositeStack:

@@ -2,12 +2,10 @@ from typing import NewType, TypeAlias
 from dataclasses import dataclass
 from beartype import beartype
 
-from artifacts import Artifact
 from geometry.projection import Projection
 from hashing import hash_dataclass
 from targets.types import TargetHash
-from stacks.astrometric_attributes import AstrometricAttributes
-from stacks.chronology_attributes import ChronologyAttributes
+from attributes import AstrometricAttributes, ChronologyAttributes
 from task.content_hashed import ContentHashed
 
 Template: TypeAlias = tuple[int | None, int | None]
