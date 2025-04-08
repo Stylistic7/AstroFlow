@@ -7,6 +7,7 @@ import shutil
 import astropy.io.fits as pyfits  # type: ignore
 from typing import Any
 
+from file_io.generic import update_header
 from stacks.artifacts import output_filename
 from stacks.simple_stack import SimpleStack
 from stacks.composite_stack import Stack
@@ -163,6 +164,7 @@ def stack_files(stack: Stack) -> Path:
     wbpp_masters.sort(key=lambda x: os.path.getmtime(x))
     filename = wbpp_masters[-1]
     print(f'last modified WBPP master {filename} -> {dest_filename}')
-    file_io.xisf_file_io.add_xisf_metadata(filename, dest_filename, metadata)
+    shutil.copy(filename, dest_filename)
+    update_header(dest_filename, metadata)
 
     return dest_filename

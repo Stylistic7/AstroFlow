@@ -9,6 +9,7 @@ from pix.classes import ImageList
 from task.astroflow_node import task
 from customization.types import CustomizedStack
 from stacks.artifacts import output_filename
+from file_io.types import XisfFilePath
 
 
 @PixInsight(slots=[1])
@@ -19,6 +20,7 @@ def _post_process_stack(images: ImageList) -> ImageList:
   return images
 
 
+# TODO: Do post-processing immediately after each stack has been stacked.
 @task.remote(resources={'PixInsight': 1})
 def post_process_stack(stack: CustomizedStack) -> Path:
   master = output_filename(stack)
@@ -39,5 +41,4 @@ def post_process_stack(stack: CustomizedStack) -> Path:
     post_processed = next(iter(results)).filename
 
   shutil.copy(post_processed, final_filename)
-
-  return Path(final_filename)
+  return XisfFilePath(final_filename)

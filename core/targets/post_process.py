@@ -5,6 +5,7 @@ from artifacts import Artifact
 from pix.decorators import PixInsight
 from pix.classes import ImageList
 from targets.types import TargetHash
+from file_io.types import XisfFilePath
 
 
 # TODO: Find a way to disable these during tests.
@@ -30,4 +31,4 @@ def post_process_target(target_id: TargetHash,
                         images: ImageList) -> list[Artifact]:
   result = _post_process_target(images)
   print(f'post_process_target, target_id {target_id} returning {result}')
-  return result
+  return XisfFilePath(result)
