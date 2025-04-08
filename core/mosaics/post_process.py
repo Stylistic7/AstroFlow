@@ -3,6 +3,7 @@ from pathlib import Path
 from astropy.time import Time
 import shutil
 
+from file_io.types import XisfFilePath
 from pix import PixInsight
 from pix.classes import ImageList
 from pix.tasks import ChannelCombination, SpectrophotometricColorCalibration, ImageSolver, StarXTerminator, LinearFit, SaveImagesAs
@@ -59,11 +60,13 @@ def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> None:
 
   images = [mosaic_output_filename(mosaic, filter) for filter in filters]
 
-  output_filename = Path(
+  output_filename = XisfFilePath(
       context.output_dir
-  ) / 'Mosaics' / mosaic.name / f'final_merged_{mosaic.stable_hash}_post_processed.fits'
+  ) / 'Mosaics' / mosaic.name / f'final_merged_{mosaic.stable_hash}_post_processed.xisf'
 
   if os.environ.get('MOCK_PIXINSIGHT'):
     shutil.copy(images[0], output_filename)
   else:
     _post_process_mosaic(images, mosaic, output_filename)
+
+  return output_filename

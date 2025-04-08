@@ -13,7 +13,6 @@ from shapely import box  # type: ignore
 
 from customization.types import CustomizedStack
 from file_io.generic import get_content_hash, read_image
-from file_io.types import FitsFilePath, TiffFilePath, WithSidecar
 from file_io.tiff_file_io import write_tiff_image
 from context import context
 from previews import QualityLevel
@@ -150,7 +149,7 @@ def _save_image_to_file(mode: QualityLevel, mosaic: Mosaic,
   filename = placed_filename(mosaic, mode, stack, tile_indices, filter)
   write_tiff_image(filename, image, {'FILTER': filter})
   print(f'### Wrote filename {filename}')
-  return WithSidecar(TiffFilePath(filename))
+  return filename
 
 
 @task.remote(memory=_PLACE_IMAGE_MEMORY_REQUIREMENT)

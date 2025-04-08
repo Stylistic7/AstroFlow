@@ -14,10 +14,8 @@ from mosaics.types import Mosaic
 from mosaics.artifacts import merged_filename
 from previews import QualityLevel, autostretch
 from task.astroflow_node import task
-from file_io.generic import read_image, get_content_hash
+from file_io.generic import read_image, get_content_hash, update_header
 from file_io.tiff_file_io import write_tiff_image
-from file_io.xisf_file_io import update_xisf_header
-from file_io.types import WithSidecar, XisfFilePath
 
 
 @PixInsight()
@@ -26,9 +24,6 @@ def run_photometric_mosaic(images: ImageList,
   return PhotometricMosaic(images, output_filename)
 
 
-# TODO: Consider what to name these images, since the AstroFlowNode decorator
-# handles all of the content hashes now.
-# TODO: Turn caching on.
 @task.remote(resources={'PixInsight': 1})
 def merge_images_with_photometric_mosaic(mosaic: Mosaic, input_0: Path,
                                          input_1: Path, filter: str) -> Path:
@@ -38,8 +33,8 @@ def merge_images_with_photometric_mosaic(mosaic: Mosaic, input_0: Path,
                              get_content_hash(input_1))
   run_photometric_mosaic([input_0, input_1], filename)
   assert os.path.exists(filename), f'file not found: {filename}'
-  # update_xisf_header(filename, {'FILTER': filter})
-  return WithSidecar(XisfFilePath(filename))
+  update_header(filename, {'FILTER': filter})
+  return filename
 
 
 def merge_images_with_maximum(image_0: np.ndarray,
@@ -54,7 +49,6 @@ def merge_images_with_maximum(image_0: np.ndarray,
   return output_image
 
 
-# TODO: Cache these results.
 @task.remote
 def merge_images(mode: QualityLevel, mosaic: Mosaic, input_0: Path,
                  input_1: Path) -> Path:
@@ -77,7 +71,7 @@ def merge_images(mode: QualityLevel, mosaic: Mosaic, input_0: Path,
   filter = next(iter(filters))
 
   # TODO: This is really ugly...
-  if mode == 'subframe':
+  if mode == QualityLevel.SUBFRAME:
     image_0 = autostretch(read_image(input_0))
     image_1 = autostretch(read_image(input_1))
 
@@ -87,7 +81,7 @@ def merge_images(mode: QualityLevel, mosaic: Mosaic, input_0: Path,
                                       get_content_hash(input_1))
     write_tiff_image(output_filename, image, {'FILTER': filter})
 
-  elif mode == 'master':
+  elif mode == QualityLevel.MASTER:
     if os.environ.get('MOCK_PIXINSIGHT'):
       return input_0
     else:
