@@ -73,7 +73,14 @@ def _(filename: TiffFilePath) -> np.ndarray:
 
 @read_header.register(WithSidecar)
 def _(wrapped: WithSidecar[Path]) -> np.ndarray:
-  return read_header(wrapped.path)
+  # TODO: Maybe try to read from the wrapped path first, and then merge the
+  # sidecar contents into it?
+  sidecar_path = wrapped.path.with_suffix(".json")
+
+  with open(sidecar_path, "r") as f:
+    metadata = json.load(f)
+
+  return metadata
 
 
 @singledispatch
@@ -98,12 +105,27 @@ def _(filename: TiffFilePath, metadata: dict[str, Any]) -> np.ndarray:
 
 
 @update_header.register(WithSidecar)
-def _(wrapped: WithSidecar[Path], metadata: dict[str, Any]) -> np.ndarray:
-  return update_header(wrapped.path, metadata)
+def _(wrapped: WithSidecar[Path], metadata_in: dict[str, Any]) -> np.ndarray:
+  sidecar_path = wrapped.path.with_suffix(".json")
+
+  try:
+    with open(sidecar_path, "r") as f:
+      metadata = json.load(f)
+  except FileNotFoundError:
+    metadata = {}
+
+  metadata |= metadata_in
+
+  with open(sidecar_path, "w") as f:
+    json.dump(metadata, f, indent=2)
 
 
 def hash_of_image_data(filename: Path | str) -> str:
-  return xxhash.xxh64(read_image(filename).tobytes()).hexdigest()
+  try:
+    return xxhash.xxh64(read_image(filename).tobytes()).hexdigest()
+  except Exception as e:
+    with open(filename, 'rb') as f:
+      return xxhash.xxh64(f.read()).hexdigest()
 
 
 @singledispatch
