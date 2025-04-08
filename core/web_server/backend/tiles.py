@@ -10,8 +10,9 @@ from flask import Blueprint, send_file, abort, jsonify
 
 from context import context
 from stacks.artifacts import output_filename as stack_output_filename
-from mosaics.artifacts import tile_filename as mosaic_output_filename
+from mosaics.artifacts import output_filename as mosaic_output_filename
 from file_io.generic import read_image
+from file_io.types import TiffFilePath
 from previews import autostretch
 
 # Settings
@@ -60,22 +61,31 @@ def get_image(object_type: str, object_id: str):
       _image_cache[key]["last_used"] = now
       return _image_cache[key]["handle"]
 
+    # Else, convert from .xisf and cache
     # TODO: Use post-processed stack image?
     if object_type == 'stack':
       path = stack_output_filename(context.stacks[object_id])
     elif object_type == 'mosaic':
       path = mosaic_output_filename(context.mosaics[object_id], filter='H')
 
-    path = os.fspath(path)
     if not os.path.exists(path):
       print(f"Path not found: {path}")
       return None
 
-    print(f"Opening file {path} with large_image...")
-    handle = large_image.open(path, plugin='vips')
+    if isinstance(path, TiffFilePath):
+      tiff_path = path
+    else:
+      tiff_path = TILE_CACHE_DIR / f"{object_type}_{object_id}.tif"
+      if not tiff_path.exists():
+        print(f"Converting {path} to {tiff_path}...")
+        convert_to_tiff(path, tiff_path)
+        print(f"Conversion done.")
+
+    print(f"Opening file {tiff_path} with large_image...")
+    handle = large_image.open(tiff_path, plugin='vips')
     _image_cache[key] = {
         "handle": handle,
-        "path": path,
+        "tiff_path": tiff_path,
         "last_used": now,
     }
     return handle

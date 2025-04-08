@@ -57,9 +57,10 @@ def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
     filename = tile_filename(mosaic, filter)
     write_tiff_image(filename,
                      autostretched, {'FILTER': filter},
-                     tile=(256, 256))
+                     tile=(256, 256),
+                     compression='deflate')
 
-    return [filter, input]
+    return [filter, filename]
 
 
 def targets_for_mosaic(mosaic: Mosaic, targets: TargetsDict) -> TargetsDict:
