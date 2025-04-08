@@ -19,7 +19,7 @@ const StackTabs = ({ stack, stack_id }) => {
   useEffect(() => {
     const checkTile = async () => {
       try {
-        const res = await fetch(`/tiles/${stack_id}/0/0/0.png`, { method: 'HEAD' });
+        const res = await fetch(`/tile/stack/${stack_id}/0/0/0.png`, { method: 'HEAD' });
         setTileViewerAvailable(res.ok);
       } catch (err) {
         setTileViewerAvailable(false);
@@ -61,7 +61,7 @@ const StackTabs = ({ stack, stack_id }) => {
         {tabIndex === 0 && (
           <Box sx={{ height: '100%', overflow: 'hidden' }}>
             {tileViewerAvailable ? (
-              <TileViewer imageHash={stack_id} />
+              <TileViewer objectType="stack" imageHash={stack_id} />
             ) : (
               <Typography align="center" variant="h6" sx={{ mt: 10 }}>
                 This stack has not been integrated yet.
