@@ -58,7 +58,7 @@ def process(polygon: Polygon, x1: float, x_clusters: list[float],
 
 
 # TODO: This is brute force. It's tolerably slow, but can be improved.
-def largest_interior_rectangle(polygon: Polygon, epsilon=20):
+def largest_interior_rectangle(polygon: Polygon, epsilon=20) -> box:
   x_clusters = cluster_continuous([p[0] for p in polygon.exterior.coords],
                                   epsilon=epsilon,
                                   key=lambda x: x)

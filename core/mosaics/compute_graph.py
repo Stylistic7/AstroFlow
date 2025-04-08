@@ -2,6 +2,7 @@ import numpy as np
 from typing import Any, Optional
 from pathlib import Path
 from shapely import box  # type: ignore
+from shapely.affinity import scale  # type: ignore
 
 from context import context, WriteMode
 from customization.types import CustomizedStack
@@ -54,7 +55,9 @@ def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
     image = read_image(filename)
     autostretched = (autostretch(image) * 255.0).astype(np.uint8)
     filename = Path(filename)
-    write_tiff_image(filename.with_stem(filename.stem + "_autostretched"),
+    filename = filename.with_stem(filename.stem +
+                                  '_autostretched').with_suffix('.tiff')
+    write_tiff_image(filename,
                      autostretched, {'FILTER': filter},
                      tile=(256, 256))
 
@@ -145,7 +148,9 @@ def compute_mask(strip: list[TargetHash], viewbox: Viewbox) -> box:
         target_poly)
 
   print(f'### Calling largest_interior_rectangle')
-  return largest_interior_rectangle(strip_poly)
+  box = largest_interior_rectangle(strip_poly)
+  shrink_factor = 0.95
+  return scale(box, xfact=shrink_factor, yfact=shrink_factor, origin='center')
 
 
 @task.remote
