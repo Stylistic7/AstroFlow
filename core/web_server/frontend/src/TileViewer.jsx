@@ -3,6 +3,12 @@ import * as PIXI from 'pixi.js';
 import { Stage, useApp } from '@pixi/react';
 import { useParams } from 'react-router-dom';
 import { Viewport } from 'pixi-viewport';
+import { Container } from '@pixi/react';
+import Polygon from './Polygon.jsx';
+import React, { useContext } from "react";
+
+import AstroFlowContext from './AstroFlowContext.jsx';
+
 
 const TILE_SIZE = 256;
 
@@ -13,6 +19,8 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp }) =>
   const [metadata, setMetadata] = useState(null);
   const containerRef = useRef(null);
   const [containerSize, setContainerSize] = useState({ width: 800, height: 600 });
+
+  const { mosaics } = useContext(AstroFlowContext);
 
   useLayoutEffect(() => {
     if (!containerRef.current) return;
@@ -54,13 +62,36 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp }) =>
           worldWidth={worldWidth}
           worldHeight={worldHeight}
           maxZoom={metadata.maxZoom}
+          mosaics={mosaics}
         />
       </Stage>
     </div>
   );
 };
 
-const ImperativeViewport = ({ objectType, imageHash, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom }) => {
+// // Add this above your `ImperativeViewport` component return:
+// const polygons = [
+//   {
+//     id: 'example-1',
+//     points: [[1000, 1000], [2000, 1000], [1500, 2000]],
+//     color: 0x00ff00,
+//   },
+//   // Add more as needed
+// ];
+
+const mosaicOutline = (mosaic) => {
+  const projection = 'mercator';
+
+  return [
+    {
+      id: 'mosaic.footprint',
+      points: mosaic.projected_footprints[projection].coords,
+      color: 0x00ff00,
+    },
+  ];
+}
+
+const ImperativeViewport = ({ objectType, imageHash, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, mosaics }) => {
   const app = useApp();
   const viewportRef = useRef(null);
   const spritesRef = useRef({});
@@ -106,6 +137,44 @@ const ImperativeViewport = ({ objectType, imageHash, imageWidth, imageHeight, wo
         bottom: imageHeight + halfHeight,
       });
     };
+
+    const updatePolygons = () => {
+      // console.log('mosaics ', mosaics);
+      // if (objectType != "mosaic" || !mosaics) {
+      //   return;
+      // }
+
+      let polygons = mosaicOutline(mosaics[imageHash]);
+      console.log('displaying ', polygons.length, ' polygons');
+
+      // Create polygon graphics and add them
+      for (const poly of polygons) {
+        console.log('polygon has ', poly.points.length, ' points');
+
+        const g = new PIXI.Graphics();
+        g.zIndex = 9999;
+        g.lineStyle(2, poly.color ?? 0xff0000, 1);
+        // g.beginFill(poly.color ?? 0xff0000, 0.2);
+        g.moveTo(poly.points[0][0], poly.points[0][1]);
+        for (let i = 1; i < poly.points.length; i++) {
+          console.log('point[', i, '] ', poly.points[i]);
+          g.lineTo(poly.points[i][0] * 5000, poly.points[i][1] * 5000);
+        }
+        g.closePath();
+        // g.endFill();
+
+        // Optional: make interactive
+        g.interactive = true;
+        g.cursor = 'pointer';
+        g.on('pointertap', () => {
+          console.log(`Clicked polygon ${poly.id}`);
+        });
+
+        viewport.addChild(g);
+      }
+
+      viewport.sortChildren();
+    }
 
     const updateTiles = () => {
       const scale = viewport.scale.x;
@@ -154,18 +223,23 @@ const ImperativeViewport = ({ objectType, imageHash, imageWidth, imageHeight, wo
       updateClamp();
     };
 
-    updateTiles();
-    viewport.on('moved', updateTiles);
-    viewport.on('zoomed', updateTiles);
-    viewport.on('moved-end', updateTiles);
-    viewport.on('zoomed-end', updateTiles);
+    const updateAll = () => {
+      updateTiles();
+      updatePolygons();
+    }
+
+    updateAll();
+    viewport.on('moved', updateAll);
+    viewport.on('zoomed', updateAll);
+    viewport.on('moved-end', updateAll);
+    viewport.on('zoomed-end', updateAll);
 
     return () => {
       viewport.destroy();
       Object.values(spritesRef.current).forEach((sprite) => sprite.destroy());
       spritesRef.current = {};
     };
-  }, [app, imageHash, imageWidth, imageHeight, maxZoom, worldWidth, worldHeight]);
+  }, [app, mosaics, imageHash, imageWidth, imageHeight, maxZoom, worldWidth, worldHeight]);
 
   return null;
 };

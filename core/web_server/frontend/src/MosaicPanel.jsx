@@ -18,16 +18,14 @@ import ColorChannelSelector from "./ColorChannelSelector.jsx";
 import TargetPanel from "./TargetPanel.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
 import { ra_to_hms, dec_to_dms } from './units.js';
-import DivWithActions from './DivWithActions.jsx';
-import MosaicOutlineActionButtons from './MosaicOutlineActionButtons.jsx';
-import ImageWithOverlay from "./ImageWithOverlay.jsx";
-import ProcessingActionButtons from "./ProcessingActionButtons.jsx";
+import TileViewer from './TileViewer';
 
 import "./Starmap.css";
 
 // TODO: Add "mosaic not found" messages.
 export default function MosaicPanel() {
 	const { stacks, targets, mosaics } = useContext(AstroFlowContext);
+	console.log('mosaics 2 ', mosaics);
 
 	const params = useParams();
 	const location = useLocation();
@@ -40,15 +38,6 @@ export default function MosaicPanel() {
 		indices: true,
 		exposure_widgets: true,
 	});
-
-	const [scale, setScale] = useState(1.0)
-
-	const handleChange = (name, checked) => {
-		setVisibility({
-			...visibility,
-			[name]: checked,
-		});
-	};
 
 	const get_filters = () => {
 		let filters = new Set();
@@ -63,8 +52,6 @@ export default function MosaicPanel() {
 	}
 
 	const [filter, setFilter] = useState(get_filters()[0]);
-
-	const fontColor = "#aaa";
 
 	const handleSetFilter = f => {
 		setFilter(f);
@@ -114,39 +101,6 @@ export default function MosaicPanel() {
 
 	const imageType = "mosaic_thumbnail_image_for_filter";
 
-	const handleZoomIn = () => {
-		setScale(scale * 1.2);
-	}
-
-	const handleZoomOut = () => {
-		setScale(scale * 0.8);
-	}
-
-	const leftActionButtons = () => {
-		return <ProcessingActionButtons
-			object_type="mosaic"
-			object_id={params.mosaic_id}
-		/>
-	}
-
-	const rightActionButtons = () => {
-		return <MosaicOutlineActionButtons
-			handleChange={handleChange}
-			handleZoomIn={handleZoomIn}
-			handleZoomOut={handleZoomOut}
-		/>
-	}
-
-	const mosaicOutline = () => (props) => {
-		return <MosaicOutline
-			{...props}
-			mosaic_id={params.mosaic_id}
-			filter={filter}
-			outline_visible={visibility.outline}
-			indices_visible={visibility.indices}
-			exposure_widgets_visible={visibility.exposure_widgets}
-		/>;
-	};
 
 	// TODO: Add a dialog box to the "run" button that shows the user what will be
 	// run, and how long it will likely take, and allow them to accept it.
@@ -182,24 +136,7 @@ export default function MosaicPanel() {
 				setFilter={handleSetFilter}
 			/>
 
-			<DivWithActions
-				left_action_buttons={leftActionButtons()}
-				right_action_buttons={rightActionButtons()}
-			>
-				<div
-					style={{
-						display: "flex",
-						flexDirection: "row",
-						justifyContent: "center"
-					}}>
-					<ImageWithOverlay
-						src={`/${imageType}/${params.mosaic_id}/${filter}`}
-						alt="mosaic"
-						scale={scale}
-						overlay={mosaicOutline()}
-					/>
-				</div>
-			</DivWithActions>
+			<TileViewer objectType="mosaic" imageHash={params.mosaic_id} />
 		</>
 	);
 }
