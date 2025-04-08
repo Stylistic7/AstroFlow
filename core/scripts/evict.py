@@ -22,7 +22,7 @@ def main():
       '--keep',
       nargs='+',
       help=
-      "Keep keys starting with any of these tuple fragments (e.g. build_mosaic_filter_subgraph)."
+      "Keep keys starting with any of these tuple fragments, e.g. build_mosaic,filter_subgraph"
   )
   group.add_argument(
       '--delete',
@@ -38,36 +38,34 @@ def main():
 
   args = parser.parse_args()
 
-  # Parse fragments as tuples — space-separated arguments, one per prefix
-  keep_prefixes = [tuple(frag.split(',')) for frag in args.keep or []]
-  delete_prefixes = [tuple(frag.split(',')) for frag in args.delete or []]
+  # Each argument like "a,b,c" becomes a tuple ("a", "b", "c")
+  keep_prefixes = [tuple(part.split(',')) for part in args.keep or []]
+  delete_prefixes = [tuple(part.split(',')) for part in args.delete or []]
 
   def should_delete(key):
     if not isinstance(key, tuple):
-      return False  # skip unexpected key formats
-
+      return False
     if keep_prefixes:
       return not any(starts_with(key, prefix) for prefix in keep_prefixes)
     else:
       return any(starts_with(key, prefix) for prefix in delete_prefixes)
 
-  keys_to_delete = (key for key in cache.iterkeys() if should_delete(key))
-  keys_buffer = list(keys_to_delete)
+  keys_to_delete = [key for key in cache.iterkeys() if should_delete(key)]
 
   action = (f"Keeping keys starting with: {keep_prefixes}" if keep_prefixes else
             f"Deleting keys starting with: {delete_prefixes}")
 
   print(f"\n{action}")
   print(
-      f"{'Would delete' if not args.confirm else 'Deleting'} {len(keys_buffer)} keys:\n"
+      f"{'Would delete' if not args.confirm else 'Deleting'} {len(keys_to_delete)} keys:\n"
   )
-  for key in keys_buffer:
+  for key in keys_to_delete:
     print(f"  - {key}")
 
   if not args.confirm:
     print("\nDry-run only. Use `--confirm` to actually delete.")
   else:
-    for key in keys_buffer:
+    for key in keys_to_delete:
       try:
         del cache[key]
       except KeyError:
