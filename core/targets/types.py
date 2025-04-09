@@ -12,7 +12,6 @@ TargetHash = NewType('TargetHash', str)
 @dataclass(order=True, frozen=True)
 class Target(ContentHashed, AstrometricAttributes,
              ChronologyAttributes[TargetHash]):
-  stable_hash: TargetHash
   stack_ids: list[StackHash]
 
   def __str__(self) -> str:

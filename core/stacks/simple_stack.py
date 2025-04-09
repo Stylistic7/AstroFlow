@@ -13,7 +13,6 @@ DependenciesDict = dict[str, StackHash]
 @dataclass(frozen=True)
 class SimpleStack(ContentHashed, ChronologyAttributes[StackHash],
                   ImagingAttributes, AstroFlowStateAttributes):
-  stable_hash: StackHash
   frames: list[FrameHash]
   metadata: MetadataDict
   dependencies: DependenciesDict

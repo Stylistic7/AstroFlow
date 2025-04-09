@@ -16,7 +16,6 @@ from task.content_hashed import ContentHashed
 @dataclass(frozen=True)
 class CompositeStack(ContentHashed, ImagingAttributes, AstrometricAttributes,
                      ChronologyAttributes[StackHash], AstroFlowStateAttributes):
-  stable_hash: StackHash
   contents: SimpleStacksDict
 
   @classmethod
