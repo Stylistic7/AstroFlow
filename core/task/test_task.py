@@ -83,6 +83,10 @@ class TestTask(unittest.TestCase):
     with tempfile.TemporaryDirectory() as output_dir:
       injected_context = {"output_dir": Path(output_dir)}
 
+      self.assertFalse(
+          make_large_image_remote.is_cached((100, 100),
+                                            injected_context=injected_context))
+
       # These functions should only run the first time.
       filename = ray.get(
           make_large_image_remote.remote((100, 100),
@@ -96,6 +100,10 @@ class TestTask(unittest.TestCase):
       self.assertIsInstance(filename, Path)
       self.assertEqual(context.num_make_large_image_runs, 1)
       self.assertEqual(context.num_consume_large_image_runs, 1)
+
+      self.assertTrue(
+          make_large_image_remote.is_cached((100, 100),
+                                            injected_context=injected_context))
 
       # The second calls should just return cached results.
       filename = ray.get(
@@ -119,9 +127,13 @@ class TestTask(unittest.TestCase):
 
   def test_excluded_from_cache(self):
     context.num_graph_runs = 0
+    self.assertFalse(make_graph_remote.is_cached())
 
     ray.get(make_graph_remote.remote())
+    self.assertFalse(make_graph_remote.is_cached())
+
     ray.get(make_graph_remote.remote())
+    self.assertFalse(make_graph_remote.is_cached())
 
     # Should have run both times since Graph is excluded from cache
     self.assertEqual(context.num_graph_runs, 2)

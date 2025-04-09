@@ -152,6 +152,30 @@ def make_task_decorator(cache: CacheProtocol,
       wrapper._function = func
       wrapper._is_task = True
 
+      # Preserve custom attributes like filename_fn
+      for attr in ('filename_fn',):
+        if hasattr(func, attr):
+          setattr(wrapper, attr, getattr(func, attr))
+
+      # TODO: Unify this code with the code above.
+      def is_cached(*args,
+                    injected_context: Optional[dict] = None,
+                    **kwargs) -> bool:
+        bound = _bind_args(func, args, kwargs, injected_context)
+        call_hash = call_hasher(fn_hash, *bound.args, **bound.kwargs)
+        cache_key = (func.__name__, call_hash)
+        print(f'### is_cached cache_key {cache_key}')
+        if cache_key not in cache:
+          debug_print(f'cache miss: {cache_key}' if self.
+                      cache_results else f'never cache: {cache_key}')
+          return False
+        cached_result = cache[cache_key]
+        content_hash = content_hasher.get(cached_result)
+        return not content_hasher.has(
+            cached_result) or content_hash == call_hash
+
+      wrapper.is_cached = is_cached
+
       return wrapper
 
   class Task:
