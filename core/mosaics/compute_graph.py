@@ -27,6 +27,7 @@ from previews import autostretch
 from pix.decorators import PixInsight
 from pix.classes import ImageList
 from pix.tasks import SaveImages
+from products.register import register_image_producer
 
 
 @PixInsight()
@@ -35,6 +36,7 @@ def save_uncompressed(images: ImageList, output_filenames: list[Path]):
   return []
 
 
+@register_image_producer(Mosaic, QualityLevel.MASTER, output_filename)
 @task.remote(cache=False)
 def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
                                input: Path) -> Optional[Path]:
@@ -49,7 +51,7 @@ def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
     context.set(key, image, write_mode=WriteMode.DISK_ONLY)
     print(f'### store_mosaic_color_channel wrote key {key}')
   elif mode == QualityLevel.MASTER:
-    filename = output_filename(mosaic, filter)
+    filename = context.output_dir / output_filename(mosaic, filter)
     save_uncompressed([input], [filename])
 
     image = read_image(filename)
@@ -60,7 +62,7 @@ def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
                      tile=(256, 256),
                      compression='deflate')
 
-    return [filter, filename]
+    return filename
 
 
 def targets_for_mosaic(mosaic: Mosaic, targets: TargetsDict) -> TargetsDict:

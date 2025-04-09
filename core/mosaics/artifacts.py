@@ -9,10 +9,11 @@ from stacks.composite_stack import CompositeStack
 from mosaics.types import TileIndices
 
 
-def output_filename(mosaic: Mosaic, filter: str) -> Path:
+# TODO: Figure out how to pass the filter through the web server API.
+def output_filename(mosaic: Mosaic, filter: str | None = 'H') -> Path:
   return WithSidecar(
       XisfFilePath(
-          Path(context.output_dir) / 'Mosaics' / mosaic.name /
+          Path('Mosaics') / mosaic.name /
           f'final_merged_{mosaic.stable_hash}_{filter}.xisf'))
 
 
