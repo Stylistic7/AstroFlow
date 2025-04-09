@@ -19,7 +19,7 @@ import TargetPanel from "./TargetPanel.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
 import { ra_to_hms, dec_to_dms } from './units.js';
 import TileViewer from './TileViewer';
-
+import { AstroFlowImage } from "./AstroFlowImage.jsx";
 import "./Starmap.css";
 
 // TODO: Add "mosaic not found" messages.
@@ -136,7 +136,7 @@ export default function MosaicPanel() {
 				setFilter={handleSetFilter}
 			/>
 
-			<TileViewer objectType="mosaic" imageHash={params.mosaic_id} />
+			<AstroFlowImage objectType="mosaic" objectId={params.mosaic_id} />
 		</>
 	);
 }

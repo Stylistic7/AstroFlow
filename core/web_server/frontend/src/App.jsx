@@ -25,7 +25,7 @@ import WorkflowGraph from './WorkflowGraph.jsx';
 import TileViewer from './TileViewer.jsx';
 import StackViewer from './StackViewer.jsx';
 import AppLayout from './AppLayout.jsx';
-
+import AstroFlowImage from './AstroFlowImage.jsx';
 
 function App() {
   const isPageVisible = usePageVisibility();

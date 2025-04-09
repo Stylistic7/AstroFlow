@@ -51,7 +51,7 @@ const StackTabs = ({ stack, stack_id }) => {
           scrollButtons="auto"
         >
           <Tab label="Stacked" />
-          <Tab label="Raw" />
+          <Tab label="Blink" />
           <Tab label="Runs" />
         </Tabs>
       </Box>
@@ -61,7 +61,7 @@ const StackTabs = ({ stack, stack_id }) => {
         {tabIndex === 0 && (
           <Box sx={{ height: '100%', overflow: 'hidden' }}>
             {tileViewerAvailable ? (
-              <TileViewer objectType="stack" imageHash={stack_id} />
+              <TileViewer objectType="stack" imageHash={stack_id} forceLevel="post_processed" />
             ) : (
               <Typography align="center" variant="h6" sx={{ mt: 10 }}>
                 This stack has not been integrated yet.
