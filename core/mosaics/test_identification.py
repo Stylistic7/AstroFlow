@@ -38,7 +38,8 @@ class TestMosaicIdentification(unittest.TestCase):
                  image_scale=1.0,
                  rotation_angle=0.0,
                  footprint=SingleSphericalPolygon.from_radec([98, 102, 102, 98],
-                                                             [-1, -1, 1, 1]))
+                                                             [-1, -1, 1, 1]),
+                 projected_footprints={})
     bar = Target(name='bar',
                  stable_hash=TargetHash('geometric_bar'),
                  content_hash='content_bar',
@@ -51,7 +52,8 @@ class TestMosaicIdentification(unittest.TestCase):
                  image_scale=1.0,
                  rotation_angle=0.0,
                  footprint=SingleSphericalPolygon.from_radec([95, 99, 99, 95],
-                                                             [-1, -1, 1, 1]))
+                                                             [-1, -1, 1, 1]),
+                 projected_footprints={})
 
     context.grouped_stacks = {
         str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
@@ -86,7 +88,8 @@ class TestMosaicIdentification(unittest.TestCase):
                  rotation_angle=0.0,
                  footprint=SingleSphericalPolygon.from_radec(
                      [98.01, 102.01, 102.01, 98.01], [-1, -1, 1, 1],
-                     center=[100.01, 0]))
+                     center=[100.01, 0]),
+                 projected_footprints={})
     bar = Target(name='bar',
                  stable_hash=TargetHash('geometric_bar'),
                  content_hash='content_bar',
@@ -100,7 +103,8 @@ class TestMosaicIdentification(unittest.TestCase):
                  rotation_angle=0.0,
                  footprint=SingleSphericalPolygon.from_radec(
                      [95.01, 99.01, 99.01, 95.01], [-1, -1, 1, 1],
-                     center=[97.01, 0]))
+                     center=[97.01, 0]),
+                 projected_footprints={})
     baz = Target(name='baz',
                  stable_hash=TargetHash('geometric_baz'),
                  content_hash='content_baz',
@@ -113,7 +117,8 @@ class TestMosaicIdentification(unittest.TestCase):
                  image_scale=1.0,
                  rotation_angle=0.0,
                  footprint=SingleSphericalPolygon.from_radec(
-                     [95, 99, 99, 95], [0.5, 0.5, 2.5, 2.5], center=[97, 1.5]))
+                     [95, 99, 99, 95], [0.5, 0.5, 2.5, 2.5], center=[97, 1.5]),
+                 projected_footprints={})
 
     context.grouped_stacks = {
         str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
@@ -152,7 +157,8 @@ class TestMosaicIdentification(unittest.TestCase):
                  image_scale=1.0,
                  rotation_angle=0.0,
                  footprint=SingleSphericalPolygon.from_radec(
-                     [98.01, 102.01, 102.01, 98.01], [0, 0, 2, 2]))
+                     [98.01, 102.01, 102.01, 98.01], [0, 0, 2, 2]),
+                 projected_footprints={})
     bar = Target(name='bar',
                  stable_hash=TargetHash('geometric_bar'),
                  content_hash='content_bar',
@@ -165,7 +171,8 @@ class TestMosaicIdentification(unittest.TestCase):
                  image_scale=1.0,
                  rotation_angle=0.0,
                  footprint=SingleSphericalPolygon.from_radec([98, 102, 102, 98],
-                                                             [3, 3, 5, 5]))
+                                                             [3, 3, 5, 5]),
+                 projected_footprints={})
     baz = Target(name='baz',
                  stable_hash=TargetHash('geometric_baz'),
                  content_hash='content_baz',
@@ -178,7 +185,8 @@ class TestMosaicIdentification(unittest.TestCase):
                  image_scale=1.0,
                  rotation_angle=0.0,
                  footprint=SingleSphericalPolygon.from_radec(
-                     [98.02, 102.02, 102.02, 98.02], [1.5, 1.5, 3.5, 3.5]))
+                     [98.02, 102.02, 102.02, 98.02], [1.5, 1.5, 3.5, 3.5]),
+                 projected_footprints={})
 
     context.grouped_stacks = {
         str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
@@ -210,7 +218,8 @@ class TestMosaicIdentification(unittest.TestCase):
                  image_scale=1.0,
                  rotation_angle=0.0,
                  footprint=SingleSphericalPolygon.from_radec([98, 102, 102, 98],
-                                                             [-1, -1, 1, 1]))
+                                                             [-1, -1, 1, 1]),
+                 projected_footprints={})
     bar = Target(name='bar',
                  stable_hash=TargetHash('geometric_bar'),
                  content_hash='content_bar',
@@ -223,7 +232,8 @@ class TestMosaicIdentification(unittest.TestCase):
                  image_scale=1.0,
                  rotation_angle=0.0,
                  footprint=SingleSphericalPolygon.from_radec([95, 99, 99, 95],
-                                                             [-1, -1, 1, 1]))
+                                                             [-1, -1, 1, 1]),
+                 projected_footprints={})
     baz = Target(name='baz',
                  stable_hash=TargetHash('geometric_baz'),
                  content_hash='content_baz',
@@ -236,7 +246,8 @@ class TestMosaicIdentification(unittest.TestCase):
                  image_scale=1.0,
                  rotation_angle=0.0,
                  footprint=SingleSphericalPolygon.from_radec(
-                     [95, 99, 99, 95], [0.5, 0.5, 2.5, 2.5]))
+                     [95, 99, 99, 95], [0.5, 0.5, 2.5, 2.5]),
+                 projected_footprints={})
     outlier = Target(
         name='outlier',
         stable_hash=TargetHash('geometric_outlier'),
@@ -250,7 +261,8 @@ class TestMosaicIdentification(unittest.TestCase):
         image_scale=1.0,
         rotation_angle=0.0,
         footprint=SingleSphericalPolygon.from_radec([96, 100, 100, 96],
-                                                    [-1.5, -1.5, 0.5, 0.5]))
+                                                    [-1.5, -1.5, 0.5, 0.5]),
+        projected_footprints={})
 
     context.grouped_stacks = {
         str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
@@ -290,7 +302,8 @@ class TestMosaicIdentification(unittest.TestCase):
                                [0.44676643, -0.62853698, 0.63666398],
                                [0.420705, -0.59334582, 0.68625654],
                                [0.45603681, -0.56689475, 0.6860472]]),
-                     np.array([0.45175641, -0.59818691, 0.66188259])))
+                     np.array([0.45175641, -0.59818691, 0.66188259])),
+                 projected_footprints={})
 
     bar = Target(name='bar',
                  stable_hash=TargetHash('geometric_bar'),
@@ -309,7 +322,8 @@ class TestMosaicIdentification(unittest.TestCase):
                                [0.46588868, -0.65547604, 0.59438951],
                                [0.44152953, -0.62243363, 0.64624148],
                                [0.47687137, -0.5960087, 0.64603973]]),
-                     np.array([0.47176113, -0.62623935, 0.62069777])))
+                     np.array([0.47176113, -0.62623935, 0.62069777])),
+                 projected_footprints={})
 
     context.grouped_stacks = {
         str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
