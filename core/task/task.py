@@ -104,22 +104,35 @@ def make_task_decorator(cache: CacheProtocol,
     def __call__(self, func: Callable):
       fn_hash = hash_source_code(func)
 
+      def _get_cache_key_and_result(bound_args):
+        call_hash = call_hasher(fn_hash, *bound_args.args, **bound_args.kwargs)
+        cache_key = (func.__name__, call_hash)
+
+        if not self.cache_results:
+          debug_print(f'never cache: {cache_key}')
+          return cache_key, call_hash, False, None
+
+        if cache_key not in cache:
+          debug_print(f'cache miss: {cache_key}')
+          return cache_key, call_hash, False, None
+
+        cached_result = cache[cache_key]
+        content_hash = content_hasher.get(cached_result)
+
+        if not content_hasher.has(cached_result) or content_hash == call_hash:
+          debug_print(f'cache hit: {cache_key}')
+          return cache_key, call_hash, True, cached_result
+        else:
+          debug_print(f'cache miss (mismatch {content_hash}): {cache_key}')
+          return cache_key, call_hash, False, None
+
       def inner(*args, injected_context: Optional[dict] = None, **kwargs):
         bound = _bind_args(func, args, kwargs, injected_context)
-        call_hash = call_hasher(fn_hash, *bound.args, **bound.kwargs)
+        cache_key, call_hash, is_valid_cache, cached_result = _get_cache_key_and_result(
+            bound)
 
-        cache_key = (func.__name__, call_hash)
-        if self.cache_results and cache_key in cache:
-          cached_result = cache[cache_key]
-          content_hash = content_hasher.get(cached_result)
-          if not content_hasher.has(cached_result) or content_hash == call_hash:
-            debug_print(f'cache hit: {cache_key}')
-            return cached_result
-          else:
-            debug_print(f'cache miss (mismatch {content_hash}): {cache_key}')
-        else:
-          debug_print(f'cache miss: {cache_key}' if self.
-                      cache_results else f'never cache: {cache_key}')
+        if is_valid_cache:
+          return cached_result
 
         start = time.perf_counter()
         result = func(*bound.args, **bound.kwargs)
@@ -127,8 +140,8 @@ def make_task_decorator(cache: CacheProtocol,
 
         _update_performance(func.__name__, elapsed, cache)
 
-        if self.cache_results and not isinstance(
-            result, no_cache_types) and not isinstance(result, Exception):
+        if (self.cache_results and not isinstance(result, no_cache_types) and
+            not isinstance(result, Exception)):
           result = content_hasher.set(result, call_hash)
           debug_print(f'store result: {cache_key} result type {type(result)}')
           cache[cache_key] = result
@@ -152,27 +165,16 @@ def make_task_decorator(cache: CacheProtocol,
       wrapper._function = func
       wrapper._is_task = True
 
-      # Preserve custom attributes like filename_fn
       for attr in ('filename_fn',):
         if hasattr(func, attr):
           setattr(wrapper, attr, getattr(func, attr))
 
-      # TODO: Unify this code with the code above.
       def is_cached(*args,
                     injected_context: Optional[dict] = None,
                     **kwargs) -> bool:
         bound = _bind_args(func, args, kwargs, injected_context)
-        call_hash = call_hasher(fn_hash, *bound.args, **bound.kwargs)
-        cache_key = (func.__name__, call_hash)
-        print(f'### is_cached cache_key {cache_key}')
-        if cache_key not in cache:
-          debug_print(f'cache miss: {cache_key}' if self.
-                      cache_results else f'never cache: {cache_key}')
-          return False
-        cached_result = cache[cache_key]
-        content_hash = content_hasher.get(cached_result)
-        return not content_hasher.has(
-            cached_result) or content_hash == call_hash
+        _, _, is_valid_cache, _ = _get_cache_key_and_result(bound)
+        return is_valid_cache
 
       wrapper.is_cached = is_cached
 
