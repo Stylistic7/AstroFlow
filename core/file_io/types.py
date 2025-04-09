@@ -30,3 +30,9 @@ class WithSidecar(Generic[T], ContentHashable):
 
   def __fspath__(self) -> str:
     return os.fspath(self.path)
+
+  def __str__(self) -> str:
+    return str(self.path)
+
+  def __truediv__(self, other):
+    return self.path / other
