@@ -1,29 +1,93 @@
 from ray_infra import ray_local
 
+import os
 import ray
 import numpy as np
 import unittest
-from pathlib import Path
+from dependency_graph import run_graph
 
-from testing import make_test_context
+from compute_graph import build_compute_graph
+from testing import make_test_context, copy_testdata_frames
 from context import context
-from products import register_image_producer
-from file_io.types import TiffFilePath
+from products import register_image_producer, get_image_producer
+from file_io.types import TiffFilePath, XisfFilePath
 from file_io.tiff_file_io import write_tiff_image
 from task.astroflow_node import task
+from stacks.composite_stack import CompositeStack
+from targets.types import Target
+from mosaics.types import Mosaic
+from previews.types import QualityLevel
 
 
+@register_image_producer(CompositeStack, QualityLevel.SUBFRAME,
+                         'preview_{name}.tiff')
 @task.remote
-@register_image_producer(object_type="stack", level="subframe", tiled=False)
-def dummy_generator(stack_id: str) -> Path:
-  output_path = Path(context.output_dir) / f"{stack_id}.png"
+def stack_preview(stack: CompositeStack) -> TiffFilePath:
+  '''Loads the best individual FITS image from a stack and saves as TIFF.'''
+  output_path = TiffFilePath(context.output_dir /
+                             stack_files.filename_fn(stack))
   image = np.zeros((100, 100))
   write_tiff_image(output_path, image)
 
-  return TiffFilePath(output_path)
+  return output_path
 
 
-class TestRegisterDecorator(unittest.TestCase):
+@register_image_producer(Target, QualityLevel.SUBFRAME)
+@task.remote
+def target_preview(target: Target) -> TiffFilePath:
+  '''Picks a representative image for the target and saves as TIFF.'''
+  pass
+
+
+@register_image_producer(Mosaic, QualityLevel.SUBFRAME)
+@task.remote
+def mosaic_preview(mosaic: Mosaic) -> TiffFilePath:
+  '''Composites the mosaic using subframe images and saves as TIFF.'''
+  pass
+
+
+@register_image_producer(CompositeStack, QualityLevel.MASTER,
+                         'master_{name}.tiff')
+@task.remote
+def stack_files(stack: CompositeStack) -> TiffFilePath:
+  '''Runs WBPP to stack raw images into a TIFF.'''
+  output_path = TiffFilePath(context.output_dir /
+                             stack_files.filename_fn(stack))
+  image = np.zeros((100, 100))
+  write_tiff_image(output_path, image)
+
+  return output_path
+
+
+@register_image_producer(Mosaic, QualityLevel.MASTER)
+@task.remote
+def merge_mosaic(mosaic: Mosaic) -> XisfFilePath:
+  '''Runs user script to post-process a mosaic into an XSIF.'''
+  pass
+
+
+@register_image_producer(CompositeStack, QualityLevel.POST_PROCESSED)
+@task.remote
+def post_process_stack(stack: CompositeStack) -> XisfFilePath:
+  '''Runs user script to post-process a stack into an XSIF.'''
+  pass
+
+
+@register_image_producer(Target, QualityLevel.POST_PROCESSED)
+@task.remote
+def post_process_target(target: Target) -> XisfFilePath:
+  '''Runs user script to post-process a target into an XSIF.'''
+  pass
+
+
+@register_image_producer(Mosaic, QualityLevel.POST_PROCESSED)
+@task.remote
+def post_process_mosaic(mosaic: Mosaic) -> XisfFilePath:
+  '''Runs user script to post-process a mosaic into an XSIF.'''
+  pass
+
+
+class TestRegistry(unittest.TestCase):
 
   def setUp(self) -> None:
     # Start with an empty context.
@@ -33,27 +97,32 @@ class TestRegisterDecorator(unittest.TestCase):
     self.input_dir_obj.cleanup()
     self.output_dir_obj.cleanup()
 
-  def test_register_decorator(self) -> None:
-    # Call the dummy generator
-    image_path = ray.get(dummy_generator.remote("abc123"))
+  def test_single_stack(self) -> None:
+    copy_testdata_frames(target_name='NGC7635', dest_dir=context.input_dirs[0])
+    run_graph(build_compute_graph())
+    stack = next(iter(context.stacks.values()))
 
-    assert image_path.exists()
+    filename = ray.get(stack_files.remote(stack))
+    self.assertTrue(os.path.exists(filename))
+
+    for k in context.get_cache_keys():
+      print(f'### key {k}')
 
     # Check thumbnail
-    thumb_key = ("thumbnail", "stack", "subframe", "abc123")
+    thumb_key = ("thumbnail", "stack", "master", stack.stable_hash)
     assert thumb_key in context
     thumb_data = context[thumb_key]
     assert isinstance(thumb_data, bytes)
 
-    # Check metadata
-    meta_key = ("metadata", "stack", "abc123")
-    assert meta_key in context
-    metadata = context[meta_key]
-    assert "subframe" in metadata
+  def test_registry(self) -> None:
+    copy_testdata_frames(target_name='NGC7635', dest_dir=context.input_dirs[0])
+    run_graph(build_compute_graph())
+    stack = next(iter(context.stacks.values()))
 
-    subframe_meta = metadata["subframe"]
-    assert subframe_meta["type"] == "png"
-    assert subframe_meta["image_url"] == "/image/stack/subframe/abc123"
-    assert subframe_meta["thumbnail_url"] == "/thumbnail/stack/subframe/abc123"
-    assert isinstance(subframe_meta["created_at"], float)
-    # assert subframe_meta["size"] == (100, 100)
+    fn = get_image_producer(CompositeStack, QualityLevel.SUBFRAME)
+    self.assertIsNotNone(fn)
+    self.assertFalse(fn.is_cached(stack))
+
+    filename = ray.get(fn.remote(stack))
+    self.assertTrue(os.path.exists(filename))
+    self.assertTrue(fn.is_cached(stack))
