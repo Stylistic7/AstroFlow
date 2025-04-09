@@ -56,48 +56,20 @@ def path_template(template: str) -> Callable:
   return lambda obj: Path(template.format(**vars(obj)))
 
 
-def register_image_producer(object_type: type,
-                            level,
-                            filename_fn: Optional[Union[str,
-                                                        Callable[...,
-                                                                 Path]]] = None,
-                            tiled: bool = False):
+def register_image_producer(
+    object_type: type,
+    level,
+    filename_fn: Optional[Union[str, Callable[..., Path]]] = None):
+
   if isinstance(filename_fn, str):
     filename_fn = path_template(filename_fn)
 
   def decorator(func: Callable[..., Path]):
-
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-      image_path: Path = func(*args, **kwargs)
-
-      assert isinstance(args[0], ChronologyAttributes
-                       ), f'type {type(args[0])} does not have stable_hash'
-      stable_hash = args[0].stable_hash
-
-      object_type_str = _get_type_name(object_type)
-      thumb_key = ('thumbnail', object_type_str, level.name.lower(),
-                   stable_hash)
-      if thumb_key not in context:
-        thumbnail = _generate_thumbnail(image_path)
-        context.set(thumb_key, thumbnail)
-
-    #   metadata_key = ('metadata', object_type_str, stable_hash)
-    #   existing = context.get(metadata_key, {})
-    #   existing[level] = {'path': image_path}
-    #   context.set(metadata_key, existing)
-
-      return image_path
-
     if filename_fn is not None:
-      wrapper.filename_fn = filename_fn
+      func.filename_fn = filename_fn
 
-    register(object_type, level, wrapper)
+    register(object_type, level, func)
 
-    return wrapper
+    return func
 
   return decorator
-
-
-def _generate_thumbnail(image_path: Path) -> bytes:
-  return array_to_png(autostretch(resize_array(read_image(image_path), 1500)))

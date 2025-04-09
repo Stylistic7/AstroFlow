@@ -80,8 +80,8 @@ def post_process_target(target: Target) -> XisfFilePath:
   pass
 
 
-@register_image_producer(Mosaic, QualityLevel.POST_PROCESSED)
 @task.remote
+@register_image_producer(Mosaic, QualityLevel.POST_PROCESSED)
 def post_process_mosaic(mosaic: Mosaic) -> XisfFilePath:
   '''Runs user script to post-process a mosaic into an XSIF.'''
   pass
@@ -104,15 +104,6 @@ class TestRegistry(unittest.TestCase):
 
     filename = ray.get(stack_files.remote(stack))
     self.assertTrue(os.path.exists(filename))
-
-    for k in context.get_cache_keys():
-      print(f'### key {k}')
-
-    # Check thumbnail
-    thumb_key = ("thumbnail", "stack", "master", stack.stable_hash)
-    assert thumb_key in context
-    thumb_data = context[thumb_key]
-    assert isinstance(thumb_data, bytes)
 
   def test_registry(self) -> None:
     copy_testdata_frames(target_name='NGC7635', dest_dir=context.input_dirs[0])
