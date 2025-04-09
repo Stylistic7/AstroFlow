@@ -611,10 +611,6 @@ def run_compute_graph():
   populate_context()
 
   # TODO: Put these in the UI.
-  context.input_dirs = ['/Volumes/Astro/Raw', '/Volumes/Astro2/Raw']
-  context.output_dir = '/Volumes/Astro/Processed'
-
-  # TODO: Put these in the UI.
   context.ignore_cached_results = True
   context.dangerously_accept_existing_files = True
 
@@ -875,9 +871,3 @@ def flask_thread_body():
 def start_flask():
   flask_thread = threading.Thread(target=flask_thread_body)
   flask_thread.start()
-
-
-# if __name__ == '__main__':
-#   # print('### Starting AstroFlow web server...')
-#   # app.run(host='0.0.0.0', port=80)
-#   start_flask()

@@ -1,6 +1,7 @@
 import os
 from typing import Any, TypeVar
 import queue
+from pathlib import Path
 
 from context import context, get_cache
 from ray_infra import connect_to_ray_cluster
@@ -44,6 +45,15 @@ def _init(state: State, action: Action) -> tuple[State, list[Action]]:
   return state, new_actions
 
 
+def _populate_context(state: State,
+                      action: Action) -> tuple[State, list[Action]]:
+  # TODO: Put these in the UI.
+  context.input_dirs = [Path('/Volumes/Astro/Raw'), Path('/Volumes/Astro2/Raw')]
+  context.output_dir = Path('/Volumes/Astro/Processed')
+
+  return state, []
+
+
 def _start_zeroconf(state: State, action: Action) -> tuple[State, list[Action]]:
   assert 'zeroconf' not in state
   state['zeroconf'] = AstroFlowZeroconf(enqueue_action)
@@ -72,7 +82,10 @@ def _start_ray_head_node(state: State,
 
   connect_to_ray_cluster()
 
-  return state, [Action(type='advertise_zeroconf')]
+  return state, [
+      Action(type='populate_context'),
+      Action(type='advertise_zeroconf')
+  ]
 
 
 def _stop_ray_node(state: State, action: Action) -> tuple[State, list[Action]]:
@@ -172,6 +185,7 @@ def dispatch(action: Action) -> dict[str, Any]:
   action = dict(action)
   new_actions = []
 
+  # TODO: Eliminate this match.
   match action['type']:
     case 'init':
       _state, new_actions = _init(_state, action)
@@ -208,6 +222,9 @@ def dispatch(action: Action) -> dict[str, Any]:
 
     case 'start_ray_head_node':
       _state, new_actions = _start_ray_head_node(_state, action)
+
+    case 'populate_context':
+      _state, new_actions = _populate_context(_state, action)
 
     case 'stop_ray_node':
       _state, new_actions = _stop_ray_node(_state, action)
