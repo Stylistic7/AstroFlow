@@ -1,8 +1,8 @@
 from ray_infra import ray_local
 
+from pathlib import Path
 import tempfile
 import datetime
-import os
 
 from context import context
 
@@ -14,10 +14,10 @@ def make_test_context(
   context.quarantined_files = []
 
   input_dir_obj = tempfile.TemporaryDirectory()
-  context.input_dirs = [input_dir_obj.name]
+  context.input_dirs = [Path(input_dir_obj.name)]
 
   output_dir_obj = tempfile.TemporaryDirectory()
-  context.output_dir = output_dir_obj.name
+  context.output_dir = Path(output_dir_obj.name)
 
   context.cosine_similarity_threshold = 0.99999
   context.min_component_members = 3
