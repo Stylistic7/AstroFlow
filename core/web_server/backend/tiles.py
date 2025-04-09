@@ -13,7 +13,11 @@ from stacks.artifacts import output_filename as stack_output_filename
 from mosaics.artifacts import tile_filename as mosaic_output_filename
 from file_io.generic import read_image
 from file_io.types import TiffFilePath
-from previews import autostretch
+from previews import autostretch, QualityLevel
+from stacks.composite_stack import CompositeStack
+from targets.types import Target
+from mosaics.types import Mosaic
+from products.registry import get_image_producer
 
 # Settings
 TILE_CACHE_DIR = Path("/tmp/astroflow_tiles")
@@ -32,6 +36,24 @@ def convert_to_tiff(path: Path, temp_path: Path):
   arr = autostretch(read_image(path))
   arr = (arr * 255.0).astype(np.uint8)
   tifffile.imwrite(temp_path, arr, tile=(256, 256), compression='deflate')
+
+
+def get_best_image(object_type: str, object_id: str) -> Path:
+  class_for_type = {'stack': CompositeStack, 'target': Target, 'mosaic': Mosaic}
+
+  if object_type == 'stack':
+    object = context.stacks[object_id]
+  elif object_type == 'target':
+    object = context.targets[object_id]
+  elif object_type == 'mosaic':
+    object = context.mosaics[object_id]
+
+  for level in [
+      QualityLevel.POST_PROCESSED, QualityLevel.MASTER, QualityLevel.SUBFRAME
+  ]:
+    fn = get_image_producer(class_for_type[object_type], level)
+    if fn is not None:
+      return context.output_dir / fn.filename_fn(object)
 
 
 def get_image(object_type: str, object_id: str):
@@ -62,11 +84,7 @@ def get_image(object_type: str, object_id: str):
       return _image_cache[key]["handle"]
 
     # Else, convert from .xisf and cache
-    # TODO: Use post-processed stack image?
-    if object_type == 'stack':
-      path = stack_output_filename(context.stacks[object_id])
-    elif object_type == 'mosaic':
-      path = mosaic_output_filename(context.mosaics[object_id], filter='H')
+    path = get_best_image(object_type, object_id)
 
     if not os.path.exists(path):
       print(f"Path not found: {path}")

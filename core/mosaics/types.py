@@ -20,7 +20,6 @@ MosaicHash = NewType('MosaicHash', str)
 @dataclass(order=True, frozen=True)
 class Mosaic(ContentHashed, AstrometricAttributes,
              ChronologyAttributes[MosaicHash]):
-  stable_hash: MosaicHash
   target_ids: list[TargetHash]
   strips: list[Strip]
 

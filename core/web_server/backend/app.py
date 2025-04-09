@@ -31,6 +31,7 @@ from dependency_graph import run_graph, graph_status_to_progress
 from dependency_graph.debugging import node_to_string
 from previews import QualityLevel, autostretch, array_to_png
 from web_server.backend.tiles import tiles_bp
+from web_server.backend.objects import objects_bp
 
 from stacks.composite_stack import CompositeStack
 from file_io.generic import read_image
@@ -111,6 +112,7 @@ else:
   )
 
 app.register_blueprint(tiles_bp)
+app.register_blueprint(objects_bp)
 
 
 # TODO: Move computations into new files.

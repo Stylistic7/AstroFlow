@@ -10,7 +10,7 @@ from typing import Any
 from file_io.generic import update_header
 from stacks.artifacts import output_filename
 from stacks.simple_stack import SimpleStack
-from stacks.composite_stack import Stack
+from stacks.composite_stack import Stack, CompositeStack
 from customization.types import CustomizedStack
 from context import context
 from pix import PixInsight, ImageList
@@ -19,6 +19,8 @@ import file_io
 from metadata.classes import MetadataDict
 from metadata.actor import get_metadata
 from task.astroflow_node import task
+from products.register import register_image_producer
+from previews import QualityLevel
 
 
 def _symlink_frames(filenames: list[str], dest_path: str) -> None:
@@ -85,7 +87,7 @@ def _setup_composite_stack(stack: Stack,
 
     # Add any dependent stacks (e.g. calibration stacks).
     dependendency_filenames = [
-        output_filename(calibration_stacks[d])
+        context.output_dir / output_filename(calibration_stacks[d])
         for d in substack.dependencies.values()
     ]
     _symlink_frames(dependendency_filenames, run_dir)
@@ -106,6 +108,7 @@ def _setup_simple_stack(stack: Stack, tmp_dir: str) -> tuple[str | None, int]:
 #
 # TODO: When a stack fails, keep note of it so it won't be retried for the
 # exact same inputs again.
+@register_image_producer(CompositeStack, QualityLevel.MASTER, output_filename)
 @task.remote(resources={'PixInsight': 1})
 def stack_files(stack: Stack) -> Path:
   assert context.output_dir
@@ -113,7 +116,7 @@ def stack_files(stack: Stack) -> Path:
 
   metadata = {'IMAGETYP': f'Master {stack.image_type}'}
 
-  dest_filename = output_filename(stack, context.output_dir)
+  dest_filename = context.output_dir / stack_files.filename_fn(stack)
 
   # TODO: This is kind of dangerous, because the output filename only depends
   # on the stack's own content hash -- the hash used by AstroFlowNode is more
