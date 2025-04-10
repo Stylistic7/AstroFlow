@@ -6,7 +6,7 @@ from context import context
 import clustering
 from stacks.composite_stack import CompositeStack, CompositeStacksDict
 from metadata.classes import FrameHash, MetadataDict
-from decorators.cached_decorator import cached
+from decorators import cached
 
 
 def _normalize_radians(x: float) -> float:

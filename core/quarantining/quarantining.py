@@ -3,7 +3,7 @@ from dataclasses import replace, asdict
 import time
 
 from context import context
-from decorators.cached_decorator import cached
+from decorators import cached
 from stacks.composite_stack import CompositeStack
 from stacks.simple_stack import SimpleStacksDict
 from attributes import ImagingAttributes

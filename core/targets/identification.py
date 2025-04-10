@@ -13,7 +13,7 @@ from hashing import hash_list
 from stacks.composite_stack import CompositeStack, CompositeStacksDict
 from attributes import AstrometricAttributes
 from stacks.types import StackHash
-from decorators.cached_decorator import cached
+from decorators import cached
 
 
 @cached.remote

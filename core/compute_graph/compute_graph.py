@@ -17,7 +17,7 @@ from dependency_graph import Graph, TaskDescriptor, make_graph_from_list
 from stacks.identification import identify_stacks
 from stacks.composite_stack import CompositeStacksDict, SimpleStacksDict
 from stacks.validation import validate_stacks
-from decorators.cached_decorator import cached
+from decorators import cached
 from customization.compute_graph import build_customize_graph
 from mosaics.types import MosaicsDict
 from mosaics.compute_graph import stacks_for_mosaic, targets_for_mosaic

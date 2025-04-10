@@ -1,5 +1,5 @@
 from stacks.composite_stack import CompositeStacksDict
-from decorators.cached_decorator import cached
+from decorators import cached
 
 
 @cached.remote

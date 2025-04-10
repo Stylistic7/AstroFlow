@@ -5,7 +5,7 @@ from mosaics.types import Mosaic
 from pix.classes import ImageList
 from pix.decorators import PixInsight
 from pix.tasks import SaveAs
-from decorators.cached_decorator import cached
+from decorators import cached
 
 
 @PixInsight()

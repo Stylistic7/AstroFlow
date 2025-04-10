@@ -6,7 +6,7 @@ from context import context
 from pix.decorators import PixInsight
 from pix.tasks import BlurXTerminator, GradientCorrection
 from pix.classes import ImageList
-from decorators.cached_decorator import cached
+from decorators import cached
 from customization.types import CustomizedStack
 from stacks.composite_stack import CompositeStack
 from stacks.artifacts import output_filename

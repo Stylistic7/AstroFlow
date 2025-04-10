@@ -11,7 +11,7 @@ from context import context
 from cache.cached_decorator import make_cached_decorator, Injected
 from hashing import hash_list
 from dependency_graph import Graph
-from profiling.measure_performance import measure_performance
+from decorators import measure_performance
 from testing.sidecar_hasher import SidecarHasher
 
 
@@ -28,7 +28,7 @@ task_with_context = make_cached_decorator(cache=context,
 
 
 @task_with_context.remote
-@measure_performance(context)
+@measure_performance
 def make_large_image_remote(shape: tuple[int],
                             output_dir: Injected[Path]) -> Path:
   context.num_make_large_image_runs = context.num_make_large_image_runs + 1

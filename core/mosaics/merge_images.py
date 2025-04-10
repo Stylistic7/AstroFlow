@@ -12,7 +12,7 @@ from mosaics.types import Mosaic
 from mosaics.artifacts import merged_filename
 from previews.types import QualityLevel
 from previews.operations import autostretch
-from decorators.cached_decorator import cached
+from decorators import cached
 from file_io.generic import read_image, get_content_hash, update_header
 from file_io.tiff_file_io import write_tiff_image
 

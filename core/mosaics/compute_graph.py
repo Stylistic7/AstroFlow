@@ -19,7 +19,7 @@ from stacks.compute_graph import get_stack_image
 from stacks.composite_stack import CompositeStacksDict
 from stacks.types import StackHash
 from previews.types import QualityLevel
-from decorators.cached_decorator import cached
+from decorators import cached
 from targets.types import TargetsDict, Target, TargetHash
 from file_io.generic import read_image
 from file_io.tiff_file_io import write_tiff_image

@@ -1,6 +1,6 @@
 from dataclasses import replace
 
-from decorators.cached_decorator import cached
+from decorators import cached
 from context import context
 from targets.target import Target
 from targets.types import TargetHash

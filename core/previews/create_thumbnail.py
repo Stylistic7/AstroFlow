@@ -17,33 +17,38 @@ def default_thumbnail_fn(path: Path, width=2048) -> Optional[np.ndarray]:
     return None
 
 
-def create_thumbnail(
+def make_create_thumbnail_decorator(
     cache: CacheProtocol,
     thumbnail_fn: Callable[[Path],
                            Optional[np.ndarray]] = default_thumbnail_fn):
 
-  def decorator(func: Callable):
-    fn_hash = hash_source_code(func)
+  def create_thumbnail(cache: CacheProtocol,
+                       thumbnail_fn: Callable[[Path], Optional[np.ndarray]]):
 
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-      result = func(*args, **kwargs)
-      if isinstance(result, Path):
-        thumbnail = thumbnail_fn(result)
-        if thumbnail is not None:
-          call_hash = hash_call(fn_hash, *args, **kwargs)
-          thumbnail_key = ('thumbnail', call_hash)
-          cache[thumbnail_key] = thumbnail
+    def decorator(func: Callable):
+      fn_hash = hash_source_code(func)
 
-      return result
+      @wraps(func)
+      def wrapper(*args, **kwargs):
+        result = func(*args, **kwargs)
+        if isinstance(result, Path):
+          thumbnail = thumbnail_fn(result)
+          if thumbnail is not None:
+            call_hash = hash_call(fn_hash, *args, **kwargs)
+            thumbnail_key = ('thumbnail', call_hash)
+            cache[thumbnail_key] = thumbnail
 
-    def get_thumbnail_fn(*args, **kwargs) -> Optional[np.ndarray]:
-      call_hash = hash_call(fn_hash, *args, **kwargs)
-      thumbnail_key = ('thumbnail', call_hash)
-      return cache.get(thumbnail_key)
+        return result
 
-    wrapper.thumbnail_fn = get_thumbnail_fn
+      def get_thumbnail_fn(*args, **kwargs) -> Optional[np.ndarray]:
+        call_hash = hash_call(fn_hash, *args, **kwargs)
+        thumbnail_key = ('thumbnail', call_hash)
+        return cache.get(thumbnail_key)
 
-    return wrapper
+      wrapper.thumbnail_fn = get_thumbnail_fn
 
-  return decorator
+      return wrapper
+
+    return decorator
+
+  return create_thumbnail(cache, thumbnail_fn)

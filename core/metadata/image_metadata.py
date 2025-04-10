@@ -13,7 +13,7 @@ import plate_solving
 from dependency_graph import Graph
 from context import context, WriteMode
 from metadata.actor import get_metadata
-from decorators.cached_decorator import cached
+from decorators import cached
 from hashing import hash_list
 
 # TODO: I need to associate dark and flat frames *before* computing thumbnails.

@@ -17,18 +17,22 @@ def _update_performance(fn_name: str, elapsed_time: float,
   cache[key] = history
 
 
-def measure_performance(cache: CacheProtocol):
+def make_measure_performance_decorator(cache: CacheProtocol):
 
-  def decorator(func: Callable):
+  def measure_performance(cache: CacheProtocol):
 
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-      start = time.perf_counter()
-      result = func(*args, **kwargs)
-      elapsed = time.perf_counter() - start
-      _update_performance(func.__name__, elapsed, cache)
-      return result
+    def decorator(func: Callable):
 
-    return wrapper
+      @wraps(func)
+      def wrapper(*args, **kwargs):
+        start = time.perf_counter()
+        result = func(*args, **kwargs)
+        elapsed = time.perf_counter() - start
+        _update_performance(func.__name__, elapsed, cache)
+        return result
 
-  return decorator
+      return wrapper
+
+    return decorator
+
+  return measure_performance(cache)

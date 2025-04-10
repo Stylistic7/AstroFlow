@@ -6,7 +6,7 @@ import numpy as np
 import unittest
 from dependency_graph import run_graph
 
-from decorators.cached_decorator import cached
+from decorators import cached
 from products import register_image_producer, get_image_producer
 from compute_graph import build_compute_graph
 from testing import make_test_context, copy_testdata_frames

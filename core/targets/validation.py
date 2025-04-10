@@ -1,6 +1,6 @@
 from context import context
 from targets.target import TargetsDict
-from decorators.cached_decorator import cached
+from decorators import cached
 
 
 @cached.remote

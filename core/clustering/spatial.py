@@ -7,7 +7,7 @@ from metadata.classes import MetadataDict
 from geometry import footprints
 from context import context
 import plate_solving
-from decorators.cached_decorator import cached
+from decorators import cached
 from hashing import hash_list
 
 T = TypeVar('T')

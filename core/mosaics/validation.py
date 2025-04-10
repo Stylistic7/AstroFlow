@@ -2,7 +2,7 @@ import ray
 
 from context import context
 from mosaics.mosaic import MosaicsDict
-from decorators.cached_decorator import cached
+from decorators import cached
 
 
 @cached.remote
