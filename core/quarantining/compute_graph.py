@@ -1,6 +1,6 @@
 from dataclasses import replace
 
-from task.astroflow_node import task
+from decorators.task_decorator import task
 from context import context
 from targets.target import Target
 from targets.types import TargetHash

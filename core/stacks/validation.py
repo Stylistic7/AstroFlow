@@ -1,5 +1,5 @@
 from stacks.composite_stack import CompositeStacksDict
-from task.astroflow_node import task
+from decorators.task_decorator import task
 
 
 @task.remote

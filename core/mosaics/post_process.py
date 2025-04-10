@@ -8,7 +8,7 @@ from pix import PixInsight
 from pix.classes import ImageList
 from pix.tasks import ChannelCombination, SpectrophotometricColorCalibration, ImageSolver, StarXTerminator, LinearFit, SaveImages
 from context import context
-from task.astroflow_node import task
+from decorators.task_decorator import task
 from previews import QualityLevel
 from mosaics.types import Mosaic
 from mosaics.artifacts import output_filename as mosaic_output_filename

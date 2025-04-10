@@ -4,43 +4,11 @@ import xxhash
 import inspect
 import pickle
 from functools import wraps
-from typing import Any, NewType, Callable, Optional, Protocol, get_origin, TypeVar, Generic, runtime_checkable, List, Type
+from typing import Any, Callable, Optional, get_origin, TypeVar, Generic, List, Type
 
-from hashing import hash_list
+from protocols import CacheProtocol, ContentHashProtocol
 
 _MAX_PERFORMANCE_SAMPLES = 100
-
-
-@runtime_checkable
-class CacheProtocol(Protocol):
-
-  def __getitem__(self, key: str) -> Any:
-    ...
-
-  def __setitem__(self, key: str, value: Any) -> None:
-    ...
-
-  def get(self, key: str, default: Any = None) -> Any:
-    ...
-
-  def __contains__(self, key: str) -> bool:
-    ...
-
-
-ContentHash = NewType('ContentHash', str)
-
-
-@runtime_checkable
-class ContentHashProtocol(Protocol):
-
-  def has(self, obj: Any) -> bool:
-    ...
-
-  def get(self, obj: Any) -> ContentHash:
-    ...
-
-  def set(self, obj: Any, content_hash: ContentHash) -> Any:
-    ...
 
 
 class Injected(Generic[TypeVar('T')]):

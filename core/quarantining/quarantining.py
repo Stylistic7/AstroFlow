@@ -3,7 +3,7 @@ from dataclasses import replace, asdict
 import time
 
 from context import context
-from task.astroflow_node import task
+from decorators.task_decorator import task
 from stacks.composite_stack import CompositeStack
 from stacks.simple_stack import SimpleStacksDict
 from attributes import ImagingAttributes

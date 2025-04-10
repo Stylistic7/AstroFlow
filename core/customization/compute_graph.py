@@ -4,7 +4,7 @@ from context import context
 from dependency_graph import Graph
 from stacks.composite_stack import CompositeStack
 from calibration import associate_with_stack
-from task.astroflow_node import task
+from decorators.task_decorator import task
 from customization.subframe_selection import select_subframes
 from customization.settings import Settings, StackSettings
 from customization.types import CustomizedStack

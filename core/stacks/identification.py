@@ -6,7 +6,7 @@ from context import context
 import clustering
 from stacks.composite_stack import CompositeStack, CompositeStacksDict
 from metadata.classes import FrameHash, MetadataDict
-from task.astroflow_node import task
+from decorators.task_decorator import task
 
 
 def _normalize_radians(x: float) -> float:

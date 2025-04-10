@@ -18,7 +18,7 @@ from pix.tasks import WeightedBatchPreprocessing
 import file_io
 from metadata.classes import MetadataDict
 from metadata.actor import get_metadata
-from task.astroflow_node import task
+from decorators.task_decorator import task
 from products.register import register_image_producer
 from previews import QualityLevel
 

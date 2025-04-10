@@ -22,3 +22,7 @@ def available_image_levels(object_type: type) -> set:
 
 def all_registered() -> dict[tuple[Type, Any], Callable[..., Path]]:
   return dict(_registry)  # return a copy
+
+
+def clear_registry() -> None:
+  _registry.clear()

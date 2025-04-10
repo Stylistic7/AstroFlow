@@ -6,7 +6,7 @@ from context import context
 from pix.decorators import PixInsight
 from pix.tasks import BlurXTerminator, GradientCorrection
 from pix.classes import ImageList
-from task.astroflow_node import task
+from decorators.task_decorator import task
 from customization.types import CustomizedStack
 from stacks.composite_stack import CompositeStack
 from stacks.artifacts import output_filename

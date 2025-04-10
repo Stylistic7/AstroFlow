@@ -13,7 +13,7 @@ from pix.tasks import PhotometricMosaic
 from mosaics.types import Mosaic
 from mosaics.artifacts import merged_filename
 from previews import QualityLevel, autostretch
-from task.astroflow_node import task
+from decorators.task_decorator import task
 from file_io.generic import read_image, get_content_hash, update_header
 from file_io.tiff_file_io import write_tiff_image
 

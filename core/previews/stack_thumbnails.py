@@ -3,7 +3,7 @@ import cv2
 import os
 import tempfile
 
-from task.astroflow_node import task
+from decorators.task_decorator import task
 from previews.operations import resize_array, array_to_png
 from previews.flat_correction import create_flat_correction_thumbnails
 from previews.calibration import calibrate_subframe

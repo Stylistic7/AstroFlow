@@ -13,7 +13,7 @@ from hashing import hash_list
 from stacks.composite_stack import CompositeStack, CompositeStacksDict
 from attributes import AstrometricAttributes
 from stacks.types import StackHash
-from task.astroflow_node import task
+from decorators.task_decorator import task
 
 
 @task.remote

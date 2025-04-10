@@ -5,7 +5,7 @@ import itertools
 from dataclasses import replace
 from datetime import datetime
 
-from task.astroflow_node import task
+from decorators.task_decorator import task
 from metadata.classes import ImageMetadata, FrameHash
 from context import context
 from stacks.types import StackHash

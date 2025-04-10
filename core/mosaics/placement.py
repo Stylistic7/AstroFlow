@@ -19,7 +19,7 @@ from previews import QualityLevel
 from mosaics.types import Mosaic, Viewbox, TileIndices
 from mosaics.trimming import trim_image, project_to_viewbox, largest_interior_rectangle
 from mosaics.artifacts import placed_filename
-from task.astroflow_node import task
+from decorators.task_decorator import task
 from stacks.composite_stack import CompositeStack
 
 _PLACE_IMAGE_MEMORY_REQUIREMENT = 6 * 1024 * 1024 * 1024  # 6 GB

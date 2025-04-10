@@ -1,6 +1,4 @@
 import ray
-from dataclasses import replace
-from typing import Any
 
 from context import context
 from metadata.image_metadata import scatter_compute_image_metadata
@@ -19,12 +17,11 @@ from dependency_graph import Graph, TaskDescriptor, make_graph_from_list
 from stacks.identification import identify_stacks
 from stacks.composite_stack import CompositeStacksDict, SimpleStacksDict
 from stacks.validation import validate_stacks
-from task.astroflow_node import task
+from decorators.task_decorator import task
 from customization.compute_graph import build_customize_graph
 from mosaics.types import MosaicsDict
 from mosaics.compute_graph import stacks_for_mosaic, targets_for_mosaic
 from quarantining.quarantining import quarantine_calibration_stacks
-
 from hashing import hash_list
 
 

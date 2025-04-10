@@ -5,7 +5,7 @@ from mosaics.types import Mosaic
 from pix.classes import ImageList
 from pix.decorators import PixInsight
 from pix.tasks import SaveAs
-from task.astroflow_node import task
+from decorators.task_decorator import task
 
 
 @PixInsight()

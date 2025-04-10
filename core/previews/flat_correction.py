@@ -2,7 +2,7 @@ from context import context, WriteMode
 from previews.operations import array_to_png
 from previews.calibration import calibrate_subframe
 from previews.operations import autostretch
-from task.astroflow_node import task
+from decorators.task_decorator import task
 from dependency_graph import Graph
 from customization.types import CustomizedStack
 from customization.subframe_selection import get_light_frames_sorted_by_stars

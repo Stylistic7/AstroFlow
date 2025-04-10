@@ -19,7 +19,7 @@ from stacks.compute_graph import get_stack_image
 from stacks.composite_stack import CompositeStacksDict
 from stacks.types import StackHash
 from previews import QualityLevel
-from task.astroflow_node import task
+from decorators.task_decorator import task
 from targets.types import TargetsDict, Target, TargetHash
 from file_io.generic import read_image
 from file_io.tiff_file_io import write_tiff_image

@@ -1,6 +1,6 @@
 from context import context
 from targets.target import TargetsDict
-from task.astroflow_node import task
+from decorators.task_decorator import task
 
 
 @task.remote

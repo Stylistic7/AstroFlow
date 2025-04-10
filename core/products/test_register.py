@@ -6,17 +6,21 @@ import numpy as np
 import unittest
 from dependency_graph import run_graph
 
+from decorators.task_decorator import task
+from products import register_image_producer, get_image_producer
 from compute_graph import build_compute_graph
 from testing import make_test_context, copy_testdata_frames
 from context import context
-from products import register_image_producer, get_image_producer
 from file_io.types import TiffFilePath, XisfFilePath
 from file_io.tiff_file_io import write_tiff_image
-from task.astroflow_node import task
 from stacks.composite_stack import CompositeStack
 from targets.types import Target
 from mosaics.types import Mosaic
 from previews.types import QualityLevel
+
+from products.registry import clear_registry
+
+clear_registry()
 
 
 @register_image_producer(CompositeStack, QualityLevel.SUBFRAME,

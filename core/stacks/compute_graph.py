@@ -5,7 +5,7 @@ from stacks.stacking import stack_files
 from stacks.composite_stack import CompositeStack
 from stacks.post_process import post_process_stack
 from dependency_graph import Graph, Node
-from task.astroflow_node import task
+from decorators.task_decorator import task
 from metadata.image_metadata import compute_image_metadata, load_metadata
 from customization.types import CustomizedStack
 from customization.subframe_selection import get_light_frames_sorted_by_stars

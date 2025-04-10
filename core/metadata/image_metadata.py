@@ -13,7 +13,7 @@ import plate_solving
 from dependency_graph import Graph
 from context import context, WriteMode
 from metadata.actor import get_metadata
-from task.astroflow_node import task
+from decorators.task_decorator import task
 from hashing import hash_list
 
 # TODO: I need to associate dark and flat frames *before* computing thumbnails.

@@ -2,7 +2,7 @@ import ray
 
 from context import context
 from mosaics.mosaic import MosaicsDict
-from task.astroflow_node import task
+from decorators.task_decorator import task
 
 
 @task.remote

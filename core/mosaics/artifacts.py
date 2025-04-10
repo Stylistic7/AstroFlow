@@ -3,7 +3,7 @@ from pathlib import Path
 from context import context
 from file_io.types import XisfFilePath, TiffFilePath, WithSidecar
 from mosaics.types import Mosaic
-from task.task import ContentHash
+from protocols import ContentHash
 from previews.types import QualityLevel
 from stacks.composite_stack import CompositeStack
 from mosaics.types import TileIndices

@@ -7,7 +7,7 @@ from metadata.classes import MetadataDict
 from geometry import footprints
 from context import context
 import plate_solving
-from task.astroflow_node import task
+from decorators.task_decorator import task
 from hashing import hash_list
 
 T = TypeVar('T')

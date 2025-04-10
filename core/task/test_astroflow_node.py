@@ -19,7 +19,7 @@ from testing import make_test_context, copy_testdata_frames
 from artifacts.artifact import unpack_artifact
 from mosaics.types import MosaicHash, Viewbox
 from geometry.projections import mercator
-from task.astroflow_node import task
+from decorators.task_decorator import task
 from file_io.fits_file_io import read_fits_image
 from stacks.composite_stack import CompositeStack, SimpleStacksDict
 

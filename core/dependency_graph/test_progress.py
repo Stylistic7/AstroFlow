@@ -5,7 +5,7 @@ import ray
 import time
 
 from dependency_graph import Graph, run_graph, graph_status_to_progress
-from task.astroflow_node import task
+from decorators.task_decorator import task
 
 
 @task.remote

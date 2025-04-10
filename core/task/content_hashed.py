@@ -1,6 +1,5 @@
 from dataclasses import dataclass
-from typing import NewType
-from task.task import ContentHash
+from protocols import ContentHash
 
 
 @dataclass(frozen=True, kw_only=True)
