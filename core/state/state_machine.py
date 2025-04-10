@@ -2,6 +2,7 @@ import os
 from typing import Any, TypeVar
 import queue
 from pathlib import Path
+import time
 
 from context import context, get_cache
 from ray_infra import connect_to_ray_cluster
@@ -81,6 +82,7 @@ def _start_ray_head_node(state: State,
   announcer.announce('ray_status')
 
   connect_to_ray_cluster()
+  time.sleep(5)
 
   return state, [
       Action(type='populate_context'),
