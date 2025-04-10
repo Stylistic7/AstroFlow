@@ -12,7 +12,7 @@ from stacks.composite_stack import CompositeStack
 from stacks.artifacts import output_filename
 from stacks.stacking import stack_files
 from file_io.types import XisfFilePath
-from products.register import register_image_producer
+from decorators import register_image_producer
 from previews.types import QualityLevel
 
 

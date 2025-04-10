@@ -1,5 +1,4 @@
-from collections import defaultdict
-from typing import Callable, Any, Type
+from typing import Callable, Any, Type, Optional, Union
 from pathlib import Path
 
 _registry: dict[tuple[Type, Any], Callable[..., Path]] = {}
@@ -26,3 +25,26 @@ def all_registered() -> dict[tuple[Type, Any], Callable[..., Path]]:
 
 def clear_registry() -> None:
   _registry.clear()
+
+
+def path_template(template: str) -> Callable:
+  return lambda obj: Path(template.format(**vars(obj)))
+
+
+def register_image_producer(
+    object_type: type,
+    level,
+    filename_fn: Optional[Union[str, Callable[..., Path]]] = None):
+
+  if isinstance(filename_fn, str):
+    filename_fn = path_template(filename_fn)
+
+  def decorator(func: Callable[..., Path]):
+    if filename_fn is not None:
+      func.filename_fn = filename_fn
+
+    register(object_type, level, func)
+
+    return func
+
+  return decorator
