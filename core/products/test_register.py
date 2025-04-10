@@ -6,7 +6,7 @@ import numpy as np
 import unittest
 from dependency_graph import run_graph
 
-from decorators.task_decorator import task
+from decorators.cached_decorator import cached
 from products import register_image_producer, get_image_producer
 from compute_graph import build_compute_graph
 from testing import make_test_context, copy_testdata_frames
@@ -25,7 +25,7 @@ clear_registry()
 
 @register_image_producer(CompositeStack, QualityLevel.SUBFRAME,
                          'preview_{name}.tiff')
-@task.remote
+@cached.remote
 def stack_preview(stack: CompositeStack) -> TiffFilePath:
   '''Loads the best individual FITS image from a stack and saves as TIFF.'''
   output_path = TiffFilePath(context.output_dir /
@@ -37,14 +37,14 @@ def stack_preview(stack: CompositeStack) -> TiffFilePath:
 
 
 @register_image_producer(Target, QualityLevel.SUBFRAME)
-@task.remote
+@cached.remote
 def target_preview(target: Target) -> TiffFilePath:
   '''Picks a representative image for the target and saves as TIFF.'''
   pass
 
 
 @register_image_producer(Mosaic, QualityLevel.SUBFRAME)
-@task.remote
+@cached.remote
 def mosaic_preview(mosaic: Mosaic) -> TiffFilePath:
   '''Composites the mosaic using subframe images and saves as TIFF.'''
   pass
@@ -52,7 +52,7 @@ def mosaic_preview(mosaic: Mosaic) -> TiffFilePath:
 
 @register_image_producer(CompositeStack, QualityLevel.MASTER,
                          'master_{name}.tiff')
-@task.remote
+@cached.remote
 def stack_files(stack: CompositeStack) -> TiffFilePath:
   '''Runs WBPP to stack raw images into a TIFF.'''
   output_path = TiffFilePath(context.output_dir /
@@ -64,27 +64,27 @@ def stack_files(stack: CompositeStack) -> TiffFilePath:
 
 
 @register_image_producer(Mosaic, QualityLevel.MASTER)
-@task.remote
+@cached.remote
 def merge_mosaic(mosaic: Mosaic) -> XisfFilePath:
   '''Runs user script to post-process a mosaic into an XSIF.'''
   pass
 
 
 @register_image_producer(CompositeStack, QualityLevel.POST_PROCESSED)
-@task.remote
+@cached.remote
 def post_process_stack(stack: CompositeStack) -> XisfFilePath:
   '''Runs user script to post-process a stack into an XSIF.'''
   pass
 
 
 @register_image_producer(Target, QualityLevel.POST_PROCESSED)
-@task.remote
+@cached.remote
 def post_process_target(target: Target) -> XisfFilePath:
   '''Runs user script to post-process a target into an XSIF.'''
   pass
 
 
-@task.remote
+@cached.remote
 @register_image_producer(Mosaic, QualityLevel.POST_PROCESSED)
 def post_process_mosaic(mosaic: Mosaic) -> XisfFilePath:
   '''Runs user script to post-process a mosaic into an XSIF.'''

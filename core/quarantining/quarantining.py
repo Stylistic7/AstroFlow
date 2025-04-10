@@ -3,14 +3,14 @@ from dataclasses import replace, asdict
 import time
 
 from context import context
-from decorators.task_decorator import task
+from decorators.cached_decorator import cached
 from stacks.composite_stack import CompositeStack
 from stacks.simple_stack import SimpleStacksDict
 from attributes import ImagingAttributes
 from stacks.types import StackHash
 
 
-@task.remote
+@cached.remote
 def quarantine_calibration_stacks(stacks: SimpleStacksDict) -> SimpleStacksDict:
   quarantined_calibration_stacks = context.quarantined_calibration_stacks or []
   return SimpleStacksDict({

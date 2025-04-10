@@ -10,7 +10,7 @@ from attributes import AstrometricAttributes, AstroFlowStateAttributes, Chronolo
 from stacks.types import StackHash
 from metadata.classes import MetadataDict, FrameHash
 from clustering.continuous import cluster_continuous
-from task.content_hashed import ContentHashed
+from cache.content_hashed import ContentHashed
 
 
 @dataclass(frozen=True)

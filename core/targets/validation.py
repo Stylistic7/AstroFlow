@@ -1,9 +1,9 @@
 from context import context
 from targets.target import TargetsDict
-from decorators.task_decorator import task
+from decorators.cached_decorator import cached
 
 
-@task.remote
+@cached.remote
 def validate_targets(targets: TargetsDict) -> None:
   stacks = context.stacks
   for target_id, target in targets.items():

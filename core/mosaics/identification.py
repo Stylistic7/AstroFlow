@@ -18,7 +18,7 @@ from hashing import hash_list
 from targets.types import TargetHash, Target, TargetsDict
 from mosaics.debugging import plot_mosaic
 from mosaics.overlap import Overlap
-from decorators.task_decorator import task
+from decorators.cached_decorator import cached
 from attributes import AstrometricAttributes, ChronologyAttributes
 
 # TODO: Make the functions in this file functional (e.g. pass TargetsDict into
@@ -319,7 +319,7 @@ def _identify_overlapping_targets(
   return mosaics
 
 
-@task.remote
+@cached.remote
 def identify_mosaics(targets: TargetsDict,
                      debug: bool = False) -> dict[MosaicHash, Mosaic]:
   print(f'### Identifying mosaics from {len(targets)} targets')

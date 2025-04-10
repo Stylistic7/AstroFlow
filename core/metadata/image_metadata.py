@@ -13,7 +13,7 @@ import plate_solving
 from dependency_graph import Graph
 from context import context, WriteMode
 from metadata.actor import get_metadata
-from decorators.task_decorator import task
+from decorators.cached_decorator import cached
 from hashing import hash_list
 
 # TODO: I need to associate dark and flat frames *before* computing thumbnails.
@@ -81,7 +81,7 @@ from hashing import hash_list
 #
 # TODO: Add a task that checks that input and output directories exist. Many
 # tasks cannot run without them.
-@task.remote(resources={'fastest_storage': 0.001})
+@cached.remote(resources={'fastest_storage': 0.001})
 def scatter_compute_image_metadata(mode: str, *filenames_in:
                                    list[Path]) -> Graph:
   directories = {
@@ -118,14 +118,14 @@ class DuplicateFileException(Exception):
 
 # TODO: What's the best approach for making this functional? I should remove
 # the side-effect (saving to the context).
-@task.remote(resources={'fastest_storage': 0.001})
+@cached.remote(resources={'fastest_storage': 0.001})
 def compute_image_metadata(filename: Path) -> Path:
   # TODO: Make sure this code doesn't actually repeatedly read the image across
   # the network. It should hit the node's filesystem cache.
   try:
     assert filename is not None
     # TODO: Don't manage cache keys and content hashes in this function;
-    # let the @task.remote decorator do that.
+    # let the @cached.remote decorator do that.
     content_hash = get_content_hash(filename)
     key = ('image_metadata', content_hash)
 
@@ -172,7 +172,7 @@ def compute_image_metadata(filename: Path) -> Path:
           f'exception {traceback.format_exc()}')
 
 
-@task.remote(cache=False)
+@cached.remote(cache=False)
 def load_metadata() -> MetadataDict:
   quarantined_files = context.quarantined_files or set()
 

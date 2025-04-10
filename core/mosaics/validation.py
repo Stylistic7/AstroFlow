@@ -2,10 +2,10 @@ import ray
 
 from context import context
 from mosaics.mosaic import MosaicsDict
-from decorators.task_decorator import task
+from decorators.cached_decorator import cached
 
 
-@task.remote
+@cached.remote
 def validate_mosaics(mosaics: MosaicsDict) -> None:
   print(f'### Entering validate_mosaics')
   targets = context.targets

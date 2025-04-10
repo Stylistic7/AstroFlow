@@ -8,7 +8,7 @@ import tempfile
 from typing import Any
 
 from context import context
-from task.task import make_task_decorator, Injected
+from cache.cached_decorator import make_cached_decorator, Injected
 from hashing import hash_list
 from dependency_graph import Graph
 from testing.sidecar_hasher import SidecarHasher
@@ -20,10 +20,10 @@ def _compute_content_hash(serialized_func: bytes, *args, **kwargs) -> str:
 
 
 sidecar_hasher = SidecarHasher()
-task_with_context = make_task_decorator(cache=context,
-                                        content_hasher=sidecar_hasher,
-                                        call_hasher=_compute_content_hash,
-                                        no_cache_types=[Graph])
+task_with_context = make_cached_decorator(cache=context,
+                                          content_hasher=sidecar_hasher,
+                                          call_hasher=_compute_content_hash,
+                                          no_cache_types=[Graph])
 
 
 @task_with_context.remote

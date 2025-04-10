@@ -19,7 +19,7 @@ from testing import make_test_context, copy_testdata_frames
 from artifacts.artifact import unpack_artifact
 from mosaics.types import MosaicHash, Viewbox
 from geometry.projections import mercator
-from decorators.task_decorator import task
+from decorators.cached_decorator import cached
 from file_io.fits_file_io import read_fits_image
 from stacks.composite_stack import CompositeStack, SimpleStacksDict
 
@@ -28,27 +28,27 @@ log = structlog.get_logger()
 T = TypeVar('T')
 
 
-@task.remote
+@cached.remote
 def my_first_task() -> int:
   return 1
 
 
-@task.remote
+@cached.remote
 def my_later_task() -> int:
   return 2
 
 
-@task.remote
+@cached.remote
 def my_last_task() -> int:
   return 3
 
 
-@task.remote
+@cached.remote
 def my_task_with_many_ancestors(i: int, *ancestor_results: list[Any]) -> int:
   return i
 
 
-@task.remote
+@cached.remote
 def compute_mosaic_viewbox(mosaic_id: MosaicHash,
                            mode: QualityLevel) -> Viewbox:
   return Viewbox(projection=mercator.MercatorProjection(),
@@ -65,17 +65,17 @@ def compute_mosaic_viewbox(mosaic_id: MosaicHash,
                  tile_height=100)
 
 
-@task.remote
+@cached.remote
 def create_small_image() -> np.ndarray:
   return np.ones((100, 100))
 
 
-@task.remote
+@cached.remote
 def consume_small_image(image) -> Any:
   return image.shape
 
 
-@task.remote
+@cached.remote
 def place_image(image: np.ndarray, viewbox: Viewbox) -> Path:
   # context.place_image_runs = (context.place_image_runs or 0) + 1
   context.and_equals('place_image_runs', 1, default_value=0)
@@ -93,31 +93,31 @@ def place_image(image: np.ndarray, viewbox: Viewbox) -> Path:
   return filename
 
 
-@task.remote
+@cached.remote
 def process(item: T) -> T:
   # context.process_runs = (context.process_runs or 0) + 1
   context.and_equals('process_runs', 1, default_value=0)
   return item
 
 
-@task.remote
+@cached.remote
 def gather(*ancestor_results: list[int]) -> int:
   print(f'### ancestor_results {ancestor_results}')
   return sum(ancestor_results)
 
 
-@task.remote
+@cached.remote
 def maybe_run_dynamic_graph(should_run: bool) -> Graph:
   if should_run:
     return Graph({gather: [(process, i) for i in range(7)]})
 
 
-@task.remote
+@cached.remote
 def done(x: Any) -> Any:
   return x
 
 
-@task.remote
+@cached.remote
 def build_subgraph(number: int) -> Graph:
   return Graph({gather: [(process, i) for i in range(number)]})
 
@@ -131,19 +131,19 @@ def build_place_image_compute_graph() -> Graph:
   })
 
 
-@task.remote
+@cached.remote
 def create_large_image(shape: tuple[int]) -> np.ndarray:
   image = np.ones(shape)
   print(f'### create_large_image size {image.nbytes / 1024 / 1024:.3f} MB')
   return image
 
 
-@task.remote
+@cached.remote
 def consume_large_image(image) -> Any:
   return image.shape
 
 
-@task.remote
+@cached.remote
 def associate_calibration(stack: CompositeStack) -> CompositeStack:
   context.and_equals('associate_calibration_runs', 1, default_value=0)
   print(f'### associate_calibration stack {stack}')

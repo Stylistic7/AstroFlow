@@ -5,7 +5,7 @@ import itertools
 from dataclasses import replace
 from datetime import datetime
 
-from decorators.task_decorator import task
+from decorators.cached_decorator import cached
 from metadata.classes import ImageMetadata, FrameHash
 from context import context
 from stacks.types import StackHash
@@ -14,7 +14,7 @@ from stacks.composite_stack import CompositeStack, SimpleStacksDict
 import clustering
 
 
-@task.remote
+@cached.remote
 def identify_calibration_stacks() -> SimpleStacksDict:
   print(f'Identifying calibration stacks...')
 

@@ -1,8 +1,5 @@
 import ray
-import time
-import xxhash
 import inspect
-import pickle
 from functools import wraps
 from typing import Any, Callable, Optional, get_origin, TypeVar, Generic, List, Type
 
@@ -31,12 +28,12 @@ def _bind_args(func: Callable, args: tuple, kwargs: dict,
   return bound
 
 
-def make_task_decorator(cache: CacheProtocol,
-                        content_hasher: ContentHashProtocol,
-                        call_hasher: Optional[Callable[[bytes, Any],
-                                                       str]] = None,
-                        no_cache_types: Optional[List[Type]] = None,
-                        debug=True):
+def make_cached_decorator(cache: CacheProtocol,
+                          content_hasher: ContentHashProtocol,
+                          call_hasher: Optional[Callable[[bytes, Any],
+                                                         str]] = None,
+                          no_cache_types: Optional[List[Type]] = None,
+                          debug=True):
   call_hasher = call_hasher or hash_call
   no_cache_types = tuple(no_cache_types or [])
 

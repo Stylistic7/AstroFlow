@@ -4,7 +4,7 @@ from context import context
 from dependency_graph import Graph
 from stacks.composite_stack import CompositeStack
 from calibration import associate_with_stack
-from decorators.task_decorator import task
+from decorators.cached_decorator import cached
 from customization.subframe_selection import select_subframes
 from customization.settings import Settings, StackSettings
 from customization.types import CustomizedStack
@@ -23,12 +23,12 @@ def apply_settings(stack: CompositeStack, settings: Settings) -> CompositeStack:
   return replace(stack, contents=new_contents)
 
 
-@task.remote(cache=False)
+@cached.remote(cache=False)
 def gather_customize_stacks(*stacks) -> None:
   context.stacks = {s.stable_hash: s for s in stacks}
 
 
-@task.remote
+@cached.remote
 def scatter_customize_stacks() -> Graph:
   quarantined_stacks = context.quarantined_stacks or []
   settings = context.settings or Settings()
@@ -44,7 +44,7 @@ def scatter_customize_stacks() -> Graph:
 # TODO: Add tests in test_customization.py
 # TODO: Pass in the StackSettings and cache this.
 # TODO: Pass in the quarantined_stacks and cache this.
-@task.remote
+@cached.remote
 def customize_stack(stack: CompositeStack,
                     settings: Settings) -> CustomizedStack:
   stack = associate_with_stack(stack)
@@ -57,7 +57,7 @@ def customize_stack(stack: CompositeStack,
 
 # TODO: Implement real customization features.
 # TODO: Make this a pure function.
-@task.remote(cache=False)
+@cached.remote(cache=False)
 def scatter_customize_targets() -> None:
   quarantined_targets = context.quarantined_targets or []
   context.targets = {
@@ -69,7 +69,7 @@ def scatter_customize_targets() -> None:
 
 # TODO: Implement real customization features.
 # TODO: Make this a pure function.
-@task.remote(cache=False)
+@cached.remote(cache=False)
 def scatter_customize_mosaics(*mosaics) -> None:
   quarantined_mosaics = context.quarantined_mosaics or []
   context.mosaics = {
@@ -79,12 +79,12 @@ def scatter_customize_mosaics(*mosaics) -> None:
   }
 
 
-@task.remote
+@cached.remote
 def customization_done() -> None:
   pass
 
 
-@task.remote
+@cached.remote
 def build_customize_graph() -> Graph:
   return Graph({
       customization_done: [

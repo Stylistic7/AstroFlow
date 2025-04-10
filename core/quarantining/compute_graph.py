@@ -1,6 +1,6 @@
 from dataclasses import replace
 
-from decorators.task_decorator import task
+from decorators.cached_decorator import cached
 from context import context
 from targets.target import Target
 from targets.types import TargetHash
@@ -9,7 +9,7 @@ from mosaics.types import MosaicHash
 from mosaics.mosaic import Mosaic
 
 
-@task.remote(task_config=dict(cache=False))
+@cached.remote(task_config=dict(cache=False))
 def quarantine_stacks() -> SimpleStacksDict | CompositeStacksDict:
   stacks = context.stacks
   if not stacks:
@@ -24,7 +24,7 @@ def quarantine_stacks() -> SimpleStacksDict | CompositeStacksDict:
 
 
 # TODO: This should be made functional.
-@task.remote(task_config=dict(cache=False))
+@cached.remote(task_config=dict(cache=False))
 def quarantine_targets() -> dict[TargetHash, Target]:
   stacks = context.stacks
   targets = context.targets
@@ -54,7 +54,7 @@ def quarantine_targets() -> dict[TargetHash, Target]:
   return output_targets
 
 
-@task.remote(task_config=dict(cache=False))
+@cached.remote(task_config=dict(cache=False))
 def quarantine_mosaics() -> dict[MosaicHash, Mosaic]:
   targets = context.targets
   mosaics = context.mosaics

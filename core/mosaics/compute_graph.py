@@ -19,7 +19,7 @@ from stacks.compute_graph import get_stack_image
 from stacks.composite_stack import CompositeStacksDict
 from stacks.types import StackHash
 from previews.types import QualityLevel
-from decorators.task_decorator import task
+from decorators.cached_decorator import cached
 from targets.types import TargetsDict, Target, TargetHash
 from file_io.generic import read_image
 from file_io.tiff_file_io import write_tiff_image
@@ -37,7 +37,7 @@ def save_uncompressed(images: ImageList, output_filenames: list[Path]):
 
 
 @register_image_producer(Mosaic, QualityLevel.MASTER, output_filename)
-@task.remote(cache=False)
+@cached.remote(cache=False)
 def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
                                input: Path) -> Optional[Path]:
   if input is None:
@@ -80,7 +80,7 @@ def stacks_for_mosaic(mosaic: Mosaic, stacks: CompositeStacksDict,
   })
 
 
-@task.remote
+@cached.remote
 def build_mosaic_subgraph(mode: QualityLevel, mosaic: Mosaic,
                           stacks: CompositeStacksDict,
                           targets: TargetsDict) -> Graph:
@@ -125,7 +125,7 @@ def build_mosaic_subgraph(mode: QualityLevel, mosaic: Mosaic,
 
 
 # TODO: This function seems to be slow for some reason.
-@task.remote(num_cpus=0.5)
+@cached.remote(num_cpus=0.5)
 def build_placement_subgraph(mode: QualityLevel, mosaic: Mosaic,
                              stack: CustomizedStack, filter: str,
                              tile_indices: TileIndices, viewbox: Viewbox,
@@ -154,14 +154,14 @@ def compute_mask(strip: list[TargetHash], viewbox: Viewbox) -> box:
   return scale(box, xfact=shrink_factor, yfact=shrink_factor, origin='center')
 
 
-@task.remote
+@cached.remote
 def compute_mosaic_masks(mode: QualityLevel, mosaic: Mosaic,
                          viewbox: Viewbox) -> list[box]:
   if mode == QualityLevel.MASTER:
     return [compute_mask(strip, viewbox) for strip in mosaic.strips]
 
 
-@task.remote
+@cached.remote
 def compute_target_mask(target: Target, viewbox: Viewbox) -> box:
   return largest_interior_rectangle(
       project_to_viewbox(target.footprint, viewbox))
@@ -183,7 +183,7 @@ def get_stacks_for_filter(
   return tuple(get_stacks_for_strip(strip) for strip in mosaic.strips)
 
 
-@task.remote
+@cached.remote
 def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
                                  strips: list[list[StackHash]],
                                  stacks: CompositeStacksDict, filter: str,

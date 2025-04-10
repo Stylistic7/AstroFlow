@@ -1,6 +1,6 @@
 import os
 
-from task.content_hashed import ContentHashed
+from cache.content_hashed import ContentHashed
 from protocols import ContentHash, ContentHashProtocol
 from file_io.types import ContentHashable
 from file_io.generic import get_content_hash, set_content_hash

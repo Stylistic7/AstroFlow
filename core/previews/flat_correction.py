@@ -2,13 +2,13 @@ from context import context, WriteMode
 from previews.operations import array_to_png
 from previews.calibration import calibrate_subframe
 from previews.operations import autostretch
-from decorators.task_decorator import task
+from decorators.cached_decorator import cached
 from dependency_graph import Graph
 from customization.types import CustomizedStack
 from customization.subframe_selection import get_light_frames_sorted_by_stars
 
 
-@task.remote
+@cached.remote
 def create_flat_correction_thumbnails(stack: CustomizedStack) -> None:
   calibration_stacks = context.calibration_stacks
 

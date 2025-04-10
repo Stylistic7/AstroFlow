@@ -7,7 +7,7 @@ from metadata.classes import MetadataDict
 from geometry import footprints
 from context import context
 import plate_solving
-from decorators.task_decorator import task
+from decorators.cached_decorator import cached
 from hashing import hash_list
 
 T = TypeVar('T')
@@ -49,7 +49,7 @@ def find_groups(values: dict[T, Any], comparison_fn: ComparisonFn,
   return groups
 
 
-@task.remote
+@cached.remote
 def cluster_by_image_center(metadata: MetadataDict) -> None:
   print(f'cluster_by_image_center metadata hash {hash_list([metadata])}')
 

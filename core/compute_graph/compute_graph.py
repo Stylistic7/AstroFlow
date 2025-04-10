@@ -5,7 +5,7 @@ from metadata.image_metadata import scatter_compute_image_metadata
 from metadata.classes import MetadataDict
 from clustering import cluster_by_image_center
 from calibration import identify_calibration_stacks
-from previews import scatter_stack_thumbnails
+from previews.stack_thumbnails import scatter_stack_thumbnails
 from previews.types import QualityLevel
 from mosaics.identification import identify_mosaics
 from stacks.compute_graph import build_stacking_subgraph
@@ -17,7 +17,7 @@ from dependency_graph import Graph, TaskDescriptor, make_graph_from_list
 from stacks.identification import identify_stacks
 from stacks.composite_stack import CompositeStacksDict, SimpleStacksDict
 from stacks.validation import validate_stacks
-from decorators.task_decorator import task
+from decorators.cached_decorator import cached
 from customization.compute_graph import build_customize_graph
 from mosaics.types import MosaicsDict
 from mosaics.compute_graph import stacks_for_mosaic, targets_for_mosaic
@@ -25,7 +25,7 @@ from quarantining.quarantining import quarantine_calibration_stacks
 from hashing import hash_list
 
 
-@task.remote(cache=False)
+@cached.remote(cache=False)
 def store_calibration_stacks(calibration_stacks: SimpleStacksDict) -> None:
   context.calibration_stacks = calibration_stacks
   print(f'### store_calibration_stacks: Stored '
@@ -34,7 +34,7 @@ def store_calibration_stacks(calibration_stacks: SimpleStacksDict) -> None:
   return calibration_stacks
 
 
-@task.remote(cache=False)
+@cached.remote(cache=False)
 def store_stacks(stacks: CompositeStacksDict) -> None:
   context.grouped_stacks = stacks
   print(f'### store_stacks: Stored '
@@ -42,7 +42,7 @@ def store_stacks(stacks: CompositeStacksDict) -> None:
   return stacks
 
 
-@task.remote(cache=False)
+@cached.remote(cache=False)
 def store_targets(targets: TargetsDict) -> None:
   context.grouped_targets = targets
   print(f'### store_targets: Stored {len(targets)} targets; '
@@ -50,7 +50,7 @@ def store_targets(targets: TargetsDict) -> None:
   return targets
 
 
-@task.remote(cache=False)
+@cached.remote(cache=False)
 def store_mosaics(mosaics: MosaicsDict) -> None:
   context.grouped_mosaics = mosaics
   print(f'### store_mosaics: Stored {len(mosaics)} mosaics; '
@@ -58,7 +58,7 @@ def store_mosaics(mosaics: MosaicsDict) -> None:
   return mosaics
 
 
-@task.remote
+@cached.remote
 def gather_spatial_groups(*stacks_in: list[CompositeStacksDict]) -> None:
   stacks = {key: value for d in stacks_in for key, value in d.items()}
   print(f'### gather_spatial_groups returning {len(stacks)} stacks')
@@ -67,7 +67,7 @@ def gather_spatial_groups(*stacks_in: list[CompositeStacksDict]) -> None:
 
 # TODO: Don't call build_spatial_group_graph for spatial groups that are cached
 # and unchanged.
-@task.remote
+@cached.remote
 def scatter_spatial_groups(spatial_groups) -> Graph:
   graph = Graph({
       gather_spatial_groups: {(identify_stacks, g) for g in spatial_groups},
@@ -78,14 +78,14 @@ def scatter_spatial_groups(spatial_groups) -> Graph:
   return graph
 
 
-@task.remote
+@cached.remote
 def regroup_graph_done() -> None:
   pass
 
 
 # TODO: Move group_stacks_into_targets() back into the parallel path over
 # spatial groups.
-@task.remote
+@cached.remote
 def build_regroup_graph(metadata: MetadataDict) -> Graph:
   print(f'build_regroup_graph metadata hash {hash_list([metadata])}')
   return Graph({
@@ -100,12 +100,12 @@ def build_regroup_graph(metadata: MetadataDict) -> Graph:
   })
 
 
-@task.remote
+@cached.remote
 def preview_graph_done() -> None:
   pass
 
 
-@task.remote
+@cached.remote
 def build_preview_graph() -> Graph:
   stacks = context.stacks
   targets = context.targets
@@ -122,12 +122,12 @@ def build_preview_graph() -> Graph:
   return Graph({preview_graph_done: tasks})
 
 
-@task.remote
+@cached.remote
 def main_processing_graph_done() -> None:
   pass
 
 
-@task.remote
+@cached.remote
 def build_main_processing_graph() -> Graph:
   stacks = context.stacks
   targets = context.targets

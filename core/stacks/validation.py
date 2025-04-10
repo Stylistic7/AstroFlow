@@ -1,8 +1,8 @@
 from stacks.composite_stack import CompositeStacksDict
-from decorators.task_decorator import task
+from decorators.cached_decorator import cached
 
 
-@task.remote
+@cached.remote
 def validate_stacks(stacks: CompositeStacksDict) -> CompositeStacksDict:
   print(f'#### validate_stacks validating {len(stacks)} stacks')
   for stack_id, stack in stacks.items():

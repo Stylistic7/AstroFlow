@@ -6,7 +6,7 @@ from context import context
 import clustering
 from stacks.composite_stack import CompositeStack, CompositeStacksDict
 from metadata.classes import FrameHash, MetadataDict
-from decorators.task_decorator import task
+from decorators.cached_decorator import cached
 
 
 def _normalize_radians(x: float) -> float:
@@ -22,7 +22,7 @@ def _normalize_radians(x: float) -> float:
 #
 # TODO: The spatial_group should include a metadata_ref for all of the images
 # in it. The call to get_metadata() should be removed.
-@task.remote
+@cached.remote
 def identify_stacks(light_frames: list[FrameHash]) -> CompositeStacksDict:
   print(f'### identify_stacks running for spatial group of '
         f'length {len(light_frames)}')

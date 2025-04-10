@@ -12,7 +12,7 @@ from context import context
 from dependency_graph import run_graph
 from testing import make_test_context, copy_testdata_frames
 from products.register import register_image_producer
-from decorators.task_decorator import task
+from decorators.cached_decorator import cached
 from file_io.types import TiffFilePath
 from file_io.tiff_file_io import write_tiff_image
 from stacks.composite_stack import CompositeStack
@@ -26,7 +26,7 @@ clear_registry()
 
 @register_image_producer(CompositeStack, QualityLevel.MASTER,
                          'master_{name}.tiff')
-@task.remote
+@cached.remote
 @create_thumbnail(context)
 def stack_files(stack: CompositeStack) -> TiffFilePath:
   '''Runs WBPP to stack raw images into a TIFF.'''

@@ -6,7 +6,7 @@ from geometry.projection import Projection
 from hashing import hash_dataclass
 from targets.types import TargetHash
 from attributes import AstrometricAttributes, ChronologyAttributes
-from task.content_hashed import ContentHashed
+from cache.content_hashed import ContentHashed
 
 Template: TypeAlias = tuple[int | None, int | None]
 TileIndices: TypeAlias = tuple[int, int]

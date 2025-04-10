@@ -7,27 +7,27 @@ import numpy as np
 
 from context import context
 from dependency_graph import Graph, run_graph
-from dependency_graph.astroflow_node import AstroFlowNode
+from task.astroflow_node import task
 from profiling.estimate_time import estimate_time
 
 
-@AstroFlowNode()
+@cached.remote
 def scatter():
   return Graph({gather: [(process, i) for i in range(7)]})
 
 
-@AstroFlowNode(track_performance=True)
+@cached.remote
 def process(item):
   time.sleep(2)
   return item
 
 
-@AstroFlowNode()
+@cached.remote
 def gather(*ancestor_results):
   return sum(ancestor_results)
 
 
-@AstroFlowNode(track_performance=True)
+@cached.remote
 def long_task(sleep_time):
   time.sleep(sleep_time)
 

@@ -19,7 +19,7 @@ from previews.types import QualityLevel
 from mosaics.types import Mosaic, Viewbox, TileIndices
 from mosaics.trimming import trim_image, project_to_viewbox, largest_interior_rectangle
 from mosaics.artifacts import placed_filename
-from decorators.task_decorator import task
+from decorators.cached_decorator import cached
 from stacks.composite_stack import CompositeStack
 
 _PLACE_IMAGE_MEMORY_REQUIREMENT = 6 * 1024 * 1024 * 1024  # 6 GB
@@ -152,7 +152,7 @@ def _save_image_to_file(mode: QualityLevel, mosaic: Mosaic,
   return filename
 
 
-@task.remote(memory=_PLACE_IMAGE_MEMORY_REQUIREMENT)
+@cached.remote(memory=_PLACE_IMAGE_MEMORY_REQUIREMENT)
 def place_image(mode: QualityLevel, mosaic: Mosaic, stack: CustomizedStack,
                 tile_indices: TileIndices, filter: str, viewbox: Viewbox,
                 mask: box, filename: Path) -> Path:

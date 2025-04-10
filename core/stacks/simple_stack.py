@@ -5,7 +5,7 @@ from stacks.types import StackHash
 from attributes import AstroFlowStateAttributes, ChronologyAttributes, ImagingAttributes
 from metadata.classes import MetadataDict, FrameHash
 from hashing import hash_list, hash_list_int
-from task.content_hashed import ContentHashed
+from cache.content_hashed import ContentHashed
 
 DependenciesDict = dict[str, StackHash]
 

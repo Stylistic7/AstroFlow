@@ -5,15 +5,15 @@ import ray
 import time
 
 from dependency_graph import Graph, run_graph, graph_status_to_progress
-from decorators.task_decorator import task
+from decorators.cached_decorator import cached
 
 
-@task.remote
+@cached.remote
 def gather():
   pass
 
 
-@task.remote
+@cached.remote
 def process(runtime, i):
   time.sleep(runtime)
 

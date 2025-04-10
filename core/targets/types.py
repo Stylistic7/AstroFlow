@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from hashing import hash_dataclass, hash_list_int
 from stacks.types import StackHash
 from attributes import AstrometricAttributes, ChronologyAttributes
-from task.content_hashed import ContentHashed
+from cache.content_hashed import ContentHashed
 
 TargetHash = NewType('TargetHash', str)
 

@@ -12,7 +12,7 @@ from mosaics.types import Mosaic
 from mosaics.artifacts import merged_filename
 from previews.types import QualityLevel
 from previews.operations import autostretch
-from decorators.task_decorator import task
+from decorators.cached_decorator import cached
 from file_io.generic import read_image, get_content_hash, update_header
 from file_io.tiff_file_io import write_tiff_image
 
@@ -23,7 +23,7 @@ def run_photometric_mosaic(images: ImageList,
   return PhotometricMosaic(images, output_filename)
 
 
-@task.remote(resources={'PixInsight': 1})
+@cached.remote(resources={'PixInsight': 1})
 def merge_images_with_photometric_mosaic(mosaic: Mosaic, input_0: Path,
                                          input_1: Path, filter: str) -> Path:
   print(f'### merge_images_with_photometric_mosaic {input_0} {input_1}')
@@ -48,7 +48,7 @@ def merge_images_with_maximum(image_0: np.ndarray,
   return output_image
 
 
-@task.remote
+@cached.remote
 def merge_images(mode: QualityLevel, mosaic: Mosaic, input_0: Path,
                  input_1: Path) -> Path:
   print(f'### merge images mode {mode} {input_0} {input_1}')

@@ -5,7 +5,7 @@ from mosaics.types import Mosaic
 from pix.classes import ImageList
 from pix.decorators import PixInsight
 from pix.tasks import SaveAs
-from decorators.task_decorator import task
+from decorators.cached_decorator import cached
 
 
 @PixInsight()
@@ -14,7 +14,7 @@ def save_as_png(images: ImageList) -> ImageList:
   return SaveAs(images, output_filenames)
 
 
-@task.remote
+@cached.remote
 def save_as_tiles(mosaic: Mosaic, filter: str) -> None:
   filename = Path(
       context.output_dir

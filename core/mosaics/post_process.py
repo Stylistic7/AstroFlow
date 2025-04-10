@@ -8,7 +8,7 @@ from pix import PixInsight
 from pix.classes import ImageList
 from pix.tasks import ChannelCombination, SpectrophotometricColorCalibration, ImageSolver, StarXTerminator, LinearFit, SaveImages
 from context import context
-from decorators.task_decorator import task
+from decorators.cached_decorator import cached
 from previews.types import QualityLevel
 from mosaics.types import Mosaic
 from mosaics.artifacts import output_filename as mosaic_output_filename
@@ -45,7 +45,7 @@ def _post_process_mosaic(images: ImageList, mosaic: Mosaic,
   return []
 
 
-@task.remote(resources={'PixInsight': 1})
+@cached.remote(resources={'PixInsight': 1})
 def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> None:
   print(f'### Entering post_process_mosaic for mosaic {mosaic}')
 

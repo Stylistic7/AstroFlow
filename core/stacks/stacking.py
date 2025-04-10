@@ -18,7 +18,7 @@ from pix.tasks import WeightedBatchPreprocessing
 import file_io
 from metadata.classes import MetadataDict
 from metadata.actor import get_metadata
-from decorators.task_decorator import task
+from decorators.cached_decorator import cached
 from products.register import register_image_producer
 from previews.types import QualityLevel
 
@@ -109,7 +109,7 @@ def _setup_simple_stack(stack: Stack, tmp_dir: str) -> tuple[str | None, int]:
 # TODO: When a stack fails, keep note of it so it won't be retried for the
 # exact same inputs again.
 @register_image_producer(CompositeStack, QualityLevel.MASTER, output_filename)
-@task.remote(resources={'PixInsight': 1})
+@cached.remote(resources={'PixInsight': 1})
 def stack_files(stack: Stack) -> Path:
   assert context.output_dir
   print(f'### Entering stack_files for {stack}')
