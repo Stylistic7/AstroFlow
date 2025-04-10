@@ -6,9 +6,8 @@ import pickle
 from functools import wraps
 from typing import Any, Callable, Optional, get_origin, TypeVar, Generic, List, Type
 
+from hashing import hash_source_code, hash_call
 from protocols import CacheProtocol, ContentHashProtocol
-
-_MAX_PERFORMANCE_SAMPLES = 100
 
 
 class Injected(Generic[TypeVar('T')]):
@@ -17,15 +16,6 @@ class Injected(Generic[TypeVar('T')]):
 
 class MissingInjectedValueError(Exception):
   pass
-
-
-def hash_source_code(func: Callable) -> bytes:
-  return xxhash.xxh64(inspect.getsource(func)).hexdigest()
-
-
-def default_call_hasher(fn_hash: bytes, *args, **kwargs) -> str:
-  data = pickle.dumps((fn_hash, args, sorted(kwargs.items())))
-  return xxhash.xxh64(data).hexdigest()
 
 
 def _bind_args(func: Callable, args: tuple, kwargs: dict,
@@ -41,22 +31,13 @@ def _bind_args(func: Callable, args: tuple, kwargs: dict,
   return bound
 
 
-def _update_performance(fn_name: str, elapsed_time: float,
-                        cache: CacheProtocol):
-  node_ip = ray.util.get_node_ip_address()
-  key = ('performance_history', node_ip, fn_name)
-  history = cache.get(key, [])
-  history = history[-(_MAX_PERFORMANCE_SAMPLES - 1):] + [elapsed_time]
-  cache[key] = history
-
-
 def make_task_decorator(cache: CacheProtocol,
                         content_hasher: ContentHashProtocol,
                         call_hasher: Optional[Callable[[bytes, Any],
                                                        str]] = None,
                         no_cache_types: Optional[List[Type]] = None,
                         debug=True):
-  call_hasher = call_hasher or default_call_hasher
+  call_hasher = call_hasher or hash_call
   no_cache_types = tuple(no_cache_types or [])
 
   def debug_print(*args, **kwargs):
@@ -102,11 +83,7 @@ def make_task_decorator(cache: CacheProtocol,
         if is_valid_cache:
           return cached_result
 
-        start = time.perf_counter()
         result = func(*bound.args, **bound.kwargs)
-        elapsed = time.perf_counter() - start
-
-        _update_performance(func.__name__, elapsed, cache)
 
         if (self.cache_results and not isinstance(result, no_cache_types) and
             not isinstance(result, Exception)):
@@ -133,7 +110,7 @@ def make_task_decorator(cache: CacheProtocol,
       wrapper._function = func
       wrapper._is_task = True
 
-      for attr in ('filename_fn',):
+      for attr in ('filename_fn', 'thumbnail_fn'):
         if hasattr(func, attr):
           setattr(wrapper, attr, getattr(func, attr))
 
