@@ -23,7 +23,7 @@ def apply_settings(stack: CompositeStack, settings: Settings) -> CompositeStack:
   return replace(stack, contents=new_contents)
 
 
-@task.remote
+@task.remote(cache=False)
 def gather_customize_stacks(*stacks) -> None:
   context.stacks = {s.stable_hash: s for s in stacks}
 
