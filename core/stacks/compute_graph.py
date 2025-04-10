@@ -9,7 +9,7 @@ from decorators.task_decorator import task
 from metadata.image_metadata import compute_image_metadata, load_metadata
 from customization.types import CustomizedStack
 from customization.subframe_selection import get_light_frames_sorted_by_stars
-from previews import QualityLevel
+from previews.types import QualityLevel
 
 
 # This function accepts a fully customized stack, after settings and calibration
@@ -34,12 +34,11 @@ def build_stacking_subgraph(stack: CustomizedStack) -> Graph:
   graph[stacking_metadata_task] = {stack_task}
   graph[post_process_task] = {stacking_metadata_task}
   graph[post_process_metadata_task] = {post_process_task}
-  graph[load_metadata] = {post_process_metadata_task}
 
   return graph
 
 
-# TODO: Calibrate the subframe returned here.s
+# TODO: Calibrate the subframe returned here.
 @task.remote
 def get_stack_subframe_image(stack: CompositeStack) -> Path:
   assert stack is not None
