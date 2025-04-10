@@ -29,7 +29,7 @@ from context import get_cache
 from compute_graph import build_compute_graph
 from dependency_graph import run_graph, graph_status_to_progress
 from dependency_graph.debugging import node_to_string
-from previews import QualityLevel, autostretch, array_to_png
+from previews.types import QualityLevel, autostretch, array_to_png
 from web_server.backend.tiles import tiles_bp
 from web_server.backend.objects import objects_bp
 

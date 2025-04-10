@@ -6,7 +6,7 @@ from artifacts import Artifact
 from geometry.projections import mercator
 from geometry.viewbox import compute_viewbox
 from geometry.polygons import project_polygon
-from previews import QualityLevel
+from previews.types import QualityLevel
 
 _TILE_SIZE = 2048  # pixels
 

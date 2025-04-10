@@ -2,8 +2,6 @@ import os
 import ray
 import numpy as np
 from pathlib import Path
-import astropy.io.fits as pyfits  # type: ignore
-import tifffile
 
 from context import context
 from file_io.generic import read_header, read_image
@@ -12,7 +10,8 @@ from pix.decorators import PixInsight
 from pix.tasks import PhotometricMosaic
 from mosaics.types import Mosaic
 from mosaics.artifacts import merged_filename
-from previews import QualityLevel, autostretch
+from previews.types import QualityLevel
+from previews.operations import autostretch
 from decorators.task_decorator import task
 from file_io.generic import read_image, get_content_hash, update_header
 from file_io.tiff_file_io import write_tiff_image

@@ -13,7 +13,7 @@ from stacks.artifacts import output_filename as stack_output_filename
 from mosaics.artifacts import tile_filename as mosaic_output_filename
 from file_io.generic import read_image
 from file_io.types import TiffFilePath
-from previews import autostretch, QualityLevel
+from previews.operations import autostretch, QualityLevel
 from stacks.composite_stack import CompositeStack
 from targets.types import Target
 from mosaics.types import Mosaic

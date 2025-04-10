@@ -15,7 +15,7 @@ from customization.types import CustomizedStack
 from file_io.generic import get_content_hash, read_image
 from file_io.tiff_file_io import write_tiff_image
 from context import context
-from previews import QualityLevel
+from previews.types import QualityLevel
 from mosaics.types import Mosaic, Viewbox, TileIndices
 from mosaics.trimming import trim_image, project_to_viewbox, largest_interior_rectangle
 from mosaics.artifacts import placed_filename

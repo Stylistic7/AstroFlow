@@ -13,7 +13,7 @@ import datetime
 from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import Graph, run_graph
-from previews import QualityLevel
+from previews.types import QualityLevel
 from testing import make_test_context, copy_testdata_frames
 
 from artifacts.artifact import unpack_artifact

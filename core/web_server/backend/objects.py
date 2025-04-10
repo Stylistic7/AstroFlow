@@ -6,7 +6,7 @@ from stacks.composite_stack import CompositeStack
 from targets.types import Target
 from mosaics.types import Mosaic
 from products.registry import get_image_producer
-from previews import QualityLevel
+from previews.types import QualityLevel
 
 objects_bp = Blueprint("objects", __name__)
 

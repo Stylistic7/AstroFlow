@@ -7,7 +7,7 @@ from spherical_geometry.polygon import SingleSphericalPolygon  # type: ignore
 
 from compute_graph import build_compute_graph
 from context import context
-from previews import QualityLevel
+from previews.types import QualityLevel
 from testing import make_test_context
 
 from customization.types import CustomizedStack

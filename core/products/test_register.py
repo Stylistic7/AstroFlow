@@ -29,7 +29,7 @@ clear_registry()
 def stack_preview(stack: CompositeStack) -> TiffFilePath:
   '''Loads the best individual FITS image from a stack and saves as TIFF.'''
   output_path = TiffFilePath(context.output_dir /
-                             stack_files.filename_fn(stack))
+                             stack_preview.filename_fn(stack))
   image = np.zeros((100, 100))
   write_tiff_image(output_path, image)
 
@@ -94,7 +94,6 @@ def post_process_mosaic(mosaic: Mosaic) -> XisfFilePath:
 class TestRegistry(unittest.TestCase):
 
   def setUp(self) -> None:
-    # Start with an empty context.
     self.input_dir_obj, self.output_dir_obj = make_test_context()
 
   def tearDown(self) -> None:

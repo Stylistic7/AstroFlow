@@ -13,7 +13,7 @@ from stacks.artifacts import output_filename
 from stacks.stacking import stack_files
 from file_io.types import XisfFilePath
 from products.register import register_image_producer
-from previews import QualityLevel
+from previews.types import QualityLevel
 
 
 @PixInsight(slots=[1])

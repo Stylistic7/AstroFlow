@@ -20,7 +20,7 @@ from metadata.classes import MetadataDict
 from metadata.actor import get_metadata
 from decorators.task_decorator import task
 from products.register import register_image_producer
-from previews import QualityLevel
+from previews.types import QualityLevel
 
 
 def _symlink_frames(filenames: list[str], dest_path: str) -> None:
