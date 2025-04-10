@@ -38,25 +38,28 @@ def convert_to_tiff(path: Path, temp_path: Path):
   tifffile.imwrite(temp_path, arr, tile=(256, 256), compression='deflate')
 
 
-def get_best_image(object_type: str, object_id: str) -> Path:
+def get_best_image(object_type: str, object_id: str, filter: str) -> Path:
   class_for_type = {'stack': CompositeStack, 'target': Target, 'mosaic': Mosaic}
 
   if object_type == 'stack':
     object = context.stacks[object_id]
+    args = [object]
   elif object_type == 'target':
     object = context.targets[object_id]
+    args = [object]
   elif object_type == 'mosaic':
     object = context.mosaics[object_id]
+    args = [object, filter]
 
   for level in [
       QualityLevel.POST_PROCESSED, QualityLevel.MASTER, QualityLevel.SUBFRAME
   ]:
     fn = get_image_producer(class_for_type[object_type], level)
     if fn is not None:
-      return context.output_dir / fn.filename_fn(object)
+      return context.output_dir / fn.filename_fn(*args)
 
 
-def get_image(object_type: str, object_id: str):
+def get_image(object_type: str, object_id: str, filter: str):
   """Get a large_image handle from the cached TIFF, generating it if needed."""
   now = time.time()
   with _cache_lock:
@@ -84,7 +87,7 @@ def get_image(object_type: str, object_id: str):
       return _image_cache[key]["handle"]
 
     # Else, convert from .xisf and cache
-    path = get_best_image(object_type, object_id)
+    path = get_best_image(object_type, object_id, filter)
 
     if not os.path.exists(path):
       print(f"Path not found: {path}")
@@ -109,9 +112,9 @@ def get_image(object_type: str, object_id: str):
     return handle
 
 
-@tiles_bp.route('/tile_metadata/<object_type>/<object_id>')
-def tile_metadata(object_type, object_id):
-  source = get_image(object_type, object_id)
+@tiles_bp.route('/tile_metadata/<object_type>/<object_id>/<filter>')
+def tile_metadata(object_type: str, object_id: str, filter: str):
+  source = get_image(object_type, object_id, filter)
   meta = source.getMetadata()
   return jsonify({
       'width': meta['sizeX'],
@@ -122,9 +125,11 @@ def tile_metadata(object_type, object_id):
   })
 
 
-@tiles_bp.route("/tile/<object_type>/<object_id>/<int:z>/<int:x>/<int:y>.png")
-def serve_tile(object_type, object_id, z, x, y):
-  source = get_image(object_type, object_id)
+@tiles_bp.route(
+    "/tile/<object_type>/<object_id>/<filter>/<int:z>/<int:x>/<int:y>.png")
+def serve_tile(object_type: str, object_id: str, filter: str, z: str, x: str,
+               y: str):
+  source = get_image(object_type, object_id, filter)
   if source is None:
     return abort(404)
 

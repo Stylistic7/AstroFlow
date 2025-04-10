@@ -124,6 +124,8 @@ def compute_image_metadata(filename: Path) -> Path:
   # the network. It should hit the node's filesystem cache.
   try:
     assert filename is not None
+    # TODO: Don't manage cache keys and content hashes in this function;
+    # let the @task.remote decorator do that.
     content_hash = get_content_hash(filename)
     key = ('image_metadata', content_hash)
 

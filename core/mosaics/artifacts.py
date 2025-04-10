@@ -10,7 +10,7 @@ from mosaics.types import TileIndices
 
 
 # TODO: Figure out how to pass the filter through the web server API.
-def output_filename(mosaic: Mosaic, filter: str | None = 'H') -> Path:
+def output_filename(mosaic: Mosaic, filter: str) -> Path:
   return WithSidecar(
       XisfFilePath(
           Path('Mosaics') / mosaic.name /

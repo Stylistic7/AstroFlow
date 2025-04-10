@@ -12,10 +12,13 @@ import AstroFlowContext from './AstroFlowContext.jsx';
 
 const TILE_SIZE = 256;
 
-const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp }) => {
-  const { objectType: objectTypeParam, imageHash: imageHashParam } = useParams();
+const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filter: filterProp }) => {
+  const { objectType: objectTypeParam, imageHash: imageHashParam, filter: filterParam } = useParams();
+
   const objectType = objectTypeProp ?? objectTypeParam;
   const imageHash = imageHashProp ?? imageHashParam;
+  const filter = filterProp ?? filterParam;
+
   const [metadata, setMetadata] = useState(null);
   const containerRef = useRef(null);
   const [containerSize, setContainerSize] = useState({ width: 800, height: 600 });
@@ -33,7 +36,7 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp }) =>
   }, []);
 
   useEffect(() => {
-    fetch(`/tile_metadata/${objectType}/${imageHash}`)
+    fetch(`/tile_metadata/${objectType}/${imageHash}/${filter}`)
       .then((res) => res.json())
       .then((meta) => setMetadata(meta));
   }, [objectType, imageHash]);
@@ -57,6 +60,7 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp }) =>
         <ImperativeViewport
           objectType={objectType}
           imageHash={imageHash}
+          filter={filter}
           imageWidth={metadata.width}
           imageHeight={metadata.height}
           worldWidth={worldWidth}
@@ -91,7 +95,7 @@ const mosaicOutline = (mosaic) => {
   ];
 }
 
-const ImperativeViewport = ({ objectType, imageHash, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, mosaics }) => {
+const ImperativeViewport = ({ objectType, imageHash, filter, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, mosaics }) => {
   const app = useApp();
   const viewportRef = useRef(null);
   const spritesRef = useRef({});
@@ -201,7 +205,7 @@ const ImperativeViewport = ({ objectType, imageHash, imageWidth, imageHeight, wo
           const key = `${bestZ}/${x}/${y}`;
           if (spritesRef.current[key]) continue;
 
-          const url = `/tile/${objectType}/${imageHash}/${bestZ}/${x}/${y}.png`;
+          const url = `/tile/${objectType}/${imageHash}/${filter}/${bestZ}/${x}/${y}.png`;
           PIXI.Texture.fromURL(url)
             .then((texture) => {
               const sprite = new PIXI.Sprite(texture);
@@ -225,7 +229,7 @@ const ImperativeViewport = ({ objectType, imageHash, imageWidth, imageHeight, wo
 
     const updateAll = () => {
       updateTiles();
-      updatePolygons();
+      // updatePolygons();
     }
 
     updateAll();

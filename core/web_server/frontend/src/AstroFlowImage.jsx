@@ -18,6 +18,7 @@ function getBestQuality(metadata) {
 export const AstroFlowImage = ({
     objectType,
     objectId,
+    filter,
     size = "full",
     forceLevel,
 }) => {
@@ -25,11 +26,11 @@ export const AstroFlowImage = ({
     const [error, setError] = useState(null);
 
     useEffect(() => {
-        fetch(`/metadata/${objectType}/${objectId}`)
+        fetch(`/metadata/${objectType}/${objectId}/${filter}`)
             .then((res) => res.json())
             .then(setMetadata)
             .catch((e) => setError("Image metadata not available"));
-    }, [objectType, objectId]);
+    }, [objectType, objectId, filter]);
 
     if (error) return <div>{error}</div>;
     if (!metadata) return <div>Loading...</div>;
@@ -50,13 +51,11 @@ export const AstroFlowImage = ({
         fontSize: 12,
     };
 
-    console.log("objectType ", objectType, " objectId ", objectId);
-
     return (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             <div style={{ flexGrow: 1, position: 'relative', overflow: 'hidden' }}>
                 {size === "full" ? (
-                    <TileViewer objectType={objectType} imageHash={objectId} />
+                    <TileViewer objectType={objectType} imageHash={objectId} filter={filter} />
                 ) : (
                     <img
                         src={size === "thumbnail" ? info.thumbnail_url : info.image_url}

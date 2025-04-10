@@ -136,7 +136,7 @@ export default function MosaicPanel() {
 				setFilter={handleSetFilter}
 			/>
 
-			<AstroFlowImage objectType="mosaic" objectId={params.mosaic_id} />
+			<AstroFlowImage objectType="mosaic" objectId={params.mosaic_id} filter={filter} />
 		</>
 	);
 }
