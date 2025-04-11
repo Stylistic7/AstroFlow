@@ -70,6 +70,36 @@ def thumbnail(object_type: str, object_id: str, filter: str):
   return abort(404)
 
 
+@objects_bp.route('/video/<object_type>/<object_id>/<filter>')
+def video(object_type: str, object_id: str, filter: str):
+  class_for_type = {'stack': CompositeStack, 'target': Target, 'mosaic': Mosaic}
+
+  # TODO: Unify this with the code in `get_best_image()`.
+  if object_type == 'stack':
+    object = context.stacks[object_id]
+    args = [object]
+  elif object_type == 'target':
+    object = context.targets[object_id]
+    args = [object]
+  elif object_type == 'mosaic':
+    object = context.mosaics[object_id]
+    args = [object, filter]
+
+  for level in [
+      QualityLevel.POST_PROCESSED, QualityLevel.MASTER, QualityLevel.SUBFRAME
+  ]:
+    if fn := get_producer(MediaType.VIDEO, class_for_type[object_type], level):
+      if hasattr(fn, 'video_fn'):
+        if video := fn.video_fn(*args):
+          buffer = io.BytesIO()
+          buffer.write(video)
+          buffer.seek(0)
+          # TODO: Support other codecs.
+          return flask.send_file(buffer, mimetype='video/webm')
+
+  return abort(404)
+
+
 @objects_bp.route("/image/<object_type>/<object_id>")
 def image(object_type, object_id, z, x, y):
   return abort(404)

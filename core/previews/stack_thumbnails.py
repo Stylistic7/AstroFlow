@@ -1,3 +1,4 @@
+import ray
 import numpy as np
 from pathlib import Path
 from typing import Any
@@ -15,7 +16,7 @@ from previews.operations import autostretch
 from customization.subframe_selection import get_light_frames_sorted_by_stars
 
 
-@cached.remote(resources={'fastest_storage': 0.001})
+@ray.remote
 def scatter_stack_thumbnails() -> Graph:
   stacks = context.stacks
   print(f'### scatter_stack_thumbnails for {len(stacks)} stacks')
@@ -68,6 +69,6 @@ def stack_thumbnail_video(stack: CompositeStack) -> Iterable[np.ndarray]:
     yield im
 
 
-@cached.remote
+@ray.remote
 def gather_stack_thumbnails() -> None:
   pass

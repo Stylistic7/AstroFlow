@@ -28,6 +28,12 @@ def _bind_args(func: Callable, args: tuple, kwargs: dict,
   return bound
 
 
+# TODO: Consider removing `no_cache_types` and just using @ray.remote for
+# functions that return Graphs.
+#
+# TODO: Consider removing `injected_context` if it's not used anywhere. The
+# original intent was to handle context for subgraphs, like temporary
+# directories.
 def make_cached_decorator(cache: CacheProtocol,
                           content_hasher: ContentHashProtocol,
                           call_hasher: Optional[Callable[[bytes, Any],
