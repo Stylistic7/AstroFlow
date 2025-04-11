@@ -9,11 +9,10 @@ import tifffile
 from flask import Blueprint, send_file, abort, jsonify
 
 from context import context
-from stacks.artifacts import output_filename as stack_output_filename
-from mosaics.artifacts import tile_filename as mosaic_output_filename
 from file_io.generic import read_image
 from file_io.types import TiffFilePath
-from previews.operations import autostretch, QualityLevel
+from previews.operations import autostretch
+from previews.types import QualityLevel
 from stacks.composite_stack import CompositeStack
 from targets.types import Target
 from mosaics.types import Mosaic
@@ -54,8 +53,7 @@ def get_best_image(object_type: str, object_id: str, filter: str) -> Path:
   for level in [
       QualityLevel.POST_PROCESSED, QualityLevel.MASTER, QualityLevel.SUBFRAME
   ]:
-    fn = get_image_producer(class_for_type[object_type], level)
-    if fn is not None:
+    if fn := get_image_producer(class_for_type[object_type], level):
       return context.output_dir / fn.filename_fn(*args)
 
 

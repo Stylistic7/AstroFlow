@@ -5,14 +5,14 @@ from pathlib import Path
 
 from hashing import hash_call, hash_source_code
 from file_io.generic import read_image
-from previews.operations import resize_array, autostretch
+from previews.operations import resize_array, autostretch, array_to_png
 from protocols import CacheProtocol
 
 
 def default_thumbnail_fn(path: Path, width=2048) -> Optional[np.ndarray]:
   try:
-    image = read_image(path)
-    return autostretch(np.clip(resize_array(image, width), 0.0, 1.0))
+    return array_to_png(
+        autostretch(np.clip(resize_array(read_image(path), width), 0.0, 1.0)))
   except Exception as e:
     return None
 
