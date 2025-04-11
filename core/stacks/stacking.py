@@ -18,8 +18,7 @@ from pix.tasks import WeightedBatchPreprocessing
 import file_io
 from metadata.classes import MetadataDict
 from metadata.actor import get_metadata
-from decorators import cached
-from decorators import register_image_producer
+from decorators import cached, register_image_producer, measure_performance, create_thumbnail
 from previews.types import QualityLevel
 
 
@@ -110,13 +109,13 @@ def _setup_simple_stack(stack: Stack, tmp_dir: str) -> tuple[str | None, int]:
 # exact same inputs again.
 @register_image_producer(CompositeStack, QualityLevel.MASTER, output_filename)
 @cached.remote(resources={'PixInsight': 1})
+@measure_performance
+@create_thumbnail
 def stack_files(stack: Stack) -> Path:
-  assert context.output_dir
-  print(f'### Entering stack_files for {stack}')
+  dest_filename = context.output_dir / stack_files.filename_fn(stack)
+  print(f'### Entering stack_files for {stack} dest_filename {dest_filename}')
 
   metadata = {'IMAGETYP': f'Master {stack.image_type}'}
-
-  dest_filename = context.output_dir / stack_files.filename_fn(stack)
 
   # TODO: This is kind of dangerous, because the output filename only depends
   # on the stack's own content hash -- the hash used by AstroFlowNode is more

@@ -43,7 +43,6 @@ def output_filename(stack: SimpleStack | CompositeStack) -> Path:
         os.path.join(
             output_dir, f'master_light_{stack.name}_{ra_dec_string}_'
             f'{stack.camera}_{stack.image_scale:.02f}aspp_'
-            f'{stack.rotation_angle:.2f}deg_{stack.filter}_'
-            f'{stack.content_hash}.xisf'))
+            f'{stack.rotation_angle:.2f}deg_{stack.filter}.xisf'))
 
   assert False, f'unknown image_type {stack.image_type}'
