@@ -1,14 +1,16 @@
 from ray_infra import ray_local
 
+import ray
 import datetime
 import unittest
 import datetime
+from pathlib import Path
 
 from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import run_graph
 from testing import make_test_context, make_synthetic_frames, copy_testdata_frames
-
+from previews.stack_thumbnails import stack_thumbnail
 from file_io.find_image_files import find_image_files
 
 
@@ -93,18 +95,14 @@ class TestImagePreviews(unittest.TestCase):
     light_stacks = [s for s in stacks.values() if s.image_type == 'light']
     self.assertEqual(len(light_stacks), 1)
     stack = next(iter(light_stacks))
-    print(f'### stack {stack}')
 
-    keys = context.get_cache_keys()
-    for k in keys:
-      print(f'### cache key {k}')
+    filename = ray.get(stack_thumbnail.remote(stack))
+    self.assertTrue(isinstance(filename, Path))
 
-    # TODO: More testing is needed, to make sure the calibration frames are
-    # actually applied correctly (e.g. the subtraction has been done).
-    self.assertTrue(
-        context.contains(('stack_subframe_thumbnail_image', stack.stable_hash)))
-    self.assertTrue(
-        context.contains(('stack_subframe_thumbnail_video', stack.stable_hash)))
+    # TODO: This test overlaps a bunch of other tests.
+    thumbnail = stack_thumbnail.thumbnail_fn(stack)
+    self.assertIsNotNone(thumbnail)
+    self.assertTrue(isinstance(thumbnail, bytes))
 
 
 if __name__ == "__main__":

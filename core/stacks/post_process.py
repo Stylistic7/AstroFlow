@@ -6,7 +6,7 @@ from context import context
 from pix.decorators import PixInsight
 from pix.tasks import BlurXTerminator, GradientCorrection
 from pix.classes import ImageList
-from decorators import cached, register_image_producer, measure_performance, create_thumbnail
+from decorators import cached, makes_image, measure_performance, create_thumbnail
 from customization.types import CustomizedStack
 from stacks.composite_stack import CompositeStack
 from stacks.stacking import stack_files
@@ -28,8 +28,7 @@ def post_processed_filename(stack: CompositeStack) -> XisfFilePath:
 
 
 # TODO: Do post-processing immediately after each stack has been stacked.
-@register_image_producer(CompositeStack, QualityLevel.POST_PROCESSED,
-                         post_processed_filename)
+@makes_image(CompositeStack).as_post_processed(post_processed_filename)
 @cached.remote(resources={'PixInsight': 1})
 @measure_performance
 @create_thumbnail

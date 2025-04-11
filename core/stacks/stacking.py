@@ -18,8 +18,7 @@ from pix.tasks import WeightedBatchPreprocessing
 import file_io
 from metadata.classes import MetadataDict
 from metadata.actor import get_metadata
-from decorators import cached, register_image_producer, measure_performance, create_thumbnail
-from previews.types import QualityLevel
+from decorators import cached, makes_image, measure_performance, create_thumbnail
 
 
 def _symlink_frames(filenames: list[str], dest_path: str) -> None:
@@ -107,8 +106,8 @@ def _setup_simple_stack(stack: Stack, tmp_dir: str) -> tuple[str | None, int]:
 #
 # TODO: When a stack fails, keep note of it so it won't be retried for the
 # exact same inputs again.
-@register_image_producer(CompositeStack, QualityLevel.MASTER, output_filename)
-@cached.remote(resources={'PixInsight': 1})
+@makes_image(CompositeStack).as_master(output_filename)
+@cached.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
 @measure_performance
 @create_thumbnail
 def stack_files(stack: Stack) -> Path:

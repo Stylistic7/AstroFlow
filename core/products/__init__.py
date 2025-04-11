@@ -1,1 +1,1 @@
-from .registry import register_image_producer, get_image_producer
+from .registry import makes_image, makes_video, get_producer, MediaType

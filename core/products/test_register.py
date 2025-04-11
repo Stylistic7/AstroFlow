@@ -7,7 +7,7 @@ import unittest
 from dependency_graph import run_graph
 
 from decorators import cached
-from products import register_image_producer, get_image_producer
+from products import makes_image, get_producer, MediaType
 from compute_graph import build_compute_graph
 from testing import make_test_context, copy_testdata_frames
 from context import context
@@ -20,11 +20,10 @@ from previews.types import QualityLevel
 
 from products.registry import clear_registry
 
-clear_registry()
+clear_registry(MediaType.IMAGE)
 
 
-@register_image_producer(CompositeStack, QualityLevel.SUBFRAME,
-                         'preview_{name}.tiff')
+@makes_image(CompositeStack).as_subframe('preview_{name}.tiff')
 @cached.remote
 def stack_preview(stack: CompositeStack) -> TiffFilePath:
   '''Loads the best individual FITS image from a stack and saves as TIFF.'''
@@ -36,22 +35,7 @@ def stack_preview(stack: CompositeStack) -> TiffFilePath:
   return output_path
 
 
-@register_image_producer(Target, QualityLevel.SUBFRAME)
-@cached.remote
-def target_preview(target: Target) -> TiffFilePath:
-  '''Picks a representative image for the target and saves as TIFF.'''
-  pass
-
-
-@register_image_producer(Mosaic, QualityLevel.SUBFRAME)
-@cached.remote
-def mosaic_preview(mosaic: Mosaic) -> TiffFilePath:
-  '''Composites the mosaic using subframe images and saves as TIFF.'''
-  pass
-
-
-@register_image_producer(CompositeStack, QualityLevel.MASTER,
-                         'master_{name}.tiff')
+@makes_image(CompositeStack).as_master('master_{name}.tiff')
 @cached.remote
 def stack_files(stack: CompositeStack) -> TiffFilePath:
   '''Runs WBPP to stack raw images into a TIFF.'''
@@ -61,34 +45,6 @@ def stack_files(stack: CompositeStack) -> TiffFilePath:
   write_tiff_image(output_path, image)
 
   return output_path
-
-
-@register_image_producer(Mosaic, QualityLevel.MASTER)
-@cached.remote
-def merge_mosaic(mosaic: Mosaic) -> XisfFilePath:
-  '''Runs user script to post-process a mosaic into an XSIF.'''
-  pass
-
-
-@register_image_producer(CompositeStack, QualityLevel.POST_PROCESSED)
-@cached.remote
-def post_process_stack(stack: CompositeStack) -> XisfFilePath:
-  '''Runs user script to post-process a stack into an XSIF.'''
-  pass
-
-
-@register_image_producer(Target, QualityLevel.POST_PROCESSED)
-@cached.remote
-def post_process_target(target: Target) -> XisfFilePath:
-  '''Runs user script to post-process a target into an XSIF.'''
-  pass
-
-
-@cached.remote
-@register_image_producer(Mosaic, QualityLevel.POST_PROCESSED)
-def post_process_mosaic(mosaic: Mosaic) -> XisfFilePath:
-  '''Runs user script to post-process a mosaic into an XSIF.'''
-  pass
 
 
 class TestRegistry(unittest.TestCase):
@@ -113,7 +69,7 @@ class TestRegistry(unittest.TestCase):
     run_graph(build_compute_graph())
     stack = next(iter(context.stacks.values()))
 
-    fn = get_image_producer(CompositeStack, QualityLevel.SUBFRAME)
+    fn = get_producer(MediaType.IMAGE, CompositeStack, QualityLevel.SUBFRAME)
     self.assertIsNotNone(fn)
     self.assertFalse(fn.is_cached(stack))
 

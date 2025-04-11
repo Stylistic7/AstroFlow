@@ -52,7 +52,7 @@ class TestCreateThumbnailDecorator(unittest.TestCase):
 
     thumbnail = stack_files.thumbnail_fn(stack)
     self.assertIsNotNone(thumbnail)
-    self.assertTrue(isinstance(thumbnail, np.ndarray))
+    self.assertTrue(isinstance(thumbnail, bytes))
 
 
 if __name__ == "__main__":

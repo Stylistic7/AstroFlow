@@ -1,7 +1,7 @@
 from cache.cached_decorator import make_cached_decorator
 from previews.create_thumbnail import make_create_thumbnail_decorator
 from profiling.measure_performance import make_measure_performance_decorator
-from products.registry import register_image_producer
+from products.registry import makes_image, makes_video
 
 from context import context
 from hashing import hash_list
@@ -22,5 +22,3 @@ cached = make_cached_decorator(cache=context,
 create_thumbnail = make_create_thumbnail_decorator(context)
 
 measure_performance = make_measure_performance_decorator(context)
-
-register_image_producer = register_image_producer
