@@ -1,3 +1,4 @@
+import ray
 from dataclasses import replace
 
 from context import context
@@ -23,7 +24,7 @@ def apply_settings(stack: CompositeStack, settings: Settings) -> CompositeStack:
   return replace(stack, contents=new_contents)
 
 
-@cached.remote(cache=False)
+@ray.remote
 def gather_customize_stacks(*stacks) -> None:
   context.stacks = {s.stable_hash: s for s in stacks}
 
@@ -57,7 +58,7 @@ def customize_stack(stack: CompositeStack,
 
 # TODO: Implement real customization features.
 # TODO: Make this a pure function.
-@cached.remote(cache=False)
+@ray.remote
 def scatter_customize_targets() -> None:
   quarantined_targets = context.quarantined_targets or []
   context.targets = {
@@ -69,7 +70,7 @@ def scatter_customize_targets() -> None:
 
 # TODO: Implement real customization features.
 # TODO: Make this a pure function.
-@cached.remote(cache=False)
+@ray.remote
 def scatter_customize_mosaics(*mosaics) -> None:
   quarantined_mosaics = context.quarantined_mosaics or []
   context.mosaics = {

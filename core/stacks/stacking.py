@@ -19,7 +19,7 @@ import file_io
 from metadata.classes import MetadataDict
 from metadata.actor import get_metadata
 from decorators import cached
-from products.register import register_image_producer
+from decorators import register_image_producer
 from previews.types import QualityLevel
 
 

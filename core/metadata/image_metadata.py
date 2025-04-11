@@ -172,7 +172,7 @@ def compute_image_metadata(filename: Path) -> Path:
           f'exception {traceback.format_exc()}')
 
 
-@cached.remote(cache=False)
+@ray.remote
 def load_metadata() -> MetadataDict:
   quarantined_files = context.quarantined_files or set()
 

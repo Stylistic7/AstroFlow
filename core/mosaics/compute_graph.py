@@ -1,3 +1,4 @@
+import ray
 import numpy as np
 from typing import Any, Optional
 from pathlib import Path
@@ -27,7 +28,7 @@ from previews.operations import autostretch
 from pix.decorators import PixInsight
 from pix.classes import ImageList
 from pix.tasks import SaveImages
-from products.register import register_image_producer
+from decorators import register_image_producer
 
 
 @PixInsight()
@@ -37,7 +38,7 @@ def save_uncompressed(images: ImageList, output_filenames: list[Path]):
 
 
 @register_image_producer(Mosaic, QualityLevel.MASTER, output_filename)
-@cached.remote(cache=False)
+@ray.remote
 def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
                                input: Path) -> Optional[Path]:
   if input is None:

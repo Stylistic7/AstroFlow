@@ -25,7 +25,7 @@ from quarantining.quarantining import quarantine_calibration_stacks
 from hashing import hash_list
 
 
-@cached.remote(cache=False)
+@ray.remote
 def store_calibration_stacks(calibration_stacks: SimpleStacksDict) -> None:
   context.calibration_stacks = calibration_stacks
   print(f'### store_calibration_stacks: Stored '
@@ -34,7 +34,7 @@ def store_calibration_stacks(calibration_stacks: SimpleStacksDict) -> None:
   return calibration_stacks
 
 
-@cached.remote(cache=False)
+@ray.remote
 def store_stacks(stacks: CompositeStacksDict) -> None:
   context.grouped_stacks = stacks
   print(f'### store_stacks: Stored '
@@ -42,7 +42,7 @@ def store_stacks(stacks: CompositeStacksDict) -> None:
   return stacks
 
 
-@cached.remote(cache=False)
+@ray.remote
 def store_targets(targets: TargetsDict) -> None:
   context.grouped_targets = targets
   print(f'### store_targets: Stored {len(targets)} targets; '
@@ -50,7 +50,7 @@ def store_targets(targets: TargetsDict) -> None:
   return targets
 
 
-@cached.remote(cache=False)
+@ray.remote
 def store_mosaics(mosaics: MosaicsDict) -> None:
   context.grouped_mosaics = mosaics
   print(f'### store_mosaics: Stored {len(mosaics)} mosaics; '

@@ -41,94 +41,79 @@ def make_cached_decorator(cache: CacheProtocol,
     if debug:
       print(*args, **kwargs)
 
-  class TaskDecorator:
+  def decorate(func: Callable, ray_opts: dict) -> Callable:
+    fn_hash = hash_source_code(func)
 
-    def __init__(self, cache=True, **ray_opts):
-      self.cache_results = cache
-      self.ray_opts = ray_opts
+    def _get_cache_key_and_result(bound):
+      call_hash = call_hasher(fn_hash, *bound.args, **bound.kwargs)
+      key = (func.__name__, call_hash)
 
-    def __call__(self, func: Callable):
-      fn_hash = hash_source_code(func)
+      if key not in cache:
+        debug_print(f'cache miss: {key}')
+        return key, call_hash, False, None
 
-      def _get_cache_key_and_result(bound_args):
-        call_hash = call_hasher(fn_hash, *bound_args.args, **bound_args.kwargs)
-        cache_key = (func.__name__, call_hash)
+      cached = cache[key]
+      stored_hash = content_hasher.get(cached)
 
-        if not self.cache_results:
-          debug_print(f'never cache: {cache_key}')
-          return cache_key, call_hash, False, None
+      if not content_hasher.has(cached) or stored_hash == call_hash:
+        debug_print(f'cache hit: {key}')
+        return key, call_hash, True, cached
+      else:
+        debug_print(f'cache mismatch ({stored_hash}): {key}')
+        return key, call_hash, False, None
 
-        if cache_key not in cache:
-          debug_print(f'cache miss: {cache_key}')
-          return cache_key, call_hash, False, None
+    def inner(*args, injected_context: Optional[dict] = None, **kwargs):
+      bound = _bind_args(func, args, kwargs, injected_context)
+      key, call_hash, valid, cached_result = _get_cache_key_and_result(bound)
 
-        cached_result = cache[cache_key]
-        content_hash = content_hasher.get(cached_result)
+      if valid:
+        return cached_result
 
-        if not content_hasher.has(cached_result) or content_hash == call_hash:
-          debug_print(f'cache hit: {cache_key}')
-          return cache_key, call_hash, True, cached_result
-        else:
-          debug_print(f'cache miss (mismatch {content_hash}): {cache_key}')
-          return cache_key, call_hash, False, None
+      result = func(*bound.args, **bound.kwargs)
 
-      def inner(*args, injected_context: Optional[dict] = None, **kwargs):
-        bound = _bind_args(func, args, kwargs, injected_context)
-        cache_key, call_hash, is_valid_cache, cached_result = _get_cache_key_and_result(
-            bound)
+      if not isinstance(result, no_cache_types + (Exception,)):
+        result = content_hasher.set(result, call_hash)
+        debug_print(f'storing: {key} as {type(result)}')
+        cache[key] = result
 
-        if is_valid_cache:
-          return cached_result
+      return result
 
-        result = func(*bound.args, **bound.kwargs)
+    ray_func = ray.remote(**ray_opts)(inner) if ray_opts else ray.remote(inner)
 
-        if (self.cache_results and not isinstance(result, no_cache_types) and
-            not isinstance(result, Exception)):
-          result = content_hasher.set(result, call_hash)
-          debug_print(f'store result: {cache_key} result type {type(result)}')
-          cache[cache_key] = result
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+      raise RuntimeError(
+          f"{func.__name__} is a remote task. Use `.remote(...)`.")
 
-        return result
+    wrapper.remote = ray_func.remote
+    wrapper.options = ray_func.options
+    wrapper._original = func
+    wrapper._function = func
+    wrapper._is_task = True
 
-      inner.__name__ = func.__name__
-      inner.__qualname__ = func.__qualname__
+    for attr in ('filename_fn', 'thumbnail_fn'):
+      if hasattr(func, attr):
+        setattr(wrapper, attr, getattr(func, attr))
 
-      ray_remote_callable = ray.remote(
-          **self.ray_opts)(inner) if self.ray_opts else ray.remote(inner)
+    def is_cached(*args,
+                  injected_context: Optional[dict] = None,
+                  **kwargs) -> bool:
+      bound = _bind_args(func, args, kwargs, injected_context)
+      _, _, valid, _ = _get_cache_key_and_result(bound)
+      return valid
 
-      @wraps(func)
-      def wrapper(*args, **kwargs):
-        raise RuntimeError(
-            f"{func.__name__} is a remote task. Call it with `.remote(...)`.")
+    wrapper.is_cached = is_cached
 
-      wrapper.remote = ray_remote_callable.remote
-      wrapper.options = ray_remote_callable.options
-      wrapper._original = func
-      wrapper._function = func
-      wrapper._is_task = True
+    return wrapper
 
-      for attr in ('filename_fn', 'thumbnail_fn'):
-        if hasattr(func, attr):
-          setattr(wrapper, attr, getattr(func, attr))
+  class CachedTask:
 
-      def is_cached(*args,
-                    injected_context: Optional[dict] = None,
-                    **kwargs) -> bool:
-        bound = _bind_args(func, args, kwargs, injected_context)
-        _, _, is_valid_cache, _ = _get_cache_key_and_result(bound)
-        return is_valid_cache
+    def __call__(self, func: Callable) -> Callable:
+      return decorate(func, ray_opts={})
 
-      wrapper.is_cached = is_cached
+    def remote(self, func: Callable = None, **ray_opts):
+      if func is None:
+        return lambda f: decorate(f, ray_opts)
+      return decorate(func, ray_opts)
 
-      return wrapper
-
-  class Task:
-
-    def remote(self, _func=None, **ray_opts):
-      cache = ray_opts.pop('cache', True)
-      decorator = TaskDecorator(cache=cache, **ray_opts)
-      if callable(_func):
-        return decorator(_func)
-      return decorator
-
-  return Task()
+  return CachedTask()
