@@ -62,7 +62,6 @@ def thumbnail(object_type: str, object_id: str, filter: str):
     if fn := get_image_producer(class_for_type[object_type], level):
       if hasattr(fn, 'thumbnail_fn'):
         if thumbnail := fn.thumbnail_fn(*args):
-          print(f'### thumbnail_fn returned None')
           buffer = io.BytesIO()
           buffer.write(thumbnail)
           buffer.seek(0)
