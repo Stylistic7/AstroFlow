@@ -7,7 +7,7 @@ from context import context
 from stacks.composite_stack import CompositeStack
 from targets.types import Target
 from mosaics.types import Mosaic
-from products.registry import get_image_producer
+from products.registry import get_producer, MediaType
 from previews.types import QualityLevel
 
 objects_bp = Blueprint("objects", __name__)
@@ -32,7 +32,7 @@ def metadata(object_type: str, object_id: str, filter: str):
   for level in [
       QualityLevel.POST_PROCESSED, QualityLevel.MASTER, QualityLevel.SUBFRAME
   ]:
-    if fn := get_image_producer(class_for_type[object_type], level):
+    if fn := get_producer(MediaType.IMAGE, class_for_type[object_type], level):
       filename = context.output_dir / fn.filename_fn(*args)
       if os.path.exists(filename):
         print(f'### quality_level {level} filename {filename}')
@@ -59,7 +59,7 @@ def thumbnail(object_type: str, object_id: str, filter: str):
   for level in [
       QualityLevel.POST_PROCESSED, QualityLevel.MASTER, QualityLevel.SUBFRAME
   ]:
-    if fn := get_image_producer(class_for_type[object_type], level):
+    if fn := get_producer(MediaType.IMAGE, class_for_type[object_type], level):
       if hasattr(fn, 'thumbnail_fn'):
         if thumbnail := fn.thumbnail_fn(*args):
           buffer = io.BytesIO()

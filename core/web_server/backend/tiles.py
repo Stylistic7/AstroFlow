@@ -16,8 +16,9 @@ from previews.types import QualityLevel
 from stacks.composite_stack import CompositeStack
 from targets.types import Target
 from mosaics.types import Mosaic
-from products.registry import get_image_producer
+from products.registry import get_producer, MediaType
 
+MediaType.IMAGE,
 # Settings
 TILE_CACHE_DIR = Path("/tmp/astroflow_tiles")
 EXPIRATION_SECONDS = 300  # 5 minutes
@@ -53,7 +54,7 @@ def get_best_image(object_type: str, object_id: str, filter: str) -> Path:
   for level in [
       QualityLevel.POST_PROCESSED, QualityLevel.MASTER, QualityLevel.SUBFRAME
   ]:
-    if fn := get_image_producer(class_for_type[object_type], level):
+    if fn := get_producer(MediaType.IMAGE, class_for_type[object_type], level):
       return context.output_dir / fn.filename_fn(*args)
 
 
