@@ -111,7 +111,7 @@ def build_preview_graph() -> Graph:
   targets = context.targets
 
   tasks = []
-  tasks.append((scatter_stack_thumbnails, QualityLevel.SUBFRAME))
+  tasks.append((scatter_stack_thumbnails,))
 
   for mosaic in context.mosaics.values():
     tasks.append(
