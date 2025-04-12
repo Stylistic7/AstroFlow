@@ -19,7 +19,7 @@ const StackTabs = ({ stack, stack_id }) => {
   useEffect(() => {
     const checkTile = async () => {
       try {
-        const res = await fetch(`/tile/stack/${stack_id}/0/0/0.png`, { method: 'HEAD' });
+        const res = await fetch(`/tile/stack/${stack_id}/none/0/0/0.png`, { method: 'HEAD' });
         setTileViewerAvailable(res.ok);
       } catch (err) {
         setTileViewerAvailable(false);
@@ -61,7 +61,7 @@ const StackTabs = ({ stack, stack_id }) => {
         {tabIndex === 0 && (
           <Box sx={{ height: '100%', overflow: 'hidden' }}>
             {tileViewerAvailable ? (
-              <TileViewer objectType="stack" imageHash={stack_id} forceLevel="post_processed" />
+              <TileViewer objectType="stack" imageHash={stack_id} filter="none" />
             ) : (
               <Typography align="center" variant="h6" sx={{ mt: 10 }}>
                 This stack has not been integrated yet.
@@ -81,7 +81,7 @@ const StackTabs = ({ stack, stack_id }) => {
             >
               <source
                 src={`/stack_subframe_thumbnail_video/${stack_id}`}
-                type="video/mp4"
+                type="video/webm"
               />
               Your browser does not support the video tag.
             </video>

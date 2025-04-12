@@ -55,7 +55,11 @@ def get_best_image(object_type: str, object_id: str, filter: str) -> Path:
       QualityLevel.POST_PROCESSED, QualityLevel.MASTER, QualityLevel.SUBFRAME
   ]:
     if fn := get_producer(MediaType.IMAGE, class_for_type[object_type], level):
-      return context.output_dir / fn.filename_fn(*args)
+      if fragment := fn.filename_fn(*args):
+        filename = context.output_dir / fragment
+        print(f'### get_best_image filename {filename}')
+        if os.path.exists(filename):
+          return filename
 
 
 def get_image(object_type: str, object_id: str, filter: str):
