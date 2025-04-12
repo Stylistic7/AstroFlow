@@ -29,6 +29,7 @@ def write_tiff_image(filename: Path,
   tifffile.imwrite(filename,
                    image,
                    compression='deflate',
+                   tile=(256, 256),
                    description=json.dumps(metadata, ensure_ascii=True),
                    **kwargs)
 
