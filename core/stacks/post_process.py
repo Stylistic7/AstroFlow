@@ -4,20 +4,21 @@ import os
 
 from context import context
 from pix.decorators import PixInsight
-from pix.tasks import BlurXTerminator, GradientCorrection
+from pix.tasks import BlurXTerminator, GradientCorrection, SaveImages
 from pix.classes import ImageList
 from decorators import cached, makes_image, measure_performance, create_thumbnail
 from customization.types import CustomizedStack
 from stacks.composite_stack import CompositeStack
 from stacks.stacking import stack_files
 from file_io.types import XisfFilePath
-from previews.types import QualityLevel
 
 
 @PixInsight(slots=[1])
-def _post_process_stack(images: ImageList) -> ImageList:
+def _post_process_stack(images: ImageList,
+                        output_filenames: list[Path]) -> ImageList:
   images = BlurXTerminator(images)
   images = GradientCorrection(images)
+  images = SaveImages(images, output_filenames)
 
   return images
 
@@ -36,19 +37,15 @@ def post_process_stack(stack: CustomizedStack) -> Path:
   master = context.output_dir / stack_files.filename_fn(stack)
   print(f'### post_process_stack, master {master}')
 
-  final_filename = post_process_stack.filename_fn(stack)
+  output_filename = context.output_dir / post_process_stack.filename_fn(stack)
 
   if context.dangerously_accept_existing_files and os.path.exists(
-      final_filename):
+      output_filename):
     print(f'### Dangerously skipping post-processing because '
-          f'file {final_filename} already exists')
-    return Path(final_filename)
+          f'file {output_filename} already exists')
+    return Path(output_filename)
 
-  if os.environ.get('MOCK_PIXINSIGHT'):
-    post_processed = master
-  else:
-    results = _post_process_stack([master])
-    post_processed = next(iter(results)).filename
+  if not os.environ.get('MOCK_PIXINSIGHT'):
+    _post_process_stack([master], [output_filename])
 
-  shutil.copy(post_processed, final_filename)
-  return XisfFilePath(final_filename)
+  return XisfFilePath(output_filename)
