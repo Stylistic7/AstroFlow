@@ -102,6 +102,8 @@ export default function Starmap() {
 							stroke: 'rgba(0, 0, 255, 0.7)',
 							strokeOpacity: '0.7',
 							strokeWidth: '4px',
+							fill: 'black',
+							fillOpacity: '0.2',
 						}
 					});
 				};
@@ -124,6 +126,8 @@ export default function Starmap() {
 							stroke: 'rgba(255, 0, 0, 0.8)',
 							strokeOpacity: '0.8',
 							strokeWidth: '4px',
+							fill: 'black',
+							fillOpacity: '0.2',
 						}
 					});
 				};
