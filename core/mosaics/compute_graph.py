@@ -1,3 +1,4 @@
+import os
 import ray
 import numpy as np
 from typing import Any, Optional
@@ -5,7 +6,7 @@ from pathlib import Path
 from shapely import box  # type: ignore
 from shapely.affinity import scale  # type: ignore
 
-from context import context, WriteMode
+from context import context
 from customization.types import CustomizedStack
 from dependency_graph import Graph, Node, make_graph_from_list
 from mosaics.merge_images import merge_images
@@ -15,20 +16,21 @@ from mosaics.placement import place_image
 from mosaics.post_process import post_process_mosaic
 from mosaics.trimming import project_to_viewbox, largest_interior_rectangle
 from mosaics.types import TileIndices
-from mosaics.artifacts import output_filename, tile_filename
+from mosaics.artifacts import tile_filename, merged_color_channel
 from stacks.compute_graph import get_stack_image
 from stacks.composite_stack import CompositeStacksDict
 from stacks.types import StackHash
 from previews.types import QualityLevel
-from decorators import cached
+from decorators import cached, create_thumbnail
 from targets.types import TargetsDict, Target, TargetHash
 from file_io.generic import read_image
 from file_io.tiff_file_io import write_tiff_image
+from file_io.types import TiffFilePath
 from previews.operations import autostretch
 from pix.decorators import PixInsight
 from pix.classes import ImageList
 from pix.tasks import SaveImages
-from decorators import register_image_producer
+from decorators import makes_image
 
 
 @PixInsight()
@@ -37,33 +39,32 @@ def save_uncompressed(images: ImageList, output_filenames: list[Path]):
   return []
 
 
-@register_image_producer(Mosaic, QualityLevel.MASTER, output_filename)
-@ray.remote
-def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
-                               input: Path) -> Optional[Path]:
-  if input is None:
-    return
+@makes_image(Mosaic).as_subframe(merged_color_channel)
+@cached.remote
+@create_thumbnail
+def store_mosaic_subframe_color_channel(mosaic: Mosaic, filter: str,
+                                        input: Path) -> Path:
+  print(
+      f'### store_mosaic_subframe_color_channel: filter {filter} input {input}')
+  return input
 
-  print(f'### store_mosaic_color_channel: filter {filter} input {input}')
-  key = ('mosaic_thumbnail_image', mode, mosaic.stable_hash, filter)
 
-  if mode == QualityLevel.SUBFRAME:
-    image = read_image(input)
-    context.set(key, image, write_mode=WriteMode.DISK_ONLY)
-    print(f'### store_mosaic_color_channel wrote key {key}')
-  elif mode == QualityLevel.MASTER:
-    filename = context.output_dir / output_filename(mosaic, filter)
-    save_uncompressed([input], [filename])
+@makes_image(Mosaic).as_master(tile_filename)
+@cached.remote
+@create_thumbnail
+def store_mosaic_master_color_channel(mosaic: Mosaic, filter: str,
+                                      input: Path) -> TiffFilePath:
+  print(f'### store_mosaic_master_color_channel: filter {filter} input {input}')
 
-    image = read_image(filename)
-    autostretched = (autostretch(image) * 255.0).astype(np.uint8)
-    filename = tile_filename(mosaic, filter)
-    write_tiff_image(filename,
-                     autostretched, {'FILTER': filter},
-                     tile=(256, 256),
-                     compression='deflate')
+  xisf_filename = context.output_dir / merged_color_channel(mosaic, filter)
+  save_uncompressed([input], [xisf_filename])
 
-    return filename
+  image = read_image(xisf_filename)
+  autostretched = (autostretch(image) * 255.0).astype(np.uint8)
+  tiff_filename = tile_filename(mosaic, filter)
+  write_tiff_image(tiff_filename, autostretched, {'FILTER': filter})
+
+  return xisf_filename
 
 
 def targets_for_mosaic(mosaic: Mosaic, targets: TargetsDict) -> TargetsDict:
@@ -113,7 +114,11 @@ def build_mosaic_subgraph(mode: QualityLevel, mosaic: Mosaic,
               f'some stacks are missing')
         continue
 
-    store_task = (store_mosaic_color_channel, mode, mosaic, filter)
+    if mode == QualityLevel.SUBFRAME:
+      store_task = (store_mosaic_subframe_color_channel, mosaic, filter)
+    elif mode == QualityLevel.MASTER:
+      store_task = (store_mosaic_master_color_channel, mosaic, filter)
+
     filter_subgraph_task = Node(build_mosaic_filter_subgraph, mode, mosaic,
                                 strips, stacks, filter, viewbox)
     graph[store_task] = {filter_subgraph_task}
