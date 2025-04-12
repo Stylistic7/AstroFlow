@@ -8,10 +8,10 @@ from pix import PixInsight
 from pix.classes import ImageList
 from pix.tasks import ChannelCombination, SpectrophotometricColorCalibration, ImageSolver, StarXTerminator, LinearFit, SaveImages
 from context import context
-from decorators import cached
+from decorators import cached, create_thumbnail, makes_image, measure_performance
 from previews.types import QualityLevel
 from mosaics.types import Mosaic
-from mosaics.artifacts import output_filename as mosaic_output_filename
+from mosaics.artifacts import post_processed_filename, merged_color_channel
 
 
 @PixInsight(slots=[1])
@@ -38,14 +38,17 @@ def _post_process_mosaic(images: ImageList, mosaic: Mosaic,
     s, o = LinearFit([s, o], h)
     narrowband = ChannelCombination([s, h, o], 'SHO')
 
-  # TODO: Supply multiple output filenames.
-  SaveImages([narrowband], [output_filename])
+    # TODO: Supply multiple output filenames.
+    SaveImages([narrowband], [output_filename])
 
   # TODO: Return list or tuples of images
   return []
 
 
+@makes_image(Mosaic).as_post_processed(post_processed_filename)
 @cached.remote(resources={'PixInsight': 1})
+@measure_performance
+@create_thumbnail
 def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> None:
   print(f'### Entering post_process_mosaic for mosaic {mosaic}')
 
@@ -58,11 +61,17 @@ def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> None:
       filters.add(context.stacks[stack_id].filter)
   filters = tuple(filters)
 
-  images = [mosaic_output_filename(mosaic, filter) for filter in filters]
+  images = [
+      context.output_dir / merged_color_channel(mosaic, filter)
+      for filter in filters
+  ]
 
-  output_filename = XisfFilePath(
-      context.output_dir
-  ) / 'Mosaics' / mosaic.name / f'final_merged_{mosaic.stable_hash}_post_processed.xisf'
+  for image in images:
+    print(
+        f'### post_process_mosaic image {image} exists {os.path.exists(image)}')
+
+  output_filename = context.output_dir / post_processed_filename(mosaic, None)
+  print(f'### post_process_mosaic output_filename {output_filename}')
 
   if os.environ.get('MOCK_PIXINSIGHT'):
     shutil.copy(images[0], output_filename)
