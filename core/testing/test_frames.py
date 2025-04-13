@@ -134,6 +134,8 @@ def copy_testdata_frames(
     fits.close()
 
 
+# TODO: Maybe remove `insert_metadata`, since it no longer matches pure-
+# functional style of `compute_image_metadata`.
 def make_synthetic_frames(start_datetime: datetime.datetime = datetime.datetime(
     2023, 12, 6, 16, 29, 43),
                           number: int = 1,

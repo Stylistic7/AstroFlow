@@ -1,6 +1,5 @@
 import ray
 import os
-import traceback
 from typing import Any
 from pathlib import Path
 import objsize  # type: ignore
@@ -11,10 +10,8 @@ import metadata.image_types as image_types
 from metadata.classes import ImageMetadata, MetadataDict
 import plate_solving
 from dependency_graph import Graph
-from context import context, WriteMode
-from metadata.actor import get_metadata
+from context import context
 from decorators import cached
-from hashing import hash_list
 
 # TODO: I need to associate dark and flat frames *before* computing thumbnails.
 
@@ -100,14 +97,8 @@ def scatter_compute_image_metadata(mode: str, *filenames_in:
     print(f'### Directory {dir} contains {len(artifacts_for_dir)} files')
     filenames.update(artifacts_for_dir)
 
-  # TODO: Eliminate this call to get_metadata().
-  known_filenames = set(get_metadata(transform_fn=lambda i: i.filename))
-  quarantined_files = context.quarantined_files or set()
-  new_filenames = filenames - known_filenames - quarantined_files
-
-  print(f'### Computing image metadata for {len(new_filenames)} new artifacts')
   graph = Graph(
-      {load_metadata: [(compute_image_metadata, f) for f in new_filenames]})
+      {load_metadata: {(compute_image_metadata, f) for f in filenames}})
 
   return graph
 
@@ -116,86 +107,36 @@ class DuplicateFileException(Exception):
   pass
 
 
-# TODO: What's the best approach for making this functional? I should remove
-# the side-effect (saving to the context).
 @cached.remote(resources={'fastest_storage': 0.001})
-def compute_image_metadata(filename: Path) -> Path:
-  # TODO: Make sure this code doesn't actually repeatedly read the image across
-  # the network. It should hit the node's filesystem cache.
-  try:
-    assert filename is not None
-    # TODO: Don't manage cache keys and content hashes in this function;
-    # let the @cached.remote decorator do that.
-    content_hash = get_content_hash(filename)
-    key = ('image_metadata', content_hash)
+def compute_image_metadata(filename: Path) -> ImageMetadata:
+  content_hash = get_content_hash(filename)
+  header = read_header(filename)
+  if image_types.is_light_frame(header):
+    plate_solution = plate_solving.solve_field(filename)
+  else:
+    plate_solution = None
+    print(f'### Skipping plate-solving for filename {filename} '
+          f'because it is not a light frame')
 
-    if context.contains(key):
-      prev_filename = context.get(key, keep_in_memory=False).filename
-      if Path(prev_filename) == Path(filename):
-        # The given input file just points to an existing known file; nothing
-        # needs to be done.
-        return filename
-      else:
-        if os.path.exists(prev_filename):
-          raise DuplicateFileException(f'{prev_filename} and {filename}')
-        else:
-          print(f'Filename {prev_filename} has been moved to '
-                f'{filename}')
-          prev_metadata = context[key]
-          metadata = ImageMetadata(content_hash=content_hash,
-                                   filename=filename,
-                                   header=prev_metadata.header,
-                                   plate_solution=prev_metadata.plate_solution)
-          context[key] = metadata
-          return filename
-
-    header = read_header(filename)
-    if image_types.is_light_frame(header):
-      plate_solution = plate_solving.solve_field(filename)
-    else:
-      plate_solution = None
-      print(f'### Skipping plate-solving for filename {filename} '
-            f'because it is not a light frame')
-
-    metadata = ImageMetadata(content_hash=content_hash,
-                             filename=filename,
-                             header=header,
-                             plate_solution=plate_solution)
-
-    context.set(key, metadata, write_mode=WriteMode.DISK_ONLY)
-    print(f'### Wrote key {key}')
-
-    return filename
-
-  except Exception as e:
-    print(f'compute_image_metadata() failed for file {filename}, '
-          f'exception {traceback.format_exc()}')
+  return ImageMetadata(content_hash=content_hash,
+                       filename=filename,
+                       header=header,
+                       plate_solution=plate_solution)
 
 
-@ray.remote
+@ray.remote(resources={'fastest_storage': 0.001})
 def load_metadata() -> MetadataDict:
   quarantined_files = context.quarantined_files or set()
 
-  def predicate_fn(image: ImageMetadata) -> bool:
-    return image.content_hash not in quarantined_files
-
-  metadata = MetadataDict(
-      get_metadata(predicate_fn=predicate_fn,
-                   post_fn=lambda images: {i.content_hash: i for i in images}))
-
-  num_files_before = len(metadata)
-  metadata = MetadataDict({
-      h: m for h, m in metadata.items() if os.path.exists(m.filename)
-  })
-  num_files_after = len(metadata)
-  print(f'### excluded {num_files_before - num_files_after} files '
-        f'that do not exist')
+  metadata = MetadataDict()
+  for key in context.get_cache_keys():
+    if type(key) is tuple and key[0] == 'compute_image_metadata':
+      if value := context[key]:
+        if value.content_hash not in quarantined_files:
+          if os.path.exists(value.filename):
+            metadata[value.content_hash] = value
 
   metadata_size_mb = objsize.get_deep_size(metadata) / 1024 / 1024
   print(f'### load_metadata() size {metadata_size_mb} MB')
-
-  context.set('metadata', metadata, write_mode=WriteMode.MEMORY_ONLY)
-
-  print(f'load_metadata metadata hash {hash_list([metadata])}')
 
   return metadata
