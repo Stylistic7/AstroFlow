@@ -49,7 +49,12 @@ def _get_namespace() -> str:
   return os.environ.get("ASTROFLOW_MOCK_NAMESPACE", "AstroFlow")
 
 
-print(f'### Using Ray namespace {_get_namespace()}')
+def starts_with(big_tuple, small_tuple):
+  if not small_tuple:
+    return True
+  if len(small_tuple) > len(big_tuple):
+    return False
+  return big_tuple[:len(small_tuple)] == small_tuple
 
 
 @ray.remote(resources={'diskcache': 0.001},
@@ -79,6 +84,23 @@ class ContextActor:
     if keep_in_memory:
       self.ref_dict[key] = ray.put(value)
       return self.ref_dict[key]
+    else:
+      return ray.put(value)
+
+  def get_matching(self, key_fragment: Key,
+                   keep_in_memory: bool) -> ray.ObjectRef:
+    if key_fragment in self.ref_dict:
+      assert type(self.ref_dict[key_fragment]) is ray.ObjectRef
+      return self.ref_dict[key_fragment]
+
+    value = {}
+    for key in self.cache.iterkeys():
+      if starts_with(key, key_fragment):
+        value[key] = self.cache[key]
+
+    if keep_in_memory:
+      self.ref_dict[key_fragment] = ray.put(value)
+      return self.ref_dict[key_fragment]
     else:
       return ray.put(value)
 
@@ -170,6 +192,12 @@ class Context:
 
   def __getitem__(self, key: Key) -> Any:
     return self.get(key)
+
+  def get_matching(self, key_fragment: Key, keep_in_memory=False) -> Any:
+    actor = ray.get_actor('context', namespace=_get_namespace())
+    maybe_ref = ray.get(actor.get_matching.remote(key_fragment, keep_in_memory))
+    if maybe_ref:
+      return ray.get(maybe_ref)
 
   def set(self,
           key: Key,
