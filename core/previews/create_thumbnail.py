@@ -28,12 +28,17 @@ def make_create_thumbnail_decorator(
       @wraps(func)
       def wrapper(*args, **kwargs):
         result = func(*args, **kwargs)
+
+        thumbnail = None
         if isinstance(result, Path):
           thumbnail = thumbnail_fn(result)
-          if thumbnail is not None:
-            call_hash = hash_call(fn_hash, *args, **kwargs)
-            thumbnail_key = ('thumbnail', call_hash)
-            cache[thumbnail_key] = thumbnail
+        elif hasattr(result, "name"):
+          thumbnail = thumbnail_fn(result.name)
+
+        if thumbnail is not None:
+          call_hash = hash_call(fn_hash, *args, **kwargs)
+          thumbnail_key = ('thumbnail', call_hash)
+          cache[thumbnail_key] = thumbnail
 
         return result
 

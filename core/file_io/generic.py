@@ -23,6 +23,8 @@ def classify_by_extension(filename: Path) -> Any:
   elif ext in (".tif", ".tiff"):
     return TiffFilePath(filename)
 
+  raise ValueError(f"Uknown file type for filename {filename}")
+
 
 @singledispatch
 def read_image(filename: Path) -> np.ndarray:

@@ -79,16 +79,8 @@ class TestFlatCorrection(unittest.TestCase):
     self.assertEqual(len(stacks), 1)
     self.assertEqual(len(context.calibration_stacks), 4)
 
-    flat_stack_ids = [
-        id for id, s in context.calibration_stacks.items()
-        if s.image_type == 'flat'
-    ]
-
-    stack = next(iter(stacks.values()))
-    for substack_id in stack.contents:
-      for flat_stack_id in flat_stack_ids:
-        key = ('flat_correction_thumbnail', substack_id, flat_stack_id)
-        self.assertTrue(context.contains(key))
+    thumbnail_keys = context.get_matching(('thumbnail',))
+    self.assertEqual(len(thumbnail_keys), 3)
 
 
 if __name__ == '__main__':

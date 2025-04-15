@@ -1,16 +1,35 @@
+import tempfile
+from pathlib import Path
+
 from context import context, WriteMode
 from previews.operations import array_to_png
 from previews.calibration import calibrate_subframe
 from previews.operations import autostretch
 from decorators import cached
-from dependency_graph import Graph
 from customization.types import CustomizedStack
 from customization.subframe_selection import get_light_frames_sorted_by_stars
+from decorators import create_thumbnail
+from metadata.classes import ImageMetadata
+from stacks.types import StackHash
+from file_io.tiff_file_io import write_tiff_image
+
+
+@create_thumbnail
+def calibrate_stack(light_frame: ImageMetadata, dependencies: dict[str,
+                                                                   StackHash],
+                    width: int) -> tempfile.NamedTemporaryFile:
+  temp_file = tempfile.NamedTemporaryFile(suffix=".tiff", delete=True)
+  write_tiff_image(
+      Path(temp_file.name),
+      autostretch(calibrate_subframe(light_frame, dependencies, width)))
+
+  return temp_file
 
 
 @cached.remote
 def create_flat_correction_thumbnails(stack: CustomizedStack) -> None:
   calibration_stacks = context.calibration_stacks
+  width = context.subframe_thumbnail_width
 
   flat_stack_ids = [
       id for id, s in calibration_stacks.items() if s.image_type == 'flat' and
@@ -23,16 +42,8 @@ def create_flat_correction_thumbnails(stack: CustomizedStack) -> None:
     light_frame = stack.all_metadata()[next(
         l for l in light_frames_by_stars if l in substack.frames)]
 
-    width = context.subframe_thumbnail_width
-
     for flat_stack_id in flat_stack_ids:
       dependencies = substack.dependencies.copy()
       dependencies['flat'] = flat_stack_id
 
-      thumbnail = array_to_png(
-          autostretch(calibrate_subframe(light_frame, dependencies, width)))
-
-      thumbnail_key = ('flat_correction_thumbnail', substack.content_hash,
-                       flat_stack_id)
-      context.set(thumbnail_key, thumbnail, write_mode=WriteMode.DISK_ONLY)
-      print(f'### Wrote key {thumbnail_key}')
+      calibrate_stack(light_frame, dependencies, width)

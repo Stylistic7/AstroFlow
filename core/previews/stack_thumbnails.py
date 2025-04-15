@@ -34,7 +34,7 @@ def scatter_stack_thumbnails() -> Graph:
 def get_best_light_frame(stack: CompositeStack) -> FitsFilePath:
   metadata = stack.all_metadata()
   light_frames_by_stars = get_light_frames_sorted_by_stars(stack)
-  return Path(metadata[light_frames_by_stars[0]].filename)
+  return FitsFilePath(metadata[light_frames_by_stars[0]].filename)
 
 
 @makes_image(CompositeStack).as_subframe(get_best_light_frame)
