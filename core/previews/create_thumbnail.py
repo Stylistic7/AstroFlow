@@ -10,11 +10,8 @@ from protocols import CacheProtocol
 
 
 def default_thumbnail_fn(path: Path, width=2048) -> Optional[np.ndarray]:
-  try:
-    return array_to_png(
-        autostretch(np.clip(resize_array(read_image(path), width), 0.0, 1.0)))
-  except Exception as e:
-    return None
+  return array_to_png(
+      autostretch(np.clip(resize_array(read_image(path), width), 0.0, 1.0)))
 
 
 def make_create_thumbnail_decorator(
