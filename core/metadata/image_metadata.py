@@ -3,6 +3,7 @@ import os
 from typing import Any
 from pathlib import Path
 import objsize  # type: ignore
+import time
 
 from file_io.find_image_files import find_image_files
 from file_io.generic import read_header, get_content_hash
@@ -11,7 +12,7 @@ from metadata.classes import ImageMetadata, MetadataDict
 import plate_solving
 from dependency_graph import Graph
 from context import context
-from decorators import cached
+from decorators import cached, measure_performance
 
 # TODO: I need to associate dark and flat frames *before* computing thumbnails.
 
@@ -125,18 +126,20 @@ def compute_image_metadata(filename: Path) -> ImageMetadata:
 
 
 @ray.remote(resources={'fastest_storage': 0.001})
+@measure_performance
 def load_metadata() -> MetadataDict:
   quarantined_files = context.quarantined_files or set()
 
+  # TODO: This won't support disconnected storage media.
   metadata = MetadataDict()
-  for key in context.get_cache_keys():
-    if type(key) is tuple and key[0] == 'compute_image_metadata':
-      if value := context[key]:
-        if value.content_hash not in quarantined_files:
-          if os.path.exists(value.filename):
-            metadata[value.content_hash] = value
+  for value in context.get_matching(('compute_image_metadata',)).values():
+    if value.content_hash not in quarantined_files:
+      if os.path.exists(value.filename):
+        metadata[value.content_hash] = value
 
   metadata_size_mb = objsize.get_deep_size(metadata) / 1024 / 1024
   print(f'### load_metadata() size {metadata_size_mb} MB')
+
+  context.metadata = metadata
 
   return metadata

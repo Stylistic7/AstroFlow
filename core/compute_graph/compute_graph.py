@@ -23,6 +23,7 @@ from mosaics.types import MosaicsDict
 from mosaics.compute_graph import stacks_for_mosaic, targets_for_mosaic
 from quarantining.quarantining import quarantine_calibration_stacks
 from hashing import hash_list
+from metadata.image_metadata import load_metadata
 
 
 @ray.remote
@@ -95,6 +96,7 @@ def build_regroup_graph(metadata: MetadataDict) -> Graph:
       identify_mosaics: {store_targets},
       store_mosaics: {identify_mosaics},
       quarantine_calibration_stacks: {identify_calibration_stacks},
+      identify_calibration_stacks: {load_metadata},
       store_calibration_stacks: {quarantine_calibration_stacks},
       regroup_graph_done: {store_mosaics, store_calibration_stacks},
   })
