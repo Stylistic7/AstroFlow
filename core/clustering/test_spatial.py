@@ -1,5 +1,6 @@
 from ray_infra import ray_local
 
+import ray
 import os
 import unittest
 from datetime import datetime, timedelta
@@ -9,17 +10,13 @@ from context import context
 from testing import make_test_context
 
 from testing.test_frames import make_synthetic_frames
-from metadata.actor import get_metadata
 from dependency_graph import Graph, make_graph_from_list, run_graph
-from metadata.image_metadata import scatter_compute_image_metadata
+from metadata.image_metadata import scatter_compute_image_metadata, load_metadata
 
 
 def compute_hash_for_filename() -> dict[str, str]:
-  return get_metadata(transform_fn=lambda i:
-                      (os.path.basename(i.filename), i.content_hash),
-                      post_fn=lambda images: {
-                          f: h for f, h in images
-                      })
+  metadata = ray.get(load_metadata.remote())
+  return {i.filename: i.content_hash for i in metadata.values()}
 
 
 def compute_graph_fragment() -> Graph:

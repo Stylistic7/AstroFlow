@@ -1,14 +1,14 @@
 from ray_infra import ray_local
 
+import ray
 import unittest
 
 from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import run_graph
 from testing import make_test_context, make_synthetic_frames
-
 from stacks.get_stacks import get_toplevel_stacks
-from metadata.actor import get_metadata
+from metadata.image_metadata import load_metadata
 
 
 class TestStackIdentification(unittest.TestCase):
@@ -71,13 +71,15 @@ class TestStackIdentification(unittest.TestCase):
 
     stack = stacks['963b3bad57928528']
     frames = stack.all_frames()
-    filenames = get_metadata(frames, transform_fn=lambda i: i.filename)
+    metadata = ray.get(load_metadata.remote())
+    filenames = [m.filename for m in metadata.values()]
     self.assertTrue(all('foo' in f for f in filenames))
     self.assertEqual(len(frames), 10)
 
     stack = stacks['31520d846ae3463d']
     frames = stack.all_frames()
-    filenames = get_metadata(frames, transform_fn=lambda i: i.filename)
+    metadata = ray.get(load_metadata.remote())
+    filenames = [m.filename for m in metadata.values()]
     self.assertTrue(all('bar' in f for f in filenames))
     self.assertEqual(len(frames), 10)
 
@@ -155,14 +157,16 @@ class TestStackIdentification(unittest.TestCase):
     self.assertEqual(len(toplevel_stack.contents), 2)
 
     stack = list(toplevel_stack.contents.values())[0]
-    filenames = get_metadata(stack.frames, transform_fn=lambda i: i.filename)
+    metadata = ray.get(load_metadata.remote())
+    filenames = [m.filename for m in metadata.values()]
     self.assertTrue(all('bar' in f for f in filenames))
     self.assertEqual(len(stack.frames), 7)
     self.assertEqual(stack.exposure_s, [120.0])
     self.assertEqual(stack.integration_s, 7 * 120)
 
     stack = list(toplevel_stack.contents.values())[1]
-    filenames = get_metadata(stack.frames, transform_fn=lambda i: i.filename)
+    metadata = ray.get(load_metadata.remote())
+    filenames = [m.filename for m in metadata.values()]
     self.assertTrue(all('foo' in f for f in filenames))
     self.assertEqual(len(stack.frames), 5)
     self.assertEqual(stack.exposure_s, [300.0])

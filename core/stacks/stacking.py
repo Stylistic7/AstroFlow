@@ -7,6 +7,8 @@ import shutil
 import astropy.io.fits as pyfits  # type: ignore
 from typing import Any
 
+import file_io
+from file_io.types import XisfFilePath
 from file_io.generic import update_header
 from stacks.artifacts import output_filename
 from stacks.simple_stack import SimpleStack
@@ -15,9 +17,7 @@ from customization.types import CustomizedStack
 from context import context
 from pix import PixInsight, ImageList
 from pix.tasks import WeightedBatchPreprocessing
-import file_io
 from metadata.classes import MetadataDict
-from metadata.actor import get_metadata
 from decorators import cached, makes_image, measure_performance, create_thumbnail
 
 
@@ -94,8 +94,7 @@ def _setup_composite_stack(stack: Stack,
 
 
 def _setup_simple_stack(stack: Stack, tmp_dir: str) -> tuple[str | None, int]:
-  # TODO: Get rid of this get_metadata() call.
-  filenames = get_metadata(stack.frames, transform_fn=lambda i: i.filename)
+  filenames = [stack.metadata[h].filename for h in stack.frames]
   _symlink_frames(filenames, tmp_dir)
 
   return filenames[0], len(filenames)
@@ -110,8 +109,9 @@ def _setup_simple_stack(stack: Stack, tmp_dir: str) -> tuple[str | None, int]:
 @cached.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
 @measure_performance
 @create_thumbnail
-def stack_files(stack: Stack) -> Path:
-  dest_filename = context.output_dir / stack_files.filename_fn(stack)
+def stack_files(stack: Stack) -> XisfFilePath:
+  dest_filename = XisfFilePath(context.output_dir /
+                               stack_files.filename_fn(stack))
   print(f'### Entering stack_files for {stack} dest_filename {dest_filename}')
 
   metadata = {'IMAGETYP': f'Master {stack.image_type}'}

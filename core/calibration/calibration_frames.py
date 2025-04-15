@@ -12,13 +12,12 @@ from stacks.types import StackHash
 from stacks.simple_stack import SimpleStack
 from stacks.composite_stack import CompositeStack, SimpleStacksDict
 import clustering
+from metadata.classes import MetadataDict
 
 
 @cached.remote
-def identify_calibration_stacks() -> SimpleStacksDict:
+def identify_calibration_stacks(metadata: MetadataDict) -> SimpleStacksDict:
   print(f'Identifying calibration stacks...')
-
-  metadata = context.metadata
 
   def get_runs(frames: set[FrameHash]) -> list[list[FrameHash]]:
     if not len(frames):

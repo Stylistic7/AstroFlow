@@ -13,7 +13,6 @@ from context import context
 from file_io.find_image_files import find_image_files
 from dependency_graph import run_graph
 from stacks.get_stacks import get_toplevel_stacks
-from metadata.actor import get_metadata
 from customization.settings import Settings, StackSettings
 
 
@@ -407,8 +406,11 @@ class TestCalibrationFrames(unittest.TestCase):
         if not isinstance(stack, SimpleStack):
           continue
 
-        filenames = get_metadata(stack.frames,
-                                 transform_fn=lambda i: i.filename)
+        filenames = [
+            m.filename
+            for m in stack.metadata.values()
+            if m.content_hash in stack.frames
+        ]
         print(f'### stack {stack} frames {stack.frames} filenames {filenames}')
         if all(filename_fragment in f for f in filenames):
           return stack_id
