@@ -10,8 +10,12 @@ from dataclasses import replace
 
 class ContentHasher(ContentHashProtocol):
 
+  # TODO: Having both `ContentHashed` and `ContentHashable` is a bit weird.
+  # The former is for objects like dataclasses that have `content_hash` fields.
+  # The latter is for objects like TiffFilePath that represent files with
+  # headers in which a content hash can be stored.
   def has(self, obj: Any) -> bool:
-    return isinstance(obj, ContentHashed)
+    return isinstance(obj, (ContentHashable, ContentHashed))
 
   def get(self, obj: Any) -> ContentHash:
     if isinstance(obj, ContentHashable):
