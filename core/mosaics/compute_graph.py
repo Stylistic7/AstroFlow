@@ -21,16 +21,15 @@ from stacks.compute_graph import get_stack_image
 from stacks.composite_stack import CompositeStacksDict
 from stacks.types import StackHash
 from previews.types import QualityLevel
-from decorators import cached, create_thumbnail
+from decorators import cached, create_thumbnail, makes_image, measure_performance
 from targets.types import TargetsDict, Target, TargetHash
 from file_io.generic import read_image
 from file_io.tiff_file_io import write_tiff_image
-from file_io.types import TiffFilePath
+from file_io.types import TiffFilePath, XisfFilePath
 from previews.operations import autostretch
 from pix.decorators import PixInsight
 from pix.classes import ImageList
 from pix.tasks import SaveImages
-from decorators import makes_image
 
 
 @PixInsight()
@@ -51,17 +50,20 @@ def store_mosaic_subframe_color_channel(mosaic: Mosaic, filter: str,
 
 @makes_image(Mosaic).as_master(tile_filename)
 @cached.remote
+@measure_performance
 @create_thumbnail
 def store_mosaic_master_color_channel(mosaic: Mosaic, filter: str,
                                       input: Path) -> TiffFilePath:
   print(f'### store_mosaic_master_color_channel: filter {filter} input {input}')
 
-  xisf_filename = context.output_dir / merged_color_channel(mosaic, filter)
+  xisf_filename = XisfFilePath(context.output_dir /
+                               merged_color_channel(mosaic, filter))
   save_uncompressed([input], [xisf_filename])
 
   image = read_image(xisf_filename)
   autostretched = (autostretch(image) * 255.0).astype(np.uint8)
-  tiff_filename = tile_filename(mosaic, filter)
+  tiff_filename = TiffFilePath(context.output_dir /
+                               tile_filename(mosaic, filter))
   write_tiff_image(tiff_filename, autostretched, {'FILTER': filter})
 
   return xisf_filename

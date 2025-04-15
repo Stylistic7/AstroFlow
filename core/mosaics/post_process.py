@@ -49,7 +49,7 @@ def _post_process_mosaic(images: ImageList, mosaic: Mosaic,
 @cached.remote(resources={'PixInsight': 1})
 @measure_performance
 @create_thumbnail
-def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> None:
+def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> XisfFilePath:
   print(f'### Entering post_process_mosaic for mosaic {mosaic}')
 
   if mode != 'master':
@@ -70,7 +70,8 @@ def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> None:
     print(
         f'### post_process_mosaic image {image} exists {os.path.exists(image)}')
 
-  output_filename = context.output_dir / post_processed_filename(mosaic, None)
+  output_filename = XisfFilePath(context.output_dir /
+                                 post_processed_filename(mosaic, None))
   print(f'### post_process_mosaic output_filename {output_filename}')
 
   if os.environ.get('MOCK_PIXINSIGHT'):

@@ -33,19 +33,20 @@ def post_processed_filename(stack: CompositeStack) -> XisfFilePath:
 @cached.remote(resources={'PixInsight': 1})
 @measure_performance
 @create_thumbnail
-def post_process_stack(stack: CustomizedStack) -> Path:
-  master = context.output_dir / stack_files.filename_fn(stack)
+def post_process_stack(stack: CustomizedStack) -> XisfFilePath:
+  master = XisfFilePath(context.output_dir / stack_files.filename_fn(stack))
   print(f'### post_process_stack, master {master}')
 
-  output_filename = context.output_dir / post_process_stack.filename_fn(stack)
+  output_filename = XisfFilePath(context.output_dir /
+                                 post_process_stack.filename_fn(stack))
 
   if context.dangerously_accept_existing_files and os.path.exists(
       output_filename):
     print(f'### Dangerously skipping post-processing because '
           f'file {output_filename} already exists')
-    return Path(output_filename)
+    return output_filename
 
   if not os.environ.get('MOCK_PIXINSIGHT'):
     _post_process_stack([master], [output_filename])
 
-  return XisfFilePath(output_filename)
+  return output_filename

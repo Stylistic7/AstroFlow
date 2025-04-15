@@ -14,6 +14,7 @@ from shapely import box  # type: ignore
 from customization.types import CustomizedStack
 from file_io.generic import get_content_hash, read_image
 from file_io.tiff_file_io import write_tiff_image
+from file_io.types import TiffFilePath
 from context import context
 from previews.types import QualityLevel
 from mosaics.types import Mosaic, Viewbox, TileIndices
@@ -145,8 +146,10 @@ def _project_in_tiles(viewbox: Viewbox,
 
 def _save_image_to_file(mode: QualityLevel, mosaic: Mosaic,
                         stack: CompositeStack, tile_indices: TileIndices,
-                        filter: str, image: np.ndarray) -> Path:
-  filename = placed_filename(mosaic, mode, stack, tile_indices, filter)
+                        filter: str, image: np.ndarray) -> TiffFilePath:
+  filename = TiffFilePath(
+      context.output_dir /
+      placed_filename(mosaic, mode, stack, tile_indices, filter))
   write_tiff_image(filename, image, {'FILTER': filter})
   print(f'### Wrote filename {filename}')
   return filename
@@ -155,7 +158,7 @@ def _save_image_to_file(mode: QualityLevel, mosaic: Mosaic,
 @cached.remote(memory=_PLACE_IMAGE_MEMORY_REQUIREMENT)
 def place_image(mode: QualityLevel, mosaic: Mosaic, stack: CustomizedStack,
                 tile_indices: TileIndices, filter: str, viewbox: Viewbox,
-                mask: box, filename: Path) -> Path:
+                mask: box, filename: Path) -> TiffFilePath:
   # if context.dangerously_accept_existing_files and os.path.exists(filename):
   #   print(f'### Dangerously skipping place_large_image because '
   #         f'file {filename} already exists')
