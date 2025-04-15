@@ -12,16 +12,17 @@ from ray_infra import ray_init
 from context import context
 from compute_graph import build_regroup_graph
 from previews.types import QualityLevel
-from mosaics.compute_graph import build_mosaic_subgraph
+from mosaics.compute_graph import build_mosaic_subgraph, stacks_for_mosaic, targets_for_mosaic
 from mosaics.post_process import post_process_mosaic
 from stacks.compute_graph import build_stacking_subgraph
 from dependency_graph import Graph, run_graph
-from dependency_graph.astroflow_node import AstroFlowNode, delete_cached_result
 from metadata.image_metadata import load_metadata, scatter_compute_image_metadata
 from customization.compute_graph import build_customize_graph
+from decorators import cached
+from targets.post_process import post_process_target
 
 
-@AstroFlowNode()
+@cached.remote
 def command_done() -> None:
   pass
 
@@ -34,8 +35,8 @@ def regroup(args):
   # - Ignoring all cached results
   # - Force re-solving files that previously failed to solve
   context.ignore_cached_results = args.force
-  if args.force:
-    delete_cached_result(build_regroup_graph)
+  # if args.force:
+  #   delete_cached_result(build_regroup_graph)
 
   # TODO: Put these in the UI.
   context.input_dirs = ['/Volumes/Astro/Raw', '/Volumes/Astro2/Raw']
@@ -52,8 +53,12 @@ def make_preview(args):
   print(f"### Making preview for {args.object_type} {args.object_id}")
 
   if args.object_type == 'mosaic':
-    mosaic_task = (build_mosaic_subgraph, QualityLevel.SUBFRAME,
-                   context.mosaics[args.object_id])
+    stacks = context.stacks
+    targets = context.targets
+    mosaic = context.mosaics[args.object_id]
+    mosaic_task = (build_mosaic_subgraph, QualityLevel.SUBFRAME, mosaic,
+                   stacks_for_mosaic(mosaic, stacks, targets),
+                   targets_for_mosaic(mosaic, targets))
     graph = Graph({command_done: {mosaic_task}, mosaic_task: {load_metadata}})
   else:
     print(f"Unsupported object_type {args.object_type}")
@@ -78,7 +83,7 @@ def merge_mosaic(args):
   # - Just deleting the toplevel graph result
   # - Ignoring all cached results
   context.ignore_cached_results = args.force
-  context.dangerously_accept_existing_files = args.force
+  context.dangerously_accept_existing_files = True
 
   run_graph(Graph({build_customize_graph: {load_metadata}}))
 
@@ -87,10 +92,14 @@ def merge_mosaic(args):
   tasks = []
   for mode in ['subframe', 'master']:
     if args.mode in ['all', mode]:
-      task = (build_mosaic_subgraph, QualityLevel(mode), mosaic)
+      stacks = context.stacks
+      targets = context.targets
+      task = (build_mosaic_subgraph, QualityLevel(mode), mosaic,
+              stacks_for_mosaic(mosaic, stacks,
+                                targets), targets_for_mosaic(mosaic, targets))
       tasks.append(task)
       # if args.force:
-      delete_cached_result(task)
+      # delete_cached_result(task)
 
   run_graph(Graph({command_done: tasks}))
 
@@ -98,7 +107,10 @@ def merge_mosaic(args):
 def post_process(args):
   print(f"### Post-processing {args.object_type} {args.object_id}")
 
-  if args.object_type == 'mosaic':
+  if args.object_type == 'target':
+    target_task = (post_process_target, context.targets[args.object_id])
+    graph = Graph({command_done: {target_task}, target_task: {load_metadata}})
+  elif args.object_type == 'mosaic':
     mosaic_task = (post_process_mosaic, QualityLevel.MASTER,
                    context.mosaics[args.object_id])
     graph = Graph({command_done: {mosaic_task}, mosaic_task: {load_metadata}})
