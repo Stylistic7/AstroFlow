@@ -191,12 +191,15 @@ class TopologicalSorterWithStatus:
     self.done_nodes = list()
     self._ts = None
 
+    self._ready_cache = None
+    self._waiting_cache = None
+    self._cache_valid = False
+
     if graph:
       for node, dependencies in graph.items():
         self.add(node, *dependencies)
 
   def add(self, node: Any, *dependencies: Iterable[Any]):
-    # Preserve dependency order and avoid duplicates
     seen = set(self.graph[node])
     for dep in dependencies:
       if dep not in seen:
@@ -218,20 +221,32 @@ class TopologicalSorterWithStatus:
   def done(self, node: Any):
     self._ts.done(node)
     self.done_nodes.append(node)
+    self._cache_valid = False  # Invalidate cache
+
+  def _update_caches(self):
+    ready = []
+    waiting = []
+    done_set = set(self.done_nodes)
+    for node, deps in self.graph.items():
+      if node in done_set:
+        continue
+      if all(dep in done_set for dep in deps):
+        ready.append(node)
+      else:
+        waiting.append(node)
+    self._ready_cache = ready
+    self._waiting_cache = waiting
+    self._cache_valid = True
 
   def peek_ready(self) -> list:
-    return [
-        node for node, deps in self.graph.items()
-        if node not in self.done_nodes and all(
-            dep in self.done_nodes for dep in deps)
-    ]
+    if not self._cache_valid:
+      self._update_caches()
+    return self._ready_cache
 
   def peek_waiting(self) -> list:
-    return [
-        node for node, deps in self.graph.items()
-        if node not in self.done_nodes and any(
-            dep not in self.done_nodes for dep in deps)
-    ]
+    if not self._cache_valid:
+      self._update_caches()
+    return self._waiting_cache
 
   def peek_done(self) -> list:
     return list(self.done_nodes)
