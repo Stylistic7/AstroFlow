@@ -39,7 +39,7 @@ def make_cached_decorator(cache: CacheProtocol,
                           call_hasher: Optional[Callable[[bytes, Any],
                                                          str]] = None,
                           no_cache_types: Optional[List[Type]] = None,
-                          debug=True):
+                          debug=False):
   call_hasher = call_hasher or hash_call
   no_cache_types = tuple(no_cache_types or [])
 
