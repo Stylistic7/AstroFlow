@@ -16,10 +16,10 @@ import datetime
 import operator
 from spherical_geometry.polygon import SingleSphericalPolygon
 import threading
-from pathlib import Path
 from dataclasses import replace
 import queue
 from distutils.util import strtobool
+import time
 
 from state import enqueue_action
 from .message_announcer import MessageAnnouncer
@@ -29,13 +29,10 @@ from context import get_cache
 from compute_graph import build_compute_graph
 from dependency_graph import run_graph, graph_status_to_progress
 from dependency_graph.debugging import node_to_string
-from previews.types import QualityLevel
-from previews.operations import autostretch, array_to_png
 from web_server.backend.tiles import tiles_bp
 from web_server.backend.objects import objects_bp
 
 from stacks.composite_stack import CompositeStack
-from file_io.generic import read_image
 
 import plotly.express as px
 import plotly.figure_factory as ff
@@ -274,48 +271,6 @@ def stack(stack_id):
   return asdict(stacks[stack_id])
 
 
-# @app.route('/trial_flat_correction_image/<stack_id>/<index>')
-# def trial_flat_correction_image(stack_id, index):
-#   key = ('trial_flat_correction', stack_id)
-#   if key not in cache:
-#     return Response(status=404)
-
-#   trial_flat_correction = cache[key][int(index)]
-
-#   buffer = io.BytesIO()
-#   buffer.write(trial_flat_correction['image'])
-#   buffer.seek(0)
-#   return flask.send_file(buffer, mimetype='image/png')
-
-
-def tuple_starts_with(t, *values):
-  if type(t) is not tuple:
-    return False
-
-  if len(values) > len(t):
-    return False
-
-  for i, v in enumerate(values):
-    if t[i] != v:
-      return False
-
-  return True
-
-
-# TODO: Decide which thumbnail format to use, and just use one.
-@app.route('/stack_thumbnail_image/<stack_id>')
-def stack_thumbnail_image(stack_id):
-  for key in [('stack_master_thumbnail_image', stack_id),
-              ('stack_subframe_thumbnail_image_png', stack_id)]:
-    if key in cache:
-      buffer = io.BytesIO()
-      buffer.write(cache[key])
-      buffer.seek(0)
-      return flask.send_file(buffer, mimetype='image/png')
-
-  return Response(status=404)
-
-
 @app.route('/flat_correction_thumbnails/<stack_id>/<flat_stack_id>')
 def flat_correction_thumbnails(stack_id, flat_stack_id):
   key = ('flat_correction_thumbnail', stack_id, flat_stack_id)
@@ -326,74 +281,6 @@ def flat_correction_thumbnails(stack_id, flat_stack_id):
   buffer.write(cache[key])
   buffer.seek(0)
   return flask.send_file(buffer, mimetype='image/png')
-
-
-@app.route('/stack_subframe_thumbnail_video/<stack_id>')
-def stack_subframe_thumbnail_video(stack_id):
-  key = ('stack_subframe_thumbnail_video', stack_id)
-  if key not in cache:
-    return Response(status=404)
-
-  buffer = io.BytesIO()
-  buffer.write(cache[key])
-  buffer.seek(0)
-  return flask.send_file(buffer, mimetype='video/webm')
-
-
-# TODO: Thumbnails should always be stored as autostretched PNG, for speed.
-@app.route('/mosaic_thumbnail_image_for_filter/<mosaic_id>/<filter>')
-def mosaic_thumbnail_image_for_filter(mosaic_id, filter):
-  master_key = ('mosaic_thumbnail_image', QualityLevel.MASTER, mosaic_id,
-                filter)
-  subframe_key = ('mosaic_thumbnail_image', QualityLevel.SUBFRAME, mosaic_id,
-                  filter)
-
-  for key in [master_key, subframe_key]:
-    if key in cache:
-      image = cache[key]
-      if isinstance(image, Path):
-        image = read_image(image)
-      buffer = io.BytesIO()
-      buffer.write(array_to_png(autostretch(image)))
-      buffer.seek(0)
-      return flask.send_file(buffer, mimetype='image/png')
-
-  return Response(status=404)
-
-
-@app.route('/mosaic_thumbnail_image/<mosaic_id>')
-def mosaic_thumbnail_image(mosaic_id):
-  mosaic = context.mosaics[mosaic_id]
-  print('### mosaic', mosaic)
-
-  for mode in [QualityLevel.MASTER, QualityLevel.SUBFRAME]:
-    for filter in ['H', 'L', 'S', 'O', 'G', 'R', 'B']:
-      key = ('mosaic_thumbnail_image', mode, mosaic_id, filter)
-      if key in cache:
-        return mosaic_thumbnail_image_for_filter(mosaic_id, filter)
-
-  return Response(status=404)
-
-
-# @app.route('/stack_master_image/<stack_id>')
-# def stack_master_image(stack_id):
-#   # stack = next(s for s in context.stacks if s.id == stack_id)
-#   stack = context.stacks[stack_id]
-
-#   if not stack:
-#     print(f'did not get stack for {stack_id}')
-#   else:
-#     print(f'got stack for {stack_id}')
-
-#   if stack.master and os.path.exists(stack.master):
-#     image = _read_image(stack.master)
-#     image = resize_array(image, new_width=640)
-#     image = autostretch(image)
-#     image = array_to_png(image)
-#     buffer = io.BytesIO()
-#     buffer.write(image)
-#     buffer.seek(0)
-#     return flask.send_file(buffer, mimetype='image/png')
 
 
 @app.route('/get_plot')
@@ -430,61 +317,6 @@ def plot():
 #   mem.write(buffer.getvalue().encode())
 #   mem.seek(0)
 #   return flask.send_file(mem, mimetype='text/html')
-
-# TODO: All of the uses of the cache in this file have to be replaced by calls
-# to the ContextActor. This also means the "front-door" to AstroFlow is via
-# the website.
-
-# @app.route('/quarantine_stack/<stack_id>')
-# def quarantine_stack(stack_id):
-#   context.or_equals('quarantined_stacks', {stack_id}, default_value=set())
-
-#   graph = ray.get(build_apply_stack_user_settings_subgraph.remote())
-
-#   thread = threading.Thread(target=run_graph,
-#                             args=(graph,),
-#                             kwargs={
-#                                 'status_fn': status_fn,
-#                                 'debug': False
-#                             })
-#   thread.daemon = True
-#   thread.start()
-
-#   return Response(status=204)
-
-# @app.route('/quarantine_target/<target_id>')
-# def quarantine_target(target_id):
-#   context.or_equals('quarantined_targets', {target_id}, default_value=set())
-
-#   graph = ray.get(build_apply_stack_user_settings_subgraph.remote())
-
-#   thread = threading.Thread(target=run_graph,
-#                             args=(graph,),
-#                             kwargs={
-#                                 'status_fn': status_fn,
-#                                 'debug': False
-#                             })
-#   thread.daemon = True
-#   thread.start()
-
-#   return Response(status=204)
-
-# @app.route('/quarantine_mosaic/<mosaic_id>')
-# def quarantine_mosaic(mosaic_id):
-#   context.or_equals('quarantined_mosaics', {mosaic_id}, default_value=set())
-
-#   graph = ray.get(build_apply_stack_user_settings_subgraph.remote())
-
-#   thread = threading.Thread(target=run_graph,
-#                             args=(graph,),
-#                             kwargs={
-#                                 'status_fn': status_fn,
-#                                 'debug': False
-#                             })
-#   thread.daemon = True
-#   thread.start()
-
-#   return Response(status=204)
 
 
 @app.route('/recent')
@@ -534,18 +366,6 @@ def get_stack_dependencies(stack_id):
   settings = context.get(key, {})
 
   return stack.dependencies | settings
-
-
-# @app.route('/set_stack_settings/<stack_id>', methods=['POST'])
-# def set_stack_settings(stack_id):
-#   with cache.transact():
-#     key = ('stack_settings', stack_id)
-#     settings = cache.get(key, {}) | request.json
-#     cache[key] = settings
-
-#   return Response(status=204)
-
-import time
 
 
 def format_sse(event, data=None) -> str:
