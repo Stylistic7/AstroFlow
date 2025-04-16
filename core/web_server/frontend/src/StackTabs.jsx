@@ -80,7 +80,7 @@ const StackTabs = ({ stack, stack_id }) => {
               style={{ pointerEvents: 'auto', width: '100%', height: '100%', objectFit: 'contain' }}
             >
               <source
-                src={`/stack_subframe_thumbnail_video/${stack_id}`}
+                src={`/video/stack/${stack_id}`}
                 type="video/webm"
               />
               Your browser does not support the video tag.

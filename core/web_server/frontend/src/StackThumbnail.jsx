@@ -58,7 +58,7 @@ export default function StackThumbnail({ stack_id, width, handleClick }) {
 		>
 			{show_image && <img
 				id={stack_id}
-				src={`/stack_thumbnail_image/${stack_id}`}
+				src={`/thumbnail/stack/${stack_id}/none`}
 				style={{
 					pointerEvents: "auto",
 					width: "100%",
@@ -81,7 +81,7 @@ export default function StackThumbnail({ stack_id, width, handleClick }) {
 				}}
 				onClick={handleClick}
 			>
-				<source src={`/stack_subframe_thumbnail_video/${stack_id}`} type="video/mp4" />
+				<source src={`/video/stack/${stack_id}/none`} type="video/mp4" />
 				Your browser does not support the video tag.
 			</video>
 			}
