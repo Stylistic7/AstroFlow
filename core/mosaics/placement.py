@@ -22,6 +22,7 @@ from mosaics.trimming import trim_image, project_to_viewbox, largest_interior_re
 from mosaics.artifacts import placed_filename
 from decorators import cached
 from stacks.composite_stack import CompositeStack
+from metadata.classes import ImageMetadata
 
 _PLACE_IMAGE_MEMORY_REQUIREMENT = 6 * 1024 * 1024 * 1024  # 6 GB
 _PLACE_TILE_MEMORY_REQUIREMENT = 128 * 1024 * 1024  # 128 MB
@@ -73,14 +74,6 @@ def place_tile(viewbox: Viewbox,
   source_xs, source_ys = wcs.all_world2pix(ras, decs, 0, quiet=True)
   tile_data = interp((source_ys, source_xs)).astype(np.float32)
   return tile_y, tile_x, tile_data
-
-
-def _get_wcs(filename: Path):
-  # TODO: The subframes need to be calibrated before being placed.
-  content_hash = get_content_hash(filename)
-  print(f'### _get_wcs: filename {filename} has content_hash {content_hash}')
-  plate_solution = context.metadata[content_hash].plate_solution
-  return WCS(plate_solution.header)
 
 
 def _make_interpolator(filename: Path):
@@ -158,17 +151,20 @@ def _save_image_to_file(mode: QualityLevel, mosaic: Mosaic,
 @cached.remote(memory=_PLACE_IMAGE_MEMORY_REQUIREMENT)
 def place_image(mode: QualityLevel, mosaic: Mosaic, stack: CustomizedStack,
                 tile_indices: TileIndices, filter: str, viewbox: Viewbox,
-                mask: box, filename: Path) -> TiffFilePath:
+                mask: box, image_metadata: ImageMetadata) -> TiffFilePath:
   # if context.dangerously_accept_existing_files and os.path.exists(filename):
   #   print(f'### Dangerously skipping place_large_image because '
   #         f'file {filename} already exists')
   #   return filename
 
+  filename = image_metadata.filename
+
   print(
       f'### place_image {mode} mosaic {mosaic.stable_hash} filename {filename}')
   assert filename, f"place_image: bad filename {filename}"
 
-  wcs = _get_wcs(filename)
+  wcs = WCS(image_metadata.plate_solution.header)
+
   interp = _make_interpolator(filename)
 
   skip_empty = mode == QualityLevel.MASTER

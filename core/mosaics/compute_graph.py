@@ -30,6 +30,7 @@ from previews.operations import autostretch
 from pix.decorators import PixInsight
 from pix.classes import ImageList
 from pix.tasks import SaveImages
+from metadata.image_metadata import compute_image_metadata
 
 
 @PixInsight()
@@ -141,6 +142,7 @@ def build_placement_subgraph(mode: QualityLevel, mosaic: Mosaic,
   # TODO: Integrate the stack mask here too.
   assert stack is not None
   return make_graph_from_list([(get_stack_image, mode, stack),
+                               Node(compute_image_metadata),
                                Node(place_image, mode, mosaic, stack,
                                     tile_indices, filter, viewbox, mask)])
 
