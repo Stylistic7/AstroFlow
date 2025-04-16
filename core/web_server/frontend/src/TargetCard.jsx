@@ -8,6 +8,7 @@ import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
 import { CardActionArea, Checkbox, FormGroup, FormControlLabel } from '@mui/material';
 import AstroFlowContext from './AstroFlowContext.jsx';
+import { AstroFlowImage } from './AstroFlowImage.jsx';
 
 export default function TargetCard({ target_id }) {
   const { stacks, targets } = useContext(AstroFlowContext);
@@ -36,11 +37,13 @@ export default function TargetCard({ target_id }) {
             marginBottom: "0.5em",
           }}>
             {
-              target.stack_ids.map(stack_id => <img
-                key={`stack_thumbnail_image_${stack_id}`}
-                src={`/stack_thumbnail_image/${stack_id}`}
-                style={{ width: "100%" }}
+              target.stack_ids.map(stack_id => <AstroFlowImage
+                objectType="stack"
+                objectId={stack_id}
+                size="thumbnail"
+                style={{ height: "100%" }}
               />)
+
             }
           </div>
           <Typography gutterBottom variant="h5" component="div">
