@@ -2,8 +2,8 @@
 import React from 'react';
 import { Box, Typography } from '@mui/material';
 
-const FlatThumbnail = ({ run, flatId, selected, onSelect }) => {
-  const thumbnailUrl = `/flat_correction_thumbnails/${run.content_hash}/${flatId}`;
+const FlatThumbnail = ({ stack, run, flatStack, selected, onSelect }) => {
+  const thumbnailUrl = `/thumbnail/run/${stack.stable_hash}/${run.content_hash}/${flatStack.content_hash}`;
 
   return (
     <Box
@@ -20,7 +20,7 @@ const FlatThumbnail = ({ run, flatId, selected, onSelect }) => {
         component="img"
         src={thumbnailUrl}
         loading="lazy"
-        alt={`Flat correction thumbnail for ${flatId}`}
+        alt={`Flat correction thumbnail for ${flatStack.content_hash}`}
         sx={{
           width: 750,
           height: 450,
@@ -30,7 +30,7 @@ const FlatThumbnail = ({ run, flatId, selected, onSelect }) => {
         }}
       />
       <Typography align="center" sx={{ py: 1 }}>
-        {flatId}
+        {flatStack.content_hash}
       </Typography>
     </Box>
   );
