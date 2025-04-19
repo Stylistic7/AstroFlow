@@ -1,11 +1,12 @@
 import os
 from flask import Blueprint, jsonify
+from typing import Any
 
 from context import context
 from stacks.composite_stack import CompositeStack
 from targets.types import Target
-from mosaics.types import Mosaic
-from mosaics.viewbox import compute_mosaic_viewbox
+from mosaics.types import Mosaic, Viewbox
+from mosaics.viewbox import compute_viewbox
 from products.registry import get_producer, MediaType
 from previews.types import QualityLevel
 from mosaics.trimming import project_to_viewbox
@@ -28,12 +29,30 @@ def get_metadata(object_type: type, *args):
 
     result = {'image_path': image_path}
 
-    if object_type == Mosaic:
-      mosaic = args[0]  # FIXME
-      viewbox = compute_mosaic_viewbox(level, mosaic)
-      polygon = project_to_viewbox(mosaic.footprint, viewbox)
-      coords = list(polygon.exterior.coords)
-      result['projected_footprint'] = coords
+    obj = args[0]
+    viewbox = compute_viewbox(level, obj)  # FIXME
+    objects = []
+
+    # TODO: What do you call an object with astrometric and chronology attributes?
+    def project(object: Any, viewbox: Viewbox) -> dict[str, Any]:
+      polygon = project_to_viewbox(object.footprint, viewbox)
+      return {
+          'type': type(object).__name__.lower(),
+          'color': '0xff0000',
+          'stable_hash': object.stable_hash,
+          'points': list(polygon.exterior.coords)
+      }
+
+    stacks = context.stacks
+    targets = context.targets
+
+    objects.append(project(obj, viewbox))
+    if isinstance(obj, Target):
+      objects += [project(stacks[s], viewbox) for s in obj.stack_ids]
+    if isinstance(obj, Mosaic):
+      objects += [project(targets[t], viewbox) for t in obj.target_ids]
+
+    result['objects'] = objects
 
     return jsonify(result)
 

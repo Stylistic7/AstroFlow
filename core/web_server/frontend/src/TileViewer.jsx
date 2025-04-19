@@ -81,16 +81,6 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
   );
 };
 
-const mosaicOutline = (metadata) => {
-  return [
-    {
-      id: 'mosaic.footprint',
-      points: metadata.projected_footprint,
-      color: 0xff0000,
-    },
-  ];
-}
-
 const ImperativeViewport = ({ objectType, imageHash, filter, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, metadata, mosaics }) => {
   const app = useApp();
   const viewportRef = useRef(null);
@@ -139,17 +129,22 @@ const ImperativeViewport = ({ objectType, imageHash, filter, imageWidth, imageHe
     };
 
     const updatePolygons = () => {
-      let polygons = mosaicOutline(metadata);
+      let polygons = metadata.objects;
+
+      const typeColors = {
+        stack: '#0000ff',
+        target: '#0000ff',
+        mosaic: '#ff0000',
+      };
 
       // Create polygon graphics and add them
       for (const poly of polygons) {
         const g = new PIXI.Graphics();
         g.zIndex = 9999;
-        g.lineStyle(50, poly.color ?? 0xff0000, 1);
+        g.lineStyle(30, typeColors[poly.type], 1);
         // g.beginFill(poly.color ?? 0xff0000, 0.2);
         g.moveTo(poly.points[0][0], poly.points[0][1]);
         for (let i = 1; i < poly.points.length; i++) {
-          // console.log('point[', i, '] ', poly.points[i]);
           g.lineTo(poly.points[i][0], poly.points[i][1]);
         }
         g.closePath();
