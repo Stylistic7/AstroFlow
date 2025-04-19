@@ -39,7 +39,7 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
     fetch(`/tile_metadata/${objectType}/${imageHash}/${filter}`)
       .then((res) => res.json())
       .then((meta) => setMetadata(meta));
-  }, [objectType, imageHash]);
+  }, [objectType, imageHash, filter]);
 
   if (!metadata || !containerRef.current) return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />;
 
@@ -103,6 +103,20 @@ const ImperativeViewport = ({ objectType, imageHash, filter, imageWidth, imageHe
   useEffect(() => {
     const screenWidth = app.renderer.view.clientWidth;
     const screenHeight = app.renderer.view.clientHeight;
+
+    // // 🔁 Clean up old viewport (if any)
+    // if (viewportRef.current) {
+    //   console.log('destroying current viewport');
+    //   viewportRef.current.destroy(); // destroy the old one
+    //   viewportRef.current = null;
+    // }
+
+    // // 🔁 Clean up any old sprites
+    // Object.values(spritesRef.current).forEach((sprite) => {
+    //   sprite.destroy({ texture: false, baseTexture: false });
+    // });
+    // spritesRef.current = {};
+
 
     const viewport = new Viewport({
       screenWidth,
@@ -181,6 +195,8 @@ const ImperativeViewport = ({ objectType, imageHash, filter, imageWidth, imageHe
     }
 
     const updateTiles = () => {
+      // console.log('updateTiles');
+
       const scale = viewport.scale.x;
       const pixelsPerScreenPixel = 1 / scale;
       let bestZ = Math.ceil(maxZoom - Math.log2(pixelsPerScreenPixel));
@@ -208,6 +224,7 @@ const ImperativeViewport = ({ objectType, imageHash, filter, imageWidth, imageHe
           const url = `/tile/${objectType}/${imageHash}/${filter}/${bestZ}/${x}/${y}.png`;
           PIXI.Texture.fromURL(url)
             .then((texture) => {
+              console.log('creating new sprite');
               const sprite = new PIXI.Sprite(texture);
               sprite.x = x * TILE_SIZE * levelScale;
               sprite.y = y * TILE_SIZE * levelScale;
@@ -243,7 +260,7 @@ const ImperativeViewport = ({ objectType, imageHash, filter, imageWidth, imageHe
       Object.values(spritesRef.current).forEach((sprite) => sprite.destroy());
       spritesRef.current = {};
     };
-  }, [app, mosaics, imageHash, imageWidth, imageHeight, maxZoom, worldWidth, worldHeight]);
+  }, [app, mosaics, imageHash, filter, imageWidth, imageHeight, maxZoom, worldWidth, worldHeight]);
 
   return null;
 };
