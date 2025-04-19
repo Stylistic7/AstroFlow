@@ -62,9 +62,9 @@ def stack_metadata(stack_id: str):
   return get_metadata(CompositeStack, context.stacks[stack_id])
 
 
-@metadata_bp.route('/metadata/target/<target_id>')
-def target_metadata(target_id: str):
-  return get_metadata(Target, context.targets[target_id])
+@metadata_bp.route('/metadata/target/<target_id>/<filter>')
+def target_metadata(target_id: str, filter: str):
+  return get_metadata(Target, context.targets[target_id], filter)
 
 
 @metadata_bp.route('/metadata/mosaic/<mosaic_id>/<filter>')

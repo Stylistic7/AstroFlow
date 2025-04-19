@@ -53,7 +53,7 @@ export default function MosaicCard({ mosaic_id }) {
               marginRight: "auto",
             }}
           />
-          <MosaicOutline
+          {/* <MosaicOutline
             stacks={stacks}
             targets={targets}
             mosaics={mosaics}
@@ -70,7 +70,7 @@ export default function MosaicCard({ mosaic_id }) {
               maxWidth: "auto",
               maxHeight: "auto",
             }}
-          />
+          /> */}
         </div>
         <CardContent>
           <Typography gutterBottom variant="h5" component="div">

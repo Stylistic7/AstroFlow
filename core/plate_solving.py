@@ -124,7 +124,7 @@ def _solve_field(filename: Path | str,
         fits.close()
     else:
       # TODO: Emit warnings through Metaflow's reporting system.
-      print(f'Could not plate-solve file {filename}')
+      # print(f'Could not plate-solve file {filename}')
       return None
 
 

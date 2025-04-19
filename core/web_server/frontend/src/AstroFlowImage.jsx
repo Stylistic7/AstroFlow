@@ -4,6 +4,7 @@ export const AstroFlowImage = ({
     objectType,
     objectId,
     filter = undefined,
+    showPolygons = false,
     size = "full",
 }) => {
     const labelStyle = {
@@ -23,7 +24,12 @@ export const AstroFlowImage = ({
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             <div style={{ flexGrow: 1, position: 'relative', overflow: 'hidden' }}>
                 {size === "full" ? (
-                    <TileViewer objectType={objectType} imageHash={objectId} filter={filter} />
+                    <TileViewer
+                        objectType={objectType}
+                        imageHash={objectId}
+                        filter={filter}
+                        showPolygons={showPolygons}
+                    />
                 ) : (
                     <img
                         src={thumbnail_url}
