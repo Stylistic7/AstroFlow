@@ -42,12 +42,25 @@ def save_uncompressed(images: ImageList, output_filenames: list[Path]):
 
 
 @makes_image(Mosaic).as_master(tile_filename)
+@cached.remote(resources={'fastest_storage': 0.001})
+@create_thumbnail
+def make_master_thumbnail(mosaic: Mosaic, filter: str) -> Path:
+  return final_filename(QualityLevel.MASTER, mosaic,
+                        filter).resolve_at(context.output_dir)
+
+
 @makes_image(Mosaic).as_subframe(partial(final_filename, QualityLevel.SUBFRAME))
 @cached.remote(resources={'fastest_storage': 0.001})
-@measure_performance
 @create_thumbnail
+def make_subframe_thumbnail(mosaic: Mosaic, filter: str) -> Path:
+  return final_filename(QualityLevel.SUBFRAME, mosaic,
+                        filter).resolve_at(context.output_dir)
+
+
+@cached.remote(resources={'fastest_storage': 0.001})
+@measure_performance
 def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
-                               input: Path) -> TiffFilePath:
+                               input: Path) -> Path:
   output = final_filename(mode, mosaic, filter).resolve_at(context.output_dir)
 
   print(f'### store_mosaic_color_channel: mode {mode} '
@@ -95,7 +108,7 @@ def build_mosaic_subgraph(mode: QualityLevel, mosaic: Mosaic,
   mask_task = (compute_mosaic_masks, mode, mosaic, viewbox)
 
   graph = Graph()
-  store_tasks = []
+  filter_done_tasks = []
   for filter in filters:
     strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
     print(f'### strips for filter {filter} {strips}')
@@ -113,14 +126,18 @@ def build_mosaic_subgraph(mode: QualityLevel, mosaic: Mosaic,
               f'some stacks are missing')
         continue
 
-    store_task = (store_mosaic_color_channel, mode, mosaic, filter)
     filter_subgraph_task = Node(build_mosaic_filter_subgraph, mode, mosaic,
                                 strips, stacks, filter, viewbox)
-    graph[store_task] = {filter_subgraph_task}
+    store_task = (store_mosaic_color_channel, mode, mosaic, filter)
+    thumbnail_task = (make_master_thumbnail, mosaic,
+                      filter) if mode == QualityLevel.MASTER else (
+                          make_subframe_thumbnail, mosaic, filter)
     graph[filter_subgraph_task] = {mask_task}
-    store_tasks.append(store_task)
+    graph[store_task] = {filter_subgraph_task}
+    graph[thumbnail_task] = {store_task}
+    filter_done_tasks.append(thumbnail_task)
 
-  graph[(post_process_mosaic, mode, mosaic)] = store_tasks
+  graph[(post_process_mosaic, mode, mosaic)] = filter_done_tasks
 
   return graph
 
