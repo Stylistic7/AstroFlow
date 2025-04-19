@@ -12,8 +12,8 @@ from artifacts.artifact import unpack_artifact
 from mosaics.placement import place_image
 from previews.types import QualityLevel
 from metadata.image_metadata import load_metadata
-from mosaics.viewbox import compute_mosaic_viewbox, Viewbox
-from mosaics.types import TileIndices
+from mosaics.viewbox import compute_viewbox
+from mosaics.types import TileIndices, Viewbox
 
 
 class TestPlacement(unittest.TestCase):
@@ -40,7 +40,7 @@ class TestPlacement(unittest.TestCase):
     target = context.targets[mosaic.target_ids[0]]
     stack = context.stacks[target.stack_ids[0]]
 
-    viewbox = compute_mosaic_viewbox(mode, mosaic)
+    viewbox = compute_viewbox(mode, mosaic)
     mask = None
     self.assertTrue(isinstance(viewbox, Viewbox))
 

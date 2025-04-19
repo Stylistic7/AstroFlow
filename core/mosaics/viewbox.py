@@ -1,21 +1,20 @@
 import ray
 import numpy as np
 
-from mosaics.types import Mosaic, Viewbox
-from artifacts import Artifact
+from attributes import AstrometricAttributes
+from mosaics.types import Viewbox
 from geometry.projections import mercator
-from geometry.viewbox import compute_viewbox
+# TODO: Rename or unify geometry_compute_viewbox
+from geometry.viewbox import compute_viewbox as geometry_compute_viewbox
 from geometry.polygons import project_polygon
 from previews.types import QualityLevel
 
 _TILE_SIZE = 2048  # pixels
 
 
-# TODO: The viewbox should include the sampling resolution, too.
-# TODO: Maybe unify the storage and retrieval of artifacts that arent'
-# images, e.g. arbitrary Python objects.
-def compute_mosaic_viewbox(mode: QualityLevel, mosaic: Mosaic) -> Viewbox:
-  print(f'### Entering compute_mosaic_viewbox for mosaic {mosaic} mode {mode}')
+def compute_viewbox(mode: QualityLevel,
+                    object: AstrometricAttributes) -> Viewbox:
+  print(f'### Entering compute_viewbox for object {object} mode {mode}')
 
   def round_to_nearest_multiple(number: float, multiple: int) -> int:
     return int(np.ceil(number / multiple) * multiple)
@@ -25,15 +24,15 @@ def compute_mosaic_viewbox(mode: QualityLevel, mosaic: Mosaic) -> Viewbox:
 
   # Project from spherical coordinates on the sky into 2D coordinates, in
   # radians. Compute the min and span in each dimension.
-  xs, ys = project_polygon(mosaic.footprint, projection)
-  x_min, y_min, x_span, y_span = compute_viewbox(list(zip(xs, ys)))
+  xs, ys = project_polygon(object.footprint, projection)
+  x_min, y_min, x_span, y_span = geometry_compute_viewbox(list(zip(xs, ys)))
 
   # Compute the number of pixels along the x axis. In master mode, use the
-  # mosaic's image scale, given in degrees per pixel. In subframe mode, make
+  # object's image scale, given in degrees per pixel. In subframe mode, make
   # a thumbnail-sized image.
   # TODO: This needs to be updated for other levels like post-processing.
   num_pixels_x = x_span / np.deg2rad(
-      mosaic.image_scale / 3600) if mode == QualityLevel.MASTER else 2048
+      object.image_scale / 3600) if mode == QualityLevel.MASTER else 2048
   finished_pixels_x = int(np.ceil(num_pixels_x))
 
   # Round the number of pixels up to a multiple of the tile size.

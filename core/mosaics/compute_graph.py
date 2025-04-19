@@ -6,14 +6,13 @@ from pathlib import Path
 from shapely import box  # type: ignore
 from shapely.affinity import scale  # type: ignore
 from functools import partial
-import shutil
 
 from context import context
 from customization.types import CustomizedStack
 from dependency_graph import Graph, Node, make_graph_from_list
 from mosaics.merge_images import merge_images
 from mosaics.types import Mosaic, Viewbox
-from mosaics.viewbox import compute_mosaic_viewbox
+from mosaics.viewbox import compute_viewbox
 from mosaics.placement import place_image
 from mosaics.post_process import post_process_mosaic
 from mosaics.trimming import project_to_viewbox, largest_interior_rectangle
@@ -27,7 +26,6 @@ from decorators import cached, create_thumbnail, makes_image, measure_performanc
 from targets.types import TargetsDict, Target, TargetHash
 from file_io.generic import read_image
 from file_io.tiff_file_io import write_tiff_image
-from file_io.types import TiffFilePath, XisfFilePath, WithSidecar
 from previews.operations import autostretch
 from pix.decorators import PixInsight
 from pix.classes import ImageList
@@ -101,10 +99,7 @@ def build_mosaic_subgraph(mode: QualityLevel, mosaic: Mosaic,
                           stacks: CompositeStacksDict,
                           targets: TargetsDict) -> Graph:
   print(f'### build_mosaic_subgraph mode {mode} for mosaic {mosaic}')
-  viewbox = compute_mosaic_viewbox(mode, mosaic)
-  assert targets
-  assert stacks
-
+  viewbox = compute_viewbox(mode, mosaic)
   filters = set(stack.filter for stack in stacks.values())
 
   mask_task = (compute_mosaic_masks, mode, mosaic, viewbox)
