@@ -1,3 +1,4 @@
+import os
 import numpy as np
 from functools import wraps
 from typing import Callable, Optional
@@ -9,7 +10,7 @@ from previews.operations import resize_array, autostretch, array_to_png
 from protocols import CacheProtocol
 
 
-def default_thumbnail_fn(path: Path, width=2048) -> Optional[np.ndarray]:
+def default_thumbnail_fn(path: str, width=2048) -> Optional[np.ndarray]:
   return array_to_png(
       autostretch(np.clip(resize_array(read_image(path), width), 0.0, 1.0)))
 
@@ -29,11 +30,7 @@ def make_create_thumbnail_decorator(
       def wrapper(*args, **kwargs):
         result = func(*args, **kwargs)
 
-        thumbnail = None
-        if isinstance(result, Path):
-          thumbnail = thumbnail_fn(result)
-        elif hasattr(result, "name"):
-          thumbnail = thumbnail_fn(result.name)
+        thumbnail = thumbnail_fn(os.fspath(result))
 
         if thumbnail is not None:
           call_hash = hash_call(fn_hash, *args, **kwargs)

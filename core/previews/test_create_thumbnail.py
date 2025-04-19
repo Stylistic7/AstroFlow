@@ -19,7 +19,7 @@ from decorators import cached, create_thumbnail
 @cached.remote
 @create_thumbnail
 def stack_files(stack: CompositeStack) -> TiffFilePath:
-  output_path = TiffFilePath(context.output_dir / 'foo.tiff')
+  output_path = TiffFilePath('foo.tiff').resolve_at(context.output_dir)
   image = np.zeros((100, 100))
   write_tiff_image(output_path, image)
 
