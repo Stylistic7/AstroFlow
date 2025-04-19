@@ -6,7 +6,7 @@ import large_image
 from pathlib import Path
 import numpy as np
 import tifffile
-from flask import Blueprint, send_file, abort, jsonify
+from flask import Blueprint, Response, send_file, abort, jsonify
 
 from context import context
 from file_io.generic import read_image
@@ -22,6 +22,7 @@ from products.registry import get_producer, MediaType
 TILE_CACHE_DIR = Path("/tmp/astroflow_tiles")
 EXPIRATION_SECONDS = 300  # 5 minutes
 TILE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+IN_PROGRESS = object()
 
 # Global cache state
 _image_cache = {}
@@ -30,11 +31,14 @@ _cache_lock = threading.Lock()
 tiles_bp = Blueprint("tiles", __name__)
 
 
-def convert_to_tiff(path: Path, temp_path: Path):
+def convert_to_tiff(source_path: Path, dest_path: Path):
   """Read image and save to .tif"""
-  arr = autostretch(read_image(path))
+  print(f"Converting {source_path} to {dest_path}...")
+  arr = autostretch(read_image(source_path))
   arr = (arr * 255.0).astype(np.uint8)
-  tifffile.imwrite(temp_path, arr, tile=(256, 256), compression='deflate')
+  dest_path.parent.mkdir(parents=True, exist_ok=True)
+  tifffile.imwrite(dest_path, arr, tile=(256, 256), compression='deflate')
+  print(f"Conversion done.")
 
 
 def get_best_image(object_type: type, *args) -> Path:
@@ -89,6 +93,13 @@ def get_image(object_type: str, object_id: str, filter: str):
       print(f"No image found")
       return None
 
+    # This prevents multiple requests from running the same image conversion
+    # multiple times in parallel.
+    _image_cache[key] = {
+        "handle": IN_PROGRESS,
+        "last_used": now,
+    }
+
     if isinstance(path, WithSidecar):
       path = path.path
 
@@ -97,9 +108,7 @@ def get_image(object_type: str, object_id: str, filter: str):
     else:
       original_path = path.resolve_at(context.output_dir)
       tiff_path = path.resolve_at(TILE_CACHE_DIR)
-      print(f"Converting {original_path} to {tiff_path}...")
       convert_to_tiff(original_path, tiff_path)
-      print(f"Conversion done.")
 
     print(f"Opening file {tiff_path} with large_image...")
     handle = large_image.open(tiff_path, plugin='vips')
@@ -114,8 +123,12 @@ def get_image(object_type: str, object_id: str, filter: str):
 @tiles_bp.route('/tile_metadata/<object_type>/<object_id>/<filter>')
 def tile_metadata(object_type: str, object_id: str, filter: str):
   source = get_image(object_type, object_id, filter)
+
   if source is None:
     return abort(404)
+
+  if source is IN_PROGRESS:
+    return Response(status=202, headers={'Retry-After': '5'})
 
   meta = source.getMetadata()
   return jsonify({
@@ -132,8 +145,12 @@ def tile_metadata(object_type: str, object_id: str, filter: str):
 def serve_tile(object_type: str, object_id: str, filter: str, z: str, x: str,
                y: str):
   source = get_image(object_type, object_id, filter)
+
   if source is None:
     return abort(404)
+
+  if source is IN_PROGRESS:
+    return Response(status=202, headers={'Retry-After': '5'})
 
   try:
     tile_data = source.getTile(x, y, z, encoding='PNG')
