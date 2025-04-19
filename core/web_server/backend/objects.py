@@ -20,7 +20,8 @@ def get_metadata(object_type: type, *args):
       QualityLevel.POST_PROCESSED, QualityLevel.MASTER, QualityLevel.SUBFRAME
   ]:
     if fn := get_producer(MediaType.IMAGE, object_type, level):
-      filename = context.output_dir / fn.filename_fn(*args)
+      filename = fn.filename_fn(*args).resolve_at(context.output_dir)
+      print(f'### get_metadata filename_fn returned {filename}')
       if os.path.exists(filename):
         print(f'### quality_level {level} filename {filename}')
         levels[level.name.lower()] = {'image_path': os.fspath(filename)}
@@ -39,7 +40,7 @@ def target_metadata(target_id: str):
 
 
 @objects_bp.route('/metadata/mosaic/<mosaic_id>/<filter>')
-def mosaic_metadata(mosaic_id: str):
+def mosaic_metadata(mosaic_id: str, filter: str):
   return get_metadata(Mosaic, context.mosaics[mosaic_id], filter)
 
 
@@ -48,8 +49,11 @@ def get_thumbnail(object_type: type, *args):
       QualityLevel.POST_PROCESSED, QualityLevel.MASTER, QualityLevel.SUBFRAME
   ]:
     if fn := get_producer(MediaType.IMAGE, object_type, level):
+      print(f'### got producer function {fn} for {object_type} level {level}')
       if hasattr(fn, 'thumbnail_fn'):
+        print(f'### has thumbnail_fn')
         if thumbnail := fn.thumbnail_fn(*args):
+          print(f'### got thumbnail')
           buffer = io.BytesIO()
           buffer.write(thumbnail)
           buffer.seek(0)

@@ -27,8 +27,7 @@ clear_image_registry()
 @create_thumbnail
 def stack_files(stack: CompositeStack) -> TiffFilePath:
   '''Runs WBPP to stack raw images into a TIFF.'''
-  output_path = TiffFilePath(context.output_dir /
-                             stack_files.filename_fn(stack))
+  output_path = stack_files.filename_fn(stack).resolve_at(context.output_dir)
   image = np.zeros((100, 100))
   write_tiff_image(output_path, image)
 

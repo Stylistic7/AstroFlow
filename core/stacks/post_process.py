@@ -34,11 +34,11 @@ def post_processed_filename(stack: CompositeStack) -> XisfFilePath:
 @measure_performance
 @create_thumbnail
 def post_process_stack(stack: CustomizedStack) -> XisfFilePath:
-  master = XisfFilePath(context.output_dir / stack_files.filename_fn(stack))
+  master = stack_files.filename_fn(stack).resolve_at(context.output_dir)
   print(f'### post_process_stack, master {master}')
 
-  output_filename = XisfFilePath(context.output_dir /
-                                 post_process_stack.filename_fn(stack))
+  output_filename = post_process_stack.filename_fn(stack).resolve_at(
+      context.output_dir)
 
   if context.dangerously_accept_existing_files and os.path.exists(
       output_filename):

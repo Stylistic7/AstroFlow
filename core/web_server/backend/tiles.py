@@ -18,7 +18,6 @@ from targets.types import Target
 from mosaics.types import Mosaic
 from products.registry import get_producer, MediaType
 
-MediaType.IMAGE,
 # Settings
 TILE_CACHE_DIR = Path("/tmp/astroflow_tiles")
 EXPIRATION_SECONDS = 300  # 5 minutes
@@ -38,26 +37,13 @@ def convert_to_tiff(path: Path, temp_path: Path):
   tifffile.imwrite(temp_path, arr, tile=(256, 256), compression='deflate')
 
 
-def get_best_image(object_type: str, object_id: str, filter: str) -> Path:
-  class_for_type = {'stack': CompositeStack, 'target': Target, 'mosaic': Mosaic}
-
-  if object_type == 'stack':
-    object = context.stacks[object_id]
-    args = [object]
-  elif object_type == 'target':
-    object = context.targets[object_id]
-    args = [object]
-  elif object_type == 'mosaic':
-    object = context.mosaics[object_id]
-    args = [object, filter]
-
+def get_best_image(object_type: type, *args) -> Path:
   for level in [
       QualityLevel.POST_PROCESSED, QualityLevel.MASTER, QualityLevel.SUBFRAME
   ]:
-    if fn := get_producer(MediaType.IMAGE, class_for_type[object_type], level):
+    if fn := get_producer(MediaType.IMAGE, object_type, level):
       if fragment := fn.filename_fn(*args):
-        filename = context.output_dir / fragment
-        print(f'### get_best_image filename {filename}')
+        filename = fragment.resolve_at(context.output_dir)
         if os.path.exists(filename):
           return filename
 
@@ -90,7 +76,19 @@ def get_image(object_type: str, object_id: str, filter: str):
       return _image_cache[key]["handle"]
 
     # Else, convert from .xisf and cache
-    path = get_best_image(object_type, object_id, filter)
+    # path = get_best_image(object_type, object_id, filter)
+    if object_type == 'stack':
+      path = get_best_image(CompositeStack, context.stacks[object_id])
+    elif object_type == 'target':
+      path = get_best_image(Target, context.targets[object_id], filter)
+    elif object_type == 'mosaic':
+      path = get_best_image(Mosaic, context.mosaics[object_id], filter)
+    else:
+      raise ValueError(f"Unknown object_type {object_type}")
+
+    if path is None:
+      print(f"No image found")
+      return None
 
     if not os.path.exists(path):
       print(f"Path not found: {path}")
@@ -118,6 +116,9 @@ def get_image(object_type: str, object_id: str, filter: str):
 @tiles_bp.route('/tile_metadata/<object_type>/<object_id>/<filter>')
 def tile_metadata(object_type: str, object_id: str, filter: str):
   source = get_image(object_type, object_id, filter)
+  if source is None:
+    return abort(404)
+
   meta = source.getMetadata()
   return jsonify({
       'width': meta['sizeX'],

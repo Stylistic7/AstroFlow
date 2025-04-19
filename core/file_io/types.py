@@ -1,12 +1,14 @@
 import os
 from pathlib import Path
 from dataclasses import dataclass
-from typing import TypeVar, Generic
+from typing import TypeVar, Generic, Self
 from abc import ABC
 
 
 class ContentHashable(ABC):
-  pass
+
+  def resolve_at(self, root: Path | str) -> Self:
+    return type(self)(Path(root) / self)
 
 
 class FitsFilePath(type(Path()), ContentHashable):
@@ -36,3 +38,11 @@ class WithSidecar(Generic[T], ContentHashable):
 
   def __truediv__(self, other):
     return self.path / other
+
+  def __getattr__(self, name):
+    path = object.__getattribute__(self, "path")
+    return getattr(path, name)
+
+  def resolve_at(self, root: Path | str) -> Self:
+    resolved = self.path.resolve_at(root)
+    return type(self)(resolved)

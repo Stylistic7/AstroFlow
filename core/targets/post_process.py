@@ -69,7 +69,7 @@ def output_filename(target: Target) -> XisfFilePath:
 def post_process_target(target: Target) -> None:
   stacks = context.stacks
   images = [
-      context.output_dir / stack_output_filename(stacks[stack_id])
+      stack_output_filename(stacks[stack_id]).resolve_at(context.output_dir)
       for stack_id in target.stack_ids
   ]
 

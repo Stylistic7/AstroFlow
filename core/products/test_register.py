@@ -26,9 +26,8 @@ clear_registry(MediaType.IMAGE)
 @makes_image(CompositeStack).as_subframe('preview_{name}.tiff')
 @cached.remote
 def stack_preview(stack: CompositeStack) -> TiffFilePath:
-  '''Loads the best individual FITS image from a stack and saves as TIFF.'''
-  output_path = TiffFilePath(context.output_dir /
-                             stack_preview.filename_fn(stack))
+  '''Loads the best individual FITS image from stack and saves as TIFF.'''
+  output_path = stack_preview.filename_fn(stack).resolve_at(context.output_dir)
   image = np.zeros((100, 100))
   write_tiff_image(output_path, image)
 
@@ -39,8 +38,7 @@ def stack_preview(stack: CompositeStack) -> TiffFilePath:
 @cached.remote
 def stack_files(stack: CompositeStack) -> TiffFilePath:
   '''Runs WBPP to stack raw images into a TIFF.'''
-  output_path = TiffFilePath(context.output_dir /
-                             stack_files.filename_fn(stack))
+  output_path = stack_files.filename_fn(stack).resolve_at(context.output_dir)
   image = np.zeros((100, 100))
   write_tiff_image(output_path, image)
 

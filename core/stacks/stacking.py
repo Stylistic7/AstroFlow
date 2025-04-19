@@ -85,7 +85,7 @@ def _setup_composite_stack(stack: Stack,
 
     # Add any dependent stacks (e.g. calibration stacks).
     dependendency_filenames = [
-        context.output_dir / output_filename(calibration_stacks[d])
+        output_filename(calibration_stacks[d]).resolve_at(context.output_dir)
         for d in substack.dependencies.values()
     ]
     _symlink_frames(dependendency_filenames, run_dir)
@@ -110,8 +110,7 @@ def _setup_simple_stack(stack: Stack, tmp_dir: str) -> tuple[str | None, int]:
 @measure_performance
 @create_thumbnail
 def stack_files(stack: Stack) -> XisfFilePath:
-  dest_filename = XisfFilePath(context.output_dir /
-                               stack_files.filename_fn(stack))
+  dest_filename = stack_files.filename_fn(stack).resolve_at(context.output_dir)
   print(f'### Entering stack_files for {stack} dest_filename {dest_filename}')
 
   metadata = {'IMAGETYP': f'Master {stack.image_type}'}
