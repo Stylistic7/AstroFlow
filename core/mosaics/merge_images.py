@@ -71,13 +71,8 @@ def merge_images(mode: QualityLevel, mosaic: Mosaic, input_0: Path,
   assert len(filters) == 1
   filter = next(iter(filters))
 
-  # TODO: This is really ugly...
   if mode == QualityLevel.SUBFRAME:
-    image_0 = autostretch(read_image(input_0))
-    image_1 = autostretch(read_image(input_1))
-
-    image = merge_images_with_maximum(image_0, image_1)
-
+    image = merge_images_with_maximum(read_image(input_0), read_image(input_1))
     output_filename = merged_filename(mosaic, mode, get_content_hash(input_0),
                                       get_content_hash(input_1)).resolve_at(
                                           context.output_dir)

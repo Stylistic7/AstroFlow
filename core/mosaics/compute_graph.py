@@ -67,7 +67,9 @@ def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
         f'filter {filter} input {input} output {output}')
 
   if mode == QualityLevel.SUBFRAME:
-    shutil.copy(input, output)
+    image = read_image(output)
+    autostretched = (autostretch(image) * 255.0).astype(np.uint8)
+    write_tiff_image(output, autostretched, {'FILTER': filter})
   elif mode == QualityLevel.MASTER:
     save_uncompressed([input], [output])
 
