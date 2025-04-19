@@ -20,6 +20,7 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
   const filter = filterProp ?? filterParam;
 
   const [metadata, setMetadata] = useState(null);
+  const [tileMetadata, setTileMetadata] = useState(null);
   const containerRef = useRef(null);
   const [containerSize, setContainerSize] = useState({ width: 800, height: 600 });
 
@@ -36,15 +37,21 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
   }, []);
 
   useEffect(() => {
-    fetch(`/tile_metadata/${objectType}/${imageHash}/${filter}`)
+    fetch(`/metadata/${objectType}/${imageHash}/${filter}`)
       .then((res) => res.json())
       .then((meta) => setMetadata(meta));
   }, [objectType, imageHash, filter]);
 
-  if (!metadata || !containerRef.current) return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />;
+  useEffect(() => {
+    fetch(`/tile_metadata/${objectType}/${imageHash}/${filter}`)
+      .then((res) => res.json())
+      .then((meta) => setTileMetadata(meta));
+  }, [objectType, imageHash, filter]);
 
-  const worldWidth = metadata.tileWidth * Math.pow(2, metadata.maxZoom);
-  const worldHeight = metadata.tileHeight * Math.pow(2, metadata.maxZoom);
+  if (!metadata || !tileMetadata || !containerRef.current) return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />;
+
+  const worldWidth = tileMetadata.tileWidth * Math.pow(2, tileMetadata.maxZoom);
+  const worldHeight = tileMetadata.tileHeight * Math.pow(2, tileMetadata.maxZoom);
 
   return (
     <div ref={containerRef} style={{ width: '100%', height: '100%' }}>
@@ -61,11 +68,12 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
           objectType={objectType}
           imageHash={imageHash}
           filter={filter}
-          imageWidth={metadata.width}
-          imageHeight={metadata.height}
+          imageWidth={tileMetadata.width}
+          imageHeight={tileMetadata.height}
           worldWidth={worldWidth}
           worldHeight={worldHeight}
-          maxZoom={metadata.maxZoom}
+          maxZoom={tileMetadata.maxZoom}
+          metadata={metadata}
           mosaics={mosaics}
         />
       </Stage>
@@ -73,29 +81,17 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
   );
 };
 
-// // Add this above your `ImperativeViewport` component return:
-// const polygons = [
-//   {
-//     id: 'example-1',
-//     points: [[1000, 1000], [2000, 1000], [1500, 2000]],
-//     color: 0x00ff00,
-//   },
-//   // Add more as needed
-// ];
-
-const mosaicOutline = (mosaic) => {
-  const projection = 'mercator';
-
+const mosaicOutline = (metadata) => {
   return [
     {
       id: 'mosaic.footprint',
-      points: mosaic.projected_footprints[projection].coords,
-      color: 0x00ff00,
+      points: metadata.projected_footprint,
+      color: 0xff0000,
     },
   ];
 }
 
-const ImperativeViewport = ({ objectType, imageHash, filter, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, mosaics }) => {
+const ImperativeViewport = ({ objectType, imageHash, filter, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, metadata, mosaics }) => {
   const app = useApp();
   const viewportRef = useRef(null);
   const spritesRef = useRef({});
@@ -103,20 +99,6 @@ const ImperativeViewport = ({ objectType, imageHash, filter, imageWidth, imageHe
   useEffect(() => {
     const screenWidth = app.renderer.view.clientWidth;
     const screenHeight = app.renderer.view.clientHeight;
-
-    // // 🔁 Clean up old viewport (if any)
-    // if (viewportRef.current) {
-    //   console.log('destroying current viewport');
-    //   viewportRef.current.destroy(); // destroy the old one
-    //   viewportRef.current = null;
-    // }
-
-    // // 🔁 Clean up any old sprites
-    // Object.values(spritesRef.current).forEach((sprite) => {
-    //   sprite.destroy({ texture: false, baseTexture: false });
-    // });
-    // spritesRef.current = {};
-
 
     const viewport = new Viewport({
       screenWidth,
@@ -157,26 +139,18 @@ const ImperativeViewport = ({ objectType, imageHash, filter, imageWidth, imageHe
     };
 
     const updatePolygons = () => {
-      // console.log('mosaics ', mosaics);
-      // if (objectType != "mosaic" || !mosaics) {
-      //   return;
-      // }
-
-      let polygons = mosaicOutline(mosaics[imageHash]);
-      console.log('displaying ', polygons.length, ' polygons');
+      let polygons = mosaicOutline(metadata);
 
       // Create polygon graphics and add them
       for (const poly of polygons) {
-        console.log('polygon has ', poly.points.length, ' points');
-
         const g = new PIXI.Graphics();
         g.zIndex = 9999;
-        g.lineStyle(2, poly.color ?? 0xff0000, 1);
+        g.lineStyle(50, poly.color ?? 0xff0000, 1);
         // g.beginFill(poly.color ?? 0xff0000, 0.2);
         g.moveTo(poly.points[0][0], poly.points[0][1]);
         for (let i = 1; i < poly.points.length; i++) {
-          console.log('point[', i, '] ', poly.points[i]);
-          g.lineTo(poly.points[i][0] * 5000, poly.points[i][1] * 5000);
+          // console.log('point[', i, '] ', poly.points[i]);
+          g.lineTo(poly.points[i][0], poly.points[i][1]);
         }
         g.closePath();
         // g.endFill();
@@ -195,8 +169,6 @@ const ImperativeViewport = ({ objectType, imageHash, filter, imageWidth, imageHe
     }
 
     const updateTiles = () => {
-      // console.log('updateTiles');
-
       const scale = viewport.scale.x;
       const pixelsPerScreenPixel = 1 / scale;
       let bestZ = Math.ceil(maxZoom - Math.log2(pixelsPerScreenPixel));
@@ -246,7 +218,7 @@ const ImperativeViewport = ({ objectType, imageHash, filter, imageWidth, imageHe
 
     const updateAll = () => {
       updateTiles();
-      // updatePolygons();
+      updatePolygons();
     }
 
     updateAll();

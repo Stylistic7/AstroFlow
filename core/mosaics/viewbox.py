@@ -14,8 +14,7 @@ _TILE_SIZE = 2048  # pixels
 # TODO: The viewbox should include the sampling resolution, too.
 # TODO: Maybe unify the storage and retrieval of artifacts that arent'
 # images, e.g. arbitrary Python objects.
-def compute_mosaic_viewbox(mode: QualityLevel,
-                           mosaic: Mosaic) -> list[Artifact]:
+def compute_mosaic_viewbox(mode: QualityLevel, mosaic: Mosaic) -> Viewbox:
   print(f'### Entering compute_mosaic_viewbox for mosaic {mosaic} mode {mode}')
 
   def round_to_nearest_multiple(number: float, multiple: int) -> int:
@@ -32,6 +31,7 @@ def compute_mosaic_viewbox(mode: QualityLevel,
   # Compute the number of pixels along the x axis. In master mode, use the
   # mosaic's image scale, given in degrees per pixel. In subframe mode, make
   # a thumbnail-sized image.
+  # TODO: This needs to be updated for other levels like post-processing.
   num_pixels_x = x_span / np.deg2rad(
       mosaic.image_scale / 3600) if mode == QualityLevel.MASTER else 2048
   finished_pixels_x = int(np.ceil(num_pixels_x))
