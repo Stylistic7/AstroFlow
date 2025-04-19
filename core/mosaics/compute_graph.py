@@ -5,6 +5,8 @@ from typing import Any, Optional
 from pathlib import Path
 from shapely import box  # type: ignore
 from shapely.affinity import scale  # type: ignore
+from functools import partial
+import shutil
 
 from context import context
 from customization.types import CustomizedStack
@@ -16,7 +18,7 @@ from mosaics.placement import place_image
 from mosaics.post_process import post_process_mosaic
 from mosaics.trimming import project_to_viewbox, largest_interior_rectangle
 from mosaics.types import TileIndices
-from mosaics.artifacts import tile_filename, merged_color_channel
+from mosaics.artifacts import tile_filename, final_filename
 from stacks.compute_graph import get_stack_image
 from stacks.composite_stack import CompositeStacksDict
 from stacks.types import StackHash
@@ -25,7 +27,7 @@ from decorators import cached, create_thumbnail, makes_image, measure_performanc
 from targets.types import TargetsDict, Target, TargetHash
 from file_io.generic import read_image
 from file_io.tiff_file_io import write_tiff_image
-from file_io.types import TiffFilePath, XisfFilePath
+from file_io.types import TiffFilePath, XisfFilePath, WithSidecar
 from previews.operations import autostretch
 from pix.decorators import PixInsight
 from pix.classes import ImageList
@@ -39,35 +41,29 @@ def save_uncompressed(images: ImageList, output_filenames: list[Path]):
   return []
 
 
-@makes_image(Mosaic).as_subframe(merged_color_channel)
-@cached.remote
-@create_thumbnail
-def store_mosaic_subframe_color_channel(mosaic: Mosaic, filter: str,
-                                        input: Path) -> Path:
-  print(
-      f'### store_mosaic_subframe_color_channel: filter {filter} input {input}')
-  return input
-
-
 @makes_image(Mosaic).as_master(tile_filename)
-@cached.remote
+@makes_image(Mosaic).as_subframe(partial(final_filename, QualityLevel.SUBFRAME))
+@cached.remote(resources={'fastest_storage': 0.001})
 @measure_performance
 @create_thumbnail
-def store_mosaic_master_color_channel(mosaic: Mosaic, filter: str,
-                                      input: Path) -> TiffFilePath:
-  print(f'### store_mosaic_master_color_channel: filter {filter} input {input}')
+def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
+                               input: Path) -> TiffFilePath:
+  output = final_filename(mode, mosaic, filter).resolve_at(context.output_dir)
 
-  xisf_filename = XisfFilePath(context.output_dir /
-                               merged_color_channel(mosaic, filter))
-  save_uncompressed([input], [xisf_filename])
+  print(f'### store_mosaic_color_channel: mode {mode} '
+        f'filter {filter} input {input} output {output}')
 
-  image = read_image(xisf_filename)
-  autostretched = (autostretch(image) * 255.0).astype(np.uint8)
-  tiff_filename = TiffFilePath(context.output_dir /
-                               tile_filename(mosaic, filter))
-  write_tiff_image(tiff_filename, autostretched, {'FILTER': filter})
+  if mode == QualityLevel.SUBFRAME:
+    shutil.copy(input, output)
+  elif mode == QualityLevel.MASTER:
+    save_uncompressed([input], [output])
 
-  return xisf_filename
+    image = read_image(output)
+    autostretched = (autostretch(image) * 255.0).astype(np.uint8)
+    tiff_filename = tile_filename(mosaic, filter).resolve_at(context.output_dir)
+    write_tiff_image(tiff_filename, autostretched, {'FILTER': filter})
+
+  return output
 
 
 def targets_for_mosaic(mosaic: Mosaic, targets: TargetsDict) -> TargetsDict:
@@ -117,11 +113,7 @@ def build_mosaic_subgraph(mode: QualityLevel, mosaic: Mosaic,
               f'some stacks are missing')
         continue
 
-    if mode == QualityLevel.SUBFRAME:
-      store_task = (store_mosaic_subframe_color_channel, mosaic, filter)
-    elif mode == QualityLevel.MASTER:
-      store_task = (store_mosaic_master_color_channel, mosaic, filter)
-
+    store_task = (store_mosaic_color_channel, mode, mosaic, filter)
     filter_subgraph_task = Node(build_mosaic_filter_subgraph, mode, mosaic,
                                 strips, stacks, filter, viewbox)
     graph[store_task] = {filter_subgraph_task}

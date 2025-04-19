@@ -140,9 +140,8 @@ def _project_in_tiles(viewbox: Viewbox,
 def _save_image_to_file(mode: QualityLevel, mosaic: Mosaic,
                         stack: CompositeStack, tile_indices: TileIndices,
                         filter: str, image: np.ndarray) -> TiffFilePath:
-  filename = TiffFilePath(
-      context.output_dir /
-      placed_filename(mosaic, mode, stack, tile_indices, filter))
+  filename = placed_filename(mosaic, mode, stack, tile_indices,
+                             filter).resolve_at(context.output_dir)
   write_tiff_image(filename, image, {'FILTER': filter})
   print(f'### Wrote filename {filename}')
   return filename

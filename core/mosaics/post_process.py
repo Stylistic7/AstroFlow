@@ -11,7 +11,7 @@ from context import context
 from decorators import cached, create_thumbnail, makes_image, measure_performance
 from previews.types import QualityLevel
 from mosaics.types import Mosaic
-from mosaics.artifacts import post_processed_filename, merged_color_channel
+from mosaics.artifacts import post_processed_filename, final_filename
 
 
 @PixInsight(slots=[1])
@@ -62,7 +62,8 @@ def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> XisfFilePath:
   filters = tuple(filters)
 
   images = [
-      context.output_dir / merged_color_channel(mosaic, filter)
+      final_filename(QualityLevel.MASTER, mosaic,
+                     filter).resolve_at(context.output_dir)
       for filter in filters
   ]
 
@@ -70,8 +71,8 @@ def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> XisfFilePath:
     print(
         f'### post_process_mosaic image {image} exists {os.path.exists(image)}')
 
-  output_filename = XisfFilePath(context.output_dir /
-                                 post_processed_filename(mosaic, None))
+  output_filename = post_processed_filename(mosaic,
+                                            None).resolve_at(context.output_dir)
   print(f'### post_process_mosaic output_filename {output_filename}')
 
   if os.environ.get('MOCK_PIXINSIGHT'):

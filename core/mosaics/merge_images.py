@@ -15,7 +15,7 @@ from previews.operations import autostretch
 from decorators import cached
 from file_io.generic import read_image, get_content_hash, update_header
 from file_io.tiff_file_io import write_tiff_image
-from file_io.types import TiffFilePath, XisfFilePath
+from file_io.types import XisfFilePath
 
 
 @PixInsight()
@@ -29,10 +29,9 @@ def merge_images_with_photometric_mosaic(mosaic: Mosaic, input_0: Path,
                                          input_1: Path,
                                          filter: str) -> XisfFilePath:
   print(f'### merge_images_with_photometric_mosaic {input_0} {input_1}')
-  filename = XisfFilePath(
-      context.output_dir /
-      merged_filename(mosaic, QualityLevel.MASTER, get_content_hash(input_0),
-                      get_content_hash(input_1)))
+  filename = merged_filename(
+      mosaic, QualityLevel.MASTER, get_content_hash(input_0),
+      get_content_hash(input_1)).resolve_at(context.output_dir)
   run_photometric_mosaic([input_0, input_1], filename)
   assert os.path.exists(filename), f'file not found: {filename}'
   update_header(filename, {'FILTER': filter})
@@ -79,8 +78,9 @@ def merge_images(mode: QualityLevel, mosaic: Mosaic, input_0: Path,
 
     image = merge_images_with_maximum(image_0, image_1)
 
-    output_filename = TiffFilePath(context.output_dir / merged_filename(
-        mosaic, mode, get_content_hash(input_0), get_content_hash(input_1)))
+    output_filename = merged_filename(mosaic, mode, get_content_hash(input_0),
+                                      get_content_hash(input_1)).resolve_at(
+                                          context.output_dir)
     write_tiff_image(Path(output_filename), image, {'FILTER': filter})
 
   elif mode == QualityLevel.MASTER:

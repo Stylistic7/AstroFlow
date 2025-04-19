@@ -9,15 +9,21 @@ from stacks.composite_stack import CompositeStack
 from mosaics.types import TileIndices
 
 
-def merged_color_channel(mosaic: Mosaic, filter: str) -> Path:
-  return WithSidecar(
-      XisfFilePath(
-          Path('Mosaics') / mosaic.name /
-          f'final_merged_{mosaic.stable_hash}_{filter}.xisf'))
+def final_filename(mode: QualityLevel, mosaic: Mosaic, filter: str) -> Path:
+  if mode == QualityLevel.SUBFRAME:
+    return WithSidecar(
+        TiffFilePath(
+            Path('Mosaics') / mosaic.name /
+            f'final_merged_{mode}_{mosaic.stable_hash}_{filter}.tiff'))
+  elif mode == QualityLevel.MASTER:
+    return WithSidecar(
+        XisfFilePath(
+            Path('Mosaics') / mosaic.name /
+            f'final_merged_{mode}_{mosaic.stable_hash}_{filter}.xisf'))
 
 
 def tile_filename(mosaic: Mosaic, filter: str) -> TiffFilePath:
-  filename = Path(merged_color_channel(mosaic, filter))
+  filename = Path(final_filename(QualityLevel.MASTER, mosaic, filter))
   return TiffFilePath(
       filename.with_stem(filename.stem + '_autostretched').with_suffix('.tiff'))
 
