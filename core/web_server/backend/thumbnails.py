@@ -1,7 +1,7 @@
 import os
 import io
 import flask
-from flask import Blueprint, abort, jsonify
+from flask import Blueprint, abort
 
 from context import context
 from stacks.composite_stack import CompositeStack
@@ -11,37 +11,7 @@ from products.registry import get_producer, MediaType
 from previews.types import QualityLevel
 from stacks.simple_stack import SimpleStack
 
-objects_bp = Blueprint("objects", __name__)
-
-
-def get_metadata(object_type: type, *args):
-  levels = {}
-  for level in [
-      QualityLevel.POST_PROCESSED, QualityLevel.MASTER, QualityLevel.SUBFRAME
-  ]:
-    if fn := get_producer(MediaType.IMAGE, object_type, level):
-      filename = fn.filename_fn(*args).resolve_at(context.output_dir)
-      print(f'### get_metadata filename_fn returned {filename}')
-      if os.path.exists(filename):
-        print(f'### quality_level {level} filename {filename}')
-        levels[level.name.lower()] = {'image_path': os.fspath(filename)}
-
-  return jsonify({'levels': levels})
-
-
-@objects_bp.route('/metadata/stack/<stack_id>')
-def stack_metadata(stack_id: str):
-  return get_metadata(CompositeStack, context.stacks[stack_id])
-
-
-@objects_bp.route('/metadata/target/<target_id>')
-def target_metadata(target_id: str):
-  return get_metadata(Target, context.targets[target_id])
-
-
-@objects_bp.route('/metadata/mosaic/<mosaic_id>/<filter>')
-def mosaic_metadata(mosaic_id: str, filter: str):
-  return get_metadata(Mosaic, context.mosaics[mosaic_id], filter)
+thumbnails_bp = Blueprint("thumbnails", __name__)
 
 
 def get_thumbnail(object_type: type, *args):
@@ -49,11 +19,8 @@ def get_thumbnail(object_type: type, *args):
       QualityLevel.POST_PROCESSED, QualityLevel.MASTER, QualityLevel.SUBFRAME
   ]:
     if fn := get_producer(MediaType.IMAGE, object_type, level):
-      print(f'### got producer function {fn} for {object_type} level {level}')
       if hasattr(fn, 'thumbnail_fn'):
-        print(f'### has thumbnail_fn')
         if thumbnail := fn.thumbnail_fn(*args):
-          print(f'### got thumbnail')
           buffer = io.BytesIO()
           buffer.write(thumbnail)
           buffer.seek(0)
@@ -62,22 +29,22 @@ def get_thumbnail(object_type: type, *args):
   return abort(404)
 
 
-@objects_bp.route('/thumbnail/stack/<stack_id>')
+@thumbnails_bp.route('/thumbnail/stack/<stack_id>')
 def stack_thumbnail(stack_id: str):
   return get_thumbnail(CompositeStack, context.stacks[stack_id])
 
 
-@objects_bp.route('/thumbnail/target/<target_id>')
+@thumbnails_bp.route('/thumbnail/target/<target_id>')
 def target_thumbnail(target_id: str):
   return get_thumbnail(Target, context.targets[target_id])
 
 
-@objects_bp.route('/thumbnail/mosaic/<mosaic_id>/<filter>')
+@thumbnails_bp.route('/thumbnail/mosaic/<mosaic_id>/<filter>')
 def mosaic_thumbnail(mosaic_id: str, filter: str):
   return get_thumbnail(Mosaic, context.mosaics[mosaic_id], filter)
 
 
-@objects_bp.route('/thumbnail/run/<stack_id>/<substack_id>/<flat_stack_id>')
+@thumbnails_bp.route('/thumbnail/run/<stack_id>/<substack_id>/<flat_stack_id>')
 def run_thumbnail(stack_id: str, substack_id: str, flat_stack_id: str):
   stacks = context.stacks
   stack = stacks[stack_id]
@@ -101,6 +68,6 @@ def get_video(object_type: type, *args):
   return abort(404)
 
 
-@objects_bp.route('/video/stack/<stack_id>')
+@thumbnails_bp.route('/video/stack/<stack_id>')
 def stack_video(stack_id: str):
   return get_video(CompositeStack, context.stacks[stack_id])

@@ -30,7 +30,9 @@ from compute_graph import build_compute_graph
 from dependency_graph import run_graph, graph_status_to_progress
 from dependency_graph.debugging import node_to_string
 from web_server.backend.tiles import tiles_bp
-from web_server.backend.objects import objects_bp
+from web_server.backend.metadata import metadata_bp
+from web_server.backend.thumbnails import thumbnails_bp
+from web_server.backend.videos import videos_bp
 
 from stacks.composite_stack import CompositeStack
 
@@ -110,7 +112,9 @@ else:
   )
 
 app.register_blueprint(tiles_bp)
-app.register_blueprint(objects_bp)
+app.register_blueprint(metadata_bp)
+app.register_blueprint(thumbnails_bp)
+app.register_blueprint(videos_bp)
 
 
 # TODO: Move computations into new files.
@@ -453,12 +457,13 @@ def run_compute_graph():
     }
 
   print('### Running compute graph!')
-  thread = threading.Thread(target=_run_graph,
-                            args=(graph,),
-                            kwargs={
-                                'status_fn': status_fn,
-                                'debug': False
-                            })
+  thread = threading.Thread(
+      target=_run_graph,
+      args=(graph,),
+      kwargs={
+          # 'status_fn': status_fn,
+          'debug': False
+      })
   thread.daemon = True
   thread.start()
 
