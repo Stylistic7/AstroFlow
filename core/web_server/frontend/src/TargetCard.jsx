@@ -59,10 +59,6 @@ export default function TargetCard({ target_id }) {
           </Typography>
         </CardContent>
       </CardActionArea>
-      <AutoStackCheckbox
-        object_type="target"
-        object_id={target_id}
-      />
     </Card>
   );
 }
