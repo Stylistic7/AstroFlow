@@ -1,10 +1,14 @@
 // src/components/RunsTab.jsx
 import React, { useEffect, useState } from 'react';
+import { useContext } from 'react';
 import { Box, Paper, Typography, IconButton } from '@mui/material';
 import { Delete as DeleteIcon } from '@mui/icons-material';
 import FlatThumbnail from './FlatThumbnail.jsx';
+import AstroFlowContext from './AstroFlowContext.jsx';
 
 const RunsTab = ({ stack }) => {
+  const { calibrationStacks } = useContext(AstroFlowContext);
+
   const [flatIds, setFlatIds] = useState([]);
   const [selectedFlatsByRun, setSelectedFlatsByRun] = useState({});
 
@@ -55,8 +59,9 @@ const RunsTab = ({ stack }) => {
               {flatIds.map((flatId) => (
                 <FlatThumbnail
                   key={flatId}
+                  stack={stack}
                   run={run}
-                  flatId={flatId}
+                  flatStack={calibrationStacks[flatId]}
                   selected={selectedFlatId === flatId}
                   onSelect={() => handleSelectFlat(run.id, flatId)}
                 />
