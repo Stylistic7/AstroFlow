@@ -12,7 +12,7 @@ import AstroFlowContext from './AstroFlowContext.jsx';
 
 const TILE_SIZE = 256;
 
-const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filter: filterProp }) => {
+const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filter: filterProp, showPolygons }) => {
   const { objectType: objectTypeParam, imageHash: imageHashParam, filter: filterParam } = useParams();
 
   const objectType = objectTypeProp ?? objectTypeParam;
@@ -37,7 +37,11 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
   }, []);
 
   useEffect(() => {
-    fetch(`/metadata/${objectType}/${imageHash}/${filter}`)
+    const url = filter !== undefined
+      ? `/metadata/${objectType}/${imageHash}/${filter}`
+      : `/metadata/${objectType}/${imageHash}`;
+
+    fetch(url)
       .then((res) => res.json())
       .then((meta) => setMetadata(meta));
   }, [objectType, imageHash, filter]);
@@ -73,6 +77,7 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
           worldWidth={worldWidth}
           worldHeight={worldHeight}
           maxZoom={tileMetadata.maxZoom}
+          showPolygons={showPolygons}
           metadata={metadata}
           mosaics={mosaics}
         />
@@ -81,7 +86,7 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
   );
 };
 
-const ImperativeViewport = ({ objectType, imageHash, filter, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, metadata, mosaics }) => {
+const ImperativeViewport = ({ objectType, imageHash, filter, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, showPolygons, metadata, mosaics }) => {
   const app = useApp();
   const viewportRef = useRef(null);
   const spritesRef = useRef({});
@@ -141,7 +146,7 @@ const ImperativeViewport = ({ objectType, imageHash, filter, imageWidth, imageHe
       for (const poly of polygons) {
         const g = new PIXI.Graphics();
         g.zIndex = 9999;
-        g.lineStyle(30, typeColors[poly.type], 1);
+        g.lineStyle(imageWidth / 500, typeColors[poly.type], 1);
         // g.beginFill(poly.color ?? 0xff0000, 0.2);
         g.moveTo(poly.points[0][0], poly.points[0][1]);
         for (let i = 1; i < poly.points.length; i++) {
@@ -213,7 +218,10 @@ const ImperativeViewport = ({ objectType, imageHash, filter, imageWidth, imageHe
 
     const updateAll = () => {
       updateTiles();
-      updatePolygons();
+
+      if (showPolygons) {
+        updatePolygons();
+      }
     }
 
     updateAll();
