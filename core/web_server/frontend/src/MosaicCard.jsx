@@ -44,7 +44,7 @@ export default function MosaicCard({ mosaic_id }) {
             position: "relative",
           }}>
           <img
-            src={`/mosaic_thumbnail_image/${mosaic_id}`}
+            src={`/thumbnail/mosaic/${mosaic_id}/${get_filters()[0]}`}
             style={{
               height: "100%",
               maxWidth: "100%",
