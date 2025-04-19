@@ -10,7 +10,7 @@ from flask import Blueprint, send_file, abort, jsonify
 
 from context import context
 from file_io.generic import read_image
-from file_io.types import TiffFilePath
+from file_io.types import TiffFilePath, WithSidecar
 from previews.operations import autostretch
 from previews.types import QualityLevel
 from stacks.composite_stack import CompositeStack
@@ -45,7 +45,7 @@ def get_best_image(object_type: type, *args) -> Path:
       if fragment := fn.filename_fn(*args):
         filename = fragment.resolve_at(context.output_dir)
         if os.path.exists(filename):
-          return filename
+          return fragment
 
 
 def get_image(object_type: str, object_id: str, filter: str):
@@ -70,13 +70,12 @@ def get_image(object_type: str, object_id: str, filter: str):
         print(f"Error deleting temp file: {e}")
 
     # Reuse if already in cache
-    key = (object_type, object_id)
+    key = (object_type, object_id, filter)
     if key in _image_cache:
       _image_cache[key]["last_used"] = now
       return _image_cache[key]["handle"]
 
     # Else, convert from .xisf and cache
-    # path = get_best_image(object_type, object_id, filter)
     if object_type == 'stack':
       path = get_best_image(CompositeStack, context.stacks[object_id])
     elif object_type == 'target':
@@ -90,18 +89,17 @@ def get_image(object_type: str, object_id: str, filter: str):
       print(f"No image found")
       return None
 
-    if not os.path.exists(path):
-      print(f"Path not found: {path}")
-      return None
+    if isinstance(path, WithSidecar):
+      path = path.path
 
     if isinstance(path, TiffFilePath):
-      tiff_path = path
+      tiff_path = path.resolve_at(context.output_dir)
     else:
-      tiff_path = TILE_CACHE_DIR / f"{object_type}_{object_id}.tif"
-      if not tiff_path.exists():
-        print(f"Converting {path} to {tiff_path}...")
-        convert_to_tiff(path, tiff_path)
-        print(f"Conversion done.")
+      original_path = path.resolve_at(context.output_dir)
+      tiff_path = path.resolve_at(TILE_CACHE_DIR)
+      print(f"Converting {original_path} to {tiff_path}...")
+      convert_to_tiff(original_path, tiff_path)
+      print(f"Conversion done.")
 
     print(f"Opening file {tiff_path} with large_image...")
     handle = large_image.open(tiff_path, plugin='vips')
