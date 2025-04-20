@@ -16,7 +16,6 @@ import AstroFlowContext from './AstroFlowContext.jsx';
 
 const RayStatus: React.FC = () => {
   const { rayStatus } = useContext(AstroFlowContext);
-  console.log("rayStatus", rayStatus, Object.keys(rayStatus).length);
 
   const [anchorEl, setAnchorEl] = useState(null);
   const [isHeadNode, setIsHeadNode] = useState(false);
@@ -61,7 +60,7 @@ const RayStatus: React.FC = () => {
       >
         <Circle sx={{ fontSize: 10, color: rayStatus.unhealthyNodes > 0 ? "error.light" : "success.light", mr: 1 }} />
         <Typography variant="body2" sx={{ mr: 1 }}>
-          {rayStatus.healthyNodes} / {rayStatus.healthyNodes + rayStatus.unhealthyNodes} Nodes
+          {rayStatus.healthyNodes} {rayStatus.healthyNodes === 1 ? 'Node' : 'Nodes'},
         </Typography>
         <Typography variant="body2" sx={{ mr: 1 }}>
           {rayStatus.totalCPUs} CPUs, {Math.round(rayStatus.totalRAM)} GB RAM
@@ -76,7 +75,7 @@ const RayStatus: React.FC = () => {
             <ListItem key={index}>
               <Circle sx={{ fontSize: 10, color: node.health === "healthy" ? "green" : "red", mr: 1 }} />
               <ListItemText
-                primary={`${node.ip} - ${node.cpus} CPUs, ${Math.round(node.ram)} GB RAM`}
+                primary={`${node.ip}: ${node.cpus} CPUs, ${Math.round(node.ram)} GB RAM`}
                 secondary={node.health === "unhealthy" ? node.message : ""}
                 sx={{ color: node.health === "unhealthy" ? "error.main" : "text.primary" }}
               />
