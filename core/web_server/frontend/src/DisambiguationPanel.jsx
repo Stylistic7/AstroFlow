@@ -13,6 +13,21 @@ export default function DisambiguationPanel({ items_in }) {
 	items = items || items_in;
 	console.log('DisambiguationPanel items', items);
 
+	if (!items || items.trim() === "") {
+		return (
+			<div style={{
+				margin: "2em",
+				padding: "2em",
+				textAlign: "center",
+				color: "#999",
+				fontStyle: "italic",
+				fontSize: "1.25em",
+			}}>
+				No results found.
+			</div>
+		);
+	}
+
 	return (
 		<>
 			<div style={{

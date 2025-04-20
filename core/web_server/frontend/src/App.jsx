@@ -166,6 +166,12 @@ function App() {
                   <StackViewer />
                 </AppLayout>
               } />
+              <Route exact path="/disambiguation/" element={
+                dataIsAvailable &&
+                <AppLayout>
+                  <DisambiguationPanel />
+                </AppLayout>
+              } />
               <Route exact path="/disambiguation/:items" element={
                 dataIsAvailable &&
                 <AppLayout>
