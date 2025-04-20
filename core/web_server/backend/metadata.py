@@ -1,5 +1,5 @@
 import os
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, abort
 from typing import Any
 
 from context import context
@@ -55,6 +55,8 @@ def get_metadata(object_type: type, *args):
     result['objects'] = objects
 
     return jsonify(result)
+
+  return abort(404)
 
 
 @metadata_bp.route('/metadata/stack/<stack_id>')
