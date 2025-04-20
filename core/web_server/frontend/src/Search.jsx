@@ -65,6 +65,19 @@ const StyledInputBase = styled(InputBase)(({ theme }) => ({
   },
 }));
 
+export function VerticalDivider({ height = 24, color = 'grey.400', marginX = 2 }) {
+  return (
+    <Box
+      sx={{
+        width: '1px',
+        height,
+        bgcolor: color,
+        mx: marginX,
+      }}
+    />
+  );
+}
+
 export default function PrimarySearchAppBar() {
   const { stacks, targets, mosaics } = useContext(AstroFlowContext);
 
@@ -217,7 +230,9 @@ export default function PrimarySearchAppBar() {
           </Search>
           <Box sx={{ flexGrow: 1 }} />
           <RayStatus />
+          <VerticalDivider />
           <ProgressComponent />
+          <VerticalDivider />
           <Box sx={{ display: { xs: 'none', md: 'flex' } }}>
             <IconButton size="large" aria-label="show 4 new mails" color="inherit">
               <Badge badgeContent={Object.keys(stacks).length} color="error">

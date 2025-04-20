@@ -55,11 +55,11 @@ const RayStatus: React.FC = () => {
           alignItems: "center",
           cursor: "pointer",
           padding: "8px",
-          bgcolor: rayStatus.unhealthyNodes > 0 ? "error.light" : "success.light",
           borderRadius: "8px",
         }}
         onClick={(event) => setAnchorEl(event.currentTarget)}
       >
+        <Circle sx={{ fontSize: 10, color: rayStatus.unhealthyNodes > 0 ? "error.light" : "success.light", mr: 1 }} />
         <Typography variant="body2" sx={{ mr: 1 }}>
           {rayStatus.healthyNodes} / {rayStatus.healthyNodes + rayStatus.unhealthyNodes} Nodes
         </Typography>
