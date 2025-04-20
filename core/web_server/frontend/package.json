@@ -17,6 +17,7 @@
     "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^13.5.0",
     "date-fns": "^2.30.0",
+    "flexsearch": "^0.8.158",
     "lodash": "^4.17.21",
     "lunr": "^2.3.9",
     "pixi-viewport": "^6.0.3",

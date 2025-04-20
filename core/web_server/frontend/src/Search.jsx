@@ -1,4 +1,5 @@
 import React, { useContext } from "react";
+import { useNavigate } from "react-router-dom";
 import { styled, alpha } from '@mui/material/styles';
 import AppBar from '@mui/material/AppBar';
 import Box from '@mui/material/Box';
@@ -20,9 +21,9 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import lunr from 'lunr';
 import LeftDrawer from "./LeftDrawer.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
-import { Breadcrumbs } from "@mui/material";
 import ProgressComponent from './ProgressComponent.jsx';
 import RayStatus from './RayStatus.jsx';
+import { Document } from "flexsearch";
 
 
 const Search = styled('div')(({ theme }) => ({
@@ -80,41 +81,81 @@ export function VerticalDivider({ height = 24, color = 'grey.400', marginX = 2 }
 
 export default function PrimarySearchAppBar() {
   const { stacks, targets, mosaics } = useContext(AstroFlowContext);
+  const navigate = useNavigate();
 
-  var documents = [{
-    "type": "mosaic",
-    "name": "Horsehead Nebula Mosaic",
-    "text": "Like Solr, but much smaller, and not as bright.",
-    "scale": 1.42,
-  }, {
-    "type": "mosaic",
-    "name": "Orion Nebula Mosaic",
-    "text": "Like Solr, but much smaller, and not as bright.",
-    "scale": 1.43,
-  }, {
-    "type": "target",
-    "name": "A Target",
-    "text": "A JavaScript library for building user interfaces.",
-    "scale": 2.0,
-  }, {
-    "type": "stack",
-    "name": "A Stack",
-    "text": "A modern JavaScript utility library delivering modularity, performance & extras.",
-    "scale": 1.44,
-  }]
+  const index = new Document({
+    document: {
+      id: "ref_id",
+      index: ["name", "camera", "image_scale"],
+      store: ["type", "name", "camera", "image_scale", "stable_hash"]
+    }
+  });
 
-  var idx = lunr(function () {
-    this.ref('name')
-    this.field('type')
-    this.field('text')
-    this.field('scale')
+  const allObjects = [];
 
-    documents.forEach(function (doc) {
-      this.add(doc)
-    }, this)
-  })
+  Object.entries(targets).forEach(([hash, target]) => {
+    allObjects.push({
+      ref_id: `target,${hash}`,
+      type: "target",
+      stable_hash: hash,
+      name: target.name,
+      camera: target.camera,
+    });
+  });
 
-  console.log(idx.search("+type:target scale:1.4~1"));
+  Object.entries(mosaics).forEach(([hash, mosaic]) => {
+    allObjects.push({
+      ref_id: `mosaic,${hash}`,
+      type: "mosaic",
+      stable_hash: hash,
+      name: mosaic.name,
+      camera: mosaic.camera,
+    });
+  });
+
+  allObjects.forEach(doc => index.add(doc));
+
+  function smartSearch(query) {
+    const tokens = query.trim().split(/\s+/);
+    const knownTypes = new Set(["target", "mosaic"]);
+    let typeFilter = null;
+    const terms = [];
+
+    for (const token of tokens) {
+      if (knownTypes.has(token.toLowerCase())) {
+        typeFilter = token.toLowerCase();
+      } else {
+        terms.push(token);
+      }
+    }
+
+    const searchResults = index.search(terms.join(" "), { enrich: true });
+
+    // Flatten results from all fields
+    let docs = searchResults.flatMap(group => group.result);
+
+    // Filter by type if specified
+    if (typeFilter) {
+      docs = docs.filter(doc => doc.doc.type === typeFilter);
+    }
+
+    return docs;
+  }
+
+  function disambiguationUrlFromResults(results) {
+    const items = results.map(r => {
+      const { type, stable_hash } = r.doc;
+      return `${type},${stable_hash}`;
+    });
+
+    return `/disambiguation/${items.join(';')}`;
+  }
+
+  function handleSearch(query) {
+    const results = smartSearch(query);
+    const url = disambiguationUrlFromResults(results);
+    navigate(url);
+  }
 
   const [anchorEl, setAnchorEl] = React.useState(null);
   const [mobileMoreAnchorEl, setMobileMoreAnchorEl] = React.useState(null);
@@ -224,8 +265,17 @@ export default function PrimarySearchAppBar() {
               <SearchIcon />
             </SearchIconWrapper>
             <StyledInputBase
+              sx={{ width: '25vw' }}
               placeholder="Search…"
-              inputProps={{ 'aria-label': 'search' }}
+              inputProps={{
+                'aria-label': 'search',
+                style: { width: '100%' },  // <-- style the real input
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleSearch(e.target.value);
+                }
+              }}
             />
           </Search>
           <Box sx={{ flexGrow: 1 }} />
