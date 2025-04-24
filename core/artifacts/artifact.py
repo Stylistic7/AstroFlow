@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import astropy.io.fits as pyfits  # type: ignore
 
-from context import context, WriteMode
+from context import context
 from file_io.generic import read_image, read_header
 from file_io.generic import get_content_hash
 from file_io.normalize_header import normalize_header

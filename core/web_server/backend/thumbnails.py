@@ -2,6 +2,7 @@ import os
 import io
 import flask
 from flask import Blueprint, abort
+import time
 
 from context import context
 from stacks.composite_stack import CompositeStack
@@ -21,27 +22,63 @@ def get_thumbnail(object_type: type, *args):
     if fn := get_producer(MediaType.IMAGE, object_type, level):
       if hasattr(fn, 'thumbnail_fn'):
         if thumbnail := fn.thumbnail_fn(*args):
-          buffer = io.BytesIO()
-          buffer.write(thumbnail)
-          buffer.seek(0)
-          return flask.send_file(buffer, mimetype='image/png')
+          resp = flask.Response(thumbnail,
+                                mimetype="image/png",
+                                direct_passthrough=True)
+          return resp
 
   return abort(404)
 
 
+# TODO: Respond to `reload_data` events.
+def stacks():
+  if hasattr(stacks, 'cached_value'):
+    return stacks.cached_value
+  else:
+    try:
+      stacks.cached_value = context.get('stacks')
+      return stacks.cached_value
+    except:
+      return None
+
+
+# TODO: Respond to `reload_data` events.
+def targets():
+  if hasattr(targets, 'cached_value'):
+    return targets.cached_value
+  else:
+    try:
+      targets.cached_value = context.get('targets')
+      return targets.cached_value
+    except:
+      return None
+
+
+# TODO: Respond to `reload_data` events.
+def mosaics():
+  if hasattr(mosaics, 'cached_value'):
+    return mosaics.cached_value
+  else:
+    try:
+      mosaics.cached_value = context.get('mosaics')
+      return mosaics.cached_value
+    except:
+      return None
+
+
 @thumbnails_bp.route('/thumbnail/stack/<stack_id>')
 def stack_thumbnail(stack_id: str):
-  return get_thumbnail(CompositeStack, context.stacks[stack_id])
+  return get_thumbnail(CompositeStack, stacks()[stack_id])
 
 
 @thumbnails_bp.route('/thumbnail/target/<target_id>')
 def target_thumbnail(target_id: str):
-  return get_thumbnail(Target, context.targets[target_id])
+  return get_thumbnail(Target, targets()[target_id])
 
 
 @thumbnails_bp.route('/thumbnail/mosaic/<mosaic_id>/<filter>')
 def mosaic_thumbnail(mosaic_id: str, filter: str):
-  return get_thumbnail(Mosaic, context.mosaics[mosaic_id], filter)
+  return get_thumbnail(Mosaic, mosaics()[mosaic_id], filter)
 
 
 @thumbnails_bp.route('/thumbnail/run/<stack_id>/<substack_id>/<flat_stack_id>')
