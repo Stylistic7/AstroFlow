@@ -16,6 +16,8 @@ from context import context, WriteMode
 import plate_solving
 from file_io.normalize_header import normalize_header
 from geometry import Degrees
+from hashing import hash_source_code, hash_call
+from metadata.image_metadata import compute_image_metadata
 
 _TESTDATA_TARGETS = {
     'M42': [
@@ -263,7 +265,9 @@ def make_synthetic_frames(start_datetime: datetime.datetime = datetime.datetime(
       plate_solution = None
 
     if insert_metadata:
-      key = ('image_metadata', content_hash)
+      fn_hash = hash_source_code(compute_image_metadata)
+      call_hash = hash_call(fn_hash, fits_filename)
+      key = ('compute_image_metadata', call_hash)
       metadata = ImageMetadata(content_hash=content_hash,
                                filename=fits_filename,
                                header=header,
