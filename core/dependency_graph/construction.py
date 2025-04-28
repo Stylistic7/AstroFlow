@@ -10,9 +10,6 @@ def list_task_done(x: Any) -> Any:
   return x
 
 
-def make_graph_from_list(tasks: list[TaskDescriptor]) -> Graph:
-  graph = Graph({})
-  for i in range(len(tasks) - 1):
-    graph[tasks[i + 1]] = {tasks[i]}
-
-  return graph
+def chain(*nodes):
+  """Create a linear chain of graph dependencies."""
+  return {nodes[i + 1]: {nodes[i]} for i in range(len(nodes) - 1)}

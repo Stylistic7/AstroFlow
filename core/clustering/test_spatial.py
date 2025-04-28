@@ -10,7 +10,7 @@ from context import context
 from testing import make_test_context
 
 from testing.test_frames import make_synthetic_frames
-from dependency_graph import Graph, make_graph_from_list, run_graph
+from dependency_graph import Graph, chain, run_graph
 from metadata.image_metadata import scatter_compute_image_metadata, load_metadata
 
 
@@ -20,8 +20,8 @@ def compute_hash_for_filename() -> dict[str, str]:
 
 
 def compute_graph_fragment() -> Graph:
-  return make_graph_from_list([(scatter_compute_image_metadata, 'input'),
-                               cluster_by_image_center])
+  return chain((scatter_compute_image_metadata, 'input'),
+               cluster_by_image_center)
 
 
 class TestSpatialAssociation(unittest.TestCase):

@@ -7,7 +7,7 @@ import ray
 import time
 
 from context import context, get_cache
-from dependency_graph import Graph, Node, GraphStatus, TopologicalSorterWithStatus, canonicalize_graph, run_graph, make_graph_from_list
+from dependency_graph import Graph, Node, GraphStatus, TopologicalSorterWithStatus, canonicalize_graph, run_graph, chain
 from dependency_graph.debugging import node_to_string
 
 cache = get_cache()
@@ -285,7 +285,7 @@ class TestDependencyGraph(unittest.TestCase):
     self.assertEqual(results[my_task_with_kwargs], 1)
 
   def test_pass_down_lists(self) -> None:
-    graph = make_graph_from_list([create_list, consume_list])
+    graph = chain(create_list, consume_list)
     results, _ = run_graph(graph, debug=True)
 
     self.assertEqual(results[create_list], [1, 2, 3])
@@ -310,7 +310,7 @@ class TestDependencyGraph(unittest.TestCase):
     self.assertEqual(results.max_parallelism_seen, 2)
 
   def test_list_of_tasks(self) -> None:
-    graph = make_graph_from_list([my_first_task, my_later_task, my_last_task])
+    graph = chain(my_first_task, my_later_task, my_last_task)
 
     results, _ = run_graph(graph, debug=True)
     self.assertEqual(results[my_last_task], 5)

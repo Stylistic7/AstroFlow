@@ -9,7 +9,7 @@ from functools import partial
 
 from context import context
 from customization.types import CustomizedStack
-from dependency_graph import Graph, Node, make_graph_from_list
+from dependency_graph import Graph, Node, chain
 from mosaics.merge_images import merge_images
 from mosaics.types import Mosaic, Viewbox
 from mosaics.viewbox import compute_viewbox
@@ -146,11 +146,13 @@ def build_placement_subgraph(mode: QualityLevel, mosaic: Mosaic,
                              tile_indices: TileIndices, viewbox: Viewbox,
                              mask: box):
   # TODO: Integrate the stack mask here too.
-  assert stack is not None
-  return make_graph_from_list([(get_stack_image, mode, stack),
-                               Node(compute_image_metadata),
-                               Node(place_image, mode, mosaic, stack,
-                                    tile_indices, filter, viewbox, mask)])
+  return Graph({
+      **chain(
+          (get_stack_image, mode, stack),
+          compute_image_metadata,
+          (place_image, mode, mosaic, stack, tile_indices, filter, viewbox, mask),
+      )
+  })
 
 
 def compute_mask(strip: list[TargetHash], viewbox: Viewbox) -> box:

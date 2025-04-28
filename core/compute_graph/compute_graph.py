@@ -13,7 +13,7 @@ from targets.compute_graph import build_target_subgraph
 from targets.types import TargetsDict
 from targets.identification import group_stacks_into_targets
 from mosaics.compute_graph import build_mosaic_subgraph
-from dependency_graph import Graph, TaskDescriptor, make_graph_from_list
+from dependency_graph import Graph, TaskDescriptor, chain
 from stacks.identification import identify_stacks
 from stacks.composite_stack import CompositeStacksDict, SimpleStacksDict
 from stacks.validation import validate_stacks
@@ -22,8 +22,6 @@ from customization.compute_graph import build_customize_graph
 from mosaics.types import MosaicsDict
 from mosaics.compute_graph import stacks_for_mosaic, targets_for_mosaic
 from quarantining.quarantining import quarantine_calibration_stacks
-from hashing import hash_list
-from metadata.image_metadata import load_metadata
 
 
 @ray.remote
@@ -68,7 +66,7 @@ def gather_spatial_groups(*stacks_in: list[CompositeStacksDict]) -> None:
 
 # TODO: Don't call build_spatial_group_graph for spatial groups that are cached
 # and unchanged.
-@cached.remote
+@ray.remote
 def scatter_spatial_groups(spatial_groups) -> Graph:
   graph = Graph({
       gather_spatial_groups: {(identify_stacks, g) for g in spatial_groups},
@@ -84,20 +82,22 @@ def regroup_graph_done() -> None:
   pass
 
 
-# TODO: Move group_stacks_into_targets() back into the parallel path over
-# spatial groups.
-@cached.remote
+@ray.remote
 def build_regroup_graph(metadata: MetadataDict) -> Graph:
-  print(f'build_regroup_graph metadata hash {hash_list([metadata])}')
   return Graph({
-      scatter_spatial_groups: {(cluster_by_image_center, metadata)},
-      group_stacks_into_targets: {scatter_spatial_groups},
-      store_targets: {group_stacks_into_targets},
-      identify_mosaics: {store_targets},
-      store_mosaics: {identify_mosaics},
-      quarantine_calibration_stacks: {identify_calibration_stacks},
-      identify_calibration_stacks: {load_metadata},
-      store_calibration_stacks: {quarantine_calibration_stacks},
+      **chain(
+          (cluster_by_image_center, metadata),
+          scatter_spatial_groups,
+          group_stacks_into_targets,
+          store_targets,
+          identify_mosaics,
+          store_mosaics,
+      ),
+      **chain(
+          (identify_calibration_stacks, metadata),
+          quarantine_calibration_stacks,
+          store_calibration_stacks,
+      ),
       regroup_graph_done: {store_mosaics, store_calibration_stacks},
   })
 
@@ -107,7 +107,7 @@ def preview_graph_done() -> None:
   pass
 
 
-@cached.remote
+@ray.remote
 def build_preview_graph() -> Graph:
   stacks = context.stacks
   targets = context.targets
@@ -129,7 +129,7 @@ def main_processing_graph_done() -> None:
   pass
 
 
-@cached.remote
+@ray.remote
 def build_main_processing_graph() -> Graph:
   stacks = context.stacks
   targets = context.targets
@@ -179,7 +179,7 @@ def build_compute_graph() -> Graph:
   task_list.append(build_preview_graph)
   task_list.append(build_main_processing_graph)
 
-  graph = make_graph_from_list(task_list)
+  graph = chain(task_list)
 
   return graph
 
