@@ -12,7 +12,6 @@ from stacks.types import StackHash
 from context import context
 from file_io.find_image_files import find_image_files
 from dependency_graph import run_graph
-from stacks.get_stacks import get_toplevel_stacks
 from customization.settings import Settings, StackSettings
 
 
@@ -497,9 +496,7 @@ class TestCalibrationFrames(unittest.TestCase):
     self.assertEqual(len(stacks), 1)
     self.assertEqual(len(context.calibration_stacks), 3)
 
-    toplevel_stacks = get_toplevel_stacks(stacks)
-    self.assertEqual(len(toplevel_stacks), 1)
-    stack = toplevel_stacks[0]
+    stack = next(iter(stacks.values()))
     self.assertEqual(len(stack.contents), 1)
 
 

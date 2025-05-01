@@ -7,7 +7,6 @@ from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import run_graph
 from testing import make_test_context, make_synthetic_frames
-from stacks.get_stacks import get_toplevel_stacks
 from metadata.image_metadata import load_metadata
 
 
@@ -33,10 +32,7 @@ class TestStackIdentification(unittest.TestCase):
 
     stacks = context.stacks
     self.assertEqual(len(stacks), 1)
-
-    toplevel_stacks = get_toplevel_stacks(stacks)
-    self.assertEqual(len(toplevel_stacks), 1)
-    toplevel_stack = toplevel_stacks[0]
+    toplevel_stack = next(iter(stacks.values()))
     self.assertEqual(toplevel_stack.center, [100, 50])
     self.assertEqual(toplevel_stack.image_scale, 1.0)
 
@@ -60,25 +56,23 @@ class TestStackIdentification(unittest.TestCase):
                           dest_dir=context.input_dirs[0])
 
     run_graph(build_compute_graph())
+
     stacks = context.stacks
     self.assertEqual(len(stacks), 2)
 
-    toplevel_stacks = get_toplevel_stacks(stacks)
-    self.assertEqual(len(toplevel_stacks), 2)
-
-    for stack in toplevel_stacks:
+    for stack in stacks:
       print(f'### toplevel stack {stack}')
 
     stack = stacks['963b3bad57928528']
     frames = stack.all_frames()
-    metadata = ray.get(load_metadata.remote())
+    metadata = stack.all_metadata()
     filenames = [m.filename for m in metadata.values()]
     self.assertTrue(all('foo' in f for f in filenames))
     self.assertEqual(len(frames), 10)
 
     stack = stacks['31520d846ae3463d']
     frames = stack.all_frames()
-    metadata = ray.get(load_metadata.remote())
+    metadata = stack.all_metadata()
     filenames = [m.filename for m in metadata.values()]
     self.assertTrue(all('bar' in f for f in filenames))
     self.assertEqual(len(frames), 10)
@@ -110,18 +104,15 @@ class TestStackIdentification(unittest.TestCase):
     stacks = context.stacks
     self.assertEqual(len(stacks), 2)
 
-    toplevel_stacks = context.stacks
-    self.assertEqual(len(toplevel_stacks), 2)
+    keys = sorted(stacks.keys())
 
-    keys = sorted(toplevel_stacks.keys())
-
-    stack = toplevel_stacks[keys[0]]
+    stack = stacks[keys[0]]
     self.assertEqual(stack.center, [100, 50])
     self.assertEqual(stack.width_pixels, 6000)
     self.assertEqual(stack.height_pixels, 4000)
     self.assertEqual(stack.image_scale, 1.0)
 
-    stack = toplevel_stacks[keys[1]]
+    stack = stacks[keys[1]]
     self.assertEqual(stack.center, [100, 50])
     self.assertEqual(stack.width_pixels, 3000)
     self.assertEqual(stack.height_pixels, 2000)
@@ -148,26 +139,20 @@ class TestStackIdentification(unittest.TestCase):
     stacks = context.stacks
     self.assertEqual(len(stacks), 1)
 
-    toplevel_stacks = get_toplevel_stacks(stacks)
-    self.assertEqual(len(toplevel_stacks), 1)
-    toplevel_stack = toplevel_stacks[0]
+    toplevel_stack = next(iter(stacks.values()))
     print(f'### toplevel_stack {toplevel_stack}')
     print(f'### toplevel_stack.contents {toplevel_stack.contents}')
     self.assertEqual(toplevel_stack.center, [100, 50])
     self.assertEqual(len(toplevel_stack.contents), 2)
 
     stack = list(toplevel_stack.contents.values())[0]
-    metadata = ray.get(load_metadata.remote())
-    filenames = [m.filename for m in metadata.values()]
-    self.assertTrue(all('bar' in f for f in filenames))
+    self.assertTrue(all('bar' in f.filename for f in stack.metadata.values()))
     self.assertEqual(len(stack.frames), 7)
     self.assertEqual(stack.exposure_s, [120.0])
     self.assertEqual(stack.integration_s, 7 * 120)
 
     stack = list(toplevel_stack.contents.values())[1]
-    metadata = ray.get(load_metadata.remote())
-    filenames = [m.filename for m in metadata.values()]
-    self.assertTrue(all('foo' in f for f in filenames))
+    self.assertTrue(all('foo' in f.filename for f in stack.metadata.values()))
     self.assertEqual(len(stack.frames), 5)
     self.assertEqual(stack.exposure_s, [300.0])
     self.assertEqual(stack.integration_s, 5 * 300)

@@ -1,11 +1,4 @@
 from stacks.simple_stack import SimpleStack
-from stacks.composite_stack import CompositeStack
-
-
-# TODO: Make these "Stack graph query" functions universal.
-# TODO: Give these better names.
-def get_toplevel_stacks(stacks):
-  return [s for s in stacks.values() if isinstance(s, CompositeStack)]
 
 
 def get_content_stacks_of_type(stacks, image_type):
