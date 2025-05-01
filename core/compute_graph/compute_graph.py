@@ -179,7 +179,7 @@ def build_compute_graph() -> Graph:
   task_list.append(build_preview_graph)
   task_list.append(build_main_processing_graph)
 
-  graph = chain(task_list)
+  graph = chain(*task_list)
 
   return graph
 
