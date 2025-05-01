@@ -71,6 +71,7 @@ def make_cached_decorator(cache: CacheProtocol,
         debug_print(f'cache mismatch ({stored_hash}): {key}')
         return key, call_hash, False, None
 
+    @wraps(func)
     def inner(*args, injected_context: Optional[dict] = None, **kwargs):
       bound = _bind_args(func, args, kwargs, injected_context)
       key, call_hash, valid, cached_result = _get_cache_key_and_result(bound)
