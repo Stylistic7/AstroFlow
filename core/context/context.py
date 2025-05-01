@@ -117,7 +117,8 @@ class ContextActor:
       self.ref_dict[key] = value
 
     if write_mode != WriteMode.MEMORY_ONLY:
-      self.cache[key] = ray.get(value)
+      value = ray.get(value)
+      self.cache[key] = value
 
   def contains(self, key: Key) -> bool:
     return key in self.cache or key in self.ref_dict
@@ -133,8 +134,8 @@ class ContextActor:
     if key in self.cache:
       del self.cache[key]
 
-  def and_equals(self, key: Key, default_value: Any, value: Any,
-                 write_mode: WriteMode) -> None:
+  def and_equals(self, key: Key, value: Any, default_value: Any,
+                 length_limit: int | None, write_mode: WriteMode) -> None:
     assert type(value) is list
     assert len(value) == 1
     value = value[0]
@@ -144,12 +145,14 @@ class ContextActor:
     if write_mode in [WriteMode.DISK_ONLY, WriteMode.MEMORY_AND_DISK]:
       with self.cache.transact():
         new_value = self.cache.get(key, default_value) + value
+        if length_limit is not None:
+          new_value = new_value[-length_limit:]
         self.cache[key] = new_value
 
     if write_mode in [WriteMode.MEMORY_ONLY, WriteMode.MEMORY_AND_DISK]:
       self.ref_dict[key] = ray.put(new_value)
 
-  def or_equals(self, key: Key, default_value: Any, value: Any,
+  def or_equals(self, key: Key, value: Any, default_value: Any,
                 write_mode: WriteMode) -> None:
     assert type(value) is list
     assert len(value) == 1
@@ -218,15 +221,18 @@ class Context:
     return self.set(key, value)
 
   # TODO: Use the Pythonic operator.
-  def and_equals(self,
-                 key: Key,
-                 value: Any,
-                 write_mode: WriteMode = WriteMode.MEMORY_AND_DISK,
-                 default_value: Any = None) -> Any:
+  def and_equals(
+      self,
+      key: Key,
+      value: Any,
+      default_value: Any = None,
+      length_limit: int | None = None,
+      write_mode: WriteMode = WriteMode.MEMORY_AND_DISK,
+  ) -> Any:
     actor = ray.get_actor('context', namespace=_get_namespace())
     return ray.get(
-        actor.and_equals.remote(key, default_value, [ray.put(value)],
-                                write_mode))
+        actor.and_equals.remote(key, [ray.put(value)], default_value,
+                                length_limit, write_mode))
 
   def plus_equals(self,
                   key: Key,
@@ -236,14 +242,16 @@ class Context:
     return self.and_equals(self, key, value, write_mode, default_value)
 
   # TODO: Use the Pythonic operator.
-  def or_equals(self,
-                key: Key,
-                value: Any,
-                write_mode: WriteMode = WriteMode.MEMORY_AND_DISK,
-                default_value: Any = None) -> Any:
+  def or_equals(
+      self,
+      key: Key,
+      value: Any,
+      default_value: Any = None,
+      write_mode: WriteMode = WriteMode.MEMORY_AND_DISK,
+  ) -> Any:
     actor = ray.get_actor('context', namespace=_get_namespace())
     return ray.get(
-        actor.or_equals.remote(key, default_value, [ray.put(value)],
+        actor.or_equals.remote(key, [ray.put(value)], default_value,
                                write_mode))
 
   def __contains__(self, key: Key) -> bool:

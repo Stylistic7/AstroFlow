@@ -16,6 +16,15 @@ class CacheProtocol(Protocol):
   def __contains__(self, key: str) -> bool:
     ...
 
+  # Atomic + operation.
+  def and_equals(self, key: str, value: Any, default: Any,
+                 length_limit: int | None) -> Any:
+    ...
+
+  # Atomic | operation.
+  def or_equals(self, key: str, value: Any, default: Any) -> Any:
+    ...
+
 
 ContentHash = NewType('ContentHash', str)
 
