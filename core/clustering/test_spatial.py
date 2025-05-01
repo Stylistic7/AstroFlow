@@ -16,7 +16,9 @@ from metadata.image_metadata import scatter_compute_image_metadata, load_metadat
 
 def compute_hash_for_filename() -> dict[str, str]:
   metadata = ray.get(load_metadata.remote())
-  return {i.filename: i.content_hash for i in metadata.values()}
+  return {
+      os.path.basename(i.filename): i.content_hash for i in metadata.values()
+  }
 
 
 def compute_graph_fragment() -> Graph:
@@ -45,7 +47,8 @@ class TestSpatialAssociation(unittest.TestCase):
     results, _ = run_graph(compute_graph_fragment())
     groups = results[cluster_by_image_center]
 
-    image_hashes = get_metadata(transform_fn=lambda i: i.content_hash)
+    metadata = context.get_matching(('compute_image_metadata',))
+    image_hashes = [m.content_hash for m in metadata.values()]
 
     expected_groups = [tuple(sorted(image_hashes))]
     self.assertEqual(groups, expected_groups)
@@ -238,6 +241,7 @@ class TestSpatialAssociation(unittest.TestCase):
     groups = results[cluster_by_image_center]
 
     hash_for_filename = compute_hash_for_filename()
+    print(f'### hash_for_filename {hash_for_filename}')
 
     expected_groups = [(hash_for_filename['Pane 0'],),
                        (hash_for_filename['Pane 1'],),

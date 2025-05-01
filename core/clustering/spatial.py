@@ -51,7 +51,7 @@ def find_groups(values: dict[T, Any], comparison_fn: ComparisonFn,
 
 @cached.remote
 def cluster_by_image_center(metadata: MetadataDict) -> None:
-  print(f'cluster_by_image_center metadata hash {hash_list([metadata])}')
+  print(f'cluster_by_image_center metadata length {len(metadata)}')
 
   cosine_similarity_threshold = context.cosine_similarity_threshold
   min_component_members = context.min_component_members
