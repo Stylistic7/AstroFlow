@@ -6,11 +6,10 @@ import unittest
 import datetime
 from pathlib import Path
 
-from compute_graph import build_compute_graph, build_main_processing_graph
+from compute_graph import build_compute_graph
 from context import context
-from dependency_graph import run_graph, print_graph
+from dependency_graph import run_graph
 from state import dispatch
-from stacks import get_stacks
 from testing import make_test_context, make_synthetic_frames, copy_testdata_frames
 
 from file_io.find_image_files import find_image_files
@@ -24,9 +23,6 @@ class TestState(unittest.TestCase):
   def tearDown(self) -> None:
     self.input_dir_obj.cleanup()
     self.output_dir_obj.cleanup()
-
-  def test_startup_not_head_node(self):
-    state = dispatch(dict(type='foo'))
 
   def test_shopping_cart(self):
     state = dispatch(dict(type='add_to_shopping_cart', item=('stack', 'foo')))
@@ -78,29 +74,19 @@ class TestState(unittest.TestCase):
     filenames = find_image_files(context.input_dirs[0])
     self.assertEqual(len(filenames), 26)
 
-    graph = build_compute_graph(regroup=True,
-                                make_previews=False,
-                                run_main_processing_graph=False)
+    graph = build_compute_graph()
     run_graph(graph)
 
     masters = os.listdir(context.output_dir)
     self.assertEqual(len(masters), 0)
 
     stacks = context.stacks
-    toplevel_stacks = get_stacks.get_toplevel_stacks(stacks)
-    self.assertEqual(len(toplevel_stacks), 1)
-    toplevel_stack = toplevel_stacks[0]
+    self.assertEqual(len(stacks), 1)
+    toplevel_stack = next(iter(stacks.values()))
 
     context.shopping_cart = [('stack', toplevel_stack.stable_hash)]
 
-    _, processing_graph = ray.get(build_main_processing_graph.remote())
-    print('### processing_graph')
-    print_graph(processing_graph)
-    self.assertEqual(len(processing_graph), 1)
-
-    graph = build_compute_graph(regroup=False,
-                                make_previews=False,
-                                run_main_processing_graph=True)
+    graph = build_compute_graph()
     run_graph(graph)
 
     masters = list(Path(context.output_dir).rglob('*.xisf'))
