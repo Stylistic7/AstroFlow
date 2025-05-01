@@ -4,12 +4,13 @@ from pathlib import Path
 from context import context
 from previews.calibration import calibrate_subframe
 from previews.operations import autostretch
-from decorators import cached, measure_performance, makes_image
+from decorators import cached, measure_performance
 from customization.types import CustomizedStack
 from customization.subframe_selection import get_light_frames_sorted_by_stars
 from decorators import create_thumbnail
 from stacks.simple_stack import SimpleStack
 from file_io.tiff_file_io import write_tiff_image
+from products import makes_image
 
 
 @makes_image(SimpleStack).as_subframe()

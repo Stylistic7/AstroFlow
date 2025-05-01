@@ -2,11 +2,8 @@ from cache.cached_decorator import make_cached_decorator
 from previews.create_thumbnail import make_create_thumbnail_decorator
 from previews.create_video import make_create_video_decorator
 from profiling.measure_performance import make_measure_performance_decorator
-from products.registry import makes_image, makes_video
-
-from context import context
 from hashing import hash_list
-from dependency_graph import Graph
+from context import context
 from decorators.content_hasher import ContentHasher
 
 
@@ -17,8 +14,7 @@ def call_hasher(serialized_func: bytes, *args, **kwargs) -> str:
 
 cached = make_cached_decorator(cache=context,
                                content_hasher=ContentHasher(),
-                               call_hasher=call_hasher,
-                               no_cache_types=[Graph])
+                               call_hasher=call_hasher)
 
 create_thumbnail = make_create_thumbnail_decorator(context)
 create_video = make_create_video_decorator(context)

@@ -18,7 +18,8 @@ from context import context
 from pix import PixInsight, ImageList
 from pix.tasks import WeightedBatchPreprocessing
 from metadata.classes import MetadataDict
-from decorators import cached, makes_image, measure_performance, create_thumbnail
+from decorators import cached, measure_performance, create_thumbnail
+from products import makes_image
 
 
 def _symlink_frames(filenames: list[str], dest_path: str) -> None:

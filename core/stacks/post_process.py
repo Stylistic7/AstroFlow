@@ -6,11 +6,12 @@ from context import context
 from pix.decorators import PixInsight
 from pix.tasks import BlurXTerminator, GradientCorrection, SaveImages
 from pix.classes import ImageList
-from decorators import cached, makes_image, measure_performance, create_thumbnail
+from decorators import cached, measure_performance, create_thumbnail
 from customization.types import CustomizedStack
 from stacks.composite_stack import CompositeStack
 from stacks.stacking import stack_files
 from file_io.types import XisfFilePath
+from products import makes_image
 
 
 @PixInsight(slots=[1])
@@ -46,7 +47,9 @@ def post_process_stack(stack: CustomizedStack) -> XisfFilePath:
           f'file {output_filename} already exists')
     return output_filename
 
-  if not os.environ.get('MOCK_PIXINSIGHT'):
+  if os.environ.get('MOCK_PIXINSIGHT'):
+    shutil.copy(master, output_filename)
+  else:
     _post_process_stack([master], [output_filename])
 
   return output_filename

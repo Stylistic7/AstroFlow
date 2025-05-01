@@ -14,11 +14,11 @@ from testing import make_test_context, copy_testdata_frames
 from file_io.types import TiffFilePath
 from file_io.tiff_file_io import write_tiff_image
 from stacks.composite_stack import CompositeStack
-from decorators import makes_image, cached, measure_performance, create_thumbnail
+from decorators import cached, measure_performance, create_thumbnail
 
-from products.registry import clear_image_registry
+from products.registry import makes_image, clear_registry, MediaType
 
-clear_image_registry()
+clear_registry(MediaType.IMAGE)
 
 
 @makes_image(CompositeStack).as_master('master_{name}.tiff')
@@ -27,7 +27,8 @@ clear_image_registry()
 @create_thumbnail
 def stack_files(stack: CompositeStack) -> TiffFilePath:
   '''Runs WBPP to stack raw images into a TIFF.'''
-  output_path = stack_files.filename_fn(stack).resolve_at(context.output_dir)
+  output_path = TiffFilePath(stack_files.filename_fn(stack)).resolve_at(
+      context.output_dir)
   image = np.zeros((100, 100))
   write_tiff_image(output_path, image)
 

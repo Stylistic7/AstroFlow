@@ -5,7 +5,7 @@ from typing import Any
 from collections.abc import Iterable
 
 from context import context
-from decorators import cached, makes_image, makes_video, measure_performance, create_thumbnail, create_video
+from decorators import cached, measure_performance, create_thumbnail, create_video
 from previews.operations import resize_array
 from previews.flat_correction import create_flat_correction_thumbnails
 from previews.calibration import calibrate_subframe
@@ -14,6 +14,7 @@ from stacks.composite_stack import CompositeStack
 from dependency_graph import Graph, TaskDescriptor
 from previews.operations import autostretch
 from customization.subframe_selection import get_light_frames_sorted_by_stars
+from products import makes_image, makes_video
 
 
 @ray.remote

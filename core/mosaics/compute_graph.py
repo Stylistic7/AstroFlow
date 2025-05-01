@@ -6,6 +6,7 @@ from pathlib import Path
 from shapely import box  # type: ignore
 from shapely.affinity import scale  # type: ignore
 from functools import partial
+import shutil
 
 from context import context
 from customization.types import CustomizedStack
@@ -22,7 +23,7 @@ from stacks.compute_graph import get_stack_image
 from stacks.composite_stack import CompositeStacksDict
 from stacks.types import StackHash
 from previews.types import QualityLevel
-from decorators import cached, create_thumbnail, makes_image, measure_performance
+from decorators import cached, create_thumbnail, measure_performance
 from targets.types import TargetsDict, Target, TargetHash
 from file_io.generic import read_image
 from file_io.tiff_file_io import write_tiff_image
@@ -31,6 +32,7 @@ from pix.decorators import PixInsight
 from pix.classes import ImageList
 from pix.tasks import SaveImages
 from metadata.image_metadata import compute_image_metadata
+from products import makes_image
 
 
 @PixInsight()
@@ -65,11 +67,14 @@ def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
         f'filter {filter} input {input} output {output}')
 
   if mode == QualityLevel.SUBFRAME:
-    image = read_image(output)
+    image = read_image(input)
     autostretched = (autostretch(image) * 255.0).astype(np.uint8)
     write_tiff_image(output, autostretched, {'FILTER': filter})
   elif mode == QualityLevel.MASTER:
-    save_uncompressed([input], [output])
+    if os.environ.get('MOCK_PIXINSIGHT'):
+      shutil.copy(input, output)
+    else:
+      save_uncompressed([input], [output])
 
     image = read_image(output)
     autostretched = (autostretch(image) * 255.0).astype(np.uint8)
@@ -94,7 +99,7 @@ def stacks_for_mosaic(mosaic: Mosaic, stacks: CompositeStacksDict,
   })
 
 
-@cached.remote
+@ray.remote
 def build_mosaic_subgraph(mode: QualityLevel, mosaic: Mosaic,
                           stacks: CompositeStacksDict,
                           targets: TargetsDict) -> Graph:
@@ -140,11 +145,11 @@ def build_mosaic_subgraph(mode: QualityLevel, mosaic: Mosaic,
 
 
 # TODO: This function seems to be slow for some reason.
-@cached.remote(num_cpus=0.5)
+@ray.remote(num_cpus=0.5)
 def build_placement_subgraph(mode: QualityLevel, mosaic: Mosaic,
                              stack: CustomizedStack, filter: str,
                              tile_indices: TileIndices, viewbox: Viewbox,
-                             mask: box):
+                             mask: box) -> Graph:
   # TODO: Integrate the stack mask here too.
   return Graph({
       **chain(
@@ -201,7 +206,7 @@ def get_stacks_for_filter(
   return tuple(get_stacks_for_strip(strip) for strip in mosaic.strips)
 
 
-@cached.remote
+@ray.remote
 def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
                                  strips: list[list[StackHash]],
                                  stacks: CompositeStacksDict, filter: str,

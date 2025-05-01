@@ -6,16 +6,14 @@ from astropy.time import Time
 
 from context import context
 from catalogs import position_string
-from artifacts import Artifact
 from pix.decorators import PixInsight
 from pix.classes import ImageList
 from pix.tasks import ChannelCombination, SpectrophotometricColorCalibration, ImageSolver, StarXTerminator, LinearFit, SaveImages
-from targets.types import TargetHash
 from file_io.types import XisfFilePath
-from decorators import cached, makes_image, measure_performance, create_thumbnail
+from decorators import cached, measure_performance, create_thumbnail
 from targets.types import Target
-from previews.types import QualityLevel
 from stacks.artifacts import output_filename as stack_output_filename
+from products import makes_image
 
 
 # TODO: Find a way to disable these during tests.
