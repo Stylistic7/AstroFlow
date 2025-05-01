@@ -11,11 +11,9 @@ from products import makes_image, get_producer, MediaType
 from compute_graph import build_compute_graph
 from testing import make_test_context, copy_testdata_frames
 from context import context
-from file_io.types import TiffFilePath, XisfFilePath
+from file_io.types import TiffFilePath
 from file_io.tiff_file_io import write_tiff_image
 from stacks.composite_stack import CompositeStack
-from targets.types import Target
-from mosaics.types import Mosaic
 from previews.types import QualityLevel
 
 from products.registry import clear_registry
@@ -27,7 +25,8 @@ clear_registry(MediaType.IMAGE)
 @cached.remote
 def stack_preview(stack: CompositeStack) -> TiffFilePath:
   '''Loads the best individual FITS image from stack and saves as TIFF.'''
-  output_path = stack_preview.filename_fn(stack).resolve_at(context.output_dir)
+  output_path = TiffFilePath(stack_preview.filename_fn(stack)).resolve_at(
+      context.output_dir)
   image = np.zeros((100, 100))
   write_tiff_image(output_path, image)
 
@@ -38,7 +37,8 @@ def stack_preview(stack: CompositeStack) -> TiffFilePath:
 @cached.remote
 def stack_files(stack: CompositeStack) -> TiffFilePath:
   '''Runs WBPP to stack raw images into a TIFF.'''
-  output_path = stack_files.filename_fn(stack).resolve_at(context.output_dir)
+  output_path = TiffFilePath(stack_files.filename_fn(stack)).resolve_at(
+      context.output_dir)
   image = np.zeros((100, 100))
   write_tiff_image(output_path, image)
 
