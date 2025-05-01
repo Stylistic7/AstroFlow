@@ -1,30 +1,25 @@
 import ray
-import ipaddress
 import numpy as np
 
 from context import context
 
 
 def estimate_time(tag: str, number: int = 1) -> float | None:
-  node_ips = []
-  resources = ray.cluster_resources()
-  for k, v in resources.items():
-    try:
-      _, ip = k.split('node:')
-      ip = ipaddress.ip_address(ip)
-      node_ips.append(str(ip))
-    except:
-      pass
-
-  total_count = 0
-  total_time = 0
-  for node_ip in node_ips:
-    key = ('performance_history', node_ip, tag)
+  nodes = ray.nodes()
+  times = []
+  for node in nodes:
+    name = node['NodeName']
+    num_cpus = node['Resources']['CPU']
+    key = ('performance_history', name, tag)
     if history := context.get(key, None):
-      total_time += np.sum(history)
-      total_count += len(history)
+      print(f'### history {history}')
 
-  if total_count:
-    return number * (total_time / total_count)
+      # If the number of remaining tasks is less than the number of CPUs,
+      # then all of them can run at the same time.
+      if number < num_cpus:
+        times.append(np.mean(history))
+      else:
+        times.append(num_cpus / np.mean(history))
 
-  return None
+  if times:
+    return number / np.sum(times)
