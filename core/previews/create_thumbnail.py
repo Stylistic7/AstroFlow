@@ -3,6 +3,7 @@ import numpy as np
 from functools import wraps
 from typing import Callable, Optional
 from pathlib import Path
+import tempfile
 
 from hashing import hash_call, hash_source_code
 from file_io.generic import read_image
@@ -30,7 +31,12 @@ def make_create_thumbnail_decorator(
       def wrapper(*args, **kwargs):
         result = func(*args, **kwargs)
 
-        thumbnail = thumbnail_fn(os.fspath(result))
+        if isinstance(result, tempfile._TemporaryFileWrapper):
+          filename = result.name
+        else:
+          filename = os.fspath(result)
+
+        thumbnail = thumbnail_fn(filename)
 
         if thumbnail is not None:
           call_hash = hash_call(fn_hash, *args, **kwargs)
