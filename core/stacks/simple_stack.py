@@ -26,6 +26,9 @@ class SimpleStack(ContentHashed, ChronologyAttributes[StackHash],
     frame_metadata = {h: i for h, i in metadata.items() if h in frames}
     assert frame_metadata
 
+    # TODO: Find a way for the content hash to be computed by the
+    # `ContentHasher` class, instead of manually here. (Calibration stacks don't
+    # have a stable hash, but they should.)
     content_hash = hash_list(sorted(frames))
 
     attributes: dict[

@@ -7,7 +7,7 @@ from context import context
 from dependency_graph import run_graph
 from testing import make_test_context
 
-from stacks.composite_stack import CompositeStack, SimpleStacksDict
+from stacks.composite_stack import SimpleStacksDict
 from mosaics.orion_mosaic import add_orion_mosaic_images
 
 
@@ -31,22 +31,19 @@ class TestHashing(unittest.TestCase):
     self.assertEqual(len(context.targets), 1)
     self.assertEqual(len(context.mosaics), 0)
 
-    light_stack = next(
-        iter(s for s in context.stacks.values()
-             if isinstance(s, CompositeStack)))
+    stack = next(iter(context.stacks.values()))
 
     # The stable hash and content hashes are computed from the image data.
     # The image data should be predictable, because `random_seed` was provided
     # above.
-    self.assertEqual(light_stack.stable_hash, '7825680a0bef1d88')
-    self.assertEqual(light_stack.content_hash, '409a606f632cbe23')
+    self.assertEqual(stack.stable_hash, '7825680a0bef1d88')
+    self.assertEqual(stack.content_hash, 'c9157f38178b684e')
 
     # The Python hash of a Stack is just an integer representation of its
     # content hash, which should be stable across Python sessions.
-    self.assertEqual(hash(light_stack), 7095785728963045726)
+    self.assertEqual(hash(stack), 1693860405574490487)
 
     # The Python hash of a SimpleStacksDict goes through `hash_dict_int()`,
     # and should be stable across Python sessions.
-    print(f'### context.calibration_stacks {type(context.calibration_stacks)}')
     self.assertTrue(isinstance(context.calibration_stacks, SimpleStacksDict))
     self.assertEqual(hash(context.calibration_stacks), 3869814240498371864)

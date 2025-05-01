@@ -2,7 +2,6 @@ from typing import Any, Callable
 import inspect
 import xxhash
 from dataclasses import fields
-import pickle
 
 
 # TODO: Maybe unify these.
@@ -39,7 +38,7 @@ def make_hashable(value: Any) -> Any:
   if isinstance(value, dict):
     return tuple(
         sorted((k, _maybe_use_content_hash(v)) for k, v in value.items()))
-  elif isinstance(value, (list, set)):
+  elif isinstance(value, (tuple, list, set)):
     return tuple(_maybe_use_content_hash(v) for v in value)
   elif isinstance(value, frozenset):
     return tuple(sorted(value))
@@ -52,5 +51,4 @@ def hash_source_code(func: Callable) -> bytes:
 
 
 def hash_call(fn_hash: bytes, *args, **kwargs) -> str:
-  data = pickle.dumps((fn_hash, args, sorted(kwargs.items())))
-  return xxhash.xxh64(data).hexdigest()
+  return hash_list([fn_hash, make_hashable(args), make_hashable(kwargs)])
