@@ -26,15 +26,15 @@ class TestTrimming(unittest.TestCase):
     self.output_dir_obj.cleanup()
 
   def test_orion_mosaic(self) -> None:
-    add_orion_mosaic_images(panes=[1, 2])
+    add_orion_mosaic_images()
 
     run_graph(build_compute_graph())
 
     stacks = context.stacks
-    self.assertEqual(len(stacks), 2)
+    self.assertEqual(len(stacks), 4)
 
     targets = context.targets
-    self.assertEqual(len(targets), 2)
+    self.assertEqual(len(targets), 4)
 
     mosaics = context.mosaics
     self.assertEqual(len(mosaics), 1)
@@ -43,26 +43,26 @@ class TestTrimming(unittest.TestCase):
     projection = mercator.MercatorProjection()
     x, y = project_polygon(mosaic.footprint, projection)
     projected_footprint = Polygon(zip(x, y))
-    print('###', list(projected_footprint.exterior.coords))
-
-    plt.figure()
-
-    union_poly = None
-    for target in context.targets.values():
-      draw_spherical_polygon(target.footprint, projection, color='blue')
-      x, y = project_polygon(target.footprint, projection)
-      poly = Polygon(zip(x, y))
-      union_poly = poly if union_poly is None else union_poly.union(poly)
-
-    print(f'### union_poly.exterior.coords {list(union_poly.exterior.coords)}')
-    box = largest_interior_rectangle(union_poly)
-    print(f'### box.exterior.coords {list(box.exterior.coords)}')
-    x, y = zip(*box.exterior.coords)
-    plt.plot(x, y, color='black')
-
-    draw_spherical_polygon(mosaic.footprint, projection, color='red')
 
     # TODO: Write a real test with an assertion.
+
+    # plt.figure()
+
+    # union_poly = None
+    # for target in context.targets.values():
+    #   draw_spherical_polygon(target.footprint, projection, color='blue')
+    #   x, y = project_polygon(target.footprint, projection)
+    #   poly = Polygon(zip(x, y))
+    #   union_poly = poly if union_poly is None else union_poly.union(poly)
+
+    # print(f'### union_poly.exterior.coords {list(union_poly.exterior.coords)}')
+    # box = largest_interior_rectangle(union_poly, epsilon=0)
+    # print(f'### box.exterior.coords {list(box.exterior.coords)}')
+    # x, y = zip(*box.exterior.coords)
+    # plt.plot(x, y, color='black')
+
+    # draw_spherical_polygon(mosaic.footprint, projection, color='red')
+
     # plt.show()
 
 
