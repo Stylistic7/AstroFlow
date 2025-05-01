@@ -50,5 +50,6 @@ def hash_source_code(func: Callable) -> bytes:
   return xxhash.xxh64(inspect.getsource(func)).hexdigest()
 
 
-def hash_call(fn_hash: bytes, *args, **kwargs) -> str:
-  return hash_list([fn_hash, make_hashable(args), make_hashable(kwargs)])
+def hash_call(serialized_func: bytes, *args, **kwargs) -> str:
+  kwargs_list = sorted(kwargs.items())
+  return hash_list([serialized_func, *args, *kwargs_list])
