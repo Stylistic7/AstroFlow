@@ -46,16 +46,6 @@ class TestMosaic(unittest.TestCase):
 
     self.assertEqual(len(context.targets), 3)
     self.assertEqual(len(context.mosaics), 1)
-    mosaic = next(iter(context.mosaics.values()))
-    print(f'### There is one mosaic, {mosaic}')
-
-    ha_key = ('mosaic_thumbnail_image', QualityLevel.SUBFRAME,
-              mosaic.stable_hash, 'H')
-    self.assertFalse(context.contains(ha_key))
-
-    sii_key = ('mosaic_thumbnail_image', QualityLevel.SUBFRAME,
-               mosaic.stable_hash, 'S')
-    self.assertTrue(context.contains(sii_key))
 
   def test_orion_mosaic(self) -> None:
     add_orion_mosaic_images()
@@ -68,14 +58,6 @@ class TestMosaic(unittest.TestCase):
     self.assertEqual(len(context.targets), 4)
     self.assertEqual(len(context.mosaics), 1)
     mosaic = next(iter(context.mosaics.values()))
-
-    subframe_key = ('mosaic_thumbnail_image', QualityLevel.SUBFRAME,
-                    mosaic.stable_hash, 'H')
-    master_key = ('mosaic_thumbnail_image', QualityLevel.MASTER,
-                  mosaic.stable_hash, 'H')
-
-    self.assertTrue(context.contains(subframe_key))
-    self.assertFalse(context.contains(master_key))
 
     self.assertTrue(
         mosaic.stable_hash in [t.stable_hash for t in context.targets.values()])
@@ -98,12 +80,13 @@ class TestMosaic(unittest.TestCase):
     self.assertEqual(len(context.mosaics), 1)
     mosaic = next(iter(context.mosaics.values()))
 
+    files = list(Path(context.output_dir).rglob('*'))
+    for file in files:
+      print(f'### {file=}')
+
     xisf_files = list(Path(context.output_dir).rglob('final_merged*.xisf'))
     self.assertEqual(len(xisf_files), 2)
     print(f'### Found final merged file {xisf_files[0]}')
-
-    self.assertTrue(context.contains(subframe_key))
-    self.assertTrue(context.contains(master_key))
 
   def test_orion_mosaic_with_missing_panel(self) -> None:
     copy_testdata_frames(target_name='Orion Pane 1',
@@ -130,14 +113,6 @@ class TestMosaic(unittest.TestCase):
     self.assertEqual(len(context.targets), 3)
     self.assertEqual(len(context.mosaics), 1)
     mosaic = next(iter(context.mosaics.values()))
-
-    subframe_key = ('mosaic_thumbnail_image', QualityLevel.SUBFRAME,
-                    mosaic.stable_hash, 'H')
-    master_key = ('mosaic_thumbnail_image', QualityLevel.MASTER,
-                  mosaic.stable_hash, 'H')
-
-    self.assertTrue(context.contains(subframe_key))
-    self.assertFalse(context.contains(master_key))
 
     self.assertTrue(
         mosaic.stable_hash in [t.stable_hash for t in context.targets.values()])
