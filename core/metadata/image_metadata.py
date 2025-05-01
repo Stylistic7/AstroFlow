@@ -79,7 +79,7 @@ from decorators import cached, measure_performance
 #
 # TODO: Add a task that checks that input and output directories exist. Many
 # tasks cannot run without them.
-@cached.remote(resources={'fastest_storage': 0.001})
+@ray.remote(resources={'fastest_storage': 0.001})
 def scatter_compute_image_metadata(mode: str, *filenames_in:
                                    list[Path]) -> Graph:
   directories = {
@@ -138,7 +138,8 @@ def load_metadata() -> MetadataDict:
         metadata[value.content_hash] = value
 
   metadata_size_mb = objsize.get_deep_size(metadata) / 1024 / 1024
-  print(f'### load_metadata() size {metadata_size_mb} MB')
+  print(f'### load_metadata() length {len(metadata)} '
+        f'size {metadata_size_mb:.2f} MB')
 
   context.metadata = metadata
 
