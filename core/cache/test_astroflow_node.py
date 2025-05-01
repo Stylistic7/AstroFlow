@@ -1,5 +1,6 @@
 from ray_infra import ray_local
 
+import ray
 import numpy as np
 import os
 import unittest
@@ -106,7 +107,7 @@ def gather(*ancestor_results: list[int]) -> int:
   return sum(ancestor_results)
 
 
-@cached.remote
+@ray.remote
 def maybe_run_dynamic_graph(should_run: bool) -> Graph:
   if should_run:
     return Graph({gather: [(process, i) for i in range(7)]})
@@ -117,7 +118,7 @@ def done(x: Any) -> Any:
   return x
 
 
-@cached.remote
+@ray.remote
 def build_subgraph(number: int) -> Graph:
   return Graph({gather: [(process, i) for i in range(number)]})
 

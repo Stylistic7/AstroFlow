@@ -22,8 +22,7 @@ def _compute_content_hash(serialized_func: bytes, *args, **kwargs) -> str:
 sidecar_hasher = SidecarHasher()
 task_with_context = make_cached_decorator(cache=context,
                                           content_hasher=sidecar_hasher,
-                                          call_hasher=_compute_content_hash,
-                                          no_cache_types=[Graph])
+                                          call_hasher=_compute_content_hash)
 
 
 @task_with_context.remote

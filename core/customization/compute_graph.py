@@ -29,7 +29,7 @@ def gather_customize_stacks(*stacks) -> None:
   context.stacks = {s.stable_hash: s for s in stacks}
 
 
-@cached.remote
+@ray.remote
 def scatter_customize_stacks() -> Graph:
   quarantined_stacks = context.quarantined_stacks or []
   settings = context.settings or Settings()
@@ -48,6 +48,7 @@ def scatter_customize_stacks() -> Graph:
 @cached.remote
 def customize_stack(stack: CompositeStack,
                     settings: Settings) -> CustomizedStack:
+  print(f'### customize_stack stack {stack} settings {settings}')
   stack = associate_with_stack(stack)
   stack = select_subframes(stack)
   stack = apply_quarantine(stack)
@@ -85,7 +86,7 @@ def customization_done() -> None:
   pass
 
 
-@cached.remote
+@ray.remote
 def build_customize_graph() -> Graph:
   return Graph({
       customization_done: [

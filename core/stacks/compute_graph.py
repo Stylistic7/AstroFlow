@@ -1,4 +1,5 @@
 from pathlib import Path
+import ray
 
 from context import context
 from stacks.stacking import stack_files
@@ -14,7 +15,7 @@ from previews.types import QualityLevel
 
 # This function accepts a fully customized stack, after settings and calibration
 # frames have been associated.
-@cached.remote
+@ray.remote
 def build_stacking_subgraph(stack: CustomizedStack) -> Graph:
   calibration_stacks = context.calibration_stacks
 
@@ -44,11 +45,10 @@ def get_stack_subframe_image(stack: CompositeStack) -> Path:
   assert stack is not None
   light_frames_by_stars = get_light_frames_sorted_by_stars(stack)
   best_light_frame = stack.all_metadata()[light_frames_by_stars[0]]
-  print(f'### get_stack_subframe_image returning {best_light_frame.filename}')
   return best_light_frame.filename
 
 
-@cached.remote
+@ray.remote
 def get_stack_image(mode: QualityLevel, stack: CompositeStack) -> Graph:
   assert stack is not None
   if mode == QualityLevel.SUBFRAME:

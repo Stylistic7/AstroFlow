@@ -2,7 +2,10 @@ import ray
 import inspect
 from functools import wraps
 from typing import Any, Callable, Optional, get_origin, TypeVar, Generic, List, Type
+import pickle
+import xxhash
 
+from dependency_graph import Graph
 from hashing import hash_source_code, hash_call
 from protocols import CacheProtocol, ContentHashProtocol
 
@@ -28,9 +31,11 @@ def _bind_args(func: Callable, args: tuple, kwargs: dict,
   return bound
 
 
-# TODO: Consider removing `no_cache_types` and just using @ray.remote for
-# functions that return Graphs.
-#
+def _default_hash_call(fn_hash: bytes, *args, **kwargs) -> str:
+  data = pickle.dumps((fn_hash, args, sorted(kwargs.items())))
+  return xxhash.xxh64(data).hexdigest()
+
+
 # TODO: Consider removing `injected_context` if it's not used anywhere. The
 # original intent was to handle context for subgraphs, like temporary
 # directories.
@@ -38,10 +43,8 @@ def make_cached_decorator(cache: CacheProtocol,
                           content_hasher: ContentHashProtocol,
                           call_hasher: Optional[Callable[[bytes, Any],
                                                          str]] = None,
-                          no_cache_types: Optional[List[Type]] = None,
                           debug=False):
-  call_hasher = call_hasher or hash_call
-  no_cache_types = tuple(no_cache_types or [])
+  call_hasher = call_hasher or _default_hash_call
 
   def debug_print(*args, **kwargs):
     if debug:
@@ -77,7 +80,10 @@ def make_cached_decorator(cache: CacheProtocol,
 
       result = func(*bound.args, **bound.kwargs)
 
-      if not isinstance(result, no_cache_types + (Exception,)):
+      # TODO: Remove this assert.
+      assert not isinstance(result, Graph)
+
+      if not isinstance(result, Exception):
         result = content_hasher.set(result, call_hash)
         debug_print(f'storing: {key} as {type(result)}')
         cache[key] = result

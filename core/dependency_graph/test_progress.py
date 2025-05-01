@@ -5,17 +5,20 @@ import ray
 import time
 
 from dependency_graph import Graph, run_graph, graph_status_to_progress
-from decorators import cached
+from decorators import measure_performance
 
 
-@cached.remote
+@ray.remote
+@measure_performance
 def gather():
   pass
 
 
-@cached.remote
+@ray.remote
+@measure_performance
 def process(runtime, i):
   time.sleep(runtime)
+  return i
 
 
 def scatter(task, runtime, number):
