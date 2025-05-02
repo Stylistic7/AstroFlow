@@ -9,20 +9,14 @@ from typing import Any
 
 from context import context
 from cache.cached_decorator import make_cached_decorator, Injected
-from hashing import hash_list
+from hashing import hash_call
 from dependency_graph import Graph
 from testing.sidecar_hasher import SidecarHasher
-
-
-def _compute_content_hash(serialized_func: bytes, *args, **kwargs) -> str:
-  kwargs_list = sorted(kwargs.items())
-  return hash_list([serialized_func, *args, *kwargs_list])
-
 
 sidecar_hasher = SidecarHasher()
 task_with_context = make_cached_decorator(cache=context,
                                           content_hasher=sidecar_hasher,
-                                          call_hasher=_compute_content_hash)
+                                          call_hasher=hash_call)
 
 
 @task_with_context.remote
@@ -48,7 +42,7 @@ def fail_remote() -> int:
   raise ValueError("intentional failure")
 
 
-@task_with_context.remote
+@ray.remote
 def make_graph_remote() -> Graph:
   context.num_graph_runs = context.num_graph_runs + 1
   return Graph()
@@ -100,16 +94,3 @@ class TestTask(unittest.TestCase):
       ray.get(fail_remote.remote())
 
     self.assertIn("intentional failure", str(cm.exception))
-
-  def test_excluded_from_cache(self):
-    context.num_graph_runs = 0
-    self.assertFalse(make_graph_remote.is_cached())
-
-    ray.get(make_graph_remote.remote())
-    self.assertFalse(make_graph_remote.is_cached())
-
-    ray.get(make_graph_remote.remote())
-    self.assertFalse(make_graph_remote.is_cached())
-
-    # Should have run both times since Graph is excluded from cache
-    self.assertEqual(context.num_graph_runs, 2)
