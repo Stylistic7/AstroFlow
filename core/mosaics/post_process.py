@@ -76,7 +76,7 @@ def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> XisfFilePath:
                                             None).resolve_at(context.output_dir)
   print(f'### post_process_mosaic output_filename {output_filename}')
 
-  if os.environ.get('MOCK_PIXINSIGHT'):
+  if context.get('mock_pixinsight', False):
     shutil.copy(images[0], output_filename)
   else:
     _post_process_mosaic(images, mosaic, output_filename)

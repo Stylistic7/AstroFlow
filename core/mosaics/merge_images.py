@@ -79,7 +79,7 @@ def merge_images(mode: QualityLevel, mosaic: Mosaic, input_0: Path,
     write_tiff_image(Path(output_filename), image, {'FILTER': filter})
 
   elif mode == QualityLevel.MASTER:
-    if os.environ.get('MOCK_PIXINSIGHT'):
+    if context.get('mock_pixinsight', False):
       return input_0
     else:
       output_filename = ray.get(

@@ -71,7 +71,7 @@ def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
     autostretched = (autostretch(image) * 255.0).astype(np.uint8)
     write_tiff_image(output, autostretched, {'FILTER': filter})
   elif mode == QualityLevel.MASTER:
-    if os.environ.get('MOCK_PIXINSIGHT'):
+    if context.get('mock_pixinsight', False):
       shutil.copy(input, output)
     else:
       save_uncompressed([input], [output])

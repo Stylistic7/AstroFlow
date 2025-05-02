@@ -4,6 +4,8 @@ import os
 import shutil
 from typing import Any
 
+import context
+
 from pix.classes import FilenameList, ImageList
 from pix.decorators import PixInsight
 from pix.tasks import BlurXTerminator, StarXTerminator, StarAlignment, ChannelCombination
@@ -124,7 +126,7 @@ def channel_combination(images: ImageList) -> ImageList:
 class TestDecorators(unittest.TestCase):
 
   def test_bxt_only(self):
-    if os.environ.get('MOCK_PIXINSIGHT'):
+    if context.get('mock_pixinsight', False):
       return
 
     temp_dir = tempfile.TemporaryDirectory()
@@ -137,7 +139,7 @@ class TestDecorators(unittest.TestCase):
     self.assertCountEqual(filenames, ['blurx.xisf'])
 
   def test_bxt_and_sxt(self):
-    if os.environ.get('MOCK_PIXINSIGHT'):
+    if context.get('mock_pixinsight', False):
       return
 
     temp_dir = tempfile.TemporaryDirectory()
@@ -150,7 +152,7 @@ class TestDecorators(unittest.TestCase):
     self.assertCountEqual(filenames, ['stars.xisf', 'starless.xisf'])
 
   def test_bxt_align_sxt(self):
-    if os.environ.get('MOCK_PIXINSIGHT'):
+    if context.get('mock_pixinsight', False):
       return
 
     temp_dir = tempfile.TemporaryDirectory()
@@ -163,7 +165,7 @@ class TestDecorators(unittest.TestCase):
     self.assertCountEqual(filenames, ['stars.xisf', 'starless.xisf'])
 
   def test_channel_combination(self):
-    if os.environ.get('MOCK_PIXINSIGHT'):
+    if context.get('mock_pixinsight', False):
       return
 
     temp_dir = tempfile.TemporaryDirectory()

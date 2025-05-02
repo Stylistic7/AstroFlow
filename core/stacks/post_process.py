@@ -47,7 +47,7 @@ def post_process_stack(stack: CustomizedStack) -> XisfFilePath:
           f'file {output_filename} already exists')
     return output_filename
 
-  if os.environ.get('MOCK_PIXINSIGHT'):
+  if context.get('mock_pixinsight', False):
     shutil.copy(master, output_filename)
   else:
     _post_process_stack([master], [output_filename])
