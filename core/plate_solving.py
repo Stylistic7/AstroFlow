@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import numpy as np
 import traceback
 from typing import Any
+import pickle
 
 from file_io.conversion import convert_xisf_to_fits
 
@@ -132,8 +133,21 @@ def _solve_field(filename: Path | str,
 # solved. The user can look at it and decide whether to improve the solver's
 # settings, or to throw the images away.
 def solve_field(filename: Path | str,
+                allow_sidecars: bool = True,
                 debug: bool = False) -> PlateSolution | None:
   assert filename
+
+  # If a sidecar file already exists, use it. This is intended for use in tests.
+  if allow_sidecars:
+    sidecar = filename.with_suffix('.pkl')
+    if sidecar.exists():
+      with open(sidecar, 'rb') as f:
+        print(f'### Returning plate-solving sidecar {sidecar}')
+        return pickle.load(f)
+
+  # TODO: Add a `context.mock_plate_solving` option that reads / writes
+  # .soln files next to each image file. The intention is to dramatically
+  # speed up tests, which spend a lot of their time plate-solving.
 
   # TODO: These options must be exposed to the user.
   # TODO: Add --radius 2 and see if that speeds things up.

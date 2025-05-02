@@ -14,6 +14,7 @@ def make_test_context(
   context.quarantined_files = []
 
   context.mock_pixinsight = True
+  context.mock_plate_solving = True
 
   input_dir_obj = tempfile.TemporaryDirectory()
   context.input_dirs = [Path(input_dir_obj.name)]

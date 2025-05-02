@@ -12,7 +12,6 @@ def _update_performance(fn_name: str, elapsed_time: float,
                         cache: CacheProtocol):
   node_ip = ray.util.get_node_ip_address()
   key = ('performance_history', node_ip, fn_name)
-  print(f'### elapsed_time {elapsed_time}')
   cache.and_equals(key, [elapsed_time], [], _MAX_PERFORMANCE_SAMPLES)
 
 

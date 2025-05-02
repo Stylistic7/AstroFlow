@@ -10,6 +10,7 @@ import uuid
 import shutil
 import xxhash
 from typing import Any
+from pathlib import Path, PosixPath
 
 from metadata.classes import ImageMetadata
 from context import context, WriteMode
@@ -134,6 +135,11 @@ def copy_testdata_frames(
 
     fits.flush()
     fits.close()
+
+    src_sidecar = Path(src_filename).with_suffix('.pkl')
+    dest_sidecar = Path(dest_filename).with_suffix('.pkl')
+    if src_sidecar.exists():
+      shutil.copy(src_sidecar, dest_sidecar)
 
 
 # TODO: Maybe remove `insert_metadata`, since it no longer matches pure-
@@ -266,7 +272,7 @@ def make_synthetic_frames(start_datetime: datetime.datetime = datetime.datetime(
 
     if insert_metadata:
       fn_hash = hash_source_code(compute_image_metadata)
-      call_hash = hash_call(fn_hash, fits_filename)
+      call_hash = hash_call(fn_hash, Path(fits_filename))
       key = ('compute_image_metadata', call_hash)
       metadata = ImageMetadata(content_hash=content_hash,
                                filename=fits_filename,

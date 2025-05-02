@@ -99,7 +99,7 @@ def scatter_compute_image_metadata(mode: str, *filenames_in:
     filenames.update(artifacts_for_dir)
 
   graph = Graph(
-      {load_metadata: {(compute_image_metadata, f) for f in filenames}})
+      {load_metadata: {(compute_image_metadata, Path(f)) for f in filenames}})
 
   return graph
 
