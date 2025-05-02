@@ -31,20 +31,13 @@ def _bind_args(func: Callable, args: tuple, kwargs: dict,
   return bound
 
 
-def _default_hash_call(fn_hash: bytes, *args, **kwargs) -> str:
-  data = pickle.dumps((fn_hash, args, sorted(kwargs.items())))
-  return xxhash.xxh64(data).hexdigest()
-
-
 # TODO: Consider removing `injected_context` if it's not used anywhere. The
 # original intent was to handle context for subgraphs, like temporary
 # directories.
 def make_cached_decorator(cache: CacheProtocol,
                           content_hasher: ContentHashProtocol,
-                          call_hasher: Optional[Callable[[bytes, Any],
-                                                         str]] = None,
-                          debug=False):
-  call_hasher = call_hasher or _default_hash_call
+                          call_hasher: Optional[Callable[[bytes, Any], str]],
+                          debug=True):
 
   def debug_print(*args, **kwargs):
     if debug:
