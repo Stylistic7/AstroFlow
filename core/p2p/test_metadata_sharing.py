@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 
 from context import context
-from targets import Target
+from targets.types import Target
 from stacks.composite_stack import CompositeStack
 from p2p.test_ipfs_node import start_test_ipfs_node, stop_test_ipfs_node
 from p2p.ipfs_api import get_node_id, add_file, provide_file, cat_file, publish_name, resolve_name, find_providers, get_file, check_download_status
@@ -30,9 +30,7 @@ class TestMetadataSharing(unittest.TestCase):
 
   def test_stack_metadata_round_trip(self):
     add_orion_mosaic_images()
-    graph = compute_graph.build_compute_graph(regroup=True,
-                                              make_previews=True,
-                                              run_main_processing_graph=True)
+    graph = compute_graph.build_compute_graph()
     run_graph(graph)
 
     metadata_file = tempfile.NamedTemporaryFile(delete=False)

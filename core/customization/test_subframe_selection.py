@@ -49,10 +49,7 @@ class TestSubframeSelection(unittest.TestCase):
     filenames = find_image_files(context.input_dirs[0])
     self.assertEqual(len(filenames), 12)
 
-    run_graph(
-        build_compute_graph(regroup=True,
-                            make_previews=False,
-                            run_main_processing_graph=False))
+    run_graph(build_compute_graph())
 
     # The max number of stars in the stack is 100. The default 75% acceptance
     # threshold means that only those frames with more than 75 stars will be
@@ -60,11 +57,6 @@ class TestSubframeSelection(unittest.TestCase):
     stacks = context.stacks
     self.assertEqual(len(stacks), 1)
     stack = list(stacks.values())[0]
-    # stack = next(iter(s for s in stacks.values() if type(s) is CompositeStack))
-    # print(f'### test_subframe_selection_subgraph stack is {repr(stack)}')
-    # print(
-    #     f'### test_subframe_selection_subgraph substack is {repr(stacks[stack.contents[0]])}'
-    # )
     self.assertEqual(len(stack.all_frames()), 5)
 
 
