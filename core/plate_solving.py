@@ -145,10 +145,6 @@ def solve_field(filename: Path | str,
         print(f'### Returning plate-solving sidecar {sidecar}')
         return pickle.load(f)
 
-  # TODO: Add a `context.mock_plate_solving` option that reads / writes
-  # .soln files next to each image file. The intention is to dramatically
-  # speed up tests, which spend a lot of their time plate-solving.
-
   # TODO: These options must be exposed to the user.
   # TODO: Add --radius 2 and see if that speeds things up.
   trial_arguments = [

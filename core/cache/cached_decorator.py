@@ -37,7 +37,7 @@ def _bind_args(func: Callable, args: tuple, kwargs: dict,
 def make_cached_decorator(cache: CacheProtocol,
                           content_hasher: ContentHashProtocol,
                           call_hasher: Optional[Callable[[bytes, Any], str]],
-                          debug=True):
+                          debug=False):
 
   def debug_print(*args, **kwargs):
     if debug:
@@ -64,8 +64,6 @@ def make_cached_decorator(cache: CacheProtocol,
         debug_print(f'cache mismatch ({stored_hash}): {key}')
         return key, call_hash, False, None
 
-    # TODO: @wraps(func) would be nice here, but it messes up the signature
-    # inspection used to inject context.
     def inner(*args, injected_context: Optional[dict] = None, **kwargs):
       bound = _bind_args(func, args, kwargs, injected_context)
       key, call_hash, valid, cached_result = _get_cache_key_and_result(bound)
@@ -84,6 +82,10 @@ def make_cached_decorator(cache: CacheProtocol,
         cache[key] = result
 
       return result
+
+    inner.__name__ = func.__name__
+    inner.__qualname__ = func.__qualname__
+    inner.__module__ = func.__module__
 
     ray_func = ray.remote(**ray_opts)(inner) if ray_opts else ray.remote(inner)
 
