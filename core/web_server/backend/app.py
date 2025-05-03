@@ -10,6 +10,7 @@ import ray
 import io
 import numpy as np
 import flask
+from typing import Any
 from flask import request, jsonify, Response
 from dataclasses import asdict
 import datetime
@@ -20,6 +21,8 @@ from dataclasses import replace
 import queue
 from distutils.util import strtobool
 import time
+from flask.json.provider import DefaultJSONProvider
+from pathlib import Path
 
 from state import enqueue_action
 from .message_announcer import MessageAnnouncer
@@ -29,6 +32,8 @@ from context import get_cache
 from compute_graph import build_compute_graph
 from dependency_graph import run_graph, graph_status_to_progress
 from dependency_graph.debugging import node_to_string
+from metadata.classes import MetadataDict
+from customization.types import CustomizedStack
 from web_server.backend.tiles import tiles_bp
 from web_server.backend.metadata import metadata_bp
 from web_server.backend.thumbnails import thumbnails_bp
@@ -115,6 +120,18 @@ app.register_blueprint(tiles_bp)
 app.register_blueprint(metadata_bp)
 app.register_blueprint(thumbnails_bp)
 app.register_blueprint(videos_bp)
+
+
+class CustomJSONProvider(DefaultJSONProvider):
+
+  def default(self, o):
+    if isinstance(o, Path):
+      return str(o)
+    return super().default(o)
+
+
+app.json_provider_class = CustomJSONProvider
+app.json = app.json_provider_class(app)
 
 
 # TODO: Move computations into new files.
@@ -214,16 +231,20 @@ def targets():
 def stacks():
   stacks = context.get('stacks', {})
 
-  def remove_metadata(stack: CompositeStack):
-    return replace(
-        stack,
-        contents={
-            h: replace(s, metadata=None) for h, s in stack.contents.items()
-        })
+  def prepare_stack(stack: CustomizedStack) -> dict[str, Any]:
+    d = _make_json_serializable(stack)
+    filenames = []
+    for s in stack.contents.values():
+      filenames += [m.filename for m in s.metadata.values()]
 
-  stacks = {h: remove_metadata(s) for h, s in stacks.items()}
+    d['filenames'] = filenames
+    d.pop('contents')
 
-  return {k: _make_json_serializable(s) for k, s in stacks.items()}
+    return d
+
+  stacks = {h: prepare_stack(s) for h, s in stacks.items()}
+
+  return stacks
 
 
 @app.route('/calibration_stacks')

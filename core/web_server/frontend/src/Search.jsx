@@ -86,12 +86,23 @@ export default function PrimarySearchAppBar() {
   const index = new Document({
     document: {
       id: "ref_id",
-      index: ["name", "camera", "image_scale"],
-      store: ["type", "name", "camera", "image_scale", "stable_hash"]
+      index: ["name", "camera", "image_scale", "stable_hash", "filenames"],
+      store: ["type", "name", "camera", "image_scale", "stable_hash", "filenames"]
     }
   });
 
   const allObjects = [];
+
+  Object.entries(stacks).forEach(([hash, stack]) => {
+    allObjects.push({
+      ref_id: `stack,${hash}`,
+      type: "stack",
+      stable_hash: hash,
+      name: stack.name,
+      camera: stack.camera,
+      filenames: stack.filenames,
+    });
+  });
 
   Object.entries(targets).forEach(([hash, target]) => {
     allObjects.push({
@@ -117,7 +128,7 @@ export default function PrimarySearchAppBar() {
 
   function smartSearch(query) {
     const tokens = query.trim().split(/\s+/);
-    const knownTypes = new Set(["target", "mosaic"]);
+    const knownTypes = new Set(["stack", "target", "mosaic"]);
     let typeFilter = null;
     const terms = [];
 
