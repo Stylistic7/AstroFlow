@@ -45,9 +45,10 @@ def identify_stacks(light_frames: list[FrameHash]) -> CompositeStacksDict:
   def camera_clusters(
       frames: tuple[FrameHash, ...]) -> Iterator[tuple[FrameHash, ...]]:
     cameras = [(metadata[k].content_hash,
-                (metadata[k].header['INSTRUME'], metadata[k].header['NAXIS1'],
-                 metadata[k].header['NAXIS2'], metadata[k].header['XPIXSZ'],
-                 metadata[k].header['YPIXSZ'])) for k in frames]
+                (metadata[k].header.get('INSTRUME', ''),
+                 metadata[k].header['NAXIS1'], metadata[k].header['NAXIS2'],
+                 metadata[k].header['XPIXSZ'], metadata[k].header['YPIXSZ']))
+               for k in frames]
     for cluster in clustering.cluster_discrete(cameras):
       frames, cameras = zip(*cluster)
       assert len(set(cameras)) == 1
