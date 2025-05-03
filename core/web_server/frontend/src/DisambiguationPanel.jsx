@@ -2,8 +2,9 @@ import React, { useContext } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import AstroFlowContext from './AstroFlowContext.jsx';
-import MosaicCard from "./MosaicCard.jsx";
+import StackCard from "./StackCard.jsx";
 import TargetCard from "./TargetCard.jsx";
+import MosaicCard from "./MosaicCard.jsx";
 
 export default function DisambiguationPanel({ items_in }) {
 	const { stacks, targets, mosaics } = useContext(AstroFlowContext);
@@ -40,13 +41,13 @@ export default function DisambiguationPanel({ items_in }) {
 			}}>
 				{items.split(";").map(item => {
 					let [type, id] = item.split(",");
-					if (type == "mosaic") {
-						return <MosaicCard
+					if (type == "stack") {
+						return <StackCard
 							key={item}
 							stacks={stacks}
 							targets={targets}
 							mosaics={mosaics}
-							mosaic_id={id}
+							stack_id={id}
 						/>;
 					} else if (type == "target") {
 						return <TargetCard
@@ -55,6 +56,14 @@ export default function DisambiguationPanel({ items_in }) {
 							targets={targets}
 							mosaics={mosaics}
 							target_id={id}
+						/>;
+					} else if (type == "mosaic") {
+						return <MosaicCard
+							key={item}
+							stacks={stacks}
+							targets={targets}
+							mosaics={mosaics}
+							mosaic_id={id}
 						/>;
 					}
 				}
