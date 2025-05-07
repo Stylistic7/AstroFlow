@@ -81,6 +81,18 @@ def scatter_customize_mosaics(*mosaics) -> None:
   }
 
 
+# TODO: Implement real customization features.
+# TODO: Make this a pure function.
+@ray.remote
+def scatter_customize_masters(*masters) -> None:
+  quarantined_masters = context.quarantined_masters or []
+  context.masters = {
+      id: t
+      for id, t in context.grouped_masters.items()
+      if id not in quarantined_masters
+  }
+
+
 @cached.remote
 def customization_done() -> None:
   pass
@@ -89,8 +101,8 @@ def customization_done() -> None:
 @ray.remote
 def build_customize_graph() -> Graph:
   return Graph({
-      customization_done: [
+      customization_done: {
           scatter_customize_stacks, scatter_customize_targets,
-          scatter_customize_mosaics
-      ]
+          scatter_customize_mosaics, scatter_customize_masters
+      }
   })

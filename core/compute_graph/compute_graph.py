@@ -13,15 +13,17 @@ from targets.compute_graph import build_target_subgraph
 from targets.types import TargetsDict
 from targets.identification import group_stacks_into_targets
 from mosaics.compute_graph import build_mosaic_subgraph
-from dependency_graph import Graph, TaskDescriptor, chain
+from dependency_graph import Graph, chain
 from stacks.identification import identify_stacks
 from stacks.composite_stack import CompositeStacksDict, SimpleStacksDict
 from stacks.validation import validate_stacks
 from decorators import cached
-from customization.compute_graph import build_customize_graph
+from customization.compute_graph import build_customize_graph, scatter_customize_masters
 from mosaics.types import MosaicsDict
 from mosaics.compute_graph import stacks_for_mosaic, targets_for_mosaic
+from masters.compute_graph import identify_masters, store_masters
 from quarantining.quarantining import quarantine_calibration_stacks
+from metadata.image_metadata import load_metadata
 
 
 @ray.remote
@@ -82,6 +84,8 @@ def regroup_graph_done() -> None:
   pass
 
 
+# TODO: Add step that cleans metadata, removing any images that won't make it
+# through the remaining steps, and alerting the user.
 @ray.remote
 def build_regroup_graph(metadata: MetadataDict) -> Graph:
   return Graph({
@@ -98,7 +102,13 @@ def build_regroup_graph(metadata: MetadataDict) -> Graph:
           quarantine_calibration_stacks,
           store_calibration_stacks,
       ),
-      regroup_graph_done: {store_mosaics, store_calibration_stacks},
+      **chain(
+          (identify_masters, metadata),
+          store_masters,
+      ),
+      regroup_graph_done: {
+          store_mosaics, store_calibration_stacks, store_masters
+      },
   })
 
 
@@ -124,7 +134,7 @@ def build_preview_graph() -> Graph:
   return Graph({preview_graph_done: tasks})
 
 
-@cached.remote
+@ray.remote
 def main_processing_graph_done() -> None:
   pass
 
@@ -135,6 +145,8 @@ def build_main_processing_graph() -> Graph:
   targets = context.targets
   mosaics = context.mosaics
   shopping_cart = context.shopping_cart or []
+
+  # shopping_cart += [('stack', s) for s in stacks.keys()]
 
   print(f'### build_main_processing_graph shopping_cart {shopping_cart}')
 
@@ -165,23 +177,28 @@ def build_main_processing_graph() -> Graph:
            stacks_for_mosaic(mosaic, stacks,
                              targets), targets_for_mosaic(mosaic, targets)))
 
+  metadata_task = (scatter_compute_image_metadata, 'all')
+
   graph[main_processing_graph_done] = tasks
+  graph[metadata_task] = {main_processing_graph_done}
+  graph[load_metadata] = {metadata_task}
+  graph[identify_masters] = {load_metadata}
+  graph[store_masters] = {identify_masters}
+  graph[scatter_customize_masters] = {store_masters}
+
   return graph
 
 
 def build_compute_graph() -> Graph:
-  task_list: list[TaskDescriptor] = [(scatter_compute_image_metadata, 'input')]
-
-  # The regroup graph only looks at light frames only, and ignores calibration
-  # frames. All of its findings are written into the given `grouped_*` keys.
-  task_list.append(build_regroup_graph)
-  task_list.append(build_customize_graph)
-  task_list.append(build_preview_graph)
-  task_list.append(build_main_processing_graph)
-
-  graph = chain(*task_list)
-
-  return graph
+  return Graph({
+      **chain(
+          (scatter_compute_image_metadata, 'all'),
+          build_regroup_graph,
+          build_customize_graph,
+          build_preview_graph,
+          build_main_processing_graph,
+      )
+  })
 
 
 # TODO: Add a cleanup task that deletes unreferenced stuff from the cache.

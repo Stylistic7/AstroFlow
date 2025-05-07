@@ -62,8 +62,8 @@ def cluster_by_image_center(metadata: MetadataDict) -> None:
   values = {
       h: get_centroid(i.plate_solution.center)
       for h, i in metadata.items()
-      if image_types.is_light_frame(i.header) and not image_types.is_master(
-          i.header) and type(i.plate_solution) is plate_solving.PlateSolution
+      if image_types.is_light_frame(i.header) and not image_types.is_master(i)
+      and type(i.plate_solution) is plate_solving.PlateSolution
   }
 
   def comparison_fn(a: float, b: float) -> bool:

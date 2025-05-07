@@ -78,6 +78,11 @@ class TestStacking(unittest.TestCase):
         str(f) for f in Path(context.output_dir).rglob("*post_processed.xisf"))
     self.assertEqual(len(filenames), 1)
 
+    for m in context.masters.values():
+      print(f'### master {m.metadata.filename}')
+
+    self.assertEqual(len(context.masters), 5)
+
 
 if __name__ == "__main__":
   unittest.main()
