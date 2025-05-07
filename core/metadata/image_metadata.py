@@ -82,6 +82,8 @@ from decorators import cached, measure_performance
 @ray.remote(resources={'fastest_storage': 0.001})
 def scatter_compute_image_metadata(mode: str, *filenames_in:
                                    list[Path]) -> Graph:
+  filenames_in = set(f for f in filenames_in if f is not None)
+
   directories = {
       None: [],
       'input': context.input_dirs,
@@ -132,7 +134,11 @@ def load_metadata() -> MetadataDict:
 
   # TODO: This won't support disconnected storage media.
   metadata = MetadataDict()
-  for value in context.get_matching(('compute_image_metadata',)).values():
+  for key, value in context.get_matching(('compute_image_metadata',)).items():
+    if not isinstance(value.content_hash, str):
+      print(f'### Rejecting bad key {key} filename {value.filename}')
+      continue
+
     if value.content_hash not in quarantined_files:
       if os.path.exists(value.filename):
         metadata[value.content_hash] = value
