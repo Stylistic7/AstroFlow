@@ -114,7 +114,10 @@ def stack_files(stack: Stack) -> XisfFilePath:
   dest_filename = stack_files.filename_fn(stack).resolve_at(context.output_dir)
   print(f'### Entering stack_files for {stack} dest_filename {dest_filename}')
 
-  metadata = {'IMAGETYP': f'Master {stack.image_type}'}
+  metadata = {
+      'IMAGETYP': f'Master {stack.image_type}',
+      'STBLHASH': stack.stable_hash
+  }
 
   # TODO: This is kind of dangerous, because the output filename only depends
   # on the stack's own content hash -- the hash used by AstroFlowNode is more
@@ -123,6 +126,7 @@ def stack_files(stack: Stack) -> XisfFilePath:
       dest_filename):
     print(f'### Dangerously skipping stacking because '
           f'file {dest_filename} already exists')
+    update_header(dest_filename, metadata)
     return dest_filename
 
   os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
