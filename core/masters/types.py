@@ -6,6 +6,7 @@ from attributes import AstroFlowStateAttributes, ChronologyAttributes, ImagingAt
 from hashing import hash_list_int
 from metadata.classes import ImageMetadata, MetadataDict, FrameHash
 from cache.content_hashed import ContentHashed
+from file_io.generic import get_content_hash
 
 
 # TODO: Should Master also include AstrometricAttributes?
@@ -22,13 +23,15 @@ class Master(ContentHashed, ChronologyAttributes[StackHash], ImagingAttributes,
     imaging_attributes = ImagingAttributes.from_frames([frame], metadata)
 
     frame_metadata = metadata[frame]
+    content_hash = get_content_hash(frame_metadata.filename)
+    stable_hash = frame_metadata.header.get('STBLHASH', None)
 
     # TODO: Unify CONTHASH and STBLHASH somewhere.
     attributes: dict[
         str,
         Any] = asdict(chronology_attributes) | asdict(imaging_attributes) | {
-            'content_hash': frame_metadata.header['CONTHASH'],
-            'stable_hash': frame_metadata.header['STBLHASH'],
+            'content_hash': content_hash,
+            'stable_hash': stable_hash,
             'metadata': frame_metadata,
             'state': {}
         }
