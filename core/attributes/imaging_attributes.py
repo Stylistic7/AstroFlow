@@ -52,7 +52,8 @@ class ImagingAttributes:
             for i in metadata_list
             if 'EXPOSURE' in i.header))
 
-    mean_temperature = np.mean([i.header['CCD-TEMP'] for i in metadata_list])
+    mean_temperature = np.mean(
+        [i.header.get('CCD-TEMP', 0) for i in metadata_list])
 
     return cls(image_type, camera, filter, mean_temperature, exposure_s,
                integration_s, width_pixels, height_pixels)
