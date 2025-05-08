@@ -45,8 +45,11 @@ def _copy_frames_with_plate_solution(metadata: MetadataDict,
     print(f'copying {filename} -> {dest_filename}')
     shutil.copyfile(filename, dest_filename)
 
-    if frame.plate_solution:
-      with pyfits.open(str(dest_filename), mode='update', mmap=False) as fits:
+    with pyfits.open(str(dest_filename), mode='update', mmap=False) as fits:
+      if 'invalid' in fits[0].header.get('BAYERPAT', '').lower():
+        del fits[0].header['BAYERPAT']
+
+      if frame.plate_solution:
         fits[0].header['RA'] = frame.plate_solution.header['CRVAL1']
         fits[0].header['DEC'] = frame.plate_solution.header['CRVAL2']
         for k, v in frame.plate_solution.header.items():
