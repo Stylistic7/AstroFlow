@@ -18,10 +18,9 @@ from stacks.identification import identify_stacks
 from stacks.composite_stack import CompositeStacksDict, SimpleStacksDict
 from stacks.validation import validate_stacks
 from decorators import cached
-from customization.compute_graph import build_customize_graph, scatter_customize_masters
+from customization.compute_graph import build_customize_graph
 from mosaics.types import MosaicsDict
 from mosaics.compute_graph import stacks_for_mosaic, targets_for_mosaic
-from masters.compute_graph import identify_masters, store_masters
 from quarantining.quarantining import quarantine_calibration_stacks
 from metadata.image_metadata import load_metadata
 
@@ -102,13 +101,7 @@ def build_regroup_graph(metadata: MetadataDict) -> Graph:
           quarantine_calibration_stacks,
           store_calibration_stacks,
       ),
-      **chain(
-          (identify_masters, metadata),
-          store_masters,
-      ),
-      regroup_graph_done: {
-          store_mosaics, store_calibration_stacks, store_masters
-      },
+      regroup_graph_done: {store_mosaics, store_calibration_stacks},
   })
 
 
@@ -182,9 +175,6 @@ def build_main_processing_graph() -> Graph:
   graph[main_processing_graph_done] = tasks
   graph[metadata_task] = {main_processing_graph_done}
   graph[load_metadata] = {metadata_task}
-  graph[identify_masters] = {load_metadata}
-  graph[store_masters] = {identify_masters}
-  graph[scatter_customize_masters] = {store_masters}
 
   return graph
 

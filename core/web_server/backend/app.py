@@ -374,6 +374,8 @@ def recent():
 # TODO: Loading stuff from the cache on every endpoint call is very slow.
 @app.route('/flats_for_camera_and_filter/<camera>/<filter>')
 def flats_for_camera_and_filter(camera, filter):
+  print(f'### getting flats for camera {camera} and filter {filter}')
+
   stacks = cache['calibration_stacks']
   return [
       k for k, s in stacks.items()
