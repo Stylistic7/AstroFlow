@@ -75,6 +75,7 @@ def _advertise_zeroconf(state: State,
 def _stop_zeroconf(state: State, action: Action) -> tuple[State, list[Action]]:
   print("Stopping service discovery...")
   state['zeroconf'].close()
+  del state['zeroconf']
   return state, []
 
 
@@ -151,7 +152,11 @@ def _stop_flask(state: State, action: Action) -> tuple[State, list[Action]]:
 
 
 def _quit(state: State, action: Action) -> tuple[State, list[Action]]:
-  return state, [Action(type='stop_ray_node'), Action(type='stop_flask')]
+  return state, [
+      Action(type='stop_ray_node'),
+      Action(type='stop_flask'),
+      Action(type='stop_zeroconf')
+  ]
 
 
 def _add_to_shopping_cart(state: State,
@@ -251,11 +256,11 @@ def dispatch(action: Action) -> dict[str, Any]:
     case 'start_ray_head_node':
       _state, new_actions = _start_ray_head_node(_state, action)
 
-    case 'populate_context':
-      _state, new_actions = _populate_context(_state, action)
-
     case 'stop_ray_node':
       _state, new_actions = _stop_ray_node(_state, action)
+
+    case 'populate_context':
+      _state, new_actions = _populate_context(_state, action)
 
     case 'run_task':
       _state, new_actions = _run_task(_state, action)
@@ -312,7 +317,7 @@ def main_event_loop():
         _action_queue.task_done()
 
       if quit_received and _action_queue.empty() and _state.get(
-          'processing') == []:
+          'processing', []) == []:
         break
 
   except Exception as e:
