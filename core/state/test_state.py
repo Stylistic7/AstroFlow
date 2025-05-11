@@ -5,14 +5,20 @@ import os
 import unittest
 import datetime
 from pathlib import Path
+import time
 
 from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import run_graph
-from state import dispatch
+from state import dispatch, enqueue_action, main_event_loop
 from testing import make_test_context, make_synthetic_frames, copy_testdata_frames
 
 from file_io.find_image_files import find_image_files
+
+
+@ray.remote
+def my_task(input):
+  time.sleep(5)
 
 
 class TestState(unittest.TestCase):
@@ -91,6 +97,12 @@ class TestState(unittest.TestCase):
 
     masters = list(Path(context.output_dir).rglob('*.xisf'))
     self.assertEqual(len(masters), 5)
+
+  def test_run_task(self) -> None:
+    enqueue_action(dict(type='run_task', task=(my_task, 'foo')))
+    enqueue_action(dict(type='quit'))
+
+    main_event_loop()
 
 
 if __name__ == "__main__":

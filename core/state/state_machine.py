@@ -3,12 +3,17 @@ from typing import Any, TypeVar
 import queue
 from pathlib import Path
 import time
+import threading
+import signal
+import sys
 
 from context import context, get_cache
 from ray_infra import connect_to_ray_cluster
 from state.ray_control import start_ray_head_node, start_ray_subordinate_node, stop_ray_node
 from state.astroflow_zeroconf import AstroFlowZeroconf
 from state.types import State, Action
+from dependency_graph import run_graph, Graph
+from dependency_graph.debugging import node_to_string
 
 T = TypeVar('T')
 
@@ -180,10 +185,31 @@ def _remove_from_shopping_cart(state: State,
   return state, []
 
 
+def _run_task(state: State, action: Action) -> tuple[State, list[Action]]:
+  node_string = node_to_string(action['task'])
+  graph = Graph({action['task']: {}})
+
+  def background_work():
+    run_graph(graph)
+    _action_queue.put(dict(type='task_done', task=action['task']))
+
+  threading.Thread(target=background_work, daemon=True).start()
+
+  state['processing'] = state.get('processing', []) + [node_string]
+  return state, []
+
+
+def _task_done(state: State, action: Action) -> tuple[State, list[Action]]:
+  node_string = node_to_string(action['task'])
+  state['processing'].remove(node_string)
+
+  return state, []
+
+
 def dispatch(action: Action) -> dict[str, Any]:
   global _state
 
-  print(f'### handling action {action}')
+  print(f'### handling action {action} current state {_state}')
   action = dict(action)
   new_actions = []
 
@@ -231,6 +257,12 @@ def dispatch(action: Action) -> dict[str, Any]:
     case 'stop_ray_node':
       _state, new_actions = _stop_ray_node(_state, action)
 
+    case 'run_task':
+      _state, new_actions = _run_task(_state, action)
+
+    case 'task_done':
+      _state, new_actions = _task_done(_state, action)
+
     case 'quit':
       _state, new_actions = _quit(_state, action)
 
@@ -247,17 +279,29 @@ def enqueue_action(action):
   _action_queue.put(action)
 
 
+ctrl_c_count = 0
+
+
+def handle_sigint(sig, frame):
+  global ctrl_c_count
+  ctrl_c_count += 1
+  if ctrl_c_count == 1:
+    print(f'### Got first ctrl-c, enqueuing graceful shutdown action')
+    enqueue_action(dict(type='quit'))
+  else:
+    print(f'### Got second ctrl-c, forcing exit')
+    sys.exit(1)
+
+
+signal.signal(signal.SIGINT, handle_sigint)
+
+
 def main_event_loop():
   quit_received = False
 
   try:
     while True:
-      try:
-        action = _action_queue.get()
-      except KeyboardInterrupt:
-        print("Ctrl-C detected — enqueuing 'quit' action")
-        _action_queue.put({'type': 'quit'})
-        continue
+      action = _action_queue.get()
 
       try:
         if action.get("type") == "quit":
@@ -267,7 +311,8 @@ def main_event_loop():
       finally:
         _action_queue.task_done()
 
-      if quit_received and _action_queue.empty():
+      if quit_received and _action_queue.empty() and _state.get(
+          'processing') == []:
         break
 
   except Exception as e:
