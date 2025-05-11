@@ -16,6 +16,8 @@
     "@testing-library/jest-dom": "^5.17.0",
     "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^13.5.0",
+    "chonky": "^2.3.2",
+    "chonky-icon-fontawesome": "^2.3.2",
     "date-fns": "^2.30.0",
     "flexsearch": "^0.8.158",
     "lodash": "^4.17.21",

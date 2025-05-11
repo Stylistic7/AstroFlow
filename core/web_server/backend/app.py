@@ -34,6 +34,7 @@ from dependency_graph import run_graph, graph_status_to_progress
 from dependency_graph.debugging import node_to_string
 from metadata.classes import MetadataDict
 from customization.types import CustomizedStack
+from web_server.backend.files import files_bp
 from web_server.backend.tiles import tiles_bp
 from web_server.backend.metadata import metadata_bp
 from web_server.backend.thumbnails import thumbnails_bp
@@ -116,6 +117,7 @@ else:
       static_folder=f'{base_path}/core/web_server/frontend/build/static',
   )
 
+app.register_blueprint(files_bp)
 app.register_blueprint(tiles_bp)
 app.register_blueprint(metadata_bp)
 app.register_blueprint(thumbnails_bp)
@@ -238,7 +240,6 @@ def stacks():
       filenames += [m.filename for m in s.metadata.values()]
 
     d['filenames'] = filenames
-    d.pop('contents')
 
     return d
 

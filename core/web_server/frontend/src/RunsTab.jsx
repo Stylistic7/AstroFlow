@@ -5,6 +5,9 @@ import { Box, Paper, Typography, IconButton } from '@mui/material';
 import { Delete as DeleteIcon } from '@mui/icons-material';
 import FlatThumbnail from './FlatThumbnail.jsx';
 import AstroFlowContext from './AstroFlowContext.jsx';
+import MetadataItem from './MetadataItem.jsx';
+import FileSelectButton from './FileSelectButton.jsx';
+import LocalFileBrowser from './FileBrowser.jsx';
 
 const RunsTab = ({ stack }) => {
   const { calibrationStacks } = useContext(AstroFlowContext);
@@ -35,6 +38,18 @@ const RunsTab = ({ stack }) => {
     alert(`Delete run ${runId} functionality triggered.`);
   };
 
+  const calibrationStackInfo = (calStackId) => {
+    const calStack = calibrationStacks[calStackId];
+    return (
+      calStack && <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 4, rowGap: 1, alignItems: 'center' }}>
+        <MetadataItem label="Content hash" value={calStack.content_hash} />
+        <MetadataItem label="Date" value={calStack.oldest_date} />
+        <MetadataItem label="Frames" value={calStack.frames.length} />
+        <MetadataItem label="Temp" value={`${calStack.mean_temperature.toFixed(1)}°C`} />
+      </Box>
+    );
+  };
+
   return (
     <Box>
       {runs.map((run) => {
@@ -50,10 +65,28 @@ const RunsTab = ({ stack }) => {
                 <DeleteIcon />
               </IconButton>
             </Box>
-            <Typography variant="body2" sx={{ mb: 2 }}>
-              Exposure: {run.exposure_s.join(', ')}s &nbsp;&nbsp; Integration: {(run.integration_s / 60).toFixed(0)}m &nbsp;&nbsp;
-              Temp: {run.mean_temperature.toFixed(1)}°C &nbsp;&nbsp; Filter: {run.filter}
-            </Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Box>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 4, rowGap: 1 }}>
+                  <MetadataItem label="Exposure" value={`${run.exposure_s.join(', ')}s`} />
+                  <MetadataItem label="Integration" value={`${(run.integration_s / 60).toFixed(0)}m`} />
+                  <MetadataItem label="Temp" value={`${run.mean_temperature.toFixed(1)}°C`} />
+                  <MetadataItem label="Filter" value={run.filter} />
+                </Box>
+              </Box>
+            </Box>
+
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              Dark: &nbsp;&nbsp; {calibrationStackInfo(run.dependencies['dark'])} <FileSelectButton />
+            </Box>
+
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              Bias: &nbsp;&nbsp; {calibrationStackInfo(run.dependencies['bias'])} <FileSelectButton />
+            </Box>
+
+            <div style={{ height: '50vh' }}>
+              <LocalFileBrowser />
+            </div>
 
             <Box sx={{ display: 'flex', overflowX: 'auto', gap: 2, py: 2 }}>
               {flatIds.map((flatId) => (
