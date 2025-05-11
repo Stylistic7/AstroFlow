@@ -7,7 +7,7 @@ import FlatThumbnail from './FlatThumbnail.jsx';
 import AstroFlowContext from './AstroFlowContext.jsx';
 import MetadataItem from './MetadataItem.jsx';
 import FileSelectButton from './FileSelectButton.jsx';
-import LocalFileBrowser from './FileBrowser.jsx';
+import FilePickerExample from './FileBrowser.jsx';
 
 const RunsTab = ({ stack }) => {
   const { calibrationStacks } = useContext(AstroFlowContext);
@@ -77,16 +77,12 @@ const RunsTab = ({ stack }) => {
             </Box>
 
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              Dark: &nbsp;&nbsp; {calibrationStackInfo(run.dependencies['dark'])} <FileSelectButton />
+              Dark: &nbsp;&nbsp; {calibrationStackInfo(run.dependencies['dark'])} <FilePickerExample />
             </Box>
 
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              Bias: &nbsp;&nbsp; {calibrationStackInfo(run.dependencies['bias'])} <FileSelectButton />
+              Bias: &nbsp;&nbsp; {calibrationStackInfo(run.dependencies['bias'])} <FilePickerExample />
             </Box>
-
-            <div style={{ height: '50vh' }}>
-              <LocalFileBrowser />
-            </div>
 
             <Box sx={{ display: 'flex', overflowX: 'auto', gap: 2, py: 2 }}>
               {flatIds.map((flatId) => (
