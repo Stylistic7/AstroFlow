@@ -1,24 +1,23 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
     Dialog,
     DialogTitle,
     DialogContent,
     IconButton,
+    Breadcrumbs,
+    Typography,
     Box,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    Paper,
 } from '@mui/material';
 import ImageIcon from '@mui/icons-material/Image';
-import {
-    FileBrowser,
-    FileList,
-    FileToolbar,
-    FileNavbar,
-    FileContextMenu,
-    ChonkyActions,
-    setChonkyDefaults,
-} from 'chonky';
-import { ChonkyIconFA } from 'chonky-icon-fontawesome';
-
-setChonkyDefaults({ iconComponent: ChonkyIconFA });
+import FolderIcon from '@mui/icons-material/Folder';
+import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 
 function buildFolderChain(path) {
     const parts = path.split('/').filter(Boolean);
@@ -32,7 +31,7 @@ function buildFolderChain(path) {
     return chain;
 }
 
-export default function FilePickerExample() {
+export default function FilePickerExample({ onSelectFile }) {
     const [dialogOpen, setDialogOpen] = useState(false);
     const [files, setFiles] = useState([]);
     const [folderChain, setFolderChain] = useState([]);
@@ -44,71 +43,95 @@ export default function FilePickerExample() {
             .then(res => res.json())
             .then(data => {
                 if (data.error) throw new Error(data.error);
-                setFiles(data.files.map(f => ({
-                    id: f.id,
-                    name: f.name,
-                    isDir: f.isDir,
-                })));
+                const sorted = data.files.slice().sort((a, b) => {
+                    if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+                    return a.name.localeCompare(b.name);
+                });
+                setFiles(sorted);
                 setFolderChain(buildFolderChain(data.path));
                 setCurrentPath(data.path);
             })
             .catch(err => console.error('Failed to load directory:', err));
     }, []);
 
-    const handleAction = useCallback((data) => {
-        const { id, payload } = data;
+    useEffect(() => {
+        if (dialogOpen) loadFolder(currentPath);
+    }, [dialogOpen, loadFolder, currentPath]);
 
-        if (id === ChonkyActions.OpenFiles.id) {
-            const file = payload?.targetFile;
-            if (file?.isDir && typeof file.id === 'string') {
-                loadFolder(file.id);
-            } else if (file?.id) {
-                console.log('Selected:', file.id);
-                setDialogOpen(false);
-            }
+    const handleClick = (file) => {
+        if (file.isDir) {
+            loadFolder(file.id);
+        } else {
+            onSelectFile?.(file.id);
+            setDialogOpen(false);
         }
-
-        else if (id === ChonkyActions.OpenFolderChain.id) {
-            const folder = payload?.folder;
-            if (folder?.isDir && typeof folder.id === 'string') {
-                loadFolder(folder.id);
-            }
-        }
-
-        else if (id === ChonkyActions.OpenParentFolder.id) {
-            const parent = folderChain.length >= 2
-                ? folderChain[folderChain.length - 2]
-                : folderChain[0];
-            if (parent?.id && typeof parent.id === 'string') {
-                loadFolder(parent.id);
-            }
-        }
-    }, [loadFolder, folderChain]);
+    };
 
     return (
         <>
-            <IconButton component="span" onClick={() => {
-                loadFolder('/Users');
-                setDialogOpen(true);
-            }}>
+            <IconButton component="span" onClick={() => setDialogOpen(true)}>
                 <ImageIcon />
             </IconButton>
 
-            <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="md" fullWidth>
+            <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth={false} fullWidth>
                 <DialogTitle>Select a file or folder</DialogTitle>
-                <DialogContent sx={{ height: 500 }}>
-                    <Box sx={{ height: '100%', borderRadius: 2, overflow: 'hidden' }}>
-                        <FileBrowser
-                            files={files}
-                            folderChain={folderChain}
-                            onFileAction={handleAction}
-                            darkMode
-                        >
-                            <FileNavbar />
-                            <FileToolbar />
-                            <FileList />
-                            <FileContextMenu />
-                        </FileBrowser>
+                <DialogContent sx={{ height: 500, overflow: 'hidden' }}>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                        <Box sx={{ mb: 2 }}>
+                            <Breadcrumbs aria-label="breadcrumb">
+                                {folderChain.map((crumb, index) => (
+                                    <Typography
+                                        key={crumb.id}
+                                        color={index === folderChain.length - 1 ? 'text.primary' : 'inherit'}
+                                        sx={{ cursor: index !== folderChain.length - 1 ? 'pointer' : 'default' }}
+                                        onClick={() => index !== folderChain.length - 1 && loadFolder(crumb.id)}
+                                    >
+                                        {crumb.name}
+                                    </Typography>
+                                ))}
+                            </Breadcrumbs>
+                        </Box>
+                        <Box sx={{ flex: 1, overflow: 'auto' }}>
+                            <TableContainer component={Paper} sx={{ maxHeight: '100%' }}>
+                                <Table stickyHeader size="small">
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell>Name</TableCell>
+                                            <TableCell>Camera</TableCell>
+                                            <TableCell>Exposure (s)</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {files.map((file) => (
+                                            <TableRow
+                                                key={file.id}
+                                                hover
+                                                onClick={() => handleClick(file)}
+                                                sx={{ cursor: 'pointer' }}
+                                            >
+                                                <TableCell>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                                        {file.isDir ? (
+                                                            <FolderIcon color="primary" sx={{ mr: 1 }} />
+                                                        ) : (
+                                                            <InsertDriveFileIcon sx={{ mr: 1 }} />
+                                                        )}
+                                                        <Typography
+                                                            fontWeight={file.isDir ? 'bold' : 'normal'}
+                                                            sx={{ wordBreak: 'break-all' }}
+                                                        >
+                                                            {file.name}
+                                                        </Typography>
+                                                    </Box>
+                                                </TableCell>
+                                                <TableCell>{file.camera || ''}</TableCell>
+                                                <TableCell>{file.exposure ?? ''}</TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                        </Box>
                     </Box>
                 </DialogContent>
             </Dialog>

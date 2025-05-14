@@ -77,11 +77,23 @@ const RunsTab = ({ stack }) => {
             </Box>
 
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              Dark: &nbsp;&nbsp; {calibrationStackInfo(run.dependencies['dark'])} <FilePickerExample />
+              Dark: &nbsp;&nbsp; {calibrationStackInfo(run.dependencies['dark'])} <FilePickerExample onSelectFile={(filename) => {
+                fetch('/api/select_file', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ type: 'dark', stack_id: stack.stable_hash, run_id: run.id, filename }),
+                });
+              }} />
             </Box>
 
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              Bias: &nbsp;&nbsp; {calibrationStackInfo(run.dependencies['bias'])} <FilePickerExample />
+              Bias: &nbsp;&nbsp; {calibrationStackInfo(run.dependencies['bias'])} <FilePickerExample onSelectFile={(filename) => {
+                fetch('/api/select_file', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ type: 'bias', stack_id: stack.stable_hash, run_id: run.id, filename }),
+                });
+              }} />
             </Box>
 
             <Box sx={{ display: 'flex', overflowX: 'auto', gap: 2, py: 2 }}>
