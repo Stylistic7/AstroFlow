@@ -4,6 +4,7 @@ import operator
 import itertools
 from dataclasses import replace
 from datetime import datetime
+from typing import Any
 
 from decorators import cached
 from metadata.classes import ImageMetadata, FrameHash
@@ -29,19 +30,19 @@ def identify_calibration_stacks(metadata: MetadataDict) -> SimpleStacksDict:
         [x[0] for x in r] for r in result if len(r) >= context.min_frames_in_run
     ]
 
-  def group_by_header(images: list[ImageMetadata],
-                      key: str) -> dict[str, set[FrameHash]]:
-    key_fn = lambda i: i.header[key]
-    sorted_images = sorted([i for i in images if key in i.header], key=key_fn)
+  def group_by_header(images: list[ImageMetadata], key: str,
+                      default_value: Any) -> dict[str, set[FrameHash]]:
+    key_fn = lambda i: i.header.get(key, default_value) or default_value
+    sorted_images = sorted(images, key=key_fn)
     return {
         k: set(FrameHash(i.content_hash) for i in g)
         for k, g in itertools.groupby(sorted_images, key=key_fn)
     }
 
-  frames_for_image_type = group_by_header(metadata.values(), 'IMAGETYP')
-  frames_for_camera = group_by_header(metadata.values(), 'INSTRUME')
-  frames_for_exposure = group_by_header(metadata.values(), 'EXPOSURE')
-  frames_for_filter = group_by_header(metadata.values(), 'FILTER')
+  frames_for_image_type = group_by_header(metadata.values(), 'IMAGETYP', '')
+  frames_for_camera = group_by_header(metadata.values(), 'INSTRUME', '')
+  frames_for_exposure = group_by_header(metadata.values(), 'EXPOSURE', 0.0)
+  frames_for_filter = group_by_header(metadata.values(), 'FILTER', '')
 
   def new_stack(frames: list[FrameHash]) -> SimpleStack:
     stack = SimpleStack.from_frames(frames, metadata)
