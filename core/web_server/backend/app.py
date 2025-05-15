@@ -25,22 +25,20 @@ from flask.json.provider import DefaultJSONProvider
 from pathlib import Path
 
 from state import enqueue_action
-from .message_announcer import MessageAnnouncer
 from context import context
 from catalogs import constellations
 from context import get_cache
 from compute_graph import build_compute_graph
 from dependency_graph import run_graph, graph_status_to_progress
 from dependency_graph.debugging import node_to_string
-from metadata.classes import MetadataDict
 from customization.types import CustomizedStack
 from web_server.backend.files import files_bp
 from web_server.backend.tiles import tiles_bp
 from web_server.backend.metadata import metadata_bp
 from web_server.backend.thumbnails import thumbnails_bp
 from web_server.backend.videos import videos_bp
-
-from stacks.composite_stack import CompositeStack
+from web_server.backend.convert_to_dict import convert_to_dict
+from web_server.backend.announcer import announcer
 
 import plotly.express as px
 import plotly.figure_factory as ff
@@ -48,8 +46,6 @@ import plotly.figure_factory as ff
 debug = False
 
 cache = get_cache()
-
-announcer = MessageAnnouncer()
 
 
 # TODO: Pull all of this transform code out into a separate module and test
@@ -229,19 +225,29 @@ def targets():
   return {k: _make_json_serializable(v) for k, v in targets.items()}
 
 
+def my_transform(v):
+  if type(v) is np.ndarray:
+    return v.tolist()
+  if type(v) is SingleSphericalPolygon:
+    return v.points.tolist()
+  return v
+
+
 @app.route('/stacks')
 def stacks():
   stacks = context.get('stacks', {})
 
   def prepare_stack(stack: CustomizedStack) -> dict[str, Any]:
-    d = _make_json_serializable(stack)
+    result = convert_to_dict(stack, [['contents', '*', 'metadata']],
+                             transform=my_transform)
+
     filenames = []
     for s in stack.contents.values():
       filenames += [m.filename for m in s.metadata.values()]
 
-    d['filenames'] = filenames
+    result['filenames'] = filenames
 
-    return d
+    return result
 
   stacks = {h: prepare_stack(s) for h, s in stacks.items()}
 
