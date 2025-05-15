@@ -24,7 +24,7 @@ from products import makes_image
 
 def _symlink_frames(filenames: list[str], dest_path: str) -> None:
   for filename in filenames:
-    assert filename
+    assert filename, f"bad filename {filename}"
     if not os.path.exists(filename):
       raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), filename)
 
@@ -87,10 +87,16 @@ def _setup_composite_stack(stack: Stack,
     _copy_frames_with_plate_solution(run_metadata, run_dir)
     num_frames += len(substack.frames)
 
+    def get_dependency_filename(d):
+      if 'stack_id' in d:
+        return output_filename(calibration_stacks[d['stack_id']]).resolve_at(
+            context.output_dir)
+      elif 'filename' in d:
+        return d['filename']
+
     # Add any dependent stacks (e.g. calibration stacks).
     dependendency_filenames = [
-        output_filename(calibration_stacks[d]).resolve_at(context.output_dir)
-        for d in substack.dependencies.values()
+        get_dependency_filename(d) for d in substack.dependencies.values()
     ]
     _symlink_frames(dependendency_filenames, run_dir)
 

@@ -135,7 +135,7 @@ def associate_with_stack(stack: CompositeStack) -> CompositeStack:
         if closest := find_closest_stack_chronologically(substack, image_type):
           print(f'### associated {image_type} cal stack {closest} '
                 f'with substack {substack}')
-          new_dependencies[image_type] = closest
+          new_dependencies[image_type] = {'stack_id': closest}
 
     new_substack = replace(substack, dependencies=new_dependencies)
     new_contents[content_hash] = new_substack

@@ -80,12 +80,19 @@ def calibrate_subframe(light_frame: ImageMetadata,
   light_image = resize_array(read_image(light_frame.filename),
                              width).astype(np.float32)
 
+  def get_nested(d, *keys):
+    for key in keys:
+      if not isinstance(d, dict) or key not in d:
+        return None
+      d = d.get(key)
+    return d
+
   bias_frame, bias_image = get_subframe_for_calibration_stack(
-      dependencies.get('bias', None), width)
+      get_nested(dependencies, 'bias', 'stack_id'), width)
   dark_frame, dark_image = get_subframe_for_calibration_stack(
-      dependencies.get('dark', None), width)
+      get_nested(dependencies, 'dark', 'stack_id'), width)
   flat_frame, flat_image = get_subframe_for_calibration_stack(
-      dependencies.get('flat', None), width)
+      get_nested(dependencies, 'flat', 'stack_id'), width)
 
   return calibrate_image(light_frame, light_image, bias_frame, bias_image,
                          dark_frame, dark_image, flat_frame, flat_image, rotate)

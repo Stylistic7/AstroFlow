@@ -28,9 +28,10 @@ def build_stacking_subgraph(stack: CustomizedStack) -> Graph:
   post_process_metadata_task = Node(compute_image_metadata,
                                     name=f'post_process_{stack.stable_hash}')
 
-  graph[stack_task] = {(stack_files, calibration_stacks[d])
+  graph[stack_task] = {(stack_files, calibration_stacks[d['stack_id']])
                        for substack in stack.contents.values()
-                       for d in substack.dependencies.values()}
+                       for d in substack.dependencies.values()
+                       if 'stack_id' in d}
 
   graph[stacking_metadata_task] = {stack_task}
   graph[post_process_task] = {stacking_metadata_task}

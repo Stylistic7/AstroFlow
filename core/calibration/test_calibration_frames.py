@@ -431,14 +431,20 @@ class TestCalibrationFrames(unittest.TestCase):
     stack = next(iter(light_stacks))
     self.assertEqual(len(stack.contents), 1)
     substack = next(iter(stack.contents.values()))
-    self.assertEqual(substack.dependencies, {'flat': second_flat_stack})
+    self.assertEqual(substack.dependencies,
+                     {'flat': {
+                         'stack_id': second_flat_stack
+                     }})
 
     # Configure the light run to use the other flat run, which has prefix
     # `flat_run_0`.
     context.settings = Settings(
         stack_settings={
             substack.content_hash:
-                StackSettings(dependencies={'flat': first_flat_stack})
+                StackSettings(
+                    dependencies={'flat': {
+                        'stack_id': first_flat_stack
+                    }})
         })
 
     # Run the graph again, with the settings applied.
@@ -456,7 +462,10 @@ class TestCalibrationFrames(unittest.TestCase):
     stack = next(iter(light_stacks))
     self.assertEqual(len(stack.contents), 1)
     substack = next(iter(stack.contents.values()))
-    self.assertEqual(substack.dependencies, {'flat': first_flat_stack})
+    self.assertEqual(substack.dependencies,
+                     {'flat': {
+                         'stack_id': first_flat_stack
+                     }})
 
   def test_generic_grouping(self) -> None:
     copy_testdata_frames(target_name='NGC7635', dest_dir=context.input_dirs[0])

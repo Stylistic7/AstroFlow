@@ -101,7 +101,9 @@ class TestStack(unittest.TestCase):
     self.assertNotEqual(light_stack.content_hash, None)
     self.assertEqual(len(light_stack.frames), 3)
     self.assertEqual(light_stack.dependencies,
-                     {'dark': dark_stack.content_hash})
+                     {'dark': {
+                         'stack_id': dark_stack.content_hash
+                     }})
     self.assertNotEqual(light_stack.oldest_date, None)
     self.assertNotEqual(light_stack.newest_date, None)
     self.assertEqual(light_stack.camera, 'ZWO ASI6200MM Pro')
