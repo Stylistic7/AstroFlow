@@ -6,7 +6,6 @@ import { Delete as DeleteIcon } from '@mui/icons-material';
 import FlatThumbnail from './FlatThumbnail.jsx';
 import AstroFlowContext from './AstroFlowContext.jsx';
 import MetadataItem from './MetadataItem.jsx';
-import FileSelectButton from './FileSelectButton.jsx';
 import FilePickerExample from './FileBrowser.jsx';
 
 const RunsTab = ({ stack }) => {
@@ -38,16 +37,26 @@ const RunsTab = ({ stack }) => {
     alert(`Delete run ${runId} functionality triggered.`);
   };
 
-  const calibrationStackInfo = (calStackId) => {
-    const calStack = calibrationStacks[calStackId];
-    return (
-      calStack && <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 4, rowGap: 1, alignItems: 'center' }}>
-        <MetadataItem label="Content hash" value={calStack.content_hash} />
-        <MetadataItem label="Date" value={calStack.oldest_date} />
-        <MetadataItem label="Frames" value={calStack.frames.length} />
-        <MetadataItem label="Temp" value={`${calStack.mean_temperature.toFixed(1)}°C`} />
-      </Box>
-    );
+  const calibrationStackInfo = (dependency) => {
+    if (dependency === undefined) {
+      return "none"
+    }
+
+    if ('filename' in dependency) {
+      return dependency.filename
+    }
+
+    if ('stack_id' in dependency) {
+      const calStack = calibrationStacks[dependency.stack_id];
+      return (
+        calStack && <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 4, rowGap: 1, alignItems: 'center' }}>
+          <MetadataItem label="Content hash" value={calStack.content_hash} />
+          <MetadataItem label="Date" value={calStack.oldest_date} />
+          <MetadataItem label="Frames" value={calStack.frames.length} />
+          <MetadataItem label="Temp" value={`${calStack.mean_temperature.toFixed(1)}°C`} />
+        </Box>
+      );
+    }
   };
 
   return (
