@@ -49,6 +49,12 @@ def regroup(args):
   results, logs = run_graph(graph)
 
 
+def customize(args):
+  print(f'### Customizing...')
+  graph = Graph({build_customize_graph: {}})
+  results, logs = run_graph(graph)
+
+
 def make_preview(args):
   print(f"### Making preview for {args.object_type} {args.object_id}")
 
@@ -149,6 +155,9 @@ def main():
                               action="store_true",
                               help="Force regrouping")
 
+  # 'customize' command
+  customize_parser = subparsers.add_parser("customize", help="customize data")
+
   # 'preview' command
   preview_parser = subparsers.add_parser("preview", help="Generate previews")
   preview_parser.add_argument("object_type",
@@ -203,6 +212,8 @@ def main():
   # Handle the parsed arguments
   if args.command == "regroup":
     regroup(args)
+  elif args.command == "customize":
+    customize(args)
   elif args.command == 'preview':
     make_preview(args)
   elif args.command == 'stack':
