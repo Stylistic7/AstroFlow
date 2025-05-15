@@ -2,7 +2,11 @@ from flask import Flask, request, jsonify, send_file, Blueprint
 import os
 from pathlib import Path
 
+from context import context
 from file_io.generic import read_header
+from customization.settings import Settings, StackSettings
+from state.state_machine import enqueue_action
+from customization.compute_graph import scatter_customize_stacks
 
 files_bp = Blueprint("files", __name__)
 
@@ -50,5 +54,18 @@ def select_file():
   stack_id = data['stack_id']
   run_id = data['run_id']
   filename = data['filename']
-  # perform your logic...
+
+  settings = context.settings or Settings()
+  stack_settings = settings.stack_settings.get(run_id, StackSettings())
+  stack_settings.dependencies[type] = {'filename': filename}
+  settings.stack_settings[run_id] = stack_settings
+  context.settings = settings
+  print(f'### context.settings is now {context.settings}')
+
+  # TODO: Only customize the single stack affected here.
+  enqueue_action(
+      dict(type='run_task',
+           task=(scatter_customize_stacks,),
+           announce_message='reload_data'))
+
   return jsonify({"status": "ok"})
