@@ -73,9 +73,11 @@ def _advertise_zeroconf(state: State,
 
 
 def _stop_zeroconf(state: State, action: Action) -> tuple[State, list[Action]]:
-  print("Stopping service discovery...")
-  state['zeroconf'].close()
-  del state['zeroconf']
+  if 'zeroconf' in state:
+    print("Stopping service discovery...")
+    state['zeroconf'].close()
+    del state['zeroconf']
+
   return state, []
 
 
@@ -196,6 +198,11 @@ def _run_task(state: State, action: Action) -> tuple[State, list[Action]]:
 
   def background_work():
     run_graph(graph)
+
+    if 'announce_message' in action:
+      from web_server.backend.app import announcer
+      announcer.announce(action['announce_message'])
+
     _action_queue.put(dict(type='task_done', task=action['task']))
 
   threading.Thread(target=background_work, daemon=True).start()
