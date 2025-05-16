@@ -1,23 +1,14 @@
+// FilePickerExample.jsx
 import { useState, useCallback, useEffect } from 'react';
 import {
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    IconButton,
-    Breadcrumbs,
-    Typography,
-    Box,
-    Table,
-    TableBody,
-    TableCell,
-    TableContainer,
-    TableHead,
-    TableRow,
-    Paper,
+    Dialog, DialogTitle, DialogContent, IconButton,
+    Breadcrumbs, Typography, Box, Table, TableBody,
+    TableCell, TableContainer, TableHead, TableRow, Paper
 } from '@mui/material';
 import ImageIcon from '@mui/icons-material/Image';
 import FolderIcon from '@mui/icons-material/Folder';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
+import { useFolder } from './FolderContext';
 
 function buildFolderChain(path) {
     const parts = path.split('/').filter(Boolean);
@@ -31,11 +22,13 @@ function buildFolderChain(path) {
     return chain;
 }
 
-export default function FilePickerExample({ onSelectFile }) {
+export default function FileBrowser({ onSelectFile }) {
     const [dialogOpen, setDialogOpen] = useState(false);
     const [files, setFiles] = useState([]);
     const [folderChain, setFolderChain] = useState([]);
-    const [currentPath, setCurrentPath] = useState('/Users');
+    const { lastFolder, setLastFolder } = useFolder(); // ✅ shared state
+
+    const [currentPath, setCurrentPath] = useState(lastFolder); // local copy to track internal navigation
 
     const loadFolder = useCallback((path) => {
         if (!path || typeof path !== 'string') return;
@@ -50,13 +43,14 @@ export default function FilePickerExample({ onSelectFile }) {
                 setFiles(sorted);
                 setFolderChain(buildFolderChain(data.path));
                 setCurrentPath(data.path);
+                setLastFolder(data.path); // ✅ update global
             })
             .catch(err => console.error('Failed to load directory:', err));
-    }, []);
+    }, [setLastFolder]);
 
     useEffect(() => {
-        if (dialogOpen) loadFolder(currentPath);
-    }, [dialogOpen, loadFolder, currentPath]);
+        if (dialogOpen) loadFolder(lastFolder); // always start from global
+    }, [dialogOpen, loadFolder, lastFolder]);
 
     const handleClick = (file) => {
         if (file.isDir) {

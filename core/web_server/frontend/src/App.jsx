@@ -26,6 +26,7 @@ import TileViewer from './TileViewer.jsx';
 import StackViewer from './StackViewer.jsx';
 import AppLayout from './AppLayout.jsx';
 import AstroFlowImage from './AstroFlowImage.jsx';
+import { FolderProvider } from './FolderContext';
 
 function App() {
   const isPageVisible = usePageVisibility();
@@ -122,84 +123,86 @@ function App() {
         <AstroFlowContext.Provider
           value={{ stacks, calibrationStacks, targets, mosaics, shoppingCart, computeGraph, computeGraphStatus, rayStatus }}
         >
-          <CssBaseline />
-          <Router>
-            <Routes>
-              <Route exact path="/" element={
-                <AppLayout>
-                  <Starmap />
-                </AppLayout>
-              } />
-              <Route exact path="/stack/:stack_id" element={
-                dataIsAvailable &&
-                <AppLayout>
-                  <StackViewer />
-                </AppLayout>
-              } />
-              <Route exact path="/target/:target_id" element={
-                dataIsAvailable &&
-                <AppLayout>
-                  <TargetPanel />
-                </AppLayout>
-              } />
-              <Route exact path="/mosaic/:mosaic_id" element={
-                dataIsAvailable &&
-                <AppLayout>
-                  <MosaicPanel />
-                </AppLayout>
-              } />
-              <Route exact path="/target/:target_id/stack/:stack_id" element={
-                dataIsAvailable &&
-                <AppLayout>
-                  <StackViewer />
-                </AppLayout>
-              } />
-              <Route exact path="/mosaic/:mosaic_id/target/:target_id" element={
-                dataIsAvailable &&
-                <AppLayout>
-                  <TargetPanel />
-                </AppLayout>}
-              />
-              <Route exact path="/mosaic/:mosaic_id/target/:target_id/stack/:stack_id" element={
-                dataIsAvailable &&
-                <AppLayout>
-                  <StackViewer />
-                </AppLayout>
-              } />
-              <Route exact path="/disambiguation/" element={
-                dataIsAvailable &&
-                <AppLayout>
-                  <DisambiguationPanel />
-                </AppLayout>
-              } />
-              <Route exact path="/disambiguation/:items" element={
-                dataIsAvailable &&
-                <AppLayout>
-                  <DisambiguationPanel />
-                </AppLayout>
-              } />
-              <Route exact path="/tile_viewer/:objectType/:imageHash" element={
-                <Box sx={{ width: '100vw', height: '100vh' }}>
-                  <TileViewer />
-                </Box>
-              } />
-              <Route exact path="/recent" element={
-                dataIsAvailable &&
-                <AppLayout>
-                  <RecentPanel />
-                </AppLayout>
-              } />
-              <Route exact path="/sse" element={
-                dataIsAvailable && <SsePanel />}
-              />
-              <Route exact path="/progress" element={
-                <ProgressComponent />}
-              />
-              <Route exact path="/workflow_graph" element={
-                dataIsAvailable && <WorkflowGraph theme={darkTheme} />}
-              />
-            </Routes>
-          </Router>
+          <FolderProvider>
+            <CssBaseline />
+            <Router>
+              <Routes>
+                <Route exact path="/" element={
+                  <AppLayout>
+                    <Starmap />
+                  </AppLayout>
+                } />
+                <Route exact path="/stack/:stack_id" element={
+                  dataIsAvailable &&
+                  <AppLayout>
+                    <StackViewer />
+                  </AppLayout>
+                } />
+                <Route exact path="/target/:target_id" element={
+                  dataIsAvailable &&
+                  <AppLayout>
+                    <TargetPanel />
+                  </AppLayout>
+                } />
+                <Route exact path="/mosaic/:mosaic_id" element={
+                  dataIsAvailable &&
+                  <AppLayout>
+                    <MosaicPanel />
+                  </AppLayout>
+                } />
+                <Route exact path="/target/:target_id/stack/:stack_id" element={
+                  dataIsAvailable &&
+                  <AppLayout>
+                    <StackViewer />
+                  </AppLayout>
+                } />
+                <Route exact path="/mosaic/:mosaic_id/target/:target_id" element={
+                  dataIsAvailable &&
+                  <AppLayout>
+                    <TargetPanel />
+                  </AppLayout>}
+                />
+                <Route exact path="/mosaic/:mosaic_id/target/:target_id/stack/:stack_id" element={
+                  dataIsAvailable &&
+                  <AppLayout>
+                    <StackViewer />
+                  </AppLayout>
+                } />
+                <Route exact path="/disambiguation/" element={
+                  dataIsAvailable &&
+                  <AppLayout>
+                    <DisambiguationPanel />
+                  </AppLayout>
+                } />
+                <Route exact path="/disambiguation/:items" element={
+                  dataIsAvailable &&
+                  <AppLayout>
+                    <DisambiguationPanel />
+                  </AppLayout>
+                } />
+                <Route exact path="/tile_viewer/:objectType/:imageHash" element={
+                  <Box sx={{ width: '100vw', height: '100vh' }}>
+                    <TileViewer />
+                  </Box>
+                } />
+                <Route exact path="/recent" element={
+                  dataIsAvailable &&
+                  <AppLayout>
+                    <RecentPanel />
+                  </AppLayout>
+                } />
+                <Route exact path="/sse" element={
+                  dataIsAvailable && <SsePanel />}
+                />
+                <Route exact path="/progress" element={
+                  <ProgressComponent />}
+                />
+                <Route exact path="/workflow_graph" element={
+                  dataIsAvailable && <WorkflowGraph theme={darkTheme} />}
+                />
+              </Routes>
+            </Router>
+          </FolderProvider>
         </AstroFlowContext.Provider>
       </StyledEngineProvider>
     </ThemeProvider >
