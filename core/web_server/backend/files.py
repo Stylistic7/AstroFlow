@@ -3,10 +3,11 @@ import os
 from pathlib import Path
 
 from context import context
+from dependency_graph import Graph
 from file_io.generic import read_header
 from customization.settings import Settings, StackSettings
 from state.state_machine import enqueue_action
-from customization.compute_graph import scatter_customize_stacks
+from customization.compute_graph import customize_stack, store_customized_stack
 
 files_bp = Blueprint("files", __name__)
 
@@ -62,10 +63,8 @@ def select_file():
   context.settings = settings
   print(f'### context.settings is now {context.settings}')
 
-  # TODO: Only customize the single stack affected here.
+  graph = Graph({store_customized_stack: {(customize_stack, [stack_id])}})
   enqueue_action(
-      dict(type='run_task',
-           task=(scatter_customize_stacks,),
-           announce_message='reload_data'))
+      dict(type='run_graph', graph=graph, announce_message='reload_data'))
 
   return jsonify({"status": "ok"})

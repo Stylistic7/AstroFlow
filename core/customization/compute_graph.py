@@ -30,6 +30,11 @@ def gather_customize_stacks(*stacks) -> None:
 
 
 @ray.remote
+def store_customized_stack(stack) -> None:
+  context.or_equals('stacks', {stack.stable_hash: s})
+
+
+@ray.remote
 def scatter_customize_stacks() -> Graph:
   quarantined_stacks = context.quarantined_stacks or []
   settings = context.settings or Settings()
