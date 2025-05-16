@@ -10,7 +10,8 @@ export default function StackThumbnail({ stack_id, width, handleClick }) {
 	const stack = stacks[stack_id];
 
 	const color_for_filter = (filter) => {
-		let rgb = {
+		const key = filter?.[0]?.toUpperCase?.();
+		const rgb = {
 			'L': [255, 255, 255],
 			'R': [230, 0, 0],
 			'G': [0, 204, 0],
@@ -18,9 +19,9 @@ export default function StackThumbnail({ stack_id, width, handleClick }) {
 			'H': [159, 43, 104],
 			'S': [140, 0, 0],
 			'O': [0, 204, 204],
-		}[filter];
+		}[key] || [128, 128, 128];  // fallback to gray if unknown
 
-		return 'rgb(' + rgb.join(', ') + ')'
+		return `rgb(${rgb.join(', ')})`;
 	};
 
 	const show_image = false;
