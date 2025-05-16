@@ -9,7 +9,7 @@ import time
 
 from compute_graph import build_compute_graph
 from context import context
-from dependency_graph import run_graph
+from dependency_graph import run_graph, Graph
 from state import dispatch, enqueue_action, main_event_loop
 from testing import make_test_context, make_synthetic_frames, copy_testdata_frames
 
@@ -98,8 +98,9 @@ class TestState(unittest.TestCase):
     masters = list(Path(context.output_dir).rglob('*.xisf'))
     self.assertEqual(len(masters), 5)
 
-  def test_run_task(self) -> None:
-    enqueue_action(dict(type='run_task', task=(my_task, 'foo')))
+  def test_run_graph(self) -> None:
+    graph = Graph({(my_task, 'foo'): {}})
+    enqueue_action(dict(type='run_graph', graph=graph))
     enqueue_action(dict(type='quit'))
 
     main_event_loop()

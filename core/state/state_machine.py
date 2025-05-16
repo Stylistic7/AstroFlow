@@ -6,6 +6,7 @@ import time
 import threading
 import signal
 import sys
+import uuid
 
 from context import context, get_cache
 from ray_infra import connect_to_ray_cluster
@@ -192,28 +193,26 @@ def _remove_from_shopping_cart(state: State,
   return state, []
 
 
-def _run_task(state: State, action: Action) -> tuple[State, list[Action]]:
-  node_string = node_to_string(action['task'])
-  graph = Graph({action['task']: {}})
+def _run_graph(state: State, action: Action) -> tuple[State, list[Action]]:
+  graph_id = uuid.uuid4()
 
   def background_work():
-    run_graph(graph)
+    run_graph(action['graph'])
 
     if 'announce_message' in action:
       from web_server.backend.app import announcer
       announcer.announce(action['announce_message'])
 
-    _action_queue.put(dict(type='task_done', task=action['task']))
+    _action_queue.put(dict(type='graph_done', graph_id=graph_id))
 
   threading.Thread(target=background_work, daemon=True).start()
 
-  state['processing'] = state.get('processing', []) + [node_string]
+  state['processing'] = state.get('processing', []) + [graph_id]
   return state, []
 
 
-def _task_done(state: State, action: Action) -> tuple[State, list[Action]]:
-  node_string = node_to_string(action['task'])
-  state['processing'].remove(node_string)
+def _graph_done(state: State, action: Action) -> tuple[State, list[Action]]:
+  state['processing'].remove(action['graph_id'])
 
   return state, []
 
@@ -269,11 +268,11 @@ def dispatch(action: Action) -> dict[str, Any]:
     case 'populate_context':
       _state, new_actions = _populate_context(_state, action)
 
-    case 'run_task':
-      _state, new_actions = _run_task(_state, action)
+    case 'run_graph':
+      _state, new_actions = _run_graph(_state, action)
 
-    case 'task_done':
-      _state, new_actions = _task_done(_state, action)
+    case 'graph_done':
+      _state, new_actions = _graph_done(_state, action)
 
     case 'quit':
       _state, new_actions = _quit(_state, action)
