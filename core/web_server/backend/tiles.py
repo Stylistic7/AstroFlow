@@ -34,6 +34,7 @@ tiles_bp = Blueprint("tiles", __name__)
 def convert_to_tiff(source_path: Path, dest_path: Path):
   """Read image and save to .tif"""
   print(f"Converting {source_path} to {dest_path}...")
+  assert source_path != dest_path
   arr = autostretch(read_image(source_path))
   arr = (arr * 255.0).astype(np.uint8)
   dest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -106,9 +107,15 @@ def get_image(object_type: str, object_id: str, filter: str):
     if isinstance(path, TiffFilePath):
       tiff_path = path.resolve_at(context.output_dir)
     else:
-      original_path = path.resolve_at(context.output_dir)
-      tiff_path = path.resolve_at(TILE_CACHE_DIR)
-      convert_to_tiff(original_path, tiff_path)
+      if path.is_absolute():
+        tiff_path = TILE_CACHE_DIR / path.with_suffix('.tiff').name
+        print(f'### absolute path {path=} {tiff_path=}')
+        convert_to_tiff(path, tiff_path)
+      else:
+        original_path = path.resolve_at(context.output_dir)
+        tiff_path = path.resolve_at(TILE_CACHE_DIR).with_suffix('.tiff')
+        print(f'### relative path {path=} {original_path=} {tiff_path=}')
+        convert_to_tiff(original_path, tiff_path)
 
     print(f"Opening file {tiff_path} with large_image...")
     handle = large_image.open(tiff_path, plugin='vips')
