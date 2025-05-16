@@ -9,6 +9,7 @@ from pathlib import Path
 from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import run_graph
+from file_io.types import WithSidecar
 from testing import make_test_context, make_synthetic_frames, copy_testdata_frames
 from previews.stack_thumbnails import stack_thumbnail
 from file_io.find_image_files import find_image_files
@@ -97,7 +98,7 @@ class TestImagePreviews(unittest.TestCase):
     stack = next(iter(light_stacks))
 
     filename = ray.get(stack_thumbnail.remote(stack))
-    self.assertTrue(isinstance(filename, Path))
+    self.assertTrue(isinstance(filename, WithSidecar))
 
     # TODO: This test overlaps a bunch of other tests.
     thumbnail = stack_thumbnail.thumbnail_fn(stack)

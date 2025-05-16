@@ -9,7 +9,7 @@ from decorators import cached, measure_performance, create_thumbnail, create_vid
 from previews.operations import resize_array
 from previews.flat_correction import create_flat_correction_thumbnails
 from previews.calibration import calibrate_subframe
-from file_io.types import FitsFilePath
+from file_io.types import FitsFilePath, WithSidecar
 from stacks.composite_stack import CompositeStack
 from dependency_graph import Graph, TaskDescriptor
 from previews.operations import autostretch
@@ -35,7 +35,9 @@ def scatter_stack_thumbnails() -> Graph:
 def get_best_light_frame(stack: CompositeStack) -> FitsFilePath:
   metadata = stack.all_metadata()
   light_frames_by_stars = get_light_frames_sorted_by_stars(stack)
-  return FitsFilePath(metadata[light_frames_by_stars[0]].filename)
+
+  # Use a sidecar file to avoid ever modifying the user's raw data files.
+  return WithSidecar(FitsFilePath(metadata[light_frames_by_stars[0]].filename))
 
 
 @makes_image(CompositeStack).as_subframe(get_best_light_frame)
