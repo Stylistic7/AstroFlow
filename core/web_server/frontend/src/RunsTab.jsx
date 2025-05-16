@@ -6,7 +6,7 @@ import { Delete as DeleteIcon } from '@mui/icons-material';
 import FlatThumbnail from './FlatThumbnail.jsx';
 import AstroFlowContext from './AstroFlowContext.jsx';
 import MetadataItem from './MetadataItem.jsx';
-import FilePickerExample from './FileBrowser.jsx';
+import FileBrowser from './FileBrowser.jsx';
 
 const RunsTab = ({ stack }) => {
   const { calibrationStacks } = useContext(AstroFlowContext);
@@ -86,7 +86,17 @@ const RunsTab = ({ stack }) => {
             </Box>
 
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              Dark: &nbsp;&nbsp; {calibrationStackInfo(run.dependencies['dark'])} <FilePickerExample onSelectFile={(filename) => {
+              Bias: &nbsp;&nbsp; {calibrationStackInfo(run.dependencies['bias'])} <FileBrowser onSelectFile={(filename) => {
+                fetch('/api/select_file', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ type: 'bias', stack_id: stack.stable_hash, run_id: run.id, filename }),
+                });
+              }} />
+            </Box>
+
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              Dark: &nbsp;&nbsp; {calibrationStackInfo(run.dependencies['dark'])} <FileBrowser onSelectFile={(filename) => {
                 fetch('/api/select_file', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -96,16 +106,24 @@ const RunsTab = ({ stack }) => {
             </Box>
 
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              Bias: &nbsp;&nbsp; {calibrationStackInfo(run.dependencies['bias'])} <FilePickerExample onSelectFile={(filename) => {
+              Flat: &nbsp;&nbsp; {calibrationStackInfo(run.dependencies['flat'])} <FileBrowser onSelectFile={(filename) => {
                 fetch('/api/select_file', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ type: 'bias', stack_id: stack.stable_hash, run_id: run.id, filename }),
+                  body: JSON.stringify({ type: 'flat', stack_id: stack.stable_hash, run_id: run.id, filename }),
                 });
               }} />
             </Box>
 
             <Box sx={{ display: 'flex', overflowX: 'auto', gap: 2, py: 2 }}>
+              <FlatThumbnail
+                key='none'
+                stack={stack}
+                run={run}
+                flatStack={undefined}
+                selected={selectedFlatId === undefined}
+                onSelect={() => handleSelectFlat(run.id, undefined)}
+              />
               {flatIds.map((flatId) => (
                 <FlatThumbnail
                   key={flatId}
