@@ -123,6 +123,11 @@ def channel_combination(images: ImageList) -> ImageList:
   return ChannelCombination(aligned)
 
 
+@PixInsight(timeout=10)
+def stuck_task(images: ImageList) -> ImageList:
+  pass
+
+
 class TestDecorators(unittest.TestCase):
 
   def test_bxt_only(self):
@@ -176,6 +181,9 @@ class TestDecorators(unittest.TestCase):
     pix_tmp_dir = images[0].tmp_dir_obj.name
     filenames = os.listdir(pix_tmp_dir)
     self.assertCountEqual(filenames, ['RGB.xisf'])
+
+  def test_stuck_task(self) -> None:
+    images = stuck_task([])
 
 
 if __name__ == "__main__":

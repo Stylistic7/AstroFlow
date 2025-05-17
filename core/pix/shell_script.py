@@ -9,7 +9,7 @@ import sys
 import uuid
 import re
 from contextlib import contextmanager
-from diskcache import Lock
+import psutil
 
 # TODO: Maybe inject this somewhere so pix can stay independent.
 from context import get_cache
@@ -57,6 +57,21 @@ def _start_pixinsight_instance(slot: int) -> int:
     time.sleep(5)
 
   return slot
+
+
+def _kill_pixinsight_instance(slot: int):
+  pid_map = _find_running_pixinsight_instances()
+  pid = pid_map.get(slot)
+  if pid:
+    try:
+      print(f"Killing PixInsight slot {slot} (PID {pid}) due to timeout...")
+      os.kill(pid, 9)
+      psutil.Process(pid).wait()
+      print(f"PID {pid} has exited.")
+    except psutil.NoSuchProcess:
+      print(f"PID {pid} already exited.")
+    except OSError as e:
+      print(f"Failed to kill PID {pid}: {e}")
 
 
 def _save_javascript_file(tmp_dir: str,
@@ -127,7 +142,8 @@ def run_script(tasks: list[ShellScriptTask],
                slots: list[int] | None = None,
                tmp_dir_in: str | None = None,
                close_after: bool = True,
-               sleep_after: bool = False) -> None:
+               sleep_after: bool = False,
+               timeout: float | None = None) -> None:
   assert tasks
 
   with _acquire_slot(slots) as slot:
@@ -154,14 +170,19 @@ def run_script(tasks: list[ShellScriptTask],
         f.write(script)
 
       print(f'Running PixInsight shell script...')
+
+      start_time = time.monotonic()
       ret = subprocess.run(
           [_PIXINSIGHT_EXECUTABLE,
            f'--execute={slot}:{script_filename}']).returncode
       print(f'--execute returned')
 
       while not os.path.exists(start_sentinel_filename):
-        # TODO: Bring the PixInsight window to the front on other platforms,
-        # too.
+        if timeout and time.monotonic() - start_time > timeout:
+          _kill_pixinsight_instance(slot)
+          raise Exception(f"PixInsight did not start within {timeout} seconds")
+
+        # TODO: Bring the PixInsight window to the front on other platforms, too.
         # TODO: Does this work with any / all slots?
         print(f'Forcing PixInsight to the foreground...')
         if sys.platform == 'darwin':
@@ -171,5 +192,9 @@ def run_script(tasks: list[ShellScriptTask],
 
         time.sleep(5)
 
-        while not os.path.exists(end_sentinel_filename):
-          time.sleep(1)
+      while not os.path.exists(end_sentinel_filename):
+        if timeout and time.monotonic() - start_time > timeout:
+          _kill_pixinsight_instance(slot)
+          raise Exception(
+              f"### PixInsight script did not finish within {timeout} seconds")
+        time.sleep(1)

@@ -53,7 +53,8 @@ from pix.tasks import OpenImages, SaveImages
 
 # TODO: Refactor this function into pieces.
 def PixInsight(
-    slots: list[int] | None = None) -> Callable[[PixInsightFn], PixInsightFn]:
+    slots: list[int] | None = None,
+    timeout: float | None = None) -> Callable[[PixInsightFn], PixInsightFn]:
 
   def decorator(func: PixInsightFn) -> PixInsightFn:
 
@@ -119,7 +120,7 @@ def PixInsight(
 
       print(f"### Shell script is ready for {func_name}, with "
             f"{len(context['tasks'])} tasks")
-      run_script(context['tasks'], slots=slots)
+      run_script(context['tasks'], slots=slots, timeout=timeout)
 
       return results
 
