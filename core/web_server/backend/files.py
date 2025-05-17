@@ -56,6 +56,7 @@ def select_file():
   run_id = data['run_id']
   filename = data['filename']
 
+  # TODO: Watch out for race conditions here.
   settings = context.settings or Settings()
   stack_settings = settings.stack_settings.get(run_id, StackSettings())
   stack_settings.dependencies[type] = {'filename': filename}
@@ -63,7 +64,8 @@ def select_file():
   context.settings = settings
   print(f'### context.settings is now {context.settings}')
 
-  graph = Graph({store_customized_stack: {(customize_stack, [stack_id])}})
+  stack = context.stacks[stack_id]
+  graph = Graph({store_customized_stack: {(customize_stack, stack, settings)}})
   enqueue_action(
       dict(type='run_graph', graph=graph, announce_message='reload_data'))
 
