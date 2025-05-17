@@ -31,7 +31,7 @@ def gather_customize_stacks(*stacks) -> None:
 
 @ray.remote
 def store_customized_stack(stack) -> None:
-  context.or_equals('stacks', {stack.stable_hash: s})
+  context.or_equals('stacks', {stack.stable_hash: stack})
 
 
 @ray.remote
