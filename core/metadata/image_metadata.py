@@ -112,6 +112,9 @@ class DuplicateFileException(Exception):
 
 @cached.remote(resources={'fastest_storage': 0.001})
 def compute_image_metadata(filename: Path) -> ImageMetadata:
+  if filename is None or not filename.exists():
+    raise FileNotFoundError(f'File "{filename}" not found')
+
   content_hash = get_content_hash(filename)
   header = read_header(filename)
   if image_types.is_light_frame(header):
