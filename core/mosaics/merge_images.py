@@ -18,7 +18,7 @@ from file_io.tiff_file_io import write_tiff_image
 from file_io.types import XisfFilePath
 
 
-@PixInsight()
+@PixInsight(timeout=300)
 def run_photometric_mosaic(images: ImageList,
                            output_filename: str) -> ImageList:
   return PhotometricMosaic(images, output_filename)
