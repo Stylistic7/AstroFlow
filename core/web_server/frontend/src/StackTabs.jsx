@@ -1,4 +1,3 @@
-// src/components/StackTabs.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
@@ -21,7 +20,7 @@ const StackTabs = ({ stack, stack_id }) => {
       try {
         const res = await fetch(`/tile/stack/${stack_id}/none/0/0/0.png`, { method: 'HEAD' });
         setTileViewerAvailable(res.ok);
-      } catch (err) {
+      } catch {
         setTileViewerAvailable(false);
       }
     };
@@ -57,40 +56,36 @@ const StackTabs = ({ stack, stack_id }) => {
       </Box>
       <Divider />
 
-      <Box sx={{ flex: 1, overflow: tabIndex === 2 ? 'auto' : 'hidden', p: 3, minHeight: 0 }}>
-        {tabIndex === 0 && (
-          <Box sx={{ height: '100%', overflow: 'hidden' }}>
-            {tileViewerAvailable ? (
-              <TileViewer objectType="stack" imageHash={stack_id} />
-            ) : (
-              <Typography align="center" variant="h6" sx={{ mt: 10 }}>
-                This stack has not been integrated yet.
-              </Typography>
-            )}
-          </Box>
-        )}
+      <Box sx={{ flex: 1, p: 3, minHeight: 0, position: 'relative' }}>
+        <Box hidden={tabIndex !== 0} sx={{ height: '100%', overflow: 'hidden', position: 'absolute', inset: 0, p: 3 }}>
+          {tileViewerAvailable ? (
+            <TileViewer objectType="stack" imageHash={stack_id} />
+          ) : (
+            <Typography align="center" variant="h6" sx={{ mt: 10 }}>
+              This stack has not been integrated yet.
+            </Typography>
+          )}
+        </Box>
 
-        {tabIndex === 1 && (
-          <Box sx={{ height: '100%' }}>
-            <video
-              loop
-              autoPlay
-              muted
-              ref={videoRef}
-              style={{ pointerEvents: 'auto', width: '100%', height: '100%', objectFit: 'contain' }}
-            >
-              <source
-                src={`/video/stack/${stack_id}`}
-                type="video/webm"
-              />
-              Your browser does not support the video tag.
-            </video>
-          </Box>
-        )}
+        <Box hidden={tabIndex !== 1} sx={{ height: '100%', position: 'absolute', inset: 0, p: 3 }}>
+          <video
+            loop
+            autoPlay
+            muted
+            ref={videoRef}
+            style={{ pointerEvents: 'auto', width: '100%', height: '100%', objectFit: 'contain' }}
+          >
+            <source
+              src={`/video/stack/${stack_id}`}
+              type="video/webm"
+            />
+            Your browser does not support the video tag.
+          </video>
+        </Box>
 
-        {tabIndex === 2 && (
+        <Box hidden={tabIndex !== 2} sx={{ height: '100%', overflow: 'auto', position: 'absolute', inset: 0, p: 3 }}>
           <RunsTab stack={stack} />
-        )}
+        </Box>
       </Box>
     </Paper>
   );
