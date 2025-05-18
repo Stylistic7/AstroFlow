@@ -110,7 +110,7 @@ class DuplicateFileException(Exception):
   pass
 
 
-@cached.remote(resources={'fastest_storage': 0.001})
+@cached.remote
 def compute_image_metadata(filename: Path) -> ImageMetadata:
   if filename is None or not filename.exists():
     raise FileNotFoundError(f'File "{filename}" not found')
