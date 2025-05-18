@@ -61,6 +61,13 @@ class Node():
         f"({_tuple_values(self.args)}) name='{self.name}' "
         f"priority={self.priority})")
 
+  def __lt__(self, other: "Node") -> bool:
+    assert isinstance(other, Node)
+    return ((self.name or
+             "", self.task._function.__name__, self.priority, self.args)
+            < (other.name or
+               "", other.task._function.__name__, other.priority, other.args))
+
 
 RemoteFunctionTuple: TypeAlias = Union[tuple[GenericRemoteFunction,
                                              Any], tuple[GenericRemoteFunction,

@@ -6,46 +6,61 @@ class WorkflowGraph(dict):
   pass
 
 
-def to_workflow_graph(
-    subgraphs: list[TopologicalSorterWithStatus]) -> WorkflowGraph:
+from collections import defaultdict
 
-  print(f'### to_workflow_graph called with {len(subgraphs)} subgraphs')
 
-  def to_entry(node: Node):
-    print(f'### to_entry {node}')
-    node = canonicalize_node(node)
-    id = node_to_string(node)
+def to_workflow_graph(subgraphs: list[TopologicalSorterWithStatus]):
+  subgraphs_by_parent = {
+      sg.parent_node: sg for sg in subgraphs if sg.parent_node is not None
+  }
 
-    type = 'execution'
-    for s in subgraphs:
-      if s.parent_node and s.parent_node == node:
-        type = 'group'
+  state: dict[str, dict] = {}
 
-    return {'id': id, 'type': type}
+  def build_graph(ts: TopologicalSorterWithStatus):
+    graph = ts.graph
 
-  def add_subgraph(subgraph: TopologicalSorterWithStatus):
-    skeleton = []
-    for k, values in subgraph.graph.items():
-      for v in values:
-        entry = to_entry(v)
-        entry['next'] = [to_entry(k)]
-        skeleton.append(entry)
+    reverse = defaultdict(set)
+    for node, deps in graph.items():
+      for dep in deps:
+        reverse[dep].add(node)
 
-    return skeleton
+    roots = sorted([n for n, deps in graph.items() if not deps])
 
-  state = {}
-  skeleton = []
-  skeleton.extend(add_subgraph(subgraphs[0]))
+    def build(node):
+      key = node_to_string(node)
 
-  for subgraph in subgraphs[1:]:
-    node = subgraph.parent_node
-    node = canonicalize_node(node)
-    id = node_to_string(node)
-    skeleton.append({
-        'id': id,
-        'type': 'group',
-        'definition': add_subgraph(subgraph)
-    })
-    state[id] = {'displayName': id, 'hasControlNode': True}
+      if node in subgraphs_by_parent:
+        sub_ts = subgraphs_by_parent[node]
+        group_meta = {
+            node_to_string(child): {
+                "displayName": child.task._function.__name__,
+                "description": str(child.args[0]) if child.args else "",
+            } for child in sub_ts.graph
+        }
+        state[key] = {
+            "displayName": node.task._function.__name__,
+            "hasControlNode": True,
+            "groupMeta": group_meta,
+        }
 
-  return {'skeleton': skeleton, 'state': state}
+        return {
+            "id": node_to_string(node),
+            "type": "group",
+            "definition": build_graph(sub_ts)
+        }
+
+      state[key] = {"displayName": node.task._function.__name__}
+
+      children = [build(n) for n in sorted(reverse[node])]
+      return {
+          "id": node_to_string(node),
+          "type": "execution",
+          **({
+              "next": children
+          } if children else {})
+      }
+
+    return [build(n) for n in roots]
+
+  top_level_ts = next(ts for ts in subgraphs if ts.parent_node is None)
+  return {"skeleton": build_graph(top_level_ts), "state": state}

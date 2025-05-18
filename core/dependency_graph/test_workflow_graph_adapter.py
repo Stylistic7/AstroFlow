@@ -68,6 +68,62 @@ class TestWorkflowGraphAdapter(unittest.TestCase):
     A = (first_remote_task, 'A')
     B = (first_remote_task, 'B')
     C = (second_remote_task, 'C')
+    D = (second_remote_task, 'D')
+
+    graph = Graph({D: {B, C}, C: {A}, B: {A}, A: {}})
+
+    workflow_graph = None
+
+    def workflow_graph_fn(wg):
+      nonlocal workflow_graph
+      workflow_graph = wg
+
+    results, logs = run_graph(graph, workflow_graph_fn=workflow_graph_fn)
+
+    pprint.pprint(workflow_graph, indent=2, width=200)
+
+    expected_workflow_graph = {
+        'skeleton': [{
+            'id': 'Node(fn=first_remote_task, args=A, priority=1)',
+            'next': [{
+                'id': 'Node(fn=first_remote_task, args=B, priority=1)',
+                'next': [{
+                    'id': 'Node(fn=second_remote_task, args=D, priority=1)',
+                    'type': 'execution'
+                }],
+                'type': 'execution'
+            }, {
+                'id': 'Node(fn=second_remote_task, args=C, priority=1)',
+                'next': [{
+                    'id': 'Node(fn=second_remote_task, args=D, priority=1)',
+                    'type': 'execution'
+                }],
+                'type': 'execution'
+            }],
+            'type': 'execution'
+        }],
+        'state': {
+            'Node(fn=first_remote_task, args=A, priority=1)': {
+                'displayName': 'first_remote_task'
+            },
+            'Node(fn=first_remote_task, args=B, priority=1)': {
+                'displayName': 'first_remote_task'
+            },
+            'Node(fn=second_remote_task, args=C, priority=1)': {
+                'displayName': 'second_remote_task'
+            },
+            'Node(fn=second_remote_task, args=D, priority=1)': {
+                'displayName': 'second_remote_task'
+            }
+        }
+    }
+
+    self.assertEqual(workflow_graph, expected_workflow_graph)
+
+  def test_graph_with_subgraph(self) -> None:
+    A = (first_remote_task, 'A')
+    B = (first_remote_task, 'B')
+    C = (second_remote_task, 'C')
     D = build_dynamic_graph
     E = (second_remote_task, 'D')
 
@@ -81,80 +137,120 @@ class TestWorkflowGraphAdapter(unittest.TestCase):
 
     results, logs = run_graph(graph, workflow_graph_fn=workflow_graph_fn)
 
-    pprint.pprint(workflow_graph, indent=2, width=80)
+    pprint.pprint(workflow_graph, indent=2, width=200)
 
     expected_workflow_graph = {
         'skeleton': [{
-            'id': 'build_dynamic_graph',
+            'id': 'Node(fn=first_remote_task, args=A, priority=1)',
             'next': [{
-                'id': '(second_remote_task, D)',
-                'type': 'execution'
-            }],
-            'type': 'group'
-        }, {
-            'id': '(second_remote_task, C)',
-            'next': [{
-                'id': 'build_dynamic_graph',
-                'type': 'group'
-            }],
-            'type': 'execution'
-        }, {
-            'id': '(first_remote_task, B)',
-            'next': [{
-                'id': 'build_dynamic_graph',
-                'type': 'group'
-            }],
-            'type': 'execution'
-        }, {
-            'id': '(first_remote_task, A)',
-            'next': [{
-                'id': '(second_remote_task, C)',
-                'type': 'execution'
-            }],
-            'type': 'execution'
-        }, {
-            'id': '(first_remote_task, A)',
-            'next': [{
-                'id': '(first_remote_task, B)',
-                'type': 'execution'
-            }],
-            'type': 'execution'
-        }, {
-            'definition': [{
-                'id': '(process, 0)',
+                'id': 'Node(fn=first_remote_task, args=B, priority=1)',
                 'next': [{
-                    'id': 'gather',
-                    'type': 'execution'
+                    'definition': [{
+                        'id': 'Node(fn=process, args=0, priority=1)',
+                        'next': [{
+                            'id': 'Node(fn=gather, priority=1)',
+                            'type': 'execution'
+                        }],
+                        'type': 'execution'
+                    }, {
+                        'id': 'Node(fn=process, args=1, priority=1)',
+                        'next': [{
+                            'id': 'Node(fn=gather, priority=1)',
+                            'type': 'execution'
+                        }],
+                        'type': 'execution'
+                    }, {
+                        'id': 'Node(fn=process, args=2, priority=1)',
+                        'next': [{
+                            'id': 'Node(fn=gather, priority=1)',
+                            'type': 'execution'
+                        }],
+                        'type': 'execution'
+                    }],
+                    'id': 'Node(fn=build_dynamic_graph, priority=1)',
+                    'type': 'group'
                 }],
                 'type': 'execution'
             }, {
-                'id': '(process, 1)',
+                'id': 'Node(fn=second_remote_task, args=C, priority=1)',
                 'next': [{
-                    'id': 'gather',
-                    'type': 'execution'
-                }],
-                'type': 'execution'
-            }, {
-                'id': '(process, 2)',
-                'next': [{
-                    'id': 'gather',
-                    'type': 'execution'
+                    'definition': [{
+                        'id': 'Node(fn=process, args=0, priority=1)',
+                        'next': [{
+                            'id': 'Node(fn=gather, priority=1)',
+                            'type': 'execution'
+                        }],
+                        'type': 'execution'
+                    }, {
+                        'id': 'Node(fn=process, args=1, priority=1)',
+                        'next': [{
+                            'id': 'Node(fn=gather, priority=1)',
+                            'type': 'execution'
+                        }],
+                        'type': 'execution'
+                    }, {
+                        'id': 'Node(fn=process, args=2, priority=1)',
+                        'next': [{
+                            'id': 'Node(fn=gather, priority=1)',
+                            'type': 'execution'
+                        }],
+                        'type': 'execution'
+                    }],
+                    'id': 'Node(fn=build_dynamic_graph, priority=1)',
+                    'type': 'group'
                 }],
                 'type': 'execution'
             }],
-            'id': 'build_dynamic_graph',
-            'type': 'group'
+            'type': 'execution'
         }],
         'state': {
-            'build_dynamic_graph': {
+            'Node(fn=build_dynamic_graph, priority=1)': {
                 'displayName': 'build_dynamic_graph',
+                'groupMeta': {
+                    'Node(fn=gather, priority=1)': {
+                        'description': '',
+                        'displayName': 'gather'
+                    },
+                    'Node(fn=process, args=0, priority=1)': {
+                        'description': '0',
+                        'displayName': 'process'
+                    },
+                    'Node(fn=process, args=1, priority=1)': {
+                        'description': '1',
+                        'displayName': 'process'
+                    },
+                    'Node(fn=process, args=2, priority=1)': {
+                        'description': '2',
+                        'displayName': 'process'
+                    }
+                },
                 'hasControlNode': True
+            },
+            'Node(fn=first_remote_task, args=A, priority=1)': {
+                'displayName': 'first_remote_task'
+            },
+            'Node(fn=first_remote_task, args=B, priority=1)': {
+                'displayName': 'first_remote_task'
+            },
+            'Node(fn=gather, priority=1)': {
+                'displayName': 'gather'
+            },
+            'Node(fn=process, args=0, priority=1)': {
+                'displayName': 'process'
+            },
+            'Node(fn=process, args=1, priority=1)': {
+                'displayName': 'process'
+            },
+            'Node(fn=process, args=2, priority=1)': {
+                'displayName': 'process'
+            },
+            'Node(fn=second_remote_task, args=C, priority=1)': {
+                'displayName': 'second_remote_task'
             }
         }
     }
 
-    # TODO: Re-enable this test.
-    # self.assertEqual(workflow_graph, expected_workflow_graph)
+    self.assertEqual(workflow_graph, expected_workflow_graph)
 
 
 if __name__ == '__main__':
