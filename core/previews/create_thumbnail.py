@@ -31,17 +31,20 @@ def make_create_thumbnail_decorator(
       def wrapper(*args, **kwargs):
         result = func(*args, **kwargs)
 
+        if result is None:
+          return result
+
         if isinstance(result, tempfile._TemporaryFileWrapper):
           filename = result.name
         else:
           filename = os.fspath(result)
 
-        thumbnail = thumbnail_fn(filename)
-
-        if thumbnail is not None:
-          call_hash = hash_call(fn_hash, *args, **kwargs)
-          thumbnail_key = ('thumbnail', call_hash)
-          cache[thumbnail_key] = thumbnail
+        if os.path.exists(filename):
+          if thumbnail := thumbnail_fn(filename):
+            call_hash = hash_call(fn_hash, *args, **kwargs)
+            thumbnail_key = ('thumbnail', call_hash)
+            cache[thumbnail_key] = thumbnail
+            print(f'### Wrote thumbnail for filename {filename}')
 
         return result
 
