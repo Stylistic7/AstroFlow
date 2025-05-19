@@ -46,7 +46,7 @@ def get_stack_subframe_image(stack: CompositeStack) -> Path:
   assert stack is not None
   light_frames_by_stars = get_light_frames_sorted_by_stars(stack)
   best_light_frame = stack.all_metadata()[light_frames_by_stars[0]]
-  return best_light_frame.filename
+  return Path(best_light_frame.filename)
 
 
 @ray.remote

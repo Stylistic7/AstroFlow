@@ -49,7 +49,12 @@ def post_process_stack(stack: CustomizedStack) -> XisfFilePath:
 
   if context.get('mock_pixinsight', False):
     shutil.copy(master, output_filename)
+    sidecar = Path(master).with_suffix('.pkl')
+    if sidecar.exists():
+      dest_sidecar = Path(output_filename).with_suffix('.pkl')
+      shutil.copy(sidecar, dest_sidecar)
+      print(f'### Copied plate-solving sidecar {sidecar} to {dest_sidecar}')
   else:
     _post_process_stack([master], [output_filename])
 
-  return output_filename
+  return XisfFilePath(output_filename)

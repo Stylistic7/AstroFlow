@@ -115,6 +115,8 @@ def _setup_simple_stack(stack: Stack, tmp_dir: str) -> tuple[str | None, int]:
 #
 # TODO: When a stack fails, keep note of it so it won't be retried for the
 # exact same inputs again.
+#
+# TODO: Don't make thumbnails for calibration stacks.
 @makes_image(CompositeStack).as_master(output_filename)
 @cached.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
 @measure_performance
@@ -159,8 +161,13 @@ def stack_files(stack: Stack) -> XisfFilePath:
                                               metadata=metadata)
       print(f'### Mocked stacking, converted filename {first_filename} to '
             f'filename {dest_filename} with metadata {metadata}')
+      sidecar = Path(first_filename).with_suffix('.pkl')
+      if sidecar.exists():
+        dest_sidecar = dest_filename.with_suffix('.pkl')
+        shutil.copy(sidecar, dest_sidecar)
+        print(f'### Copied plate-solving sidecar {sidecar} to {dest_sidecar}')
 
-      return dest_filename
+      return Path(dest_filename)
 
     print(f'### Running _run_wbpp for stack {stack}')
     _run_wbpp([], dir=tmp_dir, outputDirectory=tmp_dir)
@@ -181,4 +188,4 @@ def stack_files(stack: Stack) -> XisfFilePath:
     shutil.copy(filename, dest_filename)
     update_header(dest_filename, metadata)
 
-    return dest_filename
+    return XisfFilePath(dest_filename)

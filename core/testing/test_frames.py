@@ -11,6 +11,7 @@ import shutil
 import xxhash
 from typing import Any
 from pathlib import Path, PosixPath
+import pickle
 
 from metadata.classes import ImageMetadata
 from context import context, WriteMode
@@ -138,8 +139,9 @@ def copy_testdata_frames(
 
     src_sidecar = Path(src_filename).with_suffix('.pkl')
     dest_sidecar = Path(dest_filename).with_suffix('.pkl')
-    if src_sidecar.exists():
-      shutil.copy(src_sidecar, dest_sidecar)
+    assert src_sidecar.exists()
+    shutil.copy(src_sidecar, dest_sidecar)
+    print(f'### Copied sidecar {dest_sidecar}')
 
 
 # TODO: Maybe remove `insert_metadata`, since it no longer matches pure-
@@ -280,6 +282,11 @@ def make_synthetic_frames(start_datetime: datetime.datetime = datetime.datetime(
                                plate_solution=plate_solution)
       context.set(key, metadata, write_mode=WriteMode.DISK_ONLY)
       print(f'### Wrote key {key}')
+
+      sidecar = Path(fits_filename).with_suffix('.pkl')
+      with open(sidecar, 'wb') as f:
+        print(f'### Wrote plate-solving sidecar {sidecar}')
+        pickle.dump(plate_solution, f)
 
     if dest_dir is None:
       continue
