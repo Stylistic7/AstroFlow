@@ -1,12 +1,11 @@
+from collections import defaultdict
+
 from dependency_graph import Node, TopologicalSorterWithStatus, canonicalize_node
 from dependency_graph.debugging import node_to_string
 
 
 class WorkflowGraph(dict):
   pass
-
-
-from collections import defaultdict
 
 
 def to_workflow_graph(subgraphs: list[TopologicalSorterWithStatus]):

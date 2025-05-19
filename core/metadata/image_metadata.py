@@ -79,7 +79,7 @@ from decorators import cached, measure_performance
 #
 # TODO: Add a task that checks that input and output directories exist. Many
 # tasks cannot run without them.
-@ray.remote(resources={'fastest_storage': 0.001})
+@ray.remote
 def scatter_compute_image_metadata(mode: str, *filenames_in:
                                    list[Path]) -> Graph:
   filenames_in = set(f for f in filenames_in if f is not None)
