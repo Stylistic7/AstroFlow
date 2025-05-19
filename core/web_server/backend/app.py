@@ -63,6 +63,11 @@ def status_fn(status):
     print('### Compute graph is done!')
 
 
+def workflow_graph_fn(wg):
+  global workflow_graph
+  workflow_graph = wg
+
+
 def get_plot_html():
   buffer = io.StringIO()
 
@@ -442,6 +447,7 @@ def dispatch():
 
 
 compute_graph_status = {}
+workflow_graph = {'skeleton': [], 'state': {}}
 
 
 def populate_context():
@@ -487,128 +493,23 @@ def run_compute_graph():
     }
 
   print('### Running compute graph!')
-  thread = threading.Thread(
-      target=_run_graph,
-      args=(graph,),
-      kwargs={
-          # 'status_fn': status_fn,
-          'debug': False
-      })
+  thread = threading.Thread(target=_run_graph,
+                            args=(graph,),
+                            kwargs={
+                                'status_fn': status_fn,
+                                'workflow_graph_fn': workflow_graph_fn,
+                                'debug': False
+                            })
   thread.daemon = True
   thread.start()
 
   return Response(status=204)
 
 
+# TODO: Maybe rename this.
 @app.route('/compute_graph')
 def get_compute_graph():
-  return {
-      'skeleton': [
-          {
-              "edgeLabel": "SUB-DAG 2",
-              "id": "sub2",
-              "type": "group",
-              "definition": [{
-                  "id": "Scan Texts",
-                  "type": "execution",
-                  "next": [{
-                      "id": "Text Logs",
-                      "type": "artifact"
-                  }]
-              }, {
-                  "id": "Label Execution Logs",
-                  "type": "execution",
-                  "next": [{
-                      "id": "Execution Logs",
-                      "type": "artifact",
-                  }]
-              }],
-              "next": [{
-                  "id": "Send via APIs",
-                  "type": "execution"
-              }]
-          },
-          {
-              'id': '3117593921912447883',
-              'type': 'execution',
-              "next": [{
-                  "id": "sub2",
-                  "type": "group"
-              }]
-          },
-          {
-              "id":
-                  "Text2",
-              "type":
-                  "artifact",
-              "next": [{
-                  "edgeLabel": "obtuse-edge",
-                  "id": "sub2",
-                  "type": "group"
-              }]
-          },
-      ],
-      'state': {
-          '3117593921912447883': {
-              'displayName': 'scatter_compute_image_metadata',
-              'description': 'scatter_compute_image_metadata',
-              'icon': {
-                  'text': 'SCIM',
-                  'iconColors': 'inverted'
-              }
-          },
-          "sub2": {
-              "state":
-                  "RUNNING",
-              "hasControlNode":
-                  True,
-              "displayName":
-                  "Log Ingestion (sub2)",
-              "description":
-                  "A simple subdag that shows edge-snapping logic above it",
-              "groupMeta": {
-                  "Text Logs": {
-                      "state": "NO_STATE_RUNTIME",
-                      "icon": {
-                          "name": "logs",
-                          "iconset": "shell",
-                          "size": "small"
-                      }
-                  },
-                  "Execution Logs": {
-                      "state": "NO_STATE_RUNTIME",
-                      "icon": {
-                          "name": "logs",
-                          "iconset": "shell",
-                          "size": "small"
-                      }
-                  },
-                  "Scan Texts": {
-                      "state":
-                          "SUCCEEDED",
-                      "artifactRefs": [{
-                          "id": "Text",
-                          "path": []
-                      }, {
-                          "id": "Text2",
-                          "path": []
-                      }]
-                  },
-                  "Label Execution Logs": {
-                      "state":
-                          "RUNNING",
-                      "artifactRefs": [{
-                          "id": "Text",
-                          "path": []
-                      }, {
-                          "id": "Entities",
-                          "path": []
-                      }]
-                  }
-              }
-          }
-      }
-  }
+  return workflow_graph
 
 
 @app.route('/compute_graph_status')
