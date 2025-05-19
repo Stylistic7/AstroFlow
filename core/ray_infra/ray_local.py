@@ -2,8 +2,6 @@
 # a test cache (in the working directory), and it starts a new, single-node
 # Ray cluster that has access to both diskcache and PixInsight.
 
-print('### Entering module ray_local')
-
 import os
 import ray
 import uuid
@@ -35,16 +33,30 @@ if 'ASTROFLOW_MOCK_NAMESPACE' not in os.environ:
 
   namespace = str(uuid.uuid4())
   os.environ["ASTROFLOW_MOCK_NAMESPACE"] = namespace
+  working_dir = os.getcwd()
 
-  print(f'### Creating local Ray cluster with namespace {namespace}...')
-  ray.init(address='local',
-           namespace=namespace,
-           resources={
-               "diskcache": 1,
-               "fastest_storage": 1,
-               "PixInsight": 1
-           },
-           ignore_reinit_error=True)
+  print(f'### Creating local Ray cluster with {namespace=} {working_dir=}...')
+  ray.init(
+      address='local',
+      namespace=namespace,
+      resources={
+          "diskcache": 1,
+          "fastest_storage": 1,
+          "PixInsight": 1
+      },
+      ignore_reinit_error=False,
+      runtime_env={
+          'working_dir':
+              working_dir,
+          'excludes': [
+              '**/.cache/',
+              '**/cache.tar.gz',
+              '**/.git/',
+              '**/web_server/',
+              '**/testdata/',
+          ]
+      },
+  )
 
   print("### Cluster resources:", ray.get(get_available_resources.remote()))
 

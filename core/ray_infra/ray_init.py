@@ -16,12 +16,12 @@ def connect_to_ray_cluster():
                              'working_dir':
                                  working_dir,
                              'excludes': [
-                                 '/.cache/',
+                                 '.cache/',
                                  'cache.tar.gz',
-                                 '/.git/',
-                                 '/web_server/',
-                                 '/testdata/',
-                                 '/pix/testdata/',
+                                 '.git/',
+                                 'web_server/',
+                                 'testdata/',
+                                 'pix/testdata/',
                              ]
                          },
                          ignore_reinit_error=True)
