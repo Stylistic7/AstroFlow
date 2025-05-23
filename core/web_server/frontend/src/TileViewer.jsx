@@ -220,6 +220,7 @@ const ImperativeViewport = ({ objectType, imageHash, filter, imageWidth, imageHe
       updateTiles();
 
       if (showPolygons) {
+        console.log('showPolygons');
         updatePolygons();
       }
     }
@@ -235,7 +236,7 @@ const ImperativeViewport = ({ objectType, imageHash, filter, imageWidth, imageHe
       Object.values(spritesRef.current).forEach((sprite) => sprite.destroy());
       spritesRef.current = {};
     };
-  }, [app, mosaics, imageHash, filter, imageWidth, imageHeight, maxZoom, worldWidth, worldHeight]);
+  }, [app, mosaics, imageHash, filter, imageWidth, imageHeight, maxZoom, worldWidth, worldHeight, showPolygons]);
 
   return null;
 };

@@ -1,24 +1,17 @@
 import React, { useState, useRef, useEffect, useReducer, useContext } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 
-import Typography from '@mui/material/Typography';
-import DirectionsRunIcon from '@mui/icons-material/DirectionsRun';
 import Accordion from '@mui/material/Accordion';
 import AccordionSummary from '@mui/material/AccordionSummary';
-import AccordionDetails from '@mui/material/AccordionDetails';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { CopyToClipboard } from 'react-copy-to-clipboard';
 import Snackbar from '@mui/material/Snackbar';
-import { Checkbox, FormControlLabel, FormGroup } from '@mui/material';
-import { IconButton, Tooltip } from '@mui/material';
+import FullscreenIcon from '@mui/icons-material/Fullscreen';
 
-import ToggleIconButton from './ToggleIconButton.jsx';
-import MosaicOutline from "./MosaicOutline.jsx";
+import ToggleIconButton from './ToggleIconButton';
 import ColorChannelSelector from "./ColorChannelSelector.jsx";
-import TargetPanel from "./TargetPanel.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
 import { ra_to_hms, dec_to_dms } from './units.js';
-import TileViewer from './TileViewer';
 import { AstroFlowImage } from "./AstroFlowImage.jsx";
 import "./Starmap.css";
 
@@ -38,6 +31,14 @@ export default function MosaicPanel() {
 		indices: true,
 		exposure_widgets: true,
 	});
+
+
+	const handleChange = (name) => {
+		setVisibility({
+			...visibility,
+			[name]: !visibility[name],
+		});
+	};
 
 	const get_filters = () => {
 		let filters = new Set();
@@ -101,7 +102,6 @@ export default function MosaicPanel() {
 
 	const imageType = "mosaic_thumbnail_image_for_filter";
 
-
 	// TODO: Add a dialog box to the "run" button that shows the user what will be
 	// run, and how long it will likely take, and allow them to accept it.
 	return (
@@ -127,16 +127,30 @@ export default function MosaicPanel() {
 				key="telescopius-snackbar"
 			/>
 
-			<ColorChannelSelector
-				stacks={stacks}
-				targets={targets}
-				mosaics={mosaics}
-				mosaic_id={params.mosaic_id}
-				filter={filter}
-				setFilter={handleSetFilter}
-			/>
+			<div style={{ display: 'grid', placeItems: 'center' }}>
+				<div style={{ display: 'grid', gridAutoFlow: 'column', columnGap: '1rem', alignItems: 'center' }}>
+					<ColorChannelSelector
+						stacks={stacks}
+						targets={targets}
+						mosaics={mosaics}
+						mosaic_id={params.mosaic_id}
+						filter={filter}
+						setFilter={handleSetFilter}
+					/>
+					<ToggleIconButton
+						name="outline"
+						icon={<FullscreenIcon />}
+						checked={visibility.outline}
+						handleChange={handleChange}
+					/>
+				</div>
+			</div>
 
-			<AstroFlowImage objectType="mosaic" objectId={params.mosaic_id} filter={filter} showPolygons={true} />
+			<AstroFlowImage
+				objectType="mosaic"
+				objectId={params.mosaic_id}
+				filter={filter}
+				showPolygons={visibility.outline} />
 		</>
 	);
 }

@@ -54,7 +54,7 @@ export default function ColorChannelSelector({ stacks, targets, mosaics, mosaic_
   return (
     <div
       style={{
-        width: "100%",
+        // width: "100%",
         display: "flex",
         justifyContent: "center"
       }}

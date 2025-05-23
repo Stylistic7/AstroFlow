@@ -13,24 +13,19 @@ const ToggleButton = styled(IconButton)(({ theme, toggled }) => ({
   fontSize: '20px',
 }));
 
-const ToggleIconButton = ({ name, icon, handleChange, defaultValue = false }) => {
-  const [toggled, setToggled] = useState(defaultValue);
+const ToggleIconButton = ({ name, icon, checked, handleChange }) => {
 
   const handleToggle = (event) => {
-    setToggled(prev => {
-      const newState = !prev;
-      handleChange(name, newState);
-      return newState;
-    });
+    handleChange(name);
   };
 
   return (
     <ToggleButton
       onClick={handleToggle}
-      toggled={toggled}
+      toggled={checked}
     >
       {React.cloneElement(icon, {
-        sx: { color: toggled ? 'black' : 'white' },
+        sx: { color: checked ? 'black' : 'white' },
       })}
     </ToggleButton>
   );
