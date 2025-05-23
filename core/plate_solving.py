@@ -181,13 +181,23 @@ def solve_field(filename: Path | str,
       ]
   ]
 
+  final_result = None
   for i, arguments in enumerate(trial_arguments):
     result = _solve_field(filename, arguments, debug)
     if type(result) is PlateSolution:
-      return result
+      final_result = result
+      break
 
-  print(f'Could not plate-solve file {filename}')
-  return None
+  sidecar = filename.with_suffix('.pkl')
+  assert not sidecar.exists()
+  with open(sidecar, 'wb') as f:
+    print(f'### Wrote plate-solving sidecar {sidecar}')
+    pickle.dump(result, f)
+
+  if final_result is None:
+    print(f'Could not plate-solve file {filename}')
+
+  return final_result
 
 
 if __name__ == '__main__':
