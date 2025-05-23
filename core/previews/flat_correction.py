@@ -13,6 +13,7 @@ from file_io.tiff_file_io import write_tiff_image
 from products import makes_image
 
 
+# TODO: This should be a new, distinct type, FlatCorrectedStack.
 @makes_image(SimpleStack).as_subframe()
 @measure_performance
 @create_thumbnail
@@ -26,7 +27,7 @@ def flat_corrected_stack(
       l for l in light_frames_by_stars if l in substack.frames)]
 
   dependencies = substack.dependencies.copy()
-  dependencies['flat'] = flat_stack.content_hash
+  dependencies['flat'] = {'stack_id': flat_stack.content_hash}
 
   temp_file = tempfile.NamedTemporaryFile(suffix=".tiff", delete=True)
   write_tiff_image(

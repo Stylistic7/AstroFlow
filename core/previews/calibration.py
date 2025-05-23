@@ -37,6 +37,10 @@ def calibrate_image(light_metadata: ImageMetadata | None,
       f"dark {dark_image.shape}, "
       f"flat {flat_image.shape}")
 
+  assert 'EXPOSURE' in light_metadata.header, f'### file {light_metadata.filename} does not have EXPOSURE tag'
+  assert 'EXPOSURE' in dark_metadata.header, f'### file {dark_metadata.filename} does not have EXPOSURE tag'
+  assert 'EXPOSURE' in flat_metadata.header, f'### file {flat_metadata.filename} does not have EXPOSURE tag'
+
   light_dark_scale = light_metadata.header['EXPOSURE'] / dark_metadata.header[
       'EXPOSURE']
   flat_dark_scale = flat_metadata.header['EXPOSURE'] / dark_metadata.header[
