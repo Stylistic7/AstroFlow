@@ -94,7 +94,7 @@ def run_graph(graph: Graph,
         print(f'### Calling task {node.task._function.__name__} '
               f'with signature {str(sig)} with immediate args '
               f'of types {immediate_types} and no ancestor args')
-      return node.args
+      return list(node.args)
     else:
       results = ancestor_results(ts, node)
 
@@ -113,6 +113,13 @@ def run_graph(graph: Graph,
         if ts.done_callback:
           ts.done_callback()
           ts.done_callback = None
+
+  # TODO: This is hacky. Make it more explicit.
+  def make_run_fn(ts, node):
+    try:
+      return node.task.remote(*make_fn_args(ts, node), dry_run=dry_run)
+    except:
+      return node.task.remote(*make_fn_args(ts, node))
 
   # TODO: Consider embellishing this to force graphs like {foo: [bar, baz]} to
   # actually run bar, and then baz. At present, the ordering is not honored,
@@ -190,52 +197,43 @@ def run_graph(graph: Graph,
       print(f'Top of loop, {len(active)} active graphs, '
             f'{len(ready)} ready nodes')
 
-    if dry_run:
-      for ts, node in ready:
-        args = make_fn_args(ts, node)
-        if hasattr(node.task, 'is_cached') and node.task.is_cached(*args):
-          handle_result(ts, node, node.task.get_cached_result(*args))
-        else:
+    # This starts all ready tasks in parallel.
+    ref_to_ts_and_node = {
+        make_run_fn(ts, node): (ts, node) for (ts, node) in ready
+    }
+    remaining_refs = list(ref_to_ts_and_node.keys())
+
+    while len(remaining_refs):
+      ready_refs, remaining_refs = ray.wait(
+          remaining_refs, num_returns=int(np.ceil(len(remaining_refs) / 10)))
+
+      for ready_ref in ready_refs:
+        ts, node = ref_to_ts_and_node[ready_ref]
+        if trace:
+          trace_list.append(node)
+        if debug:
+          print(f'Task {node.task._function.__name__} finished')
+
+        num_nodes_run += 1
+
+        # Maybe call the user's status_fn, but rate limit the frequency of these
+        # calls, which may be expensive.
+        current_time = time.time()
+        if current_time > (last_status_time + status_interval):
+          if status_fn:
+            status_fn(get_status())
+          if workflow_graph_fn:
+            workflow_graph_fn(get_workflow_graph())
+          last_status_time = current_time
+
+        try:
+          handle_result(ts, node, ray.get(ready_ref))
+        except ray.exceptions.RayTaskError as e:
+          print(f'Node {node_to_string(node)} raised exception {e}')
+          ts.results[node] = e.cause
+          ts.logs[node] = []
+          ts.final_result = e.cause
           ts.done(node)
-    else:
-      # This starts all ready tasks in parallel.
-      ref_to_ts_and_node = {
-          node.task.remote(*make_fn_args(ts, node)): (ts, node)
-          for (ts, node) in ready
-      }
-      remaining_refs = list(ref_to_ts_and_node.keys())
-
-      while len(remaining_refs):
-        ready_refs, remaining_refs = ray.wait(
-            remaining_refs, num_returns=int(np.ceil(len(remaining_refs) / 10)))
-
-        for ready_ref in ready_refs:
-          ts, node = ref_to_ts_and_node[ready_ref]
-          if trace:
-            trace_list.append(node)
-          if debug:
-            print(f'Task {node.task._function.__name__} finished')
-
-          num_nodes_run += 1
-
-          # Maybe call the user's status_fn, but rate limit the frequency of these
-          # calls, which may be expensive.
-          current_time = time.time()
-          if current_time > (last_status_time + status_interval):
-            if status_fn:
-              status_fn(get_status())
-            if workflow_graph_fn:
-              workflow_graph_fn(get_workflow_graph())
-            last_status_time = current_time
-
-          try:
-            handle_result(ts, node, ray.get(ready_ref))
-          except ray.exceptions.RayTaskError as e:
-            print(f'Node {node_to_string(node)} raised exception {e}')
-            ts.results[node] = e.cause
-            ts.logs[node] = []
-            ts.final_result = e.cause
-            ts.done(node)
 
     handle_finished_subgraphs()
 
