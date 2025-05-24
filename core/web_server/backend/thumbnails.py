@@ -11,6 +11,7 @@ from mosaics.types import Mosaic
 from products.registry import get_producer, MediaType
 from previews.types import QualityLevel
 from stacks.simple_stack import SimpleStack
+from web_server.backend.object_cache import stacks, targets, mosaics
 
 thumbnails_bp = Blueprint("thumbnails", __name__)
 
@@ -28,42 +29,6 @@ def get_thumbnail(object_type: type, *args):
           return resp
 
   return abort(404)
-
-
-# TODO: Respond to `reload_data` events.
-def stacks():
-  if hasattr(stacks, 'cached_value'):
-    return stacks.cached_value
-  else:
-    try:
-      stacks.cached_value = context.get('stacks')
-      return stacks.cached_value
-    except:
-      return None
-
-
-# TODO: Respond to `reload_data` events.
-def targets():
-  if hasattr(targets, 'cached_value'):
-    return targets.cached_value
-  else:
-    try:
-      targets.cached_value = context.get('targets')
-      return targets.cached_value
-    except:
-      return None
-
-
-# TODO: Respond to `reload_data` events.
-def mosaics():
-  if hasattr(mosaics, 'cached_value'):
-    return mosaics.cached_value
-  else:
-    try:
-      mosaics.cached_value = context.get('mosaics')
-      return mosaics.cached_value
-    except:
-      return None
 
 
 @thumbnails_bp.route('/thumbnail/stack/<stack_id>')
