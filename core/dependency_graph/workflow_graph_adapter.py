@@ -1,7 +1,8 @@
 from collections import defaultdict
 
 from dependency_graph import Node, TopologicalSorterWithStatus, canonicalize_node
-from dependency_graph.debugging import node_to_string
+from dependency_graph.debugging import node_to_string, print_result_dict
+from cache.types import NeverRun
 
 
 class WorkflowGraph(dict):
@@ -9,7 +10,7 @@ class WorkflowGraph(dict):
 
 
 def _state_string(ts, node):
-  if node not in ts.results:
+  if ts.results.get(node, NeverRun) == NeverRun:
     return 'NO_STATE_RUNTIME'
 
   if isinstance(ts.results[node], Exception):

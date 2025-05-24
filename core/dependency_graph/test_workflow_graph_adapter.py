@@ -9,6 +9,7 @@ import pprint
 import compute_graph
 from context import context, get_cache
 from dependency_graph import Graph, run_graph
+from dependency_graph.debugging import print_result_dict
 from testing import make_test_context
 from dependency_graph.logging import capture_logs
 from mosaics.orion_mosaic import add_orion_mosaic_images
@@ -22,35 +23,31 @@ log = structlog.get_logger()
 T = TypeVar('T')
 
 sidecar_hasher = SidecarHasher()
-cached = make_cached_decorator(cache=cache,
+cached = make_cached_decorator(cache=context,
                                content_hasher=sidecar_hasher,
                                call_hasher=hash_call,
                                debug=True)
 
 
-@ray.remote
-@capture_logs
+@cached.remote
 def first_remote_task(arg: T) -> T:
   log.info(f'first_remote_task {arg}')
   return arg
 
 
-@ray.remote
-@capture_logs
+@cached.remote
 def second_remote_task(arg: T) -> T:
   log.info(f'second_remote_task {arg}')
   return arg
 
 
-@ray.remote
-@capture_logs
+@cached.remote
 def process(item: T) -> T:
   log.info(f'process {item}')
   return item
 
 
-@ray.remote
-@capture_logs
+@cached.remote
 def gather(*ancestor_results: list[int]) -> int:
   result = sum(ancestor_results)
   log.info(f'gather result {result}')
@@ -92,7 +89,9 @@ class TestWorkflowGraphAdapter(unittest.TestCase):
       nonlocal workflow_graph
       workflow_graph = wg
 
-    results, logs = run_graph(graph, workflow_graph_fn=workflow_graph_fn)
+    results, logs = run_graph(graph,
+                              debug=True,
+                              workflow_graph_fn=workflow_graph_fn)
 
     pprint.pprint(workflow_graph, indent=2, width=200)
 
@@ -306,6 +305,30 @@ class TestWorkflowGraphAdapter(unittest.TestCase):
                            dry_run=False)
     pprint.pprint(workflow_graph, indent=2, width=200)
     self.assertEqual(context.num_task_raises_exception_runs, 1)
+
+  def test_graph_with_subgraph_dry_run(self) -> None:
+    A = (first_remote_task, 'A')
+    B = (first_remote_task, 'B')
+    C = (second_remote_task, 'C')
+    D = build_dynamic_graph
+    E = (second_remote_task, 'D')
+
+    graph = Graph({E: {D}, D: {B, C}, C: {A}, B: {A}})
+
+    workflow_graph = None
+
+    def workflow_graph_fn(wg):
+      nonlocal workflow_graph
+      workflow_graph = wg
+
+    results, logs = run_graph(graph,
+                              dry_run=True,
+                              debug=True,
+                              workflow_graph_fn=workflow_graph_fn)
+
+    pprint.pprint(workflow_graph, indent=2, width=200)
+
+    print_result_dict(results)
 
 
 if __name__ == '__main__':
