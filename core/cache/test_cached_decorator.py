@@ -14,12 +14,13 @@ from dependency_graph import Graph
 from testing.sidecar_hasher import SidecarHasher
 
 sidecar_hasher = SidecarHasher()
-task_with_context = make_cached_decorator(cache=context,
-                                          content_hasher=sidecar_hasher,
-                                          call_hasher=hash_call)
+cached = make_cached_decorator(cache=context,
+                               content_hasher=sidecar_hasher,
+                               call_hasher=hash_call,
+                               debug=True)
 
 
-@task_with_context.remote
+@cached.remote
 def make_large_image_remote(shape: tuple[int],
                             output_dir: Injected[Path]) -> Path:
   context.num_make_large_image_runs = context.num_make_large_image_runs + 1
@@ -30,14 +31,14 @@ def make_large_image_remote(shape: tuple[int],
   return filename
 
 
-@task_with_context.remote
+@cached.remote
 def consume_large_image_remote(path: Path) -> None:
   context.num_consume_large_image_runs = context.num_consume_large_image_runs + 1
   with Image.open(path) as img:
     print(f'img.size {img.size}')
 
 
-@task_with_context.remote
+@cached.remote
 def fail_remote() -> int:
   raise ValueError("intentional failure")
 
@@ -48,7 +49,7 @@ def make_graph_remote() -> Graph:
   return Graph()
 
 
-class TestTask(unittest.TestCase):
+class TestCachedDecorator(unittest.TestCase):
 
   def test_remote_functions(self):
     context.num_make_large_image_runs = 0

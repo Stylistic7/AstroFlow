@@ -68,20 +68,25 @@ def make_cached_decorator(cache: CacheProtocol,
       bound = _bind_args(func, args, kwargs, injected_context)
       key, call_hash, valid, cached_result = _get_cache_key_and_result(bound)
 
-      if valid:
+      if valid and not isinstance(cached_result, Exception):
         return cached_result
 
-      result = func(*bound.args, **bound.kwargs)
+      try:
+        result = func(*bound.args, **bound.kwargs)
+      except Exception as e:
+        result = e
 
       # TODO: Remove this assert.
       assert not isinstance(result, Graph)
 
-      if not isinstance(result, Exception):
-        result = content_hasher.set(result, call_hash)
-        debug_print(f'storing: {key} as {type(result)}')
-        cache[key] = result
+      result = content_hasher.set(result, call_hash)
+      debug_print(f'storing: {key} as {type(result)}')
+      cache[key] = result
 
-      return result
+      if isinstance(result, Exception):
+        raise result
+      else:
+        return result
 
     inner.__name__ = func.__name__
     inner.__qualname__ = func.__qualname__
