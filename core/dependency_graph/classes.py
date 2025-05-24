@@ -179,8 +179,6 @@ class ResultDict(dict[Node, Any]):
 
 DoneCallback = Callable[[], None]
 
-from collections import defaultdict
-
 
 class TopologicalSorterWithStatus:
 
