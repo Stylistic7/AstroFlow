@@ -32,6 +32,7 @@ def matching_nodes(graph: CanonicalGraph,
 
 
 def run_graph(graph: Graph,
+              dry_run: bool = False,
               status_fn: StatusFn | None = None,
               workflow_graph_fn: WorkflowGraphFn | None = None,
               status_interval: float = _MIN_STATUS_UPDATE_INTERVAL_SECS,
@@ -84,34 +85,27 @@ def run_graph(graph: Graph,
 
     return [ts.results[node] for node in nodes]
 
-  def make_run_fn(ts: TopologicalSorterWithStatus, node: Node) -> Any:
-    if debug:
-      print(f'Making run fn for task {node.task._function.__name__}')
-
-    results = ancestor_results(ts, node)
+  def make_fn_args(ts: TopologicalSorterWithStatus, node: Node) -> Any:
     sig = inspect.signature(node.task._function)
 
-    try:
-      if len(sig.parameters) == len(node.args):
-        if debug:
-          immediate_types = [type(x) for x in node.args]
-          print(f'### Calling task {node.task._function.__name__} '
-                f'with signature {str(sig)} with immediate args '
-                f'of types {immediate_types} and no ancestor args')
-        return node.task.remote(*node.args)
-      else:
-        if debug:
-          immediate_types = [type(x) for x in node.args]
-          ancestor_types = [type(x) for x in results]
-          print(f'### Calling task {node.task._function.__name__} '
-                f'with signature {str(sig)} with immediate args of '
-                f'types {immediate_types} and ancestor args with '
-                f'types {ancestor_types}')
-        return node.task.remote(*node.args, *results)
-    except Exception as e:
-      print(f'Received exception while trying to call '
-            f'task {node.task._function.__name__}')
-      raise e
+    if len(sig.parameters) == len(node.args):
+      if debug:
+        immediate_types = [type(x) for x in node.args]
+        print(f'### Calling task {node.task._function.__name__} '
+              f'with signature {str(sig)} with immediate args '
+              f'of types {immediate_types} and no ancestor args')
+      return node.args
+    else:
+      results = ancestor_results(ts, node)
+
+      if debug:
+        immediate_types = [type(x) for x in node.args]
+        ancestor_types = [type(x) for x in results]
+        print(f'### Calling task {node.task._function.__name__} '
+              f'with signature {str(sig)} with immediate args of '
+              f'types {immediate_types} and ancestor args with '
+              f'types {ancestor_types}')
+      return list(node.args) + results
 
   def handle_finished_subgraphs() -> None:
     for ts in subgraphs:
@@ -149,6 +143,33 @@ def run_graph(graph: Graph,
         num_duplicates = 1
     print(f'###   {last_node_string} x{num_duplicates}')
 
+  def handle_result(ts: TopologicalSorterWithStatus, node: Node,
+                    result: Any) -> None:
+    # If the function captured logs, split them off the returned result.
+    log = []
+    if isinstance(result, tuple) and isinstance(result[0], LogContainer):
+      log, result = result
+      if debug:
+        print(f'### node {node_to_string(node, exclude_args=True)} produced '
+              f'a log of length {len(log)}')
+
+    if (result_size_mb := get_deep_size(result) / 1024 /
+        1024) > _RESULT_SIZE_WARNING_THRESHOLD_MB:
+      print(
+          f'### WARNING: node {node_to_string(node, exclude_args=True)} produced '
+          f'large object of type {type(result)} and '
+          f'size {result_size_mb:.3f} MB')
+
+    # There are two possibilities here: the task can return a result,
+    # or a (dynamically-generated) Graph to run as a sub-graph.
+    if isinstance(result, Graph):
+      add_subgraph(result, ts, node)
+    else:
+      ts.results[node] = result
+      ts.logs[node] = log
+      ts.final_result = result
+      ts.done(node)
+
   def get_status() -> GraphStatus:
     return reduce(add, [ts.get_status() for ts in subgraphs], GraphStatus())
 
@@ -169,69 +190,52 @@ def run_graph(graph: Graph,
       print(f'Top of loop, {len(active)} active graphs, '
             f'{len(ready)} ready nodes')
 
-    # This starts all ready tasks in parallel.
-    ref_to_ts_and_node = {
-        make_run_fn(ts, node): (ts, node) for ts, node in ready
-    }
-    remaining_refs = list(ref_to_ts_and_node.keys())
-
-    while len(remaining_refs):
-      ready_refs, remaining_refs = ray.wait(
-          remaining_refs, num_returns=int(np.ceil(len(remaining_refs) / 10)))
-
-      for ready_ref in ready_refs:
-        ts, node = ref_to_ts_and_node[ready_ref]
-        if trace:
-          trace_list.append(node)
-        if debug:
-          print(f'Task {node.task._function.__name__} finished')
-
-        num_nodes_run += 1
-
-        # Maybe call the user's status_fn, but rate limit the frequency of these
-        # calls, which may be expensive.
-        current_time = time.time()
-        if current_time > (last_status_time + status_interval):
-          if status_fn:
-            status_fn(get_status())
-          if workflow_graph_fn:
-            workflow_graph_fn(get_workflow_graph())
-          last_status_time = current_time
-
-        try:
-          result = ray.get(ready_ref)
-
-          # If the function captured logs, split them off the returned result.
-          log = []
-          if isinstance(result, tuple) and isinstance(result[0], LogContainer):
-            log, result = result
-            if debug:
-              print(
-                  f'### node {node_to_string(node, exclude_args=True)} produced '
-                  f'a log of length {len(log)}')
-
-          if (result_size_mb := get_deep_size(result) / 1024 /
-              1024) > _RESULT_SIZE_WARNING_THRESHOLD_MB:
-            print(
-                f'### WARNING: node {node_to_string(node, exclude_args=True)} produced '
-                f'large object of type {type(result)} and '
-                f'size {result_size_mb:.3f} MB')
-
-          # There are two possibilities here: the task can return a result,
-          # or a (dynamically-generated) Graph to run as a sub-graph.
-          if isinstance(result, Graph):
-            add_subgraph(result, ts, node)
-          else:
-            ts.results[node] = result
-            ts.logs[node] = log
-            ts.final_result = result
-            ts.done(node)
-        except ray.exceptions.RayTaskError as e:
-          print(f'Node {node_to_string(node)} raised exception {e}')
-          ts.results[node] = e.cause
-          ts.logs[node] = []
-          ts.final_result = e.cause
+    if dry_run:
+      for ts, node in ready:
+        args = make_fn_args(ts, node)
+        if hasattr(node.task, 'is_cached') and node.task.is_cached(*args):
+          handle_result(ts, node, node.task.get_cached_result(*args))
+        else:
           ts.done(node)
+    else:
+      # This starts all ready tasks in parallel.
+      ref_to_ts_and_node = {
+          node.task.remote(*make_fn_args(ts, node)): (ts, node)
+          for (ts, node) in ready
+      }
+      remaining_refs = list(ref_to_ts_and_node.keys())
+
+      while len(remaining_refs):
+        ready_refs, remaining_refs = ray.wait(
+            remaining_refs, num_returns=int(np.ceil(len(remaining_refs) / 10)))
+
+        for ready_ref in ready_refs:
+          ts, node = ref_to_ts_and_node[ready_ref]
+          if trace:
+            trace_list.append(node)
+          if debug:
+            print(f'Task {node.task._function.__name__} finished')
+
+          num_nodes_run += 1
+
+          # Maybe call the user's status_fn, but rate limit the frequency of these
+          # calls, which may be expensive.
+          current_time = time.time()
+          if current_time > (last_status_time + status_interval):
+            if status_fn:
+              status_fn(get_status())
+            if workflow_graph_fn:
+              workflow_graph_fn(get_workflow_graph())
+            last_status_time = current_time
+
+          try:
+            handle_result(ts, node, ray.get(ready_ref))
+          except ray.exceptions.RayTaskError as e:
+            print(f'Node {node_to_string(node)} raised exception {e}')
+            ts.results[node] = e.cause
+            ts.logs[node] = []
+            ts.final_result = e.cause
+            ts.done(node)
 
     handle_finished_subgraphs()
 
