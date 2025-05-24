@@ -6,9 +6,11 @@ from pathlib import Path
 from PIL import Image
 import tempfile
 from typing import Any
+import numpy as np
 
 from context import context
 from cache.cached_decorator import make_cached_decorator, Injected
+from cache.types import NeverRun
 from hashing import hash_call
 from dependency_graph import Graph
 from testing.sidecar_hasher import SidecarHasher
@@ -47,6 +49,11 @@ def fail_remote() -> int:
 def make_graph_remote() -> Graph:
   context.num_graph_runs = context.num_graph_runs + 1
   return Graph()
+
+
+@cached.remote
+def make_small_image() -> np.ndarray:
+  return np.ones((10, 10))
 
 
 class TestCachedDecorator(unittest.TestCase):
@@ -95,3 +102,10 @@ class TestCachedDecorator(unittest.TestCase):
       ray.get(fail_remote.remote())
 
     self.assertIn("intentional failure", str(cm.exception))
+
+  def test_dry_run(self):
+    result = ray.get(make_small_image.remote(dry_run=True))
+    self.assertEqual(result, NeverRun)
+
+    result = ray.get(make_small_image.remote(dry_run=False))
+    self.assertIsInstance(result, np.ndarray)

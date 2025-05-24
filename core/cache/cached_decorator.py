@@ -8,6 +8,7 @@ import xxhash
 from dependency_graph import Graph
 from hashing import hash_source_code, hash_call
 from protocols import CacheProtocol, ContentHashProtocol
+from cache.types import NeverRun
 
 
 class Injected(Generic[TypeVar('T')]):
@@ -64,19 +65,24 @@ def make_cached_decorator(cache: CacheProtocol,
         debug_print(f'cache mismatch ({stored_hash}): {key}')
         return key, call_hash, False, None
 
-    def inner(*args, injected_context: Optional[dict] = None, **kwargs):
+    def inner(*args,
+              injected_context: Optional[dict] = None,
+              dry_run: bool = False,
+              **kwargs):
       bound = _bind_args(func, args, kwargs, injected_context)
       key, call_hash, valid, cached_result = _get_cache_key_and_result(bound)
 
       if valid and not isinstance(cached_result, Exception):
         return cached_result
 
+      if dry_run:
+        return NeverRun
+
       try:
         result = func(*bound.args, **bound.kwargs)
       except Exception as e:
         result = e
 
-      # TODO: Remove this assert.
       assert not isinstance(result, Graph)
 
       result = content_hasher.set(result, call_hash)
