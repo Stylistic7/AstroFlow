@@ -64,7 +64,7 @@ class Viewbox(ContentHashed):
   tile_width: int
 
   def __str__(self):
-    return 'Viewbox'
+    return f'Viewbox({self.num_pixels_x} px x {self.num_pixels_y} px)'
 
   def __hash__(self) -> int:
     return hash_dataclass(self)
