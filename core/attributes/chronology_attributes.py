@@ -35,3 +35,8 @@ class ChronologyAttributes(Generic[_HashType]):
     stable_hash = sorted_metadata[0].content_hash
 
     return cls(stable_hash, oldest_date, newest_date)
+
+  def __lt__(self, other):
+    if not isinstance(other, ChronologyAttributes):
+      return NotImplemented
+    return self.oldest_date < other.oldest_date
