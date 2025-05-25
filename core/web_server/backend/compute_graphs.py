@@ -113,10 +113,7 @@ def workflow_graph_for_stack(stack_id):
     nonlocal workflow_graph
     workflow_graph = wg
 
-
-#   graph = ray.get(build_stacking_subgraph.remote(stacks()[stack_id]))
-
-  graph = Graph({(build_stacking_subgraph, stacks()[stack_id]): {}})
+  graph = ray.get(build_stacking_subgraph.remote(stacks()[stack_id]))
   results, _ = run_graph(graph,
                          workflow_graph_fn=workflow_graph_fn,
                          dry_run=True,
