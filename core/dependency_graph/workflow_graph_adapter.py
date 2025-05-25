@@ -25,8 +25,9 @@ def to_workflow_graph(subgraphs: list[TopologicalSorterWithStatus]):
   }
 
   state: dict[str, dict] = {}
+  skeleton: dict[str, dict] = {}
 
-  def build_graph(ts: TopologicalSorterWithStatus):
+  def flatten_graph(ts: TopologicalSorterWithStatus):
     graph = ts.graph
 
     reverse = defaultdict(set)
@@ -34,10 +35,10 @@ def to_workflow_graph(subgraphs: list[TopologicalSorterWithStatus]):
       for dep in deps:
         reverse[dep].add(node)
 
-    roots = sorted([n for n, deps in graph.items() if not deps])
-
-    def build(node):
+    for node in graph:
       key = node_to_string(node)
+      if key in skeleton:
+        continue
 
       if node in subgraphs_by_parent:
         sub_ts = subgraphs_by_parent[node]
@@ -53,28 +54,40 @@ def to_workflow_graph(subgraphs: list[TopologicalSorterWithStatus]):
             "hasControlNode": True,
             "groupMeta": group_meta,
         }
-
-        return {
-            "id": node_to_string(node),
-            "type": "group",
-            "definition": build_graph(sub_ts)
+        skeleton[key] = {
+            "id":
+                key,
+            "type":
+                "group",
+            "definition": [
+                node_to_string(n) for n in sorted(
+                    child for child in sub_ts.graph if not sub_ts.graph[child])
+            ]
+        }
+        flatten_graph(sub_ts)
+      else:
+        state[key] = {
+            "displayName": node.task._function.__name__,
+            "state": _state_string(ts, node)
+        }
+        children = sorted(reverse[node], key=node_to_string)
+        skeleton[key] = {
+            "id":
+                key,
+            "type":
+                "execution",
+            **({
+                "next": [{
+                    "id": node_to_string(children[0])
+                }]
+            } if children else {})
         }
 
-      state[key] = {
-          "displayName": node.task._function.__name__,
-          "state": _state_string(ts, node)
-      }
-
-      children = [build(n) for n in sorted(reverse[node])]
-      return {
-          "id": node_to_string(node),
-          "type": "execution",
-          **({
-              "next": children
-          } if children else {})
-      }
-
-    return [build(n) for n in roots]
+  for ts in subgraphs:
+    flatten_graph(ts)
 
   top_level_ts = next(ts for ts in subgraphs if ts.parent_node is None)
-  return {"skeleton": build_graph(top_level_ts), "state": state}
+  roots = sorted(n for n, deps in top_level_ts.graph.items() if not deps)
+  root_ids = [node_to_string(n) for n in roots]
+
+  return {"skeleton": list(skeleton.values()), "state": state}
