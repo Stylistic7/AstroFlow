@@ -1,8 +1,11 @@
 from collections import defaultdict
 
-from dependency_graph import Node, TopologicalSorterWithStatus, canonicalize_node
-from dependency_graph.debugging import node_to_string, print_result_dict
+from dependency_graph import Node, TopologicalSorterWithStatus
 from cache.types import NeverRun
+
+
+def node_to_id(node: Node) -> str:
+  return str(hash(node))
 
 
 class WorkflowGraph(dict):
@@ -36,14 +39,14 @@ def to_workflow_graph(subgraphs: list[TopologicalSorterWithStatus]):
         reverse[dep].add(node)
 
     for node in graph:
-      key = node_to_string(node)
+      key = node_to_id(node)
       if key in skeleton:
         continue
 
       if node in subgraphs_by_parent:
         sub_ts = subgraphs_by_parent[node]
         group_meta = {
-            node_to_string(child): {
+            node_to_id(child): {
                 "displayName": child.task._function.__name__,
                 "description": str(child.args[0]) if child.args else "",
                 "state": _state_string(sub_ts, child),
@@ -60,8 +63,8 @@ def to_workflow_graph(subgraphs: list[TopologicalSorterWithStatus]):
             "type":
                 "group",
             "definition": [
-                node_to_string(n) for n in sorted(
-                    child for child in sub_ts.graph if not sub_ts.graph[child])
+                node_to_id(n) for n in sorted(child for child in sub_ts.graph
+                                              if not sub_ts.graph[child])
             ]
         }
         flatten_graph(sub_ts)
@@ -70,15 +73,13 @@ def to_workflow_graph(subgraphs: list[TopologicalSorterWithStatus]):
             "displayName": node.task._function.__name__,
             "state": _state_string(ts, node)
         }
-        children = sorted(reverse[node], key=node_to_string)
+        children = sorted(reverse[node], key=node_to_id)
         skeleton[key] = {
-            "id":
-                key,
-            "type":
-                "execution",
+            "id": key,
+            "type": "execution",
             **({
                 "next": [{
-                    "id": node_to_string(children[0])
+                    "id": node_to_id(children[0])
                 }]
             } if children else {})
         }
@@ -88,6 +89,6 @@ def to_workflow_graph(subgraphs: list[TopologicalSorterWithStatus]):
 
   top_level_ts = next(ts for ts in subgraphs if ts.parent_node is None)
   roots = sorted(n for n, deps in top_level_ts.graph.items() if not deps)
-  root_ids = [node_to_string(n) for n in roots]
+  root_ids = [node_to_id(n) for n in roots]
 
   return {"skeleton": list(skeleton.values()), "state": state}

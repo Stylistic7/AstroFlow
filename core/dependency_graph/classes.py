@@ -1,3 +1,4 @@
+from hashing import hash_list_int
 from typing import Any, Callable, Union, TypeAlias, Iterable
 from dataclasses import dataclass, field
 from graphlib import TopologicalSorter
@@ -52,8 +53,10 @@ class Node():
             all(a == b for a, b in zip(self.args, other.args)))
 
   def __hash__(self) -> int:
-    return hash((self.task._function.__module__, self.task._function.__name__,
-                 self.name, self.priority, self.args))
+    return hash_list_int([
+        self.task._function.__module__, self.task._function.__name__, self.name,
+        self.priority, self.args
+    ])
 
   def __str__(self):
     return (
