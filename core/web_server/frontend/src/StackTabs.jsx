@@ -9,6 +9,17 @@ import {
 } from '@mui/material';
 import TileViewer from './TileViewer';
 import RunsTab from './RunsTab.jsx';
+import WorkflowGraph from './WorkflowGraph.jsx';
+import { ThemeProvider, createTheme } from '@mui/material/styles';
+
+const darkTheme = createTheme({
+  palette: {
+    mode: 'dark',
+    primary: {
+      main: '#cccccc',
+    },
+  },
+});
 
 const StackTabs = ({ stack, stack_id }) => {
   const [tabIndex, setTabIndex] = useState(0);
@@ -52,6 +63,7 @@ const StackTabs = ({ stack, stack_id }) => {
           <Tab label="Stacked" />
           <Tab label="Blink" />
           <Tab label="Runs" />
+          <Tab label="Graph" />
         </Tabs>
       </Box>
       <Divider />
@@ -85,6 +97,10 @@ const StackTabs = ({ stack, stack_id }) => {
 
         <Box hidden={tabIndex !== 2} sx={{ height: '100%', overflow: 'auto', position: 'absolute', inset: 0, p: 3 }}>
           <RunsTab stack={stack} />
+        </Box>
+
+        <Box hidden={tabIndex !== 3} sx={{ height: '100%', overflow: 'auto', position: 'absolute', inset: 0, p: 3 }}>
+          <WorkflowGraph theme={darkTheme} url={`/workflow_graph/stack/${stack_id}`} />
         </Box>
       </Box>
     </Paper>
