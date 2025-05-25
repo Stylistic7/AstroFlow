@@ -24,6 +24,7 @@ import ProgressComponent from './ProgressComponent.jsx';
 import WorkflowGraph from './WorkflowGraph.jsx';
 import TileViewer from './TileViewer.jsx';
 import StackViewer from './StackViewer.jsx';
+import MosaicViewer from './MosaicViewer.jsx';
 import AppLayout from './AppLayout.jsx';
 import AstroFlowImage from './AstroFlowImage.jsx';
 import { FolderProvider } from './FolderContext';
@@ -147,7 +148,7 @@ function App() {
                 <Route exact path="/mosaic/:mosaic_id" element={
                   dataIsAvailable &&
                   <AppLayout>
-                    <MosaicPanel />
+                    <MosaicViewer />
                   </AppLayout>
                 } />
                 <Route exact path="/target/:target_id/stack/:stack_id" element={
@@ -197,7 +198,7 @@ function App() {
                 <Route exact path="/progress" element={
                   <ProgressComponent />}
                 />
-                <Route exact path="/workflow_graph" element={
+                <Route exact path="/view_workflow_graph" element={
                   dataIsAvailable && <WorkflowGraph theme={darkTheme} />}
                 />
               </Routes>
