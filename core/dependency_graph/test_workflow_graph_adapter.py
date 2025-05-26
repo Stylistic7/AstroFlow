@@ -8,7 +8,7 @@ import pprint
 
 import compute_graph
 from context import context, get_cache
-from dependency_graph import Graph, run_graph
+from dependency_graph import Graph, Node, run_graph
 from dependency_graph.debugging import print_result_dict
 from testing import make_test_context
 from dependency_graph.logging import capture_logs
@@ -57,6 +57,15 @@ def gather(*ancestor_results: list[int]) -> int:
 @ray.remote
 def build_dynamic_graph() -> Graph:
   return Graph({gather: [(process, i) for i in range(3)]})
+
+
+@ray.remote
+def build_outer_dynamic_graph() -> Graph:
+  A = (first_remote_task, 1)
+  B = Node(build_dynamic_graph, name='inner')
+  C = (second_remote_task, 2)
+
+  return Graph({C: {B}, B: {A}})
 
 
 @cached.remote
@@ -117,20 +126,24 @@ class TestWorkflowGraphAdapter(unittest.TestCase):
         }],
         'state': {
             'Node(fn=first_remote_task, args=A, priority=1)': {
+                'description': 'A',
                 'displayName': 'first_remote_task',
-                'state': 'SUCCEEDED',
+                'state': 'SUCCEEDED'
             },
             'Node(fn=first_remote_task, args=B, priority=1)': {
+                'description': 'B',
                 'displayName': 'first_remote_task',
-                'state': 'SUCCEEDED',
+                'state': 'SUCCEEDED'
             },
             'Node(fn=second_remote_task, args=C, priority=1)': {
+                'description': 'C',
                 'displayName': 'second_remote_task',
-                'state': 'SUCCEEDED',
+                'state': 'SUCCEEDED'
             },
             'Node(fn=second_remote_task, args=D, priority=1)': {
+                'description': 'D',
                 'displayName': 'second_remote_task',
-                'state': 'SUCCEEDED',
+                'state': 'SUCCEEDED'
             }
         }
     }
@@ -141,7 +154,7 @@ class TestWorkflowGraphAdapter(unittest.TestCase):
     A = (first_remote_task, 'A')
     B = (first_remote_task, 'B')
     C = (second_remote_task, 'C')
-    D = build_dynamic_graph
+    D = Node(build_dynamic_graph, name='outer')
     E = (second_remote_task, 'D')
 
     graph = Graph({E: {D}, D: {B, C}, C: {A}, B: {A}})
@@ -184,8 +197,14 @@ class TestWorkflowGraphAdapter(unittest.TestCase):
                         }],
                         'type': 'execution'
                     }],
-                    'id': 'Node(fn=build_dynamic_graph, priority=1)',
-                    'type': 'group'
+                    'id':
+                        "Node(fn=build_dynamic_graph, name='outer', priority=1)",
+                    'next': [{
+                        'id': 'Node(fn=second_remote_task, args=D, priority=1)',
+                        'type': 'execution'
+                    }],
+                    'type':
+                        'group'
                 }],
                 'type': 'execution'
             }, {
@@ -213,67 +232,197 @@ class TestWorkflowGraphAdapter(unittest.TestCase):
                         }],
                         'type': 'execution'
                     }],
-                    'id': 'Node(fn=build_dynamic_graph, priority=1)',
-                    'type': 'group'
+                    'id':
+                        "Node(fn=build_dynamic_graph, name='outer', priority=1)",
+                    'next': [{
+                        'id': 'Node(fn=second_remote_task, args=D, priority=1)',
+                        'type': 'execution'
+                    }],
+                    'type':
+                        'group'
                 }],
                 'type': 'execution'
             }],
             'type': 'execution'
         }],
         'state': {
-            'Node(fn=build_dynamic_graph, priority=1)': {
+            "Node(fn=build_dynamic_graph, name='outer', priority=1)": {
+                'description': 'outer',
                 'displayName': 'build_dynamic_graph',
                 'groupMeta': {
                     'Node(fn=gather, priority=1)': {
-                        'description': '',
                         'displayName': 'gather',
-                        'state': 'SUCCEEDED',
+                        'state': 'SUCCEEDED'
                     },
                     'Node(fn=process, args=0, priority=1)': {
                         'description': '0',
                         'displayName': 'process',
-                        'state': 'SUCCEEDED',
+                        'state': 'SUCCEEDED'
                     },
                     'Node(fn=process, args=1, priority=1)': {
                         'description': '1',
                         'displayName': 'process',
-                        'state': 'SUCCEEDED',
+                        'state': 'SUCCEEDED'
                     },
                     'Node(fn=process, args=2, priority=1)': {
                         'description': '2',
                         'displayName': 'process',
-                        'state': 'SUCCEEDED',
+                        'state': 'SUCCEEDED'
                     }
                 },
-                'hasControlNode': True
+                'hasControlNode': True,
+                'state': 'SUCCEEDED'
             },
             'Node(fn=first_remote_task, args=A, priority=1)': {
+                'description': 'A',
                 'displayName': 'first_remote_task',
-                'state': 'SUCCEEDED',
+                'state': 'SUCCEEDED'
             },
             'Node(fn=first_remote_task, args=B, priority=1)': {
+                'description': 'B',
                 'displayName': 'first_remote_task',
-                'state': 'SUCCEEDED',
-            },
-            'Node(fn=gather, priority=1)': {
-                'displayName': 'gather',
-                'state': 'SUCCEEDED',
-            },
-            'Node(fn=process, args=0, priority=1)': {
-                'displayName': 'process',
-                'state': 'SUCCEEDED',
-            },
-            'Node(fn=process, args=1, priority=1)': {
-                'displayName': 'process',
-                'state': 'SUCCEEDED',
-            },
-            'Node(fn=process, args=2, priority=1)': {
-                'displayName': 'process',
-                'state': 'SUCCEEDED',
+                'state': 'SUCCEEDED'
             },
             'Node(fn=second_remote_task, args=C, priority=1)': {
+                'description': 'C',
                 'displayName': 'second_remote_task',
-                'state': 'SUCCEEDED',
+                'state': 'SUCCEEDED'
+            },
+            'Node(fn=second_remote_task, args=D, priority=1)': {
+                'description': 'D',
+                'displayName': 'second_remote_task',
+                'state': 'SUCCEEDED'
+            }
+        }
+    }
+
+    self.assertEqual(workflow_graph, expected_workflow_graph)
+
+  def test_graph_with_nested_subgraph(self) -> None:
+    A = (first_remote_task, 'A')
+    B = Node(build_outer_dynamic_graph, name='outer')
+    C = (second_remote_task, 'C')
+
+    graph = Graph({C: {B}, B: {A}})
+
+    workflow_graph = None
+
+    def workflow_graph_fn(wg):
+      nonlocal workflow_graph
+      workflow_graph = wg
+
+    results, logs = run_graph(graph, workflow_graph_fn=workflow_graph_fn)
+
+    pprint.pprint(workflow_graph, indent=2, width=200)
+
+    expected_workflow_graph = {
+        'skeleton': [{
+            'id': 'Node(fn=first_remote_task, args=A, priority=1)',
+            'next': [{
+                'definition': [{
+                    'id': 'Node(fn=first_remote_task, args=1, priority=1)',
+                    'next': [{
+                        'definition': [{
+                            'id': 'Node(fn=process, args=0, priority=1)',
+                            'next': [{
+                                'id': 'Node(fn=gather, priority=1)',
+                                'type': 'execution'
+                            }],
+                            'type': 'execution'
+                        }, {
+                            'id': 'Node(fn=process, args=1, priority=1)',
+                            'next': [{
+                                'id': 'Node(fn=gather, priority=1)',
+                                'type': 'execution'
+                            }],
+                            'type': 'execution'
+                        }, {
+                            'id': 'Node(fn=process, args=2, priority=1)',
+                            'next': [{
+                                'id': 'Node(fn=gather, priority=1)',
+                                'type': 'execution'
+                            }],
+                            'type': 'execution'
+                        }],
+                        'id':
+                            "Node(fn=build_dynamic_graph, name='inner', priority=1)",
+                        'next': [{
+                            'id':
+                                'Node(fn=second_remote_task, args=2, priority=1)',
+                            'type':
+                                'execution'
+                        }],
+                        'type':
+                            'group'
+                    }],
+                    'type': 'execution'
+                }],
+                'id':
+                    "Node(fn=build_outer_dynamic_graph, name='outer', priority=1)",
+                'next': [{
+                    'id': 'Node(fn=second_remote_task, args=C, priority=1)',
+                    'type': 'execution'
+                }],
+                'type':
+                    'group'
+            }],
+            'type': 'execution'
+        }],
+        'state': {
+            "Node(fn=build_outer_dynamic_graph, name='outer', priority=1)": {
+                'description': 'outer',
+                'displayName': 'build_outer_dynamic_graph',
+                'groupMeta': {
+                    "Node(fn=build_dynamic_graph, name='inner', priority=1)": {
+                        'description': 'inner',
+                        'displayName': 'build_dynamic_graph',
+                        'groupMeta': {
+                            'Node(fn=gather, priority=1)': {
+                                'displayName': 'gather',
+                                'state': 'SUCCEEDED'
+                            },
+                            'Node(fn=process, args=0, priority=1)': {
+                                'description': '0',
+                                'displayName': 'process',
+                                'state': 'SUCCEEDED'
+                            },
+                            'Node(fn=process, args=1, priority=1)': {
+                                'description': '1',
+                                'displayName': 'process',
+                                'state': 'SUCCEEDED'
+                            },
+                            'Node(fn=process, args=2, priority=1)': {
+                                'description': '2',
+                                'displayName': 'process',
+                                'state': 'SUCCEEDED'
+                            }
+                        },
+                        'hasControlNode': True,
+                        'state': 'SUCCEEDED'
+                    },
+                    'Node(fn=first_remote_task, args=1, priority=1)': {
+                        'description': '1',
+                        'displayName': 'first_remote_task',
+                        'state': 'SUCCEEDED'
+                    },
+                    'Node(fn=second_remote_task, args=2, priority=1)': {
+                        'description': '2',
+                        'displayName': 'second_remote_task',
+                        'state': 'SUCCEEDED'
+                    }
+                },
+                'hasControlNode': True,
+                'state': 'SUCCEEDED'
+            },
+            'Node(fn=first_remote_task, args=A, priority=1)': {
+                'description': 'A',
+                'displayName': 'first_remote_task',
+                'state': 'SUCCEEDED'
+            },
+            'Node(fn=second_remote_task, args=C, priority=1)': {
+                'description': 'C',
+                'displayName': 'second_remote_task',
+                'state': 'SUCCEEDED'
             }
         }
     }
