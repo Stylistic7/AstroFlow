@@ -1,7 +1,6 @@
 from collections import defaultdict
 
 from dependency_graph import Node, TopologicalSorterWithStatus
-from dependency_graph.debugging import node_to_string
 from cache.types import NeverRun
 
 _DEBUG = False
@@ -20,22 +19,28 @@ def node_to_id(node: Node) -> str:
   return str(node.task._function.__name__) + '_' + str(hash(node))
 
 
-def _state_string(ts, node):
-  result = ts.results.get(node, NeverRun)
-  return 'NO_STATE_RUNTIME' if result == NeverRun else 'FAILED' if isinstance(
-      result, Exception) else 'SUCCEEDED'
-
-
 def gather_group_meta(
     ts: TopologicalSorterWithStatus,
     subgraphs_by_parent: dict[Node, TopologicalSorterWithStatus]
 ) -> dict[str, dict]:
 
+  def state_string(ts, node):
+    result = ts.results.get(node, NeverRun)
+    return 'NO_STATE_RUNTIME' if result == NeverRun else 'FAILED' if isinstance(
+        result, Exception) else 'SUCCEEDED'
+
+  def subgraph_contains_exception(ts, node):
+    if node in subgraphs_by_parent:
+      sub_ts = subgraphs_by_parent[node]
+      if any(subgraph_contains_exception(sub_ts, n) for n in sub_ts.graph):
+        return True
+
+    return isinstance(ts.results.get(node, NeverRun), Exception)
+
   def recurse(ts: TopologicalSorterWithStatus, node: Node):
-    key = node_to_id(node)
     meta = {
         "displayName": node.task._function.__name__,
-        "state": _state_string(ts, node),
+        "state": state_string(ts, node),
     }
     if node.args:
       meta["description"] = str(node.args[0])
@@ -47,6 +52,8 @@ def gather_group_meta(
       meta["groupMeta"] = {
           node_to_id(n): recurse(sub_ts, n) for n in sub_ts.graph
       }
+      if subgraph_contains_exception(sub_ts, node):
+        meta["state"] = 'FAILED'
     return meta
 
   return {node_to_id(n): recurse(ts, n) for n in ts.graph}
@@ -107,8 +114,7 @@ def build_skeleton(ts: TopologicalSorterWithStatus,
   return [build(n, indent=indent) for n in roots]
 
 
-def to_workflow_graph(subgraphs: list[TopologicalSorterWithStatus],
-                      flatten: bool = False):
+def to_workflow_graph(subgraphs: list[TopologicalSorterWithStatus]):
   subgraphs_by_parent = {
       sg.parent_node: sg for sg in subgraphs if sg.parent_node is not None
   }

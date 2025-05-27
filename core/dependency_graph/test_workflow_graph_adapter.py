@@ -73,6 +73,16 @@ def task_raises_exception() -> None:
   raise ValueError("oh no!")
 
 
+@ray.remote
+def build_subgraph_raise_exception(depth: int) -> Graph:
+  A = (first_remote_task, f'depth_{depth}')
+  B = task_raises_exception if depth == 0 else (build_subgraph_raise_exception,
+                                                depth - 1)
+  C = (second_remote_task, f'depth_{depth}')
+
+  return Graph({C: {B}, B: {A}})
+
+
 class TestWorkflowGraphAdapter(unittest.TestCase):
 
   def setUp(self) -> None:
@@ -415,6 +425,77 @@ class TestWorkflowGraphAdapter(unittest.TestCase):
                            dry_run=False)
     pprint.pprint(workflow_graph, indent=2, width=200)
     self.assertEqual(context.num_task_raises_exception_runs, 1)
+
+  def test_subgraph_exception(self):
+    context.num_task_raises_exception_runs = 0
+
+    workflow_graph = None
+
+    def graph_update_fn(g):
+      nonlocal workflow_graph
+      workflow_graph = to_workflow_graph(g)
+
+    A = (first_remote_task, 'A')
+    C = (second_remote_task, 'C')
+
+    graph = ray.get(build_subgraph_raise_exception.remote(3))
+
+    results, _ = run_graph(graph, graph_update_fn=graph_update_fn, dry_run=True)
+    self.assertEqual(context.num_task_raises_exception_runs, 0)
+
+    # In the dry run, the subgraphs and the node inside them will never have run.
+    self.assertEqual(
+        workflow_graph['state']
+        ['build_subgraph_raise_exception_187287178012096640']['state'],
+        'NO_STATE_RUNTIME')
+    self.assertEqual(
+        workflow_graph['state']
+        ['build_subgraph_raise_exception_187287178012096640']['groupMeta']
+        ['build_subgraph_raise_exception_2082629539921352699']['state'],
+        'NO_STATE_RUNTIME')
+    self.assertEqual(
+        workflow_graph['state']
+        ['build_subgraph_raise_exception_187287178012096640']['groupMeta']
+        ['build_subgraph_raise_exception_2082629539921352699']['groupMeta']
+        ['build_subgraph_raise_exception_2135598240338844923']['state'],
+        'NO_STATE_RUNTIME')
+    self.assertEqual(
+        workflow_graph['state']
+        ['build_subgraph_raise_exception_187287178012096640']['groupMeta']
+        ['build_subgraph_raise_exception_2082629539921352699']['groupMeta']
+        ['build_subgraph_raise_exception_2135598240338844923']['groupMeta']
+        ['task_raises_exception_2392094195672432855']['state'],
+        'NO_STATE_RUNTIME')
+
+    results, _ = run_graph(graph,
+                           graph_update_fn=graph_update_fn,
+                           dry_run=False)
+    self.assertEqual(context.num_task_raises_exception_runs, 1)
+
+    # After the real run, the inner node should have raised an exception, so
+    # it has failed. In addition, the subgraph's parent nodes should pick up
+    # the failure inside it.
+    self.assertEqual(
+        workflow_graph['state']
+        ['build_subgraph_raise_exception_187287178012096640']['state'],
+        'FAILED')
+    self.assertEqual(
+        workflow_graph['state']
+        ['build_subgraph_raise_exception_187287178012096640']['groupMeta']
+        ['build_subgraph_raise_exception_2082629539921352699']['state'],
+        'FAILED')
+    self.assertEqual(
+        workflow_graph['state']
+        ['build_subgraph_raise_exception_187287178012096640']['groupMeta']
+        ['build_subgraph_raise_exception_2082629539921352699']['groupMeta']
+        ['build_subgraph_raise_exception_2135598240338844923']['state'],
+        'FAILED')
+    self.assertEqual(
+        workflow_graph['state']
+        ['build_subgraph_raise_exception_187287178012096640']['groupMeta']
+        ['build_subgraph_raise_exception_2082629539921352699']['groupMeta']
+        ['build_subgraph_raise_exception_2135598240338844923']['groupMeta']
+        ['task_raises_exception_2392094195672432855']['state'], 'FAILED')
 
   def test_graph_with_subgraph_dry_run(self) -> None:
     A = (first_remote_task, 'A')
