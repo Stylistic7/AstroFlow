@@ -11,11 +11,10 @@ from context import context, get_cache
 from dependency_graph import Graph, Node, run_graph
 from dependency_graph.debugging import print_result_dict
 from testing import make_test_context
-from dependency_graph.logging import capture_logs
-from mosaics.orion_mosaic import add_orion_mosaic_images
-from cache.cached_decorator import make_cached_decorator, Injected
+from cache.cached_decorator import make_cached_decorator
 from hashing import hash_call
 from testing.sidecar_hasher import SidecarHasher
+from dependency_graph.workflow_graph_adapter import to_workflow_graph
 
 cache = get_cache()
 log = structlog.get_logger()
@@ -94,13 +93,13 @@ class TestWorkflowGraphAdapter(unittest.TestCase):
 
     workflow_graph = None
 
-    def workflow_graph_fn(wg):
+    def graph_update_fn(g):
       nonlocal workflow_graph
-      workflow_graph = wg
+      workflow_graph = to_workflow_graph(g)
 
     results, logs = run_graph(graph,
                               debug=True,
-                              workflow_graph_fn=workflow_graph_fn)
+                              graph_update_fn=graph_update_fn)
 
     pprint.pprint(workflow_graph, indent=2, width=200)
 
@@ -160,11 +159,11 @@ class TestWorkflowGraphAdapter(unittest.TestCase):
 
     workflow_graph = None
 
-    def workflow_graph_fn(wg):
+    def graph_update_fn(g):
       nonlocal workflow_graph
-      workflow_graph = wg
+      workflow_graph = to_workflow_graph(g)
 
-    results, logs = run_graph(graph, workflow_graph_fn=workflow_graph_fn)
+    results, logs = run_graph(graph, graph_update_fn=graph_update_fn)
 
     pprint.pprint(workflow_graph, indent=2, width=200)
 
@@ -273,11 +272,11 @@ class TestWorkflowGraphAdapter(unittest.TestCase):
 
     workflow_graph = None
 
-    def workflow_graph_fn(wg):
+    def graph_update_fn(g):
       nonlocal workflow_graph
-      workflow_graph = wg
+      workflow_graph = to_workflow_graph(g)
 
-    results, logs = run_graph(graph, workflow_graph_fn=workflow_graph_fn)
+    results, logs = run_graph(graph, graph_update_fn=graph_update_fn)
 
     pprint.pprint(workflow_graph, indent=2, width=200)
 
@@ -392,23 +391,21 @@ class TestWorkflowGraphAdapter(unittest.TestCase):
 
     workflow_graph = None
 
-    def workflow_graph_fn(wg):
+    def graph_update_fn(g):
       nonlocal workflow_graph
-      workflow_graph = wg
+      workflow_graph = to_workflow_graph(g)
 
     A = (first_remote_task, 'A')
     B = (second_remote_task, 'B')
 
     graph = Graph({task_raises_exception: {A, B}})
 
-    results, _ = run_graph(graph,
-                           workflow_graph_fn=workflow_graph_fn,
-                           dry_run=True)
+    results, _ = run_graph(graph, graph_update_fn=graph_update_fn, dry_run=True)
     pprint.pprint(workflow_graph, indent=2, width=200)
     self.assertEqual(context.num_task_raises_exception_runs, 0)
 
     results, _ = run_graph(graph,
-                           workflow_graph_fn=workflow_graph_fn,
+                           graph_update_fn=graph_update_fn,
                            dry_run=False)
     pprint.pprint(workflow_graph, indent=2, width=200)
     self.assertEqual(context.num_task_raises_exception_runs, 1)
@@ -424,14 +421,14 @@ class TestWorkflowGraphAdapter(unittest.TestCase):
 
     workflow_graph = None
 
-    def workflow_graph_fn(wg):
+    def graph_update_fn(g):
       nonlocal workflow_graph
-      workflow_graph = wg
+      workflow_graph = to_workflow_graph(g)
 
     results, logs = run_graph(graph,
                               dry_run=True,
                               debug=True,
-                              workflow_graph_fn=workflow_graph_fn)
+                              graph_update_fn=graph_update_fn)
 
     pprint.pprint(workflow_graph, indent=2, width=200)
 

@@ -9,14 +9,13 @@ import numpy as np
 
 from dependency_graph import Node, Graph, CanonicalGraph, GraphStatus, ResultDict, TopologicalSorterWithStatus, GenericRemoteFunction, canonicalize_graph
 from dependency_graph.logging import LogContainer
-from dependency_graph.workflow_graph_adapter import WorkflowGraph, to_workflow_graph
 from .debugging import print_graph, node_to_string
 
 _MIN_STATUS_UPDATE_INTERVAL_SECS: float = 5.0
 _RESULT_SIZE_WARNING_THRESHOLD_MB: int = 10
 
 StatusFn = Callable[[GraphStatus], Any]
-WorkflowGraphFn = Callable[[WorkflowGraph], Any]
+GraphUpdateFn = Callable[list[TopologicalSorterWithStatus], Any]
 
 # TODO: Make a type alias for AncestorResults
 
@@ -34,7 +33,7 @@ def matching_nodes(graph: CanonicalGraph,
 def run_graph(graph: Graph,
               dry_run: bool = False,
               status_fn: StatusFn | None = None,
-              workflow_graph_fn: WorkflowGraphFn | None = None,
+              graph_update_fn: GraphUpdateFn | None = None,
               status_interval: float = _MIN_STATUS_UPDATE_INTERVAL_SECS,
               trace: bool = False,
               debug: bool = False) -> tuple[ResultDict, ResultDict]:
@@ -180,9 +179,6 @@ def run_graph(graph: Graph,
   def get_status() -> GraphStatus:
     return reduce(add, [ts.get_status() for ts in subgraphs], GraphStatus())
 
-  def get_workflow_graph() -> WorkflowGraph:
-    return to_workflow_graph(subgraphs)
-
   toplevel_ts = add_subgraph(graph)
 
   while any(ts.is_active() for ts in subgraphs):
@@ -222,8 +218,8 @@ def run_graph(graph: Graph,
         if current_time > (last_status_time + status_interval):
           if status_fn:
             status_fn(get_status())
-          if workflow_graph_fn:
-            workflow_graph_fn(get_workflow_graph())
+          if graph_update_fn:
+            graph_update_fn(subgraphs)
           last_status_time = current_time
 
         try:
@@ -243,8 +239,8 @@ def run_graph(graph: Graph,
   # Call the callbacks one last time.
   if status_fn:
     status_fn(get_status())
-  if workflow_graph_fn:
-    workflow_graph_fn(get_workflow_graph())
+  if graph_update_fn:
+    graph_update_fn(subgraphs)
 
   toplevel_ts.results.num_nodes_run = num_nodes_run
   toplevel_ts.results.max_parallelism_seen = max_parallelism_seen
