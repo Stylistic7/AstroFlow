@@ -17,7 +17,7 @@ class WorkflowGraph(dict):
 
 
 def node_to_id(node: Node) -> str:
-  return 'Node_' + str(hash(node))
+  return str(node.task._function.__name__) + '_' + str(hash(node))
 
 
 def _state_string(ts, node):
@@ -73,7 +73,10 @@ def build_skeleton(ts: TopologicalSorterWithStatus,
 
     if (ts, key) in existing_nodes:
       debug_print(f'{" " * indent} key {key} is in existing_nodes')
-      return {'id': existing_nodes[ts, key]['id']}
+      return {
+          'id': existing_nodes[ts, key]['id'],
+          'type': existing_nodes[ts, key]['type']
+      }
 
     if node in subgraphs_by_parent:
       sub_ts = subgraphs_by_parent[node]
