@@ -17,7 +17,7 @@ class WorkflowGraph(dict):
 
 
 def node_to_id(node: Node) -> str:
-  return node_to_string(node)
+  return 'Node_' + str(hash(node))
 
 
 def _state_string(ts, node):
@@ -104,7 +104,8 @@ def build_skeleton(ts: TopologicalSorterWithStatus,
   return [build(n, indent=indent) for n in roots]
 
 
-def to_workflow_graph(subgraphs: list[TopologicalSorterWithStatus]):
+def to_workflow_graph(subgraphs: list[TopologicalSorterWithStatus],
+                      flatten: bool = False):
   subgraphs_by_parent = {
       sg.parent_node: sg for sg in subgraphs if sg.parent_node is not None
   }

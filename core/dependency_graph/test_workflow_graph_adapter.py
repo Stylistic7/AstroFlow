@@ -106,40 +106,40 @@ class TestWorkflowGraphAdapter(unittest.TestCase):
 
     expected_workflow_graph = {
         'skeleton': [{
-            'id': 'Node(fn=first_remote_task, args=A, priority=1)',
+            'id': 'Node_1147742147103610095',
             'next': [{
-                'id': 'Node(fn=first_remote_task, args=B, priority=1)',
+                'id': 'Node_811649748264404692',
                 'next': [{
-                    'id': 'Node(fn=second_remote_task, args=D, priority=1)',
+                    'id': 'Node_874700556330765323',
                     'type': 'execution'
                 }],
                 'type': 'execution'
             }, {
-                'id': 'Node(fn=second_remote_task, args=C, priority=1)',
+                'id': 'Node_4510719504589501579',
                 'next': [{
-                    'id': 'Node(fn=second_remote_task, args=D, priority=1)'
+                    'id': 'Node_874700556330765323'
                 }],
                 'type': 'execution'
             }],
             'type': 'execution'
         }],
         'state': {
-            'Node(fn=first_remote_task, args=A, priority=1)': {
+            'Node_1147742147103610095': {
                 'description': 'A',
                 'displayName': 'first_remote_task',
                 'state': 'SUCCEEDED'
             },
-            'Node(fn=first_remote_task, args=B, priority=1)': {
-                'description': 'B',
-                'displayName': 'first_remote_task',
-                'state': 'SUCCEEDED'
-            },
-            'Node(fn=second_remote_task, args=C, priority=1)': {
+            'Node_4510719504589501579': {
                 'description': 'C',
                 'displayName': 'second_remote_task',
                 'state': 'SUCCEEDED'
             },
-            'Node(fn=second_remote_task, args=D, priority=1)': {
+            'Node_811649748264404692': {
+                'description': 'B',
+                'displayName': 'first_remote_task',
+                'state': 'SUCCEEDED'
+            },
+            'Node_874700556330765323': {
                 'description': 'D',
                 'displayName': 'second_remote_task',
                 'state': 'SUCCEEDED'
@@ -170,71 +170,73 @@ class TestWorkflowGraphAdapter(unittest.TestCase):
 
     expected_workflow_graph = {
         'skeleton': [{
-            'id': 'Node(fn=first_remote_task, args=A, priority=1)',
+            'id': 'Node_1147742147103610095',
             'next': [{
-                'id': 'Node(fn=first_remote_task, args=B, priority=1)',
+                'id': 'Node_811649748264404692',
                 'next': [{
                     'definition': [{
-                        'id': 'Node(fn=process, args=0, priority=1)',
+                        'id': 'Node_1161829019351892739',
                         'next': [{
-                            'id': 'Node(fn=gather, priority=1)',
+                            'id': 'Node_499248906983321316',
                             'type': 'execution'
                         }],
                         'type': 'execution'
                     }, {
-                        'id': 'Node(fn=process, args=1, priority=1)',
+                        'id': 'Node_648355766798421503',
                         'next': [{
-                            'id': 'Node(fn=gather, priority=1)'
+                            'id': 'Node_499248906983321316'
                         }],
                         'type': 'execution'
                     }, {
-                        'id': 'Node(fn=process, args=2, priority=1)',
+                        'id': 'Node_122636723848520014',
                         'next': [{
-                            'id': 'Node(fn=gather, priority=1)'
+                            'id': 'Node_499248906983321316'
                         }],
                         'type': 'execution'
                     }],
-                    'id':
-                        "Node(fn=build_dynamic_graph, name='outer', priority=1)",
+                    'id': 'Node_4387510280349443084',
                     'next': [{
-                        'id': 'Node(fn=second_remote_task, args=D, priority=1)',
+                        'id': 'Node_874700556330765323',
                         'type': 'execution'
                     }],
-                    'type':
-                        'group'
+                    'type': 'group'
                 }],
                 'type': 'execution'
             }, {
-                'id': 'Node(fn=second_remote_task, args=C, priority=1)',
+                'id': 'Node_4510719504589501579',
                 'next': [{
-                    'id':
-                        "Node(fn=build_dynamic_graph, name='outer', priority=1)"
+                    'id': 'Node_4387510280349443084'
                 }],
                 'type': 'execution'
             }],
             'type': 'execution'
         }],
         'state': {
-            "Node(fn=build_dynamic_graph, name='outer', priority=1)": {
+            'Node_1147742147103610095': {
+                'description': 'A',
+                'displayName': 'first_remote_task',
+                'state': 'SUCCEEDED'
+            },
+            'Node_4387510280349443084': {
                 'description': 'outer',
                 'displayName': 'build_dynamic_graph',
                 'groupMeta': {
-                    'Node(fn=gather, priority=1)': {
-                        'displayName': 'gather',
-                        'state': 'SUCCEEDED'
-                    },
-                    'Node(fn=process, args=0, priority=1)': {
+                    'Node_1161829019351892739': {
                         'description': '0',
                         'displayName': 'process',
                         'state': 'SUCCEEDED'
                     },
-                    'Node(fn=process, args=1, priority=1)': {
-                        'description': '1',
+                    'Node_122636723848520014': {
+                        'description': '2',
                         'displayName': 'process',
                         'state': 'SUCCEEDED'
                     },
-                    'Node(fn=process, args=2, priority=1)': {
-                        'description': '2',
+                    'Node_499248906983321316': {
+                        'displayName': 'gather',
+                        'state': 'SUCCEEDED'
+                    },
+                    'Node_648355766798421503': {
+                        'description': '1',
                         'displayName': 'process',
                         'state': 'SUCCEEDED'
                     }
@@ -242,22 +244,17 @@ class TestWorkflowGraphAdapter(unittest.TestCase):
                 'hasControlNode': True,
                 'state': 'SUCCEEDED'
             },
-            'Node(fn=first_remote_task, args=A, priority=1)': {
-                'description': 'A',
-                'displayName': 'first_remote_task',
-                'state': 'SUCCEEDED'
-            },
-            'Node(fn=first_remote_task, args=B, priority=1)': {
-                'description': 'B',
-                'displayName': 'first_remote_task',
-                'state': 'SUCCEEDED'
-            },
-            'Node(fn=second_remote_task, args=C, priority=1)': {
+            'Node_4510719504589501579': {
                 'description': 'C',
                 'displayName': 'second_remote_task',
                 'state': 'SUCCEEDED'
             },
-            'Node(fn=second_remote_task, args=D, priority=1)': {
+            'Node_811649748264404692': {
+                'description': 'B',
+                'displayName': 'first_remote_task',
+                'state': 'SUCCEEDED'
+            },
+            'Node_874700556330765323': {
                 'description': 'D',
                 'displayName': 'second_remote_task',
                 'state': 'SUCCEEDED'
@@ -286,80 +283,79 @@ class TestWorkflowGraphAdapter(unittest.TestCase):
 
     expected_workflow_graph = {
         'skeleton': [{
-            'id': 'Node(fn=first_remote_task, args=A, priority=1)',
+            'id': 'Node_1147742147103610095',
             'next': [{
                 'definition': [{
-                    'id': 'Node(fn=first_remote_task, args=1, priority=1)',
+                    'id': 'Node_1269075729911039184',
                     'next': [{
                         'definition': [{
-                            'id': 'Node(fn=process, args=0, priority=1)',
+                            'id': 'Node_1161829019351892739',
                             'next': [{
-                                'id': 'Node(fn=gather, priority=1)',
+                                'id': 'Node_499248906983321316',
                                 'type': 'execution'
                             }],
                             'type': 'execution'
                         }, {
-                            'id': 'Node(fn=process, args=1, priority=1)',
+                            'id': 'Node_648355766798421503',
                             'next': [{
-                                'id': 'Node(fn=gather, priority=1)'
+                                'id': 'Node_499248906983321316'
                             }],
                             'type': 'execution'
                         }, {
-                            'id': 'Node(fn=process, args=2, priority=1)',
+                            'id': 'Node_122636723848520014',
                             'next': [{
-                                'id': 'Node(fn=gather, priority=1)'
+                                'id': 'Node_499248906983321316'
                             }],
                             'type': 'execution'
                         }],
-                        'id':
-                            "Node(fn=build_dynamic_graph, name='inner', priority=1)",
+                        'id': 'Node_1089893007718169136',
                         'next': [{
-                            'id':
-                                'Node(fn=second_remote_task, args=2, priority=1)',
-                            'type':
-                                'execution'
+                            'id': 'Node_1379722681841618591',
+                            'type': 'execution'
                         }],
-                        'type':
-                            'group'
+                        'type': 'group'
                     }],
                     'type': 'execution'
                 }],
-                'id':
-                    "Node(fn=build_outer_dynamic_graph, name='outer', priority=1)",
+                'id': 'Node_1887197670041653630',
                 'next': [{
-                    'id': 'Node(fn=second_remote_task, args=C, priority=1)',
+                    'id': 'Node_4510719504589501579',
                     'type': 'execution'
                 }],
-                'type':
-                    'group'
+                'type': 'group'
             }],
             'type': 'execution'
         }],
         'state': {
-            "Node(fn=build_outer_dynamic_graph, name='outer', priority=1)": {
+            'Node_1147742147103610095': {
+                'description': 'A',
+                'displayName': 'first_remote_task',
+                'state': 'SUCCEEDED'
+            },
+            'Node_1887197670041653630': {
                 'description': 'outer',
                 'displayName': 'build_outer_dynamic_graph',
                 'groupMeta': {
-                    "Node(fn=build_dynamic_graph, name='inner', priority=1)": {
+                    'Node_1089893007718169136': {
                         'description': 'inner',
                         'displayName': 'build_dynamic_graph',
                         'groupMeta': {
-                            'Node(fn=gather, priority=1)': {
-                                'displayName': 'gather',
-                                'state': 'SUCCEEDED'
-                            },
-                            'Node(fn=process, args=0, priority=1)': {
+                            'Node_1161829019351892739': {
                                 'description': '0',
                                 'displayName': 'process',
                                 'state': 'SUCCEEDED'
                             },
-                            'Node(fn=process, args=1, priority=1)': {
-                                'description': '1',
+                            'Node_122636723848520014': {
+                                'description': '2',
                                 'displayName': 'process',
                                 'state': 'SUCCEEDED'
                             },
-                            'Node(fn=process, args=2, priority=1)': {
-                                'description': '2',
+                            'Node_499248906983321316': {
+                                'displayName': 'gather',
+                                'state': 'SUCCEEDED'
+                            },
+                            'Node_648355766798421503': {
+                                'description': '1',
                                 'displayName': 'process',
                                 'state': 'SUCCEEDED'
                             }
@@ -367,12 +363,12 @@ class TestWorkflowGraphAdapter(unittest.TestCase):
                         'hasControlNode': True,
                         'state': 'SUCCEEDED'
                     },
-                    'Node(fn=first_remote_task, args=1, priority=1)': {
+                    'Node_1269075729911039184': {
                         'description': '1',
                         'displayName': 'first_remote_task',
                         'state': 'SUCCEEDED'
                     },
-                    'Node(fn=second_remote_task, args=2, priority=1)': {
+                    'Node_1379722681841618591': {
                         'description': '2',
                         'displayName': 'second_remote_task',
                         'state': 'SUCCEEDED'
@@ -381,12 +377,7 @@ class TestWorkflowGraphAdapter(unittest.TestCase):
                 'hasControlNode': True,
                 'state': 'SUCCEEDED'
             },
-            'Node(fn=first_remote_task, args=A, priority=1)': {
-                'description': 'A',
-                'displayName': 'first_remote_task',
-                'state': 'SUCCEEDED'
-            },
-            'Node(fn=second_remote_task, args=C, priority=1)': {
+            'Node_4510719504589501579': {
                 'description': 'C',
                 'displayName': 'second_remote_task',
                 'state': 'SUCCEEDED'
@@ -448,67 +439,72 @@ class TestWorkflowGraphAdapter(unittest.TestCase):
 
     expected_workflow_graph = {
         'skeleton': [{
-            'id': 'Node(fn=first_remote_task, args=A, priority=1)',
+            'id': 'Node_1147742147103610095',
             'next': [{
-                'id': 'Node(fn=first_remote_task, args=B, priority=1)',
+                'id': 'Node_811649748264404692',
                 'next': [{
                     'definition': [{
-                        'id': 'Node(fn=process, args=0, priority=1)',
+                        'id': 'Node_1161829019351892739',
                         'next': [{
-                            'id': 'Node(fn=gather, priority=1)',
+                            'id': 'Node_499248906983321316',
                             'type': 'execution'
                         }],
                         'type': 'execution'
                     }, {
-                        'id': 'Node(fn=process, args=1, priority=1)',
+                        'id': 'Node_648355766798421503',
                         'next': [{
-                            'id': 'Node(fn=gather, priority=1)'
+                            'id': 'Node_499248906983321316'
                         }],
                         'type': 'execution'
                     }, {
-                        'id': 'Node(fn=process, args=2, priority=1)',
+                        'id': 'Node_122636723848520014',
                         'next': [{
-                            'id': 'Node(fn=gather, priority=1)'
+                            'id': 'Node_499248906983321316'
                         }],
                         'type': 'execution'
                     }],
-                    'id': 'Node(fn=build_dynamic_graph, priority=1)',
+                    'id': 'Node_1852986555429019640',
                     'next': [{
-                        'id': 'Node(fn=second_remote_task, args=D, priority=1)',
+                        'id': 'Node_874700556330765323',
                         'type': 'execution'
                     }],
                     'type': 'group'
                 }],
                 'type': 'execution'
             }, {
-                'id': 'Node(fn=second_remote_task, args=C, priority=1)',
+                'id': 'Node_4510719504589501579',
                 'next': [{
-                    'id': 'Node(fn=build_dynamic_graph, priority=1)'
+                    'id': 'Node_1852986555429019640'
                 }],
                 'type': 'execution'
             }],
             'type': 'execution'
         }],
         'state': {
-            'Node(fn=build_dynamic_graph, priority=1)': {
+            'Node_1147742147103610095': {
+                'description': 'A',
+                'displayName': 'first_remote_task',
+                'state': 'NO_STATE_RUNTIME'
+            },
+            'Node_1852986555429019640': {
                 'displayName': 'build_dynamic_graph',
                 'groupMeta': {
-                    'Node(fn=gather, priority=1)': {
-                        'displayName': 'gather',
-                        'state': 'NO_STATE_RUNTIME'
-                    },
-                    'Node(fn=process, args=0, priority=1)': {
+                    'Node_1161829019351892739': {
                         'description': '0',
                         'displayName': 'process',
                         'state': 'NO_STATE_RUNTIME'
                     },
-                    'Node(fn=process, args=1, priority=1)': {
-                        'description': '1',
+                    'Node_122636723848520014': {
+                        'description': '2',
                         'displayName': 'process',
                         'state': 'NO_STATE_RUNTIME'
                     },
-                    'Node(fn=process, args=2, priority=1)': {
-                        'description': '2',
+                    'Node_499248906983321316': {
+                        'displayName': 'gather',
+                        'state': 'NO_STATE_RUNTIME'
+                    },
+                    'Node_648355766798421503': {
+                        'description': '1',
                         'displayName': 'process',
                         'state': 'NO_STATE_RUNTIME'
                     }
@@ -516,22 +512,17 @@ class TestWorkflowGraphAdapter(unittest.TestCase):
                 'hasControlNode': True,
                 'state': 'NO_STATE_RUNTIME'
             },
-            'Node(fn=first_remote_task, args=A, priority=1)': {
-                'description': 'A',
-                'displayName': 'first_remote_task',
-                'state': 'NO_STATE_RUNTIME'
-            },
-            'Node(fn=first_remote_task, args=B, priority=1)': {
-                'description': 'B',
-                'displayName': 'first_remote_task',
-                'state': 'NO_STATE_RUNTIME'
-            },
-            'Node(fn=second_remote_task, args=C, priority=1)': {
+            'Node_4510719504589501579': {
                 'description': 'C',
                 'displayName': 'second_remote_task',
                 'state': 'NO_STATE_RUNTIME'
             },
-            'Node(fn=second_remote_task, args=D, priority=1)': {
+            'Node_811649748264404692': {
+                'description': 'B',
+                'displayName': 'first_remote_task',
+                'state': 'NO_STATE_RUNTIME'
+            },
+            'Node_874700556330765323': {
                 'description': 'D',
                 'displayName': 'second_remote_task',
                 'state': 'NO_STATE_RUNTIME'
