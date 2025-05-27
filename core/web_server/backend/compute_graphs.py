@@ -7,9 +7,12 @@ from context import context
 from compute_graph import build_compute_graph
 from dependency_graph import Graph, run_graph, graph_status_to_progress
 from dependency_graph.debugging import node_to_string
-from stacks.compute_graph import build_stacking_subgraph
+from dependency_graph.workflow_graph_adapter import to_workflow_graph
+from stacks.compute_graph import build_stacking_subgraph, get_stack_image
 from web_server.backend.announcer import announcer
 from web_server.backend.object_cache import stacks, targets, mosaics
+from mosaics.compute_graph import build_mosaic_subgraph, stacks_for_mosaic, targets_for_mosaic, build_placement_subgraph
+from previews.types import QualityLevel
 
 compute_graphs_bp = Blueprint("compute_graphs", __name__)
 
@@ -43,9 +46,9 @@ def status_fn(status):
     print('### Compute graph is done!')
 
 
-def workflow_graph_fn(wg):
-  global workflow_graph
-  workflow_graph = wg
+# def workflow_graph_fn(wg):
+#   global workflow_graph
+#   workflow_graph = wg
 
 
 # TODO: Maybe rename this.
@@ -91,13 +94,14 @@ def run_compute_graph():
     }
 
   print('### Running compute graph!')
-  thread = threading.Thread(target=_run_graph,
-                            args=(graph,),
-                            kwargs={
-                                'status_fn': status_fn,
-                                'workflow_graph_fn': workflow_graph_fn,
-                                'debug': False
-                            })
+  thread = threading.Thread(
+      target=_run_graph,
+      args=(graph,),
+      kwargs={
+          'status_fn': status_fn,
+          # 'workflow_graph_fn': workflow_graph_fn,
+          'debug': False
+      })
   thread.daemon = True
   thread.start()
 
@@ -109,13 +113,39 @@ def workflow_graph_for_stack(stack_id):
 
   workflow_graph = None
 
-  def workflow_graph_fn(wg):
+  def graph_update_fn(g):
     nonlocal workflow_graph
-    workflow_graph = wg
+    workflow_graph = to_workflow_graph(g)
 
   graph = ray.get(build_stacking_subgraph.remote(stacks()[stack_id]))
+
   results, _ = run_graph(graph,
-                         workflow_graph_fn=workflow_graph_fn,
+                         graph_update_fn=graph_update_fn,
+                         dry_run=True,
+                         debug=True)
+
+  return workflow_graph
+
+
+@compute_graphs_bp.route('/workflow_graph/mosaic/<mosaic_id>')
+def workflow_graph_for_mosaic(mosaic_id):
+
+  workflow_graph = None
+
+  def graph_update_fn(g):
+    nonlocal workflow_graph
+    workflow_graph = to_workflow_graph(g)
+
+  mosaic = mosaics()[mosaic_id]
+
+  graph = ray.get(
+      build_mosaic_subgraph.remote(
+          QualityLevel.MASTER, mosaic,
+          stacks_for_mosaic(mosaic, stacks(), targets()),
+          targets_for_mosaic(mosaic, targets())))
+
+  results, _ = run_graph(graph,
+                         graph_update_fn=graph_update_fn,
                          dry_run=True,
                          debug=True)
 

@@ -214,7 +214,8 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
                                  masks: list[box] | None) -> Graph:
 
   print(f'### build_mosaic_filter_subgraph mode {mode} '
-        f'mosaic {mosaic} filter {filter} strips {mosaic.strips}')
+        f'mosaic {mosaic} filter {filter} strips {mosaic.strips} '
+        f'viewbox {viewbox} masks {masks}')
 
   if masks is None:
     masks = [None] * len(strips)
