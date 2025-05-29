@@ -1,7 +1,7 @@
 import subprocess
 import sys
 import time
-import atexit
+import os
 
 
 class GunicornManager:
@@ -25,8 +25,9 @@ class GunicornManager:
     self.processes.append(
         subprocess.Popen([
             sys.executable, "-m", "gunicorn", self.module, "--bind",
-            f"0.0.0.0:{self.router_port}", "--log-level", "debug",
-            "--capture-output", "--timeout",
+            f"0.0.0.0:{self.router_port}", "--workers", "1", "--threads",
+            str(os.cpu_count()), "--log-level", "debug", "--capture-output",
+            "--timeout",
             str(self.timeout)
         ]))
 
