@@ -41,7 +41,7 @@ def _get_namespace() -> str:
 def _init(state: State, action: Action) -> tuple[State, list[Action]]:
   new_actions = []
 
-  new_actions.append(Action(type='start_flask'))
+  new_actions.append(Action(type='start_gunicorn'))
   new_actions.append(Action(type='start_zeroconf'))
 
   cache = get_cache()
@@ -130,11 +130,6 @@ def _update_zeroconf_services(state: State,
   return state, []
 
 
-def _start_ray_subordinate_node(state: State,
-                                action: Action) -> tuple[State, list[Action]]:
-  pass
-
-
 def _start_flask(state: State, action: Action) -> tuple[State, list[Action]]:
   from state.flask_control import FlaskThread
   server_thread = FlaskThread()
@@ -154,10 +149,29 @@ def _stop_flask(state: State, action: Action) -> tuple[State, list[Action]]:
   return state, []
 
 
+def _start_gunicorn(state: State, action: Action) -> tuple[State, list[Action]]:
+  from state.gunicorn_control import GunicornManager
+  gunicorn_manager = GunicornManager("web_server.backend.app:app", 4)
+  gunicorn_manager.start()
+  state['gunicorn_manager'] = gunicorn_manager
+
+  return state, []
+
+
+def _stop_gunicorn(state: State, action: Action) -> tuple[State, list[Action]]:
+  if 'gunicorn_manager' not in state:
+    return state, []
+
+  state['gunicorn_manager'].stop()
+  del state['gunicorn_manager']
+
+  return state, []
+
+
 def _quit(state: State, action: Action) -> tuple[State, list[Action]]:
   return state, [
       Action(type='stop_ray_node'),
-      Action(type='stop_flask'),
+      Action(type='stop_gunicorn'),
       Action(type='stop_zeroconf')
   ]
 
@@ -258,6 +272,12 @@ def dispatch(action: Action) -> dict[str, Any]:
 
     case 'stop_flask':
       _state, new_actions = _stop_flask(_state, action)
+
+    case 'start_gunicorn':
+      _state, new_actions = _start_gunicorn(_state, action)
+
+    case 'stop_gunicorn':
+      _state, new_actions = _stop_gunicorn(_state, action)
 
     case 'start_ray_head_node':
       _state, new_actions = _start_ray_head_node(_state, action)

@@ -94,7 +94,7 @@ else:
   app = flask.Flask(
       __name__,
       template_folder=f'{base_path}/core/web_server/frontend/build',
-      static_folder=f'{base_path}/core/web_server/frontend/build/static',
+      static_folder=f'{base_path}/core/web_server/backend/static',
   )
 
 app.register_blueprint(files_bp)
