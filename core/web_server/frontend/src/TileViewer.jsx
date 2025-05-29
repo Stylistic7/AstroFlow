@@ -72,6 +72,7 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
           objectType={objectType}
           imageHash={imageHash}
           filter={filter}
+          port={tileMetadata.port}
           imageWidth={tileMetadata.width}
           imageHeight={tileMetadata.height}
           worldWidth={worldWidth}
@@ -86,7 +87,7 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
   );
 };
 
-const ImperativeViewport = ({ objectType, imageHash, filter, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, showPolygons, metadata, mosaics }) => {
+const ImperativeViewport = ({ objectType, imageHash, filter, port, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, showPolygons, metadata, mosaics }) => {
   const app = useApp();
   const viewportRef = useRef(null);
   const spritesRef = useRef({});
@@ -193,8 +194,9 @@ const ImperativeViewport = ({ objectType, imageHash, filter, imageWidth, imageHe
           const key = `${bestZ}/${x}/${y}`;
           if (spritesRef.current[key]) continue;
 
-          const url = `/tile/${objectType}/${imageHash}/${filter}/${bestZ}/${x}/${y}.png`;
-          PIXI.Texture.fromURL(url)
+          const relativePath = `/tile/${objectType}/${imageHash}/${filter}/${bestZ}/${x}/${y}.png`;
+          const url = new URL(relativePath, `${window.location.protocol}//${window.location.hostname}:${port}`);
+          PIXI.Texture.fromURL(url.href)
             .then((texture) => {
               console.log('creating new sprite');
               const sprite = new PIXI.Sprite(texture);

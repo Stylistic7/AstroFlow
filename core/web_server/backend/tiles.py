@@ -6,7 +6,8 @@ import large_image
 from pathlib import Path
 import numpy as np
 import tifffile
-from flask import Blueprint, Response, send_file, abort, jsonify
+from flask import Blueprint, Response, send_file, abort, jsonify, request
+from flask_cors import cross_origin
 
 from context import context
 from file_io.generic import read_image
@@ -17,6 +18,7 @@ from stacks.composite_stack import CompositeStack
 from targets.types import Target
 from mosaics.types import Mosaic
 from products.registry import get_producer, MediaType
+from web_server.backend.router import stateful_route
 
 # Settings
 TILE_CACHE_DIR = Path("/tmp/astroflow_tiles")
@@ -53,7 +55,10 @@ def get_best_image(object_type: type, *args) -> Path:
           return fragment
 
 
-def get_image(object_type: str, object_id: str, filter: str):
+def get_image(object_type: str,
+              object_id: str,
+              filter: str,
+              load_if_missing: bool = False):
   """Get a large_image handle from the cached TIFF, generating it if needed."""
   now = time.time()
   with _cache_lock:
@@ -79,6 +84,9 @@ def get_image(object_type: str, object_id: str, filter: str):
     if key in _image_cache:
       _image_cache[key]["last_used"] = now
       return _image_cache[key]["handle"]
+
+    if not load_if_missing:
+      return None
 
     # Else, convert from .xisf and cache
     if object_type == 'stack':
@@ -127,9 +135,14 @@ def get_image(object_type: str, object_id: str, filter: str):
     return handle
 
 
-@tiles_bp.route('/tile_metadata/<object_type>/<object_id>/<filter>')
-def tile_metadata(object_type: str, object_id: str, filter: str):
-  source = get_image(object_type, object_id, filter)
+@stateful_route(
+    tiles_bp.route('/tile_metadata/<object_type>/<object_id>/<filter>'),
+    sharding_key='object_id')
+def tile_metadata(object_type: str, object_id: str, filter: str,
+                  backend_port: int):
+  host_port = request.host.split(":")[-1]
+  print(f'### tile_metadata calling get_image on worker on port {host_port}')
+  source = get_image(object_type, object_id, filter, load_if_missing=True)
 
   if source is None:
     return abort(404)
@@ -143,20 +156,21 @@ def tile_metadata(object_type: str, object_id: str, filter: str):
       'height': meta['sizeY'],
       'tileWidth': meta['tileWidth'],
       'tileHeight': meta['tileHeight'],
-      'maxZoom': meta['levels'] - 1
+      'maxZoom': meta['levels'] - 1,
+      'port': backend_port,
   })
 
 
 @tiles_bp.route(
     "/tile/<object_type>/<object_id>/<filter>/<int:z>/<int:x>/<int:y>.png")
+@cross_origin(origins="*")
 def serve_tile(object_type: str, object_id: str, filter: str, z: str, x: str,
                y: str):
-  source = get_image(object_type, object_id, filter)
+  host_port = request.host.split(":")[-1]
+  print(f'### serve_tile calling get_image on worker on port {host_port}')
+  source = get_image(object_type, object_id, filter, load_if_missing=False)
 
-  if source is None:
-    return abort(404)
-
-  if source is IN_PROGRESS:
+  if source in [None, IN_PROGRESS]:
     return Response(status=202, headers={'Retry-After': '5'})
 
   try:
