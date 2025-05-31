@@ -3,6 +3,7 @@ import sys
 import os
 import ray
 import datetime
+import subprocess
 
 # TODO: This feels hacky.
 sys.path.insert(
@@ -20,11 +21,23 @@ from metadata.image_metadata import load_metadata, scatter_compute_image_metadat
 from customization.compute_graph import build_customize_graph
 from decorators import cached
 from targets.post_process import post_process_target
+from stacks.post_process import post_process_stack
 
 
 @cached.remote
 def command_done() -> None:
   pass
+
+
+def open(args):
+  if args.object_type == 'stack':
+    stacks = context.stacks
+    stack = stacks[args.object_id]
+    filename = post_process_stack.filename_fn(stack).resolve_at(
+        context.output_dir)
+    if os.path.exists(filename):
+      print(f'Opening post-processed file {filename}')
+      subprocess.run(['open', filename])
 
 
 def regroup(args):
@@ -51,8 +64,7 @@ def regroup(args):
 
 def customize(args):
   print(f'### Customizing...')
-  graph = Graph({build_customize_graph: {}})
-  results, logs = run_graph(graph)
+  run_graph(Graph({build_customize_graph: {load_metadata}}))
 
 
 def make_preview(args):
@@ -142,6 +154,14 @@ def main():
   parser = argparse.ArgumentParser(prog="astroflow")
   subparsers = parser.add_subparsers(dest="command")
 
+  # 'open' command
+  open_parser = subparsers.add_parser("open", help="Open object")
+  open_parser.add_argument("object_type",
+                           choices=["stack", "target", "mosaic"],
+                           nargs="?",
+                           help="Type of object: stack, target, or mosaic")
+  open_parser.add_argument("object_id", help="ID of the object to open")
+
   # 'regroup' command
   regroup_parser = subparsers.add_parser("regroup", help="Regroup data")
   regroup_parser.add_argument(
@@ -210,7 +230,9 @@ def main():
   populate_context()
 
   # Handle the parsed arguments
-  if args.command == "regroup":
+  if args.command == 'open':
+    open(args)
+  elif args.command == "regroup":
     regroup(args)
   elif args.command == "customize":
     customize(args)
