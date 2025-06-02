@@ -2,36 +2,49 @@ from context import context
 
 
 # TODO: Respond to `reload_data` events.
-def stacks():
-  if hasattr(stacks, 'cached_value'):
-    return stacks.cached_value
+def cached_stacks():
+  if hasattr(cached_stacks, 'cached_value'):
+    return cached_stacks.cached_value
   else:
     try:
-      stacks.cached_value = context.get('stacks')
-      return stacks.cached_value
+      cached_stacks.cached_value = context.get('stacks', {})
+      return cached_stacks.cached_value
     except:
       return None
 
 
 # TODO: Respond to `reload_data` events.
-def targets():
-  if hasattr(targets, 'cached_value'):
-    return targets.cached_value
+def cached_calibration_stacks():
+  if hasattr(cached_calibration_stacks, 'cached_value'):
+    return cached_calibration_stacks.cached_value
   else:
     try:
-      targets.cached_value = context.get('targets')
-      return targets.cached_value
+      cached_calibration_stacks.cached_value = context.get(
+          'calibration_stacks', {})
+      return cached_calibration_stacks.cached_value
     except:
       return None
 
 
 # TODO: Respond to `reload_data` events.
-def mosaics():
-  if hasattr(mosaics, 'cached_value'):
-    return mosaics.cached_value
+def cached_targets():
+  if hasattr(cached_targets, 'cached_value'):
+    return cached_targets.cached_value
   else:
     try:
-      mosaics.cached_value = context.get('mosaics')
-      return mosaics.cached_value
+      cached_targets.cached_value = context.get('targets', {})
+      return cached_targets.cached_value
+    except:
+      return None
+
+
+# TODO: Respond to `reload_data` events.
+def cached_mosaics():
+  if hasattr(cached_mosaics, 'cached_value'):
+    return cached_mosaics.cached_value
+  else:
+    try:
+      cached_mosaics.cached_value = context.get('mosaics', {})
+      return cached_mosaics.cached_value
     except:
       return None

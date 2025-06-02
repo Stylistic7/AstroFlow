@@ -11,7 +11,7 @@ from mosaics.types import Mosaic
 from products.registry import get_producer, MediaType
 from previews.types import QualityLevel
 from stacks.simple_stack import SimpleStack
-from web_server.backend.object_cache import stacks, targets, mosaics
+from web_server.backend.object_cache import cached_stacks, cached_targets, cached_mosaics
 
 thumbnails_bp = Blueprint("thumbnails", __name__)
 
@@ -33,17 +33,17 @@ def get_thumbnail(object_type: type, *args):
 
 @thumbnails_bp.route('/thumbnail/stack/<stack_id>')
 def stack_thumbnail(stack_id: str):
-  return get_thumbnail(CompositeStack, stacks()[stack_id])
+  return get_thumbnail(CompositeStack, cached_stacks()[stack_id])
 
 
 @thumbnails_bp.route('/thumbnail/target/<target_id>')
 def target_thumbnail(target_id: str):
-  return get_thumbnail(Target, targets()[target_id])
+  return get_thumbnail(Target, cached_targets()[target_id])
 
 
 @thumbnails_bp.route('/thumbnail/mosaic/<mosaic_id>/<filter>')
 def mosaic_thumbnail(mosaic_id: str, filter: str):
-  return get_thumbnail(Mosaic, mosaics()[mosaic_id], filter)
+  return get_thumbnail(Mosaic, cached_mosaics()[mosaic_id], filter)
 
 
 @thumbnails_bp.route('/thumbnail/run/<stack_id>/<substack_id>/<flat_stack_id>')

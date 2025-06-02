@@ -37,7 +37,7 @@ from web_server.backend.compute_graphs import compute_graphs_bp
 from web_server.backend.videos import videos_bp
 from web_server.backend.convert_to_dict import convert_to_dict
 from web_server.backend.announcer import announcer
-from web_server.backend.object_cache import stacks, targets, mosaics
+from web_server.backend.object_cache import cached_stacks, cached_calibration_stacks, cached_targets, cached_mosaics
 
 import plotly.express as px
 import plotly.figure_factory as ff
@@ -200,14 +200,12 @@ def _make_json_serializable(D):
 
 @app.route('/mosaics')
 def mosaics():
-  mosaics = context.get('mosaics', {})
-  return {k: _make_json_serializable(v) for k, v in mosaics.items()}
+  return {k: _make_json_serializable(v) for k, v in cached_mosaics().items()}
 
 
 @app.route('/targets')
 def targets():
-  targets = context.get('targets', {})
-  return {k: _make_json_serializable(v) for k, v in targets.items()}
+  return {k: _make_json_serializable(v) for k, v in cached_targets().items()}
 
 
 def my_transform(v):
@@ -220,7 +218,6 @@ def my_transform(v):
 
 @app.route('/stacks')
 def stacks():
-  stacks = context.get('stacks', {})
 
   def prepare_stack(stack: CustomizedStack) -> dict[str, Any]:
     result = convert_to_dict(stack, [['contents', '*', 'metadata']],
@@ -234,56 +231,31 @@ def stacks():
 
     return result
 
-  stacks = {h: prepare_stack(s) for h, s in stacks.items()}
+  processed_stacks = {h: prepare_stack(s) for h, s in cached_stacks().items()}
 
-  return stacks
+  return processed_stacks
 
 
 @app.route('/calibration_stacks')
 def calibration_stacks():
-  calibration_stacks = context.get('calibration_stacks', {})
-  calibration_stacks = {
-      h: replace(s, metadata=None) for h, s in calibration_stacks.items()
+  processed_stacks = {
+      h: replace(s, metadata=None)
+      for h, s in cached_calibration_stacks().items()
   }
 
-  return {k: _make_json_serializable(s) for k, s in calibration_stacks.items()}
-
-
-@app.route('/send_datetime')
-def send_datetime():
-  return {'foo': datetime.datetime(2023, 5, 19, 4, 27, 17, 756893)}
-
-
-@app.route('/targets_for_mosaic/<mosaic_id>')
-def targets_for_mosaic(mosaic_id):
-  mosaic = context.mosaics[mosaic_id]
-  return [t for t in context.targets if t.name in mosaic.target_ids]
-
-
-@app.route('/stacks_for_target/<target>')
-def stacks_for_target(target):
-  return [s for s in context.stacks if s.target == target]
+  return {k: _make_json_serializable(s) for k, s in processed_stacks.items()}
 
 
 @app.route('/target/<target_id>')
 def target(target_id):
-  targets = test_app.targets if debug else context.targets
+  targets = test_app.targets if debug else cached_targets()
   print(f"Looking for target_id '{target_id}'")
   return asdict(targets[target_id])
 
 
-@app.route('/target_polygon_points/<target_id>')
-def target_polygon_points(target_id):
-  targets = test_app.targets if debug else context.targets
-  print(f"Looking for target_id '{target_id}'")
-  # target = next(t for t in targets if t.name == target_id)
-  target = targets[target_id]
-  return ' '.join([','.join([str(x) for x in pt]) for pt in target.footprint])
-
-
 @app.route('/stack/<stack_id>')
 def stack(stack_id):
-  stacks = test_app.stacks if debug else context.stacks
+  stacks = test_app.stacks if debug else cached_stacks()
   print(f"Looking for stack_id '{stack_id}'")
   return asdict(stacks[stack_id])
 
@@ -338,9 +310,9 @@ def plot():
 
 @app.route('/recent')
 def recent():
-  stacks = context.stacks
-  targets = context.targets
-  mosaics = context.mosaics
+  stacks = cached_stacks()
+  targets = cached_targets()
+  mosaics = cached_mosaics()
 
   def last_stack_datetime(stack_id):
     return stacks[stack_id].newest_date
@@ -373,18 +345,6 @@ def flats_for_camera_and_filter(camera, filter):
       k for k, s in stacks.items()
       if s.image_type == 'flat' and s.camera == camera and s.filter == filter
   ]
-
-
-@app.route('/get_stack_dependencies/<stack_id>')
-def get_stack_dependencies(stack_id):
-  stack = context.get('stacks', {}).get(stack_id, None)
-  if not stack:
-    return Response(status=404)
-
-  key = ('stack_settings', stack_id)
-  settings = context.get(key, {})
-
-  return stack.dependencies | settings
 
 
 def format_sse(event, data=None) -> str:
