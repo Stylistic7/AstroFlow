@@ -63,17 +63,14 @@ def _run_wbpp(unused: ImageList, *args: Any, **kwargs: Any) -> Any:
   return WeightedBatchPreprocessing(unused, *args, **kwargs)
 
 
-def _setup_run(run_number: int, substack: SimpleStack, tmp_dir: str,
-               metadata: MetadataDict,
-               calibration_stacks: SimpleStacksDict) -> None:
-  filenames = [i.filename for h, i in metadata.items() if h in substack.frames]
-  assert len(substack.frames) == len(filenames)
+def _setup_simple_stack(stack: SimpleStack, metadata: MetadataDict,
+                        calibration_stacks: SimpleStacksDict,
+                        tmp_dir: str) -> None:
+  filenames = [i.filename for h, i in metadata.items() if h in stack.frames]
+  assert len(stack.frames) == len(filenames)
 
-  run_dir = os.path.join(tmp_dir, f'RUN_{run_number}')
-  os.makedirs(run_dir, exist_ok=True)
-
-  run_metadata = {h: i for h, i in metadata.items() if h in substack.frames}
-  _copy_frames_with_plate_solution(run_metadata, run_dir)
+  run_metadata = {h: i for h, i in metadata.items() if h in stack.frames}
+  _copy_frames_with_plate_solution(run_metadata, tmp_dir)
 
   def get_dependency_filename(d):
     if 'stack_id' in d:
@@ -84,35 +81,26 @@ def _setup_run(run_number: int, substack: SimpleStack, tmp_dir: str,
 
   # Add any dependent stacks (e.g. calibration stacks).
   dependendency_filenames = [
-      get_dependency_filename(d) for d in substack.dependencies.values()
+      get_dependency_filename(d) for d in stack.dependencies.values()
   ]
-  _symlink_frames(dependendency_filenames, run_dir)
+  _symlink_frames(dependendency_filenames, tmp_dir)
 
   return filenames[0]
 
 
-def _setup_composite_stack(stack: Stack,
+def _setup_composite_stack(stack: CompositeStack, metadata: MetadataDict,
+                           calibration_stacks: SimpleStacksDict,
                            tmp_dir: str) -> tuple[str | None, int]:
-  metadata = context.metadata
-  calibration_stacks = context.calibration_stacks
-  print(f'### calibration_stacks keys {calibration_stacks.keys()}')
-
   first_filename = None
 
-  num_frames = 0
   for i, substack in enumerate(stack.contents.values()):
-    num_frames += len(substack.frames)
-    result = _setup_run(i, substack, tmp_dir, metadata, calibration_stacks)
+    run_dir = os.path.join(tmp_dir, f'RUN_{i}')
+    os.makedirs(run_dir, exist_ok=True)
+    result = _setup_simple_stack(substack, metadata, calibration_stacks,
+                                 run_dir)
     first_filename = first_filename or result
 
-  return first_filename, num_frames
-
-
-def _setup_simple_stack(stack: Stack, tmp_dir: str) -> tuple[str | None, int]:
-  filenames = [stack.metadata[h].filename for h in stack.frames]
-  _symlink_frames(filenames, tmp_dir)
-
-  return filenames[0], len(filenames)
+  return first_filename
 
 
 def _mock_stacking(src_filename: str, dest_filename: str,
@@ -178,14 +166,12 @@ def _stack_files(stack: Stack, setup_fn):
     update_header(dest_filename, metadata)
     return dest_filename
 
+  calibration_stacks = context.calibration_stacks
+  print(f'### calibration_stacks keys {calibration_stacks.keys()}')
+
   with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
-    first_filename, num_frames = setup_fn(stack, tmp_dir)
-
-    if num_frames < 3:
-      print(f'### Cannot stack {stack} because it contains only '
-            f'{num_frames} selected frames')
-      return dest_filename
-
+    first_filename = setup_fn(stack, context.metadata, calibration_stacks,
+                              tmp_dir)
     # Maybe mock PixInsight (in tests).
     if context.get('mock_pixinsight', False):
       return _mock_stacking(first_filename, dest_filename, metadata)
@@ -201,10 +187,8 @@ def _stack_files(stack: Stack, setup_fn):
 # from composite stacks.
 #
 # TODO: Don't make thumbnails for calibration stacks.
-
-
 @makes_image(CompositeStack).as_master(output_filename)
-@ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
+@cached.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
 @measure_performance
 @create_thumbnail
 def stack_files(stack: Stack) -> XisfFilePath:

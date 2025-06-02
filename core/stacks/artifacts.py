@@ -32,6 +32,10 @@ def output_filename(stack: SimpleStack | CompositeStack) -> Path:
         os.path.join(
             output_dir, f'master_flat_{stack.camera}_{stack.filter}_'
             f'{stack.content_hash}.xisf'))
+  elif isinstance(stack, SimpleStack) and 'light' in stack.image_type:
+    output_dir = Path('Runs') / 'masters'
+    return XisfFilePath(
+        os.path.join(output_dir, f'master_light_run_{stack.content_hash}.xisf'))
   elif isinstance(stack, CompositeStack) and 'light' in stack.image_type:
     output_dir = Path('Stacks') / stack.name / 'masters'
     ra_dec_string = position_string.ra_dec_string(*stack.center)

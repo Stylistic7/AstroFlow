@@ -96,7 +96,9 @@ class TestState(unittest.TestCase):
     run_graph(graph)
 
     masters = list(Path(context.output_dir).rglob('*.xisf'))
-    self.assertEqual(len(masters), 5)
+    for master in masters:
+      print(f'master {master}')
+    self.assertEqual(len(masters), 6)
 
   def test_run_graph(self) -> None:
     graph = Graph({(my_task, 'foo'): {}})

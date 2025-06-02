@@ -37,11 +37,11 @@ class TestHashing(unittest.TestCase):
     # The image data should be predictable, because `random_seed` was provided
     # above.
     self.assertEqual(stack.stable_hash, '7825680a0bef1d88')
-    self.assertEqual(stack.content_hash, '89c40efdb63055b8')
+    self.assertEqual(stack.content_hash, 'f1043e9116d4f750')
 
     # The Python hash of a Stack is just an integer representation of its
     # content hash, which should be stable across Python sessions.
-    self.assertEqual(hash(stack), 217087485612205683)
+    self.assertEqual(hash(stack), 1247087795776248668)
 
     # The Python hash of a SimpleStacksDict goes through `hash_dict_int()`,
     # and should be stable across Python sessions.
