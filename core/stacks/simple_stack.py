@@ -69,3 +69,7 @@ class SimpleStacksDict(dict[str, SimpleStack]):
 
   def __str__(self):
     return f'SimpleStacksDict({len(self)})'
+
+
+class CalibrationStack(SimpleStack):
+  pass
