@@ -44,7 +44,8 @@ def make_create_thumbnail_decorator(
             call_hash = hash_call(fn_hash, *args, **kwargs)
             thumbnail_key = ('thumbnail', call_hash)
             cache[thumbnail_key] = thumbnail
-            print(f'### Wrote thumbnail for filename {filename}')
+            print(f'### Wrote thumbnail_key {thumbnail_key} '
+                  f'for filename {filename}')
 
         return result
 

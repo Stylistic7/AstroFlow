@@ -10,7 +10,7 @@ from decorators import cached
 from metadata.classes import ImageMetadata, FrameHash
 from context import context
 from stacks.types import StackHash
-from stacks.simple_stack import SimpleStack
+from stacks.simple_stack import SimpleStack, CalibrationStack
 from stacks.composite_stack import CompositeStack, SimpleStacksDict
 import clustering
 from metadata.classes import MetadataDict
@@ -44,8 +44,8 @@ def identify_calibration_stacks(metadata: MetadataDict) -> SimpleStacksDict:
   frames_for_exposure = group_by_header(metadata.values(), 'EXPOSURE', 0.0)
   frames_for_filter = group_by_header(metadata.values(), 'FILTER', '')
 
-  def new_stack(frames: list[FrameHash]) -> SimpleStack:
-    stack = SimpleStack.from_frames(frames, metadata)
+  def new_stack(frames: list[FrameHash]) -> CalibrationStack:
+    stack = CalibrationStack.from_frames(frames, metadata)
     return stack
 
   stacks = SimpleStacksDict()
@@ -82,7 +82,7 @@ def associate_with_stack(stack: CompositeStack) -> CompositeStack:
         f'with stack {stack}')
 
   def is_compatible(substack: SimpleStack, image_type: str,
-                    cal_stack: SimpleStack) -> bool:
+                    cal_stack: CalibrationStack) -> bool:
     if cal_stack.image_type != image_type:
       return False
 
@@ -107,8 +107,8 @@ def associate_with_stack(stack: CompositeStack) -> CompositeStack:
 
     assert False, f'image_type {image_type}'
 
-  def find_closest_stack_chronologically(substack: SimpleStack,
-                                         image_type: str) -> SimpleStack | None:
+  def find_closest_stack_chronologically(
+      substack: SimpleStack, image_type: str) -> CalibrationStack | None:
     compatible_stacks = [
         s for s in cal_stacks
         if is_compatible(substack, image_type, cal_stacks[s])

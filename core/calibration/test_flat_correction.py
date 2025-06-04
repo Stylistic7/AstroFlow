@@ -80,7 +80,7 @@ class TestFlatCorrection(unittest.TestCase):
     self.assertEqual(len(context.calibration_stacks), 4)
 
     thumbnail_keys = context.get_matching(('thumbnail',))
-    self.assertEqual(len(thumbnail_keys), 3)
+    self.assertEqual(len(thumbnail_keys), 7)
 
 
 if __name__ == '__main__':

@@ -11,7 +11,7 @@ from context import context
 from dependency_graph import run_graph
 from file_io.types import WithSidecar
 from testing import make_test_context, make_synthetic_frames, copy_testdata_frames
-from previews.stack_thumbnails import stack_thumbnail
+from previews.stack_thumbnails import stack_thumbnail, calibration_stack_thumbnail
 from file_io.find_image_files import find_image_files
 
 
@@ -89,21 +89,27 @@ class TestImagePreviews(unittest.TestCase):
     graph = build_compute_graph()
     run_graph(graph)
 
-    stacks = context.stacks
-    self.assertEqual(len(stacks), 1)
+    self.assertEqual(len(context.stacks), 1)
     self.assertEqual(len(context.calibration_stacks), 4)
 
-    light_stacks = [s for s in stacks.values() if s.image_type == 'light']
-    self.assertEqual(len(light_stacks), 1)
-    stack = next(iter(light_stacks))
+    def check_thumbnail(stacks, image_type, fn):
+      matching_stacks = [
+          s for s in stacks.values() if s.image_type == image_type
+      ]
+      self.assertEqual(len(matching_stacks), 1)
+      stack = next(iter(matching_stacks))
 
-    filename = ray.get(stack_thumbnail.remote(stack))
-    self.assertTrue(isinstance(filename, WithSidecar))
+      file = ray.get(fn.remote(stack))
+      self.assertTrue(isinstance(file, WithSidecar))
 
-    # TODO: This test overlaps a bunch of other tests.
-    thumbnail = stack_thumbnail.thumbnail_fn(stack)
-    self.assertIsNotNone(thumbnail)
-    self.assertTrue(isinstance(thumbnail, bytes))
+      # TODO: This test overlaps a bunch of other tests.
+      thumbnail = fn.thumbnail_fn(stack)
+      self.assertIsNotNone(thumbnail)
+      self.assertTrue(isinstance(thumbnail, bytes))
+
+    check_thumbnail(context.stacks, 'light', stack_thumbnail)
+    check_thumbnail(context.calibration_stacks, 'dark',
+                    calibration_stack_thumbnail)
 
 
 if __name__ == "__main__":
