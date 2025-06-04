@@ -10,6 +10,7 @@ from previews.operations import resize_array
 from previews.flat_correction import create_flat_correction_thumbnails
 from previews.calibration import calibrate_subframe
 from file_io.types import FitsFilePath, WithSidecar
+from stacks.simple_stack import CalibrationStack
 from stacks.composite_stack import CompositeStack
 from dependency_graph import Graph, TaskDescriptor
 from previews.operations import autostretch
@@ -29,6 +30,9 @@ def scatter_stack_thumbnails() -> Graph:
     tasks.append((stack_thumbnail_video, stack))
     tasks.append((create_flat_correction_thumbnails, stack))
 
+  for stack in context.calibration_stacks.values():
+    tasks.append((calibration_stack_thumbnail, stack))
+
   return Graph({gather_stack_thumbnails: tasks})
 
 
@@ -46,6 +50,14 @@ def get_best_light_frame(stack: CompositeStack) -> FitsFilePath:
 @create_thumbnail
 def stack_thumbnail(stack: CompositeStack) -> FitsFilePath:
   return get_best_light_frame(stack)
+
+
+@makes_image(CalibrationStack).as_subframe(get_best_light_frame)
+@cached.remote
+@measure_performance
+@create_thumbnail
+def calibration_stack_thumbnail(stack: CompositeStack) -> FitsFilePath:
+  return next(iter(stack.frames))
 
 
 @makes_video(CompositeStack).as_subframe()
