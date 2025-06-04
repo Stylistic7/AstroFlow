@@ -144,7 +144,35 @@ def _copy_wbpp_result(tmp_dir: str, dest_filename: str, metadata: dict[str,
   return XisfFilePath(dest_filename)
 
 
-def _stack_files(stack: Stack, setup_fn):
+@ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
+def _stack_with_pixinsight(stack: Stack, metadata: dict[str, str]) -> Path:
+  dest_filename = stack_files.filename_fn(stack).resolve_at(context.output_dir)
+  os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
+
+  calibration_stacks = context.calibration_stacks
+  print(f'### calibration_stacks keys {calibration_stacks.keys()}')
+
+  with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
+    setup_fn = _setup_composite_stack if type(stack) in [
+        CompositeStack, CustomizedStack
+    ] else _setup_simple_stack
+    first_filename = setup_fn(stack, context.metadata, calibration_stacks,
+                              tmp_dir)
+
+    # Maybe mock PixInsight (in tests).
+    if context.get('mock_pixinsight', False):
+      return _mock_stacking(first_filename, dest_filename, metadata)
+
+    print(f'### Running _run_wbpp for stack {stack}')
+    _run_wbpp([], dir=tmp_dir, outputDirectory=tmp_dir)
+    return _copy_wbpp_result(tmp_dir, dest_filename, metadata)
+
+
+@makes_image(CompositeStack).as_master(output_filename)
+@cached.remote
+@measure_performance
+@create_thumbnail
+def stack_files(stack: Stack) -> XisfFilePath:
   # Determine the output file, and the metadata it should have.
   dest_filename = stack_files.filename_fn(stack).resolve_at(context.output_dir)
   os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
@@ -166,37 +194,5 @@ def _stack_files(stack: Stack, setup_fn):
     update_header(dest_filename, metadata)
     return dest_filename
 
-  calibration_stacks = context.calibration_stacks
-  print(f'### calibration_stacks keys {calibration_stacks.keys()}')
-
-  with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
-    first_filename = setup_fn(stack, context.metadata, calibration_stacks,
-                              tmp_dir)
-    # Maybe mock PixInsight (in tests).
-    if context.get('mock_pixinsight', False):
-      return _mock_stacking(first_filename, dest_filename, metadata)
-
-    # Run WBPP.
-    print(f'### Running _run_wbpp for stack {stack}')
-    _run_wbpp([], dir=tmp_dir, outputDirectory=tmp_dir)
-
-    return _copy_wbpp_result(tmp_dir, dest_filename, metadata)
-
-
-# TOOD: Implement a @singledispatch version of this that distinguishes leaf
-# from composite stacks.
-#
-# TODO: Don't make thumbnails for calibration stacks.
-@makes_image(CompositeStack).as_master(output_filename)
-@cached.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
-@measure_performance
-@create_thumbnail
-def stack_files(stack: Stack) -> XisfFilePath:
-  if type(stack) is SimpleStack:
-    result = _stack_files(stack, _setup_simple_stack)
-    print(f'### _stack_files produced result {result}')
-    return result
-  elif type(stack) is CustomizedStack:
-    result = _stack_files(stack, _setup_composite_stack)
-    print(f'### _stack_files produced result {result}')
-    return result
+  # Run WBPP.
+  return ray.get(_stack_with_pixinsight.remote(stack, metadata))

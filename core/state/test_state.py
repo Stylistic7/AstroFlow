@@ -83,7 +83,7 @@ class TestState(unittest.TestCase):
     graph = build_compute_graph()
     run_graph(graph)
 
-    masters = os.listdir(context.output_dir)
+    masters = list(Path(context.output_dir).rglob('*.xisf'))
     self.assertEqual(len(masters), 0)
 
     stacks = context.stacks
