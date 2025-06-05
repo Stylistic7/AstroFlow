@@ -18,7 +18,6 @@ import MoreIcon from '@mui/icons-material/MoreVert';
 import LayersIcon from '@mui/icons-material/Layers';
 import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import lunr from 'lunr';
 import LeftDrawer from "./LeftDrawer.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
 import ProgressComponent from './ProgressComponent.jsx';
@@ -80,13 +79,13 @@ export function VerticalDivider({ height = 24, color = 'grey.400', marginX = 2 }
 }
 
 export default function PrimarySearchAppBar() {
-  const { stacks, targets, mosaics } = useContext(AstroFlowContext);
+  const { stacks, targets, mosaics, calibrationStacks } = useContext(AstroFlowContext);
   const navigate = useNavigate();
 
   const index = new Document({
     document: {
       id: "ref_id",
-      index: ["name", "camera", "image_scale", "stable_hash", "filenames"],
+      index: ["name", "image_type", "camera", "image_scale", "stable_hash", "filenames"],
       store: ["type", "name", "camera", "image_scale", "stable_hash", "filenames"]
     }
   });
@@ -97,6 +96,7 @@ export default function PrimarySearchAppBar() {
     allObjects.push({
       ref_id: `stack,${hash}`,
       type: "stack",
+      image_type: stack.image_type,
       stable_hash: hash,
       name: stack.name,
       camera: stack.camera,
@@ -124,11 +124,23 @@ export default function PrimarySearchAppBar() {
     });
   });
 
+  Object.entries(calibrationStacks).forEach(([hash, stack]) => {
+    allObjects.push({
+      ref_id: `calibration_stack,${hash}`,
+      type: "calibration_stack",
+      image_type: stack.image_type,
+      stable_hash: hash,
+      name: stack.name,
+      camera: stack.camera,
+      filter: stack.filter,
+    });
+  });
+
   allObjects.forEach(doc => index.add(doc));
 
   function smartSearch(query) {
     const tokens = query.trim().split(/\s+/);
-    const knownTypes = new Set(["stack", "target", "mosaic"]);
+    const knownTypes = new Set(["stack", "target", "mosaic", "calibration_stack"]);
     let typeFilter = null;
     const terms = [];
 

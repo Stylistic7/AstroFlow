@@ -51,8 +51,7 @@ def mosaic_thumbnail(mosaic_id: str, filter: str):
 # TODO: Use better stack types.
 @thumbnails_bp.route('/thumbnail/calibration_stack/<stack_id>')
 def calibration_stack_thumbnail(stack_id: str):
-  return get_thumbnail(CalibrationStack,
-                       cached_calibration_stacks()[stack_id], filter)
+  return get_thumbnail(CalibrationStack, cached_calibration_stacks()[stack_id])
 
 
 @thumbnails_bp.route('/thumbnail/run/<stack_id>/<substack_id>/<flat_stack_id>')

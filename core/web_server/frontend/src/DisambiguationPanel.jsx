@@ -5,6 +5,7 @@ import AstroFlowContext from './AstroFlowContext.jsx';
 import StackCard from "./StackCard.jsx";
 import TargetCard from "./TargetCard.jsx";
 import MosaicCard from "./MosaicCard.jsx";
+import CalibrationStackCard from "./CalibrationStackCard.jsx";
 
 export default function DisambiguationPanel({ items_in }) {
 	const { stacks, targets, mosaics } = useContext(AstroFlowContext);
@@ -64,6 +65,14 @@ export default function DisambiguationPanel({ items_in }) {
 							targets={targets}
 							mosaics={mosaics}
 							mosaic_id={id}
+						/>;
+					} else if (type == "calibration_stack") {
+						return <CalibrationStackCard
+							key={item}
+							stacks={stacks}
+							targets={targets}
+							mosaics={mosaics}
+							stack_id={id}
 						/>;
 					}
 				}
