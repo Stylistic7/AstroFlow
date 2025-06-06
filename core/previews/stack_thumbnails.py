@@ -16,6 +16,7 @@ from dependency_graph import Graph, TaskDescriptor
 from previews.operations import autostretch
 from customization.subframe_selection import get_light_frames_sorted_by_stars
 from products import makes_image, makes_video
+from file_io.generic import read_image
 
 
 @ray.remote
@@ -29,6 +30,7 @@ def scatter_stack_thumbnails() -> Graph:
 
   for stack in context.calibration_stacks.values():
     tasks.append((calibration_stack_thumbnail, stack))
+    tasks.append((calibration_stack_thumbnail_video, stack))
 
   return Graph({gather_stack_thumbnails: tasks})
 
@@ -85,6 +87,19 @@ def stack_thumbnail_video(stack: CompositeStack) -> Iterable[np.ndarray]:
     im = autostretch(np.clip(im, 0.0, 1.0))
     im = (im * 255.0).astype(np.uint8)
     yield im
+
+
+@makes_video(CalibrationStack).as_subframe()
+@cached.remote(resources={'fastest_storage': 0.001})
+@measure_performance
+@create_video
+def calibration_stack_thumbnail_video(
+    stack: CalibrationStack) -> Iterable[np.ndarray]:
+  width = context.subframe_thumbnail_width
+  for frame in stack.frames:
+    im = autostretch(
+        resize_array(read_image(stack.metadata[frame].filename), width))
+    yield (im * 255.0).astype(np.uint8)
 
 
 @ray.remote
