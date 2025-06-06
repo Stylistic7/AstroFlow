@@ -15,6 +15,7 @@ from file_io.types import TiffFilePath, WithSidecar
 from previews.operations import autostretch
 from previews.types import QualityLevel
 from stacks.composite_stack import CompositeStack
+from stacks.simple_stack import CalibrationStack
 from targets.types import Target
 from mosaics.types import Mosaic
 from products.registry import get_producer, MediaType
@@ -91,6 +92,9 @@ def get_image(object_type: str,
     # Else, convert from .xisf and cache
     if object_type == 'stack':
       path = get_best_image(CompositeStack, context.stacks[object_id])
+    elif object_type == 'calibration_stack':
+      path = get_best_image(CalibrationStack,
+                            context.calibration_stacks[object_id])
     elif object_type == 'target':
       path = get_best_image(Target, context.targets[object_id], filter)
     elif object_type == 'mosaic':
