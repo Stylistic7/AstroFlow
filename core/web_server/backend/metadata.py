@@ -3,6 +3,7 @@ from flask import Blueprint, jsonify, abort
 from typing import Any
 
 from context import context
+from stacks.simple_stack import CalibrationStack
 from stacks.composite_stack import CompositeStack
 from targets.types import Target
 from mosaics.types import Mosaic, Viewbox
@@ -28,6 +29,9 @@ def get_metadata(object_type: type, *args):
       continue
 
     result = {'image_path': image_path}
+
+    if object_type is CalibrationStack:
+      return result
 
     obj = args[0]
     viewbox = compute_viewbox(level, obj)  # FIXME
@@ -62,6 +66,11 @@ def get_metadata(object_type: type, *args):
 @metadata_bp.route('/metadata/stack/<stack_id>')
 def stack_metadata(stack_id: str):
   return get_metadata(CompositeStack, context.stacks[stack_id])
+
+
+@metadata_bp.route('/metadata/calibration_stack/<stack_id>')
+def calibration_stack_metadata(stack_id: str):
+  return get_metadata(CalibrationStack, context.calibration_stacks[stack_id])
 
 
 @metadata_bp.route('/metadata/target/<target_id>/<filter>')
