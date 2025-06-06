@@ -13,9 +13,13 @@ import RuleIcon from '@mui/icons-material/Rule';
 
 import AstroFlowContext from './AstroFlowContext.jsx';
 
+function capitalizeFirst(str) {
+    return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
 
 export default function AstroFlowBreadcrumbs() {
-    const { stacks, targets, mosaics } = useContext(AstroFlowContext);
+    const { calibrationStacks, stacks, targets, mosaics } = useContext(AstroFlowContext);
 
     const params = useParams();
     const location = useLocation();
@@ -24,6 +28,7 @@ export default function AstroFlowBreadcrumbs() {
     const mosaic = mosaics[params.mosaic_id];
     const target = targets[params.target_id];
     const stack = stacks[params.stack_id];
+    const calStack = calibrationStacks[params.calibration_stack_id];
 
     // TODO: Don't hardcode the font color; use the theme.
     const fontColor = "#aaa";
@@ -31,17 +36,24 @@ export default function AstroFlowBreadcrumbs() {
     let mosaic_url = "";
     let target_url = "";
     let stack_url = "";
+    let cal_stack_url = "";
     if (params.mosaic_id) {
         mosaic_url += `/mosaic/${params.mosaic_id}`;
         target_url += `/mosaic/${params.mosaic_id}`;
         stack_url += `/mosaic/${params.mosaic_id}`;
+        cal_stack_url += `/mosaic/${params.mosaic_id}`;
     }
     if (params.target_id) {
         target_url += `/target/${params.target_id}`;
         stack_url += `/target/${params.target_id}`;
+        cal_stack_url += `/target/${params.target_id}`;
     }
     if (params.stack_id) {
-        stack_url += `/stack/${params.stack_id}`
+        stack_url += `/stack/${params.stack_id}`;
+        cal_stack_url += `/stack/${params.stack_id}`;
+    }
+    if (params.calibration_stack_id) {
+        cal_stack_url += `/calibration_stack/${params.stack_id}`;
     }
 
     return <>
@@ -128,6 +140,22 @@ export default function AstroFlowBreadcrumbs() {
             >
                 <LayersIcon sx={{ marginRight: '0.5em' }} />
                 Stack "{stack.name}"
+            </Link>}
+            {params.calibration_stack_id && <Link
+                href={cal_stack_url}
+                underline="hover"
+                sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    color: fontColor,
+                    marginLeft: '0.5em',
+                    marginRight: '0.5em',
+                }}
+                style={{ pointerEvents: "auto" }}
+                color="inherit"
+            >
+                <LayersIcon sx={{ marginRight: '0.5em' }} />
+                {capitalizeFirst(calStack.image_type)} calibration stack
             </Link>}
         </Breadcrumbs>
     </>;

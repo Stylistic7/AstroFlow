@@ -21,7 +21,7 @@ const darkTheme = createTheme({
   },
 });
 
-const StackTabs = ({ stack, stack_id }) => {
+const StackTabs = ({ stack_type, stack, stack_id }) => {
   const [tabIndex, setTabIndex] = useState(0);
   const [tileViewerAvailable, setTileViewerAvailable] = useState(true);
   const videoRef = useRef(null);
@@ -62,8 +62,8 @@ const StackTabs = ({ stack, stack_id }) => {
         >
           <Tab label="Stacked" />
           <Tab label="Blink" />
-          <Tab label="Runs" />
-          <Tab label="Graph" />
+          {(stack_type == 'stack') && <Tab label="Runs" />}
+          {(stack_type == 'stack') && <Tab label="Graph" />}
         </Tabs>
       </Box>
       <Divider />
@@ -71,7 +71,7 @@ const StackTabs = ({ stack, stack_id }) => {
       <Box sx={{ flex: 1, p: 3, minHeight: 0, position: 'relative' }}>
         <Box hidden={tabIndex !== 0} sx={{ height: '100%', overflow: 'hidden', position: 'absolute', inset: 0, p: 3 }}>
           {tileViewerAvailable ? (
-            <TileViewer objectType="stack" imageHash={stack_id} />
+            <TileViewer objectType={stack_type} imageHash={stack_id} />
           ) : (
             <Typography align="center" variant="h6" sx={{ mt: 10 }}>
               This stack has not been integrated yet.
@@ -88,7 +88,7 @@ const StackTabs = ({ stack, stack_id }) => {
             style={{ pointerEvents: 'auto', width: '100%', height: '100%', objectFit: 'contain' }}
           >
             <source
-              src={`/video/stack/${stack_id}`}
+              src={`/video/${stack_type}/${stack_id}`}
               type="video/webm"
             />
             Your browser does not support the video tag.
@@ -99,9 +99,9 @@ const StackTabs = ({ stack, stack_id }) => {
           <RunsTab stack={stack} />
         </Box>
 
-        <Box hidden={tabIndex !== 3} sx={{ height: '100%', overflow: 'auto', position: 'absolute', inset: 0, p: 3 }}>
+        {(stack_type == 'stack') && <Box hidden={tabIndex !== 3} sx={{ height: '100%', overflow: 'auto', position: 'absolute', inset: 0, p: 3 }}>
           <WorkflowGraph theme={darkTheme} url={`/workflow_graph/stack/${stack_id}`} />
-        </Box>
+        </Box>}
       </Box>
     </Paper>
   );

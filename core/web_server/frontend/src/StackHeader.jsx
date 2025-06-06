@@ -4,9 +4,9 @@ import { Box, Typography, IconButton, Paper } from '@mui/material';
 import { Delete as DeleteIcon } from '@mui/icons-material';
 import MetadataItem from './MetadataItem.jsx';
 
-import { ra_to_hms, dec_to_dms } from './units.js'
+import { ra_to_hms, dec_to_dms, format_duration } from './units.js'
 
-const StackHeader = ({ stack, stack_id }) => {
+const StackHeader = ({ stack_type, stack, stack_id }) => {
   const handleDeleteStack = () => {
     alert(`Delete stack ${stack_id} functionality triggered.`);
   };
@@ -16,13 +16,14 @@ const StackHeader = ({ stack, stack_id }) => {
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Box>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 4, rowGap: 1 }}>
-            <MetadataItem label="RA" value={ra_to_hms(stack.center[0])} />
-            <MetadataItem label="Dec" value={dec_to_dms(stack.center[1])} />
-            <MetadataItem label="Scale" value={`${stack.image_scale.toFixed(3)}\"/px`} />
-            <MetadataItem label="Angle" value={`${stack.rotation_angle.toFixed(1)}°`} />
+            {(stack_type == 'stack') && <MetadataItem label="RA" value={ra_to_hms(stack.center[0])} />}
+            {(stack_type == 'stack') && <MetadataItem label="Dec" value={dec_to_dms(stack.center[1])} />}
+            {(stack_type == 'stack') && <MetadataItem label="Scale" value={`${stack.image_scale.toFixed(3)}\"/px`} />}
+            {(stack_type == 'stack') && <MetadataItem label="Angle" value={`${stack.rotation_angle.toFixed(1)}°`} />}
             <MetadataItem label="Camera" value={stack.camera} />
-            <MetadataItem label="Filter" value={stack.filter} />
-            <MetadataItem label="Integration" value={`${(stack.integration_s / 3600).toFixed(2)}h`} />
+            {(stack_type == 'stack') && <MetadataItem label="Filter" value={stack.filter} />}
+            {(stack_type == 'calibration_stack') && <MetadataItem label="Expsosure" value={format_duration(stack.exposure_s)} />}
+            <MetadataItem label="Integration" value={format_duration(stack.integration_s)} />
             <MetadataItem label="Temp" value={`${stack.mean_temperature.toFixed(1)}°C`} />
           </Box>
         </Box>

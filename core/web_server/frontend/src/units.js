@@ -24,4 +24,23 @@ const dec_to_dms = (dec) => {
   return `${negative}${String(degrees).padStart(2, '0')}º ${String(minutes).padStart(2, '0')}' ${String(seconds).padStart(2, '0')}"`
 }
 
-export { ra_to_hms, dec_to_dms };
+function format_duration(seconds) {
+  const units = [
+    { label: 'd', value: 86400 },
+    { label: 'h', value: 3600 },
+    { label: 'm', value: 60 },
+    { label: 's', value: 1 },
+  ];
+
+  return units
+    .map(({ label, value }) => {
+      const amount = Math.floor(seconds / value);
+      seconds %= value;
+      return amount > 0 ? `${amount}${label}` : null;
+    })
+    .filter(Boolean)
+    .join(' ');
+}
+
+
+export { ra_to_hms, dec_to_dms, format_duration };

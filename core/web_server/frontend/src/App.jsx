@@ -139,7 +139,7 @@ function App() {
                     <StackViewer />
                   </AppLayout>
                 } />
-                <Route exact path="/calibration_stack/:stack_id" element={
+                <Route exact path="/calibration_stack/:calibration_stack_id" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <StackViewer />

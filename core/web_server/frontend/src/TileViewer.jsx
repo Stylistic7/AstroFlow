@@ -26,6 +26,8 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
 
   const { mosaics } = useContext(AstroFlowContext);
 
+  console.log('TileViewer objectType', objectType, 'imageHash', imageHash);
+
   useLayoutEffect(() => {
     if (!containerRef.current) return;
     const observer = new ResizeObserver(() => {
