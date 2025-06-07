@@ -59,10 +59,21 @@ const RunsTab = ({ stack }) => {
     }
   };
 
+  const getSelectedFlatByRun = run => {
+    if (selectedFlatsByRun[run.id]) {
+      return selectedFlatsByRun[run.id];
+    } else if (run.dependencies['flat']['stack_id']) {
+      return run.dependencies['flat']['stack_id'];
+    }
+
+    // TODO: Handle calibration stacks that specified by filename.
+  }
+
   return (
     <Box>
       {runs.map((run) => {
-        const selectedFlatId = selectedFlatsByRun[run.id];
+        const selectedFlatId = getSelectedFlatByRun(run);
+        console.log('run.id', run.id, 'selectedFlatId', selectedFlatId);
         const runDate = new Date(run.newest_date);
         return (
           <Paper key={run.id} sx={{ p: 2, mb: 3 }} elevation={2}>
