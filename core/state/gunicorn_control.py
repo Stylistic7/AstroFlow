@@ -25,9 +25,8 @@ class GunicornManager:
     self.processes.append(
         subprocess.Popen([
             sys.executable, "-m", "gunicorn", self.module, "--bind",
-            f"0.0.0.0:{self.router_port}", "--workers", "1", "--threads",
-            str(os.cpu_count()), "--log-level", "debug", "--capture-output",
-            "--timeout",
+            f"0.0.0.0:{self.router_port}", "--workers", "4", "--threads", "4",
+            "--log-level", "debug", "--capture-output", "--timeout",
             str(self.timeout)
         ]))
 
@@ -37,8 +36,9 @@ class GunicornManager:
       self.processes.append(
           subprocess.Popen([
               sys.executable, "-m", "gunicorn", self.module, "--bind",
-              f"0.0.0.0:{port}", "--workers", "1", "--log-level", "debug",
-              "--capture-output", "--timeout",
+              f"0.0.0.0:{port}", "--workers", "1", "--threads",
+              str(os.cpu_count()), "--log-level", "debug", "--capture-output",
+              "--timeout",
               str(self.timeout)
           ]))
       time.sleep(0.3)  # optional stagger
