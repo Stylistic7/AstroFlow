@@ -117,26 +117,20 @@ app.json_provider_class = CustomJSONProvider
 app.json = app.json_provider_class(app)
 
 
-# TODO: Move computations into new files.
-def min_footprint(footprints):
-  min_ra = np.min([p[0] for f in footprints for p in f])
-  max_ra = np.max([p[0] for f in footprints for p in f])
-  min_dec = np.min([p[1] for f in footprints for p in f])
-  max_dec = np.max([p[1] for f in footprints for p in f])
-
-  return [[min_ra, min_dec], [max_ra, min_dec], [max_ra, max_dec],
-          [min_ra, max_dec]]
-
-
 @app.route('/')
 def index():
   """ Displays the index page accessible at '/'"""
   return flask.render_template('index.html')
 
 
-@app.route('/photo_sphere_viewer')
-def photo_sphere_viewer():
-  return flask.render_template('photo_sphere_viewer.html')
+@app.route('/starmap')
+def starmap():
+  return flask.render_template('index.html')
+
+
+@app.route('/constellation_polylines')
+def constellation_polylines():
+  return constellations.polylines()
 
 
 @app.route('/get_shopping_cart')
@@ -164,23 +158,6 @@ def remove_from_shopping_cart(object_type, object_id):
   print('shopping_cart is now', context.shopping_cart)
 
   return Response(status=204)
-
-
-@app.route('/starmap')
-def starmap():
-  return flask.render_template('index.html')
-
-
-@app.route('/constellation_polylines')
-def constellation_polylines():
-  return constellations.polylines()
-
-
-@app.route('/footprints')
-def footprints():
-  plate_solutions = metaflow_data_helper.find('plate_solve',
-                                              'plate_solutions') or {}
-  return [f for _, f, _ in list(plate_solutions.values())]
 
 
 def _make_json_serializable(D):
@@ -244,32 +221,6 @@ def calibration_stacks():
   }
 
   return {k: _make_json_serializable(s) for k, s in processed_stacks.items()}
-
-
-@app.route('/target/<target_id>')
-def target(target_id):
-  targets = test_app.targets if debug else cached_targets()
-  print(f"Looking for target_id '{target_id}'")
-  return asdict(targets[target_id])
-
-
-@app.route('/stack/<stack_id>')
-def stack(stack_id):
-  stacks = test_app.stacks if debug else cached_stacks()
-  print(f"Looking for stack_id '{stack_id}'")
-  return asdict(stacks[stack_id])
-
-
-@app.route('/flat_correction_thumbnails/<stack_id>/<flat_stack_id>')
-def flat_correction_thumbnails(stack_id, flat_stack_id):
-  key = ('flat_correction_thumbnail', stack_id, flat_stack_id)
-  if key not in cache:
-    return Response(status=404)
-
-  buffer = io.BytesIO()
-  buffer.write(cache[key])
-  buffer.seek(0)
-  return flask.send_file(buffer, mimetype='image/png')
 
 
 @app.route('/get_plot')
@@ -377,13 +328,6 @@ def stream():
   response.headers['Cache-Control'] = 'no-cache'
 
   return response
-
-
-@app.route('/dispatch', methods=['POST'])
-def dispatch():
-  state_actor.dispatch(request.json,
-                       callback=lambda e: announcer.announce('foo'))
-  return Response(status=204)
 
 
 @app.route('/ray_status')
