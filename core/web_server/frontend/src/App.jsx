@@ -1,32 +1,23 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import Box from '@mui/material/Box';
-import Search from "./Search.jsx";
 import Starmap from "./Starmap.jsx";
-import MosaicPanel from "./MosaicPanel.jsx";
 import TargetPanel from "./TargetPanel.jsx";
 import DisambiguationPanel from "./DisambiguationPanel.jsx";
 import RecentPanel from "./RecentPanel.jsx";
 import SsePanel from "./SsePanel.jsx";
-import FlatCorrectionPanel from "./FlatCorrectionPanel.jsx";
-import logo from './logo.svg';
 import { usePageVisibility } from './usePageVisibility';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import { StyledEngineProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
-import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
 import './App.css';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { createContext, useContext } from 'react';
 import AstroFlowContext from './AstroFlowContext.jsx';
-import AstroFlowBreadcrumbs from "./AstroFlowBreadcrumbs.jsx";
-import { Stack } from '@mui/material';
 import ProgressComponent from './ProgressComponent.jsx';
 import WorkflowGraph from './WorkflowGraph.jsx';
 import TileViewer from './TileViewer.jsx';
 import StackViewer from './StackViewer.jsx';
 import MosaicViewer from './MosaicViewer.jsx';
 import AppLayout from './AppLayout.jsx';
-import AstroFlowImage from './AstroFlowImage.jsx';
 import { FolderProvider } from './FolderContext';
 
 function App() {
