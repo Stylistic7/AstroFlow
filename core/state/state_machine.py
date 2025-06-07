@@ -1,6 +1,5 @@
 import os
 from typing import Any, TypeVar
-import queue
 from pathlib import Path
 import time
 import threading
@@ -8,26 +7,30 @@ import signal
 import sys
 import uuid
 
-from context import context, get_cache
+from context import context, get_cache, queue
 from ray_infra import connect_to_ray_cluster
 from state.ray_control import start_ray_head_node, start_ray_subordinate_node, stop_ray_node
 from state.astroflow_zeroconf import AstroFlowZeroconf
 from state.types import State, Action
-from dependency_graph import run_graph, Graph
-from dependency_graph.debugging import node_to_string
+from dependency_graph import run_graph
 
 T = TypeVar('T')
+
+# This state machine is intended to be low-level. It runs on a single machine,
+# a single "node," and is never distributed. It is responsible for initializing
+# Ray, using zeroconf for finding other Ray nodes, and other tasks.
+#
+# It does not do AstroFlow-specific work. That kind of work -- like running
+# compute graphs, etc. -- should be done by a Ray actor, which is a singleton
+# and accessible by any node in the Ray cluster.
 
 # TODO: Actions to add:
 # add_astroflow_instance (from zeroconf)
 # remove_astroflow_instance (from zeroconf)
-# start Ray head node (from web UI or startup code)
-# start Ray follower node (from web UI or startup code)
 # volume attached
 # volume detached
 
 _state = dict()
-_action_queue = queue.Queue()
 
 
 def get_state(key: str):
@@ -217,7 +220,7 @@ def _run_graph(state: State, action: Action) -> tuple[State, list[Action]]:
       from web_server.backend.app import announcer
       announcer.announce(action['announce_message'])
 
-    _action_queue.put(dict(type='graph_done', graph_id=graph_id))
+    queue.put(dict(type='graph_done', graph_id=graph_id))
 
   threading.Thread(target=background_work, daemon=True).start()
 
@@ -234,7 +237,6 @@ def _graph_done(state: State, action: Action) -> tuple[State, list[Action]]:
 def dispatch(action: Action) -> dict[str, Any]:
   global _state
 
-  print(f'### handling action {action} current state {_state}')
   action = dict(action)
   new_actions = []
 
@@ -307,7 +309,8 @@ def dispatch(action: Action) -> dict[str, Any]:
 
 
 def enqueue_action(action):
-  _action_queue.put(action)
+  print(f'### enqueue_action {action}')
+  queue.put(action)
 
 
 ctrl_c_count = 0
@@ -317,10 +320,10 @@ def handle_sigint(sig, frame):
   global ctrl_c_count
   ctrl_c_count += 1
   if ctrl_c_count == 1:
-    print(f'### Got first ctrl-c, enqueuing graceful shutdown action')
+    print(f'Got first ctrl-c, enqueuing graceful shutdown action')
     enqueue_action(dict(type='quit'))
   else:
-    print(f'### Got second ctrl-c, forcing exit')
+    print(f'Got second ctrl-c, forcing exit')
     sys.exit(1)
 
 
@@ -332,18 +335,20 @@ def main_event_loop():
 
   try:
     while True:
-      action = _action_queue.get()
+      action = queue.get()
+      if action is None:
+        time.sleep(0.1)
+        continue
 
       try:
         if action.get("type") == "quit":
           quit_received = True
 
         dispatch(action)
-      finally:
-        _action_queue.task_done()
+      except Exception as e:
+        print(f"main_event_loop action {action['type']} raised exception {e}")
 
-      if quit_received and _action_queue.empty() and _state.get(
-          'processing', []) == []:
+      if quit_received and queue.empty() and _state.get('processing', []) == []:
         break
 
   except Exception as e:
