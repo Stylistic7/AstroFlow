@@ -5,27 +5,27 @@ from context import get_cache
 cache = get_cache()
 
 
-def put(item: Any) -> None:
+def put(queue_name: str, item: Any) -> None:
   with cache.transact():
-    queue = cache.get('action_queue', [])
+    queue = cache.get(queue_name, [])
     queue.append(item)
-    cache.set('action_queue', queue)
+    cache.set(queue_name, queue)
 
 
-def get() -> Any:
+def get(queue_name: str) -> Any:
   with cache.transact():
-    queue = cache.get('action_queue', [])
+    queue = cache.get(queue_name, [])
     if len(queue):
       result = queue.pop(0)
-      cache.set('action_queue', queue)
+      cache.set(queue_name, queue)
       return result
 
 
-def empty() -> bool:
+def empty(queue_name: str) -> bool:
   with cache.transact():
-    queue = cache.get('action_queue', [])
+    queue = cache.get(queue_name, [])
     return len(queue) == 0
 
 
-def clear() -> None:
-  cache.pop('action_queue', default=None)
+def clear(queue_name: str) -> None:
+  cache.pop(queue_name, default=None)
