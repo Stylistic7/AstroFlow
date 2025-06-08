@@ -1,47 +1,52 @@
+from dataclasses import dataclass
 import subprocess
 import sys
 import time
-import os
+
+
+@dataclass(frozen=True)
+class GunicornConfig:
+  name: str
+  config_file: str
+  module: str
+  worker_type: str
+  num_servers: int
+  start_port: int
+  num_workers: int
+  timeout: int
 
 
 class GunicornManager:
   """Starts one router and N backend gunicorn processes."""
 
-  def __init__(self,
-               module: str,
-               num_backends: int,
-               router_port: int = 8000,
-               start_port: int = 8001,
-               timeout: int = 300):
-    self.module = module
-    self.num_backends = num_backends
-    self.router_port = router_port
-    self.start_port = start_port
-    self.timeout = timeout
+  def __init__(self, config: GunicornConfig):
+    self.config = config
     self.processes = []
 
   def start(self):
-    print(f"Starting router on port {self.router_port}...")
-    self.processes.append(
-        subprocess.Popen([
-            sys.executable, "-m", "gunicorn", self.module, "--bind",
-            f"0.0.0.0:{self.router_port}", "--workers", "4", "--threads", "4",
-            "--log-level", "debug", "--capture-output", "--timeout",
-            str(self.timeout)
-        ]))
+    for i in range(self.config.num_servers):
+      port = self.config.start_port + i
+      command = [
+          sys.executable, "-m", "gunicorn", "-k", self.config.worker_type,
+          self.config.module, "--bind", f"0.0.0.0:{port}", "--threads", "4",
+          "--log-level", "debug", "--capture-output"
+      ]
 
-    for i in range(self.num_backends):
-      port = self.start_port + i
-      print(f"Starting backend on port {port}...")
-      self.processes.append(
-          subprocess.Popen([
-              sys.executable, "-m", "gunicorn", self.module, "--bind",
-              f"0.0.0.0:{port}", "--workers", "1", "--threads",
-              str(os.cpu_count()), "--log-level", "debug", "--capture-output",
-              "--timeout",
-              str(self.timeout)
-          ]))
-      time.sleep(0.3)  # optional stagger
+      if self.config.config_file:
+        command += ["-c", self.config.config_file]
+
+      if self.config.num_workers:
+        command += ["--workers", str(self.config.num_workers)]
+
+      if self.config.timeout:
+        command += ["--timeout", str(self.config.timeout)]
+
+      print(f'### Starting gunicorn process with command: {command}')
+      self.processes.append(subprocess.Popen(command))
+
+      time.sleep(0.5)
+
+    return self
 
   def stop(self):
     for proc in self.processes:

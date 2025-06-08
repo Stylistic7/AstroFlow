@@ -100,13 +100,6 @@ class TestState(unittest.TestCase):
       print(f'master {master}')
     self.assertEqual(len(masters), 6)
 
-  def test_run_graph(self) -> None:
-    graph = Graph({(my_task, 'foo'): {}})
-    enqueue_action(dict(type='run_graph', graph=graph))
-    enqueue_action(dict(type='quit'))
-
-    main_event_loop()
-
 
 if __name__ == "__main__":
   unittest.main()

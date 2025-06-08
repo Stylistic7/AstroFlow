@@ -32,6 +32,8 @@ T = TypeVar('T')
 
 _state = dict()
 
+QUEUE_NAME = 'node_state_machine'
+
 
 def get_state(key: str):
   return _state.get(key, None)
@@ -90,8 +92,8 @@ def _start_ray_head_node(state: State,
   assert 'ray_process' not in state
   state['ray_process'] = start_ray_head_node()
 
-  from web_server.backend.app import announcer
-  announcer.announce('ray_status')
+  from web_server.backend.announcer import announce
+  announce('ray_status')
 
   connect_to_ray_cluster()
   time.sleep(5)
@@ -125,8 +127,8 @@ def _update_zeroconf_services(state: State,
   print(f'### connecting to head node described by instance {instance}')
   state['ray_process'] = start_ray_subordinate_node(instance['ip'])
 
-  from web_server.backend.app import announcer
-  announcer.announce('ray_status')
+  from web_server.backend.announcer import announce
+  announce('ray_status')
 
   connect_to_ray_cluster()
 
@@ -154,19 +156,22 @@ def _stop_flask(state: State, action: Action) -> tuple[State, list[Action]]:
 
 def _start_gunicorn(state: State, action: Action) -> tuple[State, list[Action]]:
   from state.gunicorn_control import GunicornManager
-  gunicorn_manager = GunicornManager("web_server.backend.app:app", 4)
-  gunicorn_manager.start()
-  state['gunicorn_manager'] = gunicorn_manager
+  from state.gunicorn_configs import guincorn_configs
+  state['gunicorn_managers'] = [
+      GunicornManager(c).start() for c in guincorn_configs()
+  ]
 
   return state, []
 
 
 def _stop_gunicorn(state: State, action: Action) -> tuple[State, list[Action]]:
-  if 'gunicorn_manager' not in state:
+  if 'gunicorn_managers' not in state:
     return state, []
 
-  state['gunicorn_manager'].stop()
-  del state['gunicorn_manager']
+  for manager in state['gunicorn_managers']:
+    manager.stop()
+
+  del state['gunicorn_managers']
 
   return state, []
 
@@ -217,10 +222,10 @@ def _run_graph(state: State, action: Action) -> tuple[State, list[Action]]:
     run_graph(action['graph'])
 
     if 'announce_message' in action:
-      from web_server.backend.app import announcer
-      announcer.announce(action['announce_message'])
+      from web_server.backend.announcer import announce
+      announce(action['announce_message'])
 
-    queue.put(dict(type='graph_done', graph_id=graph_id))
+    queue.put(QUEUE_NAME, dict(type='graph_done', graph_id=graph_id))
 
   threading.Thread(target=background_work, daemon=True).start()
 
@@ -309,8 +314,7 @@ def dispatch(action: Action) -> dict[str, Any]:
 
 
 def enqueue_action(action):
-  print(f'### enqueue_action {action}')
-  queue.put(action)
+  queue.put(QUEUE_NAME, action)
 
 
 ctrl_c_count = 0
@@ -335,7 +339,7 @@ def main_event_loop():
 
   try:
     while True:
-      action = queue.get()
+      action = queue.get(QUEUE_NAME)
       if action is None:
         time.sleep(0.1)
         continue
@@ -346,9 +350,12 @@ def main_event_loop():
 
         dispatch(action)
       except Exception as e:
+        import traceback
         print(f"main_event_loop action {action['type']} raised exception {e}")
+        traceback.print_exc()
 
-      if quit_received and queue.empty() and _state.get('processing', []) == []:
+      if quit_received and queue.empty(QUEUE_NAME) and _state.get(
+          'processing', []) == []:
         break
 
   except Exception as e:
