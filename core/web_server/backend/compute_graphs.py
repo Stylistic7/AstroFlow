@@ -8,9 +8,9 @@ from compute_graph import build_compute_graph
 from dependency_graph import Graph, run_graph, graph_status_to_progress
 from dependency_graph.debugging import node_to_string
 from dependency_graph.workflow_graph_adapter import to_workflow_graph
-from stacks.compute_graph import build_stacking_subgraph, get_stack_image
-from web_server.backend.announcer import announcer
+from stacks.compute_graph import build_stacking_subgraph
 from web_server.backend.object_cache import cached_stacks, cached_targets, cached_mosaics
+from web_server.backend.announcer import announce
 from mosaics.compute_graph import build_mosaic_subgraph, stacks_for_mosaic, targets_for_mosaic, build_placement_subgraph
 from previews.types import QualityLevel
 
@@ -40,7 +40,7 @@ def status_fn(status):
         f'{len(status.done_nodes)} done')
 
   compute_graph_status = graph_status_to_progress(status)
-  announcer.announce('compute_graph_status')
+  announce('compute_graph_status')
 
   if len(status.ready_nodes) == 0 and len(status.waiting_nodes) == 0:
     print('### Compute graph is done!')

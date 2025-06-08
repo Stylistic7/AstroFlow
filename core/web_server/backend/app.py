@@ -13,36 +13,34 @@ import flask
 from typing import Any
 from flask import request, jsonify, Response
 from dataclasses import asdict
-import datetime
 import operator
 from spherical_geometry.polygon import SingleSphericalPolygon
 import threading
 from dataclasses import replace
-import queue
 from distutils.util import strtobool
-import time
 from flask.json.provider import DefaultJSONProvider
 from pathlib import Path
 
 from state import enqueue_action
-from context import context
+from context import context, get_cache
 from catalogs import constellations
-from context import get_cache
 from customization.types import CustomizedStack
 from web_server.backend.files import files_bp
 from web_server.backend.tiles import tiles_bp
 from web_server.backend.metadata import metadata_bp
+from web_server.backend.settings import settings_bp
 from web_server.backend.thumbnails import thumbnails_bp
 from web_server.backend.compute_graphs import compute_graphs_bp
 from web_server.backend.videos import videos_bp
 from web_server.backend.convert_to_dict import convert_to_dict
-from web_server.backend.announcer import announcer
 from web_server.backend.object_cache import cached_stacks, cached_calibration_stacks, cached_targets, cached_mosaics
+from web_server.backend.router import stateful_route
 
 import plotly.express as px
 import plotly.figure_factory as ff
 
 debug = False
+STREAM_PORT = 8001
 
 cache = get_cache()
 
@@ -100,6 +98,7 @@ else:
 app.register_blueprint(files_bp)
 app.register_blueprint(tiles_bp)
 app.register_blueprint(metadata_bp)
+app.register_blueprint(settings_bp)
 app.register_blueprint(thumbnails_bp)
 app.register_blueprint(compute_graphs_bp)
 app.register_blueprint(videos_bp)
@@ -131,6 +130,14 @@ def starmap():
 @app.route('/constellation_polylines')
 def constellation_polylines():
   return constellations.polylines()
+
+
+# This stub redirects requests to a worker on a specific port. That worker
+# will handle all SSE connections, and broadcast the announcer.announcements it receives
+# over a diskcache queue.
+@stateful_route(app.route('/stream'), fixed_port=STREAM_PORT)
+def stream():
+  pass
 
 
 @app.route('/get_shopping_cart')
@@ -298,38 +305,6 @@ def flats_for_camera_and_filter(camera, filter):
   ]
 
 
-def format_sse(event, data=None) -> str:
-  msg = f'event: {event}\n'
-  if data:
-    msg += f'data: {data}\n'
-  return msg + '\n'
-
-
-@app.route('/stream')
-def stream():
-  print('### responding to request on /stream')
-
-  def eventStream():
-    messages = announcer.listen()
-    while True:
-      try:
-        event, data = messages.get(timeout=5)  # Avoid indefinite blocking
-      except queue.Empty:
-        # Send a heartbeat every 5 seconds if no new messages arrive
-        event, data = "heartbeat", f"keep-alive"
-      if data == None:
-        data = time.ctime(time.time())
-      sse = format_sse(event, data)
-      yield sse
-
-  response = Response(eventStream(), mimetype="text/event-stream")
-  response.headers['Access-Control-Allow-Origin'] = '*'
-  response.headers['Connection'] = 'keep-alive'
-  response.headers['Cache-Control'] = 'no-cache'
-
-  return response
-
-
 @app.route('/ray_status')
 def ray_status():
   """Returns the current Ray cluster status."""
@@ -393,7 +368,8 @@ def ray_status():
 
 @app.route('/publish_ray_status')
 def publish_ray_status():
-  announcer.announce('ray_status')
+  from web_server.backend.announcer import announce
+  announce('ray_status')
   return Response(status=200)
 
 
