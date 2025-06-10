@@ -21,7 +21,7 @@ from distutils.util import strtobool
 from flask.json.provider import DefaultJSONProvider
 from pathlib import Path
 
-from state import enqueue_action
+from state.state_machine import enqueue_action
 from context import context, get_cache
 from catalogs import constellations
 from customization.types import CustomizedStack

@@ -10,7 +10,7 @@ import time
 from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import run_graph, Graph
-from state import dispatch, enqueue_action, main_event_loop
+from state.state_machine import dispatch
 from testing import make_test_context, make_synthetic_frames, copy_testdata_frames
 
 from file_io.find_image_files import find_image_files

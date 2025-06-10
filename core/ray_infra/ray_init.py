@@ -1,9 +1,11 @@
 import ray
 
 from context import ContextActor
+from state.actor import StateActor
 from base_path import get_base_path
 
 _context_actor = None
+_state_actor = None
 
 
 def connect_to_ray_cluster():
@@ -32,3 +34,8 @@ def connect_to_ray_cluster():
   _context_actor = ContextActor.options(name='context',
                                         namespace='AstroFlow',
                                         get_if_exists=True).remote()
+
+  global _state_actor
+  _state_actor = StateActor.options(name='state',
+                                    namespace='AstroFlow',
+                                    get_if_exists=True).remote()

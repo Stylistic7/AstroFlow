@@ -239,7 +239,7 @@ def _graph_done(state: State, action: Action) -> tuple[State, list[Action]]:
   return state, []
 
 
-def dispatch(action: Action) -> dict[str, Any]:
+def dispatch(action: Action) -> State:
   global _state
 
   action = dict(action)

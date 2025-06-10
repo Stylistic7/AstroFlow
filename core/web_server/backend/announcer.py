@@ -7,7 +7,6 @@ from web_server.backend.message_announcer import MessageAnnouncer
 QUEUE_NAME = 'sse_announcer_queue'
 
 announcer = MessageAnnouncer()
-print(f"Imported announcer.py as {__name__}, id(announcer) = {id(announcer)}")
 
 
 def announce(event, data=None):
