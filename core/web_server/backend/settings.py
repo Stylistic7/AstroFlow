@@ -8,6 +8,7 @@ from file_io.generic import read_header
 from customization.settings import Settings, StackSettings
 from state.state_machine import enqueue_action
 from customization.compute_graph import customize_stack, store_customized_stack
+from state.actor import state
 
 # I need to figure out two things:
 #
@@ -66,10 +67,8 @@ def update_stack_settings():
   context.settings = settings
   print(f'### context.settings is now {context.settings}')
 
-  stack = context.stacks[stack_id]
-  graph = Graph({store_customized_stack: {(customize_stack, stack, settings)}})
-  action = dict(type='run_graph', graph=graph, announce_message='reload_data')
-  enqueue_action(action)
-  context.foo_action = action
+  # TODO: Maybe don't pass the entire settings struct?
+  state.dispatch(
+      dict(type='update_settings', stack_id=stack_id, settings=settings))
 
   return jsonify({"status": "ok"})

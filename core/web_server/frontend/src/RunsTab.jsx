@@ -31,6 +31,12 @@ const RunsTab = ({ stack }) => {
 
   const handleSelectFlat = (runId, flatId) => {
     setSelectedFlatsByRun(prev => ({ ...prev, [runId]: flatId }));
+    fetch('/update_settings/stack', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stack_id: stack.stable_hash, run_id: runId, dependencies: { 'flat': flatId } }),
+    });
+
   };
 
   const handleDeleteRun = (runId) => {
