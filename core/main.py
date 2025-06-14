@@ -1,4 +1,4 @@
-from state import Action, enqueue_action, main_event_loop
+from state.state_machine import Action, enqueue_action, main_event_loop
 
 
 def main():

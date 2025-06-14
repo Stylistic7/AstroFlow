@@ -26,6 +26,7 @@ def apply_settings(stack: CompositeStack, settings: Settings) -> CompositeStack:
 
 @ray.remote
 def gather_customize_stacks(*stacks) -> None:
+  print(f'### gather_customize_stacks')
   context.stacks = {s.stable_hash: s for s in stacks}
 
 
@@ -50,7 +51,7 @@ def scatter_customize_stacks() -> Graph:
 # TODO: Add tests in test_customization.py
 # TODO: Pass in the StackSettings and cache this.
 # TODO: Pass in the quarantined_stacks and cache this.
-@cached.remote
+@ray.remote
 def customize_stack(stack: CompositeStack,
                     settings: Settings) -> CustomizedStack:
   print(f'### customize_stack stack {stack} settings {settings}')

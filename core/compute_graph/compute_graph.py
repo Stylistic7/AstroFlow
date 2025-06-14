@@ -29,32 +29,28 @@ from metadata.image_metadata import load_metadata
 def store_calibration_stacks(calibration_stacks: SimpleStacksDict) -> None:
   context.calibration_stacks = calibration_stacks
   print(f'### store_calibration_stacks: Stored '
-        f'{len(calibration_stacks)} calibration stacks; '
-        f'total is now {len(context.calibration_stacks)}')
+        f'{len(calibration_stacks)} calibration stacks')
   return calibration_stacks
 
 
 @ray.remote
 def store_stacks(stacks: CompositeStacksDict) -> None:
   context.grouped_stacks = stacks
-  print(f'### store_stacks: Stored '
-        f'{len(stacks)} stacks; total is now {len(context.grouped_stacks)}')
+  print(f'### store_stacks: Stored {len(stacks)} stacks')
   return stacks
 
 
 @ray.remote
 def store_targets(targets: TargetsDict) -> None:
   context.grouped_targets = targets
-  print(f'### store_targets: Stored {len(targets)} targets; '
-        f'total is now {len(context.grouped_targets)}')
+  print(f'### store_targets: Stored {len(targets)} targets')
   return targets
 
 
 @ray.remote
 def store_mosaics(mosaics: MosaicsDict) -> None:
   context.grouped_mosaics = mosaics
-  print(f'### store_mosaics: Stored {len(mosaics)} mosaics; '
-        f'total is now {len(context.grouped_mosaics)}')
+  print(f'### store_mosaics: Stored {len(mosaics)} mosaics')
   return mosaics
 
 
@@ -140,6 +136,7 @@ def build_main_processing_graph() -> Graph:
   shopping_cart = context.shopping_cart or []
 
   # shopping_cart += [('stack', s) for s in stacks.keys()]
+  # shopping_cart += [('mosaic', m) for m in mosaics.keys()]
 
   print(f'### build_main_processing_graph shopping_cart {shopping_cart}')
 
