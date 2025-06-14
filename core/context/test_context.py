@@ -91,3 +91,46 @@ class TestContext(unittest.TestCase):
   def test_remote_fn(self):
     context.bar = 123
     ray.get(foo.remote())
+
+  def test_lazy_load_dict(self):
+    context.add_lazy_load_dict('lazy')
+
+    context.lazy = {'abc123': 'value_abc123', 'def789': 'value_def789'}
+
+    self.assertEqual(cache['lazy'], ['abc123', 'def789'])
+    self.assertEqual(cache[('lazy', 'abc123')], 'value_abc123')
+    self.assertEqual(cache[('lazy', 'def789')], 'value_def789')
+
+    self.assertEqual(list(context.lazy.keys()), ['abc123', 'def789'])
+    self.assertEqual(list(context.lazy.values()),
+                     ['value_abc123', 'value_def789'])
+    self.assertEqual(context.lazy['abc123'], 'value_abc123')
+    self.assertEqual(context.lazy['def789'], 'value_def789')
+
+    context.or_equals('lazy', {'xyz999': 'value_xyz999'})
+
+    self.assertEqual(cache['lazy'], ['abc123', 'def789', 'xyz999'])
+    self.assertEqual(cache[('lazy', 'abc123')], 'value_abc123')
+    self.assertEqual(cache[('lazy', 'def789')], 'value_def789')
+    self.assertEqual(cache[('lazy', 'xyz999')], 'value_xyz999')
+
+    self.assertEqual(list(context.lazy.keys()), ['abc123', 'def789', 'xyz999'])
+    self.assertEqual(list(context.lazy.values()),
+                     ['value_abc123', 'value_def789', 'value_xyz999'])
+
+    context.or_equals('lazy', {
+        'mno567': 'value_mno567',
+        'xyz999': 'new_value_xyz999',
+    })
+
+    self.assertEqual(cache['lazy'], ['abc123', 'def789', 'mno567', 'xyz999'])
+    self.assertEqual(cache[('lazy', 'abc123')], 'value_abc123')
+    self.assertEqual(cache[('lazy', 'def789')], 'value_def789')
+    self.assertEqual(cache[('lazy', 'mno567')], 'value_mno567')
+    self.assertEqual(cache[('lazy', 'xyz999')], 'new_value_xyz999')
+
+    self.assertEqual(list(context.lazy.keys()),
+                     ['abc123', 'def789', 'mno567', 'xyz999'])
+    self.assertEqual(
+        list(context.lazy.values()),
+        ['value_abc123', 'value_def789', 'value_mno567', 'new_value_xyz999'])

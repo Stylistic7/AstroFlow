@@ -120,6 +120,12 @@ class ContextActor:
       value = ray.get(value)
       self.cache[key] = value
 
+  def set_lazy_load_dict(self, key: Key, value: dict[str, Any]) -> None:
+    print(f'### set_lazy_load_dict key {key}')
+    self.cache[key] = list(value.keys())
+    for k, v in value.items():
+      self.cache[(key, k)] = v
+
   def contains(self, key: Key) -> bool:
     return key in self.cache or key in self.ref_dict
 
@@ -152,13 +158,27 @@ class ContextActor:
     if write_mode in [WriteMode.MEMORY_ONLY, WriteMode.MEMORY_AND_DISK]:
       self.ref_dict[key] = ray.put(new_value)
 
-  def or_equals(self, key: Key, value: Any, default_value: Any,
-                write_mode: WriteMode) -> None:
+  def or_equals(self,
+                key: Key,
+                value: Any,
+                default_value: Any,
+                write_mode: WriteMode,
+                lazy_load_dict: bool = False) -> None:
     assert type(value) is list
     assert len(value) == 1
     value = value[0]
     assert type(value) is ray.ObjectRef, f'type(value) is {type(value)}'
     value = ray.get(value)
+
+    if lazy_load_dict:
+      with self.cache.transact():
+        keys = self.cache[key]
+        new_items = list(value.keys())
+        keys = [k for k in keys if k not in new_items] + new_items
+        self.cache[key] = keys
+        for k, v in value.items():
+          self.cache[(key, k)] = v
+        return
 
     if write_mode in [WriteMode.DISK_ONLY, WriteMode.MEMORY_AND_DISK]:
       with self.cache.transact():
@@ -179,7 +199,36 @@ class ContextActor:
     return list(self.cache.iterkeys())
 
 
+class LazyLoadDict:
+
+  def __init__(self, name: str):
+    self.name = name
+
+  def __getitem__(self, key):
+    return context.get((self.name, key))
+
+  def keys(self):
+    yield from context.get(self.name)
+
+  def __iter__(self):
+    yield from context.get(self.name)
+
+  def values(self):
+    for key in context.get(self.name):
+      yield context.get((self.name, key))
+
+  def items(self):
+    for key in context.get(self.name):
+      yield key, context.get((self.name, key))
+
+  def __len__(self):
+    return len(context.get(self.name))
+
+
 class Context:
+
+  def __init__(self):
+    object.__setattr__(self, 'lazy_load_dicts', {})
 
   def get(self,
           key: Key,
@@ -191,6 +240,10 @@ class Context:
       return ray.get(maybe_ref)
 
   def __getattr__(self, key: Key) -> Any:
+    dicts = object.__getattribute__(self, 'lazy_load_dicts')
+    if key in dicts:
+      return dicts[key]
+
     return self.get(key)
 
   def __getitem__(self, key: Key) -> Any:
@@ -207,6 +260,11 @@ class Context:
           value: Any,
           write_mode: WriteMode = WriteMode.MEMORY_AND_DISK) -> Any:
     actor = ray.get_actor('context', namespace=_get_namespace())
+
+    dicts = object.__getattribute__(self, 'lazy_load_dicts')
+    if key in dicts:
+      return ray.get(actor.set_lazy_load_dict.remote(key, value))
+
     # Ray will automatically de-reference values that are passed by value, but
     # it will not de-reference values inside containers, like lists. This puts
     # the value in the Ray object store, then passes the ObjectRef unchanged
@@ -250,9 +308,12 @@ class Context:
       write_mode: WriteMode = WriteMode.MEMORY_AND_DISK,
   ) -> Any:
     actor = ray.get_actor('context', namespace=_get_namespace())
+    dicts = object.__getattribute__(self, 'lazy_load_dicts')
     return ray.get(
-        actor.or_equals.remote(key, [ray.put(value)], default_value,
-                               write_mode))
+        actor.or_equals.remote(key, [ray.put(value)],
+                               default_value,
+                               write_mode,
+                               lazy_load_dict=key in dicts))
 
   def __contains__(self, key: Key) -> bool:
     actor = ray.get_actor('context', namespace=_get_namespace())
@@ -275,6 +336,7 @@ class Context:
     ray.get(actor.flush.remote(key))
 
   def clear(self) -> None:
+    # object.__getattribute__(self, 'lazy_load_dicts').clear()
     actor = ray.get_actor('context', namespace=_get_namespace())
     ray.get(actor.clear.remote())
 
@@ -282,5 +344,18 @@ class Context:
     actor = ray.get_actor('context', namespace=_get_namespace())
     return ray.get(actor.get_cache_keys.remote())
 
+  def add_lazy_load_dict(self, name):
+    print(f'### key {name} is now a lazy-load dict')
+    dicts = object.__getattribute__(self, 'lazy_load_dicts')
+    if name not in dicts:
+      dicts[name] = LazyLoadDict(name)
+
 
 context = Context()
+
+# TODO: Think hard about the architecture here. Where should this setup
+# actually happen?
+context.add_lazy_load_dict('stacks')
+context.add_lazy_load_dict('targets')
+context.add_lazy_load_dict('mosaics')
+context.add_lazy_load_dict('calibration_stacks')
