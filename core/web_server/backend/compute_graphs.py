@@ -9,7 +9,7 @@ from dependency_graph import Graph, run_graph, graph_status_to_progress
 from dependency_graph.debugging import node_to_string
 from dependency_graph.workflow_graph_adapter import to_workflow_graph
 from stacks.compute_graph import build_stacking_subgraph
-from web_server.backend.object_cache import cached_stacks, cached_targets, cached_mosaics
+# from web_server.backend.object_cache import cached_stacks, cached_targets, cached_mosaics
 from web_server.backend.announcer import announce
 from mosaics.compute_graph import build_mosaic_subgraph, stacks_for_mosaic, targets_for_mosaic, build_placement_subgraph
 from previews.types import QualityLevel
@@ -117,7 +117,7 @@ def workflow_graph_for_stack(stack_id):
     nonlocal workflow_graph
     workflow_graph = to_workflow_graph(g)
 
-  graph = ray.get(build_stacking_subgraph.remote(cached_stacks()[stack_id]))
+  graph = ray.get(build_stacking_subgraph.remote(context.stacks[stack_id]))
 
   results, _ = run_graph(graph,
                          graph_update_fn=graph_update_fn,
@@ -136,13 +136,13 @@ def workflow_graph_for_mosaic(mosaic_id):
     nonlocal workflow_graph
     workflow_graph = to_workflow_graph(g)
 
-  mosaic = cached_mosaics()[mosaic_id]
+  mosaic = context.mosaics[mosaic_id]
 
   graph = ray.get(
       build_mosaic_subgraph.remote(
           QualityLevel.MASTER, mosaic,
-          stacks_for_mosaic(mosaic, cached_stacks(), cached_targets()),
-          targets_for_mosaic(mosaic, cached_targets())))
+          stacks_for_mosaic(mosaic, context.stacks, context.targets),
+          targets_for_mosaic(mosaic, context.targets)))
 
   results, _ = run_graph(graph,
                          graph_update_fn=graph_update_fn,

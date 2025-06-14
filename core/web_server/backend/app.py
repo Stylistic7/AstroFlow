@@ -33,7 +33,6 @@ from web_server.backend.thumbnails import thumbnails_bp
 from web_server.backend.compute_graphs import compute_graphs_bp
 from web_server.backend.videos import videos_bp
 from web_server.backend.convert_to_dict import convert_to_dict
-from web_server.backend.object_cache import cached_stacks, cached_calibration_stacks, cached_targets, cached_mosaics
 from web_server.backend.router import stateful_route
 
 import plotly.express as px
@@ -184,12 +183,12 @@ def _make_json_serializable(D):
 
 @app.route('/mosaics')
 def mosaics():
-  return {k: _make_json_serializable(v) for k, v in cached_mosaics().items()}
+  return {k: _make_json_serializable(v) for k, v in context.mosaics.items()}
 
 
 @app.route('/targets')
 def targets():
-  return {k: _make_json_serializable(v) for k, v in cached_targets().items()}
+  return {k: _make_json_serializable(v) for k, v in context.targets.items()}
 
 
 def my_transform(v):
@@ -215,7 +214,7 @@ def stacks():
 
     return result
 
-  processed_stacks = {h: prepare_stack(s) for h, s in cached_stacks().items()}
+  processed_stacks = {h: prepare_stack(s) for h, s in context.stacks.items()}
 
   return processed_stacks
 
@@ -224,7 +223,7 @@ def stacks():
 def calibration_stacks():
   processed_stacks = {
       h: replace(s, metadata=None)
-      for h, s in cached_calibration_stacks().items()
+      for h, s in context.calibration_stacks.items()
   }
 
   return {k: _make_json_serializable(s) for k, s in processed_stacks.items()}
@@ -268,9 +267,9 @@ def plot():
 
 @app.route('/recent')
 def recent():
-  stacks = cached_stacks()
-  targets = cached_targets()
-  mosaics = cached_mosaics()
+  stacks = context.stacks
+  targets = context.targets
+  mosaics = context.mosaics
 
   def last_stack_datetime(stack_id):
     return stacks[stack_id].newest_date
