@@ -130,6 +130,12 @@ function App() {
                     <StackViewer />
                   </AppLayout>
                 } />
+                <Route exact path="/stack/:stack_id/calibration_stack/:calibration_stack_id" element={
+                  dataIsAvailable &&
+                  <AppLayout>
+                    <StackViewer />
+                  </AppLayout>
+                } />
                 <Route exact path="/calibration_stack/:calibration_stack_id" element={
                   dataIsAvailable &&
                   <AppLayout>
@@ -154,6 +160,12 @@ function App() {
                     <StackViewer />
                   </AppLayout>
                 } />
+                <Route exact path="/target/:target_id/stack/:stack_id/calibration_stack/:calibration_stack_id" element={
+                  dataIsAvailable &&
+                  <AppLayout>
+                    <StackViewer />
+                  </AppLayout>
+                } />
                 <Route exact path="/mosaic/:mosaic_id/target/:target_id" element={
                   dataIsAvailable &&
                   <AppLayout>
@@ -161,6 +173,12 @@ function App() {
                   </AppLayout>}
                 />
                 <Route exact path="/mosaic/:mosaic_id/target/:target_id/stack/:stack_id" element={
+                  dataIsAvailable &&
+                  <AppLayout>
+                    <StackViewer />
+                  </AppLayout>
+                } />
+                <Route exact path="/mosaic/:mosaic_id/target/:target_id/stack/:stack_id/calibration_stack/:calibration_stack_id" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <StackViewer />

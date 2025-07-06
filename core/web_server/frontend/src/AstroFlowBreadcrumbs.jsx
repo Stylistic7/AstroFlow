@@ -5,6 +5,7 @@ import { styled, useTheme } from '@mui/material/styles';
 
 import Breadcrumbs from '@mui/material/Breadcrumbs';
 import LayersIcon from '@mui/icons-material/Layers';
+import SquareFootIcon from '@mui/icons-material/SquareFoot';
 import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import Link from '@mui/material/Link';
@@ -154,7 +155,7 @@ export default function AstroFlowBreadcrumbs() {
                 style={{ pointerEvents: "auto" }}
                 color="inherit"
             >
-                <LayersIcon sx={{ marginRight: '0.5em' }} />
+                <SquareFootIcon sx={{ marginRight: '0.5em' }} />
                 {capitalizeFirst(calStack.image_type)} calibration stack
             </Link>}
         </Breadcrumbs>
