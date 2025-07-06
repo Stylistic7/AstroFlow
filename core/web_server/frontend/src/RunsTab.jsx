@@ -66,10 +66,13 @@ const RunsTab = ({ stack }) => {
   };
 
   const getSelectedFlatByRun = run => {
+    console.log('getSelectedFlatByRun', run);
     if (selectedFlatsByRun[run.id]) {
       return selectedFlatsByRun[run.id];
-    } else if (run.dependencies['flat']['stack_id']) {
-      return run.dependencies['flat']['stack_id'];
+    } else if ('flat' in run.dependencies) {
+      if ('stack_id' in run.dependencies['flat']) {
+        return run.dependencies['flat']['stack_id'];
+      }
     }
 
     // TODO: Handle calibration stacks that specified by filename.
