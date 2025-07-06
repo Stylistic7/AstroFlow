@@ -20,6 +20,7 @@ from dataclasses import replace
 from distutils.util import strtobool
 from flask.json.provider import DefaultJSONProvider
 from pathlib import Path
+from functools import lru_cache
 
 from state.state_machine import enqueue_action
 from context import context, get_cache
@@ -199,10 +200,10 @@ def my_transform(v):
   return v
 
 
-@app.route('/stacks')
-def stacks():
+@lru_cache(maxsize=1)
+def prepare_stacks(stacks: Any) -> dict[str, Any]:
 
-  def prepare_stack(stack: CustomizedStack) -> dict[str, Any]:
+  def prepare_stack(stack: CustomizedStack):
     result = convert_to_dict(stack, [['contents', '*', 'metadata']],
                              transform=my_transform)
 
@@ -214,9 +215,12 @@ def stacks():
 
     return result
 
-  processed_stacks = {h: prepare_stack(s) for h, s in context.stacks.items()}
+  return {h: prepare_stack(s) for h, s in stacks.items()}
 
-  return processed_stacks
+
+@app.route('/stacks')
+def stacks():
+  return prepare_stacks(context.stacks)
 
 
 @app.route('/calibration_stacks')
