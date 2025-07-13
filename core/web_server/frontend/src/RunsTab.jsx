@@ -88,7 +88,7 @@ const RunsTab = ({ stack }) => {
           <Paper key={run.id} sx={{ p: 2, mb: 3 }} elevation={2}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Typography variant="h6">
-                Run — {runDate.toDateString()} ({run.frames.length} frames)
+                Run {run.id} — {runDate.toDateString()} ({run.frames.length} frames)
               </Typography>
               <IconButton onClick={() => handleDeleteRun(run.id)} color="error">
                 <DeleteIcon />

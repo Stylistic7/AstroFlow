@@ -345,7 +345,6 @@ class Context:
     return ray.get(actor.get_cache_keys.remote())
 
   def add_lazy_load_dict(self, name):
-    print(f'### key {name} is now a lazy-load dict')
     dicts = object.__getattribute__(self, 'lazy_load_dicts')
     if name not in dicts:
       dicts[name] = LazyLoadDict(name)
