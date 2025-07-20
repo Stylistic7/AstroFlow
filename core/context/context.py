@@ -3,8 +3,7 @@ import os
 from enum import Enum
 
 from typing import Any
-# TODO: Why can't I just do `from context import cache`?
-from .cache import get_cache
+from context.cache import get_cache
 
 # The context system is a cluster-wide write-through cache. It has the following
 # properties:
@@ -121,7 +120,6 @@ class ContextActor:
       self.cache[key] = value
 
   def set_lazy_load_dict(self, key: Key, value: dict[str, Any]) -> None:
-    print(f'### set_lazy_load_dict key {key}')
     self.cache[key] = list(value.keys())
     for k, v in value.items():
       self.cache[(key, k)] = v
@@ -234,12 +232,14 @@ class Context:
           key: Key,
           default_value: Any = None,
           keep_in_memory: bool = False) -> Any:
+    assert ray.is_initialized()
     actor = ray.get_actor('context', namespace=_get_namespace())
     maybe_ref = ray.get(actor.get.remote(key, default_value, keep_in_memory))
     if maybe_ref:
       return ray.get(maybe_ref)
 
   def __getattr__(self, key: Key) -> Any:
+    assert ray.is_initialized()
     dicts = object.__getattribute__(self, 'lazy_load_dicts')
     if key in dicts:
       return dicts[key]
@@ -259,6 +259,7 @@ class Context:
           key: Key,
           value: Any,
           write_mode: WriteMode = WriteMode.MEMORY_AND_DISK) -> Any:
+    assert ray.is_initialized()
     actor = ray.get_actor('context', namespace=_get_namespace())
 
     dicts = object.__getattribute__(self, 'lazy_load_dicts')
@@ -336,7 +337,6 @@ class Context:
     ray.get(actor.flush.remote(key))
 
   def clear(self) -> None:
-    # object.__getattribute__(self, 'lazy_load_dicts').clear()
     actor = ray.get_actor('context', namespace=_get_namespace())
     ray.get(actor.clear.remote())
 

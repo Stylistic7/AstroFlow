@@ -1,131 +1,119 @@
-from ray_infra import ray_local
-
 import unittest
 import numpy as np
+import ray
+import os
+import pytest
 
 from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import run_graph
-from testing import make_test_context, make_synthetic_frames, copy_testdata_frames
-
+from testing import make_synthetic_frames, copy_testdata_frames
 from stacks.simple_stack import SimpleStack
 from stacks.composite_stack import CompositeStack
 
 
-class TestStack(unittest.TestCase):
+def test_one_dark_stack():
+  make_synthetic_frames(prefix='dark',
+                        number=5,
+                        image_type='Dark',
+                        fill_value=100,
+                        instrument='ZWO ASI6200MM Pro',
+                        width_pixels=9576,
+                        height_pixels=6388,
+                        temperature=-15,
+                        exposure=300,
+                        dest_dir=context.input_dirs[0])
 
-  def setUp(self):
-    self.input_dir_obj, self.output_dir_obj = make_test_context()
+  run_graph(build_compute_graph())
 
-  def tearDown(self):
-    self.input_dir_obj.cleanup()
-    self.output_dir_obj.cleanup()
+  stacks = context.calibration_stacks
+  assert len(stacks) == 1
+  stack = next(iter(stacks.values()))
 
-  def test_one_dark_stack(self):
-    make_synthetic_frames(prefix='dark',
-                          number=5,
-                          image_type='Dark',
-                          fill_value=100,
-                          instrument='ZWO ASI6200MM Pro',
-                          width_pixels=9576,
-                          height_pixels=6388,
-                          temperature=-15,
-                          exposure=300,
-                          dest_dir=context.input_dirs[0])
-
-    run_graph(build_compute_graph())
-
-    stacks = context.calibration_stacks
-    self.assertEqual(len(stacks), 1)
-    stack = next(iter(stacks.values()))
-
-    self.assertNotEqual(stack.content_hash, None)
-    self.assertEqual(len(stack.frames), 5)
-    self.assertEqual(stack.image_type, 'dark')
-    self.assertNotEqual(stack.oldest_date, None)
-    self.assertNotEqual(stack.newest_date, None)
-    self.assertEqual(stack.camera, 'ZWO ASI6200MM Pro')
-    self.assertEqual(stack.mean_temperature, -15.0)
-    self.assertEqual(stack.exposure_s, [300])
-    self.assertEqual(stack.integration_s, 5 * 300)
-    self.assertEqual(stack.width_pixels, 9576)
-    self.assertEqual(stack.height_pixels, 6388)
-
-  def test_one_light_one_dark(self):
-    copy_testdata_frames(target_name='NGC7635', dest_dir=context.input_dirs[0])
-    make_synthetic_frames(prefix='dark',
-                          number=5,
-                          image_type='Dark',
-                          fill_value=100,
-                          instrument='ZWO ASI6200MM Pro',
-                          width_pixels=9576,
-                          height_pixels=6388,
-                          temperature=-10,
-                          exposure=300,
-                          dest_dir=context.input_dirs[0])
-
-    run_graph(build_compute_graph())
-
-    stacks = context.stacks
-    self.assertEqual(len(stacks), 1)
-    self.assertEqual(len(context.calibration_stacks), 1)
-
-    toplevel_stack = next(
-        stack for stack in stacks.values() if isinstance(stack, CompositeStack))
-    self.assertEqual(len(toplevel_stack.contents), 1)
-    light_stack = next(iter(toplevel_stack.contents.values()))
-    dark_stack = next(
-        stack for stack in context.calibration_stacks.values()
-        if isinstance(stack, SimpleStack) and stack.image_type == 'dark')
-
-    self.assertEqual(toplevel_stack.image_type, 'light')
-    self.assertNotEqual(toplevel_stack.stable_hash, None)
-    self.assertNotEqual(toplevel_stack.content_hash, None)
-    self.assertEqual(len(toplevel_stack.contents), 1)
-    self.assertNotEqual(toplevel_stack.oldest_date, None)
-    self.assertNotEqual(toplevel_stack.newest_date, None)
-    self.assertEqual(toplevel_stack.camera, 'ZWO ASI6200MM Pro')
-    self.assertEqual(toplevel_stack.filter, 'H')
-    self.assertAlmostEqual(toplevel_stack.mean_temperature, -12.9, places=3)
-    self.assertEqual(toplevel_stack.exposure_s, [300])
-    self.assertEqual(toplevel_stack.integration_s, 3 * 300)
-    self.assertEqual(toplevel_stack.width_pixels, 9576)
-    self.assertEqual(toplevel_stack.height_pixels, 6388)
-    self.assertEqual(toplevel_stack.name, 'Bubble nebula')
-    self.assertTrue(
-        np.allclose(toplevel_stack.center, [350.183329899, 61.2229195667]))
-    self.assertAlmostEqual(toplevel_stack.image_scale, 0.38, places=2)
-    self.assertAlmostEqual(toplevel_stack.rotation_angle, 1.55, places=2)
-
-    self.assertEqual(light_stack.image_type, 'light')
-    self.assertNotEqual(light_stack.content_hash, None)
-    self.assertEqual(len(light_stack.frames), 3)
-    self.assertEqual(light_stack.dependencies,
-                     {'dark': {
-                         'stack_id': dark_stack.content_hash
-                     }})
-    self.assertNotEqual(light_stack.oldest_date, None)
-    self.assertNotEqual(light_stack.newest_date, None)
-    self.assertEqual(light_stack.camera, 'ZWO ASI6200MM Pro')
-    self.assertAlmostEqual(light_stack.mean_temperature, -12.9, places=3)
-    self.assertEqual(light_stack.exposure_s, [300])
-    self.assertEqual(light_stack.integration_s, 3 * 300)
-    self.assertEqual(light_stack.width_pixels, 9576)
-    self.assertEqual(light_stack.height_pixels, 6388)
-
-    self.assertEqual(dark_stack.image_type, 'dark')
-    self.assertNotEqual(dark_stack.content_hash, None)
-    self.assertEqual(len(dark_stack.frames), 5)
-    self.assertEqual(len(dark_stack.dependencies), 0)
-    self.assertNotEqual(dark_stack.oldest_date, None)
-    self.assertNotEqual(dark_stack.newest_date, None)
-    self.assertEqual(dark_stack.camera, 'ZWO ASI6200MM Pro')
-    self.assertEqual(dark_stack.mean_temperature, -10.0)
-    self.assertEqual(dark_stack.exposure_s, [300])
-    self.assertEqual(dark_stack.integration_s, 5 * 300)
-    self.assertEqual(dark_stack.width_pixels, 9576)
-    self.assertEqual(dark_stack.height_pixels, 6388)
+  assert stack.content_hash != None
+  assert len(stack.frames) == 5
+  assert stack.image_type == 'dark'
+  assert stack.oldest_date != None
+  assert stack.newest_date != None
+  assert stack.camera == 'ZWO ASI6200MM Pro'
+  assert stack.mean_temperature == -15.0
+  assert stack.exposure_s == [300]
+  assert stack.integration_s == 5 * 300
+  assert stack.width_pixels == 9576
+  assert stack.height_pixels == 6388
 
 
-if __name__ == "__main__":
-  unittest.main()
+def test_one_light_one_dark(test_context):
+  copy_testdata_frames(target_name='NGC7635', dest_dir=context.input_dirs[0])
+  make_synthetic_frames(prefix='dark',
+                        number=5,
+                        image_type='Dark',
+                        fill_value=100,
+                        instrument='ZWO ASI6200MM Pro',
+                        width_pixels=9576,
+                        height_pixels=6388,
+                        temperature=-10,
+                        exposure=300,
+                        dest_dir=context.input_dirs[0])
+
+  run_graph(build_compute_graph())
+
+  stacks = context.stacks
+  assert len(stacks) == 1
+  assert len(context.calibration_stacks) == 1
+
+  toplevel_stack = next(
+      stack for stack in stacks.values() if isinstance(stack, CompositeStack))
+  assert len(toplevel_stack.contents) == 1
+  light_stack = next(iter(toplevel_stack.contents.values()))
+  dark_stack = next(
+      stack for stack in context.calibration_stacks.values()
+      if isinstance(stack, SimpleStack) and stack.image_type == 'dark')
+
+  assert toplevel_stack.image_type == 'light'
+  assert toplevel_stack.stable_hash != None
+  assert toplevel_stack.content_hash != None
+  assert len(toplevel_stack.contents) == 1
+  assert toplevel_stack.oldest_date != None
+  assert toplevel_stack.newest_date != None
+  assert toplevel_stack.camera == 'ZWO ASI6200MM Pro'
+  assert toplevel_stack.filter == 'H'
+  assert toplevel_stack.mean_temperature == pytest.approx(-12.9)
+  assert toplevel_stack.exposure_s == [300]
+  assert toplevel_stack.integration_s == 3 * 300
+  assert toplevel_stack.width_pixels == 9576
+  assert toplevel_stack.height_pixels == 6388
+  assert toplevel_stack.name == 'Bubble nebula'
+  assert np.allclose(toplevel_stack.center, [350.183329899, 61.2229195667])
+  assert toplevel_stack.image_scale == pytest.approx(0.378, rel=1e-2)
+  assert toplevel_stack.rotation_angle == pytest.approx(1.55, rel=1e-2)
+
+  assert light_stack.image_type == 'light'
+  assert light_stack.content_hash != None
+  assert len(light_stack.frames) == 3
+  assert light_stack.dependencies == {
+      'dark': {
+          'stack_id': dark_stack.content_hash
+      }
+  }
+  assert light_stack.oldest_date != None
+  assert light_stack.newest_date != None
+  assert light_stack.camera == 'ZWO ASI6200MM Pro'
+  assert light_stack.mean_temperature == pytest.approx(-12.9)
+  assert light_stack.exposure_s == [300]
+  assert light_stack.integration_s == 3 * 300
+  assert light_stack.width_pixels == 9576
+  assert light_stack.height_pixels == 6388
+
+  assert dark_stack.image_type == 'dark'
+  assert dark_stack.content_hash != None
+  assert len(dark_stack.frames) == 5
+  assert len(dark_stack.dependencies) == 0
+  assert dark_stack.oldest_date != None
+  assert dark_stack.newest_date != None
+  assert dark_stack.camera == 'ZWO ASI6200MM Pro'
+  assert dark_stack.mean_temperature == -10.0
+  assert dark_stack.exposure_s == [300]
+  assert dark_stack.integration_s == 5 * 300
+  assert dark_stack.width_pixels == 9576
+  assert dark_stack.height_pixels == 6388

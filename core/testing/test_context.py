@@ -1,10 +1,16 @@
-from ray_infra import ray_local
-
 from pathlib import Path
 import tempfile
 import datetime
+from dataclasses import dataclass
+from typing import Any
 
 from context import context
+
+
+@dataclass(frozen=True)
+class TestContext:
+  input_dir_obj: Any
+  output_dir_obj: Any
 
 
 def make_test_context(
@@ -31,4 +37,4 @@ def make_test_context(
   context.master_thumbnail_width = 2160
   context.subframe_mosaic_samples = 500
 
-  return input_dir_obj, output_dir_obj
+  return TestContext(input_dir_obj, output_dir_obj)
