@@ -112,7 +112,7 @@ class CompositeStacksDict(dict[str, CompositeStack]):
     return hash_list_int([self[k].content_hash for k in sorted(self.keys())])
 
   def __str__(self):
-    return f'SimpleStacksDict({len(self)})'
+    return f'CompositeStacksDict({len(self)})'
 
 
 Stack = SimpleStack | CompositeStack
