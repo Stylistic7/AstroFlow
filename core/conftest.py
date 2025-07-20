@@ -1,5 +1,6 @@
 import ray
 import pytest
+import time
 
 from testing import make_test_context
 
@@ -17,11 +18,6 @@ def init_ray(worker_id):
   from ray_infra.ray_local import enable_test_mode
   enable_test_mode()
   assert ray.is_initialized()
-
-  yield
-
-  # Teardown code
-  ray.shutdown()
 
 
 @pytest.fixture(autouse=True)
