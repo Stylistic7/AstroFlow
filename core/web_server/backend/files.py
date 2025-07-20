@@ -49,8 +49,6 @@ def list_dir():
 @files_bp.route('/api/select_file', methods=['POST'])
 def select_file():
   data = request.get_json()
-  print(f'### select_file data {data}')
-
   type = data['type']
   stack_id = data['stack_id']
   run_id = data['run_id']
@@ -62,7 +60,6 @@ def select_file():
   stack_settings.dependencies[type] = {'filename': filename}
   settings.stack_settings[run_id] = stack_settings
   context.settings = settings
-  print(f'### context.settings is now {context.settings}')
 
   # TODO: Maybe don't pass the entire settings struct?
   state.dispatch(

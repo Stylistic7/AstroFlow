@@ -54,7 +54,6 @@ def scatter_customize_stacks() -> Graph:
 @ray.remote
 def customize_stack(stack: CompositeStack,
                     settings: Settings) -> CustomizedStack:
-  print(f'### customize_stack stack {stack} settings {settings}')
   stack = associate_with_stack(stack)
   stack = select_subframes(stack)
   stack = apply_quarantine(stack)
