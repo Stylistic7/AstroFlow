@@ -7,10 +7,7 @@ from pathlib import Path
 
 def _create_cache() -> diskcache.Cache:
   if 'ASTROFLOW_MOCK_CACHE' in os.environ:
-    namespace = os.environ.get("ASTROFLOW_MOCK_NAMESPACE", "AstroFlow")
-    print(f'### Using test cache in namespace {namespace}')
-    manager = ray.get_actor('temp_dir_manager', namespace=namespace)
-    temp_dir = ray.get(manager.get_temp_dir.remote())
+    temp_dir = os.environ['ASTROFLOW_MOCK_CACHE']
     print(f'### Using test cache at {temp_dir}')
     return diskcache.Cache(temp_dir)
   else:

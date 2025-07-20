@@ -1,7 +1,6 @@
 # This setup is used only in tests. It instructs the cache module to return
 # a test cache (in the working directory), and it starts a new, single-node
 # Ray cluster that has access to both diskcache and PixInsight.
-
 import os
 import ray
 import uuid
@@ -14,22 +13,19 @@ def get_available_resources() -> Any:
   return ray.available_resources()
 
 
-# Define the actor responsible for creating and managing the temporary directory
-@ray.remote(resources={'diskcache': 0.001})
-class TempDirManager:
-
-  def __init__(self) -> None:
-    # Create the temporary directory when the actor is initialized
-    self.temp_dir = tempfile.mkdtemp()
-    print(f"Temporary directory created: {self.temp_dir}")
-
-  def get_temp_dir(self) -> str:
-    return self.temp_dir
+_context_actor = None
+_state_actor = None
 
 
-if 'ASTROFLOW_MOCK_NAMESPACE' not in os.environ:
-  print('### Setting ASTROFLOW_MOCK_CACHE to true')
-  os.environ["ASTROFLOW_MOCK_CACHE"] = "true"
+def enable_test_mode() -> None:
+  global _context_actor, _state_actor
+
+  print(f'### Entering enable_test_mode for pid {os.getpid()}')
+  assert not ray.is_initialized()
+
+  temp_dir = tempfile.mkdtemp()
+  print(f'### Setting ASTROFLOW_MOCK_CACHE to {temp_dir}')
+  os.environ["ASTROFLOW_MOCK_CACHE"] = temp_dir
 
   namespace = str(uuid.uuid4())
   os.environ["ASTROFLOW_MOCK_NAMESPACE"] = namespace
@@ -60,23 +56,20 @@ if 'ASTROFLOW_MOCK_NAMESPACE' not in os.environ:
 
   print("### Cluster resources:", ray.get(get_available_resources.remote()))
 
-  # The TempDirManager just creates a temp directory on the node that has the
-  # `diskcache` resource (usually the head node), and makes that directory
-  # available to every other worker on that node. Think of it as a "singleton"
-  # temp directory. This is only used during testing -- the diskcache is created
-  # in this temp directory.
-  manager = TempDirManager.options(name='temp_dir_manager',
-                                   namespace=namespace,
-                                   get_if_exists=True).remote()  # type: ignore
-
-  # This is a hack that waits until the TempDirManager is actually alive.
-  temp_dir = ray.get(manager.get_temp_dir.remote())
-
   from context import ContextActor
 
-  context_actor = ContextActor.options(
-      name='context', namespace=namespace,
-      get_if_exists=True).remote()  # type: ignore
+  _context_actor = ContextActor.options(name='context',
+                                        namespace=namespace,
+                                        get_if_exists=True).remote()
+  actor = ray.get_actor('context', namespace=namespace)
+  _ = ray.get(actor.get_cache_keys.remote())
 
-  # This is a hack that waits until the ContextActor is actually alive.
-  ray.get(context_actor.get_cache_keys.remote())
+  from state.actor import StateActor
+
+  _state_actor = StateActor.options(name='state',
+                                    namespace=namespace,
+                                    get_if_exists=True).remote()
+  actor = ray.get_actor('state', namespace=namespace)
+  _ = ray.get(actor.dispatch.remote(dict(type='noop')))
+
+  print(f'### Test actors are all alive.')
