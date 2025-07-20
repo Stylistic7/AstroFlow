@@ -1,13 +1,16 @@
 from pathlib import Path
 import ray
+import numpy as np
+from spherical_geometry.polygon import SingleSphericalPolygon
 
 from context import context
 from stacks.stacking import stack_files
 from stacks.composite_stack import CompositeStack
 from stacks.post_process import post_process_stack
+from stacks.convert_to_dict import convert_to_dict
 from dependency_graph import Graph, Node
 from decorators import cached
-from metadata.image_metadata import compute_image_metadata, load_metadata
+from metadata.image_metadata import compute_image_metadata
 from customization.types import CustomizedStack
 from customization.subframe_selection import get_light_frames_sorted_by_stars
 from previews.types import QualityLevel
@@ -87,3 +90,28 @@ def get_stack_image(mode: QualityLevel, stack: CompositeStack) -> Graph:
     return Graph({
         (post_process_stack, stack): {(build_stacking_subgraph, stack)}
     })
+
+
+@ray.remote
+def process_stacks_for_ui() -> None:
+
+  def my_transform(v):
+    if type(v) is np.ndarray:
+      return v.tolist()
+    if type(v) is SingleSphericalPolygon:
+      return v.points.tolist()
+    return v
+
+  def prepare_stack(stack: CustomizedStack):
+    result = convert_to_dict(stack, [['contents', '*', 'metadata']],
+                             transform=my_transform)
+
+    filenames = []
+    for s in stack.contents.values():
+      filenames += [m.filename for m in s.metadata.values()]
+
+    result['filenames'] = filenames
+
+    return result
+
+  context.ui_stacks = {h: prepare_stack(s) for h, s in context.stacks.items()}

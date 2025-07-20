@@ -8,7 +8,7 @@ from calibration import identify_calibration_stacks
 from previews.stack_thumbnails import scatter_stack_thumbnails
 from previews.types import QualityLevel
 from mosaics.identification import identify_mosaics
-from stacks.compute_graph import build_stacking_subgraph
+from stacks.compute_graph import build_stacking_subgraph, process_stacks_for_ui
 from targets.compute_graph import build_target_subgraph
 from targets.types import TargetsDict
 from targets.identification import group_stacks_into_targets
@@ -182,6 +182,7 @@ def build_compute_graph() -> Graph:
           (scatter_compute_image_metadata, 'all'),
           build_regroup_graph,
           build_customize_graph,
+          process_stacks_for_ui,
           build_preview_graph,
           build_main_processing_graph,
       )

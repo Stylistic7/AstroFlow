@@ -4,6 +4,7 @@ from enum import Enum
 from state.types import Action, State
 
 from context import context
+from stacks.compute_graph import process_stacks_for_ui
 from dependency_graph import Graph, run_graph
 from customization.compute_graph import customize_stack, store_customized_stack
 from typing import Any
@@ -13,15 +14,23 @@ def _get_namespace() -> str:
   return os.environ.get("ASTROFLOW_MOCK_NAMESPACE", "AstroFlow")
 
 
-def update_settings(state: State, action: Action) -> tuple[State, list[Action]]:
-  stack = context.stacks[action['stack_id']]
-  graph = Graph(
-      {store_customized_stack: {(customize_stack, stack, action['settings'])}})
-  print(f'### update_settings running graph...')
-  run_graph(graph)
-  print(f'### update_settings graph done')
+def _announce(state: State, action: Action) -> tuple[State, list[Action]]:
+  from web_server.backend.announcer import announce
+  announce(action['message'])
 
   return state, []
+
+
+def _update_settings(state: State,
+                     action: Action) -> tuple[State, list[Action]]:
+  stack = context.stacks[action['stack_id']]
+  graph = Graph({
+      store_customized_stack: {(customize_stack, stack, action['settings'])},
+      process_stacks_for_ui: {store_customized_stack}
+  })
+  run_graph(graph)
+
+  return state, [Action(type='announce', message='reload_data')]
 
 
 @ray.remote(max_restarts=-1, max_task_retries=-1)
@@ -36,8 +45,10 @@ class StateActor:
     print(f"### dispatch action type {action['type']}")
 
     match action['type']:
+      case 'announce':
+        self.state, new_actions = _announce(self.state, action)
       case 'update_settings':
-        self.state, new_actions = update_settings(self.state, action)
+        self.state, new_actions = _update_settings(self.state, action)
 
     for action in new_actions:
       self.dispatch(action)

@@ -21,6 +21,7 @@ from distutils.util import strtobool
 from flask.json.provider import DefaultJSONProvider
 from pathlib import Path
 from functools import lru_cache
+import objsize
 
 from state.state_machine import enqueue_action
 from context import context, get_cache
@@ -33,7 +34,6 @@ from web_server.backend.settings import settings_bp
 from web_server.backend.thumbnails import thumbnails_bp
 from web_server.backend.compute_graphs import compute_graphs_bp
 from web_server.backend.videos import videos_bp
-from web_server.backend.convert_to_dict import convert_to_dict
 from web_server.backend.router import stateful_route
 
 import plotly.express as px
@@ -83,12 +83,12 @@ base_path = get_base_path()
 print(f'### base_path {base_path}')
 
 if getattr(sys, 'frozen', False):
-  print('App is frozen')
+  print('### Starting web server: app is frozen')
   app = flask.Flask(__name__,
                     template_folder=f'{base_path}/core/web_server/templates',
                     static_folder=f'{base_path}/core/web_server/static')
 else:
-  print('App is not frozen')
+  print('Starting web server: app is not frozen')
   app = flask.Flask(
       __name__,
       template_folder=f'{base_path}/core/web_server/frontend/build',
@@ -192,35 +192,9 @@ def targets():
   return {k: _make_json_serializable(v) for k, v in context.targets.items()}
 
 
-def my_transform(v):
-  if type(v) is np.ndarray:
-    return v.tolist()
-  if type(v) is SingleSphericalPolygon:
-    return v.points.tolist()
-  return v
-
-
-@lru_cache(maxsize=1)
-def prepare_stacks(stacks: Any) -> dict[str, Any]:
-
-  def prepare_stack(stack: CustomizedStack):
-    result = convert_to_dict(stack, [['contents', '*', 'metadata']],
-                             transform=my_transform)
-
-    filenames = []
-    for s in stack.contents.values():
-      filenames += [m.filename for m in s.metadata.values()]
-
-    result['filenames'] = filenames
-
-    return result
-
-  return {h: prepare_stack(s) for h, s in stacks.items()}
-
-
 @app.route('/stacks')
 def stacks():
-  return prepare_stacks(context.stacks)
+  return context.ui_stacks
 
 
 @app.route('/calibration_stacks')
@@ -418,3 +392,5 @@ def flask_thread_body():
 def start_flask():
   flask_thread = threading.Thread(target=flask_thread_body)
   flask_thread.start()
+
+  return flask_thread
