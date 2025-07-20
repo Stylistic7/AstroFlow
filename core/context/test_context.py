@@ -1,14 +1,11 @@
-from ray_infra import ray_local
-
 import unittest
 import ray
 import numpy as np
 from objsize import get_deep_size
+import time
 
 from context import get_cache
-from context import cache, context, WriteMode
-
-cache = get_cache()
+from context import context, WriteMode
 
 
 @ray.remote
@@ -20,6 +17,7 @@ class TestContext(unittest.TestCase):
 
   def setUp(self):
     context.clear()
+    cache = get_cache()
     cache.clear()
 
   def test_set_and_get(self):
@@ -51,6 +49,7 @@ class TestContext(unittest.TestCase):
     self.assertTrue(all(type(v) is ray.ObjectRef for v in ref_dict.values()))
     self.assertLess(get_deep_size(ref_dict), 1000)
 
+    cache = get_cache()
     self.assertEqual(list(cache.iterkeys()), ['biggie'])
     self.assertEqual(type(cache['biggie']), np.ndarray)
 
@@ -62,10 +61,12 @@ class TestContext(unittest.TestCase):
     ref_dict = context.get_ref_dict()
     self.assertEqual(len(ref_dict), 0)
 
+    cache = get_cache()
     self.assertEqual(list(cache.iterkeys()), ['biggie'])
     self.assertEqual(type(cache['biggie']), np.ndarray)
 
   def test_load_from_cache(self):
+    cache = get_cache()
     cache['foo'] = 'bar'
     self.assertEqual(context.foo, 'bar')
 
@@ -85,6 +86,7 @@ class TestContext(unittest.TestCase):
 
   def test_contains(self):
     self.assertFalse(context.contains('foo'))
+    cache = get_cache()
     cache['foo'] = 'bar'
     self.assertTrue(context.contains('foo'))
 
@@ -97,6 +99,7 @@ class TestContext(unittest.TestCase):
 
     context.lazy = {'abc123': 'value_abc123', 'def789': 'value_def789'}
 
+    cache = get_cache()
     self.assertEqual(cache['lazy'], ['abc123', 'def789'])
     self.assertEqual(cache[('lazy', 'abc123')], 'value_abc123')
     self.assertEqual(cache[('lazy', 'def789')], 'value_def789')

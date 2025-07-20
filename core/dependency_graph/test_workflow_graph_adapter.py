@@ -1,13 +1,10 @@
-from ray_infra import ray_local
-
 from typing import TypeVar
 import unittest
 import ray
 import structlog
 import pprint
 
-import compute_graph
-from context import context, get_cache
+from context import context
 from dependency_graph import Graph, Node, run_graph
 from dependency_graph.debugging import print_result_dict
 from testing import make_test_context
@@ -16,7 +13,6 @@ from hashing import hash_call
 from testing.sidecar_hasher import SidecarHasher
 from dependency_graph.workflow_graph_adapter import to_workflow_graph
 
-cache = get_cache()
 log = structlog.get_logger()
 
 T = TypeVar('T')

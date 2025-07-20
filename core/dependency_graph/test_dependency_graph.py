@@ -1,4 +1,3 @@
-from ray_infra import ray_local
 from typing import TypeVar
 import os
 import unittest
@@ -7,8 +6,6 @@ import time
 
 from context import context, get_cache
 from dependency_graph import Graph, Node, GraphStatus, TopologicalSorterWithStatus, canonicalize_graph, run_graph, chain
-
-cache = get_cache()
 
 T = TypeVar('T')
 
@@ -25,6 +22,7 @@ def my_local_task(arg: T) -> T:
 
 @ray.remote(resources={'diskcache': 0.001})
 def my_task_with_global(arg: T) -> T:
+  cache = get_cache()
   cache['foo'] = cache.get('foo', 0) + 1
   return arg
 
@@ -246,6 +244,7 @@ class TestDependencyGraph(unittest.TestCase):
     self.assertEqual(results.max_parallelism_seen, 2)
 
   def test_global_variable(self) -> None:
+    cache = get_cache()
     cache['foo'] = 10
 
     A = (my_task_with_global, 'A')

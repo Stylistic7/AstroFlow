@@ -1,17 +1,12 @@
-from ray_infra import ray_local
-
 from typing import TypeVar
 import unittest
 import ray
 import structlog
 
-from context import context, get_cache
 from dependency_graph import Graph, run_graph
-
 from dependency_graph.logging import capture_logs
 from dependency_graph.debugging import node_to_string
 
-cache = get_cache()
 log = structlog.get_logger()
 
 T = TypeVar('T')
