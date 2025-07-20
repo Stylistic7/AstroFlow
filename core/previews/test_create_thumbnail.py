@@ -1,15 +1,12 @@
-from ray_infra import ray_local
-
 import ray
 import numpy as np
 import datetime
-import unittest
 import datetime
 
 from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import run_graph
-from testing import make_test_context, copy_testdata_frames
+from testing import copy_testdata_frames
 from file_io.types import TiffFilePath
 from file_io.tiff_file_io import write_tiff_image
 from stacks.composite_stack import CompositeStack
@@ -26,34 +23,20 @@ def stack_files(stack: CompositeStack) -> TiffFilePath:
   return output_path
 
 
-class TestCreateThumbnailDecorator(unittest.TestCase):
+def test_single_stack(test_context) -> None:
+  copy_testdata_frames(prefix='light_run_0',
+                       target_name='NGC7635',
+                       start_datetime=datetime.datetime(2024, 2, 5, 16, 29, 43),
+                       dest_dir=context.input_dirs[0])
 
-  def setUp(self) -> None:
-    self.input_dir_obj, self.output_dir_obj = make_test_context()
+  run_graph(build_compute_graph())
 
-  def tearDown(self) -> None:
-    self.input_dir_obj.cleanup()
-    self.output_dir_obj.cleanup()
+  stacks = context.stacks
+  assert len(stacks) == 1
+  stack = next(iter(stacks.values()))
 
-  def test_single_stack(self) -> None:
-    copy_testdata_frames(prefix='light_run_0',
-                         target_name='NGC7635',
-                         start_datetime=datetime.datetime(
-                             2024, 2, 5, 16, 29, 43),
-                         dest_dir=context.input_dirs[0])
+  ray.get(stack_files.remote(stack))
 
-    run_graph(build_compute_graph())
-
-    stacks = context.stacks
-    self.assertEqual(len(stacks), 1)
-    stack = next(iter(stacks.values()))
-
-    ray.get(stack_files.remote(stack))
-
-    thumbnail = stack_files.thumbnail_fn(stack)
-    self.assertIsNotNone(thumbnail)
-    self.assertTrue(isinstance(thumbnail, bytes))
-
-
-if __name__ == "__main__":
-  unittest.main()
+  thumbnail = stack_files.thumbnail_fn(stack)
+  assert thumbnail != None
+  assert isinstance(thumbnail, bytes)

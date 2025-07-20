@@ -1,116 +1,94 @@
-from ray_infra import ray_local
-
 import ray
 import datetime
-import unittest
 import datetime
-from pathlib import Path
 
 from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import run_graph
 from file_io.types import WithSidecar
-from testing import make_test_context, make_synthetic_frames, copy_testdata_frames
+from testing import make_synthetic_frames, copy_testdata_frames
 from previews.stack_thumbnails import stack_thumbnail, calibration_stack_thumbnail
 from file_io.find_image_files import find_image_files
 
 
-class TestImagePreviews(unittest.TestCase):
+def test_stack_dependency_graph(test_context) -> None:
+  # These runs of dark and bias frames will be used by both runs of light
+  # frames.
+  make_synthetic_frames(prefix='dark',
+                        number=5,
+                        image_type='Dark',
+                        fill_value=100,
+                        instrument='ZWO ASI6200MM Pro',
+                        width_pixels=9576,
+                        height_pixels=6388,
+                        temperature=-15,
+                        dest_dir=context.input_dirs[0])
+  make_synthetic_frames(prefix='bias',
+                        number=7,
+                        image_type='Bias',
+                        fill_value=50,
+                        instrument='ZWO ASI6200MM Pro',
+                        width_pixels=9576,
+                        height_pixels=6388,
+                        temperature=-15,
+                        dest_dir=context.input_dirs[0])
 
-  def setUp(self) -> None:
-    self.input_dir_obj, self.output_dir_obj = make_test_context()
-    context.regroup = True
+  # The first run of light frames and its associated flats.
+  copy_testdata_frames(prefix='light_run_0',
+                       target_name='NGC7635',
+                       start_datetime=datetime.datetime(2024, 2, 5, 16, 29, 43),
+                       dest_dir=context.input_dirs[0])
+  make_synthetic_frames(prefix='flat_run_0',
+                        number=11,
+                        image_type='Flat',
+                        start_datetime=datetime.datetime(
+                            2024, 2, 5, 18, 29, 43),
+                        fill_value=50,
+                        instrument='ZWO ASI6200MM Pro',
+                        width_pixels=9576,
+                        height_pixels=6388,
+                        temperature=-15,
+                        dest_dir=context.input_dirs[0])
 
-  def tearDown(self) -> None:
-    self.input_dir_obj.cleanup()
-    self.output_dir_obj.cleanup()
+  # The second run of light frames and its associated flats.
+  copy_testdata_frames(prefix='light_run_1',
+                       target_name='NGC7635',
+                       start_datetime=datetime.datetime(2024, 2, 7, 16, 29, 43),
+                       dest_dir=context.input_dirs[0])
+  make_synthetic_frames(prefix='flat_run_1',
+                        number=13,
+                        image_type='Flat',
+                        start_datetime=datetime.datetime(
+                            2024, 2, 7, 18, 29, 43),
+                        fill_value=50,
+                        instrument='ZWO ASI6200MM Pro',
+                        width_pixels=9576,
+                        height_pixels=6388,
+                        temperature=-15,
+                        dest_dir=context.input_dirs[0])
 
-  def test_stack_dependency_graph(self) -> None:
-    # These runs of dark and bias frames will be used by both runs of light
-    # frames.
-    make_synthetic_frames(prefix='dark',
-                          number=5,
-                          image_type='Dark',
-                          fill_value=100,
-                          instrument='ZWO ASI6200MM Pro',
-                          width_pixels=9576,
-                          height_pixels=6388,
-                          temperature=-15,
-                          dest_dir=context.input_dirs[0])
-    make_synthetic_frames(prefix='bias',
-                          number=7,
-                          image_type='Bias',
-                          fill_value=50,
-                          instrument='ZWO ASI6200MM Pro',
-                          width_pixels=9576,
-                          height_pixels=6388,
-                          temperature=-15,
-                          dest_dir=context.input_dirs[0])
+  filenames = find_image_files(context.input_dirs[0])
+  assert len(filenames) == 42
 
-    # The first run of light frames and its associated flats.
-    copy_testdata_frames(prefix='light_run_0',
-                         target_name='NGC7635',
-                         start_datetime=datetime.datetime(
-                             2024, 2, 5, 16, 29, 43),
-                         dest_dir=context.input_dirs[0])
-    make_synthetic_frames(prefix='flat_run_0',
-                          number=11,
-                          image_type='Flat',
-                          start_datetime=datetime.datetime(
-                              2024, 2, 5, 18, 29, 43),
-                          fill_value=50,
-                          instrument='ZWO ASI6200MM Pro',
-                          width_pixels=9576,
-                          height_pixels=6388,
-                          temperature=-15,
-                          dest_dir=context.input_dirs[0])
+  graph = build_compute_graph()
+  run_graph(graph)
 
-    # The second run of light frames and its associated flats.
-    copy_testdata_frames(prefix='light_run_1',
-                         target_name='NGC7635',
-                         start_datetime=datetime.datetime(
-                             2024, 2, 7, 16, 29, 43),
-                         dest_dir=context.input_dirs[0])
-    make_synthetic_frames(prefix='flat_run_1',
-                          number=13,
-                          image_type='Flat',
-                          start_datetime=datetime.datetime(
-                              2024, 2, 7, 18, 29, 43),
-                          fill_value=50,
-                          instrument='ZWO ASI6200MM Pro',
-                          width_pixels=9576,
-                          height_pixels=6388,
-                          temperature=-15,
-                          dest_dir=context.input_dirs[0])
+  assert len(context.stacks) == 1
+  assert len(context.calibration_stacks) == 4
 
-    filenames = find_image_files(context.input_dirs[0])
-    self.assertEqual(len(filenames), 42)
+  def check_thumbnail(stacks, image_type, fn):
+    matching_stacks = [s for s in stacks.values() if s.image_type == image_type]
+    assert len(matching_stacks) == 1
+    stack = next(iter(matching_stacks))
 
-    graph = build_compute_graph()
-    run_graph(graph)
+    file = ray.get(fn.remote(stack))
+    assert isinstance(file, WithSidecar)
 
-    self.assertEqual(len(context.stacks), 1)
-    self.assertEqual(len(context.calibration_stacks), 4)
+    # TODO: This test overlaps a bunch of other tests.
+    thumbnail = fn.thumbnail_fn(stack)
+    assert thumbnail != None
+    assert isinstance(thumbnail, bytes)
 
-    def check_thumbnail(stacks, image_type, fn):
-      matching_stacks = [
-          s for s in stacks.values() if s.image_type == image_type
-      ]
-      self.assertEqual(len(matching_stacks), 1)
-      stack = next(iter(matching_stacks))
-
-      file = ray.get(fn.remote(stack))
-      self.assertTrue(isinstance(file, WithSidecar))
-
-      # TODO: This test overlaps a bunch of other tests.
-      thumbnail = fn.thumbnail_fn(stack)
-      self.assertIsNotNone(thumbnail)
-      self.assertTrue(isinstance(thumbnail, bytes))
-
-    check_thumbnail(context.stacks, 'light', stack_thumbnail)
-    check_thumbnail(context.calibration_stacks, 'dark',
-                    calibration_stack_thumbnail)
-
-
-if __name__ == "__main__":
-  unittest.main()
+  check_thumbnail(context.stacks, 'light', stack_thumbnail)
+  check_thumbnail(context.calibration_stacks, 'dark',
+                  calibration_stack_thumbnail)
