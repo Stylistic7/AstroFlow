@@ -13,6 +13,7 @@ from state.ray_control import start_ray_head_node, start_ray_subordinate_node, s
 from state.astroflow_zeroconf import AstroFlowZeroconf
 from state.types import State, Action
 from dependency_graph import run_graph
+import pix
 
 T = TypeVar('T')
 
@@ -39,13 +40,11 @@ def get_state(key: str):
   return _state.get(key, None)
 
 
-def _get_namespace() -> str:
-  return os.environ.get("ASTROFLOW_MOCK_NAMESPACE", "AstroFlow")
-
-
 def _init(state: State, action: Action) -> tuple[State, list[Action]]:
+  print(f'### running action _init')
   new_actions = []
 
+  new_actions.append(Action(type='prepare_pix'))
   new_actions.append(Action(type='start_gunicorn'))
   new_actions.append(Action(type='start_zeroconf'))
 
@@ -154,11 +153,16 @@ def _stop_flask(state: State, action: Action) -> tuple[State, list[Action]]:
   return state, []
 
 
+def _prepare_pix(state: State, action: Action) -> tuple[State, list[Action]]:
+  pix.prepare_cache()
+  return state, []
+
+
 def _start_gunicorn(state: State, action: Action) -> tuple[State, list[Action]]:
   from state.gunicorn_control import GunicornManager
   from state.gunicorn_configs import guincorn_configs
   state['gunicorn_managers'] = [
-      GunicornManager(c).start() for c in guincorn_configs()
+      GunicornManager(c).start() for c in guincorn_configs().values()
   ]
 
   return state, []
@@ -247,6 +251,9 @@ def dispatch(action: Action) -> State:
 
   # TODO: Eliminate this match.
   match action['type']:
+    case 'noop':
+      _state, new_actions = _state, []
+
     case 'init':
       _state, new_actions = _init(_state, action)
 

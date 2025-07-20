@@ -1,14 +1,31 @@
-import pytest
-
 import datetime
 import unittest
-from web_server.backend import app
+import httpx
+import threading
+import queue
+import time
+import pytest
 
 from compute_graph import build_compute_graph
 from testing import make_test_context, copy_testdata_frames
 from context import context
 from dependency_graph import run_graph
-from state.actor import state
+from state.gunicorn_control import GunicornManager
+from state.gunicorn_configs import guincorn_configs
+
+
+def wait_for_sse_event(q: queue.Queue, ignore_heartbeats=True):
+  with httpx.stream('GET', 'http://localhost:8001/stream', timeout=None) as r:
+    buffer = ''
+    for line in r.iter_lines():
+      if line == '':
+        if buffer.startswith('event:') or buffer.startswith('data:'):
+          if not buffer.startswith('event: heartbeat') or not ignore_heartbeats:
+            q.put(buffer.strip())
+            return
+        buffer = ''
+      else:
+        buffer += line + '\n'
 
 
 class TestUpdateSettings(unittest.TestCase):
@@ -16,14 +33,12 @@ class TestUpdateSettings(unittest.TestCase):
   def setUp(self) -> None:
     self.input_dir_obj, self.output_dir_obj = make_test_context()
 
-    app.config['TESTING'] = True
-    self.client = app.test_client()
-
   def tearDown(self) -> None:
     self.input_dir_obj.cleanup()
     self.output_dir_obj.cleanup()
 
-  def test_stacks(self):
+  @pytest.mark.exclusive
+  def test_update_settings(self):
     copy_testdata_frames(prefix='light_run_0',
                          target_name='NGC7635',
                          start_datetime=datetime.datetime(
@@ -32,14 +47,24 @@ class TestUpdateSettings(unittest.TestCase):
 
     run_graph(build_compute_graph())
 
-    response = self.client.get('/stacks')
-    self.assertEqual(response.status_code, 200)
+    static_server = GunicornManager(guincorn_configs()['static_server']).start()
+    stream_server = GunicornManager(guincorn_configs()['stream_server']).start()
 
-    stacks = response.get_json()
+    time.sleep(5)
+
+    event_q = queue.Queue()
+    listener_thread = threading.Thread(target=wait_for_sse_event,
+                                       args=(event_q,))
+    listener_thread.start()
+
+    self.assertIsNotNone(context.ui_stacks)
+
+    response = httpx.get('http://localhost:8000/stacks')
+    self.assertEqual(response.status_code, 200)
+    stacks = response.json()
     self.assertEqual(len(stacks), 1)
     stack_id = next(iter(stacks))
     stack = stacks[stack_id]
-    print(f'### stack {stack}')
 
     runs = stack['contents']
     self.assertEqual(len(runs), 1)
@@ -51,4 +76,25 @@ class TestUpdateSettings(unittest.TestCase):
         'run_id': run_id,
         'filename': 'foo.fits'
     }
-    response = self.client.put('/api/select_file', json=params)
+    response = httpx.post('http://localhost:8000/api/select_file', json=params)
+
+    try:
+      sse = event_q.get(timeout=10)
+      print("### Got SSE:", sse)
+    except queue.Empty:
+      self.fail("Timed out waiting for SSE event")
+
+    response = httpx.get('http://localhost:8000/stacks')
+    self.assertEqual(response.status_code, 200)
+    stacks = response.json()
+    self.assertEqual(len(stacks), 1)
+    stack_id = next(iter(stacks))
+    stack = stacks[stack_id]
+
+    self.assertEqual(len(stack['contents']), 1)
+    run = next(iter(stack['contents'].values()))
+    self.assertEqual(run['dependencies'].get('flat', None),
+                     {'filename': 'foo.fits'})
+
+    static_server.stop()
+    stream_server.stop()
