@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import datetime
-from typing import Any, Sequence
+from collections.abc import Sequence
 from typing import Generic, TypeVar
 from beartype import beartype
 

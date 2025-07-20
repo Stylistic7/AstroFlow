@@ -2,7 +2,8 @@ from dataclasses import dataclass
 from beartype import beartype
 import numpy as np
 import astropy  # type: ignore
-from typing import Any, Sequence
+from typing import Any
+from collections.abc import Sequence
 
 from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon  # type: ignore
 
