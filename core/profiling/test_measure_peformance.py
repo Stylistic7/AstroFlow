@@ -1,11 +1,7 @@
-from ray_infra import ray_local
-
 import ray
-import unittest
 from pathlib import Path
 from PIL import Image
 import tempfile
-from typing import Any
 
 from context import context
 from cache.cached_decorator import make_cached_decorator, Injected
@@ -37,24 +33,22 @@ def make_large_image_remote(shape: tuple[int],
   return filename
 
 
-class TestTask(unittest.TestCase):
+def test_decorator(test_context):
+  from ray.util import get_node_ip_address
 
-  def test_decorator(self):
-    from ray.util import get_node_ip_address
+  context.num_make_large_image_runs = 0
+  fn_name = "make_large_image_remote"
+  node_ip = get_node_ip_address()
+  perf_key = ('performance_history', node_ip, fn_name)
 
-    context.num_make_large_image_runs = 0
-    fn_name = "make_large_image_remote"
-    node_ip = get_node_ip_address()
-    perf_key = ('performance_history', node_ip, fn_name)
+  context[perf_key] = []
 
-    context[perf_key] = []
+  with tempfile.TemporaryDirectory() as output_dir:
+    injected_context = {"output_dir": Path(output_dir)}
+    ray.get(
+        make_large_image_remote.remote((50, 50),
+                                       injected_context=injected_context))
 
-    with tempfile.TemporaryDirectory() as output_dir:
-      injected_context = {"output_dir": Path(output_dir)}
-      ray.get(
-          make_large_image_remote.remote((50, 50),
-                                         injected_context=injected_context))
-
-    history = context.get(perf_key, [])
-    self.assertTrue(len(history) > 0)
-    self.assertIsInstance(history[0], float)
+  history = context.get(perf_key, [])
+  assert len(history) > 0
+  assert isinstance(history[0], float)

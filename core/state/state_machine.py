@@ -8,7 +8,7 @@ import sys
 import uuid
 
 from context import context, get_cache, queue
-from ray_infra import connect_to_ray_cluster
+from ray_infra.ray_init import connect_to_ray_cluster
 from state.ray_control import start_ray_head_node, start_ray_subordinate_node, stop_ray_node
 from state.astroflow_zeroconf import AstroFlowZeroconf
 from state.types import State, Action

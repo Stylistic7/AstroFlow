@@ -1,21 +1,17 @@
-from ray_infra import ray_local
-
 import os
 import ray
 import numpy as np
-import unittest
 from dependency_graph import run_graph
 
 from decorators import cached
 from products import makes_image, get_producer, MediaType
 from compute_graph import build_compute_graph
-from testing import make_test_context, copy_testdata_frames
+from testing import copy_testdata_frames
 from context import context
 from file_io.types import TiffFilePath
 from file_io.tiff_file_io import write_tiff_image
 from stacks.composite_stack import CompositeStack
 from previews.types import QualityLevel
-
 from products.registry import clear_registry
 
 clear_registry(MediaType.IMAGE)
@@ -45,32 +41,24 @@ def stack_files(stack: CompositeStack) -> TiffFilePath:
   return output_path
 
 
-class TestRegistry(unittest.TestCase):
+def test_single_stack(test_context) -> None:
+  copy_testdata_frames(target_name='NGC7635', dest_dir=context.input_dirs[0])
+  run_graph(build_compute_graph())
+  stack = next(iter(context.stacks.values()))
 
-  def setUp(self) -> None:
-    self.input_dir_obj, self.output_dir_obj = make_test_context()
+  filename = ray.get(stack_files.remote(stack))
+  assert os.path.exists(filename)
 
-  def tearDown(self) -> None:
-    self.input_dir_obj.cleanup()
-    self.output_dir_obj.cleanup()
 
-  def test_single_stack(self) -> None:
-    copy_testdata_frames(target_name='NGC7635', dest_dir=context.input_dirs[0])
-    run_graph(build_compute_graph())
-    stack = next(iter(context.stacks.values()))
+def test_registry(test_context) -> None:
+  copy_testdata_frames(target_name='NGC7635', dest_dir=context.input_dirs[0])
+  run_graph(build_compute_graph())
+  stack = next(iter(context.stacks.values()))
 
-    filename = ray.get(stack_files.remote(stack))
-    self.assertTrue(os.path.exists(filename))
+  fn = get_producer(MediaType.IMAGE, CompositeStack, QualityLevel.SUBFRAME)
+  assert fn is not None
+  assert not fn.is_cached(stack)
 
-  def test_registry(self) -> None:
-    copy_testdata_frames(target_name='NGC7635', dest_dir=context.input_dirs[0])
-    run_graph(build_compute_graph())
-    stack = next(iter(context.stacks.values()))
-
-    fn = get_producer(MediaType.IMAGE, CompositeStack, QualityLevel.SUBFRAME)
-    self.assertIsNotNone(fn)
-    self.assertFalse(fn.is_cached(stack))
-
-    filename = ray.get(fn.remote(stack))
-    self.assertTrue(os.path.exists(filename))
-    self.assertTrue(fn.is_cached(stack))
+  filename = ray.get(fn.remote(stack))
+  assert os.path.exists(filename)
+  assert fn.is_cached(stack)
