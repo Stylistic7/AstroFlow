@@ -1,5 +1,3 @@
-from ray_infra import ray_local
-
 import datetime
 import numpy as np
 import os
