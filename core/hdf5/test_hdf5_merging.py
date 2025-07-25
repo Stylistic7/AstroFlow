@@ -1,17 +1,13 @@
-from ray_infra import ray_local
-
 import os
 import shutil
 import h5py
-from typing import TypeVar, Any
-import unittest
+from typing import TypeVar
 import ray
 from pathlib import Path
 import uuid
 import numpy as np
 
 from context import context
-from testing.test_context import make_test_context
 from dependency_graph import Graph, run_graph
 
 T = TypeVar('T')
@@ -66,30 +62,21 @@ def build_graph(output_h5_filename) -> Graph:
   })
 
 
-class TestHDF5Merging(unittest.TestCase):
+def test_simple_graph(test_context) -> None:
+  output_h5_filename = Path(context.output_dir) / 'foo.h5'
 
-  def setUp(self):
-    self.input_dir_obj, self.output_dir_obj = make_test_context()
+  graph = build_graph(output_h5_filename)
+  results, _ = run_graph(graph)
 
-  def tearDown(self):
-    self.input_dir_obj.cleanup()
-    self.output_dir_obj.cleanup()
+  valid_range = range(7)
+  with h5py.File(output_h5_filename, 'r') as h5_file:
+    expected_keys = {f"image_{i}" for i in valid_range}
+    actual_keys = set(h5_file.keys())
+    assert actual_keys == expected_keys
 
-  def test_simple_graph(self) -> None:
-    output_h5_filename = Path(context.output_dir) / 'foo.h5'
+    for i in valid_range:
+      key = f"image_{i}"
+      dataset = h5_file[key]
 
-    graph = build_graph(output_h5_filename)
-    results, _ = run_graph(graph)
-
-    valid_range = range(7)
-    with h5py.File(output_h5_filename, 'r') as h5_file:
-      expected_keys = {f"image_{i}" for i in valid_range}
-      actual_keys = set(h5_file.keys())
-      self.assertEqual(actual_keys, expected_keys)
-
-      for i in valid_range:
-        key = f"image_{i}"
-        dataset = h5_file[key]
-
-        self.assertEqual(dataset.shape, (100, 100))
-        self.assertTrue((dataset[...] == i).all())
+      assert dataset.shape == (100, 100)
+      assert (dataset[...] == i).all()

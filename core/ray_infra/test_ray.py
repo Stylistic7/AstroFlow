@@ -1,5 +1,3 @@
-from ray_infra import ray_local
-
 import ray
 import numpy as np
 

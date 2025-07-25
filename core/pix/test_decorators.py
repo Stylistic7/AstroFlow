@@ -1,10 +1,8 @@
-import unittest
 import tempfile
 import os
 import shutil
-from typing import Any
 
-import context
+from context import context
 
 from pix.classes import FilenameList, ImageList
 from pix.decorators import PixInsight
@@ -128,63 +126,61 @@ def stuck_task(images: ImageList) -> ImageList:
   pass
 
 
-class TestDecorators(unittest.TestCase):
+def test_bxt_only(test_context):
+  if context.get('mock_pixinsight', False):
+    return
 
-  def test_bxt_only(self):
-    if context.get('mock_pixinsight', False):
-      return
+  temp_dir = tempfile.TemporaryDirectory()
+  filenames = copy_testdata_frames('IC4701', temp_dir.name, number=1)
 
-    temp_dir = tempfile.TemporaryDirectory()
-    filenames = copy_testdata_frames('IC4701', temp_dir.name, number=1)
+  images = bxt_only(filenames)
 
-    images = bxt_only(filenames)
-
-    pix_tmp_dir = images[0].tmp_dir_obj.name
-    filenames = os.listdir(pix_tmp_dir)
-    self.assertCountEqual(filenames, ['blurx.xisf'])
-
-  def test_bxt_and_sxt(self):
-    if context.get('mock_pixinsight', False):
-      return
-
-    temp_dir = tempfile.TemporaryDirectory()
-    filenames = copy_testdata_frames('IC4701', temp_dir.name, number=1)
-
-    images = bxt_and_sxt(filenames)
-
-    pix_tmp_dir = images[0].tmp_dir_obj.name
-    filenames = os.listdir(pix_tmp_dir)
-    self.assertCountEqual(filenames, ['stars.xisf', 'starless.xisf'])
-
-  def test_bxt_align_sxt(self):
-    if context.get('mock_pixinsight', False):
-      return
-
-    temp_dir = tempfile.TemporaryDirectory()
-    filenames = copy_testdata_frames('IC4701', temp_dir.name, number=3)
-
-    images = bxt_align_sxt(filenames)
-
-    pix_tmp_dir = images[0].tmp_dir_obj.name
-    filenames = os.listdir(pix_tmp_dir)
-    self.assertCountEqual(filenames, ['stars.xisf', 'starless.xisf'])
-
-  def test_channel_combination(self):
-    if context.get('mock_pixinsight', False):
-      return
-
-    temp_dir = tempfile.TemporaryDirectory()
-    filenames = copy_testdata_frames('IC4701', temp_dir.name, number=3)
-
-    images = channel_combination(filenames)
-
-    pix_tmp_dir = images[0].tmp_dir_obj.name
-    filenames = os.listdir(pix_tmp_dir)
-    self.assertCountEqual(filenames, ['RGB.xisf'])
-
-  def test_stuck_task(self) -> None:
-    images = stuck_task([])
+  pix_tmp_dir = images[0].tmp_dir_obj.name
+  filenames = os.listdir(pix_tmp_dir)
+  assert sorted(filenames) == sorted(['blurx.xisf'])
 
 
-if __name__ == "__main__":
-  unittest.main()
+def test_bxt_and_sxt(test_context):
+  if context.get('mock_pixinsight', False):
+    return
+
+  temp_dir = tempfile.TemporaryDirectory()
+  filenames = copy_testdata_frames('IC4701', temp_dir.name, number=1)
+
+  images = bxt_and_sxt(filenames)
+
+  pix_tmp_dir = images[0].tmp_dir_obj.name
+  filenames = os.listdir(pix_tmp_dir)
+  assert sorted(filenames) == sorted(['stars.xisf', 'starless.xisf'])
+
+
+def test_bxt_align_sxt(test_context):
+  if context.get('mock_pixinsight', False):
+    return
+
+  temp_dir = tempfile.TemporaryDirectory()
+  filenames = copy_testdata_frames('IC4701', temp_dir.name, number=3)
+
+  images = bxt_align_sxt(filenames)
+
+  pix_tmp_dir = images[0].tmp_dir_obj.name
+  filenames = os.listdir(pix_tmp_dir)
+  assert sorted(filenames) == sorted(['stars.xisf', 'starless.xisf'])
+
+
+def test_channel_combination(test_context):
+  if context.get('mock_pixinsight', False):
+    return
+
+  temp_dir = tempfile.TemporaryDirectory()
+  filenames = copy_testdata_frames('IC4701', temp_dir.name, number=3)
+
+  images = channel_combination(filenames)
+
+  pix_tmp_dir = images[0].tmp_dir_obj.name
+  filenames = os.listdir(pix_tmp_dir)
+  assert sorted(filenames) == sorted(['RGB.xisf'])
+
+
+def test_stuck_task(test_context) -> None:
+  images = stuck_task([])

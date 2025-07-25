@@ -1,8 +1,8 @@
-import shell_script
-from image_solver import ImageSolver
-from blurxterminator import BlurXTerminator
-from automatic_background_extractor import AutomaticBackgroundExtractor
-from decorators import PixInsight
+from pix import shell_script
+from pix.tasks import ImageSolver
+from pix.tasks import BlurXTerminator
+from pix.tasks import AutomaticBackgroundExtractor
+from pix.decorators import PixInsight
 
 
 # TODO: Remove the () if possible.

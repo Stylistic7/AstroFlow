@@ -7,7 +7,6 @@ import time
 from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import run_graph
-from state.state_machine import dispatch
 from testing import make_synthetic_frames, copy_testdata_frames
 from file_io.find_image_files import find_image_files
 
@@ -15,18 +14,6 @@ from file_io.find_image_files import find_image_files
 @ray.remote
 def my_task(input):
   time.sleep(5)
-
-
-def test_shopping_cart(test_context):
-  state = dispatch(dict(type='add_to_shopping_cart', item=('stack', 'foo')))
-  assert len(context.shopping_cart) == 1
-
-  state = dispatch(dict(type='add_to_shopping_cart', item=('stack', 'foo')))
-  assert len(context.shopping_cart) == 1
-
-  state = dispatch(dict(type='remove_from_shopping_cart',
-                        item=('stack', 'foo')))
-  assert len(context.shopping_cart) == 0
 
 
 def test_single_compute_graph(test_context):

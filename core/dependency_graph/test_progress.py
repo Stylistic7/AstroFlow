@@ -1,8 +1,6 @@
-from ray_infra import ray_local
-
-import unittest
 import ray
 import time
+import pytest
 
 from dependency_graph import Graph, run_graph, graph_status_to_progress
 from decorators import measure_performance
@@ -25,29 +23,25 @@ def scatter(task, runtime, number):
   return Graph({gather: {(task, runtime, i) for i in range(number)}})
 
 
-class TestProgress(unittest.TestCase):
+def test_one_process(test_context):
+  counter = 10
 
-  def test_one_process(self):
-    counter = 10
+  def status_fn(status):
+    nonlocal counter
 
-    def status_fn(status):
-      nonlocal counter
+    progress = graph_status_to_progress(status)
 
-      progress = graph_status_to_progress(status)
+    if counter == 0:
+      return
 
-      if counter == 0:
-        return
+    print(f"### remaining_number {progress['process']['remaining_number']}")
+    print(f"### estimated_time {progress['process']['estimated_time']}")
 
-      self.assertEqual(progress['process']['remaining_number'], counter)
-      self.assertAlmostEqual(progress['process']['estimated_time'],
-                             counter,
-                             places=0)
+    assert progress['process']['remaining_number'] == counter
+    assert progress['process']['estimated_time'] == pytest.approx(counter,
+                                                                  rel=0.1)
 
-      counter -= 1
+    counter -= 1
 
-    graph = scatter(process, runtime=1, number=10)
-    run_graph(graph, status_fn=status_fn, status_interval=0)
-
-
-if __name__ == '__main__':
-  unittest.main()
+  graph = scatter(process, runtime=1, number=10)
+  run_graph(graph, status_fn=status_fn, status_interval=0)

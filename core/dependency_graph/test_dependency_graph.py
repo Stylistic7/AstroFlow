@@ -1,6 +1,6 @@
 from typing import TypeVar
 import os
-import unittest
+import pytest
 import ray
 import time
 
@@ -207,431 +207,449 @@ def build_recursive_graph(max_depth: int, width: int, depth: int = 1) -> Graph:
     })
 
 
-class TestDependencyGraph(unittest.TestCase):
+def test_simple_graph(test_context) -> None:
+  A = (my_remote_task, 'A')
+  B = (my_remote_task, 'B')
+  C = (my_remote_task, 'C')
+  D = (my_remote_task, 'D')
 
-  def test_simple_graph(self) -> None:
-    A = (my_remote_task, 'A')
-    B = (my_remote_task, 'B')
-    C = (my_remote_task, 'C')
-    D = (my_remote_task, 'D')
+  graph = Graph({D: {B, C}, C: {A}, B: {A}})
+  results, _ = run_graph(graph)
 
-    graph = Graph({D: {B, C}, C: {A}, B: {A}})
-    results, _ = run_graph(graph, debug=True)
+  assert results[A] == 'A'
+  assert results[B] == 'B'
+  assert results[C] == 'C'
+  assert results[D] == 'D'
 
-    self.assertEqual(results[A], 'A')
-    self.assertEqual(results[B], 'B')
-    self.assertEqual(results[C], 'C')
-    self.assertEqual(results[D], 'D')
+  assert results.num_nodes_run == 4
+  assert results.max_parallelism_seen == 2
 
-    self.assertEqual(results.num_nodes_run, 4)
-    self.assertEqual(results.max_parallelism_seen, 2)
 
-  def test_resources(self) -> None:
-    A = (my_local_task, 'A')
-    B = (my_remote_task, 'B')
-    C = (my_local_task, 'C')
-    D = (my_remote_task, 'D')
+def test_resources(test_context) -> None:
+  A = (my_local_task, 'A')
+  B = (my_remote_task, 'B')
+  C = (my_local_task, 'C')
+  D = (my_remote_task, 'D')
 
-    graph = Graph({D: {B, C}, C: {A}, B: {A}})
-    results, _ = run_graph(graph, debug=True)
+  graph = Graph({D: {B, C}, C: {A}, B: {A}})
+  results, _ = run_graph(graph)
 
-    self.assertEqual(results[A], 'A')
-    self.assertEqual(results[B], 'B')
-    self.assertEqual(results[C], 'C')
-    self.assertEqual(results[D], 'D')
+  assert results[A] == 'A'
+  assert results[B] == 'B'
+  assert results[C] == 'C'
+  assert results[D] == 'D'
 
-    self.assertEqual(results.num_nodes_run, 4)
-    self.assertEqual(results.max_parallelism_seen, 2)
+  assert results.num_nodes_run == 4
+  assert results.max_parallelism_seen == 2
 
-  def test_global_variable(self) -> None:
-    cache = get_cache()
-    cache['foo'] = 10
 
-    A = (my_task_with_global, 'A')
-    B = (my_task_with_global, 'B')
-    C = (my_task_with_global, 'C')
-    D = (my_task_with_global, 'D')
+def test_global_variable(test_context) -> None:
+  cache = get_cache()
+  cache['foo'] = 10
 
-    graph = Graph({D: {C}, C: {B}, B: {A}})
-    results, _ = run_graph(graph, debug=True)
+  A = (my_task_with_global, 'A')
+  B = (my_task_with_global, 'B')
+  C = (my_task_with_global, 'C')
+  D = (my_task_with_global, 'D')
 
-    self.assertEqual(cache['foo'], 14)
+  graph = Graph({D: {C}, C: {B}, B: {A}})
+  results, _ = run_graph(graph)
 
-    self.assertEqual(results.num_nodes_run, 4)
-    self.assertEqual(results.max_parallelism_seen, 1)
+  assert cache['foo'] == 14
 
-  def test_pass_down(self) -> None:
-    A = my_first_task
-    B = my_later_task
-    C = my_last_task
+  assert results.num_nodes_run == 4
+  assert results.max_parallelism_seen == 1
 
-    graph = Graph({C: {B}, B: {A}})
-    results, _ = run_graph(graph, debug=True)
 
-    self.assertEqual(results[A], 1)
-    self.assertEqual(results[B], 2)
-    self.assertEqual(results[C], 5)
+def test_pass_down(test_context) -> None:
+  A = my_first_task
+  B = my_later_task
+  C = my_last_task
 
-    self.assertEqual(results.num_nodes_run, 3)
-    self.assertEqual(results.max_parallelism_seen, 1)
+  graph = Graph({C: {B}, B: {A}})
+  results, _ = run_graph(graph)
 
-  def test_pass_down_with_kwargs(self) -> None:
-    graph = Graph({my_task_with_kwargs: {my_first_task}})
-    results, _ = run_graph(graph, debug=True)
+  assert results[A] == 1
+  assert results[B] == 2
+  assert results[C] == 5
 
-    self.assertEqual(results[my_task_with_kwargs], 1)
+  assert results.num_nodes_run == 3
+  assert results.max_parallelism_seen == 1
 
-  def test_pass_down_lists(self) -> None:
-    graph = chain(create_list, consume_list)
-    results, _ = run_graph(graph, debug=True)
 
-    self.assertEqual(results[create_list], [1, 2, 3])
-    self.assertEqual(results[consume_list], 6)
+def test_pass_down_with_kwargs(test_context) -> None:
+  graph = Graph({my_task_with_kwargs: {my_first_task}})
+  results, _ = run_graph(graph)
 
-    self.assertEqual(results.num_nodes_run, 2)
-    self.assertEqual(results.max_parallelism_seen, 1)
+  assert results[my_task_with_kwargs] == 1
 
-  def test_fanout(self) -> None:
-    A = my_first_task
-    B = my_later_task
-    C = my_last_task
 
-    graph = Graph({C: {A}, B: {A}})
-    results, _ = run_graph(graph, debug=True)
+def test_pass_down_lists(test_context) -> None:
+  graph = chain(create_list, consume_list)
+  results, _ = run_graph(graph)
 
-    self.assertEqual(results[A], 1)
-    self.assertEqual(results[B], 2)
-    self.assertEqual(results[C], 4)
+  assert results[create_list] == [1, 2, 3]
+  assert results[consume_list] == 6
 
-    self.assertEqual(results.num_nodes_run, 3)
-    self.assertEqual(results.max_parallelism_seen, 2)
+  assert results.num_nodes_run == 2
+  assert results.max_parallelism_seen == 1
 
-  def test_list_of_tasks(self) -> None:
-    graph = chain(my_first_task, my_later_task, my_last_task)
 
-    results, _ = run_graph(graph, debug=True)
-    self.assertEqual(results[my_last_task], 5)
+def test_fanout(test_context) -> None:
+  A = my_first_task
+  B = my_later_task
+  C = my_last_task
 
-    self.assertEqual(results.num_nodes_run, 3)
-    self.assertEqual(results.max_parallelism_seen, 1)
+  graph = Graph({C: {A}, B: {A}})
+  results, _ = run_graph(graph)
 
-  def test_with_exception(self) -> None:
-    graph = Graph({scatter_raises_exception: {}})
+  assert results[A] == 1
+  assert results[B] == 2
+  assert results[C] == 4
 
-    results, _ = run_graph(graph, debug=True)
-    print('### test_with_exception', results[scatter_raises_exception])
-    self.assertTrue(isinstance(results[scatter_raises_exception], TypeError))
+  assert results.num_nodes_run == 3
+  assert results.max_parallelism_seen == 2
 
-  def test_dynamic_subgraph(self) -> None:
-    graph = Graph({scatter: {}})
 
-    results, _ = run_graph(graph, debug=True)
+def test_list_of_tasks(test_context) -> None:
+  graph = chain(my_first_task, my_later_task, my_last_task)
 
-    self.assertEqual(results[scatter], 21)
+  results, _ = run_graph(graph)
+  assert results[my_last_task] == 5
 
-    self.assertEqual(results.num_nodes_run, 9)
-    self.assertEqual(results.max_parallelism_seen, 7)
+  assert results.num_nodes_run == 3
+  assert results.max_parallelism_seen == 1
 
-  def test_dynamic_subgraph_completion(self) -> None:
-    # scatter() produces a dynamic subgraph. my_last_task() should run only
-    # after the entire subgraph is done, after the (implict) gather().
-    #
-    # Furthermore, my_last_task() should not "see" the subgraph at all; it
-    # should be transparently handled by the runtime. my_last_task() should
-    # see the result of gather().
-    graph = Graph({scatter: {}, my_last_task: {scatter}})
-    results, _ = run_graph(graph, debug=True)
 
-    self.assertEqual(results[scatter], 21)
-    self.assertEqual(results[my_last_task], 24)
+def test_with_exception(test_context) -> None:
+  graph = Graph({scatter_raises_exception: {}})
 
-    self.assertEqual(results.num_nodes_run, 10)
-    self.assertEqual(results.max_parallelism_seen, 7)
+  results, _ = run_graph(graph)
+  print('### test_with_exception', results[scatter_raises_exception])
+  assert isinstance(results[scatter_raises_exception], TypeError)
 
-  def test_dynamic_subgraph_completion_with_peer(self) -> None:
-    context.foo = 13
 
-    graph = Graph({gather: [scatter, increment_foo], scatter: {}})
-    results, _ = run_graph(graph, debug=True)
+def test_dynamic_subgraph(test_context) -> None:
+  graph = Graph({scatter: {}})
 
-    # scatter returns 21, increment_foo returns 14.
-    self.assertEqual(context.foo, 14)
-    self.assertEqual(results[scatter], 21)
+  results, _ = run_graph(graph)
 
-    # gather adds the results of scatter and increment_foo to get 35.
-    self.assertEqual(results[gather], 35)
+  assert results[scatter] == 21
 
-    self.assertEqual(results.num_nodes_run, 11)
-    self.assertEqual(results.max_parallelism_seen, 7)
+  assert results.num_nodes_run == 9
+  assert results.max_parallelism_seen == 7
 
-  def test_dynamic_subgraph_with_context_completion(self) -> None:
-    # Same as `test_dynamic_subgraph_completion` but with the addition of
-    # context. The context returned by the final node of the dynamic subgraph
-    # should become the context for the successor node in the parent graph.
-    graph = Graph({
-        scatter_with_context: {},
-        my_last_task_with_context: {scatter_with_context}
-    })
 
-    results, _ = run_graph(graph, debug=True)
+def test_dynamic_subgraph_completion(test_context) -> None:
+  # scatter() produces a dynamic subgraph. my_last_task() should run only
+  # after the entire subgraph is done, after the (implict) gather().
+  #
+  # Furthermore, my_last_task() should not "see" the subgraph at all; it
+  # should be transparently handled by the runtime. my_last_task() should
+  # see the result of gather().
+  graph = Graph({scatter: {}, my_last_task: {scatter}})
+  results, _ = run_graph(graph)
 
-    self.assertEqual(results[scatter_with_context], 21)
-    self.assertEqual(results[my_last_task_with_context], 24)
+  assert results[scatter] == 21
+  assert results[my_last_task] == 24
 
-    self.assertEqual(results.num_nodes_run, 10)
-    self.assertEqual(results.max_parallelism_seen, 7)
+  assert results.num_nodes_run == 10
+  assert results.max_parallelism_seen == 7
 
-  def test_mutable_context(self) -> None:
-    graph = Graph({increment_bar: {increment_foo}})
 
-    context.foo = 2
-    context.bar = 3
+def test_dynamic_subgraph_completion_with_peer(test_context) -> None:
+  context.foo = 13
 
-    results, _ = run_graph(graph, debug=True)
+  graph = Graph({gather: [scatter, increment_foo], scatter: {}})
+  results, _ = run_graph(graph)
 
-    self.assertEqual(results[increment_foo], 3)
-    self.assertEqual(results[increment_bar], 4)
-    self.assertEqual(context.foo, 3)
-    self.assertEqual(context.bar, 4)
+  # scatter returns 21, increment_foo returns 14.
+  assert context.foo == 14
+  assert results[scatter] == 21
 
-    self.assertEqual(results.num_nodes_run, 2)
-    self.assertEqual(results.max_parallelism_seen, 1)
+  # gather adds the results of scatter and increment_foo to get 35.
+  assert results[gather] == 35
 
-  def test_dynamic_graph_with_context(self) -> None:
-    graph = Graph({scatter_with_context: {}})
+  assert results.num_nodes_run == 11
+  assert results.max_parallelism_seen == 7
 
-    results, _ = run_graph(graph, debug=True)
 
-    self.assertEqual(results[scatter_with_context], 21)
-    self.assertEqual(sorted(context.processed), [0, 1, 2, 3, 4, 5, 6])
-    self.assertEqual(context.sum, 21)
+def test_dynamic_subgraph_with_context_completion(test_context) -> None:
+  # Same as `test_dynamic_subgraph_completion` but with the addition of
+  # context. The context returned by the final node of the dynamic subgraph
+  # should become the context for the successor node in the parent graph.
+  graph = Graph({
+      scatter_with_context: {},
+      my_last_task_with_context: {scatter_with_context}
+  })
 
-    self.assertEqual(results.num_nodes_run, 9)
-    self.assertEqual(results.max_parallelism_seen, 7)
+  results, _ = run_graph(graph)
 
-  def test_conditional_dynamic_graph(self) -> None:
-    dynamic_graph_task = (maybe_run_dynamic_graph, True)
-    graph = Graph({dynamic_graph_task: {}})
-    results, _ = run_graph(graph, debug=True)
-    self.assertEqual(results[dynamic_graph_task], 21)
+  assert results[scatter_with_context] == 21
+  assert results[my_last_task_with_context] == 24
 
-    self.assertEqual(results.num_nodes_run, 9)
-    self.assertEqual(results.max_parallelism_seen, 7)
+  assert results.num_nodes_run == 10
+  assert results.max_parallelism_seen == 7
 
-    dynamic_graph_task = (maybe_run_dynamic_graph, False)
-    graph = Graph({dynamic_graph_task: {}})
-    results, _ = run_graph(graph, debug=True)
-    self.assertEqual(results[dynamic_graph_task], None)
 
-    self.assertEqual(results.num_nodes_run, 1)
-    self.assertEqual(results.max_parallelism_seen, 1)
+def test_mutable_context(test_context) -> None:
+  graph = Graph({increment_bar: {increment_foo}})
 
-  def test_multiple_inputs(self) -> None:
-    task = (fn_with_multiple_inputs, 1, 2, 3)
-    graph = Graph({task: {}})
-    results, _ = run_graph(graph, debug=True)
-    self.assertEqual(results[task], 6)
+  context.foo = 2
+  context.bar = 3
 
-    self.assertEqual(results.num_nodes_run, 1)
-    self.assertEqual(results.max_parallelism_seen, 1)
+  results, _ = run_graph(graph)
 
-  def test_simple_graph_with_priority(self) -> None:
-    # set_foo(20) with priority 1 will run first, followed by set_foo(10).
-    # The final result will be 10 + 1.
-    A = (set_foo, 1)
-    B = Node(set_foo, 10, priority=2)
-    C = Node(set_foo, 20, priority=1)
-    D = increment_foo
+  assert results[increment_foo] == 3
+  assert results[increment_bar] == 4
+  assert context.foo == 3
+  assert context.bar == 4
 
-    graph = Graph({D: {B, C}, C: {A}, B: {A}})
+  assert results.num_nodes_run == 2
+  assert results.max_parallelism_seen == 1
 
-    results, _ = run_graph(graph, debug=True)
 
-    self.assertEqual(results[A], 1)
-    self.assertEqual(results[B], 10)
-    self.assertEqual(results[C], 20)
-    self.assertEqual(results[D], 11)
+def test_dynamic_graph_with_context(test_context) -> None:
+  graph = Graph({scatter_with_context: {}})
 
-    self.assertEqual(results.num_nodes_run, 4)
-    self.assertEqual(results.max_parallelism_seen, 2)
+  results, _ = run_graph(graph)
 
-  def test_duplicate_ancestors(self) -> None:
-    # The increment_foo task should only run once, because A1 == A2.
-    A1 = increment_foo
-    A2 = increment_foo
-    B = (process, 2)
-    C = (process, 3)
-    D = gather_with_context
+  assert results[scatter_with_context] == 21
+  assert sorted(context.processed) == [0, 1, 2, 3, 4, 5, 6]
+  assert context.sum == 21
 
-    graph = Graph({D: {B, C}, B: {A1}, C: {A2}})
+  assert results.num_nodes_run == 9
+  assert results.max_parallelism_seen == 7
 
-    context.foo = 7
-    context.processed = []
 
-    results, _ = run_graph(graph, debug=True)
+def test_conditional_dynamic_graph(test_context) -> None:
+  dynamic_graph_task = (maybe_run_dynamic_graph, True)
+  graph = Graph({dynamic_graph_task: {}})
+  results, _ = run_graph(graph)
+  assert results[dynamic_graph_task] == 21
 
-    self.assertEqual(context.foo, 8)
-    self.assertEqual(sorted(context.processed), [2, 3])
-    self.assertEqual(context.sum, 5)
-    self.assertEqual(results.num_nodes_run, 4)
-    self.assertEqual(results.max_parallelism_seen, 2)
+  assert results.num_nodes_run == 9
+  assert results.max_parallelism_seen == 7
 
-  def test_duplicate_nodes(self) -> None:
-    A = Node(increment_foo, name='first_foo')
-    B = Node(increment_foo, name='second_foo')
+  dynamic_graph_task = (maybe_run_dynamic_graph, False)
+  graph = Graph({dynamic_graph_task: {}})
+  results, _ = run_graph(graph)
+  assert results[dynamic_graph_task] == None
 
-    graph = Graph({A: {}, B: {}})
+  assert results.num_nodes_run == 1
+  assert results.max_parallelism_seen == 1
 
-    context.foo = 7
-    results, _ = run_graph(graph, debug=True)
 
-    self.assertEqual(results.num_nodes_run, 2)
+def test_multiple_inputs(test_context) -> None:
+  task = (fn_with_multiple_inputs, 1, 2, 3)
+  graph = Graph({task: {}})
+  results, _ = run_graph(graph)
+  assert results[task] == 6
 
-  def test_scatter_in_subgraphs(self) -> None:
-    graph = scatter_in_subgraphs()
+  assert results.num_nodes_run == 1
+  assert results.max_parallelism_seen == 1
 
-    results, _ = run_graph(graph, debug=True)
 
-    self.assertEqual(results[gather_from_subgraphs], 78)
-    self.assertEqual(results.max_parallelism_seen, 13)
+def test_simple_graph_with_priority(test_context) -> None:
+  # set_foo(20) with priority 1 will run first, followed by set_foo(10).
+  # The final result will be 10 + 1.
+  A = (set_foo, 1)
+  B = Node(set_foo, 10, priority=2)
+  C = Node(set_foo, 20, priority=1)
+  D = increment_foo
 
-  def test_overhead(self) -> None:
-    count = 1000
-    graph = Graph({(scatter_huge, count): {}})
+  graph = Graph({D: {B, C}, C: {A}, B: {A}})
 
-    start = time.time()
-    results, _ = run_graph(graph, debug=True)
-    end = time.time()
-    ms_per_fn = 1000.0 * (end - start) / count
+  results, _ = run_graph(graph)
 
-    print(f'scatter_huge: each fn took {ms_per_fn} ms')
-    self.assertLess(ms_per_fn, 2.0)
+  assert results[A] == 1
+  assert results[B] == 10
+  assert results[C] == 20
+  assert results[D] == 11
 
-  def test_graph_with_status(self) -> None:
-    A = Node(increment_foo)
-    B = Node(increment_bar)
-    C = Node(increment_baz)
-    D = Node(increment_qux)
+  assert results.num_nodes_run == 4
+  assert results.max_parallelism_seen == 2
 
-    graph = Graph({D: {B, C}, C: {A}, B: {A}})
-    ts = TopologicalSorterWithStatus(canonicalize_graph(graph),
-                                     done_callback=None)
-    ts.prepare()
 
-    print(f'### ready {ts.peek_ready()} '
-          f'waiting {ts.peek_waiting()} done {ts.peek_done()}')
+def test_duplicate_ancestors(test_context) -> None:
+  # The increment_foo task should only run once, because A1 == A2.
+  A1 = increment_foo
+  A2 = increment_foo
+  B = (process, 2)
+  C = (process, 3)
+  D = gather_with_context
 
-    ready_nodes = ts.get_ready()
-    self.assertEqual(ready_nodes, (A,))
+  graph = Graph({D: {B, C}, B: {A1}, C: {A2}})
 
-    self.assertCountEqual(ts.peek_ready(), {A})
-    self.assertCountEqual(ts.peek_waiting(), {B, C, D})
-    self.assertCountEqual(ts.peek_done(), set())
+  context.foo = 7
+  context.processed = []
 
-    ts.done(A)
-    self.assertCountEqual(ts.peek_ready(), {B, C})
-    self.assertCountEqual(ts.peek_waiting(), {D})
-    self.assertCountEqual(ts.peek_done(), {A})
+  results, _ = run_graph(graph)
 
-    ready_nodes = ts.get_ready()
-    self.assertEqual(set(ready_nodes), {B, C})
+  assert context.foo == 8
+  assert sorted(context.processed) == [2, 3]
+  assert context.sum == 5
+  assert results.num_nodes_run == 4
+  assert results.max_parallelism_seen == 2
 
-    ts.done(B)
-    self.assertCountEqual(ts.peek_ready(), {C})
-    self.assertCountEqual(ts.peek_waiting(), {D})
-    self.assertCountEqual(ts.peek_done(), {A, B})
 
-    ts.done(C)
-    self.assertCountEqual(ts.peek_ready(), {D})
-    self.assertCountEqual(ts.peek_waiting(), set())
-    self.assertCountEqual(ts.peek_done(), {A, B, C})
+def test_duplicate_nodes(test_context) -> None:
+  A = Node(increment_foo, name='first_foo')
+  B = Node(increment_foo, name='second_foo')
 
-    ready_nodes = ts.get_ready()
-    self.assertEqual(set(ready_nodes), {D})
+  graph = Graph({A: {}, B: {}})
 
-    ts.done(D)
-    self.assertCountEqual(ts.peek_ready(), set())
-    self.assertCountEqual(ts.peek_waiting(), set())
-    self.assertCountEqual(ts.peek_done(), {A, B, C, D})
+  context.foo = 7
+  results, _ = run_graph(graph)
 
-  def test_graph_status_merging(self) -> None:
-    status_1 = GraphStatus(waiting_nodes=[Node(increment_foo)],
-                           done_nodes=[Node(increment_baz)])
-    status_2 = GraphStatus(done_nodes=[Node(increment_bar)])
+  assert results.num_nodes_run == 2
 
-    status = status_1 + status_2
-    self.assertEqual(
-        status,
-        GraphStatus(done_nodes=[Node(increment_baz),
-                                Node(increment_bar)],
-                    ready_nodes=list(),
-                    waiting_nodes=[Node(increment_foo)]))
 
-  def test_status_fn(self) -> None:
-    graph = Graph({scatter: {}})
+def test_scatter_in_subgraphs(test_context) -> None:
+  graph = scatter_in_subgraphs()
 
-    final_status = None
+  results, _ = run_graph(graph)
 
-    def print_status(status: GraphStatus) -> None:
-      print('### status', status)
+  assert results[gather_from_subgraphs] == 78
+  assert results.max_parallelism_seen == 13
 
-      print(f'### done {len(status.done_nodes)} '
-            f'ready {len(status.ready_nodes)} '
-            f'waiting {len(status.waiting_nodes)}')
 
-      nonlocal final_status
-      final_status = status
+@pytest.mark.exclusive
+def test_overhead(test_context) -> None:
+  count = 1000
+  graph = Graph({(scatter_huge, count): {}})
 
-    results, _ = run_graph(graph, status_fn=print_status)
+  start = time.time()
+  results, _ = run_graph(graph)
+  end = time.time()
+  ms_per_fn = 1000.0 * (end - start) / count
 
-    self.assertEqual(results[scatter], 21)
+  print(f'scatter_huge: each fn took {ms_per_fn} ms')
+  assert ms_per_fn < 2.0
 
-    self.assertEqual(results.num_nodes_run, 9)
-    self.assertEqual(results.max_parallelism_seen, 7)
 
-    assert final_status is not None
-    self.assertEqual(len(final_status.done_nodes), 9)
-    self.assertEqual(len(final_status.ready_nodes), 0)
-    self.assertEqual(len(final_status.waiting_nodes), 0)
+def test_graph_with_status(test_context) -> None:
+  A = Node(increment_foo)
+  B = Node(increment_bar)
+  C = Node(increment_baz)
+  D = Node(increment_qux)
 
-  def test_trace(self) -> None:
-    dynamic_graph_task = (maybe_run_dynamic_graph, True)
-    graph = Graph({dynamic_graph_task: {}})
-    results, _ = run_graph(graph, trace=True)
-    self.assertEqual(results[dynamic_graph_task], 21)
+  graph = Graph({D: {B, C}, C: {A}, B: {A}})
+  ts = TopologicalSorterWithStatus(canonicalize_graph(graph),
+                                   done_callback=None)
+  ts.prepare()
 
-    self.assertEqual(results.num_nodes_run, 9)
-    self.assertEqual(results.max_parallelism_seen, 7)
+  print(f'### ready {ts.peek_ready()} '
+        f'waiting {ts.peek_waiting()} done {ts.peek_done()}')
 
-    for i in range(7):
-      self.assertTrue(Node(process, i) in results.trace)
-      self.assertLess(results.trace.index(Node(process, i)),
-                      results.trace.index(Node(gather)))
+  ready_nodes = ts.get_ready()
+  assert ready_nodes == (A,)
 
-  def test_recursive_graph(self) -> None:
-    dynamic_graph_task = (build_recursive_graph, 5, 10)
-    graph = Graph({dynamic_graph_task: {}})
+  assert sorted(ts.peek_ready()) == sorted({A})
+  assert sorted(ts.peek_waiting()) == sorted({B, C, D})
+  assert sorted(ts.peek_done()) == sorted(set())
 
-    final_status = None
+  ts.done(A)
+  assert sorted(ts.peek_ready()) == sorted({B, C})
+  assert sorted(ts.peek_waiting()) == sorted({D})
+  assert sorted(ts.peek_done()) == sorted({A})
 
-    def print_status(status: GraphStatus) -> None:
-      print(f'### done {len(status.done_nodes)} '
-            f'ready {len(status.ready_nodes)} '
-            f'waiting {len(status.waiting_nodes)}')
+  ready_nodes = ts.get_ready()
+  assert set(ready_nodes) == {B, C}
 
-      nonlocal final_status
-      final_status = status
+  ts.done(B)
+  assert sorted(ts.peek_ready()) == sorted({C})
+  assert sorted(ts.peek_waiting()) == sorted({D})
+  assert sorted(ts.peek_done()) == sorted({A, B})
 
-    results, _ = run_graph(graph, status_fn=print_status)
+  ts.done(C)
+  assert sorted(ts.peek_ready()) == sorted({D})
+  assert sorted(ts.peek_waiting()) == sorted(set())
+  assert sorted(ts.peek_done()) == sorted({A, B, C})
 
-    self.assertEqual(results.num_nodes_run, len(final_status.done_nodes))
-    self.assertEqual(len(final_status.ready_nodes), 0)
-    self.assertEqual(len(final_status.waiting_nodes), 0)
+  ready_nodes = ts.get_ready()
+  assert set(ready_nodes) == {D}
 
-    self.assertEqual(results.num_nodes_run, 1 + 10 + 100 + 1000 + 10000 +
-                     10000 * 8 + 1000 + 100 + 10 + 1)  # depth 5
-    self.assertEqual(results.max_parallelism_seen, 70000)  # depth 5
+  ts.done(D)
+  assert sorted(ts.peek_ready()) == sorted(set())
+  assert sorted(ts.peek_waiting()) == sorted(set())
+  assert sorted(ts.peek_done()) == sorted({A, B, C, D})
 
 
-if __name__ == '__main__':
-  unittest.main()
+def test_graph_status_merging(test_context) -> None:
+  status_1 = GraphStatus(waiting_nodes=[Node(increment_foo)],
+                         done_nodes=[Node(increment_baz)])
+  status_2 = GraphStatus(done_nodes=[Node(increment_bar)])
+
+  status = status_1 + status_2
+  assert status == GraphStatus(
+      done_nodes=[Node(increment_baz), Node(increment_bar)],
+      ready_nodes=list(),
+      waiting_nodes=[Node(increment_foo)])
+
+
+def test_status_fn(test_context) -> None:
+  graph = Graph({scatter: {}})
+
+  final_status = None
+
+  def print_status(status: GraphStatus) -> None:
+    print('### status', status)
+
+    print(f'### done {len(status.done_nodes)} '
+          f'ready {len(status.ready_nodes)} '
+          f'waiting {len(status.waiting_nodes)}')
+
+    nonlocal final_status
+    final_status = status
+
+  results, _ = run_graph(graph, status_fn=print_status)
+
+  assert results[scatter] == 21
+
+  assert results.num_nodes_run == 9
+  assert results.max_parallelism_seen == 7
+
+  assert final_status is not None
+  assert len(final_status.done_nodes) == 9
+  assert len(final_status.ready_nodes) == 0
+  assert len(final_status.waiting_nodes) == 0
+
+
+def test_trace(test_context) -> None:
+  dynamic_graph_task = (maybe_run_dynamic_graph, True)
+  graph = Graph({dynamic_graph_task: {}})
+  results, _ = run_graph(graph, trace=True)
+  assert results[dynamic_graph_task] == 21
+
+  assert results.num_nodes_run == 9
+  assert results.max_parallelism_seen == 7
+
+  for i in range(7):
+    assert Node(process, i) in results.trace
+    assert results.trace.index(Node(process,
+                                    i)) < results.trace.index(Node(gather))
+
+
+def test_recursive_graph(test_context) -> None:
+  dynamic_graph_task = (build_recursive_graph, 5, 10)
+  graph = Graph({dynamic_graph_task: {}})
+
+  final_status = None
+
+  def print_status(status: GraphStatus) -> None:
+    print(f'### done {len(status.done_nodes)} '
+          f'ready {len(status.ready_nodes)} '
+          f'waiting {len(status.waiting_nodes)}')
+
+    nonlocal final_status
+    final_status = status
+
+  results, _ = run_graph(graph, status_fn=print_status)
+
+  assert results.num_nodes_run == len(final_status.done_nodes)
+  assert len(final_status.ready_nodes) == 0
+  assert len(final_status.waiting_nodes) == 0
+
+  assert results.num_nodes_run == 1 + 10 + 100 + 1000 + 10000 + 10000 * 8 + 1000 + 100 + 10 + 1  # depth 5
+  assert results.max_parallelism_seen == 70000  # depth 5
