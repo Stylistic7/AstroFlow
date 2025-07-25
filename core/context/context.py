@@ -232,14 +232,18 @@ class Context:
           key: Key,
           default_value: Any = None,
           keep_in_memory: bool = False) -> Any:
-    assert ray.is_initialized()
+    if not ray.is_initialized():
+      return
+
     actor = ray.get_actor('context', namespace=_get_namespace())
     maybe_ref = ray.get(actor.get.remote(key, default_value, keep_in_memory))
     if maybe_ref:
       return ray.get(maybe_ref)
 
   def __getattr__(self, key: Key) -> Any:
-    assert ray.is_initialized()
+    if not ray.is_initialized():
+      return
+
     dicts = object.__getattribute__(self, 'lazy_load_dicts')
     if key in dicts:
       return dicts[key]
@@ -259,7 +263,9 @@ class Context:
           key: Key,
           value: Any,
           write_mode: WriteMode = WriteMode.MEMORY_AND_DISK) -> Any:
-    assert ray.is_initialized()
+    if not ray.is_initialized():
+      return
+
     actor = ray.get_actor('context', namespace=_get_namespace())
 
     dicts = object.__getattribute__(self, 'lazy_load_dicts')

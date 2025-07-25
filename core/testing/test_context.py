@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from context import context
+from context import get_cache
 
 
 @dataclass(frozen=True)
