@@ -8,6 +8,8 @@ from datetime import datetime
 from stacks.composite_stack import CompositeStack
 from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon  # type: ignore
 
+from context import context
+
 
 def _ndarray_to_json(array: np.ndarray) -> dict:
   return {
@@ -53,25 +55,29 @@ class CustomJSONEncoder(json.JSONEncoder):
 
 
 def stacks_to_hdf5(stacks, path):
-  # Example image data (randomized for demo purposes)
-  image_data = {
-      "image1": np.random.rand(256, 256),  # Grayscale image
-      "image2": np.random.rand(256, 256, 3),  # RGB image
-  }
-
-  # Create the HDF5 file
   with h5py.File(path, "w") as h5file:
-    # Store stack data
     stack_group = h5file.create_group("stacks")
     for key, stack in stacks.items():
-      # Serialize the Stack object to JSON
       stack_json = json.dumps(asdict(stack), cls=CustomJSONEncoder)
       stack_group.create_dataset(key, data=stack_json)
 
-    # Store image data
-    image_group = h5file.create_group("images")
-    for key, image in image_data.items():
-      image_group.create_dataset(key, data=image, compression="gzip")
+    subframe_group = h5file.create_group("stack_subframe_thumbnail_images")
+    master_group = h5file.create_group("stack_master_thumbnail_images")
+    for stable_hash in stacks:
+      key = ('stack_subframe_thumbnail_image', stable_hash)
+      if context.contains(key):
+        image = context[key]
+        print(f'### create_dataset key {key} type(image) {type(image)}')
+        subframe_group.create_dataset(stable_hash,
+                                      data=context[key],
+                                      compression="gzip")
+      key = ('stack_master_thumbnail_image', stable_hash)
+      if context.contains(key):
+        image = context[key]
+        print(f'### create_dataset key {key} type(image) {type(image)}')
+        master_group.create_dataset(stable_hash,
+                                    data=context[key],
+                                    compression="gzip")
 
 
 def hdf5_to_stacks(data: str) -> dict[str, Any]:
@@ -108,10 +114,13 @@ def hdf5_to_stacks(data: str) -> dict[str, Any]:
         # Recreate the Stack object
         stacks[key] = CompositeStack(**stack_dict)
 
-      # Read image data from the "images" group
-      image_group = h5file["images"]
-      for key, image_data in image_group.items():
-        # Store images as NumPy arrays
-        stacks[key] = np.array(image_data)
+      subframe_group = h5file["stack_subframe_thumbnail_images"]
+      for key, image_data in subframe_group.items():
+        context[('stack_subframe_thumbnail_image', key)] = np.array(image_data)
 
+      master_group = h5file["stack_master_thumbnail_images"]
+      for key, image_data in master_group.items():
+        context[('stack_master_thumbnail_image', key)] = np.array(image_data)
+
+    context.stacks = stacks
     return stacks

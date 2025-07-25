@@ -1,14 +1,9 @@
 import unittest
-import subprocess
 import time
-import requests
 import hashlib
 import json
-import os
 import tempfile
-import shutil
 import uuid
-from pathlib import Path
 
 from p2p.test_ipfs_node import start_test_ipfs_node, stop_test_ipfs_node
 from p2p.ipfs_api import get_node_id, add_file, provide_file, cat_file, publish_name, resolve_name, find_providers, get_file, check_download_status
