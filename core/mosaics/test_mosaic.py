@@ -3,7 +3,7 @@ import datetime
 from pathlib import Path
 import shutil
 
-from testing import make_test_context, copy_testdata_frames
+from testing import copy_testdata_frames
 from context import context
 from dependency_graph import run_graph
 from mosaics.orion_mosaic import add_orion_mosaic_images

@@ -1,5 +1,3 @@
-from ray_infra import ray_local
-
 import os
 from spherical_geometry.polygon import SphericalPolygon  # type: ignore
 import astropy.io.fits as pyfits  # type: ignore
@@ -10,7 +8,7 @@ import uuid
 import shutil
 import xxhash
 from typing import Any
-from pathlib import Path, PosixPath
+from pathlib import Path
 import pickle
 
 from metadata.classes import ImageMetadata
