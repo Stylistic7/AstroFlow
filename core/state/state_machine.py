@@ -266,6 +266,9 @@ def dispatch(action: Action) -> State:
     case 'stop_zeroconf':
       _state, new_actions = _stop_zeroconf(_state, action)
 
+    case 'prepare_pix':
+      _state, new_actions = _prepare_pix(_state, action)
+
     case 'add_to_shopping_cart':
       _state, new_actions = _add_to_shopping_cart(_state, action)
 
