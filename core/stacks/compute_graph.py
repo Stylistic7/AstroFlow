@@ -38,15 +38,6 @@ def stack_runs_done(stack: CustomizedStack) -> None:
   pass
 
 
-@ray.remote
-def build_stack_runs_subgraph(stack: CustomizedStack) -> Graph:
-  return Graph({
-      (stack_runs_done, stack): {
-          (stack_files, s) for s in stack.contents.values()
-      }
-  })
-
-
 # This function accepts a fully customized stack, after settings and calibration
 # frames have been associated.
 @ray.remote
@@ -54,7 +45,6 @@ def build_stacking_subgraph(stack: CustomizedStack) -> Graph:
   graph = Graph({})
 
   calibration_subgraph = (build_calibration_stack_subgraph, stack)
-  runs_subgraph = (build_stack_runs_subgraph, stack)
 
   stack_task = (stack_files, stack)
   stacking_metadata_task = Node(compute_image_metadata,
@@ -63,8 +53,7 @@ def build_stacking_subgraph(stack: CustomizedStack) -> Graph:
   post_process_metadata_task = Node(compute_image_metadata,
                                     name=f'post_process_{stack.stable_hash}')
 
-  graph[runs_subgraph] = {calibration_subgraph}
-  graph[stack_task] = {runs_subgraph}
+  graph[stack_task] = {calibration_subgraph}
   graph[stacking_metadata_task] = {stack_task}
   graph[post_process_task] = {stacking_metadata_task}
   graph[post_process_metadata_task] = {post_process_task}
