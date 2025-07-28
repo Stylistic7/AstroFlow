@@ -96,24 +96,16 @@ def _create_run_command(task: ShellScriptTask) -> str:
   return f'run -x {arguments} {parameters} "{task.javascript_filename}"'
 
 
-_cache_prepared = False
-
-
 def prepare_cache(prefix="pixinsight-slot-"):
-  global _cache_prepared
-
-  if not _cache_prepared:
-    cache = get_cache()
-    for key in cache.iterkeys():
-      if isinstance(key, str) and key.startswith(prefix):
-        del cache[key]
-
-    _cache_prepared = True
+  print(f'### Preparing pix cache...')
+  cache = get_cache()
+  for key in cache.iterkeys():
+    if isinstance(key, str) and key.startswith(prefix):
+      del cache[key]
 
 
 @contextmanager
 def _acquire_slot(slots=None):
-  assert _cache_prepared
   cache = get_cache()
 
   if slots is None:
