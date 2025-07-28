@@ -22,9 +22,11 @@ from customization.compute_graph import build_customize_graph
 from decorators import cached
 from targets.post_process import post_process_target
 from stacks.post_process import post_process_stack
+from state.actor import state
+from state.types import Action
 
 
-@cached.remote
+@ray.remote
 def command_done() -> None:
   pass
 
@@ -97,29 +99,10 @@ def stack(args):
 def merge_mosaic(args):
   print(f"### Merging mosaic with ID: {args.mosaic_id} mode {args.mode}")
 
-  # TODO: Consider various forms of "forcing":
-  # - Just deleting the toplevel graph result
-  # - Ignoring all cached results
-  context.ignore_cached_results = args.force
   context.dangerously_accept_existing_files = True
 
-  run_graph(Graph({build_customize_graph: {load_metadata}}))
-
-  mosaic = context.mosaics[args.mosaic_id]
-
-  tasks = []
-  for mode in ['subframe', 'master']:
-    if args.mode in ['all', mode]:
-      stacks = context.stacks
-      targets = context.targets
-      task = (build_mosaic_subgraph, QualityLevel(mode), mosaic,
-              stacks_for_mosaic(mosaic, stacks,
-                                targets), targets_for_mosaic(mosaic, targets))
-      tasks.append(task)
-      # if args.force:
-      # delete_cached_result(task)
-
-  run_graph(Graph({command_done: tasks}))
+  state.dispatch(
+      Action(type='merge_mosaic', mode=args.mode, mosaic_id=args.mosaic_id))
 
 
 def post_process(args):
