@@ -4,6 +4,7 @@ from enum import Enum
 
 from typing import Any
 from context.cache import get_cache
+from ray_infra.ray_init import connect_to_ray_cluster
 
 # The context system is a cluster-wide write-through cache. It has the following
 # properties:
@@ -233,7 +234,7 @@ class Context:
           default_value: Any = None,
           keep_in_memory: bool = False) -> Any:
     if not ray.is_initialized():
-      return
+      connect_to_ray_cluster()
 
     actor = ray.get_actor('context', namespace=_get_namespace())
     maybe_ref = ray.get(actor.get.remote(key, default_value, keep_in_memory))
@@ -242,7 +243,7 @@ class Context:
 
   def __getattr__(self, key: Key) -> Any:
     if not ray.is_initialized():
-      return
+      connect_to_ray_cluster()
 
     dicts = object.__getattribute__(self, 'lazy_load_dicts')
     if key in dicts:
@@ -264,7 +265,7 @@ class Context:
           value: Any,
           write_mode: WriteMode = WriteMode.MEMORY_AND_DISK) -> Any:
     if not ray.is_initialized():
-      return
+      connect_to_ray_cluster()
 
     actor = ray.get_actor('context', namespace=_get_namespace())
 
