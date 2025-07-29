@@ -51,7 +51,7 @@ def scatter_customize_stacks() -> Graph:
 # TODO: Add tests in test_customization.py
 # TODO: Pass in the StackSettings and cache this.
 # TODO: Pass in the quarantined_stacks and cache this.
-@ray.remote
+@cached.remote
 def customize_stack(stack: CompositeStack,
                     settings: Settings) -> CustomizedStack:
   stack = associate_with_stack(stack)
