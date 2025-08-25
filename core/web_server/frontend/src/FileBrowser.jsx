@@ -1,9 +1,9 @@
-// FilePickerExample.jsx
 import { useState, useCallback, useEffect } from 'react';
 import {
     Dialog, DialogTitle, DialogContent, IconButton,
     Breadcrumbs, Typography, Box, Table, TableBody,
-    TableCell, TableContainer, TableHead, TableRow, Paper
+    TableCell, TableContainer, TableHead, TableRow, Paper,
+    FormControlLabel, Checkbox
 } from '@mui/material';
 import ImageIcon from '@mui/icons-material/Image';
 import FolderIcon from '@mui/icons-material/Folder';
@@ -26,9 +26,10 @@ export default function FileBrowser({ onSelectFile }) {
     const [dialogOpen, setDialogOpen] = useState(false);
     const [files, setFiles] = useState([]);
     const [folderChain, setFolderChain] = useState([]);
-    const { lastFolder, setLastFolder } = useFolder(); // ✅ shared state
+    const { lastFolder, setLastFolder } = useFolder();
 
-    const [currentPath, setCurrentPath] = useState(lastFolder); // local copy to track internal navigation
+    const [currentPath, setCurrentPath] = useState(lastFolder);
+    const [applyToAll, setApplyToAll] = useState(false);
 
     const loadFolder = useCallback((path) => {
         if (!path || typeof path !== 'string') return;
@@ -43,20 +44,22 @@ export default function FileBrowser({ onSelectFile }) {
                 setFiles(sorted);
                 setFolderChain(buildFolderChain(data.path));
                 setCurrentPath(data.path);
-                setLastFolder(data.path); // ✅ update global
+                setLastFolder(data.path);
             })
             .catch(err => console.error('Failed to load directory:', err));
     }, [setLastFolder]);
 
     useEffect(() => {
-        if (dialogOpen) loadFolder(lastFolder); // always start from global
+        if (dialogOpen) {
+            loadFolder(lastFolder);
+        }
     }, [dialogOpen, loadFolder, lastFolder]);
 
     const handleClick = (file) => {
         if (file.isDir) {
             loadFolder(file.id);
         } else {
-            onSelectFile?.(file.id);
+            onSelectFile?.(file.id, applyToAll);
             setDialogOpen(false);
         }
     };
@@ -69,22 +72,36 @@ export default function FileBrowser({ onSelectFile }) {
 
             <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth={false} fullWidth>
                 <DialogTitle>Select a file or folder</DialogTitle>
-                <DialogContent sx={{ height: 500, overflow: 'hidden' }}>
+                <DialogContent sx={{ height: 540, overflow: 'hidden' }}>
                     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                        <Box sx={{ mb: 2 }}>
-                            <Breadcrumbs aria-label="breadcrumb">
-                                {folderChain.map((crumb, index) => (
-                                    <Typography
-                                        key={crumb.id}
-                                        color={index === folderChain.length - 1 ? 'text.primary' : 'inherit'}
-                                        sx={{ cursor: index !== folderChain.length - 1 ? 'pointer' : 'default' }}
-                                        onClick={() => index !== folderChain.length - 1 && loadFolder(crumb.id)}
-                                    >
-                                        {crumb.name}
-                                    </Typography>
-                                ))}
-                            </Breadcrumbs>
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                                <Breadcrumbs aria-label="breadcrumb">
+                                    {folderChain.map((crumb, index) => (
+                                        <Typography
+                                            key={crumb.id}
+                                            color={index === folderChain.length - 1 ? 'text.primary' : 'inherit'}
+                                            sx={{ cursor: index !== folderChain.length - 1 ? 'pointer' : 'default' }}
+                                            onClick={() => index !== folderChain.length - 1 && loadFolder(crumb.id)}
+                                        >
+                                            {crumb.name}
+                                        </Typography>
+                                    ))}
+                                </Breadcrumbs>
+                            </Box>
+                            <FormControlLabel
+                                sx={{ ml: 2, whiteSpace: 'nowrap' }}
+                                control={
+                                    <Checkbox
+                                        size="small"
+                                        checked={applyToAll}
+                                        onChange={(e) => setApplyToAll(e.target.checked)}
+                                    />
+                                }
+                                label="Apply to All"
+                            />
                         </Box>
+
                         <Box sx={{ flex: 1, overflow: 'auto' }}>
                             <TableContainer component={Paper} sx={{ maxHeight: '100%' }}>
                                 <Table stickyHeader size="small">

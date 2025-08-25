@@ -78,6 +78,17 @@ const RunsTab = ({ stack }) => {
     // TODO: Handle calibration stacks that specified by filename.
   }
 
+  const onSelectFile = (type, filename, runId, applyToAll) => {
+    const runIds = applyToAll ? runs.map(run => run.id) : [runId];
+    for (let runId of runIds) {
+      fetch('/api/select_file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: type, stack_id: stack.stable_hash, run_id: runId, filename }),
+      });
+    }
+  }
+
   return (
     <Box>
       {runs.map((run) => {
@@ -106,33 +117,18 @@ const RunsTab = ({ stack }) => {
             </Box>
 
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              Bias: &nbsp;&nbsp; {calibrationStackInfo(run.dependencies['bias'])} <FileBrowser onSelectFile={(filename) => {
-                fetch('/api/select_file', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ type: 'bias', stack_id: stack.stable_hash, run_id: run.id, filename }),
-                });
-              }} />
+              Bias: &nbsp;&nbsp; {calibrationStackInfo(run.dependencies['bias'])} <FileBrowser onSelectFile={
+                (filename, applyToAll) => { onSelectFile('bias', filename, run.id, applyToAll) }} />
             </Box>
 
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              Dark: &nbsp;&nbsp; {calibrationStackInfo(run.dependencies['dark'])} <FileBrowser onSelectFile={(filename) => {
-                fetch('/api/select_file', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ type: 'dark', stack_id: stack.stable_hash, run_id: run.id, filename }),
-                });
-              }} />
+              Dark: &nbsp;&nbsp; {calibrationStackInfo(run.dependencies['dark'])} <FileBrowser onSelectFile={
+                (filename, applyToAll) => { onSelectFile('dark', filename, run.id, applyToAll) }} />
             </Box>
 
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              Flat: &nbsp;&nbsp; {calibrationStackInfo(run.dependencies['flat'])} <FileBrowser onSelectFile={(filename) => {
-                fetch('/api/select_file', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ type: 'flat', stack_id: stack.stable_hash, run_id: run.id, filename }),
-                });
-              }} />
+              Flat: &nbsp;&nbsp; {calibrationStackInfo(run.dependencies['flat'])} <FileBrowser onSelectFile={
+                (filename, applyToAll) => { onSelectFile('flat', filename, run.id, applyToAll) }} />
             </Box>
 
             <Box sx={{ display: 'flex', overflowX: 'auto', gap: 2, py: 2 }}>
