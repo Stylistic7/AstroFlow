@@ -14,13 +14,14 @@ from context import context
 from compute_graph import build_regroup_graph
 from previews.types import QualityLevel
 from mosaics.compute_graph import build_mosaic_subgraph, stacks_for_mosaic, targets_for_mosaic
-from mosaics.post_process import post_process_mosaic
-from stacks.compute_graph import build_stacking_subgraph
+# from mosaics.post_process import post_process_mosaic
+# from stacks.compute_graph import build_stacking_subgraph
 from dependency_graph import Graph, run_graph
 from metadata.image_metadata import load_metadata, scatter_compute_image_metadata
 from customization.compute_graph import build_customize_graph
-from decorators import cached
-from targets.post_process import post_process_target
+# from decorators import cached
+# from targets.compute_graph import build_target_subgraph
+# from targets.post_process import post_process_target
 from stacks.post_process import post_process_stack
 from state.actor import state
 from state.types import Action
@@ -86,39 +87,22 @@ def make_preview(args):
   run_graph(graph)
 
 
-def stack(args):
-  print(f"### Stacking stack with id {args.stack_id}")
-  stack = context.stacks[args.stack_id]
+def process(args):
+  print(f"### Processing {args.object_type} {args.object_id}")
 
-  context.ignore_cached_results = args.force
-  context.dangerously_accept_existing_files = args.force
+  # context.ignore_cached_results = args.force
+  # context.dangerously_accept_existing_files = args.force
 
-  run_graph(Graph({(build_stacking_subgraph, stack): {}}))
-
-
-def merge_mosaic(args):
-  print(f"### Merging mosaic with ID: {args.mosaic_id} mode {args.mode}")
-
-  context.dangerously_accept_existing_files = True
-
-  state.dispatch(
-      Action(type='merge_mosaic', mode=args.mode, mosaic_id=args.mosaic_id))
+  state.dispatch(Action(type='process', **vars(args)))
 
 
 def post_process(args):
   print(f"### Post-processing {args.object_type} {args.object_id}")
 
-  if args.object_type == 'target':
-    target_task = (post_process_target, context.targets[args.object_id])
-    graph = Graph({command_done: {target_task}, target_task: {load_metadata}})
-  elif args.object_type == 'mosaic':
-    mosaic_task = (post_process_mosaic, QualityLevel.MASTER,
-                   context.mosaics[args.object_id])
-    graph = Graph({command_done: {mosaic_task}, mosaic_task: {load_metadata}})
-  else:
-    print(f"Unsupported object_type {args.object_type}")
+  # context.ignore_cached_results = args.force
+  # context.dangerously_accept_existing_files = args.force
 
-  run_graph(graph)
+  state.dispatch(Action(type='post_process', **vars(args)))
 
 
 def populate_context():
@@ -170,31 +154,19 @@ def main():
   preview_parser.add_argument(
       "object_id", help="ID of the object for which to generate previews")
 
-  # 'stack' command
-  stack_parser = subparsers.add_parser("stack", help="Stack images")
-  stack_parser.add_argument("stack_id", help="ID of the stack to stack")
-  stack_parser.add_argument("-f",
-                            "--force",
-                            action="store_true",
-                            help="Force stacking")
-
-  # 'merge' command
-  merge_parser = subparsers.add_parser("merge", help="Merge data")
-  merge_subparsers = merge_parser.add_subparsers(dest="subcommand")
-
-  # 'merge mosaic' command
-  mosaic_parser = merge_subparsers.add_parser("mosaic", help="Merge a mosaic")
-  mosaic_parser.add_argument("mosaic_id", help="ID of the mosaic to merge")
-  mosaic_parser.add_argument(
+  # 'process' command
+  process_parser = subparsers.add_parser("process", help="Process object")
+  process_parser.add_argument("object_type",
+                              choices=["stack", "target", "mosaic"],
+                              nargs="?",
+                              help="Type of object: stack, target, or mosaic")
+  process_parser.add_argument(
       "mode",
       choices=["subframe", "master", "all"],
       nargs="?",
       default="all",
-      help="Type of merge: subframe, master, or all (default: all)")
-  mosaic_parser.add_argument("-f",
-                             "--force",
-                             action="store_true",
-                             help="Force merging")
+      help="Type of process: subframe, master, or all (default: all)")
+  process_parser.add_argument("object_id", help="ID of the object to processs")
 
   # 'post_process' command
   post_process_parser = subparsers.add_parser("post_process",
@@ -221,10 +193,8 @@ def main():
     customize(args)
   elif args.command == 'preview':
     make_preview(args)
-  elif args.command == 'stack':
-    stack(args)
-  elif args.command == "merge" and args.subcommand == "mosaic":
-    merge_mosaic(args)
+  elif args.command == 'process':
+    process(args)
   elif args.command == "post_process":
     post_process(args)
   else:

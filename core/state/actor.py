@@ -9,6 +9,11 @@ from dependency_graph import Graph, run_graph
 from customization.compute_graph import customize_stack, store_customized_stack
 from mosaics.compute_graph import build_mosaic_subgraph, stacks_for_mosaic, targets_for_mosaic
 from previews.types import QualityLevel
+from targets.compute_graph import build_target_subgraph
+from stacks.compute_graph import build_stacking_subgraph
+from targets.post_process import post_process_target
+from stacks.post_process import post_process_stack
+from mosaics.post_process import post_process_mosaic
 
 
 def _get_namespace() -> str:
@@ -39,8 +44,22 @@ def command_done() -> None:
   pass
 
 
-def _merge_mosaic(state: State, action: Action) -> tuple[State, list[Action]]:
-  mosaic = context.mosaics[action['mosaic_id']]
+def _process_stack(state: State, action: Action) -> tuple[State, list[Action]]:
+  stack = context.stacks[action['object_id']]
+  run_graph(Graph({(build_stacking_subgraph, stack): {}}))
+
+  return state, [Action(type='announce', message='reload_data')]
+
+
+def _process_target(state: State, action: Action) -> tuple[State, list[Action]]:
+  target = context.targets[action['object_id']]
+  run_graph(Graph({(build_target_subgraph, target): {}}))
+
+  return state, [Action(type='announce', message='reload_data')]
+
+
+def _process_mosaic(state: State, action: Action) -> tuple[State, list[Action]]:
+  mosaic = context.mosaics[action['object_id']]
 
   tasks = []
   for mode in ['subframe', 'master']:
@@ -57,6 +76,21 @@ def _merge_mosaic(state: State, action: Action) -> tuple[State, list[Action]]:
   return state, [Action(type='announce', message='reload_data')]
 
 
+def _post_process(state: State, action: Action) -> tuple[State, list[Action]]:
+  print(f'### _post_process {action=}')
+  if action['object_type'] == 'stack':
+    stack = context.stacks[action['object_id']]
+    run_graph(Graph({(post_process_stack, stack): {}}))
+  elif action['object_type'] == 'target':
+    target = context.targets[action['object_id']]
+    run_graph(Graph({(post_process_target, target): {}}))
+  elif action['object_type'] == 'mosaic':
+    mosaic = context.mosaics[action['object_id']]
+    run_graph(Graph({(post_process_mosaic, mosaic): {}}))
+
+  return state, [Action(type='announce', message='reload_data')]
+
+
 @ray.remote(max_restarts=-1, max_task_retries=-1)
 class StateActor:
 
@@ -69,12 +103,23 @@ class StateActor:
     print(f"### dispatch action type {action['type']}")
 
     match action['type']:
+      case 'noop':
+        new_actions = []
       case 'announce':
         self.state, new_actions = _announce(self.state, action)
-      case 'merge_mosaic':
-        self.state, new_actions = _merge_mosaic(self.state, action)
+      case 'process':
+        if action.object_type == 'stack':
+          self.state, new_actions = _process_stack(self.state, action)
+        if action.object_type == 'target':
+          self.state, new_actions = _process_target(self.state, action)
+        elif action.object_type == 'mosaic':
+          self.state, new_actions = _process_mosaic(self.state, action)
+      case 'post_process':
+        self.state, new_actions = _post_process(self.state, action)
       case 'update_settings':
         self.state, new_actions = _update_settings(self.state, action)
+      case _:
+        raise ValueError(f"Unexpected action type: {action['type']}")
 
     for action in new_actions:
       self.dispatch(action)
