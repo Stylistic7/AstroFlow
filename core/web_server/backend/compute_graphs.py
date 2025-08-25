@@ -22,7 +22,7 @@ workflow_graph = {'skeleton': [], 'state': {}}
 
 def populate_context():
   # TODO: Put these knobs in the UI.
-  context.cosine_similarity_threshold = 0.99999
+  context.cosine_similarity_threshold = 0.9999
   context.min_component_members = 3
   context.max_run_gap = datetime.timedelta(hours=8)
   context.min_frames_in_run = 3
