@@ -121,8 +121,6 @@ def compute_image_metadata(filename: Path) -> ImageMetadata:
     plate_solution = plate_solving.solve_field(filename)
   else:
     plate_solution = None
-    print(f'### Skipping plate-solving for filename {filename} '
-          f'because it is not a light frame')
 
   return ImageMetadata(content_hash=content_hash,
                        filename=filename,
