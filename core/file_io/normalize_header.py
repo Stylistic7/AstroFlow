@@ -22,8 +22,7 @@ def normalize_header(header: dict) -> dict:
     # Leave it as a string.
     output[k] = v
 
-  if 'EXPTIME' in header and 'EXPOSURE' not in header:
-    header['EXPOSURE'] = float(header['EXPTIME'])
-    print(f"### Setting EXPOSURE to EXPTIME, value {header['EXPOSURE']}")
+  if 'EXPTIME' in output and 'EXPOSURE' not in output:
+    output['EXPOSURE'] = float(output['EXPTIME'])
 
   return output
