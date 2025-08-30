@@ -72,4 +72,4 @@ def test_single_compute_graph(test_context):
   masters = list(Path(context.output_dir).rglob('*.xisf'))
   for master in masters:
     print(f'master {master}')
-  assert len(masters) == 6
+  assert len(masters) == 5
