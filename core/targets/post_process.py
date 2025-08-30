@@ -8,7 +8,7 @@ from context import context
 from catalogs import position_string
 from pix.decorators import PixInsight
 from pix.classes import ImageList
-from pix.tasks import ChannelCombination, SpectrophotometricColorCalibration, ImageSolver, StarXTerminator, LinearFit, SaveImages
+from pix.tasks import ChannelCombination, SpectrophotometricColorCalibration, ImageSolver, StarXTerminator, LinearFit, SaveImages, StarAlignment, LRGBCombination
 from file_io.types import XisfFilePath
 from decorators import cached, measure_performance, create_thumbnail
 from targets.types import Target
@@ -21,22 +21,49 @@ from products import makes_image
 def _post_process_target(images: ImageList, target: Target) -> ImageList:
   print(f'### _post_process_target target {target} images {images}')
 
-  if 'RGB' in images:
-    rgb = ChannelCombination(images.channels('RGB'))
+  if 'LRGB' in images:
+    aligned = StarAlignment(images.channels('LRGB'))
+    rgb = LRGBCombination(aligned.channels('RGBL'))
     julian_date = int(Time(target.oldest_date).jd)
-    rgb = ImageSolver(rgb,
-                      metadata_ra=target.center[0],
-                      metadata_dec=target.center[1],
-                      metadata_resolution=target.image_scale / 3600.0,
-                      metadata_observationTime=julian_date,
-                      metadata_epoch=julian_date)
-    rgb = SpectrophotometricColorCalibration(rgb)
-    stars, _ = StarXTerminator(rgb)
+    solved = ImageSolver(rgb,
+                         metadata_ra=target.center[0],
+                         metadata_dec=target.center[1],
+                         metadata_resolution=target.image_scale / 3600.0,
+                         metadata_observationTime=julian_date,
+                         metadata_epoch=julian_date)
+    calibrated = SpectrophotometricColorCalibration(solved,
+                                                    saturationThreshold=1.0)
+    starless, stars = StarXTerminator(calibrated)
+
+    output_filenames = [
+        output_filename(target, 'stars'),
+        output_filename(target, 'starless')
+    ]
+    SaveImages([stars, starless], output_filenames)
+  elif 'RGB' in images:
+    aligned = StarAlignment(images.channels('RGB'))
+    rgb = ChannelCombination(aligned)
+    julian_date = int(Time(target.oldest_date).jd)
+    solved = ImageSolver(rgb,
+                         metadata_ra=target.center[0],
+                         metadata_dec=target.center[1],
+                         metadata_resolution=target.image_scale / 3600.0,
+                         metadata_observationTime=julian_date,
+                         metadata_epoch=julian_date)
+    calibrated = SpectrophotometricColorCalibration(solved)
+    stars, starless = StarXTerminator(calibrated)
+
+    output_filenames = [
+        output_filename(target, 'stars'),
+        output_filename(target, 'starless')
+    ]
+    SaveImages([stars, starless], output_filenames)
 
   if 'SHO' in images:
-    _, s = StarXTerminator(images.channels('s'))
-    _, h = StarXTerminator(images.channels('h'))
-    _, o = StarXTerminator(images.channels('o'))
+    aligned = StarAlignment(images.channels('RGB'))
+    _, s = StarXTerminator(aligned['S'])
+    _, h = StarXTerminator(aligned['H'])
+    _, o = StarXTerminator(aligned['O'])
     s, o = LinearFit([s, o], h)
     narrowband = ChannelCombination([s, h, o], 'SHO')
 
@@ -49,13 +76,13 @@ def _post_process_target(images: ImageList, target: Target) -> ImageList:
 
 # TODO: Targets are composed of multiple color channels, so this needs to be
 # able to return multiple images.
-def output_filename(target: Target) -> XisfFilePath:
-  ra_dec_string = position_string.ra_dec_string(*target.center)
-  return XisfFilePath(
-      Path('Targets') / target.name / 'masters' /
-      f'master_light_{target.name}_{ra_dec_string}_'
-      f'{target.camera}_{target.image_scale:.02f}aspp_'
-      f'{target.rotation_angle:.2f}deg_{target.filter}.xisf')
+def output_filename(target: Target, suffix: str) -> XisfFilePath:
+  path = XisfFilePath(
+      Path('Targets') / target.name / 'post_processed' /
+      f'target {target.stable_hash}_{suffix}.xisf').resolve_at(
+          context.output_dir)
+  path.parent.mkdir(parents=True, exist_ok=True)
+  return path
 
 
 # TODO: Hash the script used to do the post-processing, and do not repeat
@@ -65,6 +92,7 @@ def output_filename(target: Target) -> XisfFilePath:
 @measure_performance
 @create_thumbnail
 def post_process_target(target: Target) -> None:
+  print(f'Entering post_process_target for {target}')
   stacks = context.stacks
   images = [
       stack_output_filename(stacks[stack_id]).resolve_at(context.output_dir)
