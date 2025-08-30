@@ -108,11 +108,11 @@ class StateActor:
       case 'announce':
         self.state, new_actions = _announce(self.state, action)
       case 'process':
-        if action.object_type == 'stack':
+        if action['object_type'] == 'stack':
           self.state, new_actions = _process_stack(self.state, action)
-        if action.object_type == 'target':
+        if action['object_type'] == 'target':
           self.state, new_actions = _process_target(self.state, action)
-        elif action.object_type == 'mosaic':
+        elif action['object_type'] == 'mosaic':
           self.state, new_actions = _process_mosaic(self.state, action)
       case 'post_process':
         self.state, new_actions = _post_process(self.state, action)
