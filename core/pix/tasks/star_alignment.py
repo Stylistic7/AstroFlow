@@ -133,11 +133,12 @@ def StarAlignment(images: ImageList, **kwargs: Any) -> ImageList:
   output_view_ids = [v + '_registered' for v in view_ids]
   output_images = [
       Image(filename=image.filename,
+            filter=image.filter,
             tag='registered',
             view_id=view_id,
             dirty=True) for view_id, image in zip(output_view_ids, images)
   ]
   add_images_to_save(output_images)
 
-  print(f'### StarXTerminator returning {output_images}')
-  return output_images
+  print(f'### StarAlignment returning {output_images}')
+  return ImageList(output_images)
