@@ -16,3 +16,4 @@ from .channel_combination import ChannelCombination
 from .spectrophotometric_color_calibration import SpectrophotometricColorCalibration
 from .gradient_correction import GradientCorrection
 from .linear_fit import LinearFit
+from .lrgb_combination import LRGBCombination
