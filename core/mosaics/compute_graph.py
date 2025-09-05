@@ -99,7 +99,7 @@ def stacks_for_mosaic(mosaic: Mosaic, stacks: CompositeStacksDict,
   })
 
 
-@ray.remote
+@cached.remote
 def build_mosaic_subgraph(mode: QualityLevel, mosaic: Mosaic,
                           stacks: CompositeStacksDict,
                           targets: TargetsDict) -> Graph:
@@ -144,8 +144,7 @@ def build_mosaic_subgraph(mode: QualityLevel, mosaic: Mosaic,
   return graph
 
 
-# TODO: This function seems to be slow for some reason.
-@ray.remote(num_cpus=0.5)
+@cached.remote
 def build_placement_subgraph(mode: QualityLevel, mosaic: Mosaic,
                              stack: CustomizedStack, filter: str,
                              tile_indices: TileIndices, viewbox: Viewbox,
@@ -206,7 +205,7 @@ def get_stacks_for_filter(
   return tuple(get_stacks_for_strip(strip) for strip in mosaic.strips)
 
 
-@ray.remote
+@cached.remote
 def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
                                  strips: list[list[StackHash]],
                                  stacks: CompositeStacksDict, filter: str,

@@ -63,7 +63,7 @@ def gather_spatial_groups(*stacks_in: list[CompositeStacksDict]) -> None:
 
 # TODO: Don't call build_spatial_group_graph for spatial groups that are cached
 # and unchanged.
-@ray.remote
+@cached.remote
 def scatter_spatial_groups(spatial_groups) -> Graph:
   graph = Graph({
       gather_spatial_groups: {(identify_stacks, g) for g in spatial_groups},
@@ -81,7 +81,7 @@ def regroup_graph_done() -> None:
 
 # TODO: Add step that cleans metadata, removing any images that won't make it
 # through the remaining steps, and alerting the user.
-@ray.remote
+@cached.remote
 def build_regroup_graph(metadata: MetadataDict) -> Graph:
   return Graph({
       **chain(
@@ -134,10 +134,6 @@ def build_main_processing_graph() -> Graph:
   targets = context.targets
   mosaics = context.mosaics
   shopping_cart = context.shopping_cart or []
-
-  # shopping_cart += [('stack', s) for s in stacks.keys()]
-  # shopping_cart += [('mosaic', m) for m in mosaics.keys()]
-
   print(f'### build_main_processing_graph shopping_cart {shopping_cart}')
 
   # TODO: Maybe add prioritization options in the UI.

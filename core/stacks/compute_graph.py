@@ -40,7 +40,7 @@ def stack_runs_done(stack: CustomizedStack) -> None:
 
 # This function accepts a fully customized stack, after settings and calibration
 # frames have been associated.
-@ray.remote
+@cached.remote
 def build_stacking_subgraph(stack: CustomizedStack) -> Graph:
   graph = Graph({})
 
@@ -70,7 +70,7 @@ def get_stack_subframe_image(stack: CompositeStack) -> Path:
   return Path(best_light_frame.filename)
 
 
-@ray.remote
+@cached.remote
 def get_stack_image(mode: QualityLevel, stack: CompositeStack) -> Graph:
   assert stack is not None
   if mode == QualityLevel.SUBFRAME:

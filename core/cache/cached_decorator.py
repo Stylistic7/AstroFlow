@@ -1,12 +1,9 @@
 import ray
 import inspect
 from functools import wraps
-from typing import Any, Callable, Optional, get_origin, TypeVar, Generic, List, Type
-import pickle
-import xxhash
+from typing import Any, Callable, Optional, get_origin, TypeVar, Generic
 
-from dependency_graph import Graph
-from hashing import hash_source_code, hash_call
+from hashing import hash_source_code
 from protocols import CacheProtocol, ContentHashProtocol
 from cache.types import NeverRun
 
@@ -82,8 +79,6 @@ def make_cached_decorator(cache: CacheProtocol,
         result = func(*bound.args, **bound.kwargs)
       except Exception as e:
         result = e
-
-      assert not isinstance(result, Graph)
 
       result = content_hasher.set(result, call_hash)
       debug_print(f'storing: {key} as {type(result)}')

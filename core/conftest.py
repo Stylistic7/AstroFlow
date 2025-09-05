@@ -1,6 +1,5 @@
 import ray
 import pytest
-import time
 
 from testing import make_test_context
 

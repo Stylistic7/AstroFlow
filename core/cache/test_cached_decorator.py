@@ -43,9 +43,23 @@ def fail_remote() -> int:
 
 
 @ray.remote
-def make_graph_remote() -> Graph:
-  context.num_graph_runs = context.num_graph_runs + 1
-  return Graph()
+def graph_done() -> None:
+  pass
+
+
+@cached.remote
+def build_graph() -> Graph:
+  context.num_build_graph_runs = context.num_build_graph_runs + 1
+  return Graph({consume_large_image_remote: {make_large_image_remote}})
+
+
+@cached.remote
+def build_mixed_graph() -> Graph:
+  context.num_build_graph_runs = context.num_build_graph_runs + 1
+  return Graph({
+      graph_done: {consume_large_image_remote},
+      consume_large_image_remote: {make_large_image_remote}
+  })
 
 
 @cached.remote
@@ -53,7 +67,7 @@ def make_small_image() -> np.ndarray:
   return np.ones((10, 10))
 
 
-def test_remote_functions(test_context):
+def test_remote_functions(test_context) -> None:
   context.num_make_large_image_runs = 0
   context.num_consume_large_image_runs = 0
 
@@ -91,14 +105,30 @@ def test_remote_functions(test_context):
     assert context.num_consume_large_image_runs == 1
 
 
-def test_exception_handling(test_context):
+def test_exception_handling(test_context) -> None:
   with pytest.raises(ray.exceptions.RayTaskError) as excinfo:
     ray.get(fail_remote.remote())
 
   assert "intentional failure" in str(excinfo.value)
 
 
-def test_dry_run(test_context):
+def test_graph_caching(test_context) -> None:
+  context.num_build_graph_runs = 0
+  _ = ray.get(build_graph.remote())
+  assert build_graph.is_cached()
+  _ = ray.get(build_graph.remote())
+  assert context.num_build_graph_runs == 1
+
+
+def test_mixed_graph_caching(test_context) -> None:
+  context.num_build_graph_runs = 0
+  _ = ray.get(build_mixed_graph.remote())
+  assert build_mixed_graph.is_cached()
+  _ = ray.get(build_mixed_graph.remote())
+  assert context.num_build_graph_runs == 1
+
+
+def test_dry_run(test_context) -> None:
   result = ray.get(make_small_image.remote(dry_run=True))
   assert result == NeverRun
 
