@@ -26,9 +26,7 @@ def identify_calibration_stacks(metadata: MetadataDict) -> SimpleStacksDict:
 
     items = [(h, metadata[h].header['DATE-OBS']) for h in frames]
     result = clustering.cluster_continuous(items, epsilon=context.max_run_gap)
-    return [
-        [x[0] for x in r] for r in result if len(r) >= context.min_frames_in_run
-    ]
+    return [[x[0] for x in r] for r in result]
 
   def group_by_header(images: list[ImageMetadata], key: str,
                       default_value: Any) -> dict[str, set[FrameHash]]:

@@ -32,7 +32,6 @@ def make_test_context(
   context.cosine_similarity_threshold = 0.99999
   context.min_component_members = 3
   context.max_run_gap = datetime.timedelta(hours=8)
-  context.min_frames_in_run = 3
   context.min_frames_in_stack = 3
   context.subframe_thumbnail_width = 1200
   context.master_thumbnail_width = 2160

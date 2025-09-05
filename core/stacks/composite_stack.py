@@ -43,8 +43,6 @@ class CompositeStack(ContentHashed, ImagingAttributes, AstrometricAttributes,
           epsilon=context.max_run_gap)
 
       for run in runs:
-        if len(run) < context.min_frames_in_run:
-          continue
         run_frames = [x[0] for x in run]
         new_stack = SimpleStack.from_frames(run_frames, metadata)
         contents[new_stack.content_hash] = new_stack
