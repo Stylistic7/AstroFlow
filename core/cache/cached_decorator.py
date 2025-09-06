@@ -2,6 +2,7 @@ import ray
 import inspect
 from functools import wraps
 from typing import Any, Callable, Optional, get_origin, TypeVar, Generic
+from pathlib import Path
 
 from hashing import hash_source_code
 from protocols import CacheProtocol, ContentHashProtocol
@@ -77,6 +78,8 @@ def make_cached_decorator(cache: CacheProtocol,
 
       try:
         result = func(*bound.args, **bound.kwargs)
+        if isinstance(result, Path) and not result.exists():
+          raise FileNotFoundError(result)
       except Exception as e:
         result = e
 
