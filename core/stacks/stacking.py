@@ -85,22 +85,21 @@ def _setup_simple_stack(stack: SimpleStack, metadata: MetadataDict,
   ]
   _symlink_frames(dependendency_filenames, tmp_dir)
 
-  return filenames[0]
+  return filenames
 
 
 def _setup_composite_stack(stack: CompositeStack, metadata: MetadataDict,
                            calibration_stacks: SimpleStacksDict,
                            tmp_dir: str) -> tuple[str | None, int]:
-  first_filename = None
-
+  filenames = []
   for i, substack in enumerate(stack.contents.values()):
     run_dir = os.path.join(tmp_dir, f'RUN_{i}')
     os.makedirs(run_dir, exist_ok=True)
     result = _setup_simple_stack(substack, metadata, calibration_stacks,
                                  run_dir)
-    first_filename = first_filename or result
+    filenames.extend(result)
 
-  return first_filename
+  return filenames
 
 
 def _mock_stacking(src_filename: str, dest_filename: str,
@@ -156,12 +155,16 @@ def _stack_with_pixinsight(stack: Stack, metadata: dict[str, str]) -> Path:
     setup_fn = _setup_composite_stack if type(stack) in [
         CompositeStack, CustomizedStack
     ] else _setup_simple_stack
-    first_filename = setup_fn(stack, context.metadata, calibration_stacks,
-                              tmp_dir)
+    filenames = setup_fn(stack, context.metadata, calibration_stacks, tmp_dir)
+
+    if len(filenames) < context.min_frames_in_stack:
+      print(f'### Not stacking {stack} because it contains '
+            f'only {len(filenames)} files')
+      raise ValueError(f"Stack {stack} contains only {len(filenames)} files")
 
     # Maybe mock PixInsight (in tests).
     if context.get('mock_pixinsight', False):
-      return _mock_stacking(first_filename, dest_filename, metadata)
+      return _mock_stacking(filenames[0], dest_filename, metadata)
 
     print(f'### Running _run_wbpp for stack {stack}')
     _run_wbpp([], dir=tmp_dir, outputDirectory=tmp_dir)
