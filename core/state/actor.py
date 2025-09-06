@@ -5,11 +5,11 @@ from state.types import Action, State
 
 from context import context
 from stacks.compute_graph import process_stacks_for_ui
-from dependency_graph import Graph, run_graph
+from dependency_graph import Graph, run_graph, chain
 from customization.compute_graph import customize_stack, store_customized_stack
-from mosaics.compute_graph import build_mosaic_subgraph, stacks_for_mosaic, targets_for_mosaic
+from mosaics.compute_graph import build_mosaic_subgraph, stacks_for_mosaic, targets_for_mosaic, process_mosaics_for_ui
 from previews.types import QualityLevel
-from targets.compute_graph import build_target_subgraph
+from targets.compute_graph import build_target_subgraph, process_targets_for_ui
 from stacks.compute_graph import build_stacking_subgraph
 from targets.post_process import post_process_target
 from stacks.post_process import post_process_stack
@@ -46,14 +46,24 @@ def command_done() -> None:
 
 def _process_stack(state: State, action: Action) -> tuple[State, list[Action]]:
   stack = context.stacks[action['object_id']]
-  run_graph(Graph({(build_stacking_subgraph, stack): {}}))
+
+  run_graph(
+      Graph({**chain(
+          (build_stacking_subgraph, stack),
+          process_stacks_for_ui,
+      )}))
 
   return state, [Action(type='announce', message='reload_data')]
 
 
 def _process_target(state: State, action: Action) -> tuple[State, list[Action]]:
   target = context.targets[action['object_id']]
-  run_graph(Graph({(build_target_subgraph, target): {}}))
+
+  run_graph(
+      Graph({**chain(
+          (build_target_subgraph, target),
+          process_targets_for_ui,
+      )}))
 
   return state, [Action(type='announce', message='reload_data')]
 
@@ -70,6 +80,8 @@ def _process_mosaic(state: State, action: Action) -> tuple[State, list[Action]]:
               stacks_for_mosaic(mosaic, stacks,
                                 targets), targets_for_mosaic(mosaic, targets))
       tasks.append(task)
+
+  tasks.append(process_mosaics_for_ui)
 
   run_graph(Graph({command_done: tasks}))
 
