@@ -9,7 +9,7 @@ from dependency_graph import Graph, run_graph, graph_status_to_progress
 from dependency_graph.debugging import node_to_string
 from dependency_graph.workflow_graph_adapter import to_workflow_graph
 from stacks.compute_graph import build_stacking_subgraph
-# from web_server.backend.object_cache import cached_stacks, cached_targets, cached_mosaics
+from targets.compute_graph import build_target_subgraph
 from web_server.backend.announcer import announce
 from mosaics.compute_graph import build_mosaic_subgraph, stacks_for_mosaic, targets_for_mosaic, build_placement_subgraph
 from previews.types import QualityLevel
@@ -110,11 +110,11 @@ def run_compute_graph():
 @compute_graphs_bp.route('/workflow_graph/stack/<stack_id>')
 def workflow_graph_for_stack(stack_id):
 
-  workflow_graph = None
+  graph_status = None
 
   def graph_update_fn(g):
-    nonlocal workflow_graph
-    workflow_graph = to_workflow_graph(g)
+    nonlocal graph_status
+    graph_status = g
 
   graph = ray.get(build_stacking_subgraph.remote(context.stacks[stack_id]))
 
@@ -123,17 +123,36 @@ def workflow_graph_for_stack(stack_id):
                          dry_run=True,
                          debug=True)
 
-  return workflow_graph
+  return to_workflow_graph(graph_status)
+
+
+@compute_graphs_bp.route('/workflow_graph/target/<target_id>')
+def workflow_graph_for_target(target_id):
+
+  graph_status = None
+
+  def graph_update_fn(g):
+    nonlocal graph_status
+    graph_status = g
+
+  graph = ray.get(build_target_subgraph.remote(context.targets[target_id]))
+
+  results, _ = run_graph(graph,
+                         graph_update_fn=graph_update_fn,
+                         dry_run=True,
+                         debug=True)
+
+  return to_workflow_graph(graph_status)
 
 
 @compute_graphs_bp.route('/workflow_graph/mosaic/<mosaic_id>')
 def workflow_graph_for_mosaic(mosaic_id):
 
-  workflow_graph = None
+  graph_status = None
 
   def graph_update_fn(g):
-    nonlocal workflow_graph
-    workflow_graph = to_workflow_graph(g)
+    nonlocal graph_status
+    graph_status = g
 
   mosaic = context.mosaics[mosaic_id]
 
@@ -148,4 +167,4 @@ def workflow_graph_for_mosaic(mosaic_id):
                          dry_run=True,
                          debug=True)
 
-  return workflow_graph
+  return to_workflow_graph(graph_status)
