@@ -3,6 +3,7 @@ from typing import Any, Callable, Union, TypeAlias, Iterable
 from dataclasses import dataclass, field
 from graphlib import TopologicalSorter
 from collections import defaultdict
+from cache.types import NeverRunType
 
 from ray.remote_function import RemoteFunction
 from ray._private.worker import RemoteFunctionNoArgs, RemoteFunction0, RemoteFunction1, RemoteFunction2, RemoteFunction3, RemoteFunction4, RemoteFunction5, RemoteFunction6
@@ -178,6 +179,28 @@ class ResultDict(dict[Node, Any]):
 
     process(self)
     return output
+
+  def contains_instance(self, cls):
+    found = False
+
+    def process(r: ResultDict) -> None:
+      nonlocal found
+      for value in r.values():
+        if isinstance(value, ResultDict):
+          process(value)
+        elif isinstance(value, cls):
+          found = True
+          return
+
+    process(self)
+    return found
+
+  def contains_exception(self):
+    return self.contains_instance(Exception)
+
+  def is_complete(self):
+    return not self.contains_instance(Exception) and not self.contains_instance(
+        NeverRunType)
 
 
 DoneCallback = Callable[[], None]

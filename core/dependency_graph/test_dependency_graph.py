@@ -320,13 +320,17 @@ def test_list_of_tasks(test_context) -> None:
   assert results.num_nodes_run == 3
   assert results.max_parallelism_seen == 1
 
+  assert results.is_complete()
+
 
 def test_with_exception(test_context) -> None:
   graph = Graph({scatter_raises_exception: {}})
 
   results, _ = run_graph(graph)
-  print('### test_with_exception', results[scatter_raises_exception])
   assert isinstance(results[scatter_raises_exception], TypeError)
+
+  assert results.contains_exception()
+  assert not results.is_complete()
 
 
 def test_dynamic_subgraph(test_context) -> None:
@@ -338,6 +342,8 @@ def test_dynamic_subgraph(test_context) -> None:
 
   assert results.num_nodes_run == 9
   assert results.max_parallelism_seen == 7
+
+  assert results.is_complete()
 
 
 def test_dynamic_subgraph_completion(test_context) -> None:
@@ -356,6 +362,8 @@ def test_dynamic_subgraph_completion(test_context) -> None:
   assert results.num_nodes_run == 10
   assert results.max_parallelism_seen == 7
 
+  assert results.is_complete()
+
 
 def test_dynamic_subgraph_completion_with_peer(test_context) -> None:
   context.foo = 13
@@ -372,6 +380,8 @@ def test_dynamic_subgraph_completion_with_peer(test_context) -> None:
 
   assert results.num_nodes_run == 11
   assert results.max_parallelism_seen == 7
+
+  assert results.is_complete()
 
 
 def test_dynamic_subgraph_with_context_completion(test_context) -> None:
@@ -391,6 +401,8 @@ def test_dynamic_subgraph_with_context_completion(test_context) -> None:
   assert results.num_nodes_run == 10
   assert results.max_parallelism_seen == 7
 
+  assert results.is_complete()
+
 
 def test_mutable_context(test_context) -> None:
   graph = Graph({increment_bar: {increment_foo}})
@@ -408,6 +420,8 @@ def test_mutable_context(test_context) -> None:
   assert results.num_nodes_run == 2
   assert results.max_parallelism_seen == 1
 
+  assert results.is_complete()
+
 
 def test_dynamic_graph_with_context(test_context) -> None:
   graph = Graph({scatter_with_context: {}})
@@ -421,6 +435,8 @@ def test_dynamic_graph_with_context(test_context) -> None:
   assert results.num_nodes_run == 9
   assert results.max_parallelism_seen == 7
 
+  assert results.is_complete()
+
 
 def test_conditional_dynamic_graph(test_context) -> None:
   dynamic_graph_task = (maybe_run_dynamic_graph, True)
@@ -431,6 +447,8 @@ def test_conditional_dynamic_graph(test_context) -> None:
   assert results.num_nodes_run == 9
   assert results.max_parallelism_seen == 7
 
+  assert results.is_complete()
+
   dynamic_graph_task = (maybe_run_dynamic_graph, False)
   graph = Graph({dynamic_graph_task: {}})
   results, _ = run_graph(graph)
@@ -438,6 +456,8 @@ def test_conditional_dynamic_graph(test_context) -> None:
 
   assert results.num_nodes_run == 1
   assert results.max_parallelism_seen == 1
+
+  assert results.is_complete()
 
 
 def test_multiple_inputs(test_context) -> None:
@@ -448,6 +468,8 @@ def test_multiple_inputs(test_context) -> None:
 
   assert results.num_nodes_run == 1
   assert results.max_parallelism_seen == 1
+
+  assert results.is_complete()
 
 
 def test_simple_graph_with_priority(test_context) -> None:
@@ -469,6 +491,8 @@ def test_simple_graph_with_priority(test_context) -> None:
 
   assert results.num_nodes_run == 4
   assert results.max_parallelism_seen == 2
+
+  assert results.is_complete()
 
 
 def test_duplicate_ancestors(test_context) -> None:
@@ -492,6 +516,8 @@ def test_duplicate_ancestors(test_context) -> None:
   assert results.num_nodes_run == 4
   assert results.max_parallelism_seen == 2
 
+  assert results.is_complete()
+
 
 def test_duplicate_nodes(test_context) -> None:
   A = Node(increment_foo, name='first_foo')
@@ -504,6 +530,8 @@ def test_duplicate_nodes(test_context) -> None:
 
   assert results.num_nodes_run == 2
 
+  assert results.is_complete()
+
 
 def test_scatter_in_subgraphs(test_context) -> None:
   graph = scatter_in_subgraphs()
@@ -512,6 +540,8 @@ def test_scatter_in_subgraphs(test_context) -> None:
 
   assert results[gather_from_subgraphs] == 78
   assert results.max_parallelism_seen == 13
+
+  assert results.is_complete()
 
 
 @pytest.mark.exclusive
@@ -615,6 +645,8 @@ def test_status_fn(test_context) -> None:
   assert len(final_status.ready_nodes) == 0
   assert len(final_status.waiting_nodes) == 0
 
+  assert results.is_complete()
+
 
 def test_trace(test_context) -> None:
   dynamic_graph_task = (maybe_run_dynamic_graph, True)
@@ -624,6 +656,8 @@ def test_trace(test_context) -> None:
 
   assert results.num_nodes_run == 9
   assert results.max_parallelism_seen == 7
+
+  assert results.is_complete()
 
   for i in range(7):
     assert Node(process, i) in results.trace
@@ -653,3 +687,5 @@ def test_recursive_graph(test_context) -> None:
 
   assert results.num_nodes_run == 1 + 10 + 100 + 1000 + 10000 + 10000 * 8 + 1000 + 100 + 10 + 1  # depth 5
   assert results.max_parallelism_seen == 70000  # depth 5
+
+  assert results.is_complete()
