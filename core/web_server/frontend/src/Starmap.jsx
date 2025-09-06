@@ -5,12 +5,12 @@ import { ReactPhotoSphereViewer } from 'react-photo-sphere-viewer';
 import { MarkersPlugin } from '@photo-sphere-viewer/markers-plugin';
 import "@photo-sphere-viewer/markers-plugin/index.css";
 import AstroFlowContext from './AstroFlowContext.jsx';
+import MosaicTabs from "./MosaicTabs.jsx";
 
 export default function Starmap() {
-	const { stacks, targets, mosaics } = useContext(AstroFlowContext);
+	const { constellationPolylines, targets, mosaics } = useContext(AstroFlowContext);
 	const navigate = useNavigate();
-
-	console.log('targets 1', targets);
+	const [instance, setInstance] = useState(undefined);
 
 	const handleClick = (data: events.ClickEvent & { type: "click"; }) => {
 		let elements = document.elementsFromPoint(data.data.clientX, data.data.clientY);
@@ -40,98 +40,64 @@ export default function Starmap() {
 		}],
 	]
 
+	useEffect(() => {
+		if (!constellationPolylines || !targets || !mosaics)
+			return;
+
+		const markersPlugs = instance?.getPlugin(MarkersPlugin);
+		if (!markersPlugs)
+			return;
+
+		markersPlugs.clearMarkers();
+
+		constellationPolylines.map((polyline, index) => {
+			markersPlugs.addMarker({
+				id: "polyline_" + index,
+				polyline: polyline,
+				style: {
+					stroke: 'white',
+					strokeOpacity: '0.5',
+					strokeWidth: '1px',
+				},
+			});
+		});
+
+		for (let [id, target] of Object.entries(targets)) {
+			if (!target.projected_footprints) continue;
+
+			markersPlugs.addMarker({
+				id: "target," + id,
+				polygon: target.projected_footprints['galactic']['coords'],
+				style: {
+					stroke: 'rgba(0, 0, 255, 0.7)',
+					strokeOpacity: '0.7',
+					strokeWidth: '4px',
+					fill: 'black',
+					fillOpacity: '0.2',
+				}
+			});
+		};
+
+		for (let [id, mosaic] of Object.entries(mosaics)) {
+			if (!mosaic.projected_footprints) continue;
+
+			markersPlugs.addMarker({
+				id: "mosaic," + id,
+				polygon: mosaic.projected_footprints['galactic']['coords'],
+				style: {
+					stroke: 'rgba(255, 0, 0, 0.8)',
+					strokeOpacity: '0.8',
+					strokeWidth: '4px',
+					fill: 'black',
+					fillOpacity: '0.2',
+				}
+			});
+		};
+	}, [instance, constellationPolylines, targets, mosaics]);
+
+
 	const handleReady = (instance) => {
-		fetch('/constellation_polylines')
-			.then(r => r.json())
-			.then(constellation_polylines => {
-				const markersPlugs = instance.getPlugin(MarkersPlugin);
-				if (!markersPlugs)
-					return;
-
-				constellation_polylines.map((polyline, index) => {
-					markersPlugs.addMarker({
-						id: "polyline_" + index,
-						polyline: polyline,
-						style: {
-							stroke: 'white',
-							strokeOpacity: '0.5',
-							strokeWidth: '1px',
-						},
-					});
-				});
-			});
-
-		// console.log('targets 2', targets);
-		// console.log('about to draw targets', Object.keys(targets).length)
-		// const markersPlugs = instance.getPlugin(MarkersPlugin);
-		// if (!markersPlugs) {
-		// 	console.log('Could not get marker plugin');
-		// 	return;
-		// }
-
-		// for (let [id, target] of Object.entries(targets)) {
-		// 	console.log('looking at target', id);
-		// 	if (!target.projected_footprints) continue;
-
-		// 	markersPlugs.addMarker({
-		// 		id: "target," + id,
-		// 		polygon: target.projected_footprints['galactic']['coords'],
-		// 		style: {
-		// 			stroke: 'rgba(0, 0, 255, 0.7)',
-		// 			strokeOpacity: '0.7',
-		// 			strokeWidth: '4px',
-		// 		}
-		// 	});
-		// };
-
-		// TODO: Don't fetch data here. Read it from the AstroFlowContext.
-		fetch('/targets')
-			.then(r => r.json())
-			.then(targets => {
-				const markersPlugs = instance.getPlugin(MarkersPlugin);
-				if (!markersPlugs)
-					return;
-
-				for (let [id, target] of Object.entries(targets)) {
-					if (!target.projected_footprints) continue;
-
-					markersPlugs.addMarker({
-						id: "target," + id,
-						polygon: target.projected_footprints['galactic']['coords'],
-						style: {
-							stroke: 'rgba(0, 0, 255, 0.7)',
-							strokeOpacity: '0.7',
-							strokeWidth: '4px',
-							fill: 'black',
-							fillOpacity: '0.2',
-						}
-					});
-				};
-			});
-
-		fetch('/mosaics')
-			.then(r => r.json())
-			.then(mosaics => {
-				const markersPlugs = instance.getPlugin(MarkersPlugin);
-				if (!markersPlugs)
-					return;
-
-				for (let [id, mosaic] of Object.entries(mosaics)) {
-					if (!mosaic.projected_footprints) continue;
-
-					markersPlugs.addMarker({
-						id: "mosaic," + id,
-						polygon: mosaic.projected_footprints['galactic']['coords'],
-						style: {
-							stroke: 'rgba(255, 0, 0, 0.8)',
-							strokeOpacity: '0.8',
-							strokeWidth: '4px',
-							fill: 'black',
-							fillOpacity: '0.2',
-						}
-					});
-				};
-			});
+		setInstance(instance);
 	}; // end handleReady
 
 	return <ReactPhotoSphereViewer

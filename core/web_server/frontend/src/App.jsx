@@ -24,6 +24,7 @@ function App() {
   const isPageVisible = usePageVisibility();
   const [dataIsAvailable, setDataIsAvailable] = useState(false);
 
+  const [constellationPolylines, setConstellationPolylines] = useState([]);
   const [stacks, setStacks] = useState({});
   const [calibrationStacks, setCalibrationStacks] = useState({});
   const [targets, setTargets] = useState({});
@@ -37,13 +38,14 @@ function App() {
     console.log('in App.useEffect');
 
     const loadObjectData = async () => {
-      let [s, c, t, m, cart, cg] = await Promise.all([
+      let [s, c, t, m, cart, cg, cp] = await Promise.all([
         fetch('/stacks').then(r => r.json()),
         fetch('/calibration_stacks').then(r => r.json()),
         fetch('/targets').then(r => r.json()),
         fetch('/mosaics').then(r => r.json()),
         fetch(`/get_shopping_cart`).then(r => r.json()),
         fetch('/compute_graph').then(r => r.json()),
+        fetch('/constellation_polylines').then(r => r.json()),
       ]);
 
       setStacks(s);
@@ -52,6 +54,7 @@ function App() {
       setMosaics(m);
       setShoppingCart(cart);
       setComputeGraph(cg);
+      setConstellationPolylines(cp);
 
       setDataIsAvailable(true);
     };
@@ -113,7 +116,7 @@ function App() {
     <ThemeProvider theme={darkTheme}>
       <StyledEngineProvider injectFirst>
         <AstroFlowContext.Provider
-          value={{ stacks, calibrationStacks, targets, mosaics, shoppingCart, computeGraph, computeGraphStatus, rayStatus }}
+          value={{ constellationPolylines, stacks, calibrationStacks, targets, mosaics, shoppingCart, computeGraph, computeGraphStatus, rayStatus }}
         >
           <FolderProvider>
             <CssBaseline />
