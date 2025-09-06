@@ -184,12 +184,12 @@ def _make_json_serializable(D):
 
 @app.route('/mosaics')
 def mosaics():
-  return {k: _make_json_serializable(v) for k, v in context.mosaics.items()}
+  return context.ui_mosaics
 
 
 @app.route('/targets')
 def targets():
-  return {k: _make_json_serializable(v) for k, v in context.targets.items()}
+  return context.ui_targets
 
 
 @app.route('/stacks')

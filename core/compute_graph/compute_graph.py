@@ -9,10 +9,10 @@ from previews.stack_thumbnails import scatter_stack_thumbnails
 from previews.types import QualityLevel
 from mosaics.identification import identify_mosaics
 from stacks.compute_graph import build_stacking_subgraph, process_stacks_for_ui
-from targets.compute_graph import build_target_subgraph
+from targets.compute_graph import build_target_subgraph, process_targets_for_ui
 from targets.types import TargetsDict
 from targets.identification import group_stacks_into_targets
-from mosaics.compute_graph import build_mosaic_subgraph
+from mosaics.compute_graph import build_mosaic_subgraph, process_mosaics_for_ui
 from dependency_graph import Graph, chain
 from stacks.identification import identify_stacks
 from stacks.composite_stack import CompositeStacksDict, SimpleStacksDict
@@ -134,6 +134,7 @@ def build_main_processing_graph() -> Graph:
   targets = context.targets
   mosaics = context.mosaics
   shopping_cart = context.shopping_cart or []
+
   print(f'### build_main_processing_graph shopping_cart {shopping_cart}')
 
   # TODO: Maybe add prioritization options in the UI.
@@ -179,6 +180,8 @@ def build_compute_graph() -> Graph:
           build_regroup_graph,
           build_customize_graph,
           process_stacks_for_ui,
+          process_targets_for_ui,
+          process_mosaics_for_ui,
           build_preview_graph,
           build_main_processing_graph,
       )

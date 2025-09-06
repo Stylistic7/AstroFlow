@@ -7,6 +7,8 @@ from shapely import box  # type: ignore
 from shapely.affinity import scale  # type: ignore
 from functools import partial
 import shutil
+import numpy as np
+from spherical_geometry.polygon import SingleSphericalPolygon
 
 from context import context
 from customization.types import CustomizedStack
@@ -33,6 +35,8 @@ from pix.classes import ImageList
 from pix.tasks import SaveImages
 from metadata.image_metadata import compute_image_metadata
 from products import makes_image
+from stacks.convert_to_dict import convert_to_dict
+from dependency_graph import run_graph
 
 
 @PixInsight()
@@ -279,3 +283,33 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
       prev_task = merge_task
 
   return graph
+
+
+@ray.remote
+def process_mosaics_for_ui() -> None:
+  stacks = context.stacks
+  targets = context.targets
+
+  def my_transform(v):
+    if type(v) is np.ndarray:
+      return v.tolist()
+    if type(v) is SingleSphericalPolygon:
+      return v.points.tolist()
+    return v
+
+  def prepare_mosaic(mosaic: Mosaic):
+    result = convert_to_dict(mosaic, transform=my_transform)
+
+    graph = ray.get(
+        build_mosaic_subgraph.remote(QualityLevel.MASTER, mosaic,
+                                     stacks_for_mosaic(mosaic, stacks, targets),
+                                     targets_for_mosaic(mosaic, targets)))
+
+    graph_results, _ = run_graph(graph, dry_run=True)
+    result['contains_exception'] = graph_results.contains_exception()
+    result['is_complete'] = graph_results.is_complete()
+
+    return result
+
+  # TODO: Parallelize this.
+  context.ui_mosaics = {h: prepare_mosaic(s) for h, s in context.mosaics.items()}

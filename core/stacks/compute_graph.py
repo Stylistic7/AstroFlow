@@ -14,6 +14,7 @@ from metadata.image_metadata import compute_image_metadata
 from customization.types import CustomizedStack
 from customization.subframe_selection import get_light_frames_sorted_by_stars
 from previews.types import QualityLevel
+from dependency_graph import run_graph
 
 
 @ray.remote
@@ -101,6 +102,13 @@ def process_stacks_for_ui() -> None:
 
     result['filenames'] = filenames
 
+    graph = ray.get(build_stacking_subgraph.remote(stack))
+
+    graph_results, _ = run_graph(graph, dry_run=True)
+    result['contains_exception'] = graph_results.contains_exception()
+    result['is_complete'] = graph_results.is_complete()
+
     return result
 
+  # TODO: Parallelize this.
   context.ui_stacks = {h: prepare_stack(s) for h, s in context.stacks.items()}
