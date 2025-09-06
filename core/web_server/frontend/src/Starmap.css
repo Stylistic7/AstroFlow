@@ -76,3 +76,49 @@
   width: 70%;
   border-radius: 20px;
 }
+
+.target--ok {
+  stroke: rgba(0, 0, 255, 0.7);
+  stroke-opacity: 0.7;
+  stroke-width: 4px;
+  fill: black;
+  fill-opacity: 0.2;
+}
+
+.target--incomplete {
+  stroke: rgba(0, 0, 255, 0.7);
+  stroke-opacity: 0.7;
+  stroke-width: 4px;
+  fill: rgba(0, 0, 255, 0.3);
+}
+
+.target--exception {
+  stroke: rgba(0, 0, 255, 0.7);
+  stroke-opacity: 0.7;
+  stroke-width: 4px;
+  fill: rgb(208, 255, 0);
+  fill-opacity: 0.3;
+}
+
+.mosaic--ok {
+  stroke: rgba(255, 0, 0, 0.8);
+  stroke-opacity: 0.8;
+  stroke-width: 4px;
+  fill: black;
+  fill-opacity: 0.2;
+}
+
+.mosaic--incomplete {
+  stroke: rgba(255, 0, 0, 0.8);
+  stroke-opacity: 0.8;
+  stroke-width: 4px;
+  fill: rgba(255, 0, 0, 0.3);
+}
+
+.mosaic--exception {
+  stroke: rgba(255, 0, 0, 0.8);
+  stroke-opacity: 0.8;
+  stroke-width: 4px;
+  fill: rgb(208, 255, 0);
+  fill-opacity: 0.3;
+}

@@ -65,32 +65,22 @@ export default function Starmap() {
 		for (let [id, target] of Object.entries(targets)) {
 			if (!target.projected_footprints) continue;
 
+			const state = target.contains_exception ? 'exception' : (target.is_complete ? 'ok' : 'incomplete');
 			markersPlugs.addMarker({
 				id: "target," + id,
+				className: `target--${state}`,
 				polygon: target.projected_footprints['galactic']['coords'],
-				style: {
-					stroke: 'rgba(0, 0, 255, 0.7)',
-					strokeOpacity: '0.7',
-					strokeWidth: '4px',
-					fill: 'black',
-					fillOpacity: '0.2',
-				}
 			});
 		};
 
 		for (let [id, mosaic] of Object.entries(mosaics)) {
 			if (!mosaic.projected_footprints) continue;
 
+			const state = mosaic.contains_exception ? 'exception' : (mosaic.is_complete ? 'ok' : 'incomplete');
 			markersPlugs.addMarker({
 				id: "mosaic," + id,
+				className: `mosaic--${state}`,
 				polygon: mosaic.projected_footprints['galactic']['coords'],
-				style: {
-					stroke: 'rgba(255, 0, 0, 0.8)',
-					strokeOpacity: '0.8',
-					strokeWidth: '4px',
-					fill: 'black',
-					fillOpacity: '0.2',
-				}
 			});
 		};
 	}, [instance, constellationPolylines, targets, mosaics]);
