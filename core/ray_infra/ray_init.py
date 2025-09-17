@@ -44,3 +44,9 @@ def connect_to_ray_cluster():
   _state_actor = StateActor.options(name='state',
                                     namespace='AstroFlow',
                                     get_if_exists=True).remote()
+
+  global _scheduler_actor
+  from state.scheduler_actor import SchedulerActor
+  _scheduler_actor = SchedulerActor.options(name='scheduler',
+                                    namespace='AstroFlow',
+                                    get_if_exists=True).remote()

@@ -117,6 +117,9 @@ class StateActor:
     match action['type']:
       case 'noop':
         new_actions = []
+      case 'alert':
+        print(f'### ALERT')
+        new_actions = []
       case 'announce':
         self.state, new_actions = _announce(self.state, action)
       case 'process':

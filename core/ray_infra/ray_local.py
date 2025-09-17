@@ -15,7 +15,7 @@ def get_available_resources() -> Any:
 
 _context_actor = None
 _state_actor = None
-
+_scheduler_actor = None
 
 def enable_test_mode() -> None:
   global _context_actor, _state_actor
@@ -71,5 +71,13 @@ def enable_test_mode() -> None:
                                     get_if_exists=True).remote()
   actor = ray.get_actor('state', namespace=namespace)
   _ = ray.get(actor.dispatch.remote(dict(type='noop')))
+
+  from state.scheduler_actor import SchedulerActor
+
+  _scheduler_actor = SchedulerActor.options(name='scheduler',
+                                    namespace=namespace,
+                                    get_if_exists=True).remote()
+  actor = ray.get_actor('scheduler', namespace=namespace)
+  _ = ray.get(actor.add.remote(60, dict(type='noop')))
 
   print(f'### Test actors are all alive.')

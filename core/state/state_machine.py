@@ -35,6 +35,9 @@ _state = dict()
 
 QUEUE_NAME = 'node_state_machine'
 
+def _get_namespace() -> str:
+  return os.environ.get("ASTROFLOW_MOCK_NAMESPACE", "AstroFlow")
+
 
 def get_state(key: str):
   return _state.get(key, None)
@@ -99,7 +102,8 @@ def _start_ray_head_node(state: State,
 
   return state, [
       Action(type='populate_context'),
-      Action(type='advertise_zeroconf')
+      Action(type='advertise_zeroconf'),
+      Action(type='schedule_find_asiairs')
   ]
 
 
@@ -176,6 +180,13 @@ def _stop_gunicorn(state: State, action: Action) -> tuple[State, list[Action]]:
     manager.stop()
 
   del state['gunicorn_managers']
+
+  return state, []
+
+def _schedule_find_asiairs(state: State, action: Action) -> tuple[State, list[Action]]:
+  import ray
+  scheduler = ray.get_actor("scheduler", namespace=_get_namespace())
+  scheduler.add.remote(30, dict(type='alert'))
 
   return state, []
 
@@ -301,6 +312,9 @@ def dispatch(action: Action) -> State:
 
     case 'stop_ray_node':
       _state, new_actions = _stop_ray_node(_state, action)
+
+    case 'schedule_find_asiairs':
+      _state, new_actions = _schedule_find_asiairs(_state, action)
 
     case 'populate_context':
       _state, new_actions = _populate_context(_state, action)
