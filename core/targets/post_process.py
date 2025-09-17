@@ -70,10 +70,6 @@ def _post_process_target(images: ImageList, target: Target) -> ImageList:
     # TODO: Supply multiple output filenames.
     SaveImages([narrowband], [output_filename])
 
-  # TODO: Return list or tuples of images
-  return []
-
-
 # TODO: Targets are composed of multiple color channels, so this needs to be
 # able to return multiple images.
 def output_filename(target: Target, suffix: str) -> XisfFilePath:

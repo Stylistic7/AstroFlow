@@ -64,6 +64,7 @@ def PixInsight(
       func_name = cast(Callable, func).__name__
 
       filenames = [os.fspath(f) for f in filenames]
+      assert all(os.path.exists(f) for f in filenames)
 
       # TODO: The content hash of images produced by this PixInsight function
       # are composed of the hash of the function's code, the hashes of all
@@ -115,8 +116,9 @@ def PixInsight(
               'fwrapper returning {results}')
         return results
 
-      results = normalize_images(results)
-      call_with_context(SaveImages, results)
+      if results is not None:
+        results = normalize_images(results)
+        call_with_context(SaveImages, results)
 
       print(f"### Shell script is ready for {func_name}, with "
             f"{len(context['tasks'])} tasks")

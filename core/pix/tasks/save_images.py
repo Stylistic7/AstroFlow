@@ -57,7 +57,6 @@ for (let i = 0; i < output_filenames.length; ++i) {{
 def SaveImages(images: ImageList,
                output_filenames: Optional[list[Path]] = None,
                compression: bool = True) -> ImageList:
-  print(f'### Entering SaveImages {images}')
   view_ids = [i.view_id for i in images]
 
   if output_filenames is None:

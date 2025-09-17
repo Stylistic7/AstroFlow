@@ -1,7 +1,7 @@
 from typing import Any, cast
 
 from pix.classes import Image, ShellScriptTask, ImageList
-from pix.context import append_task, add_images_to_save
+from pix.context import append_task
 from pix.processes import enum, execute_on_view_ids
 
 _default_parameters = {
@@ -18,20 +18,14 @@ _default_parameters = {
 }
 
 
-def BlurXTerminator(images: ImageList, **kwargs: Any) -> ImageList:
-  print('### Entering BlurXTerminator')
-
+def BlurXTerminator(images: ImageList, **kwargs: Any) -> ImageList:  
   assert all(i.view_id is not None for i in images)
   view_ids = [cast(str, i.view_id) for i in images]
+
   append_task(
       ShellScriptTask(javascript=execute_on_view_ids(
           'BlurXTerminator', _default_parameters | kwargs, view_ids)))
 
-  images = [
+  return ImageList([
       Image(view_id=image.view_id, tag='blurx', dirty=True) for image in images
-  ]
-
-  add_images_to_save(images)
-
-  print(f'### BlurXTerminator returning {images}')
-  return images
+  ])

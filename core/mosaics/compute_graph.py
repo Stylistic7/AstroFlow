@@ -42,7 +42,6 @@ from dependency_graph import run_graph
 @PixInsight()
 def save_uncompressed(images: ImageList, output_filenames: list[Path]):
   SaveImages(images, output_filenames, compression=False)
-  return []
 
 
 @makes_image(Mosaic).as_master(tile_filename)

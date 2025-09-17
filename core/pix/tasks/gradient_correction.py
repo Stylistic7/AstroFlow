@@ -1,6 +1,6 @@
 from typing import Any, cast
 
-from pix.classes import ShellScriptTask, ImageList
+from pix.classes import Image, ShellScriptTask, ImageList
 from pix.context import append_task
 from pix.processes import enum, execute_on_view_ids
 
@@ -40,4 +40,6 @@ def GradientCorrection(images: ImageList, **kwargs: Any) -> ImageList:
       ShellScriptTask(javascript=execute_on_view_ids(
           'GradientCorrection', _default_parameters | kwargs, view_ids)))
 
-  return images
+  return ImageList([
+      Image(view_id=image.view_id, tag='gradient_correction', dirty=True) for image in images
+  ])

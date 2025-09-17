@@ -19,9 +19,7 @@ def _post_process_stack(images: ImageList,
                         output_filenames: list[Path]) -> ImageList:
   images = BlurXTerminator(images)
   images = GradientCorrection(images)
-  images = SaveImages(images, output_filenames)
-
-  return images
+  SaveImages(images, output_filenames)
 
 
 def post_processed_filename(stack: CompositeStack) -> XisfFilePath:

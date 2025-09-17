@@ -42,9 +42,6 @@ def _post_process_mosaic(images: ImageList, mosaic: Mosaic,
     # TODO: Supply multiple output filenames.
     SaveImages([narrowband], [output_filename])
 
-  # TODO: Return list or tuples of images
-  return []
-
 
 @makes_image(Mosaic).as_post_processed(post_processed_filename)
 @cached.remote(resources={'PixInsight': 1})
