@@ -11,6 +11,7 @@ from context import context, get_cache, queue
 from ray_infra.ray_init import connect_to_ray_cluster
 from state.ray_control import start_ray_head_node, start_ray_subordinate_node, stop_ray_node
 from state.astroflow_zeroconf import AstroFlowZeroconf
+from asiair.asiair_zeroconf import ASIAIRZeroconf
 from state.types import State, Action
 from dependency_graph import run_graph
 import pix
@@ -69,22 +70,31 @@ def _populate_context(state: State,
 
 
 def _start_zeroconf(state: State, action: Action) -> tuple[State, list[Action]]:
-  assert 'zeroconf' not in state
-  state['zeroconf'] = AstroFlowZeroconf(enqueue_action)
+  assert 'astroflow_zeroconf' not in state
+  state['astroflow_zeroconf'] = AstroFlowZeroconf(enqueue_action)
+
+  assert 'asiair_zeroconf' not in state
+  state['asiair_zeroconf'] = ASIAIRZeroconf(enqueue_action)
+  
   return state, []
 
 
 def _advertise_zeroconf(state: State,
                         action: Action) -> tuple[State, list[Action]]:
-  state['zeroconf'].update_state(is_ray_head=True)
+  state['astroflow_zeroconf'].update_state(is_ray_head=True)
   return state, []
 
 
 def _stop_zeroconf(state: State, action: Action) -> tuple[State, list[Action]]:
-  if 'zeroconf' in state:
-    print("Stopping service discovery...")
-    state['zeroconf'].close()
-    del state['zeroconf']
+  if 'astroflow_zeroconf' in state:
+    print("Stopping AstroFlow peer discovery...")
+    state['astroflow_zeroconf'].close()
+    del state['astroflow_zeroconf']
+
+  if 'asiair_zeroconf' in state:
+    print("Stopping ASIAir peer discovery...")
+    state['asiair_zeroconf'].close()
+    del state['asiair_zeroconf']
 
   return state, []
 
@@ -103,7 +113,7 @@ def _start_ray_head_node(state: State,
   return state, [
       Action(type='populate_context'),
       Action(type='advertise_zeroconf'),
-      Action(type='schedule_find_asiairs')
+      Action(type='schedule_download_from_asiairs')
   ]
 
 
@@ -116,7 +126,7 @@ def _stop_ray_node(state: State, action: Action) -> tuple[State, list[Action]]:
   return state, []
 
 
-def _update_zeroconf_services(state: State,
+def _update_astroflow_services(state: State,
                               action: Action) -> tuple[State, list[Action]]:
   cache = get_cache()
   if cache.get('ray_head_node_enabled', False):
@@ -137,6 +147,12 @@ def _update_zeroconf_services(state: State,
 
   return state, []
 
+def _update_asiair_services(state: State,
+                              action: Action) -> tuple[State, list[Action]]:
+  print(f"### _update_asiair_services {action=}")
+  state['asiair_devices'] = action['devices']
+
+  return state, []
 
 def _start_flask(state: State, action: Action) -> tuple[State, list[Action]]:
   from state.flask_control import FlaskThread
@@ -183,7 +199,7 @@ def _stop_gunicorn(state: State, action: Action) -> tuple[State, list[Action]]:
 
   return state, []
 
-def _schedule_find_asiairs(state: State, action: Action) -> tuple[State, list[Action]]:
+def _schedule_download_from_asiairs(state: State, action: Action) -> tuple[State, list[Action]]:
   import ray
   scheduler = ray.get_actor("scheduler", namespace=_get_namespace())
   scheduler.add.remote(30, dict(type='alert'))
@@ -273,10 +289,16 @@ def dispatch(action: Action) -> State:
 
     case 'advertise_zeroconf':
       _state, new_actions = _advertise_zeroconf(_state, action)
+    
+    case 'update_astroflow_services':
+      _state, new_actions = _update_astroflow_services(_state, action)
+
+    case 'update_asiair_services':
+      _state, new_actions = _update_asiair_services(_state, action)
 
     case 'stop_zeroconf':
       _state, new_actions = _stop_zeroconf(_state, action)
-
+    
     case 'prepare_pix':
       _state, new_actions = _prepare_pix(_state, action)
 
@@ -291,9 +313,6 @@ def dispatch(action: Action) -> State:
     case 'run_processing_graph':
       print('### Pretending to run processing graph')
       # run_graph(build_item_processing_graph(action['item']))
-
-    case 'update_zeroconf_services':
-      _state, new_actions = _update_zeroconf_services(_state, action)
 
     case 'start_flask':
       _state, new_actions = _start_flask(_state, action)
@@ -313,8 +332,8 @@ def dispatch(action: Action) -> State:
     case 'stop_ray_node':
       _state, new_actions = _stop_ray_node(_state, action)
 
-    case 'schedule_find_asiairs':
-      _state, new_actions = _schedule_find_asiairs(_state, action)
+    case 'schedule_download_from_asiairs':
+      _state, new_actions = _schedule_download_from_asiairs(_state, action)
 
     case 'populate_context':
       _state, new_actions = _populate_context(_state, action)

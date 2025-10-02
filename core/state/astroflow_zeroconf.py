@@ -24,6 +24,11 @@ class AstroFlowListener(ServiceListener):
     self.instances = {}  # Store discovered instances
     self.dispatch_fn = dispatch_fn
 
+  def _emit(self) -> None:
+    if self.dispatch_fn:
+        self.dispatch_fn(
+            dict(type='update_astroflow_services', instances=self.instances))
+
   def add_service(self, zc, type, name):
     info = zc.get_service_info(type, name)
     print(f'### add_service {info}')
@@ -43,18 +48,14 @@ class AstroFlowListener(ServiceListener):
       self.instances[name] = status
       print(f"Discovered AstroFlow instance: {status}")
 
-      if self.dispatch_fn:
-        self.dispatch_fn(
-            dict(type='update_zeroconf_services', instances=self.instances))
+      self._emit()
 
   def remove_service(self, zc, type, name):
     if name in self.instances:
       del self.instances[name]
       print(f"AstroFlow instance {name} removed")
 
-      if self.dispatch_fn and self.instances:
-        self.dispatch_fn(
-            dict(type='update_zeroconf_services', instances=self.instances))
+      self._emit()
 
   def get_instances(self):
     """Returns a list of all currently discovered AstroFlow instances."""
@@ -64,13 +65,11 @@ class AstroFlowListener(ServiceListener):
 @dataclass
 class AstroFlowZeroconf:
   enqueue_action_fn: Callable[[Action], None]
-  # instance_name: str
-  # listener: AstroFlowListener
-  # browser: ServiceBrowser
   port: int = 6379
   is_ray_head: bool = False
   mounted_volumes: list[str] = field(default_factory=list)
   zeroconf: Zeroconf = field(init=False, repr=False)
+  listener: AstroFlowListener = field(init=False, repr=False)
   service_info: ServiceInfo | None = field(default=None, init=False, repr=False)
 
   def __post_init__(self):
