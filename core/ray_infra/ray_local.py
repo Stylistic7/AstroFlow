@@ -70,7 +70,7 @@ def enable_test_mode() -> None:
                                     namespace=namespace,
                                     get_if_exists=True).remote()
   actor = ray.get_actor('state', namespace=namespace)
-  _ = ray.get(actor.dispatch.remote(dict(type='noop')))
+  _ = ray.get(actor.enqueue.remote(dict(type='noop')))
 
   from state.scheduler_actor import SchedulerActor
 
@@ -78,6 +78,6 @@ def enable_test_mode() -> None:
                                     namespace=namespace,
                                     get_if_exists=True).remote()
   actor = ray.get_actor('scheduler', namespace=namespace)
-  _ = ray.get(actor.add.remote(60, dict(type='noop')))
+#   _ = ray.get(actor.add.remote(60, dict(type='noop')))
 
   print(f'### Test actors are all alive.')

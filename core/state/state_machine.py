@@ -50,12 +50,11 @@ def _init(state: State, action: Action) -> tuple[State, list[Action]]:
 
   new_actions.append(Action(type='prepare_pix'))
   new_actions.append(Action(type='start_gunicorn'))
-  new_actions.append(Action(type='start_zeroconf'))
+  new_actions.append(Action(type='start_astroflow_zeroconf'))
 
   cache = get_cache()
   if cache.get('ray_head_node_enabled', False):
     new_actions.append(Action(type='start_ray_head_node'))
-    new_actions.append(Action(type='advertise_zeroconf'))
 
   return state, new_actions
 
@@ -65,19 +64,23 @@ def _populate_context(state: State,
   # TODO: Put these in the UI.
   context.input_dirs = [Path('/Volumes/Astro/Raw'), Path('/Volumes/Astro2/Raw')]
   context.output_dir = Path('/Volumes/Astro/Processed')
+  
+  context.asiair_devices = []
 
   return state, []
 
 
-def _start_zeroconf(state: State, action: Action) -> tuple[State, list[Action]]:
+def _start_astroflow_zeroconf(state: State, action: Action) -> tuple[State, list[Action]]:
   assert 'astroflow_zeroconf' not in state
   state['astroflow_zeroconf'] = AstroFlowZeroconf(enqueue_action)
-
-  assert 'asiair_zeroconf' not in state
-  state['asiair_zeroconf'] = ASIAIRZeroconf(enqueue_action)
   
   return state, []
 
+def _start_asiair_zeroconf(state: State, action: Action) -> tuple[State, list[Action]]:
+  assert 'asiair_zeroconf' not in state
+  state['asiair_zeroconf'] = ASIAIRZeroconf(enqueue_action)
+
+  return state, []
 
 def _advertise_zeroconf(state: State,
                         action: Action) -> tuple[State, list[Action]]:
@@ -113,6 +116,7 @@ def _start_ray_head_node(state: State,
   return state, [
       Action(type='populate_context'),
       Action(type='advertise_zeroconf'),
+      Action(type='start_asiair_zeroconf'),
       Action(type='schedule_download_from_asiairs')
   ]
 
@@ -150,7 +154,7 @@ def _update_astroflow_services(state: State,
 def _update_asiair_services(state: State,
                               action: Action) -> tuple[State, list[Action]]:
   print(f"### _update_asiair_services {action=}")
-  state['asiair_devices'] = action['devices']
+  context.asiair_devices = action['devices']
 
   return state, []
 
@@ -200,9 +204,10 @@ def _stop_gunicorn(state: State, action: Action) -> tuple[State, list[Action]]:
   return state, []
 
 def _schedule_download_from_asiairs(state: State, action: Action) -> tuple[State, list[Action]]:
+  # TODO: Put the polling interval in the UI.
   import ray
   scheduler = ray.get_actor("scheduler", namespace=_get_namespace())
-  scheduler.add.remote(30, dict(type='alert'))
+  scheduler.add.remote(15 * 60, dict(type='download_from_asiairs'))
 
   return state, []
 
@@ -284,8 +289,11 @@ def dispatch(action: Action) -> State:
     case 'init':
       _state, new_actions = _init(_state, action)
 
-    case 'start_zeroconf':
-      _state, new_actions = _start_zeroconf(_state, action)
+    case 'start_astroflow_zeroconf':
+      _state, new_actions = _start_astroflow_zeroconf(_state, action)
+    
+    case 'start_asiair_zeroconf':
+      _state, new_actions = _start_asiair_zeroconf(_state, action)
 
     case 'advertise_zeroconf':
       _state, new_actions = _advertise_zeroconf(_state, action)

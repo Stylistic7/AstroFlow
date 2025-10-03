@@ -16,8 +16,8 @@ from previews.types import QualityLevel
 
 compute_graphs_bp = Blueprint("compute_graphs", __name__)
 
-compute_graph_status = {}
-workflow_graph = {'skeleton': [], 'state': {}}
+# compute_graph_status = {}
+# workflow_graph = {'skeleton': [], 'state': {}}
 
 
 def populate_context():
@@ -32,17 +32,17 @@ def populate_context():
 
 # TODO: Pull all of this transform code out into a separate module and test
 # it properly.
-def status_fn(status):
-  global compute_graph_status
-  print(f'### status_fn {len(status.ready_nodes)} ready '
-        f'{len(status.waiting_nodes)} waiting '
-        f'{len(status.done_nodes)} done')
+# def status_fn(status):
+#   global compute_graph_status
+#   print(f'### status_fn {len(status.ready_nodes)} ready '
+#         f'{len(status.waiting_nodes)} waiting '
+#         f'{len(status.done_nodes)} done')
 
-  compute_graph_status = graph_status_to_progress(status)
-  announce('compute_graph_status')
+#   compute_graph_status = graph_status_to_progress(status)
+#   announce('compute_graph_status')
 
-  if len(status.ready_nodes) == 0 and len(status.waiting_nodes) == 0:
-    print('### Compute graph is done!')
+#   if len(status.ready_nodes) == 0 and len(status.waiting_nodes) == 0:
+#     print('### Compute graph is done!')
 
 
 # def workflow_graph_fn(wg):
@@ -51,14 +51,14 @@ def status_fn(status):
 
 
 # TODO: Maybe rename this.
-@compute_graphs_bp.route('/compute_graph')
-def get_compute_graph():
-  return workflow_graph
+# @compute_graphs_bp.route('/compute_graph')
+# def get_compute_graph():
+#   return workflow_graph
 
 
-@compute_graphs_bp.route('/compute_graph_status')
-def get_compute_graph_status():
-  return compute_graph_status
+# @compute_graphs_bp.route('/compute_graph_status')
+# def get_compute_graph_status():
+#   return compute_graph_status
 
 
 # TODO: Make sure a second graph can't be started when one is already in
@@ -66,45 +66,45 @@ def get_compute_graph_status():
 #
 # TODO: Something in here is causing `download_asiair()` to be called and
 # preventing this from returning a response immediately.
-@compute_graphs_bp.route('/run_graph')
-def run_compute_graph():
+# @compute_graphs_bp.route('/run_graph')
+# def run_compute_graph():
 
-  populate_context()
+#   populate_context()
 
-  # TODO: Put these in the UI.
-  context.ignore_cached_results = True
-  context.dangerously_accept_existing_files = True
+#   # TODO: Put these in the UI.
+#   context.ignore_cached_results = True
+#   context.dangerously_accept_existing_files = True
 
-  graph = build_compute_graph()
+#   graph = build_compute_graph()
 
-  def _run_graph(*args, **kwargs):
-    # TODO: Perhaps the results and logs should be saved incrementally,
-    # whenever a node finishes?
-    results, logs = run_graph(*args, **kwargs)
+#   def _run_graph(*args, **kwargs):
+#     # TODO: Perhaps the results and logs should be saved incrementally,
+#     # whenever a node finishes?
+#     results, logs = run_graph(*args, **kwargs)
 
-    print('### Writing graph results and logs into context')
-    context.last_run_results = {
-        node_to_string(node): result
-        for node, result in results.flatten().items()
-    }
+#     print('### Writing graph results and logs into context')
+#     context.last_run_results = {
+#         node_to_string(node): result
+#         for node, result in results.flatten().items()
+#     }
 
-    context.last_run_logs = {
-        node_to_string(node): log for node, log in logs.flatten().items()
-    }
+#     context.last_run_logs = {
+#         node_to_string(node): log for node, log in logs.flatten().items()
+#     }
 
-  print('### Running compute graph!')
-  thread = threading.Thread(
-      target=_run_graph,
-      args=(graph,),
-      kwargs={
-          'status_fn': status_fn,
-          # 'workflow_graph_fn': workflow_graph_fn,
-          'debug': False
-      })
-  thread.daemon = True
-  thread.start()
+#   print('### Running compute graph!')
+#   thread = threading.Thread(
+#       target=_run_graph,
+#       args=(graph,),
+#       kwargs={
+#           'status_fn': status_fn,
+#           # 'workflow_graph_fn': workflow_graph_fn,
+#           'debug': False
+#       })
+#   thread.daemon = True
+#   thread.start()
 
-  return Response(status=204)
+#   return Response(status=204)
 
 
 @compute_graphs_bp.route('/workflow_graph/stack/<stack_id>')
