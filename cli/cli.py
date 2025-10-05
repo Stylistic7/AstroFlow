@@ -88,7 +88,7 @@ def process(args):
   # context.ignore_cached_results = args.force
   # context.dangerously_accept_existing_files = args.force
 
-  state.dispatch(Action(type='process', **vars(args)))
+  state.enqueue(Action(type='process', **vars(args)))
 
 
 def post_process(args):
@@ -97,7 +97,12 @@ def post_process(args):
   # context.ignore_cached_results = args.force
   # context.dangerously_accept_existing_files = args.force
 
-  state.dispatch(Action(type='post_process', **vars(args)))
+  state.enqueue(Action(type='post_process', **vars(args)))
+
+
+def run_entire_graph(args):
+  print(f"### Running entire compute graph")
+  state.enqueue(Action(type='run_entire_graph', **vars(args)))
 
 
 def populate_context():
@@ -174,6 +179,8 @@ def main():
   post_process_parser.add_argument("object_id",
                                    help="ID of the object to post-processs")
 
+  run = subparsers.add_parser("run", help="customize data")
+
   # Parse the arguments
   args = parser.parse_args()
 
@@ -192,6 +199,8 @@ def main():
     process(args)
   elif args.command == "post_process":
     post_process(args)
+  elif args.command == "run":
+    run_entire_graph(args)
   else:
     print("Unknown command or subcommand")
     parser.print_help()
