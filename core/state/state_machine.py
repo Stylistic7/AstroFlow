@@ -6,6 +6,7 @@ import threading
 import signal
 import sys
 import uuid
+import datetime
 
 from context import context, get_cache, queue
 from ray_infra.ray_init import connect_to_ray_cluster
@@ -36,6 +37,7 @@ _state = dict()
 
 QUEUE_NAME = 'node_state_machine'
 
+
 def _get_namespace() -> str:
   return os.environ.get("ASTROFLOW_MOCK_NAMESPACE", "AstroFlow")
 
@@ -64,23 +66,34 @@ def _populate_context(state: State,
   # TODO: Put these in the UI.
   context.input_dirs = [Path('/Volumes/Astro/Raw'), Path('/Volumes/Astro2/Raw')]
   context.output_dir = Path('/Volumes/Astro/Processed')
-  
+
+  context.cosine_similarity_threshold = 0.9999
+  context.min_component_members = 3
+  context.max_run_gap = datetime.timedelta(hours=8)
+  context.min_frames_in_stack = 3
+  context.subframe_thumbnail_width = 1200
+  context.master_thumbnail_width = 2160
+
   context.asiair_devices = []
 
   return state, []
 
 
-def _start_astroflow_zeroconf(state: State, action: Action) -> tuple[State, list[Action]]:
+def _start_astroflow_zeroconf(state: State,
+                              action: Action) -> tuple[State, list[Action]]:
   assert 'astroflow_zeroconf' not in state
   state['astroflow_zeroconf'] = AstroFlowZeroconf(enqueue_action)
-  
+
   return state, []
 
-def _start_asiair_zeroconf(state: State, action: Action) -> tuple[State, list[Action]]:
+
+def _start_asiair_zeroconf(state: State,
+                           action: Action) -> tuple[State, list[Action]]:
   assert 'asiair_zeroconf' not in state
   state['asiair_zeroconf'] = ASIAIRZeroconf(enqueue_action)
 
   return state, []
+
 
 def _advertise_zeroconf(state: State,
                         action: Action) -> tuple[State, list[Action]]:
@@ -131,7 +144,7 @@ def _stop_ray_node(state: State, action: Action) -> tuple[State, list[Action]]:
 
 
 def _update_astroflow_services(state: State,
-                              action: Action) -> tuple[State, list[Action]]:
+                               action: Action) -> tuple[State, list[Action]]:
   cache = get_cache()
   if cache.get('ray_head_node_enabled', False):
     return state, []
@@ -151,12 +164,14 @@ def _update_astroflow_services(state: State,
 
   return state, []
 
+
 def _update_asiair_services(state: State,
-                              action: Action) -> tuple[State, list[Action]]:
+                            action: Action) -> tuple[State, list[Action]]:
   print(f"### _update_asiair_services {action=}")
   context.asiair_devices = action['devices']
 
   return state, []
+
 
 def _start_flask(state: State, action: Action) -> tuple[State, list[Action]]:
   from state.flask_control import FlaskThread
@@ -203,11 +218,16 @@ def _stop_gunicorn(state: State, action: Action) -> tuple[State, list[Action]]:
 
   return state, []
 
-def _schedule_download_from_asiairs(state: State, action: Action) -> tuple[State, list[Action]]:
+
+def _schedule_download_from_asiairs(
+    state: State, action: Action) -> tuple[State, list[Action]]:
   # TODO: Put the polling interval in the UI.
   import ray
   scheduler = ray.get_actor("scheduler", namespace=_get_namespace())
-  scheduler.add.remote(15 * 60, dict(type='download_from_asiairs'))
+  scheduler.add.remote(interval_s=15 * 60,
+                       action=dict(type='download_from_asiairs'),
+                       start_delay_s=30,
+                       ignore_if_busy=True)
 
   return state, []
 
@@ -291,13 +311,13 @@ def dispatch(action: Action) -> State:
 
     case 'start_astroflow_zeroconf':
       _state, new_actions = _start_astroflow_zeroconf(_state, action)
-    
+
     case 'start_asiair_zeroconf':
       _state, new_actions = _start_asiair_zeroconf(_state, action)
 
     case 'advertise_zeroconf':
       _state, new_actions = _advertise_zeroconf(_state, action)
-    
+
     case 'update_astroflow_services':
       _state, new_actions = _update_astroflow_services(_state, action)
 
@@ -306,7 +326,7 @@ def dispatch(action: Action) -> State:
 
     case 'stop_zeroconf':
       _state, new_actions = _stop_zeroconf(_state, action)
-    
+
     case 'prepare_pix':
       _state, new_actions = _prepare_pix(_state, action)
 

@@ -6,6 +6,7 @@ from threading import Thread, Condition
 from collections import deque
 
 from context import context
+from compute_graph import build_compute_graph, build_regroup_graph, build_preview_graph
 from stacks.compute_graph import process_stacks_for_ui
 from dependency_graph import Graph, run_graph, chain
 from customization.compute_graph import customize_stack, store_customized_stack
@@ -17,6 +18,9 @@ from targets.post_process import post_process_target
 from stacks.post_process import post_process_stack
 from mosaics.post_process import post_process_mosaic
 from asiair.download_asiair import download_from_asiairs
+from metadata.image_metadata import scatter_compute_image_metadata
+from customization.compute_graph import build_customize_graph
+
 
 def _get_namespace() -> str:
   return os.environ.get("ASTROFLOW_MOCK_NAMESPACE", "AstroFlow")
@@ -28,12 +32,33 @@ def _announce(state: State, action: Action) -> tuple[State, list[Action]]:
 
   return state, []
 
-def _download_from_asiairs(state: State, action: Action) -> tuple[State, list[Action]]:
-  graph = download_from_asiairs()
-  print(f'### _download_from_asiairs graph is {graph}')
+
+def _download_from_asiairs(state: State,
+                           action: Action) -> tuple[State, list[Action]]:
+  if len(context.asiair_devices) == 0:
+    print(f'### _download_from_asiairs no ASIAir devices found')
+    return state, []
+  
+  graph = Graph({
+      **chain(
+          download_from_asiairs,
+          (scatter_compute_image_metadata, 'input'),
+          build_regroup_graph,
+          build_customize_graph,
+          process_stacks_for_ui,
+          process_targets_for_ui,
+          process_mosaics_for_ui,
+          build_preview_graph,
+          # build_main_processing_graph,
+      )
+  })
+
+  print(f'### _download_from_asiairs running graph {graph}')
   run_graph(graph)
+  print(f'### _download_from_asiairs graph is done')
 
   return state, []
+
 
 def _update_settings(state: State,
                      action: Action) -> tuple[State, list[Action]]:
@@ -111,40 +136,49 @@ def _post_process(state: State, action: Action) -> tuple[State, list[Action]]:
   return state, [Action(type='announce', message='reload_data')]
 
 
+def _run_entire_graph(state: State,
+                      action: Action) -> tuple[State, list[Action]]:
+  run_graph(build_compute_graph())
+
+  return state, [Action(type='announce', message='reload_data')]
+
+
 @ray.remote(max_restarts=-1, max_task_retries=-1)
 class StateActor:
+
   def __init__(self):
-      self.state = State()
-      self._q: deque[Action] = deque()
-      self._busy = False
-      self._cv = Condition()
-      self._runner = Thread(target=self._run_loop, daemon=True)
-      self._runner.start()
+    self.state = State()
+    self._q: deque[Action] = deque()
+    self._busy = False
+    self._cv = Condition()
+    self._runner = Thread(target=self._run_loop, daemon=True)
+    self._runner.start()
 
   def enqueue(self, action: Action) -> int:
-        with self._cv:
-            self._q.append(action)
-            self._cv.notify()
-            return len(self._q)
+    with self._cv:
+      self._q.append(action)
+      self._cv.notify()
+      return len(self._q)
 
   def is_busy(self) -> bool:
-        with self._cv:
-            return self._busy
+    with self._cv:
+      return self._busy
 
   # TODO: The queue should explicitly contain Graphs to be run.
   def _run_loop(self) -> None:
-        while True:
-            with self._cv:
-                while not self._q:
-                    self._cv.wait()
-                action = self._q.popleft()
-                self._busy = True
-            try:
-                self._handle(action)
-            finally:
-                with self._cv:
-                    self._busy = bool(self._q)
-
+    while True:
+      with self._cv:
+        while not self._q:
+          self._cv.wait()
+        action = self._q.popleft()
+        self._busy = True
+        print(f'### set _busy {self._busy}')
+      try:
+        self._handle(action)
+      finally:
+        with self._cv:
+          self._busy = bool(self._q)
+          print(f'### set _busy {self._busy}')
 
   def _handle(self, action: Action) -> None:
     new_actions: list[Action] = []
@@ -169,6 +203,8 @@ class StateActor:
         self.state, new_actions = _post_process(self.state, action)
       case 'update_settings':
         self.state, new_actions = _update_settings(self.state, action)
+      case 'run_entire_graph':
+        self.state, new_actions = _run_entire_graph(self.state, action)
       case _:
         raise ValueError(f"Unexpected action type: {action['type']}")
 
@@ -181,12 +217,12 @@ class StateActor:
 class State:
 
   def enqueue(self, action: Action) -> int:
-        actor = ray.get_actor("state", namespace=_get_namespace())
-        return ray.get(actor.enqueue.remote(action))
+    actor = ray.get_actor("state", namespace=_get_namespace())
+    return ray.get(actor.enqueue.remote(action))
 
   def is_busy(self) -> bool:
-        actor = ray.get_actor("state", namespace=_get_namespace())
-        return ray.get(actor.is_busy.remote())
+    actor = ray.get_actor("state", namespace=_get_namespace())
+    return ray.get(actor.is_busy.remote())
 
 
 state = State()

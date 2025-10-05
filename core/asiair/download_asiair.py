@@ -20,14 +20,15 @@ from dependency_graph import Graph
 # TODO: Improve / strengthen all the types in this file.
 
 _SEARCH_DEFS = [{
-      'volume': 'EMMC%20Images',
-      'log_dir': 'log',
-      'fits_paths': ['Autorun', 'Plan']
-  }, {
-      'volume': 'TF%20Images',
-      'log_dir': 'ASIAIR/log',
-      'fits_paths': ['ASIAIR/Autorun', 'ASIAIR/Plan']
-  }]
+    'volume': 'EMMC%20Images',
+    'log_dir': 'log',
+    'fits_paths': ['Autorun', 'Plan']
+}, {
+    'volume': 'TF%20Images',
+    'log_dir': 'ASIAIR/log',
+    'fits_paths': ['ASIAIR/Autorun', 'ASIAIR/Plan']
+}]
+
 
 def ping(ip: str) -> bool:
   return subprocess.run(["ping", "-c", "1", ip],
@@ -171,9 +172,14 @@ def _download_logs_from_rig(rig: str, log_dir: str, dest_dir: str) -> bool:
   print(f"Copying logs from '{log_dir}' to '{dest_dir}'")
   return subprocess.run(['rsync', '-zar', log_dir, dest_dir]).returncode == 0
 
+
 @ray.remote
-def download_from_asiair(rig: str, ip: str, dest_path: str,
-        default_filter: str, search_defs: list[dict[str, str]] = _SEARCH_DEFS) -> None:
+def download_from_asiair(
+    rig: str,
+    ip: str,
+    dest_path: str,
+    default_filter: str,
+    search_defs: list[dict[str, str]] = _SEARCH_DEFS) -> None:
   print(f"Pinging rig '{rig}' ({ip})")
   if not ping(ip):
     print(f"Rig '{rig}' ({ip}) is not responding.")
@@ -203,10 +209,15 @@ def download_from_asiair(rig: str, ip: str, dest_path: str,
                 f'to date_dir {date_dir}')
           _download_logs_from_rig(rig, log_dir, date_dir)
 
+
 @ray.remote
 def downloads_complete():
   pass
 
+@ray.remote
 def download_from_asiairs() -> Graph:
-  return Graph({downloads_complete: {(download_from_asiair, 'foo', dev['ip'], context.input_dirs[0], 'H')
-    for dev in context.asiair_devices}})
+  return Graph({
+      downloads_complete: {(download_from_asiair, 'foo', dev['ip'],
+                            context.input_dirs[0], 'H')
+                           for dev in context.asiair_devices}
+  })
