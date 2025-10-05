@@ -142,7 +142,9 @@ def load_metadata() -> MetadataDict:
           if os.path.exists(value.filename):
             metadata[value.content_hash] = value
     except Exception as e:
-      print(f'### Rejecting bad key {key}')
+      print(
+          f'### Rejecting bad key {key} because of exception {e} for value type {type(value)}'
+      )
 
   metadata_size_mb = objsize.get_deep_size(metadata) / 1024 / 1024
   print(f'### load_metadata() length {len(metadata)} '
