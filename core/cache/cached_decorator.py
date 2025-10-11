@@ -3,6 +3,7 @@ import inspect
 from functools import wraps
 from typing import Any, Callable, Optional, get_origin, TypeVar, Generic
 from pathlib import Path
+import time
 
 from hashing import hash_source_code
 from protocols import CacheProtocol, ContentHashProtocol
@@ -53,7 +54,11 @@ def make_cached_decorator(cache: CacheProtocol,
         debug_print(f'cache miss: {key}')
         return key, call_hash, False, None
 
+      start_time = time.time()
       cached = cache[key]
+      elapsed_time = time.time() - start_time
+      if elapsed_time > 0.5:
+        print(f"### cache key {key} was slow to load, took {elapsed_time=} s")
       stored_hash = content_hasher.get(cached)
 
       if not content_hasher.has(cached) or stored_hash == call_hash:
@@ -77,7 +82,11 @@ def make_cached_decorator(cache: CacheProtocol,
         return NeverRun
 
       try:
+        start_time = time.time()
         result = func(*bound.args, **bound.kwargs)
+        elapsed_time = time.time() - start_time
+        if elapsed_time > 0.5:
+          print(f"### fn {func.__name__} was slow to run, took {elapsed_time=} s")
         if isinstance(result, Path) and not result.exists():
           raise FileNotFoundError(result)
       except Exception as e:
