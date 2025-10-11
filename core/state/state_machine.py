@@ -75,6 +75,8 @@ def _populate_context(state: State,
   context.master_thumbnail_width = 2160
 
   context.asiair_devices = []
+  context.compute_graph = {}
+  context.compute_graph_status = {}
 
   return state, []
 

@@ -8,7 +8,8 @@ from collections import deque
 from context import context
 from compute_graph import build_compute_graph, build_regroup_graph, build_preview_graph
 from stacks.compute_graph import process_stacks_for_ui
-from dependency_graph import Graph, run_graph, chain
+from dependency_graph import Graph, run_graph, chain, ResultDict, GraphStatus, TopologicalSorterWithStatus
+from dependency_graph.workflow_graph_adapter import to_workflow_graph
 from customization.compute_graph import customize_stack, store_customized_stack
 from mosaics.compute_graph import build_mosaic_subgraph, stacks_for_mosaic, targets_for_mosaic, process_mosaics_for_ui
 from previews.types import QualityLevel
@@ -33,13 +34,12 @@ def _announce(state: State, action: Action) -> tuple[State, list[Action]]:
   return state, []
 
 
-def _download_from_asiairs(state: State,
-                           action: Action) -> tuple[State, list[Action]]:
+def _download_from_asiairs() -> Graph:
   if len(context.asiair_devices) == 0:
     print(f'### _download_from_asiairs no ASIAir devices found')
-    return state, []
-  
-  graph = Graph({
+    return Graph({})
+
+  return Graph({
       **chain(
           download_from_asiairs,
           (scatter_compute_image_metadata, 'input'),
@@ -53,23 +53,13 @@ def _download_from_asiairs(state: State,
       )
   })
 
-  print(f'### _download_from_asiairs running graph {graph}')
-  run_graph(graph)
-  print(f'### _download_from_asiairs graph is done')
 
-  return state, []
-
-
-def _update_settings(state: State,
-                     action: Action) -> tuple[State, list[Action]]:
+def _update_settings(action: Action) -> Graph:
   stack = context.stacks[action['stack_id']]
-  graph = Graph({
+  return Graph({
       store_customized_stack: {(customize_stack, stack, action['settings'])},
       process_stacks_for_ui: {store_customized_stack}
   })
-  run_graph(graph)
-
-  return state, [Action(type='announce', message='reload_data')]
 
 
 @ray.remote
@@ -77,31 +67,27 @@ def command_done() -> None:
   pass
 
 
-def _process_stack(state: State, action: Action) -> tuple[State, list[Action]]:
+def _process_stack(action: Action) -> Graph:
   stack = context.stacks[action['object_id']]
 
-  run_graph(
-      Graph({**chain(
+  return Graph(
+      {**chain(
           (build_stacking_subgraph, stack),
           process_stacks_for_ui,
-      )}))
-
-  return state, [Action(type='announce', message='reload_data')]
+      )})
 
 
-def _process_target(state: State, action: Action) -> tuple[State, list[Action]]:
+def _process_target(action: Action) -> Graph:
   target = context.targets[action['object_id']]
 
-  run_graph(
-      Graph({**chain(
+  return Graph(
+      {**chain(
           (build_target_subgraph, target),
           process_targets_for_ui,
-      )}))
-
-  return state, [Action(type='announce', message='reload_data')]
+      )})
 
 
-def _process_mosaic(state: State, action: Action) -> tuple[State, list[Action]]:
+def _process_mosaic(action: Action) -> Graph:
   mosaic = context.mosaics[action['object_id']]
 
   tasks = []
@@ -116,12 +102,10 @@ def _process_mosaic(state: State, action: Action) -> tuple[State, list[Action]]:
 
   tasks.append(process_mosaics_for_ui)
 
-  run_graph(Graph({command_done: tasks}))
-
-  return state, [Action(type='announce', message='reload_data')]
+  return Graph({command_done: tasks})
 
 
-def _post_process(state: State, action: Action) -> tuple[State, list[Action]]:
+def _post_process(action: Action) -> Graph:
   print(f'### _post_process {action=}')
   if action['object_type'] == 'stack':
     stack = context.stacks[action['object_id']]
@@ -132,15 +116,6 @@ def _post_process(state: State, action: Action) -> tuple[State, list[Action]]:
   elif action['object_type'] == 'mosaic':
     mosaic = context.mosaics[action['object_id']]
     run_graph(Graph({(post_process_mosaic, mosaic): {}}))
-
-  return state, [Action(type='announce', message='reload_data')]
-
-
-def _run_entire_graph(state: State,
-                      action: Action) -> tuple[State, list[Action]]:
-  run_graph(build_compute_graph())
-
-  return state, [Action(type='announce', message='reload_data')]
 
 
 @ray.remote(max_restarts=-1, max_task_retries=-1)
@@ -180,6 +155,24 @@ class StateActor:
           self._busy = bool(self._q)
           print(f'### set _busy {self._busy}')
 
+  def _run_graph(self, state: State,
+                 graph: Graph) -> tuple[ResultDict, ResultDict]:
+
+    def status_fn(s: GraphStatus):
+      context.compute_graph_status = s
+
+    def graph_update_fn(g: list[TopologicalSorterWithStatus]):
+      # TODO: Does this compete with the compute graph itself?
+      context.compute_graph = to_workflow_graph(g)
+
+    # TODO: Should `state` be updated?
+    results, logs = run_graph(graph,
+                              status_fn=status_fn,
+                              graph_update_fn=graph_update_fn,
+                              status_interval=15)
+
+    return state, [Action(type='announce', message='reload_data')]
+
   def _handle(self, action: Action) -> None:
     new_actions: list[Action] = []
 
@@ -189,27 +182,34 @@ class StateActor:
       case 'noop':
         pass
       case 'download_from_asiairs':
-        self.state, new_actions = _download_from_asiairs(self.state, action)
+        self.state, new_actions = self._run_graph(self.state,
+                                                  _download_from_asiairs())
       case 'announce':
         self.state, new_actions = _announce(self.state, action)
       case 'process':
         if action['object_type'] == 'stack':
-          self.state, new_actions = _process_stack(self.state, action)
+          self.state, new_actions = self._run_graph(self.state,
+                                                    _process_stack(action))
         if action['object_type'] == 'target':
-          self.state, new_actions = _process_target(self.state, action)
+          self.state, new_actions = self._run_graph(self.state,
+                                                    _process_target(action))
         elif action['object_type'] == 'mosaic':
-          self.state, new_actions = _process_mosaic(self.state, action)
+          self.state, new_actions = self._run_graph(self.state,
+                                                    _process_mosaic(action))
       case 'post_process':
-        self.state, new_actions = _post_process(self.state, action)
+        self.state, new_actions = self._run_graph(self.state,
+                                                  _post_process(action))
       case 'update_settings':
-        self.state, new_actions = _update_settings(self.state, action)
+        self.state, new_actions = self._run_graph(self.state,
+                                                  _update_settings(action))
       case 'run_entire_graph':
-        self.state, new_actions = _run_entire_graph(self.state, action)
+        self.state, new_actions = self._run_graph(self.state,
+                                                  build_compute_graph())
       case _:
         raise ValueError(f"Unexpected action type: {action['type']}")
 
     for action in new_actions:
-      self.dispatch(action)
+      self._handle(action)
 
     return self.state
 
