@@ -5,7 +5,7 @@ import tempfile
 import numpy as np
 import pytest
 
-from context import context
+from context import context, get_cache
 from cache.cached_decorator import make_cached_decorator, Injected
 from cache.types import NeverRun
 from hashing import hash_call
@@ -13,7 +13,7 @@ from dependency_graph import Graph
 from testing.sidecar_hasher import SidecarHasher
 
 sidecar_hasher = SidecarHasher()
-cached = make_cached_decorator(cache=context,
+cached = make_cached_decorator(cache_provider=get_cache,
                                content_hasher=sidecar_hasher,
                                call_hasher=hash_call,
                                debug=True)

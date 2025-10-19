@@ -6,7 +6,7 @@ from threading import Thread, Condition
 from collections import deque
 
 from context import context
-from compute_graph import build_compute_graph, build_regroup_graph, build_preview_graph
+from compute_graph import build_compute_graph, build_regroup_graph, build_preview_graph, build_main_processing_graph
 from stacks.compute_graph import process_stacks_for_ui
 from dependency_graph import Graph, run_graph, chain, ResultDict, GraphStatus, TopologicalSorterWithStatus
 from dependency_graph.workflow_graph_adapter import to_workflow_graph
@@ -49,7 +49,7 @@ def _download_from_asiairs() -> Graph:
           process_targets_for_ui,
           process_mosaics_for_ui,
           build_preview_graph,
-          # build_main_processing_graph,
+          build_main_processing_graph,
       )
   })
 
@@ -118,7 +118,7 @@ def _post_process(action: Action) -> Graph:
     run_graph(Graph({(post_process_mosaic, mosaic): {}}))
 
 
-@ray.remote(max_restarts=-1, max_task_retries=-1)
+@ray.remote(resources={'diskcache': 0.001}, max_restarts=-1, max_task_retries=-1)
 class StateActor:
 
   def __init__(self):

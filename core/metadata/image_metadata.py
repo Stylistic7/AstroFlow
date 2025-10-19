@@ -12,7 +12,7 @@ from metadata.classes import ImageMetadata, MetadataDict
 import plate_solving
 from dependency_graph import Graph
 from context import context
-from decorators import cached, measure_performance
+from decorators.decorators import cached, measure_performance
 
 # TODO: I need to associate dark and flat frames *before* computing thumbnails.
 
@@ -112,6 +112,7 @@ class DuplicateFileException(Exception):
 
 @cached.remote
 def compute_image_metadata(filename: Path) -> ImageMetadata:
+  print(f'### compute_image_metadata {filename=}')
   if filename is None or not filename.exists():
     raise FileNotFoundError(f'File "{filename}" not found')
 

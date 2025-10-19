@@ -1,8 +1,6 @@
 import ray
 import pytest
 
-from testing import make_test_context
-
 
 def pytest_collection_modifyitems(config, items):
   exclusive = [item for item in items if 'exclusive' in item.keywords]
@@ -25,6 +23,7 @@ def test_context(init_ray):
 
   # Setup code
   assert ray.is_initialized()
+  from testing.test_context import make_test_context
   test_context = make_test_context()
 
   yield test_context

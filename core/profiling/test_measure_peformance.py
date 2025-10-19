@@ -3,7 +3,7 @@ from pathlib import Path
 from PIL import Image
 import tempfile
 
-from context import context
+from context import context, get_cache
 from cache.cached_decorator import make_cached_decorator, Injected
 from hashing import hash_list
 from decorators import measure_performance
@@ -16,7 +16,7 @@ def _compute_content_hash(serialized_func: bytes, *args, **kwargs) -> str:
 
 
 sidecar_hasher = SidecarHasher()
-task_with_context = make_cached_decorator(cache=context,
+task_with_context = make_cached_decorator(cache_provider=get_cache,
                                           content_hasher=sidecar_hasher,
                                           call_hasher=_compute_content_hash)
 

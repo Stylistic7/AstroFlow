@@ -3,7 +3,7 @@ import ray
 import structlog
 import pprint
 
-from context import context
+from context import context, get_cache
 from dependency_graph import Graph, Node, run_graph
 from dependency_graph.debugging import print_result_dict
 from cache.cached_decorator import make_cached_decorator
@@ -16,7 +16,7 @@ log = structlog.get_logger()
 T = TypeVar('T')
 
 sidecar_hasher = SidecarHasher()
-cached = make_cached_decorator(cache=context,
+cached = make_cached_decorator(cache_provider=get_cache,
                                content_hasher=sidecar_hasher,
                                call_hasher=hash_call,
                                debug=True)

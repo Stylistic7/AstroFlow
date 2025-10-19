@@ -3,10 +3,10 @@ from previews.create_thumbnail import make_create_thumbnail_decorator
 from previews.create_video import make_create_video_decorator
 from profiling.measure_performance import make_measure_performance_decorator
 from hashing import hash_call
-from context import context
+from context import context, get_cache
 from decorators.content_hasher import ContentHasher
 
-cached = make_cached_decorator(cache=context,
+cached = make_cached_decorator(cache_provider=get_cache,
                                content_hasher=ContentHasher(),
                                call_hasher=hash_call)
 
