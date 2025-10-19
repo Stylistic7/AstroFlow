@@ -28,8 +28,6 @@ T = TypeVar('T')
 # and accessible by any node in the Ray cluster.
 
 # TODO: Actions to add:
-# add_astroflow_instance (from zeroconf)
-# remove_astroflow_instance (from zeroconf)
 # volume attached
 # volume detached
 
@@ -47,7 +45,6 @@ def get_state(key: str):
 
 
 def _init(state: State, action: Action) -> tuple[State, list[Action]]:
-  print(f'### running action _init')
   new_actions = []
 
   new_actions.append(Action(type='prepare_pix'))
@@ -273,24 +270,6 @@ def _remove_from_shopping_cart(state: State,
   return state, []
 
 
-def _run_graph(state: State, action: Action) -> tuple[State, list[Action]]:
-  graph_id = uuid.uuid4()
-
-  def background_work():
-    run_graph(action['graph'])
-
-    if 'announce_message' in action:
-      from web_server.backend.announcer import announce
-      announce(action['announce_message'])
-
-    queue.put(QUEUE_NAME, dict(type='graph_done', graph_id=graph_id))
-
-  threading.Thread(target=background_work, daemon=True).start()
-
-  state['processing'] = state.get('processing', []) + [graph_id]
-  return state, []
-
-
 def _graph_done(state: State, action: Action) -> tuple[State, list[Action]]:
   state['processing'].remove(action['graph_id'])
 
@@ -338,12 +317,6 @@ def dispatch(action: Action) -> State:
     case 'remove_from_shopping_cart':
       _state, new_actions = _remove_from_shopping_cart(_state, action)
 
-    # TODO: This will hang the main thread forever; these need to be
-    # started asynchronously.
-    case 'run_processing_graph':
-      print('### Pretending to run processing graph')
-      # run_graph(build_item_processing_graph(action['item']))
-
     case 'start_flask':
       _state, new_actions = _start_flask(_state, action)
 
@@ -367,9 +340,6 @@ def dispatch(action: Action) -> State:
 
     case 'populate_context':
       _state, new_actions = _populate_context(_state, action)
-
-    case 'run_graph':
-      _state, new_actions = _run_graph(_state, action)
 
     case 'graph_done':
       _state, new_actions = _graph_done(_state, action)
