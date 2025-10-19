@@ -1,6 +1,7 @@
 import datetime
+import pytz
 
-from compute_graph import build_compute_graph
+from compute_graph.compute_graph import build_compute_graph
 from testing import make_synthetic_frames, copy_testdata_frames
 
 from stacks.simple_stack import SimpleStack
@@ -12,21 +13,60 @@ from dependency_graph import run_graph
 from customization.settings import Settings, StackSettings
 
 
+def _print_stack(stack: CompositeStack):
+  print(f'### Stack {stack}')
+  for substack_id, substack in stack.contents.items():
+    print(f'###   Content {substack}')
+    for d_type, d_id in substack.dependencies.items():
+      cal_stack = context.calibration_stacks[d_id['stack_id']]
+      print(f'###     Dependency ({d_type}) cal stack {cal_stack}')
+      print(
+          f'###       oldest_date {cal_stack.oldest_date} newest_date {cal_stack.newest_date}'
+      )
+
+
 def test_stack_dependency_graph(test_context) -> None:
   # These runs of dark and bias frames will be used by both runs of light
   # frames.
-  make_synthetic_frames(prefix='dark',
-                        number=5,
+  old_dark_datetime = datetime.datetime(2023, 12, 5, 16, 0,
+                                        43).astimezone(pytz.utc)
+  make_synthetic_frames(number=5,
                         image_type='Dark',
+                        start_datetime=old_dark_datetime,
                         fill_value=100,
                         instrument='ZWO ASI6200MM Pro',
                         width_pixels=9576,
                         height_pixels=6388,
                         temperature=-15,
                         dest_dir=context.input_dirs[0])
-  make_synthetic_frames(prefix='bias',
-                        number=7,
+  new_dark_datetime = datetime.datetime(2024, 1, 5, 16, 0,
+                                        43).astimezone(pytz.utc)
+  make_synthetic_frames(number=5,
+                        image_type='Dark',
+                        start_datetime=new_dark_datetime,
+                        fill_value=100,
+                        instrument='ZWO ASI6200MM Pro',
+                        width_pixels=9576,
+                        height_pixels=6388,
+                        temperature=-15,
+                        dest_dir=context.input_dirs[0])
+
+  old_bias_datetime = datetime.datetime(2023, 12, 5, 16, 29,
+                                        43).astimezone(pytz.utc)
+  make_synthetic_frames(number=7,
                         image_type='Bias',
+                        start_datetime=old_bias_datetime,
+                        fill_value=50,
+                        instrument='ZWO ASI6200MM Pro',
+                        width_pixels=9576,
+                        height_pixels=6388,
+                        temperature=-15,
+                        dest_dir=context.input_dirs[0])
+  new_bias_datetime = datetime.datetime(2024, 1, 5, 16, 29,
+                                        43).astimezone(pytz.utc)
+  make_synthetic_frames(number=7,
+                        image_type='Bias',
+                        start_datetime=new_bias_datetime,
                         fill_value=50,
                         instrument='ZWO ASI6200MM Pro',
                         width_pixels=9576,
@@ -69,17 +109,28 @@ def test_stack_dependency_graph(test_context) -> None:
                         dest_dir=context.input_dirs[0])
 
   filenames = find_image_files(context.input_dirs[0])
-  assert len(filenames) == 42
+  assert len(filenames) == 54
 
   run_graph(build_compute_graph())
 
   stacks = context.stacks
   assert len(stacks) == 1
-  assert len(context.calibration_stacks) == 4
+  assert len(context.calibration_stacks) == 6
 
-  light_stacks = [s for s in stacks.values() if s.image_type == 'light']
-  assert len(light_stacks) == 1
+  assert all(s.image_type == 'light' for s in stacks.values())
 
+  stack = next(iter(stacks.values()))
+  _print_stack(stack)
+
+  bias_stack_id = next(iter(
+      stack.contents.values())).dependencies['bias']['stack_id']
+  assert context.calibration_stacks[
+      bias_stack_id].oldest_date == new_bias_datetime
+
+  dark_stack_id = next(iter(
+      stack.contents.values())).dependencies['dark']['stack_id']
+  assert context.calibration_stacks[
+      dark_stack_id].oldest_date == new_dark_datetime
 
 def test_one_light_run_one_dark_run(test_context) -> None:
   copy_testdata_frames(target_name='NGC7635', dest_dir=context.input_dirs[0])

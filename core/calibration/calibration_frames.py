@@ -6,7 +6,7 @@ from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
-from decorators import cached
+from decorators.decorators import cached
 from metadata.classes import ImageMetadata, FrameHash
 from context import context
 from stacks.types import StackHash
@@ -74,69 +74,92 @@ def identify_calibration_stacks(metadata: MetadataDict) -> SimpleStacksDict:
   return stacks
 
 
+def _midpoint_s(a: datetime, b: datetime) -> float:
+  return (a.timestamp() + b.timestamp()) * 0.5
+
+
+def _build_cal_index(cal_stacks: dict[StackHash, CalibrationStack]):
+  bias_by_cam: dict[str, list[tuple[float, float, StackHash]]] = {}
+  dark_by_cam: dict[str, list[tuple[float, float, float, StackHash]]] = {}
+  flat_by_cam_filter: dict[tuple[str, str], list[tuple[float, StackHash]]] = {}
+
+  for sid, s in cal_stacks.items():
+    mid = _midpoint_s(s.oldest_date, s.newest_date)
+    cam = s.camera
+    if s.image_type == 'bias':
+      bias_by_cam.setdefault(cam, []).append((mid, s.mean_temperature, sid))
+    elif s.image_type == 'dark':
+      dark_by_cam.setdefault(cam, []).append(
+          (mid, s.mean_temperature, s.exposure_s, sid))
+    elif s.image_type == 'flat':
+      flat_by_cam_filter.setdefault((cam, s.filter), []).append((mid, sid))
+
+  # Optionally sort each bucket by midpoint to help cache locality; not required for correctness.
+  for lst in bias_by_cam.values():
+    lst.sort(key=lambda x: x[0])
+  for lst in dark_by_cam.values():
+    lst.sort(key=lambda x: x[0])
+  for lst in flat_by_cam_filter.values():
+    lst.sort(key=lambda x: x[0])
+
+  return bias_by_cam, dark_by_cam, flat_by_cam_filter
+
+
 def associate_with_stack(stack: CompositeStack) -> CompositeStack:
   cal_stacks = context.calibration_stacks
-  print(f'### associate_with_stack {len(cal_stacks)} cal stacks '
-        f'with stack {stack}')
+  bias_by_cam, dark_by_cam, flat_by_cam_filter = _build_cal_index(cal_stacks)
 
-  def is_compatible(substack: SimpleStack, image_type: str,
-                    cal_stack: CalibrationStack) -> bool:
-    if cal_stack.image_type != image_type:
-      return False
-
-    if cal_stack.camera != substack.camera:
-      return False
-
-    # TODO: Put temperarture temperature compatibility options in the UI.
-    good_temperature = abs(cal_stack.mean_temperature -
-                           substack.mean_temperature) < 10.0
-
-    # TODO: This allows dark scaling. Make this an option in the UI.
-    good_exposure = cal_stack.exposure_s <= substack.exposure_s
-
-    if image_type == 'bias':
-      return good_temperature
-
-    if image_type == 'dark':
-      return good_temperature and good_exposure
-
-    if image_type == 'flat':
-      return cal_stack.filter == substack.filter
-
-    assert False, f'image_type {image_type}'
-
-  def find_closest_stack_chronologically(
-      substack: SimpleStack, image_type: str) -> CalibrationStack | None:
-    compatible_stacks = [
-        s for s in cal_stacks
-        if is_compatible(substack, image_type, cal_stacks[s])
-    ]
-
-    if not compatible_stacks:
+  def choose_bias(sub: SimpleStack) -> StackHash | None:
+    cand = bias_by_cam.get(sub.camera)
+    if not cand:
       return None
+    sub_mid = _midpoint_s(sub.oldest_date, sub.newest_date)
+    sub_T = sub.mean_temperature
+    cand = [t for (m, t, sid) in cand if abs(t - sub_T) < 10.0]
+    if not cand:
+      return None
+    # Re-scan once to pick nearest by time; avoid NumPy
+    best_sid = min(((m, t, sid)
+                    for (m, t, sid) in bias_by_cam[sub.camera]
+                    if abs(t - sub_T) < 10.0),
+                   key=lambda x: abs(x[0] - sub_mid))[2]
+    return best_sid
 
-    def midpoint(a: datetime, b: datetime) -> datetime:
-      return a + (b - a) / 2
+  def choose_dark(sub: SimpleStack) -> StackHash | None:
+    cand = dark_by_cam.get(sub.camera)
+    if not cand:
+      return None
+    sub_mid = _midpoint_s(sub.oldest_date, sub.newest_date)
+    sub_T = sub.mean_temperature
+    sub_exp = sub.exposure_s
+    filtered = [(m, t, e, sid)
+                for (m, t, e, sid) in cand
+                if abs(t - sub_T) < 10.0 and e <= sub_exp]
+    if not filtered:
+      return None
+    return min(filtered, key=lambda x: abs(x[0] - sub_mid))[3]
 
-    return compatible_stacks[np.argmin([
-        abs(
-            midpoint(substack.oldest_date, substack.newest_date) -
-            midpoint(cal_stacks[s].oldest_date, cal_stacks[s].newest_date)).
-        total_seconds() for s in compatible_stacks
-    ])]
+  def choose_flat(sub: SimpleStack) -> StackHash | None:
+    cand = flat_by_cam_filter.get((sub.camera, sub.filter))
+    if not cand:
+      return None
+    sub_mid = _midpoint_s(sub.oldest_date, sub.newest_date)
+    return min(cand, key=lambda x: abs(x[0] - sub_mid))[1]
+
+  pickers = {
+      'bias': choose_bias,
+      'dark': choose_dark,
+      'flat': choose_flat,
+  }
 
   new_contents = SimpleStacksDict()
-  for content_hash, substack in stack.contents.items():
-    new_dependencies = substack.dependencies
-    for image_type in ['bias', 'dark', 'flat']:
-      if image_type not in new_dependencies:
-        if closest := find_closest_stack_chronologically(substack, image_type):
-          print(f'### associated {image_type} cal stack {closest} '
-                f'with substack {substack}')
-          new_dependencies[image_type] = {'stack_id': closest}
+  for h, sub in stack.contents.items():
+    deps = dict(sub.dependencies)  # shallow copy; avoid mutating original
+    for t in ('bias', 'dark', 'flat'):
+      if t not in deps:
+        sid = pickers[t](sub)
+        if sid is not None:
+          deps[t] = {'stack_id': sid}
+    new_contents[h] = replace(sub, dependencies=deps)
 
-    new_substack = replace(substack, dependencies=new_dependencies)
-    new_contents[content_hash] = new_substack
-
-  new_stack = replace(stack, contents=new_contents)
-  return new_stack
+  return replace(stack, contents=new_contents)
