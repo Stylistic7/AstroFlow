@@ -108,3 +108,79 @@ def test_orion_mosaic_with_missing_panel(test_context) -> None:
   run_graph(graph)
 
   shutil.copytree(context.output_dir, '/tmp/foo', dirs_exist_ok=True)
+
+import random, string
+import itertools
+
+def random_garbage(n: int) -> str:
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=n))
+
+
+def test_context_actor_speed(benchmark):
+  copy_testdata_frames(target_name='Orion Pane 1',
+                       start_datetime=datetime.datetime(2024, 2, 5, 16, 29, 43),
+                       dest_dir=context.input_dirs[0],
+                       add_noise=False)
+  copy_testdata_frames(target_name='Orion Pane 2',
+                       start_datetime=datetime.datetime(2024, 2, 5, 17, 29, 43),
+                       dest_dir=context.input_dirs[0],
+                       add_noise=False)
+  copy_testdata_frames(target_name='Orion Pane 3',
+                       start_datetime=datetime.datetime(2024, 2, 5, 18, 29, 43),
+                       dest_dir=context.input_dirs[0],
+                       add_noise=False)
+
+  graph = build_compute_graph()
+  run_graph(graph)
+
+  assert len(context.targets) == 3
+  assert len(context.mosaics) == 1
+  mosaic = next(iter(context.mosaics.values()))
+
+  # random_dict = {random_garbage(8): mosaic for _ in range(100)}
+
+  stacks = context.stacks
+  random_dict = {random_garbage(8): v for v in stacks.values() for _ in range(10)}
+
+  def insert_into_context_actor():
+    for k, v in random_dict.items():
+      context[k] = v    
+
+  benchmark(insert_into_context_actor)
+
+import tempfile
+import diskcache
+
+def test_direct_diskcache_speed(benchmark):
+  copy_testdata_frames(target_name='Orion Pane 1',
+                       start_datetime=datetime.datetime(2024, 2, 5, 16, 29, 43),
+                       dest_dir=context.input_dirs[0],
+                       add_noise=False)
+  copy_testdata_frames(target_name='Orion Pane 2',
+                       start_datetime=datetime.datetime(2024, 2, 5, 17, 29, 43),
+                       dest_dir=context.input_dirs[0],
+                       add_noise=False)
+  copy_testdata_frames(target_name='Orion Pane 3',
+                       start_datetime=datetime.datetime(2024, 2, 5, 18, 29, 43),
+                       dest_dir=context.input_dirs[0],
+                       add_noise=False)
+
+  graph = build_compute_graph()
+  run_graph(graph)
+
+  assert len(context.targets) == 3
+  assert len(context.mosaics) == 1
+  mosaic = next(iter(context.mosaics.values()))
+
+  testdata_cache_dir = tempfile.TemporaryDirectory()
+  testdata_cache = diskcache.Cache(testdata_cache_dir.name)
+
+  # random_dict = {random_garbage(8): mosaic for _ in range(100)}
+
+  stacks = context.stacks
+  random_dict = {random_garbage(8): v for v in stacks.values() for _ in range(10)}
+  def insert_into_cache():
+    for k, v in random_dict.items():
+      testdata_cache[k] = v
+
+  benchmark(insert_into_cache)

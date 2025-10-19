@@ -1,2 +1,2 @@
-from .context import context, ContextActor, WriteMode
+from .context import context, ContextActor
 from .cache import get_cache

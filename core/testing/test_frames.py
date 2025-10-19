@@ -12,7 +12,7 @@ from pathlib import Path
 import pickle
 
 from metadata.classes import ImageMetadata
-from context import context, WriteMode
+from context import context
 import plate_solving
 from file_io.normalize_header import normalize_header
 from geometry import Degrees
@@ -278,8 +278,7 @@ def make_synthetic_frames(start_datetime: datetime.datetime = datetime.datetime(
                                filename=fits_filename,
                                header=header,
                                plate_solution=plate_solution)
-      context.set(key, metadata, write_mode=WriteMode.DISK_ONLY)
-      print(f'### Wrote key {key}')
+      context.set(key, metadata)
 
       sidecar = Path(fits_filename).with_suffix('.pkl')
       with open(sidecar, 'wb') as f:
