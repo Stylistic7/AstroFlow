@@ -31,7 +31,6 @@ def plot_mosaic(mosaic: Mosaic, title: str = 'Mosaic') -> None:
 
   for i, target_id in enumerate(mosaic.target_ids):
     target = targets[target_id]
-    tile_indices = mosaic.tile_indices[i]
 
     projection_name = 'mercator'
     projection = MercatorProjection()
@@ -55,7 +54,7 @@ def plot_mosaic(mosaic: Mosaic, title: str = 'Mosaic') -> None:
     plt.text(
         center[0],
         center[1],
-        f'{tile_indices[0]}, {tile_indices[1]}; {target_id}; {len(overlapping_targets)}',
+        f'{target_id}: {len(overlapping_targets)}',
         fontsize=12,
         color='blue')
     plt.scatter([center[0]], [center[1]], color='black')
