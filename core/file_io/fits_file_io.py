@@ -7,7 +7,7 @@ from file_io.normalize_header import normalize_header
 
 
 def read_fits_header(filename: Path | str, debug: bool = False) -> dict:
-  fits = pyfits.open(filename, mmap=False)
+  fits = pyfits.open(filename)
   header = fits[0].header
   fits.close()
 
@@ -21,7 +21,7 @@ def read_fits_header(filename: Path | str, debug: bool = False) -> dict:
 
 
 def read_fits_image(filename: Path | str) -> np.ndarray:
-  fits = pyfits.open(str(filename), mmap=False)
+  fits = pyfits.open(str(filename))
   image = fits[0].data
   fits.close()
 
@@ -29,6 +29,6 @@ def read_fits_image(filename: Path | str) -> np.ndarray:
 
 
 def update_fits_header(filename: Path, metadata: dict[str, Any]) -> None:
-  with pyfits.open(str(filename), mode='update', mmap=False) as fits:
+  with pyfits.open(str(filename), mode='update') as fits:
     for k, v in metadata.items():
       fits[0].header[k] = v
