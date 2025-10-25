@@ -5,7 +5,7 @@ from operator import add
 import time
 from typing import Callable, Any
 from objsize import get_deep_size
-import numpy as np
+import itertools
 
 from dependency_graph import Node, Graph, CanonicalGraph, GraphStatus, ResultDict, TopologicalSorterWithStatus, GenericRemoteFunction, canonicalize_graph
 from dependency_graph.logging import LogContainer
@@ -181,51 +181,66 @@ def run_graph(graph: Graph,
 
   toplevel_ts = add_subgraph(graph)
 
+  # Constants; tune per cluster/workload
+  MAX_IN_FLIGHT = 4 * int(ray.cluster_resources().get("CPU", 1))
+  WAIT_BATCH = 16
+  TIMEOUT = 0.2  # seconds
+
   while any(ts.is_active() for ts in subgraphs):
-    ready = get_ready_nodes()
-    if debug:
-      print_ready_nodes(ready)
+    ready_nodes = list(get_ready_nodes())  # one-shot, non-idempotent
+    if len(ready_nodes) > 100:
+      print_ready_nodes(ready_nodes)
 
-    max_parallelism_seen = max(len(ready), max_parallelism_seen)
-
+    max_parallelism_seen = max(len(ready_nodes), max_parallelism_seen)
     if debug:
       active = [ts for ts in subgraphs if ts.is_active()]
-      print(f'Top of loop, {len(active)} active graphs, '
-            f'{len(ready)} ready nodes')
+      print(
+          f"Top of loop, {len(active)} active graphs, {len(ready_nodes)} ready nodes"
+      )
 
-    # This starts all ready tasks in parallel.
-    ref_to_ts_and_node = {
-        make_run_fn(ts, node): (ts, node) for (ts, node) in ready
-    }
-    remaining_refs = list(ref_to_ts_and_node.keys())
+    # Submit from ready_nodes incrementally, cap in-flight, and process completions.
+    i = 0
+    pending: list[ray.ObjectRef] = []
+    ref_meta: dict[ray.ObjectRef, tuple[TsType, NodeType]] = {}
 
-    while len(remaining_refs):
-      ready_refs, remaining_refs = ray.wait(
-          remaining_refs, num_returns=int(np.ceil(len(remaining_refs) / 10)))
+    while i < len(ready_nodes) or pending:
+      # Fill up to concurrency cap from the one-shot ready list.
+      while i < len(ready_nodes) and len(pending) < MAX_IN_FLIGHT:
+        ts, node = ready_nodes[i]
+        i += 1
+        ref = make_run_fn(ts, node)  # launch; returns ObjectRef
+        ref_meta[ref] = (ts, node)
+        pending.append(ref)
 
-      for ready_ref in ready_refs:
-        ts, node = ref_to_ts_and_node[ready_ref]
-        if trace:
-          trace_list.append(node)
-        if debug:
-          print(f'Task {node.task._function.__name__} finished')
+      if not pending:
+        break
 
-        num_nodes_run += 1
+      k = min(WAIT_BATCH, len(pending))
+      ready_refs, still_pending = ray.wait(pending, num_returns=k, timeout=TIMEOUT)
+      pending = still_pending
 
-        # Maybe call the user's status_fn, but rate limit the frequency of these
-        # calls, which may be expensive.
-        current_time = time.time()
-        if current_time > (last_status_time + status_interval):
+      if not ready_refs:
+        # Periodic status/graph updates even without completions.
+        now = time.time()
+        if now > (last_status_time + status_interval):
           if status_fn:
             status_fn(get_status())
           if graph_update_fn:
             graph_update_fn(subgraphs)
-          last_status_time = current_time
+          last_status_time = now
+        continue
 
+      for ref in ready_refs:
+        ts, node = ref_meta.pop(ref)
+        if trace:
+          trace_list.append(node)
+        if debug:
+          print(f"Task {node.task._function.__name__} finished")
+        num_nodes_run += 1
         try:
-          handle_result(ts, node, ray.get(ready_ref))
+          handle_result(ts, node, ray.get(ref))
         except ray.exceptions.RayTaskError as e:
-          print(f'Node {node_to_string(node)} raised exception {e}')
+          print(f"Node {node_to_string(node)} raised exception {e}")
           ts.results[node] = e.cause
           ts.logs[node] = []
           ts.final_result = e.cause
