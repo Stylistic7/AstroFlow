@@ -9,6 +9,7 @@ import random
 from typing import Any, Sequence
 from dataclasses import asdict
 from beartype import beartype
+import healpy
 
 from context import context
 from mosaics.types import Mosaic, MosaicHash, MosaicsDict, Strip
@@ -39,7 +40,15 @@ def roughly_same_image_scale(a: float, b: float) -> bool:
   return ratio > 0.9 and ratio < 1.1
 
 
-@ray.remote
+# @ray.remote
+# def target_compatible_with_target(a: Target, b: Target,
+#                                   allowed_overlaps: list[Overlap]):
+#   overlap = ray.get(targets_overlap.remote(a, b))
+#   return (roughly_same_image_scale(a.image_scale, b.image_scale) and
+#           roughly_same_area(a.footprint, b.footprint) and
+#           overlap is not Overlap.INCOMPATIBLE and overlap in allowed_overlaps)
+
+
 def target_compatible_with_mosaic(target_id: TargetHash,
                                   mosaic: set[TargetHash],
                                   allowed_overlaps: list[Overlap],
@@ -62,7 +71,7 @@ def target_compatible_with_mosaic(target_id: TargetHash,
     if not roughly_same_area(target.footprint, targets[tid].footprint):
       return False
 
-    overlap = targets_overlap(target, targets[tid], debug)
+    overlap = ray.get(targets_overlap.remote(target, targets[tid], debug))
     if overlap is Overlap.INCOMPATIBLE:
       return False
 
@@ -72,6 +81,7 @@ def target_compatible_with_mosaic(target_id: TargetHash,
   return num_good_overlaps > 0
 
 
+@cached.remote
 def targets_overlap(a: Target, b: Target, debug: bool = False) -> bool:
   if a.stable_hash == b.stable_hash:
     return Overlap.IDENTICAL
@@ -94,8 +104,8 @@ def targets_overlap(a: Target, b: Target, debug: bool = False) -> bool:
     print(f'b.rotation_angle {np.degrees(b.rotation_angle)} degrees')
 
   # TODO: This essentially forces mosaics to be made with an equatorial mount.
-  # if (a.rotation_angle - b.rotation_angle) > 0.17:
-  #   return False
+  if abs(a.rotation_angle - b.rotation_angle) > 0.17:
+    return False
 
   intersects = a.footprint.intersects_poly(b.footprint)
 
@@ -205,11 +215,10 @@ def group_targets(
   mosaics = []
   for target_id in target_ids:
     # Find mosaics that are compatible with the current target, in parallel.
-    results = ray.get([
-        target_compatible_with_mosaic.remote(target_id, mosaic,
-                                             allowed_overlaps, debug)
-        for mosaic in mosaics
-    ])
+    results = [
+        target_compatible_with_mosaic(target_id, mosaic, allowed_overlaps,
+                                      debug) for mosaic in mosaics
+    ]
     compatible_mosaics = [
         mosaic for mosaic, match in zip(mosaics, results) if match
     ]
@@ -229,7 +238,7 @@ def group_targets(
   return mosaics
 
 
-@beartype
+@ray.remote
 def find_strips(target_ids: list[TargetHash],
                 debug: bool = False) -> list[Strip]:
   targets = context.grouped_targets
@@ -253,8 +262,10 @@ def find_strips(target_ids: list[TargetHash],
 
     end_target_id = None
     for target_id in strip:
-      overlap_count = sum(1 for tid in strip if targets_overlap(
-          targets[target_id], targets[tid]) == Overlap.LONG_EDGE)
+      overlap_count = sum(
+          1 for tid in strip
+          if ray.get(targets_overlap.remote(targets[target_id],
+                                            targets[tid])) == Overlap.LONG_EDGE)
       if debug:
         print(f'### target {target_id} has overlap_count {overlap_count}')
       if overlap_count == 1:
@@ -269,8 +280,9 @@ def find_strips(target_ids: list[TargetHash],
     strip.remove(end_target_id)
     while len(output_strip) < strip_length:
       for target_id in strip:
-        if targets_overlap(targets[output_strip[-1]],
-                           targets[target_id]) == Overlap.LONG_EDGE:
+        if ray.get(
+            targets_overlap.remote(targets[output_strip[-1]],
+                                   targets[target_id])) == Overlap.LONG_EDGE:
           if debug:
             print(f'### added {target_id} to strip')
           output_strip.append(target_id)
@@ -288,6 +300,53 @@ def find_strips(target_ids: list[TargetHash],
     output_strips.append(ordered_strip)
 
   return output_strips
+
+
+def healpix_cells_for_poly(poly, nside=64, nest=True, inclusive=True):
+  # poly.points is closed; drop duplicated last vertex
+  verts = np.asarray(poly.points)[
+      ..., :-1, :][0] if poly.points.ndim == 3 else poly.points[:-1]
+  return healpy.query_polygon(nside, verts, inclusive=inclusive, nest=nest)
+
+
+# def candidate_pairs_from_cells(nside, targets_for_cell, cells, nest=True):
+#     cs = sorted(healpy.pixelfunc.get_all_neighbours(nside, cells, nest=nest))
+#     S = set()
+#     # within-cell pairs
+#     for c in cs:
+#         ids = targets_for_cell.get(c, [])
+#         S.update((min(a,b), max(a,b)) for a,b in combinations(ids, 2))
+#     # cross-cell pairs (only c1<c2 to dedup)
+#     for i, c1 in enumerate(cs):
+#         ids1 = targets_for_cell.get(c1, [])
+#         for c2 in cs[i+1:]:
+#             ids2 = targets_for_cell.get(c2, [])
+#             if not ids1 or not ids2: continue
+#             S.update((min(a,b), max(a,b)) for a,b in product(ids1, ids2))
+#     return S
+
+# def _identify_overlapping_targets(
+#     debug: bool = False) -> list[list[TargetHash]]:
+#   print(f'### _identify_overlapping_targets')
+
+#   targets = context.grouped_targets
+#   if not targets:
+#     return []
+
+#   from collections import defaultdict
+
+#   targets_for_cell = defaultdict(list)
+#   for target_id, target in targets.items():
+#     cells = healpix_cells_for_poly(target.footprint)
+#     for c in cells:
+#       targets_for_cell[c].append(target_id)
+
+#   for cell, target in targets_for_cell.items():
+#     print(f'### cell {cell} touches target {target}')
+#     neighbors = healpy.pixelfunc.get_all_neighbours(nside=64, theta=cell)
+#     print(f'### cell {cell} has neighbors {neighbors}')
+
+#   return []
 
 
 def _identify_overlapping_targets(
@@ -321,7 +380,7 @@ def _identify_overlapping_targets(
 
 @cached.remote
 def identify_mosaics(targets: TargetsDict,
-                     debug: bool = False) -> dict[MosaicHash, Mosaic]:
+                     debug: bool = True) -> dict[MosaicHash, Mosaic]:
   print(f'### Identifying mosaics from {len(targets)} targets')
 
   mosaics = _identify_overlapping_targets(debug)
@@ -358,7 +417,7 @@ def identify_mosaics(targets: TargetsDict,
       #         for target_id in mosaic
       #     ]).points).tolist()
 
-      strips = find_strips(mosaic, debug)
+      strips = ray.get(find_strips.remote(mosaic, debug))
       print('### strips', strips)
       target_ids = []
       tile_indices = []
@@ -419,8 +478,8 @@ def identify_mosaics(targets: TargetsDict,
       output_mosaic = Mosaic(**attributes)
       print(f'### Made output_mosaic {output_mosaic}')
 
-      if debug:
-        plot_mosaic(output_mosaic, title=f'Mosaic')
+      # if debug:
+      #   plot_mosaic(output_mosaic, title=f'Mosaic')
 
       output_mosaics[stable_hash] = output_mosaic
     except Exception as e:
