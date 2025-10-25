@@ -8,7 +8,7 @@ from collections import deque
 from context import context
 from compute_graph import build_compute_graph, build_regroup_graph, build_preview_graph, build_main_processing_graph
 from stacks.compute_graph import process_stacks_for_ui
-from dependency_graph import Graph, run_graph, chain, ResultDict, GraphStatus, TopologicalSorterWithStatus
+from dependency_graph import Graph, run_graph, chain, ResultDict, GraphStatus, TopologicalSorterWithStatus, graph_status_to_progress
 from dependency_graph.workflow_graph_adapter import to_workflow_graph
 from customization.compute_graph import customize_stack, store_customized_stack
 from mosaics.compute_graph import build_mosaic_subgraph, stacks_for_mosaic, targets_for_mosaic, process_mosaics_for_ui
@@ -118,7 +118,9 @@ def _post_process(action: Action) -> Graph:
     run_graph(Graph({(post_process_mosaic, mosaic): {}}))
 
 
-@ray.remote(resources={'diskcache': 0.001}, max_restarts=-1, max_task_retries=-1)
+@ray.remote(resources={'diskcache': 0.001},
+            max_restarts=-1,
+            max_task_retries=-1)
 class StateActor:
 
   def __init__(self):
@@ -158,12 +160,11 @@ class StateActor:
   def _run_graph(self, state: State,
                  graph: Graph) -> tuple[ResultDict, ResultDict]:
 
-    def status_fn(s: GraphStatus):
-      context.compute_graph_status = s
+    def status_fn(status: GraphStatus):
+      context.compute_graph_status = status
 
-    def graph_update_fn(g: list[TopologicalSorterWithStatus]):
-      # TODO: Does this compete with the compute graph itself?
-      context.compute_graph = to_workflow_graph(g)
+    def graph_update_fn(graphs: list[TopologicalSorterWithStatus]):
+      context.compute_graphs = graphs
 
     # TODO: Should `state` be updated?
     results, logs = run_graph(graph,
