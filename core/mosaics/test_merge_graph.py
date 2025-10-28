@@ -13,12 +13,14 @@ from mosaics.types import TileIndices
 from mosaics.orion_mosaic import add_orion_mosaic_images
 from targets.types import Target
 from testing.test_stacks import make_composite_stack
+from attributes.astrometric_attributes import healpix_cells_from_poly
 
 _OLDEST_DATE = datetime.datetime(2024, 2, 5, 16, 29, 43)
 _NEWEST_DATE = datetime.datetime(2024, 2, 5, 17, 29, 43)
 _FOOTPRINT = SingleSphericalPolygon.from_radec([98.01, 102.01, 102.01, 98.01],
                                                [-1, -1, 1, 1],
                                                center=[100.01, 0])
+_HEALPIX_CELLS = healpix_cells_from_poly(_FOOTPRINT)
 
 
 # TODO: Put this somewhere generally-accessible.
@@ -27,6 +29,7 @@ def make_test_target(name,
                      image_scale=1.0,
                      rotation_angle=0.0,
                      footprint=None,
+                     healpix_cells=None,
                      projected_footprints=None,
                      content_hash='content_hash',
                      stable_hash='stable_hash',
@@ -38,6 +41,7 @@ def make_test_target(name,
                 image_scale=image_scale,
                 rotation_angle=rotation_angle,
                 footprint=footprint,
+                healpix_cells=healpix_cells,
                 projected_footprints=projected_footprints,
                 content_hash=content_hash,
                 stable_hash=stable_hash,
@@ -63,6 +67,7 @@ def test_three_by_one(test_context) -> None:
                   image_scale=1.0,
                   rotation_angle=0.0,
                   footprint=_FOOTPRINT,
+                  healpix_cells=_HEALPIX_CELLS,
                   projected_footprints={})
 
   context.targets = targets = {
@@ -117,6 +122,7 @@ def test_two_by_three(test_context) -> None:
                   image_scale=1.0,
                   rotation_angle=0.0,
                   footprint=_FOOTPRINT,
+                  healpix_cells=_HEALPIX_CELLS,
                   projected_footprints={})
 
   context.targets = targets = {
@@ -198,6 +204,7 @@ def test_three_panes(test_context) -> None:
                   image_scale=1.0,
                   rotation_angle=0.0,
                   footprint=_FOOTPRINT,
+                  healpix_cells=_HEALPIX_CELLS,
                   projected_footprints={})
 
   context.targets = targets = {

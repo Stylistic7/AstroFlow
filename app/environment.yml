@@ -5,6 +5,7 @@ channels:
 dependencies:
   - python=3.11
   - numpy
+  - cdshealpix
   - ray-default
   - flask
   - liblapack
@@ -26,3 +27,5 @@ dependencies:
   - pandas
   - ephem
   - matplotlib
+  - pytest
+  - pytest-benchmark

@@ -12,9 +12,9 @@ import geometry.footprints as footprints
 from hashing import hash_list
 from stacks.composite_stack import CompositeStack, CompositeStacksDict
 from attributes import AstrometricAttributes
+from attributes.astrometric_attributes import healpix_cells_from_poly
 from stacks.types import StackHash
 from decorators import cached
-
 
 @cached.remote
 def group_stacks_into_targets(stacks: CompositeStacksDict) -> TargetsDict:
@@ -67,16 +67,22 @@ def group_stacks_into_targets(stacks: CompositeStacksDict) -> TargetsDict:
   groups = find_groups(values, comparison_fn, min_component_members=1)
 
   def new_target(stack_ids: list[StackHash]) -> Target:
-    # TODO: This just uses the first stack's footprint, which is very simple,
-    # but maybe not very precise. The more precise implementation is here in
-    # a comment.
-    # footprint = next(
-    #     SphericalPolygon.multi_intersection([
-    #         SphericalPolygon(stacks[stack_id].footprint)
-    #         for stack_id in stack_ids
-    #     ]).points).tolist()
-    # projected_footprint = footprints.all_projections(
-    #     SphericalPolygon(footprint))
+    # Compute the target's polygon as the intersection of all its stacks.
+    footprint = SphericalPolygon.multi_intersection([
+            SphericalPolygon(stacks[stack_id].footprint)
+            for stack_id in stack_ids
+        ])
+    points = list(footprint.points)
+    assert len(points) == 1
+    points = points[0]
+    footprint = SingleSphericalPolygon(points)
+    if not footprint.is_clockwise():
+      footprint = SingleSphericalPolygon(footprint.points[::-1])
+    assert not SphericalPolygon.self_intersect(list(footprint.points))
+    projected_footprints = footprints.all_projections(footprint)
+
+    # TODO: Move this stuff into AstrometricAttributes somehow?
+    healpix_cells = healpix_cells_from_poly(footprint)
 
     # TODO: Validate all stacks here.
 
@@ -89,7 +95,10 @@ def group_stacks_into_targets(stacks: CompositeStacksDict) -> TargetsDict:
         'oldest_date': min(stacks[s].oldest_date for s in stack_ids),
         'newest_date': min(stacks[s].newest_date for s in stack_ids),
         'content_hash': content_hash,
-        'stack_ids': stack_ids
+        'stack_ids': stack_ids,
+        'footprint': footprint,
+        'healpix_cells': healpix_cells,
+        'projected_footprints': projected_footprints,
     }
 
     astrometric_attributes: dict[str, Any] = {
@@ -97,7 +106,8 @@ def group_stacks_into_targets(stacks: CompositeStacksDict) -> TargetsDict:
         for f in fields(AstrometricAttributes)
     }
 
-    attributes = target_attributes | astrometric_attributes
+    # The target attributes here will override `astrometric_attributes`.
+    attributes = astrometric_attributes | target_attributes
 
     return Target(**attributes)
 

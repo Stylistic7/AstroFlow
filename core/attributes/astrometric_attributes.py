@@ -2,6 +2,9 @@ from dataclasses import dataclass
 from beartype import beartype
 import numpy as np
 import astropy  # type: ignore
+from astropy.coordinates import SkyCoord
+import astropy.units as u
+from cdshealpix import nested as cds  # or ring
 from typing import Any
 from collections.abc import Sequence
 
@@ -20,6 +23,14 @@ def _normalize_radians(x: float) -> float:
     return float(x)
 
 
+def healpix_cells_from_poly(poly, nside: int = 10):
+  depth = int(np.log2(nside))  # cdshealpix uses depth = log2(nside)
+  ra_deg, dec_deg = poly.to_radec()
+  c = SkyCoord(ra_deg * u.deg, dec_deg * u.deg, frame="icrs")
+  ipix, _, _ = cds.polygon_search(c.ra, c.dec, depth, flat=True)
+  return list(map(int, np.unique(ipix)))
+
+
 @beartype
 @dataclass(frozen=True)
 class AstrometricAttributes:
@@ -28,6 +39,7 @@ class AstrometricAttributes:
   image_scale: float
   rotation_angle: float
   footprint: SingleSphericalPolygon
+  healpix_cells: list[int]
   projected_footprints: dict[str, Any]  # TODO: Strongly-type this.
 
   @classmethod
@@ -60,5 +72,7 @@ class AstrometricAttributes:
     assert not SphericalPolygon.self_intersect(footprint.points)
     projected_footprints = footprints.all_projections(footprint)
 
+    healpix_cells = healpix_cells_from_poly(footprint)
+
     return cls(name, center, image_scale, rotation_angle, footprint,
-               projected_footprints)
+               healpix_cells, projected_footprints)
