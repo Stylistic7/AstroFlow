@@ -52,3 +52,36 @@ class DisjointSet:
         for a, b in edges:
             d.union(a, b)
         return d
+
+class HashDisjointSet:
+    def __init__(self):
+        self.index = {}          # hash → int index
+        self.rev = []            # int → hash
+        self.dsu = None
+
+    def _ensure(self, h):
+        if h not in self.index:
+            self.index[h] = len(self.rev)
+            self.rev.append(h)
+            if self.dsu:
+                # expand existing DSU
+                self.dsu.p.append(len(self.rev)-1)
+                self.dsu.sz.append(1)
+            else:
+                self.dsu = DisjointSet(1)
+        return self.index[h]
+
+    def union(self, ha, hb):
+        ia, ib = self._ensure(ha), self._ensure(hb)
+        self.dsu.union(ia, ib)
+
+    def same(self, ha, hb):
+        ia, ib = self._ensure(ha), self._ensure(hb)
+        return self.dsu.same(ia, ib)
+
+    def groups(self):
+        if self.dsu is None:
+            return []
+        
+        groups = self.dsu.groups()
+        return [[self.rev[i] for i in g] for g in groups]

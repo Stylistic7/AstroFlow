@@ -1,6 +1,6 @@
 import random
 
-from mosaics.disjoint_set import DisjointSet
+from mosaics.disjoint_set import DisjointSet, HashDisjointSet
 
 def test_singletons():
     d = DisjointSet(5)
@@ -77,3 +77,62 @@ def test_random_consistency(seed: int = 123, n: int = 200):
         naive_parts.setdefault(find_naive(i), set()).add(i)
     naive_parts = sorted(sorted(s) for s in naive_parts.values())
     assert parts == naive_parts
+
+def _norm(groups):
+    return sorted(sorted(g) for g in groups)
+
+def test_same_creates_singletons():
+    d = HashDisjointSet()
+    a, b = "af18f99255326fdb", "b9ac7a4e22c3a810"
+    assert d.same(a, a)
+    assert not d.same(a, b)
+    assert _norm(d.groups()) == [[a], [b]]
+
+def test_chain_union_groups():
+    d = HashDisjointSet()
+    a, b, c = "aa", "bb", "cc"
+    d.union(a, b)
+    d.union(b, c)
+    assert d.same(a, c)
+    assert _norm(d.groups()) == [[a, b, c]]
+
+def test_two_components():
+    d = HashDisjointSet()
+    a, b, c, d0 = "a1", "b2", "c3", "d4"
+    d.union(a, b)
+    d.union(c, d0)
+    g = _norm(d.groups())
+    assert g == _norm([[a, b], [c, d0]])
+    assert not d.same(a, c)
+
+def test_idempotent_unions():
+    d = HashDisjointSet()
+    a, b = "x", "y"
+    d.union(a, b)
+    d.union(a, b)
+    d.union(b, a)
+    assert d.same(a, b)
+    assert _norm(d.groups()) == [[a, b]]
+
+def test_interleaved_same_and_union():
+    d = HashDisjointSet()
+    a, b, c = "h1", "h2", "h3"
+    assert not d.same(a, b)
+    d.union(a, b)
+    assert d.same(a, b)
+    assert not d.same(a, c)
+    d.union(b, c)
+    assert d.same(a, c)
+    assert _norm(d.groups()) == [[a, b, c]]
+
+def test_deterministic_groups():
+    d = HashDisjointSet()
+    items = [f"h{i:03d}" for i in range(10)]
+    for i in range(0, 10, 2):
+        d.union(items[i], items[i+1])
+    g1 = _norm(d.groups())
+    g2 = _norm(d.groups())
+    assert g1 == g2
+
+
+

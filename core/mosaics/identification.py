@@ -9,7 +9,10 @@ import random
 from typing import Any, Sequence
 from dataclasses import asdict
 from beartype import beartype
-import healpy
+import time
+from collections import defaultdict
+from itertools import combinations
+
 
 from context import context
 from mosaics.types import Mosaic, MosaicHash, MosaicsDict, Strip
@@ -18,9 +21,12 @@ from geometry import footprints
 from hashing import hash_list
 from targets.types import TargetHash, Target, TargetsDict
 from mosaics.debugging import plot_mosaic
+from mosaics.disjoint_set import HashDisjointSet
 from mosaics.overlap import Overlap
 from decorators import cached
 from attributes import AstrometricAttributes, ChronologyAttributes
+from attributes.astrometric_attributes import healpix_cells_from_poly
+
 
 # TODO: Make the functions in this file functional (e.g. pass TargetsDict into
 # them, vs. relying on context).
@@ -48,7 +54,7 @@ def roughly_same_image_scale(a: float, b: float) -> bool:
 #           roughly_same_area(a.footprint, b.footprint) and
 #           overlap is not Overlap.INCOMPATIBLE and overlap in allowed_overlaps)
 
-
+@ray.remote
 def target_compatible_with_mosaic(target_id: TargetHash,
                                   mosaic: set[TargetHash],
                                   allowed_overlaps: list[Overlap],
@@ -212,30 +218,34 @@ def group_targets(
     allowed_overlaps,
     debug: bool = False,
 ) -> list[set[TargetHash]]:
-  mosaics = []
+  assert len(target_ids) > 0
+  targets = context.grouped_targets
+
+  target_ids_for_cell = defaultdict(list)
   for target_id in target_ids:
-    # Find mosaics that are compatible with the current target, in parallel.
-    results = [
-        target_compatible_with_mosaic(target_id, mosaic, allowed_overlaps,
-                                      debug) for mosaic in mosaics
-    ]
-    compatible_mosaics = [
-        mosaic for mosaic, match in zip(mosaics, results) if match
-    ]
+    target = targets[target_id]
+    assert len(target.healpix_cells) > 0
+    for cell in target.healpix_cells:
+      target_ids_for_cell[cell].append(target_id)
 
-    if compatible_mosaics:
-      if debug:
-        print(f'### target {target_id} will be merged with '
-              f'existing mosaics {compatible_mosaics}')
-      merged_mosaic = {target_id}
-      for mosaic in compatible_mosaics:
-        merged_mosaic = merged_mosaic.union(mosaic)
-      mosaics = [c for c in mosaics if c not in compatible_mosaics]
-      mosaics.append(merged_mosaic)
-    else:
-      mosaics.append({target_id})
+  assert len(target_ids_for_cell) > 0
 
-  return mosaics
+  disjoint_set = HashDisjointSet()
+  for cell, tids in target_ids_for_cell.items():
+    if len(tids) < 2:
+      continue
+      
+    for a, b in combinations(sorted(tids), 2):
+      if ray.get(targets_overlap.remote(targets[a], targets[b])) in allowed_overlaps:
+        disjoint_set.union(a, b)
+  
+  mosaics = disjoint_set.groups()
+
+  singletons = [[t] for t in target_ids if not any(t in m for m in mosaics)]
+
+  result = mosaics + singletons
+  assert sum(len(r) for r in result) == len(target_ids)
+  return result
 
 
 @ray.remote
@@ -293,60 +303,13 @@ def find_strips(target_ids: list[TargetHash],
 
   output_strips = []
   for strip in strips:
-    ordered_strip = order_strip(strip)
+    ordered_strip = order_strip(set(strip))
     if debug:
       print(f'### before ordering, strip is {strip}')
       print(f'### after ordering, strip is {ordered_strip}')
     output_strips.append(ordered_strip)
 
   return output_strips
-
-
-def healpix_cells_for_poly(poly, nside=64, nest=True, inclusive=True):
-  # poly.points is closed; drop duplicated last vertex
-  verts = np.asarray(poly.points)[
-      ..., :-1, :][0] if poly.points.ndim == 3 else poly.points[:-1]
-  return healpy.query_polygon(nside, verts, inclusive=inclusive, nest=nest)
-
-
-# def candidate_pairs_from_cells(nside, targets_for_cell, cells, nest=True):
-#     cs = sorted(healpy.pixelfunc.get_all_neighbours(nside, cells, nest=nest))
-#     S = set()
-#     # within-cell pairs
-#     for c in cs:
-#         ids = targets_for_cell.get(c, [])
-#         S.update((min(a,b), max(a,b)) for a,b in combinations(ids, 2))
-#     # cross-cell pairs (only c1<c2 to dedup)
-#     for i, c1 in enumerate(cs):
-#         ids1 = targets_for_cell.get(c1, [])
-#         for c2 in cs[i+1:]:
-#             ids2 = targets_for_cell.get(c2, [])
-#             if not ids1 or not ids2: continue
-#             S.update((min(a,b), max(a,b)) for a,b in product(ids1, ids2))
-#     return S
-
-# def _identify_overlapping_targets(
-#     debug: bool = False) -> list[list[TargetHash]]:
-#   print(f'### _identify_overlapping_targets')
-
-#   targets = context.grouped_targets
-#   if not targets:
-#     return []
-
-#   from collections import defaultdict
-
-#   targets_for_cell = defaultdict(list)
-#   for target_id, target in targets.items():
-#     cells = healpix_cells_for_poly(target.footprint)
-#     for c in cells:
-#       targets_for_cell[c].append(target_id)
-
-#   for cell, target in targets_for_cell.items():
-#     print(f'### cell {cell} touches target {target}')
-#     neighbors = healpy.pixelfunc.get_all_neighbours(nside=64, theta=cell)
-#     print(f'### cell {cell} has neighbors {neighbors}')
-
-#   return []
 
 
 def _identify_overlapping_targets(
@@ -371,7 +334,7 @@ def _identify_overlapping_targets(
            num_grouped_targets=num_grouped_targets,
            num_ungrouped_targets=num_ungrouped_targets)
 
-  mosaics = [m for m in mosaics if len(m) > 1]
+  mosaics = [sorted(m) for m in mosaics if len(m) > 1]
   for mosaic in mosaics:
     print('### Group of overlapping targets:', mosaic)
 
@@ -438,6 +401,8 @@ def identify_mosaics(targets: TargetsDict,
             f'and {all_points.shape} points')
       footprint = SingleSphericalPolygon.convex_hull(all_points)
 
+      healpix_cells = healpix_cells_from_poly(footprint)
+
       # TODO: This is turbo weird, but appears to work. Just randomize the
       # points until the `convex_hull()` operation is successful.
       for i in range(10):
@@ -464,6 +429,7 @@ def identify_mosaics(targets: TargetsDict,
           image_scale=image_scale,
           rotation_angle=rotation_angle,
           footprint=footprint,
+          healpix_cells=healpix_cells,
           projected_footprints=projected_footprints)
 
       attributes: dict[str, Any] = asdict(chronology_attributes) | asdict(
