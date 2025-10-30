@@ -1,11 +1,9 @@
 import os
-from typing import Any, TypeVar
+from typing import TypeVar
 from pathlib import Path
 import time
-import threading
 import signal
 import sys
-import uuid
 import datetime
 
 from context import context, get_cache, queue
@@ -14,7 +12,7 @@ from state.ray_control import start_ray_head_node, start_ray_subordinate_node, s
 from state.astroflow_zeroconf import AstroFlowZeroconf
 from asiair.asiair_zeroconf import ASIAIRZeroconf
 from state.types import State, Action
-from dependency_graph import run_graph
+from dependency_graph import Graph, GraphStatus
 import pix
 
 T = TypeVar('T')
@@ -72,8 +70,8 @@ def _populate_context(state: State,
   context.master_thumbnail_width = 2160
 
   context.asiair_devices = []
-  context.compute_graph = {}
-  context.compute_graph_status = {}
+  context.compute_graph = Graph()
+  context.compute_graph_status = GraphStatus()
 
   return state, []
 
