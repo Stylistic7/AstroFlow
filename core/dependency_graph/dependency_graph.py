@@ -5,7 +5,6 @@ from operator import add
 import time
 from typing import Callable, Any
 from objsize import get_deep_size
-import itertools
 
 from dependency_graph import Node, Graph, CanonicalGraph, GraphStatus, ResultDict, TopologicalSorterWithStatus, GenericRemoteFunction, canonicalize_graph
 from dependency_graph.logging import LogContainer
@@ -115,10 +114,15 @@ def run_graph(graph: Graph,
 
   # TODO: This is hacky. Make it more explicit.
   def make_run_fn(ts, node):
+    start_time = time.time()
     try:
-      return node.task.remote(*make_fn_args(ts, node), dry_run=dry_run)
+      result = node.task.remote(*make_fn_args(ts, node), dry_run=dry_run)
     except:
-      return node.task.remote(*make_fn_args(ts, node))
+      result = node.task.remote(*make_fn_args(ts, node))
+    elapsed_time = time.time() - start_time
+    if elapsed_time > 1.0:
+      print(f'### make_run_fn took {elapsed_time:.3f} s')
+    return result
 
   # TODO: Consider embellishing this to force graphs like {foo: [bar, baz]} to
   # actually run bar, and then baz. At present, the ordering is not honored,
