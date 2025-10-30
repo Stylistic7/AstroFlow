@@ -5,8 +5,10 @@ from typing import Any, Callable, Optional, get_origin, TypeVar, Generic
 from pathlib import Path
 import time
 import objsize
+from dataclasses import replace
 
 from hashing import hash_source_code
+from hashing.types import LargeObject
 from protocols import CacheProtocol, ContentHashProtocol
 from cache.types import NeverRun
 
@@ -18,16 +20,18 @@ class Injected(Generic[TypeVar('T')]):
 class MissingInjectedValueError(Exception):
   pass
 
+
 import ray
 from ray.runtime_context import get_runtime_context
 
+
 def _is_head_node() -> bool:
-    node_id = get_runtime_context().get_node_id()
-    for n in ray.nodes():
-        if n["Alive"] and n["NodeID"] == node_id:
-            # Ray marks the head with this internal resource
-            return "node:__internal_head__" in n["Resources"]
-    raise RuntimeError("Current node not found in ray.nodes()")
+  node_id = get_runtime_context().get_node_id()
+  for n in ray.nodes():
+    if n["Alive"] and n["NodeID"] == node_id:
+      # Ray marks the head with this internal resource
+      return "node:__internal_head__" in n["Resources"]
+  raise RuntimeError("Current node not found in ray.nodes()")
 
 
 def _bind_args(func: Callable, args: tuple, kwargs: dict,
@@ -49,8 +53,9 @@ def _bind_args(func: Callable, args: tuple, kwargs: dict,
 def make_cached_decorator(cache_provider: Callable[[], CacheProtocol],
                           content_hasher: ContentHashProtocol,
                           call_hasher: Optional[Callable[[bytes, Any], str]],
-                          debug=True):
+                          debug=False):
   cache: CacheProtocol | None = None
+
   def _resolve_cache():
     nonlocal cache
     if cache is None:
@@ -76,10 +81,12 @@ def make_cached_decorator(cache_provider: Callable[[], CacheProtocol],
       cached = _resolve_cache()[key]
       elapsed_time = time.time() - start_time
       if elapsed_time > 0.5:
-        debug_print(f"### cache key {key} was slow to load, took {elapsed_time=} s")
+        debug_print(
+            f"### cache key {key} was slow to load, took {elapsed_time=} s")
       size_mb = objsize.get_deep_size(cached) / 1024.0 / 1024.0
       if size_mb > 5:
-          debug_print(f"### cache key {key} contained large object, {size_mb:0.3f} MB")
+        debug_print(
+            f"### cache key {key} contained large object, {size_mb:0.3f} MB")
       stored_hash = content_hasher.get(cached)
 
       if not content_hasher.has(cached) or stored_hash == call_hash:
@@ -95,11 +102,13 @@ def make_cached_decorator(cache_provider: Callable[[], CacheProtocol],
               **kwargs):
       if debug:
         assert _is_head_node()
-      
+
       bound = _bind_args(func, args, kwargs, injected_context)
       key, call_hash, valid, cached_result = _get_cache_key_and_result(bound)
 
       if valid and not isinstance(cached_result, Exception):
+        if isinstance(cached_result, LargeObject):
+          assert cached_result.ref is None
         return cached_result
 
       if dry_run:
@@ -109,19 +118,38 @@ def make_cached_decorator(cache_provider: Callable[[], CacheProtocol],
         start_time = time.time()
         result = func(*bound.args, **bound.kwargs)
         elapsed_time = time.time() - start_time
+        if isinstance(result, ray.exceptions.RayTaskError):
+          print(
+              f"### fn {func.__name__} raised ray.exceptions.RayTaskError {result}"
+          )
         if elapsed_time > 0.5:
-          debug_print(f"### fn {func.__name__} was slow to run, took {elapsed_time=} s")
+          debug_print(
+              f"### fn {func.__name__} was slow to run, took {elapsed_time=} s")
         size_mb = objsize.get_deep_size(result) / 1024.0 / 1024.0
         if size_mb > 5:
-          debug_print(f"### fn {func.__name__} returned large object, {size_mb:0.3f} MB")
+          debug_print(
+              f"### fn {func.__name__} returned large object, {size_mb:0.3f} MB"
+          )
         if isinstance(result, Path) and not result.exists():
           raise FileNotFoundError(result)
       except Exception as e:
         result = e
 
+      def _handle_large_object(obj: Any) -> Any:
+        if isinstance(obj, LargeObject):
+          return obj.strip_ref()
+
+        return obj
+
       result = content_hasher.set(result, call_hash)
-      debug_print(f'storing: {key} as {type(result)} into cache {_resolve_cache().directory}')
-      _resolve_cache()[key] = result
+      if isinstance(result, ray.exceptions.RayTaskError):
+        print(
+            f"### fn {func.__name__} content_hasher raised ray.exceptions.RayTaskError {result}"
+        )
+      debug_print(
+          f'storing: {key} as {type(result)} into cache {_resolve_cache().directory}'
+      )
+      _resolve_cache()[key] = _handle_large_object(result)
 
       if isinstance(result, Exception):
         raise result

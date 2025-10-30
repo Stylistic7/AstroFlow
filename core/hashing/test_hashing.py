@@ -1,11 +1,14 @@
-import unittest
+import ray
+import copy
 
+from hashing.hashing import hash_list
+from hashing.types import LargeObject
 from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import run_graph
 from stacks.composite_stack import SimpleStacksDict
 from mosaics.orion_mosaic import add_orion_mosaic_images
-
+from metadata.image_metadata import load_metadata
 
 def test_hashes(test_context) -> None:
   # This test uses a random seed because it checks the specific values of
@@ -34,3 +37,30 @@ def test_hashes(test_context) -> None:
   # and should be stable across Python sessions.
   dict = SimpleStacksDict({stack.stable_hash: stack})
   assert hash(dict) == 1637061765880640416
+
+def test_metadata_dict(test_context) -> None:
+  add_orion_mosaic_images(panes=[1], random_seed=123)
+  run_graph(build_compute_graph())
+
+  metadata = ray.get(load_metadata.remote())
+  assert metadata.content_hash == '977b6cfb2a98f2ba'
+
+  add_orion_mosaic_images(panes=[2], add_calibration_frames=False, random_seed=456)
+  run_graph(build_compute_graph())
+
+  metadata = ray.get(load_metadata.remote())
+  assert metadata.content_hash != '977b6cfb2a98f2ba'
+
+def test_large_object(test_context) -> None:
+  d = {'A': 1, 'B': 2}
+  d_ref = LargeObject(d)
+  assert d_ref.content_hash == '9ba9e7eeec8c514f'
+
+  d_copy = copy.copy(d)
+  d_copy_ref = LargeObject(d_copy)
+  assert d_ref.content_hash == d_copy_ref.content_hash
+
+  d['C'] = 3
+  new_d_ref = LargeObject(d)
+  assert new_d_ref.content_hash != d_ref.content_hash
+

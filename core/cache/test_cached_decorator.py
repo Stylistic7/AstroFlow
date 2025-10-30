@@ -9,7 +9,8 @@ from context import context, get_cache
 from cache.cached_decorator import make_cached_decorator, Injected
 from cache.types import NeverRun
 from hashing import hash_call
-from dependency_graph import Graph
+from hashing.types import LargeObject
+from dependency_graph import Graph, run_graph, print_result_dict
 from testing.sidecar_hasher import SidecarHasher
 
 sidecar_hasher = SidecarHasher()
@@ -17,6 +18,25 @@ cached = make_cached_decorator(cache_provider=get_cache,
                                content_hasher=sidecar_hasher,
                                call_hasher=hash_call,
                                debug=True)
+
+@cached.remote
+def make_large_array(shape: tuple[int]) -> LargeObject:
+  arr = np.random.rand(*shape)
+  return LargeObject(arr)
+
+@cached.remote
+def add_to_large_array(value: float, obj: LargeObject) -> LargeObject:
+  arr = obj.get() + value
+  return LargeObject(arr)
+
+@cached.remote
+def consume_large_array(obj: LargeObject) -> None:
+  arr = obj.get()
+  print(f'### arr.shape {arr.shape}')
+
+@cached.remote
+def build_large_array_graph(arr: LargeObject) -> Graph:
+  return Graph({consume_large_array: {(add_to_large_array, 10, arr)}})
 
 
 @cached.remote
@@ -134,3 +154,31 @@ def test_dry_run(test_context) -> None:
 
   result = ray.get(make_small_image.remote(dry_run=False))
   assert isinstance(result, np.ndarray)
+
+def test_large_object(test_context) -> None:
+  arr = ray.get(make_large_array.remote((1000, 1000)))
+  graph = ray.get(build_large_array_graph.remote(arr))
+  results, _ = run_graph(graph)
+  print_result_dict(results)
+
+
+  # The first time the graph is run, the cache is cold, and the LargeObjects
+  # should contain live ray.ObjectRefs.
+  # results, _ = run_graph(graph)
+  # result = results[add_task]
+  # assert type(result) is LargeObject
+  # assert result.ref is not None
+  # arr = result.get()
+  # assert type(arr) is np.ndarray
+  # assert arr.shape == shape
+
+  # # The second time the graph is run, the cache is warm, and the LargeObjects
+  # # should load their values into memory from the diskcache only when get() is
+  # # called.
+  # results, _ = run_graph(graph)
+  # result = results[add_task]
+  # assert type(result) is LargeObject
+  # assert result.ref is None
+  # arr = result.get()
+  # assert type(arr) is np.ndarray
+  # assert arr.shape == shape
