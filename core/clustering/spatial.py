@@ -3,12 +3,11 @@ import ray
 from typing import Sequence, Callable, Any, TypeVar
 
 import metadata.image_types as image_types
-from metadata.classes import MetadataDict
 from geometry import footprints
 from context import context
 import plate_solving
 from decorators import cached
-from hashing import hash_list
+from hashing.types import LargeObject
 
 T = TypeVar('T')
 ComparisonFn = Callable[[T, T], bool]
@@ -50,9 +49,9 @@ def find_groups(values: dict[T, Any], comparison_fn: ComparisonFn,
 
 
 @cached.remote
-def cluster_by_image_center(metadata: MetadataDict) -> None:
-  print(f'cluster_by_image_center metadata length {len(metadata)}')
-
+def cluster_by_image_center(metadata_ref: LargeObject) -> None:
+  metadata = metadata_ref.get()
+  
   cosine_similarity_threshold = context.cosine_similarity_threshold
   min_component_members = context.min_component_members
 

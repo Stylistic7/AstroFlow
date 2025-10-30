@@ -1,3 +1,4 @@
+import ray
 from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon  # type: ignore
 import astropy.io.fits as pyfits  # type: ignore
 from astropy.wcs import WCS  # type: ignore
@@ -15,11 +16,11 @@ from attributes import AstrometricAttributes
 from attributes.astrometric_attributes import healpix_cells_from_poly
 from stacks.types import StackHash
 from decorators import cached
+from hashing.types import LargeObject
 
 @cached.remote
-def group_stacks_into_targets(stacks: CompositeStacksDict) -> TargetsDict:
-  metadata = context.metadata
-
+def group_stacks_into_targets(metadata_ref: LargeObject, stacks: CompositeStacksDict) -> TargetsDict:
+  metadata = metadata_ref.get()
   cosine_similarity_threshold = context.cosine_similarity_threshold
 
   def get_spherical_polygon(wcs: WCS) -> SphericalPolygon:

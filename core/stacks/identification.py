@@ -1,13 +1,13 @@
+import ray
 import numpy as np
 from beartype import beartype
 
 from typing import Iterator
-from context import context
 import clustering
 from stacks.composite_stack import CompositeStack, CompositeStacksDict
 from metadata.classes import FrameHash, MetadataDict
 from decorators import cached
-
+from hashing.types import LargeObject
 
 def _normalize_radians(x: float) -> float:
   if x < 0.0:
@@ -16,21 +16,17 @@ def _normalize_radians(x: float) -> float:
     return x
 
 
-# TODO: Cache results for spatial groups. Astrophotographers rarely shoot more
-# than a few different spatial positions in a night anyway. If the hashes of
-# all the light frames are the same, then the resulting stacks are the same.
-#
-# TODO: The spatial_group should include a metadata_ref for all of the images
-# in it. The call to get_metadata() should be removed.
 @cached.remote
-def identify_stacks(light_frames: list[FrameHash]) -> CompositeStacksDict:
+def identify_stacks(metadata_ref: LargeObject,
+                    light_frames: list[FrameHash]) -> CompositeStacksDict:
   print(f'### identify_stacks running for spatial group of '
         f'length {len(light_frames)}')
+  metadata_in = metadata_ref.get()
 
   # TODO: Maybe implement a version of cluster_continuous() that repeatedly
   # subdivides by independent 1D variables.
   metadata = MetadataDict({
-      h: i for h, i in context.metadata.items() if h in light_frames
+      h: i for h, i in metadata_in.items() if h in light_frames
   })
 
   @beartype

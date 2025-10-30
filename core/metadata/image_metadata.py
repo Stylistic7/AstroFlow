@@ -13,6 +13,7 @@ import plate_solving
 from dependency_graph import Graph
 from context import context
 from decorators.decorators import cached, measure_performance
+from hashing.types import LargeObject
 
 # TODO: I need to associate dark and flat frames *before* computing thumbnails.
 
@@ -110,7 +111,7 @@ class DuplicateFileException(Exception):
   pass
 
 
-@cached.remote
+@cached.remote(num_cpus=0.25)
 def compute_image_metadata(filename: Path) -> ImageMetadata:
   print(f'### compute_image_metadata {filename=}')
   if filename is None or not filename.exists():
@@ -151,6 +152,7 @@ def load_metadata() -> MetadataDict:
   print(f'### load_metadata() length {len(metadata)} '
         f'size {metadata_size_mb:.2f} MB')
 
+  # TODO: Pass the LargeObject everywhere, and remove this from the context.
   context.metadata = metadata
 
-  return metadata
+  return LargeObject(metadata)

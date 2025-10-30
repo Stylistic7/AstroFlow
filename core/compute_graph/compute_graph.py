@@ -23,7 +23,7 @@ from mosaics.types import MosaicsDict
 from mosaics.compute_graph import stacks_for_mosaic, targets_for_mosaic
 from quarantining.quarantining import quarantine_calibration_stacks
 from metadata.image_metadata import load_metadata
-
+from hashing.types import LargeObject
 
 @ray.remote
 def store_calibration_stacks(calibration_stacks: SimpleStacksDict) -> None:
@@ -57,16 +57,15 @@ def store_mosaics(mosaics: MosaicsDict) -> None:
 @cached.remote
 def gather_spatial_groups(*stacks_in: list[CompositeStacksDict]) -> None:
   stacks = {key: value for d in stacks_in for key, value in d.items()}
-  print(f'### gather_spatial_groups returning {len(stacks)} stacks')
   return stacks
 
 
 # TODO: Don't call build_spatial_group_graph for spatial groups that are cached
 # and unchanged.
 @cached.remote
-def scatter_spatial_groups(spatial_groups) -> Graph:
+def scatter_spatial_groups(metadata_ref: LargeObject, spatial_groups) -> Graph:
   graph = Graph({
-      gather_spatial_groups: {(identify_stacks, g) for g in spatial_groups},
+      gather_spatial_groups: {(identify_stacks, metadata_ref, g) for g in spatial_groups},
       validate_stacks: {gather_spatial_groups},
       store_stacks: {validate_stacks}
   })
@@ -82,18 +81,18 @@ def regroup_graph_done() -> None:
 # TODO: Add step that cleans metadata, removing any images that won't make it
 # through the remaining steps, and alerting the user.
 @cached.remote
-def build_regroup_graph(metadata: MetadataDict) -> Graph:
+def build_regroup_graph(metadata_ref: LargeObject) -> Graph:
   return Graph({
       **chain(
-          (cluster_by_image_center, metadata),
-          scatter_spatial_groups,
-          group_stacks_into_targets,
+          (cluster_by_image_center, metadata_ref),
+          (scatter_spatial_groups, metadata_ref),
+          (group_stacks_into_targets, metadata_ref),
           store_targets,
           identify_mosaics,
           store_mosaics,
       ),
       **chain(
-          (identify_calibration_stacks, metadata),
+          (identify_calibration_stacks, metadata_ref),
           quarantine_calibration_stacks,
           store_calibration_stacks,
       ),
@@ -136,6 +135,10 @@ def build_main_processing_graph() -> Graph:
   shopping_cart = context.shopping_cart or []
 
   print(f'### build_main_processing_graph shopping_cart {shopping_cart}')
+
+  # shopping_cart += [('stack', stack_id) for stack_id in stacks.keys()]
+  # shopping_cart += [('target', target_id) for target_id in targets.keys()]
+  # shopping_cart += [('mosaic', mosaic_id) for mosaic_id in mosaics.keys()]
 
   # TODO: Maybe add prioritization options in the UI.
   graph = Graph({})

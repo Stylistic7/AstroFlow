@@ -7,10 +7,11 @@ from context import context
 from testing.test_frames import make_synthetic_frames
 from dependency_graph import Graph, chain, run_graph
 from metadata.image_metadata import scatter_compute_image_metadata, load_metadata
-
+from metadata.classes import MetadataDict
 
 def compute_hash_for_filename() -> dict[str, str]:
-  metadata = ray.get(load_metadata.remote())
+  metadata = ray.get(load_metadata.remote()).get()
+  assert isinstance(metadata, MetadataDict)
   return {
       os.path.basename(i.filename): i.content_hash for i in metadata.values()
   }

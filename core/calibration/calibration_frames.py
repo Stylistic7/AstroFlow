@@ -13,12 +13,12 @@ from stacks.types import StackHash
 from stacks.simple_stack import SimpleStack, CalibrationStack
 from stacks.composite_stack import CompositeStack, SimpleStacksDict
 import clustering
-from metadata.classes import MetadataDict
-
+from hashing.types import LargeObject
 
 @cached.remote
-def identify_calibration_stacks(metadata: MetadataDict) -> SimpleStacksDict:
+def identify_calibration_stacks(metadata_ref: LargeObject) -> SimpleStacksDict:
   print(f'Identifying calibration stacks...')
+  metadata = metadata_ref.get()
 
   def get_runs(frames: set[FrameHash]) -> list[list[FrameHash]]:
     if not len(frames):
