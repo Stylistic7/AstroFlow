@@ -13,7 +13,6 @@ import time
 from collections import defaultdict
 from itertools import combinations
 
-
 from context import context
 from mosaics.types import Mosaic, MosaicHash, MosaicsDict, Strip
 from catalogs import position_string
@@ -26,7 +25,6 @@ from mosaics.overlap import Overlap
 from decorators import cached
 from attributes import AstrometricAttributes, ChronologyAttributes
 from attributes.astrometric_attributes import healpix_cells_from_poly
-
 
 # TODO: Make the functions in this file functional (e.g. pass TargetsDict into
 # them, vs. relying on context).
@@ -53,6 +51,7 @@ def roughly_same_image_scale(a: float, b: float) -> bool:
 #   return (roughly_same_image_scale(a.image_scale, b.image_scale) and
 #           roughly_same_area(a.footprint, b.footprint) and
 #           overlap is not Overlap.INCOMPATIBLE and overlap in allowed_overlaps)
+
 
 @ray.remote
 def target_compatible_with_mosaic(target_id: TargetHash,
@@ -234,11 +233,12 @@ def group_targets(
   for cell, tids in target_ids_for_cell.items():
     if len(tids) < 2:
       continue
-      
+
     for a, b in combinations(sorted(tids), 2):
-      if ray.get(targets_overlap.remote(targets[a], targets[b])) in allowed_overlaps:
+      if ray.get(targets_overlap.remote(targets[a],
+                                        targets[b])) in allowed_overlaps:
         disjoint_set.union(a, b)
-  
+
   mosaics = disjoint_set.groups()
 
   singletons = [[t] for t in target_ids if not any(t in m for m in mosaics)]
@@ -309,8 +309,16 @@ def find_strips(target_ids: list[TargetHash],
       print(f'### after ordering, strip is {ordered_strip}')
     output_strips.append(ordered_strip)
 
-  return output_strips
+  # TODO: This is a bit of a hack. Consider more principled ways of sorting
+  # strips.
+  def min_dec(strip: list[TargetHash]):
+    return min(targets[t].center[1] for t in strip)
 
+  # Sort each strip individually by increasing RA.
+  strips = [sorted(s, key=lambda t: targets[t].center[0]) for s in strips]
+  
+  # Sort the strips by increasing Dec.
+  return sorted(strips, key=min_dec)
 
 def _identify_overlapping_targets(
     debug: bool = False) -> list[list[TargetHash]]:
@@ -383,11 +391,6 @@ def identify_mosaics(targets: TargetsDict,
       strips = ray.get(find_strips.remote(mosaic, debug))
       print('### strips', strips)
       target_ids = []
-      tile_indices = []
-      for i, strip in enumerate(strips):
-        for j, target_id in enumerate(strip):
-          target_ids.append(target_id)
-          tile_indices.append((i, j))
 
       for target_id in mosaic:
         print(f'### Target {target_id} '
@@ -437,7 +440,6 @@ def identify_mosaics(targets: TargetsDict,
               'stable_hash': stable_hash,
               'content_hash': content_hash,
               'target_ids': target_ids,
-              # 'tile_indices': tile_indices,
               'strips': strips,
           }
 
