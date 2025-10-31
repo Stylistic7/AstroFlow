@@ -151,6 +151,7 @@ def _stack_with_pixinsight(stack: Stack, metadata: dict[str, str]) -> Path:
   calibration_stacks = context.calibration_stacks
   print(f'### calibration_stacks keys {calibration_stacks.keys()}')
 
+  # TODO: Remove dependence on context.metadata.
   with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
     setup_fn = _setup_composite_stack if type(stack) in [
         CompositeStack, CustomizedStack
