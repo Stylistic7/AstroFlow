@@ -6,8 +6,9 @@ from pathlib import Path
 
 from context import context
 from dependency_graph import run_graph
-from testing import make_test_context, make_synthetic_frames
+from testing import make_synthetic_frames
 from metadata.image_metadata import scatter_compute_image_metadata, load_metadata
+from metadata.classes import MetadataDict
 
 
 def compute_graph_fragment():
@@ -15,7 +16,8 @@ def compute_graph_fragment():
 
 
 def get_filenames_in_cache():
-  metadata = ray.get(load_metadata.remote())
+  metadata = ray.get(load_metadata.remote()).get()
+  assert isinstance(metadata, MetadataDict)
   return [i.filename for i in metadata.values()]
 
 
@@ -24,7 +26,9 @@ def get_filenames_on_disk(input_dir: Path) -> list[Path]:
 
 
 def get_metadata():
-  return list(ray.get(load_metadata.remote()).values())
+  metadata = ray.get(load_metadata.remote()).get()
+  assert isinstance(metadata, MetadataDict)
+  return list(metadata.values())
 
 
 def test_existing_files(test_context):
