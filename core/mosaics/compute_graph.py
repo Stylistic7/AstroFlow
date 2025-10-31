@@ -19,7 +19,6 @@ from mosaics.viewbox import compute_viewbox
 from mosaics.placement import place_image
 from mosaics.post_process import post_process_mosaic
 from mosaics.trimming import project_to_viewbox, largest_interior_rectangle
-from mosaics.types import TileIndices
 from mosaics.artifacts import tile_filename, final_filename
 from stacks.compute_graph import get_stack_image
 from stacks.composite_stack import CompositeStacksDict
@@ -150,14 +149,14 @@ def build_mosaic_subgraph(mode: QualityLevel, mosaic: Mosaic,
 @cached.remote
 def build_placement_subgraph(mode: QualityLevel, mosaic: Mosaic,
                              stack: CustomizedStack, filter: str,
-                             tile_indices: TileIndices, viewbox: Viewbox,
+                             viewbox: Viewbox,
                              mask: box) -> Graph:
   # TODO: Integrate the stack mask here too.
   return Graph({
       **chain(
           (get_stack_image, mode, stack),
           compute_image_metadata,
-          (place_image, mode, mosaic, stack, tile_indices, filter, viewbox, mask),
+          (place_image, mode, mosaic, stack, filter, viewbox, mask),
       )
   })
 
@@ -253,11 +252,11 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
       stack = stacks[stack_id]
       if i == 0:
         prev_task = Node(build_placement_subgraph, mode, mosaic, stack, filter,
-                         TileIndices((strip_index, i)), viewbox, mask)
+                         viewbox, mask)
       else:
         placement_task = Node(build_placement_subgraph, mode,
                               mosaic, stack, filter,
-                              TileIndices((strip_index, i)), viewbox, mask)
+                              viewbox, mask)
         merge_task = Node(merge_images,
                           mode,
                           mosaic,

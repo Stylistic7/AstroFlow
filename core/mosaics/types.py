@@ -9,8 +9,6 @@ from attributes import AstrometricAttributes, ChronologyAttributes
 from cache.content_hashed import ContentHashed
 
 Template: TypeAlias = tuple[int | None, int | None]
-TileIndices: TypeAlias = tuple[int, int]
-Pair: TypeAlias = list[TileIndices]
 Strip: TypeAlias = list[TargetHash]
 
 MosaicHash = NewType('MosaicHash', str)

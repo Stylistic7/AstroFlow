@@ -6,7 +6,6 @@ from mosaics.types import Mosaic
 from protocols import ContentHash
 from previews.types import QualityLevel
 from stacks.composite_stack import CompositeStack
-from mosaics.types import TileIndices
 
 
 def final_filename(mode: QualityLevel, mosaic: Mosaic, filter: str) -> Path:
@@ -43,12 +42,11 @@ def merged_filename(mosaic: Mosaic, mode: QualityLevel, hash_0: ContentHash,
 
 
 def placed_filename(mosaic: Mosaic, mode: QualityLevel, stack: CompositeStack,
-                    tile_indices: TileIndices, filter: str) -> Path:
-  tile_indices_str = '_'.join(str(i) for i in tile_indices)
+                    filter: str) -> Path:
   return TiffFilePath(
       Path('Mosaics') / mosaic.name /
       f'placed_image_{mode}_{mosaic.stable_hash}_{stack.stable_hash}_'
-      f'{tile_indices_str}_{filter}.tiff')
+      f'{filter}.tiff')
 
 
 def post_processed_filename(mosaic: Mosaic, filter: str):

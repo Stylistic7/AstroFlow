@@ -17,7 +17,7 @@ from file_io.tiff_file_io import write_tiff_image
 from file_io.types import TiffFilePath
 from context import context
 from previews.types import QualityLevel
-from mosaics.types import Mosaic, Viewbox, TileIndices
+from mosaics.types import Mosaic, Viewbox
 from mosaics.trimming import trim_image, project_to_viewbox, largest_interior_rectangle
 from mosaics.artifacts import placed_filename
 from decorators import cached
@@ -138,9 +138,9 @@ def _project_in_tiles(viewbox: Viewbox,
 
 
 def _save_image_to_file(mode: QualityLevel, mosaic: Mosaic,
-                        stack: CompositeStack, tile_indices: TileIndices,
+                        stack: CompositeStack,
                         filter: str, image: np.ndarray) -> TiffFilePath:
-  filename = placed_filename(mosaic, mode, stack, tile_indices,
+  filename = placed_filename(mosaic, mode, stack,
                              filter).resolve_at(context.output_dir)
   write_tiff_image(filename, image, {'FILTER': filter})
   print(f'### Wrote filename {filename}')
@@ -149,7 +149,7 @@ def _save_image_to_file(mode: QualityLevel, mosaic: Mosaic,
 
 @cached.remote(memory=_PLACE_IMAGE_MEMORY_REQUIREMENT)
 def place_image(mode: QualityLevel, mosaic: Mosaic, stack: CustomizedStack,
-                tile_indices: TileIndices, filter: str, viewbox: Viewbox,
+                filter: str, viewbox: Viewbox,
                 mask: box, image_metadata: ImageMetadata) -> TiffFilePath:
   # if context.dangerously_accept_existing_files and os.path.exists(filename):
   #   print(f'### Dangerously skipping place_large_image because '
@@ -179,4 +179,4 @@ def place_image(mode: QualityLevel, mosaic: Mosaic, stack: CustomizedStack,
   if mask:
     image = trim_image(image, mask)
 
-  return _save_image_to_file(mode, mosaic, stack, tile_indices, filter, image)
+  return _save_image_to_file(mode, mosaic, stack, filter, image)
