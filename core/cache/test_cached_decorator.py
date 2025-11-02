@@ -10,8 +10,9 @@ from cache.cached_decorator import make_cached_decorator, Injected
 from cache.types import NeverRun
 from hashing import hash_call
 from hashing.types import LargeObject
-from dependency_graph import Graph, run_graph, print_result_dict
+from dependency_graph import Graph, run_graph, print_result_dict, print_graph
 from testing.sidecar_hasher import SidecarHasher
+from ray.exceptions import ObjectFreedError
 
 sidecar_hasher = SidecarHasher()
 cached = make_cached_decorator(cache_provider=get_cache,
@@ -19,20 +20,40 @@ cached = make_cached_decorator(cache_provider=get_cache,
                                call_hasher=hash_call,
                                debug=True)
 
+
+@cached.remote
+def bar(obj_ref) -> Graph:
+  obj = obj_ref.get()
+  return len(obj)
+
+
+@cached.remote
+def baz(obj_ref) -> Graph:
+  obj = obj_ref.get()
+  return len(obj)
+
+
+def foo(obj_ref) -> Graph:
+  return Graph({(bar, obj_ref): {(baz, obj_ref)}})
+
+
 @cached.remote
 def make_large_array(shape: tuple[int]) -> LargeObject:
   arr = np.random.rand(*shape)
   return LargeObject(arr)
+
 
 @cached.remote
 def add_to_large_array(value: float, obj: LargeObject) -> LargeObject:
   arr = obj.get() + value
   return LargeObject(arr)
 
+
 @cached.remote
 def consume_large_array(obj: LargeObject) -> None:
   arr = obj.get()
   print(f'### arr.shape {arr.shape}')
+
 
 @cached.remote
 def build_large_array_graph(arr: LargeObject) -> Graph:
@@ -155,30 +176,41 @@ def test_dry_run(test_context) -> None:
   result = ray.get(make_small_image.remote(dry_run=False))
   assert isinstance(result, np.ndarray)
 
+
 def test_large_object(test_context) -> None:
-  arr = ray.get(make_large_array.remote((1000, 1000)))
-  graph = ray.get(build_large_array_graph.remote(arr))
-  results, _ = run_graph(graph)
-  print_result_dict(results)
+  # This first try will result in this large object being cached.
+  obj_ref = LargeObject("foo is big")
+  assert isinstance(obj_ref.get(), str)
 
+  graph = foo(obj_ref)
+  print_graph(graph)
 
-  # The first time the graph is run, the cache is cold, and the LargeObjects
-  # should contain live ray.ObjectRefs.
-  # results, _ = run_graph(graph)
-  # result = results[add_task]
-  # assert type(result) is LargeObject
-  # assert result.ref is not None
-  # arr = result.get()
-  # assert type(arr) is np.ndarray
-  # assert arr.shape == shape
+  result, _ = run_graph(graph)
+  print_result_dict(result)
+  assert all(r == 10 for r in result.values())
 
-  # # The second time the graph is run, the cache is warm, and the LargeObjects
-  # # should load their values into memory from the diskcache only when get() is
-  # # called.
-  # results, _ = run_graph(graph)
-  # result = results[add_task]
-  # assert type(result) is LargeObject
-  # assert result.ref is None
-  # arr = result.get()
-  # assert type(arr) is np.ndarray
-  # assert arr.shape == shape
+  # Now, forcibly remove the object from the Ray object store. Running the same
+  # graph again should still work, but it will force the LargeObject to reload
+  # its contents from the cache.
+  ray._private.internal_api.free([obj_ref.ref], local_only=False)
+  with pytest.raises(ObjectFreedError):
+    ray.get(obj_ref.ref)
+
+  graph = foo(obj_ref)
+  print_graph(graph)
+
+  result, _ = run_graph(graph)
+  print_result_dict(result)
+  assert all(r == 10 for r in result.values())
+
+  # Finally, running the graph a third time with an entirely different
+  # obj_ref should pass that new value through the entire graph.
+  obj_ref = LargeObject("bar is bigger")
+  assert isinstance(obj_ref.get(), str)
+
+  graph = foo(obj_ref)
+  print_graph(graph)
+
+  result, _ = run_graph(graph)
+  print_result_dict(result)
+  assert all(r == 13 for r in result.values())

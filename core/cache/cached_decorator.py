@@ -87,6 +87,8 @@ def make_cached_decorator(cache_provider: Callable[[], CacheProtocol],
       if size_mb > 5:
         debug_print(
             f"### cache key {key} contained large object, {size_mb:0.3f} MB")
+      if isinstance(cached, LargeObject):
+        assert cached.ref is None
       stored_hash = content_hasher.get(cached)
 
       if not content_hasher.has(cached) or stored_hash == call_hash:

@@ -25,6 +25,7 @@ from quarantining.quarantining import quarantine_calibration_stacks
 from metadata.image_metadata import load_metadata
 from hashing.types import LargeObject
 
+
 @ray.remote
 def store_calibration_stacks(calibration_stacks: SimpleStacksDict) -> None:
   context.calibration_stacks = calibration_stacks
@@ -65,7 +66,9 @@ def gather_spatial_groups(*stacks_in: list[CompositeStacksDict]) -> None:
 @cached.remote
 def scatter_spatial_groups(metadata_ref: LargeObject, spatial_groups) -> Graph:
   graph = Graph({
-      gather_spatial_groups: {(identify_stacks, metadata_ref, g) for g in spatial_groups},
+      gather_spatial_groups: {
+          (identify_stacks, metadata_ref, g) for g in spatial_groups
+      },
       validate_stacks: {gather_spatial_groups},
       store_stacks: {validate_stacks}
   })
