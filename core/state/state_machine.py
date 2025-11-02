@@ -12,7 +12,7 @@ from state.ray_control import start_ray_head_node, start_ray_subordinate_node, s
 from state.astroflow_zeroconf import AstroFlowZeroconf
 from asiair.asiair_zeroconf import ASIAIRZeroconf
 from state.types import State, Action
-from dependency_graph import Graph, GraphStatus
+from dependency_graph import Graph, GraphStatus, TopologicalSorterWithStatus
 import pix
 
 T = TypeVar('T')
@@ -70,7 +70,7 @@ def _populate_context(state: State,
   context.master_thumbnail_width = 2160
 
   context.asiair_devices = []
-  context.compute_graph = Graph()
+  context.compute_graphs = [TopologicalSorterWithStatus(Graph())]
   context.compute_graph_status = GraphStatus()
 
   return state, []

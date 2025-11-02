@@ -12,8 +12,8 @@ from dependency_graph.progress import graph_status_to_progress
 
 compute_graphs_bp = Blueprint("compute_graphs", __name__)
 
-@compute_graphs_bp.route('/compute_graphs')
-def compute_graphs():
+@compute_graphs_bp.route('/compute_graph')
+def compute_graph():
   return to_workflow_graph(context.compute_graphs)
 
 
