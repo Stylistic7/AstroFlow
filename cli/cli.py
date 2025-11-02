@@ -36,28 +36,11 @@ def open(args):
     if os.path.exists(filename):
       print(f'Opening post-processed file {filename}')
       subprocess.run(['open', filename])
-
+  
 
 def regroup(args):
   print(f"### Regrouping {args.regroup_type}")
-
-  # TODO: Consider various forms of "forcing":
-  # - Just deleting the toplevel graph result
-  # - Ignoring all cached results
-  # - Force re-solving files that previously failed to solve
-  context.ignore_cached_results = args.force
-  # if args.force:
-  #   delete_cached_result(build_regroup_graph)
-
-  # TODO: Put these in the UI.
-  context.input_dirs = ['/Volumes/Astro/Raw', '/Volumes/Astro2/Raw']
-  context.output_dir = '/Volumes/Astro/Processed'
-
-  graph = Graph({
-      build_regroup_graph: {(scatter_compute_image_metadata, args.regroup_type)}
-  })
-
-  results, logs = run_graph(graph)
+  state.enqueue(Action(type='regroup', **vars(args)))
 
 
 def customize(args):
