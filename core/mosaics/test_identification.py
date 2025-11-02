@@ -140,7 +140,7 @@ def test_three_targets(test_context) -> None:
   assert len(mosaics) == 1
   mosaic = next(iter(mosaics.values()))
   assert mosaic.target_ids == [
-      baz.stable_hash, bar.stable_hash, foo.stable_hash
+      bar.stable_hash, baz.stable_hash, foo.stable_hash
   ]
 
   # TODO: This only works when the mosaic polygon is "tight," rather than
