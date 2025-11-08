@@ -48,9 +48,9 @@ def roughly_same_image_scale(a: float, b: float) -> bool:
 def targets_overlap(a: Target,
                     b: Target,
                     min_area_frac=0.03,
-                    span_match=0.5,
+                    span_match=0.6,
                     thick_min=0.05,
-                    thick_max=0.3) -> Overlap:
+                    thick_max=0.25) -> Overlap:
   if a is b:
     return Overlap.IDENTICAL
 
