@@ -9,6 +9,7 @@ from context import context
 from compute_graph import build_compute_graph, build_regroup_graph, build_preview_graph, build_main_processing_graph
 from stacks.compute_graph import process_stacks_for_ui
 from dependency_graph import Graph, run_graph, chain, ResultDict, GraphStatus, TopologicalSorterWithStatus, graph_status_to_progress
+from dependency_graph.debugging import print_result_dict, print_graph
 from dependency_graph.workflow_graph_adapter import to_workflow_graph
 from customization.compute_graph import customize_stack, store_customized_stack
 from mosaics.compute_graph import build_mosaic_subgraph, stacks_for_mosaic, targets_for_mosaic, process_mosaics_for_ui
@@ -21,6 +22,7 @@ from mosaics.post_process import post_process_mosaic
 from asiair.download_asiair import download_from_asiairs
 from metadata.image_metadata import scatter_compute_image_metadata
 from customization.compute_graph import build_customize_graph
+from metadata.image_metadata import load_metadata
 
 
 def _get_namespace() -> str:
@@ -161,16 +163,37 @@ class StateActor:
                  graph: Graph) -> tuple[ResultDict, ResultDict]:
 
     def status_fn(status: GraphStatus):
-      context.compute_graph_status = status
+      # TODO: Re-enable this, with some testing to make sure it's not too slow.
+      # context.compute_graph_status = status
+      pass
 
     def graph_update_fn(graphs: list[TopologicalSorterWithStatus]):
-      context.compute_graphs = graphs
+      # TODO: Re-enable this, with some testing to make sure it's not too slow.
+      # for g in graphs:
+      #   print(f'graph_update_fn type(g) {type(g)}')
+      # context.compute_graphs = graphs
+      pass
 
     # TODO: Should `state` be updated?
     results, logs = run_graph(graph,
                               status_fn=status_fn,
                               graph_update_fn=graph_update_fn,
                               status_interval=15)
+
+    return state, [Action(type='announce', message='reload_data')]
+
+  # TODO: Complete this. The goal is to iterate over the graph's dry run result,
+  # deleting all of the cached results, and then running the Graph again. This
+  # should be a generic operation.
+  def _regroup(self, state: State) -> tuple[State, list[Action]]:
+    graph = Graph({build_regroup_graph: {(scatter_compute_image_metadata, 'all')}})
+    print_graph(graph)
+
+    results, _ = run_graph(graph, dry_run=True)
+    print_result_dict(results)
+
+    for node, result in results.items():
+      print(f'### {node=} {result=}')
 
     return state, [Action(type='announce', message='reload_data')]
 
@@ -206,6 +229,9 @@ class StateActor:
       case 'run_entire_graph':
         self.state, new_actions = self._run_graph(self.state,
                                                   build_compute_graph())
+      case 'regroup':
+        self.state, new_actions = self._regroup(self.state)
+
       case _:
         raise ValueError(f"Unexpected action type: {action['type']}")
 
