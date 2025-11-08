@@ -3,9 +3,8 @@ import * as PIXI from 'pixi.js';
 import { Stage, useApp } from '@pixi/react';
 import { useParams } from 'react-router-dom';
 import { Viewport } from 'pixi-viewport';
-import { Container } from '@pixi/react';
-import Polygon from './Polygon.jsx';
 import React, { useContext } from "react";
+import { useNavigate } from "react-router-dom";
 
 import AstroFlowContext from './AstroFlowContext.jsx';
 
@@ -26,6 +25,8 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
 
   const { mosaics } = useContext(AstroFlowContext);
 
+  const navigate = useNavigate();
+
   console.log('TileViewer objectType', objectType, 'imageHash', imageHash);
 
   useLayoutEffect(() => {
@@ -43,6 +44,7 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
       ? `/metadata/${objectType}/${imageHash}/${filter}`
       : `/metadata/${objectType}/${imageHash}`;
 
+    console.log('metadata', url);
     fetch(url)
       .then((res) => res.json())
       .then((meta) => setMetadata(meta));
@@ -53,6 +55,17 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
       .then((res) => res.json())
       .then((meta) => setTileMetadata(meta));
   }, [objectType, imageHash, filter]);
+
+  const onClick = (poly, event) => {
+    console.log('onClick', poly);
+
+    const e = event.nativeEvent; // underlying DOM PointerEvent
+    if (e.metaKey || e.ctrlKey) {
+      window.open(`/${poly.type}/${poly.stable_hash}`, '_blank');
+    } else {
+      navigate(`/${poly.type}/${poly.stable_hash}`);
+    }
+  };
 
   if (!metadata || !tileMetadata || !containerRef.current) return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />;
 
@@ -83,13 +96,14 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
           showPolygons={showPolygons}
           metadata={metadata}
           mosaics={mosaics}
+          onClick={onClick}
         />
       </Stage>
     </div>
   );
 };
 
-const ImperativeViewport = ({ objectType, imageHash, filter, port, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, showPolygons, metadata, mosaics }) => {
+const ImperativeViewport = ({ objectType, imageHash, filter, port, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, showPolygons, metadata, mosaics, onClick }) => {
   const app = useApp();
   const viewportRef = useRef(null);
   const spritesRef = useRef({});
@@ -147,6 +161,8 @@ const ImperativeViewport = ({ objectType, imageHash, filter, port, imageWidth, i
 
       // Create polygon graphics and add them
       for (const poly of polygons) {
+        console.log('poly', poly);
+
         const g = new PIXI.Graphics();
         g.zIndex = 9999;
         g.lineStyle(imageWidth / 500, typeColors[poly.type], 1);
@@ -160,10 +176,10 @@ const ImperativeViewport = ({ objectType, imageHash, filter, port, imageWidth, i
 
         // Optional: make interactive
         g.interactive = true;
+        g.hitArea = new PIXI.Polygon(poly.points.flat()); // hit test against polygon area
+        g.eventMode = 'static';
         g.cursor = 'pointer';
-        g.on('pointertap', () => {
-          console.log(`Clicked polygon ${poly.id}`);
-        });
+        g.on('pointertap', (event) => onClick(poly, event));
 
         viewport.addChild(g);
       }
@@ -200,7 +216,6 @@ const ImperativeViewport = ({ objectType, imageHash, filter, port, imageWidth, i
           const url = new URL(relativePath, `${window.location.protocol}//${window.location.hostname}:${port}`);
           PIXI.Texture.fromURL(url.href)
             .then((texture) => {
-              console.log('creating new sprite');
               const sprite = new PIXI.Sprite(texture);
               sprite.x = x * TILE_SIZE * levelScale;
               sprite.y = y * TILE_SIZE * levelScale;
@@ -224,7 +239,6 @@ const ImperativeViewport = ({ objectType, imageHash, filter, port, imageWidth, i
       updateTiles();
 
       if (showPolygons) {
-        console.log('showPolygons');
         updatePolygons();
       }
     }
