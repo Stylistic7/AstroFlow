@@ -89,13 +89,11 @@ def group_stacks_into_targets(metadata_ref: LargeObject, stacks: CompositeStacks
 
     stable_hash = TargetHash(stacks[sorted(
         stack_ids, key=lambda s: stacks[s].oldest_date)[0]].stable_hash)
-    content_hash = hash_list(stacks[s].content_hash for s in stack_ids)
 
     target_attributes: dict[str, Any] = {
         'stable_hash': stable_hash,
         'oldest_date': min(stacks[s].oldest_date for s in stack_ids),
         'newest_date': min(stacks[s].newest_date for s in stack_ids),
-        'content_hash': content_hash,
         'stack_ids': stack_ids,
         'footprint': footprint,
         'healpix_cells': healpix_cells,

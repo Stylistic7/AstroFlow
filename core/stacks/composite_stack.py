@@ -1,11 +1,12 @@
 from dataclasses import dataclass, asdict
 from typing import Any, Optional, Sequence
 import numpy as np
+import ray
 
 import units
 from hashing import hash_list, hash_list_int
 from context import context
-from stacks.simple_stack import SimpleStack, SimpleStacksDict
+from stacks.simple_stack import SimpleStack, SimpleStacksDict, simple_stack_from_frames
 from attributes import AstrometricAttributes, AstroFlowStateAttributes, ChronologyAttributes, ImagingAttributes
 from stacks.types import StackHash
 from metadata.classes import MetadataDict, FrameHash
@@ -44,13 +45,11 @@ class CompositeStack(ContentHashed, ImagingAttributes, AstrometricAttributes,
 
       for run in runs:
         run_frames = [x[0] for x in run]
-        new_stack = SimpleStack.from_frames(run_frames, metadata)
-        contents[new_stack.content_hash] = new_stack
+        new_stack = ray.get(simple_stack_from_frames.remote(run_frames, metadata))
+        contents[new_stack.stable_hash] = new_stack
 
     if not contents:
       return None
-
-    content_hash = hash_list(sorted(contents.keys()))
 
     chronology_attributes = ChronologyAttributes.from_frames(frames, metadata)
     imaging_attributes = ImagingAttributes.from_frames(frames, metadata)
@@ -59,7 +58,6 @@ class CompositeStack(ContentHashed, ImagingAttributes, AstrometricAttributes,
     attributes: dict[str, Any] = asdict(chronology_attributes) | asdict(
         imaging_attributes) | asdict(astrometric_attributes) | {
             'contents': contents,
-            'content_hash': content_hash,
             'state': {},
         }
 

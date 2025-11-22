@@ -6,6 +6,8 @@ from attributes import AstroFlowStateAttributes, ChronologyAttributes, ImagingAt
 from metadata.classes import MetadataDict, FrameHash
 from hashing import hash_list, hash_list_int
 from cache.content_hashed import ContentHashed
+from decorators import cached
+from hashing.types import LargeObject
 
 DependenciesDict = dict[str, StackHash]
 
@@ -16,32 +18,6 @@ class SimpleStack(ContentHashed, ChronologyAttributes[StackHash],
   frames: list[FrameHash]
   metadata: MetadataDict
   dependencies: DependenciesDict
-
-  @classmethod
-  def from_frames(cls, frames: list[FrameHash],
-                  metadata: MetadataDict) -> 'SimpleStack':
-    chronology_attributes = ChronologyAttributes.from_frames(frames, metadata)
-    imaging_attributes = ImagingAttributes.from_frames(frames, metadata)
-
-    frame_metadata = {h: i for h, i in metadata.items() if h in frames}
-    assert frame_metadata
-
-    # TODO: Find a way for the content hash to be computed by the
-    # `ContentHasher` class, instead of manually here. (Calibration stacks don't
-    # have a stable hash, but they should.)
-    content_hash = hash_list(sorted(frames))
-
-    attributes: dict[
-        str,
-        Any] = asdict(chronology_attributes) | asdict(imaging_attributes) | {
-            'content_hash': content_hash,
-            'frames': frames,
-            'metadata': frame_metadata,
-            'dependencies': DependenciesDict(),
-            'state': {}
-        }
-
-    return cls(**attributes)
 
   def __str__(self) -> str:
     return (f'SimpleStack(Content hash {self.content_hash}, '
@@ -73,3 +49,22 @@ class SimpleStacksDict(dict[str, SimpleStack]):
 
 class CalibrationStack(SimpleStack):
   pass
+
+
+@cached.remote
+def simple_stack_from_frames(frames: list[FrameHash], metadata: LargeObject) -> SimpleStack:
+  chronology_attributes = ChronologyAttributes.from_frames(frames, metadata)
+  imaging_attributes = ImagingAttributes.from_frames(frames, metadata)
+
+  frame_metadata = {h: i for h, i in metadata.items() if h in frames}
+  assert frame_metadata
+
+  attributes: dict[
+      str, Any] = asdict(chronology_attributes) | asdict(imaging_attributes) | {
+          'frames': frames,
+          'metadata': frame_metadata,
+          'dependencies': DependenciesDict(),
+          'state': {}
+      }
+
+  return SimpleStack(**attributes)
