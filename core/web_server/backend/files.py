@@ -1,6 +1,7 @@
-from flask import Flask, request, jsonify, send_file, Blueprint
+from flask import Flask, request, jsonify, send_file, Blueprint, Response
 import os
 from pathlib import Path
+import subprocess
 
 from context import context
 from dependency_graph import Graph
@@ -8,6 +9,7 @@ from file_io.generic import read_header
 from customization.settings import Settings, StackSettings
 from customization.compute_graph import customize_stack, store_customized_stack
 from state.actor import state
+from stacks.artifacts import output_filename
 
 files_bp = Blueprint("files", __name__)
 
@@ -66,3 +68,12 @@ def select_file():
       dict(type='update_settings', stack_id=stack_id, settings=settings))
 
   return jsonify({"status": "ok"})
+
+@files_bp.route('/api/open_stack_master/<stack_id>')
+def open_stack_master(stack_id):
+  stack = context.stacks[stack_id]
+  filename = output_filename(stack).resolve_at(context.output_dir)
+  print(f'### opening filename {filename}')
+  subprocess.Popen(["open", str(filename)])
+
+  return Response(status=200)

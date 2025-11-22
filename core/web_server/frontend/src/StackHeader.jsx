@@ -1,14 +1,20 @@
 // src/components/StackHeader.jsx
 import React from 'react';
 import { Box, Typography, IconButton, Paper } from '@mui/material';
-import { Delete as DeleteIcon } from '@mui/icons-material';
+import { Delete } from '@mui/icons-material';
+import { OpenInNew } from '@mui/icons-material';
 import MetadataItem from './MetadataItem.jsx';
 
 import { ra_to_hms, dec_to_dms, format_duration } from './units.js'
 
 const StackHeader = ({ stack_type, stack, stack_id }) => {
-  const handleDeleteStack = () => {
+  // TODO: Implement.
+  const handleDeleteStack = async () => {
     alert(`Delete stack ${stack_id} functionality triggered.`);
+  };
+
+  const handleOpenStack = async () => {
+    const res = await fetch(`/api/open_stack_master/${stack_id}`, { method: 'HEAD' });
   };
 
   return (
@@ -27,8 +33,12 @@ const StackHeader = ({ stack_type, stack, stack_id }) => {
             <MetadataItem label="Temp" value={`${stack.mean_temperature.toFixed(1)}°C`} />
           </Box>
         </Box>
-        <IconButton onClick={handleDeleteStack} color="error" sx={{ alignSelf: 'start' }}>
-          <DeleteIcon />
+        <Box sx={{ flexGrow: 1 }} />
+        <IconButton onClick={handleOpenStack}>
+          <OpenInNew />
+        </IconButton>
+        <IconButton onClick={handleDeleteStack} color="error">
+          <Delete />
         </IconButton>
       </Box>
     </Paper>
