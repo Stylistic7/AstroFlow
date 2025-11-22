@@ -69,6 +69,7 @@ def get_subframe_for_calibration_stack(
     return None, None
 
   stack = context.calibration_stacks[stack_id]
+  assert stack is not None
   frame = stack.metadata[stack.frames[0]]
   image = resize_array(read_image(frame.filename), width).astype(np.float32)
 

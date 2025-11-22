@@ -90,7 +90,7 @@ def test_one_light_one_dark(test_context):
   assert len(light_stack.frames) == 3
   assert light_stack.dependencies == {
       'dark': {
-          'stack_id': dark_stack.content_hash
+          'stack_id': dark_stack.stable_hash
       }
   }
   assert light_stack.oldest_date != None

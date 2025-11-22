@@ -27,7 +27,7 @@ def flat_corrected_stack(
       l for l in light_frames_by_stars if l in substack.frames)]
 
   dependencies = substack.dependencies.copy()
-  dependencies['flat'] = {'stack_id': flat_stack.content_hash}
+  dependencies['flat'] = {'stack_id': flat_stack.stable_hash}
 
   temp_file = tempfile.NamedTemporaryFile(suffix=".tiff", delete=True)
   write_tiff_image(

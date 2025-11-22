@@ -132,7 +132,7 @@ def compute_image_metadata(filename: Path) -> ImageMetadata:
 
 @ray.remote(resources={'fastest_storage': 0.001})
 @measure_performance
-def load_metadata() -> MetadataDict:
+def load_metadata() -> LargeObject:
   quarantined_files = context.quarantined_files or set()
 
   # TODO: This won't support disconnected storage media.

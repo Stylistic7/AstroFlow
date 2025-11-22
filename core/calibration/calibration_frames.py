@@ -10,7 +10,7 @@ from decorators.decorators import cached
 from metadata.classes import ImageMetadata, FrameHash
 from context import context
 from stacks.types import StackHash
-from stacks.simple_stack import SimpleStack, CalibrationStack
+from stacks.simple_stack import SimpleStack, CalibrationStack, simple_stack_from_frames
 from stacks.composite_stack import CompositeStack, SimpleStacksDict
 import clustering
 from hashing.types import LargeObject
@@ -43,7 +43,7 @@ def identify_calibration_stacks(metadata_ref: LargeObject) -> SimpleStacksDict:
   frames_for_filter = group_by_header(metadata.values(), 'FILTER', '')
 
   def new_stack(frames: list[FrameHash]) -> CalibrationStack:
-    stack = CalibrationStack.from_frames(frames, metadata)
+    stack = ray.get(simple_stack_from_frames.remote(frames, metadata))
     return stack
 
   stacks = SimpleStacksDict()
@@ -52,7 +52,7 @@ def identify_calibration_stacks(metadata_ref: LargeObject) -> SimpleStacksDict:
         'bias', set()) & frames_for_camera.get(camera, set())
     for run in get_runs(bias_frames):
       stack = new_stack(run)
-      stacks[StackHash(stack.content_hash)] = stack
+      stacks[StackHash(stack.stable_hash)] = stack
 
     for exposure in frames_for_exposure:
       dark_frames = frames_for_image_type.get(
@@ -60,7 +60,7 @@ def identify_calibration_stacks(metadata_ref: LargeObject) -> SimpleStacksDict:
               camera, set()) & frames_for_exposure.get(exposure, set())
       for run in get_runs(dark_frames):
         stack = new_stack(run)
-        stacks[StackHash(stack.content_hash)] = stack
+        stacks[StackHash(stack.stable_hash)] = stack
 
     for filter in frames_for_filter:
       flat_frames = frames_for_image_type.get(
@@ -68,7 +68,7 @@ def identify_calibration_stacks(metadata_ref: LargeObject) -> SimpleStacksDict:
               camera, set()) & frames_for_filter.get(filter, set())
       for run in get_runs(flat_frames):
         stack = new_stack(run)
-        stacks[StackHash(stack.content_hash)] = stack
+        stacks[StackHash(stack.stable_hash)] = stack
 
   print(f'### calibration_stacks keys {stacks.keys()}')
   return stacks
