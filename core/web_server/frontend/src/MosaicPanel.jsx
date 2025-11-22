@@ -3,6 +3,7 @@ import { useNavigate, useParams, useLocation } from "react-router-dom";
 
 import Accordion from '@mui/material/Accordion';
 import AccordionSummary from '@mui/material/AccordionSummary';
+import AccordionDetails from '@mui/material/AccordionDetails';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { CopyToClipboard } from 'react-copy-to-clipboard';
 import Snackbar from '@mui/material/Snackbar';
@@ -61,6 +62,8 @@ export default function MosaicPanel() {
 	const telescopius_pane_line = (mosaic, target_id, pane) => {
 		// TODO: Fix the tile indices.
 		// let [tile_x, tile_y] = mosaic.tile_indices[pane];
+		// debugger;
+
 		let tile_x = 1;
 		let tile_y = 1;
 		let target = targets[target_id];
@@ -78,6 +81,8 @@ export default function MosaicPanel() {
 	const [open, setOpen] = useState(false);
 
 	const telescopius = mosaic => {
+		debugger;
+
 		const header = "Pane, RA, DEC, Position Angle (East), Pane width (arcmins), Pane height (arcmins), Overlap, Row, Column";
 		const text = [header].concat(
 			mosaic.target_ids.map((target_id, pane) =>
@@ -100,6 +105,10 @@ export default function MosaicPanel() {
 		</>;
 	};
 
+	if (mosaic) {
+		console.log('telescopius', telescopius(mosaic));
+	}
+
 	const imageType = "mosaic_thumbnail_image_for_filter";
 
 	// TODO: Add a dialog box to the "run" button that shows the user what will be
@@ -114,9 +123,9 @@ export default function MosaicPanel() {
 				>
 					Telescopius
 				</AccordionSummary>
-				{/* <AccordionDetails>
+				<AccordionDetails>
 					{telescopius(mosaic)}
-				</AccordionDetails> */}
+				</AccordionDetails>
 			</Accordion>
 			<Snackbar
 				anchorOrigin={{ vertical: "top", horizontal: "center" }}
