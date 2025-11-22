@@ -45,22 +45,18 @@ def roughly_same_image_scale(a: float, b: float) -> bool:
 
 
 @cached.remote
-def targets_overlap(a: Target,
-                    b: Target,
-                    min_area_frac=0.03,
-                    span_match=0.6,
-                    thick_min=0.05,
-                    thick_max=0.25) -> Overlap:
+def targets_overlap(
+    a: Target,
+    b: Target,
+    min_area_frac: float = 0.03,
+    span_match: float = 0.6,
+    thick_min: float = 0.08,
+    thick_max: float = 0.45,
+) -> Overlap:
   if a is b:
     return Overlap.IDENTICAL
 
-  if not roughly_same_image_scale(a.image_scale, b.image_scale):
-    return Overlap.INCOMPATIBLE
-
   a, b = a.footprint, b.footprint
-  if not roughly_same_area(a, b):
-      return Overlap.INCOMPATIBLE
-
   if not a.intersects_poly(b):
     return Overlap.NON_OVERLAPPING
 
@@ -69,69 +65,89 @@ def targets_overlap(a: Target,
   if not polys:
     return Overlap.NON_OVERLAPPING
   inter = max(polys, key=lambda p: p.area())
+
+  # reject tiny overlaps: real, but not useful for mosaics
   if inter.area() / max(min(a.area(), b.area()), 1e-30) < min_area_frac:
     return Overlap.INCOMPATIBLE
 
-  def lonlat(p):
-    xyz = np.array(list(p.points))
-    return np.c_[np.arctan2(xyz[:, 1], xyz[:, 0]), np.arcsin(xyz[:, 2])]
-
-  def gnomonic(ll, lon0, lat0):
-    lo, la = ll[:, 0], ll[:, 1]
-    cl0, sl0 = np.cos(lat0), np.sin(lat0)
-    co0, so0 = np.cos(lon0), np.sin(lon0)
-    cl, sl = np.cos(la), np.sin(la)
-    co, so = np.cos(lo), np.sin(lo)
-    cosc = sl0 * sl + cl0 * cl * (co * co0 + so * so0)
-    x = cl * (so * co0 - co * so0) / cosc
-    y = (cl0 * sl - sl0 * cl * (co * co0 + so * so0)) / cosc
-    return np.c_[x, y]
-
-  def obb(xy):
-    X = xy - xy.mean(0)
-    cov = (X.T @ X) / max(len(X) - 1, 1)
-    v, e = np.linalg.eigh(cov)
-    proj = X @ e
-    lo, hi = proj.min(0), proj.max(0)
-    w, h = (hi - lo)
-    S, L = sorted((w, h))
-    return S, L  # minor/major lengths in the plane
-
-  # tangent plane at intersection centroid (symmetric)
-  xyz = np.array(list(inter.points))
-  c = xyz.mean(0)
+  # tangent basis at intersection centroid, in XYZ
+  ptsI = np.array(list(inter.points), float)  # (N,3) unit vectors
+  c = ptsI.mean(0)
   c /= np.linalg.norm(c)
-  lon0, lat0 = np.arctan2(c[1], c[0]), np.arcsin(c[2])
-  proj = lambda p: gnomonic(lonlat(p), lon0, lat0)
+  ref = np.array([0.0, 0.0, 1.0])
+  if abs(c @ ref) > 0.9:
+    ref = np.array([1.0, 0.0, 0.0])
+  e1 = np.cross(c, ref)
+  e1 /= np.linalg.norm(e1)
+  e2 = np.cross(c, e1)
+  e2 /= np.linalg.norm(e2)
+  E = np.vstack([e1, e2])  # 2x3; rows are basis vectors
 
-  S_a, L_a = obb(proj(a))
-  S_b, L_b = obb(proj(b))
-  S_i, L_i = obb(proj(inter))
-  span, thick = (L_i, S_i) if L_i >= S_i else (S_i, L_i)
+  def spans_in_plane(poly):
+    pts = np.array(list(poly.points), float)  # (N,3)
+    xy = pts @ E.T  # (N,2) in common plane
+    d = xy.max(0) - xy.min(0)  # (dx, dy)
+    return float(abs(d[0])), float(abs(d[1]))
 
-  # symmetric scores: use a frame only if thickness test passes
-  def score_long(S,
-                 L):  # span vs long edge; thickness vs that frame's short edge
-    t = thick / S
-    return (span / L) if (thick_min <= t <= thick_max) else 0.0
+  ax, ay = spans_in_plane(a)
+  bx, by = spans_in_plane(b)
+  ix, iy = spans_in_plane(inter)
 
-  def score_short(S,
-                  L):  # span vs short edge; thickness vs that frame's long edge
-    t = thick / L
-    return (span / S) if (thick_min <= t <= thick_max) else 0.0
+  # decide which direction is "span" vs "thickness" for the intersection stripe
+  if iy >= ix:
+    span, thick = iy, ix  # stripe runs along e2
+    span_axis_is_y = True
+  else:
+    span, thick = ix, iy  # stripe runs along e1
+    span_axis_is_y = False
 
-  long_score = max(score_long(S_a, L_a), score_long(S_b, L_b))
-  short_score = max(score_short(S_a, L_a), score_short(S_b, L_b))
+  def scores_for_frame(wx, wy):
+    # wx,wy are that frame's extents along e1,e2 in the *same* plane
+    if wx == 0 or wy == 0:
+      return 0.0, 0.0
+
+    # frame intrinsic long/short sides
+    L = max(wx, wy)
+    S = min(wx, wy)
+
+    if span_axis_is_y:
+      # stripe runs along y; thickness along x
+      cov_span = span / wy
+      cov_thick = thick / wx
+    else:
+      # stripe runs along x; thickness along y
+      cov_span = span / wx
+      cov_thick = thick / wy
+
+    # long-edge hypothesis: stripe spans long side, thin on short side
+    long_score = 0.0
+    if cov_span >= span_match and thick_min <= cov_thick <= thick_max:
+      # long side coverage
+      cov_long = span / L
+      long_score = min(1.0, cov_long)
+
+    # short-edge hypothesis: stripe spans short side, thin on long side
+    short_score = 0.0
+    if cov_span >= span_match and thick_min <= cov_thick <= thick_max:
+      cov_short = span / S
+      short_score = min(1.0, cov_short)
+
+    return long_score, short_score
+
+  long_a, short_a = scores_for_frame(ax, ay)
+  long_b, short_b = scores_for_frame(bx, by)
+
+  # symmetric aggregation: swapping a,b leaves these unchanged
+  long_score = max(long_a, long_b)
+  short_score = max(short_a, short_b)
 
   if long_score >= span_match and short_score < span_match:
     return Overlap.LONG_EDGE
   if short_score >= span_match and long_score < span_match:
     return Overlap.SHORT_EDGE
   if long_score >= span_match and short_score >= span_match:
-    if long_score > short_score:
-      return Overlap.LONG_EDGE
-    if short_score > long_score:
-      return Overlap.SHORT_EDGE
+    return Overlap.LONG_EDGE if long_score >= short_score else Overlap.SHORT_EDGE
+
   return Overlap.INCOMPATIBLE
 
 
@@ -315,7 +331,6 @@ def identify_mosaics(targets: TargetsDict,
 
       stable_hash = targets[sorted(
           mosaic, key=lambda t: targets[t].oldest_date)[0]].stable_hash
-      content_hash = hash_list(targets[t].content_hash for t in mosaic)
 
       oldest_date = min(targets[t].oldest_date for t in mosaic)
       newest_date = min(targets[t].newest_date for t in mosaic)
@@ -381,7 +396,6 @@ def identify_mosaics(targets: TargetsDict,
       attributes: dict[str, Any] = asdict(chronology_attributes) | asdict(
           astrometric_attributes) | {
               'stable_hash': stable_hash,
-              'content_hash': content_hash,
               'target_ids': sorted(mosaic),
               'strips': strips,
           }
