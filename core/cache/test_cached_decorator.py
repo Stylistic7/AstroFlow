@@ -8,17 +8,32 @@ import pytest
 from context import context, get_cache
 from cache.cached_decorator import make_cached_decorator, Injected
 from cache.types import NeverRun
-from hashing import hash_call
+from hashing import hash_call, hash_list
 from hashing.types import LargeObject
 from dependency_graph import Graph, run_graph, print_result_dict, print_graph
 from testing.sidecar_hasher import SidecarHasher
+from cache.content_hashed import ContentHashed
+from decorators.content_hasher import ContentHasher
 from ray.exceptions import ObjectFreedError
 
-sidecar_hasher = SidecarHasher()
 cached = make_cached_decorator(cache_provider=get_cache,
-                               content_hasher=sidecar_hasher,
-                               call_hasher=hash_call,
-                               debug=True)
+                               content_hasher=ContentHasher(),
+                               call_hasher=hash_call)
+
+sidecar_cached = make_cached_decorator(cache_provider=get_cache,
+                                       content_hasher=SidecarHasher(),
+                                       call_hasher=hash_call,
+                                       debug=True)
+
+_FAKE_SOURCE_CODE = 'abc123'
+def fake_source_hash_call(serialized_func: bytes, *args, **kwargs) -> str:
+  kwargs_list = sorted(kwargs.items())
+  return hash_list([_FAKE_SOURCE_CODE, *args, *kwargs_list])
+
+fake_source_code_hashed = make_cached_decorator(
+    cache_provider=get_cache,
+    content_hasher=ContentHasher(),
+    call_hasher=fake_source_hash_call)
 
 
 @cached.remote
@@ -61,24 +76,6 @@ def build_large_array_graph(arr: LargeObject) -> Graph:
 
 
 @cached.remote
-def make_large_image_remote(shape: tuple[int],
-                            output_dir: Injected[Path]) -> Path:
-  context.num_make_large_image_runs = context.num_make_large_image_runs + 1
-  filename = output_dir / "foo.png"
-  img = Image.new('L', shape, color=128)
-  img.save(filename)
-  print(f'Wrote image to filename {filename}')
-  return filename
-
-
-@cached.remote
-def consume_large_image_remote(path: Path) -> None:
-  context.num_consume_large_image_runs = context.num_consume_large_image_runs + 1
-  with Image.open(path) as img:
-    print(f'img.size {img.size}')
-
-
-@cached.remote
 def fail_remote() -> int:
   raise ValueError("intentional failure")
 
@@ -89,23 +86,50 @@ def graph_done() -> None:
 
 
 @cached.remote
+def make_small_image() -> np.ndarray:
+  return np.ones((10, 10))
+
+
+@fake_source_code_hashed.remote
+def task_returns_list() -> list[ContentHashed]:
+  return [
+      ContentHashed(content_hash='a'),
+      ContentHashed(content_hash='b'),
+      ContentHashed(content_hash='c')
+  ]
+
+
+@sidecar_cached.remote
+def make_large_image_remote(shape: tuple[int],
+                            output_dir: Injected[Path]) -> Path:
+  context.num_make_large_image_runs = context.num_make_large_image_runs + 1
+  filename = output_dir / "foo.png"
+  img = Image.new('L', shape, color=128)
+  img.save(filename)
+  print(f'Wrote image to filename {filename}')
+  return filename
+
+
+@sidecar_cached.remote
+def consume_large_image_remote(path: Path) -> None:
+  context.num_consume_large_image_runs = context.num_consume_large_image_runs + 1
+  with Image.open(path) as img:
+    print(f'img.size {img.size}')
+
+
+@sidecar_cached.remote
 def build_graph() -> Graph:
   context.num_build_graph_runs = context.num_build_graph_runs + 1
   return Graph({consume_large_image_remote: {make_large_image_remote}})
 
 
-@cached.remote
+@sidecar_cached.remote
 def build_mixed_graph() -> Graph:
   context.num_build_graph_runs = context.num_build_graph_runs + 1
   return Graph({
       graph_done: {consume_large_image_remote},
       consume_large_image_remote: {make_large_image_remote}
   })
-
-
-@cached.remote
-def make_small_image() -> np.ndarray:
-  return np.ones((10, 10))
 
 
 def test_remote_functions(test_context) -> None:
@@ -214,3 +238,10 @@ def test_large_object(test_context) -> None:
   result, _ = run_graph(graph)
   print_result_dict(result)
   assert all(r == 13 for r in result.values())
+
+
+def test_list_of_content_hashed_objects(test_context) -> None:
+  result = ray.get(task_returns_list.remote())
+  assert result[0].content_hash == hash_list([fake_source_hash_call('a'), 0])
+  assert result[1].content_hash == hash_list([fake_source_hash_call('b'), 1])
+  assert result[2].content_hash == hash_list([fake_source_hash_call('c'), 2])
