@@ -60,25 +60,21 @@ class ContextActor:
     self.cache = get_cache()
 
   def get(self, key: Key, default_value: Any) -> ray.ObjectRef:
-    value = self.cache.get(key, default_value)
-    return ray.put(value)
+    return self.cache.get(key, default_value)
 
   def get_matching(self, key_fragment: Key) -> ray.ObjectRef:
-    value = {
+    return {
         key: self.cache[key]
         for key in self.cache.iterkeys()
         if starts_with(key, key_fragment)
     }
 
-    return ray.put(value)
-
   def set(self, key: Key, value: Any) -> None:
-    assert type(value) is list
-    assert len(value) == 1
-    value = value[0]
-    assert type(value) is ray.ObjectRef, f'type(value) is {type(value)}'
+    # TODO: This import is ugly.
+    from hashing.types import LargeObject
+    if isinstance(value, LargeObject):
+      value = value.strip_ref()
 
-    value = ray.get(value)
     self.cache[key] = value
 
   def contains(self, key: Key) -> bool:
@@ -89,21 +85,9 @@ class ContextActor:
       del self.cache[key]
 
   def and_equals(self, key: Key, value: Any, length_limit: int | None) -> None:
-    assert type(value) is list
-    assert len(value) == 1
-    value = value[0]
-    assert type(value) is ray.ObjectRef, f'type(value) is {type(value)}'
-    value = ray.get(value)
-
     self.cache.and_equals(key, value, length_limit)
 
   def or_equals(self, key: Key, value: Any) -> None:
-    assert type(value) is list
-    assert len(value) == 1
-    value = value[0]
-    assert type(value) is ray.ObjectRef, f'type(value) is {type(value)}'
-    value = ray.get(value)
-
     self.cache.or_equals(key, value)
 
   def clear(self) -> None:
@@ -120,15 +104,9 @@ class Context:
       connect_to_ray_cluster()
 
     actor = ray.get_actor('context', namespace=_get_namespace())
-    obj_ref = ray.get(actor.get.remote(key, default_value))
-    value = ray.get(obj_ref)
-
-    return value
+    return ray.get(actor.get.remote(key, default_value))
 
   def __getattr__(self, key: Key) -> Any:
-    if not ray.is_initialized():
-      connect_to_ray_cluster()
-
     return self.get(key)
 
   def __getitem__(self, key: Key) -> Any:
@@ -136,21 +114,14 @@ class Context:
 
   def get_matching(self, key_fragment: Key) -> Any:
     actor = ray.get_actor('context', namespace=_get_namespace())
-    maybe_ref = ray.get(actor.get_matching.remote(key_fragment))
-    if maybe_ref:
-      return ray.get(maybe_ref)
+    return ray.get(actor.get_matching.remote(key_fragment))
 
   def set(self, key: Key, value: Any) -> Any:
     if not ray.is_initialized():
       connect_to_ray_cluster()
 
     actor = ray.get_actor('context', namespace=_get_namespace())
-
-    # Ray will automatically de-reference values that are passed by value, but
-    # it will not de-reference values inside containers, like lists. This puts
-    # the value in the Ray object store, then passes the ObjectRef unchanged
-    # to the Actor.
-    return ray.get(actor.set.remote(key, [ray.put(value, _owner=actor)]))
+    return ray.get(actor.set.remote(key, value))
 
   def __setattr__(self, key: Key, value: Any) -> Any:
     return self.set(key, value)
@@ -159,26 +130,20 @@ class Context:
     return self.set(key, value)
 
   # TODO: Use the Pythonic operator.
-  def and_equals(
-      self,
-      key: Key,
-      value: Any,
-      length_limit: int | None = None,
-  ) -> Any:
+  def and_equals(self,
+                 key: Key,
+                 value: Any,
+                 length_limit: int | None = None) -> Any:
     actor = ray.get_actor('context', namespace=_get_namespace())
-    return ray.get(actor.and_equals.remote(key, [ray.put(value)], length_limit))
+    return ray.get(actor.and_equals.remote(key, value, length_limit))
 
   def plus_equals(self, key: Key, value: Any):
-    return self.and_equals(self, key, value)
+    return self.and_equals(key, value)
 
   # TODO: Use the Pythonic operator.
-  def or_equals(
-      self,
-      key: Key,
-      value: Any,
-  ) -> Any:
+  def or_equals(self, key: Key, value: Any) -> Any:
     actor = ray.get_actor('context', namespace=_get_namespace())
-    return ray.get(actor.or_equals.remote(key, [ray.put(value)]))
+    return ray.get(actor.or_equals.remote(key, value))
 
   def __contains__(self, key: Key) -> bool:
     actor = ray.get_actor('context', namespace=_get_namespace())
