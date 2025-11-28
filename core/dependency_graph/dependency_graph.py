@@ -121,7 +121,8 @@ def run_graph(graph: Graph,
       result = node.task.remote(*make_fn_args(ts, node))
     elapsed_time = time.time() - start_time
     if elapsed_time > 1.0:
-      print(f'### make_run_fn took {elapsed_time:.3f} s')
+      print(f'### make_run_fn took {elapsed_time:.3f} s '
+            f'for node {node_to_string(node, exclude_args=True)}')
     return result
 
   # TODO: Consider embellishing this to force graphs like {foo: [bar, baz]} to
@@ -220,7 +221,9 @@ def run_graph(graph: Graph,
         break
 
       k = min(WAIT_BATCH, len(pending))
-      ready_refs, still_pending = ray.wait(pending, num_returns=k, timeout=TIMEOUT)
+      ready_refs, still_pending = ray.wait(pending,
+                                           num_returns=k,
+                                           timeout=TIMEOUT)
       pending = still_pending
 
       if not ready_refs:

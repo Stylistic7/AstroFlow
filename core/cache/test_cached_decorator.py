@@ -26,9 +26,12 @@ sidecar_cached = make_cached_decorator(cache_provider=get_cache,
                                        debug=True)
 
 _FAKE_SOURCE_CODE = 'abc123'
+
+
 def fake_source_hash_call(serialized_func: bytes, *args, **kwargs) -> str:
   kwargs_list = sorted(kwargs.items())
   return hash_list([_FAKE_SOURCE_CODE, *args, *kwargs_list])
+
 
 fake_source_code_hashed = make_cached_decorator(
     cache_provider=get_cache,
