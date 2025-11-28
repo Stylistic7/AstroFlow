@@ -329,7 +329,7 @@ def _identify_overlapping_targets(
 
 @cached.remote
 def identify_mosaics(targets: TargetsDict,
-                     debug: bool = True) -> dict[MosaicHash, Mosaic]:
+                     debug: bool = False) -> dict[MosaicHash, Mosaic]:
   print(f'### Identifying mosaics from {len(targets)} targets')
 
   # test_commutativity()
