@@ -160,7 +160,7 @@ class StateActor:
           print(f'### set _busy {self._busy}')
 
   def _run_graph(self, state: State,
-                 graph: Graph) -> tuple[ResultDict, ResultDict]:
+                 graph: Graph) -> tuple[State, list[Action]]:
 
     def status_fn(status: GraphStatus):
       # TODO: Re-enable this, with some testing to make sure it's not too slow.
@@ -186,15 +186,9 @@ class StateActor:
   # deleting all of the cached results, and then running the Graph again. This
   # should be a generic operation.
   def _regroup(self, state: State) -> tuple[State, list[Action]]:
-    graph = Graph({build_regroup_graph: {(scatter_compute_image_metadata, 'all')}})
-    print_graph(graph)
-
-    results, _ = run_graph(graph, dry_run=True)
-    print_result_dict(results)
-
-    for node, result in results.items():
-      print(f'### {node=} {result=}')
-
+    graph = Graph(
+        {build_regroup_graph: {(scatter_compute_image_metadata, 'all')}})
+    run_graph(graph)
     return state, [Action(type='announce', message='reload_data')]
 
   def _handle(self, action: Action) -> None:
