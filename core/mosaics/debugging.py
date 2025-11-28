@@ -4,7 +4,6 @@ from spherical_geometry.polygon import SphericalPolygon  # type: ignore
 from shapely import Polygon  # type: ignore
 
 from context import context
-from mosaics import identification
 from mosaics.types import Mosaic
 from geometry.projection import Projection
 from geometry.polygons import project_polygon
@@ -23,40 +22,62 @@ def draw_spherical_polygon(polygon: SphericalPolygon,
   plt.plot(x, y, color=color)
 
 
+def plot_targets_overlap(a, b, title: str = "Targets Overlap") -> None:
+  plt.figure()
+  plt.title(title)
+  plt.axis('equal')
+
+  projection = MercatorProjection()
+
+  def plot_target(target) -> None:
+    ra, dec = (np.radians(np.array(x)) for x in target.center)
+    center = projection.project(ra, dec)
+
+    draw_spherical_polygon(target.footprint, projection, color='blue')
+    plt.scatter([center[0]], [center[1]], color='black')
+
+  plot_target(a)
+  plot_target(b)
+
+  plt.show()
+
+
 def plot_mosaic(mosaic: Mosaic, title: str = 'Mosaic') -> None:
+  import ray
+  from mosaics.identification import targets_overlap, Overlap
+
   targets = context.grouped_targets
 
   plt.figure()
   plt.title(title)
+  plt.axis('equal')
+
+  projection = MercatorProjection()
 
   for i, target_id in enumerate(mosaic.target_ids):
     target = targets[target_id]
-
-    projection_name = 'mercator'
-    projection = MercatorProjection()
 
     ra, dec = (np.radians(np.array(x)) for x in target.center)
     center = projection.project(ra, dec)
 
     print(f'### center is {center}')
-    # print(f'### mercator is',
-    #       target.projected_footprints[projection_name]['coords'])
 
+    acceptable_overlaps = [Overlap.LONG_EDGE, Overlap.SHORT_EDGE]
     overlapping_targets = [
         tid for tid in mosaic.target_ids
-        if identification.targets_overlap(targets[target_id], targets[tid]) !=
-        identification.Overlap.INCOMPATIBLE
+        if ray.get(targets_overlap.remote(targets[target_id], targets[tid])) in
+        acceptable_overlaps
     ]
     print(f'### overlapping_targets for target {target_id} '
           f'are {overlapping_targets}')
 
     draw_spherical_polygon(target.footprint, projection, color='blue')
-    plt.text(
-        center[0],
-        center[1],
-        f'{target_id}: {len(overlapping_targets)}',
-        fontsize=12,
-        color='blue')
+    plt.text(center[0],
+             center[1],
+             f'{target_id}: {len(overlapping_targets)}',
+             fontsize=12,
+             color='blue')
+
     plt.scatter([center[0]], [center[1]], color='black')
 
   draw_spherical_polygon(mosaic.footprint, projection, color='red')

@@ -19,7 +19,7 @@ from catalogs import position_string
 from geometry import footprints
 from hashing import hash_list
 from targets.types import TargetHash, Target, TargetsDict
-from mosaics.debugging import plot_mosaic
+from mosaics.debugging import plot_mosaic, plot_targets_overlap
 from mosaics.disjoint_set import HashDisjointSet
 from mosaics.overlap import Overlap
 from decorators import cached
@@ -46,17 +46,25 @@ def roughly_same_image_scale(a: float, b: float) -> bool:
 
 @cached.remote
 def targets_overlap(
-    a: Target,
-    b: Target,
+    a_target: Target,
+    b_target: Target,
     min_area_frac: float = 0.03,
-    span_match: float = 0.6,
-    thick_min: float = 0.08,
-    thick_max: float = 0.45,
+    span_match: float = 0.75,
+    thick_min: float = 0.1,
+    thick_max: float = 0.3,
+    debug: bool = False,
 ) -> Overlap:
-  if a is b:
+  if a_target is b_target:
     return Overlap.IDENTICAL
 
-  a, b = a.footprint, b.footprint
+  if not roughly_same_image_scale(a_target.image_scale, b_target.image_scale):
+    return Overlap.INCOMPATIBLE
+
+  a, b = a_target.footprint, b_target.footprint
+
+  if not roughly_same_area(a, b):
+    return Overlap.INCOMPATIBLE
+
   if not a.intersects_poly(b):
     return Overlap.NON_OVERLAPPING
 
@@ -102,35 +110,38 @@ def targets_overlap(
     span_axis_is_y = False
 
   def scores_for_frame(wx, wy):
-    # wx,wy are that frame's extents along e1,e2 in the *same* plane
+    # wx,wy are that frame's extents along e1,e2
     if wx == 0 or wy == 0:
       return 0.0, 0.0
 
     # frame intrinsic long/short sides
-    L = max(wx, wy)
-    S = min(wx, wy)
-
-    if span_axis_is_y:
-      # stripe runs along y; thickness along x
-      cov_span = span / wy
-      cov_thick = thick / wx
+    if wx >= wy:
+      L, S = wx, wy
+      span_L, span_S = ix, iy
     else:
-      # stripe runs along x; thickness along y
-      cov_span = span / wx
-      cov_thick = thick / wy
+      L, S = wy, wx
+      span_L, span_S = iy, ix
 
-    # long-edge hypothesis: stripe spans long side, thin on short side
+    # how much of each side is covered by the intersection bounding box
+    cov_L = span_L / L  # ∈ (0,1]
+    cov_S = span_S / S  # ∈ (0,1]
+
+    # decide whether the stripe runs more along the frame's long or short side
+    stripe_along_L = span_L >= span_S
+
     long_score = 0.0
-    if cov_span >= span_match and thick_min <= cov_thick <= thick_max:
-      # long side coverage
-      cov_long = span / L
-      long_score = min(1.0, cov_long)
-
-    # short-edge hypothesis: stripe spans short side, thin on long side
     short_score = 0.0
-    if cov_span >= span_match and thick_min <= cov_thick <= thick_max:
-      cov_short = span / S
-      short_score = min(1.0, cov_short)
+
+    if stripe_along_L:
+      # long-edge hypothesis: stripe runs along long side, thin on short side
+      thin_short = cov_S  # stripe thickness vs short side
+      if cov_L >= span_match and thick_min <= thin_short <= thick_max:
+        long_score = cov_L
+    else:
+      # short-edge hypothesis: stripe runs along short side, thin on long side
+      thin_long = cov_L  # stripe thickness vs long side
+      if cov_S >= span_match and thick_min <= thin_long <= thick_max:
+        short_score = cov_S
 
     return long_score, short_score
 
@@ -142,13 +153,23 @@ def targets_overlap(
   short_score = max(short_a, short_b)
 
   if long_score >= span_match and short_score < span_match:
-    return Overlap.LONG_EDGE
-  if short_score >= span_match and long_score < span_match:
-    return Overlap.SHORT_EDGE
-  if long_score >= span_match and short_score >= span_match:
-    return Overlap.LONG_EDGE if long_score >= short_score else Overlap.SHORT_EDGE
+    result = Overlap.LONG_EDGE
+  elif short_score >= span_match and long_score < span_match:
+    result = Overlap.SHORT_EDGE
+  elif long_score >= span_match and short_score >= span_match:
+    result = Overlap.LONG_EDGE if long_score >= short_score else Overlap.SHORT_EDGE
+  else:
+    result = Overlap.INCOMPATIBLE
 
-  return Overlap.INCOMPATIBLE
+  if debug:
+    title = (f'targets_overlap {a_target.stable_hash} {b_target.stable_hash}\n'
+             f'{ax=:.3f} {ay=:.3f} {bx=:.3f} {by=:.3f} {ix=:.3f} {iy=:.3f}\n'
+             f'{span=:.3f} {thick=:.3f} {span_axis_is_y=}\n'
+             f'{long_score=:.3f} {short_score=:.3f} {result=}')
+
+    plot_targets_overlap(a_target, b_target, title=title)
+
+  return result
 
 
 def group_targets(
@@ -403,8 +424,8 @@ def identify_mosaics(targets: TargetsDict,
       output_mosaic = Mosaic(**attributes)
       print(f'### Made output_mosaic {output_mosaic}')
 
-      # if debug:
-      #   plot_mosaic(output_mosaic, title=f'Mosaic')
+      if debug:
+        plot_mosaic(output_mosaic, title=f'Mosaic')
 
       output_mosaics[stable_hash] = output_mosaic
     except Exception as e:

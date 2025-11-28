@@ -17,7 +17,7 @@ def test_two_targets(test_context) -> None:
   # These two targets are on the celestial equator, but overlap by one degree
   # in right ascension. This is the easiest case to think about.
   foo_footprint = SingleSphericalPolygon.from_radec([98, 102, 102, 98],
-                                                           [-1, -1, 1, 1])
+                                                    [-1, -1, 1, 1])
   foo = Target(name='foo',
                stable_hash=TargetHash('geometric_foo'),
                content_hash='content_foo',
@@ -34,7 +34,7 @@ def test_two_targets(test_context) -> None:
                projected_footprints={})
 
   bar_footprint = SingleSphericalPolygon.from_radec([95, 99, 99, 95],
-                                                           [-1, -1, 1, 1])
+                                                    [-1, -1, 1, 1])
   bar = Target(name='bar',
                stable_hash=TargetHash('geometric_bar'),
                content_hash='content_bar',
@@ -59,6 +59,7 @@ def test_two_targets(test_context) -> None:
   mosaics = ray.get(identify_mosaics.remote(context.grouped_targets))
   assert len(mosaics) == 1
   mosaic = next(iter(mosaics.values()))
+  print(f'### mosaic.strips {mosaic.strips}')
 
   assert mosaic.target_ids == [bar.stable_hash, foo.stable_hash]
 
@@ -72,8 +73,7 @@ def test_two_targets(test_context) -> None:
 
 def test_three_targets(test_context) -> None:
   foo_footprint = SingleSphericalPolygon.from_radec(
-                   [98.01, 102.01, 102.01, 98.01], [-1, -1, 1, 1],
-                   center=[100.01, 0])
+      [98.01, 102.01, 102.01, 98.01], [-1, -1, 1, 1], center=[100.01, 0])
   foo = Target(name='foo',
                stable_hash=TargetHash('geometric_foo'),
                content_hash='content_foo',
@@ -90,8 +90,7 @@ def test_three_targets(test_context) -> None:
                projected_footprints={})
 
   bar_footprint = SingleSphericalPolygon.from_radec(
-                   [95.01, 99.01, 99.01, 95.01], [-1, -1, 1, 1],
-                   center=[97.01, 0])
+      [95.01, 99.01, 99.01, 95.01], [-1, -1, 1, 1], center=[97.01, 0])
   bar = Target(name='bar',
                stable_hash=TargetHash('geometric_bar'),
                content_hash='content_bar',
@@ -108,8 +107,8 @@ def test_three_targets(test_context) -> None:
                projected_footprints={})
 
   baz_footprint = SingleSphericalPolygon.from_radec([95, 99, 99, 95],
-                                                           [0.5, 0.5, 2.5, 2.5],
-                                                           center=[97, 1.5])
+                                                    [0.5, 0.5, 2.5, 2.5],
+                                                    center=[97, 1.5])
   baz = Target(name='baz',
                stable_hash=TargetHash('geometric_baz'),
                content_hash='content_baz',
@@ -153,7 +152,7 @@ def test_three_targets(test_context) -> None:
 
 def test_three_out_of_order_targets(test_context) -> None:
   foo_footprint = SingleSphericalPolygon.from_radec(
-                   [98.01, 102.01, 102.01, 98.01], [0, 0, 2, 2])
+      [98.01, 102.01, 102.01, 98.01], [0, 0, 2, 2])
   foo = Target(name='foo',
                stable_hash=TargetHash('geometric_foo'),
                content_hash='content_foo',
@@ -170,7 +169,7 @@ def test_three_out_of_order_targets(test_context) -> None:
                projected_footprints={})
 
   bar_footprint = SingleSphericalPolygon.from_radec([98, 102, 102, 98],
-                                                           [3, 3, 5, 5])
+                                                    [3, 3, 5, 5])
   bar = Target(name='bar',
                stable_hash=TargetHash('geometric_bar'),
                content_hash='content_bar',
@@ -187,7 +186,7 @@ def test_three_out_of_order_targets(test_context) -> None:
                projected_footprints={})
 
   baz_footprint = SingleSphericalPolygon.from_radec(
-                   [98.02, 102.02, 102.02, 98.02], [1.5, 1.5, 3.5, 3.5])
+      [98.02, 102.02, 102.02, 98.02], [1.5, 1.5, 3.5, 3.5])
   baz = Target(name='baz',
                stable_hash=TargetHash('geometric_baz'),
                content_hash='content_baz',
@@ -224,7 +223,7 @@ def test_three_out_of_order_targets(test_context) -> None:
 
 def test_three_targets_and_an_outlier(test_context) -> None:
   foo_footprint = SingleSphericalPolygon.from_radec([98, 102, 102, 98],
-                                                           [-1, -1, 1, 1])
+                                                    [-1, -1, 1, 1])
   foo = Target(name='foo',
                stable_hash=TargetHash('geometric_foo'),
                content_hash='content_foo',
@@ -241,7 +240,7 @@ def test_three_targets_and_an_outlier(test_context) -> None:
                projected_footprints={})
 
   bar_footprint = SingleSphericalPolygon.from_radec([95, 99, 99, 95],
-                                                           [-1, -1, 1, 1])
+                                                    [-1, -1, 1, 1])
   bar = Target(name='bar',
                stable_hash=TargetHash('geometric_bar'),
                content_hash='content_bar',
@@ -257,8 +256,8 @@ def test_three_targets_and_an_outlier(test_context) -> None:
                healpix_cells=healpix_cells_from_poly(bar_footprint),
                projected_footprints={})
 
-  baz_footprint = SingleSphericalPolygon.from_radec(
-                   [95, 99, 99, 95], [0.5, 0.5, 2.5, 2.5])
+  baz_footprint = SingleSphericalPolygon.from_radec([95, 99, 99, 95],
+                                                    [0.5, 0.5, 2.5, 2.5])
   baz = Target(name='baz',
                stable_hash=TargetHash('geometric_baz'),
                content_hash='content_baz',
@@ -274,8 +273,8 @@ def test_three_targets_and_an_outlier(test_context) -> None:
                healpix_cells=healpix_cells_from_poly(baz_footprint),
                projected_footprints={})
 
-  outlier_footprint = SingleSphericalPolygon.from_radec(
-                       [96, 100, 100, 96], [-1.5, -1.5, 0.5, 0.5])
+  outlier_footprint = SingleSphericalPolygon.from_radec([96, 100, 100, 96],
+                                                        [-1.5, -1.5, 0.5, 0.5])
   outlier = Target(name='outlier',
                    stable_hash=TargetHash('geometric_outlier'),
                    content_hash='content_outlier',
@@ -314,12 +313,12 @@ def test_three_targets_and_an_outlier(test_context) -> None:
 
 def test_ic1318(test_context) -> None:
   foo_footprint = SingleSphericalPolygon(
-                   np.array([[0.45603681, -0.56689475, 0.6860472],
-                             [0.48206283, -0.60210192, 0.6364658],
-                             [0.44676643, -0.62853698, 0.63666398],
-                             [0.420705, -0.59334582, 0.68625654],
-                             [0.45603681, -0.56689475, 0.6860472]]),
-                   np.array([0.45175641, -0.59818691, 0.66188259]))
+      np.array([[0.45603681, -0.56689475, 0.6860472],
+                [0.48206283, -0.60210192, 0.6364658],
+                [0.44676643, -0.62853698, 0.63666398],
+                [0.420705, -0.59334582, 0.68625654],
+                [0.45603681, -0.56689475, 0.6860472]]),
+      np.array([0.45175641, -0.59818691, 0.66188259]))
   foo = Target(name='foo',
                stable_hash=TargetHash('geometric_foo'),
                content_hash='content_foo',
@@ -336,12 +335,12 @@ def test_ic1318(test_context) -> None:
                projected_footprints={})
 
   bar_footprint = SingleSphericalPolygon(
-                   np.array([[0.47687137, -0.5960087, 0.64603973],
-                             [0.50124499, -0.62906976, 0.59415881],
-                             [0.46588868, -0.65547604, 0.59438951],
-                             [0.44152953, -0.62243363, 0.64624148],
-                             [0.47687137, -0.5960087, 0.64603973]]),
-                   np.array([0.47176113, -0.62623935, 0.62069777]))
+      np.array([[0.47687137, -0.5960087, 0.64603973],
+                [0.50124499, -0.62906976, 0.59415881],
+                [0.46588868, -0.65547604, 0.59438951],
+                [0.44152953, -0.62243363, 0.64624148],
+                [0.47687137, -0.5960087, 0.64603973]]),
+      np.array([0.47176113, -0.62623935, 0.62069777]))
   bar = Target(name='bar',
                stable_hash=TargetHash('geometric_bar'),
                content_hash='content_bar',

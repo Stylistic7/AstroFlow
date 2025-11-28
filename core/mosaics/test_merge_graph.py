@@ -263,8 +263,8 @@ def test_orion_mosaic(test_context) -> None:
   assert len(context.mosaics) == 1
   mosaic = next(iter(context.mosaics.values()))
 
-  assert (mosaic.strips, [['2e5e69b75efbc277', '15a294ac14d63dea'],
-                          ['1101452f8cf2f9ff', '6d9f6be3ffab0f22']])
+  assert mosaic.strips == [['2e5e69b75efbc277', '15a294ac14d63dea'],
+                           ['1101452f8cf2f9ff', '6d9f6be3ffab0f22']]
 
   mode = QualityLevel.SUBFRAME
   filter = 'H'
@@ -278,18 +278,14 @@ def test_orion_mosaic(test_context) -> None:
                                           viewbox, masks))
   print_graph(graph)
 
-  place_0_0 = Node(build_placement_subgraph, mode,
-                   mosaic, stacks['2e5e69b75efbc277'], filter,
-                   viewbox, None)
-  place_0_1 = Node(build_placement_subgraph, mode,
-                   mosaic, stacks['15a294ac14d63dea'], filter,
-                   viewbox, None)
-  place_1_0 = Node(build_placement_subgraph, mode,
-                   mosaic, stacks['1101452f8cf2f9ff'], filter,
-                   viewbox, None)
-  place_1_1 = Node(build_placement_subgraph, mode,
-                   mosaic, stacks['6d9f6be3ffab0f22'], filter,
-                viewbox, None)
+  place_0_0 = Node(build_placement_subgraph, mode, mosaic,
+                   stacks['2e5e69b75efbc277'], filter, viewbox, None)
+  place_0_1 = Node(build_placement_subgraph, mode, mosaic,
+                   stacks['15a294ac14d63dea'], filter, viewbox, None)
+  place_1_0 = Node(build_placement_subgraph, mode, mosaic,
+                   stacks['1101452f8cf2f9ff'], filter, viewbox, None)
+  place_1_1 = Node(build_placement_subgraph, mode, mosaic,
+                   stacks['6d9f6be3ffab0f22'], filter, viewbox, None)
 
   merge_0_0__0_1 = Node(merge_images,
                         mode,
@@ -354,12 +350,10 @@ def test_orion_mosaic_one_by_two(test_context) -> None:
            mode,
            mosaic,
            name=f'merge_{mosaic.stable_hash}_strip_1'): [
-          Node(build_placement_subgraph,
-               mode, mosaic, stacks['1101452f8cf2f9ff'], filter,
-               viewbox, None),
-          Node(build_placement_subgraph,
-               mode, mosaic, stacks['2e5e69b75efbc277'], filter,
-               viewbox, None),
+          Node(build_placement_subgraph, mode, mosaic,
+               stacks['1101452f8cf2f9ff'], filter, viewbox, None),
+          Node(build_placement_subgraph, mode, mosaic,
+               stacks['2e5e69b75efbc277'], filter, viewbox, None),
       ]
   })
 
@@ -385,6 +379,7 @@ def test_orion_mosaic_two_by_one(test_context) -> None:
   assert len(targets) == 2
   assert len(context.mosaics) == 1
   mosaic = next(iter(context.mosaics.values()))
+  print(f'### mosaic strips {mosaic.strips}')
 
   assert mosaic.strips == [['2e5e69b75efbc277', '15a294ac14d63dea']]
 
@@ -398,14 +393,13 @@ def test_orion_mosaic_two_by_one(test_context) -> None:
   graph = ray.get(
       build_mosaic_filter_subgraph.remote(mode, mosaic, strips, stacks, filter,
                                           viewbox, masks))
+  print(f'### graph')
   print_graph(graph)
 
-  place_0_0 = Node(build_placement_subgraph, mode,
-                   mosaic, stacks['2e5e69b75efbc277'], filter,
-                   viewbox, None)
-  place_0_1 = Node(build_placement_subgraph, mode,
-                   mosaic, stacks['15a294ac14d63dea'], filter,
-                   viewbox, None)
+  place_0_0 = Node(build_placement_subgraph, mode, mosaic,
+                   stacks['2e5e69b75efbc277'], filter, viewbox, None)
+  place_0_1 = Node(build_placement_subgraph, mode, mosaic,
+                   stacks['15a294ac14d63dea'], filter, viewbox, None)
   merge = Node(merge_images,
                mode,
                mosaic,
@@ -415,6 +409,9 @@ def test_orion_mosaic_two_by_one(test_context) -> None:
       place_0_1: [place_0_0],
       merge: [place_0_0, place_0_1]
   })
+
+  print(f'### expected_graph')
+  print_graph(expected_graph)
 
   assert canonicalize_graph(graph) == canonicalize_graph(expected_graph)
 
@@ -449,15 +446,12 @@ def test_orion_mosaic_missing_panel(test_context) -> None:
                                           viewbox, masks))
   print_graph(graph)
 
-  place_0_0 = Node(build_placement_subgraph, mode,
-                   mosaic, stacks['1101452f8cf2f9ff'], filter,
-                   viewbox, None)
-  place_1_0 = Node(build_placement_subgraph, mode,
-                   mosaic, stacks['2e5e69b75efbc277'], filter,
-                   viewbox, None)
-  place_1_1 = Node(build_placement_subgraph, mode,
-                   mosaic, stacks['15a294ac14d63dea'], filter,
-                viewbox, None)
+  place_0_0 = Node(build_placement_subgraph, mode, mosaic,
+                   stacks['1101452f8cf2f9ff'], filter, viewbox, None)
+  place_1_0 = Node(build_placement_subgraph, mode, mosaic,
+                   stacks['2e5e69b75efbc277'], filter, viewbox, None)
+  place_1_1 = Node(build_placement_subgraph, mode, mosaic,
+                   stacks['15a294ac14d63dea'], filter, viewbox, None)
   merge_1_0__1_1 = Node(merge_images,
                         mode,
                         mosaic,

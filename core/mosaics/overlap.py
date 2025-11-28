@@ -7,4 +7,3 @@ class Overlap(Enum):
   INCOMPATIBLE = 3
   LONG_EDGE = 4
   SHORT_EDGE = 5
-  CORNER = 6
