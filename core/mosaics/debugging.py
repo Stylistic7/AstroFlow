@@ -4,6 +4,7 @@ from spherical_geometry.polygon import SphericalPolygon  # type: ignore
 from shapely import Polygon  # type: ignore
 
 from context import context
+from targets.types import TargetHash, TargetsDict
 from mosaics.types import Mosaic
 from geometry.projection import Projection
 from geometry.polygons import project_polygon
@@ -41,12 +42,12 @@ def plot_targets_overlap(a, b, title: str = "Targets Overlap") -> None:
 
   plt.show()
 
+def plot_mosaic(targets: TargetsDict, mosaic: Mosaic, title: str = 'Mosaic') -> None:
+  plot_targets_and_footprint(targets, mosaic.target_ids, mosaic.footprint, title)
 
-def plot_mosaic(mosaic: Mosaic, title: str = 'Mosaic') -> None:
+def plot_targets_and_footprint(targets: TargetsDict, target_ids: list[TargetHash], footprint: SphericalPolygon | None, title: str = 'Mosaic') -> None:
   import ray
   from mosaics.identification import targets_overlap, Overlap
-
-  targets = context.grouped_targets
 
   plt.figure()
   plt.title(title)
@@ -54,7 +55,7 @@ def plot_mosaic(mosaic: Mosaic, title: str = 'Mosaic') -> None:
 
   projection = MercatorProjection()
 
-  for i, target_id in enumerate(mosaic.target_ids):
+  for i, target_id in enumerate(target_ids):
     target = targets[target_id]
 
     ra, dec = (np.radians(np.array(x)) for x in target.center)
@@ -64,7 +65,7 @@ def plot_mosaic(mosaic: Mosaic, title: str = 'Mosaic') -> None:
 
     acceptable_overlaps = [Overlap.LONG_EDGE, Overlap.SHORT_EDGE]
     overlapping_targets = [
-        tid for tid in mosaic.target_ids
+        tid for tid in target_ids
         if ray.get(targets_overlap.remote(targets[target_id], targets[tid])) in
         acceptable_overlaps
     ]
@@ -80,6 +81,7 @@ def plot_mosaic(mosaic: Mosaic, title: str = 'Mosaic') -> None:
 
     plt.scatter([center[0]], [center[1]], color='black')
 
-  draw_spherical_polygon(mosaic.footprint, projection, color='red')
+  if footprint is not None:
+    draw_spherical_polygon(footprint, projection, color='red')
 
   plt.show()

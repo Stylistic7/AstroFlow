@@ -1,33 +1,25 @@
-import traceback
 import structlog
 from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon  # type: ignore
 from spherical_geometry.vector import vector_to_lonlat
-from spherical_geometry import great_circle_arc
 import ray
 import numpy as np
 import random
-from typing import Any, Sequence
+from typing import Any
 from dataclasses import asdict
 from beartype import beartype
-import time
 from collections import defaultdict
 from itertools import combinations
 
-from context import context
 from mosaics.types import Mosaic, MosaicHash, MosaicsDict, Strip
 from catalogs import position_string
 from geometry import footprints
-from hashing import hash_list
 from targets.types import TargetHash, Target, TargetsDict
-from mosaics.debugging import plot_mosaic, plot_targets_overlap
+from mosaics.debugging import plot_targets_and_footprint, plot_mosaic, plot_targets_overlap
 from mosaics.disjoint_set import HashDisjointSet
 from mosaics.overlap import Overlap
 from decorators import cached
 from attributes import AstrometricAttributes, ChronologyAttributes
 from attributes.astrometric_attributes import healpix_cells_from_poly
-
-# TODO: Make the functions in this file functional (e.g. pass TargetsDict into
-# them, vs. relying on context).
 
 logger = structlog.get_logger()
 log = logger
@@ -173,12 +165,11 @@ def targets_overlap(
 
 
 def group_targets(
+    targets: TargetsDict,
     target_ids: list[TargetHash],
     allowed_overlaps,
-    debug: bool = False,
 ) -> list[set[TargetHash]]:
   assert len(target_ids) > 0
-  targets = context.grouped_targets
 
   target_ids_for_cell = defaultdict(list)
   for target_id in target_ids:
@@ -210,24 +201,26 @@ def group_targets(
   return result
 
 
-def test_commutativity():
-  targets = context.grouped_targets
+# def test_commutativity():
+#   targets = context.grouped_targets
 
-  for a in targets.keys():
-    for b in targets.keys():
-      a_to_b = ray.get(targets_overlap.remote(targets[a], targets[b]))
-      b_to_a = ray.get(targets_overlap.remote(targets[b], targets[a]))
-      assert a_to_b == b_to_a, f"### {a_to_b=} {b_to_a=}"
+#   for a in targets.keys():
+#     for b in targets.keys():
+#       a_to_b = ray.get(targets_overlap.remote(targets[a], targets[b]))
+#       b_to_a = ray.get(targets_overlap.remote(targets[b], targets[a]))
+#       assert a_to_b == b_to_a, f"### {a_to_b=} {b_to_a=}"
 
 
-def find_strips(target_ids: list[TargetHash],
+def find_strips(targets: TargetsDict, target_ids: list[TargetHash],
                 debug: bool = False) -> list[Strip]:
-  targets = context.grouped_targets
 
-  strips = group_targets(target_ids, allowed_overlaps=[Overlap.LONG_EDGE])
+  strips = group_targets(targets, target_ids, allowed_overlaps=[Overlap.LONG_EDGE])
   if debug:
     for i, strip in enumerate(strips):
       print(f'### Strip {i} is {strip}')
+    plot_targets_and_footprint(targets, target_ids,
+                                None,
+                                title="Mosaic")
 
   # TODO: Maybe use this same algorithm to order the strips themselves to make
   # sure the output strips can be merged with PhotometricMergeMosaic.
@@ -299,8 +292,7 @@ def find_strips(target_ids: list[TargetHash],
 
 
 def _identify_overlapping_targets(
-    debug: bool = False) -> list[list[TargetHash]]:
-  targets = context.grouped_targets
+    targets: TargetsDict, debug: bool = False) -> list[list[TargetHash]]:
   if not targets:
     return []
 
@@ -309,9 +301,9 @@ def _identify_overlapping_targets(
   log.info('Identifying overlapping targets', num_targets=len(targets))
 
   mosaics = group_targets(
+      targets,
       target_ids,
-      allowed_overlaps=[Overlap.LONG_EDGE, Overlap.SHORT_EDGE],
-      debug=debug)
+      allowed_overlaps=[Overlap.LONG_EDGE, Overlap.SHORT_EDGE])
 
   num_grouped_targets = sum(len(m) for m in mosaics)
   num_ungrouped_targets = len(targets) - num_grouped_targets
@@ -334,7 +326,7 @@ def identify_mosaics(targets: TargetsDict,
 
   # test_commutativity()
 
-  mosaics = _identify_overlapping_targets(debug)
+  mosaics = _identify_overlapping_targets(targets, debug)
   if not mosaics:
     print('### No overlapping targets found')
     return MosaicsDict()
@@ -347,88 +339,92 @@ def identify_mosaics(targets: TargetsDict,
     print(f'### Processing mosaic {i} / {len(mosaics)} '
           f'with {len(mosaic)} targets: {mosaic}')
 
+    stable_hash = targets[sorted(
+        mosaic, key=lambda t: targets[t].oldest_date)[0]].stable_hash
+
+    if debug:
+      plot_targets_and_footprint(targets, mosaic,
+                                 None,
+                                 title=f'Mosaic {stable_hash} before ordering')
+
+    oldest_date = min(targets[t].oldest_date for t in mosaic)
+    newest_date = min(targets[t].newest_date for t in mosaic)
+
+    image_scale = np.mean([targets[t].image_scale for t in mosaic])
+    rotation_angle = np.mean([targets[t].rotation_angle for t in mosaic])
+
+    # This doesn't seem work for polygons with holes in them.
+    # TODO: Consider using multi_union but falling back to convex hull when
+    # it doesn't work?
+    # old_footprint = next(
+    #     SphericalPolygon.multi_union([
+    #         SphericalPolygon(targets[target_id].footprint)
+    #         for target_id in mosaic
+    #     ]).points).tolist()
+
     try:
-      # TODO: Validate all targets here.
-
-      stable_hash = targets[sorted(
-          mosaic, key=lambda t: targets[t].oldest_date)[0]].stable_hash
-
-      oldest_date = min(targets[t].oldest_date for t in mosaic)
-      newest_date = min(targets[t].newest_date for t in mosaic)
-
-      image_scale = np.mean([targets[t].image_scale for t in mosaic])
-      rotation_angle = np.mean([targets[t].rotation_angle for t in mosaic])
-
-      # This doesn't seem work for polygons with holes in them.
-      # TODO: Consider using multi_union but falling back to convex hull when
-      # it doesn't work?
-      # old_footprint = next(
-      #     SphericalPolygon.multi_union([
-      #         SphericalPolygon(targets[target_id].footprint)
-      #         for target_id in mosaic
-      #     ]).points).tolist()
-
-      strips = find_strips(mosaic, debug)
+      strips = find_strips(targets, mosaic, debug)
       print('### strips', strips)
+    except AssertionError:
+      print(f'### Failed to order mosaic')
+      continue
 
-      for target_id in mosaic:
-        print(f'### Target {target_id} '
-              f'has {len(targets[target_id].footprint.points)} points')
+    for target_id in mosaic:
+      print(f'### Target {target_id} '
+            f'has {len(targets[target_id].footprint.points)} points')
 
-      all_points = [
-          targets[target_id].footprint.points[:-1] for target_id in mosaic
-      ]
-      all_points = np.concatenate(all_points)
-      print(f'### Mosaic composed of {len(mosaic)} targets '
-            f'and {all_points.shape} points')
-      footprint = SingleSphericalPolygon.convex_hull(all_points)
+    all_points = [
+        targets[target_id].footprint.points[:-1] for target_id in mosaic
+    ]
+    all_points = np.concatenate(all_points)
+    print(f'### Mosaic composed of {len(mosaic)} targets '
+          f'and {all_points.shape} points')
+    footprint = SingleSphericalPolygon.convex_hull(all_points)
 
-      healpix_cells = healpix_cells_from_poly(footprint)
+    healpix_cells = healpix_cells_from_poly(footprint)
 
-      # TODO: This is turbo weird, but appears to work. Just randomize the
-      # points until the `convex_hull()` operation is successful.
-      for i in range(10):
-        if SphericalPolygon.self_intersect(footprint.points):
-          points = footprint.points
-          random.shuffle(points)
-          footprint = SingleSphericalPolygon.convex_hull(points)
-        else:
-          print(f'### convex_hull successful after {i} iterations '
-                f'with {len(footprint.points)} points')
-          break
+    # TODO: This is turbo weird, but appears to work. Just randomize the
+    # points until the `convex_hull()` operation is successful.
+    for i in range(10):
+      if SphericalPolygon.self_intersect(footprint.points):
+        points = footprint.points
+        random.shuffle(points)
+        footprint = SingleSphericalPolygon.convex_hull(points)
+      else:
+        print(f'### convex_hull successful after {i} iterations '
+              f'with {len(footprint.points)} points')
+        break
 
-      # assert not SphericalPolygon.self_intersect(footprint.points)
-      projected_footprints = footprints.all_projections(footprint)
+    # assert not SphericalPolygon.self_intersect(footprint.points)
+    projected_footprints = footprints.all_projections(footprint)
 
-      center = vector_to_lonlat(*np.mean(footprint.points, axis=0))
-      name = position_string.canonical_target_string(center)
+    center = vector_to_lonlat(*np.mean(footprint.points, axis=0))
+    name = position_string.canonical_target_string(center)
 
-      chronology_attributes = ChronologyAttributes(stable_hash, oldest_date,
-                                                   newest_date)
-      astrometric_attributes = AstrometricAttributes(
-          name=name,
-          center=list(center),
-          image_scale=image_scale,
-          rotation_angle=rotation_angle,
-          footprint=footprint,
-          healpix_cells=healpix_cells,
-          projected_footprints=projected_footprints)
+    chronology_attributes = ChronologyAttributes(stable_hash, oldest_date,
+                                                 newest_date)
+    astrometric_attributes = AstrometricAttributes(
+        name=name,
+        center=list(center),
+        image_scale=image_scale,
+        rotation_angle=rotation_angle,
+        footprint=footprint,
+        healpix_cells=healpix_cells,
+        projected_footprints=projected_footprints)
 
-      attributes: dict[str, Any] = asdict(chronology_attributes) | asdict(
-          astrometric_attributes) | {
-              'stable_hash': stable_hash,
-              'target_ids': sorted(mosaic),
-              'strips': strips,
-          }
+    attributes: dict[str, Any] = asdict(chronology_attributes) | asdict(
+        astrometric_attributes) | {
+            'stable_hash': stable_hash,
+            'target_ids': sorted(mosaic),
+            'strips': strips,
+        }
 
-      output_mosaic = Mosaic(**attributes)
-      print(f'### Made output_mosaic {output_mosaic}')
+    output_mosaic = Mosaic(**attributes)
+    print(f'### Made output_mosaic {output_mosaic}')
 
-      if debug:
-        plot_mosaic(output_mosaic, title=f'Mosaic')
+    if debug:
+      plot_mosaic(targets, output_mosaic, title=f'Mosaic {stable_hash} after ordering')
 
-      output_mosaics[stable_hash] = output_mosaic
-    except Exception as e:
-      traceback.print_exc()
+    output_mosaics[stable_hash] = output_mosaic
 
   return output_mosaics
