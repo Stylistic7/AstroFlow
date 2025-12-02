@@ -20,6 +20,14 @@ def make_test_context(
 
   context.quarantined_files = []
 
+  context.grouped_stacks = {}
+  context.grouped_targets = {}
+  context.grouped_mosaics = {} 
+
+  context.stacks = {}
+  context.targets = {}
+  context.mosaics = {} 
+
   context.mock_pixinsight = True
   context.mock_plate_solving = True
 

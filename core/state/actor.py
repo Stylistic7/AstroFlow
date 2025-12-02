@@ -21,7 +21,7 @@ from stacks.post_process import post_process_stack
 from mosaics.post_process import post_process_mosaic
 from asiair.download_asiair import download_from_asiairs
 from metadata.image_metadata import scatter_compute_image_metadata
-from customization.compute_graph import build_customize_graph
+# from customization.compute_graph import build_customize_graph
 from metadata.image_metadata import load_metadata
 
 
@@ -46,10 +46,6 @@ def _download_from_asiairs() -> Graph:
           download_from_asiairs,
           (scatter_compute_image_metadata, 'input'),
           build_regroup_graph,
-          build_customize_graph,
-          process_stacks_for_ui,
-          process_targets_for_ui,
-          process_mosaics_for_ui,
           build_preview_graph,
           build_main_processing_graph,
       )

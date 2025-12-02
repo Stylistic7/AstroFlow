@@ -17,9 +17,15 @@ from attributes.astrometric_attributes import healpix_cells_from_poly
 from stacks.types import StackHash
 from decorators import cached
 from hashing.types import LargeObject
+from customization.types import CustomizedStack
 
 @cached.remote
 def group_stacks_into_targets(metadata_ref: LargeObject, stacks: CompositeStacksDict) -> TargetsDict:
+  print(f'### group_stacks_into_targets type(stacks) {type(stacks)} len {len(stacks)}')
+
+  for key, value in stacks.items():
+    print(f'### {key=} type {type(value)} image_type {value.image_type} str {(str(value))}')
+
   metadata = metadata_ref.get()
   cosine_similarity_threshold = context.cosine_similarity_threshold
 
@@ -41,7 +47,7 @@ def group_stacks_into_targets(metadata_ref: LargeObject, stacks: CompositeStacks
   values = {
       id: center_polygon_image_scale(stack)
       for id, stack in stacks.items()
-      if type(stack) is CompositeStack and stack.image_type == 'light'
+      if type(stack) is CustomizedStack and stack.image_type == 'light'
   }
 
   print(f'### Finding targets out of {len(values)} light-frame stacks')
@@ -74,7 +80,10 @@ def group_stacks_into_targets(metadata_ref: LargeObject, stacks: CompositeStacks
             for stack_id in stack_ids
         ])
     points = list(footprint.points)
-    assert len(points) == 1
+    if len(points) != 1:
+      print(f'### Target with {stack_ids=} resulted in a disjoint polygon')
+      return None
+      
     points = points[0]
     footprint = SingleSphericalPolygon(points)
     if not footprint.is_clockwise():
@@ -111,7 +120,7 @@ def group_stacks_into_targets(metadata_ref: LargeObject, stacks: CompositeStacks
     return Target(**attributes)
 
   targets_list = [new_target(g) for g in groups]
-  targets = {t.stable_hash: t for t in targets_list}
+  targets = {t.stable_hash: t for t in targets_list if t is not None}
 
   print(f'### Found {len(targets)} targets: {targets.keys()}')
   return targets

@@ -10,7 +10,6 @@ from previews.types import QualityLevel
 from mosaics.identification import identify_mosaics
 from stacks.compute_graph import build_stacking_subgraph, process_stacks_for_ui
 from targets.compute_graph import build_target_subgraph, process_targets_for_ui
-from targets.types import TargetsDict
 from targets.identification import group_stacks_into_targets
 from mosaics.compute_graph import build_mosaic_subgraph, process_mosaics_for_ui
 from dependency_graph import Graph, chain
@@ -18,7 +17,7 @@ from stacks.identification import identify_stacks
 from stacks.composite_stack import CompositeStacksDict, SimpleStacksDict
 from stacks.validation import validate_stacks
 from decorators import cached
-from customization.compute_graph import build_customize_graph
+from customization.compute_graph import scatter_customize_stacks, scatter_customize_targets, scatter_customize_mosaics
 from mosaics.types import MosaicsDict
 from mosaics.compute_graph import stacks_for_mosaic, targets_for_mosaic
 from quarantining.quarantining import quarantine_calibration_stacks
@@ -32,27 +31,6 @@ def store_calibration_stacks(calibration_stacks: SimpleStacksDict) -> None:
   print(f'### store_calibration_stacks: Stored '
         f'{len(calibration_stacks)} calibration stacks')
   return calibration_stacks
-
-
-@ray.remote
-def store_stacks(stacks: CompositeStacksDict) -> None:
-  context.grouped_stacks = stacks
-  print(f'### store_stacks: Stored {len(stacks)} stacks')
-  return stacks
-
-
-@ray.remote
-def store_targets(targets: TargetsDict) -> None:
-  context.grouped_targets = targets
-  print(f'### store_targets: Stored {len(targets)} targets')
-  return targets
-
-
-@ray.remote
-def store_mosaics(mosaics: MosaicsDict) -> None:
-  context.grouped_mosaics = mosaics
-  print(f'### store_mosaics: Stored {len(mosaics)} mosaics')
-  return mosaics
 
 
 @cached.remote
@@ -70,16 +48,9 @@ def scatter_spatial_groups(metadata_ref: LargeObject, spatial_groups) -> Graph:
           (identify_stacks, metadata_ref, g) for g in spatial_groups
       },
       validate_stacks: {gather_spatial_groups},
-      store_stacks: {validate_stacks}
   })
 
   return graph
-
-
-@cached.remote
-def regroup_graph_done() -> None:
-  pass
-
 
 # TODO: Add step that cleans metadata, removing any images that won't make it
 # through the remaining steps, and alerting the user.
@@ -89,17 +60,23 @@ def build_regroup_graph(metadata_ref: LargeObject) -> Graph:
       **chain(
           (cluster_by_image_center, metadata_ref),
           (scatter_spatial_groups, metadata_ref),
-          (group_stacks_into_targets, metadata_ref),
-          store_targets,
-          identify_mosaics,
-          store_mosaics,
       ),
       **chain(
           (identify_calibration_stacks, metadata_ref),
           quarantine_calibration_stacks,
           store_calibration_stacks,
-      ),
-      regroup_graph_done: {store_mosaics, store_calibration_stacks},
+      ), scatter_customize_stacks: [(scatter_spatial_groups, metadata_ref),
+                                    quarantine_calibration_stacks],
+      process_stacks_for_ui: {scatter_customize_stacks},
+      (group_stacks_into_targets, metadata_ref): {scatter_customize_stacks},
+      scatter_customize_targets: {(group_stacks_into_targets, metadata_ref)},
+      process_targets_for_ui: {scatter_customize_targets},
+      identify_mosaics: {scatter_customize_targets},
+      scatter_customize_mosaics: {identify_mosaics},
+      process_mosaics_for_ui: [
+          scatter_customize_stacks, scatter_customize_targets,
+          scatter_customize_mosaics
+      ]
   })
 
 
@@ -186,10 +163,6 @@ def build_compute_graph() -> Graph:
       **chain(
           (scatter_compute_image_metadata, 'all'),
           build_regroup_graph,
-          build_customize_graph,
-          process_stacks_for_ui,
-          process_targets_for_ui,
-          process_mosaics_for_ui,
           build_preview_graph,
           build_main_processing_graph,
       )

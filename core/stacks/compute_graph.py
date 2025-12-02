@@ -8,6 +8,7 @@ from stacks.stacking import stack_files
 from stacks.composite_stack import CompositeStack
 from stacks.post_process import post_process_stack
 from stacks.convert_to_dict import convert_to_dict
+from stacks.composite_stack import CompositeStacksDict
 from dependency_graph import Graph, Node
 from decorators import cached
 from metadata.image_metadata import compute_image_metadata
@@ -83,7 +84,8 @@ def get_stack_image(mode: QualityLevel, stack: CompositeStack) -> Graph:
 
 
 @ray.remote
-def process_stacks_for_ui() -> None:
+def process_stacks_for_ui(stacks: CompositeStacksDict) -> None:
+  print(f'### process_stacks_for_ui type(stacks) {type(stacks)}')
 
   def my_transform(v):
     if type(v) is np.ndarray:
@@ -111,4 +113,6 @@ def process_stacks_for_ui() -> None:
     return result
 
   # TODO: Parallelize this.
-  context.ui_stacks = {h: prepare_stack(s) for h, s in context.stacks.items()}
+  ui_stacks = {h: prepare_stack(s) for h, s in stacks.items()}
+  context.ui_stacks = ui_stacks
+  return ui_stacks

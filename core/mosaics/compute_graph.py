@@ -36,7 +36,7 @@ from metadata.image_metadata import compute_image_metadata
 from products import makes_image
 from stacks.convert_to_dict import convert_to_dict
 from dependency_graph import run_graph
-
+from mosaics.types import MosaicsDict
 
 @PixInsight()
 def save_uncompressed(images: ImageList, output_filenames: list[Path]):
@@ -282,11 +282,9 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
 
   return graph
 
-
 @ray.remote
-def process_mosaics_for_ui() -> None:
-  stacks = context.stacks
-  targets = context.targets
+def process_mosaics_for_ui(stacks: CompositeStacksDict, targets: TargetsDict, mosaics: MosaicsDict) -> None:
+  print(f'### process_mosaics_for_ui')
 
   def my_transform(v):
     if type(v) is np.ndarray:
@@ -310,4 +308,6 @@ def process_mosaics_for_ui() -> None:
     return result
 
   # TODO: Parallelize this.
-  context.ui_mosaics = {h: prepare_mosaic(s) for h, s in context.mosaics.items()}
+  ui_mosaics = {h: prepare_mosaic(s) for h, s in mosaics.items()}
+  context.ui_mosaics = ui_mosaics
+  return ui_mosaics

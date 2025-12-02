@@ -105,8 +105,7 @@ def _build_cal_index(cal_stacks: dict[StackHash, CalibrationStack]):
   return bias_by_cam, dark_by_cam, flat_by_cam_filter
 
 
-def associate_with_stack(stack: CompositeStack) -> CompositeStack:
-  cal_stacks = context.calibration_stacks
+def associate_with_stack(stack: CompositeStack, cal_stacks: SimpleStacksDict) -> CompositeStack:
   bias_by_cam, dark_by_cam, flat_by_cam_filter = _build_cal_index(cal_stacks)
 
   def choose_bias(sub: SimpleStack) -> StackHash | None:

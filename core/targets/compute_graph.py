@@ -6,6 +6,7 @@ from context import context
 from dependency_graph import Graph
 from targets.types import Target
 from targets.post_process import post_process_target
+from targets.types import TargetsDict
 from stacks.compute_graph import build_stacking_subgraph
 from stacks.convert_to_dict import convert_to_dict
 from dependency_graph import run_graph
@@ -26,7 +27,7 @@ def build_target_subgraph(target: Target) -> Graph:
 
 
 @ray.remote
-def process_targets_for_ui() -> None:
+def process_targets_for_ui(targets: TargetsDict) -> None:
 
   def my_transform(v):
     if type(v) is np.ndarray:
@@ -47,4 +48,6 @@ def process_targets_for_ui() -> None:
     return result
 
   # TODO: Parallelize this.
-  context.ui_targets = {h: prepare_target(s) for h, s in context.targets.items()}
+  ui_targets = {h: prepare_target(s) for h, s in targets.items()}
+  context.ui_targets = ui_targets
+  return ui_targets
