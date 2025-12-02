@@ -16,7 +16,7 @@ from previews.types import QualityLevel
 from mosaics.compute_graph import build_mosaic_subgraph, stacks_for_mosaic, targets_for_mosaic
 from dependency_graph import Graph, run_graph
 from metadata.image_metadata import load_metadata, scatter_compute_image_metadata
-from customization.compute_graph import build_customize_graph
+# from customization.compute_graph import build_customize_graph
 from stacks.post_process import post_process_stack
 from state.actor import state
 from state.types import Action
@@ -43,9 +43,9 @@ def regroup(args):
   state.enqueue(Action(type='regroup', **vars(args)))
 
 
-def customize(args):
-  print(f'### Customizing...')
-  run_graph(Graph({build_customize_graph: {load_metadata}}))
+# def customize(args):
+#   print(f'### Customizing...')
+#   run_graph(Graph({build_customize_graph: {load_metadata}}))
 
 
 def make_preview(args):

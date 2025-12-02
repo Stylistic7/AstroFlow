@@ -78,6 +78,7 @@ def scatter_customize_targets() -> None:
 # TODO: Make this a pure function.
 @ray.remote
 def scatter_customize_mosaics(*mosaics) -> None:
+  print(f'### scatter_customize_mosaics')
   quarantined_mosaics = context.quarantined_mosaics or []
   context.mosaics = {
       id: t

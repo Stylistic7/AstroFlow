@@ -79,16 +79,15 @@ const ProgressComponent = () => {
               <Box key={processName} sx={{ mb: 2, width: '100%' }}>
                 {/* Process Name as Title */}
                 <Typography variant="subtitle1" gutterBottom>
-                  Process "{processName}" ({data.total_number - data.remaining_number} / {data.total_number})
+                  {processName} ({data.total_number - data.remaining_number} / {data.total_number})
                 </Typography>
-                <Typography variant="body1">Remaining Time: {formatTime(data.estimated_time)}</Typography>
                 <Box display="flex" alignItems="center">
                   <Box sx={{ width: '100%', mr: 1 }}>
                     <LinearProgress variant="determinate" value={progress} />
                   </Box>
                   <Box>
                     <Typography variant="body2" color="textSecondary">
-                      {`${progress.toFixed(2)}%`}
+                      {`${progress.toFixed(0)}%`}
                     </Typography>
                   </Box>
                 </Box>
