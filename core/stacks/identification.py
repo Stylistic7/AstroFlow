@@ -2,6 +2,7 @@ import ray
 import numpy as np
 from beartype import beartype
 
+from context import context
 from typing import Iterator
 import clustering
 from stacks.composite_stack import CompositeStack, CompositeStacksDict
@@ -77,10 +78,10 @@ def identify_stacks(metadata_ref: LargeObject,
     for camera_frames in camera_clusters(scale_frames):
       for rotation_frames in rotation_clusters(camera_frames):
         for filter_frames in filter_clusters(rotation_frames):
-          if filter_frames:
+          if len(filter_frames) >= context.min_frames_in_stack:
             new_stack = CompositeStack.from_frames(filter_frames,
                                                    metadata=metadata)
-            if new_stack:
+            if new_stack is not None:
               new_stacks[new_stack.stable_hash] = new_stack
 
   print(f'### identify_stacks done, returning {len(new_stacks)} stacks')

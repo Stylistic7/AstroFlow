@@ -34,6 +34,9 @@ def select_subframes(stack: CompositeStack) -> CompositeStack:
   print(f'### Selected {len(selected_light_frames)} light frames '
         f'out of {len(sorted_light_frames)}')
 
+  if len(selected_light_frames) < context.min_frames_in_stack:
+    return None
+
   new_contents = {}
   for content_hash, substack in stack.contents.items():
     if new_frames := [f for f in substack.frames if f in selected_light_frames]:
