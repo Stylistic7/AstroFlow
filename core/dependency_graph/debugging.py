@@ -7,7 +7,7 @@ def _tuple_values(tup: tuple) -> str:
   return ', '.join([str(t) for t in tup])
 
 
-def node_to_string(node: Node, exclude_args: bool = False) -> str:
+def node_to_string(node: Node, exclude_args: bool = True) -> str:
   node = canonicalize_node(node)
 
   string = f'Node(fn={node.task._function.__name__}'

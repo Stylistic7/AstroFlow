@@ -122,7 +122,7 @@ def run_graph(graph: Graph,
     elapsed_time = time.time() - start_time
     if elapsed_time > 1.0:
       print(f'### make_run_fn took {elapsed_time:.3f} s '
-            f'for node {node_to_string(node, exclude_args=True)}')
+            f'for node {node_to_string(node)}')
     return result
 
   # TODO: Consider embellishing this to force graphs like {foo: [bar, baz]} to
@@ -143,7 +143,7 @@ def run_graph(graph: Graph,
     last_node_string = None
     num_duplicates = 0
     for ts, node in ready:
-      node_string = node_to_string(node, exclude_args=True)
+      node_string = node_to_string(node)
       if node_string == last_node_string:
         num_duplicates += 1
         continue
@@ -161,13 +161,13 @@ def run_graph(graph: Graph,
     if isinstance(result, tuple) and isinstance(result[0], LogContainer):
       log, result = result
       if debug:
-        print(f'### node {node_to_string(node, exclude_args=True)} produced '
+        print(f'### node {node_to_string(node)} produced '
               f'a log of length {len(log)}')
 
     if (result_size_mb := get_deep_size(result) / 1024 /
         1024) > _RESULT_SIZE_WARNING_THRESHOLD_MB:
       print(
-          f'### WARNING: node {node_to_string(node, exclude_args=True)} produced '
+          f'### WARNING: node {node_to_string(node)} produced '
           f'large object of type {type(result)} and '
           f'size {result_size_mb:.3f} MB')
 
