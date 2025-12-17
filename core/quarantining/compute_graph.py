@@ -1,21 +1,18 @@
 from dataclasses import replace
 
 from decorators import cached
-from context import context
-from targets.target import Target
+from targets.types import Target
 from targets.types import TargetHash
+from targets.types import TargetsDict
 from stacks.composite_stack import CompositeStacksDict, SimpleStacksDict
-from mosaics.types import MosaicHash
-from mosaics.mosaic import Mosaic
+from stacks.types import StackHash
+from mosaics.types import MosaicHash, MosaicsDict
+from mosaics.types import Mosaic
 
 
-@cached.remote(task_config=dict(cache=False))
-def quarantine_stacks() -> SimpleStacksDict | CompositeStacksDict:
-  stacks = context.stacks
-  if not stacks:
-    return {}
-
-  quarantined_stacks = context.quarantined_stacks or set()
+@cached.remote
+def quarantine_stacks(quarantined_stacks: list[StackHash],
+                      stacks: CompositeStacksDict) -> CompositeStacksDict:
   return {
       stack_id: stack
       for stack_id, stack in stacks.items()
@@ -23,17 +20,14 @@ def quarantine_stacks() -> SimpleStacksDict | CompositeStacksDict:
   }
 
 
-# TODO: This should be made functional.
-@cached.remote(task_config=dict(cache=False))
-def quarantine_targets() -> dict[TargetHash, Target]:
-  stacks = context.stacks
-  targets = context.targets
+@cached.remote
+def quarantine_targets(
+    quarantined_stacks: list[StackHash],
+    quarantined_targets: list[TargetHash],
+    stacks: CompositeStacksDict,
+    targets: TargetsDict,
+) -> TargetsDict:
   print(f'### quarantine_targets {len(targets)} targets')
-  if not targets:
-    return {}
-
-  quarantined_stacks = context.quarantined_stacks or set()
-  quarantined_targets = context.quarantined_targets or set()
 
   output_targets = {}
   for target_id, target in targets.items():
@@ -51,38 +45,40 @@ def quarantine_targets() -> dict[TargetHash, Target]:
     target = replace(target, stack_ids=stack_ids)
     output_targets[target_id] = target
 
+  print(f'### quarantine_targets returning {len(output_targets)} targets')
   return output_targets
 
 
-@cached.remote(task_config=dict(cache=False))
-def quarantine_mosaics() -> dict[MosaicHash, Mosaic]:
-  targets = context.targets
-  mosaics = context.mosaics
-  print(f'### quarantine_mosaics {len(mosaics)} mosaics')
-  if not mosaics:
-    return {}
-
-  quarantined_targets = context.quarantined_targets or set()
-  quarantined_mosaics = context.quarantined_mosaics or set()
-  print(f'### quarantined_targets {quarantined_targets}')
-  print(f'### quarantined_mosaics {quarantined_mosaics}')
-
+@cached.remote
+def quarantine_mosaics(quarantined_targets: list[TargetHash],
+                       quarantined_mosaics: list[MosaicHash],
+                       targets: TargetsDict,
+                       mosaics: MosaicsDict) -> MosaicsDict:
   output_mosaics = {}
   for mosaic_id, mosaic in mosaics.items():
     if mosaic_id in quarantined_mosaics:
       continue
 
-    new_target_ids, new_tile_indices = [], []
-    for target_id, tile_indices in zip(mosaic.target_ids, mosaic.tile_indices):
+    new_target_ids = []
+    for target_id in mosaic.target_ids:
       if target_id not in targets or target_id in quarantined_targets:
         continue
 
       new_target_ids.append(target_id)
-      new_tile_indices.append(tile_indices)
 
-    mosaic = replace(mosaic,
-                     target_ids=new_target_ids,
-                     tile_indices=new_tile_indices)
+    # TODO: After removing targets, strips have to be recomputed.
+    mosaic = replace(mosaic, target_ids=new_target_ids)
     output_mosaics[mosaic_id] = mosaic
 
   return output_mosaics
+
+
+@cached.remote
+def quarantine_calibration_stacks(
+    quarantined_calibration_stacks: list[StackHash],
+    cal_stacks: SimpleStacksDict) -> SimpleStacksDict:
+  return SimpleStacksDict({
+      h: s
+      for h, s in cal_stacks.items()
+      if h not in quarantined_calibration_stacks
+  })

@@ -1,21 +1,8 @@
-import ray
 from dataclasses import replace, asdict
-import time
 
 from context import context
-from decorators import cached
 from stacks.composite_stack import CompositeStack
-from stacks.simple_stack import SimpleStacksDict
 from attributes import ImagingAttributes
-from stacks.types import StackHash
-
-
-@cached.remote
-def quarantine_calibration_stacks(stacks: SimpleStacksDict) -> SimpleStacksDict:
-  quarantined_calibration_stacks = context.quarantined_calibration_stacks or []
-  return SimpleStacksDict({
-      h: s for h, s in stacks.items() if h not in quarantined_calibration_stacks
-  })
 
 
 # TODO: Ensure that all of the actions in this file are idempotent. The goal

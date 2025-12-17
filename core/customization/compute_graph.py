@@ -9,9 +9,9 @@ from calibration import associate_with_stack
 from decorators import cached
 from customization.subframe_selection import select_subframes
 from customization.settings import Settings, StackSettings
-from customization.types import CustomizedStack
+from customization.types import CustomizedStack, CustomizedStacksDict
 from quarantining.quarantining import apply_quarantine
-from mosaics.types import MosaicsDict
+from mosaics.types import MosaicsDict, MosaicHash
 from targets.types import TargetsDict
 
 def apply_settings(stack: CompositeStack, settings: Settings) -> CompositeStack:
@@ -26,12 +26,10 @@ def apply_settings(stack: CompositeStack, settings: Settings) -> CompositeStack:
   return replace(stack, contents=new_contents)
 
 
-@ray.remote
-def gather_customize_stacks(*stacks) -> None:
+@cached.remote
+def gather_customize_stacks(*stacks) -> CustomizedStacksDict:
   print(f'### gather_customize_stacks type(stacks) {type(stacks)} len {len(stacks)}')
-  stacks_dict = {s.stable_hash: s for s in stacks if s is not None}
-  context.stacks = stacks_dict
-  return stacks_dict
+  return {s.stable_hash: s for s in stacks if s is not None}
 
 
 @ray.remote
@@ -39,18 +37,14 @@ def store_customized_stack(stack) -> None:
   context.or_equals('stacks', {stack.stable_hash: stack})
 
 
-@ray.remote
-def scatter_customize_stacks(stacks: CompositeStacksDict, cal_stacks: SimpleStacksDict) -> Graph:
+@cached.remote
+def scatter_customize_stacks(settings: Settings, stacks: CompositeStacksDict, cal_stacks: SimpleStacksDict) -> Graph:
   print(f'### scatter_customize_stacks type(stacks) {type(stacks)} len {len(stacks)}')
   print(f'### scatter_customize_stacks type(cal_stacks) {type(cal_stacks)} len {len(cal_stacks)}')
   
-  quarantined_stacks = context.quarantined_stacks or []
-  settings = context.settings or Settings()
-
   tasks = []
   for stack_id, stack in stacks.items():
-    if stack_id not in quarantined_stacks:
-      tasks.append((customize_stack, stack, cal_stacks, settings))
+    tasks.append((customize_stack, stack, cal_stacks, settings))
 
   return Graph({gather_customize_stacks: tasks})
 
@@ -74,43 +68,18 @@ def customize_stack(stack: CompositeStack,
 
 
 # TODO: Implement real customization features.
-@ray.remote
-def scatter_customize_targets(targets: TargetsDict) -> None:
-  quarantined_targets = context.quarantined_targets or []
-  targets_dict = {
-      id: t
-      for id, t in targets.items()
-      if id not in quarantined_targets
-  }
-  context.targets = targets_dict
-  print(f'### scatter_customize_targets returning {len(targets_dict)} targets')
-  return targets_dict
+@cached.remote
+def scatter_customize_targets(settings: Settings, targets: TargetsDict) -> TargetsDict:
+  return targets
 
 
 # TODO: Implement real customization features.
-@ray.remote
-def scatter_customize_mosaics(mosaics: MosaicsDict) -> None:
-  print(f'### scatter_customize_mosaics')
-  quarantined_mosaics = context.quarantined_mosaics or []
-  mosaics_dict = {
-      id: t
-      for id, t in mosaics.items()
-      if id not in quarantined_mosaics
-  }
-  context.mosaics = mosaics_dict
-  return mosaics_dict
+@cached.remote
+def scatter_customize_mosaics(settings: Settings, mosaics: MosaicsDict) -> MosaicsDict:
+  return mosaics
 
 
 @cached.remote
 def customization_done() -> None:
   pass
 
-
-# @ray.remote
-# def build_customize_graph() -> Graph:
-#   return Graph({
-#       customization_done: {
-#           scatter_customize_stacks, scatter_customize_targets,
-#           scatter_customize_mosaics
-#       }
-#   })

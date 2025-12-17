@@ -61,7 +61,7 @@ def test_quarantine_toplevel_target(test_context):
   stacks = [s for s in context.stacks if type(s) is CompositeStack]
   assert all(len(s.dependencies) == 3 for s in stacks)
 
-  context.quarantined_targets = [next(iter(context.targets))]
+  context.quarantined_targets = (next(iter(context.targets)),)
 
   run_graph(build_compute_graph())
 
