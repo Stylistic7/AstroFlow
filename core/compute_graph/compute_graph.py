@@ -2,7 +2,6 @@ import ray
 
 from context import context
 from metadata.image_metadata import scatter_compute_image_metadata
-from metadata.classes import MetadataDict
 from clustering import cluster_by_image_center
 from calibration import identify_calibration_stacks
 from previews.stack_thumbnails import scatter_stack_thumbnails
@@ -11,18 +10,21 @@ from mosaics.identification import identify_mosaics
 from stacks.compute_graph import build_stacking_subgraph, process_stacks_for_ui
 from targets.compute_graph import build_target_subgraph, process_targets_for_ui
 from targets.identification import group_stacks_into_targets
+from targets.types import TargetsDict
 from mosaics.compute_graph import build_mosaic_subgraph, process_mosaics_for_ui
+from mosaics.types import MosaicsDict
 from dependency_graph import Graph, chain
 from stacks.identification import identify_stacks
 from stacks.composite_stack import CompositeStacksDict, SimpleStacksDict
 from stacks.validation import validate_stacks
 from decorators import cached
 from customization.compute_graph import scatter_customize_stacks, scatter_customize_targets, scatter_customize_mosaics
-from mosaics.types import MosaicsDict
 from mosaics.compute_graph import stacks_for_mosaic, targets_for_mosaic
-from quarantining.quarantining import quarantine_calibration_stacks
 from metadata.image_metadata import load_metadata
 from hashing.types import LargeObject
+from quarantining.compute_graph import quarantine_stacks, quarantine_calibration_stacks, quarantine_targets, quarantine_mosaics
+from customization.settings import Settings
+from customization.types import CustomizedStacksDict
 
 
 @ray.remote
@@ -33,49 +35,99 @@ def store_calibration_stacks(calibration_stacks: SimpleStacksDict) -> None:
   return calibration_stacks
 
 
-@cached.remote
-def gather_spatial_groups(*stacks_in: list[CompositeStacksDict]) -> None:
-  stacks = {key: value for d in stacks_in for key, value in d.items()}
+@ray.remote
+def store_stacks(stacks: CustomizedStacksDict):
+  context.stacks = stacks
+  print(f'### store_stacks: Stored {len(stacks)} stacks')
   return stacks
+
+
+@ray.remote
+def store_targets(targets: TargetsDict):
+  context.targets = targets
+  print(f'### store_targets: Stored {len(targets)} targets')
+  return targets
+
+
+@ray.remote
+def store_mosaics(mosaics: MosaicsDict):
+  context.mosaics = mosaics
+  print(f'### store_mosaics: Stored {len(mosaics)} mosaics')
+  return mosaics
+
+
+@cached.remote
+def gather_spatial_groups(
+    *stacks_in: list[CompositeStacksDict]) -> CompositeStacksDict:
+  return {key: value for d in stacks_in for key, value in d.items()}
 
 
 # TODO: Don't call build_spatial_group_graph for spatial groups that are cached
 # and unchanged.
-@cached.remote
+@ray.remote
 def scatter_spatial_groups(metadata_ref: LargeObject, spatial_groups) -> Graph:
-  graph = Graph({
+  return Graph({
       gather_spatial_groups: {
           (identify_stacks, metadata_ref, g) for g in spatial_groups
       },
       validate_stacks: {gather_spatial_groups},
   })
 
-  return graph
 
 # TODO: Add step that cleans metadata, removing any images that won't make it
 # through the remaining steps, and alerting the user.
-@cached.remote
+@ray.remote
 def build_regroup_graph(metadata_ref: LargeObject) -> Graph:
+  quarantined_stacks = context.quarantined_stacks or tuple()
+  quarantined_calibration_stacks = context.quarantined_calibration_stacks or tuple(
+  )
+  quarantined_targets = context.quarantined_targets or tuple()
+  quarantined_mosaics = context.quarantined_mosaics or tuple()
+  settings = context.settings or Settings()
+
+  scatter_spatial_groups_task = (scatter_spatial_groups, metadata_ref)
+  cluster_by_image_center_task = (cluster_by_image_center, metadata_ref)
+  identify_calibration_stacks_task = (identify_calibration_stacks, metadata_ref)
+  group_stacks_into_targets_task = (group_stacks_into_targets, metadata_ref)
+
+  quarantine_calibration_stacks_task = (quarantine_calibration_stacks,
+                                        quarantined_calibration_stacks)
+  quarantine_stacks_task = (quarantine_stacks, quarantined_stacks)
+  quarantine_targets_task = (quarantine_targets, quarantined_stacks,
+                             quarantined_targets)
+  quarantine_mosaics_task = (quarantine_mosaics, quarantined_targets,
+                             quarantined_mosaics)
+
+  scatter_customize_stacks_task = (scatter_customize_stacks, settings)
+  scatter_customize_targets_task = (scatter_customize_targets, settings)
+  scatter_customize_mosaics_task = (scatter_customize_mosaics, settings)
+
   return Graph({
-      **chain(
-          (cluster_by_image_center, metadata_ref),
-          (scatter_spatial_groups, metadata_ref),
-      ),
-      **chain(
-          (identify_calibration_stacks, metadata_ref),
-          quarantine_calibration_stacks,
-          store_calibration_stacks,
-      ), scatter_customize_stacks: [(scatter_spatial_groups, metadata_ref),
-                                    quarantine_calibration_stacks],
-      process_stacks_for_ui: {scatter_customize_stacks},
-      (group_stacks_into_targets, metadata_ref): {scatter_customize_stacks},
-      scatter_customize_targets: {(group_stacks_into_targets, metadata_ref)},
-      process_targets_for_ui: {scatter_customize_targets},
-      identify_mosaics: {scatter_customize_targets},
-      scatter_customize_mosaics: {identify_mosaics},
+      scatter_spatial_groups_task: {cluster_by_image_center_task},
+      quarantine_calibration_stacks_task: {identify_calibration_stacks_task},
+      store_calibration_stacks: {quarantine_calibration_stacks_task},
+      process_stacks_for_ui: {scatter_spatial_groups_task},
+      quarantine_stacks_task: {scatter_spatial_groups_task},
+      scatter_customize_stacks_task: [
+          quarantine_stacks_task, quarantine_calibration_stacks_task
+      ],
+      store_stacks: {scatter_customize_stacks_task},
+      group_stacks_into_targets_task: {scatter_customize_stacks_task},
+      scatter_customize_targets_task: {group_stacks_into_targets_task},
+      process_targets_for_ui: {group_stacks_into_targets_task},
+      quarantine_targets_task: [
+          scatter_spatial_groups_task, scatter_customize_targets_task
+      ],
+      store_targets: {quarantine_targets_task},
+      identify_mosaics: {quarantine_targets_task},
+      scatter_customize_mosaics_task: {identify_mosaics},
+      quarantine_mosaics_task: [
+          scatter_customize_targets_task, scatter_customize_mosaics_task
+      ],
+      store_mosaics: {quarantine_mosaics_task},
       process_mosaics_for_ui: [
-          scatter_customize_stacks, scatter_customize_targets,
-          scatter_customize_mosaics
+          scatter_spatial_groups_task, group_stacks_into_targets_task,
+          identify_mosaics
       ]
   })
 
@@ -119,8 +171,6 @@ def build_main_processing_graph() -> Graph:
   # shopping_cart += [('stack', stack_id) for stack_id in stacks.keys()]
   # shopping_cart += [('target', target_id) for target_id in targets.keys()]
   # shopping_cart += [('mosaic', mosaic_id) for mosaic_id in mosaics.keys()]
-
-  shopping_cart += [('mosaic', '75a1da6463e118e6')]
 
   # TODO: Maybe add prioritization options in the UI.
   graph = Graph({})
