@@ -89,8 +89,10 @@ def _copy_fits_files(fits_files: list[str], dest_dir: str) -> list[str] | None:
     return []
 
   print(f"Using rsync to copy {len(fits_files)} FITS files to '{dest_dir}'...")
-  ret = subprocess.run(['rsync', '-ua', '--inplace', *fits_files,
-                        dest_dir]).returncode
+  ret = subprocess.run([
+      'rsync', '-a', '--partial', '--checksum', '--inplace', *fits_files,
+      dest_dir
+  ]).returncode
   if ret != 0:
     print("Could not rsync FITS files")
     return None
@@ -213,6 +215,7 @@ def download_from_asiair(
 @ray.remote
 def downloads_complete():
   pass
+
 
 @ray.remote
 def download_from_asiairs() -> Graph:
