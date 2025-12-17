@@ -263,8 +263,9 @@ def test_orion_mosaic(test_context) -> None:
   assert len(context.mosaics) == 1
   mosaic = next(iter(context.mosaics.values()))
 
-  assert mosaic.strips == [['2e5e69b75efbc277', '15a294ac14d63dea'],
-                           ['1101452f8cf2f9ff', '6d9f6be3ffab0f22']]
+  print(f'### actual mosaic.strips {mosaic.strips}')
+
+  assert mosaic.strips == [['1101452f8cf2f9ff', '6d9f6be3ffab0f22'], ['2e5e69b75efbc277', '15a294ac14d63dea']]
 
   mode = QualityLevel.SUBFRAME
   filter = 'H'

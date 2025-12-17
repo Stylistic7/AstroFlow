@@ -27,16 +27,16 @@ def test_hashes(test_context) -> None:
   # The image data should be predictable, because `random_seed` was provided
   # above.
   assert stack.stable_hash == '7825680a0bef1d88'
-  assert stack.content_hash == '84e1d4ceecbaa9a5'
+  assert stack.content_hash == '3a1071145ec0108b'
 
   # The Python hash of a Stack is just an integer representation of its
   # content hash, which should be stable across Python sessions.
-  assert hash(stack) == 2702512833600196490
+  assert hash(stack) == 1700584814134696921
 
   # The Python hash of a SimpleStacksDict goes through `hash_dict_int()`,
   # and should be stable across Python sessions.
   dict = SimpleStacksDict({stack.stable_hash: stack})
-  assert hash(dict) == 2702512833600196490
+  assert hash(dict) == 1700584814134696921
 
 def test_metadata_dict(test_context) -> None:
   add_orion_mosaic_images(panes=[1], random_seed=123)

@@ -21,6 +21,7 @@ class LargeObject:
 
   def get(self) -> Any:
     try:
+      print(f'### Calling ray.get for LargeObject')
       return ray.get(self.ref)
     except Exception as e:
       key = ('large_object', self.content_hash)
