@@ -180,7 +180,7 @@ def run_script(tasks: list[ShellScriptTask],
       while not os.path.exists(start_sentinel_filename):
         if timeout and time.monotonic() - start_time > timeout:
           _kill_pixinsight_instance(slot)
-          raise Exception(f"PixInsight did not start within {timeout} seconds")
+          _start_pixinsight_instance(slot)
 
         # TODO: Bring the PixInsight window to the front on other platforms, too.
         # TODO: Does this work with any / all slots?
