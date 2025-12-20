@@ -172,6 +172,9 @@ def build_main_processing_graph() -> Graph:
   # shopping_cart += [('target', target_id) for target_id in targets.keys()]
   # shopping_cart += [('mosaic', mosaic_id) for mosaic_id in mosaics.keys()]
 
+  # shopping_cart += [('mosaic', '75a1da6463e118e6')]
+  # shopping_cart += [('mosaic', '0ee57ba3ed4695a3')]
+
   # TODO: Maybe add prioritization options in the UI.
   graph = Graph({})
   tasks = []
@@ -199,11 +202,7 @@ def build_main_processing_graph() -> Graph:
            stacks_for_mosaic(mosaic, stacks,
                              targets), targets_for_mosaic(mosaic, targets)))
 
-  metadata_task = (scatter_compute_image_metadata, 'all')
-
   graph[main_processing_graph_done] = tasks
-  graph[metadata_task] = {main_processing_graph_done}
-  graph[load_metadata] = {metadata_task}
 
   return graph
 
@@ -211,7 +210,7 @@ def build_main_processing_graph() -> Graph:
 def build_compute_graph() -> Graph:
   return Graph({
       **chain(
-          (scatter_compute_image_metadata, 'all'),
+          scatter_compute_image_metadata,
           build_regroup_graph,
           build_preview_graph,
           build_main_processing_graph,

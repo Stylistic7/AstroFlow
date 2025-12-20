@@ -81,22 +81,14 @@ from hashing.types import LargeObject
 # TODO: Add a task that checks that input and output directories exist. Many
 # tasks cannot run without them.
 @ray.remote
-def scatter_compute_image_metadata(mode: str, *filenames_in:
+def scatter_compute_image_metadata(*filenames_in:
                                    list[Path]) -> Graph:
   filenames_in = set(f for f in filenames_in if f is not None)
-
-  directories = {
-      None: [],
-      'input': context.input_dirs,
-      'master': [context.output_dir],
-      'all': context.input_dirs + [context.output_dir],
-  }[mode]
-
   filenames: set[str] = set(filenames_in)
 
   # TODO: Don't do anything if the directory's modification time hasn't
   # changed since the last time it was listed.
-  for dir in directories:
+  for dir in context.input_dirs:
     artifacts_for_dir = set(find_image_files(dir))
     print(f'### Directory {dir} contains {len(artifacts_for_dir)} files')
     filenames.update(artifacts_for_dir)

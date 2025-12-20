@@ -18,7 +18,7 @@ def compute_hash_for_filename() -> dict[str, str]:
 
 
 def compute_graph_fragment() -> Graph:
-  return chain((scatter_compute_image_metadata, 'input'),
+  return chain(scatter_compute_image_metadata,
                cluster_by_image_center)
 
 

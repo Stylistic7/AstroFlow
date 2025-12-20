@@ -12,7 +12,7 @@ from metadata.classes import MetadataDict
 
 
 def compute_graph_fragment():
-  return {(scatter_compute_image_metadata, 'input'): {}}
+  return {scatter_compute_image_metadata: {}}
 
 
 def get_filenames_in_cache():

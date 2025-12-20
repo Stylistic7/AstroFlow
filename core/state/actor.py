@@ -39,7 +39,7 @@ def _download_from_asiairs() -> Graph:
   return Graph({
       **chain(
           download_from_asiairs,
-          (scatter_compute_image_metadata, 'input'),
+          scatter_compute_image_metadata,
           build_regroup_graph,
           build_preview_graph,
           build_main_processing_graph,
@@ -178,7 +178,7 @@ class StateActor:
   # should be a generic operation.
   def _regroup(self, state: State) -> tuple[State, list[Action]]:
     graph = Graph(
-        {build_regroup_graph: {(scatter_compute_image_metadata, 'all')}})
+        {build_regroup_graph: {scatter_compute_image_metadata}})
     run_graph(graph)
     return state, [Action(type='announce', message='reload_data')]
 
