@@ -18,7 +18,7 @@ def _create_cache() -> diskcache.Cache:
     print(f'### Using real cache at {path}')
     os.makedirs(path, exist_ok=True)
     cache = diskcache.Cache(path,
-                           size_limit=int(50 * 1024 * 1024 * 1024),
+                           size_limit=int(100 * 1024 * 1024 * 1024),
                            eviction_policy='least-frequently-used')
     return add_lazy_load_functionality(
       cache, ['stacks', 'targets', 'mosaics', 'calibration_stacks'])
