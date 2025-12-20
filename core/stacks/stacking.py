@@ -179,8 +179,9 @@ def _stack_with_pixinsight(stack: Stack, metadata: dict[str, str]) -> Path:
 def stack_files(stack: Stack) -> XisfFilePath:
   # Determine the output file, and the metadata it should have.
   dest_filename = stack_files.filename_fn(stack).resolve_at(context.output_dir)
+  dest_filename_exists = os.path.exists(dest_filename)
   os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
-  print(f'### Entering stack_files for {stack} dest_filename {dest_filename}')
+  print(f'### Entering stack_files for {stack} {dest_filename=} {dest_filename_exists=}')
 
   metadata = {
       'IMAGETYP': f'Master {stack.image_type}',
@@ -191,8 +192,7 @@ def stack_files(stack: Stack) -> XisfFilePath:
   # TODO: This is kind of dangerous, because the output filename only depends
   # on the stack's own content hash -- the hash used by AstroFlowNode is more
   # complete and includes this function's code, for example.
-  if context.dangerously_accept_existing_files and os.path.exists(
-      dest_filename):
+  if context.dangerously_accept_existing_files and dest_filename_exists:
     print(f'### Dangerously skipping stacking because '
           f'file {dest_filename} already exists')
     update_header(dest_filename, metadata)
