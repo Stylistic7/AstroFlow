@@ -49,16 +49,10 @@ def build_stacking_subgraph(stack: CustomizedStack) -> Graph:
   calibration_subgraph = (build_calibration_stack_subgraph, stack)
 
   stack_task = (stack_files, stack)
-  stacking_metadata_task = Node(compute_image_metadata,
-                                name=f'stacking_{stack.stable_hash}')
   post_process_task = Node(post_process_stack, stack)
-  post_process_metadata_task = Node(compute_image_metadata,
-                                    name=f'post_process_{stack.stable_hash}')
 
   graph[stack_task] = {calibration_subgraph}
-  graph[stacking_metadata_task] = {stack_task}
-  graph[post_process_task] = {stacking_metadata_task}
-  graph[post_process_metadata_task] = {post_process_task}
+  graph[post_process_task] = {stack_task}
 
   return graph
 

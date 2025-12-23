@@ -132,9 +132,10 @@ def load_metadata() -> LargeObject:
   for key, value in context.get_matching(('compute_image_metadata',)).items():
     try:
       if isinstance(value.content_hash, str):
-        if value.content_hash not in quarantined_files:
-          if os.path.exists(value.filename):
-            metadata[value.content_hash] = value
+        if not image_types.is_master(value):
+          if value.content_hash not in quarantined_files:
+            if os.path.exists(value.filename):
+              metadata[value.content_hash] = value
     except Exception as e:
       print(
           f'### Rejecting bad key {key} because of exception {e} for value type {type(value)}'
