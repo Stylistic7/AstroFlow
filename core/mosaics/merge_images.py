@@ -2,6 +2,7 @@ import os
 import ray
 import numpy as np
 from pathlib import Path
+from dataclasses import dataclass
 
 from context import context
 from file_io.generic import read_header, read_image
@@ -16,6 +17,12 @@ from decorators import cached
 from file_io.generic import read_image, get_content_hash, update_header
 from file_io.tiff_file_io import write_tiff_image
 from file_io.types import XisfFilePath
+from products import makes_image
+
+
+@dataclass(frozen=True)
+class MergedImage:
+  pass
 
 
 @PixInsight(timeout=300)
@@ -29,9 +36,8 @@ def merge_images_with_photometric_mosaic(mosaic: Mosaic, input_0: Path,
                                          input_1: Path,
                                          filter: str) -> XisfFilePath:
   print(f'### merge_images_with_photometric_mosaic {input_0} {input_1}')
-  filename = merged_filename(
-      mosaic, QualityLevel.MASTER, get_content_hash(input_0),
-      get_content_hash(input_1)).resolve_at(context.output_dir)
+  filename = merged_filename(QualityLevel.MASTER, mosaic, input_0,
+                             input_1).resolve_at(context.output_dir)
   run_photometric_mosaic([input_0, input_1], filename)
   assert os.path.exists(filename), f'file not found: {filename}'
   update_header(filename, {'FILTER': filter})
@@ -50,6 +56,7 @@ def merge_images_with_maximum(image_0: np.ndarray,
   return output_image
 
 
+@makes_image(MergedImage).as_master(merged_filename)
 @cached.remote
 def merge_images(mode: QualityLevel, mosaic: Mosaic, input_0: Path,
                  input_1: Path) -> Path:
@@ -73,9 +80,8 @@ def merge_images(mode: QualityLevel, mosaic: Mosaic, input_0: Path,
 
   if mode == QualityLevel.SUBFRAME:
     image = merge_images_with_maximum(read_image(input_0), read_image(input_1))
-    output_filename = merged_filename(mosaic, mode, get_content_hash(input_0),
-                                      get_content_hash(input_1)).resolve_at(
-                                          context.output_dir)
+    output_filename = merged_filename(mode, mosaic, input_0,
+                                      input_1).resolve_at(context.output_dir)
     write_tiff_image(Path(output_filename), image, {'FILTER': filter})
 
   elif mode == QualityLevel.MASTER:

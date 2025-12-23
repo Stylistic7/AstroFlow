@@ -10,6 +10,7 @@ import structlog
 from astropy.coordinates import SkyCoord  # type: ignore
 from astropy import units as u  # type: ignore
 from shapely import box  # type: ignore
+from dataclasses import dataclass
 
 from customization.types import CustomizedStack
 from file_io.generic import get_content_hash, read_image
@@ -23,11 +24,17 @@ from mosaics.artifacts import placed_filename
 from decorators import cached
 from stacks.composite_stack import CompositeStack
 from metadata.classes import ImageMetadata
+from products import makes_image
 
 _PLACE_IMAGE_MEMORY_REQUIREMENT = 6 * 1024 * 1024 * 1024  # 6 GB
 _PLACE_TILE_MEMORY_REQUIREMENT = 128 * 1024 * 1024  # 128 MB
 
 log = structlog.get_logger()
+
+
+@dataclass(frozen=True)
+class PlacedImage:
+  pass
 
 
 def round_to_nearest_multiple(number: float, multiple: int) -> int:
@@ -138,19 +145,20 @@ def _project_in_tiles(viewbox: Viewbox,
 
 
 def _save_image_to_file(mode: QualityLevel, mosaic: Mosaic,
-                        stack: CompositeStack,
-                        filter: str, image: np.ndarray) -> TiffFilePath:
-  filename = placed_filename(mosaic, mode, stack,
-                             filter).resolve_at(context.output_dir)
+                        stack: CustomizedStack, filter: str, viewbox: Viewbox,
+                        mask: box, image: np.ndarray) -> TiffFilePath:
+  filename = placed_filename(mode, mosaic, stack, filter, viewbox,
+                             mask).resolve_at(context.output_dir)
   write_tiff_image(filename, image, {'FILTER': filter})
   print(f'### Wrote filename {filename}')
   return filename
 
 
+@makes_image(PlacedImage).as_master(placed_filename)
 @cached.remote(memory=_PLACE_IMAGE_MEMORY_REQUIREMENT)
 def place_image(mode: QualityLevel, mosaic: Mosaic, stack: CustomizedStack,
-                filter: str, viewbox: Viewbox,
-                mask: box, image_metadata: ImageMetadata) -> TiffFilePath:
+                filter: str, viewbox: Viewbox, mask: box,
+                image_metadata: ImageMetadata) -> TiffFilePath:
   # if context.dangerously_accept_existing_files and os.path.exists(filename):
   #   print(f'### Dangerously skipping place_large_image because '
   #         f'file {filename} already exists')
@@ -179,4 +187,4 @@ def place_image(mode: QualityLevel, mosaic: Mosaic, stack: CustomizedStack,
   if mask:
     image = trim_image(image, mask)
 
-  return _save_image_to_file(mode, mosaic, stack, filter, image)
+  return _save_image_to_file(mode, mosaic, stack, filter, viewbox, mask, image)
