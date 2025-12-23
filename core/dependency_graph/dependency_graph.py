@@ -103,6 +103,7 @@ def run_graph(graph: Graph,
               f'with signature {str(sig)} with immediate args of '
               f'types {immediate_types} and ancestor args with '
               f'types {ancestor_types}')
+
       return list(node.args) + results
 
   def handle_finished_subgraphs() -> None:
@@ -125,9 +126,6 @@ def run_graph(graph: Graph,
             f'for node {node_to_string(node)}')
     return result
 
-  # TODO: Consider embellishing this to force graphs like {foo: [bar, baz]} to
-  # actually run bar, and then baz. At present, the ordering is not honored,
-  # but the sort below at least makes the order deterministic.
   def get_ready_nodes() -> list[tuple[TopologicalSorterWithStatus, Node]]:
     active = [ts for ts in subgraphs if ts.is_active()]
     return [
@@ -178,6 +176,7 @@ def run_graph(graph: Graph,
     else:
       ts.results[node] = result
       ts.logs[node] = log
+      ts.complete_args[node] = make_fn_args(ts, node)
       ts.final_result = result
       ts.done(node)
 

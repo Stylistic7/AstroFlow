@@ -216,6 +216,7 @@ class TopologicalSorterWithStatus:
     self.done_callback = done_callback
     self.results = ResultDict()
     self.logs = ResultDict()
+    self.complete_args = ResultDict()
     self.final_result = None
 
     self.graph = defaultdict(list)
