@@ -62,14 +62,12 @@ def gather_spatial_groups(
   return {key: value for d in stacks_in for key, value in d.items()}
 
 
-# TODO: Don't call build_spatial_group_graph for spatial groups that are cached
-# and unchanged.
 @ray.remote
 def scatter_spatial_groups(metadata_ref: LargeObject, spatial_groups) -> Graph:
   return Graph({
-      gather_spatial_groups: {
+      gather_spatial_groups: [
           (identify_stacks, metadata_ref, g) for g in spatial_groups
-      },
+      ],
       validate_stacks: {gather_spatial_groups},
   })
 
