@@ -1,7 +1,10 @@
 from collections import defaultdict
+import os
 
 from dependency_graph import Node, TopologicalSorterWithStatus
 from cache.types import NeverRun
+from context import context
+from dependency_graph.debugging import node_to_string
 
 _DEBUG = False
 
@@ -38,9 +41,23 @@ def gather_group_meta(
     return isinstance(ts.results.get(node, NeverRun), Exception)
 
   def recurse(ts: TopologicalSorterWithStatus, node: Node):
+    filename = None
+    try:
+      if hasattr(node.task, 'filename_fn'):
+        args = ts.complete_args[node]
+        print(f'### {node_to_string(node)} has filename_fn, calling with args {[type(a) for a in args]}')
+        filename = node.task.filename_fn(*args).resolve_at(context.output_dir)
+        if os.path.exists(filename):
+          filename = os.fspath(filename)
+    except:
+      pass
+
     meta = {
         "displayName": node.task._function.__name__,
         "state": state_string(ts, node),
+        "options": {
+          "imageUrl": f"/api/open_image/{filename}",
+        },
     }
     if node.args:
       meta["description"] = str(node.args[0])

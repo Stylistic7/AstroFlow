@@ -1,4 +1,4 @@
-import React, { useContext, useState, useEffect } from "react";
+import React, { useContext, useRef, useState, useEffect } from "react";
 
 import AstroFlowContext from './AstroFlowContext.jsx';
 
@@ -1001,8 +1001,11 @@ export default function WorkflowGraph({ theme, url }) {
     // TODO: Better typing for the ref
     const graphComponent = graphRef.current;
 
-    const onSelectedNodeChange = (event) => {
+    const onSelectedNodeChange = async (event) => {
       console.log(event);
+      // console.log(event.detail.node.options.imageUrl);
+      const url = event.detail?.node?.options?.imageUrl;
+      const res = await fetch(url, { method: 'HEAD' });
     }
 
     if (graphComponent) {
@@ -1027,7 +1030,6 @@ export default function WorkflowGraph({ theme, url }) {
 
     return () => {
       graphComponent?.removeEventListener("selectedNodeChange", onSelectedNodeChange);
-
     }
   }, [computeGraph])
 

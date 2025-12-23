@@ -74,6 +74,14 @@ def open_stack_master(stack_id):
   stack = context.stacks[stack_id]
   filename = output_filename(stack).resolve_at(context.output_dir)
   print(f'### opening filename {filename}')
-  subprocess.Popen(["open", str(filename)])
+  subprocess.Popen(["/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight", str(filename)])
+
+  return Response(status=200)
+
+@files_bp.route('/api/open_image/<path:filename>')
+def open_image(filename):
+  filename = '/' + filename
+  print(f'### opening filename {filename}')
+  subprocess.Popen(["/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight", str(filename)])
 
   return Response(status=200)
