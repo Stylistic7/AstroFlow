@@ -163,6 +163,7 @@ def build_main_processing_graph() -> Graph:
   targets = context.targets
   mosaics = context.mosaics
   shopping_cart = context.shopping_cart or []
+  mode = context.forced_mode or QualityLevel.MASTER
 
   print(f'### build_main_processing_graph shopping_cart {shopping_cart}')
 
@@ -181,13 +182,13 @@ def build_main_processing_graph() -> Graph:
       if id not in stacks:
         print(f'### WARNING: stack {id} is in shopping cart but does not exist')
         continue
-      tasks.append((build_stacking_subgraph, stacks[id]))
+      tasks.append((build_stacking_subgraph, mode, stacks[id]))
     elif type == 'target':
       if id not in targets:
         print(
             f'### WARNING: target {id} is in shopping cart but does not exist')
         continue
-      tasks.append((build_target_subgraph, targets[id]))
+      tasks.append((build_target_subgraph, mode, targets[id]))
     if type == 'mosaic':
       if id not in mosaics:
         print(
@@ -196,7 +197,7 @@ def build_main_processing_graph() -> Graph:
 
       mosaic = mosaics[id]
       tasks.append(
-          (build_mosaic_subgraph, QualityLevel.MASTER, mosaic,
+          (build_mosaic_subgraph, mode, mosaic,
            stacks_for_mosaic(mosaic, stacks,
                              targets), targets_for_mosaic(mosaic, targets)))
 

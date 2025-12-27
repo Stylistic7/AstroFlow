@@ -22,6 +22,7 @@ from pix.tasks import WeightedBatchPreprocessing
 from metadata.classes import MetadataDict
 from decorators import cached, measure_performance, create_thumbnail
 from products import makes_image
+from previews.types import QualityLevel
 
 
 def _symlink_frames(filenames: list[str], dest_path: str) -> None:
@@ -63,7 +64,8 @@ def _run_wbpp(unused: ImageList, *args: Any, **kwargs: Any) -> Any:
   return WeightedBatchPreprocessing(unused, *args, **kwargs)
 
 
-def _setup_simple_stack(stack: SimpleStack, metadata: MetadataDict,
+def _setup_simple_stack(mode: QualityLevel, stack: SimpleStack,
+                        metadata: MetadataDict,
                         calibration_stacks: SimpleStacksDict,
                         tmp_dir: str) -> None:
   filenames = [i.filename for h, i in metadata.items() if h in stack.frames]
@@ -74,8 +76,9 @@ def _setup_simple_stack(stack: SimpleStack, metadata: MetadataDict,
 
   def get_dependency_filename(d):
     if 'stack_id' in d:
-      return output_filename(calibration_stacks[d['stack_id']]).resolve_at(
-          context.output_dir)
+      return output_filename(mode,
+                             calibration_stacks[d['stack_id']]).resolve_at(
+                                 context.output_dir)
     elif 'filename' in d:
       return d['filename']
 
@@ -88,14 +91,15 @@ def _setup_simple_stack(stack: SimpleStack, metadata: MetadataDict,
   return filenames
 
 
-def _setup_composite_stack(stack: CompositeStack, metadata: MetadataDict,
+def _setup_composite_stack(mode: QualityLevel, stack: CompositeStack,
+                           metadata: MetadataDict,
                            calibration_stacks: SimpleStacksDict,
                            tmp_dir: str) -> tuple[str | None, int]:
   filenames = []
   for i, substack in enumerate(stack.contents.values()):
     run_dir = os.path.join(tmp_dir, f'RUN_{i}')
     os.makedirs(run_dir, exist_ok=True)
-    result = _setup_simple_stack(substack, metadata, calibration_stacks,
+    result = _setup_simple_stack(mode, substack, metadata, calibration_stacks,
                                  run_dir)
     filenames.extend(result)
 
@@ -144,19 +148,23 @@ def _copy_wbpp_result(tmp_dir: str, dest_filename: str, metadata: dict[str,
 
 
 @ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
-def _stack_with_pixinsight(stack: Stack, metadata: dict[str, str]) -> Path:
-  dest_filename = stack_files.filename_fn(stack).resolve_at(context.output_dir)
+def _stack_with_pixinsight(mode: QualityLevel, stack: Stack,
+                           metadata: dict[str, str]) -> Path:
+  dest_filename = stack_files.filename_fn(mode,
+                                          stack).resolve_at(context.output_dir)
   os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
 
   calibration_stacks = context.calibration_stacks
   print(f'### calibration_stacks keys {calibration_stacks.keys()}')
 
   # TODO: Remove dependence on context.metadata.
+  # TODO: implement downscaling (or perhaps any mode-specific processing)
   with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
     setup_fn = _setup_composite_stack if type(stack) in [
         CompositeStack, CustomizedStack
     ] else _setup_simple_stack
-    filenames = setup_fn(stack, context.metadata, calibration_stacks, tmp_dir)
+    filenames = setup_fn(mode, stack, context.metadata, calibration_stacks,
+                         tmp_dir)
 
     if len(filenames) < context.min_frames_in_stack:
       print(f'### Not stacking {stack} because it contains '
@@ -176,12 +184,15 @@ def _stack_with_pixinsight(stack: Stack, metadata: dict[str, str]) -> Path:
 @cached.remote
 @measure_performance
 @create_thumbnail
-def stack_files(stack: Stack) -> XisfFilePath:
+def stack_files(mode: QualityLevel, stack: Stack) -> XisfFilePath:
   # Determine the output file, and the metadata it should have.
-  dest_filename = stack_files.filename_fn(stack).resolve_at(context.output_dir)
+  dest_filename = stack_files.filename_fn(mode,
+                                          stack).resolve_at(context.output_dir)
   dest_filename_exists = os.path.exists(dest_filename)
   os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
-  print(f'### Entering stack_files for {stack} {dest_filename=} {dest_filename_exists=}')
+  print(
+      f'### Entering stack_files for {stack} {dest_filename=} {dest_filename_exists=}'
+  )
 
   metadata = {
       'IMAGETYP': f'Master {stack.image_type}',
@@ -199,4 +210,4 @@ def stack_files(stack: Stack) -> XisfFilePath:
     return dest_filename
 
   # Run WBPP.
-  return ray.get(_stack_with_pixinsight.remote(stack, metadata))
+  return ray.get(_stack_with_pixinsight.remote(mode, stack, metadata))

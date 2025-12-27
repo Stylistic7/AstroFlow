@@ -12,6 +12,7 @@ from stacks.composite_stack import CompositeStack
 from stacks.stacking import stack_files
 from file_io.types import XisfFilePath
 from products import makes_image
+from previews.types import QualityLevel
 
 
 @PixInsight(slots=[1])
@@ -22,8 +23,9 @@ def _post_process_stack(images: ImageList,
   SaveImages(images, output_filenames)
 
 
-def post_processed_filename(stack: CompositeStack) -> XisfFilePath:
-  master = stack_files.filename_fn(stack)
+def post_processed_filename(mode: QualityLevel,
+                            stack: CompositeStack) -> XisfFilePath:
+  master = stack_files.filename_fn(mode, stack)
   return master.with_stem(master.stem + "_post_processed")
 
 
@@ -32,11 +34,12 @@ def post_processed_filename(stack: CompositeStack) -> XisfFilePath:
 @cached.remote(resources={'PixInsight': 1})
 @measure_performance
 @create_thumbnail
-def post_process_stack(stack: CustomizedStack) -> XisfFilePath:
-  master = stack_files.filename_fn(stack).resolve_at(context.output_dir)
+def post_process_stack(mode: QualityLevel,
+                       stack: CustomizedStack) -> XisfFilePath:
+  master = stack_files.filename_fn(mode, stack).resolve_at(context.output_dir)
   print(f'### post_process_stack, master {master}')
 
-  output_filename = post_process_stack.filename_fn(stack).resolve_at(
+  output_filename = post_process_stack.filename_fn(mode, stack).resolve_at(
       context.output_dir)
 
   if context.dangerously_accept_existing_files and os.path.exists(

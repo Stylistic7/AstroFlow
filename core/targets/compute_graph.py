@@ -10,16 +10,17 @@ from targets.types import TargetsDict
 from stacks.compute_graph import build_stacking_subgraph
 from stacks.convert_to_dict import convert_to_dict
 from dependency_graph import run_graph
+from previews.types import QualityLevel
 
 
 @ray.remote
-def build_target_subgraph(target: Target) -> Graph:
+def build_target_subgraph(mode: QualityLevel, target: Target) -> Graph:
   print(f'### build_target_subgraph target {target}')
 
   stacks = context.stacks
 
   graph = Graph()
-  graph[(post_process_target, target)] = {(build_stacking_subgraph,
+  graph[(post_process_target, target)] = {(build_stacking_subgraph, mode,
                                            stacks[stack_id])
                                           for stack_id in target.stack_ids}
 
@@ -39,7 +40,7 @@ def process_targets_for_ui(targets: TargetsDict) -> None:
   def prepare_target(target: Target):
     result = convert_to_dict(target, transform=my_transform)
 
-    graph = ray.get(build_target_subgraph.remote(target))
+    graph = ray.get(build_target_subgraph.remote(QualityLevel.MASTER, target))
 
     graph_results, _ = run_graph(graph, dry_run=True)
     result['contains_exception'] = graph_results.contains_exception()

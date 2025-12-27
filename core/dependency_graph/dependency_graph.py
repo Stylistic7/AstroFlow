@@ -164,10 +164,9 @@ def run_graph(graph: Graph,
 
     if (result_size_mb := get_deep_size(result) / 1024 /
         1024) > _RESULT_SIZE_WARNING_THRESHOLD_MB:
-      print(
-          f'### WARNING: node {node_to_string(node)} produced '
-          f'large object of type {type(result)} and '
-          f'size {result_size_mb:.3f} MB')
+      print(f'### WARNING: node {node_to_string(node)} produced '
+            f'large object of type {type(result)} and '
+            f'size {result_size_mb:.3f} MB')
 
     # There are two possibilities here: the task can return a result,
     # or a (dynamically-generated) Graph to run as a sub-graph.

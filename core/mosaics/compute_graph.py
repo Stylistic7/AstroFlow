@@ -38,6 +38,7 @@ from stacks.convert_to_dict import convert_to_dict
 from dependency_graph import run_graph
 from mosaics.types import MosaicsDict
 
+
 @PixInsight()
 def save_uncompressed(images: ImageList, output_filenames: list[Path]):
   SaveImages(images, output_filenames, compression=False)
@@ -149,8 +150,7 @@ def build_mosaic_subgraph(mode: QualityLevel, mosaic: Mosaic,
 @cached.remote
 def build_placement_subgraph(mode: QualityLevel, mosaic: Mosaic,
                              stack: CustomizedStack, filter: str,
-                             viewbox: Viewbox,
-                             mask: box) -> Graph:
+                             viewbox: Viewbox, mask: box) -> Graph:
   # TODO: Integrate the stack mask here too.
   return Graph({
       **chain(
@@ -254,9 +254,8 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
         prev_task = Node(build_placement_subgraph, mode, mosaic, stack, filter,
                          viewbox, mask)
       else:
-        placement_task = Node(build_placement_subgraph, mode,
-                              mosaic, stack, filter,
-                              viewbox, mask)
+        placement_task = Node(build_placement_subgraph, mode, mosaic, stack,
+                              filter, viewbox, mask)
         merge_task = Node(merge_images,
                           mode,
                           mosaic,
@@ -282,8 +281,10 @@ def build_mosaic_filter_subgraph(mode: QualityLevel, mosaic: Mosaic,
 
   return graph
 
+
 @ray.remote
-def process_mosaics_for_ui(stacks: CompositeStacksDict, targets: TargetsDict, mosaics: MosaicsDict) -> None:
+def process_mosaics_for_ui(stacks: CompositeStacksDict, targets: TargetsDict,
+                           mosaics: MosaicsDict) -> None:
   print(f'### process_mosaics_for_ui')
 
   def my_transform(v):

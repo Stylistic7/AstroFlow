@@ -24,10 +24,11 @@ def calibration_done(stack: CustomizedStack) -> None:
 
 
 @ray.remote
-def build_calibration_stack_subgraph(stack: CustomizedStack) -> Graph:
+def build_calibration_stack_subgraph(mode: QualityLevel,
+                                     stack: CustomizedStack) -> Graph:
   calibration_stacks = context.calibration_stacks
   return Graph({
-      (calibration_done, stack): {(stack_files,
+      (calibration_done, stack): {(stack_files, mode,
                                    calibration_stacks[d['stack_id']])
                                   for substack in stack.contents.values()
                                   for d in substack.dependencies.values()
@@ -43,16 +44,16 @@ def stack_runs_done(stack: CustomizedStack) -> None:
 # This function accepts a fully customized stack, after settings and calibration
 # frames have been associated.
 @cached.remote
-def build_stacking_subgraph(stack: CustomizedStack) -> Graph:
-  graph = Graph({})
+def build_stacking_subgraph(mode: QualityLevel,
+                            stack: CustomizedStack) -> Graph:
+  calibration_task = (build_calibration_stack_subgraph, mode, stack)
+  stack_task = (stack_files, mode, stack)
+  post_process_task = Node(post_process_stack, mode, stack)
 
-  calibration_subgraph = (build_calibration_stack_subgraph, stack)
-
-  stack_task = (stack_files, stack)
-  post_process_task = Node(post_process_stack, stack)
-
-  graph[stack_task] = {calibration_subgraph}
-  graph[post_process_task] = {stack_task}
+  graph = Graph({
+      stack_task: {calibration_task},
+      post_process_task: {stack_task}
+  })
 
   return graph
 
@@ -73,7 +74,8 @@ def get_stack_image(mode: QualityLevel, stack: CompositeStack) -> Graph:
     return Graph({(get_stack_subframe_image, stack): {}})
   else:
     return Graph({
-        (post_process_stack, stack): {(build_stacking_subgraph, stack)}
+        (post_process_stack, mode, stack): {(build_stacking_subgraph, mode,
+                                             stack)}
     })
 
 
@@ -98,7 +100,7 @@ def process_stacks_for_ui(stacks: CompositeStacksDict) -> None:
 
     result['filenames'] = filenames
 
-    graph = ray.get(build_stacking_subgraph.remote(stack))
+    graph = ray.get(build_stacking_subgraph.remote(QualityLevel.MASTER, stack))
 
     graph_results, _ = run_graph(graph, dry_run=True)
     result['contains_exception'] = graph_results.contains_exception()

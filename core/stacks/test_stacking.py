@@ -58,8 +58,20 @@ def test_orion_pane(test_context):
   stack_id = next(iter(context.stacks))
   context.shopping_cart = [('stack', stack_id)]
 
+  print(f'### made stack {next(iter(context.stacks.values()))}')
+
   graph = build_compute_graph()
   run_graph(graph, debug=True)
+
+  import subprocess
+  all_filenames = list(str(f) for f in Path(context.output_dir).rglob("*"))
+  result = subprocess.run(["tree"],
+                          cwd=context.output_dir,
+                          stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE,
+                          text=True,
+                          check=True)
+  print(f'Contents of {context.output_dir} are {result.stdout}')
 
   filenames = list(
       str(f) for f in Path(context.output_dir).rglob("*post_processed.xisf"))
