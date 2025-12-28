@@ -137,7 +137,9 @@ def make_cached_decorator(cache_provider: Callable[[], CacheProtocol],
       except Exception as e:
         result = e
 
-      def _handle_large_object(obj: Any) -> Any:
+      def _handle_object_wrappers(obj: Any) -> Any:
+        assert not isinstance(obj, ray.ObjectRef)
+        
         if isinstance(obj, LargeObject):
           return obj.strip_ref()
 
@@ -151,7 +153,7 @@ def make_cached_decorator(cache_provider: Callable[[], CacheProtocol],
       debug_print(
           f'storing: {key} as {type(result)} into cache {_resolve_cache().directory}'
       )
-      _resolve_cache()[key] = _handle_large_object(result)
+      _resolve_cache()[key] = _handle_object_wrappers(result)
 
       if isinstance(result, Exception):
         raise result
