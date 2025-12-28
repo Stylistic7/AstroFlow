@@ -10,18 +10,14 @@ import ray
 import io
 import numpy as np
 import flask
-from typing import Any
 from flask import request, jsonify, Response
 from dataclasses import asdict
 import operator
 from spherical_geometry.polygon import SingleSphericalPolygon
 import threading
 from dataclasses import replace
-from distutils.util import strtobool
 from flask.json.provider import DefaultJSONProvider
 from pathlib import Path
-from functools import lru_cache
-import objsize
 
 from state.state_machine import enqueue_action
 from context import context, get_cache
@@ -43,6 +39,14 @@ debug = False
 STREAM_PORT = 8001
 
 cache = get_cache()
+
+def strtobool(val: str) -> bool:
+    val = val.lower()
+    if val in {"y", "yes", "t", "true", "on", "1"}:
+        return True
+    if val in {"n", "no", "f", "false", "off", "0"}:
+        return False
+    raise ValueError(f"invalid truth value {val!r}")
 
 
 def get_plot_html():
