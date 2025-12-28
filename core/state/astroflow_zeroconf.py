@@ -50,6 +50,10 @@ class AstroFlowListener(ServiceListener):
 
       self._emit()
 
+  def update_service(self, zc: Zeroconf, type_: str, name: str) -> None:
+    # Treat updates as refreshes (common pattern)
+    self.add_service(zc, type_, name)
+
   def remove_service(self, zc, type, name):
     if name in self.instances:
       del self.instances[name]
