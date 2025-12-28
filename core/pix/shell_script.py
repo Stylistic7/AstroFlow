@@ -143,7 +143,8 @@ def run_script(tasks: list[ShellScriptTask],
                tmp_dir_in: str | None = None,
                close_after: bool = True,
                sleep_after: bool = False,
-               timeout: float | None = None) -> None:
+               timeout: float | None = None,
+               force_to_foreground: bool = False) -> None:
   assert tasks
 
   with _acquire_slot(slots) as slot:
@@ -184,11 +185,12 @@ def run_script(tasks: list[ShellScriptTask],
 
         # TODO: Bring the PixInsight window to the front on other platforms, too.
         # TODO: Does this work with any / all slots?
-        print(f'Forcing PixInsight to the foreground...')
-        if sys.platform == 'darwin':
-          subprocess.run(
-              """osascript -e 'tell application "PixInsight" to activate'""",
-              shell=True)
+        if force_to_foreground:
+          print(f'Forcing PixInsight to the foreground...')
+          if sys.platform == 'darwin':
+            subprocess.run(
+                """osascript -e 'tell application "PixInsight" to activate'""",
+                shell=True)
 
         time.sleep(5)
 
