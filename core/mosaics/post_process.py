@@ -11,7 +11,7 @@ from context import context
 from decorators import cached, create_thumbnail, measure_performance
 from previews.types import QualityLevel
 from mosaics.types import Mosaic
-from mosaics.artifacts import post_processed_filename, final_filename
+from mosaics.artifacts import final_filename
 from products import makes_image
 
 
@@ -43,14 +43,14 @@ def _post_process_mosaic(images: ImageList, mosaic: Mosaic,
     SaveImages([narrowband], [output_filename])
 
 
-@makes_image(Mosaic).as_post_processed(post_processed_filename)
+@makes_image(Mosaic).as_post_processed(final_filename)
 @cached.remote(resources={'PixInsight': 1})
 @measure_performance
 @create_thumbnail
 def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> XisfFilePath:
   print(f'### Entering post_process_mosaic for mosaic {mosaic}')
 
-  if mode != 'master':
+  if mode != QualityLevel.MASTER:
     return None
 
   filters = set()
@@ -60,7 +60,7 @@ def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> XisfFilePath:
   filters = tuple(filters)
 
   images = [
-      final_filename(QualityLevel.MASTER, mosaic,
+      final_filename(mode, mosaic,
                      filter).resolve_at(context.output_dir)
       for filter in filters
   ]
@@ -69,8 +69,7 @@ def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> XisfFilePath:
     print(
         f'### post_process_mosaic image {image} exists {os.path.exists(image)}')
 
-  output_filename = post_processed_filename(mosaic,
-                                            None).resolve_at(context.output_dir)
+  output_filename = final_filename(mode, mosaic, None).resolve_at(context.output_dir)
   print(f'### post_process_mosaic output_filename {output_filename}')
 
   if context.get('mock_pixinsight', False):

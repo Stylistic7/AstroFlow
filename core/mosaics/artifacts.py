@@ -15,13 +15,13 @@ def final_filename(mode: QualityLevel, mosaic: Mosaic, filter: str) -> Path:
   if mode == QualityLevel.SUBFRAME:
     return WithSidecar(
         TiffFilePath(
-            Path('Mosaics') / mosaic.name /
-            f'final_merged_{mode}_{mosaic.stable_hash}_{filter}.tiff'))
-  elif mode == QualityLevel.MASTER:
+            Path('Mosaics') / mode / mosaic.name /
+            f'final_{mosaic.stable_hash}_{filter}.tiff'))
+  else:
     return WithSidecar(
         XisfFilePath(
-            Path('Mosaics') / mosaic.name /
-            f'final_merged_{mode}_{mosaic.stable_hash}_{filter}.xisf'))
+            Path('Mosaics') / mode / mosaic.name /
+            f'final_{mosaic.stable_hash}_{filter}.xisf'))
 
 
 def tile_filename(mosaic: Mosaic, filter: str) -> TiffFilePath:
@@ -38,24 +38,18 @@ def merged_filename(mode: QualityLevel, mosaic: Mosaic, image_0: WithSidecar,
   if mode == QualityLevel.SUBFRAME:
     return WithSidecar(
         TiffFilePath(
-            Path('Mosaics') / mosaic.name /
-            f'merged_{mode}_{hash_0}_{hash_1}.tiff'))
+            Path('Mosaics') / mode / mosaic.name /
+            f'merged_{hash_0}_{hash_1}.tiff'))
   else:
     return WithSidecar(
         XisfFilePath(
-            Path('Mosaics') / mosaic.name /
-            f'merged_{mode}_{hash_0}_{hash_1}.xisf'))
+            Path('Mosaics') / mode / mosaic.name /
+            f'merged_{hash_0}_{hash_1}.xisf'))
 
 
 def placed_filename(mode: QualityLevel, mosaic: Mosaic, stack: CustomizedStack,
                     filter: str, viewbox: Viewbox, mask: box) -> Path:
   return TiffFilePath(
-      Path('Mosaics') / mosaic.name /
-      f'placed_image_{mode}_{mosaic.stable_hash}_{stack.stable_hash}_'
+      Path('Mosaics') / mode / mosaic.name /
+      f'placed_image_{mosaic.stable_hash}_{stack.stable_hash}_'
       f'{filter}.tiff')
-
-
-def post_processed_filename(mosaic: Mosaic, filter: str):
-  return XisfFilePath(
-      Path('Mosaics') / mosaic.name /
-      f'final_merged_{mosaic.stable_hash}_post_processed.xisf')

@@ -57,8 +57,6 @@ def test_orion_mosaic(test_context) -> None:
   graph = build_compute_graph()
   run_graph(graph)
 
-  shutil.copytree(context.output_dir, '/tmp/foo', dirs_exist_ok=True)
-
   assert len(context.targets) == 4
   assert len(context.mosaics) == 1
   mosaic = next(iter(context.mosaics.values()))
@@ -67,7 +65,7 @@ def test_orion_mosaic(test_context) -> None:
   for file in files:
     print(f'### {file=}')
 
-  xisf_files = list(Path(context.output_dir).rglob('final_merged*.xisf'))
+  xisf_files = list(Path(context.output_dir).rglob('final*.xisf'))
   assert len(xisf_files) == 2
   print(f'### Found final merged file {xisf_files[0]}')
 

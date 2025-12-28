@@ -23,30 +23,35 @@ from metadata.classes import MetadataDict
 from decorators import cached, measure_performance, create_thumbnail
 from products import makes_image
 from previews.types import QualityLevel
+from stacks.downscale import downscale_fits
 
-
-def _symlink_frames(filenames: list[str], dest_path: str) -> None:
+def _symlink_frames(filenames: list[str], dest_dir: str) -> None:
   for filename in filenames:
     assert filename, f"bad filename {filename}"
     if not os.path.exists(filename):
       raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), filename)
 
-    dest_filename = os.path.join(dest_path, os.path.basename(filename))
+    dest_filename = os.path.join(dest_dir, os.path.basename(filename))
     print(f'symlinking {filename} -> {dest_filename}')
     os.symlink(filename, dest_filename)
 
 
-def _copy_frames_with_plate_solution(metadata: MetadataDict,
-                                     dest_path: str) -> None:
+def _copy_frames_with_plate_solution(mode: QualityLevel, metadata: MetadataDict,
+                                     dest_dir: str) -> None:
+  # TODO: Parallelize this.
   for frame in metadata.values():
     filename = frame.filename
     assert filename
     if not os.path.exists(filename):
       raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), filename)
 
-    dest_filename = os.path.join(dest_path, os.path.basename(filename))
+    dest_filename = os.path.join(dest_dir, os.path.basename(filename))
     print(f'copying {filename} -> {dest_filename}')
-    shutil.copyfile(filename, dest_filename)
+    
+    if mode == QualityLevel.MASTER:
+      shutil.copyfile(filename, dest_filename)
+    elif mode == QualityLevel.DOWNSCALED_MASTER:
+      downscale_fits(filename, dest_filename, K=4)
 
     with pyfits.open(str(dest_filename), mode='update', mmap=False) as fits:
       if 'invalid' in fits[0].header.get('BAYERPAT', '').lower():
@@ -67,12 +72,12 @@ def _run_wbpp(unused: ImageList, *args: Any, **kwargs: Any) -> Any:
 def _setup_simple_stack(mode: QualityLevel, stack: SimpleStack,
                         metadata: MetadataDict,
                         calibration_stacks: SimpleStacksDict,
-                        tmp_dir: str) -> None:
+                        dest_dir: str) -> None:
   filenames = [i.filename for h, i in metadata.items() if h in stack.frames]
   assert len(stack.frames) == len(filenames)
 
   run_metadata = {h: i for h, i in metadata.items() if h in stack.frames}
-  _copy_frames_with_plate_solution(run_metadata, tmp_dir)
+  _copy_frames_with_plate_solution(mode, run_metadata, dest_dir)
 
   def get_dependency_filename(d):
     if 'stack_id' in d:
@@ -86,7 +91,7 @@ def _setup_simple_stack(mode: QualityLevel, stack: SimpleStack,
   dependendency_filenames = [
       get_dependency_filename(d) for d in stack.dependencies.values()
   ]
-  _symlink_frames(dependendency_filenames, tmp_dir)
+  _symlink_frames(dependendency_filenames, dest_dir)
 
   return filenames
 
@@ -94,10 +99,10 @@ def _setup_simple_stack(mode: QualityLevel, stack: SimpleStack,
 def _setup_composite_stack(mode: QualityLevel, stack: CompositeStack,
                            metadata: MetadataDict,
                            calibration_stacks: SimpleStacksDict,
-                           tmp_dir: str) -> tuple[str | None, int]:
+                           dest_dir: str) -> tuple[str | None, int]:
   filenames = []
   for i, substack in enumerate(stack.contents.values()):
-    run_dir = os.path.join(tmp_dir, f'RUN_{i}')
+    run_dir = os.path.join(dest_dir, f'RUN_{i}')
     os.makedirs(run_dir, exist_ok=True)
     result = _setup_simple_stack(mode, substack, metadata, calibration_stacks,
                                  run_dir)
@@ -124,10 +129,10 @@ def _mock_stacking(src_filename: str, dest_filename: str,
   return XisfFilePath(dest_filename)
 
 
-def _copy_wbpp_result(tmp_dir: str, dest_filename: str, metadata: dict[str,
+def _copy_wbpp_result(stacking_dir: str, dest_filename: str, metadata: dict[str,
                                                                        str]):
   # The 'master' dir indicates success.
-  master_dir = os.path.join(tmp_dir, 'master')
+  master_dir = os.path.join(stacking_dir, 'master')
   if not os.path.exists(master_dir):
     raise Exception("WBPP did not produce an output master dir")
 
