@@ -191,7 +191,7 @@ def run_graph(graph: Graph,
 
   while any(ts.is_active() for ts in subgraphs):
     ready_nodes = list(get_ready_nodes())  # one-shot, non-idempotent
-    if len(ready_nodes) > 100:
+    if debug and len(ready_nodes) > 100:
       print_ready_nodes(ready_nodes)
 
     max_parallelism_seen = max(len(ready_nodes), max_parallelism_seen)
