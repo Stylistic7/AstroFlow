@@ -15,7 +15,7 @@ from metadata.image_metadata import compute_image_metadata
 from customization.types import CustomizedStack
 from customization.subframe_selection import get_light_frames_sorted_by_stars
 from previews.types import QualityLevel
-from dependency_graph import run_graph
+from dependency_graph import run_graph, chain
 
 
 @ray.remote
@@ -46,16 +46,15 @@ def stack_runs_done(stack: CustomizedStack) -> None:
 @cached.remote
 def build_stacking_subgraph(mode: QualityLevel,
                             stack: CustomizedStack) -> Graph:
-  calibration_task = (build_calibration_stack_subgraph, mode, stack)
-  stack_task = (stack_files, mode, stack)
-  post_process_task = Node(post_process_stack, mode, stack)
-
-  graph = Graph({
-      stack_task: {calibration_task},
-      post_process_task: {stack_task}
+  return Graph({
+      **chain(
+          (build_calibration_stack_subgraph, mode, stack),
+          (stack_files, mode, stack),
+          Node(compute_image_metadata, name=f'stacking_{stack.stable_hash}'),
+          (post_process_stack, mode, stack),
+          Node(compute_image_metadata, name=f'post_process_{stack.stable_hash}'),
+      )
   })
-
-  return graph
 
 
 # TODO: Calibrate the subframe returned here.
