@@ -666,7 +666,7 @@ def test_trace(test_context) -> None:
 
 
 def test_recursive_graph(test_context) -> None:
-  dynamic_graph_task = (build_recursive_graph, 4, 10)
+  dynamic_graph_task = (build_recursive_graph, 5, 10)
   graph = Graph({dynamic_graph_task: {}})
 
   final_status = None
@@ -685,7 +685,7 @@ def test_recursive_graph(test_context) -> None:
   assert len(final_status.ready_nodes) == 0
   assert len(final_status.waiting_nodes) == 0
 
-  assert results.num_nodes_run == 1 + 10 + 100 + 1000 + 1000 * 8 + 100 + 10 + 1  # depth 4
-  assert results.max_parallelism_seen == 7000  # depth 4
+  assert results.num_nodes_run == 1 + 10 + 100 + 1000 + 10000 + 10000 * 8 + 1000 + 100 + 10 + 1  # depth 5
+  assert results.max_parallelism_seen == 70000  # depth 5
 
   assert results.is_complete()
