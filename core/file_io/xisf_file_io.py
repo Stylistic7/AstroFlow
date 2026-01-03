@@ -1,7 +1,7 @@
 import numpy as np
 from pathlib import Path
 from my_xisf import XISF  # type: ignore
-from typing import Any
+from typing import Any, Dict
 
 from file_io.normalize_header import normalize_header
 
@@ -65,4 +65,25 @@ def update_xisf_header(filename: Path | str, metadata: dict[str, Any]) -> None:
              image,
              creator_app="AstroFlow",
              image_metadata=ims_meta[0],
+             xisf_metadata=file_meta)
+
+
+def write_xisf_image(filename: Path,
+                     image: np.ndarray,
+                     metadata: dict[str, Any] | None = None,
+                     **kwargs) -> None:
+  file_meta: Dict[str, Any] = {}
+
+  fits_meta: Dict[str, Any] = {}
+  if metadata is not None:
+    for k, v in metadata.items():
+      fits_meta[k] = [{'value': str(v), 'comment': ''}]
+
+  ims_meta = {'FITSKeywords': fits_meta}
+
+  filename.parent.mkdir(parents=True, exist_ok=True)
+  XISF.write(filename,
+             image,
+             creator_app="AstroFlow",
+             image_metadata=ims_meta,
              xisf_metadata=file_meta)

@@ -11,6 +11,10 @@ class ContentHashable(ABC):
     return type(self)(Path(root) / self)
 
 
+class ContentHashableFile(type(Path()), ContentHashable):
+  pass
+
+
 class FitsFilePath(type(Path()), ContentHashable):
   pass
 
