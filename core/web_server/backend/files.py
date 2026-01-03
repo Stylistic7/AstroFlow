@@ -1,15 +1,13 @@
-from flask import Flask, request, jsonify, send_file, Blueprint, Response
+from flask import request, jsonify, Blueprint, Response
 import os
 from pathlib import Path
 import subprocess
 
 from context import context
-from dependency_graph import Graph
 from file_io.generic import read_header
 from customization.settings import Settings, StackSettings
-from customization.compute_graph import customize_stack, store_customized_stack
 from state.actor import state
-from stacks.artifacts import output_filename
+from stacks.stacking import stack_files
 
 files_bp = Blueprint("files", __name__)
 
@@ -72,7 +70,7 @@ def select_file():
 @files_bp.route('/api/open_stack_master/<stack_id>')
 def open_stack_master(stack_id):
   stack = context.stacks[stack_id]
-  filename = output_filename(stack).resolve_at(context.output_dir)
+  filename = stack_files.filename_fn(stack)
   print(f'### opening filename {filename}')
   subprocess.Popen(["/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight", str(filename)])
 
