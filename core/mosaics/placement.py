@@ -5,7 +5,7 @@ from astropy.wcs import WCS  # type: ignore
 from scipy.interpolate import RegularGridInterpolator  # type: ignore
 from itertools import product
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 import structlog
 from astropy.coordinates import SkyCoord  # type: ignore
 from astropy import units as u  # type: ignore
@@ -22,7 +22,6 @@ from mosaics.types import Mosaic, Viewbox
 from mosaics.trimming import trim_image, project_to_viewbox, largest_interior_rectangle
 from mosaics.artifacts import placed_filename
 from decorators import cached
-from stacks.composite_stack import CompositeStack
 from metadata.classes import ImageMetadata
 from products import makes_image
 
@@ -144,11 +143,10 @@ def _project_in_tiles(viewbox: Viewbox,
   return projected_image[0:viewbox.num_pixels_y, 0:viewbox.num_pixels_x]
 
 
-def _save_image_to_file(mode: QualityLevel, mosaic: Mosaic,
-                        stack: CustomizedStack, filter: str, viewbox: Viewbox,
-                        mask: box, image: np.ndarray) -> TiffFilePath:
-  filename = placed_filename(mode, mosaic, stack, filter, viewbox,
-                             mask).resolve_at(context.output_dir)
+def _save_image_to_file(mosaic: Mosaic, stack: CustomizedStack, filter: str,
+                        viewbox: Viewbox, mask: box,
+                        image: np.ndarray) -> TiffFilePath:
+  filename = place_image.filename_fn(mosaic, stack, filter, viewbox, mask)
   write_tiff_image(filename, image, {'FILTER': filter})
   print(f'### Wrote filename {filename}')
   return filename
@@ -187,4 +185,4 @@ def place_image(mode: QualityLevel, mosaic: Mosaic, stack: CustomizedStack,
   if mask:
     image = trim_image(image, mask)
 
-  return _save_image_to_file(mode, mosaic, stack, filter, viewbox, mask, image)
+  return _save_image_to_file(mosaic, stack, filter, viewbox, mask, image)

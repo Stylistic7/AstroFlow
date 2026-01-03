@@ -1,12 +1,9 @@
-import os
 import ray
 import numpy as np
-from typing import Any, Optional
+from typing import Optional
 from pathlib import Path
 from shapely import box  # type: ignore
 from shapely.affinity import scale  # type: ignore
-from functools import partial
-import shutil
 import numpy as np
 from spherical_geometry.polygon import SingleSphericalPolygon
 
@@ -14,77 +11,21 @@ from context import context
 from customization.types import CustomizedStack
 from dependency_graph import Graph, Node, chain
 from mosaics.merge_images import merge_images
-from mosaics.types import Mosaic, Viewbox
+from mosaics.types import Mosaic, MosaicsDict, Viewbox
 from mosaics.viewbox import compute_viewbox
 from mosaics.placement import place_image
 from mosaics.post_process import post_process_mosaic
 from mosaics.trimming import project_to_viewbox, largest_interior_rectangle
-from mosaics.artifacts import tile_filename, final_filename
 from stacks.compute_graph import get_stack_image
 from stacks.composite_stack import CompositeStacksDict
 from stacks.types import StackHash
 from previews.types import QualityLevel
-from decorators import cached, create_thumbnail, measure_performance
+from decorators import cached
 from targets.types import TargetsDict, Target, TargetHash
-from file_io.generic import read_image
-from file_io.tiff_file_io import write_tiff_image
-from previews.operations import autostretch
-from pix.decorators import PixInsight
-from pix.classes import ImageList
-from pix.tasks import SaveImages
 from metadata.image_metadata import compute_image_metadata
-from products import makes_image
 from stacks.convert_to_dict import convert_to_dict
 from dependency_graph import run_graph
-from mosaics.types import MosaicsDict
-
-
-@PixInsight()
-def save_uncompressed(images: ImageList, output_filenames: list[Path]):
-  SaveImages(images, output_filenames, compression=False)
-
-
-@makes_image(Mosaic).as_master(tile_filename)
-@cached.remote(resources={'fastest_storage': 0.001})
-@create_thumbnail
-def make_master_thumbnail(mosaic: Mosaic, filter: str) -> Path:
-  return final_filename(QualityLevel.MASTER, mosaic,
-                        filter).resolve_at(context.output_dir)
-
-
-@makes_image(Mosaic).as_subframe(partial(final_filename, QualityLevel.SUBFRAME))
-@cached.remote(resources={'fastest_storage': 0.001})
-@create_thumbnail
-def make_subframe_thumbnail(mosaic: Mosaic, filter: str) -> Path:
-  return final_filename(QualityLevel.SUBFRAME, mosaic,
-                        filter).resolve_at(context.output_dir)
-
-
-@cached.remote(resources={'fastest_storage': 0.001})
-@measure_performance
-def store_mosaic_color_channel(mode: QualityLevel, mosaic: Mosaic, filter: str,
-                               input: Path) -> Path:
-  output = final_filename(mode, mosaic, filter).resolve_at(context.output_dir)
-
-  print(f'### store_mosaic_color_channel: mode {mode} '
-        f'filter {filter} input {input} output {output}')
-
-  if mode == QualityLevel.SUBFRAME:
-    image = read_image(input)
-    autostretched = (autostretch(image) * 255.0).astype(np.uint8)
-    write_tiff_image(output, autostretched, {'FILTER': filter})
-  elif mode == QualityLevel.MASTER:
-    if context.get('mock_pixinsight', False):
-      shutil.copy(input, output)
-    else:
-      save_uncompressed([input], [output])
-
-    image = read_image(output)
-    autostretched = (autostretch(image) * 255.0).astype(np.uint8)
-    tiff_filename = tile_filename(mosaic, filter).resolve_at(context.output_dir)
-    write_tiff_image(tiff_filename, autostretched, {'FILTER': filter})
-
-  return output
+from mosaics.final_storage import store_mosaic_color_channel
 
 
 def targets_for_mosaic(mosaic: Mosaic, targets: TargetsDict) -> TargetsDict:
@@ -134,13 +75,9 @@ def build_mosaic_subgraph(mode: QualityLevel, mosaic: Mosaic,
     filter_subgraph_task = Node(build_mosaic_filter_subgraph, mode, mosaic,
                                 strips, stacks, filter, viewbox)
     store_task = (store_mosaic_color_channel, mode, mosaic, filter)
-    thumbnail_task = (make_master_thumbnail, mosaic,
-                      filter) if mode == QualityLevel.MASTER else (
-                          make_subframe_thumbnail, mosaic, filter)
     graph[filter_subgraph_task] = {mask_task}
     graph[store_task] = {filter_subgraph_task}
-    graph[thumbnail_task] = {store_task}
-    filter_done_tasks.append(thumbnail_task)
+    filter_done_tasks.append(store_task)
 
   graph[(post_process_mosaic, mode, mosaic)] = filter_done_tasks
 

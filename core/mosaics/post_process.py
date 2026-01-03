@@ -10,8 +10,9 @@ from pix.tasks import ChannelCombination, SpectrophotometricColorCalibration, Im
 from context import context
 from decorators import cached, create_thumbnail, measure_performance
 from previews.types import QualityLevel
+from mosaics.final_storage import store_mosaic_color_channel_master
 from mosaics.types import Mosaic
-from mosaics.artifacts import final_filename
+from mosaics.artifacts import mosaic_filename_xisf
 from products import makes_image
 
 
@@ -43,7 +44,7 @@ def _post_process_mosaic(images: ImageList, mosaic: Mosaic,
     SaveImages([narrowband], [output_filename])
 
 
-@makes_image(Mosaic).as_post_processed(final_filename)
+@makes_image(Mosaic).as_post_processed(mosaic_filename_xisf)
 @cached.remote(resources={'PixInsight': 1})
 @measure_performance
 @create_thumbnail
@@ -60,8 +61,7 @@ def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> XisfFilePath:
   filters = tuple(filters)
 
   images = [
-      final_filename(mode, mosaic,
-                     filter).resolve_at(context.output_dir)
+      store_mosaic_color_channel_master.filename_fn(mosaic, filter)
       for filter in filters
   ]
 
@@ -69,7 +69,8 @@ def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> XisfFilePath:
     print(
         f'### post_process_mosaic image {image} exists {os.path.exists(image)}')
 
-  output_filename = final_filename(mode, mosaic, None).resolve_at(context.output_dir)
+  output_filename = post_process_mosaic.filename_fn(mosaic, None)
+  output_filename.parent.mkdir(parents=True, exist_ok=True)
   print(f'### post_process_mosaic output_filename {output_filename}')
 
   if context.get('mock_pixinsight', False):
@@ -77,4 +78,5 @@ def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> XisfFilePath:
   else:
     _post_process_mosaic(images, mosaic, output_filename)
 
+  print(f'### post_process_mosaic returning {output_filename=}')
   return output_filename
