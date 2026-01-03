@@ -163,7 +163,9 @@ def build_main_processing_graph() -> Graph:
   targets = context.targets
   mosaics = context.mosaics
   shopping_cart = context.shopping_cart or []
-  mode = context.forced_mode or QualityLevel.MASTER
+
+  # TODO: Figure out a nice way to set this during development.
+  mode = QualityLevel.MASTER
 
   print(f'### build_main_processing_graph shopping_cart {shopping_cart}')
 

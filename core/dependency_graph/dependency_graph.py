@@ -64,7 +64,7 @@ def _make_subgraph(graph: Graph,
 
   def done_callback(subgraph_ts: TopologicalSorterWithStatus) -> None:
     if debug:
-      print(f'Subgraph is done {subgraph_ts.graph}')
+      print(f'Subgraph is done')
     if parent_ts is None:
       return
 

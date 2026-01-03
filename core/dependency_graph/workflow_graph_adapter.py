@@ -41,11 +41,13 @@ def gather_group_meta(
     return isinstance(ts.results.get(node, NeverRun), Exception)
 
   def recurse(ts: TopologicalSorterWithStatus, node: Node):
+    # TODO: Split this out as an independent function -- it may get complex.
     filename = None
     try:
       if hasattr(node.task, 'filename_fn'):
         args = ts.complete_args[node]
-        print(f'### {node_to_string(node)} has filename_fn, calling with args {[type(a) for a in args]}')
+        print(f'### {node_to_string(node)} has filename_fn, '
+              f'calling with args {[type(a) for a in args]}')
         filename = node.task.filename_fn(*args).resolve_at(context.output_dir)
         if os.path.exists(filename):
           filename = os.fspath(filename)
@@ -56,7 +58,7 @@ def gather_group_meta(
         "displayName": node.task._function.__name__,
         "state": state_string(ts, node),
         "options": {
-          "imageUrl": f"/api/open_image/{filename}",
+            "imageUrl": f"/api/open_image/{filename}",
         },
     }
     if node.args:
