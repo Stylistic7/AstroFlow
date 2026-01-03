@@ -23,9 +23,8 @@ def _post_process_stack(images: ImageList,
   SaveImages(images, output_filenames)
 
 
-def post_processed_filename(mode: QualityLevel,
-                            stack: CompositeStack) -> XisfFilePath:
-  master = stack_files.filename_fn(mode, stack)
+def post_processed_filename(stack: CompositeStack) -> XisfFilePath:
+  master = stack_files.filename_fn(stack)
   return master.with_stem(master.stem + "_post_processed")
 
 
@@ -36,11 +35,10 @@ def post_processed_filename(mode: QualityLevel,
 @create_thumbnail
 def post_process_stack(mode: QualityLevel,
                        stack: CustomizedStack) -> XisfFilePath:
-  master = stack_files.filename_fn(mode, stack).resolve_at(context.output_dir)
+  master = stack_files.filename_fn(stack)
   print(f'### post_process_stack, master {master}')
 
-  output_filename = post_process_stack.filename_fn(mode, stack).resolve_at(
-      context.output_dir)
+  output_filename = post_process_stack.filename_fn(stack)
 
   if context.dangerously_accept_existing_files and os.path.exists(
       output_filename):

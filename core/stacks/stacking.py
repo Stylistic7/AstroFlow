@@ -7,12 +7,11 @@ import os
 import shutil
 import astropy.io.fits as pyfits  # type: ignore
 from typing import Any
-from functools import singledispatch
 
 import file_io
 from file_io.types import XisfFilePath
 from file_io.generic import update_header
-from stacks.artifacts import output_filename
+from stacks.artifacts import stack_filename
 from stacks.simple_stack import SimpleStack, SimpleStacksDict
 from stacks.composite_stack import Stack, CompositeStack
 from customization.types import CustomizedStack
@@ -24,6 +23,7 @@ from decorators import cached, measure_performance, create_thumbnail
 from products import makes_image
 from previews.types import QualityLevel
 from stacks.downscale import downscale_fits
+
 
 def _symlink_frames(filenames: list[str], dest_dir: str) -> None:
   for filename in filenames:
@@ -46,11 +46,13 @@ def _copy_frames_with_plate_solution(mode: QualityLevel, metadata: MetadataDict,
       raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), filename)
 
     dest_filename = os.path.join(dest_dir, os.path.basename(filename))
-    print(f'copying {filename} -> {dest_filename}')
-    
+    print(f'copying {filename} -> {dest_filename} with mode {mode}')
+
     if mode == QualityLevel.MASTER:
+      print(f'### copying master...')
       shutil.copyfile(filename, dest_filename)
     elif mode == QualityLevel.DOWNSCALED_MASTER:
+      print(f'### downscaling FITS...')
       downscale_fits(filename, dest_filename, K=4)
 
     with pyfits.open(str(dest_filename), mode='update', mmap=False) as fits:
@@ -81,9 +83,7 @@ def _setup_simple_stack(mode: QualityLevel, stack: SimpleStack,
 
   def get_dependency_filename(d):
     if 'stack_id' in d:
-      return output_filename(mode,
-                             calibration_stacks[d['stack_id']]).resolve_at(
-                                 context.output_dir)
+      return stack_files.filename_fn(calibration_stacks[d['stack_id']])
     elif 'filename' in d:
       return d['filename']
 
@@ -129,8 +129,8 @@ def _mock_stacking(src_filename: str, dest_filename: str,
   return XisfFilePath(dest_filename)
 
 
-def _copy_wbpp_result(stacking_dir: str, dest_filename: str, metadata: dict[str,
-                                                                       str]):
+def _copy_wbpp_result(stacking_dir: str, dest_filename: str,
+                      metadata: dict[str, str]):
   # The 'master' dir indicates success.
   master_dir = os.path.join(stacking_dir, 'master')
   if not os.path.exists(master_dir):
@@ -152,52 +152,19 @@ def _copy_wbpp_result(stacking_dir: str, dest_filename: str, metadata: dict[str,
   return XisfFilePath(dest_filename)
 
 
-@ray.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
-def _stack_with_pixinsight(mode: QualityLevel, stack: Stack,
-                           metadata: dict[str, str]) -> Path:
-  dest_filename = stack_files.filename_fn(mode,
-                                          stack).resolve_at(context.output_dir)
-  os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
-
-  calibration_stacks = context.calibration_stacks
-  print(f'### calibration_stacks keys {calibration_stacks.keys()}')
-
-  # TODO: Remove dependence on context.metadata.
-  # TODO: implement downscaling (or perhaps any mode-specific processing)
-  with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
-    setup_fn = _setup_composite_stack if type(stack) in [
-        CompositeStack, CustomizedStack
-    ] else _setup_simple_stack
-    filenames = setup_fn(mode, stack, context.metadata, calibration_stacks,
-                         tmp_dir)
-
-    if len(filenames) < context.min_frames_in_stack:
-      print(f'### Not stacking {stack} because it contains '
-            f'only {len(filenames)} files')
-      raise ValueError(f"Stack {stack} contains only {len(filenames)} files")
-
-    # Maybe mock PixInsight (in tests).
-    if context.get('mock_pixinsight', False):
-      return _mock_stacking(filenames[0], dest_filename, metadata)
-
-    print(f'### Running _run_wbpp for stack {stack}')
-    _run_wbpp([], dir=tmp_dir, outputDirectory=tmp_dir)
-    return _copy_wbpp_result(tmp_dir, dest_filename, metadata)
-
-
-@makes_image(CompositeStack).as_master(output_filename)
-@cached.remote
+# TODO: This is not a pure function -- it uses a few things from context.
+# Context must only be used *outside* of @cached.remote functions.
+@makes_image(CompositeStack).as_master(stack_filename)
+@cached.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
 @measure_performance
 @create_thumbnail
 def stack_files(mode: QualityLevel, stack: Stack) -> XisfFilePath:
   # Determine the output file, and the metadata it should have.
-  dest_filename = stack_files.filename_fn(mode,
-                                          stack).resolve_at(context.output_dir)
+  dest_filename = stack_files.filename_fn(stack)
   dest_filename_exists = os.path.exists(dest_filename)
   os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
-  print(
-      f'### Entering stack_files for {stack} {dest_filename=} {dest_filename_exists=}'
-  )
+  print(f'### Entering stack_files for {stack} {dest_filename=} '
+        f'{dest_filename_exists=} {mode=}')
 
   metadata = {
       'IMAGETYP': f'Master {stack.image_type}',
@@ -214,5 +181,29 @@ def stack_files(mode: QualityLevel, stack: Stack) -> XisfFilePath:
     update_header(dest_filename, metadata)
     return dest_filename
 
-  # Run WBPP.
-  return ray.get(_stack_with_pixinsight.remote(mode, stack, metadata))
+  calibration_stacks = context.calibration_stacks
+  print(f'### calibration_stacks keys {list(calibration_stacks.keys())}')
+
+  # TODO: Eliminate this use of context.metadata.
+  with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
+    print(f'### using tmp_dir {tmp_dir}')
+
+    setup_fn = _setup_simple_stack if isinstance(
+        stack, SimpleStack) else _setup_composite_stack
+    filenames = setup_fn(mode, stack, context.metadata, calibration_stacks,
+                         tmp_dir)
+
+    if len(filenames) < context.min_frames_in_stack:
+      print(f'### Not stacking {stack} because it contains '
+            f'only {len(filenames)} files')
+      raise ValueError(f"Stack {stack} contains only {len(filenames)} files")
+
+    # Maybe mock PixInsight (in tests).
+    mock_stacking = context.get('mock_pixinsight', False)
+    print(f'### mock_stacking {mock_stacking}')
+    if mock_stacking:
+      return _mock_stacking(filenames[0], dest_filename, metadata)
+
+    print(f'### Running _run_wbpp for stack {stack}')
+    _run_wbpp([], dir=tmp_dir, outputDirectory=tmp_dir)
+    return _copy_wbpp_result(tmp_dir, dest_filename, metadata)

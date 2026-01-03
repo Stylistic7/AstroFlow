@@ -4,7 +4,7 @@ from pathlib import Path
 from dependency_graph import run_graph
 from compute_graph import build_compute_graph
 from context import context
-from testing import copy_testdata_frames, make_synthetic_frames
+from testing import copy_testdata_frames, make_synthetic_frames, print_tree
 
 
 def test_orion_pane(test_context):
@@ -63,15 +63,7 @@ def test_orion_pane(test_context):
   graph = build_compute_graph()
   run_graph(graph, debug=True)
 
-  import subprocess
-  all_filenames = list(str(f) for f in Path(context.output_dir).rglob("*"))
-  result = subprocess.run(["tree"],
-                          cwd=context.output_dir,
-                          stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE,
-                          text=True,
-                          check=True)
-  print(f'Contents of {context.output_dir} are {result.stdout}')
+  print_tree(context.output_dir)
 
   filenames = list(
       str(f) for f in Path(context.output_dir).rglob("*post_processed.xisf"))
