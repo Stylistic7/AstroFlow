@@ -5,14 +5,13 @@ from pathlib import Path
 from astropy.time import Time
 
 from context import context
-from catalogs import position_string
 from pix.decorators import PixInsight
 from pix.classes import ImageList
 from pix.tasks import ChannelCombination, SpectrophotometricColorCalibration, ImageSolver, StarXTerminator, LinearFit, SaveImages, StarAlignment, LRGBCombination
 from file_io.types import XisfFilePath
 from decorators import cached, measure_performance, create_thumbnail
 from targets.types import Target
-from stacks.artifacts import output_filename as stack_output_filename
+from stacks.artifacts import stack_filename
 from products import makes_image
 
 
@@ -70,30 +69,23 @@ def _post_process_target(images: ImageList, target: Target) -> ImageList:
     # TODO: Supply multiple output filenames.
     SaveImages([narrowband], [output_filename])
 
+
 # TODO: Targets are composed of multiple color channels, so this needs to be
 # able to return multiple images.
-def output_filename(target: Target, suffix: str) -> XisfFilePath:
-  path = XisfFilePath(
-      Path('Targets') / target.name / 'post_processed' /
-      f'target {target.stable_hash}_{suffix}.xisf').resolve_at(
-          context.output_dir)
-  path.parent.mkdir(parents=True, exist_ok=True)
-  return path
+def target_filename(target: Target, suffix: str) -> XisfFilePath:
+  return XisfFilePath(f'target {target.stable_hash}_{suffix}.xisf')
 
 
 # TODO: Hash the script used to do the post-processing, and do not repeat
 # the post-processing when a file with that hash already exists.
-@makes_image(Target).as_post_processed(output_filename)
+@makes_image(Target).as_post_processed(target_filename)
 @cached.remote(resources={'PixInsight': 1}, scheduling_strategy="SPREAD")
 @measure_performance
 @create_thumbnail
 def post_process_target(target: Target) -> None:
   print(f'Entering post_process_target for {target}')
   stacks = context.stacks
-  images = [
-      stack_output_filename(stacks[stack_id]).resolve_at(context.output_dir)
-      for stack_id in target.stack_ids
-  ]
+  images = [stack_filename(stacks[stack_id]) for stack_id in target.stack_ids]
 
   result = _post_process_target(images, target)
   print(f'post_process_target, target {target} returning {result}')
