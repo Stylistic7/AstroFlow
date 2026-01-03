@@ -18,14 +18,17 @@ from products.registry import makes_image, clear_registry, MediaType
 clear_registry(MediaType.IMAGE)
 
 
-@makes_image(CompositeStack).as_master('master_{name}.tiff')
+def stack_filename(stack: CompositeStack) -> TiffFilePath:
+  return TiffFilePath(f'master_{stack.name}.tiff')
+
+
+@makes_image(CompositeStack).as_master(stack_filename)
 @cached.remote
 @measure_performance
 @create_thumbnail
 def stack_files(stack: CompositeStack) -> TiffFilePath:
   '''Runs WBPP to stack raw images into a TIFF.'''
-  output_path = TiffFilePath(stack_files.filename_fn(stack)).resolve_at(
-      context.output_dir)
+  output_path = stack_files.filename_fn(stack)
   image = np.zeros((100, 100))
   write_tiff_image(output_path, image)
 

@@ -2,23 +2,21 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import Callable, Any, Type, Optional, Union
 
+from file_io.types import ContentHashable
 from previews.types import QualityLevel
-
+from context import context
 
 class MediaType(str, Enum):
   IMAGE = "image"
   VIDEO = "video"
 
+type FilenameFn = Union[str, Callable[..., Path]]
 
 _registry: dict[MediaType, dict[tuple[Type, QualityLevel],
                                 Callable[..., Path]]] = {
                                     MediaType.IMAGE: {},
                                     MediaType.VIDEO: {},
                                 }
-
-
-def path_template(template: str) -> Callable:
-  return lambda obj: Path(template.format(**vars(obj)))
 
 
 def register_producer(media_type: MediaType, object_type: type,
@@ -44,6 +42,14 @@ def available_levels(media_type: MediaType,
 def clear_registry(media_type: MediaType) -> None:
   _registry[media_type].clear()
 
+# TODO: Where is the best spot to insert the context.output_dir?
+def fully_resolve(object_type: type, level: QualityLevel, filename_fn: FilenameFn):
+  def inner(*args, **kwargs):
+    filename = filename_fn(*args, **kwargs)
+    assert isinstance(filename, ContentHashable)
+    return filename.resolve_at(context.output_dir / str(object_type.__name__) / str(level))
+  
+  return inner
 
 class MediaProducerBuilder:
 
@@ -53,31 +59,25 @@ class MediaProducerBuilder:
 
   def _bind(self,
             level: QualityLevel,
-            filename_fn: Optional[Union[str, Callable[..., Path]]] = None):
-    if isinstance(filename_fn, str):
-      filename_fn = path_template(filename_fn)
-
+            filename_fn: FilenameFn | None = None):
     def decorator(func: Callable[..., Path]):
       if filename_fn is not None:
-        func.filename_fn = filename_fn
+        func.filename_fn = fully_resolve(self.object_type, level, filename_fn)
       register_producer(self.media_type, self.object_type, level, func)
       return func
 
     return decorator
 
   def as_subframe(self,
-                  filename_fn: Optional[Union[str, Callable[...,
-                                                            Path]]] = None):
+                  filename_fn: FilenameFn | None = None):
     return self._bind(QualityLevel.SUBFRAME, filename_fn)
 
   def as_master(self,
-                filename_fn: Optional[Union[str, Callable[..., Path]]] = None):
+                filename_fn: FilenameFn | None = None):
     return self._bind(QualityLevel.MASTER, filename_fn)
 
   def as_post_processed(self,
-                        filename_fn: Optional[Union[str,
-                                                    Callable[...,
-                                                             Path]]] = None):
+                        filename_fn: FilenameFn | None = None):
     return self._bind(QualityLevel.POST_PROCESSED, filename_fn)
 
 
