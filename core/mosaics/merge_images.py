@@ -30,6 +30,10 @@ class MergedImage:
 @cached.remote
 def merge_images_with_maximum(mosaic: Mosaic, input_0: Path,
                               input_1: Path) -> TiffFilePath:
+  filters = set(read_header(i)['FILTER'] for i in [input_0, input_1])
+  assert len(filters) == 1
+  filter = next(iter(filters))
+
   image_0 = read_image(input_0)
   image_1 = read_image(input_1)
 

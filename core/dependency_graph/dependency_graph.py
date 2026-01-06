@@ -6,6 +6,7 @@ import time
 from typing import Callable, Any
 from objsize import get_deep_size
 
+from cache.types import NeverRunType
 from dependency_graph import Node, Graph, CanonicalGraph, GraphStatus, ResultDict, TopologicalSorterWithStatus, GenericRemoteFunction, canonicalize_graph
 from dependency_graph.logging import LogContainer
 from .debugging import print_graph, node_to_string
@@ -135,6 +136,8 @@ def _make_fn_args(ts: TopologicalSorterWithStatus,
 
 
 # TODO: This is hacky. Make it more explicit.
+# TODO: Don't run any function that has a NeverRunType in its arguments; its
+# output should be NeverRunType too.
 def _make_run_fn(ts, node, dry_run, debug):
   start_time = time.time()
   try:
@@ -170,6 +173,8 @@ def _handle_result(ts: TopologicalSorterWithStatus,
   # or a (dynamically-generated) Graph to run as a sub-graph.
   if isinstance(result, Graph):
     return _make_subgraph(result, ts, node, debug)
+  # TODO: Don't call any future dependent nodes.
+  # elif isinstance(result, NeverRunType):
   else:
     ts.results[node] = result
     ts.logs[node] = log
