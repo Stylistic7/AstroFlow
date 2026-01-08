@@ -104,19 +104,19 @@ def build_regroup_graph(metadata_ref: LargeObject) -> Graph:
       scatter_spatial_groups_task: {cluster_by_image_center_task},
       quarantine_calibration_stacks_task: {identify_calibration_stacks_task},
       store_calibration_stacks: {quarantine_calibration_stacks_task},
-      process_stacks_for_ui: {scatter_spatial_groups_task},
       quarantine_stacks_task: {scatter_spatial_groups_task},
       scatter_customize_stacks_task: [
           quarantine_stacks_task, quarantine_calibration_stacks_task
       ],
       store_stacks: {scatter_customize_stacks_task},
+      process_stacks_for_ui: {scatter_customize_stacks_task},
       group_stacks_into_targets_task: {scatter_customize_stacks_task},
       scatter_customize_targets_task: {group_stacks_into_targets_task},
-      process_targets_for_ui: {group_stacks_into_targets_task},
       quarantine_targets_task: [
           scatter_spatial_groups_task, scatter_customize_targets_task
       ],
       store_targets: {quarantine_targets_task},
+      process_targets_for_ui: {quarantine_targets_task},
       identify_mosaics: {quarantine_targets_task},
       scatter_customize_mosaics_task: {identify_mosaics},
       quarantine_mosaics_task: [
@@ -175,6 +175,7 @@ def build_main_processing_graph() -> Graph:
 
   # shopping_cart += [('mosaic', '75a1da6463e118e6')]
   # shopping_cart += [('mosaic', '0ee57ba3ed4695a3')]
+  shopping_cart += [('mosaic', '7ae4d017d0ceada2')]
 
   # TODO: Maybe add prioritization options in the UI.
   graph = Graph({})
