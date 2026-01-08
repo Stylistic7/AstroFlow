@@ -10,7 +10,7 @@ const ra_to_hms = (ra) => {
   let [minutes, minutes_remainder] = divmod(hours_remainder, 15 * 60);
   let seconds = Math.round(minutes_remainder / 15);
 
-  return `${String(hours).padStart(2, '0')}h ${String(minutes).padStart(2, '0')}' ${String(seconds).padStart(2, '0')}"`;
+  return `${String(hours).padStart(2, '0')}hr ${String(minutes).padStart(2, '0')}' ${String(seconds).padStart(2, '0')}"`;
 }
 
 const dec_to_dms = (dec) => {
