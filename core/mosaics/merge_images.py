@@ -30,6 +30,9 @@ class MergedImage:
 @cached.remote
 def merge_images_with_maximum(mosaic: Mosaic, input_0: Path,
                               input_1: Path) -> TiffFilePath:
+  input_0 = input_0.resolve(strict=True)
+  input_1 = input_1.resolve(strict=True)
+
   filters = set(read_header(i)['FILTER'] for i in [input_0, input_1])
   assert len(filters) == 1
   filter = next(iter(filters))
@@ -62,7 +65,6 @@ def merge_images_with_photometric_mosaic(mosaic: Mosaic, input_0: Path,
                                          input_1: Path,
                                          filter: str) -> XisfFilePath:
   print(f'### merge_images_with_photometric_mosaic {input_0} {input_1}')
-  # filename = merge_images.filename_fn(mosaic, input_0, input_1)
   filename = merge_images_with_pmm.filename_fn(mosaic, input_0, input_1)
   run_photometric_mosaic([input_0, input_1], filename)
   assert os.path.exists(filename), f'file not found: {filename}'
@@ -74,14 +76,8 @@ def merge_images_with_photometric_mosaic(mosaic: Mosaic, input_0: Path,
 @cached.remote
 def merge_images_with_pmm(mosaic: Mosaic, input_0: Path,
                           input_1: Path) -> XisfFilePath:
-  if input_0 is None and input_1 is None:
-    return None
-
-  if input_0 is not None and input_1 is None:
-    return input_0
-
-  if input_0 is None and input_1 is not None:
-    return input_1
+  input_0 = input_0.resolve(strict=True)
+  input_1 = input_1.resolve(strict=True)
 
   print(f'### merge_images_with_pmm {input_0=} header {read_header(input_0)}')
   print(f'### merge_images_with_pmm {input_1=} header {read_header(input_1)}')
