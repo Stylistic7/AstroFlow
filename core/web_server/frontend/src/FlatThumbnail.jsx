@@ -4,11 +4,11 @@ import { Box, Typography } from '@mui/material';
 
 const FlatThumbnail = ({ stack, run, flatStack, selected, onSelect }) => {
   const thumbnailUrl = flatStack
-    ? `/thumbnail/run/${stack.stable_hash}/${run.content_hash}/${flatStack.content_hash}`
+    ? `/thumbnail/run/${stack.stable_hash}/${run.stable_hash}/${flatStack.stable_hash}`
     : `/thumbnail/stack/${stack.stable_hash}`;
 
-  const content_hash = flatStack
-    ? flatStack.content_hash
+  const stable_hash = flatStack
+    ? flatStack.stable_hash
     : 'none';
 
   return (
@@ -26,7 +26,7 @@ const FlatThumbnail = ({ stack, run, flatStack, selected, onSelect }) => {
         component="img"
         src={thumbnailUrl}
         loading="lazy"
-        alt={`Flat correction thumbnail for ${content_hash}`}
+        alt={`Flat correction thumbnail for ${stable_hash}`}
         sx={{
           width: 750,
           height: 450,
@@ -36,7 +36,7 @@ const FlatThumbnail = ({ stack, run, flatStack, selected, onSelect }) => {
         }}
       />
       <Typography align="center" sx={{ py: 1 }}>
-        {content_hash}
+        {stable_hash}
       </Typography>
     </Box>
   );
