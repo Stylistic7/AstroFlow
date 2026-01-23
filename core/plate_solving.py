@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import subprocess
 import sys
 import tempfile
@@ -6,13 +8,15 @@ from pathlib import Path
 import astropy.wcs  # type: ignore
 import astropy.io.fits as pyfits  # type: ignore
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, is_dataclass, asdict
 import numpy as np
 import traceback
 from typing import Any
-import pickle
 
 from file_io.conversion import convert_xisf_to_fits
+from file_io.sidecar import get_section, set_section, sidecar_path_for
+
+_PLATESOLUTION_SCHEMA = "astroflow.platesolution.v1"
 
 
 @dataclass
@@ -132,21 +136,41 @@ def _solve_field(filename: Path | str,
 # TODO: Make a "junk drawer" video that shows everything that can't be plate-
 # solved. The user can look at it and decide whether to improve the solver's
 # settings, or to throw the images away.
+def _plate_solution_to_obj(ps: PlateSolution) -> dict[str, Any]:
+  d = asdict(ps) if is_dataclass(ps) else dict(ps)  # type: ignore[arg-type]
+  c = d.get("center")
+  if isinstance(c, tuple):
+    d["center"] = list(c)
+  return {"schema": _PLATESOLUTION_SCHEMA, "data": d}
+
+
+def _plate_solution_from_obj(obj: dict[str, Any]) -> PlateSolution:
+  if obj.get("schema") != _PLATESOLUTION_SCHEMA:
+    raise ValueError(
+        f"Unsupported plate_solution schema: {obj.get('schema')!r}")
+  d = obj["data"]
+  if "center" in d and isinstance(d["center"], list):
+    d["center"] = tuple(d["center"])
+  return PlateSolution(**d)
+
+
 def solve_field(filename: Path | str,
-                allow_sidecars: bool = True,
                 debug: bool = False) -> PlateSolution | None:
-  assert filename
+  filename = Path(filename)
+  assert str(filename)
 
-  # If a sidecar file already exists, use it. This is intended for use in tests.
-  if allow_sidecars:
-    sidecar = filename.with_suffix('.pkl')
-    if sidecar.exists():
-      with open(sidecar, 'rb') as f:
-        print(f'### Returning plate-solving sidecar {sidecar}')
-        return pickle.load(f)
+  # Always consult sidecar first.
+  ps_obj = get_section(filename, "plate_solution")
+  if isinstance(ps_obj, dict):
+    try:
+      ps = _plate_solution_from_obj(ps_obj)
+      print(f"### Returning plate-solution from sidecar "
+            f"{sidecar_path_for(filename)}")
+      return ps
+    except Exception:
+      # Corrupt / incompatible section → recompute.
+      pass
 
-  # TODO: These options must be exposed to the user.
-  # TODO: Add --radius 2 and see if that speeds things up.
   trial_arguments = [
       [
           "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
@@ -181,24 +205,23 @@ def solve_field(filename: Path | str,
       ]
   ]
 
-  final_result = None
-  for i, arguments in enumerate(trial_arguments):
+  final_result: PlateSolution | None = None
+  for arguments in trial_arguments:
     result = _solve_field(filename, arguments, debug)
     if type(result) is PlateSolution:
       final_result = result
       break
 
-  sidecar = filename.with_suffix('.pkl')
-  assert not sidecar.exists()
-  with open(sidecar, 'wb') as f:
-    print(f'### Wrote plate-solving sidecar {sidecar}')
-    pickle.dump(result, f)
-
   if final_result is None:
-    print(f'Could not plate-solve file {filename}')
+    print(f"Could not plate-solve file {filename}")
+    return None
+
+  # Persist result unconditionally.
+  set_section(filename, "plate_solution", _plate_solution_to_obj(final_result))
+  print(f"### Updated AstroFlow sidecar for {filename}")
 
   return final_result
 
 
 if __name__ == '__main__':
-  solve_field(sys.argv[1], debug=True)
+  solve_field(Path(sys.argv[1]), debug=True)
