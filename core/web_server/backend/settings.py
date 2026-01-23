@@ -1,13 +1,7 @@
-from flask import Flask, request, jsonify, send_file, Blueprint
-import os
-from pathlib import Path
+from flask import request, jsonify, Blueprint
 
 from context import context
-from dependency_graph import Graph
-from file_io.generic import read_header
 from customization.settings import Settings, StackSettings
-from state.state_machine import enqueue_action
-from customization.compute_graph import customize_stack, store_customized_stack
 from state.actor import state
 
 # I need to figure out two things:
@@ -68,7 +62,7 @@ def update_stack_settings():
   print(f'### context.settings is now {context.settings}')
 
   # TODO: Maybe don't pass the entire settings struct?
-  state.dispatch(
+  state.enqueue(
       dict(type='update_settings', stack_id=stack_id, settings=settings))
 
   return jsonify({"status": "ok"})
