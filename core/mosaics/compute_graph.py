@@ -26,6 +26,7 @@ from metadata.image_metadata import compute_image_metadata
 from stacks.convert_to_dict import convert_to_dict
 from dependency_graph import run_graph
 from mosaics.final_storage import store_mosaic_color_channel
+from dependency_graph.workflow_graph_adapter import to_workflow_graph
 
 
 def targets_for_mosaic(mosaic: Mosaic, targets: TargetsDict) -> TargetsDict:
@@ -47,9 +48,11 @@ def stacks_for_mosaic(mosaic: Mosaic, stacks: CompositeStacksDict,
 def build_mosaic_subgraph(mode: QualityLevel, mosaic: Mosaic,
                           stacks: CompositeStacksDict,
                           targets: TargetsDict) -> Graph:
-  print(f'### build_mosaic_subgraph mode {mode} for mosaic {mosaic}')
+  print(
+      f'### build_mosaic_subgraph mode {mode} for mosaic {mosaic} stacks {[str(s) for s in stacks]}'
+  )
   viewbox = compute_viewbox(mode, mosaic)
-  filters = set(stack.filter for stack in stacks.values())
+  filters = set(stack.filter for stack in stacks.values() if stack is not None)
 
   mask_task = (compute_mosaic_masks, mode, mosaic, viewbox)
 
@@ -100,7 +103,7 @@ def build_placement_subgraph(mode: QualityLevel, mosaic: Mosaic,
 
 def compute_mask(strip: list[TargetHash], viewbox: Viewbox) -> box:
   targets = context.targets
-  print(f'### Entering compute_mask')
+  print(f'### Entering compute_mask {viewbox=}')
 
   # Compute the 2D polygon of all the targets in the strip.
   strip_poly = None
@@ -234,14 +237,24 @@ def process_mosaics_for_ui(stacks: CompositeStacksDict, targets: TargetsDict,
   def prepare_mosaic(mosaic: Mosaic):
     result = convert_to_dict(mosaic, transform=my_transform)
 
+    graph_status = None
+
+    def graph_update_fn(g):
+      nonlocal graph_status
+      graph_status = g
+
     graph = ray.get(
         build_mosaic_subgraph.remote(QualityLevel.MASTER, mosaic,
                                      stacks_for_mosaic(mosaic, stacks, targets),
                                      targets_for_mosaic(mosaic, targets)))
 
-    graph_results, _ = run_graph(graph, dry_run=True)
+    graph_results, _ = run_graph(graph,
+                                 graph_update_fn=graph_update_fn,
+                                 dry_run=True)
+                                 
     result['contains_exception'] = graph_results.contains_exception()
     result['is_complete'] = graph_results.is_complete()
+    result['workflow_graph'] = to_workflow_graph(graph_status)
 
     return result
 
