@@ -3,10 +3,11 @@ from pathlib import Path
 from xisf import XISF  # type: ignore
 import numpy as np
 from typing import Dict, Any, Optional
+import shutil
 
 from file_io.tiff_file_io import read_tiff_header, read_tiff_image
-from file_io.types import FitsFilePath, XisfFilePath, TiffFilePath
-
+from file_io.types import FitsFilePath, XisfFilePath, TiffFilePath, WithSidecar
+from file_io.sidecar import sidecar_path_for
 
 # TODO: Add a round-trip unit test.
 def convert_xisf_to_fits(xisf_filename: Path | str,
@@ -34,8 +35,11 @@ def convert_xisf_to_fits(xisf_filename: Path | str,
   fits_filename.parent.mkdir(parents=True, exist_ok=True)
   hdu.writeto(fits_filename, overwrite=True)
 
-  return FitsFilePath(fits_filename)
+  if isinstance(fits_filename, WithSidecar):
+    shutil.copy(sidecar_path_for(xisf_filename), sidecar_path_for(fits_filename))
+    return WithSidecar(FitsFilePath(fits_filename))
 
+  return FitsFilePath(fits_filename)
 
 def convert_fits_to_xisf(fits_filename: Path | str,
                          xisf_filename: Path | str,
@@ -71,6 +75,10 @@ def convert_fits_to_xisf(fits_filename: Path | str,
              creator_app="AstroFlow",
              image_metadata=ims_meta,
              xisf_metadata=file_meta)
+
+  if isinstance(fits_filename, WithSidecar):
+    shutil.copy(sidecar_path_for(fits_filename), sidecar_path_for(xisf_filename))
+    return WithSidecar(XisfFilePath(xisf_filename))
 
   return XisfFilePath(xisf_filename)
 
@@ -108,5 +116,9 @@ def convert_tiff_to_xisf(tiff_filename: Path | str,
              creator_app="AstroFlow",
              image_metadata=ims_meta,
              xisf_metadata=file_meta)
+  
+  if isinstance(tiff_filename, WithSidecar):
+    shutil.copy(sidecar_path_for(tiff_filename), sidecar_path_for(xisf_filename))
+    return WithSidecar(XisfFilePath(xisf_filename))
 
   return XisfFilePath(xisf_filename)
