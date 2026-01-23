@@ -24,8 +24,6 @@ def stack_filename(stack: SimpleStack | CompositeStack) -> Path:
   elif isinstance(stack, SimpleStack) and 'flat' in stack.image_type:
     return XisfFilePath(f'flat_{stack.camera}_{stack.filter}_'
                         f'{stack.stable_hash}.xisf')
-  elif isinstance(stack, SimpleStack) and 'light' in stack.image_type:
-    return XisfFilePath(f'light_run_{stack.stable_hash}.xisf')
   elif isinstance(stack, CompositeStack) and 'light' in stack.image_type:
     ra_dec_string = position_string.ra_dec_string(*stack.center)
     return XisfFilePath(f'light_{stack.name}_{ra_dec_string}_'
