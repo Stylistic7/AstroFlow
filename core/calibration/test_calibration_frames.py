@@ -1,15 +1,18 @@
+import ray
 import datetime
 import pytz
 
 from compute_graph.compute_graph import build_compute_graph
 from testing import make_synthetic_frames, copy_testdata_frames
 
+from previews.types import QualityLevel
+from stacks.compute_graph import build_calibration_stack_subgraph
 from stacks.simple_stack import SimpleStack
 from stacks.composite_stack import CompositeStack
 from stacks.types import StackHash
 from context import context
 from file_io.find_image_files import find_image_files
-from dependency_graph import run_graph
+from dependency_graph import run_graph, print_graph
 from customization.settings import Settings, StackSettings
 
 
@@ -362,6 +365,13 @@ def test_stack_calibration_frames(test_context) -> None:
   light_stacks = [s for s in stacks.values() if s.image_type == 'light']
   assert len(light_stacks) == 1
 
+  for cal_stack in context.calibration_stacks.values():
+    print(f'### cal_stack {cal_stack}')
+    print(f'### dependencies {cal_stack.dependencies}')
+
+  graph = ray.get(build_calibration_stack_subgraph.remote(QualityLevel.MASTER, light_stacks[0]))
+  print(f'### build_calibration_stack_subgraph')
+  print_graph(graph)
 
 def test_multiple_filters_for_flats(test_context) -> None:
   # Only one run of flat frames applies to the light frames, which use

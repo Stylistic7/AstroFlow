@@ -3,7 +3,7 @@ import ray
 from context import context
 from metadata.image_metadata import scatter_compute_image_metadata
 from clustering import cluster_by_image_center
-from calibration import identify_calibration_stacks
+from calibration import identify_calibration_stacks, associate_calibration_stacks
 from previews.stack_thumbnails import scatter_stack_thumbnails
 from previews.types import QualityLevel
 from mosaics.identification import identify_mosaics
@@ -86,6 +86,7 @@ def build_regroup_graph(metadata_ref: LargeObject) -> Graph:
   scatter_spatial_groups_task = (scatter_spatial_groups, metadata_ref)
   cluster_by_image_center_task = (cluster_by_image_center, metadata_ref)
   identify_calibration_stacks_task = (identify_calibration_stacks, metadata_ref)
+  associate_calibration_stacks_task = (associate_calibration_stacks)
   group_stacks_into_targets_task = (group_stacks_into_targets, metadata_ref)
 
   quarantine_calibration_stacks_task = (quarantine_calibration_stacks,
@@ -102,7 +103,8 @@ def build_regroup_graph(metadata_ref: LargeObject) -> Graph:
 
   return Graph({
       scatter_spatial_groups_task: {cluster_by_image_center_task},
-      quarantine_calibration_stacks_task: {identify_calibration_stacks_task},
+      associate_calibration_stacks_task: {identify_calibration_stacks_task},
+      quarantine_calibration_stacks_task: {associate_calibration_stacks_task},
       store_calibration_stacks: {quarantine_calibration_stacks_task},
       quarantine_stacks_task: {scatter_spatial_groups_task},
       scatter_customize_stacks_task: [
@@ -173,7 +175,7 @@ def build_main_processing_graph() -> Graph:
   # shopping_cart += [('target', target_id) for target_id in targets.keys()]
   # shopping_cart += [('mosaic', mosaic_id) for mosaic_id in mosaics.keys()]
 
-  # shopping_cart += [('mosaic', '75a1da6463e118e6')]
+  shopping_cart += [('mosaic', '75a1da6463e118e6')]
   # shopping_cart += [('mosaic', '0ee57ba3ed4695a3')]
   shopping_cart += [('mosaic', '7ae4d017d0ceada2')]
 

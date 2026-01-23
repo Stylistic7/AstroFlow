@@ -44,6 +44,7 @@ def identify_calibration_stacks(metadata_ref: LargeObject) -> SimpleStacksDict:
 
   def new_stack(frames: list[FrameHash]) -> CalibrationStack:
     stack = ray.get(simple_stack_from_frames.remote(frames, metadata))
+    assert stack.image_type in ['bias', 'dark', 'flat']
     return stack
 
   stacks = SimpleStacksDict()
@@ -105,7 +106,7 @@ def _build_cal_index(cal_stacks: dict[StackHash, CalibrationStack]):
   return bias_by_cam, dark_by_cam, flat_by_cam_filter
 
 
-def associate_with_stack(stack: CompositeStack, cal_stacks: SimpleStacksDict) -> CompositeStack:
+def associate_with_stacks(stacks: SimpleStacksDict, cal_stacks: SimpleStacksDict) -> SimpleStacksDict:
   bias_by_cam, dark_by_cam, flat_by_cam_filter = _build_cal_index(cal_stacks)
 
   def choose_bias(sub: SimpleStack) -> StackHash | None:
@@ -151,14 +152,31 @@ def associate_with_stack(stack: CompositeStack, cal_stacks: SimpleStacksDict) ->
       'flat': choose_flat,
   }
 
-  new_contents = SimpleStacksDict()
-  for h, sub in stack.contents.items():
-    deps = dict(sub.dependencies)  # shallow copy; avoid mutating original
-    for t in ('bias', 'dark', 'flat'):
+  calibrations_for_stack_type = {
+    'bias': [],
+    'dark': ['bias'],
+    'flat': ['bias'],
+    'light': ['bias', 'dark', 'flat']
+  }
+
+  new_stacks = SimpleStacksDict()
+  for h, stack in stacks.items():
+    print(f'### associating stack {stack}')
+    deps = dict(stack.dependencies)  # shallow copy; avoid mutating original
+    for t in calibrations_for_stack_type[stack.image_type]:
       if t not in deps:
-        sid = pickers[t](sub)
+        sid = pickers[t](stack)
+
         if sid is not None:
           deps[t] = {'stack_id': sid}
-    new_contents[h] = replace(sub, dependencies=deps)
+    new_stacks[h] = replace(stack, dependencies=deps)
 
+  return new_stacks
+
+def associate_with_stack(stack: CompositeStack, cal_stacks: SimpleStacksDict) -> CompositeStack:
+  new_contents = associate_with_stacks(stack.contents, cal_stacks)
   return replace(stack, contents=new_contents)
+
+@cached.remote
+def associate_calibration_stacks(cal_stacks: SimpleStacksDict) -> SimpleStacksDict:
+  return associate_with_stacks(cal_stacks, cal_stacks)

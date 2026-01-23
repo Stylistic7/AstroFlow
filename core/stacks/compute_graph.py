@@ -5,7 +5,7 @@ from spherical_geometry.polygon import SingleSphericalPolygon
 
 from context import context
 from stacks.stacking import stack_files
-from stacks.composite_stack import CompositeStack
+from stacks.composite_stack import SimpleStack, CompositeStack
 from stacks.post_process import post_process_stack
 from stacks.convert_to_dict import convert_to_dict
 from stacks.composite_stack import CompositeStacksDict
@@ -15,7 +15,8 @@ from metadata.image_metadata import compute_image_metadata
 from customization.types import CustomizedStack
 from customization.subframe_selection import get_light_frames_sorted_by_stars
 from previews.types import QualityLevel
-from dependency_graph import run_graph, chain
+from dependency_graph import run_graph, chain, print_graph
+from dependency_graph.workflow_graph_adapter import to_workflow_graph
 
 
 @ray.remote
@@ -23,17 +24,37 @@ def calibration_done(stack: CustomizedStack) -> None:
   pass
 
 
-@ray.remote
+@cached.remote
 def build_calibration_stack_subgraph(mode: QualityLevel,
                                      stack: CustomizedStack) -> Graph:
   calibration_stacks = context.calibration_stacks
-  return Graph({
-      (calibration_done, stack): {(stack_files, mode,
-                                   calibration_stacks[d['stack_id']])
-                                  for substack in stack.contents.values()
-                                  for d in substack.dependencies.values()
-                                  if 'stack_id' in d}
-  })
+
+  def visit_all_dependencies(stack: SimpleStack, depth=0) -> Graph:
+    assert isinstance(stack, SimpleStack)
+
+    print(f'### {' ' * depth} visit_all_dependencies {str(stack)}')
+    tasks = []
+    subgraphs = {}
+    for t, dep in stack.dependencies.items():
+      print(f'### {' ' * depth} type {t} dep {dep}')
+      if (stack_id := dep.get('stack_id')) is not None:
+        substack = calibration_stacks[stack_id]
+        tasks.append((stack_files, mode, substack))
+        subgraphs |= visit_all_dependencies(substack, depth=depth+2)
+    
+    if depth == 0:
+      return subgraphs
+    else:
+      return {(stack_files, mode, stack): tasks} | subgraphs
+
+  graph = Graph({})
+  for substack in stack.contents.values():
+    graph |= visit_all_dependencies(substack)
+
+  print(f'### build_calibration_stack_subgraph')
+  print_graph(graph)
+
+  return graph
 
 
 @ray.remote
@@ -97,13 +118,20 @@ def process_stacks_for_ui(stacks: CompositeStacksDict) -> None:
     for s in stack.contents.values():
       filenames += [m.filename for m in s.metadata.values()]
 
-    result['filenames'] = filenames
+    graph_status = None
+
+    def graph_update_fn(g):
+      nonlocal graph_status
+      graph_status = g
 
     graph = ray.get(build_stacking_subgraph.remote(QualityLevel.MASTER, stack))
 
-    graph_results, _ = run_graph(graph, dry_run=True)
+    graph_results, _ = run_graph(graph, graph_update_fn=graph_update_fn, dry_run=True)
+
+    result['filenames'] = filenames
     result['contains_exception'] = graph_results.contains_exception()
     result['is_complete'] = graph_results.is_complete()
+    result['workflow_graph'] = to_workflow_graph(graph_status)
 
     return result
 
