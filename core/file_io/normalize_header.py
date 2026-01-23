@@ -8,7 +8,15 @@ def normalize_header(header: dict) -> dict:
       continue
 
     if k == 'IMAGETYP':
-      output[k] = v.lower()
+      found = False
+      for t in ['bias', 'dark', 'flat', 'light']:
+        if t in v.lower():
+          output[k] = t
+          found = True
+      
+      if not found:
+        raise ValueError(f"Unknown IMAGETYP {v}")
+
       continue
 
     # Try to coerce the type to a date.
@@ -24,5 +32,8 @@ def normalize_header(header: dict) -> dict:
 
   if 'EXPTIME' in output and 'EXPOSURE' not in output:
     output['EXPOSURE'] = float(output['EXPTIME'])
+
+  if 'FILTER' not in output:
+    output['FILTER'] = 'none'
 
   return output
