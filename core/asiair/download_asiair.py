@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 import ray
 import subprocess
-import re
 from pathlib import Path
 import tempfile
 import time
@@ -12,8 +13,8 @@ from typing import Any
 
 import file_io
 import file_io.fits_file_io
+from file_io.sidecar import update_sidecar
 import time_util
-
 from context import context
 from dependency_graph import Graph
 
@@ -65,22 +66,46 @@ def _make_dest_dir_for_date(dest_dir: str, date: datetime.datetime) -> str:
 
 
 # TODO: Remove `rig` or somehow bring it up through the UI?
-def _modify_fits_headers(fits_files: list[str], rig: str,
-                         default_filter: str) -> list[str]:
-  print(f'Updating FITS headers of {len(fits_files)} files...')
-  for filename in fits_files:
-    assert os.path.exists(filename)
-    fits = pyfits.open(filename, mode='update', mmap=False)
-    dt = time_util.parse_utc_datetime(fits[0].header['DATE-OBS'])
-    fits[0].header['RIG'] = rig
-    fits[0].header['DATE'] = dt.strftime('%Y-%m-%d')
-    if 'FILTER' not in fits[0].header:
-      assert default_filter, "--default-filter must be specified"
-      fits[0].header['FILTER'] = default_filter
-    fits.flush()
-    fits.close()
+def _save_fits_overlay(fits_files: list[str], rig: str,
+                       default_filter: str) -> list[str]:
+  """
+  Read raw FITS headers and persist an AstroFlow header overlay into the sidecar.
+  The FITS files themselves are never modified.
+  """
+  print(f"Recording FITS header overlay for {len(fits_files)} files...")
 
-  print('Done updating FITS headers')
+  for filename in fits_files:
+    path = Path(filename)
+    assert path.exists()
+
+    # Read-only: inspect raw header.
+    with pyfits.open(path, mode="readonly", memmap=True) as fits:
+      hdr = fits[0].header
+      date_obs = hdr.get("DATE-OBS")
+      has_filter = "FILTER" in hdr
+
+    if not date_obs:
+      raise KeyError(f"{path}: missing DATE-OBS")
+
+    dt = time_util.parse_utc_datetime(date_obs)
+
+    def _upd(root: dict) -> None:
+      astroflow = root.setdefault("astroflow", {})
+      overlay = astroflow.setdefault("header_overlay", {})
+
+      overlay["RIG"] = rig
+      overlay["DATE"] = dt.strftime("%Y-%m-%d")
+
+      if not has_filter:
+        assert default_filter, "--default-filter must be specified"
+        overlay["FILTER"] = default_filter
+      else:
+        # If raw FITS has FILTER, do not override it via overlay.
+        overlay.pop("FILTER", None)
+
+    update_sidecar(path, _upd)
+
+  print("Done recording FITS header overlay")
   return fits_files
 
 
@@ -90,8 +115,8 @@ def _copy_fits_files(fits_files: list[str], dest_dir: str) -> list[str] | None:
 
   print(f"Using rsync to copy {len(fits_files)} FITS files to '{dest_dir}'...")
   ret = subprocess.run([
-      'rsync', '-a', '--partial', '--checksum', '--inplace', *fits_files,
-      dest_dir
+      "rsync", "-a", "--ignore-existing", "--partial",
+      "--partial-dir=.rsync-partial", "--delay-updates", *fits_files, dest_dir
   ]).returncode
   if ret != 0:
     print("Could not rsync FITS files")
@@ -143,8 +168,7 @@ def _download_group(fits_files: list[str], dest_dir: str, rig: str,
                     default_filter: str) -> None:
   copied_fits_files = _copy_fits_files(fits_files, dest_dir)
   assert copied_fits_files is not None
-  modified_fits_files = _modify_fits_headers(copied_fits_files, rig,
-                                             default_filter)
+  _save_fits_overlay(copied_fits_files, rig, default_filter)
 
 
 def _download_from_rig_grouped_by_date(
