@@ -1,5 +1,4 @@
 from pathlib import Path
-import shutil
 import os
 
 from context import context
@@ -11,6 +10,7 @@ from customization.types import CustomizedStack
 from stacks.composite_stack import CompositeStack
 from stacks.stacking import stack_files
 from file_io.types import XisfFilePath
+from file_io.generic import copy_image
 from products import makes_image
 from previews.types import QualityLevel
 
@@ -47,12 +47,7 @@ def post_process_stack(mode: QualityLevel,
     return output_filename
 
   if context.get('mock_pixinsight', False):
-    shutil.copy(master, output_filename)
-    sidecar = Path(master).with_suffix('.pkl')
-    if sidecar.exists():
-      dest_sidecar = Path(output_filename).with_suffix('.pkl')
-      shutil.copy(sidecar, dest_sidecar)
-      print(f'### Copied plate-solving sidecar {sidecar} to {dest_sidecar}')
+    copy_image(master, output_filename)
   else:
     _post_process_stack([master], [output_filename])
 

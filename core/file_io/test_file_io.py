@@ -7,8 +7,8 @@ import shutil
 from pathlib import Path
 
 from file_io.types import FitsFilePath, XisfFilePath, WithSidecar
-from file_io.generic import read_header, read_image, update_header, get_content_hash, set_content_hash
-
+from file_io.generic import read_header, read_image, update_header, get_content_hash, set_content_hash, copy_image
+from file_io.sidecar import sidecar_path_for
 
 class TestFileIO(unittest.TestCase):
 
@@ -69,7 +69,7 @@ class TestFileIO(unittest.TestCase):
       shutil.copy(input_filename, output_file.path)
       set_content_hash(output_file, 'foo')
 
-      sidecar_path = output_file.path.with_suffix(".json")
+      sidecar_path = sidecar_path_for(output_file.path)
       self.assertTrue(os.path.exists(sidecar_path))
 
       update_header(output_file, {'FLOATVAL': 1.234})
@@ -78,6 +78,23 @@ class TestFileIO(unittest.TestCase):
 
       self.assertEqual(get_content_hash(output_file), 'foo')
 
+  def test_copy(self):
+    input_filename = Path(
+        'testdata/output/Stacks/Great Nebula in Orion/masters/master_light_Great Nebula in Orion_RA_82.70_DEC_-5.60_ZWO ASI6200MM Pro_2.21aspp_1.57deg_H_77ade5e8fa458f7f.xisf'
+    )
+    with tempfile.TemporaryDirectory() as temp_dir:
+      first_file = WithSidecar(XisfFilePath(os.path.join(temp_dir,
+                                                          'foo.xisf')))
+      shutil.copy(input_filename, first_file.path)
+      set_content_hash(first_file, 'foo')
+      update_header(first_file, {'FLOATVAL': 1.234})
+
+      second_file = WithSidecar(XisfFilePath(os.path.join(temp_dir,
+                                                          'bar.xisf')))
+      copy_image(first_file, second_file)
+
+      header = read_header(second_file)
+      self.assertEqual(header['FLOATVAL'], 1.234)
 
 if __name__ == '__main__':
   unittest.main()

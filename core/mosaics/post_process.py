@@ -1,8 +1,8 @@
 import os
 from pathlib import Path
 from astropy.time import Time
-import shutil
 
+from file_io.generic import read_image, read_header, copy_image
 from file_io.types import XisfFilePath
 from pix import PixInsight
 from pix.classes import ImageList
@@ -66,17 +66,18 @@ def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> XisfFilePath:
   ]
 
   for image in images:
-    print(
-        f'### post_process_mosaic image {image} exists {os.path.exists(image)}')
+    print(f'### post_process_mosaic image {image} '
+          f'type {type(image)} exists {os.path.exists(image)}')
 
   output_filename = post_process_mosaic.filename_fn(mosaic, None)
   output_filename.parent.mkdir(parents=True, exist_ok=True)
   print(f'### post_process_mosaic output_filename {output_filename}')
 
   if context.get('mock_pixinsight', False):
-    shutil.copy(images[0], output_filename)
+    print(f'### post_process_mosaic mocking PixInsight ' 
+          f'{images[0]} -> {output_filename}')
+    copy_image(images[0], output_filename)
   else:
     _post_process_mosaic(images, mosaic, output_filename)
 
-  print(f'### post_process_mosaic returning {output_filename=}')
   return output_filename

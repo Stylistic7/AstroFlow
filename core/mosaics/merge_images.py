@@ -3,10 +3,9 @@ import ray
 import numpy as np
 from pathlib import Path
 from dataclasses import dataclass
-import shutil
 
 from context import context
-from file_io.generic import read_header, read_image
+from file_io.generic import read_header, read_image, copy_image
 from file_io.conversion import convert_tiff_to_xisf
 from pix.classes import ImageList
 from pix.decorators import PixInsight
@@ -66,6 +65,7 @@ def merge_images_with_photometric_mosaic(mosaic: Mosaic, input_0: Path,
                                          filter: str) -> XisfFilePath:
   print(f'### merge_images_with_photometric_mosaic {input_0} {input_1}')
   filename = merge_images_with_pmm.filename_fn(mosaic, input_0, input_1)
+  filename.parent.mkdir(parents=True, exist_ok=True)
   run_photometric_mosaic([input_0, input_1], filename)
   assert os.path.exists(filename), f'file not found: {filename}'
   update_header(filename, {'FILTER': filter})
@@ -97,7 +97,7 @@ def merge_images_with_pmm(mosaic: Mosaic, input_0: Path,
     else:
       print(f'### mocking PixInsight for merging; '
             f'converting {input_0=} to {output_filename=}')
-      shutil.copy(input_0, output_filename)
+      copy_image(input_0, output_filename)
       return output_filename
   else:
     return ray.get(

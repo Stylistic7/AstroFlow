@@ -4,13 +4,12 @@ import os
 from pathlib import Path
 import errno
 import os
-import shutil
 import astropy.io.fits as pyfits  # type: ignore
 from typing import Any
 
 import file_io
 from file_io.types import XisfFilePath
-from file_io.generic import update_header
+from file_io.generic import update_header, copy_image
 from stacks.artifacts import stack_filename
 from stacks.simple_stack import SimpleStack, SimpleStacksDict
 from stacks.composite_stack import Stack, CompositeStack
@@ -50,7 +49,7 @@ def _copy_frames_with_plate_solution(mode: QualityLevel, metadata: MetadataDict,
 
     if mode == QualityLevel.MASTER:
       print(f'### copying master...')
-      shutil.copyfile(filename, dest_filename)
+      copy_image(filename, dest_filename)
     elif mode == QualityLevel.DOWNSCALED_MASTER:
       print(f'### downscaling FITS...')
       downscale_fits(filename, dest_filename, K=4)
@@ -114,18 +113,13 @@ def _setup_composite_stack(mode: QualityLevel, stack: CompositeStack,
 def _mock_stacking(src_filename: str, dest_filename: str,
                    metadata: dict[str, str]) -> None:
   assert src_filename is not None
+  
+  print(f'### Mocked stacking, converted filename {src_filename} to '
+        f'filename {dest_filename} with metadata {metadata}')
   file_io.conversion.convert_fits_to_xisf(src_filename,
                                           dest_filename,
                                           add_noise=True,
                                           metadata=metadata)
-  print(f'### Mocked stacking, converted filename {src_filename} to '
-        f'filename {dest_filename} with metadata {metadata}')
-  sidecar = Path(src_filename).with_suffix('.pkl')
-  if sidecar.exists():
-    dest_sidecar = dest_filename.with_suffix('.pkl')
-    shutil.copy(sidecar, dest_sidecar)
-    print(f'### Copied plate-solving sidecar {sidecar} to {dest_sidecar}')
-
   return XisfFilePath(dest_filename)
 
 
@@ -146,7 +140,7 @@ def _copy_wbpp_result(stacking_dir: str, dest_filename: str,
   wbpp_masters.sort(key=lambda x: os.path.getmtime(x))
   filename = wbpp_masters[-1]
   print(f'last modified WBPP master {filename} -> {dest_filename}')
-  shutil.copy(filename, dest_filename)
+  copy_image(filename, dest_filename)
   update_header(dest_filename, metadata)
 
   return XisfFilePath(dest_filename)

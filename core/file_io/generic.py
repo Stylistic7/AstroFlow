@@ -4,7 +4,9 @@ import xxhash
 from typing import Any
 from functools import singledispatch
 import json
+import shutil
 
+from file_io.sidecar import sidecar_path_for
 from file_io.types import FitsFilePath, XisfFilePath, TiffFilePath, WithSidecar
 from file_io.fits_file_io import read_fits_header, read_fits_image, update_fits_header
 from file_io.xisf_file_io import read_xisf_header, read_xisf_image, update_xisf_header
@@ -80,12 +82,23 @@ def _(wrapped: WithSidecar[Path]) -> dict[str, Any]:
   except:
     image_metadata = {}
 
-  sidecar_path = wrapped.path.with_suffix(".json")
-
-  with open(sidecar_path, "r") as f:
-    sidecar_metadata = json.load(f)
+  try:
+    with open(sidecar_path_for(wrapped), "r") as f:
+      sidecar_metadata = json.load(f)
+  except:
+    sidecar_metadata = {}
 
   return image_metadata | sidecar_metadata
+
+
+def copy_image(input: Path, output: Path) -> Path:
+  if isinstance(input, WithSidecar):
+    shutil.copy(input.path, output.path)
+    shutil.copy(sidecar_path_for(input.path), sidecar_path_for(output.path))
+  else:
+    shutil.copy(input, output)
+
+  return output
 
 
 @singledispatch
@@ -111,7 +124,7 @@ def _(filename: TiffFilePath, metadata: dict[str, Any]) -> dict[str, Any]:
 
 @update_header.register(WithSidecar)
 def _(wrapped: WithSidecar[Path], metadata_in: dict[str, Any]) -> dict[str, Any]:
-  sidecar_path = wrapped.path.with_suffix(".json")
+  sidecar_path = sidecar_path_for(wrapped.path)
 
   try:
     with open(sidecar_path, "r") as f:
@@ -159,7 +172,7 @@ def _(filename: TiffFilePath) -> str:
 
 @get_content_hash.register(WithSidecar)
 def _(wrapped: WithSidecar[Path]) -> str:
-  sidecar_path = wrapped.path.with_suffix(".json")
+  sidecar_path = sidecar_path_for(wrapped.path)
 
   with open(sidecar_path, "r") as f:
     metadata = json.load(f)
@@ -190,7 +203,7 @@ def _(filename: TiffFilePath, content_hash: str) -> None:
 
 @set_content_hash.register(WithSidecar)
 def _(wrapped: WithSidecar[Path], content_hash: str) -> None:
-  sidecar_path = wrapped.path.with_suffix(".json")
+  sidecar_path = sidecar_path_for(wrapped.path)
 
   try:
     with open(sidecar_path, "r") as f:
