@@ -1,5 +1,6 @@
 from xisf import XISF  # type: ignore
-from shapely.geometry import Polygon, box
+from shapely.geometry import Polygon
+from shapely import box  # type: ignore
 from spherical_geometry.polygon import SphericalPolygon  # type: ignore
 import numpy as np
 import structlog
@@ -9,7 +10,7 @@ from typing import Optional
 
 from clustering import cluster_continuous
 from geometry.polygons import project_polygon
-from mosaics.types import Viewbox
+from mosaics.types import Viewbox, Mask
 
 log = structlog.get_logger()
 
@@ -36,7 +37,7 @@ def project_to_viewbox(polygon: SphericalPolygon, viewbox: Viewbox) -> Polygon:
 
 @ray.remote
 def process(polygon: Polygon, x1: float, x_clusters: list[float],
-            y_clusters: list[float]) -> tuple[Optional[box], float]:
+            y_clusters: list[float]) -> tuple[Optional[Polygon], float]:
   max_area = 0.0
   best_rectangle = None
 
@@ -82,16 +83,16 @@ def largest_interior_rectangle(polygon: Polygon, epsilon=20) -> box:
 
 
 def trim_image(image: np.ndarray,
-               box: box,
+               mask: Mask,
                draw_outline: bool = False) -> np.ndarray:
-  x_min, y_min, x_max, y_max = box.bounds
+  x_min, y_min, x_max, y_max = mask.bounds
   x_min, y_min, x_max, y_max = map(int, (x_min, y_min, x_max, y_max))
 
   output_image = np.zeros_like(image)
   output_image[y_min:y_max, x_min:x_max] = image[y_min:y_max, x_min:x_max]
 
   if draw_outline:
-    # Draw white outline (value 1.0) of the box
+    # Draw white outline (value 1.0) of the mask
     output_image[y_min, x_min:x_max] = 1.0  # Top edge
     output_image[y_max - 1, x_min:x_max] = 1.0  # Bottom edge
     output_image[y_min:y_max, x_min] = 1.0  # Left edge

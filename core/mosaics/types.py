@@ -1,6 +1,7 @@
 from typing import NewType, TypeAlias
 from dataclasses import dataclass
 from beartype import beartype
+from shapely import box  # type: ignore
 
 from geometry.projection import Projection
 from hashing import hash_dataclass
@@ -62,7 +63,26 @@ class Viewbox(ContentHashed):
   tile_width: int
 
   def __str__(self):
-    return f'Viewbox({self.num_pixels_x} px x {self.num_pixels_y} px)'
+    return (f'Viewbox(content_hash={self.content_hash} '
+            f'{self.num_pixels_x} px x {self.num_pixels_y} px')
+
+  def __hash__(self) -> int:
+    return hash_dataclass(self)
+
+
+@dataclass(frozen=True)
+class Mask(ContentHashed):
+  xmin: int
+  ymin: int
+  xmax: int
+  ymax: int
+
+  def to_box(self):
+    return box(self.xmin, self.ymin, self.xmax, self.ymax)
+
+  def __str__(self):
+    return (f'Mask(content_hash={self.content_hash} {self.xmin=} '
+            f'{self.xmax=} {self.ymin=} {self.ymax=}')
 
   def __hash__(self) -> int:
     return hash_dataclass(self)

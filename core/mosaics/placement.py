@@ -9,7 +9,6 @@ from typing import Any
 import structlog
 from astropy.coordinates import SkyCoord  # type: ignore
 from astropy import units as u  # type: ignore
-from shapely import box  # type: ignore
 from dataclasses import dataclass
 
 from customization.types import CustomizedStack
@@ -18,7 +17,7 @@ from file_io.tiff_file_io import write_tiff_image
 from file_io.types import TiffFilePath
 from context import context
 from previews.types import QualityLevel
-from mosaics.types import Mosaic, Viewbox
+from mosaics.types import Mosaic, Viewbox, Mask
 from mosaics.trimming import trim_image, project_to_viewbox, largest_interior_rectangle
 from mosaics.artifacts import placed_filename
 from decorators import cached
@@ -144,18 +143,18 @@ def _project_in_tiles(viewbox: Viewbox,
 
 
 def _save_image_to_file(mosaic: Mosaic, stack: CustomizedStack, filter: str,
-                        viewbox: Viewbox, mask: box,
+                        viewbox: Viewbox, mask: Mask,
                         image: np.ndarray) -> TiffFilePath:
   filename = place_image.filename_fn(mosaic, stack, filter, viewbox, mask)
   write_tiff_image(filename, image, {'FILTER': filter})
-  print(f'### Wrote filename {filename}')
+  print(f'### Wrote filename {filename} type {type(filename)}')
   return filename
 
 
 @makes_image(PlacedImage).as_master(placed_filename)
 @cached.remote(memory=_PLACE_IMAGE_MEMORY_REQUIREMENT)
 def place_image(mode: QualityLevel, mosaic: Mosaic, stack: CustomizedStack,
-                filter: str, viewbox: Viewbox, mask: box,
+                filter: str, viewbox: Viewbox, mask: Mask,
                 image_metadata: ImageMetadata) -> TiffFilePath:
   # if context.dangerously_accept_existing_files and os.path.exists(filename):
   #   print(f'### Dangerously skipping place_large_image because '
@@ -165,7 +164,8 @@ def place_image(mode: QualityLevel, mosaic: Mosaic, stack: CustomizedStack,
   filename = image_metadata.filename
 
   print(
-      f'### place_image {mode} mosaic {mosaic.stable_hash} filename {filename}')
+      f'### place_image {mode} mosaic {str(mosaic)} stack {str(stack)} {filename=} viewbox {str(viewbox)}'
+  )
   assert filename, f"place_image: bad filename {filename}"
 
   wcs = WCS(image_metadata.plate_solution.header)
