@@ -26,7 +26,7 @@ def test_foo(init_ray):
     assert result == 49
 
     cache = get_cache()
-    assert cache[("foo_task", "d3e215c7dbe3ba6e")] == 49
+    assert cache[("foo_task", "2af56cd5e907db8a")] == 49
 
 
 def test_lazy_load_dict(init_ray):
@@ -79,7 +79,12 @@ def test_lazy_load_dict(init_ray):
     assert raw_cache[("stacks", "mno567")] == "value_mno567"
     assert raw_cache[("stacks", "xyz999")] == "new_value_xyz999"
 
-    assert list(cache["stacks"].keys()) == ["abc123", "def789", "mno567", "xyz999"]
+    assert list(cache["stacks"].keys()) == [
+        "abc123",
+        "def789",
+        "mno567",
+        "xyz999",
+    ]
     assert list(cache["stacks"].values()) == [
         "value_abc123",
         "value_def789",
@@ -87,7 +92,12 @@ def test_lazy_load_dict(init_ray):
         "new_value_xyz999",
     ]
 
-    assert list(context.stacks.keys()) == ["abc123", "def789", "mno567", "xyz999"]
+    assert list(context.stacks.keys()) == [
+        "abc123",
+        "def789",
+        "mno567",
+        "xyz999",
+    ]
     assert list(context.stacks.values()) == [
         "value_abc123",
         "value_def789",

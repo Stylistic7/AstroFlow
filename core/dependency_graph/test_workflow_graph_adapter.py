@@ -65,7 +65,9 @@ def build_outer_dynamic_graph() -> Graph:
 
 @cached.remote
 def task_raises_exception() -> None:
-    context.num_task_raises_exception_runs = context.num_task_raises_exception_runs + 1
+    context.num_task_raises_exception_runs = (
+        context.num_task_raises_exception_runs + 1
+    )
     raise ValueError("oh no!")
 
 
@@ -96,7 +98,9 @@ def test_simple_graph(test_context) -> None:
         nonlocal workflow_graph
         workflow_graph = to_workflow_graph(g)
 
-    results, logs = run_graph(graph, debug=True, graph_update_fn=graph_update_fn)
+    results, logs = run_graph(
+        graph, debug=True, graph_update_fn=graph_update_fn
+    )
 
     pprint.pprint(workflow_graph, indent=2, width=200)
 
@@ -133,21 +137,25 @@ def test_simple_graph(test_context) -> None:
             "first_remote_task_1147742147103610095": {
                 "description": "A",
                 "displayName": "first_remote_task",
+                "options": {"imageUrl": "/api/open_image/None"},
                 "state": "SUCCEEDED",
             },
             "first_remote_task_811649748264404692": {
                 "description": "B",
                 "displayName": "first_remote_task",
+                "options": {"imageUrl": "/api/open_image/None"},
                 "state": "SUCCEEDED",
             },
             "second_remote_task_4510719504589501579": {
                 "description": "C",
                 "displayName": "second_remote_task",
+                "options": {"imageUrl": "/api/open_image/None"},
                 "state": "SUCCEEDED",
             },
             "second_remote_task_874700556330765323": {
                 "description": "D",
                 "displayName": "second_remote_task",
+                "options": {"imageUrl": "/api/open_image/None"},
                 "state": "SUCCEEDED",
             },
         },
@@ -249,45 +257,54 @@ def test_graph_with_subgraph(test_context) -> None:
                 "groupMeta": {
                     "gather_499248906983321316": {
                         "displayName": "gather",
+                        "options": {"imageUrl": "/api/open_image/None"},
                         "state": "SUCCEEDED",
                     },
                     "process_1161829019351892739": {
                         "description": "0",
                         "displayName": "process",
+                        "options": {"imageUrl": "/api/open_image/None"},
                         "state": "SUCCEEDED",
                     },
                     "process_122636723848520014": {
                         "description": "2",
                         "displayName": "process",
+                        "options": {"imageUrl": "/api/open_image/None"},
                         "state": "SUCCEEDED",
                     },
                     "process_648355766798421503": {
                         "description": "1",
                         "displayName": "process",
+                        "options": {"imageUrl": "/api/open_image/None"},
                         "state": "SUCCEEDED",
                     },
                 },
                 "hasControlNode": True,
+                "options": {"imageUrl": "/api/open_image/None"},
                 "state": "SUCCEEDED",
             },
             "first_remote_task_1147742147103610095": {
                 "description": "A",
                 "displayName": "first_remote_task",
+                "options": {"imageUrl": "/api/open_image/None"},
                 "state": "SUCCEEDED",
             },
             "first_remote_task_811649748264404692": {
                 "description": "B",
                 "displayName": "first_remote_task",
+                "options": {"imageUrl": "/api/open_image/None"},
                 "state": "SUCCEEDED",
             },
             "second_remote_task_4510719504589501579": {
                 "description": "C",
                 "displayName": "second_remote_task",
+                "options": {"imageUrl": "/api/open_image/None"},
                 "state": "SUCCEEDED",
             },
             "second_remote_task_874700556330765323": {
                 "description": "D",
                 "displayName": "second_remote_task",
+                "options": {"imageUrl": "/api/open_image/None"},
                 "state": "SUCCEEDED",
             },
         },
@@ -393,49 +410,59 @@ def test_graph_with_nested_subgraph(test_context) -> None:
                         "groupMeta": {
                             "gather_499248906983321316": {
                                 "displayName": "gather",
+                                "options": {"imageUrl": "/api/open_image/None"},
                                 "state": "SUCCEEDED",
                             },
                             "process_1161829019351892739": {
                                 "description": "0",
                                 "displayName": "process",
+                                "options": {"imageUrl": "/api/open_image/None"},
                                 "state": "SUCCEEDED",
                             },
                             "process_122636723848520014": {
                                 "description": "2",
                                 "displayName": "process",
+                                "options": {"imageUrl": "/api/open_image/None"},
                                 "state": "SUCCEEDED",
                             },
                             "process_648355766798421503": {
                                 "description": "1",
                                 "displayName": "process",
+                                "options": {"imageUrl": "/api/open_image/None"},
                                 "state": "SUCCEEDED",
                             },
                         },
                         "hasControlNode": True,
+                        "options": {"imageUrl": "/api/open_image/None"},
                         "state": "SUCCEEDED",
                     },
                     "first_remote_task_1269075729911039184": {
                         "description": "1",
                         "displayName": "first_remote_task",
+                        "options": {"imageUrl": "/api/open_image/None"},
                         "state": "SUCCEEDED",
                     },
                     "second_remote_task_1379722681841618591": {
                         "description": "2",
                         "displayName": "second_remote_task",
+                        "options": {"imageUrl": "/api/open_image/None"},
                         "state": "SUCCEEDED",
                     },
                 },
                 "hasControlNode": True,
+                "options": {"imageUrl": "/api/open_image/None"},
                 "state": "SUCCEEDED",
             },
             "first_remote_task_1147742147103610095": {
                 "description": "A",
                 "displayName": "first_remote_task",
+                "options": {"imageUrl": "/api/open_image/None"},
                 "state": "SUCCEEDED",
             },
             "second_remote_task_4510719504589501579": {
                 "description": "C",
                 "displayName": "second_remote_task",
+                "options": {"imageUrl": "/api/open_image/None"},
                 "state": "SUCCEEDED",
             },
         },
@@ -462,7 +489,9 @@ def test_dry_run(test_context):
     pprint.pprint(workflow_graph, indent=2, width=200)
     assert context.num_task_raises_exception_runs == 0
 
-    results, _ = run_graph(graph, graph_update_fn=graph_update_fn, dry_run=False)
+    results, _ = run_graph(
+        graph, graph_update_fn=graph_update_fn, dry_run=False
+    )
     pprint.pprint(workflow_graph, indent=2, width=200)
     assert context.num_task_raises_exception_runs == 1
 
@@ -486,66 +515,76 @@ def test_subgraph_exception(test_context):
 
     # In the dry run, the subgraphs and the node inside them will never have run.
     assert (
-        workflow_graph["state"]["build_subgraph_raise_exception_187287178012096640"][
+        workflow_graph["state"][
+            "build_subgraph_raise_exception_187287178012096640"
+        ]["state"]
+        == "NO_STATE_RUNTIME"
+    )
+    assert (
+        workflow_graph["state"][
+            "build_subgraph_raise_exception_187287178012096640"
+        ]["groupMeta"]["build_subgraph_raise_exception_2082629539921352699"][
             "state"
         ]
         == "NO_STATE_RUNTIME"
     )
     assert (
-        workflow_graph["state"]["build_subgraph_raise_exception_187287178012096640"][
+        workflow_graph["state"][
+            "build_subgraph_raise_exception_187287178012096640"
+        ]["groupMeta"]["build_subgraph_raise_exception_2082629539921352699"][
             "groupMeta"
-        ]["build_subgraph_raise_exception_2082629539921352699"]["state"]
+        ]["build_subgraph_raise_exception_2135598240338844923"]["state"]
         == "NO_STATE_RUNTIME"
     )
     assert (
-        workflow_graph["state"]["build_subgraph_raise_exception_187287178012096640"][
+        workflow_graph["state"][
+            "build_subgraph_raise_exception_187287178012096640"
+        ]["groupMeta"]["build_subgraph_raise_exception_2082629539921352699"][
             "groupMeta"
-        ]["build_subgraph_raise_exception_2082629539921352699"]["groupMeta"][
-            "build_subgraph_raise_exception_2135598240338844923"
+        ]["build_subgraph_raise_exception_2135598240338844923"]["groupMeta"][
+            "task_raises_exception_2392094195672432855"
         ]["state"]
         == "NO_STATE_RUNTIME"
     )
-    assert (
-        workflow_graph["state"]["build_subgraph_raise_exception_187287178012096640"][
-            "groupMeta"
-        ]["build_subgraph_raise_exception_2082629539921352699"]["groupMeta"][
-            "build_subgraph_raise_exception_2135598240338844923"
-        ]["groupMeta"]["task_raises_exception_2392094195672432855"]["state"]
-        == "NO_STATE_RUNTIME"
-    )
 
-    results, _ = run_graph(graph, graph_update_fn=graph_update_fn, dry_run=False)
+    results, _ = run_graph(
+        graph, graph_update_fn=graph_update_fn, dry_run=False
+    )
     assert context.num_task_raises_exception_runs == 1
 
     # After the real run, the inner node should have raised an exception, so
     # it has failed. In addition, the subgraph's parent nodes should pick up
     # the failure inside it.
     assert (
-        workflow_graph["state"]["build_subgraph_raise_exception_187287178012096640"][
+        workflow_graph["state"][
+            "build_subgraph_raise_exception_187287178012096640"
+        ]["state"]
+        == "FAILED"
+    )
+    assert (
+        workflow_graph["state"][
+            "build_subgraph_raise_exception_187287178012096640"
+        ]["groupMeta"]["build_subgraph_raise_exception_2082629539921352699"][
             "state"
         ]
         == "FAILED"
     )
     assert (
-        workflow_graph["state"]["build_subgraph_raise_exception_187287178012096640"][
+        workflow_graph["state"][
+            "build_subgraph_raise_exception_187287178012096640"
+        ]["groupMeta"]["build_subgraph_raise_exception_2082629539921352699"][
             "groupMeta"
-        ]["build_subgraph_raise_exception_2082629539921352699"]["state"]
+        ]["build_subgraph_raise_exception_2135598240338844923"]["state"]
         == "FAILED"
     )
     assert (
-        workflow_graph["state"]["build_subgraph_raise_exception_187287178012096640"][
+        workflow_graph["state"][
+            "build_subgraph_raise_exception_187287178012096640"
+        ]["groupMeta"]["build_subgraph_raise_exception_2082629539921352699"][
             "groupMeta"
-        ]["build_subgraph_raise_exception_2082629539921352699"]["groupMeta"][
-            "build_subgraph_raise_exception_2135598240338844923"
+        ]["build_subgraph_raise_exception_2135598240338844923"]["groupMeta"][
+            "task_raises_exception_2392094195672432855"
         ]["state"]
-        == "FAILED"
-    )
-    assert (
-        workflow_graph["state"]["build_subgraph_raise_exception_187287178012096640"][
-            "groupMeta"
-        ]["build_subgraph_raise_exception_2082629539921352699"]["groupMeta"][
-            "build_subgraph_raise_exception_2135598240338844923"
-        ]["groupMeta"]["task_raises_exception_2392094195672432855"]["state"]
         == "FAILED"
     )
 
@@ -646,45 +685,54 @@ def test_graph_with_subgraph_dry_run(test_context) -> None:
                 "groupMeta": {
                     "gather_499248906983321316": {
                         "displayName": "gather",
+                        "options": {"imageUrl": "/api/open_image/None"},
                         "state": "NO_STATE_RUNTIME",
                     },
                     "process_1161829019351892739": {
                         "description": "0",
                         "displayName": "process",
+                        "options": {"imageUrl": "/api/open_image/None"},
                         "state": "NO_STATE_RUNTIME",
                     },
                     "process_122636723848520014": {
                         "description": "2",
                         "displayName": "process",
+                        "options": {"imageUrl": "/api/open_image/None"},
                         "state": "NO_STATE_RUNTIME",
                     },
                     "process_648355766798421503": {
                         "description": "1",
                         "displayName": "process",
+                        "options": {"imageUrl": "/api/open_image/None"},
                         "state": "NO_STATE_RUNTIME",
                     },
                 },
                 "hasControlNode": True,
+                "options": {"imageUrl": "/api/open_image/None"},
                 "state": "NO_STATE_RUNTIME",
             },
             "first_remote_task_1147742147103610095": {
                 "description": "A",
                 "displayName": "first_remote_task",
+                "options": {"imageUrl": "/api/open_image/None"},
                 "state": "NO_STATE_RUNTIME",
             },
             "first_remote_task_811649748264404692": {
                 "description": "B",
                 "displayName": "first_remote_task",
+                "options": {"imageUrl": "/api/open_image/None"},
                 "state": "NO_STATE_RUNTIME",
             },
             "second_remote_task_4510719504589501579": {
                 "description": "C",
                 "displayName": "second_remote_task",
+                "options": {"imageUrl": "/api/open_image/None"},
                 "state": "NO_STATE_RUNTIME",
             },
             "second_remote_task_874700556330765323": {
                 "description": "D",
                 "displayName": "second_remote_task",
+                "options": {"imageUrl": "/api/open_image/None"},
                 "state": "NO_STATE_RUNTIME",
             },
         },
