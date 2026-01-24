@@ -74,6 +74,8 @@ def _populate_context(state: State,
   context.compute_graphs = [TopologicalSorterWithStatus(Graph())]
   context.compute_graph_status = GraphStatus()
 
+  context.dangerously_accept_existing_files = False
+
   return state, []
 
 
