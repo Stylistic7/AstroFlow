@@ -21,207 +21,282 @@ _PLATESOLUTION_SCHEMA = "astroflow.platesolution.v1"
 
 @dataclass
 class PlateSolution:
-  image_filename: str
-  header: dict
-  num_stars: int
-  center: tuple[float, float]
-  image_scale: float
-  rotation_angle: float
-  footprint: list
+    image_filename: str
+    header: dict
+    num_stars: int
+    center: tuple[float, float]
+    image_scale: float
+    rotation_angle: float
+    footprint: list
 
 
 def get_footprint(header: dict[str, Any]) -> list[float]:
-  """Returns a 4x2 array. Order is clockwise starting with the bottom left corner."""
-  with warnings.catch_warnings():
-    warnings.simplefilter("ignore")
-    header['NAXIS1'] = header['IMAGEW']
-    header['NAXIS2'] = header['IMAGEH']
-    wcs = astropy.wcs.WCS(header=header)
-    return wcs.calc_footprint(header=header).tolist()
+    """Returns a 4x2 array. Order is clockwise starting with the bottom left corner."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        header["NAXIS1"] = header["IMAGEW"]
+        header["NAXIS2"] = header["IMAGEH"]
+        wcs = astropy.wcs.WCS(header=header)
+        return wcs.calc_footprint(header=header).tolist()
 
 
 def get_center(header: dict[str, Any]) -> tuple[float, float]:
-  return float(header['CRVAL1']), float(header['CRVAL2'])
+    return float(header["CRVAL1"]), float(header["CRVAL2"])
 
 
 def get_rotation_angle(header: dict[str, Any]) -> float:
-  return np.arctan2(header['CD1_2'], header['CD1_1'])
+    return np.arctan2(header["CD1_2"], header["CD1_1"])
 
 
 def get_image_scale(header: dict[str, Any]) -> float:
-  scale_x = np.linalg.norm(np.array([header['CD1_1'], header['CD2_1']]))
-  scale_y = np.linalg.norm(np.array([header['CD1_2'], header['CD2_2']]))
-  assert np.isclose(
-      scale_x, scale_y, atol=0.05 / 3600,
-      rtol=0), f'scale_x {scale_x} is not close to scale_y {scale_y}'
+    scale_x = np.linalg.norm(np.array([header["CD1_1"], header["CD2_1"]]))
+    scale_y = np.linalg.norm(np.array([header["CD1_2"], header["CD2_2"]]))
+    assert np.isclose(scale_x, scale_y, atol=0.05 / 3600, rtol=0), (
+        f"scale_x {scale_x} is not close to scale_y {scale_y}"
+    )
 
-  # The result is in arcseconds per pixel.
-  image_scale = scale_x * 3600.0
-  return float(image_scale)
+    # The result is in arcseconds per pixel.
+    image_scale = scale_x * 3600.0
+    return float(image_scale)
 
 
 def get_num_stars(axy_file: Path | str) -> int:
-  fits = pyfits.open(axy_file, mmap=False)
-  table = fits[1].data
-  fits.close()
-  return table.shape[0]
+    fits = pyfits.open(axy_file, mmap=False)
+    table = fits[1].data
+    fits.close()
+    return table.shape[0]
 
 
 def simplify_header(header: dict[str, Any]) -> dict[str, Any]:
-  output_header = {}
-  for k in header.keys():
-    if 'COMMENT' in k or 'HISTORY' in k:
-      continue
-    output_header[k] = header[k]
+    output_header = {}
+    for k in header.keys():
+        if "COMMENT" in k or "HISTORY" in k:
+            continue
+        output_header[k] = header[k]
 
-  return output_header
+    return output_header
 
 
-def _solve_field(filename: Path | str,
-                 arguments: list[str],
-                 debug: bool = False) -> PlateSolution | Exception | None:
-  # TODO: Only copy the file to a temp dir once.
-  with tempfile.TemporaryDirectory() as temp_dir:
-    if os.path.splitext(filename)[-1] in ['.xisf']:
-      dest_filename = Path(os.path.join(
-          temp_dir, os.path.basename(filename))).with_suffix('.fits')
-      convert_xisf_to_fits(filename, dest_filename)
-    else:
-      dest_filename = Path(os.path.join(temp_dir, os.path.basename(filename)))
-      os.symlink(filename, dest_filename)
+def _solve_field(
+    filename: Path | str, arguments: list[str], debug: bool = False
+) -> PlateSolution | Exception | None:
+    # TODO: Only copy the file to a temp dir once.
+    with tempfile.TemporaryDirectory() as temp_dir:
+        if os.path.splitext(filename)[-1] in [".xisf"]:
+            dest_filename = Path(
+                os.path.join(temp_dir, os.path.basename(filename))
+            ).with_suffix(".fits")
+            convert_xisf_to_fits(filename, dest_filename)
+        else:
+            dest_filename = Path(os.path.join(temp_dir, os.path.basename(filename)))
+            os.symlink(filename, dest_filename)
 
-    try:
-      command = arguments + [dest_filename]
-      if debug:
-        print('### command ' + ' '.join([str(i) for i in command]))
+        try:
+            command = arguments + [dest_filename]
+            if debug:
+                print("### command " + " ".join([str(i) for i in command]))
 
-      ret = subprocess.run(command, capture_output=True)
+            ret = subprocess.run(command, capture_output=True)
 
-      if debug:
-        print(ret.stdout.decode('utf-8'))
-    except Exception as e:
-      print(f'Could not plate solve file {dest_filename} due to exception')
-      traceback.print_exc()
-      return e
+            if debug:
+                print(ret.stdout.decode("utf-8"))
+        except Exception as e:
+            print(f"Could not plate solve file {dest_filename} due to exception")
+            traceback.print_exc()
+            return e
 
-    wcs_file = Path(dest_filename).with_suffix('.wcs')
-    axy_file = Path(dest_filename).with_suffix('.axy')
-    if os.path.exists(wcs_file) and os.path.exists(axy_file):
-      fits = pyfits.open(wcs_file, mmap=False)
-      header = simplify_header(fits[0].header)
-      try:
-        num_stars = get_num_stars(axy_file)
-        soln = PlateSolution(image_filename=str(filename),
-                             header=header,
-                             center=get_center(header),
-                             image_scale=get_image_scale(header),
-                             footprint=get_footprint(header),
-                             rotation_angle=get_rotation_angle(header),
-                             num_stars=num_stars)
-        print(f'### Sucessfully plate-solved file {filename}, '
-              f'has {num_stars} stars')
-        return soln
-      except Exception as e:
-        print(f'Could not plate solve file {filename} due to exception')
-        traceback.print_exc()
-        return e
-      finally:
-        fits.close()
-    else:
-      # TODO: Emit warnings through Metaflow's reporting system.
-      # print(f'Could not plate-solve file {filename}')
-      return None
+        wcs_file = Path(dest_filename).with_suffix(".wcs")
+        axy_file = Path(dest_filename).with_suffix(".axy")
+        if os.path.exists(wcs_file) and os.path.exists(axy_file):
+            fits = pyfits.open(wcs_file, mmap=False)
+            header = simplify_header(fits[0].header)
+            try:
+                num_stars = get_num_stars(axy_file)
+                soln = PlateSolution(
+                    image_filename=str(filename),
+                    header=header,
+                    center=get_center(header),
+                    image_scale=get_image_scale(header),
+                    footprint=get_footprint(header),
+                    rotation_angle=get_rotation_angle(header),
+                    num_stars=num_stars,
+                )
+                print(
+                    f"### Sucessfully plate-solved file {filename}, "
+                    f"has {num_stars} stars"
+                )
+                return soln
+            except Exception as e:
+                print(f"Could not plate solve file {filename} due to exception")
+                traceback.print_exc()
+                return e
+            finally:
+                fits.close()
+        else:
+            # TODO: Emit warnings through Metaflow's reporting system.
+            # print(f'Could not plate-solve file {filename}')
+            return None
 
 
 # TODO: Make a "junk drawer" video that shows everything that can't be plate-
 # solved. The user can look at it and decide whether to improve the solver's
 # settings, or to throw the images away.
 def _plate_solution_to_obj(ps: PlateSolution) -> dict[str, Any]:
-  d = asdict(ps) if is_dataclass(ps) else dict(ps)  # type: ignore[arg-type]
-  c = d.get("center")
-  if isinstance(c, tuple):
-    d["center"] = list(c)
-  return {"schema": _PLATESOLUTION_SCHEMA, "data": d}
+    d = asdict(ps) if is_dataclass(ps) else dict(ps)  # type: ignore[arg-type]
+    c = d.get("center")
+    if isinstance(c, tuple):
+        d["center"] = list(c)
+    return {"schema": _PLATESOLUTION_SCHEMA, "data": d}
 
 
 def _plate_solution_from_obj(obj: dict[str, Any]) -> PlateSolution:
-  if obj.get("schema") != _PLATESOLUTION_SCHEMA:
-    raise ValueError(
-        f"Unsupported plate_solution schema: {obj.get('schema')!r}")
-  d = obj["data"]
-  if "center" in d and isinstance(d["center"], list):
-    d["center"] = tuple(d["center"])
-  return PlateSolution(**d)
+    if obj.get("schema") != _PLATESOLUTION_SCHEMA:
+        raise ValueError(f"Unsupported plate_solution schema: {obj.get('schema')!r}")
+    d = obj["data"]
+    if "center" in d and isinstance(d["center"], list):
+        d["center"] = tuple(d["center"])
+    return PlateSolution(**d)
 
 
-def solve_field(filename: Path | str,
-                debug: bool = False) -> PlateSolution | None:
-  filename = Path(filename)
-  assert str(filename)
+def solve_field(filename: Path | str, debug: bool = False) -> PlateSolution | None:
+    filename = Path(filename)
+    assert str(filename)
 
-  # Always consult sidecar first.
-  ps_obj = get_section(filename, "plate_solution")
-  if isinstance(ps_obj, dict):
-    try:
-      ps = _plate_solution_from_obj(ps_obj)
-      print(f"### Returning plate-solution from sidecar "
-            f"{sidecar_path_for(filename)}")
-      return ps
-    except Exception:
-      # Corrupt / incompatible section → recompute.
-      pass
+    # Always consult sidecar first.
+    ps_obj = get_section(filename, "plate_solution")
+    if isinstance(ps_obj, dict):
+        try:
+            ps = _plate_solution_from_obj(ps_obj)
+            print(
+                f"### Returning plate-solution from sidecar "
+                f"{sidecar_path_for(filename)}"
+            )
+            return ps
+        except Exception:
+            # Corrupt / incompatible section → recompute.
+            pass
 
-  trial_arguments = [
-      [
-          "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
-          "--scale-low", "1.0", "--scale-high", "10.0", "--scale-units",
-          "degwidth", "--guess-scale", "--downsample", "16", "--tweak-order",
-          "4", "--crpix-center", "--no-background-subtraction", "--depth", "10",
-          "--cpulimit", "5"
-      ],
-      [
-          "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
-          "--scale-low", "0.5", "--scale-high", "10.0", "--scale-units",
-          "degwidth", "--guess-scale", "--downsample", "16", "--tweak-order",
-          "4", "--crpix-center", "--no-background-subtraction", "--depth",
-          "100", "--cpulimit", "60"
-      ],
-      [
-          "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
-          "--downsample", "16", "--tweak-order", "4", "--crpix-center",
-          "--no-background-subtraction", "--cpulimit", "120"
-      ],
-      [
-          "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
-          "--downsample", "16", "--tweak-order", "4", "--crpix-center",
-          "--cpulimit", "120"
-      ],
-      [
-          "solve-field", "--overwrite", "--no-plots", "--new-fits", "none",
-          "--scale-low", "0.5", "--scale-high", "10.0", "--scale-units",
-          "degwidth", "--guess-scale", "--downsample", "4", "--tweak-order",
-          "4", "--crpix-center", "--no-background-subtraction", "--depth",
-          "500", "--cpulimit", "300"
-      ]
-  ]
+    trial_arguments = [
+        [
+            "solve-field",
+            "--overwrite",
+            "--no-plots",
+            "--new-fits",
+            "none",
+            "--scale-low",
+            "1.0",
+            "--scale-high",
+            "10.0",
+            "--scale-units",
+            "degwidth",
+            "--guess-scale",
+            "--downsample",
+            "16",
+            "--tweak-order",
+            "4",
+            "--crpix-center",
+            "--no-background-subtraction",
+            "--depth",
+            "10",
+            "--cpulimit",
+            "5",
+        ],
+        [
+            "solve-field",
+            "--overwrite",
+            "--no-plots",
+            "--new-fits",
+            "none",
+            "--scale-low",
+            "0.5",
+            "--scale-high",
+            "10.0",
+            "--scale-units",
+            "degwidth",
+            "--guess-scale",
+            "--downsample",
+            "16",
+            "--tweak-order",
+            "4",
+            "--crpix-center",
+            "--no-background-subtraction",
+            "--depth",
+            "100",
+            "--cpulimit",
+            "60",
+        ],
+        [
+            "solve-field",
+            "--overwrite",
+            "--no-plots",
+            "--new-fits",
+            "none",
+            "--downsample",
+            "16",
+            "--tweak-order",
+            "4",
+            "--crpix-center",
+            "--no-background-subtraction",
+            "--cpulimit",
+            "120",
+        ],
+        [
+            "solve-field",
+            "--overwrite",
+            "--no-plots",
+            "--new-fits",
+            "none",
+            "--downsample",
+            "16",
+            "--tweak-order",
+            "4",
+            "--crpix-center",
+            "--cpulimit",
+            "120",
+        ],
+        [
+            "solve-field",
+            "--overwrite",
+            "--no-plots",
+            "--new-fits",
+            "none",
+            "--scale-low",
+            "0.5",
+            "--scale-high",
+            "10.0",
+            "--scale-units",
+            "degwidth",
+            "--guess-scale",
+            "--downsample",
+            "4",
+            "--tweak-order",
+            "4",
+            "--crpix-center",
+            "--no-background-subtraction",
+            "--depth",
+            "500",
+            "--cpulimit",
+            "300",
+        ],
+    ]
 
-  final_result: PlateSolution | None = None
-  for arguments in trial_arguments:
-    result = _solve_field(filename, arguments, debug)
-    if type(result) is PlateSolution:
-      final_result = result
-      break
+    final_result: PlateSolution | None = None
+    for arguments in trial_arguments:
+        result = _solve_field(filename, arguments, debug)
+        if type(result) is PlateSolution:
+            final_result = result
+            break
 
-  if final_result is None:
-    print(f"Could not plate-solve file {filename}")
-    return None
+    if final_result is None:
+        print(f"Could not plate-solve file {filename}")
+        return None
 
-  # Persist result unconditionally.
-  set_section(filename, "plate_solution", _plate_solution_to_obj(final_result))
-  print(f"### Updated AstroFlow sidecar for {filename}")
+    # Persist result unconditionally.
+    set_section(filename, "plate_solution", _plate_solution_to_obj(final_result))
+    print(f"### Updated AstroFlow sidecar for {filename}")
 
-  return final_result
+    return final_result
 
 
-if __name__ == '__main__':
-  solve_field(Path(sys.argv[1]), debug=True)
+if __name__ == "__main__":
+    solve_field(Path(sys.argv[1]), debug=True)

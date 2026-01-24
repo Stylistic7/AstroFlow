@@ -7,9 +7,9 @@ _real_version = importlib.metadata.version
 
 
 def _safe_version(package_name):
-  if package_name == "xisf":
-    return "0.0.0"  # Fake version to bypass the error
-  return _real_version(package_name)  # Call the original function
+    if package_name == "xisf":
+        return "0.0.0"  # Fake version to bypass the error
+    return _real_version(package_name)  # Call the original function
 
 
 # Monkey-patch importlib.metadata.version to prevent xisf import errors

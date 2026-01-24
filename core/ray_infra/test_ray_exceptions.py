@@ -3,10 +3,10 @@ import ray
 
 @ray.remote
 def remote_fn(i):
-  if i == 10:
-    raise ValueError("invalid i == 10")
-  else:
-    return i
+    if i == 10:
+        raise ValueError("invalid i == 10")
+    else:
+        return i
 
 
 # def test_one_exception_parallel_tasks(init_ray):

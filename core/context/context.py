@@ -40,130 +40,124 @@ RefDict = dict[Key, ray.ObjectRef]
 
 
 def _get_namespace() -> str:
-  return os.environ.get("ASTROFLOW_MOCK_NAMESPACE", "AstroFlow")
+    return os.environ.get("ASTROFLOW_MOCK_NAMESPACE", "AstroFlow")
 
 
 def starts_with(big_tuple, small_tuple):
-  if not small_tuple:
-    return True
-  if len(small_tuple) > len(big_tuple):
-    return False
-  return big_tuple[:len(small_tuple)] == small_tuple
+    if not small_tuple:
+        return True
+    if len(small_tuple) > len(big_tuple):
+        return False
+    return big_tuple[: len(small_tuple)] == small_tuple
 
 
-@ray.remote(resources={'diskcache': 0.001},
-            max_restarts=-1,
-            max_task_retries=-1)
+@ray.remote(resources={"diskcache": 0.001}, max_restarts=-1, max_task_retries=-1)
 class ContextActor:
+    def __init__(self) -> None:
+        self.cache = get_cache()
 
-  def __init__(self) -> None:
-    self.cache = get_cache()
+    def get(self, key: Key, default_value: Any) -> ray.ObjectRef:
+        return self.cache.get(key, default_value)
 
-  def get(self, key: Key, default_value: Any) -> ray.ObjectRef:
-    return self.cache.get(key, default_value)
+    def get_matching(self, key_fragment: Key) -> ray.ObjectRef:
+        return {
+            key: self.cache[key]
+            for key in self.cache.iterkeys()
+            if starts_with(key, key_fragment)
+        }
 
-  def get_matching(self, key_fragment: Key) -> ray.ObjectRef:
-    return {
-        key: self.cache[key]
-        for key in self.cache.iterkeys()
-        if starts_with(key, key_fragment)
-    }
+    def set(self, key: Key, value: Any) -> None:
+        # TODO: This import is ugly.
+        from hashing.types import LargeObject
 
-  def set(self, key: Key, value: Any) -> None:
-    # TODO: This import is ugly.
-    from hashing.types import LargeObject
-    if isinstance(value, LargeObject):
-      value = value.strip_ref()
+        if isinstance(value, LargeObject):
+            value = value.strip_ref()
 
-    self.cache[key] = value
+        self.cache[key] = value
 
-  def contains(self, key: Key) -> bool:
-    return key in self.cache
+    def contains(self, key: Key) -> bool:
+        return key in self.cache
 
-  def delete(self, key: Key) -> None:
-    if key in self.cache:
-      del self.cache[key]
+    def delete(self, key: Key) -> None:
+        if key in self.cache:
+            del self.cache[key]
 
-  def and_equals(self, key: Key, value: Any, length_limit: int | None) -> None:
-    self.cache.and_equals(key, value, length_limit)
+    def and_equals(self, key: Key, value: Any, length_limit: int | None) -> None:
+        self.cache.and_equals(key, value, length_limit)
 
-  def or_equals(self, key: Key, value: Any) -> None:
-    self.cache.or_equals(key, value)
+    def or_equals(self, key: Key, value: Any) -> None:
+        self.cache.or_equals(key, value)
 
-  def clear(self) -> None:
-    self.cache.clear()
+    def clear(self) -> None:
+        self.cache.clear()
 
-  def get_cache_keys(self) -> list:
-    return list(self.cache.iterkeys())
+    def get_cache_keys(self) -> list:
+        return list(self.cache.iterkeys())
 
 
 class Context:
+    def get(self, key: Key, default_value: Any = None) -> Any:
+        if not ray.is_initialized():
+            connect_to_ray_cluster()
 
-  def get(self, key: Key, default_value: Any = None) -> Any:
-    if not ray.is_initialized():
-      connect_to_ray_cluster()
+        actor = ray.get_actor("context", namespace=_get_namespace())
+        return ray.get(actor.get.remote(key, default_value))
 
-    actor = ray.get_actor('context', namespace=_get_namespace())
-    return ray.get(actor.get.remote(key, default_value))
+    def __getattr__(self, key: Key) -> Any:
+        return self.get(key)
 
-  def __getattr__(self, key: Key) -> Any:
-    return self.get(key)
+    def __getitem__(self, key: Key) -> Any:
+        return self.get(key)
 
-  def __getitem__(self, key: Key) -> Any:
-    return self.get(key)
+    def get_matching(self, key_fragment: Key) -> Any:
+        actor = ray.get_actor("context", namespace=_get_namespace())
+        return ray.get(actor.get_matching.remote(key_fragment))
 
-  def get_matching(self, key_fragment: Key) -> Any:
-    actor = ray.get_actor('context', namespace=_get_namespace())
-    return ray.get(actor.get_matching.remote(key_fragment))
+    def set(self, key: Key, value: Any) -> Any:
+        if not ray.is_initialized():
+            connect_to_ray_cluster()
 
-  def set(self, key: Key, value: Any) -> Any:
-    if not ray.is_initialized():
-      connect_to_ray_cluster()
+        actor = ray.get_actor("context", namespace=_get_namespace())
+        return ray.get(actor.set.remote(key, value))
 
-    actor = ray.get_actor('context', namespace=_get_namespace())
-    return ray.get(actor.set.remote(key, value))
+    def __setattr__(self, key: Key, value: Any) -> Any:
+        return self.set(key, value)
 
-  def __setattr__(self, key: Key, value: Any) -> Any:
-    return self.set(key, value)
+    def __setitem__(self, key: Key, value: Any) -> Any:
+        return self.set(key, value)
 
-  def __setitem__(self, key: Key, value: Any) -> Any:
-    return self.set(key, value)
+    # TODO: Use the Pythonic operator.
+    def and_equals(self, key: Key, value: Any, length_limit: int | None = None) -> Any:
+        actor = ray.get_actor("context", namespace=_get_namespace())
+        return ray.get(actor.and_equals.remote(key, value, length_limit))
 
-  # TODO: Use the Pythonic operator.
-  def and_equals(self,
-                 key: Key,
-                 value: Any,
-                 length_limit: int | None = None) -> Any:
-    actor = ray.get_actor('context', namespace=_get_namespace())
-    return ray.get(actor.and_equals.remote(key, value, length_limit))
+    def plus_equals(self, key: Key, value: Any):
+        return self.and_equals(key, value)
 
-  def plus_equals(self, key: Key, value: Any):
-    return self.and_equals(key, value)
+    # TODO: Use the Pythonic operator.
+    def or_equals(self, key: Key, value: Any) -> Any:
+        actor = ray.get_actor("context", namespace=_get_namespace())
+        return ray.get(actor.or_equals.remote(key, value))
 
-  # TODO: Use the Pythonic operator.
-  def or_equals(self, key: Key, value: Any) -> Any:
-    actor = ray.get_actor('context', namespace=_get_namespace())
-    return ray.get(actor.or_equals.remote(key, value))
+    def __contains__(self, key: Key) -> bool:
+        actor = ray.get_actor("context", namespace=_get_namespace())
+        return ray.get(actor.contains.remote(key))
 
-  def __contains__(self, key: Key) -> bool:
-    actor = ray.get_actor('context', namespace=_get_namespace())
-    return ray.get(actor.contains.remote(key))
+    def contains(self, key: Key) -> bool:
+        actor = ray.get_actor("context", namespace=_get_namespace())
+        return ray.get(actor.contains.remote(key))
 
-  def contains(self, key: Key) -> bool:
-    actor = ray.get_actor('context', namespace=_get_namespace())
-    return ray.get(actor.contains.remote(key))
+    def delete(self, key: Key) -> None:
+        actor = ray.get_actor("context", namespace=_get_namespace())
+        ray.get(actor.delete.remote(key))
 
-  def delete(self, key: Key) -> None:
-    actor = ray.get_actor('context', namespace=_get_namespace())
-    ray.get(actor.delete.remote(key))
+    def clear(self) -> None:
+        actor = ray.get_actor("context", namespace=_get_namespace())
+        ray.get(actor.clear.remote())
 
-  def clear(self) -> None:
-    actor = ray.get_actor('context', namespace=_get_namespace())
-    ray.get(actor.clear.remote())
-
-  def get_cache_keys(self) -> list[str]:
-    actor = ray.get_actor('context', namespace=_get_namespace())
-    return ray.get(actor.get_cache_keys.remote())
+    def get_cache_keys(self) -> list[str]:
+        actor = ray.get_actor("context", namespace=_get_namespace())
+        return ray.get(actor.get_cache_keys.remote())
 
 
 context = Context()

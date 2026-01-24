@@ -6,4 +6,4 @@ from beartype import beartype
 @beartype
 @dataclass(frozen=True)
 class AstroFlowStateAttributes:
-  state: dict[str, Any]
+    state: dict[str, Any]

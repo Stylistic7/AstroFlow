@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 import uuid
+
 # import functools
 from enum import Enum
 
@@ -35,9 +36,9 @@ from enum import Enum
 
 @dataclass
 class JavaScript:
-  code: str = None
-  open_views: list[str] = field(default_factory=list)
-  saved_files: list[str] = field(default_factory=list)
+    code: str = None
+    open_views: list[str] = field(default_factory=list)
+    saved_files: list[str] = field(default_factory=list)
 
 
 # @dataclass

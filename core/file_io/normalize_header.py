@@ -2,38 +2,38 @@ from dateutil.parser import parse
 
 
 def normalize_header(header: dict) -> dict:
-  output = dict()
-  for k, v in header.items():
-    if k in ['COMMENT', 'HISTORY']:
-      continue
+    output = dict()
+    for k, v in header.items():
+        if k in ["COMMENT", "HISTORY"]:
+            continue
 
-    if k == 'IMAGETYP':
-      found = False
-      for t in ['bias', 'dark', 'flat', 'light']:
-        if t in v.lower():
-          output[k] = t
-          found = True
-      
-      if not found:
-        raise ValueError(f"Unknown IMAGETYP {v}")
+        if k == "IMAGETYP":
+            found = False
+            for t in ["bias", "dark", "flat", "light"]:
+                if t in v.lower():
+                    output[k] = t
+                    found = True
 
-      continue
+            if not found:
+                raise ValueError(f"Unknown IMAGETYP {v}")
 
-    # Try to coerce the type to a date.
-    if 'DATE' in k:
-      try:
-        output[k] = parse(v + ' UTC')
-        continue
-      except Exception as e:
+            continue
+
+        # Try to coerce the type to a date.
+        if "DATE" in k:
+            try:
+                output[k] = parse(v + " UTC")
+                continue
+            except Exception as e:
+                output[k] = v
+
+        # Leave it as a string.
         output[k] = v
 
-    # Leave it as a string.
-    output[k] = v
+    if "EXPTIME" in output and "EXPOSURE" not in output:
+        output["EXPOSURE"] = float(output["EXPTIME"])
 
-  if 'EXPTIME' in output and 'EXPOSURE' not in output:
-    output['EXPOSURE'] = float(output['EXPTIME'])
+    if "FILTER" not in output:
+        output["FILTER"] = "none"
 
-  if 'FILTER' not in output:
-    output['FILTER'] = 'none'
-
-  return output
+    return output

@@ -4,13 +4,13 @@ import numpy as np
 
 @ray.remote
 def f(x):
-  return x * x
+    return x * x
 
 
 @ray.remote
 def func(large_arg, i):
-  print(f'type(large_arg) {type(large_arg)}')
-  return len(large_arg) + i
+    print(f"type(large_arg) {type(large_arg)}")
+    return len(large_arg) + i
 
 
 futures = [f.remote(i) for i in range(4)]

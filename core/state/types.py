@@ -1,6 +1,6 @@
 class Action(dict):
-  pass
+    pass
 
 
 class State(dict):
-  pass
+    pass

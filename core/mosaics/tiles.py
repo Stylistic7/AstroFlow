@@ -10,13 +10,16 @@ from decorators import cached
 
 @PixInsight()
 def save_as_png(images: ImageList) -> ImageList:
-  output_filenames = [Path(i.filename).with_suffix('.png') for i in images]
-  return SaveAs(images, output_filenames)
+    output_filenames = [Path(i.filename).with_suffix(".png") for i in images]
+    return SaveAs(images, output_filenames)
 
 
 @cached.remote
 def save_as_tiles(mosaic: Mosaic, filter: str) -> None:
-  filename = Path(
-      context.output_dir
-  ) / 'Mosaics' / mosaic.name / f'final_merged_{mosaic.stable_hash}_{filter}.fits'
-  save_as_png([filename])
+    filename = (
+        Path(context.output_dir)
+        / "Mosaics"
+        / mosaic.name
+        / f"final_merged_{mosaic.stable_hash}_{filter}.fits"
+    )
+    save_as_png([filename])

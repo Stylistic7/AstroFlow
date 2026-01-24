@@ -16,27 +16,29 @@ from decorators import cached, create_thumbnail
 @cached.remote
 @create_thumbnail
 def stack_files(stack: CompositeStack) -> TiffFilePath:
-  output_path = TiffFilePath('foo.tiff').resolve_at(context.output_dir)
-  image = np.zeros((100, 100))
-  write_tiff_image(output_path, image)
+    output_path = TiffFilePath("foo.tiff").resolve_at(context.output_dir)
+    image = np.zeros((100, 100))
+    write_tiff_image(output_path, image)
 
-  return output_path
+    return output_path
 
 
 def test_single_stack(test_context) -> None:
-  copy_testdata_frames(prefix='light_run_0',
-                       target_name='NGC7635',
-                       start_datetime=datetime.datetime(2024, 2, 5, 16, 29, 43),
-                       dest_dir=context.input_dirs[0])
+    copy_testdata_frames(
+        prefix="light_run_0",
+        target_name="NGC7635",
+        start_datetime=datetime.datetime(2024, 2, 5, 16, 29, 43),
+        dest_dir=context.input_dirs[0],
+    )
 
-  run_graph(build_compute_graph())
+    run_graph(build_compute_graph())
 
-  stacks = context.stacks
-  assert len(stacks) == 1
-  stack = next(iter(stacks.values()))
+    stacks = context.stacks
+    assert len(stacks) == 1
+    stack = next(iter(stacks.values()))
 
-  ray.get(stack_files.remote(stack))
+    ray.get(stack_files.remote(stack))
 
-  thumbnail = stack_files.thumbnail_fn(stack)
-  assert thumbnail != None
-  assert isinstance(thumbnail, bytes)
+    thumbnail = stack_files.thumbnail_fn(stack)
+    assert thumbnail != None
+    assert isinstance(thumbnail, bytes)

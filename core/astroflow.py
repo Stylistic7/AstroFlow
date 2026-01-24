@@ -52,98 +52,103 @@ log = logger
 # broken up into multiple smaller steps. If the user moves files around, we want
 # to give the user the chance to point the program at the new locations.
 def collect_results_as_dict(filenames, fn, prev_result, parallel=True):
-  log = logger.bind(fn=fn.__name__)
+    log = logger.bind(fn=fn.__name__)
 
-  def run_fn(filenames):
-    log.info(f'running fn', num_files=len(filenames))
-    if parallel:
-      with Pool() as p:
-        results = p.map(fn, filenames)
-        return {f: x for f, x in zip(filenames, results)}
+    def run_fn(filenames):
+        log.info(f"running fn", num_files=len(filenames))
+        if parallel:
+            with Pool() as p:
+                results = p.map(fn, filenames)
+                return {f: x for f, x in zip(filenames, results)}
+        else:
+            return {f: fn(f) for f in filenames if fn(f)}
+
+    log.info(f"prev_result", num_files=len(prev_result))
+    result = {k: v for k, v in prev_result.items() if os.path.exists(k)}
+    num_removed_files = len(prev_result) - len(result)
+    if num_removed_files:
+        print(f"Removed {num_removed_files} that no longer exist.")
+
+    added_files = set(filenames) - set(prev_result.keys())
+    if len(added_files):
+        print(f"Computing fn for {len(added_files)} new images...")
+        result |= run_fn(added_files)
     else:
-      return {f: fn(f) for f in filenames if fn(f)}
+        print("no work to do")
 
-  log.info(f'prev_result', num_files=len(prev_result))
-  result = {k: v for k, v in prev_result.items() if os.path.exists(k)}
-  num_removed_files = len(prev_result) - len(result)
-  if num_removed_files:
-    print(f'Removed {num_removed_files} that no longer exist.')
-
-  added_files = set(filenames) - set(prev_result.keys())
-  if len(added_files):
-    print(f'Computing fn for {len(added_files)} new images...')
-    result |= run_fn(added_files)
-  else:
-    print('no work to do')
-
-  print(f'collect_results_as_dict done, len', len(result))
-  return result
+    print(f"collect_results_as_dict done, len", len(result))
+    return result
 
 
 def download(save_dir, default_filter):
-  print('Downloading files...')
-  # TODO: Put these into the config file, filled in by the web UI.
-  #
-  # TODO: Allow the user to pick the rig when they begin an import from an
-  # ASIAIR.
-  #
-  # TODO: Eliminate the RIG keyword entirely. Instead, only associate images
-  # into stacks when they ~the same image scale and resolution. Allow users
-  # to give each combination a mnemonic name.
-  #
-  # TODO: Automatically apply Drizzle for under-sampled images.
-  #
-  # TODO: Scan network for ASIAIR devices, so the user doesn't have to set
-  # static IPs.
-  rigs = [
-      {
-          'name': 'RC71',
-          'ip': '192.168.50.15',
-      },
-      {
-          'name': 'C11',
-          'ip': '192.168.50.16',
-      },
-  ]
+    print("Downloading files...")
+    # TODO: Put these into the config file, filled in by the web UI.
+    #
+    # TODO: Allow the user to pick the rig when they begin an import from an
+    # ASIAIR.
+    #
+    # TODO: Eliminate the RIG keyword entirely. Instead, only associate images
+    # into stacks when they ~the same image scale and resolution. Allow users
+    # to give each combination a mnemonic name.
+    #
+    # TODO: Automatically apply Drizzle for under-sampled images.
+    #
+    # TODO: Scan network for ASIAIR devices, so the user doesn't have to set
+    # static IPs.
+    rigs = [
+        {
+            "name": "RC71",
+            "ip": "192.168.50.15",
+        },
+        {
+            "name": "C11",
+            "ip": "192.168.50.16",
+        },
+    ]
 
-  search_defs = [{
-      'volume': 'EMMC%20Images',
-      'log_dir': 'log',
-      'fits_paths': ['Autorun', 'Plan']
-  }, {
-      'volume': 'TF%20Images',
-      'log_dir': 'ASIAIR/log',
-      'fits_paths': ['ASIAIR/Autorun', 'ASIAIR/Plan']
-  }]
+    search_defs = [
+        {
+            "volume": "EMMC%20Images",
+            "log_dir": "log",
+            "fits_paths": ["Autorun", "Plan"],
+        },
+        {
+            "volume": "TF%20Images",
+            "log_dir": "ASIAIR/log",
+            "fits_paths": ["ASIAIR/Autorun", "ASIAIR/Plan"],
+        },
+    ]
 
-  # TODO: Mount the volumes, then repeatedly copy files from them, e.g. every
-  # half hour. Any imaging runs that are closed (e.g. a pane has been finished)
-  # are then ready to stack. Stacking and downloading must be done in parallel,
-  # though.
-  for rig in rigs:
-    download_asiair.run(rig['name'], rig['ip'], search_defs, save_dir,
-                        default_filter)
+    # TODO: Mount the volumes, then repeatedly copy files from them, e.g. every
+    # half hour. Any imaging runs that are closed (e.g. a pane has been finished)
+    # are then ready to stack. Stacking and downloading must be done in parallel,
+    # though.
+    for rig in rigs:
+        download_asiair.run(
+            rig["name"], rig["ip"], search_defs, save_dir, default_filter
+        )
 
 
 def remove_frames_during_mount_movements(light_frames):
-  print('Removing frames during mount movements...')
+    print("Removing frames during mount movements...")
 
-  # TODO: implement quarantining.
-  settled_light_frames = (
-      autorun_log_analysis.remove_frames_during_settling(light_frames))
+    # TODO: implement quarantining.
+    settled_light_frames = autorun_log_analysis.remove_frames_during_settling(
+        light_frames
+    )
 
-  num_removed_files = len(light_frames) - len(settled_light_frames)
-  print(f'Removed {num_removed_files} during settling periods.')
+    num_removed_files = len(light_frames) - len(settled_light_frames)
+    print(f"Removed {num_removed_files} during settling periods.")
 
-  return settled_light_frames
+    return settled_light_frames
 
 
 def assert_all_light_frames_in_stacks(light_frames, stacks):
-  file_sets = [set(s.light_frames) for s in stacks]
-  light_frames_in_stacks = set().union(*file_sets)
-  # print(f'{len(light_frames)} light frames, '
-  #       f'{len(light_frames_in_stacks)} light frames in stacks')
-  assert set(light_frames) == light_frames_in_stacks
+    file_sets = [set(s.light_frames) for s in stacks]
+    light_frames_in_stacks = set().union(*file_sets)
+    # print(f'{len(light_frames)} light frames, '
+    #       f'{len(light_frames_in_stacks)} light frames in stacks')
+    assert set(light_frames) == light_frames_in_stacks
 
 
 # def main():

@@ -10,55 +10,54 @@ from protocols import CacheProtocol
 
 
 def make_create_video_decorator(cache: CacheProtocol):
+    def create_video(cache: CacheProtocol):
+        def decorator(
+            func: Callable, fourcc_str: str = "VP80", frame_rate: float = 10.0
+        ):
+            fn_hash = hash_source_code(func)
 
-  def create_video(cache: CacheProtocol):
+            @wraps(func)
+            def wrapper(*args, **kwargs):
+                frame_generator = func(*args, **kwargs)
 
-    def decorator(func: Callable,
-                  fourcc_str: str = 'VP80',
-                  frame_rate: float = 10.0):
-      fn_hash = hash_source_code(func)
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    fourcc = cv2.VideoWriter_fourcc(*fourcc_str)  # type: ignore
+                    video_filename = os.path.join(tmp_dir, "output.webm")
 
-      @wraps(func)
-      def wrapper(*args, **kwargs):
-        frame_generator = func(*args, **kwargs)
+                    frame = next(frame_generator)
+                    height, width = frame.shape
+                    height = int(((height + 8 - 1) / 8) * 8)
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
-          fourcc = cv2.VideoWriter_fourcc(*fourcc_str)  # type: ignore
-          video_filename = os.path.join(tmp_dir, 'output.webm')
+                    def pad(im: np.ndarray):
+                        frame = np.zeros((height, width), dtype=np.uint8)
+                        frame[0 : im.shape[0], 0 : im.shape[1]] = im
+                        return frame
 
-          frame = next(frame_generator)
-          height, width = frame.shape
-          height = int(((height + 8 - 1) / 8) * 8)
+                    out = cv2.VideoWriter(
+                        video_filename, fourcc, frame_rate, (width, height), False
+                    )
+                    out.write(pad(frame))
 
-          def pad(im: np.ndarray):
-            frame = np.zeros((height, width), dtype=np.uint8)
-            frame[0:im.shape[0], 0:im.shape[1]] = im
-            return frame
+                    for frame in frame_generator:
+                        out.write(pad(frame))
 
-          out = cv2.VideoWriter(video_filename, fourcc, frame_rate,
-                                (width, height), False)
-          out.write(pad(frame))
+                    out.release()
+                    video = open(video_filename, "rb").read()
 
-          for frame in frame_generator:
-            out.write(pad(frame))
+                    call_hash = hash_call(fn_hash, *args, **kwargs)
+                    video_key = ("video", call_hash)
+                    cache[video_key] = video
+                    print(f"### create_video wrote video key {video_key}")
 
-          out.release()
-          video = open(video_filename, 'rb').read()
+            def get_video_fn(*args, **kwargs) -> Optional[np.ndarray]:
+                call_hash = hash_call(fn_hash, *args, **kwargs)
+                video_key = ("video", call_hash)
+                return cache.get(video_key)
 
-          call_hash = hash_call(fn_hash, *args, **kwargs)
-          video_key = ('video', call_hash)
-          cache[video_key] = video
-          print(f'### create_video wrote video key {video_key}')
+            wrapper.video_fn = get_video_fn
 
-      def get_video_fn(*args, **kwargs) -> Optional[np.ndarray]:
-        call_hash = hash_call(fn_hash, *args, **kwargs)
-        video_key = ('video', call_hash)
-        return cache.get(video_key)
+            return wrapper
 
-      wrapper.video_fn = get_video_fn
+        return decorator
 
-      return wrapper
-
-    return decorator
-
-  return create_video(cache)
+    return create_video(cache)

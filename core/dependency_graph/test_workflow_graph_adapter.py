@@ -13,583 +13,681 @@ from dependency_graph.workflow_graph_adapter import to_workflow_graph
 
 log = structlog.get_logger()
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 sidecar_hasher = SidecarHasher()
-cached = make_cached_decorator(cache_provider=get_cache,
-                               content_hasher=sidecar_hasher,
-                               call_hasher=hash_call,
-                               debug=True)
+cached = make_cached_decorator(
+    cache_provider=get_cache,
+    content_hasher=sidecar_hasher,
+    call_hasher=hash_call,
+    debug=True,
+)
 
 
 @cached.remote
 def first_remote_task(arg: T) -> T:
-  log.info(f'first_remote_task {arg}')
-  return arg
+    log.info(f"first_remote_task {arg}")
+    return arg
 
 
 @cached.remote
 def second_remote_task(arg: T) -> T:
-  log.info(f'second_remote_task {arg}')
-  return arg
+    log.info(f"second_remote_task {arg}")
+    return arg
 
 
 @cached.remote
 def process(item: T) -> T:
-  log.info(f'process {item}')
-  return item
+    log.info(f"process {item}")
+    return item
 
 
 @cached.remote
 def gather(*ancestor_results: list[int]) -> int:
-  result = sum(ancestor_results)
-  log.info(f'gather result {result}')
-  return result
+    result = sum(ancestor_results)
+    log.info(f"gather result {result}")
+    return result
 
 
 @ray.remote
 def build_dynamic_graph() -> Graph:
-  return Graph({gather: [(process, i) for i in range(3)]})
+    return Graph({gather: [(process, i) for i in range(3)]})
 
 
 @ray.remote
 def build_outer_dynamic_graph() -> Graph:
-  A = (first_remote_task, 1)
-  B = Node(build_dynamic_graph, name='inner')
-  C = (second_remote_task, 2)
+    A = (first_remote_task, 1)
+    B = Node(build_dynamic_graph, name="inner")
+    C = (second_remote_task, 2)
 
-  return Graph({C: {B}, B: {A}})
+    return Graph({C: {B}, B: {A}})
 
 
 @cached.remote
 def task_raises_exception() -> None:
-  context.num_task_raises_exception_runs = context.num_task_raises_exception_runs + 1
-  raise ValueError("oh no!")
+    context.num_task_raises_exception_runs = context.num_task_raises_exception_runs + 1
+    raise ValueError("oh no!")
 
 
 @ray.remote
 def build_subgraph_raise_exception(depth: int) -> Graph:
-  A = (first_remote_task, f'depth_{depth}')
-  B = task_raises_exception if depth == 0 else (build_subgraph_raise_exception,
-                                                depth - 1)
-  C = (second_remote_task, f'depth_{depth}')
+    A = (first_remote_task, f"depth_{depth}")
+    B = (
+        task_raises_exception
+        if depth == 0
+        else (build_subgraph_raise_exception, depth - 1)
+    )
+    C = (second_remote_task, f"depth_{depth}")
 
-  return Graph({C: {B}, B: {A}})
+    return Graph({C: {B}, B: {A}})
 
 
 def test_simple_graph(test_context) -> None:
-  A = (first_remote_task, 'A')
-  B = (first_remote_task, 'B')
-  C = (second_remote_task, 'C')
-  D = (second_remote_task, 'D')
+    A = (first_remote_task, "A")
+    B = (first_remote_task, "B")
+    C = (second_remote_task, "C")
+    D = (second_remote_task, "D")
 
-  graph = Graph({D: {B, C}, C: {A}, B: {A}, A: {}})
+    graph = Graph({D: {B, C}, C: {A}, B: {A}, A: {}})
 
-  workflow_graph = None
+    workflow_graph = None
 
-  def graph_update_fn(g):
-    nonlocal workflow_graph
-    workflow_graph = to_workflow_graph(g)
+    def graph_update_fn(g):
+        nonlocal workflow_graph
+        workflow_graph = to_workflow_graph(g)
 
-  results, logs = run_graph(graph, debug=True, graph_update_fn=graph_update_fn)
+    results, logs = run_graph(graph, debug=True, graph_update_fn=graph_update_fn)
 
-  pprint.pprint(workflow_graph, indent=2, width=200)
+    pprint.pprint(workflow_graph, indent=2, width=200)
 
-  expected_workflow_graph = {
-      'skeleton': [{
-          'id': 'first_remote_task_1147742147103610095',
-          'next': [{
-              'id': 'first_remote_task_811649748264404692',
-              'next': [{
-                  'id': 'second_remote_task_874700556330765323',
-                  'type': 'execution'
-              }],
-              'type': 'execution'
-          }, {
-              'id': 'second_remote_task_4510719504589501579',
-              'next': [{
-                  'id': 'second_remote_task_874700556330765323',
-                  'type': 'execution'
-              }],
-              'type': 'execution'
-          }],
-          'type': 'execution'
-      }],
-      'state': {
-          'first_remote_task_1147742147103610095': {
-              'description': 'A',
-              'displayName': 'first_remote_task',
-              'state': 'SUCCEEDED'
-          },
-          'first_remote_task_811649748264404692': {
-              'description': 'B',
-              'displayName': 'first_remote_task',
-              'state': 'SUCCEEDED'
-          },
-          'second_remote_task_4510719504589501579': {
-              'description': 'C',
-              'displayName': 'second_remote_task',
-              'state': 'SUCCEEDED'
-          },
-          'second_remote_task_874700556330765323': {
-              'description': 'D',
-              'displayName': 'second_remote_task',
-              'state': 'SUCCEEDED'
-          }
-      }
-  }
+    expected_workflow_graph = {
+        "skeleton": [
+            {
+                "id": "first_remote_task_1147742147103610095",
+                "next": [
+                    {
+                        "id": "first_remote_task_811649748264404692",
+                        "next": [
+                            {
+                                "id": "second_remote_task_874700556330765323",
+                                "type": "execution",
+                            }
+                        ],
+                        "type": "execution",
+                    },
+                    {
+                        "id": "second_remote_task_4510719504589501579",
+                        "next": [
+                            {
+                                "id": "second_remote_task_874700556330765323",
+                                "type": "execution",
+                            }
+                        ],
+                        "type": "execution",
+                    },
+                ],
+                "type": "execution",
+            }
+        ],
+        "state": {
+            "first_remote_task_1147742147103610095": {
+                "description": "A",
+                "displayName": "first_remote_task",
+                "state": "SUCCEEDED",
+            },
+            "first_remote_task_811649748264404692": {
+                "description": "B",
+                "displayName": "first_remote_task",
+                "state": "SUCCEEDED",
+            },
+            "second_remote_task_4510719504589501579": {
+                "description": "C",
+                "displayName": "second_remote_task",
+                "state": "SUCCEEDED",
+            },
+            "second_remote_task_874700556330765323": {
+                "description": "D",
+                "displayName": "second_remote_task",
+                "state": "SUCCEEDED",
+            },
+        },
+    }
 
-  assert workflow_graph == expected_workflow_graph
+    assert workflow_graph == expected_workflow_graph
 
 
 def test_graph_with_subgraph(test_context) -> None:
-  A = (first_remote_task, 'A')
-  B = (first_remote_task, 'B')
-  C = (second_remote_task, 'C')
-  D = Node(build_dynamic_graph, name='outer')
-  E = (second_remote_task, 'D')
+    A = (first_remote_task, "A")
+    B = (first_remote_task, "B")
+    C = (second_remote_task, "C")
+    D = Node(build_dynamic_graph, name="outer")
+    E = (second_remote_task, "D")
 
-  graph = Graph({E: {D}, D: {B, C}, C: {A}, B: {A}})
+    graph = Graph({E: {D}, D: {B, C}, C: {A}, B: {A}})
 
-  workflow_graph = None
+    workflow_graph = None
 
-  def graph_update_fn(g):
-    nonlocal workflow_graph
-    workflow_graph = to_workflow_graph(g)
+    def graph_update_fn(g):
+        nonlocal workflow_graph
+        workflow_graph = to_workflow_graph(g)
 
-  results, logs = run_graph(graph, graph_update_fn=graph_update_fn)
+    results, logs = run_graph(graph, graph_update_fn=graph_update_fn)
 
-  pprint.pprint(workflow_graph, indent=2, width=200)
+    pprint.pprint(workflow_graph, indent=2, width=200)
 
-  expected_workflow_graph = {
-      'skeleton': [{
-          'id': 'first_remote_task_1147742147103610095',
-          'next': [{
-              'id': 'first_remote_task_811649748264404692',
-              'next': [{
-                  'definition': [{
-                      'id': 'process_1161829019351892739',
-                      'next': [{
-                          'id': 'gather_499248906983321316',
-                          'type': 'execution'
-                      }],
-                      'type': 'execution'
-                  }, {
-                      'id': 'process_648355766798421503',
-                      'next': [{
-                          'id': 'gather_499248906983321316',
-                          'type': 'execution'
-                      }],
-                      'type': 'execution'
-                  }, {
-                      'id': 'process_122636723848520014',
-                      'next': [{
-                          'id': 'gather_499248906983321316',
-                          'type': 'execution'
-                      }],
-                      'type': 'execution'
-                  }],
-                  'id': 'build_dynamic_graph_4387510280349443084',
-                  'next': [{
-                      'id': 'second_remote_task_874700556330765323',
-                      'type': 'execution'
-                  }],
-                  'type': 'group'
-              }],
-              'type': 'execution'
-          }, {
-              'id': 'second_remote_task_4510719504589501579',
-              'next': [{
-                  'id': 'build_dynamic_graph_4387510280349443084',
-                  'type': 'group'
-              }],
-              'type': 'execution'
-          }],
-          'type': 'execution'
-      }],
-      'state': {
-          'build_dynamic_graph_4387510280349443084': {
-              'description': 'outer',
-              'displayName': 'build_dynamic_graph',
-              'groupMeta': {
-                  'gather_499248906983321316': {
-                      'displayName': 'gather',
-                      'state': 'SUCCEEDED'
-                  },
-                  'process_1161829019351892739': {
-                      'description': '0',
-                      'displayName': 'process',
-                      'state': 'SUCCEEDED'
-                  },
-                  'process_122636723848520014': {
-                      'description': '2',
-                      'displayName': 'process',
-                      'state': 'SUCCEEDED'
-                  },
-                  'process_648355766798421503': {
-                      'description': '1',
-                      'displayName': 'process',
-                      'state': 'SUCCEEDED'
-                  }
-              },
-              'hasControlNode': True,
-              'state': 'SUCCEEDED'
-          },
-          'first_remote_task_1147742147103610095': {
-              'description': 'A',
-              'displayName': 'first_remote_task',
-              'state': 'SUCCEEDED'
-          },
-          'first_remote_task_811649748264404692': {
-              'description': 'B',
-              'displayName': 'first_remote_task',
-              'state': 'SUCCEEDED'
-          },
-          'second_remote_task_4510719504589501579': {
-              'description': 'C',
-              'displayName': 'second_remote_task',
-              'state': 'SUCCEEDED'
-          },
-          'second_remote_task_874700556330765323': {
-              'description': 'D',
-              'displayName': 'second_remote_task',
-              'state': 'SUCCEEDED'
-          }
-      }
-  }
+    expected_workflow_graph = {
+        "skeleton": [
+            {
+                "id": "first_remote_task_1147742147103610095",
+                "next": [
+                    {
+                        "id": "first_remote_task_811649748264404692",
+                        "next": [
+                            {
+                                "definition": [
+                                    {
+                                        "id": "process_1161829019351892739",
+                                        "next": [
+                                            {
+                                                "id": "gather_499248906983321316",
+                                                "type": "execution",
+                                            }
+                                        ],
+                                        "type": "execution",
+                                    },
+                                    {
+                                        "id": "process_648355766798421503",
+                                        "next": [
+                                            {
+                                                "id": "gather_499248906983321316",
+                                                "type": "execution",
+                                            }
+                                        ],
+                                        "type": "execution",
+                                    },
+                                    {
+                                        "id": "process_122636723848520014",
+                                        "next": [
+                                            {
+                                                "id": "gather_499248906983321316",
+                                                "type": "execution",
+                                            }
+                                        ],
+                                        "type": "execution",
+                                    },
+                                ],
+                                "id": "build_dynamic_graph_4387510280349443084",
+                                "next": [
+                                    {
+                                        "id": "second_remote_task_874700556330765323",
+                                        "type": "execution",
+                                    }
+                                ],
+                                "type": "group",
+                            }
+                        ],
+                        "type": "execution",
+                    },
+                    {
+                        "id": "second_remote_task_4510719504589501579",
+                        "next": [
+                            {
+                                "id": "build_dynamic_graph_4387510280349443084",
+                                "type": "group",
+                            }
+                        ],
+                        "type": "execution",
+                    },
+                ],
+                "type": "execution",
+            }
+        ],
+        "state": {
+            "build_dynamic_graph_4387510280349443084": {
+                "description": "outer",
+                "displayName": "build_dynamic_graph",
+                "groupMeta": {
+                    "gather_499248906983321316": {
+                        "displayName": "gather",
+                        "state": "SUCCEEDED",
+                    },
+                    "process_1161829019351892739": {
+                        "description": "0",
+                        "displayName": "process",
+                        "state": "SUCCEEDED",
+                    },
+                    "process_122636723848520014": {
+                        "description": "2",
+                        "displayName": "process",
+                        "state": "SUCCEEDED",
+                    },
+                    "process_648355766798421503": {
+                        "description": "1",
+                        "displayName": "process",
+                        "state": "SUCCEEDED",
+                    },
+                },
+                "hasControlNode": True,
+                "state": "SUCCEEDED",
+            },
+            "first_remote_task_1147742147103610095": {
+                "description": "A",
+                "displayName": "first_remote_task",
+                "state": "SUCCEEDED",
+            },
+            "first_remote_task_811649748264404692": {
+                "description": "B",
+                "displayName": "first_remote_task",
+                "state": "SUCCEEDED",
+            },
+            "second_remote_task_4510719504589501579": {
+                "description": "C",
+                "displayName": "second_remote_task",
+                "state": "SUCCEEDED",
+            },
+            "second_remote_task_874700556330765323": {
+                "description": "D",
+                "displayName": "second_remote_task",
+                "state": "SUCCEEDED",
+            },
+        },
+    }
 
-  assert workflow_graph == expected_workflow_graph
+    assert workflow_graph == expected_workflow_graph
 
 
 def test_graph_with_nested_subgraph(test_context) -> None:
-  A = (first_remote_task, 'A')
-  B = Node(build_outer_dynamic_graph, name='outer')
-  C = (second_remote_task, 'C')
+    A = (first_remote_task, "A")
+    B = Node(build_outer_dynamic_graph, name="outer")
+    C = (second_remote_task, "C")
 
-  graph = Graph({C: {B}, B: {A}})
+    graph = Graph({C: {B}, B: {A}})
 
-  workflow_graph = None
+    workflow_graph = None
 
-  def graph_update_fn(g):
-    nonlocal workflow_graph
-    workflow_graph = to_workflow_graph(g)
+    def graph_update_fn(g):
+        nonlocal workflow_graph
+        workflow_graph = to_workflow_graph(g)
 
-  results, logs = run_graph(graph, graph_update_fn=graph_update_fn)
+    results, logs = run_graph(graph, graph_update_fn=graph_update_fn)
 
-  pprint.pprint(workflow_graph, indent=2, width=200)
+    pprint.pprint(workflow_graph, indent=2, width=200)
 
-  expected_workflow_graph = {
-      'skeleton': [{
-          'id': 'first_remote_task_1147742147103610095',
-          'next': [{
-              'definition': [{
-                  'id': 'first_remote_task_1269075729911039184',
-                  'next': [{
-                      'definition': [{
-                          'id': 'process_1161829019351892739',
-                          'next': [{
-                              'id': 'gather_499248906983321316',
-                              'type': 'execution'
-                          }],
-                          'type': 'execution'
-                      }, {
-                          'id': 'process_648355766798421503',
-                          'next': [{
-                              'id': 'gather_499248906983321316',
-                              'type': 'execution'
-                          }],
-                          'type': 'execution'
-                      }, {
-                          'id': 'process_122636723848520014',
-                          'next': [{
-                              'id': 'gather_499248906983321316',
-                              'type': 'execution'
-                          }],
-                          'type': 'execution'
-                      }],
-                      'id': 'build_dynamic_graph_1089893007718169136',
-                      'next': [{
-                          'id': 'second_remote_task_1379722681841618591',
-                          'type': 'execution'
-                      }],
-                      'type': 'group'
-                  }],
-                  'type': 'execution'
-              }],
-              'id': 'build_outer_dynamic_graph_1887197670041653630',
-              'next': [{
-                  'id': 'second_remote_task_4510719504589501579',
-                  'type': 'execution'
-              }],
-              'type': 'group'
-          }],
-          'type': 'execution'
-      }],
-      'state': {
-          'build_outer_dynamic_graph_1887197670041653630': {
-              'description': 'outer',
-              'displayName': 'build_outer_dynamic_graph',
-              'groupMeta': {
-                  'build_dynamic_graph_1089893007718169136': {
-                      'description': 'inner',
-                      'displayName': 'build_dynamic_graph',
-                      'groupMeta': {
-                          'gather_499248906983321316': {
-                              'displayName': 'gather',
-                              'state': 'SUCCEEDED'
-                          },
-                          'process_1161829019351892739': {
-                              'description': '0',
-                              'displayName': 'process',
-                              'state': 'SUCCEEDED'
-                          },
-                          'process_122636723848520014': {
-                              'description': '2',
-                              'displayName': 'process',
-                              'state': 'SUCCEEDED'
-                          },
-                          'process_648355766798421503': {
-                              'description': '1',
-                              'displayName': 'process',
-                              'state': 'SUCCEEDED'
-                          }
-                      },
-                      'hasControlNode': True,
-                      'state': 'SUCCEEDED'
-                  },
-                  'first_remote_task_1269075729911039184': {
-                      'description': '1',
-                      'displayName': 'first_remote_task',
-                      'state': 'SUCCEEDED'
-                  },
-                  'second_remote_task_1379722681841618591': {
-                      'description': '2',
-                      'displayName': 'second_remote_task',
-                      'state': 'SUCCEEDED'
-                  }
-              },
-              'hasControlNode': True,
-              'state': 'SUCCEEDED'
-          },
-          'first_remote_task_1147742147103610095': {
-              'description': 'A',
-              'displayName': 'first_remote_task',
-              'state': 'SUCCEEDED'
-          },
-          'second_remote_task_4510719504589501579': {
-              'description': 'C',
-              'displayName': 'second_remote_task',
-              'state': 'SUCCEEDED'
-          }
-      }
-  }
+    expected_workflow_graph = {
+        "skeleton": [
+            {
+                "id": "first_remote_task_1147742147103610095",
+                "next": [
+                    {
+                        "definition": [
+                            {
+                                "id": "first_remote_task_1269075729911039184",
+                                "next": [
+                                    {
+                                        "definition": [
+                                            {
+                                                "id": "process_1161829019351892739",
+                                                "next": [
+                                                    {
+                                                        "id": "gather_499248906983321316",
+                                                        "type": "execution",
+                                                    }
+                                                ],
+                                                "type": "execution",
+                                            },
+                                            {
+                                                "id": "process_648355766798421503",
+                                                "next": [
+                                                    {
+                                                        "id": "gather_499248906983321316",
+                                                        "type": "execution",
+                                                    }
+                                                ],
+                                                "type": "execution",
+                                            },
+                                            {
+                                                "id": "process_122636723848520014",
+                                                "next": [
+                                                    {
+                                                        "id": "gather_499248906983321316",
+                                                        "type": "execution",
+                                                    }
+                                                ],
+                                                "type": "execution",
+                                            },
+                                        ],
+                                        "id": "build_dynamic_graph_1089893007718169136",
+                                        "next": [
+                                            {
+                                                "id": "second_remote_task_1379722681841618591",
+                                                "type": "execution",
+                                            }
+                                        ],
+                                        "type": "group",
+                                    }
+                                ],
+                                "type": "execution",
+                            }
+                        ],
+                        "id": "build_outer_dynamic_graph_1887197670041653630",
+                        "next": [
+                            {
+                                "id": "second_remote_task_4510719504589501579",
+                                "type": "execution",
+                            }
+                        ],
+                        "type": "group",
+                    }
+                ],
+                "type": "execution",
+            }
+        ],
+        "state": {
+            "build_outer_dynamic_graph_1887197670041653630": {
+                "description": "outer",
+                "displayName": "build_outer_dynamic_graph",
+                "groupMeta": {
+                    "build_dynamic_graph_1089893007718169136": {
+                        "description": "inner",
+                        "displayName": "build_dynamic_graph",
+                        "groupMeta": {
+                            "gather_499248906983321316": {
+                                "displayName": "gather",
+                                "state": "SUCCEEDED",
+                            },
+                            "process_1161829019351892739": {
+                                "description": "0",
+                                "displayName": "process",
+                                "state": "SUCCEEDED",
+                            },
+                            "process_122636723848520014": {
+                                "description": "2",
+                                "displayName": "process",
+                                "state": "SUCCEEDED",
+                            },
+                            "process_648355766798421503": {
+                                "description": "1",
+                                "displayName": "process",
+                                "state": "SUCCEEDED",
+                            },
+                        },
+                        "hasControlNode": True,
+                        "state": "SUCCEEDED",
+                    },
+                    "first_remote_task_1269075729911039184": {
+                        "description": "1",
+                        "displayName": "first_remote_task",
+                        "state": "SUCCEEDED",
+                    },
+                    "second_remote_task_1379722681841618591": {
+                        "description": "2",
+                        "displayName": "second_remote_task",
+                        "state": "SUCCEEDED",
+                    },
+                },
+                "hasControlNode": True,
+                "state": "SUCCEEDED",
+            },
+            "first_remote_task_1147742147103610095": {
+                "description": "A",
+                "displayName": "first_remote_task",
+                "state": "SUCCEEDED",
+            },
+            "second_remote_task_4510719504589501579": {
+                "description": "C",
+                "displayName": "second_remote_task",
+                "state": "SUCCEEDED",
+            },
+        },
+    }
 
-  assert workflow_graph == expected_workflow_graph
+    assert workflow_graph == expected_workflow_graph
 
 
 def test_dry_run(test_context):
-  context.num_task_raises_exception_runs = 0
+    context.num_task_raises_exception_runs = 0
 
-  workflow_graph = None
+    workflow_graph = None
 
-  def graph_update_fn(g):
-    nonlocal workflow_graph
-    workflow_graph = to_workflow_graph(g)
+    def graph_update_fn(g):
+        nonlocal workflow_graph
+        workflow_graph = to_workflow_graph(g)
 
-  A = (first_remote_task, 'A')
-  B = (second_remote_task, 'B')
+    A = (first_remote_task, "A")
+    B = (second_remote_task, "B")
 
-  graph = Graph({task_raises_exception: {A, B}})
+    graph = Graph({task_raises_exception: {A, B}})
 
-  results, _ = run_graph(graph, graph_update_fn=graph_update_fn, dry_run=True)
-  pprint.pprint(workflow_graph, indent=2, width=200)
-  assert context.num_task_raises_exception_runs == 0
+    results, _ = run_graph(graph, graph_update_fn=graph_update_fn, dry_run=True)
+    pprint.pprint(workflow_graph, indent=2, width=200)
+    assert context.num_task_raises_exception_runs == 0
 
-  results, _ = run_graph(graph, graph_update_fn=graph_update_fn, dry_run=False)
-  pprint.pprint(workflow_graph, indent=2, width=200)
-  assert context.num_task_raises_exception_runs == 1
+    results, _ = run_graph(graph, graph_update_fn=graph_update_fn, dry_run=False)
+    pprint.pprint(workflow_graph, indent=2, width=200)
+    assert context.num_task_raises_exception_runs == 1
 
 
 def test_subgraph_exception(test_context):
-  context.num_task_raises_exception_runs = 0
+    context.num_task_raises_exception_runs = 0
 
-  workflow_graph = None
+    workflow_graph = None
 
-  def graph_update_fn(g):
-    nonlocal workflow_graph
-    workflow_graph = to_workflow_graph(g)
+    def graph_update_fn(g):
+        nonlocal workflow_graph
+        workflow_graph = to_workflow_graph(g)
 
-  A = (first_remote_task, 'A')
-  C = (second_remote_task, 'C')
+    A = (first_remote_task, "A")
+    C = (second_remote_task, "C")
 
-  graph = ray.get(build_subgraph_raise_exception.remote(3))
+    graph = ray.get(build_subgraph_raise_exception.remote(3))
 
-  results, _ = run_graph(graph, graph_update_fn=graph_update_fn, dry_run=True)
-  assert context.num_task_raises_exception_runs == 0
+    results, _ = run_graph(graph, graph_update_fn=graph_update_fn, dry_run=True)
+    assert context.num_task_raises_exception_runs == 0
 
-  # In the dry run, the subgraphs and the node inside them will never have run.
-  assert workflow_graph['state'][
-      'build_subgraph_raise_exception_187287178012096640'][
-          'state'] == 'NO_STATE_RUNTIME'
-  assert workflow_graph['state'][
-      'build_subgraph_raise_exception_187287178012096640']['groupMeta'][
-          'build_subgraph_raise_exception_2082629539921352699'][
-              'state'] == 'NO_STATE_RUNTIME'
-  assert workflow_graph['state'][
-      'build_subgraph_raise_exception_187287178012096640']['groupMeta'][
-          'build_subgraph_raise_exception_2082629539921352699']['groupMeta'][
-              'build_subgraph_raise_exception_2135598240338844923'][
-                  'state'] == 'NO_STATE_RUNTIME'
-  assert workflow_graph['state'][
-      'build_subgraph_raise_exception_187287178012096640']['groupMeta'][
-          'build_subgraph_raise_exception_2082629539921352699']['groupMeta'][
-              'build_subgraph_raise_exception_2135598240338844923'][
-                  'groupMeta']['task_raises_exception_2392094195672432855'][
-                      'state'] == 'NO_STATE_RUNTIME'
+    # In the dry run, the subgraphs and the node inside them will never have run.
+    assert (
+        workflow_graph["state"]["build_subgraph_raise_exception_187287178012096640"][
+            "state"
+        ]
+        == "NO_STATE_RUNTIME"
+    )
+    assert (
+        workflow_graph["state"]["build_subgraph_raise_exception_187287178012096640"][
+            "groupMeta"
+        ]["build_subgraph_raise_exception_2082629539921352699"]["state"]
+        == "NO_STATE_RUNTIME"
+    )
+    assert (
+        workflow_graph["state"]["build_subgraph_raise_exception_187287178012096640"][
+            "groupMeta"
+        ]["build_subgraph_raise_exception_2082629539921352699"]["groupMeta"][
+            "build_subgraph_raise_exception_2135598240338844923"
+        ]["state"]
+        == "NO_STATE_RUNTIME"
+    )
+    assert (
+        workflow_graph["state"]["build_subgraph_raise_exception_187287178012096640"][
+            "groupMeta"
+        ]["build_subgraph_raise_exception_2082629539921352699"]["groupMeta"][
+            "build_subgraph_raise_exception_2135598240338844923"
+        ]["groupMeta"]["task_raises_exception_2392094195672432855"]["state"]
+        == "NO_STATE_RUNTIME"
+    )
 
-  results, _ = run_graph(graph, graph_update_fn=graph_update_fn, dry_run=False)
-  assert context.num_task_raises_exception_runs == 1
+    results, _ = run_graph(graph, graph_update_fn=graph_update_fn, dry_run=False)
+    assert context.num_task_raises_exception_runs == 1
 
-  # After the real run, the inner node should have raised an exception, so
-  # it has failed. In addition, the subgraph's parent nodes should pick up
-  # the failure inside it.
-  assert workflow_graph['state'][
-      'build_subgraph_raise_exception_187287178012096640']['state'] == 'FAILED'
-  assert workflow_graph['state'][
-      'build_subgraph_raise_exception_187287178012096640']['groupMeta'][
-          'build_subgraph_raise_exception_2082629539921352699'][
-              'state'] == 'FAILED'
-  assert workflow_graph['state'][
-      'build_subgraph_raise_exception_187287178012096640']['groupMeta'][
-          'build_subgraph_raise_exception_2082629539921352699']['groupMeta'][
-              'build_subgraph_raise_exception_2135598240338844923'][
-                  'state'] == 'FAILED'
-  assert workflow_graph['state'][
-      'build_subgraph_raise_exception_187287178012096640']['groupMeta'][
-          'build_subgraph_raise_exception_2082629539921352699']['groupMeta'][
-              'build_subgraph_raise_exception_2135598240338844923'][
-                  'groupMeta']['task_raises_exception_2392094195672432855'][
-                      'state'] == 'FAILED'
+    # After the real run, the inner node should have raised an exception, so
+    # it has failed. In addition, the subgraph's parent nodes should pick up
+    # the failure inside it.
+    assert (
+        workflow_graph["state"]["build_subgraph_raise_exception_187287178012096640"][
+            "state"
+        ]
+        == "FAILED"
+    )
+    assert (
+        workflow_graph["state"]["build_subgraph_raise_exception_187287178012096640"][
+            "groupMeta"
+        ]["build_subgraph_raise_exception_2082629539921352699"]["state"]
+        == "FAILED"
+    )
+    assert (
+        workflow_graph["state"]["build_subgraph_raise_exception_187287178012096640"][
+            "groupMeta"
+        ]["build_subgraph_raise_exception_2082629539921352699"]["groupMeta"][
+            "build_subgraph_raise_exception_2135598240338844923"
+        ]["state"]
+        == "FAILED"
+    )
+    assert (
+        workflow_graph["state"]["build_subgraph_raise_exception_187287178012096640"][
+            "groupMeta"
+        ]["build_subgraph_raise_exception_2082629539921352699"]["groupMeta"][
+            "build_subgraph_raise_exception_2135598240338844923"
+        ]["groupMeta"]["task_raises_exception_2392094195672432855"]["state"]
+        == "FAILED"
+    )
 
 
 def test_graph_with_subgraph_dry_run(test_context) -> None:
-  A = (first_remote_task, 'A')
-  B = (first_remote_task, 'B')
-  C = (second_remote_task, 'C')
-  D = build_dynamic_graph
-  E = (second_remote_task, 'D')
+    A = (first_remote_task, "A")
+    B = (first_remote_task, "B")
+    C = (second_remote_task, "C")
+    D = build_dynamic_graph
+    E = (second_remote_task, "D")
 
-  graph = Graph({E: {D}, D: {B, C}, C: {A}, B: {A}})
+    graph = Graph({E: {D}, D: {B, C}, C: {A}, B: {A}})
 
-  workflow_graph = None
+    workflow_graph = None
 
-  def graph_update_fn(g):
-    nonlocal workflow_graph
-    workflow_graph = to_workflow_graph(g)
+    def graph_update_fn(g):
+        nonlocal workflow_graph
+        workflow_graph = to_workflow_graph(g)
 
-  results, logs = run_graph(graph,
-                            dry_run=True,
-                            debug=True,
-                            graph_update_fn=graph_update_fn)
+    results, logs = run_graph(
+        graph, dry_run=True, debug=True, graph_update_fn=graph_update_fn
+    )
 
-  pprint.pprint(workflow_graph, indent=2, width=200)
+    pprint.pprint(workflow_graph, indent=2, width=200)
 
-  print_result_dict(results)
+    print_result_dict(results)
 
-  expected_workflow_graph = {
-      'skeleton': [{
-          'id': 'first_remote_task_1147742147103610095',
-          'next': [{
-              'id': 'first_remote_task_811649748264404692',
-              'next': [{
-                  'definition': [{
-                      'id': 'process_1161829019351892739',
-                      'next': [{
-                          'id': 'gather_499248906983321316',
-                          'type': 'execution'
-                      }],
-                      'type': 'execution'
-                  }, {
-                      'id': 'process_648355766798421503',
-                      'next': [{
-                          'id': 'gather_499248906983321316',
-                          'type': 'execution'
-                      }],
-                      'type': 'execution'
-                  }, {
-                      'id': 'process_122636723848520014',
-                      'next': [{
-                          'id': 'gather_499248906983321316',
-                          'type': 'execution'
-                      }],
-                      'type': 'execution'
-                  }],
-                  'id': 'build_dynamic_graph_1852986555429019640',
-                  'next': [{
-                      'id': 'second_remote_task_874700556330765323',
-                      'type': 'execution'
-                  }],
-                  'type': 'group'
-              }],
-              'type': 'execution'
-          }, {
-              'id': 'second_remote_task_4510719504589501579',
-              'next': [{
-                  'id': 'build_dynamic_graph_1852986555429019640',
-                  'type': 'group'
-              }],
-              'type': 'execution'
-          }],
-          'type': 'execution'
-      }],
-      'state': {
-          'build_dynamic_graph_1852986555429019640': {
-              'displayName': 'build_dynamic_graph',
-              'groupMeta': {
-                  'gather_499248906983321316': {
-                      'displayName': 'gather',
-                      'state': 'NO_STATE_RUNTIME'
-                  },
-                  'process_1161829019351892739': {
-                      'description': '0',
-                      'displayName': 'process',
-                      'state': 'NO_STATE_RUNTIME'
-                  },
-                  'process_122636723848520014': {
-                      'description': '2',
-                      'displayName': 'process',
-                      'state': 'NO_STATE_RUNTIME'
-                  },
-                  'process_648355766798421503': {
-                      'description': '1',
-                      'displayName': 'process',
-                      'state': 'NO_STATE_RUNTIME'
-                  }
-              },
-              'hasControlNode': True,
-              'state': 'NO_STATE_RUNTIME'
-          },
-          'first_remote_task_1147742147103610095': {
-              'description': 'A',
-              'displayName': 'first_remote_task',
-              'state': 'NO_STATE_RUNTIME'
-          },
-          'first_remote_task_811649748264404692': {
-              'description': 'B',
-              'displayName': 'first_remote_task',
-              'state': 'NO_STATE_RUNTIME'
-          },
-          'second_remote_task_4510719504589501579': {
-              'description': 'C',
-              'displayName': 'second_remote_task',
-              'state': 'NO_STATE_RUNTIME'
-          },
-          'second_remote_task_874700556330765323': {
-              'description': 'D',
-              'displayName': 'second_remote_task',
-              'state': 'NO_STATE_RUNTIME'
-          }
-      }
-  }
+    expected_workflow_graph = {
+        "skeleton": [
+            {
+                "id": "first_remote_task_1147742147103610095",
+                "next": [
+                    {
+                        "id": "first_remote_task_811649748264404692",
+                        "next": [
+                            {
+                                "definition": [
+                                    {
+                                        "id": "process_1161829019351892739",
+                                        "next": [
+                                            {
+                                                "id": "gather_499248906983321316",
+                                                "type": "execution",
+                                            }
+                                        ],
+                                        "type": "execution",
+                                    },
+                                    {
+                                        "id": "process_648355766798421503",
+                                        "next": [
+                                            {
+                                                "id": "gather_499248906983321316",
+                                                "type": "execution",
+                                            }
+                                        ],
+                                        "type": "execution",
+                                    },
+                                    {
+                                        "id": "process_122636723848520014",
+                                        "next": [
+                                            {
+                                                "id": "gather_499248906983321316",
+                                                "type": "execution",
+                                            }
+                                        ],
+                                        "type": "execution",
+                                    },
+                                ],
+                                "id": "build_dynamic_graph_1852986555429019640",
+                                "next": [
+                                    {
+                                        "id": "second_remote_task_874700556330765323",
+                                        "type": "execution",
+                                    }
+                                ],
+                                "type": "group",
+                            }
+                        ],
+                        "type": "execution",
+                    },
+                    {
+                        "id": "second_remote_task_4510719504589501579",
+                        "next": [
+                            {
+                                "id": "build_dynamic_graph_1852986555429019640",
+                                "type": "group",
+                            }
+                        ],
+                        "type": "execution",
+                    },
+                ],
+                "type": "execution",
+            }
+        ],
+        "state": {
+            "build_dynamic_graph_1852986555429019640": {
+                "displayName": "build_dynamic_graph",
+                "groupMeta": {
+                    "gather_499248906983321316": {
+                        "displayName": "gather",
+                        "state": "NO_STATE_RUNTIME",
+                    },
+                    "process_1161829019351892739": {
+                        "description": "0",
+                        "displayName": "process",
+                        "state": "NO_STATE_RUNTIME",
+                    },
+                    "process_122636723848520014": {
+                        "description": "2",
+                        "displayName": "process",
+                        "state": "NO_STATE_RUNTIME",
+                    },
+                    "process_648355766798421503": {
+                        "description": "1",
+                        "displayName": "process",
+                        "state": "NO_STATE_RUNTIME",
+                    },
+                },
+                "hasControlNode": True,
+                "state": "NO_STATE_RUNTIME",
+            },
+            "first_remote_task_1147742147103610095": {
+                "description": "A",
+                "displayName": "first_remote_task",
+                "state": "NO_STATE_RUNTIME",
+            },
+            "first_remote_task_811649748264404692": {
+                "description": "B",
+                "displayName": "first_remote_task",
+                "state": "NO_STATE_RUNTIME",
+            },
+            "second_remote_task_4510719504589501579": {
+                "description": "C",
+                "displayName": "second_remote_task",
+                "state": "NO_STATE_RUNTIME",
+            },
+            "second_remote_task_874700556330765323": {
+                "description": "D",
+                "displayName": "second_remote_task",
+                "state": "NO_STATE_RUNTIME",
+            },
+        },
+    }
 
-  assert workflow_graph == expected_workflow_graph
+    assert workflow_graph == expected_workflow_graph

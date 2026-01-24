@@ -8,7 +8,11 @@ from previews.types import QualityLevel
 from dependency_graph import Graph, Node, print_graph, run_graph, canonicalize_graph
 from mosaics.types import Mosaic
 from mosaics.merge_images import merge_images
-from mosaics.compute_graph import build_mosaic_filter_subgraph, build_placement_subgraph, get_stacks_for_filter
+from mosaics.compute_graph import (
+    build_mosaic_filter_subgraph,
+    build_placement_subgraph,
+    get_stacks_for_filter,
+)
 from mosaics.orion_mosaic import add_orion_mosaic_images
 from targets.types import Target
 from testing.test_stacks import make_composite_stack
@@ -16,456 +20,588 @@ from attributes.astrometric_attributes import healpix_cells_from_poly
 
 _OLDEST_DATE = datetime.datetime(2024, 2, 5, 16, 29, 43)
 _NEWEST_DATE = datetime.datetime(2024, 2, 5, 17, 29, 43)
-_FOOTPRINT = SingleSphericalPolygon.from_radec([98.01, 102.01, 102.01, 98.01],
-                                               [-1, -1, 1, 1],
-                                               center=[100.01, 0])
+_FOOTPRINT = SingleSphericalPolygon.from_radec(
+    [98.01, 102.01, 102.01, 98.01], [-1, -1, 1, 1], center=[100.01, 0]
+)
 _HEALPIX_CELLS = healpix_cells_from_poly(_FOOTPRINT)
 
 
 # TODO: Put this somewhere generally-accessible.
-def make_test_target(name,
-                     center=[0.0, 0.0],
-                     image_scale=1.0,
-                     rotation_angle=0.0,
-                     footprint=None,
-                     healpix_cells=None,
-                     projected_footprints=None,
-                     content_hash='content_hash',
-                     stable_hash='stable_hash',
-                     stack_ids=[],
-                     oldest_date=_OLDEST_DATE,
-                     newest_date=_NEWEST_DATE) -> Target:
-  return Target(name=name,
-                center=center,
-                image_scale=image_scale,
-                rotation_angle=rotation_angle,
-                footprint=footprint,
-                healpix_cells=healpix_cells,
-                projected_footprints=projected_footprints,
-                content_hash=content_hash,
-                stable_hash=stable_hash,
-                stack_ids=stack_ids,
-                oldest_date=oldest_date,
-                newest_date=newest_date)
+def make_test_target(
+    name,
+    center=[0.0, 0.0],
+    image_scale=1.0,
+    rotation_angle=0.0,
+    footprint=None,
+    healpix_cells=None,
+    projected_footprints=None,
+    content_hash="content_hash",
+    stable_hash="stable_hash",
+    stack_ids=[],
+    oldest_date=_OLDEST_DATE,
+    newest_date=_NEWEST_DATE,
+) -> Target:
+    return Target(
+        name=name,
+        center=center,
+        image_scale=image_scale,
+        rotation_angle=rotation_angle,
+        footprint=footprint,
+        healpix_cells=healpix_cells,
+        projected_footprints=projected_footprints,
+        content_hash=content_hash,
+        stable_hash=stable_hash,
+        stack_ids=stack_ids,
+        oldest_date=oldest_date,
+        newest_date=newest_date,
+    )
 
 
 def test_three_by_one(test_context) -> None:
-  mode = QualityLevel.SUBFRAME
-  filter = 'H'
-  viewbox = None
-  masks = None
+    mode = QualityLevel.SUBFRAME
+    filter = "H"
+    viewbox = None
+    masks = None
 
-  mosaic = Mosaic(name='three_by_one',
-                  content_hash='content_abc123',
-                  stable_hash='mosaic_abc123',
-                  target_ids=['a', 'b', 'c'],
-                  strips=[['a'], ['b'], ['c']],
-                  oldest_date=_OLDEST_DATE,
-                  newest_date=_NEWEST_DATE,
-                  center=[0.0, 0.0],
-                  image_scale=1.0,
-                  rotation_angle=0.0,
-                  footprint=_FOOTPRINT,
-                  healpix_cells=_HEALPIX_CELLS,
-                  projected_footprints={})
+    mosaic = Mosaic(
+        name="three_by_one",
+        content_hash="content_abc123",
+        stable_hash="mosaic_abc123",
+        target_ids=["a", "b", "c"],
+        strips=[["a"], ["b"], ["c"]],
+        oldest_date=_OLDEST_DATE,
+        newest_date=_NEWEST_DATE,
+        center=[0.0, 0.0],
+        image_scale=1.0,
+        rotation_angle=0.0,
+        footprint=_FOOTPRINT,
+        healpix_cells=_HEALPIX_CELLS,
+        projected_footprints={},
+    )
 
-  context.targets = targets = {
-      'a': make_test_target('a', stack_ids=['a']),
-      'b': make_test_target('b', stack_ids=['b']),
-      'c': make_test_target('c', stack_ids=['c']),
-  }
+    context.targets = targets = {
+        "a": make_test_target("a", stack_ids=["a"]),
+        "b": make_test_target("b", stack_ids=["b"]),
+        "c": make_test_target("c", stack_ids=["c"]),
+    }
 
-  context.stacks = stacks = {
-      'a': make_composite_stack(stable_hash='a'),
-      'b': make_composite_stack(stable_hash='b'),
-      'c': make_composite_stack(stable_hash='c'),
-  }
+    context.stacks = stacks = {
+        "a": make_composite_stack(stable_hash="a"),
+        "b": make_composite_stack(stable_hash="b"),
+        "c": make_composite_stack(stable_hash="c"),
+    }
 
-  strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
+    strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
 
-  graph = ray.get(
-      build_mosaic_filter_subgraph.remote(mode, mosaic, strips, stacks, filter,
-                                          viewbox, masks))
-  print_graph(graph)
+    graph = ray.get(
+        build_mosaic_filter_subgraph.remote(
+            mode, mosaic, strips, stacks, filter, viewbox, masks
+        )
+    )
+    print_graph(graph)
 
-  expected_graph = Graph({
-      Node(merge_images, mode, mosaic, name='merge_mosaic_abc123_strip_1'): [
-          Node(build_placement_subgraph, mode, mosaic, stacks['a'], filter,
-               viewbox, None),
-          Node(build_placement_subgraph, mode, mosaic, stacks['b'], filter,
-               viewbox, None)
-      ],
-      Node(merge_images, mode, mosaic, name='merge_mosaic_abc123_strip_2'): [
-          Node(merge_images, mode, mosaic, name='merge_mosaic_abc123_strip_1'),
-          Node(build_placement_subgraph, mode, mosaic, stacks['c'], filter,
-               viewbox, None)
-      ],
-  })
-  assert canonicalize_graph(graph) == canonicalize_graph(expected_graph)
+    expected_graph = Graph(
+        {
+            Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_1"): [
+                Node(
+                    build_placement_subgraph,
+                    mode,
+                    mosaic,
+                    stacks["a"],
+                    filter,
+                    viewbox,
+                    None,
+                ),
+                Node(
+                    build_placement_subgraph,
+                    mode,
+                    mosaic,
+                    stacks["b"],
+                    filter,
+                    viewbox,
+                    None,
+                ),
+            ],
+            Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_2"): [
+                Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_1"),
+                Node(
+                    build_placement_subgraph,
+                    mode,
+                    mosaic,
+                    stacks["c"],
+                    filter,
+                    viewbox,
+                    None,
+                ),
+            ],
+        }
+    )
+    assert canonicalize_graph(graph) == canonicalize_graph(expected_graph)
 
 
 def test_two_by_three(test_context) -> None:
-  mode = QualityLevel.SUBFRAME
-  filter = 'H'
-  viewbox = None
-  masks = None
+    mode = QualityLevel.SUBFRAME
+    filter = "H"
+    viewbox = None
+    masks = None
 
-  mosaic = Mosaic(name='two_by_three',
-                  content_hash='content_abc123',
-                  stable_hash='mosaic_abc123',
-                  target_ids=['a', 'b', 'c', 'd', 'e', 'f'],
-                  strips=[['a', 'b', 'c'], ['d', 'e', 'f']],
-                  oldest_date=_OLDEST_DATE,
-                  newest_date=_NEWEST_DATE,
-                  center=[0.0, 0.0],
-                  image_scale=1.0,
-                  rotation_angle=0.0,
-                  footprint=_FOOTPRINT,
-                  healpix_cells=_HEALPIX_CELLS,
-                  projected_footprints={})
+    mosaic = Mosaic(
+        name="two_by_three",
+        content_hash="content_abc123",
+        stable_hash="mosaic_abc123",
+        target_ids=["a", "b", "c", "d", "e", "f"],
+        strips=[["a", "b", "c"], ["d", "e", "f"]],
+        oldest_date=_OLDEST_DATE,
+        newest_date=_NEWEST_DATE,
+        center=[0.0, 0.0],
+        image_scale=1.0,
+        rotation_angle=0.0,
+        footprint=_FOOTPRINT,
+        healpix_cells=_HEALPIX_CELLS,
+        projected_footprints={},
+    )
 
-  context.targets = targets = {
-      'a': make_test_target('a', stack_ids=['a']),
-      'b': make_test_target('b', stack_ids=['b']),
-      'c': make_test_target('c', stack_ids=['c']),
-      'd': make_test_target('d', stack_ids=['d']),
-      'e': make_test_target('e', stack_ids=['e']),
-      'f': make_test_target('f', stack_ids=['f'])
-  }
+    context.targets = targets = {
+        "a": make_test_target("a", stack_ids=["a"]),
+        "b": make_test_target("b", stack_ids=["b"]),
+        "c": make_test_target("c", stack_ids=["c"]),
+        "d": make_test_target("d", stack_ids=["d"]),
+        "e": make_test_target("e", stack_ids=["e"]),
+        "f": make_test_target("f", stack_ids=["f"]),
+    }
 
-  context.stacks = stacks = {
-      'a': make_composite_stack(stable_hash='a'),
-      'b': make_composite_stack(stable_hash='b'),
-      'c': make_composite_stack(stable_hash='c'),
-      'd': make_composite_stack(stable_hash='d'),
-      'e': make_composite_stack(stable_hash='e'),
-      'f': make_composite_stack(stable_hash='f')
-  }
+    context.stacks = stacks = {
+        "a": make_composite_stack(stable_hash="a"),
+        "b": make_composite_stack(stable_hash="b"),
+        "c": make_composite_stack(stable_hash="c"),
+        "d": make_composite_stack(stable_hash="d"),
+        "e": make_composite_stack(stable_hash="e"),
+        "f": make_composite_stack(stable_hash="f"),
+    }
 
-  strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
+    strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
 
-  graph = ray.get(
-      build_mosaic_filter_subgraph.remote(mode, mosaic, strips, stacks, filter,
-                                          viewbox, masks))
-  print_graph(graph)
+    graph = ray.get(
+        build_mosaic_filter_subgraph.remote(
+            mode, mosaic, strips, stacks, filter, viewbox, masks
+        )
+    )
+    print_graph(graph)
 
-  place_a = Node(build_placement_subgraph, mode, mosaic, stacks['a'], filter,
-                 viewbox, None)
-  place_b = Node(build_placement_subgraph, mode, mosaic, stacks['b'], filter,
-                 viewbox, None)
-  place_c = Node(build_placement_subgraph, mode, mosaic, stacks['c'], filter,
-                 viewbox, None)
-  place_d = Node(build_placement_subgraph, mode, mosaic, stacks['d'], filter,
-                 viewbox, None)
-  place_e = Node(build_placement_subgraph, mode, mosaic, stacks['e'], filter,
-                 viewbox, None)
-  place_f = Node(build_placement_subgraph, mode, mosaic, stacks['f'], filter,
-                 viewbox, None)
+    place_a = Node(
+        build_placement_subgraph, mode, mosaic, stacks["a"], filter, viewbox, None
+    )
+    place_b = Node(
+        build_placement_subgraph, mode, mosaic, stacks["b"], filter, viewbox, None
+    )
+    place_c = Node(
+        build_placement_subgraph, mode, mosaic, stacks["c"], filter, viewbox, None
+    )
+    place_d = Node(
+        build_placement_subgraph, mode, mosaic, stacks["d"], filter, viewbox, None
+    )
+    place_e = Node(
+        build_placement_subgraph, mode, mosaic, stacks["e"], filter, viewbox, None
+    )
+    place_f = Node(
+        build_placement_subgraph, mode, mosaic, stacks["f"], filter, viewbox, None
+    )
 
-  merge_a_b = Node(merge_images, mode, mosaic, name='merge_mosaic_abc123_b')
-  merge_a_b_c = Node(merge_images, mode, mosaic, name='merge_mosaic_abc123_c')
-  merge_d_e = Node(merge_images, mode, mosaic, name='merge_mosaic_abc123_e')
-  merge_d_e_f = Node(merge_images, mode, mosaic, name='merge_mosaic_abc123_f')
-  final_merge = Node(merge_images,
-                     mode,
-                     mosaic,
-                     name='merge_mosaic_abc123_strip_1')
+    merge_a_b = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_b")
+    merge_a_b_c = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_c")
+    merge_d_e = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_e")
+    merge_d_e_f = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_f")
+    final_merge = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_1")
 
-  expected_graph = Graph({
-      place_b: [place_a],
-      merge_a_b: [place_a, place_b],
-      place_c: [merge_a_b],
-      merge_a_b_c: [merge_a_b, place_c],
-      place_e: [place_d],
-      merge_d_e: [place_d, place_e],
-      place_f: [merge_d_e],
-      merge_d_e_f: [merge_d_e, place_f],
-      final_merge: [merge_a_b_c, merge_d_e_f]
-  })
+    expected_graph = Graph(
+        {
+            place_b: [place_a],
+            merge_a_b: [place_a, place_b],
+            place_c: [merge_a_b],
+            merge_a_b_c: [merge_a_b, place_c],
+            place_e: [place_d],
+            merge_d_e: [place_d, place_e],
+            place_f: [merge_d_e],
+            merge_d_e_f: [merge_d_e, place_f],
+            final_merge: [merge_a_b_c, merge_d_e_f],
+        }
+    )
 
-  assert canonicalize_graph(graph) == canonicalize_graph(expected_graph)
+    assert canonicalize_graph(graph) == canonicalize_graph(expected_graph)
 
 
 def test_three_panes(test_context) -> None:
-  mode = QualityLevel.SUBFRAME
-  filter = 'H'
-  viewbox = None
-  masks = None
+    mode = QualityLevel.SUBFRAME
+    filter = "H"
+    viewbox = None
+    masks = None
 
-  mosaic = Mosaic(name='three_panes',
-                  content_hash='content_abc123',
-                  stable_hash='mosaic_abc123',
-                  target_ids=['a', 'b', 'c'],
-                  strips=[['a'], ['b', 'c']],
-                  oldest_date=_OLDEST_DATE,
-                  newest_date=_NEWEST_DATE,
-                  center=[0.0, 0.0],
-                  image_scale=1.0,
-                  rotation_angle=0.0,
-                  footprint=_FOOTPRINT,
-                  healpix_cells=_HEALPIX_CELLS,
-                  projected_footprints={})
+    mosaic = Mosaic(
+        name="three_panes",
+        content_hash="content_abc123",
+        stable_hash="mosaic_abc123",
+        target_ids=["a", "b", "c"],
+        strips=[["a"], ["b", "c"]],
+        oldest_date=_OLDEST_DATE,
+        newest_date=_NEWEST_DATE,
+        center=[0.0, 0.0],
+        image_scale=1.0,
+        rotation_angle=0.0,
+        footprint=_FOOTPRINT,
+        healpix_cells=_HEALPIX_CELLS,
+        projected_footprints={},
+    )
 
-  context.targets = targets = {
-      'a': make_test_target('a', stack_ids=['a']),
-      'b': make_test_target('b', stack_ids=['b']),
-      'c': make_test_target('c', stack_ids=['c']),
-  }
+    context.targets = targets = {
+        "a": make_test_target("a", stack_ids=["a"]),
+        "b": make_test_target("b", stack_ids=["b"]),
+        "c": make_test_target("c", stack_ids=["c"]),
+    }
 
-  context.stacks = stacks = {
-      'a': make_composite_stack(stable_hash='a'),
-      'b': make_composite_stack(stable_hash='b'),
-      'c': make_composite_stack(stable_hash='c'),
-  }
+    context.stacks = stacks = {
+        "a": make_composite_stack(stable_hash="a"),
+        "b": make_composite_stack(stable_hash="b"),
+        "c": make_composite_stack(stable_hash="c"),
+    }
 
-  strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
+    strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
 
-  graph = ray.get(
-      build_mosaic_filter_subgraph.remote(mode, mosaic, strips, stacks, filter,
-                                          viewbox, masks))
-  print_graph(graph)
+    graph = ray.get(
+        build_mosaic_filter_subgraph.remote(
+            mode, mosaic, strips, stacks, filter, viewbox, masks
+        )
+    )
+    print_graph(graph)
 
-  place_a = Node(build_placement_subgraph, mode, mosaic, stacks['a'], filter,
-                 viewbox, None)
-  place_b = Node(build_placement_subgraph, mode, mosaic, stacks['b'], filter,
-                 viewbox, None)
-  place_c = Node(build_placement_subgraph, mode, mosaic, stacks['c'], filter,
-                 viewbox, None)
-  merge_strip_0 = Node(merge_images, mode, mosaic, name='merge_mosaic_abc123_c')
-  merge_strip_1 = Node(merge_images,
-                       mode,
-                       mosaic,
-                       name='merge_mosaic_abc123_strip_1')
+    place_a = Node(
+        build_placement_subgraph, mode, mosaic, stacks["a"], filter, viewbox, None
+    )
+    place_b = Node(
+        build_placement_subgraph, mode, mosaic, stacks["b"], filter, viewbox, None
+    )
+    place_c = Node(
+        build_placement_subgraph, mode, mosaic, stacks["c"], filter, viewbox, None
+    )
+    merge_strip_0 = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_c")
+    merge_strip_1 = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_1")
 
-  expected_graph = Graph({
-      place_c: [place_b],
-      merge_strip_0: [place_b, place_c],
-      merge_strip_1: [
-          place_a,
-          merge_strip_0,
-      ]
-  })
+    expected_graph = Graph(
+        {
+            place_c: [place_b],
+            merge_strip_0: [place_b, place_c],
+            merge_strip_1: [
+                place_a,
+                merge_strip_0,
+            ],
+        }
+    )
 
-  assert canonicalize_graph(graph) == canonicalize_graph(expected_graph)
+    assert canonicalize_graph(graph) == canonicalize_graph(expected_graph)
 
 
 def test_orion_mosaic(test_context) -> None:
-  add_orion_mosaic_images()
+    add_orion_mosaic_images()
 
-  # Running the graph the first time, with an empty shopping cart, should
-  # produce all the subframe previews for the stacks, targets, and mosaic.
-  graph = build_compute_graph()
-  run_graph(graph)
+    # Running the graph the first time, with an empty shopping cart, should
+    # produce all the subframe previews for the stacks, targets, and mosaic.
+    graph = build_compute_graph()
+    run_graph(graph)
 
-  stacks = context.stacks
-  targets = context.targets
-  assert len(targets) == 4
-  assert len(context.mosaics) == 1
-  mosaic = next(iter(context.mosaics.values()))
+    stacks = context.stacks
+    targets = context.targets
+    assert len(targets) == 4
+    assert len(context.mosaics) == 1
+    mosaic = next(iter(context.mosaics.values()))
 
-  print(f'### actual mosaic.strips {mosaic.strips}')
+    print(f"### actual mosaic.strips {mosaic.strips}")
 
-  assert mosaic.strips == [['1101452f8cf2f9ff', '6d9f6be3ffab0f22'], ['2e5e69b75efbc277', '15a294ac14d63dea']]
+    assert mosaic.strips == [
+        ["1101452f8cf2f9ff", "6d9f6be3ffab0f22"],
+        ["2e5e69b75efbc277", "15a294ac14d63dea"],
+    ]
 
-  mode = QualityLevel.SUBFRAME
-  filter = 'H'
-  viewbox = None
-  masks = None
+    mode = QualityLevel.SUBFRAME
+    filter = "H"
+    viewbox = None
+    masks = None
 
-  strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
+    strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
 
-  graph = ray.get(
-      build_mosaic_filter_subgraph.remote(mode, mosaic, strips, stacks, filter,
-                                          viewbox, masks))
-  print_graph(graph)
+    graph = ray.get(
+        build_mosaic_filter_subgraph.remote(
+            mode, mosaic, strips, stacks, filter, viewbox, masks
+        )
+    )
+    print_graph(graph)
 
-  place_0_0 = Node(build_placement_subgraph, mode, mosaic,
-                   stacks['2e5e69b75efbc277'], filter, viewbox, None)
-  place_0_1 = Node(build_placement_subgraph, mode, mosaic,
-                   stacks['15a294ac14d63dea'], filter, viewbox, None)
-  place_1_0 = Node(build_placement_subgraph, mode, mosaic,
-                   stacks['1101452f8cf2f9ff'], filter, viewbox, None)
-  place_1_1 = Node(build_placement_subgraph, mode, mosaic,
-                   stacks['6d9f6be3ffab0f22'], filter, viewbox, None)
+    place_0_0 = Node(
+        build_placement_subgraph,
+        mode,
+        mosaic,
+        stacks["2e5e69b75efbc277"],
+        filter,
+        viewbox,
+        None,
+    )
+    place_0_1 = Node(
+        build_placement_subgraph,
+        mode,
+        mosaic,
+        stacks["15a294ac14d63dea"],
+        filter,
+        viewbox,
+        None,
+    )
+    place_1_0 = Node(
+        build_placement_subgraph,
+        mode,
+        mosaic,
+        stacks["1101452f8cf2f9ff"],
+        filter,
+        viewbox,
+        None,
+    )
+    place_1_1 = Node(
+        build_placement_subgraph,
+        mode,
+        mosaic,
+        stacks["6d9f6be3ffab0f22"],
+        filter,
+        viewbox,
+        None,
+    )
 
-  merge_0_0__0_1 = Node(merge_images,
-                        mode,
-                        mosaic,
-                        name=f'merge_{mosaic.stable_hash}_15a294ac14d63dea')
-  merge_1_0__1_1 = Node(merge_images,
-                        mode,
-                        mosaic,
-                        name=f'merge_{mosaic.stable_hash}_6d9f6be3ffab0f22')
-  final_merge = Node(merge_images,
-                     mode,
-                     mosaic,
-                     name=f'merge_{mosaic.stable_hash}_strip_1')
+    merge_0_0__0_1 = Node(
+        merge_images, mode, mosaic, name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea"
+    )
+    merge_1_0__1_1 = Node(
+        merge_images, mode, mosaic, name=f"merge_{mosaic.stable_hash}_6d9f6be3ffab0f22"
+    )
+    final_merge = Node(
+        merge_images, mode, mosaic, name=f"merge_{mosaic.stable_hash}_strip_1"
+    )
 
-  expected_graph = Graph({
-      place_1_1: [place_1_0],
-      merge_1_0__1_1: [place_1_0, place_1_1],
-      place_0_1: [place_0_0],
-      merge_0_0__0_1: [place_0_0, place_0_1],
-      final_merge: [merge_1_0__1_1, merge_0_0__0_1],
-  })
+    expected_graph = Graph(
+        {
+            place_1_1: [place_1_0],
+            merge_1_0__1_1: [place_1_0, place_1_1],
+            place_0_1: [place_0_0],
+            merge_0_0__0_1: [place_0_0, place_0_1],
+            final_merge: [merge_1_0__1_1, merge_0_0__0_1],
+        }
+    )
 
-  print('### Actual graph')
-  print_graph(graph)
+    print("### Actual graph")
+    print_graph(graph)
 
-  print('### Expected graph')
-  print_graph(expected_graph)
+    print("### Expected graph")
+    print_graph(expected_graph)
 
-  assert canonicalize_graph(graph) == canonicalize_graph(expected_graph)
+    assert canonicalize_graph(graph) == canonicalize_graph(expected_graph)
 
 
 def test_orion_mosaic_one_by_two(test_context) -> None:
-  add_orion_mosaic_images(panes=[1, 2])
+    add_orion_mosaic_images(panes=[1, 2])
 
-  # Running the graph the first time, with an empty shopping cart, should
-  # produce all the subframe previews for the stacks, targets, and mosaic.
-  graph = build_compute_graph()
-  run_graph(graph)
+    # Running the graph the first time, with an empty shopping cart, should
+    # produce all the subframe previews for the stacks, targets, and mosaic.
+    graph = build_compute_graph()
+    run_graph(graph)
 
-  stacks = context.stacks
-  targets = context.targets
-  assert len(targets) == 2
-  assert len(context.mosaics) == 1
-  mosaic = next(iter(context.mosaics.values()))
+    stacks = context.stacks
+    targets = context.targets
+    assert len(targets) == 2
+    assert len(context.mosaics) == 1
+    mosaic = next(iter(context.mosaics.values()))
 
-  print(f'### mosaic.strips {mosaic.strips}')
-  assert mosaic.strips == [['1101452f8cf2f9ff'], ['2e5e69b75efbc277']]
+    print(f"### mosaic.strips {mosaic.strips}")
+    assert mosaic.strips == [["1101452f8cf2f9ff"], ["2e5e69b75efbc277"]]
 
-  mode = QualityLevel.SUBFRAME
-  filter = 'H'
-  viewbox = None
-  masks = None
+    mode = QualityLevel.SUBFRAME
+    filter = "H"
+    viewbox = None
+    masks = None
 
-  strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
+    strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
 
-  graph = ray.get(
-      build_mosaic_filter_subgraph.remote(mode, mosaic, strips, stacks, filter,
-                                          viewbox, masks))
+    graph = ray.get(
+        build_mosaic_filter_subgraph.remote(
+            mode, mosaic, strips, stacks, filter, viewbox, masks
+        )
+    )
 
-  expected_graph = Graph({
-      Node(merge_images,
-           mode,
-           mosaic,
-           name=f'merge_{mosaic.stable_hash}_strip_1'): [
-          Node(build_placement_subgraph, mode, mosaic,
-               stacks['1101452f8cf2f9ff'], filter, viewbox, None),
-          Node(build_placement_subgraph, mode, mosaic,
-               stacks['2e5e69b75efbc277'], filter, viewbox, None),
-      ]
-  })
+    expected_graph = Graph(
+        {
+            Node(
+                merge_images, mode, mosaic, name=f"merge_{mosaic.stable_hash}_strip_1"
+            ): [
+                Node(
+                    build_placement_subgraph,
+                    mode,
+                    mosaic,
+                    stacks["1101452f8cf2f9ff"],
+                    filter,
+                    viewbox,
+                    None,
+                ),
+                Node(
+                    build_placement_subgraph,
+                    mode,
+                    mosaic,
+                    stacks["2e5e69b75efbc277"],
+                    filter,
+                    viewbox,
+                    None,
+                ),
+            ]
+        }
+    )
 
-  print('### Actual graph')
-  print_graph(graph)
+    print("### Actual graph")
+    print_graph(graph)
 
-  print('### Expected graph')
-  print_graph(expected_graph)
+    print("### Expected graph")
+    print_graph(expected_graph)
 
-  assert canonicalize_graph(graph) == canonicalize_graph(expected_graph)
+    assert canonicalize_graph(graph) == canonicalize_graph(expected_graph)
 
 
 def test_orion_mosaic_two_by_one(test_context) -> None:
-  add_orion_mosaic_images(panes=[1, 3])
+    add_orion_mosaic_images(panes=[1, 3])
 
-  # Running the graph the first time, with an empty shopping cart, should
-  # produce all the subframe previews for the stacks, targets, and mosaic.
-  graph = build_compute_graph()
-  run_graph(graph)
+    # Running the graph the first time, with an empty shopping cart, should
+    # produce all the subframe previews for the stacks, targets, and mosaic.
+    graph = build_compute_graph()
+    run_graph(graph)
 
-  stacks = context.stacks
-  targets = context.targets
-  assert len(targets) == 2
-  assert len(context.mosaics) == 1
-  mosaic = next(iter(context.mosaics.values()))
-  print(f'### mosaic strips {mosaic.strips}')
+    stacks = context.stacks
+    targets = context.targets
+    assert len(targets) == 2
+    assert len(context.mosaics) == 1
+    mosaic = next(iter(context.mosaics.values()))
+    print(f"### mosaic strips {mosaic.strips}")
 
-  assert mosaic.strips == [['2e5e69b75efbc277', '15a294ac14d63dea']]
+    assert mosaic.strips == [["2e5e69b75efbc277", "15a294ac14d63dea"]]
 
-  mode = QualityLevel.SUBFRAME
-  filter = 'H'
-  viewbox = None
-  masks = None
+    mode = QualityLevel.SUBFRAME
+    filter = "H"
+    viewbox = None
+    masks = None
 
-  strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
+    strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
 
-  graph = ray.get(
-      build_mosaic_filter_subgraph.remote(mode, mosaic, strips, stacks, filter,
-                                          viewbox, masks))
-  print(f'### graph')
-  print_graph(graph)
+    graph = ray.get(
+        build_mosaic_filter_subgraph.remote(
+            mode, mosaic, strips, stacks, filter, viewbox, masks
+        )
+    )
+    print(f"### graph")
+    print_graph(graph)
 
-  place_0_0 = Node(build_placement_subgraph, mode, mosaic,
-                   stacks['2e5e69b75efbc277'], filter, viewbox, None)
-  place_0_1 = Node(build_placement_subgraph, mode, mosaic,
-                   stacks['15a294ac14d63dea'], filter, viewbox, None)
-  merge = Node(merge_images,
-               mode,
-               mosaic,
-               name=f'merge_{mosaic.stable_hash}_15a294ac14d63dea')
+    place_0_0 = Node(
+        build_placement_subgraph,
+        mode,
+        mosaic,
+        stacks["2e5e69b75efbc277"],
+        filter,
+        viewbox,
+        None,
+    )
+    place_0_1 = Node(
+        build_placement_subgraph,
+        mode,
+        mosaic,
+        stacks["15a294ac14d63dea"],
+        filter,
+        viewbox,
+        None,
+    )
+    merge = Node(
+        merge_images, mode, mosaic, name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea"
+    )
 
-  expected_graph = Graph({
-      place_0_1: [place_0_0],
-      merge: [place_0_0, place_0_1]
-  })
+    expected_graph = Graph({place_0_1: [place_0_0], merge: [place_0_0, place_0_1]})
 
-  print(f'### expected_graph')
-  print_graph(expected_graph)
+    print(f"### expected_graph")
+    print_graph(expected_graph)
 
-  assert canonicalize_graph(graph) == canonicalize_graph(expected_graph)
+    assert canonicalize_graph(graph) == canonicalize_graph(expected_graph)
 
 
 def test_orion_mosaic_missing_panel(test_context) -> None:
-  add_orion_mosaic_images(panes=[1, 2, 3])
+    add_orion_mosaic_images(panes=[1, 2, 3])
 
-  # Running the graph the first time, with an empty shopping cart, should
-  # produce all the subframe previews for the stacks, targets, and mosaic.
-  graph = build_compute_graph()
-  run_graph(graph)
+    # Running the graph the first time, with an empty shopping cart, should
+    # produce all the subframe previews for the stacks, targets, and mosaic.
+    graph = build_compute_graph()
+    run_graph(graph)
 
-  stacks = context.stacks
-  targets = context.targets
-  assert len(targets) == 3
-  assert len(context.mosaics) == 1
-  mosaic = next(iter(context.mosaics.values()))
+    stacks = context.stacks
+    targets = context.targets
+    assert len(targets) == 3
+    assert len(context.mosaics) == 1
+    mosaic = next(iter(context.mosaics.values()))
 
-  print(f'### mosaic.strips {mosaic.strips}')
-  assert mosaic.strips == [['1101452f8cf2f9ff'],
-                           ['2e5e69b75efbc277', '15a294ac14d63dea']]
+    print(f"### mosaic.strips {mosaic.strips}")
+    assert mosaic.strips == [
+        ["1101452f8cf2f9ff"],
+        ["2e5e69b75efbc277", "15a294ac14d63dea"],
+    ]
 
-  mode = QualityLevel.SUBFRAME
-  filter = 'H'
-  viewbox = None
-  masks = None
+    mode = QualityLevel.SUBFRAME
+    filter = "H"
+    viewbox = None
+    masks = None
 
-  strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
+    strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
 
-  graph = ray.get(
-      build_mosaic_filter_subgraph.remote(mode, mosaic, strips, stacks, filter,
-                                          viewbox, masks))
-  print_graph(graph)
+    graph = ray.get(
+        build_mosaic_filter_subgraph.remote(
+            mode, mosaic, strips, stacks, filter, viewbox, masks
+        )
+    )
+    print_graph(graph)
 
-  place_0_0 = Node(build_placement_subgraph, mode, mosaic,
-                   stacks['1101452f8cf2f9ff'], filter, viewbox, None)
-  place_1_0 = Node(build_placement_subgraph, mode, mosaic,
-                   stacks['2e5e69b75efbc277'], filter, viewbox, None)
-  place_1_1 = Node(build_placement_subgraph, mode, mosaic,
-                   stacks['15a294ac14d63dea'], filter, viewbox, None)
-  merge_1_0__1_1 = Node(merge_images,
-                        mode,
-                        mosaic,
-                        name=f'merge_{mosaic.stable_hash}_15a294ac14d63dea')
-  final_merge = Node(merge_images,
-                     mode,
-                     mosaic,
-                     name=f'merge_{mosaic.stable_hash}_strip_1')
+    place_0_0 = Node(
+        build_placement_subgraph,
+        mode,
+        mosaic,
+        stacks["1101452f8cf2f9ff"],
+        filter,
+        viewbox,
+        None,
+    )
+    place_1_0 = Node(
+        build_placement_subgraph,
+        mode,
+        mosaic,
+        stacks["2e5e69b75efbc277"],
+        filter,
+        viewbox,
+        None,
+    )
+    place_1_1 = Node(
+        build_placement_subgraph,
+        mode,
+        mosaic,
+        stacks["15a294ac14d63dea"],
+        filter,
+        viewbox,
+        None,
+    )
+    merge_1_0__1_1 = Node(
+        merge_images, mode, mosaic, name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea"
+    )
+    final_merge = Node(
+        merge_images, mode, mosaic, name=f"merge_{mosaic.stable_hash}_strip_1"
+    )
 
-  expected_graph = Graph({
-      place_1_1: [place_1_0],
-      merge_1_0__1_1: [place_1_0, place_1_1],
-      final_merge: [place_0_0, merge_1_0__1_1]
-  })
+    expected_graph = Graph(
+        {
+            place_1_1: [place_1_0],
+            merge_1_0__1_1: [place_1_0, place_1_1],
+            final_merge: [place_0_0, merge_1_0__1_1],
+        }
+    )
 
-  assert canonicalize_graph(graph) == canonicalize_graph(expected_graph)
+    assert canonicalize_graph(graph) == canonicalize_graph(expected_graph)

@@ -18,24 +18,28 @@ for (let i = 0; i < filenames.length; ++i) {{
 
 
 def OpenImages(filenames: FilenameList) -> ImageList:
-  print(f'### OpenImages called with filenames {filenames} ')
+    print(f"### OpenImages called with filenames {filenames} ")
 
-  # The view ids are just the images' content hashes, with a 'V_' in front to
-  # satisfy PixInsight.
-  content_hashes = [get_content_hash(f) for f in filenames]
-  filters = [read_header(f).get('FILTER', None) for f in filenames]
-  view_ids = ['V_' + h for h in content_hashes]
+    # The view ids are just the images' content hashes, with a 'V_' in front to
+    # satisfy PixInsight.
+    content_hashes = [get_content_hash(f) for f in filenames]
+    filters = [read_header(f).get("FILTER", None) for f in filenames]
+    view_ids = ["V_" + h for h in content_hashes]
 
-  append_task(
-      ShellScriptTask(javascript=_javascript.format(filenames=filenames,
-                                                    view_ids=view_ids)))
+    append_task(
+        ShellScriptTask(
+            javascript=_javascript.format(filenames=filenames, view_ids=view_ids)
+        )
+    )
 
-  images = ImageList([
-      Image(filename=f, view_id=v, filter=filt)
-      for f, v, filt in zip(filenames, view_ids, filters)
-  ])
+    images = ImageList(
+        [
+            Image(filename=f, view_id=v, filter=filt)
+            for f, v, filt in zip(filenames, view_ids, filters)
+        ]
+    )
 
-  # add_images_to_save(images)
+    # add_images_to_save(images)
 
-  print('### OpenImages returning images', images)
-  return images
+    print("### OpenImages returning images", images)
+    return images

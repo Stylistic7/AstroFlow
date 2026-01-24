@@ -12,13 +12,15 @@ from plate_solving import PlateSolution
 # cause of failure whenever possible, and provide a solution (e.g. increasing
 # timeout on slow computers).
 def remove_bad_images():
-  image_hashes = context.image_hashes
-  plate_solutions = context.plate_solutions
-  quarantined_files = context.quarantined_files
+    image_hashes = context.image_hashes
+    plate_solutions = context.plate_solutions
+    quarantined_files = context.quarantined_files
 
-  return {
-      h: p
-      for h, p in plate_solutions.items()
-      if h in image_hashes and image_hashes[h] and
-      h not in quarantined_files and type(p) is PlateSolution
-  }
+    return {
+        h: p
+        for h, p in plate_solutions.items()
+        if h in image_hashes
+        and image_hashes[h]
+        and h not in quarantined_files
+        and type(p) is PlateSolution
+    }

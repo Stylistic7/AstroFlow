@@ -6,7 +6,12 @@ from context import context
 
 from pix.classes import FilenameList, ImageList
 from pix.decorators import PixInsight
-from pix.tasks import BlurXTerminator, StarXTerminator, StarAlignment, ChannelCombination
+from pix.tasks import (
+    BlurXTerminator,
+    StarXTerminator,
+    StarAlignment,
+    ChannelCombination,
+)
 
 # TODO: Automatically rename images by looking at the stem they have in common.
 # Append the function's name.
@@ -28,34 +33,34 @@ from pix.tasks import BlurXTerminator, StarXTerminator, StarAlignment, ChannelCo
 # system as a new `id` flag added to the AbstractImage.
 
 _TESTDATA_TARGETS = {
-    'IC4701': [
-        'master_light_IC4701_R.xisf',
-        'master_light_IC4701_G.xisf',
-        'master_light_IC4701_B.xisf',
-        'master_light_IC4701_H.xisf',
-        'master_light_IC4701_O.xisf',
-        'master_light_IC4701_S.xisf',
+    "IC4701": [
+        "master_light_IC4701_R.xisf",
+        "master_light_IC4701_G.xisf",
+        "master_light_IC4701_B.xisf",
+        "master_light_IC4701_H.xisf",
+        "master_light_IC4701_O.xisf",
+        "master_light_IC4701_S.xisf",
     ]
 }
 
 
 # TODO: Use Path everywhere instead of str.
-def copy_testdata_frames(target_name: str,
-                         dest_dir: str,
-                         prefix: str = '',
-                         number: int | None = None) -> list[str]:
-  dest_filenames = []
-  for filename in _TESTDATA_TARGETS[target_name][:number]:
-    path = os.path.dirname(os.path.realpath(__file__))
-    src_filename = os.path.join(path, 'testdata', 'Stacks', target_name,
-                                'masters', filename)
-    print('### src_filename is', src_filename)
-    dest_filename = os.path.join(dest_dir, prefix + filename)
-    shutil.copy(src_filename, dest_filename)
-    print(f'### Copied filename {dest_filename}')
-    dest_filenames.append(dest_filename)
+def copy_testdata_frames(
+    target_name: str, dest_dir: str, prefix: str = "", number: int | None = None
+) -> list[str]:
+    dest_filenames = []
+    for filename in _TESTDATA_TARGETS[target_name][:number]:
+        path = os.path.dirname(os.path.realpath(__file__))
+        src_filename = os.path.join(
+            path, "testdata", "Stacks", target_name, "masters", filename
+        )
+        print("### src_filename is", src_filename)
+        dest_filename = os.path.join(dest_dir, prefix + filename)
+        shutil.copy(src_filename, dest_filename)
+        print(f"### Copied filename {dest_filename}")
+        dest_filenames.append(dest_filename)
 
-  return dest_filenames
+    return dest_filenames
 
 
 # TODO: Desired qualities of the API that are not correct yet, and not tested:
@@ -99,88 +104,88 @@ def copy_testdata_frames(target_name: str,
 # fragments or other bastardizations.
 @PixInsight()
 def bxt_only(images: ImageList) -> ImageList:
-  return BlurXTerminator(images)
+    return BlurXTerminator(images)
 
 
 @PixInsight()
 def bxt_and_sxt(images: ImageList) -> ImageList:
-  deconvolved = BlurXTerminator(images)
-  return StarXTerminator(deconvolved)
+    deconvolved = BlurXTerminator(images)
+    return StarXTerminator(deconvolved)
 
 
 @PixInsight()
 def bxt_align_sxt(images: ImageList) -> ImageList:
-  deconvolved = BlurXTerminator(images)
-  aligned = StarAlignment(deconvolved)
-  return StarXTerminator(aligned)
+    deconvolved = BlurXTerminator(images)
+    aligned = StarAlignment(deconvolved)
+    return StarXTerminator(aligned)
 
 
 @PixInsight()
 def channel_combination(images: ImageList) -> ImageList:
-  aligned = StarAlignment(images)
-  return ChannelCombination(aligned)
+    aligned = StarAlignment(images)
+    return ChannelCombination(aligned)
 
 
 @PixInsight(timeout=10)
 def stuck_task(images: ImageList) -> ImageList:
-  pass
+    pass
 
 
 def test_bxt_only(test_context):
-  if context.get('mock_pixinsight', False):
-    return
+    if context.get("mock_pixinsight", False):
+        return
 
-  temp_dir = tempfile.TemporaryDirectory()
-  filenames = copy_testdata_frames('IC4701', temp_dir.name, number=1)
+    temp_dir = tempfile.TemporaryDirectory()
+    filenames = copy_testdata_frames("IC4701", temp_dir.name, number=1)
 
-  images = bxt_only(filenames)
+    images = bxt_only(filenames)
 
-  pix_tmp_dir = images[0].tmp_dir_obj.name
-  filenames = os.listdir(pix_tmp_dir)
-  assert sorted(filenames) == sorted(['blurx.xisf'])
+    pix_tmp_dir = images[0].tmp_dir_obj.name
+    filenames = os.listdir(pix_tmp_dir)
+    assert sorted(filenames) == sorted(["blurx.xisf"])
 
 
 def test_bxt_and_sxt(test_context):
-  if context.get('mock_pixinsight', False):
-    return
+    if context.get("mock_pixinsight", False):
+        return
 
-  temp_dir = tempfile.TemporaryDirectory()
-  filenames = copy_testdata_frames('IC4701', temp_dir.name, number=1)
+    temp_dir = tempfile.TemporaryDirectory()
+    filenames = copy_testdata_frames("IC4701", temp_dir.name, number=1)
 
-  images = bxt_and_sxt(filenames)
+    images = bxt_and_sxt(filenames)
 
-  pix_tmp_dir = images[0].tmp_dir_obj.name
-  filenames = os.listdir(pix_tmp_dir)
-  assert sorted(filenames) == sorted(['stars.xisf', 'starless.xisf'])
+    pix_tmp_dir = images[0].tmp_dir_obj.name
+    filenames = os.listdir(pix_tmp_dir)
+    assert sorted(filenames) == sorted(["stars.xisf", "starless.xisf"])
 
 
 def test_bxt_align_sxt(test_context):
-  if context.get('mock_pixinsight', False):
-    return
+    if context.get("mock_pixinsight", False):
+        return
 
-  temp_dir = tempfile.TemporaryDirectory()
-  filenames = copy_testdata_frames('IC4701', temp_dir.name, number=3)
+    temp_dir = tempfile.TemporaryDirectory()
+    filenames = copy_testdata_frames("IC4701", temp_dir.name, number=3)
 
-  images = bxt_align_sxt(filenames)
+    images = bxt_align_sxt(filenames)
 
-  pix_tmp_dir = images[0].tmp_dir_obj.name
-  filenames = os.listdir(pix_tmp_dir)
-  assert sorted(filenames) == sorted(['stars.xisf', 'starless.xisf'])
+    pix_tmp_dir = images[0].tmp_dir_obj.name
+    filenames = os.listdir(pix_tmp_dir)
+    assert sorted(filenames) == sorted(["stars.xisf", "starless.xisf"])
 
 
 def test_channel_combination(test_context):
-  if context.get('mock_pixinsight', False):
-    return
+    if context.get("mock_pixinsight", False):
+        return
 
-  temp_dir = tempfile.TemporaryDirectory()
-  filenames = copy_testdata_frames('IC4701', temp_dir.name, number=3)
+    temp_dir = tempfile.TemporaryDirectory()
+    filenames = copy_testdata_frames("IC4701", temp_dir.name, number=3)
 
-  images = channel_combination(filenames)
+    images = channel_combination(filenames)
 
-  pix_tmp_dir = images[0].tmp_dir_obj.name
-  filenames = os.listdir(pix_tmp_dir)
-  assert sorted(filenames) == sorted(['RGB.xisf'])
+    pix_tmp_dir = images[0].tmp_dir_obj.name
+    filenames = os.listdir(pix_tmp_dir)
+    assert sorted(filenames) == sorted(["RGB.xisf"])
 
 
 def test_stuck_task(test_context) -> None:
-  images = stuck_task([])
+    images = stuck_task([])

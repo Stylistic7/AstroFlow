@@ -5,27 +5,31 @@ from pix.context import append_task
 from pix.processes import enum, execute_on_view_ids
 
 _default_parameters = {
-    'ai_file': 'BlurXTerminator.4.mlpackage',
-    'correct_only': False,
-    'correct_first': False,
-    'nonstellar_then_stellar': False,
-    'lum_only': False,
-    'sharpen_stars': 0.25,
-    'adjust_halos': 0.00,
-    'nonstellar_psf_diameter': 0.00,
-    'auto_nonstellar_psf': True,
-    'sharpen_nonstellar': 0.90,
+    "ai_file": "BlurXTerminator.4.mlpackage",
+    "correct_only": False,
+    "correct_first": False,
+    "nonstellar_then_stellar": False,
+    "lum_only": False,
+    "sharpen_stars": 0.25,
+    "adjust_halos": 0.00,
+    "nonstellar_psf_diameter": 0.00,
+    "auto_nonstellar_psf": True,
+    "sharpen_nonstellar": 0.90,
 }
 
 
-def BlurXTerminator(images: ImageList, **kwargs: Any) -> ImageList:  
-  assert all(i.view_id is not None for i in images)
-  view_ids = [cast(str, i.view_id) for i in images]
+def BlurXTerminator(images: ImageList, **kwargs: Any) -> ImageList:
+    assert all(i.view_id is not None for i in images)
+    view_ids = [cast(str, i.view_id) for i in images]
 
-  append_task(
-      ShellScriptTask(javascript=execute_on_view_ids(
-          'BlurXTerminator', _default_parameters | kwargs, view_ids)))
+    append_task(
+        ShellScriptTask(
+            javascript=execute_on_view_ids(
+                "BlurXTerminator", _default_parameters | kwargs, view_ids
+            )
+        )
+    )
 
-  return ImageList([
-      Image(view_id=image.view_id, tag='blurx', dirty=True) for image in images
-  ])
+    return ImageList(
+        [Image(view_id=image.view_id, tag="blurx", dirty=True) for image in images]
+    )

@@ -12,29 +12,31 @@ from cache.content_hashed import ContentHashed
 Template: TypeAlias = tuple[int | None, int | None]
 Strip: TypeAlias = list[TargetHash]
 
-MosaicHash = NewType('MosaicHash', str)
+MosaicHash = NewType("MosaicHash", str)
 
 
 @beartype
 @dataclass(order=True, frozen=True)
-class Mosaic(ContentHashed, AstrometricAttributes,
-             ChronologyAttributes[MosaicHash]):
-  target_ids: list[TargetHash]
-  strips: list[Strip]
+class Mosaic(ContentHashed, AstrometricAttributes, ChronologyAttributes[MosaicHash]):
+    target_ids: list[TargetHash]
+    strips: list[Strip]
 
-  def __str__(self) -> str:
-    return (
-        f'Mosaic(name={self.name}, stable_hash={self.stable_hash}, '
-        f'content_hash={self.content_hash}, {len(self.target_ids)} targets)')
+    def __str__(self) -> str:
+        return (
+            f"Mosaic(name={self.name}, stable_hash={self.stable_hash}, "
+            f"content_hash={self.content_hash}, {len(self.target_ids)} targets)"
+        )
 
-  def __hash__(self) -> int:
-    return hash_dataclass(self)
+    def __hash__(self) -> int:
+        return hash_dataclass(self)
 
-  def __eq__(self, other) -> bool:
-    return (self.stable_hash == other.stable_hash and
-            self.content_hash == other.content_hash)
+    def __eq__(self, other) -> bool:
+        return (
+            self.stable_hash == other.stable_hash
+            and self.content_hash == other.content_hash
+        )
 
-  # TODO: Add a valid() method, and assert on it.
+    # TODO: Add a valid() method, and assert on it.
 
 
 MosaicsDict = dict[MosaicHash, Mosaic]
@@ -43,46 +45,50 @@ MosaicsDict = dict[MosaicHash, Mosaic]
 @beartype
 @dataclass(frozen=True)
 class Viewbox(ContentHashed):
-  projection: Projection
+    projection: Projection
 
-  x_min: float  # radians
-  x_span: float  # radians
+    x_min: float  # radians
+    x_span: float  # radians
 
-  y_min: float  # radians
-  y_span: float  # radians
+    y_min: float  # radians
+    y_span: float  # radians
 
-  resolution: float  # radians per pixel
+    resolution: float  # radians per pixel
 
-  num_pixels_y: int
-  num_pixels_x: int
+    num_pixels_y: int
+    num_pixels_x: int
 
-  num_tiles_y: int
-  num_tiles_x: int
+    num_tiles_y: int
+    num_tiles_x: int
 
-  tile_height: int
-  tile_width: int
+    tile_height: int
+    tile_width: int
 
-  def __str__(self):
-    return (f'Viewbox(content_hash={self.content_hash} '
-            f'{self.num_pixels_x} px x {self.num_pixels_y} px')
+    def __str__(self):
+        return (
+            f"Viewbox(content_hash={self.content_hash} "
+            f"{self.num_pixels_x} px x {self.num_pixels_y} px"
+        )
 
-  def __hash__(self) -> int:
-    return hash_dataclass(self)
+    def __hash__(self) -> int:
+        return hash_dataclass(self)
 
 
 @dataclass(frozen=True)
 class Mask(ContentHashed):
-  xmin: int
-  ymin: int
-  xmax: int
-  ymax: int
+    xmin: int
+    ymin: int
+    xmax: int
+    ymax: int
 
-  def to_box(self):
-    return box(self.xmin, self.ymin, self.xmax, self.ymax)
+    def to_box(self):
+        return box(self.xmin, self.ymin, self.xmax, self.ymax)
 
-  def __str__(self):
-    return (f'Mask(content_hash={self.content_hash} {self.xmin=} '
-            f'{self.xmax=} {self.ymin=} {self.ymax=}')
+    def __str__(self):
+        return (
+            f"Mask(content_hash={self.content_hash} {self.xmin=} "
+            f"{self.xmax=} {self.ymin=} {self.ymax=}"
+        )
 
-  def __hash__(self) -> int:
-    return hash_dataclass(self)
+    def __hash__(self) -> int:
+        return hash_dataclass(self)

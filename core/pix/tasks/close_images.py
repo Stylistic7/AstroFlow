@@ -21,7 +21,7 @@ for (let i = 0; i < view_ids.length; ++i) {{
 
 
 def CloseImages(images: ImageList) -> ImageList:
-  view_ids = [i.view_id for i in images]
-  print(f'### closing images with view ids {view_ids}')
-  append_task(ShellScriptTask(javascript=_javascript.format(view_ids=view_ids)))
-  return []
+    view_ids = [i.view_id for i in images]
+    print(f"### closing images with view ids {view_ids}")
+    append_task(ShellScriptTask(javascript=_javascript.format(view_ids=view_ids)))
+    return []

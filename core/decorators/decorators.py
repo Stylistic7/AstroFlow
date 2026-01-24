@@ -6,9 +6,9 @@ from hashing import hash_call
 from context import context, get_cache
 from decorators.content_hasher import ContentHasher
 
-cached = make_cached_decorator(cache_provider=get_cache,
-                               content_hasher=ContentHasher(),
-                               call_hasher=hash_call)
+cached = make_cached_decorator(
+    cache_provider=get_cache, content_hasher=ContentHasher(), call_hasher=hash_call
+)
 
 create_thumbnail = make_create_thumbnail_decorator(context)
 create_video = make_create_video_decorator(context)

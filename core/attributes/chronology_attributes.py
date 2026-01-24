@@ -13,30 +13,29 @@ _HashType = TypeVar("_HashType", bound=str)
 @beartype
 @dataclass(frozen=True)
 class ChronologyAttributes(Generic[_HashType]):
-  stable_hash: _HashType
-  oldest_date: datetime.datetime
-  newest_date: datetime.datetime
+    stable_hash: _HashType
+    oldest_date: datetime.datetime
+    newest_date: datetime.datetime
 
-  @classmethod
-  def from_frames(
-      cls,
-      frames: Sequence[FrameHash],
-      metadata: MetadataDict | None = None) -> 'ChronologyAttributes':
-    assert frames
+    @classmethod
+    def from_frames(
+        cls, frames: Sequence[FrameHash], metadata: MetadataDict | None = None
+    ) -> "ChronologyAttributes":
+        assert frames
 
-    metadata = metadata or context.metadata
-    metadata_list = [i for i in metadata.values() if i.content_hash in frames]
+        metadata = metadata or context.metadata
+        metadata_list = [i for i in metadata.values() if i.content_hash in frames]
 
-    sorted_metadata = sorted(metadata_list, key=lambda i: i.header['DATE-OBS'])
-    oldest_date = sorted_metadata[0].header['DATE-OBS']
-    newest_date = sorted_metadata[-1].header['DATE-OBS']
+        sorted_metadata = sorted(metadata_list, key=lambda i: i.header["DATE-OBS"])
+        oldest_date = sorted_metadata[0].header["DATE-OBS"]
+        newest_date = sorted_metadata[-1].header["DATE-OBS"]
 
-    # The stable hash is just the content hash of the oldest frame.
-    stable_hash = sorted_metadata[0].content_hash
+        # The stable hash is just the content hash of the oldest frame.
+        stable_hash = sorted_metadata[0].content_hash
 
-    return cls(stable_hash, oldest_date, newest_date)
+        return cls(stable_hash, oldest_date, newest_date)
 
-  def __lt__(self, other):
-    if not isinstance(other, ChronologyAttributes):
-      return NotImplemented
-    return self.oldest_date < other.oldest_date
+    def __lt__(self, other):
+        if not isinstance(other, ChronologyAttributes):
+            return NotImplemented
+        return self.oldest_date < other.oldest_date

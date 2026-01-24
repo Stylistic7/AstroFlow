@@ -6,52 +6,53 @@ import os
 from base_path import get_base_path
 import geometry.projections.mollweide as mollweide
 
-constellation_line_path = os.path.join(get_base_path(), 'core', 'catalogs',
-                                       'sfa_constellation_lines.csv')
+constellation_line_path = os.path.join(
+    get_base_path(), "core", "catalogs", "sfa_constellation_lines.csv"
+)
 
 
 def _read_constellation_csv():
-  rows = []
-  with open(constellation_line_path) as csvfile:
-    reader = csv.reader(csvfile, delimiter=',')
-    num_rows = 0
-    for i, row in enumerate(reader):
-      assert len(row) == 14
-      if i > 7:
-        rows.append(row)
+    rows = []
+    with open(constellation_line_path) as csvfile:
+        reader = csv.reader(csvfile, delimiter=",")
+        num_rows = 0
+        for i, row in enumerate(reader):
+            assert len(row) == 14
+            if i > 7:
+                rows.append(row)
 
-  return rows
+    return rows
 
 
 # TODO: Memoize this.
 def polylines():
-  rows = _read_constellation_csv()
+    rows = _read_constellation_csv()
 
-  polylines = []
-  polyline = []
+    polylines = []
+    polyline = []
 
-  def end_polyline(polyline):
-    if not polyline:
-      return
+    def end_polyline(polyline):
+        if not polyline:
+            return
 
-    logging.debug(f'Polyline had {len(polyline)} points')
-    polylines.append(polyline)
+        logging.debug(f"Polyline had {len(polyline)} points")
+        polylines.append(polyline)
 
-  for row in rows:
-    if row[1] == '':
-      end_polyline(polyline)
-      polyline = []
-      continue
+    for row in rows:
+        if row[1] == "":
+            end_polyline(polyline)
+            polyline = []
+            continue
 
-    # TODO: Process all of the points at once in a batch.
-    ra, dec = np.radians(15 * float(row[2])), np.radians(float(row[3]))
-    theta, phi = mollweide.equatorial_to_galactic(ra, dec)
-    polyline.append((theta, phi))
+        # TODO: Process all of the points at once in a batch.
+        ra, dec = np.radians(15 * float(row[2])), np.radians(float(row[3]))
+        theta, phi = mollweide.equatorial_to_galactic(ra, dec)
+        polyline.append((theta, phi))
 
-  assert len(polyline) == 0
+    assert len(polyline) == 0
 
-  return polylines
+    return polylines
 
 
-if __name__ == '__main__':
-  print(polylines())
+if __name__ == "__main__":
+    print(polylines())

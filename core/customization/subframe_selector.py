@@ -72,47 +72,76 @@ File.writeTextFile("{output_filename}", measurements);
 
 # @cache.memoize(tag='subframe_selector')
 def measure_frames(light_frames, image_scale):
-  with tempfile.TemporaryDirectory() as tmp_dir:
-    script_filename = os.path.join(tmp_dir, "run_subframe_selector.js")
-    output_filename = os.path.join(tmp_dir, "subframe_selector_result.csv")
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        script_filename = os.path.join(tmp_dir, "run_subframe_selector.js")
+        output_filename = os.path.join(tmp_dir, "subframe_selector_result.csv")
 
-    light_frames = [[True, str(s), "", ""] for s in light_frames]
+        light_frames = [[True, str(s), "", ""] for s in light_frames]
 
-    with open(script_filename, "w") as f:
-      script = subframe_selector_script.format(
-          light_frames=json.dumps(light_frames),
-          image_scale=image_scale,
-          output_filename=output_filename)
-      f.write(script)
+        with open(script_filename, "w") as f:
+            script = subframe_selector_script.format(
+                light_frames=json.dumps(light_frames),
+                image_scale=image_scale,
+                output_filename=output_filename,
+            )
+            f.write(script)
 
-    print('Running PixInsight SubframeSelector on', len(light_frames),
-          'light frames...')
-    ret = subprocess.run([
-        '/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight',
-        f'--execute={script_filename}'
-    ]).returncode
+        print(
+            "Running PixInsight SubframeSelector on",
+            len(light_frames),
+            "light frames...",
+        )
+        ret = subprocess.run(
+            [
+                "/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight",
+                f"--execute={script_filename}",
+            ]
+        ).returncode
 
-    while not os.path.exists(output_filename):
-      time.sleep(5)
+        while not os.path.exists(output_filename):
+            time.sleep(5)
 
-    with open(output_filename) as f:
-      result = f.read()
+        with open(output_filename) as f:
+            result = f.read()
 
-      column_headings = [
-          'Index', 'Approved', 'Locked', 'File', 'Weight', 'PSF Signal Weight',
-          'PSF SNR', 'PSF Scale', 'PSF Scale SNR', 'PSF Count', 'M*', 'N*',
-          'SNR', 'FWHM', 'Eccentricity', 'Altitude', 'Azimuth', 'Median',
-          'Median Mean Deviation', 'Noise', 'Noise Ratio', 'Stars',
-          'Star Residual', 'PSF Total Flux', 'PSF Total Power Flux',
-          'PSF Total Mean Flux', 'PSF Total Mean Power Flux',
-          'FWHM Mean Deviation', 'Eccentricity Mean Deviation',
-          'Star Residual Mean Deviation', 'Median Mean Dev.'
-      ]
+            column_headings = [
+                "Index",
+                "Approved",
+                "Locked",
+                "File",
+                "Weight",
+                "PSF Signal Weight",
+                "PSF SNR",
+                "PSF Scale",
+                "PSF Scale SNR",
+                "PSF Count",
+                "M*",
+                "N*",
+                "SNR",
+                "FWHM",
+                "Eccentricity",
+                "Altitude",
+                "Azimuth",
+                "Median",
+                "Median Mean Deviation",
+                "Noise",
+                "Noise Ratio",
+                "Stars",
+                "Star Residual",
+                "PSF Total Flux",
+                "PSF Total Power Flux",
+                "PSF Total Mean Flux",
+                "PSF Total Mean Power Flux",
+                "FWHM Mean Deviation",
+                "Eccentricity Mean Deviation",
+                "Star Residual Mean Deviation",
+                "Median Mean Dev.",
+            ]
 
-      output_dict = {}
-      for line in result.splitlines():
-        line_dict = dict(zip(column_headings, line.split(',')))
-        if math.isfinite(float(line_dict['PSF Signal Weight'])):
-          output_dict[line_dict['File']] = line_dict
+            output_dict = {}
+            for line in result.splitlines():
+                line_dict = dict(zip(column_headings, line.split(",")))
+                if math.isfinite(float(line_dict["PSF Signal Weight"])):
+                    output_dict[line_dict["File"]] = line_dict
 
-      return output_dict
+            return output_dict

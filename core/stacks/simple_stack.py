@@ -13,58 +13,68 @@ DependenciesDict = dict[str, StackHash]
 
 
 @dataclass(frozen=True)
-class SimpleStack(ContentHashed, ChronologyAttributes[StackHash],
-                  ImagingAttributes, AstroFlowStateAttributes):
-  frames: list[FrameHash]
-  metadata: MetadataDict
-  dependencies: DependenciesDict
+class SimpleStack(
+    ContentHashed,
+    ChronologyAttributes[StackHash],
+    ImagingAttributes,
+    AstroFlowStateAttributes,
+):
+    frames: list[FrameHash]
+    metadata: MetadataDict
+    dependencies: DependenciesDict
 
-  def __str__(self) -> str:
-    return (f'SimpleStack(Content hash {self.content_hash}, '
-            f'Type {self.image_type}, '
-            f'Camera {self.camera}, '
-            f'Exposure {self.exposure_s}, '
-            f'Integration {self.integration_s} s, '
-            f'Filter {self.filter}, '
-            f'Temp {self.mean_temperature:.02f} degC)')
+    def __str__(self) -> str:
+        return (
+            f"SimpleStack(Content hash {self.content_hash}, "
+            f"Type {self.image_type}, "
+            f"Camera {self.camera}, "
+            f"Exposure {self.exposure_s}, "
+            f"Integration {self.integration_s} s, "
+            f"Filter {self.filter}, "
+            f"Temp {self.mean_temperature:.02f} degC)"
+        )
 
-  def __hash__(self) -> int:
-    return hash_list_int([self.content_hash])
+    def __hash__(self) -> int:
+        return hash_list_int([self.content_hash])
 
-  def __eq__(self, other: object) -> bool:
-    if not isinstance(other, SimpleStack):
-      return NotImplemented
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, SimpleStack):
+            return NotImplemented
 
-    return (self.content_hash == other.content_hash)
+        return self.content_hash == other.content_hash
 
 
 class SimpleStacksDict(dict[str, SimpleStack]):
+    def __hash__(self):
+        return hash_list_int([self[k].content_hash for k in sorted(self.keys())])
 
-  def __hash__(self):
-    return hash_list_int([self[k].content_hash for k in sorted(self.keys())])
-
-  def __str__(self):
-    return f'SimpleStacksDict({len(self)})'
+    def __str__(self):
+        return f"SimpleStacksDict({len(self)})"
 
 
 class CalibrationStack(SimpleStack):
-  pass
+    pass
 
 
 @cached.remote
-def simple_stack_from_frames(frames: list[FrameHash], metadata: LargeObject) -> SimpleStack:
-  chronology_attributes = ChronologyAttributes.from_frames(frames, metadata)
-  imaging_attributes = ImagingAttributes.from_frames(frames, metadata)
+def simple_stack_from_frames(
+    frames: list[FrameHash], metadata: LargeObject
+) -> SimpleStack:
+    chronology_attributes = ChronologyAttributes.from_frames(frames, metadata)
+    imaging_attributes = ImagingAttributes.from_frames(frames, metadata)
 
-  frame_metadata = {h: i for h, i in metadata.items() if h in frames}
-  assert frame_metadata
+    frame_metadata = {h: i for h, i in metadata.items() if h in frames}
+    assert frame_metadata
 
-  attributes: dict[
-      str, Any] = asdict(chronology_attributes) | asdict(imaging_attributes) | {
-          'frames': frames,
-          'metadata': frame_metadata,
-          'dependencies': DependenciesDict(),
-          'state': {}
-      }
+    attributes: dict[str, Any] = (
+        asdict(chronology_attributes)
+        | asdict(imaging_attributes)
+        | {
+            "frames": frames,
+            "metadata": frame_metadata,
+            "dependencies": DependenciesDict(),
+            "state": {},
+        }
+    )
 
-  return SimpleStack(**attributes)
+    return SimpleStack(**attributes)

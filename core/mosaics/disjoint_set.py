@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Iterable, Iterator, List
 
+
 class DisjointSet:
     __slots__ = ("p", "sz")
 
@@ -53,10 +54,11 @@ class DisjointSet:
             d.union(a, b)
         return d
 
+
 class HashDisjointSet:
     def __init__(self):
-        self.index = {}          # hash → int index
-        self.rev = []            # int → hash
+        self.index = {}  # hash → int index
+        self.rev = []  # int → hash
         self.dsu = None
 
     def _ensure(self, h):
@@ -65,7 +67,7 @@ class HashDisjointSet:
             self.rev.append(h)
             if self.dsu:
                 # expand existing DSU
-                self.dsu.p.append(len(self.rev)-1)
+                self.dsu.p.append(len(self.rev) - 1)
                 self.dsu.sz.append(1)
             else:
                 self.dsu = DisjointSet(1)
@@ -82,6 +84,6 @@ class HashDisjointSet:
     def groups(self):
         if self.dsu is None:
             return []
-        
+
         groups = self.dsu.groups()
         return [[self.rev[i] for i in g] for g in groups]

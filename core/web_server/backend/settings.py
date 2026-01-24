@@ -42,27 +42,26 @@ from state.actor import state
 settings_bp = Blueprint("settings", __name__)
 
 
-@settings_bp.route('/update_settings/stack', methods=['POST'])
+@settings_bp.route("/update_settings/stack", methods=["POST"])
 def update_stack_settings():
-  port = request.environ.get("SERVER_PORT")
-  print(f'### update_stack_settings SERVER_PORT {port}')
+    port = request.environ.get("SERVER_PORT")
+    print(f"### update_stack_settings SERVER_PORT {port}")
 
-  data = request.get_json()
-  stack_id = data['stack_id']
-  run_id = data['run_id']
-  dependencies = data['dependencies']
-  print(f'### update_stack_settings {stack_id=} {dependencies=}')
+    data = request.get_json()
+    stack_id = data["stack_id"]
+    run_id = data["run_id"]
+    dependencies = data["dependencies"]
+    print(f"### update_stack_settings {stack_id=} {dependencies=}")
 
-  # TODO: Watch out for race conditions here.
-  settings = context.settings or Settings()
-  stack_settings = settings.stack_settings.get(run_id, StackSettings())
-  stack_settings.dependencies |= dependencies
-  settings.stack_settings[run_id] = stack_settings
-  context.settings = settings
-  print(f'### context.settings is now {context.settings}')
+    # TODO: Watch out for race conditions here.
+    settings = context.settings or Settings()
+    stack_settings = settings.stack_settings.get(run_id, StackSettings())
+    stack_settings.dependencies |= dependencies
+    settings.stack_settings[run_id] = stack_settings
+    context.settings = settings
+    print(f"### context.settings is now {context.settings}")
 
-  # TODO: Maybe don't pass the entire settings struct?
-  state.enqueue(
-      dict(type='update_settings', stack_id=stack_id, settings=settings))
+    # TODO: Maybe don't pass the entire settings struct?
+    state.enqueue(dict(type="update_settings", stack_id=stack_id, settings=settings))
 
-  return jsonify({"status": "ok"})
+    return jsonify({"status": "ok"})

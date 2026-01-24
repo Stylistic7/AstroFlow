@@ -53,79 +53,88 @@ from pix.tasks import OpenImages, SaveImages
 
 # TODO: Refactor this function into pieces.
 def PixInsight(
-    slots: list[int] | None = None,
-    timeout: float | None = None) -> Callable[[PixInsightFn], PixInsightFn]:
+    slots: list[int] | None = None, timeout: float | None = None
+) -> Callable[[PixInsightFn], PixInsightFn]:
+    def decorator(func: PixInsightFn) -> PixInsightFn:
+        @functools.wraps(func)
+        def wrapper(filenames: FilenameList, *args: Any, **kwargs: Any) -> ImageList:
+            func_name = cast(Callable, func).__name__
 
-  def decorator(func: PixInsightFn) -> PixInsightFn:
+            filenames = [os.fspath(f) for f in filenames]
+            assert all(os.path.exists(f) for f in filenames)
 
-    @functools.wraps(func)
-    def wrapper(filenames: FilenameList, *args: Any,
-                **kwargs: Any) -> ImageList:
-      func_name = cast(Callable, func).__name__
+            # TODO: The content hash of images produced by this PixInsight function
+            # are composed of the hash of the function's code, the hashes of all
+            # the function's input images, and the output image's view_id.
+            # input_image_hashes = [get_content_hash(f) for f in filenames]
 
-      filenames = [os.fspath(f) for f in filenames]
-      assert all(os.path.exists(f) for f in filenames)
+            tmp_dir_obj = tempfile.TemporaryDirectory()
+            context = dict(
+                tmp_dir_obj=tmp_dir_obj,
+                tasks=[],
+                images_to_save=[],
+                debug_images=[],
+                process_number=0,
+            )
 
-      # TODO: The content hash of images produced by this PixInsight function
-      # are composed of the hash of the function's code, the hashes of all
-      # the function's input images, and the output image's view_id.
-      # input_image_hashes = [get_content_hash(f) for f in filenames]
+            def normalize_images(results: list[Image]) -> list[Image]:
+                output = []
+                for result in results:
+                    result.tmp_dir_obj = tmp_dir_obj
 
-      tmp_dir_obj = tempfile.TemporaryDirectory()
-      context = dict(tmp_dir_obj=tmp_dir_obj,
-                     tasks=[],
-                     images_to_save=[],
-                     debug_images=[],
-                     process_number=0)
+                    if result.filename:
+                        result.filename = os.path.join(
+                            tmp_dir_obj.name, result.filename
+                        )
+                    else:
+                        result.filename = os.path.join(
+                            tmp_dir_obj.name, f"{result.tag}.xisf"
+                        )
 
-      def normalize_images(results: list[Image]) -> list[Image]:
-        output = []
-        for result in results:
-          result.tmp_dir_obj = tmp_dir_obj
+                    output.append(result)
 
-          if result.filename:
-            result.filename = os.path.join(tmp_dir_obj.name, result.filename)
-          else:
-            result.filename = os.path.join(tmp_dir_obj.name,
-                                           f'{result.tag}.xisf')
+                return output
 
-          output.append(result)
+            def call_with_context(
+                func: Callable[..., ImageList], *args: Any, **kwargs: Any
+            ) -> ImageList:
+                func.__globals__.update(context)
+                return func(*args, **kwargs)
 
-        return output
+            # Load the given filenames and their metadata.
+            images = call_with_context(OpenImages, filenames)
+            context["images"] = images
 
-      def call_with_context(func: Callable[..., ImageList], *args: Any,
-                            **kwargs: Any) -> ImageList:
-        func.__globals__.update(context)
-        return func(*args, **kwargs)
+            # Call the decorated PixInsight function.
+            print(f"### Calling PixInsight function {func_name}")
+            results = call_with_context(func, images, *args, **kwargs)
+            assert isinstance(context["tasks"], list)
+            print(
+                f"### PixInsight function {func_name} returned correctly, "
+                f"{len(context['tasks'])} tasks, results {results}"
+            )
 
-      # Load the given filenames and their metadata.
-      images = call_with_context(OpenImages, filenames)
-      context['images'] = images
+            # If the PixInsight function didn't add any tasks, there is nothing
+            # to do. The OpenImages task doesn't count.
+            if len(context["tasks"]) == 1:
+                print(
+                    f"### PixInsight function {func_name} made no tasks, "
+                    "fwrapper returning {results}"
+                )
+                return results
 
-      # Call the decorated PixInsight function.
-      print(f'### Calling PixInsight function {func_name}')
-      results = call_with_context(func, images, *args, **kwargs)
-      assert isinstance(context['tasks'], list)
-      print(f'### PixInsight function {func_name} returned correctly, '
-            f'{len(context["tasks"])} tasks, results {results}')
+            if results is not None:
+                results = normalize_images(results)
+                call_with_context(SaveImages, results)
 
-      # If the PixInsight function didn't add any tasks, there is nothing
-      # to do. The OpenImages task doesn't count.
-      if len(context['tasks']) == 1:
-        print(f'### PixInsight function {func_name} made no tasks, '
-              'fwrapper returning {results}')
-        return results
+            print(
+                f"### Shell script is ready for {func_name}, with "
+                f"{len(context['tasks'])} tasks"
+            )
+            run_script(context["tasks"], slots=slots, timeout=timeout)
 
-      if results is not None:
-        results = normalize_images(results)
-        call_with_context(SaveImages, results)
+            return results
 
-      print(f"### Shell script is ready for {func_name}, with "
-            f"{len(context['tasks'])} tasks")
-      run_script(context['tasks'], slots=slots, timeout=timeout)
+        return wrapper
 
-      return results
-
-    return wrapper
-
-  return decorator
+    return decorator

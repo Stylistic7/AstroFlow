@@ -54,22 +54,27 @@ for (let i = 0; i < output_filenames.length; ++i) {{
 """
 
 
-def SaveImages(images: ImageList,
-               output_filenames: Optional[list[Path]] = None,
-               compression: bool = True) -> ImageList:
-  view_ids = [i.view_id for i in images]
+def SaveImages(
+    images: ImageList,
+    output_filenames: Optional[list[Path]] = None,
+    compression: bool = True,
+) -> ImageList:
+    view_ids = [i.view_id for i in images]
 
-  if output_filenames is None:
-    output_filenames = [i.filename for i in images]
-  else:
-    output_filenames = [os.fspath(f) for f in output_filenames]
+    if output_filenames is None:
+        output_filenames = [i.filename for i in images]
+    else:
+        output_filenames = [os.fspath(f) for f in output_filenames]
 
-  append_task(
-      ShellScriptTask(javascript=_javascript.format(
-          view_ids=view_ids,
-          output_filenames=output_filenames,
-          tiff_output_hint='zip-compression' if compression else '',
-          xisf_output_hint='compression-codec lz4hc+sh' if compression else ''))
-  )
+    append_task(
+        ShellScriptTask(
+            javascript=_javascript.format(
+                view_ids=view_ids,
+                output_filenames=output_filenames,
+                tiff_output_hint="zip-compression" if compression else "",
+                xisf_output_hint="compression-codec lz4hc+sh" if compression else "",
+            )
+        )
+    )
 
-  return images
+    return images

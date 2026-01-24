@@ -9,72 +9,76 @@ _DEBUG = False
 
 
 def test_mercator_whole_sphere(test_context) -> None:
-  proj = mercator.MercatorProjection(lon_0=0)
+    proj = mercator.MercatorProjection(lon_0=0)
 
-  # The Mercator projection projects the entire sphere to the xy plane bounded
-  # by x in [0, 2 pi), and y in [-pi, pi].
-  viewbox = 0, -np.pi, 2 * np.pi, 2 * np.pi
-  lon, lat = proj.sample_viewbox_lon_lat(viewbox, 1000)
+    # The Mercator projection projects the entire sphere to the xy plane bounded
+    # by x in [0, 2 pi), and y in [-pi, pi].
+    viewbox = 0, -np.pi, 2 * np.pi, 2 * np.pi
+    lon, lat = proj.sample_viewbox_lon_lat(viewbox, 1000)
 
-  assert np.min(lon) == 0
-  assert np.max(lon) == 2 * np.pi
+    assert np.min(lon) == 0
+    assert np.max(lon) == 2 * np.pi
 
-  assert np.allclose(np.min(lat), np.radians(-85), atol=0.05)
-  assert np.allclose(np.max(lat), np.radians(85), atol=0.05)
+    assert np.allclose(np.min(lat), np.radians(-85), atol=0.05)
+    assert np.allclose(np.max(lat), np.radians(85), atol=0.05)
 
-  if _DEBUG:
-    plt.figure()
-    plt.imshow(lon)
-    plt.title('lon')
+    if _DEBUG:
+        plt.figure()
+        plt.imshow(lon)
+        plt.title("lon")
 
-    plt.figure()
-    plt.imshow(lat)
-    plt.title('lat')
+        plt.figure()
+        plt.imshow(lat)
+        plt.title("lat")
 
-    plt.show()
+        plt.show()
 
 
 def test_sinusoidal_whole_sphere(test_context) -> None:
-  proj = sinusoidal.SinusoidalProjection(lon_0=np.pi)
+    proj = sinusoidal.SinusoidalProjection(lon_0=np.pi)
 
-  # The sinusoidal projection projects the entire sphere to the xy plane,
-  # bounded by x in [0, 2 pi), and y in [-pi, pi].
-  viewbox = -np.pi, -np.pi / 2, 2 * np.pi, np.pi
-  lon, lat = proj.sample_viewbox_lon_lat(viewbox, 1000)
+    # The sinusoidal projection projects the entire sphere to the xy plane,
+    # bounded by x in [0, 2 pi), and y in [-pi, pi].
+    viewbox = -np.pi, -np.pi / 2, 2 * np.pi, np.pi
+    lon, lat = proj.sample_viewbox_lon_lat(viewbox, 1000)
 
-  assert np.min(lat) == -np.pi / 2
-  assert np.max(lat) == np.pi / 2
+    assert np.min(lat) == -np.pi / 2
+    assert np.max(lat) == np.pi / 2
 
-  if _DEBUG:
-    plt.figure()
-    plt.imshow(lon)
-    plt.title('lon')
+    if _DEBUG:
+        plt.figure()
+        plt.imshow(lon)
+        plt.title("lon")
 
-    plt.figure()
-    plt.imshow(lat)
-    plt.title('lat')
+        plt.figure()
+        plt.imshow(lat)
+        plt.title("lat")
 
-    plt.show()
+        plt.show()
 
 
 def test_mollweide_whole_sphere(test_context) -> None:
-  R = 1
-  proj = mollweide.MollweideProjection(R=R, lon_0=np.pi)
+    R = 1
+    proj = mollweide.MollweideProjection(R=R, lon_0=np.pi)
 
-  # The Mollweide projection projects the entire sphere to the xy plane
-  # bounded by x in [-2 R sqrt(2), 2 R sqrt(2)] and y in
-  # [-R sqrt(2), R sqrt(2)].
-  viewbox = -2 * R * np.sqrt(2), -R * np.sqrt(2), 4 * R * np.sqrt(
-      2), 2 * R * np.sqrt(2)
-  lon, lat = proj.sample_viewbox_lon_lat(viewbox, 1000)
+    # The Mollweide projection projects the entire sphere to the xy plane
+    # bounded by x in [-2 R sqrt(2), 2 R sqrt(2)] and y in
+    # [-R sqrt(2), R sqrt(2)].
+    viewbox = (
+        -2 * R * np.sqrt(2),
+        -R * np.sqrt(2),
+        4 * R * np.sqrt(2),
+        2 * R * np.sqrt(2),
+    )
+    lon, lat = proj.sample_viewbox_lon_lat(viewbox, 1000)
 
-  if _DEBUG:
-    plt.figure()
-    plt.imshow(lon)
-    plt.title('lon')
+    if _DEBUG:
+        plt.figure()
+        plt.imshow(lon)
+        plt.title("lon")
 
-    plt.figure()
-    plt.imshow(lat)
-    plt.title('lat')
+        plt.figure()
+        plt.imshow(lat)
+        plt.title("lat")
 
-    plt.show()
+        plt.show()

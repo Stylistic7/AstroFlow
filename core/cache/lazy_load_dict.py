@@ -4,10 +4,12 @@ from types import MethodType
 
 Key = str | tuple[str, ...]
 
+
 # TODO: I don't think this is going to work across Ray nodes. The ContextActor
 # probably needs to re-create the LazyLoadDict with its own context.get() func.
 class LazyLoadDict:
     __slots__ = ("name", "_orig_get")
+
     def __init__(self, name: str, orig_get: Callable[[Any], Any]):
         self.name = name
         self._orig_get = orig_get
@@ -33,6 +35,7 @@ class LazyLoadDict:
     def __len__(self):
         ks = self._orig_get(self.name) or ()
         return len(ks)
+
 
 def add_lazy_load_functionality(
     cache: diskcache.Cache, lazy_names: list[str]
@@ -72,7 +75,9 @@ def add_lazy_load_functionality(
                 new_value = _orig_get(key) | value
                 _orig_set(key, new_value)
 
-    def _and_equals(self: diskcache.Cache, key: Key, value: Any, length_limit: int | None) -> None:
+    def _and_equals(
+        self: diskcache.Cache, key: Key, value: Any, length_limit: int | None
+    ) -> None:
         assert key not in lazy
         with self.transact():
             old_value = _orig_get(key, [])

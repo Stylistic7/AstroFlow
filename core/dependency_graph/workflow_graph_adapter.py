@@ -10,137 +10,148 @@ _DEBUG = False
 
 
 def debug_print(message):
-  if _DEBUG:
-    print(message)
+    if _DEBUG:
+        print(message)
 
 
 class WorkflowGraph(dict):
-  pass
+    pass
 
 
 def node_to_id(node: Node) -> str:
-  return str(node.task._function.__name__) + '_' + str(hash(node))
+    return str(node.task._function.__name__) + "_" + str(hash(node))
 
 
 def gather_group_meta(
     ts: TopologicalSorterWithStatus,
-    subgraphs_by_parent: dict[Node, TopologicalSorterWithStatus]
+    subgraphs_by_parent: dict[Node, TopologicalSorterWithStatus],
 ) -> dict[str, dict]:
+    def state_string(ts, node):
+        result = ts.results.get(node, NeverRun)
+        return (
+            "NO_STATE_RUNTIME"
+            if result == NeverRun
+            else "FAILED"
+            if isinstance(result, Exception)
+            else "SUCCEEDED"
+        )
 
-  def state_string(ts, node):
-    result = ts.results.get(node, NeverRun)
-    return 'NO_STATE_RUNTIME' if result == NeverRun else 'FAILED' if isinstance(
-        result, Exception) else 'SUCCEEDED'
+    def subgraph_contains_exception(ts, node):
+        if node in subgraphs_by_parent:
+            sub_ts = subgraphs_by_parent[node]
+            if any(subgraph_contains_exception(sub_ts, n) for n in sub_ts.graph):
+                return True
 
-  def subgraph_contains_exception(ts, node):
-    if node in subgraphs_by_parent:
-      sub_ts = subgraphs_by_parent[node]
-      if any(subgraph_contains_exception(sub_ts, n) for n in sub_ts.graph):
-        return True
+        return isinstance(ts.results.get(node, NeverRun), Exception)
 
-    return isinstance(ts.results.get(node, NeverRun), Exception)
+    def recurse(ts: TopologicalSorterWithStatus, node: Node):
+        # TODO: Split this out as an independent function -- it may get complex.
+        filename = None
+        try:
+            if hasattr(node.task, "filename_fn"):
+                args = ts.complete_args[node]
+                print(
+                    f"### {node_to_string(node)} has filename_fn, "
+                    f"calling with args {[type(a) for a in args]}"
+                )
+                filename = node.task.filename_fn(*args).resolve_at(context.output_dir)
+                if os.path.exists(filename):
+                    filename = os.fspath(filename)
+        except:
+            pass
 
-  def recurse(ts: TopologicalSorterWithStatus, node: Node):
-    # TODO: Split this out as an independent function -- it may get complex.
-    filename = None
-    try:
-      if hasattr(node.task, 'filename_fn'):
-        args = ts.complete_args[node]
-        print(f'### {node_to_string(node)} has filename_fn, '
-              f'calling with args {[type(a) for a in args]}')
-        filename = node.task.filename_fn(*args).resolve_at(context.output_dir)
-        if os.path.exists(filename):
-          filename = os.fspath(filename)
-    except:
-      pass
+        meta = {
+            "displayName": node.task._function.__name__,
+            "state": state_string(ts, node),
+            "options": {
+                "imageUrl": f"/api/open_image/{filename}",
+            },
+        }
+        if node.args:
+            meta["description"] = str(node.args[0])
+        if node.name:
+            meta["description"] = node.name
+        if node in subgraphs_by_parent:
+            sub_ts = subgraphs_by_parent[node]
+            meta["hasControlNode"] = True
+            meta["groupMeta"] = {
+                node_to_id(n): recurse(sub_ts, n) for n in sub_ts.graph
+            }
+            if subgraph_contains_exception(sub_ts, node):
+                meta["state"] = "FAILED"
+        return meta
 
-    meta = {
-        "displayName": node.task._function.__name__,
-        "state": state_string(ts, node),
-        "options": {
-            "imageUrl": f"/api/open_image/{filename}",
-        },
-    }
-    if node.args:
-      meta["description"] = str(node.args[0])
-    if node.name:
-      meta["description"] = node.name
-    if node in subgraphs_by_parent:
-      sub_ts = subgraphs_by_parent[node]
-      meta["hasControlNode"] = True
-      meta["groupMeta"] = {
-          node_to_id(n): recurse(sub_ts, n) for n in sub_ts.graph
-      }
-      if subgraph_contains_exception(sub_ts, node):
-        meta["state"] = 'FAILED'
-    return meta
-
-  return {node_to_id(n): recurse(ts, n) for n in ts.graph}
+    return {node_to_id(n): recurse(ts, n) for n in ts.graph}
 
 
-def build_skeleton(ts: TopologicalSorterWithStatus,
-                   subgraphs_by_parent: dict[Node, TopologicalSorterWithStatus],
-                   indent: int = 0) -> list[dict]:
-  existing_nodes = {}
+def build_skeleton(
+    ts: TopologicalSorterWithStatus,
+    subgraphs_by_parent: dict[Node, TopologicalSorterWithStatus],
+    indent: int = 0,
+) -> list[dict]:
+    existing_nodes = {}
 
-  debug_print(f'{" " * indent} build_skeleton() called for ts '
-              'with {len(ts.graph)} entries')
+    debug_print(
+        f"{' ' * indent} build_skeleton() called for ts with {{len(ts.graph)}} entries"
+    )
 
-  graph = ts.graph
-  reverse = defaultdict(set)
-  for node, deps in graph.items():
-    for dep in deps:
-      reverse[dep].add(node)
-  roots = sorted(n for n, deps in graph.items() if not deps)
+    graph = ts.graph
+    reverse = defaultdict(set)
+    for node, deps in graph.items():
+        for dep in deps:
+            reverse[dep].add(node)
+    roots = sorted(n for n, deps in graph.items() if not deps)
 
-  def build(node, indent):
-    key = node_to_id(node)
-    debug_print(f'{" " * indent} build() called for node {node}')
+    def build(node, indent):
+        key = node_to_id(node)
+        debug_print(f"{' ' * indent} build() called for node {node}")
 
-    if (ts, key) in existing_nodes:
-      debug_print(f'{" " * indent} key {key} is in existing_nodes')
-      return {
-          'id': existing_nodes[ts, key]['id'],
-          'type': existing_nodes[ts, key]['type']
-      }
+        if (ts, key) in existing_nodes:
+            debug_print(f"{' ' * indent} key {key} is in existing_nodes")
+            return {
+                "id": existing_nodes[ts, key]["id"],
+                "type": existing_nodes[ts, key]["type"],
+            }
 
-    if node in subgraphs_by_parent:
-      sub_ts = subgraphs_by_parent[node]
-      debug_print(
-          f'{" " * indent} calling build_skeleton() for subgraph node {node}')
-      result = {
-          "id":
-              key,
-          "type":
-              "group",
-          "definition":
-              build_skeleton(sub_ts, subgraphs_by_parent, indent=indent + 2)
-      }
-    else:
-      result = {"id": key, "type": "execution"}
+        if node in subgraphs_by_parent:
+            sub_ts = subgraphs_by_parent[node]
+            debug_print(
+                f"{' ' * indent} calling build_skeleton() for subgraph node {node}"
+            )
+            result = {
+                "id": key,
+                "type": "group",
+                "definition": build_skeleton(
+                    sub_ts, subgraphs_by_parent, indent=indent + 2
+                ),
+            }
+        else:
+            result = {"id": key, "type": "execution"}
 
-    debug_print(f'{" " * indent} calling build() for {len(reverse[node])} '
-                f'children of {node}')
-    children = [build(n, indent=indent + 2) for n in sorted(reverse[node])]
-    if children:
-      result["next"] = children
+        debug_print(
+            f"{' ' * indent} calling build() for {len(reverse[node])} "
+            f"children of {node}"
+        )
+        children = [build(n, indent=indent + 2) for n in sorted(reverse[node])]
+        if children:
+            result["next"] = children
 
-    existing_nodes[ts, key] = result
-    debug_print(f'{" " * indent} putting key {key} into existing_nodes')
+        existing_nodes[ts, key] = result
+        debug_print(f"{' ' * indent} putting key {key} into existing_nodes")
 
-    return result
+        return result
 
-  return [build(n, indent=indent) for n in roots]
+    return [build(n, indent=indent) for n in roots]
 
 
 def to_workflow_graph(subgraphs: list[TopologicalSorterWithStatus]):
-  subgraphs_by_parent = {
-      sg.parent_node: sg for sg in subgraphs if sg.parent_node is not None
-  }
+    subgraphs_by_parent = {
+        sg.parent_node: sg for sg in subgraphs if sg.parent_node is not None
+    }
 
-  top_level_ts = next(ts for ts in subgraphs if ts.parent_node is None)
+    top_level_ts = next(ts for ts in subgraphs if ts.parent_node is None)
 
-  return {
-      "skeleton": build_skeleton(top_level_ts, subgraphs_by_parent),
-      "state": gather_group_meta(top_level_ts, subgraphs_by_parent),
-  }
+    return {
+        "skeleton": build_skeleton(top_level_ts, subgraphs_by_parent),
+        "state": gather_group_meta(top_level_ts, subgraphs_by_parent),
+    }

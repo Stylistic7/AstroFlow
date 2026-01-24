@@ -81,71 +81,72 @@ from hashing.types import LargeObject
 # TODO: Add a task that checks that input and output directories exist. Many
 # tasks cannot run without them.
 @ray.remote
-def scatter_compute_image_metadata(*filenames_in:
-                                   list[Path]) -> Graph:
-  filenames_in = set(f for f in filenames_in if f is not None)
-  filenames: set[str] = set(filenames_in)
+def scatter_compute_image_metadata(*filenames_in: list[Path]) -> Graph:
+    filenames_in = set(f for f in filenames_in if f is not None)
+    filenames: set[str] = set(filenames_in)
 
-  # TODO: Don't do anything if the directory's modification time hasn't
-  # changed since the last time it was listed.
-  for dir in context.input_dirs:
-    artifacts_for_dir = set(find_image_files(dir))
-    print(f'### Directory {dir} contains {len(artifacts_for_dir)} files')
-    filenames.update(artifacts_for_dir)
+    # TODO: Don't do anything if the directory's modification time hasn't
+    # changed since the last time it was listed.
+    for dir in context.input_dirs:
+        artifacts_for_dir = set(find_image_files(dir))
+        print(f"### Directory {dir} contains {len(artifacts_for_dir)} files")
+        filenames.update(artifacts_for_dir)
 
-  graph = Graph(
-      {load_metadata: {(compute_image_metadata, Path(f)) for f in filenames}})
+    graph = Graph(
+        {load_metadata: {(compute_image_metadata, Path(f)) for f in filenames}}
+    )
 
-  return graph
+    return graph
 
 
 class DuplicateFileException(Exception):
-  pass
+    pass
 
 
 @cached.remote(num_cpus=0.25)
 def compute_image_metadata(filename: Path) -> ImageMetadata:
-  print(f'### compute_image_metadata {filename=}')
-  if filename is None or not filename.exists():
-    raise FileNotFoundError(f'File "{filename}" not found')
+    print(f"### compute_image_metadata {filename=}")
+    if filename is None or not filename.exists():
+        raise FileNotFoundError(f'File "{filename}" not found')
 
-  content_hash = get_content_hash(filename)
-  header = read_header(filename)
-  if image_types.is_light_frame(header):
-    plate_solution = plate_solving.solve_field(filename)
-  else:
-    plate_solution = None
+    content_hash = get_content_hash(filename)
+    header = read_header(filename)
+    if image_types.is_light_frame(header):
+        plate_solution = plate_solving.solve_field(filename)
+    else:
+        plate_solution = None
 
-  return ImageMetadata(content_hash=content_hash,
-                       filename=filename,
-                       header=header,
-                       plate_solution=plate_solution)
+    return ImageMetadata(
+        content_hash=content_hash,
+        filename=filename,
+        header=header,
+        plate_solution=plate_solution,
+    )
 
 
-@ray.remote(resources={'fastest_storage': 0.001})
+@ray.remote(resources={"fastest_storage": 0.001})
 @measure_performance
 def load_metadata() -> LargeObject:
-  quarantined_files = context.quarantined_files or set()
+    quarantined_files = context.quarantined_files or set()
 
-  # TODO: This won't support disconnected storage media.
-  metadata = MetadataDict()
-  for key, value in context.get_matching(('compute_image_metadata',)).items():
-    try:
-      if isinstance(value.content_hash, str):
-        if not image_types.is_master(value):
-          if value.content_hash not in quarantined_files:
-            if os.path.exists(value.filename):
-              metadata[value.content_hash] = value
-    except Exception as e:
-      print(
-          f'### Rejecting bad key {key} because of exception {e} for value type {type(value)}'
-      )
+    # TODO: This won't support disconnected storage media.
+    metadata = MetadataDict()
+    for key, value in context.get_matching(("compute_image_metadata",)).items():
+        try:
+            if isinstance(value.content_hash, str):
+                if not image_types.is_master(value):
+                    if value.content_hash not in quarantined_files:
+                        if os.path.exists(value.filename):
+                            metadata[value.content_hash] = value
+        except Exception as e:
+            print(
+                f"### Rejecting bad key {key} because of exception {e} for value type {type(value)}"
+            )
 
-  metadata_size_mb = objsize.get_deep_size(metadata) / 1024 / 1024
-  print(f'### load_metadata() length {len(metadata)} '
-        f'size {metadata_size_mb:.2f} MB')
+    metadata_size_mb = objsize.get_deep_size(metadata) / 1024 / 1024
+    print(f"### load_metadata() length {len(metadata)} size {metadata_size_mb:.2f} MB")
 
-  # TODO: Pass the LargeObject everywhere, and remove this from the context.
-  context.metadata = metadata
+    # TODO: Pass the LargeObject everywhere, and remove this from the context.
+    context.metadata = metadata
 
-  return LargeObject(metadata)
+    return LargeObject(metadata)

@@ -5,7 +5,9 @@ import numpy as np
 from astropy.io import fits
 
 
-def downscale_fits(in_path: str | Path, out_path: str | Path, *, K: int, overwrite: bool = True) -> None:
+def downscale_fits(
+    in_path: str | Path, out_path: str | Path, *, K: int, overwrite: bool = True
+) -> None:
     """
     Power-of-two downscale that mimics *in-camera binning* for WBPP:
 
@@ -41,7 +43,11 @@ def downscale_fits(in_path: str | Path, out_path: str | Path, *, K: int, overwri
     assert img.min() >= -1e-3  # should be >= 0 in practice
     assert img.max() <= 65535 + 1e-3
 
-    y = img.reshape(h // K, K, w // K, K).mean(axis=(1, 3)).astype(np.float32, copy=False)
+    y = (
+        img.reshape(h // K, K, w // K, K)
+        .mean(axis=(1, 3))
+        .astype(np.float32, copy=False)
+    )
 
     # Range invariants for mean downscale in ADU space
     assert np.isfinite(y).all()
@@ -62,11 +68,25 @@ def downscale_fits(in_path: str | Path, out_path: str | Path, *, K: int, overwri
 
     # Copy only safe metadata (no structural/scaling/WCS/SIP families).
     keep = (
-        "CREATOR", "INSTRUME", "GUIDECAM", "TELESCOP", "RIG",
-        "IMAGETYP", "FILTER",
-        "EXPOSURE", "EXPTIME", "DATE-OBS", "DATE-END", "TIMESYS",
-        "GAIN", "OFFSET", "EGAIN", "CCD-TEMP", "SET-TEMP",
-        "FOCALLEN", "FOCUSPOS",
+        "CREATOR",
+        "INSTRUME",
+        "GUIDECAM",
+        "TELESCOP",
+        "RIG",
+        "IMAGETYP",
+        "FILTER",
+        "EXPOSURE",
+        "EXPTIME",
+        "DATE-OBS",
+        "DATE-END",
+        "TIMESYS",
+        "GAIN",
+        "OFFSET",
+        "EGAIN",
+        "CCD-TEMP",
+        "SET-TEMP",
+        "FOCALLEN",
+        "FOCUSPOS",
     )
     for k in keep:
         if k in h0:

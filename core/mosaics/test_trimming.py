@@ -13,41 +13,41 @@ from geometry.projections import mercator
 
 
 def test_orion_mosaic(test_context) -> None:
-  add_orion_mosaic_images()
+    add_orion_mosaic_images()
 
-  run_graph(build_compute_graph())
+    run_graph(build_compute_graph())
 
-  stacks = context.stacks
-  assert len(stacks) == 4
+    stacks = context.stacks
+    assert len(stacks) == 4
 
-  targets = context.targets
-  assert len(targets) == 4
+    targets = context.targets
+    assert len(targets) == 4
 
-  mosaics = context.mosaics
-  assert len(mosaics) == 1
-  mosaic = next(iter(mosaics.values()))
+    mosaics = context.mosaics
+    assert len(mosaics) == 1
+    mosaic = next(iter(mosaics.values()))
 
-  projection = mercator.MercatorProjection()
-  x, y = project_polygon(mosaic.footprint, projection)
-  projected_footprint = Polygon(zip(x, y))
+    projection = mercator.MercatorProjection()
+    x, y = project_polygon(mosaic.footprint, projection)
+    projected_footprint = Polygon(zip(x, y))
 
-  # TODO: Write a real test with an assertion.
+    # TODO: Write a real test with an assertion.
 
-  # plt.figure()
+    # plt.figure()
 
-  # union_poly = None
-  # for target in context.targets.values():
-  #   draw_spherical_polygon(target.footprint, projection, color='blue')
-  #   x, y = project_polygon(target.footprint, projection)
-  #   poly = Polygon(zip(x, y))
-  #   union_poly = poly if union_poly is None else union_poly.union(poly)
+    # union_poly = None
+    # for target in context.targets.values():
+    #   draw_spherical_polygon(target.footprint, projection, color='blue')
+    #   x, y = project_polygon(target.footprint, projection)
+    #   poly = Polygon(zip(x, y))
+    #   union_poly = poly if union_poly is None else union_poly.union(poly)
 
-  # print(f'### union_poly.exterior.coords {list(union_poly.exterior.coords)}')
-  # box = largest_interior_rectangle(union_poly, epsilon=0)
-  # print(f'### box.exterior.coords {list(box.exterior.coords)}')
-  # x, y = zip(*box.exterior.coords)
-  # plt.plot(x, y, color='black')
+    # print(f'### union_poly.exterior.coords {list(union_poly.exterior.coords)}')
+    # box = largest_interior_rectangle(union_poly, epsilon=0)
+    # print(f'### box.exterior.coords {list(box.exterior.coords)}')
+    # x, y = zip(*box.exterior.coords)
+    # plt.plot(x, y, color='black')
 
-  # draw_spherical_polygon(mosaic.footprint, projection, color='red')
+    # draw_spherical_polygon(mosaic.footprint, projection, color='red')
 
-  # plt.show()
+    # plt.show()

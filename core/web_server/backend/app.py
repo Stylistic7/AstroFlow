@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import sys
 
-sys.path.append('../..')
+sys.path.append("../..")
 
 # TODO: Don't connect to Ray until instructed to by the user.
 # from ray_infra import ray_init
@@ -40,6 +40,7 @@ STREAM_PORT = 8001
 
 cache = get_cache()
 
+
 def strtobool(val: str) -> bool:
     val = val.lower()
     if val in {"y", "yes", "t", "true", "on", "1"}:
@@ -50,54 +51,58 @@ def strtobool(val: str) -> bool:
 
 
 def get_plot_html():
-  buffer = io.StringIO()
+    buffer = io.StringIO()
 
-  # df = px.data.iris()  # replace with your own data source
-  # fig = px.scatter(df, x="sepal_width", y="sepal_length", color="species")
+    # df = px.data.iris()  # replace with your own data source
+    # fig = px.scatter(df, x="sepal_width", y="sepal_length", color="species")
 
-  x1 = np.random.randn(200) - 2
-  x2 = np.random.randn(200)
-  x3 = np.random.randn(200) + 2
+    x1 = np.random.randn(200) - 2
+    x2 = np.random.randn(200)
+    x3 = np.random.randn(200) + 2
 
-  hist_data = [x1, x2, x3]
+    hist_data = [x1, x2, x3]
 
-  group_labels = ['Group 1', 'Group 2', 'Group 3']
-  colors = ['#A56CC1', '#A6ACEC', '#63F5EF']
+    group_labels = ["Group 1", "Group 2", "Group 3"]
+    colors = ["#A56CC1", "#A6ACEC", "#63F5EF"]
 
-  # Create distplot with curve_type set to 'normal'
-  fig = ff.create_distplot(hist_data,
-                           group_labels,
-                           colors=colors,
-                           curve_type='normal',
-                           bin_size=.2,
-                           show_rug=False)
+    # Create distplot with curve_type set to 'normal'
+    fig = ff.create_distplot(
+        hist_data,
+        group_labels,
+        colors=colors,
+        curve_type="normal",
+        bin_size=0.2,
+        show_rug=False,
+    )
 
-  # Add title
-  fig.update_layout(title_text='Hist and Curve Plot')
-  # fig.show()
+    # Add title
+    fig.update_layout(title_text="Hist and Curve Plot")
+    # fig.show()
 
-  fig.write_html(buffer, full_html=False)
+    fig.write_html(buffer, full_html=False)
 
-  return buffer.getvalue()
+    return buffer.getvalue()
 
 
 from base_path import get_base_path
 
 base_path = get_base_path()
-print(f'### base_path {base_path}')
+print(f"### base_path {base_path}")
 
-if getattr(sys, 'frozen', False):
-  print('### Starting web server: app is frozen')
-  app = flask.Flask(__name__,
-                    template_folder=f'{base_path}/core/web_server/templates',
-                    static_folder=f'{base_path}/core/web_server/static')
+if getattr(sys, "frozen", False):
+    print("### Starting web server: app is frozen")
+    app = flask.Flask(
+        __name__,
+        template_folder=f"{base_path}/core/web_server/templates",
+        static_folder=f"{base_path}/core/web_server/static",
+    )
 else:
-  print('Starting web server: app is not frozen')
-  app = flask.Flask(
-      __name__,
-      template_folder=f'{base_path}/core/web_server/frontend/build',
-      static_folder=f'{base_path}/core/web_server/backend/static',
-  )
+    print("Starting web server: app is not frozen")
+    app = flask.Flask(
+        __name__,
+        template_folder=f"{base_path}/core/web_server/frontend/build",
+        static_folder=f"{base_path}/core/web_server/backend/static",
+    )
 
 app.register_blueprint(files_bp)
 app.register_blueprint(tiles_bp)
@@ -109,114 +114,112 @@ app.register_blueprint(videos_bp)
 
 
 class CustomJSONProvider(DefaultJSONProvider):
-
-  def default(self, o):
-    if isinstance(o, Path):
-      return str(o)
-    return super().default(o)
+    def default(self, o):
+        if isinstance(o, Path):
+            return str(o)
+        return super().default(o)
 
 
 app.json_provider_class = CustomJSONProvider
 app.json = app.json_provider_class(app)
 
 
-@app.route('/')
+@app.route("/")
 def index():
-  """ Displays the index page accessible at '/'"""
-  return flask.render_template('index.html')
+    """Displays the index page accessible at '/'"""
+    return flask.render_template("index.html")
 
 
-@app.route('/starmap')
+@app.route("/starmap")
 def starmap():
-  return flask.render_template('index.html')
+    return flask.render_template("index.html")
 
 
-@app.route('/constellation_polylines')
+@app.route("/constellation_polylines")
 def constellation_polylines():
-  return constellations.polylines()
+    return constellations.polylines()
 
 
 # This stub redirects requests to a worker on a specific port. That worker
 # will handle all SSE connections, and broadcast the announcer.announcements it receives
 # over a diskcache queue.
-@stateful_route(app.route('/stream'), fixed_port=STREAM_PORT)
+@stateful_route(app.route("/stream"), fixed_port=STREAM_PORT)
 def stream():
-  pass
+    pass
 
 
-@app.route('/get_shopping_cart')
+@app.route("/get_shopping_cart")
 def get_shopping_cart():
-  return list(context.get('shopping_cart', set()))
+    return list(context.get("shopping_cart", set()))
 
 
-@app.route('/add_to_shopping_cart/<object_type>/<object_id>')
+@app.route("/add_to_shopping_cart/<object_type>/<object_id>")
 def add_to_shopping_cart(object_type, object_id):
-  shopping_cart = context.shopping_cart or set()
-  shopping_cart.add((object_type, object_id))
-  context.shopping_cart = shopping_cart
+    shopping_cart = context.shopping_cart or set()
+    shopping_cart.add((object_type, object_id))
+    context.shopping_cart = shopping_cart
 
-  print('shopping_cart is now', context.shopping_cart)
+    print("shopping_cart is now", context.shopping_cart)
 
-  return Response(status=204)
+    return Response(status=204)
 
 
-@app.route('/remove_from_shopping_cart/<object_type>/<object_id>')
+@app.route("/remove_from_shopping_cart/<object_type>/<object_id>")
 def remove_from_shopping_cart(object_type, object_id):
-  shopping_cart = context.shopping_cart or set()
-  shopping_cart.remove((object_type, object_id))
-  context.shopping_cart = shopping_cart
+    shopping_cart = context.shopping_cart or set()
+    shopping_cart.remove((object_type, object_id))
+    context.shopping_cart = shopping_cart
 
-  print('shopping_cart is now', context.shopping_cart)
+    print("shopping_cart is now", context.shopping_cart)
 
-  return Response(status=204)
+    return Response(status=204)
 
 
 def _make_json_serializable(D):
-  output = {}
-  for k, v in asdict(D).items():
-    if type(v) is np.ndarray:
-      output[k] = v.tolist()
-    elif type(v) is SingleSphericalPolygon:
-      output[k] = v.points.tolist()
-    elif type(v) is None:
-      continue
-    else:
-      output[k] = v
+    output = {}
+    for k, v in asdict(D).items():
+        if type(v) is np.ndarray:
+            output[k] = v.tolist()
+        elif type(v) is SingleSphericalPolygon:
+            output[k] = v.points.tolist()
+        elif type(v) is None:
+            continue
+        else:
+            output[k] = v
 
-  return output
+    return output
 
 
-@app.route('/mosaics')
+@app.route("/mosaics")
 def mosaics():
-  return context.ui_mosaics
+    return context.ui_mosaics
 
 
-@app.route('/targets')
+@app.route("/targets")
 def targets():
-  return context.ui_targets
+    return context.ui_targets
 
 
-@app.route('/stacks')
+@app.route("/stacks")
 def stacks():
-  return context.ui_stacks
+    return context.ui_stacks
 
 
-@app.route('/calibration_stacks')
+@app.route("/calibration_stacks")
 def calibration_stacks():
-  processed_stacks = {
-      h: replace(s, metadata=None)
-      for h, s in context.calibration_stacks.items()
-  }
+    processed_stacks = {
+        h: replace(s, metadata=None) for h, s in context.calibration_stacks.items()
+    }
 
-  return {k: _make_json_serializable(s) for k, s in processed_stacks.items()}
+    return {k: _make_json_serializable(s) for k, s in processed_stacks.items()}
 
 
-@app.route('/get_plot')
+@app.route("/get_plot")
 def plot():
-  mem = io.BytesIO()
-  mem.write(get_plot_html().encode())
-  mem.seek(0)
-  return flask.send_file(mem, mimetype='text/html')
+    mem = io.BytesIO()
+    mem.write(get_plot_html().encode())
+    mem.seek(0)
+    return flask.send_file(mem, mimetype="text/html")
 
 
 # @app.route('/get_num_stars_histogram_html/<stack_id>')
@@ -247,154 +250,150 @@ def plot():
 #   return flask.send_file(mem, mimetype='text/html')
 
 
-@app.route('/recent')
+@app.route("/recent")
 def recent():
-  stacks = context.stacks
-  targets = context.targets
-  mosaics = context.mosaics
+    stacks = context.stacks
+    targets = context.targets
+    mosaics = context.mosaics
 
-  def last_stack_datetime(stack_id):
-    return stacks[stack_id].newest_date
+    def last_stack_datetime(stack_id):
+        return stacks[stack_id].newest_date
 
-  def last_target_datetime(target_id):
-    return max([last_stack_datetime(s) for s in targets[target_id].stack_ids])
+    def last_target_datetime(target_id):
+        return max([last_stack_datetime(s) for s in targets[target_id].stack_ids])
 
-  def last_mosaic_datetime(mosaic_id):
-    return max([last_target_datetime(t) for t in mosaics[mosaic_id].target_ids])
+    def last_mosaic_datetime(mosaic_id):
+        return max([last_target_datetime(t) for t in mosaics[mosaic_id].target_ids])
 
-  targets_and_dates = [
-      (('target', s), last_target_datetime(s)) for s in targets.keys()
-  ]
-  mosaics_and_dates = [
-      (('mosaic', s), last_mosaic_datetime(s)) for s in mosaics.keys()
-  ]
+    targets_and_dates = [
+        (("target", s), last_target_datetime(s)) for s in targets.keys()
+    ]
+    mosaics_and_dates = [
+        (("mosaic", s), last_mosaic_datetime(s)) for s in mosaics.keys()
+    ]
 
-  all_items = targets_and_dates + mosaics_and_dates
-  sorted_items = sorted(all_items, key=operator.itemgetter(1), reverse=True)
-  return [i[0] for i in sorted_items]
+    all_items = targets_and_dates + mosaics_and_dates
+    sorted_items = sorted(all_items, key=operator.itemgetter(1), reverse=True)
+    return [i[0] for i in sorted_items]
 
 
 # TODO: Loading stuff from the cache on every endpoint call is very slow.
-@app.route('/flats_for_camera_and_filter/<camera>/<filter>')
+@app.route("/flats_for_camera_and_filter/<camera>/<filter>")
 def flats_for_camera_and_filter(camera, filter):
-  print(f'### getting flats for camera {camera} and filter {filter}')
-  return [
-      k for k, s in context.calibration_stacks.items()
-      if s.image_type == 'flat' and s.camera == camera and s.filter == filter
-  ]
+    print(f"### getting flats for camera {camera} and filter {filter}")
+    return [
+        k
+        for k, s in context.calibration_stacks.items()
+        if s.image_type == "flat" and s.camera == camera and s.filter == filter
+    ]
 
 
-@app.route('/ray_status')
+@app.route("/ray_status")
 def ray_status():
-  """Returns the current Ray cluster status."""
-  try:
-    nodes = ray.nodes()
-    cluster_resources = ray.cluster_resources()
-  except:
-    return jsonify({
-        "healthyNodes":
-            0,
-        "unhealthyNodes":
-            0,
-        "totalCPUs":
-            0,
-        "totalRAM":
-            0,
-        "nodes": [],
-        "error":
-            "Ray is not running. Start a head node to initialize the cluster."
-    })
-
-  healthy_nodes = sum(1 for node in nodes if node["Alive"])
-  unhealthy_nodes = len(nodes) - healthy_nodes
-
-  total_cpus = int(cluster_resources.get("CPU", 0))
-  total_ram = int(cluster_resources.get("memory", 0) /
-                  1e9)  # Convert bytes to GB
-
-  node_list = []
-  for node in nodes:
-    ip = node["NodeManagerAddress"]
-    health = "healthy" if node["Alive"] else "unhealthy"
-    cpus = int(node["Resources"].get("CPU", 0))
-    ram = int(node["Resources"].get("memory", 0) / 1e9)  # Convert bytes to GB
-    message = None
-
-    # Check for node failure reasons (if any)
-    if not node["Alive"]:
-      message = "Unknown failure"
-      if "NodeID" in node:
-        failure_reason = node.get("MetricsExportError", None)
-        if failure_reason:
-          message = failure_reason
-
-    node_list.append({
-        "ip": ip,
-        "health": health,
-        "cpus": cpus,
-        "ram": ram,
-        "message": message
-    })
-
-  return jsonify({
-      "healthyNodes": healthy_nodes,
-      "unhealthyNodes": unhealthy_nodes,
-      "totalCPUs": total_cpus,
-      "totalRAM": total_ram,
-      "nodes": node_list
-  })
-
-
-@app.route('/publish_ray_status')
-def publish_ray_status():
-  from web_server.backend.announcer import announce
-  announce('ray_status')
-  return Response(status=200)
-
-
-@app.route('/last_run_logs')
-def get_last_run_logs():
-  return cache['last_run_logs'] or {}
-
-
-@app.route('/ray_head_node_enabled', methods=['GET', 'POST'])
-def ray_head_node_enabled():
-  if request.method == 'POST':
-    print(f'### ray_head_node_enabled method {request.method}')
-
-    data = request.get_json() or request.form
-    enabled_str = data.get('enabled')
-
-    if enabled_str is None:
-      return jsonify({'error': 'Missing "enabled" parameter'}), 400
-
+    """Returns the current Ray cluster status."""
     try:
-      ray_head_node_enabled = bool(strtobool(enabled_str))
-    except ValueError:
-      return jsonify({'error': 'Invalid boolean value'}), 400
+        nodes = ray.nodes()
+        cluster_resources = ray.cluster_resources()
+    except:
+        return jsonify(
+            {
+                "healthyNodes": 0,
+                "unhealthyNodes": 0,
+                "totalCPUs": 0,
+                "totalRAM": 0,
+                "nodes": [],
+                "error": "Ray is not running. Start a head node to initialize the cluster.",
+            }
+        )
 
-    print(f'### setting ray_head_node_enabled {ray_head_node_enabled}')
-    cache['ray_head_node_enabled'] = ray_head_node_enabled
+    healthy_nodes = sum(1 for node in nodes if node["Alive"])
+    unhealthy_nodes = len(nodes) - healthy_nodes
 
-    if ray_head_node_enabled:
-      enqueue_action(dict(type='start_ray_head_node'))
-    else:
-      enqueue_action(dict(type='stop_ray_head_node'))
+    total_cpus = int(cluster_resources.get("CPU", 0))
+    total_ram = int(cluster_resources.get("memory", 0) / 1e9)  # Convert bytes to GB
 
-    print('### Response to /ray_head_node_enabled done')
+    node_list = []
+    for node in nodes:
+        ip = node["NodeManagerAddress"]
+        health = "healthy" if node["Alive"] else "unhealthy"
+        cpus = int(node["Resources"].get("CPU", 0))
+        ram = int(node["Resources"].get("memory", 0) / 1e9)  # Convert bytes to GB
+        message = None
+
+        # Check for node failure reasons (if any)
+        if not node["Alive"]:
+            message = "Unknown failure"
+            if "NodeID" in node:
+                failure_reason = node.get("MetricsExportError", None)
+                if failure_reason:
+                    message = failure_reason
+
+        node_list.append(
+            {"ip": ip, "health": health, "cpus": cpus, "ram": ram, "message": message}
+        )
+
+    return jsonify(
+        {
+            "healthyNodes": healthy_nodes,
+            "unhealthyNodes": unhealthy_nodes,
+            "totalCPUs": total_cpus,
+            "totalRAM": total_ram,
+            "nodes": node_list,
+        }
+    )
+
+
+@app.route("/publish_ray_status")
+def publish_ray_status():
+    from web_server.backend.announcer import announce
+
+    announce("ray_status")
     return Response(status=200)
 
-  # GET request: return the current value
-  return jsonify({'enabled': cache.get('ray_head_node_enabled', False)})
+
+@app.route("/last_run_logs")
+def get_last_run_logs():
+    return cache["last_run_logs"] or {}
+
+
+@app.route("/ray_head_node_enabled", methods=["GET", "POST"])
+def ray_head_node_enabled():
+    if request.method == "POST":
+        print(f"### ray_head_node_enabled method {request.method}")
+
+        data = request.get_json() or request.form
+        enabled_str = data.get("enabled")
+
+        if enabled_str is None:
+            return jsonify({"error": 'Missing "enabled" parameter'}), 400
+
+        try:
+            ray_head_node_enabled = bool(strtobool(enabled_str))
+        except ValueError:
+            return jsonify({"error": "Invalid boolean value"}), 400
+
+        print(f"### setting ray_head_node_enabled {ray_head_node_enabled}")
+        cache["ray_head_node_enabled"] = ray_head_node_enabled
+
+        if ray_head_node_enabled:
+            enqueue_action(dict(type="start_ray_head_node"))
+        else:
+            enqueue_action(dict(type="stop_ray_head_node"))
+
+        print("### Response to /ray_head_node_enabled done")
+        return Response(status=200)
+
+    # GET request: return the current value
+    return jsonify({"enabled": cache.get("ray_head_node_enabled", False)})
 
 
 def flask_thread_body():
-  print('### Starting AstroFlow web server...')
-  app.run(host='0.0.0.0', port=80)
+    print("### Starting AstroFlow web server...")
+    app.run(host="0.0.0.0", port=80)
 
 
 def start_flask():
-  flask_thread = threading.Thread(target=flask_thread_body)
-  flask_thread.start()
+    flask_thread = threading.Thread(target=flask_thread_body)
+    flask_thread.start()
 
-  return flask_thread
+    return flask_thread
