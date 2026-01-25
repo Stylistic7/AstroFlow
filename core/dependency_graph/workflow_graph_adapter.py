@@ -4,9 +4,9 @@ import os
 from dependency_graph import Node, TopologicalSorterWithStatus
 from cache.types import NeverRun
 from context import context
-from dependency_graph.debugging import node_to_string
+from dependency_graph.debugging import node_to_string, print_graph
 
-_DEBUG = False
+_DEBUG = True
 
 
 def debug_print(message):
@@ -29,7 +29,7 @@ def gather_group_meta(
     def state_string(ts, node):
         result = ts.results.get(node, NeverRun)
         return (
-            "NO_STATE_RUNTIME"
+            "NEVER_RUN"
             if result == NeverRun
             else "FAILED"
             if isinstance(result, Exception)
@@ -39,7 +39,9 @@ def gather_group_meta(
     def subgraph_contains_exception(ts, node):
         if node in subgraphs_by_parent:
             sub_ts = subgraphs_by_parent[node]
-            if any(subgraph_contains_exception(sub_ts, n) for n in sub_ts.graph):
+            if any(
+                subgraph_contains_exception(sub_ts, n) for n in sub_ts.graph
+            ):
                 return True
 
         return isinstance(ts.results.get(node, NeverRun), Exception)
@@ -54,7 +56,9 @@ def gather_group_meta(
                     f"### {node_to_string(node)} has filename_fn, "
                     f"calling with args {[type(a) for a in args]}"
                 )
-                filename = node.task.filename_fn(*args).resolve_at(context.output_dir)
+                filename = node.task.filename_fn(*args).resolve_at(
+                    context.output_dir
+                )
                 if os.path.exists(filename):
                     filename = os.fspath(filename)
         except:
@@ -92,7 +96,7 @@ def build_skeleton(
     existing_nodes = {}
 
     debug_print(
-        f"{' ' * indent} build_skeleton() called for ts with {{len(ts.graph)}} entries"
+        f"{' ' * indent} build_skeleton() called for ts with {len(ts.graph)} entries"
     )
 
     graph = ts.graph
@@ -145,13 +149,25 @@ def build_skeleton(
 
 
 def to_workflow_graph(subgraphs: list[TopologicalSorterWithStatus]):
-    subgraphs_by_parent = {
+    ts_by_parent = {
         sg.parent_node: sg for sg in subgraphs if sg.parent_node is not None
     }
 
     top_level_ts = next(ts for ts in subgraphs if ts.parent_node is None)
 
+    debug_print(
+        f"### Entering to_workflow_graph with {len(subgraphs)} total "
+        f"subgraphs, {len(ts_by_parent)} with parents"
+    )
+
+    debug_print(f"### to_workflow_graph toplevel graph is")
+    print_graph(top_level_ts.graph)
+
+    for ts in ts_by_parent.values():
+        debug_print("### to_workflow_graph subgraph")
+        print_graph(ts.graph)
+
     return {
-        "skeleton": build_skeleton(top_level_ts, subgraphs_by_parent),
-        "state": gather_group_meta(top_level_ts, subgraphs_by_parent),
+        "skeleton": build_skeleton(top_level_ts, ts_by_parent),
+        "state": gather_group_meta(top_level_ts, ts_by_parent),
     }

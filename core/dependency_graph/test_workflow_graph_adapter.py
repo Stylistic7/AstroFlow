@@ -92,15 +92,17 @@ def test_simple_graph(test_context) -> None:
 
     graph = Graph({D: {B, C}, C: {A}, B: {A}, A: {}})
 
-    workflow_graph = None
+    graph_status = None
 
     def graph_update_fn(g):
-        nonlocal workflow_graph
-        workflow_graph = to_workflow_graph(g)
+        nonlocal graph_status
+        graph_status = g
 
     results, logs = run_graph(
         graph, debug=True, graph_update_fn=graph_update_fn
     )
+
+    workflow_graph = to_workflow_graph(graph_status)
 
     pprint.pprint(workflow_graph, indent=2, width=200)
 
@@ -168,8 +170,8 @@ def test_graph_with_subgraph(test_context) -> None:
     A = (first_remote_task, "A")
     B = (first_remote_task, "B")
     C = (second_remote_task, "C")
-    D = Node(build_dynamic_graph, name="outer")
-    E = (second_remote_task, "D")
+    D = Node(build_dynamic_graph, name="D")
+    E = (second_remote_task, "E")
 
     graph = Graph({E: {D}, D: {B, C}, C: {A}, B: {A}})
 
@@ -186,13 +188,13 @@ def test_graph_with_subgraph(test_context) -> None:
     expected_workflow_graph = {
         "skeleton": [
             {
-                "id": "first_remote_task_1147742147103610095",
+                "id": "first_remote_task_1147742147103610095",  # A
                 "next": [
                     {
-                        "id": "first_remote_task_811649748264404692",
+                        "id": "first_remote_task_811649748264404692",  # B
                         "next": [
                             {
-                                "definition": [
+                                "definition": [  # FIXME is this correct? I guess there's only one copy of subgraph D
                                     {
                                         "id": "process_1161829019351892739",
                                         "next": [
@@ -224,10 +226,10 @@ def test_graph_with_subgraph(test_context) -> None:
                                         "type": "execution",
                                     },
                                 ],
-                                "id": "build_dynamic_graph_4387510280349443084",
+                                "id": "build_dynamic_graph_1615547368631720922",  # subgraph D
                                 "next": [
                                     {
-                                        "id": "second_remote_task_874700556330765323",
+                                        "id": "second_remote_task_5978802897279351252",
                                         "type": "execution",
                                     }
                                 ],
@@ -237,10 +239,10 @@ def test_graph_with_subgraph(test_context) -> None:
                         "type": "execution",
                     },
                     {
-                        "id": "second_remote_task_4510719504589501579",
+                        "id": "second_remote_task_4510719504589501579",  # C
                         "next": [
                             {
-                                "id": "build_dynamic_graph_4387510280349443084",
+                                "id": "build_dynamic_graph_1615547368631720922",  # subgraph D
                                 "type": "group",
                             }
                         ],
@@ -251,8 +253,8 @@ def test_graph_with_subgraph(test_context) -> None:
             }
         ],
         "state": {
-            "build_dynamic_graph_4387510280349443084": {
-                "description": "outer",
+            "build_dynamic_graph_1615547368631720922": {  # subgraph D
+                "description": "D",
                 "displayName": "build_dynamic_graph",
                 "groupMeta": {
                     "gather_499248906983321316": {
@@ -301,8 +303,8 @@ def test_graph_with_subgraph(test_context) -> None:
                 "options": {"imageUrl": "/api/open_image/None"},
                 "state": "SUCCEEDED",
             },
-            "second_remote_task_874700556330765323": {
-                "description": "D",
+            "second_remote_task_5978802897279351252": {
+                "description": "E",
                 "displayName": "second_remote_task",
                 "options": {"imageUrl": "/api/open_image/None"},
                 "state": "SUCCEEDED",
@@ -504,9 +506,6 @@ def test_subgraph_exception(test_context):
     def graph_update_fn(g):
         nonlocal workflow_graph
         workflow_graph = to_workflow_graph(g)
-
-    A = (first_remote_task, "A")
-    C = (second_remote_task, "C")
 
     graph = ray.get(build_subgraph_raise_exception.remote(3))
 

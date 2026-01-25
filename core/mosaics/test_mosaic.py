@@ -1,7 +1,7 @@
-import unittest
 import datetime
 from pathlib import Path
 import shutil
+import pprint
 
 from testing import copy_testdata_frames
 from context import context
@@ -49,7 +49,9 @@ def test_orion_mosaic(test_context) -> None:
     assert len(context.mosaics) == 1
     mosaic = next(iter(context.mosaics.values()))
 
-    assert mosaic.stable_hash in [t.stable_hash for t in context.targets.values()]
+    assert mosaic.stable_hash in [
+        t.stable_hash for t in context.targets.values()
+    ]
 
     # After putting the mosaic in the shopping cart, the second graph
     # execution should stack the subframes into masters, and generate a final
@@ -81,7 +83,7 @@ def test_orion_mosaic(test_context) -> None:
     ui_mosaic = ui_mosaics[mosaic.stable_hash]
 
     workflow_graph = ui_mosaic["workflow_graph"]
-    print(f"### {workflow_graph=}")
+    pprint.pprint(workflow_graph, indent=2, width=200)
 
 
 def test_orion_mosaic_with_missing_panel(test_context) -> None:
@@ -113,7 +115,9 @@ def test_orion_mosaic_with_missing_panel(test_context) -> None:
     assert len(context.mosaics) == 1
     mosaic = next(iter(context.mosaics.values()))
 
-    assert mosaic.stable_hash in [t.stable_hash for t in context.targets.values()]
+    assert mosaic.stable_hash in [
+        t.stable_hash for t in context.targets.values()
+    ]
 
     # After putting the mosaic in the shopping cart, the second graph
     # execution should stack the subframes into masters, and generate a final
@@ -166,7 +170,9 @@ def test_context_actor_speed(benchmark):
     # random_dict = {random_garbage(8): mosaic for _ in range(100)}
 
     stacks = context.stacks
-    random_dict = {random_garbage(8): v for v in stacks.values() for _ in range(10)}
+    random_dict = {
+        random_garbage(8): v for v in stacks.values() for _ in range(10)
+    }
 
     def insert_into_context_actor():
         for k, v in random_dict.items():
@@ -212,7 +218,9 @@ def test_direct_diskcache_speed(benchmark):
     # random_dict = {random_garbage(8): mosaic for _ in range(100)}
 
     stacks = context.stacks
-    random_dict = {random_garbage(8): v for v in stacks.values() for _ in range(10)}
+    random_dict = {
+        random_garbage(8): v for v in stacks.values() for _ in range(10)
+    }
 
     def insert_into_cache():
         for k, v in random_dict.items():

@@ -1,5 +1,6 @@
 import datetime
 from pathlib import Path
+import pprint
 
 from dependency_graph import run_graph
 from compute_graph import build_compute_graph
@@ -77,3 +78,12 @@ def test_orion_pane(test_context):
         str(f) for f in Path(context.output_dir).rglob("*post_processed.xisf")
     )
     assert len(filenames) == 1
+
+    ui_stacks = context.ui_stacks
+    assert len(ui_stacks) == 1
+    assert list(ui_stacks.keys()) == [stack_id]
+    ui_stack = ui_stacks[stack_id]
+
+    print(f"### final workflow graph")
+    workflow_graph = ui_stack["workflow_graph"]
+    pprint.pprint(workflow_graph, indent=2, width=200)
