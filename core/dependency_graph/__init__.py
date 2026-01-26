@@ -5,6 +5,7 @@ from .classes import (
     Node,
     TopologicalSorterWithStatus,
     ResultDict,
+    Skipped,
     TaskDescriptor,
     GenericRemoteFunction,
     canonicalize_node,

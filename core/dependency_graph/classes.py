@@ -34,6 +34,23 @@ def _tuple_values(tup: tuple) -> str:
     return ", ".join([str(t) for t in tup])
 
 
+class SkippedType:
+    def __eq__(self, other):
+        return isinstance(other, SkippedType)
+
+    def __hash__(self):
+        return hash("SkippedType")
+
+    def __repr__(self):
+        return "Skipped"
+
+    def __str__(self):
+        return "Skipped"
+
+
+Skipped = SkippedType()
+
+
 class Node:
     task: GenericRemoteFunction
     name: str | None

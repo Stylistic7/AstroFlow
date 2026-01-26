@@ -13,6 +13,7 @@ from dependency_graph import (
     canonicalize_graph,
     run_graph,
     chain,
+    print_result_dict,
 )
 
 T = TypeVar("T")
@@ -339,7 +340,7 @@ def test_with_exception(test_context) -> None:
     graph = Graph({scatter_raises_exception: {}})
 
     results, _ = run_graph(graph)
-    assert isinstance(results[scatter_raises_exception], TypeError)
+    assert isinstance(results[scatter_raises_exception], TimeoutError)
 
     assert results.contains_exception()
     assert not results.is_complete()

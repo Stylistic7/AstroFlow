@@ -205,9 +205,9 @@ def build_main_processing_graph() -> Graph:
     # shopping_cart += [('target', target_id) for target_id in targets.keys()]
     # shopping_cart += [('mosaic', mosaic_id) for mosaic_id in mosaics.keys()]
 
-    shopping_cart += [("mosaic", "75a1da6463e118e6")]
+    # shopping_cart += [("mosaic", "75a1da6463e118e6")]
     # shopping_cart += [('mosaic', '0ee57ba3ed4695a3')]
-    shopping_cart += [("mosaic", "7ae4d017d0ceada2")]
+    # shopping_cart += [("mosaic", "7ae4d017d0ceada2")]
 
     # TODO: Maybe add prioritization options in the UI.
     graph = Graph({})

@@ -1,7 +1,7 @@
 from collections import defaultdict
 import os
 
-from dependency_graph import Node, TopologicalSorterWithStatus
+from dependency_graph import Node, TopologicalSorterWithStatus, Skipped
 from cache.types import NeverRun
 from context import context
 from dependency_graph.debugging import node_to_string, print_graph
@@ -29,8 +29,10 @@ def gather_group_meta(
     def state_string(ts, node):
         result = ts.results.get(node, NeverRun)
         return (
-            "NEVER_RUN"
+            "NO_STATE_RUNTIME"
             if result == NeverRun
+            else "SKIPPED"
+            if result == Skipped
             else "FAILED"
             if isinstance(result, Exception)
             else "SUCCEEDED"
@@ -39,9 +41,7 @@ def gather_group_meta(
     def subgraph_contains_exception(ts, node):
         if node in subgraphs_by_parent:
             sub_ts = subgraphs_by_parent[node]
-            if any(
-                subgraph_contains_exception(sub_ts, n) for n in sub_ts.graph
-            ):
+            if any(subgraph_contains_exception(sub_ts, n) for n in sub_ts.graph):
                 return True
 
         return isinstance(ts.results.get(node, NeverRun), Exception)
@@ -56,9 +56,7 @@ def gather_group_meta(
                     f"### {node_to_string(node)} has filename_fn, "
                     f"calling with args {[type(a) for a in args]}"
                 )
-                filename = node.task.filename_fn(*args).resolve_at(
-                    context.output_dir
-                )
+                filename = node.task.filename_fn(*args).resolve_at(context.output_dir)
                 if os.path.exists(filename):
                     filename = os.fspath(filename)
         except:

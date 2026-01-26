@@ -6,13 +6,14 @@ import time
 from typing import Callable, Any
 from objsize import get_deep_size
 
-from cache.types import NeverRunType
+from cache.types import NeverRun
 from dependency_graph import (
     Node,
     Graph,
     CanonicalGraph,
     GraphStatus,
     ResultDict,
+    Skipped,
     TopologicalSorterWithStatus,
     GenericRemoteFunction,
     canonicalize_graph,
@@ -25,6 +26,15 @@ _RESULT_SIZE_WARNING_THRESHOLD_MB: int = 10
 
 StatusFn = Callable[[GraphStatus], Any]
 GraphUpdateFn = Callable[list[TopologicalSorterWithStatus], Any]
+
+
+class AncestorsNeverRan(Exception):
+    pass
+
+
+class AncestorsFailed(Exception):
+    pass
+
 
 # TODO: Make a type alias for AncestorResults
 
@@ -156,15 +166,23 @@ def _make_fn_args(
         return list(node.args) + results
 
 
-# TODO: This is hacky. Make it more explicit.
-# TODO: Don't run any function that has a NeverRunType in its arguments; its
-# output should be NeverRunType too.
 def _make_run_fn(ts, node, dry_run, debug):
     start_time = time.time()
+
+    fn_args = _make_fn_args(ts, node, debug)
+
+    if any(isinstance(x, Exception) for x in fn_args):
+        raise AncestorsFailed(node)
+
+    if any(x in [NeverRun, Skipped] for x in fn_args):
+        raise AncestorsNeverRan(node)
+
+    # TODO: This is hacky. Make it more explicit.
     try:
-        result = node.task.remote(*_make_fn_args(ts, node, debug), dry_run=dry_run)
+        result = node.task.remote(*fn_args, dry_run=dry_run)
     except:
-        result = node.task.remote(*_make_fn_args(ts, node, debug))
+        result = node.task.remote(*fn_args)
+
     elapsed_time = time.time() - start_time
     if elapsed_time > 1.0:
         print(
@@ -257,9 +275,18 @@ def run_graph(
             while i < len(ready_nodes) and len(pending) < MAX_IN_FLIGHT:
                 ts, node = ready_nodes[i]
                 i += 1
-                ref = _make_run_fn(ts, node, dry_run, debug)
-                ref_meta[ref] = (ts, node)
-                pending.append(ref)
+                try:
+                    ref = _make_run_fn(ts, node, dry_run, debug)
+                    ref_meta[ref] = (ts, node)
+                    pending.append(ref)
+                except AncestorsNeverRan:
+                    ts.results[node] = NeverRun
+                    ts.logs[node] = []
+                    ts.done(node)
+                except AncestorsFailed:
+                    ts.results[node] = Skipped
+                    ts.logs[node] = []
+                    ts.done(node)
 
             if not pending:
                 break
