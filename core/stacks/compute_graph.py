@@ -2,6 +2,8 @@ from pathlib import Path
 import ray
 import numpy as np
 from spherical_geometry.polygon import SingleSphericalPolygon
+from functools import partial
+from typing import Any
 
 from context import context
 from stacks.stacking import stack_files
@@ -9,7 +11,7 @@ from stacks.composite_stack import SimpleStack, CompositeStack
 from stacks.post_process import post_process_stack
 from stacks.convert_to_dict import convert_to_dict
 from stacks.composite_stack import CompositeStacksDict
-from dependency_graph import Graph, Node
+from dependency_graph import Graph, Node, TopologicalSorterWithStatus
 from decorators import cached
 from metadata.image_metadata import compute_image_metadata
 from customization.types import CustomizedStack
@@ -63,20 +65,34 @@ def stack_runs_done(stack: CustomizedStack) -> None:
     pass
 
 
+def _store_workflow_graph(key: Any, ts: TopologicalSorterWithStatus):
+    context.or_equals("workflow_graphs", {key: to_workflow_graph([ts])})
+
+
 # This function accepts a fully customized stack, after settings and calibration
 # frames have been associated.
 @cached.remote
-def build_stacking_subgraph(mode: QualityLevel, stack: CustomizedStack) -> Graph:
+def build_stacking_subgraph(
+    mode: QualityLevel, stack: CustomizedStack
+) -> Graph:
     return Graph(
         {
             **chain(
                 (build_calibration_stack_subgraph, mode, stack),
                 (stack_files, mode, stack),
-                Node(compute_image_metadata, name=f"stacking_{stack.stable_hash}"),
+                Node(
+                    compute_image_metadata, name=f"stacking_{stack.stable_hash}"
+                ),
                 (post_process_stack, mode, stack),
-                Node(compute_image_metadata, name=f"post_process_{stack.stable_hash}"),
+                Node(
+                    compute_image_metadata,
+                    name=f"post_process_{stack.stable_hash}",
+                ),
             )
-        }
+        },
+        graph_update_fn=partial(
+            _store_workflow_graph, ("stack", stack.stable_hash)
+        ),
     )
 
 
@@ -130,7 +146,9 @@ def process_stacks_for_ui(stacks: CompositeStacksDict) -> None:
             nonlocal graph_status
             graph_status = g
 
-        graph = ray.get(build_stacking_subgraph.remote(QualityLevel.MASTER, stack))
+        graph = ray.get(
+            build_stacking_subgraph.remote(QualityLevel.MASTER, stack)
+        )
 
         graph_results, _ = run_graph(
             graph, graph_update_fn=graph_update_fn, dry_run=True

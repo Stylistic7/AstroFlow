@@ -6,10 +6,12 @@ from shapely import box  # type: ignore
 from shapely.affinity import scale  # type: ignore
 import numpy as np
 from spherical_geometry.polygon import SingleSphericalPolygon
+from functools import partial
+from typing import Any
 
 from context import context
 from customization.types import CustomizedStack
-from dependency_graph import Graph, Node, chain
+from dependency_graph import Graph, Node, chain, TopologicalSorterWithStatus
 from mosaics.merge_images import merge_images
 from mosaics.types import Mosaic, MosaicsDict, Viewbox
 from mosaics.viewbox import compute_viewbox
@@ -49,6 +51,10 @@ def stacks_for_mosaic(
     )
 
 
+def _store_workflow_graph(key: Any, ts: TopologicalSorterWithStatus):
+    context.or_equals("workflow_graphs", {key: to_workflow_graph([ts])})
+
+
 @cached.remote
 def build_mosaic_subgraph(
     mode: QualityLevel,
@@ -60,11 +66,17 @@ def build_mosaic_subgraph(
         f"### build_mosaic_subgraph mode {mode} for mosaic {mosaic} stacks {[str(s) for s in stacks]}"
     )
     viewbox = compute_viewbox(mode, mosaic)
-    filters = set(stack.filter for stack in stacks.values() if stack is not None)
+    filters = set(
+        stack.filter for stack in stacks.values() if stack is not None
+    )
 
     mask_task = (compute_mosaic_masks, mode, mosaic, viewbox)
 
-    graph = Graph()
+    graph = Graph(
+        graph_update_fn=partial(
+            _store_workflow_graph, ("mosaic", mosaic.stable_hash)
+        )
+    )
     filter_done_tasks = []
     for filter in filters:
         strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
@@ -73,7 +85,9 @@ def build_mosaic_subgraph(
         if mode == QualityLevel.SUBFRAME:
             # In subframe mode, missing panels are allowed. Just remove them from
             # the strips.
-            strips = tuple(tuple(s for s in strip if s is not None) for strip in strips)
+            strips = tuple(
+                tuple(s for s in strip if s is not None) for strip in strips
+            )
             strips = tuple(s for s in strips if len(s))
         else:
             # In master mode, missing panels are not allowed; skip the filter.
@@ -152,7 +166,9 @@ def compute_mosaic_masks(
 
 @cached.remote
 def compute_target_mask(target: Target, viewbox: Viewbox) -> box:
-    return largest_interior_rectangle(project_to_viewbox(target.footprint, viewbox))
+    return largest_interior_rectangle(
+        project_to_viewbox(target.footprint, viewbox)
+    )
 
 
 def get_stacks_for_filter(

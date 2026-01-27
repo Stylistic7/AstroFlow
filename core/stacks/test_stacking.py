@@ -84,6 +84,9 @@ def test_orion_pane(test_context):
     assert list(ui_stacks.keys()) == [stack_id]
     ui_stack = ui_stacks[stack_id]
 
+    workflow_graph = context["workflow_graphs"][("stack", stack_id)]
+    print(f"### stack workflow graph {workflow_graph}")
+
     print(f"### final workflow graph")
     workflow_graph = ui_stack["workflow_graph"]
     pprint.pprint(workflow_graph, indent=2, width=200)

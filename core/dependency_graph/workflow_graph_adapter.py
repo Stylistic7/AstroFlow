@@ -151,6 +151,7 @@ def build_skeleton(
 
 
 def to_workflow_graph(subgraphs: list[TopologicalSorterWithStatus]):
+    # TODO: Use @singledispatch to make multiple versions of this.
     if len(subgraphs) == 1:
         top_level_ts = subgraphs[0]
         ts_by_parent = dict()

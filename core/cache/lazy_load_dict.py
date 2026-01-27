@@ -46,7 +46,9 @@ def add_lazy_load_functionality(
     _orig_get = cache.get
     _orig_set = cache.set
 
-    def _wrap_get(self: diskcache.Cache, key: Key, default: Any = None, **kw) -> Any:
+    def _wrap_get(
+        self: diskcache.Cache, key: Key, default: Any = None, **kw
+    ) -> Any:
         if key in lazy:
             return LazyLoadDict(key, lambda kk: _orig_get(kk, None, **kw))
         return _orig_get(key, default, **kw)
@@ -64,7 +66,7 @@ def add_lazy_load_functionality(
     def _or_equals(self: diskcache.Cache, key: Key, value: Any) -> None:
         if key in lazy:
             with self.transact():
-                keys = _orig_get(key)
+                keys = _orig_get(key, dict())
                 new_items = list(value.keys())
                 keys = [k for k in keys if k not in new_items] + new_items
                 _orig_set(key, keys)

@@ -51,7 +51,9 @@ def starts_with(big_tuple, small_tuple):
     return big_tuple[: len(small_tuple)] == small_tuple
 
 
-@ray.remote(resources={"diskcache": 0.001}, max_restarts=-1, max_task_retries=-1)
+@ray.remote(
+    resources={"diskcache": 0.001}, max_restarts=-1, max_task_retries=-1
+)
 class ContextActor:
     def __init__(self) -> None:
         self.cache = get_cache()
@@ -82,7 +84,9 @@ class ContextActor:
         if key in self.cache:
             del self.cache[key]
 
-    def and_equals(self, key: Key, value: Any, length_limit: int | None) -> None:
+    def and_equals(
+        self, key: Key, value: Any, length_limit: int | None
+    ) -> None:
         self.cache.and_equals(key, value, length_limit)
 
     def or_equals(self, key: Key, value: Any) -> None:
@@ -127,7 +131,9 @@ class Context:
         return self.set(key, value)
 
     # TODO: Use the Pythonic operator.
-    def and_equals(self, key: Key, value: Any, length_limit: int | None = None) -> Any:
+    def and_equals(
+        self, key: Key, value: Any, length_limit: int | None = None
+    ) -> Any:
         actor = ray.get_actor("context", namespace=_get_namespace())
         return ray.get(actor.and_equals.remote(key, value, length_limit))
 

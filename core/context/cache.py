@@ -12,7 +12,14 @@ def _create_cache() -> diskcache.Cache:
         print(f"### Using test cache at {temp_dir}")
         cache = diskcache.Cache(temp_dir)
         return add_lazy_load_functionality(
-            cache, ["stacks", "targets", "mosaics", "calibration_stacks"]
+            cache,
+            [
+                "stacks",
+                "targets",
+                "mosaics",
+                "calibration_stacks",
+                "workflow_graphs",
+            ],
         )
     else:
         # TODO: This path may not be correct on platforms other than MacOS.
