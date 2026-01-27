@@ -17,6 +17,7 @@ from dependency_graph import (
     TopologicalSorterWithStatus,
     GenericRemoteFunction,
     canonicalize_graph,
+    GraphUpdateFn,
 )
 from dependency_graph.logging import LogContainer
 from .debugging import print_graph, node_to_string
@@ -25,7 +26,6 @@ _MIN_STATUS_UPDATE_INTERVAL_SECS: float = 5.0
 _RESULT_SIZE_WARNING_THRESHOLD_MB: int = 10
 
 StatusFn = Callable[[GraphStatus], Any]
-GraphUpdateFn = Callable[list[TopologicalSorterWithStatus], Any]
 
 
 class AncestorsNeverRan(Exception):
@@ -56,7 +56,9 @@ def _print_ready_nodes(ready) -> None:
     print(f"###   {last_node_string} x{num_duplicates}")
 
 
-def _get_ready_nodes(subgraphs) -> list[tuple[TopologicalSorterWithStatus, Node]]:
+def _get_ready_nodes(
+    subgraphs,
+) -> list[tuple[TopologicalSorterWithStatus, Node]]:
     active = [ts for ts in subgraphs if ts.is_active()]
     return [
         (ts, n)
@@ -72,7 +74,9 @@ def _get_ready_nodes(subgraphs) -> list[tuple[TopologicalSorterWithStatus, Node]
     ]
 
 
-def matching_nodes(graph: CanonicalGraph, fn: GenericRemoteFunction) -> list[Node]:
+def matching_nodes(
+    graph: CanonicalGraph, fn: GenericRemoteFunction
+) -> list[Node]:
     def _matches(node: Node) -> bool:
         return (
             node.task._function.__module__ == fn._function.__module__
@@ -109,7 +113,7 @@ def _make_subgraph(
 
     dc: Callable[[], None] = lambda: done_callback(ts)
     ts: TopologicalSorterWithStatus = TopologicalSorterWithStatus(
-        canonical_graph, parent_node, done_callback=dc
+        canonical_graph, graph.graph_update_fn, parent_node, done_callback=dc
     )
     ts.prepare()
 
@@ -193,7 +197,10 @@ def _make_run_fn(ts, node, dry_run, debug):
 
 
 def _handle_result(
-    ts: TopologicalSorterWithStatus, node: Node, result: Any, debug: bool = False
+    ts: TopologicalSorterWithStatus,
+    node: Node,
+    result: Any,
+    debug: bool = False,
 ) -> None:
     # If the function captured logs, split them off the returned result.
     log = []
@@ -225,6 +232,8 @@ def _handle_result(
         ts.complete_args[node] = _make_fn_args(ts, node)
         ts.final_result = result
         ts.done(node)
+        if ts.graph_update_fn is not None:
+            ts.graph_update_fn(ts)
 
 
 def run_graph(
@@ -254,7 +263,9 @@ def run_graph(
     TIMEOUT = 0.2  # seconds
 
     while any(ts.is_active() for ts in subgraphs):
-        ready_nodes = list(_get_ready_nodes(subgraphs))  # one-shot, non-idempotent
+        ready_nodes = list(
+            _get_ready_nodes(subgraphs)
+        )  # one-shot, non-idempotent
         if debug and len(ready_nodes) > 100:
             _print_ready_nodes(ready_nodes)
 
@@ -283,10 +294,14 @@ def run_graph(
                     ts.results[node] = NeverRun
                     ts.logs[node] = []
                     ts.done(node)
+                    if ts.graph_update_fn is not None:
+                        ts.graph_update_fn(ts)
                 except AncestorsFailed:
                     ts.results[node] = Skipped
                     ts.logs[node] = []
                     ts.done(node)
+                    if ts.graph_update_fn is not None:
+                        ts.graph_update_fn(ts)
 
             if not pending:
                 break
@@ -324,6 +339,8 @@ def run_graph(
                     ts.logs[node] = []
                     ts.final_result = e.cause
                     ts.done(node)
+                    if ts.graph_update_fn is not None:
+                        ts.graph_update_fn(ts)
 
         _handle_finished_subgraphs(subgraphs)
 

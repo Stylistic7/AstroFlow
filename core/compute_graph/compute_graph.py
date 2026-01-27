@@ -3,7 +3,10 @@ import ray
 from context import context
 from metadata.image_metadata import scatter_compute_image_metadata
 from clustering import cluster_by_image_center
-from calibration import identify_calibration_stacks, associate_calibration_stacks
+from calibration import (
+    identify_calibration_stacks,
+    associate_calibration_stacks,
+)
 from previews.stack_thumbnails import scatter_stack_thumbnails
 from previews.types import QualityLevel
 from mosaics.identification import identify_mosaics
@@ -68,7 +71,9 @@ def store_mosaics(mosaics: MosaicsDict):
 
 
 @cached.remote
-def gather_spatial_groups(*stacks_in: list[CompositeStacksDict]) -> CompositeStacksDict:
+def gather_spatial_groups(
+    *stacks_in: list[CompositeStacksDict],
+) -> CompositeStacksDict:
     return {key: value for d in stacks_in for key, value in d.items()}
 
 
@@ -89,14 +94,19 @@ def scatter_spatial_groups(metadata_ref: LargeObject, spatial_groups) -> Graph:
 @ray.remote
 def build_regroup_graph(metadata_ref: LargeObject) -> Graph:
     quarantined_stacks = context.quarantined_stacks or tuple()
-    quarantined_calibration_stacks = context.quarantined_calibration_stacks or tuple()
+    quarantined_calibration_stacks = (
+        context.quarantined_calibration_stacks or tuple()
+    )
     quarantined_targets = context.quarantined_targets or tuple()
     quarantined_mosaics = context.quarantined_mosaics or tuple()
     settings = context.settings or Settings()
 
     scatter_spatial_groups_task = (scatter_spatial_groups, metadata_ref)
     cluster_by_image_center_task = (cluster_by_image_center, metadata_ref)
-    identify_calibration_stacks_task = (identify_calibration_stacks, metadata_ref)
+    identify_calibration_stacks_task = (
+        identify_calibration_stacks,
+        metadata_ref,
+    )
     associate_calibration_stacks_task = associate_calibration_stacks
     group_stacks_into_targets_task = (group_stacks_into_targets, metadata_ref)
 
@@ -123,8 +133,12 @@ def build_regroup_graph(metadata_ref: LargeObject) -> Graph:
     return Graph(
         {
             scatter_spatial_groups_task: {cluster_by_image_center_task},
-            associate_calibration_stacks_task: {identify_calibration_stacks_task},
-            quarantine_calibration_stacks_task: {associate_calibration_stacks_task},
+            associate_calibration_stacks_task: {
+                identify_calibration_stacks_task
+            },
+            quarantine_calibration_stacks_task: {
+                associate_calibration_stacks_task
+            },
             store_calibration_stacks: {quarantine_calibration_stacks_task},
             quarantine_stacks_task: {scatter_spatial_groups_task},
             scatter_customize_stacks_task: [
@@ -205,9 +219,9 @@ def build_main_processing_graph() -> Graph:
     # shopping_cart += [('target', target_id) for target_id in targets.keys()]
     # shopping_cart += [('mosaic', mosaic_id) for mosaic_id in mosaics.keys()]
 
-    # shopping_cart += [("mosaic", "75a1da6463e118e6")]
+    shopping_cart += [("mosaic", "75a1da6463e118e6")]
     # shopping_cart += [('mosaic', '0ee57ba3ed4695a3')]
-    # shopping_cart += [("mosaic", "7ae4d017d0ceada2")]
+    shopping_cart += [("mosaic", "7ae4d017d0ceada2")]
 
     # TODO: Maybe add prioritization options in the UI.
     graph = Graph({})
@@ -215,7 +229,9 @@ def build_main_processing_graph() -> Graph:
     for type, id in shopping_cart:
         if type == "stack":
             if id not in stacks:
-                print(f"### WARNING: stack {id} is in shopping cart but does not exist")
+                print(
+                    f"### WARNING: stack {id} is in shopping cart but does not exist"
+                )
                 continue
             tasks.append((build_stacking_subgraph, mode, stacks[id]))
         elif type == "target":

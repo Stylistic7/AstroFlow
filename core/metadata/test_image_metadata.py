@@ -5,14 +5,17 @@ import os
 from pathlib import Path
 
 from context import context
-from dependency_graph import run_graph
+from dependency_graph import run_graph, Graph
 from testing import make_synthetic_frames
-from metadata.image_metadata import scatter_compute_image_metadata, load_metadata
+from metadata.image_metadata import (
+    scatter_compute_image_metadata,
+    load_metadata,
+)
 from metadata.classes import MetadataDict
 
 
 def compute_graph_fragment():
-    return {scatter_compute_image_metadata: {}}
+    return Graph({scatter_compute_image_metadata: {}})
 
 
 def get_filenames_in_cache():
@@ -22,7 +25,9 @@ def get_filenames_in_cache():
 
 
 def get_filenames_on_disk(input_dir: Path) -> list[Path]:
-    return [Path(f) for f in glob.glob(f"{input_dir}/**/*.fit?", recursive=True)]
+    return [
+        Path(f) for f in glob.glob(f"{input_dir}/**/*.fit?", recursive=True)
+    ]
 
 
 def get_metadata():

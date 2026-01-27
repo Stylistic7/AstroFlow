@@ -10,6 +10,7 @@ from .classes import (
     GenericRemoteFunction,
     canonicalize_node,
     canonicalize_graph,
+    GraphUpdateFn,
 )
 from .construction import chain
 from .dependency_graph import run_graph, matching_nodes

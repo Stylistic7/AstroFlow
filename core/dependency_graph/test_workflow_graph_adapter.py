@@ -2,9 +2,10 @@ from typing import TypeVar, Any
 import ray
 import structlog
 import pprint
+from functools import partial
 
 from context import context, get_cache
-from dependency_graph import Graph, Node, run_graph
+from dependency_graph import Graph, Node, run_graph, TopologicalSorterWithStatus
 from dependency_graph.debugging import print_result_dict
 from cache.cached_decorator import make_cached_decorator
 from hashing import hash_call
@@ -66,12 +67,17 @@ def build_outer_dynamic_graph() -> Graph:
     B = Node(build_dynamic_graph, name="inner")
     C = (second_remote_task, 2)
 
-    return Graph({C: {B}, B: {A}})
+    return Graph(
+        {C: {B}, B: {A}},
+        graph_update_fn=partial(_store_graph_update_in_context, "inner"),
+    )
 
 
 @cached.remote
 def task_raises_exception() -> None:
-    context.num_task_raises_exception_runs = context.num_task_raises_exception_runs + 1
+    context.num_task_raises_exception_runs = (
+        context.num_task_raises_exception_runs + 1
+    )
     raise ValueError("oh no!")
 
 
@@ -102,13 +108,15 @@ def test_simple_graph(test_context) -> None:
         nonlocal graph_status
         graph_status = g
 
-    results, logs = run_graph(graph, debug=True, graph_update_fn=graph_update_fn)
+    results, logs = run_graph(
+        graph, debug=True, graph_update_fn=graph_update_fn
+    )
 
     workflow_graph = to_workflow_graph(graph_status)
 
     pprint.pprint(workflow_graph, indent=2, width=200)
 
-    expected_workflow_graph = {
+    assert workflow_graph == {
         "skeleton": [
             {
                 "id": "first_remote_task_1147742147103610095",
@@ -165,8 +173,6 @@ def test_simple_graph(test_context) -> None:
         },
     }
 
-    assert workflow_graph == expected_workflow_graph
-
 
 def test_graph_with_subgraph(test_context) -> None:
     A = (first_remote_task, "A")
@@ -188,16 +194,16 @@ def test_graph_with_subgraph(test_context) -> None:
     workflow_graph = to_workflow_graph(graph_status)
     pprint.pprint(workflow_graph, indent=2, width=200)
 
-    expected_workflow_graph = {
+    assert workflow_graph == {
         "skeleton": [
             {
-                "id": "first_remote_task_1147742147103610095",  # A
+                "id": "first_remote_task_1147742147103610095",
                 "next": [
                     {
-                        "id": "first_remote_task_811649748264404692",  # B
+                        "id": "first_remote_task_811649748264404692",
                         "next": [
                             {
-                                "definition": [  # FIXME is this correct? I guess there's only one copy of subgraph D
+                                "definition": [
                                     {
                                         "id": "process_1161829019351892739",
                                         "next": [
@@ -229,7 +235,7 @@ def test_graph_with_subgraph(test_context) -> None:
                                         "type": "execution",
                                     },
                                 ],
-                                "id": "build_dynamic_graph_1615547368631720922",  # subgraph D
+                                "id": "build_dynamic_graph_1615547368631720922",
                                 "next": [
                                     {
                                         "id": "second_remote_task_5978802897279351252",
@@ -242,10 +248,10 @@ def test_graph_with_subgraph(test_context) -> None:
                         "type": "execution",
                     },
                     {
-                        "id": "second_remote_task_4510719504589501579",  # C
+                        "id": "second_remote_task_4510719504589501579",
                         "next": [
                             {
-                                "id": "build_dynamic_graph_1615547368631720922",  # subgraph D
+                                "id": "build_dynamic_graph_1615547368631720922",
                                 "type": "group",
                             }
                         ],
@@ -256,7 +262,7 @@ def test_graph_with_subgraph(test_context) -> None:
             }
         ],
         "state": {
-            "build_dynamic_graph_1615547368631720922": {  # subgraph D
+            "build_dynamic_graph_1615547368631720922": {
                 "description": "D",
                 "displayName": "build_dynamic_graph",
                 "groupMeta": {
@@ -315,8 +321,6 @@ def test_graph_with_subgraph(test_context) -> None:
         },
     }
 
-    assert workflow_graph == expected_workflow_graph
-
 
 def test_graph_with_nested_subgraph(test_context) -> None:
     A = (first_remote_task, "A")
@@ -336,7 +340,7 @@ def test_graph_with_nested_subgraph(test_context) -> None:
     workflow_graph = to_workflow_graph(graph_status)
     pprint.pprint(workflow_graph, indent=2, width=200)
 
-    expected_workflow_graph = {
+    assert workflow_graph == {
         "skeleton": [
             {
                 "id": "first_remote_task_1147742147103610095",
@@ -474,8 +478,6 @@ def test_graph_with_nested_subgraph(test_context) -> None:
         },
     }
 
-    assert workflow_graph == expected_workflow_graph
-
 
 def test_dry_run(test_context):
     context.num_task_raises_exception_runs = 0
@@ -498,7 +500,7 @@ def test_dry_run(test_context):
     pprint.pprint(workflow_graph, indent=2, width=200)
     assert context.num_task_raises_exception_runs == 0
 
-    expected_workflow_graph = {
+    assert workflow_graph == {
         "skeleton": [
             {
                 "id": "first_remote_task_1147742147103610095",
@@ -554,8 +556,6 @@ def test_dry_run(test_context):
         },
     }
 
-    assert workflow_graph == expected_workflow_graph
-
     graph_status = None
     run_graph(graph, graph_update_fn=graph_update_fn, dry_run=False)
     workflow_graph = to_workflow_graph(graph_status)
@@ -563,7 +563,7 @@ def test_dry_run(test_context):
     pprint.pprint(workflow_graph, indent=2, width=200)
     assert context.num_task_raises_exception_runs == 1
 
-    expected_workflow_graph = {
+    assert workflow_graph == {
         "skeleton": [
             {
                 "id": "first_remote_task_1147742147103610095",
@@ -619,8 +619,6 @@ def test_dry_run(test_context):
         },
     }
 
-    assert workflow_graph == expected_workflow_graph
-
 
 def test_nested_subgraph_exception(test_context):
     context.num_task_raises_exception_runs = 0
@@ -638,7 +636,7 @@ def test_nested_subgraph_exception(test_context):
 
     assert context.num_task_raises_exception_runs == 0
 
-    expected_workflow_graph = {
+    assert workflow_graph == {
         "skeleton": [
             {
                 "id": "first_remote_task_5771038318960121532",
@@ -727,18 +725,24 @@ def test_nested_subgraph_exception(test_context):
                                     "downstream_task_1000809495514155957": {
                                         "description": "depth_0",
                                         "displayName": "downstream_task",
-                                        "options": {"imageUrl": "/api/open_image/None"},
+                                        "options": {
+                                            "imageUrl": "/api/open_image/None"
+                                        },
                                         "state": "NO_STATE_RUNTIME",
                                     },
                                     "first_remote_task_7322121736103433607": {
                                         "description": "depth_0",
                                         "displayName": "first_remote_task",
-                                        "options": {"imageUrl": "/api/open_image/None"},
+                                        "options": {
+                                            "imageUrl": "/api/open_image/None"
+                                        },
                                         "state": "NO_STATE_RUNTIME",
                                     },
                                     "task_raises_exception_2392094195672432855": {
                                         "displayName": "task_raises_exception",
-                                        "options": {"imageUrl": "/api/open_image/None"},
+                                        "options": {
+                                            "imageUrl": "/api/open_image/None"
+                                        },
                                         "state": "NO_STATE_RUNTIME",
                                     },
                                 },
@@ -795,8 +799,6 @@ def test_nested_subgraph_exception(test_context):
         },
     }
 
-    assert workflow_graph == expected_workflow_graph
-
     graph_status = None
     run_graph(graph, graph_update_fn=graph_update_fn, dry_run=False)
     workflow_graph = to_workflow_graph(graph_status)
@@ -807,7 +809,7 @@ def test_nested_subgraph_exception(test_context):
     # After the real run, the inner node should have raised an exception, so
     # it has failed. In addition, the subgraph's parent nodes should pick up
     # the failure inside it.
-    expected_workflow_graph = {
+    assert workflow_graph == {
         "skeleton": [
             {
                 "id": "first_remote_task_5771038318960121532",
@@ -896,18 +898,24 @@ def test_nested_subgraph_exception(test_context):
                                     "downstream_task_1000809495514155957": {
                                         "description": "depth_0",
                                         "displayName": "downstream_task",
-                                        "options": {"imageUrl": "/api/open_image/None"},
+                                        "options": {
+                                            "imageUrl": "/api/open_image/None"
+                                        },
                                         "state": "SKIPPED",
                                     },
                                     "first_remote_task_7322121736103433607": {
                                         "description": "depth_0",
                                         "displayName": "first_remote_task",
-                                        "options": {"imageUrl": "/api/open_image/None"},
+                                        "options": {
+                                            "imageUrl": "/api/open_image/None"
+                                        },
                                         "state": "SUCCEEDED",
                                     },
                                     "task_raises_exception_2392094195672432855": {
                                         "displayName": "task_raises_exception",
-                                        "options": {"imageUrl": "/api/open_image/None"},
+                                        "options": {
+                                            "imageUrl": "/api/open_image/None"
+                                        },
                                         "state": "FAILED",
                                     },
                                 },
@@ -964,8 +972,6 @@ def test_nested_subgraph_exception(test_context):
         },
     }
 
-    assert workflow_graph == expected_workflow_graph
-
 
 def test_graph_with_subgraph_dry_run(test_context) -> None:
     A = (first_remote_task, "A")
@@ -991,7 +997,7 @@ def test_graph_with_subgraph_dry_run(test_context) -> None:
 
     print_result_dict(results)
 
-    expected_workflow_graph = {
+    assert workflow_graph == {
         "skeleton": [
             {
                 "id": "first_remote_task_1147742147103610095",
@@ -1117,4 +1123,103 @@ def test_graph_with_subgraph_dry_run(test_context) -> None:
         },
     }
 
-    assert workflow_graph == expected_workflow_graph
+
+def _store_graph_update_in_context(
+    key: Any, ts: TopologicalSorterWithStatus
+) -> None:
+    context[key] = to_workflow_graph([ts])
+
+
+def test_nested_graph_update_fn(test_context) -> None:
+    A = (first_remote_task, "A")
+    B = Node(build_outer_dynamic_graph, name="outer")
+    C = (second_remote_task, "C")
+
+    graph = Graph(
+        {C: {B}, B: {A}},
+        graph_update_fn=partial(_store_graph_update_in_context, "outer"),
+    )
+
+    run_graph(graph, debug=True)
+
+    assert context["outer"] == {
+        "skeleton": [
+            {
+                "id": "first_remote_task_1147742147103610095",
+                "type": "execution",
+                "next": [
+                    {
+                        "id": "build_outer_dynamic_graph_1887197670041653630",
+                        "type": "execution",
+                        "next": [
+                            {
+                                "id": "second_remote_task_4510719504589501579",
+                                "type": "execution",
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+        "state": {
+            "second_remote_task_4510719504589501579": {
+                "displayName": "second_remote_task",
+                "state": "SUCCEEDED",
+                "options": {"imageUrl": "/api/open_image/None"},
+                "description": "C",
+            },
+            "build_outer_dynamic_graph_1887197670041653630": {
+                "displayName": "build_outer_dynamic_graph",
+                "state": "SUCCEEDED",
+                "options": {"imageUrl": "/api/open_image/None"},
+                "description": "outer",
+            },
+            "first_remote_task_1147742147103610095": {
+                "displayName": "first_remote_task",
+                "state": "SUCCEEDED",
+                "options": {"imageUrl": "/api/open_image/None"},
+                "description": "A",
+            },
+        },
+    }
+
+    assert context["inner"] == {
+        "skeleton": [
+            {
+                "id": "first_remote_task_1269075729911039184",
+                "type": "execution",
+                "next": [
+                    {
+                        "id": "build_dynamic_graph_1089893007718169136",
+                        "type": "execution",
+                        "next": [
+                            {
+                                "id": "second_remote_task_1379722681841618591",
+                                "type": "execution",
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+        "state": {
+            "second_remote_task_1379722681841618591": {
+                "displayName": "second_remote_task",
+                "state": "SUCCEEDED",
+                "options": {"imageUrl": "/api/open_image/None"},
+                "description": "2",
+            },
+            "build_dynamic_graph_1089893007718169136": {
+                "displayName": "build_dynamic_graph",
+                "state": "SUCCEEDED",
+                "options": {"imageUrl": "/api/open_image/None"},
+                "description": "inner",
+            },
+            "first_remote_task_1269075729911039184": {
+                "displayName": "first_remote_task",
+                "state": "SUCCEEDED",
+                "options": {"imageUrl": "/api/open_image/None"},
+                "description": "1",
+            },
+        },
+    }

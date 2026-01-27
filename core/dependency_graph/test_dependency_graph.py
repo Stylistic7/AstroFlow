@@ -137,7 +137,9 @@ def gather_from_subgraphs(*ancestor_results: list[list[int]]) -> int:
 
 
 def scatter_in_subgraphs() -> Graph:
-    return Graph({gather_from_subgraphs: [(build_subgraph, i) for i in range(13)]})
+    return Graph(
+        {gather_from_subgraphs: [(build_subgraph, i) for i in range(13)]}
+    )
 
 
 @ray.remote
@@ -402,7 +404,10 @@ def test_dynamic_subgraph_with_context_completion(test_context) -> None:
     # context. The context returned by the final node of the dynamic subgraph
     # should become the context for the successor node in the parent graph.
     graph = Graph(
-        {scatter_with_context: {}, my_last_task_with_context: {scatter_with_context}}
+        {
+            scatter_with_context: {},
+            my_last_task_with_context: {scatter_with_context},
+        }
     )
 
     results, _ = run_graph(graph)
@@ -484,6 +489,9 @@ def test_multiple_inputs(test_context) -> None:
     assert results.is_complete()
 
 
+# TODO: This still sometimes fails, so the priority is not honored correctly.
+# Maybe the best thing to do is remove priority entirely, and just use the []
+# notation instead of the {} notation.
 def test_simple_graph_with_priority(test_context) -> None:
     # set_foo(20) with priority 1 will run first, followed by set_foo(10).
     # The final result will be 10 + 1.
@@ -577,7 +585,9 @@ def test_graph_with_status(test_context) -> None:
     D = Node(increment_qux)
 
     graph = Graph({D: {B, C}, C: {A}, B: {A}})
-    ts = TopologicalSorterWithStatus(canonicalize_graph(graph), done_callback=None)
+    ts = TopologicalSorterWithStatus(
+        canonicalize_graph(graph), done_callback=None
+    )
     ts.prepare()
 
     print(
@@ -677,7 +687,9 @@ def test_trace(test_context) -> None:
 
     for i in range(7):
         assert Node(process, i) in results.trace
-        assert results.trace.index(Node(process, i)) < results.trace.index(Node(gather))
+        assert results.trace.index(Node(process, i)) < results.trace.index(
+            Node(gather)
+        )
 
 
 def test_recursive_graph(test_context) -> None:

@@ -6,7 +6,7 @@ from cache.types import NeverRun
 from context import context
 from dependency_graph.debugging import node_to_string, print_graph
 
-_DEBUG = True
+_DEBUG = False
 
 
 def debug_print(message):
@@ -41,7 +41,9 @@ def gather_group_meta(
     def subgraph_contains_exception(ts, node):
         if node in subgraphs_by_parent:
             sub_ts = subgraphs_by_parent[node]
-            if any(subgraph_contains_exception(sub_ts, n) for n in sub_ts.graph):
+            if any(
+                subgraph_contains_exception(sub_ts, n) for n in sub_ts.graph
+            ):
                 return True
 
         return isinstance(ts.results.get(node, NeverRun), Exception)
@@ -56,7 +58,9 @@ def gather_group_meta(
                     f"### {node_to_string(node)} has filename_fn, "
                     f"calling with args {[type(a) for a in args]}"
                 )
-                filename = node.task.filename_fn(*args).resolve_at(context.output_dir)
+                filename = node.task.filename_fn(*args).resolve_at(
+                    context.output_dir
+                )
                 if os.path.exists(filename):
                     filename = os.fspath(filename)
         except:
@@ -147,11 +151,14 @@ def build_skeleton(
 
 
 def to_workflow_graph(subgraphs: list[TopologicalSorterWithStatus]):
-    ts_by_parent = {
-        sg.parent_node: sg for sg in subgraphs if sg.parent_node is not None
-    }
-
-    top_level_ts = next(ts for ts in subgraphs if ts.parent_node is None)
+    if len(subgraphs) == 1:
+        top_level_ts = subgraphs[0]
+        ts_by_parent = dict()
+    else:
+        ts_by_parent = {
+            sg.parent_node: sg for sg in subgraphs if sg.parent_node is not None
+        }
+        top_level_ts = next(ts for ts in subgraphs if ts.parent_node is None)
 
     debug_print(
         f"### Entering to_workflow_graph with {len(subgraphs)} total "
