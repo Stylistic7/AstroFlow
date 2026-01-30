@@ -32,7 +32,14 @@ def _create_cache() -> diskcache.Cache:
             eviction_policy="least-frequently-used",
         )
         return add_lazy_load_functionality(
-            cache, ["stacks", "targets", "mosaics", "calibration_stacks"]
+            cache,
+            [
+                "stacks",
+                "targets",
+                "mosaics",
+                "calibration_stacks",
+                "workflow_graphs",
+            ],
         )
 
 

@@ -20,14 +20,14 @@ def compute_graph_status():
 
 @compute_graphs_bp.route("/workflow_graph/stack/<stack_id>")
 def workflow_graph_for_stack(stack_id):
-    return context.ui_stacks[stack_id]["workflow_graph"]
+    return context["workflow_graphs"][("stack", stack_id)]
 
 
 @compute_graphs_bp.route("/workflow_graph/target/<target_id>")
 def workflow_graph_for_target(target_id):
-    return context.ui_targets[target_id]["workflow_graph"]
+    return context["workflow_graphs"][("target", target_id)]
 
 
 @compute_graphs_bp.route("/workflow_graph/mosaic/<mosaic_id>")
 def workflow_graph_for_mosaic(mosaic_id):
-    return context.ui_mosaics[mosaic_id]["workflow_graph"]
+    return context["workflow_graphs"][("mosaic", mosaic_id)]

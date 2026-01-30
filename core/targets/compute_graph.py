@@ -26,11 +26,14 @@ def build_target_subgraph(mode: QualityLevel, target: Target) -> Graph:
 
     stacks = context.stacks
 
-    graph = Graph(
-        graph_update_fn=partial(
-            _store_workflow_graph, ("target", target.stable_hash)
-        ),
+    graph_update_fn = (
+        partial(_store_workflow_graph, ("target", target.stable_hash))
+        if mode == QualityLevel.MASTER
+        else None
     )
+
+    graph = Graph(graph_update_fn=graph_update_fn)
+
     graph[(post_process_target, target)] = {
         (build_stacking_subgraph, mode, stacks[stack_id])
         for stack_id in target.stack_ids
@@ -49,27 +52,7 @@ def process_targets_for_ui(targets: TargetsDict) -> None:
         return v
 
     def prepare_target(target: Target):
-        result = convert_to_dict(target, transform=my_transform)
-
-        graph_status = None
-
-        def graph_update_fn(g):
-            nonlocal graph_status
-            graph_status = g
-
-        graph = ray.get(
-            build_target_subgraph.remote(QualityLevel.MASTER, target)
-        )
-
-        graph_results, _ = run_graph(
-            graph, graph_update_fn=graph_update_fn, dry_run=True
-        )
-
-        result["contains_exception"] = graph_results.contains_exception()
-        result["is_complete"] = graph_results.is_complete()
-        result["workflow_graph"] = to_workflow_graph(graph_status)
-
-        return result
+        return convert_to_dict(target, transform=my_transform)
 
     # TODO: Parallelize this.
     ui_targets = {h: prepare_target(s) for h, s in targets.items()}

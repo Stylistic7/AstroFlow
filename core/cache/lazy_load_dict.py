@@ -74,7 +74,7 @@ def add_lazy_load_functionality(
                     _orig_set((key, k), v)
         else:
             with self.transact():
-                new_value = _orig_get(key) | value
+                new_value = _orig_get(key, dict()) | value
                 _orig_set(key, new_value)
 
     def _and_equals(

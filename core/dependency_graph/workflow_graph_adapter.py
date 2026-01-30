@@ -161,18 +161,6 @@ def to_workflow_graph(subgraphs: list[TopologicalSorterWithStatus]):
         }
         top_level_ts = next(ts for ts in subgraphs if ts.parent_node is None)
 
-    debug_print(
-        f"### Entering to_workflow_graph with {len(subgraphs)} total "
-        f"subgraphs, {len(ts_by_parent)} with parents"
-    )
-
-    debug_print(f"### to_workflow_graph toplevel graph is")
-    print_graph(top_level_ts.graph)
-
-    for ts in ts_by_parent.values():
-        debug_print("### to_workflow_graph subgraph")
-        print_graph(ts.graph)
-
     return {
         "skeleton": build_skeleton(top_level_ts, ts_by_parent),
         "state": gather_group_meta(top_level_ts, ts_by_parent),

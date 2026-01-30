@@ -35,11 +35,9 @@ def build_calibration_stack_subgraph(
     def visit_all_dependencies(stack: SimpleStack, depth=0) -> Graph:
         assert isinstance(stack, SimpleStack)
 
-        print(f"### {' ' * depth} visit_all_dependencies {str(stack)}")
         tasks = []
         subgraphs = {}
         for t, dep in stack.dependencies.items():
-            print(f"### {' ' * depth} type {t} dep {dep}")
             if (stack_id := dep.get("stack_id")) is not None:
                 substack = calibration_stacks[stack_id]
                 tasks.append((stack_files, mode, substack))
@@ -53,9 +51,6 @@ def build_calibration_stack_subgraph(
     graph = Graph({})
     for substack in stack.contents.values():
         graph |= visit_all_dependencies(substack)
-
-    print(f"### build_calibration_stack_subgraph")
-    print_graph(graph)
 
     return graph
 
@@ -75,6 +70,12 @@ def _store_workflow_graph(key: Any, ts: TopologicalSorterWithStatus):
 def build_stacking_subgraph(
     mode: QualityLevel, stack: CustomizedStack
 ) -> Graph:
+    graph_update_fn = (
+        partial(_store_workflow_graph, ("stack", stack.stable_hash))
+        if mode == QualityLevel.MASTER
+        else None
+    )
+
     return Graph(
         {
             **chain(
@@ -90,9 +91,7 @@ def build_stacking_subgraph(
                 ),
             )
         },
-        graph_update_fn=partial(
-            _store_workflow_graph, ("stack", stack.stable_hash)
-        ),
+        graph_update_fn=graph_update_fn,
     )
 
 
@@ -140,24 +139,7 @@ def process_stacks_for_ui(stacks: CompositeStacksDict) -> None:
         for s in stack.contents.values():
             filenames += [m.filename for m in s.metadata.values()]
 
-        graph_status = None
-
-        def graph_update_fn(g):
-            nonlocal graph_status
-            graph_status = g
-
-        graph = ray.get(
-            build_stacking_subgraph.remote(QualityLevel.MASTER, stack)
-        )
-
-        graph_results, _ = run_graph(
-            graph, graph_update_fn=graph_update_fn, dry_run=True
-        )
-
         result["filenames"] = filenames
-        result["contains_exception"] = graph_results.contains_exception()
-        result["is_complete"] = graph_results.is_complete()
-        result["workflow_graph"] = to_workflow_graph(graph_status)
 
         return result
 

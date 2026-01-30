@@ -72,11 +72,14 @@ def build_mosaic_subgraph(
 
     mask_task = (compute_mosaic_masks, mode, mosaic, viewbox)
 
-    graph = Graph(
-        graph_update_fn=partial(
-            _store_workflow_graph, ("mosaic", mosaic.stable_hash)
-        )
+    graph_update_fn = (
+        partial(_store_workflow_graph, ("mosaic", mosaic.stable_hash))
+        if mode == QualityLevel.MASTER
+        else None
     )
+
+    graph = Graph(graph_update_fn=graph_update_fn)
+
     filter_done_tasks = []
     for filter in filters:
         strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
@@ -294,8 +297,6 @@ def build_mosaic_filter_subgraph(
 def process_mosaics_for_ui(
     stacks: CompositeStacksDict, targets: TargetsDict, mosaics: MosaicsDict
 ) -> None:
-    print(f"### process_mosaics_for_ui")
-
     def my_transform(v):
         if type(v) is np.ndarray:
             return v.tolist()
@@ -304,32 +305,7 @@ def process_mosaics_for_ui(
         return v
 
     def prepare_mosaic(mosaic: Mosaic):
-        result = convert_to_dict(mosaic, transform=my_transform)
-
-        graph_status = None
-
-        def graph_update_fn(g):
-            nonlocal graph_status
-            graph_status = g
-
-        graph = ray.get(
-            build_mosaic_subgraph.remote(
-                QualityLevel.MASTER,
-                mosaic,
-                stacks_for_mosaic(mosaic, stacks, targets),
-                targets_for_mosaic(mosaic, targets),
-            )
-        )
-
-        graph_results, _ = run_graph(
-            graph, graph_update_fn=graph_update_fn, dry_run=True
-        )
-
-        result["contains_exception"] = graph_results.contains_exception()
-        result["is_complete"] = graph_results.is_complete()
-        result["workflow_graph"] = to_workflow_graph(graph_status)
-
-        return result
+        return convert_to_dict(mosaic, transform=my_transform)
 
     # TODO: Parallelize this.
     ui_mosaics = {h: prepare_mosaic(s) for h, s in mosaics.items()}
