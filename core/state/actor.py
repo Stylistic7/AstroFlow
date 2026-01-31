@@ -3,6 +3,7 @@ import os
 from state.types import Action, State
 from threading import Thread, Condition
 from collections import deque
+from typing import Any
 
 from context import context
 from compute_graph import (
@@ -14,11 +15,11 @@ from compute_graph import (
 from stacks.compute_graph import process_stacks_for_ui
 from dependency_graph import (
     Graph,
+    Node,
     run_graph,
     chain,
     GraphStatus,
     TopologicalSorterWithStatus,
-    graph_status_to_progress,
 )
 from customization.compute_graph import customize_stack, store_customized_stack
 from mosaics.compute_graph import (
@@ -35,6 +36,7 @@ from stacks.post_process import post_process_stack
 from mosaics.post_process import post_process_mosaic
 from asiair.download_asiair import download_from_asiairs
 from metadata.image_metadata import scatter_compute_image_metadata
+from dependency_graph.workflow_graph_adapter import node_to_id
 
 
 def _get_namespace() -> str:
@@ -71,7 +73,9 @@ def _update_settings(action: Action) -> Graph:
     stack = context.stacks[action["stack_id"]]
     return Graph(
         {
-            store_customized_stack: {(customize_stack, stack, action["settings"])},
+            store_customized_stack: {
+                (customize_stack, stack, action["settings"])
+            },
             process_stacks_for_ui: {store_customized_stack},
         }
     )
@@ -143,7 +147,15 @@ def _post_process(action: Action) -> Graph:
         run_graph(Graph({(post_process_mosaic, mosaic): {}}))
 
 
-@ray.remote(resources={"diskcache": 0.001}, max_restarts=-1, max_task_retries=-1)
+# def node_status_fn(node: Node, result: Any, logs: list[Any]):
+#     context[("node_status", node_to_id(node))] = dict(
+#         result_type=str(type(result).__name__), logs=logs
+#     )
+
+
+@ray.remote(
+    resources={"diskcache": 0.001}, max_restarts=-1, max_task_retries=-1
+)
 class StateActor:
     def __init__(self):
         self.state = State()
@@ -179,24 +191,18 @@ class StateActor:
                     self._busy = bool(self._q)
                     print(f"### set _busy {self._busy}")
 
-    def _run_graph(self, state: State, graph: Graph) -> tuple[State, list[Action]]:
+    def _run_graph(
+        self, state: State, graph: Graph
+    ) -> tuple[State, list[Action]]:
         def status_fn(status: GraphStatus):
             # TODO: Re-enable this, with some testing to make sure it's not too slow.
             # context.compute_graph_status = status
             pass
 
-        def graph_update_fn(graphs: list[TopologicalSorterWithStatus]):
-            # TODO: Re-enable this, with some testing to make sure it's not too slow.
-            # for g in graphs:
-            #   print(f'graph_update_fn type(g) {type(g)}')
-            # context.compute_graphs = graphs
-            pass
-
         # TODO: Should `state` be updated?
-        results, logs = run_graph(
+        run_graph(
             graph,
             status_fn=status_fn,
-            graph_update_fn=graph_update_fn,
             status_interval=15,
         )
 

@@ -150,16 +150,13 @@ def build_skeleton(
     return [build(n, indent=indent) for n in roots]
 
 
-def to_workflow_graph(subgraphs: list[TopologicalSorterWithStatus]):
-    # TODO: Use @singledispatch to make multiple versions of this.
-    if len(subgraphs) == 1:
-        top_level_ts = subgraphs[0]
-        ts_by_parent = dict()
-    else:
-        ts_by_parent = {
-            sg.parent_node: sg for sg in subgraphs if sg.parent_node is not None
-        }
-        top_level_ts = next(ts for ts in subgraphs if ts.parent_node is None)
+def to_workflow_graph(
+    top_level_ts: TopologicalSorterWithStatus,
+    subgraphs: list[TopologicalSorterWithStatus],
+):
+    ts_by_parent = {
+        sg.parent_node: sg for sg in subgraphs if sg.parent_node is not None
+    }
 
     return {
         "skeleton": build_skeleton(top_level_ts, ts_by_parent),

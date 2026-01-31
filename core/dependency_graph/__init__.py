@@ -3,6 +3,7 @@ from .classes import (
     CanonicalGraph,
     GraphStatus,
     Node,
+    NodeStatusFn,
     TopologicalSorterWithStatus,
     ResultDict,
     Skipped,

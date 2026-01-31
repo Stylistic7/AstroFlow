@@ -80,10 +80,6 @@ def test_orion_mosaic(test_context) -> None:
     ui_mosaics = context.ui_mosaics
     assert len(ui_mosaics) == 1
     assert list(ui_mosaics.keys()) == [mosaic.stable_hash]
-    ui_mosaic = ui_mosaics[mosaic.stable_hash]
-
-    workflow_graph = ui_mosaic["workflow_graph"]
-    pprint.pprint(workflow_graph, indent=2, width=200)
 
 
 def test_orion_mosaic_with_missing_panel(test_context) -> None:

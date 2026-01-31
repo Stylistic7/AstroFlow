@@ -100,19 +100,19 @@ def test_simple_graph(test_context) -> None:
     C = (second_remote_task, "C")
     D = (second_remote_task, "D")
 
-    graph = Graph({D: {B, C}, C: {A}, B: {A}, A: {}})
+    top_level_graph, subgraphs = None, None
 
-    graph_status = None
+    def graph_update_fn(*g):
+        nonlocal top_level_graph, subgraphs
+        top_level_graph, subgraphs = g
 
-    def graph_update_fn(g):
-        nonlocal graph_status
-        graph_status = g
-
-    results, logs = run_graph(
-        graph, debug=True, graph_update_fn=graph_update_fn
+    graph = Graph(
+        {D: {B, C}, C: {A}, B: {A}, A: {}}, graph_update_fn=graph_update_fn
     )
 
-    workflow_graph = to_workflow_graph(graph_status)
+    run_graph(graph, debug=True)
+
+    workflow_graph = to_workflow_graph(top_level_graph, subgraphs)
 
     pprint.pprint(workflow_graph, indent=2, width=200)
 
@@ -181,17 +181,19 @@ def test_graph_with_subgraph(test_context) -> None:
     D = Node(build_dynamic_graph, name="D")
     E = (second_remote_task, "E")
 
-    graph = Graph({E: {D}, D: {B, C}, C: {A}, B: {A}})
+    top_level_graph, subgraphs = None, None
 
-    graph_status = None
+    def graph_update_fn(*g):
+        nonlocal top_level_graph, subgraphs
+        top_level_graph, subgraphs = g
 
-    def graph_update_fn(g):
-        nonlocal graph_status
-        graph_status = g
+    graph = Graph(
+        {E: {D}, D: {B, C}, C: {A}, B: {A}}, graph_update_fn=graph_update_fn
+    )
 
-    results, logs = run_graph(graph, graph_update_fn=graph_update_fn)
+    run_graph(graph)
 
-    workflow_graph = to_workflow_graph(graph_status)
+    workflow_graph = to_workflow_graph(top_level_graph, subgraphs)
     pprint.pprint(workflow_graph, indent=2, width=200)
 
     assert workflow_graph == {
@@ -327,17 +329,17 @@ def test_graph_with_nested_subgraph(test_context) -> None:
     B = Node(build_outer_dynamic_graph, name="outer")
     C = (second_remote_task, "C")
 
-    graph = Graph({C: {B}, B: {A}})
+    top_level_graph, subgraphs = None, None
 
-    graph_status = None
+    def graph_update_fn(*g):
+        nonlocal top_level_graph, subgraphs
+        top_level_graph, subgraphs = g
 
-    def graph_update_fn(g):
-        nonlocal graph_status
-        graph_status = g
+    graph = Graph({C: {B}, B: {A}}, graph_update_fn=graph_update_fn)
 
-    results, logs = run_graph(graph, graph_update_fn=graph_update_fn)
+    run_graph(graph)
 
-    workflow_graph = to_workflow_graph(graph_status)
+    workflow_graph = to_workflow_graph(top_level_graph, subgraphs)
     pprint.pprint(workflow_graph, indent=2, width=200)
 
     assert workflow_graph == {
@@ -482,20 +484,20 @@ def test_graph_with_nested_subgraph(test_context) -> None:
 def test_dry_run(test_context):
     context.num_task_raises_exception_runs = 0
 
-    def graph_update_fn(g):
-        nonlocal graph_status
-        graph_status = g
+    def graph_update_fn(*g):
+        nonlocal top_level_graph, subgraphs
+        top_level_graph, subgraphs = g
 
     A = (first_remote_task, "A")
     B = (second_remote_task, "B")
     C = task_raises_exception
     D = (downstream_task, "D")
 
-    graph = Graph({D: {C}, C: {A, B}})
+    graph = Graph({D: {C}, C: {A, B}}, graph_update_fn=graph_update_fn)
 
-    graph_status = None
-    run_graph(graph, graph_update_fn=graph_update_fn, dry_run=True)
-    workflow_graph = to_workflow_graph(graph_status)
+    top_level_graph, subgraphs = None, None
+    run_graph(graph, dry_run=True)
+    workflow_graph = to_workflow_graph(top_level_graph, subgraphs)
 
     pprint.pprint(workflow_graph, indent=2, width=200)
     assert context.num_task_raises_exception_runs == 0
@@ -556,9 +558,9 @@ def test_dry_run(test_context):
         },
     }
 
-    graph_status = None
-    run_graph(graph, graph_update_fn=graph_update_fn, dry_run=False)
-    workflow_graph = to_workflow_graph(graph_status)
+    top_level_graph, subgraphs = None, None
+    run_graph(graph, dry_run=False)
+    workflow_graph = to_workflow_graph(top_level_graph, subgraphs)
 
     pprint.pprint(workflow_graph, indent=2, width=200)
     assert context.num_task_raises_exception_runs == 1
@@ -623,15 +625,16 @@ def test_dry_run(test_context):
 def test_nested_subgraph_exception(test_context):
     context.num_task_raises_exception_runs = 0
 
-    def graph_update_fn(g):
-        nonlocal graph_status
-        graph_status = g
+    def graph_update_fn(*g):
+        nonlocal top_level_graph, subgraphs
+        top_level_graph, subgraphs = g
 
     graph = ray.get(build_subgraph_raise_exception.remote(3))
+    graph.graph_update_fn = graph_update_fn
 
-    graph_status = None
-    run_graph(graph, graph_update_fn=graph_update_fn, dry_run=True)
-    workflow_graph = to_workflow_graph(graph_status)
+    top_level_graph, subgraphs = None, None
+    run_graph(graph, dry_run=True)
+    workflow_graph = to_workflow_graph(top_level_graph, subgraphs)
     pprint.pprint(workflow_graph, indent=2, width=200)
 
     assert context.num_task_raises_exception_runs == 0
@@ -799,9 +802,9 @@ def test_nested_subgraph_exception(test_context):
         },
     }
 
-    graph_status = None
-    run_graph(graph, graph_update_fn=graph_update_fn, dry_run=False)
-    workflow_graph = to_workflow_graph(graph_status)
+    top_level_graph, subgraphs = None, None
+    run_graph(graph, dry_run=False)
+    workflow_graph = to_workflow_graph(top_level_graph, subgraphs)
     pprint.pprint(workflow_graph, indent=2, width=200)
 
     assert context.num_task_raises_exception_runs == 1
@@ -980,19 +983,19 @@ def test_graph_with_subgraph_dry_run(test_context) -> None:
     D = build_dynamic_graph
     E = (second_remote_task, "D")
 
-    graph = Graph({E: {D}, D: {B, C}, C: {A}, B: {A}})
+    top_level_graph, subgraphs = None, None
 
-    graph_status = None
+    def graph_update_fn(*g):
+        nonlocal top_level_graph, subgraphs
+        top_level_graph, subgraphs = g
 
-    def graph_update_fn(g):
-        nonlocal graph_status
-        graph_status = g
-
-    results, logs = run_graph(
-        graph, dry_run=True, debug=True, graph_update_fn=graph_update_fn
+    graph = Graph(
+        {E: {D}, D: {B, C}, C: {A}, B: {A}}, graph_update_fn=graph_update_fn
     )
 
-    workflow_graph = to_workflow_graph(graph_status)
+    results, logs = run_graph(graph, dry_run=True, debug=True)
+
+    workflow_graph = to_workflow_graph(top_level_graph, subgraphs)
     pprint.pprint(workflow_graph, indent=2, width=200)
 
     print_result_dict(results)
@@ -1125,9 +1128,11 @@ def test_graph_with_subgraph_dry_run(test_context) -> None:
 
 
 def _store_graph_update_in_context(
-    key: Any, ts: TopologicalSorterWithStatus
+    key: Any,
+    ts: TopologicalSorterWithStatus,
+    subgraphs: list[TopologicalSorterWithStatus],
 ) -> None:
-    context[key] = to_workflow_graph([ts])
+    context[key] = to_workflow_graph(ts, subgraphs)
 
 
 def test_nested_graph_update_fn(test_context) -> None:
@@ -1146,39 +1151,136 @@ def test_nested_graph_update_fn(test_context) -> None:
         "skeleton": [
             {
                 "id": "first_remote_task_1147742147103610095",
-                "type": "execution",
                 "next": [
                     {
+                        "definition": [
+                            {
+                                "id": "first_remote_task_1269075729911039184",
+                                "next": [
+                                    {
+                                        "definition": [
+                                            {
+                                                "id": "process_1161829019351892739",
+                                                "next": [
+                                                    {
+                                                        "id": "gather_499248906983321316",
+                                                        "type": "execution",
+                                                    }
+                                                ],
+                                                "type": "execution",
+                                            },
+                                            {
+                                                "id": "process_648355766798421503",
+                                                "next": [
+                                                    {
+                                                        "id": "gather_499248906983321316",
+                                                        "type": "execution",
+                                                    }
+                                                ],
+                                                "type": "execution",
+                                            },
+                                            {
+                                                "id": "process_122636723848520014",
+                                                "next": [
+                                                    {
+                                                        "id": "gather_499248906983321316",
+                                                        "type": "execution",
+                                                    }
+                                                ],
+                                                "type": "execution",
+                                            },
+                                        ],
+                                        "id": "build_dynamic_graph_1089893007718169136",
+                                        "next": [
+                                            {
+                                                "id": "second_remote_task_1379722681841618591",
+                                                "type": "execution",
+                                            }
+                                        ],
+                                        "type": "group",
+                                    }
+                                ],
+                                "type": "execution",
+                            }
+                        ],
                         "id": "build_outer_dynamic_graph_1887197670041653630",
-                        "type": "execution",
                         "next": [
                             {
                                 "id": "second_remote_task_4510719504589501579",
                                 "type": "execution",
                             }
                         ],
+                        "type": "group",
                     }
                 ],
+                "type": "execution",
             }
         ],
         "state": {
-            "second_remote_task_4510719504589501579": {
-                "displayName": "second_remote_task",
-                "state": "SUCCEEDED",
-                "options": {"imageUrl": "/api/open_image/None"},
-                "description": "C",
-            },
             "build_outer_dynamic_graph_1887197670041653630": {
-                "displayName": "build_outer_dynamic_graph",
-                "state": "SUCCEEDED",
-                "options": {"imageUrl": "/api/open_image/None"},
                 "description": "outer",
+                "displayName": "build_outer_dynamic_graph",
+                "groupMeta": {
+                    "build_dynamic_graph_1089893007718169136": {
+                        "description": "inner",
+                        "displayName": "build_dynamic_graph",
+                        "groupMeta": {
+                            "gather_499248906983321316": {
+                                "displayName": "gather",
+                                "options": {"imageUrl": "/api/open_image/None"},
+                                "state": "SUCCEEDED",
+                            },
+                            "process_1161829019351892739": {
+                                "description": "0",
+                                "displayName": "process",
+                                "options": {"imageUrl": "/api/open_image/None"},
+                                "state": "SUCCEEDED",
+                            },
+                            "process_122636723848520014": {
+                                "description": "2",
+                                "displayName": "process",
+                                "options": {"imageUrl": "/api/open_image/None"},
+                                "state": "SUCCEEDED",
+                            },
+                            "process_648355766798421503": {
+                                "description": "1",
+                                "displayName": "process",
+                                "options": {"imageUrl": "/api/open_image/None"},
+                                "state": "SUCCEEDED",
+                            },
+                        },
+                        "hasControlNode": True,
+                        "options": {"imageUrl": "/api/open_image/None"},
+                        "state": "SUCCEEDED",
+                    },
+                    "first_remote_task_1269075729911039184": {
+                        "description": "1",
+                        "displayName": "first_remote_task",
+                        "options": {"imageUrl": "/api/open_image/None"},
+                        "state": "SUCCEEDED",
+                    },
+                    "second_remote_task_1379722681841618591": {
+                        "description": "2",
+                        "displayName": "second_remote_task",
+                        "options": {"imageUrl": "/api/open_image/None"},
+                        "state": "SUCCEEDED",
+                    },
+                },
+                "hasControlNode": True,
+                "options": {"imageUrl": "/api/open_image/None"},
+                "state": "SUCCEEDED",
             },
             "first_remote_task_1147742147103610095": {
-                "displayName": "first_remote_task",
-                "state": "SUCCEEDED",
-                "options": {"imageUrl": "/api/open_image/None"},
                 "description": "A",
+                "displayName": "first_remote_task",
+                "options": {"imageUrl": "/api/open_image/None"},
+                "state": "SUCCEEDED",
+            },
+            "second_remote_task_4510719504589501579": {
+                "description": "C",
+                "displayName": "second_remote_task",
+                "options": {"imageUrl": "/api/open_image/None"},
+                "state": "SUCCEEDED",
             },
         },
     }
@@ -1187,39 +1289,97 @@ def test_nested_graph_update_fn(test_context) -> None:
         "skeleton": [
             {
                 "id": "first_remote_task_1269075729911039184",
-                "type": "execution",
                 "next": [
                     {
+                        "definition": [
+                            {
+                                "id": "process_1161829019351892739",
+                                "next": [
+                                    {
+                                        "id": "gather_499248906983321316",
+                                        "type": "execution",
+                                    }
+                                ],
+                                "type": "execution",
+                            },
+                            {
+                                "id": "process_648355766798421503",
+                                "next": [
+                                    {
+                                        "id": "gather_499248906983321316",
+                                        "type": "execution",
+                                    }
+                                ],
+                                "type": "execution",
+                            },
+                            {
+                                "id": "process_122636723848520014",
+                                "next": [
+                                    {
+                                        "id": "gather_499248906983321316",
+                                        "type": "execution",
+                                    }
+                                ],
+                                "type": "execution",
+                            },
+                        ],
                         "id": "build_dynamic_graph_1089893007718169136",
-                        "type": "execution",
                         "next": [
                             {
                                 "id": "second_remote_task_1379722681841618591",
                                 "type": "execution",
                             }
                         ],
+                        "type": "group",
                     }
                 ],
+                "type": "execution",
             }
         ],
         "state": {
-            "second_remote_task_1379722681841618591": {
-                "displayName": "second_remote_task",
-                "state": "SUCCEEDED",
-                "options": {"imageUrl": "/api/open_image/None"},
-                "description": "2",
-            },
             "build_dynamic_graph_1089893007718169136": {
-                "displayName": "build_dynamic_graph",
-                "state": "SUCCEEDED",
-                "options": {"imageUrl": "/api/open_image/None"},
                 "description": "inner",
+                "displayName": "build_dynamic_graph",
+                "groupMeta": {
+                    "gather_499248906983321316": {
+                        "displayName": "gather",
+                        "options": {"imageUrl": "/api/open_image/None"},
+                        "state": "SUCCEEDED",
+                    },
+                    "process_1161829019351892739": {
+                        "description": "0",
+                        "displayName": "process",
+                        "options": {"imageUrl": "/api/open_image/None"},
+                        "state": "SUCCEEDED",
+                    },
+                    "process_122636723848520014": {
+                        "description": "2",
+                        "displayName": "process",
+                        "options": {"imageUrl": "/api/open_image/None"},
+                        "state": "SUCCEEDED",
+                    },
+                    "process_648355766798421503": {
+                        "description": "1",
+                        "displayName": "process",
+                        "options": {"imageUrl": "/api/open_image/None"},
+                        "state": "SUCCEEDED",
+                    },
+                },
+                "hasControlNode": True,
+                "options": {"imageUrl": "/api/open_image/None"},
+                "state": "SUCCEEDED",
             },
             "first_remote_task_1269075729911039184": {
-                "displayName": "first_remote_task",
-                "state": "SUCCEEDED",
-                "options": {"imageUrl": "/api/open_image/None"},
                 "description": "1",
+                "displayName": "first_remote_task",
+                "options": {"imageUrl": "/api/open_image/None"},
+                "state": "SUCCEEDED",
+            },
+            "second_remote_task_1379722681841618591": {
+                "description": "2",
+                "displayName": "second_remote_task",
+                "options": {"imageUrl": "/api/open_image/None"},
+                "state": "SUCCEEDED",
             },
         },
     }

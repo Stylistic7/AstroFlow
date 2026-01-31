@@ -60,8 +60,14 @@ def stack_runs_done(stack: CustomizedStack) -> None:
     pass
 
 
-def _store_workflow_graph(key: Any, ts: TopologicalSorterWithStatus):
-    context.or_equals("workflow_graphs", {key: to_workflow_graph([ts])})
+def _store_workflow_graph(
+    key: Any,
+    ts: TopologicalSorterWithStatus,
+    subgraphs: list[TopologicalSorterWithStatus],
+):
+    context.or_equals(
+        "workflow_graphs", {key: to_workflow_graph(ts, subgraphs)}
+    )
 
 
 # This function accepts a fully customized stack, after settings and calibration

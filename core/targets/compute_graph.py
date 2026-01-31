@@ -16,8 +16,14 @@ from previews.types import QualityLevel
 from dependency_graph.workflow_graph_adapter import to_workflow_graph
 
 
-def _store_workflow_graph(key: Any, ts: TopologicalSorterWithStatus):
-    context.or_equals("workflow_graphs", {key: to_workflow_graph([ts])})
+def _store_workflow_graph(
+    key: Any,
+    ts: TopologicalSorterWithStatus,
+    subgraphs: list[TopologicalSorterWithStatus],
+):
+    context.or_equals(
+        "workflow_graphs", {key: to_workflow_graph(ts, subgraphs)}
+    )
 
 
 @ray.remote

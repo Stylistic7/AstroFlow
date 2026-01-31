@@ -125,6 +125,8 @@ class Node:
         )
 
 
+NodeStatusFn = Callable[[Node, Any, Any], None]
+
 RemoteFunctionTuple: TypeAlias = Union[
     tuple[GenericRemoteFunction, Any],
     tuple[GenericRemoteFunction, Any, Any],
@@ -152,9 +154,10 @@ class TopologicalSorterWithStatus:
     def __init__(
         self,
         graph: CanonicalGraph,
-        graph_update_fn: GraphUpdateFn | None = None,
         parent_node: Node | None = None,
         done_callback: DoneCallback | None = None,
+        graph_update_fns: list[GraphUpdateFn] | None = None,
+        node_status_fn: NodeStatusFn | None = None,
     ) -> None:
         self.parent_node = parent_node
         self.done_callback = done_callback
@@ -164,7 +167,8 @@ class TopologicalSorterWithStatus:
         self.final_result = None
 
         self.graph = defaultdict(list)
-        self.graph_update_fn = graph_update_fn
+        self.graph_update_fns = graph_update_fns
+        self.node_status_fn = node_status_fn
         self.done_nodes = list()
         self._ts = None
 
@@ -234,21 +238,26 @@ class TopologicalSorterWithStatus:
         )
 
 
-GraphUpdateFn = Callable[list[TopologicalSorterWithStatus], Any]
+GraphUpdateFn = Callable[
+    [TopologicalSorterWithStatus, list[TopologicalSorterWithStatus]], Any
+]
 
 
 class Graph(dict[TaskDescriptor, Iterable[TaskDescriptor]]):
-    __slots__ = ("graph_update_fn",)
+    __slots__ = ("graph_update_fn", "node_status_fn")
     graph_update_fn: GraphUpdateFn | None
+    node_status_fn: NodeStatusFn | None
 
     def __init__(
         self,
         *args,
         graph_update_fn: GraphUpdateFn | None = None,
+        node_status_fn: NodeStatusFn | None = None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.graph_update_fn = graph_update_fn
+        self.node_status_fn = node_status_fn
 
 
 class CanonicalGraph(dict[Node, list[Node]]):
