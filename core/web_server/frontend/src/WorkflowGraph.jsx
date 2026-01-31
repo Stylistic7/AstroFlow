@@ -1,6 +1,6 @@
 import React, { useContext, useRef, useState, useEffect } from "react";
 
-import AstroFlowContext from './AstroFlowContext.jsx';
+import { NodeStatusDialog } from "./NodeStatusDialog.jsx";
 
 // Zone.js is required before importing the Workflow Graph
 import 'zone.js';
@@ -29,6 +29,8 @@ const DEFAULT_LAYOUT_OPTIONS: LayoutOptions = {
 
 export default function WorkflowGraph({ theme, url }) {
   const [computeGraph, setComputeGraph] = useState();
+  const [nodeId, setNodeId] = useState(null);
+  const [nodeLabel, setNodeLabel] = useState(null);
 
   useEffect(() => {
     const loadComputeGraph = async () => {
@@ -996,16 +998,26 @@ export default function WorkflowGraph({ theme, url }) {
 
   const graphRef = React.useRef();
 
-  React.useEffect(() => {
-
+  useEffect(() => {
     // TODO: Better typing for the ref
     const graphComponent = graphRef.current;
 
     const onSelectedNodeChange = async (event) => {
       console.log(event);
       // console.log(event.detail.node.options.imageUrl);
-      const url = event.detail?.node?.options?.imageUrl;
-      const res = await fetch(url, { method: 'HEAD' });
+      // const url = event.detail?.node?.options?.imageUrl;
+      // const res = await fetch(url, { method: 'HEAD' });
+
+      const node = event?.detail?.node ?? null;
+      const id =
+        node?.options?.nodeId ??
+        node?.id ??
+        node?.name ??
+        node?.label ??
+        null;
+
+      setNodeId(id);
+      setNodeLabel(node?.label ?? node?.name ?? null);
     }
 
     if (graphComponent) {
@@ -1042,12 +1054,18 @@ export default function WorkflowGraph({ theme, url }) {
     return;
   }
 
-  return (
+  return <>
     <div className="WorkflowGraph">
       <div className="example-wrapper">
         <google-workflow-graph ref={graphRef}></google-workflow-graph>
         <workflow-graph-color-theme-loader />
       </div>
     </div>
-  );
+    <NodeStatusDialog
+      open={Boolean(nodeId)}
+      nodeId={nodeId}
+      nodeLabel={nodeLabel}
+      onClose={() => setNodeId(null)}
+    />
+  </>;
 }
