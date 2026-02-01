@@ -113,17 +113,11 @@ def _make_subgraph(
 
     dc: Callable[[], None] = lambda: done_callback(ts)
 
-    graph_update_fns = []
-    if graph.graph_update_fn is not None:
-        graph_update_fns += [graph.graph_update_fn]
-    if parent_ts is not None:
-        graph_update_fns += parent_ts.graph_update_fns
-
     ts: TopologicalSorterWithStatus = TopologicalSorterWithStatus(
         canonical_graph,
         parent_node,
         dc,
-        graph_update_fns,
+        graph.graph_update_fn,
         graph.node_status_fn,
     )
     ts.prepare()
@@ -215,6 +209,9 @@ def _handle_node_done(
 ) -> None:
     ts.results[node] = result
     ts.logs[node] = logs
+    # TODO: complete_args is only used to call filename_fn by the workflow
+    # graph adapter, but we should be able to call it directly here, and not
+    # have to save compute or pass around complete_args.
     ts.complete_args[node] = _make_fn_args(ts, node)
     ts.done(node)
 
@@ -251,9 +248,6 @@ def _handle_result(
     else:
         _handle_node_done(ts, node, result, log)
         ts.final_result = result
-        for fn in ts.graph_update_fns:
-            fn(ts, subgraphs)
-
 
 def run_graph(
     graph: Graph,
@@ -310,12 +304,8 @@ def run_graph(
                     pending.append(ref)
                 except AncestorsNeverRan:
                     _handle_node_done(ts, node, NeverRun, [])
-                    for fn in ts.graph_update_fns:
-                        fn(ts, subgraphs)
                 except AncestorsFailed:
                     _handle_node_done(ts, node, Skipped, [])
-                    for fn in ts.graph_update_fns:
-                        fn(ts, subgraphs)
 
             if not pending:
                 break
@@ -332,6 +322,9 @@ def run_graph(
                 if now > (last_status_time + status_interval):
                     if status_fn:
                         status_fn(get_status())
+                    for ts in subgraphs:
+                        if ts.graph_update_fn is not None:
+                            ts.graph_update_fn(ts, subgraphs)
                     last_status_time = now
                 continue
 
@@ -347,14 +340,10 @@ def run_graph(
                         ts, subgraphs, node, ray.get(ref), debug
                     ):
                         subgraphs.append(new_ts)
-                        for fn in new_ts.graph_update_fns:
-                            fn(new_ts, subgraphs)
                 except ray.exceptions.RayTaskError as e:
                     print(f"Node {node_to_string(node)} raised exception {e}")
                     _handle_node_done(ts, node, e.cause, [])
                     ts.final_result = e.cause
-                    for fn in ts.graph_update_fns:
-                        fn(ts, subgraphs)
 
         _handle_finished_subgraphs(subgraphs)
 
@@ -364,6 +353,9 @@ def run_graph(
     # Call the callbacks one last time.
     if status_fn:
         status_fn(get_status())
+    for ts in subgraphs:
+        if ts.graph_update_fn is not None:
+            ts.graph_update_fn(ts, subgraphs)
 
     toplevel_ts.results.num_nodes_run = num_nodes_run
     toplevel_ts.results.max_parallelism_seen = max_parallelism_seen

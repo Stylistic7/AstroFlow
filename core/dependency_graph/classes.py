@@ -156,7 +156,7 @@ class TopologicalSorterWithStatus:
         graph: CanonicalGraph,
         parent_node: Node | None = None,
         done_callback: DoneCallback | None = None,
-        graph_update_fns: list[GraphUpdateFn] | None = None,
+        graph_update_fn: GraphUpdateFn | None = None,
         node_status_fn: NodeStatusFn | None = None,
     ) -> None:
         self.parent_node = parent_node
@@ -167,7 +167,7 @@ class TopologicalSorterWithStatus:
         self.final_result = None
 
         self.graph = defaultdict(list)
-        self.graph_update_fns = graph_update_fns
+        self.graph_update_fn = graph_update_fn
         self.node_status_fn = node_status_fn
         self.done_nodes = list()
         self._ts = None
