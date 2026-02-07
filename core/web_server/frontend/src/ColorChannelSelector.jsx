@@ -8,6 +8,10 @@ import "./Starmap.css";
 export default function ColorChannelSelector({ stacks, targets, mosaics, mosaic_id, filter, setFilter }) {
   const mosaic = mosaics[mosaic_id];
 
+  if (!mosaic) {
+    return <Typography>Mosaic not found: {mosaic_id}</Typography>;
+  }
+
   const colorForFilter = (filter) => {
     let rgb = {
       'L': [51, 51, 51],

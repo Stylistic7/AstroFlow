@@ -31,9 +31,9 @@ def workflow_graph_for_target(target_id):
     return context["workflow_graphs"][("target", target_id)]
 
 
-@compute_graphs_bp.route("/workflow_graph/mosaic/<mosaic_id>")
-def workflow_graph_for_mosaic(mosaic_id):
-    return context["workflow_graphs"][("mosaic", mosaic_id)]
+@compute_graphs_bp.route("/workflow_graph/mosaic/<mosaic_id>/<filter>")
+def workflow_graph_for_mosaic(mosaic_id, filter):
+    return context["workflow_graphs"][("mosaic", mosaic_id, filter)]
 
 
 @compute_graphs_bp.route("/api/node_status/<node_id>")
