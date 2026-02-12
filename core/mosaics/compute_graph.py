@@ -7,11 +7,10 @@ from shapely.affinity import scale  # type: ignore
 import numpy as np
 from spherical_geometry.polygon import SingleSphericalPolygon
 from functools import partial
-from typing import Any
 
 from context import context
 from customization.types import CustomizedStack
-from dependency_graph import Graph, Node, chain, TopologicalSorterWithStatus
+from dependency_graph import Graph, Node, chain
 from mosaics.merge_images import merge_images
 from mosaics.types import Mosaic, MosaicsDict, Viewbox
 from mosaics.viewbox import compute_viewbox
@@ -26,9 +25,11 @@ from decorators import cached
 from targets.types import TargetsDict, Target, TargetHash
 from metadata.image_metadata import compute_image_metadata
 from stacks.convert_to_dict import convert_to_dict
-from dependency_graph import run_graph
 from mosaics.final_storage import store_mosaic_color_channel
-from dependency_graph.workflow_graph_adapter import to_workflow_graph
+from dependency_graph.workflow_graph_adapter import (
+    store_workflow_graph,
+    store_node_status,
+)
 
 
 def targets_for_mosaic(mosaic: Mosaic, targets: TargetsDict) -> TargetsDict:
@@ -51,16 +52,6 @@ def stacks_for_mosaic(
     )
 
 
-def _store_workflow_graph(
-    key: Any,
-    ts: TopologicalSorterWithStatus,
-    subgraphs: list[TopologicalSorterWithStatus],
-):
-    context.or_equals(
-        "workflow_graphs", {key: to_workflow_graph(ts, subgraphs)}
-    )
-
-
 @cached.remote
 def build_mosaic_subgraph(
     mode: QualityLevel,
@@ -76,15 +67,13 @@ def build_mosaic_subgraph(
         stack.filter for stack in stacks.values() if stack is not None
     )
 
+    if context.override_filters is not None:
+        print(f"### WARNING: override_filters: {context.override_filters}")
+        filters = context.override_filters
+
     mask_task = (compute_mosaic_masks, mode, mosaic, viewbox)
 
-    graph_update_fn = (
-        partial(_store_workflow_graph, ("mosaic", mosaic.stable_hash))
-        if mode == QualityLevel.MASTER
-        else None
-    )
-
-    graph = Graph(graph_update_fn=graph_update_fn)
+    graph = Graph()
 
     filter_done_tasks = []
     for filter in filters:
@@ -218,6 +207,13 @@ def build_mosaic_filter_subgraph(
     if masks is None:
         masks = [None] * len(strips)
 
+    graph_update_fn, node_status_fn = None, None
+    if mode == QualityLevel.MASTER:
+        graph_update_fn = partial(
+            store_workflow_graph, ("mosaic", mosaic.stable_hash, filter)
+        )
+        node_status_fn = store_node_status
+
     # For strip index 0:
     #   merge(place_a, place_b) -> merge_b
     #   merge(merge_b, place_c) -> merge_c
@@ -232,7 +228,10 @@ def build_mosaic_filter_subgraph(
     #   merge(place_i, place_j) -> merge_j
     #   merge(merge_j, place_k) -> merge_k
     #   merge(merge_k, place_l) -> merge_l
-    graph = Graph()
+
+    graph = Graph(
+        graph_update_fn=graph_update_fn, node_status_fn=node_status_fn
+    )
     strip_tasks = []
     for strip_index, (strip, mask) in enumerate(zip(strips, masks)):
         prev_task = None

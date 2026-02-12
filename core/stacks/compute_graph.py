@@ -3,7 +3,6 @@ import ray
 import numpy as np
 from spherical_geometry.polygon import SingleSphericalPolygon
 from functools import partial
-from typing import Any
 
 from context import context
 from stacks.stacking import stack_files
@@ -11,14 +10,16 @@ from stacks.composite_stack import SimpleStack, CompositeStack
 from stacks.post_process import post_process_stack
 from stacks.convert_to_dict import convert_to_dict
 from stacks.composite_stack import CompositeStacksDict
-from dependency_graph import Graph, Node, TopologicalSorterWithStatus
 from decorators import cached
 from metadata.image_metadata import compute_image_metadata
 from customization.types import CustomizedStack
 from customization.subframe_selection import get_light_frames_sorted_by_stars
 from previews.types import QualityLevel
-from dependency_graph import run_graph, chain, print_graph
-from dependency_graph.workflow_graph_adapter import to_workflow_graph
+from dependency_graph import Graph, Node, chain
+from dependency_graph.workflow_graph_adapter import (
+    store_workflow_graph,
+    store_node_status,
+)
 
 
 @ray.remote
@@ -60,27 +61,18 @@ def stack_runs_done(stack: CustomizedStack) -> None:
     pass
 
 
-def _store_workflow_graph(
-    key: Any,
-    ts: TopologicalSorterWithStatus,
-    subgraphs: list[TopologicalSorterWithStatus],
-):
-    context.or_equals(
-        "workflow_graphs", {key: to_workflow_graph(ts, subgraphs)}
-    )
-
-
 # This function accepts a fully customized stack, after settings and calibration
 # frames have been associated.
 @cached.remote
 def build_stacking_subgraph(
     mode: QualityLevel, stack: CustomizedStack
 ) -> Graph:
-    graph_update_fn = (
-        partial(_store_workflow_graph, ("stack", stack.stable_hash))
-        if mode == QualityLevel.MASTER
-        else None
-    )
+    graph_update_fn, node_status_fn = None, None
+    if mode == QualityLevel.MASTER:
+        graph_update_fn = partial(
+            store_workflow_graph, ("stack", stack.stable_hash)
+        )
+        node_status_fn = store_node_status
 
     return Graph(
         {
@@ -98,6 +90,7 @@ def build_stacking_subgraph(
             )
         },
         graph_update_fn=graph_update_fn,
+        node_status_fn=node_status_fn,
     )
 
 

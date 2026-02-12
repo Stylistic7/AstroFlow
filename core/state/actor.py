@@ -15,11 +15,9 @@ from compute_graph import (
 from stacks.compute_graph import process_stacks_for_ui
 from dependency_graph import (
     Graph,
-    Node,
     run_graph,
     chain,
     GraphStatus,
-    TopologicalSorterWithStatus,
 )
 from customization.compute_graph import customize_stack, store_customized_stack
 from mosaics.compute_graph import (
@@ -36,7 +34,6 @@ from stacks.post_process import post_process_stack
 from mosaics.post_process import post_process_mosaic
 from asiair.download_asiair import download_from_asiairs
 from metadata.image_metadata import scatter_compute_image_metadata
-from dependency_graph.workflow_graph_adapter import node_to_id
 
 
 def _get_namespace() -> str:
@@ -145,12 +142,6 @@ def _post_process(action: Action) -> Graph:
     elif action["object_type"] == "mosaic":
         mosaic = context.mosaics[action["object_id"]]
         run_graph(Graph({(post_process_mosaic, mosaic): {}}))
-
-
-# def node_status_fn(node: Node, result: Any, logs: list[Any]):
-#     context[("node_status", node_to_id(node))] = dict(
-#         result_type=str(type(result).__name__), logs=logs
-#     )
 
 
 @ray.remote(

@@ -13,17 +13,10 @@ from stacks.compute_graph import build_stacking_subgraph
 from stacks.convert_to_dict import convert_to_dict
 from dependency_graph import run_graph
 from previews.types import QualityLevel
-from dependency_graph.workflow_graph_adapter import to_workflow_graph
-
-
-def _store_workflow_graph(
-    key: Any,
-    ts: TopologicalSorterWithStatus,
-    subgraphs: list[TopologicalSorterWithStatus],
-):
-    context.or_equals(
-        "workflow_graphs", {key: to_workflow_graph(ts, subgraphs)}
-    )
+from dependency_graph.workflow_graph_adapter import (
+    store_workflow_graph,
+    store_node_status,
+)
 
 
 @ray.remote
@@ -32,13 +25,16 @@ def build_target_subgraph(mode: QualityLevel, target: Target) -> Graph:
 
     stacks = context.stacks
 
-    graph_update_fn = (
-        partial(_store_workflow_graph, ("target", target.stable_hash))
-        if mode == QualityLevel.MASTER
-        else None
-    )
+    graph_update_fn, node_status_fn = None, None
+    if mode == QualityLevel.MASTER:
+        graph_update_fn = partial(
+            store_workflow_graph, ("target", target.stable_hash)
+        )
+        node_status_fn = store_node_status
 
-    graph = Graph(graph_update_fn=graph_update_fn)
+    graph = Graph(
+        graph_update_fn=graph_update_fn, node_status_fn=node_status_fn
+    )
 
     graph[(post_process_target, target)] = {
         (build_stacking_subgraph, mode, stacks[stack_id])
