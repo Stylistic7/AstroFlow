@@ -5,7 +5,6 @@ import { ReactPhotoSphereViewer } from 'react-photo-sphere-viewer';
 import { MarkersPlugin } from '@photo-sphere-viewer/markers-plugin';
 import "@photo-sphere-viewer/markers-plugin/index.css";
 import AstroFlowContext from './AstroFlowContext.jsx';
-import MosaicTabs from "./MosaicTabs.jsx";
 
 export default function Starmap() {
 	const { constellationPolylines, targets, mosaics } = useContext(AstroFlowContext);

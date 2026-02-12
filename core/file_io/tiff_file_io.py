@@ -19,7 +19,10 @@ def read_tiff_image(filename: Path) -> np.ndarray:
 
 
 def write_tiff_image(
-    filename: Path, image: np.ndarray, metadata: dict[str, Any] | None = None, **kwargs
+    filename: Path,
+    image: np.ndarray,
+    metadata: dict[str, Any] | None = None,
+    **kwargs,
 ) -> None:
     if metadata is None:
         metadata = {}
@@ -38,7 +41,9 @@ def write_tiff_image(
 def update_tiff_header(filename: Path, metadata_in: dict[str, Any]) -> None:
     with tifffile.TiffFile(filename) as tiff:
         image = tiff.asarray()
-        metadata = normalize_header(json.loads(tiff.pages[0].description or "{}"))
+        metadata = normalize_header(
+            json.loads(tiff.pages[0].description or "{}")
+        )
 
     metadata |= metadata_in
     tifffile.imwrite(

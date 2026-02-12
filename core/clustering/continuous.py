@@ -55,5 +55,6 @@ def items_in_distribution(
     return [
         i
         for i in items_to_test
-        if abs(key(i) - mean) <= slop or abs(key(i) - mean) / std <= max_std_devs
+        if abs(key(i) - mean) <= slop
+        or abs(key(i) - mean) / std <= max_std_devs
     ]

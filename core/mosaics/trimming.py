@@ -19,7 +19,9 @@ def draw_polygon(
     image: np.ndarray, polygon: Polygon, color: float = 1.0, thickness: int = 2
 ) -> np.ndarray:
     points = np.array(polygon.exterior.coords, dtype=np.int32)
-    cv2.polylines(image, [points], isClosed=True, color=color, thickness=thickness)
+    cv2.polylines(
+        image, [points], isClosed=True, color=color, thickness=thickness
+    )
 
     return image
 
@@ -33,7 +35,10 @@ def project_to_viewbox(polygon: SphericalPolygon, viewbox: Viewbox) -> Polygon:
 
 @ray.remote
 def process(
-    polygon: Polygon, x1: float, x_clusters: list[float], y_clusters: list[float]
+    polygon: Polygon,
+    x1: float,
+    x_clusters: list[float],
+    y_clusters: list[float],
 ) -> tuple[Optional[Polygon], float]:
     max_area = 0.0
     best_rectangle = None
@@ -58,10 +63,14 @@ def process(
 # TODO: This is brute force. It's tolerably slow, but can be improved.
 def largest_interior_rectangle(polygon: Polygon, epsilon=20) -> box:
     x_clusters = cluster_continuous(
-        [p[0] for p in polygon.exterior.coords], epsilon=epsilon, key=lambda x: x
+        [p[0] for p in polygon.exterior.coords],
+        epsilon=epsilon,
+        key=lambda x: x,
     )
     y_clusters = cluster_continuous(
-        [p[1] for p in polygon.exterior.coords], epsilon=epsilon, key=lambda y: y
+        [p[1] for p in polygon.exterior.coords],
+        epsilon=epsilon,
+        key=lambda y: y,
     )
 
     tasks = [
@@ -79,7 +88,9 @@ def largest_interior_rectangle(polygon: Polygon, epsilon=20) -> box:
     return best_rectangle
 
 
-def trim_image(image: np.ndarray, mask: Mask, draw_outline: bool = False) -> np.ndarray:
+def trim_image(
+    image: np.ndarray, mask: Mask, draw_outline: bool = True
+) -> np.ndarray:
     x_min, y_min, x_max, y_max = mask.bounds
     x_min, y_min, x_max, y_max = map(int, (x_min, y_min, x_max, y_max))
 

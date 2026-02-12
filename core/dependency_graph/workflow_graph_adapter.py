@@ -1,5 +1,7 @@
 from collections import defaultdict
 import os
+from typing import Any
+import traceback
 
 from dependency_graph import Node, TopologicalSorterWithStatus, Skipped
 from cache.types import NeverRun
@@ -54,10 +56,6 @@ def gather_group_meta(
         try:
             if hasattr(node.task, "filename_fn"):
                 args = ts.complete_args[node]
-                print(
-                    f"### {node_to_string(node)} has filename_fn, "
-                    f"calling with args {[type(a) for a in args]}"
-                )
                 filename = node.task.filename_fn(*args).resolve_at(
                     context.output_dir
                 )
@@ -162,3 +160,23 @@ def to_workflow_graph(
         "skeleton": build_skeleton(top_level_ts, ts_by_parent),
         "state": gather_group_meta(top_level_ts, ts_by_parent),
     }
+
+
+def store_workflow_graph(
+    key: Any,
+    ts: TopologicalSorterWithStatus,
+    subgraphs: list[TopologicalSorterWithStatus],
+):
+    context.or_equals(
+        "workflow_graphs", {key: to_workflow_graph(ts, subgraphs)}
+    )
+
+
+def store_node_status(node: Node, result: Any, logs: list[Any]):
+    status_dict = dict(result_type=str(type(result).__name__), logs=logs)
+
+    if isinstance(result, Exception):
+        status_dict["exception"] = result
+        status_dict["stack_trace"] = traceback.format_exc()
+
+    context[("node_status", node_to_id(node))] = status_dict

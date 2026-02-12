@@ -1,7 +1,12 @@
 from pathlib import Path
 from shapely import box  # type: ignore
 
-from file_io.types import TiffFilePath, XisfFilePath, ContentHashableFile, WithSidecar
+from file_io.types import (
+    TiffFilePath,
+    XisfFilePath,
+    ContentHashableFile,
+    WithSidecar,
+)
 from mosaics.types import Mosaic
 from customization.types import CustomizedStack
 from mosaics.types import Mosaic, Viewbox
@@ -9,17 +14,23 @@ from file_io.generic import get_content_hash
 
 
 def mosaic_filename_tiff(mosaic: Mosaic, filter: str) -> WithSidecar:
-    return WithSidecar(TiffFilePath(f"final_{mosaic.stable_hash}_{filter}.tiff"))
+    return WithSidecar(
+        TiffFilePath(f"final_{mosaic.stable_hash}_{filter}.tiff")
+    )
 
 
 def mosaic_filename_xisf(mosaic: Mosaic, filter: str) -> WithSidecar:
-    return WithSidecar(XisfFilePath(f"final_{mosaic.stable_hash}_{filter}.xisf"))
+    return WithSidecar(
+        XisfFilePath(f"final_{mosaic.stable_hash}_{filter}.xisf")
+    )
 
 
 def tile_filename(mosaic: Mosaic, filter: str) -> TiffFilePath:
     filename = Path(mosaic_filename_tiff(mosaic, filter))
     return TiffFilePath(
-        filename.with_stem(filename.stem + "_autostretched").with_suffix(".tiff")
+        filename.with_stem(filename.stem + "_autostretched").with_suffix(
+            ".tiff"
+        )
     )
 
 
@@ -42,7 +53,11 @@ def merged_filename_xisf(
 
 
 def placed_filename(
-    mosaic: Mosaic, stack: CustomizedStack, filter: str, viewbox: Viewbox, mask: box
+    mosaic: Mosaic,
+    stack: CustomizedStack,
+    filter: str,
+    viewbox: Viewbox,
+    mask: box,
 ) -> TiffFilePath:
     return TiffFilePath(
         f"placed_image_{mosaic.stable_hash}_{stack.stable_hash}_{filter}.tiff"

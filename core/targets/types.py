@@ -10,7 +10,9 @@ TargetHash = NewType("TargetHash", str)
 
 
 @dataclass(order=True, frozen=True)
-class Target(ContentHashed, AstrometricAttributes, ChronologyAttributes[TargetHash]):
+class Target(
+    ContentHashed, AstrometricAttributes, ChronologyAttributes[TargetHash]
+):
     stack_ids: list[StackHash]
 
     def __str__(self) -> str:
@@ -33,7 +35,9 @@ class Target(ContentHashed, AstrometricAttributes, ChronologyAttributes[TargetHa
 
 class TargetsDict(dict[TargetHash, Target]):
     def __hash__(self):
-        return hash_list_int([self[k].content_hash for k in sorted(self.keys())])
+        return hash_list_int(
+            [self[k].content_hash for k in sorted(self.keys())]
+        )
 
     def __str__(self):
         return f"SimpleStacksDict({len(self)})"
