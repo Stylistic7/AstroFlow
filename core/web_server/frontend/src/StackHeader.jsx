@@ -25,7 +25,7 @@ const StackHeader = ({ stack_type, stack, stack_id }) => {
             {(stack_type == 'stack') && <MetadataItem label="RA" value={ra_to_hms(stack.center[0])} />}
             {(stack_type == 'stack') && <MetadataItem label="Dec" value={dec_to_dms(stack.center[1])} />}
             {(stack_type == 'stack') && <MetadataItem label="Scale" value={`${stack.image_scale.toFixed(3)}\"/px`} />}
-            {(stack_type == 'stack') && <MetadataItem label="Angle" value={`${stack.rotation_angle.toFixed(1)}°`} />}
+            {(stack_type == 'stack') && <MetadataItem label="Angle" value={`${(stack.rotation_angle * (180.0 / Math.PI)).toFixed(1)}°`} />}
             <MetadataItem label="Camera" value={stack.camera} />
             {(stack_type == 'stack') && <MetadataItem label="Filter" value={stack.filter} />}
             {(stack_type == 'calibration_stack') && <MetadataItem label="Expsosure" value={format_duration(stack.exposure_s)} />}
