@@ -29,7 +29,9 @@ logger = structlog.get_logger()
 log = logger
 
 
-def roughly_same_area(a: SingleSphericalPolygon, b: SingleSphericalPolygon) -> bool:
+def roughly_same_area(
+    a: SingleSphericalPolygon, b: SingleSphericalPolygon
+) -> bool:
     ratio = a.area() / b.area()
     return ratio > 0.9 and ratio < 1.1
 
@@ -37,6 +39,11 @@ def roughly_same_area(a: SingleSphericalPolygon, b: SingleSphericalPolygon) -> b
 def roughly_same_image_scale(a: float, b: float) -> bool:
     ratio = a / b
     return ratio > 0.9 and ratio < 1.1
+
+
+# TODO: This parameter 2.5 should be in the UI.
+def roughly_same_position_angle(a: float, b: float) -> bool:
+    return abs(a - b) < 2.5
 
 
 @cached.remote
@@ -53,6 +60,11 @@ def targets_overlap(
         return Overlap.IDENTICAL
 
     if not roughly_same_image_scale(a_target.image_scale, b_target.image_scale):
+        return Overlap.INCOMPATIBLE
+
+    if not roughly_same_position_angle(
+        a_target.rotation_angle, b_target.rotation_angle
+    ):
         return Overlap.INCOMPATIBLE
 
     a, b = a_target.footprint, b_target.footprint
@@ -152,7 +164,11 @@ def targets_overlap(
     elif short_score >= span_match and long_score < span_match:
         result = Overlap.SHORT_EDGE
     elif long_score >= span_match and short_score >= span_match:
-        result = Overlap.LONG_EDGE if long_score >= short_score else Overlap.SHORT_EDGE
+        result = (
+            Overlap.LONG_EDGE
+            if long_score >= short_score
+            else Overlap.SHORT_EDGE
+        )
     else:
         result = Overlap.INCOMPATIBLE
 
@@ -219,7 +235,9 @@ def group_targets(
 def find_strips(
     targets: TargetsDict, target_ids: list[TargetHash], debug: bool = False
 ) -> list[Strip]:
-    strips = group_targets(targets, target_ids, allowed_overlaps=[Overlap.LONG_EDGE])
+    strips = group_targets(
+        targets, target_ids, allowed_overlaps=[Overlap.LONG_EDGE]
+    )
     if debug:
         for i, strip in enumerate(strips):
             print(f"### Strip {i} is {strip}")
@@ -239,7 +257,9 @@ def find_strips(
             return sum(
                 1
                 for tid in strip
-                if ray.get(targets_overlap.remote(targets[target_id], targets[tid]))
+                if ray.get(
+                    targets_overlap.remote(targets[target_id], targets[tid])
+                )
                 == Overlap.LONG_EDGE
             )
 
@@ -308,11 +328,15 @@ def _identify_overlapping_targets(
         return []
 
     # Sort the targets by their center RA.
-    target_ids = list(sorted(targets.keys(), key=lambda t: targets[t].center[0]))
+    target_ids = list(
+        sorted(targets.keys(), key=lambda t: targets[t].center[0])
+    )
     log.info("Identifying overlapping targets", num_targets=len(targets))
 
     mosaics = group_targets(
-        targets, target_ids, allowed_overlaps=[Overlap.LONG_EDGE, Overlap.SHORT_EDGE]
+        targets,
+        target_ids,
+        allowed_overlaps=[Overlap.LONG_EDGE, Overlap.SHORT_EDGE],
     )
 
     num_grouped_targets = sum(len(m) for m in mosaics)
@@ -360,7 +384,10 @@ def identify_mosaics(
 
         if debug:
             plot_targets_and_footprint(
-                targets, mosaic, None, title=f"Mosaic {stable_hash} before ordering"
+                targets,
+                mosaic,
+                None,
+                title=f"Mosaic {stable_hash} before ordering",
             )
 
         oldest_date = min(targets[t].oldest_date for t in mosaic)
@@ -391,7 +418,9 @@ def identify_mosaics(
                 f"has {len(targets[target_id].footprint.points)} points"
             )
 
-        all_points = [targets[target_id].footprint.points[:-1] for target_id in mosaic]
+        all_points = [
+            targets[target_id].footprint.points[:-1] for target_id in mosaic
+        ]
         all_points = np.concatenate(all_points)
         print(
             f"### Mosaic composed of {len(mosaic)} targets "
@@ -449,7 +478,9 @@ def identify_mosaics(
 
         if debug:
             plot_mosaic(
-                targets, output_mosaic, title=f"Mosaic {stable_hash} after ordering"
+                targets,
+                output_mosaic,
+                title=f"Mosaic {stable_hash} after ordering",
             )
 
         output_mosaics[stable_hash] = output_mosaic
