@@ -113,12 +113,18 @@ def _make_subgraph(
 
     dc: Callable[[], None] = lambda: done_callback(ts)
 
+    # Use the graph's explicit update node status update function, if specified.
+    # Otherwise, inherit from the parent.
+    node_status_fn = graph.node_status_fn or (
+        parent_ts.node_status_fn if parent_ts is not None else None
+    )
+
     ts: TopologicalSorterWithStatus = TopologicalSorterWithStatus(
         canonical_graph,
         parent_node,
         dc,
         graph.graph_update_fn,
-        graph.node_status_fn,
+        node_status_fn,
     )
     ts.prepare()
 
@@ -215,6 +221,9 @@ def _handle_node_done(
     ts.complete_args[node] = _make_fn_args(ts, node)
     ts.done(node)
 
+    if ts.node_status_fn is not None:
+        ts.node_status_fn(node, result, logs)
+
 
 def _handle_result(
     ts: TopologicalSorterWithStatus,
@@ -248,6 +257,7 @@ def _handle_result(
     else:
         _handle_node_done(ts, node, result, log)
         ts.final_result = result
+
 
 def run_graph(
     graph: Graph,
