@@ -11,13 +11,6 @@ from decorators import cached
 from hashing.types import LargeObject
 
 
-def _normalize_radians(x: float) -> float:
-    if x < 0.0:
-        return x + np.pi
-    else:
-        return x
-
-
 @cached.remote
 def identify_stacks(
     metadata_ref: LargeObject, light_frames: list[FrameHash]
@@ -29,7 +22,9 @@ def identify_stacks(
 
     # TODO: Maybe implement a version of cluster_continuous() that repeatedly
     # subdivides by independent 1D variables.
-    metadata = MetadataDict({h: i for h, i in metadata_in.items() if h in light_frames})
+    metadata = MetadataDict(
+        {h: i for h, i in metadata_in.items() if h in light_frames}
+    )
 
     @beartype
     def scale_clusters() -> Iterator[tuple[FrameHash, ...]]:
@@ -63,6 +58,7 @@ def identify_stacks(
             assert len(set(cameras)) == 1
             yield frames
 
+    # TODO: The parameter should be in the UI.
     @beartype
     def rotation_clusters(
         frames: tuple[FrameHash, ...],
@@ -70,11 +66,13 @@ def identify_stacks(
         rotation_angles = [
             (
                 metadata[k].content_hash,
-                _normalize_radians(metadata[k].plate_solution.rotation_angle),
+                metadata[k].plate_solution.rotation_angle,
             )
             for k in frames
         ]
-        for cluster in clustering.cluster_continuous(rotation_angles, epsilon=5.0):
+        for cluster in clustering.cluster_angles(
+            rotation_angles, np.radians(2.5)
+        ):
             frames, _ = zip(*cluster)
             yield frames
 
@@ -83,14 +81,15 @@ def identify_stacks(
         frames: tuple[FrameHash, ...],
     ) -> Iterator[tuple[FrameHash, ...]]:
         filters = [
-            (metadata[k].content_hash, metadata[k].header["FILTER"]) for k in frames
+            (metadata[k].content_hash, metadata[k].header["FILTER"])
+            for k in frames
         ]
         for cluster in clustering.cluster_discrete(filters):
             filter_frames, filters = zip(*cluster)
             assert len(set(filters)) == 1
             yield filter_frames
 
-    new_stacks = {}
+    new_stacks = CompositeStacksDict()
     for scale_frames in scale_clusters():
         for camera_frames in camera_clusters(scale_frames):
             for rotation_frames in rotation_clusters(camera_frames):

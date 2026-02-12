@@ -49,9 +49,13 @@ class AstrometricAttributes:
         assert frames
 
         metadata = metadata or context.metadata
-        metadata_list = [i for i in metadata.values() if i.content_hash in frames]
+        metadata_list = [
+            i for i in metadata.values() if i.content_hash in frames
+        ]
 
-        sorted_metadata = sorted(metadata_list, key=lambda i: i.header["DATE-OBS"])
+        sorted_metadata = sorted(
+            metadata_list, key=lambda i: i.header["DATE-OBS"]
+        )
         oldest_image_metadata = sorted_metadata[0]
 
         assert oldest_image_metadata.plate_solution
@@ -59,9 +63,12 @@ class AstrometricAttributes:
         name = position_string.canonical_target_string(center)
 
         image_scale = oldest_image_metadata.plate_solution.image_scale
-        rotation_angle = _normalize_radians(
-            oldest_image_metadata.plate_solution.rotation_angle
-        )
+
+        rotation_angles = [
+            np.mod(m.plate_solution.rotation_angle, 2 * np.pi)
+            for m in metadata_list
+        ]
+        rotation_angle = np.mean(rotation_angles)
 
         # TODO: Unify this WCS stuff and put it somewhere more general.
         # It's in target_identification and in mosaics/projection.
