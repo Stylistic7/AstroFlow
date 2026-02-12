@@ -3,7 +3,8 @@ from pathlib import Path
 import shutil
 import pprint
 
-from testing import copy_testdata_frames
+from file_io.generic import read_header
+from testing import copy_testdata_frames, print_tree
 from context import context
 from dependency_graph import run_graph
 from mosaics.orion_mosaic import add_orion_mosaic_images
@@ -69,13 +70,38 @@ def test_orion_mosaic(test_context) -> None:
     assert len(context.mosaics) == 1
     mosaic = next(iter(context.mosaics.values()))
 
-    files = list(Path(context.output_dir).rglob("*"))
-    for file in files:
-        print(f"### {file=}")
+    print_tree(context.output_dir)
 
-    xisf_files = list(Path(context.output_dir).rglob("final*.xisf"))
-    assert len(xisf_files) == 2
-    print(f"### Found final merged file {xisf_files[0]}")
+    def assert_files(
+        pattern: str,
+        expected_number: int | None = None,
+        expected_header: dict | None = None,
+    ):
+        files = list(Path(context.output_dir).rglob(pattern))
+        if expected_number is not None:
+            assert len(files) == expected_number
+        if expected_header is not None:
+            for file in files:
+                header = read_header(file)
+                print(f"### {file=} {header=}")
+                assert expected_header.items() <= header.items()
+
+    assert_files("CompositeStack/Master/bias*.xisf", 1)
+    assert_files("CompositeStack/Master/dark*.xisf", 1)
+    assert_files("CompositeStack/Master/flat*.xisf", 1)
+
+    assert_files("CompositeStack/Master/light*.xisf", 4, {"FILTER": "H"})
+    assert_files("CompositeStack/PostProcessed/light*.xisf", 4, {"FILTER": "H"})
+
+    assert_files("PlacedImage/Subframe/placed_image*.tiff", 4, {"FILTER": "H"})
+    assert_files("PlacedImage/Master/placed_image*.tiff", 4, {"FILTER": "H"})
+
+    assert_files("MergedImage/Subframe/*.tiff", 3, {"FILTER": "H"})
+    assert_files("MergedImage/Master/*.xisf", 3, {"FILTER": "H"})
+
+    assert_files("Mosaic/Subframe/*.tiff", 1, {"FILTER": "H"})
+    assert_files("Mosaic/Master/*.xisf", 1, {"FILTER": "H"})
+    assert_files("Mosaic/PostProcessed/*.xisf", 1, {"FILTER": "H"})
 
     ui_mosaics = context.ui_mosaics
     assert len(ui_mosaics) == 1

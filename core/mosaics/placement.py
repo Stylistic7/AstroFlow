@@ -12,13 +12,17 @@ from astropy import units as u  # type: ignore
 from dataclasses import dataclass
 
 from customization.types import CustomizedStack
-from file_io.generic import get_content_hash, read_image
+from file_io.generic import read_image, read_header
 from file_io.tiff_file_io import write_tiff_image
 from file_io.types import TiffFilePath
 from context import context
 from previews.types import QualityLevel
 from mosaics.types import Mosaic, Viewbox, Mask
-from mosaics.trimming import trim_image, project_to_viewbox, largest_interior_rectangle
+from mosaics.trimming import (
+    trim_image,
+    project_to_viewbox,
+    largest_interior_rectangle,
+)
 from mosaics.artifacts import placed_filename
 from decorators import cached
 from metadata.classes import ImageMetadata
@@ -48,10 +52,14 @@ def place_tile(
     interp: RegularGridInterpolator,
     skip_empty: bool = False,
 ) -> tuple[int, int, np.ndarray]:
-    tile_y_min = viewbox.y_min + tile_y * viewbox.tile_height * viewbox.resolution
+    tile_y_min = (
+        viewbox.y_min + tile_y * viewbox.tile_height * viewbox.resolution
+    )
     tile_y_max = tile_y_min + viewbox.tile_height * viewbox.resolution
 
-    tile_x_min = viewbox.x_min + tile_x * viewbox.tile_width * viewbox.resolution
+    tile_x_min = (
+        viewbox.x_min + tile_x * viewbox.tile_width * viewbox.resolution
+    )
     tile_x_max = tile_x_min + viewbox.tile_width * viewbox.resolution
 
     if skip_empty:
@@ -66,14 +74,18 @@ def place_tile(
         # If none of the corners of this tile fall inside the source image's
         # footprint, this tile can be skipped.
         inside_footprint = [
-            wcs.footprint_contains(SkyCoord(ra * u.deg, dec * u.deg, frame="icrs"))
+            wcs.footprint_contains(
+                SkyCoord(ra * u.deg, dec * u.deg, frame="icrs")
+            )
             for ra, dec in zip(ras, decs)
         ]
         if not any(inside_footprint):
             return tile_y, tile_x, None
 
     # Compute the RA, Dec of all the tile's pixels.
-    ys = np.linspace(tile_y_min, tile_y_max, viewbox.tile_height, endpoint=False)
+    ys = np.linspace(
+        tile_y_min, tile_y_max, viewbox.tile_height, endpoint=False
+    )
     xs = np.linspace(tile_x_min, tile_x_max, viewbox.tile_width, endpoint=False)
     xx, yy = np.meshgrid(xs, ys, indexing="xy")
     ras, decs = viewbox.projection.unproject(xx, yy)
@@ -87,24 +99,6 @@ def place_tile(
 def _make_interpolator(filename: Path):
     # TODO: The subframes need to be calibrated before being placed.
     image = read_image(filename)
-
-    img_median = np.median(image)
-    img_mad = np.median(np.abs(image - img_median))
-
-    print(
-        f"### place_image: image shape {image.shape} dtype {image.dtype} "
-        f"min {np.min(image)} max {np.max(image)} "
-        f"img_median {img_median} img_mad {img_mad}"
-    )
-
-    # target_median = 1.5e-3
-    # target_mad = 2e-4
-    # image = (image - img_median) * (target_mad / img_mad) + target_median
-
-    # epsilon = 1e-6
-    # image[image == 0.0] = epsilon
-
-    # assert not np.any(image == 0.0)
 
     # TODO: This seems to take up a huge amount of memory with method 'cubic.'
     # Maybe tiling would reduce the intermediate memory usage.
@@ -136,7 +130,9 @@ def _project_in_tiles(
 
     interp_ref = ray.put(interp)
     remaining_refs = [
-        place_tile.remote(viewbox, tile_y, tile_x, wcs_ref, interp_ref, skip_empty)
+        place_tile.remote(
+            viewbox, tile_y, tile_x, wcs_ref, interp_ref, skip_empty
+        )
         for tile_y, tile_x in product(
             range(viewbox.num_tiles_y), range(viewbox.num_tiles_x)
         )
@@ -157,23 +153,8 @@ def _project_in_tiles(
     return projected_image[0 : viewbox.num_pixels_y, 0 : viewbox.num_pixels_x]
 
 
-def _save_image_to_file(
-    mosaic: Mosaic,
-    stack: CustomizedStack,
-    filter: str,
-    viewbox: Viewbox,
-    mask: Mask,
-    image: np.ndarray,
-) -> TiffFilePath:
-    filename = place_image.filename_fn(mosaic, stack, filter, viewbox, mask)
-    write_tiff_image(filename, image, {"FILTER": filter})
-    print(f"### Wrote filename {filename} type {type(filename)}")
-    return filename
-
-
-@makes_image(PlacedImage).as_master(placed_filename)
-@cached.remote(memory=_PLACE_IMAGE_MEMORY_REQUIREMENT)
-def place_image(
+@cached.remote
+def _place_image(
     mode: QualityLevel,
     mosaic: Mosaic,
     stack: CustomizedStack,
@@ -203,11 +184,80 @@ def place_image(
 
     # Trim the image to its own largest interior rectangle.
     if mode == QualityLevel.MASTER:
-        box = largest_interior_rectangle(project_to_viewbox(stack.footprint, viewbox))
+        print(f"### _place_image trimming largest_interior_rectangle")
+        box = largest_interior_rectangle(
+            project_to_viewbox(stack.footprint, viewbox)
+        )
         image = trim_image(image, box)
 
     # Maybe trim the image again to the provided mask.
     if mask:
         image = trim_image(image, mask)
 
-    return _save_image_to_file(mosaic, stack, filter, viewbox, mask, image)
+    # TODO: This is really awful; can the structure be improved?
+    if mode == QualityLevel.SUBFRAME:
+        output_filename = place_image_subframe.filename_fn(
+            mosaic, stack, filter, viewbox, mask
+        )
+    elif mode == QualityLevel.MASTER:
+        output_filename = place_image_master.filename_fn(
+            mosaic, stack, filter, viewbox, mask
+        )
+
+    write_tiff_image(output_filename, image, {"FILTER": filter})
+    print(f"### _place_image {output_filename=}")
+
+    return output_filename
+
+
+@makes_image(PlacedImage).as_subframe(placed_filename)
+@ray.remote
+def place_image_subframe(
+    mode: QualityLevel,
+    mosaic: Mosaic,
+    stack: CustomizedStack,
+    filter: str,
+    viewbox: Viewbox,
+    mask: Mask,
+    image_metadata: ImageMetadata,
+) -> TiffFilePath:
+    return _place_image.remote(
+        mode, mosaic, stack, filter, viewbox, mask, image_metadata
+    )
+
+
+@makes_image(PlacedImage).as_master(placed_filename)
+@ray.remote(memory=_PLACE_IMAGE_MEMORY_REQUIREMENT)
+def place_image_master(
+    mode: QualityLevel,
+    mosaic: Mosaic,
+    stack: CustomizedStack,
+    filter: str,
+    viewbox: Viewbox,
+    mask: Mask,
+    image_metadata: ImageMetadata,
+) -> TiffFilePath:
+    return _place_image.remote(
+        mode, mosaic, stack, filter, viewbox, mask, image_metadata
+    )
+
+
+# TODO: These trampolines are ugly; can they be improved?
+@ray.remote
+def place_image(
+    mode: QualityLevel,
+    mosaic: Mosaic,
+    stack: CustomizedStack,
+    filter: str,
+    viewbox: Viewbox,
+    mask: Mask,
+    image_metadata: ImageMetadata,
+) -> TiffFilePath:
+    if mode == QualityLevel.SUBFRAME:
+        return place_image_subframe.remote(
+            mode, mosaic, stack, filter, viewbox, mask, image_metadata
+        )
+    elif mode == QualityLevel.MASTER:
+        return place_image_master.remote(
+            mode, mosaic, stack, filter, viewbox, mask, image_metadata
+        )
