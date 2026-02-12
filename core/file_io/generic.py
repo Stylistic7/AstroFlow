@@ -5,12 +5,25 @@ from typing import Any
 from functools import singledispatch
 import json
 import shutil
+import traceback
 
 from file_io.sidecar import sidecar_path_for
 from file_io.types import FitsFilePath, XisfFilePath, TiffFilePath, WithSidecar
-from file_io.fits_file_io import read_fits_header, read_fits_image, update_fits_header
-from file_io.xisf_file_io import read_xisf_header, read_xisf_image, update_xisf_header
-from file_io.tiff_file_io import read_tiff_header, read_tiff_image, update_tiff_header
+from file_io.fits_file_io import (
+    read_fits_header,
+    read_fits_image,
+    update_fits_header,
+)
+from file_io.xisf_file_io import (
+    read_xisf_header,
+    read_xisf_image,
+    update_xisf_header,
+)
+from file_io.tiff_file_io import (
+    read_tiff_header,
+    read_tiff_image,
+    update_tiff_header,
+)
 
 _CONTENT_HASH_KEY = "CONTHASH"
 
@@ -49,8 +62,8 @@ def _(filename: TiffFilePath) -> np.ndarray:
     return read_tiff_image(filename)
 
 
-@read_image.register(WithSidecar)
-def _(wrapped: WithSidecar[Path]) -> np.ndarray:
+@read_image.register
+def _(wrapped: WithSidecar) -> np.ndarray:
     return read_image(wrapped.path)
 
 
@@ -75,23 +88,21 @@ def _(filename: TiffFilePath) -> dict[str, Any]:
     return read_tiff_header(filename)
 
 
-@read_header.register(WithSidecar)
-def _(wrapped: WithSidecar[Path]) -> dict[str, Any]:
-    try:
-        image_metadata = read_header(wrapped.path)
-    except:
-        image_metadata = {}
+@read_header.register
+def _(wrapped: WithSidecar) -> dict[str, Any]:
+    image_metadata = read_header(wrapped.path)
 
     try:
         with open(sidecar_path_for(wrapped), "r") as f:
             sidecar_metadata = json.load(f)
-    except:
+    except FileNotFoundError:
         sidecar_metadata = {}
 
     return image_metadata | sidecar_metadata
 
 
 def copy_image(input: Path, output: Path) -> Path:
+    Path(output).parent.mkdir(parents=True, exist_ok=True)
     if isinstance(input, WithSidecar):
         shutil.copy(input.path, output.path)
         shutil.copy(sidecar_path_for(input.path), sidecar_path_for(output.path))
@@ -122,8 +133,8 @@ def _(filename: TiffFilePath, metadata: dict[str, Any]) -> dict[str, Any]:
     return update_tiff_header(filename, metadata)
 
 
-@update_header.register(WithSidecar)
-def _(wrapped: WithSidecar[Path], metadata_in: dict[str, Any]) -> dict[str, Any]:
+@update_header.register
+def _(wrapped: WithSidecar, metadata_in: dict[str, Any]) -> dict[str, Any]:
     sidecar_path = sidecar_path_for(wrapped.path)
 
     try:
@@ -154,21 +165,27 @@ def get_content_hash(filename: Path) -> str:
 
 @get_content_hash.register
 def _(filename: FitsFilePath) -> str:
-    return read_header(filename).get(_CONTENT_HASH_KEY, hash_of_image_data(filename))
+    return read_header(filename).get(
+        _CONTENT_HASH_KEY, hash_of_image_data(filename)
+    )
 
 
 @get_content_hash.register
 def _(filename: XisfFilePath) -> str:
-    return read_header(filename).get(_CONTENT_HASH_KEY, hash_of_image_data(filename))
+    return read_header(filename).get(
+        _CONTENT_HASH_KEY, hash_of_image_data(filename)
+    )
 
 
 @get_content_hash.register
 def _(filename: TiffFilePath) -> str:
-    return read_header(filename).get(_CONTENT_HASH_KEY, hash_of_image_data(filename))
+    return read_header(filename).get(
+        _CONTENT_HASH_KEY, hash_of_image_data(filename)
+    )
 
 
-@get_content_hash.register(WithSidecar)
-def _(wrapped: WithSidecar[Path]) -> str:
+@get_content_hash.register
+def _(wrapped: WithSidecar) -> str:
     sidecar_path = sidecar_path_for(wrapped.path)
 
     with open(sidecar_path, "r") as f:
@@ -198,8 +215,8 @@ def _(filename: TiffFilePath, content_hash: str) -> None:
     update_tiff_header(filename, {_CONTENT_HASH_KEY: content_hash})
 
 
-@set_content_hash.register(WithSidecar)
-def _(wrapped: WithSidecar[Path], content_hash: str) -> None:
+@set_content_hash.register
+def _(wrapped: WithSidecar, content_hash: str) -> None:
     sidecar_path = sidecar_path_for(wrapped.path)
 
     try:

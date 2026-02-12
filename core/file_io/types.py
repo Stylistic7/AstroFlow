@@ -49,3 +49,6 @@ class WithSidecar(Generic[T], ContentHashable):
     def resolve_at(self, root: Path | str) -> Self:
         resolved = self.path.resolve_at(root)
         return type(self)(resolved)
+
+    def __repr__(self) -> str:
+        return f"WithSidecar({self.path!r})"
