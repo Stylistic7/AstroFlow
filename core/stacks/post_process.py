@@ -9,6 +9,7 @@ from decorators import cached, measure_performance, create_thumbnail
 from customization.types import CustomizedStack
 from stacks.composite_stack import CompositeStack
 from stacks.stacking import stack_files
+from stacks.artifacts import stack_filename
 from file_io.types import XisfFilePath
 from file_io.generic import copy_image
 from products import makes_image
@@ -16,29 +17,31 @@ from previews.types import QualityLevel
 
 
 @PixInsight(slots=[1])
-def _post_process_stack(images: ImageList, output_filenames: list[Path]) -> ImageList:
+def _post_process_stack(
+    images: ImageList, output_filenames: list[Path]
+) -> ImageList:
     images = BlurXTerminator(images)
     images = GradientCorrection(images)
     SaveImages(images, output_filenames)
 
 
-def post_processed_filename(stack: CompositeStack) -> XisfFilePath:
-    master = stack_files.filename_fn(stack)
-    return master.with_stem(master.stem + "_post_processed")
-
-
 # TODO: Do post-processing immediately after each stack has been stacked.
-@makes_image(CompositeStack).as_post_processed(post_processed_filename)
+@makes_image(CompositeStack).as_post_processed(stack_filename)
 @cached.remote(resources={"PixInsight": 1})
 @measure_performance
 @create_thumbnail
-def post_process_stack(mode: QualityLevel, stack: CustomizedStack) -> XisfFilePath:
+def post_process_stack(
+    mode: QualityLevel, stack: CustomizedStack
+) -> XisfFilePath:
     master = stack_files.filename_fn(stack)
     print(f"### post_process_stack, master {master}")
 
     output_filename = post_process_stack.filename_fn(stack)
+    os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 
-    if context.dangerously_accept_existing_files and os.path.exists(output_filename):
+    if context.dangerously_accept_existing_files and os.path.exists(
+        output_filename
+    ):
         print(
             f"### Dangerously skipping post-processing because "
             f"file {output_filename} already exists"
