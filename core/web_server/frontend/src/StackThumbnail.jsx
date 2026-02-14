@@ -97,7 +97,7 @@ export default function StackThumbnail({ stack_id, width, handleClick }) {
 				onClick={handleClick}
 			>
 				<span style={{ color: "#aaa" }}>
-					{stack.camera}, {stack.image_scale.toFixed(2)}"/px,
+					{stack.camera}, {stack.image_scale.toFixed(2)}"/px, {(stack.rotation_angle * 180 / Math.PI).toFixed(2)}&deg;
 				</span>
 				&nbsp;
 				<span style={{
