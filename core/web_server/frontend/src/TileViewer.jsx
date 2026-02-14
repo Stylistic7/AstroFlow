@@ -60,10 +60,13 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
     console.log('onClick', poly);
 
     const e = event.nativeEvent; // underlying DOM PointerEvent
+    
+    // This is tacked onto the end of the current URL.
+    const url = `${poly.type}/${poly.stable_hash}`;
     if (e.metaKey || e.ctrlKey) {
-      window.open(`/${poly.type}/${poly.stable_hash}`, '_blank');
+      window.open(url, '_blank');
     } else {
-      navigate(`/${poly.type}/${poly.stable_hash}`);
+      navigate(url);
     }
   };
 
