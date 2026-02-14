@@ -60,7 +60,7 @@ def test_orion_pane(test_context):
     assert len(context.targets) == 1
 
     filenames = list(
-        str(f) for f in Path(context.output_dir).rglob("*post_processed.xisf")
+        str(f) for f in Path(context.output_dir).rglob("PostProcessed/*.xisf")
     )
     assert len(filenames) == 0
 
@@ -75,18 +75,13 @@ def test_orion_pane(test_context):
     print_tree(context.output_dir)
 
     filenames = list(
-        str(f) for f in Path(context.output_dir).rglob("*post_processed.xisf")
+        str(f) for f in Path(context.output_dir).rglob("PostProcessed/*.xisf")
     )
     assert len(filenames) == 1
 
     ui_stacks = context.ui_stacks
     assert len(ui_stacks) == 1
     assert list(ui_stacks.keys()) == [stack_id]
-    ui_stack = ui_stacks[stack_id]
 
     workflow_graph = context["workflow_graphs"][("stack", stack_id)]
     print(f"### stack workflow graph {workflow_graph}")
-
-    print(f"### final workflow graph")
-    workflow_graph = ui_stack["workflow_graph"]
-    pprint.pprint(workflow_graph, indent=2, width=200)
