@@ -10,6 +10,7 @@ from beartype import beartype
 from collections import defaultdict
 from itertools import combinations
 
+from clustering.angles import angular_spread
 from mosaics.types import Mosaic, MosaicHash, MosaicsDict, Strip
 from catalogs import position_string
 from geometry import footprints
@@ -41,9 +42,9 @@ def roughly_same_image_scale(a: float, b: float) -> bool:
     return ratio > 0.9 and ratio < 1.1
 
 
-# TODO: This parameter 2.5 should be in the UI.
+# TODO: This parameter should be in the UI.
 def roughly_same_position_angle(a: float, b: float) -> bool:
-    return abs(a - b) < 2.5
+    return np.degrees(angular_spread([a, b])) < 4.0
 
 
 @cached.remote

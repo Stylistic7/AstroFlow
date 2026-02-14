@@ -8,9 +8,9 @@ from typing import Any
 
 from context import context
 from clustering import find_groups
+from clustering.angles import angular_spread
 from targets.types import Target, TargetHash, TargetsDict
 import geometry.footprints as footprints
-from hashing import hash_list
 from stacks.composite_stack import CompositeStack, CompositeStacksDict
 from attributes import AstrometricAttributes
 from attributes.astrometric_attributes import healpix_cells_from_poly
@@ -43,7 +43,7 @@ def group_stacks_into_targets(
         assert not SphericalPolygon.self_intersect(footprint.points)
         return footprint
 
-    def center_polygon_image_scale(
+    def extract_stack_info(
         stack: CompositeStack,
     ) -> tuple[np.ndarray, SphericalPolygon, float]:
         first_frame = stack.all_frames()[0]
@@ -52,10 +52,11 @@ def group_stacks_into_targets(
             np.asarray(footprints.radec_to_vector(*stack.center)),
             get_spherical_polygon(pyfits.Header(plate_solution.header)),
             stack.image_scale,
+            stack.rotation_angle,
         )
 
     values = {
-        id: center_polygon_image_scale(stack)
+        id: extract_stack_info(stack)
         for id, stack in stacks.items()
         if type(stack) is CustomizedStack and stack.image_type == "light"
     }
@@ -69,8 +70,8 @@ def group_stacks_into_targets(
         a: tuple[np.ndarray, SphericalPolygon, float],
         b: tuple[np.ndarray, SphericalPolygon, float],
     ) -> bool:
-        a_center, a_polygon, a_image_scale = a
-        b_center, b_polygon, b_image_scale = b
+        a_center, a_polygon, a_image_scale, a_rotation_angle = a
+        b_center, b_polygon, b_image_scale, b_rotation_angle = b
 
         image_scales = a_image_scale, b_image_scale
         if not np.allclose(image_scales, np.mean(image_scales), atol=0.1):
@@ -79,8 +80,16 @@ def group_stacks_into_targets(
         if np.dot(a_center, b_center) < cosine_similarity_threshold:
             return False
 
+        # TODO: Put this parameter in the UI.
+        if (
+            np.degrees(angular_spread([a_rotation_angle, b_rotation_angle]))
+            > 4.0
+        ):
+            return False
+
         iou = (
-            a_polygon.intersection(b_polygon).area() / a_polygon.union(b_polygon).area()
+            a_polygon.intersection(b_polygon).area()
+            / a_polygon.union(b_polygon).area()
         )
         return iou > 0.6
 
@@ -89,11 +98,16 @@ def group_stacks_into_targets(
     def new_target(stack_ids: list[StackHash]) -> Target:
         # Compute the target's polygon as the intersection of all its stacks.
         footprint = SphericalPolygon.multi_intersection(
-            [SphericalPolygon(stacks[stack_id].footprint) for stack_id in stack_ids]
+            [
+                SphericalPolygon(stacks[stack_id].footprint)
+                for stack_id in stack_ids
+            ]
         )
         points = list(footprint.points)
         if len(points) != 1:
-            print(f"### Target with {stack_ids=} resulted in a disjoint polygon")
+            print(
+                f"### Target with {stack_ids=} resulted in a disjoint polygon"
+            )
             return None
 
         points = points[0]
