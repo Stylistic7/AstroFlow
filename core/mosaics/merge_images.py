@@ -50,6 +50,7 @@ def merge_images_with_maximum(
     output_filename = merge_images_with_maximum.filename_fn(
         mosaic, input_0, input_1
     )
+    Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
     write_tiff_image(Path(output_filename), output_image, {"FILTER": filter})
 
     return output_filename
@@ -97,6 +98,7 @@ def merge_images_with_pmm(
         output_filename = merge_images_with_pmm.filename_fn(
             mosaic, input_0, input_1
         )
+        Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
         if isinstance(input_0, TiffFilePath):
             print(
                 f"### mocking PixInsight for merging; "
