@@ -17,7 +17,9 @@ MosaicHash = NewType("MosaicHash", str)
 
 @beartype
 @dataclass(order=True, frozen=True)
-class Mosaic(ContentHashed, AstrometricAttributes, ChronologyAttributes[MosaicHash]):
+class Mosaic(
+    ContentHashed, AstrometricAttributes, ChronologyAttributes[MosaicHash]
+):
     target_ids: list[TargetHash]
     strips: list[Strip]
 
@@ -31,6 +33,9 @@ class Mosaic(ContentHashed, AstrometricAttributes, ChronologyAttributes[MosaicHa
         return hash_dataclass(self)
 
     def __eq__(self, other) -> bool:
+        if not isinstance(other, Mosaic):
+            return NotImplemented
+
         return (
             self.stable_hash == other.stable_hash
             and self.content_hash == other.content_hash
