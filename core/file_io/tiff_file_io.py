@@ -36,6 +36,7 @@ def write_tiff_image(
         description=json.dumps(metadata, ensure_ascii=True),
         **kwargs,
     )
+    assert filename.exists()
 
 
 def update_tiff_header(filename: Path, metadata_in: dict[str, Any]) -> None:
@@ -52,3 +53,4 @@ def update_tiff_header(filename: Path, metadata_in: dict[str, Any]) -> None:
         compression="deflate",
         description=json.dumps(metadata, ensure_ascii=True),
     )
+    assert filename.exists()

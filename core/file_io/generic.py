@@ -186,12 +186,7 @@ def _(filename: TiffFilePath) -> str:
 
 @get_content_hash.register
 def _(wrapped: WithSidecar) -> str:
-    sidecar_path = sidecar_path_for(wrapped.path)
-
-    with open(sidecar_path, "r") as f:
-        metadata = json.load(f)
-
-    return metadata[_CONTENT_HASH_KEY]
+    return read_header(wrapped)[_CONTENT_HASH_KEY]
 
 
 @singledispatch
