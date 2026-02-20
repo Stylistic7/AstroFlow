@@ -40,7 +40,9 @@ def merged_filename_tiff(
     hash_0 = get_content_hash(image_0)
     hash_1 = get_content_hash(image_1)
 
-    return WithSidecar(TiffFilePath(f"merged_{hash_0}_{hash_1}.tiff"))
+    return WithSidecar(
+        TiffFilePath(f"merged_{mosaic.stable_hash}_{hash_0}_{hash_1}.tiff")
+    )
 
 
 def merged_filename_xisf(
@@ -49,7 +51,9 @@ def merged_filename_xisf(
     hash_0 = get_content_hash(image_0)
     hash_1 = get_content_hash(image_1)
 
-    return WithSidecar(XisfFilePath(f"merged_{hash_0}_{hash_1}.xisf"))
+    return WithSidecar(
+        XisfFilePath(f"merged_{mosaic.stable_hash}_{hash_0}_{hash_1}.xisf")
+    )
 
 
 def placed_filename(
@@ -60,5 +64,5 @@ def placed_filename(
     mask: box,
 ) -> TiffFilePath:
     return TiffFilePath(
-        f"placed_image_{mosaic.stable_hash}_{stack.stable_hash}_{filter}.tiff"
+        f"placed_{mosaic.stable_hash}_{stack.stable_hash}_{filter}.tiff"
     )
