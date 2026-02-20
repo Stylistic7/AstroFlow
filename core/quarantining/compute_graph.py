@@ -1,4 +1,5 @@
 from dataclasses import replace
+from beartype import beartype
 
 from decorators import cached
 from targets.types import Target
@@ -10,6 +11,7 @@ from mosaics.types import MosaicHash, MosaicsDict
 from mosaics.types import Mosaic
 
 
+@beartype
 @cached.remote
 def quarantine_stacks(
     quarantined_stacks: list[StackHash], stacks: CompositeStacksDict
@@ -21,6 +23,7 @@ def quarantine_stacks(
     }
 
 
+@beartype
 @cached.remote
 def quarantine_targets(
     quarantined_stacks: list[StackHash],
@@ -37,7 +40,9 @@ def quarantine_targets(
             continue
 
         stack_ids = [
-            s for s in target.stack_ids if s in stacks and s not in quarantined_stacks
+            s
+            for s in target.stack_ids
+            if s in stacks and s not in quarantined_stacks
         ]
         if not stack_ids:
             continue
@@ -77,8 +82,13 @@ def quarantine_mosaics(
 
 @cached.remote
 def quarantine_calibration_stacks(
-    quarantined_calibration_stacks: list[StackHash], cal_stacks: SimpleStacksDict
+    quarantined_calibration_stacks: list[StackHash],
+    cal_stacks: SimpleStacksDict,
 ) -> SimpleStacksDict:
     return SimpleStacksDict(
-        {h: s for h, s in cal_stacks.items() if h not in quarantined_calibration_stacks}
+        {
+            h: s
+            for h, s in cal_stacks.items()
+            if h not in quarantined_calibration_stacks
+        }
     )

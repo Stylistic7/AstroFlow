@@ -10,7 +10,11 @@ from decorators.decorators import cached
 from metadata.classes import ImageMetadata, FrameHash
 from context import context
 from stacks.types import StackHash
-from stacks.simple_stack import SimpleStack, CalibrationStack, simple_stack_from_frames
+from stacks.simple_stack import (
+    SimpleStack,
+    CalibrationStack,
+    simple_stack_from_frames,
+)
 from stacks.composite_stack import CompositeStack, SimpleStacksDict
 import clustering
 from hashing.types import LargeObject
@@ -26,7 +30,9 @@ def identify_calibration_stacks(metadata_ref: LargeObject) -> SimpleStacksDict:
             return []
 
         items = [(h, metadata[h].header["DATE-OBS"]) for h in frames]
-        result = clustering.cluster_continuous(items, epsilon=context.max_run_gap)
+        result = clustering.cluster_continuous(
+            items, epsilon=context.max_run_gap
+        )
         return [[x[0] for x in r] for r in result]
 
     def group_by_header(
@@ -51,9 +57,9 @@ def identify_calibration_stacks(metadata_ref: LargeObject) -> SimpleStacksDict:
 
     stacks = SimpleStacksDict()
     for camera in frames_for_camera:
-        bias_frames = frames_for_image_type.get("bias", set()) & frames_for_camera.get(
-            camera, set()
-        )
+        bias_frames = frames_for_image_type.get(
+            "bias", set()
+        ) & frames_for_camera.get(camera, set())
         for run in get_runs(bias_frames):
             stack = new_stack(run)
             stacks[StackHash(stack.stable_hash)] = stack
@@ -89,19 +95,25 @@ def _midpoint_s(a: datetime, b: datetime) -> float:
 def _build_cal_index(cal_stacks: dict[StackHash, CalibrationStack]):
     bias_by_cam: dict[str, list[tuple[float, float, StackHash]]] = {}
     dark_by_cam: dict[str, list[tuple[float, float, float, StackHash]]] = {}
-    flat_by_cam_filter: dict[tuple[str, str], list[tuple[float, StackHash]]] = {}
+    flat_by_cam_filter: dict[
+        tuple[str, str], list[tuple[float, StackHash]]
+    ] = {}
 
     for sid, s in cal_stacks.items():
         mid = _midpoint_s(s.oldest_date, s.newest_date)
         cam = s.camera
         if s.image_type == "bias":
-            bias_by_cam.setdefault(cam, []).append((mid, s.mean_temperature, sid))
+            bias_by_cam.setdefault(cam, []).append(
+                (mid, s.mean_temperature, sid)
+            )
         elif s.image_type == "dark":
             dark_by_cam.setdefault(cam, []).append(
                 (mid, s.mean_temperature, s.exposure_s, sid)
             )
         elif s.image_type == "flat":
-            flat_by_cam_filter.setdefault((cam, s.filter), []).append((mid, sid))
+            flat_by_cam_filter.setdefault((cam, s.filter), []).append(
+                (mid, sid)
+            )
 
     # Optionally sort each bucket by midpoint to help cache locality; not required for correctness.
     for lst in bias_by_cam.values():
@@ -198,5 +210,7 @@ def associate_with_stack(
 
 
 @cached.remote
-def associate_calibration_stacks(cal_stacks: SimpleStacksDict) -> SimpleStacksDict:
+def associate_calibration_stacks(
+    cal_stacks: SimpleStacksDict,
+) -> SimpleStacksDict:
     return associate_with_stacks(cal_stacks, cal_stacks)

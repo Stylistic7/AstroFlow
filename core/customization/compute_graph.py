@@ -21,7 +21,9 @@ def apply_settings(stack: CompositeStack, settings: Settings) -> CompositeStack:
         substack_settings = settings.stack_settings.get(
             substack.content_hash, StackSettings()
         )
-        new_dependencies = substack.dependencies | substack_settings.dependencies
+        new_dependencies = (
+            substack.dependencies | substack_settings.dependencies
+        )
         new_substack = replace(substack, dependencies=new_dependencies)
         new_contents[content_hash] = new_substack
 
@@ -30,7 +32,9 @@ def apply_settings(stack: CompositeStack, settings: Settings) -> CompositeStack:
 
 @cached.remote
 def gather_customize_stacks(*stacks) -> CustomizedStacksDict:
-    print(f"### gather_customize_stacks type(stacks) {type(stacks)} len {len(stacks)}")
+    print(
+        f"### gather_customize_stacks type(stacks) {type(stacks)} len {len(stacks)}"
+    )
     return {s.stable_hash: s for s in stacks if s is not None}
 
 
@@ -41,9 +45,13 @@ def store_customized_stack(stack) -> None:
 
 @cached.remote
 def scatter_customize_stacks(
-    settings: Settings, stacks: CompositeStacksDict, cal_stacks: SimpleStacksDict
+    settings: Settings,
+    stacks: CompositeStacksDict,
+    cal_stacks: SimpleStacksDict,
 ) -> Graph:
-    print(f"### scatter_customize_stacks type(stacks) {type(stacks)} len {len(stacks)}")
+    print(
+        f"### scatter_customize_stacks type(stacks) {type(stacks)} len {len(stacks)}"
+    )
     print(
         f"### scatter_customize_stacks type(cal_stacks) {type(cal_stacks)} len {len(cal_stacks)}"
     )
@@ -57,7 +65,6 @@ def scatter_customize_stacks(
 
 # TODO: Add tests in test_customization.py
 # TODO: Pass in the quarantined_stacks and cache this.
-@cached.remote
 def customize_stack(
     stack: CompositeStack, cal_stacks: SimpleStacksDict, settings: Settings
 ) -> CustomizedStack:
@@ -73,15 +80,32 @@ def customize_stack(
     return CustomizedStack(**stack.__dict__)
 
 
+@cached.remote
+def customize_stacks(
+    settings: Settings,
+    stacks: CompositeStacksDict,
+    cal_stacks: SimpleStacksDict,
+) -> CustomizedStacksDict:
+    result = {
+        k: customize_stack(v, cal_stacks, settings) for k, v in stacks.items()
+    }
+    result = {k: v for k, v in result.items() if v is not None}
+    return result
+
+
 # TODO: Implement real customization features.
 @cached.remote
-def scatter_customize_targets(settings: Settings, targets: TargetsDict) -> TargetsDict:
+def scatter_customize_targets(
+    settings: Settings, targets: TargetsDict
+) -> TargetsDict:
     return targets
 
 
 # TODO: Implement real customization features.
 @cached.remote
-def scatter_customize_mosaics(settings: Settings, mosaics: MosaicsDict) -> MosaicsDict:
+def scatter_customize_mosaics(
+    settings: Settings, mosaics: MosaicsDict
+) -> MosaicsDict:
     return mosaics
 
 

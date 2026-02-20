@@ -5,12 +5,12 @@ from spherical_geometry.polygon import SingleSphericalPolygon
 from functools import partial
 
 from context import context
+from decorators import cached
 from stacks.stacking import stack_files
 from stacks.composite_stack import SimpleStack, CompositeStack
 from stacks.post_process import post_process_stack
 from stacks.convert_to_dict import convert_to_dict
 from stacks.composite_stack import CompositeStacksDict
-from decorators import cached
 from metadata.image_metadata import compute_image_metadata
 from customization.types import CustomizedStack
 from customization.subframe_selection import get_light_frames_sorted_by_stars
@@ -118,9 +118,10 @@ def get_stack_image(mode: QualityLevel, stack: CompositeStack) -> Graph:
         )
 
 
-@ray.remote
+@cached.remote
 def process_stacks_for_ui(stacks: CompositeStacksDict) -> None:
     print(f"### process_stacks_for_ui type(stacks) {type(stacks)}")
+    assert None not in stacks.values()
 
     def my_transform(v):
         if type(v) is np.ndarray:
