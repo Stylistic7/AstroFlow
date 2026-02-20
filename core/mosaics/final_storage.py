@@ -25,7 +25,9 @@ def save_uncompressed(images: ImageList, output_filenames: list[Path]):
 @cached.remote(resources={"PixInsight": 1})
 @create_thumbnail
 @measure_performance
-def store_mosaic_color_channel_master(mosaic: Mosaic, filter: str, input: Path) -> Path:
+def store_mosaic_color_channel_master(
+    mosaic: Mosaic, filter: str, input: Path
+) -> Path:
     output = store_mosaic_color_channel_master.filename_fn(mosaic, filter)
     output.parent.mkdir(parents=True, exist_ok=True)
     if context.get("mock_pixinsight", False):
@@ -48,11 +50,10 @@ def store_mosaic_color_channel_subframe(
     mosaic: Mosaic, filter: str, input: Path
 ) -> Path:
     output = store_mosaic_color_channel_subframe.filename_fn(mosaic, filter)
-    print(f"### store_mosaic_color_channel_subframe: {filter=} {input=} {output=}")
     image = read_image(input)
     autostretched = (autostretch(image) * 255.0).astype(np.uint8)
+    Path(output).parent.mkdir(parents=True, exist_ok=True)
     write_tiff_image(output, autostretched, {"FILTER": filter})
-
     return output
 
 
@@ -60,7 +61,6 @@ def store_mosaic_color_channel_subframe(
 def store_mosaic_color_channel(
     mode: QualityLevel, mosaic: Mosaic, filter: str, input: Path
 ) -> Path:
-    print(f"### store_mosaic_color_channel {mode=} {str(mosaic)} {filter=} {input=}")
     if mode == QualityLevel.SUBFRAME:
         return store_mosaic_color_channel_subframe.remote(mosaic, filter, input)
     else:

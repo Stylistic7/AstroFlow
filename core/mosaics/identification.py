@@ -10,7 +10,7 @@ from beartype import beartype
 from collections import defaultdict
 from itertools import combinations
 
-from clustering.angles import angular_spread
+from clustering.angles import angular_spread_mod_pi
 from mosaics.types import Mosaic, MosaicHash, MosaicsDict, Strip
 from catalogs import position_string
 from geometry import footprints
@@ -44,7 +44,7 @@ def roughly_same_image_scale(a: float, b: float) -> bool:
 
 # TODO: This parameter should be in the UI.
 def roughly_same_position_angle(a: float, b: float) -> bool:
-    return np.degrees(angular_spread([a, b])) < 4.0
+    return np.degrees(angular_spread_mod_pi([a, b])) < 4.0
 
 
 @cached.remote
@@ -351,7 +351,7 @@ def _identify_overlapping_targets(
 
     mosaics = [sorted(m) for m in mosaics if len(m) > 1]
     for mosaic in mosaics:
-        print("### Group of overlapping targets:", mosaic)
+        print(f"### Group of {len(mosaic)} overlapping targets:", mosaic)
 
     return mosaics
 

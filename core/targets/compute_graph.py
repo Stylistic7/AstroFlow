@@ -1,17 +1,16 @@
 import ray
 import numpy as np
 from spherical_geometry.polygon import SingleSphericalPolygon
-from typing import Any
 from functools import partial
 
 from context import context
-from dependency_graph import Graph, TopologicalSorterWithStatus
+from decorators import cached
+from dependency_graph import Graph
 from targets.types import Target
 from targets.post_process import post_process_target
 from targets.types import TargetsDict
 from stacks.compute_graph import build_stacking_subgraph
 from stacks.convert_to_dict import convert_to_dict
-from dependency_graph import run_graph
 from previews.types import QualityLevel
 from dependency_graph.workflow_graph_adapter import (
     store_workflow_graph,
@@ -44,7 +43,7 @@ def build_target_subgraph(mode: QualityLevel, target: Target) -> Graph:
     return graph
 
 
-@ray.remote
+@cached.remote
 def process_targets_for_ui(targets: TargetsDict) -> None:
     def my_transform(v):
         if type(v) is np.ndarray:

@@ -12,8 +12,9 @@ from hashing.types import LargeObject
 
 
 @cached.remote
+@beartype
 def identify_stacks(
-    metadata_ref: LargeObject, light_frames: list[FrameHash]
+    metadata_ref: LargeObject, light_frames: tuple[FrameHash, ...]
 ) -> CompositeStacksDict:
     print(
         f"### identify_stacks running for spatial group of length {len(light_frames)}"
@@ -70,7 +71,7 @@ def identify_stacks(
             )
             for k in frames
         ]
-        for cluster in clustering.cluster_angles(
+        for cluster in clustering.cluster_angles_mod_pi(
             rotation_angles, np.radians(2.5)
         ):
             frames, _ = zip(*cluster)
@@ -100,6 +101,8 @@ def identify_stacks(
                         )
                         if new_stack is not None:
                             new_stacks[new_stack.stable_hash] = new_stack
+
+    assert None not in new_stacks.values()
 
     print(f"### identify_stacks done, returning {len(new_stacks)} stacks")
     return new_stacks

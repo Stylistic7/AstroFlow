@@ -5,7 +5,13 @@ from spherical_geometry.polygon import SingleSphericalPolygon  # type: ignore
 from compute_graph import build_compute_graph
 from context import context
 from previews.types import QualityLevel
-from dependency_graph import Graph, Node, print_graph, run_graph, canonicalize_graph
+from dependency_graph import (
+    Graph,
+    Node,
+    print_graph,
+    run_graph,
+    canonicalize_graph,
+)
 from mosaics.types import Mosaic
 from mosaics.merge_images import merge_images
 from mosaics.compute_graph import (
@@ -102,7 +108,9 @@ def test_three_by_one(test_context) -> None:
 
     expected_graph = Graph(
         {
-            Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_1"): [
+            Node(
+                merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_1"
+            ): [
                 Node(
                     build_placement_subgraph,
                     mode,
@@ -122,8 +130,15 @@ def test_three_by_one(test_context) -> None:
                     None,
                 ),
             ],
-            Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_2"): [
-                Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_1"),
+            Node(
+                merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_2"
+            ): [
+                Node(
+                    merge_images,
+                    mode,
+                    mosaic,
+                    name="merge_mosaic_abc123_strip_1",
+                ),
                 Node(
                     build_placement_subgraph,
                     mode,
@@ -189,29 +204,67 @@ def test_two_by_three(test_context) -> None:
     print_graph(graph)
 
     place_a = Node(
-        build_placement_subgraph, mode, mosaic, stacks["a"], filter, viewbox, None
+        build_placement_subgraph,
+        mode,
+        mosaic,
+        stacks["a"],
+        filter,
+        viewbox,
+        None,
     )
     place_b = Node(
-        build_placement_subgraph, mode, mosaic, stacks["b"], filter, viewbox, None
+        build_placement_subgraph,
+        mode,
+        mosaic,
+        stacks["b"],
+        filter,
+        viewbox,
+        None,
     )
     place_c = Node(
-        build_placement_subgraph, mode, mosaic, stacks["c"], filter, viewbox, None
+        build_placement_subgraph,
+        mode,
+        mosaic,
+        stacks["c"],
+        filter,
+        viewbox,
+        None,
     )
     place_d = Node(
-        build_placement_subgraph, mode, mosaic, stacks["d"], filter, viewbox, None
+        build_placement_subgraph,
+        mode,
+        mosaic,
+        stacks["d"],
+        filter,
+        viewbox,
+        None,
     )
     place_e = Node(
-        build_placement_subgraph, mode, mosaic, stacks["e"], filter, viewbox, None
+        build_placement_subgraph,
+        mode,
+        mosaic,
+        stacks["e"],
+        filter,
+        viewbox,
+        None,
     )
     place_f = Node(
-        build_placement_subgraph, mode, mosaic, stacks["f"], filter, viewbox, None
+        build_placement_subgraph,
+        mode,
+        mosaic,
+        stacks["f"],
+        filter,
+        viewbox,
+        None,
     )
 
     merge_a_b = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_b")
     merge_a_b_c = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_c")
     merge_d_e = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_e")
     merge_d_e_f = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_f")
-    final_merge = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_1")
+    final_merge = Node(
+        merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_1"
+    )
 
     expected_graph = Graph(
         {
@@ -274,16 +327,38 @@ def test_three_panes(test_context) -> None:
     print_graph(graph)
 
     place_a = Node(
-        build_placement_subgraph, mode, mosaic, stacks["a"], filter, viewbox, None
+        build_placement_subgraph,
+        mode,
+        mosaic,
+        stacks["a"],
+        filter,
+        viewbox,
+        None,
     )
     place_b = Node(
-        build_placement_subgraph, mode, mosaic, stacks["b"], filter, viewbox, None
+        build_placement_subgraph,
+        mode,
+        mosaic,
+        stacks["b"],
+        filter,
+        viewbox,
+        None,
     )
     place_c = Node(
-        build_placement_subgraph, mode, mosaic, stacks["c"], filter, viewbox, None
+        build_placement_subgraph,
+        mode,
+        mosaic,
+        stacks["c"],
+        filter,
+        viewbox,
+        None,
     )
-    merge_strip_0 = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_c")
-    merge_strip_1 = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_1")
+    merge_strip_0 = Node(
+        merge_images, mode, mosaic, name="merge_mosaic_abc123_c"
+    )
+    merge_strip_1 = Node(
+        merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_1"
+    )
 
     expected_graph = Graph(
         {
@@ -372,10 +447,16 @@ def test_orion_mosaic(test_context) -> None:
     )
 
     merge_0_0__0_1 = Node(
-        merge_images, mode, mosaic, name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea"
+        merge_images,
+        mode,
+        mosaic,
+        name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea",
     )
     merge_1_0__1_1 = Node(
-        merge_images, mode, mosaic, name=f"merge_{mosaic.stable_hash}_6d9f6be3ffab0f22"
+        merge_images,
+        mode,
+        mosaic,
+        name=f"merge_{mosaic.stable_hash}_6d9f6be3ffab0f22",
     )
     final_merge = Node(
         merge_images, mode, mosaic, name=f"merge_{mosaic.stable_hash}_strip_1"
@@ -415,7 +496,7 @@ def test_orion_mosaic_one_by_two(test_context) -> None:
     mosaic = next(iter(context.mosaics.values()))
 
     print(f"### mosaic.strips {mosaic.strips}")
-    assert mosaic.strips == [["1101452f8cf2f9ff"], ["2e5e69b75efbc277"]]
+    assert mosaic.strips == [["2e5e69b75efbc277"], ["1101452f8cf2f9ff"]]
 
     mode = QualityLevel.SUBFRAME
     filter = "H"
@@ -433,13 +514,16 @@ def test_orion_mosaic_one_by_two(test_context) -> None:
     expected_graph = Graph(
         {
             Node(
-                merge_images, mode, mosaic, name=f"merge_{mosaic.stable_hash}_strip_1"
+                merge_images,
+                mode,
+                mosaic,
+                name=f"merge_{mosaic.stable_hash}_strip_1",
             ): [
                 Node(
                     build_placement_subgraph,
                     mode,
                     mosaic,
-                    stacks["1101452f8cf2f9ff"],
+                    stacks["2e5e69b75efbc277"],
                     filter,
                     viewbox,
                     None,
@@ -448,7 +532,7 @@ def test_orion_mosaic_one_by_two(test_context) -> None:
                     build_placement_subgraph,
                     mode,
                     mosaic,
-                    stacks["2e5e69b75efbc277"],
+                    stacks["1101452f8cf2f9ff"],
                     filter,
                     viewbox,
                     None,
@@ -517,10 +601,15 @@ def test_orion_mosaic_two_by_one(test_context) -> None:
         None,
     )
     merge = Node(
-        merge_images, mode, mosaic, name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea"
+        merge_images,
+        mode,
+        mosaic,
+        name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea",
     )
 
-    expected_graph = Graph({place_0_1: [place_0_0], merge: [place_0_0, place_0_1]})
+    expected_graph = Graph(
+        {place_0_1: [place_0_0], merge: [place_0_0, place_0_1]}
+    )
 
     print(f"### expected_graph")
     print_graph(expected_graph)
@@ -590,7 +679,10 @@ def test_orion_mosaic_missing_panel(test_context) -> None:
         None,
     )
     merge_1_0__1_1 = Node(
-        merge_images, mode, mosaic, name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea"
+        merge_images,
+        mode,
+        mosaic,
+        name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea",
     )
     final_merge = Node(
         merge_images, mode, mosaic, name=f"merge_{mosaic.stable_hash}_strip_1"

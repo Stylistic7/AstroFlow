@@ -1,10 +1,7 @@
-import ray
 import numpy as np
 from typing import Optional
-from pathlib import Path
 from shapely import box  # type: ignore
 from shapely.affinity import scale  # type: ignore
-import numpy as np
 from spherical_geometry.polygon import SingleSphericalPolygon
 from functools import partial
 
@@ -178,6 +175,8 @@ def get_stacks_for_filter(
     """Returns the mosaics strips with target hashes replaced by stack hashes."""
 
     def get_stack_for_target(target_id: TargetHash) -> StackHash:
+        # TODO: What should be done if there are several stacks in this target
+        # with the same filter, but, e.g. different rotations?
         for stack_id in targets[target_id].stack_ids:
             if stacks[stack_id].filter == filter:
                 return stack_id
@@ -298,10 +297,8 @@ def build_mosaic_filter_subgraph(
     return graph
 
 
-@ray.remote
-def process_mosaics_for_ui(
-    stacks: CompositeStacksDict, targets: TargetsDict, mosaics: MosaicsDict
-) -> None:
+@cached.remote
+def process_mosaics_for_ui(mosaics: MosaicsDict) -> None:
     def my_transform(v):
         if type(v) is np.ndarray:
             return v.tolist()

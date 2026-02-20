@@ -1,155 +1,79 @@
-import ray
-from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon  # type: ignore
-import astropy.io.fits as pyfits  # type: ignore
-from astropy.wcs import WCS  # type: ignore
 import numpy as np
-from dataclasses import fields
-from typing import Any
+from typing import Iterator
+from beartype import beartype
 
-from context import context
-from clustering import find_groups
-from clustering.angles import angular_spread
-from targets.types import Target, TargetHash, TargetsDict
-import geometry.footprints as footprints
-from stacks.composite_stack import CompositeStack, CompositeStacksDict
-from attributes import AstrometricAttributes
-from attributes.astrometric_attributes import healpix_cells_from_poly
+import clustering
+from targets.types import Target, TargetsDict
+from stacks.composite_stack import CompositeStacksDict
 from stacks.types import StackHash
 from decorators import cached
-from hashing.types import LargeObject
-from customization.types import CustomizedStack
 
 
 @cached.remote
-def group_stacks_into_targets(
-    metadata_ref: LargeObject, stacks: CompositeStacksDict
-) -> TargetsDict:
-    print(
-        f"### group_stacks_into_targets type(stacks) {type(stacks)} len {len(stacks)}"
-    )
+def identify_targets(stacks: CompositeStacksDict) -> TargetsDict:
+    print(f"### identify_targets stacks {stacks.keys()}")
 
-    for key, value in stacks.items():
-        print(
-            f"### {key=} type {type(value)} image_type {value.image_type} str {(str(value))}"
-        )
+    @beartype
+    def scale_clusters() -> Iterator[tuple[StackHash, ...]]:
+        scales = [
+            (stack.stable_hash, stack.image_scale) for stack in stacks.values()
+        ]
+        for cluster in clustering.cluster_continuous(scales, epsilon=0.2):
+            scale_stacks, _ = zip(*cluster)
+            yield scale_stacks
 
-    metadata = metadata_ref.get()
-    cosine_similarity_threshold = context.cosine_similarity_threshold
-
-    def get_spherical_polygon(wcs: WCS) -> SphericalPolygon:
-        footprint = SingleSphericalPolygon.from_wcs(wcs)
-        if not footprint.is_clockwise():
-            footprint = SingleSphericalPolygon(footprint.points[::-1])
-        assert not SphericalPolygon.self_intersect(footprint.points)
-        return footprint
-
-    def extract_stack_info(
-        stack: CompositeStack,
-    ) -> tuple[np.ndarray, SphericalPolygon, float]:
-        first_frame = stack.all_frames()[0]
-        plate_solution = metadata[first_frame].plate_solution
-        return (
-            np.asarray(footprints.radec_to_vector(*stack.center)),
-            get_spherical_polygon(pyfits.Header(plate_solution.header)),
-            stack.image_scale,
-            stack.rotation_angle,
-        )
-
-    values = {
-        id: extract_stack_info(stack)
-        for id, stack in stacks.items()
-        if type(stack) is CustomizedStack and stack.image_type == "light"
-    }
-
-    print(f"### Finding targets out of {len(values)} light-frame stacks")
-
-    # TODO: Make this IoU threashold a knob in the UI.
-    # TODO: Don't combine stacks with different image scales into the same
-    # target.
-    def comparison_fn(
-        a: tuple[np.ndarray, SphericalPolygon, float],
-        b: tuple[np.ndarray, SphericalPolygon, float],
-    ) -> bool:
-        a_center, a_polygon, a_image_scale, a_rotation_angle = a
-        b_center, b_polygon, b_image_scale, b_rotation_angle = b
-
-        image_scales = a_image_scale, b_image_scale
-        if not np.allclose(image_scales, np.mean(image_scales), atol=0.1):
-            return False
-
-        if np.dot(a_center, b_center) < cosine_similarity_threshold:
-            return False
-
-        # TODO: Put this parameter in the UI.
-        if (
-            np.degrees(angular_spread([a_rotation_angle, b_rotation_angle]))
-            > 4.0
-        ):
-            return False
-
-        iou = (
-            a_polygon.intersection(b_polygon).area()
-            / a_polygon.union(b_polygon).area()
-        )
-        return iou > 0.6
-
-    groups = find_groups(values, comparison_fn, min_component_members=1)
-
-    def new_target(stack_ids: list[StackHash]) -> Target:
-        # Compute the target's polygon as the intersection of all its stacks.
-        footprint = SphericalPolygon.multi_intersection(
-            [
-                SphericalPolygon(stacks[stack_id].footprint)
-                for stack_id in stack_ids
-            ]
-        )
-        points = list(footprint.points)
-        if len(points) != 1:
-            print(
-                f"### Target with {stack_ids=} resulted in a disjoint polygon"
+    @beartype
+    def camera_clusters(
+        stack_hashes: tuple[StackHash, ...],
+    ) -> Iterator[tuple[StackHash, ...]]:
+        cameras = [
+            (
+                stacks[s].stable_hash,
+                (
+                    stacks[s].camera,
+                    stacks[s].width_pixels,
+                    stacks[s].height_pixels,
+                ),
             )
-            return None
+            for s in stack_hashes
+        ]
+        for cluster in clustering.cluster_discrete(cameras):
+            stack_hashes, cameras = zip(*cluster)
+            assert len(set(cameras)) == 1
+            yield stack_hashes
 
-        points = points[0]
-        footprint = SingleSphericalPolygon(points)
-        if not footprint.is_clockwise():
-            footprint = SingleSphericalPolygon(footprint.points[::-1])
-        assert not SphericalPolygon.self_intersect(list(footprint.points))
-        projected_footprints = footprints.all_projections(footprint)
+    # TODO: The parameter should be in the UI.
+    @beartype
+    def rotation_clusters(
+        stack_hashes: tuple[StackHash, ...],
+    ) -> Iterator[tuple[StackHash, ...]]:
+        rotation_angles = [
+            (
+                stacks[s].stable_hash,
+                stacks[s].rotation_angle,
+            )
+            for s in stack_hashes
+        ]
+        for cluster in clustering.cluster_angles_mod_pi(
+            rotation_angles, np.radians(5.0)
+        ):
+            stack_hashes, _ = zip(*cluster)
+            yield stack_hashes
 
-        # TODO: Move this stuff into AstrometricAttributes somehow?
-        healpix_cells = healpix_cells_from_poly(footprint)
+    new_targets = TargetsDict()
+    for scale_stacks in scale_clusters():
+        for camera_stacks in camera_clusters(scale_stacks):
+            for rotation_stacks in rotation_clusters(camera_stacks):
+                try:
+                    new_target = Target.from_stacks(
+                        [stacks[s] for s in rotation_stacks]
+                    )
+                    new_targets[new_target.stable_hash] = new_target
+                except ValueError:
+                    print(
+                        f"### WARNING: Failed to create target from "
+                        f"stacks {rotation_stacks}"
+                    )
 
-        # TODO: Validate all stacks here.
-
-        stable_hash = TargetHash(
-            stacks[
-                sorted(stack_ids, key=lambda s: stacks[s].oldest_date)[0]
-            ].stable_hash
-        )
-
-        target_attributes: dict[str, Any] = {
-            "stable_hash": stable_hash,
-            "oldest_date": min(stacks[s].oldest_date for s in stack_ids),
-            "newest_date": min(stacks[s].newest_date for s in stack_ids),
-            "stack_ids": stack_ids,
-            "footprint": footprint,
-            "healpix_cells": healpix_cells,
-            "projected_footprints": projected_footprints,
-        }
-
-        astrometric_attributes: dict[str, Any] = {
-            f.name: getattr(stacks[stack_ids[0]], f.name)
-            for f in fields(AstrometricAttributes)
-        }
-
-        # The target attributes here will override `astrometric_attributes`.
-        attributes = astrometric_attributes | target_attributes
-
-        return Target(**attributes)
-
-    targets_list = [new_target(g) for g in groups]
-    targets = {t.stable_hash: t for t in targets_list if t is not None}
-
-    print(f"### Found {len(targets)} targets: {targets.keys()}")
-    return targets
+    print(f"### identify_targets done, returning {len(new_targets)} targets")
+    return new_targets

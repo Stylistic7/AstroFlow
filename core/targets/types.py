@@ -1,9 +1,13 @@
-from typing import NewType
-from dataclasses import dataclass
+from typing import NewType, Optional, Any
+from dataclasses import dataclass, asdict, fields
 
 from hashing import hash_dataclass, hash_list_int
 from stacks.types import StackHash
-from attributes import AstrometricAttributes, ChronologyAttributes
+from customization.types import CustomizedStack
+from attributes import (
+    AstrometricAttributes,
+    ChronologyAttributes,
+)
 from cache.content_hashed import ContentHashed
 
 TargetHash = NewType("TargetHash", str)
@@ -15,6 +19,22 @@ class Target(
 ):
     stack_ids: list[StackHash]
 
+    @classmethod
+    def from_stacks(cls, stacks: list[CustomizedStack]) -> Optional["Target"]:
+        chronology_attributes = ChronologyAttributes.from_objects(stacks)
+        astrometric_attributes = AstrometricAttributes.from_objects(stacks)
+
+        stable_hash = sorted(stacks, key=lambda s: s.oldest_date)[0].stable_hash
+        stack_ids = [s.stable_hash for s in stacks]
+
+        attributes: dict[str, Any] = (
+            asdict(chronology_attributes)
+            | asdict(astrometric_attributes)
+            | {"stable_hash": stable_hash, "stack_ids": stack_ids}
+        )
+
+        return cls(**attributes)
+
     def __str__(self) -> str:
         return (
             f"Target(name={self.name}, stable_hash={self.stable_hash}, "
@@ -25,6 +45,9 @@ class Target(
         return hash_dataclass(self)
 
     def __eq__(self, other) -> bool:
+        if not isinstance(other, Target):
+            return NotImplemented
+
         return (
             self.stable_hash == other.stable_hash
             and self.content_hash == other.content_hash
