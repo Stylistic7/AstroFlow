@@ -89,7 +89,7 @@ def largest_interior_rectangle(polygon: Polygon, epsilon=20) -> box:
 
 
 def trim_image(
-    image: np.ndarray, mask: Mask, draw_outline: bool = True
+    image: np.ndarray, mask: Mask, draw_outline: bool = False
 ) -> np.ndarray:
     x_min, y_min, x_max, y_max = mask.bounds
     x_min, y_min, x_max, y_max = map(int, (x_min, y_min, x_max, y_max))

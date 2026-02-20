@@ -183,16 +183,15 @@ def _place_image(
     image = _project_in_tiles(viewbox, interp, wcs, skip_empty=skip_empty)
 
     # Trim the image to its own largest interior rectangle.
-    if mode == QualityLevel.MASTER:
-        print(f"### _place_image trimming largest_interior_rectangle")
-        box = largest_interior_rectangle(
-            project_to_viewbox(stack.footprint, viewbox)
-        )
-        image = trim_image(image, box)
+    # if mode == QualityLevel.MASTER:
+    #     box = largest_interior_rectangle(
+    #         project_to_viewbox(stack.footprint, viewbox)
+    #     )
+    #     image = trim_image(image, box)
 
-    # Maybe trim the image again to the provided mask.
-    if mask:
-        image = trim_image(image, mask)
+    # # Maybe trim the image again to the provided mask.
+    # if mask:
+    #     image = trim_image(image, mask)
 
     # TODO: This is really awful; can the structure be improved?
     if mode == QualityLevel.SUBFRAME:
