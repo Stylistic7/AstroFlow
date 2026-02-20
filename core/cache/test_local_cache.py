@@ -30,7 +30,10 @@ def test_foo(init_ray):
 
 
 def test_lazy_load_dict(init_ray):
+    # This one has lazy-load dict functionality.
     cache = get_cache()
+
+    # This one sees the lazy-load dicts as primitive lists.
     raw_cache = diskcache.Cache(cache.directory)
 
     cache["stacks"] = {"abc123": "value_abc123", "def789": "value_def789"}
@@ -73,6 +76,7 @@ def test_lazy_load_dict(init_ray):
         },
     )
 
+    # Insert into the cache directly; the context won't see this.
     assert raw_cache["stacks"] == ["abc123", "def789", "mno567", "xyz999"]
     assert raw_cache[("stacks", "abc123")] == "value_abc123"
     assert raw_cache[("stacks", "def789")] == "value_def789"
@@ -92,6 +96,7 @@ def test_lazy_load_dict(init_ray):
         "new_value_xyz999",
     ]
 
+    # Make sure the context is still showing the stale data.
     assert list(context.stacks.keys()) == [
         "abc123",
         "def789",
@@ -104,3 +109,11 @@ def test_lazy_load_dict(init_ray):
         "value_mno567",
         "new_value_xyz999",
     ]
+
+    # Clear both the context and the underlying cache.
+    context.stacks = {}
+    assert len(list(context.stacks.keys())) == 0
+    assert len(list(context.stacks.values())) == 0
+    assert len(list(cache["stacks"].keys())) == 0
+    assert len(list(cache["stacks"].values())) == 0
+    assert len((raw_cache["stacks"])) == 0
