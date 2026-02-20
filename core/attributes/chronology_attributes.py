@@ -19,19 +19,35 @@ class ChronologyAttributes(Generic[_HashType]):
 
     @classmethod
     def from_frames(
-        cls, frames: Sequence[FrameHash], metadata: MetadataDict | None = None
+        cls, frames: Sequence[FrameHash], metadata: MetadataDict
     ) -> "ChronologyAttributes":
         assert frames
+        assert metadata
 
-        metadata = metadata or context.metadata
-        metadata_list = [i for i in metadata.values() if i.content_hash in frames]
+        metadata_list = [
+            i for i in metadata.values() if i.content_hash in frames
+        ]
 
-        sorted_metadata = sorted(metadata_list, key=lambda i: i.header["DATE-OBS"])
+        sorted_metadata = sorted(
+            metadata_list, key=lambda i: i.header["DATE-OBS"]
+        )
         oldest_date = sorted_metadata[0].header["DATE-OBS"]
         newest_date = sorted_metadata[-1].header["DATE-OBS"]
 
         # The stable hash is just the content hash of the oldest frame.
         stable_hash = sorted_metadata[0].content_hash
+
+        return cls(stable_hash, oldest_date, newest_date)
+
+    @classmethod
+    def from_objects(
+        cls, objects: Sequence["ChronologyAttributes"]
+    ) -> "ChronologyAttributes":
+        oldest_date = min(o.oldest_date for o in objects)
+        newest_date = max(o.newest_date for o in objects)
+
+        sorted_objects = sorted(objects, key=lambda i: i.oldest_date)
+        stable_hash = sorted_objects[0].stable_hash
 
         return cls(stable_hash, oldest_date, newest_date)
 
