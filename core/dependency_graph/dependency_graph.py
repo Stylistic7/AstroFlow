@@ -155,30 +155,10 @@ def _make_fn_args(
     ts: TopologicalSorterWithStatus, node: Node, debug: bool = False
 ) -> Any:
     sig = inspect.signature(node.task._function)
-
-    if len(sig.parameters) == len(node.args):
-        if debug:
-            immediate_types = [type(x) for x in node.args]
-            print(
-                f"### Calling task {node.task._function.__name__} "
-                f"with signature {str(sig)} with immediate args "
-                f"of types {immediate_types} and no ancestor args"
-            )
-        return list(node.args)
-    else:
-        results = _ancestor_results(ts, node, debug)
-
-        if debug:
-            immediate_types = [type(x) for x in node.args]
-            ancestor_types = [type(x) for x in results]
-            print(
-                f"### Calling task {node.task._function.__name__} "
-                f"with signature {str(sig)} with immediate args of "
-                f"types {immediate_types} and ancestor args with "
-                f"types {ancestor_types}"
-            )
-
-        return list(node.args) + results
+    args = list(node.args)
+    if len(sig.parameters) > len(node.args):
+        args += _ancestor_results(ts, node, debug)
+    return args
 
 
 def _make_run_fn(ts, node, dry_run, debug):

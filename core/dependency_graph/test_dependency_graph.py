@@ -3,6 +3,7 @@ import os
 import pytest
 import ray
 import time
+from beartype import beartype
 
 from context import context, get_cache
 from dependency_graph import (
@@ -13,7 +14,6 @@ from dependency_graph import (
     canonicalize_graph,
     run_graph,
     chain,
-    print_result_dict,
 )
 
 T = TypeVar("T")
@@ -117,12 +117,14 @@ def process_raises_exception(item: T) -> None:
 
 
 @ray.remote
-def gather(*ancestor_results: list[int]) -> int:
+def gather(*ancestor_results: tuple[int]) -> int:
+    assert isinstance(ancestor_results, tuple)
     return sum(ancestor_results)
 
 
 @ray.remote
-def passthrough(*ancestor_results: list[T]) -> list[T]:
+def passthrough(*ancestor_results: tuple[T]) -> tuple[T]:
+    assert isinstance(ancestor_results, tuple)
     return ancestor_results
 
 
@@ -132,7 +134,8 @@ def build_subgraph(item: T) -> Graph:
 
 
 @ray.remote
-def gather_from_subgraphs(*ancestor_results: list[list[int]]) -> int:
+def gather_from_subgraphs(*ancestor_results: tuple[list[int]]) -> int:
+    assert isinstance(ancestor_results, tuple)
     return sum(r[0] for r in ancestor_results)
 
 
@@ -162,6 +165,7 @@ def noop() -> None:
 
 
 @ray.remote
+@beartype
 def produce_file(output_dir: str, filename: str) -> str | None:
     filename = os.path.join(output_dir, filename)
 
@@ -179,6 +183,7 @@ def fn_with_multiple_inputs(a: int, b: int, c: int) -> int:
 
 
 @ray.remote
+@beartype
 def maybe_run_dynamic_graph(should_run: bool) -> Graph:
     if should_run:
         return Graph({gather: [(process, i) for i in range(7)]})
@@ -202,6 +207,7 @@ def consume_list(L) -> int:
 
 
 @ray.remote
+@beartype
 def build_recursive_graph(max_depth: int, width: int, depth: int = 1) -> Graph:
     if depth == max_depth:
         return Graph({gather: [(process, i) for i in range(7)]})
@@ -220,6 +226,33 @@ def build_recursive_graph(max_depth: int, width: int, depth: int = 1) -> Graph:
                 ]
             }
         )
+
+
+@ray.remote
+def gather_as_tuple(*ancestor_results):
+    return ancestor_results
+
+
+@ray.remote
+def produces_tuple_graph() -> Graph:
+    graph = Graph(
+        {gather_as_tuple: [(process, 7), (process, 11), (process, 13)]}
+    )
+
+    return graph
+
+
+@ray.remote
+def handles_tuple_graph(ancestor_results) -> Graph:
+    print(
+        f"### handles_tuple_graph {ancestor_results=} {type(ancestor_results)} {len(ancestor_results)}"
+    )
+    a, b, c = ancestor_results
+
+    graph = Graph({})
+    graph[gather] = [(process, a), (process, b), (process, c)]
+
+    return graph
 
 
 def test_simple_graph(test_context) -> None:
@@ -290,6 +323,18 @@ def test_pass_down(test_context) -> None:
 
     assert results.num_nodes_run == 3
     assert results.max_parallelism_seen == 1
+
+
+def test_pass_down_with_one_ancestor(test_context) -> None:
+    graph = Graph({gather: {(process, 11)}})
+    results, _ = run_graph(graph)
+    assert results[gather] == 11
+
+
+def test_pass_down_with_two_ancestors(test_context) -> None:
+    graph = Graph({gather: {(process, 11), (process, 13)}})
+    results, _ = run_graph(graph)
+    assert results[gather] == 24
 
 
 def test_pass_down_with_kwargs(test_context) -> None:
@@ -700,7 +745,7 @@ def test_recursive_graph(test_context) -> None:
 
     def print_status(status: GraphStatus) -> None:
         print(
-            f"### done {len(status.done_nodes)} "
+            f"done {len(status.done_nodes)} "
             f"ready {len(status.ready_nodes)} "
             f"waiting {len(status.waiting_nodes)}"
         )
@@ -721,3 +766,10 @@ def test_recursive_graph(test_context) -> None:
     assert results.max_parallelism_seen == 70000  # depth 5
 
     assert results.is_complete()
+
+
+def test_returns_tuple(test_context) -> None:
+    graph = Graph({handles_tuple_graph: {produces_tuple_graph}})
+
+    result, _ = run_graph(graph)
+    assert result[handles_tuple_graph] == 31
