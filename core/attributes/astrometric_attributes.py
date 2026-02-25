@@ -95,9 +95,6 @@ class AstrometricAttributes:
     def from_frames(
         cls, frames: Sequence[FrameHash], metadata: MetadataDict
     ) -> "AstrometricAttributes":
-        assert frames
-        assert metadata
-
         metadata_list = [
             i for i in metadata.values() if i.content_hash in frames
         ]

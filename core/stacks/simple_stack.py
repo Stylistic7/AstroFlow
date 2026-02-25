@@ -2,9 +2,14 @@ from dataclasses import dataclass, asdict
 from typing import Any
 
 from stacks.types import StackHash
-from attributes import AstroFlowStateAttributes, ChronologyAttributes, ImagingAttributes
+from attributes import (
+    AstroFlowStateAttributes,
+    ChronologyAttributes,
+    ImagingAttributes,
+)
 from metadata.classes import MetadataDict, FrameHash
-from hashing import hash_list, hash_list_int
+from metadata.image_types import is_master
+from hashing import hash_list_int
 from cache.content_hashed import ContentHashed
 from decorators import cached
 from hashing.types import LargeObject
@@ -46,7 +51,9 @@ class SimpleStack(
 
 class SimpleStacksDict(dict[str, SimpleStack]):
     def __hash__(self):
-        return hash_list_int([self[k].content_hash for k in sorted(self.keys())])
+        return hash_list_int(
+            [self[k].content_hash for k in sorted(self.keys())]
+        )
 
     def __str__(self):
         return f"SimpleStacksDict({len(self)})"
@@ -65,6 +72,7 @@ def simple_stack_from_frames(
 
     frame_metadata = {h: i for h, i in metadata.items() if h in frames}
     assert frame_metadata
+    assert not any(is_master(i.header) for i in frame_metadata.values())
 
     attributes: dict[str, Any] = (
         asdict(chronology_attributes)

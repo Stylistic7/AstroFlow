@@ -1,4 +1,10 @@
-from metadata.classes import ImageMetadata
+def is_master(header: dict) -> bool:
+    if not header:
+        return False
+    if "IMAGETYP" not in header:
+        return False
+    image_type = header["IMAGETYP"].lower()
+    return "master" in image_type
 
 
 def is_light_frame(header: dict) -> bool:
@@ -48,14 +54,3 @@ def is_frame_type(header: dict, type: str) -> bool:
         return is_flat_frame(header)
 
     raise ValueError(f"Unknown image type {type}")
-
-
-def is_master(metadata: ImageMetadata) -> bool:
-    if "master" in str(metadata.filename).lower():
-        return True
-    if not metadata.header:
-        return False
-    if "IMAGETYP" not in metadata.header:
-        return False
-    image_type = metadata.header["IMAGETYP"].lower()
-    return "master" in image_type

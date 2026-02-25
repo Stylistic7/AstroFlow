@@ -31,9 +31,6 @@ class ImagingAttributes:
     def from_frames(
         cls, frames: Iterable[FrameHash], metadata: MetadataDict | None = None
     ) -> "ImagingAttributes":
-        assert frames
-
-        metadata = metadata or context.metadata
         metadata_list = [
             i for i in metadata.values() if i.content_hash in frames
         ]
@@ -45,7 +42,9 @@ class ImagingAttributes:
             )
             if allow_empty and len(values) == 0:
                 return None
-            assert len(values) == 1, f"Key {key} had non-unique values {values}"
+            assert len(values) == 1, (
+                f"Key {key} had non-unique values {values} {[i.filename for i in metadata_list]}"
+            )
             return values[0]
 
         def get_quality_set(key: str) -> list[Any]:

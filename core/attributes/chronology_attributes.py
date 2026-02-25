@@ -4,7 +4,6 @@ from collections.abc import Sequence
 from typing import Generic, TypeVar
 from beartype import beartype
 
-from context import context
 from metadata.classes import MetadataDict, FrameHash
 
 _HashType = TypeVar("_HashType", bound=str)
@@ -21,9 +20,6 @@ class ChronologyAttributes(Generic[_HashType]):
     def from_frames(
         cls, frames: Sequence[FrameHash], metadata: MetadataDict
     ) -> "ChronologyAttributes":
-        assert frames
-        assert metadata
-
         metadata_list = [
             i for i in metadata.values() if i.content_hash in frames
         ]

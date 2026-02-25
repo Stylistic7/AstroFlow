@@ -134,17 +134,14 @@ def load_metadata() -> LargeObject:
     for key, value in context.get_matching(("compute_image_metadata",)).items():
         try:
             if isinstance(value.content_hash, str):
-                if not image_types.is_master(value):
-                    if value.content_hash not in quarantined_files:
+                if value.content_hash not in quarantined_files:
+                    if "master" not in str(value.filename.name):
                         if os.path.exists(value.filename):
                             metadata[value.content_hash] = value
         except Exception as e:
             print(
                 f"### Rejecting bad key {key} because of exception {e} for value type {type(value)}"
             )
-
-    metadata_size_mb = objsize.get_deep_size(metadata) / 1024 / 1024
-    print(f"### load_metadata() length {len(metadata)} size {metadata_size_mb:.2f} MB")
 
     # TODO: Pass the LargeObject everywhere, and remove this from the context.
     context.metadata = metadata

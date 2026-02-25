@@ -14,7 +14,9 @@ ComparisonFn = Callable[[T, T], bool]
 
 
 def find_groups(
-    values: dict[T, Any], comparison_fn: ComparisonFn, min_component_members: int
+    values: dict[T, Any],
+    comparison_fn: ComparisonFn,
+    min_component_members: int,
 ) -> list[list[T]]:
     print(f"Finding groups among {len(values)} values")
     ids = values.keys()
@@ -65,7 +67,7 @@ def cluster_by_image_center(metadata_ref: LargeObject) -> None:
         h: get_centroid(i.plate_solution.center)
         for h, i in metadata.items()
         if image_types.is_light_frame(i.header)
-        and not image_types.is_master(i)
+        and not image_types.is_master(i.header)
         and type(i.plate_solution) is plate_solving.PlateSolution
     }
 
