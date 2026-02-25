@@ -11,7 +11,7 @@ from decorators import cached
 
 @cached.remote
 def identify_targets(stacks: CompositeStacksDict) -> TargetsDict:
-    print(f"### identify_targets stacks {stacks.keys()}")
+    print(f"### identify_targets stacks {list(stacks.keys())}")
 
     @beartype
     def scale_clusters() -> Iterator[tuple[StackHash, ...]]:
@@ -62,8 +62,11 @@ def identify_targets(stacks: CompositeStacksDict) -> TargetsDict:
 
     new_targets = TargetsDict()
     for scale_stacks in scale_clusters():
+        print(f"### {scale_stacks=}")
         for camera_stacks in camera_clusters(scale_stacks):
+            print(f"### {camera_stacks=}")
             for rotation_stacks in rotation_clusters(camera_stacks):
+                print(f"### {rotation_stacks=}")
                 try:
                     new_target = Target.from_stacks(
                         [stacks[s] for s in rotation_stacks]
