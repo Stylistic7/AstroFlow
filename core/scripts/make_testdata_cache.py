@@ -24,8 +24,8 @@ def create_tar_gz_from_directory(source_dir, output_filename):
 
 
 def copy_all_stack_data(metadata, cache, testdata_cache, stack_id):
-    stacks = cache["grouped_stacks"]
-    testdata_cache["grouped_stacks"] |= {stack_id: stacks[stack_id]}
+    stacks = cache["stacks"]
+    testdata_cache["stacks"] |= {stack_id: stacks[stack_id]}
 
     stack = stacks[stack_id]
     assert isinstance(stack, CompositeStack)
@@ -35,6 +35,16 @@ def copy_all_stack_data(metadata, cache, testdata_cache, stack_id):
             key = ("compute_image_metadata", frame_hash)
             testdata_cache[key] = metadata[frame_hash]
             print(f"### Copied metadata for {frame_hash=}")
+
+
+def copy_all_target_data(metadata, cache, testdata_cache, target_id):
+    targets = cache["targets"]
+
+    target = targets[target_id]
+    testdata_cache["targets"] |= {target_id: target}
+
+    for stack_id in target.stack_ids:
+        copy_all_stack_data(metadata, cache, testdata_cache, stack_id)
 
 
 def copy_image(metadata, cache, testdata_cache, content_hash, target_dir):
@@ -48,14 +58,14 @@ def copy_image(metadata, cache, testdata_cache, content_hash, target_dir):
 
 
 def copy_all_mosaic_data(metadata, cache, testdata_cache, mosaic_id):
-    targets = cache["grouped_targets"]
-    mosaics = cache["grouped_mosaics"]
+    targets = cache["targets"]
+    mosaics = cache["mosaics"]
 
     mosaic = mosaics[mosaic_id]
 
-    testdata_cache["grouped_mosaics"] |= {mosaic_id: mosaic}
+    testdata_cache["mosaics"] |= {mosaic_id: mosaic}
 
-    testdata_cache["grouped_targets"] |= {
+    testdata_cache["targets"] |= {
         target_id: targets[target_id] for target_id in mosaic.target_ids
     }
 
@@ -74,32 +84,22 @@ if __name__ == "__main__":
     testdata_cache_dir = tempfile.TemporaryDirectory()
     testdata_cache = diskcache.Cache(testdata_cache_dir.name)
     testdata_cache.clear()
-    testdata_cache["grouped_stacks"] = {}
-    testdata_cache["grouped_targets"] = {}
-    testdata_cache["grouped_mosaics"] = {}
+    testdata_cache["stacks"] = {}
+    testdata_cache["targets"] = {}
+    testdata_cache["mosaics"] = {}
     print(f"Opened testdata cache in dir {testdata_cache_dir.name}")
 
     metadata = ray.get(load_metadata.remote()).get()
 
     copy_all_mosaic_data(metadata, cache, testdata_cache, "2145f06bc55e07d0")
     copy_all_stack_data(metadata, cache, testdata_cache, "8768e9be7664d771")
-    copy_image(
-        metadata,
-        cache,
-        testdata_cache,
-        "f0084e9cb2350950",
-        "testdata/Stacks/IC1318/masters",
-    )
-    copy_image(
-        metadata,
-        cache,
-        testdata_cache,
-        "fdba336421ecf07e",
-        "testdata/Stacks/IC1318/masters",
-    )
+    copy_all_target_data(metadata, cache, testdata_cache, "bedcbfed642ec2b9")
+    copy_all_target_data(metadata, cache, testdata_cache, "24059224549fd764")
 
     # Copy the output files, and store the cache to a tar.gz file on disk.
     # shutil.copytree(context.output_dir, 'testdata', dirs_exist_ok=True)
     print(f"testdata_cache has {len(list(testdata_cache.iterkeys()))} keys")
     testdata_cache.close()
-    create_tar_gz_from_directory(testdata_cache.directory, TESTDATA_CACHE_GZIP_FILENAME)
+    create_tar_gz_from_directory(
+        testdata_cache.directory, TESTDATA_CACHE_GZIP_FILENAME
+    )
