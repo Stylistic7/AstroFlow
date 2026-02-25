@@ -93,8 +93,8 @@ def test_orion_mosaic(test_context) -> None:
     assert_files("CompositeStack/Master/light*.xisf", 4, {"FILTER": "H"})
     assert_files("CompositeStack/PostProcessed/light*.xisf", 4, {"FILTER": "H"})
 
-    assert_files("PlacedImage/Subframe/placed_image*.tiff", 4, {"FILTER": "H"})
-    assert_files("PlacedImage/Master/placed_image*.tiff", 4, {"FILTER": "H"})
+    assert_files("PlacedImage/Subframe/placed*.tiff", 4, {"FILTER": "H"})
+    assert_files("PlacedImage/Master/placed*.tiff", 4, {"FILTER": "H"})
 
     assert_files("MergedImage/Subframe/*.tiff", 3, {"FILTER": "H"})
     assert_files("MergedImage/Master/*.xisf", 3, {"FILTER": "H"})
