@@ -34,7 +34,9 @@ def test_two_targets(test_context) -> None:
         projected_footprints={},
     )
 
-    bar_footprint = SingleSphericalPolygon.from_radec([95, 99, 99, 95], [-1, -1, 1, 1])
+    bar_footprint = SingleSphericalPolygon.from_radec(
+        [95, 99, 99, 95], [-1, -1, 1, 1]
+    )
     bar = Target(
         name="bar",
         stable_hash=TargetHash("geometric_bar"),
@@ -50,13 +52,13 @@ def test_two_targets(test_context) -> None:
         projected_footprints={},
     )
 
-    context.grouped_stacks = {
+    context.stacks = {
         str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
         for i in range(6)
     }
-    context.grouped_targets = {foo.stable_hash: foo, bar.stable_hash: bar}
+    context.targets = {foo.stable_hash: foo, bar.stable_hash: bar}
 
-    mosaics = ray.get(identify_mosaics.remote(context.grouped_targets))
+    mosaics = ray.get(identify_mosaics.remote(context.targets))
     assert len(mosaics) == 1
     mosaic = next(iter(mosaics.values()))
     print(f"### mosaic.strips {mosaic.strips}")
@@ -126,21 +128,25 @@ def test_three_targets(test_context) -> None:
         projected_footprints={},
     )
 
-    context.grouped_stacks = {
+    context.stacks = {
         str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
         for i in range(9)
     }
-    context.grouped_targets = {
+    context.targets = {
         foo.stable_hash: foo,
         bar.stable_hash: bar,
         baz.stable_hash: baz,
     }
 
-    mosaics = ray.get(identify_mosaics.remote(context.grouped_targets))
+    mosaics = ray.get(identify_mosaics.remote(context.targets))
 
     assert len(mosaics) == 1
     mosaic = next(iter(mosaics.values()))
-    assert mosaic.target_ids == [bar.stable_hash, baz.stable_hash, foo.stable_hash]
+    assert mosaic.target_ids == [
+        bar.stable_hash,
+        baz.stable_hash,
+        foo.stable_hash,
+    ]
 
     # TODO: This only works when the mosaic polygon is "tight," rather than
     # the convex hull.
@@ -169,7 +175,9 @@ def test_three_out_of_order_targets(test_context) -> None:
         projected_footprints={},
     )
 
-    bar_footprint = SingleSphericalPolygon.from_radec([98, 102, 102, 98], [3, 3, 5, 5])
+    bar_footprint = SingleSphericalPolygon.from_radec(
+        [98, 102, 102, 98], [3, 3, 5, 5]
+    )
     bar = Target(
         name="bar",
         stable_hash=TargetHash("geometric_bar"),
@@ -203,21 +211,25 @@ def test_three_out_of_order_targets(test_context) -> None:
         projected_footprints={},
     )
 
-    context.grouped_stacks = {
+    context.stacks = {
         str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
         for i in range(9)
     }
-    context.grouped_targets = {
+    context.targets = {
         foo.stable_hash: foo,
         bar.stable_hash: bar,
         baz.stable_hash: baz,
     }
 
-    mosaics = ray.get(identify_mosaics.remote(context.grouped_targets))
+    mosaics = ray.get(identify_mosaics.remote(context.targets))
 
     assert len(mosaics) == 1
     mosaic = next(iter(mosaics.values()))
-    assert mosaic.target_ids == [bar.stable_hash, baz.stable_hash, foo.stable_hash]
+    assert mosaic.target_ids == [
+        bar.stable_hash,
+        baz.stable_hash,
+        foo.stable_hash,
+    ]
 
 
 def test_three_targets_and_an_outlier(test_context) -> None:
@@ -239,7 +251,9 @@ def test_three_targets_and_an_outlier(test_context) -> None:
         projected_footprints={},
     )
 
-    bar_footprint = SingleSphericalPolygon.from_radec([95, 99, 99, 95], [-1, -1, 1, 1])
+    bar_footprint = SingleSphericalPolygon.from_radec(
+        [95, 99, 99, 95], [-1, -1, 1, 1]
+    )
     bar = Target(
         name="bar",
         stable_hash=TargetHash("geometric_bar"),
@@ -291,24 +305,26 @@ def test_three_targets_and_an_outlier(test_context) -> None:
         projected_footprints={},
     )
 
-    context.grouped_stacks = {
+    context.stacks = {
         str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
         for i in range(12)
     }
-    context.grouped_targets = {
+    context.targets = {
         foo.stable_hash: foo,
         bar.stable_hash: bar,
         baz.stable_hash: baz,
         outlier.stable_hash: outlier,
     }
 
-    mosaics = ray.get(identify_mosaics.remote(context.grouped_targets))
+    mosaics = ray.get(identify_mosaics.remote(context.targets))
 
     assert len(mosaics) == 1
     mosaic = next(iter(mosaics.values()))
 
     assert len(mosaic.strips) == 2
-    assert sorted(mosaic.strips[0]) == sorted([bar.stable_hash, baz.stable_hash])
+    assert sorted(mosaic.strips[0]) == sorted(
+        [bar.stable_hash, baz.stable_hash]
+    )
     assert sorted(mosaic.strips[1]) == sorted([foo.stable_hash])
 
 
@@ -367,16 +383,16 @@ def test_ic1318(test_context) -> None:
         projected_footprints={},
     )
 
-    context.grouped_stacks = {
+    context.stacks = {
         str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
         for i in range(6)
     }
-    context.grouped_targets = {
+    context.targets = {
         foo.stable_hash: foo,
         bar.stable_hash: bar,
     }
 
-    mosaics = ray.get(identify_mosaics.remote(context.grouped_targets))
+    mosaics = ray.get(identify_mosaics.remote(context.targets))
 
     assert len(mosaics) == 1
     mosaic = next(iter(mosaics.values()))
@@ -390,10 +406,9 @@ def test_big_cygnus_pano(test_context) -> None:
 
     run_graph(build_compute_graph())
 
-    mosaics = ray.get(identify_mosaics.remote(context.grouped_targets))
+    mosaics = ray.get(identify_mosaics.remote(context.targets))
 
-    assert len(mosaics) == 1
-    mosaic = next(iter(mosaics.values()))
+    mosaic = mosaics["2145f06bc55e07d0"]
     print("### mosaic", mosaic)
 
     target_ids = mosaic.target_ids

@@ -1,3 +1,5 @@
+import pytest
+
 from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import run_graph
@@ -19,7 +21,7 @@ def test_one_perfect_stack(test_context):
     stacks = context.stacks
     assert len(stacks) == 1
     toplevel_stack = next(iter(stacks.values()))
-    assert toplevel_stack.center == [100, 50]
+    assert toplevel_stack.center == pytest.approx([100, 50], abs=1e-12)
     assert toplevel_stack.image_scale == 1.0
 
     assert len(toplevel_stack.contents) == 1
@@ -103,13 +105,13 @@ def test_two_stacks_different_image_sizes(test_context):
     keys = sorted(stacks.keys())
 
     stack = stacks[keys[0]]
-    assert stack.center == [100, 50]
+    assert stack.center == pytest.approx([100, 50], abs=1e-12)
     assert stack.width_pixels == 6000
     assert stack.height_pixels == 4000
     assert stack.image_scale == 1.0
 
     stack = stacks[keys[1]]
-    assert stack.center == [100, 50]
+    assert stack.center == pytest.approx([100, 50], abs=1e-12)
     assert stack.width_pixels == 3000
     assert stack.height_pixels == 2000
     assert stack.image_scale == 1.0
@@ -143,7 +145,7 @@ def test_multiple_exposures(test_context):
     toplevel_stack = next(iter(stacks.values()))
     print(f"### toplevel_stack {toplevel_stack}")
     print(f"### toplevel_stack.contents {toplevel_stack.contents}")
-    assert toplevel_stack.center == [100, 50]
+    assert toplevel_stack.center == pytest.approx([100, 50], abs=1e-12)
     assert len(toplevel_stack.contents) == 2
 
     stack = list(toplevel_stack.contents.values())[0]

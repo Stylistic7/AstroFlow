@@ -10,7 +10,7 @@ from targets.identification import identify_targets
 
 
 def test_orion_nebula(test_context):
-    copy_testdata_frames(stacks_name="M42", dest_dir=context.input_dirs[0])
+    copy_testdata_frames(target_name="M42", dest_dir=context.input_dirs[0])
 
     graph = build_compute_graph()
     run_graph(graph)
