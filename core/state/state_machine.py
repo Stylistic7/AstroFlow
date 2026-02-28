@@ -61,9 +61,16 @@ def _init(state: State, action: Action) -> tuple[State, list[Action]]:
     return state, new_actions
 
 
-def _populate_context(state: State, action: Action) -> tuple[State, list[Action]]:
+def _populate_context(
+    state: State, action: Action
+) -> tuple[State, list[Action]]:
     # TODO: Put these in the UI.
-    context.input_dirs = [Path("/Volumes/Astro/Raw"), Path("/Volumes/Astro2/Raw")]
+    print(f"### _populate_context")
+
+    context.input_dirs = [
+        Path("/Volumes/Astro/Raw"),
+        Path("/Volumes/Astro2/Raw"),
+    ]
     context.output_dir = Path("/Volumes/Astro/Processed")
 
     context.cosine_similarity_threshold = 0.9999
@@ -78,6 +85,9 @@ def _populate_context(state: State, action: Action) -> tuple[State, list[Action]
     context.compute_graph_status = GraphStatus()
 
     context.dangerously_accept_existing_files = False
+    context.override_filters = None
+    context.shopping_cart = [("mosaic", "75a1da6463e118e6")]
+    context.ray_head_node_enabled = True
 
     return state, []
 
@@ -91,14 +101,18 @@ def _start_astroflow_zeroconf(
     return state, []
 
 
-def _start_asiair_zeroconf(state: State, action: Action) -> tuple[State, list[Action]]:
+def _start_asiair_zeroconf(
+    state: State, action: Action
+) -> tuple[State, list[Action]]:
     assert "asiair_zeroconf" not in state
     state["asiair_zeroconf"] = ASIAIRZeroconf(enqueue_action)
 
     return state, []
 
 
-def _advertise_zeroconf(state: State, action: Action) -> tuple[State, list[Action]]:
+def _advertise_zeroconf(
+    state: State, action: Action
+) -> tuple[State, list[Action]]:
     state["astroflow_zeroconf"].update_state(is_ray_head=True)
     return state, []
 
@@ -117,7 +131,9 @@ def _stop_zeroconf(state: State, action: Action) -> tuple[State, list[Action]]:
     return state, []
 
 
-def _start_ray_head_node(state: State, action: Action) -> tuple[State, list[Action]]:
+def _start_ray_head_node(
+    state: State, action: Action
+) -> tuple[State, list[Action]]:
     assert "ray_process" not in state
     state["ray_process"] = start_ray_head_node()
 
@@ -169,7 +185,9 @@ def _update_astroflow_services(
     return state, []
 
 
-def _update_asiair_services(state: State, action: Action) -> tuple[State, list[Action]]:
+def _update_asiair_services(
+    state: State, action: Action
+) -> tuple[State, list[Action]]:
     print(f"### _update_asiair_services {action=}")
     context.asiair_devices = action["devices"]
 
@@ -249,7 +267,9 @@ def _quit(state: State, action: Action) -> tuple[State, list[Action]]:
     ]
 
 
-def _add_to_shopping_cart(state: State, action: Action) -> tuple[State, list[Action]]:
+def _add_to_shopping_cart(
+    state: State, action: Action
+) -> tuple[State, list[Action]]:
     if not context.shopping_cart:
         context.shopping_cart = []
 
@@ -346,7 +366,9 @@ def dispatch(action: Action) -> State:
             _state, new_actions = _stop_ray_node(_state, action)
 
         case "schedule_download_from_asiairs":
-            _state, new_actions = _schedule_download_from_asiairs(_state, action)
+            _state, new_actions = _schedule_download_from_asiairs(
+                _state, action
+            )
 
         case "populate_context":
             _state, new_actions = _populate_context(_state, action)
@@ -405,7 +427,9 @@ def main_event_loop():
             except Exception as e:
                 import traceback
 
-                print(f"main_event_loop action {action['type']} raised exception {e}")
+                print(
+                    f"main_event_loop action {action['type']} raised exception {e}"
+                )
                 traceback.print_exc()
 
             if (
