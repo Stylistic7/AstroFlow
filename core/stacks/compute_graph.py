@@ -82,11 +82,13 @@ def build_stacking_subgraph(
                 Node(
                     compute_image_metadata, name=f"stacking_{stack.stable_hash}"
                 ),
-                (post_process_stack, mode, stack),
-                Node(
-                    compute_image_metadata,
-                    name=f"post_process_{stack.stable_hash}",
-                ),
+                # TODO: Put the post-processing back into the graph somewhere
+                # else.
+                # (post_process_stack, mode, stack),
+                # Node(
+                #     compute_image_metadata,
+                #     name=f"post_process_{stack.stable_hash}",
+                # ),
             )
         },
         graph_update_fn=graph_update_fn,
@@ -109,13 +111,7 @@ def get_stack_image(mode: QualityLevel, stack: CompositeStack) -> Graph:
     if mode == QualityLevel.SUBFRAME:
         return Graph({(get_stack_subframe_image, stack): {}})
     else:
-        return Graph(
-            {
-                (post_process_stack, mode, stack): {
-                    (build_stacking_subgraph, mode, stack)
-                }
-            }
-        )
+        return Graph({(build_stacking_subgraph, mode, stack): {}})
 
 
 @cached.remote
