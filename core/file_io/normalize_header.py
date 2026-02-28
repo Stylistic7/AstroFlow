@@ -8,14 +8,18 @@ def normalize_header(header: dict) -> dict:
             continue
 
         if k == "IMAGETYP":
-            found = False
+            image_type = None
             for t in ["bias", "dark", "flat", "light"]:
                 if t in v.lower():
-                    output[k] = t
-                    found = True
+                    image_type = t
 
-            if not found:
+            if image_type is None:
                 raise ValueError(f"Unknown IMAGETYP {v}")
+
+            if "master" in v.lower():
+                output[k] = f"master {image_type}"
+            else:
+                output[k] = image_type
 
             continue
 

@@ -135,12 +135,14 @@ def load_metadata() -> LargeObject:
         try:
             if isinstance(value.content_hash, str):
                 if value.content_hash not in quarantined_files:
-                    if "master" not in str(value.filename.name):
+                    if "master" not in os.path.basename(value.filename).lower():
                         if os.path.exists(value.filename):
-                            metadata[value.content_hash] = value
+                            if not image_types.is_master(value.header):
+                                metadata[value.content_hash] = value
         except Exception as e:
             print(
-                f"### Rejecting bad key {key} because of exception {e} for value type {type(value)}"
+                f"### Rejecting bad key {key} because of exception {e} for "
+                f"value type {type(value)}"
             )
 
     # TODO: Pass the LargeObject everywhere, and remove this from the context.
