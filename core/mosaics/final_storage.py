@@ -49,11 +49,22 @@ def store_mosaic_color_channel_master(
 def store_mosaic_color_channel_subframe(
     mosaic: Mosaic, filter: str, input: Path
 ) -> Path:
+    print(
+        f"### store_mosaic_color_channel_subframe type {str(mosaic)} {filter=} {input=}"
+    )
+
+    # TODO: What is this awful hack doing?
+    if not isinstance(input, Path):
+        return None
+
+    assert input.exists()
+
     output = store_mosaic_color_channel_subframe.filename_fn(mosaic, filter)
     image = read_image(input)
     autostretched = (autostretch(image) * 255.0).astype(np.uint8)
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     write_tiff_image(output, autostretched, {"FILTER": filter})
+
     return output
 
 
@@ -61,6 +72,9 @@ def store_mosaic_color_channel_subframe(
 def store_mosaic_color_channel(
     mode: QualityLevel, mosaic: Mosaic, filter: str, input: Path
 ) -> Path:
+    print(
+        f"### store_mosaic_color_channel {mode=} {str(mosaic)} {filter=} {input=}"
+    )
     if mode == QualityLevel.SUBFRAME:
         return store_mosaic_color_channel_subframe.remote(mosaic, filter, input)
     else:
