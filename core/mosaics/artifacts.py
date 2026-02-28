@@ -61,7 +61,6 @@ def placed_filename(
     stack: CustomizedStack,
     filter: str,
     viewbox: Viewbox,
-    mask: box,
 ) -> TiffFilePath:
     return TiffFilePath(
         f"placed_{mosaic.stable_hash}_{stack.stable_hash}_{filter}.tiff"

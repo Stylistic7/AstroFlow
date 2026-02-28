@@ -13,7 +13,6 @@ from mosaics.types import Mosaic, MosaicsDict, Viewbox
 from mosaics.viewbox import compute_viewbox
 from mosaics.placement import place_image
 from mosaics.post_process import post_process_mosaic
-from mosaics.trimming import project_to_viewbox, largest_interior_rectangle
 from stacks.compute_graph import get_stack_image
 from stacks.composite_stack import CompositeStacksDict
 from stacks.types import StackHash
@@ -64,11 +63,10 @@ def build_mosaic_subgraph(
         stack.filter for stack in stacks.values() if stack is not None
     )
 
+    # TODO: This needs to be moved out of this cached function, into a wrapper.
     if context.override_filters is not None:
         print(f"### WARNING: override_filters: {context.override_filters}")
         filters = context.override_filters
-
-    mask_task = (compute_mosaic_masks, mode, mosaic, viewbox)
 
     graph = Graph()
 
@@ -103,7 +101,7 @@ def build_mosaic_subgraph(
             viewbox,
         )
         store_task = (store_mosaic_color_channel, mode, mosaic, filter)
-        graph[filter_subgraph_task] = {mask_task}
+        graph[filter_subgraph_task] = {}
         graph[store_task] = {filter_subgraph_task}
         filter_done_tasks.append(store_task)
 
@@ -119,7 +117,6 @@ def build_placement_subgraph(
     stack: CustomizedStack,
     filter: str,
     viewbox: Viewbox,
-    mask: box,
 ) -> Graph:
     # TODO: Integrate the stack mask here too.
     return Graph(
@@ -127,42 +124,9 @@ def build_placement_subgraph(
             **chain(
                 (get_stack_image, mode, stack),
                 compute_image_metadata,
-                (place_image, mode, mosaic, stack, filter, viewbox, mask),
+                (place_image, mode, mosaic, stack, filter, viewbox),
             )
         }
-    )
-
-
-def compute_mask(strip: list[TargetHash], viewbox: Viewbox) -> box:
-    targets = context.targets
-    print(f"### Entering compute_mask {viewbox=}")
-
-    # Compute the 2D polygon of all the targets in the strip.
-    strip_poly = None
-    for target_id in strip:
-        target_poly = project_to_viewbox(targets[target_id].footprint, viewbox)
-        strip_poly = (
-            target_poly if strip_poly is None else strip_poly.union(target_poly)
-        )
-
-    print(f"### Calling largest_interior_rectangle")
-    box = largest_interior_rectangle(strip_poly)
-    shrink_factor = 0.95
-    return scale(box, xfact=shrink_factor, yfact=shrink_factor, origin="center")
-
-
-@cached.remote
-def compute_mosaic_masks(
-    mode: QualityLevel, mosaic: Mosaic, viewbox: Viewbox
-) -> list[box]:
-    if mode == QualityLevel.MASTER:
-        return [compute_mask(strip, viewbox) for strip in mosaic.strips]
-
-
-@cached.remote
-def compute_target_mask(target: Target, viewbox: Viewbox) -> box:
-    return largest_interior_rectangle(
-        project_to_viewbox(target.footprint, viewbox)
     )
 
 
@@ -195,16 +159,12 @@ def build_mosaic_filter_subgraph(
     stacks: CompositeStacksDict,
     filter: str,
     viewbox: Viewbox,
-    masks: list[box] | None,
 ) -> Graph:
     print(
         f"### build_mosaic_filter_subgraph mode {mode} "
         f"mosaic {mosaic} filter {filter} strips {mosaic.strips} "
-        f"viewbox {viewbox} masks {masks}"
+        f"viewbox {viewbox}"
     )
-
-    if masks is None:
-        masks = [None] * len(strips)
 
     graph_update_fn, node_status_fn = None, None
     if mode == QualityLevel.MASTER:
@@ -232,7 +192,7 @@ def build_mosaic_filter_subgraph(
         graph_update_fn=graph_update_fn, node_status_fn=node_status_fn
     )
     strip_tasks = []
-    for strip_index, (strip, mask) in enumerate(zip(strips, masks)):
+    for strip in strips:
         prev_task = None
         for i, stack_id in enumerate(strip):
             # Missing stacks are acceptable, except in MASTER mode.
@@ -255,7 +215,6 @@ def build_mosaic_filter_subgraph(
                     stack,
                     filter,
                     viewbox,
-                    mask,
                 )
             else:
                 placement_task = Node(
@@ -265,7 +224,6 @@ def build_mosaic_filter_subgraph(
                     stack,
                     filter,
                     viewbox,
-                    mask,
                 )
                 merge_task = Node(
                     merge_images,

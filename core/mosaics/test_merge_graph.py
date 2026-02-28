@@ -67,7 +67,6 @@ def test_three_by_one(test_context) -> None:
     mode = QualityLevel.SUBFRAME
     filter = "H"
     viewbox = None
-    masks = None
 
     mosaic = Mosaic(
         name="three_by_one",
@@ -101,7 +100,7 @@ def test_three_by_one(test_context) -> None:
 
     graph = ray.get(
         build_mosaic_filter_subgraph.remote(
-            mode, mosaic, strips, stacks, filter, viewbox, masks
+            mode, mosaic, strips, stacks, filter, viewbox
         )
     )
     print_graph(graph)
@@ -118,7 +117,6 @@ def test_three_by_one(test_context) -> None:
                     stacks["a"],
                     filter,
                     viewbox,
-                    None,
                 ),
                 Node(
                     build_placement_subgraph,
@@ -127,7 +125,6 @@ def test_three_by_one(test_context) -> None:
                     stacks["b"],
                     filter,
                     viewbox,
-                    None,
                 ),
             ],
             Node(
@@ -146,7 +143,6 @@ def test_three_by_one(test_context) -> None:
                     stacks["c"],
                     filter,
                     viewbox,
-                    None,
                 ),
             ],
         }
@@ -158,7 +154,6 @@ def test_two_by_three(test_context) -> None:
     mode = QualityLevel.SUBFRAME
     filter = "H"
     viewbox = None
-    masks = None
 
     mosaic = Mosaic(
         name="two_by_three",
@@ -198,64 +193,28 @@ def test_two_by_three(test_context) -> None:
 
     graph = ray.get(
         build_mosaic_filter_subgraph.remote(
-            mode, mosaic, strips, stacks, filter, viewbox, masks
+            mode, mosaic, strips, stacks, filter, viewbox
         )
     )
     print_graph(graph)
 
     place_a = Node(
-        build_placement_subgraph,
-        mode,
-        mosaic,
-        stacks["a"],
-        filter,
-        viewbox,
-        None,
+        build_placement_subgraph, mode, mosaic, stacks["a"], filter, viewbox
     )
     place_b = Node(
-        build_placement_subgraph,
-        mode,
-        mosaic,
-        stacks["b"],
-        filter,
-        viewbox,
-        None,
+        build_placement_subgraph, mode, mosaic, stacks["b"], filter, viewbox
     )
     place_c = Node(
-        build_placement_subgraph,
-        mode,
-        mosaic,
-        stacks["c"],
-        filter,
-        viewbox,
-        None,
+        build_placement_subgraph, mode, mosaic, stacks["c"], filter, viewbox
     )
     place_d = Node(
-        build_placement_subgraph,
-        mode,
-        mosaic,
-        stacks["d"],
-        filter,
-        viewbox,
-        None,
+        build_placement_subgraph, mode, mosaic, stacks["d"], filter, viewbox
     )
     place_e = Node(
-        build_placement_subgraph,
-        mode,
-        mosaic,
-        stacks["e"],
-        filter,
-        viewbox,
-        None,
+        build_placement_subgraph, mode, mosaic, stacks["e"], filter, viewbox
     )
     place_f = Node(
-        build_placement_subgraph,
-        mode,
-        mosaic,
-        stacks["f"],
-        filter,
-        viewbox,
-        None,
+        build_placement_subgraph, mode, mosaic, stacks["f"], filter, viewbox
     )
 
     merge_a_b = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_b")
@@ -287,7 +246,6 @@ def test_three_panes(test_context) -> None:
     mode = QualityLevel.SUBFRAME
     filter = "H"
     viewbox = None
-    masks = None
 
     mosaic = Mosaic(
         name="three_panes",
@@ -321,37 +279,19 @@ def test_three_panes(test_context) -> None:
 
     graph = ray.get(
         build_mosaic_filter_subgraph.remote(
-            mode, mosaic, strips, stacks, filter, viewbox, masks
+            mode, mosaic, strips, stacks, filter, viewbox
         )
     )
     print_graph(graph)
 
     place_a = Node(
-        build_placement_subgraph,
-        mode,
-        mosaic,
-        stacks["a"],
-        filter,
-        viewbox,
-        None,
+        build_placement_subgraph, mode, mosaic, stacks["a"], filter, viewbox
     )
     place_b = Node(
-        build_placement_subgraph,
-        mode,
-        mosaic,
-        stacks["b"],
-        filter,
-        viewbox,
-        None,
+        build_placement_subgraph, mode, mosaic, stacks["b"], filter, viewbox
     )
     place_c = Node(
-        build_placement_subgraph,
-        mode,
-        mosaic,
-        stacks["c"],
-        filter,
-        viewbox,
-        None,
+        build_placement_subgraph, mode, mosaic, stacks["c"], filter, viewbox
     )
     merge_strip_0 = Node(
         merge_images, mode, mosaic, name="merge_mosaic_abc123_c"
@@ -398,13 +338,12 @@ def test_orion_mosaic(test_context) -> None:
     mode = QualityLevel.SUBFRAME
     filter = "H"
     viewbox = None
-    masks = None
 
     strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
 
     graph = ray.get(
         build_mosaic_filter_subgraph.remote(
-            mode, mosaic, strips, stacks, filter, viewbox, masks
+            mode, mosaic, strips, stacks, filter, viewbox
         )
     )
     print_graph(graph)
@@ -416,7 +355,6 @@ def test_orion_mosaic(test_context) -> None:
         stacks["2e5e69b75efbc277"],
         filter,
         viewbox,
-        None,
     )
     place_0_1 = Node(
         build_placement_subgraph,
@@ -425,7 +363,6 @@ def test_orion_mosaic(test_context) -> None:
         stacks["15a294ac14d63dea"],
         filter,
         viewbox,
-        None,
     )
     place_1_0 = Node(
         build_placement_subgraph,
@@ -434,7 +371,6 @@ def test_orion_mosaic(test_context) -> None:
         stacks["1101452f8cf2f9ff"],
         filter,
         viewbox,
-        None,
     )
     place_1_1 = Node(
         build_placement_subgraph,
@@ -443,7 +379,6 @@ def test_orion_mosaic(test_context) -> None:
         stacks["6d9f6be3ffab0f22"],
         filter,
         viewbox,
-        None,
     )
 
     merge_0_0__0_1 = Node(
@@ -501,13 +436,12 @@ def test_orion_mosaic_one_by_two(test_context) -> None:
     mode = QualityLevel.SUBFRAME
     filter = "H"
     viewbox = None
-    masks = None
 
     strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
 
     graph = ray.get(
         build_mosaic_filter_subgraph.remote(
-            mode, mosaic, strips, stacks, filter, viewbox, masks
+            mode, mosaic, strips, stacks, filter, viewbox
         )
     )
 
@@ -526,7 +460,6 @@ def test_orion_mosaic_one_by_two(test_context) -> None:
                     stacks["2e5e69b75efbc277"],
                     filter,
                     viewbox,
-                    None,
                 ),
                 Node(
                     build_placement_subgraph,
@@ -535,7 +468,6 @@ def test_orion_mosaic_one_by_two(test_context) -> None:
                     stacks["1101452f8cf2f9ff"],
                     filter,
                     viewbox,
-                    None,
                 ),
             ]
         }
@@ -570,13 +502,12 @@ def test_orion_mosaic_two_by_one(test_context) -> None:
     mode = QualityLevel.SUBFRAME
     filter = "H"
     viewbox = None
-    masks = None
 
     strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
 
     graph = ray.get(
         build_mosaic_filter_subgraph.remote(
-            mode, mosaic, strips, stacks, filter, viewbox, masks
+            mode, mosaic, strips, stacks, filter, viewbox
         )
     )
     print(f"### graph")
@@ -589,7 +520,6 @@ def test_orion_mosaic_two_by_one(test_context) -> None:
         stacks["2e5e69b75efbc277"],
         filter,
         viewbox,
-        None,
     )
     place_0_1 = Node(
         build_placement_subgraph,
@@ -598,7 +528,6 @@ def test_orion_mosaic_two_by_one(test_context) -> None:
         stacks["15a294ac14d63dea"],
         filter,
         viewbox,
-        None,
     )
     merge = Node(
         merge_images,
@@ -640,13 +569,12 @@ def test_orion_mosaic_missing_panel(test_context) -> None:
     mode = QualityLevel.SUBFRAME
     filter = "H"
     viewbox = None
-    masks = None
 
     strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
 
     graph = ray.get(
         build_mosaic_filter_subgraph.remote(
-            mode, mosaic, strips, stacks, filter, viewbox, masks
+            mode, mosaic, strips, stacks, filter, viewbox
         )
     )
     print_graph(graph)
@@ -658,7 +586,6 @@ def test_orion_mosaic_missing_panel(test_context) -> None:
         stacks["1101452f8cf2f9ff"],
         filter,
         viewbox,
-        None,
     )
     place_1_0 = Node(
         build_placement_subgraph,
@@ -667,7 +594,6 @@ def test_orion_mosaic_missing_panel(test_context) -> None:
         stacks["2e5e69b75efbc277"],
         filter,
         viewbox,
-        None,
     )
     place_1_1 = Node(
         build_placement_subgraph,
@@ -676,7 +602,6 @@ def test_orion_mosaic_missing_panel(test_context) -> None:
         stacks["15a294ac14d63dea"],
         filter,
         viewbox,
-        None,
     )
     merge_1_0__1_1 = Node(
         merge_images,

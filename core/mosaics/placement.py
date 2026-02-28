@@ -12,17 +12,12 @@ from astropy import units as u  # type: ignore
 from dataclasses import dataclass
 
 from customization.types import CustomizedStack
-from file_io.generic import read_image, read_header
+from file_io.generic import read_image
 from file_io.tiff_file_io import write_tiff_image
 from file_io.types import TiffFilePath
 from context import context
 from previews.types import QualityLevel
-from mosaics.types import Mosaic, Viewbox, Mask
-from mosaics.trimming import (
-    trim_image,
-    project_to_viewbox,
-    largest_interior_rectangle,
-)
+from mosaics.types import Mosaic, Viewbox
 from mosaics.artifacts import placed_filename
 from decorators import cached
 from metadata.classes import ImageMetadata
@@ -153,14 +148,13 @@ def _project_in_tiles(
     return projected_image[0 : viewbox.num_pixels_y, 0 : viewbox.num_pixels_x]
 
 
-@cached.remote
+@ray.remote
 def _place_image(
     mode: QualityLevel,
     mosaic: Mosaic,
     stack: CustomizedStack,
     filter: str,
     viewbox: Viewbox,
-    mask: Mask,
     image_metadata: ImageMetadata,
 ) -> TiffFilePath:
     # if context.dangerously_accept_existing_files and os.path.exists(filename):
@@ -173,8 +167,12 @@ def _place_image(
     print(
         f"### place_image {mode} mosaic {str(mosaic)} stack {str(stack)} {filename=} viewbox {str(viewbox)}"
     )
-    assert filename, f"place_image: bad filename {filename}"
 
+    if image_metadata.plate_solution is None:
+        raise ValueError(
+            f"Cannot place image {filename} because it does not have a plate "
+            f"solution"
+        )
     wcs = WCS(image_metadata.plate_solution.header)
 
     interp = _make_interpolator(filename)
@@ -182,25 +180,14 @@ def _place_image(
     skip_empty = mode == QualityLevel.MASTER
     image = _project_in_tiles(viewbox, interp, wcs, skip_empty=skip_empty)
 
-    # Trim the image to its own largest interior rectangle.
-    # if mode == QualityLevel.MASTER:
-    #     box = largest_interior_rectangle(
-    #         project_to_viewbox(stack.footprint, viewbox)
-    #     )
-    #     image = trim_image(image, box)
-
-    # # Maybe trim the image again to the provided mask.
-    # if mask:
-    #     image = trim_image(image, mask)
-
     # TODO: This is really awful; can the structure be improved?
     if mode == QualityLevel.SUBFRAME:
         output_filename = place_image_subframe.filename_fn(
-            mosaic, stack, filter, viewbox, mask
+            mosaic, stack, filter, viewbox
         )
     elif mode == QualityLevel.MASTER:
         output_filename = place_image_master.filename_fn(
-            mosaic, stack, filter, viewbox, mask
+            mosaic, stack, filter, viewbox
         )
 
     write_tiff_image(output_filename, image, {"FILTER": filter})
@@ -217,11 +204,12 @@ def place_image_subframe(
     stack: CustomizedStack,
     filter: str,
     viewbox: Viewbox,
-    mask: Mask,
     image_metadata: ImageMetadata,
 ) -> TiffFilePath:
-    return _place_image.remote(
-        mode, mosaic, stack, filter, viewbox, mask, image_metadata
+    return ray.get(
+        _place_image.remote(
+            mode, mosaic, stack, filter, viewbox, image_metadata
+        )
     )
 
 
@@ -233,30 +221,34 @@ def place_image_master(
     stack: CustomizedStack,
     filter: str,
     viewbox: Viewbox,
-    mask: Mask,
     image_metadata: ImageMetadata,
 ) -> TiffFilePath:
-    return _place_image.remote(
-        mode, mosaic, stack, filter, viewbox, mask, image_metadata
+    return ray.get(
+        _place_image.remote(
+            mode, mosaic, stack, filter, viewbox, image_metadata
+        )
     )
 
 
 # TODO: These trampolines are ugly; can they be improved?
-@ray.remote
+@cached.remote
 def place_image(
     mode: QualityLevel,
     mosaic: Mosaic,
     stack: CustomizedStack,
     filter: str,
     viewbox: Viewbox,
-    mask: Mask,
     image_metadata: ImageMetadata,
 ) -> TiffFilePath:
     if mode == QualityLevel.SUBFRAME:
-        return place_image_subframe.remote(
-            mode, mosaic, stack, filter, viewbox, mask, image_metadata
+        return ray.get(
+            place_image_subframe.remote(
+                mode, mosaic, stack, filter, viewbox, image_metadata
+            )
         )
     elif mode == QualityLevel.MASTER:
-        return place_image_master.remote(
-            mode, mosaic, stack, filter, viewbox, mask, image_metadata
+        return ray.get(
+            place_image_master.remote(
+                mode, mosaic, stack, filter, viewbox, image_metadata
+            )
         )
