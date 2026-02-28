@@ -1,8 +1,9 @@
 import ray
-from flask import Blueprint
+from flask import Blueprint, Response
+import json
+import subprocess
 
 from context import context
-from dependency_graph.workflow_graph_adapter import to_workflow_graph
 from dependency_graph.progress import graph_status_to_progress
 
 compute_graphs_bp = Blueprint("compute_graphs", __name__)
@@ -38,4 +39,20 @@ def workflow_graph_for_mosaic(mosaic_id, filter):
 
 @compute_graphs_bp.route("/api/node_status/<node_id>")
 def node_status(node_id):
-    return context[("node_status", node_id)]
+    return json.dumps(context[("node_status", node_id)], default=str)
+
+
+@compute_graphs_bp.route("/api/open_node_result_path/<node_id>")
+def open_node_result_path(node_id):
+    status = context[("node_status", node_id)]
+    if "path" in status:
+        filename = str(status["path"])
+        print(f"### opening filename {filename}")
+        subprocess.Popen(
+            [
+                "/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight",
+                filename,
+            ]
+        )
+
+        return Response(status=200)

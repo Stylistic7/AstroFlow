@@ -2,11 +2,13 @@ from collections import defaultdict
 import os
 from typing import Any
 import traceback
+import ray
+from pathlib import Path
 
 from dependency_graph import Node, TopologicalSorterWithStatus, Skipped
 from cache.types import NeverRun
 from context import context
-from dependency_graph.debugging import node_to_string, print_graph
+from file_io.types import WithSidecar
 
 _DEBUG = False
 
@@ -173,10 +175,15 @@ def store_workflow_graph(
 
 
 def store_node_status(node: Node, result: Any, logs: list[Any]):
+    if isinstance(result, ray.ObjectRef):
+        result = ray.get(result)
+
     status_dict = dict(result_type=str(type(result).__name__), logs=logs)
 
     if isinstance(result, Exception):
         status_dict["exception"] = result
         status_dict["stack_trace"] = traceback.format_exc()
+    elif isinstance(result, (Path, WithSidecar)):
+        status_dict["path"] = str(result)
 
     context[("node_status", node_to_id(node))] = status_dict

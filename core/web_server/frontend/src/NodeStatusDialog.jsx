@@ -33,7 +33,6 @@ const monospaceSx = {
 };
 
 const StateChip = ({ state }) => {
-  // Map your real states here (SUCCEEDED / FAILED / SKIPPED / RUNNING / etc.)
   const { label, color, variant } = (() => {
     switch (state) {
       case "SUCCEEDED":
@@ -60,20 +59,26 @@ const copyToClipboard = async (text) => {
   }
 };
 
+/**
+ * Expected backend payload:
+ * {
+ *   result_type: string | null,
+ *   logs: any[],
+ *   exception: string | null,
+ *   stack_trace: string | null,
+ *   path?: string | null,                 // if present -> show "Open result"
+ *   open_image_url?: string | null,       // optional legacy hook
+ * }
+ */
 export function NodeStatusDialog({ open, onClose, nodeId, nodeLabel }) {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
   const [details, setDetails] = useState(null);
 
-  // Suggested payload shape returned by your backend:
-  // {
-  //   id, label,
-  //   state: "SUCCEEDED"|"FAILED"|"SKIPPED"|...,
-  //   open_image_url?: "/api/open_image?hash=...",
-  //   image_url?: "/tiles/..." or "/api/image/..." (optional if you want preview)
-  //   exception?: { message?: string, type?: string, stack?: string },
-  //   log?: string
-  // }
+  // UI status for "open result" action
+  const [openResultBusy, setOpenResultBusy] = useState(false);
+  const [openResultErr, setOpenResultErr] = useState(null);
+
   useEffect(() => {
     if (!open || !nodeId) return;
     let cancelled = false;
@@ -81,10 +86,12 @@ export function NodeStatusDialog({ open, onClose, nodeId, nodeLabel }) {
     setLoading(true);
     setErr(null);
     setDetails(null);
+    setOpenResultBusy(false);
+    setOpenResultErr(null);
 
     (async () => {
       try {
-        const res = await fetch(`/api/node_status/${nodeId}`);
+        const res = await fetch(`/api/node_status/${encodeURIComponent(nodeId)}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         if (!cancelled) setDetails(data);
@@ -100,41 +107,86 @@ export function NodeStatusDialog({ open, onClose, nodeId, nodeLabel }) {
     };
   }, [open, nodeId]);
 
-  const title = details?.label ?? nodeLabel ?? details?.id ?? nodeId ?? "Node";
+  const resultType = details?.result_type ?? null;
 
-  const state = details?.state ?? null;
-  const hasImage = Boolean(details?.open_image_url);
-  const hasException = Boolean(details?.exception?.stack || details?.exception?.message);
-  const hasLog = Boolean(details?.log);
+  const exceptionMessage = details?.exception ?? "";
+  const stackTrace = details?.stack_trace ?? "";
+
+  const logsArr = Array.isArray(details?.logs) ? details.logs : [];
+  const logText = useMemo(() => logsArr.map(String).join("\n"), [logsArr]);
+
+  const hasException = Boolean(stackTrace || exceptionMessage);
+  const hasLog = logText.length > 0;
+
+  const state = useMemo(() => {
+    if (!details) return null;
+    if (hasException || resultType) return "FAILED";
+    return "SUCCEEDED";
+  }, [details, hasException, resultType]);
+
+  const openImageUrl = details?.open_image_url ?? null;
+  const hasImage = Boolean(openImageUrl);
+
+  const resultPath = details?.path ?? null;
+  const hasPath = Boolean(resultPath);
+
+  const title = nodeLabel ?? nodeId ?? "Node";
 
   const exceptionSummary = useMemo(() => {
-    if (!details?.exception) return "";
-    const t = details.exception.type ? `${details.exception.type}: ` : "";
-    return `${t}${details.exception.message ?? ""}`.trim();
-  }, [details]);
+    if (!hasException && !resultType) return "";
+    const t = resultType ? `${resultType}: ` : "";
+    return `${t}${exceptionMessage}`.trim();
+  }, [hasException, resultType, exceptionMessage]);
 
   const openImage = useCallback(() => {
-    const u = details?.open_image_url;
-    if (!u) return;
-    // If your server endpoint triggers native OS open, a normal navigation is fine.
-    // If you prefer not to navigate away, do window.open(u, "_blank") instead.
-    window.location.href = u;
-  }, [details]);
+    if (!openImageUrl) return;
+    window.location.href = openImageUrl;
+  }, [openImageUrl]);
 
+  const openResultPath = useCallback(async () => {
+    if (!nodeId || !hasPath) return;
+
+    setOpenResultBusy(true);
+    setOpenResultErr(null);
+
+    try {
+      const res = await fetch(
+        `/api/open_node_result_path/${encodeURIComponent(nodeId)}`
+      ); // GET by default
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      // Optionally consume body
+      try {
+        await res.text();
+      } catch {
+        // ignore
+      }
+    } catch (e) {
+      setOpenResultErr(String(e));
+    } finally {
+      setOpenResultBusy(false);
+    }
+  }, [nodeId, hasPath]);
+  
   const copyException = useCallback(() => {
-    copyToClipboard(details?.exception?.stack ?? details?.exception?.message ?? "");
-  }, [details]);
+    copyToClipboard(stackTrace || exceptionMessage || "");
+  }, [stackTrace, exceptionMessage]);
 
   const copyLog = useCallback(() => {
-    copyToClipboard(details?.log ?? "");
-  }, [details]);
+    copyToClipboard(logText);
+  }, [logText]);
+
+  const logLineCount = useMemo(() => (hasLog ? logText.split("\n").length : 0), [hasLog, logText]);
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth={false} fullWidth>
       <DialogTitle sx={{ pr: 6 }}>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
           <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant="h6" noWrap>{title}</Typography>
+            <Typography variant="h6" noWrap>
+              {title}
+            </Typography>
             <Typography variant="caption" color="text.secondary" noWrap>
               {nodeId ? `id: ${nodeId}` : ""}
             </Typography>
@@ -154,7 +206,6 @@ export function NodeStatusDialog({ open, onClose, nodeId, nodeLabel }) {
 
       <DialogContent sx={{ height: 540, overflow: "hidden" }}>
         <Box sx={{ display: "flex", flexDirection: "column", height: "100%", gap: 2 }}>
-          {/* Top summary / actions */}
           <Paper variant="outlined" sx={{ p: 2 }}>
             <Stack direction="row" spacing={1.5} alignItems="center" justifyContent="space-between">
               <Stack direction="row" spacing={1} alignItems="center">
@@ -165,7 +216,19 @@ export function NodeStatusDialog({ open, onClose, nodeId, nodeLabel }) {
               </Stack>
 
               <Stack direction="row" spacing={1} alignItems="center">
-                {hasImage && (
+                {hasPath && (
+                  <Button
+                    size="small"
+                    variant="contained"
+                    startIcon={<ImageIcon />}
+                    onClick={openResultPath}
+                    disabled={openResultBusy}
+                  >
+                    {openResultBusy ? "Opening…" : "Open result"}
+                  </Button>
+                )}
+
+                {!hasPath && hasImage && (
                   <Button
                     size="small"
                     variant="contained"
@@ -177,6 +240,25 @@ export function NodeStatusDialog({ open, onClose, nodeId, nodeLabel }) {
                 )}
               </Stack>
             </Stack>
+
+            {hasPath && (
+              <>
+                <Divider sx={{ my: 1.5 }} />
+                <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                  Result path
+                </Typography>
+                <Typography sx={monospaceSx}>{String(resultPath)}</Typography>
+              </>
+            )}
+
+            {openResultErr && (
+              <>
+                <Divider sx={{ my: 1.5 }} />
+                <Typography variant="body2" color="error">
+                  Failed to open result: {openResultErr}
+                </Typography>
+              </>
+            )}
 
             {err && (
               <>
@@ -192,17 +274,21 @@ export function NodeStatusDialog({ open, onClose, nodeId, nodeLabel }) {
                 <Divider sx={{ my: 1.5 }} />
                 <Stack direction="row" spacing={1} alignItems="center">
                   <CircularProgress size={16} />
-                  <Typography variant="body2" color="text.secondary">Loading…</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Loading…
+                  </Typography>
                 </Stack>
               </>
             )}
           </Paper>
 
-          {/* Scrollable lower area */}
           <Box sx={{ flex: 1, overflow: "auto" }}>
             <Stack spacing={1.5}>
-              {/* Exception accordion */}
-              <Accordion disableGutters defaultExpanded={false} sx={{ border: 1, borderColor: "divider" }}>
+              <Accordion
+                disableGutters
+                defaultExpanded={false}
+                sx={{ border: 1, borderColor: "divider" }}
+              >
                 <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                   <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
                     <ErrorOutlineIcon fontSize="small" />
@@ -210,14 +296,22 @@ export function NodeStatusDialog({ open, onClose, nodeId, nodeLabel }) {
                       Exception
                     </Typography>
                     {hasException ? (
-                      <Typography variant="caption" color="text.secondary" noWrap sx={{ maxWidth: 520 }}>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        noWrap
+                        sx={{ maxWidth: 520 }}
+                      >
                         {exceptionSummary}
                       </Typography>
                     ) : (
-                      <Typography variant="caption" color="text.secondary">None</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        None
+                      </Typography>
                     )}
                   </Stack>
                 </AccordionSummary>
+
                 <AccordionDetails>
                   <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
                     <Tooltip title="Copy">
@@ -229,18 +323,20 @@ export function NodeStatusDialog({ open, onClose, nodeId, nodeLabel }) {
                       Stack trace
                     </Typography>
                   </Stack>
+
                   <Paper variant="outlined" sx={{ p: 1.5, bgcolor: "background.default" }}>
                     <Typography component="pre" sx={monospaceSx}>
-                      {details?.exception?.stack ??
-                        details?.exception?.message ??
-                        "No exception information."}
+                      {stackTrace || exceptionMessage || "No exception information."}
                     </Typography>
                   </Paper>
                 </AccordionDetails>
               </Accordion>
 
-              {/* Log accordion */}
-              <Accordion disableGutters defaultExpanded={false} sx={{ border: 1, borderColor: "divider" }}>
+              <Accordion
+                disableGutters
+                defaultExpanded={false}
+                sx={{ border: 1, borderColor: "divider" }}
+              >
                 <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                   <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
                     <ArticleIcon fontSize="small" />
@@ -249,13 +345,16 @@ export function NodeStatusDialog({ open, onClose, nodeId, nodeLabel }) {
                     </Typography>
                     {hasLog ? (
                       <Typography variant="caption" color="text.secondary">
-                        {`${String(details.log).split("\n").length} lines`}
+                        {`${logLineCount} lines`}
                       </Typography>
                     ) : (
-                      <Typography variant="caption" color="text.secondary">None</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        None
+                      </Typography>
                     )}
                   </Stack>
                 </AccordionSummary>
+
                 <AccordionDetails>
                   <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
                     <Tooltip title="Copy">
@@ -267,9 +366,10 @@ export function NodeStatusDialog({ open, onClose, nodeId, nodeLabel }) {
                       Node output
                     </Typography>
                   </Stack>
+
                   <Paper variant="outlined" sx={{ p: 1.5, bgcolor: "background.default" }}>
                     <Typography component="pre" sx={monospaceSx}>
-                      {details?.log ?? "No log output."}
+                      {hasLog ? logText : "No log output."}
                     </Typography>
                   </Paper>
                 </AccordionDetails>
