@@ -56,7 +56,7 @@ def merge_images_with_maximum(
     return output_filename
 
 
-@PixInsight(timeout=300)
+@PixInsight(timeout=600)
 def run_photometric_mosaic(
     images: ImageList, output_filename: Path
 ) -> ImageList:
@@ -126,6 +126,11 @@ def merge_images(
     mode: QualityLevel, mosaic: Mosaic, input_0: Path, input_1: Path
 ) -> Path:
     if mode == QualityLevel.SUBFRAME:
-        return merge_images_with_maximum.remote(mosaic, input_0, input_1)
+        result = ray.get(
+            merge_images_with_maximum.remote(mosaic, input_0, input_1)
+        )
     else:
-        return merge_images_with_pmm.remote(mosaic, input_0, input_1)
+        result = ray.get(merge_images_with_pmm.remote(mosaic, input_0, input_1))
+
+    print(f"### merge_images {result=}")
+    return result
