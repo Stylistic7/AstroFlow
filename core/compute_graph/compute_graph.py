@@ -79,6 +79,7 @@ def combine_dicts(*ancestor_results: tuple[dict[Any, Any]]) -> dict[Any, Any]:
 @ray.remote
 def scatter_spatial_groups(metadata_ref: LargeObject, spatial_groups) -> Graph:
     settings = context.settings or Settings()
+    quarantined_stacks = context.quarantined_stacks or tuple()
     quarantined_calibration_stacks = (
         context.quarantined_calibration_stacks or tuple()
     )
@@ -109,10 +110,13 @@ def scatter_spatial_groups(metadata_ref: LargeObject, spatial_groups) -> Graph:
             g,
         )
         validate_stacks_task = Node(validate_stacks, name=str(i))
-        customize_stacks_task = Node(customize_stacks, settings, name=str(i))
+        customize_stacks_task = Node(
+            customize_stacks, settings, quarantined_stacks, name=str(i)
+        )
 
         target_task = Node(identify_targets, name=str(i))
 
+        # TODO: Validate stacks after customizing them.
         graph[validate_stacks_task] = {stack_task}
         graph[customize_stacks_task] = [
             validate_stacks_task,
@@ -208,14 +212,14 @@ def build_main_processing_graph() -> Graph:
                     f"### WARNING: stack {id} is in shopping cart but does not exist"
                 )
                 continue
-            tasks.append((build_stacking_subgraph, mode, stacks[id]))
+            tasks.append((build_stacking_subgraph, stacks[id]))
         elif type == "target":
             if id not in targets:
                 print(
                     f"### WARNING: target {id} is in shopping cart but does not exist"
                 )
                 continue
-            tasks.append((build_target_subgraph, mode, targets[id]))
+            tasks.append((build_target_subgraph, targets[id]))
         if type == "mosaic":
             if id not in mosaics:
                 print(
