@@ -28,7 +28,7 @@ def hash_list(L: Any, debug: bool = False) -> str:
 
     if debug:
         for i, o in zip(L, L2):
-            print(f"### L {i} type {type(i)} L2 {o} type {type(o)}")
+            print(f"### L type {type(i)} L2 type {type(o)} {str(o)} ")
 
     return xxhash.xxh64(str(L2)).hexdigest()
 
