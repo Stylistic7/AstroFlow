@@ -1,6 +1,7 @@
 import datetime
 import unittest
 
+from hashing import hash_list
 from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import run_graph
@@ -55,6 +56,24 @@ def test_quarantine_run(test_context) -> None:
     assert len(context.stacks) == 1
     assert len(context.targets) == 1
     assert len(context.mosaics) == 0
+
+    # The stack should have two runs.
+    stack = next(iter(context.stacks.values()))
+    assert len(stack.contents) == 2
+    runs = list(stack.contents.keys())
+    two_run_hash = hash_list([{stack.stable_hash: stack}], debug=True)
+
+    # Quarantine the first run.
+    context.quarantined_stacks = (runs[0],)
+
+    run_graph(build_compute_graph())
+
+    # The stack should have only the second run now.
+    stack = next(iter(context.stacks.values()))
+    assert list(stack.contents.keys()) == [runs[1]]
+    one_run_hash = hash_list([{stack.stable_hash: stack}], debug=True)
+
+    assert two_run_hash != one_run_hash
 
 
 def test_quarantine_toplevel_target(test_context):
