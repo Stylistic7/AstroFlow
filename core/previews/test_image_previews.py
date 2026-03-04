@@ -1,13 +1,17 @@
 import ray
 import datetime
-import datetime
 
 from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import run_graph
 from file_io.types import WithSidecar
 from testing import make_synthetic_frames, copy_testdata_frames
-from previews.stack_thumbnails import stack_thumbnail, calibration_stack_thumbnail
+from previews.stack_thumbnails import (
+    stack_thumbnail,
+    calibration_stack_thumbnail,
+)
+from products.registry import get_producer, MediaType
+from previews.types import QualityLevel
 from file_io.find_image_files import find_image_files
 
 
@@ -80,24 +84,32 @@ def test_stack_dependency_graph(test_context) -> None:
     filenames = find_image_files(context.input_dirs[0])
     assert len(filenames) == 42
 
+    context.shopping_cart = [("stack", "c39bb8ef8c9266e6")]
+
     graph = build_compute_graph()
     run_graph(graph)
 
     assert len(context.stacks) == 1
     assert len(context.calibration_stacks) == 4
 
-    def check_thumbnail(stacks, image_type, fn):
-        matching_stacks = [s for s in stacks.values() if s.image_type == image_type]
-        assert len(matching_stacks) == 1
-        stack = next(iter(matching_stacks))
-
-        file = ray.get(fn.remote(stack))
+    def check_thumbnail(stack, fn):
+        file = ray.get(stack_thumbnail.remote(stack))
         assert isinstance(file, WithSidecar)
 
-        # TODO: This test overlaps a bunch of other tests.
-        thumbnail = fn.thumbnail_fn(stack)
-        assert thumbnail != None
+        thumbnail = stack_thumbnail.thumbnail_fn(stack)
+        assert thumbnail is not None
         assert isinstance(thumbnail, bytes)
 
-    check_thumbnail(context.stacks, "light", stack_thumbnail)
-    check_thumbnail(context.calibration_stacks, "dark", calibration_stack_thumbnail)
+        for mode in [QualityLevel.SUBFRAME, QualityLevel.MASTER]:
+            fn = get_producer(MediaType.IMAGE, type(stack), mode)
+            assert fn is not None
+            thumbnail = fn.thumbnail_fn(stack)
+            assert type(thumbnail) is bytes
+
+            fn = get_producer(MediaType.IMAGE, type(stack), mode)
+            assert fn is not None
+            thumbnail = fn.thumbnail_fn(stack)
+            assert type(thumbnail) is bytes
+
+    for stack in context.stacks.values():
+        check_thumbnail(stack, stack_thumbnail)
