@@ -23,7 +23,6 @@ from web_server.backend.router import stateful_route
 
 # Settings
 TILE_CACHE_DIR = Path("/tmp/astroflow_tiles")
-EXPIRATION_SECONDS = 300  # 5 minutes
 TILE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 IN_PROGRESS = object()
 
@@ -54,6 +53,9 @@ def get_best_image(object_type: type, *args) -> Path:
         if fn := get_producer(MediaType.IMAGE, object_type, level):
             if fragment := fn.filename_fn(*args):
                 filename = fragment.resolve_at(context.output_dir)
+                print(
+                    f"### Looking for image {filename} exists {os.path.exists(filename)}"
+                )
                 if os.path.exists(filename):
                     return fragment
 
@@ -64,24 +66,6 @@ def get_image(
     """Get a large_image handle from the cached TIFF, generating it if needed."""
     now = time.time()
     with _cache_lock:
-        # Clean up expired entries
-        expired = [
-            key
-            for key, entry in _image_cache.items()
-            if now - entry["last_used"] > EXPIRATION_SECONDS
-        ]
-        for key in expired:
-            print(f"Unloading and deleting cached image: {key}")
-            entry = _image_cache.pop(key)
-            try:
-                entry["handle"].close()
-            except Exception as e:
-                print(f"Error closing handle: {e}")
-            try:
-                entry["temp_path"].unlink()
-            except Exception as e:
-                print(f"Error deleting temp file: {e}")
-
         # Reuse if already in cache
         key = (object_type, object_id, filter)
         if key in _image_cache:
