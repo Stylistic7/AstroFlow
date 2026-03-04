@@ -11,9 +11,15 @@ from .noisexterminator import NoiseXTerminator
 from .star_alignment import StarAlignment
 from .integer_resample import IntegerResample
 from .fast_rotation import FastRotation
+from .multiscale_gradient_correction import MultiscaleGradientCorrection
 from .photometric_mosaic import PhotometricMosaic
 from .channel_combination import ChannelCombination
-from .spectrophotometric_color_calibration import SpectrophotometricColorCalibration
+from .spectrophotometric_color_calibration import (
+    SpectrophotometricColorCalibration,
+)
+from .spectrophotometric_flux_calibration import (
+    SpectrophotometricFluxCalibration,
+)
 from .gradient_correction import GradientCorrection
 from .linear_fit import LinearFit
 from .lrgb_combination import LRGBCombination
