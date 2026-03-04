@@ -1,9 +1,18 @@
+import ray
 from pathlib import Path
 import os
+from astropy.time import Time
 
 from context import context
 from pix.decorators import PixInsight
-from pix.tasks import BlurXTerminator, GradientCorrection, SaveImages
+from pix.tasks import (
+    BlurXTerminator,
+    GradientCorrection,
+    ImageSolver,
+    SaveImages,
+    SpectrophotometricFluxCalibration,
+    MultiscaleGradientCorrection,
+)
 from pix.classes import ImageList
 from decorators import cached, measure_performance, create_thumbnail
 from customization.types import CustomizedStack
@@ -18,11 +27,28 @@ from previews.types import QualityLevel
 
 @PixInsight(slots=[1])
 def _post_process_stack(
-    images: ImageList, output_filenames: list[Path]
+    images: ImageList,
+    output_filenames: list[Path],
+    stack: CustomizedStack,
 ) -> ImageList:
-    images = BlurXTerminator(images)
-    images = GradientCorrection(images)
-    SaveImages(images, output_filenames)
+    # images = BlurXTerminator(images)
+    # images = GradientCorrection(images)
+
+    # TODO: Make this more self-contained inside the ImageSolver function.
+    julian_date = int(Time(stack.oldest_date).jd)
+    solved = ImageSolver(
+        images,
+        metadata_ra=stack.center[0],
+        metadata_dec=stack.center[1],
+        metadata_resolution=stack.image_scale / 3600.0,
+        metadata_observationTime=julian_date,
+        metadata_epoch=julian_date,
+    )
+
+    flux_calibrated = SpectrophotometricFluxCalibration(solved)
+    gradient_corrected = MultiscaleGradientCorrection(flux_calibrated)
+
+    SaveImages(gradient_corrected, output_filenames)
 
 
 # TODO: Do post-processing immediately after each stack has been stacked.
@@ -30,9 +56,7 @@ def _post_process_stack(
 @cached.remote(resources={"PixInsight": 1})
 @measure_performance
 @create_thumbnail
-def post_process_stack(
-    mode: QualityLevel, stack: CustomizedStack
-) -> XisfFilePath:
+def post_process_stack(stack: CustomizedStack) -> XisfFilePath:
     master = stack_files.filename_fn(stack)
     print(f"### post_process_stack, master {master}")
 
@@ -51,6 +75,10 @@ def post_process_stack(
     if context.get("mock_pixinsight", False):
         copy_image(master, output_filename)
     else:
-        _post_process_stack([master], [output_filename])
+        _post_process_stack(
+            [master],
+            [output_filename],
+            stack,
+        )
 
     return XisfFilePath(output_filename)
