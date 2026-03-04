@@ -11,32 +11,30 @@ from targets.post_process import post_process_target
 from targets.types import TargetsDict
 from stacks.compute_graph import build_stacking_subgraph
 from stacks.convert_to_dict import convert_to_dict
-from previews.types import QualityLevel
 from dependency_graph.workflow_graph_adapter import (
     store_workflow_graph,
     store_node_status,
 )
 
 
+# TODO: Remove context and make this function pure.
 @ray.remote
-def build_target_subgraph(mode: QualityLevel, target: Target) -> Graph:
+def build_target_subgraph(target: Target) -> Graph:
     print(f"### build_target_subgraph target {target}")
 
     stacks = context.stacks
 
-    graph_update_fn, node_status_fn = None, None
-    if mode == QualityLevel.MASTER:
-        graph_update_fn = partial(
-            store_workflow_graph, ("target", target.stable_hash)
-        )
-        node_status_fn = store_node_status
+    graph_update_fn = partial(
+        store_workflow_graph, ("target", target.stable_hash)
+    )
+    node_status_fn = store_node_status
 
     graph = Graph(
         graph_update_fn=graph_update_fn, node_status_fn=node_status_fn
     )
 
     graph[(post_process_target, target)] = {
-        (build_stacking_subgraph, mode, stacks[stack_id])
+        (build_stacking_subgraph, stacks[stack_id])
         for stack_id in target.stack_ids
     }
 

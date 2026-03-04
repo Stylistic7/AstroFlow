@@ -28,9 +28,7 @@ def calibration_done(stack: CustomizedStack) -> None:
 
 
 @cached.remote
-def build_calibration_stack_subgraph(
-    mode: QualityLevel, stack: CustomizedStack
-) -> Graph:
+def build_calibration_stack_subgraph(stack: CustomizedStack) -> Graph:
     calibration_stacks = context.calibration_stacks
 
     def visit_all_dependencies(stack: SimpleStack, depth=0) -> Graph:
@@ -41,13 +39,13 @@ def build_calibration_stack_subgraph(
         for t, dep in stack.dependencies.items():
             if (stack_id := dep.get("stack_id")) is not None:
                 substack = calibration_stacks[stack_id]
-                tasks.append((stack_files, mode, substack))
+                tasks.append((stack_files, substack))
                 subgraphs |= visit_all_dependencies(substack, depth=depth + 2)
 
         if depth == 0:
             return subgraphs
         else:
-            return {(stack_files, mode, stack): tasks} | subgraphs
+            return {(stack_files, stack): tasks} | subgraphs
 
     graph = Graph({})
     for substack in stack.contents.values():
@@ -64,31 +62,25 @@ def stack_runs_done(stack: CustomizedStack) -> None:
 # This function accepts a fully customized stack, after settings and calibration
 # frames have been associated.
 @cached.remote
-def build_stacking_subgraph(
-    mode: QualityLevel, stack: CustomizedStack
-) -> Graph:
-    graph_update_fn, node_status_fn = None, None
-    if mode == QualityLevel.MASTER:
-        graph_update_fn = partial(
-            store_workflow_graph, ("stack", stack.stable_hash)
-        )
-        node_status_fn = store_node_status
+def build_stacking_subgraph(stack: CustomizedStack) -> Graph:
+    graph_update_fn = partial(
+        store_workflow_graph, ("stack", stack.stable_hash)
+    )
+    node_status_fn = store_node_status
 
     return Graph(
         {
             **chain(
-                (build_calibration_stack_subgraph, mode, stack),
-                (stack_files, mode, stack),
+                (build_calibration_stack_subgraph, stack),
+                (stack_files, stack),
                 Node(
                     compute_image_metadata, name=f"stacking_{stack.stable_hash}"
                 ),
-                # TODO: Put the post-processing back into the graph somewhere
-                # else.
-                # (post_process_stack, mode, stack),
-                # Node(
-                #     compute_image_metadata,
-                #     name=f"post_process_{stack.stable_hash}",
-                # ),
+                (post_process_stack, stack),
+                Node(
+                    compute_image_metadata,
+                    name=f"post_process_{stack.stable_hash}",
+                ),
             )
         },
         graph_update_fn=graph_update_fn,
@@ -111,7 +103,7 @@ def get_stack_image(mode: QualityLevel, stack: CompositeStack) -> Graph:
     if mode == QualityLevel.SUBFRAME:
         return Graph({(get_stack_subframe_image, stack): {}})
     else:
-        return Graph({(build_stacking_subgraph, mode, stack): {}})
+        return Graph({(build_stacking_subgraph, stack): {}})
 
 
 @cached.remote
