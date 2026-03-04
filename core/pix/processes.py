@@ -16,6 +16,8 @@ def _format(value: Any) -> str:
         return str(value)
     elif type(value) is str:
         return f'"{value}"'
+    elif type(value) is list:
+        return "[" + ", ".join([_format(v) for v in value]) + "]"
 
     return str(value)
 
