@@ -1002,6 +1002,10 @@ export default function WorkflowGraph({ theme, url }) {
     // TODO: Better typing for the ref
     const graphComponent = graphRef.current;
 
+    if (!graphComponent) {
+      return;
+    }
+
     const onSelectedNodeChange = async (event) => {
       console.log(event);
       // console.log(event.detail.node.options.imageUrl);
