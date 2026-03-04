@@ -1,4 +1,4 @@
-from flask import request, jsonify, Blueprint
+from flask import request, jsonify, Blueprint, Response
 
 from context import context
 from customization.settings import Settings, StackSettings
@@ -62,6 +62,17 @@ def update_stack_settings():
     print(f"### context.settings is now {context.settings}")
 
     # TODO: Maybe don't pass the entire settings struct?
-    state.enqueue(dict(type="update_settings", stack_id=stack_id, settings=settings))
+    state.enqueue(
+        dict(type="update_settings", stack_id=stack_id, settings=settings)
+    )
 
     return jsonify({"status": "ok"})
+
+
+@settings_bp.route("/quarantine_stack/<run_id>")
+def quarantine_stack(run_id):
+    context.quarantined_stacks = tuple(
+        set(context.quarantined_stacks or tuple()) | {run_id}
+    )
+
+    return Response(status=200)

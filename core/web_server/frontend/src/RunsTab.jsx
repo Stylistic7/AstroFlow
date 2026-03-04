@@ -40,7 +40,7 @@ const RunsTab = ({ stack }) => {
   };
 
   const handleDeleteRun = (runId) => {
-    alert(`Delete run ${runId} functionality triggered.`);
+    fetch(`/quarantine_stack/${runId}`);
   };
 
   const calibrationStackInfo = (dependency) => {
