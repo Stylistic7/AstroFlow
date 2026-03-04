@@ -31,7 +31,9 @@ def _print_stack(stack: CompositeStack):
 def test_stack_dependency_graph(test_context) -> None:
     # These runs of dark and bias frames will be used by both runs of light
     # frames.
-    old_dark_datetime = datetime.datetime(2023, 12, 5, 16, 0, 43).astimezone(pytz.utc)
+    old_dark_datetime = datetime.datetime(2023, 12, 5, 16, 0, 43).astimezone(
+        pytz.utc
+    )
     make_synthetic_frames(
         number=5,
         image_type="Dark",
@@ -43,7 +45,9 @@ def test_stack_dependency_graph(test_context) -> None:
         temperature=-15,
         dest_dir=context.input_dirs[0],
     )
-    new_dark_datetime = datetime.datetime(2024, 1, 5, 16, 0, 43).astimezone(pytz.utc)
+    new_dark_datetime = datetime.datetime(2024, 1, 5, 16, 0, 43).astimezone(
+        pytz.utc
+    )
     make_synthetic_frames(
         number=5,
         image_type="Dark",
@@ -56,7 +60,9 @@ def test_stack_dependency_graph(test_context) -> None:
         dest_dir=context.input_dirs[0],
     )
 
-    old_bias_datetime = datetime.datetime(2023, 12, 5, 16, 29, 43).astimezone(pytz.utc)
+    old_bias_datetime = datetime.datetime(2023, 12, 5, 16, 29, 43).astimezone(
+        pytz.utc
+    )
     make_synthetic_frames(
         number=7,
         image_type="Bias",
@@ -68,7 +74,9 @@ def test_stack_dependency_graph(test_context) -> None:
         temperature=-15,
         dest_dir=context.input_dirs[0],
     )
-    new_bias_datetime = datetime.datetime(2024, 1, 5, 16, 29, 43).astimezone(pytz.utc)
+    new_bias_datetime = datetime.datetime(2024, 1, 5, 16, 29, 43).astimezone(
+        pytz.utc
+    )
     make_synthetic_frames(
         number=7,
         image_type="Bias",
@@ -135,11 +143,21 @@ def test_stack_dependency_graph(test_context) -> None:
     stack = next(iter(stacks.values()))
     _print_stack(stack)
 
-    bias_stack_id = next(iter(stack.contents.values())).dependencies["bias"]["stack_id"]
-    assert context.calibration_stacks[bias_stack_id].oldest_date == new_bias_datetime
+    bias_stack_id = next(iter(stack.contents.values())).dependencies["bias"][
+        "stack_id"
+    ]
+    assert (
+        context.calibration_stacks[bias_stack_id].oldest_date
+        == new_bias_datetime
+    )
 
-    dark_stack_id = next(iter(stack.contents.values())).dependencies["dark"]["stack_id"]
-    assert context.calibration_stacks[dark_stack_id].oldest_date == new_dark_datetime
+    dark_stack_id = next(iter(stack.contents.values())).dependencies["dark"][
+        "stack_id"
+    ]
+    assert (
+        context.calibration_stacks[dark_stack_id].oldest_date
+        == new_dark_datetime
+    )
 
 
 def test_one_light_run_one_dark_run(test_context) -> None:
@@ -408,9 +426,7 @@ def test_stack_calibration_frames(test_context) -> None:
         print(f"### cal_stack {cal_stack}")
         print(f"### dependencies {cal_stack.dependencies}")
 
-    graph = ray.get(
-        build_calibration_stack_subgraph.remote(QualityLevel.MASTER, light_stacks[0])
-    )
+    graph = ray.get(build_calibration_stack_subgraph.remote(light_stacks[0]))
     print(f"### build_calibration_stack_subgraph")
     print_graph(graph)
 
@@ -513,7 +529,9 @@ def test_flat_frame_selection(test_context) -> None:
                 for m in stack.metadata.values()
                 if m.content_hash in stack.frames
             ]
-            print(f"### stack {stack} frames {stack.frames} filenames {filenames}")
+            print(
+                f"### stack {stack} frames {stack.frames} filenames {filenames}"
+            )
             if all(filename_fragment in f for f in filenames):
                 return stack_id
 

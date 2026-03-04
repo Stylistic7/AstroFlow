@@ -88,7 +88,9 @@ def _solve_field(
             ).with_suffix(".fits")
             convert_xisf_to_fits(filename, dest_filename)
         else:
-            dest_filename = Path(os.path.join(temp_dir, os.path.basename(filename)))
+            dest_filename = Path(
+                os.path.join(temp_dir, os.path.basename(filename))
+            )
             os.symlink(filename, dest_filename)
 
         try:
@@ -101,7 +103,9 @@ def _solve_field(
             if debug:
                 print(ret.stdout.decode("utf-8"))
         except Exception as e:
-            print(f"Could not plate solve file {dest_filename} due to exception")
+            print(
+                f"Could not plate solve file {dest_filename} due to exception"
+            )
             traceback.print_exc()
             return e
 
@@ -151,14 +155,18 @@ def _plate_solution_to_obj(ps: PlateSolution) -> dict[str, Any]:
 
 def _plate_solution_from_obj(obj: dict[str, Any]) -> PlateSolution:
     if obj.get("schema") != _PLATESOLUTION_SCHEMA:
-        raise ValueError(f"Unsupported plate_solution schema: {obj.get('schema')!r}")
+        raise ValueError(
+            f"Unsupported plate_solution schema: {obj.get('schema')!r}"
+        )
     d = obj["data"]
     if "center" in d and isinstance(d["center"], list):
         d["center"] = tuple(d["center"])
     return PlateSolution(**d)
 
 
-def solve_field(filename: Path | str, debug: bool = False) -> PlateSolution | None:
+def solve_field(
+    filename: Path | str, debug: bool = False
+) -> PlateSolution | None:
     filename = Path(filename)
     assert str(filename)
 
@@ -292,7 +300,9 @@ def solve_field(filename: Path | str, debug: bool = False) -> PlateSolution | No
         return None
 
     # Persist result unconditionally.
-    set_section(filename, "plate_solution", _plate_solution_to_obj(final_result))
+    set_section(
+        filename, "plate_solution", _plate_solution_to_obj(final_result)
+    )
     print(f"### Updated AstroFlow sidecar for {filename}")
 
     return final_result

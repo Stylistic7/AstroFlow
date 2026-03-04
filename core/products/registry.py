@@ -14,7 +14,9 @@ class MediaType(str, Enum):
 
 type FilenameFn = Union[str, Callable[..., Path]]
 
-_registry: dict[MediaType, dict[tuple[Type, QualityLevel], Callable[..., Path]]] = {
+_registry: dict[
+    MediaType, dict[tuple[Type, QualityLevel], Callable[..., Path]]
+] = {
     MediaType.IMAGE: {},
     MediaType.VIDEO: {},
 }
@@ -38,8 +40,14 @@ def get_producer(
     return _registry[media_type].get((object_type, level))
 
 
-def available_levels(media_type: MediaType, object_type: type) -> set[QualityLevel]:
-    return {level for (otype, level) in _registry[media_type] if otype is object_type}
+def available_levels(
+    media_type: MediaType, object_type: type
+) -> set[QualityLevel]:
+    return {
+        level
+        for (otype, level) in _registry[media_type]
+        if otype is object_type
+    }
 
 
 def clear_registry(media_type: MediaType) -> None:
@@ -47,7 +55,9 @@ def clear_registry(media_type: MediaType) -> None:
 
 
 # TODO: Where is the best spot to insert the context.output_dir?
-def fully_resolve(object_type: type, level: QualityLevel, filename_fn: FilenameFn):
+def fully_resolve(
+    object_type: type, level: QualityLevel, filename_fn: FilenameFn
+):
     def inner(*args, **kwargs):
         filename = filename_fn(*args, **kwargs)
         assert isinstance(filename, ContentHashable)
@@ -66,7 +76,9 @@ class MediaProducerBuilder:
     def _bind(self, level: QualityLevel, filename_fn: FilenameFn | None = None):
         def decorator(func: Callable[..., Path]):
             if filename_fn is not None:
-                func.filename_fn = fully_resolve(self.object_type, level, filename_fn)
+                func.filename_fn = fully_resolve(
+                    self.object_type, level, filename_fn
+                )
             register_producer(self.media_type, self.object_type, level, func)
             return func
 

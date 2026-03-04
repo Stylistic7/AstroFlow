@@ -20,6 +20,7 @@ from products import makes_image
 def flat_corrected_stack(
     stack: CustomizedStack, substack: SimpleStack, flat_stack: SimpleStack
 ) -> tempfile.NamedTemporaryFile:
+    # TODO: Remove context, make this function pure.
     width = context.subframe_thumbnail_width
 
     light_frames_by_stars = get_light_frames_sorted_by_stars(stack)
@@ -53,4 +54,6 @@ def create_flat_correction_thumbnails(stack: CustomizedStack) -> None:
 
     for substack in stack.contents.values():
         for flat_stack_id in flat_stack_ids:
-            flat_corrected_stack(stack, substack, calibration_stacks[flat_stack_id])
+            flat_corrected_stack(
+                stack, substack, calibration_stacks[flat_stack_id]
+            )

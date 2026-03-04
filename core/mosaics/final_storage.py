@@ -31,6 +31,7 @@ def store_mosaic_color_channel_master(
     output = store_mosaic_color_channel_master.filename_fn(mosaic, filter)
     output.parent.mkdir(parents=True, exist_ok=True)
     if context.get("mock_pixinsight", False):
+        # TODO: Convert the image to tiled TIFF here at the same time.
         print(
             f"### store_mosaic_color_channel_master mocking PixInsight; "
             f"copying {input=} to {output=}"

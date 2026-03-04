@@ -32,6 +32,8 @@ def _post_process_target(images: ImageList, target: Target) -> ImageList:
     if "LRGB" in images:
         aligned = StarAlignment(images.channels("LRGB"))
         rgb = LRGBCombination(aligned.channels("RGBL"))
+
+        # TODO: Make this more self-contained inside the ImageSolver function.
         julian_date = int(Time(target.oldest_date).jd)
         solved = ImageSolver(
             rgb,
@@ -41,7 +43,9 @@ def _post_process_target(images: ImageList, target: Target) -> ImageList:
             metadata_observationTime=julian_date,
             metadata_epoch=julian_date,
         )
-        calibrated = SpectrophotometricColorCalibration(solved, saturationThreshold=1.0)
+        calibrated = SpectrophotometricColorCalibration(
+            solved, saturationThreshold=1.0
+        )
         starless, stars = StarXTerminator(calibrated)
 
         output_filenames = [

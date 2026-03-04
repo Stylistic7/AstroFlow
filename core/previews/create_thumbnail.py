@@ -12,7 +12,6 @@ from protocols import CacheProtocol
 
 
 def default_thumbnail_fn(path: Path, width=2048) -> Optional[np.ndarray]:
-    print(f"### default_thumbnail_fn {path=}")
     return array_to_png(
         autostretch(np.clip(resize_array(read_image(path), width), 0.0, 1.0))
     )
@@ -23,7 +22,8 @@ def make_create_thumbnail_decorator(
     thumbnail_fn: Callable[[Path], Optional[np.ndarray]] = default_thumbnail_fn,
 ):
     def create_thumbnail(
-        cache: CacheProtocol, thumbnail_fn: Callable[[Path], Optional[np.ndarray]]
+        cache: CacheProtocol,
+        thumbnail_fn: Callable[[Path], Optional[np.ndarray]],
     ):
         def decorator(func: Callable):
             fn_hash = hash_source_code(func)

@@ -24,7 +24,9 @@ from products import makes_image
 
 
 @PixInsight(slots=[1])
-def _post_process_mosaic(images: ImageList, mosaic: Mosaic, output_filename: Path):
+def _post_process_mosaic(
+    images: ImageList, mosaic: Mosaic, output_filename: Path
+):
     print(f"### _post_process_mosaic mosaic {mosaic} images {images}")
 
     if "RGB" in images:
@@ -57,7 +59,7 @@ def _post_process_mosaic(images: ImageList, mosaic: Mosaic, output_filename: Pat
 @measure_performance
 @create_thumbnail
 def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> XisfFilePath:
-    print(f"### Entering post_process_mosaic for mosaic {mosaic}")
+    print(f"### Entering post_process_mosaic for {mode=} mosaic {str(mosaic)}")
 
     if mode != QualityLevel.MASTER:
         return None
@@ -72,6 +74,8 @@ def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> XisfFilePath:
         store_mosaic_color_channel_master.filename_fn(mosaic, filter)
         for filter in filters
     ]
+
+    print(f"### post_process_mosaic {filters=} {images=}")
 
     for image in images:
         print(
