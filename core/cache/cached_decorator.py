@@ -41,9 +41,14 @@ def _bind_args(
     bound = sig.bind_partial(*args, **kwargs)
     bound.apply_defaults()
     for name, param in sig.parameters.items():
-        if get_origin(param.annotation) == Injected and name not in bound.arguments:
+        if (
+            get_origin(param.annotation) == Injected
+            and name not in bound.arguments
+        ):
             if injected_context is None or name not in injected_context:
-                raise MissingInjectedValueError(f"Missing injected argument: {name}")
+                raise MissingInjectedValueError(
+                    f"Missing injected argument: {name}"
+                )
             bound.arguments[name] = injected_context[name]
     return bound
 
@@ -92,9 +97,18 @@ def make_cached_decorator(
                 debug_print(
                     f"### cache key {key} contained large object, {size_mb:0.3f} MB"
                 )
+
             if isinstance(cached, LargeObject):
                 assert cached.ref is None
-            stored_hash = content_hasher.get(cached)
+
+            stored_hash = None
+            try:
+                stored_hash = content_hasher.get(cached)
+            except KeyError:
+                print(
+                    f"### WARNING: Could not get content hash of object "
+                    f"type {type(cached)}"
+                )
 
             if not content_hasher.has(cached) or stored_hash == call_hash:
                 debug_print(f"cache hit: {key}")
@@ -113,7 +127,9 @@ def make_cached_decorator(
                 assert _is_head_node()
 
             bound = _bind_args(func, args, kwargs, injected_context)
-            key, call_hash, valid, cached_result = _get_cache_key_and_result(bound)
+            key, call_hash, valid, cached_result = _get_cache_key_and_result(
+                bound
+            )
 
             if valid and not isinstance(cached_result, Exception):
                 if isinstance(cached_result, LargeObject):
@@ -172,11 +188,15 @@ def make_cached_decorator(
         inner.__qualname__ = func.__qualname__
         inner.__module__ = func.__module__
 
-        ray_func = ray.remote(**ray_opts)(inner) if ray_opts else ray.remote(inner)
+        ray_func = (
+            ray.remote(**ray_opts)(inner) if ray_opts else ray.remote(inner)
+        )
 
         @wraps(func)
         def wrapper(*args, **kwargs):
-            raise RuntimeError(f"{func.__name__} is a remote task. Use `.remote(...)`.")
+            raise RuntimeError(
+                f"{func.__name__} is a remote task. Use `.remote(...)`."
+            )
 
         wrapper.remote = ray_func.remote
         wrapper.options = ray_func.options
@@ -188,7 +208,9 @@ def make_cached_decorator(
             if hasattr(func, attr):
                 setattr(wrapper, attr, getattr(func, attr))
 
-        def is_cached(*args, injected_context: Optional[dict] = None, **kwargs) -> bool:
+        def is_cached(
+            *args, injected_context: Optional[dict] = None, **kwargs
+        ) -> bool:
             bound = _bind_args(func, args, kwargs, injected_context)
             _, _, valid, _ = _get_cache_key_and_result(bound)
             return valid
