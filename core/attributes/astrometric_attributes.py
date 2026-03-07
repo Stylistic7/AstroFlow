@@ -105,15 +105,15 @@ class AstrometricAttributes:
 
         center = list(
             spherical_centroid_deg(
-                [m.plate_solution.center for m in metadata.values()]
+                [m.plate_solution.center for m in sorted_metadata]
             )
         )
         name = position_string.canonical_target_string(center)
         image_scale = np.mean(
-            [m.plate_solution.image_scale for m in metadata.values()]
+            [m.plate_solution.image_scale for m in sorted_metadata]
         )
         rotation_angle = angular_mean_mod_pi(
-            [m.plate_solution.rotation_angle for m in metadata.values()]
+            [m.plate_solution.rotation_angle for m in sorted_metadata]
         )
         footprint = SingleSphericalPolygon.from_wcs(
             astropy.io.fits.Header(oldest_image_metadata.plate_solution.header)
