@@ -126,7 +126,7 @@ export default function TargetPanel() {
 						key={"StackThumbnail_" + stack_id}
 						stacks={stacks}
 						stack_id={stack_id}
-						handleClick={event => navigate(`${location.pathname}/stack/${stack_id}`)}
+						handleClick={event => window.open(`${location.pathname}/stack/${stack_id}`, '_blank')}
 					/>
 				))}
 			</div>
