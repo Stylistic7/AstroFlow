@@ -10,10 +10,12 @@ from stacks.types import StackHash
 # is to be able to apply these functions very quickly when the user quarantines
 # something in the UI.
 def apply_quarantine(
-    stack: CompositeStack, quarantined_stacks: set[StackHash]
+    stack: CompositeStack, quarantined_substacks: set[StackHash]
 ) -> CompositeStack:
     new_contents = {
-        h: s for h, s in stack.contents.items() if h not in quarantined_stacks
+        h: s
+        for h, s in stack.contents.items()
+        if h not in quarantined_substacks
     }
 
     if len(new_contents) == 0:
@@ -23,7 +25,7 @@ def apply_quarantine(
         new_dependencies = {
             t: s
             for t, s in substack.dependencies.items()
-            if s not in quarantined_stacks
+            if s not in quarantined_substacks
         }
         new_contents[substack_id] = replace(
             substack, dependencies=new_dependencies

@@ -6,6 +6,7 @@ from typing import Any
 
 from context import context
 from context import get_cache
+from customization.settings import Settings
 
 
 @dataclass(frozen=True)
@@ -18,12 +19,6 @@ def make_test_context() -> tuple[
     tempfile.TemporaryDirectory, tempfile.TemporaryDirectory
 ]:
     context.clear()
-
-    context.quarantined_files = []
-
-    context.grouped_stacks = {}
-    context.grouped_targets = {}
-    context.grouped_mosaics = {}
 
     context.stacks = {}
     context.targets = {}
@@ -45,5 +40,7 @@ def make_test_context() -> tuple[
     context.subframe_thumbnail_width = 1200
     context.master_thumbnail_width = 2160
     context.subframe_mosaic_samples = 500
+
+    context.settings = Settings()
 
     return TestContext(input_dir_obj, output_dir_obj)

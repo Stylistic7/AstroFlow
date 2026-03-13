@@ -4,6 +4,7 @@ import unittest
 from hashing import hash_list
 from compute_graph import build_compute_graph
 from context import context
+from customization.settings import Settings, StackSettings, TargetSettings
 from dependency_graph import run_graph
 from testing import make_synthetic_frames, copy_testdata_frames
 from stacks.composite_stack import CompositeStack
@@ -64,7 +65,11 @@ def test_quarantine_run(test_context) -> None:
     two_run_hash = hash_list([{stack.stable_hash: stack}], debug=True)
 
     # Quarantine the first run.
-    context.quarantined_stacks = (runs[0],)
+    context.settings = Settings(
+        stack_settings={
+            stack.stable_hash: StackSettings(quarantined_substacks=[runs[0]])
+        }
+    )
 
     run_graph(build_compute_graph())
 
@@ -86,7 +91,10 @@ def test_quarantine_toplevel_target(test_context):
     stacks = [s for s in context.stacks if type(s) is CompositeStack]
     assert all(len(s.dependencies) == 3 for s in stacks)
 
-    context.quarantined_targets = (next(iter(context.targets)),)
+    target_hash = next(iter(context.targets))
+    context.settings = Settings(
+        target_settings={target_hash: TargetSettings(is_quarantined=True)}
+    )
 
     run_graph(build_compute_graph())
 
@@ -107,15 +115,17 @@ def test_quarantine_calibration_stack(test_context):
     stacks = [s for s in context.stacks if type(s) is CompositeStack]
     assert all(len(s.dependencies) == 3 for s in stacks)
 
-    context.quarantined_calibration_stacks = [
-        next(
-            iter(
-                s
-                for s in context.calibration_stacks
-                if context.calibration_stacks[s].image_type == "dark"
-            )
+    dark_hash = next(
+        iter(
+            s
+            for s in context.calibration_stacks
+            if context.calibration_stacks[s].image_type == "dark"
         )
-    ]
+    )
+    context.settings = Settings(
+        cal_stack_settings={dark_hash: StackSettings(is_quarantined=True)}
+    )
+
     run_graph(build_compute_graph())
 
     assert len(context.targets) == 4

@@ -23,10 +23,12 @@ from stacks.identification import identify_stacks
 from stacks.composite_stack import SimpleStacksDict
 from stacks.validation import validate_stacks
 from decorators import cached
-from customization.compute_graph import customize_stacks
+from customization.compute_graph import (
+    scatter_customize_stacks,
+    scatter_customize_cal_stacks,
+)
 from mosaics.compute_graph import stacks_for_mosaic, targets_for_mosaic
 from hashing.types import LargeObject
-from quarantining.compute_graph import quarantine_calibration_stacks
 from customization.settings import Settings
 from customization.types import CustomizedStacksDict
 
@@ -79,10 +81,6 @@ def combine_dicts(*ancestor_results: tuple[dict[Any, Any]]) -> dict[Any, Any]:
 @ray.remote
 def scatter_spatial_groups(metadata_ref: LargeObject, spatial_groups) -> Graph:
     settings = context.settings or Settings()
-    quarantined_stacks = context.quarantined_stacks or tuple()
-    quarantined_calibration_stacks = (
-        context.quarantined_calibration_stacks or tuple()
-    )
 
     graph = Graph({})
 
@@ -94,8 +92,8 @@ def scatter_spatial_groups(metadata_ref: LargeObject, spatial_groups) -> Graph:
     }
 
     quarantine_calibration_stacks_task = (
-        quarantine_calibration_stacks,
-        quarantined_calibration_stacks,
+        scatter_customize_cal_stacks,
+        settings,
     )
 
     graph[quarantine_calibration_stacks_task] = {associate_calibration_stacks}
@@ -111,7 +109,7 @@ def scatter_spatial_groups(metadata_ref: LargeObject, spatial_groups) -> Graph:
         )
         validate_stacks_task = Node(validate_stacks, name=str(i))
         customize_stacks_task = Node(
-            customize_stacks, settings, quarantined_stacks, name=str(i)
+            scatter_customize_stacks, settings, name=str(i)
         )
 
         target_task = Node(identify_targets, name=str(i))

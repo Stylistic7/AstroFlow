@@ -1,12 +1,13 @@
 import ray
 from dataclasses import replace
+from frozendict import frozendict
 
 from context import context
-from stacks.types import StackHash
-from stacks.composite_stack import CompositeStack, CompositeStacksDict
+from stacks.composite_stack import CompositeStack
 from stacks.simple_stack import SimpleStacksDict
 from calibration import associate_with_stack
 from decorators import cached
+from dependency_graph import Graph
 from customization.subframe_selection import select_subframes
 from customization.settings import Settings, StackSettings
 from customization.types import CustomizedStack, CustomizedStacksDict
@@ -15,15 +16,12 @@ from mosaics.types import MosaicsDict
 from targets.types import TargetsDict
 
 
-def apply_settings(stack: CompositeStack, settings: Settings) -> CompositeStack:
+def apply_settings(
+    stack: CompositeStack, stack_settings: StackSettings
+) -> CompositeStack:
     new_contents = {}
     for content_hash, substack in stack.contents.items():
-        substack_settings = settings.stack_settings.get(
-            substack.content_hash, StackSettings()
-        )
-        new_dependencies = (
-            substack.dependencies | substack_settings.dependencies
-        )
+        new_dependencies = substack.dependencies | stack_settings.dependencies
         new_substack = replace(substack, dependencies=new_dependencies)
         new_contents[content_hash] = new_substack
 
@@ -36,11 +34,11 @@ def store_customized_stack(stack) -> None:
 
 
 # TODO: Add tests in test_customization.py
+@cached.remote
 def customize_stack(
     stack: CompositeStack,
     cal_stacks: SimpleStacksDict,
-    settings: Settings,
-    quarantined_stacks: tuple[StackHash],
+    settings: StackSettings,
 ) -> CustomizedStack:
     def chain(x, *funcs):
         for f in funcs:
@@ -53,7 +51,7 @@ def customize_stack(
         stack,
         lambda s: associate_with_stack(s, cal_stacks),
         select_subframes,
-        lambda s: apply_quarantine(s, quarantined_stacks),
+        lambda s: apply_quarantine(s, settings.quarantined_substacks),
         lambda s: apply_settings(s, settings),
     )
 
@@ -64,18 +62,41 @@ def customize_stack(
 
 
 @cached.remote
-def customize_stacks(
+def gather_customize_stacks(*ancestor_results) -> None:
+    return {s.stable_hash: s for s in ancestor_results if s is not None}
+
+
+@cached.remote
+def scatter_customize_stacks(
     settings: Settings,
-    quarantined_stacks: tuple[StackHash],
-    stacks: CompositeStacksDict,
+    stacks: CustomizedStacksDict,
     cal_stacks: SimpleStacksDict,
 ) -> CustomizedStacksDict:
-    result = {
-        k: customize_stack(v, cal_stacks, settings, quarantined_stacks)
-        for k, v in stacks.items()
-    }
-    result = {k: v for k, v in result.items() if v is not None}
-    return result
+    print(f"### scatter_customize_stacks type(cal_stacks) {type(cal_stacks)}")
+    return Graph(
+        {
+            gather_customize_stacks: [
+                (
+                    customize_stack,
+                    v,
+                    frozendict(cal_stacks),
+                    settings.stack_settings.get(k, StackSettings()),
+                )
+                for k, v in stacks.items()
+            ]
+        }
+    )
+
+
+# TODO: Implement real customization features.
+@cached.remote
+def scatter_customize_cal_stacks(
+    settings: Settings, cal_stacks: SimpleStacksDict
+) -> SimpleStacksDict:
+    print(
+        f"### scatter_customize_cal_stacks type(cal_stacks) {type(cal_stacks)}"
+    )
+    return cal_stacks
 
 
 # TODO: Implement real customization features.
@@ -92,8 +113,3 @@ def scatter_customize_mosaics(
     settings: Settings, mosaics: MosaicsDict
 ) -> MosaicsDict:
     return mosaics
-
-
-@cached.remote
-def customization_done() -> None:
-    pass
