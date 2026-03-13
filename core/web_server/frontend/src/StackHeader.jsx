@@ -8,9 +8,9 @@ import MetadataItem from './MetadataItem.jsx';
 import { ra_to_hms, dec_to_dms, format_duration } from './units.js'
 
 const StackHeader = ({ stack_type, stack, stack_id }) => {
-  // TODO: Implement.
   const handleDeleteStack = async () => {
-    alert(`Delete stack ${stack_id} functionality triggered.`);
+    fetch(`/quarantine_stack/${stack_id}`);
+    alert(`Quarantined stack ${stack_id}.`);
   };
 
   const handleOpenStack = async () => {
