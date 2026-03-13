@@ -2,7 +2,7 @@ from typing import Any
 import os
 
 from pix.classes import ShellScriptTask, Image, ImageList
-from pix.context import append_task, add_images_to_save
+from pix.context import append_task
 
 # TODO: These parameters must be floats, not strings, so they can be overriden
 # by the user.
@@ -80,7 +80,9 @@ def PhotometricMosaic(
     # TODO: The `javascript_filename` thing is long. Maybe there can be two
     # ShellScriptTask types, one that accepts code, and one that accepts a filename.
     append_task(
-        ShellScriptTask(javascript_filename=javascript_filename, parameters=parameters)
+        ShellScriptTask(
+            javascript_filename=javascript_filename, parameters=parameters
+        )
     )
 
     return ImageList(

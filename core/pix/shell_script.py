@@ -25,7 +25,9 @@ _DEFAULT_SLOTS: list[int] = [1]
 def _find_running_pixinsight_instances() -> dict[int, int]:
     try:
         command = [_PIXINSIGHT_EXECUTABLE, "-e"]
-        result = subprocess.run(command, text=True, capture_output=True, check=True)
+        result = subprocess.run(
+            command, text=True, capture_output=True, check=True
+        )
         output = result.stdout
 
         slot_pid_map = {}
@@ -72,7 +74,9 @@ def _kill_pixinsight_instance(slot: int):
     pid = pid_map.get(slot)
     if pid:
         try:
-            print(f"Killing PixInsight slot {slot} (PID {pid}) due to timeout...")
+            print(
+                f"Killing PixInsight slot {slot} (PID {pid}) due to timeout..."
+            )
             os.kill(pid, 9)
             psutil.Process(pid).wait()
             print(f"PID {pid} has exited.")
@@ -82,7 +86,9 @@ def _kill_pixinsight_instance(slot: int):
             print(f"Failed to kill PID {pid}: {e}")
 
 
-def _save_javascript_file(tmp_dir: str, task: ShellScriptTask) -> ShellScriptTask:
+def _save_javascript_file(
+    tmp_dir: str, task: ShellScriptTask
+) -> ShellScriptTask:
     if task.javascript and not task.javascript_filename:
         script_filename = os.path.join(tmp_dir, f"{uuid.uuid4()}.js")
         with open(script_filename, "w") as f:
@@ -167,13 +173,17 @@ def run_script(
             if tmp_dir_in is None
             else cast(ContextManager, nullcontext(tmp_dir_in))
         ) as tmp_dir:
-            start_sentinel_filename = os.path.join(tmp_dir, "start_sentinel.txt")
+            start_sentinel_filename = os.path.join(
+                tmp_dir, "start_sentinel.txt"
+            )
             end_sentinel_filename = os.path.join(tmp_dir, "end_sentinel.txt")
             script_filename = os.path.join(tmp_dir, "script.scp")
 
             tasks = [_save_javascript_file(tmp_dir, t) for t in tasks]
             script = f'![echo "start" > {start_sentinel_filename}\n'
-            script += "\n\n".join(_create_run_command(t) for t in tasks) + "\n\n"
+            script += (
+                "\n\n".join(_create_run_command(t) for t in tasks) + "\n\n"
+            )
             if close_after:
                 script += f"close --force *\n"
             if sleep_after:
