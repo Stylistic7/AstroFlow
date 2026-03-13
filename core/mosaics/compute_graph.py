@@ -123,8 +123,9 @@ def build_placement_subgraph(
         {
             **chain(
                 (get_stack_image, mode, stack),
-                compute_image_metadata,
+                Node(compute_image_metadata, name="stack"),
                 (place_image, mode, mosaic, stack, filter, viewbox),
+                Node(compute_image_metadata, name="placed"),
             )
         }
     )
@@ -231,10 +232,15 @@ def build_mosaic_filter_subgraph(
                     mosaic,
                     name=f"merge_{mosaic.stable_hash}_{stack_id}",
                 )
+                metadata_task = Node(
+                    compute_image_metadata,
+                    name=f"merge_{mosaic.stable_hash}_{stack_id}",
+                )
                 if prev_task is not None:
                     graph[placement_task] = [prev_task]
                 graph[merge_task] = [prev_task, placement_task]
-                prev_task = merge_task
+                graph[metadata_task] = [merge_task]
+                prev_task = metadata_task
 
         assert prev_task is not None, f"strips are {strips}"
         strip_tasks.append(prev_task)

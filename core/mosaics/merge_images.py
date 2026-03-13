@@ -4,17 +4,19 @@ import numpy as np
 from pathlib import Path
 from dataclasses import dataclass
 
+from decorators import measure_performance
 from context import context
 from file_io.generic import read_header, read_image, copy_image
 from file_io.conversion import convert_tiff_to_xisf
 from pix.classes import ImageList
 from pix.decorators import PixInsight
 from pix.tasks import PhotometricMosaic
+from metadata.classes import ImageMetadata
 from mosaics.types import Mosaic
 from mosaics.artifacts import merged_filename_tiff, merged_filename_xisf
 from previews.types import QualityLevel
 from decorators import cached
-from file_io.generic import read_image, update_header
+from file_io.generic import update_header
 from file_io.tiff_file_io import write_tiff_image
 from file_io.types import XisfFilePath, TiffFilePath, WithSidecar
 from products import makes_image
@@ -27,11 +29,12 @@ class MergedImage:
 
 @makes_image(MergedImage).as_subframe(merged_filename_tiff)
 @cached.remote
+@measure_performance
 def merge_images_with_maximum(
-    mosaic: Mosaic, input_0: Path, input_1: Path
+    mosaic: Mosaic, input_0: ImageMetadata, input_1: ImageMetadata
 ) -> WithSidecar[TiffFilePath]:
-    input_0 = input_0.resolve(strict=True)
-    input_1 = input_1.resolve(strict=True)
+    input_0 = input_0.filename.resolve(strict=True)
+    input_1 = input_1.filename.resolve(strict=True)
 
     filters = set(read_header(i)["FILTER"] for i in [input_0, input_1])
     assert len(filters) == 1
@@ -56,7 +59,7 @@ def merge_images_with_maximum(
     return output_filename
 
 
-@PixInsight(timeout=600)
+@PixInsight()
 def run_photometric_mosaic(
     images: ImageList, output_filename: Path
 ) -> ImageList:
@@ -64,9 +67,13 @@ def run_photometric_mosaic(
 
 
 @cached.remote(resources={"PixInsight": 1})
+@measure_performance
 def merge_images_with_photometric_mosaic(
-    mosaic: Mosaic, input_0: Path, input_1: Path, filter: str
+    mosaic: Mosaic, input_0: ImageMetadata, input_1: ImageMetadata, filter: str
 ) -> WithSidecar[XisfFilePath]:
+    input_0 = input_0.filename.resolve(strict=True)
+    input_1 = input_1.filename.resolve(strict=True)
+
     filename = merge_images_with_pmm.filename_fn(mosaic, input_0, input_1)
     print(
         f"### merge_images_with_photometric_mosaic "
@@ -83,9 +90,13 @@ def merge_images_with_photometric_mosaic(
 
 @makes_image(MergedImage).as_master(merged_filename_xisf)
 @cached.remote
+@measure_performance
 def merge_images_with_pmm(
-    mosaic: Mosaic, input_0: Path, input_1: Path
+    mosaic: Mosaic, input_0: ImageMetadata, input_1: ImageMetadata
 ) -> WithSidecar[XisfFilePath]:
+    input_0 = input_0.filename.resolve(strict=True)
+    input_1 = input_1.filename.resolve(strict=True)
+
     print(f"### merge_images_with_pmm {input_0=} header {read_header(input_0)}")
     print(f"### merge_images_with_pmm {input_1=} header {read_header(input_1)}")
 
@@ -122,8 +133,12 @@ def merge_images_with_pmm(
 
 # TODO: These trampolines are ugly; can they be improved?
 @ray.remote
+@measure_performance
 def merge_images(
-    mode: QualityLevel, mosaic: Mosaic, input_0: Path, input_1: Path
+    mode: QualityLevel,
+    mosaic: Mosaic,
+    input_0: ImageMetadata,
+    input_1: ImageMetadata,
 ) -> Path:
     if mode == QualityLevel.SUBFRAME:
         result = ray.get(
