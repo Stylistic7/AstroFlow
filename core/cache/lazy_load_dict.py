@@ -17,6 +17,12 @@ class LazyLoadDict:
     def __getitem__(self, k: Any) -> Any:
         return self._orig_get((self.name, k))
 
+    def get(self, k: Any, default: Any) -> Any:
+        if k in self.keys():
+            return self.__getitem__(k)
+        else:
+            return default
+
     def keys(self) -> Iterable[Any]:
         ks = self._orig_get(self.name) or ()
         return iter(ks)
