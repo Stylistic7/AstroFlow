@@ -8,6 +8,8 @@ from dependency_graph.progress import graph_status_to_progress
 
 compute_graphs_bp = Blueprint("compute_graphs", __name__)
 
+_EMPTY_WORKFLOW_GRAPH = {"skeleton": [], "state": {}}
+
 
 @compute_graphs_bp.route("/compute_graph")
 def compute_graph():
@@ -24,17 +26,23 @@ def compute_graph_status():
 
 @compute_graphs_bp.route("/workflow_graph/stack/<stack_id>")
 def workflow_graph_for_stack(stack_id):
-    return context["workflow_graphs"][("stack", stack_id)]
+    return context["workflow_graphs"].get(
+        ("stack", stack_id), _EMPTY_WORKFLOW_GRAPH
+    )
 
 
 @compute_graphs_bp.route("/workflow_graph/target/<target_id>")
 def workflow_graph_for_target(target_id):
-    return context["workflow_graphs"][("target", target_id)]
+    return context["workflow_graphs"].get(
+        ("target", target_id), _EMPTY_WORKFLOW_GRAPH
+    )
 
 
 @compute_graphs_bp.route("/workflow_graph/mosaic/<mosaic_id>/<filter>")
 def workflow_graph_for_mosaic(mosaic_id, filter):
-    return context["workflow_graphs"][("mosaic", mosaic_id, filter)]
+    return context["workflow_graphs"].get(
+        ("mosaic", mosaic_id, filter), _EMPTY_WORKFLOW_GRAPH
+    )
 
 
 @compute_graphs_bp.route("/api/node_status/<node_id>")
