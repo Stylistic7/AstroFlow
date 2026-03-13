@@ -3,6 +3,7 @@ from pathlib import Path
 from my_xisf import XISF  # type: ignore
 from typing import Any, Dict
 
+from file_io.types import ImageGeometry
 from file_io.normalize_header import normalize_header
 
 
@@ -40,6 +41,15 @@ def read_xisf_header(filename: Path | str, debug: bool = False) -> dict:
     return header
 
 
+def read_xisf_image_geometry(filename: Path) -> ImageGeometry:
+    xisf = XISF(filename)
+    image_meta = xisf.get_images_metadata()[0]
+    return ImageGeometry.from_shape_and_dtype(
+        tuple(image_meta["geometry"]),
+        image_meta["dtype"],
+    )
+
+
 def read_xisf_image(filename: Path | str) -> np.ndarray:
     xisf = XISF(str(filename))
     return xisf.read_image(0).squeeze().astype(np.float32)
@@ -71,7 +81,10 @@ def update_xisf_header(filename: Path | str, metadata: dict[str, Any]) -> None:
 
 
 def write_xisf_image(
-    filename: Path, image: np.ndarray, metadata: dict[str, Any] | None = None, **kwargs
+    filename: Path,
+    image: np.ndarray,
+    metadata: dict[str, Any] | None = None,
+    **kwargs,
 ) -> None:
     file_meta: Dict[str, Any] = {}
 

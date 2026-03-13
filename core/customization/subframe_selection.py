@@ -3,8 +3,7 @@ import time
 
 from stacks.composite_stack import CompositeStack
 from context import context
-from metadata.image_types import is_light_frame
-from metadata.classes import ImageMetadata, FrameHash
+from metadata.classes import ImageMetadata
 
 
 def get_light_frames_sorted_by_stars(

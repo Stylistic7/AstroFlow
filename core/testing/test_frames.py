@@ -126,7 +126,9 @@ def copy_testdata_frames(
         # Add a small amount of noise so it will have a unique hash.
         assert image.dtype == np.uint16
         if add_noise:
-            image += rng.integers(low=0, high=2, size=image.shape, dtype=image.dtype)
+            image += rng.integers(
+                low=0, high=2, size=image.shape, dtype=image.dtype
+            )
 
         content_hash = xxhash.xxh64(image.tobytes()).hexdigest()
         header["CONTHASH"] = content_hash
@@ -148,7 +150,9 @@ def copy_testdata_frames(
 # TODO: Maybe remove `insert_metadata`, since it no longer matches pure-
 # functional style of `compute_image_metadata`.
 def make_synthetic_frames(
-    start_datetime: datetime.datetime = datetime.datetime(2023, 12, 6, 16, 29, 43),
+    start_datetime: datetime.datetime = datetime.datetime(
+        2023, 12, 6, 16, 29, 43
+    ),
     number: int = 1,
     image_type: str = "Light",
     prefix: str | None = None,
@@ -182,7 +186,9 @@ def make_synthetic_frames(
 
     ids = ids if ids else [f"{prefix}_{i:05}.fits" for i in range(number)]
 
-    random_seed = abs(xxhash.xxh64(str([random_seed, image_type, prefix])).intdigest())
+    random_seed = abs(
+        xxhash.xxh64(str([random_seed, image_type, prefix])).intdigest()
+    )
     rng = np.random.default_rng(seed=random_seed)
 
     output_filenames = []
@@ -195,7 +201,8 @@ def make_synthetic_frames(
             image_data = _make_flat_frame(height_pixels, width_pixels)
         elif fill_value:
             image_data = (
-                np.ones((height_pixels, width_pixels), dtype=np.uint16) * fill_value
+                np.ones((height_pixels, width_pixels), dtype=np.uint16)
+                * fill_value
             )
         else:
             image_data = rng.integers(
@@ -281,6 +288,10 @@ def make_synthetic_frames(
                 content_hash=content_hash,
                 filename=fits_filename,
                 header=header,
+                width=width_pixels,
+                height=height_pixels,
+                channels=1,
+                dtype=np.uint16,
                 plate_solution=plate_solution,
             )
             context.set(key, metadata)

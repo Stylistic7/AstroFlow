@@ -1,12 +1,9 @@
 import ray
 import os
-from typing import Any
 from pathlib import Path
-import objsize  # type: ignore
-import time
 
 from file_io.find_image_files import find_image_files
-from file_io.generic import read_header, get_content_hash
+from file_io.generic import read_header, get_content_hash, read_image_geometry
 import metadata.image_types as image_types
 from metadata.classes import ImageMetadata, MetadataDict
 import plate_solving
@@ -105,21 +102,30 @@ class DuplicateFileException(Exception):
 
 @cached.remote(num_cpus=0.25)
 def compute_image_metadata(filename: Path) -> ImageMetadata:
-    print(f"### compute_image_metadata {filename=}")
+    print(f"### compute_image_metadata filename={filename}")
+
     if filename is None or not filename.exists():
         raise FileNotFoundError(f'File "{filename}" not found')
 
+    filename = filename.resolve()
     content_hash = get_content_hash(filename)
     header = read_header(filename)
-    if image_types.is_light_frame(header):
-        plate_solution = plate_solving.solve_field(filename)
-    else:
-        plate_solution = None
+    geometry = read_image_geometry(filename)
+
+    plate_solution = (
+        plate_solving.solve_field(filename)
+        if image_types.is_light_frame(header)
+        else None
+    )
 
     return ImageMetadata(
         content_hash=content_hash,
         filename=filename,
         header=header,
+        width_pixels=geometry.width_pixels,
+        height_pixels=geometry.height_pixels,
+        channels=geometry.channels,
+        dtype=geometry.dtype,
         plate_solution=plate_solution,
     )
 

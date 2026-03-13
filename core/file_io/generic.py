@@ -8,19 +8,28 @@ import shutil
 import traceback
 
 from file_io.sidecar import sidecar_path_for
-from file_io.types import FitsFilePath, XisfFilePath, TiffFilePath, WithSidecar
+from file_io.types import (
+    FitsFilePath,
+    XisfFilePath,
+    TiffFilePath,
+    WithSidecar,
+    ImageGeometry,
+)
 from file_io.fits_file_io import (
     read_fits_header,
+    read_fits_image_geometry,
     read_fits_image,
     update_fits_header,
 )
 from file_io.xisf_file_io import (
     read_xisf_header,
+    read_xisf_image_geometry,
     read_xisf_image,
     update_xisf_header,
 )
 from file_io.tiff_file_io import (
     read_tiff_header,
+    read_tiff_image_geometry,
     read_tiff_image,
     update_tiff_header,
 )
@@ -99,6 +108,32 @@ def _(wrapped: WithSidecar) -> dict[str, Any]:
         sidecar_metadata = {}
 
     return image_metadata | sidecar_metadata
+
+
+@singledispatch
+def read_image_geometry(filename: Path) -> ImageGeometry:
+    # TODO: When all files are strongly-typed, this should throw an exception.
+    return read_image_geometry(classify_by_extension(filename))
+
+
+@read_image_geometry.register
+def _(filename: FitsFilePath) -> ImageGeometry:
+    return read_fits_image_geometry(filename)
+
+
+@read_image_geometry.register
+def _(filename: XisfFilePath) -> ImageGeometry:
+    return read_xisf_image_geometry(filename)
+
+
+@read_image_geometry.register
+def _(filename: TiffFilePath) -> ImageGeometry:
+    return read_tiff_image_geometry(filename)
+
+
+@read_image_geometry.register
+def _(wrapped: WithSidecar) -> ImageGeometry:
+    return read_image_geometry(wrapped.path)
 
 
 def copy_image(input: Path, output: Path) -> Path:

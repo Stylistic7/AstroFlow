@@ -4,6 +4,7 @@ from typing import Any
 import tifffile
 import json
 
+from file_io.types import ImageGeometry
 from file_io.normalize_header import normalize_header
 
 
@@ -11,6 +12,12 @@ def read_tiff_header(filename: Path) -> dict:
     with tifffile.TiffFile(filename) as tiff:
         metadata = tiff.pages[0].description or "{}"
         return normalize_header(json.loads(metadata))
+
+
+def read_tiff_image_geometry(filename: Path) -> ImageGeometry:
+    with tifffile.TiffFile(filename) as tf:
+        series = tf.series[0]
+        return ImageGeometry.from_shape_and_dtype(series.shape, series.dtype)
 
 
 def read_tiff_image(filename: Path) -> np.ndarray:
