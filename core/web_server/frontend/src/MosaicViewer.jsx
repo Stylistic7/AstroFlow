@@ -12,9 +12,9 @@ import {
 	Snackbar,
 	Tab,
 	Tabs,
+	Typography,
 } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import Typography from '@mui/material/Typography';
 
 import FullscreenIcon from "@mui/icons-material/Fullscreen";
 import { CopyToClipboard } from "react-copy-to-clipboard";
@@ -64,7 +64,7 @@ export default function MosaicViewer() {
 	const [tabIndex, setTabIndex] = useState(0);
 
 	// View toggles (add more here later: indices, exposure_widgets, etc.)
-    const [showOutline, setShowOutline] = useState(true);
+	const [showOutline, setShowOutline] = useState(true);
     
     const mosaic = mosaics[mosaic_id];
     
@@ -90,11 +90,20 @@ export default function MosaicViewer() {
 
 	const telescopius = useMemo(() => {
 		if (!mosaic) return null;
+
 		const header =
 			"Pane, RA, DEC, Position Angle (East), Pane width (arcmins), Pane height (arcmins), Overlap, Row, Column";
-		const lines = mosaic.target_ids.map((target_id, pane) =>
+
+		const sorted_target_ids = [...mosaic.target_ids].sort((a, b) => {
+			const ra_a = stacks[targets[a].stack_ids[0]].center[0];
+			const ra_b = stacks[targets[b].stack_ids[0]].center[0];
+			return ra_a - ra_b; // increasing RA
+		});
+
+		const lines = sorted_target_ids.map((target_id, pane) =>
 			telescopius_pane_line(stacks, targets, mosaic, target_id, pane)
 		);
+
 		const text = [header, ...lines].join("\n");
 		return { header, lines, text };
 	}, [mosaic, stacks, targets]);
@@ -140,7 +149,7 @@ export default function MosaicViewer() {
 								text={telescopius.text}
 								onCopy={() => setCopiedOpen(true)}
 							>
-								<button>Copy to clipboard with button</button>
+								<button>Copy to clipboard</button>
 							</CopyToClipboard>
 						</>
 					) : null}

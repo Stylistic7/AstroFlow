@@ -84,7 +84,7 @@ def _populate_context(
     context.compute_graphs = [TopologicalSorterWithStatus(Graph())]
     context.compute_graph_status = GraphStatus()
 
-    context.dangerously_accept_existing_files = False
+    context.dangerously_accept_existing_files = True
     context.override_filters = None
     context.shopping_cart = [("mosaic", "75a1da6463e118e6")]
     context.ray_head_node_enabled = True
@@ -290,10 +290,9 @@ def _remove_from_shopping_cart(
     print(f"### _remove_from_shopping_cart item {action['item']}")
     print(f"### current shopping cart is {context.shopping_cart}")
     if action["item"] in context.shopping_cart:
-        # TODO: Is there a cleaner way to do this? Can I use the -= operator?
-        new_shopping_cart = context.shopping_cart
-        new_shopping_cart.remove(action["item"])
-        context.shopping_cart = new_shopping_cart
+        new_cart = list(context.shopping_cart)
+        new_cart.remove(action["item"])
+        context.shopping_cart = new_cart
 
     # TODO: Consider canceling running graphs when items are removed from
     # the shopping cart.
@@ -306,81 +305,41 @@ def _graph_done(state: State, action: Action) -> tuple[State, list[Action]]:
     return state, []
 
 
+_HANDLERS = {
+    "noop": lambda s, a: (s, []),
+    "init": _init,
+    "start_astroflow_zeroconf": _start_astroflow_zeroconf,
+    "start_asiair_zeroconf": _start_asiair_zeroconf,
+    "advertise_zeroconf": _advertise_zeroconf,
+    "update_astroflow_services": _update_astroflow_services,
+    "update_asiair_services": _update_asiair_services,
+    "stop_zeroconf": _stop_zeroconf,
+    "prepare_pix": _prepare_pix,
+    "add_to_shopping_cart": _add_to_shopping_cart,
+    "remove_from_shopping_cart": _remove_from_shopping_cart,
+    "start_flask": _start_flask,
+    "stop_flask": _stop_flask,
+    "start_gunicorn": _start_gunicorn,
+    "stop_gunicorn": _stop_gunicorn,
+    "start_ray_head_node": _start_ray_head_node,
+    "stop_ray_node": _stop_ray_node,
+    "schedule_download_from_asiairs": _schedule_download_from_asiairs,
+    "populate_context": _populate_context,
+    "graph_done": _graph_done,
+    "quit": _quit,
+}
+
+
 def dispatch(action: Action) -> State:
     global _state
 
     action = dict(action)
-    new_actions = []
 
-    # TODO: Eliminate this match.
-    match action["type"]:
-        case "noop":
-            _state, new_actions = _state, []
+    handler = _HANDLERS.get(action["type"])
+    if handler is None:
+        raise ValueError(f"Invalid action {action}")
 
-        case "init":
-            _state, new_actions = _init(_state, action)
-
-        case "start_astroflow_zeroconf":
-            _state, new_actions = _start_astroflow_zeroconf(_state, action)
-
-        case "start_asiair_zeroconf":
-            _state, new_actions = _start_asiair_zeroconf(_state, action)
-
-        case "advertise_zeroconf":
-            _state, new_actions = _advertise_zeroconf(_state, action)
-
-        case "update_astroflow_services":
-            _state, new_actions = _update_astroflow_services(_state, action)
-
-        case "update_asiair_services":
-            _state, new_actions = _update_asiair_services(_state, action)
-
-        case "stop_zeroconf":
-            _state, new_actions = _stop_zeroconf(_state, action)
-
-        case "prepare_pix":
-            _state, new_actions = _prepare_pix(_state, action)
-
-        case "add_to_shopping_cart":
-            _state, new_actions = _add_to_shopping_cart(_state, action)
-
-        case "remove_from_shopping_cart":
-            _state, new_actions = _remove_from_shopping_cart(_state, action)
-
-        case "start_flask":
-            _state, new_actions = _start_flask(_state, action)
-
-        case "stop_flask":
-            _state, new_actions = _stop_flask(_state, action)
-
-        case "start_gunicorn":
-            _state, new_actions = _start_gunicorn(_state, action)
-
-        case "stop_gunicorn":
-            _state, new_actions = _stop_gunicorn(_state, action)
-
-        case "start_ray_head_node":
-            _state, new_actions = _start_ray_head_node(_state, action)
-
-        case "stop_ray_node":
-            _state, new_actions = _stop_ray_node(_state, action)
-
-        case "schedule_download_from_asiairs":
-            _state, new_actions = _schedule_download_from_asiairs(
-                _state, action
-            )
-
-        case "populate_context":
-            _state, new_actions = _populate_context(_state, action)
-
-        case "graph_done":
-            _state, new_actions = _graph_done(_state, action)
-
-        case "quit":
-            _state, new_actions = _quit(_state, action)
-
-        case _:
-            raise ValueError(f"Invalid action {action}")
+    _state, new_actions = handler(_state, action)
 
     for action in new_actions:
         dispatch(action)

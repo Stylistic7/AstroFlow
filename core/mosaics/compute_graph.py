@@ -255,8 +255,13 @@ def build_mosaic_filter_subgraph(
                 mosaic,
                 name=f"merge_{mosaic.stable_hash}_strip_{i}",
             )
+            metadata_task = Node(
+                compute_image_metadata,
+                name=f"merge_{mosaic.stable_hash}_strip_{i}",
+            )
             graph[merge_task] = [prev_task, strip_tasks[i]]
-            prev_task = merge_task
+            graph[metadata_task] = [merge_task]
+            prev_task = metadata_task
 
     return graph
 

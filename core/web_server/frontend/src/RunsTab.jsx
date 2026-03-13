@@ -1,6 +1,5 @@
 // src/components/RunsTab.jsx
-import React, { useEffect, useState } from 'react';
-import { useContext } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { Box, Paper, Typography, IconButton } from '@mui/material';
 import { Delete as DeleteIcon } from '@mui/icons-material';
 import FlatThumbnail from './FlatThumbnail.jsx';
@@ -41,6 +40,7 @@ const RunsTab = ({ stack }) => {
 
   const handleDeleteRun = (runId) => {
     fetch(`/quarantine_stack/${runId}`);
+    alert(`Quarantined run ${runId}.`);
   };
 
   const calibrationStackInfo = (dependency) => {
@@ -66,7 +66,6 @@ const RunsTab = ({ stack }) => {
   };
 
   const getSelectedFlatByRun = run => {
-    console.log('getSelectedFlatByRun', run);
     if (selectedFlatsByRun[run.id]) {
       return selectedFlatsByRun[run.id];
     } else if ('flat' in run.dependencies) {
@@ -93,7 +92,6 @@ const RunsTab = ({ stack }) => {
     <Box>
       {runs.map((run) => {
         const selectedFlatId = getSelectedFlatByRun(run);
-        console.log('run.id', run.id, 'selectedFlatId', selectedFlatId);
         const runDate = new Date(run.newest_date);
         return (
           <Paper key={run.id} sx={{ p: 2, mb: 3 }} elevation={2}>
