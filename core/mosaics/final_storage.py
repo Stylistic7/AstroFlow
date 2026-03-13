@@ -1,10 +1,11 @@
 import ray
 from pathlib import Path
 import numpy as np
+import tifffile
 
 from context import context
 from mosaics.artifacts import mosaic_filename_tiff, mosaic_filename_xisf
-from file_io.generic import read_image, read_header, copy_image
+from file_io.generic import read_image, copy_image
 from file_io.tiff_file_io import write_tiff_image
 from previews.operations import autostretch
 from pix.decorators import PixInsight
@@ -14,6 +15,15 @@ from products import makes_image
 from decorators import cached, create_thumbnail, measure_performance
 from mosaics.types import Mosaic
 from previews.types import QualityLevel
+
+
+def make_preview_tiff(source_path: Path, dest_path: Path):
+    """Read image and save to .tif"""
+    assert source_path != dest_path
+    arr = autostretch(read_image(source_path))
+    arr = (arr * 255.0).astype(np.uint8)
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    tifffile.imwrite(dest_path, arr, tile=(256, 256), compression="deflate")
 
 
 @PixInsight()
@@ -29,16 +39,20 @@ def store_mosaic_color_channel_master(
     mosaic: Mosaic, filter: str, input: Path
 ) -> Path:
     output = store_mosaic_color_channel_master.filename_fn(mosaic, filter)
+    tiff_output = output.with_suffix(".tiff")
+
     output.parent.mkdir(parents=True, exist_ok=True)
+
     if context.get("mock_pixinsight", False):
-        # TODO: Convert the image to tiled TIFF here at the same time.
         print(
             f"### store_mosaic_color_channel_master mocking PixInsight; "
             f"copying {input=} to {output=}"
         )
         copy_image(input, output)
+        make_preview_tiff(input, tiff_output)
     else:
         save_uncompressed([input], [output])
+        make_preview_tiff(output, tiff_output)
 
     return output
 
