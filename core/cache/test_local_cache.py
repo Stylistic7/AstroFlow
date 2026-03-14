@@ -5,6 +5,7 @@ from cache.cached_decorator import make_cached_decorator
 from testing.sidecar_hasher import SidecarHasher
 from hashing import hash_call
 from context import context, get_cache
+from targets.types import TargetsDict
 
 
 sidecar_hasher = SidecarHasher()
@@ -117,3 +118,35 @@ def test_lazy_load_dict(init_ray):
     assert len(list(cache["stacks"].keys())) == 0
     assert len(list(cache["stacks"].values())) == 0
     assert len((raw_cache["stacks"])) == 0
+
+
+def test_lazy_load_dict_preserves_type(init_ray):
+    """Reading a typed lazy-load key back from cache returns the registered type."""
+    cache = get_cache()
+
+    # "targets" is registered with lazy_types={"targets": TargetsDict}, so
+    # reading it back should reconstruct a TargetsDict, not a plain dict or
+    # LazyLoadDict.
+    original = TargetsDict({"t1": "target_1", "t2": "target_2"})
+    cache["targets"] = original
+
+    result = cache["targets"]
+    assert isinstance(result, TargetsDict), (
+        f"Expected TargetsDict but got {type(result)}"
+    )
+    # Use items() explicitly — dict() may use the C-level copy path that
+    # bypasses our lazy overrides on the dict subclass.
+    assert dict(result.items()) == {"t1": "target_1", "t2": "target_2"}
+
+    # Context should also return a TargetsDict.
+    context_result = context.targets
+    assert isinstance(context_result, TargetsDict), (
+        f"Expected TargetsDict from context but got {type(context_result)}"
+    )
+    assert dict(context_result.items()) == {"t1": "target_1", "t2": "target_2"}
+
+    # Unregistered keys (e.g. "stacks") still return a LazyLoadDict.
+    from cache.lazy_load_dict import LazyLoadDict
+
+    cache["stacks"] = {"s1": "stack_1"}
+    assert isinstance(cache["stacks"], LazyLoadDict)

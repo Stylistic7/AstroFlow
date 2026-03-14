@@ -1,7 +1,9 @@
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 import inspect
 import xxhash
 from dataclasses import fields
+from beartype import beartype
 
 from file_io.types import ContentHashable
 from protocols import ContentHash
@@ -10,11 +12,12 @@ from file_io.generic import get_content_hash
 
 
 # TODO: Maybe unify these.
+@beartype
 def hash_string(x: Any) -> str:
     return xxhash.xxh64(x).hexdigest()
 
 
-def _maybe_use_content_hash(obj):
+def _maybe_use_content_hash(obj: Any) -> Any:
     if isinstance(obj, ContentHashable):
         return ContentHash(get_content_hash(obj))
     elif hasattr(obj, "content_hash"):
@@ -23,6 +26,7 @@ def _maybe_use_content_hash(obj):
         return make_hashable(obj)
 
 
+@beartype
 def hash_list(L: Any, debug: bool = False) -> str:
     L2 = [_maybe_use_content_hash(x) for x in L]
 
@@ -33,19 +37,23 @@ def hash_list(L: Any, debug: bool = False) -> str:
     return xxhash.xxh64(str(L2)).hexdigest()
 
 
+@beartype
 def hash_list_int(L: Any) -> int:
     L = [_maybe_use_content_hash(x) for x in L]
     return xxhash.xxh64(str(L)).intdigest()
 
 
+@beartype
 def hash_dict_int(x: dict) -> int:
     return hash_list_int(tuple(make_hashable(x)))
 
 
+@beartype
 def hash_dataclass(x: Any) -> int:
     return hash_list_int(make_hashable(getattr(x, f.name)) for f in fields(x))
 
 
+@beartype
 def make_hashable(value: Any) -> Any:
     if isinstance(value, dict):
         return tuple(
@@ -59,10 +67,12 @@ def make_hashable(value: Any) -> Any:
         return value
 
 
-def hash_source_code(func: Callable) -> bytes:
+@beartype
+def hash_source_code(func: Callable) -> str:
     return xxhash.xxh64(inspect.getsource(func)).hexdigest()
 
 
-def hash_call(serialized_func: bytes, *args, **kwargs) -> str:
+@beartype
+def hash_call(serialized_func: str, *args, **kwargs) -> str:
     kwargs_list = sorted(kwargs.items())
     return hash_list([serialized_func, *args, *kwargs_list], debug=False)

@@ -9,10 +9,12 @@ from attributes import (
     ChronologyAttributes,
 )
 from cache.content_hashed import ContentHashed
+from beartype import beartype
 
 TargetHash = NewType("TargetHash", str)
 
 
+@beartype
 @dataclass(order=True, frozen=True)
 class Target(
     ContentHashed, AstrometricAttributes, ChronologyAttributes[TargetHash]

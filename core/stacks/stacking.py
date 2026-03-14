@@ -12,6 +12,7 @@ from file_io.types import XisfFilePath
 from file_io.generic import update_header, copy_image
 from stacks.artifacts import stack_filename
 from stacks.simple_stack import SimpleStack, SimpleStacksDict
+from stacks.types import StackIdDependency, FilenameDependency
 from stacks.composite_stack import Stack, CompositeStack
 from customization.types import CustomizedStack
 from context import context
@@ -85,10 +86,10 @@ def _setup_simple_stack(
     _copy_frames_with_plate_solution(run_metadata, dest_dir)
 
     def get_dependency_filename(d):
-        if "stack_id" in d:
-            return stack_files.filename_fn(calibration_stacks[d["stack_id"]])
-        elif "filename" in d:
-            return d["filename"]
+        if isinstance(d, StackIdDependency):
+            return stack_files.filename_fn(calibration_stacks[d.stack_id])
+        elif isinstance(d, FilenameDependency):
+            return d.filename
 
     # Add any dependent stacks (e.g. calibration stacks).
     dependendency_filenames = [

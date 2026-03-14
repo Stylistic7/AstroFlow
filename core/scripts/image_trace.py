@@ -1,4 +1,5 @@
 from context import cache
+from stacks.types import StackIdDependency
 
 quarantined_files = cache.get("quarantined_files", [])
 spatial_groups = cache.get("spatial_groups", [])
@@ -85,7 +86,10 @@ def trace_image_hash(hash):
 
     found = False
     for parent_stack in stacks.values():
-        if stack.content_hash in parent_stack.dependencies.values():
+        if any(
+            isinstance(dep, StackIdDependency) and dep.stack_id == stack.content_hash
+            for dep in parent_stack.dependencies.values()
+        ):
             found = True
             break
 

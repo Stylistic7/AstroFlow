@@ -1,14 +1,18 @@
 import structlog
 import functools
+from collections.abc import Callable
+from typing import Any
+from beartype import beartype
 
 
 class LogContainer(list):
     pass
 
 
-def capture_logs(func):
+@beartype
+def capture_logs(func: Callable) -> Callable:
     @functools.wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: Any, **kwargs: Any) -> tuple["LogContainer", Any]:
         captured_logs = []
 
         def log_capture_processor(_, __, event_dict):

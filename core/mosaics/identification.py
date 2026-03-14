@@ -1,4 +1,5 @@
 import structlog
+from frozendict import frozendict
 from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon  # type: ignore
 from spherical_geometry.vector import vector_to_lonlat
 import ray
@@ -30,22 +31,25 @@ logger = structlog.get_logger()
 log = logger
 
 
+@beartype
 def roughly_same_area(
     a: SingleSphericalPolygon, b: SingleSphericalPolygon
 ) -> bool:
     ratio = a.area() / b.area()
-    return ratio > 0.9 and ratio < 1.1
+    return bool(ratio > 0.9 and ratio < 1.1)
 
 
+@beartype
 def roughly_same_image_scale(a: float, b: float) -> bool:
     ratio = a / b
-    return ratio > 0.9 and ratio < 1.1
+    return bool(ratio > 0.9 and ratio < 1.1)
 
 
+@beartype
 def roughly_same_position_angle(
     a: float, b: float, angular_tolerance: float
 ) -> bool:
-    return angular_spread_mod_pi([a, b]) < angular_tolerance
+    return bool(angular_spread_mod_pi([a, b]) < angular_tolerance)
 
 
 @cached.remote
@@ -188,12 +192,13 @@ def targets_overlap(
     return result
 
 
+@beartype
 def group_targets(
     targets: TargetsDict,
     target_ids: list[TargetHash],
     allowed_overlaps: list[Overlap],
     angular_tolerance: float,
-) -> list[set[TargetHash]]:
+) -> list[list[TargetHash]]:
     assert len(target_ids) > 0
 
     target_ids_for_cell = defaultdict(list)
@@ -240,6 +245,7 @@ def group_targets(
 #       assert a_to_b == b_to_a, f"### {a_to_b=} {b_to_a=}"
 
 
+@beartype
 def find_strips(
     targets: TargetsDict,
     target_ids: list[TargetHash],
@@ -336,6 +342,7 @@ def find_strips(
     return sorted(strips, key=min_dec)
 
 
+@beartype
 def _identify_overlapping_targets(
     targets: TargetsDict, angular_tolerance: float, debug: bool = False
 ) -> list[list[TargetHash]]:
@@ -375,6 +382,8 @@ def _identify_overlapping_targets(
 def identify_mosaics(
     angular_tolerance: float, targets: TargetsDict, debug: bool = False
 ) -> dict[MosaicHash, Mosaic]:
+    if not isinstance(targets, TargetsDict):
+        targets = TargetsDict(targets)
     print(f"### Identifying mosaics from {len(targets)} targets")
 
     # test_commutativity()
@@ -461,7 +470,7 @@ def identify_mosaics(
                 break
 
         # assert not SphericalPolygon.self_intersect(footprint.points)
-        projected_footprints = footprints.all_projections(footprint)
+        projected_footprints = frozendict(footprints.all_projections(footprint))
 
         center = vector_to_lonlat(*np.mean(footprint.points, axis=0))
         name = position_string.canonical_target_string(center)
@@ -471,7 +480,7 @@ def identify_mosaics(
         )
         astrometric_attributes = AstrometricAttributes(
             name=name,
-            center=list(center),
+            center=tuple(center),
             image_scale=image_scale,
             rotation_angle=rotation_angle,
             footprint=footprint,

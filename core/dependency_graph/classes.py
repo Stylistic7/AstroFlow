@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from hashing import hash_list_int
-from typing import Any, Callable, Union, TypeAlias, Iterable
+from typing import Any, Callable, Union, TypeAlias
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from graphlib import TopologicalSorter
 from collections import defaultdict
 from cache.types import NeverRunType
+from beartype import beartype
 
 from ray.remote_function import RemoteFunction
 from ray._private.worker import (
@@ -288,6 +290,7 @@ def canonicalize_graph(graph: Graph) -> CanonicalGraph:
     return output
 
 
+@beartype
 @dataclass
 class GraphStatus:
     done_nodes: list[Node] = field(default_factory=list)

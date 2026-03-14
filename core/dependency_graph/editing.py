@@ -2,6 +2,7 @@ from ray.remote_function import RemoteFunction
 from copy import copy
 
 from dependency_graph import Graph, Node, canonicalize_graph
+from beartype import beartype
 
 
 def replace_task(

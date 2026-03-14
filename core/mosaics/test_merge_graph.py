@@ -1,6 +1,7 @@
 import ray
 import datetime
-from spherical_geometry.polygon import SingleSphericalPolygon  # type: ignore
+from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon  # type: ignore
+from frozendict import frozendict
 
 from compute_graph import build_compute_graph
 from context import context
@@ -21,9 +22,10 @@ from mosaics.compute_graph import (
 )
 from metadata.image_metadata import compute_image_metadata
 from mosaics.orion_mosaic import add_orion_mosaic_images
-from targets.types import Target
+from targets.types import Target, TargetsDict
 from testing.test_stacks import make_composite_stack
 from attributes.astrometric_attributes import healpix_cells_from_poly
+from stacks.composite_stack import CompositeStacksDict
 
 _OLDEST_DATE = datetime.datetime(2024, 2, 5, 16, 29, 43)
 _NEWEST_DATE = datetime.datetime(2024, 2, 5, 17, 29, 43)
@@ -36,12 +38,12 @@ _HEALPIX_CELLS = healpix_cells_from_poly(_FOOTPRINT)
 # TODO: Put this somewhere generally-accessible.
 def make_test_target(
     name,
-    center=[0.0, 0.0],
+    center=(0.0, 0.0),
     image_scale=1.0,
     rotation_angle=0.0,
-    footprint=None,
-    healpix_cells=None,
-    projected_footprints=None,
+    footprint=SphericalPolygon.from_cone(0.0, 90.0, 1.0),
+    healpix_cells=tuple(),
+    projected_footprints=frozendict(),
     content_hash="content_hash",
     stable_hash="stable_hash",
     stack_ids=[],
@@ -77,26 +79,28 @@ def test_three_by_one(test_context) -> None:
         strips=[["a"], ["b"], ["c"]],
         oldest_date=_OLDEST_DATE,
         newest_date=_NEWEST_DATE,
-        center=[0.0, 0.0],
+        center=(0.0, 0.0),
         image_scale=1.0,
         rotation_angle=0.0,
         footprint=_FOOTPRINT,
         healpix_cells=_HEALPIX_CELLS,
-        projected_footprints={},
+        projected_footprints=frozendict(),
     )
 
-    context.targets = targets = {
-        "a": make_test_target("a", stack_ids=["a"]),
-        "b": make_test_target("b", stack_ids=["b"]),
-        "c": make_test_target("c", stack_ids=["c"]),
-    }
-
-    context.stacks = stacks = {
-        "a": make_composite_stack(stable_hash="a"),
-        "b": make_composite_stack(stable_hash="b"),
-        "c": make_composite_stack(stable_hash="c"),
-    }
-
+    context.targets = targets = TargetsDict(
+        {
+            "a": make_test_target("a", stack_ids=["a"]),
+            "b": make_test_target("b", stack_ids=["b"]),
+            "c": make_test_target("c", stack_ids=["c"]),
+        }
+    )
+    context.stacks = stacks = CompositeStacksDict(
+        {
+            "a": make_composite_stack(stable_hash="a"),
+            "b": make_composite_stack(stable_hash="b"),
+            "c": make_composite_stack(stable_hash="c"),
+        }
+    )
     strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
 
     graph = ray.get(
@@ -106,13 +110,27 @@ def test_three_by_one(test_context) -> None:
     )
     print_graph(graph)
 
-    place_a = Node(build_placement_subgraph, mode, mosaic, stacks["a"], filter, viewbox)
-    place_b = Node(build_placement_subgraph, mode, mosaic, stacks["b"], filter, viewbox)
-    place_c = Node(build_placement_subgraph, mode, mosaic, stacks["c"], filter, viewbox)
-    merge_strip_1 = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_1")
-    meta_strip_1 = Node(compute_image_metadata, name="merge_mosaic_abc123_strip_1")
-    merge_strip_2 = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_2")
-    meta_strip_2 = Node(compute_image_metadata, name="merge_mosaic_abc123_strip_2")
+    place_a = Node(
+        build_placement_subgraph, mode, mosaic, stacks["a"], filter, viewbox
+    )
+    place_b = Node(
+        build_placement_subgraph, mode, mosaic, stacks["b"], filter, viewbox
+    )
+    place_c = Node(
+        build_placement_subgraph, mode, mosaic, stacks["c"], filter, viewbox
+    )
+    merge_strip_1 = Node(
+        merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_1"
+    )
+    meta_strip_1 = Node(
+        compute_image_metadata, name="merge_mosaic_abc123_strip_1"
+    )
+    merge_strip_2 = Node(
+        merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_2"
+    )
+    meta_strip_2 = Node(
+        compute_image_metadata, name="merge_mosaic_abc123_strip_2"
+    )
 
     expected_graph = Graph(
         {
@@ -138,31 +156,35 @@ def test_two_by_three(test_context) -> None:
         strips=[["a", "b", "c"], ["d", "e", "f"]],
         oldest_date=_OLDEST_DATE,
         newest_date=_NEWEST_DATE,
-        center=[0.0, 0.0],
+        center=(0.0, 0.0),
         image_scale=1.0,
         rotation_angle=0.0,
         footprint=_FOOTPRINT,
         healpix_cells=_HEALPIX_CELLS,
-        projected_footprints={},
+        projected_footprints=frozendict(),
     )
 
-    context.targets = targets = {
-        "a": make_test_target("a", stack_ids=["a"]),
-        "b": make_test_target("b", stack_ids=["b"]),
-        "c": make_test_target("c", stack_ids=["c"]),
-        "d": make_test_target("d", stack_ids=["d"]),
-        "e": make_test_target("e", stack_ids=["e"]),
-        "f": make_test_target("f", stack_ids=["f"]),
-    }
+    context.targets = targets = TargetsDict(
+        {
+            "a": make_test_target("a", stack_ids=["a"]),
+            "b": make_test_target("b", stack_ids=["b"]),
+            "c": make_test_target("c", stack_ids=["c"]),
+            "d": make_test_target("d", stack_ids=["d"]),
+            "e": make_test_target("e", stack_ids=["e"]),
+            "f": make_test_target("f", stack_ids=["f"]),
+        }
+    )
 
-    context.stacks = stacks = {
-        "a": make_composite_stack(stable_hash="a"),
-        "b": make_composite_stack(stable_hash="b"),
-        "c": make_composite_stack(stable_hash="c"),
-        "d": make_composite_stack(stable_hash="d"),
-        "e": make_composite_stack(stable_hash="e"),
-        "f": make_composite_stack(stable_hash="f"),
-    }
+    context.stacks = stacks = CompositeStacksDict(
+        {
+            "a": make_composite_stack(stable_hash="a"),
+            "b": make_composite_stack(stable_hash="b"),
+            "c": make_composite_stack(stable_hash="c"),
+            "d": make_composite_stack(stable_hash="d"),
+            "e": make_composite_stack(stable_hash="e"),
+            "f": make_composite_stack(stable_hash="f"),
+        }
+    )
 
     strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
 
@@ -203,7 +225,9 @@ def test_two_by_three(test_context) -> None:
     final_merge = Node(
         merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_1"
     )
-    final_meta = Node(compute_image_metadata, name="merge_mosaic_abc123_strip_1")
+    final_meta = Node(
+        compute_image_metadata, name="merge_mosaic_abc123_strip_1"
+    )
 
     expected_graph = Graph(
         {
@@ -240,25 +264,29 @@ def test_three_panes(test_context) -> None:
         strips=[["a"], ["b", "c"]],
         oldest_date=_OLDEST_DATE,
         newest_date=_NEWEST_DATE,
-        center=[0.0, 0.0],
+        center=(0.0, 0.0),
         image_scale=1.0,
         rotation_angle=0.0,
         footprint=_FOOTPRINT,
         healpix_cells=_HEALPIX_CELLS,
-        projected_footprints={},
+        projected_footprints=frozendict(),
     )
 
-    context.targets = targets = {
-        "a": make_test_target("a", stack_ids=["a"]),
-        "b": make_test_target("b", stack_ids=["b"]),
-        "c": make_test_target("c", stack_ids=["c"]),
-    }
+    context.targets = targets = TargetsDict(
+        {
+            "a": make_test_target("a", stack_ids=["a"]),
+            "b": make_test_target("b", stack_ids=["b"]),
+            "c": make_test_target("c", stack_ids=["c"]),
+        }
+    )
 
-    context.stacks = stacks = {
-        "a": make_composite_stack(stable_hash="a"),
-        "b": make_composite_stack(stable_hash="b"),
-        "c": make_composite_stack(stable_hash="c"),
-    }
+    context.stacks = stacks = CompositeStacksDict(
+        {
+            "a": make_composite_stack(stable_hash="a"),
+            "b": make_composite_stack(stable_hash="b"),
+            "c": make_composite_stack(stable_hash="c"),
+        }
+    )
 
     strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
 
@@ -285,7 +313,9 @@ def test_three_panes(test_context) -> None:
     merge_strip_1 = Node(
         merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_1"
     )
-    meta_strip_1 = Node(compute_image_metadata, name="merge_mosaic_abc123_strip_1")
+    meta_strip_1 = Node(
+        compute_image_metadata, name="merge_mosaic_abc123_strip_1"
+    )
 
     expected_graph = Graph(
         {
@@ -310,6 +340,7 @@ def test_orion_mosaic(test_context) -> None:
 
     stacks = context.stacks
     targets = context.targets
+    assert isinstance(targets, TargetsDict)
     assert len(targets) == 4
     assert len(context.mosaics) == 1
     mosaic = next(iter(context.mosaics.values()))
@@ -373,18 +404,26 @@ def test_orion_mosaic(test_context) -> None:
         mosaic,
         name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea",
     )
-    meta_0 = Node(compute_image_metadata, name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea")
+    meta_0 = Node(
+        compute_image_metadata,
+        name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea",
+    )
     merge_1_0__1_1 = Node(
         merge_images,
         mode,
         mosaic,
         name=f"merge_{mosaic.stable_hash}_6d9f6be3ffab0f22",
     )
-    meta_1 = Node(compute_image_metadata, name=f"merge_{mosaic.stable_hash}_6d9f6be3ffab0f22")
+    meta_1 = Node(
+        compute_image_metadata,
+        name=f"merge_{mosaic.stable_hash}_6d9f6be3ffab0f22",
+    )
     final_merge = Node(
         merge_images, mode, mosaic, name=f"merge_{mosaic.stable_hash}_strip_1"
     )
-    final_meta = Node(compute_image_metadata, name=f"merge_{mosaic.stable_hash}_strip_1")
+    final_meta = Node(
+        compute_image_metadata, name=f"merge_{mosaic.stable_hash}_strip_1"
+    )
 
     expected_graph = Graph(
         {
@@ -418,6 +457,7 @@ def test_orion_mosaic_one_by_two(test_context) -> None:
 
     stacks = context.stacks
     targets = context.targets
+    assert isinstance(targets, TargetsDict)
     assert len(targets) == 2
     assert len(context.mosaics) == 1
     mosaic = next(iter(context.mosaics.values()))
@@ -437,10 +477,28 @@ def test_orion_mosaic_one_by_two(test_context) -> None:
         )
     )
 
-    place_strip_0 = Node(build_placement_subgraph, mode, mosaic, stacks["1101452f8cf2f9ff"], filter, viewbox)
-    place_strip_1 = Node(build_placement_subgraph, mode, mosaic, stacks["2e5e69b75efbc277"], filter, viewbox)
-    final_merge = Node(merge_images, mode, mosaic, name=f"merge_{mosaic.stable_hash}_strip_1")
-    final_meta = Node(compute_image_metadata, name=f"merge_{mosaic.stable_hash}_strip_1")
+    place_strip_0 = Node(
+        build_placement_subgraph,
+        mode,
+        mosaic,
+        stacks["1101452f8cf2f9ff"],
+        filter,
+        viewbox,
+    )
+    place_strip_1 = Node(
+        build_placement_subgraph,
+        mode,
+        mosaic,
+        stacks["2e5e69b75efbc277"],
+        filter,
+        viewbox,
+    )
+    final_merge = Node(
+        merge_images, mode, mosaic, name=f"merge_{mosaic.stable_hash}_strip_1"
+    )
+    final_meta = Node(
+        compute_image_metadata, name=f"merge_{mosaic.stable_hash}_strip_1"
+    )
 
     expected_graph = Graph(
         {
@@ -468,6 +526,7 @@ def test_orion_mosaic_two_by_one(test_context) -> None:
 
     stacks = context.stacks
     targets = context.targets
+    assert isinstance(targets, TargetsDict)
     assert len(targets) == 2
     assert len(context.mosaics) == 1
     mosaic = next(iter(context.mosaics.values()))
@@ -511,7 +570,10 @@ def test_orion_mosaic_two_by_one(test_context) -> None:
         mosaic,
         name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea",
     )
-    meta = Node(compute_image_metadata, name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea")
+    meta = Node(
+        compute_image_metadata,
+        name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea",
+    )
 
     expected_graph = Graph(
         {place_0_1: [place_0_0], merge: [place_0_0, place_0_1], meta: [merge]}
@@ -533,6 +595,7 @@ def test_orion_mosaic_missing_panel(test_context) -> None:
 
     stacks = context.stacks
     targets = context.targets
+    assert isinstance(targets, TargetsDict)
     assert len(targets) == 3
     assert len(context.mosaics) == 1
     mosaic = next(iter(context.mosaics.values()))
@@ -586,11 +649,16 @@ def test_orion_mosaic_missing_panel(test_context) -> None:
         mosaic,
         name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea",
     )
-    meta_1 = Node(compute_image_metadata, name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea")
+    meta_1 = Node(
+        compute_image_metadata,
+        name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea",
+    )
     final_merge = Node(
         merge_images, mode, mosaic, name=f"merge_{mosaic.stable_hash}_strip_1"
     )
-    final_meta = Node(compute_image_metadata, name=f"merge_{mosaic.stable_hash}_strip_1")
+    final_meta = Node(
+        compute_image_metadata, name=f"merge_{mosaic.stable_hash}_strip_1"
+    )
 
     expected_graph = Graph(
         {

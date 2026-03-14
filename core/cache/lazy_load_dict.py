@@ -4,6 +4,58 @@ from types import MethodType
 
 Key = str | tuple[str, ...]
 
+_lazy_subclass_cache: dict[type, type] = {}
+
+
+def _make_lazy_subclass(base_type: type) -> type:
+    """Return a lazy-loading subclass of base_type (which must be a dict subclass).
+
+    The returned class passes isinstance checks for base_type while keeping all
+    values stored lazily in the diskcache rather than in the dict's own storage.
+    """
+    if base_type in _lazy_subclass_cache:
+        return _lazy_subclass_cache[base_type]
+
+    class LazySubclass(base_type):
+        def _lazy_init(self, name: str, orig_get: Callable) -> None:
+            self._lazy_name = name
+            self._lazy_orig_get = orig_get
+
+        def __getitem__(self, k: Any) -> Any:
+            return self._lazy_orig_get((self._lazy_name, k))
+
+        def get(self, k: Any, default: Any = None) -> Any:
+            if k in list(self.keys()):
+                return self[k]
+            return default
+
+        def keys(self) -> Iterable[Any]:
+            ks = self._lazy_orig_get(self._lazy_name) or ()
+            return iter(ks)
+
+        def __iter__(self):
+            return self.keys()
+
+        def values(self):
+            for k in self.keys():
+                yield self._lazy_orig_get((self._lazy_name, k))
+
+        def items(self):
+            for k in self.keys():
+                yield k, self._lazy_orig_get((self._lazy_name, k))
+
+        def __len__(self) -> int:
+            ks = self._lazy_orig_get(self._lazy_name) or ()
+            return len(ks)
+
+        def __contains__(self, k: Any) -> bool:
+            return k in list(self.keys())
+
+    LazySubclass.__name__ = f"Lazy{base_type.__name__}"
+    LazySubclass.__qualname__ = f"Lazy{base_type.__name__}"
+    _lazy_subclass_cache[base_type] = LazySubclass
+    return LazySubclass
+
 
 # TODO: I don't think this is going to work across Ray nodes. The ContextActor
 # probably needs to re-create the LazyLoadDict with its own context.get() func.
@@ -44,9 +96,12 @@ class LazyLoadDict:
 
 
 def add_lazy_load_functionality(
-    cache: diskcache.Cache, lazy_names: list[str]
+    cache: diskcache.Cache,
+    lazy_names: list[str],
+    lazy_types: dict[str, type] | None = None,
 ) -> diskcache.Cache:
     lazy = set(lazy_names)
+    lazy_types = lazy_types or {}
 
     # capture originals (bound to this instance)
     _orig_get = cache.get
@@ -56,7 +111,14 @@ def add_lazy_load_functionality(
         self: diskcache.Cache, key: Key, default: Any = None, **kw
     ) -> Any:
         if key in lazy:
-            return LazyLoadDict(key, lambda kk: _orig_get(kk, None, **kw))
+            orig_get_fn = lambda kk: _orig_get(kk, None, **kw)
+            if key in lazy_types:
+                cls = _make_lazy_subclass(lazy_types[key])
+                inst = cls.__new__(cls)
+                dict.__init__(inst)
+                inst._lazy_init(key, orig_get_fn)
+                return inst
+            return LazyLoadDict(key, orig_get_fn)
         return _orig_get(key, default, **kw)
 
     def _wrap_set(self: diskcache.Cache, key: Key, value: Any, **kw) -> bool:

@@ -1,22 +1,28 @@
 from dataclasses import replace, asdict
+from collections.abc import Sequence
 
 from context import context
 from stacks.composite_stack import CompositeStack
+from stacks.simple_stack import SimpleStacksDict
 from attributes import ImagingAttributes
 from stacks.types import StackHash
+from beartype import beartype
 
 
 # TODO: Ensure that all of the actions in this file are idempotent. The goal
 # is to be able to apply these functions very quickly when the user quarantines
 # something in the UI.
+@beartype
 def apply_quarantine(
-    stack: CompositeStack, quarantined_substacks: set[StackHash]
-) -> CompositeStack:
-    new_contents = {
-        h: s
-        for h, s in stack.contents.items()
-        if h not in quarantined_substacks
-    }
+    stack: CompositeStack, quarantined_substacks: Sequence[StackHash] | set[StackHash]
+) -> CompositeStack | None:
+    new_contents = SimpleStacksDict(
+        {
+            h: s
+            for h, s in stack.contents.items()
+            if h not in quarantined_substacks
+        }
+    )
 
     if len(new_contents) == 0:
         return None

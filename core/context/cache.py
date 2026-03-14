@@ -7,20 +7,22 @@ from cache.lazy_load_dict import add_lazy_load_functionality
 
 
 def _create_cache() -> diskcache.Cache:
+    from targets.types import TargetsDict
+
+    lazy_names = [
+        "stacks",
+        "targets",
+        "mosaics",
+        "calibration_stacks",
+        "workflow_graphs",
+    ]
+    lazy_types = {"targets": TargetsDict}
+
     if "ASTROFLOW_MOCK_CACHE" in os.environ:
         temp_dir = os.environ["ASTROFLOW_MOCK_CACHE"]
         print(f"### Using test cache at {temp_dir}")
         cache = diskcache.Cache(temp_dir)
-        return add_lazy_load_functionality(
-            cache,
-            [
-                "stacks",
-                "targets",
-                "mosaics",
-                "calibration_stacks",
-                "workflow_graphs",
-            ],
-        )
+        return add_lazy_load_functionality(cache, lazy_names, lazy_types)
     else:
         # TODO: This path may not be correct on platforms other than MacOS.
         path = str(Path.home() / "Pictures" / "AstroFlow" / "cache")
@@ -31,16 +33,7 @@ def _create_cache() -> diskcache.Cache:
             size_limit=int(100 * 1024 * 1024 * 1024),
             eviction_policy="least-frequently-used",
         )
-        return add_lazy_load_functionality(
-            cache,
-            [
-                "stacks",
-                "targets",
-                "mosaics",
-                "calibration_stacks",
-                "workflow_graphs",
-            ],
-        )
+        return add_lazy_load_functionality(cache, lazy_names, lazy_types)
 
 
 cache = None

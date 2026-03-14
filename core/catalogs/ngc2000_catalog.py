@@ -3,8 +3,10 @@ from numpy import radians, degrees
 from typing import Any
 
 from geometry.distance import distance
+from beartype import beartype
 
 
+@beartype
 def _read_names_catalog() -> list[dict[str, Any]]:
     entries = []
     with open("catalogs/names.dat") as f:
@@ -18,6 +20,7 @@ def _read_names_catalog() -> list[dict[str, Any]]:
     return entries
 
 
+@beartype
 def _read_ngc2000_catalog() -> list[dict[str, Any]]:
     names = _read_names_catalog()
 
@@ -75,6 +78,7 @@ DistanceAndEntry = tuple[float, dict[str, Any] | None]
 
 
 # TODO: This return type is terrible.
+@beartype
 def _find_best_object_by_size(ra: float, dec: float) -> DistanceAndEntry:
     # Sort the objects by descending radius.
     entries = sorted(_read_ngc2000_catalog(), key=lambda x: x["radius"], reverse=True)
@@ -108,6 +112,7 @@ def _find_best_object_by_size(ra: float, dec: float) -> DistanceAndEntry:
     return best_distance, best_entry
 
 
+@beartype
 def _find_best_object_by_distance(ra: float, dec: float) -> DistanceAndEntry:
     entries = _read_ngc2000_catalog()
 
@@ -127,6 +132,7 @@ def _find_best_object_by_distance(ra: float, dec: float) -> DistanceAndEntry:
     return best_distance, best_entry
 
 
+@beartype
 def find_best_object(ra: float, dec: float) -> DistanceAndEntry:
     distance, entry = _find_best_object_by_size(ra, dec)
     if entry:

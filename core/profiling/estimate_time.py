@@ -2,8 +2,10 @@ import ray
 import numpy as np
 
 from context import context
+from beartype import beartype
 
 
+@beartype
 def estimate_time(tag: str, number: int = 1) -> float | None:
     nodes = ray.nodes()
     times = []

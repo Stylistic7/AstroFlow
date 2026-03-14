@@ -9,6 +9,7 @@ from collections.abc import Sequence, Iterable
 from astropy.wcs import WCS  # type: ignore
 from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon  # type: ignore
 from typing import Any
+from frozendict import frozendict
 
 from clustering.angles import angular_mean_mod_pi
 from context import context
@@ -17,15 +18,19 @@ import geometry.footprints as footprints
 from catalogs import position_string
 
 
-def healpix_cells_from_poly(poly, nside: int = 10):
+@beartype
+def healpix_cells_from_poly(
+    poly: SphericalPolygon | SingleSphericalPolygon, nside: int = 10
+) -> tuple[int, ...]:
     depth = int(np.log2(nside))  # cdshealpix uses depth = log2(nside)
     ra_deg, dec_deg = poly.to_radec()
     c = SkyCoord(ra_deg * u.deg, dec_deg * u.deg, frame="icrs")
     ipix, _, _ = cds.polygon_search(c.ra, c.dec, depth, flat=True)
-    return list(map(int, np.unique(ipix)))
+    return tuple(map(int, np.unique(ipix)))
 
 
 # TODO: Start using radians everywhere, and strongly-type the units.
+@beartype
 def spherical_centroid_deg(
     points: Iterable[tuple[float, float]],
 ) -> tuple[float, float]:
@@ -65,6 +70,7 @@ def _spherical_polygon_for_wcs(wcs: WCS) -> SingleSphericalPolygon:
     return footprint
 
 
+@beartype
 def _intersect_polygons(
     polygons: list[SphericalPolygon],
 ) -> SingleSphericalPolygon:
@@ -84,12 +90,12 @@ def _intersect_polygons(
 @dataclass(frozen=True)
 class AstrometricAttributes:
     name: str
-    center: list[float]
+    center: tuple[float, float]
     image_scale: float
     rotation_angle: float
     footprint: SingleSphericalPolygon
-    healpix_cells: list[int]
-    projected_footprints: dict[str, Any]  # TODO: Strongly-type this.
+    healpix_cells: tuple[int, ...]
+    projected_footprints: frozendict[str, Any]
 
     @classmethod
     def from_frames(
@@ -103,10 +109,8 @@ class AstrometricAttributes:
         )
         oldest_image_metadata = sorted_metadata[0]
 
-        center = list(
-            spherical_centroid_deg(
-                [m.plate_solution.center for m in sorted_metadata]
-            )
+        center = spherical_centroid_deg(
+            [m.plate_solution.center for m in sorted_metadata]
         )
         name = position_string.canonical_target_string(center)
         image_scale = np.mean(
@@ -118,7 +122,7 @@ class AstrometricAttributes:
         footprint = SingleSphericalPolygon.from_wcs(
             astropy.io.fits.Header(oldest_image_metadata.plate_solution.header)
         )
-        projected_footprints = footprints.all_projections(footprint)
+        projected_footprints = frozendict(footprints.all_projections(footprint))
         healpix_cells = healpix_cells_from_poly(footprint)
 
         return cls(
@@ -136,7 +140,7 @@ class AstrometricAttributes:
         cls, objects: Sequence["AstrometricAttributes"]
     ) -> "AstrometricAttributes":
         # TODO: Strongly-type physical units, maybe do auto-conversion.
-        center = list(spherical_centroid_deg([o.center for o in objects]))
+        center = spherical_centroid_deg([o.center for o in objects])
         image_scale = np.mean([o.image_scale for o in objects])
         rotation_angle = angular_mean_mod_pi(
             [o.rotation_angle for o in objects]
@@ -145,7 +149,7 @@ class AstrometricAttributes:
         footprint = _intersect_polygons(
             [SphericalPolygon(o.footprint) for o in objects]
         )
-        projected_footprints = footprints.all_projections(footprint)
+        projected_footprints = frozendict(footprints.all_projections(footprint))
         healpix_cells = healpix_cells_from_poly(footprint)
 
         return cls(
@@ -156,4 +160,11 @@ class AstrometricAttributes:
             footprint,
             healpix_cells,
             projected_footprints,
+        )
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "projected_footprints",
+            frozendict(self.projected_footprints),
         )

@@ -1,8 +1,10 @@
-from typing import Sequence
+from collections.abc import Sequence
 
 import catalogs.ngc2000_catalog as ngc2000_catalog
+from beartype import beartype
 
 
+@beartype
 def ra_dec_string(ra: float, dec: float) -> str:
     def round_to_nearest_tenth(number: float) -> float:
         return int(round(number * 10.0)) / 10.0
@@ -13,6 +15,7 @@ def ra_dec_string(ra: float, dec: float) -> str:
     return f"RA_{ra:.2f}_DEC_{dec:.2f}"
 
 
+@beartype
 def canonical_target_string(position: Sequence[float]) -> str:
     ra, dec = position
 

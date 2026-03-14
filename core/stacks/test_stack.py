@@ -7,6 +7,7 @@ from dependency_graph import run_graph
 from testing import make_synthetic_frames, copy_testdata_frames
 from stacks.simple_stack import SimpleStack
 from stacks.composite_stack import CompositeStack
+from stacks.types import StackHash, StackIdDependency
 
 
 def test_one_dark_stack():
@@ -95,7 +96,7 @@ def test_one_light_one_dark(test_context):
     assert light_stack.image_type == "light"
     assert light_stack.content_hash != None
     assert len(light_stack.frames) == 3
-    assert light_stack.dependencies == {"dark": {"stack_id": dark_stack.stable_hash}}
+    assert light_stack.dependencies == {"dark": StackIdDependency(stack_id=StackHash(dark_stack.stable_hash))}
     assert light_stack.oldest_date != None
     assert light_stack.newest_date != None
     assert light_stack.camera == "ZWO ASI6200MM Pro"

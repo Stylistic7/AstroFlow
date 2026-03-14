@@ -4,7 +4,7 @@ from frozendict import frozendict
 
 from context import context
 from stacks.composite_stack import CompositeStack
-from stacks.simple_stack import SimpleStacksDict
+from stacks.simple_stack import SimpleStack, SimpleStacksDict
 from calibration import associate_with_stack
 from decorators import cached
 from dependency_graph import Graph
@@ -19,7 +19,7 @@ from targets.types import TargetsDict
 def apply_settings(
     stack: CompositeStack, stack_settings: StackSettings
 ) -> CompositeStack:
-    new_contents = {}
+    new_contents = SimpleStacksDict()
     for content_hash, substack in stack.contents.items():
         new_dependencies = substack.dependencies | stack_settings.dependencies
         new_substack = replace(substack, dependencies=new_dependencies)

@@ -4,8 +4,10 @@ from dataclasses import dataclass
 from typing import TypeVar, Generic, Self, Any
 from abc import ABC
 import numpy as np
+from beartype import beartype
 
 
+@beartype
 @dataclass(frozen=True, slots=True)
 class ImageGeometry:
     width_pixels: int

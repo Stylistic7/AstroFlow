@@ -3,8 +3,10 @@ import ray
 from context import context
 import units
 from mosaics.types import Mosaic
+from beartype import beartype
 
 
+@beartype
 def find_missing_tiles(mosaic: Mosaic) -> None:
     max_x = max(t[0] for t in mosaic.tile_indices)
     max_y = max(t[1] for t in mosaic.tile_indices)

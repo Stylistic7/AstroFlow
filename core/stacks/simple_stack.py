@@ -1,7 +1,8 @@
 from dataclasses import dataclass, asdict
 from typing import Any
+from beartype import beartype
 
-from stacks.types import StackHash
+from stacks.types import StackHash, DependenciesDict
 from attributes import (
     AstroFlowStateAttributes,
     ChronologyAttributes,
@@ -14,9 +15,8 @@ from cache.content_hashed import ContentHashed
 from decorators import cached
 from hashing.types import LargeObject
 
-DependenciesDict = dict[str, StackHash]
 
-
+@beartype
 @dataclass(frozen=True)
 class SimpleStack(
     ContentHashed,
@@ -70,7 +70,7 @@ def simple_stack_from_frames(
     chronology_attributes = ChronologyAttributes.from_frames(frames, metadata)
     imaging_attributes = ImagingAttributes.from_frames(frames, metadata)
 
-    frame_metadata = {h: i for h, i in metadata.items() if h in frames}
+    frame_metadata = MetadataDict({h: i for h, i in metadata.items() if h in frames})
     assert frame_metadata
     assert not any(is_master(i.header) for i in frame_metadata.values())
 

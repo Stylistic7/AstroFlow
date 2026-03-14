@@ -1,6 +1,8 @@
 import numpy as np
+from beartype import beartype
 
 
+@beartype
 def ra_to_hms(ra: float) -> str:
     hours, remainder = np.divmod(ra * 3600, 15 * 3600)
     minutes, remainder = np.divmod(remainder, 15 * 60)
@@ -8,6 +10,7 @@ def ra_to_hms(ra: float) -> str:
     return f"{hours:.0f}h {minutes:.0f}m {seconds:.0f}s"
 
 
+@beartype
 def dec_to_dms(dec: float) -> str:
     degrees, remainder = np.divmod(dec * 3600, 3600)
     minutes, remainder = np.divmod(remainder, 60)

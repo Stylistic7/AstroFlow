@@ -3,7 +3,7 @@ from functools import cache
 
 from context import context
 from metadata.classes import ImageMetadata
-from stacks.types import StackHash
+from stacks.types import StackHash, DependenciesDict, StackIdDependency
 from previews.operations import resize_array
 from file_io.generic import read_image
 
@@ -93,7 +93,7 @@ def get_subframe_for_calibration_stack(
 
 
 def calibrate_subframe(
-    light_frame: ImageMetadata, dependencies: dict[str, StackHash], width: int
+    light_frame: ImageMetadata, dependencies: DependenciesDict, width: int
 ) -> np.ndarray:
     assert light_frame.plate_solution is not None
     rotate = light_frame.plate_solution.rotation_angle < 0.0
@@ -102,21 +102,20 @@ def calibrate_subframe(
         np.float32
     )
 
-    def get_nested(d, *keys):
-        for key in keys:
-            if not isinstance(d, dict) or key not in d:
-                return None
-            d = d.get(key)
-        return d
+    def get_stack_id(key) -> StackHash | None:
+        dep = dependencies.get(key)
+        if isinstance(dep, StackIdDependency):
+            return dep.stack_id
+        return None
 
     bias_frame, bias_image = get_subframe_for_calibration_stack(
-        get_nested(dependencies, "bias", "stack_id"), width
+        get_stack_id("bias"), width
     )
     dark_frame, dark_image = get_subframe_for_calibration_stack(
-        get_nested(dependencies, "dark", "stack_id"), width
+        get_stack_id("dark"), width
     )
     flat_frame, flat_image = get_subframe_for_calibration_stack(
-        get_nested(dependencies, "flat", "stack_id"), width
+        get_stack_id("flat"), width
     )
 
     return calibrate_image(

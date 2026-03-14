@@ -1,6 +1,7 @@
 import numpy as np
-from spherical_geometry.polygon import SphericalPolygon  # type: ignore
+from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon  # type: ignore
 from typing import Any
+from beartype import beartype
 
 from geometry import Degrees
 from geometry.projection import Projection
@@ -52,7 +53,8 @@ def radec_to_vector(
 
 
 # TODO: Strongly type this result.
-def all_projections(polygon: SphericalPolygon) -> dict[str, dict[str, Any]]:
+@beartype
+def all_projections(polygon: SphericalPolygon | SingleSphericalPolygon) -> dict[str, dict[str, Any]]:
     projections: dict[str, Projection] = {
         "galactic": galactic.GalacticProjection(),
         "mercator": mercator.MercatorProjection(),

@@ -5,6 +5,7 @@ from decorators import cached
 
 
 @cached.remote
+@beartype
 def validate_stacks(stacks: CompositeStacksDict) -> CompositeStacksDict:
     print(
         f"#### validate_stacks validating {len(stacks)} stacks "

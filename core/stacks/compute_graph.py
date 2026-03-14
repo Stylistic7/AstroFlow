@@ -8,6 +8,7 @@ from context import context
 from decorators import cached
 from stacks.stacking import stack_files
 from stacks.composite_stack import SimpleStack, CompositeStack
+from stacks.types import StackIdDependency
 from stacks.post_process import post_process_stack
 from stacks.convert_to_dict import convert_to_dict
 from stacks.composite_stack import CompositeStacksDict
@@ -37,8 +38,8 @@ def build_calibration_stack_subgraph(stack: CustomizedStack) -> Graph:
         tasks = []
         subgraphs = {}
         for t, dep in stack.dependencies.items():
-            if (stack_id := dep.get("stack_id")) is not None:
-                substack = calibration_stacks[stack_id]
+            if isinstance(dep, StackIdDependency):
+                substack = calibration_stacks[dep.stack_id]
                 tasks.append((stack_files, substack))
                 subgraphs |= visit_all_dependencies(substack, depth=depth + 2)
 

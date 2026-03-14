@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from frozendict import frozendict
 
-from stacks.types import StackHash
+from stacks.types import StackHash, StackDependency
 from targets.types import TargetHash
 from mosaics.types import MosaicHash
 from hashing import hash_dataclass
@@ -11,7 +11,7 @@ from hashing import hash_dataclass
 class StackSettings:
     is_quarantined: bool = False
     quarantined_substacks: list[StackHash] = field(default_factory=list)
-    dependencies: frozendict[str, StackHash] = field(default_factory=frozendict)
+    dependencies: frozendict[str, StackDependency] = field(default_factory=frozendict)
 
     def __hash__(self):
         return hash_dataclass(self)

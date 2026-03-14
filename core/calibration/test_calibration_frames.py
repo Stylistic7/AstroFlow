@@ -9,11 +9,12 @@ from previews.types import QualityLevel
 from stacks.compute_graph import build_calibration_stack_subgraph
 from stacks.simple_stack import SimpleStack
 from stacks.composite_stack import CompositeStack
-from stacks.types import StackHash
+from stacks.types import StackHash, StackIdDependency
 from context import context
 from file_io.find_image_files import find_image_files
 from dependency_graph import run_graph, print_graph
 from customization.settings import Settings, StackSettings
+from frozendict import frozendict
 
 
 def _print_stack(stack: CompositeStack):
@@ -21,7 +22,7 @@ def _print_stack(stack: CompositeStack):
     for substack_id, substack in stack.contents.items():
         print(f"###   Content {substack}")
         for d_type, d_id in substack.dependencies.items():
-            cal_stack = context.calibration_stacks[d_id["stack_id"]]
+            cal_stack = context.calibration_stacks[d_id.stack_id]
             print(f"###     Dependency ({d_type}) cal stack {cal_stack}")
             print(
                 f"###       oldest_date {cal_stack.oldest_date} newest_date {cal_stack.newest_date}"
@@ -143,17 +144,13 @@ def test_stack_dependency_graph(test_context) -> None:
     stack = next(iter(stacks.values()))
     _print_stack(stack)
 
-    bias_stack_id = next(iter(stack.contents.values())).dependencies["bias"][
-        "stack_id"
-    ]
+    bias_stack_id = next(iter(stack.contents.values())).dependencies["bias"].stack_id
     assert (
         context.calibration_stacks[bias_stack_id].oldest_date
         == new_bias_datetime
     )
 
-    dark_stack_id = next(iter(stack.contents.values())).dependencies["dark"][
-        "stack_id"
-    ]
+    dark_stack_id = next(iter(stack.contents.values())).dependencies["dark"].stack_id
     assert (
         context.calibration_stacks[dark_stack_id].oldest_date
         == new_dark_datetime
@@ -553,14 +550,14 @@ def test_flat_frame_selection(test_context) -> None:
     stack = next(iter(light_stacks))
     assert len(stack.contents) == 1
     substack = next(iter(stack.contents.values()))
-    assert substack.dependencies == {"flat": {"stack_id": second_flat_stack}}
+    assert substack.dependencies == {"flat": StackIdDependency(stack_id=second_flat_stack)}
 
     # Configure the light run to use the other flat run, which has prefix
     # `flat_run_0`.
     context.settings = Settings(
         stack_settings={
             stack.stable_hash: StackSettings(
-                dependencies={"flat": {"stack_id": first_flat_stack}}
+                dependencies=frozendict({"flat": StackIdDependency(stack_id=first_flat_stack)})
             )
         }
     )
@@ -581,7 +578,7 @@ def test_flat_frame_selection(test_context) -> None:
     stack = next(iter(light_stacks))
     assert len(stack.contents) == 1
     substack = next(iter(stack.contents.values()))
-    assert substack.dependencies == {"flat": {"stack_id": first_flat_stack}}
+    assert substack.dependencies == {"flat": StackIdDependency(stack_id=first_flat_stack)}
 
 
 def test_generic_grouping(test_context) -> None:

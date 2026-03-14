@@ -1,11 +1,16 @@
 import datetime
 from typing import Any
 from dataclasses import asdict
+from frozendict import frozendict
 
 from spherical_geometry.polygon import SingleSphericalPolygon  # type: ignore
 
-from stacks.composite_stack import CompositeStack
-from attributes import AstrometricAttributes, ChronologyAttributes, ImagingAttributes
+from stacks.composite_stack import CompositeStack, SimpleStacksDict
+from attributes import (
+    AstrometricAttributes,
+    ChronologyAttributes,
+    ImagingAttributes,
+)
 from attributes.astrometric_attributes import healpix_cells_from_poly
 
 
@@ -36,15 +41,15 @@ def make_composite_stack(**kwargs: Any) -> CompositeStack:
     astrometric_attributes = asdict(
         AstrometricAttributes(
             name="name",
-            center=[50.0, 50.0],
+            center=(50.0, 50.0),
             image_scale=1.0,
             rotation_angle=0.0,
             footprint=footprint,
             healpix_cells=healpix_cells,
-            projected_footprints={},
+            projected_footprints=frozendict(),
         )
     )
-    composite_stack_attributes = {"contents": [], "state": {}}
+    composite_stack_attributes = {"contents": SimpleStacksDict(), "state": {}}
 
     attributes = (
         chronology_attributes

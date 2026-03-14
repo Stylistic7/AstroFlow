@@ -4,6 +4,7 @@ import time
 
 from dependency_graph import GraphStatus
 from profiling.estimate_time import estimate_time
+from beartype import beartype
 
 
 # This function takes lists of ready, waiting, and done nodes from the
@@ -11,6 +12,7 @@ from profiling.estimate_time import estimate_time
 # their total number, remaining number, and estimated remaining time.
 #
 # TODO: Strongly-type the output.
+@beartype
 def graph_status_to_progress(status: GraphStatus) -> dict[str, Any]:
     remaining_task_counts = Counter(
         node.task._function.__name__

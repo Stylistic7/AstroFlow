@@ -38,9 +38,9 @@ class ContentHasher(ContentHashProtocol):
         elif isinstance(obj, dict) and all(
             isinstance(x, ContentHashed) for x in obj.values()
         ):
-            return {
+            return type(obj)({
                 k: replace(v, content_hash=hash_list([content_hash, i]))
                 for i, (k, v) in enumerate(obj.items())
-            }
+            })
         else:
             return obj

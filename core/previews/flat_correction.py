@@ -9,6 +9,7 @@ from customization.types import CustomizedStack
 from customization.subframe_selection import get_light_frames_sorted_by_stars
 from decorators import create_thumbnail
 from stacks.simple_stack import SimpleStack
+from stacks.types import StackHash, StackIdDependency
 from file_io.tiff_file_io import write_tiff_image
 from products import makes_image
 
@@ -29,7 +30,7 @@ def flat_corrected_stack(
     ]
 
     dependencies = substack.dependencies.copy()
-    dependencies["flat"] = {"stack_id": flat_stack.stable_hash}
+    dependencies["flat"] = StackIdDependency(stack_id=StackHash(flat_stack.stable_hash))
 
     temp_file = tempfile.NamedTemporaryFile(suffix=".tiff", delete=True)
     write_tiff_image(

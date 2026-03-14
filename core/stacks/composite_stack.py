@@ -1,7 +1,9 @@
 from dataclasses import dataclass, asdict
-from typing import Any, Optional, Sequence
+from typing import Any, Optional
+from collections.abc import Sequence
 import numpy as np
 import ray
+from beartype import beartype
 
 import units
 from hashing import hash_list, hash_list_int
@@ -19,6 +21,7 @@ from clustering.continuous import cluster_continuous
 from cache.content_hashed import ContentHashed
 
 
+@beartype
 @dataclass(frozen=True)
 class CompositeStack(
     ContentHashed,

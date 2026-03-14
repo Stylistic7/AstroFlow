@@ -1,8 +1,14 @@
 import os
 import itertools
+from collections.abc import Generator, Iterable
+from typing import Any
+from beartype import beartype
 
 
-def round_robin_by_directory(filenames, cluster=3):
+@beartype
+def round_robin_by_directory(
+    filenames: list[str], cluster: int = 3
+) -> Generator[str, None, None]:
     filenames = sorted(filenames)
     dirs = sorted(set(os.path.dirname(f) for f in filenames))
 
@@ -14,7 +20,10 @@ def round_robin_by_directory(filenames, cluster=3):
                 filenames.remove(filename)
 
 
-def chunked(iterable, size=10):
+@beartype
+def chunked(
+    iterable: Iterable[Any], size: int = 10
+) -> Generator[itertools.chain, None, None]:
     iterator = iter(iterable)
     for first in iterator:
         yield itertools.chain([first], itertools.islice(iterator, size - 1))

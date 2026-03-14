@@ -2,11 +2,13 @@ import ephem  # type: ignore
 import datetime
 from dateutil.parser import parse
 import pytz  # type: ignore
+from beartype import beartype
 
 kSanFranciscoLat = 37.7749
 kSanFranciscoLon = -122.4194
 
 
+@beartype
 def parse_local_datetime(s: str) -> datetime.datetime:
     local = pytz.timezone("America/Los_Angeles")
     naive = parse(s)
@@ -15,10 +17,12 @@ def parse_local_datetime(s: str) -> datetime.datetime:
     return utc_dt
 
 
+@beartype
 def parse_utc_datetime(s: str) -> datetime.datetime:
     return pytz.utc.localize(parse(s))
 
 
+@beartype
 def period_overlap(
     p1: tuple[datetime.datetime, datetime.datetime],
     p2: tuple[datetime.datetime, datetime.datetime],
@@ -51,6 +55,7 @@ def get_next_twilight_time() -> datetime.date:
     return pytz.utc.localize(twilight.datetime())
 
 
+@beartype
 def before_twilight(margin_minutes: float = 30) -> bool:
     twilight_dt = get_next_twilight_time()
     print("Next astronomical twilight starts at", twilight_dt, "UTC")

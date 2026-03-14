@@ -1,9 +1,11 @@
 import numpy as np
 from numpy import fabs, sin, cos, arctan2, sqrt
+from beartype import beartype
 
 
 # TODO: Name this better.
 # TODO: Use strongly-typed physical units (e.g. degrees).
+@beartype
 def distance(
     ra_1: float, dec_1: float, ra_2: float, dec_2: float, degrees: bool = True
 ) -> float:

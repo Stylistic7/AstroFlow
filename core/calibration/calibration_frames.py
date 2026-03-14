@@ -9,7 +9,7 @@ from typing import Any
 from decorators.decorators import cached
 from metadata.classes import ImageMetadata, FrameHash
 from context import context
-from stacks.types import StackHash
+from stacks.types import StackHash, StackIdDependency
 from stacks.simple_stack import (
     SimpleStack,
     CalibrationStack,
@@ -18,6 +18,7 @@ from stacks.simple_stack import (
 from stacks.composite_stack import CompositeStack, SimpleStacksDict
 import clustering
 from hashing.types import LargeObject
+from beartype import beartype
 
 
 @cached.remote
@@ -88,6 +89,7 @@ def identify_calibration_stacks(metadata_ref: LargeObject) -> SimpleStacksDict:
     return stacks
 
 
+@beartype
 def _midpoint_s(a: datetime, b: datetime) -> float:
     return (a.timestamp() + b.timestamp()) * 0.5
 
@@ -196,7 +198,7 @@ def associate_with_stacks(
                 sid = pickers[t](stack)
 
                 if sid is not None:
-                    deps[t] = {"stack_id": sid}
+                    deps[t] = StackIdDependency(stack_id=sid)
         new_stacks[h] = replace(stack, dependencies=deps)
 
     return new_stacks

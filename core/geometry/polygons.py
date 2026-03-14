@@ -1,12 +1,14 @@
 import numpy as np
 from spherical_geometry import great_circle_arc, vector
-from spherical_geometry.polygon import SphericalPolygon  # type: ignore
+from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon  # type: ignore
 
 from geometry.projection import Projection
+from beartype import beartype
 
 
+@beartype
 def project_polygon(
-    polygon: SphericalPolygon, projection: Projection
+    polygon: SphericalPolygon | SingleSphericalPolygon, projection: Projection
 ) -> tuple[list[float], list[float]]:
     xs, ys = [], []
     points = list(polygon.points)

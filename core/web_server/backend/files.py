@@ -8,6 +8,7 @@ from file_io.generic import read_header
 from customization.settings import Settings, StackSettings
 from state.actor import state
 from stacks.stacking import stack_files
+from stacks.types import FilenameDependency
 
 files_bp = Blueprint("files", __name__)
 
@@ -60,7 +61,7 @@ def select_file():
     # TODO: Watch out for race conditions here.
     settings = context.settings or Settings()
     stack_settings = settings.stack_settings.get(run_id, StackSettings())
-    stack_settings.dependencies[type] = {"filename": filename}
+    stack_settings.dependencies[type] = FilenameDependency(filename=filename)
     settings.stack_settings[run_id] = stack_settings
     context.settings = settings
 

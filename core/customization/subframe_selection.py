@@ -2,8 +2,9 @@ from dataclasses import replace
 import time
 
 from stacks.composite_stack import CompositeStack
+from stacks.simple_stack import SimpleStacksDict
 from context import context
-from metadata.classes import ImageMetadata
+from metadata.classes import ImageMetadata, MetadataDict
 
 
 def get_light_frames_sorted_by_stars(
@@ -49,14 +50,14 @@ def select_subframes(stack: CompositeStack) -> CompositeStack:
     if len(selected_light_frames) < context.min_frames_in_stack:
         return None
 
-    new_contents = {}
+    new_contents = SimpleStacksDict()
     for content_hash, substack in stack.contents.items():
         if new_frames := [
             f for f in substack.frames if f in selected_light_frames
         ]:
-            new_metadata = {
+            new_metadata = MetadataDict({
                 h: m for h, m in metadata.items() if h in new_frames
-            }
+            })
             new_substack = replace(
                 substack, frames=new_frames, metadata=new_metadata
             )

@@ -59,7 +59,7 @@ def _bind_args(
 def make_cached_decorator(
     cache_provider: Callable[[], CacheProtocol],
     content_hasher: ContentHashProtocol,
-    call_hasher: Optional[Callable[[bytes, Any], str]],
+    call_hasher: Optional[Callable[[str, Any], str]],
     debug=False,
 ):
     cache: CacheProtocol | None = None

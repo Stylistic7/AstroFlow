@@ -4,10 +4,12 @@ import numpy as np
 import operator
 from collections.abc import Callable, Sequence
 from typing import TypeVar
+from beartype import beartype
 
 T = TypeVar("T")
 
 
+@beartype
 def angular_spread_mod_pi(angles: list[float]) -> float:
     angles = np.mod(angles, np.pi)
     angles = np.sort(angles)
@@ -16,6 +18,7 @@ def angular_spread_mod_pi(angles: list[float]) -> float:
     return min(angles[i + n - 1] - angles[i] for i in range(n))
 
 
+@beartype
 def angular_mean_mod_pi(angles: Sequence[float]) -> float:
     if not angles:
         raise ValueError("angles must be non-empty")

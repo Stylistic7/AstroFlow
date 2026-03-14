@@ -79,6 +79,7 @@ class Viewbox(ContentHashed):
         return hash_dataclass(self)
 
 
+@beartype
 @dataclass(frozen=True)
 class Mask(ContentHashed):
     xmin: int

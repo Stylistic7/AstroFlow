@@ -1,6 +1,8 @@
 import numpy as np
+from beartype import beartype
 
 
+@beartype
 def compute_viewbox(
     points: list[tuple[float, float]],
 ) -> tuple[float, float, float, float]:

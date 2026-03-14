@@ -1,12 +1,15 @@
 from typing import Any
 
-from dependency_graph import CanonicalGraph, Node, ResultDict, canonicalize_node
+from dependency_graph import CanonicalGraph, Graph, Node, ResultDict, canonicalize_node
+from beartype import beartype
 
 
+@beartype
 def _tuple_values(tup: tuple) -> str:
     return ", ".join([str(t) for t in tup])
 
 
+@beartype
 def node_to_string(node: Node, exclude_args: bool = True) -> str:
     node = canonicalize_node(node)
 
@@ -22,11 +25,13 @@ def node_to_string(node: Node, exclude_args: bool = True) -> str:
     return string
 
 
-def node_to_string_tuple(node: Node) -> str:
+@beartype
+def node_to_string_tuple(node: Node) -> tuple:
     node = canonicalize_node(node)
     return (node.task._function.__name__, *[str(x) for x in node.args])
 
 
+@beartype
 def print_result_dict(results: ResultDict, indent: int = 0) -> None:
     for node, result in results.items():
         if type(node.task) is str:
@@ -40,7 +45,8 @@ def print_result_dict(results: ResultDict, indent: int = 0) -> None:
             print_result_dict(result, indent + 2)
 
 
-def print_graph(graph: CanonicalGraph) -> None:
+@beartype
+def print_graph(graph: CanonicalGraph | Graph) -> None:
     if not graph:
         print("Compute graph is empty")
         return

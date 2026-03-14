@@ -13,6 +13,7 @@ from decorators import (
 )
 from previews.operations import resize_array
 from previews.flat_correction import create_flat_correction_thumbnails
+from stacks.types import DependenciesDict
 from previews.calibration import calibrate_subframe
 from file_io.types import FitsFilePath, WithSidecar
 from stacks.simple_stack import SimpleStack, CalibrationStack
@@ -84,7 +85,7 @@ def stack_thumbnail_video(stack: CustomizedStack) -> Iterable[np.ndarray]:
     metadata = stack.all_metadata()
     for light_frame in get_light_frames_sorted_by_stars(stack):
         light_frame = metadata[light_frame]
-        dependencies = {}
+        dependencies = DependenciesDict()
         if substack := next(
             iter(
                 s
