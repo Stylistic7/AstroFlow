@@ -86,11 +86,11 @@ def test_orion_mosaic(test_context) -> None:
                 print(f"### {file=} {header=}")
                 assert expected_header.items() <= header.items()
 
-    assert_files("CompositeStack/Master/bias*.xisf", 1)
-    assert_files("CompositeStack/Master/dark*.xisf", 1)
-    assert_files("CompositeStack/Master/flat*.xisf", 1)
+    assert_files("CustomizedStack/Master/bias*.xisf", 1)
+    assert_files("CustomizedStack/Master/dark*.xisf", 1)
+    assert_files("CustomizedStack/Master/flat*.xisf", 1)
 
-    assert_files("CompositeStack/Master/light*.xisf", 4, {"FILTER": "H"})
+    assert_files("CustomizedStack/Master/light*.xisf", 4, {"FILTER": "H"})
     assert_files("CompositeStack/PostProcessed/light*.xisf", 4, {"FILTER": "H"})
 
     assert_files("PlacedImage/Subframe/placed*.tiff", 4, {"FILTER": "H"})

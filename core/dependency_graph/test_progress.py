@@ -51,4 +51,4 @@ def test_one_process(test_context):
     graph = scatter(process, runtime=1, number=10)
     run_graph(graph, status_fn=status_fn, status_interval=0)
 
-    assert False
+    # TODO: Add real assertions about progress reporting
