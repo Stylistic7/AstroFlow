@@ -108,6 +108,8 @@ class Context:
         return ray.get(actor.get.remote(key, default_value))
 
     def __getattr__(self, key: Key) -> Any:
+        if isinstance(key, str) and key.startswith("__") and key.endswith("__"):
+            raise AttributeError(key)
         return self.get(key)
 
     def __getitem__(self, key: Key) -> Any:
