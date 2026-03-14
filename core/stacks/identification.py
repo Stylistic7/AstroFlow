@@ -14,7 +14,9 @@ from hashing.types import LargeObject
 @cached.remote
 @beartype
 def identify_stacks(
-    metadata_ref: LargeObject, light_frames: tuple[FrameHash, ...]
+    metadata_ref: LargeObject,
+    angular_tolerance: float,
+    light_frames: tuple[FrameHash, ...],
 ) -> CompositeStacksDict:
     print(
         f"### identify_stacks running for spatial group of length {len(light_frames)}"
@@ -59,7 +61,6 @@ def identify_stacks(
             assert len(set(cameras)) == 1
             yield frames
 
-    # TODO: The parameter should be in the UI.
     @beartype
     def rotation_clusters(
         frames: tuple[FrameHash, ...],
@@ -72,7 +73,7 @@ def identify_stacks(
             for k in frames
         ]
         for cluster in clustering.cluster_angles_mod_pi(
-            rotation_angles, np.radians(2.5)
+            rotation_angles, angular_tolerance
         ):
             frames, _ = zip(*cluster)
             yield frames

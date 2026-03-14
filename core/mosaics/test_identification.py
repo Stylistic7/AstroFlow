@@ -58,7 +58,7 @@ def test_two_targets(test_context) -> None:
     }
     context.targets = {foo.stable_hash: foo, bar.stable_hash: bar}
 
-    mosaics = ray.get(identify_mosaics.remote(context.targets))
+    mosaics = ray.get(identify_mosaics.remote(context.angular_tolerance, context.targets))
     assert len(mosaics) == 1
     mosaic = next(iter(mosaics.values()))
     print(f"### mosaic.strips {mosaic.strips}")
@@ -138,7 +138,7 @@ def test_three_targets(test_context) -> None:
         baz.stable_hash: baz,
     }
 
-    mosaics = ray.get(identify_mosaics.remote(context.targets))
+    mosaics = ray.get(identify_mosaics.remote(context.angular_tolerance, context.targets))
 
     assert len(mosaics) == 1
     mosaic = next(iter(mosaics.values()))
@@ -221,7 +221,7 @@ def test_three_out_of_order_targets(test_context) -> None:
         baz.stable_hash: baz,
     }
 
-    mosaics = ray.get(identify_mosaics.remote(context.targets))
+    mosaics = ray.get(identify_mosaics.remote(context.angular_tolerance, context.targets))
 
     assert len(mosaics) == 1
     mosaic = next(iter(mosaics.values()))
@@ -316,7 +316,7 @@ def test_three_targets_and_an_outlier(test_context) -> None:
         outlier.stable_hash: outlier,
     }
 
-    mosaics = ray.get(identify_mosaics.remote(context.targets))
+    mosaics = ray.get(identify_mosaics.remote(context.angular_tolerance, context.targets))
 
     assert len(mosaics) == 1
     mosaic = next(iter(mosaics.values()))
@@ -392,7 +392,7 @@ def test_ic1318(test_context) -> None:
         bar.stable_hash: bar,
     }
 
-    mosaics = ray.get(identify_mosaics.remote(context.targets))
+    mosaics = ray.get(identify_mosaics.remote(context.angular_tolerance, context.targets))
 
     assert len(mosaics) == 1
     mosaic = next(iter(mosaics.values()))
@@ -401,14 +401,15 @@ def test_ic1318(test_context) -> None:
     assert mosaic.target_ids == [bar.stable_hash, foo.stable_hash]
 
 
+# TODO: Make this actually test something.
 def test_big_cygnus_pano(test_context) -> None:
     copy_testdata_into_cache()
 
     run_graph(build_compute_graph())
 
-    mosaics = ray.get(identify_mosaics.remote(context.targets))
+    mosaics = ray.get(identify_mosaics.remote(context.angular_tolerance, context.targets))
 
-    mosaic = mosaics["2145f06bc55e07d0"]
+    mosaic = mosaics["3a9e9b98253ec8d4"]
     print("### mosaic", mosaic)
 
     target_ids = mosaic.target_ids

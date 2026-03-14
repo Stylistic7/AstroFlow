@@ -5,6 +5,7 @@ import time
 import signal
 import sys
 import datetime
+import numpy as np
 
 from context import context, get_cache, queue
 from ray_infra.ray_init import connect_to_ray_cluster
@@ -74,6 +75,8 @@ def _populate_context(
     context.output_dir = Path("/Volumes/Astro/Processed")
 
     context.cosine_similarity_threshold = 0.9999
+    context.angular_tolerance = np.radians(10.0)
+
     context.min_component_members = 3
     context.max_run_gap = datetime.timedelta(hours=8)
     context.min_frames_in_stack = 3
@@ -84,7 +87,7 @@ def _populate_context(
     context.compute_graphs = [TopologicalSorterWithStatus(Graph())]
     context.compute_graph_status = GraphStatus()
 
-    context.dangerously_accept_existing_files = True
+    context.dangerously_accept_existing_files = False
     context.override_filters = None
     context.shopping_cart = [("mosaic", "75a1da6463e118e6")]
     context.ray_head_node_enabled = True

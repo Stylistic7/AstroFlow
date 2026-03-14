@@ -1,6 +1,7 @@
 from pathlib import Path
 import tempfile
 import datetime
+import numpy as np
 from dataclasses import dataclass
 from typing import Any
 
@@ -34,6 +35,7 @@ def make_test_context() -> tuple[
     context.output_dir = Path(output_dir_obj.name)
 
     context.cosine_similarity_threshold = 0.99999
+    context.angular_tolerance = np.radians(10.0)
     context.min_component_members = 3
     context.max_run_gap = datetime.timedelta(hours=8)
     context.min_frames_in_stack = 3

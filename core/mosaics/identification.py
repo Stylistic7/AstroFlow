@@ -42,9 +42,10 @@ def roughly_same_image_scale(a: float, b: float) -> bool:
     return ratio > 0.9 and ratio < 1.1
 
 
-# TODO: This parameter should be in the UI.
-def roughly_same_position_angle(a: float, b: float) -> bool:
-    return np.degrees(angular_spread_mod_pi([a, b])) < 4.0
+def roughly_same_position_angle(
+    a: float, b: float, angular_tolerance: float
+) -> bool:
+    return angular_spread_mod_pi([a, b]) < angular_tolerance
 
 
 @cached.remote
@@ -55,6 +56,7 @@ def targets_overlap(
     span_match: float = 0.75,
     thick_min: float = 0.1,
     thick_max: float = 0.3,
+    angular_tolerance: float = 10.0,
     debug: bool = False,
 ) -> Overlap:
     if a_target is b_target:
@@ -64,7 +66,7 @@ def targets_overlap(
         return Overlap.INCOMPATIBLE
 
     if not roughly_same_position_angle(
-        a_target.rotation_angle, b_target.rotation_angle
+        a_target.rotation_angle, b_target.rotation_angle, angular_tolerance
     ):
         return Overlap.INCOMPATIBLE
 
@@ -189,7 +191,8 @@ def targets_overlap(
 def group_targets(
     targets: TargetsDict,
     target_ids: list[TargetHash],
-    allowed_overlaps,
+    allowed_overlaps: list[Overlap],
+    angular_tolerance: float,
 ) -> list[set[TargetHash]]:
     assert len(target_ids) > 0
 
@@ -209,7 +212,11 @@ def group_targets(
             continue
 
         for a, b in combinations(sorted(tids), 2):
-            overlap = ray.get(targets_overlap.remote(targets[a], targets[b]))
+            overlap = ray.get(
+                targets_overlap.remote(
+                    targets[a], targets[b], angular_tolerance=angular_tolerance
+                )
+            )
             if overlap in allowed_overlaps:
                 print(f"### union {a=} {b=} with overlap {overlap}")
                 disjoint_set.union(a, b)
@@ -234,10 +241,13 @@ def group_targets(
 
 
 def find_strips(
-    targets: TargetsDict, target_ids: list[TargetHash], debug: bool = False
+    targets: TargetsDict,
+    target_ids: list[TargetHash],
+    angular_tolerance: float,
+    debug: bool = False,
 ) -> list[Strip]:
     strips = group_targets(
-        targets, target_ids, allowed_overlaps=[Overlap.LONG_EDGE]
+        targets, target_ids, [Overlap.LONG_EDGE], angular_tolerance
     )
     if debug:
         for i, strip in enumerate(strips):
@@ -259,7 +269,11 @@ def find_strips(
                 1
                 for tid in strip
                 if ray.get(
-                    targets_overlap.remote(targets[target_id], targets[tid])
+                    targets_overlap.remote(
+                        targets[target_id],
+                        targets[tid],
+                        angular_tolerance=angular_tolerance,
+                    )
                 )
                 == Overlap.LONG_EDGE
             )
@@ -323,7 +337,7 @@ def find_strips(
 
 
 def _identify_overlapping_targets(
-    targets: TargetsDict, debug: bool = False
+    targets: TargetsDict, angular_tolerance: float, debug: bool = False
 ) -> list[list[TargetHash]]:
     if not targets:
         return []
@@ -337,7 +351,8 @@ def _identify_overlapping_targets(
     mosaics = group_targets(
         targets,
         target_ids,
-        allowed_overlaps=[Overlap.LONG_EDGE, Overlap.SHORT_EDGE],
+        [Overlap.LONG_EDGE, Overlap.SHORT_EDGE],
+        angular_tolerance,
     )
 
     num_grouped_targets = sum(len(m) for m in mosaics)
@@ -358,13 +373,13 @@ def _identify_overlapping_targets(
 
 @cached.remote
 def identify_mosaics(
-    targets: TargetsDict, debug: bool = False
+    angular_tolerance: float, targets: TargetsDict, debug: bool = False
 ) -> dict[MosaicHash, Mosaic]:
     print(f"### Identifying mosaics from {len(targets)} targets")
 
     # test_commutativity()
 
-    mosaics = _identify_overlapping_targets(targets, debug)
+    mosaics = _identify_overlapping_targets(targets, angular_tolerance, debug)
     if not mosaics:
         print("### No overlapping targets found")
         return MosaicsDict()
@@ -407,7 +422,7 @@ def identify_mosaics(
         #     ]).points).tolist()
 
         try:
-            strips = find_strips(targets, mosaic, debug)
+            strips = find_strips(targets, mosaic, angular_tolerance, debug)
             print("### strips", strips)
         except AssertionError:
             print(f"### Failed to order mosaic")

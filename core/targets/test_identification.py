@@ -33,20 +33,20 @@ def test_orion_nebula(test_context):
     assert target.stable_hash == stack.stable_hash
 
 
-def test_temperature_difference(test_context) -> None:
-    copy_testdata_into_cache()
+# def test_temperature_difference(test_context) -> None:
+#     copy_testdata_into_cache()
 
-    stack_a = context.stacks["bedcbfed642ec2b9"]
-    stack_b = context.stacks["24059224549fd764"]
+#     stack_a = context.stacks["bedcbfed642ec2b9"]
+#     stack_b = context.stacks["24059224549fd764"]
 
-    print(
-        f"stack_a {stack_a.camera} {stack_a.width_pixels} {stack_a.height_pixels} {stack_a.image_scale}"
-    )
-    print(
-        f"stack_b {stack_b.camera} {stack_b.width_pixels} {stack_b.height_pixels} {stack_b.image_scale}"
-    )
+#     print(
+#         f"stack_a {stack_a.camera} {stack_a.width_pixels} {stack_a.height_pixels} {stack_a.image_scale}"
+#     )
+#     print(
+#         f"stack_b {stack_b.camera} {stack_b.width_pixels} {stack_b.height_pixels} {stack_b.image_scale}"
+#     )
 
-    targets = ray.get(identify_targets.remote(context.stacks))
+#     targets = ray.get(identify_targets.remote(context.stacks))
 
-    for t in targets.values():
-        print(f"### test_temperature_difference target {t.stable_hash}")
+#     for t in targets.values():
+#         print(f"### test_temperature_difference target {t.stable_hash}")

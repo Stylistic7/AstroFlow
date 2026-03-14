@@ -10,7 +10,9 @@ from decorators import cached
 
 
 @cached.remote
-def identify_targets(stacks: CompositeStacksDict) -> TargetsDict:
+def identify_targets(
+    angular_tolerance: float, stacks: CompositeStacksDict
+) -> TargetsDict:
     print(f"### identify_targets stacks {list(stacks.keys())}")
 
     @beartype
@@ -42,7 +44,6 @@ def identify_targets(stacks: CompositeStacksDict) -> TargetsDict:
             assert len(set(cameras)) == 1
             yield stack_hashes
 
-    # TODO: The parameter should be in the UI.
     @beartype
     def rotation_clusters(
         stack_hashes: tuple[StackHash, ...],
@@ -55,7 +56,7 @@ def identify_targets(stacks: CompositeStacksDict) -> TargetsDict:
             for s in stack_hashes
         ]
         for cluster in clustering.cluster_angles_mod_pi(
-            rotation_angles, np.radians(5.0)
+            rotation_angles, angular_tolerance
         ):
             stack_hashes, _ = zip(*cluster)
             yield stack_hashes
