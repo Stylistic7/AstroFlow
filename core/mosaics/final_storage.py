@@ -13,6 +13,7 @@ from pix.classes import ImageList
 from pix.tasks import SaveImages
 from products import makes_image
 from decorators import cached, create_thumbnail, measure_performance
+from metadata.classes import ImageMetadata
 from mosaics.types import Mosaic
 from previews.types import QualityLevel
 
@@ -36,8 +37,9 @@ def save_uncompressed(images: ImageList, output_filenames: list[Path]):
 @create_thumbnail
 @measure_performance
 def store_mosaic_color_channel_master(
-    mosaic: Mosaic, filter: str, input: Path
+    mosaic: Mosaic, filter: str, input: ImageMetadata
 ) -> Path:
+    filename = input.filename
     output = store_mosaic_color_channel_master.filename_fn(mosaic, filter)
     tiff_output = output.with_suffix(".tiff")
 
@@ -46,12 +48,12 @@ def store_mosaic_color_channel_master(
     if context.get("mock_pixinsight", False):
         print(
             f"### store_mosaic_color_channel_master mocking PixInsight; "
-            f"copying {input=} to {output=}"
+            f"copying {filename=} to {output=}"
         )
-        copy_image(input, output)
-        make_preview_tiff(input, tiff_output)
+        copy_image(filename, output)
+        make_preview_tiff(filename, tiff_output)
     else:
-        save_uncompressed([input], [output])
+        save_uncompressed([filename], [output])
         make_preview_tiff(output, tiff_output)
 
     return output
@@ -62,20 +64,17 @@ def store_mosaic_color_channel_master(
 @create_thumbnail
 @measure_performance
 def store_mosaic_color_channel_subframe(
-    mosaic: Mosaic, filter: str, input: Path
+    mosaic: Mosaic, filter: str, input: ImageMetadata
 ) -> Path:
+    filename = input.filename
     print(
-        f"### store_mosaic_color_channel_subframe type {str(mosaic)} {filter=} {input=}"
+        f"### store_mosaic_color_channel_subframe type {str(mosaic)} {filter=} {filename=}"
     )
 
-    # TODO: What is this awful hack doing?
-    if not isinstance(input, Path):
-        return None
-
-    assert input.exists()
+    assert filename.exists()
 
     output = store_mosaic_color_channel_subframe.filename_fn(mosaic, filter)
-    image = read_image(input)
+    image = read_image(filename)
     autostretched = (autostretch(image) * 255.0).astype(np.uint8)
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     write_tiff_image(output, autostretched, {"FILTER": filter})
@@ -85,7 +84,7 @@ def store_mosaic_color_channel_subframe(
 
 @ray.remote
 def store_mosaic_color_channel(
-    mode: QualityLevel, mosaic: Mosaic, filter: str, input: Path
+    mode: QualityLevel, mosaic: Mosaic, filter: str, input: ImageMetadata
 ) -> Path:
     print(
         f"### store_mosaic_color_channel {mode=} {str(mosaic)} {filter=} {input=}"
