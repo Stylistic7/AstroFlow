@@ -136,15 +136,22 @@ def load_metadata() -> LargeObject:
     quarantined_files = context.quarantined_files or set()
 
     # TODO: This won't support disconnected storage media.
+    input_dirs = [str(Path(d).resolve()) for d in (context.input_dirs or [])]
+
+    def is_input_file(filename) -> bool:
+        resolved = str(Path(filename).resolve())
+        return any(resolved.startswith(d) for d in input_dirs)
+
     metadata = MetadataDict()
     for key, value in context.get_matching(("compute_image_metadata",)).items():
         try:
             if isinstance(value.content_hash, str):
                 if value.content_hash not in quarantined_files:
-                    if "master" not in os.path.basename(value.filename).lower():
-                        if os.path.exists(value.filename):
-                            if not image_types.is_master(value.header):
-                                metadata[value.content_hash] = value
+                    if is_input_file(value.filename):
+                        if "master" not in os.path.basename(value.filename).lower():
+                            if os.path.exists(value.filename):
+                                if not image_types.is_master(value.header):
+                                    metadata[value.content_hash] = value
         except Exception as e:
             print(
                 f"### Rejecting bad key {key} because of exception {e} for "
