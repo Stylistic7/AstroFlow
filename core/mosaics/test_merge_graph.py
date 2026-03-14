@@ -19,6 +19,7 @@ from mosaics.compute_graph import (
     build_placement_subgraph,
     get_stacks_for_filter,
 )
+from metadata.image_metadata import compute_image_metadata
 from mosaics.orion_mosaic import add_orion_mosaic_images
 from targets.types import Target
 from testing.test_stacks import make_composite_stack
@@ -105,46 +106,20 @@ def test_three_by_one(test_context) -> None:
     )
     print_graph(graph)
 
+    place_a = Node(build_placement_subgraph, mode, mosaic, stacks["a"], filter, viewbox)
+    place_b = Node(build_placement_subgraph, mode, mosaic, stacks["b"], filter, viewbox)
+    place_c = Node(build_placement_subgraph, mode, mosaic, stacks["c"], filter, viewbox)
+    merge_strip_1 = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_1")
+    meta_strip_1 = Node(compute_image_metadata, name="merge_mosaic_abc123_strip_1")
+    merge_strip_2 = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_2")
+    meta_strip_2 = Node(compute_image_metadata, name="merge_mosaic_abc123_strip_2")
+
     expected_graph = Graph(
         {
-            Node(
-                merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_1"
-            ): [
-                Node(
-                    build_placement_subgraph,
-                    mode,
-                    mosaic,
-                    stacks["a"],
-                    filter,
-                    viewbox,
-                ),
-                Node(
-                    build_placement_subgraph,
-                    mode,
-                    mosaic,
-                    stacks["b"],
-                    filter,
-                    viewbox,
-                ),
-            ],
-            Node(
-                merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_2"
-            ): [
-                Node(
-                    merge_images,
-                    mode,
-                    mosaic,
-                    name="merge_mosaic_abc123_strip_1",
-                ),
-                Node(
-                    build_placement_subgraph,
-                    mode,
-                    mosaic,
-                    stacks["c"],
-                    filter,
-                    viewbox,
-                ),
-            ],
+            merge_strip_1: [place_a, place_b],
+            meta_strip_1: [merge_strip_1],
+            merge_strip_2: [meta_strip_1, place_c],
+            meta_strip_2: [merge_strip_2],
         }
     )
     assert canonicalize_graph(graph) == canonicalize_graph(expected_graph)
@@ -218,24 +193,34 @@ def test_two_by_three(test_context) -> None:
     )
 
     merge_a_b = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_b")
+    meta_a_b = Node(compute_image_metadata, name="merge_mosaic_abc123_b")
     merge_a_b_c = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_c")
+    meta_a_b_c = Node(compute_image_metadata, name="merge_mosaic_abc123_c")
     merge_d_e = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_e")
+    meta_d_e = Node(compute_image_metadata, name="merge_mosaic_abc123_e")
     merge_d_e_f = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_f")
+    meta_d_e_f = Node(compute_image_metadata, name="merge_mosaic_abc123_f")
     final_merge = Node(
         merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_1"
     )
+    final_meta = Node(compute_image_metadata, name="merge_mosaic_abc123_strip_1")
 
     expected_graph = Graph(
         {
             place_b: [place_a],
             merge_a_b: [place_a, place_b],
-            place_c: [merge_a_b],
-            merge_a_b_c: [merge_a_b, place_c],
+            meta_a_b: [merge_a_b],
+            place_c: [meta_a_b],
+            merge_a_b_c: [meta_a_b, place_c],
+            meta_a_b_c: [merge_a_b_c],
             place_e: [place_d],
             merge_d_e: [place_d, place_e],
-            place_f: [merge_d_e],
-            merge_d_e_f: [merge_d_e, place_f],
-            final_merge: [merge_a_b_c, merge_d_e_f],
+            meta_d_e: [merge_d_e],
+            place_f: [meta_d_e],
+            merge_d_e_f: [meta_d_e, place_f],
+            meta_d_e_f: [merge_d_e_f],
+            final_merge: [meta_a_b_c, meta_d_e_f],
+            final_meta: [final_merge],
         }
     )
 
@@ -296,18 +281,19 @@ def test_three_panes(test_context) -> None:
     merge_strip_0 = Node(
         merge_images, mode, mosaic, name="merge_mosaic_abc123_c"
     )
+    meta_strip_0 = Node(compute_image_metadata, name="merge_mosaic_abc123_c")
     merge_strip_1 = Node(
         merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_1"
     )
+    meta_strip_1 = Node(compute_image_metadata, name="merge_mosaic_abc123_strip_1")
 
     expected_graph = Graph(
         {
             place_c: [place_b],
             merge_strip_0: [place_b, place_c],
-            merge_strip_1: [
-                place_a,
-                merge_strip_0,
-            ],
+            meta_strip_0: [merge_strip_0],
+            merge_strip_1: [place_a, meta_strip_0],
+            meta_strip_1: [merge_strip_1],
         }
     )
 
@@ -387,23 +373,29 @@ def test_orion_mosaic(test_context) -> None:
         mosaic,
         name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea",
     )
+    meta_0 = Node(compute_image_metadata, name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea")
     merge_1_0__1_1 = Node(
         merge_images,
         mode,
         mosaic,
         name=f"merge_{mosaic.stable_hash}_6d9f6be3ffab0f22",
     )
+    meta_1 = Node(compute_image_metadata, name=f"merge_{mosaic.stable_hash}_6d9f6be3ffab0f22")
     final_merge = Node(
         merge_images, mode, mosaic, name=f"merge_{mosaic.stable_hash}_strip_1"
     )
+    final_meta = Node(compute_image_metadata, name=f"merge_{mosaic.stable_hash}_strip_1")
 
     expected_graph = Graph(
         {
             place_1_1: [place_1_0],
             merge_1_0__1_1: [place_1_0, place_1_1],
+            meta_1: [merge_1_0__1_1],
             place_0_1: [place_0_0],
             merge_0_0__0_1: [place_0_0, place_0_1],
-            final_merge: [merge_1_0__1_1, merge_0_0__0_1],
+            meta_0: [merge_0_0__0_1],
+            final_merge: [meta_1, meta_0],
+            final_meta: [final_merge],
         }
     )
 
@@ -431,7 +423,7 @@ def test_orion_mosaic_one_by_two(test_context) -> None:
     mosaic = next(iter(context.mosaics.values()))
 
     print(f"### mosaic.strips {mosaic.strips}")
-    assert mosaic.strips == [["2e5e69b75efbc277"], ["1101452f8cf2f9ff"]]
+    assert mosaic.strips == [["1101452f8cf2f9ff"], ["2e5e69b75efbc277"]]
 
     mode = QualityLevel.SUBFRAME
     filter = "H"
@@ -445,31 +437,15 @@ def test_orion_mosaic_one_by_two(test_context) -> None:
         )
     )
 
+    place_strip_0 = Node(build_placement_subgraph, mode, mosaic, stacks["1101452f8cf2f9ff"], filter, viewbox)
+    place_strip_1 = Node(build_placement_subgraph, mode, mosaic, stacks["2e5e69b75efbc277"], filter, viewbox)
+    final_merge = Node(merge_images, mode, mosaic, name=f"merge_{mosaic.stable_hash}_strip_1")
+    final_meta = Node(compute_image_metadata, name=f"merge_{mosaic.stable_hash}_strip_1")
+
     expected_graph = Graph(
         {
-            Node(
-                merge_images,
-                mode,
-                mosaic,
-                name=f"merge_{mosaic.stable_hash}_strip_1",
-            ): [
-                Node(
-                    build_placement_subgraph,
-                    mode,
-                    mosaic,
-                    stacks["2e5e69b75efbc277"],
-                    filter,
-                    viewbox,
-                ),
-                Node(
-                    build_placement_subgraph,
-                    mode,
-                    mosaic,
-                    stacks["1101452f8cf2f9ff"],
-                    filter,
-                    viewbox,
-                ),
-            ]
+            final_merge: [place_strip_0, place_strip_1],
+            final_meta: [final_merge],
         }
     )
 
@@ -535,9 +511,10 @@ def test_orion_mosaic_two_by_one(test_context) -> None:
         mosaic,
         name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea",
     )
+    meta = Node(compute_image_metadata, name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea")
 
     expected_graph = Graph(
-        {place_0_1: [place_0_0], merge: [place_0_0, place_0_1]}
+        {place_0_1: [place_0_0], merge: [place_0_0, place_0_1], meta: [merge]}
     )
 
     print(f"### expected_graph")
@@ -609,15 +586,19 @@ def test_orion_mosaic_missing_panel(test_context) -> None:
         mosaic,
         name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea",
     )
+    meta_1 = Node(compute_image_metadata, name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea")
     final_merge = Node(
         merge_images, mode, mosaic, name=f"merge_{mosaic.stable_hash}_strip_1"
     )
+    final_meta = Node(compute_image_metadata, name=f"merge_{mosaic.stable_hash}_strip_1")
 
     expected_graph = Graph(
         {
             place_1_1: [place_1_0],
             merge_1_0__1_1: [place_1_0, place_1_1],
-            final_merge: [place_0_0, merge_1_0__1_1],
+            meta_1: [merge_1_0__1_1],
+            final_merge: [place_0_0, meta_1],
+            final_meta: [final_merge],
         }
     )
 

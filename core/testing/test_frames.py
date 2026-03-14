@@ -288,10 +288,10 @@ def make_synthetic_frames(
                 content_hash=content_hash,
                 filename=fits_filename,
                 header=header,
-                width=width_pixels,
-                height=height_pixels,
+                width_pixels=width_pixels,
+                height_pixels=height_pixels,
                 channels=1,
-                dtype=np.uint16,
+                dtype=np.dtype(np.uint16),
                 plate_solution=plate_solution,
             )
             context.set(key, metadata)
