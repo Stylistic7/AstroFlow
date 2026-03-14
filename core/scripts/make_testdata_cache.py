@@ -91,10 +91,10 @@ if __name__ == "__main__":
 
     metadata = ray.get(load_metadata.remote()).get()
 
-    copy_all_mosaic_data(metadata, cache, testdata_cache, "2145f06bc55e07d0")
+    copy_all_mosaic_data(metadata, cache, testdata_cache, "75a1da6463e118e6")
     copy_all_stack_data(metadata, cache, testdata_cache, "8768e9be7664d771")
     copy_all_target_data(metadata, cache, testdata_cache, "bedcbfed642ec2b9")
-    copy_all_target_data(metadata, cache, testdata_cache, "24059224549fd764")
+    # copy_all_target_data(metadata, cache, testdata_cache, "24059224549fd764")
 
     # Copy the output files, and store the cache to a tar.gz file on disk.
     # shutil.copytree(context.output_dir, 'testdata', dirs_exist_ok=True)
