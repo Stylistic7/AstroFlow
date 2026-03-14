@@ -20,12 +20,13 @@ from mosaics.compute_graph import build_mosaic_subgraph, process_mosaics_for_ui
 from mosaics.types import MosaicsDict
 from dependency_graph import Graph, Node, chain
 from stacks.identification import identify_stacks
-from stacks.composite_stack import SimpleStacksDict
+from stacks.composite_stack import SimpleStacksDict, CompositeStacksDict
 from stacks.validation import validate_stacks
 from decorators import cached
 from customization.compute_graph import (
     scatter_customize_stacks,
     scatter_customize_cal_stacks,
+    scatter_customize_targets,
 )
 from mosaics.compute_graph import stacks_for_mosaic, targets_for_mosaic
 from hashing.types import LargeObject
@@ -78,9 +79,16 @@ def combine_dicts(*ancestor_results: tuple[dict[Any, Any]]) -> dict[Any, Any]:
     return result
 
 
-@ray.remote
-def scatter_spatial_groups(metadata_ref: LargeObject, spatial_groups) -> Graph:
-    settings = context.settings or Settings()
+@cached.remote
+def scatter_spatial_groups(
+    metadata_ref: LargeObject, settings: Settings, spatial_groups
+) -> Graph:
+    angular_tolerance = context.angular_tolerance
+
+    context.stacks = CompositeStacksDict()
+    context.calibration_stacks = SimpleStacksDict()
+    context.targets = TargetsDict()
+    context.mosaics = MosaicsDict()
 
     graph = Graph({})
 
@@ -105,6 +113,7 @@ def scatter_spatial_groups(metadata_ref: LargeObject, spatial_groups) -> Graph:
         stack_task = (
             identify_stacks,
             metadata_ref,
+            angular_tolerance,
             g,
         )
         validate_stacks_task = Node(validate_stacks, name=str(i))
@@ -112,7 +121,8 @@ def scatter_spatial_groups(metadata_ref: LargeObject, spatial_groups) -> Graph:
             scatter_customize_stacks, settings, name=str(i)
         )
 
-        target_task = Node(identify_targets, name=str(i))
+        target_task = Node(identify_targets, angular_tolerance, name=str(i))
+        customize_targets_task = Node(scatter_customize_targets, settings, name=str(i))
 
         # TODO: Validate stacks after customizing them.
         graph[validate_stacks_task] = {stack_task}
@@ -122,9 +132,10 @@ def scatter_spatial_groups(metadata_ref: LargeObject, spatial_groups) -> Graph:
         ]
 
         graph[target_task] = {customize_stacks_task}
+        graph[customize_targets_task] = {target_task}
 
         stack_tasks.add(customize_stacks_task)
-        target_tasks.add(target_task)
+        target_tasks.add(customize_targets_task)
 
     gather_stacks_task = Node(combine_dicts, name="combine_stacks")
     graph[gather_stacks_task] = stack_tasks
@@ -136,17 +147,19 @@ def scatter_spatial_groups(metadata_ref: LargeObject, spatial_groups) -> Graph:
     graph[store_targets] = {gather_targets_task}
     graph[process_targets_for_ui] = {gather_targets_task}
 
-    graph[identify_mosaics] = {gather_targets_task}
-    graph[store_mosaics] = {identify_mosaics}
-    graph[process_mosaics_for_ui] = {identify_mosaics}
+    mosaics_task = Node(identify_mosaics, angular_tolerance)
+    graph[mosaics_task] = {gather_targets_task}
+    graph[store_mosaics] = {mosaics_task}
+    graph[process_mosaics_for_ui] = {mosaics_task}
 
     return graph
 
 
 @ray.remote
 def build_regroup_graph(metadata_ref: LargeObject) -> Graph:
+    settings = context.settings or Settings()
     cluster_by_image_center_task = (cluster_by_image_center, metadata_ref)
-    scatter_spatial_groups_task = (scatter_spatial_groups, metadata_ref)
+    scatter_spatial_groups_task = (scatter_spatial_groups, metadata_ref, settings)
 
     return Graph(
         {

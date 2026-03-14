@@ -559,7 +559,7 @@ def test_flat_frame_selection(test_context) -> None:
     # `flat_run_0`.
     context.settings = Settings(
         stack_settings={
-            substack.content_hash: StackSettings(
+            stack.stable_hash: StackSettings(
                 dependencies={"flat": {"stack_id": first_flat_stack}}
             )
         }
