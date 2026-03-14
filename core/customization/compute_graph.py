@@ -9,7 +9,7 @@ from calibration import associate_with_stack
 from decorators import cached
 from dependency_graph import Graph
 from customization.subframe_selection import select_subframes
-from customization.settings import Settings, StackSettings
+from customization.settings import Settings, StackSettings, TargetSettings
 from customization.types import CustomizedStack, CustomizedStacksDict
 from quarantining.quarantining import apply_quarantine
 from mosaics.types import MosaicsDict
@@ -61,7 +61,7 @@ def customize_stack(
     return CustomizedStack(**stack.__dict__)
 
 
-@cached.remote
+@ray.remote
 def gather_customize_stacks(*ancestor_results) -> None:
     return {s.stable_hash: s for s in ancestor_results if s is not None}
 
@@ -99,12 +99,17 @@ def scatter_customize_cal_stacks(
     return cal_stacks
 
 
-# TODO: Implement real customization features.
 @cached.remote
 def scatter_customize_targets(
     settings: Settings, targets: TargetsDict
 ) -> TargetsDict:
-    return targets
+    return TargetsDict(
+        {
+            h: t
+            for h, t in targets.items()
+            if not settings.target_settings.get(h, TargetSettings()).is_quarantined
+        }
+    )
 
 
 # TODO: Implement real customization features.
