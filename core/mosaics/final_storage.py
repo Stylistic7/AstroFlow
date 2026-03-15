@@ -2,6 +2,7 @@ import ray
 from pathlib import Path
 import numpy as np
 import tifffile
+from beartype import beartype
 
 from context import context
 from mosaics.artifacts import mosaic_filename_tiff, mosaic_filename_xisf
@@ -13,6 +14,7 @@ from pix.classes import ImageList
 from pix.tasks import SaveImages
 from products import makes_image
 from decorators import cached, create_thumbnail, measure_performance
+from file_io.types import WithSidecar
 from metadata.classes import ImageMetadata
 from mosaics.types import Mosaic
 from previews.types import QualityLevel
@@ -65,7 +67,7 @@ def store_mosaic_color_channel_master(
 @measure_performance
 def store_mosaic_color_channel_subframe(
     mosaic: Mosaic, filter: str, input: ImageMetadata
-) -> Path:
+) -> WithSidecar:
     filename = input.filename
     print(
         f"### store_mosaic_color_channel_subframe type {str(mosaic)} {filter=} {filename=}"
@@ -83,13 +85,18 @@ def store_mosaic_color_channel_subframe(
 
 
 @ray.remote
+@beartype
 def store_mosaic_color_channel(
     mode: QualityLevel, mosaic: Mosaic, filter: str, input: ImageMetadata
-) -> Path:
+) -> WithSidecar:
     print(
         f"### store_mosaic_color_channel {mode=} {str(mosaic)} {filter=} {input=}"
     )
     if mode == QualityLevel.SUBFRAME:
-        return store_mosaic_color_channel_subframe.remote(mosaic, filter, input)
+        return ray.get(
+            store_mosaic_color_channel_subframe.remote(mosaic, filter, input)
+        )
     else:
-        return store_mosaic_color_channel_master.remote(mosaic, filter, input)
+        return ray.get(
+            store_mosaic_color_channel_master.remote(mosaic, filter, input)
+        )

@@ -156,11 +156,11 @@ def get_stacks_for_filter(
 def build_mosaic_filter_subgraph(
     mode: QualityLevel,
     mosaic: Mosaic,
-    strips: list[list[StackHash]],
-    stacks: CompositeStacksDict,
+    strips: list[list[StackHash]] | tuple,
+    stacks: CompositeStacksDict | dict | object,
     filter: str,
-    viewbox: Viewbox,
-) -> Graph:
+    viewbox: Viewbox | None,
+) -> Graph | None:
     print(
         f"### build_mosaic_filter_subgraph mode {mode} "
         f"mosaic {mosaic} filter {filter} strips {mosaic.strips} "
@@ -267,7 +267,7 @@ def build_mosaic_filter_subgraph(
 
 
 @cached.remote
-def process_mosaics_for_ui(mosaics: MosaicsDict) -> None:
+def process_mosaics_for_ui(mosaics: MosaicsDict) -> dict:
     def my_transform(v):
         if type(v) is np.ndarray:
             return v.tolist()

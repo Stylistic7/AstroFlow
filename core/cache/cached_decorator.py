@@ -5,7 +5,9 @@ from typing import Any, Callable, Optional, get_origin, TypeVar, Generic
 from pathlib import Path
 import time
 import objsize
-from dataclasses import replace
+from beartype import beartype as _beartype
+from dataclasses import dataclass
+from ray.runtime_context import get_runtime_context
 
 from hashing import hash_source_code
 from hashing.types import LargeObject
@@ -13,16 +15,16 @@ from protocols import CacheProtocol, ContentHashProtocol
 from cache.types import NeverRun
 
 
-class Injected(Generic[TypeVar("T")]):
-    pass
+T = TypeVar("T")
+
+
+@dataclass(frozen=True)
+class Injected(Generic[T]):
+    value: T
 
 
 class MissingInjectedValueError(Exception):
     pass
-
-
-import ray
-from ray.runtime_context import get_runtime_context
 
 
 def _is_head_node() -> bool:
@@ -49,7 +51,7 @@ def _bind_args(
                 raise MissingInjectedValueError(
                     f"Missing injected argument: {name}"
                 )
-            bound.arguments[name] = injected_context[name]
+            bound.arguments[name] = Injected(value=injected_context[name])
     return bound
 
 
@@ -76,6 +78,7 @@ def make_cached_decorator(
 
     def decorate(func: Callable, ray_opts: dict) -> Callable:
         fn_hash = hash_source_code(func)
+        func = _beartype(func)
 
         def _get_cache_key_and_result(bound):
             call_hash = call_hasher(fn_hash, *bound.args, **bound.kwargs)

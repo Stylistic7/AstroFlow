@@ -65,7 +65,7 @@ class CalibrationStack(SimpleStack):
 
 @cached.remote
 def simple_stack_from_frames(
-    frames: list[FrameHash], metadata: LargeObject
+    frames: list[FrameHash], metadata: MetadataDict
 ) -> SimpleStack:
     chronology_attributes = ChronologyAttributes.from_frames(frames, metadata)
     imaging_attributes = ImagingAttributes.from_frames(frames, metadata)

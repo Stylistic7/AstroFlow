@@ -1,6 +1,7 @@
 import ray
 import os
 from pathlib import Path
+from beartype import beartype
 
 from file_io.find_image_files import find_image_files
 from file_io.generic import read_header, get_content_hash, read_image_geometry
@@ -78,6 +79,7 @@ from hashing.types import LargeObject
 # TODO: Add a task that checks that input and output directories exist. Many
 # tasks cannot run without them.
 @ray.remote
+@beartype
 def scatter_compute_image_metadata(*filenames_in: list[Path]) -> Graph:
     filenames_in = set(f for f in filenames_in if f is not None)
     filenames: set[str] = set(filenames_in)
@@ -101,7 +103,7 @@ class DuplicateFileException(Exception):
 
 
 @cached.remote(num_cpus=0.25)
-def compute_image_metadata(filename: Path) -> ImageMetadata:
+def compute_image_metadata(filename: Path | os.PathLike) -> ImageMetadata:
     print(f"### compute_image_metadata filename={filename}")
 
     if filename is None or not filename.exists():
@@ -131,6 +133,7 @@ def compute_image_metadata(filename: Path) -> ImageMetadata:
 
 
 @ray.remote(resources={"fastest_storage": 0.001})
+@beartype
 @measure_performance
 def load_metadata() -> LargeObject:
     quarantined_files = context.quarantined_files or set()

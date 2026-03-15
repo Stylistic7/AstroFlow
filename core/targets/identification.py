@@ -4,14 +4,14 @@ from beartype import beartype
 
 import clustering
 from targets.types import Target, TargetsDict
-from stacks.composite_stack import CompositeStacksDict
+from customization.types import CustomizedStacksDict
 from stacks.types import StackHash
 from decorators import cached
 
 
 @cached.remote
 def identify_targets(
-    angular_tolerance: float, stacks: CompositeStacksDict
+    angular_tolerance: float, stacks: CustomizedStacksDict
 ) -> TargetsDict:
     print(f"### identify_targets stacks {list(stacks.keys())}")
 

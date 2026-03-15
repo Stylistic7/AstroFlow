@@ -2,13 +2,15 @@ import datetime
 import ray
 from context import context
 import numpy as np
+from frozendict import frozendict
 from spherical_geometry.polygon import SingleSphericalPolygon  # type: ignore
 
 from compute_graph.compute_graph import build_compute_graph
 from dependency_graph.dependency_graph import run_graph
 from testing import make_composite_stack, copy_testdata_into_cache
 from stacks.types import StackHash
-from targets.types import Target, TargetHash
+from stacks.composite_stack import CompositeStacksDict
+from targets.types import Target, TargetHash, TargetsDict
 from mosaics.identification import identify_mosaics
 from attributes.astrometric_attributes import healpix_cells_from_poly
 
@@ -26,12 +28,12 @@ def test_two_targets(test_context) -> None:
         oldest_date=datetime.datetime(2023, 12, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 1, 6, 16, 29, 43),
         stack_ids=[StackHash("0"), StackHash("1"), StackHash("2")],
-        center=[100, 0],
+        center=(100.0, 0.0),
         image_scale=1.0,
         rotation_angle=0.0,
         footprint=foo_footprint,
         healpix_cells=healpix_cells_from_poly(foo_footprint),
-        projected_footprints={},
+        projected_footprints=frozendict(),
     )
 
     bar_footprint = SingleSphericalPolygon.from_radec(
@@ -44,21 +46,25 @@ def test_two_targets(test_context) -> None:
         oldest_date=datetime.datetime(2024, 2, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 3, 6, 16, 29, 43),
         stack_ids=[StackHash("3"), StackHash("4"), StackHash("5")],
-        center=[97, 0],
+        center=(97.0, 0.0),
         image_scale=1.0,
         rotation_angle=0.0,
         footprint=bar_footprint,
         healpix_cells=healpix_cells_from_poly(bar_footprint),
-        projected_footprints={},
+        projected_footprints=frozendict(),
     )
 
-    context.stacks = {
-        str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
-        for i in range(6)
-    }
-    context.targets = {foo.stable_hash: foo, bar.stable_hash: bar}
+    context.stacks = CompositeStacksDict(
+        {
+            str(i): make_composite_stack(stable_hash=str(i), image_scale=1.0)
+            for i in range(6)
+        }
+    )
+    context.targets = TargetsDict({foo.stable_hash: foo, bar.stable_hash: bar})
 
-    mosaics = ray.get(identify_mosaics.remote(context.angular_tolerance, context.targets))
+    mosaics = ray.get(
+        identify_mosaics.remote(context.angular_tolerance, context.targets)
+    )
     assert len(mosaics) == 1
     mosaic = next(iter(mosaics.values()))
     print(f"### mosaic.strips {mosaic.strips}")
@@ -75,7 +81,7 @@ def test_two_targets(test_context) -> None:
 
 def test_three_targets(test_context) -> None:
     foo_footprint = SingleSphericalPolygon.from_radec(
-        [98.01, 102.01, 102.01, 98.01], [-1, -1, 1, 1], center=[100.01, 0]
+        [98.01, 102.01, 102.01, 98.01], [-1, -1, 1, 1], center=(100.01, 0.0)
     )
     foo = Target(
         name="foo",
@@ -84,16 +90,16 @@ def test_three_targets(test_context) -> None:
         oldest_date=datetime.datetime(2023, 12, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 1, 6, 16, 29, 43),
         stack_ids=[StackHash("0"), StackHash("1"), StackHash("2")],
-        center=[100.01, 0],
+        center=(100.01, 0.0),
         image_scale=1.0,
         rotation_angle=0.0,
         footprint=foo_footprint,
         healpix_cells=healpix_cells_from_poly(foo_footprint),
-        projected_footprints={},
+        projected_footprints=frozendict(),
     )
 
     bar_footprint = SingleSphericalPolygon.from_radec(
-        [95.01, 99.01, 99.01, 95.01], [-1, -1, 1, 1], center=[97.01, 0]
+        [95.01, 99.01, 99.01, 95.01], [-1, -1, 1, 1], center=(97.01, 0.0)
     )
     bar = Target(
         name="bar",
@@ -102,16 +108,16 @@ def test_three_targets(test_context) -> None:
         oldest_date=datetime.datetime(2024, 2, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 3, 6, 16, 29, 43),
         stack_ids=[StackHash("3"), StackHash("4"), StackHash("5")],
-        center=[97.01, 0],
+        center=(97.01, 0.0),
         image_scale=1.0,
         rotation_angle=0.0,
         footprint=bar_footprint,
         healpix_cells=healpix_cells_from_poly(bar_footprint),
-        projected_footprints={},
+        projected_footprints=frozendict(),
     )
 
     baz_footprint = SingleSphericalPolygon.from_radec(
-        [95, 99, 99, 95], [0.5, 0.5, 2.5, 2.5], center=[97, 1.5]
+        [95, 99, 99, 95], [0.5, 0.5, 2.5, 2.5], center=(97.0, 1.5)
     )
     baz = Target(
         name="baz",
@@ -120,25 +126,31 @@ def test_three_targets(test_context) -> None:
         oldest_date=datetime.datetime(2024, 4, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 5, 6, 16, 29, 43),
         stack_ids=[StackHash("6"), StackHash("7"), StackHash("8")],
-        center=[97, 1.5],
+        center=(97.0, 1.5),
         image_scale=1.0,
         rotation_angle=0.0,
         footprint=baz_footprint,
         healpix_cells=healpix_cells_from_poly(baz_footprint),
-        projected_footprints={},
+        projected_footprints=frozendict(),
     )
 
-    context.stacks = {
-        str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
-        for i in range(9)
-    }
-    context.targets = {
-        foo.stable_hash: foo,
-        bar.stable_hash: bar,
-        baz.stable_hash: baz,
-    }
+    context.stacks = CompositeStacksDict(
+        {
+            str(i): make_composite_stack(stable_hash=str(i), image_scale=1.0)
+            for i in range(9)
+        }
+    )
+    context.targets = TargetsDict(
+        {
+            foo.stable_hash: foo,
+            bar.stable_hash: bar,
+            baz.stable_hash: baz,
+        }
+    )
 
-    mosaics = ray.get(identify_mosaics.remote(context.angular_tolerance, context.targets))
+    mosaics = ray.get(
+        identify_mosaics.remote(context.angular_tolerance, context.targets)
+    )
 
     assert len(mosaics) == 1
     mosaic = next(iter(mosaics.values()))
@@ -167,12 +179,12 @@ def test_three_out_of_order_targets(test_context) -> None:
         oldest_date=datetime.datetime(2023, 12, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 1, 6, 16, 29, 43),
         stack_ids=[StackHash("0"), StackHash("1"), StackHash("2")],
-        center=[100.01, 1],
+        center=(100.01, 1.0),
         image_scale=1.0,
         rotation_angle=0.0,
         footprint=foo_footprint,
         healpix_cells=healpix_cells_from_poly(foo_footprint),
-        projected_footprints={},
+        projected_footprints=frozendict(),
     )
 
     bar_footprint = SingleSphericalPolygon.from_radec(
@@ -185,12 +197,12 @@ def test_three_out_of_order_targets(test_context) -> None:
         oldest_date=datetime.datetime(2024, 4, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 5, 6, 16, 29, 43),
         stack_ids=[StackHash("6"), StackHash("7"), StackHash("8")],
-        center=[100, 4],
+        center=(100.0, 4.0),
         image_scale=1.0,
         rotation_angle=0.0,
         footprint=bar_footprint,
         healpix_cells=healpix_cells_from_poly(bar_footprint),
-        projected_footprints={},
+        projected_footprints=frozendict(),
     )
 
     baz_footprint = SingleSphericalPolygon.from_radec(
@@ -203,25 +215,31 @@ def test_three_out_of_order_targets(test_context) -> None:
         oldest_date=datetime.datetime(2024, 2, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 3, 6, 16, 29, 43),
         stack_ids=[StackHash("3"), StackHash("4"), StackHash("5")],
-        center=[100.02, 2.5],
+        center=(100.02, 2.5),
         image_scale=1.0,
         rotation_angle=0.0,
         footprint=baz_footprint,
         healpix_cells=healpix_cells_from_poly(baz_footprint),
-        projected_footprints={},
+        projected_footprints=frozendict(),
     )
 
-    context.stacks = {
-        str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
-        for i in range(9)
-    }
-    context.targets = {
-        foo.stable_hash: foo,
-        bar.stable_hash: bar,
-        baz.stable_hash: baz,
-    }
+    context.stacks = CompositeStacksDict(
+        {
+            str(i): make_composite_stack(stable_hash=str(i), image_scale=1.0)
+            for i in range(9)
+        }
+    )
+    context.targets = TargetsDict(
+        {
+            foo.stable_hash: foo,
+            bar.stable_hash: bar,
+            baz.stable_hash: baz,
+        }
+    )
 
-    mosaics = ray.get(identify_mosaics.remote(context.angular_tolerance, context.targets))
+    mosaics = ray.get(
+        identify_mosaics.remote(context.angular_tolerance, context.targets)
+    )
 
     assert len(mosaics) == 1
     mosaic = next(iter(mosaics.values()))
@@ -243,12 +261,12 @@ def test_three_targets_and_an_outlier(test_context) -> None:
         oldest_date=datetime.datetime(2023, 12, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 1, 6, 16, 29, 43),
         stack_ids=[StackHash("0"), StackHash("1"), StackHash("2")],
-        center=[100, 0],
+        center=(100.0, 0.0),
         image_scale=1.0,
         rotation_angle=0.0,
         footprint=foo_footprint,
         healpix_cells=healpix_cells_from_poly(foo_footprint),
-        projected_footprints={},
+        projected_footprints=frozendict(),
     )
 
     bar_footprint = SingleSphericalPolygon.from_radec(
@@ -261,12 +279,12 @@ def test_three_targets_and_an_outlier(test_context) -> None:
         oldest_date=datetime.datetime(2024, 2, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 3, 6, 16, 29, 43),
         stack_ids=[StackHash("3"), StackHash("4"), StackHash("5")],
-        center=[97, 0],
+        center=(97.0, 0.0),
         image_scale=1.0,
         rotation_angle=0.0,
         footprint=bar_footprint,
         healpix_cells=healpix_cells_from_poly(bar_footprint),
-        projected_footprints={},
+        projected_footprints=frozendict(),
     )
 
     baz_footprint = SingleSphericalPolygon.from_radec(
@@ -279,12 +297,12 @@ def test_three_targets_and_an_outlier(test_context) -> None:
         oldest_date=datetime.datetime(2024, 4, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 5, 6, 16, 29, 43),
         stack_ids=[StackHash("6"), StackHash("7"), StackHash("8")],
-        center=[97, 1.5],
+        center=(97.0, 1.5),
         image_scale=1.0,
         rotation_angle=0.0,
         footprint=baz_footprint,
         healpix_cells=healpix_cells_from_poly(baz_footprint),
-        projected_footprints={},
+        projected_footprints=frozendict(),
     )
 
     outlier_footprint = SingleSphericalPolygon.from_radec(
@@ -297,26 +315,32 @@ def test_three_targets_and_an_outlier(test_context) -> None:
         oldest_date=datetime.datetime(2024, 6, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 7, 6, 16, 29, 43),
         stack_ids=[StackHash("9"), StackHash("10"), StackHash("11")],
-        center=[98, -0.5],
+        center=(98.0, -0.5),
         image_scale=1.0,
         rotation_angle=0.0,
         footprint=outlier_footprint,
         healpix_cells=healpix_cells_from_poly(outlier_footprint),
-        projected_footprints={},
+        projected_footprints=frozendict(),
     )
 
-    context.stacks = {
-        str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
-        for i in range(12)
-    }
-    context.targets = {
-        foo.stable_hash: foo,
-        bar.stable_hash: bar,
-        baz.stable_hash: baz,
-        outlier.stable_hash: outlier,
-    }
+    context.stacks = CompositeStacksDict(
+        {
+            str(i): make_composite_stack(stable_hash=str(i), image_scale=1.0)
+            for i in range(12)
+        }
+    )
+    context.targets = TargetsDict(
+        {
+            foo.stable_hash: foo,
+            bar.stable_hash: bar,
+            baz.stable_hash: baz,
+            outlier.stable_hash: outlier,
+        }
+    )
 
-    mosaics = ray.get(identify_mosaics.remote(context.angular_tolerance, context.targets))
+    mosaics = ray.get(
+        identify_mosaics.remote(context.angular_tolerance, context.targets)
+    )
 
     assert len(mosaics) == 1
     mosaic = next(iter(mosaics.values()))
@@ -348,12 +372,12 @@ def test_ic1318(test_context) -> None:
         oldest_date=datetime.datetime(2023, 12, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 1, 6, 16, 29, 43),
         stack_ids=[StackHash("1"), StackHash("2"), StackHash("3")],
-        center=[100, 0],
+        center=(100.0, 0.0),
         image_scale=1.0,
         rotation_angle=0.0,
         footprint=foo_footprint,
         healpix_cells=healpix_cells_from_poly(foo_footprint),
-        projected_footprints={},
+        projected_footprints=frozendict(),
     )
 
     bar_footprint = SingleSphericalPolygon(
@@ -375,24 +399,30 @@ def test_ic1318(test_context) -> None:
         oldest_date=datetime.datetime(2024, 2, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 3, 6, 16, 29, 43),
         stack_ids=[StackHash("3"), StackHash("4"), StackHash("5")],
-        center=[97, 0],
+        center=(97.0, 0.0),
         image_scale=1.0,
         rotation_angle=0.0,
         footprint=bar_footprint,
         healpix_cells=healpix_cells_from_poly(bar_footprint),
-        projected_footprints={},
+        projected_footprints=frozendict(),
     )
 
-    context.stacks = {
-        str(i): make_composite_stack(stable_hash=str(i), image_scale=1)
-        for i in range(6)
-    }
-    context.targets = {
-        foo.stable_hash: foo,
-        bar.stable_hash: bar,
-    }
+    context.stacks = CompositeStacksDict(
+        {
+            str(i): make_composite_stack(stable_hash=str(i), image_scale=1.0)
+            for i in range(6)
+        }
+    )
+    context.targets = TargetsDict(
+        {
+            foo.stable_hash: foo,
+            bar.stable_hash: bar,
+        }
+    )
 
-    mosaics = ray.get(identify_mosaics.remote(context.angular_tolerance, context.targets))
+    mosaics = ray.get(
+        identify_mosaics.remote(context.angular_tolerance, context.targets)
+    )
 
     assert len(mosaics) == 1
     mosaic = next(iter(mosaics.values()))
@@ -407,9 +437,11 @@ def test_big_cygnus_pano(test_context) -> None:
 
     run_graph(build_compute_graph())
 
-    mosaics = ray.get(identify_mosaics.remote(context.angular_tolerance, context.targets))
+    mosaics = ray.get(
+        identify_mosaics.remote(context.angular_tolerance, context.targets)
+    )
 
-    mosaic = mosaics["3a9e9b98253ec8d4"]
+    mosaic = mosaics["75a1da6463e118e6"]
     print("### mosaic", mosaic)
 
     target_ids = mosaic.target_ids

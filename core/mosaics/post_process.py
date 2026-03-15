@@ -58,7 +58,7 @@ def _post_process_mosaic(
 @cached.remote(resources={"PixInsight": 1})
 @measure_performance
 @create_thumbnail
-def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> XisfFilePath:
+def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> XisfFilePath | None:
     print(f"### Entering post_process_mosaic for {mode=} mosaic {str(mosaic)}")
 
     if mode != QualityLevel.MASTER:

@@ -17,7 +17,9 @@ from decorators.content_hasher import ContentHasher
 from ray.exceptions import ObjectFreedError
 
 cached = make_cached_decorator(
-    cache_provider=get_cache, content_hasher=ContentHasher(), call_hasher=hash_call
+    cache_provider=get_cache,
+    content_hasher=ContentHasher(),
+    call_hasher=hash_call,
 )
 
 sidecar_cached = make_cached_decorator(
@@ -43,13 +45,13 @@ fake_source_code_hashed = make_cached_decorator(
 
 
 @cached.remote
-def bar(obj_ref) -> Graph:
+def bar(obj_ref) -> int:
     obj = obj_ref.get()
     return len(obj)
 
 
 @cached.remote
-def baz(obj_ref) -> Graph:
+def baz(obj_ref) -> int:
     obj = obj_ref.get()
     return len(obj)
 
@@ -106,9 +108,11 @@ def task_returns_list() -> list[ContentHashed]:
 
 
 @sidecar_cached.remote
-def make_large_image_remote(shape: tuple[int], output_dir: Injected[Path]) -> Path:
+def make_large_image_remote(
+    shape: tuple[int, ...], output_dir: Injected[Path]
+) -> Path:
     context.num_make_large_image_runs = context.num_make_large_image_runs + 1
-    filename = output_dir / "foo.png"
+    filename = output_dir.value / "foo.png"
     img = Image.new("L", shape, color=128)
     img.save(filename)
     print(f"Wrote image to filename {filename}")
@@ -117,7 +121,9 @@ def make_large_image_remote(shape: tuple[int], output_dir: Injected[Path]) -> Pa
 
 @sidecar_cached.remote
 def consume_large_image_remote(path: Path) -> None:
-    context.num_consume_large_image_runs = context.num_consume_large_image_runs + 1
+    context.num_consume_large_image_runs = (
+        context.num_consume_large_image_runs + 1
+    )
     with Image.open(path) as img:
         print(f"img.size {img.size}")
 

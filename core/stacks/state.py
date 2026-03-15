@@ -1,5 +1,6 @@
 import ray
 from dataclasses import replace
+from beartype import beartype
 
 from context import context
 from stacks.artifacts import output_filename
@@ -10,6 +11,7 @@ from artifacts import artifact_exists
 
 # TODO: Include error messages, exceptions, etc. here to inform the user.
 @ray.remote
+@beartype
 def update_state(stacks: CompositeStacksDict) -> CompositeStacksDict:
     print("### Entering update_state")
     output_stacks = CompositeStacksDict()

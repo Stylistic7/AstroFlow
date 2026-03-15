@@ -1,6 +1,13 @@
 from typing import Any
 
-from dependency_graph import CanonicalGraph, Graph, Node, ResultDict, canonicalize_node
+from dependency_graph import (
+    CanonicalGraph,
+    Graph,
+    Node,
+    ResultDict,
+    canonicalize_node,
+    canonicalize_graph,
+)
 from beartype import beartype
 
 
@@ -39,7 +46,9 @@ def print_result_dict(results: ResultDict, indent: int = 0) -> None:
             continue
 
         if type(result) is not ResultDict:
-            print(f"{' ' * indent}{node.task._function.__name__} {node.args}: {result}")
+            print(
+                f"{' ' * indent}{node.task._function.__name__} {node.args}: {result}"
+            )
         else:
             print(f"{' ' * indent}{node.task._function.__name__} {node.args}:")
             print_result_dict(result, indent + 2)
@@ -50,6 +59,8 @@ def print_graph(graph: CanonicalGraph | Graph) -> None:
     if not graph:
         print("Compute graph is empty")
         return
+
+    graph = canonicalize_graph(graph)
 
     print(f"Printing compute graph with {len(graph)} edges:")
     for k, v in graph.items():

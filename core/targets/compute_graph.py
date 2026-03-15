@@ -1,5 +1,6 @@
 import ray
 import numpy as np
+from beartype import beartype
 from spherical_geometry.polygon import SingleSphericalPolygon
 from functools import partial
 
@@ -19,6 +20,7 @@ from dependency_graph.workflow_graph_adapter import (
 
 # TODO: Remove context and make this function pure.
 @ray.remote
+@beartype
 def build_target_subgraph(target: Target) -> Graph:
     print(f"### build_target_subgraph target {target}")
 
@@ -42,7 +44,7 @@ def build_target_subgraph(target: Target) -> Graph:
 
 
 @cached.remote
-def process_targets_for_ui(targets: TargetsDict) -> None:
+def process_targets_for_ui(targets: dict) -> dict:
     def my_transform(v):
         if type(v) is np.ndarray:
             return v.tolist()

@@ -380,7 +380,7 @@ def _identify_overlapping_targets(
 
 @cached.remote
 def identify_mosaics(
-    angular_tolerance: float, targets: TargetsDict, debug: bool = False
+    angular_tolerance: float, targets: dict, debug: bool = False
 ) -> dict[MosaicHash, Mosaic]:
     if not isinstance(targets, TargetsDict):
         targets = TargetsDict(targets)

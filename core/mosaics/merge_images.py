@@ -1,6 +1,7 @@
 import os
 import ray
 import numpy as np
+from beartype import beartype
 from pathlib import Path
 from dataclasses import dataclass
 
@@ -133,13 +134,14 @@ def merge_images_with_pmm(
 
 # TODO: These trampolines are ugly; can they be improved?
 @ray.remote
+@beartype
 @measure_performance
 def merge_images(
     mode: QualityLevel,
     mosaic: Mosaic,
     input_0: ImageMetadata,
     input_1: ImageMetadata,
-) -> Path:
+) -> WithSidecar:
     if mode == QualityLevel.SUBFRAME:
         result = ray.get(
             merge_images_with_maximum.remote(mosaic, input_0, input_1)

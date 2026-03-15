@@ -35,7 +35,8 @@ from customization.types import CustomizedStacksDict
 
 
 @ray.remote
-def store_calibration_stacks(calibration_stacks: SimpleStacksDict) -> None:
+@beartype
+def store_calibration_stacks(calibration_stacks: SimpleStacksDict) -> SimpleStacksDict:
     context.calibration_stacks = calibration_stacks
     print(
         f"### store_calibration_stacks: Stored "
@@ -46,23 +47,26 @@ def store_calibration_stacks(calibration_stacks: SimpleStacksDict) -> None:
 
 # TODO: Merge combining and storing into a single op.
 @ray.remote
-def store_stacks(stacks: CustomizedStacksDict):
+@beartype
+def store_stacks(stacks: dict[str, Any]) -> dict[str, Any]:
     assert None not in stacks.values()
-    context.stacks = stacks
+    context.stacks = CustomizedStacksDict(stacks)
     print(f"### store_stacks: Stored {len(stacks)} stacks")
     return stacks
 
 
 @ray.remote
-def store_targets(targets: TargetsDict):
+@beartype
+def store_targets(targets: dict[str, Any]) -> dict[str, Any]:
     assert None not in targets.values()
-    context.targets = targets
+    context.targets = TargetsDict(targets)
     print(f"### store_targets: Stored {len(targets)} targets")
     return targets
 
 
 @ray.remote
-def store_mosaics(mosaics: MosaicsDict):
+@beartype
+def store_mosaics(mosaics: MosaicsDict) -> MosaicsDict:
     assert None not in mosaics.values()
     context.mosaics = mosaics
     print(f"### store_mosaics: Stored {len(mosaics)} mosaics")
@@ -70,7 +74,8 @@ def store_mosaics(mosaics: MosaicsDict):
 
 
 @ray.remote
-def combine_dicts(*ancestor_results: tuple[dict[Any, Any]]) -> dict[Any, Any]:
+@beartype
+def combine_dicts(*ancestor_results: dict[Any, Any]) -> dict[Any, Any]:
     assert isinstance(ancestor_results, tuple)
     for d in ancestor_results:
         assert None not in d.values(), f"### combine_dicts: None in dict {d}"
@@ -156,6 +161,7 @@ def scatter_spatial_groups(
 
 
 @ray.remote
+@beartype
 def build_regroup_graph(metadata_ref: LargeObject) -> Graph:
     settings = context.settings or Settings()
     cluster_by_image_center_task = (cluster_by_image_center, metadata_ref)
@@ -175,6 +181,7 @@ def preview_graph_done() -> None:
 
 
 @ray.remote
+@beartype
 def build_preview_graph() -> Graph:
     stacks = context.stacks
     targets = context.targets
@@ -197,11 +204,13 @@ def build_preview_graph() -> Graph:
 
 
 @ray.remote
+@beartype
 def main_processing_graph_done() -> None:
     pass
 
 
 @ray.remote
+@beartype
 def build_main_processing_graph() -> Graph:
     stacks = context.stacks
     targets = context.targets

@@ -3,6 +3,7 @@ import ray
 import numpy as np
 from spherical_geometry.polygon import SingleSphericalPolygon
 from functools import partial
+from beartype import beartype
 
 from context import context
 from decorators import cached
@@ -24,6 +25,7 @@ from dependency_graph.workflow_graph_adapter import (
 
 
 @ray.remote
+@beartype
 def calibration_done(stack: CustomizedStack) -> None:
     pass
 
@@ -56,6 +58,7 @@ def build_calibration_stack_subgraph(stack: CustomizedStack) -> Graph:
 
 
 @ray.remote
+@beartype
 def stack_runs_done(stack: CustomizedStack) -> None:
     pass
 
@@ -108,7 +111,7 @@ def get_stack_image(mode: QualityLevel, stack: CompositeStack) -> Graph:
 
 
 @cached.remote
-def process_stacks_for_ui(stacks: CompositeStacksDict) -> None:
+def process_stacks_for_ui(stacks: dict) -> dict:
     print(f"### process_stacks_for_ui type(stacks) {type(stacks)}")
     assert None not in stacks.values()
 

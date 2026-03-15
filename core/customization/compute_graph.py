@@ -1,9 +1,9 @@
 import ray
 from dataclasses import replace
-from frozendict import frozendict
+from beartype import beartype
 
 from context import context
-from stacks.composite_stack import CompositeStack
+from stacks.composite_stack import CompositeStack, CompositeStacksDict
 from stacks.simple_stack import SimpleStack, SimpleStacksDict
 from calibration import associate_with_stack
 from decorators import cached
@@ -29,7 +29,8 @@ def apply_settings(
 
 
 @ray.remote
-def store_customized_stack(stack) -> None:
+@beartype
+def store_customized_stack(stack: CustomizedStack) -> None:
     context.or_equals("stacks", {stack.stable_hash: stack})
 
 
@@ -62,16 +63,17 @@ def customize_stack(
 
 
 @ray.remote
-def gather_customize_stacks(*ancestor_results) -> None:
-    return {s.stable_hash: s for s in ancestor_results if s is not None}
+@beartype
+def gather_customize_stacks(*ancestor_results: CustomizedStack | None) -> CustomizedStacksDict:
+    return CustomizedStacksDict({s.stable_hash: s for s in ancestor_results if s is not None})
 
 
 @cached.remote
 def scatter_customize_stacks(
     settings: Settings,
-    stacks: CustomizedStacksDict,
+    stacks: CompositeStacksDict,
     cal_stacks: SimpleStacksDict,
-) -> CustomizedStacksDict:
+) -> Graph:
     print(f"### scatter_customize_stacks type(cal_stacks) {type(cal_stacks)}")
     return Graph(
         {
@@ -79,7 +81,7 @@ def scatter_customize_stacks(
                 (
                     customize_stack,
                     v,
-                    frozendict(cal_stacks),
+                    cal_stacks,
                     settings.stack_settings.get(k, StackSettings()),
                 )
                 for k, v in stacks.items()

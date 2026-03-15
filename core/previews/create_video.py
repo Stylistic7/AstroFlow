@@ -55,6 +55,7 @@ def make_create_video_decorator(cache: CacheProtocol):
                 return cache.get(video_key)
 
             wrapper.video_fn = get_video_fn
+            wrapper.__annotations__['return'] = type(None)
 
             return wrapper
 

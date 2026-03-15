@@ -25,9 +25,11 @@ task_with_context = make_cached_decorator(
 
 @task_with_context.remote
 @measure_performance
-def make_large_image_remote(shape: tuple[int], output_dir: Injected[Path]) -> Path:
+def make_large_image_remote(
+    shape: tuple[int, ...], output_dir: Injected[Path]
+) -> Path:
     context.num_make_large_image_runs = context.num_make_large_image_runs + 1
-    filename = output_dir / "foo.png"
+    filename = output_dir.value / "foo.png"
     img = Image.new("L", shape, color=128)
     img.save(filename)
     print(f"Wrote image to filename {filename}")
@@ -40,16 +42,18 @@ def test_decorator(test_context):
     context.num_make_large_image_runs = 0
     fn_name = "make_large_image_remote"
     node_ip = get_node_ip_address()
-    perf_key = ("performance_history", node_ip, fn_name)
+    perf_key = ("profile", node_ip, fn_name)
 
     context[perf_key] = []
 
     with tempfile.TemporaryDirectory() as output_dir:
         injected_context = {"output_dir": Path(output_dir)}
         ray.get(
-            make_large_image_remote.remote((50, 50), injected_context=injected_context)
+            make_large_image_remote.remote(
+                (50, 50), injected_context=injected_context
+            )
         )
 
     history = context.get(perf_key, [])
     assert len(history) > 0
-    assert isinstance(history[0], float)
+    assert isinstance(history[0], dict)

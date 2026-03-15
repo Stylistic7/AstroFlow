@@ -1,7 +1,10 @@
 import datetime
 from pathlib import Path
 import shutil
-import pprint
+import diskcache
+import tempfile
+import random, string
+
 
 from file_io.generic import read_header
 from testing import copy_testdata_frames, print_tree
@@ -154,10 +157,6 @@ def test_orion_mosaic_with_missing_panel(test_context) -> None:
     shutil.copytree(context.output_dir, "/tmp/foo", dirs_exist_ok=True)
 
 
-import random, string
-import itertools
-
-
 def random_garbage(n: int) -> str:
     return "".join(random.choices(string.ascii_letters + string.digits, k=n))
 
@@ -201,10 +200,6 @@ def test_context_actor_speed(benchmark):
             context[k] = v
 
     benchmark(insert_into_context_actor)
-
-
-import tempfile
-import diskcache
 
 
 def test_direct_diskcache_speed(benchmark):

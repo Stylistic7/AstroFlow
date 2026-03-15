@@ -26,6 +26,7 @@ def find_missing_tiles(mosaic: Mosaic) -> None:
 
 
 @ray.remote
+@beartype
 def make_suggestions() -> None:
     print("### Entering make_suggestions")
     for mosaic in context.mosaics.values():

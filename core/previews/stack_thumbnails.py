@@ -1,5 +1,6 @@
 import ray
 import numpy as np
+from beartype import beartype
 from pathlib import Path
 from typing import Any
 from collections.abc import Iterable
@@ -26,6 +27,7 @@ from file_io.generic import read_image
 
 
 @ray.remote
+@beartype
 def scatter_stack_thumbnails() -> Graph:
     tasks: list[TaskDescriptor] = list()
 
@@ -70,7 +72,7 @@ def stack_thumbnail(stack: CustomizedStack) -> WithSidecar:
 @cached.remote
 @measure_performance
 @create_thumbnail
-def calibration_stack_thumbnail(stack: CalibrationStack) -> WithSidecar:
+def calibration_stack_thumbnail(stack: SimpleStack) -> WithSidecar:
     return get_first_frame(stack)
 
 
@@ -108,7 +110,7 @@ def stack_thumbnail_video(stack: CustomizedStack) -> Iterable[np.ndarray]:
 @measure_performance
 @create_video
 def calibration_stack_thumbnail_video(
-    stack: CalibrationStack,
+    stack: SimpleStack,
 ) -> Iterable[np.ndarray]:
     width = context.subframe_thumbnail_width
     for frame in stack.frames:
@@ -119,5 +121,6 @@ def calibration_stack_thumbnail_video(
 
 
 @ray.remote
+@beartype
 def gather_stack_thumbnails() -> None:
     pass

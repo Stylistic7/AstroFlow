@@ -1,6 +1,7 @@
 import os
 import ray
 import numpy as np
+from beartype import beartype
 from astropy.wcs import WCS  # type: ignore
 from scipy.interpolate import RegularGridInterpolator  # type: ignore
 from itertools import product
@@ -39,6 +40,7 @@ def round_to_nearest_multiple(number: float, multiple: int) -> int:
 
 
 @ray.remote(memory=_PLACE_TILE_MEMORY_REQUIREMENT, scheduling_strategy="SPREAD")
+@beartype
 def place_tile(
     viewbox: Viewbox,
     tile_y: int,
@@ -46,7 +48,7 @@ def place_tile(
     wcs: Any,
     interp: RegularGridInterpolator,
     skip_empty: bool = False,
-) -> tuple[int, int, np.ndarray]:
+) -> tuple[int, int, np.ndarray | None]:
     tile_y_min = (
         viewbox.y_min + tile_y * viewbox.tile_height * viewbox.resolution
     )
@@ -149,6 +151,7 @@ def _project_in_tiles(
 
 
 @ray.remote
+@beartype
 def _place_image(
     mode: QualityLevel,
     mosaic: Mosaic,
@@ -198,6 +201,7 @@ def _place_image(
 
 @makes_image(PlacedImage).as_subframe(placed_filename)
 @ray.remote
+@beartype
 def place_image_subframe(
     mode: QualityLevel,
     mosaic: Mosaic,
@@ -215,6 +219,7 @@ def place_image_subframe(
 
 @makes_image(PlacedImage).as_master(placed_filename)
 @ray.remote(memory=_PLACE_IMAGE_MEMORY_REQUIREMENT)
+@beartype
 def place_image_master(
     mode: QualityLevel,
     mosaic: Mosaic,

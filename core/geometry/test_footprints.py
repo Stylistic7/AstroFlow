@@ -14,12 +14,12 @@ def test_stack(test_context) -> None:
     make_synthetic_frames(
         number=3,
         prefix="foo",
-        ra=180,
-        dec=0,
+        ra=180.0,
+        dec=0.0,
         width_pixels=10800,
         height_pixels=7200,
-        rotation_angle_deg=0,
-        dither=0,
+        rotation_angle_deg=0.0,
+        dither=0.0,
         dest_dir=context.input_dirs[0],
     )
 
@@ -27,7 +27,9 @@ def test_stack(test_context) -> None:
 
     stacks = context.stacks
     assert len(stacks) == 1
-    stack = next(iter(s for s in stacks.values() if isinstance(s, CompositeStack)))
+    stack = next(
+        iter(s for s in stacks.values() if isinstance(s, CompositeStack))
+    )
 
     x, y = project_polygon(stack.footprint, mercator.MercatorProjection())
     projected_footprint = Polygon(zip(x, y))
@@ -84,10 +86,10 @@ def test_target(test_context) -> None:
     make_synthetic_frames(
         number=3,
         prefix="foo",
-        ra=180,
-        dec=0,
-        rotation_angle_deg=0,
-        dither=0,
+        ra=180.0,
+        dec=0.0,
+        rotation_angle_deg=0.0,
+        dither=0.0,
         image_scale=1.0,
         width_pixels=10800,
         height_pixels=7200,
@@ -96,10 +98,10 @@ def test_target(test_context) -> None:
     make_synthetic_frames(
         number=5,
         prefix="bar",
-        ra=180,
-        dec=0,
-        rotation_angle_deg=0,
-        dither=0,
+        ra=180.0,
+        dec=0.0,
+        rotation_angle_deg=0.0,
+        dither=0.0,
         image_scale=2.0,
         width_pixels=5400,
         height_pixels=3600,
@@ -171,10 +173,10 @@ def test_mosaic(test_context) -> None:
     make_synthetic_frames(
         number=3,
         prefix="foo",
-        ra=180,
-        dec=0,
-        rotation_angle_deg=0,
-        dither=0,
+        ra=180.0,
+        dec=0.0,
+        rotation_angle_deg=0.0,
+        dither=0.0,
         image_scale=1.0,
         width_pixels=10800,
         height_pixels=7200,
@@ -184,9 +186,9 @@ def test_mosaic(test_context) -> None:
         number=5,
         prefix="bar",
         ra=182.5,
-        dec=0,
-        rotation_angle_deg=0,
-        dither=0,
+        dec=0.0,
+        rotation_angle_deg=0.0,
+        dither=0.0,
         image_scale=1.0,
         width_pixels=10800,
         height_pixels=7200,

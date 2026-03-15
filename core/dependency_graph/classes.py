@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from hashing import hash_list_int
-from typing import Any, Callable, Union, TypeAlias
-from collections.abc import Iterable
+from typing import Any, Union, TypeAlias
+from collections.abc import Iterable, Callable
 from dataclasses import dataclass, field
 from graphlib import TopologicalSorter
 from collections import defaultdict
@@ -129,17 +129,20 @@ class Node:
 
 NodeStatusFn = Callable[[Node, Any, Any], None]
 
+AnyTask: TypeAlias = GenericRemoteFunction | Callable
+
 RemoteFunctionTuple: TypeAlias = Union[
-    tuple[GenericRemoteFunction, Any],
-    tuple[GenericRemoteFunction, Any, Any],
-    tuple[GenericRemoteFunction, Any, Any, Any],
-    tuple[GenericRemoteFunction, Any, Any, Any, Any],
-    tuple[GenericRemoteFunction, Any, Any, Any, Any, Any],
-    tuple[GenericRemoteFunction, Any, Any, Any, Any, Any, Any],
-    tuple[GenericRemoteFunction, Any, Any, Any, Any, Any, Any, Any],
+    tuple[AnyTask],
+    tuple[AnyTask, Any],
+    tuple[AnyTask, Any, Any],
+    tuple[AnyTask, Any, Any, Any],
+    tuple[AnyTask, Any, Any, Any, Any],
+    tuple[AnyTask, Any, Any, Any, Any, Any],
+    tuple[AnyTask, Any, Any, Any, Any, Any, Any],
+    tuple[AnyTask, Any, Any, Any, Any, Any, Any, Any],
 ]
 
-TaskDescriptor: TypeAlias = Node | GenericRemoteFunction | RemoteFunctionTuple
+TaskDescriptor: TypeAlias = Node | AnyTask | RemoteFunctionTuple
 
 
 def canonicalize_node(task: TaskDescriptor) -> Node:

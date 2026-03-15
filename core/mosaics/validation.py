@@ -6,7 +6,7 @@ from decorators import cached
 
 
 @cached.remote
-def validate_mosaics(mosaics: MosaicsDict) -> None:
+def validate_mosaics(mosaics: MosaicsDict) -> MosaicsDict:
     print(f"### Entering validate_mosaics")
     targets = context.targets
     for mosaic_id, mosaic in mosaics.items():

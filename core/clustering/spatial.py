@@ -54,7 +54,7 @@ def find_groups(
 
 
 @cached.remote
-def cluster_by_image_center(metadata_ref: LargeObject) -> None:
+def cluster_by_image_center(metadata_ref: LargeObject) -> list[tuple[str, ...]]:
     metadata = metadata_ref.get()
 
     cosine_similarity_threshold = context.cosine_similarity_threshold
@@ -72,7 +72,7 @@ def cluster_by_image_center(metadata_ref: LargeObject) -> None:
     }
 
     def comparison_fn(a: float, b: float) -> bool:
-        return np.dot(a, b) > cosine_similarity_threshold
+        return bool(np.dot(a, b) > cosine_similarity_threshold)
 
     groups = find_groups(values, comparison_fn, min_component_members)
     groups_as_tuples = [tuple(sorted(g)) for g in groups]
