@@ -102,6 +102,7 @@ def get_stack_subframe_image(stack: CompositeStack) -> Path:
 
 
 @cached.remote
+@beartype
 def get_stack_image(mode: QualityLevel, stack: CompositeStack) -> Graph:
     assert stack is not None
     if mode == QualityLevel.SUBFRAME:
@@ -111,8 +112,8 @@ def get_stack_image(mode: QualityLevel, stack: CompositeStack) -> Graph:
 
 
 @cached.remote
+@beartype
 def process_stacks_for_ui(stacks: dict) -> dict:
-    print(f"### process_stacks_for_ui type(stacks) {type(stacks)}")
     assert None not in stacks.values()
 
     def my_transform(v):
@@ -139,3 +140,20 @@ def process_stacks_for_ui(stacks: dict) -> dict:
     ui_stacks = {h: prepare_stack(s) for h, s in stacks.items()}
     context.ui_stacks = ui_stacks
     return ui_stacks
+
+
+@cached.remote
+@beartype
+def process_calibration_stacks_for_ui(cal_stacks: dict) -> dict:
+    assert None not in cal_stacks.values()
+
+    def prepare_stack(stack: SimpleStack):
+        result = convert_to_dict(stack, [["metadata"]])
+        result["filenames"] = [m.filename for m in stack.metadata.values()]
+
+        return result
+
+    # TODO: Parallelize this.
+    ui_cal_stacks = {h: prepare_stack(s) for h, s in cal_stacks.items()}
+    context.ui_calibration_stacks = ui_cal_stacks
+    return ui_cal_stacks

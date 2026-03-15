@@ -207,11 +207,7 @@ def stacks():
 
 @app.route("/calibration_stacks")
 def calibration_stacks():
-    processed_stacks = {
-        h: replace(s, metadata=None) for h, s in context.calibration_stacks.items()
-    }
-
-    return {k: _make_json_serializable(s) for k, s in processed_stacks.items()}
+    return context.ui_calibration_stacks
 
 
 @app.route("/get_plot")
@@ -260,10 +256,14 @@ def recent():
         return stacks[stack_id].newest_date
 
     def last_target_datetime(target_id):
-        return max([last_stack_datetime(s) for s in targets[target_id].stack_ids])
+        return max(
+            [last_stack_datetime(s) for s in targets[target_id].stack_ids]
+        )
 
     def last_mosaic_datetime(mosaic_id):
-        return max([last_target_datetime(t) for t in mosaics[mosaic_id].target_ids])
+        return max(
+            [last_target_datetime(t) for t in mosaics[mosaic_id].target_ids]
+        )
 
     targets_and_dates = [
         (("target", s), last_target_datetime(s)) for s in targets.keys()
@@ -310,14 +310,18 @@ def ray_status():
     unhealthy_nodes = len(nodes) - healthy_nodes
 
     total_cpus = int(cluster_resources.get("CPU", 0))
-    total_ram = int(cluster_resources.get("memory", 0) / 1e9)  # Convert bytes to GB
+    total_ram = int(
+        cluster_resources.get("memory", 0) / 1e9
+    )  # Convert bytes to GB
 
     node_list = []
     for node in nodes:
         ip = node["NodeManagerAddress"]
         health = "healthy" if node["Alive"] else "unhealthy"
         cpus = int(node["Resources"].get("CPU", 0))
-        ram = int(node["Resources"].get("memory", 0) / 1e9)  # Convert bytes to GB
+        ram = int(
+            node["Resources"].get("memory", 0) / 1e9
+        )  # Convert bytes to GB
         message = None
 
         # Check for node failure reasons (if any)
@@ -329,7 +333,13 @@ def ray_status():
                     message = failure_reason
 
         node_list.append(
-            {"ip": ip, "health": health, "cpus": cpus, "ram": ram, "message": message}
+            {
+                "ip": ip,
+                "health": health,
+                "cpus": cpus,
+                "ram": ram,
+                "message": message,
+            }
         )
 
     return jsonify(

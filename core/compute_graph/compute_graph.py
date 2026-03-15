@@ -12,7 +12,11 @@ from calibration import (
 from previews.stack_thumbnails import scatter_stack_thumbnails
 from previews.types import QualityLevel
 from mosaics.identification import identify_mosaics
-from stacks.compute_graph import build_stacking_subgraph, process_stacks_for_ui
+from stacks.compute_graph import (
+    build_stacking_subgraph,
+    process_stacks_for_ui,
+    process_calibration_stacks_for_ui,
+)
 from targets.compute_graph import build_target_subgraph, process_targets_for_ui
 from targets.identification import identify_targets
 from targets.types import TargetsDict
@@ -36,7 +40,9 @@ from customization.types import CustomizedStacksDict
 
 @ray.remote
 @beartype
-def store_calibration_stacks(calibration_stacks: SimpleStacksDict) -> SimpleStacksDict:
+def store_calibration_stacks(
+    calibration_stacks: SimpleStacksDict,
+) -> SimpleStacksDict:
     context.calibration_stacks = calibration_stacks
     print(
         f"### store_calibration_stacks: Stored "
@@ -84,7 +90,7 @@ def combine_dicts(*ancestor_results: dict[Any, Any]) -> dict[Any, Any]:
     return result
 
 
-@cached.remote
+@ray.remote
 def scatter_spatial_groups(
     metadata_ref: LargeObject, settings: Settings, spatial_groups
 ) -> Graph:
@@ -110,6 +116,9 @@ def scatter_spatial_groups(
     )
 
     graph[quarantine_calibration_stacks_task] = {associate_calibration_stacks}
+    graph[process_calibration_stacks_for_ui] = {
+        quarantine_calibration_stacks_task
+    }
     graph[store_calibration_stacks] = {quarantine_calibration_stacks_task}
 
     stack_tasks = set()
@@ -127,7 +136,9 @@ def scatter_spatial_groups(
         )
 
         target_task = Node(identify_targets, angular_tolerance, name=str(i))
-        customize_targets_task = Node(scatter_customize_targets, settings, name=str(i))
+        customize_targets_task = Node(
+            scatter_customize_targets, settings, name=str(i)
+        )
 
         # TODO: Validate stacks after customizing them.
         graph[validate_stacks_task] = {stack_task}
@@ -165,7 +176,11 @@ def scatter_spatial_groups(
 def build_regroup_graph(metadata_ref: LargeObject) -> Graph:
     settings = context.settings or Settings()
     cluster_by_image_center_task = (cluster_by_image_center, metadata_ref)
-    scatter_spatial_groups_task = (scatter_spatial_groups, metadata_ref, settings)
+    scatter_spatial_groups_task = (
+        scatter_spatial_groups,
+        metadata_ref,
+        settings,
+    )
 
     return Graph(
         {

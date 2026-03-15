@@ -88,7 +88,7 @@ def _populate_context(
     context.compute_graph_status = GraphStatus()
 
     context.dangerously_accept_existing_files = False
-    context.override_filters = None
+    context.override_filters = ["H"]
     context.shopping_cart = [("mosaic", "75a1da6463e118e6")]
     context.ray_head_node_enabled = True
 
