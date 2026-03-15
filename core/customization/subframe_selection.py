@@ -52,9 +52,9 @@ def select_subframes(stack: CompositeStack) -> CompositeStack:
 
     new_contents = SimpleStacksDict()
     for content_hash, substack in stack.contents.items():
-        if new_frames := [
+        if new_frames := tuple(
             f for f in substack.frames if f in selected_light_frames
-        ]:
+        ):
             new_metadata = MetadataDict({
                 h: m for h, m in metadata.items() if h in new_frames
             })

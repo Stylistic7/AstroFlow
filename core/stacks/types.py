@@ -1,6 +1,7 @@
 from typing import NewType
 from dataclasses import dataclass
 from beartype import beartype
+from frozendict import frozendict
 
 StackHash = NewType("StackHash", str)
 
@@ -18,4 +19,4 @@ class FilenameDependency:
 
 
 StackDependency = StackIdDependency | FilenameDependency
-DependenciesDict = dict[str, StackDependency]
+DependenciesDict = frozendict[str, StackDependency]

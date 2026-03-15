@@ -69,7 +69,7 @@ def test_two_targets(test_context) -> None:
     mosaic = next(iter(mosaics.values()))
     print(f"### mosaic.strips {mosaic.strips}")
 
-    assert mosaic.target_ids == [bar.stable_hash, foo.stable_hash]
+    assert mosaic.target_ids == (bar.stable_hash, foo.stable_hash)
 
     # TODO: This only works when the mosaic polygon is "tight," rather than
     # the convex hull.
@@ -154,11 +154,11 @@ def test_three_targets(test_context) -> None:
 
     assert len(mosaics) == 1
     mosaic = next(iter(mosaics.values()))
-    assert mosaic.target_ids == [
+    assert mosaic.target_ids == (
         bar.stable_hash,
         baz.stable_hash,
         foo.stable_hash,
-    ]
+    )
 
     # TODO: This only works when the mosaic polygon is "tight," rather than
     # the convex hull.
@@ -243,11 +243,11 @@ def test_three_out_of_order_targets(test_context) -> None:
 
     assert len(mosaics) == 1
     mosaic = next(iter(mosaics.values()))
-    assert mosaic.target_ids == [
+    assert mosaic.target_ids == (
         bar.stable_hash,
         baz.stable_hash,
         foo.stable_hash,
-    ]
+    )
 
 
 def test_three_targets_and_an_outlier(test_context) -> None:
@@ -428,7 +428,7 @@ def test_ic1318(test_context) -> None:
     mosaic = next(iter(mosaics.values()))
     print("### mosaic", mosaic)
 
-    assert mosaic.target_ids == [bar.stable_hash, foo.stable_hash]
+    assert mosaic.target_ids == (bar.stable_hash, foo.stable_hash)
 
 
 # TODO: Make this actually test something.

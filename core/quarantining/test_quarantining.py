@@ -67,7 +67,7 @@ def test_quarantine_run(test_context) -> None:
     # Quarantine the first run.
     context.settings = Settings(
         stack_settings={
-            stack.stable_hash: StackSettings(quarantined_substacks=[runs[0]])
+            stack.stable_hash: StackSettings(quarantined_substacks=(runs[0],))
         }
     )
 

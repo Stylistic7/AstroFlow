@@ -5,6 +5,7 @@ import itertools
 from dataclasses import replace
 from datetime import datetime
 from typing import Any
+from frozendict import frozendict
 
 from decorators.decorators import cached
 from metadata.classes import ImageMetadata, FrameHash
@@ -192,14 +193,14 @@ def associate_with_stacks(
     new_stacks = SimpleStacksDict()
     for h, stack in stacks.items():
         print(f"### associating stack {stack}")
-        deps = dict(stack.dependencies)  # shallow copy; avoid mutating original
+        deps = dict(stack.dependencies)  # mutable copy to build up
         for t in calibrations_for_stack_type[stack.image_type]:
             if t not in deps:
                 sid = pickers[t](stack)
 
                 if sid is not None:
                     deps[t] = StackIdDependency(stack_id=sid)
-        new_stacks[h] = replace(stack, dependencies=deps)
+        new_stacks[h] = replace(stack, dependencies=frozendict(deps))
 
     return new_stacks
 

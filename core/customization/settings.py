@@ -10,7 +10,7 @@ from hashing import hash_dataclass
 @dataclass(frozen=True)
 class StackSettings:
     is_quarantined: bool = False
-    quarantined_substacks: list[StackHash] = field(default_factory=list)
+    quarantined_substacks: tuple[StackHash, ...] = field(default_factory=tuple)
     dependencies: frozendict[str, StackDependency] = field(default_factory=frozendict)
 
     def __hash__(self):

@@ -1,6 +1,7 @@
 from dataclasses import dataclass, asdict
 from typing import Any
 from beartype import beartype
+from frozendict import frozendict
 
 from stacks.types import StackHash, DependenciesDict
 from attributes import (
@@ -24,7 +25,7 @@ class SimpleStack(
     ImagingAttributes,
     AstroFlowStateAttributes,
 ):
-    frames: list[FrameHash]
+    frames: tuple[FrameHash, ...]
     metadata: MetadataDict
     dependencies: DependenciesDict
 
@@ -78,10 +79,10 @@ def simple_stack_from_frames(
         asdict(chronology_attributes)
         | asdict(imaging_attributes)
         | {
-            "frames": frames,
+            "frames": tuple(frames),
             "metadata": frame_metadata,
-            "dependencies": DependenciesDict(),
-            "state": {},
+            "dependencies": frozendict(),
+            "state": frozendict(),
         }
     )
 

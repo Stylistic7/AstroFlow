@@ -28,7 +28,7 @@ def make_composite_stack(**kwargs: Any) -> CompositeStack:
             camera="ZWO ASI6200MM Pro",
             filter="H",
             mean_temperature=-20.0,
-            exposure_s=[300.0],
+            exposure_s=(300.0,),
             integration_s=1500.0,
             width_pixels=9576,
             height_pixels=6488,
@@ -49,7 +49,7 @@ def make_composite_stack(**kwargs: Any) -> CompositeStack:
             projected_footprints=frozendict(),
         )
     )
-    composite_stack_attributes = {"contents": SimpleStacksDict(), "state": {}}
+    composite_stack_attributes = {"contents": SimpleStacksDict(), "state": frozendict()}
 
     attributes = (
         chronology_attributes

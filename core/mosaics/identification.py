@@ -251,7 +251,7 @@ def find_strips(
     target_ids: list[TargetHash],
     angular_tolerance: float,
     debug: bool = False,
-) -> list[Strip]:
+) -> tuple[Strip, ...]:
     strips = group_targets(
         targets, target_ids, [Overlap.LONG_EDGE], angular_tolerance
     )
@@ -268,7 +268,7 @@ def find_strips(
         strip = list(sorted(strip, key=lambda t: targets[t].center[0]))
 
         if len(strip) < 3:
-            return strip
+            return Strip(strip)
 
         def overlap_count(target_id):
             return sum(
@@ -336,10 +336,10 @@ def find_strips(
         return min(targets[t].center[1] for t in strip)
 
     # Sort each strip individually by increasing RA.
-    strips = [sorted(s, key=lambda t: targets[t].center[0]) for s in strips]
+    strips = [tuple(sorted(s, key=lambda t: targets[t].center[0])) for s in strips]
 
     # Sort the strips by increasing Dec.
-    return sorted(strips, key=min_dec)
+    return tuple(sorted(strips, key=min_dec))
 
 
 @beartype
@@ -493,7 +493,7 @@ def identify_mosaics(
             | asdict(astrometric_attributes)
             | {
                 "stable_hash": stable_hash,
-                "target_ids": sorted(mosaic),
+                "target_ids": tuple(sorted(mosaic)),
                 "strips": strips,
             }
         )

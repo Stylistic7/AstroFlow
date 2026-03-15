@@ -4,6 +4,7 @@ from collections.abc import Sequence
 import numpy as np
 import ray
 from beartype import beartype
+from frozendict import frozendict
 
 import units
 from hashing import hash_list, hash_list_int
@@ -83,7 +84,7 @@ class CompositeStack(
             | asdict(astrometric_attributes)
             | {
                 "contents": contents,
-                "state": {},
+                "state": frozendict(),
             }
         )
 

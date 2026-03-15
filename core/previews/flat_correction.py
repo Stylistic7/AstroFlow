@@ -1,5 +1,6 @@
 import tempfile
 from pathlib import Path
+from frozendict import frozendict
 
 from context import context
 from previews.calibration import calibrate_subframe
@@ -29,8 +30,7 @@ def flat_corrected_stack(
         next(l for l in light_frames_by_stars if l in substack.frames)
     ]
 
-    dependencies = substack.dependencies.copy()
-    dependencies["flat"] = StackIdDependency(stack_id=StackHash(flat_stack.stable_hash))
+    dependencies = frozendict({**substack.dependencies, "flat": StackIdDependency(stack_id=StackHash(flat_stack.stable_hash))})
 
     temp_file = tempfile.NamedTemporaryFile(suffix=".tiff", delete=True)
     write_tiff_image(

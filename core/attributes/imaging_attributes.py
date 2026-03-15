@@ -22,7 +22,7 @@ class ImagingAttributes:
     camera: str
     filter: str | None
     mean_temperature: float
-    exposure_s: list[float]
+    exposure_s: tuple[float, ...]
     integration_s: float
     width_pixels: int
     height_pixels: int
@@ -56,7 +56,7 @@ class ImagingAttributes:
         camera = get_unique_quality("INSTRUME")
         width_pixels = get_unique_quality("NAXIS1")
         height_pixels = get_unique_quality("NAXIS2")
-        exposure_s = [float(e) for e in get_quality_set("EXPOSURE")]
+        exposure_s = tuple(float(e) for e in get_quality_set("EXPOSURE"))
         filter = get_unique_quality("FILTER", allow_empty=True)
 
         integration_s = float(
@@ -90,7 +90,7 @@ class ImagingAttributes:
         camera = get_unique_quality(o.camera for o in objects)
         filter = list(set(o.filter for o in objects))
         mean_temperature = np.mean(o.mean_temperature for o in objects)
-        exposure_s = list(set(o.exposure_s for o in objects))
+        exposure_s = tuple({v for o in objects for v in o.exposure_s})
         integration_s = np.sum(o.integration_s for o in objects)
         width_pixels = get_unique_quality(o.width_pixels for o in objects)
         height_pixels = get_unique_quality(o.height_pixels for o in objects)

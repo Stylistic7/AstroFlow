@@ -1,5 +1,6 @@
 from dataclasses import replace, asdict
 from collections.abc import Sequence
+from frozendict import frozendict
 
 from context import context
 from stacks.composite_stack import CompositeStack
@@ -28,11 +29,13 @@ def apply_quarantine(
         return None
 
     for substack_id, substack in new_contents.items():
-        new_dependencies = {
-            t: s
-            for t, s in substack.dependencies.items()
-            if s not in quarantined_substacks
-        }
+        new_dependencies = frozendict(
+            {
+                t: s
+                for t, s in substack.dependencies.items()
+                if s not in quarantined_substacks
+            }
+        )
         new_contents[substack_id] = replace(
             substack, dependencies=new_dependencies
         )

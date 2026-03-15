@@ -10,7 +10,7 @@ from attributes import AstrometricAttributes, ChronologyAttributes
 from cache.content_hashed import ContentHashed
 
 Template: TypeAlias = tuple[int | None, int | None]
-Strip: TypeAlias = list[TargetHash]
+Strip: TypeAlias = tuple[TargetHash, ...]
 
 MosaicHash = NewType("MosaicHash", str)
 
@@ -20,8 +20,8 @@ MosaicHash = NewType("MosaicHash", str)
 class Mosaic(
     ContentHashed, AstrometricAttributes, ChronologyAttributes[MosaicHash]
 ):
-    target_ids: list[TargetHash]
-    strips: list[Strip]
+    target_ids: tuple[TargetHash, ...]
+    strips: tuple[Strip, ...]
 
     def __str__(self) -> str:
         return (

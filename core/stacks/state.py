@@ -1,6 +1,7 @@
 import ray
 from dataclasses import replace
 from beartype import beartype
+from frozendict import frozendict
 
 from context import context
 from stacks.artifacts import output_filename
@@ -21,7 +22,7 @@ def update_state(stacks: CompositeStacksDict) -> CompositeStacksDict:
 
         output_stacks[stack_id] = replace(
             stack,
-            state={
+            state=frozendict({
                 "num_frames": len(stack.all_frames()),
                 "stack_files": all(
                     artifact_exists(a) for a in output_filename(stack_id)
@@ -29,7 +30,7 @@ def update_state(stacks: CompositeStacksDict) -> CompositeStacksDict:
                 "post_process_stack": all(
                     artifact_exists(a) for a in post_process_stack_artifacts(stack_id)
                 ),
-            },
+            }),
         )
         print(f"### Updated stack state {stack_id} to {stack.state}")
 
