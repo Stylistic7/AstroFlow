@@ -432,10 +432,8 @@ def test_ic1318(test_context) -> None:
 
 
 # TODO: Make this actually test something.
-def test_big_cygnus_pano(test_context) -> None:
+def test_big_cygnus_pano(with_real_testdata) -> None:
     copy_testdata_into_cache()
-
-    run_graph(build_compute_graph())
 
     mosaics = ray.get(
         identify_mosaics.remote(context.settings.clustering_settings.angular_tolerance, context.targets)

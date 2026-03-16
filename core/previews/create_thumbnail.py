@@ -42,7 +42,7 @@ def make_create_thumbnail_decorator(
 
                 if os.path.exists(filename):
                     if thumbnail := thumbnail_fn(filename):
-                        call_hash = hash_call(fn_hash, args[0] if args else None)
+                        call_hash = hash_call(fn_hash, *args, **kwargs)
                         thumbnail_key = ("thumbnail", call_hash)
                         cache[thumbnail_key] = thumbnail
                         print(
@@ -50,12 +50,25 @@ def make_create_thumbnail_decorator(
                             f"for filename {filename}"
                         )
 
+                        # Store an index by first arg so thumbnail_fn(first_arg)
+                        # can find thumbnails for functions with multiple args.
+                        if args:
+                            first_arg_hash = hash_call(fn_hash, args[0])
+                            cache[("thumbnail_index", first_arg_hash)] = call_hash
+
                 return result
 
             def get_thumbnail_fn(*args, **kwargs) -> Optional[np.ndarray]:
-                call_hash = hash_call(fn_hash, args[0] if args else None)
-                thumbnail_key = ("thumbnail", call_hash)
-                return cache.get(thumbnail_key)
+                # Try index lookup by first arg (works for single-arg calls).
+                if args:
+                    first_arg_hash = hash_call(fn_hash, args[0])
+                    index_key = ("thumbnail_index", first_arg_hash)
+                    if (call_hash := cache.get(index_key)) is not None:
+                        return cache.get(("thumbnail", call_hash))
+
+                # Fall back to full-args lookup.
+                call_hash = hash_call(fn_hash, *args, **kwargs)
+                return cache.get(("thumbnail", call_hash))
 
             wrapper.thumbnail_fn = get_thumbnail_fn
 

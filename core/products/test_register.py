@@ -1,12 +1,8 @@
 import os
 import ray
 import numpy as np
-from dependency_graph import run_graph
-
 from decorators import cached
 from products import makes_image, get_producer, MediaType
-from compute_graph import build_compute_graph
-from testing import copy_testdata_frames
 from context import context
 from file_io.types import TiffFilePath, XisfFilePath, ContentHashableFile
 from file_io.tiff_file_io import write_tiff_image
@@ -48,18 +44,14 @@ def stack_files(stack: CompositeStack) -> XisfFilePath:
     return output_path
 
 
-def test_single_stack(test_context) -> None:
-    copy_testdata_frames(target_name="NGC7635", dest_dir=context.input_dirs[0])
-    run_graph(build_compute_graph())
+def test_single_stack(with_real_testdata) -> None:
     stack = next(iter(context.stacks.values()))
 
     filename = ray.get(stack_files.remote(stack))
     assert os.path.exists(filename)
 
 
-def test_registry(test_context) -> None:
-    copy_testdata_frames(target_name="NGC7635", dest_dir=context.input_dirs[0])
-    run_graph(build_compute_graph())
+def test_registry(with_real_testdata) -> None:
     stack = next(iter(context.stacks.values()))
 
     fn = get_producer(MediaType.IMAGE, CompositeStack, QualityLevel.SUBFRAME)

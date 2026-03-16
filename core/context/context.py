@@ -92,6 +92,14 @@ class ContextActor:
     def or_equals(self, key: Key, value: Any) -> None:
         self.cache.or_equals(key, value)
 
+    def set_many(self, items: dict) -> None:
+        from hashing.types import LargeObject
+
+        for key, value in items.items():
+            if isinstance(value, LargeObject):
+                value = value.strip_ref()
+            self.cache[key] = value
+
     def clear(self) -> None:
         self.cache.clear()
 
@@ -166,6 +174,10 @@ class Context:
     def delete(self, key: Key) -> None:
         actor = ray.get_actor("context", namespace=_get_namespace())
         ray.get(actor.delete.remote(key))
+
+    def set_many(self, items: dict) -> None:
+        actor = ray.get_actor("context", namespace=_get_namespace())
+        ray.get(actor.set_many.remote(items))
 
     def clear(self) -> None:
         actor = ray.get_actor("context", namespace=_get_namespace())

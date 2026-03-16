@@ -2,6 +2,7 @@ import tempfile
 import os
 import shutil
 
+import pytest
 from context import context
 
 from pix.classes import FilenameList, ImageList
@@ -131,6 +132,7 @@ def stuck_task(images: ImageList) -> ImageList:
     pass
 
 
+@pytest.mark.slow
 def test_bxt_only(test_context):
     if context.get("mock_pixinsight", False):
         return
@@ -145,6 +147,7 @@ def test_bxt_only(test_context):
     assert sorted(filenames) == sorted(["blurx.xisf"])
 
 
+@pytest.mark.slow
 def test_bxt_and_sxt(test_context):
     if context.get("mock_pixinsight", False):
         return
@@ -159,6 +162,7 @@ def test_bxt_and_sxt(test_context):
     assert sorted(filenames) == sorted(["stars.xisf", "starless.xisf"])
 
 
+@pytest.mark.slow
 def test_bxt_align_sxt(test_context):
     if context.get("mock_pixinsight", False):
         return
@@ -173,6 +177,7 @@ def test_bxt_align_sxt(test_context):
     assert sorted(filenames) == sorted(["stars.xisf", "starless.xisf"])
 
 
+@pytest.mark.slow
 def test_channel_combination(test_context):
     if context.get("mock_pixinsight", False):
         return
@@ -187,5 +192,6 @@ def test_channel_combination(test_context):
     assert sorted(filenames) == sorted(["RGB.xisf"])
 
 
+@pytest.mark.slow
 def test_stuck_task(test_context) -> None:
     images = stuck_task([])

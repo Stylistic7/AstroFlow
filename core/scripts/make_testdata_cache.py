@@ -25,8 +25,6 @@ def create_tar_gz_from_directory(source_dir, output_filename):
 
 def copy_all_stack_data(metadata, cache, testdata_cache, stack_id):
     stacks = cache["stacks"]
-    testdata_cache["stacks"] |= {stack_id: stacks[stack_id]}
-
     stack = stacks[stack_id]
     assert isinstance(stack, CompositeStack)
     for substack in stack.contents.values():
@@ -39,10 +37,7 @@ def copy_all_stack_data(metadata, cache, testdata_cache, stack_id):
 
 def copy_all_target_data(metadata, cache, testdata_cache, target_id):
     targets = cache["targets"]
-
     target = targets[target_id]
-    testdata_cache["targets"] |= {target_id: target}
-
     for stack_id in target.stack_ids:
         copy_all_stack_data(metadata, cache, testdata_cache, stack_id)
 
@@ -60,15 +55,7 @@ def copy_image(metadata, cache, testdata_cache, content_hash, target_dir):
 def copy_all_mosaic_data(metadata, cache, testdata_cache, mosaic_id):
     targets = cache["targets"]
     mosaics = cache["mosaics"]
-
     mosaic = mosaics[mosaic_id]
-
-    testdata_cache["mosaics"] |= {mosaic_id: mosaic}
-
-    testdata_cache["targets"] |= {
-        target_id: targets[target_id] for target_id in mosaic.target_ids
-    }
-
     stack_ids = [
         stack_id
         for target_id in mosaic.target_ids
@@ -84,9 +71,6 @@ if __name__ == "__main__":
     testdata_cache_dir = tempfile.TemporaryDirectory()
     testdata_cache = diskcache.Cache(testdata_cache_dir.name)
     testdata_cache.clear()
-    testdata_cache["stacks"] = {}
-    testdata_cache["targets"] = {}
-    testdata_cache["mosaics"] = {}
     print(f"Opened testdata cache in dir {testdata_cache_dir.name}")
 
     metadata = ray.get(load_metadata.remote()).get()
