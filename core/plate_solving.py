@@ -91,7 +91,7 @@ def _solve_field(
             dest_filename = Path(
                 os.path.join(temp_dir, os.path.basename(filename))
             )
-            os.symlink(filename, dest_filename)
+            os.symlink(Path(filename).resolve(), dest_filename)
 
         try:
             command = arguments + [dest_filename]

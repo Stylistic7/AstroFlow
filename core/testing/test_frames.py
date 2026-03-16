@@ -9,12 +9,12 @@ import shutil
 import xxhash
 from typing import Any
 from pathlib import Path
-import pickle
 
 from metadata.classes import ImageMetadata
 from context import context
 import plate_solving
 from file_io.normalize_header import normalize_header
+from file_io.sidecar import sidecar_path_for
 from geometry import Degrees
 from hashing import hash_source_code, hash_call
 from metadata.image_metadata import compute_image_metadata
@@ -140,11 +140,14 @@ def copy_testdata_frames(
         fits.flush()
         fits.close()
 
-        src_sidecar = Path(src_filename).with_suffix(".pkl")
-        dest_sidecar = Path(dest_filename).with_suffix(".pkl")
-        assert src_sidecar.exists()
-        shutil.copy(src_sidecar, dest_sidecar)
-        print(f"### Copied sidecar {dest_sidecar}")
+        src_sidecar = sidecar_path_for(Path(src_filename))
+        if not src_sidecar.exists():
+            print(f"### Creating sidecar for {src_filename}")
+            plate_solving.solve_field(Path(src_filename))
+        dest_sidecar = sidecar_path_for(Path(dest_filename))
+        if src_sidecar.exists():
+            shutil.copy(src_sidecar, dest_sidecar)
+            print(f"### Copied sidecar {dest_sidecar}")
 
 
 # TODO: Maybe remove `insert_metadata`, since it no longer matches pure-
@@ -296,10 +299,6 @@ def make_synthetic_frames(
             )
             context.set(key, metadata)
 
-            sidecar = Path(fits_filename).with_suffix(".pkl")
-            with open(sidecar, "wb") as f:
-                print(f"### Wrote plate-solving sidecar {sidecar}")
-                pickle.dump(plate_solution, f)
 
         if dest_dir is None:
             continue

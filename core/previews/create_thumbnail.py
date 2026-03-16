@@ -42,7 +42,7 @@ def make_create_thumbnail_decorator(
 
                 if os.path.exists(filename):
                     if thumbnail := thumbnail_fn(filename):
-                        call_hash = hash_call(fn_hash, *args, **kwargs)
+                        call_hash = hash_call(fn_hash, args[0] if args else None)
                         thumbnail_key = ("thumbnail", call_hash)
                         cache[thumbnail_key] = thumbnail
                         print(
@@ -53,7 +53,7 @@ def make_create_thumbnail_decorator(
                 return result
 
             def get_thumbnail_fn(*args, **kwargs) -> Optional[np.ndarray]:
-                call_hash = hash_call(fn_hash, *args, **kwargs)
+                call_hash = hash_call(fn_hash, args[0] if args else None)
                 thumbnail_key = ("thumbnail", call_hash)
                 return cache.get(thumbnail_key)
 
