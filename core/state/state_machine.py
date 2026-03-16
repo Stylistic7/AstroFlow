@@ -4,10 +4,9 @@ from pathlib import Path
 import time
 import signal
 import sys
-import datetime
-import numpy as np
 
 from context import context, get_cache, queue
+from customization.settings import Settings, DevelopmentSettings, PreviewSettings
 from ray_infra.ray_init import connect_to_ray_cluster
 from state.ray_control import (
     start_ray_head_node,
@@ -74,21 +73,20 @@ def _populate_context(
     ]
     context.output_dir = Path("/Volumes/Astro/Processed")
 
-    context.cosine_similarity_threshold = 0.9999
-    context.angular_tolerance = np.radians(10.0)
-
-    context.min_component_members = 3
-    context.max_run_gap = datetime.timedelta(hours=8)
-    context.min_frames_in_stack = 3
-    context.subframe_thumbnail_width = 1200
-    context.master_thumbnail_width = 2160
-
     context.asiair_devices = []
     context.compute_graphs = [TopologicalSorterWithStatus(Graph())]
     context.compute_graph_status = GraphStatus()
 
-    context.dangerously_accept_existing_files = False
-    context.override_filters = ["H"]
+    context.settings = Settings(
+        development_settings=DevelopmentSettings(
+            override_filters=("H",),
+        ),
+        preview_settings=PreviewSettings(
+            subframe_thumbnail_width=1200,
+            master_thumbnail_width=2160,
+        ),
+    )
+
     context.shopping_cart = [("mosaic", "75a1da6463e118e6")]
     context.ray_head_node_enabled = True
 

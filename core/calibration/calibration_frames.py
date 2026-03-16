@@ -9,7 +9,6 @@ from frozendict import frozendict
 
 from decorators.decorators import cached
 from metadata.classes import ImageMetadata, FrameHash
-from context import context
 from stacks.types import StackHash, StackIdDependency
 from stacks.simple_stack import (
     SimpleStack,
@@ -23,7 +22,7 @@ from beartype import beartype
 
 
 @cached.remote
-def identify_calibration_stacks(metadata_ref: LargeObject) -> SimpleStacksDict:
+def identify_calibration_stacks(metadata_ref: LargeObject, max_run_gap) -> SimpleStacksDict:
     print(f"Identifying calibration stacks...")
     metadata = metadata_ref.get()
 
@@ -33,7 +32,7 @@ def identify_calibration_stacks(metadata_ref: LargeObject) -> SimpleStacksDict:
 
         items = [(h, metadata[h].header["DATE-OBS"]) for h in frames]
         result = clustering.cluster_continuous(
-            items, epsilon=context.max_run_gap
+            items, epsilon=max_run_gap
         )
         return [[x[0] for x in r] for r in result]
 

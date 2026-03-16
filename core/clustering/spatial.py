@@ -4,7 +4,6 @@ from typing import Sequence, Callable, Any, TypeVar
 
 import metadata.image_types as image_types
 from geometry import footprints
-from context import context
 import plate_solving
 from decorators import cached
 from hashing.types import LargeObject
@@ -54,11 +53,8 @@ def find_groups(
 
 
 @cached.remote
-def cluster_by_image_center(metadata_ref: LargeObject) -> list[tuple[str, ...]]:
+def cluster_by_image_center(metadata_ref: LargeObject, cosine_similarity_threshold: float, min_component_members: int) -> list[tuple[str, ...]]:
     metadata = metadata_ref.get()
-
-    cosine_similarity_threshold = context.cosine_similarity_threshold
-    min_component_members = context.min_component_members
 
     def get_centroid(center: Sequence[float]) -> np.ndarray:
         return np.asarray(footprints.radec_to_vector(*center))

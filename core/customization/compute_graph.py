@@ -1,6 +1,7 @@
 import ray
 from dataclasses import replace
 from beartype import beartype
+from frozendict import frozendict
 
 from context import context
 from stacks.composite_stack import CompositeStack, CompositeStacksDict
@@ -39,7 +40,8 @@ def store_customized_stack(stack: CustomizedStack) -> None:
 def customize_stack(
     stack: CompositeStack,
     cal_stacks: SimpleStacksDict,
-    settings: StackSettings,
+    stack_settings: StackSettings,
+    min_frames_in_stack: int,
 ) -> CustomizedStack:
     def chain(x, *funcs):
         for f in funcs:
@@ -51,9 +53,9 @@ def customize_stack(
     stack = chain(
         stack,
         lambda s: associate_with_stack(s, cal_stacks),
-        select_subframes,
-        lambda s: apply_quarantine(s, settings.quarantined_substacks),
-        lambda s: apply_settings(s, settings),
+        lambda s: select_subframes(s, min_frames_in_stack),
+        lambda s: apply_quarantine(s, stack_settings.quarantined_substacks),
+        lambda s: apply_settings(s, stack_settings),
     )
 
     if stack is None:
@@ -70,7 +72,8 @@ def gather_customize_stacks(*ancestor_results: CustomizedStack | None) -> Custom
 
 @cached.remote
 def scatter_customize_stacks(
-    settings: Settings,
+    stack_settings: frozendict,
+    min_frames_in_stack: int,
     stacks: CompositeStacksDict,
     cal_stacks: SimpleStacksDict,
 ) -> Graph:
@@ -82,7 +85,8 @@ def scatter_customize_stacks(
                     customize_stack,
                     v,
                     cal_stacks,
-                    settings.stack_settings.get(k, StackSettings()),
+                    stack_settings.get(k, StackSettings()),
+                    min_frames_in_stack,
                 )
                 for k, v in stacks.items()
             ]
@@ -92,9 +96,7 @@ def scatter_customize_stacks(
 
 # TODO: Implement real customization features.
 @cached.remote
-def scatter_customize_cal_stacks(
-    settings: Settings, cal_stacks: SimpleStacksDict
-) -> SimpleStacksDict:
+def scatter_customize_cal_stacks(cal_stacks: SimpleStacksDict) -> SimpleStacksDict:
     print(
         f"### scatter_customize_cal_stacks type(cal_stacks) {type(cal_stacks)}"
     )
@@ -103,13 +105,13 @@ def scatter_customize_cal_stacks(
 
 @cached.remote
 def scatter_customize_targets(
-    settings: Settings, targets: TargetsDict
+    target_settings: frozendict, targets: TargetsDict
 ) -> TargetsDict:
     return TargetsDict(
         {
             h: t
             for h, t in targets.items()
-            if not settings.target_settings.get(h, TargetSettings()).is_quarantined
+            if not target_settings.get(h, TargetSettings()).is_quarantined
         }
     )
 
@@ -117,6 +119,6 @@ def scatter_customize_targets(
 # TODO: Implement real customization features.
 @cached.remote
 def scatter_customize_mosaics(
-    settings: Settings, mosaics: MosaicsDict
+    mosaic_settings: frozendict, mosaics: MosaicsDict
 ) -> MosaicsDict:
     return mosaics

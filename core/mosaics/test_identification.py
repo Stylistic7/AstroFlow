@@ -63,7 +63,7 @@ def test_two_targets(test_context) -> None:
     context.targets = TargetsDict({foo.stable_hash: foo, bar.stable_hash: bar})
 
     mosaics = ray.get(
-        identify_mosaics.remote(context.angular_tolerance, context.targets)
+        identify_mosaics.remote(context.settings.clustering_settings.angular_tolerance, context.targets)
     )
     assert len(mosaics) == 1
     mosaic = next(iter(mosaics.values()))
@@ -149,7 +149,7 @@ def test_three_targets(test_context) -> None:
     )
 
     mosaics = ray.get(
-        identify_mosaics.remote(context.angular_tolerance, context.targets)
+        identify_mosaics.remote(context.settings.clustering_settings.angular_tolerance, context.targets)
     )
 
     assert len(mosaics) == 1
@@ -238,7 +238,7 @@ def test_three_out_of_order_targets(test_context) -> None:
     )
 
     mosaics = ray.get(
-        identify_mosaics.remote(context.angular_tolerance, context.targets)
+        identify_mosaics.remote(context.settings.clustering_settings.angular_tolerance, context.targets)
     )
 
     assert len(mosaics) == 1
@@ -339,7 +339,7 @@ def test_three_targets_and_an_outlier(test_context) -> None:
     )
 
     mosaics = ray.get(
-        identify_mosaics.remote(context.angular_tolerance, context.targets)
+        identify_mosaics.remote(context.settings.clustering_settings.angular_tolerance, context.targets)
     )
 
     assert len(mosaics) == 1
@@ -421,7 +421,7 @@ def test_ic1318(test_context) -> None:
     )
 
     mosaics = ray.get(
-        identify_mosaics.remote(context.angular_tolerance, context.targets)
+        identify_mosaics.remote(context.settings.clustering_settings.angular_tolerance, context.targets)
     )
 
     assert len(mosaics) == 1
@@ -438,7 +438,7 @@ def test_big_cygnus_pano(test_context) -> None:
     run_graph(build_compute_graph())
 
     mosaics = ray.get(
-        identify_mosaics.remote(context.angular_tolerance, context.targets)
+        identify_mosaics.remote(context.settings.clustering_settings.angular_tolerance, context.targets)
     )
 
     mosaic = mosaics["75a1da6463e118e6"]

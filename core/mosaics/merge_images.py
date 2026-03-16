@@ -6,7 +6,7 @@ from pathlib import Path
 from dataclasses import dataclass
 
 from decorators import measure_performance
-from context import context
+from customization.settings import DevelopmentSettings
 from file_io.generic import read_header, read_image, copy_image
 from file_io.conversion import convert_tiff_to_xisf
 from pix.classes import ImageList
@@ -93,7 +93,7 @@ def merge_images_with_photometric_mosaic(
 @cached.remote
 @measure_performance
 def merge_images_with_pmm(
-    mosaic: Mosaic, input_0: ImageMetadata, input_1: ImageMetadata
+    mosaic: Mosaic, input_0: ImageMetadata, input_1: ImageMetadata, mock_pixinsight: bool
 ) -> WithSidecar[XisfFilePath]:
     input_0 = input_0.filename.resolve(strict=True)
     input_1 = input_1.filename.resolve(strict=True)
@@ -105,8 +105,7 @@ def merge_images_with_pmm(
     assert len(filters) == 1, f"### Incorrect number of filters: {filters}"
     filter = next(iter(filters))
 
-    # TODO: This is messy. Clean it up.
-    if context.get("mock_pixinsight", False):
+    if mock_pixinsight:
         output_filename = merge_images_with_pmm.filename_fn(
             mosaic, input_0, input_1
         )
@@ -116,7 +115,7 @@ def merge_images_with_pmm(
                 f"### mocking PixInsight for merging; "
                 f"converting {input_0=} to {output_filename=}"
             )
-            return convert_tiff_to_xisf(input_0, output_filename)
+            return WithSidecar(convert_tiff_to_xisf(input_0, output_filename))
         else:
             print(
                 f"### mocking PixInsight for merging; "
@@ -139,6 +138,7 @@ def merge_images_with_pmm(
 def merge_images(
     mode: QualityLevel,
     mosaic: Mosaic,
+    development_settings: DevelopmentSettings,
     input_0: ImageMetadata,
     input_1: ImageMetadata,
 ) -> WithSidecar:
@@ -147,7 +147,7 @@ def merge_images(
             merge_images_with_maximum.remote(mosaic, input_0, input_1)
         )
     else:
-        result = ray.get(merge_images_with_pmm.remote(mosaic, input_0, input_1))
+        result = ray.get(merge_images_with_pmm.remote(mosaic, input_0, input_1, development_settings.mock_pixinsight))
 
     print(f"### merge_images {result=}")
     return result

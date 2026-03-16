@@ -145,14 +145,20 @@ def load_metadata() -> LargeObject:
         resolved = str(Path(filename).resolve())
         return any(resolved.startswith(d) for d in input_dirs)
 
+    settings = context.settings
+    allow_missing = (
+        settings is not None
+        and settings.development_settings.dangerously_allow_missing_files
+    )
+
     metadata = MetadataDict()
     for key, value in context.get_matching(("compute_image_metadata",)).items():
         try:
             if isinstance(value.content_hash, str):
                 if value.content_hash not in quarantined_files:
-                    if is_input_file(value.filename):
+                    if allow_missing or is_input_file(value.filename):
                         if "master" not in os.path.basename(value.filename).lower():
-                            if os.path.exists(value.filename):
+                            if allow_missing or os.path.exists(value.filename):
                                 if not image_types.is_master(value.header):
                                     metadata[value.content_hash] = value
         except Exception as e:

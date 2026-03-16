@@ -3,7 +3,6 @@ from pathlib import Path
 import os
 from astropy.time import Time
 
-from context import context
 from pix.decorators import PixInsight
 from pix.tasks import (
     BlurXTerminator,
@@ -15,6 +14,7 @@ from pix.tasks import (
 )
 from pix.classes import ImageList
 from decorators import cached, measure_performance, create_thumbnail
+from customization.settings import DevelopmentSettings
 from customization.types import CustomizedStack
 from stacks.composite_stack import CompositeStack
 from stacks.stacking import stack_files
@@ -56,23 +56,21 @@ def _post_process_stack(
 @cached.remote(resources={"PixInsight": 1})
 @measure_performance
 @create_thumbnail
-def post_process_stack(stack: CustomizedStack) -> XisfFilePath:
+def post_process_stack(stack: CustomizedStack, development_settings: DevelopmentSettings) -> XisfFilePath:
     master = stack_files.filename_fn(stack)
     print(f"### post_process_stack, master {master}")
 
     output_filename = post_process_stack.filename_fn(stack)
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 
-    if context.dangerously_accept_existing_files and os.path.exists(
-        output_filename
-    ):
+    if development_settings.dangerously_accept_existing_files and os.path.exists(output_filename):
         print(
             f"### Dangerously skipping post-processing because "
             f"file {output_filename} already exists"
         )
         return output_filename
 
-    if context.get("mock_pixinsight", False):
+    if development_settings.mock_pixinsight:
         copy_image(master, output_filename)
     else:
         _post_process_stack(

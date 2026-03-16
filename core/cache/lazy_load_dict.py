@@ -2,6 +2,32 @@ import diskcache
 from typing import Any, Iterable, Callable
 from types import MethodType
 
+
+def _reconstruct_lazy_typed(base_type: type, name: str):
+    from context.context import context
+
+    def orig_get_fn(kk):
+        if isinstance(kk, tuple):
+            return context.get(kk)
+        return context.get_lazy_keys(kk)
+
+    cls = _make_lazy_subclass(base_type)
+    inst = cls.__new__(cls)
+    dict.__init__(inst)
+    inst._lazy_init(name, orig_get_fn)
+    return inst
+
+
+def _reconstruct_lazy_untyped(name: str):
+    from context.context import context
+
+    def orig_get_fn(kk):
+        if isinstance(kk, tuple):
+            return context.get(kk)
+        return context.get_lazy_keys(kk)
+
+    return LazyLoadDict(name, orig_get_fn)
+
 Key = str | tuple[str, ...]
 
 _lazy_subclass_cache: dict[type, type] = {}
@@ -51,14 +77,20 @@ def _make_lazy_subclass(base_type: type) -> type:
         def __contains__(self, k: Any) -> bool:
             return k in list(self.keys())
 
+        @property
+        def content_hash(self):
+            from context.context import context
+            return context.get_content_hash(self._lazy_name)
+
+        def __reduce__(self):
+            return (_reconstruct_lazy_typed, (base_type, self._lazy_name))
+
     LazySubclass.__name__ = f"Lazy{base_type.__name__}"
     LazySubclass.__qualname__ = f"Lazy{base_type.__name__}"
     _lazy_subclass_cache[base_type] = LazySubclass
     return LazySubclass
 
 
-# TODO: I don't think this is going to work across Ray nodes. The ContextActor
-# probably needs to re-create the LazyLoadDict with its own context.get() func.
 class LazyLoadDict:
     __slots__ = ("name", "_orig_get")
 
@@ -93,6 +125,14 @@ class LazyLoadDict:
     def __len__(self):
         ks = self._orig_get(self.name) or ()
         return len(ks)
+
+    @property
+    def content_hash(self):
+        from context.context import context
+        return context.get_content_hash(self.name)
+
+    def __reduce__(self):
+        return (_reconstruct_lazy_untyped, (self.name,))
 
 
 def add_lazy_load_functionality(
@@ -155,6 +195,8 @@ def add_lazy_load_functionality(
             if length_limit is not None:
                 new_value = new_value[-length_limit:]
             _orig_set(key, new_value)
+
+    cache._orig_get = _orig_get
 
     cache.get = MethodType(_wrap_get, cache)
     cache.set = MethodType(_wrap_set, cache)

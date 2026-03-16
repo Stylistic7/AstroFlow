@@ -1,6 +1,7 @@
 import datetime
 import unittest
 
+from frozendict import frozendict
 from hashing import hash_list
 from compute_graph import build_compute_graph
 from context import context
@@ -66,9 +67,9 @@ def test_quarantine_run(test_context) -> None:
 
     # Quarantine the first run.
     context.settings = Settings(
-        stack_settings={
+        stack_settings=frozendict({
             stack.stable_hash: StackSettings(quarantined_substacks=(runs[0],))
-        }
+        })
     )
 
     run_graph(build_compute_graph())
@@ -93,7 +94,7 @@ def test_quarantine_toplevel_target(test_context):
 
     target_hash = next(iter(context.targets))
     context.settings = Settings(
-        target_settings={target_hash: TargetSettings(is_quarantined=True)}
+        target_settings=frozendict({target_hash: TargetSettings(is_quarantined=True)})
     )
 
     run_graph(build_compute_graph())
@@ -123,7 +124,7 @@ def test_quarantine_calibration_stack(test_context):
         )
     )
     context.settings = Settings(
-        cal_stack_settings={dark_hash: StackSettings(is_quarantined=True)}
+        cal_stack_settings=frozendict({dark_hash: StackSettings(is_quarantined=True)})
     )
 
     run_graph(build_compute_graph())

@@ -8,6 +8,9 @@ from cache.lazy_load_dict import add_lazy_load_functionality
 
 def _create_cache() -> diskcache.Cache:
     from targets.types import TargetsDict
+    from stacks.composite_stack import CompositeStacksDict
+    from stacks.simple_stack import SimpleStacksDict
+    from mosaics.types import MosaicsDict
 
     lazy_names = [
         "stacks",
@@ -16,7 +19,12 @@ def _create_cache() -> diskcache.Cache:
         "calibration_stacks",
         "workflow_graphs",
     ]
-    lazy_types = {"targets": TargetsDict}
+    lazy_types = {
+        "stacks": CompositeStacksDict,
+        "targets": TargetsDict,
+        "mosaics": MosaicsDict,
+        "calibration_stacks": SimpleStacksDict,
+    }
 
     if "ASTROFLOW_MOCK_CACHE" in os.environ:
         temp_dir = os.environ["ASTROFLOW_MOCK_CACHE"]

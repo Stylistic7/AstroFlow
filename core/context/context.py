@@ -95,6 +95,14 @@ class ContextActor:
     def clear(self) -> None:
         self.cache.clear()
 
+    def get_lazy_keys(self, name: str) -> list | None:
+        return self.cache._orig_get(name)
+
+    def get_content_hash(self, name: str) -> str:
+        from hashing import hash_list
+        keys = self.cache._orig_get(name) or []
+        return hash_list(sorted((k, self.cache._orig_get((name, k))) for k in keys))
+
     def get_cache_keys(self) -> list:
         return list(self.cache.iterkeys())
 
@@ -162,6 +170,14 @@ class Context:
     def clear(self) -> None:
         actor = ray.get_actor("context", namespace=_get_namespace())
         ray.get(actor.clear.remote())
+
+    def get_lazy_keys(self, name: str) -> list | None:
+        actor = ray.get_actor("context", namespace=_get_namespace())
+        return ray.get(actor.get_lazy_keys.remote(name))
+
+    def get_content_hash(self, name: str) -> str:
+        actor = ray.get_actor("context", namespace=_get_namespace())
+        return ray.get(actor.get_content_hash.remote(name))
 
     def get_cache_keys(self) -> list[str]:
         actor = ray.get_actor("context", namespace=_get_namespace())

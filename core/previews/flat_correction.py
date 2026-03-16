@@ -2,7 +2,6 @@ import tempfile
 from pathlib import Path
 from frozendict import frozendict
 
-from context import context
 from previews.calibration import calibrate_subframe
 from previews.operations import autostretch
 from decorators import cached, measure_performance
@@ -10,6 +9,7 @@ from customization.types import CustomizedStack
 from customization.subframe_selection import get_light_frames_sorted_by_stars
 from decorators import create_thumbnail
 from stacks.simple_stack import SimpleStack
+from stacks.composite_stack import SimpleStacksDict
 from stacks.types import StackHash, StackIdDependency
 from file_io.tiff_file_io import write_tiff_image
 from products import makes_image
@@ -20,10 +20,9 @@ from products import makes_image
 @measure_performance
 @create_thumbnail
 def flat_corrected_stack(
-    stack: CustomizedStack, substack: SimpleStack, flat_stack: SimpleStack
+    stack: CustomizedStack, substack: SimpleStack, flat_stack: SimpleStack, subframe_thumbnail_width: int
 ) -> tempfile.NamedTemporaryFile:
-    # TODO: Remove context, make this function pure.
-    width = context.subframe_thumbnail_width
+    width = subframe_thumbnail_width
 
     light_frames_by_stars = get_light_frames_sorted_by_stars(stack)
     light_frame = stack.all_metadata()[
@@ -42,9 +41,7 @@ def flat_corrected_stack(
 
 
 @cached.remote
-def create_flat_correction_thumbnails(stack: CustomizedStack) -> None:
-    calibration_stacks = context.calibration_stacks
-
+def create_flat_correction_thumbnails(stack: CustomizedStack, calibration_stacks: SimpleStacksDict, subframe_thumbnail_width: int) -> None:
     flat_stack_ids = [
         id
         for id, s in calibration_stacks.items()
@@ -56,5 +53,5 @@ def create_flat_correction_thumbnails(stack: CustomizedStack) -> None:
     for substack in stack.contents.values():
         for flat_stack_id in flat_stack_ids:
             flat_corrected_stack(
-                stack, substack, calibration_stacks[flat_stack_id]
+                stack, substack, calibration_stacks[flat_stack_id], subframe_thumbnail_width
             )

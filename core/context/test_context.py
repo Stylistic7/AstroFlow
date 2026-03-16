@@ -7,8 +7,15 @@ import tempfile
 import diskcache
 import os
 
+from dataclasses import dataclass
+
 from context import get_cache
 from context import context
+
+
+@dataclass
+class MockStack:
+    content_hash: str
 
 
 @ray.remote
@@ -128,6 +135,26 @@ def test_context_actor_speed(empty_context, benchmark):
             context[k] = v
 
     benchmark(insert_into_context_actor)
+
+
+def test_lazy_dict_content_hash_changes_on_value_update(empty_context):
+    stack_v1 = MockStack(content_hash="hash_v1")
+    stack_v2 = MockStack(content_hash="hash_v2")
+
+    context.stacks = {"abc123": stack_v1}
+    hash_before = context.get_content_hash("stacks")
+
+    # Same key, different content_hash — must invalidate
+    context.or_equals("stacks", {"abc123": stack_v2})
+    hash_after = context.get_content_hash("stacks")
+
+    assert hash_before != hash_after
+
+
+def test_lazy_dict_content_hash_stable_when_unchanged(empty_context):
+    context.stacks = {"abc123": MockStack(content_hash="hash_v1")}
+
+    assert context.get_content_hash("stacks") == context.get_content_hash("stacks")
 
 
 def test_direct_diskcache_speed(empty_context, benchmark):

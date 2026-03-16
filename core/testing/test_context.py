@@ -1,13 +1,11 @@
 from pathlib import Path
 import tempfile
-import datetime
-import numpy as np
 from dataclasses import dataclass
 from typing import Any
 
 from context import context
 from context import get_cache
-from customization.settings import Settings
+from customization.settings import Settings, ClusteringSettings, DevelopmentSettings, PreviewSettings
 
 
 @dataclass(frozen=True)
@@ -25,7 +23,6 @@ def make_test_context() -> tuple[
     context.targets = {}
     context.mosaics = {}
 
-    context.mock_pixinsight = True
     context.mock_plate_solving = True
 
     input_dir_obj = tempfile.TemporaryDirectory()
@@ -34,15 +31,19 @@ def make_test_context() -> tuple[
     output_dir_obj = tempfile.TemporaryDirectory()
     context.output_dir = Path(output_dir_obj.name)
 
-    context.cosine_similarity_threshold = 0.99999
-    context.angular_tolerance = np.radians(10.0)
-    context.min_component_members = 3
-    context.max_run_gap = datetime.timedelta(hours=8)
-    context.min_frames_in_stack = 3
-    context.subframe_thumbnail_width = 1200
-    context.master_thumbnail_width = 2160
-    context.subframe_mosaic_samples = 500
-
-    context.settings = Settings()
+    context.settings = Settings(
+        clustering_settings=ClusteringSettings(
+            cosine_similarity_threshold=0.99999,
+        ),
+        development_settings=DevelopmentSettings(
+            mock_pixinsight=True,
+            dangerously_allow_missing_files=True,
+        ),
+        preview_settings=PreviewSettings(
+            subframe_thumbnail_width=1200,
+            master_thumbnail_width=2160,
+            subframe_mosaic_samples=500,
+        ),
+    )
 
     return TestContext(input_dir_obj, output_dir_obj)

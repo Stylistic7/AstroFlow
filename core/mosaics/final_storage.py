@@ -39,15 +39,15 @@ def save_uncompressed(images: ImageList, output_filenames: list[Path]):
 @create_thumbnail
 @measure_performance
 def store_mosaic_color_channel_master(
-    mosaic: Mosaic, filter: str, input: ImageMetadata
-) -> Path:
+    mosaic: Mosaic, filter: str, input: ImageMetadata, mock_pixinsight: bool
+) -> WithSidecar:
     filename = input.filename
     output = store_mosaic_color_channel_master.filename_fn(mosaic, filter)
     tiff_output = output.with_suffix(".tiff")
 
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    if context.get("mock_pixinsight", False):
+    if mock_pixinsight:
         print(
             f"### store_mosaic_color_channel_master mocking PixInsight; "
             f"copying {filename=} to {output=}"
@@ -97,6 +97,7 @@ def store_mosaic_color_channel(
             store_mosaic_color_channel_subframe.remote(mosaic, filter, input)
         )
     else:
+        mock_pixinsight = context.settings.development_settings.mock_pixinsight
         return ray.get(
-            store_mosaic_color_channel_master.remote(mosaic, filter, input)
+            store_mosaic_color_channel_master.remote(mosaic, filter, input, mock_pixinsight)
         )

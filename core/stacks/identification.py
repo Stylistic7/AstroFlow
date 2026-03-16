@@ -2,7 +2,6 @@ import ray
 import numpy as np
 from beartype import beartype
 
-from context import context
 from typing import Iterator
 import clustering
 from stacks.composite_stack import CompositeStack, CompositeStacksDict
@@ -17,6 +16,8 @@ def identify_stacks(
     metadata_ref: LargeObject,
     angular_tolerance: float,
     light_frames: tuple[FrameHash, ...],
+    min_frames_in_stack: int,
+    max_run_gap,
 ) -> CompositeStacksDict:
     print(
         f"### identify_stacks running for spatial group of length {len(light_frames)}"
@@ -96,9 +97,9 @@ def identify_stacks(
         for camera_frames in camera_clusters(scale_frames):
             for rotation_frames in rotation_clusters(camera_frames):
                 for filter_frames in filter_clusters(rotation_frames):
-                    if len(filter_frames) >= context.min_frames_in_stack:
+                    if len(filter_frames) >= min_frames_in_stack:
                         new_stack = CompositeStack.from_frames(
-                            filter_frames, metadata=metadata
+                            filter_frames, metadata=metadata, max_run_gap=max_run_gap
                         )
                         if new_stack is not None:
                             new_stacks[new_stack.stable_hash] = new_stack

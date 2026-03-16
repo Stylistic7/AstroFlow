@@ -80,6 +80,26 @@ def store_mosaics(mosaics: MosaicsDict) -> MosaicsDict:
 
 
 @ray.remote
+def store_ui_stacks(ui_stacks: dict) -> None:
+    context.ui_stacks = ui_stacks
+
+
+@ray.remote
+def store_ui_calibration_stacks(ui_cal_stacks: dict) -> None:
+    context.ui_calibration_stacks = ui_cal_stacks
+
+
+@ray.remote
+def store_ui_targets(ui_targets: dict) -> None:
+    context.ui_targets = ui_targets
+
+
+@ray.remote
+def store_ui_mosaics(ui_mosaics: dict) -> None:
+    context.ui_mosaics = ui_mosaics
+
+
+@ray.remote
 @beartype
 def combine_dicts(*ancestor_results: dict[Any, Any]) -> dict[Any, Any]:
     assert isinstance(ancestor_results, tuple)
@@ -94,7 +114,7 @@ def combine_dicts(*ancestor_results: dict[Any, Any]) -> dict[Any, Any]:
 def scatter_spatial_groups(
     metadata_ref: LargeObject, settings: Settings, spatial_groups
 ) -> Graph:
-    angular_tolerance = context.angular_tolerance
+    cs = settings.clustering_settings
 
     context.stacks = CompositeStacksDict()
     context.calibration_stacks = SimpleStacksDict()
@@ -107,18 +127,17 @@ def scatter_spatial_groups(
         (
             identify_calibration_stacks,
             metadata_ref,
+            cs.max_run_gap,
         )
     }
 
-    quarantine_calibration_stacks_task = (
-        scatter_customize_cal_stacks,
-        settings,
-    )
+    quarantine_calibration_stacks_task = (scatter_customize_cal_stacks,)
 
     graph[quarantine_calibration_stacks_task] = {associate_calibration_stacks}
     graph[process_calibration_stacks_for_ui] = {
         quarantine_calibration_stacks_task
     }
+    graph[store_ui_calibration_stacks] = {process_calibration_stacks_for_ui}
     graph[store_calibration_stacks] = {quarantine_calibration_stacks_task}
 
     stack_tasks = set()
@@ -127,17 +146,22 @@ def scatter_spatial_groups(
         stack_task = (
             identify_stacks,
             metadata_ref,
-            angular_tolerance,
+            cs.angular_tolerance,
             g,
+            cs.min_frames_in_stack,
+            cs.max_run_gap,
         )
         validate_stacks_task = Node(validate_stacks, name=str(i))
         customize_stacks_task = Node(
-            scatter_customize_stacks, settings, name=str(i)
+            scatter_customize_stacks,
+            settings.stack_settings,
+            cs.min_frames_in_stack,
+            name=str(i),
         )
 
-        target_task = Node(identify_targets, angular_tolerance, name=str(i))
+        target_task = Node(identify_targets, cs.angular_tolerance, name=str(i))
         customize_targets_task = Node(
-            scatter_customize_targets, settings, name=str(i)
+            scatter_customize_targets, settings.target_settings, name=str(i)
         )
 
         # TODO: Validate stacks after customizing them.
@@ -157,16 +181,19 @@ def scatter_spatial_groups(
     graph[gather_stacks_task] = stack_tasks
     graph[store_stacks] = {gather_stacks_task}
     graph[process_stacks_for_ui] = {gather_stacks_task}
+    graph[store_ui_stacks] = {process_stacks_for_ui}
 
     gather_targets_task = Node(combine_dicts, name="combine_targets")
     graph[gather_targets_task] = target_tasks
     graph[store_targets] = {gather_targets_task}
     graph[process_targets_for_ui] = {gather_targets_task}
+    graph[store_ui_targets] = {process_targets_for_ui}
 
-    mosaics_task = Node(identify_mosaics, angular_tolerance)
+    mosaics_task = Node(identify_mosaics, cs.angular_tolerance)
     graph[mosaics_task] = {gather_targets_task}
     graph[store_mosaics] = {mosaics_task}
     graph[process_mosaics_for_ui] = {mosaics_task}
+    graph[store_ui_mosaics] = {process_mosaics_for_ui}
 
     return graph
 
@@ -175,7 +202,13 @@ def scatter_spatial_groups(
 @beartype
 def build_regroup_graph(metadata_ref: LargeObject) -> Graph:
     settings = context.settings or Settings()
-    cluster_by_image_center_task = (cluster_by_image_center, metadata_ref)
+    cs = settings.clustering_settings
+    cluster_by_image_center_task = (
+        cluster_by_image_center,
+        metadata_ref,
+        cs.cosine_similarity_threshold,
+        cs.min_component_members,
+    )
     scatter_spatial_groups_task = (
         scatter_spatial_groups,
         metadata_ref,
@@ -200,6 +233,10 @@ def preview_graph_done() -> None:
 def build_preview_graph() -> Graph:
     stacks = context.stacks
     targets = context.targets
+    calibration_stacks = context.calibration_stacks
+    settings = context.settings or Settings()
+    development_settings = settings.development_settings
+    min_frames_in_stack = settings.clustering_settings.min_frames_in_stack
 
     tasks = []
     tasks.append((scatter_stack_thumbnails,))
@@ -212,6 +249,9 @@ def build_preview_graph() -> Graph:
                 mosaic,
                 stacks_for_mosaic(mosaic, stacks, targets),
                 targets_for_mosaic(mosaic, targets),
+                calibration_stacks,
+                development_settings,
+                min_frames_in_stack,
             )
         )
 
@@ -231,6 +271,10 @@ def build_main_processing_graph() -> Graph:
     targets = context.targets
     mosaics = context.mosaics
     shopping_cart = context.shopping_cart or []
+    calibration_stacks = context.calibration_stacks
+    settings = context.settings or Settings()
+    development_settings = settings.development_settings
+    min_frames_in_stack = settings.clustering_settings.min_frames_in_stack
 
     # TODO: Figure out a nice way to set this during development.
     mode = QualityLevel.MASTER
@@ -247,14 +291,14 @@ def build_main_processing_graph() -> Graph:
                     f"### WARNING: stack {id} is in shopping cart but does not exist"
                 )
                 continue
-            tasks.append((build_stacking_subgraph, stacks[id]))
+            tasks.append((build_stacking_subgraph, stacks[id], calibration_stacks, development_settings, min_frames_in_stack))
         elif type == "target":
             if id not in targets:
                 print(
                     f"### WARNING: target {id} is in shopping cart but does not exist"
                 )
                 continue
-            tasks.append((build_target_subgraph, targets[id]))
+            tasks.append((build_target_subgraph, targets[id], development_settings, min_frames_in_stack))
         if type == "mosaic":
             if id not in mosaics:
                 print(
@@ -270,6 +314,9 @@ def build_main_processing_graph() -> Graph:
                     mosaic,
                     stacks_for_mosaic(mosaic, stacks, targets),
                     targets_for_mosaic(mosaic, targets),
+                    calibration_stacks,
+                    development_settings,
+                    min_frames_in_stack,
                 )
             )
 

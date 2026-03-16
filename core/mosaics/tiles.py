@@ -1,6 +1,5 @@
 from pathlib import Path
 
-from context import context
 from mosaics.types import Mosaic
 from pix.classes import ImageList
 from pix.decorators import PixInsight
@@ -15,9 +14,9 @@ def save_as_png(images: ImageList) -> ImageList:
 
 
 @cached.remote
-def save_as_tiles(mosaic: Mosaic, filter: str) -> None:
+def save_as_tiles(mosaic: Mosaic, filter: str, output_dir: Path) -> None:
     filename = (
-        Path(context.output_dir)
+        Path(output_dir)
         / "Mosaics"
         / mosaic.name
         / f"final_merged_{mosaic.stable_hash}_{filter}.fits"

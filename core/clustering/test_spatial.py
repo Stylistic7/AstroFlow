@@ -16,8 +16,16 @@ def compute_hash_for_filename() -> dict[str, str]:
     return {os.path.basename(i.filename): i.content_hash for i in metadata.values()}
 
 
+@ray.remote
+def _run_cluster(metadata_ref):
+    cs = context.settings.clustering_settings
+    return ray.get(
+        cluster_by_image_center.remote(metadata_ref, cs.cosine_similarity_threshold, cs.min_component_members)
+    )
+
+
 def compute_graph_fragment() -> Graph:
-    return chain(scatter_compute_image_metadata, cluster_by_image_center)
+    return chain(scatter_compute_image_metadata, _run_cluster)
 
 
 def test_one_perfect_group(test_context) -> None:
@@ -27,7 +35,7 @@ def test_one_perfect_group(test_context) -> None:
     )
 
     results, _ = run_graph(compute_graph_fragment())
-    groups = results[cluster_by_image_center]
+    groups = results[_run_cluster]
 
     metadata = context.get_matching(("compute_image_metadata",))
     image_hashes = [m.content_hash for m in metadata.values()]
@@ -60,7 +68,7 @@ def test_two_perfect_groups_one_hour_ra(test_context) -> None:
     )
 
     results, _ = run_graph(compute_graph_fragment())
-    groups = results[cluster_by_image_center]
+    groups = results[_run_cluster]
 
     hash_for_filename = compute_hash_for_filename()
 
@@ -111,7 +119,7 @@ def test_two_perfect_groups_one_degree_dec(test_context) -> None:
     )
 
     results, _ = run_graph(compute_graph_fragment())
-    groups = results[cluster_by_image_center]
+    groups = results[_run_cluster]
 
     hash_for_filename = compute_hash_for_filename()
 
@@ -164,7 +172,7 @@ def test_two_perfect_groups_half_degree_dec(test_context) -> None:
     )
 
     results, _ = run_graph(compute_graph_fragment())
-    groups = results[cluster_by_image_center]
+    groups = results[_run_cluster]
 
     hash_for_filename = compute_hash_for_filename()
 
@@ -215,7 +223,7 @@ def test_two_noisy_groups(test_context) -> None:
     )
 
     results, _ = run_graph(compute_graph_fragment())
-    groups = results[cluster_by_image_center]
+    groups = results[_run_cluster]
 
     hash_for_filename = compute_hash_for_filename()
 
@@ -259,10 +267,14 @@ def test_sadr_pano(test_context) -> None:
 
     make_synthetic_frames(centers=centers, ids=ids, dither=0, dest_dir=input_dir)
 
-    context.min_component_members = 1
+    from dataclasses import replace
+    context.settings = replace(
+        context.settings,
+        clustering_settings=replace(context.settings.clustering_settings, min_component_members=1),
+    )
 
     results, _ = run_graph(compute_graph_fragment())
-    groups = results[cluster_by_image_center]
+    groups = results[_run_cluster]
 
     hash_for_filename = compute_hash_for_filename()
     print(f"### hash_for_filename {hash_for_filename}")

@@ -145,8 +145,15 @@ def test_lazy_load_dict_preserves_type(init_ray):
     )
     assert dict(context_result.items()) == {"t1": "target_1", "t2": "target_2"}
 
-    # Unregistered keys (e.g. "stacks") still return a LazyLoadDict.
+    # Keys in lazy_names but not lazy_types return a plain LazyLoadDict.
+    # "workflow_graphs" is in lazy_names but not lazy_types.
     from cache.lazy_load_dict import LazyLoadDict
 
-    cache["stacks"] = {"s1": "stack_1"}
-    assert isinstance(cache["stacks"], LazyLoadDict)
+    cache["workflow_graphs"] = {"wf1": "graph_1"}
+    assert isinstance(cache["workflow_graphs"], LazyLoadDict)
+
+    # "stacks" is registered with CompositeStacksDict, so it returns a typed lazy dict.
+    from stacks.composite_stack import CompositeStacksDict
+
+    cache["stacks"] = {"s2": "stack_2"}
+    assert isinstance(cache["stacks"], CompositeStacksDict)

@@ -15,11 +15,11 @@ from stacks.simple_stack import SimpleStack, SimpleStacksDict
 from stacks.types import StackIdDependency, FilenameDependency
 from stacks.composite_stack import Stack, CompositeStack
 from customization.types import CustomizedStack
-from context import context
 from pix import PixInsight, ImageList
 from pix.tasks import WeightedBatchPreprocessing
 from metadata.classes import MetadataDict
 from decorators import cached, measure_performance, create_thumbnail
+from customization.settings import DevelopmentSettings
 from products import makes_image
 
 
@@ -75,15 +75,13 @@ def _run_wbpp(unused: ImageList, *args: Any, **kwargs: Any) -> Any:
 
 def _setup_simple_stack(
     stack: SimpleStack,
-    metadata: MetadataDict,
     calibration_stacks: SimpleStacksDict,
     dest_dir: str,
 ) -> None:
-    filenames = [i.filename for h, i in metadata.items() if h in stack.frames]
+    filenames = [i.filename for i in stack.metadata.values()]
     assert len(stack.frames) == len(filenames)
 
-    run_metadata = {h: i for h, i in metadata.items() if h in stack.frames}
-    _copy_frames_with_plate_solution(run_metadata, dest_dir)
+    _copy_frames_with_plate_solution(stack.metadata, dest_dir)
 
     def get_dependency_filename(d):
         if isinstance(d, StackIdDependency):
@@ -102,7 +100,6 @@ def _setup_simple_stack(
 
 def _setup_composite_stack(
     stack: CompositeStack,
-    metadata: MetadataDict,
     calibration_stacks: SimpleStacksDict,
     dest_dir: str,
 ) -> tuple[str | None, int]:
@@ -111,7 +108,7 @@ def _setup_composite_stack(
         run_dir = os.path.join(dest_dir, f"RUN_{i}")
         os.makedirs(run_dir, exist_ok=True)
         result = _setup_simple_stack(
-            substack, metadata, calibration_stacks, run_dir
+            substack, calibration_stacks, run_dir
         )
         filenames.extend(result)
 
@@ -158,14 +155,17 @@ def _copy_wbpp_result(
     return XisfFilePath(dest_filename)
 
 
-# TODO: This is not a pure function -- it uses a few things from context.
-# Context must only be used *outside* of @cached.remote functions.
 # TODO: add an `as_downscaled_master` quality level.
 @makes_image(CustomizedStack).as_master(stack_filename)
 @cached.remote(resources={"PixInsight": 1}, scheduling_strategy="SPREAD")
 @measure_performance
 @create_thumbnail
-def stack_files(stack: Stack) -> XisfFilePath:
+def stack_files(
+    stack: Stack,
+    calibration_stacks: SimpleStacksDict,
+    development_settings: DevelopmentSettings,
+    min_frames_in_stack: int,
+) -> XisfFilePath:
     # Determine the output file, and the metadata it should have.
     dest_filename = stack_files.filename_fn(stack)
     dest_filename_exists = os.path.exists(dest_filename)
@@ -184,7 +184,7 @@ def stack_files(stack: Stack) -> XisfFilePath:
     # TODO: This is kind of dangerous, because the output filename only depends
     # on the stack's own content hash -- the hash used by AstroFlowNode is more
     # complete and includes this function's code, for example.
-    if context.dangerously_accept_existing_files and dest_filename_exists:
+    if development_settings.dangerously_accept_existing_files and dest_filename_exists:
         print(
             f"### Dangerously skipping stacking because "
             f"file {dest_filename} already exists"
@@ -192,10 +192,8 @@ def stack_files(stack: Stack) -> XisfFilePath:
         update_header(dest_filename, metadata)
         return dest_filename
 
-    calibration_stacks = context.calibration_stacks
     print(f"### calibration_stacks keys {list(calibration_stacks.keys())}")
 
-    # TODO: Eliminate this use of context.metadata.
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
         print(f"### using tmp_dir {tmp_dir}")
 
@@ -204,11 +202,9 @@ def stack_files(stack: Stack) -> XisfFilePath:
             if isinstance(stack, SimpleStack)
             else _setup_composite_stack
         )
-        filenames = setup_fn(
-            stack, context.metadata, calibration_stacks, tmp_dir
-        )
+        filenames = setup_fn(stack, calibration_stacks, tmp_dir)
 
-        if len(filenames) < context.min_frames_in_stack:
+        if len(filenames) < min_frames_in_stack:
             print(
                 f"### Not stacking {stack} because it contains "
                 f"only {len(filenames)} files"
@@ -217,10 +213,8 @@ def stack_files(stack: Stack) -> XisfFilePath:
                 f"Stack {stack} contains only {len(filenames)} files"
             )
 
-        # Maybe mock PixInsight (in tests).
-        mock_stacking = context.get("mock_pixinsight", False)
-        print(f"### mock_stacking {mock_stacking}")
-        if mock_stacking:
+        print(f"### mock_stacking {development_settings.mock_pixinsight}")
+        if development_settings.mock_pixinsight:
             return _mock_stacking(filenames[0], dest_filename, metadata)
 
         print(f"### Running _run_wbpp for stack {stack}")

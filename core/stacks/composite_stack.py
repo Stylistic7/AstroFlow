@@ -8,7 +8,6 @@ from frozendict import frozendict
 
 import units
 from hashing import hash_list, hash_list_int
-from context import context
 from stacks.simple_stack import SimpleStack, SimpleStacksDict, simple_stack_from_frames
 from attributes import (
     AstrometricAttributes,
@@ -35,7 +34,7 @@ class CompositeStack(
 
     @classmethod
     def from_frames(
-        cls, frames: Sequence[FrameHash], metadata: MetadataDict
+        cls, frames: Sequence[FrameHash], metadata: MetadataDict, max_run_gap
     ) -> Optional["CompositeStack"]:
         metadata_list = [i for h, i in metadata.items() if h in frames]
 
@@ -61,7 +60,7 @@ class CompositeStack(
                     for i in sorted_metadata
                     if i.content_hash in exposure_frames
                 ],
-                epsilon=context.max_run_gap,
+                epsilon=max_run_gap,
             )
 
             for run in runs:

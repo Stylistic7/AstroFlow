@@ -87,7 +87,7 @@ def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> XisfFilePath | No
     output_filename.parent.mkdir(parents=True, exist_ok=True)
     print(f"### post_process_mosaic output_filename {output_filename}")
 
-    if context.get("mock_pixinsight", False):
+    if context.settings and context.settings.development_settings.mock_pixinsight:
         print(
             f"### post_process_mosaic mocking PixInsight "
             f"{images[0]} -> {output_filename}"

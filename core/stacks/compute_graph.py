@@ -5,16 +5,16 @@ from spherical_geometry.polygon import SingleSphericalPolygon
 from functools import partial
 from beartype import beartype
 
-from context import context
 from decorators import cached
 from stacks.stacking import stack_files
-from stacks.composite_stack import SimpleStack, CompositeStack
+from stacks.composite_stack import SimpleStack, CompositeStack, SimpleStacksDict
 from stacks.types import StackIdDependency
 from stacks.post_process import post_process_stack
 from stacks.convert_to_dict import convert_to_dict
 from stacks.composite_stack import CompositeStacksDict
 from metadata.image_metadata import compute_image_metadata
 from customization.types import CustomizedStack
+from customization.settings import DevelopmentSettings
 from customization.subframe_selection import get_light_frames_sorted_by_stars
 from previews.types import QualityLevel
 from dependency_graph import Graph, Node, chain
@@ -31,9 +31,12 @@ def calibration_done(stack: CustomizedStack) -> None:
 
 
 @cached.remote
-def build_calibration_stack_subgraph(stack: CustomizedStack) -> Graph:
-    calibration_stacks = context.calibration_stacks
-
+def build_calibration_stack_subgraph(
+    stack: CustomizedStack,
+    calibration_stacks: SimpleStacksDict,
+    development_settings: DevelopmentSettings,
+    min_frames_in_stack: int,
+) -> Graph:
     def visit_all_dependencies(stack: SimpleStack, depth=0) -> Graph:
         assert isinstance(stack, SimpleStack)
 
@@ -42,13 +45,13 @@ def build_calibration_stack_subgraph(stack: CustomizedStack) -> Graph:
         for t, dep in stack.dependencies.items():
             if isinstance(dep, StackIdDependency):
                 substack = calibration_stacks[dep.stack_id]
-                tasks.append((stack_files, substack))
+                tasks.append((stack_files, substack, calibration_stacks, development_settings, min_frames_in_stack))
                 subgraphs |= visit_all_dependencies(substack, depth=depth + 2)
 
         if depth == 0:
             return subgraphs
         else:
-            return {(stack_files, stack): tasks} | subgraphs
+            return {(stack_files, stack, calibration_stacks, development_settings, min_frames_in_stack): tasks} | subgraphs
 
     graph = Graph({})
     for substack in stack.contents.values():
@@ -66,7 +69,12 @@ def stack_runs_done(stack: CustomizedStack) -> None:
 # This function accepts a fully customized stack, after settings and calibration
 # frames have been associated.
 @cached.remote
-def build_stacking_subgraph(stack: CustomizedStack) -> Graph:
+def build_stacking_subgraph(
+    stack: CustomizedStack,
+    calibration_stacks: SimpleStacksDict,
+    development_settings: DevelopmentSettings,
+    min_frames_in_stack: int,
+) -> Graph:
     graph_update_fn = partial(
         store_workflow_graph, ("stack", stack.stable_hash)
     )
@@ -75,12 +83,12 @@ def build_stacking_subgraph(stack: CustomizedStack) -> Graph:
     return Graph(
         {
             **chain(
-                (build_calibration_stack_subgraph, stack),
-                (stack_files, stack),
+                (build_calibration_stack_subgraph, stack, calibration_stacks, development_settings, min_frames_in_stack),
+                (stack_files, stack, calibration_stacks, development_settings, min_frames_in_stack),
                 Node(
                     compute_image_metadata, name=f"stacking_{stack.stable_hash}"
                 ),
-                (post_process_stack, stack),
+                (post_process_stack, stack, development_settings),
                 Node(
                     compute_image_metadata,
                     name=f"post_process_{stack.stable_hash}",
@@ -103,12 +111,18 @@ def get_stack_subframe_image(stack: CompositeStack) -> Path:
 
 @cached.remote
 @beartype
-def get_stack_image(mode: QualityLevel, stack: CompositeStack) -> Graph:
+def get_stack_image(
+    mode: QualityLevel,
+    stack: CompositeStack,
+    calibration_stacks: SimpleStacksDict,
+    development_settings: DevelopmentSettings,
+    min_frames_in_stack: int,
+) -> Graph:
     assert stack is not None
     if mode == QualityLevel.SUBFRAME:
         return Graph({(get_stack_subframe_image, stack): {}})
     else:
-        return Graph({(build_stacking_subgraph, stack): {}})
+        return Graph({(build_stacking_subgraph, stack, calibration_stacks, development_settings, min_frames_in_stack): {}})
 
 
 @cached.remote
@@ -138,7 +152,6 @@ def process_stacks_for_ui(stacks: dict) -> dict:
 
     # TODO: Parallelize this.
     ui_stacks = {h: prepare_stack(s) for h, s in stacks.items()}
-    context.ui_stacks = ui_stacks
     return ui_stacks
 
 
@@ -155,5 +168,4 @@ def process_calibration_stacks_for_ui(cal_stacks: dict) -> dict:
 
     # TODO: Parallelize this.
     ui_cal_stacks = {h: prepare_stack(s) for h, s in cal_stacks.items()}
-    context.ui_calibration_stacks = ui_cal_stacks
     return ui_cal_stacks

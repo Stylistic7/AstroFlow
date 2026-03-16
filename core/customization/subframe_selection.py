@@ -3,7 +3,6 @@ import time
 
 from stacks.composite_stack import CompositeStack
 from stacks.simple_stack import SimpleStacksDict
-from context import context
 from metadata.classes import ImageMetadata, MetadataDict
 
 
@@ -19,7 +18,7 @@ def get_light_frames_sorted_by_stars(
     )
 
 
-def select_subframes(stack: CompositeStack) -> CompositeStack:
+def select_subframes(stack: CompositeStack, min_frames_in_stack: int) -> CompositeStack:
     print(f"### select_subframes for stack {stack}")
     metadata = stack.all_metadata()
     sorted_light_frames = get_light_frames_sorted_by_stars(stack)
@@ -47,7 +46,7 @@ def select_subframes(stack: CompositeStack) -> CompositeStack:
         f"out of {len(sorted_light_frames)}"
     )
 
-    if len(selected_light_frames) < context.min_frames_in_stack:
+    if len(selected_light_frames) < min_frames_in_stack:
         return None
 
     new_contents = SimpleStacksDict()

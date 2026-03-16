@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 from astropy.time import Time
 
-from context import context
 from pix.decorators import PixInsight
 from pix.classes import ImageList
 from pix.tasks import (
@@ -21,6 +20,7 @@ from file_io.types import XisfFilePath
 from decorators import cached, measure_performance, create_thumbnail
 from targets.types import Target
 from stacks.artifacts import stack_filename
+from customization.types import CustomizedStacksDict
 from products import makes_image
 
 
@@ -98,9 +98,8 @@ def target_filename(target: Target, suffix: str) -> XisfFilePath:
 @cached.remote(resources={"PixInsight": 1}, scheduling_strategy="SPREAD")
 @measure_performance
 @create_thumbnail
-def post_process_target(target: Target) -> None:
+def post_process_target(target: Target, stacks: CustomizedStacksDict) -> None:
     print(f"Entering post_process_target for {target}")
-    stacks = context.stacks
     images = [stack_filename(stacks[stack_id]) for stack_id in target.stack_ids]
 
     result = _post_process_target(images, target)

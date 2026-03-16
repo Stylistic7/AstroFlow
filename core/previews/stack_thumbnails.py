@@ -31,14 +31,18 @@ from file_io.generic import read_image
 def scatter_stack_thumbnails() -> Graph:
     tasks: list[TaskDescriptor] = list()
 
+    calibration_stacks = context.calibration_stacks
+    settings = context.settings
+    subframe_thumbnail_width = settings.preview_settings.subframe_thumbnail_width
+
     for stack in context.stacks.values():
         tasks.append((stack_thumbnail, stack))
-        tasks.append((stack_thumbnail_video, stack))
-        tasks.append((create_flat_correction_thumbnails, stack))
+        tasks.append((stack_thumbnail_video, stack, subframe_thumbnail_width))
+        tasks.append((create_flat_correction_thumbnails, stack, calibration_stacks, subframe_thumbnail_width))
 
-    for stack in context.calibration_stacks.values():
+    for stack in calibration_stacks.values():
         tasks.append((calibration_stack_thumbnail, stack))
-        tasks.append((calibration_stack_thumbnail_video, stack))
+        tasks.append((calibration_stack_thumbnail_video, stack, subframe_thumbnail_width))
 
     return Graph({gather_stack_thumbnails: tasks})
 
@@ -80,10 +84,10 @@ def calibration_stack_thumbnail(stack: SimpleStack) -> WithSidecar:
 @cached.remote(resources={"fastest_storage": 0.001})
 @measure_performance
 @create_video
-def stack_thumbnail_video(stack: CustomizedStack) -> Iterable[np.ndarray]:
+def stack_thumbnail_video(stack: CustomizedStack, subframe_thumbnail_width: int) -> Iterable[np.ndarray]:
     # Sort all the light frames (no matter which run they're from) by the
     # number of stars. The better images should be in front.
-    width = context.subframe_thumbnail_width
+    width = subframe_thumbnail_width
     metadata = stack.all_metadata()
     for light_frame in get_light_frames_sorted_by_stars(stack):
         light_frame = metadata[light_frame]
@@ -111,8 +115,9 @@ def stack_thumbnail_video(stack: CustomizedStack) -> Iterable[np.ndarray]:
 @create_video
 def calibration_stack_thumbnail_video(
     stack: SimpleStack,
+    subframe_thumbnail_width: int,
 ) -> Iterable[np.ndarray]:
-    width = context.subframe_thumbnail_width
+    width = subframe_thumbnail_width
     for frame in stack.frames:
         im = autostretch(
             resize_array(read_image(stack.metadata[frame].filename), width)

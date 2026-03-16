@@ -423,7 +423,10 @@ def test_stack_calibration_frames(test_context) -> None:
         print(f"### cal_stack {cal_stack}")
         print(f"### dependencies {cal_stack.dependencies}")
 
-    graph = ray.get(build_calibration_stack_subgraph.remote(light_stacks[0]))
+    cal_stacks = context.calibration_stacks
+    dev_settings = context.settings.development_settings
+    min_frames = context.settings.clustering_settings.min_frames_in_stack
+    graph = ray.get(build_calibration_stack_subgraph.remote(light_stacks[0], cal_stacks, dev_settings, min_frames))
     print(f"### build_calibration_stack_subgraph")
     print_graph(graph)
 
@@ -555,11 +558,11 @@ def test_flat_frame_selection(test_context) -> None:
     # Configure the light run to use the other flat run, which has prefix
     # `flat_run_0`.
     context.settings = Settings(
-        stack_settings={
+        stack_settings=frozendict({
             stack.stable_hash: StackSettings(
                 dependencies=frozendict({"flat": StackIdDependency(stack_id=first_flat_stack)})
             )
-        }
+        })
     )
 
     # Run the graph again, with the settings applied.

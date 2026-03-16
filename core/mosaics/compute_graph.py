@@ -5,8 +5,8 @@ from shapely.affinity import scale  # type: ignore
 from spherical_geometry.polygon import SingleSphericalPolygon
 from functools import partial
 
-from context import context
 from customization.types import CustomizedStack
+from customization.settings import DevelopmentSettings
 from dependency_graph import Graph, Node, chain
 from mosaics.merge_images import merge_images
 from mosaics.types import Mosaic, MosaicsDict, Viewbox
@@ -14,7 +14,7 @@ from mosaics.viewbox import compute_viewbox
 from mosaics.placement import place_image
 from mosaics.post_process import post_process_mosaic
 from stacks.compute_graph import get_stack_image
-from stacks.composite_stack import CompositeStacksDict
+from stacks.composite_stack import CompositeStacksDict, SimpleStacksDict
 from stacks.types import StackHash
 from previews.types import QualityLevel
 from decorators import cached
@@ -54,6 +54,9 @@ def build_mosaic_subgraph(
     mosaic: Mosaic,
     stacks: CompositeStacksDict,
     targets: TargetsDict,
+    calibration_stacks: SimpleStacksDict,
+    development_settings: DevelopmentSettings,
+    min_frames_in_stack: int,
 ) -> Graph:
     print(
         f"### build_mosaic_subgraph mode {mode} for mosaic {mosaic} stacks {[str(s) for s in stacks]}"
@@ -63,10 +66,9 @@ def build_mosaic_subgraph(
         stack.filter for stack in stacks.values() if stack is not None
     )
 
-    # TODO: This needs to be moved out of this cached function, into a wrapper.
-    if context.override_filters is not None:
-        print(f"### WARNING: override_filters: {context.override_filters}")
-        filters = context.override_filters
+    if development_settings.override_filters is not None:
+        print(f"### WARNING: override_filters: {development_settings.override_filters}")
+        filters = development_settings.override_filters
 
     graph = Graph()
 
@@ -99,6 +101,9 @@ def build_mosaic_subgraph(
             stacks,
             filter,
             viewbox,
+            calibration_stacks,
+            development_settings,
+            min_frames_in_stack,
         )
         store_task = (store_mosaic_color_channel, mode, mosaic, filter)
         graph[filter_subgraph_task] = {}
@@ -117,12 +122,15 @@ def build_placement_subgraph(
     stack: CustomizedStack,
     filter: str,
     viewbox: Viewbox,
+    calibration_stacks: SimpleStacksDict,
+    development_settings: DevelopmentSettings,
+    min_frames_in_stack: int,
 ) -> Graph:
     # TODO: Integrate the stack mask here too.
     return Graph(
         {
             **chain(
-                (get_stack_image, mode, stack),
+                (get_stack_image, mode, stack, calibration_stacks, development_settings, min_frames_in_stack),
                 Node(compute_image_metadata, name="stack"),
                 (place_image, mode, mosaic, stack, filter, viewbox),
                 Node(compute_image_metadata, name="placed"),
@@ -160,6 +168,9 @@ def build_mosaic_filter_subgraph(
     stacks: CompositeStacksDict | dict | object,
     filter: str,
     viewbox: Viewbox | None,
+    calibration_stacks: SimpleStacksDict,
+    development_settings: DevelopmentSettings,
+    min_frames_in_stack: int,
 ) -> Graph | None:
     print(
         f"### build_mosaic_filter_subgraph mode {mode} "
@@ -216,6 +227,9 @@ def build_mosaic_filter_subgraph(
                     stack,
                     filter,
                     viewbox,
+                    calibration_stacks,
+                    development_settings,
+                    min_frames_in_stack,
                 )
             else:
                 placement_task = Node(
@@ -225,11 +239,15 @@ def build_mosaic_filter_subgraph(
                     stack,
                     filter,
                     viewbox,
+                    calibration_stacks,
+                    development_settings,
+                    min_frames_in_stack,
                 )
                 merge_task = Node(
                     merge_images,
                     mode,
                     mosaic,
+                    development_settings,
                     name=f"merge_{mosaic.stable_hash}_{stack_id}",
                 )
                 metadata_task = Node(
@@ -253,6 +271,7 @@ def build_mosaic_filter_subgraph(
                 merge_images,
                 mode,
                 mosaic,
+                development_settings,
                 name=f"merge_{mosaic.stable_hash}_strip_{i}",
             )
             metadata_task = Node(
@@ -280,5 +299,4 @@ def process_mosaics_for_ui(mosaics: MosaicsDict) -> dict:
 
     # TODO: Parallelize this.
     ui_mosaics = {h: prepare_mosaic(s) for h, s in mosaics.items()}
-    context.ui_mosaics = ui_mosaics
     return ui_mosaics
