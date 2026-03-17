@@ -45,6 +45,7 @@ def _create_cache() -> diskcache.Cache:
 
 
 cache = None
+queue_cache = None
 
 
 def get_cache() -> diskcache.Cache:
@@ -54,3 +55,18 @@ def get_cache() -> diskcache.Cache:
         cache = _create_cache()
 
     return cache
+
+
+def get_queue_cache() -> diskcache.Cache:
+    global queue_cache
+
+    if queue_cache is None:
+        if "ASTROFLOW_MOCK_CACHE" in os.environ:
+            temp_dir = os.environ["ASTROFLOW_MOCK_CACHE"] + "_queue"
+            queue_cache = diskcache.Cache(temp_dir)
+        else:
+            path = str(Path.home() / "Pictures" / "AstroFlow" / "queue_cache")
+            os.makedirs(path, exist_ok=True)
+            queue_cache = diskcache.Cache(path)
+
+    return queue_cache

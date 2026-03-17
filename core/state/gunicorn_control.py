@@ -48,7 +48,7 @@ class GunicornManager:
             if self.config.num_workers:
                 command += ["--workers", str(self.config.num_workers)]
 
-            if self.config.timeout:
+            if self.config.timeout is not None:
                 command += ["--timeout", str(self.config.timeout)]
 
             print(f"### Starting gunicorn process with command: {command}")

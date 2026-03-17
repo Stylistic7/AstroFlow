@@ -77,11 +77,6 @@ def _make_lazy_subclass(base_type: type) -> type:
         def __contains__(self, k: Any) -> bool:
             return k in list(self.keys())
 
-        @property
-        def content_hash(self):
-            from context.context import context
-            return context.get_content_hash(self._lazy_name)
-
         def __reduce__(self):
             return (_reconstruct_lazy_typed, (base_type, self._lazy_name))
 
@@ -125,11 +120,6 @@ class LazyLoadDict:
     def __len__(self):
         ks = self._orig_get(self.name) or ()
         return len(ks)
-
-    @property
-    def content_hash(self):
-        from context.context import context
-        return context.get_content_hash(self.name)
 
     def __reduce__(self):
         return (_reconstruct_lazy_untyped, (self.name,))

@@ -1,8 +1,8 @@
 from typing import Any
 
-from context import get_cache
+from context.cache import get_queue_cache
 
-cache = get_cache()
+cache = get_queue_cache()
 
 
 def put(queue_name: str, item: Any) -> None:
