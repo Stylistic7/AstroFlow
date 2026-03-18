@@ -368,7 +368,7 @@ def test_orion_mosaic(test_context) -> None:
     assert isinstance(targets, TargetsDict)
     assert len(targets) == 4
     assert len(context.mosaics) == 1
-    mosaic = next(iter(context.mosaics.values()))
+    mosaic = next(iter(context.mosaics.values())).get()
 
     print(f"### actual mosaic.strips {mosaic.strips}")
 
@@ -394,11 +394,15 @@ def test_orion_mosaic(test_context) -> None:
     )
     print_graph(graph)
 
+    # Unwrap ContextRefs for expected node comparisons (matches what build_mosaic_filter_subgraph does)
+    from cache.context_ref import ContextRef
+    s = {k: (v.get() if isinstance(v, ContextRef) else v) for k, v in stacks.items()}
+
     place_0_0 = Node(
         build_placement_subgraph,
         mode,
         mosaic,
-        stacks["2e5e69b75efbc277"],
+        s["2e5e69b75efbc277"],
         filter,
         viewbox,
         calibration_stacks,
@@ -409,7 +413,7 @@ def test_orion_mosaic(test_context) -> None:
         build_placement_subgraph,
         mode,
         mosaic,
-        stacks["15a294ac14d63dea"],
+        s["15a294ac14d63dea"],
         filter,
         viewbox,
         calibration_stacks,
@@ -420,7 +424,7 @@ def test_orion_mosaic(test_context) -> None:
         build_placement_subgraph,
         mode,
         mosaic,
-        stacks["1101452f8cf2f9ff"],
+        s["1101452f8cf2f9ff"],
         filter,
         viewbox,
         calibration_stacks,
@@ -431,7 +435,7 @@ def test_orion_mosaic(test_context) -> None:
         build_placement_subgraph,
         mode,
         mosaic,
-        stacks["6d9f6be3ffab0f22"],
+        s["6d9f6be3ffab0f22"],
         filter,
         viewbox,
         calibration_stacks,
@@ -503,7 +507,7 @@ def test_orion_mosaic_one_by_two(test_context) -> None:
     assert isinstance(targets, TargetsDict)
     assert len(targets) == 2
     assert len(context.mosaics) == 1
-    mosaic = next(iter(context.mosaics.values()))
+    mosaic = next(iter(context.mosaics.values())).get()
 
     print(f"### mosaic.strips {mosaic.strips}")
     assert mosaic.strips == (("1101452f8cf2f9ff",), ("2e5e69b75efbc277",))
@@ -524,11 +528,14 @@ def test_orion_mosaic_one_by_two(test_context) -> None:
         )
     )
 
+    from cache.context_ref import ContextRef
+    s = {k: (v.get() if isinstance(v, ContextRef) else v) for k, v in stacks.items()}
+
     place_strip_0 = Node(
         build_placement_subgraph,
         mode,
         mosaic,
-        stacks["1101452f8cf2f9ff"],
+        s["1101452f8cf2f9ff"],
         filter,
         viewbox,
         calibration_stacks,
@@ -539,7 +546,7 @@ def test_orion_mosaic_one_by_two(test_context) -> None:
         build_placement_subgraph,
         mode,
         mosaic,
-        stacks["2e5e69b75efbc277"],
+        s["2e5e69b75efbc277"],
         filter,
         viewbox,
         calibration_stacks,
@@ -582,7 +589,7 @@ def test_orion_mosaic_two_by_one(test_context) -> None:
     assert isinstance(targets, TargetsDict)
     assert len(targets) == 2
     assert len(context.mosaics) == 1
-    mosaic = next(iter(context.mosaics.values()))
+    mosaic = next(iter(context.mosaics.values())).get()
     print(f"### mosaic strips {mosaic.strips}")
 
     assert mosaic.strips == (("2e5e69b75efbc277", "15a294ac14d63dea"),)
@@ -605,11 +612,14 @@ def test_orion_mosaic_two_by_one(test_context) -> None:
     print(f"### graph")
     print_graph(graph)
 
+    from cache.context_ref import ContextRef
+    s = {k: (v.get() if isinstance(v, ContextRef) else v) for k, v in stacks.items()}
+
     place_0_0 = Node(
         build_placement_subgraph,
         mode,
         mosaic,
-        stacks["2e5e69b75efbc277"],
+        s["2e5e69b75efbc277"],
         filter,
         viewbox,
         calibration_stacks,
@@ -620,7 +630,7 @@ def test_orion_mosaic_two_by_one(test_context) -> None:
         build_placement_subgraph,
         mode,
         mosaic,
-        stacks["15a294ac14d63dea"],
+        s["15a294ac14d63dea"],
         filter,
         viewbox,
         calibration_stacks,
@@ -662,7 +672,7 @@ def test_orion_mosaic_missing_panel(test_context) -> None:
     assert isinstance(targets, TargetsDict)
     assert len(targets) == 3
     assert len(context.mosaics) == 1
-    mosaic = next(iter(context.mosaics.values()))
+    mosaic = next(iter(context.mosaics.values())).get()
 
     print(f"### mosaic.strips {mosaic.strips}")
     assert mosaic.strips == (
@@ -687,11 +697,14 @@ def test_orion_mosaic_missing_panel(test_context) -> None:
     )
     print_graph(graph)
 
+    from cache.context_ref import ContextRef
+    s = {k: (v.get() if isinstance(v, ContextRef) else v) for k, v in stacks.items()}
+
     place_0_0 = Node(
         build_placement_subgraph,
         mode,
         mosaic,
-        stacks["1101452f8cf2f9ff"],
+        s["1101452f8cf2f9ff"],
         filter,
         viewbox,
         calibration_stacks,
@@ -702,7 +715,7 @@ def test_orion_mosaic_missing_panel(test_context) -> None:
         build_placement_subgraph,
         mode,
         mosaic,
-        stacks["2e5e69b75efbc277"],
+        s["2e5e69b75efbc277"],
         filter,
         viewbox,
         calibration_stacks,
@@ -713,7 +726,7 @@ def test_orion_mosaic_missing_panel(test_context) -> None:
         build_placement_subgraph,
         mode,
         mosaic,
-        stacks["15a294ac14d63dea"],
+        s["15a294ac14d63dea"],
         filter,
         viewbox,
         calibration_stacks,

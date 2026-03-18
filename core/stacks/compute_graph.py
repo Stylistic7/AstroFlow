@@ -120,7 +120,12 @@ def get_stack_image(
 ) -> Graph:
     assert stack is not None
     if mode == QualityLevel.SUBFRAME:
-        return Graph({(get_stack_subframe_image, stack): {}})
+        return Graph({
+            **chain(
+                (get_stack_subframe_image, stack),
+                Node(compute_image_metadata, name=f"subframe_{stack.stable_hash}"),
+            )
+        })
     else:
         return Graph({(build_stacking_subgraph, stack, calibration_stacks, development_settings, min_frames_in_stack): {}})
 
@@ -151,7 +156,11 @@ def process_stacks_for_ui(stacks: dict) -> dict:
         return result
 
     # TODO: Parallelize this.
-    ui_stacks = {h: prepare_stack(s) for h, s in stacks.items()}
+    from cache.context_ref import ContextRef
+    ui_stacks = {
+        h: prepare_stack(ref.get() if isinstance(ref, ContextRef) else ref)
+        for h, ref in stacks.items()
+    }
     return ui_stacks
 
 
@@ -167,5 +176,9 @@ def process_calibration_stacks_for_ui(cal_stacks: dict) -> dict:
         return result
 
     # TODO: Parallelize this.
-    ui_cal_stacks = {h: prepare_stack(s) for h, s in cal_stacks.items()}
+    from cache.context_ref import ContextRef
+    ui_cal_stacks = {
+        h: prepare_stack(ref.get() if isinstance(ref, ContextRef) else ref)
+        for h, ref in cal_stacks.items()
+    }
     return ui_cal_stacks

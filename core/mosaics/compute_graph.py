@@ -35,6 +35,12 @@ def targets_for_mosaic(mosaic: Mosaic, targets: TargetsDict) -> TargetsDict:
     )
 
 
+def _unwrap(ref):
+    """Unwrap a ContextRef to its value, or return plain objects as-is."""
+    from cache.context_ref import ContextRef
+    return ref.get() if isinstance(ref, ContextRef) else ref
+
+
 def stacks_for_mosaic(
     mosaic: Mosaic, stacks: CompositeStacksDict, targets: TargetsDict
 ) -> CompositeStacksDict:
@@ -43,7 +49,7 @@ def stacks_for_mosaic(
         {
             stack_id: stacks[stack_id]
             for target_id in mosaic.target_ids
-            for stack_id in targets[target_id].stack_ids
+            for stack_id in _unwrap(targets[target_id]).stack_ids
         }
     )
 
@@ -63,7 +69,7 @@ def build_mosaic_subgraph(
     )
     viewbox = compute_viewbox(mode, mosaic)
     filters = set(
-        stack.filter for stack in stacks.values() if stack is not None
+        ref.get().filter for ref in stacks.values() if ref is not None
     )
 
     if development_settings.override_filters is not None:
@@ -84,6 +90,12 @@ def build_mosaic_subgraph(
                 tuple(s for s in strip if s is not None) for strip in strips
             )
             strips = tuple(s for s in strips if len(s))
+            if not strips:
+                print(
+                    f"### Skipping mosaic {mosaic} filter {filter} because "
+                    f"all stacks are missing"
+                )
+                continue
         else:
             # In master mode, missing panels are not allowed; skip the filter.
             if any(None in strip for strip in strips):
@@ -131,7 +143,6 @@ def build_placement_subgraph(
         {
             **chain(
                 (get_stack_image, mode, stack, calibration_stacks, development_settings, min_frames_in_stack),
-                Node(compute_image_metadata, name="stack"),
                 (place_image, mode, mosaic, stack, filter, viewbox),
                 Node(compute_image_metadata, name="placed"),
             )
@@ -150,8 +161,8 @@ def get_stacks_for_filter(
     def get_stack_for_target(target_id: TargetHash) -> StackHash:
         # TODO: What should be done if there are several stacks in this target
         # with the same filter, but, e.g. different rotations?
-        for stack_id in targets[target_id].stack_ids:
-            if stacks[stack_id].filter == filter:
+        for stack_id in _unwrap(targets[target_id]).stack_ids:
+            if _unwrap(stacks[stack_id]).filter == filter:
                 return stack_id
 
     def get_stacks_for_strip(strip: list[TargetHash]) -> list[StackHash]:
@@ -218,7 +229,7 @@ def build_mosaic_filter_subgraph(
                 else:
                     continue
 
-            stack = stacks[stack_id]
+            stack = _unwrap(stacks[stack_id])
             if i == 0:
                 prev_task = Node(
                     build_placement_subgraph,
@@ -282,6 +293,11 @@ def build_mosaic_filter_subgraph(
             graph[metadata_task] = [merge_task]
             prev_task = metadata_task
 
+    # If prev_task was never added to the graph as a key (single-strip, single-stack
+    # case), register it as a leaf so the subgraph actually runs it.
+    if strip_tasks and prev_task not in graph:
+        graph[prev_task] = []
+
     return graph
 
 
@@ -298,5 +314,5 @@ def process_mosaics_for_ui(mosaics: MosaicsDict) -> dict:
         return convert_to_dict(mosaic, transform=my_transform)
 
     # TODO: Parallelize this.
-    ui_mosaics = {h: prepare_mosaic(s) for h, s in mosaics.items()}
+    ui_mosaics = {h: prepare_mosaic(ref.get()) for h, ref in mosaics.items()}
     return ui_mosaics
