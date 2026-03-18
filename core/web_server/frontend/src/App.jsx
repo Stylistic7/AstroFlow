@@ -18,6 +18,7 @@ import TileViewer from './TileViewer.jsx';
 import StackViewer from './StackViewer.jsx';
 import MosaicViewer from './MosaicViewer.jsx';
 import AppLayout from './AppLayout.jsx';
+import PerformanceExplorer from './PerformanceExplorer.jsx';
 import { FolderProvider } from './FolderContext';
 
 function App() {
@@ -218,6 +219,11 @@ function App() {
                 />
                 <Route exact path="/view_workflow_graph" element={
                   dataIsAvailable && <WorkflowGraph theme={darkTheme} />}
+                />
+                <Route exact path="/performance" element={
+                  <AppLayout>
+                    <PerformanceExplorer />
+                  </AppLayout>}
                 />
               </Routes>
             </Router>

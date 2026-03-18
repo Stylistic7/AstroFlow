@@ -83,7 +83,7 @@ def _collect_image_stats_by_argument(func, args, kwargs):
 
 def _update_profile(fn_name: str, record: dict[str, Any], cache: CacheProtocol):
     node_ip = ray.util.get_node_ip_address()
-    key = ("profile", node_ip, fn_name)
+    key = ("profile", fn_name, node_ip)
     cache.and_equals(key, [record], _MAX_PROFILE_SAMPLES)
 
 
