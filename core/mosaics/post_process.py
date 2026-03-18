@@ -3,7 +3,7 @@ from pathlib import Path
 from astropy.time import Time
 
 from file_io.generic import read_image, read_header, copy_image
-from file_io.types import XisfFilePath
+from file_io.types import XisfFilePath, WithSidecar
 from pix import PixInsight
 from pix.classes import ImageList
 from pix.tasks import (
@@ -58,7 +58,7 @@ def _post_process_mosaic(
 @cached.remote(resources={"PixInsight": 1})
 @measure_performance
 @create_thumbnail
-def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> XisfFilePath | None:
+def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> WithSidecar[XisfFilePath] | None:
     print(f"### Entering post_process_mosaic for {mode=} mosaic {str(mosaic)}")
 
     if mode != QualityLevel.MASTER:
@@ -66,8 +66,8 @@ def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> XisfFilePath | No
 
     filters = set()
     for target_id in mosaic.target_ids:
-        for stack_id in context.targets[target_id].stack_ids:
-            filters.add(context.stacks[stack_id].filter)
+        for stack_id in context.targets[target_id].get().stack_ids:
+            filters.add(context.stacks[stack_id].get().filter)
     filters = tuple(filters)
 
     images = [
@@ -96,4 +96,4 @@ def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> XisfFilePath | No
     else:
         _post_process_mosaic(images, mosaic, output_filename)
 
-    return output_filename
+    return WithSidecar(output_filename)

@@ -3,6 +3,7 @@ import os
 
 from pix.classes import ShellScriptTask, Image, ImageList
 from pix.context import append_task
+from pix.tasks.copy_fits_keywords import CopyFITSKeywords
 
 # TODO: These parameters must be floats, not strings, so they can be overriden
 # by the user.
@@ -85,7 +86,7 @@ def PhotometricMosaic(
         )
     )
 
-    return ImageList(
+    result = ImageList(
         [
             Image(
                 filename=output_filename,
@@ -95,3 +96,5 @@ def PhotometricMosaic(
             )
         ]
     )
+    CopyFITSKeywords(images[0], result[0])
+    return result

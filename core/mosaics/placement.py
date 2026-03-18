@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from customization.types import CustomizedStack
 from file_io.generic import read_image
 from file_io.tiff_file_io import write_tiff_image
-from file_io.types import TiffFilePath
+from file_io.types import TiffFilePath, WithSidecar
 from context import context
 from previews.types import QualityLevel
 from mosaics.types import Mosaic, Viewbox
@@ -159,7 +159,7 @@ def _place_image(
     filter: str,
     viewbox: Viewbox,
     image_metadata: ImageMetadata,
-) -> TiffFilePath:
+) -> WithSidecar[TiffFilePath]:
     # if context.dangerously_accept_existing_files and os.path.exists(filename):
     #   print(f'### Dangerously skipping place_large_image because '
     #         f'file {filename} already exists')
@@ -196,7 +196,7 @@ def _place_image(
     write_tiff_image(output_filename, image, {"FILTER": filter})
     print(f"### _place_image {output_filename=}")
 
-    return output_filename
+    return WithSidecar(output_filename)
 
 
 @makes_image(PlacedImage).as_subframe(placed_filename)
@@ -209,7 +209,7 @@ def place_image_subframe(
     filter: str,
     viewbox: Viewbox,
     image_metadata: ImageMetadata,
-) -> TiffFilePath:
+) -> WithSidecar[TiffFilePath]:
     return ray.get(
         _place_image.remote(
             mode, mosaic, stack, filter, viewbox, image_metadata
@@ -227,7 +227,7 @@ def place_image_master(
     filter: str,
     viewbox: Viewbox,
     image_metadata: ImageMetadata,
-) -> TiffFilePath:
+) -> WithSidecar[TiffFilePath]:
     return ray.get(
         _place_image.remote(
             mode, mosaic, stack, filter, viewbox, image_metadata
@@ -244,7 +244,7 @@ def place_image(
     filter: str,
     viewbox: Viewbox,
     image_metadata: ImageMetadata,
-) -> TiffFilePath:
+) -> WithSidecar[TiffFilePath]:
     if mode == QualityLevel.SUBFRAME:
         return ray.get(
             place_image_subframe.remote(

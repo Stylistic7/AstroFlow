@@ -17,7 +17,6 @@ from mosaics.types import Mosaic
 from mosaics.artifacts import merged_filename_tiff, merged_filename_xisf
 from previews.types import QualityLevel
 from decorators import cached
-from file_io.generic import update_header
 from file_io.tiff_file_io import write_tiff_image
 from file_io.types import XisfFilePath, TiffFilePath, WithSidecar
 from products import makes_image
@@ -57,36 +56,30 @@ def merge_images_with_maximum(
     Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
     write_tiff_image(Path(output_filename), output_image, {"FILTER": filter})
 
-    return output_filename
+    return WithSidecar(output_filename)
 
 
 @PixInsight()
-def run_photometric_mosaic(
-    images: ImageList, output_filename: Path
-) -> ImageList:
+def run_photometric_mosaic(images: ImageList, output_filename: Path) -> ImageList:
     return PhotometricMosaic(images, output_filename)
 
 
 @cached.remote(resources={"PixInsight": 1})
 @measure_performance
 def merge_images_with_photometric_mosaic(
-    mosaic: Mosaic, input_0: ImageMetadata, input_1: ImageMetadata, filter: str
+    mosaic: Mosaic, input_0: TiffFilePath, input_1: TiffFilePath
 ) -> WithSidecar[XisfFilePath]:
-    input_0 = input_0.filename.resolve(strict=True)
-    input_1 = input_1.filename.resolve(strict=True)
+    input_0 = input_0.resolve(strict=True)
+    input_1 = input_1.resolve(strict=True)
 
     filename = merge_images_with_pmm.filename_fn(mosaic, input_0, input_1)
     print(
-        f"### merge_images_with_photometric_mosaic "
-        f" {input_0=} {input_1=} {filter=} {filename=}"
+        f"### merge_images_with_photometric_mosaic {input_0=} {input_1=} {filename=}"
     )
     filename.parent.mkdir(parents=True, exist_ok=True)
     run_photometric_mosaic([input_0, input_1], filename)
     assert os.path.exists(filename), f"file not found: {filename}"
-    assert isinstance(filename, WithSidecar)
-    update_header(filename, {"FILTER": filter})
-    assert read_header(filename)["FILTER"] == filter
-    return filename
+    return WithSidecar(filename)
 
 
 @makes_image(MergedImage).as_master(merged_filename_xisf)
@@ -115,19 +108,18 @@ def merge_images_with_pmm(
                 f"### mocking PixInsight for merging; "
                 f"converting {input_0=} to {output_filename=}"
             )
+            # convert_tiff_to_xisf copies the TIFF header (including FILTER)
             return WithSidecar(convert_tiff_to_xisf(input_0, output_filename))
         else:
             print(
                 f"### mocking PixInsight for merging; "
-                f"converting {input_0=} to {output_filename=}"
+                f"copying {input_0=} to {output_filename=}"
             )
             copy_image(input_0, output_filename)
-            return output_filename
+            return WithSidecar(output_filename)
     else:
         return ray.get(
-            merge_images_with_photometric_mosaic.remote(
-                mosaic, input_0, input_1, filter
-            )
+            merge_images_with_photometric_mosaic.remote(mosaic, input_0, input_1)
         )
 
 

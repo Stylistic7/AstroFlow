@@ -21,5 +21,6 @@ from .spectrophotometric_flux_calibration import (
     SpectrophotometricFluxCalibration,
 )
 from .gradient_correction import GradientCorrection
+from .copy_fits_keywords import CopyFITSKeywords
 from .linear_fit import LinearFit
 from .lrgb_combination import LRGBCombination

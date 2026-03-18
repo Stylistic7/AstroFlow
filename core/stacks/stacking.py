@@ -8,7 +8,7 @@ import astropy.io.fits as pyfits  # type: ignore
 from typing import Any
 
 import file_io
-from file_io.types import XisfFilePath
+from file_io.types import XisfFilePath, WithSidecar
 from file_io.generic import update_header, copy_image
 from stacks.artifacts import stack_filename
 from stacks.simple_stack import SimpleStack, SimpleStacksDict
@@ -117,7 +117,7 @@ def _setup_composite_stack(
 
 def _mock_stacking(
     src_filename: str, dest_filename: str, metadata: dict[str, str]
-) -> None:
+) -> WithSidecar[XisfFilePath]:
     assert src_filename is not None
 
     print(
@@ -127,7 +127,7 @@ def _mock_stacking(
     file_io.conversion.convert_fits_to_xisf(
         src_filename, dest_filename, add_noise=True, metadata=metadata
     )
-    return XisfFilePath(dest_filename)
+    return WithSidecar(XisfFilePath(dest_filename))
 
 
 def _copy_wbpp_result(
@@ -152,7 +152,7 @@ def _copy_wbpp_result(
     copy_image(filename, dest_filename)
     update_header(dest_filename, metadata)
 
-    return XisfFilePath(dest_filename)
+    return WithSidecar(XisfFilePath(dest_filename))
 
 
 # TODO: add an `as_downscaled_master` quality level.
@@ -165,7 +165,7 @@ def stack_files(
     calibration_stacks: SimpleStacksDict,
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
-) -> XisfFilePath:
+) -> WithSidecar[XisfFilePath]:
     # Determine the output file, and the metadata it should have.
     dest_filename = stack_files.filename_fn(stack)
     dest_filename_exists = os.path.exists(dest_filename)
@@ -190,7 +190,7 @@ def stack_files(
             f"file {dest_filename} already exists"
         )
         update_header(dest_filename, metadata)
-        return dest_filename
+        return WithSidecar(dest_filename)
 
     print(f"### calibration_stacks keys {list(calibration_stacks.keys())}")
 

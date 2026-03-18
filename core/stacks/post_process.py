@@ -19,7 +19,7 @@ from customization.types import CustomizedStack
 from stacks.composite_stack import CompositeStack
 from stacks.stacking import stack_files
 from stacks.artifacts import stack_filename
-from file_io.types import XisfFilePath
+from file_io.types import XisfFilePath, WithSidecar
 from file_io.generic import copy_image
 from products import makes_image
 from previews.types import QualityLevel
@@ -56,7 +56,7 @@ def _post_process_stack(
 @cached.remote(resources={"PixInsight": 1})
 @measure_performance
 @create_thumbnail
-def post_process_stack(stack: CustomizedStack, development_settings: DevelopmentSettings) -> XisfFilePath:
+def post_process_stack(stack: CustomizedStack, development_settings: DevelopmentSettings) -> WithSidecar[XisfFilePath]:
     master = stack_files.filename_fn(stack)
     print(f"### post_process_stack, master {master}")
 
@@ -68,7 +68,7 @@ def post_process_stack(stack: CustomizedStack, development_settings: Development
             f"### Dangerously skipping post-processing because "
             f"file {output_filename} already exists"
         )
-        return output_filename
+        return WithSidecar(output_filename)
 
     if development_settings.mock_pixinsight:
         copy_image(master, output_filename)
@@ -79,4 +79,4 @@ def post_process_stack(stack: CustomizedStack, development_settings: Development
             stack,
         )
 
-    return XisfFilePath(output_filename)
+    return WithSidecar(XisfFilePath(output_filename))

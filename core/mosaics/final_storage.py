@@ -14,7 +14,7 @@ from pix.classes import ImageList
 from pix.tasks import SaveImages
 from products import makes_image
 from decorators import cached, create_thumbnail, measure_performance
-from file_io.types import WithSidecar
+from file_io.types import TiffFilePath, XisfFilePath, WithSidecar
 from metadata.classes import ImageMetadata
 from mosaics.types import Mosaic
 from previews.types import QualityLevel
@@ -30,8 +30,8 @@ def make_preview_tiff(source_path: Path, dest_path: Path):
 
 
 @PixInsight()
-def save_uncompressed(images: ImageList, output_filenames: list[Path]):
-    SaveImages(images, output_filenames, compression=False)
+def save_uncompressed(images: ImageList, output_filenames: list[Path], fits_keywords: dict[str, str] | None = None):
+    SaveImages(images, output_filenames, compression=False, fits_keywords=fits_keywords)
 
 
 @makes_image(Mosaic).as_master(mosaic_filename_xisf)
@@ -40,7 +40,7 @@ def save_uncompressed(images: ImageList, output_filenames: list[Path]):
 @measure_performance
 def store_mosaic_color_channel_master(
     mosaic: Mosaic, filter: str, input: ImageMetadata, mock_pixinsight: bool
-) -> WithSidecar:
+) -> WithSidecar[XisfFilePath]:
     filename = input.filename
     output = store_mosaic_color_channel_master.filename_fn(mosaic, filter)
     tiff_output = output.with_suffix(".tiff")
@@ -55,10 +55,10 @@ def store_mosaic_color_channel_master(
         copy_image(filename, output)
         make_preview_tiff(filename, tiff_output)
     else:
-        save_uncompressed([filename], [output])
+        save_uncompressed([filename], [output], fits_keywords={"FILTER": filter})
         make_preview_tiff(output, tiff_output)
 
-    return output
+    return WithSidecar(output)
 
 
 @makes_image(Mosaic).as_subframe(mosaic_filename_tiff)
@@ -67,7 +67,7 @@ def store_mosaic_color_channel_master(
 @measure_performance
 def store_mosaic_color_channel_subframe(
     mosaic: Mosaic, filter: str, input: ImageMetadata
-) -> WithSidecar:
+) -> WithSidecar[TiffFilePath]:
     filename = input.filename
     print(
         f"### store_mosaic_color_channel_subframe type {str(mosaic)} {filter=} {filename=}"
@@ -81,7 +81,7 @@ def store_mosaic_color_channel_subframe(
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     write_tiff_image(output, autostretched, {"FILTER": filter})
 
-    return output
+    return WithSidecar(output)
 
 
 @ray.remote

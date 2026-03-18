@@ -1,3 +1,4 @@
+import json
 from typing import Optional
 from pathlib import Path
 import os
@@ -8,6 +9,16 @@ from pix.context import append_task
 _javascript = """
 var view_ids = {view_ids};
 var output_filenames = {output_filenames};
+var fits_keywords = {fits_keywords};
+
+function setFITSKeywords(window, kw) {{
+    var keywords = window.keywords;
+    for (var key in kw) {{
+        keywords = keywords.filter(function(k) {{ return k.name !== key; }});
+        keywords.push(new FITSKeyword(key, String(kw[key]), ""));
+    }}
+    window.keywords = keywords;
+}}
 
 function saveCompressedTiff(window, filename) {{
     let fileFormat = new FileFormat("TIFF");
@@ -40,8 +51,9 @@ function saveCompressedTiff(window, filename) {{
 
 for (let i = 0; i < output_filenames.length; ++i) {{
   let filename = output_filenames[i];
-  console.writeln('Saving view ' + view_ids[i] + ' to filename ' + filename);
   let window = View.viewById(view_ids[i]).window;
+  setFITSKeywords(window, fits_keywords);
+  console.writeln('Saving view ' + view_ids[i] + ' to filename ' + filename);
   let ext = filename.toLowerCase().split('.').pop();
   if (ext === 'tif' || ext === 'tiff') {{
     saveCompressedTiff(window, filename);
@@ -58,6 +70,7 @@ def SaveImages(
     images: ImageList,
     output_filenames: Optional[list[Path]] = None,
     compression: bool = True,
+    fits_keywords: Optional[dict[str, str]] = None,
 ) -> ImageList:
     view_ids = [i.view_id for i in images]
 
@@ -66,6 +79,8 @@ def SaveImages(
     else:
         output_filenames = [os.fspath(f) for f in output_filenames]
 
+    fits_keywords_js = json.dumps(fits_keywords or {})
+
     append_task(
         ShellScriptTask(
             javascript=_javascript.format(
@@ -73,6 +88,7 @@ def SaveImages(
                 output_filenames=output_filenames,
                 tiff_output_hint="zip-compression" if compression else "",
                 xisf_output_hint="compression-codec lz4hc+sh" if compression else "",
+                fits_keywords=fits_keywords_js,
             )
         )
     )
