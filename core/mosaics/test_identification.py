@@ -66,7 +66,7 @@ def test_two_targets(test_context) -> None:
         identify_mosaics.remote(context.settings.clustering_settings.angular_tolerance, context.targets)
     )
     assert len(mosaics) == 1
-    mosaic = next(iter(mosaics.values()))
+    mosaic = next(iter(mosaics.values())).get()
     print(f"### mosaic.strips {mosaic.strips}")
 
     assert mosaic.target_ids == (bar.stable_hash, foo.stable_hash)
@@ -153,7 +153,7 @@ def test_three_targets(test_context) -> None:
     )
 
     assert len(mosaics) == 1
-    mosaic = next(iter(mosaics.values()))
+    mosaic = next(iter(mosaics.values())).get()
     assert mosaic.target_ids == (
         bar.stable_hash,
         baz.stable_hash,
@@ -242,7 +242,7 @@ def test_three_out_of_order_targets(test_context) -> None:
     )
 
     assert len(mosaics) == 1
-    mosaic = next(iter(mosaics.values()))
+    mosaic = next(iter(mosaics.values())).get()
     assert mosaic.target_ids == (
         bar.stable_hash,
         baz.stable_hash,
@@ -343,7 +343,7 @@ def test_three_targets_and_an_outlier(test_context) -> None:
     )
 
     assert len(mosaics) == 1
-    mosaic = next(iter(mosaics.values()))
+    mosaic = next(iter(mosaics.values())).get()
 
     assert len(mosaic.strips) == 2
     assert sorted(mosaic.strips[0]) == sorted(
@@ -425,7 +425,7 @@ def test_ic1318(test_context) -> None:
     )
 
     assert len(mosaics) == 1
-    mosaic = next(iter(mosaics.values()))
+    mosaic = next(iter(mosaics.values())).get()
     print("### mosaic", mosaic)
 
     assert mosaic.target_ids == (bar.stable_hash, foo.stable_hash)
@@ -439,7 +439,7 @@ def test_big_cygnus_pano(with_real_testdata) -> None:
         identify_mosaics.remote(context.settings.clustering_settings.angular_tolerance, context.targets)
     )
 
-    mosaic = mosaics["75a1da6463e118e6"]
+    mosaic = mosaics["333742eced99004e"].get()
     print("### mosaic", mosaic)
 
     target_ids = mosaic.target_ids

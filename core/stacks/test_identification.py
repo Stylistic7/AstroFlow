@@ -20,7 +20,7 @@ def test_one_perfect_stack(test_context):
 
     stacks = context.stacks
     assert len(stacks) == 1
-    toplevel_stack = next(iter(stacks.values()))
+    toplevel_stack = next(iter(stacks.values())).get()
     assert toplevel_stack.center == pytest.approx([100, 50], abs=1e-12)
     assert toplevel_stack.image_scale == 1.0
 
@@ -56,14 +56,14 @@ def test_two_stacks_different_image_scales(test_context):
     for stack in stacks:
         print(f"### toplevel stack {stack}")
 
-    stack = stacks["963b3bad57928528"]
+    stack = stacks["963b3bad57928528"].get()
     frames = stack.all_frames()
     metadata = stack.all_metadata()
     filenames = [m.filename for m in metadata.values()]
     assert all("foo" in f for f in filenames)
     assert len(frames) == 10
 
-    stack = stacks["31520d846ae3463d"]
+    stack = stacks["31520d846ae3463d"].get()
     frames = stack.all_frames()
     metadata = stack.all_metadata()
     filenames = [m.filename for m in metadata.values()]
@@ -104,13 +104,13 @@ def test_two_stacks_different_image_sizes(test_context):
 
     keys = sorted(stacks.keys())
 
-    stack = stacks[keys[0]]
+    stack = stacks[keys[0]].get()
     assert stack.center == pytest.approx([100, 50], abs=1e-12)
     assert stack.width_pixels == 6000
     assert stack.height_pixels == 4000
     assert stack.image_scale == 1.0
 
-    stack = stacks[keys[1]]
+    stack = stacks[keys[1]].get()
     assert stack.center == pytest.approx([100, 50], abs=1e-12)
     assert stack.width_pixels == 3000
     assert stack.height_pixels == 2000
@@ -142,7 +142,7 @@ def test_multiple_exposures(test_context):
     stacks = context.stacks
     assert len(stacks) == 1
 
-    toplevel_stack = next(iter(stacks.values()))
+    toplevel_stack = next(iter(stacks.values())).get()
     print(f"### toplevel_stack {toplevel_stack}")
     print(f"### toplevel_stack.contents {toplevel_stack.contents}")
     assert toplevel_stack.center == pytest.approx([100, 50], abs=1e-12)

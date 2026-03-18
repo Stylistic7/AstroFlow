@@ -19,6 +19,7 @@ from stacks.types import StackHash
 from metadata.classes import MetadataDict, FrameHash
 from clustering.continuous import cluster_continuous
 from cache.content_hashed import ContentHashed
+from cache.context_ref import ContextRef
 
 
 @beartype
@@ -131,9 +132,10 @@ class CompositeStack(
         )
 
 
-class CompositeStacksDict(dict[str, CompositeStack]):
+class CompositeStacksDict(dict[str, ContextRef]):
     def __hash__(self):
-        return hash_list_int([self[k].content_hash for k in sorted(self.keys())])
+        from cache.context_ref import dict_content_hash
+        return hash_list_int([dict_content_hash(self)])
 
     def __str__(self):
         return f"CompositeStacksDict({len(self)})"

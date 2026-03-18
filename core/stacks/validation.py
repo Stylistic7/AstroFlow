@@ -11,7 +11,8 @@ def validate_stacks(stacks: CompositeStacksDict) -> CompositeStacksDict:
         f"#### validate_stacks validating {len(stacks)} stacks "
         f"type {type(stacks)}"
     )
-    for stack_id, stack in stacks.items():
+    for stack_id, stack_ref in stacks.items():
+        stack = stack_ref.get()
         assert stack.contents, (
             f"### Stack {stack} has bad contents {stack.contents}"
         )

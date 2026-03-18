@@ -130,5 +130,10 @@ def hdf5_to_stacks(data: str) -> dict[str, Any]:
             for key, image_data in master_group.items():
                 context[("stack_master_thumbnail_image", key)] = np.array(image_data)
 
-        context.stacks = stacks
+        from cache.context_ref import ContextRef
+        from stacks.composite_stack import CompositeStacksDict
+        stacks_refs = CompositeStacksDict({
+            k: ContextRef.store(("stacks", k), v) for k, v in stacks.items()
+        })
+        context.stacks = stacks_refs
         return stacks

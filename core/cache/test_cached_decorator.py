@@ -9,7 +9,7 @@ from context import context, get_cache
 from cache.cached_decorator import make_cached_decorator, Injected
 from cache.types import NeverRun
 from hashing import hash_call, hash_list
-from hashing.types import LargeObject
+from cache.context_ref import ContextRef
 from dependency_graph import Graph, run_graph, print_result_dict, print_graph
 from testing.sidecar_hasher import SidecarHasher
 from cache.content_hashed import ContentHashed
@@ -61,25 +61,25 @@ def foo(obj_ref) -> Graph:
 
 
 @cached.remote
-def make_large_array(shape: tuple[int]) -> LargeObject:
+def make_large_array(shape: tuple[int]) -> ContextRef:
     arr = np.random.rand(*shape)
-    return LargeObject(arr)
+    return ContextRef.store_large(arr)
 
 
 @cached.remote
-def add_to_large_array(value: float, obj: LargeObject) -> LargeObject:
+def add_to_large_array(value: float, obj: ContextRef) -> ContextRef:
     arr = obj.get() + value
-    return LargeObject(arr)
+    return ContextRef.store_large(arr)
 
 
 @cached.remote
-def consume_large_array(obj: LargeObject) -> None:
+def consume_large_array(obj: ContextRef) -> None:
     arr = obj.get()
     print(f"### arr.shape {arr.shape}")
 
 
 @cached.remote
-def build_large_array_graph(arr: LargeObject) -> Graph:
+def build_large_array_graph(arr: ContextRef) -> Graph:
     return Graph({consume_large_array: {(add_to_large_array, 10, arr)}})
 
 
@@ -226,7 +226,7 @@ def test_dry_run(test_context) -> None:
 
 def test_large_object(test_context) -> None:
     # This first try will result in this large object being cached.
-    obj_ref = LargeObject("foo is big")
+    obj_ref = ContextRef.store_large("foo is big")
     assert isinstance(obj_ref.get(), str)
 
     graph = foo(obj_ref)
@@ -237,7 +237,7 @@ def test_large_object(test_context) -> None:
     assert all(r == 10 for r in result.values())
 
     # Now, forcibly remove the object from the Ray object store. Running the same
-    # graph again should still work, but it will force the LargeObject to reload
+    # graph again should still work, but it will force the ContextRef to reload
     # its contents from the cache.
     ray._private.internal_api.free([obj_ref.ref], local_only=False)
     with pytest.raises(ObjectFreedError):
@@ -252,7 +252,7 @@ def test_large_object(test_context) -> None:
 
     # Finally, running the graph a third time with an entirely different
     # obj_ref should pass that new value through the entire graph.
-    obj_ref = LargeObject("bar is bigger")
+    obj_ref = ContextRef.store_large("bar is bigger")
     assert isinstance(obj_ref.get(), str)
 
     graph = foo(obj_ref)

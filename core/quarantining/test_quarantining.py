@@ -60,7 +60,7 @@ def test_quarantine_run(test_context) -> None:
     assert len(context.mosaics) == 0
 
     # The stack should have two runs.
-    stack = next(iter(context.stacks.values()))
+    stack = next(iter(context.stacks.values())).get()
     assert len(stack.contents) == 2
     runs = list(stack.contents.keys())
     two_run_hash = hash_list([{stack.stable_hash: stack}], debug=True)
@@ -75,7 +75,7 @@ def test_quarantine_run(test_context) -> None:
     run_graph(build_compute_graph())
 
     # The stack should have only the second run now.
-    stack = next(iter(context.stacks.values()))
+    stack = next(iter(context.stacks.values())).get()
     assert list(stack.contents.keys()) == [runs[1]]
     one_run_hash = hash_list([{stack.stable_hash: stack}], debug=True)
 
@@ -89,7 +89,7 @@ def test_quarantine_toplevel_target(test_context):
     assert len(context.targets) == 4
     assert len(context.mosaics) == 1
 
-    stacks = [s for s in context.stacks if type(s) is CompositeStack]
+    stacks = [ref.get() for ref in context.stacks.values() if type(ref.get()) is CompositeStack]
     assert all(len(s.dependencies) == 3 for s in stacks)
 
     target_hash = next(iter(context.targets))
@@ -102,7 +102,7 @@ def test_quarantine_toplevel_target(test_context):
     assert len(context.targets) == 3
     assert len(context.mosaics) == 1
 
-    stacks = [s for s in context.stacks if type(s) is CompositeStack]
+    stacks = [ref.get() for ref in context.stacks.values() if type(ref.get()) is CompositeStack]
     assert all(len(s.dependencies) == 3 for s in stacks)
 
 
@@ -113,7 +113,7 @@ def test_quarantine_calibration_stack(test_context):
     assert len(context.targets) == 4
     assert len(context.mosaics) == 1
 
-    stacks = [s for s in context.stacks if type(s) is CompositeStack]
+    stacks = [ref.get() for ref in context.stacks.values() if type(ref.get()) is CompositeStack]
     assert all(len(s.dependencies) == 3 for s in stacks)
 
     dark_hash = next(
@@ -132,5 +132,5 @@ def test_quarantine_calibration_stack(test_context):
     assert len(context.targets) == 4
     assert len(context.mosaics) == 1
 
-    stacks = [s for s in context.stacks if type(s) is CompositeStack]
+    stacks = [ref.get() for ref in context.stacks.values() if type(ref.get()) is CompositeStack]
     assert all(len(s.dependencies) == 2 for s in stacks)

@@ -51,10 +51,10 @@ def test_orion_mosaic(test_context) -> None:
 
     assert len(context.targets) == 4
     assert len(context.mosaics) == 1
-    mosaic = next(iter(context.mosaics.values()))
+    mosaic = next(iter(context.mosaics.values())).get()
 
     assert mosaic.stable_hash in [
-        t.stable_hash for t in context.targets.values()
+        t.get().stable_hash for t in context.targets.values()
     ]
 
     # After putting the mosaic in the shopping cart, the second graph
@@ -71,7 +71,7 @@ def test_orion_mosaic(test_context) -> None:
 
     assert len(context.targets) == 4
     assert len(context.mosaics) == 1
-    mosaic = next(iter(context.mosaics.values()))
+    mosaic = next(iter(context.mosaics.values())).get()
 
     print_tree(context.output_dir)
 
@@ -138,10 +138,10 @@ def test_orion_mosaic_with_missing_panel(test_context) -> None:
 
     assert len(context.targets) == 3
     assert len(context.mosaics) == 1
-    mosaic = next(iter(context.mosaics.values()))
+    mosaic = next(iter(context.mosaics.values())).get()
 
     assert mosaic.stable_hash in [
-        t.stable_hash for t in context.targets.values()
+        t.get().stable_hash for t in context.targets.values()
     ]
 
     # After putting the mosaic in the shopping cart, the second graph

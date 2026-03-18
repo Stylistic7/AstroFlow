@@ -8,6 +8,7 @@ from hashing import hash_dataclass
 from targets.types import TargetHash
 from attributes import AstrometricAttributes, ChronologyAttributes
 from cache.content_hashed import ContentHashed
+from cache.context_ref import ContextRef
 
 Template: TypeAlias = tuple[int | None, int | None]
 Strip: TypeAlias = tuple[TargetHash, ...]
@@ -44,7 +45,14 @@ class Mosaic(
     # TODO: Add a valid() method, and assert on it.
 
 
-MosaicsDict = dict[MosaicHash, Mosaic]
+class MosaicsDict(dict[str, ContextRef]):
+    def __hash__(self):
+        from hashing import hash_list_int
+        from cache.context_ref import dict_content_hash
+        return hash_list_int([dict_content_hash(self)])
+
+    def __str__(self):
+        return f"MosaicsDict({len(self)})"
 
 
 @beartype

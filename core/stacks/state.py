@@ -4,6 +4,7 @@ from beartype import beartype
 from frozendict import frozendict
 
 from context import context
+from cache.context_ref import ContextRef
 from stacks.artifacts import output_filename
 from stacks.composite_stack import CompositeStack, CompositeStacksDict
 from stacks import post_process_stack_artifacts
@@ -15,12 +16,13 @@ from artifacts import artifact_exists
 @beartype
 def update_state(stacks: CompositeStacksDict) -> CompositeStacksDict:
     print("### Entering update_state")
-    output_stacks = CompositeStacksDict()
-    for stack_id, stack in stacks.items():
+    new_refs = CompositeStacksDict()
+    for stack_id, stack_ref in stacks.items():
+        stack = stack_ref.get()
         if type(stack) is not CompositeStack:
             continue
 
-        output_stacks[stack_id] = replace(
+        updated = replace(
             stack,
             state=frozendict({
                 "num_frames": len(stack.all_frames()),
@@ -32,7 +34,11 @@ def update_state(stacks: CompositeStacksDict) -> CompositeStacksDict:
                 ),
             }),
         )
-        print(f"### Updated stack state {stack_id} to {stack.state}")
+        new_refs[stack_id] = ContextRef.store(("stacks", stack_id), updated)
+        print(f"### Updated stack state {stack_id} to {updated.state}")
 
-    context.or_equals("stacks", output_stacks)
-    return output_stacks
+    # Merge new refs into the existing stacks dict
+    existing = context.stacks or CompositeStacksDict()
+    merged = CompositeStacksDict({**existing, **new_refs})
+    context.stacks = merged
+    return new_refs

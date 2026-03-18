@@ -111,5 +111,5 @@ def test_stack_dependency_graph(test_context) -> None:
             thumbnail = fn.thumbnail_fn(stack)
             assert type(thumbnail) is bytes
 
-    for stack in context.stacks.values():
-        check_thumbnail(stack, stack_thumbnail)
+    for stack_ref in context.stacks.values():
+        check_thumbnail(stack_ref.get(), stack_thumbnail)

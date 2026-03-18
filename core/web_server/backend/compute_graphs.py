@@ -26,28 +26,35 @@ def compute_graph_status():
 
 @compute_graphs_bp.route("/workflow_graph/stack/<stack_id>")
 def workflow_graph_for_stack(stack_id):
-    return context["workflow_graphs"].get(
-        ("stack", stack_id), _EMPTY_WORKFLOW_GRAPH
-    )
+    wf = context["workflow_graphs"] or {}
+    ref = wf.get(("stack", stack_id))
+    return ref.get() if ref is not None else _EMPTY_WORKFLOW_GRAPH
 
 
 @compute_graphs_bp.route("/workflow_graph/target/<target_id>")
 def workflow_graph_for_target(target_id):
-    return context["workflow_graphs"].get(
-        ("target", target_id), _EMPTY_WORKFLOW_GRAPH
-    )
+    wf = context["workflow_graphs"] or {}
+    ref = wf.get(("target", target_id))
+    return ref.get() if ref is not None else _EMPTY_WORKFLOW_GRAPH
 
 
 @compute_graphs_bp.route("/workflow_graph/mosaic/<mosaic_id>/<filter>")
 def workflow_graph_for_mosaic(mosaic_id, filter):
-    return context["workflow_graphs"].get(
-        ("mosaic", mosaic_id, filter), _EMPTY_WORKFLOW_GRAPH
-    )
+    wf = context["workflow_graphs"] or {}
+    ref = wf.get(("mosaic", mosaic_id, filter))
+    return ref.get() if ref is not None else _EMPTY_WORKFLOW_GRAPH
+
+
+def _json_default(obj):
+    try:
+        return str(obj)
+    except Exception:
+        return repr(obj)
 
 
 @compute_graphs_bp.route("/api/node_status/<node_id>")
 def node_status(node_id):
-    return json.dumps(context[("node_status", node_id)], default=str)
+    return json.dumps(context[("node_status", node_id)], default=_json_default)
 
 
 @compute_graphs_bp.route("/api/open_node_result_path/<node_id>")

@@ -31,7 +31,7 @@ def get_video(object_type: type, *args):
 
 @videos_bp.route("/video/stack/<stack_id>")
 def stack_video(stack_id: str):
-    return get_video(CompositeStack, context.stacks[stack_id])
+    return get_video(CompositeStack, context.stacks[stack_id].get())
 
 
 @videos_bp.route("/video/calibration_stack/<stack_id>")

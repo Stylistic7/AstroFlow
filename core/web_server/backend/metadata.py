@@ -54,9 +54,9 @@ def get_metadata(object_type: type, *args):
 
         objects.append(project(obj, viewbox))
         if isinstance(obj, Target):
-            objects += [project(stacks[s], viewbox) for s in obj.stack_ids]
+            objects += [project(stacks[s].get(), viewbox) for s in obj.stack_ids]
         if isinstance(obj, Mosaic):
-            objects += [project(targets[t], viewbox) for t in obj.target_ids]
+            objects += [project(targets[t].get(), viewbox) for t in obj.target_ids]
 
         result["objects"] = objects
 
@@ -67,7 +67,7 @@ def get_metadata(object_type: type, *args):
 
 @metadata_bp.route("/metadata/stack/<stack_id>")
 def stack_metadata(stack_id: str):
-    return get_metadata(CompositeStack, context.stacks[stack_id])
+    return get_metadata(CompositeStack, context.stacks[stack_id].get())
 
 
 @metadata_bp.route("/metadata/calibration_stack/<stack_id>")
@@ -77,9 +77,9 @@ def calibration_stack_metadata(stack_id: str):
 
 @metadata_bp.route("/metadata/target/<target_id>/<filter>")
 def target_metadata(target_id: str, filter: str):
-    return get_metadata(Target, context.targets[target_id], filter)
+    return get_metadata(Target, context.targets[target_id].get(), filter)
 
 
 @metadata_bp.route("/metadata/mosaic/<mosaic_id>/<filter>")
 def mosaic_metadata(mosaic_id: str, filter: str):
-    return get_metadata(Mosaic, context.mosaics[mosaic_id], filter)
+    return get_metadata(Mosaic, context.mosaics[mosaic_id].get(), filter)

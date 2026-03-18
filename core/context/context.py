@@ -1,10 +1,8 @@
 import ray
 import os
-from enum import Enum
 
 from typing import Any
 from context.cache import get_cache
-from cache.lazy_load_dict import LazyLoadDict
 from ray_infra.ray_init import connect_to_ray_cluster
 
 # The context system is a cluster-wide write-through cache. It has the following
@@ -36,7 +34,6 @@ from ray_infra.ray_init import connect_to_ray_cluster
 # has been committed to disk and/or the Ray object store.
 
 Key = str | tuple[str, ...]
-RefDict = dict[Key, ray.ObjectRef]
 
 
 def _get_namespace() -> str:
@@ -69,10 +66,9 @@ class ContextActor:
         }
 
     def set(self, key: Key, value: Any) -> None:
-        # TODO: This import is ugly.
-        from hashing.types import LargeObject
+        from cache.context_ref import ContextRef
 
-        if isinstance(value, LargeObject):
+        if isinstance(value, ContextRef):
             value = value.strip_ref()
 
         self.cache[key] = value
@@ -87,24 +83,32 @@ class ContextActor:
     def and_equals(
         self, key: Key, value: Any, length_limit: int | None
     ) -> None:
-        self.cache.and_equals(key, value, length_limit)
+        """Append value (a list) to an existing list at key."""
+        with self.cache.transact():
+            old_value = self.cache.get(key, [])
+            new_value = old_value + value
+            if length_limit is not None:
+                new_value = new_value[-length_limit:]
+            self.cache[key] = new_value
 
-    def or_equals(self, key: Key, value: Any) -> None:
-        self.cache.or_equals(key, value)
+    def or_equals(self, key: Key, value: dict) -> None:
+        """Merge value into a dict stored at key (dict |= value)."""
+        with self.cache.transact():
+            old_value = self.cache.get(key, {})
+            if not isinstance(old_value, dict):
+                old_value = {}
+            self.cache[key] = {**old_value, **value}
 
     def set_many(self, items: dict) -> None:
-        from hashing.types import LargeObject
+        from cache.context_ref import ContextRef
 
         for key, value in items.items():
-            if isinstance(value, LargeObject):
+            if isinstance(value, ContextRef):
                 value = value.strip_ref()
             self.cache[key] = value
 
     def clear(self) -> None:
         self.cache.clear()
-
-    def get_lazy_keys(self, name: str) -> list | None:
-        return self.cache._orig_get(name)
 
     def get_cache_keys(self) -> list:
         return list(self.cache.iterkeys())
@@ -153,8 +157,7 @@ class Context:
     def plus_equals(self, key: Key, value: Any):
         return self.and_equals(key, value)
 
-    # TODO: Use the Pythonic operator.
-    def or_equals(self, key: Key, value: Any) -> Any:
+    def or_equals(self, key: Key, value: dict) -> None:
         actor = ray.get_actor("context", namespace=_get_namespace())
         return ray.get(actor.or_equals.remote(key, value))
 
@@ -177,10 +180,6 @@ class Context:
     def clear(self) -> None:
         actor = ray.get_actor("context", namespace=_get_namespace())
         ray.get(actor.clear.remote())
-
-    def get_lazy_keys(self, name: str) -> list | None:
-        actor = ray.get_actor("context", namespace=_get_namespace())
-        return ray.get(actor.get_lazy_keys.remote(name))
 
     def get_cache_keys(self) -> list[str]:
         actor = ray.get_actor("context", namespace=_get_namespace())

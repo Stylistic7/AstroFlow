@@ -23,7 +23,7 @@ def test_stack_metadata_round_trip(test_context):
 
     metadata_file = tempfile.NamedTemporaryFile(delete=False)
     composite_stacks = {
-        k: v for k, v in context.stacks.items() if type(v) is CompositeStack
+        k: ref.get() for k, ref in context.stacks.items() if type(ref.get()) is CompositeStack
     }
     stacks_to_hdf5(composite_stacks, metadata_file)
     metadata_file.close()
@@ -31,7 +31,7 @@ def test_stack_metadata_round_trip(test_context):
     stacks = hdf5_to_stacks(open(metadata_file.name, "rb").read())
 
     for k in composite_stacks.keys():
-        assert context.stacks[k] == stacks[k]
+        assert context.stacks[k].get() == stacks[k]
 
 
 def test_two_participant_mosaic(test_context):
@@ -41,26 +41,44 @@ def test_two_participant_mosaic(test_context):
     run_graph(graph)
     metadata_file_A = tempfile.NamedTemporaryFile(delete=False)
     composite_stacks = {
-        k: v for k, v in context.stacks.items() if type(v) is CompositeStack
+        k: ref.get() for k, ref in context.stacks.items() if type(ref.get()) is CompositeStack
     }
     stacks_to_hdf5(composite_stacks, metadata_file_A)
     metadata_file_A.close()
 
     # Create an HDF5 file containing just panes 3 and 4.
+    input_dirs = context.input_dirs
+    output_dir = context.output_dir
+    settings = context.settings
     context.clear()
+    context.input_dirs = input_dirs
+    context.output_dir = output_dir
+    context.settings = settings
+    context.stacks = {}
+    context.targets = {}
+    context.mosaics = {}
     add_orion_mosaic_images(panes=[3, 4])
     graph = compute_graph.build_compute_graph()
     run_graph(graph)
     metadata_file_B = tempfile.NamedTemporaryFile(delete=False)
     composite_stacks = {
-        k: v for k, v in context.stacks.items() if type(v) is CompositeStack
+        k: ref.get() for k, ref in context.stacks.items() if type(ref.get()) is CompositeStack
     }
     stacks_to_hdf5(composite_stacks, metadata_file_B)
     metadata_file_B.close()
 
     # Load both HDF5 files at once.
     print("### Loading both HDF5 files...")
+    input_dirs2 = context.input_dirs
+    output_dir2 = context.output_dir
+    settings2 = context.settings
     context.clear()
+    context.input_dirs = input_dirs2
+    context.output_dir = output_dir2
+    context.settings = settings2
+    context.stacks = {}
+    context.targets = {}
+    context.mosaics = {}
     hdf5_to_stacks(open(metadata_file_A.name, "rb").read())
     hdf5_to_stacks(open(metadata_file_B.name, "rb").read())
     graph = compute_graph.build_compute_graph()

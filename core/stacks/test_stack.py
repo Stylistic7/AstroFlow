@@ -65,7 +65,7 @@ def test_one_light_one_dark(test_context):
     assert len(context.calibration_stacks) == 1
 
     toplevel_stack = next(
-        stack for stack in stacks.values() if isinstance(stack, CompositeStack)
+        ref.get() for ref in stacks.values() if isinstance(ref.get(), CompositeStack)
     )
     assert len(toplevel_stack.contents) == 1
     light_stack = next(iter(toplevel_stack.contents.values()))

@@ -100,7 +100,7 @@ def target_filename(target: Target, suffix: str) -> XisfFilePath:
 @create_thumbnail
 def post_process_target(target: Target, stacks: CustomizedStacksDict) -> None:
     print(f"Entering post_process_target for {target}")
-    images = [stack_filename(stacks[stack_id]) for stack_id in target.stack_ids]
+    images = [stack_filename(stacks[stack_id].get()) for stack_id in target.stack_ids]
 
     result = _post_process_target(images, target)
     print(f"post_process_target, target {target} returning {result}")

@@ -23,8 +23,6 @@ def make_test_context() -> tuple[
     context.targets = {}
     context.mosaics = {}
 
-    context.mock_plate_solving = True
-
     input_dir_obj = tempfile.TemporaryDirectory()
     context.input_dirs = [Path(input_dir_obj.name)]
 

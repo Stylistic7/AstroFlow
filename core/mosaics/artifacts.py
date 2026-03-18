@@ -1,11 +1,8 @@
 from pathlib import Path
-from shapely import box  # type: ignore
 
 from file_io.types import (
     TiffFilePath,
     XisfFilePath,
-    ContentHashableFile,
-    WithSidecar,
 )
 from mosaics.types import Mosaic
 from customization.types import CustomizedStack
@@ -13,20 +10,16 @@ from mosaics.types import Mosaic, Viewbox
 from file_io.generic import get_content_hash
 
 
-def mosaic_filename_tiff(mosaic: Mosaic, filter: str) -> WithSidecar:
-    return WithSidecar(
-        TiffFilePath(f"final_{mosaic.stable_hash}_{filter}.tiff")
-    )
+def mosaic_filename_tiff(mosaic: Mosaic, filter: str) -> TiffFilePath:
+    return TiffFilePath(f"final_{mosaic.stable_hash}_{filter}.tiff")
 
 
-def mosaic_filename_xisf(mosaic: Mosaic, filter: str) -> WithSidecar:
-    return WithSidecar(
-        XisfFilePath(f"final_{mosaic.stable_hash}_{filter}.xisf")
-    )
+def mosaic_filename_xisf(mosaic: Mosaic, filter: str) -> XisfFilePath:
+    return XisfFilePath(f"final_{mosaic.stable_hash}_{filter}.xisf")
 
 
 def tile_filename(mosaic: Mosaic, filter: str) -> TiffFilePath:
-    filename = Path(mosaic_filename_tiff(mosaic, filter))
+    filename = mosaic_filename_tiff(mosaic, filter)
     return TiffFilePath(
         filename.with_stem(filename.stem + "_autostretched").with_suffix(
             ".tiff"
@@ -35,25 +28,21 @@ def tile_filename(mosaic: Mosaic, filter: str) -> TiffFilePath:
 
 
 def merged_filename_tiff(
-    mosaic: Mosaic, image_0: WithSidecar, image_1: WithSidecar
-) -> WithSidecar:
+    mosaic: Mosaic, image_0: Path, image_1: Path
+) -> TiffFilePath:
     hash_0 = get_content_hash(image_0)
     hash_1 = get_content_hash(image_1)
 
-    return WithSidecar(
-        TiffFilePath(f"merged_{mosaic.stable_hash}_{hash_0}_{hash_1}.tiff")
-    )
+    return TiffFilePath(f"merged_{mosaic.stable_hash}_{hash_0}_{hash_1}.tiff")
 
 
 def merged_filename_xisf(
-    mosaic: Mosaic, image_0: WithSidecar, image_1: WithSidecar
-) -> WithSidecar:
+    mosaic: Mosaic, image_0: Path, image_1: Path
+) -> XisfFilePath:
     hash_0 = get_content_hash(image_0)
     hash_1 = get_content_hash(image_1)
 
-    return WithSidecar(
-        XisfFilePath(f"merged_{mosaic.stable_hash}_{hash_0}_{hash_1}.xisf")
-    )
+    return XisfFilePath(f"merged_{mosaic.stable_hash}_{hash_0}_{hash_1}.xisf")
 
 
 def placed_filename(

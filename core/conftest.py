@@ -90,18 +90,18 @@ def identified_testdata(init_ray, tmp_path_factory):
     # Run only identification (metadata + regrouping), not preview generation.
     run_graph(Graph({**chain(scatter_compute_image_metadata, build_regroup_graph)}))
 
-    # Force-evaluate lazy proxies into real dicts so they can be safely
-    # stored and later written back to the context without deadlocking
-    # (lazy proxies call back into the context actor when iterated, which
-    # deadlocks if done from inside the actor's own set() method).
-    from customization.types import CustomizedStacksDict
-    from targets.types import TargetsDict
+    # Eagerly resolve all ContextRefs to actual objects, so they can be
+    # re-stored in each test's fresh context via with_real_testdata.
     from stacks.simple_stack import SimpleStacksDict
 
-    stacks = CustomizedStacksDict(context.stacks)
-    targets = TargetsDict(context.targets)
-    mosaics = dict(context.mosaics)
-    calibration_stacks = SimpleStacksDict(context.calibration_stacks)
+    raw_stacks = context.stacks or {}
+    raw_targets = context.targets or {}
+    raw_mosaics = context.mosaics or {}
+
+    stacks = {k: ref.get() for k, ref in raw_stacks.items()}
+    targets = {k: ref.get() for k, ref in raw_targets.items()}
+    mosaics = {k: ref.get() for k, ref in raw_mosaics.items()}
+    calibration_stacks = SimpleStacksDict(context.calibration_stacks or {})
 
     return IdentifiedTestdata(
         stacks=stacks,
@@ -119,9 +119,27 @@ def with_real_testdata(test_context, identified_testdata):
     short-circuiting anything that depends on identification being correct.
     """
     from context import context
+    from cache.context_ref import ContextRef
+    from customization.types import CustomizedStacksDict
+    from targets.types import TargetsDict
+    from mosaics.types import MosaicsDict
 
-    context.stacks = identified_testdata.stacks
-    context.targets = identified_testdata.targets
-    context.mosaics = identified_testdata.mosaics
+    # Re-store each object as a ContextRef in the current test's fresh context.
+    stacks = CustomizedStacksDict({
+        k: ContextRef.store(("stacks", k), v)
+        for k, v in identified_testdata.stacks.items()
+    })
+    targets = TargetsDict({
+        k: ContextRef.store(("targets", k), v)
+        for k, v in identified_testdata.targets.items()
+    })
+    mosaics = MosaicsDict({
+        k: ContextRef.store(("mosaics", k), v)
+        for k, v in identified_testdata.mosaics.items()
+    })
+
+    context.stacks = stacks
+    context.targets = targets
+    context.mosaics = mosaics
     context.calibration_stacks = identified_testdata.calibration_stacks
     return identified_testdata

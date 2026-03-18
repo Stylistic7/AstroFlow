@@ -14,7 +14,7 @@ from metadata.image_types import is_master
 from hashing import hash_list_int
 from cache.content_hashed import ContentHashed
 from decorators import cached
-from hashing.types import LargeObject
+from cache.context_ref import ContextRef
 
 
 @beartype

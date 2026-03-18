@@ -77,15 +77,15 @@ def get_image(
 
         # Else, convert from .xisf and cache
         if object_type == "stack":
-            path = get_best_image(CompositeStack, context.stacks[object_id])
+            path = get_best_image(CompositeStack, context.stacks[object_id].get())
         elif object_type == "calibration_stack":
             path = get_best_image(
                 CalibrationStack, context.calibration_stacks[object_id]
             )
         elif object_type == "target":
-            path = get_best_image(Target, context.targets[object_id], filter)
+            path = get_best_image(Target, context.targets[object_id].get(), filter)
         elif object_type == "mosaic":
-            path = get_best_image(Mosaic, context.mosaics[object_id], filter)
+            path = get_best_image(Mosaic, context.mosaics[object_id].get(), filter)
         else:
             raise ValueError(f"Unknown object_type {object_type}")
 

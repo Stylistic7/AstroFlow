@@ -33,17 +33,17 @@ def get_thumbnail(object_type: type, *args):
 
 @thumbnails_bp.route("/thumbnail/stack/<stack_id>")
 def stack_thumbnail(stack_id: str):
-    return get_thumbnail(CustomizedStack, context.stacks[stack_id])
+    return get_thumbnail(CustomizedStack, context.stacks[stack_id].get())
 
 
 @thumbnails_bp.route("/thumbnail/target/<target_id>")
 def target_thumbnail(target_id: str):
-    return get_thumbnail(Target, context.targets[target_id])
+    return get_thumbnail(Target, context.targets[target_id].get())
 
 
 @thumbnails_bp.route("/thumbnail/mosaic/<mosaic_id>/<filter>")
 def mosaic_thumbnail(mosaic_id: str, filter: str):
-    return get_thumbnail(Mosaic, context.mosaics[mosaic_id], filter)
+    return get_thumbnail(Mosaic, context.mosaics[mosaic_id].get(), filter)
 
 
 # TODO: Use better stack types.
@@ -55,7 +55,7 @@ def calibration_stack_thumbnail(stack_id: str):
 @thumbnails_bp.route("/thumbnail/run/<stack_id>/<substack_id>/<flat_stack_id>")
 def run_thumbnail(stack_id: str, substack_id: str, flat_stack_id: str):
     stacks = context.stacks
-    stack = stacks[stack_id]
+    stack = stacks[stack_id].get()
     substack = stack.contents[substack_id]
     flat_stack = context.calibration_stacks[flat_stack_id]
     return get_thumbnail(SimpleStack, stack, substack, flat_stack)
@@ -80,4 +80,4 @@ def get_video(object_type: type, *args):
 
 @thumbnails_bp.route("/video/stack/<stack_id>")
 def stack_video(stack_id: str):
-    return get_video(CompositeStack, context.stacks[stack_id])
+    return get_video(CompositeStack, context.stacks[stack_id].get())

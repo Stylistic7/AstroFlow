@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from ray.runtime_context import get_runtime_context
 
 from hashing import hash_source_code
-from hashing.types import LargeObject
+from cache.context_ref import ContextRef
 from protocols import CacheProtocol, ContentHashProtocol
 from cache.types import NeverRun
 
@@ -101,7 +101,7 @@ def make_cached_decorator(
                     f"### cache key {key} contained large object, {size_mb:0.3f} MB"
                 )
 
-            if isinstance(cached, LargeObject):
+            if isinstance(cached, ContextRef):
                 assert cached.ref is None
 
             stored_hash = None
@@ -135,7 +135,7 @@ def make_cached_decorator(
             )
 
             if valid and not isinstance(cached_result, Exception):
-                if isinstance(cached_result, LargeObject):
+                if isinstance(cached_result, ContextRef):
                     assert cached_result.ref is None
                 return cached_result
 
@@ -167,7 +167,7 @@ def make_cached_decorator(
             def _handle_object_wrappers(obj: Any) -> Any:
                 assert not isinstance(obj, ray.ObjectRef)
 
-                if isinstance(obj, LargeObject):
+                if isinstance(obj, ContextRef):
                     return obj.strip_ref()
 
                 return obj

@@ -1,5 +1,6 @@
 from stacks.composite_stack import CompositeStack
 from hashing import hash_list_int
+from cache.context_ref import ContextRef
 
 import units
 
@@ -22,11 +23,10 @@ class CustomizedStack(CompositeStack):
         )
 
 
-class CustomizedStacksDict(dict[str, CustomizedStack]):
+class CustomizedStacksDict(dict[str, ContextRef]):
     def __hash__(self):
-        return hash_list_int(
-            [self[k].content_hash for k in sorted(self.keys())]
-        )
+        from cache.context_ref import dict_content_hash
+        return hash_list_int([dict_content_hash(self)])
 
     def __str__(self):
         return f"CustomizedStacksDict({len(self)})"

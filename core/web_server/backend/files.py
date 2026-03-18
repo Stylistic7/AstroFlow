@@ -73,7 +73,7 @@ def select_file():
 
 @files_bp.route("/api/open_stack_master/<stack_id>")
 def open_stack_master(stack_id):
-    stack = context.stacks[stack_id]
+    stack = context.stacks[stack_id].get()
     filename = stack_files.filename_fn(stack)
     print(f"### opening filename {filename}")
     subprocess.Popen(

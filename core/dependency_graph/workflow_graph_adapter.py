@@ -22,6 +22,17 @@ class WorkflowGraph(dict):
     pass
 
 
+class WorkflowGraphsDict(dict):
+    """Dict mapping workflow graph keys (tuples) to ContextRef objects."""
+    def __hash__(self):
+        from hashing import hash_list_int
+        from hashing.hashing import hash_list
+        return hash_list_int([hash_list(sorted(str(k) for k in self.keys()))])
+
+    def __str__(self):
+        return f"WorkflowGraphsDict({len(self)})"
+
+
 def node_to_id(node: Node) -> str:
     return str(node.task._function.__name__) + "_" + str(hash(node))
 
@@ -169,9 +180,12 @@ def store_workflow_graph(
     ts: TopologicalSorterWithStatus,
     subgraphs: list[TopologicalSorterWithStatus],
 ):
-    context.or_equals(
-        "workflow_graphs", {key: to_workflow_graph(ts, subgraphs)}
-    )
+    from cache.context_ref import ContextRef
+
+    wf_graph = to_workflow_graph(ts, subgraphs)
+    cache_key = ("workflow_graphs", str(key))
+    new_ref = ContextRef.store(cache_key, wf_graph)
+    context.or_equals("workflow_graphs", {key: new_ref})
 
 
 def store_node_status(node: Node, result: Any, logs: list[Any]):

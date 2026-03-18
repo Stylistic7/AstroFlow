@@ -79,12 +79,6 @@ def test_load_from_cache(empty_context):
     assert context.foo == "bar"
 
 
-def test_or_equals(empty_context):
-    context.foo = {"a": 1}
-    context.or_equals("foo", {"b": 2})
-    assert context.foo == {"a": 1, "b": 2}
-
-
 def test_and_equals(empty_context):
     context.foo = ["a"]
     context.and_equals("foo", ["b"])
@@ -135,26 +129,6 @@ def test_context_actor_speed(empty_context, benchmark):
             context[k] = v
 
     benchmark(insert_into_context_actor)
-
-
-def test_lazy_dict_content_hash_changes_on_value_update(empty_context):
-    stack_v1 = MockStack(content_hash="hash_v1")
-    stack_v2 = MockStack(content_hash="hash_v2")
-
-    context.stacks = {"abc123": stack_v1}
-    hash_before = context.get_content_hash("stacks")
-
-    # Same key, different content_hash — must invalidate
-    context.or_equals("stacks", {"abc123": stack_v2})
-    hash_after = context.get_content_hash("stacks")
-
-    assert hash_before != hash_after
-
-
-def test_lazy_dict_content_hash_stable_when_unchanged(empty_context):
-    context.stacks = {"abc123": MockStack(content_hash="hash_v1")}
-
-    assert context.get_content_hash("stacks") == context.get_content_hash("stacks")
 
 
 def test_direct_diskcache_speed(empty_context, benchmark):

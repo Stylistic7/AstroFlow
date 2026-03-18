@@ -67,7 +67,7 @@ def _download_from_asiairs() -> Graph:
 
 
 def _update_settings(action: Action) -> Graph:
-    stack = context.stacks[action["stack_id"]]
+    stack = context.stacks[action["stack_id"]].get()
     return Graph(
         {
             store_customized_stack: {
@@ -84,7 +84,7 @@ def command_done() -> None:
 
 
 def _process_stack(action: Action) -> Graph:
-    stack = context.stacks[action["object_id"]]
+    stack = context.stacks[action["object_id"]].get()
 
     return Graph(
         {
@@ -97,7 +97,7 @@ def _process_stack(action: Action) -> Graph:
 
 
 def _process_target(action: Action) -> Graph:
-    target = context.targets[action["object_id"]]
+    target = context.targets[action["object_id"]].get()
 
     return Graph(
         {
@@ -110,7 +110,7 @@ def _process_target(action: Action) -> Graph:
 
 
 def _process_mosaic(action: Action) -> Graph:
-    mosaic = context.mosaics[action["object_id"]]
+    mosaic = context.mosaics[action["object_id"]].get()
 
     tasks = []
     for mode in ["subframe", "master"]:
@@ -134,13 +134,13 @@ def _process_mosaic(action: Action) -> Graph:
 def _post_process(action: Action) -> Graph:
     print(f"### _post_process {action=}")
     if action["object_type"] == "stack":
-        stack = context.stacks[action["object_id"]]
+        stack = context.stacks[action["object_id"]].get()
         run_graph(Graph({(post_process_stack, stack): {}}))
     elif action["object_type"] == "target":
-        target = context.targets[action["object_id"]]
+        target = context.targets[action["object_id"]].get()
         run_graph(Graph({(post_process_target, target): {}}))
     elif action["object_type"] == "mosaic":
-        mosaic = context.mosaics[action["object_id"]]
+        mosaic = context.mosaics[action["object_id"]].get()
         run_graph(Graph({(post_process_mosaic, mosaic): {}}))
 
 

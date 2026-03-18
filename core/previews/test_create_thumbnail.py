@@ -35,7 +35,7 @@ def test_single_stack(test_context) -> None:
 
     stacks = context.stacks
     assert len(stacks) == 1
-    stack = next(iter(stacks.values()))
+    stack = next(iter(stacks.values())).get()
 
     ray.get(stack_files.remote(stack))
 

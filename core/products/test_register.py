@@ -45,14 +45,14 @@ def stack_files(stack: CompositeStack) -> XisfFilePath:
 
 
 def test_single_stack(with_real_testdata) -> None:
-    stack = next(iter(context.stacks.values()))
+    stack = next(iter(context.stacks.values())).get()
 
     filename = ray.get(stack_files.remote(stack))
     assert os.path.exists(filename)
 
 
 def test_registry(with_real_testdata) -> None:
-    stack = next(iter(context.stacks.values()))
+    stack = next(iter(context.stacks.values())).get()
 
     fn = get_producer(MediaType.IMAGE, CompositeStack, QualityLevel.SUBFRAME)
     assert fn is not None

@@ -35,7 +35,8 @@ def scatter_stack_thumbnails() -> Graph:
     settings = context.settings
     subframe_thumbnail_width = settings.preview_settings.subframe_thumbnail_width
 
-    for stack in context.stacks.values():
+    for stack_ref in context.stacks.values():
+        stack = stack_ref.get()
         tasks.append((stack_thumbnail, stack))
         tasks.append((stack_thumbnail_video, stack, subframe_thumbnail_width))
         tasks.append((create_flat_correction_thumbnails, stack, calibration_stacks, subframe_thumbnail_width))

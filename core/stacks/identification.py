@@ -7,13 +7,14 @@ import clustering
 from stacks.composite_stack import CompositeStack, CompositeStacksDict
 from metadata.classes import FrameHash, MetadataDict
 from decorators import cached
-from hashing.types import LargeObject
+from cache.context_ref import ContextRef
+from cache.context_ref import ContextRef
 
 
 @cached.remote
 @beartype
 def identify_stacks(
-    metadata_ref: LargeObject,
+    metadata_ref: ContextRef,
     angular_tolerance: float,
     light_frames: tuple[FrameHash, ...],
     min_frames_in_stack: int,
@@ -102,7 +103,9 @@ def identify_stacks(
                             filter_frames, metadata=metadata, max_run_gap=max_run_gap
                         )
                         if new_stack is not None:
-                            new_stacks[new_stack.stable_hash] = new_stack
+                            new_stacks[new_stack.stable_hash] = ContextRef.store(
+                                ("stacks", new_stack.stable_hash), new_stack
+                            )
 
     assert None not in new_stacks.values()
 

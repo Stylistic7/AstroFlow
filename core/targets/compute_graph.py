@@ -41,7 +41,7 @@ def build_target_subgraph(
     )
 
     graph[(post_process_target, target, stacks)] = {
-        (build_stacking_subgraph, stacks[stack_id], calibration_stacks, development_settings, min_frames_in_stack)
+        (build_stacking_subgraph, stacks[stack_id].get(), calibration_stacks, development_settings, min_frames_in_stack)
         for stack_id in target.stack_ids
     }
 
@@ -61,5 +61,9 @@ def process_targets_for_ui(targets: dict) -> dict:
         return convert_to_dict(target, transform=my_transform)
 
     # TODO: Parallelize this.
-    ui_targets = {h: prepare_target(s) for h, s in targets.items()}
+    from cache.context_ref import ContextRef
+    ui_targets = {
+        h: prepare_target(ref.get() if isinstance(ref, ContextRef) else ref)
+        for h, ref in targets.items()
+    }
     return ui_targets

@@ -67,7 +67,7 @@ def test_orion_pane(test_context):
     stack_id = next(iter(context.stacks))
     context.shopping_cart = [("stack", stack_id)]
 
-    print(f"### made stack {next(iter(context.stacks.values()))}")
+    print(f"### made stack {next(iter(context.stacks.values())).get()}")
 
     graph = build_compute_graph()
     run_graph(graph, debug=True)
@@ -83,5 +83,7 @@ def test_orion_pane(test_context):
     assert len(ui_stacks) == 1
     assert list(ui_stacks.keys()) == [stack_id]
 
-    workflow_graph = context["workflow_graphs"][("stack", stack_id)]
+    wf = context["workflow_graphs"] or {}
+    workflow_graph_ref = wf.get(("stack", stack_id))
+    workflow_graph = workflow_graph_ref.get() if workflow_graph_ref is not None else None
     print(f"### stack workflow graph {workflow_graph}")

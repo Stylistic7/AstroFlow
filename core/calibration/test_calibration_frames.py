@@ -139,9 +139,9 @@ def test_stack_dependency_graph(test_context) -> None:
     assert len(stacks) == 1
     assert len(context.calibration_stacks) == 6
 
-    assert all(s.image_type == "light" for s in stacks.values())
+    assert all(ref.get().image_type == "light" for ref in stacks.values())
 
-    stack = next(iter(stacks.values()))
+    stack = next(iter(stacks.values())).get()
     _print_stack(stack)
 
     bias_stack_id = next(iter(stack.contents.values())).dependencies["bias"].stack_id
@@ -179,7 +179,7 @@ def test_one_light_run_one_dark_run(test_context) -> None:
     assert len(stacks) == 1
     assert len(context.calibration_stacks) == 1
 
-    light_stacks = [s for s in stacks.values() if s.image_type == "light"]
+    light_stacks = [ref.get() for ref in stacks.values() if ref.get().image_type == "light"]
     assert len(light_stacks) == 1
 
 
@@ -266,9 +266,9 @@ def test_flats_from_different_camera(test_context) -> None:
     assert len(context.calibration_stacks) == 6
 
     light_stacks = [
-        s
-        for s in stacks.values()
-        if s.image_type == "light" and isinstance(s, CompositeStack)
+        ref.get()
+        for ref in stacks.values()
+        if ref.get().image_type == "light" and isinstance(ref.get(), CompositeStack)
     ]
     assert len(light_stacks) == 2
 
@@ -331,7 +331,7 @@ def test_dark_scaling(test_context) -> None:
     assert len(stacks) == 1
     assert len(context.calibration_stacks) == 4
 
-    light_stacks = [s for s in stacks.values() if s.image_type == "light"]
+    light_stacks = [ref.get() for ref in stacks.values() if ref.get().image_type == "light"]
     assert len(light_stacks) == 1
 
 
@@ -362,9 +362,9 @@ def test_temperature_mismatch(test_context) -> None:
     assert len(context.calibration_stacks) == 1
 
     light_stacks = [
-        s
-        for s in stacks.values()
-        if isinstance(s, CompositeStack) and s.image_type == "light"
+        ref.get()
+        for ref in stacks.values()
+        if isinstance(ref.get(), CompositeStack) and ref.get().image_type == "light"
     ]
     assert len(light_stacks) == 1
     stack = light_stacks[0]
@@ -416,7 +416,7 @@ def test_stack_calibration_frames(test_context) -> None:
     assert len(stacks) == 1
     assert len(context.calibration_stacks) == 3
 
-    light_stacks = [s for s in stacks.values() if s.image_type == "light"]
+    light_stacks = [ref.get() for ref in stacks.values() if ref.get().image_type == "light"]
     assert len(light_stacks) == 1
 
     for cal_stack in context.calibration_stacks.values():
@@ -467,7 +467,7 @@ def test_multiple_filters_for_flats(test_context) -> None:
     assert len(stacks) == 1
     assert len(context.calibration_stacks) == 2
 
-    light_stacks = [s for s in stacks.values() if s.image_type == "light"]
+    light_stacks = [ref.get() for ref in stacks.values() if ref.get().image_type == "light"]
     assert len(light_stacks) == 1
 
 
@@ -545,9 +545,9 @@ def test_flat_frame_selection(test_context) -> None:
     print(f"### second_flat_stack {second_flat_stack}")
 
     light_stacks = [
-        s
-        for s in context.stacks.values()
-        if s.image_type == "light" and isinstance(s, CompositeStack)
+        ref.get()
+        for ref in context.stacks.values()
+        if ref.get().image_type == "light" and isinstance(ref.get(), CompositeStack)
     ]
     assert len(light_stacks) == 1
     stack = next(iter(light_stacks))
@@ -573,9 +573,9 @@ def test_flat_frame_selection(test_context) -> None:
     assert len(context.calibration_stacks) == 2
 
     light_stacks = [
-        s
-        for s in stacks.values()
-        if s.image_type == "light" and isinstance(s, CompositeStack)
+        ref.get()
+        for ref in stacks.values()
+        if ref.get().image_type == "light" and isinstance(ref.get(), CompositeStack)
     ]
     assert len(light_stacks) == 1
     stack = next(iter(light_stacks))
@@ -628,5 +628,5 @@ def test_generic_grouping(test_context) -> None:
     assert len(stacks) == 1
     assert len(context.calibration_stacks) == 3
 
-    stack = next(iter(stacks.values()))
+    stack = next(iter(stacks.values())).get()
     assert len(stack.contents) == 1

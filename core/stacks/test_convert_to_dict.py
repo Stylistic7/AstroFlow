@@ -29,7 +29,7 @@ def test_convert_to_dict(test_context) -> None:
     stacks = context.stacks
     assert len(stacks) == 1
 
-    stack = next(iter(stacks.values()))
+    stack = next(iter(stacks.values())).get()
 
     stack_dict = convert_to_dict(stack)
     for substack in stack_dict["contents"].values():

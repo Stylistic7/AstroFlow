@@ -4,6 +4,7 @@ from beartype import beartype
 from frozendict import frozendict
 
 from context import context
+from cache.context_ref import ContextRef
 from stacks.composite_stack import CompositeStack, CompositeStacksDict
 from stacks.simple_stack import SimpleStack, SimpleStacksDict
 from calibration import associate_with_stack
@@ -32,7 +33,10 @@ def apply_settings(
 @ray.remote
 @beartype
 def store_customized_stack(stack: CustomizedStack) -> None:
-    context.or_equals("stacks", {stack.stable_hash: stack})
+    new_ref = ContextRef.store(("stacks", stack.stable_hash), stack)
+    existing = context.stacks or CompositeStacksDict()
+    merged = CompositeStacksDict({**existing, stack.stable_hash: new_ref})
+    context.stacks = merged
 
 
 # TODO: Add tests in test_customization.py
@@ -67,7 +71,10 @@ def customize_stack(
 @ray.remote
 @beartype
 def gather_customize_stacks(*ancestor_results: CustomizedStack | None) -> CustomizedStacksDict:
-    return CustomizedStacksDict({s.stable_hash: s for s in ancestor_results if s is not None})
+    return CustomizedStacksDict({
+        s.stable_hash: ContextRef.store(("stacks", s.stable_hash), s)
+        for s in ancestor_results if s is not None
+    })
 
 
 @cached.remote
@@ -83,12 +90,12 @@ def scatter_customize_stacks(
             gather_customize_stacks: [
                 (
                     customize_stack,
-                    v,
+                    ref.get(),
                     cal_stacks,
                     stack_settings.get(k, StackSettings()),
                     min_frames_in_stack,
                 )
-                for k, v in stacks.items()
+                for k, ref in stacks.items()
             ]
         }
     )
@@ -100,6 +107,7 @@ def scatter_customize_cal_stacks(cal_stacks: SimpleStacksDict) -> SimpleStacksDi
     print(
         f"### scatter_customize_cal_stacks type(cal_stacks) {type(cal_stacks)}"
     )
+    # cal_stacks is a SimpleStacksDict of real SimpleStack objects — pass through as-is
     return cal_stacks
 
 
@@ -109,8 +117,8 @@ def scatter_customize_targets(
 ) -> TargetsDict:
     return TargetsDict(
         {
-            h: t
-            for h, t in targets.items()
+            h: ref
+            for h, ref in targets.items()
             if not target_settings.get(h, TargetSettings()).is_quarantined
         }
     )

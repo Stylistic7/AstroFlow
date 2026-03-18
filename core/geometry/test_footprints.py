@@ -27,9 +27,7 @@ def test_stack(test_context) -> None:
 
     stacks = context.stacks
     assert len(stacks) == 1
-    stack = next(
-        iter(s for s in stacks.values() if isinstance(s, CompositeStack))
-    )
+    stack = next(iter(stacks.values())).get()
 
     x, y = project_polygon(stack.footprint, mercator.MercatorProjection())
     projected_footprint = Polygon(zip(x, y))
@@ -116,7 +114,7 @@ def test_target(test_context) -> None:
     targets = context.targets
     assert len(targets) == 2
 
-    target = next(iter(targets.values()))
+    target = next(iter(targets.values())).get()
 
     x, y = project_polygon(target.footprint, mercator.MercatorProjection())
     projected_footprint = Polygon(zip(x, y))
@@ -205,7 +203,7 @@ def test_mosaic(test_context) -> None:
 
     mosaics = context.mosaics
     assert len(mosaics) == 1
-    mosaic = next(iter(mosaics.values()))
+    mosaic = next(iter(mosaics.values())).get()
 
     x, y = project_polygon(mosaic.footprint, mercator.MercatorProjection())
     projected_footprint = Polygon(zip(x, y))

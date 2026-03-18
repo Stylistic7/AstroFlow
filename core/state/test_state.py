@@ -69,7 +69,7 @@ def test_single_compute_graph(test_context):
 
     stacks = context.stacks
     assert len(stacks) == 1
-    toplevel_stack = next(iter(stacks.values()))
+    toplevel_stack = next(iter(stacks.values())).get()
 
     context.shopping_cart = [("stack", toplevel_stack.stable_hash)]
 

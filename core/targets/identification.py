@@ -7,6 +7,7 @@ from targets.types import Target, TargetsDict
 from customization.types import CustomizedStacksDict
 from stacks.types import StackHash
 from decorators import cached
+from cache.context_ref import ContextRef
 
 
 @cached.remote
@@ -15,10 +16,13 @@ def identify_targets(
 ) -> TargetsDict:
     print(f"### identify_targets stacks {list(stacks.keys())}")
 
+    # Resolve all ContextRefs once up-front for efficient access
+    resolved = {k: ref.get() for k, ref in stacks.items()}
+
     @beartype
     def scale_clusters() -> Iterator[tuple[StackHash, ...]]:
         scales = [
-            (stack.stable_hash, stack.image_scale) for stack in stacks.values()
+            (stack.stable_hash, stack.image_scale) for stack in resolved.values()
         ]
         for cluster in clustering.cluster_continuous(scales, epsilon=0.2):
             scale_stacks, _ = zip(*cluster)
@@ -30,11 +34,11 @@ def identify_targets(
     ) -> Iterator[tuple[StackHash, ...]]:
         cameras = [
             (
-                stacks[s].stable_hash,
+                resolved[s].stable_hash,
                 (
-                    stacks[s].camera,
-                    stacks[s].width_pixels,
-                    stacks[s].height_pixels,
+                    resolved[s].camera,
+                    resolved[s].width_pixels,
+                    resolved[s].height_pixels,
                 ),
             )
             for s in stack_hashes
@@ -50,8 +54,8 @@ def identify_targets(
     ) -> Iterator[tuple[StackHash, ...]]:
         rotation_angles = [
             (
-                stacks[s].stable_hash,
-                stacks[s].rotation_angle,
+                resolved[s].stable_hash,
+                resolved[s].rotation_angle,
             )
             for s in stack_hashes
         ]
@@ -67,9 +71,11 @@ def identify_targets(
             for rotation_stacks in rotation_clusters(camera_stacks):
                 try:
                     new_target = Target.from_stacks(
-                        [stacks[s] for s in rotation_stacks]
+                        [resolved[s] for s in rotation_stacks]
                     )
-                    new_targets[new_target.stable_hash] = new_target
+                    new_targets[new_target.stable_hash] = ContextRef.store(
+                        ("targets", new_target.stable_hash), new_target
+                    )
                 except ValueError:
                     print(
                         f"### WARNING: Failed to create target from "

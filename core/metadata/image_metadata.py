@@ -11,7 +11,7 @@ import plate_solving
 from dependency_graph import Graph
 from context import context
 from decorators.decorators import cached, measure_performance
-from hashing.types import LargeObject
+from cache.context_ref import ContextRef
 
 # TODO: I need to associate dark and flat frames *before* computing thumbnails.
 
@@ -135,7 +135,7 @@ def compute_image_metadata(filename: Path | os.PathLike) -> ImageMetadata:
 @ray.remote(resources={"fastest_storage": 0.001})
 @beartype
 @measure_performance
-def load_metadata() -> LargeObject:
+def load_metadata() -> ContextRef:
     quarantined_files = context.quarantined_files or set()
 
     # TODO: This won't support disconnected storage media.
@@ -167,7 +167,7 @@ def load_metadata() -> LargeObject:
                 f"value type {type(value)}"
             )
 
-    # TODO: Pass the LargeObject everywhere, and remove this from the context.
+    # TODO: Pass the ContextRef everywhere, and remove this from the context.
     context.metadata = metadata
 
-    return LargeObject(metadata)
+    return ContextRef.store_large(metadata)

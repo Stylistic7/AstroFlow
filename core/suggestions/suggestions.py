@@ -29,5 +29,5 @@ def find_missing_tiles(mosaic: Mosaic) -> None:
 @beartype
 def make_suggestions() -> None:
     print("### Entering make_suggestions")
-    for mosaic in context.mosaics.values():
-        find_missing_tiles(mosaic)
+    for mosaic_ref in context.mosaics.values():
+        find_missing_tiles(mosaic_ref.get())

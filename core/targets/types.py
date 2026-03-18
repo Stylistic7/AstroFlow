@@ -9,6 +9,7 @@ from attributes import (
     ChronologyAttributes,
 )
 from cache.content_hashed import ContentHashed
+from cache.context_ref import ContextRef
 from beartype import beartype
 
 TargetHash = NewType("TargetHash", str)
@@ -58,11 +59,10 @@ class Target(
     # TODO: Add a valid() method, and assert on it.
 
 
-class TargetsDict(dict[TargetHash, Target]):
+class TargetsDict(dict[str, ContextRef]):
     def __hash__(self):
-        return hash_list_int(
-            [self[k].content_hash for k in sorted(self.keys())]
-        )
+        from cache.context_ref import dict_content_hash
+        return hash_list_int([dict_content_hash(self)])
 
     def __str__(self):
-        return f"SimpleStacksDict({len(self)})"
+        return f"TargetsDict({len(self)})"

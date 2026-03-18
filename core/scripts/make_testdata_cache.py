@@ -25,7 +25,8 @@ def create_tar_gz_from_directory(source_dir, output_filename):
 
 def copy_all_stack_data(metadata, cache, testdata_cache, stack_id):
     stacks = cache["stacks"]
-    stack = stacks[stack_id]
+    stack_ref = stacks[stack_id]
+    stack = stack_ref.get() if hasattr(stack_ref, "get") else stack_ref
     assert isinstance(stack, CompositeStack)
     for substack in stack.contents.values():
         assert isinstance(substack, SimpleStack)
@@ -37,7 +38,8 @@ def copy_all_stack_data(metadata, cache, testdata_cache, stack_id):
 
 def copy_all_target_data(metadata, cache, testdata_cache, target_id):
     targets = cache["targets"]
-    target = targets[target_id]
+    target_ref = targets[target_id]
+    target = target_ref.get() if hasattr(target_ref, "get") else target_ref
     for stack_id in target.stack_ids:
         copy_all_stack_data(metadata, cache, testdata_cache, stack_id)
 
@@ -55,11 +57,13 @@ def copy_image(metadata, cache, testdata_cache, content_hash, target_dir):
 def copy_all_mosaic_data(metadata, cache, testdata_cache, mosaic_id):
     targets = cache["targets"]
     mosaics = cache["mosaics"]
-    mosaic = mosaics[mosaic_id]
+    mosaic_ref = mosaics[mosaic_id]
+    mosaic = mosaic_ref.get() if hasattr(mosaic_ref, "get") else mosaic_ref
     stack_ids = [
         stack_id
         for target_id in mosaic.target_ids
-        for stack_id in targets[target_id].stack_ids
+        for target_ref in [targets[target_id]]
+        for stack_id in (target_ref.get() if hasattr(target_ref, "get") else target_ref).stack_ids
     ]
     for stack_id in stack_ids:
         copy_all_stack_data(metadata, cache, testdata_cache, stack_id)

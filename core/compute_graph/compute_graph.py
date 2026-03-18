@@ -3,6 +3,7 @@ from typing import Any
 from beartype import beartype
 
 from context import context
+from cache.context_ref import ContextRef
 from metadata.image_metadata import scatter_compute_image_metadata
 from clustering import cluster_by_image_center
 from calibration import (
@@ -33,7 +34,7 @@ from customization.compute_graph import (
     scatter_customize_targets,
 )
 from mosaics.compute_graph import stacks_for_mosaic, targets_for_mosaic
-from hashing.types import LargeObject
+from cache.context_ref import ContextRef
 from customization.settings import Settings
 from customization.types import CustomizedStacksDict
 
@@ -56,24 +57,29 @@ def store_calibration_stacks(
 @beartype
 def store_stacks(stacks: dict[str, Any]) -> dict[str, Any]:
     assert None not in stacks.values()
-    context.stacks = CustomizedStacksDict(stacks)
+    # stacks values are already ContextRefs (from gather_customize_stacks)
+    result = CustomizedStacksDict(stacks)
+    context.stacks = result
     print(f"### store_stacks: Stored {len(stacks)} stacks")
-    return stacks
+    return result
 
 
 @ray.remote
 @beartype
 def store_targets(targets: dict[str, Any]) -> dict[str, Any]:
     assert None not in targets.values()
-    context.targets = TargetsDict(targets)
+    # targets values are already ContextRefs (from identify_targets)
+    result = TargetsDict(targets)
+    context.targets = result
     print(f"### store_targets: Stored {len(targets)} targets")
-    return targets
+    return result
 
 
 @ray.remote
 @beartype
 def store_mosaics(mosaics: MosaicsDict) -> MosaicsDict:
     assert None not in mosaics.values()
+    # mosaics values are already ContextRefs (from identify_mosaics)
     context.mosaics = mosaics
     print(f"### store_mosaics: Stored {len(mosaics)} mosaics")
     return mosaics
@@ -112,14 +118,14 @@ def combine_dicts(*ancestor_results: dict[Any, Any]) -> dict[Any, Any]:
 
 @ray.remote
 def scatter_spatial_groups(
-    metadata_ref: LargeObject, settings: Settings, spatial_groups
+    metadata_ref: ContextRef, settings: Settings, spatial_groups
 ) -> Graph:
     cs = settings.clustering_settings
 
     context.stacks = CompositeStacksDict()
     context.calibration_stacks = SimpleStacksDict()
     context.targets = TargetsDict()
-    context.mosaics = MosaicsDict()
+    context.mosaics = MosaicsDict({})  # empty dict of refs
 
     graph = Graph({})
 
@@ -200,7 +206,7 @@ def scatter_spatial_groups(
 
 @ray.remote
 @beartype
-def build_regroup_graph(metadata_ref: LargeObject) -> Graph:
+def build_regroup_graph(metadata_ref: ContextRef) -> Graph:
     settings = context.settings or Settings()
     cs = settings.clustering_settings
     cluster_by_image_center_task = (
@@ -241,7 +247,8 @@ def build_preview_graph() -> Graph:
     tasks = []
     tasks.append((scatter_stack_thumbnails,))
 
-    for mosaic in context.mosaics.values():
+    for mosaic_ref in context.mosaics.values():
+        mosaic = mosaic_ref.get()
         tasks.append(
             (
                 build_mosaic_subgraph,
@@ -291,14 +298,14 @@ def build_main_processing_graph() -> Graph:
                     f"### WARNING: stack {id} is in shopping cart but does not exist"
                 )
                 continue
-            tasks.append((build_stacking_subgraph, stacks[id], calibration_stacks, development_settings, min_frames_in_stack))
+            tasks.append((build_stacking_subgraph, stacks[id].get(), calibration_stacks, development_settings, min_frames_in_stack))
         elif type == "target":
             if id not in targets:
                 print(
                     f"### WARNING: target {id} is in shopping cart but does not exist"
                 )
                 continue
-            tasks.append((build_target_subgraph, targets[id], development_settings, min_frames_in_stack))
+            tasks.append((build_target_subgraph, targets[id].get(), development_settings, min_frames_in_stack))
         if type == "mosaic":
             if id not in mosaics:
                 print(
@@ -306,7 +313,7 @@ def build_main_processing_graph() -> Graph:
                 )
                 continue
 
-            mosaic = mosaics[id]
+            mosaic = mosaics[id].get()
             tasks.append(
                 (
                     build_mosaic_subgraph,

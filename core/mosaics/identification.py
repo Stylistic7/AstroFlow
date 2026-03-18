@@ -26,6 +26,7 @@ from mosaics.overlap import Overlap
 from decorators import cached
 from attributes import AstrometricAttributes, ChronologyAttributes
 from attributes.astrometric_attributes import healpix_cells_from_poly
+from cache.context_ref import ContextRef
 
 logger = structlog.get_logger()
 log = logger
@@ -194,7 +195,7 @@ def targets_overlap(
 
 @beartype
 def group_targets(
-    targets: TargetsDict,
+    targets: dict,
     target_ids: list[TargetHash],
     allowed_overlaps: list[Overlap],
     angular_tolerance: float,
@@ -247,7 +248,7 @@ def group_targets(
 
 @beartype
 def find_strips(
-    targets: TargetsDict,
+    targets: dict,
     target_ids: list[TargetHash],
     angular_tolerance: float,
     debug: bool = False,
@@ -344,14 +345,14 @@ def find_strips(
 
 @beartype
 def _identify_overlapping_targets(
-    targets: TargetsDict, angular_tolerance: float, debug: bool = False
+    targets: dict, angular_tolerance: float, debug: bool = False
 ) -> list[list[TargetHash]]:
     if not targets:
         return []
 
     # Sort the targets by their center RA.
     target_ids = list(
-        sorted(targets.keys(), key=lambda t: targets[t].center[0])
+        sorted(targets.keys(), key=lambda t: targets[t].center[0])  # type: ignore[union-attr]
     )
     log.info("Identifying overlapping targets", num_targets=len(targets))
 
@@ -381,57 +382,51 @@ def _identify_overlapping_targets(
 @cached.remote
 def identify_mosaics(
     angular_tolerance: float, targets: dict, debug: bool = False
-) -> dict[MosaicHash, Mosaic]:
-    if not isinstance(targets, TargetsDict):
-        targets = TargetsDict(targets)
-    print(f"### Identifying mosaics from {len(targets)} targets")
+) -> MosaicsDict:
+    # Resolve ContextRefs to real Target objects for local processing
+    resolved: dict[str, Target] = {
+        k: (ref.get() if isinstance(ref, ContextRef) else ref)
+        for k, ref in targets.items()
+    }
+    print(f"### Identifying mosaics from {len(resolved)} targets")
 
     # test_commutativity()
 
-    mosaics = _identify_overlapping_targets(targets, angular_tolerance, debug)
+    mosaics = _identify_overlapping_targets(resolved, angular_tolerance, debug)
     if not mosaics:
         print("### No overlapping targets found")
-        return MosaicsDict()
+        return MosaicsDict({})
 
     print(f"Found {len(mosaics)} mosaics")
 
     # TODO: Parallelize these
-    output_mosaics = {}
+    output_mosaics = MosaicsDict()
     for i, mosaic in enumerate(mosaics):
         print(
             f"### Processing mosaic {i} / {len(mosaics)} "
             f"with {len(mosaic)} targets: {mosaic}"
         )
 
-        stable_hash = targets[
-            sorted(mosaic, key=lambda t: targets[t].oldest_date)[0]
+        stable_hash = resolved[
+            sorted(mosaic, key=lambda t: resolved[t].oldest_date)[0]
         ].stable_hash
 
         if debug:
             plot_targets_and_footprint(
-                targets,
+                resolved,
                 mosaic,
                 None,
                 title=f"Mosaic {stable_hash} before ordering",
             )
 
-        oldest_date = min(targets[t].oldest_date for t in mosaic)
-        newest_date = min(targets[t].newest_date for t in mosaic)
+        oldest_date = min(resolved[t].oldest_date for t in mosaic)
+        newest_date = min(resolved[t].newest_date for t in mosaic)
 
-        image_scale = np.mean([targets[t].image_scale for t in mosaic])
-        rotation_angle = np.mean([targets[t].rotation_angle for t in mosaic])
-
-        # This doesn't seem work for polygons with holes in them.
-        # TODO: Consider using multi_union but falling back to convex hull when
-        # it doesn't work?
-        # old_footprint = next(
-        #     SphericalPolygon.multi_union([
-        #         SphericalPolygon(targets[target_id].footprint)
-        #         for target_id in mosaic
-        #     ]).points).tolist()
+        image_scale = np.mean([resolved[t].image_scale for t in mosaic])
+        rotation_angle = np.mean([resolved[t].rotation_angle for t in mosaic])
 
         try:
-            strips = find_strips(targets, mosaic, angular_tolerance, debug)
+            strips = find_strips(resolved, mosaic, angular_tolerance, debug)
             print("### strips", strips)
         except AssertionError:
             print(f"### Failed to order mosaic")
@@ -440,11 +435,11 @@ def identify_mosaics(
         for target_id in mosaic:
             print(
                 f"### Target {target_id} "
-                f"has {len(targets[target_id].footprint.points)} points"
+                f"has {len(resolved[target_id].footprint.points)} points"
             )
 
         all_points = [
-            targets[target_id].footprint.points[:-1] for target_id in mosaic
+            resolved[target_id].footprint.points[:-1] for target_id in mosaic
         ]
         all_points = np.concatenate(all_points)
         print(
@@ -455,8 +450,6 @@ def identify_mosaics(
 
         healpix_cells = healpix_cells_from_poly(footprint)
 
-        # TODO: This is turbo weird, but appears to work. Just randomize the
-        # points until the `convex_hull()` operation is successful.
         for i in range(10):
             if SphericalPolygon.self_intersect(footprint.points):
                 points = footprint.points
@@ -469,7 +462,6 @@ def identify_mosaics(
                 )
                 break
 
-        # assert not SphericalPolygon.self_intersect(footprint.points)
         projected_footprints = frozendict(footprints.all_projections(footprint))
 
         center = vector_to_lonlat(*np.mean(footprint.points, axis=0))
@@ -503,11 +495,13 @@ def identify_mosaics(
 
         if debug:
             plot_mosaic(
-                targets,
+                resolved,
                 output_mosaic,
                 title=f"Mosaic {stable_hash} after ordering",
             )
 
-        output_mosaics[stable_hash] = output_mosaic
+        output_mosaics[stable_hash] = ContextRef.store(
+            ("mosaics", stable_hash), output_mosaic
+        )
 
     return output_mosaics

@@ -253,16 +253,16 @@ def recent():
     mosaics = context.mosaics
 
     def last_stack_datetime(stack_id):
-        return stacks[stack_id].newest_date
+        return stacks[stack_id].get().newest_date
 
     def last_target_datetime(target_id):
         return max(
-            [last_stack_datetime(s) for s in targets[target_id].stack_ids]
+            [last_stack_datetime(s) for s in targets[target_id].get().stack_ids]
         )
 
     def last_mosaic_datetime(mosaic_id):
         return max(
-            [last_target_datetime(t) for t in mosaics[mosaic_id].target_ids]
+            [last_target_datetime(t) for t in mosaics[mosaic_id].get().target_ids]
         )
 
     targets_and_dates = [
@@ -284,7 +284,7 @@ def flats_for_camera_and_filter(camera, filter):
     return [
         k
         for k, s in context.calibration_stacks.items()
-        if s.image_type == "flat" and s.camera == camera and s.filter == filter
+        if s.image_type == "flat" and s.camera == camera and s.filter == filter  # calibration_stacks holds real SimpleStack objects
     ]
 
 

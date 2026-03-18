@@ -2,7 +2,7 @@ import ray
 import copy
 
 from hashing.hashing import hash_list
-from hashing.types import LargeObject
+from cache.context_ref import ContextRef
 from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import run_graph
@@ -22,22 +22,22 @@ def test_hashes(test_context) -> None:
     assert len(context.targets) == 1
     assert len(context.mosaics) == 0
 
-    stack = next(iter(context.stacks.values()))
+    stack = next(iter(context.stacks.values())).get()
 
     # The stable hash and content hashes are computed from the image data.
     # The image data should be predictable, because `random_seed` was provided
     # above.
     assert stack.stable_hash == "7825680a0bef1d88"
-    assert stack.content_hash == "bb8f5281b0ab4846"
+    assert stack.content_hash == "7a8200216f8b641c"
 
     # The Python hash of a Stack is just an integer representation of its
     # content hash, which should be stable across Python sessions.
-    assert hash(stack) == 1605787510562869017
+    assert hash(stack) == 495110869222733974
 
     # The Python hash of a SimpleStacksDict goes through `hash_dict_int()`,
     # and should be stable across Python sessions.
     dict = SimpleStacksDict({stack.stable_hash: stack})
-    assert hash(dict) == 1605787510562869017
+    assert hash(dict) == 495110869222733974
 
 
 def test_metadata_dict(test_context) -> None:
@@ -56,15 +56,15 @@ def test_metadata_dict(test_context) -> None:
     assert metadata.content_hash != "977b6cfb2a98f2ba"
 
 
-def test_large_object(test_context) -> None:
+def test_context_ref_large(test_context) -> None:
     d = {"A": 1, "B": 2}
-    d_ref = LargeObject(d)
+    d_ref = ContextRef.store_large(d)
     assert d_ref.content_hash == "9ba9e7eeec8c514f"
 
     d_copy = copy.copy(d)
-    d_copy_ref = LargeObject(d_copy)
+    d_copy_ref = ContextRef.store_large(d_copy)
     assert d_ref.content_hash == d_copy_ref.content_hash
 
     d["C"] = 3
-    new_d_ref = LargeObject(d)
+    new_d_ref = ContextRef.store_large(d)
     assert new_d_ref.content_hash != d_ref.content_hash

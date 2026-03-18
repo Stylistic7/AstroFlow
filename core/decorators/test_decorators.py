@@ -31,7 +31,7 @@ def stack_files(stack: CompositeStack) -> TiffFilePath:
 
 
 def test_single_stack(with_real_testdata) -> None:
-    stack = next(iter(context.stacks.values()))
+    stack = next(iter(context.stacks.values())).get()
 
     filename = ray.get(stack_files.remote(stack))
     assert isinstance(filename, Path)
