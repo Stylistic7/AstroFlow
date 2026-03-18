@@ -15,7 +15,7 @@ from context import context
 import plate_solving
 from file_io.normalize_header import normalize_header
 from file_io.sidecar import sidecar_path_for
-from geometry import Degrees
+from units import Degrees, Radians, ArcsecondsPerPixel
 from hashing import hash_source_code, hash_call
 from metadata.image_metadata import compute_image_metadata
 
@@ -275,10 +275,9 @@ def make_synthetic_frames(
                 image_filename=fits_filename,
                 header=fits_header,
                 num_stars=num_stars,
-                center=center,
-                image_scale=image_scale,
-                rotation_angle=rotation_angle_deg,
-                footprint=SphericalPolygon.from_cone(0.0, 90.0, 1.0),
+                center=(Degrees(center[0]), Degrees(center[1])),
+                image_scale=ArcsecondsPerPixel(image_scale),
+                rotation_angle=Radians(np.radians(rotation_angle_deg)),
             )
         else:
             plate_solution = None

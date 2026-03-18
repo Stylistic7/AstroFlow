@@ -16,6 +16,7 @@ from context import context
 from metadata.classes import MetadataDict, FrameHash
 import geometry.footprints as footprints
 from catalogs import position_string
+from units import Degrees, Radians, ArcsecondsPerPixel
 
 
 @beartype
@@ -90,9 +91,9 @@ def _intersect_polygons(
 @dataclass(frozen=True)
 class AstrometricAttributes:
     name: str
-    center: tuple[float, float]
-    image_scale: float
-    rotation_angle: float
+    center: tuple[Degrees, Degrees]
+    image_scale: ArcsecondsPerPixel
+    rotation_angle: Radians
     footprint: SingleSphericalPolygon
     healpix_cells: tuple[int, ...]
     projected_footprints: frozendict[str, Any]
@@ -109,16 +110,17 @@ class AstrometricAttributes:
         )
         oldest_image_metadata = sorted_metadata[0]
 
-        center = spherical_centroid_deg(
+        center_raw = spherical_centroid_deg(
             [m.plate_solution.center for m in sorted_metadata]
         )
+        center = (Degrees(center_raw[0]), Degrees(center_raw[1]))
         name = position_string.canonical_target_string(center)
-        image_scale = np.mean(
+        image_scale = ArcsecondsPerPixel(np.mean(
             [m.plate_solution.image_scale for m in sorted_metadata]
-        )
-        rotation_angle = angular_mean_mod_pi(
+        ))
+        rotation_angle = Radians(angular_mean_mod_pi(
             [m.plate_solution.rotation_angle for m in sorted_metadata]
-        )
+        ))
         footprint = SingleSphericalPolygon.from_wcs(
             astropy.io.fits.Header(oldest_image_metadata.plate_solution.header)
         )
@@ -139,12 +141,12 @@ class AstrometricAttributes:
     def from_objects(
         cls, objects: Sequence["AstrometricAttributes"]
     ) -> "AstrometricAttributes":
-        # TODO: Strongly-type physical units, maybe do auto-conversion.
-        center = spherical_centroid_deg([o.center for o in objects])
-        image_scale = np.mean([o.image_scale for o in objects])
-        rotation_angle = angular_mean_mod_pi(
+        center_raw = spherical_centroid_deg([o.center for o in objects])
+        center = (Degrees(center_raw[0]), Degrees(center_raw[1]))
+        image_scale = ArcsecondsPerPixel(np.mean([o.image_scale for o in objects]))
+        rotation_angle = Radians(angular_mean_mod_pi(
             [o.rotation_angle for o in objects]
-        )
+        ))
         name = position_string.canonical_target_string(center)
         footprint = _intersect_polygons(
             [SphericalPolygon(o.footprint) for o in objects]

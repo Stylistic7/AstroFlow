@@ -151,11 +151,11 @@ def test_multiple_exposures(test_context):
     stack = list(toplevel_stack.contents.values())[0]
     assert all("bar" in f.filename for f in stack.metadata.values())
     assert len(stack.frames) == 7
-    assert stack.exposure_s == (120.0,)
-    assert stack.integration_s == 7 * 120
+    assert stack.exposure == (120.0,)
+    assert stack.integration == 7 * 120
 
     stack = list(toplevel_stack.contents.values())[1]
     assert all("foo" in f.filename for f in stack.metadata.values())
     assert len(stack.frames) == 5
-    assert stack.exposure_s == (300.0,)
-    assert stack.integration_s == 5 * 300
+    assert stack.exposure == (300.0,)
+    assert stack.integration == 5 * 300

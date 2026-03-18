@@ -15,8 +15,9 @@ from typing import Any
 
 from file_io.conversion import convert_xisf_to_fits
 from file_io.sidecar import get_section, set_section, sidecar_path_for
+from units import Degrees, Radians, ArcsecondsPerPixel
 
-_PLATESOLUTION_SCHEMA = "astroflow.platesolution.v1"
+_PLATESOLUTION_SCHEMA = "astroflow.platesolution.v2"
 
 
 @dataclass
@@ -24,40 +25,27 @@ class PlateSolution:
     image_filename: str
     header: dict
     num_stars: int
-    center: tuple[float, float]
-    image_scale: float
-    rotation_angle: float
-    footprint: list
+    center: tuple[Degrees, Degrees]
+    image_scale: ArcsecondsPerPixel
+    rotation_angle: Radians
 
 
-def get_footprint(header: dict[str, Any]) -> list[float]:
-    """Returns a 4x2 array. Order is clockwise starting with the bottom left corner."""
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        header["NAXIS1"] = header["IMAGEW"]
-        header["NAXIS2"] = header["IMAGEH"]
-        wcs = astropy.wcs.WCS(header=header)
-        return wcs.calc_footprint(header=header).tolist()
+def get_center(header: dict[str, Any]) -> tuple[Degrees, Degrees]:
+    return Degrees(header["CRVAL1"]), Degrees(header["CRVAL2"])
 
 
-def get_center(header: dict[str, Any]) -> tuple[float, float]:
-    return float(header["CRVAL1"]), float(header["CRVAL2"])
+def get_rotation_angle(header: dict[str, Any]) -> Radians:
+    return Radians(np.arctan2(header["CD1_2"], header["CD1_1"]))
 
 
-def get_rotation_angle(header: dict[str, Any]) -> float:
-    return np.arctan2(header["CD1_2"], header["CD1_1"])
-
-
-def get_image_scale(header: dict[str, Any]) -> float:
+def get_image_scale(header: dict[str, Any]) -> ArcsecondsPerPixel:
     scale_x = np.linalg.norm(np.array([header["CD1_1"], header["CD2_1"]]))
     scale_y = np.linalg.norm(np.array([header["CD1_2"], header["CD2_2"]]))
     assert np.isclose(scale_x, scale_y, atol=0.05 / 3600, rtol=0), (
         f"scale_x {scale_x} is not close to scale_y {scale_y}"
     )
 
-    # The result is in arcseconds per pixel.
-    image_scale = scale_x * 3600.0
-    return float(image_scale)
+    return ArcsecondsPerPixel(scale_x * 3600.0)
 
 
 def get_num_stars(axy_file: Path | str) -> int:
@@ -121,7 +109,6 @@ def _solve_field(
                     header=header,
                     center=get_center(header),
                     image_scale=get_image_scale(header),
-                    footprint=get_footprint(header),
                     rotation_angle=get_rotation_angle(header),
                     num_stars=num_stars,
                 )
@@ -154,13 +141,23 @@ def _plate_solution_to_obj(ps: PlateSolution) -> dict[str, Any]:
 
 
 def _plate_solution_from_obj(obj: dict[str, Any]) -> PlateSolution:
-    if obj.get("schema") != _PLATESOLUTION_SCHEMA:
+    schema = obj.get("schema")
+    if schema not in (_PLATESOLUTION_SCHEMA, "astroflow.platesolution.v1"):
         raise ValueError(
-            f"Unsupported plate_solution schema: {obj.get('schema')!r}"
+            f"Unsupported plate_solution schema: {schema!r}"
         )
     d = obj["data"]
-    if "center" in d and isinstance(d["center"], list):
-        d["center"] = tuple(d["center"])
+    if "center" in d:
+        c = d["center"]
+        if isinstance(c, list):
+            c = tuple(c)
+        d["center"] = (Degrees(c[0]), Degrees(c[1]))
+    if "image_scale" in d and d["image_scale"] is not None:
+        d["image_scale"] = ArcsecondsPerPixel(d["image_scale"])
+    if "rotation_angle" in d and d["rotation_angle"] is not None:
+        d["rotation_angle"] = Radians(d["rotation_angle"])
+    # v1 sidecars have a footprint field that was removed in v2.
+    d.pop("footprint", None)
     return PlateSolution(**d)
 
 

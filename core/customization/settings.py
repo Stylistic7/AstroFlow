@@ -3,6 +3,7 @@ import datetime
 from dataclasses import dataclass, field
 from frozendict import frozendict
 
+from units import Radians
 from stacks.types import StackHash, StackDependency
 from targets.types import TargetHash
 from mosaics.types import MosaicHash
@@ -40,7 +41,7 @@ class ClusteringSettings:
     """Parameters controlling spatial grouping and stack identification."""
     cosine_similarity_threshold: float = 0.9999
     min_component_members: int = 3
-    angular_tolerance: float = field(default_factory=lambda: math.radians(10.0))
+    angular_tolerance: Radians = field(default_factory=lambda: Radians(math.radians(10.0)))
     max_run_gap: datetime.timedelta = field(default_factory=lambda: datetime.timedelta(hours=8))
     min_frames_in_stack: int = 3
 

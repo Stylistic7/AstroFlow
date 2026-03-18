@@ -1,3 +1,4 @@
+import math
 from stacks.composite_stack import CompositeStack
 from hashing import hash_list_int
 from cache.context_ref import ContextRef
@@ -14,10 +15,10 @@ class CustomizedStack(CompositeStack):
             f"RA {units.ra_to_hms(self.center[0])}, "
             f"Dec {units.dec_to_dms(self.center[1])}, "
             f'Scale {self.image_scale:.2f}"/px, '
-            f"PA {self.rotation_angle:.2f} deg, "
+            f"PA {math.degrees(self.rotation_angle):.2f} deg, "
             f"Camera {self.camera}, "
-            f"Exposure {self.exposure_s} s, "
-            f"Integration {self.integration_s} s, "
+            f"Exposure {self.exposure} s, "
+            f"Integration {self.integration} s, "
             f"Filter {self.filter}, "
             f"Temp {self.mean_temperature:.02f} degC)"
         )

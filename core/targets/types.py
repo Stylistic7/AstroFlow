@@ -20,7 +20,7 @@ TargetHash = NewType("TargetHash", str)
 class Target(
     ContentHashed, AstrometricAttributes, ChronologyAttributes[TargetHash]
 ):
-    stack_ids: list[StackHash]
+    stack_ids: tuple[StackHash, ...]
 
     @classmethod
     def from_stacks(cls, stacks: list[CustomizedStack]) -> Optional["Target"]:
@@ -28,7 +28,7 @@ class Target(
         astrometric_attributes = AstrometricAttributes.from_objects(stacks)
 
         stable_hash = sorted(stacks, key=lambda s: s.oldest_date)[0].stable_hash
-        stack_ids = [s.stable_hash for s in stacks]
+        stack_ids = tuple(s.stable_hash for s in stacks)
 
         attributes: dict[str, Any] = (
             asdict(chronology_attributes)

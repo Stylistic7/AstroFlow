@@ -37,8 +37,8 @@ def test_one_dark_stack():
     assert stack.newest_date != None
     assert stack.camera == "ZWO ASI6200MM Pro"
     assert stack.mean_temperature == -15.0
-    assert stack.exposure_s == (300,)
-    assert stack.integration_s == 5 * 300
+    assert stack.exposure == (300,)
+    assert stack.integration == 5 * 300
     assert stack.width_pixels == 9576
     assert stack.height_pixels == 6388
 
@@ -84,8 +84,8 @@ def test_one_light_one_dark(test_context):
     assert toplevel_stack.camera == "ZWO ASI6200MM Pro"
     assert toplevel_stack.filter == "H"
     assert toplevel_stack.mean_temperature == pytest.approx(-12.9)
-    assert toplevel_stack.exposure_s == (300,)
-    assert toplevel_stack.integration_s == 3 * 300
+    assert toplevel_stack.exposure == (300,)
+    assert toplevel_stack.integration == 3 * 300
     assert toplevel_stack.width_pixels == 9576
     assert toplevel_stack.height_pixels == 6388
     assert toplevel_stack.name == "Bubble nebula"
@@ -101,8 +101,8 @@ def test_one_light_one_dark(test_context):
     assert light_stack.newest_date != None
     assert light_stack.camera == "ZWO ASI6200MM Pro"
     assert light_stack.mean_temperature == pytest.approx(-12.9)
-    assert light_stack.exposure_s == (300,)
-    assert light_stack.integration_s == 3 * 300
+    assert light_stack.exposure == (300,)
+    assert light_stack.integration == 3 * 300
     assert light_stack.width_pixels == 9576
     assert light_stack.height_pixels == 6388
 
@@ -114,7 +114,7 @@ def test_one_light_one_dark(test_context):
     assert dark_stack.newest_date != None
     assert dark_stack.camera == "ZWO ASI6200MM Pro"
     assert dark_stack.mean_temperature == -10.0
-    assert dark_stack.exposure_s == (300,)
-    assert dark_stack.integration_s == 5 * 300
+    assert dark_stack.exposure == (300,)
+    assert dark_stack.integration == 5 * 300
     assert dark_stack.width_pixels == 9576
     assert dark_stack.height_pixels == 6388

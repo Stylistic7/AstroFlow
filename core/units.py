@@ -1,5 +1,35 @@
+import math
 import numpy as np
 from beartype import beartype
+
+
+class Degrees(float):
+    """An angle in degrees."""
+
+    def to_radians(self) -> "Radians":
+        return Radians(math.radians(self))
+
+
+class Radians(float):
+    """An angle in radians."""
+
+    def to_degrees(self) -> Degrees:
+        return Degrees(math.degrees(self))
+
+
+class ArcsecondsPerPixel(float):
+    """An image scale in arcseconds per pixel."""
+
+    def to_degrees_per_pixel(self) -> float:
+        return self / 3600.0
+
+
+class Celsius(float):
+    """A temperature in degrees Celsius."""
+
+
+class Seconds(float):
+    """A duration in seconds."""
 
 
 @beartype

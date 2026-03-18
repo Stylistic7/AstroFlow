@@ -27,6 +27,7 @@ from testing.test_stacks import make_composite_stack
 from attributes.astrometric_attributes import healpix_cells_from_poly
 from stacks.composite_stack import CompositeStacksDict, SimpleStacksDict
 from customization.settings import DevelopmentSettings
+from units import Degrees, Radians, ArcsecondsPerPixel
 
 _OLDEST_DATE = datetime.datetime(2024, 2, 5, 16, 29, 43)
 _NEWEST_DATE = datetime.datetime(2024, 2, 5, 17, 29, 43)
@@ -39,15 +40,15 @@ _HEALPIX_CELLS = healpix_cells_from_poly(_FOOTPRINT)
 # TODO: Put this somewhere generally-accessible.
 def make_test_target(
     name,
-    center=(0.0, 0.0),
-    image_scale=1.0,
-    rotation_angle=0.0,
+    center=(Degrees(0.0), Degrees(0.0)),
+    image_scale=ArcsecondsPerPixel(1.0),
+    rotation_angle=Radians(0.0),
     footprint=SphericalPolygon.from_cone(0.0, 90.0, 1.0),
     healpix_cells=tuple(),
     projected_footprints=frozendict(),
     content_hash="content_hash",
     stable_hash="stable_hash",
-    stack_ids=[],
+    stack_ids=(),
     oldest_date=_OLDEST_DATE,
     newest_date=_NEWEST_DATE,
 ) -> Target:
@@ -80,9 +81,9 @@ def test_three_by_one(test_context) -> None:
         strips=(("a",), ("b",), ("c",)),
         oldest_date=_OLDEST_DATE,
         newest_date=_NEWEST_DATE,
-        center=(0.0, 0.0),
-        image_scale=1.0,
-        rotation_angle=0.0,
+        center=(Degrees(0.0), Degrees(0.0)),
+        image_scale=ArcsecondsPerPixel(1.0),
+        rotation_angle=Radians(0.0),
         footprint=_FOOTPRINT,
         healpix_cells=_HEALPIX_CELLS,
         projected_footprints=frozendict(),
@@ -90,9 +91,9 @@ def test_three_by_one(test_context) -> None:
 
     context.targets = targets = TargetsDict(
         {
-            "a": make_test_target("a", stack_ids=["a"]),
-            "b": make_test_target("b", stack_ids=["b"]),
-            "c": make_test_target("c", stack_ids=["c"]),
+            "a": make_test_target("a", stack_ids=("a",)),
+            "b": make_test_target("b", stack_ids=("b",)),
+            "c": make_test_target("c", stack_ids=("c",)),
         }
     )
     context.stacks = stacks = CompositeStacksDict(
@@ -164,9 +165,9 @@ def test_two_by_three(test_context) -> None:
         strips=(("a", "b", "c"), ("d", "e", "f")),
         oldest_date=_OLDEST_DATE,
         newest_date=_NEWEST_DATE,
-        center=(0.0, 0.0),
-        image_scale=1.0,
-        rotation_angle=0.0,
+        center=(Degrees(0.0), Degrees(0.0)),
+        image_scale=ArcsecondsPerPixel(1.0),
+        rotation_angle=Radians(0.0),
         footprint=_FOOTPRINT,
         healpix_cells=_HEALPIX_CELLS,
         projected_footprints=frozendict(),
@@ -174,12 +175,12 @@ def test_two_by_three(test_context) -> None:
 
     context.targets = targets = TargetsDict(
         {
-            "a": make_test_target("a", stack_ids=["a"]),
-            "b": make_test_target("b", stack_ids=["b"]),
-            "c": make_test_target("c", stack_ids=["c"]),
-            "d": make_test_target("d", stack_ids=["d"]),
-            "e": make_test_target("e", stack_ids=["e"]),
-            "f": make_test_target("f", stack_ids=["f"]),
+            "a": make_test_target("a", stack_ids=("a",)),
+            "b": make_test_target("b", stack_ids=("b",)),
+            "c": make_test_target("c", stack_ids=("c",)),
+            "d": make_test_target("d", stack_ids=("d",)),
+            "e": make_test_target("e", stack_ids=("e",)),
+            "f": make_test_target("f", stack_ids=("f",)),
         }
     )
 
@@ -282,9 +283,9 @@ def test_three_panes(test_context) -> None:
         strips=(("a",), ("b", "c")),
         oldest_date=_OLDEST_DATE,
         newest_date=_NEWEST_DATE,
-        center=(0.0, 0.0),
-        image_scale=1.0,
-        rotation_angle=0.0,
+        center=(Degrees(0.0), Degrees(0.0)),
+        image_scale=ArcsecondsPerPixel(1.0),
+        rotation_angle=Radians(0.0),
         footprint=_FOOTPRINT,
         healpix_cells=_HEALPIX_CELLS,
         projected_footprints=frozendict(),
@@ -292,9 +293,9 @@ def test_three_panes(test_context) -> None:
 
     context.targets = targets = TargetsDict(
         {
-            "a": make_test_target("a", stack_ids=["a"]),
-            "b": make_test_target("b", stack_ids=["b"]),
-            "c": make_test_target("c", stack_ids=["c"]),
+            "a": make_test_target("a", stack_ids=("a",)),
+            "b": make_test_target("b", stack_ids=("b",)),
+            "c": make_test_target("c", stack_ids=("c",)),
         }
     )
 

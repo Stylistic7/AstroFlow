@@ -17,16 +17,4 @@ def test_one_perfectly_centered_image(test_context):
         }
     }
 
-    expected_plate_solutions = {
-        "foo_00000.fit": PlateSolution(
-            image_filename="foo_00000.fit",
-            header=None,
-            num_stars=0,
-            center=(100.0, 45.0),
-            image_scale=None,
-            rotation_angle=None,
-            footprint=[(98.0, 46.0), (98.0, 44.0), (102.0, 44.0), (102.0, 46.0)],
-        )
-    }
-
     # TODO: Actually compare these...

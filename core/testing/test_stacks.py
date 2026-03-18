@@ -12,6 +12,7 @@ from attributes import (
     ImagingAttributes,
 )
 from attributes.astrometric_attributes import healpix_cells_from_poly
+from units import Degrees, Radians, ArcsecondsPerPixel, Celsius, Seconds
 
 
 def make_composite_stack(**kwargs: Any) -> CompositeStack:
@@ -27,9 +28,9 @@ def make_composite_stack(**kwargs: Any) -> CompositeStack:
             image_type="light",
             camera="ZWO ASI6200MM Pro",
             filter="H",
-            mean_temperature=-20.0,
-            exposure_s=(300.0,),
-            integration_s=1500.0,
+            mean_temperature=Celsius(-20.0),
+            exposure=(Seconds(300.0),),
+            integration=Seconds(1500.0),
             width_pixels=9576,
             height_pixels=6488,
         )
@@ -41,9 +42,9 @@ def make_composite_stack(**kwargs: Any) -> CompositeStack:
     astrometric_attributes = asdict(
         AstrometricAttributes(
             name="name",
-            center=(50.0, 50.0),
-            image_scale=1.0,
-            rotation_angle=0.0,
+            center=(Degrees(50.0), Degrees(50.0)),
+            image_scale=ArcsecondsPerPixel(1.0),
+            rotation_angle=Radians(0.0),
             footprint=footprint,
             healpix_cells=healpix_cells,
             projected_footprints=frozendict(),

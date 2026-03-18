@@ -27,6 +27,7 @@ from decorators import cached
 from attributes import AstrometricAttributes, ChronologyAttributes
 from attributes.astrometric_attributes import healpix_cells_from_poly
 from cache.context_ref import ContextRef
+from units import Degrees, Radians, ArcsecondsPerPixel
 
 logger = structlog.get_logger()
 log = logger
@@ -422,8 +423,8 @@ def identify_mosaics(
         oldest_date = min(resolved[t].oldest_date for t in mosaic)
         newest_date = min(resolved[t].newest_date for t in mosaic)
 
-        image_scale = np.mean([resolved[t].image_scale for t in mosaic])
-        rotation_angle = np.mean([resolved[t].rotation_angle for t in mosaic])
+        image_scale = ArcsecondsPerPixel(np.mean([resolved[t].image_scale for t in mosaic]))
+        rotation_angle = Radians(np.mean([resolved[t].rotation_angle for t in mosaic]))
 
         try:
             strips = find_strips(resolved, mosaic, angular_tolerance, debug)
@@ -464,7 +465,8 @@ def identify_mosaics(
 
         projected_footprints = frozendict(footprints.all_projections(footprint))
 
-        center = vector_to_lonlat(*np.mean(footprint.points, axis=0))
+        center_raw = vector_to_lonlat(*np.mean(footprint.points, axis=0))
+        center = (Degrees(center_raw[0]), Degrees(center_raw[1]))
         name = position_string.canonical_target_string(center)
 
         chronology_attributes = ChronologyAttributes(
@@ -472,7 +474,7 @@ def identify_mosaics(
         )
         astrometric_attributes = AstrometricAttributes(
             name=name,
-            center=tuple(center),
+            center=center,
             image_scale=image_scale,
             rotation_angle=rotation_angle,
             footprint=footprint,

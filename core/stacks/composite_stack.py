@@ -114,8 +114,8 @@ class CompositeStack(
             f'Scale {self.image_scale:.2f}"/px, '
             f"PA {self.rotation_angle:.2f} deg, "
             f"Camera {self.camera}, "
-            f"Exposure {self.exposure_s} s, "
-            f"Integration {self.integration_s} s, "
+            f"Exposure {self.exposure} s, "
+            f"Integration {self.integration} s, "
             f"Filter {self.filter}, "
             f"Temp {self.mean_temperature:.02f} degC)"
         )

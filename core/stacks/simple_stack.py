@@ -34,8 +34,8 @@ class SimpleStack(
             f"SimpleStack(Content hash {self.content_hash}, "
             f"Type {self.image_type}, "
             f"Camera {self.camera}, "
-            f"Exposure {self.exposure_s}, "
-            f"Integration {self.integration_s} s, "
+            f"Exposure {self.exposure}, "
+            f"Integration {self.integration} s, "
             f"Filter {self.filter}, "
             f"Temp {self.mean_temperature:.02f} degC)"
         )

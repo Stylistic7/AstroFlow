@@ -13,6 +13,7 @@ from stacks.composite_stack import CompositeStacksDict
 from targets.types import Target, TargetHash, TargetsDict
 from mosaics.identification import identify_mosaics
 from attributes.astrometric_attributes import healpix_cells_from_poly
+from units import Degrees, Radians, ArcsecondsPerPixel
 
 
 def test_two_targets(test_context) -> None:
@@ -27,10 +28,10 @@ def test_two_targets(test_context) -> None:
         content_hash="content_foo",
         oldest_date=datetime.datetime(2023, 12, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 1, 6, 16, 29, 43),
-        stack_ids=[StackHash("0"), StackHash("1"), StackHash("2")],
-        center=(100.0, 0.0),
-        image_scale=1.0,
-        rotation_angle=0.0,
+        stack_ids=(StackHash("0"), StackHash("1"), StackHash("2")),
+        center=(Degrees(100.0), Degrees(0.0)),
+        image_scale=ArcsecondsPerPixel(1.0),
+        rotation_angle=Radians(0.0),
         footprint=foo_footprint,
         healpix_cells=healpix_cells_from_poly(foo_footprint),
         projected_footprints=frozendict(),
@@ -45,10 +46,10 @@ def test_two_targets(test_context) -> None:
         content_hash="content_bar",
         oldest_date=datetime.datetime(2024, 2, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 3, 6, 16, 29, 43),
-        stack_ids=[StackHash("3"), StackHash("4"), StackHash("5")],
-        center=(97.0, 0.0),
-        image_scale=1.0,
-        rotation_angle=0.0,
+        stack_ids=(StackHash("3"), StackHash("4"), StackHash("5")),
+        center=(Degrees(97.0), Degrees(0.0)),
+        image_scale=ArcsecondsPerPixel(1.0),
+        rotation_angle=Radians(0.0),
         footprint=bar_footprint,
         healpix_cells=healpix_cells_from_poly(bar_footprint),
         projected_footprints=frozendict(),
@@ -56,7 +57,7 @@ def test_two_targets(test_context) -> None:
 
     context.stacks = CompositeStacksDict(
         {
-            str(i): make_composite_stack(stable_hash=str(i), image_scale=1.0)
+            str(i): make_composite_stack(stable_hash=str(i), image_scale=ArcsecondsPerPixel(1.0))
             for i in range(6)
         }
     )
@@ -89,10 +90,10 @@ def test_three_targets(test_context) -> None:
         content_hash="content_foo",
         oldest_date=datetime.datetime(2023, 12, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 1, 6, 16, 29, 43),
-        stack_ids=[StackHash("0"), StackHash("1"), StackHash("2")],
-        center=(100.01, 0.0),
-        image_scale=1.0,
-        rotation_angle=0.0,
+        stack_ids=(StackHash("0"), StackHash("1"), StackHash("2")),
+        center=(Degrees(100.01), Degrees(0.0)),
+        image_scale=ArcsecondsPerPixel(1.0),
+        rotation_angle=Radians(0.0),
         footprint=foo_footprint,
         healpix_cells=healpix_cells_from_poly(foo_footprint),
         projected_footprints=frozendict(),
@@ -107,10 +108,10 @@ def test_three_targets(test_context) -> None:
         content_hash="content_bar",
         oldest_date=datetime.datetime(2024, 2, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 3, 6, 16, 29, 43),
-        stack_ids=[StackHash("3"), StackHash("4"), StackHash("5")],
-        center=(97.01, 0.0),
-        image_scale=1.0,
-        rotation_angle=0.0,
+        stack_ids=(StackHash("3"), StackHash("4"), StackHash("5")),
+        center=(Degrees(97.01), Degrees(0.0)),
+        image_scale=ArcsecondsPerPixel(1.0),
+        rotation_angle=Radians(0.0),
         footprint=bar_footprint,
         healpix_cells=healpix_cells_from_poly(bar_footprint),
         projected_footprints=frozendict(),
@@ -125,10 +126,10 @@ def test_three_targets(test_context) -> None:
         content_hash="content_baz",
         oldest_date=datetime.datetime(2024, 4, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 5, 6, 16, 29, 43),
-        stack_ids=[StackHash("6"), StackHash("7"), StackHash("8")],
-        center=(97.0, 1.5),
-        image_scale=1.0,
-        rotation_angle=0.0,
+        stack_ids=(StackHash("6"), StackHash("7"), StackHash("8")),
+        center=(Degrees(97.0), Degrees(1.5)),
+        image_scale=ArcsecondsPerPixel(1.0),
+        rotation_angle=Radians(0.0),
         footprint=baz_footprint,
         healpix_cells=healpix_cells_from_poly(baz_footprint),
         projected_footprints=frozendict(),
@@ -136,7 +137,7 @@ def test_three_targets(test_context) -> None:
 
     context.stacks = CompositeStacksDict(
         {
-            str(i): make_composite_stack(stable_hash=str(i), image_scale=1.0)
+            str(i): make_composite_stack(stable_hash=str(i), image_scale=ArcsecondsPerPixel(1.0))
             for i in range(9)
         }
     )
@@ -178,10 +179,10 @@ def test_three_out_of_order_targets(test_context) -> None:
         content_hash="content_foo",
         oldest_date=datetime.datetime(2023, 12, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 1, 6, 16, 29, 43),
-        stack_ids=[StackHash("0"), StackHash("1"), StackHash("2")],
-        center=(100.01, 1.0),
-        image_scale=1.0,
-        rotation_angle=0.0,
+        stack_ids=(StackHash("0"), StackHash("1"), StackHash("2")),
+        center=(Degrees(100.01), Degrees(1.0)),
+        image_scale=ArcsecondsPerPixel(1.0),
+        rotation_angle=Radians(0.0),
         footprint=foo_footprint,
         healpix_cells=healpix_cells_from_poly(foo_footprint),
         projected_footprints=frozendict(),
@@ -196,10 +197,10 @@ def test_three_out_of_order_targets(test_context) -> None:
         content_hash="content_bar",
         oldest_date=datetime.datetime(2024, 4, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 5, 6, 16, 29, 43),
-        stack_ids=[StackHash("6"), StackHash("7"), StackHash("8")],
-        center=(100.0, 4.0),
-        image_scale=1.0,
-        rotation_angle=0.0,
+        stack_ids=(StackHash("6"), StackHash("7"), StackHash("8")),
+        center=(Degrees(100.0), Degrees(4.0)),
+        image_scale=ArcsecondsPerPixel(1.0),
+        rotation_angle=Radians(0.0),
         footprint=bar_footprint,
         healpix_cells=healpix_cells_from_poly(bar_footprint),
         projected_footprints=frozendict(),
@@ -214,10 +215,10 @@ def test_three_out_of_order_targets(test_context) -> None:
         content_hash="content_baz",
         oldest_date=datetime.datetime(2024, 2, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 3, 6, 16, 29, 43),
-        stack_ids=[StackHash("3"), StackHash("4"), StackHash("5")],
-        center=(100.02, 2.5),
-        image_scale=1.0,
-        rotation_angle=0.0,
+        stack_ids=(StackHash("3"), StackHash("4"), StackHash("5")),
+        center=(Degrees(100.02), Degrees(2.5)),
+        image_scale=ArcsecondsPerPixel(1.0),
+        rotation_angle=Radians(0.0),
         footprint=baz_footprint,
         healpix_cells=healpix_cells_from_poly(baz_footprint),
         projected_footprints=frozendict(),
@@ -225,7 +226,7 @@ def test_three_out_of_order_targets(test_context) -> None:
 
     context.stacks = CompositeStacksDict(
         {
-            str(i): make_composite_stack(stable_hash=str(i), image_scale=1.0)
+            str(i): make_composite_stack(stable_hash=str(i), image_scale=ArcsecondsPerPixel(1.0))
             for i in range(9)
         }
     )
@@ -260,10 +261,10 @@ def test_three_targets_and_an_outlier(test_context) -> None:
         content_hash="content_foo",
         oldest_date=datetime.datetime(2023, 12, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 1, 6, 16, 29, 43),
-        stack_ids=[StackHash("0"), StackHash("1"), StackHash("2")],
-        center=(100.0, 0.0),
-        image_scale=1.0,
-        rotation_angle=0.0,
+        stack_ids=(StackHash("0"), StackHash("1"), StackHash("2")),
+        center=(Degrees(100.0), Degrees(0.0)),
+        image_scale=ArcsecondsPerPixel(1.0),
+        rotation_angle=Radians(0.0),
         footprint=foo_footprint,
         healpix_cells=healpix_cells_from_poly(foo_footprint),
         projected_footprints=frozendict(),
@@ -278,10 +279,10 @@ def test_three_targets_and_an_outlier(test_context) -> None:
         content_hash="content_bar",
         oldest_date=datetime.datetime(2024, 2, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 3, 6, 16, 29, 43),
-        stack_ids=[StackHash("3"), StackHash("4"), StackHash("5")],
-        center=(97.0, 0.0),
-        image_scale=1.0,
-        rotation_angle=0.0,
+        stack_ids=(StackHash("3"), StackHash("4"), StackHash("5")),
+        center=(Degrees(97.0), Degrees(0.0)),
+        image_scale=ArcsecondsPerPixel(1.0),
+        rotation_angle=Radians(0.0),
         footprint=bar_footprint,
         healpix_cells=healpix_cells_from_poly(bar_footprint),
         projected_footprints=frozendict(),
@@ -296,10 +297,10 @@ def test_three_targets_and_an_outlier(test_context) -> None:
         content_hash="content_baz",
         oldest_date=datetime.datetime(2024, 4, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 5, 6, 16, 29, 43),
-        stack_ids=[StackHash("6"), StackHash("7"), StackHash("8")],
-        center=(97.0, 1.5),
-        image_scale=1.0,
-        rotation_angle=0.0,
+        stack_ids=(StackHash("6"), StackHash("7"), StackHash("8")),
+        center=(Degrees(97.0), Degrees(1.5)),
+        image_scale=ArcsecondsPerPixel(1.0),
+        rotation_angle=Radians(0.0),
         footprint=baz_footprint,
         healpix_cells=healpix_cells_from_poly(baz_footprint),
         projected_footprints=frozendict(),
@@ -314,10 +315,10 @@ def test_three_targets_and_an_outlier(test_context) -> None:
         content_hash="content_outlier",
         oldest_date=datetime.datetime(2024, 6, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 7, 6, 16, 29, 43),
-        stack_ids=[StackHash("9"), StackHash("10"), StackHash("11")],
-        center=(98.0, -0.5),
-        image_scale=1.0,
-        rotation_angle=0.0,
+        stack_ids=(StackHash("9"), StackHash("10"), StackHash("11")),
+        center=(Degrees(98.0), Degrees(-0.5)),
+        image_scale=ArcsecondsPerPixel(1.0),
+        rotation_angle=Radians(0.0),
         footprint=outlier_footprint,
         healpix_cells=healpix_cells_from_poly(outlier_footprint),
         projected_footprints=frozendict(),
@@ -325,7 +326,7 @@ def test_three_targets_and_an_outlier(test_context) -> None:
 
     context.stacks = CompositeStacksDict(
         {
-            str(i): make_composite_stack(stable_hash=str(i), image_scale=1.0)
+            str(i): make_composite_stack(stable_hash=str(i), image_scale=ArcsecondsPerPixel(1.0))
             for i in range(12)
         }
     )
@@ -371,10 +372,10 @@ def test_ic1318(test_context) -> None:
         content_hash="content_foo",
         oldest_date=datetime.datetime(2023, 12, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 1, 6, 16, 29, 43),
-        stack_ids=[StackHash("1"), StackHash("2"), StackHash("3")],
-        center=(100.0, 0.0),
-        image_scale=1.0,
-        rotation_angle=0.0,
+        stack_ids=(StackHash("1"), StackHash("2"), StackHash("3")),
+        center=(Degrees(100.0), Degrees(0.0)),
+        image_scale=ArcsecondsPerPixel(1.0),
+        rotation_angle=Radians(0.0),
         footprint=foo_footprint,
         healpix_cells=healpix_cells_from_poly(foo_footprint),
         projected_footprints=frozendict(),
@@ -398,10 +399,10 @@ def test_ic1318(test_context) -> None:
         content_hash="content_bar",
         oldest_date=datetime.datetime(2024, 2, 6, 16, 29, 43),
         newest_date=datetime.datetime(2024, 3, 6, 16, 29, 43),
-        stack_ids=[StackHash("3"), StackHash("4"), StackHash("5")],
-        center=(97.0, 0.0),
-        image_scale=1.0,
-        rotation_angle=0.0,
+        stack_ids=(StackHash("3"), StackHash("4"), StackHash("5")),
+        center=(Degrees(97.0), Degrees(0.0)),
+        image_scale=ArcsecondsPerPixel(1.0),
+        rotation_angle=Radians(0.0),
         footprint=bar_footprint,
         healpix_cells=healpix_cells_from_poly(bar_footprint),
         projected_footprints=frozendict(),
@@ -409,7 +410,7 @@ def test_ic1318(test_context) -> None:
 
     context.stacks = CompositeStacksDict(
         {
-            str(i): make_composite_stack(stable_hash=str(i), image_scale=1.0)
+            str(i): make_composite_stack(stable_hash=str(i), image_scale=ArcsecondsPerPixel(1.0))
             for i in range(6)
         }
     )

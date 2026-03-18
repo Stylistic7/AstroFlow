@@ -110,7 +110,7 @@ def _build_cal_index(cal_stacks: dict[StackHash, CalibrationStack]):
             )
         elif s.image_type == "dark":
             dark_by_cam.setdefault(cam, []).append(
-                (mid, s.mean_temperature, s.exposure_s, sid)
+                (mid, s.mean_temperature, s.exposure, sid)
             )
         elif s.image_type == "flat":
             flat_by_cam_filter.setdefault((cam, s.filter), []).append(
@@ -159,7 +159,7 @@ def associate_with_stacks(
             return None
         sub_mid = _midpoint_s(sub.oldest_date, sub.newest_date)
         sub_T = sub.mean_temperature
-        sub_exp = sub.exposure_s
+        sub_exp = sub.exposure
         filtered = [
             (m, t, e, sid)
             for (m, t, e, sid) in cand

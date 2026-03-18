@@ -1,3 +1,4 @@
+import math
 import os
 from pathlib import Path
 
@@ -19,7 +20,7 @@ def stack_filename(stack: SimpleStack | CompositeStack) -> Path:
     elif isinstance(stack, SimpleStack) and "dark" in stack.image_type:
         return XisfFilePath(
             f"dark_{stack.stable_hash}_{stack.camera}_"
-            f"{stack.mean_temperature:.0f}C_{exposure_string(stack.exposure_s)}_"
+            f"{stack.mean_temperature:.0f}C_{exposure_string(stack.exposure)}_"
             f"{stack.stable_hash}.xisf"
         )
     elif isinstance(stack, SimpleStack) and "flat" in stack.image_type:
@@ -32,7 +33,7 @@ def stack_filename(stack: SimpleStack | CompositeStack) -> Path:
         return XisfFilePath(
             f"light_{stack.stable_hash}_{stack.name}_{ra_dec_string}_"
             f"{stack.camera}_{stack.image_scale:.02f}aspp_"
-            f"{stack.rotation_angle:.2f}deg_{stack.filter}.xisf"
+            f"{math.degrees(stack.rotation_angle):.2f}deg_{stack.filter}.xisf"
         )
 
     assert False, f'unknown image_type "{stack.image_type}"'
