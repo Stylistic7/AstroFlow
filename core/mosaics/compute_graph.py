@@ -122,7 +122,7 @@ def build_mosaic_subgraph(
         graph[store_task] = {filter_subgraph_task}
         filter_done_tasks.append(store_task)
 
-    graph[(post_process_mosaic, mode, mosaic)] = filter_done_tasks
+    graph[(post_process_mosaic, mode, mosaic, stacks, targets, development_settings.mock_pixinsight)] = filter_done_tasks
 
     return graph
 

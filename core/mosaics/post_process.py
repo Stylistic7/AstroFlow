@@ -14,13 +14,14 @@ from pix.tasks import (
     LinearFit,
     SaveImages,
 )
-from context import context
 from decorators import cached, create_thumbnail, measure_performance
 from previews.types import QualityLevel
 from mosaics.final_storage import store_mosaic_color_channel_master
 from mosaics.types import Mosaic
 from mosaics.artifacts import mosaic_filename_xisf
 from products import makes_image
+from stacks.composite_stack import CompositeStacksDict
+from targets.types import TargetsDict
 
 
 @PixInsight(slots=[1])
@@ -58,7 +59,13 @@ def _post_process_mosaic(
 @cached.remote(resources={"PixInsight": 1})
 @measure_performance
 @create_thumbnail
-def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> WithSidecar[XisfFilePath] | None:
+def post_process_mosaic(
+    mode: QualityLevel,
+    mosaic: Mosaic,
+    stacks: CompositeStacksDict,
+    targets: TargetsDict,
+    mock_pixinsight: bool,
+) -> WithSidecar[XisfFilePath] | None:
     print(f"### Entering post_process_mosaic for {mode=} mosaic {str(mosaic)}")
 
     if mode != QualityLevel.MASTER:
@@ -66,8 +73,8 @@ def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> WithSidecar[XisfF
 
     filters = set()
     for target_id in mosaic.target_ids:
-        for stack_id in context.targets[target_id].get().stack_ids:
-            filters.add(context.stacks[stack_id].get().filter)
+        for stack_id in targets[target_id].get().stack_ids:
+            filters.add(stacks[stack_id].get().filter)
     filters = tuple(filters)
 
     images = [
@@ -87,7 +94,7 @@ def post_process_mosaic(mode: QualityLevel, mosaic: Mosaic) -> WithSidecar[XisfF
     output_filename.parent.mkdir(parents=True, exist_ok=True)
     print(f"### post_process_mosaic output_filename {output_filename}")
 
-    if context.settings and context.settings.development_settings.mock_pixinsight:
+    if mock_pixinsight:
         print(
             f"### post_process_mosaic mocking PixInsight "
             f"{images[0]} -> {output_filename}"

@@ -141,7 +141,9 @@ def _post_process(action: Action) -> Graph:
         run_graph(Graph({(post_process_target, target): {}}))
     elif action["object_type"] == "mosaic":
         mosaic = context.mosaics[action["object_id"]].get()
-        run_graph(Graph({(post_process_mosaic, mosaic): {}}))
+        settings = context.settings
+        mock_pixinsight = settings.development_settings.mock_pixinsight if settings else False
+        run_graph(Graph({(post_process_mosaic, QualityLevel.MASTER, mosaic, context.stacks, context.targets, mock_pixinsight): {}}))
 
 
 @ray.remote(
