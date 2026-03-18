@@ -79,7 +79,7 @@ def store_mosaic_color_channel_subframe(
     image = read_image(filename)
     autostretched = (autostretch(image) * 255.0).astype(np.uint8)
     Path(output).parent.mkdir(parents=True, exist_ok=True)
-    write_tiff_image(output, autostretched, {"FILTER": filter})
+    write_tiff_image(output, autostretched, {"FILTER": filter}, tile=(256, 256))
 
     return WithSidecar(output)
 

@@ -29,18 +29,20 @@ def write_tiff_image(
     filename: Path,
     image: np.ndarray,
     metadata: dict[str, Any] | None = None,
+    tile: tuple[int, int] | None = None,
     **kwargs,
 ) -> None:
     if metadata is None:
         metadata = {}
 
+    tile_kwargs = {"tile": tile} if tile is not None else {}
     filename.parent.mkdir(parents=True, exist_ok=True)
     tifffile.imwrite(
         filename,
         image,
         compression="deflate",
-        tile=(256, 256),
         description=json.dumps(metadata, ensure_ascii=True),
+        **tile_kwargs,
         **kwargs,
     )
     assert filename.exists()
