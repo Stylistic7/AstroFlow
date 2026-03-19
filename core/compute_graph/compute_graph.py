@@ -207,7 +207,7 @@ def scatter_spatial_groups(
 @ray.remote
 @beartype
 def build_regroup_graph(metadata_ref: ContextRef) -> Graph:
-    settings = context.settings or Settings()
+    settings = context.settings
     cs = settings.clustering_settings
     cluster_by_image_center_task = (
         cluster_by_image_center,
@@ -240,7 +240,7 @@ def build_preview_graph() -> Graph:
     stacks = context.stacks
     targets = context.targets
     calibration_stacks = context.calibration_stacks
-    settings = context.settings or Settings()
+    settings = context.settings
     development_settings = settings.development_settings
     min_frames_in_stack = settings.clustering_settings.min_frames_in_stack
 
@@ -279,7 +279,7 @@ def build_main_processing_graph() -> Graph:
     mosaics = context.mosaics
     shopping_cart = context.shopping_cart or []
     calibration_stacks = context.calibration_stacks
-    settings = context.settings or Settings()
+    settings = context.settings
     development_settings = settings.development_settings
     min_frames_in_stack = settings.clustering_settings.min_frames_in_stack
 

@@ -54,7 +54,7 @@ def update_stack_settings():
     print(f"### update_stack_settings {stack_id=} {dependencies=}")
 
     # TODO: Watch out for race conditions here.
-    settings = context.settings or Settings()
+    settings = context.settings
     stack_settings = settings.stack_settings.get(run_id, StackSettings())
     stack_settings.dependencies |= dependencies
     settings.stack_settings[run_id] = stack_settings

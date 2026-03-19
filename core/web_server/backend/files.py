@@ -59,7 +59,7 @@ def select_file():
     filename = data["filename"]
 
     # TODO: Watch out for race conditions here.
-    settings = context.settings or Settings()
+    settings = context.settings
     stack_settings = settings.stack_settings.get(run_id, StackSettings())
     stack_settings.dependencies[type] = FilenameDependency(filename=filename)
     settings.stack_settings[run_id] = stack_settings

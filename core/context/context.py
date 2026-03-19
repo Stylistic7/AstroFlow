@@ -127,6 +127,11 @@ class Context:
             raise AttributeError(key)
         return self.get(key)
 
+    @property
+    def settings(self):
+        from customization.settings import Settings
+        return self.get("settings") or Settings()
+
     def __getitem__(self, key: Key) -> Any:
         return self.get(key)
 

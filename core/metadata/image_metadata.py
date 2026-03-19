@@ -145,11 +145,7 @@ def load_metadata() -> ContextRef:
         resolved = str(Path(filename).resolve())
         return any(resolved.startswith(d) for d in input_dirs)
 
-    settings = context.settings
-    allow_missing = (
-        settings is not None
-        and settings.development_settings.dangerously_allow_missing_files
-    )
+    allow_missing = context.development_settings.dangerously_allow_missing_files
 
     metadata = MetadataDict()
     for key, value in context.get_matching(("compute_image_metadata",)).items():

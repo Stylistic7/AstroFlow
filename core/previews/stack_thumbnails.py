@@ -32,8 +32,7 @@ def scatter_stack_thumbnails() -> Graph:
     tasks: list[TaskDescriptor] = list()
 
     calibration_stacks = context.calibration_stacks
-    settings = context.settings
-    subframe_thumbnail_width = settings.preview_settings.subframe_thumbnail_width
+    subframe_thumbnail_width = context.settings.preview_settings.subframe_thumbnail_width
 
     for stack_ref in context.stacks.values():
         stack = stack_ref.get()
