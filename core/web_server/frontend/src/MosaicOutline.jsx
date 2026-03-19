@@ -155,8 +155,8 @@ export default function MosaicOutline({
               width={width * 0.75}
               height={height * 0.75}
               key={`exposure_duration_${stack_id}`}
-              totalExposureDuration={stack.integration_s / 3600.0}
-              selectedExposureDuration={stack.integration_s / 3600.0}
+              totalExposureDuration={stack.integration / 3600.0}
+              selectedExposureDuration={stack.integration / 3600.0}
               stack={stack}
               style={{ pointerEvents: "none" }}
             />}

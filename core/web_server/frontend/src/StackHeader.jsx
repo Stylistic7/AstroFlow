@@ -28,8 +28,8 @@ const StackHeader = ({ stack_type, stack, stack_id }) => {
             {(stack_type == 'stack') && <MetadataItem label="Angle" value={`${(stack.rotation_angle * (180.0 / Math.PI)).toFixed(1)}°`} />}
             <MetadataItem label="Camera" value={stack.camera} />
             {(stack_type == 'stack') && <MetadataItem label="Filter" value={stack.filter} />}
-            {(stack_type == 'calibration_stack') && <MetadataItem label="Expsosure" value={format_duration(stack.exposure_s)} />}
-            <MetadataItem label="Integration" value={format_duration(stack.integration_s)} />
+            {(stack_type == 'calibration_stack') && <MetadataItem label="Exposure" value={format_duration(stack.exposure)} />}
+            <MetadataItem label="Integration" value={format_duration(stack.integration)} />
             <MetadataItem label="Temp" value={`${stack.mean_temperature.toFixed(1)}°C`} />
           </Box>
         </Box>
