@@ -1,18 +1,12 @@
-import ray
-from pathlib import Path
 import os
 from astropy.time import Time
 
-from pix.decorators import PixInsight
-from pix.tasks import (
-    BlurXTerminator,
-    GradientCorrection,
+from pix2 import Image
+from pix2.tasks import (
     ImageSolver,
-    SaveImages,
     SpectrophotometricFluxCalibration,
     MultiscaleGradientCorrection,
 )
-from pix.classes import ImageList
 from decorators import cached, measure_performance, create_thumbnail
 from customization.settings import DevelopmentSettings
 from customization.types import CustomizedStack
@@ -20,24 +14,15 @@ from stacks.composite_stack import CompositeStack
 from stacks.stacking import stack_files
 from stacks.artifacts import stack_filename
 from file_io.types import XisfFilePath, WithSidecar
-from file_io.generic import copy_image
 from products import makes_image
-from previews.types import QualityLevel
 
 
-@PixInsight(slots=[1])
-def _post_process_stack(
-    images: ImageList,
-    output_filenames: list[Path],
-    stack: CustomizedStack,
-) -> ImageList:
-    # images = BlurXTerminator(images)
-    # images = GradientCorrection(images)
+def _post_process_stack(master_path, stack: CustomizedStack) -> Image:
+    image = Image.open(master_path)
 
-    # TODO: Make this more self-contained inside the ImageSolver function.
     julian_date = int(Time(stack.oldest_date).jd)
     solved = ImageSolver(
-        images,
+        image,
         metadata_ra=stack.center[0],
         metadata_dec=stack.center[1],
         metadata_resolution=stack.image_scale / 3600.0,
@@ -45,13 +30,10 @@ def _post_process_stack(
         metadata_epoch=julian_date,
     )
 
-    flux_calibrated = SpectrophotometricFluxCalibration(solved)
-    gradient_corrected = MultiscaleGradientCorrection(flux_calibrated)
-
-    SaveImages(gradient_corrected, output_filenames)
+    calibrated = SpectrophotometricFluxCalibration(solved)
+    return MultiscaleGradientCorrection(calibrated)
 
 
-# TODO: Do post-processing immediately after each stack has been stacked.
 @makes_image(CompositeStack).as_post_processed(stack_filename)
 @cached.remote(resources={"PixInsight": 1})
 @measure_performance
@@ -70,13 +52,7 @@ def post_process_stack(stack: CustomizedStack, development_settings: Development
         )
         return WithSidecar(output_filename)
 
-    if development_settings.mock_pixinsight:
-        copy_image(master, output_filename)
-    else:
-        _post_process_stack(
-            [master],
-            [output_filename],
-            stack,
-        )
+    result = _post_process_stack(master, stack)
+    result.save_to(output_filename, mock=development_settings.mock_pixinsight)
 
     return WithSidecar(XisfFilePath(output_filename))

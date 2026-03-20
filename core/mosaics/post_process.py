@@ -2,18 +2,15 @@ import os
 from pathlib import Path
 from astropy.time import Time
 
-from file_io.generic import read_image, read_header, copy_image
-from file_io.types import XisfFilePath, WithSidecar
-from pix import PixInsight
-from pix.classes import ImageList
-from pix.tasks import (
+from pix2 import Image, ImageList
+from pix2.tasks import (
     ChannelCombination,
     SpectrophotometricColorCalibration,
     ImageSolver,
     StarXTerminator,
     LinearFit,
-    SaveImages,
 )
+from file_io.types import XisfFilePath, WithSidecar
 from decorators import cached, create_thumbnail, measure_performance
 from previews.types import QualityLevel
 from mosaics.final_storage import store_mosaic_color_channel_master
@@ -24,12 +21,7 @@ from stacks.composite_stack import CompositeStacksDict
 from targets.types import TargetsDict
 
 
-@PixInsight(slots=[1])
-def _post_process_mosaic(
-    images: ImageList, mosaic: Mosaic, output_filename: Path
-):
-    print(f"### _post_process_mosaic mosaic {mosaic} images {images}")
-
+def _post_process_mosaic(images: ImageList, mosaic: Mosaic) -> Image | None:
     if "RGB" in images:
         rgb = ChannelCombination(images.channels("RGB"))
         julian_date = int(Time(mosaic.oldest_date).jd)
@@ -42,17 +34,18 @@ def _post_process_mosaic(
             metadata_epoch=julian_date,
         )
         rgb = SpectrophotometricColorCalibration(rgb)
-        stars, _ = StarXTerminator(rgb)
+        stars, starless = StarXTerminator(rgb)
+        return stars
 
     if "SHO" in images:
-        _, s = StarXTerminator(images.channels("s"))
-        _, h = StarXTerminator(images.channels("h"))
-        _, o = StarXTerminator(images.channels("o"))
+        _, s = StarXTerminator(images["S"])
+        _, h = StarXTerminator(images["H"])
+        _, o = StarXTerminator(images["O"])
         s, o = LinearFit([s, o], h)
         narrowband = ChannelCombination([s, h, o], "SHO")
+        return narrowband
 
-        # TODO: Supply multiple output filenames.
-        SaveImages([narrowband], [output_filename])
+    return None
 
 
 @makes_image(Mosaic).as_post_processed(mosaic_filename_xisf)
@@ -64,8 +57,8 @@ def post_process_mosaic(
     mosaic: Mosaic,
     stacks: CompositeStacksDict,
     targets: TargetsDict,
-    mock_pixinsight: bool,
 ) -> WithSidecar[XisfFilePath] | None:
+    from context import context
     print(f"### Entering post_process_mosaic for {mode=} mosaic {str(mosaic)}")
 
     if mode != QualityLevel.MASTER:
@@ -75,32 +68,21 @@ def post_process_mosaic(
     for target_id in mosaic.target_ids:
         for stack_id in targets[target_id].get().stack_ids:
             filters.add(stacks[stack_id].get().filter)
-    filters = tuple(filters)
 
-    images = [
-        store_mosaic_color_channel_master.filename_fn(mosaic, filter)
-        for filter in filters
+    image_paths = [
+        store_mosaic_color_channel_master.filename_fn(mosaic, f)
+        for f in filters
     ]
 
-    print(f"### post_process_mosaic {filters=} {images=}")
-
-    for image in images:
-        print(
-            f"### post_process_mosaic image {image} "
-            f"type {type(image)} exists {os.path.exists(image)}"
-        )
+    images = Image.open_many(image_paths)
+    result = _post_process_mosaic(images, mosaic)
+    if result is None:
+        return None
 
     output_filename = post_process_mosaic.filename_fn(mosaic, None)
     output_filename.parent.mkdir(parents=True, exist_ok=True)
-    print(f"### post_process_mosaic output_filename {output_filename}")
 
-    if mock_pixinsight:
-        print(
-            f"### post_process_mosaic mocking PixInsight "
-            f"{images[0]} -> {output_filename}"
-        )
-        copy_image(images[0], output_filename)
-    else:
-        _post_process_mosaic(images, mosaic, output_filename)
+    mock = context.settings.development_settings.mock_pixinsight
+    result.save_to(output_filename, mock=mock)
 
     return WithSidecar(output_filename)

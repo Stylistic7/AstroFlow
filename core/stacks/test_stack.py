@@ -88,7 +88,7 @@ def test_one_light_one_dark(test_context):
     assert toplevel_stack.integration == 3 * 300
     assert toplevel_stack.width_pixels == 9576
     assert toplevel_stack.height_pixels == 6388
-    assert toplevel_stack.name == "Bubble nebula"
+    assert toplevel_stack.name == "Bubble Nebula"
     assert np.allclose(toplevel_stack.center, [350.183329899, 61.2229195667])
     assert toplevel_stack.image_scale == pytest.approx(0.378, rel=1e-2)
     assert toplevel_stack.rotation_angle == pytest.approx(1.55, rel=1e-2)

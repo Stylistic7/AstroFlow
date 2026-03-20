@@ -122,7 +122,7 @@ def build_mosaic_subgraph(
         graph[store_task] = {filter_subgraph_task}
         filter_done_tasks.append(store_task)
 
-    graph[(post_process_mosaic, mode, mosaic, stacks, targets, development_settings.mock_pixinsight)] = filter_done_tasks
+    graph[(post_process_mosaic, mode, mosaic, stacks, targets)] = filter_done_tasks
 
     return graph
 
@@ -258,7 +258,6 @@ def build_mosaic_filter_subgraph(
                     merge_images,
                     mode,
                     mosaic,
-                    development_settings,
                     name=f"merge_{mosaic.stable_hash}_{stack_id}",
                 )
                 metadata_task = Node(
@@ -282,7 +281,6 @@ def build_mosaic_filter_subgraph(
                 merge_images,
                 mode,
                 mosaic,
-                development_settings,
                 name=f"merge_{mosaic.stable_hash}_strip_{i}",
             )
             metadata_task = Node(
