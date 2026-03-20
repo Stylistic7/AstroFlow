@@ -169,6 +169,63 @@ class TestRecipeInternals:
 
 
 # ---------------------------------------------------------------------------
+# ImageList features
+# ---------------------------------------------------------------------------
+
+class TestImageList:
+    """Verify filter-based lookup and multi-image operations."""
+
+    def test_open_many(self, tmp_path):
+        f1 = _make_test_fits(tmp_path / "h.fits")
+        f2 = _make_test_fits(tmp_path / "o.fits")
+        images = Image.open_many([f1, f2])
+        assert len(images) == 2
+        assert images[0].recipe is images[1].recipe
+
+    def test_filter_lookup_by_string(self, tmp_path):
+        from pix2 import ImageList
+        from pix2.recipe import Recipe
+
+        recipe = Recipe(input_filenames=[])
+        h = Image(view_id="V_h", recipe=recipe, filter="H")
+        o = Image(view_id="V_o", recipe=recipe, filter="OIII")
+        images = ImageList([h, o])
+
+        assert images["H"] is h
+        assert images["O"] is o
+        assert images["R"] is None
+
+    def test_contains_filters(self, tmp_path):
+        from pix2 import ImageList
+        from pix2.recipe import Recipe
+
+        recipe = Recipe(input_filenames=[])
+        s = Image(view_id="V_s", recipe=recipe, filter="SII")
+        h = Image(view_id="V_h", recipe=recipe, filter="Ha")
+        o = Image(view_id="V_o", recipe=recipe, filter="OIII")
+        images = ImageList([s, h, o])
+
+        assert "SHO" in images
+        assert "RGB" not in images
+
+    def test_channels(self, tmp_path):
+        from pix2 import ImageList
+        from pix2.recipe import Recipe
+
+        recipe = Recipe(input_filenames=[])
+        r = Image(view_id="V_r", recipe=recipe, filter="Red")
+        g = Image(view_id="V_g", recipe=recipe, filter="Green")
+        b = Image(view_id="V_b", recipe=recipe, filter="Blue")
+        images = ImageList([r, g, b])
+
+        rgb = images.channels("RGB")
+        assert len(rgb) == 3
+        assert rgb[0] is r
+        assert rgb[1] is g
+        assert rgb[2] is b
+
+
+# ---------------------------------------------------------------------------
 # JavaScript generation
 # ---------------------------------------------------------------------------
 
