@@ -29,6 +29,15 @@ class PlateSolution:
     image_scale: ArcsecondsPerPixel
     rotation_angle: Radians
 
+    def __setstate__(self, state):
+        # Drop fields removed in v2 (e.g. footprint) so old pickled
+        # PlateSolution objects can still be deserialized.
+        valid_fields = {f.name for f in self.__dataclass_fields__.values()}
+        for key in list(state):
+            if key not in valid_fields:
+                del state[key]
+        self.__dict__.update(state)
+
 
 def get_center(header: dict[str, Any]) -> tuple[Degrees, Degrees]:
     return Degrees(header["CRVAL1"]), Degrees(header["CRVAL2"])
@@ -171,6 +180,9 @@ def solve_field(
     ps_obj = get_section(filename, "plate_solution")
     if isinstance(ps_obj, dict):
         try:
+            if ps_obj.get("data") is None:
+                # Previously failed to solve — don't retry.
+                return None
             ps = _plate_solution_from_obj(ps_obj)
             print(
                 f"### Returning plate-solution from sidecar "
@@ -213,6 +225,9 @@ def solve_field(
 
     if final_result is None:
         print(f"Could not plate-solve file {filename}")
+        set_section(
+            filename, "plate_solution", {"schema": _PLATESOLUTION_SCHEMA, "data": None}
+        )
         return None
 
     # Persist result unconditionally.
