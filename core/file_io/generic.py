@@ -99,15 +99,13 @@ def _(filename: TiffFilePath) -> dict[str, Any]:
 
 @read_header.register
 def _(wrapped: WithSidecar) -> dict[str, Any]:
-    image_metadata = read_header(wrapped.path)
-
-    try:
-        with open(sidecar_path_for(wrapped), "r") as f:
-            sidecar_metadata = json.load(f)
-    except FileNotFoundError:
-        sidecar_metadata = {}
-
-    return image_metadata | sidecar_metadata
+    from file_io.sidecar import get_section
+    image_header = read_header(wrapped.path)
+    # Content hash from sidecar overrides any in-file header.
+    ch = get_section(wrapped.path, "content_hash")
+    if ch is not None:
+        image_header[_CONTENT_HASH_KEY] = ch
+    return image_header
 
 
 @singledispatch
@@ -221,7 +219,11 @@ def _(filename: TiffFilePath) -> str:
 
 @get_content_hash.register
 def _(wrapped: WithSidecar) -> str:
-    return read_header(wrapped)[_CONTENT_HASH_KEY]
+    from file_io.sidecar import get_section
+    ch = get_section(wrapped.path, "content_hash")
+    if ch is not None:
+        return ch
+    return hash_of_image_data(wrapped.path)
 
 
 @singledispatch
@@ -247,15 +249,5 @@ def _(filename: TiffFilePath, content_hash: str) -> None:
 
 @set_content_hash.register
 def _(wrapped: WithSidecar, content_hash: str) -> None:
-    sidecar_path = sidecar_path_for(wrapped.path)
-
-    try:
-        with open(sidecar_path, "r") as f:
-            metadata = json.load(f)
-    except FileNotFoundError:
-        metadata = {}
-
-    metadata[_CONTENT_HASH_KEY] = content_hash
-
-    with open(sidecar_path, "w") as f:
-        json.dump(metadata, f, indent=2)
+    from file_io.sidecar import set_section
+    set_section(wrapped.path, "content_hash", content_hash)

@@ -110,6 +110,14 @@ def compute_image_metadata(filename: Path | os.PathLike) -> ImageMetadata:
         raise FileNotFoundError(f'File "{filename}" not found')
 
     filename = filename.resolve()
+
+    # Cold-start optimization: try to reconstruct from sidecar without FITS I/O.
+    from metadata.sidecar_io import read_image_metadata, write_image_metadata
+    cached = read_image_metadata(filename)
+    if cached is not None:
+        print(f"### compute_image_metadata restored from sidecar: {filename}")
+        return cached
+
     content_hash = get_content_hash(filename)
     header = read_header(filename)
     geometry = read_image_geometry(filename)
@@ -120,7 +128,7 @@ def compute_image_metadata(filename: Path | os.PathLike) -> ImageMetadata:
         else None
     )
 
-    return ImageMetadata(
+    result = ImageMetadata(
         content_hash=content_hash,
         filename=filename,
         header=header,
@@ -130,6 +138,9 @@ def compute_image_metadata(filename: Path | os.PathLike) -> ImageMetadata:
         dtype=geometry.dtype,
         plate_solution=plate_solution,
     )
+
+    write_image_metadata(result)
+    return result
 
 
 @ray.remote(resources={"fastest_storage": 0.001})

@@ -24,6 +24,9 @@ from decorators import cached
 from metadata.classes import ImageMetadata
 from products import makes_image
 
+class ProjectionFailedException(Exception):
+    pass
+
 _PLACE_IMAGE_MEMORY_REQUIREMENT = 6 * 1024 * 1024 * 1024  # 6 GB
 _PLACE_TILE_MEMORY_REQUIREMENT = 128 * 1024 * 1024  # 128 MB
 
@@ -191,6 +194,13 @@ def _place_image(
     elif mode == QualityLevel.MASTER:
         output_filename = place_image_master.filename_fn(
             mosaic, stack, filter, viewbox
+        )
+
+    if not np.any(image):
+        raise ProjectionFailedException(
+            f"Placed image for stack {stack.stable_hash} in mosaic "
+            f"{mosaic.stable_hash} is entirely blank. This likely indicates "
+            f"a WCS or viewbox mismatch."
         )
 
     write_tiff_image(output_filename, image, {"FILTER": filter})

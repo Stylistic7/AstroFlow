@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from typing import Any, Callable
 
-_SCHEMA = "astroflow.sidecar.v1"
+_SCHEMA = "astroflow.sidecar.v2"
 
 
 def sidecar_path_for(data_path: Path) -> Path:
@@ -32,10 +32,6 @@ def load_sidecar(path: Path) -> dict[str, Any]:
     except FileNotFoundError:
         obj = {}
 
-    schema = obj.get("schema")
-    if schema not in (None, _SCHEMA):
-        raise ValueError(f"Unsupported sidecar schema: {schema!r}")
-
     obj.setdefault("schema", _SCHEMA)
     obj.setdefault("astroflow", {})
     if not isinstance(obj["astroflow"], dict):
@@ -48,12 +44,21 @@ def save_sidecar(path: Path, obj: dict[str, Any]) -> None:
     _atomic_write_text(path, text)
 
 
+def _stamp_file_size(root: dict[str, Any], data_path: Path) -> None:
+    """Record the data file's size so readers can detect staleness."""
+    try:
+        root["file_size"] = data_path.stat().st_size
+    except (FileNotFoundError, OSError):
+        pass
+
+
 def update_sidecar(
     data_path: Path, updater: Callable[[dict[str, Any]], None]
 ) -> dict[str, Any]:
     sc_path = sidecar_path_for(data_path)
     root = load_sidecar(sc_path)
     updater(root)
+    _stamp_file_size(root, data_path)
     save_sidecar(sc_path, root)
     return root
 
@@ -69,3 +74,10 @@ def set_section(data_path: Path, key: str, value: Any) -> None:
         root["astroflow"][key] = value
 
     update_sidecar(data_path, _upd)
+
+
+def get_file_size(data_path: Path) -> int | None:
+    """Return the file_size recorded in the sidecar, or None."""
+    sc_path = sidecar_path_for(data_path)
+    root = load_sidecar(sc_path)
+    return root.get("file_size")

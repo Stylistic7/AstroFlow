@@ -39,6 +39,18 @@ class PlateSolution:
         self.__dict__.update(state)
 
 
+def _ensure_naxis(header: dict[str, Any]) -> None:
+    """Copy IMAGEW/IMAGEH to NAXIS1/NAXIS2 if missing.
+
+    solve-field outputs IMAGEW/IMAGEH but not always NAXIS1/NAXIS2.
+    Astropy WCS needs NAXIS1/NAXIS2 for footprint_contains() and similar.
+    """
+    if "NAXIS1" not in header and "IMAGEW" in header:
+        header["NAXIS1"] = header["IMAGEW"]
+    if "NAXIS2" not in header and "IMAGEH" in header:
+        header["NAXIS2"] = header["IMAGEH"]
+
+
 def get_center(header: dict[str, Any]) -> tuple[Degrees, Degrees]:
     return Degrees(header["CRVAL1"]), Degrees(header["CRVAL2"])
 
@@ -111,6 +123,7 @@ def _solve_field(
         if os.path.exists(wcs_file) and os.path.exists(axy_file):
             fits = pyfits.open(wcs_file, mmap=False)
             header = simplify_header(fits[0].header)
+            _ensure_naxis(header)
             try:
                 num_stars = get_num_stars(axy_file)
                 soln = PlateSolution(
@@ -150,12 +163,13 @@ def _plate_solution_to_obj(ps: PlateSolution) -> dict[str, Any]:
 
 
 def _plate_solution_from_obj(obj: dict[str, Any]) -> PlateSolution:
-    schema = obj.get("schema")
-    if schema not in (_PLATESOLUTION_SCHEMA, "astroflow.platesolution.v1"):
+    if obj.get("schema") != _PLATESOLUTION_SCHEMA:
         raise ValueError(
-            f"Unsupported plate_solution schema: {schema!r}"
+            f"Unsupported plate_solution schema: {obj.get('schema')!r}"
         )
     d = obj["data"]
+    if "header" in d and isinstance(d["header"], dict):
+        _ensure_naxis(d["header"])
     if "center" in d:
         c = d["center"]
         if isinstance(c, list):
@@ -165,7 +179,6 @@ def _plate_solution_from_obj(obj: dict[str, Any]) -> PlateSolution:
         d["image_scale"] = ArcsecondsPerPixel(d["image_scale"])
     if "rotation_angle" in d and d["rotation_angle"] is not None:
         d["rotation_angle"] = Radians(d["rotation_angle"])
-    # v1 sidecars have a footprint field that was removed in v2.
     d.pop("footprint", None)
     return PlateSolution(**d)
 
