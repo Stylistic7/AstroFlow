@@ -90,20 +90,19 @@ def _acquire_slot(slots: list[int]):
         time.sleep(1)
 
 
-def run_javascript(
-    javascript: str,
+def run_scp(
+    scp_commands: str,
     tmp_dir: Path,
     slots: list[int] | None = None,
     timeout: float | None = None,
 ) -> None:
-    """Execute JavaScript in a PixInsight instance.
+    """Execute a .scp script in a PixInsight instance.
 
-    Acquires a slot lock, ensures an instance is running, writes the JS
-    to a temp file, wraps it in a .scp script with start/end sentinels,
-    and executes it via PixInsight's --execute flag.
+    Wraps the given commands with start/end sentinels and a close-all,
+    then executes via PixInsight's --execute flag.
 
     Args:
-        javascript: The complete JavaScript to execute.
+        scp_commands: The .scp commands (run -x lines, etc.)
         tmp_dir: Working directory for temp files and sentinels.
         slots: PixInsight slot numbers to try. Defaults to [1].
         timeout: Maximum seconds to wait for completion.
@@ -115,19 +114,14 @@ def run_javascript(
         _start_instance(slot)
 
         script_id = uuid.uuid4().hex[:12]
-        js_filename = tmp_dir / f"{script_id}.js"
         scp_filename = tmp_dir / f"{script_id}.scp"
         start_sentinel = tmp_dir / f"start_{script_id}.txt"
         end_sentinel = tmp_dir / f"end_{script_id}.txt"
 
-        # Write the JavaScript file
-        js_filename.write_text(javascript)
-        print(f"### pix2: Wrote JavaScript to {js_filename}")
-
-        # Write the .scp shell script
+        # Wrap commands with sentinels and close-all
         scp = (
             f'![echo "start" > {start_sentinel}\n'
-            f'run -x "{js_filename}"\n'
+            f'{scp_commands}\n'
             f'close --force *\n'
             f'![echo "end" > {end_sentinel}\n'
         )

@@ -15,4 +15,5 @@ from .automatic_background_extractor import AutomaticBackgroundExtractor
 from .fast_rotation import FastRotation
 from .integer_resample import IntegerResample
 from .photometric_mosaic import PhotometricMosaic
+from .mosaic_by_coordinates import MosaicByCoordinates
 from .wbpp import run_wbpp

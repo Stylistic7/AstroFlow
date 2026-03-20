@@ -121,7 +121,7 @@ class TestRecipeInternals:
         assert len(denoised.recipe.steps) == 1
 
         solved = ImageSolver(denoised, metadata_ra=100.0, metadata_dec=45.0)
-        assert len(solved.recipe.steps) == 2
+        assert len(solved.recipe.steps) == 3  # BXT + activate + script
 
     def test_recipe_not_materialized_until_save(self, tmp_path):
         fits = _make_test_fits(tmp_path / "input.fits")

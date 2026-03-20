@@ -19,9 +19,18 @@ if TYPE_CHECKING:
 
 @dataclass
 class Step:
-    """A single PixInsight operation in a recipe."""
-    javascript: str
+    """A single PixInsight operation in a recipe.
+
+    Steps come in two flavors:
+    - Inline JavaScript: set `javascript` to the JS code.
+    - External script: set `script_filename` to the .js path, with optional
+      `parameters` (passed via -p flags) and `arguments` (via -a flags).
+    """
     name: str = ""
+    javascript: str | None = None
+    script_filename: str | None = None
+    parameters: dict[str, Any] = field(default_factory=dict)
+    arguments: dict[str, Any] = field(default_factory=dict)
 
 
 class Recipe:
@@ -56,12 +65,44 @@ class Recipe:
         """The temp file path where this image's view will be saved."""
         return self.tmp_dir / f"{image.view_id}.xisf"
 
-    def to_javascript(self, save: dict[Image, Path] | None = None) -> str:
-        """Generate the complete PixInsight JavaScript for this recipe.
+    def _write_step_js(self, step: Step) -> Path | None:
+        """Write inline JavaScript to a temp file. Returns the path."""
+        if step.javascript is None:
+            return None
+        js_path = self.tmp_dir / f"{uuid.uuid4().hex[:12]}.js"
+        js_path.write_text(step.javascript)
+        return js_path
 
-        Args:
-            save: Mapping of Image → output path. If None, saves all
-                  registered outputs to the temp directory.
+    def _scp_command_for_step(self, step: Step) -> str:
+        """Generate the .scp run command for a step."""
+        if step.script_filename:
+            filename = step.script_filename
+        else:
+            js_path = self._write_step_js(step)
+            if js_path is None:
+                return ""
+            filename = str(js_path)
+
+        args = " ".join(
+            f'-a="{k}={v}"' for k, v in step.arguments.items()
+        )
+        params = " ".join(
+            f'-p="{k},{v}"' for k, v in step.parameters.items()
+        )
+        parts = ["run", "-x"]
+        if args:
+            parts.append(args)
+        if params:
+            parts.append(params)
+        parts.append(f'"{filename}"')
+        return " ".join(parts)
+
+    def to_javascript(self, save: dict[Image, Path] | None = None) -> str:
+        """Generate the inline JavaScript for steps that use it.
+
+        For recipes with only inline JS steps, this returns the complete
+        script. For mixed recipes (inline + external scripts), use
+        to_scp() instead which handles both.
         """
         from pix2.tasks.open_images import generate_open_images_js
         from pix2.tasks.save_images import generate_save_images_js
@@ -76,14 +117,15 @@ class Recipe:
         lines.append(generate_open_images_js(self.input_filenames))
         lines.append('')
 
-        # All processing steps
+        # All processing steps (inline JS only)
         for step in self.steps:
-            if step.name:
-                lines.append(f'// {step.name}')
-            lines.append(step.javascript)
-            lines.append('')
+            if step.javascript:
+                if step.name:
+                    lines.append(f'// {step.name}')
+                lines.append(step.javascript)
+                lines.append('')
 
-        # Save outputs — either to requested paths or to temp dir
+        # Save outputs
         save_targets: dict[str, Path] = {}
         if save:
             for image, path in save.items():
@@ -102,6 +144,62 @@ class Recipe:
 
         return '\n'.join(lines)
 
+    def _has_script_steps(self) -> bool:
+        """Does this recipe contain any external script steps?"""
+        return any(s.script_filename for s in self.steps)
+
+    def to_scp(self, save: dict[Image, Path] | None = None) -> str:
+        """Generate the complete .scp script for this recipe.
+
+        Handles both inline JavaScript and external script steps.
+        """
+        from pix2.tasks.open_images import generate_open_images_js
+        from pix2.tasks.save_images import generate_save_images_js
+
+        log_file = self.tmp_dir / f"{self._recipe_id}.log"
+
+        if not self._has_script_steps():
+            # All inline JS — generate a single .js file and run it
+            js = self.to_javascript(save=save)
+            js_path = self.tmp_dir / f"{self._recipe_id}_main.js"
+            js_path.write_text(js)
+            return f'run -x "{js_path}"'
+
+        # Mixed recipe: generate separate commands for each step
+        scp_lines = []
+
+        # Open images as first JS step
+        open_js = (
+            'console.beginLog();\n\n'
+            + generate_open_images_js(self.input_filenames)
+        )
+        open_path = self.tmp_dir / f"{self._recipe_id}_open.js"
+        open_path.write_text(open_js)
+        scp_lines.append(f'run -x "{open_path}"')
+
+        # Each processing step
+        for step in self.steps:
+            cmd = self._scp_command_for_step(step)
+            if cmd:
+                scp_lines.append(cmd)
+
+        # Save outputs + capture log
+        save_targets: dict[str, Path] = {}
+        if save:
+            for image, path in save.items():
+                save_targets[image.view_id] = path
+        else:
+            for image in self.outputs:
+                save_targets[image.view_id] = self._output_path_in_tmp(image)
+
+        save_js = generate_save_images_js(save_targets)
+        save_js += f'\nFile.writeTextFile("{log_file}", console.endLog().toString());'
+        save_path = self.tmp_dir / f"{self._recipe_id}_save.js"
+        save_path.write_text(save_js)
+        scp_lines.append(f'run -x "{save_path}"')
+
+        return '\n'.join(scp_lines)
+
     def materialize(self, mock: bool = False) -> None:
         """Execute the recipe, saving all outputs to the temp directory.
 
@@ -112,20 +210,18 @@ class Recipe:
             return
 
         if mock:
-            # Mock: copy the first input file to each output location
             src = self.input_filenames[0]
             for image in self.outputs:
                 dest = self._output_path_in_tmp(image)
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dest)
         else:
-            # Real execution: generate JS, run PixInsight, capture log
             save_all = {
                 image: self._output_path_in_tmp(image)
                 for image in self.outputs
             }
-            js = self.to_javascript(save=save_all)
-            self._run_pixinsight(js)
+            scp = self.to_scp(save=save_all)
+            self._run_pixinsight(scp)
 
             log_file = self.tmp_dir / f"{self._recipe_id}.log"
             if log_file.exists():
@@ -133,10 +229,10 @@ class Recipe:
 
         self.is_materialized = True
 
-    def _run_pixinsight(self, javascript: str) -> None:
-        """Execute JavaScript in a real PixInsight instance."""
-        from pix2.runner import run_javascript
-        run_javascript(javascript, self.tmp_dir)
+    def _run_pixinsight(self, scp_content: str) -> None:
+        """Execute a .scp script in a real PixInsight instance."""
+        from pix2.runner import run_scp
+        run_scp(scp_content, self.tmp_dir)
 
     def copy_output(self, image: Image, dest: Path) -> None:
         """Copy a materialized output to the requested path."""

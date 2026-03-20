@@ -1,4 +1,8 @@
-"""ImageSolver — astrometric plate solving in PixInsight."""
+"""ImageSolver — astrometric plate solving in PixInsight.
+
+ImageSolver is a script (not a built-in process), invoked via -p parameter
+flags in the .scp file rather than inline JavaScript.
+"""
 from typing import Any
 
 from pix2.image import Image
@@ -18,15 +22,46 @@ _DEFAULT_PARAMETERS = {
     "solver_version": "6.3.1",
     "solver_magnitude": "12",
     "solver_autoMagnitude": "false",
+    "solver_generateErrorImg": "false",
     "solver_structureLayers": "5",
+    "solver_minStructureSize": "0",
+    "solver_hotPixelFilterRadius": "1",
+    "solver_noiseReductionFilterRadius": "0",
     "solver_sensitivity": "0.5",
     "solver_peakResponse": "0.5",
+    "solver_brightThreshold": "3",
+    "solver_maxStarDistortion": "0.6",
+    "solver_autoPSF": "false",
     "solver_catalogMode": "1",
+    "solver_vizierServer": "https://vizier.cds.unistra.fr/",
+    "solver_showStars": "false",
+    "solver_showStarMatches": "false",
+    "solver_showSimplifiedSurfaces": "false",
+    "solver_showDistortion": "false",
+    "solver_generateDistortModel": "false",
     "solver_catalog": "PPMXL",
     "solver_distortionCorrection": "true",
+    "solver_rbfType": "101",
+    "solver_maxSplinePoints": "4000",
+    "solver_splineOrder": "2",
+    "solver_splineSmoothing": "0.004999999888241291",
+    "solver_enableSimplifier": "true",
+    "solver_simplifierRejectFraction": "0.10000000149011612",
+    "solver_outlierDetectionRadius": "160",
+    "solver_outlierDetectionMinThreshold": "4",
+    "solver_outlierDetectionSigma": "5",
     "solver_useActive": "true",
+    "solver_outSuffix": "_ast",
+    "solver_projection": "0",
+    "solver_projectionOriginMode": "0",
+    "solver_restrictToHQStars": "false",
+    "solver_intersectionMode": "1",
+    "solver_tryApparentCoordinates": "true",
+    "solver_tryExhaustiveInitialAlignment": "false",
     "non_interactive": "true",
 }
+
+_SCRIPT_FILENAME = "/Applications/PixInsight/src/scripts/AdP/ImageSolver.js"
 
 _ACTIVATE_JS = """
 let view = View.viewById("{view_id}");
@@ -34,33 +69,23 @@ let window = view.window;
 window.bringToFront();
 """
 
-_JAVASCRIPT_FILENAME = (
-    "/Applications/PixInsight/src/scripts/AdP/ImageSolver.js"
-)
-
 
 def ImageSolver(image: Image, **kwargs: Any) -> Image:
-    parameters = _DEFAULT_PARAMETERS | {
-        k: str(v) for k, v in kwargs.items()
-    }
+    parameters = _DEFAULT_PARAMETERS | {k: str(v) for k, v in kwargs.items()}
 
-    # ImageSolver is a script, not a process — it needs the view activated
-    # and parameters passed via -p flags. We encode this in the JavaScript.
-    activate_js = _ACTIVATE_JS.format(view_id=image.view_id)
+    # Bring the target view to the front before running the script
+    image.recipe.add_step(Step(
+        name="ImageSolver (activate)",
+        javascript=_ACTIVATE_JS.format(view_id=image.view_id),
+    ))
 
-    # Build parameter string for the script
-    param_assignments = "\n".join(
-        f'// param: {k}={v}' for k, v in parameters.items()
-    )
+    # Run ImageSolver as an external script with -p parameter flags
+    image.recipe.add_step(Step(
+        name="ImageSolver",
+        script_filename=_SCRIPT_FILENAME,
+        parameters=parameters,
+    ))
 
-    js = (
-        f'{activate_js}\n'
-        f'// ImageSolver parameters:\n'
-        f'{param_assignments}\n'
-        f'// ImageSolver will be invoked as an external script'
-    )
-
-    image.recipe.add_step(Step(javascript=js, name="ImageSolver"))
     return Image(
         view_id=image.view_id,
         recipe=image.recipe,
