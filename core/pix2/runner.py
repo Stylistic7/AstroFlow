@@ -2,9 +2,10 @@
 import os
 import re
 import subprocess
-import sys
 import time
 import uuid
+import filelock
+from contextlib import contextmanager
 from pathlib import Path
 
 import psutil
@@ -13,10 +14,11 @@ _PIXINSIGHT_EXECUTABLE = (
     "/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight"
 )
 _DEFAULT_SLOTS = [1]
+_LOCK_DIR = Path(os.environ.get("TMPDIR", "/tmp"))
 
 
 def _find_running_instances() -> dict[int, int]:
-    """Return a map of slot → PID for running PixInsight instances."""
+    """Return a map of slot -> PID for running PixInsight instances."""
     try:
         result = subprocess.run(
             [_PIXINSIGHT_EXECUTABLE, "-e"],
@@ -33,7 +35,7 @@ def _find_running_instances() -> dict[int, int]:
 
 
 def _start_instance(slot: int) -> None:
-    """Start a PixInsight instance at the given slot, waiting until it's ready."""
+    """Start a PixInsight instance at the given slot, waiting until ready."""
     subprocess.Popen(
         [
             _PIXINSIGHT_EXECUTABLE,
@@ -64,6 +66,30 @@ def _kill_instance(slot: int) -> None:
             pass
 
 
+@contextmanager
+def _acquire_slot(slots: list[int]):
+    """Acquire exclusive access to a PixInsight slot via file lock.
+
+    Tries each slot in order. Blocks until one is available.
+    """
+    while True:
+        for slot in slots:
+            lock_path = _LOCK_DIR / f"pix2-slot-{slot}.lock"
+            lock = filelock.FileLock(lock_path)
+            try:
+                lock.acquire(timeout=0)
+                try:
+                    yield slot
+                finally:
+                    lock.release()
+                return
+            except filelock.Timeout:
+                continue
+
+        # All slots busy — wait and retry
+        time.sleep(1)
+
+
 def run_javascript(
     javascript: str,
     tmp_dir: Path,
@@ -72,8 +98,9 @@ def run_javascript(
 ) -> None:
     """Execute JavaScript in a PixInsight instance.
 
-    Writes the JS to a temp file, wraps it in a .scp script with
-    start/end sentinels, and executes it via PixInsight's --execute flag.
+    Acquires a slot lock, ensures an instance is running, writes the JS
+    to a temp file, wraps it in a .scp script with start/end sentinels,
+    and executes it via PixInsight's --execute flag.
 
     Args:
         javascript: The complete JavaScript to execute.
@@ -84,52 +111,52 @@ def run_javascript(
     if slots is None:
         slots = _DEFAULT_SLOTS
 
-    slot = slots[0]
-    _start_instance(slot)
+    with _acquire_slot(slots) as slot:
+        _start_instance(slot)
 
-    script_id = uuid.uuid4().hex[:12]
-    js_filename = tmp_dir / f"{script_id}.js"
-    scp_filename = tmp_dir / f"{script_id}.scp"
-    start_sentinel = tmp_dir / "start_sentinel.txt"
-    end_sentinel = tmp_dir / "end_sentinel.txt"
+        script_id = uuid.uuid4().hex[:12]
+        js_filename = tmp_dir / f"{script_id}.js"
+        scp_filename = tmp_dir / f"{script_id}.scp"
+        start_sentinel = tmp_dir / f"start_{script_id}.txt"
+        end_sentinel = tmp_dir / f"end_{script_id}.txt"
 
-    # Write the JavaScript file
-    js_filename.write_text(javascript)
-    print(f"### pix2: Wrote JavaScript to {js_filename}")
+        # Write the JavaScript file
+        js_filename.write_text(javascript)
+        print(f"### pix2: Wrote JavaScript to {js_filename}")
 
-    # Write the .scp shell script
-    scp = (
-        f'![echo "start" > {start_sentinel}\n'
-        f'run -x "{js_filename}"\n'
-        f'close --force *\n'
-        f'![echo "end" > {end_sentinel}\n'
-    )
-    scp_filename.write_text(scp)
-    print(f"### pix2: Wrote script to {scp_filename}")
+        # Write the .scp shell script
+        scp = (
+            f'![echo "start" > {start_sentinel}\n'
+            f'run -x "{js_filename}"\n'
+            f'close --force *\n'
+            f'![echo "end" > {end_sentinel}\n'
+        )
+        scp_filename.write_text(scp)
+        print(f"### pix2: Wrote script to {scp_filename}")
 
-    # Execute
-    start_time = time.monotonic()
-    subprocess.run(
-        [_PIXINSIGHT_EXECUTABLE, f"--execute={slot}:{scp_filename}"]
-    )
+        # Execute
+        start_time = time.monotonic()
+        subprocess.run(
+            [_PIXINSIGHT_EXECUTABLE, f"--execute={slot}:{scp_filename}"]
+        )
 
-    # Wait for start sentinel
-    while not start_sentinel.exists():
-        if timeout and time.monotonic() - start_time > timeout:
-            _kill_instance(slot)
-            _start_instance(slot)
-            raise TimeoutError(
-                f"PixInsight script did not start within {timeout}s"
-            )
-        time.sleep(5)
+        # Wait for start sentinel
+        while not start_sentinel.exists():
+            if timeout and time.monotonic() - start_time > timeout:
+                _kill_instance(slot)
+                _start_instance(slot)
+                raise TimeoutError(
+                    f"PixInsight script did not start within {timeout}s"
+                )
+            time.sleep(5)
 
-    # Wait for end sentinel
-    while not end_sentinel.exists():
-        if timeout and time.monotonic() - start_time > timeout:
-            _kill_instance(slot)
-            raise TimeoutError(
-                f"PixInsight script did not finish within {timeout}s"
-            )
-        time.sleep(1)
+        # Wait for end sentinel
+        while not end_sentinel.exists():
+            if timeout and time.monotonic() - start_time > timeout:
+                _kill_instance(slot)
+                raise TimeoutError(
+                    f"PixInsight script did not finish within {timeout}s"
+                )
+            time.sleep(1)
 
-    print(f"### pix2: Script completed in {time.monotonic() - start_time:.1f}s")
+        print(f"### pix2: Script completed in {time.monotonic() - start_time:.1f}s")
