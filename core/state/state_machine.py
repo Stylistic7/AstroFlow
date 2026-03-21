@@ -18,7 +18,6 @@ from asiair.asiair_zeroconf import ASIAIRZeroconf
 from state.types import State, Action
 from dependency_graph import Graph, GraphStatus, TopologicalSorterWithStatus
 from previews.types import QualityLevel
-import pix
 
 T = TypeVar("T")
 
@@ -216,7 +215,6 @@ def _stop_flask(state: State, action: Action) -> tuple[State, list[Action]]:
 
 
 def _prepare_pix(state: State, action: Action) -> tuple[State, list[Action]]:
-    pix.prepare_cache()
     return state, []
 
 
