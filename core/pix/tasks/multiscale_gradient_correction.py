@@ -1,19 +1,16 @@
-from typing import Any, cast
+"""MultiscaleGradientCorrection — gradient correction using MARS database."""
+from typing import Any
 
-from pix.classes import ShellScriptTask, ImageList
-from pix.context import append_task
-from pix.processes import enum, execute_on_view_ids
+from pix.image import Image
+from pix.recipe import Step
+from pix.tasks.js import execute_on_views
 
-# TODO: Find a way to store / specify the MARS database files.
-_default_parameters = {
+_DEFAULT_PARAMETERS = {
     "useMARSDatabase": True,
     "marsDatabaseFiles": [
         [True, "/Volumes/Astro/Catalogs/MARS-DR1-1.1.1.xmars"]
     ],
     "grayMARSFilter": "Ha",
-    "redMARSFilter": "R",
-    "greenMARSFilter": "G",
-    "blueMARSFilter": "B",
     "referenceImageId": "",
     "gradientScale": 1024,
     "structureSeparation": 3,
@@ -21,40 +18,28 @@ _default_parameters = {
     "minFieldRatio": 0.017,
     "maxFieldRatio": 0.167,
     "enforceFieldLimits": True,
-    "scaleFactorRK": 1.0000,
-    "scaleFactorG": 1.0000,
-    "scaleFactorB": 1.0000,
     "showGradientModel": True,
-    "command": "",
+}
+
+_MARS_FILTER_MAP = {
+    "L": "L", "R": "R", "G": "G", "B": "B",
+    "H": "Ha", "O": "OIII", "S": "SII",
 }
 
 
-def MultiscaleGradientCorrection(images: ImageList, **kwargs: Any) -> ImageList:
-    assert all(i.view_id is not None for i in images)
-    view_ids = [cast(str, i.view_id) for i in images]
+def MultiscaleGradientCorrection(image: Image, **kwargs: Any) -> Image:
+    from pix.tasks.filters import normalize_filter
+    filter_key = normalize_filter(image.filter) or "Ha"
+    mars_filter = _MARS_FILTER_MAP.get(filter_key, "Ha")
 
-    filters = set([cast(str, i.filter) for i in images])
-    assert len(filters) == 1
-    filter = next(iter(filters))
-
-    mars_filter = {
-        "L": "L",
-        "R": "R",
-        "G": "G",
-        "B": "B",
-        "H": "Ha",
-        "O": "OIII",
-        "S": "SII",
-    }[filter]
-
-    append_task(
-        ShellScriptTask(
-            javascript=execute_on_view_ids(
-                "MultiscaleGradientCorrection",
-                _default_parameters | {"grayMARSFilter": mars_filter} | kwargs,
-                view_ids,
-            )
-        )
+    js = execute_on_views(
+        "MultiscaleGradientCorrection",
+        _DEFAULT_PARAMETERS | {"grayMARSFilter": mars_filter} | kwargs,
+        [image.view_id],
     )
-
-    return images
+    image.recipe.add_step(Step(javascript=js, name="MultiscaleGradientCorrection"))
+    return Image(
+        view_id=image.view_id,
+        recipe=image.recipe,
+        filter=image.filter,
+    )

@@ -6,9 +6,9 @@ factory that generates task functions for these simple cases.
 """
 from typing import Any
 
-from pix2.image import Image
-from pix2.recipe import Step
-from pix2.tasks.js import execute_on_views
+from pix.image import Image
+from pix.recipe import Step
+from pix.tasks.js import execute_on_views
 
 
 def make_process_task(

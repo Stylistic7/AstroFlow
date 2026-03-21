@@ -5,7 +5,7 @@ console log capture, and file I/O all work end-to-end with a real
 PixInsight installation.
 
 Marked as slow — skipped in normal test runs. Run explicitly with:
-    pytest pix2/test_pixinsight.py -v
+    pytest pix/test_pixinsight.py -v
 """
 import numpy as np
 from pathlib import Path
@@ -13,8 +13,8 @@ from pathlib import Path
 import pytest
 import astropy.io.fits as pyfits
 
-from pix2 import Image
-from pix2.tasks import BlurXTerminator, StarXTerminator, ImageSolver
+from pix import Image
+from pix.tasks import BlurXTerminator, StarXTerminator, ImageSolver
 
 
 def _make_test_fits(path: Path, width=1080, height=720) -> Path:

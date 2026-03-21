@@ -1,57 +1,50 @@
-import os
-from typing import Any, cast
+"""MosaicByCoordinates — register images to a common coordinate frame."""
+from typing import Any
 
-from pix.classes import ShellScriptTask, ImageList
-from pix.context import append_task
+from pix.image import Image
+from pix.recipe import Step
 
-_default_parameters = {
-    "engine_files": '""',
+_SCRIPT_FILENAME = (
+    "/Applications/PixInsight/src/scripts/AdP/MosaicByCoordinates.js"
+)
+
+_DEFAULT_PARAMETERS = {
     "engine_centerCoordsAuto": True,
-    "engine_centerRA": 312.893418127648,
-    "engine_centerDec": 30.863823588048277,
     "engine_resolutionAuto": True,
-    "engine_resolution": 0.00019886620125921314,
     "engine_rotationAuto": True,
-    "engine_rotation": 89.68771925250053,
     "engine_projectionAuto": False,
     "engine_projection": 3,
-    "engine_projectionOriginMode": 0,
-    "engine_projectionOriginRA": 0,
-    "engine_projectionOriginDec": 0,
     "engine_dimensionsAuto": True,
-    "engine_width": 19307,
-    "engine_height": 23094,
     "engine_qualityHQ": True,
     "engine_pixelInterpolation": 5,
     "engine_clampingThreshold": 0.3,
     "engine_suffix": '"_registered"',
     "engine_overwrite": False,
     "engine_errorPolicy": 1,
-    "engine_outputDir": '""',
     "non_interactive": True,
 }
 
 
-def MosaicByCoordinates(images: ImageList, **kwargs: Any) -> ImageList:
-    parameters = _default_parameters | kwargs
-    javascript_filename = (
-        "/Applications/PixInsight/src/scripts/AdP/MosaicByCoordinates.js"
-    )
+def MosaicByCoordinates(images: list[Image], **kwargs: Any) -> list[Image]:
+    """Register images to a common coordinate frame using plate solutions."""
+    recipe = images[0].recipe
+    parameters = _DEFAULT_PARAMETERS | kwargs
 
-    assert all(i.filename is not None for i in images)
-    filenames = [cast(str, i.filename) for i in images]
-    output_filenames = [f"{os.path.splitext(f)[0]}_registered.xisf" for f in filenames]
-
-    # Remove output filenames that already exist.
-    # filenames = [
-    #     i for i, o in zip(filenames, output_filenames) if not os.path.exists(o)
-    # ]
-
+    # MosaicByCoordinates expects filenames, not view IDs
+    filenames = [img.view_id for img in images]  # TODO: use actual filenames
     parameters["engine_files"] = "|".join(filenames)
 
-    append_task(
-        ShellScriptTask(javascript_filename=javascript_filename, parameters=parameters)
-    )
+    recipe.add_step(Step(
+        name="MosaicByCoordinates",
+        script_filename=_SCRIPT_FILENAME,
+        parameters={k: str(v) for k, v in parameters.items()},
+    ))
 
-    # return output_filenames
-    return []
+    return [
+        Image(
+            view_id=img.view_id + "_registered",
+            recipe=recipe,
+            filter=img.filter,
+        )
+        for img in images
+    ]

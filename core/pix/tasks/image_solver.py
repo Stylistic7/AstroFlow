@@ -1,12 +1,14 @@
-import os
+"""ImageSolver — astrometric plate solving in PixInsight.
+
+ImageSolver is a script (not a built-in process), invoked via -p parameter
+flags in the .scp file rather than inline JavaScript.
+"""
 from typing import Any
 
-from pix.classes import ShellScriptTask, FilenameList, ImageList
-from pix.context import append_task
+from pix.image import Image
+from pix.recipe import Step
 
-# TODO: These parameters must be floats, not strings, so they can be overriden
-# by the user.
-_default_parameters = {
+_DEFAULT_PARAMETERS = {
     "metadata_focal": "541.5685232722849",
     "metadata_useFocal": "false",
     "metadata_xpixsz": "3.759999990463257",
@@ -59,30 +61,33 @@ _default_parameters = {
     "non_interactive": "true",
 }
 
-_activate_javascript = """
+_SCRIPT_FILENAME = "/Applications/PixInsight/src/scripts/AdP/ImageSolver.js"
+
+_ACTIVATE_JS = """
 let view = View.viewById("{view_id}");
 let window = view.window;
 window.bringToFront();
 """
 
 
-def ImageSolver(images: ImageList, **kwargs: Any) -> ImageList:
-    print("### ImageSolver() images are", images)
-    parameters = _default_parameters | kwargs
-    javascript_filename = "/Applications/PixInsight/src/scripts/AdP/ImageSolver.js"
+def ImageSolver(image: Image, **kwargs: Any) -> Image:
+    parameters = _DEFAULT_PARAMETERS | {k: str(v) for k, v in kwargs.items()}
 
-    # TODO: The `javascript_filename` thing is long. Maybe there can be two
-    # ShellScriptTask types, one that accepts code, and one that accepts a filename.
-    for image in images:
-        append_task(
-            ShellScriptTask(
-                javascript=_activate_javascript.format(view_id=image.view_id)
-            )
-        )
-        append_task(
-            ShellScriptTask(
-                javascript_filename=javascript_filename, parameters=parameters
-            )
-        )
+    # Bring the target view to the front before running the script
+    image.recipe.add_step(Step(
+        name="ImageSolver (activate)",
+        javascript=_ACTIVATE_JS.format(view_id=image.view_id),
+    ))
 
-    return images
+    # Run ImageSolver as an external script with -p parameter flags
+    image.recipe.add_step(Step(
+        name="ImageSolver",
+        script_filename=_SCRIPT_FILENAME,
+        parameters=parameters,
+    ))
+
+    return Image(
+        view_id=image.view_id,
+        recipe=image.recipe,
+        filter=image.filter,
+    )

@@ -1,11 +1,12 @@
+"""LRGBCombination — combine LRGB channels into a color image."""
 from typing import Any
 
-from pix.classes import ShellScriptTask, Image, ImageList
-from pix.context import append_task
-from pix.processes import enum, execute_global
+from pix.image import Image
+from pix.recipe import Step
+from pix.tasks.js import Enum, execute_global
 
-_default_parameters = {
-    "colorSpace": enum("LRGBCombination.prototype.RGB"),
+_DEFAULT_PARAMETERS = {
+    "colorSpace": Enum("LRGBCombination.prototype.RGB"),
     "channels": [],
     "inheritAstrometricSolution": True,
     "mL": 0.500,
@@ -16,27 +17,23 @@ _default_parameters = {
     "layersProtected": 2,
 }
 
-_rename_javascript = """
+_RENAME_JS = """
 var windows = ImageWindow.windows;
 windows[windows.length - 1].currentView.id = "{view_id}";
 """
 
 
 def LRGBCombination(
-    images: ImageList, output_view_id: str = "LRGB", **kwargs: Any
-) -> ImageList:
-    # TODO: This is horrifically ugly.
+    images: list[Image], output_view_id: str = "LRGB", **kwargs: Any
+) -> Image:
     view_ids = [i.view_id for i in images]
-    parameters = _default_parameters | kwargs
+    parameters = _DEFAULT_PARAMETERS | kwargs
     channels = [f'[true, "{v}"]' for v in view_ids]
-    parameters["channels"] = enum(f"[{', '.join(channels)}]")
+    parameters["channels"] = Enum(f"[{', '.join(channels)}]")
 
-    append_task(
-        ShellScriptTask(javascript=execute_global("LRGBCombination", parameters))
-    )
+    recipe = images[0].recipe
+    js = execute_global("LRGBCombination", parameters)
+    js += "\n" + _RENAME_JS.format(view_id=output_view_id)
 
-    append_task(
-        ShellScriptTask(javascript=_rename_javascript.format(view_id=output_view_id))
-    )
-
-    return ImageList([Image(view_id=output_view_id, tag=output_view_id, dirty=True)])
+    recipe.add_step(Step(javascript=js, name="LRGBCombination"))
+    return Image(view_id=output_view_id, recipe=recipe)

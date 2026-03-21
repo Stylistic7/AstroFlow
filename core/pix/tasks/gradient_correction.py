@@ -1,10 +1,7 @@
-from typing import Any, cast
+"""GradientCorrection — gradient removal."""
+from pix.tasks.process import make_process_task
 
-from pix.classes import Image, ShellScriptTask, ImageList
-from pix.context import append_task
-from pix.processes import enum, execute_on_view_ids
-
-_default_parameters = {
+GradientCorrection = make_process_task("GradientCorrection", {
     "reference": 0.50,
     "lowThreshold": 0.20,
     "lowTolerance": 0.50,
@@ -29,24 +26,4 @@ _default_parameters = {
     "generateGradientModel": False,
     "generateProtectionMasks": False,
     "gridSamplingDelta": 16,
-}
-
-
-def GradientCorrection(images: ImageList, **kwargs: Any) -> ImageList:
-    assert all(i.view_id is not None for i in images)
-    view_ids = [cast(str, i.view_id) for i in images]
-
-    append_task(
-        ShellScriptTask(
-            javascript=execute_on_view_ids(
-                "GradientCorrection", _default_parameters | kwargs, view_ids
-            )
-        )
-    )
-
-    return ImageList(
-        [
-            Image(view_id=image.view_id, tag="gradient_correction", dirty=True)
-            for image in images
-        ]
-    )
+})

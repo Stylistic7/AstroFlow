@@ -1,49 +1,48 @@
-from typing import Any, cast
+"""StarXTerminator — AI-based star removal."""
+from typing import Any
 
-from pix.classes import ShellScriptTask, Image, ImageList
-from pix.context import append_task
-from pix.processes import execute_on_view_ids
+from pix.image import Image
+from pix.recipe import Step
+from pix.tasks.js import execute_on_views
 
-_default_parameters = {
-    # TODO: Make this cross-platform.
+_DEFAULT_PARAMETERS = {
     "ai_file": "/Applications/PixInsight/library/StarXTerminator.11.mlmodel",
     "stars": True,
     "unscreen": False,
     "overlap": 0.20,
 }
 
-_rename_javascript = """
+_RENAME_JS = """
 var windows = ImageWindow.windows;
-windows[windows.length - 1].currentView.id = "{view_id}";
+windows[windows.length - 1].currentView.id = "{stars_view_id}";
 """
 
 
-def StarXTerminator(images: ImageList, **kwargs: Any) -> ImageList:
-    assert all(i.view_id is not None for i in images)
+def StarXTerminator(image: Image, **kwargs: Any) -> tuple[Image, Image]:
+    """Remove stars from an image.
 
-    output_images = []
-    for image in images:
-        view_id = cast(str, image.view_id)
-        append_task(
-            ShellScriptTask(
-                javascript=execute_on_view_ids(
-                    "StarXTerminator", _default_parameters | kwargs, [view_id]
-                )
-            )
-        )
+    Returns:
+        (stars, starless) — two Images from the same recipe.
+    """
+    stars_view_id = image.view_id + "_stars"
 
-        stars_view_id = view_id + "_stars"
-        append_task(
-            ShellScriptTask(javascript=_rename_javascript.format(view_id=stars_view_id))
-        )
+    js = execute_on_views(
+        "StarXTerminator",
+        _DEFAULT_PARAMETERS | kwargs,
+        [image.view_id],
+    )
+    js += "\n" + _RENAME_JS.format(stars_view_id=stars_view_id)
 
-        output_images.append(
-            Image(filename=image.filename, tag="starless", view_id=view_id, dirty=True)
-        )
-        output_images.append(
-            Image(
-                filename=image.filename, tag="stars", view_id=stars_view_id, dirty=True
-            )
-        )
+    image.recipe.add_step(Step(javascript=js, name="StarXTerminator"))
 
-    return ImageList(output_images)
+    stars = Image(
+        view_id=stars_view_id,
+        recipe=image.recipe,
+        filter=image.filter,
+    )
+    starless = Image(
+        view_id=image.view_id,
+        recipe=image.recipe,
+        filter=image.filter,
+    )
+    return stars, starless

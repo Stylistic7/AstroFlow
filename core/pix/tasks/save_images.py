@@ -1,96 +1,17 @@
-import json
-from typing import Optional
+"""Generate JavaScript to save images from PixInsight."""
 from pathlib import Path
-import os
-
-from pix.classes import ShellScriptTask, ImageList
-from pix.context import append_task
-
-_javascript = """
-var view_ids = {view_ids};
-var output_filenames = {output_filenames};
-var fits_keywords = {fits_keywords};
-
-function setFITSKeywords(window, kw) {{
-    var keywords = window.keywords;
-    for (var key in kw) {{
-        keywords = keywords.filter(function(k) {{ return k.name !== key; }});
-        keywords.push(new FITSKeyword(key, String(kw[key]), ""));
-    }}
-    window.keywords = keywords;
-}}
-
-function saveCompressedTiff(window, filename) {{
-    let fileFormat = new FileFormat("TIFF");
-    let f = new FileFormatInstance(fileFormat);
-    if (f.isNull)
-        throw new Error("Unable to create FileFormatInstance for TIFF");
-
-    let description = new ImageDescription();
-    description.bitsPerSample = 32;  // Set 32-bit per sample
-    description.ieeefpSampleFormat = true;  // Enable floating-point sample format
-    description.compression = true;
-
-    if (!f.create(filename, "{tiff_output_hint}")) {{
-        throw new Error("Unable to create file: " + filename);
-    }}
-
-    if (!f.setOptions(description)) {{
-        throw new Error("Unable to set image options for 32-bit IEEE floating point.");
-    }}
-
-    let img = window.mainView.image;  // Retrieve the actual Image object
-
-    if (!f.writeImage(img)) {{
-        throw new Error("Failed to write image: " + filename);
-    }}
-
-    f.close();
-    console.writeln("Image saved as 32-bit IEEE floating-point TIFF: " + filename);
-}}
-
-for (let i = 0; i < output_filenames.length; ++i) {{
-  let filename = output_filenames[i];
-  let window = View.viewById(view_ids[i]).window;
-  setFITSKeywords(window, fits_keywords);
-  console.writeln('Saving view ' + view_ids[i] + ' to filename ' + filename);
-  let ext = filename.toLowerCase().split('.').pop();
-  if (ext === 'tif' || ext === 'tiff') {{
-    saveCompressedTiff(window, filename);
-  }} else if (ext === 'xisf') {{
-    window.saveAs(filename, false, false, true, false, "{xisf_output_hint}");
-  }} else {{
-    throw new Error("Unsupported extension: " + ext);
-  }}
-}}
-"""
 
 
-def SaveImages(
-    images: ImageList,
-    output_filenames: Optional[list[Path]] = None,
-    compression: bool = True,
-    fits_keywords: Optional[dict[str, str]] = None,
-) -> ImageList:
-    view_ids = [i.view_id for i in images]
+def generate_save_images_js(targets: dict[str, Path]) -> str:
+    """Generate JS to save views to files.
 
-    if output_filenames is None:
-        output_filenames = [i.filename for i in images]
-    else:
-        output_filenames = [os.fspath(f) for f in output_filenames]
-
-    fits_keywords_js = json.dumps(fits_keywords or {})
-
-    append_task(
-        ShellScriptTask(
-            javascript=_javascript.format(
-                view_ids=view_ids,
-                output_filenames=output_filenames,
-                tiff_output_hint="zip-compression" if compression else "",
-                xisf_output_hint="compression-codec lz4hc+sh" if compression else "",
-                fits_keywords=fits_keywords_js,
-            )
-        )
-    )
-
-    return images
+    Args:
+        targets: Mapping of view_id → output file path.
+    """
+    lines = []
+    for view_id, path in targets.items():
+        path_str = str(path)
+        lines.append(f'var view = View.viewById("{view_id}");')
+        lines.append(f'var window = view.window;')
+        lines.append(f'window.saveAs("{path_str}", false, false, true, false);')
+    return "\n".join(lines)

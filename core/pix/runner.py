@@ -47,7 +47,7 @@ def _start_instance(slot: int) -> None:
         ],
         start_new_session=True,
     )
-    print(f"### pix2: Started PixInsight instance at slot {slot}")
+    print(f"### pix: Started PixInsight instance at slot {slot}")
 
     while slot not in _find_running_instances():
         time.sleep(5)
@@ -59,7 +59,7 @@ def _kill_instance(slot: int) -> None:
     pid = pid_map.get(slot)
     if pid:
         try:
-            print(f"### pix2: Killing PixInsight slot {slot} (PID {pid})")
+            print(f"### pix: Killing PixInsight slot {slot} (PID {pid})")
             os.kill(pid, 9)
             psutil.Process(pid).wait()
         except (psutil.NoSuchProcess, OSError):
@@ -74,7 +74,7 @@ def _acquire_slot(slots: list[int]):
     """
     while True:
         for slot in slots:
-            lock_path = _LOCK_DIR / f"pix2-slot-{slot}.lock"
+            lock_path = _LOCK_DIR / f"pix-slot-{slot}.lock"
             lock = filelock.FileLock(lock_path)
             try:
                 lock.acquire(timeout=0)
@@ -126,7 +126,7 @@ def run_scp(
             f'![echo "end" > {end_sentinel}\n'
         )
         scp_filename.write_text(scp)
-        print(f"### pix2: Wrote script to {scp_filename}")
+        print(f"### pix: Wrote script to {scp_filename}")
 
         # Execute
         start_time = time.monotonic()
@@ -153,4 +153,4 @@ def run_scp(
                 )
             time.sleep(1)
 
-        print(f"### pix2: Script completed in {time.monotonic() - start_time:.1f}s")
+        print(f"### pix: Script completed in {time.monotonic() - start_time:.1f}s")

@@ -1,28 +1,30 @@
-from typing import Any, cast
+"""LinearFit — linear scaling of images to match a reference."""
+from typing import Any
 
-from pix.classes import ShellScriptTask, Image, ImageList
-from pix.context import append_task
-from pix.processes import enum, execute_on_view_ids
+from pix.image import Image
+from pix.recipe import Step
+from pix.tasks.js import execute_on_views
 
-_default_parameters = {
+_DEFAULT_PARAMETERS = {
     "referenceViewId": "",
     "rejectLow": 0.000000,
     "rejectHigh": 0.920000,
 }
 
 
-def LinearFit(images: ImageList, reference_image: Image, **kwargs: Any) -> ImageList:
-    assert all(i.view_id is not None for i in images)
-    view_ids = [cast(str, i.view_id) for i in images]
+def LinearFit(images: list[Image], reference: Image, **kwargs: Any) -> list[Image]:
+    """Scale images to match reference brightness.
 
-    parameters = (
-        _default_parameters | kwargs | {"referenceViewId": reference_image.view_id}
-    )
+    Returns the input images (modified in-place in PixInsight).
+    """
+    view_ids = [i.view_id for i in images]
+    parameters = _DEFAULT_PARAMETERS | kwargs | {"referenceViewId": reference.view_id}
 
-    append_task(
-        ShellScriptTask(
-            javascript=execute_on_view_ids("LinearFit", parameters, view_ids)
-        )
-    )
+    recipe = images[0].recipe
+    js = execute_on_views("LinearFit", parameters, view_ids)
+    recipe.add_step(Step(javascript=js, name="LinearFit"))
 
-    return images
+    return [
+        Image(view_id=img.view_id, recipe=recipe, filter=img.filter)
+        for img in images
+    ]

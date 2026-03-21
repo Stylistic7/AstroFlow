@@ -7,8 +7,8 @@ from dataclasses import dataclass
 
 from decorators import measure_performance
 from file_io.generic import read_header, read_image
-from pix2 import Image
-from pix2.tasks import PhotometricMosaic
+from pix import Image
+from pix.tasks import PhotometricMosaic
 from metadata.classes import ImageMetadata
 from mosaics.types import Mosaic
 from mosaics.artifacts import merged_filename_tiff, merged_filename_xisf

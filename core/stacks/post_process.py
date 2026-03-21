@@ -1,8 +1,8 @@
 import os
 from astropy.time import Time
 
-from pix2 import Image
-from pix2.tasks import (
+from pix import Image
+from pix.tasks import (
     ImageSolver,
     SpectrophotometricFluxCalibration,
     MultiscaleGradientCorrection,

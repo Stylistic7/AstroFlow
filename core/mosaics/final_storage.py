@@ -9,7 +9,7 @@ from mosaics.artifacts import mosaic_filename_tiff, mosaic_filename_xisf
 from file_io.generic import read_image, copy_image
 from file_io.tiff_file_io import write_tiff_image
 from previews.operations import autostretch
-from pix2 import Image
+from pix import Image
 from products import makes_image
 from decorators import cached, create_thumbnail, measure_performance
 from file_io.types import TiffFilePath, XisfFilePath, WithSidecar
@@ -41,7 +41,7 @@ def store_mosaic_color_channel_master(
 
     mock = context.settings.development_settings.mock_pixinsight
 
-    # Save via pix2: opens the image in PixInsight and saves as uncompressed XISF
+    # Save via pix: opens the image in PixInsight and saves as uncompressed XISF
     image = Image.open(filename)
     image.save_to(output, mock=mock)
     make_preview_tiff(output if not mock else filename, tiff_output)

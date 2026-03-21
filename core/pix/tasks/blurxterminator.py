@@ -1,10 +1,11 @@
-from typing import Any, cast
+"""BlurXTerminator — AI-based deconvolution."""
+from typing import Any
 
-from pix.classes import Image, ShellScriptTask, ImageList
-from pix.context import append_task
-from pix.processes import enum, execute_on_view_ids
+from pix.image import Image
+from pix.recipe import Step
+from pix.tasks.js import execute_on_views
 
-_default_parameters = {
+_DEFAULT_PARAMETERS = {
     "ai_file": "BlurXTerminator.4.mlpackage",
     "correct_only": False,
     "correct_first": False,
@@ -18,18 +19,15 @@ _default_parameters = {
 }
 
 
-def BlurXTerminator(images: ImageList, **kwargs: Any) -> ImageList:
-    assert all(i.view_id is not None for i in images)
-    view_ids = [cast(str, i.view_id) for i in images]
-
-    append_task(
-        ShellScriptTask(
-            javascript=execute_on_view_ids(
-                "BlurXTerminator", _default_parameters | kwargs, view_ids
-            )
-        )
+def BlurXTerminator(image: Image, **kwargs: Any) -> Image:
+    js = execute_on_views(
+        "BlurXTerminator",
+        _DEFAULT_PARAMETERS | kwargs,
+        [image.view_id],
     )
-
-    return ImageList(
-        [Image(view_id=image.view_id, tag="blurx", dirty=True) for image in images]
+    image.recipe.add_step(Step(javascript=js, name="BlurXTerminator"))
+    return Image(
+        view_id=image.view_id,
+        recipe=image.recipe,
+        filter=image.filter,
     )

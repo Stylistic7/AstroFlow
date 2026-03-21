@@ -15,8 +15,7 @@ from stacks.simple_stack import SimpleStack, SimpleStacksDict
 from stacks.types import StackIdDependency, FilenameDependency
 from stacks.composite_stack import Stack, CompositeStack
 from customization.types import CustomizedStack
-from pix import PixInsight, ImageList
-from pix.tasks import WeightedBatchPreprocessing
+from pix.tasks import run_wbpp
 from metadata.classes import MetadataDict
 from decorators import cached, measure_performance, create_thumbnail
 from customization.settings import DevelopmentSettings
@@ -66,11 +65,6 @@ def _copy_frames_with_plate_solution(
                 fits[0].header["DEC"] = frame.plate_solution.header["CRVAL2"]
                 for k, v in frame.plate_solution.header.items():
                     fits[0].header[k] = v
-
-
-@PixInsight()
-def _run_wbpp(unused: ImageList, *args: Any, **kwargs: Any) -> Any:
-    return WeightedBatchPreprocessing(unused, *args, **kwargs)
 
 
 def _setup_simple_stack(
@@ -213,10 +207,9 @@ def stack_files(
                 f"Stack {stack} contains only {len(filenames)} files"
             )
 
-        print(f"### mock_stacking {development_settings.mock_pixinsight}")
         if development_settings.mock_pixinsight:
             return _mock_stacking(filenames[0], dest_filename, metadata)
 
-        print(f"### Running _run_wbpp for stack {stack}")
-        _run_wbpp([], dir=tmp_dir, outputDirectory=tmp_dir)
+        print(f"### Running WBPP for stack {stack}")
+        run_wbpp(Path(tmp_dir), Path(tmp_dir))
         return _copy_wbpp_result(tmp_dir, dest_filename, metadata)

@@ -9,8 +9,8 @@ from pathlib import Path
 
 import astropy.io.fits as pyfits
 
-from pix2 import Image
-from pix2.tasks import BlurXTerminator, StarXTerminator, ImageSolver
+from pix import Image
+from pix.tasks import BlurXTerminator, StarXTerminator, ImageSolver
 
 
 def _make_test_fits(path: Path, width=100, height=80) -> Path:
@@ -183,8 +183,8 @@ class TestImageList:
         assert images[0].recipe is images[1].recipe
 
     def test_filter_lookup_by_string(self, tmp_path):
-        from pix2 import ImageList
-        from pix2.recipe import Recipe
+        from pix import ImageList
+        from pix.recipe import Recipe
 
         recipe = Recipe(input_filenames=[])
         h = Image(view_id="V_h", recipe=recipe, filter="H")
@@ -196,8 +196,8 @@ class TestImageList:
         assert images["R"] is None
 
     def test_contains_filters(self, tmp_path):
-        from pix2 import ImageList
-        from pix2.recipe import Recipe
+        from pix import ImageList
+        from pix.recipe import Recipe
 
         recipe = Recipe(input_filenames=[])
         s = Image(view_id="V_s", recipe=recipe, filter="SII")
@@ -209,8 +209,8 @@ class TestImageList:
         assert "RGB" not in images
 
     def test_channels(self, tmp_path):
-        from pix2 import ImageList
-        from pix2.recipe import Recipe
+        from pix import ImageList
+        from pix.recipe import Recipe
 
         recipe = Recipe(input_filenames=[])
         r = Image(view_id="V_r", recipe=recipe, filter="Red")

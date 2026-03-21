@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pix2.image import Image
+    from pix.image import Image
 
 
 @dataclass
@@ -48,7 +48,7 @@ class Recipe:
         self.log: str | None = None
         self._recipe_id = uuid.uuid4().hex[:12]
         self._tmp_dir_obj = tempfile.TemporaryDirectory(
-            prefix=f"pix2-{self._recipe_id}-"
+            prefix=f"pix-{self._recipe_id}-"
         )
 
     @property
@@ -104,8 +104,8 @@ class Recipe:
         script. For mixed recipes (inline + external scripts), use
         to_scp() instead which handles both.
         """
-        from pix2.tasks.open_images import generate_open_images_js
-        from pix2.tasks.save_images import generate_save_images_js
+        from pix.tasks.open_images import generate_open_images_js
+        from pix.tasks.save_images import generate_save_images_js
 
         log_file = self.tmp_dir / f"{self._recipe_id}.log"
 
@@ -153,8 +153,8 @@ class Recipe:
 
         Handles both inline JavaScript and external script steps.
         """
-        from pix2.tasks.open_images import generate_open_images_js
-        from pix2.tasks.save_images import generate_save_images_js
+        from pix.tasks.open_images import generate_open_images_js
+        from pix.tasks.save_images import generate_save_images_js
 
         log_file = self.tmp_dir / f"{self._recipe_id}.log"
 
@@ -231,7 +231,7 @@ class Recipe:
 
     def _run_pixinsight(self, scp_content: str) -> None:
         """Execute a .scp script in a real PixInsight instance."""
-        from pix2.runner import run_scp
+        from pix.runner import run_scp
         run_scp(scp_content, self.tmp_dir)
 
     def copy_output(self, image: Image, dest: Path) -> None:

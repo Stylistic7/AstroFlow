@@ -1,10 +1,11 @@
+"""CopyFITSKeywords — copy FITS header keywords between views."""
 import json
 from typing import Optional
 
-from pix.classes import ShellScriptTask, Image
-from pix.context import append_task
+from pix.image import Image
+from pix.recipe import Step
 
-_javascript = """\
+_JAVASCRIPT = """\
 function copyFITSKeywords(source_view_id, dest_view_id, keys) {{
     var source_window = View.viewById(source_view_id).window;
     var dest_window = View.viewById(dest_view_id).window;
@@ -30,17 +31,10 @@ copyFITSKeywords("{source_view_id}", "{dest_view_id}", {keys});
 def CopyFITSKeywords(
     source: Image, dest: Image, keys: Optional[list[str]] = None
 ) -> Image:
-    """Copy FITS keywords from source view to dest view.
-
-    If keys is None, all keywords are copied. Otherwise only the named keys.
-    """
-    append_task(
-        ShellScriptTask(
-            javascript=_javascript.format(
-                source_view_id=source.view_id,
-                dest_view_id=dest.view_id,
-                keys=json.dumps(keys),
-            )
-        )
+    js = _JAVASCRIPT.format(
+        source_view_id=source.view_id,
+        dest_view_id=dest.view_id,
+        keys=json.dumps(keys),
     )
+    source.recipe.add_step(Step(javascript=js, name="CopyFITSKeywords"))
     return dest

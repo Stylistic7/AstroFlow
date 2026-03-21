@@ -2,8 +2,8 @@ import os
 from pathlib import Path
 from astropy.time import Time
 
-from pix2 import Image, ImageList
-from pix2.tasks import (
+from pix import Image, ImageList
+from pix.tasks import (
     ChannelCombination,
     SpectrophotometricColorCalibration,
     ImageSolver,

@@ -1,18 +1,14 @@
-import ray
-from typing import Any
 import os
 from pathlib import Path
 from astropy.time import Time
 
-from pix.decorators import PixInsight
-from pix.classes import ImageList
+from pix import Image, ImageList
 from pix.tasks import (
     ChannelCombination,
     SpectrophotometricColorCalibration,
     ImageSolver,
     StarXTerminator,
     LinearFit,
-    SaveImages,
     StarAlignment,
     LRGBCombination,
 )
@@ -24,16 +20,10 @@ from customization.types import CustomizedStacksDict
 from products import makes_image
 
 
-# TODO: Find a way to disable these during tests.
-@PixInsight(slots=[1])
-def _post_process_target(images: ImageList, target: Target) -> ImageList:
-    print(f"### _post_process_target target {target} images {images}")
-
+def _post_process_target(images: ImageList, target: Target) -> tuple[Image, Image] | None:
     if "LRGB" in images:
         aligned = StarAlignment(images.channels("LRGB"))
-        rgb = LRGBCombination(aligned.channels("RGBL"))
-
-        # TODO: Make this more self-contained inside the ImageSolver function.
+        rgb = LRGBCombination([aligned[i] for i in range(len(aligned))])
         julian_date = int(Time(target.oldest_date).jd)
         solved = ImageSolver(
             rgb,
@@ -43,17 +33,11 @@ def _post_process_target(images: ImageList, target: Target) -> ImageList:
             metadata_observationTime=julian_date,
             metadata_epoch=julian_date,
         )
-        calibrated = SpectrophotometricColorCalibration(
-            solved, saturationThreshold=1.0
-        )
-        starless, stars = StarXTerminator(calibrated)
+        calibrated = SpectrophotometricColorCalibration(solved, saturationThreshold=1.0)
+        stars, starless = StarXTerminator(calibrated)
+        return stars, starless
 
-        output_filenames = [
-            output_filename(target, "stars"),
-            output_filename(target, "starless"),
-        ]
-        SaveImages([stars, starless], output_filenames)
-    elif "RGB" in images:
+    if "RGB" in images:
         aligned = StarAlignment(images.channels("RGB"))
         rgb = ChannelCombination(aligned)
         julian_date = int(Time(target.oldest_date).jd)
@@ -67,41 +51,43 @@ def _post_process_target(images: ImageList, target: Target) -> ImageList:
         )
         calibrated = SpectrophotometricColorCalibration(solved)
         stars, starless = StarXTerminator(calibrated)
-
-        output_filenames = [
-            output_filename(target, "stars"),
-            output_filename(target, "starless"),
-        ]
-        SaveImages([stars, starless], output_filenames)
+        return stars, starless
 
     if "SHO" in images:
-        aligned = StarAlignment(images.channels("RGB"))
-        _, s = StarXTerminator(aligned["S"])
-        _, h = StarXTerminator(aligned["H"])
-        _, o = StarXTerminator(aligned["O"])
+        aligned = StarAlignment(images.channels("SHO"))
+        _, s = StarXTerminator(aligned[0])
+        _, h = StarXTerminator(aligned[1])
+        _, o = StarXTerminator(aligned[2])
         s, o = LinearFit([s, o], h)
         narrowband = ChannelCombination([s, h, o], "SHO")
+        return narrowband, None
 
-        # TODO: Supply multiple output filenames.
-        SaveImages([narrowband], [output_filename])
+    return None
 
 
-# TODO: Targets are composed of multiple color channels, so this needs to be
-# able to return multiple images.
 def target_filename(target: Target, suffix: str) -> XisfFilePath:
     return XisfFilePath(f"target {target.stable_hash}_{suffix}.xisf")
 
 
-# TODO: Hash the script used to do the post-processing, and do not repeat
-# the post-processing when a file with that hash already exists.
 @makes_image(Target).as_post_processed(target_filename)
 @cached.remote(resources={"PixInsight": 1}, scheduling_strategy="SPREAD")
 @measure_performance
 @create_thumbnail
 def post_process_target(target: Target, stacks: CustomizedStacksDict) -> None:
+    from context import context
+
     print(f"Entering post_process_target for {target}")
-    images = [stack_filename(stacks[stack_id].get()) for stack_id in target.stack_ids]
+    image_paths = [stack_filename(stacks[stack_id].get()) for stack_id in target.stack_ids]
+    images = Image.open_many(image_paths)
+
+    mock = context.settings.development_settings.mock_pixinsight
 
     result = _post_process_target(images, target)
-    print(f"post_process_target, target {target} returning {result}")
-    # return XisfFilePath(result)
+    if result is None:
+        return
+
+    stars, starless = result
+    if stars is not None:
+        stars.save_to(target_filename(target, "stars"), mock=mock)
+    if starless is not None:
+        starless.save_to(target_filename(target, "starless"), mock=mock)

@@ -1,4 +1,4 @@
-"""Lazy image type for pix2.
+"""Lazy image type for pix.
 
 An Image represents the result of a PixInsight operation (or chain of
 operations) that hasn't been executed yet. It looks and feels like a
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pix2.recipe import Recipe
+from pix.recipe import Recipe
 
 
 class Image:
@@ -32,7 +32,7 @@ class Image:
         This does not read the file — it just records that this file
         will be opened when the recipe is executed.
         """
-        from pix2.tasks.open_images import read_filter_from_header
+        from pix.tasks.open_images import read_filter_from_header
 
         filename = Path(filename)
         recipe = Recipe(input_filenames=[filename])
@@ -47,7 +47,7 @@ class Image:
         recipe = Recipe(input_filenames=filenames)
         images = []
         for filename in filenames:
-            from pix2.tasks.open_images import read_filter_from_header
+            from pix.tasks.open_images import read_filter_from_header
             filter = read_filter_from_header(filename)
             view_id = f"V_{filename.stem}"
             images.append(cls(view_id=view_id, recipe=recipe, filter=filter))
@@ -72,7 +72,7 @@ class ImageList(list):
         if isinstance(key, int):
             return super().__getitem__(key)
         # String key: find by filter
-        from pix2.tasks.filters import normalize_filter
+        from pix.tasks.filters import normalize_filter
         for image in self:
             if normalize_filter(image.filter) == normalize_filter(key):
                 return image
@@ -80,7 +80,7 @@ class ImageList(list):
 
     def __contains__(self, filters):
         if isinstance(filters, str):
-            from pix2.tasks.filters import normalize_filter
+            from pix.tasks.filters import normalize_filter
             return all(
                 any(normalize_filter(img.filter) == normalize_filter(f) for img in self)
                 for f in filters

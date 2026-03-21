@@ -1,10 +1,7 @@
-from typing import Any, cast
+"""SpectrophotometricFluxCalibration."""
+from pix.tasks.js import Enum
+from pix.tasks.process import make_process_task
 
-from pix.classes import ShellScriptTask, ImageList
-from pix.context import append_task
-from pix.processes import enum, execute_on_view_ids
-
-# TODO: Select parameters for this from the user's camera metadata.
 _default_parameters = {
     "narrowbandMode": False,
     "grayFilterTrCurve": "300,0,380,0,400,1,500,1,675,1,710,0,800,0",
@@ -42,7 +39,7 @@ _default_parameters = {
     "psfMinStructureSize": 0,
     "psfMinSNR": 40.00,
     "psfAllowClusteredSources": False,
-    "psfType": enum("SpectrophotometricFluxCalibration.prototype.PSFType_Auto"),
+    "psfType": Enum("SpectrophotometricFluxCalibration.prototype.PSFType_Auto"),
     "psfGrowth": 1.75,
     "psfMaxStars": 24576,
     "psfSearchTolerance": 4.00,
@@ -53,21 +50,4 @@ _default_parameters = {
     "outputDirectory": "",
 }
 
-
-def SpectrophotometricFluxCalibration(
-    images: ImageList, **kwargs: Any
-) -> ImageList:
-    assert all(i.view_id is not None for i in images)
-    view_ids = [cast(str, i.view_id) for i in images]
-
-    append_task(
-        ShellScriptTask(
-            javascript=execute_on_view_ids(
-                "SpectrophotometricFluxCalibration",
-                _default_parameters | kwargs,
-                view_ids,
-            )
-        )
-    )
-
-    return images
+SpectrophotometricFluxCalibration = make_process_task("SpectrophotometricFluxCalibration", _default_parameters)

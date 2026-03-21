@@ -1,13 +1,19 @@
-from typing import Any
-import os
+"""PhotometricMosaic — join two images with photometric matching.
 
-from pix.classes import ShellScriptTask, Image, ImageList
-from pix.context import append_task
+This is a script-based task invoked via -p parameter flags.
+"""
+from typing import Any
+
+from pix.image import Image
+from pix.recipe import Step
 from pix.tasks.copy_fits_keywords import CopyFITSKeywords
 
-# TODO: These parameters must be floats, not strings, so they can be overriden
-# by the user.
-_default_parameters = {
+_SCRIPT_FILENAME = (
+    "/Applications/PixInsight/src/scripts/"
+    "JohnMurphy/PhotometricMosaic/AstroFlowPhotometricMosaic.js"
+)
+
+_DEFAULT_PARAMETERS = {
     "referenceView": "placed_0",
     "targetView": "placed_1",
     "replaceRefImage": False,
@@ -29,10 +35,6 @@ _default_parameters = {
     "joinSize": 90,
     "joinPosition": 0,
     "joinOutlierPercent": 2,
-    "cropTargetPreviewLeft": 0,
-    "cropTargetPreviewTop": 0,
-    "cropTargetPreviewWidth": 0,
-    "cropTargetPreviewHeight": 0,
     "useCropTargetToReplaceRegion": False,
     "sampleStarGrowthRate": 0.25,
     "sampleStarGrowthRateTarget": 1,
@@ -40,10 +42,6 @@ _default_parameters = {
     "sampleSize": 27,
     "maxSamples": 3000,
     "useAutoSampleGeneration": True,
-    "adjustScale0": 1,
-    "adjustScale1": 1,
-    "adjustScale2": 1,
-    "adjustScaleLineOffset": 0,
     "overlapGradientSmoothness": -1,
     "taperLength": "47",
     "useAutoTaperLength": True,
@@ -65,36 +63,26 @@ _default_parameters = {
 }
 
 
-def PhotometricMosaic(
-    images: ImageList, output_filename: str, **kwargs: Any
-) -> ImageList:
-    print(
-        f"### Entering PhotometricMosaic, images {images} "
-        f"output_filename {output_filename}"
-    )
-    parameters = _default_parameters | kwargs
-    javascript_filename = "/Applications/PixInsight/src/scripts/JohnMurphy/PhotometricMosaic/AstroFlowPhotometricMosaic.js"
+def PhotometricMosaic(images: list[Image], **kwargs: Any) -> Image:
+    """Join two images using PixInsight's PhotometricMosaic script."""
+    assert len(images) == 2
+    recipe = images[0].recipe
 
-    parameters["referenceView"] = images[0].view_id
-    parameters["targetView"] = images[1].view_id
+    parameters = _DEFAULT_PARAMETERS | kwargs | {
+        "referenceView": images[0].view_id,
+        "targetView": images[1].view_id,
+    }
 
-    # TODO: The `javascript_filename` thing is long. Maybe there can be two
-    # ShellScriptTask types, one that accepts code, and one that accepts a filename.
-    append_task(
-        ShellScriptTask(
-            javascript_filename=javascript_filename, parameters=parameters
-        )
-    )
+    recipe.add_step(Step(
+        name="PhotometricMosaic",
+        script_filename=_SCRIPT_FILENAME,
+        parameters={k: str(v) for k, v in parameters.items()},
+    ))
 
-    result = ImageList(
-        [
-            Image(
-                filename=output_filename,
-                view_id="Mosaic",
-                filter=images[0].filter,
-                dirty=True,
-            )
-        ]
+    result = Image(
+        view_id="Mosaic",
+        recipe=recipe,
+        filter=images[0].filter,
     )
-    CopyFITSKeywords(images[0], result[0])
+    CopyFITSKeywords(images[0], result)
     return result
