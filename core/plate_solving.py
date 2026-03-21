@@ -40,15 +40,17 @@ class PlateSolution:
 
 
 def _ensure_naxis(header: dict[str, Any]) -> None:
-    """Copy IMAGEW/IMAGEH to NAXIS1/NAXIS2 if missing.
+    """Ensure NAXIS, NAXIS1, NAXIS2 are present in the WCS header.
 
-    solve-field outputs IMAGEW/IMAGEH but not always NAXIS1/NAXIS2.
-    Astropy WCS needs NAXIS1/NAXIS2 for footprint_contains() and similar.
+    solve-field outputs IMAGEW/IMAGEH but not always NAXIS/NAXIS1/NAXIS2.
+    Astropy WCS needs these for footprint_contains() and to avoid warnings.
     """
     if "NAXIS1" not in header and "IMAGEW" in header:
         header["NAXIS1"] = header["IMAGEW"]
     if "NAXIS2" not in header and "IMAGEH" in header:
         header["NAXIS2"] = header["IMAGEH"]
+    if "NAXIS" not in header and "NAXIS1" in header:
+        header["NAXIS"] = 2
 
 
 def get_center(header: dict[str, Any]) -> tuple[Degrees, Degrees]:
