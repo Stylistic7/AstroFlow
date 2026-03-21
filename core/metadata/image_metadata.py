@@ -174,7 +174,4 @@ def load_metadata() -> ContextRef:
                 f"value type {type(value)}"
             )
 
-    # TODO: Pass the ContextRef everywhere, and remove this from the context.
-    context.metadata = metadata
-
     return ContextRef.store_large(metadata)
