@@ -21,7 +21,10 @@ def compute_graph():
 
 @compute_graphs_bp.route("/compute_graph_status")
 def compute_graph_status():
-    return graph_status_to_progress(context.compute_graph_status)
+    status = context.compute_graph_status
+    if status is None:
+        return {}
+    return graph_status_to_progress(status)
 
 
 @compute_graphs_bp.route("/workflow_graph/stack/<stack_id>")
