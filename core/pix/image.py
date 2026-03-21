@@ -6,9 +6,15 @@ normal object, but execution is deferred until save_to() is called.
 """
 from __future__ import annotations
 
+import xxhash
 from pathlib import Path
 
 from pix.recipe import Recipe
+
+
+def view_id_for(filename: Path) -> str:
+    """Deterministic, short, PixInsight-safe view ID from a filename."""
+    return f"V_{xxhash.xxh64(str(filename)).hexdigest()[:12]}"
 
 
 class Image:
@@ -37,7 +43,7 @@ class Image:
         filename = Path(filename)
         recipe = Recipe(input_filenames=[filename])
         filter = read_filter_from_header(filename)
-        view_id = f"V_{filename.stem}"
+        view_id = view_id_for(filename)
         return cls(view_id=view_id, recipe=recipe, filter=filter)
 
     @classmethod
@@ -49,7 +55,7 @@ class Image:
         for filename in filenames:
             from pix.tasks.open_images import read_filter_from_header
             filter = read_filter_from_header(filename)
-            view_id = f"V_{filename.stem}"
+            view_id = view_id_for(filename)
             images.append(cls(view_id=view_id, recipe=recipe, filter=filter))
         return ImageList(images)
 

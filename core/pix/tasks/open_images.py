@@ -14,20 +14,15 @@ def read_filter_from_header(filename: Path) -> str | None:
 
 def generate_open_images_js(filenames: list[Path]) -> str:
     """Generate JavaScript to open image files in PixInsight."""
+    from pix.image import view_id_for
+
     lines = []
-    for filename in filenames:
-        view_id = f"V_{filename.stem}"
-        lines.append(
-            f'var w_{view_id} = ImageWindow.open("{filename}");'
-        )
-        lines.append(
-            f'if (w_{view_id}.length > 0) {{'
-        )
-        lines.append(
-            f'  w_{view_id}[0].mainView.id = "{view_id}";'
-        )
-        lines.append(
-            f'  w_{view_id}[0].show();'
-        )
+    for i, filename in enumerate(filenames):
+        view_id = view_id_for(filename)
+        var = f"w_{i}"
+        lines.append(f'var {var} = ImageWindow.open("{filename}");')
+        lines.append(f'if ({var}.length > 0) {{')
+        lines.append(f'  {var}[0].mainView.id = "{view_id}";')
+        lines.append(f'  {var}[0].show();')
         lines.append('}')
     return '\n'.join(lines)
