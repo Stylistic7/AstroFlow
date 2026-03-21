@@ -57,10 +57,13 @@ def image_metadata_from_obj(
     obj: dict[str, Any], filename: Path
 ) -> ImageMetadata:
     """Reconstruct ImageMetadata from a sidecar dict."""
-    # Load plate solution from its own sidecar section (if any).
+    # Load plate solution from the same sidecar file (not via solve_field,
+    # which would redundantly re-read the sidecar or worse, re-run the solver).
     plate_solution = None
     if image_types.is_light_frame(obj["header"]):
-        plate_solution = plate_solving.solve_field(filename)
+        ps_obj = get_section(filename, "plate_solution")
+        if isinstance(ps_obj, dict) and ps_obj.get("data") is not None:
+            plate_solution = plate_solving._plate_solution_from_obj(ps_obj)
 
     return ImageMetadata(
         content_hash=obj["content_hash"],
