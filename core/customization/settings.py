@@ -43,7 +43,7 @@ class ClusteringSettings:
     min_component_members: int = 3
     angular_tolerance: Radians = field(default_factory=lambda: Radians(math.radians(10.0)))
     max_run_gap: datetime.timedelta = field(default_factory=lambda: datetime.timedelta(hours=8))
-    min_frames_in_stack: int = 3
+    min_frames_in_stack: int = 5
 
     def __hash__(self):
         return hash_dataclass(self)
