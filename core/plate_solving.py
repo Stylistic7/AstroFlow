@@ -78,6 +78,7 @@ def get_num_stars(axy_file: Path | str) -> int:
     return table.shape[0]
 
 
+
 def simplify_header(header: dict[str, Any]) -> dict[str, Any]:
     output_header = {}
     for k in header.keys():
@@ -223,8 +224,6 @@ def solve_field(
             "degwidth",
             "--downsample",
             "2",
-            "--objs",
-            "1000",
             "--tweak-order",
             "2",
             "--crpix-center",
