@@ -186,9 +186,13 @@ class StateActor:
         self, state: State, graph: Graph
     ) -> tuple[State, list[Action]]:
         def status_fn(status: GraphStatus):
-            # TODO: Re-enable this, with some testing to make sure it's not too slow.
-            # context.compute_graph_status = status
-            pass
+            # Fire-and-forget: update status without blocking the graph.
+            from context import _get_namespace
+            actor = ray.get_actor("context", namespace=_get_namespace())
+            actor.set.remote("compute_graph_status", status)
+
+            from web_server.backend.announcer import announce
+            announce("compute_graph_status")
 
         # TODO: Should `state` be updated?
         run_graph(

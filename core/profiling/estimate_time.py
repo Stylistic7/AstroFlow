@@ -6,22 +6,46 @@ from beartype import beartype
 
 
 @beartype
-def estimate_time(tag: str, number: int = 1) -> float | None:
-    nodes = ray.nodes()
-    times = []
-    for node in nodes:
-        name = node["NodeName"]
-        num_cpus = node["Resources"]["CPU"]
-        key = ("performance_history", name, tag)
-        if history := context.get(key, None):
-            print(f"### history {history}")
+def estimate_time(fn_name: str, remaining: int = 1) -> float | None:
+    """Estimate seconds to complete `remaining` tasks of function `fn_name`.
 
-            # If the number of remaining tasks is less than the number of CPUs,
-            # then all of them can run at the same time.
-            if number < num_cpus:
-                times.append(np.mean(history))
-            else:
-                times.append(num_cpus / np.mean(history))
+    Uses historical wall_time_s from the profile data collected by
+    @measure_performance, combined with per-node CPU counts to model
+    parallel throughput across the Ray cluster.
+    """
+    if remaining <= 0:
+        return 0.0
 
-    if times:
-        return number / np.sum(times)
+    # Collect all profile samples for this function across all nodes.
+    all_profiles = context.get_matching(("profile", fn_name))
+    if not all_profiles:
+        return None
+
+    # Flatten all wall_time_s samples.
+    wall_times = []
+    for key, samples in all_profiles.items():
+        for sample in samples:
+            if "wall_time_s" in sample:
+                wall_times.append(sample["wall_time_s"])
+
+    if not wall_times:
+        return None
+
+    mean_task_time = np.mean(wall_times)
+    if mean_task_time <= 0:
+        return None
+
+    # Sum throughput across all alive nodes.
+    # Each node can run min(remaining, num_cpus) tasks in parallel.
+    total_throughput = 0.0
+    for node in ray.nodes():
+        if not node.get("Alive", False):
+            continue
+        num_cpus = node.get("Resources", {}).get("CPU", 0)
+        if num_cpus > 0:
+            total_throughput += num_cpus / mean_task_time  # tasks per second
+
+    if total_throughput <= 0:
+        return None
+
+    return remaining / total_throughput

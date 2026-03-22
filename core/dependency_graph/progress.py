@@ -28,14 +28,11 @@ def graph_status_to_progress(status: GraphStatus) -> dict[str, Any]:
     status_dict = {}
     for fn_name in set(remaining_task_counts.keys()) | set(done_task_counts.keys()):
         estimated_time = estimate_time(fn_name, remaining_task_counts[fn_name])
-        if estimated_time is None:
-            print(f"### {estimated_time=}")
-            continue
 
         status_dict[fn_name] = {
             "total_number": remaining_task_counts[fn_name] + done_task_counts[fn_name],
             "remaining_number": remaining_task_counts[fn_name],
-            "estimated_time": estimated_time,
+            "estimated_time": estimated_time or 0,
         }
 
     return status_dict
