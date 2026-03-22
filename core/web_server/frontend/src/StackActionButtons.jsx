@@ -1,4 +1,4 @@
-import { Tooltip, IconButton } from '@mui/material';
+import { Box, Tooltip, IconButton } from '@mui/material';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import QuarantineToggle from './QuarantineToggle';
 
@@ -8,16 +8,18 @@ export default function StackActionButtons({ stack_id, is_quarantined }) {
     alert(`This would show the image at ${stack_id} in Finder.`);
   };
 
-  return <>
-    <QuarantineToggle
-      objectType="stack"
-      objectId={stack_id}
-      isQuarantined={is_quarantined || false}
-    />
-    <Tooltip title="Show in Finder">
-      <IconButton onClick={handleShowInFinder} color="white">
-        <FolderOpenIcon />
-      </IconButton>
-    </Tooltip>
-  </>;
+  return (
+    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+      <QuarantineToggle
+        objectType="stack"
+        objectId={stack_id}
+        isQuarantined={is_quarantined || false}
+      />
+      <Tooltip title="Show in Finder">
+        <IconButton onClick={handleShowInFinder} color="white">
+          <FolderOpenIcon />
+        </IconButton>
+      </Tooltip>
+    </Box>
+  );
 }

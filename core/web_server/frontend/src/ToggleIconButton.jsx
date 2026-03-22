@@ -13,7 +13,7 @@ const ToggleButton = styled(IconButton)(({ theme, toggled }) => ({
   fontSize: '20px',
 }));
 
-const ToggleIconButton = ({ name, icon, checked, handleChange }) => {
+const ToggleIconButton = ({ name, icon, checked, handleChange, disabled }) => {
 
   const handleToggle = (event) => {
     handleChange(name);
@@ -23,6 +23,7 @@ const ToggleIconButton = ({ name, icon, checked, handleChange }) => {
     <ToggleButton
       onClick={handleToggle}
       toggled={checked}
+      disabled={disabled}
     >
       {React.cloneElement(icon, {
         sx: { color: checked ? 'black' : 'white' },

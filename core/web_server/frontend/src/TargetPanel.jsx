@@ -1,11 +1,9 @@
 import React, { useContext } from "react";
 import { useParams, useLocation } from "react-router-dom";
 
-import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 
 import StackThumbnail from "./StackThumbnail.jsx";
-import QuarantineToggle from './QuarantineToggle.jsx';
 import "./Starmap.css";
 import AstroFlowContext from './AstroFlowContext.jsx';
 
@@ -20,16 +18,6 @@ export default function TargetPanel() {
 
 	return (
 		<>
-			<Box sx={{ display: 'flex', alignItems: 'center', ml: 2, mb: 1 }}>
-				<Typography variant="h6" sx={{ mr: 1 }}>
-					{target?.name || params.target_id}
-				</Typography>
-				<QuarantineToggle
-					objectType="target"
-					objectId={params.target_id}
-					isQuarantined={target?.is_quarantined || false}
-				/>
-			</Box>
 			<div style={{
 				display: "grid",
 				gridTemplateColumns: "repeat(4, 1fr)",

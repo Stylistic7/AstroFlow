@@ -3,6 +3,7 @@ import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useContext } from 'react';
 import { styled, useTheme } from '@mui/material/styles';
 
+import Box from '@mui/material/Box';
 import Breadcrumbs from '@mui/material/Breadcrumbs';
 import LayersIcon from '@mui/icons-material/Layers';
 import SquareFootIcon from '@mui/icons-material/SquareFoot';
@@ -13,6 +14,7 @@ import PanoramaHorizontalIcon from '@mui/icons-material/PanoramaHorizontal';
 import RuleIcon from '@mui/icons-material/Rule';
 
 import AstroFlowContext from './AstroFlowContext.jsx';
+import QuarantineToggle from './QuarantineToggle.jsx';
 
 function capitalizeFirst(str) {
     return str.charAt(0).toUpperCase() + str.slice(1);
@@ -57,107 +59,143 @@ export default function AstroFlowBreadcrumbs() {
         cal_stack_url += `/calibration_stack/${params.stack_id}`;
     }
 
-    return <>
-        <Breadcrumbs aria-label="breadcrumb" sx={{
-            padding: "12px",
+    // Determine the deepest (most specific) object for the quarantine toggle.
+    let quarantineObjectType = null;
+    let quarantineObjectId = null;
+    let quarantineIsQuarantined = false;
+    if (params.calibration_stack_id && calStack) {
+        quarantineObjectType = "stack";
+        quarantineObjectId = params.calibration_stack_id;
+        quarantineIsQuarantined = calStack.is_quarantined || false;
+    } else if (params.stack_id && stack) {
+        quarantineObjectType = "stack";
+        quarantineObjectId = params.stack_id;
+        quarantineIsQuarantined = stack.is_quarantined || false;
+    } else if (params.target_id && target) {
+        quarantineObjectType = "target";
+        quarantineObjectId = params.target_id;
+        quarantineIsQuarantined = target.is_quarantined || false;
+    } else if (params.mosaic_id && mosaic) {
+        quarantineObjectType = "mosaic";
+        quarantineObjectId = params.mosaic_id;
+        quarantineIsQuarantined = mosaic.is_quarantined || false;
+    }
+
+    return (
+        <Box sx={{
+            display: 'flex',
+            alignItems: 'center',
             backgroundColor: theme.palette.background.default,
+            pr: 1,
         }}>
-            <Link
-                href="/"
-                underline="hover"
-                sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    color: fontColor,
-                    marginLeft: '0.5em',
-                    marginRight: '0.5em',
-                }}
-                style={{ pointerEvents: "auto" }}
-                color="inherit"
-            >
-                <PanoramaHorizontalIcon sx={{ marginRight: '0.5em' }} />
-                Starmap
-            </Link>
-            {params.items && <Link
-                href={location.pathname}
-                underline="hover"
-                sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    color: fontColor,
-                    marginLeft: '0.5em',
-                    marginRight: '0.5em',
-                }}
-                style={{ pointerEvents: "auto" }}
-                color="inherit"
-            >
-                <RuleIcon sx={{ marginRight: '0.5em' }} />
-                Disambiguation
-            </Link>}
-            {params.mosaic_id && <Link
-                href={mosaic_url}
-                underline="hover"
-                sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    color: fontColor,
-                    marginLeft: '0.5em',
-                    marginRight: '0.5em',
-                }}
-                style={{ pointerEvents: "auto" }}
-                color="inherit"
-            >
-                <AutoAwesomeMosaicIcon sx={{ marginRight: '0.5em' }} />
-                Mosaic "{mosaic.name}"
-            </Link>}
-            {params.target_id && <Link
-                href={target_url}
-                underline="hover"
-                sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    color: fontColor,
-                    marginLeft: '0.5em',
-                    marginRight: '0.5em',
-                }}
-                style={{ pointerEvents: "auto" }}
-                color="inherit"
-            >
-                <AutoAwesomeIcon sx={{ marginRight: '0.5em' }} />
-                Target "{target.name}"
-            </Link>}
-            {params.stack_id && <Link
-                href={stack_url}
-                underline="hover"
-                sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    color: fontColor,
-                    marginLeft: '0.5em',
-                    marginRight: '0.5em',
-                }}
-                style={{ pointerEvents: "auto" }}
-                color="inherit"
-            >
-                <LayersIcon sx={{ marginRight: '0.5em' }} />
-                Stack "{stack.name}"
-            </Link>}
-            {params.calibration_stack_id && <Link
-                href={cal_stack_url}
-                underline="hover"
-                sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    color: fontColor,
-                    marginLeft: '0.5em',
-                    marginRight: '0.5em',
-                }}
-                style={{ pointerEvents: "auto" }}
-                color="inherit"
-            >
-                <SquareFootIcon sx={{ marginRight: '0.5em' }} />
-                {capitalizeFirst(calStack.image_type)} calibration stack
-            </Link>}
-        </Breadcrumbs>
-    </>;
+            <Breadcrumbs aria-label="breadcrumb" sx={{
+                padding: "12px",
+                flex: 1,
+            }}>
+                <Link
+                    href="/"
+                    underline="hover"
+                    sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        color: fontColor,
+                        marginLeft: '0.5em',
+                        marginRight: '0.5em',
+                    }}
+                    style={{ pointerEvents: "auto" }}
+                    color="inherit"
+                >
+                    <PanoramaHorizontalIcon sx={{ marginRight: '0.5em' }} />
+                    Starmap
+                </Link>
+                {params.items && <Link
+                    href={location.pathname}
+                    underline="hover"
+                    sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        color: fontColor,
+                        marginLeft: '0.5em',
+                        marginRight: '0.5em',
+                    }}
+                    style={{ pointerEvents: "auto" }}
+                    color="inherit"
+                >
+                    <RuleIcon sx={{ marginRight: '0.5em' }} />
+                    Disambiguation
+                </Link>}
+                {params.mosaic_id && <Link
+                    href={mosaic_url}
+                    underline="hover"
+                    sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        color: fontColor,
+                        marginLeft: '0.5em',
+                        marginRight: '0.5em',
+                    }}
+                    style={{ pointerEvents: "auto" }}
+                    color="inherit"
+                >
+                    <AutoAwesomeMosaicIcon sx={{ marginRight: '0.5em' }} />
+                    Mosaic "{mosaic.name}"
+                </Link>}
+                {params.target_id && <Link
+                    href={target_url}
+                    underline="hover"
+                    sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        color: fontColor,
+                        marginLeft: '0.5em',
+                        marginRight: '0.5em',
+                    }}
+                    style={{ pointerEvents: "auto" }}
+                    color="inherit"
+                >
+                    <AutoAwesomeIcon sx={{ marginRight: '0.5em' }} />
+                    Target "{target.name}"
+                </Link>}
+                {params.stack_id && <Link
+                    href={stack_url}
+                    underline="hover"
+                    sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        color: fontColor,
+                        marginLeft: '0.5em',
+                        marginRight: '0.5em',
+                    }}
+                    style={{ pointerEvents: "auto" }}
+                    color="inherit"
+                >
+                    <LayersIcon sx={{ marginRight: '0.5em' }} />
+                    Stack "{stack.name}"
+                </Link>}
+                {params.calibration_stack_id && <Link
+                    href={cal_stack_url}
+                    underline="hover"
+                    sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        color: fontColor,
+                        marginLeft: '0.5em',
+                        marginRight: '0.5em',
+                    }}
+                    style={{ pointerEvents: "auto" }}
+                    color="inherit"
+                >
+                    <SquareFootIcon sx={{ marginRight: '0.5em' }} />
+                    {capitalizeFirst(calStack.image_type)} calibration stack
+                </Link>}
+            </Breadcrumbs>
+            {quarantineObjectType && (
+                <QuarantineToggle
+                    objectType={quarantineObjectType}
+                    objectId={quarantineObjectId}
+                    isQuarantined={quarantineIsQuarantined}
+                />
+            )}
+        </Box>
+    );
 }

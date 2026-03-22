@@ -2,7 +2,7 @@ import React from 'react';
 import { Box, Typography, IconButton, Paper } from '@mui/material';
 import { OpenInNew } from '@mui/icons-material';
 import MetadataItem from './MetadataItem.jsx';
-import QuarantineToggle from './QuarantineToggle.jsx';
+import DecisionBadge from './DecisionBadge.jsx';
 
 import { ra_to_hms, dec_to_dms, format_duration } from './units.js'
 
@@ -34,14 +34,12 @@ const StackHeader = ({ stack_type, stack, stack_id }) => {
           </Box>
         </Box>
         <Box sx={{ flexGrow: 1 }} />
+        {stack_type === 'stack' && (
+          <DecisionBadge objectType="stack" objectId={stack_id} />
+        )}
         <IconButton onClick={handleOpenStack}>
           <OpenInNew />
         </IconButton>
-        <QuarantineToggle
-          objectType="stack"
-          objectId={stack_id}
-          isQuarantined={stack.is_quarantined || false}
-        />
       </Box>
     </Paper>
   );
