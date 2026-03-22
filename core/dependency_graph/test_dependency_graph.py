@@ -773,3 +773,128 @@ def test_returns_tuple(test_context) -> None:
 
     result, _ = run_graph(graph)
     assert result[handles_tuple_graph] == 31
+
+
+@ray.remote
+def slow_process(item: T) -> T:
+    time.sleep(1)
+    return item
+
+
+@ray.remote
+def slow_gather(*ancestor_results: tuple[int]) -> float:
+    assert isinstance(ancestor_results, tuple)
+    return sum(ancestor_results)
+
+
+from decorators import cached
+
+
+@cached.remote
+def cached_slow_process(sleep_s: int, item: T) -> T:
+    time.sleep(sleep_s)
+    return item
+
+
+def test_cached_tasks_run_in_parallel(test_context) -> None:
+    """@cached.remote tasks with {} should run in parallel.
+
+    Uses a 3s sleep so that serial execution (30s) is clearly distinguishable
+    from parallel execution (~3s + worker startup).
+    """
+    N = 10
+    SLEEP = 3
+
+    # Warm up workers so startup time doesn't mask the result.
+    warmup = Graph({gather: {(process, i) for i in range(N)}})
+    run_graph(warmup)
+
+    graph = Graph(
+        {slow_gather: {(cached_slow_process, SLEEP, i) for i in range(N)}}
+    )
+
+    start = time.time()
+    results, _ = run_graph(graph)
+    elapsed = time.time() - start
+
+    serial_time = N * SLEEP
+    print(f"### {N} cached tasks with {{}} took {elapsed:.2f}s (serial would be {serial_time}s)")
+    assert results[slow_gather] == sum(range(N))
+    assert elapsed < serial_time * 0.5, (
+        f"Took {elapsed:.1f}s, serial would be {serial_time}s — tasks not parallel"
+    )
+
+
+def test_cached_tasks_list_run_in_parallel(test_context) -> None:
+    """@cached.remote tasks with [] should run in parallel.
+
+    Uses a 3s sleep so that serial execution (30s) is clearly distinguishable
+    from parallel execution (~3s + worker startup).
+    """
+    N = 10
+    SLEEP = 3
+
+    # Warm up workers so startup time doesn't mask the result.
+    warmup = Graph({gather: [(process, i) for i in range(N)]})
+    run_graph(warmup)
+
+    graph = Graph(
+        {slow_gather: [(cached_slow_process, SLEEP, i) for i in range(N)]}
+    )
+
+    start = time.time()
+    results, _ = run_graph(graph)
+    elapsed = time.time() - start
+
+    serial_time = N * SLEEP
+    print(f"### {N} cached tasks with [] took {elapsed:.2f}s (serial would be {serial_time}s)")
+    assert results[slow_gather] == sum(range(N))
+    assert elapsed < serial_time * 0.5, (
+        f"Took {elapsed:.1f}s, serial would be {serial_time}s — tasks not parallel"
+    )
+
+
+def test_set_deps_run_in_parallel(test_context) -> None:
+    """Independent tasks listed with {} notation should run in parallel."""
+    N = 10
+    graph = Graph({gather: {(process, i) for i in range(N)}})
+    results, _ = run_graph(graph)
+
+    assert results[gather] == sum(range(N))
+    assert results.max_parallelism_seen >= N
+
+
+def test_list_deps_run_in_parallel(test_context) -> None:
+    """Independent tasks listed with [] notation should run in parallel."""
+    N = 10
+    graph = Graph({gather: [(process, i) for i in range(N)]})
+    results, _ = run_graph(graph)
+
+    assert results[gather] == sum(range(N))
+    assert results.max_parallelism_seen >= N
+
+
+def test_set_deps_wall_time(test_context) -> None:
+    """Wall time with {} should be ~1s for 10 x 1s tasks, not ~10s."""
+    N = 10
+    graph = Graph({gather: {(slow_process, i) for i in range(N)}})
+
+    start = time.time()
+    results, _ = run_graph(graph)
+    elapsed = time.time() - start
+
+    assert results[gather] == sum(range(N))
+    assert elapsed < N * 0.5, f"Took {elapsed:.1f}s — tasks ran serially"
+
+
+def test_list_deps_wall_time(test_context) -> None:
+    """Wall time with [] should be ~1s for 10 x 1s tasks, not ~10s."""
+    N = 10
+    graph = Graph({gather: [(slow_process, i) for i in range(N)]})
+
+    start = time.time()
+    results, _ = run_graph(graph)
+    elapsed = time.time() - start
+
+    assert results[gather] == sum(range(N))
+    assert elapsed < N * 0.5, f"Took {elapsed:.1f}s — tasks ran serially"
