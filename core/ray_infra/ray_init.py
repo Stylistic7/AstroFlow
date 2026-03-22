@@ -63,3 +63,9 @@ def connect_to_ray_cluster():
         _scheduler_actor = SchedulerActor.options(
             name="scheduler", namespace="AstroFlow", get_if_exists=True
         ).remote()
+
+        # Block until all actors are actually ready.
+        print("### Waiting for Ray actors to be ready...")
+        ray.get(_context_actor.get.remote("_ping", None))
+        ray.get(_state_actor.is_busy.remote())
+        print("### Ray actors are ready.")
