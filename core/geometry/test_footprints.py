@@ -1,3 +1,4 @@
+import pytest
 import shapely  # type: ignore
 from shapely import Polygon  # type: ignore
 
@@ -10,6 +11,7 @@ from geometry.projections import mercator
 from stacks.composite_stack import CompositeStack
 
 
+@pytest.mark.heavy
 def test_stack(test_context) -> None:
     make_synthetic_frames(
         number=3,
@@ -78,6 +80,7 @@ def test_stack(test_context) -> None:
     )
 
 
+@pytest.mark.heavy
 def test_target(test_context) -> None:
     # Two stacks with the same footprint, but different image scales. They
     # should be merged into a single target.
@@ -166,6 +169,7 @@ def test_target(test_context) -> None:
     )
 
 
+@pytest.mark.heavy
 def test_mosaic(test_context) -> None:
     # Two stacks that overlap by 1.5 degrees in RA.
     make_synthetic_frames(

@@ -1,3 +1,4 @@
+import pytest
 import ray
 import numpy as np
 import datetime
@@ -23,6 +24,7 @@ def stack_files(stack: CompositeStack) -> TiffFilePath:
     return output_path
 
 
+@pytest.mark.heavy
 def test_single_stack(test_context) -> None:
     copy_testdata_frames(
         prefix="light_run_0",

@@ -1,3 +1,4 @@
+import pytest
 import datetime
 from objsize import get_deep_size
 
@@ -16,6 +17,7 @@ def print_dict_skeleton(d, indent=0):
         print_dict_skeleton(d[k], indent + 1)
 
 
+@pytest.mark.heavy
 def test_convert_to_dict(test_context) -> None:
     copy_testdata_frames(
         prefix="light_run_0",

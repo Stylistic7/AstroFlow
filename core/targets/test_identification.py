@@ -1,7 +1,9 @@
+import pytest
 from context import context
 from stacks.composite_stack import CompositeStack
 
 
+@pytest.mark.heavy
 def test_orion_nebula(with_real_testdata):
     assert len(context.stacks) > 0
 

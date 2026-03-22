@@ -1,3 +1,4 @@
+import pytest
 import ray
 import datetime
 import pytz
@@ -29,6 +30,7 @@ def _print_stack(stack: CompositeStack):
             )
 
 
+@pytest.mark.heavy
 def test_stack_dependency_graph(test_context) -> None:
     # These runs of dark and bias frames will be used by both runs of light
     # frames.
@@ -157,6 +159,7 @@ def test_stack_dependency_graph(test_context) -> None:
     )
 
 
+@pytest.mark.heavy
 def test_one_light_run_one_dark_run(test_context) -> None:
     copy_testdata_frames(target_name="NGC7635", dest_dir=context.input_dirs[0])
     make_synthetic_frames(
@@ -183,6 +186,7 @@ def test_one_light_run_one_dark_run(test_context) -> None:
     assert len(light_stacks) == 1
 
 
+@pytest.mark.heavy
 def test_flats_from_different_camera(test_context) -> None:
     # There are lights from two different cameras. This should result
     # in two stacks, with mutually-exclusive sets of flat frames.
@@ -273,6 +277,7 @@ def test_flats_from_different_camera(test_context) -> None:
     assert len(light_stacks) == 2
 
 
+@pytest.mark.heavy
 def test_dark_scaling(test_context) -> None:
     # The light frames are 180 seconds, but the dark frames are 60 or 300
     # seconds. AstroFlow should pick the closest darks that are equal to or
@@ -336,6 +341,7 @@ def test_dark_scaling(test_context) -> None:
 
 
 # TODO: Test temperatures that do and do not match.
+@pytest.mark.heavy
 def test_temperature_mismatch(test_context) -> None:
     # The light frames are at temperature -13, but the darks are at -15. This
     # difference is small enough for the frames to still be associated.
@@ -374,6 +380,7 @@ def test_temperature_mismatch(test_context) -> None:
     assert len(substack.dependencies) == 1
 
 
+@pytest.mark.heavy
 def test_stack_calibration_frames(test_context) -> None:
     copy_testdata_frames(target_name="NGC7635", dest_dir=context.input_dirs[0])
     make_synthetic_frames(
@@ -431,6 +438,7 @@ def test_stack_calibration_frames(test_context) -> None:
     print_graph(graph)
 
 
+@pytest.mark.heavy
 def test_multiple_filters_for_flats(test_context) -> None:
     # Only one run of flat frames applies to the light frames, which use
     # the H filter.
@@ -471,6 +479,7 @@ def test_multiple_filters_for_flats(test_context) -> None:
     assert len(light_stacks) == 1
 
 
+@pytest.mark.heavy
 def test_flat_frame_selection(test_context) -> None:
     # There are two runs of flat frames, but the user has selected the first
     # one, which is much more distant chronologically.
@@ -557,12 +566,14 @@ def test_flat_frame_selection(test_context) -> None:
 
     # Configure the light run to use the other flat run, which has prefix
     # `flat_run_0`.
-    context.settings = Settings(
+    from dataclasses import replace
+    context.settings = replace(
+        context.settings,
         stack_settings=frozendict({
             stack.stable_hash: StackSettings(
                 dependencies=frozendict({"flat": StackIdDependency(stack_id=first_flat_stack)})
             )
-        })
+        }),
     )
 
     # Run the graph again, with the settings applied.
@@ -584,6 +595,7 @@ def test_flat_frame_selection(test_context) -> None:
     assert substack.dependencies == {"flat": StackIdDependency(stack_id=first_flat_stack)}
 
 
+@pytest.mark.heavy
 def test_generic_grouping(test_context) -> None:
     copy_testdata_frames(target_name="NGC7635", dest_dir=context.input_dirs[0])
     make_synthetic_frames(

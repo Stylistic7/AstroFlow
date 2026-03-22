@@ -12,6 +12,7 @@ from metadata.image_metadata import (
     load_metadata,
 )
 from metadata.classes import MetadataDict
+from file_io.sidecar import sidecar_path_for
 
 
 def compute_graph_fragment():
@@ -21,12 +22,12 @@ def compute_graph_fragment():
 def get_filenames_in_cache():
     metadata = ray.get(load_metadata.remote()).get()
     assert isinstance(metadata, MetadataDict)
-    return [i.filename for i in metadata.values()]
+    return [Path(i.filename).resolve() for i in metadata.values()]
 
 
 def get_filenames_on_disk(input_dir: Path) -> list[Path]:
     return [
-        Path(f) for f in glob.glob(f"{input_dir}/**/*.fit?", recursive=True)
+        Path(f).resolve() for f in glob.glob(f"{input_dir}/**/*.fit?", recursive=True)
     ]
 
 
@@ -39,7 +40,7 @@ def get_metadata():
 def test_existing_files(test_context):
     input_dir = context.input_dirs[0]
     make_synthetic_frames(
-        number=3, exposure=30, dest_dir=input_dir, insert_metadata=False
+        number=3, exposure=30, dest_dir=input_dir,
     )
 
     graph = compute_graph_fragment()
@@ -54,7 +55,7 @@ def test_existing_files(test_context):
 
 def test_moved_files(test_context):
     input_dir = context.input_dirs[0]
-    make_synthetic_frames(number=5, dest_dir=input_dir, insert_metadata=False)
+    make_synthetic_frames(number=5, dest_dir=input_dir)
 
     graph = compute_graph_fragment()
     run_graph(graph)
@@ -68,7 +69,11 @@ def test_moved_files(test_context):
     os.mkdir(new_dir)
     random.shuffle(filenames_on_disk)
     for filename in filenames_on_disk[:2]:
-        os.rename(filename, os.path.join(new_dir, os.path.basename(filename)))
+        dest = os.path.join(new_dir, os.path.basename(filename))
+        os.rename(filename, dest)
+        sc = sidecar_path_for(filename)
+        if sc.exists():
+            os.rename(sc, sidecar_path_for(Path(dest)))
 
     graph = compute_graph_fragment()
     run_graph(graph)
@@ -84,7 +89,7 @@ def test_moved_files(test_context):
 def test_added_files(test_context):
     input_dir = context.input_dirs[0]
     make_synthetic_frames(
-        number=3, prefix="foo", dest_dir=input_dir, insert_metadata=False
+        number=3, prefix="foo", dest_dir=input_dir,
     )
 
     graph = compute_graph_fragment()
@@ -98,7 +103,7 @@ def test_added_files(test_context):
     assert sorted(filenames) == sorted(filenames_in_cache)
 
     make_synthetic_frames(
-        number=5, prefix="bar", dest_dir=input_dir, insert_metadata=False
+        number=5, prefix="bar", dest_dir=input_dir,
     )
 
     graph = compute_graph_fragment()
@@ -113,7 +118,7 @@ def test_added_files(test_context):
 
 def test_deleted_files(test_context):
     input_dir = context.input_dirs[0]
-    make_synthetic_frames(number=3, dest_dir=input_dir, insert_metadata=False)
+    make_synthetic_frames(number=3, dest_dir=input_dir)
     filenames = get_filenames_on_disk(input_dir)
     assert len(filenames) == 3
 

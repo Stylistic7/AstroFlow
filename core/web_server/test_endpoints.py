@@ -28,6 +28,7 @@ def client(test_context):
 
 class TestStacksEndpoint:
 
+    @pytest.mark.heavy
     def test_stacks_returns_json(self, client, test_context):
         add_orion_mosaic_images()
         run_graph(build_compute_graph())
@@ -38,6 +39,7 @@ class TestStacksEndpoint:
         assert isinstance(data, dict)
         assert len(data) > 0
 
+    @pytest.mark.heavy
     def test_stack_has_required_fields(self, client, test_context):
         add_orion_mosaic_images()
         run_graph(build_compute_graph())
@@ -53,6 +55,7 @@ class TestStacksEndpoint:
 
 class TestMosaicEndpoints:
 
+    @pytest.mark.heavy
     def test_mosaic_pipeline_to_api(self, client, test_context):
         """Full pipeline: ingest → identify → API response."""
         add_orion_mosaic_images()
@@ -71,6 +74,7 @@ class TestMosaicEndpoints:
         assert "strips" in mosaic
         assert len(mosaic["target_ids"]) == 4
 
+    @pytest.mark.heavy
     def test_targets_endpoint(self, client, test_context):
         add_orion_mosaic_images()
         run_graph(build_compute_graph())
@@ -85,6 +89,7 @@ class TestMosaicEndpoints:
         assert "stack_ids" in target
         assert len(target["center"]) == 2
 
+    @pytest.mark.heavy
     def test_calibration_stacks_endpoint(self, client, test_context):
         add_orion_mosaic_images()
         run_graph(build_compute_graph())
@@ -94,6 +99,7 @@ class TestMosaicEndpoints:
         # Orion test data includes darks and flats
         assert len(cal_stacks) > 0
 
+    @pytest.mark.heavy
     def test_metadata_endpoint_before_processing(self, client, test_context):
         """Metadata returns 404 for stacks not yet processed."""
         add_orion_mosaic_images()
@@ -106,6 +112,7 @@ class TestMosaicEndpoints:
         resp = client.get(f"/metadata/stack/{stack_id}")
         assert resp.status_code == 404
 
+    @pytest.mark.heavy
     def test_thumbnail_endpoint(self, client, test_context):
         add_orion_mosaic_images()
         run_graph(build_compute_graph())
@@ -117,6 +124,7 @@ class TestMosaicEndpoints:
         # Should return an image or 404 if thumbnail not yet generated
         assert resp.status_code in [200, 404]
 
+    @pytest.mark.heavy
     def test_shopping_cart(self, client, test_context):
         resp = client.get("/get_shopping_cart")
         assert resp.status_code == 200
@@ -124,6 +132,7 @@ class TestMosaicEndpoints:
         assert isinstance(cart, list)
         assert len(cart) == 0
 
+    @pytest.mark.heavy
     def test_constellation_polylines(self, client, test_context):
         resp = client.get("/constellation_polylines")
         assert resp.status_code == 200
@@ -131,16 +140,19 @@ class TestMosaicEndpoints:
         assert isinstance(data, list)
         assert len(data) > 0
 
+    @pytest.mark.heavy
     def test_compute_graph_status(self, client, test_context):
         resp = client.get("/compute_graph_status")
         assert resp.status_code == 200
 
+    @pytest.mark.heavy
     def test_ray_status(self, client, test_context):
         resp = client.get("/ray_status")
         assert resp.status_code == 200
         data = resp.get_json()
         assert "nodes" in data or isinstance(data, dict)
 
+    @pytest.mark.heavy
     def test_performance_endpoint(self, client, test_context):
         resp = client.get("/api/performance")
         assert resp.status_code == 200
@@ -151,6 +163,7 @@ class TestMosaicEndpoints:
 class TestMosaicWithShoppingCart:
     """Test the full mosaic pipeline including stacking and post-processing."""
 
+    @pytest.mark.heavy
     def test_full_mosaic_produces_correct_api_response(self, client, test_context):
         add_orion_mosaic_images()
 

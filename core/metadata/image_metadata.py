@@ -190,11 +190,15 @@ def load_metadata() -> ContextRef:
         try:
             if isinstance(value.content_hash, str):
                 if value.content_hash not in quarantined_files:
-                    if allow_missing or is_input_file(value.filename):
+                    in_input = is_input_file(value.filename)
+                    if allow_missing or in_input:
                         if "master" not in os.path.basename(value.filename).lower():
-                            if allow_missing or os.path.exists(value.filename):
+                            exists = os.path.exists(value.filename)
+                            if exists or (allow_missing and not in_input):
                                 if not image_types.is_master(value.header):
-                                    metadata[value.content_hash] = value
+                                    existing = metadata.get(value.content_hash)
+                                    if existing is None or exists:
+                                        metadata[value.content_hash] = value
         except Exception as e:
             print(
                 f"### Rejecting bad key {key} because of exception {e} for "

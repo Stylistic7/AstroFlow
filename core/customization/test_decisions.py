@@ -48,6 +48,7 @@ def test_resolve_decision_override():
     assert resolve_decision(dp, overrides) == BinaryChoice.EXCLUDE
 
 
+@pytest.mark.heavy
 def test_rotation_outlier_detection(test_context):
     """Frames with notably different rotation angles should generate a decision point."""
     # First group: 10 frames at rotation 90 degrees (session 1)
@@ -87,6 +88,7 @@ def test_rotation_outlier_detection(test_context):
         assert "diff_deg" in dp.metadata
 
 
+@pytest.mark.heavy
 def test_no_decisions_for_uniform_rotation(test_context):
     """Frames with identical rotation should not generate decisions."""
     make_synthetic_frames(

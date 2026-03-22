@@ -105,6 +105,15 @@ def _(wrapped: WithSidecar) -> dict[str, Any]:
     ch = get_section(wrapped.path, "content_hash")
     if ch is not None:
         image_header[_CONTENT_HASH_KEY] = ch
+    # Overlay any header overrides written by update_header(WithSidecar, ...).
+    sidecar_path = sidecar_path_for(wrapped.path)
+    try:
+        with open(sidecar_path, "r") as f:
+            sidecar = json.load(f)
+        for k, v in sidecar.get("header", {}).items():
+            image_header[k] = v
+    except FileNotFoundError:
+        pass
     return image_header
 
 
@@ -172,14 +181,16 @@ def _(wrapped: WithSidecar, metadata_in: dict[str, Any]) -> dict[str, Any]:
 
     try:
         with open(sidecar_path, "r") as f:
-            metadata = json.load(f)
+            sidecar = json.load(f)
     except FileNotFoundError:
-        metadata = {}
+        sidecar = {}
 
-    metadata |= metadata_in
+    header = sidecar.get("header", {})
+    header |= metadata_in
+    sidecar["header"] = header
 
     with open(sidecar_path, "w") as f:
-        json.dump(metadata, f, indent=2)
+        json.dump(sidecar, f, indent=2)
 
 
 def hash_of_image_data(filename: Path | str) -> str:

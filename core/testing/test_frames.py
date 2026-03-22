@@ -165,8 +165,6 @@ def copy_testdata_frames(
         print(f"### Copied sidecar {dest_sidecar}")
 
 
-# TODO: Maybe remove `insert_metadata`, since it no longer matches pure-
-# functional style of `compute_image_metadata`.
 def make_synthetic_frames(
     start_datetime: datetime.datetime = datetime.datetime(
         2023, 12, 6, 16, 29, 43
@@ -177,7 +175,6 @@ def make_synthetic_frames(
     ids: list[str] | None = None,
     content_hashes: list[str] | None = None,
     dest_dir: str | None = None,
-    insert_metadata: bool = True,
     ra: float = 100,
     dec: float = 45,
     centers: list[tuple[float, float]] | None = None,
@@ -297,22 +294,21 @@ def make_synthetic_frames(
         else:
             plate_solution = None
 
-        if insert_metadata:
-            fn_hash = hash_source_code(compute_image_metadata)
-            call_hash = hash_call(fn_hash, context.settings.development_settings, Path(fits_filename))
-            key = ("compute_image_metadata", call_hash)
-            metadata = ImageMetadata(
-                content_hash=content_hash,
-                filename=fits_filename,
-                header=header,
-                width_pixels=width_pixels,
-                height_pixels=height_pixels,
-                channels=1,
-                dtype=np.dtype(np.uint16),
-                plate_solution=plate_solution,
-            )
-            context.set(key, metadata)
+        metadata = ImageMetadata(
+            content_hash=content_hash,
+            filename=fits_filename,
+            header=header,
+            width_pixels=width_pixels,
+            height_pixels=height_pixels,
+            channels=1,
+            dtype=np.dtype(np.uint16),
+            plate_solution=plate_solution,
+        )
 
+        fn_hash = hash_source_code(compute_image_metadata)
+        call_hash = hash_call(fn_hash, context.settings.development_settings, Path(fits_filename))
+        key = ("compute_image_metadata", call_hash)
+        context.set(key, metadata)
 
         if dest_dir is None:
             continue
@@ -324,6 +320,28 @@ def make_synthetic_frames(
         print(
             f"### Wrote FITS filename {fits_filename} with content hash {content_hash}"
         )
+
+        # Write a sidecar so compute_image_metadata can short-circuit
+        # without reading the FITS file or invoking solve-field.
+        from metadata.sidecar_io import write_image_metadata
+        sidecar_metadata = ImageMetadata(
+            content_hash=content_hash,
+            filename=Path(fits_filename),
+            header=header,
+            width_pixels=width_pixels,
+            height_pixels=height_pixels,
+            channels=1,
+            dtype=np.dtype(np.uint16),
+            plate_solution=plate_solution,
+        )
+        write_image_metadata(sidecar_metadata)
+        if plate_solution is not None:
+            from file_io.sidecar import set_section
+            set_section(
+                Path(fits_filename), "plate_solution",
+                plate_solving._plate_solution_to_obj(plate_solution),
+            )
+
         output_filenames.append(fits_filename)
 
     return output_filenames

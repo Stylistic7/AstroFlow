@@ -1,3 +1,4 @@
+import pytest
 import datetime
 import unittest
 
@@ -12,6 +13,7 @@ from stacks.composite_stack import CompositeStack
 from mosaics.orion_mosaic import add_orion_mosaic_images
 
 
+@pytest.mark.heavy
 def test_quarantine_run(test_context) -> None:
     # The first run of light frames and its associated flats.
     copy_testdata_frames(
@@ -82,6 +84,7 @@ def test_quarantine_run(test_context) -> None:
     assert two_run_hash != one_run_hash
 
 
+@pytest.mark.heavy
 def test_quarantine_toplevel_target(test_context):
     add_orion_mosaic_images()
     run_graph(build_compute_graph())
@@ -106,6 +109,7 @@ def test_quarantine_toplevel_target(test_context):
     assert all(len(s.dependencies) == 3 for s in stacks)
 
 
+@pytest.mark.heavy
 def test_quarantine_calibration_stack(test_context):
     add_orion_mosaic_images()
     run_graph(build_compute_graph())

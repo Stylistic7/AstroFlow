@@ -1,3 +1,4 @@
+import pytest
 import os
 import ray
 import numpy as np
@@ -44,6 +45,7 @@ def stack_files(stack: CompositeStack) -> XisfFilePath:
     return output_path
 
 
+@pytest.mark.heavy
 def test_single_stack(with_real_testdata) -> None:
     stack = next(iter(context.stacks.values())).get()
 
@@ -51,6 +53,7 @@ def test_single_stack(with_real_testdata) -> None:
     assert os.path.exists(filename)
 
 
+@pytest.mark.heavy
 def test_registry(with_real_testdata) -> None:
     stack = next(iter(context.stacks.values())).get()
 

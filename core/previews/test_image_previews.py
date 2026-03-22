@@ -1,3 +1,4 @@
+import pytest
 import ray
 import datetime
 
@@ -15,6 +16,7 @@ from previews.types import QualityLevel
 from file_io.find_image_files import find_image_files
 
 
+@pytest.mark.heavy
 def test_stack_dependency_graph(test_context) -> None:
     # These runs of dark and bias frames will be used by both runs of light
     # frames.
