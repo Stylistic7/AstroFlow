@@ -102,6 +102,7 @@ def identify_stacks(
             yield filter_frames
 
     new_stacks = CompositeStacksDict()
+    pending_context = {}
     for scale_frames in scale_clusters():
         for camera_frames in camera_clusters(scale_frames):
             for rotation_frames in rotation_clusters(camera_frames):
@@ -111,9 +112,19 @@ def identify_stacks(
                             filter_frames, metadata=metadata, max_run_gap=max_run_gap
                         )
                         if new_stack is not None:
-                            new_stacks[new_stack.stable_hash] = ContextRef.store(
-                                ("stacks", new_stack.stable_hash), new_stack
+                            cache_key = ("stacks", new_stack.stable_hash)
+                            ref = ray.put(new_stack)
+                            content_hash = new_stack.content_hash
+                            new_stacks[new_stack.stable_hash] = ContextRef(
+                                cache_key=cache_key,
+                                content_hash=content_hash,
+                                ref=ref,
                             )
+                            pending_context[cache_key] = new_stack
+
+    # Batch-write all stacks to context in a single actor call.
+    if pending_context:
+        context.set_many(pending_context)
 
     assert None not in new_stacks.values()
 
