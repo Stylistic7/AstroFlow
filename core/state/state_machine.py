@@ -1,12 +1,18 @@
 import os
+import subprocess
 from typing import TypeVar
 from pathlib import Path
 import time
 import signal
 import sys
 
+from base_path import get_bin_dir
 from context import context, get_cache, queue
-from customization.settings import Settings, DevelopmentSettings, PreviewSettings
+from customization.settings import (
+    Settings,
+    DevelopmentSettings,
+    PreviewSettings,
+)
 from ray_infra.ray_init import connect_to_ray_cluster
 from state.ray_control import (
     start_ray_head_node,
@@ -78,7 +84,7 @@ def _populate_context(
 
     context.settings = Settings(
         development_settings=DevelopmentSettings(
-            override_filters=("H",),
+            override_filters=None,
         ),
         preview_settings=PreviewSettings(
             subframe_thumbnail_width=1200,
@@ -258,11 +264,23 @@ def _schedule_download_from_asiairs(
     return state, []
 
 
+def _stop_scheduler(state: State, action: Action) -> tuple[State, list[Action]]:
+    try:
+        import ray
+
+        scheduler = ray.get_actor("scheduler", namespace=_get_namespace())
+        ray.get(scheduler.stop.remote(), timeout=5)
+    except Exception:
+        pass
+    return state, []
+
+
 def _quit(state: State, action: Action) -> tuple[State, list[Action]]:
     return state, [
-        Action(type="stop_ray_node"),
-        Action(type="stop_gunicorn"),
+        Action(type="stop_scheduler"),
         Action(type="stop_zeroconf"),
+        Action(type="stop_gunicorn"),
+        Action(type="stop_ray_node"),
     ]
 
 
@@ -322,6 +340,7 @@ _HANDLERS = {
     "stop_gunicorn": _stop_gunicorn,
     "start_ray_head_node": _start_ray_head_node,
     "stop_ray_node": _stop_ray_node,
+    "stop_scheduler": _stop_scheduler,
     "schedule_download_from_asiairs": _schedule_download_from_asiairs,
     "populate_context": _populate_context,
     "graph_done": _graph_done,
@@ -353,6 +372,12 @@ def enqueue_action(action):
 ctrl_c_count = 0
 
 
+def _force_cleanup():
+    ray_path = get_bin_dir() / "ray"
+    subprocess.run(["pkill", "-f", "gunicorn"], capture_output=True)
+    subprocess.run([ray_path, "stop", "--force"], capture_output=True)
+
+
 def handle_sigint(sig, frame):
     global ctrl_c_count
     ctrl_c_count += 1
@@ -360,11 +385,18 @@ def handle_sigint(sig, frame):
         print(f"Got first ctrl-c, enqueuing graceful shutdown action")
         enqueue_action(dict(type="quit"))
     else:
-        print(f"Got second ctrl-c, forcing exit")
+        print(f"Got second ctrl-c, forcing cleanup and exit")
+        _force_cleanup()
         sys.exit(1)
 
 
+def _handle_sigterm(sig, frame):
+    print("Got SIGTERM, enqueuing graceful shutdown action")
+    enqueue_action(dict(type="quit"))
+
+
 signal.signal(signal.SIGINT, handle_sigint)
+signal.signal(signal.SIGTERM, _handle_sigterm)
 
 
 def main_event_loop():

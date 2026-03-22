@@ -1,91 +1,85 @@
+import atexit
+import socket
+import subprocess
+import threading
 import webbrowser
-import sys
-import tkinter as tk
-from tkinter import scrolledtext
-import Quartz
 
-# from homebrew import ensure_homebrew
-from subprocesses import SubprocessManager
-from ray_control import start_ray_head_node
+from AppKit import NSApplication, NSApp, NSApplicationActivationPolicyRegular
+from Foundation import NSObject
+from PyObjCTools import AppHelper
 
-# TODO: The goals here are to:
-# 1. Start the web server and launch the browser.
-# 2. Start the Ray head node.
-#    TODO: Offer options to connect to an existing head node.
+from base_path import get_bin_dir
+from dependency_graph.serialization import enable_function_fqname_pickling
+from state.state_machine import Action, enqueue_action, main_event_loop
 
-# TODO: Prevent launching multiple copies on the same machine.
-
-_ASTROFLOW_URL = 'http://localhost:80'
+_ASTROFLOW_URL = "http://localhost:8000"
 
 
-def is_option_key_pressed():
-  """Check if the Option (⌥) key is currently held down."""
-  flags = Quartz.CGEventSourceFlagsState(
-      Quartz.kCGEventSourceStateHIDSystemState)
-  return bool(flags & Quartz.kCGEventFlagMaskAlternate)
+def _force_cleanup():
+    ray_path = get_bin_dir() / "ray"
+    subprocess.run(["pkill", "-f", "gunicorn"], capture_output=True)
+    subprocess.run([ray_path, "stop"], capture_output=True)
 
 
-def open_web_ui(unused):
-  webbrowser.open(_ASTROFLOW_URL)
+def _wait_and_open_browser():
+    """Poll until the web server is accepting connections, then open browser."""
+    for _ in range(60):
+        try:
+            s = socket.create_connection(("localhost", 8000), timeout=1)
+            s.close()
+            webbrowser.open(_ASTROFLOW_URL)
+            return
+        except OSError:
+            import time
+
+            time.sleep(1)
 
 
-class RedirectText:
+class AppDelegate(NSObject):
+    _shutting_down = False
 
-  def __init__(self, text_widget):
-    self.text_widget = text_widget
+    def applicationDidFinishLaunching_(self, notification):
+        self._backend = threading.Thread(target=self._run_backend, daemon=True)
+        self._backend.start()
 
-  def write(self, string):
-    self.text_widget.insert(tk.END, string)
-    self.text_widget.see(tk.END)
+        threading.Thread(target=_wait_and_open_browser, daemon=True).start()
 
-  def flush(self):
-    pass
+    def _run_backend(self):
+        enable_function_fqname_pickling()
+        enqueue_action(Action(type="init"))
+        main_event_loop()
+        # Graceful shutdown finished — terminate the app on the main thread
+        self._shutting_down = True
+        self.performSelectorOnMainThread_withObject_waitUntilDone_(
+            "doTerminate:", None, False
+        )
+
+    def doTerminate_(self, sender):
+        NSApp.terminate_(None)
+
+    def applicationShouldHandleReopen_hasVisibleWindows_(self, app, flag):
+        webbrowser.open(_ASTROFLOW_URL)
+        return False
+
+    def applicationShouldTerminate_(self, app):
+        if self._shutting_down:
+            return 1  # NSTerminateNow
+        self._shutting_down = True
+        enqueue_action(dict(type="quit"))
+        return 0  # NSTerminateCancel — backend thread will terminate when done
 
 
 def main():
-  # Create the Tkinter window
-  root = tk.Tk()
-  root.title("AstroFlow Configuration")
-  root.deiconify()
-  root.lift()
+    atexit.register(_force_cleanup)
 
-  def reopen_handler():
-    if is_option_key_pressed():
-      root.lift()
-    else:
-      webbrowser.open(_ASTROFLOW_URL)
+    app = NSApplication.sharedApplication()
+    app.setActivationPolicy_(NSApplicationActivationPolicyRegular)
 
-  # TODO: Intercept the tkinter CloseApplication event and run `ray stop`.
-  root.createcommand("::tk::mac::ReopenApplication", reopen_handler)
-  root.createcommand("::tk::mac::Quit", root.quit)
+    delegate = AppDelegate.alloc().init()
+    app.setDelegate_(delegate)
 
-  # Create a scrolled text widget
-  text_widget = scrolledtext.ScrolledText(root,
-                                          wrap=tk.WORD,
-                                          height=40,
-                                          width=160)
-
-  text_widget.tag_configure("red", foreground="red")
-  text_widget.tag_configure("green", foreground="green")
-  text_widget.tag_configure("blue", foreground="blue")
-
-  text_widget.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
-
-  text_widget.insert(tk.END, f"sys.argv is {sys.argv}\n", "red")
-  text_widget.see(tk.END)  # Auto-scroll
-
-  # Configure the grid to expand and contract with the window size
-  root.grid_columnconfigure(0, weight=1)
-  root.grid_rowconfigure(0, weight=1)
-
-  sys.stdout = RedirectText(text_widget)  # Redirect stdout
-
-  manager = SubprocessManager(root, text_widget)
-  start_ray_head_node(manager)
-
-  root.protocol("WM_DELETE_WINDOW", manager.stop_all)  # Stop processes on close
-  root.mainloop()
+    AppHelper.runEventLoop()
 
 
-if __name__ == '__main__':
-  main()
+if __name__ == "__main__":
+    main()

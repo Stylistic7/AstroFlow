@@ -9,14 +9,15 @@ from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 hidden_imports = collect_submodules("ray")
 hidden_imports += collect_submodules("spherical_geometry")
 hidden_imports += collect_submodules("xisf")
-hidden_imports += collect_submodules("tkinter")
-hidden_imports += ["diskcache", "flask", "graphlib", "objsize", "plotly",
+hidden_imports += collect_submodules("objc")
+hidden_imports += ["AppKit", "Foundation", "PyObjCTools", "PyObjCTools.AppHelper",
+                   "diskcache", "flask", "graphlib", "objsize", "plotly",
                    "shapely", "skimage", "skimage.transform",
-                   "spherical_geometry", "structlog", "tkinter", "_tkinter",
+                   "spherical_geometry", "structlog",
                    "xisf", "xxhash", "yaml"]
 print(f'### hidden_imports {hidden_imports}')
 
-datas = collect_data_files("tkinter") + collect_data_files("ray") + collect_data_files("xisf")
+datas = collect_data_files("ray") + collect_data_files("xisf")
 
 a = Analysis(
     ['AstroFlow.py'],

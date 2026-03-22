@@ -74,12 +74,16 @@ def start_ray_subordinate_node(head_node_address):
     return process
 
 
-def stop_ray_node():
+def stop_ray_node(timeout=15):
     ray_path = get_bin_dir() / "ray"
     subprocess.run([ray_path, "stop"], capture_output=True, text=True)
 
-    while True:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
         print("### Waiting for Ray node to stop...")
         if not _ray_status():
-            break
+            return
         time.sleep(1)
+
+    print("### Ray did not stop in time, forcing...")
+    subprocess.run([ray_path, "stop", "--force"], capture_output=True, text=True)
