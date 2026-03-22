@@ -187,7 +187,7 @@ class StateActor:
     ) -> tuple[State, list[Action]]:
         def status_fn(status: GraphStatus):
             # Fire-and-forget: update status without blocking the graph.
-            from context import _get_namespace
+            from context.context import _get_namespace
             actor = ray.get_actor("context", namespace=_get_namespace())
             actor.set.remote("compute_graph_status", status)
 
