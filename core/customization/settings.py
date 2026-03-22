@@ -68,6 +68,7 @@ class DevelopmentSettings:
     dangerously_accept_existing_files: bool = False
     dangerously_allow_missing_files: bool = False
     override_filters: tuple[str, ...] | None = None
+    test_mode: bool = False
 
     def __hash__(self):
         return hash_dataclass(self)

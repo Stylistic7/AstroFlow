@@ -75,6 +75,7 @@ def identified_testdata(init_ray, tmp_path_factory):
         development_settings=DevelopmentSettings(
             mock_pixinsight=True,
             dangerously_allow_missing_files=True,
+            test_mode=True,
         ),
         preview_settings=PreviewSettings(
             subframe_thumbnail_width=1200,
@@ -86,6 +87,27 @@ def identified_testdata(init_ray, tmp_path_factory):
     # Copy all real testdata files so their metadata is computed and identified.
     for target_name in _TESTDATA_TARGETS:
         copy_testdata_frames(target_name=target_name, dest_dir=str(input_dir))
+
+    # Verify all copied frames have complete sidecars so that
+    # compute_image_metadata returns instantly with no FITS I/O or solving.
+    from pathlib import Path
+    from file_io.sidecar import get_section
+    from file_io.find_image_files import find_image_files
+    import metadata.image_types as image_types
+    from file_io.generic import read_header
+    for f in find_image_files(str(input_dir)):
+        im = get_section(Path(f), "image_metadata")
+        assert im is not None, (
+            f"Frame {f} has no image_metadata in its sidecar. "
+            f"Run scripts/plate_solve_testdata.py to fix."
+        )
+        header = read_header(Path(f))
+        if image_types.is_light_frame(header):
+            ps = get_section(Path(f), "plate_solution")
+            assert ps is not None and ps.get("data") is not None, (
+                f"Light frame {f} has no plate solution in its sidecar. "
+                f"Run scripts/plate_solve_testdata.py to fix."
+            )
 
     # Run only identification (metadata + regrouping), not preview generation.
     run_graph(Graph({**chain(scatter_compute_image_metadata, build_regroup_graph)}))

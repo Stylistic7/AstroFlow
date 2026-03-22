@@ -1,28 +1,95 @@
 {
   "astroflow": {
+    "image_metadata": {
+      "channels": 1,
+      "content_hash": "afaab805a87592b2",
+      "dtype": "uint16",
+      "header": {
+        "AP_0_0": -0.005241863223,
+        "AP_0_1": -4.14298349847e-06,
+        "AP_0_2": 1.2809995375125e-06,
+        "AP_1_0": 2.70236009722e-06,
+        "AP_1_1": 4.3621815198e-07,
+        "AP_2_0": 1.9201916158575e-07,
+        "AP_ORDER": 2,
+        "A_0_0": 0,
+        "A_0_1": 0,
+        "A_0_2": -1.28223467395e-06,
+        "A_1_0": 0,
+        "A_1_1": -4.324317883625e-07,
+        "A_2_0": -1.907792969815e-07,
+        "A_ORDER": 2,
+        "BITPIX": 16,
+        "BP_0_0": -0.00809215593096,
+        "BP_0_1": 7.35492627044e-06,
+        "BP_0_2": -7.497585104575e-07,
+        "BP_1_0": 1.10881399891e-06,
+        "BP_1_1": 2.40472571059e-07,
+        "BP_2_0": 1.8923730305275e-07,
+        "BP_ORDER": 2,
+        "BSCALE": 1,
+        "BZERO": 32768,
+        "B_0_0": 0,
+        "B_0_1": 0,
+        "B_0_2": 7.5264446488e-07,
+        "B_1_0": 0,
+        "B_1_1": -2.4046202756725e-07,
+        "B_2_0": -1.88715896904e-07,
+        "B_ORDER": 2,
+        "CCD-TEMP": -12.8000001907349,
+        "CCDXBIN": 1,
+        "CCDYBIN": 1,
+        "CD1_1": 2.5104938673e-06,
+        "CD1_2": 0.0001044375787855,
+        "CD2_1": -0.0001043753060175,
+        "CD2_2": 2.04755887381e-06,
+        "CREATOR": "ZWO ASIAIR Plus",
+        "CRPIX1": 3276.032623292,
+        "CRPIX2": 2537.916137696,
+        "CRVAL1": 350.033794903,
+        "CRVAL2": 61.3785596214,
+        "CTYPE1": "RA---TAN-SIP",
+        "CTYPE2": "DEC--TAN-SIP",
+        "DATE-OBS": "2023-10-05T04:25:17.930400+00:00",
+        "DEC": 61.3407,
+        "EGAIN": 0.246657639741898,
+        "EXPOSURE": 300.0,
+        "EXPTIME": 300.0,
+        "EXTEND": true,
+        "FILTER": "H",
+        "FLATVERS": 1,
+        "FOCALLEN": 2066,
+        "FOCUSPOS": 24562,
+        "GAIN": 100,
+        "GUIDECAM": "ZWO ASI220MM Mini",
+        "IMAGEH": 6384,
+        "IMAGETYP": "light",
+        "IMAGEW": 9568,
+        "INSTRUME": "ZWO ASI6200MM Pro",
+        "NAXIS": 2,
+        "NAXIS1": 9576,
+        "NAXIS2": 6388,
+        "OFFSET": 50,
+        "RA": 350.4765,
+        "RIG": "C11",
+        "SET-TEMP": -20,
+        "SIMPLE": true,
+        "TELESCOP": "EQMod Mount",
+        "XBINNING": 1,
+        "XORGSUBF": 0,
+        "XPIXSZ": 3.75999999046326,
+        "YBINNING": 1,
+        "YORGSUBF": 0,
+        "YPIXSZ": 3.75999999046326
+      },
+      "height_pixels": 6388,
+      "width_pixels": 9576
+    },
     "plate_solution": {
       "data": {
         "center": [
           350.183452634,
           61.2229443082
-        ],
-        "footprint": [
-          [
-            349.45568248122015,
-            61.71601456337972
-          ],
-          [
-            350.8684394090827,
-            61.73019447144
-          ],
-          [
-            350.8892610365947,
-            60.72649937882812
-          ],
-          [
-            349.51976913968485,
-            60.712993130903925
-          ]
         ],
         "header": {
           "AP_0_0": 8.19833747679e-07,
@@ -66,7 +133,7 @@
           "CTYPE2": "DEC--TAN-SIP",
           "CUNIT1": "deg",
           "CUNIT2": "deg",
-          "DATE": "2026-03-15T17:46:33",
+          "DATE": "2026-03-22T11:44:48",
           "EQUINOX": 2000.0,
           "EXTEND": true,
           "IMAGEH": 6388,
@@ -81,11 +148,12 @@
         },
         "image_filename": "/Users/nobody/Projects/AstroFlow/core/testdata/input/Light_NGC7635_300.0s_Bin1_6200MM_H_20231004-213019_0004.fit",
         "image_scale": 0.37735643009593267,
-        "num_stars": 1000,
+        "num_stars": 19591,
         "rotation_angle": 1.5504341390793135
       },
-      "schema": "astroflow.platesolution.v1"
+      "schema": "astroflow.platesolution.v2"
     }
   },
+  "file_size": 122353920,
   "schema": "astroflow.sidecar.v1"
 }

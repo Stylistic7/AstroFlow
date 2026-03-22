@@ -187,7 +187,9 @@ def _plate_solution_from_obj(obj: dict[str, Any]) -> PlateSolution:
 
 
 def solve_field(
-    filename: Path | str, debug: bool = False
+    filename: Path | str,
+    development_settings=None,
+    debug: bool = False,
 ) -> PlateSolution | None:
     filename = Path(filename)
     assert str(filename)
@@ -208,6 +210,13 @@ def solve_field(
         except Exception:
             # Corrupt / incompatible section → recompute.
             pass
+
+    if development_settings is not None and development_settings.test_mode:
+        raise RuntimeError(
+            f"solve-field would be invoked for {filename} but test_mode is enabled. "
+            f"Ensure the sidecar file has a valid plate_solution section. "
+            f"Run scripts/plate_solve_testdata.py to fix."
+        )
 
     trial_arguments = [
         [

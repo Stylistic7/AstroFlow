@@ -84,6 +84,8 @@ def scatter_compute_image_metadata(*filenames_in: list[Path]) -> Graph:
     filenames_in = set(f for f in filenames_in if f is not None)
     filenames: set[str] = set(filenames_in)
 
+    development_settings = context.settings.development_settings
+
     # TODO: Don't do anything if the directory's modification time hasn't
     # changed since the last time it was listed.
     for dir in context.input_dirs:
@@ -92,7 +94,7 @@ def scatter_compute_image_metadata(*filenames_in: list[Path]) -> Graph:
         filenames.update(artifacts_for_dir)
 
     graph = Graph(
-        {load_metadata: {(compute_image_metadata, Path(f)) for f in filenames}}
+        {load_metadata: {(compute_image_metadata, development_settings, Path(f)) for f in filenames}}
     )
 
     return graph
@@ -102,9 +104,12 @@ class DuplicateFileException(Exception):
     pass
 
 
-@cached.remote(num_cpus=0.25)
-def compute_image_metadata(filename: Path | os.PathLike) -> ImageMetadata:
-    print(f"### compute_image_metadata filename={filename}")
+def _compute_image_metadata_impl(
+    filename: Path | os.PathLike,
+    plate_solve: bool = True,
+    development_settings=None,
+) -> ImageMetadata:
+    print(f"### compute_image_metadata filename={filename} plate_solve={plate_solve}")
 
     if filename is None or not filename.exists():
         raise FileNotFoundError(f'File "{filename}" not found')
@@ -123,8 +128,8 @@ def compute_image_metadata(filename: Path | os.PathLike) -> ImageMetadata:
     geometry = read_image_geometry(filename)
 
     plate_solution = (
-        plate_solving.solve_field(filename)
-        if image_types.is_light_frame(header)
+        plate_solving.solve_field(filename, development_settings=development_settings)
+        if plate_solve and image_types.is_light_frame(header)
         else None
     )
 
@@ -141,6 +146,28 @@ def compute_image_metadata(filename: Path | os.PathLike) -> ImageMetadata:
 
     write_image_metadata(result)
     return result
+
+
+@cached.remote(num_cpus=0.25)
+def compute_image_metadata(
+    development_settings,
+    filename: Path | os.PathLike,
+) -> ImageMetadata:
+    return _compute_image_metadata_impl(
+        filename, plate_solve=True, development_settings=development_settings,
+    )
+
+
+@cached.remote(num_cpus=0.25)
+def compute_image_metadata_no_solve(
+    filename: Path | os.PathLike,
+) -> ImageMetadata:
+    """Like compute_image_metadata, but skips plate solving.
+
+    Use this for intermediate outputs (stacking results, placed images,
+    merged mosaics) where plate solving is unnecessary and expensive.
+    """
+    return _compute_image_metadata_impl(filename, plate_solve=False)
 
 
 @ray.remote(resources={"fastest_storage": 0.001})

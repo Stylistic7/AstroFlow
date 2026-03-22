@@ -14,7 +14,7 @@ from metadata.classes import ImageMetadata
 from context import context
 import plate_solving
 from file_io.normalize_header import normalize_header
-from file_io.sidecar import sidecar_path_for
+from file_io.sidecar import sidecar_path_for, get_section
 from units import Degrees, Radians, ArcsecondsPerPixel
 from hashing import hash_source_code, hash_call
 from metadata.image_metadata import compute_image_metadata
@@ -141,13 +141,28 @@ def copy_testdata_frames(
         fits.close()
 
         src_sidecar = sidecar_path_for(Path(src_filename))
-        if not src_sidecar.exists():
-            print(f"### Creating sidecar for {src_filename}")
-            plate_solving.solve_field(Path(src_filename))
+        assert src_sidecar.exists(), (
+            f"Testdata sidecar missing: {src_sidecar}. "
+            f"Run scripts/plate_solve_testdata.py to generate it."
+        )
+        assert get_section(Path(src_filename), "plate_solution"), (
+            f"Testdata sidecar has no plate solution: {src_sidecar}. "
+            f"Run scripts/plate_solve_testdata.py to regenerate it."
+        )
         dest_sidecar = sidecar_path_for(Path(dest_filename))
-        if src_sidecar.exists():
-            shutil.copy(src_sidecar, dest_sidecar)
-            print(f"### Copied sidecar {dest_sidecar}")
+        shutil.copy(src_sidecar, dest_sidecar)
+
+        # Update sidecar to reflect any FITS header overrides (DATE-OBS,
+        # content hash) so the sidecar short-circuit returns correct metadata.
+        from file_io.sidecar import set_section
+        im_obj = get_section(Path(dest_filename), "image_metadata")
+        if im_obj is not None:
+            im_obj["content_hash"] = content_hash
+            if date_obs is not None:
+                im_obj["header"]["DATE-OBS"] = header["DATE-OBS"]
+            set_section(Path(dest_filename), "image_metadata", im_obj)
+
+        print(f"### Copied sidecar {dest_sidecar}")
 
 
 # TODO: Maybe remove `insert_metadata`, since it no longer matches pure-
@@ -284,7 +299,7 @@ def make_synthetic_frames(
 
         if insert_metadata:
             fn_hash = hash_source_code(compute_image_metadata)
-            call_hash = hash_call(fn_hash, Path(fits_filename))
+            call_hash = hash_call(fn_hash, context.settings.development_settings, Path(fits_filename))
             key = ("compute_image_metadata", call_hash)
             metadata = ImageMetadata(
                 content_hash=content_hash,

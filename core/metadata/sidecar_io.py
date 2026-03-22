@@ -83,19 +83,9 @@ def write_image_metadata(meta: ImageMetadata) -> None:
 
 
 def read_image_metadata(filename: Path) -> ImageMetadata | None:
-    """Read ImageMetadata from the sidecar file, or return None if missing/stale."""
+    """Read ImageMetadata from the sidecar file, or return None if missing."""
     obj = get_section(filename, "image_metadata")
     if obj is None:
         return None
-
-    # Staleness check: if the file size changed, the cached metadata is stale.
-    stored_size = get_file_size(filename)
-    if stored_size is not None:
-        try:
-            actual_size = filename.stat().st_size
-            if actual_size != stored_size:
-                return None
-        except (FileNotFoundError, OSError):
-            pass
 
     return image_metadata_from_obj(obj, filename)
