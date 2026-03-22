@@ -1,7 +1,6 @@
-import React, { useState, useRef, useEffect, useReducer } from "react";
-import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useContext } from 'react';
-import { styled, useTheme } from '@mui/material/styles';
+import { useParams, useLocation } from "react-router-dom";
+import { useTheme } from '@mui/material/styles';
 
 import Box from '@mui/material/Box';
 import Breadcrumbs from '@mui/material/Breadcrumbs';

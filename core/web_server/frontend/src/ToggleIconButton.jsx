@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
+import React from 'react';
 import IconButton from '@mui/material/IconButton';
-import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import { styled } from '@mui/material/styles';
 
 const ToggleButton = styled(IconButton)(({ theme, toggled }) => ({

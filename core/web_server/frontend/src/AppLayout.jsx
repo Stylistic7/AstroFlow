@@ -1,11 +1,7 @@
-// src/components/AppLayout.jsx
-import React from 'react';
-import { Box, useTheme } from '@mui/material';
+import { Box } from '@mui/material';
 import Search from './Search.jsx';
 
 const AppLayout = ({ children }) => {
-  const theme = useTheme();
-
   return (
     <>
       <Search />

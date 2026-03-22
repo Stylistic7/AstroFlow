@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useReducer, useContext } from "react";
+import { useState, useEffect, useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import "./Starmap.css";
 import { ReactPhotoSphereViewer } from 'react-photo-sphere-viewer';
@@ -11,7 +11,7 @@ export default function Starmap() {
 	const navigate = useNavigate();
 	const [instance, setInstance] = useState(undefined);
 
-	const handleClick = (data: events.ClickEvent & { type: "click"; }) => {
+	const handleClick = (data) => {
 		let elements = document.elementsFromPoint(data.data.clientX, data.data.clientY);
 		let matching_items = [];
 		elements.forEach((elt, i) => {
@@ -49,7 +49,7 @@ export default function Starmap() {
 
 		markersPlugs.clearMarkers();
 
-		constellationPolylines.map((polyline, index) => {
+		constellationPolylines.forEach((polyline, index) => {
 			markersPlugs.addMarker({
 				id: "polyline_" + index,
 				polyline: polyline,

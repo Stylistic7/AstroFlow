@@ -1,9 +1,4 @@
-import React, { useState, useRef, useEffect, useReducer } from "react";
-import { useParams } from "react-router-dom";
-
 import Typography from '@mui/material/Typography';
-
-import "./Starmap.css";
 
 export default function ColorChannelSelector({ stacks, targets, mosaics, mosaic_id, filter, setFilter }) {
   const mosaic = mosaics[mosaic_id];
@@ -33,7 +28,7 @@ export default function ColorChannelSelector({ stacks, targets, mosaics, mosaic_
       let found = false;
       for (let target_id of mosaic.target_ids) {
         for (let stack_id of targets[target_id].stack_ids) {
-          if (stacks[stack_id].filter == filter) {
+          if (stacks[stack_id].filter === filter) {
             found = true;
           }
         }
@@ -45,10 +40,6 @@ export default function ColorChannelSelector({ stacks, targets, mosaics, mosaic_
     }
 
     return filter_array;
-
-    // const filter_array = Array.from(filters);
-    // console.log('got filters', filter_array);
-    // return filter_array;
   }
 
   const filters = getFilters();
@@ -66,11 +57,12 @@ export default function ColorChannelSelector({ stacks, targets, mosaics, mosaic_
       {filters.map(f => {
         const color = colorForFilter(f);
         return <div
+          key={f}
           style={{
             float: "left",
             margin: "0.5em",
             padding: "0.5em",
-            border: f == filter ? `1px solid ${color}` : "",
+            border: f === filter ? `1px solid ${color}` : "",
           }}
         >
           <span

@@ -22,13 +22,13 @@ const StackHeader = ({ stack_type, stack, stack_id }) => {
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Box>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 4, rowGap: 1 }}>
-            {(stack_type == 'stack') && <MetadataItem label="RA" value={ra_to_hms(stack.center[0])} />}
-            {(stack_type == 'stack') && <MetadataItem label="Dec" value={dec_to_dms(stack.center[1])} />}
-            {(stack_type == 'stack') && <MetadataItem label="Scale" value={`${stack.image_scale.toFixed(3)}"/px`} />}
-            {(stack_type == 'stack') && <MetadataItem label="Angle" value={`${(stack.rotation_angle * (180.0 / Math.PI)).toFixed(1)}°`} />}
+            {(stack_type === 'stack') && <MetadataItem label="RA" value={ra_to_hms(stack.center[0])} />}
+            {(stack_type === 'stack') && <MetadataItem label="Dec" value={dec_to_dms(stack.center[1])} />}
+            {(stack_type === 'stack') && <MetadataItem label="Scale" value={`${stack.image_scale.toFixed(3)}"/px`} />}
+            {(stack_type === 'stack') && <MetadataItem label="Angle" value={`${(stack.rotation_angle * (180.0 / Math.PI)).toFixed(1)}°`} />}
             <MetadataItem label="Camera" value={stack.camera} />
-            {(stack_type == 'stack') && <MetadataItem label="Filter" value={stack.filter} />}
-            {(stack_type == 'calibration_stack') && <MetadataItem label="Exposure" value={format_duration(stack.exposure)} />}
+            {(stack_type === 'stack') && <MetadataItem label="Filter" value={stack.filter} />}
+            {(stack_type === 'calibration_stack') && <MetadataItem label="Exposure" value={format_duration(stack.exposure)} />}
             <MetadataItem label="Integration" value={format_duration(stack.integration)} />
             <MetadataItem label="Temp" value={`${stack.mean_temperature.toFixed(1)}°C`} />
           </Box>

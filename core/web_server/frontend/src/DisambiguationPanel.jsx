@@ -13,8 +13,6 @@ export default function DisambiguationPanel({ items_in }) {
 	// const params = useParams();
 	let { items } = useParams();
 	items = items || items_in;
-	console.log('DisambiguationPanel items', items);
-
 	if (!items || items.trim() === "") {
 		return (
 			<div style={{
@@ -42,7 +40,7 @@ export default function DisambiguationPanel({ items_in }) {
 			}}>
 				{items.split(";").map(item => {
 					let [type, id] = item.split(",");
-					if (type == "stack") {
+					if (type === "stack") {
 						return <StackCard
 							key={item}
 							stacks={stacks}
@@ -50,7 +48,7 @@ export default function DisambiguationPanel({ items_in }) {
 							mosaics={mosaics}
 							stack_id={id}
 						/>;
-					} else if (type == "target") {
+					} else if (type === "target") {
 						return <TargetCard
 							key={item}
 							stacks={stacks}
@@ -58,7 +56,7 @@ export default function DisambiguationPanel({ items_in }) {
 							mosaics={mosaics}
 							target_id={id}
 						/>;
-					} else if (type == "mosaic") {
+					} else if (type === "mosaic") {
 						return <MosaicCard
 							key={item}
 							stacks={stacks}
@@ -66,7 +64,7 @@ export default function DisambiguationPanel({ items_in }) {
 							mosaics={mosaics}
 							mosaic_id={id}
 						/>;
-					} else if (type == "calibration_stack") {
+					} else if (type === "calibration_stack") {
 						return <CalibrationStackCard
 							key={item}
 							stacks={stacks}

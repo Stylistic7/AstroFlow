@@ -1,5 +1,3 @@
-import React, { useState, useRef, useEffect, useReducer } from "react";
-
 export default function Polyline({ className, data, polyline, style, handleClick }) {
 	let points_string = "";
 
@@ -17,8 +15,7 @@ export default function Polyline({ className, data, polyline, style, handleClick
 			data={data}
 			points={points_string}
 			style={style}
-			onClick={(event) => { handleClick && handleClick(event) }}
+			onClick={handleClick}
 		/>
 	);
 }
-

@@ -99,7 +99,7 @@ export default function MosaicOutline({
         let stack_id = targets[target_id].stack_ids[0];
         if (filter) {
           stack_id = targets[target_id].stack_ids.find(
-            s => stacks[s].filter == filter);
+            s => stacks[s].filter === filter);
         }
 
         const stack = stacks[stack_id];
@@ -128,7 +128,7 @@ export default function MosaicOutline({
           />
         }
 
-        return <>
+        return <React.Fragment key={target_id}>
           {outline_visible && <Polyline
             polyline={coords}
             key={target_id}
@@ -162,7 +162,7 @@ export default function MosaicOutline({
             />}
             {error_icon}
           </g>
-        </>
+        </React.Fragment>
       })}
       {outline_visible && <Polyline
         polyline={mosaic.projected_footprints[projection].coords}

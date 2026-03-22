@@ -14,7 +14,7 @@ import {
 import { ExpandMore, ExpandLess, Circle } from "@mui/icons-material";
 import AstroFlowContext from './AstroFlowContext.jsx';
 
-const RayStatus: React.FC = () => {
+const RayStatus = () => {
   const { rayStatus } = useContext(AstroFlowContext);
 
   const [anchorEl, setAnchorEl] = useState(null);
@@ -39,7 +39,7 @@ const RayStatus: React.FC = () => {
     })
   };
 
-  if (Object.keys(rayStatus).length == 0) {
+  if (Object.keys(rayStatus).length === 0) {
     return <Typography variant="body2" color="textSecondary" align="center" sx={{ padding: '1em' }}>
       No Cluster
     </Typography>
