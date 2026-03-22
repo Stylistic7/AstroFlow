@@ -1,7 +1,7 @@
 // src/components/RunsTab.jsx
 import React, { useContext, useEffect, useState } from 'react';
 import { Box, Paper, Typography, IconButton } from '@mui/material';
-import { Delete as DeleteIcon } from '@mui/icons-material';
+import QuarantineToggle from './QuarantineToggle.jsx';
 import FlatThumbnail from './FlatThumbnail.jsx';
 import AstroFlowContext from './AstroFlowContext.jsx';
 import MetadataItem from './MetadataItem.jsx';
@@ -38,10 +38,6 @@ const RunsTab = ({ stack }) => {
 
   };
 
-  const handleDeleteRun = (runId) => {
-    fetch(`/quarantine_stack/${runId}`);
-    alert(`Quarantined run ${runId}.`);
-  };
 
   const calibrationStackInfo = (dependency) => {
     if (dependency === undefined) {
@@ -99,9 +95,11 @@ const RunsTab = ({ stack }) => {
               <Typography variant="h6">
                 Run {run.id} — {runDate.toDateString()} ({run.frames.length} frames)
               </Typography>
-              <IconButton onClick={() => handleDeleteRun(run.id)} color="error">
-                <DeleteIcon />
-              </IconButton>
+              <QuarantineToggle
+                objectType="stack"
+                objectId={run.id}
+                isQuarantined={run.is_quarantined || false}
+              />
             </Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Box>

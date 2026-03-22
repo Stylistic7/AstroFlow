@@ -1,25 +1,19 @@
-import { IconButton, Tooltip } from '@mui/material';
-import DeleteIcon from '@mui/icons-material/Delete';
+import { Tooltip, IconButton } from '@mui/material';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
-import { styled } from '@mui/system';
+import QuarantineToggle from './QuarantineToggle';
 
 
-export default function StackActionButtons({ stack_id }) {
-  const handleQuarantine = () => {
-    console.log(`Quaranting stack ${stack_id}`);
-    fetch(`/quarantine_stack/${stack_id}`);
-  };
-
+export default function StackActionButtons({ stack_id, is_quarantined }) {
   const handleShowInFinder = () => {
     alert(`This would show the image at ${stack_id} in Finder.`);
   };
 
   return <>
-    <Tooltip title="Quarantine">
-      <IconButton onClick={handleQuarantine} color="white">
-        <DeleteIcon />
-      </IconButton>
-    </Tooltip>
+    <QuarantineToggle
+      objectType="stack"
+      objectId={stack_id}
+      isQuarantined={is_quarantined || false}
+    />
     <Tooltip title="Show in Finder">
       <IconButton onClick={handleShowInFinder} color="white">
         <FolderOpenIcon />

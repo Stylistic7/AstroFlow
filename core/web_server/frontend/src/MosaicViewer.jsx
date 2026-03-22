@@ -23,6 +23,7 @@ import { createTheme } from "@mui/material/styles";
 import AstroFlowContext from "./AstroFlowContext.jsx";
 import { AstroFlowImage } from "./AstroFlowImage.jsx";
 import ColorChannelSelector from "./ColorChannelSelector.jsx";
+import QuarantineToggle from "./QuarantineToggle.jsx";
 import ToggleIconButton from "./ToggleIconButton";
 import WorkflowGraph from "./WorkflowGraph.jsx";
 import { ra_to_hms, dec_to_dms } from "./units.js";
@@ -192,6 +193,11 @@ export default function MosaicViewer() {
 						icon={<FullscreenIcon />}
 						checked={showOutline}
 						handleChange={() => setShowOutline((v) => !v)}
+					/>
+					<QuarantineToggle
+						objectType="mosaic"
+						objectId={mosaic_id}
+						isQuarantined={mosaic?.is_quarantined || false}
 					/>
 				</Box>
 			</Box>

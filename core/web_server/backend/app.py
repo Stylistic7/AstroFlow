@@ -192,19 +192,45 @@ def _make_json_serializable(D):
     return output
 
 
+def _add_quarantine_flags(items: dict, quarantine_settings: dict, settings_class) -> dict:
+    """Add is_quarantined flag to each item in the dict."""
+    result = {}
+    for k, v in (items or {}).items():
+        if isinstance(v, dict):
+            v = dict(v)
+            v["is_quarantined"] = quarantine_settings.get(k, settings_class()).is_quarantined
+        result[k] = v
+    return result
+
+
 @app.route("/mosaics")
 def mosaics():
-    return context.ui_mosaics
+    from customization.settings import MosaicSettings
+    return _add_quarantine_flags(
+        context.ui_mosaics,
+        context.settings.mosaic_settings,
+        MosaicSettings,
+    )
 
 
 @app.route("/targets")
 def targets():
-    return context.ui_targets
+    from customization.settings import TargetSettings
+    return _add_quarantine_flags(
+        context.ui_targets,
+        context.settings.target_settings,
+        TargetSettings,
+    )
 
 
 @app.route("/stacks")
 def stacks():
-    return context.ui_stacks
+    from customization.settings import StackSettings
+    return _add_quarantine_flags(
+        context.ui_stacks,
+        context.settings.stack_settings,
+        StackSettings,
+    )
 
 
 @app.route("/calibration_stacks")
