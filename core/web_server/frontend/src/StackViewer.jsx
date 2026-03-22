@@ -1,5 +1,4 @@
-// src/components/StackViewer.jsx
-import React, { useContext } from 'react';
+import { useContext } from 'react';
 import { Box, CircularProgress, Typography } from '@mui/material';
 import { useParams } from 'react-router-dom';
 import AstroFlowContext from './AstroFlowContext.jsx';

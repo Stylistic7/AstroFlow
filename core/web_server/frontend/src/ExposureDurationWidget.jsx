@@ -1,6 +1,3 @@
-import React, { useState, useRef, useEffect, useReducer } from "react";
-import './Starmap.css';
-
 export default function ExposureDurationWidget({ totalExposureDuration, selectedExposureDuration, sx, ...props }) {
 
 	const clock_face = () => {
@@ -92,5 +89,5 @@ export default function ExposureDurationWidget({ totalExposureDuration, selected
 		selectedExposureDuration -= 12;
 	}
 
-	return <React.Fragment>{elements}</React.Fragment>;
+	return <>{elements}</>;
 }

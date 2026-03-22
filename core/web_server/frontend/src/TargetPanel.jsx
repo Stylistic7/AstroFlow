@@ -1,10 +1,7 @@
 import React, { useContext } from "react";
 import { useParams, useLocation } from "react-router-dom";
 
-import Box from '@mui/material/Box';
-
 import StackThumbnail from "./StackThumbnail.jsx";
-import "./Starmap.css";
 import AstroFlowContext from './AstroFlowContext.jsx';
 
 
@@ -17,8 +14,7 @@ export default function TargetPanel() {
 	const target = targets[params.target_id];
 
 	return (
-		<>
-			<div style={{
+		<div style={{
 				display: "grid",
 				gridTemplateColumns: "repeat(4, 1fr)",
 				maxHeight: "80vh",
@@ -35,7 +31,6 @@ export default function TargetPanel() {
 						handleClick={event => window.open(`${location.pathname}/stack/${stack_id}`, '_blank')}
 					/>
 				))}
-			</div>
-		</>
+		</div>
 	);
 }

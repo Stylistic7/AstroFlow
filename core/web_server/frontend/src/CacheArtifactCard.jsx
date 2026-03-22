@@ -1,12 +1,12 @@
-import React, { useContext } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useContext } from "react";
+import { useNavigate } from "react-router-dom";
 
 import AutoStackCheckbox from "./AutoStackCheckbox.jsx";
 
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
-import { CardActionArea, Checkbox, FormGroup, FormControlLabel } from '@mui/material';
+import { CardActionArea } from '@mui/material';
 import AstroFlowContext from './AstroFlowContext.jsx';
 
 export default function CacheArtifactCard({ target_id }) {

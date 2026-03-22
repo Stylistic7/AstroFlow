@@ -29,7 +29,7 @@ const GraphVisualization = () => {
       {/* Input nodes */}
       <Box sx={{ display: "flex", gap: 2 }}>
         {inputs.map((input) => (
-          <CacheArtifactCard target_id={input.target_id} />
+          <CacheArtifactCard key={input.id} target_id={input.target_id} />
         ))}
       </Box>
 

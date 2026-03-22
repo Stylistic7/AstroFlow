@@ -18,7 +18,6 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 
 import FullscreenIcon from "@mui/icons-material/Fullscreen";
 import { CopyToClipboard } from "react-copy-to-clipboard";
-import { createTheme } from "@mui/material/styles";
 
 import AstroFlowContext from "./AstroFlowContext.jsx";
 import { AstroFlowImage } from "./AstroFlowImage.jsx";
@@ -26,14 +25,8 @@ import ColorChannelSelector from "./ColorChannelSelector.jsx";
 
 import ToggleIconButton from "./ToggleIconButton";
 import WorkflowGraph from "./WorkflowGraph.jsx";
+import darkTheme from "./theme.js";
 import { ra_to_hms, dec_to_dms } from "./units.js";
-
-const darkTheme = createTheme({
-	palette: {
-		mode: "dark",
-		primary: { main: "#cccccc" },
-	},
-});
 
 // NOTE: This is the same helper logic you had previously, consolidated here.
 const telescopius_pane_line = (stacks, targets, mosaic, target_id, pane) => {

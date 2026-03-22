@@ -1,24 +1,3 @@
-import React, { useState, useRef, useEffect, useReducer } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-
-import LayersIcon from '@mui/icons-material/Layers';
-import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import DeleteIcon from '@mui/icons-material/Delete';
-import Button from '@mui/material/Button';
-import Dialog from '@mui/material/Dialog';
-import DialogActions from '@mui/material/DialogActions';
-import DialogContent from '@mui/material/DialogContent';
-import DialogContentText from '@mui/material/DialogContentText';
-import DialogTitle from '@mui/material/DialogTitle';
-
-import Breadcrumbs from '@mui/material/Breadcrumbs';
-import Link from '@mui/material/Link';
-import Typography from '@mui/material/Typography';
-
-import TargetPanel from "./TargetPanel.jsx";
-import "./Starmap.css";
-
 export default function HDRImage({ image_url }) {
   if (image_url === undefined) {
     image_url = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAeAAAAHgAQMAAABHGizWAAAAAXNSR0IB2cksfwAAAAlwSFlzAAALEwAACxMBAJqcGAAAAAZQTFRFAAAAAAAApWe5zwAAAAJ0Uk5TAP9bkSK1AAABqElEQVR4nO3aQXKEIBBA0XY1x/CocFSO4UoStGlAsGRmKln9v7E0PHaUDkGEiIiIiIiIiP4nF0tB3C6vdIlxS39Ld6UdDAZPYXuUlCx5pOHQjwSDwQ/4da43XYuxmqN5CAaDv8DutF7AYPDXOA1YY+7NJQkGgxVr+qWYpvJLHv7WtycYDD4exZINry8lMBg8hbvq993EcDAYfE2XpJd6EXoR/Yrc8pDx5yMYDB6sseV3gI5bq82NLf99zVP53oLB4DsseSPe2+VYi7YNchcYDB7i9BbTXDzvlnLRAhgMnsVStjOCbXzoV+RS341XJhgM7lrqL8XYnh5s1N2PMjAY3OGUt0OEW5nRNVP53oLB4AF2e1FrPorRTny/JMFg8OhdlSo7h/pfrmo/vgQGg+ex5c7d+WhvOBFbtXdLEgwGd8OtkB5cjzuF6icaGAyewfZIvyJjN9ztl5FgMPgB215hyL/NvJ3P0DYwGPwh1jvfLlCdAQwGf47juePh+/O6YDB4Bms67kjfd9VZwtBTMBg8xrEUqg1E2/goPe2TgMFgIiIiIiIiIvrDfgCHetV+sEUfrQAAAABJRU5ErkJggg==";

@@ -6,7 +6,6 @@ import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
 import { CardActionArea } from '@mui/material';
 
-import MosaicOutline from "./MosaicOutline.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
 
 // TODO: Don't show MosaicCards for "mosaics" with just one panel?
@@ -14,8 +13,6 @@ export default function MosaicCard({ mosaic_id }) {
   const { stacks, targets, mosaics } = useContext(AstroFlowContext);
 
   const mosaic = mosaics[mosaic_id];
-  console.log('mosaic', mosaic);
-
   const navigate = useNavigate();
 
   const get_filters = () => {
@@ -53,24 +50,6 @@ export default function MosaicCard({ mosaic_id }) {
               marginRight: "auto",
             }}
           />
-          {/* <MosaicOutline
-            stacks={stacks}
-            targets={targets}
-            mosaics={mosaics}
-            mosaic_id={mosaic_id}
-            style={{
-              display: "block",
-              position: "absolute",
-              left: 0,
-              top: 0,
-              width: "100%",
-              height: "100%",
-              marginLeft: "auto",
-              marginRight: "auto",
-              maxWidth: "auto",
-              maxHeight: "auto",
-            }}
-          /> */}
         </div>
         <CardContent>
           <Typography gutterBottom variant="h5" component="div">

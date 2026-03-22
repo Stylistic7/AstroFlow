@@ -1,9 +1,7 @@
-import React, { useState, useRef, useEffect, useContext } from "react";
+import { useState, useRef, useEffect, useContext } from "react";
 import useVideoFrames from "./useVideoFrames.ts";
 import ExposureDurationWidget from "./ExposureDurationWidget.jsx";
-import './Starmap.css';
 import AstroFlowContext from './AstroFlowContext.jsx';
-import { light } from "@mui/material/styles/createPalette";
 
 export default function StackThumbnail({ stack_id, width, handleClick }) {
 	const { stacks } = useContext(AstroFlowContext);

@@ -6,8 +6,9 @@ import DisambiguationPanel from "./DisambiguationPanel.jsx";
 import RecentPanel from "./RecentPanel.jsx";
 import SsePanel from "./SsePanel.jsx";
 import { usePageVisibility } from './usePageVisibility';
-import { ThemeProvider, createTheme } from '@mui/material/styles';
+import { ThemeProvider } from '@mui/material/styles';
 import { StyledEngineProvider } from '@mui/material/styles';
+import darkTheme from './theme.js';
 import CssBaseline from '@mui/material/CssBaseline';
 import './App.css';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
@@ -38,10 +39,8 @@ function App() {
   const [decisions, setDecisions] = useState([]);
 
   useEffect(() => {
-    console.log('in App.useEffect');
-
     const loadObjectData = async () => {
-      let [s, c, t, m, cart, cg, cp] = await Promise.all([
+      const [s, c, t, m, cart, cg, cp] = await Promise.all([
         fetch('/stacks').then(r => r.json()),
         fetch('/calibration_stacks').then(r => r.json()),
         fetch('/targets').then(r => r.json()),
@@ -65,25 +64,17 @@ function App() {
     loadObjectData();
 
     const loadComputeGraphStatus = async () => {
-      let [s] = await Promise.all([
-        fetch('/compute_graph_status').then(r => r.json()),
-      ]);
-
+      const s = await fetch('/compute_graph_status').then(r => r.json());
       setComputeGraphStatus(s);
     };
 
     const loadRayStatus = async () => {
-      console.log('loadRayStatus');
-
-      let [s] = await Promise.all([
-        fetch('/ray_status').then(r => r.json()),
-      ]);
-
+      const s = await fetch('/ray_status').then(r => r.json());
       setRayStatus(s);
     };
 
     const loadDecisions = async () => {
-      let d = await fetch('/api/decisions').then(r => r.json());
+      const d = await fetch('/api/decisions').then(r => r.json());
       setDecisions(d);
     };
 
@@ -91,9 +82,7 @@ function App() {
     loadRayStatus();
     loadDecisions();
 
-    // TODO: This removes the hostname's port, which is a little gross.
     const stream_url = window.location.protocol + '//' + window.location.hostname + '/stream';
-    console.log('SSE stream URL:', stream_url);
     const sse = new window.EventSource(stream_url);
 
     sse.onmessage = e => { loadObjectData(); loadDecisions(); };
@@ -103,12 +92,10 @@ function App() {
     sse.addEventListener("decisions_updated", e => loadDecisions());
 
     sse.onerror = () => {
-      console.log('sse error');
       sse.close();
     }
 
     return () => {
-      console.log('closing sse');
       sse.close();
     };
   }, []);
@@ -132,110 +119,110 @@ function App() {
             <CssBaseline />
             <Router>
               <Routes>
-                <Route exact path="/" element={
+                <Route path="/" element={
                   <AppLayout>
                     <Starmap />
                   </AppLayout>
                 } />
-                <Route exact path="/stack/:stack_id" element={
+                <Route path="/stack/:stack_id" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <StackViewer />
                   </AppLayout>
                 } />
-                <Route exact path="/stack/:stack_id/calibration_stack/:calibration_stack_id" element={
+                <Route path="/stack/:stack_id/calibration_stack/:calibration_stack_id" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <StackViewer />
                   </AppLayout>
                 } />
-                <Route exact path="/calibration_stack/:calibration_stack_id" element={
+                <Route path="/calibration_stack/:calibration_stack_id" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <StackViewer />
                   </AppLayout>
                 } />
-                <Route exact path="/target/:target_id" element={
+                <Route path="/target/:target_id" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <TargetPanel />
                   </AppLayout>
                 } />
-                <Route exact path="/mosaic/:mosaic_id" element={
+                <Route path="/mosaic/:mosaic_id" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <MosaicViewer />
                   </AppLayout>
                 } />
-                <Route exact path="/target/:target_id/stack/:stack_id" element={
+                <Route path="/target/:target_id/stack/:stack_id" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <StackViewer />
                   </AppLayout>
                 } />
-                <Route exact path="/target/:target_id/stack/:stack_id/calibration_stack/:calibration_stack_id" element={
+                <Route path="/target/:target_id/stack/:stack_id/calibration_stack/:calibration_stack_id" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <StackViewer />
                   </AppLayout>
                 } />
-                <Route exact path="/mosaic/:mosaic_id/target/:target_id" element={
+                <Route path="/mosaic/:mosaic_id/target/:target_id" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <TargetPanel />
                   </AppLayout>}
                 />
-                <Route exact path="/mosaic/:mosaic_id/target/:target_id/stack/:stack_id" element={
+                <Route path="/mosaic/:mosaic_id/target/:target_id/stack/:stack_id" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <StackViewer />
                   </AppLayout>
                 } />
-                <Route exact path="/mosaic/:mosaic_id/target/:target_id/stack/:stack_id/calibration_stack/:calibration_stack_id" element={
+                <Route path="/mosaic/:mosaic_id/target/:target_id/stack/:stack_id/calibration_stack/:calibration_stack_id" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <StackViewer />
                   </AppLayout>
                 } />
-                <Route exact path="/disambiguation/" element={
+                <Route path="/disambiguation/" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <DisambiguationPanel />
                   </AppLayout>
                 } />
-                <Route exact path="/disambiguation/:items" element={
+                <Route path="/disambiguation/:items" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <DisambiguationPanel />
                   </AppLayout>
                 } />
-                <Route exact path="/tile_viewer/:objectType/:imageHash" element={
+                <Route path="/tile_viewer/:objectType/:imageHash" element={
                   <Box sx={{ width: '100vw', height: '100vh' }}>
                     <TileViewer />
                   </Box>
                 } />
-                <Route exact path="/decisions" element={
+                <Route path="/decisions" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <DecisionsPage />
                   </AppLayout>
                 } />
-                <Route exact path="/recent" element={
+                <Route path="/recent" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <RecentPanel />
                   </AppLayout>
                 } />
-                <Route exact path="/sse" element={
+                <Route path="/sse" element={
                   dataIsAvailable && <SsePanel />}
                 />
-                <Route exact path="/progress" element={
+                <Route path="/progress" element={
                   <ProgressComponent />}
                 />
-                <Route exact path="/view_workflow_graph" element={
+                <Route path="/view_workflow_graph" element={
                   dataIsAvailable && <WorkflowGraph theme={darkTheme} />}
                 />
-                <Route exact path="/performance" element={
+                <Route path="/performance" element={
                   <AppLayout>
                     <PerformanceExplorer />
                   </AppLayout>}
@@ -245,17 +232,8 @@ function App() {
           </FolderProvider>
         </AstroFlowContext.Provider>
       </StyledEngineProvider>
-    </ThemeProvider >
+    </ThemeProvider>
   );
 }
-
-const darkTheme = createTheme({
-  palette: {
-    mode: 'dark',
-    primary: {
-      main: '#cccccc',
-    },
-  },
-});
 
 export default App;

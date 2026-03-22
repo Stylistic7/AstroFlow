@@ -1,5 +1,4 @@
-// src/components/FlatThumbnail.jsx
-import React from 'react';
+
 import { Box, Typography } from '@mui/material';
 
 const FlatThumbnail = ({ stack, run, flatStack, selected, onSelect }) => {

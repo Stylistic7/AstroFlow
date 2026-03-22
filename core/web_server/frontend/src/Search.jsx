@@ -1,4 +1,4 @@
-import React, { useContext, useMemo } from "react";
+import React, { useState, useContext, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { styled, alpha } from '@mui/material/styles';
 import AppBar from '@mui/material/AppBar';
@@ -79,61 +79,30 @@ export default function PrimarySearchAppBar() {
   const { stacks, targets, mosaics, calibrationStacks, decisions } = useContext(AstroFlowContext);
   const navigate = useNavigate();
 
-  const index = new Document({
-    document: {
-      id: "ref_id",
-      index: ["name", "image_type", "camera", "image_scale", "stable_hash", "filenames"],
-      store: ["type", "name", "camera", "image_scale", "stable_hash", "filenames"]
-    }
-  });
-
-  const allObjects = [];
-
-  Object.entries(stacks).forEach(([hash, stack]) => {
-    allObjects.push({
-      ref_id: `stack,${hash}`,
-      type: "stack",
-      image_type: stack.image_type,
-      stable_hash: hash,
-      name: stack.name,
-      camera: stack.camera,
-      filenames: stack.filenames,
+  const index = useMemo(() => {
+    const idx = new Document({
+      document: {
+        id: "ref_id",
+        index: ["name", "image_type", "camera", "image_scale", "stable_hash", "filenames"],
+        store: ["type", "name", "camera", "image_scale", "stable_hash", "filenames"]
+      }
     });
-  });
 
-  Object.entries(targets).forEach(([hash, target]) => {
-    allObjects.push({
-      ref_id: `target,${hash}`,
-      type: "target",
-      stable_hash: hash,
-      name: target.name,
-      camera: target.camera,
+    Object.entries(stacks).forEach(([hash, stack]) => {
+      idx.add({ ref_id: `stack,${hash}`, type: "stack", image_type: stack.image_type, stable_hash: hash, name: stack.name, camera: stack.camera, filenames: stack.filenames });
     });
-  });
-
-  Object.entries(mosaics).forEach(([hash, mosaic]) => {
-    allObjects.push({
-      ref_id: `mosaic,${hash}`,
-      type: "mosaic",
-      stable_hash: hash,
-      name: mosaic.name,
-      camera: mosaic.camera,
+    Object.entries(targets).forEach(([hash, target]) => {
+      idx.add({ ref_id: `target,${hash}`, type: "target", stable_hash: hash, name: target.name, camera: target.camera });
     });
-  });
-
-  Object.entries(calibrationStacks).forEach(([hash, stack]) => {
-    allObjects.push({
-      ref_id: `calibration_stack,${hash}`,
-      type: "calibration_stack",
-      image_type: stack.image_type,
-      stable_hash: hash,
-      name: stack.name,
-      camera: stack.camera,
-      filter: stack.filter,
+    Object.entries(mosaics).forEach(([hash, mosaic]) => {
+      idx.add({ ref_id: `mosaic,${hash}`, type: "mosaic", stable_hash: hash, name: mosaic.name, camera: mosaic.camera });
     });
-  });
+    Object.entries(calibrationStacks).forEach(([hash, stack]) => {
+      idx.add({ ref_id: `calibration_stack,${hash}`, type: "calibration_stack", image_type: stack.image_type, stable_hash: hash, name: stack.name, camera: stack.camera, filter: stack.filter });
+    });
 
-  allObjects.forEach(doc => index.add(doc));
+    return idx;
+  }, [stacks, targets, mosaics, calibrationStacks]);
 
   const unreviewedCount = useMemo(
     () => (decisions || []).filter(d => !d.is_overridden).length,
@@ -182,8 +151,8 @@ export default function PrimarySearchAppBar() {
     navigate(url);
   }
 
-  const [anchorEl, setAnchorEl] = React.useState(null);
-  const [mobileMoreAnchorEl, setMobileMoreAnchorEl] = React.useState(null);
+  const [anchorEl, setAnchorEl] = useState(null);
+  const [mobileMoreAnchorEl, setMobileMoreAnchorEl] = useState(null);
 
   const isMenuOpen = Boolean(anchorEl);
   const isMobileMenuOpen = Boolean(mobileMoreAnchorEl);

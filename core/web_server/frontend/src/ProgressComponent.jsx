@@ -1,6 +1,5 @@
-import React, { useState, useRef, useEffect, useReducer, useContext } from "react";
-import { Box, Typography, LinearProgress, Menu, Accordion, AccordionSummary, AccordionDetails } from '@mui/material';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import { useState, useContext } from "react";
+import { Box, Typography, LinearProgress, Menu } from '@mui/material';
 
 import AstroFlowContext from './AstroFlowContext.jsx';
 
@@ -24,7 +23,7 @@ const ProgressComponent = () => {
   // Calculate the total remaining time
   const totalRemainingTime = processEntries.reduce((acc, [key, value]) => acc + value.estimated_time, 0);
 
-  if (totalRemainingTime == 0) {
+  if (totalRemainingTime === 0) {
     return <Typography variant="body2" color="textSecondary" align="center" sx={{ padding: '1em' }}>
       Idle
     </Typography>
@@ -70,7 +69,7 @@ const ProgressComponent = () => {
         <Box sx={{ p: 2 }}>
           {/* Loop through sorted processes */}
           {processEntries.map(([processName, data]) => {
-            if (data.remaining_number == 0) {
+            if (data.remaining_number === 0) {
               return;
             }
 

@@ -1,10 +1,8 @@
-import { useEffect, useRef, useState, useLayoutEffect } from 'react';
+import { useEffect, useRef, useState, useLayoutEffect, useContext } from 'react';
 import * as PIXI from 'pixi.js';
 import { Stage, useApp } from '@pixi/react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Viewport } from 'pixi-viewport';
-import React, { useContext } from "react";
-import { useNavigate } from "react-router-dom";
 
 import AstroFlowContext from './AstroFlowContext.jsx';
 
@@ -27,8 +25,6 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
 
   const navigate = useNavigate();
 
-  console.log('TileViewer objectType', objectType, 'imageHash', imageHash);
-
   useLayoutEffect(() => {
     if (!containerRef.current) return;
     const observer = new ResizeObserver(() => {
@@ -44,7 +40,6 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
       ? `/metadata/${objectType}/${imageHash}/${filter}`
       : `/metadata/${objectType}/${imageHash}`;
 
-    console.log('metadata', url);
     fetch(url)
       .then((res) => res.json())
       .then((meta) => setMetadata(meta));
@@ -57,8 +52,6 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
   }, [objectType, imageHash, filter]);
 
   const onClick = (poly, event) => {
-    console.log('onClick', poly);
-
     const e = event.nativeEvent; // underlying DOM PointerEvent
     
     // This is tacked onto the end of the current URL.
@@ -164,8 +157,6 @@ const ImperativeViewport = ({ objectType, imageHash, filter, port, imageWidth, i
 
       // Create polygon graphics and add them
       for (const poly of polygons) {
-        console.log('poly', poly);
-
         const g = new PIXI.Graphics();
         g.zIndex = 9999;
         g.lineStyle(imageWidth / 500, typeColors[poly.type], 1);
