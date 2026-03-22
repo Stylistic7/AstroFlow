@@ -46,7 +46,7 @@ def customize_stack(
     cal_stacks: SimpleStacksDict,
     stack_settings: StackSettings,
     min_frames_in_stack: int,
-) -> CustomizedStack:
+) -> CustomizedStack | None:
     def chain(x, *funcs):
         for f in funcs:
             if x is None:
