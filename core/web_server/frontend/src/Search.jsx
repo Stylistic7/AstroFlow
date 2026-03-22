@@ -1,9 +1,10 @@
-import React, { useContext } from "react";
+import React, { useContext, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { styled, alpha } from '@mui/material/styles';
 import AppBar from '@mui/material/AppBar';
 import Box from '@mui/material/Box';
 import Toolbar from '@mui/material/Toolbar';
+import Tooltip from '@mui/material/Tooltip';
 import AstroFlowBreadcrumbs from "./AstroFlowBreadcrumbs.jsx";
 import IconButton from '@mui/material/IconButton';
 import InputBase from '@mui/material/InputBase';
@@ -12,12 +13,8 @@ import MenuItem from '@mui/material/MenuItem';
 import Menu from '@mui/material/Menu';
 import SearchIcon from '@mui/icons-material/Search';
 import AccountCircle from '@mui/icons-material/AccountCircle';
-import MailIcon from '@mui/icons-material/Mail';
-import NotificationsIcon from '@mui/icons-material/Notifications';
 import MoreIcon from '@mui/icons-material/MoreVert';
-import LayersIcon from '@mui/icons-material/Layers';
-import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import LeftDrawer from "./LeftDrawer.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
 import ProgressComponent from './ProgressComponent.jsx';
@@ -79,7 +76,7 @@ export function VerticalDivider({ height = 24, color = 'grey.400', marginX = 2 }
 }
 
 export default function PrimarySearchAppBar() {
-  const { stacks, targets, mosaics, calibrationStacks } = useContext(AstroFlowContext);
+  const { stacks, targets, mosaics, calibrationStacks, decisions } = useContext(AstroFlowContext);
   const navigate = useNavigate();
 
   const index = new Document({
@@ -137,6 +134,11 @@ export default function PrimarySearchAppBar() {
   });
 
   allObjects.forEach(doc => index.add(doc));
+
+  const unreviewedCount = useMemo(
+    () => (decisions || []).filter(d => !d.is_overridden).length,
+    [decisions]
+  );
 
   function smartSearch(query) {
     const tokens = query.trim().split(/\s+/);
@@ -242,25 +244,13 @@ export default function PrimarySearchAppBar() {
       open={isMobileMenuOpen}
       onClose={handleMobileMenuClose}
     >
-      <MenuItem>
-        <IconButton size="large" aria-label="show 4 new mails" color="inherit">
-          <Badge badgeContent={4} color="error">
-            <MailIcon />
+      <MenuItem onClick={() => navigate('/decisions')}>
+        <IconButton size="large" color="inherit">
+          <Badge badgeContent={unreviewedCount} color="warning">
+            <WarningAmberIcon />
           </Badge>
         </IconButton>
-        <p>Messages</p>
-      </MenuItem>
-      <MenuItem>
-        <IconButton
-          size="large"
-          aria-label="show 17 new notifications"
-          color="inherit"
-        >
-          <Badge badgeContent={Object.keys(stacks).length} color="error">
-            <NotificationsIcon />
-          </Badge>
-        </IconButton>
-        <p>Notifications</p>
+        <p>Decisions</p>
       </MenuItem>
       <MenuItem onClick={handleProfileMenuOpen}>
         <IconButton
@@ -307,29 +297,17 @@ export default function PrimarySearchAppBar() {
           <ProgressComponent />
           <VerticalDivider />
           <Box sx={{ display: { xs: 'none', md: 'flex' } }}>
-            <IconButton size="large" aria-label="show 4 new mails" color="inherit">
-              <Badge badgeContent={Object.keys(stacks).length} color="error">
-                <LayersIcon />
-              </Badge>
-            </IconButton>
-            <IconButton
-              size="large"
-              aria-label="show 17 new notifications"
-              color="inherit"
-            >
-              <Badge badgeContent={Object.keys(targets).length} color="error">
-                <AutoAwesomeIcon />
-              </Badge>
-            </IconButton>
-            <IconButton
-              size="large"
-              aria-label="show 17 new notifications"
-              color="inherit"
-            >
-              <Badge badgeContent={Object.keys(mosaics).length} color="error">
-                <AutoAwesomeMosaicIcon />
-              </Badge>
-            </IconButton>
+            <Tooltip title={unreviewedCount > 0 ? `${unreviewedCount} decision(s) to review` : 'No decisions to review'}>
+              <IconButton
+                size="large"
+                color="inherit"
+                onClick={() => navigate('/decisions')}
+              >
+                <Badge badgeContent={unreviewedCount} color="warning">
+                  <WarningAmberIcon />
+                </Badge>
+              </IconButton>
+            </Tooltip>
             <IconButton
               size="large"
               edge="end"

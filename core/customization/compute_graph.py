@@ -13,9 +13,28 @@ from dependency_graph import Graph
 from customization.subframe_selection import select_subframes
 from customization.settings import Settings, StackSettings, TargetSettings
 from customization.types import CustomizedStack, CustomizedStacksDict
+from customization.decisions import BinaryChoice, DecisionKey, DecisionOverride, ObjectType
 from quarantining.quarantining import apply_quarantine
 from mosaics.types import MosaicsDict
 from targets.types import TargetsDict
+
+
+def apply_decision_exclusions(
+    stack: CompositeStack,
+    decision_overrides: frozendict[DecisionKey, DecisionOverride],
+) -> CompositeStack | None:
+    """Remove substacks that have been explicitly excluded via decision overrides."""
+    excluded_substacks = {
+        key[3]  # subject_id (the substack hash)
+        for key, override in decision_overrides.items()
+        if (
+            key[1] == ObjectType.STACK
+            and override.choice == BinaryChoice.EXCLUDE
+        )
+    }
+    if not excluded_substacks:
+        return stack
+    return apply_quarantine(stack, excluded_substacks)
 
 
 def apply_settings(
@@ -45,6 +64,7 @@ def customize_stack(
     stack: CompositeStack,
     cal_stacks: SimpleStacksDict,
     stack_settings: StackSettings,
+    decision_overrides: frozendict,
     min_frames_in_stack: int,
 ) -> CustomizedStack | None:
     def chain(x, *funcs):
@@ -59,6 +79,7 @@ def customize_stack(
         lambda s: associate_with_stack(s, cal_stacks),
         lambda s: select_subframes(s, min_frames_in_stack),
         lambda s: apply_quarantine(s, stack_settings.quarantined_substacks),
+        lambda s: apply_decision_exclusions(s, decision_overrides),
         lambda s: apply_settings(s, stack_settings),
     )
 
@@ -80,11 +101,20 @@ def gather_customize_stacks(*ancestor_results: CustomizedStack | None) -> Custom
 @cached.remote
 def scatter_customize_stacks(
     stack_settings: frozendict,
+    decision_overrides: frozendict,
     min_frames_in_stack: int,
     stacks: CompositeStacksDict,
     cal_stacks: SimpleStacksDict,
 ) -> Graph:
     print(f"### scatter_customize_stacks type(cal_stacks) {type(cal_stacks)}")
+
+    def _overrides_for_stack(stack_hash):
+        """Extract only the decision overrides relevant to this stack."""
+        return frozendict({
+            k: v for k, v in decision_overrides.items()
+            if len(k) >= 3 and k[2] == stack_hash
+        })
+
     return Graph(
         {
             gather_customize_stacks: [
@@ -93,6 +123,7 @@ def scatter_customize_stacks(
                     ref.get(),
                     cal_stacks,
                     stack_settings.get(k, StackSettings()),
+                    _overrides_for_stack(k),
                     min_frames_in_stack,
                 )
                 for k, ref in stacks.items()

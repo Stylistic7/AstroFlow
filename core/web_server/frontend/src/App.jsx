@@ -19,6 +19,7 @@ import StackViewer from './StackViewer.jsx';
 import MosaicViewer from './MosaicViewer.jsx';
 import AppLayout from './AppLayout.jsx';
 import PerformanceExplorer from './PerformanceExplorer.jsx';
+import DecisionsPage from './DecisionsPage.jsx';
 import { FolderProvider } from './FolderContext';
 
 function App() {
@@ -34,6 +35,7 @@ function App() {
   const [computeGraph, setComputeGraph] = useState({});
   const [computeGraphStatus, setComputeGraphStatus] = useState({});
   const [rayStatus, setRayStatus] = useState({});
+  const [decisions, setDecisions] = useState([]);
 
   useEffect(() => {
     console.log('in App.useEffect');
@@ -80,18 +82,25 @@ function App() {
       setRayStatus(s);
     };
 
+    const loadDecisions = async () => {
+      let d = await fetch('/api/decisions').then(r => r.json());
+      setDecisions(d);
+    };
+
     loadComputeGraphStatus();
     loadRayStatus();
+    loadDecisions();
 
     // TODO: This removes the hostname's port, which is a little gross.
     const stream_url = window.location.protocol + '//' + window.location.hostname + '/stream';
     console.log('SSE stream URL:', stream_url);
     const sse = new window.EventSource(stream_url);
 
-    sse.onmessage = e => loadObjectData();
-    sse.addEventListener("reload_data", e => loadObjectData());
+    sse.onmessage = e => { loadObjectData(); loadDecisions(); };
+    sse.addEventListener("reload_data", e => { loadObjectData(); loadDecisions(); });
     sse.addEventListener("compute_graph_status", e => loadComputeGraphStatus());
     sse.addEventListener("ray_status", e => loadRayStatus());
+    sse.addEventListener("decisions_updated", e => loadDecisions());
 
     sse.onerror = () => {
       console.log('sse error');
@@ -117,7 +126,7 @@ function App() {
     <ThemeProvider theme={darkTheme}>
       <StyledEngineProvider injectFirst>
         <AstroFlowContext.Provider
-          value={{ constellationPolylines, stacks, calibrationStacks, targets, mosaics, shoppingCart, computeGraph, computeGraphStatus, rayStatus }}
+          value={{ constellationPolylines, stacks, calibrationStacks, targets, mosaics, shoppingCart, computeGraph, computeGraphStatus, rayStatus, decisions }}
         >
           <FolderProvider>
             <CssBaseline />
@@ -204,6 +213,12 @@ function App() {
                   <Box sx={{ width: '100vw', height: '100vh' }}>
                     <TileViewer />
                   </Box>
+                } />
+                <Route exact path="/decisions" element={
+                  dataIsAvailable &&
+                  <AppLayout>
+                    <DecisionsPage />
+                  </AppLayout>
                 } />
                 <Route exact path="/recent" element={
                   dataIsAvailable &&

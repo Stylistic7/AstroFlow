@@ -18,6 +18,7 @@ from state.ray_control import (
     start_ray_head_node,
     start_ray_subordinate_node,
     stop_ray_node,
+    is_ray_connected,
 )
 from state.astroflow_zeroconf import AstroFlowZeroconf
 from asiair.asiair_zeroconf import ASIAIRZeroconf
@@ -148,7 +149,6 @@ def _start_ray_head_node(
     announce("ray_status")
 
     connect_to_ray_cluster()
-    time.sleep(5)
 
     return state, [
         Action(type="populate_context"),
@@ -174,19 +174,41 @@ def _update_astroflow_services(
     if cache.get("ray_head_node_enabled", False):
         return state, []
 
+    from web_server.backend.announcer import announce
+
+    instances = action.get("instances", {})
+    head = next(
+        (i for i in instances.values() if i["ray_head"] == "yes"),
+        None,
+    )
+
+    # If no head node is advertising, check if we've lost our connection.
+    if head is None:
+        if "ray_process" in state and not is_ray_connected():
+            print("### Lost connection to head node, cleaning up")
+            stop_ray_node()
+            del state["ray_process"]
+            announce("ray_status")
+        return state, []
+
+    # Already connected — nothing to do.
     if "ray_process" in state:
         return state, []
 
-    # TODO: This should be a follow-on action.
-    instance = next(iter(action["instances"].values()))
-    print(f"### connecting to head node described by instance {instance}")
-    state["ray_process"] = start_ray_subordinate_node(instance["ip"])
-
-    from web_server.backend.announcer import announce
-
-    announce("ray_status")
-
-    connect_to_ray_cluster()
+    # Try to connect to the discovered head node.
+    print(f"### Connecting to head node at {head['ip']}")
+    try:
+        state["ray_process"] = start_ray_subordinate_node(head["ip"])
+        announce("ray_status")
+        connect_to_ray_cluster()
+    except Exception as e:
+        print(f"### Failed to connect to head node: {e}")
+        # Clean up so the next periodic re-check can retry.
+        try:
+            stop_ray_node()
+        except Exception:
+            pass
+        state.pop("ray_process", None)
 
     return state, []
 
@@ -395,11 +417,10 @@ def _handle_sigterm(sig, frame):
     enqueue_action(dict(type="quit"))
 
 
-signal.signal(signal.SIGINT, handle_sigint)
-signal.signal(signal.SIGTERM, _handle_sigterm)
-
-
 def main_event_loop():
+    signal.signal(signal.SIGINT, handle_sigint)
+    signal.signal(signal.SIGTERM, _handle_sigterm)
+
     quit_received = False
 
     try:

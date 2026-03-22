@@ -161,6 +161,7 @@ def scatter_spatial_groups(
         customize_stacks_task = Node(
             scatter_customize_stacks,
             settings.stack_settings,
+            settings.decision_overrides,
             cs.min_frames_in_stack,
             name=str(i),
         )

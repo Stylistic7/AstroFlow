@@ -5,6 +5,8 @@ import socket
 import json
 import os
 import hashlib
+import threading
+import time
 
 from state.types import Action
 
@@ -73,7 +75,7 @@ class AstroFlowZeroconf:
     service_info: ServiceInfo | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
-        """Initialize Zeroconf and register the service."""
+        """Initialize Zeroconf, register the service, and start periodic re-check."""
         self.instance_name = get_unique_instance_name()
         self.zeroconf = Zeroconf()
         self.service_name = f"{self.instance_name}._astroflow._tcp.local."
@@ -81,6 +83,11 @@ class AstroFlowZeroconf:
         self.browser = ServiceBrowser(
             self.zeroconf, "_astroflow._tcp.local.", self.listener
         )
+        self.register_service()
+        self._rescan_thread = threading.Thread(
+            target=self._periodic_rescan, daemon=True
+        )
+        self._rescan_thread.start()
 
     def get_ip(self) -> str:
         """Retrieve the local machine's LAN IP address."""
@@ -127,6 +134,13 @@ class AstroFlowZeroconf:
         if mounted_volumes is not None:
             self.mounted_volumes = mounted_volumes
         self.register_service()  # Re-register with updated state
+
+    def _periodic_rescan(self):
+        """Re-emit discovered instances every 30s so the state machine can retry."""
+        while True:
+            time.sleep(30)
+            if self.listener.instances:
+                self.listener._emit()
 
     def close(self):
         """Unregister the service and clean up Zeroconf."""

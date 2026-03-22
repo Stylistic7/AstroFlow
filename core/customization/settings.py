@@ -8,6 +8,7 @@ from stacks.types import StackHash, StackDependency
 from targets.types import TargetHash
 from mosaics.types import MosaicHash
 from hashing import hash_dataclass
+from customization.decisions import DecisionKey, DecisionOverride
 
 
 @dataclass(frozen=True)
@@ -84,6 +85,9 @@ class Settings:
         default_factory=frozendict
     )
     mosaic_settings: frozendict[MosaicHash, MosaicSettings] = field(
+        default_factory=frozendict
+    )
+    decision_overrides: frozendict[DecisionKey, DecisionOverride] = field(
         default_factory=frozendict
     )
     clustering_settings: ClusteringSettings = field(default_factory=ClusteringSettings)

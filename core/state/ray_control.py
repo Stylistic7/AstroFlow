@@ -6,13 +6,25 @@ import socket
 from base_path import get_bin_dir
 
 
-def _ray_status():
+def is_ray_connected():
+    """Check if the local Ray node is connected to a live cluster."""
     ray_path = get_bin_dir() / "ray"
     result = subprocess.run([ray_path, "status"], capture_output=True, text=True)
     return "Autoscaler status" in result.stdout
 
 
-def start_ray_head_node():
+def _wait_for_ray(timeout):
+    """Poll ray status until the node is up, or raise TimeoutError."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        print("### Waiting for Ray node to start...")
+        if is_ray_connected():
+            return
+        time.sleep(1)
+    raise TimeoutError(f"Ray node did not start within {timeout}s")
+
+
+def start_ray_head_node(timeout=60):
     # TODO: Check for an existing Ray head node.
     ray_path = get_bin_dir() / "ray"
     # TODO: Put these resources in the UI.
@@ -28,11 +40,11 @@ def start_ray_head_node():
         bufsize=1,  # Line-buffered output
     )
 
-    while True:
-        print("### Waiting for Ray node to start...")
-        if _ray_status():
-            break
-        time.sleep(1)
+    try:
+        _wait_for_ray(timeout)
+    except TimeoutError:
+        process.kill()
+        raise
 
     return process
 
@@ -50,7 +62,7 @@ def get_ip() -> str:
     return ip
 
 
-def start_ray_subordinate_node(head_node_address):
+def start_ray_subordinate_node(head_node_address, timeout=60):
     ray_path = get_bin_dir() / "ray"
     # TODO: Put these resources in the UI.
     resources = """'{"PixInsight": 1}'"""
@@ -65,11 +77,11 @@ def start_ray_subordinate_node(head_node_address):
         bufsize=1,  # Line-buffered output
     )
 
-    while True:
-        print("### Waiting for Ray node to start...")
-        if _ray_status():
-            break
-        time.sleep(1)
+    try:
+        _wait_for_ray(timeout)
+    except TimeoutError:
+        process.kill()
+        raise
 
     return process
 
@@ -81,7 +93,7 @@ def stop_ray_node(timeout=15):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         print("### Waiting for Ray node to stop...")
-        if not _ray_status():
+        if not is_ray_connected():
             return
         time.sleep(1)
 

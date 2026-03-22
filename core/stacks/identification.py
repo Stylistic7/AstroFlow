@@ -1,6 +1,8 @@
+import math
 import ray
 import numpy as np
 from beartype import beartype
+from frozendict import frozendict
 
 from typing import Iterator
 import clustering
@@ -8,7 +10,13 @@ from stacks.composite_stack import CompositeStack, CompositeStacksDict
 from metadata.classes import FrameHash, MetadataDict
 from decorators import cached
 from cache.context_ref import ContextRef
-from cache.context_ref import ContextRef
+from context import context
+from customization.decisions import (
+    DecisionPoint,
+    DecisionType,
+    BinaryChoice,
+    ObjectType,
+)
 
 
 @cached.remote
@@ -109,5 +117,90 @@ def identify_stacks(
 
     assert None not in new_stacks.values()
 
+    # Detect decision points: flag runs with notable rotation angle spread.
+    detected_decisions = _detect_rotation_outliers(
+        new_stacks, metadata, angular_tolerance
+    )
+    if detected_decisions:
+        context.or_equals("decisions", detected_decisions)
+
     print(f"### identify_stacks done, returning {len(new_stacks)} stacks")
     return new_stacks
+
+
+def _detect_rotation_outliers(
+    stacks: CompositeStacksDict,
+    metadata: MetadataDict,
+    angular_tolerance: float,
+) -> dict:
+    """Detect runs within stacks whose rotation angle is far from the stack mean.
+
+    Flags any run where the per-run mean rotation angle deviates from the
+    stack-wide mean by more than half the angular tolerance.
+    """
+    detected = {}
+
+    for stack_hash, stack_ref in stacks.items():
+        stack = stack_ref.get()
+        if len(stack.contents) < 2:
+            continue
+
+        # Compute per-run mean rotation angles.
+        run_angles = {}
+        for run_hash, run in stack.contents.items():
+            angles = [
+                m.plate_solution.rotation_angle
+                for m in run.metadata.values()
+                if m.plate_solution is not None
+            ]
+            if angles:
+                run_angles[run_hash] = clustering.angular_mean_mod_pi(angles)
+
+        if len(run_angles) < 2:
+            continue
+
+        spread = clustering.angular_spread_mod_pi(list(run_angles.values()))
+        if spread <= angular_tolerance * 0.5:
+            continue
+
+        stack_mean = clustering.angular_mean_mod_pi(list(run_angles.values()))
+
+        for run_hash, run_angle in run_angles.items():
+            # Distance from mean, accounting for mod-pi periodicity.
+            diff = clustering.angular_spread_mod_pi([run_angle, stack_mean])
+            if diff <= angular_tolerance * 0.3:
+                continue
+
+            key = (
+                DecisionType.ROTATION_OUTLIER,
+                ObjectType.STACK,
+                stack_hash,
+                run_hash,
+            )
+            detected[key] = DecisionPoint(
+                key=key,
+                decision_type=DecisionType.ROTATION_OUTLIER,
+                default_choice=BinaryChoice.INCLUDE,
+                title=f"Run rotation differs by {math.degrees(diff):.1f}°",
+                description=(
+                    f"This run's mean rotation angle differs by "
+                    f"{math.degrees(diff):.1f}° from the stack mean. "
+                    f"The stack's total rotation spread is "
+                    f"{math.degrees(spread):.1f}° "
+                    f"(tolerance: {math.degrees(angular_tolerance):.1f}°). "
+                    f"Including it may cause alignment artifacts."
+                ),
+                metadata=frozendict({
+                    "run_angle_deg": round(math.degrees(run_angle), 2),
+                    "stack_mean_deg": round(math.degrees(stack_mean), 2),
+                    "diff_deg": round(math.degrees(diff), 2),
+                    "spread_deg": round(math.degrees(spread), 2),
+                    "tolerance_deg": round(math.degrees(angular_tolerance), 2),
+                    "run_frame_count": len(stack.contents[run_hash].frames),
+                }),
+                object_type=ObjectType.STACK,
+                object_id=stack_hash,
+                subject_id=run_hash,
+            )
+
+    return detected
