@@ -94,7 +94,7 @@ def simplify_header(header: dict[str, Any]) -> dict[str, Any]:
 
 def _solve_field(
     filename: Path | str, arguments: list[str], debug: bool = False
-) -> PlateSolution | Exception | None:
+) -> PlateSolution | None:
     # TODO: Only copy the file to a temp dir once.
     with tempfile.TemporaryDirectory() as temp_dir:
         if os.path.splitext(filename)[-1] in [".xisf"]:
@@ -117,12 +117,12 @@ def _solve_field(
 
             if debug:
                 print(ret.stdout.decode("utf-8"))
-        except Exception as e:
+        except Exception:
             print(
                 f"Could not plate solve file {dest_filename} due to exception"
             )
             traceback.print_exc()
-            return e
+            raise
 
         wcs_file = Path(dest_filename).with_suffix(".wcs")
         axy_file = Path(dest_filename).with_suffix(".axy")
@@ -145,10 +145,10 @@ def _solve_field(
                     f"has {num_stars} stars"
                 )
                 return soln
-            except Exception as e:
+            except Exception:
                 print(f"Could not plate solve file {filename} due to exception")
                 traceback.print_exc()
-                return e
+                raise
             finally:
                 fits.close()
         else:
@@ -245,7 +245,7 @@ def solve_field(
     final_result: PlateSolution | None = None
     for arguments in trial_arguments:
         result = _solve_field(filename, arguments, debug)
-        if type(result) is PlateSolution:
+        if result is not None:
             final_result = result
             break
 
