@@ -6,6 +6,7 @@ from .classes import (
     NodeStatusFn,
     TopologicalSorterWithStatus,
     ResultDict,
+    RunStats,
     Skipped,
     TaskDescriptor,
     GenericRemoteFunction,

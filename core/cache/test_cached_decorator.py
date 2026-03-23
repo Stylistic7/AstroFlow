@@ -10,7 +10,7 @@ from cache.cached_decorator import make_cached_decorator, Injected
 from cache.types import NeverRun
 from hashing import hash_call, hash_list
 from cache.context_ref import ContextRef
-from dependency_graph import Graph, run_graph, print_result_dict, print_graph
+from dependency_graph import Graph, run_graph, print_graph
 from testing.sidecar_hasher import SidecarHasher
 from cache.content_hashed import ContentHashed
 from decorators.content_hasher import ContentHasher
@@ -232,9 +232,13 @@ def test_large_object(test_context) -> None:
     graph = foo(obj_ref)
     print_graph(graph)
 
-    result, _ = run_graph(graph)
-    print_result_dict(result)
-    assert all(r == 10 for r in result.values())
+    captured = {}
+    def on_node_done(node, result, logs):
+        captured[node.task._function.__name__] = result
+
+    graph.node_status_fn = on_node_done
+    run_graph(graph)
+    assert all(r == 10 for r in captured.values())
 
     # Now, forcibly remove the object from the Ray object store. Running the same
     # graph again should still work, but it will force the ContextRef to reload
@@ -246,9 +250,10 @@ def test_large_object(test_context) -> None:
     graph = foo(obj_ref)
     print_graph(graph)
 
-    result, _ = run_graph(graph)
-    print_result_dict(result)
-    assert all(r == 10 for r in result.values())
+    captured = {}
+    graph.node_status_fn = on_node_done
+    run_graph(graph)
+    assert all(r == 10 for r in captured.values())
 
     # Finally, running the graph a third time with an entirely different
     # obj_ref should pass that new value through the entire graph.
@@ -258,9 +263,10 @@ def test_large_object(test_context) -> None:
     graph = foo(obj_ref)
     print_graph(graph)
 
-    result, _ = run_graph(graph)
-    print_result_dict(result)
-    assert all(r == 13 for r in result.values())
+    captured = {}
+    graph.node_status_fn = on_node_done
+    run_graph(graph)
+    assert all(r == 13 for r in captured.values())
 
 
 def test_list_of_content_hashed_objects(test_context) -> None:

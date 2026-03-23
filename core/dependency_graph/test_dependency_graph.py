@@ -10,6 +10,8 @@ from dependency_graph import (
     Graph,
     Node,
     GraphStatus,
+    ResultDict,
+    RunStats,
     TopologicalSorterWithStatus,
     canonicalize_graph,
     run_graph,
@@ -17,6 +19,17 @@ from dependency_graph import (
 )
 
 T = TypeVar("T")
+
+
+def _capturing_graph(graph: Graph) -> tuple[Graph, ResultDict]:
+    """Attach a node_status_fn that captures results into a ResultDict."""
+    captured = ResultDict()
+
+    def on_node_done(node, result, logs):
+        captured[node] = result
+
+    graph.node_status_fn = on_node_done
+    return graph, captured
 
 
 @ray.remote
@@ -261,16 +274,16 @@ def test_simple_graph(test_context) -> None:
     C = (my_remote_task, "C")
     D = (my_remote_task, "D")
 
-    graph = Graph({D: {B, C}, C: {A}, B: {A}})
-    results, _ = run_graph(graph)
+    graph, captured = _capturing_graph(Graph({D: {B, C}, C: {A}, B: {A}}))
+    stats = run_graph(graph)
 
-    assert results[A] == "A"
-    assert results[B] == "B"
-    assert results[C] == "C"
-    assert results[D] == "D"
+    assert captured[A] == "A"
+    assert captured[B] == "B"
+    assert captured[C] == "C"
+    assert captured[D] == "D"
 
-    assert results.num_nodes_run == 4
-    assert results.max_parallelism_seen == 2
+    assert stats.num_nodes_run == 4
+    assert stats.max_parallelism_seen == 2
 
 
 def test_resources(test_context) -> None:
@@ -279,16 +292,16 @@ def test_resources(test_context) -> None:
     C = (my_local_task, "C")
     D = (my_remote_task, "D")
 
-    graph = Graph({D: {B, C}, C: {A}, B: {A}})
-    results, _ = run_graph(graph)
+    graph, captured = _capturing_graph(Graph({D: {B, C}, C: {A}, B: {A}}))
+    stats = run_graph(graph)
 
-    assert results[A] == "A"
-    assert results[B] == "B"
-    assert results[C] == "C"
-    assert results[D] == "D"
+    assert captured[A] == "A"
+    assert captured[B] == "B"
+    assert captured[C] == "C"
+    assert captured[D] == "D"
 
-    assert results.num_nodes_run == 4
-    assert results.max_parallelism_seen == 2
+    assert stats.num_nodes_run == 4
+    assert stats.max_parallelism_seen == 2
 
 
 def test_global_variable(test_context) -> None:
@@ -301,12 +314,12 @@ def test_global_variable(test_context) -> None:
     D = (my_task_with_global, "D")
 
     graph = Graph({D: {C}, C: {B}, B: {A}})
-    results, _ = run_graph(graph)
+    stats = run_graph(graph)
 
     assert cache["foo"] == 14
 
-    assert results.num_nodes_run == 4
-    assert results.max_parallelism_seen == 1
+    assert stats.num_nodes_run == 4
+    assert stats.max_parallelism_seen == 1
 
 
 def test_pass_down(test_context) -> None:
@@ -314,45 +327,45 @@ def test_pass_down(test_context) -> None:
     B = my_later_task
     C = my_last_task
 
-    graph = Graph({C: {B}, B: {A}})
-    results, _ = run_graph(graph)
+    graph, captured = _capturing_graph(Graph({C: {B}, B: {A}}))
+    stats = run_graph(graph)
 
-    assert results[A] == 1
-    assert results[B] == 2
-    assert results[C] == 5
+    assert captured[A] == 1
+    assert captured[B] == 2
+    assert captured[C] == 5
 
-    assert results.num_nodes_run == 3
-    assert results.max_parallelism_seen == 1
+    assert stats.num_nodes_run == 3
+    assert stats.max_parallelism_seen == 1
 
 
 def test_pass_down_with_one_ancestor(test_context) -> None:
-    graph = Graph({gather: {(process, 11)}})
-    results, _ = run_graph(graph)
-    assert results[gather] == 11
+    graph, captured = _capturing_graph(Graph({gather: {(process, 11)}}))
+    run_graph(graph)
+    assert captured[gather] == 11
 
 
 def test_pass_down_with_two_ancestors(test_context) -> None:
-    graph = Graph({gather: {(process, 11), (process, 13)}})
-    results, _ = run_graph(graph)
-    assert results[gather] == 24
+    graph, captured = _capturing_graph(Graph({gather: {(process, 11), (process, 13)}}))
+    run_graph(graph)
+    assert captured[gather] == 24
 
 
 def test_pass_down_with_kwargs(test_context) -> None:
-    graph = Graph({my_task_with_kwargs: {my_first_task}})
-    results, _ = run_graph(graph)
+    graph, captured = _capturing_graph(Graph({my_task_with_kwargs: {my_first_task}}))
+    run_graph(graph)
 
-    assert results[my_task_with_kwargs] == 1
+    assert captured[my_task_with_kwargs] == 1
 
 
 def test_pass_down_lists(test_context) -> None:
-    graph = chain(create_list, consume_list)
-    results, _ = run_graph(graph)
+    graph, captured = _capturing_graph(chain(create_list, consume_list))
+    stats = run_graph(graph)
 
-    assert results[create_list] == [1, 2, 3]
-    assert results[consume_list] == 6
+    assert captured[create_list] == [1, 2, 3]
+    assert captured[consume_list] == 6
 
-    assert results.num_nodes_run == 2
-    assert results.max_parallelism_seen == 1
+    assert stats.num_nodes_run == 2
+    assert stats.max_parallelism_seen == 1
 
 
 def test_fanout(test_context) -> None:
@@ -360,50 +373,43 @@ def test_fanout(test_context) -> None:
     B = my_later_task
     C = my_last_task
 
-    graph = Graph({C: {A}, B: {A}})
-    results, _ = run_graph(graph)
+    graph, captured = _capturing_graph(Graph({C: {A}, B: {A}}))
+    stats = run_graph(graph)
 
-    assert results[A] == 1
-    assert results[B] == 2
-    assert results[C] == 4
+    assert captured[A] == 1
+    assert captured[B] == 2
+    assert captured[C] == 4
 
-    assert results.num_nodes_run == 3
-    assert results.max_parallelism_seen == 2
+    assert stats.num_nodes_run == 3
+    assert stats.max_parallelism_seen == 2
 
 
 def test_list_of_tasks(test_context) -> None:
-    graph = chain(my_first_task, my_later_task, my_last_task)
+    graph, captured = _capturing_graph(chain(my_first_task, my_later_task, my_last_task))
 
-    results, _ = run_graph(graph)
-    assert results[my_last_task] == 5
+    stats = run_graph(graph)
+    assert captured[my_last_task] == 5
 
-    assert results.num_nodes_run == 3
-    assert results.max_parallelism_seen == 1
-
-    assert results.is_complete()
+    assert stats.num_nodes_run == 3
+    assert stats.max_parallelism_seen == 1
 
 
 def test_with_exception(test_context) -> None:
-    graph = Graph({scatter_raises_exception: {}})
+    graph, captured = _capturing_graph(Graph({scatter_raises_exception: {}}))
 
-    results, _ = run_graph(graph)
-    assert isinstance(results[scatter_raises_exception], TimeoutError)
-
-    assert results.contains_exception()
-    assert not results.is_complete()
+    run_graph(graph)
+    assert isinstance(captured[scatter_raises_exception], TimeoutError)
 
 
 def test_dynamic_subgraph(test_context) -> None:
-    graph = Graph({scatter: {}})
+    graph, captured = _capturing_graph(Graph({scatter: {}}))
 
-    results, _ = run_graph(graph)
+    stats = run_graph(graph)
 
-    assert results[scatter] == 21
+    assert captured[scatter] == 21
 
-    assert results.num_nodes_run == 9
-    assert results.max_parallelism_seen == 7
-
-    assert results.is_complete()
+    assert stats.num_nodes_run == 9
+    assert stats.max_parallelism_seen == 7
 
 
 def test_dynamic_subgraph_completion(test_context) -> None:
@@ -413,125 +419,109 @@ def test_dynamic_subgraph_completion(test_context) -> None:
     # Furthermore, my_last_task() should not "see" the subgraph at all; it
     # should be transparently handled by the runtime. my_last_task() should
     # see the result of gather().
-    graph = Graph({scatter: {}, my_last_task: {scatter}})
-    results, _ = run_graph(graph)
+    graph, captured = _capturing_graph(Graph({scatter: {}, my_last_task: {scatter}}))
+    stats = run_graph(graph)
 
-    assert results[scatter] == 21
-    assert results[my_last_task] == 24
+    assert captured[scatter] == 21
+    assert captured[my_last_task] == 24
 
-    assert results.num_nodes_run == 10
-    assert results.max_parallelism_seen == 7
-
-    assert results.is_complete()
+    assert stats.num_nodes_run == 10
+    assert stats.max_parallelism_seen == 7
 
 
 def test_dynamic_subgraph_completion_with_peer(test_context) -> None:
     context.foo = 13
 
-    graph = Graph({gather: [scatter, increment_foo], scatter: {}})
-    results, _ = run_graph(graph)
+    graph, captured = _capturing_graph(Graph({gather: [scatter, increment_foo], scatter: {}}))
+    stats = run_graph(graph)
 
     # scatter returns 21, increment_foo returns 14.
     assert context.foo == 14
-    assert results[scatter] == 21
+    assert captured[scatter] == 21
 
     # gather adds the results of scatter and increment_foo to get 35.
-    assert results[gather] == 35
+    assert captured[gather] == 35
 
-    assert results.num_nodes_run == 11
-    assert results.max_parallelism_seen == 7
-
-    assert results.is_complete()
+    assert stats.num_nodes_run == 11
+    assert stats.max_parallelism_seen == 7
 
 
 def test_dynamic_subgraph_with_context_completion(test_context) -> None:
     # Same as `test_dynamic_subgraph_completion` but with the addition of
     # context. The context returned by the final node of the dynamic subgraph
     # should become the context for the successor node in the parent graph.
-    graph = Graph(
+    graph, captured = _capturing_graph(Graph(
         {
             scatter_with_context: {},
             my_last_task_with_context: {scatter_with_context},
         }
-    )
+    ))
 
-    results, _ = run_graph(graph)
+    stats = run_graph(graph)
 
-    assert results[scatter_with_context] == 21
-    assert results[my_last_task_with_context] == 24
+    assert captured[scatter_with_context] == 21
+    assert captured[my_last_task_with_context] == 24
 
-    assert results.num_nodes_run == 10
-    assert results.max_parallelism_seen == 7
-
-    assert results.is_complete()
+    assert stats.num_nodes_run == 10
+    assert stats.max_parallelism_seen == 7
 
 
 def test_mutable_context(test_context) -> None:
-    graph = Graph({increment_bar: {increment_foo}})
+    graph, captured = _capturing_graph(Graph({increment_bar: {increment_foo}}))
 
     context.foo = 2
     context.bar = 3
 
-    results, _ = run_graph(graph)
+    stats = run_graph(graph)
 
-    assert results[increment_foo] == 3
-    assert results[increment_bar] == 4
+    assert captured[increment_foo] == 3
+    assert captured[increment_bar] == 4
     assert context.foo == 3
     assert context.bar == 4
 
-    assert results.num_nodes_run == 2
-    assert results.max_parallelism_seen == 1
-
-    assert results.is_complete()
+    assert stats.num_nodes_run == 2
+    assert stats.max_parallelism_seen == 1
 
 
 def test_dynamic_graph_with_context(test_context) -> None:
-    graph = Graph({scatter_with_context: {}})
+    graph, captured = _capturing_graph(Graph({scatter_with_context: {}}))
 
-    results, _ = run_graph(graph)
+    stats = run_graph(graph)
 
-    assert results[scatter_with_context] == 21
+    assert captured[scatter_with_context] == 21
     assert sorted(context.processed) == [0, 1, 2, 3, 4, 5, 6]
     assert context.sum == 21
 
-    assert results.num_nodes_run == 9
-    assert results.max_parallelism_seen == 7
-
-    assert results.is_complete()
+    assert stats.num_nodes_run == 9
+    assert stats.max_parallelism_seen == 7
 
 
 def test_conditional_dynamic_graph(test_context) -> None:
     dynamic_graph_task = (maybe_run_dynamic_graph, True)
-    graph = Graph({dynamic_graph_task: {}})
-    results, _ = run_graph(graph)
-    assert results[dynamic_graph_task] == 21
+    graph, captured = _capturing_graph(Graph({dynamic_graph_task: {}}))
+    stats = run_graph(graph)
+    assert captured[dynamic_graph_task] == 21
 
-    assert results.num_nodes_run == 9
-    assert results.max_parallelism_seen == 7
-
-    assert results.is_complete()
+    assert stats.num_nodes_run == 9
+    assert stats.max_parallelism_seen == 7
 
     dynamic_graph_task = (maybe_run_dynamic_graph, False)
-    graph = Graph({dynamic_graph_task: {}})
-    results, _ = run_graph(graph)
-    assert results[dynamic_graph_task] == None
+    graph, captured = _capturing_graph(Graph({dynamic_graph_task: {}}))
+    stats = run_graph(graph)
+    assert captured[dynamic_graph_task] == None
 
-    assert results.num_nodes_run == 1
-    assert results.max_parallelism_seen == 1
-
-    assert results.is_complete()
+    assert stats.num_nodes_run == 1
+    assert stats.max_parallelism_seen == 1
 
 
 def test_multiple_inputs(test_context) -> None:
     task = (fn_with_multiple_inputs, 1, 2, 3)
-    graph = Graph({task: {}})
-    results, _ = run_graph(graph)
-    assert results[task] == 6
+    graph, captured = _capturing_graph(Graph({task: {}}))
+    stats = run_graph(graph)
+    assert captured[task] == 6
 
-    assert results.num_nodes_run == 1
-    assert results.max_parallelism_seen == 1
-
-    assert results.is_complete()
+    assert stats.num_nodes_run == 1
+    assert stats.max_parallelism_seen == 1
 
 
 # TODO: This still sometimes fails, so the priority is not honored correctly.
@@ -545,19 +535,17 @@ def test_simple_graph_with_priority(test_context) -> None:
     C = Node(set_foo, 20, priority=1)
     D = increment_foo
 
-    graph = Graph({D: {B, C}, C: {A}, B: {A}})
+    graph, captured = _capturing_graph(Graph({D: {B, C}, C: {A}, B: {A}}))
 
-    results, _ = run_graph(graph)
+    stats = run_graph(graph)
 
-    assert results[A] == 1
-    assert results[B] == 10
-    assert results[C] == 20
-    assert results[D] == 11
+    assert captured[A] == 1
+    assert captured[B] == 10
+    assert captured[C] == 20
+    assert captured[D] == 11
 
-    assert results.num_nodes_run == 4
-    assert results.max_parallelism_seen == 2
-
-    assert results.is_complete()
+    assert stats.num_nodes_run == 4
+    assert stats.max_parallelism_seen == 2
 
 
 def test_duplicate_ancestors(test_context) -> None:
@@ -573,15 +561,13 @@ def test_duplicate_ancestors(test_context) -> None:
     context.foo = 7
     context.processed = []
 
-    results, _ = run_graph(graph)
+    stats = run_graph(graph)
 
     assert context.foo == 8
     assert sorted(context.processed) == [2, 3]
     assert context.sum == 5
-    assert results.num_nodes_run == 4
-    assert results.max_parallelism_seen == 2
-
-    assert results.is_complete()
+    assert stats.num_nodes_run == 4
+    assert stats.max_parallelism_seen == 2
 
 
 def test_duplicate_nodes(test_context) -> None:
@@ -591,22 +577,18 @@ def test_duplicate_nodes(test_context) -> None:
     graph = Graph({A: {}, B: {}})
 
     context.foo = 7
-    results, _ = run_graph(graph)
+    stats = run_graph(graph)
 
-    assert results.num_nodes_run == 2
-
-    assert results.is_complete()
+    assert stats.num_nodes_run == 2
 
 
 def test_scatter_in_subgraphs(test_context) -> None:
-    graph = scatter_in_subgraphs()
+    graph, captured = _capturing_graph(scatter_in_subgraphs())
 
-    results, _ = run_graph(graph)
+    stats = run_graph(graph)
 
-    assert results[gather_from_subgraphs] == 78
-    assert results.max_parallelism_seen == 13
-
-    assert results.is_complete()
+    assert captured[gather_from_subgraphs] == 78
+    assert stats.max_parallelism_seen == 13
 
 
 @pytest.mark.exclusive
@@ -615,7 +597,7 @@ def test_overhead(test_context) -> None:
     graph = Graph({(scatter_huge, count): {}})
 
     start = time.time()
-    results, _ = run_graph(graph)
+    run_graph(graph)
     end = time.time()
     ms_per_fn = 1000.0 * (end - start) / count
 
@@ -688,7 +670,7 @@ def test_graph_status_merging(test_context) -> None:
 
 
 def test_status_fn(test_context) -> None:
-    graph = Graph({scatter: {}})
+    graph, captured = _capturing_graph(Graph({scatter: {}}))
 
     final_status = None
 
@@ -704,35 +686,31 @@ def test_status_fn(test_context) -> None:
         nonlocal final_status
         final_status = status
 
-    results, _ = run_graph(graph, status_fn=print_status)
+    stats = run_graph(graph, status_fn=print_status)
 
-    assert results[scatter] == 21
+    assert captured[scatter] == 21
 
-    assert results.num_nodes_run == 9
-    assert results.max_parallelism_seen == 7
+    assert stats.num_nodes_run == 9
+    assert stats.max_parallelism_seen == 7
 
     assert final_status is not None
     assert len(final_status.done_nodes) == 9
     assert len(final_status.ready_nodes) == 0
     assert len(final_status.waiting_nodes) == 0
 
-    assert results.is_complete()
-
 
 def test_trace(test_context) -> None:
     dynamic_graph_task = (maybe_run_dynamic_graph, True)
-    graph = Graph({dynamic_graph_task: {}})
-    results, _ = run_graph(graph, trace=True)
-    assert results[dynamic_graph_task] == 21
+    graph, captured = _capturing_graph(Graph({dynamic_graph_task: {}}))
+    stats = run_graph(graph, trace=True)
+    assert captured[dynamic_graph_task] == 21
 
-    assert results.num_nodes_run == 9
-    assert results.max_parallelism_seen == 7
-
-    assert results.is_complete()
+    assert stats.num_nodes_run == 9
+    assert stats.max_parallelism_seen == 7
 
     for i in range(7):
-        assert Node(process, i) in results.trace
-        assert results.trace.index(Node(process, i)) < results.trace.index(
+        assert Node(process, i) in stats.trace
+        assert stats.trace.index(Node(process, i)) < stats.trace.index(
             Node(gather)
         )
 
@@ -753,26 +731,24 @@ def test_recursive_graph(test_context) -> None:
         nonlocal final_status
         final_status = status
 
-    results, _ = run_graph(graph, status_fn=print_status)
+    stats = run_graph(graph, status_fn=print_status)
 
-    assert results.num_nodes_run == len(final_status.done_nodes)
+    assert stats.num_nodes_run == len(final_status.done_nodes)
     assert len(final_status.ready_nodes) == 0
     assert len(final_status.waiting_nodes) == 0
 
     assert (
-        results.num_nodes_run
+        stats.num_nodes_run
         == 1 + 10 + 100 + 1000 + 10000 + 10000 * 8 + 1000 + 100 + 10 + 1
     )  # depth 5
-    assert results.max_parallelism_seen == 70000  # depth 5
-
-    assert results.is_complete()
+    assert stats.max_parallelism_seen == 70000  # depth 5
 
 
 def test_returns_tuple(test_context) -> None:
-    graph = Graph({handles_tuple_graph: {produces_tuple_graph}})
+    graph, captured = _capturing_graph(Graph({handles_tuple_graph: {produces_tuple_graph}}))
 
-    result, _ = run_graph(graph)
-    assert result[handles_tuple_graph] == 31
+    run_graph(graph)
+    assert captured[handles_tuple_graph] == 31
 
 
 @ray.remote
@@ -814,12 +790,13 @@ def test_cached_tasks_run_in_parallel(test_context) -> None:
     )
 
     start = time.time()
-    results, _ = run_graph(graph)
+    graph, captured = _capturing_graph(graph)
+    run_graph(graph)
     elapsed = time.time() - start
 
     serial_time = N * SLEEP
     print(f"### {N} cached tasks with {{}} took {elapsed:.2f}s (serial would be {serial_time}s)")
-    assert results[slow_gather] == sum(range(N))
+    assert captured[slow_gather] == sum(range(N))
     assert elapsed < serial_time * 0.5, (
         f"Took {elapsed:.1f}s, serial would be {serial_time}s — tasks not parallel"
     )
@@ -843,12 +820,13 @@ def test_cached_tasks_list_run_in_parallel(test_context) -> None:
     )
 
     start = time.time()
-    results, _ = run_graph(graph)
+    graph, captured = _capturing_graph(graph)
+    run_graph(graph)
     elapsed = time.time() - start
 
     serial_time = N * SLEEP
     print(f"### {N} cached tasks with [] took {elapsed:.2f}s (serial would be {serial_time}s)")
-    assert results[slow_gather] == sum(range(N))
+    assert captured[slow_gather] == sum(range(N))
     assert elapsed < serial_time * 0.5, (
         f"Took {elapsed:.1f}s, serial would be {serial_time}s — tasks not parallel"
     )
@@ -857,44 +835,44 @@ def test_cached_tasks_list_run_in_parallel(test_context) -> None:
 def test_set_deps_run_in_parallel(test_context) -> None:
     """Independent tasks listed with {} notation should run in parallel."""
     N = 10
-    graph = Graph({gather: {(process, i) for i in range(N)}})
-    results, _ = run_graph(graph)
+    graph, captured = _capturing_graph(Graph({gather: {(process, i) for i in range(N)}}))
+    stats = run_graph(graph)
 
-    assert results[gather] == sum(range(N))
-    assert results.max_parallelism_seen >= N
+    assert captured[gather] == sum(range(N))
+    assert stats.max_parallelism_seen >= N
 
 
 def test_list_deps_run_in_parallel(test_context) -> None:
     """Independent tasks listed with [] notation should run in parallel."""
     N = 10
-    graph = Graph({gather: [(process, i) for i in range(N)]})
-    results, _ = run_graph(graph)
+    graph, captured = _capturing_graph(Graph({gather: [(process, i) for i in range(N)]}))
+    stats = run_graph(graph)
 
-    assert results[gather] == sum(range(N))
-    assert results.max_parallelism_seen >= N
+    assert captured[gather] == sum(range(N))
+    assert stats.max_parallelism_seen >= N
 
 
 def test_set_deps_wall_time(test_context) -> None:
     """Wall time with {} should be ~1s for 10 x 1s tasks, not ~10s."""
     N = 10
-    graph = Graph({gather: {(slow_process, i) for i in range(N)}})
+    graph, captured = _capturing_graph(Graph({gather: {(slow_process, i) for i in range(N)}}))
 
     start = time.time()
-    results, _ = run_graph(graph)
+    run_graph(graph)
     elapsed = time.time() - start
 
-    assert results[gather] == sum(range(N))
+    assert captured[gather] == sum(range(N))
     assert elapsed < N * 0.5, f"Took {elapsed:.1f}s — tasks ran serially"
 
 
 def test_list_deps_wall_time(test_context) -> None:
     """Wall time with [] should be ~1s for 10 x 1s tasks, not ~10s."""
     N = 10
-    graph = Graph({gather: [(slow_process, i) for i in range(N)]})
+    graph, captured = _capturing_graph(Graph({gather: [(slow_process, i) for i in range(N)]}))
 
     start = time.time()
-    results, _ = run_graph(graph)
+    run_graph(graph)
     elapsed = time.time() - start
 
-    assert results[gather] == sum(range(N))
+    assert captured[gather] == sum(range(N))
     assert elapsed < N * 0.5, f"Took {elapsed:.1f}s — tasks ran serially"

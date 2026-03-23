@@ -1,3 +1,4 @@
+import gc
 import pickle
 from dataclasses import dataclass
 from typing import Any
@@ -8,7 +9,16 @@ import ray
 from cache.content_hashed import ContentHashed
 from cache.context_ref import ContextRef, dict_content_hash
 from context import context
+from decorators import cached
+from dependency_graph import Graph, Node, run_graph
 from hashing import hash_list
+
+
+def _ray_object_count() -> int:
+    """Return the number of live objects in the Ray object store."""
+    gc.collect()
+    worker = ray._private.worker.global_worker
+    return len(worker.core_worker.get_all_reference_counts())
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -64,10 +74,8 @@ def test_store_writes_to_context(empty_context):
 # ---------------------------------------------------------------------------
 
 
-def test_get_via_ray_fast_path(empty_context):
+def test_get_via_context_path(empty_context):
     ref = ContextRef.store("my_key", {"value": 7})
-    # Confirm ref is set, so this exercises the ray.get() path.
-    assert ref.ref is not None
     assert ref.get() == {"value": 7}
 
 
@@ -77,22 +85,26 @@ def test_get_via_context_fallback_when_ref_is_none(empty_context):
     assert ref.get() == {"ra": 83.8}
 
 
-def test_get_repopulates_ref_after_context_fallback(empty_context):
-    """After a fallback fetch, get() stores a new ref for future fast-path use."""
+def test_get_repopulates_ref_after_context_fetch(empty_context):
+    """get() with ref=None reads from context (diskcache) without caching."""
     context["my_key"] = "hello"
     ref = ContextRef(cache_key="my_key", content_hash="h", ref=None)
     assert ref.get() == "hello"
-    assert ref.ref is not None
-    assert ray.get(ref.ref) == "hello"
+    assert ref.ref is None
 
 
-def test_get_second_call_uses_fast_path(empty_context):
-    context["my_key"] = "hello"
-    ref = ContextRef(cache_key="my_key", content_hash="h", ref=None)
-    ref.get()  # populates ref via fallback
-    # Delete from context to confirm second call hits Ray, not context.
-    context.delete("my_key")
-    assert ref.get() == "hello"
+def test_get_does_not_call_ray_put(empty_context):
+    """get() must never call ray.put — that would bloat the object store."""
+    # With a ref: uses fast path, no ray.put needed.
+    ref = ContextRef.store("my_key", {"data": 42})
+    original_ref = ref.ref
+    ref.get()
+    assert ref.ref is original_ref
+
+    # Without a ref: falls back to diskcache, still no ray.put.
+    ref_no_ray = ContextRef(cache_key="my_key", content_hash="h", ref=None)
+    ref_no_ray.get()
+    assert ref_no_ray.ref is None
 
 
 # ---------------------------------------------------------------------------
@@ -101,7 +113,8 @@ def test_get_second_call_uses_fast_path(empty_context):
 
 
 def test_strip_ref_returns_copy_without_ref(empty_context):
-    ref = ContextRef.store("my_key", "value")
+    ref = ContextRef(cache_key="my_key", content_hash="h",
+                     ref=ray.put("value"))
     stripped = ref.strip_ref()
     assert stripped.ref is None
     assert stripped.cache_key == ref.cache_key
@@ -109,7 +122,8 @@ def test_strip_ref_returns_copy_without_ref(empty_context):
 
 
 def test_strip_ref_does_not_mutate_original(empty_context):
-    ref = ContextRef.store("my_key", "value")
+    ref = ContextRef(cache_key="my_key", content_hash="h",
+                     ref=ray.put("value"))
     ref.strip_ref()
     assert ref.ref is not None
 
@@ -119,14 +133,16 @@ def test_strip_ref_does_not_mutate_original(empty_context):
 # ---------------------------------------------------------------------------
 
 
-def test_pickling_strips_ref(empty_context):
-    """Pickling strips the ObjectRef to avoid stale cross-session Ray refs."""
-    ref = ContextRef.store("my_key", "value")
-    assert ref.ref is not None
+def test_pickling_preserves_ref(empty_context):
+    """Pickling preserves the ObjectRef so it survives Ray task boundaries."""
+    ref = ContextRef(cache_key="my_key", content_hash="h",
+                     ref=ray.put("value"))
     restored = pickle.loads(pickle.dumps(ref))
-    assert restored.ref is None
+    assert restored.ref is not None
     assert restored.cache_key == ref.cache_key
     assert restored.content_hash == ref.content_hash
+    # The preserved ref is usable.
+    assert ray.get(restored.ref) == "value"
 
 
 def test_get_after_pickling_uses_fast_path(empty_context):
@@ -142,6 +158,24 @@ def test_strip_ref_before_diskcache_persistence(empty_context):
     assert stripped.ref is None
     # Stripped ref recovers from context.
     assert stripped.get() == "value"
+
+
+def test_context_strips_refs_from_dict_of_context_refs(empty_context):
+    """Writing a dict of ContextRefs to context strips ObjectRefs for diskcache."""
+    ref_a = ContextRef.store(("stacks", "A"), {"data": 1})
+    ref_b = ContextRef.store(("stacks", "B"), {"data": 2})
+
+    # Write a dict of ContextRefs into context (goes to diskcache).
+    context["my_dict"] = {"A": ref_a, "B": ref_b}
+
+    # Read it back — refs should be None (stripped for disk safety).
+    stored = context["my_dict"]
+    assert stored["A"].ref is None
+    assert stored["B"].ref is None
+
+    # But the values are still recoverable via the diskcache fallback.
+    assert stored["A"].get() == {"data": 1}
+    assert stored["B"].get() == {"data": 2}
 
 
 # ---------------------------------------------------------------------------
@@ -259,8 +293,8 @@ def _remote_get(ref: ContextRef) -> Any:
 
 
 def test_get_in_ray_task(empty_context):
-    """A ContextRef passed to a Ray task has its ref stripped by pickling but
-    can still recover the value from context inside the worker."""
+    """A ContextRef passed to a Ray task preserves its ref across pickling
+    and can retrieve the value via the fast ray.get() path."""
     ref = ContextRef.store("remote_key", {"answer": 42})
     result = ray.get(_remote_get.remote(ref))
     assert result == {"answer": 42}
@@ -278,3 +312,77 @@ def test_dict_content_hash_in_ray_task_needs_no_context(empty_context):
     }
     result = ray.get(_remote_dict_content_hash.remote(refs))
     assert result == dict_content_hash(refs)
+
+
+# ---------------------------------------------------------------------------
+# Object store hygiene — no unexpected ray.put calls
+# ---------------------------------------------------------------------------
+
+
+def test_store_creates_one_ray_object(empty_context):
+    before = _ray_object_count()
+    ref = ContextRef.store("key", {"data": 1})
+    assert ref.ref is not None
+    assert _ray_object_count() - before == 1
+
+
+def test_get_does_not_create_ray_objects(empty_context):
+    ref = ContextRef.store("key", {"data": 1})
+    before = _ray_object_count()
+    for _ in range(10):
+        ref.get()
+    assert _ray_object_count() == before
+
+
+# ---------------------------------------------------------------------------
+# Graph integration — scatter/gather/consume must not bloat object store
+# ---------------------------------------------------------------------------
+
+
+@cached.remote
+def _produce_refs(group_id: int, n: int) -> dict:
+    return {
+        f"{group_id}_{i}": ContextRef.store(
+            ("items", f"{group_id}_{i}"),
+            MockStack(name=f"item_{group_id}_{i}", content_hash=f"h_{group_id}_{i}"),
+        )
+        for i in range(n)
+    }
+
+
+@ray.remote
+def _combine_dicts(*dicts) -> dict:
+    return {k: v for d in dicts for k, v in d.items()}
+
+
+@cached.remote
+def _consume_refs(combined: dict) -> list:
+    return sorted([ref.get().name for ref in combined.values()])
+
+
+def test_scatter_gather_consume_no_object_bloat(empty_context):
+    N_GROUPS = 3
+    ITEMS_PER_GROUP = 10
+    TOTAL_ITEMS = N_GROUPS * ITEMS_PER_GROUP
+
+    graph = Graph({
+        Node(_combine_dicts): [
+            (_produce_refs, i, ITEMS_PER_GROUP) for i in range(N_GROUPS)
+        ],
+        Node(_consume_refs): {Node(_combine_dicts)},
+    })
+
+    captured = {}
+    def on_node_done(node, result, logs):
+        captured[node.task._function.__name__] = result
+
+    graph.node_status_fn = on_node_done
+    before = _ray_object_count()
+    run_graph(graph)
+    after = _ray_object_count()
+
+    consume_result = [v for v in captured.values() if isinstance(v, list)][0]
+    assert len(consume_result) == TOTAL_ITEMS
+    assert after - before <= TOTAL_ITEMS + 20, (
+        f"Object store grew by {after - before}, expected at most {TOTAL_ITEMS + 20}"
+    )

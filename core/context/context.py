@@ -48,6 +48,22 @@ def starts_with(big_tuple, small_tuple):
     return big_tuple[: len(small_tuple)] == small_tuple
 
 
+def _strip_refs(value: Any) -> Any:
+    """Strip Ray ObjectRefs from ContextRefs before writing to diskcache.
+
+    ObjectRefs are session-scoped and become invalid across Ray restarts.
+    """
+    from cache.context_ref import ContextRef
+
+    if isinstance(value, ContextRef):
+        return value.strip_ref()
+    if isinstance(value, dict) and value and all(
+        isinstance(v, ContextRef) for v in value.values()
+    ):
+        return type(value)({k: v.strip_ref() for k, v in value.items()})
+    return value
+
+
 @ray.remote(
     resources={"diskcache": 0.001}, max_restarts=-1, max_task_retries=-1
 )
@@ -66,12 +82,7 @@ class ContextActor:
         }
 
     def set(self, key: Key, value: Any) -> None:
-        from cache.context_ref import ContextRef
-
-        if isinstance(value, ContextRef):
-            value = value.strip_ref()
-
-        self.cache[key] = value
+        self.cache[key] = _strip_refs(value)
 
     def contains(self, key: Key) -> bool:
         return key in self.cache
@@ -100,12 +111,8 @@ class ContextActor:
             self.cache[key] = {**old_value, **value}
 
     def set_many(self, items: dict) -> None:
-        from cache.context_ref import ContextRef
-
         for key, value in items.items():
-            if isinstance(value, ContextRef):
-                value = value.strip_ref()
-            self.cache[key] = value
+            self.cache[key] = _strip_refs(value)
 
     def clear(self) -> None:
         self.cache.clear()

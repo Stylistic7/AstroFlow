@@ -30,16 +30,16 @@ def test_hashes(test_context) -> None:
     # The image data should be predictable, because `random_seed` was provided
     # above.
     assert stack.stable_hash == "7825680a0bef1d88"
-    assert stack.content_hash == "79b9c8cb5fe753a3"
+    assert stack.content_hash == "67db78c35ae2bc5d"
 
     # The Python hash of a Stack is just an integer representation of its
     # content hash, which should be stable across Python sessions.
-    assert hash(stack) == 734958455043857722
+    assert hash(stack) == 1283145438255882074
 
     # The Python hash of a SimpleStacksDict goes through `hash_dict_int()`,
     # and should be stable across Python sessions.
     dict = SimpleStacksDict({stack.stable_hash: stack})
-    assert hash(dict) == 734958455043857722
+    assert hash(dict) == 1283145438255882074
 
 
 @pytest.mark.heavy

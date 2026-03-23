@@ -308,6 +308,13 @@ class GraphStatus:
         return self
 
 
+@dataclass
+class RunStats:
+    num_nodes_run: int = 0
+    max_parallelism_seen: int = 0
+    trace: list[Node] = field(default_factory=list)
+
+
 class ResultDict(dict[Node, Any]):
     num_nodes_run: int = 0
     max_parallelism_seen: int = 0

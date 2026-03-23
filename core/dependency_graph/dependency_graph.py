@@ -14,6 +14,7 @@ from dependency_graph import (
     GraphStatus,
     NodeStatusFn,
     ResultDict,
+    RunStats,
     Skipped,
     TopologicalSorterWithStatus,
     GenericRemoteFunction,
@@ -24,6 +25,11 @@ from .debugging import print_graph, node_to_string
 
 _MIN_STATUS_UPDATE_INTERVAL_SECS: float = 5.0
 _RESULT_SIZE_WARNING_THRESHOLD_MB: int = 10
+
+
+def _ray_object_count() -> int:
+    worker = ray._private.worker.global_worker
+    return len(worker.core_worker.get_all_reference_counts())
 
 StatusFn = Callable[[GraphStatus], Any]
 
@@ -99,9 +105,10 @@ def _make_subgraph(
             return
 
         if parent_node is not None:
-            parent_ts.done(parent_node)
-            parent_ts.results[parent_node] = subgraph_ts.final_result
-            parent_ts.logs[parent_node] = subgraph_ts.logs
+            _handle_node_done(
+                parent_ts, parent_node,
+                subgraph_ts.final_result, subgraph_ts.logs,
+            )
 
         parent_ts.final_result = subgraph_ts.final_result
 
@@ -137,6 +144,7 @@ def _handle_finished_subgraphs(subgraphs) -> None:
             if ts.done_callback:
                 ts.done_callback()
                 ts.done_callback = None
+            ts.results.clear()
 
 
 def _ancestor_results(
@@ -246,7 +254,7 @@ def run_graph(
     status_interval: float = _MIN_STATUS_UPDATE_INTERVAL_SECS,
     trace: bool = False,
     debug: bool = False,
-) -> tuple[ResultDict, ResultDict]:
+) -> "RunStats":
     num_nodes_run: int = 0
     max_parallelism_seen: int = 0
     subgraphs: list[TopologicalSorterWithStatus] = []
@@ -323,7 +331,10 @@ def run_graph(
                 if trace:
                     trace_list.append(node)
                 if debug:
-                    print(f"Task {node.task._function.__name__} finished")
+                    print(
+                        f"Task {node.task._function.__name__} finished "
+                        f"(ray_objects={_ray_object_count()})"
+                    )
                 num_nodes_run += 1
                 try:
                     if new_ts := _handle_result(
@@ -347,10 +358,8 @@ def run_graph(
         if ts.graph_update_fn is not None:
             ts.graph_update_fn(ts, subgraphs)
 
-    toplevel_ts.results.num_nodes_run = num_nodes_run
-    toplevel_ts.results.max_parallelism_seen = max_parallelism_seen
-
-    if trace:
-        toplevel_ts.results.trace = trace_list
-
-    return toplevel_ts.results, toplevel_ts.logs
+    return RunStats(
+        num_nodes_run=num_nodes_run,
+        max_parallelism_seen=max_parallelism_seen,
+        trace=trace_list,
+    )

@@ -69,7 +69,7 @@ def test_simple_graph(test_context) -> None:
     output_h5_filename = Path(context.output_dir) / "foo.h5"
 
     graph = build_graph(output_h5_filename)
-    results, _ = run_graph(graph)
+    run_graph(graph)
 
     valid_range = range(7)
     with h5py.File(output_h5_filename, "r") as h5_file:

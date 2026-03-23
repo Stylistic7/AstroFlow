@@ -163,6 +163,13 @@ def make_cached_decorator(
                 if isinstance(obj, ContextRef):
                     return obj.strip_ref()
 
+                if isinstance(obj, dict) and obj and all(
+                    isinstance(v, ContextRef) for v in obj.values()
+                ):
+                    return type(obj)({
+                        k: v.strip_ref() for k, v in obj.items()
+                    })
+
                 return obj
 
             result = content_hasher.set(result, call_hash)

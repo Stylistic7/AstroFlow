@@ -6,7 +6,7 @@ from functools import partial
 
 from context import context, get_cache
 from dependency_graph import Graph, Node, run_graph, TopologicalSorterWithStatus
-from dependency_graph.debugging import print_result_dict
+
 from cache.cached_decorator import make_cached_decorator
 from hashing import hash_call
 from testing.sidecar_hasher import SidecarHasher
@@ -993,12 +993,10 @@ def test_graph_with_subgraph_dry_run(test_context) -> None:
         {E: {D}, D: {B, C}, C: {A}, B: {A}}, graph_update_fn=graph_update_fn
     )
 
-    results, logs = run_graph(graph, dry_run=True, debug=True)
+    run_graph(graph, dry_run=True, debug=True)
 
     workflow_graph = to_workflow_graph(top_level_graph, subgraphs)
     pprint.pprint(workflow_graph, indent=2, width=200)
-
-    print_result_dict(results)
 
     assert workflow_graph == {
         "skeleton": [

@@ -4,13 +4,25 @@ import ray
 import structlog
 
 from context import context
-from dependency_graph import Graph, run_graph
+from dependency_graph import Graph, ResultDict, run_graph
 from dependency_graph.logging import capture_logs
 from dependency_graph.debugging import node_to_string
 
 log = structlog.get_logger()
 
 T = TypeVar("T")
+
+
+class _CapturedResults:
+    """Captures both results and logs from run_graph via node_status_fn."""
+
+    def __init__(self):
+        self.results = ResultDict()
+        self.logs = ResultDict()
+
+    def on_node_done(self, node, result, node_logs):
+        self.results[node] = result
+        self.logs[node] = node_logs
 
 
 @ray.remote
@@ -59,51 +71,55 @@ def test_simple_graph(test_context) -> None:
     C = (second_remote_task, "C")
     D = (second_remote_task, "D")
 
+    cap = _CapturedResults()
     graph = Graph({D: {B, C}, C: {A}, B: {A}})
-    results, logs = run_graph(graph)
+    graph.node_status_fn = cap.on_node_done
+    stats = run_graph(graph)
 
     context.last_run_results = {
-        node_to_string(node): result for node, result in results.flatten().items()
+        node_to_string(node): result for node, result in cap.results.items()
     }
 
     context.last_run_logs = {
-        node_to_string(node): log for node, log in logs.flatten().items()
+        node_to_string(node): log for node, log in cap.logs.items()
     }
 
-    assert results[A] == "A"
-    assert results[B] == "B"
-    assert results[C] == "C"
-    assert results[D] == "D"
+    assert cap.results[A] == "A"
+    assert cap.results[B] == "B"
+    assert cap.results[C] == "C"
+    assert cap.results[D] == "D"
 
-    assert logs[A][0]["event"] == "first_remote_task A"
-    assert logs[B][0]["event"] == "first_remote_task B"
-    assert logs[C][0]["event"] == "second_remote_task C"
-    assert logs[D][0]["event"] == "second_remote_task D"
+    assert cap.logs[A][0]["event"] == "first_remote_task A"
+    assert cap.logs[B][0]["event"] == "first_remote_task B"
+    assert cap.logs[C][0]["event"] == "second_remote_task C"
+    assert cap.logs[D][0]["event"] == "second_remote_task D"
 
-    assert results.num_nodes_run == 4
-    assert results.max_parallelism_seen == 2
+    assert stats.num_nodes_run == 4
+    assert stats.max_parallelism_seen == 2
 
 
 def test_conditional_dynamic_graph(test_context) -> None:
     dynamic_graph_task = (maybe_run_dynamic_graph, True)
+    cap = _CapturedResults()
     graph = Graph({dynamic_graph_task: {}})
-    results, logs = run_graph(graph)
-    assert results[dynamic_graph_task] == 21
+    graph.node_status_fn = cap.on_node_done
+    stats = run_graph(graph)
+    assert cap.results[dynamic_graph_task] == 21
 
-    assert results.num_nodes_run == 9
-    assert results.max_parallelism_seen == 7
+    assert stats.num_nodes_run == 9
+    assert stats.max_parallelism_seen == 7
 
-    print(f"### {len(logs)} nodes produced logs")
+    print(f"### {len(cap.logs)} nodes produced logs")
 
-    for node, log in logs.flatten().items():
-        print(f"### node {node_to_string(node)} has log of length {len(log)}")
-        for entry in log:
+    for node, node_log in cap.logs.items():
+        print(f"### node {node_to_string(node)} has log of length {len(node_log)}")
+        for entry in node_log:
             print(f"###   {entry}")
 
     context.last_run_results = {
-        node_to_string(node): result for node, result in results.flatten().items()
+        node_to_string(node): result for node, result in cap.results.items()
     }
 
     context.last_run_logs = {
-        node_to_string(node): log for node, log in logs.flatten().items()
+        node_to_string(node): log for node, log in cap.logs.items()
     }

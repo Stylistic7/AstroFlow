@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from clustering import cluster_by_image_center
 from context import context
 from testing.test_frames import make_synthetic_frames
-from dependency_graph import Graph, chain, run_graph
+from dependency_graph import Graph, ResultDict, chain, run_graph
 from metadata.image_metadata import scatter_compute_image_metadata, load_metadata
 from metadata.classes import MetadataDict
 
@@ -24,8 +24,15 @@ def _run_cluster(metadata_ref):
     )
 
 
-def compute_graph_fragment() -> Graph:
-    return chain(scatter_compute_image_metadata, _run_cluster)
+def compute_graph_fragment() -> tuple[Graph, ResultDict]:
+    graph = chain(scatter_compute_image_metadata, _run_cluster)
+    captured = ResultDict()
+
+    def on_node_done(node, result, logs):
+        captured[node] = result
+
+    graph.node_status_fn = on_node_done
+    return graph, captured
 
 
 def test_one_perfect_group(test_context) -> None:
@@ -34,8 +41,9 @@ def test_one_perfect_group(test_context) -> None:
         ra=100, dec=50, prefix="foo", number=10, dither=0, dest_dir=input_dir
     )
 
-    results, _ = run_graph(compute_graph_fragment())
-    groups = results[_run_cluster]
+    graph, captured = compute_graph_fragment()
+    run_graph(graph)
+    groups = captured[_run_cluster]
 
     metadata = context.get_matching(("compute_image_metadata",))
     image_hashes = [m.content_hash for m in metadata.values()]
@@ -67,8 +75,9 @@ def test_two_perfect_groups_one_hour_ra(test_context) -> None:
         dest_dir=input_dir,
     )
 
-    results, _ = run_graph(compute_graph_fragment())
-    groups = results[_run_cluster]
+    graph, captured = compute_graph_fragment()
+    run_graph(graph)
+    groups = captured[_run_cluster]
 
     hash_for_filename = compute_hash_for_filename()
 
@@ -118,8 +127,9 @@ def test_two_perfect_groups_one_degree_dec(test_context) -> None:
         dest_dir=input_dir,
     )
 
-    results, _ = run_graph(compute_graph_fragment())
-    groups = results[_run_cluster]
+    graph, captured = compute_graph_fragment()
+    run_graph(graph)
+    groups = captured[_run_cluster]
 
     hash_for_filename = compute_hash_for_filename()
 
@@ -171,8 +181,9 @@ def test_two_perfect_groups_half_degree_dec(test_context) -> None:
         dest_dir=input_dir,
     )
 
-    results, _ = run_graph(compute_graph_fragment())
-    groups = results[_run_cluster]
+    graph, captured = compute_graph_fragment()
+    run_graph(graph)
+    groups = captured[_run_cluster]
 
     hash_for_filename = compute_hash_for_filename()
 
@@ -222,8 +233,9 @@ def test_two_noisy_groups(test_context) -> None:
         dest_dir=input_dir,
     )
 
-    results, _ = run_graph(compute_graph_fragment())
-    groups = results[_run_cluster]
+    graph, captured = compute_graph_fragment()
+    run_graph(graph)
+    groups = captured[_run_cluster]
 
     hash_for_filename = compute_hash_for_filename()
 
@@ -273,8 +285,9 @@ def test_sadr_pano(test_context) -> None:
         clustering_settings=replace(context.settings.clustering_settings, min_component_members=1),
     )
 
-    results, _ = run_graph(compute_graph_fragment())
-    groups = results[_run_cluster]
+    graph, captured = compute_graph_fragment()
+    run_graph(graph)
+    groups = captured[_run_cluster]
 
     hash_for_filename = compute_hash_for_filename()
     print(f"### hash_for_filename {hash_for_filename}")

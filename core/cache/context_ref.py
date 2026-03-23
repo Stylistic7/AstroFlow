@@ -35,13 +35,10 @@ class ContextRef:
         if self.ref is not None:
             try:
                 return ray.get(self.ref)
-            except ray.exceptions.RayError as e:
-                print(f"### ContextRef.get: Ray ref stale for {self.cache_key}: {e}")
+            except Exception:
                 pass
         from context import context
-        result = context[self.cache_key]
-        self.ref = ray.put(result)
-        return result
+        return context[self.cache_key]
 
     def strip_ref(self) -> "ContextRef":
         out = copy(self)
@@ -49,11 +46,10 @@ class ContextRef:
         return out
 
     def __reduce__(self):
-        # Always strip the ref when pickling. Ray ObjectRefs are session-scoped
-        # and become invalid across Ray sessions (e.g. between tests). The ref
-        # is an in-process optimization only; the diskcache fallback path in
-        # get() handles cross-session retrieval.
-        return (_reconstruct_context_ref, (self.cache_key, self.content_hash, None))
+        # Preserve the ref across pickling. Within a Ray session, ObjectRefs
+        # are valid across task boundaries. The diskcache fallback in get()
+        # handles the case where a ref becomes stale (e.g. across sessions).
+        return (_reconstruct_context_ref, (self.cache_key, self.content_hash, self.ref))
 
     def __hash__(self):
         return hash_list_int([self.content_hash])
