@@ -53,26 +53,18 @@ class ContentHasher(ContentHashProtocol):
                 for i, (k, v) in enumerate(obj.items())
             })
         elif _is_context_ref_dict(obj):
-            # For dicts of ContextRefs, derive a per-entry hash from the
-            # call_hash and the entry index, then re-store each object with
-            # the updated content_hash. This ensures downstream hash_call()
-            # computations see a stable, non-empty content_hash.
-            from dataclasses import replace as dc_replace
+            # For dicts of ContextRefs, derive a per-entry content_hash from
+            # the call_hash and the entry index.  Only update the lightweight
+            # ContextRef — never materialise the underlying object.
             from cache.context_ref import ContextRef
             result = type(obj)()
             for i, (k, ref) in enumerate(obj.items()):
                 derived = hash_list([content_hash, i])
-                obj_val = ref.get()
-                if isinstance(obj_val, ContentHashed):
-                    updated_obj = dc_replace(obj_val, content_hash=derived)
-                    new_ref = ContextRef.store(ref.cache_key, updated_obj)
-                else:
-                    new_ref = ContextRef(
-                        cache_key=ref.cache_key,
-                        content_hash=derived,
-                        ref=ref.ref,
-                    )
-                result[k] = new_ref
+                result[k] = ContextRef(
+                    cache_key=ref.cache_key,
+                    content_hash=derived,
+                    ref=ref.ref,
+                )
             return result
         else:
             return obj
