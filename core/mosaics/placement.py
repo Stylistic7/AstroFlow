@@ -1,8 +1,11 @@
 import os
+import warnings
 import ray
 import numpy as np
 from beartype import beartype
-from astropy.wcs import WCS  # type: ignore
+from astropy.wcs import WCS, FITSFixedWarning  # type: ignore
+
+warnings.filterwarnings("ignore", category=FITSFixedWarning)
 from scipy.interpolate import RegularGridInterpolator  # type: ignore
 from itertools import product
 from pathlib import Path

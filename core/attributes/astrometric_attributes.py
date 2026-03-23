@@ -1,12 +1,15 @@
+import warnings
 from dataclasses import dataclass
 from beartype import beartype
 import numpy as np
 import astropy  # type: ignore
 from astropy.coordinates import SkyCoord
 import astropy.units as u
+from astropy.wcs import WCS, FITSFixedWarning  # type: ignore
 from cdshealpix import nested as cds  # or ring
 from collections.abc import Sequence, Iterable
-from astropy.wcs import WCS  # type: ignore
+
+warnings.filterwarnings("ignore", category=FITSFixedWarning)
 from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon  # type: ignore
 from typing import Any
 from frozendict import frozendict

@@ -5,9 +5,12 @@ import sys
 import tempfile
 import os
 from pathlib import Path
-import astropy.wcs  # type: ignore
-import astropy.io.fits as pyfits  # type: ignore
 import warnings
+import astropy.wcs  # type: ignore
+from astropy.wcs import FITSFixedWarning  # type: ignore
+import astropy.io.fits as pyfits  # type: ignore
+
+warnings.filterwarnings("ignore", category=FITSFixedWarning)
 from dataclasses import dataclass, is_dataclass, asdict
 import numpy as np
 import traceback
