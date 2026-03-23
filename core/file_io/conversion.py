@@ -1,3 +1,4 @@
+import ast
 import astropy.io.fits as pyfits  # type: ignore
 from pathlib import Path
 from xisf import XISF  # type: ignore
@@ -25,8 +26,8 @@ def convert_xisf_to_fits(
     for k, values in fits_meta.items():
         for v in values:
             try:
-                value = eval(v["value"])
-            except:
+                value = ast.literal_eval(v["value"])
+            except (ValueError, SyntaxError):
                 value = v["value"]
 
             hdu.header[k] = (value, v["comment"])

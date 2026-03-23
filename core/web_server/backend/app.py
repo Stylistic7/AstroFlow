@@ -324,7 +324,7 @@ def ray_status():
     try:
         nodes = ray.nodes()
         cluster_resources = ray.cluster_resources()
-    except:
+    except Exception:
         return jsonify(
             {
                 "healthyNodes": 0,

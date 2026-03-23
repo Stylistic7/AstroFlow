@@ -74,7 +74,7 @@ def gather_group_meta(
                 )
                 if os.path.exists(filename):
                     filename = os.fspath(filename)
-        except:
+        except (AttributeError, KeyError, TypeError):
             pass
 
         meta = {

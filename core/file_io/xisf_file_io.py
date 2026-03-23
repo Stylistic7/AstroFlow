@@ -1,3 +1,4 @@
+import ast
 import numpy as np
 from pathlib import Path
 from my_xisf import XISF  # type: ignore
@@ -15,8 +16,8 @@ def read_xisf_header(filename: Path | str, debug: bool = False) -> dict:
 
     def _eval(value: Any) -> Any:
         try:
-            return eval(value)
-        except:
+            return ast.literal_eval(value)
+        except (ValueError, SyntaxError):
             return value
 
     fits_header = ims_meta[0]["FITSKeywords"]
