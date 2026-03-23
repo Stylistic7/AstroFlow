@@ -1,8 +1,12 @@
 import ray
-import time
+import ray._private.auto_init_hook
 import threading
 
 from base_path import get_base_path
+
+# Disable Ray's auto-init, which silently creates a standalone local cluster
+# when ray.get_actor() etc. are called before connect_to_ray_cluster().
+ray._private.auto_init_hook.enable_auto_connect = False
 
 _context_actor = None
 _state_actor = None
@@ -12,14 +16,13 @@ _ray_init_lock = threading.Lock()
 
 
 def connect_to_ray_cluster():
-    if threading.current_thread() is not threading.main_thread():
-        return False
-
     if ray.is_initialized():
+        print(f"### connect_to_ray_cluster: already initialized, skipping")
         return
 
     with _ray_init_lock:
         if ray.is_initialized():
+            print(f"### connect_to_ray_cluster: already initialized (under lock), skipping")
             return
 
         working_dir = f"{get_base_path()}/core"
