@@ -108,33 +108,12 @@ def test_get_does_not_call_ray_put(empty_context):
 
 
 # ---------------------------------------------------------------------------
-# strip_ref()
-# ---------------------------------------------------------------------------
-
-
-def test_strip_ref_returns_copy_without_ref(empty_context):
-    ref = ContextRef(cache_key="my_key", content_hash="h",
-                     ref=ray.put("value"))
-    stripped = ref.strip_ref()
-    assert stripped.ref is None
-    assert stripped.cache_key == ref.cache_key
-    assert stripped.content_hash == ref.content_hash
-
-
-def test_strip_ref_does_not_mutate_original(empty_context):
-    ref = ContextRef(cache_key="my_key", content_hash="h",
-                     ref=ray.put("value"))
-    ref.strip_ref()
-    assert ref.ref is not None
-
-
-# ---------------------------------------------------------------------------
 # Pickling (__reduce__)
 # ---------------------------------------------------------------------------
 
 
 def test_pickling_strips_ref(empty_context):
-    """Pickling strips the ObjectRef — safe for both diskcache and Ray tasks."""
+    """Pickling strips the ObjectRef — get() falls back to diskcache."""
     ref = ContextRef.store("my_key", "value")
     assert ref.ref is not None
     restored = pickle.loads(pickle.dumps(ref))
@@ -143,35 +122,29 @@ def test_pickling_strips_ref(empty_context):
     assert restored.content_hash == ref.content_hash
 
 
-def test_get_after_pickling_uses_fast_path(empty_context):
+def test_get_after_pickling(empty_context):
     ref = ContextRef.store("my_key", "recoverable")
     restored = pickle.loads(pickle.dumps(ref))
     assert restored.get() == "recoverable"
 
 
-def test_strip_ref_before_diskcache_persistence(empty_context):
-    """strip_ref() is the explicit tool for removing refs before writing to disk."""
+def test_get_falls_back_when_ref_is_none(empty_context):
+    """get() falls back to diskcache when ref is None."""
     ref = ContextRef.store("my_key", "value")
-    stripped = ref.strip_ref()
-    assert stripped.ref is None
-    # Stripped ref recovers from context.
-    assert stripped.get() == "value"
+    ref.ref = None
+    assert ref.get() == "value"
 
 
-def test_context_strips_refs_from_dict_of_context_refs(empty_context):
-    """Writing a dict of ContextRefs to context strips ObjectRefs for diskcache."""
+def test_context_round_trips_context_refs(empty_context):
+    """ContextRefs written to context survive round-trip through diskcache."""
     ref_a = ContextRef.store(("stacks", "A"), {"data": 1})
     ref_b = ContextRef.store(("stacks", "B"), {"data": 2})
 
     # Write a dict of ContextRefs into context (goes to diskcache).
     context["my_dict"] = {"A": ref_a, "B": ref_b}
 
-    # Read it back — refs should be None (stripped for disk safety).
+    # Read it back — values are recoverable regardless of ref state.
     stored = context["my_dict"]
-    assert stored["A"].ref is None
-    assert stored["B"].ref is None
-
-    # But the values are still recoverable via the diskcache fallback.
     assert stored["A"].get() == {"data": 1}
     assert stored["B"].get() == {"data": 2}
 

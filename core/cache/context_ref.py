@@ -1,5 +1,4 @@
 import ray
-from copy import copy
 from dataclasses import dataclass
 from typing import Any
 
@@ -34,21 +33,16 @@ class ContextRef:
     def get(self) -> Any:
         if self.ref is not None:
             try:
-                return ray.get(self.ref)
+                return ray.get(self.ref, timeout=5)
             except Exception:
-                pass
+                self.ref = None
         from context import context
         return context[self.cache_key]
 
-    def strip_ref(self) -> "ContextRef":
-        out = copy(self)
-        out.ref = None
-        return out
-
     def __reduce__(self):
-        # Strip the ref when pickling. Pickle is used for both Ray task
-        # serialization and diskcache persistence, and we cannot distinguish
-        # them. Stripping is safe: get() falls back to diskcache.
+        # Strip the ref when pickling. ObjectRefs cannot reliably survive
+        # serialization (ownership is lost in diskcache, and cross-process
+        # refs may be unresolvable). get() falls back to diskcache.
         return (_reconstruct_context_ref, (self.cache_key, self.content_hash, None))
 
     def __hash__(self):
@@ -69,10 +63,13 @@ class ContextRef:
         Uses obj.content_hash if the object already carries one (i.e. it is a
         ContentHashed dataclass), otherwise derives the hash from the object.
         """
-        from context import context
+        from context.context import _get_namespace
 
         ref = ray.put(obj)
-        context[cache_key] = obj
+        # Fire-and-forget: the object is already in the Ray object store
+        # via ray.put. The diskcache write is for persistence across restarts.
+        actor = ray.get_actor("context", namespace=_get_namespace())
+        actor.set.remote(cache_key, obj)
 
         if hasattr(obj, "content_hash") and obj.content_hash:
             content_hash = obj.content_hash
