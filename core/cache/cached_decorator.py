@@ -134,7 +134,7 @@ def make_cached_decorator(
                 bound
             )
 
-            if valid and not isinstance(cached_result, Exception):
+            if valid:
                 if isinstance(cached_result, ContextRef):
                     assert cached_result.ref is None
                 return cached_result
@@ -142,27 +142,20 @@ def make_cached_decorator(
             if dry_run:
                 return NeverRun
 
-            try:
-                start_time = time.time()
-                result = func(*bound.args, **bound.kwargs)
-                elapsed_time = time.time() - start_time
-                if isinstance(result, ray.exceptions.RayTaskError):
-                    print(
-                        f"### fn {func.__name__} raised ray.exceptions.RayTaskError {result}"
-                    )
-                if elapsed_time > 0.5:
-                    debug_print(
-                        f"### fn {func.__name__} was slow to run, took {elapsed_time=} s"
-                    )
-                size_mb = objsize.get_deep_size(result) / 1024.0 / 1024.0
-                if size_mb > 5:
-                    debug_print(
-                        f"### fn {func.__name__} returned large object, {size_mb:0.3f} MB"
-                    )
-                if isinstance(result, Path) and not result.exists():
-                    raise FileNotFoundError(result)
-            except Exception as e:
-                result = e
+            start_time = time.time()
+            result = func(*bound.args, **bound.kwargs)
+            elapsed_time = time.time() - start_time
+            if elapsed_time > 0.5:
+                debug_print(
+                    f"### fn {func.__name__} was slow to run, took {elapsed_time=} s"
+                )
+            size_mb = objsize.get_deep_size(result) / 1024.0 / 1024.0
+            if size_mb > 5:
+                debug_print(
+                    f"### fn {func.__name__} returned large object, {size_mb:0.3f} MB"
+                )
+            if isinstance(result, Path) and not result.exists():
+                raise FileNotFoundError(result)
 
             def _handle_object_wrappers(obj: Any) -> Any:
                 assert not isinstance(obj, ray.ObjectRef)
@@ -173,19 +166,12 @@ def make_cached_decorator(
                 return obj
 
             result = content_hasher.set(result, call_hash)
-            if isinstance(result, ray.exceptions.RayTaskError):
-                print(
-                    f"### fn {func.__name__} content_hasher raised ray.exceptions.RayTaskError {result}"
-                )
             debug_print(
                 f"storing: {key} as {type(result)} into cache {_resolve_cache().directory}"
             )
             _resolve_cache()[key] = _handle_object_wrappers(result)
 
-            if isinstance(result, Exception):
-                raise result
-            else:
-                return result
+            return result
 
         inner.__name__ = func.__name__
         inner.__qualname__ = func.__qualname__
