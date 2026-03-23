@@ -210,8 +210,9 @@ def solve_field(
                 f"{sidecar_path_for(filename)}"
             )
             return ps
-        except Exception:
+        except Exception as e:
             # Corrupt / incompatible section → recompute.
+            print(f"### plate_solving: ignoring cached solution for {filename}: {e}")
             pass
 
     if development_settings is not None and development_settings.test_mode:

@@ -35,7 +35,7 @@ def _deserialize_header(header: dict[str, Any]) -> dict[str, Any]:
             try:
                 out[k] = parse(v)
                 continue
-            except Exception:
+            except (ValueError, OverflowError):
                 pass
         out[k] = v
     return out

@@ -97,21 +97,21 @@ def downscale_fits(
         if k in h0:
             try:
                 hdr[k] = int(round(float(h0[k]) * K))
-            except Exception:
+            except (KeyError, ValueError, TypeError):
                 pass
 
     for k in ("XPIXSZ", "YPIXSZ"):
         if k in h0:
             try:
                 hdr[k] = float(h0[k]) * K
-            except Exception:
+            except (KeyError, ValueError, TypeError):
                 pass
 
     for k in ("XORGSUBF", "YORGSUBF"):
         if k in h0:
             try:
                 hdr[k] = float(h0[k]) / K
-            except Exception:
+            except (KeyError, ValueError, TypeError):
                 pass
 
     dst.writeto(out_path, overwrite=overwrite, output_verify="exception")

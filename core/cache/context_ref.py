@@ -35,7 +35,8 @@ class ContextRef:
         if self.ref is not None:
             try:
                 return ray.get(self.ref)
-            except Exception:
+            except ray.exceptions.RayError as e:
+                print(f"### ContextRef.get: Ray ref stale for {self.cache_key}: {e}")
                 pass
         from context import context
         result = context[self.cache_key]
