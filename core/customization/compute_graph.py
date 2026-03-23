@@ -61,12 +61,14 @@ def store_customized_stack(stack: CustomizedStack) -> None:
 # TODO: Add tests in test_customization.py
 @cached.remote
 def customize_stack(
-    stack: CompositeStack,
+    stack_ref: ContextRef,
     cal_stacks: SimpleStacksDict,
     stack_settings: StackSettings,
     decision_overrides: frozendict,
     min_frames_in_stack: int,
 ) -> CustomizedStack | None:
+    stack = stack_ref.get()
+
     def chain(x, *funcs):
         for f in funcs:
             if x is None:
@@ -120,7 +122,7 @@ def scatter_customize_stacks(
             gather_customize_stacks: [
                 (
                     customize_stack,
-                    ref.get(),
+                    ref,
                     cal_stacks,
                     stack_settings.get(k, StackSettings()),
                     _overrides_for_stack(k),
