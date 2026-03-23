@@ -390,6 +390,8 @@ def identify_mosaics(
         for k, ref in targets.items()
     }
     print(f"### Identifying mosaics from {len(resolved)} targets")
+    for k, t in list(resolved.items())[:5]:
+        print(f"###   target {k}: center={t.center}, healpix_cells={t.healpix_cells[:5]}{'...' if len(t.healpix_cells) > 5 else ''}")
 
     # test_commutativity()
 

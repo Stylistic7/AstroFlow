@@ -46,10 +46,10 @@ class ContextRef:
         return out
 
     def __reduce__(self):
-        # Preserve the ref across pickling. Within a Ray session, ObjectRefs
-        # are valid across task boundaries. The diskcache fallback in get()
-        # handles the case where a ref becomes stale (e.g. across sessions).
-        return (_reconstruct_context_ref, (self.cache_key, self.content_hash, self.ref))
+        # Strip the ref when pickling. Pickle is used for both Ray task
+        # serialization and diskcache persistence, and we cannot distinguish
+        # them. Stripping is safe: get() falls back to diskcache.
+        return (_reconstruct_context_ref, (self.cache_key, self.content_hash, None))
 
     def __hash__(self):
         return hash_list_int([self.content_hash])

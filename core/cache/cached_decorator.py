@@ -157,26 +157,12 @@ def make_cached_decorator(
             if isinstance(result, Path) and not result.exists():
                 raise FileNotFoundError(result)
 
-            def _handle_object_wrappers(obj: Any) -> Any:
-                assert not isinstance(obj, ray.ObjectRef)
-
-                if isinstance(obj, ContextRef):
-                    return obj.strip_ref()
-
-                if isinstance(obj, dict) and obj and all(
-                    isinstance(v, ContextRef) for v in obj.values()
-                ):
-                    return type(obj)({
-                        k: v.strip_ref() for k, v in obj.items()
-                    })
-
-                return obj
-
             result = content_hasher.set(result, call_hash)
             debug_print(
                 f"storing: {key} as {type(result)} into cache {_resolve_cache().directory}"
             )
-            _resolve_cache()[key] = _handle_object_wrappers(result)
+            # diskcache pickles the value; ContextRef.__reduce__ strips refs.
+            _resolve_cache()[key] = result
 
             return result
 

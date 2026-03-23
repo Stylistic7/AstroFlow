@@ -133,16 +133,14 @@ def test_strip_ref_does_not_mutate_original(empty_context):
 # ---------------------------------------------------------------------------
 
 
-def test_pickling_preserves_ref(empty_context):
-    """Pickling preserves the ObjectRef so it survives Ray task boundaries."""
-    ref = ContextRef(cache_key="my_key", content_hash="h",
-                     ref=ray.put("value"))
+def test_pickling_strips_ref(empty_context):
+    """Pickling strips the ObjectRef — safe for both diskcache and Ray tasks."""
+    ref = ContextRef.store("my_key", "value")
+    assert ref.ref is not None
     restored = pickle.loads(pickle.dumps(ref))
-    assert restored.ref is not None
+    assert restored.ref is None
     assert restored.cache_key == ref.cache_key
     assert restored.content_hash == ref.content_hash
-    # The preserved ref is usable.
-    assert ray.get(restored.ref) == "value"
 
 
 def test_get_after_pickling_uses_fast_path(empty_context):
