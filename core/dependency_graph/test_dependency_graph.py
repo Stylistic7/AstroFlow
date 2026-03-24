@@ -275,7 +275,7 @@ def test_simple_graph(test_context) -> None:
     D = (my_remote_task, "D")
 
     graph, captured = _capturing_graph(Graph({D: {B, C}, C: {A}, B: {A}}))
-    stats = run_graph(graph)
+    _, stats = run_graph(graph)
 
     assert captured[A] == "A"
     assert captured[B] == "B"
@@ -293,7 +293,7 @@ def test_resources(test_context) -> None:
     D = (my_remote_task, "D")
 
     graph, captured = _capturing_graph(Graph({D: {B, C}, C: {A}, B: {A}}))
-    stats = run_graph(graph)
+    _, stats = run_graph(graph)
 
     assert captured[A] == "A"
     assert captured[B] == "B"
@@ -314,7 +314,7 @@ def test_global_variable(test_context) -> None:
     D = (my_task_with_global, "D")
 
     graph = Graph({D: {C}, C: {B}, B: {A}})
-    stats = run_graph(graph)
+    _, stats = run_graph(graph)
 
     assert cache["foo"] == 14
 
@@ -328,7 +328,7 @@ def test_pass_down(test_context) -> None:
     C = my_last_task
 
     graph, captured = _capturing_graph(Graph({C: {B}, B: {A}}))
-    stats = run_graph(graph)
+    _, stats = run_graph(graph)
 
     assert captured[A] == 1
     assert captured[B] == 2
@@ -359,7 +359,7 @@ def test_pass_down_with_kwargs(test_context) -> None:
 
 def test_pass_down_lists(test_context) -> None:
     graph, captured = _capturing_graph(chain(create_list, consume_list))
-    stats = run_graph(graph)
+    _, stats = run_graph(graph)
 
     assert captured[create_list] == [1, 2, 3]
     assert captured[consume_list] == 6
@@ -374,7 +374,7 @@ def test_fanout(test_context) -> None:
     C = my_last_task
 
     graph, captured = _capturing_graph(Graph({C: {A}, B: {A}}))
-    stats = run_graph(graph)
+    _, stats = run_graph(graph)
 
     assert captured[A] == 1
     assert captured[B] == 2
@@ -387,7 +387,7 @@ def test_fanout(test_context) -> None:
 def test_list_of_tasks(test_context) -> None:
     graph, captured = _capturing_graph(chain(my_first_task, my_later_task, my_last_task))
 
-    stats = run_graph(graph)
+    _, stats = run_graph(graph)
     assert captured[my_last_task] == 5
 
     assert stats.num_nodes_run == 3
@@ -404,7 +404,7 @@ def test_with_exception(test_context) -> None:
 def test_dynamic_subgraph(test_context) -> None:
     graph, captured = _capturing_graph(Graph({scatter: {}}))
 
-    stats = run_graph(graph)
+    _, stats = run_graph(graph)
 
     assert captured[scatter] == 21
 
@@ -420,7 +420,7 @@ def test_dynamic_subgraph_completion(test_context) -> None:
     # should be transparently handled by the runtime. my_last_task() should
     # see the result of gather().
     graph, captured = _capturing_graph(Graph({scatter: {}, my_last_task: {scatter}}))
-    stats = run_graph(graph)
+    _, stats = run_graph(graph)
 
     assert captured[scatter] == 21
     assert captured[my_last_task] == 24
@@ -433,7 +433,7 @@ def test_dynamic_subgraph_completion_with_peer(test_context) -> None:
     context.foo = 13
 
     graph, captured = _capturing_graph(Graph({gather: [scatter, increment_foo], scatter: {}}))
-    stats = run_graph(graph)
+    _, stats = run_graph(graph)
 
     # scatter returns 21, increment_foo returns 14.
     assert context.foo == 14
@@ -457,7 +457,7 @@ def test_dynamic_subgraph_with_context_completion(test_context) -> None:
         }
     ))
 
-    stats = run_graph(graph)
+    _, stats = run_graph(graph)
 
     assert captured[scatter_with_context] == 21
     assert captured[my_last_task_with_context] == 24
@@ -472,7 +472,7 @@ def test_mutable_context(test_context) -> None:
     context.foo = 2
     context.bar = 3
 
-    stats = run_graph(graph)
+    _, stats = run_graph(graph)
 
     assert captured[increment_foo] == 3
     assert captured[increment_bar] == 4
@@ -486,7 +486,7 @@ def test_mutable_context(test_context) -> None:
 def test_dynamic_graph_with_context(test_context) -> None:
     graph, captured = _capturing_graph(Graph({scatter_with_context: {}}))
 
-    stats = run_graph(graph)
+    _, stats = run_graph(graph)
 
     assert captured[scatter_with_context] == 21
     assert sorted(context.processed) == [0, 1, 2, 3, 4, 5, 6]
@@ -499,7 +499,7 @@ def test_dynamic_graph_with_context(test_context) -> None:
 def test_conditional_dynamic_graph(test_context) -> None:
     dynamic_graph_task = (maybe_run_dynamic_graph, True)
     graph, captured = _capturing_graph(Graph({dynamic_graph_task: {}}))
-    stats = run_graph(graph)
+    _, stats = run_graph(graph)
     assert captured[dynamic_graph_task] == 21
 
     assert stats.num_nodes_run == 9
@@ -507,7 +507,7 @@ def test_conditional_dynamic_graph(test_context) -> None:
 
     dynamic_graph_task = (maybe_run_dynamic_graph, False)
     graph, captured = _capturing_graph(Graph({dynamic_graph_task: {}}))
-    stats = run_graph(graph)
+    _, stats = run_graph(graph)
     assert captured[dynamic_graph_task] == None
 
     assert stats.num_nodes_run == 1
@@ -517,7 +517,7 @@ def test_conditional_dynamic_graph(test_context) -> None:
 def test_multiple_inputs(test_context) -> None:
     task = (fn_with_multiple_inputs, 1, 2, 3)
     graph, captured = _capturing_graph(Graph({task: {}}))
-    stats = run_graph(graph)
+    _, stats = run_graph(graph)
     assert captured[task] == 6
 
     assert stats.num_nodes_run == 1
@@ -537,7 +537,7 @@ def test_simple_graph_with_priority(test_context) -> None:
 
     graph, captured = _capturing_graph(Graph({D: {B, C}, C: {A}, B: {A}}))
 
-    stats = run_graph(graph)
+    _, stats = run_graph(graph)
 
     assert captured[A] == 1
     assert captured[B] == 10
@@ -561,7 +561,7 @@ def test_duplicate_ancestors(test_context) -> None:
     context.foo = 7
     context.processed = []
 
-    stats = run_graph(graph)
+    _, stats = run_graph(graph)
 
     assert context.foo == 8
     assert sorted(context.processed) == [2, 3]
@@ -577,7 +577,7 @@ def test_duplicate_nodes(test_context) -> None:
     graph = Graph({A: {}, B: {}})
 
     context.foo = 7
-    stats = run_graph(graph)
+    _, stats = run_graph(graph)
 
     assert stats.num_nodes_run == 2
 
@@ -585,7 +585,7 @@ def test_duplicate_nodes(test_context) -> None:
 def test_scatter_in_subgraphs(test_context) -> None:
     graph, captured = _capturing_graph(scatter_in_subgraphs())
 
-    stats = run_graph(graph)
+    _, stats = run_graph(graph)
 
     assert captured[gather_from_subgraphs] == 78
     assert stats.max_parallelism_seen == 13
@@ -686,7 +686,7 @@ def test_status_fn(test_context) -> None:
         nonlocal final_status
         final_status = status
 
-    stats = run_graph(graph, status_fn=print_status)
+    _, stats = run_graph(graph, status_fn=print_status)
 
     assert captured[scatter] == 21
 
@@ -702,7 +702,7 @@ def test_status_fn(test_context) -> None:
 def test_trace(test_context) -> None:
     dynamic_graph_task = (maybe_run_dynamic_graph, True)
     graph, captured = _capturing_graph(Graph({dynamic_graph_task: {}}))
-    stats = run_graph(graph, trace=True)
+    _, stats = run_graph(graph, trace=True)
     assert captured[dynamic_graph_task] == 21
 
     assert stats.num_nodes_run == 9
@@ -731,7 +731,7 @@ def test_recursive_graph(test_context) -> None:
         nonlocal final_status
         final_status = status
 
-    stats = run_graph(graph, status_fn=print_status)
+    _, stats = run_graph(graph, status_fn=print_status)
 
     assert stats.num_nodes_run == len(final_status.done_nodes)
     assert len(final_status.ready_nodes) == 0
@@ -836,7 +836,7 @@ def test_set_deps_run_in_parallel(test_context) -> None:
     """Independent tasks listed with {} notation should run in parallel."""
     N = 10
     graph, captured = _capturing_graph(Graph({gather: {(process, i) for i in range(N)}}))
-    stats = run_graph(graph)
+    _, stats = run_graph(graph)
 
     assert captured[gather] == sum(range(N))
     assert stats.max_parallelism_seen >= N
@@ -846,7 +846,7 @@ def test_list_deps_run_in_parallel(test_context) -> None:
     """Independent tasks listed with [] notation should run in parallel."""
     N = 10
     graph, captured = _capturing_graph(Graph({gather: [(process, i) for i in range(N)]}))
-    stats = run_graph(graph)
+    _, stats = run_graph(graph)
 
     assert captured[gather] == sum(range(N))
     assert stats.max_parallelism_seen >= N

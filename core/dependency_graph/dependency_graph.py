@@ -254,7 +254,7 @@ def run_graph(
     status_interval: float = _MIN_STATUS_UPDATE_INTERVAL_SECS,
     trace: bool = False,
     debug: bool = False,
-) -> "RunStats":
+) -> tuple[Any, "RunStats"]:
     num_nodes_run: int = 0
     max_parallelism_seen: int = 0
     subgraphs: list[TopologicalSorterWithStatus] = []
@@ -358,7 +358,7 @@ def run_graph(
         if ts.graph_update_fn is not None:
             ts.graph_update_fn(ts, subgraphs)
 
-    return RunStats(
+    return toplevel_ts.final_result, RunStats(
         num_nodes_run=num_nodes_run,
         max_parallelism_seen=max_parallelism_seen,
         trace=trace_list,

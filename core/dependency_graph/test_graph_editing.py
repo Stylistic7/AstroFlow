@@ -47,7 +47,7 @@ class TestGraphEditing(unittest.TestCase):
         C = last_task
 
         graph, captured = _capturing_graph(Graph({C: {B}, B: {A}}))
-        stats = run_graph(graph)
+        _, stats = run_graph(graph)
 
         self.assertEqual(captured[A], 1)
         self.assertEqual(captured[B], 2)
@@ -60,7 +60,7 @@ class TestGraphEditing(unittest.TestCase):
         print_graph(graph)
 
         graph, captured = _capturing_graph(graph)
-        stats = run_graph(graph)
+        _, stats = run_graph(graph)
 
         self.assertEqual(captured[A], 1)
         self.assertTrue(B not in captured)

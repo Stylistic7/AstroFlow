@@ -74,7 +74,7 @@ def test_simple_graph(test_context) -> None:
     cap = _CapturedResults()
     graph = Graph({D: {B, C}, C: {A}, B: {A}})
     graph.node_status_fn = cap.on_node_done
-    stats = run_graph(graph)
+    _, stats = run_graph(graph)
 
     context.last_run_results = {
         node_to_string(node): result for node, result in cap.results.items()
@@ -103,7 +103,7 @@ def test_conditional_dynamic_graph(test_context) -> None:
     cap = _CapturedResults()
     graph = Graph({dynamic_graph_task: {}})
     graph.node_status_fn = cap.on_node_done
-    stats = run_graph(graph)
+    _, stats = run_graph(graph)
     assert cap.results[dynamic_graph_task] == 21
 
     assert stats.num_nodes_run == 9

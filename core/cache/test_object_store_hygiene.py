@@ -19,19 +19,40 @@ from customization.settings import (
 )
 
 
-def _ray_object_store_types() -> Counter:
+def _ray_objects() -> list:
+    """Return all live objects in the Ray object store."""
     gc.collect()
     worker = ray._private.worker.global_worker
     counts = worker.core_worker.get_all_reference_counts()
-    type_counts = Counter()
+    objects = []
     for obj_id_bytes in counts:
         obj_ref = ray.ObjectRef(bytes.fromhex(obj_id_bytes.decode()))
         try:
-            val = ray.get(obj_ref)
-            type_counts[type(val).__name__] += 1
-        except Exception as e:
-            type_counts[f"<error: {type(e).__name__}>"] += 1
-    return type_counts
+            objects.append(ray.get(obj_ref, timeout=5))
+        except Exception:
+            pass
+    return objects
+
+
+def _ray_object_store_types() -> Counter:
+    return Counter(type(obj).__name__ for obj in _ray_objects())
+
+
+def _check_no_duplicates(objects: list) -> None:
+    """Assert no duplicate ContentHashed objects in the Ray object store."""
+    from cache.content_hashed import ContentHashed
+
+    seen = {}  # (type_name, content_hash) -> count
+    for obj in objects:
+        if isinstance(obj, ContentHashed) and obj.content_hash:
+            key = (type(obj).__name__, obj.content_hash)
+            seen[key] = seen.get(key, 0) + 1
+
+    duplicates = {k: v for k, v in seen.items() if v > 1}
+    assert not duplicates, (
+        f"Duplicate objects in Ray store: "
+        + ", ".join(f"{t}({h[:8]}...) x{c}" for (t, h), c in duplicates.items())
+    )
 
 
 def _setup(test_context):
@@ -57,18 +78,20 @@ def _setup(test_context):
 @pytest.mark.heavy
 def test_step1_metadata_only(test_context):
     _setup(test_context)
-    graph = Graph({scatter_compute_image_metadata: {}})
-    run_graph(graph)
-    types = _ray_object_store_types()
+    run_graph(Graph({scatter_compute_image_metadata: {}}))
+    objects = _ray_objects()
+    _check_no_duplicates(objects)
+    types = Counter(type(obj).__name__ for obj in objects)
     print(f"\nAfter metadata: {sum(types.values())} {dict(types.most_common())}")
 
 
 @pytest.mark.heavy
 def test_step2_metadata_and_regroup(test_context):
     _setup(test_context)
-    graph = Graph({**chain(scatter_compute_image_metadata, build_regroup_graph)})
-    run_graph(graph)
-    types = _ray_object_store_types()
+    run_graph(Graph({**chain(scatter_compute_image_metadata, build_regroup_graph)}))
+    objects = _ray_objects()
+    _check_no_duplicates(objects)
+    types = Counter(type(obj).__name__ for obj in objects)
     print(f"\nAfter regroup: {sum(types.values())} {dict(types.most_common())}")
     assert len(context.stacks or {}) == 9
     assert len(context.targets or {}) == 9
@@ -79,13 +102,14 @@ def test_step2_metadata_and_regroup(test_context):
 def test_step3_with_preview(test_context):
     from compute_graph.compute_graph import build_preview_graph
     _setup(test_context)
-    graph = Graph({**chain(
+    run_graph(Graph({**chain(
         scatter_compute_image_metadata,
         build_regroup_graph,
         build_preview_graph,
-    )})
-    run_graph(graph)
-    types = _ray_object_store_types()
+    )}))
+    objects = _ray_objects()
+    _check_no_duplicates(objects)
+    types = Counter(type(obj).__name__ for obj in objects)
     print(f"\nAfter preview: {sum(types.values())} {dict(types.most_common())}")
     assert len(context.stacks or {}) == 9
     assert len(context.targets or {}) == 9
@@ -102,10 +126,12 @@ def test_step4_full_graph_with_snapshots(test_context):
         fn_name = node.task._function.__name__
         name = node.name
         key = f"{fn_name}({name})" if name else fn_name
-        types = _ray_object_store_types()
+        objects = _ray_objects()
+        types = Counter(type(obj).__name__ for obj in objects)
         total = sum(types.values())
         summary = ", ".join(f"{t}:{c}" for t, c in types.most_common())
         snapshots.append((key, total, summary))
+        _check_no_duplicates(objects)
 
     graph = build_compute_graph()
     graph.node_status_fn = on_node_done

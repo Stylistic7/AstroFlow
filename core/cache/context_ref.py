@@ -63,13 +63,10 @@ class ContextRef:
         Uses obj.content_hash if the object already carries one (i.e. it is a
         ContentHashed dataclass), otherwise derives the hash from the object.
         """
-        from context.context import _get_namespace
+        from context import context
 
         ref = ray.put(obj)
-        # Fire-and-forget: the object is already in the Ray object store
-        # via ray.put. The diskcache write is for persistence across restarts.
-        actor = ray.get_actor("context", namespace=_get_namespace())
-        actor.set.remote(cache_key, obj)
+        context[cache_key] = obj
 
         if hasattr(obj, "content_hash") and obj.content_hash:
             content_hash = obj.content_hash

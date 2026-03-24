@@ -20,7 +20,7 @@ def hash_string(x: Any) -> str:
 def _maybe_use_content_hash(obj: Any) -> Any:
     if isinstance(obj, ContentHashable):
         return ContentHash(get_content_hash(obj))
-    elif hasattr(obj, "content_hash"):
+    elif hasattr(obj, "content_hash") and obj.content_hash:
         return obj.content_hash
     else:
         return make_hashable(obj)
