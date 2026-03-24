@@ -20,7 +20,6 @@ from dependency_graph import (
     GenericRemoteFunction,
     canonicalize_graph,
 )
-from dependency_graph.logging import LogContainer
 from .debugging import print_graph, node_to_string
 
 _MIN_STATUS_UPDATE_INTERVAL_SECS: float = 5.0
@@ -168,9 +167,6 @@ def _handle_finished_subgraphs(subgraphs) -> None:
             if ts.done_callback:
                 ts.done_callback()
                 ts.done_callback = None
-            if ts.graph_update_fn is not None:
-                ts.graph_update_fn(ts, subgraphs)
-                ts.graph_update_fn = None
             ts.results.clear()
 
 
@@ -229,6 +225,14 @@ def _handle_node_done(
     logs: list[Any],
 ) -> None:
     ts.results[node] = result
+    # Lightweight state: Skipped sentinel, Exception instance, or None for success.
+    # Absence from dict means not yet run.
+    if result is Skipped:
+        ts.node_states[node] = Skipped
+    elif isinstance(result, Exception):
+        ts.node_states[node] = result
+    else:
+        ts.node_states[node] = None
     ts.logs[node] = logs
     # TODO: complete_args is only used to call filename_fn by the workflow
     # graph adapter, but we should be able to call it directly here, and not
@@ -247,15 +251,6 @@ def _handle_result(
     result: Any,
     debug: bool = False,
 ) -> None:
-    # If the function captured logs, split them off the returned result.
-    log = []
-    if isinstance(result, tuple) and isinstance(result[0], LogContainer):
-        log, result = result
-        if debug:
-            print(
-                f"### node {node_to_string(node)} produced a log of length {len(log)}"
-            )
-
     if (
         result_size_mb := get_deep_size(result) / 1024 / 1024
     ) > _RESULT_SIZE_WARNING_THRESHOLD_MB:
@@ -270,7 +265,7 @@ def _handle_result(
     if isinstance(result, Graph):
         return _make_subgraph(result, ts, node, debug)
     else:
-        _handle_node_done(ts, node, result, log)
+        _handle_node_done(ts, node, result, [])
         ts.final_result = result
 
 

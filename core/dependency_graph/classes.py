@@ -167,6 +167,7 @@ class TopologicalSorterWithStatus:
         self.parent_node = parent_node
         self.done_callback = done_callback
         self.results = ResultDict()
+        self.node_states = {}  # {Node: "SUCCEEDED" | "FAILED" | "SKIPPED"}
         self.logs = ResultDict()
         self.complete_args = ResultDict()
         self.final_result = None

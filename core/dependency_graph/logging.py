@@ -9,34 +9,44 @@ class LogContainer(list):
     pass
 
 
-@beartype
-def capture_logs(func: Callable) -> Callable:
-    @functools.wraps(func)
-    def wrapper(*args: Any, **kwargs: Any):
-        captured_logs = []
+def make_capture_logs_decorator(cache):
+    """Create a @capture_logs decorator that stores logs in the given cache.
 
-        def log_capture_processor(_, __, event_dict):
-            captured_logs.append(event_dict)
-            return event_dict
+    Logs are stored at ("logs", function_name, call_hash) where call_hash
+    is derived from the function arguments.
+    """
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any):
+            captured_logs = []
 
-        structlog.configure(
-            processors=[
-                log_capture_processor,
-                structlog.processors.add_log_level,
-                structlog.processors.TimeStamper(fmt="iso"),
-                structlog.processors.JSONRenderer(),
-            ],
-            logger_factory=structlog.stdlib.LoggerFactory(),
-            wrapper_class=structlog.make_filtering_bound_logger(10),
-        )
+            def log_capture_processor(_, __, event_dict):
+                captured_logs.append(event_dict)
+                return event_dict
 
-        try:
-            result = func(*args, **kwargs)
-        except Exception as e:
-            return LogContainer(captured_logs), e
-        finally:
-            structlog.reset_defaults()
+            structlog.configure(
+                processors=[
+                    log_capture_processor,
+                    structlog.processors.add_log_level,
+                    structlog.processors.TimeStamper(fmt="iso"),
+                    structlog.processors.JSONRenderer(),
+                ],
+                logger_factory=structlog.stdlib.LoggerFactory(),
+                wrapper_class=structlog.make_filtering_bound_logger(10),
+            )
 
-        return LogContainer(captured_logs), result
+            try:
+                result = func(*args, **kwargs)
+            finally:
+                structlog.reset_defaults()
+                if captured_logs:
+                    from hashing import hash_call, hash_source_code
+                    fn_hash = hash_source_code(func)
+                    call_hash = hash_call(fn_hash, *args, **kwargs)
+                    cache[("logs", func.__name__, call_hash)] = captured_logs
 
-    return wrapper
+            return result
+
+        return wrapper
+
+    return decorator
