@@ -168,6 +168,9 @@ def _handle_finished_subgraphs(subgraphs) -> None:
             if ts.done_callback:
                 ts.done_callback()
                 ts.done_callback = None
+            if ts.graph_update_fn is not None:
+                ts.graph_update_fn(ts, subgraphs)
+                ts.graph_update_fn = None
             ts.results.clear()
 
 

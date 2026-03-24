@@ -27,11 +27,13 @@ def capture_logs(func: Callable) -> Callable:
                 structlog.processors.JSONRenderer(),
             ],
             logger_factory=structlog.stdlib.LoggerFactory(),
-            wrapper_class=structlog.make_filtering_bound_logger(20),
+            wrapper_class=structlog.make_filtering_bound_logger(10),
         )
 
         try:
             result = func(*args, **kwargs)
+        except Exception as e:
+            return LogContainer(captured_logs), e
         finally:
             structlog.reset_defaults()
 

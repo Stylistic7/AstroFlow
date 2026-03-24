@@ -172,6 +172,8 @@ def make_cached_decorator(
             )
             _resolve_cache()[key] = strip_refs(result)
 
+            if logs is not None:
+                return logs, result
             return result
 
         inner.__name__ = func.__name__
