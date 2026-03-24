@@ -1,3 +1,4 @@
+import math
 import structlog
 from frozendict import frozendict
 from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon  # type: ignore
@@ -42,29 +43,32 @@ def roughly_same_area(
 
 
 @beartype
-def roughly_same_image_scale(a: float, b: float) -> bool:
+def roughly_same_image_scale(a: ArcsecondsPerPixel, b: ArcsecondsPerPixel) -> bool:
     ratio = a / b
     return bool(ratio > 0.9 and ratio < 1.1)
 
 
 @beartype
 def roughly_same_position_angle(
-    a: float, b: float, angular_tolerance: float
+    a: Radians, b: Radians, angular_tolerance: Radians
 ) -> bool:
     return bool(angular_spread_mod_pi([a, b]) < angular_tolerance)
 
 
 @cached.remote
 def targets_overlap(
-    a_target: Target,
-    b_target: Target,
+    a_target_ref: ContextRef,
+    b_target_ref: ContextRef,
     min_area_frac: float = 0.03,
     span_match: float = 0.75,
     thick_min: float = 0.1,
     thick_max: float = 0.3,
-    angular_tolerance: float = 10.0,
+    angular_tolerance: Radians = Radians(math.radians(10.0)),
     debug: bool = False,
 ) -> Overlap:
+    a_target = a_target_ref.get()
+    b_target = b_target_ref.get()
+
     if a_target is b_target:
         return Overlap.IDENTICAL
 
@@ -196,16 +200,16 @@ def targets_overlap(
 
 @beartype
 def group_targets(
-    targets: dict,
+    target_refs: dict[TargetHash, ContextRef],
     target_ids: list[TargetHash],
     allowed_overlaps: list[Overlap],
-    angular_tolerance: float,
+    angular_tolerance: Radians,
 ) -> list[list[TargetHash]]:
     assert len(target_ids) > 0
 
     target_ids_for_cell = defaultdict(list)
     for target_id in target_ids:
-        target = targets[target_id]
+        target = target_refs[target_id].get()
         assert len(target.healpix_cells) > 0
         for cell in target.healpix_cells:
             target_ids_for_cell[cell].append(target_id)
@@ -221,7 +225,8 @@ def group_targets(
         for a, b in combinations(sorted(tids), 2):
             overlap = ray.get(
                 targets_overlap.remote(
-                    targets[a], targets[b], angular_tolerance=angular_tolerance
+                    target_refs[a], target_refs[b],
+                    angular_tolerance=angular_tolerance,
                 )
             )
             if overlap in allowed_overlaps:
@@ -237,37 +242,30 @@ def group_targets(
     return result
 
 
-# def test_commutativity():
-#   targets = context.grouped_targets
-
-#   for a in targets.keys():
-#     for b in targets.keys():
-#       a_to_b = ray.get(targets_overlap.remote(targets[a], targets[b]))
-#       b_to_a = ray.get(targets_overlap.remote(targets[b], targets[a]))
-#       assert a_to_b == b_to_a, f"### {a_to_b=} {b_to_a=}"
 
 
 @beartype
 def find_strips(
-    targets: dict,
+    target_refs: dict[TargetHash, ContextRef],
     target_ids: list[TargetHash],
-    angular_tolerance: float,
+    angular_tolerance: Radians,
     debug: bool = False,
 ) -> tuple[Strip, ...]:
+    resolved = {k: ref.get() for k, ref in target_refs.items()}
     strips = group_targets(
-        targets, target_ids, [Overlap.LONG_EDGE], angular_tolerance
+        target_refs, target_ids, [Overlap.LONG_EDGE], angular_tolerance
     )
     if debug:
         for i, strip in enumerate(strips):
             print(f"### Strip {i} is {strip}")
-        plot_targets_and_footprint(targets, target_ids, None, title="Mosaic")
+        plot_targets_and_footprint(resolved, target_ids, None, title="Mosaic")
 
     # TODO: Maybe use this same algorithm to order the strips themselves to make
     # sure the output strips can be merged with PhotometricMergeMosaic.
     @beartype
     def order_strip(strip: set[TargetHash]) -> Strip:
         strip_length = len(strip)
-        strip = list(sorted(strip, key=lambda t: targets[t].center[0]))
+        strip = list(sorted(strip, key=lambda t: resolved[t].center[0]))
 
         if len(strip) < 3:
             return Strip(strip)
@@ -278,8 +276,8 @@ def find_strips(
                 for tid in strip
                 if ray.get(
                     targets_overlap.remote(
-                        targets[target_id],
-                        targets[tid],
+                        target_refs[target_id],
+                        target_refs[tid],
                         angular_tolerance=angular_tolerance,
                     )
                 )
@@ -301,7 +299,8 @@ def find_strips(
             for target_id in strip:
                 overlap = ray.get(
                     targets_overlap.remote(
-                        targets[output_strip[-1]], targets[target_id]
+                        target_refs[output_strip[-1]], target_refs[target_id],
+                        angular_tolerance=angular_tolerance,
                     )
                 )
                 if overlap == Overlap.LONG_EDGE:
@@ -335,10 +334,10 @@ def find_strips(
     # TODO: This is a bit of a hack. Consider more principled ways of sorting
     # strips.
     def min_dec(strip: list[TargetHash]):
-        return min(targets[t].center[1] for t in strip)
+        return min(resolved[t].center[1] for t in strip)
 
     # Sort each strip individually by increasing RA.
-    strips = [tuple(sorted(s, key=lambda t: targets[t].center[0])) for s in strips]
+    strips = [tuple(sorted(s, key=lambda t: resolved[t].center[0])) for s in strips]
 
     # Sort the strips by increasing Dec.
     return tuple(sorted(strips, key=min_dec))
@@ -346,26 +345,30 @@ def find_strips(
 
 @beartype
 def _identify_overlapping_targets(
-    targets: dict, angular_tolerance: float, debug: bool = False
+    target_refs: dict[TargetHash, ContextRef],
+    angular_tolerance: Radians,
+    debug: bool = False,
 ) -> list[list[TargetHash]]:
-    if not targets:
+    if not target_refs:
         return []
+
+    resolved = {k: ref.get() for k, ref in target_refs.items()}
 
     # Sort the targets by their center RA.
     target_ids = list(
-        sorted(targets.keys(), key=lambda t: targets[t].center[0])  # type: ignore[union-attr]
+        sorted(resolved.keys(), key=lambda t: resolved[t].center[0])
     )
-    log.info("Identifying overlapping targets", num_targets=len(targets))
+    log.info("Identifying overlapping targets", num_targets=len(target_refs))
 
     mosaics = group_targets(
-        targets,
+        target_refs,
         target_ids,
         [Overlap.LONG_EDGE, Overlap.SHORT_EDGE],
         angular_tolerance,
     )
 
     num_grouped_targets = sum(len(m) for m in mosaics)
-    num_ungrouped_targets = len(targets) - num_grouped_targets
+    num_ungrouped_targets = len(target_refs) - num_grouped_targets
     log.info(
         "Done grouping overlapping targets",
         num_mosaics=len(mosaics),
@@ -382,20 +385,14 @@ def _identify_overlapping_targets(
 
 @cached.remote
 def identify_mosaics(
-    angular_tolerance: float, targets: dict, debug: bool = False
+    angular_tolerance: Radians, targets: dict[str, ContextRef], debug: bool = False
 ) -> MosaicsDict:
-    # Resolve ContextRefs to real Target objects for local processing
-    resolved: dict[str, Target] = {
-        k: (ref.get() if isinstance(ref, ContextRef) else ref)
-        for k, ref in targets.items()
-    }
+    resolved: dict[str, Target] = {k: ref.get() for k, ref in targets.items()}
     print(f"### Identifying mosaics from {len(resolved)} targets")
     for k, t in list(resolved.items())[:5]:
         print(f"###   target {k}: center={t.center}, healpix_cells={t.healpix_cells[:5]}{'...' if len(t.healpix_cells) > 5 else ''}")
 
-    # test_commutativity()
-
-    mosaics = _identify_overlapping_targets(resolved, angular_tolerance, debug)
+    mosaics = _identify_overlapping_targets(targets, angular_tolerance, debug)
     if not mosaics:
         print("### No overlapping targets found")
         return MosaicsDict({})
@@ -429,7 +426,8 @@ def identify_mosaics(
         rotation_angle = Radians(np.mean([resolved[t].rotation_angle for t in mosaic]))
 
         try:
-            strips = find_strips(resolved, mosaic, angular_tolerance, debug)
+            mosaic_refs = {k: targets[k] for k in mosaic}
+            strips = find_strips(mosaic_refs, mosaic, angular_tolerance, debug)
             print("### strips", strips)
         except AssertionError:
             print(f"### Failed to order mosaic")

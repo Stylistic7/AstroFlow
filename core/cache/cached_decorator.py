@@ -15,6 +15,9 @@ from protocols import CacheProtocol, ContentHashProtocol
 from cache.types import NeverRun
 
 
+from cache.context_ref import strip_refs
+
+
 T = TypeVar("T")
 
 
@@ -89,7 +92,7 @@ def make_cached_decorator(
                 return key, call_hash, False, None
 
             start_time = time.time()
-            cached = _resolve_cache()[key]
+            cached = strip_refs(_resolve_cache()[key])
             elapsed_time = time.time() - start_time
             if elapsed_time > 0.5:
                 debug_print(
@@ -100,9 +103,6 @@ def make_cached_decorator(
                 debug_print(
                     f"### cache key {key} contained large object, {size_mb:0.3f} MB"
                 )
-
-            if isinstance(cached, ContextRef):
-                assert cached.ref is None
 
             stored_hash = None
             try:
@@ -161,8 +161,7 @@ def make_cached_decorator(
             debug_print(
                 f"storing: {key} as {type(result)} into cache {_resolve_cache().directory}"
             )
-            # diskcache pickles the value; ContextRef.__reduce__ strips refs.
-            _resolve_cache()[key] = result
+            _resolve_cache()[key] = strip_refs(result)
 
             return result
 

@@ -81,7 +81,7 @@ def _populate_context(
 
     context.asiair_devices = []
     context.compute_graphs = [TopologicalSorterWithStatus(Graph())]
-    context.compute_graph_status = GraphStatus()
+    context.compute_graph_status = {}
 
     context.settings = Settings(
         development_settings=DevelopmentSettings(

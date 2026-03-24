@@ -56,7 +56,8 @@ class ContextActor:
         self.cache = get_cache()
 
     def get(self, key: Key, default_value: Any) -> ray.ObjectRef:
-        return self.cache.get(key, default_value)
+        from cache.context_ref import strip_refs
+        return strip_refs(self.cache.get(key, default_value))
 
     def get_matching(self, key_fragment: Key) -> ray.ObjectRef:
         return {
@@ -66,7 +67,8 @@ class ContextActor:
         }
 
     def set(self, key: Key, value: Any) -> None:
-        self.cache[key] = value
+        from cache.context_ref import strip_refs
+        self.cache[key] = strip_refs(value)
 
     def contains(self, key: Key) -> bool:
         return key in self.cache
@@ -79,24 +81,27 @@ class ContextActor:
         self, key: Key, value: Any, length_limit: int | None
     ) -> None:
         """Append value (a list) to an existing list at key."""
+        from cache.context_ref import strip_refs
         with self.cache.transact():
             old_value = self.cache.get(key, [])
             new_value = old_value + value
             if length_limit is not None:
                 new_value = new_value[-length_limit:]
-            self.cache[key] = new_value
+            self.cache[key] = strip_refs(new_value)
 
     def or_equals(self, key: Key, value: dict) -> None:
         """Merge value into a dict stored at key (dict |= value)."""
+        from cache.context_ref import strip_refs
         with self.cache.transact():
             old_value = self.cache.get(key, {})
             if not isinstance(old_value, dict):
                 old_value = {}
-            self.cache[key] = {**old_value, **value}
+            self.cache[key] = strip_refs({**old_value, **value})
 
     def set_many(self, items: dict) -> None:
+        from cache.context_ref import strip_refs
         for key, value in items.items():
-            self.cache[key] = value
+            self.cache[key] = strip_refs(value)
 
     def clear(self) -> None:
         self.cache.clear()

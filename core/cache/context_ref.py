@@ -40,10 +40,9 @@ class ContextRef:
         return context[self.cache_key]
 
     def __reduce__(self):
-        # Strip the ref when pickling. ObjectRefs cannot reliably survive
-        # serialization (ownership is lost in diskcache, and cross-process
-        # refs may be unresolvable). get() falls back to diskcache.
-        return (_reconstruct_context_ref, (self.cache_key, self.content_hash, None))
+        # Preserve the ref so it survives Ray task boundaries. The
+        # ContextActor strips refs before writing to diskcache.
+        return (_reconstruct_context_ref, (self.cache_key, self.content_hash, self.ref))
 
     def __hash__(self):
         return hash_list_int([self.content_hash])
@@ -84,6 +83,25 @@ class ContextRef:
         """
         content_hash = hash_list([obj])
         return cls.store(("large_object", content_hash), obj)
+
+
+def strip_refs(value: Any) -> Any:
+    """Strip ObjectRefs from ContextRefs in a value.
+
+    Use before writing to or after reading from diskcache. ObjectRefs are
+    session-scoped and cause "owner is unknown" errors when deserialized
+    from disk in a different session.
+    """
+    def strip(v):
+        return ContextRef(v.cache_key, v.content_hash) if isinstance(v, ContextRef) and v.ref is not None else v
+
+    if isinstance(value, ContextRef):
+        return strip(value)
+    if isinstance(value, dict):
+        return type(value)({k: strip(v) for k, v in value.items()})
+    if isinstance(value, (list, tuple)):
+        return type(value)(strip(v) for v in value)
+    return value
 
 
 def dict_content_hash(refs: dict[str, "ContextRef"]) -> str:

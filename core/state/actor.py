@@ -186,10 +186,14 @@ class StateActor:
         self, state: State, graph: Graph
     ) -> tuple[State, list[Action]]:
         def status_fn(status: GraphStatus):
-            # Fire-and-forget: update status without blocking the graph.
+            # Compute progress summary here — don't store the full
+            # GraphStatus, which carries Node objects with large args.
+            from dependency_graph.progress import graph_status_to_progress
+            progress = graph_status_to_progress(status)
+
             from context.context import _get_namespace
             actor = ray.get_actor("context", namespace=_get_namespace())
-            actor.set.remote("compute_graph_status", status)
+            actor.set.remote("compute_graph_status", progress)
 
             from web_server.backend.announcer import announce
             announce("compute_graph_status")

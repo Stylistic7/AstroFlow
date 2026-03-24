@@ -4,7 +4,6 @@ import json
 import subprocess
 
 from context import context
-from dependency_graph.progress import graph_status_to_progress
 
 compute_graphs_bp = Blueprint("compute_graphs", __name__)
 
@@ -21,10 +20,7 @@ def compute_graph():
 
 @compute_graphs_bp.route("/compute_graph_status")
 def compute_graph_status():
-    status = context.compute_graph_status
-    if status is None:
-        return {}
-    return graph_status_to_progress(status)
+    return context.compute_graph_status or {}
 
 
 @compute_graphs_bp.route("/workflow_graph/stack/<stack_id>")
