@@ -32,6 +32,75 @@ const monospaceSx = {
   lineHeight: 1.35,
 };
 
+const levelColors = {
+  debug: "text.disabled",
+  info: "text.primary",
+  warning: "warning.main",
+  error: "error.main",
+  critical: "error.dark",
+};
+
+const levelWeight = {
+  debug: 400,
+  info: 400,
+  warning: 600,
+  error: 600,
+  critical: 700,
+};
+
+const StructuredLogEntry = ({ entry }) => {
+  // entry is either a structlog dict or a plain string
+  if (typeof entry === "string") {
+    return <Typography sx={monospaceSx}>{entry}</Typography>;
+  }
+
+  const level = entry.level ?? "info";
+  const event = entry.event ?? "";
+  const timestamp = entry.timestamp ?? "";
+  const color = levelColors[level] ?? "text.primary";
+  const weight = levelWeight[level] ?? 400;
+
+  // Collect extra keys (everything except event, level, timestamp)
+  const extras = Object.entries(entry).filter(
+    ([k]) => !["event", "level", "timestamp"].includes(k)
+  );
+
+  return (
+    <Box sx={{ display: "flex", gap: 1, alignItems: "baseline", py: 0.25 }}>
+      {timestamp && (
+        <Typography sx={{ ...monospaceSx, color: "text.disabled", flexShrink: 0 }}>
+          {timestamp.split("T")[1]?.split(".")[0] ?? timestamp}
+        </Typography>
+      )}
+      <Chip
+        label={level.toUpperCase()}
+        size="small"
+        sx={{
+          height: 18,
+          fontSize: 10,
+          fontWeight: 600,
+          bgcolor: level === "debug" ? "action.hover" :
+                   level === "warning" ? "warning.light" :
+                   level === "error" || level === "critical" ? "error.light" :
+                   "info.light",
+          color: level === "error" || level === "critical" ? "error.contrastText" :
+                 level === "warning" ? "warning.contrastText" :
+                 "text.primary",
+        }}
+      />
+      <Typography sx={{ ...monospaceSx, color, fontWeight: weight, flex: 1 }}>
+        {event}
+        {extras.length > 0 && (
+          <Typography component="span" sx={{ ...monospaceSx, color: "text.secondary" }}>
+            {" "}
+            {extras.map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(" ")}
+          </Typography>
+        )}
+      </Typography>
+    </Box>
+  );
+};
+
 const StateChip = ({ state }) => {
   const { label, color, variant } = (() => {
     switch (state) {
@@ -113,7 +182,16 @@ export function NodeStatusDialog({ open, onClose, nodeId, nodeLabel }) {
   const stackTrace = details?.stack_trace ?? "";
 
   const logsArr = Array.isArray(details?.logs) ? details.logs : [];
-  const logText = useMemo(() => logsArr.map(String).join("\n"), [logsArr]);
+  const logText = useMemo(() => {
+    return logsArr.map(entry =>
+      typeof entry === "string" ? entry :
+      `${entry.timestamp ?? ""} [${(entry.level ?? "info").toUpperCase()}] ${entry.event ?? ""}` +
+      Object.entries(entry)
+        .filter(([k]) => !["event", "level", "timestamp"].includes(k))
+        .map(([k, v]) => ` ${k}=${JSON.stringify(v)}`)
+        .join("")
+    ).join("\n");
+  }, [logsArr]);
 
   const hasException = Boolean(stackTrace || exceptionMessage);
   const hasLog = logText.length > 0;
@@ -367,10 +445,14 @@ export function NodeStatusDialog({ open, onClose, nodeId, nodeLabel }) {
                     </Typography>
                   </Stack>
 
-                  <Paper variant="outlined" sx={{ p: 1.5, bgcolor: "background.default" }}>
-                    <Typography component="pre" sx={monospaceSx}>
-                      {hasLog ? logText : "No log output."}
-                    </Typography>
+                  <Paper variant="outlined" sx={{ p: 1.5, bgcolor: "background.default", maxHeight: 300, overflow: "auto" }}>
+                    {hasLog ? (
+                      logsArr.map((entry, i) => <StructuredLogEntry key={i} entry={entry} />)
+                    ) : (
+                      <Typography sx={monospaceSx} color="text.secondary">
+                        No log output.
+                      </Typography>
+                    )}
                   </Paper>
                 </AccordionDetails>
               </Accordion>

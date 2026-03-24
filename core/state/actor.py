@@ -198,7 +198,9 @@ class StateActor:
             from web_server.backend.announcer import announce
             announce("compute_graph_status")
 
-        # TODO: Should `state` be updated?
+        from dependency_graph.workflow_graph_adapter import store_node_status
+        graph.node_status_fn = store_node_status
+
         run_graph(
             graph,
             status_fn=status_fn,
