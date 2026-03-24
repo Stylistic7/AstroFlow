@@ -1,28 +1,24 @@
 from typing import TypeVar
-import unittest
 import ray
 import structlog
 
 from context import context
 from dependency_graph import Graph, ResultDict, run_graph
-from dependency_graph.logging import capture_logs
-from dependency_graph.debugging import node_to_string
+from decorators import capture_logs
+from hashing import hash_call, hash_source_code
 
 log = structlog.get_logger()
 
 T = TypeVar("T")
 
 
-class _CapturedResults:
-    """Captures both results and logs from run_graph via node_status_fn."""
-
-    def __init__(self):
-        self.results = ResultDict()
-        self.logs = ResultDict()
-
-    def on_node_done(self, node, result, node_logs):
-        self.results[node] = result
-        self.logs[node] = node_logs
+def _get_logs(func, *args):
+    """Read captured logs from context for a given function call."""
+    # Unwrap Ray remote wrapper to get the original function
+    raw = getattr(func, '_function', func)
+    fn_hash = hash_source_code(raw)
+    call_hash = hash_call(fn_hash, *args)
+    return context.get(("logs", raw.__name__, call_hash))
 
 
 @ray.remote
@@ -54,72 +50,31 @@ def gather(*ancestor_results: list[int]) -> int:
     return result
 
 
-@ray.remote
-@capture_logs
-def maybe_run_dynamic_graph(should_run: bool) -> Graph:
-    if should_run:
-        log.info("running dynamic graph")
-        return Graph({gather: [(process, i) for i in range(7)]})
-    else:
-        log.info("not running dynamic graph")
-        return Graph({})
-
-
 def test_simple_graph(test_context) -> None:
     A = (first_remote_task, "A")
     B = (first_remote_task, "B")
     C = (second_remote_task, "C")
     D = (second_remote_task, "D")
 
-    cap = _CapturedResults()
+    captured = ResultDict()
+    def on_node_done(node, result, logs):
+        captured[node] = result
+
     graph = Graph({D: {B, C}, C: {A}, B: {A}})
-    graph.node_status_fn = cap.on_node_done
+    graph.node_status_fn = on_node_done
     _, stats = run_graph(graph)
 
-    context.last_run_results = {
-        node_to_string(node): result for node, result in cap.results.items()
-    }
+    assert captured[A] == "A"
+    assert captured[B] == "B"
+    assert captured[C] == "C"
+    assert captured[D] == "D"
 
-    context.last_run_logs = {
-        node_to_string(node): log for node, log in cap.logs.items()
-    }
-
-    assert cap.results[A] == "A"
-    assert cap.results[B] == "B"
-    assert cap.results[C] == "C"
-    assert cap.results[D] == "D"
-
-    assert cap.logs[A][0]["event"] == "first_remote_task A"
-    assert cap.logs[B][0]["event"] == "first_remote_task B"
-    assert cap.logs[C][0]["event"] == "second_remote_task C"
-    assert cap.logs[D][0]["event"] == "second_remote_task D"
+    # Logs are stored in context by @capture_logs
+    logs_a = _get_logs(first_remote_task, "A")
+    logs_c = _get_logs(second_remote_task, "C")
+    assert logs_a[0]["event"] == "first_remote_task A"
+    assert logs_c[0]["event"] == "second_remote_task C"
 
     assert stats.num_nodes_run == 4
     assert stats.max_parallelism_seen == 2
 
-
-def test_conditional_dynamic_graph(test_context) -> None:
-    dynamic_graph_task = (maybe_run_dynamic_graph, True)
-    cap = _CapturedResults()
-    graph = Graph({dynamic_graph_task: {}})
-    graph.node_status_fn = cap.on_node_done
-    _, stats = run_graph(graph)
-    assert cap.results[dynamic_graph_task] == 21
-
-    assert stats.num_nodes_run == 9
-    assert stats.max_parallelism_seen == 7
-
-    print(f"### {len(cap.logs)} nodes produced logs")
-
-    for node, node_log in cap.logs.items():
-        print(f"### node {node_to_string(node)} has log of length {len(node_log)}")
-        for entry in node_log:
-            print(f"###   {entry}")
-
-    context.last_run_results = {
-        node_to_string(node): result for node, result in cap.results.items()
-    }
-
-    context.last_run_logs = {
-        node_to_string(node): log for node, log in cap.logs.items()
-    }

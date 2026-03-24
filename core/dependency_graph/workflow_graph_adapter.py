@@ -6,6 +6,7 @@ import ray
 from pathlib import Path
 
 from dependency_graph import Node, TopologicalSorterWithStatus, Skipped
+from cache.types import NeverRun
 from context import context
 from file_io.types import WithSidecar
 
@@ -41,14 +42,16 @@ def gather_group_meta(
     subgraphs_by_parent: dict[Node, TopologicalSorterWithStatus],
 ) -> dict[str, dict]:
     def state_string(ts, node):
-        if node not in ts.node_states:
-            return "NO_STATE_RUNTIME"
-        state = ts.node_states[node]
-        if state is Skipped:
-            return "SKIPPED"
-        if isinstance(state, Exception):
-            return "FAILED"
-        return "SUCCEEDED"
+        result = ts.results.get(node, NeverRun)
+        return (
+            "NO_STATE_RUNTIME"
+            if result == NeverRun
+            else "SKIPPED"
+            if result == Skipped
+            else "FAILED"
+            if isinstance(result, Exception)
+            else "SUCCEEDED"
+        )
 
     def subgraph_contains_exception(ts, node):
         if node in subgraphs_by_parent:
@@ -58,7 +61,7 @@ def gather_group_meta(
             ):
                 return True
 
-        return isinstance(ts.node_states.get(node), Exception)
+        return isinstance(ts.results.get(node, NeverRun), Exception)
 
     def recurse(ts: TopologicalSorterWithStatus, node: Node):
         # TODO: Split this out as an independent function -- it may get complex.

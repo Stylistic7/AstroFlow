@@ -14,7 +14,16 @@ from stacks.composite_stack import CompositeStacksDict
 from targets.types import Target, TargetHash, TargetsDict
 from mosaics.identification import identify_mosaics
 from attributes.astrometric_attributes import healpix_cells_from_poly
+from cache.context_ref import ContextRef
 from units import Degrees, Radians, ArcsecondsPerPixel
+
+
+def _make_targets_dict(*targets):
+    """Wrap Target objects in ContextRefs and return a TargetsDict."""
+    return TargetsDict({
+        t.stable_hash: ContextRef.store(("targets", t.stable_hash), t)
+        for t in targets
+    })
 
 
 @pytest.mark.heavy
@@ -63,7 +72,7 @@ def test_two_targets(test_context) -> None:
             for i in range(6)
         }
     )
-    context.targets = TargetsDict({foo.stable_hash: foo, bar.stable_hash: bar})
+    context.targets = _make_targets_dict(foo, bar)
 
     mosaics = ray.get(
         identify_mosaics.remote(context.settings.clustering_settings.angular_tolerance, context.targets)
@@ -144,13 +153,7 @@ def test_three_targets(test_context) -> None:
             for i in range(9)
         }
     )
-    context.targets = TargetsDict(
-        {
-            foo.stable_hash: foo,
-            bar.stable_hash: bar,
-            baz.stable_hash: baz,
-        }
-    )
+    context.targets = _make_targets_dict(foo, bar, baz)
 
     mosaics = ray.get(
         identify_mosaics.remote(context.settings.clustering_settings.angular_tolerance, context.targets)
@@ -234,13 +237,7 @@ def test_three_out_of_order_targets(test_context) -> None:
             for i in range(9)
         }
     )
-    context.targets = TargetsDict(
-        {
-            foo.stable_hash: foo,
-            bar.stable_hash: bar,
-            baz.stable_hash: baz,
-        }
-    )
+    context.targets = _make_targets_dict(foo, bar, baz)
 
     mosaics = ray.get(
         identify_mosaics.remote(context.settings.clustering_settings.angular_tolerance, context.targets)
@@ -335,14 +332,7 @@ def test_three_targets_and_an_outlier(test_context) -> None:
             for i in range(12)
         }
     )
-    context.targets = TargetsDict(
-        {
-            foo.stable_hash: foo,
-            bar.stable_hash: bar,
-            baz.stable_hash: baz,
-            outlier.stable_hash: outlier,
-        }
-    )
+    context.targets = _make_targets_dict(foo, bar, baz, outlier)
 
     mosaics = ray.get(
         identify_mosaics.remote(context.settings.clustering_settings.angular_tolerance, context.targets)
@@ -420,12 +410,7 @@ def test_ic1318(test_context) -> None:
             for i in range(6)
         }
     )
-    context.targets = TargetsDict(
-        {
-            foo.stable_hash: foo,
-            bar.stable_hash: bar,
-        }
-    )
+    context.targets = _make_targets_dict(foo, bar)
 
     mosaics = ray.get(
         identify_mosaics.remote(context.settings.clustering_settings.angular_tolerance, context.targets)

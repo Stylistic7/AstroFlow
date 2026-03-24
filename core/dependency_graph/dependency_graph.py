@@ -128,10 +128,14 @@ def _make_subgraph(
             return
 
         if parent_node is not None:
-            _handle_node_done(
-                parent_ts, parent_node,
-                subgraph_ts.final_result, subgraph_ts.logs,
-            )
+            parent_ts.done(parent_node)
+            parent_ts.results[parent_node] = subgraph_ts.final_result
+            parent_ts.logs[parent_node] = subgraph_ts.logs
+
+            if parent_ts.node_status_fn is not None:
+                parent_ts.node_status_fn(
+                    parent_node, subgraph_ts.final_result, subgraph_ts.logs
+                )
 
         parent_ts.final_result = subgraph_ts.final_result
 
@@ -167,7 +171,6 @@ def _handle_finished_subgraphs(subgraphs) -> None:
             if ts.done_callback:
                 ts.done_callback()
                 ts.done_callback = None
-            ts.results.clear()
 
 
 def _ancestor_results(
@@ -227,12 +230,6 @@ def _handle_node_done(
     ts.results[node] = result
     # Lightweight state: Skipped sentinel, Exception instance, or None for success.
     # Absence from dict means not yet run.
-    if result is Skipped:
-        ts.node_states[node] = Skipped
-    elif isinstance(result, Exception):
-        ts.node_states[node] = result
-    else:
-        ts.node_states[node] = None
     ts.logs[node] = logs
     # TODO: complete_args is only used to call filename_fn by the workflow
     # graph adapter, but we should be able to call it directly here, and not
