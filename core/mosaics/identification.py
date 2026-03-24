@@ -25,6 +25,7 @@ from mosaics.debugging import (
 from mosaics.disjoint_set import HashDisjointSet
 from mosaics.overlap import Overlap
 from decorators import cached
+from dependency_graph.logging import capture_logs
 from attributes import AstrometricAttributes, ChronologyAttributes
 from attributes.astrometric_attributes import healpix_cells_from_poly
 from cache.context_ref import ContextRef
@@ -230,7 +231,7 @@ def group_targets(
                 )
             )
             if overlap in allowed_overlaps:
-                print(f"### union {a=} {b=} with overlap {overlap}")
+                log.debug("Union", a=a[:8], b=b[:8], overlap=str(overlap))
                 disjoint_set.union(a, b)
 
     mosaics = disjoint_set.groups()
@@ -257,7 +258,7 @@ def find_strips(
     )
     if debug:
         for i, strip in enumerate(strips):
-            print(f"### Strip {i} is {strip}")
+            log.debug("Strip", index=i, strip=strip)
         plot_targets_and_footprint(resolved, target_ids, None, title="Mosaic")
 
     # TODO: Maybe use this same algorithm to order the strips themselves to make
@@ -285,7 +286,7 @@ def find_strips(
             )
 
         overlap_counts = {tid: overlap_count(tid) for tid in strip}
-        print(f"### overlap_counts {overlap_counts}")
+        log.debug("Overlap counts", counts=overlap_counts)
         assert set(overlap_counts.values()) == {1, 2}
         ones = [k for k, v in overlap_counts.items() if v == 1]
         assert len(ones) == 2
@@ -294,7 +295,7 @@ def find_strips(
         output_strip = [end_target_id]
         strip.remove(end_target_id)
         while len(output_strip) < strip_length:
-            print(f"### order_strip len(output_strip) {len(output_strip)}")
+            log.debug("Ordering strip", progress=len(output_strip))
             starting_length = len(output_strip)
             for target_id in strip:
                 overlap = ray.get(
@@ -305,15 +306,12 @@ def find_strips(
                 )
                 if overlap == Overlap.LONG_EDGE:
                     if debug:
-                        print(f"### added {target_id} to strip")
+                        log.debug("Added to strip", target_id=target_id[:8])
                     output_strip.append(target_id)
                     strip.remove(target_id)
                     break
                 else:
-                    print(
-                        f"### end of strip target {output_strip[-1]} "
-                        f"has overlap {overlap} with target {target_id}"
-                    )
+                    log.debug("End of strip", target=output_strip[-1][:8], overlap=str(overlap))
 
             assert len(output_strip) != starting_length, (
                 "### order_strip did not make progress"
@@ -324,11 +322,10 @@ def find_strips(
 
     output_strips = []
     for i, strip in enumerate(strips):
-        print(f"### Ordering strip {i} / {len(strips)}")
+        log.debug("Ordering strip", index=i, total=len(strips))
         ordered_strip = order_strip(set(strip))
         if debug:
-            print(f"### before ordering, strip is {strip}")
-            print(f"### after ordering, strip is {ordered_strip}")
+            log.debug("Strip ordering", before=strip, after=ordered_strip)
         output_strips.append(ordered_strip)
 
     # TODO: This is a bit of a hack. Consider more principled ways of sorting
@@ -378,7 +375,7 @@ def _identify_overlapping_targets(
 
     mosaics = [sorted(m) for m in mosaics if len(m) > 1]
     for mosaic in mosaics:
-        print(f"### Group of {len(mosaic)} overlapping targets:", mosaic)
+        log.info("Overlapping target group", num_targets=len(mosaic))
 
     return mosaics
 
@@ -388,24 +385,19 @@ def identify_mosaics(
     angular_tolerance: Radians, targets: dict[str, ContextRef], debug: bool = False
 ) -> MosaicsDict:
     resolved: dict[str, Target] = {k: ref.get() for k, ref in targets.items()}
-    print(f"### Identifying mosaics from {len(resolved)} targets")
-    for k, t in list(resolved.items())[:5]:
-        print(f"###   target {k}: center={t.center}, healpix_cells={t.healpix_cells[:5]}{'...' if len(t.healpix_cells) > 5 else ''}")
+    log.info("Identifying mosaics", num_targets=len(resolved))
 
     mosaics = _identify_overlapping_targets(targets, angular_tolerance, debug)
     if not mosaics:
-        print("### No overlapping targets found")
+        log.info("No overlapping targets found")
         return MosaicsDict({})
 
-    print(f"Found {len(mosaics)} mosaics")
+    log.info("Found mosaics", num_mosaics=len(mosaics))
 
     # TODO: Parallelize these
     output_mosaics = MosaicsDict()
     for i, mosaic in enumerate(mosaics):
-        print(
-            f"### Processing mosaic {i} / {len(mosaics)} "
-            f"with {len(mosaic)} targets: {mosaic}"
-        )
+        log.info("Processing mosaic", index=i, total=len(mosaics), num_targets=len(mosaic))
 
         stable_hash = resolved[
             sorted(mosaic, key=lambda t: resolved[t].oldest_date)[0]
@@ -428,25 +420,16 @@ def identify_mosaics(
         try:
             mosaic_refs = {k: targets[k] for k in mosaic}
             strips = find_strips(mosaic_refs, mosaic, angular_tolerance, debug)
-            print("### strips", strips)
+            log.debug("Ordered strips", num_strips=len(strips))
         except AssertionError:
-            print(f"### Failed to order mosaic")
+            log.warning("Failed to order mosaic", stable_hash=stable_hash)
             continue
-
-        for target_id in mosaic:
-            print(
-                f"### Target {target_id} "
-                f"has {len(resolved[target_id].footprint.points)} points"
-            )
 
         all_points = [
             resolved[target_id].footprint.points[:-1] for target_id in mosaic
         ]
         all_points = np.concatenate(all_points)
-        print(
-            f"### Mosaic composed of {len(mosaic)} targets "
-            f"and {all_points.shape} points"
-        )
+        log.debug("Computing convex hull", num_targets=len(mosaic), num_points=all_points.shape[0])
         footprint = SingleSphericalPolygon.convex_hull(all_points)
 
         healpix_cells = healpix_cells_from_poly(footprint)
@@ -457,10 +440,6 @@ def identify_mosaics(
                 random.shuffle(points)
                 footprint = SingleSphericalPolygon.convex_hull(points)
             else:
-                print(
-                    f"### convex_hull successful after {i} iterations "
-                    f"with {len(footprint.points)} points"
-                )
                 break
 
         projected_footprints = frozendict(footprints.all_projections(footprint))
@@ -493,7 +472,7 @@ def identify_mosaics(
         )
 
         output_mosaic = Mosaic(**attributes)
-        print(f"### Made output_mosaic {output_mosaic}")
+        log.info("Made mosaic", name=name, stable_hash=stable_hash, num_targets=len(mosaic))
 
         if debug:
             plot_mosaic(

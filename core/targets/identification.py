@@ -1,4 +1,5 @@
 import numpy as np
+import structlog
 from typing import Iterator
 from beartype import beartype
 
@@ -7,14 +8,17 @@ from targets.types import Target, TargetsDict
 from customization.types import CustomizedStacksDict
 from stacks.types import StackHash
 from decorators import cached
+from dependency_graph.logging import capture_logs
 from cache.context_ref import ContextRef
+
+log = structlog.get_logger()
 
 
 @cached.remote
 def identify_targets(
     angular_tolerance: float, stacks: CustomizedStacksDict
 ) -> TargetsDict:
-    print(f"### identify_targets stacks {list(stacks.keys())}")
+    log.info("Identifying targets", num_stacks=len(stacks))
 
     # Resolve all ContextRefs once up-front for efficient access
     resolved = {k: ref.get() for k, ref in stacks.items()}
@@ -77,10 +81,7 @@ def identify_targets(
                         ("targets", new_target.stable_hash), new_target
                     )
                 except ValueError:
-                    print(
-                        f"### WARNING: Failed to create target from "
-                        f"stacks {rotation_stacks}"
-                    )
+                    log.warning("Failed to create target", stacks=rotation_stacks)
 
-    print(f"### identify_targets done, returning {len(new_targets)} targets")
+    log.info("Identified targets", num_targets=len(new_targets))
     return new_targets

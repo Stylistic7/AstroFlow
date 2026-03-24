@@ -1,4 +1,5 @@
 import math
+import structlog
 import ray
 import numpy as np
 from beartype import beartype
@@ -9,6 +10,7 @@ import clustering
 from stacks.composite_stack import CompositeStack, CompositeStacksDict
 from metadata.classes import FrameHash, MetadataDict
 from decorators import cached
+from dependency_graph.logging import capture_logs
 from cache.context_ref import ContextRef
 from context import context
 from customization.decisions import (
@@ -17,6 +19,9 @@ from customization.decisions import (
     BinaryChoice,
     ObjectType,
 )
+
+
+log = structlog.get_logger()
 
 
 @cached.remote
@@ -28,9 +33,7 @@ def identify_stacks(
     min_frames_in_stack: int,
     max_run_gap,
 ) -> CompositeStacksDict:
-    print(
-        f"### identify_stacks running for spatial group of length {len(light_frames)}"
-    )
+    log.info("Identifying stacks", num_frames=len(light_frames))
     metadata_in = metadata_ref.get()
 
     # TODO: Maybe implement a version of cluster_continuous() that repeatedly
@@ -124,7 +127,7 @@ def identify_stacks(
     if detected_decisions:
         context.or_equals("decisions", detected_decisions)
 
-    print(f"### identify_stacks done, returning {len(new_stacks)} stacks")
+    log.info("Identified stacks", num_stacks=len(new_stacks))
     return new_stacks
 
 
