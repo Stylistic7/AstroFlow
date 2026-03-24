@@ -57,8 +57,8 @@ def roughly_same_position_angle(
 
 @cached.remote
 def targets_overlap(
-    a_target_ref: ContextRef,
-    b_target_ref: ContextRef,
+    a_target_ref: ContextRef[Target],
+    b_target_ref: ContextRef[Target],
     min_area_frac: float = 0.03,
     span_match: float = 0.75,
     thick_min: float = 0.1,
@@ -200,7 +200,7 @@ def targets_overlap(
 
 @beartype
 def group_targets(
-    target_refs: dict[TargetHash, ContextRef],
+    target_refs: dict[TargetHash, ContextRef[Target]],
     target_ids: list[TargetHash],
     allowed_overlaps: list[Overlap],
     angular_tolerance: Radians,
@@ -246,7 +246,7 @@ def group_targets(
 
 @beartype
 def find_strips(
-    target_refs: dict[TargetHash, ContextRef],
+    target_refs: dict[TargetHash, ContextRef[Target]],
     target_ids: list[TargetHash],
     angular_tolerance: Radians,
     debug: bool = False,
@@ -341,7 +341,7 @@ def find_strips(
 
 @beartype
 def _identify_overlapping_targets(
-    target_refs: dict[TargetHash, ContextRef],
+    target_refs: dict[TargetHash, ContextRef[Target]],
     angular_tolerance: Radians,
     debug: bool = False,
 ) -> list[list[TargetHash]]:
@@ -381,7 +381,7 @@ def _identify_overlapping_targets(
 
 @node
 def identify_mosaics(
-    angular_tolerance: Radians, targets: dict[str, ContextRef], debug: bool = False
+    angular_tolerance: Radians, targets: dict[TargetHash, ContextRef[Target]], debug: bool = False
 ) -> MosaicsDict:
     resolved: dict[str, Target] = {k: ref.get() for k, ref in targets.items()}
     log.info("Identifying mosaics", num_targets=len(resolved))
@@ -411,7 +411,7 @@ def identify_mosaics(
             )
 
         oldest_date = min(resolved[t].oldest_date for t in mosaic)
-        newest_date = min(resolved[t].newest_date for t in mosaic)
+        newest_date = max(resolved[t].newest_date for t in mosaic)
 
         image_scale = ArcsecondsPerPixel(np.mean([resolved[t].image_scale for t in mosaic]))
         rotation_angle = Radians(np.mean([resolved[t].rotation_angle for t in mosaic]))

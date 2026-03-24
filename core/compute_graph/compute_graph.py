@@ -4,6 +4,7 @@ from beartype import beartype
 
 from context import context
 from cache.context_ref import ContextRef
+from metadata.classes import MetadataDict
 from metadata.image_metadata import scatter_compute_image_metadata
 from clustering import cluster_by_image_center
 from calibration import (
@@ -118,7 +119,7 @@ def combine_dicts(*ancestor_results: dict[Any, Any]) -> dict[Any, Any]:
 
 @ray.remote
 def scatter_spatial_groups(
-    metadata_ref: ContextRef, settings: Settings, spatial_groups
+    metadata_ref: ContextRef[MetadataDict], settings: Settings, spatial_groups
 ) -> Graph:
     cs = settings.clustering_settings
 
@@ -207,7 +208,7 @@ def scatter_spatial_groups(
 
 @ray.remote
 @beartype
-def build_regroup_graph(metadata_ref: ContextRef) -> Graph:
+def build_regroup_graph(metadata_ref: ContextRef[MetadataDict]) -> Graph:
     settings = context.settings
     cs = settings.clustering_settings
     cluster_by_image_center_task = (

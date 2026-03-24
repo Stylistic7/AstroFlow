@@ -7,6 +7,7 @@ from geometry import footprints
 import plate_solving
 from decorators import cached
 from cache.context_ref import ContextRef
+from metadata.classes import MetadataDict
 
 T = TypeVar("T")
 ComparisonFn = Callable[[T, T], bool]
@@ -53,7 +54,7 @@ def find_groups(
 
 
 @cached.remote
-def cluster_by_image_center(metadata_ref: ContextRef, cosine_similarity_threshold: float, min_component_members: int) -> list[tuple[str, ...]]:
+def cluster_by_image_center(metadata_ref: ContextRef[MetadataDict], cosine_similarity_threshold: float, min_component_members: int) -> list[tuple[str, ...]]:
     metadata = metadata_ref.get()
 
     def get_centroid(center: Sequence[float]) -> np.ndarray:

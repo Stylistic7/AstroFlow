@@ -61,7 +61,7 @@ def store_customized_stack(stack: CustomizedStack) -> None:
 # TODO: Add tests in test_customization.py
 @cached.remote
 def customize_stack(
-    stack_ref: ContextRef,
+    stack_ref: ContextRef[CompositeStack],
     cal_stacks: SimpleStacksDict,
     stack_settings: StackSettings,
     decision_overrides: frozendict,

@@ -25,7 +25,7 @@ log = structlog.get_logger()
 
 @node
 def identify_stacks(
-    metadata_ref: ContextRef,
+    metadata_ref: ContextRef[MetadataDict],
     angular_tolerance: float,
     light_frames: tuple[FrameHash, ...],
     min_frames_in_stack: int,

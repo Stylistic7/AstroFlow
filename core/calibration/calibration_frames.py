@@ -18,11 +18,12 @@ from stacks.simple_stack import (
 from stacks.composite_stack import CompositeStack, SimpleStacksDict
 import clustering
 from cache.context_ref import ContextRef
+from metadata.classes import MetadataDict
 from beartype import beartype
 
 
 @cached.remote
-def identify_calibration_stacks(metadata_ref: ContextRef, max_run_gap) -> SimpleStacksDict:
+def identify_calibration_stacks(metadata_ref: ContextRef[MetadataDict], max_run_gap) -> SimpleStacksDict:
     print(f"Identifying calibration stacks...")
     metadata = metadata_ref.get()
 
