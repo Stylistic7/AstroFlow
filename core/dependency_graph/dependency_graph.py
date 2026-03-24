@@ -31,6 +31,30 @@ def _ray_object_count() -> int:
     worker = ray._private.worker.global_worker
     return len(worker.core_worker.get_all_reference_counts())
 
+
+def _ray_object_store_duplicates() -> dict[tuple[str, str], int]:
+    """Find duplicate ContentHashed objects in the Ray object store.
+
+    Returns a dict of (type_name, content_hash) -> count for any
+    objects that appear more than once.
+    """
+    from cache.content_hashed import ContentHashed
+
+    worker = ray._private.worker.global_worker
+    counts = worker.core_worker.get_all_reference_counts()
+    seen: dict[tuple[str, str], int] = {}
+    for obj_id_bytes in counts:
+        obj_ref = ray.ObjectRef(bytes.fromhex(obj_id_bytes.decode()))
+        try:
+            obj = ray.get(obj_ref, timeout=5)
+        except Exception:
+            continue
+        if isinstance(obj, ContentHashed) and obj.content_hash:
+            key = (type(obj).__name__, obj.content_hash)
+            seen[key] = seen.get(key, 0) + 1
+    return {k: v for k, v in seen.items() if v > 1}
+
+
 StatusFn = Callable[[GraphStatus], Any]
 
 
@@ -331,9 +355,16 @@ def run_graph(
                 if trace:
                     trace_list.append(node)
                 if debug:
+                    obj_count = _ray_object_count()
+                    dupes = _ray_object_store_duplicates()
+                    dupe_str = (
+                        " DUPLICATES: " + ", ".join(
+                            f"{t}({h[:8]}) x{c}" for (t, h), c in dupes.items()
+                        )
+                    ) if dupes else ""
                     print(
                         f"Task {node.task._function.__name__} finished "
-                        f"(ray_objects={_ray_object_count()})"
+                        f"(ray_objects={obj_count}){dupe_str}"
                     )
                 num_nodes_run += 1
                 try:

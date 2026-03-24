@@ -38,17 +38,10 @@ def _ray_object_store_types() -> Counter:
     return Counter(type(obj).__name__ for obj in _ray_objects())
 
 
-def _check_no_duplicates(objects: list) -> None:
+def _check_no_duplicates() -> None:
     """Assert no duplicate ContentHashed objects in the Ray object store."""
-    from cache.content_hashed import ContentHashed
-
-    seen = {}  # (type_name, content_hash) -> count
-    for obj in objects:
-        if isinstance(obj, ContentHashed) and obj.content_hash:
-            key = (type(obj).__name__, obj.content_hash)
-            seen[key] = seen.get(key, 0) + 1
-
-    duplicates = {k: v for k, v in seen.items() if v > 1}
+    from dependency_graph.dependency_graph import _ray_object_store_duplicates
+    duplicates = _ray_object_store_duplicates()
     assert not duplicates, (
         f"Duplicate objects in Ray store: "
         + ", ".join(f"{t}({h[:8]}...) x{c}" for (t, h), c in duplicates.items())
@@ -80,7 +73,7 @@ def test_step1_metadata_only(test_context):
     _setup(test_context)
     run_graph(Graph({scatter_compute_image_metadata: {}}))
     objects = _ray_objects()
-    _check_no_duplicates(objects)
+    _check_no_duplicates()
     types = Counter(type(obj).__name__ for obj in objects)
     print(f"\nAfter metadata: {sum(types.values())} {dict(types.most_common())}")
 
@@ -90,7 +83,7 @@ def test_step2_metadata_and_regroup(test_context):
     _setup(test_context)
     run_graph(Graph({**chain(scatter_compute_image_metadata, build_regroup_graph)}))
     objects = _ray_objects()
-    _check_no_duplicates(objects)
+    _check_no_duplicates()
     types = Counter(type(obj).__name__ for obj in objects)
     print(f"\nAfter regroup: {sum(types.values())} {dict(types.most_common())}")
     assert len(context.stacks or {}) == 9
@@ -108,7 +101,7 @@ def test_step3_with_preview(test_context):
         build_preview_graph,
     )}))
     objects = _ray_objects()
-    _check_no_duplicates(objects)
+    _check_no_duplicates()
     types = Counter(type(obj).__name__ for obj in objects)
     print(f"\nAfter preview: {sum(types.values())} {dict(types.most_common())}")
     assert len(context.stacks or {}) == 9
@@ -131,7 +124,7 @@ def test_step4_full_graph_with_snapshots(test_context):
         total = sum(types.values())
         summary = ", ".join(f"{t}:{c}" for t, c in types.most_common())
         snapshots.append((key, total, summary))
-        _check_no_duplicates(objects)
+        _check_no_duplicates()
 
     graph = build_compute_graph()
     graph.node_status_fn = on_node_done
