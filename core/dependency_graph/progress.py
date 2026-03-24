@@ -1,6 +1,5 @@
 from typing import Any
 from collections import Counter
-import time
 
 from dependency_graph import GraphStatus
 from profiling.estimate_time import estimate_time
@@ -21,9 +20,6 @@ def graph_status_to_progress(status: GraphStatus) -> dict[str, Any]:
     done_task_counts = Counter(
         node.task._function.__name__ for node in status.done_nodes
     )
-
-    print(f"### remaining_task_counts {remaining_task_counts}")
-    print(f"### done_task_counts {done_task_counts}")
 
     status_dict = {}
     for fn_name in set(remaining_task_counts.keys()) | set(done_task_counts.keys()):

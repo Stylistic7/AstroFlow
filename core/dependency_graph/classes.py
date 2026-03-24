@@ -301,11 +301,11 @@ class GraphStatus:
     waiting_nodes: list[Node] = field(default_factory=list)
 
     def __add__(self, rhs: "GraphStatus") -> "GraphStatus":
-        self.done_nodes += rhs.done_nodes
-        self.ready_nodes += rhs.ready_nodes
-        self.waiting_nodes += rhs.waiting_nodes
-
-        return self
+        return GraphStatus(
+            done_nodes=self.done_nodes + rhs.done_nodes,
+            ready_nodes=self.ready_nodes + rhs.ready_nodes,
+            waiting_nodes=self.waiting_nodes + rhs.waiting_nodes,
+        )
 
 
 @dataclass

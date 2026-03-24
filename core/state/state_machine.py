@@ -23,7 +23,7 @@ from state.ray_control import (
 from state.astroflow_zeroconf import AstroFlowZeroconf
 from asiair.asiair_zeroconf import ASIAIRZeroconf
 from state.types import State, Action
-from dependency_graph import Graph, GraphStatus, TopologicalSorterWithStatus
+from dependency_graph import Graph, TopologicalSorterWithStatus
 from previews.types import QualityLevel
 
 T = TypeVar("T")
