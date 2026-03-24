@@ -132,7 +132,7 @@ class CompositeStack(
         )
 
 
-class CompositeStacksDict(dict[str, ContextRef]):
+class CompositeStacksDict(dict[StackHash, ContextRef["CompositeStack"]]):
     def __hash__(self):
         from cache.context_ref import dict_content_hash
         return hash_list_int([dict_content_hash(self)])

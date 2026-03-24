@@ -1,6 +1,8 @@
 import ray
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Generic, TypeVar
+
+T = TypeVar("T")
 
 from hashing.hashing import hash_list, hash_list_int
 
@@ -14,7 +16,7 @@ def _reconstruct_context_ref(
 
 
 @dataclass
-class ContextRef:
+class ContextRef(Generic[T]):
     """A lightweight reference to a value in context (diskcache + Ray object store).
 
     Carries a content_hash for cheap cache key computation, and an optional
@@ -30,7 +32,7 @@ class ContextRef:
     content_hash: str
     ref: ray.ObjectRef | None = None
 
-    def get(self) -> Any:
+    def get(self) -> T:
         if self.ref is not None:
             try:
                 return ray.get(self.ref, timeout=5)
@@ -56,7 +58,7 @@ class ContextRef:
         return NotImplemented
 
     @classmethod
-    def store(cls, cache_key: Any, obj: Any) -> "ContextRef":
+    def store(cls, cache_key: Any, obj: T) -> "ContextRef[T]":
         """Store obj in context (diskcache) and the Ray object store.
 
         Uses obj.content_hash if the object already carries one (i.e. it is a
@@ -104,7 +106,7 @@ def strip_refs(value: Any) -> Any:
     return value
 
 
-def dict_content_hash(refs: dict[str, "ContextRef"]) -> str:
+def dict_content_hash(refs: dict[str, "ContextRef[Any]"]) -> str:
     """Stable content hash for a dict of ContextRefs.
 
     Pure in-memory — reads no values from diskcache or the ContextActor.

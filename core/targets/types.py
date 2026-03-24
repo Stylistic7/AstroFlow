@@ -59,7 +59,7 @@ class Target(
     # TODO: Add a valid() method, and assert on it.
 
 
-class TargetsDict(dict[str, ContextRef]):
+class TargetsDict(dict[TargetHash, ContextRef["Target"]]):
     def __hash__(self):
         from cache.context_ref import dict_content_hash
         return hash_list_int([dict_content_hash(self)])
