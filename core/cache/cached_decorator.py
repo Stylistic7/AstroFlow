@@ -79,9 +79,10 @@ def make_cached_decorator(
         if debug:
             print(*args, **kwargs)
 
-    def decorate(func: Callable, ray_opts: dict) -> Callable:
+    def decorate(func: Callable, ray_opts: dict, apply_beartype: bool = True) -> Callable:
         fn_hash = hash_source_code(func)
-        func = _beartype(func)
+        if apply_beartype:
+            func = _beartype(func)
 
         def _get_cache_key_and_result(bound):
             call_hash = call_hasher(fn_hash, *bound.args, **bound.kwargs)
@@ -145,6 +146,14 @@ def make_cached_decorator(
             start_time = time.time()
             result = func(*bound.args, **bound.kwargs)
             elapsed_time = time.time() - start_time
+
+            # Split off captured logs if present (from @capture_logs).
+            logs = None
+            if isinstance(result, tuple) and len(result) == 2:
+                from dependency_graph.logging import LogContainer
+                if isinstance(result[0], LogContainer):
+                    logs, result = result
+
             if elapsed_time > 0.5:
                 debug_print(
                     f"### fn {func.__name__} was slow to run, took {elapsed_time=} s"
@@ -208,5 +217,11 @@ def make_cached_decorator(
             if func is None:
                 return lambda f: decorate(f, ray_opts)
             return decorate(func, ray_opts)
+
+        def remote_no_beartype(self, func: Callable = None, **ray_opts):
+            """Like remote, but skips beartype (for use with @node)."""
+            if func is None:
+                return lambda f: decorate(f, ray_opts, apply_beartype=False)
+            return decorate(func, ray_opts, apply_beartype=False)
 
     return CachedTask()

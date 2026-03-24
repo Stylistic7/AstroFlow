@@ -7,14 +7,13 @@ import clustering
 from targets.types import Target, TargetsDict
 from customization.types import CustomizedStacksDict
 from stacks.types import StackHash
-from decorators import cached
-from dependency_graph.logging import capture_logs
+from decorators import node
 from cache.context_ref import ContextRef
 
 log = structlog.get_logger()
 
 
-@cached.remote
+@node
 def identify_targets(
     angular_tolerance: float, stacks: CustomizedStacksDict
 ) -> TargetsDict:

@@ -24,8 +24,7 @@ from mosaics.debugging import (
 )
 from mosaics.disjoint_set import HashDisjointSet
 from mosaics.overlap import Overlap
-from decorators import cached
-from dependency_graph.logging import capture_logs
+from decorators import cached, node
 from attributes import AstrometricAttributes, ChronologyAttributes
 from attributes.astrometric_attributes import healpix_cells_from_poly
 from cache.context_ref import ContextRef
@@ -380,7 +379,7 @@ def _identify_overlapping_targets(
     return mosaics
 
 
-@cached.remote
+@node
 def identify_mosaics(
     angular_tolerance: Radians, targets: dict[str, ContextRef], debug: bool = False
 ) -> MosaicsDict:

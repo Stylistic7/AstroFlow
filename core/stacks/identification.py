@@ -9,8 +9,7 @@ from typing import Iterator
 import clustering
 from stacks.composite_stack import CompositeStack, CompositeStacksDict
 from metadata.classes import FrameHash, MetadataDict
-from decorators import cached
-from dependency_graph.logging import capture_logs
+from decorators import node
 from cache.context_ref import ContextRef
 from context import context
 from customization.decisions import (
@@ -24,8 +23,7 @@ from customization.decisions import (
 log = structlog.get_logger()
 
 
-@cached.remote
-@beartype
+@node
 def identify_stacks(
     metadata_ref: ContextRef,
     angular_tolerance: float,

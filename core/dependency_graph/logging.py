@@ -12,7 +12,7 @@ class LogContainer(list):
 @beartype
 def capture_logs(func: Callable) -> Callable:
     @functools.wraps(func)
-    def wrapper(*args: Any, **kwargs: Any) -> tuple["LogContainer", Any]:
+    def wrapper(*args: Any, **kwargs: Any):
         captured_logs = []
 
         def log_capture_processor(_, __, event_dict):
