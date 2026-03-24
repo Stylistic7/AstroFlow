@@ -42,7 +42,7 @@ def test_decorator(test_context):
     context.num_make_large_image_runs = 0
     fn_name = "make_large_image_remote"
     node_ip = get_node_ip_address()
-    perf_key = ("profile", node_ip, fn_name)
+    perf_key = ("profile", fn_name, node_ip)
 
     context[perf_key] = []
 

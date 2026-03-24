@@ -88,21 +88,20 @@ class ContextRef(Generic[T]):
 
 
 def strip_refs(value: Any) -> Any:
-    """Strip ObjectRefs from ContextRefs in a value.
+    """Recursively strip ObjectRefs from ContextRefs in a value.
 
     Use before writing to or after reading from diskcache. ObjectRefs are
     session-scoped and cause "owner is unknown" errors when deserialized
     from disk in a different session.
     """
-    def strip(v):
-        return ContextRef(v.cache_key, v.content_hash) if isinstance(v, ContextRef) and v.ref is not None else v
-
     if isinstance(value, ContextRef):
-        return strip(value)
+        if value.ref is not None:
+            return ContextRef(value.cache_key, value.content_hash)
+        return value
     if isinstance(value, dict):
-        return type(value)({k: strip(v) for k, v in value.items()})
+        return type(value)({k: strip_refs(v) for k, v in value.items()})
     if isinstance(value, (list, tuple)):
-        return type(value)(strip(v) for v in value)
+        return type(value)(strip_refs(v) for v in value)
     return value
 
 
