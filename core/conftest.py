@@ -1,6 +1,9 @@
+import os
+import threading
 from dataclasses import dataclass
 from typing import Any
 
+import psutil
 import ray
 import pytest
 
@@ -9,6 +12,31 @@ def pytest_collection_modifyitems(config, items):
     exclusive = [item for item in items if "exclusive" in item.keywords]
     normal = [item for item in items if "exclusive" not in item.keywords]
     items[:] = normal + exclusive  # run normal tests first
+
+
+@pytest.fixture(autouse=True)
+def report_peak_memory(request):
+    """Track and report peak memory consumption per test."""
+    process = psutil.Process(os.getpid())
+    baseline = process.memory_info().rss
+    peak = baseline
+    stop = threading.Event()
+
+    def sampler():
+        nonlocal peak
+        while not stop.is_set():
+            peak = max(peak, process.memory_info().rss)
+            stop.wait(0.05)
+
+    t = threading.Thread(target=sampler, daemon=True)
+    t.start()
+    yield
+    stop.set()
+    t.join()
+
+    delta_mb = (peak - baseline) / 1024 / 1024
+    if delta_mb > 10:
+        print(f"\n  Peak memory: {delta_mb:.0f} MB")
 
 
 @pytest.fixture(scope="session", autouse=True)
