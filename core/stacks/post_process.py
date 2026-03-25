@@ -9,7 +9,7 @@ from pix.tasks import (
 )
 from decorators import node, create_thumbnail
 from customization.settings import DevelopmentSettings
-from stacks.composite_stack import CompositeStack
+from stacks.composite_stack import Stack
 from stacks.stacking import stack_files
 from stacks.artifacts import stack_filename
 from file_io.types import XisfFilePath, WithSidecar
@@ -19,7 +19,7 @@ import structlog
 log = structlog.get_logger()
 
 
-def _post_process_stack(master_path, stack: CompositeStack) -> Image:
+def _post_process_stack(master_path, stack: Stack) -> Image:
     image = Image.open(master_path)
 
     julian_date = int(Time(stack.oldest_date).jd)
@@ -36,10 +36,10 @@ def _post_process_stack(master_path, stack: CompositeStack) -> Image:
     return MultiscaleGradientCorrection(calibrated)
 
 
-@makes_image(CompositeStack).as_post_processed(stack_filename)
+@makes_image(Stack).as_post_processed(stack_filename)
 @node(resources={"PixInsight": 1})
 @create_thumbnail
-def post_process_stack(stack: CompositeStack, development_settings: DevelopmentSettings) -> WithSidecar[XisfFilePath]:
+def post_process_stack(stack: Stack, development_settings: DevelopmentSettings) -> WithSidecar[XisfFilePath]:
     master = stack_files.filename_fn(stack)
     log.info("Post-processing stack", master=master)
 

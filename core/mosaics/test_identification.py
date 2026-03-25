@@ -10,7 +10,7 @@ from compute_graph.compute_graph import build_compute_graph
 from dependency_graph.dependency_graph import run_graph
 from testing import make_composite_stack, copy_testdata_into_cache
 from stacks.types import StackHash
-from stacks.composite_stack import CompositeStacksDict
+from stacks.composite_stack import StacksDict
 from targets.types import Target, TargetHash, TargetsDict
 from mosaics.identification import identify_mosaics
 from attributes.astrometric_attributes import healpix_cells_from_poly
@@ -66,7 +66,7 @@ def test_two_targets(test_context) -> None:
         projected_footprints=frozendict(),
     )
 
-    context.stacks = CompositeStacksDict(
+    context.stacks = StacksDict(
         {
             str(i): make_composite_stack(stable_hash=str(i), image_scale=ArcsecondsPerPixel(1.0))
             for i in range(6)
@@ -147,7 +147,7 @@ def test_three_targets(test_context) -> None:
         projected_footprints=frozendict(),
     )
 
-    context.stacks = CompositeStacksDict(
+    context.stacks = StacksDict(
         {
             str(i): make_composite_stack(stable_hash=str(i), image_scale=ArcsecondsPerPixel(1.0))
             for i in range(9)
@@ -231,7 +231,7 @@ def test_three_out_of_order_targets(test_context) -> None:
         projected_footprints=frozendict(),
     )
 
-    context.stacks = CompositeStacksDict(
+    context.stacks = StacksDict(
         {
             str(i): make_composite_stack(stable_hash=str(i), image_scale=ArcsecondsPerPixel(1.0))
             for i in range(9)
@@ -326,7 +326,7 @@ def test_three_targets_and_an_outlier(test_context) -> None:
         projected_footprints=frozendict(),
     )
 
-    context.stacks = CompositeStacksDict(
+    context.stacks = StacksDict(
         {
             str(i): make_composite_stack(stable_hash=str(i), image_scale=ArcsecondsPerPixel(1.0))
             for i in range(12)
@@ -404,7 +404,7 @@ def test_ic1318(test_context) -> None:
         projected_footprints=frozendict(),
     )
 
-    context.stacks = CompositeStacksDict(
+    context.stacks = StacksDict(
         {
             str(i): make_composite_stack(stable_hash=str(i), image_scale=ArcsecondsPerPixel(1.0))
             for i in range(6)

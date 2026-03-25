@@ -10,13 +10,13 @@ from dependency_graph import run_graph
 from testing import copy_testdata_frames
 from file_io.types import TiffFilePath
 from file_io.tiff_file_io import write_tiff_image
-from stacks.composite_stack import CompositeStack
+from stacks.composite_stack import Stack
 from decorators import cached, create_thumbnail
 
 
 @cached.remote
 @create_thumbnail
-def stack_files(stack: CompositeStack) -> TiffFilePath:
+def stack_files(stack: Stack) -> TiffFilePath:
     output_path = TiffFilePath("foo.tiff").resolve_at(context.output_dir)
     image = np.zeros((100, 100))
     write_tiff_image(output_path, image)

@@ -6,7 +6,7 @@ from frozendict import frozendict
 
 from context import context
 from cache.context_ref import ContextRef
-from stacks.composite_stack import CompositeStack, CompositeStacksDict
+from stacks.composite_stack import Stack, StacksDict
 from stacks.simple_stack import Run, RunsDict
 from calibration import associate_with_stack
 from decorators import node
@@ -28,8 +28,8 @@ ALL_EXCLUSION_TYPES = (
 
 
 def apply_settings(
-    stack: CompositeStack, stack_settings: StackSettings
-) -> CompositeStack:
+    stack: Stack, stack_settings: StackSettings
+) -> Stack:
     new_contents = RunsDict()
     for content_hash, substack in stack.contents.items():
         new_dependencies = substack.dependencies | stack_settings.dependencies
@@ -41,12 +41,12 @@ def apply_settings(
 
 @node
 def enrich_with_calibration(
-    stack_ref: ContextRef[CompositeStack],
+    stack_ref: ContextRef[Stack],
     cal_stacks: RunsDict,
     stack_settings: StackSettings,
     stack_overrides: frozendict,
     min_frames_in_stack: int,
-) -> CompositeStack:
+) -> Stack:
     """Enrich stack with calibration deps and user settings. All frames preserved.
 
     Also detects and publishes decisions (quality, rotation) as side effects
@@ -67,8 +67,8 @@ def enrich_with_calibration(
 
 @ray.remote
 @beartype
-def gather_enriched_stacks(*ancestor_results: CompositeStack) -> CompositeStacksDict:
-    return CompositeStacksDict({
+def gather_enriched_stacks(*ancestor_results: Stack) -> StacksDict:
+    return StacksDict({
         s.stable_hash: ContextRef.store(("stacks", s.stable_hash), s)
         for s in ancestor_results if s is not None
     })
@@ -80,7 +80,7 @@ def scatter_customize_stacks(
     stack_settings: frozendict,
     decision_overrides: frozendict,
     min_frames_in_stack: int,
-    stacks: CompositeStacksDict,
+    stacks: StacksDict,
     cal_stacks: RunsDict,
 ) -> Graph:
     log.debug("Scattering stack customization", cal_stacks_type=type(cal_stacks).__name__)

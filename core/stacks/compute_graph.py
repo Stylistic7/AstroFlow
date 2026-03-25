@@ -6,7 +6,7 @@ from functools import partial
 from beartype import beartype
 from decorators import node
 from stacks.stacking import stack_files
-from stacks.composite_stack import Run, CompositeStack, RunsDict, CompositeStacksDict
+from stacks.composite_stack import Run, Stack, RunsDict, StacksDict
 from stacks.types import StackIdDependency
 from stacks.post_process import post_process_stack
 from stacks.convert_to_dict import convert_to_dict
@@ -23,13 +23,13 @@ from dependency_graph.workflow_graph_adapter import (
 
 @ray.remote
 @beartype
-def calibration_done(stack: CompositeStack) -> None:
+def calibration_done(stack: Stack) -> None:
     pass
 
 
 @node
 def build_calibration_stack_subgraph(
-    stack: CompositeStack,
+    stack: Stack,
     calibration_stacks: RunsDict,
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
@@ -59,7 +59,7 @@ def build_calibration_stack_subgraph(
 
 @ray.remote
 @beartype
-def stack_runs_done(stack: CompositeStack) -> None:
+def stack_runs_done(stack: Stack) -> None:
     pass
 
 
@@ -69,7 +69,7 @@ from frozendict import frozendict
 # stack_files resolves decisions internally to filter before stacking.
 @node
 def build_stacking_subgraph(
-    stack: CompositeStack,
+    stack: Stack,
     calibration_stacks: RunsDict,
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
@@ -102,7 +102,7 @@ def build_stacking_subgraph(
 
 # TODO: Calibrate the subframe returned here.
 @node
-def get_stack_subframe_image(stack: CompositeStack) -> Path:
+def get_stack_subframe_image(stack: Stack) -> Path:
     assert stack is not None
     light_frames_by_stars = get_light_frames_sorted_by_stars(stack)
     best_light_frame = stack.all_metadata()[light_frames_by_stars[0]]
@@ -111,7 +111,7 @@ def get_stack_subframe_image(stack: CompositeStack) -> Path:
 
 def get_stack_image(
     mode: QualityLevel,
-    stack: CompositeStack,
+    stack: Stack,
     calibration_stacks: RunsDict,
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
@@ -140,7 +140,7 @@ def process_stacks_for_ui(stacks: dict) -> dict:
             return v.points.tolist()
         return v
 
-    def prepare_stack(stack: CompositeStack):
+    def prepare_stack(stack: Stack):
         result = convert_to_dict(
             stack, [["contents", "*", "metadata"]], transform=my_transform
         )

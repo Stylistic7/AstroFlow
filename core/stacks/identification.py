@@ -7,7 +7,7 @@ from frozendict import frozendict
 
 from typing import Iterator
 import clustering
-from stacks.composite_stack import CompositeStack, CompositeStacksDict
+from stacks.composite_stack import Stack, StacksDict
 from metadata.classes import FrameHash, MetadataDict
 from decorators import node
 from cache.context_ref import ContextRef
@@ -31,7 +31,7 @@ def identify_stacks(
     light_frames: tuple[FrameHash, ...],
     min_frames_in_stack: int,
     max_run_gap,
-) -> CompositeStacksDict:
+) -> StacksDict:
     log.info("Identifying stacks", num_frames=len(light_frames))
     metadata_in = metadata_ref.get()
 
@@ -103,13 +103,13 @@ def identify_stacks(
             assert len(set(filters)) == 1
             yield filter_frames
 
-    new_stacks = CompositeStacksDict()
+    new_stacks = StacksDict()
     for scale_frames in scale_clusters():
         for camera_frames in camera_clusters(scale_frames):
             for rotation_frames in rotation_clusters(camera_frames):
                 for filter_frames in filter_clusters(rotation_frames):
                     if len(filter_frames) >= min_frames_in_stack:
-                        new_stack = CompositeStack.from_frames(
+                        new_stack = Stack.from_frames(
                             filter_frames, metadata=metadata, max_run_gap=max_run_gap
                         )
                         if new_stack is not None:
@@ -132,7 +132,7 @@ def identify_stacks(
 
 
 def _detect_rotation_outliers(
-    stacks: CompositeStacksDict,
+    stacks: StacksDict,
     metadata: MetadataDict,
     angular_tolerance: float,
 ) -> dict:

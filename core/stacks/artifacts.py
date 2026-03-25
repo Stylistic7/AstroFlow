@@ -3,12 +3,12 @@ import os
 from pathlib import Path
 
 from stacks.simple_stack import Run
-from stacks.composite_stack import CompositeStack
+from stacks.composite_stack import Stack
 from catalogs import position_string
 from file_io.types import XisfFilePath
 
 
-def stack_filename(stack: Run | CompositeStack) -> Path:
+def stack_filename(stack: Run | Stack) -> Path:
     def exposure_string(exposures):
         return "_".join([f"{x}s" for x in exposures])
 
@@ -28,7 +28,7 @@ def stack_filename(stack: Run | CompositeStack) -> Path:
             f"flat_{stack.stable_hash}_{stack.camera}_{stack.filter}_"
             f"{stack.stable_hash}.xisf"
         )
-    elif isinstance(stack, CompositeStack) and "light" in stack.image_type:
+    elif isinstance(stack, Stack) and "light" in stack.image_type:
         ra_dec_string = position_string.ra_dec_string(*stack.center)
         return XisfFilePath(
             f"light_{stack.stable_hash}_{stack.name}_{ra_dec_string}_"

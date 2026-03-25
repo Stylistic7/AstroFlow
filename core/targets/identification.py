@@ -5,7 +5,7 @@ from beartype import beartype
 
 import clustering
 from targets.types import Target, TargetsDict
-from stacks.composite_stack import CompositeStacksDict
+from stacks.composite_stack import StacksDict
 from stacks.types import StackHash
 from decorators import node
 from cache.context_ref import ContextRef
@@ -15,7 +15,7 @@ log = structlog.get_logger()
 
 @node
 def identify_targets(
-    angular_tolerance: float, stacks: CompositeStacksDict
+    angular_tolerance: float, stacks: StacksDict
 ) -> TargetsDict:
     log.info("Identifying targets", num_stacks=len(stacks))
 

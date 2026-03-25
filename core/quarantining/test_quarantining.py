@@ -15,7 +15,7 @@ from customization.resolve import resolve_decisions
 from customization.compute_graph import ALL_EXCLUSION_TYPES
 from dependency_graph import run_graph
 from testing import make_synthetic_frames, copy_testdata_frames
-from stacks.composite_stack import CompositeStack
+from stacks.composite_stack import Stack
 
 
 @pytest.mark.heavy
@@ -83,7 +83,7 @@ def test_quarantine_run(test_context) -> None:
 
 def _run_deps_per_stack():
     """Return the set of dependency counts per run, for each composite stack."""
-    stacks = [ref.get() for ref in context.stacks.values() if type(ref.get()) is CompositeStack]
+    stacks = [ref.get() for ref in context.stacks.values() if type(ref.get()) is Stack]
     return [
         {len(run.dependencies) for run in s.contents.values()}
         for s in stacks

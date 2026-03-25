@@ -7,7 +7,7 @@ from spherical_geometry.polygon import SingleSphericalPolygon
 from functools import partial
 
 from frozendict import frozendict
-from stacks.composite_stack import CompositeStack, CompositeStacksDict, RunsDict
+from stacks.composite_stack import Stack, StacksDict, RunsDict
 from customization.settings import DevelopmentSettings
 from dependency_graph import Graph, Node, chain
 from mosaics.merge_images import merge_images
@@ -45,10 +45,10 @@ def _unwrap(ref):
 
 
 def stacks_for_mosaic(
-    mosaic: Mosaic, stacks: CompositeStacksDict, targets: TargetsDict
-) -> CompositeStacksDict:
+    mosaic: Mosaic, stacks: StacksDict, targets: TargetsDict
+) -> StacksDict:
     """Returns only the stacks included in the mosaic."""
-    return CompositeStacksDict(
+    return StacksDict(
         {
             stack_id: stacks[stack_id]
             for target_id in mosaic.target_ids
@@ -60,7 +60,7 @@ def stacks_for_mosaic(
 def build_mosaic_subgraph(
     mode: QualityLevel,
     mosaic: Mosaic,
-    stacks: CompositeStacksDict,
+    stacks: StacksDict,
     targets: TargetsDict,
     calibration_stacks: RunsDict,
     development_settings: DevelopmentSettings,
@@ -126,7 +126,7 @@ def build_mosaic_subgraph(
 def build_placement_subgraph(
     mode: QualityLevel,
     mosaic: Mosaic,
-    stack: CompositeStack,
+    stack: Stack,
     filter: str,
     viewbox: Viewbox,
     calibration_stacks: RunsDict,
@@ -149,7 +149,7 @@ def get_stacks_for_filter(
     mosaic: Mosaic,
     filter: str,
     targets: TargetsDict,
-    stacks: CompositeStacksDict,
+    stacks: StacksDict,
 ) -> Optional[list[list[StackHash]]]:
     """Returns the mosaics strips with target hashes replaced by stack hashes."""
 
@@ -170,7 +170,7 @@ def build_mosaic_filter_subgraph(
     mode: QualityLevel,
     mosaic: Mosaic,
     strips: list[list[StackHash]] | tuple,
-    stacks: CompositeStacksDict | dict | object,
+    stacks: StacksDict | dict | object,
     filter: str,
     viewbox: Viewbox | None,
     calibration_stacks: RunsDict,

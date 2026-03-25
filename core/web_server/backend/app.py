@@ -21,7 +21,7 @@ from pathlib import Path
 
 from state.state_machine import enqueue_action
 from context import context, get_cache
-from stacks.composite_stack import CompositeStack
+from stacks.composite_stack import Stack
 from web_server.backend.files import files_bp
 from web_server.backend.tiles import tiles_bp
 from web_server.backend.metadata import metadata_bp

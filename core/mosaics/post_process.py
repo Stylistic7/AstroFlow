@@ -18,7 +18,7 @@ from mosaics.final_storage import store_mosaic_color_channel_master
 from mosaics.types import Mosaic
 from mosaics.artifacts import mosaic_filename_xisf
 from products import makes_image
-from stacks.composite_stack import CompositeStacksDict
+from stacks.composite_stack import StacksDict
 from targets.types import TargetsDict
 
 log = structlog.get_logger()
@@ -57,7 +57,7 @@ def _post_process_mosaic(images: ImageList, mosaic: Mosaic) -> Image | None:
 def post_process_mosaic(
     mode: QualityLevel,
     mosaic: Mosaic,
-    stacks: CompositeStacksDict,
+    stacks: StacksDict,
     targets: TargetsDict,
 ) -> WithSidecar[XisfFilePath] | None:
     from context import context

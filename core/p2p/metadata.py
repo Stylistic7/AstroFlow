@@ -5,7 +5,7 @@ import json
 from typing import Any
 from dataclasses import dataclass, asdict, field, fields, is_dataclass
 from datetime import datetime
-from stacks.composite_stack import CompositeStack
+from stacks.composite_stack import Stack
 from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon  # type: ignore
 
 from context import context
@@ -102,7 +102,7 @@ def hdf5_to_stacks(data: str) -> dict[str, Any]:
                     field_type = next(
                         (
                             f.type
-                            for f in fields(CompositeStack)
+                            for f in fields(Stack)
                             if f.name == field_name
                         ),
                         None,
@@ -120,7 +120,7 @@ def hdf5_to_stacks(data: str) -> dict[str, Any]:
                         stack_dict[field_name] = _json_to_ndarray(field_value)
 
                 # Recreate the Stack object
-                stacks[key] = CompositeStack(**stack_dict)
+                stacks[key] = Stack(**stack_dict)
 
             subframe_group = h5file["stack_subframe_thumbnail_images"]
             for key, image_data in subframe_group.items():
@@ -131,8 +131,8 @@ def hdf5_to_stacks(data: str) -> dict[str, Any]:
                 context[("stack_master_thumbnail_image", key)] = np.array(image_data)
 
         from cache.context_ref import ContextRef
-        from stacks.composite_stack import CompositeStacksDict
-        stacks_refs = CompositeStacksDict({
+        from stacks.composite_stack import StacksDict
+        stacks_refs = StacksDict({
             k: ContextRef.store(("stacks", k), v) for k, v in stacks.items()
         })
         context.stacks = stacks_refs

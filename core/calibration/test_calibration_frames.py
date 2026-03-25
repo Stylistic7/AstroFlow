@@ -9,7 +9,7 @@ from testing import make_synthetic_frames, copy_testdata_frames
 from previews.types import QualityLevel
 from stacks.compute_graph import build_calibration_stack_subgraph
 from stacks.simple_stack import Run
-from stacks.composite_stack import CompositeStack
+from stacks.composite_stack import Stack
 from stacks.types import StackHash, StackIdDependency
 from context import context
 from file_io.find_image_files import find_image_files
@@ -18,7 +18,7 @@ from customization.settings import Settings, StackSettings
 from frozendict import frozendict
 
 
-def _print_stack(stack: CompositeStack):
+def _print_stack(stack: Stack):
     print(f"### Stack {stack}")
     for substack_id, substack in stack.contents.items():
         print(f"###   Content {substack}")
@@ -272,7 +272,7 @@ def test_flats_from_different_camera(test_context) -> None:
     light_stacks = [
         ref.get()
         for ref in stacks.values()
-        if ref.get().image_type == "light" and isinstance(ref.get(), CompositeStack)
+        if ref.get().image_type == "light" and isinstance(ref.get(), Stack)
     ]
     assert len(light_stacks) == 2
 
@@ -370,7 +370,7 @@ def test_temperature_mismatch(test_context) -> None:
     light_stacks = [
         ref.get()
         for ref in stacks.values()
-        if isinstance(ref.get(), CompositeStack) and ref.get().image_type == "light"
+        if isinstance(ref.get(), Stack) and ref.get().image_type == "light"
     ]
     assert len(light_stacks) == 1
     stack = light_stacks[0]
@@ -556,7 +556,7 @@ def test_flat_frame_selection(test_context) -> None:
     light_stacks = [
         ref.get()
         for ref in context.stacks.values()
-        if ref.get().image_type == "light" and isinstance(ref.get(), CompositeStack)
+        if ref.get().image_type == "light" and isinstance(ref.get(), Stack)
     ]
     assert len(light_stacks) == 1
     stack = next(iter(light_stacks))
@@ -586,7 +586,7 @@ def test_flat_frame_selection(test_context) -> None:
     light_stacks = [
         ref.get()
         for ref in stacks.values()
-        if ref.get().image_type == "light" and isinstance(ref.get(), CompositeStack)
+        if ref.get().image_type == "light" and isinstance(ref.get(), Stack)
     ]
     assert len(light_stacks) == 1
     stack = next(iter(light_stacks))

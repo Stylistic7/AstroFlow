@@ -170,12 +170,12 @@ def with_real_testdata(test_context, identified_testdata):
     """
     from context import context
     from cache.context_ref import ContextRef
-    from stacks.composite_stack import CompositeStacksDict
+    from stacks.composite_stack import StacksDict
     from targets.types import TargetsDict
     from mosaics.types import MosaicsDict
 
     # Re-store each object as a ContextRef in the current test's fresh context.
-    stacks = CompositeStacksDict({
+    stacks = StacksDict({
         k: ContextRef.store(("stacks", k), v)
         for k, v in identified_testdata.stacks.items()
     })

@@ -27,7 +27,7 @@ from mosaics.compute_graph import build_mosaic_subgraph, process_mosaics_for_ui
 from mosaics.types import MosaicsDict
 from dependency_graph import Graph, Node, chain
 from stacks.identification import identify_stacks
-from stacks.composite_stack import RunsDict, CompositeStacksDict
+from stacks.composite_stack import RunsDict, StacksDict
 from stacks.validation import validate_stacks
 from decorators import node
 from customization.compute_graph import (
@@ -58,7 +58,7 @@ def store_calibration_stacks(
 def store_stacks(stacks: dict[str, Any]) -> dict[str, Any]:
     assert None not in stacks.values()
     # stacks values are already ContextRefs (from gather_enriched_stacks)
-    result = CompositeStacksDict(stacks)
+    result = StacksDict(stacks)
     context.stacks = result
     log.info("Stored stacks", count=len(stacks))
     return result
@@ -122,7 +122,7 @@ def scatter_spatial_groups(
 ) -> Graph:
     cs = settings.clustering_settings
 
-    context.stacks = CompositeStacksDict()
+    context.stacks = StacksDict()
     context.calibration_stacks = RunsDict()
     context.targets = TargetsDict()
     context.mosaics = MosaicsDict({})  # empty dict of refs

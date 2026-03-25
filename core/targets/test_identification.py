@@ -1,6 +1,6 @@
 import pytest
 from context import context
-from stacks.composite_stack import CompositeStack
+from stacks.composite_stack import Stack
 
 
 @pytest.mark.heavy
@@ -11,7 +11,7 @@ def test_orion_nebula(with_real_testdata):
     # Every stack should have non-empty hashes.
     for stack_ref in context.stacks.values():
         stack = stack_ref.get()
-        if not isinstance(stack, CompositeStack):
+        if not isinstance(stack, Stack):
             continue
         assert stack.stable_hash, f"Stack has empty stable_hash"
         assert stack.content_hash, f"Stack {stack.stable_hash} has empty content_hash"

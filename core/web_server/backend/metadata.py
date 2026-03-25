@@ -4,7 +4,7 @@ from typing import Any
 
 from context import context
 from stacks.simple_stack import CalibrationStack
-from stacks.composite_stack import CompositeStack
+from stacks.composite_stack import Stack
 from targets.types import Target
 from mosaics.types import Mosaic, Viewbox
 from mosaics.viewbox import compute_viewbox
@@ -76,7 +76,7 @@ def get_metadata(object_type: type, *args):
 
 @metadata_bp.route("/metadata/stack/<stack_id>")
 def stack_metadata(stack_id: str):
-    return get_metadata(CompositeStack, context.stacks[stack_id].get())
+    return get_metadata(Stack, context.stacks[stack_id].get())
 
 
 @metadata_bp.route("/metadata/calibration_stack/<stack_id>")

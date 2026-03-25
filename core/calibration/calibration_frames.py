@@ -15,7 +15,7 @@ from stacks.simple_stack import (
     CalibrationStack,
     run_from_frames,
 )
-from stacks.composite_stack import CompositeStack, RunsDict
+from stacks.composite_stack import Stack, RunsDict
 import clustering
 from cache.context_ref import ContextRef
 from metadata.classes import MetadataDict
@@ -209,8 +209,8 @@ def associate_with_stacks(
 
 
 def associate_with_stack(
-    stack: CompositeStack, cal_stacks: RunsDict
-) -> CompositeStack:
+    stack: Stack, cal_stacks: RunsDict
+) -> Stack:
     new_contents = associate_with_stacks(stack.contents, cal_stacks)
     return replace(stack, contents=new_contents)
 

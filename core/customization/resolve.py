@@ -1,10 +1,10 @@
-"""Apply decisions to a CompositeStack to produce filtered or annotated views."""
+"""Apply decisions to a Stack to produce filtered or annotated views."""
 from __future__ import annotations
 
 from dataclasses import replace
 from frozendict import frozendict
 
-from stacks.composite_stack import CompositeStack
+from stacks.composite_stack import Stack
 from stacks.simple_stack import RunsDict
 from customization.decisions import (
     BinaryChoice, DecisionKey, DecisionOverride, DecisionType,
@@ -15,10 +15,10 @@ from quarantining.quarantining import apply_quarantine
 
 
 def _apply_run_exclusions(
-    stack: CompositeStack,
+    stack: Stack,
     decision_overrides: frozendict[DecisionKey, DecisionOverride],
     decision_type: DecisionType,
-) -> CompositeStack | None:
+) -> Stack | None:
     """Remove runs excluded by a specific decision type."""
     excluded = {
         key[3]  # subject_id = run hash
@@ -35,11 +35,11 @@ def _apply_run_exclusions(
 
 
 def resolve_decisions(
-    stack: CompositeStack,
+    stack: Stack,
     decision_types: tuple[DecisionType, ...],
     decision_overrides: frozendict[DecisionKey, DecisionOverride],
     min_frames_in_stack: int,
-) -> CompositeStack | None:
+) -> Stack | None:
     """Apply the specified decision types to produce a filtered view.
 
     Decision types are automatically sorted by DECISION_PRECEDENCE (lower
@@ -66,7 +66,7 @@ def resolve_decisions(
 
 def is_frame_included(
     frame_hash: str,
-    stack: CompositeStack,
+    stack: Stack,
     decision_overrides: frozendict[DecisionKey, DecisionOverride],
 ) -> bool:
     """Check if a frame survives the quality filter. For per-frame annotation."""
@@ -104,7 +104,7 @@ def is_frame_included(
 
 def is_run_included(
     run_hash: str,
-    stack: CompositeStack,
+    stack: Stack,
     decision_overrides: frozendict[DecisionKey, DecisionOverride],
 ) -> bool:
     """Check if a run survives rotation/quarantine decisions. For per-run annotation."""

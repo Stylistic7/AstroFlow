@@ -5,7 +5,7 @@ from frozendict import frozendict
 
 from spherical_geometry.polygon import SingleSphericalPolygon  # type: ignore
 
-from stacks.composite_stack import CompositeStack, RunsDict
+from stacks.composite_stack import Stack, RunsDict
 from attributes import (
     AstrometricAttributes,
     ChronologyAttributes,
@@ -15,7 +15,7 @@ from attributes.astrometric_attributes import healpix_cells_from_poly
 from units import Degrees, Radians, ArcsecondsPerPixel, Celsius, Seconds
 
 
-def make_composite_stack(**kwargs: Any) -> CompositeStack:
+def make_composite_stack(**kwargs: Any) -> Stack:
     chronology_attributes = asdict(
         ChronologyAttributes(
             stable_hash="stable_hash",
@@ -60,4 +60,4 @@ def make_composite_stack(**kwargs: Any) -> CompositeStack:
         | kwargs
     )
 
-    return CompositeStack(**attributes)
+    return Stack(**attributes)

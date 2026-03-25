@@ -5,7 +5,7 @@ from flask import Blueprint, abort
 
 from context import context
 from stacks.simple_stack import CalibrationStack
-from stacks.composite_stack import CompositeStack
+from stacks.composite_stack import Stack
 from products.registry import get_producer, MediaType
 from previews.types import QualityLevel
 
@@ -31,7 +31,7 @@ def get_video(object_type: type, *args):
 
 @videos_bp.route("/video/stack/<stack_id>")
 def stack_video(stack_id: str):
-    return get_video(CompositeStack, context.stacks[stack_id].get())
+    return get_video(Stack, context.stacks[stack_id].get())
 
 
 @videos_bp.route("/video/calibration_stack/<stack_id>")

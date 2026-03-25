@@ -8,7 +8,7 @@ import os
 from context import get_cache
 from metadata.image_metadata import load_metadata
 from stacks.simple_stack import Run
-from stacks.composite_stack import CompositeStack
+from stacks.composite_stack import Stack
 
 TESTDATA_CACHE_GZIP_FILENAME = "testdata/cache.tar.gz"
 
@@ -27,7 +27,7 @@ def copy_all_stack_data(metadata, cache, testdata_cache, stack_id):
     stacks = cache["stacks"]
     stack_ref = stacks[stack_id]
     stack = stack_ref.get() if hasattr(stack_ref, "get") else stack_ref
-    assert isinstance(stack, CompositeStack)
+    assert isinstance(stack, Stack)
     for substack in stack.contents.values():
         assert isinstance(substack, Run)
         for frame_hash in substack.frames:

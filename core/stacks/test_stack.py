@@ -6,7 +6,7 @@ from context import context
 from dependency_graph import run_graph
 from testing import make_synthetic_frames, copy_testdata_frames
 from stacks.simple_stack import Run
-from stacks.composite_stack import CompositeStack
+from stacks.composite_stack import Stack
 from stacks.types import StackHash, StackIdDependency
 
 
@@ -67,7 +67,7 @@ def test_one_light_one_dark(test_context):
     assert len(context.calibration_stacks) == 1
 
     toplevel_stack = next(
-        ref.get() for ref in stacks.values() if isinstance(ref.get(), CompositeStack)
+        ref.get() for ref in stacks.values() if isinstance(ref.get(), Stack)
     )
     assert len(toplevel_stack.contents) == 1
     light_stack = next(iter(toplevel_stack.contents.values()))

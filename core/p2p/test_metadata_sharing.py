@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 
 from context import context
-from stacks.composite_stack import CompositeStack
+from stacks.composite_stack import Stack
 from p2p.metadata import stacks_to_hdf5, hdf5_to_stacks
 from mosaics.orion_mosaic import add_orion_mosaic_images
 import compute_graph
@@ -23,7 +23,7 @@ def test_stack_metadata_round_trip(test_context):
 
     metadata_file = tempfile.NamedTemporaryFile(delete=False)
     composite_stacks = {
-        k: ref.get() for k, ref in context.stacks.items() if type(ref.get()) is CompositeStack
+        k: ref.get() for k, ref in context.stacks.items() if type(ref.get()) is Stack
     }
     stacks_to_hdf5(composite_stacks, metadata_file)
     metadata_file.close()
@@ -41,7 +41,7 @@ def test_two_participant_mosaic(test_context):
     run_graph(graph)
     metadata_file_A = tempfile.NamedTemporaryFile(delete=False)
     composite_stacks = {
-        k: ref.get() for k, ref in context.stacks.items() if type(ref.get()) is CompositeStack
+        k: ref.get() for k, ref in context.stacks.items() if type(ref.get()) is Stack
     }
     stacks_to_hdf5(composite_stacks, metadata_file_A)
     metadata_file_A.close()
@@ -62,7 +62,7 @@ def test_two_participant_mosaic(test_context):
     run_graph(graph)
     metadata_file_B = tempfile.NamedTemporaryFile(delete=False)
     composite_stacks = {
-        k: ref.get() for k, ref in context.stacks.items() if type(ref.get()) is CompositeStack
+        k: ref.get() for k, ref in context.stacks.items() if type(ref.get()) is Stack
     }
     stacks_to_hdf5(composite_stacks, metadata_file_B)
     metadata_file_B.close()

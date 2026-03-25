@@ -24,7 +24,7 @@ from cache.context_ref import ContextRef
 
 @beartype
 @dataclass(frozen=True)
-class CompositeStack(
+class Stack(
     ContentHashed,
     ImagingAttributes,
     AstrometricAttributes,
@@ -36,7 +36,7 @@ class CompositeStack(
     @classmethod
     def from_frames(
         cls, frames: Sequence[FrameHash], metadata: MetadataDict, max_run_gap
-    ) -> Optional["CompositeStack"]:
+    ) -> Optional["Stack"]:
         metadata_list = [i for h, i in metadata.items() if h in frames]
 
         # Sort the light frames by observation date. The oldest image will be used
@@ -106,7 +106,7 @@ class CompositeStack(
 
     def __str__(self) -> str:
         return (
-            f"CompositeStack(Stable hash {self.stable_hash}, "
+            f"Stack(Stable hash {self.stable_hash}, "
             f"Content hash {self.content_hash}, "
             f"Target {self.name}, "
             f"RA {units.ra_to_hms(self.center[0])}, "
@@ -124,7 +124,7 @@ class CompositeStack(
         return hash_list_int([self.content_hash])
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, CompositeStack):
+        if not isinstance(other, Stack):
             return NotImplemented
 
         return (self.content_hash == other.content_hash) and (
@@ -132,13 +132,11 @@ class CompositeStack(
         )
 
 
-class CompositeStacksDict(dict[StackHash, ContextRef["CompositeStack"]]):
+class StacksDict(dict[StackHash, ContextRef["Stack"]]):
     def __hash__(self):
         from cache.context_ref import dict_content_hash
         return hash_list_int([dict_content_hash(self)])
 
     def __str__(self):
-        return f"CompositeStacksDict({len(self)})"
+        return f"StacksDict({len(self)})"
 
-
-Stack = Run | CompositeStack

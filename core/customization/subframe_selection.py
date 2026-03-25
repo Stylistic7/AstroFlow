@@ -2,7 +2,7 @@ import structlog
 from dataclasses import replace
 from frozendict import frozendict
 
-from stacks.composite_stack import CompositeStack
+from stacks.composite_stack import Stack
 from stacks.simple_stack import RunsDict
 from metadata.classes import ImageMetadata, MetadataDict
 from customization.decisions import (
@@ -17,7 +17,7 @@ _DECISION_SIGNIFICANCE_THRESHOLD = 0.25  # >25% excluded → generate decision
 
 
 def get_light_frames_sorted_by_stars(
-    stack: CompositeStack,
+    stack: Stack,
 ) -> list[ImageMetadata]:
     metadata = stack.all_metadata()
     assert all(f in metadata for f in stack.all_frames())
@@ -29,10 +29,10 @@ def get_light_frames_sorted_by_stars(
 
 
 def select_subframes(
-    stack: CompositeStack,
+    stack: Stack,
     min_frames_in_stack: int,
     decision_overrides: frozendict[DecisionKey, DecisionOverride] = frozendict(),
-) -> CompositeStack:
+) -> Stack:
     metadata = stack.all_metadata()
     sorted_light_frames = get_light_frames_sorted_by_stars(stack)
     total_frames = len(sorted_light_frames)

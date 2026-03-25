@@ -15,7 +15,7 @@ from astropy.coordinates import SkyCoord  # type: ignore
 from astropy import units as u  # type: ignore
 from dataclasses import dataclass
 
-from stacks.composite_stack import CompositeStack
+from stacks.composite_stack import Stack
 from file_io.generic import read_image
 from file_io.tiff_file_io import write_tiff_image
 from file_io.types import TiffFilePath, WithSidecar
@@ -161,7 +161,7 @@ def _project_in_tiles(
 def _place_image(
     mode: QualityLevel,
     mosaic: Mosaic,
-    stack: CompositeStack,
+    stack: Stack,
     filter: str,
     viewbox: Viewbox,
     image_metadata: ImageMetadata,
@@ -216,7 +216,7 @@ def _place_image(
 def place_image_subframe(
     mode: QualityLevel,
     mosaic: Mosaic,
-    stack: CompositeStack,
+    stack: Stack,
     filter: str,
     viewbox: Viewbox,
     image_metadata: ImageMetadata,
@@ -234,7 +234,7 @@ def place_image_subframe(
 def place_image_master(
     mode: QualityLevel,
     mosaic: Mosaic,
-    stack: CompositeStack,
+    stack: Stack,
     filter: str,
     viewbox: Viewbox,
     image_metadata: ImageMetadata,
@@ -251,7 +251,7 @@ def place_image_master(
 def place_image(
     mode: QualityLevel,
     mosaic: Mosaic,
-    stack: CompositeStack,
+    stack: Stack,
     filter: str,
     viewbox: Viewbox,
     image_metadata: ImageMetadata,

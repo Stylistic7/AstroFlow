@@ -1,9 +1,9 @@
-from stacks.composite_stack import CompositeStacksDict
+from stacks.composite_stack import StacksDict
 from decorators import node
 
 
 @node
-def validate_stacks(stacks: CompositeStacksDict) -> CompositeStacksDict:
+def validate_stacks(stacks: StacksDict) -> StacksDict:
     print(
         f"#### validate_stacks validating {len(stacks)} stacks "
         f"type {type(stacks)}"

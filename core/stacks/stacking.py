@@ -13,7 +13,7 @@ from file_io.generic import update_header, copy_image
 from stacks.artifacts import stack_filename
 from stacks.simple_stack import Run, RunsDict
 from stacks.types import StackIdDependency, FilenameDependency
-from stacks.composite_stack import Stack, CompositeStack
+from stacks.composite_stack import Stack
 from pix.tasks import run_wbpp
 from metadata.classes import MetadataDict
 from frozendict import frozendict
@@ -98,7 +98,7 @@ def _setup_simple_stack(
 
 
 def _setup_composite_stack(
-    stack: CompositeStack,
+    stack: Stack,
     calibration_stacks: RunsDict,
     dest_dir: str,
 ) -> tuple[str | None, int]:
@@ -155,7 +155,7 @@ def _copy_wbpp_result(
 
 
 # TODO: add an `as_downscaled_master` quality level.
-@makes_image(CompositeStack).as_master(stack_filename)
+@makes_image(Stack).as_master(stack_filename)
 @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD")
 @create_thumbnail
 def stack_files(
@@ -166,7 +166,7 @@ def stack_files(
     decisions: frozendict = frozendict(),
 ) -> WithSidecar[XisfFilePath]:
     # Apply exclusion decisions to filter frames before stacking.
-    if isinstance(stack, CompositeStack) and decisions:
+    if isinstance(stack, Stack) and decisions:
         filtered = resolve_decisions(stack, ALL_EXCLUSION_TYPES, decisions, min_frames_in_stack)
         if filtered is None:
             raise ValueError(f"Stack {stack} has no frames after applying decisions")

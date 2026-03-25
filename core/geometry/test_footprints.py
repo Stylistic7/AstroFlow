@@ -8,7 +8,7 @@ from dependency_graph import run_graph
 from geometry.polygons import project_polygon
 from testing.test_frames import make_synthetic_frames
 from geometry.projections import mercator
-from stacks.composite_stack import CompositeStack
+from stacks.composite_stack import Stack
 
 
 @pytest.mark.heavy

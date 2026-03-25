@@ -26,7 +26,7 @@ from mosaics.orion_mosaic import add_orion_mosaic_images
 from targets.types import Target, TargetsDict
 from testing.test_stacks import make_composite_stack
 from attributes.astrometric_attributes import healpix_cells_from_poly
-from stacks.composite_stack import CompositeStacksDict, RunsDict
+from stacks.composite_stack import StacksDict, RunsDict
 from customization.settings import DevelopmentSettings
 from units import Degrees, Radians, ArcsecondsPerPixel
 
@@ -98,7 +98,7 @@ def test_three_by_one(test_context) -> None:
             "c": make_test_target("c", stack_ids=("c",)),
         }
     )
-    context.stacks = stacks = CompositeStacksDict(
+    context.stacks = stacks = StacksDict(
         {
             "a": make_composite_stack(stable_hash="a"),
             "b": make_composite_stack(stable_hash="b"),
@@ -187,7 +187,7 @@ def test_two_by_three(test_context) -> None:
         }
     )
 
-    context.stacks = stacks = CompositeStacksDict(
+    context.stacks = stacks = StacksDict(
         {
             "a": make_composite_stack(stable_hash="a"),
             "b": make_composite_stack(stable_hash="b"),
@@ -303,7 +303,7 @@ def test_three_panes(test_context) -> None:
         }
     )
 
-    context.stacks = stacks = CompositeStacksDict(
+    context.stacks = stacks = StacksDict(
         {
             "a": make_composite_stack(stable_hash="a"),
             "b": make_composite_stack(stable_hash="b"),

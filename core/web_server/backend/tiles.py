@@ -14,7 +14,7 @@ from file_io.generic import read_image
 from file_io.types import TiffFilePath, WithSidecar
 from previews.operations import autostretch
 from previews.types import QualityLevel
-from stacks.composite_stack import CompositeStack
+from stacks.composite_stack import Stack
 from stacks.simple_stack import CalibrationStack
 from targets.types import Target
 from mosaics.types import Mosaic
@@ -77,7 +77,7 @@ def get_image(
 
         # Else, convert from .xisf and cache
         if object_type == "stack":
-            path = get_best_image(CompositeStack, context.stacks[object_id].get())
+            path = get_best_image(Stack, context.stacks[object_id].get())
         elif object_type == "calibration_stack":
             path = get_best_image(
                 CalibrationStack, context.calibration_stacks[object_id]

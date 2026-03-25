@@ -20,7 +20,7 @@ from file_io.types import FitsFilePath, WithSidecar
 from stacks.simple_stack import Run, CalibrationStack
 from dependency_graph import Graph, TaskDescriptor
 from previews.operations import autostretch
-from stacks.composite_stack import CompositeStack
+from stacks.composite_stack import Stack
 from customization.subframe_selection import get_light_frames_sorted_by_stars
 from customization.resolve import is_frame_included
 from products import makes_image, makes_video
@@ -59,7 +59,7 @@ def get_first_frame(stack: Run) -> WithSidecar:
     )
 
 
-def get_best_light_frame(stack: CompositeStack) -> WithSidecar:
+def get_best_light_frame(stack: Stack) -> WithSidecar:
     metadata = stack.all_metadata()
     light_frames_by_stars = get_light_frames_sorted_by_stars(stack)
 
@@ -69,10 +69,10 @@ def get_best_light_frame(stack: CompositeStack) -> WithSidecar:
     )
 
 
-@makes_image(CompositeStack).as_subframe(get_best_light_frame)
+@makes_image(Stack).as_subframe(get_best_light_frame)
 @node
 @create_thumbnail
-def stack_thumbnail(stack: CompositeStack) -> WithSidecar:
+def stack_thumbnail(stack: Stack) -> WithSidecar:
     return get_best_light_frame(stack)
 
 
@@ -109,11 +109,11 @@ def _annotate_frame(
     return im
 
 
-@makes_video(CompositeStack).as_subframe()
+@makes_video(Stack).as_subframe()
 @node(resources={"fastest_storage": 0.001})
 @create_video
 def stack_thumbnail_video(
-    stack: CompositeStack,
+    stack: Stack,
     subframe_thumbnail_width: int,
     decisions: frozendict = frozendict(),
 ) -> Iterable[np.ndarray]:
