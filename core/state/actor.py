@@ -19,7 +19,6 @@ from dependency_graph import (
     chain,
     GraphStatus,
 )
-from customization.compute_graph import customize_stack, store_customized_stack
 from mosaics.compute_graph import (
     build_mosaic_subgraph,
     stacks_for_mosaic,
@@ -65,17 +64,6 @@ def _download_from_asiairs() -> Graph:
         }
     )
 
-
-def _update_settings(action: Action) -> Graph:
-    stack = context.stacks[action["stack_id"]].get()
-    return Graph(
-        {
-            store_customized_stack: {
-                (customize_stack, stack, action["settings"])
-            },
-            process_stacks_for_ui: {store_customized_stack},
-        }
-    )
 
 
 @ray.remote
@@ -248,11 +236,7 @@ class StateActor:
                 self.state, new_actions = self._run_graph(
                     self.state, _post_process(action)
                 )
-            case "update_settings":
-                self.state, new_actions = self._run_graph(
-                    self.state, _update_settings(action)
-                )
-            case "run_entire_graph":
+            case "update_settings" | "run_entire_graph":
                 self.state, new_actions = self._run_graph(
                     self.state, build_compute_graph()
                 )
