@@ -210,12 +210,20 @@ def _restore_context(snapshot):
         context[k] = v
 
 
+@dataclass
+class ContextSnapshot:
+    data: dict
+    input_dir: str
+    output_dir: str
+
+
 @pytest.fixture(scope="session")
 def orion_mosaic_snapshot(init_ray):
     """Session fixture: runs 4-pane Orion mosaic graph once, snapshots the result.
 
     Tests use `with_orion_mosaic` to restore this snapshot into a fresh,
-    hermetic context per test.
+    hermetic context per test. The temp dirs are kept alive for the session
+    so that tests which re-run the graph can find the input files.
     """
     from testing.test_context import make_test_context
     from mosaics.orion_mosaic import add_orion_mosaic_images
@@ -225,13 +233,28 @@ def orion_mosaic_snapshot(init_ray):
     ctx = make_test_context()
     add_orion_mosaic_images()
     run_graph(build_compute_graph())
-    snapshot = _snapshot_context()
+
+    from context import context
+    snapshot = ContextSnapshot(
+        data=_snapshot_context(),
+        input_dir=str(context.input_dirs[0]),
+        output_dir=str(context.output_dir),
+    )
+    yield snapshot
     ctx.input_dir_obj.cleanup()
     ctx.output_dir_obj.cleanup()
-    return snapshot
 
 
 @pytest.fixture
 def with_orion_mosaic(test_context, orion_mosaic_snapshot):
-    """Per-test fixture: restores the Orion mosaic snapshot into a fresh context."""
-    _restore_context(orion_mosaic_snapshot)
+    """Per-test fixture: restores the Orion mosaic snapshot into a fresh context.
+
+    Points input_dirs and output_dir at the session's temp dirs (which
+    still contain the original files), ensuring tests that re-run the
+    graph can find the data on disk.
+    """
+    _restore_context(orion_mosaic_snapshot.data)
+    from context import context
+    from pathlib import Path
+    context.input_dirs = [Path(orion_mosaic_snapshot.input_dir)]
+    context.output_dir = Path(orion_mosaic_snapshot.output_dir)
