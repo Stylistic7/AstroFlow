@@ -109,13 +109,13 @@ def get_stack_subframe_image(stack: CompositeStack) -> Path:
     return Path(best_light_frame.filename)
 
 
-@node
 def get_stack_image(
     mode: QualityLevel,
     stack: CompositeStack,
     calibration_stacks: SimpleStacksDict,
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
+    decisions: frozendict = frozendict(),
 ) -> Graph:
     assert stack is not None
     if mode == QualityLevel.SUBFRAME:
@@ -126,7 +126,7 @@ def get_stack_image(
             )
         })
     else:
-        return Graph({(build_stacking_subgraph, stack, calibration_stacks, development_settings, min_frames_in_stack): {}})
+        return Graph({(build_stacking_subgraph, stack, calibration_stacks, development_settings, min_frames_in_stack, decisions): {}})
 
 
 @node

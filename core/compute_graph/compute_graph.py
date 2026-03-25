@@ -260,6 +260,7 @@ def build_preview_graph() -> Graph:
                 calibration_stacks,
                 development_settings,
                 min_frames_in_stack,
+                settings.decision_overrides,
             )
         )
 
@@ -321,6 +322,7 @@ def build_main_processing_graph() -> Graph:
                     calibration_stacks,
                     development_settings,
                     min_frames_in_stack,
+                    settings.decision_overrides,
                 )
             )
 

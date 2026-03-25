@@ -6,6 +6,7 @@ from shapely.affinity import scale  # type: ignore
 from spherical_geometry.polygon import SingleSphericalPolygon
 from functools import partial
 
+from frozendict import frozendict
 from stacks.composite_stack import CompositeStack, CompositeStacksDict, SimpleStacksDict
 from customization.settings import DevelopmentSettings
 from dependency_graph import Graph, Node, chain
@@ -56,7 +57,6 @@ def stacks_for_mosaic(
     )
 
 
-@node
 def build_mosaic_subgraph(
     mode: QualityLevel,
     mosaic: Mosaic,
@@ -65,6 +65,7 @@ def build_mosaic_subgraph(
     calibration_stacks: SimpleStacksDict,
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
+    decisions: frozendict = frozendict(),
 ) -> Graph:
     log.info("Building mosaic subgraph", mode=mode, mosaic=str(mosaic), stacks=[str(s) for s in stacks])
     viewbox = compute_viewbox(mode, mosaic)
@@ -110,6 +111,7 @@ def build_mosaic_subgraph(
             calibration_stacks,
             development_settings,
             min_frames_in_stack,
+            decisions,
         )
         store_task = (store_mosaic_color_channel, mode, mosaic, filter)
         graph[filter_subgraph_task] = {}
@@ -121,7 +123,6 @@ def build_mosaic_subgraph(
     return graph
 
 
-@node
 def build_placement_subgraph(
     mode: QualityLevel,
     mosaic: Mosaic,
@@ -131,12 +132,12 @@ def build_placement_subgraph(
     calibration_stacks: SimpleStacksDict,
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
+    decisions: frozendict = frozendict(),
 ) -> Graph:
-    # TODO: Integrate the stack mask here too.
     return Graph(
         {
             **chain(
-                (get_stack_image, mode, stack, calibration_stacks, development_settings, min_frames_in_stack),
+                (get_stack_image, mode, stack, calibration_stacks, development_settings, min_frames_in_stack, decisions),
                 (place_image, mode, mosaic, stack, filter, viewbox),
                 Node(compute_image_metadata_no_solve, name="placed"),
             )
@@ -165,7 +166,6 @@ def get_stacks_for_filter(
     return tuple(get_stacks_for_strip(strip) for strip in mosaic.strips)
 
 
-@node
 def build_mosaic_filter_subgraph(
     mode: QualityLevel,
     mosaic: Mosaic,
@@ -176,6 +176,7 @@ def build_mosaic_filter_subgraph(
     calibration_stacks: SimpleStacksDict,
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
+    decisions: frozendict = frozendict(),
 ) -> Graph | None:
     log.info("Building mosaic filter subgraph", mode=mode, mosaic=str(mosaic), filter=filter, strips=mosaic.strips, viewbox=str(viewbox))
 
@@ -228,6 +229,7 @@ def build_mosaic_filter_subgraph(
                     calibration_stacks,
                     development_settings,
                     min_frames_in_stack,
+                    decisions,
                 )
             else:
                 placement_task = Node(
@@ -240,6 +242,7 @@ def build_mosaic_filter_subgraph(
                     calibration_stacks,
                     development_settings,
                     min_frames_in_stack,
+                    decisions,
                 )
                 merge_task = Node(
                     merge_images,

@@ -109,17 +109,24 @@ def _process_target(action: Action) -> Graph:
 def _process_mosaic(action: Action) -> Graph:
     mosaic = context.mosaics[action["object_id"]].get()
 
+    stacks = context.stacks
+    targets = context.targets
+    calibration_stacks = context.calibration_stacks
+    settings = context.settings
+
     tasks = []
     for mode in ["subframe", "master"]:
         if action["mode"] in ["all", mode]:
-            stacks = context.stacks
-            targets = context.targets
             task = (
                 build_mosaic_subgraph,
                 QualityLevel(mode),
                 mosaic,
                 stacks_for_mosaic(mosaic, stacks, targets),
                 targets_for_mosaic(mosaic, targets),
+                calibration_stacks,
+                settings.development_settings,
+                settings.clustering_settings.min_frames_in_stack,
+                settings.decision_overrides,
             )
             tasks.append(task)
 
