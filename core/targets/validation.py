@@ -1,9 +1,9 @@
 from targets.target import TargetsDict
 from customization.types import CustomizedStacksDict
-from decorators import cached
+from decorators import node
 
 
-@cached.remote
+@node
 def validate_targets(targets: TargetsDict, stacks: CustomizedStacksDict) -> None:
     for target_id, target in targets.items():
         assert all(s in stacks for s in target.stack_ids), (

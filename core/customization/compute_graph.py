@@ -8,7 +8,7 @@ from cache.context_ref import ContextRef
 from stacks.composite_stack import CompositeStack, CompositeStacksDict
 from stacks.simple_stack import SimpleStack, SimpleStacksDict
 from calibration import associate_with_stack
-from decorators import cached
+from decorators import node
 from dependency_graph import Graph
 from customization.subframe_selection import select_subframes
 from customization.settings import Settings, StackSettings, TargetSettings
@@ -59,7 +59,7 @@ def store_customized_stack(stack: CustomizedStack) -> None:
 
 
 # TODO: Add tests in test_customization.py
-@cached.remote
+@node
 def customize_stack(
     stack_ref: ContextRef[CompositeStack],
     cal_stacks: SimpleStacksDict,
@@ -100,7 +100,7 @@ def gather_customize_stacks(*ancestor_results: CustomizedStack | None) -> Custom
     })
 
 
-@cached.remote
+@node
 def scatter_customize_stacks(
     stack_settings: frozendict,
     decision_overrides: frozendict,
@@ -135,7 +135,7 @@ def scatter_customize_stacks(
 
 
 # TODO: Implement real customization features.
-@cached.remote
+@node
 def scatter_customize_cal_stacks(cal_stacks: SimpleStacksDict) -> SimpleStacksDict:
     print(
         f"### scatter_customize_cal_stacks type(cal_stacks) {type(cal_stacks)}"
@@ -144,7 +144,7 @@ def scatter_customize_cal_stacks(cal_stacks: SimpleStacksDict) -> SimpleStacksDi
     return cal_stacks
 
 
-@cached.remote
+@node
 def scatter_customize_targets(
     target_settings: frozendict, targets: TargetsDict
 ) -> TargetsDict:
@@ -158,7 +158,7 @@ def scatter_customize_targets(
 
 
 # TODO: Implement real customization features.
-@cached.remote
+@node
 def scatter_customize_mosaics(
     mosaic_settings: frozendict, mosaics: MosaicsDict
 ) -> MosaicsDict:

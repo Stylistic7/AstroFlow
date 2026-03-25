@@ -28,7 +28,7 @@ from dependency_graph import Graph, Node, chain
 from stacks.identification import identify_stacks
 from stacks.composite_stack import SimpleStacksDict, CompositeStacksDict
 from stacks.validation import validate_stacks
-from decorators import cached
+from decorators import node
 from customization.compute_graph import (
     scatter_customize_stacks,
     scatter_customize_cal_stacks,
@@ -231,7 +231,7 @@ def build_regroup_graph(metadata_ref: ContextRef[MetadataDict]) -> Graph:
     )
 
 
-@cached.remote
+@node
 def preview_graph_done() -> None:
     pass
 

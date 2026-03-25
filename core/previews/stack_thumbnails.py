@@ -7,8 +7,7 @@ from collections.abc import Iterable
 
 from context import context
 from decorators import (
-    cached,
-    measure_performance,
+    node,
     create_thumbnail,
     create_video,
 )
@@ -65,24 +64,21 @@ def get_best_light_frame(stack: CustomizedStack) -> WithSidecar:
 
 
 @makes_image(CustomizedStack).as_subframe(get_best_light_frame)
-@cached.remote
-@measure_performance
+@node
 @create_thumbnail
 def stack_thumbnail(stack: CustomizedStack) -> WithSidecar:
     return get_best_light_frame(stack)
 
 
 @makes_image(CalibrationStack).as_subframe(get_first_frame)
-@cached.remote
-@measure_performance
+@node
 @create_thumbnail
 def calibration_stack_thumbnail(stack: SimpleStack) -> WithSidecar:
     return get_first_frame(stack)
 
 
 @makes_video(CustomizedStack).as_subframe()
-@cached.remote(resources={"fastest_storage": 0.001})
-@measure_performance
+@node(resources={"fastest_storage": 0.001})
 @create_video
 def stack_thumbnail_video(stack: CustomizedStack, subframe_thumbnail_width: int) -> Iterable[np.ndarray]:
     # Sort all the light frames (no matter which run they're from) by the
@@ -110,8 +106,7 @@ def stack_thumbnail_video(stack: CustomizedStack, subframe_thumbnail_width: int)
 
 
 @makes_video(CalibrationStack).as_subframe()
-@cached.remote(resources={"fastest_storage": 0.001})
-@measure_performance
+@node(resources={"fastest_storage": 0.001})
 @create_video
 def calibration_stack_thumbnail_video(
     stack: SimpleStack,

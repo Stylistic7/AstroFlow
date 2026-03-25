@@ -4,7 +4,7 @@ from frozendict import frozendict
 
 from previews.calibration import calibrate_subframe
 from previews.operations import autostretch
-from decorators import cached, measure_performance
+from decorators import node, measure_performance
 from customization.types import CustomizedStack
 from customization.subframe_selection import get_light_frames_sorted_by_stars
 from decorators import create_thumbnail
@@ -40,7 +40,7 @@ def flat_corrected_stack(
     return temp_file
 
 
-@cached.remote
+@node
 def create_flat_correction_thumbnails(stack: CustomizedStack, calibration_stacks: SimpleStacksDict, subframe_thumbnail_width: int) -> None:
     flat_stack_ids = [
         id

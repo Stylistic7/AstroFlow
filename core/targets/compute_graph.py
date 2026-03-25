@@ -5,7 +5,7 @@ from spherical_geometry.polygon import SingleSphericalPolygon
 from functools import partial
 
 from context import context
-from decorators import cached
+from decorators import node
 from dependency_graph import Graph
 from targets.types import Target
 from targets.post_process import post_process_target
@@ -48,7 +48,7 @@ def build_target_subgraph(
     return graph
 
 
-@cached.remote
+@node
 def process_targets_for_ui(targets: dict) -> dict:
     def my_transform(v):
         if type(v) is np.ndarray:

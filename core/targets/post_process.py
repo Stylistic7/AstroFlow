@@ -13,7 +13,7 @@ from pix.tasks import (
     LRGBCombination,
 )
 from file_io.types import XisfFilePath
-from decorators import cached, measure_performance, create_thumbnail
+from decorators import node, create_thumbnail
 from targets.types import Target
 from stacks.artifacts import stack_filename
 from customization.types import CustomizedStacksDict
@@ -70,8 +70,7 @@ def target_filename(target: Target, suffix: str) -> XisfFilePath:
 
 
 @makes_image(Target).as_post_processed(target_filename)
-@cached.remote(resources={"PixInsight": 1}, scheduling_strategy="SPREAD")
-@measure_performance
+@node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD")
 @create_thumbnail
 def post_process_target(target: Target, stacks: CustomizedStacksDict) -> None:
     from context import context

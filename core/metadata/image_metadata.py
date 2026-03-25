@@ -10,7 +10,7 @@ from metadata.classes import ImageMetadata, MetadataDict
 import plate_solving
 from dependency_graph import Graph
 from context import context
-from decorators.decorators import cached, measure_performance
+from decorators.decorators import node
 from cache.context_ref import ContextRef
 
 # TODO: I need to associate dark and flat frames *before* computing thumbnails.
@@ -148,7 +148,7 @@ def _compute_image_metadata_impl(
     return result
 
 
-@cached.remote(num_cpus=0.25)
+@node(num_cpus=0.25)
 def compute_image_metadata(
     development_settings,
     filename: Path | os.PathLike,
@@ -158,7 +158,7 @@ def compute_image_metadata(
     )
 
 
-@cached.remote(num_cpus=0.25)
+@node(num_cpus=0.25)
 def compute_image_metadata_no_solve(
     filename: Path | os.PathLike,
 ) -> ImageMetadata:

@@ -5,7 +5,7 @@ from typing import Sequence, Callable, Any, TypeVar
 import metadata.image_types as image_types
 from geometry import footprints
 import plate_solving
-from decorators import cached
+from decorators import node
 from cache.context_ref import ContextRef
 from metadata.classes import MetadataDict
 
@@ -53,7 +53,7 @@ def find_groups(
     return groups
 
 
-@cached.remote
+@node
 def cluster_by_image_center(metadata_ref: ContextRef[MetadataDict], cosine_similarity_threshold: float, min_component_members: int) -> list[tuple[str, ...]]:
     metadata = metadata_ref.get()
 
