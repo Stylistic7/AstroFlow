@@ -13,7 +13,7 @@ from metadata.classes import MetadataDict, FrameHash
 from metadata.image_types import is_master
 from hashing import hash_list_int
 from cache.content_hashed import ContentHashed
-from decorators import cached
+from decorators import node
 from cache.context_ref import ContextRef
 
 
@@ -64,7 +64,7 @@ class CalibrationStack(SimpleStack):
     pass
 
 
-@cached.remote
+@node
 def simple_stack_from_frames(
     frames: list[FrameHash], metadata: MetadataDict
 ) -> SimpleStack:

@@ -7,7 +7,7 @@ from pix.tasks import (
     SpectrophotometricFluxCalibration,
     MultiscaleGradientCorrection,
 )
-from decorators import cached, measure_performance, create_thumbnail
+from decorators import node, create_thumbnail
 from customization.settings import DevelopmentSettings
 from customization.types import CustomizedStack
 from stacks.composite_stack import CompositeStack
@@ -35,8 +35,7 @@ def _post_process_stack(master_path, stack: CustomizedStack) -> Image:
 
 
 @makes_image(CompositeStack).as_post_processed(stack_filename)
-@cached.remote(resources={"PixInsight": 1})
-@measure_performance
+@node(resources={"PixInsight": 1})
 @create_thumbnail
 def post_process_stack(stack: CustomizedStack, development_settings: DevelopmentSettings) -> WithSidecar[XisfFilePath]:
     master = stack_files.filename_fn(stack)

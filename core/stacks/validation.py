@@ -1,11 +1,8 @@
-from beartype import beartype
-
 from stacks.composite_stack import CompositeStacksDict
-from decorators import cached
+from decorators import node
 
 
-@cached.remote
-@beartype
+@node
 def validate_stacks(stacks: CompositeStacksDict) -> CompositeStacksDict:
     print(
         f"#### validate_stacks validating {len(stacks)} stacks "

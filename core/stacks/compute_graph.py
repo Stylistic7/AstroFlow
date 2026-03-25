@@ -4,8 +4,7 @@ import numpy as np
 from spherical_geometry.polygon import SingleSphericalPolygon
 from functools import partial
 from beartype import beartype
-
-from decorators import cached
+from decorators import node
 from stacks.stacking import stack_files
 from stacks.composite_stack import SimpleStack, CompositeStack, SimpleStacksDict
 from stacks.types import StackIdDependency
@@ -30,7 +29,7 @@ def calibration_done(stack: CustomizedStack) -> None:
     pass
 
 
-@cached.remote
+@node
 def build_calibration_stack_subgraph(
     stack: CustomizedStack,
     calibration_stacks: SimpleStacksDict,
@@ -68,7 +67,7 @@ def stack_runs_done(stack: CustomizedStack) -> None:
 
 # This function accepts a fully customized stack, after settings and calibration
 # frames have been associated.
-@cached.remote
+@node
 def build_stacking_subgraph(
     stack: CustomizedStack,
     calibration_stacks: SimpleStacksDict,
@@ -101,7 +100,7 @@ def build_stacking_subgraph(
 
 
 # TODO: Calibrate the subframe returned here.
-@cached.remote
+@node
 def get_stack_subframe_image(stack: CompositeStack) -> Path:
     assert stack is not None
     light_frames_by_stars = get_light_frames_sorted_by_stars(stack)
@@ -109,8 +108,7 @@ def get_stack_subframe_image(stack: CompositeStack) -> Path:
     return Path(best_light_frame.filename)
 
 
-@cached.remote
-@beartype
+@node
 def get_stack_image(
     mode: QualityLevel,
     stack: CompositeStack,
@@ -130,8 +128,7 @@ def get_stack_image(
         return Graph({(build_stacking_subgraph, stack, calibration_stacks, development_settings, min_frames_in_stack): {}})
 
 
-@cached.remote
-@beartype
+@node
 def process_stacks_for_ui(stacks: dict) -> dict:
     assert None not in stacks.values()
 
@@ -164,8 +161,7 @@ def process_stacks_for_ui(stacks: dict) -> dict:
     return ui_stacks
 
 
-@cached.remote
-@beartype
+@node
 def process_calibration_stacks_for_ui(cal_stacks: dict) -> dict:
     assert None not in cal_stacks.values()
 

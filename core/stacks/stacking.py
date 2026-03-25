@@ -17,7 +17,7 @@ from stacks.composite_stack import Stack, CompositeStack
 from customization.types import CustomizedStack
 from pix.tasks import run_wbpp
 from metadata.classes import MetadataDict
-from decorators import cached, measure_performance, create_thumbnail
+from decorators import node, create_thumbnail
 from customization.settings import DevelopmentSettings
 from products import makes_image
 
@@ -151,8 +151,7 @@ def _copy_wbpp_result(
 
 # TODO: add an `as_downscaled_master` quality level.
 @makes_image(CustomizedStack).as_master(stack_filename)
-@cached.remote(resources={"PixInsight": 1}, scheduling_strategy="SPREAD")
-@measure_performance
+@node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD")
 @create_thumbnail
 def stack_files(
     stack: Stack,

@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any
 from frozendict import frozendict
 
-from decorators.decorators import cached
+from decorators.decorators import node
 from metadata.classes import ImageMetadata, FrameHash
 from stacks.types import StackHash, StackIdDependency
 from stacks.simple_stack import (
@@ -22,7 +22,7 @@ from metadata.classes import MetadataDict
 from beartype import beartype
 
 
-@cached.remote
+@node
 def identify_calibration_stacks(metadata_ref: ContextRef[MetadataDict], max_run_gap) -> SimpleStacksDict:
     print(f"Identifying calibration stacks...")
     metadata = metadata_ref.get()
@@ -212,7 +212,7 @@ def associate_with_stack(
     return replace(stack, contents=new_contents)
 
 
-@cached.remote
+@node
 def associate_calibration_stacks(
     cal_stacks: SimpleStacksDict,
 ) -> SimpleStacksDict:
