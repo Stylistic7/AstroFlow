@@ -16,6 +16,8 @@ import numpy as np
 import traceback
 from typing import Any
 
+from beartype import beartype
+
 from file_io.conversion import convert_xisf_to_fits
 from file_io.sidecar import get_section, set_section, sidecar_path_for
 from units import Degrees, Radians, ArcsecondsPerPixel
@@ -43,6 +45,7 @@ class PlateSolution:
             object.__setattr__(self, key, value)
 
 
+@beartype
 def _ensure_naxis(header: dict[str, Any]) -> None:
     """Ensure NAXIS, NAXIS1, NAXIS2 are present in the WCS header.
 
@@ -57,14 +60,17 @@ def _ensure_naxis(header: dict[str, Any]) -> None:
         header["NAXIS"] = 2
 
 
+@beartype
 def get_center(header: dict[str, Any]) -> tuple[Degrees, Degrees]:
     return Degrees(header["CRVAL1"]), Degrees(header["CRVAL2"])
 
 
+@beartype
 def get_rotation_angle(header: dict[str, Any]) -> Radians:
     return Radians(np.arctan2(header["CD1_2"], header["CD1_1"]))
 
 
+@beartype
 def get_image_scale(header: dict[str, Any]) -> ArcsecondsPerPixel:
     scale_x = np.linalg.norm(np.array([header["CD1_1"], header["CD2_1"]]))
     scale_y = np.linalg.norm(np.array([header["CD1_2"], header["CD2_2"]]))
@@ -75,6 +81,7 @@ def get_image_scale(header: dict[str, Any]) -> ArcsecondsPerPixel:
     return ArcsecondsPerPixel(scale_x * 3600.0)
 
 
+@beartype
 def get_num_stars(axy_file: Path | str) -> int:
     fits = pyfits.open(axy_file, mmap=False)
     table = fits[1].data
@@ -83,6 +90,7 @@ def get_num_stars(axy_file: Path | str) -> int:
 
 
 
+@beartype
 def simplify_header(header: dict[str, Any]) -> dict[str, Any]:
     output_header = {}
     for k in header.keys():
@@ -93,6 +101,7 @@ def simplify_header(header: dict[str, Any]) -> dict[str, Any]:
     return output_header
 
 
+@beartype
 def _solve_field(
     filename: Path | str, arguments: list[str], debug: bool = False
 ) -> PlateSolution | None:
@@ -161,6 +170,7 @@ def _solve_field(
 # TODO: Make a "junk drawer" video that shows everything that can't be plate-
 # solved. The user can look at it and decide whether to improve the solver's
 # settings, or to throw the images away.
+@beartype
 def _plate_solution_to_obj(ps: PlateSolution) -> dict[str, Any]:
     d = asdict(ps) if is_dataclass(ps) else dict(ps)  # type: ignore[arg-type]
     c = d.get("center")
@@ -169,6 +179,7 @@ def _plate_solution_to_obj(ps: PlateSolution) -> dict[str, Any]:
     return {"schema": _PLATESOLUTION_SCHEMA, "data": d}
 
 
+@beartype
 def _plate_solution_from_obj(obj: dict[str, Any]) -> PlateSolution:
     if obj.get("schema") != _PLATESOLUTION_SCHEMA:
         raise ValueError(
@@ -190,6 +201,7 @@ def _plate_solution_from_obj(obj: dict[str, Any]) -> PlateSolution:
     return PlateSolution(**d)
 
 
+@beartype
 def solve_field(
     filename: Path | str,
     development_settings=None,
