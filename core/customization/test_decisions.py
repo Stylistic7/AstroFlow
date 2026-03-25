@@ -152,6 +152,81 @@ def test_exclude_rotated_run_splits_stack(test_context):
 
 
 @pytest.mark.heavy
+def test_subframe_quality_decision(test_context):
+    """When >25% of frames would be excluded by quality filter, a decision is generated."""
+    # 10 good frames (high star count) + 5 bad frames (very low star count).
+    # With the 75% threshold, the bad frames should be excluded.
+    make_synthetic_frames(
+        ra=100, dec=50, prefix="good", number=10, dither=0,
+        rotation_angle_deg=90.0, num_stars=1000,
+        start_datetime=datetime.datetime(2023, 12, 1, 20, 0, 0),
+        dest_dir=context.input_dirs[0],
+    )
+    make_synthetic_frames(
+        ra=100, dec=50, prefix="bad", number=5, dither=0,
+        rotation_angle_deg=90.0, num_stars=100,
+        start_datetime=datetime.datetime(2023, 12, 1, 21, 0, 0),
+        dest_dir=context.input_dirs[0],
+    )
+
+    run_graph(build_compute_graph())
+
+    assert len(context.stacks) == 1
+    stack = next(iter(context.stacks.values())).get()
+    # Default behavior: bad frames excluded by quality filter.
+    assert len(stack.all_frames()) == 10
+
+    # A subframe quality decision should have been generated (5/15 = 33% > 25%).
+    decisions = context.get("decisions", {})
+    quality_decisions = {
+        k: v for k, v in decisions.items()
+        if v.decision_type == DecisionType.SUBFRAME_QUALITY
+    }
+    assert len(quality_decisions) == 1
+    dp = next(iter(quality_decisions.values()))
+    assert dp.metadata["excluded_count"] == 5
+    assert dp.metadata["total_frames"] == 15
+
+    # Verify the skip mechanism works: select_subframes with skip returns stack unchanged.
+    from customization.subframe_selection import select_subframes
+    unfiltered = select_subframes(stack, min_frames_in_stack=3, skip_quality_filter=True)
+    assert unfiltered is stack  # Same object — no filtering applied
+
+
+@pytest.mark.heavy
+def test_no_subframe_decision_for_minor_exclusion(test_context):
+    """When only a small fraction of frames are excluded, no decision is generated."""
+    # 14 good frames + 1 bad frame = 6.7% excluded, below 25% threshold.
+    make_synthetic_frames(
+        ra=100, dec=50, prefix="good", number=14, dither=0,
+        rotation_angle_deg=90.0, num_stars=1000,
+        start_datetime=datetime.datetime(2023, 12, 1, 20, 0, 0),
+        dest_dir=context.input_dirs[0],
+    )
+    make_synthetic_frames(
+        ra=100, dec=50, prefix="bad", number=1, dither=0,
+        rotation_angle_deg=90.0, num_stars=100,
+        start_datetime=datetime.datetime(2023, 12, 1, 21, 0, 0),
+        dest_dir=context.input_dirs[0],
+    )
+
+    run_graph(build_compute_graph())
+
+    assert len(context.stacks) == 1
+    stack = next(iter(context.stacks.values())).get()
+    # The 1 bad frame should still be excluded by the filter.
+    assert len(stack.all_frames()) == 14
+
+    # No subframe quality decision should be generated (1/15 = 6.7% < 25%).
+    decisions = context.get("decisions", {})
+    quality_decisions = {
+        k: v for k, v in decisions.items()
+        if v.decision_type == DecisionType.SUBFRAME_QUALITY
+    }
+    assert len(quality_decisions) == 0
+
+
+@pytest.mark.heavy
 def test_no_decisions_for_uniform_rotation(test_context):
     """Frames with identical rotation should not generate decisions."""
     make_synthetic_frames(

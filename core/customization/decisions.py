@@ -9,6 +9,7 @@ from hashing import hash_dataclass
 class DecisionType(str, Enum):
     ROTATION_OUTLIER = "rotation_outlier"
     SMALL_RUN = "small_run"
+    SUBFRAME_QUALITY = "subframe_quality"
 
 
 class BinaryChoice(str, Enum):

@@ -13,7 +13,7 @@ from dependency_graph import Graph
 from customization.subframe_selection import select_subframes
 from customization.settings import Settings, StackSettings, TargetSettings
 from customization.types import CustomizedStack, CustomizedStacksDict
-from customization.decisions import BinaryChoice, DecisionKey, DecisionOverride, ObjectType
+from customization.decisions import BinaryChoice, DecisionKey, DecisionOverride, DecisionType, ObjectType
 from quarantining.quarantining import apply_quarantine
 from mosaics.types import MosaicsDict
 from targets.types import TargetsDict
@@ -76,10 +76,17 @@ def customize_stack(
             x = f(x)
         return x
 
+    # Check if the user overrode the subframe quality filter for this stack.
+    skip_quality = any(
+        key[0] == DecisionType.SUBFRAME_QUALITY
+        and override.choice == BinaryChoice.EXCLUDE
+        for key, override in decision_overrides.items()
+    )
+
     stack = chain(
         stack,
         lambda s: associate_with_stack(s, cal_stacks),
-        lambda s: select_subframes(s, min_frames_in_stack),
+        lambda s: select_subframes(s, min_frames_in_stack, skip_quality_filter=skip_quality),
         lambda s: apply_quarantine(s, stack_settings.quarantined_substacks),
         lambda s: apply_decision_exclusions(s, decision_overrides),
         lambda s: apply_settings(s, stack_settings),
