@@ -8,13 +8,11 @@ import Tooltip from '@mui/material/Tooltip';
 import AstroFlowBreadcrumbs from "./AstroFlowBreadcrumbs.jsx";
 import IconButton from '@mui/material/IconButton';
 import InputBase from '@mui/material/InputBase';
-import Badge from '@mui/material/Badge';
 import MenuItem from '@mui/material/MenuItem';
 import Menu from '@mui/material/Menu';
 import SearchIcon from '@mui/icons-material/Search';
 import AccountCircle from '@mui/icons-material/AccountCircle';
 import MoreIcon from '@mui/icons-material/MoreVert';
-import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import LeftDrawer from "./LeftDrawer.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
 import ProgressComponent from './ProgressComponent.jsx';
@@ -76,7 +74,7 @@ export function VerticalDivider({ height = 24, color = 'grey.400', marginX = 2 }
 }
 
 export default function PrimarySearchAppBar() {
-  const { stacks, targets, mosaics, calibrationStacks, decisions } = useContext(AstroFlowContext);
+  const { stacks, targets, mosaics, calibrationStacks } = useContext(AstroFlowContext);
   const navigate = useNavigate();
 
   const index = useMemo(() => {
@@ -103,11 +101,6 @@ export default function PrimarySearchAppBar() {
 
     return idx;
   }, [stacks, targets, mosaics, calibrationStacks]);
-
-  const unreviewedCount = useMemo(
-    () => (decisions || []).filter(d => !d.is_overridden).length,
-    [decisions]
-  );
 
   function smartSearch(query) {
     const tokens = query.trim().split(/\s+/);
@@ -213,14 +206,6 @@ export default function PrimarySearchAppBar() {
       open={isMobileMenuOpen}
       onClose={handleMobileMenuClose}
     >
-      <MenuItem onClick={() => navigate('/decisions')}>
-        <IconButton size="large" color="inherit">
-          <Badge badgeContent={unreviewedCount} color="warning">
-            <WarningAmberIcon />
-          </Badge>
-        </IconButton>
-        <p>Decisions</p>
-      </MenuItem>
       <MenuItem onClick={handleProfileMenuOpen}>
         <IconButton
           size="large"
@@ -266,17 +251,6 @@ export default function PrimarySearchAppBar() {
           <ProgressComponent />
           <VerticalDivider />
           <Box sx={{ display: { xs: 'none', md: 'flex' } }}>
-            <Tooltip title={unreviewedCount > 0 ? `${unreviewedCount} decision(s) to review` : 'No decisions to review'}>
-              <IconButton
-                size="large"
-                color="inherit"
-                onClick={() => navigate('/decisions')}
-              >
-                <Badge badgeContent={unreviewedCount} color="warning">
-                  <WarningAmberIcon />
-                </Badge>
-              </IconButton>
-            </Tooltip>
             <IconButton
               size="large"
               edge="end"

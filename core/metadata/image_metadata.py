@@ -11,7 +11,7 @@ from metadata.classes import ImageMetadata, MetadataDict
 import plate_solving
 from dependency_graph import Graph
 from context import context
-from decorators.decorators import node
+from decorators.decorators import node, measure_performance
 from cache.context_ref import ContextRef
 
 log = structlog.get_logger()

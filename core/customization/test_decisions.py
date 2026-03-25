@@ -14,6 +14,7 @@ from customization.decisions import (
     ObjectType,
     DecisionOverride,
     resolve_decision,
+    get_decisions_for_object,
 )
 
 
@@ -73,7 +74,8 @@ def test_rotation_outlier_detection(test_context):
 
     run_graph(build_compute_graph())
 
-    decisions = context.get("decisions", {})
+    stack_hash = next(iter(context.stacks))
+    decisions = get_decisions_for_object(ObjectType.STACK, stack_hash)
     assert len(decisions) > 0, "Expected at least one decision point to be detected"
 
     # All detected decisions should be rotation outliers
@@ -111,7 +113,8 @@ def test_exclude_rotated_run_splits_stack(test_context):
     assert total_frames_before == 15
 
     # A rotation outlier decision should have been detected.
-    decisions = context.get("decisions", {})
+    stack_hash = next(iter(context.stacks))
+    decisions = get_decisions_for_object(ObjectType.STACK, stack_hash)
     rotation_decisions = {
         k: v for k, v in decisions.items()
         if v.decision_type == DecisionType.ROTATION_OUTLIER
@@ -173,7 +176,8 @@ def test_subframe_quality_decision(test_context):
     assert len(stack.all_frames()) == 10
 
     # A subframe quality decision should have been generated (5/15 = 33% > 25%).
-    decisions = context.get("decisions", {})
+    stack_hash = next(iter(context.stacks))
+    decisions = get_decisions_for_object(ObjectType.STACK, stack_hash)
     quality_decisions = {
         k: v for k, v in decisions.items()
         if v.decision_type == DecisionType.SUBFRAME_QUALITY
@@ -216,7 +220,8 @@ def test_no_subframe_decision_for_minor_exclusion(test_context):
     assert len(stack.all_frames()) == 14
 
     # No subframe quality decision should be generated (1/15 = 6.7% < 25%).
-    decisions = context.get("decisions", {})
+    stack_hash = next(iter(context.stacks))
+    decisions = get_decisions_for_object(ObjectType.STACK, stack_hash)
     quality_decisions = {
         k: v for k, v in decisions.items()
         if v.decision_type == DecisionType.SUBFRAME_QUALITY
@@ -239,5 +244,6 @@ def test_no_decisions_for_uniform_rotation(test_context):
 
     run_graph(build_compute_graph())
 
-    decisions = context.get("decisions", {})
+    stack_hash = next(iter(context.stacks))
+    decisions = get_decisions_for_object(ObjectType.STACK, stack_hash)
     assert len(decisions) == 0, "No decisions expected for uniform rotation"

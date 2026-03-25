@@ -8,9 +8,22 @@ from hashing import hash_dataclass
 
 
 class DecisionType(str, Enum):
+    QUARANTINE = "quarantine"
     ROTATION_OUTLIER = "rotation_outlier"
     SMALL_RUN = "small_run"
     SUBFRAME_QUALITY = "subframe_quality"
+    CALIBRATION_BIAS = "calibration_bias"
+    CALIBRATION_DARK = "calibration_dark"
+    CALIBRATION_FLAT = "calibration_flat"
+
+
+# Lower precedence = applied first by resolve_decisions.
+DECISION_PRECEDENCE: dict["DecisionType", int] = {
+    DecisionType.QUARANTINE: 0,
+    DecisionType.ROTATION_OUTLIER: 1,
+    DecisionType.SMALL_RUN: 2,
+    DecisionType.SUBFRAME_QUALITY: 3,
+}
 
 
 class BinaryChoice(str, Enum):
@@ -33,7 +46,7 @@ DecisionKey = tuple[DecisionType, ObjectType, str, str]
 class DecisionPoint:
     key: DecisionKey
     decision_type: DecisionType
-    default_choice: BinaryChoice
+    default_choice: Any
     title: str
     description: str
     metadata: frozendict = field(default_factory=frozendict)
@@ -53,6 +66,11 @@ class DecisionOverride:
         return hash_dataclass(self)
 
 
+def _decisions_key(object_type: ObjectType, object_id: str):
+    """Context key for per-object decision storage."""
+    return ("decisions", object_type.value, object_id)
+
+
 def resolve_decision(
     decision: DecisionPoint,
     overrides: frozendict[DecisionKey, DecisionOverride],
@@ -60,8 +78,8 @@ def resolve_decision(
 ) -> Any:
     """Publish a decision (if not already published) and resolve its value.
 
-    1. Publishes the decision to context["decisions"] if not already there.
-       If it's already there (e.g. from a previous run), leaves it untouched.
+    1. Publishes the decision to per-object storage in context if not already
+       there.
     2. Resolves: user override wins, otherwise the caller's default.
 
     The default comes from the calling code, not from the cached DecisionPoint.
@@ -72,11 +90,20 @@ def resolve_decision(
     decisions, or a numeric threshold for quality decisions, etc.
     """
     from context import context
-    decisions = context.get("decisions", {})
+    obj_key = _decisions_key(decision.object_type, decision.object_id)
+    decisions = context.get(obj_key, {})
     if decision.key not in decisions:
-        context.or_equals("decisions", {decision.key: decision})
+        context.or_equals(obj_key, {decision.key: decision})
 
     override = overrides.get(decision.key)
     if override is not None:
         return override.choice
     return default
+
+
+def get_decisions_for_object(
+    object_type: ObjectType, object_id: str,
+) -> dict[DecisionKey, DecisionPoint]:
+    """Read all decisions for a specific object from context."""
+    from context import context
+    return context.get(_decisions_key(object_type, object_id), {})
