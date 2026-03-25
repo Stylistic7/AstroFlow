@@ -1,3 +1,4 @@
+import cv2
 import ray
 import numpy as np
 from beartype import beartype
@@ -21,6 +22,7 @@ from dependency_graph import Graph, TaskDescriptor
 from previews.operations import autostretch
 from stacks.composite_stack import CompositeStack
 from customization.subframe_selection import get_light_frames_sorted_by_stars
+from customization.resolve import is_frame_included
 from products import makes_image, makes_video
 from file_io.generic import read_image
 
@@ -32,11 +34,15 @@ def scatter_stack_thumbnails() -> Graph:
 
     calibration_stacks = context.calibration_stacks
     subframe_thumbnail_width = context.settings.preview_settings.subframe_thumbnail_width
+    all_decisions = context.settings.decision_overrides
 
-    for stack_ref in context.stacks.values():
+    def decisions_for(stack_hash):
+        return frozendict({k: v for k, v in all_decisions.items() if len(k) >= 3 and k[2] == stack_hash})
+
+    for stack_hash, stack_ref in context.stacks.items():
         stack = stack_ref.get()
         tasks.append((stack_thumbnail, stack))
-        tasks.append((stack_thumbnail_video, stack, subframe_thumbnail_width))
+        tasks.append((stack_thumbnail_video, stack, subframe_thumbnail_width, decisions_for(stack_hash)))
         tasks.append((create_flat_correction_thumbnails, stack, calibration_stacks, subframe_thumbnail_width))
 
     for stack in calibration_stacks.values():
@@ -77,16 +83,46 @@ def calibration_stack_thumbnail(stack: SimpleStack) -> WithSidecar:
     return get_first_frame(stack)
 
 
+def _annotate_frame(
+    im: np.ndarray, num_stars: int, included: bool,
+) -> np.ndarray:
+    """Burn star count and include/exclude status into a grayscale frame."""
+    h, w = im.shape
+
+    # Star count — top-left, white text with dark outline for readability.
+    text = f"{num_stars}"
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    scale = max(0.4, w / 1200)
+    thickness = max(1, int(scale * 2))
+    pos = (int(w * 0.03), int(h * 0.07))
+    cv2.putText(im, text, pos, font, scale, 0, thickness + 2, cv2.LINE_AA)
+    cv2.putText(im, text, pos, font, scale, 255, thickness, cv2.LINE_AA)
+
+    if not included:
+        # Excluded frames: dim bar across the bottom + "EXCLUDED" label.
+        bar_h = max(2, int(h * 0.02))
+        im[h - bar_h:, :] = 200
+        label_pos = (int(w * 0.03), h - int(h * 0.04))
+        cv2.putText(im, "EXCLUDED", label_pos, font, scale * 0.8, 0, thickness + 2, cv2.LINE_AA)
+        cv2.putText(im, "EXCLUDED", label_pos, font, scale * 0.8, 200, thickness, cv2.LINE_AA)
+
+    return im
+
+
 @makes_video(CompositeStack).as_subframe()
 @node(resources={"fastest_storage": 0.001})
 @create_video
-def stack_thumbnail_video(stack: CompositeStack, subframe_thumbnail_width: int) -> Iterable[np.ndarray]:
+def stack_thumbnail_video(
+    stack: CompositeStack,
+    subframe_thumbnail_width: int,
+    decisions: frozendict = frozendict(),
+) -> Iterable[np.ndarray]:
     # Sort all the light frames (no matter which run they're from) by the
     # number of stars. The better images should be in front.
     width = subframe_thumbnail_width
     metadata = stack.all_metadata()
-    for light_frame in get_light_frames_sorted_by_stars(stack):
-        light_frame = metadata[light_frame]
+    for frame_hash in get_light_frames_sorted_by_stars(stack):
+        light_frame = metadata[frame_hash]
         dependencies = frozendict()
         if substack := next(
             iter(
@@ -102,6 +138,11 @@ def stack_thumbnail_video(stack: CompositeStack, subframe_thumbnail_width: int) 
         im = resize_array(im, width)
         im = autostretch(np.clip(im, 0.0, 1.0))
         im = (im * 255.0).astype(np.uint8)
+
+        num_stars = light_frame.plate_solution.num_stars if light_frame.plate_solution else 0
+        included = is_frame_included(frame_hash, stack, decisions)
+        im = _annotate_frame(im, num_stars, included)
+
         yield im
 
 
