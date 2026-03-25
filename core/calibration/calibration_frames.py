@@ -27,7 +27,7 @@ log = structlog.get_logger()
 
 @node
 def identify_calibration_stacks(metadata_ref: ContextRef[MetadataDict], max_run_gap) -> SimpleStacksDict:
-    print(f"Identifying calibration stacks...")
+    log.info("Identifying calibration stacks")
     metadata = metadata_ref.get()
 
     def get_runs(frames: set[FrameHash]) -> list[list[FrameHash]]:
@@ -195,7 +195,7 @@ def associate_with_stacks(
 
     new_stacks = SimpleStacksDict()
     for h, stack in stacks.items():
-        print(f"### associating stack {stack}")
+        log.info("Associating stack", stack=str(stack))
         deps = dict(stack.dependencies)  # mutable copy to build up
         for t in calibrations_for_stack_type[stack.image_type]:
             if t not in deps:
