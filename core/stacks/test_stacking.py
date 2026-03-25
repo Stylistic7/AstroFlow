@@ -2,11 +2,18 @@ import pytest
 import datetime
 from pathlib import Path
 import pprint
+from frozendict import frozendict
 
 from dependency_graph import run_graph
 from compute_graph import build_compute_graph
 from context import context
 from testing import copy_testdata_frames, make_synthetic_frames, print_tree
+from customization.decisions import (
+    DecisionType, DecisionOverride, BinaryChoice, ObjectType,
+    get_decisions_for_object,
+)
+from customization.resolve import resolve_decisions
+from customization.compute_graph import ALL_EXCLUSION_TYPES
 
 
 @pytest.mark.heavy
@@ -89,3 +96,126 @@ def test_orion_pane(test_context):
     workflow_graph_ref = wf.get(("stack", stack_id))
     workflow_graph = workflow_graph_ref.get() if workflow_graph_ref is not None else None
     print(f"### stack workflow graph {workflow_graph}")
+
+
+@pytest.mark.heavy
+def test_resolve_decisions_filters_rotation_outlier(test_context):
+    """resolve_decisions with a ROTATION_OUTLIER override excludes the flagged run."""
+    # Two runs at different rotations — the 5-frame run should be flagged.
+    make_synthetic_frames(
+        ra=100, dec=50, prefix="normal", number=10, dither=0,
+        rotation_angle_deg=90.0,
+        start_datetime=datetime.datetime(2023, 12, 1, 20, 0, 0),
+        dest_dir=context.input_dirs[0],
+    )
+    make_synthetic_frames(
+        ra=100, dec=50, prefix="rotated", number=5, dither=0,
+        rotation_angle_deg=97.0,
+        start_datetime=datetime.datetime(2023, 12, 2, 20, 0, 0),
+        dest_dir=context.input_dirs[0],
+    )
+
+    run_graph(build_compute_graph())
+
+    stack = next(iter(context.stacks.values())).get()
+    assert len(stack.all_frames()) == 15
+
+    # Find the rotation outlier decision.
+    stack_hash = next(iter(context.stacks))
+    decisions = get_decisions_for_object(ObjectType.STACK, stack_hash)
+    rotated_key = next(
+        k for k, dp in decisions.items()
+        if dp.decision_type == DecisionType.ROTATION_OUTLIER
+        and dp.metadata["run_frame_count"] == 5
+    )
+
+    # Without override: all 15 frames survive (default is INCLUDE).
+    resolved = resolve_decisions(stack, ALL_EXCLUSION_TYPES, frozendict(), min_frames_in_stack=1)
+    assert len(resolved.all_frames()) == 15
+
+    # With EXCLUDE override: only the 10 normal frames survive.
+    overrides = frozendict({rotated_key: DecisionOverride(choice=BinaryChoice.EXCLUDE)})
+    resolved = resolve_decisions(stack, ALL_EXCLUSION_TYPES, overrides, min_frames_in_stack=1)
+    assert len(resolved.all_frames()) == 10
+
+
+@pytest.mark.heavy
+def test_resolve_decisions_filters_subframe_quality(test_context):
+    """resolve_decisions applies quality filter, removing low-star-count frames."""
+    # 10 good frames (1000 stars) + 5 bad frames (100 stars).
+    # 75% threshold → cutoff at 750 stars → bad frames excluded.
+    make_synthetic_frames(
+        ra=100, dec=50, prefix="good", number=10, dither=0,
+        rotation_angle_deg=90.0, num_stars=1000,
+        start_datetime=datetime.datetime(2023, 12, 1, 20, 0, 0),
+        dest_dir=context.input_dirs[0],
+    )
+    make_synthetic_frames(
+        ra=100, dec=50, prefix="bad", number=5, dither=0,
+        rotation_angle_deg=90.0, num_stars=100,
+        start_datetime=datetime.datetime(2023, 12, 1, 21, 0, 0),
+        dest_dir=context.input_dirs[0],
+    )
+
+    run_graph(build_compute_graph())
+
+    stack = next(iter(context.stacks.values())).get()
+    assert len(stack.all_frames()) == 15
+
+    # Default: quality filter is active (INCLUDE means "apply filter").
+    resolved = resolve_decisions(stack, ALL_EXCLUSION_TYPES, frozendict(), min_frames_in_stack=1)
+    assert len(resolved.all_frames()) == 10
+
+    # Override to EXCLUDE (skip filter): all 15 frames survive.
+    stack_hash = next(iter(context.stacks))
+    quality_key = (DecisionType.SUBFRAME_QUALITY, ObjectType.STACK, stack_hash, stack_hash)
+    overrides = frozendict({quality_key: DecisionOverride(choice=BinaryChoice.EXCLUDE)})
+    resolved = resolve_decisions(stack, ALL_EXCLUSION_TYPES, overrides, min_frames_in_stack=1)
+    assert len(resolved.all_frames()) == 15
+
+
+@pytest.mark.heavy
+def test_decisions_change_cache_key(test_context):
+    """Changing decisions produces a different cache key for stack_files."""
+    make_synthetic_frames(
+        ra=100, dec=50, prefix="normal", number=10, dither=0,
+        rotation_angle_deg=90.0,
+        start_datetime=datetime.datetime(2023, 12, 1, 20, 0, 0),
+        dest_dir=context.input_dirs[0],
+    )
+    make_synthetic_frames(
+        ra=100, dec=50, prefix="rotated", number=5, dither=0,
+        rotation_angle_deg=97.0,
+        start_datetime=datetime.datetime(2023, 12, 2, 20, 0, 0),
+        dest_dir=context.input_dirs[0],
+    )
+
+    run_graph(build_compute_graph())
+
+    stack = next(iter(context.stacks.values())).get()
+    stack_hash = next(iter(context.stacks))
+
+    # Find the rotation decision.
+    decisions = get_decisions_for_object(ObjectType.STACK, stack_hash)
+    rotated_key = next(
+        k for k, dp in decisions.items()
+        if dp.decision_type == DecisionType.ROTATION_OUTLIER
+    )
+
+    # Compute cache keys with different overrides — they must differ.
+    from hashing import hash_call, hash_source_code
+    from stacks.stacking import stack_files
+
+    fn_hash = hash_source_code(stack_files)
+
+    cal_stacks = context.calibration_stacks
+    dev_settings = context.settings.development_settings
+    min_frames = context.settings.clustering_settings.min_frames_in_stack
+
+    key_no_override = hash_call(fn_hash, stack, cal_stacks, dev_settings, min_frames, frozendict())
+    overrides = frozendict({rotated_key: DecisionOverride(choice=BinaryChoice.EXCLUDE)})
+    key_with_override = hash_call(fn_hash, stack, cal_stacks, dev_settings, min_frames, overrides)
+
+    assert key_no_override != key_with_override, (
+        "Changing decisions must produce a different cache key"
+    )
