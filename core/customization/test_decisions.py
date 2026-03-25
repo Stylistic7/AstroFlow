@@ -144,10 +144,16 @@ def test_exclude_rotated_run_splits_stack(test_context):
 
     assert len(context.stacks) == 1
     stack_after = next(iter(context.stacks.values())).get()
-    total_frames_after = len(stack_after.all_frames())
 
-    # The excluded run's 5 frames should be removed, leaving 10.
-    assert total_frames_after == 10
+    # The enriched stack preserves all frames (new behavior).
+    assert len(stack_after.all_frames()) == 15
+
+    # But resolve_decisions with the override should filter to 10.
+    from customization.resolve import resolve_decisions
+    from customization.compute_graph import ALL_EXCLUSION_TYPES
+    resolved = resolve_decisions(stack_after, ALL_EXCLUSION_TYPES, overrides, min_frames_in_stack=1)
+    assert resolved is not None
+    assert len(resolved.all_frames()) == 10
 
 
 @pytest.mark.heavy
@@ -172,8 +178,8 @@ def test_subframe_quality_decision(test_context):
 
     assert len(context.stacks) == 1
     stack = next(iter(context.stacks.values())).get()
-    # Default behavior: bad frames excluded by quality filter.
-    assert len(stack.all_frames()) == 10
+    # Enriched stack preserves all frames.
+    assert len(stack.all_frames()) == 15
 
     # A subframe quality decision should have been generated (5/15 = 33% > 25%).
     stack_hash = next(iter(context.stacks))
@@ -216,8 +222,8 @@ def test_no_subframe_decision_for_minor_exclusion(test_context):
 
     assert len(context.stacks) == 1
     stack = next(iter(context.stacks.values())).get()
-    # The 1 bad frame should still be excluded by the filter.
-    assert len(stack.all_frames()) == 14
+    # Enriched stack preserves all frames.
+    assert len(stack.all_frames()) == 15
 
     # No subframe quality decision should be generated (1/15 = 6.7% < 25%).
     stack_hash = next(iter(context.stacks))

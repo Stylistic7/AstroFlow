@@ -44,22 +44,37 @@ def enrich_with_calibration(
     stack_ref: ContextRef[CompositeStack],
     cal_stacks: SimpleStacksDict,
     stack_settings: StackSettings,
+    stack_overrides: frozendict,
+    min_frames_in_stack: int,
 ) -> CompositeStack:
-    """Enrich stack with calibration deps and user settings. All frames preserved."""
+    """Enrich stack with calibration deps and user settings. All frames preserved.
+
+    Also detects and publishes decisions (quality, rotation) as side effects
+    so they're visible in the UI, but does NOT filter frames.
+    """
     stack = stack_ref.get()
     stack = associate_with_stack(stack, cal_stacks)
     stack = apply_settings(stack, stack_settings)
+
+    # Detect and publish decisions without filtering.
+    # resolve_decisions publishes DecisionPoints to context as a side effect.
+    _resolve_decisions(stack, ALL_EXCLUSION_TYPES, stack_overrides, min_frames_in_stack)
+
     return stack
 
 
 @node
 def resolve_stack_decisions(
-    stack: CompositeStack,
     decision_types: tuple[DecisionType, ...],
     stack_overrides: frozendict,
     min_frames_in_stack: int,
+    stack: CompositeStack,
 ) -> CompositeStack | None:
-    """Apply exclusion decisions to produce a filtered view of the stack."""
+    """Apply exclusion decisions to produce a filtered view of the stack.
+
+    `stack` is last because the dependency graph appends ancestor results
+    to the end of the argument list.
+    """
     return _resolve_decisions(stack, decision_types, stack_overrides, min_frames_in_stack)
 
 
@@ -71,14 +86,6 @@ def gather_enriched_stacks(*ancestor_results: CompositeStack) -> CompositeStacks
         for s in ancestor_results if s is not None
     })
 
-
-@ray.remote
-@beartype
-def gather_resolved_stacks(*ancestor_results: CompositeStack | None) -> CompositeStacksDict:
-    return CompositeStacksDict({
-        s.stable_hash: ContextRef.store(("resolved_stacks", s.stable_hash), s)
-        for s in ancestor_results if s is not None
-    })
 
 
 @node
@@ -98,15 +105,14 @@ def scatter_customize_stacks(
             if len(k) >= 3 and k[2] == stack_hash
         })
 
-    # Two-phase graph: enrich (all frames) → resolve (filtered).
-    # Consumers that need all frames depend on enrich_with_calibration.
-    # Consumers that need filtered frames depend on resolve_stack_decisions.
     enrich_tasks = [
         (
             enrich_with_calibration,
             ref,
             cal_stacks,
             stack_settings.get(k, StackSettings()),
+            _overrides_for_stack(k),
+            min_frames_in_stack,
         )
         for k, ref in stacks.items()
     ]
