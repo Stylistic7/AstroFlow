@@ -7,6 +7,11 @@ from hashing import hash_list
 from compute_graph import build_compute_graph
 from context import context
 from customization.settings import Settings, StackSettings, TargetSettings
+from customization.decisions import (
+    DecisionType, DecisionOverride, BinaryChoice, ObjectType,
+)
+from customization.resolve import resolve_decisions
+from customization.compute_graph import ALL_EXCLUSION_TYPES
 from dependency_graph import run_graph
 from testing import make_synthetic_frames, copy_testdata_frames
 from stacks.composite_stack import CompositeStack
@@ -61,27 +66,19 @@ def test_quarantine_run(test_context) -> None:
     assert len(context.targets) == 1
     assert len(context.mosaics) == 0
 
-    # The stack should have two runs.
+    # The enriched stack should have two runs (all frames preserved).
     stack = next(iter(context.stacks.values())).get()
     assert len(stack.contents) == 2
     runs = list(stack.contents.keys())
-    two_run_hash = hash_list([{stack.stable_hash: stack}], debug=True)
 
-    # Quarantine the first run.
-    context.settings = Settings(
-        stack_settings=frozendict({
-            stack.stable_hash: StackSettings(quarantined_substacks=(runs[0],))
-        })
-    )
+    # Quarantine the first run via a QUARANTINE decision override.
+    quarantine_key = (DecisionType.QUARANTINE, ObjectType.STACK, stack.stable_hash, runs[0])
+    overrides = frozendict({quarantine_key: DecisionOverride(choice=BinaryChoice.EXCLUDE)})
 
-    run_graph(build_compute_graph())
-
-    # The stack should have only the second run now.
-    stack = next(iter(context.stacks.values())).get()
-    assert list(stack.contents.keys()) == [runs[1]]
-    one_run_hash = hash_list([{stack.stable_hash: stack}], debug=True)
-
-    assert two_run_hash != one_run_hash
+    # resolve_decisions should filter to only the second run.
+    resolved = resolve_decisions(stack, ALL_EXCLUSION_TYPES, overrides, min_frames_in_stack=1)
+    assert resolved is not None
+    assert list(resolved.contents.keys()) == [runs[1]]
 
 
 @pytest.mark.heavy

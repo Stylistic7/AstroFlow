@@ -14,7 +14,6 @@ from customization.decisions import DecisionKey, DecisionOverride
 @dataclass(frozen=True)
 class StackSettings:
     is_quarantined: bool = False
-    quarantined_substacks: tuple[StackHash, ...] = field(default_factory=tuple)
     dependencies: frozendict[str, StackDependency] = field(default_factory=frozendict)
 
     def __hash__(self):
