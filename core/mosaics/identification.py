@@ -433,10 +433,11 @@ def identify_mosaics(
 
         healpix_cells = healpix_cells_from_poly(footprint)
 
+        rng = random.Random(hash(tuple(map(tuple, all_points))))
         for i in range(10):
             if SphericalPolygon.self_intersect(footprint.points):
                 points = footprint.points
-                random.shuffle(points)
+                rng.shuffle(points)
                 footprint = SingleSphericalPolygon.convex_hull(points)
             else:
                 break
