@@ -176,6 +176,25 @@ const ImperativeViewport = ({ objectType, imageHash, filter, port, imageWidth, i
         g.on('pointertap', (event) => onClick(poly, event));
 
         viewport.addChild(g);
+
+        // Decision indicator: amber dot at the top-right of the polygon bounding box.
+        if (poly.has_decisions) {
+          const xs = poly.points.map(p => p[0]);
+          const ys = poly.points.map(p => p[1]);
+          const maxX = Math.max(...xs);
+          const minY = Math.min(...ys);
+          const dotRadius = imageWidth / 150;
+
+          const dot = new PIXI.Graphics();
+          dot.zIndex = 10000;
+          dot.beginFill(0xffa726, 0.9); // amber
+          dot.drawCircle(maxX, minY, dotRadius);
+          dot.endFill();
+          // White outline for visibility
+          dot.lineStyle(dotRadius * 0.2, 0xffffff, 0.8);
+          dot.drawCircle(maxX, minY, dotRadius);
+          viewport.addChild(dot);
+        }
       }
 
       viewport.sortChildren();

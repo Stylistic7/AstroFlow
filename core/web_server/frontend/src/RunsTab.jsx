@@ -1,16 +1,19 @@
-import { useContext, useEffect, useState } from 'react';
-import { Box, Paper, Typography, IconButton } from '@mui/material';
+import { useContext, useEffect, useState, useCallback } from 'react';
+import { Box, Chip, Paper, Typography, IconButton } from '@mui/material';
 import QuarantineToggle from './QuarantineToggle.jsx';
 import FlatThumbnail from './FlatThumbnail.jsx';
 import AstroFlowContext from './AstroFlowContext.jsx';
 import MetadataItem from './MetadataItem.jsx';
 import FileBrowser from './FileBrowser.jsx';
+import DecisionReviewDialog from './DecisionReviewDialog.jsx';
 
 const RunsTab = ({ stack }) => {
   const { calibrationStacks } = useContext(AstroFlowContext);
 
   const [flatIds, setFlatIds] = useState([]);
   const [selectedFlatsByRun, setSelectedFlatsByRun] = useState({});
+  const [decisions, setDecisions] = useState([]);
+  const [reviewRunId, setReviewRunId] = useState(null);
 
   useEffect(() => {
     const fetchFlats = async () => {
@@ -24,6 +27,22 @@ const RunsTab = ({ stack }) => {
     };
     fetchFlats();
   }, [stack.camera, stack.filter]);
+
+  useEffect(() => {
+    const fetchDecisions = async () => {
+      try {
+        const res = await fetch(`/api/decisions/for/stack/${stack.stable_hash}`);
+        setDecisions(await res.json());
+      } catch { /* ignore */ }
+    };
+    fetchDecisions();
+  }, [stack.stable_hash]);
+
+  const decisionsForRun = (runId) =>
+    decisions.filter(d =>
+      d.subject_id === runId &&
+      (d.decision_type === 'rotation_outlier' || d.decision_type === 'quarantine')
+    );
 
   const runs = Object.entries(stack.contents || {}).map(([id, run]) => ({ id, ...run }));
 
@@ -88,12 +107,26 @@ const RunsTab = ({ stack }) => {
       {runs.map((run) => {
         const selectedFlatId = getSelectedFlatByRun(run);
         const runDate = new Date(run.newest_date);
+        const runDecisions = decisionsForRun(run.id);
         return (
           <Paper key={run.id} sx={{ p: 2, mb: 3 }} elevation={2}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography variant="h6">
-                Run {run.id} — {runDate.toDateString()} ({run.frames.length} frames)
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                <Typography variant="h6">
+                  Run {run.id} — {runDate.toDateString()} ({run.frames.length} frames)
+                </Typography>
+                {runDecisions.map(d => (
+                  <Chip
+                    key={JSON.stringify(d.key)}
+                    label={d.title}
+                    size="small"
+                    color={d.is_overridden ? 'info' : 'warning'}
+                    variant="outlined"
+                    onClick={() => setReviewRunId(run.id)}
+                    sx={{ cursor: 'pointer' }}
+                  />
+                ))}
+              </Box>
               <QuarantineToggle
                 objectType="stack"
                 objectId={run.id}
@@ -154,6 +187,11 @@ const RunsTab = ({ stack }) => {
           </Paper>
         );
       })}
+      <DecisionReviewDialog
+        open={reviewRunId !== null}
+        onClose={() => setReviewRunId(null)}
+        decisions={reviewRunId ? decisionsForRun(reviewRunId) : []}
+      />
     </Box>
   );
 };

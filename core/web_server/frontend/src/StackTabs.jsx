@@ -1,16 +1,82 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
+  Chip,
+  Stack,
   Tabs,
   Tab,
   Divider,
   Paper,
-  Typography
+  ToggleButton,
+  ToggleButtonGroup,
+  Typography,
 } from '@mui/material';
 import TileViewer from './TileViewer';
 import RunsTab from './RunsTab.jsx';
 import WorkflowGraph from './WorkflowGraph.jsx';
 import darkTheme from './theme.js';
+
+function BlinkQualityInfo({ stack_id }) {
+  const [decision, setDecision] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchDecision = async () => {
+      try {
+        const res = await fetch(`/api/decisions/for/stack/${stack_id}`);
+        const all = await res.json();
+        const qd = all.find(d => d.decision_type === 'subframe_quality');
+        setDecision(qd || null);
+      } catch { /* ignore */ }
+    };
+    fetchDecision();
+  }, [stack_id]);
+
+  if (!decision) return null;
+
+  const handleOverride = async (event, newValue) => {
+    if (newValue === null) return;
+    setLoading(true);
+    try {
+      const choice = newValue === 'default' ? null : newValue;
+      await fetch('/api/decisions/override', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: decision.key, choice }),
+      });
+      setDecision(prev => ({
+        ...prev,
+        effective_choice: choice || prev.default_choice,
+        is_overridden: choice !== null,
+      }));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const { metadata: m } = decision;
+  const toggleValue = decision.is_overridden ? decision.effective_choice : 'default';
+
+  return (
+    <Paper elevation={1} sx={{ p: 1.5, mt: 1, display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+      <Typography variant="body2" color="text.secondary">
+        Quality filter: {m.excluded_count} of {m.total_frames} frames excluded
+        (best: {m.best_star_count} stars, threshold: {m.threshold_stars})
+      </Typography>
+      <ToggleButtonGroup
+        value={toggleValue}
+        exclusive
+        onChange={handleOverride}
+        disabled={loading}
+        size="small"
+      >
+        <ToggleButton value="include" color="success">Apply filter</ToggleButton>
+        <ToggleButton value="exclude" color="error">Keep all</ToggleButton>
+        <ToggleButton value="default">Default ({decision.default_choice})</ToggleButton>
+      </ToggleButtonGroup>
+    </Paper>
+  );
+}
 
 const StackTabs = ({ stack_type, stack, stack_id }) => {
   const [tabIndex, setTabIndex] = useState(0);
@@ -70,13 +136,13 @@ const StackTabs = ({ stack_type, stack, stack_id }) => {
           )}
         </Box>
 
-        <Box hidden={tabIndex !== 1} sx={{ height: '100%', position: 'absolute', inset: 0, p: 3 }}>
+        <Box hidden={tabIndex !== 1} sx={{ height: '100%', position: 'absolute', inset: 0, p: 3, display: 'flex', flexDirection: 'column' }}>
           <video
             loop
             autoPlay
             muted
             ref={videoRef}
-            style={{ pointerEvents: 'auto', width: '100%', height: '100%', objectFit: 'contain' }}
+            style={{ pointerEvents: 'auto', width: '100%', flex: 1, objectFit: 'contain' }}
           >
             <source
               src={`/video/${stack_type}/${stack_id}`}
@@ -84,6 +150,7 @@ const StackTabs = ({ stack_type, stack, stack_id }) => {
             />
             Your browser does not support the video tag.
           </video>
+          {stack_type === 'stack' && <BlinkQualityInfo stack_id={stack_id} />}
         </Box>
 
         <Box hidden={tabIndex !== 2} sx={{ height: '100%', overflow: 'auto', position: 'absolute', inset: 0, p: 3 }}>

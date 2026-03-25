@@ -11,6 +11,7 @@ from mosaics.viewbox import compute_viewbox
 from products.registry import get_producer, MediaType
 from previews.types import QualityLevel
 from mosaics.trimming import project_to_viewbox
+from customization.decisions import ObjectType, get_decisions_for_object
 
 metadata_bp = Blueprint("metadata", __name__)
 
@@ -56,7 +57,15 @@ def get_metadata(object_type: type, *args):
         if isinstance(obj, Target):
             objects += [project(stacks[s].get(), viewbox) for s in obj.stack_ids]
         if isinstance(obj, Mosaic):
-            objects += [project(targets[t].get(), viewbox) for t in obj.target_ids]
+            for t in obj.target_ids:
+                target = targets[t].get()
+                poly = project(target, viewbox)
+                # Check if any stack in this target has decisions.
+                poly["has_decisions"] = any(
+                    len(get_decisions_for_object(ObjectType.STACK, sid)) > 0
+                    for sid in target.stack_ids
+                )
+                objects.append(poly)
 
         result["objects"] = objects
 

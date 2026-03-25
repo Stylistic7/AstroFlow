@@ -2,6 +2,7 @@ import React, { useContext } from "react";
 import { useParams, useLocation } from "react-router-dom";
 
 import StackThumbnail from "./StackThumbnail.jsx";
+import DecisionBadge from "./DecisionBadge.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
 
 
@@ -24,12 +25,16 @@ export default function TargetPanel() {
 				opacity: target?.is_quarantined ? 0.5 : 1,
 			}}>
 				{target?.stack_ids?.map((stack_id) => (
-					<StackThumbnail
-						key={"StackThumbnail_" + stack_id}
-						stacks={stacks}
-						stack_id={stack_id}
-						handleClick={event => window.open(`${location.pathname}/stack/${stack_id}`, '_blank')}
-					/>
+					<div key={"cell_" + stack_id} style={{ position: "relative" }}>
+						<StackThumbnail
+							stacks={stacks}
+							stack_id={stack_id}
+							handleClick={event => window.open(`${location.pathname}/stack/${stack_id}`, '_blank')}
+						/>
+						<div style={{ position: "absolute", top: 0, right: 0, zIndex: 1 }}>
+							<DecisionBadge objectType="stack" objectId={stack_id} />
+						</div>
+					</div>
 				))}
 		</div>
 	);
