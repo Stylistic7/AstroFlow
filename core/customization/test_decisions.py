@@ -18,34 +18,20 @@ from customization.decisions import (
 
 
 def test_resolve_decision_default():
-    dp = DecisionPoint(
-        key=(DecisionType.ROTATION_OUTLIER, ObjectType.STACK, "s1", "r1"),
-        decision_type=DecisionType.ROTATION_OUTLIER,
-        default_choice=BinaryChoice.INCLUDE,
-        title="test",
-        description="test",
-        object_type=ObjectType.STACK,
-        object_id="s1",
-        subject_id="r1",
-    )
-    assert resolve_decision(dp, frozendict()) == BinaryChoice.INCLUDE
+    key = (DecisionType.ROTATION_OUTLIER, ObjectType.STACK, "s1", "r1")
+    # No override → caller's default wins.
+    assert resolve_decision(key, frozendict(), default=BinaryChoice.INCLUDE) == BinaryChoice.INCLUDE
+    assert resolve_decision(key, frozendict(), default=BinaryChoice.EXCLUDE) == BinaryChoice.EXCLUDE
 
 
 def test_resolve_decision_override():
-    dp = DecisionPoint(
-        key=(DecisionType.ROTATION_OUTLIER, ObjectType.STACK, "s1", "r1"),
-        decision_type=DecisionType.ROTATION_OUTLIER,
-        default_choice=BinaryChoice.INCLUDE,
-        title="test",
-        description="test",
-        object_type=ObjectType.STACK,
-        object_id="s1",
-        subject_id="r1",
-    )
+    key = (DecisionType.ROTATION_OUTLIER, ObjectType.STACK, "s1", "r1")
     overrides = frozendict({
-        dp.key: DecisionOverride(choice=BinaryChoice.EXCLUDE),
+        key: DecisionOverride(choice=BinaryChoice.EXCLUDE),
     })
-    assert resolve_decision(dp, overrides) == BinaryChoice.EXCLUDE
+    # User override wins regardless of default.
+    assert resolve_decision(key, overrides, default=BinaryChoice.INCLUDE) == BinaryChoice.EXCLUDE
+    assert resolve_decision(key, overrides, default=BinaryChoice.EXCLUDE) == BinaryChoice.EXCLUDE
 
 
 @pytest.mark.heavy

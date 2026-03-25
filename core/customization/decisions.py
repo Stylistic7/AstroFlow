@@ -53,27 +53,17 @@ class DecisionOverride:
 
 
 def resolve_decision(
-    decision: DecisionPoint,
+    key: DecisionKey,
     overrides: frozendict[DecisionKey, DecisionOverride],
+    default: BinaryChoice,
 ) -> BinaryChoice:
-    override = overrides.get(decision.key)
+    """Resolve a decision: user override wins, otherwise use the caller's default.
+
+    The default comes from the calling code, not from the cached DecisionPoint.
+    This ensures code changes to defaults take effect immediately, unless the
+    user has explicitly overridden the decision.
+    """
+    override = overrides.get(key)
     if override is not None:
         return override.choice
-    return decision.default_choice
-
-
-def resolve_decisions_for_stack(
-    decisions: dict[DecisionKey, DecisionPoint],
-    overrides: frozendict[DecisionKey, DecisionOverride],
-    stack_id: str,
-) -> frozendict[DecisionKey, BinaryChoice]:
-    """Resolve all decisions affecting a specific stack.
-
-    Returns a frozen dict suitable for use as a task argument (hashable).
-    """
-    relevant = {
-        k: resolve_decision(d, overrides)
-        for k, d in decisions.items()
-        if k[1] == ObjectType.STACK and k[2] == stack_id
-    }
-    return frozendict(relevant)
+    return default
