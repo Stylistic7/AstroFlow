@@ -6,9 +6,10 @@ def largest_interior_rectangle(image):
         return np.isnan(np.min(x))
 
     def find_seed_point():
+        rng = np.random.default_rng(seed=42)
         height, width = image.shape
         while True:
-            y, x = np.random.randint(height), np.random.randint(width)
+            y, x = rng.integers(height), rng.integers(width)
             if not contains_nan(image[y - 1 : y + 1, x - 1 : x + 1]):
                 return y, x
 
