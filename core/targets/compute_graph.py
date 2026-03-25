@@ -1,4 +1,5 @@
 import ray
+import structlog
 import numpy as np
 from beartype import beartype
 from spherical_geometry.polygon import SingleSphericalPolygon
@@ -18,6 +19,8 @@ from dependency_graph.workflow_graph_adapter import (
     store_node_status,
 )
 
+log = structlog.get_logger()
+
 
 @ray.remote
 @beartype
@@ -26,7 +29,7 @@ def build_target_subgraph(
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
 ) -> Graph:
-    print(f"### build_target_subgraph target {target}")
+    log.info("Building target subgraph", target=str(target))
 
     stacks = context.stacks
     calibration_stacks = context.calibration_stacks

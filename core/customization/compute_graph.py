@@ -1,4 +1,5 @@
 import ray
+import structlog
 from dataclasses import replace
 from beartype import beartype
 from frozendict import frozendict
@@ -17,6 +18,8 @@ from customization.decisions import BinaryChoice, DecisionKey, DecisionOverride,
 from quarantining.quarantining import apply_quarantine
 from mosaics.types import MosaicsDict
 from targets.types import TargetsDict
+
+log = structlog.get_logger()
 
 
 def apply_decision_exclusions(
@@ -108,7 +111,7 @@ def scatter_customize_stacks(
     stacks: CompositeStacksDict,
     cal_stacks: SimpleStacksDict,
 ) -> Graph:
-    print(f"### scatter_customize_stacks type(cal_stacks) {type(cal_stacks)}")
+    log.debug("Scattering stack customization", cal_stacks_type=type(cal_stacks).__name__)
 
     def _overrides_for_stack(stack_hash):
         """Extract only the decision overrides relevant to this stack."""
@@ -137,9 +140,7 @@ def scatter_customize_stacks(
 # TODO: Implement real customization features.
 @node
 def scatter_customize_cal_stacks(cal_stacks: SimpleStacksDict) -> SimpleStacksDict:
-    print(
-        f"### scatter_customize_cal_stacks type(cal_stacks) {type(cal_stacks)}"
-    )
+    log.debug("Scattering calibration stack customization", cal_stacks_type=type(cal_stacks).__name__)
     # cal_stacks is a SimpleStacksDict of real SimpleStack objects — pass through as-is
     return cal_stacks
 

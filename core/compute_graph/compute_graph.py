@@ -1,4 +1,5 @@
 import ray
+import structlog
 from typing import Any
 from beartype import beartype
 
@@ -39,6 +40,8 @@ from cache.context_ref import ContextRef
 from customization.settings import Settings
 from customization.types import CustomizedStacksDict
 
+log = structlog.get_logger()
+
 
 @ray.remote
 @beartype
@@ -46,10 +49,7 @@ def store_calibration_stacks(
     calibration_stacks: SimpleStacksDict,
 ) -> SimpleStacksDict:
     context.calibration_stacks = calibration_stacks
-    print(
-        f"### store_calibration_stacks: Stored "
-        f"{len(calibration_stacks)} calibration stacks"
-    )
+    log.info("Stored calibration stacks", count=len(calibration_stacks))
     return calibration_stacks
 
 
@@ -61,7 +61,7 @@ def store_stacks(stacks: dict[str, Any]) -> dict[str, Any]:
     # stacks values are already ContextRefs (from gather_customize_stacks)
     result = CustomizedStacksDict(stacks)
     context.stacks = result
-    print(f"### store_stacks: Stored {len(stacks)} stacks")
+    log.info("Stored stacks", count=len(stacks))
     return result
 
 
@@ -72,7 +72,7 @@ def store_targets(targets: dict[str, Any]) -> dict[str, Any]:
     # targets values are already ContextRefs (from identify_targets)
     result = TargetsDict(targets)
     context.targets = result
-    print(f"### store_targets: Stored {len(targets)} targets")
+    log.info("Stored targets", count=len(targets))
     return result
 
 
@@ -82,7 +82,7 @@ def store_mosaics(mosaics: MosaicsDict) -> MosaicsDict:
     assert None not in mosaics.values()
     # mosaics values are already ContextRefs (from identify_mosaics)
     context.mosaics = mosaics
-    print(f"### store_mosaics: Stored {len(mosaics)} mosaics")
+    log.info("Stored mosaics", count=len(mosaics))
     return mosaics
 
 
@@ -288,7 +288,7 @@ def build_main_processing_graph() -> Graph:
     # TODO: Figure out a nice way to set this during development.
     mode = QualityLevel.MASTER
 
-    print(f"### build_main_processing_graph shopping_cart {shopping_cart}")
+    log.info("Building main processing graph", shopping_cart=shopping_cart)
 
     # TODO: Maybe add prioritization options in the UI.
     graph = Graph({})
@@ -296,23 +296,17 @@ def build_main_processing_graph() -> Graph:
     for type, id in shopping_cart:
         if type == "stack":
             if id not in stacks:
-                print(
-                    f"### WARNING: stack {id} is in shopping cart but does not exist"
-                )
+                log.warning("Stack in shopping cart does not exist", stack_id=id)
                 continue
             tasks.append((build_stacking_subgraph, stacks[id].get(), calibration_stacks, development_settings, min_frames_in_stack))
         elif type == "target":
             if id not in targets:
-                print(
-                    f"### WARNING: target {id} is in shopping cart but does not exist"
-                )
+                log.warning("Target in shopping cart does not exist", target_id=id)
                 continue
             tasks.append((build_target_subgraph, targets[id].get(), development_settings, min_frames_in_stack))
         if type == "mosaic":
             if id not in mosaics:
-                print(
-                    f"### WARNING: mosaic {id} is in shopping cart but does not exist"
-                )
+                log.warning("Mosaic in shopping cart does not exist", mosaic_id=id)
                 continue
 
             mosaic = mosaics[id].get()

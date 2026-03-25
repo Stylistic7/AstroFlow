@@ -1,5 +1,6 @@
 import ray
 import os
+import structlog
 from pathlib import Path
 from beartype import beartype
 
@@ -12,6 +13,8 @@ from dependency_graph import Graph
 from context import context
 from decorators.decorators import node
 from cache.context_ref import ContextRef
+
+log = structlog.get_logger()
 
 # TODO: I need to associate dark and flat frames *before* computing thumbnails.
 
@@ -90,7 +93,7 @@ def scatter_compute_image_metadata(*filenames_in: list[Path]) -> Graph:
     # changed since the last time it was listed.
     for dir in context.input_dirs:
         artifacts_for_dir = set(find_image_files(dir))
-        print(f"### Directory {dir} contains {len(artifacts_for_dir)} files")
+        log.info("Found image files in directory", directory=str(dir), count=len(artifacts_for_dir))
         filenames.update(artifacts_for_dir)
 
     graph = Graph(
@@ -109,7 +112,7 @@ def _compute_image_metadata_impl(
     plate_solve: bool = True,
     development_settings=None,
 ) -> ImageMetadata:
-    print(f"### compute_image_metadata filename={filename} plate_solve={plate_solve}")
+    log.info("Computing image metadata", filename=str(filename), plate_solve=plate_solve)
 
     if filename is None or not filename.exists():
         raise FileNotFoundError(f'File "{filename}" not found')
@@ -120,7 +123,7 @@ def _compute_image_metadata_impl(
     from metadata.sidecar_io import read_image_metadata, write_image_metadata
     cached = read_image_metadata(filename)
     if cached is not None:
-        print(f"### compute_image_metadata restored from sidecar: {filename}")
+        log.debug("Restored image metadata from sidecar", filename=str(filename))
         return cached
 
     content_hash = get_content_hash(filename)
@@ -200,9 +203,6 @@ def load_metadata() -> ContextRef[MetadataDict]:
                                     if existing is None or exists:
                                         metadata[value.content_hash] = value
         except Exception as e:
-            print(
-                f"### Rejecting bad key {key} because of exception {e} for "
-                f"value type {type(value)}"
-            )
+            log.warning("Rejecting bad metadata key", key=key, error=str(e), value_type=type(value).__name__)
 
     return ContextRef.store_large(metadata)
