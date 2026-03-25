@@ -28,20 +28,24 @@ class _Node:
         def my_function(...) -> SomeType:
             ...
 
-        @node.remote(num_cpus=0.25)
+        @node(num_cpus=0.25)
+        def my_function(...) -> SomeType:
+            ...
+
+        @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD")
         def my_function(...) -> SomeType:
             ...
     """
-    def __call__(self, func):
-        return self._wrap(func, ray_opts={})
-
-    def remote(self, func=None, **ray_opts):
-        if func is None:
-            return lambda f: self._wrap(f, ray_opts)
-        return self._wrap(func, ray_opts)
+    def __call__(self, func=None, **ray_opts):
+        if func is not None:
+            # Bare @node — func is the decorated function
+            return self._wrap(func, ray_opts={})
+        # @node(**kwargs) — return a decorator
+        return lambda f: self._wrap(f, ray_opts)
 
     def _wrap(self, func, ray_opts):
-        wrapped = capture_logs(func)
+        wrapped = _beartype(func)
+        wrapped = capture_logs(wrapped)
         wrapped = measure_performance(wrapped)
         return cached.remote(wrapped, **ray_opts)
 
