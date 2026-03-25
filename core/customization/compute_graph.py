@@ -63,19 +63,6 @@ def enrich_with_calibration(
     return stack
 
 
-@node
-def resolve_stack_decisions(
-    decision_types: tuple[DecisionType, ...],
-    stack_overrides: frozendict,
-    min_frames_in_stack: int,
-    stack: CompositeStack,
-) -> CompositeStack | None:
-    """Apply exclusion decisions to produce a filtered view of the stack.
-
-    `stack` is last because the dependency graph appends ancestor results
-    to the end of the argument list.
-    """
-    return _resolve_decisions(stack, decision_types, stack_overrides, min_frames_in_stack)
 
 
 @ray.remote
