@@ -49,7 +49,7 @@ def init_ray(worker_id):
     assert ray.is_initialized()
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def test_context(init_ray):
     # Setup code
     assert ray.is_initialized()
@@ -193,3 +193,45 @@ def with_real_testdata(test_context, identified_testdata):
     context.mosaics = mosaics
     context.calibration_stacks = identified_testdata.calibration_stacks
     return identified_testdata
+
+
+def _snapshot_context():
+    """Snapshot the entire context as a plain dict (no ObjectRefs)."""
+    from context import context
+    keys = context.get_cache_keys()
+    return {k: context.get(k) for k in keys}
+
+
+def _restore_context(snapshot):
+    """Restore a snapshot into the current context."""
+    from context import context
+    context.clear()
+    for k, v in snapshot.items():
+        context[k] = v
+
+
+@pytest.fixture(scope="session")
+def orion_mosaic_snapshot(init_ray):
+    """Session fixture: runs 4-pane Orion mosaic graph once, snapshots the result.
+
+    Tests use `with_orion_mosaic` to restore this snapshot into a fresh,
+    hermetic context per test.
+    """
+    from testing.test_context import make_test_context
+    from mosaics.orion_mosaic import add_orion_mosaic_images
+    from compute_graph.compute_graph import build_compute_graph
+    from dependency_graph import run_graph
+
+    ctx = make_test_context()
+    add_orion_mosaic_images()
+    run_graph(build_compute_graph())
+    snapshot = _snapshot_context()
+    ctx.input_dir_obj.cleanup()
+    ctx.output_dir_obj.cleanup()
+    return snapshot
+
+
+@pytest.fixture
+def with_orion_mosaic(test_context, orion_mosaic_snapshot):
+    """Per-test fixture: restores the Orion mosaic snapshot into a fresh context."""
+    _restore_context(orion_mosaic_snapshot)

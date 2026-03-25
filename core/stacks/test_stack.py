@@ -11,7 +11,7 @@ from stacks.types import StackHash, StackIdDependency
 
 
 @pytest.mark.heavy
-def test_one_dark_stack():
+def test_one_dark_stack(test_context):
     make_synthetic_frames(
         prefix="dark",
         number=5,

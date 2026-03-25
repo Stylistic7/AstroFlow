@@ -13,9 +13,11 @@ from metadata.image_metadata import load_metadata
 
 
 @pytest.mark.heavy
-def test_hashes(test_context) -> None:
-    # This test uses a random seed because it checks the specific values of
-    # hashes, so all of the frames will have predictable contents.
+def test_hashes_and_metadata(test_context) -> None:
+    """Hash stability for stacks and metadata after identification.
+
+    Uses a fixed random seed so frame contents and hashes are deterministic.
+    """
     add_orion_mosaic_images(panes=[1], random_seed=123)
     run_graph(build_compute_graph())
 
@@ -24,32 +26,20 @@ def test_hashes(test_context) -> None:
     assert len(context.targets) == 1
     assert len(context.mosaics) == 0
 
+    # --- Stack hashes ---
     stack = next(iter(context.stacks.values())).get()
-
-    # The stable hash and content hashes are computed from the image data.
-    # The image data should be predictable, because `random_seed` was provided
-    # above.
     assert stack.stable_hash == "7825680a0bef1d88"
     assert stack.content_hash == "e4819baf50e8373c"
-
-    # The Python hash of a Stack is just an integer representation of its
-    # content hash, which should be stable across Python sessions.
     assert hash(stack) == 1310964378027558128
 
-    # The Python hash of a SimpleStacksDict goes through `hash_dict_int()`,
-    # and should be stable across Python sessions.
     dict = SimpleStacksDict({stack.stable_hash: stack})
     assert hash(dict) == 1310964378027558128
 
-
-@pytest.mark.heavy
-def test_metadata_dict(test_context) -> None:
-    add_orion_mosaic_images(panes=[1], random_seed=123)
-    run_graph(build_compute_graph())
-
+    # --- Metadata hash ---
     metadata = ray.get(load_metadata.remote())
     assert metadata.content_hash == "977b6cfb2a98f2ba"
 
+    # Adding more frames changes the metadata hash.
     add_orion_mosaic_images(
         panes=[2], add_calibration_frames=False, random_seed=456
     )
