@@ -15,7 +15,7 @@ from file_io.types import TiffFilePath, WithSidecar
 from previews.operations import autostretch
 from previews.types import QualityLevel
 from stacks.composite_stack import Stack
-from stacks.simple_stack import CalibrationStack
+from stacks.composite_stack import CalibrationStack
 from targets.types import Target
 from mosaics.types import Mosaic
 from products.registry import get_producer, MediaType

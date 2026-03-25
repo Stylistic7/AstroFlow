@@ -24,14 +24,42 @@ from cache.context_ref import ContextRef
 
 @beartype
 @dataclass(frozen=True)
-class Stack(
+class BaseStack(
     ContentHashed,
     ImagingAttributes,
-    AstrometricAttributes,
     ChronologyAttributes[StackHash],
     AstroFlowStateAttributes,
 ):
+    """Common base for all stacks (light and calibration). Contains Runs."""
     contents: RunsDict
+
+    def all_frames(self) -> list[FrameHash]:
+        all_frames = []
+        for c in self.contents.values():
+            all_frames.extend(c.frames)
+        return all_frames
+
+    def all_metadata(self) -> MetadataDict:
+        all_metadata = MetadataDict({})
+        for c in self.contents.values():
+            all_metadata |= c.metadata
+        return all_metadata
+
+    def __hash__(self):
+        return hash_list_int([self.content_hash])
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, BaseStack):
+            return NotImplemented
+        return (self.content_hash == other.content_hash) and (
+            self.stable_hash == other.stable_hash
+        )
+
+
+@beartype
+@dataclass(frozen=True)
+class Stack(BaseStack, AstrometricAttributes):
+    """Light stack with astrometric attributes (center, footprint, etc.)."""
 
     @classmethod
     def from_frames(
@@ -90,20 +118,6 @@ class Stack(
 
         return cls(**attributes)
 
-    def all_frames(self) -> list[FrameHash]:
-        all_frames = []
-        for c in self.contents.values():
-            all_frames.extend(c.frames)
-
-        return all_frames
-
-    def all_metadata(self) -> MetadataDict:
-        all_metadata = MetadataDict({})
-        for c in self.contents.values():
-            all_metadata |= c.metadata
-
-        return all_metadata
-
     def __str__(self) -> str:
         return (
             f"Stack(Stable hash {self.stable_hash}, "
@@ -120,15 +134,38 @@ class Stack(
             f"Temp {self.mean_temperature:.02f} degC)"
         )
 
-    def __hash__(self):
-        return hash_list_int([self.content_hash])
 
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Stack):
-            return NotImplemented
+class CalibrationStack(BaseStack):
+    """Calibration stack (bias/dark/flat) — no astrometric attributes."""
 
-        return (self.content_hash == other.content_hash) and (
-            self.stable_hash == other.stable_hash
+    @classmethod
+    def from_run(cls, run: Run) -> "CalibrationStack":
+        return cls(
+            content_hash=run.content_hash,
+            image_type=run.image_type,
+            camera=run.camera,
+            filter=run.filter,
+            mean_temperature=run.mean_temperature,
+            exposure=run.exposure,
+            integration=run.integration,
+            width_pixels=run.width_pixels,
+            height_pixels=run.height_pixels,
+            stable_hash=run.stable_hash,
+            oldest_date=run.oldest_date,
+            newest_date=run.newest_date,
+            state=frozendict(),
+            contents=RunsDict({run.stable_hash: run}),
+        )
+
+    def __str__(self) -> str:
+        return (
+            f"CalibrationStack(Content hash {self.content_hash}, "
+            f"Type {self.image_type}, "
+            f"Camera {self.camera}, "
+            f"Exposure {self.exposure}, "
+            f"Integration {self.integration} s, "
+            f"Filter {self.filter}, "
+            f"Temp {self.mean_temperature:.02f} degC)"
         )
 
 
@@ -140,3 +177,12 @@ class StacksDict(dict[StackHash, ContextRef["Stack"]]):
     def __str__(self):
         return f"StacksDict({len(self)})"
 
+
+class CalibrationStacksDict(dict[StackHash, "CalibrationStack"]):
+    def __hash__(self):
+        return hash_list_int(
+            [self[k].content_hash for k in sorted(self.keys())]
+        )
+
+    def __str__(self):
+        return f"CalibrationStacksDict({len(self)})"

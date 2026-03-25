@@ -10,12 +10,8 @@ from frozendict import frozendict
 from decorators.decorators import node
 from metadata.classes import ImageMetadata, FrameHash
 from stacks.types import StackHash, StackIdDependency
-from stacks.simple_stack import (
-    Run,
-    CalibrationStack,
-    run_from_frames,
-)
-from stacks.composite_stack import Stack, RunsDict
+from stacks.simple_stack import Run, RunsDict, run_from_frames
+from stacks.composite_stack import Stack, CalibrationStack, CalibrationStacksDict
 import clustering
 from cache.context_ref import ContextRef
 from metadata.classes import MetadataDict
@@ -56,11 +52,11 @@ def identify_calibration_stacks(metadata_ref: ContextRef[MetadataDict], max_run_
     frames_for_filter = group_by_header(metadata.values(), "FILTER", "")
 
     def new_stack(frames: list[FrameHash]) -> CalibrationStack:
-        stack = ray.get(run_from_frames.remote(frames, metadata))
-        assert stack.image_type in ["bias", "dark", "flat"]
-        return stack
+        run = ray.get(run_from_frames.remote(frames, metadata))
+        assert run.image_type in ["bias", "dark", "flat"]
+        return CalibrationStack.from_run(run)
 
-    stacks = RunsDict()
+    stacks = CalibrationStacksDict()
     for camera in frames_for_camera:
         bias_frames = frames_for_image_type.get(
             "bias", set()
@@ -133,7 +129,7 @@ def _build_cal_index(cal_stacks: dict[StackHash, CalibrationStack]):
 
 
 def associate_with_stacks(
-    stacks: RunsDict, cal_stacks: RunsDict
+    stacks: RunsDict, cal_stacks: CalibrationStacksDict
 ) -> RunsDict:
     bias_by_cam, dark_by_cam, flat_by_cam_filter = _build_cal_index(cal_stacks)
 
@@ -209,7 +205,7 @@ def associate_with_stacks(
 
 
 def associate_with_stack(
-    stack: Stack, cal_stacks: RunsDict
+    stack: Stack, cal_stacks: CalibrationStacksDict
 ) -> Stack:
     new_contents = associate_with_stacks(stack.contents, cal_stacks)
     return replace(stack, contents=new_contents)
@@ -217,6 +213,13 @@ def associate_with_stack(
 
 @node
 def associate_calibration_stacks(
-    cal_stacks: RunsDict,
-) -> RunsDict:
-    return associate_with_stacks(cal_stacks, cal_stacks)
+    cal_stacks: CalibrationStacksDict,
+) -> CalibrationStacksDict:
+    # Associate calibration stacks with each other (e.g., bias for darks/flats).
+    # Extract runs, associate, then re-wrap.
+    runs = RunsDict({k: next(iter(s.contents.values())) for k, s in cal_stacks.items()})
+    associated = associate_with_stacks(runs, cal_stacks)
+    return CalibrationStacksDict({
+        k: CalibrationStack.from_run(associated[k])
+        for k in cal_stacks
+    })

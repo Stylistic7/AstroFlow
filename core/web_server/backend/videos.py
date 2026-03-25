@@ -4,7 +4,7 @@ import flask
 from flask import Blueprint, abort
 
 from context import context
-from stacks.simple_stack import CalibrationStack
+from stacks.composite_stack import CalibrationStack
 from stacks.composite_stack import Stack
 from products.registry import get_producer, MediaType
 from previews.types import QualityLevel

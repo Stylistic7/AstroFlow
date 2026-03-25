@@ -3,7 +3,7 @@ from flask import Blueprint, jsonify, abort
 from typing import Any
 
 from context import context
-from stacks.simple_stack import CalibrationStack
+from stacks.composite_stack import CalibrationStack
 from stacks.composite_stack import Stack
 from targets.types import Target
 from mosaics.types import Mosaic, Viewbox

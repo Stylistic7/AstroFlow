@@ -60,9 +60,6 @@ class RunsDict(dict[str, Run]):
         return f"RunsDict({len(self)})"
 
 
-class CalibrationStack(Run):
-    pass
-
 
 @node
 def run_from_frames(
