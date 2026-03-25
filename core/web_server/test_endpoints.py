@@ -68,11 +68,6 @@ def test_orion_mosaic_endpoints(client, with_orion_mosaic):
     cart = client.get("/get_shopping_cart").get_json()
     assert isinstance(cart, list)
 
-    # /constellation_polylines
-    data = client.get("/constellation_polylines").get_json()
-    assert isinstance(data, list)
-    assert len(data) > 0
-
     # /compute_graph_status
     assert client.get("/compute_graph_status").status_code == 200
 

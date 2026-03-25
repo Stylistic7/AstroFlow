@@ -21,7 +21,6 @@ from pathlib import Path
 
 from state.state_machine import enqueue_action
 from context import context, get_cache
-from catalogs import constellations
 from stacks.composite_stack import CompositeStack
 from web_server.backend.files import files_bp
 from web_server.backend.tiles import tiles_bp
@@ -138,10 +137,6 @@ def index():
 def starmap():
     return flask.render_template("index.html")
 
-
-@app.route("/constellation_polylines")
-def constellation_polylines():
-    return constellations.polylines()
 
 
 # This stub redirects requests to a worker on a specific port. That worker

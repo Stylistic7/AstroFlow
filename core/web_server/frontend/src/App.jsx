@@ -22,12 +22,12 @@ import AppLayout from './AppLayout.jsx';
 import PerformanceExplorer from './PerformanceExplorer.jsx';
 
 import { FolderProvider } from './FolderContext';
+import constellationPolylines from './constellationPolylines.json';
 
 function App() {
   const isPageVisible = usePageVisibility();
   const [dataIsAvailable, setDataIsAvailable] = useState(false);
 
-  const [constellationPolylines, setConstellationPolylines] = useState([]);
   const [stacks, setStacks] = useState({});
   const [calibrationStacks, setCalibrationStacks] = useState({});
   const [targets, setTargets] = useState({});
@@ -40,14 +40,13 @@ function App() {
 
   useEffect(() => {
     const loadObjectData = async () => {
-      const [s, c, t, m, cart, cg, cp] = await Promise.all([
+      const [s, c, t, m, cart, cg] = await Promise.all([
         fetch('/stacks').then(r => r.json()),
         fetch('/calibration_stacks').then(r => r.json()),
         fetch('/targets').then(r => r.json()),
         fetch('/mosaics').then(r => r.json()),
         fetch(`/get_shopping_cart`).then(r => r.json()),
         fetch('/compute_graph').then(r => r.json()),
-        fetch('/constellation_polylines').then(r => r.json()),
       ]);
 
       setStacks(s);
@@ -56,7 +55,6 @@ function App() {
       setMosaics(m);
       setShoppingCart(cart);
       setComputeGraph(cg);
-      setConstellationPolylines(cp);
 
       setDataIsAvailable(true);
     };
