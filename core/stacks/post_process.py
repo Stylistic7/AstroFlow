@@ -15,6 +15,9 @@ from stacks.stacking import stack_files
 from stacks.artifacts import stack_filename
 from file_io.types import XisfFilePath, WithSidecar
 from products import makes_image
+import structlog
+
+log = structlog.get_logger()
 
 
 def _post_process_stack(master_path, stack: CustomizedStack) -> Image:
@@ -39,16 +42,13 @@ def _post_process_stack(master_path, stack: CustomizedStack) -> Image:
 @create_thumbnail
 def post_process_stack(stack: CustomizedStack, development_settings: DevelopmentSettings) -> WithSidecar[XisfFilePath]:
     master = stack_files.filename_fn(stack)
-    print(f"### post_process_stack, master {master}")
+    log.info("Post-processing stack", master=master)
 
     output_filename = post_process_stack.filename_fn(stack)
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 
     if development_settings.dangerously_accept_existing_files and os.path.exists(output_filename):
-        print(
-            f"### Dangerously skipping post-processing because "
-            f"file {output_filename} already exists"
-        )
+        log.info("Dangerously skipping post-processing because file already exists", output_filename=output_filename)
         return WithSidecar(output_filename)
 
     result = _post_process_stack(master, stack)

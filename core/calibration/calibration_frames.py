@@ -20,6 +20,9 @@ import clustering
 from cache.context_ref import ContextRef
 from metadata.classes import MetadataDict
 from beartype import beartype
+import structlog
+
+log = structlog.get_logger()
 
 
 @node
@@ -86,7 +89,7 @@ def identify_calibration_stacks(metadata_ref: ContextRef[MetadataDict], max_run_
                 stack = new_stack(run)
                 stacks[StackHash(stack.stable_hash)] = stack
 
-    print(f"### calibration_stacks keys {stacks.keys()}")
+    log.info("Calibration stacks identified", keys=list(stacks.keys()))
     return stacks
 
 

@@ -20,6 +20,9 @@ from metadata.classes import MetadataDict
 from decorators import node, create_thumbnail
 from customization.settings import DevelopmentSettings
 from products import makes_image
+import structlog
+
+log = structlog.get_logger()
 
 
 def _symlink_frames(filenames: list[str], dest_dir: str) -> None:
@@ -163,10 +166,7 @@ def stack_files(
     dest_filename = stack_files.filename_fn(stack)
     dest_filename_exists = os.path.exists(dest_filename)
     os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
-    print(
-        f"### Entering stack_files for {stack} {dest_filename=} "
-        f"{dest_filename_exists=}"
-    )
+    log.info("Entering stack_files", stack=str(stack), dest_filename=dest_filename, dest_filename_exists=dest_filename_exists)
 
     metadata = {
         "IMAGETYP": f"Master {stack.image_type}",
@@ -178,17 +178,14 @@ def stack_files(
     # on the stack's own content hash -- the hash used by AstroFlowNode is more
     # complete and includes this function's code, for example.
     if development_settings.dangerously_accept_existing_files and dest_filename_exists:
-        print(
-            f"### Dangerously skipping stacking because "
-            f"file {dest_filename} already exists"
-        )
+        log.info("Dangerously skipping stacking because file already exists", dest_filename=dest_filename)
         update_header(dest_filename, metadata)
         return WithSidecar(dest_filename)
 
-    print(f"### calibration_stacks keys {list(calibration_stacks.keys())}")
+    log.info("Calibration stacks", keys=list(calibration_stacks.keys()))
 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
-        print(f"### using tmp_dir {tmp_dir}")
+        log.debug("Using temporary directory", tmp_dir=tmp_dir)
 
         setup_fn = (
             _setup_simple_stack
@@ -198,10 +195,7 @@ def stack_files(
         filenames = setup_fn(stack, calibration_stacks, tmp_dir)
 
         if len(filenames) < min_frames_in_stack:
-            print(
-                f"### Not stacking {stack} because it contains "
-                f"only {len(filenames)} files"
-            )
+            log.info("Not stacking, too few files", stack=str(stack), num_files=len(filenames))
             raise ValueError(
                 f"Stack {stack} contains only {len(filenames)} files"
             )
@@ -209,6 +203,6 @@ def stack_files(
         if development_settings.mock_pixinsight:
             return _mock_stacking(filenames[0], dest_filename, metadata)
 
-        print(f"### Running WBPP for stack {stack}")
+        log.info("Running WBPP", stack=str(stack))
         run_wbpp(Path(tmp_dir), Path(tmp_dir))
         return _copy_wbpp_result(tmp_dir, dest_filename, metadata)

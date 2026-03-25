@@ -8,6 +8,9 @@ import plate_solving
 from decorators import node
 from cache.context_ref import ContextRef
 from metadata.classes import MetadataDict
+import structlog
+
+log = structlog.get_logger()
 
 T = TypeVar("T")
 ComparisonFn = Callable[[T, T], bool]
@@ -74,5 +77,5 @@ def cluster_by_image_center(metadata_ref: ContextRef[MetadataDict], cosine_simil
     groups = find_groups(values, comparison_fn, min_component_members)
     groups_as_tuples = [tuple(sorted(g)) for g in groups]
 
-    print(f"### Returning {len(groups_as_tuples)} spatial groups")
+    log.info("Returning spatial groups", num_groups=len(groups_as_tuples))
     return groups_as_tuples
