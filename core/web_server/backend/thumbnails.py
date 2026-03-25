@@ -8,7 +8,7 @@ from targets.types import Target
 from mosaics.types import Mosaic
 from products.registry import get_producer, MediaType
 from previews.types import QualityLevel
-from stacks.simple_stack import SimpleStack, CalibrationStack
+from stacks.simple_stack import Run, CalibrationStack
 
 thumbnails_bp = Blueprint("thumbnails", __name__)
 
@@ -57,7 +57,7 @@ def run_thumbnail(stack_id: str, substack_id: str, flat_stack_id: str):
     stack = stacks[stack_id].get()
     substack = stack.contents[substack_id]
     flat_stack = context.calibration_stacks[flat_stack_id]
-    return get_thumbnail(SimpleStack, stack, substack, flat_stack)
+    return get_thumbnail(Run, stack, substack, flat_stack)
 
 
 def get_video(object_type: type, *args):

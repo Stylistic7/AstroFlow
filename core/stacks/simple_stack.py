@@ -19,7 +19,7 @@ from cache.context_ref import ContextRef
 
 @beartype
 @dataclass(frozen=True)
-class SimpleStack(
+class Run(
     ContentHashed,
     ChronologyAttributes[StackHash],
     ImagingAttributes,
@@ -31,7 +31,7 @@ class SimpleStack(
 
     def __str__(self) -> str:
         return (
-            f"SimpleStack(Content hash {self.content_hash}, "
+            f"Run(Content hash {self.content_hash}, "
             f"Type {self.image_type}, "
             f"Camera {self.camera}, "
             f"Exposure {self.exposure}, "
@@ -44,30 +44,30 @@ class SimpleStack(
         return hash_list_int([self.content_hash])
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, SimpleStack):
+        if not isinstance(other, Run):
             return NotImplemented
 
         return self.content_hash == other.content_hash
 
 
-class SimpleStacksDict(dict[str, SimpleStack]):
+class RunsDict(dict[str, Run]):
     def __hash__(self):
         return hash_list_int(
             [self[k].content_hash for k in sorted(self.keys())]
         )
 
     def __str__(self):
-        return f"SimpleStacksDict({len(self)})"
+        return f"RunsDict({len(self)})"
 
 
-class CalibrationStack(SimpleStack):
+class CalibrationStack(Run):
     pass
 
 
 @node
-def simple_stack_from_frames(
+def run_from_frames(
     frames: list[FrameHash], metadata: MetadataDict
-) -> SimpleStack:
+) -> Run:
     chronology_attributes = ChronologyAttributes.from_frames(frames, metadata)
     imaging_attributes = ImagingAttributes.from_frames(frames, metadata)
 
@@ -86,4 +86,4 @@ def simple_stack_from_frames(
         }
     )
 
-    return SimpleStack(**attributes)
+    return Run(**attributes)

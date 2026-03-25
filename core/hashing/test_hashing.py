@@ -7,7 +7,7 @@ from cache.context_ref import ContextRef
 from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import run_graph
-from stacks.composite_stack import SimpleStacksDict
+from stacks.composite_stack import RunsDict
 from mosaics.orion_mosaic import add_orion_mosaic_images
 from metadata.image_metadata import load_metadata
 
@@ -32,7 +32,7 @@ def test_hashes_and_metadata(test_context) -> None:
     assert stack.content_hash == "e4819baf50e8373c"
     assert hash(stack) == 1310964378027558128
 
-    dict = SimpleStacksDict({stack.stable_hash: stack})
+    dict = RunsDict({stack.stable_hash: stack})
     assert hash(dict) == 1310964378027558128
 
     # --- Metadata hash ---

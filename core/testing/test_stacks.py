@@ -5,7 +5,7 @@ from frozendict import frozendict
 
 from spherical_geometry.polygon import SingleSphericalPolygon  # type: ignore
 
-from stacks.composite_stack import CompositeStack, SimpleStacksDict
+from stacks.composite_stack import CompositeStack, RunsDict
 from attributes import (
     AstrometricAttributes,
     ChronologyAttributes,
@@ -50,7 +50,7 @@ def make_composite_stack(**kwargs: Any) -> CompositeStack:
             projected_footprints=frozendict(),
         )
     )
-    composite_stack_attributes = {"contents": SimpleStacksDict(), "state": frozendict()}
+    composite_stack_attributes = {"contents": RunsDict(), "state": frozendict()}
 
     attributes = (
         chronology_attributes

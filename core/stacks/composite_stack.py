@@ -8,7 +8,7 @@ from frozendict import frozendict
 
 import units
 from hashing import hash_list, hash_list_int
-from stacks.simple_stack import SimpleStack, SimpleStacksDict, simple_stack_from_frames
+from stacks.simple_stack import Run, RunsDict, run_from_frames
 from attributes import (
     AstrometricAttributes,
     AstroFlowStateAttributes,
@@ -31,7 +31,7 @@ class CompositeStack(
     ChronologyAttributes[StackHash],
     AstroFlowStateAttributes,
 ):
-    contents: SimpleStacksDict
+    contents: RunsDict
 
     @classmethod
     def from_frames(
@@ -43,7 +43,7 @@ class CompositeStack(
         # to compute the hash of the whole stack.
         sorted_metadata = sorted(metadata_list, key=lambda i: i.header["DATE-OBS"])
 
-        contents = SimpleStacksDict()
+        contents = RunsDict()
         exposures = [
             (i.content_hash, i.header["EXPOSURE"])
             for i in metadata_list
@@ -67,7 +67,7 @@ class CompositeStack(
             for run in runs:
                 run_frames = [x[0] for x in run]
                 new_stack = ray.get(
-                    simple_stack_from_frames.remote(run_frames, metadata)
+                    run_from_frames.remote(run_frames, metadata)
                 )
                 contents[new_stack.stable_hash] = new_stack
 
@@ -141,4 +141,4 @@ class CompositeStacksDict(dict[StackHash, ContextRef["CompositeStack"]]):
         return f"CompositeStacksDict({len(self)})"
 
 
-Stack = SimpleStack | CompositeStack
+Stack = Run | CompositeStack

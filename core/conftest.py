@@ -142,7 +142,7 @@ def identified_testdata(init_ray, tmp_path_factory):
 
     # Eagerly resolve all ContextRefs to actual objects, so they can be
     # re-stored in each test's fresh context via with_real_testdata.
-    from stacks.simple_stack import SimpleStacksDict
+    from stacks.simple_stack import RunsDict
 
     raw_stacks = context.stacks or {}
     raw_targets = context.targets or {}
@@ -151,7 +151,7 @@ def identified_testdata(init_ray, tmp_path_factory):
     stacks = {k: ref.get() for k, ref in raw_stacks.items()}
     targets = {k: ref.get() for k, ref in raw_targets.items()}
     mosaics = {k: ref.get() for k, ref in raw_mosaics.items()}
-    calibration_stacks = SimpleStacksDict(context.calibration_stacks or {})
+    calibration_stacks = RunsDict(context.calibration_stacks or {})
 
     return IdentifiedTestdata(
         stacks=stacks,

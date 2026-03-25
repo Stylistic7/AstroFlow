@@ -5,7 +5,7 @@ from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import run_graph
 from testing import make_synthetic_frames, copy_testdata_frames
-from stacks.simple_stack import SimpleStack
+from stacks.simple_stack import Run
 from stacks.composite_stack import CompositeStack
 from stacks.types import StackHash, StackIdDependency
 
@@ -74,7 +74,7 @@ def test_one_light_one_dark(test_context):
     dark_stack = next(
         stack
         for stack in context.calibration_stacks.values()
-        if isinstance(stack, SimpleStack) and stack.image_type == "dark"
+        if isinstance(stack, Run) and stack.image_type == "dark"
     )
 
     assert toplevel_stack.image_type == "light"

@@ -27,7 +27,7 @@ from mosaics.compute_graph import build_mosaic_subgraph, process_mosaics_for_ui
 from mosaics.types import MosaicsDict
 from dependency_graph import Graph, Node, chain
 from stacks.identification import identify_stacks
-from stacks.composite_stack import SimpleStacksDict, CompositeStacksDict
+from stacks.composite_stack import RunsDict, CompositeStacksDict
 from stacks.validation import validate_stacks
 from decorators import node
 from customization.compute_graph import (
@@ -45,8 +45,8 @@ log = structlog.get_logger()
 @ray.remote
 @beartype
 def store_calibration_stacks(
-    calibration_stacks: SimpleStacksDict,
-) -> SimpleStacksDict:
+    calibration_stacks: RunsDict,
+) -> RunsDict:
     context.calibration_stacks = calibration_stacks
     log.info("Stored calibration stacks", count=len(calibration_stacks))
     return calibration_stacks
@@ -123,7 +123,7 @@ def scatter_spatial_groups(
     cs = settings.clustering_settings
 
     context.stacks = CompositeStacksDict()
-    context.calibration_stacks = SimpleStacksDict()
+    context.calibration_stacks = RunsDict()
     context.targets = TargetsDict()
     context.mosaics = MosaicsDict({})  # empty dict of refs
 

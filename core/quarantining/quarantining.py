@@ -4,7 +4,7 @@ from frozendict import frozendict
 
 from context import context
 from stacks.composite_stack import CompositeStack
-from stacks.simple_stack import SimpleStacksDict
+from stacks.simple_stack import RunsDict
 from attributes import ImagingAttributes
 from stacks.types import StackHash
 from beartype import beartype
@@ -17,7 +17,7 @@ from beartype import beartype
 def apply_quarantine(
     stack: CompositeStack, quarantined_substacks: Sequence[StackHash] | set[StackHash]
 ) -> CompositeStack | None:
-    new_contents = SimpleStacksDict(
+    new_contents = RunsDict(
         {
             h: s
             for h, s in stack.contents.items()

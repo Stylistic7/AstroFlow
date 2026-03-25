@@ -8,7 +8,7 @@ from testing import make_synthetic_frames, copy_testdata_frames
 
 from previews.types import QualityLevel
 from stacks.compute_graph import build_calibration_stack_subgraph
-from stacks.simple_stack import SimpleStack
+from stacks.simple_stack import Run
 from stacks.composite_stack import CompositeStack
 from stacks.types import StackHash, StackIdDependency
 from context import context
@@ -530,7 +530,7 @@ def test_flat_frame_selection(test_context) -> None:
     # frames.
     def find_cal_stack(filename_fragment: str) -> StackHash | None:
         for stack_id, stack in context.calibration_stacks.items():
-            if not isinstance(stack, SimpleStack):
+            if not isinstance(stack, Run):
                 continue
 
             filenames = [

@@ -85,7 +85,7 @@ def _populate_context(
 
     context.settings = Settings(
         development_settings=DevelopmentSettings(
-            override_filters=None,
+            override_filters=("H",),
         ),
         preview_settings=PreviewSettings(
             subframe_thumbnail_width=1200,

@@ -6,7 +6,7 @@ from functools import partial
 from beartype import beartype
 from decorators import node
 from stacks.stacking import stack_files
-from stacks.composite_stack import SimpleStack, CompositeStack, SimpleStacksDict, CompositeStacksDict
+from stacks.composite_stack import Run, CompositeStack, RunsDict, CompositeStacksDict
 from stacks.types import StackIdDependency
 from stacks.post_process import post_process_stack
 from stacks.convert_to_dict import convert_to_dict
@@ -30,12 +30,12 @@ def calibration_done(stack: CompositeStack) -> None:
 @node
 def build_calibration_stack_subgraph(
     stack: CompositeStack,
-    calibration_stacks: SimpleStacksDict,
+    calibration_stacks: RunsDict,
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
 ) -> Graph:
-    def visit_all_dependencies(stack: SimpleStack, depth=0) -> Graph:
-        assert isinstance(stack, SimpleStack)
+    def visit_all_dependencies(stack: Run, depth=0) -> Graph:
+        assert isinstance(stack, Run)
 
         tasks = []
         subgraphs = {}
@@ -70,7 +70,7 @@ from frozendict import frozendict
 @node
 def build_stacking_subgraph(
     stack: CompositeStack,
-    calibration_stacks: SimpleStacksDict,
+    calibration_stacks: RunsDict,
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
     decisions: frozendict = frozendict(),
@@ -112,7 +112,7 @@ def get_stack_subframe_image(stack: CompositeStack) -> Path:
 def get_stack_image(
     mode: QualityLevel,
     stack: CompositeStack,
-    calibration_stacks: SimpleStacksDict,
+    calibration_stacks: RunsDict,
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
     decisions: frozendict = frozendict(),
@@ -166,7 +166,7 @@ def process_stacks_for_ui(stacks: dict) -> dict:
 def process_calibration_stacks_for_ui(cal_stacks: dict) -> dict:
     assert None not in cal_stacks.values()
 
-    def prepare_stack(stack: SimpleStack):
+    def prepare_stack(stack: Run):
         result = convert_to_dict(stack, [["metadata"]])
         result["filenames"] = [m.filename for m in stack.metadata.values()]
 

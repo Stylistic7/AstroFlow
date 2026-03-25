@@ -11,7 +11,7 @@ import file_io
 from file_io.types import XisfFilePath, WithSidecar
 from file_io.generic import update_header, copy_image
 from stacks.artifacts import stack_filename
-from stacks.simple_stack import SimpleStack, SimpleStacksDict
+from stacks.simple_stack import Run, RunsDict
 from stacks.types import StackIdDependency, FilenameDependency
 from stacks.composite_stack import Stack, CompositeStack
 from pix.tasks import run_wbpp
@@ -73,8 +73,8 @@ def _copy_frames_with_plate_solution(
 
 
 def _setup_simple_stack(
-    stack: SimpleStack,
-    calibration_stacks: SimpleStacksDict,
+    stack: Run,
+    calibration_stacks: RunsDict,
     dest_dir: str,
 ) -> None:
     filenames = [i.filename for i in stack.metadata.values()]
@@ -99,7 +99,7 @@ def _setup_simple_stack(
 
 def _setup_composite_stack(
     stack: CompositeStack,
-    calibration_stacks: SimpleStacksDict,
+    calibration_stacks: RunsDict,
     dest_dir: str,
 ) -> tuple[str | None, int]:
     filenames = []
@@ -160,7 +160,7 @@ def _copy_wbpp_result(
 @create_thumbnail
 def stack_files(
     stack: Stack,
-    calibration_stacks: SimpleStacksDict,
+    calibration_stacks: RunsDict,
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
     decisions: frozendict = frozendict(),
@@ -199,7 +199,7 @@ def stack_files(
 
         setup_fn = (
             _setup_simple_stack
-            if isinstance(stack, SimpleStack)
+            if isinstance(stack, Run)
             else _setup_composite_stack
         )
         filenames = setup_fn(stack, calibration_stacks, tmp_dir)

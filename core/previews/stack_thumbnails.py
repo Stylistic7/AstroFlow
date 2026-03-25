@@ -17,7 +17,7 @@ from previews.flat_correction import create_flat_correction_thumbnails
 from frozendict import frozendict
 from previews.calibration import calibrate_subframe
 from file_io.types import FitsFilePath, WithSidecar
-from stacks.simple_stack import SimpleStack, CalibrationStack
+from stacks.simple_stack import Run, CalibrationStack
 from dependency_graph import Graph, TaskDescriptor
 from previews.operations import autostretch
 from stacks.composite_stack import CompositeStack
@@ -52,7 +52,7 @@ def scatter_stack_thumbnails() -> Graph:
     return Graph({gather_stack_thumbnails: tasks})
 
 
-def get_first_frame(stack: SimpleStack) -> WithSidecar:
+def get_first_frame(stack: Run) -> WithSidecar:
     # Use a sidecar file to avoid ever modifying the user's raw data files.
     return WithSidecar(
         FitsFilePath(stack.metadata[next(iter(stack.frames))].filename)
@@ -79,7 +79,7 @@ def stack_thumbnail(stack: CompositeStack) -> WithSidecar:
 @makes_image(CalibrationStack).as_subframe(get_first_frame)
 @node
 @create_thumbnail
-def calibration_stack_thumbnail(stack: SimpleStack) -> WithSidecar:
+def calibration_stack_thumbnail(stack: Run) -> WithSidecar:
     return get_first_frame(stack)
 
 
@@ -150,7 +150,7 @@ def stack_thumbnail_video(
 @node(resources={"fastest_storage": 0.001})
 @create_video
 def calibration_stack_thumbnail_video(
-    stack: SimpleStack,
+    stack: Run,
     subframe_thumbnail_width: int,
 ) -> Iterable[np.ndarray]:
     width = subframe_thumbnail_width

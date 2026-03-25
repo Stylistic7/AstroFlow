@@ -7,7 +7,7 @@ from frozendict import frozendict
 from context import context
 from cache.context_ref import ContextRef
 from stacks.composite_stack import CompositeStack, CompositeStacksDict
-from stacks.simple_stack import SimpleStack, SimpleStacksDict
+from stacks.simple_stack import Run, RunsDict
 from calibration import associate_with_stack
 from decorators import node
 from dependency_graph import Graph
@@ -30,7 +30,7 @@ ALL_EXCLUSION_TYPES = (
 def apply_settings(
     stack: CompositeStack, stack_settings: StackSettings
 ) -> CompositeStack:
-    new_contents = SimpleStacksDict()
+    new_contents = RunsDict()
     for content_hash, substack in stack.contents.items():
         new_dependencies = substack.dependencies | stack_settings.dependencies
         new_substack = replace(substack, dependencies=new_dependencies)
@@ -42,7 +42,7 @@ def apply_settings(
 @node
 def enrich_with_calibration(
     stack_ref: ContextRef[CompositeStack],
-    cal_stacks: SimpleStacksDict,
+    cal_stacks: RunsDict,
     stack_settings: StackSettings,
     stack_overrides: frozendict,
     min_frames_in_stack: int,
@@ -81,7 +81,7 @@ def scatter_customize_stacks(
     decision_overrides: frozendict,
     min_frames_in_stack: int,
     stacks: CompositeStacksDict,
-    cal_stacks: SimpleStacksDict,
+    cal_stacks: RunsDict,
 ) -> Graph:
     log.debug("Scattering stack customization", cal_stacks_type=type(cal_stacks).__name__)
 
@@ -109,9 +109,9 @@ def scatter_customize_stacks(
 
 # TODO: Implement real customization features.
 @node
-def scatter_customize_cal_stacks(cal_stacks: SimpleStacksDict) -> SimpleStacksDict:
+def scatter_customize_cal_stacks(cal_stacks: RunsDict) -> RunsDict:
     log.debug("Scattering calibration stack customization", cal_stacks_type=type(cal_stacks).__name__)
-    # cal_stacks is a SimpleStacksDict of real SimpleStack objects — pass through as-is
+    # cal_stacks is a RunsDict of real Run objects — pass through as-is
     return cal_stacks
 
 

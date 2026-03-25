@@ -309,7 +309,7 @@ def flats_for_camera_and_filter(camera, filter):
     return [
         k
         for k, s in context.calibration_stacks.items()
-        if s.image_type == "flat" and s.camera == camera and s.filter == filter  # calibration_stacks holds real SimpleStack objects
+        if s.image_type == "flat" and s.camera == camera and s.filter == filter  # calibration_stacks holds real Run objects
     ]
 
 

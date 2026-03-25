@@ -5,21 +5,21 @@ from frozendict import frozendict
 from previews.calibration import calibrate_subframe
 from previews.operations import autostretch
 from decorators import node, measure_performance
-from stacks.composite_stack import CompositeStack, SimpleStacksDict
+from stacks.composite_stack import CompositeStack, RunsDict
 from customization.subframe_selection import get_light_frames_sorted_by_stars
 from decorators import create_thumbnail
-from stacks.simple_stack import SimpleStack
+from stacks.simple_stack import Run
 from stacks.types import StackHash, StackIdDependency
 from file_io.tiff_file_io import write_tiff_image
 from products import makes_image
 
 
 # TODO: This should be a new, distinct type, FlatCorrectedStack.
-@makes_image(SimpleStack).as_subframe()
+@makes_image(Run).as_subframe()
 @measure_performance
 @create_thumbnail
 def flat_corrected_stack(
-    stack: CompositeStack, substack: SimpleStack, flat_stack: SimpleStack, subframe_thumbnail_width: int
+    stack: CompositeStack, substack: Run, flat_stack: Run, subframe_thumbnail_width: int
 ) -> tempfile.NamedTemporaryFile:
     width = subframe_thumbnail_width
 
@@ -40,7 +40,7 @@ def flat_corrected_stack(
 
 
 @node
-def create_flat_correction_thumbnails(stack: CompositeStack, calibration_stacks: SimpleStacksDict, subframe_thumbnail_width: int) -> None:
+def create_flat_correction_thumbnails(stack: CompositeStack, calibration_stacks: RunsDict, subframe_thumbnail_width: int) -> None:
     flat_stack_ids = [
         id
         for id, s in calibration_stacks.items()

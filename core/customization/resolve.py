@@ -5,7 +5,7 @@ from dataclasses import replace
 from frozendict import frozendict
 
 from stacks.composite_stack import CompositeStack
-from stacks.simple_stack import SimpleStacksDict
+from stacks.simple_stack import RunsDict
 from customization.decisions import (
     BinaryChoice, DecisionKey, DecisionOverride, DecisionType,
     ObjectType, DECISION_PRECEDENCE, resolve_decision, get_decisions_for_object,

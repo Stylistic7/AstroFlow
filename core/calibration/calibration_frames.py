@@ -11,11 +11,11 @@ from decorators.decorators import node
 from metadata.classes import ImageMetadata, FrameHash
 from stacks.types import StackHash, StackIdDependency
 from stacks.simple_stack import (
-    SimpleStack,
+    Run,
     CalibrationStack,
-    simple_stack_from_frames,
+    run_from_frames,
 )
-from stacks.composite_stack import CompositeStack, SimpleStacksDict
+from stacks.composite_stack import CompositeStack, RunsDict
 import clustering
 from cache.context_ref import ContextRef
 from metadata.classes import MetadataDict
@@ -26,7 +26,7 @@ log = structlog.get_logger()
 
 
 @node
-def identify_calibration_stacks(metadata_ref: ContextRef[MetadataDict], max_run_gap) -> SimpleStacksDict:
+def identify_calibration_stacks(metadata_ref: ContextRef[MetadataDict], max_run_gap) -> RunsDict:
     log.info("Identifying calibration stacks")
     metadata = metadata_ref.get()
 
@@ -56,11 +56,11 @@ def identify_calibration_stacks(metadata_ref: ContextRef[MetadataDict], max_run_
     frames_for_filter = group_by_header(metadata.values(), "FILTER", "")
 
     def new_stack(frames: list[FrameHash]) -> CalibrationStack:
-        stack = ray.get(simple_stack_from_frames.remote(frames, metadata))
+        stack = ray.get(run_from_frames.remote(frames, metadata))
         assert stack.image_type in ["bias", "dark", "flat"]
         return stack
 
-    stacks = SimpleStacksDict()
+    stacks = RunsDict()
     for camera in frames_for_camera:
         bias_frames = frames_for_image_type.get(
             "bias", set()
@@ -133,11 +133,11 @@ def _build_cal_index(cal_stacks: dict[StackHash, CalibrationStack]):
 
 
 def associate_with_stacks(
-    stacks: SimpleStacksDict, cal_stacks: SimpleStacksDict
-) -> SimpleStacksDict:
+    stacks: RunsDict, cal_stacks: RunsDict
+) -> RunsDict:
     bias_by_cam, dark_by_cam, flat_by_cam_filter = _build_cal_index(cal_stacks)
 
-    def choose_bias(sub: SimpleStack) -> StackHash | None:
+    def choose_bias(sub: Run) -> StackHash | None:
         cand = bias_by_cam.get(sub.camera)
         if not cand:
             return None
@@ -157,7 +157,7 @@ def associate_with_stacks(
         )[2]
         return best_sid
 
-    def choose_dark(sub: SimpleStack) -> StackHash | None:
+    def choose_dark(sub: Run) -> StackHash | None:
         cand = dark_by_cam.get(sub.camera)
         if not cand:
             return None
@@ -173,7 +173,7 @@ def associate_with_stacks(
             return None
         return min(filtered, key=lambda x: abs(x[0] - sub_mid))[3]
 
-    def choose_flat(sub: SimpleStack) -> StackHash | None:
+    def choose_flat(sub: Run) -> StackHash | None:
         cand = flat_by_cam_filter.get((sub.camera, sub.filter))
         if not cand:
             return None
@@ -193,7 +193,7 @@ def associate_with_stacks(
         "light": ["bias", "dark", "flat"],
     }
 
-    new_stacks = SimpleStacksDict()
+    new_stacks = RunsDict()
     for h, stack in stacks.items():
         log.info("Associating stack", stack=str(stack))
         deps = dict(stack.dependencies)  # mutable copy to build up
@@ -209,7 +209,7 @@ def associate_with_stacks(
 
 
 def associate_with_stack(
-    stack: CompositeStack, cal_stacks: SimpleStacksDict
+    stack: CompositeStack, cal_stacks: RunsDict
 ) -> CompositeStack:
     new_contents = associate_with_stacks(stack.contents, cal_stacks)
     return replace(stack, contents=new_contents)
@@ -217,6 +217,6 @@ def associate_with_stack(
 
 @node
 def associate_calibration_stacks(
-    cal_stacks: SimpleStacksDict,
-) -> SimpleStacksDict:
+    cal_stacks: RunsDict,
+) -> RunsDict:
     return associate_with_stacks(cal_stacks, cal_stacks)

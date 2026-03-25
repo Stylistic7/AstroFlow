@@ -3,7 +3,7 @@ from dataclasses import replace
 from frozendict import frozendict
 
 from stacks.composite_stack import CompositeStack
-from stacks.simple_stack import SimpleStacksDict
+from stacks.simple_stack import RunsDict
 from metadata.classes import ImageMetadata, MetadataDict
 from customization.decisions import (
     DecisionPoint, DecisionType, DecisionOverride, DecisionKey,
@@ -101,7 +101,7 @@ def select_subframes(
     if len(selected_light_frames) < min_frames_in_stack:
         return None
 
-    new_contents = SimpleStacksDict()
+    new_contents = RunsDict()
     for content_hash, substack in stack.contents.items():
         if new_frames := tuple(
             f for f in substack.frames if f in selected_light_frames

@@ -7,7 +7,7 @@ from spherical_geometry.polygon import SingleSphericalPolygon
 from functools import partial
 
 from frozendict import frozendict
-from stacks.composite_stack import CompositeStack, CompositeStacksDict, SimpleStacksDict
+from stacks.composite_stack import CompositeStack, CompositeStacksDict, RunsDict
 from customization.settings import DevelopmentSettings
 from dependency_graph import Graph, Node, chain
 from mosaics.merge_images import merge_images
@@ -62,7 +62,7 @@ def build_mosaic_subgraph(
     mosaic: Mosaic,
     stacks: CompositeStacksDict,
     targets: TargetsDict,
-    calibration_stacks: SimpleStacksDict,
+    calibration_stacks: RunsDict,
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
     decisions: frozendict = frozendict(),
@@ -129,7 +129,7 @@ def build_placement_subgraph(
     stack: CompositeStack,
     filter: str,
     viewbox: Viewbox,
-    calibration_stacks: SimpleStacksDict,
+    calibration_stacks: RunsDict,
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
     decisions: frozendict = frozendict(),
@@ -173,7 +173,7 @@ def build_mosaic_filter_subgraph(
     stacks: CompositeStacksDict | dict | object,
     filter: str,
     viewbox: Viewbox | None,
-    calibration_stacks: SimpleStacksDict,
+    calibration_stacks: RunsDict,
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
     decisions: frozendict = frozendict(),
