@@ -4,8 +4,8 @@ from beartype import beartype
 
 
 @beartype
-@dataclass
+@dataclass(frozen=True)
 class SpatialGroup:
     name: str
-    light_frames: list[str]
+    light_frames: tuple[str, ...]
     metadata_ref: ray.ObjectRef
