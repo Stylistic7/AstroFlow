@@ -14,7 +14,6 @@ from stacks.artifacts import stack_filename
 from stacks.simple_stack import SimpleStack, SimpleStacksDict
 from stacks.types import StackIdDependency, FilenameDependency
 from stacks.composite_stack import Stack, CompositeStack
-from customization.types import CustomizedStack
 from pix.tasks import run_wbpp
 from metadata.classes import MetadataDict
 from decorators import node, create_thumbnail
@@ -153,7 +152,7 @@ def _copy_wbpp_result(
 
 
 # TODO: add an `as_downscaled_master` quality level.
-@makes_image(CustomizedStack).as_master(stack_filename)
+@makes_image(CompositeStack).as_master(stack_filename)
 @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD")
 @create_thumbnail
 def stack_files(

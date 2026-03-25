@@ -6,13 +6,11 @@ from functools import partial
 from beartype import beartype
 from decorators import node
 from stacks.stacking import stack_files
-from stacks.composite_stack import SimpleStack, CompositeStack, SimpleStacksDict
+from stacks.composite_stack import SimpleStack, CompositeStack, SimpleStacksDict, CompositeStacksDict
 from stacks.types import StackIdDependency
 from stacks.post_process import post_process_stack
 from stacks.convert_to_dict import convert_to_dict
-from stacks.composite_stack import CompositeStacksDict
 from metadata.image_metadata import compute_image_metadata_no_solve
-from customization.types import CustomizedStack
 from customization.settings import DevelopmentSettings
 from customization.subframe_selection import get_light_frames_sorted_by_stars
 from previews.types import QualityLevel
@@ -25,13 +23,13 @@ from dependency_graph.workflow_graph_adapter import (
 
 @ray.remote
 @beartype
-def calibration_done(stack: CustomizedStack) -> None:
+def calibration_done(stack: CompositeStack) -> None:
     pass
 
 
 @node
 def build_calibration_stack_subgraph(
-    stack: CustomizedStack,
+    stack: CompositeStack,
     calibration_stacks: SimpleStacksDict,
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
@@ -61,7 +59,7 @@ def build_calibration_stack_subgraph(
 
 @ray.remote
 @beartype
-def stack_runs_done(stack: CustomizedStack) -> None:
+def stack_runs_done(stack: CompositeStack) -> None:
     pass
 
 
@@ -69,7 +67,7 @@ def stack_runs_done(stack: CustomizedStack) -> None:
 # frames have been associated.
 @node
 def build_stacking_subgraph(
-    stack: CustomizedStack,
+    stack: CompositeStack,
     calibration_stacks: SimpleStacksDict,
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
@@ -139,7 +137,7 @@ def process_stacks_for_ui(stacks: dict) -> dict:
             return v.points.tolist()
         return v
 
-    def prepare_stack(stack: CustomizedStack):
+    def prepare_stack(stack: CompositeStack):
         result = convert_to_dict(
             stack, [["contents", "*", "metadata"]], transform=my_transform
         )

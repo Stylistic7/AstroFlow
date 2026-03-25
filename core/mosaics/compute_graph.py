@@ -6,7 +6,7 @@ from shapely.affinity import scale  # type: ignore
 from spherical_geometry.polygon import SingleSphericalPolygon
 from functools import partial
 
-from customization.types import CustomizedStack
+from stacks.composite_stack import CompositeStack, CompositeStacksDict, SimpleStacksDict
 from customization.settings import DevelopmentSettings
 from dependency_graph import Graph, Node, chain
 from mosaics.merge_images import merge_images
@@ -15,7 +15,6 @@ from mosaics.viewbox import compute_viewbox
 from mosaics.placement import place_image
 from mosaics.post_process import post_process_mosaic
 from stacks.compute_graph import get_stack_image
-from stacks.composite_stack import CompositeStacksDict, SimpleStacksDict
 from stacks.types import StackHash
 from previews.types import QualityLevel
 from decorators import node
@@ -126,7 +125,7 @@ def build_mosaic_subgraph(
 def build_placement_subgraph(
     mode: QualityLevel,
     mosaic: Mosaic,
-    stack: CustomizedStack,
+    stack: CompositeStack,
     filter: str,
     viewbox: Viewbox,
     calibration_stacks: SimpleStacksDict,
