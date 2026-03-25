@@ -33,6 +33,11 @@ def build_target_subgraph(
 
     stacks = context.stacks
     calibration_stacks = context.calibration_stacks
+    all_decisions = context.settings.decision_overrides
+
+    def decisions_for(stack_id):
+        from frozendict import frozendict
+        return frozendict({k: v for k, v in all_decisions.items() if len(k) >= 3 and k[2] == stack_id})
 
     graph_update_fn = partial(
         store_workflow_graph, ("target", target.stable_hash)
@@ -44,7 +49,7 @@ def build_target_subgraph(
     )
 
     graph[(post_process_target, target, stacks)] = {
-        (build_stacking_subgraph, stacks[stack_id].get(), calibration_stacks, development_settings, min_frames_in_stack)
+        (build_stacking_subgraph, stacks[stack_id].get(), calibration_stacks, development_settings, min_frames_in_stack, decisions_for(stack_id))
         for stack_id in target.stack_ids
     }
 

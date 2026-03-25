@@ -16,8 +16,11 @@ from stacks.types import StackIdDependency, FilenameDependency
 from stacks.composite_stack import Stack, CompositeStack
 from pix.tasks import run_wbpp
 from metadata.classes import MetadataDict
+from frozendict import frozendict
 from decorators import node, create_thumbnail
 from customization.settings import DevelopmentSettings
+from customization.resolve import resolve_decisions
+from customization.compute_graph import ALL_EXCLUSION_TYPES
 from products import makes_image
 import structlog
 
@@ -160,7 +163,15 @@ def stack_files(
     calibration_stacks: SimpleStacksDict,
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
+    decisions: frozendict = frozendict(),
 ) -> WithSidecar[XisfFilePath]:
+    # Apply exclusion decisions to filter frames before stacking.
+    if isinstance(stack, CompositeStack) and decisions:
+        filtered = resolve_decisions(stack, ALL_EXCLUSION_TYPES, decisions, min_frames_in_stack)
+        if filtered is None:
+            raise ValueError(f"Stack {stack} has no frames after applying decisions")
+        stack = filtered
+
     # Determine the output file, and the metadata it should have.
     dest_filename = stack_files.filename_fn(stack)
     dest_filename_exists = os.path.exists(dest_filename)

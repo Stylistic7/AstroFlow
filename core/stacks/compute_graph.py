@@ -63,14 +63,17 @@ def stack_runs_done(stack: CompositeStack) -> None:
     pass
 
 
-# This function accepts a fully customized stack, after settings and calibration
-# frames have been associated.
+from frozendict import frozendict
+
+# This function accepts an enriched stack (all frames with calibration).
+# stack_files resolves decisions internally to filter before stacking.
 @node
 def build_stacking_subgraph(
     stack: CompositeStack,
     calibration_stacks: SimpleStacksDict,
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
+    decisions: frozendict = frozendict(),
 ) -> Graph:
     graph_update_fn = partial(
         store_workflow_graph, ("stack", stack.stable_hash)
@@ -81,7 +84,7 @@ def build_stacking_subgraph(
         {
             **chain(
                 (build_calibration_stack_subgraph, stack, calibration_stacks, development_settings, min_frames_in_stack),
-                (stack_files, stack, calibration_stacks, development_settings, min_frames_in_stack),
+                (stack_files, stack, calibration_stacks, development_settings, min_frames_in_stack, decisions),
                 Node(
                     compute_image_metadata_no_solve, name=f"stacking_{stack.stable_hash}"
                 ),

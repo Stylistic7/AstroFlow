@@ -297,7 +297,9 @@ def build_main_processing_graph() -> Graph:
             if id not in stacks:
                 log.warning("Stack in shopping cart does not exist", stack_id=id)
                 continue
-            tasks.append((build_stacking_subgraph, stacks[id].get(), calibration_stacks, development_settings, min_frames_in_stack))
+            from frozendict import frozendict as fd
+            stack_decisions = fd({k: v for k, v in settings.decision_overrides.items() if len(k) >= 3 and k[2] == id})
+            tasks.append((build_stacking_subgraph, stacks[id].get(), calibration_stacks, development_settings, min_frames_in_stack, stack_decisions))
         elif type == "target":
             if id not in targets:
                 log.warning("Target in shopping cart does not exist", target_id=id)

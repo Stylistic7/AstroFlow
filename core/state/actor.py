@@ -72,12 +72,21 @@ def command_done() -> None:
 
 
 def _process_stack(action: Action) -> Graph:
-    stack = context.stacks[action["object_id"]].get()
+    from frozendict import frozendict
+    stack_id = action["object_id"]
+    stack = context.stacks[stack_id].get()
+    decisions = frozendict({
+        k: v for k, v in context.settings.decision_overrides.items()
+        if len(k) >= 3 and k[2] == stack_id
+    })
 
     return Graph(
         {
             **chain(
-                (build_stacking_subgraph, stack),
+                (build_stacking_subgraph, stack, context.calibration_stacks,
+                 context.settings.development_settings,
+                 context.settings.clustering_settings.min_frames_in_stack,
+                 decisions),
                 process_stacks_for_ui,
             )
         }
