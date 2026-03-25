@@ -1,4 +1,5 @@
 import numpy as np
+import structlog
 from typing import Optional
 from shapely import box  # type: ignore
 from shapely.affinity import scale  # type: ignore
@@ -26,6 +27,8 @@ from dependency_graph.workflow_graph_adapter import (
     store_workflow_graph,
     store_node_status,
 )
+
+log = structlog.get_logger()
 
 
 def targets_for_mosaic(mosaic: Mosaic, targets: TargetsDict) -> TargetsDict:
@@ -64,16 +67,14 @@ def build_mosaic_subgraph(
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
 ) -> Graph:
-    print(
-        f"### build_mosaic_subgraph mode {mode} for mosaic {mosaic} stacks {[str(s) for s in stacks]}"
-    )
+    log.info("Building mosaic subgraph", mode=mode, mosaic=str(mosaic), stacks=[str(s) for s in stacks])
     viewbox = compute_viewbox(mode, mosaic)
     filters = set(
         ref.get().filter for ref in stacks.values() if ref is not None
     )
 
     if development_settings.override_filters is not None:
-        print(f"### WARNING: override_filters: {development_settings.override_filters}")
+        log.warning("Overriding filters", override_filters=development_settings.override_filters)
         filters = development_settings.override_filters
 
     graph = Graph()
@@ -81,7 +82,7 @@ def build_mosaic_subgraph(
     filter_done_tasks = []
     for filter in filters:
         strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
-        print(f"### strips for filter {filter} {strips}")
+        log.debug("Strips for filter", filter=filter, strips=strips)
 
         if mode == QualityLevel.SUBFRAME:
             # In subframe mode, missing panels are allowed. Just remove them from
@@ -91,18 +92,12 @@ def build_mosaic_subgraph(
             )
             strips = tuple(s for s in strips if len(s))
             if not strips:
-                print(
-                    f"### Skipping mosaic {mosaic} filter {filter} because "
-                    f"all stacks are missing"
-                )
+                log.warning("Skipping mosaic filter, all stacks missing", mosaic=str(mosaic), filter=filter)
                 continue
         else:
             # In master mode, missing panels are not allowed; skip the filter.
             if any(None in strip for strip in strips):
-                print(
-                    f"### Skipping mosaic {mosaic} filter {filter} because "
-                    f"some stacks are missing"
-                )
+                log.warning("Skipping mosaic filter, some stacks missing", mosaic=str(mosaic), filter=filter)
                 continue
 
         filter_subgraph_task = Node(
@@ -183,11 +178,7 @@ def build_mosaic_filter_subgraph(
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
 ) -> Graph | None:
-    print(
-        f"### build_mosaic_filter_subgraph mode {mode} "
-        f"mosaic {mosaic} filter {filter} strips {mosaic.strips} "
-        f"viewbox {viewbox}"
-    )
+    log.info("Building mosaic filter subgraph", mode=mode, mosaic=str(mosaic), filter=filter, strips=mosaic.strips, viewbox=str(viewbox))
 
     graph_update_fn, node_status_fn = None, None
     if mode == QualityLevel.MASTER:
@@ -221,10 +212,7 @@ def build_mosaic_filter_subgraph(
             # Missing stacks are acceptable, except in MASTER mode.
             if stack_id is None:
                 if mode == QualityLevel.MASTER:
-                    print(
-                        f"### build_mosaic_filter_subgraph returning None because a "
-                        f"stack for filter {filter} was not found"
-                    )
+                    log.warning("Returning None, stack for filter not found", filter=filter)
                     return None
                 else:
                     continue

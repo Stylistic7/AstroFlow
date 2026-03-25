@@ -173,9 +173,7 @@ def _place_image(
 
     filename = image_metadata.filename
 
-    print(
-        f"### place_image {mode} mosaic {str(mosaic)} stack {str(stack)} {filename=} viewbox {str(viewbox)}"
-    )
+    log.info("Placing image", mode=mode, mosaic=str(mosaic), stack=str(stack), filename=filename, viewbox=str(viewbox))
 
     if image_metadata.plate_solution is None:
         raise ValueError(
@@ -207,7 +205,7 @@ def _place_image(
         )
 
     write_tiff_image(output_filename, image, {"FILTER": filter})
-    print(f"### _place_image {output_filename=}")
+    log.info("Place image complete", output_filename=output_filename)
 
     return WithSidecar(output_filename)
 

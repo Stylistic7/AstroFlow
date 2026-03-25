@@ -1,6 +1,7 @@
 import os
 import ray
 import numpy as np
+import structlog
 from beartype import beartype
 from pathlib import Path
 from dataclasses import dataclass
@@ -17,6 +18,8 @@ from file_io.tiff_file_io import write_tiff_image
 from file_io.types import XisfFilePath, TiffFilePath, WithSidecar
 from products import makes_image
 from context import context
+
+log = structlog.get_logger()
 
 
 @dataclass(frozen=True)
@@ -93,5 +96,5 @@ def merge_images(
     else:
         result = ray.get(merge_images_with_pmm.remote(mosaic, input_0, input_1))
 
-    print(f"### merge_images {result=}")
+    log.info("Merge images complete", result=result)
     return result

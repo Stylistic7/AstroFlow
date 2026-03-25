@@ -1,4 +1,5 @@
 import os
+import structlog
 from pathlib import Path
 from astropy.time import Time
 
@@ -19,6 +20,8 @@ from mosaics.artifacts import mosaic_filename_xisf
 from products import makes_image
 from stacks.composite_stack import CompositeStacksDict
 from targets.types import TargetsDict
+
+log = structlog.get_logger()
 
 
 def _post_process_mosaic(images: ImageList, mosaic: Mosaic) -> Image | None:
@@ -58,7 +61,7 @@ def post_process_mosaic(
     targets: TargetsDict,
 ) -> WithSidecar[XisfFilePath] | None:
     from context import context
-    print(f"### Entering post_process_mosaic for {mode=} mosaic {str(mosaic)}")
+    log.info("Entering post_process_mosaic", mode=mode, mosaic=str(mosaic))
 
     if mode != QualityLevel.MASTER:
         return None
