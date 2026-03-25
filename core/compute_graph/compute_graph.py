@@ -38,7 +38,6 @@ from customization.compute_graph import (
 from mosaics.compute_graph import stacks_for_mosaic, targets_for_mosaic
 from cache.context_ref import ContextRef
 from customization.settings import Settings
-from customization.types import CustomizedStacksDict
 
 log = structlog.get_logger()
 
@@ -58,8 +57,8 @@ def store_calibration_stacks(
 @beartype
 def store_stacks(stacks: dict[str, Any]) -> dict[str, Any]:
     assert None not in stacks.values()
-    # stacks values are already ContextRefs (from gather_customize_stacks)
-    result = CustomizedStacksDict(stacks)
+    # stacks values are already ContextRefs (from gather_enriched_stacks)
+    result = CompositeStacksDict(stacks)
     context.stacks = result
     log.info("Stored stacks", count=len(stacks))
     return result

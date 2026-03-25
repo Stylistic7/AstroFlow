@@ -16,7 +16,7 @@ from file_io.types import XisfFilePath
 from decorators import node, create_thumbnail
 from targets.types import Target
 from stacks.artifacts import stack_filename
-from customization.types import CustomizedStacksDict
+from stacks.composite_stack import CompositeStacksDict
 from products import makes_image
 
 
@@ -72,7 +72,7 @@ def target_filename(target: Target, suffix: str) -> XisfFilePath:
 @makes_image(Target).as_post_processed(target_filename)
 @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD")
 @create_thumbnail
-def post_process_target(target: Target, stacks: CustomizedStacksDict) -> None:
+def post_process_target(target: Target, stacks: CompositeStacksDict) -> None:
     from context import context
 
     print(f"Entering post_process_target for {target}")

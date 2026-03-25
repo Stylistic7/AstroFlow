@@ -5,7 +5,7 @@ from file_io.types import (
     XisfFilePath,
 )
 from mosaics.types import Mosaic
-from customization.types import CustomizedStack
+from stacks.composite_stack import CompositeStack
 from mosaics.types import Mosaic, Viewbox
 from file_io.generic import get_content_hash
 
@@ -47,7 +47,7 @@ def merged_filename_xisf(
 
 def placed_filename(
     mosaic: Mosaic,
-    stack: CustomizedStack,
+    stack: CompositeStack,
     filter: str,
     viewbox: Viewbox,
 ) -> TiffFilePath:

@@ -4,7 +4,6 @@ from flask import Blueprint, abort
 
 from context import context
 from stacks.composite_stack import CompositeStack
-from customization.types import CustomizedStack
 from targets.types import Target
 from mosaics.types import Mosaic
 from products.registry import get_producer, MediaType
@@ -33,7 +32,7 @@ def get_thumbnail(object_type: type, *args):
 
 @thumbnails_bp.route("/thumbnail/stack/<stack_id>")
 def stack_thumbnail(stack_id: str):
-    return get_thumbnail(CustomizedStack, context.stacks[stack_id].get())
+    return get_thumbnail(CompositeStack, context.stacks[stack_id].get())
 
 
 @thumbnails_bp.route("/thumbnail/target/<target_id>")

@@ -3,7 +3,7 @@ from dataclasses import dataclass, asdict, fields
 
 from hashing import hash_dataclass, hash_list_int
 from stacks.types import StackHash
-from customization.types import CustomizedStack
+from stacks.composite_stack import CompositeStack
 from attributes import (
     AstrometricAttributes,
     ChronologyAttributes,
@@ -23,7 +23,7 @@ class Target(
     stack_ids: tuple[StackHash, ...]
 
     @classmethod
-    def from_stacks(cls, stacks: list[CustomizedStack]) -> Optional["Target"]:
+    def from_stacks(cls, stacks: list[CompositeStack]) -> Optional["Target"]:
         chronology_attributes = ChronologyAttributes.from_objects(stacks)
         astrometric_attributes = AstrometricAttributes.from_objects(stacks)
 
