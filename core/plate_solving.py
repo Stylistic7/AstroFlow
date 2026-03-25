@@ -23,7 +23,7 @@ from units import Degrees, Radians, ArcsecondsPerPixel
 _PLATESOLUTION_SCHEMA = "astroflow.platesolution.v2"
 
 
-@dataclass
+@dataclass(frozen=True)
 class PlateSolution:
     image_filename: str
     header: dict
@@ -39,7 +39,8 @@ class PlateSolution:
         for key in list(state):
             if key not in valid_fields:
                 del state[key]
-        self.__dict__.update(state)
+        for key, value in state.items():
+            object.__setattr__(self, key, value)
 
 
 def _ensure_naxis(header: dict[str, Any]) -> None:
