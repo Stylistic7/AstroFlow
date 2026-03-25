@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime
 import numpy as np
+from beartype import beartype
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,7 @@ import plate_solving
 import metadata.image_types as image_types
 
 
+@beartype
 def _serialize_header(header: dict[str, Any]) -> dict[str, Any]:
     """Convert header values to JSON-safe types."""
     out = {}
@@ -25,6 +27,7 @@ def _serialize_header(header: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+@beartype
 def _deserialize_header(header: dict[str, Any]) -> dict[str, Any]:
     """Restore header values from JSON, parsing DATE keys back to datetime."""
     from dateutil.parser import parse
@@ -41,6 +44,7 @@ def _deserialize_header(header: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+@beartype
 def image_metadata_to_obj(meta: ImageMetadata) -> dict[str, Any]:
     """Serialize ImageMetadata to a JSON-safe dict (excluding filename and plate_solution)."""
     return {
@@ -53,6 +57,7 @@ def image_metadata_to_obj(meta: ImageMetadata) -> dict[str, Any]:
     }
 
 
+@beartype
 def image_metadata_from_obj(
     obj: dict[str, Any], filename: Path
 ) -> ImageMetadata:
@@ -77,11 +82,13 @@ def image_metadata_from_obj(
     )
 
 
+@beartype
 def write_image_metadata(meta: ImageMetadata) -> None:
     """Write ImageMetadata to the sidecar file for the given image."""
     set_section(meta.filename, "image_metadata", image_metadata_to_obj(meta))
 
 
+@beartype
 def read_image_metadata(filename: Path) -> ImageMetadata | None:
     """Read ImageMetadata from the sidecar file, or return None if missing."""
     obj = get_section(filename, "image_metadata")
