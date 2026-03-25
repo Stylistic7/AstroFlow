@@ -76,15 +76,10 @@ def customize_stack(
             x = f(x)
         return x
 
-    # Resolve the subframe quality decision: user override wins, default is INCLUDE (apply filter).
-    from customization.decisions import resolve_decision
-    quality_key = (DecisionType.SUBFRAME_QUALITY, ObjectType.STACK, stack.stable_hash, stack.stable_hash)
-    skip_quality = resolve_decision(quality_key, decision_overrides, default=BinaryChoice.INCLUDE) == BinaryChoice.EXCLUDE
-
     stack = chain(
         stack,
         lambda s: associate_with_stack(s, cal_stacks),
-        lambda s: select_subframes(s, min_frames_in_stack, skip_quality_filter=skip_quality),
+        lambda s: select_subframes(s, min_frames_in_stack, decision_overrides=decision_overrides),
         lambda s: apply_quarantine(s, stack_settings.quarantined_substacks),
         lambda s: apply_decision_exclusions(s, decision_overrides),
         lambda s: apply_settings(s, stack_settings),

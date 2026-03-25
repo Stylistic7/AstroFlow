@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from enum import Enum
 from dataclasses import dataclass, field
+from typing import Any
 from frozendict import frozendict
 from hashing import hash_dataclass
 
@@ -46,24 +47,36 @@ class DecisionPoint:
 
 @dataclass(frozen=True)
 class DecisionOverride:
-    choice: BinaryChoice
+    choice: Any
 
     def __hash__(self):
         return hash_dataclass(self)
 
 
 def resolve_decision(
-    key: DecisionKey,
+    decision: DecisionPoint,
     overrides: frozendict[DecisionKey, DecisionOverride],
-    default: BinaryChoice,
-) -> BinaryChoice:
-    """Resolve a decision: user override wins, otherwise use the caller's default.
+    default: Any,
+) -> Any:
+    """Publish a decision (if not already published) and resolve its value.
+
+    1. Publishes the decision to context["decisions"] if not already there.
+       If it's already there (e.g. from a previous run), leaves it untouched.
+    2. Resolves: user override wins, otherwise the caller's default.
 
     The default comes from the calling code, not from the cached DecisionPoint.
     This ensures code changes to defaults take effect immediately, unless the
     user has explicitly overridden the decision.
+
+    The return value can be any type — BinaryChoice for include/exclude
+    decisions, or a numeric threshold for quality decisions, etc.
     """
-    override = overrides.get(key)
+    from context import context
+    decisions = context.get("decisions", {})
+    if decision.key not in decisions:
+        context.or_equals("decisions", {decision.key: decision})
+
+    override = overrides.get(decision.key)
     if override is not None:
         return override.choice
     return default

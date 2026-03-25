@@ -17,21 +17,31 @@ from customization.decisions import (
 )
 
 
-def test_resolve_decision_default():
+def _make_decision(key):
+    return DecisionPoint(
+        key=key, decision_type=key[0], default_choice=BinaryChoice.INCLUDE,
+        title="test", description="test",
+        object_type=key[1], object_id=key[2], subject_id=key[3],
+    )
+
+
+def test_resolve_decision_default(test_context):
     key = (DecisionType.ROTATION_OUTLIER, ObjectType.STACK, "s1", "r1")
+    dp = _make_decision(key)
     # No override → caller's default wins.
-    assert resolve_decision(key, frozendict(), default=BinaryChoice.INCLUDE) == BinaryChoice.INCLUDE
-    assert resolve_decision(key, frozendict(), default=BinaryChoice.EXCLUDE) == BinaryChoice.EXCLUDE
+    assert resolve_decision(dp, frozendict(), default=BinaryChoice.INCLUDE) == BinaryChoice.INCLUDE
+    assert resolve_decision(dp, frozendict(), default=BinaryChoice.EXCLUDE) == BinaryChoice.EXCLUDE
 
 
-def test_resolve_decision_override():
+def test_resolve_decision_override(test_context):
     key = (DecisionType.ROTATION_OUTLIER, ObjectType.STACK, "s1", "r1")
+    dp = _make_decision(key)
     overrides = frozendict({
         key: DecisionOverride(choice=BinaryChoice.EXCLUDE),
     })
     # User override wins regardless of default.
-    assert resolve_decision(key, overrides, default=BinaryChoice.INCLUDE) == BinaryChoice.EXCLUDE
-    assert resolve_decision(key, overrides, default=BinaryChoice.EXCLUDE) == BinaryChoice.EXCLUDE
+    assert resolve_decision(dp, overrides, default=BinaryChoice.INCLUDE) == BinaryChoice.EXCLUDE
+    assert resolve_decision(dp, overrides, default=BinaryChoice.EXCLUDE) == BinaryChoice.EXCLUDE
 
 
 @pytest.mark.heavy
@@ -173,10 +183,12 @@ def test_subframe_quality_decision(test_context):
     assert dp.metadata["excluded_count"] == 5
     assert dp.metadata["total_frames"] == 15
 
-    # Verify the skip mechanism works: select_subframes with skip returns stack unchanged.
-    from customization.subframe_selection import select_subframes
-    unfiltered = select_subframes(stack, min_frames_in_stack=3, skip_quality_filter=True)
-    assert unfiltered is stack  # Same object — no filtering applied
+    # Verify the override resolves correctly.
+    quality_key = next(iter(quality_decisions))
+    override = frozendict({quality_key: DecisionOverride(choice=BinaryChoice.EXCLUDE)})
+    dp = quality_decisions[quality_key]
+    assert resolve_decision(dp, override, default=BinaryChoice.INCLUDE) == BinaryChoice.EXCLUDE
+    assert resolve_decision(dp, frozendict(), default=BinaryChoice.INCLUDE) == BinaryChoice.INCLUDE
 
 
 @pytest.mark.heavy

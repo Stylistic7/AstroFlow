@@ -17,6 +17,7 @@ from customization.decisions import (
     DecisionType,
     BinaryChoice,
     ObjectType,
+    resolve_decision,
 )
 
 
@@ -118,12 +119,13 @@ def identify_stacks(
 
     assert None not in new_stacks.values()
 
-    # Detect decision points: flag runs with notable rotation angle spread.
+    # Detect and publish decision points for runs with notable rotation spread.
+    # resolve_decision handles publishing to context.
     detected_decisions = _detect_rotation_outliers(
         new_stacks, metadata, angular_tolerance
     )
-    if detected_decisions:
-        context.or_equals("decisions", detected_decisions)
+    for decision in detected_decisions.values():
+        resolve_decision(decision, frozendict(), default=BinaryChoice.INCLUDE)
 
     log.info("Identified stacks", num_stacks=len(new_stacks))
     return new_stacks

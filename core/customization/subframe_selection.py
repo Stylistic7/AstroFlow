@@ -6,9 +6,9 @@ from stacks.composite_stack import CompositeStack
 from stacks.simple_stack import SimpleStacksDict
 from metadata.classes import ImageMetadata, MetadataDict
 from customization.decisions import (
-    DecisionPoint, DecisionType, BinaryChoice, ObjectType,
+    DecisionPoint, DecisionType, DecisionOverride, DecisionKey,
+    BinaryChoice, ObjectType, resolve_decision,
 )
-from context import context
 
 log = structlog.get_logger()
 
@@ -31,7 +31,7 @@ def get_light_frames_sorted_by_stars(
 def select_subframes(
     stack: CompositeStack,
     min_frames_in_stack: int,
-    skip_quality_filter: bool = False,
+    decision_overrides: frozendict[DecisionKey, DecisionOverride] = frozendict(),
 ) -> CompositeStack:
     metadata = stack.all_metadata()
     sorted_light_frames = get_light_frames_sorted_by_stars(stack)
@@ -43,10 +43,6 @@ def select_subframes(
              best_stars=highest_star_count,
              total_frames=total_frames)
 
-    if skip_quality_filter:
-        log.info("Quality filter skipped by decision override")
-        return stack
-
     threshold_stars = int(_QUALITY_THRESHOLD * highest_star_count)
     selected_light_frames = [
         f for f in stack.all_frames()
@@ -54,12 +50,8 @@ def select_subframes(
     ]
     excluded_count = total_frames - len(selected_light_frames)
 
-    log.info("Subframe quality filter",
-             selected=len(selected_light_frames),
-             excluded=excluded_count,
-             threshold_stars=threshold_stars)
-
-    # Publish a decision if a significant fraction would be excluded.
+    # Publish a decision (if significant) and resolve it.
+    # resolve_decision handles publishing to context if not already there.
     if total_frames > 0 and excluded_count / total_frames > _DECISION_SIGNIFICANCE_THRESHOLD:
         worst_included = min(
             metadata[f].plate_solution.num_stars for f in selected_light_frames
@@ -70,14 +62,9 @@ def select_subframes(
             if f not in selected_light_frames
         ) if excluded_count > 0 else 0
 
-        key = (
-            DecisionType.SUBFRAME_QUALITY,
-            ObjectType.STACK,
-            stack.stable_hash,
-            stack.stable_hash,  # subject_id same as object_id for stack-level decisions
-        )
         decision = DecisionPoint(
-            key=key,
+            key=(DecisionType.SUBFRAME_QUALITY, ObjectType.STACK,
+                 stack.stable_hash, stack.stable_hash),
             decision_type=DecisionType.SUBFRAME_QUALITY,
             default_choice=BinaryChoice.INCLUDE,
             title=f"{excluded_count} of {total_frames} frames excluded by quality filter",
@@ -100,7 +87,16 @@ def select_subframes(
             object_id=stack.stable_hash,
             subject_id=stack.stable_hash,
         )
-        context.or_equals("decisions", {key: decision})
+
+        choice = resolve_decision(decision, decision_overrides, default=BinaryChoice.INCLUDE)
+        if choice == BinaryChoice.EXCLUDE:
+            log.info("Quality filter skipped by decision override")
+            return stack
+
+    log.info("Subframe quality filter",
+             selected=len(selected_light_frames),
+             excluded=excluded_count,
+             threshold_stars=threshold_stars)
 
     if len(selected_light_frames) < min_frames_in_stack:
         return None
