@@ -67,6 +67,7 @@ def test_moved_files(test_context):
 
     new_dir = os.path.join(input_dir, "new_dir")
     os.mkdir(new_dir)
+    random.seed(42)
     random.shuffle(filenames_on_disk)
     for filename in filenames_on_disk[:2]:
         dest = os.path.join(new_dir, os.path.basename(filename))
@@ -128,6 +129,7 @@ def test_deleted_files(test_context):
     filenames_in_cache = get_filenames_in_cache()
     assert len(filenames_in_cache) == 3
 
+    random.seed(42)
     random.shuffle(filenames)
     for filename in filenames[:2]:
         os.remove(filename)

@@ -61,6 +61,7 @@ def test_large_object(empty_context):
     assert len(list(cache.iterkeys())) == 0
     assert len(list(context.get_cache_keys())) == 0
 
+    np.random.seed(42)
     large_object = np.random.random((1000, 1000))
     assert get_deep_size(large_object) > 10000
 
@@ -120,6 +121,7 @@ def random_garbage(n: int) -> str:
 
 
 def test_context_actor_speed(empty_context, benchmark):
+    random.seed(42)
     random_dict = {
         random_garbage(8): random_garbage(16 * 1024 * 1024) for _ in range(100)
     }
@@ -132,6 +134,7 @@ def test_context_actor_speed(empty_context, benchmark):
 
 
 def test_direct_diskcache_speed(empty_context, benchmark):
+    random.seed(42)
     random_dict = {
         random_garbage(8): random_garbage(16 * 1024 * 1024) for _ in range(100)
     }
