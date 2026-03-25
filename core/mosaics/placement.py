@@ -23,7 +23,7 @@ from context import context
 from previews.types import QualityLevel
 from mosaics.types import Mosaic, Viewbox
 from mosaics.artifacts import placed_filename
-from decorators import cached
+from decorators import node
 from metadata.classes import ImageMetadata
 from products import makes_image
 
@@ -249,7 +249,7 @@ def place_image_master(
 
 
 # TODO: These trampolines are ugly; can they be improved?
-@cached.remote
+@node
 def place_image(
     mode: QualityLevel,
     mosaic: Mosaic,

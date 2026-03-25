@@ -55,7 +55,7 @@ def roughly_same_position_angle(
     return bool(angular_spread_mod_pi([a, b]) < angular_tolerance)
 
 
-@cached.remote
+@node
 def targets_overlap(
     a_target_ref: ContextRef[Target],
     b_target_ref: ContextRef[Target],

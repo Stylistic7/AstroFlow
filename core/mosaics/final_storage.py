@@ -11,7 +11,7 @@ from file_io.tiff_file_io import write_tiff_image
 from previews.operations import autostretch
 from pix import Image
 from products import makes_image
-from decorators import cached, create_thumbnail, measure_performance
+from decorators import node, create_thumbnail
 from file_io.types import TiffFilePath, XisfFilePath, WithSidecar
 from metadata.classes import ImageMetadata
 from mosaics.types import Mosaic
@@ -28,9 +28,8 @@ def make_preview_tiff(source_path: Path, dest_path: Path):
 
 
 @makes_image(Mosaic).as_master(mosaic_filename_xisf)
-@cached.remote(resources={"PixInsight": 1})
+@node(resources={"PixInsight": 1})
 @create_thumbnail
-@measure_performance
 def store_mosaic_color_channel_master(
     mosaic: Mosaic, filter: str, input: ImageMetadata
 ) -> WithSidecar[XisfFilePath]:
@@ -50,9 +49,8 @@ def store_mosaic_color_channel_master(
 
 
 @makes_image(Mosaic).as_subframe(mosaic_filename_tiff)
-@cached.remote(resources={"fastest_storage": 0.001})
+@node(resources={"fastest_storage": 0.001})
 @create_thumbnail
-@measure_performance
 def store_mosaic_color_channel_subframe(
     mosaic: Mosaic, filter: str, input: ImageMetadata
 ) -> WithSidecar[TiffFilePath]:

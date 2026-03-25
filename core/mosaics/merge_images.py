@@ -5,7 +5,6 @@ from beartype import beartype
 from pathlib import Path
 from dataclasses import dataclass
 
-from decorators import measure_performance
 from file_io.generic import read_header, read_image
 from pix import Image
 from pix.tasks import PhotometricMosaic
@@ -13,7 +12,7 @@ from metadata.classes import ImageMetadata
 from mosaics.types import Mosaic
 from mosaics.artifacts import merged_filename_tiff, merged_filename_xisf
 from previews.types import QualityLevel
-from decorators import cached
+from decorators import node, measure_performance
 from file_io.tiff_file_io import write_tiff_image
 from file_io.types import XisfFilePath, TiffFilePath, WithSidecar
 from products import makes_image
@@ -26,8 +25,7 @@ class MergedImage:
 
 
 @makes_image(MergedImage).as_subframe(merged_filename_tiff)
-@cached.remote
-@measure_performance
+@node
 def merge_images_with_maximum(
     mosaic: Mosaic, input_0: ImageMetadata, input_1: ImageMetadata
 ) -> WithSidecar[TiffFilePath]:
@@ -58,8 +56,7 @@ def merge_images_with_maximum(
 
 
 @makes_image(MergedImage).as_master(merged_filename_xisf)
-@cached.remote
-@measure_performance
+@node
 def merge_images_with_pmm(
     mosaic: Mosaic, input_0: ImageMetadata, input_1: ImageMetadata
 ) -> WithSidecar[XisfFilePath]:

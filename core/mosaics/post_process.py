@@ -11,7 +11,7 @@ from pix.tasks import (
     LinearFit,
 )
 from file_io.types import XisfFilePath, WithSidecar
-from decorators import cached, create_thumbnail, measure_performance
+from decorators import node, create_thumbnail
 from previews.types import QualityLevel
 from mosaics.final_storage import store_mosaic_color_channel_master
 from mosaics.types import Mosaic
@@ -49,8 +49,7 @@ def _post_process_mosaic(images: ImageList, mosaic: Mosaic) -> Image | None:
 
 
 @makes_image(Mosaic).as_post_processed(mosaic_filename_xisf)
-@cached.remote(resources={"PixInsight": 1})
-@measure_performance
+@node(resources={"PixInsight": 1})
 @create_thumbnail
 def post_process_mosaic(
     mode: QualityLevel,

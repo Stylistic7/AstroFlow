@@ -17,7 +17,7 @@ from stacks.compute_graph import get_stack_image
 from stacks.composite_stack import CompositeStacksDict, SimpleStacksDict
 from stacks.types import StackHash
 from previews.types import QualityLevel
-from decorators import cached
+from decorators import node
 from targets.types import TargetsDict, Target, TargetHash
 from metadata.image_metadata import compute_image_metadata_no_solve
 from stacks.convert_to_dict import convert_to_dict
@@ -54,7 +54,7 @@ def stacks_for_mosaic(
     )
 
 
-@cached.remote
+@node
 def build_mosaic_subgraph(
     mode: QualityLevel,
     mosaic: Mosaic,
@@ -127,7 +127,7 @@ def build_mosaic_subgraph(
     return graph
 
 
-@cached.remote
+@node
 def build_placement_subgraph(
     mode: QualityLevel,
     mosaic: Mosaic,
@@ -171,7 +171,7 @@ def get_stacks_for_filter(
     return tuple(get_stacks_for_strip(strip) for strip in mosaic.strips)
 
 
-@cached.remote
+@node
 def build_mosaic_filter_subgraph(
     mode: QualityLevel,
     mosaic: Mosaic,
@@ -299,7 +299,7 @@ def build_mosaic_filter_subgraph(
     return graph
 
 
-@cached.remote
+@node
 def process_mosaics_for_ui(mosaics: MosaicsDict) -> dict:
     def my_transform(v):
         if type(v) is np.ndarray:

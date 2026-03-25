@@ -2,10 +2,10 @@ import ray
 
 from mosaics.mosaic import MosaicsDict
 from targets.types import TargetsDict
-from decorators import cached
+from decorators import node
 
 
-@cached.remote
+@node
 def validate_mosaics(mosaics: MosaicsDict, targets: TargetsDict) -> MosaicsDict:
     print(f"### Entering validate_mosaics")
     for mosaic_id, mosaic in mosaics.items():
