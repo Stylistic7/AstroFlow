@@ -16,6 +16,8 @@ from customization.decisions import (
     resolve_decision,
     get_decisions_for_object,
 )
+from customization.resolve import resolve_decisions
+from customization.compute_graph import ALL_EXCLUSION_TYPES
 
 
 def _make_decision(key):
@@ -46,51 +48,8 @@ def test_resolve_decision_override(test_context):
 
 
 @pytest.mark.heavy
-def test_rotation_outlier_detection(test_context):
-    """Frames with notably different rotation angles should generate a decision point."""
-    # First group: 10 frames at rotation 90 degrees (session 1)
-    make_synthetic_frames(
-        ra=100,
-        dec=50,
-        prefix="normal",
-        number=10,
-        dither=0,
-        rotation_angle_deg=90.0,
-        start_datetime=datetime.datetime(2023, 12, 1, 20, 0, 0),
-        dest_dir=context.input_dirs[0],
-    )
-    # Second group: 5 frames at rotation 97 degrees (session 2, >8h later
-    # so they form a separate run within the same stack)
-    make_synthetic_frames(
-        ra=100,
-        dec=50,
-        prefix="rotated",
-        number=5,
-        dither=0,
-        rotation_angle_deg=97.0,
-        start_datetime=datetime.datetime(2023, 12, 2, 20, 0, 0),
-        dest_dir=context.input_dirs[0],
-    )
-
-    run_graph(build_compute_graph())
-
-    stack_hash = next(iter(context.stacks))
-    decisions = get_decisions_for_object(ObjectType.STACK, stack_hash)
-    assert len(decisions) > 0, "Expected at least one decision point to be detected"
-
-    # All detected decisions should be rotation outliers
-    for key, dp in decisions.items():
-        assert dp.decision_type == DecisionType.ROTATION_OUTLIER
-        assert dp.default_choice == BinaryChoice.INCLUDE
-        assert dp.object_type == ObjectType.STACK
-        assert "diff_deg" in dp.metadata
-
-
-@pytest.mark.heavy
-def test_exclude_rotated_run_splits_stack(test_context):
-    """Excluding a rotated run via decision override should remove it from the stack."""
-    # Create 10 frames at 90° and 5 frames at 97° — same position, different rotation.
-    # These form one stack with two runs. The 7° difference should trigger a decision.
+def test_rotation_outlier_detection_and_exclusion(test_context):
+    """Rotation outlier: detection, resolve_decisions filtering, and cache key invalidation."""
     make_synthetic_frames(
         ra=100, dec=50, prefix="normal", number=10, dither=0,
         rotation_angle_deg=90.0,
@@ -104,63 +63,59 @@ def test_exclude_rotated_run_splits_stack(test_context):
         dest_dir=context.input_dirs[0],
     )
 
-    # First run: default behavior includes all frames.
     run_graph(build_compute_graph())
 
     assert len(context.stacks) == 1
     stack = next(iter(context.stacks.values())).get()
-    total_frames_before = len(stack.all_frames())
-    assert total_frames_before == 15
-
-    # A rotation outlier decision should have been detected.
     stack_hash = next(iter(context.stacks))
-    decisions = get_decisions_for_object(ObjectType.STACK, stack_hash)
-    rotation_decisions = {
-        k: v for k, v in decisions.items()
-        if v.decision_type == DecisionType.ROTATION_OUTLIER
-    }
-    assert len(rotation_decisions) > 0
 
-    # Find the decision for the rotated run (5 frames) and exclude it.
+    # Enriched stack preserves all frames.
+    assert len(stack.all_frames()) == 15
+
+    # --- Detection ---
+    decisions = get_decisions_for_object(ObjectType.STACK, stack_hash)
+    assert len(decisions) > 0, "Expected at least one decision point"
+    for key, dp in decisions.items():
+        assert dp.decision_type == DecisionType.ROTATION_OUTLIER
+        assert dp.default_choice == BinaryChoice.INCLUDE
+        assert dp.object_type == ObjectType.STACK
+        assert "diff_deg" in dp.metadata
+
+    # Find the rotated run's decision (5 frames).
     rotated_key = next(
-        key for key, dp in rotation_decisions.items()
+        k for k, dp in decisions.items()
         if dp.metadata["run_frame_count"] == 5
     )
-    overrides = frozendict({
-        rotated_key: DecisionOverride(choice=BinaryChoice.EXCLUDE),
-    })
 
-    # Update settings with the override and re-run.
-    from customization.settings import Settings
-    new_settings = Settings(
-        clustering_settings=context.settings.clustering_settings,
-        development_settings=context.settings.development_settings,
-        preview_settings=context.settings.preview_settings,
-        decision_overrides=overrides,
-    )
-    context.settings = new_settings
+    # --- Filtering ---
+    # Without override: all 15 frames survive.
+    resolved = resolve_decisions(stack, ALL_EXCLUSION_TYPES, frozendict(), min_frames_in_stack=1)
+    assert len(resolved.all_frames()) == 15
 
-    run_graph(build_compute_graph())
-
-    assert len(context.stacks) == 1
-    stack_after = next(iter(context.stacks.values())).get()
-
-    # The enriched stack preserves all frames (new behavior).
-    assert len(stack_after.all_frames()) == 15
-
-    # But resolve_decisions with the override should filter to 10.
-    from customization.resolve import resolve_decisions
-    from customization.compute_graph import ALL_EXCLUSION_TYPES
-    resolved = resolve_decisions(stack_after, ALL_EXCLUSION_TYPES, overrides, min_frames_in_stack=1)
-    assert resolved is not None
+    # With EXCLUDE override: only the 10 normal frames survive.
+    overrides = frozendict({rotated_key: DecisionOverride(choice=BinaryChoice.EXCLUDE)})
+    resolved = resolve_decisions(stack, ALL_EXCLUSION_TYPES, overrides, min_frames_in_stack=1)
     assert len(resolved.all_frames()) == 10
+
+    # --- Cache key invalidation ---
+    from hashing import hash_call, hash_source_code
+    from stacks.stacking import stack_files
+
+    fn_hash = hash_source_code(stack_files)
+    cal_stacks = context.calibration_stacks
+    dev_settings = context.settings.development_settings
+    min_frames = context.settings.clustering_settings.min_frames_in_stack
+
+    key_no_override = hash_call(fn_hash, stack, cal_stacks, dev_settings, min_frames, frozendict())
+    key_with_override = hash_call(fn_hash, stack, cal_stacks, dev_settings, min_frames, overrides)
+    assert key_no_override != key_with_override, (
+        "Changing decisions must produce a different cache key"
+    )
 
 
 @pytest.mark.heavy
-def test_subframe_quality_decision(test_context):
-    """When >25% of frames would be excluded by quality filter, a decision is generated."""
-    # 10 good frames (high star count) + 5 bad frames (very low star count).
-    # With the 75% threshold, the bad frames should be excluded.
+def test_subframe_quality_decision_and_filtering(test_context):
+    """Subframe quality: detection, metadata, resolve_decisions filtering, and override."""
     make_synthetic_frames(
         ra=100, dec=50, prefix="good", number=10, dither=0,
         rotation_angle_deg=90.0, num_stars=1000,
@@ -178,11 +133,12 @@ def test_subframe_quality_decision(test_context):
 
     assert len(context.stacks) == 1
     stack = next(iter(context.stacks.values())).get()
+    stack_hash = next(iter(context.stacks))
+
     # Enriched stack preserves all frames.
     assert len(stack.all_frames()) == 15
 
-    # A subframe quality decision should have been generated (5/15 = 33% > 25%).
-    stack_hash = next(iter(context.stacks))
+    # --- Detection ---
     decisions = get_decisions_for_object(ObjectType.STACK, stack_hash)
     quality_decisions = {
         k: v for k, v in decisions.items()
@@ -193,18 +149,25 @@ def test_subframe_quality_decision(test_context):
     assert dp.metadata["excluded_count"] == 5
     assert dp.metadata["total_frames"] == 15
 
-    # Verify the override resolves correctly.
+    # --- Override resolution ---
     quality_key = next(iter(quality_decisions))
     override = frozendict({quality_key: DecisionOverride(choice=BinaryChoice.EXCLUDE)})
-    dp = quality_decisions[quality_key]
     assert resolve_decision(dp, override, default=BinaryChoice.INCLUDE) == BinaryChoice.EXCLUDE
     assert resolve_decision(dp, frozendict(), default=BinaryChoice.INCLUDE) == BinaryChoice.INCLUDE
+
+    # --- Filtering ---
+    # Default: quality filter removes bad frames.
+    resolved = resolve_decisions(stack, ALL_EXCLUSION_TYPES, frozendict(), min_frames_in_stack=1)
+    assert len(resolved.all_frames()) == 10
+
+    # Override to EXCLUDE (skip filter): all 15 frames survive.
+    resolved = resolve_decisions(stack, ALL_EXCLUSION_TYPES, override, min_frames_in_stack=1)
+    assert len(resolved.all_frames()) == 15
 
 
 @pytest.mark.heavy
 def test_no_subframe_decision_for_minor_exclusion(test_context):
     """When only a small fraction of frames are excluded, no decision is generated."""
-    # 14 good frames + 1 bad frame = 6.7% excluded, below 25% threshold.
     make_synthetic_frames(
         ra=100, dec=50, prefix="good", number=14, dither=0,
         rotation_angle_deg=90.0, num_stars=1000,
@@ -239,11 +202,7 @@ def test_no_subframe_decision_for_minor_exclusion(test_context):
 def test_no_decisions_for_uniform_rotation(test_context):
     """Frames with identical rotation should not generate decisions."""
     make_synthetic_frames(
-        ra=100,
-        dec=50,
-        prefix="uniform",
-        number=10,
-        dither=0,
+        ra=100, dec=50, prefix="uniform", number=10, dither=0,
         rotation_angle_deg=90.0,
         dest_dir=context.input_dirs[0],
     )
