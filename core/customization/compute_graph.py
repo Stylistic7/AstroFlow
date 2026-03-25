@@ -76,11 +76,16 @@ def customize_stack(
             x = f(x)
         return x
 
-    # Check if the user overrode the subframe quality filter for this stack.
-    skip_quality = any(
-        key[0] == DecisionType.SUBFRAME_QUALITY
-        and override.choice == BinaryChoice.EXCLUDE
-        for key, override in decision_overrides.items()
+    # Resolve the subframe quality decision for this stack.
+    # The decision is published by select_subframes on the first run.
+    # On subsequent runs, check if the user overrode it to EXCLUDE (skip filter).
+    from customization.decisions import resolve_decision
+    decisions = context.get("decisions", {})
+    quality_key = (DecisionType.SUBFRAME_QUALITY, ObjectType.STACK, stack.stable_hash, stack.stable_hash)
+    quality_decision = decisions.get(quality_key)
+    skip_quality = (
+        quality_decision is not None
+        and resolve_decision(quality_decision, decision_overrides) == BinaryChoice.EXCLUDE
     )
 
     stack = chain(
