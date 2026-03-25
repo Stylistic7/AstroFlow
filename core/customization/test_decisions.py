@@ -89,6 +89,69 @@ def test_rotation_outlier_detection(test_context):
 
 
 @pytest.mark.heavy
+def test_exclude_rotated_run_splits_stack(test_context):
+    """Excluding a rotated run via decision override should remove it from the stack."""
+    # Create 10 frames at 90° and 5 frames at 97° — same position, different rotation.
+    # These form one stack with two runs. The 7° difference should trigger a decision.
+    make_synthetic_frames(
+        ra=100, dec=50, prefix="normal", number=10, dither=0,
+        rotation_angle_deg=90.0,
+        start_datetime=datetime.datetime(2023, 12, 1, 20, 0, 0),
+        dest_dir=context.input_dirs[0],
+    )
+    make_synthetic_frames(
+        ra=100, dec=50, prefix="rotated", number=5, dither=0,
+        rotation_angle_deg=97.0,
+        start_datetime=datetime.datetime(2023, 12, 2, 20, 0, 0),
+        dest_dir=context.input_dirs[0],
+    )
+
+    # First run: default behavior includes all frames.
+    run_graph(build_compute_graph())
+
+    assert len(context.stacks) == 1
+    stack = next(iter(context.stacks.values())).get()
+    total_frames_before = len(stack.all_frames())
+    assert total_frames_before == 15
+
+    # A rotation outlier decision should have been detected.
+    decisions = context.get("decisions", {})
+    rotation_decisions = {
+        k: v for k, v in decisions.items()
+        if v.decision_type == DecisionType.ROTATION_OUTLIER
+    }
+    assert len(rotation_decisions) > 0
+
+    # Find the decision for the rotated run (5 frames) and exclude it.
+    rotated_key = next(
+        key for key, dp in rotation_decisions.items()
+        if dp.metadata["run_frame_count"] == 5
+    )
+    overrides = frozendict({
+        rotated_key: DecisionOverride(choice=BinaryChoice.EXCLUDE),
+    })
+
+    # Update settings with the override and re-run.
+    from customization.settings import Settings
+    new_settings = Settings(
+        clustering_settings=context.settings.clustering_settings,
+        development_settings=context.settings.development_settings,
+        preview_settings=context.settings.preview_settings,
+        decision_overrides=overrides,
+    )
+    context.settings = new_settings
+
+    run_graph(build_compute_graph())
+
+    assert len(context.stacks) == 1
+    stack_after = next(iter(context.stacks.values())).get()
+    total_frames_after = len(stack_after.all_frames())
+
+    # The excluded run's 5 frames should be removed, leaving 10.
+    assert total_frames_after == 10
+
+
+@pytest.mark.heavy
 def test_no_decisions_for_uniform_rotation(test_context):
     """Frames with identical rotation should not generate decisions."""
     make_synthetic_frames(
