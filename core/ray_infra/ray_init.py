@@ -51,7 +51,7 @@ def connect_to_ray_cluster():
 
         _context_actor = ContextActor.options(
             name="context", namespace="AstroFlow", get_if_exists=True,
-            max_concurrency=16,
+            max_concurrency=64,
         ).remote()
 
         global _state_actor
