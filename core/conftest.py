@@ -14,6 +14,17 @@ def pytest_collection_modifyitems(config, items):
     items[:] = normal + exclusive  # run normal tests first
 
 
+_MAX_MEMORY_PERCENT = int(os.environ.get("ASTROFLOW_TEST_MAX_MEMORY_PERCENT", "80"))
+
+
+@pytest.fixture(autouse=True)
+def ensure_memory():
+    """Wait until system memory pressure drops below threshold before starting a test."""
+    import time
+    while psutil.virtual_memory().percent > _MAX_MEMORY_PERCENT:
+        time.sleep(1)
+
+
 @pytest.fixture(autouse=True)
 def report_peak_memory(request):
     """Track and report peak memory consumption per test."""
