@@ -39,7 +39,7 @@ def flat_corrected_stack(
     return temp_file
 
 
-@node
+@node(memory=8 * 1024 * 1024 * 1024)
 def create_flat_correction_thumbnails(stack: Stack, calibration_stacks: CalibrationStacksDict, subframe_thumbnail_width: int) -> None:
     flat_stack_ids = [
         id
