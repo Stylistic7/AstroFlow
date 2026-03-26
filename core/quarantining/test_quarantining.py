@@ -82,11 +82,15 @@ def test_quarantine_run(test_context) -> None:
 
 
 def _run_deps_per_stack():
-    """Return the set of dependency counts per run, for each composite stack."""
+    """Return the set of dependency counts per run, for each composite stack (after resolving calibration)."""
+    from customization.resolve import resolve_calibration
+    from frozendict import frozendict as fd
+    cal_stacks = context.calibration_stacks
     stacks = [ref.get() for ref in context.stacks.values() if type(ref.get()) is Stack]
+    resolved = [resolve_calibration(s, cal_stacks, fd()) for s in stacks]
     return [
         {len(run.dependencies) for run in s.contents.values()}
-        for s in stacks
+        for s in resolved
     ]
 
 
