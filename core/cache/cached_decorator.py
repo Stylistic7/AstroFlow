@@ -17,8 +17,8 @@ from cache.types import NeverRun
 
 from cache.context_ref import strip_refs
 
-# Toggle to print task entry/exit on cache misses (when work is actually done).
-TRACE_TASKS = True
+import os
+TRACE_TASKS = os.environ.get("ASTROFLOW_TRACE_TASKS", "") == "1"
 
 
 T = TypeVar("T")
