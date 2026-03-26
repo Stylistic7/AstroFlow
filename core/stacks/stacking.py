@@ -13,7 +13,7 @@ from file_io.generic import update_header, copy_image
 from stacks.artifacts import stack_filename
 from stacks.simple_stack import Run, RunsDict
 from stacks.types import StackIdDependency, FilenameDependency
-from stacks.composite_stack import Stack, CalibrationStacksDict
+from stacks.composite_stack import BaseStack, Stack, CalibrationStacksDict
 from pix.tasks import run_wbpp
 from metadata.classes import MetadataDict
 from frozendict import frozendict
@@ -72,15 +72,15 @@ def _copy_frames_with_plate_solution(
                     fits[0].header[k] = v
 
 
-def _setup_simple_stack(
-    stack: Run,
+def _setup_run(
+    run: Run,
     calibration_stacks: CalibrationStacksDict,
     dest_dir: str,
-) -> None:
-    filenames = [i.filename for i in stack.metadata.values()]
-    assert len(stack.frames) == len(filenames)
+) -> list[str]:
+    filenames = [i.filename for i in run.metadata.values()]
+    assert len(run.frames) == len(filenames)
 
-    _copy_frames_with_plate_solution(stack.metadata, dest_dir)
+    _copy_frames_with_plate_solution(run.metadata, dest_dir)
 
     def get_dependency_filename(d):
         if isinstance(d, StackIdDependency):
@@ -88,28 +88,24 @@ def _setup_simple_stack(
         elif isinstance(d, FilenameDependency):
             return d.filename
 
-    # Add any dependent stacks (e.g. calibration stacks).
-    dependendency_filenames = [
-        get_dependency_filename(d) for d in stack.dependencies.values()
+    dependency_filenames = [
+        get_dependency_filename(d) for d in run.dependencies.values()
     ]
-    _symlink_frames(dependendency_filenames, dest_dir)
+    _symlink_frames(dependency_filenames, dest_dir)
 
     return filenames
 
 
-def _setup_composite_stack(
-    stack: Stack,
+def _setup_stack(
+    stack: BaseStack,
     calibration_stacks: CalibrationStacksDict,
     dest_dir: str,
-) -> tuple[str | None, int]:
+) -> list[str]:
     filenames = []
-    for i, substack in enumerate(stack.contents.values()):
+    for i, run in enumerate(stack.contents.values()):
         run_dir = os.path.join(dest_dir, f"RUN_{i}")
         os.makedirs(run_dir, exist_ok=True)
-        result = _setup_simple_stack(
-            substack, calibration_stacks, run_dir
-        )
-        filenames.extend(result)
+        filenames.extend(_setup_run(run, calibration_stacks, run_dir))
 
     return filenames
 
@@ -159,14 +155,14 @@ def _copy_wbpp_result(
 @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD")
 @create_thumbnail
 def stack_files(
-    stack: Stack,
+    stack: BaseStack,
     calibration_stacks: CalibrationStacksDict,
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
     decisions: frozendict = frozendict(),
 ) -> WithSidecar[XisfFilePath]:
     # Apply exclusion decisions to filter frames before stacking.
-    if isinstance(stack, Stack) and decisions:
+    if decisions:
         filtered = resolve_decisions(stack, ALL_EXCLUSION_TYPES, decisions, min_frames_in_stack)
         if filtered is None:
             raise ValueError(f"Stack {stack} has no frames after applying decisions")
@@ -197,12 +193,7 @@ def stack_files(
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
         log.debug("Using temporary directory", tmp_dir=tmp_dir)
 
-        setup_fn = (
-            _setup_simple_stack
-            if isinstance(stack, Run)
-            else _setup_composite_stack
-        )
-        filenames = setup_fn(stack, calibration_stacks, tmp_dir)
+        filenames = _setup_stack(stack, calibration_stacks, tmp_dir)
 
         if len(filenames) < min_frames_in_stack:
             log.info("Not stacking, too few files", stack=str(stack), num_files=len(filenames))

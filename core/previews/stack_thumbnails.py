@@ -53,11 +53,11 @@ def scatter_stack_thumbnails() -> Graph:
     return Graph({gather_stack_thumbnails: tasks})
 
 
-def get_first_frame(stack: Run) -> WithSidecar:
+def get_first_frame(stack: CalibrationStack) -> WithSidecar:
     # Use a sidecar file to avoid ever modifying the user's raw data files.
-    return WithSidecar(
-        FitsFilePath(stack.metadata[next(iter(stack.frames))].filename)
-    )
+    metadata = stack.all_metadata()
+    first_frame = stack.all_frames()[0]
+    return WithSidecar(FitsFilePath(metadata[first_frame].filename))
 
 
 def get_best_light_frame(stack: Stack) -> WithSidecar:
@@ -80,7 +80,7 @@ def stack_thumbnail(stack: Stack) -> WithSidecar:
 @makes_image(CalibrationStack).as_subframe(get_first_frame)
 @node
 @create_thumbnail
-def calibration_stack_thumbnail(stack: Run) -> WithSidecar:
+def calibration_stack_thumbnail(stack: CalibrationStack) -> WithSidecar:
     return get_first_frame(stack)
 
 
@@ -151,13 +151,14 @@ def stack_thumbnail_video(
 @node(resources={"fastest_storage": 0.001})
 @create_video
 def calibration_stack_thumbnail_video(
-    stack: Run,
+    stack: CalibrationStack,
     subframe_thumbnail_width: int,
 ) -> Iterable[np.ndarray]:
     width = subframe_thumbnail_width
-    for frame in stack.frames:
+    metadata = stack.all_metadata()
+    for frame in stack.all_frames():
         im = autostretch(
-            resize_array(read_image(stack.metadata[frame].filename), width)
+            resize_array(read_image(metadata[frame].filename), width)
         )
         yield (im * 255.0).astype(np.uint8)
 

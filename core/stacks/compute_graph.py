@@ -34,25 +34,23 @@ def build_calibration_stack_subgraph(
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
 ) -> Graph:
-    def visit_all_dependencies(stack: Run, depth=0) -> Graph:
-        assert isinstance(stack, Run)
-
-        tasks = []
-        subgraphs = {}
-        for t, dep in stack.dependencies.items():
+    def visit_cal_dependencies(run: Run) -> Graph:
+        """Build tasks to stack all calibration dependencies of a run."""
+        subgraph = {}
+        for dep in run.dependencies.values():
             if isinstance(dep, StackIdDependency):
-                substack = calibration_stacks[dep.stack_id]
-                tasks.append((stack_files, substack, calibration_stacks, development_settings, min_frames_in_stack))
-                subgraphs |= visit_all_dependencies(substack, depth=depth + 2)
-
-        if depth == 0:
-            return subgraphs
-        else:
-            return {(stack_files, stack, calibration_stacks, development_settings, min_frames_in_stack): tasks} | subgraphs
+                cal_stack = calibration_stacks[dep.stack_id]
+                task = (stack_files, cal_stack, calibration_stacks, development_settings, min_frames_in_stack)
+                # Recurse: this cal stack's run may depend on other cal stacks.
+                cal_run = next(iter(cal_stack.contents.values()))
+                inner = visit_cal_dependencies(cal_run)
+                subgraph[task] = list(inner.keys()) if inner else []
+                subgraph |= inner
+        return subgraph
 
     graph = Graph({})
-    for substack in stack.contents.values():
-        graph |= visit_all_dependencies(substack)
+    for run in stack.contents.values():
+        graph |= visit_cal_dependencies(run)
 
     return graph
 
@@ -166,9 +164,9 @@ def process_stacks_for_ui(stacks: dict) -> dict:
 def process_calibration_stacks_for_ui(cal_stacks: dict) -> dict:
     assert None not in cal_stacks.values()
 
-    def prepare_stack(stack: Run):
-        result = convert_to_dict(stack, [["metadata"]])
-        result["filenames"] = [m.filename for m in stack.metadata.values()]
+    def prepare_stack(stack):
+        result = convert_to_dict(stack, [["contents", "*", "metadata"]])
+        result["filenames"] = [m.filename for m in stack.all_metadata().values()]
 
         return result
 
