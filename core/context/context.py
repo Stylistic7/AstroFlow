@@ -54,10 +54,33 @@ def starts_with(big_tuple, small_tuple):
 class ContextActor:
     def __init__(self) -> None:
         self.cache = get_cache()
+        self._inflight = 0
+        self._peak_inflight = 0
+        self._total_calls = 0
+
+    def _enter(self):
+        self._inflight += 1
+        self._total_calls += 1
+        if self._inflight > self._peak_inflight:
+            self._peak_inflight = self._inflight
+
+    def _exit(self):
+        self._inflight -= 1
+
+    def get_concurrency_stats(self):
+        return {
+            "inflight": self._inflight,
+            "peak_inflight": self._peak_inflight,
+            "total_calls": self._total_calls,
+        }
 
     def get(self, key: Key, default_value: Any) -> ray.ObjectRef:
-        from cache.context_ref import strip_refs
-        return strip_refs(self.cache.get(key, default_value))
+        self._enter()
+        try:
+            from cache.context_ref import strip_refs
+            return strip_refs(self.cache.get(key, default_value))
+        finally:
+            self._exit()
 
     def get_matching(self, key_fragment: Key) -> ray.ObjectRef:
         return {
@@ -67,8 +90,12 @@ class ContextActor:
         }
 
     def set(self, key: Key, value: Any) -> None:
-        from cache.context_ref import strip_refs
-        self.cache[key] = strip_refs(value)
+        self._enter()
+        try:
+            from cache.context_ref import strip_refs
+            self.cache[key] = strip_refs(value)
+        finally:
+            self._exit()
 
     def contains(self, key: Key) -> bool:
         return key in self.cache
@@ -91,12 +118,16 @@ class ContextActor:
 
     def or_equals(self, key: Key, value: dict) -> None:
         """Merge value into a dict stored at key (dict |= value)."""
-        from cache.context_ref import strip_refs
-        with self.cache.transact():
-            old_value = self.cache.get(key, {})
-            if not isinstance(old_value, dict):
-                old_value = {}
-            self.cache[key] = strip_refs({**old_value, **value})
+        self._enter()
+        try:
+            from cache.context_ref import strip_refs
+            with self.cache.transact():
+                old_value = self.cache.get(key, {})
+                if not isinstance(old_value, dict):
+                    old_value = {}
+                self.cache[key] = strip_refs({**old_value, **value})
+        finally:
+            self._exit()
 
     def set_many(self, items: dict) -> None:
         from cache.context_ref import strip_refs
