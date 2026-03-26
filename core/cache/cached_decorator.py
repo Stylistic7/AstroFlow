@@ -17,6 +17,9 @@ from cache.types import NeverRun
 
 from cache.context_ref import strip_refs
 
+# Toggle to print task entry/exit on cache misses (when work is actually done).
+TRACE_TASKS = True
+
 
 T = TypeVar("T")
 
@@ -142,9 +145,13 @@ def make_cached_decorator(
             if dry_run:
                 return NeverRun
 
+            if TRACE_TASKS:
+                print(f">>> {func.__name__} (cache miss, running)")
             start_time = time.time()
             result = func(*bound.args, **bound.kwargs)
             elapsed_time = time.time() - start_time
+            if TRACE_TASKS:
+                print(f"<<< {func.__name__} ({elapsed_time:.3f}s)")
 
             if elapsed_time > 0.5:
                 debug_print(
