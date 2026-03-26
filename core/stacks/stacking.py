@@ -13,7 +13,7 @@ from file_io.generic import update_header, copy_image
 from stacks.artifacts import stack_filename
 from stacks.run import Run, RunsDict
 from stacks.types import StackIdDependency, FilenameDependency
-from stacks.composite_stack import BaseStack, Stack, CalibrationStacksDict
+from stacks.composite_stack import BaseStack, Stack, CalibrationStack, CalibrationStacksDict
 from pix.tasks import run_wbpp
 from metadata.classes import MetadataDict
 from frozendict import frozendict
@@ -152,6 +152,7 @@ def _copy_wbpp_result(
 
 # TODO: add an `as_downscaled_master` quality level.
 @makes_image(Stack).as_master(stack_filename)
+@makes_image(CalibrationStack).as_master(stack_filename)
 @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD")
 @create_thumbnail
 def stack_files(
