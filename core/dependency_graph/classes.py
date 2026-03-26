@@ -140,6 +140,7 @@ RemoteFunctionTuple: TypeAlias = Union[
     tuple[AnyTask, Any, Any, Any, Any, Any],
     tuple[AnyTask, Any, Any, Any, Any, Any, Any],
     tuple[AnyTask, Any, Any, Any, Any, Any, Any, Any],
+    tuple[AnyTask, Any, Any, Any, Any, Any, Any, Any, Any],
 ]
 
 TaskDescriptor: TypeAlias = Node | AnyTask | RemoteFunctionTuple
