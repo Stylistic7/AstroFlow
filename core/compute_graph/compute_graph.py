@@ -215,12 +215,17 @@ def preview_graph_done() -> None:
 @ray.remote
 @beartype
 def build_preview_graph() -> Graph:
+    from customization.settings import ProcessingConfig
+
     stacks = context.stacks
     targets = context.targets
-    calibration_stacks = context.calibration_stacks
     settings = context.settings
-    development_settings = settings.development_settings
-    min_frames_in_stack = settings.clustering_settings.min_frames_in_stack
+    config = ProcessingConfig(
+        calibration_stacks=context.calibration_stacks,
+        development_settings=settings.development_settings,
+        min_frames_in_stack=settings.clustering_settings.min_frames_in_stack,
+        decisions=settings.decision_overrides,
+    )
 
     tasks = []
     tasks.append((scatter_stack_thumbnails,))
@@ -234,10 +239,7 @@ def build_preview_graph() -> Graph:
                 mosaic,
                 stacks_for_mosaic(mosaic, stacks, targets),
                 targets_for_mosaic(mosaic, targets),
-                calibration_stacks,
-                development_settings,
-                min_frames_in_stack,
-                settings.decision_overrides,
+                config,
             )
         )
 
@@ -257,10 +259,21 @@ def build_main_processing_graph() -> Graph:
     targets = context.targets
     mosaics = context.mosaics
     shopping_cart = context.shopping_cart or []
+    from customization.settings import ProcessingConfig
+    from frozendict import frozendict as fd
+
     calibration_stacks = context.calibration_stacks
     settings = context.settings
-    development_settings = settings.development_settings
-    min_frames_in_stack = settings.clustering_settings.min_frames_in_stack
+
+    def config_for(stack_id=None):
+        decisions = fd({k: v for k, v in settings.decision_overrides.items()
+                        if len(k) >= 3 and k[2] == stack_id}) if stack_id else fd()
+        return ProcessingConfig(
+            calibration_stacks=calibration_stacks,
+            development_settings=settings.development_settings,
+            min_frames_in_stack=settings.clustering_settings.min_frames_in_stack,
+            decisions=decisions,
+        )
 
     # TODO: Figure out a nice way to set this during development.
     mode = QualityLevel.MASTER
@@ -275,14 +288,12 @@ def build_main_processing_graph() -> Graph:
             if id not in stacks:
                 log.warning("Stack in shopping cart does not exist", stack_id=id)
                 continue
-            from frozendict import frozendict as fd
-            stack_decisions = fd({k: v for k, v in settings.decision_overrides.items() if len(k) >= 3 and k[2] == id})
-            tasks.append((build_stacking_subgraph, stacks[id].get(), calibration_stacks, development_settings, min_frames_in_stack, stack_decisions))
+            tasks.append((build_stacking_subgraph, stacks[id].get(), config_for(id)))
         elif type == "target":
             if id not in targets:
                 log.warning("Target in shopping cart does not exist", target_id=id)
                 continue
-            tasks.append((build_target_subgraph, targets[id].get(), development_settings, min_frames_in_stack))
+            tasks.append((build_target_subgraph, targets[id].get(), config_for()))
         if type == "mosaic":
             if id not in mosaics:
                 log.warning("Mosaic in shopping cart does not exist", mosaic_id=id)
@@ -296,10 +307,7 @@ def build_main_processing_graph() -> Graph:
                     mosaic,
                     stacks_for_mosaic(mosaic, stacks, targets),
                     targets_for_mosaic(mosaic, targets),
-                    calibration_stacks,
-                    development_settings,
-                    min_frames_in_stack,
-                    settings.decision_overrides,
+                    config_for(),
                 )
             )
 

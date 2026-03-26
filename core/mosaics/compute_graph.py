@@ -64,10 +64,7 @@ def build_mosaic_subgraph(
     mosaic: Mosaic,
     stacks: StacksDict,
     targets: TargetsDict,
-    calibration_stacks: CalibrationStacksDict,
-    development_settings: DevelopmentSettings,
-    min_frames_in_stack: int,
-    decisions: frozendict = frozendict(),
+    config: "ProcessingConfig",
 ) -> Graph:
     log.info("Building mosaic subgraph", mode=mode, mosaic=str(mosaic), stacks=[str(s) for s in stacks])
     viewbox = compute_viewbox(mode, mosaic)
@@ -75,9 +72,9 @@ def build_mosaic_subgraph(
         ref.get().filter for ref in stacks.values() if ref is not None
     )
 
-    if development_settings.override_filters is not None:
-        log.warning("Overriding filters", override_filters=development_settings.override_filters)
-        filters = development_settings.override_filters
+    if config.development_settings.override_filters is not None:
+        log.warning("Overriding filters", override_filters=config.development_settings.override_filters)
+        filters = config.development_settings.override_filters
 
     graph = Graph()
 
@@ -110,10 +107,7 @@ def build_mosaic_subgraph(
             stacks,
             filter,
             viewbox,
-            calibration_stacks,
-            development_settings,
-            min_frames_in_stack,
-            decisions,
+            config,
         )
         store_task = (store_mosaic_color_channel, mode, mosaic, filter)
         graph[filter_subgraph_task] = {}
@@ -132,15 +126,12 @@ def build_placement_subgraph(
     stack: Stack,
     filter: str,
     viewbox: Viewbox,
-    calibration_stacks: CalibrationStacksDict,
-    development_settings: DevelopmentSettings,
-    min_frames_in_stack: int,
-    decisions: frozendict = frozendict(),
+    config: "ProcessingConfig",
 ) -> Graph:
     return Graph(
         {
             **chain(
-                (get_stack_image, mode, stack, calibration_stacks, development_settings, min_frames_in_stack, decisions),
+                (get_stack_image, mode, stack, config),
                 (place_image, mode, mosaic, stack, filter, viewbox),
                 Node(compute_image_metadata_no_solve, name="placed"),
             )
@@ -177,10 +168,7 @@ def build_mosaic_filter_subgraph(
     stacks: StacksDict | dict | object,
     filter: str,
     viewbox: Viewbox | None,
-    calibration_stacks: CalibrationStacksDict,
-    development_settings: DevelopmentSettings,
-    min_frames_in_stack: int,
-    decisions: frozendict = frozendict(),
+    config: "ProcessingConfig",
 ) -> Graph | None:
     log.info("Building mosaic filter subgraph", mode=mode, mosaic=str(mosaic), filter=filter, strips=mosaic.strips, viewbox=str(viewbox))
 
@@ -225,28 +213,12 @@ def build_mosaic_filter_subgraph(
             if i == 0:
                 prev_task = Node(
                     build_placement_subgraph,
-                    mode,
-                    mosaic,
-                    stack,
-                    filter,
-                    viewbox,
-                    calibration_stacks,
-                    development_settings,
-                    min_frames_in_stack,
-                    decisions,
+                    mode, mosaic, stack, filter, viewbox, config,
                 )
             else:
                 placement_task = Node(
                     build_placement_subgraph,
-                    mode,
-                    mosaic,
-                    stack,
-                    filter,
-                    viewbox,
-                    calibration_stacks,
-                    development_settings,
-                    min_frames_in_stack,
-                    decisions,
+                    mode, mosaic, stack, filter, viewbox, config,
                 )
                 merge_task = Node(
                     merge_images,

@@ -18,7 +18,7 @@ from pix.tasks import run_wbpp
 from metadata.classes import MetadataDict
 from frozendict import frozendict
 from decorators import node, create_thumbnail
-from customization.settings import DevelopmentSettings
+from customization.settings import DevelopmentSettings, ProcessingConfig
 from customization.resolve import resolve_calibration, resolve_decisions
 from customization.compute_graph import ALL_EXCLUSION_TYPES
 from products import makes_image
@@ -156,19 +156,18 @@ def _copy_wbpp_result(
 @create_thumbnail
 def stack_files(
     stack: BaseStack,
-    calibration_stacks: CalibrationStacksDict,
-    development_settings: DevelopmentSettings,
-    min_frames_in_stack: int,
-    decisions: frozendict = frozendict(),
+    config: ProcessingConfig,
 ) -> WithSidecar[XisfFilePath]:
     # Resolve calibration (lazy, cached via decision framework).
-    stack = resolve_calibration(stack, calibration_stacks, decisions)
+    stack = resolve_calibration(stack, config.calibration_stacks, config.decisions)
     # Apply exclusion decisions to filter frames before stacking.
-    if decisions:
-        filtered = resolve_decisions(stack, ALL_EXCLUSION_TYPES, decisions, min_frames_in_stack)
+    if config.decisions:
+        filtered = resolve_decisions(stack, ALL_EXCLUSION_TYPES, config.decisions, config.min_frames_in_stack)
         if filtered is None:
             raise ValueError(f"Stack {stack} has no frames after applying decisions")
         stack = filtered
+
+    development_settings = config.development_settings
 
     # Determine the output file, and the metadata it should have.
     dest_filename = stack_files.filename_fn(stack)
@@ -190,6 +189,8 @@ def stack_files(
         update_header(dest_filename, metadata)
         return WithSidecar(dest_filename)
 
+    calibration_stacks = config.calibration_stacks
+    min_frames_in_stack = config.min_frames_in_stack
     log.info("Calibration stacks", keys=list(calibration_stacks.keys()))
 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:

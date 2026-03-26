@@ -26,18 +26,23 @@ log = structlog.get_logger()
 @beartype
 def build_target_subgraph(
     target: Target,
-    development_settings: DevelopmentSettings,
-    min_frames_in_stack: int,
+    config: "ProcessingConfig",
 ) -> Graph:
+    from customization.settings import ProcessingConfig
+    from frozendict import frozendict as fd
     log.info("Building target subgraph", target=str(target))
 
     stacks = context.stacks
-    calibration_stacks = context.calibration_stacks
     all_decisions = context.settings.decision_overrides
 
-    def decisions_for(stack_id):
-        from frozendict import frozendict
-        return frozendict({k: v for k, v in all_decisions.items() if len(k) >= 3 and k[2] == stack_id})
+    def config_for(stack_id):
+        decisions = fd({k: v for k, v in all_decisions.items() if len(k) >= 3 and k[2] == stack_id})
+        return ProcessingConfig(
+            calibration_stacks=config.calibration_stacks,
+            development_settings=config.development_settings,
+            min_frames_in_stack=config.min_frames_in_stack,
+            decisions=decisions,
+        )
 
     graph_update_fn = partial(
         store_workflow_graph, ("target", target.stable_hash)
@@ -49,7 +54,7 @@ def build_target_subgraph(
     )
 
     graph[(post_process_target, target, stacks)] = {
-        (build_stacking_subgraph, stacks[stack_id].get(), calibration_stacks, development_settings, min_frames_in_stack, decisions_for(stack_id))
+        (build_stacking_subgraph, stacks[stack_id].get(), config_for(stack_id))
         for stack_id in target.stack_ids
     }
 

@@ -33,17 +33,25 @@ from file_io.generic import read_image
 def scatter_stack_thumbnails() -> Graph:
     tasks: list[TaskDescriptor] = list()
 
-    calibration_stacks = context.calibration_stacks
-    subframe_thumbnail_width = context.settings.preview_settings.subframe_thumbnail_width
-    all_decisions = context.settings.decision_overrides
+    from customization.settings import ProcessingConfig
 
-    def decisions_for(stack_hash):
-        return frozendict({k: v for k, v in all_decisions.items() if len(k) >= 3 and k[2] == stack_hash})
+    calibration_stacks = context.calibration_stacks
+    settings = context.settings
+    subframe_thumbnail_width = settings.preview_settings.subframe_thumbnail_width
+
+    def config_for(stack_hash):
+        decisions = frozendict({k: v for k, v in settings.decision_overrides.items() if len(k) >= 3 and k[2] == stack_hash})
+        return ProcessingConfig(
+            calibration_stacks=calibration_stacks,
+            development_settings=settings.development_settings,
+            min_frames_in_stack=settings.clustering_settings.min_frames_in_stack,
+            decisions=decisions,
+        )
 
     for stack_hash, stack_ref in context.stacks.items():
         stack = stack_ref.get()
         tasks.append((stack_thumbnail, stack))
-        tasks.append((stack_thumbnail_video, stack, subframe_thumbnail_width, calibration_stacks, decisions_for(stack_hash)))
+        tasks.append((stack_thumbnail_video, stack, subframe_thumbnail_width, config_for(stack_hash)))
         tasks.append((create_flat_correction_thumbnails, stack, calibration_stacks, subframe_thumbnail_width))
 
     for stack in calibration_stacks.values():
@@ -116,11 +124,10 @@ def _annotate_frame(
 def stack_thumbnail_video(
     stack: Stack,
     subframe_thumbnail_width: int,
-    cal_stacks: CalibrationStacksDict,
-    decisions: frozendict = frozendict(),
+    config: "ProcessingConfig",
 ) -> Iterable[np.ndarray]:
     # Resolve calibration lazily (for flat correction of subframes).
-    stack = resolve_calibration(stack, cal_stacks, decisions)
+    stack = resolve_calibration(stack, config.calibration_stacks, config.decisions)
     # Sort all the light frames (no matter which run they're from) by the
     # number of stars. The better images should be in front.
     width = subframe_thumbnail_width
@@ -144,7 +151,7 @@ def stack_thumbnail_video(
         im = (im * 255.0).astype(np.uint8)
 
         num_stars = light_frame.plate_solution.num_stars if light_frame.plate_solution else 0
-        included = is_frame_included(frame_hash, stack, decisions)
+        included = is_frame_included(frame_hash, stack, config.decisions)
         im = _annotate_frame(im, num_stars, included)
 
         yield im

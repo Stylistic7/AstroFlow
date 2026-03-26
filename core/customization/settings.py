@@ -74,6 +74,22 @@ class DevelopmentSettings:
 
 
 @dataclass(frozen=True)
+class ProcessingConfig:
+    """Bundles the 'how to process' parameters passed through the compute graph.
+
+    Created once per graph run by the @ray.remote graph builder, then passed
+    to all @node compute functions. Frozen and hashable for cache keys.
+    """
+    calibration_stacks: frozendict = field(default_factory=frozendict)
+    development_settings: "DevelopmentSettings" = field(default_factory=lambda: DevelopmentSettings())
+    min_frames_in_stack: int = 5
+    decisions: frozendict = field(default_factory=frozendict)
+
+    def __hash__(self):
+        return hash_dataclass(self)
+
+
+@dataclass(frozen=True)
 class Settings:
     stack_settings: frozendict[StackHash, StackSettings] = field(
         default_factory=frozendict

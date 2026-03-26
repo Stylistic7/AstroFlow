@@ -72,21 +72,23 @@ def command_done() -> None:
 
 
 def _process_stack(action: Action) -> Graph:
-    from frozendict import frozendict
+    from customization.settings import ProcessingConfig
+    from frozendict import frozendict as fd
     stack_id = action["object_id"]
     stack = context.stacks[stack_id].get()
-    decisions = frozendict({
-        k: v for k, v in context.settings.decision_overrides.items()
-        if len(k) >= 3 and k[2] == stack_id
-    })
+    settings = context.settings
+    config = ProcessingConfig(
+        calibration_stacks=context.calibration_stacks,
+        development_settings=settings.development_settings,
+        min_frames_in_stack=settings.clustering_settings.min_frames_in_stack,
+        decisions=fd({k: v for k, v in settings.decision_overrides.items()
+                      if len(k) >= 3 and k[2] == stack_id}),
+    )
 
     return Graph(
         {
             **chain(
-                (build_stacking_subgraph, stack, context.calibration_stacks,
-                 context.settings.development_settings,
-                 context.settings.clustering_settings.min_frames_in_stack,
-                 decisions),
+                (build_stacking_subgraph, stack, config),
                 process_stacks_for_ui,
             )
         }
@@ -94,12 +96,20 @@ def _process_stack(action: Action) -> Graph:
 
 
 def _process_target(action: Action) -> Graph:
+    from customization.settings import ProcessingConfig
     target = context.targets[action["object_id"]].get()
+    settings = context.settings
+    config = ProcessingConfig(
+        calibration_stacks=context.calibration_stacks,
+        development_settings=settings.development_settings,
+        min_frames_in_stack=settings.clustering_settings.min_frames_in_stack,
+        decisions=settings.decision_overrides,
+    )
 
     return Graph(
         {
             **chain(
-                (build_target_subgraph, target),
+                (build_target_subgraph, target, config),
                 process_targets_for_ui,
             )
         }
@@ -107,12 +117,18 @@ def _process_target(action: Action) -> Graph:
 
 
 def _process_mosaic(action: Action) -> Graph:
+    from customization.settings import ProcessingConfig
     mosaic = context.mosaics[action["object_id"]].get()
 
     stacks = context.stacks
     targets = context.targets
-    calibration_stacks = context.calibration_stacks
     settings = context.settings
+    config = ProcessingConfig(
+        calibration_stacks=context.calibration_stacks,
+        development_settings=settings.development_settings,
+        min_frames_in_stack=settings.clustering_settings.min_frames_in_stack,
+        decisions=settings.decision_overrides,
+    )
 
     tasks = []
     for mode in ["subframe", "master"]:
@@ -123,10 +139,7 @@ def _process_mosaic(action: Action) -> Graph:
                 mosaic,
                 stacks_for_mosaic(mosaic, stacks, targets),
                 targets_for_mosaic(mosaic, targets),
-                calibration_stacks,
-                settings.development_settings,
-                settings.clustering_settings.min_frames_in_stack,
-                settings.decision_overrides,
+                config,
             )
             tasks.append(task)
 

@@ -27,21 +27,20 @@ def calibration_done(stack: Stack) -> None:
     pass
 
 
+from customization.settings import ProcessingConfig
+
 @node
 def build_calibration_stack_subgraph(
     stack: Stack,
-    calibration_stacks: CalibrationStacksDict,
-    development_settings: DevelopmentSettings,
-    min_frames_in_stack: int,
+    config: ProcessingConfig,
 ) -> Graph:
     def visit_cal_dependencies(run: Run) -> Graph:
         """Build tasks to stack all calibration dependencies of a run."""
         subgraph = {}
         for dep in run.dependencies.values():
             if isinstance(dep, StackIdDependency):
-                cal_stack = calibration_stacks[dep.stack_id]
-                task = (stack_files, cal_stack, calibration_stacks, development_settings, min_frames_in_stack)
-                # Recurse: this cal stack's run may depend on other cal stacks.
+                cal_stack = config.calibration_stacks[dep.stack_id]
+                task = (stack_files, cal_stack, config)
                 cal_run = next(iter(cal_stack.contents.values()))
                 inner = visit_cal_dependencies(cal_run)
                 subgraph[task] = list(inner.keys()) if inner else []
@@ -55,23 +54,10 @@ def build_calibration_stack_subgraph(
     return graph
 
 
-@ray.remote
-@beartype
-def stack_runs_done(stack: Stack) -> None:
-    pass
-
-
-from frozendict import frozendict
-
-# This function accepts an enriched stack (all frames with calibration).
-# stack_files resolves decisions internally to filter before stacking.
 @node
 def build_stacking_subgraph(
     stack: Stack,
-    calibration_stacks: CalibrationStacksDict,
-    development_settings: DevelopmentSettings,
-    min_frames_in_stack: int,
-    decisions: frozendict = frozendict(),
+    config: ProcessingConfig,
 ) -> Graph:
     graph_update_fn = partial(
         store_workflow_graph, ("stack", stack.stable_hash)
@@ -81,12 +67,12 @@ def build_stacking_subgraph(
     return Graph(
         {
             **chain(
-                (build_calibration_stack_subgraph, stack, calibration_stacks, development_settings, min_frames_in_stack),
-                (stack_files, stack, calibration_stacks, development_settings, min_frames_in_stack, decisions),
+                (build_calibration_stack_subgraph, stack, config),
+                (stack_files, stack, config),
                 Node(
                     compute_image_metadata_no_solve, name=f"stacking_{stack.stable_hash}"
                 ),
-                (post_process_stack, stack, development_settings),
+                (post_process_stack, stack, config.development_settings),
                 Node(
                     compute_image_metadata_no_solve,
                     name=f"post_process_{stack.stable_hash}",
@@ -111,10 +97,7 @@ def get_stack_subframe_image(stack: Stack) -> Path:
 def get_stack_image(
     mode: QualityLevel,
     stack: Stack,
-    calibration_stacks: CalibrationStacksDict,
-    development_settings: DevelopmentSettings,
-    min_frames_in_stack: int,
-    decisions: frozendict = frozendict(),
+    config: ProcessingConfig,
 ) -> Graph:
     assert stack is not None
     if mode == QualityLevel.SUBFRAME:
@@ -125,7 +108,7 @@ def get_stack_image(
             )
         })
     else:
-        return Graph({(build_stacking_subgraph, stack, calibration_stacks, development_settings, min_frames_in_stack, decisions): {}})
+        return Graph({(build_stacking_subgraph, stack, config): {}})
 
 
 @ray.remote

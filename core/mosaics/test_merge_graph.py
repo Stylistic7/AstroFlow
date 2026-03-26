@@ -113,22 +113,22 @@ def test_three_by_one(test_context) -> None:
     graph = ray.get(
         build_mosaic_filter_subgraph.remote(
             mode, mosaic, strips, stacks, filter, viewbox,
-            calibration_stacks, DevelopmentSettings(), min_frames_in_stack,
+            calibration_stacks, DevelopmentSettings(), min_frames_in_stack, frozendict(),
         )
     )
     print_graph(graph)
 
     place_a = Node(
         build_placement_subgraph, mode, mosaic, stacks["a"], filter, viewbox,
-        calibration_stacks, DevelopmentSettings(), min_frames_in_stack,
+        calibration_stacks, DevelopmentSettings(), min_frames_in_stack, frozendict(),
     )
     place_b = Node(
         build_placement_subgraph, mode, mosaic, stacks["b"], filter, viewbox,
-        calibration_stacks, DevelopmentSettings(), min_frames_in_stack,
+        calibration_stacks, DevelopmentSettings(), min_frames_in_stack, frozendict(),
     )
     place_c = Node(
         build_placement_subgraph, mode, mosaic, stacks["c"], filter, viewbox,
-        calibration_stacks, DevelopmentSettings(), min_frames_in_stack,
+        calibration_stacks, DevelopmentSettings(), min_frames_in_stack, frozendict(),
     )
     merge_strip_1 = Node(
         merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_1"
@@ -206,34 +206,34 @@ def test_two_by_three(test_context) -> None:
     graph = ray.get(
         build_mosaic_filter_subgraph.remote(
             mode, mosaic, strips, stacks, filter, viewbox,
-            calibration_stacks, DevelopmentSettings(), min_frames_in_stack,
+            calibration_stacks, DevelopmentSettings(), min_frames_in_stack, frozendict(),
         )
     )
     print_graph(graph)
 
     place_a = Node(
         build_placement_subgraph, mode, mosaic, stacks["a"], filter, viewbox,
-        calibration_stacks, DevelopmentSettings(), min_frames_in_stack,
+        calibration_stacks, DevelopmentSettings(), min_frames_in_stack, frozendict(),
     )
     place_b = Node(
         build_placement_subgraph, mode, mosaic, stacks["b"], filter, viewbox,
-        calibration_stacks, DevelopmentSettings(), min_frames_in_stack,
+        calibration_stacks, DevelopmentSettings(), min_frames_in_stack, frozendict(),
     )
     place_c = Node(
         build_placement_subgraph, mode, mosaic, stacks["c"], filter, viewbox,
-        calibration_stacks, DevelopmentSettings(), min_frames_in_stack,
+        calibration_stacks, DevelopmentSettings(), min_frames_in_stack, frozendict(),
     )
     place_d = Node(
         build_placement_subgraph, mode, mosaic, stacks["d"], filter, viewbox,
-        calibration_stacks, DevelopmentSettings(), min_frames_in_stack,
+        calibration_stacks, DevelopmentSettings(), min_frames_in_stack, frozendict(),
     )
     place_e = Node(
         build_placement_subgraph, mode, mosaic, stacks["e"], filter, viewbox,
-        calibration_stacks, DevelopmentSettings(), min_frames_in_stack,
+        calibration_stacks, DevelopmentSettings(), min_frames_in_stack, frozendict(),
     )
     place_f = Node(
         build_placement_subgraph, mode, mosaic, stacks["f"], filter, viewbox,
-        calibration_stacks, DevelopmentSettings(), min_frames_in_stack,
+        calibration_stacks, DevelopmentSettings(), min_frames_in_stack, frozendict(),
     )
 
     merge_a_b = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_b")
@@ -319,22 +319,22 @@ def test_three_panes(test_context) -> None:
     graph = ray.get(
         build_mosaic_filter_subgraph.remote(
             mode, mosaic, strips, stacks, filter, viewbox,
-            calibration_stacks, DevelopmentSettings(), min_frames_in_stack,
+            calibration_stacks, DevelopmentSettings(), min_frames_in_stack, frozendict(),
         )
     )
     print_graph(graph)
 
     place_a = Node(
         build_placement_subgraph, mode, mosaic, stacks["a"], filter, viewbox,
-        calibration_stacks, DevelopmentSettings(), min_frames_in_stack,
+        calibration_stacks, DevelopmentSettings(), min_frames_in_stack, frozendict(),
     )
     place_b = Node(
         build_placement_subgraph, mode, mosaic, stacks["b"], filter, viewbox,
-        calibration_stacks, DevelopmentSettings(), min_frames_in_stack,
+        calibration_stacks, DevelopmentSettings(), min_frames_in_stack, frozendict(),
     )
     place_c = Node(
         build_placement_subgraph, mode, mosaic, stacks["c"], filter, viewbox,
-        calibration_stacks, DevelopmentSettings(), min_frames_in_stack,
+        calibration_stacks, DevelopmentSettings(), min_frames_in_stack, frozendict(),
     )
     merge_strip_0 = Node(
         merge_images, mode, mosaic, name="merge_mosaic_abc123_c"
@@ -395,7 +395,7 @@ def test_orion_mosaic(test_context) -> None:
     graph = ray.get(
         build_mosaic_filter_subgraph.remote(
             mode, mosaic, strips, stacks, filter, viewbox,
-            calibration_stacks, DevelopmentSettings(), min_frames_in_stack,
+            calibration_stacks, DevelopmentSettings(), min_frames_in_stack, frozendict(),
         )
     )
     print_graph(graph)
@@ -531,7 +531,7 @@ def test_orion_mosaic_one_by_two(test_context) -> None:
     graph = ray.get(
         build_mosaic_filter_subgraph.remote(
             mode, mosaic, strips, stacks, filter, viewbox,
-            calibration_stacks, DevelopmentSettings(), min_frames_in_stack,
+            calibration_stacks, DevelopmentSettings(), min_frames_in_stack, frozendict(),
         )
     )
 
@@ -614,7 +614,7 @@ def test_orion_mosaic_two_by_one(test_context) -> None:
     graph = ray.get(
         build_mosaic_filter_subgraph.remote(
             mode, mosaic, strips, stacks, filter, viewbox,
-            calibration_stacks, DevelopmentSettings(), min_frames_in_stack,
+            calibration_stacks, DevelopmentSettings(), min_frames_in_stack, frozendict(),
         )
     )
     print(f"### graph")
@@ -701,7 +701,7 @@ def test_orion_mosaic_missing_panel(test_context) -> None:
     graph = ray.get(
         build_mosaic_filter_subgraph.remote(
             mode, mosaic, strips, stacks, filter, viewbox,
-            calibration_stacks, DevelopmentSettings(), min_frames_in_stack,
+            calibration_stacks, DevelopmentSettings(), min_frames_in_stack, frozendict(),
         )
     )
     print_graph(graph)
