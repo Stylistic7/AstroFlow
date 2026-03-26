@@ -29,11 +29,11 @@ def test_hashes_and_metadata(test_context) -> None:
     # --- Stack hashes ---
     stack = next(iter(context.stacks.values())).get()
     assert stack.stable_hash == "7825680a0bef1d88"
-    assert stack.content_hash == "0e658d1fb82e30a6"
-    assert hash(stack) == 11120325435010708773
+    assert stack.content_hash == "3dd215b9d80b5616"
+    assert hash(stack) == 1343723860084752222
 
     dict = RunsDict({stack.stable_hash: stack})
-    assert hash(dict) == 11120325435010708773
+    assert hash(dict) == 1343723860084752222
 
     # --- Metadata hash ---
     metadata = ray.get(load_metadata.remote())

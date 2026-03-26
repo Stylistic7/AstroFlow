@@ -106,11 +106,14 @@ class Stack(BaseStack, AstrometricAttributes):
         imaging_attributes = ImagingAttributes.from_frames(frames, metadata)
         astrometric_attributes = AstrometricAttributes.from_frames(frames, metadata)
 
+        content_hash = hash_list([contents])
+
         attributes: dict[str, Any] = (
             asdict(chronology_attributes)
             | asdict(imaging_attributes)
             | asdict(astrometric_attributes)
             | {
+                "content_hash": content_hash,
                 "contents": contents,
                 "state": frozendict(),
             }

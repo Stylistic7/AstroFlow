@@ -149,24 +149,22 @@ def scatter_spatial_groups(
             cs.max_run_gap,
         )
 
-        stack_tasks.add(stack_task)
-
-    gather_stacks_task = Node(combine_dicts, name="combine_stacks")
-    graph[gather_stacks_task] = stack_tasks
-    graph[store_stacks] = {gather_stacks_task}
-    graph[process_stacks_for_ui] = {store_stacks}
-
-    # Target identification depends on stacks being stored in context.
-    for i, g in enumerate(spatial_groups):
         target_task = Node(identify_targets, cs.angular_tolerance, name=str(i))
         customize_targets_task = Node(
             scatter_customize_targets, settings.target_settings, name=str(i)
         )
 
-        graph[target_task] = {store_stacks}
+        # Each target identification depends on its own spatial group's stacks.
+        graph[target_task] = {stack_task}
         graph[customize_targets_task] = {target_task}
 
+        stack_tasks.add(stack_task)
         target_tasks.add(customize_targets_task)
+
+    gather_stacks_task = Node(combine_dicts, name="combine_stacks")
+    graph[gather_stacks_task] = stack_tasks
+    graph[store_stacks] = {gather_stacks_task}
+    graph[process_stacks_for_ui] = {store_stacks}
     graph[store_ui_stacks] = {process_stacks_for_ui}
 
     gather_targets_task = Node(combine_dicts, name="combine_targets")
