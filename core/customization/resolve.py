@@ -4,10 +4,11 @@ from __future__ import annotations
 from dataclasses import replace
 from frozendict import frozendict
 
-from stacks.composite_stack import Stack
-from stacks.run import RunsDict
+from stacks.composite_stack import Stack, CalibrationStacksDict
+from stacks.run import Run, RunsDict
+from stacks.types import StackIdDependency
 from customization.decisions import (
-    BinaryChoice, DecisionKey, DecisionOverride, DecisionType,
+    BinaryChoice, DecisionKey, DecisionOverride, DecisionPoint, DecisionType,
     ObjectType, DECISION_PRECEDENCE, resolve_decision, get_decisions_for_object,
 )
 from customization.subframe_selection import select_subframes
@@ -125,3 +126,102 @@ def is_run_included(
                 return False
 
     return True
+
+
+# ---------------------------------------------------------------------------
+# Calibration resolution via the decision framework
+# ---------------------------------------------------------------------------
+
+_CAL_DECISION_TYPES = {
+    "bias": DecisionType.CALIBRATION_BIAS,
+    "dark": DecisionType.CALIBRATION_DARK,
+    "flat": DecisionType.CALIBRATION_FLAT,
+}
+
+_CALIBRATIONS_FOR_IMAGE_TYPE = {
+    "bias": [],
+    "dark": ["bias"],
+    "flat": ["bias"],
+    "light": ["bias", "dark", "flat"],
+}
+
+
+def resolve_calibration(
+    stack: Stack,
+    cal_stacks: CalibrationStacksDict,
+    decision_overrides: frozendict[DecisionKey, DecisionOverride],
+) -> Stack:
+    """Resolve calibration dependencies for each run via the decision framework.
+
+    For each run, for each calibration type (bias, dark, flat), the matching
+    logic is wrapped in a lazy default. The decision framework returns the
+    cached default or user override.
+    """
+    from calibration.calibration_frames import _build_cal_index, _midpoint_s
+
+    bias_by_cam, dark_by_cam, flat_by_cam_filter = _build_cal_index(cal_stacks)
+
+    def _choose_bias(run: Run):
+        cand = bias_by_cam.get(run.camera)
+        if not cand:
+            return None
+        mid = _midpoint_s(run.oldest_date, run.newest_date)
+        T = run.mean_temperature
+        filtered = [(m, t, sid) for (m, t, sid) in cand if abs(t - T) < 10.0]
+        if not filtered:
+            return None
+        return min(filtered, key=lambda x: abs(x[0] - mid))[2]
+
+    def _choose_dark(run: Run):
+        cand = dark_by_cam.get(run.camera)
+        if not cand:
+            return None
+        mid = _midpoint_s(run.oldest_date, run.newest_date)
+        T = run.mean_temperature
+        exp = run.exposure
+        filtered = [(m, t, e, sid) for (m, t, e, sid) in cand if abs(t - T) < 10.0 and e <= exp]
+        if not filtered:
+            return None
+        return min(filtered, key=lambda x: abs(x[0] - mid))[3]
+
+    def _choose_flat(run: Run):
+        cand = flat_by_cam_filter.get((run.camera, run.filter))
+        if not cand:
+            return None
+        mid = _midpoint_s(run.oldest_date, run.newest_date)
+        return min(cand, key=lambda x: abs(x[0] - mid))[1]
+
+    pickers = {"bias": _choose_bias, "dark": _choose_dark, "flat": _choose_flat}
+
+    new_contents = RunsDict()
+    for run_hash, run in stack.contents.items():
+        deps = dict(run.dependencies)
+        for cal_type in _CALIBRATIONS_FOR_IMAGE_TYPE.get(run.image_type, []):
+            if cal_type in deps:
+                continue  # Already set (e.g., from cal-to-cal association)
+
+            dt = _CAL_DECISION_TYPES[cal_type]
+            key = (dt, ObjectType.STACK, stack.stable_hash, run_hash)
+            decision = DecisionPoint(
+                key=key,
+                decision_type=dt,
+                default_choice=None,  # Filled by lazy default
+                title=f"Calibration: {cal_type}",
+                description=f"Which {cal_type} stack to use for this run",
+                object_type=ObjectType.STACK,
+                object_id=stack.stable_hash,
+                subject_id=run_hash,
+            )
+
+            sid = resolve_decision(
+                decision,
+                decision_overrides,
+                default=lambda r=run, p=pickers[cal_type]: p(r),
+            )
+
+            if sid is not None:
+                deps[cal_type] = StackIdDependency(stack_id=sid)
+
+        new_contents[run_hash] = replace(run, dependencies=frozendict(deps))
+
+    return replace(stack, contents=new_contents)
