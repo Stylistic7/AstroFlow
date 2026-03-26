@@ -10,6 +10,7 @@ from metadata.image_metadata import scatter_compute_image_metadata
 from clustering import cluster_by_image_center
 from calibration import (
     identify_calibration_stacks,
+    associate_calibration_stacks,
 )
 from previews.stack_thumbnails import scatter_stack_thumbnails
 from previews.types import QualityLevel
@@ -133,8 +134,9 @@ def scatter_spatial_groups(
         cs.max_run_gap,
     )
 
-    graph[store_calibration_stacks] = {identify_cal_stacks_task}
-    graph[process_calibration_stacks_for_ui] = {identify_cal_stacks_task}
+    graph[associate_calibration_stacks] = {identify_cal_stacks_task}
+    graph[store_calibration_stacks] = {associate_calibration_stacks}
+    graph[process_calibration_stacks_for_ui] = {associate_calibration_stacks}
     graph[store_ui_calibration_stacks] = {process_calibration_stacks_for_ui}
 
     stack_tasks = set()
