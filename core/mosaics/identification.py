@@ -217,21 +217,23 @@ def group_targets(
     assert len(target_ids_for_cell) > 0
 
     disjoint_set = HashDisjointSet()
-    # TODO: Parallelize these.
+    # Fire all overlap checks in parallel, then collect results.
+    futures = []
     for cell, tids in target_ids_for_cell.items():
         if len(tids) < 2:
             continue
-
         for a, b in combinations(sorted(tids), 2):
-            overlap = ray.get(
-                targets_overlap.remote(
-                    target_refs[a], target_refs[b],
-                    angular_tolerance=angular_tolerance,
-                )
+            ref = targets_overlap.remote(
+                target_refs[a], target_refs[b],
+                angular_tolerance=angular_tolerance,
             )
-            if overlap in allowed_overlaps:
-                log.debug("Union", a=a[:8], b=b[:8], overlap=str(overlap))
-                disjoint_set.union(a, b)
+            futures.append((a, b, ref))
+
+    for a, b, ref in futures:
+        overlap = ray.get(ref)
+        if overlap in allowed_overlaps:
+            log.debug("Union", a=a[:8], b=b[:8], overlap=str(overlap))
+            disjoint_set.union(a, b)
 
     mosaics = disjoint_set.groups()
 
@@ -270,18 +272,22 @@ def find_strips(
         if len(strip) < 3:
             return Strip(strip)
 
+        # Fire all pairwise overlap checks in parallel.
+        overlap_refs = {
+            (tid_a, tid_b): targets_overlap.remote(
+                target_refs[tid_a], target_refs[tid_b],
+                angular_tolerance=angular_tolerance,
+            )
+            for tid_a, tid_b in combinations(strip, 2)
+        }
+        overlap_results = {k: ray.get(ref) for k, ref in overlap_refs.items()}
+
         def overlap_count(target_id):
             return sum(
-                1
-                for tid in strip
-                if ray.get(
-                    targets_overlap.remote(
-                        target_refs[target_id],
-                        target_refs[tid],
-                        angular_tolerance=angular_tolerance,
-                    )
-                )
-                == Overlap.LONG_EDGE
+                1 for tid in strip
+                if tid != target_id and (
+                    overlap_results.get((target_id, tid), overlap_results.get((tid, target_id)))
+                ) == Overlap.LONG_EDGE
             )
 
         overlap_counts = {tid: overlap_count(tid) for tid in strip}
@@ -296,13 +302,10 @@ def find_strips(
         while len(output_strip) < strip_length:
             log.debug("Ordering strip", progress=len(output_strip))
             starting_length = len(output_strip)
+            # Use pre-computed overlap results instead of serial ray.get calls.
+            last = output_strip[-1]
             for target_id in strip:
-                overlap = ray.get(
-                    targets_overlap.remote(
-                        target_refs[output_strip[-1]], target_refs[target_id],
-                        angular_tolerance=angular_tolerance,
-                    )
-                )
+                overlap = overlap_results.get((last, target_id), overlap_results.get((target_id, last)))
                 if overlap == Overlap.LONG_EDGE:
                     if debug:
                         log.debug("Added to strip", target_id=target_id[:8])
