@@ -57,6 +57,29 @@ class DecisionPoint:
     def __hash__(self):
         return hash_dataclass(self)
 
+    @staticmethod
+    def make(
+        decision_type: DecisionType,
+        object_id: str,
+        subject_id: str,
+        title: str,
+        description: str,
+        metadata: dict | frozendict = frozendict(),
+        object_type: ObjectType = ObjectType.STACK,
+    ) -> "DecisionPoint":
+        key = (decision_type, object_type, object_id, subject_id)
+        return DecisionPoint(
+            key=key,
+            decision_type=decision_type,
+            default_choice=None,  # Filled by resolve_decision's lazy default
+            title=title,
+            description=description,
+            metadata=frozendict(metadata) if isinstance(metadata, dict) else metadata,
+            object_type=object_type,
+            object_id=object_id,
+            subject_id=subject_id,
+        )
+
 
 @dataclass(frozen=True)
 class DecisionOverride:

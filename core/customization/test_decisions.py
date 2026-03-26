@@ -172,30 +172,35 @@ def test_subframe_quality_decision_and_filtering(test_context):
     assert len(stack.all_frames()) == 15
 
     # --- Detection ---
-    decisions = get_decisions_for_object(ObjectType.STACK, stack_hash)
+    all_decisions = get_decisions_for_object(ObjectType.STACK, stack_hash)
     quality_decisions = {
-        k: v for k, v in decisions.items()
+        k: v for k, v in all_decisions.items()
         if v.decision_type == DecisionType.SUBFRAME_QUALITY
     }
     assert len(quality_decisions) == 1
     dp = next(iter(quality_decisions.values()))
     assert dp.metadata["excluded_count"] == 5
     assert dp.metadata["total_frames"] == 15
+    # The cached default is the quality threshold (a float).
+    assert dp.default_choice == 0.75
 
-    # --- Override resolution ---
-    quality_key = next(iter(quality_decisions))
-    override = frozendict({quality_key: DecisionOverride(choice=BinaryChoice.EXCLUDE)})
-    assert resolve_decision(dp, override, default=BinaryChoice.INCLUDE) == BinaryChoice.EXCLUDE
-    assert resolve_decision(dp, frozendict(), default=BinaryChoice.INCLUDE) == BinaryChoice.INCLUDE
-
-    # --- Filtering ---
-    # Default: quality filter removes bad frames.
+    # --- Filtering with default threshold ---
+    # Default 75% threshold: 100 stars < 750 (75% of 1000), so bad frames excluded.
     resolved = resolve_decisions(stack, ALL_EXCLUSION_TYPES, frozendict(), min_frames_in_stack=1)
     assert len(resolved.all_frames()) == 10
 
-    # Override to EXCLUDE (skip filter): all 15 frames survive.
-    resolved = resolve_decisions(stack, ALL_EXCLUSION_TYPES, override, min_frames_in_stack=1)
+    # --- Override with threshold=0.0 (keep all frames) ---
+    quality_key = next(iter(quality_decisions))
+    override_keep_all = frozendict({quality_key: DecisionOverride(choice=0.0)})
+    resolved = resolve_decisions(stack, ALL_EXCLUSION_TYPES, override_keep_all, min_frames_in_stack=1)
     assert len(resolved.all_frames()) == 15
+
+    # --- Override with stricter threshold (0.9 = 900 stars minimum) ---
+    override_strict = frozendict({quality_key: DecisionOverride(choice=0.9)})
+    resolved = resolve_decisions(stack, ALL_EXCLUSION_TYPES, override_strict, min_frames_in_stack=1)
+    # Only frames with >= 900 stars survive (the 10 "good" frames have ~1000 stars each,
+    # but with noise they might vary — just verify fewer than 15 survive).
+    assert len(resolved.all_frames()) <= 10
 
 
 @pytest.mark.heavy

@@ -174,16 +174,10 @@ def _detect_rotation_outliers(
             if diff <= angular_tolerance * 0.3:
                 continue
 
-            key = (
-                DecisionType.ROTATION_OUTLIER,
-                ObjectType.STACK,
-                stack_hash,
-                run_hash,
-            )
-            detected[key] = DecisionPoint(
-                key=key,
+            dp = DecisionPoint.make(
                 decision_type=DecisionType.ROTATION_OUTLIER,
-                default_choice=BinaryChoice.INCLUDE,
+                object_id=stack_hash,
+                subject_id=run_hash,
                 title=f"Run rotation differs by {math.degrees(diff):.1f}°",
                 description=(
                     f"This run's mean rotation angle differs by "
@@ -193,17 +187,15 @@ def _detect_rotation_outliers(
                     f"(tolerance: {math.degrees(angular_tolerance):.1f}°). "
                     f"Including it may cause alignment artifacts."
                 ),
-                metadata=frozendict({
+                metadata={
                     "run_angle_deg": round(math.degrees(run_angle), 2),
                     "stack_mean_deg": round(math.degrees(stack_mean), 2),
                     "diff_deg": round(math.degrees(diff), 2),
                     "spread_deg": round(math.degrees(spread), 2),
                     "tolerance_deg": round(math.degrees(angular_tolerance), 2),
                     "run_frame_count": len(stack.contents[run_hash].frames),
-                }),
-                object_type=ObjectType.STACK,
-                object_id=stack_hash,
-                subject_id=run_hash,
+                },
             )
+            detected[dp.key] = dp
 
     return detected

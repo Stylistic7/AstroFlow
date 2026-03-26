@@ -78,29 +78,29 @@ def is_frame_included(
     if m.plate_solution is None:
         return False
 
-    all_metadata = stack.all_metadata()
-    star_counts = [
-        md.plate_solution.num_stars
-        for md in all_metadata.values()
-        if md.plate_solution is not None
-    ]
-    if not star_counts:
-        return True
-
-    from customization.subframe_selection import _QUALITY_THRESHOLD
-    best = max(star_counts)
-    threshold = int(_QUALITY_THRESHOLD * best)
-
-    # Check if the quality filter is overridden (user chose to skip it).
+    # Check the resolved quality threshold from the decision cache.
     quality_key = (
         DecisionType.SUBFRAME_QUALITY, ObjectType.STACK,
         stack.stable_hash, stack.stable_hash,
     )
-    override = decision_overrides.get(quality_key)
-    if override is not None and override.choice == BinaryChoice.EXCLUDE:
-        return True  # Filter skipped → all frames included.
 
-    return m.plate_solution.num_stars >= threshold
+    # Check override first.
+    override = decision_overrides.get(quality_key)
+    if override is not None:
+        quality_threshold = override.choice  # float, e.g. 0.0 to keep all
+    else:
+        # Check cached decision.
+        decisions = get_decisions_for_object(ObjectType.STACK, stack.stable_hash)
+        dp = decisions.get(quality_key)
+        if dp is not None and dp.default_choice is not None:
+            quality_threshold = dp.default_choice
+        else:
+            from customization.subframe_selection import _DEFAULT_QUALITY_THRESHOLD
+            quality_threshold = _DEFAULT_QUALITY_THRESHOLD
+
+    from customization.subframe_selection import _compute_threshold_stars
+    threshold_stars = _compute_threshold_stars(metadata, stack.all_frames(), quality_threshold)
+    return m.plate_solution.num_stars >= threshold_stars
 
 
 def is_run_included(
@@ -201,16 +201,12 @@ def resolve_calibration(
                 continue  # Already set (e.g., from cal-to-cal association)
 
             dt = _CAL_DECISION_TYPES[cal_type]
-            key = (dt, ObjectType.STACK, stack.stable_hash, run_hash)
-            decision = DecisionPoint(
-                key=key,
+            decision = DecisionPoint.make(
                 decision_type=dt,
-                default_choice=None,  # Filled by lazy default
-                title=f"Calibration: {cal_type}",
-                description=f"Which {cal_type} stack to use for this run",
-                object_type=ObjectType.STACK,
                 object_id=stack.stable_hash,
                 subject_id=run_hash,
+                title=f"Calibration: {cal_type}",
+                description=f"Which {cal_type} stack to use for this run",
             )
 
             sid = resolve_decision(
