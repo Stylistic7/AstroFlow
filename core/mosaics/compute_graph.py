@@ -1,3 +1,4 @@
+import ray
 import numpy as np
 import structlog
 from typing import Optional
@@ -57,6 +58,7 @@ def stacks_for_mosaic(
     )
 
 
+@ray.remote
 def build_mosaic_subgraph(
     mode: QualityLevel,
     mosaic: Mosaic,
@@ -123,6 +125,7 @@ def build_mosaic_subgraph(
     return graph
 
 
+@ray.remote
 def build_placement_subgraph(
     mode: QualityLevel,
     mosaic: Mosaic,
@@ -166,6 +169,7 @@ def get_stacks_for_filter(
     return tuple(get_stacks_for_strip(strip) for strip in mosaic.strips)
 
 
+@ray.remote
 def build_mosaic_filter_subgraph(
     mode: QualityLevel,
     mosaic: Mosaic,

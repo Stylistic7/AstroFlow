@@ -107,6 +107,7 @@ def get_stack_subframe_image(stack: Stack) -> Path:
     return Path(best_light_frame.filename)
 
 
+@ray.remote
 def get_stack_image(
     mode: QualityLevel,
     stack: Stack,
