@@ -52,23 +52,13 @@ def enrich_with_calibration(
     Also detects and publishes decisions (quality, rotation) as side effects
     so they're visible in the UI, but does NOT filter frames.
     """
-    import time
-    t0 = time.time()
     stack = stack_ref.get()
-    print(f"### enrich_with_calibration: stack={stack.stable_hash[:8]} frames={len(stack.all_frames())} cal_stacks={len(cal_stacks)}")
-    t1 = time.time()
     stack = associate_with_stack(stack, cal_stacks)
-    print(f"### enrich_with_calibration: associate_with_stack took {time.time()-t1:.3f}s")
-    t1 = time.time()
     stack = apply_settings(stack, stack_settings)
-    print(f"### enrich_with_calibration: apply_settings took {time.time()-t1:.3f}s")
 
     # Detect and publish decisions without filtering.
     # resolve_decisions publishes DecisionPoints to context as a side effect.
-    t1 = time.time()
     _resolve_decisions(stack, ALL_EXCLUSION_TYPES, stack_overrides, min_frames_in_stack)
-    print(f"### enrich_with_calibration: resolve_decisions took {time.time()-t1:.3f}s")
-    print(f"### enrich_with_calibration: total {time.time()-t0:.3f}s")
 
     # Clear stale marker — this stack has been reprocessed.
     invalidated = context.get("invalidated", {})

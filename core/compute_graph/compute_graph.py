@@ -10,7 +10,6 @@ from metadata.image_metadata import scatter_compute_image_metadata
 from clustering import cluster_by_image_center
 from calibration import (
     identify_calibration_stacks,
-    associate_calibration_stacks,
 )
 from previews.stack_thumbnails import scatter_stack_thumbnails
 from previews.types import QualityLevel
@@ -46,7 +45,7 @@ log = structlog.get_logger()
 @beartype
 def store_calibration_stacks(
     calibration_stacks: CalibrationStacksDict,
-) -> RunsDict:
+) -> CalibrationStacksDict:
     context.calibration_stacks = calibration_stacks
     log.info("Stored calibration stacks", count=len(calibration_stacks))
     return calibration_stacks
@@ -129,17 +128,15 @@ def scatter_spatial_groups(
 
     graph = Graph({})
 
-    graph[associate_calibration_stacks] = {
-        (
-            identify_calibration_stacks,
-            metadata_ref,
-            cs.max_run_gap,
-        )
-    }
+    identify_cal_stacks_task = (
+        identify_calibration_stacks,
+        metadata_ref,
+        cs.max_run_gap,
+    )
 
     quarantine_calibration_stacks_task = (scatter_customize_cal_stacks,)
 
-    graph[quarantine_calibration_stacks_task] = {associate_calibration_stacks}
+    graph[quarantine_calibration_stacks_task] = {identify_cal_stacks_task}
     graph[process_calibration_stacks_for_ui] = {
         quarantine_calibration_stacks_task
     }

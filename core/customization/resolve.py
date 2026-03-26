@@ -1,7 +1,6 @@
 """Apply decisions to a Stack to produce filtered or annotated views."""
 from __future__ import annotations
 
-import time
 from dataclasses import replace
 from frozendict import frozendict
 
@@ -46,9 +45,6 @@ def resolve_decisions(
     Decision types are automatically sorted by DECISION_PRECEDENCE (lower
     first): run-level exclusions before frame-level exclusions.
     """
-    t0 = time.time()
-    print(f"### resolve_decisions: stack={stack.stable_hash[:8]} types={[dt.value for dt in decision_types]} overrides={len(decision_overrides)} frames={len(stack.all_frames())}")
-
     sorted_types = sorted(
         decision_types,
         key=lambda dt: DECISION_PRECEDENCE.get(dt, 999),
@@ -56,9 +52,7 @@ def resolve_decisions(
 
     for dt in sorted_types:
         if stack is None:
-            print(f"### resolve_decisions: stack is None after {dt.value}, returning")
             return None
-        t1 = time.time()
         if dt in (DecisionType.QUARANTINE, DecisionType.ROTATION_OUTLIER):
             stack = _apply_run_exclusions(stack, decision_overrides, dt)
         elif dt == DecisionType.SUBFRAME_QUALITY:
@@ -66,9 +60,7 @@ def resolve_decisions(
                 stack, min_frames_in_stack,
                 decision_overrides=decision_overrides,
             )
-        print(f"### resolve_decisions: {dt.value} took {time.time()-t1:.3f}s, frames={len(stack.all_frames()) if stack else 0}")
 
-    print(f"### resolve_decisions: total {time.time()-t0:.3f}s")
     return stack
 
 
