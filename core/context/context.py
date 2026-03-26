@@ -58,11 +58,15 @@ class ContextActor:
         self._peak_inflight = 0
         self._total_calls = 0
 
+    _MAX_CONCURRENCY = 64
+
     def _enter(self):
         self._inflight += 1
         self._total_calls += 1
         if self._inflight > self._peak_inflight:
             self._peak_inflight = self._inflight
+            if self._peak_inflight >= self._MAX_CONCURRENCY:
+                print(f"### ContextActor: concurrency limit hit ({self._peak_inflight}/{self._MAX_CONCURRENCY})")
 
     def _exit(self):
         self._inflight -= 1
