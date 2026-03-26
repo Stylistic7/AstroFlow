@@ -139,6 +139,13 @@ def starmap():
 
 
 
+@app.route("/api/invalidated")
+def get_invalidated():
+    """Return the set of objects whose cached images are stale."""
+    invalidated = context.get("invalidated", {})
+    return jsonify([list(k) for k in invalidated.keys()])
+
+
 # This stub redirects requests to a worker on a specific port. That worker
 # will handle all SSE connections, and broadcast the announcer.announcements it receives
 # over a diskcache queue.

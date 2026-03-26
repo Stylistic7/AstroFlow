@@ -118,6 +118,11 @@ def override_decision():
         dict(type="update_settings", settings=new_settings)
     )
 
+    # Mark the affected object as stale so the UI shows an indicator.
+    object_type = key[1].value  # ObjectType enum → string
+    object_id = key[2]
+    context.or_equals("invalidated", {(object_type, object_id): True})
+
     return jsonify({
         "key": _serialize_key(key),
         "choice": raw_choice,

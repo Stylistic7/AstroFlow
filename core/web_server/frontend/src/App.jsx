@@ -36,6 +36,7 @@ function App() {
   const [computeGraph, setComputeGraph] = useState({});
   const [computeGraphStatus, setComputeGraphStatus] = useState({});
   const [rayStatus, setRayStatus] = useState({});
+  const [invalidated, setInvalidated] = useState([]);
 
 
   useEffect(() => {
@@ -71,14 +72,22 @@ function App() {
       setRayStatus(s);
     };
 
+    const loadInvalidated = async () => {
+      try {
+        const d = await fetch('/api/invalidated').then(r => r.json());
+        setInvalidated(d);
+      } catch { /* ignore */ }
+    };
+
     loadComputeGraphStatus();
     loadRayStatus();
+    loadInvalidated();
 
     const stream_url = window.location.protocol + '//' + window.location.hostname + '/stream';
     const sse = new window.EventSource(stream_url);
 
-    sse.onmessage = e => { loadObjectData(); };
-    sse.addEventListener("reload_data", e => { loadObjectData(); });
+    sse.onmessage = e => { loadObjectData(); loadInvalidated(); };
+    sse.addEventListener("reload_data", e => { loadObjectData(); loadInvalidated(); });
     sse.addEventListener("compute_graph_status", e => loadComputeGraphStatus());
     sse.addEventListener("ray_status", e => loadRayStatus());
 
@@ -104,7 +113,7 @@ function App() {
     <ThemeProvider theme={darkTheme}>
       <StyledEngineProvider injectFirst>
         <AstroFlowContext.Provider
-          value={{ constellationPolylines, stacks, calibrationStacks, targets, mosaics, shoppingCart, computeGraph, computeGraphStatus, rayStatus }}
+          value={{ constellationPolylines, stacks, calibrationStacks, targets, mosaics, shoppingCart, computeGraph, computeGraphStatus, rayStatus, invalidated }}
         >
           <FolderProvider>
             <CssBaseline />

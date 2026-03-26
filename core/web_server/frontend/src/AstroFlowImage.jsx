@@ -1,4 +1,6 @@
+import { useContext } from "react";
 import TileViewer from "./TileViewer.jsx";
+import AstroFlowContext from "./AstroFlowContext.jsx";
 
 export const AstroFlowImage = ({
     objectType,
@@ -7,16 +9,10 @@ export const AstroFlowImage = ({
     showPolygons = false,
     size = "full",
 }) => {
-    const labelStyle = {
-        position: "absolute",
-        top: 4,
-        right: 4,
-        background: "rgba(0,0,0,0.5)",
-        color: "white",
-        padding: "2px 6px",
-        borderRadius: 4,
-        fontSize: 12,
-    };
+    const { invalidated } = useContext(AstroFlowContext);
+    const isStale = (invalidated || []).some(
+        ([type, id]) => type === objectType && id === objectId
+    );
 
     let thumbnail_url = `/thumbnail/${objectType}/${objectId}${filter ? `/${filter}` : ''}`;
 
@@ -37,7 +33,17 @@ export const AstroFlowImage = ({
                         style={{ width: "100%", height: "auto" }}
                     />
                 )}
-                {/* <div style={labelStyle}>Level: {level}</div> */}
+                {isStale && (
+                    <div style={{
+                        position: 'absolute', top: 8, right: 8,
+                        background: 'rgba(255, 100, 100, 0.85)',
+                        color: 'white', padding: '2px 8px',
+                        borderRadius: 4, fontSize: 12,
+                        pointerEvents: 'none',
+                    }}>
+                        Reprocessing...
+                    </div>
+                )}
             </div>
         </div>
     );

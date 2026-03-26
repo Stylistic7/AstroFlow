@@ -4,8 +4,11 @@ import ExposureDurationWidget from "./ExposureDurationWidget.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
 
 export default function StackThumbnail({ stack_id, width, handleClick }) {
-	const { stacks } = useContext(AstroFlowContext);
+	const { stacks, invalidated } = useContext(AstroFlowContext);
 	const stack = stacks[stack_id];
+	const isStale = (invalidated || []).some(
+		([type, id]) => type === "stack" && id === stack_id
+	);
 
 	const color_for_filter = (filter) => {
 		const key = filter?.[0]?.toUpperCase?.();
@@ -146,6 +149,18 @@ export default function StackThumbnail({ stack_id, width, handleClick }) {
 			>
 				<span>Frame count {frameCount}</span>
 			</div>
+
+			{isStale && (
+				<div style={{
+					position: "absolute", top: "0.5em", right: "0.5em",
+					background: "rgba(255, 100, 100, 0.85)",
+					color: "white", padding: "1px 6px",
+					borderRadius: 4, fontSize: 11,
+					pointerEvents: "none",
+				}}>
+					Reprocessing...
+				</div>
+			)}
 
 		</div>
 	);

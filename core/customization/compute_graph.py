@@ -70,6 +70,13 @@ def enrich_with_calibration(
     print(f"### enrich_with_calibration: resolve_decisions took {time.time()-t1:.3f}s")
     print(f"### enrich_with_calibration: total {time.time()-t0:.3f}s")
 
+    # Clear stale marker — this stack has been reprocessed.
+    invalidated = context.get("invalidated", {})
+    stack_key = ("stack", stack.stable_hash)
+    if stack_key in invalidated:
+        invalidated = {k: v for k, v in invalidated.items() if k != stack_key}
+        context["invalidated"] = invalidated
+
     return stack
 
 
