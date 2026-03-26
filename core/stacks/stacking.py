@@ -152,7 +152,6 @@ def _copy_wbpp_result(
 
 # TODO: add an `as_downscaled_master` quality level.
 @makes_image(Stack).as_master(stack_filename)
-@makes_image(CalibrationStack).as_master(stack_filename)
 @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD")
 @create_thumbnail
 def stack_files(
@@ -210,3 +209,9 @@ def stack_files(
         log.info("Running WBPP", stack=str(stack))
         run_wbpp(Path(tmp_dir), Path(tmp_dir))
         return _copy_wbpp_result(tmp_dir, dest_filename, metadata)
+
+
+# Register stack_files as a producer for CalibrationStack too.
+from products.registry import register_producer, MediaType
+from previews.types import QualityLevel
+register_producer(MediaType.IMAGE, CalibrationStack, QualityLevel.MASTER, stack_files)
