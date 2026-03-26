@@ -9,13 +9,37 @@ from testing import make_synthetic_frames, copy_testdata_frames
 from previews.types import QualityLevel
 from stacks.compute_graph import build_calibration_stack_subgraph
 from stacks.run import Run
-from stacks.composite_stack import Stack
+from stacks.composite_stack import Stack, CalibrationStack
 from stacks.types import StackHash, StackIdDependency
 from context import context
 from file_io.find_image_files import find_image_files
 from dependency_graph import run_graph, print_graph
 from customization.settings import Settings, StackSettings
 from frozendict import frozendict
+
+
+def _cal_deps(stack: CalibrationStack) -> set[str]:
+    """Get dependency type names for a calibration stack's single run."""
+    run = next(iter(stack.contents.values()))
+    return set(run.dependencies.keys())
+
+
+def assert_cal_deps(cal_stacks):
+    """Assert correct calibration-to-calibration dependencies.
+
+    bias → no deps, dark → bias (if bias exists), flat → bias (if bias exists).
+    """
+    has_bias = any(s.image_type == "bias" for s in cal_stacks.values())
+    for cal_stack in cal_stacks.values():
+        deps = _cal_deps(cal_stack)
+        if cal_stack.image_type == "bias":
+            assert deps == set(), f"Bias should have no deps, got {deps}"
+        elif cal_stack.image_type == "dark":
+            expected = {"bias"} if has_bias else set()
+            assert deps == expected, f"Dark deps: expected {expected}, got {deps}"
+        elif cal_stack.image_type == "flat":
+            expected = {"bias"} if has_bias else set()
+            assert deps == expected, f"Flat deps: expected {expected}, got {deps}"
 
 
 def _print_stack(stack: Stack):
@@ -140,6 +164,7 @@ def test_stack_dependency_graph(test_context) -> None:
     stacks = context.stacks
     assert len(stacks) == 1
     assert len(context.calibration_stacks) == 6
+    assert_cal_deps(context.calibration_stacks)
 
     assert all(ref.get().image_type == "light" for ref in stacks.values())
 
@@ -181,6 +206,9 @@ def test_one_light_run_one_dark_run(test_context) -> None:
     stacks = context.stacks
     assert len(stacks) == 1
     assert len(context.calibration_stacks) == 1
+
+    # Dark without bias — dark should have no dependencies.
+    assert_cal_deps(context.calibration_stacks)
 
     light_stacks = [ref.get() for ref in stacks.values() if ref.get().image_type == "light"]
     assert len(light_stacks) == 1
@@ -268,6 +296,7 @@ def test_flats_from_different_camera(test_context) -> None:
     stacks = context.stacks
     assert len(stacks) == 2
     assert len(context.calibration_stacks) == 6
+    assert_cal_deps(context.calibration_stacks)
 
     light_stacks = [
         ref.get()
@@ -335,6 +364,7 @@ def test_dark_scaling(test_context) -> None:
     stacks = context.stacks
     assert len(stacks) == 1
     assert len(context.calibration_stacks) == 4
+    assert_cal_deps(context.calibration_stacks)
 
     light_stacks = [ref.get() for ref in stacks.values() if ref.get().image_type == "light"]
     assert len(light_stacks) == 1
@@ -422,26 +452,13 @@ def test_stack_calibration_frames(test_context) -> None:
     stacks = context.stacks
     assert len(stacks) == 1
     assert len(context.calibration_stacks) == 3
+    assert_cal_deps(context.calibration_stacks)
 
     light_stacks = [ref.get() for ref in stacks.values() if ref.get().image_type == "light"]
     assert len(light_stacks) == 1
 
     cal_stacks = context.calibration_stacks
-
-    def cal_deps(stack):
-        """Get the dependency types for a calibration stack's single run."""
-        run = next(iter(stack.contents.values()))
-        return set(run.dependencies.keys())
-
-    # Verify calibration-to-calibration association:
-    # bias → no deps, dark → bias, flat → bias
-    for cal_stack in cal_stacks.values():
-        if cal_stack.image_type == "bias":
-            assert cal_deps(cal_stack) == set()
-        elif cal_stack.image_type == "dark":
-            assert cal_deps(cal_stack) == {"bias"}
-        elif cal_stack.image_type == "flat":
-            assert cal_deps(cal_stack) == {"bias"}
+    assert_cal_deps(cal_stacks)
 
     dev_settings = context.settings.development_settings
     min_frames = context.settings.clustering_settings.min_frames_in_stack
@@ -485,6 +502,7 @@ def test_multiple_filters_for_flats(test_context) -> None:
     stacks = context.stacks
     assert len(stacks) == 1
     assert len(context.calibration_stacks) == 2
+    assert_cal_deps(context.calibration_stacks)
 
     light_stacks = [ref.get() for ref in stacks.values() if ref.get().image_type == "light"]
     assert len(light_stacks) == 1
@@ -593,6 +611,7 @@ def test_flat_frame_selection(test_context) -> None:
     stacks = context.stacks
     assert len(stacks) == 1
     assert len(context.calibration_stacks) == 2
+    assert_cal_deps(context.calibration_stacks)
 
     light_stacks = [
         ref.get()
@@ -650,6 +669,7 @@ def test_generic_grouping(test_context) -> None:
     stacks = context.stacks
     assert len(stacks) == 1
     assert len(context.calibration_stacks) == 3
+    assert_cal_deps(context.calibration_stacks)
 
     stack = next(iter(stacks.values())).get()
     assert len(stack.contents) == 1
