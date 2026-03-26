@@ -111,49 +111,60 @@ def get_stack_image(
         return Graph({(build_stacking_subgraph, stack, config): {}})
 
 
+def _my_transform(v):
+    if type(v) is np.ndarray:
+        return v.tolist()
+    if type(v) is SingleSphericalPolygon:
+        return v.points.tolist()
+    return v
+
+
+@ray.remote
+def _prepare_stack_for_ui(
+    stack: Stack,
+    cal_stacks: CalibrationStacksDict,
+    decisions,
+    min_frames: int,
+) -> dict:
+    from customization.resolve import resolve_calibration, resolve_decisions
+    from customization.compute_graph import ALL_EXCLUSION_TYPES
+
+    # Resolve calibration so the UI shows calibration deps per run.
+    stack = resolve_calibration(stack, cal_stacks, decisions)
+    # Publish quality/rotation decisions as side effects (for UI visibility).
+    resolve_decisions(stack, ALL_EXCLUSION_TYPES, decisions, min_frames)
+    result = convert_to_dict(
+        stack, [["contents", "*", "metadata"]], transform=_my_transform
+    )
+
+    filenames = []
+    for s in stack.contents.values():
+        filenames += [m.filename for m in s.metadata.values()]
+
+    result["filenames"] = filenames
+    return result
+
+
 @ray.remote
 def process_stacks_for_ui(*_ancestor_results) -> dict:
     from context import context
     from cache.context_ref import ContextRef
-    from customization.resolve import resolve_calibration, resolve_decisions
-    from customization.compute_graph import ALL_EXCLUSION_TYPES
-    from frozendict import frozendict
 
     stacks = context.stacks or {}
     cal_stacks = context.calibration_stacks or CalibrationStacksDict()
     decisions = context.settings.decision_overrides
-
-    def my_transform(v):
-        if type(v) is np.ndarray:
-            return v.tolist()
-        if type(v) is SingleSphericalPolygon:
-            return v.points.tolist()
-        return v
-
     min_frames = context.settings.clustering_settings.min_frames_in_stack
 
-    def prepare_stack(stack: Stack):
-        # Resolve calibration so the UI shows calibration deps per run.
-        stack = resolve_calibration(stack, cal_stacks, decisions)
-        # Publish quality/rotation decisions as side effects (for UI visibility).
-        resolve_decisions(stack, ALL_EXCLUSION_TYPES, decisions, min_frames)
-        result = convert_to_dict(
-            stack, [["contents", "*", "metadata"]], transform=my_transform
+    # Fire all stack preparations in parallel.
+    futures = {
+        h: _prepare_stack_for_ui.remote(
+            ref.get() if isinstance(ref, ContextRef) else ref,
+            cal_stacks, decisions, min_frames,
         )
-
-        filenames = []
-        for s in stack.contents.values():
-            filenames += [m.filename for m in s.metadata.values()]
-
-        result["filenames"] = filenames
-
-        return result
-
-    ui_stacks = {
-        h: prepare_stack(ref.get() if isinstance(ref, ContextRef) else ref)
         for h, ref in stacks.items()
     }
-    return ui_stacks
+
+    return {h: ray.get(ref) for h, ref in futures.items()}
 
 
 @node
