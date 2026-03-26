@@ -133,15 +133,18 @@ def _prepare_stack_for_ui(
     stack = resolve_calibration(stack, cal_stacks, decisions)
     # Publish quality/rotation decisions as side effects (for UI visibility).
     resolve_decisions(stack, ALL_EXCLUSION_TYPES, decisions, min_frames)
+
+    # Emit only the fields the UI needs for the starmap, cards, and search.
+    # The heavy 'contents' field (runs with all frame metadata) is fetched
+    # on demand when the user opens a specific stack.
     result = convert_to_dict(
-        stack, [["contents", "*", "metadata"]], transform=_my_transform
+        stack, [["contents"], ["projected_footprints"]], transform=_my_transform
     )
 
-    filenames = []
-    for s in stack.contents.values():
-        filenames += [m.filename for m in s.metadata.values()]
-
-    result["filenames"] = filenames
+    # Filenames for search indexing (lightweight — just path strings).
+    result["filenames"] = [
+        m.filename for s in stack.contents.values() for m in s.metadata.values()
+    ]
     return result
 
 
