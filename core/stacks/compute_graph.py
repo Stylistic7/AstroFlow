@@ -6,7 +6,7 @@ from functools import partial
 from beartype import beartype
 from decorators import node
 from stacks.stacking import stack_files
-from stacks.composite_stack import Run, Stack, RunsDict, StacksDict
+from stacks.composite_stack import Run, Stack, RunsDict, StacksDict, CalibrationStacksDict
 from stacks.types import StackIdDependency
 from stacks.post_process import post_process_stack
 from stacks.convert_to_dict import convert_to_dict
@@ -30,7 +30,7 @@ def calibration_done(stack: Stack) -> None:
 @node
 def build_calibration_stack_subgraph(
     stack: Stack,
-    calibration_stacks: RunsDict,
+    calibration_stacks: CalibrationStacksDict,
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
 ) -> Graph:
@@ -70,7 +70,7 @@ from frozendict import frozendict
 @node
 def build_stacking_subgraph(
     stack: Stack,
-    calibration_stacks: RunsDict,
+    calibration_stacks: CalibrationStacksDict,
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
     decisions: frozendict = frozendict(),
@@ -112,7 +112,7 @@ def get_stack_subframe_image(stack: Stack) -> Path:
 def get_stack_image(
     mode: QualityLevel,
     stack: Stack,
-    calibration_stacks: RunsDict,
+    calibration_stacks: CalibrationStacksDict,
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
     decisions: frozendict = frozendict(),

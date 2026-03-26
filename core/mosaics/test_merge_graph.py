@@ -26,7 +26,7 @@ from mosaics.orion_mosaic import add_orion_mosaic_images
 from targets.types import Target, TargetsDict
 from testing.test_stacks import make_composite_stack
 from attributes.astrometric_attributes import healpix_cells_from_poly
-from stacks.composite_stack import StacksDict, RunsDict
+from stacks.composite_stack import StacksDict, RunsDict, CalibrationStacksDict
 from customization.settings import DevelopmentSettings
 from units import Degrees, Radians, ArcsecondsPerPixel
 
@@ -106,7 +106,7 @@ def test_three_by_one(test_context) -> None:
         }
     )
     strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
-    calibration_stacks = RunsDict({})
+    calibration_stacks = CalibrationStacksDict({})
 
     min_frames_in_stack = 3
 
@@ -199,7 +199,7 @@ def test_two_by_three(test_context) -> None:
     )
 
     strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
-    calibration_stacks = RunsDict({})
+    calibration_stacks = CalibrationStacksDict({})
 
     min_frames_in_stack = 3
 
@@ -312,7 +312,7 @@ def test_three_panes(test_context) -> None:
     )
 
     strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
-    calibration_stacks = RunsDict({})
+    calibration_stacks = CalibrationStacksDict({})
 
     min_frames_in_stack = 3
 
@@ -388,7 +388,7 @@ def test_orion_mosaic(test_context) -> None:
     viewbox = None
 
     strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
-    calibration_stacks = RunsDict({})
+    calibration_stacks = CalibrationStacksDict({})
 
     min_frames_in_stack = 3
 
@@ -524,7 +524,7 @@ def test_orion_mosaic_one_by_two(test_context) -> None:
     viewbox = None
 
     strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
-    calibration_stacks = RunsDict({})
+    calibration_stacks = CalibrationStacksDict({})
 
     min_frames_in_stack = 3
 
@@ -607,7 +607,7 @@ def test_orion_mosaic_two_by_one(test_context) -> None:
     viewbox = None
 
     strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
-    calibration_stacks = RunsDict({})
+    calibration_stacks = CalibrationStacksDict({})
 
     min_frames_in_stack = 3
 
@@ -694,7 +694,7 @@ def test_orion_mosaic_missing_panel(test_context) -> None:
     viewbox = None
 
     strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
-    calibration_stacks = RunsDict({})
+    calibration_stacks = CalibrationStacksDict({})
 
     min_frames_in_stack = 3
 

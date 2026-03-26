@@ -6,7 +6,7 @@ from frozendict import frozendict
 
 from context import context
 from cache.context_ref import ContextRef
-from stacks.composite_stack import Stack, StacksDict
+from stacks.composite_stack import Stack, StacksDict, CalibrationStacksDict
 from stacks.simple_stack import Run, RunsDict
 from calibration import associate_with_stack
 from decorators import node
@@ -42,7 +42,7 @@ def apply_settings(
 @node
 def enrich_with_calibration(
     stack_ref: ContextRef[Stack],
-    cal_stacks: RunsDict,
+    cal_stacks: CalibrationStacksDict,
     stack_settings: StackSettings,
     stack_overrides: frozendict,
     min_frames_in_stack: int,
@@ -81,7 +81,7 @@ def scatter_customize_stacks(
     decision_overrides: frozendict,
     min_frames_in_stack: int,
     stacks: StacksDict,
-    cal_stacks: RunsDict,
+    cal_stacks: CalibrationStacksDict,
 ) -> Graph:
     log.debug("Scattering stack customization", cal_stacks_type=type(cal_stacks).__name__)
 
@@ -109,9 +109,8 @@ def scatter_customize_stacks(
 
 # TODO: Implement real customization features.
 @node
-def scatter_customize_cal_stacks(cal_stacks: RunsDict) -> RunsDict:
+def scatter_customize_cal_stacks(cal_stacks: CalibrationStacksDict) -> CalibrationStacksDict:
     log.debug("Scattering calibration stack customization", cal_stacks_type=type(cal_stacks).__name__)
-    # cal_stacks is a RunsDict of real Run objects — pass through as-is
     return cal_stacks
 
 

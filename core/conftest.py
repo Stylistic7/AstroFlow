@@ -151,7 +151,7 @@ def identified_testdata(init_ray, tmp_path_factory):
     stacks = {k: ref.get() for k, ref in raw_stacks.items()}
     targets = {k: ref.get() for k, ref in raw_targets.items()}
     mosaics = {k: ref.get() for k, ref in raw_mosaics.items()}
-    calibration_stacks = RunsDict(context.calibration_stacks or {})
+    calibration_stacks = CalibrationStacksDict(context.calibration_stacks or {})
 
     return IdentifiedTestdata(
         stacks=stacks,
@@ -170,7 +170,7 @@ def with_real_testdata(test_context, identified_testdata):
     """
     from context import context
     from cache.context_ref import ContextRef
-    from stacks.composite_stack import StacksDict
+    from stacks.composite_stack import StacksDict, CalibrationStacksDict
     from targets.types import TargetsDict
     from mosaics.types import MosaicsDict
 

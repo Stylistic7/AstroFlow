@@ -5,7 +5,7 @@ from frozendict import frozendict
 from previews.calibration import calibrate_subframe
 from previews.operations import autostretch
 from decorators import node, measure_performance
-from stacks.composite_stack import Stack, RunsDict
+from stacks.composite_stack import Stack, RunsDict, CalibrationStacksDict
 from customization.subframe_selection import get_light_frames_sorted_by_stars
 from decorators import create_thumbnail
 from stacks.simple_stack import Run
@@ -40,7 +40,7 @@ def flat_corrected_stack(
 
 
 @node
-def create_flat_correction_thumbnails(stack: Stack, calibration_stacks: RunsDict, subframe_thumbnail_width: int) -> None:
+def create_flat_correction_thumbnails(stack: Stack, calibration_stacks: CalibrationStacksDict, subframe_thumbnail_width: int) -> None:
     flat_stack_ids = [
         id
         for id, s in calibration_stacks.items()

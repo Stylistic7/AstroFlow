@@ -13,7 +13,7 @@ from file_io.generic import update_header, copy_image
 from stacks.artifacts import stack_filename
 from stacks.simple_stack import Run, RunsDict
 from stacks.types import StackIdDependency, FilenameDependency
-from stacks.composite_stack import Stack
+from stacks.composite_stack import Stack, CalibrationStacksDict
 from pix.tasks import run_wbpp
 from metadata.classes import MetadataDict
 from frozendict import frozendict
@@ -74,7 +74,7 @@ def _copy_frames_with_plate_solution(
 
 def _setup_simple_stack(
     stack: Run,
-    calibration_stacks: RunsDict,
+    calibration_stacks: CalibrationStacksDict,
     dest_dir: str,
 ) -> None:
     filenames = [i.filename for i in stack.metadata.values()]
@@ -99,7 +99,7 @@ def _setup_simple_stack(
 
 def _setup_composite_stack(
     stack: Stack,
-    calibration_stacks: RunsDict,
+    calibration_stacks: CalibrationStacksDict,
     dest_dir: str,
 ) -> tuple[str | None, int]:
     filenames = []
@@ -160,7 +160,7 @@ def _copy_wbpp_result(
 @create_thumbnail
 def stack_files(
     stack: Stack,
-    calibration_stacks: RunsDict,
+    calibration_stacks: CalibrationStacksDict,
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
     decisions: frozendict = frozendict(),

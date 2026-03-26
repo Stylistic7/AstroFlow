@@ -22,7 +22,7 @@ log = structlog.get_logger()
 
 
 @node
-def identify_calibration_stacks(metadata_ref: ContextRef[MetadataDict], max_run_gap) -> RunsDict:
+def identify_calibration_stacks(metadata_ref: ContextRef[MetadataDict], max_run_gap) -> CalibrationStacksDict:
     log.info("Identifying calibration stacks")
     metadata = metadata_ref.get()
 
