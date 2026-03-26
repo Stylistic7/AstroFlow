@@ -426,15 +426,26 @@ def test_stack_calibration_frames(test_context) -> None:
     light_stacks = [ref.get() for ref in stacks.values() if ref.get().image_type == "light"]
     assert len(light_stacks) == 1
 
-    for cal_stack in context.calibration_stacks.values():
-        print(f"### cal_stack {cal_stack}")
-        print(f"### dependencies {cal_stack.dependencies}")
-
     cal_stacks = context.calibration_stacks
+
+    def cal_deps(stack):
+        """Get the dependency types for a calibration stack's single run."""
+        run = next(iter(stack.contents.values()))
+        return set(run.dependencies.keys())
+
+    # Verify calibration-to-calibration association:
+    # bias → no deps, dark → bias, flat → bias
+    for cal_stack in cal_stacks.values():
+        if cal_stack.image_type == "bias":
+            assert cal_deps(cal_stack) == set()
+        elif cal_stack.image_type == "dark":
+            assert cal_deps(cal_stack) == {"bias"}
+        elif cal_stack.image_type == "flat":
+            assert cal_deps(cal_stack) == {"bias"}
+
     dev_settings = context.settings.development_settings
     min_frames = context.settings.clustering_settings.min_frames_in_stack
     graph = ray.get(build_calibration_stack_subgraph.remote(light_stacks[0], cal_stacks, dev_settings, min_frames))
-    print(f"### build_calibration_stack_subgraph")
     print_graph(graph)
 
 
