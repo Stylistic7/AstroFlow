@@ -16,6 +16,10 @@ _PIXINSIGHT_EXECUTABLE = (
 _DEFAULT_SLOTS = [1]
 _LOCK_DIR = Path(os.environ.get("TMPDIR", "/tmp"))
 
+# Periodic restart to mitigate PixInsight memory leaks.
+_RESTART_INTERVAL = int(os.environ.get("ASTROFLOW_PIX_RESTART_INTERVAL", "20"))
+_MAX_MEMORY_GB = float(os.environ.get("ASTROFLOW_PIX_MAX_MEMORY_GB", "32"))
+
 
 def _find_running_instances() -> dict[int, int]:
     """Return a map of slot -> PID for running PixInsight instances."""
@@ -51,6 +55,42 @@ def _start_instance(slot: int) -> None:
 
     while slot not in _find_running_instances():
         time.sleep(5)
+
+
+def _counter_path(slot: int) -> Path:
+    return _LOCK_DIR / f"pix-slot-{slot}.count"
+
+
+def _should_restart(slot: int) -> bool:
+    """Check if PixInsight should be restarted (task count or memory).
+
+    Called while the slot lock is held — counter file access is race-free.
+    """
+    # Increment task counter.
+    path = _counter_path(slot)
+    count = int(path.read_text()) if path.exists() else 0
+    count += 1
+    path.write_text(str(count))
+
+    if _RESTART_INTERVAL > 0 and count >= _RESTART_INTERVAL:
+        print(f"### pix: Slot {slot} hit {count} tasks, restarting")
+        path.write_text("0")
+        return True
+
+    # Check memory.
+    if _MAX_MEMORY_GB > 0:
+        pid = _find_running_instances().get(slot)
+        if pid:
+            try:
+                mem_gb = psutil.Process(pid).memory_info().rss / (1024**3)
+                if mem_gb > _MAX_MEMORY_GB:
+                    print(f"### pix: Slot {slot} using {mem_gb:.1f} GB (limit {_MAX_MEMORY_GB}), restarting")
+                    path.write_text("0")
+                    return True
+            except psutil.NoSuchProcess:
+                pass
+
+    return False
 
 
 def _kill_instance(slot: int) -> None:
@@ -154,3 +194,6 @@ def run_scp(
             time.sleep(1)
 
         print(f"### pix: Script completed in {time.monotonic() - start_time:.1f}s")
+
+        if _should_restart(slot):
+            _kill_instance(slot)
