@@ -50,7 +50,8 @@ def connect_to_ray_cluster():
         from context import ContextActor
 
         _context_actor = ContextActor.options(
-            name="context", namespace="AstroFlow", get_if_exists=True
+            name="context", namespace="AstroFlow", get_if_exists=True,
+            max_concurrency=16,
         ).remote()
 
         global _state_actor

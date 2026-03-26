@@ -55,7 +55,8 @@ def enable_test_mode() -> None:
     from context import ContextActor
 
     _context_actor = ContextActor.options(
-        name="context", namespace=namespace, get_if_exists=True
+        name="context", namespace=namespace, get_if_exists=True,
+        max_concurrency=16,
     ).remote()
     actor = ray.get_actor("context", namespace=namespace)
     _ = ray.get(actor.get_cache_keys.remote())
