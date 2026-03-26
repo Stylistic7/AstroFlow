@@ -31,7 +31,6 @@ from stacks.validation import validate_stacks
 from decorators import node
 from customization.compute_graph import (
     scatter_customize_stacks,
-    scatter_customize_cal_stacks,
     scatter_customize_targets,
 )
 from mosaics.compute_graph import stacks_for_mosaic, targets_for_mosaic
@@ -134,14 +133,9 @@ def scatter_spatial_groups(
         cs.max_run_gap,
     )
 
-    quarantine_calibration_stacks_task = (scatter_customize_cal_stacks,)
-
-    graph[quarantine_calibration_stacks_task] = {identify_cal_stacks_task}
-    graph[process_calibration_stacks_for_ui] = {
-        quarantine_calibration_stacks_task
-    }
+    graph[store_calibration_stacks] = {identify_cal_stacks_task}
+    graph[process_calibration_stacks_for_ui] = {identify_cal_stacks_task}
     graph[store_ui_calibration_stacks] = {process_calibration_stacks_for_ui}
-    graph[store_calibration_stacks] = {quarantine_calibration_stacks_task}
 
     stack_tasks = set()
     target_tasks = set()
@@ -172,7 +166,7 @@ def scatter_spatial_groups(
         graph[validate_stacks_task] = {stack_task}
         graph[customize_stacks_task] = [
             validate_stacks_task,
-            quarantine_calibration_stacks_task,
+            store_calibration_stacks,
         ]
 
         graph[target_task] = {customize_stacks_task}
