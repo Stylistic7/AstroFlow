@@ -178,7 +178,7 @@ class StacksDict(dict[StackHash, ContextRef["Stack"]]):
         return f"StacksDict({len(self)})"
 
 
-class CalibrationStacksDict(dict[StackHash, "CalibrationStack"]):
+class CalibrationStacksDict(dict[StackHash, CalibrationStack]):
     def __hash__(self):
         return hash_list_int(
             [self[k].content_hash for k in sorted(self.keys())]

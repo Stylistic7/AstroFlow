@@ -32,7 +32,7 @@ def test_one_dark_stack(test_context):
     stack = next(iter(stacks.values()))
 
     assert stack.content_hash != None
-    assert len(stack.frames) == 5
+    assert len(stack.all_frames()) == 5
     assert stack.image_type == "dark"
     assert stack.oldest_date != None
     assert stack.newest_date != None
@@ -74,7 +74,7 @@ def test_one_light_one_dark(test_context):
     dark_stack = next(
         stack
         for stack in context.calibration_stacks.values()
-        if isinstance(stack, Run) and stack.image_type == "dark"
+        if stack.image_type == "dark"
     )
 
     assert toplevel_stack.image_type == "light"
@@ -110,8 +110,8 @@ def test_one_light_one_dark(test_context):
 
     assert dark_stack.image_type == "dark"
     assert dark_stack.content_hash != None
-    assert len(dark_stack.frames) == 5
-    assert len(dark_stack.dependencies) == 0
+    assert len(dark_stack.all_frames()) == 5
+    assert len(next(iter(dark_stack.contents.values())).dependencies) == 0
     assert dark_stack.oldest_date != None
     assert dark_stack.newest_date != None
     assert dark_stack.camera == "ZWO ASI6200MM Pro"

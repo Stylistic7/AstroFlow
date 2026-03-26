@@ -49,7 +49,7 @@ def init_ray(worker_id):
     assert ray.is_initialized()
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def test_context(init_ray):
     # Setup code
     assert ray.is_initialized()
