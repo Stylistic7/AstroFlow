@@ -57,8 +57,8 @@ def roughly_same_position_angle(
 
 @node
 def targets_overlap(
-    a_target: Target,
-    b_target: Target,
+    a_target_ref: ContextRef[Target],
+    b_target_ref: ContextRef[Target],
     min_area_frac: float = 0.03,
     span_match: float = 0.75,
     thick_min: float = 0.1,
@@ -66,6 +66,8 @@ def targets_overlap(
     angular_tolerance: Radians = Radians(math.radians(10.0)),
     debug: bool = False,
 ) -> Overlap:
+    a_target = a_target_ref.get()
+    b_target = b_target_ref.get()
 
     if a_target is b_target:
         return Overlap.IDENTICAL
@@ -205,13 +207,9 @@ def group_targets(
 ) -> list[list[TargetHash]]:
     assert len(target_ids) > 0
 
-    # Resolve all targets up front so we pass objects, not ContextRefs.
-    resolved: dict[TargetHash, Target] = {
-        tid: target_refs[tid].get() for tid in target_ids
-    }
-
     target_ids_for_cell = defaultdict(list)
-    for target_id, target in resolved.items():
+    for target_id in target_ids:
+        target = target_refs[target_id].get()
         assert len(target.healpix_cells) > 0
         for cell in target.healpix_cells:
             target_ids_for_cell[cell].append(target_id)
@@ -226,7 +224,7 @@ def group_targets(
             continue
         for a, b in combinations(sorted(tids), 2):
             ref = targets_overlap.remote(
-                resolved[a], resolved[b],
+                target_refs[a], target_refs[b],
                 angular_tolerance=angular_tolerance,
             )
             futures.append((a, b, ref))
@@ -277,7 +275,7 @@ def find_strips(
         # Fire all pairwise overlap checks in parallel.
         overlap_refs = {
             (tid_a, tid_b): targets_overlap.remote(
-                resolved[tid_a], resolved[tid_b],
+                target_refs[tid_a], target_refs[tid_b],
                 angular_tolerance=angular_tolerance,
             )
             for tid_a, tid_b in combinations(strip, 2)
