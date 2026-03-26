@@ -14,7 +14,7 @@ def pytest_collection_modifyitems(config, items):
     items[:] = normal + exclusive  # run normal tests first
 
 
-_MAX_MEMORY_PERCENT = int(os.environ.get("ASTROFLOW_TEST_MAX_MEMORY_PERCENT", "80"))
+_MAX_MEMORY_PERCENT = int(os.environ.get("ASTROFLOW_TEST_MAX_MEMORY_PERCENT", "50"))
 
 
 @pytest.fixture(autouse=True)
