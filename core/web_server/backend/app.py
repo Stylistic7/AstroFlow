@@ -237,6 +237,43 @@ def stacks():
     )
 
 
+@app.route("/stacks/<stack_id>/detail")
+def stack_detail(stack_id):
+    """Return full stack detail including contents (runs with dependencies).
+
+    This is fetched on demand when the user opens a specific stack,
+    not on every page load.
+    """
+    from flask import jsonify, abort
+    from customization.resolve import resolve_calibration
+    from stacks.convert_to_dict import convert_to_dict
+    import numpy as np
+    from spherical_geometry.polygon import SingleSphericalPolygon
+
+    stack_ref = (context.stacks or {}).get(stack_id)
+    if stack_ref is None:
+        return abort(404)
+
+    stack = stack_ref.get()
+
+    # Resolve calibration so the UI shows which bias/dark/flat is assigned.
+    cal_stacks = context.calibration_stacks or {}
+    decisions = context.settings.decision_overrides
+    stack = resolve_calibration(stack, cal_stacks, decisions)
+
+    def transform(v):
+        if type(v) is np.ndarray:
+            return v.tolist()
+        if type(v) is SingleSphericalPolygon:
+            return v.points.tolist()
+        return v
+
+    result = convert_to_dict(
+        stack, [["contents", "*", "metadata"]], transform=transform
+    )
+    return jsonify(result)
+
+
 @app.route("/calibration_stacks")
 def calibration_stacks():
     return context.ui_calibration_stacks

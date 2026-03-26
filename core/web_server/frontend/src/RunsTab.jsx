@@ -14,6 +14,7 @@ const RunsTab = ({ stack }) => {
   const [selectedFlatsByRun, setSelectedFlatsByRun] = useState({});
   const [decisions, setDecisions] = useState([]);
   const [reviewRunId, setReviewRunId] = useState(null);
+  const [detail, setDetail] = useState(null);
 
   useEffect(() => {
     const fetchFlats = async () => {
@@ -38,13 +39,23 @@ const RunsTab = ({ stack }) => {
     fetchDecisions();
   }, [stack.stable_hash]);
 
+  useEffect(() => {
+    const fetchDetail = async () => {
+      try {
+        const res = await fetch(`/stacks/${stack.stable_hash}/detail`);
+        if (res.ok) setDetail(await res.json());
+      } catch { /* ignore */ }
+    };
+    fetchDetail();
+  }, [stack.stable_hash]);
+
   const decisionsForRun = (runId) =>
     decisions.filter(d =>
       d.subject_id === runId &&
       (d.decision_type === 'rotation_outlier' || d.decision_type === 'quarantine')
     );
 
-  const runs = Object.entries(stack.contents || {}).map(([id, run]) => ({ id, ...run }));
+  const runs = Object.entries((detail || stack)?.contents || {}).map(([id, run]) => ({ id, ...run }));
 
   const handleSelectFlat = (runId, flatId) => {
     setSelectedFlatsByRun(prev => ({ ...prev, [runId]: flatId }));

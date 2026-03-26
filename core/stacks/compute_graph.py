@@ -134,18 +134,31 @@ def _prepare_stack_for_ui(
     # Publish quality/rotation decisions as side effects (for UI visibility).
     resolve_decisions(stack, ALL_EXCLUSION_TYPES, decisions, min_frames)
 
-    # Emit only the fields the UI needs for the starmap, cards, and search.
-    # The heavy 'contents' field (runs with all frame metadata) is fetched
-    # on demand when the user opens a specific stack.
-    result = convert_to_dict(
-        stack, [["contents"], ["projected_footprints"]], transform=_my_transform
-    )
-
-    # Filenames for search indexing (lightweight — just path strings).
-    result["filenames"] = [
-        m.filename for s in stack.contents.values() for m in s.metadata.values()
-    ]
-    return result
+    # Emit only the scalar fields the UI needs for starmap, cards, and search.
+    # Heavy fields (contents, projected_footprints, footprint) are fetched
+    # on demand via /stacks/<id>/detail.
+    return {
+        "stable_hash": stack.stable_hash,
+        "content_hash": stack.content_hash,
+        "name": stack.name,
+        "image_type": stack.image_type,
+        "camera": stack.camera,
+        "filter": stack.filter,
+        "exposure": stack.exposure,
+        "integration": stack.integration,
+        "mean_temperature": stack.mean_temperature,
+        "image_scale": stack.image_scale,
+        "rotation_angle": stack.rotation_angle,
+        "width_pixels": stack.width_pixels,
+        "height_pixels": stack.height_pixels,
+        "center": list(stack.center) if stack.center else None,
+        "oldest_date": str(stack.oldest_date) if stack.oldest_date else None,
+        "newest_date": str(stack.newest_date) if stack.newest_date else None,
+        "state": dict(stack.state),
+        "filenames": [
+            m.filename for s in stack.contents.values() for m in s.metadata.values()
+        ],
+    }
 
 
 @ray.remote
