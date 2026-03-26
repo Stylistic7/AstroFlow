@@ -28,10 +28,8 @@ from mosaics.types import MosaicsDict
 from dependency_graph import Graph, Node, chain
 from stacks.identification import identify_stacks
 from stacks.composite_stack import RunsDict, StacksDict, CalibrationStacksDict
-from stacks.validation import validate_stacks
 from decorators import node
 from customization.compute_graph import (
-    scatter_customize_stacks,
     scatter_customize_targets,
 )
 from mosaics.compute_graph import stacks_for_mosaic, targets_for_mosaic
@@ -150,37 +148,25 @@ def scatter_spatial_groups(
             cs.min_frames_in_stack,
             cs.max_run_gap,
         )
-        validate_stacks_task = Node(validate_stacks, name=str(i))
-        customize_stacks_task = Node(
-            scatter_customize_stacks,
-            settings.stack_settings,
-            settings.decision_overrides,
-            cs.min_frames_in_stack,
-            name=str(i),
-        )
 
+        stack_tasks.add(stack_task)
+
+    gather_stacks_task = Node(combine_dicts, name="combine_stacks")
+    graph[gather_stacks_task] = stack_tasks
+    graph[store_stacks] = {gather_stacks_task}
+    graph[process_stacks_for_ui] = {store_stacks}
+
+    # Target identification depends on stacks being stored in context.
+    for i, g in enumerate(spatial_groups):
         target_task = Node(identify_targets, cs.angular_tolerance, name=str(i))
         customize_targets_task = Node(
             scatter_customize_targets, settings.target_settings, name=str(i)
         )
 
-        # TODO: Validate stacks after customizing them.
-        graph[validate_stacks_task] = {stack_task}
-        graph[customize_stacks_task] = [
-            validate_stacks_task,
-            store_calibration_stacks,
-        ]
-
-        graph[target_task] = {customize_stacks_task}
+        graph[target_task] = {store_stacks}
         graph[customize_targets_task] = {target_task}
 
-        stack_tasks.add(customize_stacks_task)
         target_tasks.add(customize_targets_task)
-
-    gather_stacks_task = Node(combine_dicts, name="combine_stacks")
-    graph[gather_stacks_task] = stack_tasks
-    graph[store_stacks] = {gather_stacks_task}
-    graph[process_stacks_for_ui] = {gather_stacks_task}
     graph[store_ui_stacks] = {process_stacks_for_ui}
 
     gather_targets_task = Node(combine_dicts, name="combine_targets")

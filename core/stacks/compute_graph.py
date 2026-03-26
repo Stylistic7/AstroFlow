@@ -128,9 +128,17 @@ def get_stack_image(
         return Graph({(build_stacking_subgraph, stack, calibration_stacks, development_settings, min_frames_in_stack, decisions): {}})
 
 
-@node
-def process_stacks_for_ui(stacks: dict) -> dict:
-    assert None not in stacks.values()
+@ray.remote
+def process_stacks_for_ui(*_ancestor_results) -> dict:
+    from context import context
+    from cache.context_ref import ContextRef
+    from customization.resolve import resolve_calibration, resolve_decisions
+    from customization.compute_graph import ALL_EXCLUSION_TYPES
+    from frozendict import frozendict
+
+    stacks = context.stacks or {}
+    cal_stacks = context.calibration_stacks or CalibrationStacksDict()
+    decisions = context.settings.decision_overrides
 
     def my_transform(v):
         if type(v) is np.ndarray:
@@ -139,7 +147,13 @@ def process_stacks_for_ui(stacks: dict) -> dict:
             return v.points.tolist()
         return v
 
+    min_frames = context.settings.clustering_settings.min_frames_in_stack
+
     def prepare_stack(stack: Stack):
+        # Resolve calibration so the UI shows calibration deps per run.
+        stack = resolve_calibration(stack, cal_stacks, decisions)
+        # Publish quality/rotation decisions as side effects (for UI visibility).
+        resolve_decisions(stack, ALL_EXCLUSION_TYPES, decisions, min_frames)
         result = convert_to_dict(
             stack, [["contents", "*", "metadata"]], transform=my_transform
         )
@@ -152,8 +166,6 @@ def process_stacks_for_ui(stacks: dict) -> dict:
 
         return result
 
-    # TODO: Parallelize this.
-    from cache.context_ref import ContextRef
     ui_stacks = {
         h: prepare_stack(ref.get() if isinstance(ref, ContextRef) else ref)
         for h, ref in stacks.items()

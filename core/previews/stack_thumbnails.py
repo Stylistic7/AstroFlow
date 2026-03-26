@@ -18,12 +18,12 @@ from frozendict import frozendict
 from previews.calibration import calibrate_subframe
 from file_io.types import FitsFilePath, WithSidecar
 from stacks.run import Run
-from stacks.composite_stack import CalibrationStack
+from stacks.composite_stack import CalibrationStack, CalibrationStacksDict
 from dependency_graph import Graph, TaskDescriptor
 from previews.operations import autostretch
 from stacks.composite_stack import Stack
 from customization.subframe_selection import get_light_frames_sorted_by_stars
-from customization.resolve import is_frame_included
+from customization.resolve import is_frame_included, resolve_calibration
 from products import makes_image, makes_video
 from file_io.generic import read_image
 
@@ -43,7 +43,7 @@ def scatter_stack_thumbnails() -> Graph:
     for stack_hash, stack_ref in context.stacks.items():
         stack = stack_ref.get()
         tasks.append((stack_thumbnail, stack))
-        tasks.append((stack_thumbnail_video, stack, subframe_thumbnail_width, decisions_for(stack_hash)))
+        tasks.append((stack_thumbnail_video, stack, subframe_thumbnail_width, calibration_stacks, decisions_for(stack_hash)))
         tasks.append((create_flat_correction_thumbnails, stack, calibration_stacks, subframe_thumbnail_width))
 
     for stack in calibration_stacks.values():
@@ -116,8 +116,11 @@ def _annotate_frame(
 def stack_thumbnail_video(
     stack: Stack,
     subframe_thumbnail_width: int,
+    cal_stacks: CalibrationStacksDict,
     decisions: frozendict = frozendict(),
 ) -> Iterable[np.ndarray]:
+    # Resolve calibration lazily (for flat correction of subframes).
+    stack = resolve_calibration(stack, cal_stacks, decisions)
     # Sort all the light frames (no matter which run they're from) by the
     # number of stars. The better images should be in front.
     width = subframe_thumbnail_width

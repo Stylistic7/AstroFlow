@@ -19,7 +19,7 @@ from metadata.classes import MetadataDict
 from frozendict import frozendict
 from decorators import node, create_thumbnail
 from customization.settings import DevelopmentSettings
-from customization.resolve import resolve_decisions
+from customization.resolve import resolve_calibration, resolve_decisions
 from customization.compute_graph import ALL_EXCLUSION_TYPES
 from products import makes_image
 import structlog
@@ -161,6 +161,8 @@ def stack_files(
     min_frames_in_stack: int,
     decisions: frozendict = frozendict(),
 ) -> WithSidecar[XisfFilePath]:
+    # Resolve calibration (lazy, cached via decision framework).
+    stack = resolve_calibration(stack, calibration_stacks, decisions)
     # Apply exclusion decisions to filter frames before stacking.
     if decisions:
         filtered = resolve_decisions(stack, ALL_EXCLUSION_TYPES, decisions, min_frames_in_stack)

@@ -103,17 +103,20 @@ def test_rotation_outlier_detection_and_exclusion(test_context):
     assert len(stack.all_frames()) == 15
 
     # --- Detection ---
-    decisions = get_decisions_for_object(ObjectType.STACK, stack_hash)
-    assert len(decisions) > 0, "Expected at least one decision point"
-    for key, dp in decisions.items():
-        assert dp.decision_type == DecisionType.ROTATION_OUTLIER
+    all_decisions = get_decisions_for_object(ObjectType.STACK, stack_hash)
+    rotation_decisions = {
+        k: dp for k, dp in all_decisions.items()
+        if dp.decision_type == DecisionType.ROTATION_OUTLIER
+    }
+    assert len(rotation_decisions) > 0, "Expected at least one rotation outlier decision"
+    for key, dp in rotation_decisions.items():
         assert dp.default_choice == BinaryChoice.INCLUDE
         assert dp.object_type == ObjectType.STACK
         assert "diff_deg" in dp.metadata
 
     # Find the rotated run's decision (5 frames).
     rotated_key = next(
-        k for k, dp in decisions.items()
+        k for k, dp in rotation_decisions.items()
         if dp.metadata["run_frame_count"] == 5
     )
 
@@ -241,4 +244,8 @@ def test_no_decisions_for_uniform_rotation(test_context):
 
     stack_hash = next(iter(context.stacks))
     decisions = get_decisions_for_object(ObjectType.STACK, stack_hash)
-    assert len(decisions) == 0, "No decisions expected for uniform rotation"
+    rotation_decisions = {
+        k: v for k, v in decisions.items()
+        if v.decision_type == DecisionType.ROTATION_OUTLIER
+    }
+    assert len(rotation_decisions) == 0, "No rotation decisions expected for uniform rotation"
