@@ -19,7 +19,7 @@ const RunsTab = ({ stack }) => {
   useEffect(() => {
     const fetchFlats = async () => {
       try {
-        const res = await fetch(`/flats_for_camera_and_filter/${stack.camera}/${stack.filter}`);
+        const res = await fetch(`/api/flats/${stack.camera}/${stack.filter}`);
         const json = await res.json();
         setFlatIds(json);
       } catch (err) {
@@ -42,7 +42,7 @@ const RunsTab = ({ stack }) => {
   useEffect(() => {
     const fetchDetail = async () => {
       try {
-        const res = await fetch(`/stacks/${stack.stable_hash}/detail`);
+        const res = await fetch(`/api/stacks/${stack.stable_hash}/detail`);
         if (res.ok) setDetail(await res.json());
       } catch { /* ignore */ }
     };
@@ -59,7 +59,7 @@ const RunsTab = ({ stack }) => {
 
   const handleSelectFlat = (runId, flatId) => {
     setSelectedFlatsByRun(prev => ({ ...prev, [runId]: flatId }));
-    fetch('/update_settings/stack', {
+    fetch('/api/settings/stack', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ stack_id: stack.stable_hash, run_id: runId, dependencies: { 'flat': flatId } }),

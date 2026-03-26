@@ -74,21 +74,21 @@ def get_metadata(object_type: type, *args):
     return abort(404)
 
 
-@metadata_bp.route("/metadata/stack/<stack_id>")
+@metadata_bp.route("/api/metadata/stack/<stack_id>")
 def stack_metadata(stack_id: str):
     return get_metadata(Stack, context.stacks[stack_id].get())
 
 
-@metadata_bp.route("/metadata/calibration_stack/<stack_id>")
+@metadata_bp.route("/api/metadata/calibration_stack/<stack_id>")
 def calibration_stack_metadata(stack_id: str):
     return get_metadata(CalibrationStack, context.calibration_stacks[stack_id])
 
 
-@metadata_bp.route("/metadata/target/<target_id>/<filter>")
+@metadata_bp.route("/api/metadata/target/<target_id>/<filter>")
 def target_metadata(target_id: str, filter: str):
     return get_metadata(Target, context.targets[target_id].get(), filter)
 
 
-@metadata_bp.route("/metadata/mosaic/<mosaic_id>/<filter>")
+@metadata_bp.route("/api/metadata/mosaic/<mosaic_id>/<filter>")
 def mosaic_metadata(mosaic_id: str, filter: str):
     return get_metadata(Mosaic, context.mosaics[mosaic_id].get(), filter)

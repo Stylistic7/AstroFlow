@@ -21,7 +21,7 @@ const RayStatus = () => {
   const [isHeadNode, setIsHeadNode] = useState(false);
 
   useEffect(() => {
-    fetch('/ray_head_node_enabled')
+    fetch('/api/ray/head_node_enabled')
       .then(r => r.json())
       .then(j => setIsHeadNode(j.enabled))
       .catch(console.error);
@@ -30,7 +30,7 @@ const RayStatus = () => {
   const toggleHeadNode = () => {
     const newHeadState = !isHeadNode;
     setIsHeadNode(newHeadState);
-    fetch('/ray_head_node_enabled', {
+    fetch('/api/ray/head_node_enabled', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'

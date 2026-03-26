@@ -22,7 +22,7 @@ def _update_settings(updater):
     return new_settings
 
 
-@settings_bp.route("/update_settings/stack", methods=["POST"])
+@settings_bp.route("/api/settings/stack", methods=["POST"])
 def update_stack_settings():
     data = request.get_json()
     stack_id = data["stack_id"]

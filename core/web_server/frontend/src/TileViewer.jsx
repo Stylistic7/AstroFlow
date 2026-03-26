@@ -37,8 +37,8 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
 
   useEffect(() => {
     const url = filter !== undefined
-      ? `/metadata/${objectType}/${imageHash}/${filter}`
-      : `/metadata/${objectType}/${imageHash}`;
+      ? `/api/metadata/${objectType}/${imageHash}/${filter}`
+      : `/api/metadata/${objectType}/${imageHash}`;
 
     fetch(url)
       .then((res) => res.json())

@@ -154,12 +154,12 @@ def stream():
     pass
 
 
-@app.route("/get_shopping_cart")
+@app.route("/api/shopping_cart")
 def get_shopping_cart():
     return list(context.get("shopping_cart", set()))
 
 
-@app.route("/add_to_shopping_cart/<object_type>/<object_id>")
+@app.route("/api/shopping_cart/<object_type>/<object_id>", methods=["POST"])
 def add_to_shopping_cart(object_type, object_id):
     shopping_cart = context.shopping_cart or set()
     shopping_cart.add((object_type, object_id))
@@ -170,7 +170,7 @@ def add_to_shopping_cart(object_type, object_id):
     return Response(status=204)
 
 
-@app.route("/remove_from_shopping_cart/<object_type>/<object_id>")
+@app.route("/api/shopping_cart/<object_type>/<object_id>", methods=["DELETE"])
 def remove_from_shopping_cart(object_type, object_id):
     shopping_cart = context.shopping_cart or set()
     shopping_cart.remove((object_type, object_id))
@@ -207,7 +207,7 @@ def _add_quarantine_flags(items: dict, quarantine_settings: dict, settings_class
     return result
 
 
-@app.route("/mosaics")
+@app.route("/api/mosaics")
 def mosaics():
     from customization.settings import MosaicSettings
     return _add_quarantine_flags(
@@ -217,7 +217,7 @@ def mosaics():
     )
 
 
-@app.route("/targets")
+@app.route("/api/targets")
 def targets():
     from customization.settings import TargetSettings
     return _add_quarantine_flags(
@@ -227,7 +227,7 @@ def targets():
     )
 
 
-@app.route("/stacks")
+@app.route("/api/stacks")
 def stacks():
     from customization.settings import StackSettings
     return _add_quarantine_flags(
@@ -237,7 +237,7 @@ def stacks():
     )
 
 
-@app.route("/stacks/<stack_id>/detail")
+@app.route("/api/stacks/<stack_id>/detail")
 def stack_detail(stack_id):
     """Return full stack detail including contents (runs with dependencies).
 
@@ -274,7 +274,7 @@ def stack_detail(stack_id):
     return jsonify(result)
 
 
-@app.route("/calibration_stacks")
+@app.route("/api/calibration_stacks")
 def calibration_stacks():
     return context.ui_calibration_stacks
 
@@ -315,7 +315,7 @@ def plot():
 #   return flask.send_file(mem, mimetype='text/html')
 
 
-@app.route("/recent")
+@app.route("/api/recent")
 def recent():
     stacks = context.stacks
     targets = context.targets
@@ -347,7 +347,7 @@ def recent():
 
 
 # TODO: Loading stuff from the cache on every endpoint call is very slow.
-@app.route("/flats_for_camera_and_filter/<camera>/<filter>")
+@app.route("/api/flats/<camera>/<filter>")
 def flats_for_camera_and_filter(camera, filter):
     print(f"### getting flats for camera {camera} and filter {filter}")
     return [
@@ -357,7 +357,7 @@ def flats_for_camera_and_filter(camera, filter):
     ]
 
 
-@app.route("/ray_status")
+@app.route("/api/ray/status")
 def ray_status():
     """Returns the current Ray cluster status."""
     try:
@@ -422,7 +422,7 @@ def ray_status():
     )
 
 
-@app.route("/publish_ray_status")
+@app.route("/api/ray/publish_status")
 def publish_ray_status():
     from web_server.backend.announcer import announce
 
@@ -430,12 +430,12 @@ def publish_ray_status():
     return Response(status=200)
 
 
-@app.route("/last_run_logs")
+@app.route("/api/logs/last_run")
 def get_last_run_logs():
     return cache["last_run_logs"] or {}
 
 
-@app.route("/ray_head_node_enabled", methods=["GET", "POST"])
+@app.route("/api/ray/head_node_enabled", methods=["GET", "POST"])
 def ray_head_node_enabled():
     if request.method == "POST":
         print(f"### ray_head_node_enabled method {request.method}")

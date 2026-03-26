@@ -53,7 +53,7 @@ def test_update_settings(test_context):
 
     assert context.ui_stacks is not None
 
-    response = httpx.get("http://localhost:8000/stacks")
+    response = httpx.get("http://localhost:8000/api/stacks")
     assert response.status_code == 200
     stacks = response.json()
     assert len(stacks) == 1
@@ -78,7 +78,7 @@ def test_update_settings(test_context):
     except queue.Empty:
         raise TimeoutError("Timed out waiting for SSE event")
 
-    response = httpx.get("http://localhost:8000/stacks")
+    response = httpx.get("http://localhost:8000/api/stacks")
     assert response.status_code == 200
     stacks = response.json()
     assert len(stacks) == 1

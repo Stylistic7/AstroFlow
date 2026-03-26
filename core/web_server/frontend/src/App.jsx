@@ -42,12 +42,12 @@ function App() {
   useEffect(() => {
     const loadObjectData = async () => {
       const [s, c, t, m, cart, cg] = await Promise.all([
-        fetch('/stacks').then(r => r.json()),
-        fetch('/calibration_stacks').then(r => r.json()),
-        fetch('/targets').then(r => r.json()),
-        fetch('/mosaics').then(r => r.json()),
-        fetch(`/get_shopping_cart`).then(r => r.json()),
-        fetch('/compute_graph').then(r => r.json()),
+        fetch('/api/stacks').then(r => r.json()),
+        fetch('/api/calibration_stacks').then(r => r.json()),
+        fetch('/api/targets').then(r => r.json()),
+        fetch('/api/mosaics').then(r => r.json()),
+        fetch('/api/shopping_cart').then(r => r.json()),
+        fetch('/api/compute_graph').then(r => r.json()),
       ]);
 
       setStacks(s);
@@ -63,12 +63,12 @@ function App() {
     loadObjectData();
 
     const loadComputeGraphStatus = async () => {
-      const s = await fetch('/compute_graph_status').then(r => r.json());
+      const s = await fetch('/api/compute_graph/status').then(r => r.json());
       setComputeGraphStatus(s);
     };
 
     const loadRayStatus = async () => {
-      const s = await fetch('/ray_status').then(r => r.json());
+      const s = await fetch('/api/ray/status').then(r => r.json());
       setRayStatus(s);
     };
 

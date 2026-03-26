@@ -78,6 +78,4 @@ def get_video(object_type: type, *args):
     return abort(404)
 
 
-@thumbnails_bp.route("/video/stack/<stack_id>")
-def stack_video(stack_id: str):
-    return get_video(Stack, context.stacks[stack_id].get())
+    # Video endpoints moved to videos.py

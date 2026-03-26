@@ -10,7 +10,7 @@ compute_graphs_bp = Blueprint("compute_graphs", __name__)
 _EMPTY_WORKFLOW_GRAPH = {"skeleton": [], "state": {}}
 
 
-@compute_graphs_bp.route("/compute_graph")
+@compute_graphs_bp.route("/api/compute_graph")
 def compute_graph():
     # TODO: Don't convert to a workflow graph here, do it through a
     # graph_update_fn.
@@ -18,26 +18,26 @@ def compute_graph():
     return {}
 
 
-@compute_graphs_bp.route("/compute_graph_status")
+@compute_graphs_bp.route("/api/compute_graph/status")
 def compute_graph_status():
     return context.compute_graph_status or {}
 
 
-@compute_graphs_bp.route("/workflow_graph/stack/<stack_id>")
+@compute_graphs_bp.route("/api/workflow_graph/stack/<stack_id>")
 def workflow_graph_for_stack(stack_id):
     wf = context["workflow_graphs"] or {}
     ref = wf.get(("stack", stack_id))
     return ref.get() if ref is not None else _EMPTY_WORKFLOW_GRAPH
 
 
-@compute_graphs_bp.route("/workflow_graph/target/<target_id>")
+@compute_graphs_bp.route("/api/workflow_graph/target/<target_id>")
 def workflow_graph_for_target(target_id):
     wf = context["workflow_graphs"] or {}
     ref = wf.get(("target", target_id))
     return ref.get() if ref is not None else _EMPTY_WORKFLOW_GRAPH
 
 
-@compute_graphs_bp.route("/workflow_graph/mosaic/<mosaic_id>/<filter>")
+@compute_graphs_bp.route("/api/workflow_graph/mosaic/<mosaic_id>/<filter>")
 def workflow_graph_for_mosaic(mosaic_id, filter):
     wf = context["workflow_graphs"] or {}
     ref = wf.get(("mosaic", mosaic_id, filter))

@@ -158,7 +158,7 @@ const StackTabs = ({ stack_type, stack, stack_id }) => {
         </Box>
 
         {(stack_type === 'stack') && <Box hidden={tabIndex !== 3} sx={{ height: '100%', overflow: 'auto', position: 'absolute', inset: 0, p: 3 }}>
-          <WorkflowGraph theme={darkTheme} url={`/workflow_graph/stack/${stack_id}`} />
+          <WorkflowGraph theme={darkTheme} url={`/api/workflow_graph/stack/${stack_id}`} />
         </Box>}
       </Box>
     </Paper>
