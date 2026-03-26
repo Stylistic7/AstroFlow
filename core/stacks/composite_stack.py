@@ -118,6 +118,16 @@ class Stack(BaseStack, AstrometricAttributes):
 
         return cls(**attributes)
 
+    def __hash__(self):
+        return hash_list_int([self.content_hash])
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, BaseStack):
+            return NotImplemented
+        return (self.content_hash == other.content_hash) and (
+            self.stable_hash == other.stable_hash
+        )
+
     def __str__(self) -> str:
         return (
             f"Stack(Stable hash {self.stable_hash}, "
@@ -155,6 +165,16 @@ class CalibrationStack(BaseStack):
             newest_date=run.newest_date,
             state=frozendict(),
             contents=RunsDict({run.stable_hash: run}),
+        )
+
+    def __hash__(self):
+        return hash_list_int([self.content_hash])
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, BaseStack):
+            return NotImplemented
+        return (self.content_hash == other.content_hash) and (
+            self.stable_hash == other.stable_hash
         )
 
     def __str__(self) -> str:

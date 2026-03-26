@@ -98,7 +98,13 @@ def test_one_light_one_dark(test_context):
     assert light_stack.image_type == "light"
     assert light_stack.content_hash != None
     assert len(light_stack.frames) == 3
-    assert light_stack.dependencies == {"dark": StackIdDependency(stack_id=StackHash(dark_stack.stable_hash))}
+    # Raw stacks have no calibration deps — calibration is resolved lazily.
+    # Resolve to verify the correct dark is matched.
+    from customization.resolve import resolve_calibration
+    from frozendict import frozendict
+    resolved = resolve_calibration(toplevel_stack, context.calibration_stacks, frozendict())
+    resolved_light = next(iter(resolved.contents.values()))
+    assert resolved_light.dependencies == {"dark": StackIdDependency(stack_id=StackHash(dark_stack.stable_hash))}
     assert light_stack.oldest_date != None
     assert light_stack.newest_date != None
     assert light_stack.camera == "ZWO ASI6200MM Pro"
