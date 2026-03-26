@@ -246,9 +246,9 @@ export default function PrimarySearchAppBar() {
             />
           </Search>
           <Box sx={{ flexGrow: 1 }} />
-          <RayStatus />
-          <VerticalDivider />
           <ProgressComponent />
+          <VerticalDivider />
+          <RayStatus />
           <VerticalDivider />
           <Box sx={{ display: { xs: 'none', md: 'flex' } }}>
             <IconButton

@@ -207,6 +207,9 @@ class StateActor:
             # GraphStatus, which carries Node objects with large args.
             from dependency_graph.progress import graph_status_to_progress
             progress = graph_status_to_progress(status)
+            total = sum(v["total_number"] for v in progress.values())
+            remaining = sum(v["remaining_number"] for v in progress.values())
+            print(f"### progress: {total - remaining}/{total} done, {len(progress)} task types")
 
             from context.context import _get_namespace
             actor = ray.get_actor("context", namespace=_get_namespace())
@@ -221,7 +224,7 @@ class StateActor:
         run_graph(
             graph,
             status_fn=status_fn,
-            status_interval=15,
+            status_interval=5,
         )
 
         return state, [Action(type="announce", message="reload_data")]
