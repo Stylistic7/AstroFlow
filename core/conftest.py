@@ -52,7 +52,11 @@ def report_peak_memory(request):
 
 @pytest.fixture(scope="session", autouse=True)
 def init_ray(worker_id):
-    # Setup code
+    # Wait for memory before starting a Ray cluster.
+    import time
+    while psutil.virtual_memory().percent > _MAX_MEMORY_PERCENT:
+        time.sleep(1)
+
     assert not ray.is_initialized()
     from ray_infra.ray_local import enable_test_mode
 
