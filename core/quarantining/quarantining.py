@@ -4,7 +4,7 @@ from frozendict import frozendict
 
 from context import context
 from stacks.composite_stack import Stack
-from stacks.simple_stack import RunsDict
+from stacks.run import RunsDict
 from attributes import ImagingAttributes
 from stacks.types import StackHash
 from beartype import beartype

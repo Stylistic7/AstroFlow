@@ -2,7 +2,7 @@ import math
 import os
 from pathlib import Path
 
-from stacks.simple_stack import Run
+from stacks.run import Run
 from stacks.composite_stack import Stack
 from catalogs import position_string
 from file_io.types import XisfFilePath

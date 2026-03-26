@@ -8,7 +8,7 @@ from targets.types import Target
 from mosaics.types import Mosaic
 from products.registry import get_producer, MediaType
 from previews.types import QualityLevel
-from stacks.simple_stack import Run
+from stacks.run import Run
 from stacks.composite_stack import CalibrationStack
 
 thumbnails_bp = Blueprint("thumbnails", __name__)

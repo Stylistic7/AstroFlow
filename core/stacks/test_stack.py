@@ -5,7 +5,7 @@ from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import run_graph
 from testing import make_synthetic_frames, copy_testdata_frames
-from stacks.simple_stack import Run
+from stacks.run import Run
 from stacks.composite_stack import Stack
 from stacks.types import StackHash, StackIdDependency
 

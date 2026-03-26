@@ -17,7 +17,7 @@ from previews.flat_correction import create_flat_correction_thumbnails
 from frozendict import frozendict
 from previews.calibration import calibrate_subframe
 from file_io.types import FitsFilePath, WithSidecar
-from stacks.simple_stack import Run
+from stacks.run import Run
 from stacks.composite_stack import CalibrationStack
 from dependency_graph import Graph, TaskDescriptor
 from previews.operations import autostretch

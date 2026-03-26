@@ -10,7 +10,7 @@ from frozendict import frozendict
 from decorators.decorators import node
 from metadata.classes import ImageMetadata, FrameHash
 from stacks.types import StackHash, StackIdDependency
-from stacks.simple_stack import Run, RunsDict, run_from_frames
+from stacks.run import Run, RunsDict, run_from_frames
 from stacks.composite_stack import Stack, CalibrationStack, CalibrationStacksDict
 import clustering
 from cache.context_ref import ContextRef

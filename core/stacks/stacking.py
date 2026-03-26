@@ -11,7 +11,7 @@ import file_io
 from file_io.types import XisfFilePath, WithSidecar
 from file_io.generic import update_header, copy_image
 from stacks.artifacts import stack_filename
-from stacks.simple_stack import Run, RunsDict
+from stacks.run import Run, RunsDict
 from stacks.types import StackIdDependency, FilenameDependency
 from stacks.composite_stack import BaseStack, Stack, CalibrationStacksDict
 from pix.tasks import run_wbpp

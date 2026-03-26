@@ -1,4 +1,4 @@
-from stacks.simple_stack import Run
+from stacks.run import Run
 
 
 def get_content_stacks_of_type(stacks, image_type):

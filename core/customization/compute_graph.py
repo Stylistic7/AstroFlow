@@ -7,7 +7,7 @@ from frozendict import frozendict
 from context import context
 from cache.context_ref import ContextRef
 from stacks.composite_stack import Stack, StacksDict, CalibrationStacksDict
-from stacks.simple_stack import Run, RunsDict
+from stacks.run import Run, RunsDict
 from calibration import associate_with_stack
 from decorators import node
 from dependency_graph import Graph

@@ -3,7 +3,7 @@ from dataclasses import replace
 from frozendict import frozendict
 
 from stacks.composite_stack import Stack
-from stacks.simple_stack import RunsDict
+from stacks.run import RunsDict
 from metadata.classes import ImageMetadata, MetadataDict
 from customization.decisions import (
     DecisionPoint, DecisionType, DecisionOverride, DecisionKey,

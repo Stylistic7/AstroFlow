@@ -8,7 +8,7 @@ from frozendict import frozendict
 
 import units
 from hashing import hash_list, hash_list_int
-from stacks.simple_stack import Run, RunsDict, run_from_frames
+from stacks.run import Run, RunsDict, run_from_frames
 from attributes import (
     AstrometricAttributes,
     AstroFlowStateAttributes,

@@ -8,7 +8,7 @@ from decorators import node, measure_performance
 from stacks.composite_stack import Stack, RunsDict, CalibrationStacksDict
 from customization.subframe_selection import get_light_frames_sorted_by_stars
 from decorators import create_thumbnail
-from stacks.simple_stack import Run
+from stacks.run import Run
 from stacks.types import StackHash, StackIdDependency
 from file_io.tiff_file_io import write_tiff_image
 from products import makes_image

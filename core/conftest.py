@@ -142,7 +142,7 @@ def identified_testdata(init_ray, tmp_path_factory):
 
     # Eagerly resolve all ContextRefs to actual objects, so they can be
     # re-stored in each test's fresh context via with_real_testdata.
-    from stacks.simple_stack import RunsDict
+    from stacks.run import RunsDict
 
     raw_stacks = context.stacks or {}
     raw_targets = context.targets or {}

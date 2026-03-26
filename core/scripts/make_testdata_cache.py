@@ -7,7 +7,7 @@ import os
 
 from context import get_cache
 from metadata.image_metadata import load_metadata
-from stacks.simple_stack import Run
+from stacks.run import Run
 from stacks.composite_stack import Stack
 
 TESTDATA_CACHE_GZIP_FILENAME = "testdata/cache.tar.gz"
