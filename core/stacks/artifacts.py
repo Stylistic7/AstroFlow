@@ -2,28 +2,27 @@ import math
 import os
 from pathlib import Path
 
-from stacks.run import Run
-from stacks.composite_stack import Stack
+from stacks.composite_stack import BaseStack, Stack
 from catalogs import position_string
 from file_io.types import XisfFilePath
 
 
-def stack_filename(stack: Run | Stack) -> Path:
+def stack_filename(stack: BaseStack) -> Path:
     def exposure_string(exposures):
         return "_".join([f"{x}s" for x in exposures])
 
-    if isinstance(stack, Run) and "bias" in stack.image_type:
+    if "bias" in stack.image_type:
         return XisfFilePath(
             f"bias_{stack.stable_hash}_{stack.camera}_"
             f"{stack.mean_temperature:.0f}C_{stack.stable_hash}.xisf"
         )
-    elif isinstance(stack, Run) and "dark" in stack.image_type:
+    elif "dark" in stack.image_type:
         return XisfFilePath(
             f"dark_{stack.stable_hash}_{stack.camera}_"
             f"{stack.mean_temperature:.0f}C_{exposure_string(stack.exposure)}_"
             f"{stack.stable_hash}.xisf"
         )
-    elif isinstance(stack, Run) and "flat" in stack.image_type:
+    elif "flat" in stack.image_type:
         return XisfFilePath(
             f"flat_{stack.stable_hash}_{stack.camera}_{stack.filter}_"
             f"{stack.stable_hash}.xisf"
