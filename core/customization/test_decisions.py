@@ -31,9 +31,25 @@ def _make_decision(key):
 def test_resolve_decision_default(test_context):
     key = (DecisionType.ROTATION_OUTLIER, ObjectType.STACK, "s1", "r1")
     dp = _make_decision(key)
-    # No override → caller's default wins.
+    # No override → default value is computed, cached, and returned.
     assert resolve_decision(dp, frozendict(), default=BinaryChoice.INCLUDE) == BinaryChoice.INCLUDE
-    assert resolve_decision(dp, frozendict(), default=BinaryChoice.EXCLUDE) == BinaryChoice.EXCLUDE
+    # Second call returns cached default, not the new default argument.
+    assert resolve_decision(dp, frozendict(), default=BinaryChoice.EXCLUDE) == BinaryChoice.INCLUDE
+
+
+def test_resolve_decision_callable_default(test_context):
+    key = (DecisionType.ROTATION_OUTLIER, ObjectType.STACK, "s2", "r2")
+    dp = _make_decision(key)
+    call_count = [0]
+    def expensive_default():
+        call_count[0] += 1
+        return BinaryChoice.INCLUDE
+    # First call: lambda runs, result cached.
+    assert resolve_decision(dp, frozendict(), default=expensive_default) == BinaryChoice.INCLUDE
+    assert call_count[0] == 1
+    # Second call: cached, lambda not called again.
+    assert resolve_decision(dp, frozendict(), default=expensive_default) == BinaryChoice.INCLUDE
+    assert call_count[0] == 1
 
 
 def test_resolve_decision_override(test_context):
@@ -44,7 +60,21 @@ def test_resolve_decision_override(test_context):
     })
     # User override wins regardless of default.
     assert resolve_decision(dp, overrides, default=BinaryChoice.INCLUDE) == BinaryChoice.EXCLUDE
-    assert resolve_decision(dp, overrides, default=BinaryChoice.EXCLUDE) == BinaryChoice.EXCLUDE
+
+
+def test_resolve_decision_override_caches_default_for_ui(test_context):
+    """When there's an override, the default is still computed and cached for the UI."""
+    key = (DecisionType.ROTATION_OUTLIER, ObjectType.STACK, "s3", "r3")
+    dp = _make_decision(key)
+    overrides = frozendict({
+        key: DecisionOverride(choice=BinaryChoice.EXCLUDE),
+    })
+    # Override wins.
+    assert resolve_decision(dp, overrides, default=BinaryChoice.INCLUDE) == BinaryChoice.EXCLUDE
+    # But the cached DecisionPoint has the computed default for UI display.
+    cached = get_decisions_for_object(ObjectType.STACK, "s3")
+    assert key in cached
+    assert cached[key].default_choice == BinaryChoice.INCLUDE
 
 
 @pytest.mark.heavy
