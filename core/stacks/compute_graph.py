@@ -34,6 +34,11 @@ def build_calibration_stack_subgraph(
     stack: Stack,
     config: ProcessingConfig,
 ) -> Graph:
+    from customization.resolve import resolve_calibration
+
+    # Resolve calibration to discover which cal stacks this stack depends on.
+    enriched = resolve_calibration(stack, config.calibration_stacks, config.decisions)
+
     def visit_cal_dependencies(run: Run) -> Graph:
         """Build tasks to stack all calibration dependencies of a run."""
         subgraph = {}
@@ -48,7 +53,7 @@ def build_calibration_stack_subgraph(
         return subgraph
 
     graph = Graph({})
-    for run in stack.contents.values():
+    for run in enriched.contents.values():
         graph |= visit_cal_dependencies(run)
 
     return graph
