@@ -26,14 +26,13 @@ from customization.subframe_selection import get_light_frames_sorted_by_stars
 from customization.resolve import is_frame_included, resolve_calibration
 from products import makes_image, makes_video
 from file_io.generic import read_image
+from customization.settings import ProcessingConfig
 
 
 @ray.remote
 @beartype
 def scatter_stack_thumbnails() -> Graph:
     tasks: list[TaskDescriptor] = list()
-
-    from customization.settings import ProcessingConfig
 
     calibration_stacks = context.calibration_stacks
     settings = context.settings
@@ -124,7 +123,7 @@ def _annotate_frame(
 def stack_thumbnail_video(
     stack: Stack,
     subframe_thumbnail_width: int,
-    config: "ProcessingConfig",
+    config: ProcessingConfig,
 ) -> Iterable[np.ndarray]:
     # Resolve calibration lazily (for flat correction of subframes).
     stack = resolve_calibration(stack, config.calibration_stacks, config.decisions)
