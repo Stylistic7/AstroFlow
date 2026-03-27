@@ -21,7 +21,7 @@ from mosaics.compute_graph import (
     build_placement_subgraph,
     get_stacks_for_filter,
 )
-from metadata.image_metadata import compute_image_metadata_no_solve as compute_image_metadata
+from metadata.image_metadata import compute_image_metadata
 from mosaics.orion_mosaic import add_orion_mosaic_images
 from targets.types import Target, TargetsDict
 from testing.test_stacks import make_composite_stack

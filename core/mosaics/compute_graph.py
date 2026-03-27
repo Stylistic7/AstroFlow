@@ -21,7 +21,7 @@ from stacks.types import StackHash
 from previews.types import QualityLevel
 from decorators import node
 from targets.types import TargetsDict, Target, TargetHash
-from metadata.image_metadata import compute_image_metadata_no_solve
+from metadata.image_metadata import compute_image_metadata
 from stacks.convert_to_dict import convert_to_dict
 from mosaics.final_storage import store_mosaic_color_channel
 from dependency_graph.workflow_graph_adapter import (
@@ -133,7 +133,7 @@ def build_placement_subgraph(
             **chain(
                 (get_stack_image, mode, stack, config),
                 (place_image, mode, mosaic, stack, filter, viewbox),
-                Node(compute_image_metadata_no_solve, name="placed"),
+                Node(compute_image_metadata, config.development_settings, name="placed"),
             )
         }
     )
@@ -227,7 +227,7 @@ def build_mosaic_filter_subgraph(
                     name=f"merge_{mosaic.stable_hash}_{stack_id}",
                 )
                 metadata_task = Node(
-                    compute_image_metadata_no_solve,
+                    compute_image_metadata, config.development_settings,
                     name=f"merge_{mosaic.stable_hash}_{stack_id}",
                 )
                 if prev_task is not None:
@@ -250,7 +250,7 @@ def build_mosaic_filter_subgraph(
                 name=f"merge_{mosaic.stable_hash}_strip_{i}",
             )
             metadata_task = Node(
-                compute_image_metadata_no_solve,
+                compute_image_metadata, config.development_settings,
                 name=f"merge_{mosaic.stable_hash}_strip_{i}",
             )
             graph[merge_task] = [prev_task, strip_tasks[i]]

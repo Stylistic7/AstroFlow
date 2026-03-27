@@ -28,7 +28,14 @@ def flat_corrected_stack(
         next(l for l in light_frames_by_stars if l in substack.frames)
     ]
 
-    dependencies = frozendict({**substack.dependencies, "flat": StackIdDependency(stack_id=StackHash(flat_stack.stable_hash))})
+    dependencies = frozendict(
+        {
+            **substack.dependencies,
+            "flat": StackIdDependency(
+                stack_id=StackHash(flat_stack.stable_hash)
+            ),
+        }
+    )
 
     temp_file = tempfile.NamedTemporaryFile(suffix=".tiff", delete=True)
     write_tiff_image(
@@ -39,8 +46,12 @@ def flat_corrected_stack(
     return temp_file
 
 
-@node(memory=8 * 1024 * 1024 * 1024)
-def create_flat_correction_thumbnails(stack: Stack, calibration_stacks: CalibrationStacksDict, subframe_thumbnail_width: int) -> None:
+@node(memory=3 * 1024 * 1024 * 1024)
+def create_flat_correction_thumbnails(
+    stack: Stack,
+    calibration_stacks: CalibrationStacksDict,
+    subframe_thumbnail_width: int,
+) -> None:
     flat_stack_ids = [
         id
         for id, s in calibration_stacks.items()
@@ -52,5 +63,8 @@ def create_flat_correction_thumbnails(stack: Stack, calibration_stacks: Calibrat
     for substack in stack.contents.values():
         for flat_stack_id in flat_stack_ids:
             flat_corrected_stack(
-                stack, substack, calibration_stacks[flat_stack_id], subframe_thumbnail_width
+                stack,
+                substack,
+                calibration_stacks[flat_stack_id],
+                subframe_thumbnail_width,
             )

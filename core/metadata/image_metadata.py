@@ -161,16 +161,6 @@ def compute_image_metadata(
     )
 
 
-@node(num_cpus=0.25)
-def compute_image_metadata_no_solve(
-    filename: Path | os.PathLike,
-) -> ImageMetadata:
-    """Like compute_image_metadata, but skips plate solving.
-
-    Use this for intermediate outputs (stacking results, placed images,
-    merged mosaics) where plate solving is unnecessary and expensive.
-    """
-    return _compute_image_metadata_impl(filename, plate_solve=False)
 
 
 @ray.remote(resources={"fastest_storage": 0.001})

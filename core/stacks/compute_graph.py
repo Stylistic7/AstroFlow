@@ -10,7 +10,7 @@ from stacks.composite_stack import Run, Stack, RunsDict, StacksDict, Calibration
 from stacks.types import StackIdDependency
 from stacks.post_process import post_process_stack
 from stacks.convert_to_dict import convert_to_dict
-from metadata.image_metadata import compute_image_metadata_no_solve
+from metadata.image_metadata import compute_image_metadata
 from customization.settings import DevelopmentSettings
 from customization.subframe_selection import get_light_frames_sorted_by_stars
 from previews.types import QualityLevel
@@ -75,11 +75,12 @@ def build_stacking_subgraph(
                 (build_calibration_stack_subgraph, stack, config),
                 (stack_files, stack, config),
                 Node(
-                    compute_image_metadata_no_solve, name=f"stacking_{stack.stable_hash}"
+                    compute_image_metadata, config.development_settings,
+                    name=f"stacking_{stack.stable_hash}",
                 ),
                 (post_process_stack, stack, config.development_settings),
                 Node(
-                    compute_image_metadata_no_solve,
+                    compute_image_metadata, config.development_settings,
                     name=f"post_process_{stack.stable_hash}",
                 ),
             )
@@ -109,7 +110,7 @@ def get_stack_image(
         return Graph({
             **chain(
                 (get_stack_subframe_image, stack),
-                Node(compute_image_metadata_no_solve, name=f"subframe_{stack.stable_hash}"),
+                Node(compute_image_metadata, config.development_settings, name=f"subframe_{stack.stable_hash}"),
             )
         })
     else:
