@@ -1,4 +1,5 @@
 """MultiscaleGradientCorrection — gradient correction using MARS database."""
+import re
 from typing import Any
 
 from pix.image import Image
@@ -37,7 +38,11 @@ def MultiscaleGradientCorrection(image: Image, **kwargs: Any) -> Image:
         _DEFAULT_PARAMETERS | {"grayMARSFilter": mars_filter} | kwargs,
         [image.view_id],
     )
-    image.recipe.add_step(Step(javascript=js, name="MultiscaleGradientCorrection"))
+    image.recipe.add_step(Step(
+        javascript=js,
+        name="MultiscaleGradientCorrection",
+        error_patterns=[re.compile(r'\*\*\* Error:.*lacks flux calibration metadata')],
+    ))
     return Image(
         view_id=image.view_id,
         recipe=image.recipe,

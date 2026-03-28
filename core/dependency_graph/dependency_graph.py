@@ -221,6 +221,20 @@ def _make_run_fn(ts, node, dry_run, debug):
     return result
 
 
+def _retrieve_logs(ts: TopologicalSorterWithStatus, node: Node) -> list[Any]:
+    """Retrieve captured logs from context for a completed node."""
+    from context import context
+    from hashing import hash_source_code, hash_call
+    try:
+        fn_args = _make_fn_args(ts, node)
+        raw_func = node.task._function
+        fn_hash = hash_source_code(raw_func)
+        call_hash = hash_call(fn_hash, *fn_args)
+        return context.get(("logs", raw_func.__name__, call_hash), [])
+    except Exception:
+        return []
+
+
 def _handle_node_done(
     ts: TopologicalSorterWithStatus,
     node: Node,
@@ -262,7 +276,7 @@ def _handle_result(
     if isinstance(result, Graph):
         return _make_subgraph(result, ts, node, debug)
     else:
-        _handle_node_done(ts, node, result, [])
+        _handle_node_done(ts, node, result, _retrieve_logs(ts, node))
         ts.final_result = result
 
 
@@ -369,7 +383,7 @@ def run_graph(
                         subgraphs.append(new_ts)
                 except ray.exceptions.RayTaskError as e:
                     print(f"Node {node_to_string(node)} raised exception {e}")
-                    _handle_node_done(ts, node, e.cause, [])
+                    _handle_node_done(ts, node, e.cause, _retrieve_logs(ts, node))
                     ts.final_result = e.cause
 
         _handle_finished_subgraphs(subgraphs)

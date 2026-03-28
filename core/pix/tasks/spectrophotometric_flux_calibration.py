@@ -1,4 +1,6 @@
 """SpectrophotometricFluxCalibration."""
+import re
+
 from pix.tasks.js import Enum
 from pix.tasks.process import make_process_task
 
@@ -50,4 +52,8 @@ _default_parameters = {
     "outputDirectory": "",
 }
 
-SpectrophotometricFluxCalibration = make_process_task("SpectrophotometricFluxCalibration", _default_parameters)
+SpectrophotometricFluxCalibration = make_process_task(
+    "SpectrophotometricFluxCalibration",
+    _default_parameters,
+    error_patterns=[re.compile(r'\*\*\* Error:.*no astrometric solution')],
+)

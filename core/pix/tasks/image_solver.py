@@ -3,6 +3,7 @@
 ImageSolver is a script (not a built-in process), invoked via -p parameter
 flags in the .scp file rather than inline JavaScript.
 """
+import re
 from typing import Any
 
 from pix.image import Image
@@ -84,6 +85,7 @@ def ImageSolver(image: Image, **kwargs: Any) -> Image:
         name="ImageSolver",
         script_filename=_SCRIPT_FILENAME,
         parameters=parameters,
+        error_patterns=[re.compile(r'\*\*\* Error:')],
     ))
 
     return Image(

@@ -4,6 +4,7 @@ Most PixInsight processes follow the same pattern: create a process instance,
 set parameters, and execute on one or more views. This module provides a
 factory that generates task functions for these simple cases.
 """
+import re
 from typing import Any
 
 from pix.image import Image
@@ -15,6 +16,7 @@ def make_process_task(
     process_name: str,
     default_parameters: dict[str, Any],
     tag: str | None = None,
+    error_patterns: list[re.Pattern] | None = None,
 ):
     """Create a task function for a simple execute-on-views process.
 
@@ -22,6 +24,7 @@ def make_process_task(
     kwargs to override default parameters, appends a step to the recipe,
     and returns new Image(s) sharing the same recipe.
     """
+    step_error_patterns = error_patterns or []
 
     def task(image: Image, **kwargs: Any) -> Image:
         js = execute_on_views(
@@ -29,7 +32,11 @@ def make_process_task(
             default_parameters | kwargs,
             [image.view_id],
         )
-        image.recipe.add_step(Step(javascript=js, name=process_name))
+        image.recipe.add_step(Step(
+            javascript=js,
+            name=process_name,
+            error_patterns=step_error_patterns,
+        ))
         return Image(
             view_id=image.view_id,
             recipe=image.recipe,

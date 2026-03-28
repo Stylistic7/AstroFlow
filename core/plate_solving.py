@@ -15,6 +15,7 @@ from dataclasses import dataclass, is_dataclass, asdict
 import numpy as np
 import traceback
 from typing import Any
+from collections.abc import Mapping
 
 from beartype import beartype
 
@@ -91,7 +92,7 @@ def get_num_stars(axy_file: Path | str) -> int:
 
 
 @beartype
-def simplify_header(header: dict[str, Any]) -> dict[str, Any]:
+def simplify_header(header: Mapping[str, Any]) -> dict[str, Any]:
     output_header = {}
     for k in header.keys():
         if "COMMENT" in k or "HISTORY" in k:

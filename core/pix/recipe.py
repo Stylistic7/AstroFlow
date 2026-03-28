@@ -6,6 +6,7 @@ Execution is deferred until an Image.save_to() call forces materialization.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import tempfile
 import uuid
@@ -17,6 +18,11 @@ if TYPE_CHECKING:
     from pix.image import Image
 
 
+class PixInsightError(Exception):
+    """A PixInsight task reported an error in its console output."""
+    pass
+
+
 @dataclass
 class Step:
     """A single PixInsight operation in a recipe.
@@ -25,12 +31,16 @@ class Step:
     - Inline JavaScript: set `javascript` to the JS code.
     - External script: set `script_filename` to the .js path, with optional
       `parameters` (passed via -p flags) and `arguments` (via -a flags).
+
+    error_patterns: compiled regexes matched against the PixInsight console log
+    after execution. If any pattern matches, a PixInsightError is raised.
     """
     name: str = ""
     javascript: str | None = None
     script_filename: str | None = None
     parameters: dict[str, Any] = field(default_factory=dict)
     arguments: dict[str, Any] = field(default_factory=dict)
+    error_patterns: list[re.Pattern] = field(default_factory=list)
 
 
 class Recipe:
@@ -227,7 +237,29 @@ class Recipe:
             if log_file.exists():
                 self.log = log_file.read_text()
 
+            if self.log:
+                self._emit_log()
+                self._check_for_errors()
+
         self.is_materialized = True
+
+    def _emit_log(self) -> None:
+        """Emit PixInsight console output through structlog for capture."""
+        import structlog
+        logger = structlog.get_logger()
+        for line in self.log.splitlines():
+            if line.strip():
+                logger.info(line)
+
+    def _check_for_errors(self) -> None:
+        """Check PixInsight console log against each step's error patterns."""
+        for step in self.steps:
+            for pattern in step.error_patterns:
+                match = pattern.search(self.log)
+                if match:
+                    raise PixInsightError(
+                        f"{step.name}: {match.group(0)}"
+                    )
 
     def _run_pixinsight(self, scp_content: str) -> None:
         """Execute a .scp script in a real PixInsight instance."""
