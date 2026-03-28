@@ -85,7 +85,7 @@ def ImageSolver(image: Image, **kwargs: Any) -> Image:
         name="ImageSolver",
         script_filename=_SCRIPT_FILENAME,
         parameters=parameters,
-        error_patterns=[re.compile(r'\*\*\* Error:')],
+        success_pattern=re.compile(r'Resolution \.+ [\d.]+ arcsec/px'),
     ))
 
     return Image(

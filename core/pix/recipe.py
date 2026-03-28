@@ -34,6 +34,10 @@ class Step:
 
     error_patterns: compiled regexes matched against the PixInsight console log
     after execution. If any pattern matches, a PixInsightError is raised.
+
+    success_pattern: if set, this regex MUST match the log or a PixInsightError
+    is raised. Use this for tasks where intermediate errors are acceptable as
+    long as the final output is produced (e.g. ImageSolver).
     """
     name: str = ""
     javascript: str | None = None
@@ -41,6 +45,7 @@ class Step:
     parameters: dict[str, Any] = field(default_factory=dict)
     arguments: dict[str, Any] = field(default_factory=dict)
     error_patterns: list[re.Pattern] = field(default_factory=list)
+    success_pattern: re.Pattern | None = None
 
 
 class Recipe:
@@ -252,7 +257,7 @@ class Recipe:
                 logger.info(line)
 
     def _check_for_errors(self) -> None:
-        """Check PixInsight console log against each step's error patterns."""
+        """Check PixInsight console log against each step's error/success patterns."""
         for step in self.steps:
             for pattern in step.error_patterns:
                 match = pattern.search(self.log)
@@ -260,6 +265,10 @@ class Recipe:
                     raise PixInsightError(
                         f"{step.name}: {match.group(0)}"
                     )
+            if step.success_pattern and not step.success_pattern.search(self.log):
+                raise PixInsightError(
+                    f"{step.name} did not produce expected output"
+                )
 
     def _run_pixinsight(self, scp_content: str) -> None:
         """Execute a .scp script in a real PixInsight instance."""
