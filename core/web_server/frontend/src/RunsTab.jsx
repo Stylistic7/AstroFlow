@@ -83,7 +83,7 @@ const RunsTab = ({ stack }) => {
         calStack && <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 4, rowGap: 1, alignItems: 'center' }}>
           <MetadataItem label="Content hash" value={calStack.content_hash} />
           <MetadataItem label="Date" value={calStack.oldest_date} />
-          <MetadataItem label="Frames" value={calStack.frames.length} />
+          <MetadataItem label="Frames" value={(calStack.filenames || []).length} />
           <MetadataItem label="Temp" value={`${calStack.mean_temperature.toFixed(1)}°C`} />
         </Box>
       );

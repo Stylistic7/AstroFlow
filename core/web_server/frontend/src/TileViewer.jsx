@@ -21,7 +21,7 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
   const containerRef = useRef(null);
   const [containerSize, setContainerSize] = useState({ width: 800, height: 600 });
 
-  const { mosaics } = useContext(AstroFlowContext);
+  const { mosaics, stacks, targets } = useContext(AstroFlowContext);
 
   const navigate = useNavigate();
 
@@ -53,9 +53,17 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
 
   const onClick = (poly, event) => {
     const e = event.nativeEvent; // underlying DOM PointerEvent
-    
-    // This is tacked onto the end of the current URL.
-    const url = `${poly.type}/${poly.stable_hash}`;
+
+    // Navigate to the stack for the current filter, if available.
+    let url = `${poly.type}/${poly.stable_hash}`;
+    if (poly.type === 'target' && filter && targets?.[poly.stable_hash]) {
+      const target = targets[poly.stable_hash];
+      const stackId = target.stack_ids?.find(s => stacks?.[s]?.filter === filter);
+      if (stackId) {
+        url += `/stack/${stackId}`;
+      }
+    }
+
     if (e.metaKey || e.ctrlKey) {
       window.open(url, '_blank');
     } else {
