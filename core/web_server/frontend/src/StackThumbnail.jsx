@@ -45,10 +45,7 @@ export default function StackThumbnail({ stack_id, width, handleClick }) {
 
 	if (!stack) return null;
 
-	let light_frames = [];
-	for (const substack of Object.values(stack.contents)) {
-		light_frames.push(...substack.frames);
-	}
+	const numFrames = (stack.filenames || []).length || 1;
 
 	// TODO: Display the progress bar as red during frames with too few stars.
 	return (
@@ -134,7 +131,7 @@ export default function StackThumbnail({ stack_id, width, handleClick }) {
 				}}>
 					<div style={{
 						height: "0.75em",
-						width: (100.0 * (frameCount % light_frames.length) / light_frames.length) + "%",
+						width: (100.0 * (frameCount % numFrames) / numFrames) + "%",
 						backgroundColor: currentFrameIsSelected ? "#ccc" : "#f00"
 					}}></div>
 				</div>
