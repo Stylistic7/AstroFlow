@@ -185,11 +185,8 @@ def resolve_calibration(
         return min(filtered, key=lambda x: abs(x[0] - mid))[3]
 
     def _choose_flat(run: Run):
-        cand = flat_by_cam_filter.get((run.camera, run.filter))
-        if not cand:
-            return None
-        mid = _midpoint_s(run.oldest_date, run.newest_date)
-        return min(cand, key=lambda x: abs(x[0] - mid))[1]
+        # No automatic flat selection — the user must choose manually.
+        return None
 
     pickers = {"bias": _choose_bias, "dark": _choose_dark, "flat": _choose_flat}
 
