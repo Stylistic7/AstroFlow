@@ -3,7 +3,7 @@ import useVideoFrames from "./useVideoFrames.ts";
 import ExposureDurationWidget from "./ExposureDurationWidget.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
 
-export default function StackThumbnail({ stack_id, width, handleClick }) {
+export default function StackThumbnail({ stack_id, width, handleClick, children }) {
 	const { stacks, invalidated } = useContext(AstroFlowContext);
 	const stack = stacks[stack_id];
 	const isStale = (invalidated || []).some(
@@ -105,18 +105,25 @@ export default function StackThumbnail({ stack_id, width, handleClick }) {
 				</span>
 			</div>
 
-			<ExposureDurationWidget
-				key={`exposure_duration_${stack_id}`}
-				totalExposureDuration={stack.integration / 3600.0}
-				selectedExposureDuration={stack.integration / 3600.0}
-				stack={stack}
-				sx={{
-					position: "absolute",
-					top: "0.3em",
-					right: "0.5em",
-					width: "2em",
-				}}
-			/>
+			<div style={{
+				position: "absolute",
+				top: "0.3em",
+				right: "0.5em",
+				display: "flex",
+				flexDirection: "row",
+				alignItems: "center",
+				gap: "0.3em",
+				pointerEvents: "auto",
+			}}>
+				<ExposureDurationWidget
+					key={`exposure_duration_${stack_id}`}
+					totalExposureDuration={stack.integration / 3600.0}
+					selectedExposureDuration={stack.integration / 3600.0}
+					stack={stack}
+					sx={{ width: "2em" }}
+				/>
+				{children}
+			</div>
 
 			<div style={{
 				position: "absolute",

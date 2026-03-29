@@ -25,16 +25,14 @@ export default function TargetPanel() {
 				opacity: target?.is_quarantined ? 0.5 : 1,
 			}}>
 				{target?.stack_ids?.map((stack_id) => (
-					<div key={"cell_" + stack_id} style={{ position: "relative" }}>
-						<StackThumbnail
-							stacks={stacks}
-							stack_id={stack_id}
-							handleClick={event => window.open(`${location.pathname}/stack/${stack_id}`, '_blank')}
-						/>
-						<div style={{ position: "absolute", top: 0, right: 0, zIndex: 1 }}>
-							<DecisionBadge objectType="stack" objectId={stack_id} />
-						</div>
-					</div>
+					<StackThumbnail
+						key={"cell_" + stack_id}
+						stacks={stacks}
+						stack_id={stack_id}
+						handleClick={event => window.open(`${location.pathname}/stack/${stack_id}`, '_blank')}
+					>
+						<DecisionBadge objectType="stack" objectId={stack_id} />
+					</StackThumbnail>
 				))}
 		</div>
 	);
