@@ -219,7 +219,7 @@ def decision_overrides():
     # Serialize tuple keys to JSON-safe arrays
     return {
         "overrides": [
-            {"key": list(k), "choice": str(v.choice)}
+            {"key": [e.value if hasattr(e, 'value') else e for e in k], "choice": v.choice.value}
             for k, v in overrides.items()
         ]
     }
