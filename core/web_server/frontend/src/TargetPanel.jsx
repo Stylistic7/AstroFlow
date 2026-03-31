@@ -7,7 +7,7 @@ import AstroFlowContext from './AstroFlowContext.jsx';
 
 
 export default function TargetPanel() {
-	const { stacks, targets } = useContext(AstroFlowContext);
+	const { stacks, targets, isQuarantined } = useContext(AstroFlowContext);
 
 	const params = useParams();
 	const location = useLocation();
@@ -22,7 +22,7 @@ export default function TargetPanel() {
 				gap: "1em",
 				marginLeft: "2em",
 				marginRight: "2em",
-				opacity: target?.is_quarantined ? 0.5 : 1,
+				opacity: isQuarantined("target", params.target_id) ? 0.5 : 1,
 			}}>
 				{target?.stack_ids?.map((stack_id) => (
 					<StackThumbnail

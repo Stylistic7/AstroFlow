@@ -1,22 +1,23 @@
-import { useState } from 'react';
+import { useState, useContext } from 'react';
 import { Tooltip } from '@mui/material';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import ToggleIconButton from './ToggleIconButton';
+import AstroFlowContext from './AstroFlowContext.jsx';
 
-export default function QuarantineToggle({ objectType, objectId, isQuarantined, onToggle }) {
-  const [quarantined, setQuarantined] = useState(isQuarantined);
+export default function QuarantineToggle({ objectType, objectId }) {
+  const { isQuarantined, refreshDecisions } = useContext(AstroFlowContext);
   const [loading, setLoading] = useState(false);
+
+  const quarantined = isQuarantined(objectType, objectId);
 
   const handleToggle = async () => {
     setLoading(true);
     try {
-      const resp = await fetch(`/api/quarantine/${objectType}/${objectId}`, {
+      await fetch(`/api/quarantine/${objectType}/${objectId}`, {
         method: 'POST',
       });
-      const data = await resp.json();
-      setQuarantined(data.is_quarantined);
-      if (onToggle) onToggle(data.is_quarantined);
+      await refreshDecisions();
     } finally {
       setLoading(false);
     }

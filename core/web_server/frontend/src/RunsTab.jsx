@@ -141,7 +141,6 @@ const RunsTab = ({ stack }) => {
               <QuarantineToggle
                 objectType="stack"
                 objectId={run.id}
-                isQuarantined={run.is_quarantined || false}
               />
             </Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

@@ -1,12 +1,14 @@
-import React from 'react';
+import React, { useContext } from 'react';
 import { Box, Typography, IconButton, Paper } from '@mui/material';
 import { OpenInNew } from '@mui/icons-material';
 import MetadataItem from './MetadataItem.jsx';
 import DecisionBadge from './DecisionBadge.jsx';
+import AstroFlowContext from './AstroFlowContext.jsx';
 
 import { ra_to_hms, dec_to_dms, format_duration } from './units.js'
 
 const StackHeader = ({ stack_type, stack, stack_id }) => {
+  const { isQuarantined } = useContext(AstroFlowContext);
   const handleOpenStack = async () => {
     const res = await fetch(`/api/open_stack_master/${stack_id}`, { method: 'HEAD' });
   };
@@ -16,7 +18,7 @@ const StackHeader = ({ stack_type, stack, stack_id }) => {
       elevation={3}
       sx={{
         pl: 2, pt: 0.5, pb: 0.5,
-        opacity: stack.is_quarantined ? 0.5 : 1,
+        opacity: isQuarantined(stack_type, stack_id) ? 0.5 : 1,
       }}
     >
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

@@ -37,6 +37,7 @@ function App() {
   const [computeGraphStatus, setComputeGraphStatus] = useState({});
   const [rayStatus, setRayStatus] = useState({});
   const [invalidated, setInvalidated] = useState([]);
+  const [decisionOverrides, setDecisionOverrides] = useState([]);
   const [showQuarantined, setShowQuarantined] = useState(
     () => localStorage.getItem('astroflow_showQuarantined') !== 'false'
   );
@@ -82,15 +83,23 @@ function App() {
       } catch { /* ignore */ }
     };
 
+    const loadDecisionOverrides = async () => {
+      try {
+        const d = await fetch('/api/decision_overrides').then(r => r.json());
+        setDecisionOverrides(d.overrides || []);
+      } catch { /* ignore */ }
+    };
+
     loadComputeGraphStatus();
     loadRayStatus();
     loadInvalidated();
+    loadDecisionOverrides();
 
     const stream_url = window.location.protocol + '//' + window.location.hostname + '/stream';
     const sse = new window.EventSource(stream_url);
 
-    sse.onmessage = e => { loadObjectData(); loadInvalidated(); };
-    sse.addEventListener("reload_data", e => { loadObjectData(); loadInvalidated(); });
+    sse.onmessage = e => { loadObjectData(); loadInvalidated(); loadDecisionOverrides(); };
+    sse.addEventListener("reload_data", e => { loadObjectData(); loadInvalidated(); loadDecisionOverrides(); });
     sse.addEventListener("compute_graph_status", e => loadComputeGraphStatus());
     sse.addEventListener("ray_status", e => loadRayStatus());
 
@@ -118,23 +127,31 @@ function App() {
     });
   }, []);
 
-  const filterQuarantined = useCallback((items) => {
-    if (showQuarantined) return items;
-    const result = {};
-    for (const [k, v] of Object.entries(items || {})) {
-      if (!v?.is_quarantined) result[k] = v;
+  // Build a set of quarantined (objectType, objectId) from decision overrides.
+  const quarantinedSet = useMemo(() => {
+    const set = new Set();
+    for (const { key, choice } of decisionOverrides) {
+      // key: [DecisionType, ObjectType, object_id, subject_id]
+      if (key[0] === "quarantine" && choice === "exclude") {
+        set.add(`${key[1]}:${key[2]}`);
+      }
     }
-    return result;
-  }, [showQuarantined]);
+    return set;
+  }, [decisionOverrides]);
 
-  const visibleStacks = useMemo(() => filterQuarantined(stacks), [stacks, filterQuarantined]);
-  const visibleTargets = useMemo(() => filterQuarantined(targets), [targets, filterQuarantined]);
-  const visibleMosaics = useMemo(() => filterQuarantined(mosaics), [mosaics, filterQuarantined]);
+  const isQuarantined = useCallback(
+    (objectType, objectId) => quarantinedSet.has(`${objectType}:${objectId}`),
+    [quarantinedSet]
+  );
 
-  const quarantineCount = useMemo(() => {
-    const count = (items) => Object.values(items || {}).filter(v => v?.is_quarantined).length;
-    return count(stacks) + count(targets) + count(mosaics);
-  }, [stacks, targets, mosaics]);
+  const quarantineCount = quarantinedSet.size;
+
+  const refreshDecisions = useCallback(async () => {
+    try {
+      const d = await fetch('/api/decision_overrides').then(r => r.json());
+      setDecisionOverrides(d.overrides || []);
+    } catch { /* ignore */ }
+  }, []);
 
   // TODO: It's a little awkward to have to put <Search /> in each of these
   // routes.
@@ -144,18 +161,20 @@ function App() {
         <AstroFlowContext.Provider
           value={{
             constellationPolylines,
-            stacks: visibleStacks,
+            stacks,
             calibrationStacks,
-            targets: visibleTargets,
-            mosaics: visibleMosaics,
+            targets,
+            mosaics,
             shoppingCart,
             computeGraph,
             computeGraphStatus,
             rayStatus,
             invalidated,
+            isQuarantined,
             showQuarantined,
             toggleShowQuarantined,
             quarantineCount,
+            refreshDecisions,
           }}
         >
           <FolderProvider>

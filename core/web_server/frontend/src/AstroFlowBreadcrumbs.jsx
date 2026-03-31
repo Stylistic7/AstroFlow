@@ -61,23 +61,18 @@ export default function AstroFlowBreadcrumbs() {
     // Determine the deepest (most specific) object for the quarantine toggle.
     let quarantineObjectType = null;
     let quarantineObjectId = null;
-    let quarantineIsQuarantined = false;
     if (params.calibration_stack_id && calStack) {
         quarantineObjectType = "stack";
         quarantineObjectId = params.calibration_stack_id;
-        quarantineIsQuarantined = calStack.is_quarantined || false;
     } else if (params.stack_id && stack) {
         quarantineObjectType = "stack";
         quarantineObjectId = params.stack_id;
-        quarantineIsQuarantined = stack.is_quarantined || false;
     } else if (params.target_id && target) {
         quarantineObjectType = "target";
         quarantineObjectId = params.target_id;
-        quarantineIsQuarantined = target.is_quarantined || false;
     } else if (params.mosaic_id && mosaic) {
         quarantineObjectType = "mosaic";
         quarantineObjectId = params.mosaic_id;
-        quarantineIsQuarantined = mosaic.is_quarantined || false;
     }
 
     return (
@@ -192,7 +187,6 @@ export default function AstroFlowBreadcrumbs() {
                 <QuarantineToggle
                     objectType={quarantineObjectType}
                     objectId={quarantineObjectId}
-                    isQuarantined={quarantineIsQuarantined}
                 />
             )}
         </Box>

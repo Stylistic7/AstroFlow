@@ -4,36 +4,8 @@ from dataclasses import dataclass, field
 from frozendict import frozendict
 
 from units import Radians
-from stacks.types import StackHash, StackDependency
-from targets.types import TargetHash
-from mosaics.types import MosaicHash
 from hashing import hash_dataclass
 from customization.decisions import DecisionKey, DecisionOverride
-
-
-@dataclass(frozen=True)
-class StackSettings:
-    is_quarantined: bool = False
-    dependencies: frozendict[str, StackDependency] = field(default_factory=frozendict)
-
-    def __hash__(self):
-        return hash_dataclass(self)
-
-
-@dataclass(frozen=True)
-class TargetSettings:
-    is_quarantined: bool = False
-
-    def __hash__(self):
-        return hash_dataclass(self)
-
-
-@dataclass(frozen=True)
-class MosaicSettings:
-    is_quarantined: bool = False
-
-    def __hash__(self):
-        return hash_dataclass(self)
 
 
 @dataclass(frozen=True)
@@ -91,18 +63,6 @@ class ProcessingConfig:
 
 @dataclass(frozen=True)
 class Settings:
-    stack_settings: frozendict[StackHash, StackSettings] = field(
-        default_factory=frozendict
-    )
-    cal_stack_settings: frozendict[StackHash, StackSettings] = field(
-        default_factory=frozendict
-    )
-    target_settings: frozendict[TargetHash, TargetSettings] = field(
-        default_factory=frozendict
-    )
-    mosaic_settings: frozendict[MosaicHash, MosaicSettings] = field(
-        default_factory=frozendict
-    )
     decision_overrides: frozendict[DecisionKey, DecisionOverride] = field(
         default_factory=frozendict
     )

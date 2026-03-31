@@ -3,7 +3,7 @@ import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import QuarantineToggle from './QuarantineToggle';
 
 
-export default function StackActionButtons({ stack_id, is_quarantined }) {
+export default function StackActionButtons({ stack_id }) {
   const handleShowInFinder = () => {
     alert(`This would show the image at ${stack_id} in Finder.`);
   };
@@ -13,7 +13,6 @@ export default function StackActionButtons({ stack_id, is_quarantined }) {
       <QuarantineToggle
         objectType="stack"
         objectId={stack_id}
-        isQuarantined={is_quarantined || false}
       />
       <Tooltip title="Show in Finder">
         <IconButton onClick={handleShowInFinder} color="white">

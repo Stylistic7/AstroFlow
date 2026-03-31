@@ -151,7 +151,7 @@ def scatter_spatial_groups(
 
         target_task = Node(identify_targets, cs.angular_tolerance, name=str(i))
         customize_targets_task = Node(
-            scatter_customize_targets, settings.target_settings, name=str(i)
+            scatter_customize_targets, settings.decision_overrides, name=str(i)
         )
 
         # Each target identification depends on its own spatial group's stacks.

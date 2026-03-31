@@ -5,10 +5,8 @@ import subprocess
 
 from context import context
 from file_io.generic import read_header
-from customization.settings import Settings, StackSettings
 from state.actor import state
 from stacks.stacking import stack_files
-from stacks.types import FilenameDependency
 
 files_bp = Blueprint("files", __name__)
 
@@ -52,23 +50,8 @@ def list_dir():
 
 @files_bp.route("/api/select_file", methods=["POST"])
 def select_file():
-    data = request.get_json()
-    type = data["type"]
-    stack_id = data["stack_id"]
-    run_id = data["run_id"]
-    filename = data["filename"]
-
-    # TODO: Watch out for race conditions here.
-    settings = context.settings
-    stack_settings = settings.stack_settings.get(run_id, StackSettings())
-    stack_settings.dependencies[type] = FilenameDependency(filename=filename)
-    settings.stack_settings[run_id] = stack_settings
-    context.settings = settings
-
-    # TODO: Maybe don't pass the entire settings struct?
-    state.dispatch(dict(type="update_settings", stack_id=stack_id, settings=settings))
-
-    return jsonify({"status": "ok"})
+    # TODO: Reimplement using decision overrides instead of removed StackSettings.dependencies
+    return jsonify({"error": "Not yet reimplemented with decision overrides"}), 501
 
 
 @files_bp.route("/api/open_stack_master/<stack_id>")

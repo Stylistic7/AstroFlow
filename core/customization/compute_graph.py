@@ -2,8 +2,9 @@ import structlog
 from frozendict import frozendict
 
 from decorators import node
-from customization.settings import TargetSettings
-from customization.decisions import DecisionType
+from customization.decisions import (
+    DecisionType, DecisionOverride, DecisionKey, ObjectType, BinaryChoice,
+)
 from mosaics.types import MosaicsDict
 from targets.types import TargetsDict
 
@@ -17,22 +18,37 @@ ALL_EXCLUSION_TYPES = (
 )
 
 
+def _is_quarantined(
+    decision_overrides: frozendict[DecisionKey, DecisionOverride],
+    object_type: ObjectType,
+    object_id: str,
+) -> bool:
+    key = (DecisionType.QUARANTINE, object_type, object_id, object_id)
+    override = decision_overrides.get(key)
+    return override is not None and override.choice == BinaryChoice.EXCLUDE
+
+
 @node
 def scatter_customize_targets(
-    target_settings: frozendict, targets: TargetsDict
+    decision_overrides: frozendict, targets: TargetsDict
 ) -> TargetsDict:
     return TargetsDict(
         {
             h: ref
             for h, ref in targets.items()
-            if not target_settings.get(h, TargetSettings()).is_quarantined
+            if not _is_quarantined(decision_overrides, ObjectType.TARGET, h)
         }
     )
 
 
-# TODO: Implement real customization features.
 @node
 def scatter_customize_mosaics(
-    mosaic_settings: frozendict, mosaics: MosaicsDict
+    decision_overrides: frozendict, mosaics: MosaicsDict
 ) -> MosaicsDict:
-    return mosaics
+    return MosaicsDict(
+        {
+            h: ref
+            for h, ref in mosaics.items()
+            if not _is_quarantined(decision_overrides, ObjectType.MOSAIC, h)
+        }
+    )
