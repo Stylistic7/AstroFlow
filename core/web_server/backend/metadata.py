@@ -31,7 +31,7 @@ def get_metadata(object_type: type, *args):
         if image_path is None:
             continue
 
-        result = {"image_path": image_path}
+        result = {"image_path": image_path, "quality_level": level.value}
 
         if object_type is CalibrationStack:
             return result

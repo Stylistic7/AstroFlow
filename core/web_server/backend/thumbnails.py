@@ -26,6 +26,7 @@ def get_thumbnail(object_type: type, *args):
                     resp = flask.Response(
                         thumbnail, mimetype="image/png", direct_passthrough=True
                     )
+                    resp.headers["X-Quality-Level"] = level.value
                     return resp
 
     return abort(404)
