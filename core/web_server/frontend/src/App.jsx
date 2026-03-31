@@ -38,6 +38,7 @@ function App() {
   const [rayStatus, setRayStatus] = useState({});
   const [invalidated, setInvalidated] = useState([]);
   const [decisionOverrides, setDecisionOverrides] = useState([]);
+  const [sseConnected, setSseConnected] = useState(false);
   const [showQuarantined, setShowQuarantined] = useState(
     () => localStorage.getItem('astroflow_showQuarantined') !== 'false'
   );
@@ -95,20 +96,55 @@ function App() {
     loadInvalidated();
     loadDecisionOverrides();
 
-    const stream_url = window.location.protocol + '//' + window.location.hostname + '/stream';
-    const sse = new window.EventSource(stream_url);
+    const stream_url = `${window.location.protocol}//${window.location.hostname}:8001/stream`;
+    const HEARTBEAT_TIMEOUT_MS = 45000;
+    let sse = null;
+    let reconnectTimer = null;
+    let heartbeatTimer = null;
+    let destroyed = false;
 
-    sse.onmessage = e => { loadObjectData(); loadInvalidated(); loadDecisionOverrides(); };
-    sse.addEventListener("reload_data", e => { loadObjectData(); loadInvalidated(); loadDecisionOverrides(); });
-    sse.addEventListener("compute_graph_status", e => loadComputeGraphStatus());
-    sse.addEventListener("ray_status", e => loadRayStatus());
+    const resetHeartbeatTimer = () => {
+      clearTimeout(heartbeatTimer);
+      setSseConnected(true);
+      heartbeatTimer = setTimeout(() => {
+        // No message (including heartbeat) received for 15s — assume dead.
+        setSseConnected(false);
+        if (sse) { sse.close(); sse = null; }
+        reconnectTimer = setTimeout(connect, 3000);
+      }, HEARTBEAT_TIMEOUT_MS);
+    };
 
-    sse.onerror = () => {
-      sse.close();
-    }
+    const connect = () => {
+      if (destroyed) return;
+      sse = new window.EventSource(stream_url);
+
+      sse.onopen = () => resetHeartbeatTimer();
+
+      // Any event (including heartbeat) resets the dead-man timer.
+      const onAnyEvent = () => resetHeartbeatTimer();
+
+      sse.onmessage = e => { onAnyEvent(); loadObjectData(); loadInvalidated(); loadDecisionOverrides(); };
+      sse.addEventListener("reload_data", e => { onAnyEvent(); loadObjectData(); loadInvalidated(); loadDecisionOverrides(); });
+      sse.addEventListener("compute_graph_status", e => { onAnyEvent(); loadComputeGraphStatus(); });
+      sse.addEventListener("ray_status", e => { onAnyEvent(); loadRayStatus(); });
+      sse.addEventListener("heartbeat", onAnyEvent);
+
+      sse.onerror = () => {
+        setSseConnected(false);
+        sse.close();
+        sse = null;
+        clearTimeout(heartbeatTimer);
+        reconnectTimer = setTimeout(connect, 3000);
+      };
+    };
+
+    connect();
 
     return () => {
-      sse.close();
+      destroyed = true;
+      clearTimeout(reconnectTimer);
+      clearTimeout(heartbeatTimer);
+      if (sse) sse.close();
     };
   }, []);
 
@@ -175,6 +211,7 @@ function App() {
             toggleShowQuarantined,
             quarantineCount,
             refreshDecisions,
+            sseConnected,
           }}
         >
           <FolderProvider>

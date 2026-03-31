@@ -23,9 +23,9 @@ def stream():
         messages = announcer.listen()
         while True:
             try:
-                event, data = messages.get(timeout=5)  # Avoid indefinite blocking
+                event, data = messages.get(timeout=15)
             except Empty:
-                # Send a heartbeat every 5 seconds if no new messages arrive
+                # Send a heartbeat if no new messages arrive
                 event, data = "heartbeat", f"keep-alive"
             if data == None:
                 data = time.ctime(time.time())

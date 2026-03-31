@@ -15,7 +15,7 @@ import { ExpandMore, ExpandLess, Circle } from "@mui/icons-material";
 import AstroFlowContext from './AstroFlowContext.jsx';
 
 const RayStatus = () => {
-  const { rayStatus } = useContext(AstroFlowContext);
+  const { rayStatus, sseConnected } = useContext(AstroFlowContext);
 
   const [anchorEl, setAnchorEl] = useState(null);
   const [isHeadNode, setIsHeadNode] = useState(false);
@@ -38,6 +38,17 @@ const RayStatus = () => {
       body: JSON.stringify({ enabled: newHeadState.toString() })
     })
   };
+
+  if (!sseConnected) {
+    return (
+      <Box sx={{ display: "flex", alignItems: "center", padding: "8px" }}>
+        <Circle sx={{ fontSize: 10, color: "error.light", mr: 1 }} />
+        <Typography variant="body2" color="error.light">
+          Disconnected
+        </Typography>
+      </Box>
+    );
+  }
 
   if (Object.keys(rayStatus).length === 0) {
     return <Typography variant="body2" color="textSecondary" align="center" sx={{ padding: '1em' }}>
