@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Box from '@mui/material/Box';
 import Starmap from "./Starmap.jsx";
 import TargetPanel from "./TargetPanel.jsx";
@@ -37,6 +37,9 @@ function App() {
   const [computeGraphStatus, setComputeGraphStatus] = useState({});
   const [rayStatus, setRayStatus] = useState({});
   const [invalidated, setInvalidated] = useState([]);
+  const [showQuarantined, setShowQuarantined] = useState(
+    () => localStorage.getItem('astroflow_showQuarantined') !== 'false'
+  );
 
 
   useEffect(() => {
@@ -107,13 +110,53 @@ function App() {
   // This could maybe be implemented with "complex but normalized" routes like
   // /mosaic/:mosaic_id/target/:target_id/stack/:stack_id.
 
+  const toggleShowQuarantined = useCallback(() => {
+    setShowQuarantined(prev => {
+      const next = !prev;
+      localStorage.setItem('astroflow_showQuarantined', String(next));
+      return next;
+    });
+  }, []);
+
+  const filterQuarantined = useCallback((items) => {
+    if (showQuarantined) return items;
+    const result = {};
+    for (const [k, v] of Object.entries(items || {})) {
+      if (!v?.is_quarantined) result[k] = v;
+    }
+    return result;
+  }, [showQuarantined]);
+
+  const visibleStacks = useMemo(() => filterQuarantined(stacks), [stacks, filterQuarantined]);
+  const visibleTargets = useMemo(() => filterQuarantined(targets), [targets, filterQuarantined]);
+  const visibleMosaics = useMemo(() => filterQuarantined(mosaics), [mosaics, filterQuarantined]);
+
+  const quarantineCount = useMemo(() => {
+    const count = (items) => Object.values(items || {}).filter(v => v?.is_quarantined).length;
+    return count(stacks) + count(targets) + count(mosaics);
+  }, [stacks, targets, mosaics]);
+
   // TODO: It's a little awkward to have to put <Search /> in each of these
   // routes.
   return (
     <ThemeProvider theme={darkTheme}>
       <StyledEngineProvider injectFirst>
         <AstroFlowContext.Provider
-          value={{ constellationPolylines, stacks, calibrationStacks, targets, mosaics, shoppingCart, computeGraph, computeGraphStatus, rayStatus, invalidated }}
+          value={{
+            constellationPolylines,
+            stacks: visibleStacks,
+            calibrationStacks,
+            targets: visibleTargets,
+            mosaics: visibleMosaics,
+            shoppingCart,
+            computeGraph,
+            computeGraphStatus,
+            rayStatus,
+            invalidated,
+            showQuarantined,
+            toggleShowQuarantined,
+            quarantineCount,
+          }}
         >
           <FolderProvider>
             <CssBaseline />

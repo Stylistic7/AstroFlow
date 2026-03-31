@@ -13,6 +13,9 @@ import Menu from '@mui/material/Menu';
 import SearchIcon from '@mui/icons-material/Search';
 import AccountCircle from '@mui/icons-material/AccountCircle';
 import MoreIcon from '@mui/icons-material/MoreVert';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
+import Badge from '@mui/material/Badge';
 import LeftDrawer from "./LeftDrawer.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
 import ProgressComponent from './ProgressComponent.jsx';
@@ -74,7 +77,7 @@ export function VerticalDivider({ height = 24, color = 'grey.400', marginX = 2 }
 }
 
 export default function PrimarySearchAppBar() {
-  const { stacks, targets, mosaics, calibrationStacks } = useContext(AstroFlowContext);
+  const { stacks, targets, mosaics, calibrationStacks, showQuarantined, toggleShowQuarantined, quarantineCount } = useContext(AstroFlowContext);
   const navigate = useNavigate();
 
   const index = useMemo(() => {
@@ -245,6 +248,18 @@ export default function PrimarySearchAppBar() {
               }}
             />
           </Search>
+          {quarantineCount > 0 && (
+            <Tooltip title={showQuarantined
+              ? `Showing ${quarantineCount} quarantined item${quarantineCount > 1 ? 's' : ''} (click to hide)`
+              : `${quarantineCount} quarantined item${quarantineCount > 1 ? 's' : ''} hidden (click to show)`
+            }>
+              <IconButton color="inherit" onClick={toggleShowQuarantined} size="small">
+                <Badge badgeContent={quarantineCount} color="warning" max={99}>
+                  {showQuarantined ? <VisibilityIcon /> : <VisibilityOffIcon />}
+                </Badge>
+              </IconButton>
+            </Tooltip>
+          )}
           <Box sx={{ flexGrow: 1 }} />
           <ProgressComponent />
           <VerticalDivider />
