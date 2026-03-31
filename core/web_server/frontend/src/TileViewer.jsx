@@ -271,8 +271,14 @@ const ImperativeViewport = ({ objectType, imageHash, filter, port, imageWidth, i
     viewport.on('zoomed-end', updateAll);
 
     return () => {
-      viewport.destroy();
-      Object.values(spritesRef.current).forEach((sprite) => sprite.destroy());
+      viewport.off('moved', updateAll);
+      viewport.off('zoomed', updateAll);
+      viewport.off('moved-end', updateAll);
+      viewport.off('zoomed-end', updateAll);
+      if (viewport.parent) {
+        viewport.parent.removeChild(viewport);
+      }
+      try { viewport.destroy({ children: true }); } catch {}
       spritesRef.current = {};
     };
   }, [app, mosaics, imageHash, filter, imageWidth, imageHeight, maxZoom, worldWidth, worldHeight, showPolygons]);
