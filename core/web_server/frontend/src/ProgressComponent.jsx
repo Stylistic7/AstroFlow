@@ -20,18 +20,17 @@ const ProgressComponent = () => {
   // Sort processes by estimated time in descending order (most significant first)
   processEntries = processEntries.sort((a, b) => b[1].estimated_time - a[1].estimated_time);
 
-  // Calculate the total remaining time
+  // Calculate overall progress
+  const totalItems = processEntries.reduce((acc, [key, value]) => acc + value.total_number, 0);
+  const remainingItems = processEntries.reduce((acc, [key, value]) => acc + value.remaining_number, 0);
   const totalRemainingTime = processEntries.reduce((acc, [key, value]) => acc + value.estimated_time, 0);
 
-  if (totalRemainingTime === 0) {
+  if (remainingItems === 0) {
     return <Typography variant="body2" color="textSecondary" align="center" sx={{ padding: '1em' }}>
       Idle
     </Typography>
   }
 
-  // Calculate overall progress percentage
-  const totalItems = processEntries.reduce((acc, [key, value]) => acc + value.total_number, 0);
-  const remainingItems = processEntries.reduce((acc, [key, value]) => acc + value.remaining_number, 0);
   const overallProgress = ((totalItems - remainingItems) / totalItems) * 100;
 
   // Handle menu open/close
@@ -48,7 +47,10 @@ const ProgressComponent = () => {
       {/* Overall Progress Bar */}
       <Box onClick={handleClick} sx={{ flexGrow: 1, cursor: 'pointer' }}>
         <Typography variant="body2" color="textSecondary" align="center">
-          Running: {formatTime(totalRemainingTime)} remaining
+          {totalRemainingTime > 0
+            ? `Running: ${formatTime(totalRemainingTime)} remaining`
+            : `Running: ${totalItems - remainingItems}/${totalItems} tasks`
+          }
         </Typography>
         <LinearProgress variant="determinate" value={overallProgress} />
       </Box>
