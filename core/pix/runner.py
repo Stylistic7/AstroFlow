@@ -39,7 +39,22 @@ def _find_running_instances() -> dict[int, int]:
 
 
 def _start_instance(slot: int) -> None:
-    """Start a PixInsight instance at the given slot, waiting until ready."""
+    """Ensure a PixInsight instance is running at the given slot.
+
+    If an instance is already running (and its PID is alive), this is a no-op.
+    Otherwise, waits for any stale registration to clear, then launches a new
+    instance and waits until it registers.
+    """
+    existing = _find_running_instances()
+    if slot in existing:
+        pid = existing[slot]
+        if psutil.pid_exists(pid):
+            return  # Already running
+        # Stale registration — wait for it to clear
+        print(f"### pix: Slot {slot} has stale PID {pid}, waiting for cleanup")
+        while slot in _find_running_instances():
+            time.sleep(2)
+
     subprocess.Popen(
         [
             _PIXINSIGHT_EXECUTABLE,
@@ -94,16 +109,39 @@ def _should_restart(slot: int) -> bool:
 
 
 def _kill_instance(slot: int) -> None:
-    """Kill a PixInsight instance by slot number."""
+    """Shut down a PixInsight instance by slot number.
+
+    First tries a graceful exit via PixInsight's own quit command, giving
+    it time to clean up its slot registration. Falls back to SIGKILL if
+    the graceful shutdown doesn't complete within 30 seconds.
+    """
     pid_map = _find_running_instances()
     pid = pid_map.get(slot)
-    if pid:
+    if not pid:
+        return
+
+    print(f"### pix: Requesting graceful exit for slot {slot} (PID {pid})")
+    exit_script = _LOCK_DIR / f"pix-exit-{slot}.scp"
+    exit_script.write_text("exit\n")
+    subprocess.run(
+        [_PIXINSIGHT_EXECUTABLE, f"--execute={slot}:{exit_script}"],
+        timeout=10,
+    )
+
+    # Wait for the process to exit
+    try:
+        proc = psutil.Process(pid)
+        proc.wait(timeout=30)
+        print(f"### pix: Slot {slot} exited gracefully")
+    except psutil.TimeoutExpired:
+        print(f"### pix: Slot {slot} did not exit gracefully, sending SIGKILL")
         try:
-            print(f"### pix: Killing PixInsight slot {slot} (PID {pid})")
             os.kill(pid, 9)
-            psutil.Process(pid).wait()
-        except (psutil.NoSuchProcess, OSError):
+            psutil.Process(pid).wait(timeout=10)
+        except (psutil.NoSuchProcess, OSError, psutil.TimeoutExpired):
             pass
+    except psutil.NoSuchProcess:
+        pass  # Already gone
 
 
 @contextmanager

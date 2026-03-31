@@ -7,8 +7,10 @@ PixInsight installation.
 Marked as slow — skipped in normal test runs. Run explicitly with:
     pytest pix/test_pixinsight.py -v
 """
+import os
 import numpy as np
 from pathlib import Path
+from unittest import mock
 
 import pytest
 import astropy.io.fits as pyfits
@@ -109,3 +111,26 @@ class TestConsoleLogCapture:
         # Log should be a non-empty string, not binary
         assert isinstance(result.recipe.log, str)
         assert len(result.recipe.log) > 10
+
+
+@pytest.mark.slow
+class TestInstanceRestart:
+
+    def test_restart_between_tasks(self, tmp_path):
+        """Run two separate recipes with restart_interval=1.
+
+        After the first task, PixInsight should be killed and restarted.
+        The second task must still succeed — proving that the graceful
+        shutdown and restart cycle works.
+        """
+        with mock.patch("pix.runner._RESTART_INTERVAL", 1):
+            for i in range(2):
+                fits = _make_test_fits(tmp_path / f"input_{i}.fits")
+                image = Image.open(fits)
+                result = BlurXTerminator(image)
+                output = tmp_path / f"output_{i}.xisf"
+                result.save_to(output)
+
+                assert output.exists(), f"Task {i} did not produce output"
+                assert output.stat().st_size > 0
+                assert result.recipe.log is not None
