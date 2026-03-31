@@ -10,7 +10,7 @@ from frozendict import frozendict
 from decorators.decorators import node
 from metadata.classes import ImageMetadata, FrameHash
 from stacks.types import StackHash, StackIdDependency
-from stacks.run import Run, RunsDict, run_from_frames
+from stacks.run import BaseRun, Run, RunsDict, run_from_frames, calibration_run_from_frames
 from stacks.composite_stack import Stack, CalibrationStack, CalibrationStacksDict
 import clustering
 from cache.context_ref import ContextRef
@@ -52,7 +52,7 @@ def identify_calibration_stacks(metadata_ref: ContextRef[MetadataDict], max_run_
     frames_for_filter = group_by_header(metadata.values(), "FILTER", "")
 
     def new_stack(frames: list[FrameHash]) -> CalibrationStack:
-        run = ray.get(run_from_frames.remote(frames, metadata))
+        run = ray.get(calibration_run_from_frames.remote(frames, metadata))
         assert run.image_type in ["bias", "dark", "flat"]
         return CalibrationStack.from_run(run)
 
@@ -133,7 +133,7 @@ def associate_with_stacks(
 ) -> RunsDict:
     bias_by_cam, dark_by_cam, flat_by_cam_filter = _build_cal_index(cal_stacks)
 
-    def choose_bias(sub: Run) -> StackHash | None:
+    def choose_bias(sub: BaseRun) -> StackHash | None:
         cand = bias_by_cam.get(sub.camera)
         if not cand:
             return None
@@ -153,7 +153,7 @@ def associate_with_stacks(
         )[2]
         return best_sid
 
-    def choose_dark(sub: Run) -> StackHash | None:
+    def choose_dark(sub: BaseRun) -> StackHash | None:
         cand = dark_by_cam.get(sub.camera)
         if not cand:
             return None
@@ -169,7 +169,7 @@ def associate_with_stacks(
             return None
         return min(filtered, key=lambda x: abs(x[0] - sub_mid))[3]
 
-    def choose_flat(sub: Run) -> StackHash | None:
+    def choose_flat(sub: BaseRun) -> StackHash | None:
         cand = flat_by_cam_filter.get((sub.camera, sub.filter))
         if not cand:
             return None

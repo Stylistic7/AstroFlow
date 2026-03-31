@@ -8,7 +8,7 @@ from frozendict import frozendict
 
 import units
 from hashing import hash_list, hash_list_int
-from stacks.run import Run, RunsDict, run_from_frames
+from stacks.run import BaseRun, Run, RunsDict, run_from_frames
 from attributes import (
     AstrometricAttributes,
     AstroFlowStateAttributes,
@@ -152,7 +152,7 @@ class CalibrationStack(BaseStack):
     """Calibration stack (bias/dark/flat) — no astrometric attributes."""
 
     @classmethod
-    def from_run(cls, run: Run) -> "CalibrationStack":
+    def from_run(cls, run: BaseRun) -> "CalibrationStack":
         return cls(
             content_hash=run.content_hash,
             image_type=run.image_type,

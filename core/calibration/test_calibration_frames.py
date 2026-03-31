@@ -14,7 +14,7 @@ from stacks.types import StackHash, StackIdDependency
 from context import context
 from file_io.find_image_files import find_image_files
 from dependency_graph import run_graph, print_graph
-from customization.settings import Settings, StackSettings
+from customization.settings import Settings, StackSettings, ProcessingConfig
 from frozendict import frozendict
 
 
@@ -467,9 +467,12 @@ def test_stack_calibration_frames(test_context) -> None:
     cal_stacks = context.calibration_stacks
     assert_cal_deps(cal_stacks)
 
-    dev_settings = context.settings.development_settings
-    min_frames = context.settings.clustering_settings.min_frames_in_stack
-    graph = ray.get(build_calibration_stack_subgraph.remote(light_stacks[0], cal_stacks, dev_settings, min_frames))
+    config = ProcessingConfig(
+        calibration_stacks=cal_stacks,
+        development_settings=context.settings.development_settings,
+        min_frames_in_stack=context.settings.clustering_settings.min_frames_in_stack,
+    )
+    graph = ray.get(build_calibration_stack_subgraph.remote(light_stacks[0], config))
     print_graph(graph)
 
 
@@ -587,40 +590,22 @@ def test_flat_frame_selection(test_context) -> None:
     stack = _resolve_light_stack(next(iter(light_stacks)))
     assert len(stack.contents) == 1
     substack = next(iter(stack.contents.values()))
-    assert substack.dependencies == {"flat": StackIdDependency(stack_id=second_flat_stack)}
+    # Automatic flat selection is disabled — no flat by default.
+    assert "flat" not in substack.dependencies
 
-    # Configure the light run to use the other flat run, which has prefix
-    # `flat_run_0`.
-    from dataclasses import replace
-    context.settings = replace(
-        context.settings,
-        stack_settings=frozendict({
-            stack.stable_hash: StackSettings(
-                dependencies=frozendict({"flat": StackIdDependency(stack_id=first_flat_stack)})
-            )
-        }),
-    )
+    # Configure the light run to use flat_run_0 via decision override,
+    # and verify resolve_calibration applies it.
+    from customization.decisions import DecisionType, ObjectType, DecisionOverride
+    from customization.resolve import resolve_calibration
+    run_hash = next(iter(stack.contents.keys()))
+    override_key = (DecisionType.CALIBRATION_FLAT, ObjectType.STACK, stack.stable_hash, run_hash)
+    overrides = frozendict({
+        override_key: DecisionOverride(choice=first_flat_stack),
+    })
 
-    # Run the graph again, with the settings applied.
-    run_graph(build_compute_graph())
-
-    stacks = context.stacks
-    assert len(stacks) == 1
-    assert len(context.calibration_stacks) == 2
-    assert_cal_deps(context.calibration_stacks)
-
-    light_stacks = [
-        ref.get()
-        for ref in stacks.values()
-        if ref.get().image_type == "light" and isinstance(ref.get(), Stack)
-    ]
-    assert len(light_stacks) == 1
-    stack = _resolve_light_stack(next(iter(light_stacks)))
-    assert len(stack.contents) == 1
-    substack = next(iter(stack.contents.values()))
-    # TODO: flat selection override should use decision_overrides, not StackSettings.
-    # For now, verify that calibration resolves (default flat selected).
-    assert "flat" in substack.dependencies
+    resolved = resolve_calibration(stack, context.calibration_stacks, overrides)
+    substack = next(iter(resolved.contents.values()))
+    assert substack.dependencies == {"flat": StackIdDependency(stack_id=first_flat_stack)}
 
 
 @pytest.mark.heavy

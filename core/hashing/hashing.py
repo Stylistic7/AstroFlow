@@ -63,8 +63,17 @@ def make_hashable(value: Any) -> Any:
         return tuple(_maybe_use_content_hash(v) for v in value)
     elif isinstance(value, frozenset):
         return tuple(sorted(value))
+    elif _is_dataclass_instance(value):
+        return tuple(
+            (f.name, _maybe_use_content_hash(getattr(value, f.name)))
+            for f in fields(value)
+        )
     else:
         return value
+
+
+def _is_dataclass_instance(obj: Any) -> bool:
+    return hasattr(obj, "__dataclass_fields__") and not isinstance(obj, type)
 
 
 @beartype

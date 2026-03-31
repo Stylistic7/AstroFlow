@@ -151,6 +151,7 @@ const RunsTab = ({ stack }) => {
                   <MetadataItem label="Integration" value={`${(run.integration / 60).toFixed(0)}m`} />
                   <MetadataItem label="Temp" value={`${run.mean_temperature.toFixed(1)}°C`} />
                   <MetadataItem label="Filter" value={run.filter} />
+                  {run.rotation_angle != null && <MetadataItem label="Rotation" value={`${(run.rotation_angle * 180 / Math.PI).toFixed(1)}°`} />}
                 </Box>
               </Box>
             </Box>
