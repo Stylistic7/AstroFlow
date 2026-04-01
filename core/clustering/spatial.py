@@ -65,61 +65,58 @@ def _min_fov_deg(metadata: MetadataDict, frame_hash: str) -> float:
 
 
 @node
-def cluster_by_image_scale(
+def cluster_by_image_center(
     metadata_ref: ContextRef[MetadataDict],
+    overlap_fraction: float,
+    min_component_members: int,
 ) -> list[tuple[str, ...]]:
-    """Group light frames by image scale (arcsec/pixel), as a proxy for focal length."""
+    """Cluster light frames by sky position, adaptive to each focal length.
+
+    First groups frames by image scale (proxy for focal length), then
+    spatially clusters within each scale group using a cosine similarity
+    threshold derived from the group's FOV and the requested overlap fraction.
+    """
     metadata = metadata_ref.get()
-    items = [
-        (h, i.plate_solution.image_scale)
+
+    plate_solved = {
+        h: i
         for h, i in metadata.items()
         if image_types.is_light_frame(i.header)
         and not image_types.is_master(i.header)
         and type(i.plate_solution) is plate_solving.PlateSolution
-    ]
-    groups = cluster_continuous(items, epsilon=0.2)
-    result = [tuple(h for h, _ in g) for g in groups]
-    log.info("Clustered by image scale", num_groups=len(result), sizes=[len(g) for g in result])
-    return result
+    }
 
-
-@node
-def cluster_by_image_center(
-    metadata_ref: ContextRef[MetadataDict],
-    frames: tuple[str, ...],
-    overlap_fraction: float,
-    min_component_members: int,
-) -> list[tuple[str, ...]]:
-    metadata = metadata_ref.get()
+    # Split by image scale first so each spatial group has uniform FOV.
+    scale_items = [(h, i.plate_solution.image_scale) for h, i in plate_solved.items()]
+    scale_groups = cluster_continuous(scale_items, epsilon=0.2)
+    log.info("Scale groups", num_groups=len(scale_groups), sizes=[len(g) for g in scale_groups])
 
     def get_centroid(center: Sequence[float]) -> np.ndarray:
         return np.asarray(footprints.radec_to_vector(*center))
 
-    values = {
-        h: get_centroid(metadata[h].plate_solution.center)
-        for h in frames
-    }
+    all_spatial_groups: list[tuple[str, ...]] = []
+    for scale_group in scale_groups:
+        frame_hashes = [h for h, _ in scale_group]
+        values = {h: get_centroid(plate_solved[h].plate_solution.center) for h in frame_hashes}
 
-    # Compute adaptive threshold from the FOV of this scale group.
-    # All frames have similar image scale, so use the first one.
-    min_fov = _min_fov_deg(metadata, frames[0])
-    max_offset_deg = (1.0 - overlap_fraction) * min_fov / 2.0
-    max_offset_deg = min(max_offset_deg, 2.0)  # safety ceiling
-    cosine_similarity_threshold = math.cos(math.radians(max_offset_deg))
+        min_fov = _min_fov_deg(metadata, frame_hashes[0])
+        max_offset_deg = (1.0 - overlap_fraction) * min_fov / 2.0
+        max_offset_deg = min(max_offset_deg, 2.0)
+        threshold = math.cos(math.radians(max_offset_deg))
 
-    log.info(
-        "Spatial clustering",
-        num_frames=len(frames),
-        min_fov_deg=round(min_fov, 3),
-        max_offset_deg=round(max_offset_deg, 4),
-        threshold=round(cosine_similarity_threshold, 8),
-    )
+        log.info(
+            "Spatial clustering for scale group",
+            num_frames=len(frame_hashes),
+            min_fov_deg=round(min_fov, 3),
+            max_offset_deg=round(max_offset_deg, 4),
+            threshold=round(threshold, 8),
+        )
 
-    def comparison_fn(a: float, b: float) -> bool:
-        return bool(np.dot(a, b) > cosine_similarity_threshold)
+        def comparison_fn(a, b, t=threshold):
+            return bool(np.dot(a, b) > t)
 
-    groups = find_groups(values, comparison_fn, min_component_members)
-    groups_as_tuples = [tuple(sorted(g)) for g in groups]
+        groups = find_groups(values, comparison_fn, min_component_members)
+        all_spatial_groups.extend(tuple(sorted(g)) for g in groups)
 
-    log.info("Returning spatial groups", num_groups=len(groups_as_tuples))
-    return groups_as_tuples
+    log.info("Total spatial groups", num_groups=len(all_spatial_groups))
+    return all_spatial_groups

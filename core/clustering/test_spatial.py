@@ -2,7 +2,7 @@ import ray
 import os
 from datetime import datetime, timedelta
 
-from clustering import cluster_by_image_scale, cluster_by_image_center
+from clustering import cluster_by_image_center
 from context import context
 from testing.test_frames import make_synthetic_frames
 from dependency_graph import Graph, ResultDict, chain, run_graph
@@ -19,16 +19,11 @@ def compute_hash_for_filename() -> dict[str, str]:
 @ray.remote
 def _run_cluster(metadata_ref):
     cs = context.settings.clustering_settings
-    scale_groups = ray.get(cluster_by_image_scale.remote(metadata_ref))
-    all_spatial_groups = []
-    for scale_group in scale_groups:
-        spatial_groups = ray.get(
-            cluster_by_image_center.remote(
-                metadata_ref, scale_group, cs.overlap_fraction, cs.min_component_members,
-            )
+    return ray.get(
+        cluster_by_image_center.remote(
+            metadata_ref, cs.overlap_fraction, cs.min_component_members,
         )
-        all_spatial_groups.extend(spatial_groups)
-    return all_spatial_groups
+    )
 
 
 def compute_graph_fragment() -> tuple[Graph, ResultDict]:
