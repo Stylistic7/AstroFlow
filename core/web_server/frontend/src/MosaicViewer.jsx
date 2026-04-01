@@ -3,53 +3,27 @@ import React, { useContext, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import {
-	Accordion,
-	AccordionDetails,
-	AccordionSummary,
 	Box,
 	Divider,
+	IconButton,
 	Paper,
-	Snackbar,
 	Tab,
 	Tabs,
+	Tooltip,
 	Typography,
 } from "@mui/material";
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 
 import FullscreenIcon from "@mui/icons-material/Fullscreen";
-import { CopyToClipboard } from "react-copy-to-clipboard";
+import ShareIcon from "@mui/icons-material/Share";
 
 import AstroFlowContext from "./AstroFlowContext.jsx";
 import { AstroFlowImage } from "./AstroFlowImage.jsx";
 import ColorChannelSelector from "./ColorChannelSelector.jsx";
+import TelescopiusDialog from "./TelescopiusDialog.jsx";
 
 import ToggleIconButton from "./ToggleIconButton";
 import WorkflowGraph from "./WorkflowGraph.jsx";
 import darkTheme from "./theme.js";
-import { ra_to_hms, dec_to_dms } from "./units.js";
-
-// NOTE: This is the same helper logic you had previously, consolidated here.
-const telescopius_pane_line = (stacks, targets, mosaic, target_id, pane) => {
-	// TODO: Fix tile indices. Placeholder kept to preserve prior behavior.
-	let tile_x = 1;
-	let tile_y = 1;
-
-	let target = targets[target_id];
-	let stack_id = target.stack_ids[0];
-	let stack = stacks[stack_id];
-
-	let [ra, dec] = stack.center;
-	let rotation_angle = (stack.rotation_angle * 180.0) / Math.PI;
-	let pane_width = (stack.image_scale * stack.width_pixels) / 60.0;
-	let pane_height = (stack.image_scale * stack.height_pixels) / 60.0;
-
-	// TODO: Overlap percent was previously hardcoded.
-	return `Pane ${pane + 1}, ${ra_to_hms(ra)}, ${dec_to_dms(
-		dec
-	)}, ${rotation_angle.toFixed(1)}, ${pane_width.toFixed(
-		2
-	)}, ${pane_height.toFixed(2)}, 20%, ${tile_x + 1}, ${tile_y + 1}`;
-};
 
 export default function MosaicViewer() {
     const { mosaic_id } = useParams();
@@ -82,27 +56,7 @@ export default function MosaicViewer() {
 		);
 	}, [mosaic_id, availableFilters]);
 
-	const telescopius = useMemo(() => {
-		if (!mosaic) return null;
-
-		const header =
-			"Pane, RA, DEC, Position Angle (East), Pane width (arcmins), Pane height (arcmins), Overlap, Row, Column";
-
-		const sorted_target_ids = [...mosaic.target_ids].sort((a, b) => {
-			const ra_a = stacks[targets[a].stack_ids[0]].center[0];
-			const ra_b = stacks[targets[b].stack_ids[0]].center[0];
-			return ra_a - ra_b; // increasing RA
-		});
-
-		const lines = sorted_target_ids.map((target_id, pane) =>
-			telescopius_pane_line(stacks, targets, mosaic, target_id, pane)
-		);
-
-		const text = [header, ...lines].join("\n");
-		return { header, lines, text };
-	}, [mosaic, stacks, targets]);
-
-	const [copiedOpen, setCopiedOpen] = useState(false);
+	const [telescopiusOpen, setTelescopiusOpen] = useState(false);
 
 	return (
 		<Paper
@@ -117,49 +71,15 @@ export default function MosaicViewer() {
 				minHeight: 0,
 			}}
 		>
-			{/* Telescopius accordion moved above tabs */}
-			<Accordion>
-				<AccordionSummary
-					expandIcon={<ExpandMoreIcon />}
-					aria-controls="telescopius-content"
-					id="telescopius-header"
-				>
-					Telescopius
-				</AccordionSummary>
-				<AccordionDetails>
-					{telescopius ? (
-						<>
-							<p>
-								{telescopius.header}
-								<br />
-								{telescopius.lines.map((line, idx) => (
-									<React.Fragment key={idx}>
-										<span>{line}</span>
-										<br />
-									</React.Fragment>
-								))}
-							</p>
-							<CopyToClipboard
-								text={telescopius.text}
-								onCopy={() => setCopiedOpen(true)}
-							>
-								<button>Copy to clipboard</button>
-							</CopyToClipboard>
-						</>
-					) : null}
-				</AccordionDetails>
-			</Accordion>
-
-			<Snackbar
-				anchorOrigin={{ vertical: "top", horizontal: "center" }}
-				open={copiedOpen}
-				autoHideDuration={5000}
-				onClose={() => setCopiedOpen(false)}
-				message="Telescopius text copied"
-				key="telescopius-snackbar"
+			<TelescopiusDialog
+				open={telescopiusOpen}
+				onClose={() => setTelescopiusOpen(false)}
+				stacks={stacks}
+				targets={targets}
+				mosaic={mosaic}
 			/>
 
-			{/* Control bar (ColorChannelSelector + view toggles) moved above tabs */}
+			{/* Control bar */}
 			<Box
 				sx={{
 					display: "flex",
@@ -186,6 +106,16 @@ export default function MosaicViewer() {
 					checked={showOutline}
 					handleChange={() => setShowOutline((v) => !v)}
 				/>
+
+				<Tooltip title="Export to Telescopius">
+					<IconButton
+						size="small"
+						onClick={() => setTelescopiusOpen(true)}
+						sx={{ color: 'text.secondary' }}
+					>
+						<ShareIcon fontSize="small" />
+					</IconButton>
+				</Tooltip>
 			</Box>
 
 			{/* Tabs */}
