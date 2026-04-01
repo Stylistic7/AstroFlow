@@ -11,7 +11,7 @@ from customization.decisions import DecisionKey, DecisionOverride
 @dataclass(frozen=True)
 class ClusteringSettings:
     """Parameters controlling spatial grouping and stack identification."""
-    cosine_similarity_threshold: float = 0.9999
+    overlap_fraction: float = 0.8
     min_component_members: int = 3
     angular_tolerance: Radians = field(default_factory=lambda: Radians(math.radians(10.0)))
     max_run_gap: datetime.timedelta = field(default_factory=lambda: datetime.timedelta(hours=8))

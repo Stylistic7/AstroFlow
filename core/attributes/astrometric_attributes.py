@@ -2,6 +2,7 @@ import warnings
 from dataclasses import dataclass
 from beartype import beartype
 import numpy as np
+import structlog
 import astropy  # type: ignore
 from astropy.coordinates import SkyCoord
 import astropy.units as u
@@ -20,6 +21,8 @@ from metadata.classes import MetadataDict, FrameHash
 import geometry.footprints as footprints
 from catalogs import position_string
 from units import Degrees, Radians, ArcsecondsPerPixel
+
+log = structlog.get_logger()
 
 
 @beartype
@@ -78,10 +81,21 @@ def _spherical_polygon_for_wcs(wcs: WCS) -> SingleSphericalPolygon:
 def _intersect_polygons(
     polygons: list[SphericalPolygon],
 ) -> SingleSphericalPolygon:
+    for i, p in enumerate(polygons):
+        log.info(
+            "Intersecting polygon",
+            index=i,
+            area=p.area(),
+            num_sub_polygons=len(list(p.points)),
+        )
     footprint = SphericalPolygon.multi_intersection(polygons)
     points = list(footprint.points)
     if len(points) != 1:
-        raise ValueError("Object has invalid polygon footprint")
+        raise ValueError(
+            f"Polygon intersection produced {len(points)} sub-polygons "
+            f"(expected 1) from {len(polygons)} input polygons. "
+            f"Input areas: {[p.area() for p in polygons]}"
+        )
     footprint = SingleSphericalPolygon(points[0])
     if not footprint.is_clockwise():
         footprint = SingleSphericalPolygon(footprint.points[::-1])

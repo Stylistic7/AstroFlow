@@ -2,7 +2,7 @@ import ray
 import os
 from datetime import datetime, timedelta
 
-from clustering import cluster_by_image_center
+from clustering import cluster_by_image_scale, cluster_by_image_center
 from context import context
 from testing.test_frames import make_synthetic_frames
 from dependency_graph import Graph, ResultDict, chain, run_graph
@@ -19,9 +19,16 @@ def compute_hash_for_filename() -> dict[str, str]:
 @ray.remote
 def _run_cluster(metadata_ref):
     cs = context.settings.clustering_settings
-    return ray.get(
-        cluster_by_image_center.remote(metadata_ref, cs.cosine_similarity_threshold, cs.min_component_members)
-    )
+    scale_groups = ray.get(cluster_by_image_scale.remote(metadata_ref))
+    all_spatial_groups = []
+    for scale_group in scale_groups:
+        spatial_groups = ray.get(
+            cluster_by_image_center.remote(
+                metadata_ref, scale_group, cs.overlap_fraction, cs.min_component_members,
+            )
+        )
+        all_spatial_groups.extend(spatial_groups)
+    return all_spatial_groups
 
 
 def compute_graph_fragment() -> tuple[Graph, ResultDict]:
@@ -214,13 +221,16 @@ def test_two_noisy_groups(test_context) -> None:
     input_dir = context.input_dirs[0]
 
     start_datetime = datetime(2023, 12, 6, 16, 29, 43)
+    # ~50px dither at 2.21 arcsec/pixel = 0.031°, realistic for autoguided imaging.
+    # With 720px height the min FOV is ~0.44°, giving max_offset ~0.044° at 80% overlap.
     make_synthetic_frames(
         start_datetime=start_datetime,
         ra=307,
         dec=40,
         prefix="foo",
         number=3,
-        dither=0.1,
+        dither=0.031,
+        image_scale=2.21,
         dest_dir=input_dir,
     )
     make_synthetic_frames(
@@ -229,7 +239,8 @@ def test_two_noisy_groups(test_context) -> None:
         dec=45,
         prefix="bar",
         number=3,
-        dither=0.1,
+        dither=0.031,
+        image_scale=2.21,
         dest_dir=input_dir,
     )
 

@@ -56,7 +56,7 @@ def _setup(test_context):
     context.output_dir = test_context.output_dir_obj.name
     context.settings = Settings(
         clustering_settings=ClusteringSettings(
-            cosine_similarity_threshold=0.99999, min_frames_in_stack=3,
+            min_frames_in_stack=3,
         ),
         development_settings=DevelopmentSettings(
             mock_pixinsight=True, dangerously_allow_missing_files=True, test_mode=True,

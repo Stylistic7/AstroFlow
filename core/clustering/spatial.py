@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import ray
 from typing import Sequence, Callable, Any, TypeVar
@@ -5,6 +6,7 @@ from typing import Sequence, Callable, Any, TypeVar
 import metadata.image_types as image_types
 from geometry import footprints
 import plate_solving
+from clustering.continuous import cluster_continuous
 from decorators import node
 from cache.context_ref import ContextRef
 from metadata.classes import MetadataDict
@@ -56,20 +58,62 @@ def find_groups(
     return groups
 
 
+def _min_fov_deg(metadata: MetadataDict, frame_hash: str) -> float:
+    """Minimum FOV dimension in degrees for a plate-solved frame."""
+    m = metadata[frame_hash]
+    return m.plate_solution.image_scale * min(m.width_pixels, m.height_pixels) / 3600.0
+
+
 @node
-def cluster_by_image_center(metadata_ref: ContextRef[MetadataDict], cosine_similarity_threshold: float, min_component_members: int) -> list[tuple[str, ...]]:
+def cluster_by_image_scale(
+    metadata_ref: ContextRef[MetadataDict],
+) -> list[tuple[str, ...]]:
+    """Group light frames by image scale (arcsec/pixel), as a proxy for focal length."""
+    metadata = metadata_ref.get()
+    items = [
+        (h, i.plate_solution.image_scale)
+        for h, i in metadata.items()
+        if image_types.is_light_frame(i.header)
+        and not image_types.is_master(i.header)
+        and type(i.plate_solution) is plate_solving.PlateSolution
+    ]
+    groups = cluster_continuous(items, epsilon=0.2)
+    result = [tuple(h for h, _ in g) for g in groups]
+    log.info("Clustered by image scale", num_groups=len(result), sizes=[len(g) for g in result])
+    return result
+
+
+@node
+def cluster_by_image_center(
+    metadata_ref: ContextRef[MetadataDict],
+    frames: tuple[str, ...],
+    overlap_fraction: float,
+    min_component_members: int,
+) -> list[tuple[str, ...]]:
     metadata = metadata_ref.get()
 
     def get_centroid(center: Sequence[float]) -> np.ndarray:
         return np.asarray(footprints.radec_to_vector(*center))
 
     values = {
-        h: get_centroid(i.plate_solution.center)
-        for h, i in metadata.items()
-        if image_types.is_light_frame(i.header)
-        and not image_types.is_master(i.header)
-        and type(i.plate_solution) is plate_solving.PlateSolution
+        h: get_centroid(metadata[h].plate_solution.center)
+        for h in frames
     }
+
+    # Compute adaptive threshold from the FOV of this scale group.
+    # All frames have similar image scale, so use the first one.
+    min_fov = _min_fov_deg(metadata, frames[0])
+    max_offset_deg = (1.0 - overlap_fraction) * min_fov / 2.0
+    max_offset_deg = min(max_offset_deg, 2.0)  # safety ceiling
+    cosine_similarity_threshold = math.cos(math.radians(max_offset_deg))
+
+    log.info(
+        "Spatial clustering",
+        num_frames=len(frames),
+        min_fov_deg=round(min_fov, 3),
+        max_offset_deg=round(max_offset_deg, 4),
+        threshold=round(cosine_similarity_threshold, 8),
+    )
 
     def comparison_fn(a: float, b: float) -> bool:
         return bool(np.dot(a, b) > cosine_similarity_threshold)

@@ -7,7 +7,7 @@ from context import context
 from cache.context_ref import ContextRef
 from metadata.classes import MetadataDict
 from metadata.image_metadata import scatter_compute_image_metadata
-from clustering import cluster_by_image_center
+from clustering import cluster_by_image_scale, cluster_by_image_center
 from calibration import (
     identify_calibration_stacks,
     associate_calibration_stacks,
@@ -114,6 +114,38 @@ def combine_dicts(*ancestor_results: dict[Any, Any]) -> dict[Any, Any]:
 
 
 @ray.remote
+def scatter_scale_groups(
+    metadata_ref: ContextRef[MetadataDict], settings: Settings, scale_groups
+) -> Graph:
+    """Fan out cluster_by_image_center per scale group, then scatter spatial groups."""
+    cs = settings.clustering_settings
+    graph = Graph({})
+
+    center_tasks = set()
+    for i, scale_group in enumerate(scale_groups):
+        task = Node(
+            cluster_by_image_center,
+            metadata_ref, scale_group, cs.overlap_fraction, cs.min_component_members,
+            name=f"scale_{i}",
+        )
+        graph[task] = {}
+        center_tasks.add(task)
+
+    gather_task = Node(combine_lists, name="combine_spatial_groups")
+    graph[gather_task] = center_tasks
+
+    scatter_task = (scatter_spatial_groups, metadata_ref, settings)
+    graph[scatter_task] = {gather_task}
+
+    return graph
+
+
+@node
+def combine_lists(*lists: list) -> list:
+    return [item for sublist in lists for item in sublist]
+
+
+@ray.remote
 def scatter_spatial_groups(
     metadata_ref: ContextRef[MetadataDict], settings: Settings, spatial_groups
 ) -> Graph:
@@ -187,22 +219,17 @@ def scatter_spatial_groups(
 def build_regroup_graph(metadata_ref: ContextRef[MetadataDict]) -> Graph:
     settings = context.settings
     cs = settings.clustering_settings
-    cluster_by_image_center_task = (
-        cluster_by_image_center,
-        metadata_ref,
-        cs.cosine_similarity_threshold,
-        cs.min_component_members,
-    )
-    scatter_spatial_groups_task = (
-        scatter_spatial_groups,
+    cluster_by_scale_task = (cluster_by_image_scale, metadata_ref)
+    scatter_scale_groups_task = (
+        scatter_scale_groups,
         metadata_ref,
         settings,
     )
 
     return Graph(
         {
-            cluster_by_image_center_task: {},
-            scatter_spatial_groups_task: {cluster_by_image_center_task},
+            cluster_by_scale_task: {},
+            scatter_scale_groups_task: {cluster_by_scale_task},
         }
     )
 
