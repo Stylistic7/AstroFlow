@@ -160,8 +160,8 @@ def stack_files(
 ) -> WithSidecar[XisfFilePath]:
     # Resolve calibration (lazy, cached via decision framework).
     stack = resolve_calibration(stack, config.calibration_stacks, config.decisions)
-    # Apply exclusion decisions to filter frames before stacking.
-    if config.decisions:
+    # Apply exclusion decisions to filter frames before stacking (light stacks only).
+    if config.decisions and isinstance(stack, Stack):
         filtered = resolve_decisions(stack, ALL_EXCLUSION_TYPES, config.decisions, config.min_frames_in_stack)
         if filtered is None:
             raise ValueError(f"Stack {stack} has no frames after applying decisions")

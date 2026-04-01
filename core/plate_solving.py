@@ -22,6 +22,7 @@ from beartype import beartype
 from file_io.conversion import convert_xisf_to_fits
 from file_io.sidecar import get_section, set_section, sidecar_path_for
 from units import Degrees, Radians, ArcsecondsPerPixel
+from customization.settings import DevelopmentSettings
 
 _PLATESOLUTION_SCHEMA = "astroflow.platesolution.v2"
 
@@ -205,7 +206,7 @@ def _plate_solution_from_obj(obj: dict[str, Any]) -> PlateSolution:
 @beartype
 def solve_field(
     filename: Path | str,
-    development_settings=None,
+    development_settings: DevelopmentSettings = DevelopmentSettings(),
     debug: bool = False,
 ) -> PlateSolution | None:
     filename = Path(filename)
@@ -229,55 +230,43 @@ def solve_field(
             print(f"### plate_solving: ignoring cached solution for {filename}: {e}")
             pass
 
-    if development_settings is not None and development_settings.test_mode:
-        raise RuntimeError(
-            f"solve-field would be invoked for {filename} but test_mode is enabled. "
-            f"Ensure the sidecar file has a valid plate_solution section. "
-            f"Run scripts/plate_solve_testdata.py to fix."
-        )
-
-    trial_arguments = [
-        [
-            "solve-field",
-            "--overwrite",
-            "--no-plots",
-            "--new-fits",
-            "none",
-            "--scale-low",
-            "0.1",
-            "--scale-high",
-            "180",
-            "--scale-units",
-            "degwidth",
-            "--downsample",
-            "2",
-            "--tweak-order",
-            "2",
-            "--crpix-center",
-        ]
+    arguments = [
+        "solve-field",
+        "--overwrite",
+        "--no-plots",
+        "--new-fits",
+        "none",
+        "--scale-low",
+        "0.1",
+        "--scale-high",
+        "180",
+        "--scale-units",
+        "degwidth",
+        "--downsample",
+        "2",
+        "--tweak-order",
+        "2",
+        "--crpix-center",
     ]
 
-    final_result: PlateSolution | None = None
-    for arguments in trial_arguments:
-        result = _solve_field(filename, arguments, debug)
-        if result is not None:
-            final_result = result
-            break
+    if development_settings.test_mode:
+        arguments += ["--cpulimit", "1"]
 
-    if final_result is None:
+    result = _solve_field(filename, arguments, debug)
+
+    if result is None:
         print(f"Could not plate-solve file {filename}")
         set_section(
             filename, "plate_solution", {"schema": _PLATESOLUTION_SCHEMA, "data": None}
         )
         return None
 
-    # Persist result unconditionally.
     set_section(
-        filename, "plate_solution", _plate_solution_to_obj(final_result)
+        filename, "plate_solution", _plate_solution_to_obj(result)
     )
     print(f"### Updated AstroFlow sidecar for {filename}")
 
-    return final_result
+    return result
 
 
 if __name__ == "__main__":

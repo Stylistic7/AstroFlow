@@ -3,12 +3,15 @@ import os
 import datetime
 from pathlib import Path
 import time
+from dataclasses import replace
+from frozendict import frozendict
 
 from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import run_graph
 from testing import make_synthetic_frames, copy_testdata_frames
 from file_io.find_image_files import find_image_files
+from customization.decisions import DecisionType, ObjectType, DecisionOverride
 
 
 @ray.remote
@@ -72,6 +75,17 @@ def test_single_compute_graph(test_context):
     toplevel_stack = next(iter(stacks.values())).get()
 
     context.shopping_cart = [("stack", toplevel_stack.stable_hash)]
+
+    # Flat selection is manual — override to assign the flat to every light run.
+    flat_stack_id = next(
+        (sid for sid, s in context.calibration_stacks.items() if s.image_type == "flat"),
+        None,
+    )
+    overrides = {}
+    for run_hash in toplevel_stack.contents:
+        key = (DecisionType.CALIBRATION_FLAT, ObjectType.STACK, toplevel_stack.stable_hash, run_hash)
+        overrides[key] = DecisionOverride(choice=flat_stack_id)
+    context.settings = replace(context.settings, decision_overrides=frozendict(overrides))
 
     graph = build_compute_graph()
     run_graph(graph)

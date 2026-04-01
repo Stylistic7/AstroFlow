@@ -229,7 +229,18 @@ class Recipe:
             for image in self.outputs:
                 dest = self._output_path_in_tmp(image)
                 dest.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src, dest)
+                if dest.suffix == ".xisf" and src.suffix != ".xisf":
+                    from file_io.conversion import convert_tiff_to_xisf, convert_fits_to_xisf
+                    if src.suffix in (".tiff", ".tif"):
+                        convert_tiff_to_xisf(src, dest)
+                    elif src.suffix in (".fits", ".fit", ".fts"):
+                        convert_fits_to_xisf(src, dest)
+                    else:
+                        raise ValueError(
+                            f"Cannot convert {src.suffix} to XISF in mock mode"
+                        )
+                else:
+                    shutil.copy2(src, dest)
         else:
             save_all = {
                 image: self._output_path_in_tmp(image)

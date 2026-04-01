@@ -21,8 +21,12 @@ _MAX_MEMORY_PERCENT = int(os.environ.get("ASTROFLOW_TEST_MAX_MEMORY_PERCENT", "5
 def ensure_memory():
     """Wait until system memory pressure drops below threshold before starting a test."""
     import time
-    while psutil.virtual_memory().percent > _MAX_MEMORY_PERCENT:
-        time.sleep(1)
+    mem = psutil.virtual_memory()
+    if mem.percent > _MAX_MEMORY_PERCENT:
+        print(f"\n  Memory gate: {mem.percent:.0f}% used (threshold {_MAX_MEMORY_PERCENT}%), waiting...")
+        while psutil.virtual_memory().percent > _MAX_MEMORY_PERCENT:
+            time.sleep(1)
+        print(f"  Memory gate: released at {psutil.virtual_memory().percent:.0f}%")
 
 
 @pytest.fixture(autouse=True)

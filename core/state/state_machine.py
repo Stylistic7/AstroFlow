@@ -84,9 +84,7 @@ def _populate_context(
     context.compute_graph_status = {}
 
     context.settings = Settings(
-        development_settings=DevelopmentSettings(
-            override_filters=("H",),
-        ),
+        development_settings=DevelopmentSettings(),
         preview_settings=PreviewSettings(
             subframe_thumbnail_width=1200,
             master_thumbnail_width=2160,

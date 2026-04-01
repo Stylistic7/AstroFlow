@@ -266,8 +266,11 @@ def build_main_processing_graph() -> Graph:
     settings = context.settings
 
     def config_for(stack_id=None):
-        decisions = fd({k: v for k, v in settings.decision_overrides.items()
-                        if len(k) >= 3 and k[2] == stack_id}) if stack_id else fd()
+        if stack_id:
+            decisions = fd({k: v for k, v in settings.decision_overrides.items()
+                            if len(k) >= 3 and k[2] == stack_id})
+        else:
+            decisions = fd(settings.decision_overrides)
         return ProcessingConfig(
             calibration_stacks=calibration_stacks,
             development_settings=settings.development_settings,

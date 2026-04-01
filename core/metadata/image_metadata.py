@@ -13,6 +13,7 @@ from dependency_graph import Graph
 from context import context
 from decorators.decorators import node, measure_performance
 from cache.context_ref import ContextRef
+from customization.settings import DevelopmentSettings
 
 log = structlog.get_logger()
 
@@ -107,14 +108,14 @@ class DuplicateFileException(Exception):
     pass
 
 
-def _compute_image_metadata_impl(
-    filename: Path | os.PathLike,
-    plate_solve: bool = True,
-    development_settings=None,
+@node(num_cpus=0.25)
+def compute_image_metadata(
+    development_settings: DevelopmentSettings,
+    filename: os.PathLike,
 ) -> ImageMetadata:
-    log.info("Computing image metadata", filename=str(filename), plate_solve=plate_solve)
+    log.info("Computing image metadata", filename=str(filename))
 
-    if filename is None or not filename.exists():
+    if not filename.exists():
         raise FileNotFoundError(f'File "{filename}" not found')
 
     filename = filename.resolve()
@@ -132,7 +133,7 @@ def _compute_image_metadata_impl(
 
     plate_solution = (
         plate_solving.solve_field(filename, development_settings=development_settings)
-        if plate_solve and image_types.is_light_frame(header)
+        if image_types.is_light_frame(header)
         else None
     )
 
@@ -149,16 +150,6 @@ def _compute_image_metadata_impl(
 
     write_image_metadata(result)
     return result
-
-
-@node(num_cpus=0.25)
-def compute_image_metadata(
-    development_settings,
-    filename: Path | os.PathLike,
-) -> ImageMetadata:
-    return _compute_image_metadata_impl(
-        filename, plate_solve=True, development_settings=development_settings,
-    )
 
 
 

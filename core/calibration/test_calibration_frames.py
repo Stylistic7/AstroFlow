@@ -14,7 +14,7 @@ from stacks.types import StackHash, StackIdDependency
 from context import context
 from file_io.find_image_files import find_image_files
 from dependency_graph import run_graph, print_graph
-from customization.settings import Settings, StackSettings, ProcessingConfig
+from customization.settings import Settings, ProcessingConfig
 from frozendict import frozendict
 
 

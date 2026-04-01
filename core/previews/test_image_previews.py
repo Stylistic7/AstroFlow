@@ -11,9 +11,11 @@ from previews.stack_thumbnails import (
     stack_thumbnail,
     calibration_stack_thumbnail,
 )
-from products.registry import get_producer, MediaType
+from products import get_producer, MediaType, ensure_producers_registered
 from previews.types import QualityLevel
 from file_io.find_image_files import find_image_files
+
+ensure_producers_registered()
 
 
 @pytest.mark.heavy
