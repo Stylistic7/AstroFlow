@@ -176,8 +176,17 @@ function App() {
   }, [decisionOverrides]);
 
   const isQuarantined = useCallback(
-    (objectType, objectId) => quarantinedSet.has(`${objectType}:${objectId}`),
-    [quarantinedSet]
+    (objectType, objectId) => {
+      if (quarantinedSet.has(`${objectType}:${objectId}`)) return true;
+      // A target is effectively quarantined if all its stacks are.
+      if (objectType === "target" && targets[objectId]?.stack_ids?.length > 0) {
+        return targets[objectId].stack_ids.every(
+          sid => quarantinedSet.has(`stack:${sid}`)
+        );
+      }
+      return false;
+    },
+    [quarantinedSet, targets]
   );
 
   const quarantineCount = quarantinedSet.size;

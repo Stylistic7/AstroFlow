@@ -7,7 +7,7 @@ import "@photo-sphere-viewer/markers-plugin/index.css";
 import AstroFlowContext from './AstroFlowContext.jsx';
 
 export default function Starmap() {
-	const { constellationPolylines, targets, mosaics, isQuarantined } = useContext(AstroFlowContext);
+	const { constellationPolylines, targets, mosaics, isQuarantined, showQuarantined } = useContext(AstroFlowContext);
 	const navigate = useNavigate();
 	const [instance, setInstance] = useState(undefined);
 
@@ -63,7 +63,7 @@ export default function Starmap() {
 
 		for (let [id, target] of Object.entries(targets)) {
 			if (!target.projected_footprints) continue;
-			if (isQuarantined("target", id)) continue;
+			if (!showQuarantined && isQuarantined("target", id)) continue;
 
 			const state = target.contains_exception ? 'exception' : (target.is_complete ? 'ok' : 'incomplete');
 			markersPlugs.addMarker({
@@ -83,7 +83,7 @@ export default function Starmap() {
 				polygon: mosaic.projected_footprints['galactic']['coords'],
 			});
 		};
-	}, [instance, constellationPolylines, targets, mosaics, isQuarantined]);
+	}, [instance, constellationPolylines, targets, mosaics, isQuarantined, showQuarantined]);
 
 
 	const handleReady = (instance) => {

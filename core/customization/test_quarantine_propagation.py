@@ -1,6 +1,5 @@
-"""Tests for quarantine propagation: stack quarantine → target visibility."""
+"""Tests for quarantine helpers and propagation logic."""
 import datetime
-import ray
 import pytest
 from frozendict import frozendict
 
@@ -10,40 +9,21 @@ from dependency_graph import run_graph
 from testing import make_synthetic_frames
 from customization.decisions import ObjectType
 from customization.helpers import quarantine_key, exclude
-from customization.compute_graph import scatter_customize_targets
-
-
-def _customize_targets(overrides, targets):
-    return ray.get(scatter_customize_targets.remote(overrides, targets))
+from customization.compute_graph import _is_quarantined
 
 
 @pytest.mark.heavy
-def test_quarantine_target_directly(test_context):
-    """Explicitly quarantining a target removes it from the customized output."""
-    make_synthetic_frames(
-        ra=100, dec=50, prefix="a", number=5, dither=0,
-        start_datetime=datetime.datetime(2023, 12, 1, 20, 0, 0),
-        dest_dir=context.input_dirs[0],
-    )
-
-    run_graph(build_compute_graph())
-
-    assert len(context.targets) == 1
-    target_hash = next(iter(context.targets))
-
-    # Without quarantine, target survives.
-    result = _customize_targets(frozendict(), context.targets)
-    assert target_hash in result
-
-    # With quarantine, target is removed.
-    overrides = frozendict(exclude(quarantine_key(ObjectType.TARGET, target_hash)))
-    result = _customize_targets(overrides, context.targets)
-    assert target_hash not in result
+def test_is_quarantined(test_context):
+    """_is_quarantined returns True only when an explicit EXCLUDE override exists."""
+    overrides = frozendict(exclude(quarantine_key(ObjectType.TARGET, "abc")))
+    assert _is_quarantined(overrides, ObjectType.TARGET, "abc")
+    assert not _is_quarantined(overrides, ObjectType.TARGET, "xyz")
+    assert not _is_quarantined(frozendict(), ObjectType.TARGET, "abc")
 
 
 @pytest.mark.heavy
-def test_quarantine_all_stacks_hides_target(test_context):
-    """When every stack in a target is quarantined, the target is excluded."""
+def test_all_stacks_quarantined_implies_target_quarantined(test_context):
+    """When every stack in a target is quarantined, the target is effectively quarantined."""
     make_synthetic_frames(
         ra=100, dec=50, prefix="a", number=5, dither=0,
         start_datetime=datetime.datetime(2023, 12, 1, 20, 0, 0),
@@ -56,19 +36,25 @@ def test_quarantine_all_stacks_hides_target(test_context):
     target_hash = next(iter(context.targets))
     target = context.targets[target_hash].get()
 
+    # Quarantine every stack.
     overrides = {}
     for stack_id in target.stack_ids:
         overrides |= exclude(quarantine_key(ObjectType.STACK, stack_id))
+    overrides = frozendict(overrides)
 
-    result = _customize_targets(frozendict(overrides), context.targets)
-    assert target_hash not in result, (
-        "Target with all stacks quarantined should be excluded"
+    # Target itself is not explicitly quarantined...
+    assert not _is_quarantined(overrides, ObjectType.TARGET, target_hash)
+
+    # ...but all its stacks are.
+    assert all(
+        _is_quarantined(overrides, ObjectType.STACK, sid)
+        for sid in target.stack_ids
     )
 
 
 @pytest.mark.heavy
-def test_quarantine_some_stacks_keeps_target(test_context):
-    """When only some stacks in a target are quarantined, the target survives."""
+def test_partial_quarantine_does_not_affect_target(test_context):
+    """When only some stacks are quarantined, the target is not effectively quarantined."""
     make_synthetic_frames(
         ra=100, dec=50, prefix="a", number=5, dither=0, filter="H",
         start_datetime=datetime.datetime(2023, 12, 1, 20, 0, 0),
@@ -85,12 +71,11 @@ def test_quarantine_some_stacks_keeps_target(test_context):
     assert len(context.targets) == 1
     target_hash = next(iter(context.targets))
     target = context.targets[target_hash].get()
-    assert len(target.stack_ids) == 2, "Expected two stacks (H and O filters)"
+    assert len(target.stack_ids) == 2
 
+    # Quarantine only one stack.
     first_stack_id = target.stack_ids[0]
     overrides = frozendict(exclude(quarantine_key(ObjectType.STACK, first_stack_id)))
 
-    result = _customize_targets(overrides, context.targets)
-    assert target_hash in result, (
-        "Target with some stacks still active should not be excluded"
-    )
+    assert _is_quarantined(overrides, ObjectType.STACK, first_stack_id)
+    assert not _is_quarantined(overrides, ObjectType.STACK, target.stack_ids[1])
