@@ -104,7 +104,7 @@ class Stack(BaseStack, AstrometricAttributes):
 
         chronology_attributes = ChronologyAttributes.from_frames(frames, metadata)
         imaging_attributes = ImagingAttributes.from_frames(frames, metadata)
-        astrometric_attributes = AstrometricAttributes.from_frames(frames, metadata)
+        astrometric_attributes = AstrometricAttributes.from_objects(list(contents.values()))
 
         content_hash = hash_list([contents])
 

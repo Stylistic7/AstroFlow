@@ -57,15 +57,18 @@ def get_metadata(object_type: type, *args):
         if isinstance(obj, Target):
             objects += [project(stacks[s].get(), viewbox) for s in obj.stack_ids]
         if isinstance(obj, Mosaic):
+            selected_filter = args[1] if len(args) > 1 else None
             for t in obj.target_ids:
                 target = targets[t].get()
-                poly = project(target, viewbox)
-                # Check if any stack in this target has decisions.
-                poly["has_decisions"] = any(
-                    len(get_decisions_for_object(ObjectType.STACK, sid)) > 0
-                    for sid in target.stack_ids
-                )
-                objects.append(poly)
+                for sid in target.stack_ids:
+                    stack = stacks[sid].get()
+                    if selected_filter and stack.filter != selected_filter:
+                        continue
+                    poly = project(stack, viewbox)
+                    poly["has_decisions"] = (
+                        len(get_decisions_for_object(ObjectType.STACK, sid)) > 0
+                    )
+                    objects.append(poly)
 
         result["objects"] = objects
 
