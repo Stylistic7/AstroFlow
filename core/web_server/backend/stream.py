@@ -21,6 +21,7 @@ def format_sse(event, data=None) -> str:
 def stream():
     def eventStream():
         messages = announcer.listen()
+        yield format_sse("heartbeat", "connected")
         while True:
             try:
                 event, data = messages.get(timeout=15)
