@@ -4,9 +4,8 @@ from frozendict import frozendict
 
 from context import context
 from customization.settings import Settings
-from customization.decisions import (
-    DecisionType, ObjectType, DecisionOverride, BinaryChoice,
-)
+from customization.decisions import ObjectType, BinaryChoice
+from customization.helpers import quarantine_key, exclude
 from web_server.backend.announcer import announce
 
 settings_bp = Blueprint("settings", __name__)
@@ -32,7 +31,7 @@ def toggle_quarantine(object_type, object_id):
     if obj_type is None:
         return jsonify({"error": f"Unknown object type: {object_type}"}), 400
 
-    key = (DecisionType.QUARANTINE, obj_type, object_id, object_id)
+    key = quarantine_key(obj_type, object_id)
 
     current_overrides = context.settings.decision_overrides
     is_currently_quarantined = (
@@ -41,11 +40,9 @@ def toggle_quarantine(object_type, object_id):
     )
 
     if is_currently_quarantined:
-        # Un-quarantine: delete the override
         new_overrides = frozendict({k: v for k, v in current_overrides.items() if k != key})
     else:
-        # Quarantine: add EXCLUDE override
-        new_overrides = frozendict(dict(current_overrides) | {key: DecisionOverride(choice=BinaryChoice.EXCLUDE)})
+        new_overrides = frozendict(dict(current_overrides) | exclude(key))
 
     _update_settings(lambda s: replace(s, decision_overrides=new_overrides))
     announce("reload_data")

@@ -5,35 +5,26 @@ import shutil
 import diskcache
 import tempfile
 import random, string
-from frozendict import frozendict
-from dataclasses import replace
-
 from file_io.generic import read_header
 from testing import copy_testdata_frames, print_tree
 from context import context
 from dependency_graph import run_graph
 from mosaics.orion_mosaic import add_orion_mosaic_images
 from compute_graph.compute_graph import build_compute_graph
-from customization.decisions import DecisionType, ObjectType, DecisionOverride
+from customization.helpers import set_flat
 
 
 def _override_flats_for_all_stacks():
-    """Create decision overrides that assign the flat calibration stack to every light stack run."""
+    """Assign the flat calibration stack to every light stack run."""
     flat_stack_id = next(
         (sid for sid, s in context.calibration_stacks.items() if s.image_type == "flat"),
         None,
     )
     assert flat_stack_id is not None, "No flat calibration stack found"
-    overrides = {}
     for stack_ref in context.stacks.values():
         stack = stack_ref.get()
         for run_hash in stack.contents:
-            key = (DecisionType.CALIBRATION_FLAT, ObjectType.STACK, stack.stable_hash, run_hash)
-            overrides[key] = DecisionOverride(choice=flat_stack_id)
-    context.settings = replace(
-        context.settings,
-        decision_overrides=frozendict(overrides),
-    )
+            set_flat(stack.stable_hash, run_hash, flat_stack_id)
 
 
 @pytest.mark.heavy

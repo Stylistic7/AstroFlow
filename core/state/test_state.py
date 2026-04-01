@@ -3,15 +3,13 @@ import os
 import datetime
 from pathlib import Path
 import time
-from dataclasses import replace
-from frozendict import frozendict
 
 from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import run_graph
 from testing import make_synthetic_frames, copy_testdata_frames
 from file_io.find_image_files import find_image_files
-from customization.decisions import DecisionType, ObjectType, DecisionOverride
+from customization.helpers import set_flat
 
 
 @ray.remote
@@ -81,11 +79,8 @@ def test_single_compute_graph(test_context):
         (sid for sid, s in context.calibration_stacks.items() if s.image_type == "flat"),
         None,
     )
-    overrides = {}
     for run_hash in toplevel_stack.contents:
-        key = (DecisionType.CALIBRATION_FLAT, ObjectType.STACK, toplevel_stack.stable_hash, run_hash)
-        overrides[key] = DecisionOverride(choice=flat_stack_id)
-    context.settings = replace(context.settings, decision_overrides=frozendict(overrides))
+        set_flat(toplevel_stack.stable_hash, run_hash, flat_stack_id)
 
     graph = build_compute_graph()
     run_graph(graph)

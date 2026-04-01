@@ -595,13 +595,10 @@ def test_flat_frame_selection(test_context) -> None:
 
     # Configure the light run to use flat_run_0 via decision override,
     # and verify resolve_calibration applies it.
-    from customization.decisions import DecisionType, ObjectType, DecisionOverride
     from customization.resolve import resolve_calibration
+    from customization.helpers import calibration_override
     run_hash = next(iter(stack.contents.keys()))
-    override_key = (DecisionType.CALIBRATION_FLAT, ObjectType.STACK, stack.stable_hash, run_hash)
-    overrides = frozendict({
-        override_key: DecisionOverride(choice=first_flat_stack),
-    })
+    overrides = frozendict(calibration_override("flat", stack.stable_hash, run_hash, first_flat_stack))
 
     resolved = resolve_calibration(stack, context.calibration_stacks, overrides)
     substack = next(iter(resolved.contents.values()))

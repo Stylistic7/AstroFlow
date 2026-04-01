@@ -5,6 +5,7 @@ from decorators import node
 from customization.decisions import (
     DecisionType, DecisionOverride, DecisionKey, ObjectType, BinaryChoice,
 )
+from customization.helpers import quarantine_key
 from mosaics.types import MosaicsDict
 from targets.types import TargetsDict
 
@@ -23,8 +24,7 @@ def _is_quarantined(
     object_type: ObjectType,
     object_id: str,
 ) -> bool:
-    key = (DecisionType.QUARANTINE, object_type, object_id, object_id)
-    override = decision_overrides.get(key)
+    override = decision_overrides.get(quarantine_key(object_type, object_id))
     return override is not None and override.choice == BinaryChoice.EXCLUDE
 
 
