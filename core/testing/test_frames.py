@@ -296,6 +296,7 @@ def make_synthetic_frames(
 
         metadata = ImageMetadata(
             content_hash=content_hash,
+            stable_hash=content_hash,
             filename=fits_filename,
             header=header,
             width_pixels=width_pixels,
@@ -326,6 +327,7 @@ def make_synthetic_frames(
         from metadata.sidecar_io import write_image_metadata
         sidecar_metadata = ImageMetadata(
             content_hash=content_hash,
+            stable_hash=content_hash,
             filename=Path(fits_filename),
             header=header,
             width_pixels=width_pixels,

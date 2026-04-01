@@ -1,13 +1,11 @@
-from pathlib import Path
-
 from file_io.types import (
     TiffFilePath,
     XisfFilePath,
 )
+from metadata.classes import ImageMetadata
 from mosaics.types import Mosaic
 from stacks.composite_stack import Stack
 from mosaics.types import Mosaic, Viewbox
-from file_io.generic import get_content_hash
 
 
 def mosaic_filename_tiff(mosaic: Mosaic, filter: str) -> TiffFilePath:
@@ -28,21 +26,19 @@ def tile_filename(mosaic: Mosaic, filter: str) -> TiffFilePath:
 
 
 def merged_filename_tiff(
-    mosaic: Mosaic, image_0: Path, image_1: Path
+    mosaic: Mosaic, image_0: ImageMetadata, image_1: ImageMetadata
 ) -> TiffFilePath:
-    hash_0 = get_content_hash(image_0)
-    hash_1 = get_content_hash(image_1)
-
-    return TiffFilePath(f"merged_{mosaic.stable_hash}_{hash_0}_{hash_1}.tiff")
+    return TiffFilePath(
+        f"merged_{mosaic.stable_hash}_{image_0.stable_hash}_{image_1.stable_hash}.tiff"
+    )
 
 
 def merged_filename_xisf(
-    mosaic: Mosaic, image_0: Path, image_1: Path
+    mosaic: Mosaic, image_0: ImageMetadata, image_1: ImageMetadata
 ) -> XisfFilePath:
-    hash_0 = get_content_hash(image_0)
-    hash_1 = get_content_hash(image_1)
-
-    return XisfFilePath(f"merged_{mosaic.stable_hash}_{hash_0}_{hash_1}.xisf")
+    return XisfFilePath(
+        f"merged_{mosaic.stable_hash}_{image_0.stable_hash}_{image_1.stable_hash}.xisf"
+    )
 
 
 def placed_filename(

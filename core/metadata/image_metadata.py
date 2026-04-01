@@ -130,6 +130,7 @@ def compute_image_metadata(
     content_hash = get_content_hash(filename)
     header = read_header(filename)
     geometry = read_image_geometry(filename)
+    stable_hash = header.get("STBLHASH", content_hash)
 
     plate_solution = (
         plate_solving.solve_field(filename, development_settings=development_settings)
@@ -139,6 +140,7 @@ def compute_image_metadata(
 
     result = ImageMetadata(
         content_hash=content_hash,
+        stable_hash=stable_hash,
         filename=filename,
         header=header,
         width_pixels=geometry.width_pixels,

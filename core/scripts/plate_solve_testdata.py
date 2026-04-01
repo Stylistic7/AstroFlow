@@ -48,6 +48,7 @@ for filename in fits_files:
     geometry = read_image_geometry(filename)
     meta = ImageMetadata(
         content_hash=content_hash,
+        stable_hash=header.get("STBLHASH", content_hash),
         filename=filename,
         header=header,
         width_pixels=geometry.width_pixels,

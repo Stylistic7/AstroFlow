@@ -107,6 +107,7 @@ def test_stack_dependency_graph(test_context) -> None:
         for mode in [QualityLevel.SUBFRAME, QualityLevel.MASTER]:
             fn = get_producer(MediaType.IMAGE, type(stack), mode)
             assert fn is not None
+            assert hasattr(fn, 'thumbnail_fn'), f"{fn.__name__} has no thumbnail_fn (type={type(stack).__name__}, mode={mode})"
             thumbnail = fn.thumbnail_fn(stack)
             assert type(thumbnail) is bytes
 

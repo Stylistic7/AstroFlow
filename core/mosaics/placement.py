@@ -204,7 +204,7 @@ def _place_image(
             f"a WCS or viewbox mismatch."
         )
 
-    write_tiff_image(output_filename, image, {"FILTER": filter})
+    write_tiff_image(output_filename, image, {"FILTER": filter, "STBLHASH": stack.stable_hash})
     log.info("Place image complete", output_filename=output_filename)
 
     return WithSidecar(output_filename)

@@ -17,9 +17,14 @@ def copy_testdata_into_cache():
 
     cache = get_cache()
     num_copied = 0
+    num_skipped = 0
     for key in testdata_cache.iterkeys():
-        print(f"Copied key {key} into cache")
-        cache[key] = testdata_cache[key]
-        num_copied += 1
+        try:
+            cache[key] = testdata_cache[key]
+            print(f"Copied key {key} into cache")
+            num_copied += 1
+        except (AttributeError, TypeError) as e:
+            print(f"Skipped stale cache entry {key}: {e}")
+            num_skipped += 1
 
-    print(f"### Copied {num_copied} keys from testdata cache")
+    print(f"### Copied {num_copied} keys from testdata cache ({num_skipped} skipped)")

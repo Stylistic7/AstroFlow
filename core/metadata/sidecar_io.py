@@ -49,6 +49,7 @@ def image_metadata_to_obj(meta: ImageMetadata) -> dict[str, Any]:
     """Serialize ImageMetadata to a JSON-safe dict (excluding filename and plate_solution)."""
     return {
         "content_hash": meta.content_hash,
+        "stable_hash": meta.stable_hash,
         "header": _serialize_header(meta.header),
         "width_pixels": meta.width_pixels,
         "height_pixels": meta.height_pixels,
@@ -70,8 +71,10 @@ def image_metadata_from_obj(
         if isinstance(ps_obj, dict) and ps_obj.get("data") is not None:
             plate_solution = plate_solving._plate_solution_from_obj(ps_obj)
 
+    content_hash = obj["content_hash"]
     return ImageMetadata(
-        content_hash=obj["content_hash"],
+        content_hash=content_hash,
+        stable_hash=obj.get("stable_hash", content_hash),
         filename=filename,
         header=_deserialize_header(obj["header"]),
         width_pixels=obj["width_pixels"],

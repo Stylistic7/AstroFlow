@@ -17,6 +17,7 @@ FrameHash = NewType("FrameHash", str)
 @dataclass(frozen=True, slots=True)
 class ImageMetadata:
     content_hash: str
+    stable_hash: str
     filename: Path
     header: dict[str, Any]
 

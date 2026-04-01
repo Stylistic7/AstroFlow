@@ -18,6 +18,7 @@ from file_io.tiff_file_io import write_tiff_image
 from file_io.types import XisfFilePath, TiffFilePath, WithSidecar
 from products import makes_image
 from context import context
+from hashing import hash_list
 
 log = structlog.get_logger()
 
@@ -32,15 +33,18 @@ class MergedImage:
 def merge_images_with_maximum(
     mosaic: Mosaic, input_0: ImageMetadata, input_1: ImageMetadata
 ) -> WithSidecar[TiffFilePath]:
-    input_0 = input_0.filename.resolve(strict=True)
-    input_1 = input_1.filename.resolve(strict=True)
+    stable_hash = hash_list([input_0.stable_hash, input_1.stable_hash])
+    output_filename = merge_images_with_maximum.filename_fn(mosaic, input_0, input_1)
 
-    filters = set(read_header(i)["FILTER"] for i in [input_0, input_1])
+    path_0 = input_0.filename.resolve(strict=True)
+    path_1 = input_1.filename.resolve(strict=True)
+
+    filters = set(read_header(i)["FILTER"] for i in [path_0, path_1])
     assert len(filters) == 1
     filter = next(iter(filters))
 
-    image_0 = read_image(input_0)
-    image_1 = read_image(input_1)
+    image_0 = read_image(path_0)
+    image_1 = read_image(path_1)
 
     assert not np.isnan(np.min(image_0))
     assert not np.isnan(np.min(image_1))
@@ -49,11 +53,8 @@ def merge_images_with_maximum(
     output_image[overlap] = (image_0[overlap] + image_1[overlap]) / 2.0
     assert not np.isnan(np.min(output_image))
 
-    output_filename = merge_images_with_maximum.filename_fn(
-        mosaic, input_0, input_1
-    )
     Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
-    write_tiff_image(Path(output_filename), output_image, {"FILTER": filter})
+    write_tiff_image(Path(output_filename), output_image, {"FILTER": filter, "STBLHASH": stable_hash})
 
     return WithSidecar(output_filename)
 
@@ -63,17 +64,16 @@ def merge_images_with_maximum(
 def merge_images_with_pmm(
     mosaic: Mosaic, input_0: ImageMetadata, input_1: ImageMetadata
 ) -> WithSidecar[XisfFilePath]:
-    input_0_path = input_0.filename.resolve(strict=True)
-    input_1_path = input_1.filename.resolve(strict=True)
+    output_filename = merge_images_with_pmm.filename_fn(mosaic, input_0, input_1)
 
-    output_filename = merge_images_with_pmm.filename_fn(
-        mosaic, input_0_path, input_1_path
-    )
+    path_0 = input_0.filename.resolve(strict=True)
+    path_1 = input_1.filename.resolve(strict=True)
+
     Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
 
     mock = context.settings.development_settings.mock_pixinsight
 
-    images = Image.open_many([input_0_path, input_1_path])
+    images = Image.open_many([path_0, path_1])
     result = PhotometricMosaic(images)
     result.save_to(output_filename, mock=mock)
 
