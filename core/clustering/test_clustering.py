@@ -1,5 +1,6 @@
 import operator
 import datetime
+import pytest
 
 import clustering
 
@@ -128,3 +129,39 @@ def test_cluster_dates_with_gap(test_context) -> None:
             (datetime.datetime(2023, 4, 14, 6, 47, 16, 562603), 14),
         ],
     ]
+
+
+# -- Edge cases --
+
+def test_cluster_continuous_empty():
+    assert clustering.cluster_continuous([], epsilon=0.1) == []
+
+
+def test_cluster_continuous_single_item():
+    items = [(0.5, "a")]
+    clusters = clustering.cluster_continuous(items, epsilon=0.1, key=operator.itemgetter(0))
+    assert clusters == [[(0.5, "a")]]
+
+
+def test_cluster_discrete_empty():
+    assert clustering.cluster_discrete([]) == []
+
+
+def test_cluster_discrete_single_group():
+    items = [("a", "X"), ("b", "X"), ("c", "X")]
+    clusters = clustering.cluster_discrete(items, key=operator.itemgetter(1))
+    assert len(clusters) == 1
+    assert len(clusters[0]) == 3
+
+
+def test_cluster_continuous_all_identical():
+    items = [(0.5, "a"), (0.5, "b"), (0.5, "c")]
+    clusters = clustering.cluster_continuous(items, epsilon=0.01, key=operator.itemgetter(0))
+    assert len(clusters) == 1
+    assert len(clusters[0]) == 3
+
+
+def test_cluster_continuous_all_separate():
+    items = [(0.0, "a"), (10.0, "b"), (20.0, "c")]
+    clusters = clustering.cluster_continuous(items, epsilon=0.1, key=operator.itemgetter(0))
+    assert len(clusters) == 3
