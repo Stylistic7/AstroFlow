@@ -5,7 +5,7 @@ from frozendict import frozendict
 from stacks.composite_stack import Stack
 from stacks.run import RunsDict
 from metadata.classes import ImageMetadata, MetadataDict
-from customization.decisions import (
+from decisions.decisions import (
     DecisionPoint, DecisionType, DecisionOverride, DecisionKey,
     ObjectType, resolve_decision,
 )

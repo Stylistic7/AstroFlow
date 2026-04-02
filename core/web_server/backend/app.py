@@ -214,7 +214,7 @@ def stacks():
 @app.route("/api/decision_overrides")
 def decision_overrides():
     """Return all decision overrides for the frontend to resolve locally."""
-    from customization.decisions import DecisionOverride
+    from decisions.decisions import DecisionOverride
     overrides = context.settings.decision_overrides or {}
     # Serialize tuple keys to JSON-safe arrays
     return {
@@ -233,7 +233,7 @@ def stack_detail(stack_id):
     not on every page load.
     """
     from flask import jsonify, abort
-    from customization.resolve import resolve_calibration
+    from decisions.resolve import resolve_calibration
     from stacks.convert_to_dict import convert_to_dict
     import numpy as np
     from spherical_geometry.polygon import SingleSphericalPolygon

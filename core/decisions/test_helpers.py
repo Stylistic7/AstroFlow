@@ -2,10 +2,10 @@
 import pytest
 from frozendict import frozendict
 
-from customization.decisions import (
+from decisions.decisions import (
     DecisionType, ObjectType, DecisionOverride, BinaryChoice,
 )
-from customization.helpers import (
+from decisions.helpers import (
     quarantine_key, calibration_key,
     exclude, include, calibration_override,
 )

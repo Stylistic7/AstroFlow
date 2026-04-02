@@ -13,7 +13,7 @@ from dependency_graph import Graph
 from context import context
 from decorators.decorators import node, measure_performance
 from cache.context_ref import ContextRef
-from customization.settings import DevelopmentSettings
+from decisions.settings import DevelopmentSettings
 
 log = structlog.get_logger()
 

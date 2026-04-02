@@ -8,7 +8,7 @@ import sys
 
 from base_path import get_bin_dir
 from context import context, get_cache, queue
-from customization.settings import (
+from decisions.settings import (
     Settings,
     DevelopmentSettings,
     PreviewSettings,
@@ -84,7 +84,9 @@ def _populate_context(
     context.compute_graph_status = {}
 
     context.settings = Settings(
-        development_settings=DevelopmentSettings(),
+        development_settings=DevelopmentSettings(
+            override_filters=("H",),
+        ),
         preview_settings=PreviewSettings(
             subframe_thumbnail_width=1200,
             master_thumbnail_width=2160,

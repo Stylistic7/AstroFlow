@@ -3,9 +3,9 @@ from flask import request, jsonify, Blueprint
 from frozendict import frozendict
 
 from context import context
-from customization.settings import Settings
-from customization.decisions import ObjectType, BinaryChoice
-from customization.helpers import quarantine_key, exclude
+from decisions.settings import Settings
+from decisions.decisions import ObjectType, BinaryChoice
+from decisions.helpers import quarantine_key, exclude
 from web_server.backend.announcer import announce
 
 settings_bp = Blueprint("settings", __name__)

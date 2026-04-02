@@ -13,7 +13,7 @@ from targets.post_process import post_process_target
 from targets.types import TargetsDict
 from stacks.compute_graph import build_stacking_subgraph
 from stacks.convert_to_dict import convert_to_dict
-from customization.settings import DevelopmentSettings
+from decisions.settings import DevelopmentSettings
 from dependency_graph.workflow_graph_adapter import (
     store_workflow_graph,
     store_node_status,
@@ -28,7 +28,7 @@ def build_target_subgraph(
     target: Target,
     config: "ProcessingConfig",
 ) -> Graph:
-    from customization.settings import ProcessingConfig
+    from decisions.settings import ProcessingConfig
     from frozendict import frozendict as fd
     log.info("Building target subgraph", target=str(target))
 

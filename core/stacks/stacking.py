@@ -18,9 +18,9 @@ from pix.tasks import run_wbpp
 from metadata.classes import MetadataDict
 from frozendict import frozendict
 from decorators import node, create_thumbnail
-from customization.settings import DevelopmentSettings, ProcessingConfig
-from customization.resolve import resolve_calibration, resolve_decisions
-from customization.compute_graph import ALL_EXCLUSION_TYPES
+from decisions.settings import DevelopmentSettings, ProcessingConfig
+from decisions.resolve import resolve_calibration, resolve_decisions
+from decisions.compute_graph import ALL_EXCLUSION_TYPES
 from products import makes_image
 import structlog
 

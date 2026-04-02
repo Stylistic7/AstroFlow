@@ -29,12 +29,12 @@ from dependency_graph import Graph, Node, chain
 from stacks.identification import identify_stacks
 from stacks.composite_stack import RunsDict, StacksDict, CalibrationStacksDict
 from decorators import node
-from customization.compute_graph import (
+from decisions.compute_graph import (
     scatter_customize_targets,
 )
 from mosaics.compute_graph import stacks_for_mosaic, targets_for_mosaic
 from cache.context_ref import ContextRef
-from customization.settings import Settings
+from decisions.settings import Settings
 
 log = structlog.get_logger()
 
@@ -211,7 +211,7 @@ def preview_graph_done() -> None:
 @ray.remote
 @beartype
 def build_preview_graph() -> Graph:
-    from customization.settings import ProcessingConfig
+    from decisions.settings import ProcessingConfig
 
     stacks = context.stacks
     targets = context.targets
@@ -255,7 +255,7 @@ def build_main_processing_graph() -> Graph:
     targets = context.targets
     mosaics = context.mosaics
     shopping_cart = context.shopping_cart or []
-    from customization.settings import ProcessingConfig
+    from decisions.settings import ProcessingConfig
     from frozendict import frozendict as fd
 
     calibration_stacks = context.calibration_stacks

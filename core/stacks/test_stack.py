@@ -100,7 +100,7 @@ def test_one_light_one_dark(test_context):
     assert len(light_stack.frames) == 3
     # Raw stacks have no calibration deps — calibration is resolved lazily.
     # Resolve to verify the correct dark is matched.
-    from customization.resolve import resolve_calibration
+    from decisions.resolve import resolve_calibration
     from frozendict import frozendict
     resolved = resolve_calibration(toplevel_stack, context.calibration_stacks, frozendict())
     resolved_light = next(iter(resolved.contents.values()))

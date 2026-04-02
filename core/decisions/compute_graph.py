@@ -2,10 +2,10 @@ import structlog
 from frozendict import frozendict
 
 from decorators import node
-from customization.decisions import (
+from decisions.decisions import (
     DecisionType, DecisionOverride, DecisionKey, ObjectType, BinaryChoice,
 )
-from customization.helpers import quarantine_key
+from decisions.helpers import quarantine_key
 from mosaics.types import MosaicsDict
 from targets.types import TargetsDict
 

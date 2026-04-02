@@ -5,7 +5,7 @@ from typing import Any
 
 from context import context
 from context import get_cache
-from customization.settings import Settings, ClusteringSettings, DevelopmentSettings, PreviewSettings
+from decisions.settings import Settings, ClusteringSettings, DevelopmentSettings, PreviewSettings
 
 
 @dataclass(frozen=True)

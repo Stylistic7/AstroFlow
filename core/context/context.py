@@ -160,7 +160,7 @@ class Context:
 
     @property
     def settings(self):
-        from customization.settings import Settings
+        from decisions.settings import Settings
         return self.get("settings") or Settings()
 
     def __getitem__(self, key: Key) -> Any:

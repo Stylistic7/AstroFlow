@@ -96,7 +96,7 @@ def identified_testdata(init_ray, tmp_path_factory):
     from compute_graph.compute_graph import build_regroup_graph
     from metadata.image_metadata import scatter_compute_image_metadata
     from dependency_graph import Graph, chain, run_graph
-    from customization.settings import (
+    from decisions.settings import (
         Settings,
         ClusteringSettings,
         DevelopmentSettings,

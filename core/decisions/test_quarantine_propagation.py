@@ -7,9 +7,9 @@ from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import run_graph
 from testing import make_synthetic_frames
-from customization.decisions import ObjectType
-from customization.helpers import quarantine_key, exclude
-from customization.compute_graph import _is_quarantined
+from decisions.decisions import ObjectType
+from decisions.helpers import quarantine_key, exclude
+from decisions.compute_graph import _is_quarantined
 
 
 @pytest.mark.heavy

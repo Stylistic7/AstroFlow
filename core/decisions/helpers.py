@@ -6,7 +6,7 @@ into context.settings. Use the full framework directly for unusual cases.
 from dataclasses import replace
 from frozendict import frozendict
 
-from customization.decisions import (
+from decisions.decisions import (
     DecisionKey,
     DecisionOverride,
     DecisionType,

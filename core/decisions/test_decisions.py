@@ -7,7 +7,7 @@ from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import run_graph
 from testing import make_synthetic_frames
-from customization.decisions import (
+from decisions.decisions import (
     DecisionPoint,
     DecisionType,
     BinaryChoice,
@@ -16,8 +16,8 @@ from customization.decisions import (
     resolve_decision,
     get_decisions_for_object,
 )
-from customization.resolve import resolve_decisions
-from customization.compute_graph import ALL_EXCLUSION_TYPES
+from decisions.resolve import resolve_decisions
+from decisions.compute_graph import ALL_EXCLUSION_TYPES
 
 
 def _make_decision(key):

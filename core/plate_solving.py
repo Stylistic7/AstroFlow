@@ -22,7 +22,7 @@ from beartype import beartype
 from file_io.conversion import convert_xisf_to_fits
 from file_io.sidecar import get_section, set_section, sidecar_path_for
 from units import Degrees, Radians, ArcsecondsPerPixel
-from customization.settings import DevelopmentSettings
+from decisions.settings import DevelopmentSettings
 
 _PLATESOLUTION_SCHEMA = "astroflow.platesolution.v2"
 

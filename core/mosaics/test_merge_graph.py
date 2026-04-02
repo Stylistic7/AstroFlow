@@ -27,7 +27,7 @@ from targets.types import Target, TargetsDict
 from testing.test_stacks import make_composite_stack
 from attributes.astrometric_attributes import healpix_cells_from_poly
 from stacks.composite_stack import StacksDict, RunsDict, CalibrationStacksDict
-from customization.settings import ProcessingConfig
+from decisions.settings import ProcessingConfig
 from units import Degrees, Radians, ArcsecondsPerPixel
 
 _OLDEST_DATE = datetime.datetime(2024, 2, 5, 16, 29, 43)

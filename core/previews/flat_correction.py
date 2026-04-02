@@ -6,7 +6,7 @@ from previews.calibration import calibrate_subframe
 from previews.operations import autostretch
 from decorators import node, measure_performance
 from stacks.composite_stack import Stack, RunsDict, CalibrationStacksDict
-from customization.subframe_selection import get_light_frames_sorted_by_stars
+from decisions.subframe_selection import get_light_frames_sorted_by_stars
 from decorators import create_thumbnail
 from stacks.run import Run
 from stacks.types import StackHash, StackIdDependency

@@ -72,7 +72,7 @@ def command_done() -> None:
 
 
 def _process_stack(action: Action) -> Graph:
-    from customization.settings import ProcessingConfig
+    from decisions.settings import ProcessingConfig
     from frozendict import frozendict as fd
     stack_id = action["object_id"]
     stack = context.stacks[stack_id].get()
@@ -96,7 +96,7 @@ def _process_stack(action: Action) -> Graph:
 
 
 def _process_target(action: Action) -> Graph:
-    from customization.settings import ProcessingConfig
+    from decisions.settings import ProcessingConfig
     target = context.targets[action["object_id"]].get()
     settings = context.settings
     config = ProcessingConfig(
@@ -117,7 +117,7 @@ def _process_target(action: Action) -> Graph:
 
 
 def _process_mosaic(action: Action) -> Graph:
-    from customization.settings import ProcessingConfig
+    from decisions.settings import ProcessingConfig
     mosaic = context.mosaics[action["object_id"]].get()
 
     stacks = context.stacks

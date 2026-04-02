@@ -7,11 +7,11 @@ from frozendict import frozendict
 from stacks.composite_stack import Stack, CalibrationStacksDict
 from stacks.run import Run, RunsDict
 from stacks.types import StackIdDependency
-from customization.decisions import (
+from decisions.decisions import (
     BinaryChoice, DecisionKey, DecisionOverride, DecisionPoint, DecisionType,
     ObjectType, DECISION_PRECEDENCE, resolve_decision, get_decisions_for_object,
 )
-from customization.subframe_selection import select_subframes
+from decisions.subframe_selection import select_subframes
 from quarantining.quarantining import apply_quarantine
 
 
@@ -95,10 +95,10 @@ def is_frame_included(
         if dp is not None and dp.default_choice is not None:
             quality_threshold = dp.default_choice
         else:
-            from customization.subframe_selection import _DEFAULT_QUALITY_THRESHOLD
+            from decisions.subframe_selection import _DEFAULT_QUALITY_THRESHOLD
             quality_threshold = _DEFAULT_QUALITY_THRESHOLD
 
-    from customization.subframe_selection import _compute_threshold_stars
+    from decisions.subframe_selection import _compute_threshold_stars
     threshold_stars = _compute_threshold_stars(metadata, stack.all_frames(), quality_threshold)
     return m.plate_solution.num_stars >= threshold_stars
 

@@ -11,8 +11,8 @@ from stacks.types import StackIdDependency
 from stacks.post_process import post_process_stack
 from stacks.convert_to_dict import convert_to_dict
 from metadata.image_metadata import compute_image_metadata
-from customization.settings import DevelopmentSettings
-from customization.subframe_selection import get_light_frames_sorted_by_stars
+from decisions.settings import DevelopmentSettings
+from decisions.subframe_selection import get_light_frames_sorted_by_stars
 from previews.types import QualityLevel
 from dependency_graph import Graph, Node, chain
 from dependency_graph.workflow_graph_adapter import (
@@ -27,14 +27,14 @@ def calibration_done(stack: Stack) -> None:
     pass
 
 
-from customization.settings import ProcessingConfig
+from decisions.settings import ProcessingConfig
 
 @node
 def build_calibration_stack_subgraph(
     stack: Stack,
     config: ProcessingConfig,
 ) -> Graph:
-    from customization.resolve import resolve_calibration
+    from decisions.resolve import resolve_calibration
 
     # Resolve calibration to discover which cal stacks this stack depends on.
     enriched = resolve_calibration(stack, config.calibration_stacks, config.decisions)
@@ -132,8 +132,8 @@ def _prepare_stack_for_ui(
     decisions,
     min_frames: int,
 ) -> dict:
-    from customization.resolve import resolve_calibration, resolve_decisions
-    from customization.compute_graph import ALL_EXCLUSION_TYPES
+    from decisions.resolve import resolve_calibration, resolve_decisions
+    from decisions.compute_graph import ALL_EXCLUSION_TYPES
 
     # Resolve calibration so the UI shows calibration deps per run.
     stack = resolve_calibration(stack, cal_stacks, decisions)

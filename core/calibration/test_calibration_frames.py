@@ -14,7 +14,7 @@ from stacks.types import StackHash, StackIdDependency
 from context import context
 from file_io.find_image_files import find_image_files
 from dependency_graph import run_graph, print_graph
-from customization.settings import Settings, ProcessingConfig
+from decisions.settings import Settings, ProcessingConfig
 from frozendict import frozendict
 
 
@@ -26,7 +26,7 @@ def _cal_deps(stack: CalibrationStack) -> set[str]:
 
 def _resolve_light_stack(stack):
     """Resolve calibration on a light stack for testing."""
-    from customization.resolve import resolve_calibration
+    from decisions.resolve import resolve_calibration
     from frozendict import frozendict as fd
     return resolve_calibration(stack, context.calibration_stacks, fd())
 
@@ -595,8 +595,8 @@ def test_flat_frame_selection(test_context) -> None:
 
     # Configure the light run to use flat_run_0 via decision override,
     # and verify resolve_calibration applies it.
-    from customization.resolve import resolve_calibration
-    from customization.helpers import calibration_override
+    from decisions.resolve import resolve_calibration
+    from decisions.helpers import calibration_override
     run_hash = next(iter(stack.contents.keys()))
     overrides = frozendict(calibration_override("flat", stack.stable_hash, run_hash, first_flat_stack))
 

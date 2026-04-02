@@ -3,7 +3,7 @@ from flask import request, jsonify, Blueprint
 from frozendict import frozendict
 
 from context import context
-from customization.decisions import (
+from decisions.decisions import (
     DecisionKey,
     DecisionOverride,
     BinaryChoice,

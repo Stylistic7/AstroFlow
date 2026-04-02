@@ -8,7 +8,7 @@ from pix.tasks import (
     MultiscaleGradientCorrection,
 )
 from decorators import node, create_thumbnail
-from customization.settings import DevelopmentSettings
+from decisions.settings import DevelopmentSettings
 from stacks.composite_stack import Stack
 from stacks.stacking import stack_files
 from stacks.artifacts import stack_filename

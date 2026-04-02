@@ -11,7 +11,7 @@ from context import context
 from dependency_graph import run_graph
 from mosaics.orion_mosaic import add_orion_mosaic_images
 from compute_graph.compute_graph import build_compute_graph
-from customization.helpers import set_flat
+from decisions.helpers import set_flat
 
 
 def _override_flats_for_all_stacks():

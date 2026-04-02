@@ -22,11 +22,11 @@ from stacks.composite_stack import CalibrationStack, CalibrationStacksDict
 from dependency_graph import Graph, TaskDescriptor
 from previews.operations import autostretch
 from stacks.composite_stack import Stack
-from customization.subframe_selection import get_light_frames_sorted_by_stars
-from customization.resolve import is_frame_included, resolve_calibration
+from decisions.subframe_selection import get_light_frames_sorted_by_stars
+from decisions.resolve import is_frame_included, resolve_calibration
 from products import makes_image, makes_video
 from file_io.generic import read_image
-from customization.settings import ProcessingConfig
+from decisions.settings import ProcessingConfig
 
 
 @ray.remote

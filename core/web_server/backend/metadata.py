@@ -11,7 +11,7 @@ from mosaics.viewbox import compute_viewbox
 from products.registry import get_producer, MediaType
 from previews.types import QualityLevel
 from mosaics.trimming import project_to_viewbox
-from customization.decisions import ObjectType, get_decisions_for_object
+from decisions.decisions import ObjectType, get_decisions_for_object
 
 metadata_bp = Blueprint("metadata", __name__)
 

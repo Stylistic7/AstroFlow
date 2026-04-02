@@ -9,7 +9,7 @@ from functools import partial
 
 from frozendict import frozendict
 from stacks.composite_stack import Stack, StacksDict, RunsDict, CalibrationStacksDict
-from customization.settings import DevelopmentSettings
+from decisions.settings import DevelopmentSettings
 from dependency_graph import Graph, Node, chain
 from mosaics.merge_images import merge_images
 from mosaics.types import Mosaic, MosaicsDict, Viewbox

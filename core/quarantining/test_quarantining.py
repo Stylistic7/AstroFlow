@@ -7,12 +7,12 @@ from frozendict import frozendict
 from hashing import hash_list
 from compute_graph import build_compute_graph
 from context import context
-from customization.settings import Settings, StackSettings, TargetSettings
-from customization.decisions import (
+from decisions.settings import Settings, StackSettings, TargetSettings
+from decisions.decisions import (
     DecisionType, DecisionOverride, BinaryChoice, ObjectType,
 )
-from customization.resolve import resolve_decisions
-from customization.compute_graph import ALL_EXCLUSION_TYPES
+from decisions.resolve import resolve_decisions
+from decisions.compute_graph import ALL_EXCLUSION_TYPES
 from dependency_graph import run_graph
 from testing import make_synthetic_frames, copy_testdata_frames
 from stacks.composite_stack import Stack
@@ -83,7 +83,7 @@ def test_quarantine_run(test_context) -> None:
 
 def _run_deps_per_stack():
     """Return the set of dependency counts per run, for each composite stack (after resolving calibration)."""
-    from customization.resolve import resolve_calibration
+    from decisions.resolve import resolve_calibration
     from frozendict import frozendict as fd
     cal_stacks = context.calibration_stacks
     stacks = [ref.get() for ref in context.stacks.values() if type(ref.get()) is Stack]

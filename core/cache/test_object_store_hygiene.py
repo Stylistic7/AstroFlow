@@ -11,7 +11,7 @@ from metadata.image_metadata import scatter_compute_image_metadata
 from compute_graph.compute_graph import build_regroup_graph
 from testing import copy_testdata_frames
 from testing.test_frames import _TESTDATA_TARGETS
-from customization.settings import (
+from decisions.settings import (
     Settings,
     ClusteringSettings,
     DevelopmentSettings,

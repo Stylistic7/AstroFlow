@@ -12,7 +12,7 @@ from metadata.classes import FrameHash, MetadataDict
 from decorators import node
 from cache.context_ref import ContextRef
 from context import context
-from customization.decisions import (
+from decisions.decisions import (
     DecisionPoint,
     DecisionType,
     BinaryChoice,

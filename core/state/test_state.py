@@ -9,7 +9,7 @@ from context import context
 from dependency_graph import run_graph
 from testing import make_synthetic_frames, copy_testdata_frames
 from file_io.find_image_files import find_image_files
-from customization.helpers import set_flat
+from decisions.helpers import set_flat
 
 
 @ray.remote
