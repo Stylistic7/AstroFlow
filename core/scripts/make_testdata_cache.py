@@ -5,10 +5,21 @@ import shutil
 import diskcache
 import os
 
+from ray_infra.ray_init import connect_to_ray_cluster
+connect_to_ray_cluster()
+
 from context import get_cache
+from cache.context_ref import ContextRef
 from metadata.image_metadata import load_metadata
 from stacks.run import Run
 from stacks.composite_stack import Stack
+
+
+def _resolve(obj):
+    """Resolve a ContextRef, or return the object as-is."""
+    if isinstance(obj, ContextRef):
+        return obj.get()
+    return obj
 
 TESTDATA_CACHE_GZIP_FILENAME = "testdata/cache.tar.gz"
 
@@ -25,8 +36,7 @@ def create_tar_gz_from_directory(source_dir, output_filename):
 
 def copy_all_stack_data(metadata, cache, testdata_cache, stack_id):
     stacks = cache["stacks"]
-    stack_ref = stacks[stack_id]
-    stack = stack_ref.get() if hasattr(stack_ref, "get") else stack_ref
+    stack = _resolve(stacks[stack_id])
     assert isinstance(stack, Stack)
     for substack in stack.contents.values():
         assert isinstance(substack, Run)
@@ -38,32 +48,19 @@ def copy_all_stack_data(metadata, cache, testdata_cache, stack_id):
 
 def copy_all_target_data(metadata, cache, testdata_cache, target_id):
     targets = cache["targets"]
-    target_ref = targets[target_id]
-    target = target_ref.get() if hasattr(target_ref, "get") else target_ref
+    target = _resolve(targets[target_id])
     for stack_id in target.stack_ids:
         copy_all_stack_data(metadata, cache, testdata_cache, stack_id)
-
-
-def copy_image(metadata, cache, testdata_cache, content_hash, target_dir):
-    key = ("compute_image_metadata", content_hash)
-    testdata_cache[key] = metadata[content_hash]
-
-    source_filename = metadata[content_hash].filename
-    os.makedirs(target_dir, exist_ok=True)
-    shutil.copy(source_filename, target_dir)
-    print(f"### Copied file {source_filename} to {target_dir}")
 
 
 def copy_all_mosaic_data(metadata, cache, testdata_cache, mosaic_id):
     targets = cache["targets"]
     mosaics = cache["mosaics"]
-    mosaic_ref = mosaics[mosaic_id]
-    mosaic = mosaic_ref.get() if hasattr(mosaic_ref, "get") else mosaic_ref
+    mosaic = _resolve(mosaics[mosaic_id])
     stack_ids = [
         stack_id
         for target_id in mosaic.target_ids
-        for target_ref in [targets[target_id]]
-        for stack_id in (target_ref.get() if hasattr(target_ref, "get") else target_ref).stack_ids
+        for stack_id in _resolve(targets[target_id]).stack_ids
     ]
     for stack_id in stack_ids:
         copy_all_stack_data(metadata, cache, testdata_cache, stack_id)
@@ -82,7 +79,6 @@ if __name__ == "__main__":
     copy_all_mosaic_data(metadata, cache, testdata_cache, "75a1da6463e118e6")
     copy_all_stack_data(metadata, cache, testdata_cache, "8768e9be7664d771")
     copy_all_target_data(metadata, cache, testdata_cache, "bedcbfed642ec2b9")
-    # copy_all_target_data(metadata, cache, testdata_cache, "24059224549fd764")
 
     # Copy the output files, and store the cache to a tar.gz file on disk.
     # shutil.copytree(context.output_dir, 'testdata', dirs_exist_ok=True)
