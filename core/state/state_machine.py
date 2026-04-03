@@ -93,10 +93,10 @@ def _populate_context(
         ),
     )
 
-    context.shopping_cart = [("mosaic", "75a1da6463e118e6")]
+    context.shopping_cart = [("mosaic", "75a1da6463e118e6", "DownscaledMaster")]
     context.ray_head_node_enabled = True
 
-    return state, []
+    return state, [Action(type="run_entire_graph")]
 
 
 def _start_astroflow_zeroconf(
