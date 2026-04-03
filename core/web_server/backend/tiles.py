@@ -48,6 +48,7 @@ def get_best_image(object_type: type, *args) -> Path:
     for level in [
         QualityLevel.POST_PROCESSED,
         QualityLevel.MASTER,
+        QualityLevel.DOWNSCALED_MASTER,
         QualityLevel.SUBFRAME,
     ]:
         if filename_fn := get_filename_fn(MediaType.IMAGE, object_type, level):

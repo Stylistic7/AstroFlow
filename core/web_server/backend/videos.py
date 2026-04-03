@@ -16,6 +16,7 @@ def get_video(object_type: type, *args):
     for level in [
         QualityLevel.POST_PROCESSED,
         QualityLevel.MASTER,
+        QualityLevel.DOWNSCALED_MASTER,
         QualityLevel.SUBFRAME,
     ]:
         if fn := get_producer(MediaType.VIDEO, object_type, level):

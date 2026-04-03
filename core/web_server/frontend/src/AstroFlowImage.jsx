@@ -4,12 +4,14 @@ import AstroFlowContext from "./AstroFlowContext.jsx";
 
 const qualityLabels = {
     "Subframe": "Single frame",
+    "DownscaledMaster": "Downscaled",
     "Master": "Stacked",
     "PostProcessed": "Processed",
 };
 
 const qualityColors = {
     "Subframe": "rgba(255, 170, 50, 0.85)",
+    "DownscaledMaster": "rgba(180, 130, 255, 0.85)",
     "Master": "rgba(100, 160, 255, 0.85)",
     "PostProcessed": "rgba(80, 200, 120, 0.85)",
 };
