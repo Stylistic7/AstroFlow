@@ -84,7 +84,7 @@ def get_image(
         elif object_type == "mosaic":
             obj_args = (context.mosaics[object_id].get(), filter)
 
-        if level:
+        if level and level != "auto":
             ql = QualityLevel(level)
             path = get_image_for_level(obj_cls, ql, *obj_args)
         else:
@@ -135,12 +135,11 @@ def get_image(
 
 
 @stateful_route(
-    tiles_bp.route("/tile_metadata/<object_type>/<object_id>/<filter>"),
     tiles_bp.route("/tile_metadata/<object_type>/<object_id>/<filter>/<level>"),
     sharding_key="object_id",
 )
 def tile_metadata(
-    object_type: str, object_id: str, filter: str, level: str = None, backend_port: int = None,
+    object_type: str, object_id: str, filter: str, level: str = "auto", backend_port: int = None,
 ):
     host_port = request.host.split(":")[-1]
     print(f"### tile_metadata calling get_image on worker on port {host_port} level={level}")
@@ -166,14 +165,11 @@ def tile_metadata(
 
 
 @tiles_bp.route(
-    "/tile/<object_type>/<object_id>/<filter>/<int:z>/<int:x>/<int:y>.png"
-)
-@tiles_bp.route(
     "/tile/<object_type>/<object_id>/<filter>/<level>/<int:z>/<int:x>/<int:y>.png"
 )
 @cross_origin(origins="*")
 def serve_tile(
-    object_type: str, object_id: str, filter: str, z: str, x: str, y: str, level: str = None,
+    object_type: str, object_id: str, filter: str, level: str, z: str, x: str, y: str,
 ):
     source = get_image(object_type, object_id, filter, level=level, load_if_missing=False)
 

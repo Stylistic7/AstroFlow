@@ -66,8 +66,8 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
   }, [objectType, imageHash, filter, qualityLevelProp]);
 
   useEffect(() => {
-    const levelSuffix = qualityLevelProp ? `/${qualityLevelProp}` : '';
-    fetch(`/tile_metadata/${objectType}/${imageHash}/${filter}${levelSuffix}`)
+    const level = qualityLevelProp || 'auto';
+    fetch(`/tile_metadata/${objectType}/${imageHash}/${filter}/${level}`)
       .then((res) => res.ok ? res.json() : null)
       .then((meta) => { if (meta) setTileMetadata(meta); });
   }, [objectType, imageHash, filter, qualityLevelProp]);
@@ -259,8 +259,8 @@ const ImperativeViewport = ({ objectType, imageHash, filter, qualityLevel, port,
           const key = `${bestZ}/${x}/${y}`;
           if (spritesRef.current[key]) continue;
 
-          const levelSegment = qualityLevel ? `/${qualityLevel}` : '';
-          const relativePath = `/tile/${objectType}/${imageHash}/${filter}${levelSegment}/${bestZ}/${x}/${y}.png`;
+          const tileLevel = qualityLevel || 'auto';
+          const relativePath = `/tile/${objectType}/${imageHash}/${filter}/${tileLevel}/${bestZ}/${x}/${y}.png`;
           const url = new URL(relativePath, `${window.location.protocol}//${window.location.hostname}:${port}`);
           PIXI.Texture.fromURL(url.href)
             .then((texture) => {
