@@ -112,6 +112,21 @@ app.register_blueprint(settings_bp)
 app.register_blueprint(thumbnails_bp)
 app.register_blueprint(compute_graphs_bp)
 app.register_blueprint(videos_bp)
+
+
+import time
+from flask import g
+
+@app.before_request
+def _start_timer():
+    g.start_time = time.monotonic()
+
+@app.after_request
+def _log_slow_requests(response):
+    elapsed = time.monotonic() - g.start_time
+    if elapsed > 0.2:
+        print(f"SLOW [{elapsed:.2f}s] {request.method} {request.path}")
+    return response
 app.register_blueprint(performance_bp)
 app.register_blueprint(decisions_bp)
 
@@ -196,19 +211,26 @@ def _make_json_serializable(D):
     return output
 
 
+def _cached_json(data, max_age=10):
+    """Return a JSON response with Cache-Control headers."""
+    response = jsonify(data)
+    response.headers['Cache-Control'] = f'public, max-age={max_age}'
+    return response
+
+
 @app.route("/api/mosaics")
 def mosaics():
-    return context.ui_mosaics or {}
+    return _cached_json(context.ui_mosaics or {})
 
 
 @app.route("/api/targets")
 def targets():
-    return context.ui_targets or {}
+    return _cached_json(context.ui_targets or {})
 
 
 @app.route("/api/stacks")
 def stacks():
-    return context.ui_stacks or {}
+    return _cached_json(context.ui_stacks or {})
 
 
 @app.route("/api/decision_overrides")
@@ -305,32 +327,18 @@ def plot():
 
 @app.route("/api/recent")
 def recent():
-    stacks = context.stacks
-    targets = context.targets
-    mosaics = context.mosaics
+    ui_targets = context.ui_targets or {}
+    ui_mosaics = context.ui_mosaics or {}
 
-    def last_stack_datetime(stack_id):
-        return stacks[stack_id].get().newest_date
+    items = []
+    for tid, t in ui_targets.items():
+        if "newest_date" in t:
+            items.append((("target", tid), t["newest_date"]))
+    for mid, m in ui_mosaics.items():
+        if "newest_date" in m:
+            items.append((("mosaic", mid), m["newest_date"]))
 
-    def last_target_datetime(target_id):
-        return max(
-            [last_stack_datetime(s) for s in targets[target_id].get().stack_ids]
-        )
-
-    def last_mosaic_datetime(mosaic_id):
-        return max(
-            [last_target_datetime(t) for t in mosaics[mosaic_id].get().target_ids]
-        )
-
-    targets_and_dates = [
-        (("target", s), last_target_datetime(s)) for s in targets.keys()
-    ]
-    mosaics_and_dates = [
-        (("mosaic", s), last_mosaic_datetime(s)) for s in mosaics.keys()
-    ]
-
-    all_items = targets_and_dates + mosaics_and_dates
-    sorted_items = sorted(all_items, key=operator.itemgetter(1), reverse=True)
+    sorted_items = sorted(items, key=operator.itemgetter(1), reverse=True)
     return [i[0] for i in sorted_items]
 
 

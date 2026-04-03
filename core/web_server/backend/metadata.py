@@ -128,22 +128,45 @@ def validity_for_object(object_type: str, object_id: str):
 
 @metadata_bp.route("/api/validity")
 def validity_all():
-    """Return validity for all objects, keyed by type and ID."""
-    from products import is_object_valid
+    """Return validity for all objects, keyed by type and ID.
+
+    Batch-fetches the validity dict and ui_targets/ui_mosaics in minimal
+    Ray calls, then computes hierarchy locally.
+    """
+    validity = context.get("validity", {})
+    ui_targets = context.ui_targets or {}
+    ui_mosaics = context.ui_mosaics or {}
+    stacks = context.stacks or {}
+
+    def stack_valid(stack_id, level):
+        return validity.get(("stack", stack_id, level)) is True
+
+    def target_valid(target_id, level):
+        target = ui_targets.get(target_id)
+        if not target or "stack_ids" not in target:
+            return False
+        return all(stack_valid(sid, level) for sid in target["stack_ids"])
+
+    def mosaic_valid(mosaic_id, level):
+        mosaic = ui_mosaics.get(mosaic_id)
+        if not mosaic or "target_ids" not in mosaic:
+            return False
+        return all(target_valid(tid, level) for tid in mosaic["target_ids"])
+
     result = {}
-    for stack_id in (context.stacks or {}):
+    for stack_id in stacks:
         result[f"stack:{stack_id}"] = {
-            level.value: is_object_valid("stack", stack_id, level.value)
+            level.value: stack_valid(stack_id, level.value)
             for level in QualityLevel
         }
-    for target_id in (context.targets or {}):
+    for target_id in ui_targets:
         result[f"target:{target_id}"] = {
-            level.value: is_object_valid("target", target_id, level.value)
+            level.value: target_valid(target_id, level.value)
             for level in QualityLevel
         }
-    for mosaic_id in (context.mosaics or {}):
+    for mosaic_id in ui_mosaics:
         result[f"mosaic:{mosaic_id}"] = {
-            level.value: is_object_valid("mosaic", mosaic_id, level.value)
+            level.value: mosaic_valid(mosaic_id, level.value)
             for level in QualityLevel
         }
     return jsonify(result)
