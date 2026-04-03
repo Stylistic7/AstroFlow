@@ -157,7 +157,7 @@ def available_qualities(object_type: str, object_id: str, filter: str = None):
     obj_type, args = _resolve_object(object_type, object_id, filter)
     available = _available_qualities(obj_type, *args)
     if not available:
-        return abort(404)
+        return jsonify({"quality_level": None, "image_path": None, "available": []})
 
     levels = [
         {

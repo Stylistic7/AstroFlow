@@ -2,7 +2,9 @@ import React from 'react';
 import IconButton from '@mui/material/IconButton';
 import { styled } from '@mui/material/styles';
 
-const ToggleButton = styled(IconButton)(({ theme, toggled }) => ({
+const ToggleButton = styled(IconButton, {
+  shouldForwardProp: (prop) => prop !== 'toggled',
+})(({ theme, toggled }) => ({
   borderRadius: '50%',
   backgroundColor: toggled ? theme.palette.primary.main : 'transparent',
   '&:hover': {
