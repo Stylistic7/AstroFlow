@@ -116,10 +116,10 @@ def override_decision():
 
     state.cancel_and_restart()
 
-    # Mark the affected object as stale so the UI shows an indicator.
+    from products import invalidate_object
     object_type = key[1].value  # ObjectType enum → string
     object_id = key[2]
-    context.or_equals("invalidated", {(object_type, object_id): True})
+    invalidate_object(object_type, object_id)
 
     return jsonify({
         "key": _serialize_key(key),

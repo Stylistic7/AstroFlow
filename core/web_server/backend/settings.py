@@ -46,8 +46,8 @@ def toggle_quarantine(object_type, object_id):
 
     _update_settings(lambda s: replace(s, decision_overrides=new_overrides))
 
-    # Mark the affected object as stale so the UI shows an indicator.
-    context.or_equals("invalidated", {(object_type, object_id): True})
+    from products import invalidate_object
+    invalidate_object(object_type, object_id)
     announce("reload_data")
 
     from state.actor import state

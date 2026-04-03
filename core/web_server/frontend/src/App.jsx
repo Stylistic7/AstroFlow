@@ -36,8 +36,8 @@ function App() {
   const [computeGraph, setComputeGraph] = useState({});
   const [computeGraphStatus, setComputeGraphStatus] = useState({});
   const [rayStatus, setRayStatus] = useState({});
-  const [invalidated, setInvalidated] = useState([]);
   const [decisionOverrides, setDecisionOverrides] = useState([]);
+  const [validity, setValidity] = useState({});
   const [sseConnected, setSseConnected] = useState(false);
   const [showQuarantined, setShowQuarantined] = useState(
     () => localStorage.getItem('astroflow_showQuarantined') !== 'false'
@@ -46,13 +46,14 @@ function App() {
 
   useEffect(() => {
     const loadObjectData = async () => {
-      const [s, c, t, m, cart, cg] = await Promise.all([
+      const [s, c, t, m, cart, cg, v] = await Promise.all([
         fetch('/api/stacks').then(r => r.json()),
         fetch('/api/calibration_stacks').then(r => r.json()),
         fetch('/api/targets').then(r => r.json()),
         fetch('/api/mosaics').then(r => r.json()),
         fetch('/api/shopping_cart').then(r => r.json()),
         fetch('/api/compute_graph').then(r => r.json()),
+        fetch('/api/validity').then(r => r.json()).catch(() => ({})),
       ]);
 
       setStacks(s);
@@ -61,6 +62,7 @@ function App() {
       setMosaics(m);
       setShoppingCart(cart);
       setComputeGraph(cg);
+      setValidity(v);
 
       setDataIsAvailable(true);
     };
@@ -77,13 +79,6 @@ function App() {
       setRayStatus(s);
     };
 
-    const loadInvalidated = async () => {
-      try {
-        const d = await fetch('/api/invalidated').then(r => r.json());
-        setInvalidated(d);
-      } catch { /* ignore */ }
-    };
-
     const loadDecisionOverrides = async () => {
       try {
         const d = await fetch('/api/decision_overrides').then(r => r.json());
@@ -93,7 +88,6 @@ function App() {
 
     loadComputeGraphStatus();
     loadRayStatus();
-    loadInvalidated();
     loadDecisionOverrides();
 
     const stream_url = `${window.location.protocol}//${window.location.hostname}:8001/stream`;
@@ -123,8 +117,8 @@ function App() {
       // Any event (including heartbeat) resets the dead-man timer.
       const onAnyEvent = () => resetHeartbeatTimer();
 
-      sse.onmessage = e => { onAnyEvent(); loadObjectData(); loadInvalidated(); loadDecisionOverrides(); };
-      sse.addEventListener("reload_data", e => { onAnyEvent(); loadObjectData(); loadInvalidated(); loadDecisionOverrides(); });
+      sse.onmessage = e => { onAnyEvent(); loadObjectData(); loadDecisionOverrides(); };
+      sse.addEventListener("reload_data", e => { onAnyEvent(); loadObjectData(); loadDecisionOverrides(); });
       sse.addEventListener("compute_graph_status", e => { onAnyEvent(); loadComputeGraphStatus(); });
       sse.addEventListener("ray_status", e => { onAnyEvent(); loadRayStatus(); });
       sse.addEventListener("heartbeat", onAnyEvent);
@@ -214,7 +208,7 @@ function App() {
             computeGraph,
             computeGraphStatus,
             rayStatus,
-            invalidated,
+            validity,
             isQuarantined,
             showQuarantined,
             toggleShowQuarantined,

@@ -109,6 +109,39 @@ def _resolve_object(object_type_str, object_id, filter=None):
     abort(400, f"Unknown object type: {object_type_str}")
 
 
+@metadata_bp.route("/api/validity/<object_type>/<object_id>")
+def validity_for_object(object_type: str, object_id: str):
+    """Return validity per quality level for a single object."""
+    from products import is_object_valid
+    result = {}
+    for level in QualityLevel:
+        result[level.value] = is_object_valid(object_type, object_id, level.value)
+    return jsonify(result)
+
+
+@metadata_bp.route("/api/validity")
+def validity_all():
+    """Return validity for all objects, keyed by type and ID."""
+    from products import is_object_valid
+    result = {}
+    for stack_id in (context.stacks or {}):
+        result[f"stack:{stack_id}"] = {
+            level.value: is_object_valid("stack", stack_id, level.value)
+            for level in QualityLevel
+        }
+    for target_id in (context.targets or {}):
+        result[f"target:{target_id}"] = {
+            level.value: is_object_valid("target", target_id, level.value)
+            for level in QualityLevel
+        }
+    for mosaic_id in (context.mosaics or {}):
+        result[f"mosaic:{mosaic_id}"] = {
+            level.value: is_object_valid("mosaic", mosaic_id, level.value)
+            for level in QualityLevel
+        }
+    return jsonify(result)
+
+
 @metadata_bp.route("/api/best_quality/<object_type>/<object_id>")
 @metadata_bp.route("/api/best_quality/<object_type>/<object_id>/<filter>")
 def best_quality(object_type: str, object_id: str, filter: str = None):

@@ -231,8 +231,6 @@ class StateActor:
             kill_all_instances()
             return state, [Action(type="announce", message="reload_data")]
 
-        # Graph completed successfully — clear stale markers.
-        context["invalidated"] = {}
         return state, [Action(type="announce", message="reload_data")]
 
     # TODO: Complete this. The goal is to iterate over the graph's dry run result,

@@ -1,4 +1,7 @@
-from .registry import makes_image, makes_video, get_producer, get_filename_fn, MediaType, clear_registry
+from .registry import (
+    makes_image, makes_video, get_producer, get_filename_fn, MediaType,
+    clear_registry, invalidate_object, is_object_valid,
+)
 
 
 def ensure_producers_registered():

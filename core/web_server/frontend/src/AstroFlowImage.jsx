@@ -23,10 +23,7 @@ export const AstroFlowImage = ({
     showPolygons = false,
     size = "full",
 }) => {
-    const { invalidated } = useContext(AstroFlowContext);
-    const isStale = (invalidated || []).some(
-        ([type, id]) => type === objectType && id === objectId
-    );
+    const { validity } = useContext(AstroFlowContext);
 
     const [qualityLevel, setQualityLevel] = useState(null);
 
@@ -43,6 +40,8 @@ export const AstroFlowImage = ({
     let thumbnail_url = `/thumbnail/${objectType}/${objectId}${filter ? `/${filter}` : ''}`;
 
     const label = qualityLabels[qualityLevel];
+    const objectValidity = validity[`${objectType}:${objectId}`];
+    const isStale = qualityLevel && objectValidity && objectValidity[qualityLevel] === false;
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -70,7 +69,7 @@ export const AstroFlowImage = ({
                 }}>
                     {label && (
                         <div style={{
-                            background: qualityColors[qualityLevel],
+                            background: isStale ? 'rgba(255, 160, 50, 0.85)' : qualityColors[qualityLevel],
                             color: 'white',
                             padding: '2px 8px',
                             borderRadius: 4,
@@ -78,20 +77,7 @@ export const AstroFlowImage = ({
                             fontWeight: 500,
                             width: 'fit-content',
                         }}>
-                            {label}
-                        </div>
-                    )}
-                    {isStale && (
-                        <div style={{
-                            background: 'rgba(255, 100, 100, 0.85)',
-                            color: 'white',
-                            padding: '2px 8px',
-                            borderRadius: 4,
-                            fontSize: 11,
-                            fontWeight: 500,
-                            width: 'fit-content',
-                        }}>
-                            Reprocessing…
+                            {isStale ? `${label} (stale)` : label}
                         </div>
                     )}
                 </div>

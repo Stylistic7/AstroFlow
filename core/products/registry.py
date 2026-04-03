@@ -69,6 +69,57 @@ def clear_registry(media_type: MediaType) -> None:
     _filename_fns[media_type].clear()
 
 
+def _mark_valid(object_type: type, level: QualityLevel, args: tuple) -> None:
+    """Mark a product as valid after its producer completes."""
+    # The first argument to a producer is always the primary object
+    # (Stack, Mosaic, etc.) which has stable_hash.
+    obj = args[0] if args else None
+    if obj is None or not hasattr(obj, "stable_hash"):
+        return
+    key = (object_type.__name__.lower(), obj.stable_hash, level.value)
+    try:
+        from context import context
+        context.or_equals("validity", {key: True})
+    except Exception:
+        pass  # Don't let validity tracking break the producer
+
+
+def invalidate_object(object_type: str, object_id: str) -> None:
+    """Mark all quality levels of an object as invalid."""
+    from context import context
+    updates = {}
+    for level in QualityLevel:
+        updates[(object_type, object_id, level.value)] = False
+    context.or_equals("validity", updates)
+
+
+def is_object_valid(object_type: str, object_id: str, level: str) -> bool:
+    """Query validity, deriving parent validity from children.
+
+    Returns True if the product is up to date, False otherwise
+    (stale or never produced).
+    """
+    from context import context
+
+    if object_type == "mosaic":
+        mosaics = context.mosaics or {}
+        if object_id not in mosaics:
+            return False
+        mosaic = mosaics[object_id].get()
+        return all(is_object_valid("target", tid, level) for tid in mosaic.target_ids)
+
+    if object_type == "target":
+        targets = context.targets or {}
+        if object_id not in targets:
+            return False
+        target = targets[object_id].get()
+        return all(is_object_valid("stack", sid, level) for sid in target.stack_ids)
+
+    # Leaf: valid only if explicitly marked True.
+    validity = context.get("validity", {})
+    return validity.get((object_type, object_id, level)) is True
+
+
 def fully_resolve(
     object_type: type, level: QualityLevel, filename_fn: FilenameFn
 ):
@@ -88,21 +139,32 @@ class MediaProducerBuilder:
         self.object_type = object_type
 
     def _bind(self, level: QualityLevel, filename_fn: FilenameFn | None = None):
+        object_type = self.object_type
+
         def decorator(func: Callable[..., Path]):
+            import functools
+
             resolved = None
             if filename_fn is not None:
-                resolved = fully_resolve(self.object_type, level, filename_fn)
-                # Set on the function so it's accessible inside Ray workers
-                # (where the process-local registry may not be populated).
-                # When multiple levels are registered on the same function,
-                # the last decorator wins — use get_filename_fn() for
-                # level-specific lookup in the main process.
+                resolved = fully_resolve(object_type, level, filename_fn)
                 func.filename_fn = resolved
+
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs):
+                result = func(*args, **kwargs)
+                # Mark this product as valid after successful production.
+                _mark_valid(object_type, level, args)
+                return result
+
+            # Copy attributes from the original function.
+            if hasattr(func, 'filename_fn'):
+                wrapper.filename_fn = func.filename_fn
+
             register_producer(
-                self.media_type, self.object_type, level, func,
+                self.media_type, object_type, level, wrapper,
                 filename_fn=resolved,
             )
-            return func
+            return wrapper
 
         return decorator
 
