@@ -21,23 +21,39 @@ _registry: dict[
     MediaType.VIDEO: {},
 }
 
+_filename_fns: dict[
+    MediaType, dict[tuple[Type, QualityLevel], Callable[..., Path]]
+] = {
+    MediaType.IMAGE: {},
+    MediaType.VIDEO: {},
+}
+
 
 def register_producer(
     media_type: MediaType,
     object_type: type,
     level: QualityLevel,
     func: Callable[..., Path],
+    filename_fn: "FilenameFn | None" = None,
 ) -> None:
     key = (object_type, level)
     if key in _registry[media_type]:
         raise ValueError(f"Duplicate registration for {media_type.value} {key}")
     _registry[media_type][key] = func
+    if filename_fn is not None:
+        _filename_fns[media_type][key] = filename_fn
 
 
 def get_producer(
     media_type: MediaType, object_type: type, level: QualityLevel
 ) -> Optional[Callable[..., Path]]:
     return _registry[media_type].get((object_type, level))
+
+
+def get_filename_fn(
+    media_type: MediaType, object_type: type, level: QualityLevel
+) -> Optional[Callable[..., Path]]:
+    return _filename_fns[media_type].get((object_type, level))
 
 
 def available_levels(
@@ -52,9 +68,9 @@ def available_levels(
 
 def clear_registry(media_type: MediaType) -> None:
     _registry[media_type].clear()
+    _filename_fns[media_type].clear()
 
 
-# TODO: Where is the best spot to insert the context.output_dir?
 def fully_resolve(
     object_type: type, level: QualityLevel, filename_fn: FilenameFn
 ):
@@ -75,17 +91,25 @@ class MediaProducerBuilder:
 
     def _bind(self, level: QualityLevel, filename_fn: FilenameFn | None = None):
         def decorator(func: Callable[..., Path]):
+            resolved = None
             if filename_fn is not None:
-                func.filename_fn = fully_resolve(
-                    self.object_type, level, filename_fn
-                )
-            register_producer(self.media_type, self.object_type, level, func)
+                resolved = fully_resolve(self.object_type, level, filename_fn)
+                # Set on the function for backward compatibility.
+                # When multiple levels are registered, the last decorator wins.
+                func.filename_fn = resolved
+            register_producer(
+                self.media_type, self.object_type, level, func,
+                filename_fn=resolved,
+            )
             return func
 
         return decorator
 
     def as_subframe(self, filename_fn: FilenameFn | None = None):
         return self._bind(QualityLevel.SUBFRAME, filename_fn)
+
+    def as_downscaled_master(self, filename_fn: FilenameFn | None = None):
+        return self._bind(QualityLevel.DOWNSCALED_MASTER, filename_fn)
 
     def as_master(self, filename_fn: FilenameFn | None = None):
         return self._bind(QualityLevel.MASTER, filename_fn)

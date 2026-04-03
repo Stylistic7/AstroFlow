@@ -41,9 +41,10 @@ def _symlink_frames(filenames: list[str], dest_dir: str) -> None:
 
 
 def _copy_frames_with_plate_solution(
-    metadata: MetadataDict, dest_dir: str
+    metadata: MetadataDict, dest_dir: str, downscale_factor: int = 1,
 ) -> None:
-    # TODO: Parallelize this.
+    from stacks.downscale import downscale_fits
+
     for frame in metadata.values():
         filename = frame.filename
         assert filename
@@ -54,33 +55,35 @@ def _copy_frames_with_plate_solution(
 
         dest_filename = os.path.join(dest_dir, os.path.basename(filename))
         os.makedirs(dest_dir, exist_ok=True)
-        print(f"copying {filename} -> {dest_filename}")
 
-        copy_image(filename, dest_filename)
+        if downscale_factor > 1:
+            log.info("Downscaling frame", filename=filename, factor=downscale_factor)
+            downscale_fits(filename, dest_filename, K=downscale_factor)
+        else:
+            print(f"copying {filename} -> {dest_filename}")
+            copy_image(filename, dest_filename)
 
-        # TODO: Reinstate the DOWNSCALED_MASTER mode.
-        # downscale_fits(filename, dest_filename, K=4)
+            with pyfits.open(str(dest_filename), mode="update", mmap=False) as fits:
+                if "invalid" in fits[0].header.get("BAYERPAT", "").lower():
+                    del fits[0].header["BAYERPAT"]
 
-        with pyfits.open(str(dest_filename), mode="update", mmap=False) as fits:
-            if "invalid" in fits[0].header.get("BAYERPAT", "").lower():
-                del fits[0].header["BAYERPAT"]
-
-            if frame.plate_solution:
-                fits[0].header["RA"] = frame.plate_solution.header["CRVAL1"]
-                fits[0].header["DEC"] = frame.plate_solution.header["CRVAL2"]
-                for k, v in frame.plate_solution.header.items():
-                    fits[0].header[k] = v
+                if frame.plate_solution:
+                    fits[0].header["RA"] = frame.plate_solution.header["CRVAL1"]
+                    fits[0].header["DEC"] = frame.plate_solution.header["CRVAL2"]
+                    for k, v in frame.plate_solution.header.items():
+                        fits[0].header[k] = v
 
 
 def _setup_run(
     run: Run,
     calibration_stacks: CalibrationStacksDict,
     dest_dir: str,
+    downscale_factor: int = 1,
 ) -> list[str]:
     filenames = [i.filename for i in run.metadata.values()]
     assert len(run.frames) == len(filenames)
 
-    _copy_frames_with_plate_solution(run.metadata, dest_dir)
+    _copy_frames_with_plate_solution(run.metadata, dest_dir, downscale_factor)
 
     def get_dependency_filename(d):
         if isinstance(d, StackIdDependency):
@@ -100,12 +103,13 @@ def _setup_stack(
     stack: BaseStack,
     calibration_stacks: CalibrationStacksDict,
     dest_dir: str,
+    downscale_factor: int = 1,
 ) -> list[str]:
     filenames = []
     for i, run in enumerate(stack.contents.values()):
         run_dir = os.path.join(dest_dir, f"RUN_{i}")
         os.makedirs(run_dir, exist_ok=True)
-        filenames.extend(_setup_run(run, calibration_stacks, run_dir))
+        filenames.extend(_setup_run(run, calibration_stacks, run_dir, downscale_factor))
 
     return filenames
 
@@ -150,7 +154,9 @@ def _copy_wbpp_result(
     return WithSidecar(XisfFilePath(dest_filename))
 
 
-# TODO: add an `as_downscaled_master` quality level.
+@makes_image(CalibrationStack).as_downscaled_master(stack_filename)
+@makes_image(CalibrationStack).as_master(stack_filename)
+@makes_image(Stack).as_downscaled_master(stack_filename)
 @makes_image(Stack).as_master(stack_filename)
 @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD")
 @create_thumbnail
@@ -196,7 +202,7 @@ def stack_files(
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
         log.debug("Using temporary directory", tmp_dir=tmp_dir)
 
-        filenames = _setup_stack(stack, calibration_stacks, tmp_dir)
+        filenames = _setup_stack(stack, calibration_stacks, tmp_dir, config.downscale_factor)
 
         if len(filenames) < min_frames_in_stack:
             log.info("Not stacking, too few files", stack=str(stack), num_files=len(filenames))
@@ -212,7 +218,3 @@ def stack_files(
         return _copy_wbpp_result(tmp_dir, dest_filename, metadata)
 
 
-# Register stack_files as a producer for CalibrationStack too.
-from products.registry import register_producer, MediaType
-from previews.types import QualityLevel
-register_producer(MediaType.IMAGE, CalibrationStack, QualityLevel.MASTER, stack_files)

@@ -13,13 +13,14 @@ from previews.types import QualityLevel
 _TILE_SIZE = 2048  # pixels
 
 
-def compute_viewbox(mode: QualityLevel, object: AstrometricAttributes) -> Viewbox:
+def compute_viewbox(
+    mode: QualityLevel, object: AstrometricAttributes, downscale_factor: int = 1,
+) -> Viewbox:
     print(f"### Entering compute_viewbox for object {object} mode {mode}")
 
     def round_to_nearest_multiple(number: float, multiple: int) -> int:
         return int(np.ceil(number / multiple) * multiple)
 
-    # TODO: Put this in the UI somewhere.
     projection = mercator.MercatorProjection()
 
     # Project from spherical coordinates on the sky into 2D coordinates, in
@@ -27,15 +28,14 @@ def compute_viewbox(mode: QualityLevel, object: AstrometricAttributes) -> Viewbo
     xs, ys = project_polygon(object.footprint, projection)
     x_min, y_min, x_span, y_span = geometry_compute_viewbox(list(zip(xs, ys)))
 
-    # Compute the number of pixels along the x axis. In master mode, use the
-    # object's image scale, given in degrees per pixel. In subframe mode, make
-    # a thumbnail-sized image.
-    # TODO: This needs to be updated for other levels like post-processing.
-    num_pixels_x = (
-        x_span / np.deg2rad(object.image_scale / 3600)
-        if mode == QualityLevel.MASTER
-        else 2048
-    )
+    # Compute the number of pixels along the x axis. Non-subframe modes use
+    # the object's image scale (adjusted by downscale_factor); subframe mode
+    # makes a fixed-size thumbnail.
+    if mode == QualityLevel.SUBFRAME:
+        num_pixels_x = 2048
+    else:
+        effective_scale = object.image_scale * downscale_factor
+        num_pixels_x = x_span / np.deg2rad(effective_scale / 3600)
     finished_pixels_x = int(np.ceil(num_pixels_x))
 
     # Round the number of pixels up to a multiple of the tile size.

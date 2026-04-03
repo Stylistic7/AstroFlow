@@ -19,6 +19,7 @@ metadata_bp = Blueprint("metadata", __name__)
 _QUALITY_PRIORITY = [
     QualityLevel.POST_PROCESSED,
     QualityLevel.MASTER,
+    QualityLevel.DOWNSCALED_MASTER,
     QualityLevel.SUBFRAME,
 ]
 

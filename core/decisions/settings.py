@@ -56,6 +56,7 @@ class ProcessingConfig:
     development_settings: "DevelopmentSettings" = field(default_factory=lambda: DevelopmentSettings())
     min_frames_in_stack: int = 5
     decisions: frozendict = field(default_factory=frozendict)
+    downscale_factor: int = 1
 
     def __hash__(self):
         return hash_dataclass(self)

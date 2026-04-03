@@ -184,7 +184,7 @@ def _place_image(
 
     interp = _make_interpolator(filename)
 
-    skip_empty = mode == QualityLevel.MASTER
+    skip_empty = mode != QualityLevel.SUBFRAME
     image = _project_in_tiles(viewbox, interp, wcs, skip_empty=skip_empty)
 
     # TODO: This is really awful; can the structure be improved?
@@ -262,7 +262,7 @@ def place_image(
                 mode, mosaic, stack, filter, viewbox, image_metadata
             )
         )
-    elif mode == QualityLevel.MASTER:
+    else:
         return ray.get(
             place_image_master.remote(
                 mode, mosaic, stack, filter, viewbox, image_metadata

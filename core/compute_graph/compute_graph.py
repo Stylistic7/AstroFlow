@@ -261,7 +261,12 @@ def build_main_processing_graph() -> Graph:
     calibration_stacks = context.calibration_stacks
     settings = context.settings
 
-    def config_for(stack_id=None):
+    _DOWNSCALE_FACTORS = {
+        QualityLevel.MASTER: 1,
+        QualityLevel.DOWNSCALED_MASTER: 8,
+    }
+
+    def config_for(stack_id=None, mode=QualityLevel.MASTER):
         if stack_id:
             decisions = fd({k: v for k, v in settings.decision_overrides.items()
                             if len(k) >= 3 and k[2] == stack_id})
@@ -272,27 +277,28 @@ def build_main_processing_graph() -> Graph:
             development_settings=settings.development_settings,
             min_frames_in_stack=settings.clustering_settings.min_frames_in_stack,
             decisions=decisions,
+            downscale_factor=_DOWNSCALE_FACTORS.get(mode, 1),
         )
-
-    # TODO: Figure out a nice way to set this during development.
-    mode = QualityLevel.MASTER
 
     log.info("Building main processing graph", shopping_cart=shopping_cart)
 
-    # TODO: Maybe add prioritization options in the UI.
     graph = Graph({})
     tasks = []
-    for type, id in shopping_cart:
+    for entry in shopping_cart:
+        # Shopping cart entries: (type, id) or (type, id, mode_str)
+        type, id = entry[0], entry[1]
+        mode = QualityLevel(entry[2]) if len(entry) > 2 else QualityLevel.MASTER
+
         if type == "stack":
             if id not in stacks:
                 log.warning("Stack in shopping cart does not exist", stack_id=id)
                 continue
-            tasks.append((build_stacking_subgraph, stacks[id].get(), config_for(id)))
+            tasks.append((build_stacking_subgraph, stacks[id].get(), config_for(id, mode)))
         elif type == "target":
             if id not in targets:
                 log.warning("Target in shopping cart does not exist", target_id=id)
                 continue
-            tasks.append((build_target_subgraph, targets[id].get(), config_for()))
+            tasks.append((build_target_subgraph, targets[id].get(), config_for(mode=mode)))
         if type == "mosaic":
             if id not in mosaics:
                 log.warning("Mosaic in shopping cart does not exist", mosaic_id=id)
@@ -306,7 +312,7 @@ def build_main_processing_graph() -> Graph:
                     mosaic,
                     stacks_for_mosaic(mosaic, stacks, targets),
                     targets_for_mosaic(mosaic, targets),
-                    config_for(),
+                    config_for(mode=mode),
                 )
             )
 
