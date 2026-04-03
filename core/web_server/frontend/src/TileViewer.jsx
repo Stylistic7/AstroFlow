@@ -66,10 +66,11 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
   }, [objectType, imageHash, filter, qualityLevelProp]);
 
   useEffect(() => {
-    fetch(`/tile_metadata/${objectType}/${imageHash}/${filter}`)
-      .then((res) => res.json())
-      .then((meta) => setTileMetadata(meta));
-  }, [objectType, imageHash, filter]);
+    const levelSuffix = qualityLevelProp ? `/${qualityLevelProp}` : '';
+    fetch(`/tile_metadata/${objectType}/${imageHash}/${filter}${levelSuffix}`)
+      .then((res) => res.ok ? res.json() : null)
+      .then((meta) => { if (meta) setTileMetadata(meta); });
+  }, [objectType, imageHash, filter, qualityLevelProp]);
 
   const onClick = (poly, event) => {
     const e = event.nativeEvent; // underlying DOM PointerEvent
@@ -115,6 +116,7 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
           objectType={objectType}
           imageHash={imageHash}
           filter={filter}
+          qualityLevel={qualityLevelProp}
           port={tileMetadata.port}
           imageWidth={tileMetadata.width}
           imageHeight={tileMetadata.height}
@@ -131,7 +133,7 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
   );
 };
 
-const ImperativeViewport = ({ objectType, imageHash, filter, port, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, showPolygons, metadata, mosaics, onClick }) => {
+const ImperativeViewport = ({ objectType, imageHash, filter, qualityLevel, port, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, showPolygons, metadata, mosaics, onClick }) => {
   const app = useApp();
   const viewportRef = useRef(null);
   const spritesRef = useRef({});
@@ -257,7 +259,8 @@ const ImperativeViewport = ({ objectType, imageHash, filter, port, imageWidth, i
           const key = `${bestZ}/${x}/${y}`;
           if (spritesRef.current[key]) continue;
 
-          const relativePath = `/tile/${objectType}/${imageHash}/${filter}/${bestZ}/${x}/${y}.png`;
+          const levelSegment = qualityLevel ? `/${qualityLevel}` : '';
+          const relativePath = `/tile/${objectType}/${imageHash}/${filter}${levelSegment}/${bestZ}/${x}/${y}.png`;
           const url = new URL(relativePath, `${window.location.protocol}//${window.location.hostname}:${port}`);
           PIXI.Texture.fromURL(url.href)
             .then((texture) => {

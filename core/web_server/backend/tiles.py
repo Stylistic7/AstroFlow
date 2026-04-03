@@ -44,31 +44,24 @@ def convert_to_tiff(source_path: Path, dest_path: Path):
     print(f"Conversion done.")
 
 
-def get_best_image(object_type: type, *args) -> Path:
-    for level in [
-        QualityLevel.POST_PROCESSED,
-        QualityLevel.MASTER,
-        QualityLevel.DOWNSCALED_MASTER,
-        QualityLevel.SUBFRAME,
-    ]:
-        if filename_fn := get_filename_fn(MediaType.IMAGE, object_type, level):
-            if fragment := filename_fn(*args):
-                filename = fragment.resolve_at(context.output_dir)
-                print(
-                    f"### Looking for image {filename} exists {os.path.exists(filename)}"
-                )
-                if os.path.exists(filename):
-                    return fragment
+def get_image_for_level(object_type: type, level: QualityLevel, *args) -> Path | None:
+    """Get the image path for a specific quality level."""
+    filename_fn = get_filename_fn(MediaType.IMAGE, object_type, level)
+    if filename_fn is None:
+        return None
+    fragment = filename_fn(*args)
+    if fragment and os.path.exists(fragment.resolve_at(context.output_dir)):
+        return fragment
+    return None
 
 
 def get_image(
-    object_type: str, object_id: str, filter: str, load_if_missing: bool = False
+    object_type: str, object_id: str, filter: str, level: str = None, load_if_missing: bool = False,
 ):
     """Get a large_image handle from the cached TIFF, generating it if needed."""
     now = time.time()
     with _cache_lock:
-        # Reuse if already in cache
-        key = (object_type, object_id, filter)
+        key = (object_type, object_id, filter, level)
         if key in _image_cache:
             _image_cache[key]["last_used"] = now
             return _image_cache[key]["handle"]
@@ -76,19 +69,31 @@ def get_image(
         if not load_if_missing:
             return None
 
-        # Else, convert from .xisf and cache
-        if object_type == "stack":
-            path = get_best_image(Stack, context.stacks[object_id].get())
-        elif object_type == "calibration_stack":
-            path = get_best_image(
-                CalibrationStack, context.calibration_stacks[object_id]
-            )
-        elif object_type == "target":
-            path = get_best_image(Target, context.targets[object_id].get(), filter)
-        elif object_type == "mosaic":
-            path = get_best_image(Mosaic, context.mosaics[object_id].get(), filter)
-        else:
+        # Resolve the object and find the image at the requested level.
+        type_map = {"stack": Stack, "calibration_stack": CalibrationStack, "target": Target, "mosaic": Mosaic}
+        obj_cls = type_map.get(object_type)
+        if obj_cls is None:
             raise ValueError(f"Unknown object_type {object_type}")
+
+        if object_type == "stack":
+            obj_args = (context.stacks[object_id].get(),)
+        elif object_type == "calibration_stack":
+            obj_args = (context.calibration_stacks[object_id],)
+        elif object_type == "target":
+            obj_args = (context.targets[object_id].get(), filter)
+        elif object_type == "mosaic":
+            obj_args = (context.mosaics[object_id].get(), filter)
+
+        if level:
+            ql = QualityLevel(level)
+            path = get_image_for_level(obj_cls, ql, *obj_args)
+        else:
+            # Fallback: find best available.
+            path = None
+            for ql in [QualityLevel.POST_PROCESSED, QualityLevel.MASTER, QualityLevel.DOWNSCALED_MASTER, QualityLevel.SUBFRAME]:
+                path = get_image_for_level(obj_cls, ql, *obj_args)
+                if path:
+                    break
 
         if path is None:
             print(f"No image found")
@@ -131,14 +136,15 @@ def get_image(
 
 @stateful_route(
     tiles_bp.route("/tile_metadata/<object_type>/<object_id>/<filter>"),
+    tiles_bp.route("/tile_metadata/<object_type>/<object_id>/<filter>/<level>"),
     sharding_key="object_id",
 )
 def tile_metadata(
-    object_type: str, object_id: str, filter: str, backend_port: int
+    object_type: str, object_id: str, filter: str, level: str = None, backend_port: int = None,
 ):
     host_port = request.host.split(":")[-1]
-    print(f"### tile_metadata calling get_image on worker on port {host_port}")
-    source = get_image(object_type, object_id, filter, load_if_missing=True)
+    print(f"### tile_metadata calling get_image on worker on port {host_port} level={level}")
+    source = get_image(object_type, object_id, filter, level=level, load_if_missing=True)
 
     if source is None:
         return abort(404)
@@ -162,11 +168,14 @@ def tile_metadata(
 @tiles_bp.route(
     "/tile/<object_type>/<object_id>/<filter>/<int:z>/<int:x>/<int:y>.png"
 )
+@tiles_bp.route(
+    "/tile/<object_type>/<object_id>/<filter>/<level>/<int:z>/<int:x>/<int:y>.png"
+)
 @cross_origin(origins="*")
 def serve_tile(
-    object_type: str, object_id: str, filter: str, z: str, x: str, y: str
+    object_type: str, object_id: str, filter: str, z: str, x: str, y: str, level: str = None,
 ):
-    source = get_image(object_type, object_id, filter, load_if_missing=False)
+    source = get_image(object_type, object_id, filter, level=level, load_if_missing=False)
 
     if source in [None, IN_PROGRESS]:
         return Response(status=202, headers={"Retry-After": "5"})
