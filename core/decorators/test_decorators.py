@@ -23,9 +23,7 @@ def stack_filename(stack: Stack) -> TiffFilePath:
 @create_thumbnail
 def stack_files(stack: Stack) -> TiffFilePath:
     """Runs WBPP to stack raw images into a TIFF."""
-    from products.registry import get_filename_fn, MediaType
-    from previews.types import QualityLevel
-    output_path = get_filename_fn(MediaType.IMAGE, Stack, QualityLevel.MASTER)(stack)
+    output_path = stack_files.filename_fn(stack)
     image = np.zeros((100, 100))
     write_tiff_image(output_path, image)
 
