@@ -47,6 +47,7 @@ export const AstroFlowImage = ({
                         objectType={objectType}
                         imageHash={objectId}
                         filter={filter}
+                        qualityLevel={qualityLevel}
                         showPolygons={showPolygons}
                     />
                 ) : (

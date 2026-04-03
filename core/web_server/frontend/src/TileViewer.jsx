@@ -9,7 +9,7 @@ import AstroFlowContext from './AstroFlowContext.jsx';
 
 const TILE_SIZE = 256;
 
-const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filter: filterProp, showPolygons }) => {
+const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filter: filterProp, qualityLevel: qualityLevelProp, showPolygons }) => {
   const { objectType: objectTypeParam, imageHash: imageHashParam, filter: filterParam } = useParams();
 
   const objectType = objectTypeProp ?? objectTypeParam;
@@ -36,24 +36,34 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
   }, []);
 
   useEffect(() => {
-    // First find the best quality level, then fetch metadata at that level.
-    const bestUrl = filter !== undefined
-      ? `/api/available_qualities/${objectType}/${imageHash}/${filter}`
-      : `/api/available_qualities/${objectType}/${imageHash}`;
-
-    fetch(bestUrl)
-      .then((res) => res.ok ? res.json() : null)
-      .then((best) => {
-        if (!best || !best.quality_level) return;
-        const level = best.quality_level;
-        const metaUrl = filter !== undefined
-          ? `/api/metadata/${objectType}/${imageHash}/${filter}/${level}`
-          : `/api/metadata/${objectType}/${imageHash}/${level}`;
-        return fetch(metaUrl).then((res) => res.json());
-      })
-      .then((meta) => { if (meta) setMetadata(meta); })
-      .catch(() => {});
-  }, [objectType, imageHash, filter]);
+    if (qualityLevelProp) {
+      // Quality level provided by parent — fetch metadata directly.
+      const metaUrl = filter !== undefined
+        ? `/api/metadata/${objectType}/${imageHash}/${filter}/${qualityLevelProp}`
+        : `/api/metadata/${objectType}/${imageHash}/${qualityLevelProp}`;
+      fetch(metaUrl)
+        .then((res) => res.ok ? res.json() : null)
+        .then((meta) => { if (meta) setMetadata(meta); })
+        .catch(() => {});
+    } else {
+      // Auto-detect best quality level.
+      const bestUrl = filter !== undefined
+        ? `/api/available_qualities/${objectType}/${imageHash}/${filter}`
+        : `/api/available_qualities/${objectType}/${imageHash}`;
+      fetch(bestUrl)
+        .then((res) => res.ok ? res.json() : null)
+        .then((best) => {
+          if (!best || !best.quality_level) return;
+          const level = best.quality_level;
+          const metaUrl = filter !== undefined
+            ? `/api/metadata/${objectType}/${imageHash}/${filter}/${level}`
+            : `/api/metadata/${objectType}/${imageHash}/${level}`;
+          return fetch(metaUrl).then((res) => res.json());
+        })
+        .then((meta) => { if (meta) setMetadata(meta); })
+        .catch(() => {});
+    }
+  }, [objectType, imageHash, filter, qualityLevelProp]);
 
   useEffect(() => {
     fetch(`/tile_metadata/${objectType}/${imageHash}/${filter}`)
