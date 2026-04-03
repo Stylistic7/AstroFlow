@@ -24,14 +24,25 @@ def _post_process_stack(master_path, stack: Stack, downscale_factor: int = 1) ->
 
     effective_scale = stack.image_scale * downscale_factor
     julian_date = int(Time(stack.oldest_date).jd)
-    solved = ImageSolver(
-        image,
+
+    solver_kwargs = dict(
         metadata_ra=stack.center[0],
         metadata_dec=stack.center[1],
         metadata_resolution=effective_scale / 3600.0,
         metadata_observationTime=julian_date,
         metadata_epoch=julian_date,
     )
+
+    if downscale_factor > 1:
+        # Downscaled images have tiny stars — adjust solver for low resolution.
+        solver_kwargs |= dict(
+            solver_structureLayers=3,
+            solver_sensitivity=0.9,
+            solver_catalog="GaiaDR3",
+            solver_catalogMode=0,  # 0 = local catalog
+        )
+
+    solved = ImageSolver(image, **solver_kwargs)
 
     calibrated = SpectrophotometricFluxCalibration(solved)
     return MultiscaleGradientCorrection(calibrated)
