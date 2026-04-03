@@ -44,6 +44,7 @@ export const AstroFlowImage = ({
             <div style={{ flexGrow: 1, position: 'relative', overflow: 'hidden' }}>
                 {size === "full" ? (
                     <TileViewer
+                        key={`${objectType}:${objectId}:${filter}:${qualityLevel}`}
                         objectType={objectType}
                         imageHash={objectId}
                         filter={filter}
