@@ -114,9 +114,7 @@ def override_decision():
     new_settings = updater(settings)
     context.settings = new_settings
 
-    state.enqueue(
-        dict(type="update_settings", settings=new_settings)
-    )
+    state.cancel_and_restart()
 
     # Mark the affected object as stale so the UI shows an indicator.
     object_type = key[1].value  # ObjectType enum → string

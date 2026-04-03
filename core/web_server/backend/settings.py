@@ -47,6 +47,9 @@ def toggle_quarantine(object_type, object_id):
     _update_settings(lambda s: replace(s, decision_overrides=new_overrides))
     announce("reload_data")
 
+    from state.actor import state
+    state.cancel_and_restart()
+
     return jsonify({
         "object_type": object_type,
         "object_id": object_id,

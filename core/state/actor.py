@@ -1,7 +1,7 @@
 import ray
 import os
 from state.types import Action, State
-from threading import Thread, Condition
+from threading import Thread, Condition, Event
 from collections import deque
 from typing import Any
 
@@ -170,6 +170,7 @@ class StateActor:
         self._q: deque[Action] = deque()
         self._busy = False
         self._cv = Condition()
+        self._cancel_event = Event()
         self._runner = Thread(target=self._run_loop, daemon=True)
         self._runner.start()
 
@@ -179,17 +180,22 @@ class StateActor:
             self._cv.notify()
             return len(self._q)
 
+    def cancel_and_restart(self) -> None:
+        """Cancel the current graph and enqueue a full restart."""
+        self._cancel_event.set()
+        self.enqueue(Action(type="run_entire_graph"))
+
     def is_busy(self) -> bool:
         with self._cv:
             return self._busy
 
-    # TODO: The queue should explicitly contain Graphs to be run.
     def _run_loop(self) -> None:
         while True:
             with self._cv:
                 while not self._q:
                     self._cv.wait()
                 action = self._q.popleft()
+                self._cancel_event.clear()
                 self._busy = True
                 print(f"### set _busy {self._busy}")
             try:
@@ -202,9 +208,9 @@ class StateActor:
     def _run_graph(
         self, state: State, graph: Graph
     ) -> tuple[State, list[Action]]:
+        from dependency_graph import GraphCancelled
+
         def status_fn(status: GraphStatus):
-            # Compute progress summary here — don't store the full
-            # GraphStatus, which carries Node objects with large args.
             from dependency_graph.progress import graph_status_to_progress
             progress = graph_status_to_progress(status)
             total = sum(v["total_number"] for v in progress.values())
@@ -221,11 +227,17 @@ class StateActor:
         from dependency_graph.workflow_graph_adapter import store_node_status
         graph.node_status_fn = store_node_status
 
-        run_graph(
-            graph,
-            status_fn=status_fn,
-            status_interval=5,
-        )
+        try:
+            run_graph(
+                graph,
+                status_fn=status_fn,
+                status_interval=5,
+                cancel_event=self._cancel_event,
+            )
+        except GraphCancelled:
+            print("### Graph cancelled, cleaning up PixInsight")
+            from pix.runner import kill_all_instances
+            kill_all_instances()
 
         return state, [Action(type="announce", message="reload_data")]
 
@@ -288,6 +300,11 @@ class State:
     def enqueue(self, action: Action) -> int:
         actor = ray.get_actor("state", namespace=_get_namespace())
         return ray.get(actor.enqueue.remote(action))
+
+    def cancel_and_restart(self) -> None:
+        """Cancel the current graph and restart from the beginning."""
+        actor = ray.get_actor("state", namespace=_get_namespace())
+        ray.get(actor.cancel_and_restart.remote())
 
     def is_busy(self) -> bool:
         actor = ray.get_actor("state", namespace=_get_namespace())

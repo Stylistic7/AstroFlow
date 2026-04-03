@@ -1,5 +1,6 @@
 import ray
 import inspect
+import threading
 from functools import reduce
 from operator import add
 import time
@@ -280,6 +281,11 @@ def _handle_result(
         ts.final_result = result
 
 
+class GraphCancelled(Exception):
+    """Raised when a graph run is cancelled via cancel_event."""
+    pass
+
+
 def run_graph(
     graph: Graph,
     dry_run: bool = False,
@@ -287,6 +293,7 @@ def run_graph(
     status_interval: float = _MIN_STATUS_UPDATE_INTERVAL_SECS,
     trace: bool = False,
     debug: bool = False,
+    cancel_event: "threading.Event | None" = None,
 ) -> tuple[Any, "RunStats"]:
     num_nodes_run: int = 0
     max_parallelism_seen: int = 0
@@ -306,6 +313,9 @@ def run_graph(
     TIMEOUT = 0.2  # seconds
 
     while any(ts.is_active() for ts in subgraphs):
+        if cancel_event and cancel_event.is_set():
+            raise GraphCancelled("Graph run cancelled")
+
         ready_nodes = list(
             _get_ready_nodes(subgraphs)
         )  # one-shot, non-idempotent
@@ -346,6 +356,11 @@ def run_graph(
                 pending, num_returns=k, timeout=TIMEOUT
             )
             pending = still_pending
+
+            if cancel_event and cancel_event.is_set():
+                for ref in pending:
+                    ray.cancel(ref, force=True)
+                raise GraphCancelled("Graph run cancelled")
 
             if not ready_refs:
                 # Periodic status/graph updates even without completions.
