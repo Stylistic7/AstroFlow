@@ -1,10 +1,10 @@
 import { useState } from "react";
 
 const qualityLabels = {
-    "Subframe": "Single frame",
+    "Subframe": "Subframe",
     "DownscaledMaster": "Downscaled",
-    "Master": "Stacked",
-    "PostProcessed": "Processed",
+    "Master": "Master",
+    "PostProcessed": "Post-processed",
 };
 
 const qualityColors = {
