@@ -9,7 +9,7 @@ from stacks.master import MastersDict
 from targets.types import Target
 from mosaics.types import Mosaic, Viewbox
 from mosaics.viewbox import compute_viewbox
-from products.registry import get_producer, MediaType
+from products.registry import get_producer, get_filename_fn, MediaType
 from previews.types import QualityLevel
 from mosaics.trimming import project_to_viewbox
 from decisions.decisions import ObjectType, get_decisions_for_object
@@ -27,10 +27,10 @@ _QUALITY_PRIORITY = [
 def _best_quality(object_type: type, *args) -> tuple[QualityLevel, str] | None:
     """Find the best available quality level for an object. Returns (level, image_path) or None."""
     for level in _QUALITY_PRIORITY:
-        fn = get_producer(MediaType.IMAGE, object_type, level)
-        if fn is None:
+        filename_fn = get_filename_fn(MediaType.IMAGE, object_type, level)
+        if filename_fn is None:
             continue
-        filename = fn.filename_fn(*args).resolve_at(context.output_dir)
+        filename = filename_fn(*args)
         if os.path.exists(filename):
             return level, os.fspath(filename)
     return None
@@ -155,10 +155,10 @@ def metadata(object_type: str, object_id: str, level_or_filter: str = None, filt
         quality_level, _ = result
 
     # Get the image path for the requested level.
-    fn = get_producer(MediaType.IMAGE, obj_type, quality_level)
-    if fn is None:
+    filename_fn = get_filename_fn(MediaType.IMAGE, obj_type, quality_level)
+    if filename_fn is None:
         return abort(404)
-    filename = fn.filename_fn(*args).resolve_at(context.output_dir)
+    filename = filename_fn(*args)
     image_path = os.fspath(filename) if os.path.exists(filename) else None
 
     objects = _get_polygons(obj_type, quality_level, *args)

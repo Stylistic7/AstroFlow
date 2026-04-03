@@ -56,8 +56,11 @@ def select_file():
 
 @files_bp.route("/api/open_stack_master/<stack_id>")
 def open_stack_master(stack_id):
+    from products.registry import get_filename_fn, MediaType
+    from previews.types import QualityLevel
     stack = context.stacks[stack_id].get()
-    filename = stack_files.filename_fn(stack)
+    filename_fn = get_filename_fn(MediaType.IMAGE, type(stack), QualityLevel.MASTER)
+    filename = filename_fn(stack)
     print(f"### opening filename {filename}")
     subprocess.Popen(
         [

@@ -37,8 +37,6 @@ def register_producer(
     filename_fn: "FilenameFn | None" = None,
 ) -> None:
     key = (object_type, level)
-    if key in _registry[media_type]:
-        raise ValueError(f"Duplicate registration for {media_type.value} {key}")
     _registry[media_type][key] = func
     if filename_fn is not None:
         _filename_fns[media_type][key] = filename_fn
@@ -94,8 +92,11 @@ class MediaProducerBuilder:
             resolved = None
             if filename_fn is not None:
                 resolved = fully_resolve(self.object_type, level, filename_fn)
-                # Set on the function for backward compatibility.
-                # When multiple levels are registered, the last decorator wins.
+                # Set on the function so it's accessible inside Ray workers
+                # (where the process-local registry may not be populated).
+                # When multiple levels are registered on the same function,
+                # the last decorator wins — use get_filename_fn() for
+                # level-specific lookup in the main process.
                 func.filename_fn = resolved
             register_producer(
                 self.media_type, self.object_type, level, func,

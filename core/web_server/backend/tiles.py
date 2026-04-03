@@ -18,7 +18,7 @@ from stacks.composite_stack import Stack
 from stacks.composite_stack import CalibrationStack
 from targets.types import Target
 from mosaics.types import Mosaic
-from products.registry import get_producer, MediaType
+from products.registry import get_producer, get_filename_fn, MediaType
 from web_server.backend.router import stateful_route
 
 # Settings
@@ -50,8 +50,8 @@ def get_best_image(object_type: type, *args) -> Path:
         QualityLevel.MASTER,
         QualityLevel.SUBFRAME,
     ]:
-        if fn := get_producer(MediaType.IMAGE, object_type, level):
-            if fragment := fn.filename_fn(*args):
+        if filename_fn := get_filename_fn(MediaType.IMAGE, object_type, level):
+            if fragment := filename_fn(*args):
                 filename = fragment.resolve_at(context.output_dir)
                 print(
                     f"### Looking for image {filename} exists {os.path.exists(filename)}"

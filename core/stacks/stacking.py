@@ -87,7 +87,12 @@ def _setup_run(
 
     def get_dependency_filename(d):
         if isinstance(d, StackIdDependency):
-            return stack_files.filename_fn(calibration_stacks[d.stack_id])
+            from products.registry import get_filename_fn, MediaType
+            from previews.types import QualityLevel
+            cal_stack = calibration_stacks[d.stack_id]
+            level = QualityLevel.DOWNSCALED_MASTER if downscale_factor > 1 else QualityLevel.MASTER
+            filename_fn = get_filename_fn(MediaType.IMAGE, type(cal_stack), level)
+            return filename_fn(cal_stack)
         elif isinstance(d, FilenameDependency):
             return d.filename
 

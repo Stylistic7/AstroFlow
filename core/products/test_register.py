@@ -3,7 +3,7 @@ import os
 import ray
 import numpy as np
 from decorators import cached
-from products import makes_image, get_producer, MediaType
+from products import makes_image, get_producer, get_filename_fn, MediaType
 from context import context
 from file_io.types import TiffFilePath, XisfFilePath, ContentHashableFile
 from file_io.tiff_file_io import write_tiff_image
@@ -27,7 +27,8 @@ def stack_filename_xisf(stack: Stack) -> XisfFilePath:
 @cached.remote
 def stack_preview(stack: Stack) -> TiffFilePath:
     """Loads the best individual FITS image from stack and saves as TIFF."""
-    output_path = stack_preview.filename_fn(stack)
+    from products.registry import fully_resolve
+    output_path = fully_resolve(Stack, QualityLevel.SUBFRAME, stack_filename_tiff)(stack)
     image = np.zeros((100, 100))
     write_tiff_image(output_path, image)
 
@@ -38,7 +39,8 @@ def stack_preview(stack: Stack) -> TiffFilePath:
 @cached.remote
 def stack_files(stack: Stack) -> XisfFilePath:
     """Runs WBPP to stack raw images into an XISF."""
-    output_path = stack_files.filename_fn(stack)
+    from products.registry import fully_resolve
+    output_path = fully_resolve(Stack, QualityLevel.MASTER, stack_filename_xisf)(stack)
     image = np.zeros((100, 100, 1))
     write_xisf_image(output_path, image)
 

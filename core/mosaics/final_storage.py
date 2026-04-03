@@ -6,11 +6,14 @@ from beartype import beartype
 
 from context import context
 from mosaics.artifacts import mosaic_filename_tiff, mosaic_filename_xisf
+from mosaics.types import Mosaic
 from file_io.generic import read_image, copy_image
 from file_io.tiff_file_io import write_tiff_image
 from previews.operations import autostretch
+from previews.types import QualityLevel
 from pix import Image
 from products import makes_image
+from products.registry import get_filename_fn, MediaType
 from decorators import node, create_thumbnail
 from file_io.types import TiffFilePath, XisfFilePath, WithSidecar
 from metadata.classes import ImageMetadata

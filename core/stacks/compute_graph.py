@@ -98,7 +98,7 @@ def build_stacking_subgraph(
                     name=f"stacking_{stack.stable_hash}",
                 ),
                 (create_master, stack),
-                (post_process_stack, stack, config.development_settings),
+                (post_process_stack, stack, config.development_settings, config.downscale_factor),
                 Node(
                     compute_image_metadata, config.development_settings,
                     name=f"post_process_{stack.stable_hash}",

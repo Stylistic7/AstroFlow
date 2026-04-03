@@ -187,12 +187,11 @@ def _place_image(
     skip_empty = mode != QualityLevel.SUBFRAME
     image = _project_in_tiles(viewbox, interp, wcs, skip_empty=skip_empty)
 
-    # TODO: This is really awful; can the structure be improved?
     if mode == QualityLevel.SUBFRAME:
         output_filename = place_image_subframe.filename_fn(
             mosaic, stack, filter, viewbox
         )
-    elif mode == QualityLevel.MASTER:
+    else:
         output_filename = place_image_master.filename_fn(
             mosaic, stack, filter, viewbox
         )

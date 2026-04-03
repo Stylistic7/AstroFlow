@@ -10,10 +10,10 @@ from pix.tasks import (
 from decorators import node, create_thumbnail
 from decisions.settings import DevelopmentSettings
 from stacks.composite_stack import Stack
-from stacks.stacking import stack_files
 from stacks.artifacts import stack_filename
 from file_io.types import XisfFilePath, WithSidecar
-from products import makes_image
+from products import makes_image, get_filename_fn, MediaType
+from previews.types import QualityLevel
 import structlog
 
 log = structlog.get_logger()
@@ -39,8 +39,10 @@ def _post_process_stack(master_path, stack: Stack) -> Image:
 @makes_image(Stack).as_post_processed(stack_filename)
 @node(resources={"PixInsight": 1})
 @create_thumbnail
-def post_process_stack(stack: Stack, development_settings: DevelopmentSettings) -> WithSidecar[XisfFilePath]:
-    master = stack_files.filename_fn(stack)
+def post_process_stack(stack: Stack, development_settings: DevelopmentSettings, downscale_factor: int = 1) -> WithSidecar[XisfFilePath]:
+    level = QualityLevel.DOWNSCALED_MASTER if downscale_factor > 1 else QualityLevel.MASTER
+    master_fn = get_filename_fn(MediaType.IMAGE, Stack, level)
+    master = master_fn(stack)
     log.info("Post-processing stack", master=master)
 
     output_filename = post_process_stack.filename_fn(stack)

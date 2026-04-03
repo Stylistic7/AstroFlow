@@ -14,10 +14,10 @@ from pix.tasks import (
 from file_io.types import XisfFilePath, WithSidecar
 from decorators import node, create_thumbnail
 from previews.types import QualityLevel
-from mosaics.final_storage import store_mosaic_color_channel_master
 from mosaics.types import Mosaic
 from mosaics.artifacts import mosaic_filename_xisf
 from products import makes_image
+from products.registry import get_filename_fn, MediaType
 from stacks.composite_stack import StacksDict
 from targets.types import TargetsDict
 
@@ -71,10 +71,8 @@ def post_process_mosaic(
         for stack_id in targets[target_id].get().stack_ids:
             filters.add(stacks[stack_id].get().filter)
 
-    image_paths = [
-        store_mosaic_color_channel_master.filename_fn(mosaic, f)
-        for f in filters
-    ]
+    from mosaics.final_storage import store_mosaic_color_channel_master
+    image_paths = [store_mosaic_color_channel_master.filename_fn(mosaic, f) for f in filters]
 
     images = Image.open_many(image_paths)
     result = _post_process_mosaic(images, mosaic)
