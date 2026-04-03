@@ -6,6 +6,7 @@ import time
 import signal
 import sys
 
+from frozendict import frozendict
 from base_path import get_bin_dir
 from context import context, get_cache, queue
 from decisions.settings import (
@@ -83,7 +84,12 @@ def _populate_context(
     context.compute_graphs = [TopologicalSorterWithStatus(Graph())]
     context.compute_graph_status = {}
 
+    # Preserve existing decision overrides across restarts.
+    existing_settings = context.settings
+    existing_overrides = existing_settings.decision_overrides if existing_settings else frozendict()
+
     context.settings = Settings(
+        decision_overrides=existing_overrides,
         development_settings=DevelopmentSettings(
             override_filters=("H",),
         ),
