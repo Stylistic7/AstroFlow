@@ -44,7 +44,7 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
     fetch(bestUrl)
       .then((res) => res.ok ? res.json() : null)
       .then((best) => {
-        if (!best) return;
+        if (!best || !best.quality_level) return;
         const level = best.quality_level;
         const metaUrl = filter !== undefined
           ? `/api/metadata/${objectType}/${imageHash}/${filter}/${level}`
