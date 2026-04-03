@@ -8,7 +8,7 @@ import FileBrowser from './FileBrowser.jsx';
 import DecisionReviewDialog from './DecisionReviewDialog.jsx';
 
 const RunsTab = ({ stack }) => {
-  const { calibrationStacks } = useContext(AstroFlowContext);
+  const { calibrationStacks, isQuarantined } = useContext(AstroFlowContext);
 
   const [flatIds, setFlatIds] = useState([]);
   const [selectedFlatsByRun, setSelectedFlatsByRun] = useState({});
@@ -120,7 +120,7 @@ const RunsTab = ({ stack }) => {
         const runDate = new Date(run.newest_date);
         const runDecisions = decisionsForRun(run.id);
         return (
-          <Paper key={run.id} sx={{ p: 2, mb: 3 }} elevation={2}>
+          <Paper key={run.id} sx={{ p: 2, mb: 3, opacity: isQuarantined("stack", run.id) ? 0.4 : 1 }} elevation={2}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                 <Typography variant="h6">
