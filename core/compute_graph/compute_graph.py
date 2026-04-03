@@ -119,11 +119,6 @@ def scatter_spatial_groups(
 ) -> Graph:
     cs = settings.clustering_settings
 
-    context.stacks = StacksDict()
-    context.calibration_stacks = CalibrationStacksDict()
-    context.targets = TargetsDict()
-    context.mosaics = MosaicsDict({})  # empty dict of refs
-
     graph = Graph({})
 
     identify_cal_stacks_task = (
