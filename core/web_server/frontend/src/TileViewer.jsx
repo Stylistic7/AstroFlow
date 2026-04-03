@@ -90,7 +90,7 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
     }
 
     if (e.metaKey || e.ctrlKey) {
-      window.open(url, '_blank');
+      window.open(`${window.location.pathname}/${url}`, '_blank');
     } else {
       navigate(url);
     }
