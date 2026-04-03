@@ -122,14 +122,26 @@ def compute_image_metadata(
 
     # Cold-start optimization: try to reconstruct from sidecar without FITS I/O.
     from metadata.sidecar_io import read_image_metadata, write_image_metadata
+    from file_io.sidecar import get_section, set_section
+
+    # Skip files previously marked as broken (e.g., truncated downloads).
+    if get_section(filename, "broken") is not None:
+        log.warning("Skipping broken file", filename=str(filename))
+        return None
+
     cached = read_image_metadata(filename)
     if cached is not None:
         log.debug("Restored image metadata from sidecar", filename=str(filename))
         return cached
 
-    content_hash = get_content_hash(filename)
-    header = read_header(filename)
-    geometry = read_image_geometry(filename)
+    try:
+        content_hash = get_content_hash(filename)
+        header = read_header(filename)
+        geometry = read_image_geometry(filename)
+    except (ValueError, OSError) as e:
+        log.error("File is broken, marking for skip", filename=str(filename), error=str(e))
+        set_section(filename, "broken", {"error": str(e)})
+        return None
     stable_hash = header.get("STBLHASH", content_hash)
 
     plate_solution = (
