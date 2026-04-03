@@ -1,22 +1,7 @@
 import { useContext, useEffect, useState } from "react";
 import TileViewer from "./TileViewer.jsx";
 import AstroFlowContext from "./AstroFlowContext.jsx";
-
-const qualityLabels = {
-    "Subframe": "Single frame",
-    "DownscaledMaster": "Downscaled",
-    "Master": "Stacked",
-    "PostProcessed": "Processed",
-};
-
-const qualityColors = {
-    "Subframe": "rgba(255, 170, 50, 0.85)",
-    "DownscaledMaster": "rgba(180, 130, 255, 0.85)",
-    "Master": "rgba(100, 160, 255, 0.85)",
-    "PostProcessed": "rgba(80, 200, 120, 0.85)",
-};
-
-const staleColor = "rgba(255, 160, 50, 0.85)";
+import QualityLevelSelector from "./QualityLevelSelector.jsx";
 
 export const AstroFlowImage = ({
     objectType,
@@ -29,7 +14,6 @@ export const AstroFlowImage = ({
 
     const [qualityLevel, setQualityLevel] = useState(null);
     const [availableLevels, setAvailableLevels] = useState([]);
-    const [dropdownOpen, setDropdownOpen] = useState(false);
 
     useEffect(() => {
         const url = filter !== undefined
@@ -45,12 +29,15 @@ export const AstroFlowImage = ({
             .catch(() => {});
     }, [objectType, objectId, filter]);
 
-    const thumbnail_url = `/thumbnail/${objectType}/${objectId}${filter ? `/${filter}` : ''}`;
-
+    // Merge server-side validity with client-side context validity
+    // (context updates more frequently via SSE).
     const objectValidity = validity[`${objectType}:${objectId}`] || {};
-    const isStale = qualityLevel && objectValidity[qualityLevel] === false;
-    const label = qualityLabels[qualityLevel];
-    const color = isStale ? staleColor : qualityColors[qualityLevel];
+    const enrichedLevels = availableLevels.map(l => ({
+        ...l,
+        valid: objectValidity[l.quality_level] ?? l.valid,
+    }));
+
+    const thumbnail_url = `/thumbnail/${objectType}/${objectId}${filter ? `/${filter}` : ''}`;
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -70,83 +57,16 @@ export const AstroFlowImage = ({
                     />
                 )}
 
-                {/* Quality level dropdown selector */}
-                {label && (
-                    <div style={{
-                        position: 'absolute', top: 8, left: 8,
-                        pointerEvents: 'auto',
-                        userSelect: 'none',
-                    }}>
-                        <div
-                            onClick={() => availableLevels.length > 1 && setDropdownOpen(v => !v)}
-                            style={{
-                                background: color,
-                                color: 'white',
-                                padding: '2px 10px',
-                                borderRadius: 4,
-                                fontSize: 11,
-                                fontWeight: 500,
-                                cursor: availableLevels.length > 1 ? 'pointer' : 'default',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 4,
-                            }}
-                        >
-                            {isStale ? `${label} (stale)` : label}
-                            {availableLevels.length > 1 && (
-                                <span style={{ fontSize: 8 }}>{dropdownOpen ? '▲' : '▼'}</span>
-                            )}
-                        </div>
-
-                        {dropdownOpen && availableLevels.length > 1 && (
-                            <div style={{
-                                marginTop: 2,
-                                background: 'rgba(30, 30, 30, 0.95)',
-                                borderRadius: 4,
-                                overflow: 'hidden',
-                                boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
-                            }}>
-                                {availableLevels.map(({ quality_level, valid }) => {
-                                    const lvlLabel = qualityLabels[quality_level] || quality_level;
-                                    const lvlStale = valid === false;
-                                    const lvlColor = lvlStale ? staleColor : qualityColors[quality_level];
-                                    const selected = quality_level === qualityLevel;
-                                    return (
-                                        <div
-                                            key={quality_level}
-                                            onClick={() => {
-                                                setQualityLevel(quality_level);
-                                                setDropdownOpen(false);
-                                            }}
-                                            style={{
-                                                padding: '4px 10px',
-                                                fontSize: 11,
-                                                cursor: 'pointer',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: 6,
-                                                background: selected ? 'rgba(255,255,255,0.1)' : 'transparent',
-                                            }}
-                                        >
-                                            <span style={{
-                                                width: 8, height: 8, borderRadius: '50%',
-                                                background: lvlColor,
-                                                display: 'inline-block',
-                                                flexShrink: 0,
-                                            }} />
-                                            <span style={{
-                                                color: 'white',
-                                                fontWeight: selected ? 600 : 400,
-                                            }}>
-                                                {lvlStale ? `${lvlLabel} (stale)` : lvlLabel}
-                                            </span>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </div>
-                )}
+                <div style={{
+                    position: 'absolute', top: 8, left: 8,
+                    pointerEvents: 'auto',
+                }}>
+                    <QualityLevelSelector
+                        selected={qualityLevel}
+                        available={enrichedLevels}
+                        onSelect={setQualityLevel}
+                    />
+                </div>
             </div>
         </div>
     );
