@@ -38,8 +38,6 @@ def _post_process_stack(master_path, stack: Stack, downscale_factor: int = 1) ->
         solver_kwargs |= dict(
             solver_structureLayers=3,
             solver_sensitivity=0.9,
-            solver_catalog="GaiaDR3",
-            solver_catalogMode=0,  # 0 = local catalog
         )
 
     solved = ImageSolver(image, **solver_kwargs)
