@@ -30,11 +30,11 @@ export const AstroFlowImage = ({
 
     useEffect(() => {
         const url = filter !== undefined
-            ? `/api/metadata/${objectType}/${objectId}/${filter}`
-            : `/api/metadata/${objectType}/${objectId}`;
+            ? `/api/best_quality/${objectType}/${objectId}/${filter}`
+            : `/api/best_quality/${objectType}/${objectId}`;
         fetch(url)
             .then((res) => res.ok ? res.json() : null)
-            .then((meta) => setQualityLevel(meta?.quality_level ?? null))
+            .then((data) => setQualityLevel(data?.quality_level ?? null))
             .catch(() => {});
     }, [objectType, objectId, filter]);
 

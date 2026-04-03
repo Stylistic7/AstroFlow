@@ -36,13 +36,23 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
   }, []);
 
   useEffect(() => {
-    const url = filter !== undefined
-      ? `/api/metadata/${objectType}/${imageHash}/${filter}`
-      : `/api/metadata/${objectType}/${imageHash}`;
+    // First find the best quality level, then fetch metadata at that level.
+    const bestUrl = filter !== undefined
+      ? `/api/best_quality/${objectType}/${imageHash}/${filter}`
+      : `/api/best_quality/${objectType}/${imageHash}`;
 
-    fetch(url)
-      .then((res) => res.json())
-      .then((meta) => setMetadata(meta));
+    fetch(bestUrl)
+      .then((res) => res.ok ? res.json() : null)
+      .then((best) => {
+        if (!best) return;
+        const level = best.quality_level;
+        const metaUrl = filter !== undefined
+          ? `/api/metadata/${objectType}/${imageHash}/${filter}/${level}`
+          : `/api/metadata/${objectType}/${imageHash}/${level}`;
+        return fetch(metaUrl).then((res) => res.json());
+      })
+      .then((meta) => { if (meta) setMetadata(meta); })
+      .catch(() => {});
   }, [objectType, imageHash, filter]);
 
   useEffect(() => {

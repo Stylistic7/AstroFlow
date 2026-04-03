@@ -7,6 +7,7 @@ from beartype import beartype
 from decorators import node
 from stacks.stacking import stack_files
 from stacks.composite_stack import Run, Stack, RunsDict, StacksDict, CalibrationStacksDict
+from stacks.master import Master, MastersDict
 from stacks.types import StackIdDependency
 from stacks.post_process import post_process_stack
 from stacks.convert_to_dict import convert_to_dict
@@ -28,6 +29,24 @@ def calibration_done(stack: Stack) -> None:
 
 
 from decisions.settings import ProcessingConfig
+from context import context
+import structlog
+
+log = structlog.get_logger()
+
+
+@node
+def create_master(stack: Stack, image_metadata) -> Master:
+    """Build a Master object from the stacking result and store it in context."""
+    from metadata.classes import ImageMetadata
+    master = Master.from_stack_and_metadata(stack, image_metadata)
+    log.info("Created master", master=str(master))
+
+    masters = context.masters or MastersDict()
+    masters[master.stack_id] = master
+    context.masters = masters
+
+    return master
 
 @node
 def build_calibration_stack_subgraph(
@@ -78,6 +97,7 @@ def build_stacking_subgraph(
                     compute_image_metadata, config.development_settings,
                     name=f"stacking_{stack.stable_hash}",
                 ),
+                (create_master, stack),
                 (post_process_stack, stack, config.development_settings),
                 Node(
                     compute_image_metadata, config.development_settings,
