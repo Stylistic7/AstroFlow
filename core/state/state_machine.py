@@ -96,7 +96,10 @@ def _populate_context(
     context.shopping_cart = [("mosaic", "75a1da6463e118e6", "DownscaledMaster")]
     context.ray_head_node_enabled = True
 
-    return state, [Action(type="run_entire_graph")]
+    from state.actor import state as state_proxy
+    state_proxy.enqueue(Action(type="run_entire_graph"))
+
+    return state, []
 
 
 def _start_astroflow_zeroconf(
