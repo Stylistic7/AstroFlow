@@ -152,7 +152,9 @@ def identified_testdata(init_ray, tmp_path_factory):
             )
 
     # Run only identification (metadata + regrouping), not preview generation.
-    run_graph(Graph({**chain(scatter_compute_image_metadata, build_regroup_graph)}))
+    settings = context.settings
+    regroup = (build_regroup_graph, settings.clustering_settings, settings.decision_overrides)
+    run_graph(Graph({**chain(scatter_compute_image_metadata, regroup)}))
 
     # Eagerly resolve all ContextRefs to actual objects, so they can be
     # re-stored in each test's fresh context via with_real_testdata.

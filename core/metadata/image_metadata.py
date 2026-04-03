@@ -127,7 +127,7 @@ def compute_image_metadata(
     # Skip files previously marked as broken (e.g., truncated downloads).
     if get_section(filename, "broken") is not None:
         log.warning("Skipping broken file", filename=str(filename))
-        return None
+        raise ValueError(f"Skipping broken file: {filename}")
 
     cached = read_image_metadata(filename)
     if cached is not None:

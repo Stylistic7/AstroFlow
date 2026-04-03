@@ -25,7 +25,7 @@ from targets.identification import identify_targets
 from targets.types import TargetsDict
 from mosaics.compute_graph import build_mosaic_subgraph, process_mosaics_for_ui
 from mosaics.types import MosaicsDict
-from dependency_graph import Graph, Node, chain
+from dependency_graph import Graph, Node
 from stacks.identification import identify_stacks
 from stacks.composite_stack import RunsDict, StacksDict, CalibrationStacksDict
 from decorators import node
@@ -34,7 +34,7 @@ from decisions.compute_graph import (
 )
 from mosaics.compute_graph import stacks_for_mosaic, targets_for_mosaic
 from cache.context_ref import ContextRef
-from decisions.settings import Settings
+from decisions.settings import ClusteringSettings, DevelopmentSettings
 from compute_graph.objects import Objects
 
 log = structlog.get_logger()
@@ -116,16 +116,17 @@ def combine_dicts(*ancestor_results: dict[Any, Any]) -> dict[Any, Any]:
 
 @ray.remote
 def scatter_spatial_groups(
-    metadata_ref: ContextRef[MetadataDict], settings: Settings, spatial_groups
+    metadata_ref: ContextRef[MetadataDict],
+    clustering_settings: ClusteringSettings,
+    decision_overrides,
+    spatial_groups,
 ) -> Graph:
-    cs = settings.clustering_settings
-
     graph = Graph({})
 
     identify_cal_stacks_task = (
         identify_calibration_stacks,
         metadata_ref,
-        cs.max_run_gap,
+        clustering_settings.max_run_gap,
     )
 
     graph[associate_calibration_stacks] = {identify_cal_stacks_task}
@@ -139,15 +140,15 @@ def scatter_spatial_groups(
         stack_task = (
             identify_stacks,
             metadata_ref,
-            cs.angular_tolerance,
+            clustering_settings.angular_tolerance,
             g,
-            cs.min_frames_in_stack,
-            cs.max_run_gap,
+            clustering_settings.min_frames_in_stack,
+            clustering_settings.max_run_gap,
         )
 
-        target_task = Node(identify_targets, cs.angular_tolerance, name=str(i))
+        target_task = Node(identify_targets, clustering_settings.angular_tolerance, name=str(i))
         customize_targets_task = Node(
-            scatter_customize_targets, settings.decision_overrides, name=str(i)
+            scatter_customize_targets, decision_overrides, name=str(i)
         )
 
         # Each target identification depends on its own spatial group's stacks.
@@ -169,7 +170,7 @@ def scatter_spatial_groups(
     graph[process_targets_for_ui] = {gather_targets_task}
     graph[store_ui_targets] = {process_targets_for_ui}
 
-    mosaics_task = Node(identify_mosaics, cs.angular_tolerance)
+    mosaics_task = Node(identify_mosaics, clustering_settings.angular_tolerance)
     graph[mosaics_task] = {gather_targets_task}
     graph[store_mosaics] = {mosaics_task}
     graph[process_mosaics_for_ui] = {mosaics_task}
@@ -187,15 +188,23 @@ def scatter_spatial_groups(
 
 @ray.remote
 @beartype
-def build_regroup_graph(settings: Settings, metadata_ref: ContextRef[MetadataDict]) -> Graph:
-    cs = settings.clustering_settings
+def build_regroup_graph(
+    clustering_settings: ClusteringSettings,
+    decision_overrides,
+    metadata_ref: ContextRef[MetadataDict],
+) -> Graph:
     cluster_task = (
         cluster_by_image_center,
         metadata_ref,
-        cs.overlap_fraction,
-        cs.min_component_members,
+        clustering_settings.overlap_fraction,
+        clustering_settings.min_component_members,
     )
-    scatter_task = (scatter_spatial_groups, metadata_ref, settings)
+    scatter_task = (
+        scatter_spatial_groups,
+        metadata_ref,
+        clustering_settings,
+        decision_overrides,
+    )
 
     return Graph(
         {
@@ -223,13 +232,17 @@ def preview_graph_done() -> None:
 
 
 @node
-def build_preview_graph(settings: Settings, objects: Objects) -> Graph:
+def build_preview_graph(
+    development_settings: DevelopmentSettings,
+    min_frames_in_stack: int,
+    objects: Objects,
+) -> Graph:
     from decisions.settings import ProcessingConfig
 
     config = ProcessingConfig(
         calibration_stacks=objects.calibration_stacks,
-        development_settings=settings.development_settings,
-        min_frames_in_stack=settings.clustering_settings.min_frames_in_stack,
+        development_settings=development_settings,
+        min_frames_in_stack=min_frames_in_stack,
     )
 
     tasks = []
@@ -259,7 +272,9 @@ def main_processing_graph_done() -> None:
 
 @node
 def build_main_processing_graph(
-    settings: Settings,
+    development_settings: DevelopmentSettings,
+    min_frames_in_stack: int,
+    decision_overrides,
     shopping_cart: tuple,
     objects: Objects,
 ) -> Graph:
@@ -278,14 +293,14 @@ def build_main_processing_graph(
 
     def config_for(stack_id=None, mode=QualityLevel.MASTER):
         if stack_id:
-            decisions = fd({k: v for k, v in settings.decision_overrides.items()
+            decisions = fd({k: v for k, v in decision_overrides.items()
                             if len(k) >= 3 and k[2] == stack_id})
         else:
-            decisions = fd(settings.decision_overrides)
+            decisions = fd(decision_overrides)
         return ProcessingConfig(
             calibration_stacks=calibration_stacks,
-            development_settings=settings.development_settings,
-            min_frames_in_stack=settings.clustering_settings.min_frames_in_stack,
+            development_settings=development_settings,
+            min_frames_in_stack=min_frames_in_stack,
             decisions=decisions,
             downscale_factor=_DOWNSCALE_FACTORS.get(mode, 1),
         )
@@ -335,14 +350,17 @@ def build_compute_graph() -> Graph:
     settings = context.settings
     shopping_cart = tuple(context.shopping_cart or [])
 
+    regroup = (build_regroup_graph, settings.clustering_settings, settings.decision_overrides)
+
+    dev = settings.development_settings
+    min_frames = settings.clustering_settings.min_frames_in_stack
+    overrides = settings.decision_overrides
+
     return Graph(
         {
-            **chain(
-                scatter_compute_image_metadata,
-                (build_regroup_graph, settings),
-                (build_preview_graph, settings),
-                (build_main_processing_graph, settings, shopping_cart),
-            )
+            regroup: {scatter_compute_image_metadata},
+            (build_preview_graph, dev, min_frames): {regroup},
+            (build_main_processing_graph, dev, min_frames, overrides, shopping_cart): {regroup},
         }
     )
 
