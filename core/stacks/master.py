@@ -39,9 +39,10 @@ class Master(
 
     @classmethod
     def from_stack_and_metadata(
-        cls, stack: "Stack", image_metadata: ImageMetadata,
+        cls, stack, image_metadata: ImageMetadata,
     ) -> "Master":
         from stacks.composite_stack import Stack
+        assert isinstance(stack, Stack)
         from attributes.astrometric_attributes import (
             healpix_cells_from_poly,
             _spherical_polygon_for_wcs,
