@@ -139,32 +139,20 @@ class MediaProducerBuilder:
         self.object_type = object_type
 
     def _bind(self, level: QualityLevel, filename_fn: FilenameFn | None = None):
-        object_type = self.object_type
-
         def decorator(func: Callable[..., Path]):
-            import functools
-
             resolved = None
             if filename_fn is not None:
-                resolved = fully_resolve(object_type, level, filename_fn)
+                resolved = fully_resolve(self.object_type, level, filename_fn)
                 func.filename_fn = resolved
-
-            @functools.wraps(func)
-            def wrapper(*args, **kwargs):
-                result = func(*args, **kwargs)
-                # Mark this product as valid after successful production.
-                _mark_valid(object_type, level, args)
-                return result
-
-            # Copy attributes from the original function.
-            if hasattr(func, 'filename_fn'):
-                wrapper.filename_fn = func.filename_fn
-
+            # Store validity metadata on the function so the @node decorator
+            # can call _mark_valid after execution.
+            func._validity_object_type = self.object_type
+            func._validity_level = level
             register_producer(
-                self.media_type, object_type, level, wrapper,
+                self.media_type, self.object_type, level, func,
                 filename_fn=resolved,
             )
-            return wrapper
+            return func
 
         return decorator
 

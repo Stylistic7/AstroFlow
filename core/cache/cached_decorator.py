@@ -165,6 +165,11 @@ def make_cached_decorator(
             if isinstance(result, Path) and not result.exists():
                 raise FileNotFoundError(result)
 
+            # If the function is a @makes_image producer, mark the product valid.
+            if hasattr(func, '_validity_object_type'):
+                from products.registry import _mark_valid
+                _mark_valid(func._validity_object_type, func._validity_level, bound.args)
+
             result = content_hasher.set(result, call_hash)
             debug_print(
                 f"storing: {key} as {type(result)} into cache {_resolve_cache().directory}"
