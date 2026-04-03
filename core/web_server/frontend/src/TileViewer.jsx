@@ -38,8 +38,8 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
   useEffect(() => {
     // First find the best quality level, then fetch metadata at that level.
     const bestUrl = filter !== undefined
-      ? `/api/best_quality/${objectType}/${imageHash}/${filter}`
-      : `/api/best_quality/${objectType}/${imageHash}`;
+      ? `/api/available_qualities/${objectType}/${imageHash}/${filter}`
+      : `/api/available_qualities/${objectType}/${imageHash}`;
 
     fetch(bestUrl)
       .then((res) => res.ok ? res.json() : null)

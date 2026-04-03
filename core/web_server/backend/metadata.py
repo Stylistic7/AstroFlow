@@ -24,16 +24,23 @@ _QUALITY_PRIORITY = [
 ]
 
 
-def _best_quality(object_type: type, *args) -> tuple[QualityLevel, str] | None:
-    """Find the best available quality level for an object. Returns (level, image_path) or None."""
+def _available_qualities(object_type: type, *args) -> list[tuple[QualityLevel, str]]:
+    """Return all quality levels that have files on disk, in priority order."""
+    result = []
     for level in _QUALITY_PRIORITY:
         filename_fn = get_filename_fn(MediaType.IMAGE, object_type, level)
         if filename_fn is None:
             continue
         filename = filename_fn(*args)
         if os.path.exists(filename):
-            return level, os.fspath(filename)
-    return None
+            result.append((level, os.fspath(filename)))
+    return result
+
+
+def _best_quality(object_type: type, *args) -> tuple[QualityLevel, str] | None:
+    """Find the best available quality level for an object."""
+    available = _available_qualities(object_type, *args)
+    return available[0] if available else None
 
 
 def _get_polygons(object_type: type, level: QualityLevel, *args) -> list[dict[str, Any]]:
@@ -142,16 +149,33 @@ def validity_all():
     return jsonify(result)
 
 
-@metadata_bp.route("/api/best_quality/<object_type>/<object_id>")
-@metadata_bp.route("/api/best_quality/<object_type>/<object_id>/<filter>")
-def best_quality(object_type: str, object_id: str, filter: str = None):
-    """Return the best available quality level for an object."""
+@metadata_bp.route("/api/available_qualities/<object_type>/<object_id>")
+@metadata_bp.route("/api/available_qualities/<object_type>/<object_id>/<filter>")
+def available_qualities(object_type: str, object_id: str, filter: str = None):
+    """Return all available quality levels for an object, best first, with validity."""
+    from products import is_object_valid
     obj_type, args = _resolve_object(object_type, object_id, filter)
-    result = _best_quality(obj_type, *args)
-    if result is None:
+    available = _available_qualities(obj_type, *args)
+    if not available:
         return abort(404)
-    level, image_path = result
-    return jsonify({"quality_level": level.value, "image_path": image_path})
+
+    levels = [
+        {
+            "quality_level": level.value,
+            "image_path": path,
+            "valid": is_object_valid(object_type, object_id, level.value),
+        }
+        for level, path in available
+    ]
+
+    # Best non-stale level, falling back to best available.
+    best = next((l for l in levels if l["valid"]), levels[0])
+
+    return jsonify({
+        "quality_level": best["quality_level"],
+        "image_path": best["image_path"],
+        "available": levels,
+    })
 
 
 @metadata_bp.route("/api/metadata/<object_type>/<object_id>/<level_or_filter>")
