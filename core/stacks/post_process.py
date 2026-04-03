@@ -19,15 +19,16 @@ import structlog
 log = structlog.get_logger()
 
 
-def _post_process_stack(master_path, stack: Stack) -> Image:
+def _post_process_stack(master_path, stack: Stack, downscale_factor: int = 1) -> Image:
     image = Image.open(master_path)
 
+    effective_scale = stack.image_scale * downscale_factor
     julian_date = int(Time(stack.oldest_date).jd)
     solved = ImageSolver(
         image,
         metadata_ra=stack.center[0],
         metadata_dec=stack.center[1],
-        metadata_resolution=stack.image_scale / 3600.0,
+        metadata_resolution=effective_scale / 3600.0,
         metadata_observationTime=julian_date,
         metadata_epoch=julian_date,
     )
@@ -52,7 +53,7 @@ def post_process_stack(stack: Stack, development_settings: DevelopmentSettings, 
         log.info("Dangerously skipping post-processing because file already exists", output_filename=output_filename)
         return WithSidecar(output_filename)
 
-    result = _post_process_stack(master, stack)
+    result = _post_process_stack(master, stack, downscale_factor)
     result.save_to(output_filename, mock=development_settings.mock_pixinsight)
 
     return WithSidecar(XisfFilePath(output_filename))
