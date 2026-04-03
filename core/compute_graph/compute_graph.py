@@ -35,6 +35,7 @@ from decisions.compute_graph import (
 from mosaics.compute_graph import stacks_for_mosaic, targets_for_mosaic
 from cache.context_ref import ContextRef
 from decisions.settings import Settings
+from compute_graph.objects import Objects
 
 log = structlog.get_logger()
 
@@ -174,13 +175,19 @@ def scatter_spatial_groups(
     graph[process_mosaics_for_ui] = {mosaics_task}
     graph[store_ui_mosaics] = {process_mosaics_for_ui}
 
+    # gather_objects runs after all stores, producing an Objects snapshot
+    # for downstream cached graph builders.
+    graph[gather_objects] = {
+        store_stacks, store_targets, store_mosaics, store_calibration_stacks,
+        store_ui_stacks, store_ui_targets, store_ui_mosaics, store_ui_calibration_stacks,
+    }
+
     return graph
 
 
 @ray.remote
 @beartype
-def build_regroup_graph(metadata_ref: ContextRef[MetadataDict]) -> Graph:
-    settings = context.settings
+def build_regroup_graph(settings: Settings, metadata_ref: ContextRef[MetadataDict]) -> Graph:
     cs = settings.clustering_settings
     cluster_task = (
         cluster_by_image_center,
@@ -198,38 +205,45 @@ def build_regroup_graph(metadata_ref: ContextRef[MetadataDict]) -> Graph:
     )
 
 
+@ray.remote
+@beartype
+def gather_objects() -> Objects:
+    """Snapshot all identified objects from context after regrouping."""
+    return Objects(
+        stacks=context.stacks or StacksDict(),
+        targets=context.targets or TargetsDict(),
+        mosaics=context.mosaics or MosaicsDict({}),
+        calibration_stacks=context.calibration_stacks or CalibrationStacksDict({}),
+    )
+
+
 @node
 def preview_graph_done() -> None:
     pass
 
 
-@ray.remote
-@beartype
-def build_preview_graph() -> Graph:
+@node
+def build_preview_graph(settings: Settings, objects: Objects) -> Graph:
     from decisions.settings import ProcessingConfig
 
-    stacks = context.stacks
-    targets = context.targets
-    settings = context.settings
     config = ProcessingConfig(
-        calibration_stacks=context.calibration_stacks,
+        calibration_stacks=objects.calibration_stacks,
         development_settings=settings.development_settings,
         min_frames_in_stack=settings.clustering_settings.min_frames_in_stack,
-        decisions=settings.decision_overrides,
     )
 
     tasks = []
     tasks.append((scatter_stack_thumbnails,))
 
-    for mosaic_ref in context.mosaics.values():
+    for mosaic_ref in objects.mosaics.values():
         mosaic = mosaic_ref.get()
         tasks.append(
             (
                 build_mosaic_subgraph,
                 QualityLevel.SUBFRAME,
                 mosaic,
-                stacks_for_mosaic(mosaic, stacks, targets),
-                targets_for_mosaic(mosaic, targets),
+                stacks_for_mosaic(mosaic, objects.stacks, objects.targets),
+                targets_for_mosaic(mosaic, objects.targets),
                 config,
             )
         )
@@ -243,18 +257,19 @@ def main_processing_graph_done() -> None:
     pass
 
 
-@ray.remote
-@beartype
-def build_main_processing_graph() -> Graph:
-    stacks = context.stacks
-    targets = context.targets
-    mosaics = context.mosaics
-    shopping_cart = context.shopping_cart or []
+@node
+def build_main_processing_graph(
+    settings: Settings,
+    shopping_cart: tuple,
+    objects: Objects,
+) -> Graph:
     from decisions.settings import ProcessingConfig
     from frozendict import frozendict as fd
 
-    calibration_stacks = context.calibration_stacks
-    settings = context.settings
+    stacks = objects.stacks
+    targets = objects.targets
+    mosaics = objects.mosaics
+    calibration_stacks = objects.calibration_stacks
 
     _DOWNSCALE_FACTORS = {
         QualityLevel.MASTER: 1,
@@ -317,13 +332,16 @@ def build_main_processing_graph() -> Graph:
 
 
 def build_compute_graph() -> Graph:
+    settings = context.settings
+    shopping_cart = tuple(context.shopping_cart or [])
+
     return Graph(
         {
             **chain(
                 scatter_compute_image_metadata,
-                build_regroup_graph,
-                build_preview_graph,
-                build_main_processing_graph,
+                (build_regroup_graph, settings),
+                (build_preview_graph, settings),
+                (build_main_processing_graph, settings, shopping_cart),
             )
         }
     )
