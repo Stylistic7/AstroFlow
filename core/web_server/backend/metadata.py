@@ -65,6 +65,7 @@ def get_metadata(object_type: type, *args):
                     if selected_filter and stack.filter != selected_filter:
                         continue
                     poly = project(stack, viewbox)
+                    poly["target_id"] = t
                     poly["has_decisions"] = (
                         len(get_decisions_for_object(ObjectType.STACK, sid)) > 0
                     )

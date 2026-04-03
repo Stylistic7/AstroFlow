@@ -54,14 +54,18 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
   const onClick = (poly, event) => {
     const e = event.nativeEvent; // underlying DOM PointerEvent
 
-    // Navigate to the stack for the current filter, if available.
-    let url = `${poly.type}/${poly.stable_hash}`;
-    if (poly.type === 'target' && filter && targets?.[poly.stable_hash]) {
+    let url;
+    if (poly.type === 'stack' && poly.target_id) {
+      // Stack polygon inside a mosaic/target — build the full waterfall path.
+      url = `target/${poly.target_id}/stack/${poly.stable_hash}`;
+    } else if (poly.type === 'target' && filter && targets?.[poly.stable_hash]) {
       const target = targets[poly.stable_hash];
       const stackId = target.stack_ids?.find(s => stacks?.[s]?.filter === filter);
-      if (stackId) {
-        url += `/stack/${stackId}`;
-      }
+      url = stackId
+        ? `target/${poly.stable_hash}/stack/${stackId}`
+        : `target/${poly.stable_hash}`;
+    } else {
+      url = `${poly.type}/${poly.stable_hash}`;
     }
 
     if (e.metaKey || e.ctrlKey) {
