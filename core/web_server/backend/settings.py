@@ -45,6 +45,9 @@ def toggle_quarantine(object_type, object_id):
         new_overrides = frozendict(dict(current_overrides) | exclude(key))
 
     _update_settings(lambda s: replace(s, decision_overrides=new_overrides))
+
+    # Mark the affected object as stale so the UI shows an indicator.
+    context.or_equals("invalidated", {(object_type, object_id): True})
     announce("reload_data")
 
     from state.actor import state
