@@ -48,9 +48,11 @@ def _get_polygons(object_type: type, level: QualityLevel, *args) -> list[dict[st
     viewbox = compute_viewbox(level, obj)
 
     def project(object: Any, viewbox: Viewbox) -> dict[str, Any]:
+        from stacks.master import Master
         polygon = project_to_viewbox(object.footprint, viewbox)
+        obj_type = "stack" if isinstance(object, Master) else type(object).__name__.lower()
         return {
-            "type": type(object).__name__.lower(),
+            "type": obj_type,
             "color": "0xff0000",
             "stable_hash": object.stable_hash,
             "points": list(polygon.exterior.coords),
