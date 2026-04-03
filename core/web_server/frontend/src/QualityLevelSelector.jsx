@@ -41,9 +41,9 @@ export default function QualityLevelSelector({ selected, available, onSelect }) 
                 style={{
                     background: color,
                     color: "white",
-                    padding: "2px 10px",
+                    padding: "4px 12px",
                     borderRadius: 4,
-                    fontSize: 11,
+                    fontSize: 13,
                     fontWeight: 500,
                     cursor: hasChoices ? "pointer" : "default",
                     display: "flex",
@@ -53,7 +53,7 @@ export default function QualityLevelSelector({ selected, available, onSelect }) 
             >
                 {isStale ? `${label} (stale)` : label}
                 {hasChoices && (
-                    <span style={{ fontSize: 8 }}>{open ? "▲" : "▼"}</span>
+                    <span style={{ fontSize: 10 }}>{open ? "▲" : "▼"}</span>
                 )}
             </div>
 
@@ -76,7 +76,7 @@ export default function QualityLevelSelector({ selected, available, onSelect }) 
                                 onClick={() => { onSelect(quality_level); setOpen(false); }}
                                 style={{
                                     padding: "4px 10px",
-                                    fontSize: 11,
+                                    fontSize: 13,
                                     cursor: "pointer",
                                     display: "flex",
                                     alignItems: "center",
@@ -85,7 +85,7 @@ export default function QualityLevelSelector({ selected, available, onSelect }) 
                                 }}
                             >
                                 <span style={{
-                                    width: 8, height: 8, borderRadius: "50%",
+                                    width: 10, height: 10, borderRadius: "50%",
                                     background: lvlColor,
                                     display: "inline-block",
                                     flexShrink: 0,
