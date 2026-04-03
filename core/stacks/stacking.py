@@ -176,7 +176,11 @@ def stack_files(
     development_settings = config.development_settings
 
     # Determine the output file, and the metadata it should have.
-    dest_filename = stack_files.filename_fn(stack)
+    from products.registry import get_filename_fn, MediaType
+    from previews.types import QualityLevel
+    level = QualityLevel.DOWNSCALED_MASTER if config.downscale_factor > 1 else QualityLevel.MASTER
+    filename_fn = get_filename_fn(MediaType.IMAGE, type(stack), level) or stack_files.filename_fn
+    dest_filename = filename_fn(stack)
     dest_filename_exists = os.path.exists(dest_filename)
     os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
     log.info("Entering stack_files", stack=str(stack), dest_filename=dest_filename, dest_filename_exists=dest_filename_exists)

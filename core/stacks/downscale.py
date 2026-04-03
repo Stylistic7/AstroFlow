@@ -33,8 +33,12 @@ def downscale_fits(
         raise ValueError("Expected 2D primary image in HDU[0]")
 
     h, w = data.shape
-    if (h % K) or (w % K):
-        raise ValueError(f"Image shape {data.shape} not divisible by K={K}")
+
+    # Trim edges so dimensions are divisible by K (at most K-1 pixels lost).
+    h_trim = h - (h % K)
+    w_trim = w - (w % K)
+    data = data[:h_trim, :w_trim]
+    h, w = data.shape
 
     # Astropy applies BZERO/BSCALE and unsigned16 convention automatically:
     # img is in "physical ADU" space, typically [0..65535] for these ZWO frames.
