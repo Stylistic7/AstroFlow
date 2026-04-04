@@ -40,6 +40,7 @@ class DevelopmentSettings:
     dangerously_allow_missing_files: bool = False
     override_filters: tuple[str, ...] | None = None
     test_mode: bool = False
+    skip_preview_graph: bool = False
 
     def __hash__(self):
         return hash_dataclass(self)

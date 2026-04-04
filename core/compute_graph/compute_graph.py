@@ -355,13 +355,14 @@ def build_compute_graph() -> Graph:
     min_frames = settings.clustering_settings.min_frames_in_stack
     overrides = settings.decision_overrides
 
-    return Graph(
-        {
-            regroup: {scatter_compute_image_metadata},
-            (build_preview_graph, dev, min_frames): {regroup},
-            (build_main_processing_graph, dev, min_frames, overrides, shopping_cart): {regroup},
-        }
-    )
+    graph = {
+        regroup: {scatter_compute_image_metadata},
+        (build_main_processing_graph, dev, min_frames, overrides, shopping_cart): {regroup},
+    }
+    if not dev.skip_preview_graph:
+        graph[(build_preview_graph, dev, min_frames)] = {regroup}
+
+    return Graph(graph)
 
 
 # TODO: Add a cleanup task that deletes unreferenced stuff from the cache.
