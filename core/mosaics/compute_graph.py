@@ -173,7 +173,7 @@ def build_mosaic_filter_subgraph(
     log.info("Building mosaic filter subgraph", mode=mode, mosaic=str(mosaic), filter=filter, strips=mosaic.strips, viewbox=str(viewbox))
 
     graph_update_fn = partial(
-        store_workflow_graph, ("mosaic", mosaic.stable_hash, filter)
+        store_workflow_graph, ("mosaic", mosaic.stable_hash, filter, mode.value)
     )
     node_status_fn = store_node_status
 

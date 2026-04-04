@@ -38,10 +38,18 @@ def workflow_graph_for_target(target_id):
 
 
 @compute_graphs_bp.route("/api/workflow_graph/mosaic/<mosaic_id>/<filter>")
-def workflow_graph_for_mosaic(mosaic_id, filter):
+@compute_graphs_bp.route("/api/workflow_graph/mosaic/<mosaic_id>/<filter>/<quality>")
+def workflow_graph_for_mosaic(mosaic_id, filter, quality=None):
     wf = context["workflow_graphs"] or {}
-    ref = wf.get(("mosaic", mosaic_id, filter))
-    return ref.get() if ref is not None else _EMPTY_WORKFLOW_GRAPH
+    if quality:
+        ref = wf.get(("mosaic", mosaic_id, filter, quality))
+        if ref is not None:
+            return ref.get()
+    # Fall back to any quality level that has a graph.
+    for key, ref in wf.items():
+        if isinstance(key, tuple) and len(key) >= 3 and key[0] == "mosaic" and key[1] == mosaic_id and key[2] == filter:
+            return ref.get()
+    return _EMPTY_WORKFLOW_GRAPH
 
 
 def _json_default(obj):
