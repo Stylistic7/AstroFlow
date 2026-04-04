@@ -15,13 +15,14 @@ const qualityColors = {
 };
 
 const staleColor = "rgba(255, 160, 50, 0.85)";
+const missingColor = "rgba(100, 100, 100, 0.85)";
 
 /**
  * Dropdown selector for quality levels with validity indicators.
  *
  * Props:
  *   selected    — currently selected quality level string (e.g. "Master")
- *   available   — array of {quality_level, valid} from /api/available_qualities
+ *   available   — array of {quality_level, valid, exists} from /api/available_qualities
  *   onSelect    — callback(quality_level) when the user picks a level
  */
 export default function QualityLevelSelector({ selected, available, onSelect }) {
@@ -29,9 +30,11 @@ export default function QualityLevelSelector({ selected, available, onSelect }) 
 
     if (!selected || !available?.length) return null;
 
+    const selectedLevel = available.find(l => l.quality_level === selected);
     const label = qualityLabels[selected] || selected;
-    const isStale = available.find(l => l.quality_level === selected)?.valid === false;
-    const color = isStale ? staleColor : qualityColors[selected];
+    const isStale = selectedLevel?.exists && selectedLevel?.valid === false;
+    const isMissing = !selectedLevel?.exists;
+    const color = isMissing ? missingColor : isStale ? staleColor : qualityColors[selected];
     const hasChoices = available.length > 1;
 
     return (
@@ -51,7 +54,7 @@ export default function QualityLevelSelector({ selected, available, onSelect }) 
                     gap: 4,
                 }}
             >
-                {isStale ? `${label} (stale)` : label}
+                {isMissing ? `${label} (n/a)` : isStale ? `${label} (stale)` : label}
                 {hasChoices && (
                     <span style={{ fontSize: 10 }}>{open ? "▲" : "▼"}</span>
                 )}
@@ -65,11 +68,13 @@ export default function QualityLevelSelector({ selected, available, onSelect }) 
                     overflow: "hidden",
                     boxShadow: "0 2px 8px rgba(0,0,0,0.5)",
                 }}>
-                    {available.map(({ quality_level, valid }) => {
+                    {available.map(({ quality_level, valid, exists }) => {
                         const lvlLabel = qualityLabels[quality_level] || quality_level;
-                        const lvlStale = valid === false;
-                        const lvlColor = lvlStale ? staleColor : qualityColors[quality_level];
+                        const lvlMissing = !exists;
+                        const lvlStale = exists && valid === false;
+                        const lvlColor = lvlMissing ? missingColor : lvlStale ? staleColor : qualityColors[quality_level];
                         const isSelected = quality_level === selected;
+                        const statusText = lvlMissing ? " (n/a)" : lvlStale ? " (stale)" : "";
                         return (
                             <div
                                 key={quality_level}
@@ -91,10 +96,10 @@ export default function QualityLevelSelector({ selected, available, onSelect }) 
                                     flexShrink: 0,
                                 }} />
                                 <span style={{
-                                    color: "white",
+                                    color: lvlMissing ? "rgba(255,255,255,0.5)" : "white",
                                     fontWeight: isSelected ? 600 : 400,
                                 }}>
-                                    {lvlStale ? `${lvlLabel} (stale)` : lvlLabel}
+                                    {lvlLabel}{statusText}
                                 </span>
                             </div>
                         );

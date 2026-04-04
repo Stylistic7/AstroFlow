@@ -175,24 +175,27 @@ def validity_all():
 @metadata_bp.route("/api/available_qualities/<object_type>/<object_id>")
 @metadata_bp.route("/api/available_qualities/<object_type>/<object_id>/<filter>")
 def available_qualities(object_type: str, object_id: str, filter: str = None):
-    """Return all available quality levels for an object, best first, with validity."""
+    """Return all quality levels with existence and validity status."""
     from products import is_object_valid
     obj_type, args = _resolve_object(object_type, object_id, filter)
-    available = _available_qualities(obj_type, *args)
-    if not available:
-        return jsonify({"quality_level": None, "image_path": None, "available": []})
+    on_disk = dict(_available_qualities(obj_type, *args))  # level -> path
 
-    levels = [
-        {
+    levels = []
+    for level in _QUALITY_PRIORITY:
+        path = on_disk.get(level)
+        levels.append({
             "quality_level": level.value,
-            "image_path": path,
-            "valid": is_object_valid(object_type, object_id, level.value),
-        }
-        for level, path in available
-    ]
+            "image_path": os.fspath(path) if path else None,
+            "exists": path is not None,
+            "valid": is_object_valid(object_type, object_id, level.value) if path else False,
+        })
 
-    # Best non-stale level, falling back to best available.
-    best = next((l for l in levels if l["valid"]), levels[0])
+    # Best: first existing+valid, then first existing, then first overall.
+    best = (
+        next((l for l in levels if l["exists"] and l["valid"]), None)
+        or next((l for l in levels if l["exists"]), None)
+        or levels[0]
+    )
 
     return jsonify({
         "quality_level": best["quality_level"],
