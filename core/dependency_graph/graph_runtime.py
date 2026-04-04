@@ -175,9 +175,8 @@ class GraphRuntime:
             except (AttributeError, KeyError, TypeError):
                 pass
 
-        # Preserve the first exception as final_result — don't let
-        # subsequent Skipped nodes overwrite it.
-        if not isinstance(self.final_result, Exception):
+        # Don't let Skipped overwrite a meaningful result or exception.
+        if result is not Skipped:
             self.final_result = result
 
         if self.node_status_fn is not None:
