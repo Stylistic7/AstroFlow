@@ -4,6 +4,7 @@ import { useParams, useLocation } from "react-router-dom";
 import StackThumbnail from "./StackThumbnail.jsx";
 import DecisionBadge from "./DecisionBadge.jsx";
 import QuarantineToggle from "./QuarantineToggle.jsx";
+import ShoppingCartMenu from "./ShoppingCartMenu.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
 
 
@@ -18,6 +19,7 @@ export default function TargetPanel() {
 	return (
 		<div>
 			<div style={{ display: "flex", alignItems: "center", marginLeft: "2em", marginBottom: "0.5em" }}>
+				<ShoppingCartMenu objectType="target" objectId={params.target_id} />
 				<QuarantineToggle objectType="target" objectId={params.target_id} />
 			</div>
 			<div style={{

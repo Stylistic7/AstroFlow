@@ -171,28 +171,34 @@ def stream():
 
 @app.route("/api/shopping_cart")
 def get_shopping_cart():
-    return list(context.get("shopping_cart", set()))
+    return list(context.shopping_cart or [])
 
 
-@app.route("/api/shopping_cart/<object_type>/<object_id>", methods=["POST"])
-def add_to_shopping_cart(object_type, object_id):
-    shopping_cart = context.shopping_cart or set()
-    shopping_cart.add((object_type, object_id))
-    context.shopping_cart = shopping_cart
-
-    print("shopping_cart is now", context.shopping_cart)
-
+@app.route("/api/shopping_cart/<object_type>/<object_id>/<quality>", methods=["POST"])
+def add_to_shopping_cart(object_type, object_id, quality):
+    from web_server.backend.announcer import announce
+    from state.actor import state as state_handle
+    cart = list(context.shopping_cart or [])
+    entry = (object_type, object_id, quality)
+    if entry not in cart:
+        cart.append(entry)
+        context.shopping_cart = cart
+        state_handle.cancel_and_restart()
+    announce("reload_data")
     return Response(status=204)
 
 
-@app.route("/api/shopping_cart/<object_type>/<object_id>", methods=["DELETE"])
-def remove_from_shopping_cart(object_type, object_id):
-    shopping_cart = context.shopping_cart or set()
-    shopping_cart.remove((object_type, object_id))
-    context.shopping_cart = shopping_cart
-
-    print("shopping_cart is now", context.shopping_cart)
-
+@app.route("/api/shopping_cart/<object_type>/<object_id>/<quality>", methods=["DELETE"])
+def remove_from_shopping_cart(object_type, object_id, quality):
+    from web_server.backend.announcer import announce
+    from state.actor import state as state_handle
+    cart = list(context.shopping_cart or [])
+    entry = (object_type, object_id, quality)
+    if entry in cart:
+        cart.remove(entry)
+        context.shopping_cart = cart
+        state_handle.cancel_and_restart()
+    announce("reload_data")
     return Response(status=204)
 
 

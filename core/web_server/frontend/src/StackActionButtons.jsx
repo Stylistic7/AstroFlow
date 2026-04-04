@@ -1,6 +1,7 @@
 import { Box, Tooltip, IconButton } from '@mui/material';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import QuarantineToggle from './QuarantineToggle';
+import ShoppingCartMenu from './ShoppingCartMenu';
 
 
 export default function StackActionButtons({ stack_id }) {
@@ -10,6 +11,7 @@ export default function StackActionButtons({ stack_id }) {
 
   return (
     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+      <ShoppingCartMenu objectType="stack" objectId={stack_id} />
       <QuarantineToggle
         objectType="stack"
         objectId={stack_id}

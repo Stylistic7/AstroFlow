@@ -20,6 +20,7 @@ import LeftDrawer from "./LeftDrawer.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
 import ProgressComponent from './ProgressComponent.jsx';
 import RayStatus from './RayStatus.jsx';
+import ShoppingCartPanel from './ShoppingCartPanel.jsx';
 import { Document } from "flexsearch";
 
 
@@ -261,6 +262,8 @@ export default function PrimarySearchAppBar() {
             </Tooltip>
           )}
           <Box sx={{ flexGrow: 1 }} />
+          <ShoppingCartPanel />
+          <VerticalDivider />
           <ProgressComponent />
           <VerticalDivider />
           <RayStatus />

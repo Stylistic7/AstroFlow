@@ -14,6 +14,7 @@ import RuleIcon from '@mui/icons-material/Rule';
 
 import AstroFlowContext from './AstroFlowContext.jsx';
 import QuarantineToggle from './QuarantineToggle.jsx';
+import ShoppingCartMenu from './ShoppingCartMenu.jsx';
 
 function capitalizeFirst(str) {
     return str.charAt(0).toUpperCase() + str.slice(1);
@@ -183,12 +184,16 @@ export default function AstroFlowBreadcrumbs() {
                     {capitalizeFirst(calStack.image_type)} calibration stack
                 </Link>}
             </Breadcrumbs>
-            {quarantineObjectType && (
+            {quarantineObjectType && (<>
+                <ShoppingCartMenu
+                    objectType={quarantineObjectType}
+                    objectId={quarantineObjectId}
+                />
                 <QuarantineToggle
                     objectType={quarantineObjectType}
                     objectId={quarantineObjectId}
                 />
-            )}
+            </>)}
         </Box>
     );
 }
