@@ -172,12 +172,10 @@ def build_mosaic_filter_subgraph(
 ) -> Graph | None:
     log.info("Building mosaic filter subgraph", mode=mode, mosaic=str(mosaic), filter=filter, strips=mosaic.strips, viewbox=str(viewbox))
 
-    graph_update_fn, node_status_fn = None, None
-    if mode == QualityLevel.MASTER:
-        graph_update_fn = partial(
-            store_workflow_graph, ("mosaic", mosaic.stable_hash, filter)
-        )
-        node_status_fn = store_node_status
+    graph_update_fn = partial(
+        store_workflow_graph, ("mosaic", mosaic.stable_hash, filter)
+    )
+    node_status_fn = store_node_status
 
     # For strip index 0:
     #   merge(place_a, place_b) -> merge_b
