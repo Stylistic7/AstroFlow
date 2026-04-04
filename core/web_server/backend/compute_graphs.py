@@ -23,47 +23,25 @@ def compute_graph_status():
     return context.compute_graph_status or {}
 
 
-@compute_graphs_bp.route("/api/workflow_graph/stack/<stack_id>")
 @compute_graphs_bp.route("/api/workflow_graph/stack/<stack_id>/<quality>")
-def workflow_graph_for_stack(stack_id, quality=None):
+def workflow_graph_for_stack(stack_id, quality):
     wf = context["workflow_graphs"] or {}
-    if quality:
-        ref = wf.get(("stack", stack_id, quality))
-        if ref is not None:
-            return ref.get()
-    for key, ref in wf.items():
-        if isinstance(key, tuple) and len(key) >= 2 and key[0] == "stack" and key[1] == stack_id:
-            return ref.get()
-    return _EMPTY_WORKFLOW_GRAPH
+    ref = wf.get(("stack", stack_id, quality))
+    return ref.get() if ref is not None else _EMPTY_WORKFLOW_GRAPH
 
 
-@compute_graphs_bp.route("/api/workflow_graph/target/<target_id>")
 @compute_graphs_bp.route("/api/workflow_graph/target/<target_id>/<quality>")
-def workflow_graph_for_target(target_id, quality=None):
+def workflow_graph_for_target(target_id, quality):
     wf = context["workflow_graphs"] or {}
-    if quality:
-        ref = wf.get(("target", target_id, quality))
-        if ref is not None:
-            return ref.get()
-    for key, ref in wf.items():
-        if isinstance(key, tuple) and len(key) >= 2 and key[0] == "target" and key[1] == target_id:
-            return ref.get()
-    return _EMPTY_WORKFLOW_GRAPH
+    ref = wf.get(("target", target_id, quality))
+    return ref.get() if ref is not None else _EMPTY_WORKFLOW_GRAPH
 
 
-@compute_graphs_bp.route("/api/workflow_graph/mosaic/<mosaic_id>/<filter>")
 @compute_graphs_bp.route("/api/workflow_graph/mosaic/<mosaic_id>/<filter>/<quality>")
-def workflow_graph_for_mosaic(mosaic_id, filter, quality=None):
+def workflow_graph_for_mosaic(mosaic_id, filter, quality):
     wf = context["workflow_graphs"] or {}
-    if quality:
-        ref = wf.get(("mosaic", mosaic_id, filter, quality))
-        if ref is not None:
-            return ref.get()
-    # Fall back to any quality level that has a graph.
-    for key, ref in wf.items():
-        if isinstance(key, tuple) and len(key) >= 3 and key[0] == "mosaic" and key[1] == mosaic_id and key[2] == filter:
-            return ref.get()
-    return _EMPTY_WORKFLOW_GRAPH
+    ref = wf.get(("mosaic", mosaic_id, filter, quality))
+    return ref.get() if ref is not None else _EMPTY_WORKFLOW_GRAPH
 
 
 def _json_default(obj):
