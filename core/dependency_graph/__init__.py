@@ -4,7 +4,6 @@ from .classes import (
     GraphStatus,
     Node,
     NodeStatusFn,
-    TopologicalSorterWithStatus,
     ResultDict,
     RunStats,
     Skipped,
@@ -14,6 +13,7 @@ from .classes import (
     canonicalize_graph,
     GraphUpdateFn,
 )
+from .graph_runtime import GraphRuntime
 from .construction import chain
 from .dependency_graph import run_graph, matching_nodes, GraphCancelled
 from .debugging import print_graph, print_result_dict

@@ -4,8 +4,6 @@ from hashing import hash_list_int
 from typing import Any, Union, TypeAlias
 from collections.abc import Iterable, Callable
 from dataclasses import dataclass, field
-from graphlib import TopologicalSorter
-from collections import defaultdict
 from cache.types import NeverRunType
 from beartype import beartype
 
@@ -156,97 +154,7 @@ def canonicalize_node(task: TaskDescriptor) -> Node:
         return Node(task)
 
 
-class TopologicalSorterWithStatus:
-    def __init__(
-        self,
-        graph: CanonicalGraph,
-        parent_node: Node | None = None,
-        done_callback: DoneCallback | None = None,
-        graph_update_fn: GraphUpdateFn | None = None,
-        node_status_fn: NodeStatusFn | None = None,
-    ) -> None:
-        self.parent_node = parent_node
-        self.done_callback = done_callback
-        self.results = ResultDict()
-        self.logs = ResultDict()
-        self.complete_args = ResultDict()
-        self.final_result = None
-
-        self.graph = defaultdict(list)
-        self.graph_update_fn = graph_update_fn
-        self.node_status_fn = node_status_fn
-        self.done_nodes = list()
-        self._ts = None
-
-        self._ready_cache = None
-        self._waiting_cache = None
-        self._cache_valid = False
-
-        if graph:
-            for node, dependencies in graph.items():
-                self.add(node, *dependencies)
-
-    def add(self, node: Any, *dependencies: Iterable[Any]):
-        seen = set(self.graph[node])
-        for dep in dependencies:
-            if dep not in seen:
-                self.graph[node].append(dep)
-                seen.add(dep)
-            if dep not in self.graph:
-                self.graph[dep] = []
-
-    def prepare(self):
-        self._ts = TopologicalSorter(self.graph)
-        self._ts.prepare()
-
-    def is_active(self) -> bool:
-        return self._ts.is_active()
-
-    def get_ready(self):
-        return self._ts.get_ready()
-
-    def done(self, node: Any):
-        self._ts.done(node)
-        self.done_nodes.append(node)
-        self._cache_valid = False  # Invalidate cache
-
-    def _update_caches(self):
-        ready = []
-        waiting = []
-        done_set = set(self.done_nodes)
-        for node, deps in self.graph.items():
-            if node in done_set:
-                continue
-            if all(dep in done_set for dep in deps):
-                ready.append(node)
-            else:
-                waiting.append(node)
-        self._ready_cache = ready
-        self._waiting_cache = waiting
-        self._cache_valid = True
-
-    def peek_ready(self) -> list:
-        if not self._cache_valid:
-            self._update_caches()
-        return self._ready_cache
-
-    def peek_waiting(self) -> list:
-        if not self._cache_valid:
-            self._update_caches()
-        return self._waiting_cache
-
-    def peek_done(self) -> list:
-        return list(self.done_nodes)
-
-    def get_status(self) -> GraphStatus:
-        return GraphStatus(
-            self.peek_done(), self.peek_ready(), self.peek_waiting()
-        )
-
-
-GraphUpdateFn = Callable[
-    [TopologicalSorterWithStatus, list[TopologicalSorterWithStatus]], Any
-]
+GraphUpdateFn = Callable[..., Any]
 
 
 class Graph(dict[TaskDescriptor, Iterable[TaskDescriptor]]):
@@ -375,4 +283,3 @@ class ResultDict(dict[Node, Any]):
         ) and not self.contains_instance(NeverRunType)
 
 
-DoneCallback = Callable[[], None]

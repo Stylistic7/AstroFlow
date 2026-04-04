@@ -5,7 +5,7 @@ import traceback
 import ray
 from pathlib import Path
 
-from dependency_graph import Node, TopologicalSorterWithStatus, Skipped
+from dependency_graph import Node, GraphRuntime, Skipped
 from cache.types import NeverRun
 from context import context
 from file_io.types import WithSidecar
@@ -38,11 +38,11 @@ def node_to_id(node: Node) -> str:
 
 
 def gather_group_meta(
-    ts: TopologicalSorterWithStatus,
-    subgraphs_by_parent: dict[Node, TopologicalSorterWithStatus],
+    rt: GraphRuntime,
+    subgraphs_by_parent: dict[Node, GraphRuntime],
 ) -> dict[str, dict]:
-    def state_string(ts, node):
-        result = ts.results.get(node, NeverRun)
+    def state_string(rt, node):
+        result = rt.results.get(node, NeverRun)
         return (
             "NO_STATE_RUNTIME"
             if result == NeverRun
@@ -53,33 +53,30 @@ def gather_group_meta(
             else "SUCCEEDED"
         )
 
-    def subgraph_contains_exception(ts, node):
+    def subgraph_contains_exception(rt, node):
         if node in subgraphs_by_parent:
-            sub_ts = subgraphs_by_parent[node]
+            sub_rt = subgraphs_by_parent[node]
             if any(
-                subgraph_contains_exception(sub_ts, n) for n in sub_ts.graph
+                subgraph_contains_exception(sub_rt, n) for n in sub_rt.graph
             ):
                 return True
 
-        return isinstance(ts.results.get(node, NeverRun), Exception)
+        return isinstance(rt.results.get(node, NeverRun), Exception)
 
-    def recurse(ts: TopologicalSorterWithStatus, node: Node):
-        # TODO: Split this out as an independent function -- it may get complex.
+    def recurse(rt: GraphRuntime, node: Node):
         filename = None
         try:
-            if hasattr(node.task, "filename_fn"):
-                args = ts.complete_args[node]
-                filename = node.task.filename_fn(*args).resolve_at(
-                    context.output_dir
-                )
-                if os.path.exists(filename):
-                    filename = os.fspath(filename)
+            fragment = rt.filenames.get(node)
+            if fragment is not None:
+                resolved = fragment.resolve_at(context.output_dir)
+                if os.path.exists(resolved):
+                    filename = os.fspath(resolved)
         except (AttributeError, KeyError, TypeError):
             pass
 
         meta = {
             "displayName": node.task._function.__name__,
-            "state": state_string(ts, node),
+            "state": state_string(rt, node),
             "options": {
                 "imageUrl": f"/api/open_image/{filename}",
             },
@@ -89,30 +86,30 @@ def gather_group_meta(
         if node.name:
             meta["description"] = node.name
         if node in subgraphs_by_parent:
-            sub_ts = subgraphs_by_parent[node]
+            sub_rt = subgraphs_by_parent[node]
             meta["hasControlNode"] = True
             meta["groupMeta"] = {
-                node_to_id(n): recurse(sub_ts, n) for n in sub_ts.graph
+                node_to_id(n): recurse(sub_rt, n) for n in sub_rt.graph
             }
-            if subgraph_contains_exception(sub_ts, node):
+            if subgraph_contains_exception(sub_rt, node):
                 meta["state"] = "FAILED"
         return meta
 
-    return {node_to_id(n): recurse(ts, n) for n in ts.graph}
+    return {node_to_id(n): recurse(rt, n) for n in rt.graph}
 
 
 def build_skeleton(
-    ts: TopologicalSorterWithStatus,
-    subgraphs_by_parent: dict[Node, TopologicalSorterWithStatus],
+    rt: GraphRuntime,
+    subgraphs_by_parent: dict[Node, GraphRuntime],
     indent: int = 0,
 ) -> list[dict]:
     existing_nodes = {}
 
     debug_print(
-        f"{' ' * indent} build_skeleton() called for ts with {len(ts.graph)} entries"
+        f"{' ' * indent} build_skeleton() called for rt with {len(rt.graph)} entries"
     )
 
-    graph = ts.graph
+    graph = rt.graph
     reverse = defaultdict(set)
     for node, deps in graph.items():
         for dep in deps:
@@ -123,15 +120,15 @@ def build_skeleton(
         key = node_to_id(node)
         debug_print(f"{' ' * indent} build() called for node {node}")
 
-        if (ts, key) in existing_nodes:
+        if (rt, key) in existing_nodes:
             debug_print(f"{' ' * indent} key {key} is in existing_nodes")
             return {
-                "id": existing_nodes[ts, key]["id"],
-                "type": existing_nodes[ts, key]["type"],
+                "id": existing_nodes[rt, key]["id"],
+                "type": existing_nodes[rt, key]["type"],
             }
 
         if node in subgraphs_by_parent:
-            sub_ts = subgraphs_by_parent[node]
+            sub_rt = subgraphs_by_parent[node]
             debug_print(
                 f"{' ' * indent} calling build_skeleton() for subgraph node {node}"
             )
@@ -139,7 +136,7 @@ def build_skeleton(
                 "id": key,
                 "type": "group",
                 "definition": build_skeleton(
-                    sub_ts, subgraphs_by_parent, indent=indent + 2
+                    sub_rt, subgraphs_by_parent, indent=indent + 2
                 ),
             }
         else:
@@ -153,7 +150,7 @@ def build_skeleton(
         if children:
             result["next"] = children
 
-        existing_nodes[ts, key] = result
+        existing_nodes[rt, key] = result
         debug_print(f"{' ' * indent} putting key {key} into existing_nodes")
 
         return result
@@ -161,28 +158,19 @@ def build_skeleton(
     return [build(n, indent=indent) for n in roots]
 
 
-def to_workflow_graph(
-    top_level_ts: TopologicalSorterWithStatus,
-    subgraphs: list[TopologicalSorterWithStatus],
-):
-    ts_by_parent = {
-        sg.parent_node: sg for sg in subgraphs if sg.parent_node is not None
-    }
+def to_workflow_graph(root: GraphRuntime):
+    by_parent = root.subgraphs_by_parent
 
     return {
-        "skeleton": build_skeleton(top_level_ts, ts_by_parent),
-        "state": gather_group_meta(top_level_ts, ts_by_parent),
+        "skeleton": build_skeleton(root, by_parent),
+        "state": gather_group_meta(root, by_parent),
     }
 
 
-def store_workflow_graph(
-    key: Any,
-    ts: TopologicalSorterWithStatus,
-    subgraphs: list[TopologicalSorterWithStatus],
-):
+def store_workflow_graph(key: Any, rt: GraphRuntime):
     from cache.context_ref import ContextRef
 
-    wf_graph = to_workflow_graph(ts, subgraphs)
+    wf_graph = to_workflow_graph(rt)
     cache_key = ("workflow_graphs", str(key))
     new_ref = ContextRef.store(cache_key, wf_graph)
     context.or_equals("workflow_graphs", {key: new_ref})

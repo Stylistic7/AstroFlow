@@ -5,7 +5,7 @@ import pprint
 from functools import partial
 
 from context import context, get_cache
-from dependency_graph import Graph, Node, run_graph, TopologicalSorterWithStatus
+from dependency_graph import Graph, Node, run_graph, GraphRuntime
 
 from cache.cached_decorator import make_cached_decorator
 from hashing import hash_call
@@ -100,11 +100,11 @@ def test_simple_graph(test_context) -> None:
     C = (second_remote_task, "C")
     D = (second_remote_task, "D")
 
-    top_level_graph, subgraphs = None, None
+    captured_rt = None
 
-    def graph_update_fn(*g):
-        nonlocal top_level_graph, subgraphs
-        top_level_graph, subgraphs = g
+    def graph_update_fn(rt):
+        nonlocal captured_rt
+        captured_rt = rt
 
     graph = Graph(
         {D: {B, C}, C: {A}, B: {A}, A: {}}, graph_update_fn=graph_update_fn
@@ -112,7 +112,7 @@ def test_simple_graph(test_context) -> None:
 
     run_graph(graph, debug=True)
 
-    workflow_graph = to_workflow_graph(top_level_graph, subgraphs)
+    workflow_graph = to_workflow_graph(captured_rt)
 
     pprint.pprint(workflow_graph, indent=2, width=200)
 
@@ -181,11 +181,11 @@ def test_graph_with_subgraph(test_context) -> None:
     D = Node(build_dynamic_graph, name="D")
     E = (second_remote_task, "E")
 
-    top_level_graph, subgraphs = None, None
+    captured_rt = None
 
-    def graph_update_fn(*g):
-        nonlocal top_level_graph, subgraphs
-        top_level_graph, subgraphs = g
+    def graph_update_fn(rt):
+        nonlocal captured_rt
+        captured_rt = rt
 
     graph = Graph(
         {E: {D}, D: {B, C}, C: {A}, B: {A}}, graph_update_fn=graph_update_fn
@@ -193,7 +193,7 @@ def test_graph_with_subgraph(test_context) -> None:
 
     run_graph(graph)
 
-    workflow_graph = to_workflow_graph(top_level_graph, subgraphs)
+    workflow_graph = to_workflow_graph(captured_rt)
     pprint.pprint(workflow_graph, indent=2, width=200)
 
     assert workflow_graph == {
@@ -329,17 +329,17 @@ def test_graph_with_nested_subgraph(test_context) -> None:
     B = Node(build_outer_dynamic_graph, name="outer")
     C = (second_remote_task, "C")
 
-    top_level_graph, subgraphs = None, None
+    captured_rt = None
 
-    def graph_update_fn(*g):
-        nonlocal top_level_graph, subgraphs
-        top_level_graph, subgraphs = g
+    def graph_update_fn(rt):
+        nonlocal captured_rt
+        captured_rt = rt
 
     graph = Graph({C: {B}, B: {A}}, graph_update_fn=graph_update_fn)
 
     run_graph(graph)
 
-    workflow_graph = to_workflow_graph(top_level_graph, subgraphs)
+    workflow_graph = to_workflow_graph(captured_rt)
     pprint.pprint(workflow_graph, indent=2, width=200)
 
     assert workflow_graph == {
@@ -484,9 +484,9 @@ def test_graph_with_nested_subgraph(test_context) -> None:
 def test_dry_run(test_context):
     context.num_task_raises_exception_runs = 0
 
-    def graph_update_fn(*g):
-        nonlocal top_level_graph, subgraphs
-        top_level_graph, subgraphs = g
+    def graph_update_fn(rt):
+        nonlocal captured_rt
+        captured_rt = rt
 
     A = (first_remote_task, "A")
     B = (second_remote_task, "B")
@@ -495,9 +495,9 @@ def test_dry_run(test_context):
 
     graph = Graph({D: {C}, C: {A, B}}, graph_update_fn=graph_update_fn)
 
-    top_level_graph, subgraphs = None, None
+    captured_rt = None
     run_graph(graph, dry_run=True)
-    workflow_graph = to_workflow_graph(top_level_graph, subgraphs)
+    workflow_graph = to_workflow_graph(captured_rt)
 
     pprint.pprint(workflow_graph, indent=2, width=200)
     assert context.num_task_raises_exception_runs == 0
@@ -558,9 +558,9 @@ def test_dry_run(test_context):
         },
     }
 
-    top_level_graph, subgraphs = None, None
+    captured_rt = None
     run_graph(graph, dry_run=False)
-    workflow_graph = to_workflow_graph(top_level_graph, subgraphs)
+    workflow_graph = to_workflow_graph(captured_rt)
 
     pprint.pprint(workflow_graph, indent=2, width=200)
     assert context.num_task_raises_exception_runs == 1
@@ -625,16 +625,16 @@ def test_dry_run(test_context):
 def test_nested_subgraph_exception(test_context):
     context.num_task_raises_exception_runs = 0
 
-    def graph_update_fn(*g):
-        nonlocal top_level_graph, subgraphs
-        top_level_graph, subgraphs = g
+    def graph_update_fn(rt):
+        nonlocal captured_rt
+        captured_rt = rt
 
     graph = ray.get(build_subgraph_raise_exception.remote(3))
     graph.graph_update_fn = graph_update_fn
 
-    top_level_graph, subgraphs = None, None
+    captured_rt = None
     run_graph(graph, dry_run=True)
-    workflow_graph = to_workflow_graph(top_level_graph, subgraphs)
+    workflow_graph = to_workflow_graph(captured_rt)
     pprint.pprint(workflow_graph, indent=2, width=200)
 
     assert context.num_task_raises_exception_runs == 0
@@ -802,9 +802,9 @@ def test_nested_subgraph_exception(test_context):
         },
     }
 
-    top_level_graph, subgraphs = None, None
+    captured_rt = None
     run_graph(graph, dry_run=False)
-    workflow_graph = to_workflow_graph(top_level_graph, subgraphs)
+    workflow_graph = to_workflow_graph(captured_rt)
     pprint.pprint(workflow_graph, indent=2, width=200)
 
     assert context.num_task_raises_exception_runs == 1
@@ -983,11 +983,11 @@ def test_graph_with_subgraph_dry_run(test_context) -> None:
     D = build_dynamic_graph
     E = (second_remote_task, "D")
 
-    top_level_graph, subgraphs = None, None
+    captured_rt = None
 
-    def graph_update_fn(*g):
-        nonlocal top_level_graph, subgraphs
-        top_level_graph, subgraphs = g
+    def graph_update_fn(rt):
+        nonlocal captured_rt
+        captured_rt = rt
 
     graph = Graph(
         {E: {D}, D: {B, C}, C: {A}, B: {A}}, graph_update_fn=graph_update_fn
@@ -995,7 +995,7 @@ def test_graph_with_subgraph_dry_run(test_context) -> None:
 
     run_graph(graph, dry_run=True, debug=True)
 
-    workflow_graph = to_workflow_graph(top_level_graph, subgraphs)
+    workflow_graph = to_workflow_graph(captured_rt)
     pprint.pprint(workflow_graph, indent=2, width=200)
 
     assert workflow_graph == {
@@ -1127,10 +1127,9 @@ def test_graph_with_subgraph_dry_run(test_context) -> None:
 
 def _store_graph_update_in_context(
     key: Any,
-    ts: TopologicalSorterWithStatus,
-    subgraphs: list[TopologicalSorterWithStatus],
+    rt: GraphRuntime,
 ) -> None:
-    context[key] = to_workflow_graph(ts, subgraphs)
+    context[key] = to_workflow_graph(rt)
 
 
 def test_nested_graph_update_fn(test_context) -> None:

@@ -24,7 +24,7 @@ from state.ray_control import (
 from state.astroflow_zeroconf import AstroFlowZeroconf
 from asiair.asiair_zeroconf import ASIAIRZeroconf
 from state.types import State, Action
-from dependency_graph import Graph, TopologicalSorterWithStatus
+from dependency_graph import Graph, GraphRuntime
 from previews.types import QualityLevel
 
 T = TypeVar("T")
@@ -81,7 +81,7 @@ def _populate_context(
     context.output_dir = Path("/Volumes/Astro/Processed")
 
     context.asiair_devices = []
-    context.compute_graphs = [TopologicalSorterWithStatus(Graph())]
+    context.compute_graphs = [GraphRuntime(Graph({}))]
     context.compute_graph_status = {}
 
     # Preserve existing decision overrides across restarts.

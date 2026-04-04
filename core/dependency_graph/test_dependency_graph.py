@@ -12,8 +12,6 @@ from dependency_graph import (
     GraphStatus,
     ResultDict,
     RunStats,
-    TopologicalSorterWithStatus,
-    canonicalize_graph,
     run_graph,
     chain,
 )
@@ -605,56 +603,6 @@ def test_overhead(test_context) -> None:
     assert ms_per_fn < 2.0
 
 
-def test_graph_with_status(test_context) -> None:
-    A = Node(increment_foo)
-    B = Node(increment_bar)
-    C = Node(increment_baz)
-    D = Node(increment_qux)
-
-    graph = Graph({D: {B, C}, C: {A}, B: {A}})
-    ts = TopologicalSorterWithStatus(
-        canonicalize_graph(graph), done_callback=None
-    )
-    ts.prepare()
-
-    print(
-        f"### ready {ts.peek_ready()} waiting {ts.peek_waiting()} done {ts.peek_done()}"
-    )
-
-    ready_nodes = ts.get_ready()
-    assert ready_nodes == (A,)
-
-    assert sorted(ts.peek_ready()) == sorted({A})
-    assert sorted(ts.peek_waiting()) == sorted({B, C, D})
-    assert sorted(ts.peek_done()) == sorted(set())
-
-    ts.done(A)
-    assert sorted(ts.peek_ready()) == sorted({B, C})
-    assert sorted(ts.peek_waiting()) == sorted({D})
-    assert sorted(ts.peek_done()) == sorted({A})
-
-    ready_nodes = ts.get_ready()
-    assert set(ready_nodes) == {B, C}
-
-    ts.done(B)
-    assert sorted(ts.peek_ready()) == sorted({C})
-    assert sorted(ts.peek_waiting()) == sorted({D})
-    assert sorted(ts.peek_done()) == sorted({A, B})
-
-    ts.done(C)
-    assert sorted(ts.peek_ready()) == sorted({D})
-    assert sorted(ts.peek_waiting()) == sorted(set())
-    assert sorted(ts.peek_done()) == sorted({A, B, C})
-
-    ready_nodes = ts.get_ready()
-    assert set(ready_nodes) == {D}
-
-    ts.done(D)
-    assert sorted(ts.peek_ready()) == sorted(set())
-    assert sorted(ts.peek_waiting()) == sorted(set())
-    assert sorted(ts.peek_done()) == sorted({A, B, C, D})
-
-
 def test_graph_status_merging(test_context) -> None:
     status_1 = GraphStatus(
         waiting_nodes=[Node(increment_foo)], done_nodes=[Node(increment_baz)]
@@ -715,6 +663,7 @@ def test_trace(test_context) -> None:
         )
 
 
+@pytest.mark.timeout(600)
 def test_recursive_graph(test_context) -> None:
     dynamic_graph_task = (build_recursive_graph, 5, 10)
     graph = Graph({dynamic_graph_task: {}})
