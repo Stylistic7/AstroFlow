@@ -44,8 +44,9 @@ def build_target_subgraph(
             decisions=decisions,
         )
 
+    quality = "DownscaledMaster" if config.downscale_factor > 1 else "Master"
     graph_update_fn = partial(
-        store_workflow_graph, ("target", target.stable_hash)
+        store_workflow_graph, ("target", target.stable_hash, quality)
     )
     node_status_fn = store_node_status
 

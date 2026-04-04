@@ -24,17 +24,31 @@ def compute_graph_status():
 
 
 @compute_graphs_bp.route("/api/workflow_graph/stack/<stack_id>")
-def workflow_graph_for_stack(stack_id):
+@compute_graphs_bp.route("/api/workflow_graph/stack/<stack_id>/<quality>")
+def workflow_graph_for_stack(stack_id, quality=None):
     wf = context["workflow_graphs"] or {}
-    ref = wf.get(("stack", stack_id))
-    return ref.get() if ref is not None else _EMPTY_WORKFLOW_GRAPH
+    if quality:
+        ref = wf.get(("stack", stack_id, quality))
+        if ref is not None:
+            return ref.get()
+    for key, ref in wf.items():
+        if isinstance(key, tuple) and len(key) >= 2 and key[0] == "stack" and key[1] == stack_id:
+            return ref.get()
+    return _EMPTY_WORKFLOW_GRAPH
 
 
 @compute_graphs_bp.route("/api/workflow_graph/target/<target_id>")
-def workflow_graph_for_target(target_id):
+@compute_graphs_bp.route("/api/workflow_graph/target/<target_id>/<quality>")
+def workflow_graph_for_target(target_id, quality=None):
     wf = context["workflow_graphs"] or {}
-    ref = wf.get(("target", target_id))
-    return ref.get() if ref is not None else _EMPTY_WORKFLOW_GRAPH
+    if quality:
+        ref = wf.get(("target", target_id, quality))
+        if ref is not None:
+            return ref.get()
+    for key, ref in wf.items():
+        if isinstance(key, tuple) and len(key) >= 2 and key[0] == "target" and key[1] == target_id:
+            return ref.get()
+    return _EMPTY_WORKFLOW_GRAPH
 
 
 @compute_graphs_bp.route("/api/workflow_graph/mosaic/<mosaic_id>/<filter>")

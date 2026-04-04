@@ -92,8 +92,9 @@ def build_stacking_subgraph(
     stack: Stack,
     config: ProcessingConfig,
 ) -> Graph:
+    quality = "DownscaledMaster" if config.downscale_factor > 1 else "Master"
     graph_update_fn = partial(
-        store_workflow_graph, ("stack", stack.stable_hash)
+        store_workflow_graph, ("stack", stack.stable_hash, quality)
     )
     node_status_fn = store_node_status
 
