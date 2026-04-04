@@ -63,6 +63,19 @@ class GraphRuntime:
         self._started: set[Node] = set()
         self._done: set[Node] = set()
 
+        # Reverse dependencies: node -> set of nodes that depend on it.
+        self._dependents: dict[Node, set[Node]] = defaultdict(set)
+        for node, deps in self._graph.items():
+            for dep in deps:
+                self._dependents[dep].add(node)
+
+        # Incrementally-maintained ready set: nodes whose deps are all
+        # done and that haven't been started yet.
+        self._ready: set[Node] = {
+            n for n in self._graph
+            if not self._graph[n]  # no dependencies
+        }
+
         # Children: nodes that returned a Graph get a child runtime.
         # _children holds active children; _completed_children holds finished ones
         # (kept for workflow_graph_adapter introspection).
@@ -94,22 +107,15 @@ class GraphRuntime:
     def get_ready(self) -> list[Node]:
         """Return nodes that are ready to run (all deps done, not yet started).
 
-        Idempotent — safe to call multiple times. Traverses child runtimes
-        to find ready nodes at all levels of the tree.
+        Idempotent — safe to call multiple times.
         """
-        # First, check if any children have completed and propagate results.
         self._propagate_completed_children()
-
-        ready = [
-            n for n in self._graph
-            if n not in self._started
-            and all(d in self._done for d in self._graph[n])
-        ]
-        return ready
+        return list(self._ready)
 
     def start(self, node: Node) -> None:
         """Mark a node as started (submitted to Ray)."""
         self._started.add(node)
+        self._ready.discard(node)
 
     def node_completed(
         self, node: Node, result: Any, logs: list[Any] | None = None,
@@ -151,6 +157,15 @@ class GraphRuntime:
         self.results[node] = result
         self.logs[node] = logs
         self._done.add(node)
+        self._ready.discard(node)
+
+        # Check if completing this node unblocks any dependents.
+        for dependent in self._dependents.get(node, ()):
+            if (
+                dependent not in self._started
+                and all(d in self._done for d in self._graph[dependent])
+            ):
+                self._ready.add(dependent)
 
         # Opportunistically compute the output filename for the workflow UI.
         if hasattr(node.task, "filename_fn"):
@@ -180,7 +195,7 @@ class GraphRuntime:
     def is_active(self) -> bool:
         """True if there is still work to do at this level or any child."""
         self._propagate_completed_children()
-        if len(self._done) < len(self._graph):
+        if self._ready or (len(self._done) + len(self._children) < len(self._graph)):
             return True
         return any(c.is_active() for c in self._children.values())
 
@@ -205,7 +220,7 @@ class GraphRuntime:
             n for n in self._graph
             if n not in self._done
             and n not in self._started
-            and not all(d in self._done for d in self._graph[n])
+            and n not in self._ready
         ]
 
     def get_status(self) -> GraphStatus:
