@@ -53,7 +53,6 @@ def place_tile(
     tile_x: int,
     wcs: Any,
     interp: RegularGridInterpolator,
-    skip_empty: bool = False,
 ) -> tuple[int, int, np.ndarray | None]:
     tile_y_min = (
         viewbox.y_min + tile_y * viewbox.tile_height * viewbox.resolution
@@ -65,25 +64,24 @@ def place_tile(
     )
     tile_x_max = tile_x_min + viewbox.tile_width * viewbox.resolution
 
-    if skip_empty:
-        # Compute the four corner points in RA/Dec.
-        corners_x = [tile_x_min, tile_x_max, tile_x_min, tile_x_max]
-        corners_y = [tile_y_min, tile_y_min, tile_y_max, tile_y_max]
-        ras, decs = viewbox.projection.unproject(
-            np.array(corners_x), np.array(corners_y)
-        )
-        ras, decs = np.degrees(ras), np.degrees(decs)
+    # Compute the four corner points in RA/Dec.
+    corners_x = [tile_x_min, tile_x_max, tile_x_min, tile_x_max]
+    corners_y = [tile_y_min, tile_y_min, tile_y_max, tile_y_max]
+    ras, decs = viewbox.projection.unproject(
+        np.array(corners_x), np.array(corners_y)
+    )
+    ras, decs = np.degrees(ras), np.degrees(decs)
 
-        # If none of the corners of this tile fall inside the source image's
-        # footprint, this tile can be skipped.
-        inside_footprint = [
-            wcs.footprint_contains(
-                SkyCoord(ra * u.deg, dec * u.deg, frame="icrs")
-            )
-            for ra, dec in zip(ras, decs)
-        ]
-        if not any(inside_footprint):
-            return tile_y, tile_x, None
+    # If none of the corners of this tile fall inside the source image's
+    # footprint, this tile can be skipped.
+    inside_footprint = [
+        wcs.footprint_contains(
+            SkyCoord(ra * u.deg, dec * u.deg, frame="icrs")
+        )
+        for ra, dec in zip(ras, decs)
+    ]
+    if not any(inside_footprint):
+        return tile_y, tile_x, None
 
     # Compute the RA, Dec of all the tile's pixels.
     ys = np.linspace(
@@ -119,7 +117,6 @@ def _project_in_tiles(
     viewbox: Viewbox,
     interp: RegularGridInterpolator,
     wcs: WCS,
-    skip_empty: bool = False,
 ):
     wcs_ref = ray.put(wcs)
 
@@ -134,7 +131,7 @@ def _project_in_tiles(
     interp_ref = ray.put(interp)
     remaining_refs = [
         place_tile.remote(
-            viewbox, tile_y, tile_x, wcs_ref, interp_ref, skip_empty
+            viewbox, tile_y, tile_x, wcs_ref, interp_ref
         )
         for tile_y, tile_x in product(
             range(viewbox.num_tiles_y), range(viewbox.num_tiles_x)
@@ -184,7 +181,7 @@ def _place_image(
 
     interp = _make_interpolator(filename)
 
-    image = _project_in_tiles(viewbox, interp, wcs, skip_empty=True)
+    image = _project_in_tiles(viewbox, interp, wcs)
 
     if mode == QualityLevel.SUBFRAME:
         output_filename = place_image_subframe.filename_fn(
