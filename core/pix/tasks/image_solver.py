@@ -41,7 +41,6 @@ _DEFAULT_PARAMETERS = {
     "solver_showSimplifiedSurfaces": "false",
     "solver_showDistortion": "false",
     "solver_generateDistortModel": "false",
-    "solver_catalog": "PPMXL",
     "solver_distortionCorrection": "true",
     "solver_rbfType": "101",
     "solver_maxSplinePoints": "4000",
