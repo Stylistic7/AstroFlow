@@ -54,7 +54,7 @@ export default function QualityLevelSelector({ selected, available, onSelect }) 
                     gap: 4,
                 }}
             >
-                {isMissing ? `${label} (n/a)` : isStale ? `${label} (stale)` : label}
+                {isMissing ? `${label} (incomplete)` : isStale ? `${label} (stale)` : label}
                 {hasChoices && (
                     <span style={{ fontSize: 10 }}>{open ? "▲" : "▼"}</span>
                 )}
@@ -74,7 +74,7 @@ export default function QualityLevelSelector({ selected, available, onSelect }) 
                         const lvlStale = exists && valid === false;
                         const lvlColor = lvlMissing ? missingColor : lvlStale ? staleColor : qualityColors[quality_level];
                         const isSelected = quality_level === selected;
-                        const statusText = lvlMissing ? " (n/a)" : lvlStale ? " (stale)" : "";
+                        const statusText = lvlMissing ? " (incomplete)" : lvlStale ? " (stale)" : "";
                         return (
                             <div
                                 key={quality_level}
