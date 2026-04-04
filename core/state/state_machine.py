@@ -92,6 +92,7 @@ def _populate_context(
         decision_overrides=existing_overrides,
         development_settings=DevelopmentSettings(
             override_filters=("H",),
+            skip_preview_graph=True,
         ),
         preview_settings=PreviewSettings(
             subframe_thumbnail_width=1200,
