@@ -25,8 +25,6 @@ def node_to_string(node: Node, exclude_args: bool = True) -> str:
         string += f", args={_tuple_values(node.args)}"
     if node.name:
         string += f", name='{node.name}'"
-    if node.priority:
-        string += f", priority={node.priority}"
     string += ")"
 
     return string

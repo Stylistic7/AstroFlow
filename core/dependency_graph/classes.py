@@ -56,7 +56,6 @@ Skipped = SkippedType()
 class Node:
     task: GenericRemoteFunction
     name: str | None
-    priority: int
     args: Any
 
     def __init__(
@@ -64,11 +63,9 @@ class Node:
         task: GenericRemoteFunction,
         *args: Any,
         name: str | None = None,
-        priority: int = 1,
     ) -> None:
         self.task = task
         self.name = name
-        self.priority = priority
         self.args = args
 
     def __eq__(self, other: Any) -> bool:
@@ -77,7 +74,6 @@ class Node:
             self.task._function.__module__ == other.task._function.__module__
             and self.task._function.__name__ == other.task._function.__name__
             and self.name == other.name
-            and self.priority == other.priority
             and self.args == other.args
         )
 
@@ -88,7 +84,6 @@ class Node:
             self.task._function.__module__ == other.task._function.__module__
             and self.task._function.__name__ == other.task._function.__name__
             and self.name == other.name
-            and self.priority == other.priority
             and all(a == b for a, b in zip(self.args, other.args))
         )
 
@@ -98,16 +93,15 @@ class Node:
                 self.task._function.__module__,
                 self.task._function.__name__,
                 self.name,
-                self.priority,
                 self.args,
             ]
         )
 
     def __str__(self):
         return (
-            f"Node({self.task._function.__module__}.{self.task._function.__name__}"
-            f"({_tuple_values(self.args)}) name='{self.name}' "
-            f"priority={self.priority})"
+            f"Node(fn={self.task._function.__name__}"
+            f", name='{self.name}')" if self.name else
+            f"Node(fn={self.task._function.__name__})"
         )
 
     def __lt__(self, other: "Node") -> bool:
@@ -115,12 +109,10 @@ class Node:
         return (
             self.name or "",
             self.task._function.__name__,
-            self.priority,
             self.args,
         ) < (
             other.name or "",
             other.task._function.__name__,
-            other.priority,
             other.args,
         )
 
@@ -220,13 +212,10 @@ class GraphStatus:
 @dataclass
 class RunStats:
     num_nodes_run: int = 0
-    max_parallelism_seen: int = 0
     trace: list[Node] = field(default_factory=list)
 
 
 class ResultDict(dict[Node, Any]):
-    num_nodes_run: int = 0
-    max_parallelism_seen: int = 0
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super(ResultDict, self).__init__(*args, **kwargs)

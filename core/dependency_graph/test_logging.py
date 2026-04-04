@@ -76,5 +76,4 @@ def test_simple_graph(test_context) -> None:
     assert logs_c[0]["event"] == "second_remote_task C"
 
     assert stats.num_nodes_run == 4
-    assert stats.max_parallelism_seen == 2
 

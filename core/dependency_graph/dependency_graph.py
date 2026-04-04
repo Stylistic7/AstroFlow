@@ -139,7 +139,6 @@ def run_graph(
     cancel_event: "threading.Event | None" = None,
 ) -> tuple[Any, "RunStats"]:
     num_nodes_run: int = 0
-    max_parallelism_seen: int = 0
     last_status_time: float = 0
     trace_list = []
 
@@ -165,7 +164,6 @@ def run_graph(
         if len(ready_cache) < RESCAN_THRESHOLD:
             _refill_cache()
 
-        max_parallelism_seen = max(len(ready_cache), max_parallelism_seen)
         if debug:
             print(f"Top of loop, {len(ready_cache)} ready nodes")
 
@@ -250,9 +248,6 @@ def run_graph(
             # Refill the cache when it runs low.
             if len(ready_cache) < RESCAN_THRESHOLD:
                 _refill_cache()
-                max_parallelism_seen = max(
-                    len(ready_cache) + len(pending), max_parallelism_seen
-                )
 
     assert not root.is_active()
 
@@ -263,7 +258,6 @@ def run_graph(
 
     return root.final_result, RunStats(
         num_nodes_run=num_nodes_run,
-        max_parallelism_seen=max_parallelism_seen,
         trace=trace_list,
     )
 

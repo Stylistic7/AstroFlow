@@ -54,7 +54,6 @@ class TestGraphEditing(unittest.TestCase):
         self.assertEqual(captured[C], 5)
 
         self.assertEqual(stats.num_nodes_run, 3)
-        self.assertEqual(stats.max_parallelism_seen, 1)
 
         graph = replace_task(Graph({C: {B}, B: {A}}), later_task, fake_later_task)
         print_graph(graph)
@@ -68,4 +67,3 @@ class TestGraphEditing(unittest.TestCase):
         self.assertEqual(captured[C], 105)
 
         self.assertEqual(stats.num_nodes_run, 3)
-        self.assertEqual(stats.max_parallelism_seen, 1)
