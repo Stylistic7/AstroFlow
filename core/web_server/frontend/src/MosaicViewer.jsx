@@ -93,6 +93,15 @@ export default function MosaicViewer() {
 					py: 1,
 				}}
 			>
+				{enrichedLevels.length > 0 && <>
+					<QualityLevelSelector
+						selected={qualityLevel}
+						available={enrichedLevels}
+						onSelect={setQualityLevel}
+					/>
+					<Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
+				</>}
+
 				<ColorChannelSelector
 					stacks={stacks}
 					targets={targets}
@@ -101,15 +110,6 @@ export default function MosaicViewer() {
 					filter={filter}
 					setFilter={setFilter}
 				/>
-
-				{enrichedLevels.length > 0 && <>
-					<Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
-					<QualityLevelSelector
-						selected={qualityLevel}
-						available={enrichedLevels}
-						onSelect={setQualityLevel}
-					/>
-				</>}
 
 				<Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
 
