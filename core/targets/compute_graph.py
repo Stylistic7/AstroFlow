@@ -22,7 +22,7 @@ from dependency_graph.workflow_graph_adapter import (
 log = structlog.get_logger()
 
 
-@ray.remote
+@ray.remote(num_cpus=0.1)
 @beartype
 def build_target_subgraph(
     target: Target,

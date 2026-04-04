@@ -22,7 +22,7 @@ from dependency_graph.workflow_graph_adapter import (
 )
 
 
-@ray.remote
+@ray.remote(num_cpus=0.1)
 @beartype
 def calibration_done(stack: Stack) -> None:
     pass
@@ -71,10 +71,19 @@ def build_calibration_stack_subgraph(
                 subgraph |= inner
         return subgraph
 
-    graph = Graph({})
+    cal_tasks = {}
     for run in enriched.contents.values():
-        graph |= visit_cal_dependencies(run)
+        cal_tasks |= visit_cal_dependencies(run)
 
+    if not cal_tasks:
+        return Graph({})
+
+    # Single terminal node gathering all calibration stacking tasks.
+    graph = Graph(cal_tasks)
+    all_cal = set(cal_tasks.keys())
+    depended_on = {d for deps in cal_tasks.values() for d in deps}
+    leaf_tasks = all_cal - depended_on
+    graph[(calibration_done, stack)] = leaf_tasks
     return graph
 
 
@@ -145,7 +154,7 @@ def _my_transform(v):
     return v
 
 
-@ray.remote
+@ray.remote(num_cpus=0.1)
 def _prepare_stack_for_ui(
     stack: Stack,
     cal_stacks: CalibrationStacksDict,
@@ -187,7 +196,7 @@ def _prepare_stack_for_ui(
     }
 
 
-@ray.remote
+@ray.remote(num_cpus=0.1)
 def process_stacks_for_ui(*_ancestor_results) -> dict:
     from context import context
     from cache.context_ref import ContextRef
@@ -206,7 +215,9 @@ def process_stacks_for_ui(*_ancestor_results) -> dict:
         for h, ref in stacks.items()
     }
 
-    return {h: ray.get(ref) for h, ref in futures.items()}
+    hashes = list(futures.keys())
+    results = ray.get(list(futures.values()))
+    return dict(zip(hashes, results))
 
 
 @node

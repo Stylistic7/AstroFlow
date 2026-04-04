@@ -142,6 +142,17 @@ def _make_subgraph(
 
     canonical_graph = canonicalize_graph(graph)
 
+    # Every subgraph must produce exactly one result — enforced by requiring
+    # exactly one terminal node (a node with no dependents).
+    if parent_ts is not None and canonical_graph:
+        all_nodes = set(canonical_graph.keys())
+        depended_on = {dep for deps in canonical_graph.values() for dep in deps}
+        terminal_nodes = all_nodes - depended_on
+        assert len(terminal_nodes) == 1, (
+            f"Subgraph has {len(terminal_nodes)} terminal nodes, expected 1: "
+            f"{[node_to_string(n) for n in terminal_nodes]}"
+        )
+
     if debug:
         print(f"### Creating new subgraph:")
         print_graph(canonical_graph)

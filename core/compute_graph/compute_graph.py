@@ -40,7 +40,7 @@ from compute_graph.objects import Objects
 log = structlog.get_logger()
 
 
-@ray.remote
+@ray.remote(num_cpus=0.1)
 @beartype
 def store_calibration_stacks(
     calibration_stacks: CalibrationStacksDict,
@@ -50,8 +50,7 @@ def store_calibration_stacks(
     return calibration_stacks
 
 
-# TODO: Merge combining and storing into a single op.
-@ray.remote
+@ray.remote(num_cpus=0.1)
 @beartype
 def store_stacks(stacks: dict[str, Any]) -> dict[str, Any]:
     assert None not in stacks.values()
@@ -62,7 +61,7 @@ def store_stacks(stacks: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-@ray.remote
+@ray.remote(num_cpus=0.1)
 @beartype
 def store_targets(targets: dict[str, Any]) -> dict[str, Any]:
     assert None not in targets.values()
@@ -73,7 +72,7 @@ def store_targets(targets: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-@ray.remote
+@ray.remote(num_cpus=0.1)
 @beartype
 def store_mosaics(mosaics: MosaicsDict) -> MosaicsDict:
     assert None not in mosaics.values()
@@ -83,27 +82,27 @@ def store_mosaics(mosaics: MosaicsDict) -> MosaicsDict:
     return mosaics
 
 
-@ray.remote
+@ray.remote(num_cpus=0.1)
 def store_ui_stacks(ui_stacks: dict) -> None:
     context.ui_stacks = ui_stacks
 
 
-@ray.remote
+@ray.remote(num_cpus=0.1)
 def store_ui_calibration_stacks(ui_cal_stacks: dict) -> None:
     context.ui_calibration_stacks = ui_cal_stacks
 
 
-@ray.remote
+@ray.remote(num_cpus=0.1)
 def store_ui_targets(ui_targets: dict) -> None:
     context.ui_targets = ui_targets
 
 
-@ray.remote
+@ray.remote(num_cpus=0.1)
 def store_ui_mosaics(ui_mosaics: dict) -> None:
     context.ui_mosaics = ui_mosaics
 
 
-@ray.remote
+@ray.remote(num_cpus=0.1)
 @beartype
 def combine_dicts(*ancestor_results: dict[Any, Any]) -> dict[Any, Any]:
     assert isinstance(ancestor_results, tuple)
@@ -114,7 +113,7 @@ def combine_dicts(*ancestor_results: dict[Any, Any]) -> dict[Any, Any]:
     return result
 
 
-@ray.remote
+@ray.remote(num_cpus=0.1)
 def scatter_spatial_groups(
     metadata_ref: ContextRef[MetadataDict],
     clustering_settings: ClusteringSettings,
@@ -161,7 +160,7 @@ def scatter_spatial_groups(
     gather_stacks_task = Node(combine_dicts, name="combine_stacks")
     graph[gather_stacks_task] = stack_tasks
     graph[store_stacks] = {gather_stacks_task}
-    graph[process_stacks_for_ui] = {store_stacks}
+    graph[process_stacks_for_ui] = {store_stacks, store_calibration_stacks}
     graph[store_ui_stacks] = {process_stacks_for_ui}
 
     gather_targets_task = Node(combine_dicts, name="combine_targets")
@@ -176,8 +175,8 @@ def scatter_spatial_groups(
     graph[process_mosaics_for_ui] = {mosaics_task}
     graph[store_ui_mosaics] = {process_mosaics_for_ui}
 
-    # gather_objects runs after all stores, producing an Objects snapshot
-    # for downstream cached graph builders.
+    # gather_objects is the sole terminal node — its result (Objects) flows
+    # to downstream graph builders via the chain.
     graph[gather_objects] = {
         store_stacks, store_targets, store_mosaics, store_calibration_stacks,
         store_ui_stacks, store_ui_targets, store_ui_mosaics, store_ui_calibration_stacks,
@@ -186,7 +185,7 @@ def scatter_spatial_groups(
     return graph
 
 
-@ray.remote
+@ray.remote(num_cpus=0.1)
 @beartype
 def build_regroup_graph(
     clustering_settings: ClusteringSettings,
@@ -214,7 +213,7 @@ def build_regroup_graph(
     )
 
 
-@ray.remote
+@ray.remote(num_cpus=0.1)
 @beartype
 def gather_objects() -> Objects:
     """Snapshot all identified objects from context after regrouping."""
@@ -264,7 +263,7 @@ def build_preview_graph(
     return Graph({preview_graph_done: tasks})
 
 
-@ray.remote
+@ray.remote(num_cpus=0.1)
 @beartype
 def main_processing_graph_done() -> None:
     pass

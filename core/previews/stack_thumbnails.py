@@ -29,7 +29,7 @@ from file_io.generic import read_image
 from decisions.settings import ProcessingConfig
 
 
-@ray.remote
+@ray.remote(num_cpus=0.1)
 @beartype
 def scatter_stack_thumbnails() -> Graph:
     tasks: list[TaskDescriptor] = list()
@@ -172,7 +172,7 @@ def calibration_stack_thumbnail_video(
         yield (im * 255.0).astype(np.uint8)
 
 
-@ray.remote
+@ray.remote(num_cpus=0.1)
 @beartype
 def gather_stack_thumbnails() -> None:
     pass

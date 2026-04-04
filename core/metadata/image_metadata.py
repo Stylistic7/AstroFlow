@@ -82,7 +82,7 @@ log = structlog.get_logger()
 #
 # TODO: Add a task that checks that input and output directories exist. Many
 # tasks cannot run without them.
-@ray.remote
+@ray.remote(num_cpus=0.1)
 @beartype
 def scatter_compute_image_metadata(*filenames_in: list[Path]) -> Graph:
     filenames_in = set(f for f in filenames_in if f is not None)
@@ -168,7 +168,7 @@ def compute_image_metadata(
 
 
 
-@ray.remote(resources={"fastest_storage": 0.001})
+@ray.remote(num_cpus=0.1, resources={"fastest_storage": 0.001})
 @beartype
 @measure_performance
 def load_metadata() -> ContextRef[MetadataDict]:

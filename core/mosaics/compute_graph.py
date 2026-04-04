@@ -58,7 +58,7 @@ def stacks_for_mosaic(
     )
 
 
-@ray.remote
+@ray.remote(num_cpus=0.1)
 def build_mosaic_subgraph(
     mode: QualityLevel,
     mosaic: Mosaic,
@@ -119,7 +119,7 @@ def build_mosaic_subgraph(
     return graph
 
 
-@ray.remote
+@ray.remote(num_cpus=0.1)
 def build_placement_subgraph(
     mode: QualityLevel,
     mosaic: Mosaic,
@@ -160,7 +160,7 @@ def get_stacks_for_filter(
     return tuple(get_stacks_for_strip(strip) for strip in mosaic.strips)
 
 
-@ray.remote
+@ray.remote(num_cpus=0.1)
 def build_mosaic_filter_subgraph(
     mode: QualityLevel,
     mosaic: Mosaic,
