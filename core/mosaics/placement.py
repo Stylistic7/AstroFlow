@@ -184,8 +184,7 @@ def _place_image(
 
     interp = _make_interpolator(filename)
 
-    skip_empty = mode != QualityLevel.SUBFRAME
-    image = _project_in_tiles(viewbox, interp, wcs, skip_empty=skip_empty)
+    image = _project_in_tiles(viewbox, interp, wcs, skip_empty=True)
 
     if mode == QualityLevel.SUBFRAME:
         output_filename = place_image_subframe.filename_fn(
