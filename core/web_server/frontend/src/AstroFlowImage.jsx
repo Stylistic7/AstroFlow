@@ -3,14 +3,11 @@ import TileViewer from "./TileViewer.jsx";
 import AstroFlowContext from "./AstroFlowContext.jsx";
 import QualityLevelSelector from "./QualityLevelSelector.jsx";
 
-export const AstroFlowImage = ({
-    objectType,
-    objectId,
-    filter = undefined,
-    showPolygons = false,
-    size = "full",
-    showQualitySelector = true,
-}) => {
+/**
+ * Hook to fetch available quality levels for an object.
+ * Returns [qualityLevel, setQualityLevel, enrichedLevels].
+ */
+export function useQualityLevels(objectType, objectId, filter) {
     const { validity } = useContext(AstroFlowContext);
 
     const [qualityLevel, setQualityLevel] = useState(null);
@@ -30,13 +27,31 @@ export const AstroFlowImage = ({
             .catch(() => {});
     }, [objectType, objectId, filter]);
 
-    // Merge server-side validity with client-side context validity
-    // (context updates more frequently via SSE).
     const objectValidity = validity[`${objectType}:${objectId}`] || {};
     const enrichedLevels = availableLevels.map(l => ({
         ...l,
         valid: objectValidity[l.quality_level] ?? l.valid,
     }));
+
+    return [qualityLevel, setQualityLevel, enrichedLevels];
+}
+
+export const AstroFlowImage = ({
+    objectType,
+    objectId,
+    filter = undefined,
+    showPolygons = false,
+    size = "full",
+    showQualitySelector = true,
+    qualityLevel: qualityLevelProp = undefined,
+    onQualityChange = undefined,
+}) => {
+    // Use controlled props if provided, otherwise manage internally.
+    const [internalLevel, setInternalLevel, enrichedLevels] =
+        useQualityLevels(objectType, objectId, filter);
+
+    const qualityLevel = qualityLevelProp !== undefined ? qualityLevelProp : internalLevel;
+    const setQualityLevel = onQualityChange || setInternalLevel;
 
     const thumbnail_url = `/thumbnail/${objectType}/${objectId}${filter ? `/${filter}` : ''}`;
 

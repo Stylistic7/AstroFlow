@@ -17,8 +17,9 @@ import FullscreenIcon from "@mui/icons-material/Fullscreen";
 import ShareIcon from "@mui/icons-material/Share";
 
 import AstroFlowContext from "./AstroFlowContext.jsx";
-import { AstroFlowImage } from "./AstroFlowImage.jsx";
+import { AstroFlowImage, useQualityLevels } from "./AstroFlowImage.jsx";
 import ColorChannelSelector from "./ColorChannelSelector.jsx";
+import QualityLevelSelector from "./QualityLevelSelector.jsx";
 import TelescopiusDialog from "./TelescopiusDialog.jsx";
 
 import ToggleIconButton from "./ToggleIconButton";
@@ -56,6 +57,9 @@ export default function MosaicViewer() {
 		);
 	}, [mosaic_id, availableFilters]);
 
+	const [qualityLevel, setQualityLevel, enrichedLevels] =
+		useQualityLevels("mosaic", mosaic_id, filter);
+
 	const [telescopiusOpen, setTelescopiusOpen] = useState(false);
 
 	return (
@@ -89,6 +93,14 @@ export default function MosaicViewer() {
 					py: 1,
 				}}
 			>
+				<QualityLevelSelector
+					selected={qualityLevel}
+					available={enrichedLevels}
+					onSelect={setQualityLevel}
+				/>
+
+				<Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
+
 				<ColorChannelSelector
 					stacks={stacks}
 					targets={targets}
@@ -151,6 +163,9 @@ export default function MosaicViewer() {
 						objectId={mosaic_id}
 						filter={filter}
 						showPolygons={showOutline}
+						qualityLevel={qualityLevel}
+						onQualityChange={setQualityLevel}
+						showQualitySelector={false}
 					/>
 				</Box>
 
@@ -166,7 +181,7 @@ export default function MosaicViewer() {
 				>
 					<WorkflowGraph
 						theme={darkTheme}
-						url={`/api/workflow_graph/mosaic/${mosaic_id}/${filter}`}
+						url={`/api/workflow_graph/mosaic/${mosaic_id}/${filter}${qualityLevel ? `/${qualityLevel}` : ''}`}
 					/>
 				</Box>
 			</Box>
