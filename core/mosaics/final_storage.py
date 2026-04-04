@@ -51,6 +51,26 @@ def store_mosaic_color_channel_master(
     return WithSidecar(output)
 
 
+@makes_image(Mosaic).as_downscaled_master(mosaic_filename_xisf)
+@node(resources={"PixInsight": 1})
+@create_thumbnail
+def store_mosaic_color_channel_downscaled_master(
+    mosaic: Mosaic, filter: str, input: ImageMetadata
+) -> WithSidecar[XisfFilePath]:
+    filename = input.filename
+    output = store_mosaic_color_channel_downscaled_master.filename_fn(mosaic, filter)
+    tiff_output = output.with_suffix(".tiff")
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    mock = context.settings.development_settings.mock_pixinsight
+
+    image = Image.open(filename)
+    image.save_to(output, mock=mock)
+    make_preview_tiff(output if not mock else filename, tiff_output)
+
+    return WithSidecar(output)
+
+
 @makes_image(Mosaic).as_subframe(mosaic_filename_tiff)
 @node(resources={"fastest_storage": 0.001})
 @create_thumbnail
@@ -84,6 +104,10 @@ def store_mosaic_color_channel(
     if mode == QualityLevel.SUBFRAME:
         return ray.get(
             store_mosaic_color_channel_subframe.remote(mosaic, filter, input)
+        )
+    elif mode == QualityLevel.DOWNSCALED_MASTER:
+        return ray.get(
+            store_mosaic_color_channel_downscaled_master.remote(mosaic, filter, input)
         )
     else:
         return ray.get(
