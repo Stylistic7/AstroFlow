@@ -150,26 +150,33 @@ def run_graph(
     WAIT_BATCH = 16
     TIMEOUT = 0.2  # seconds
 
+    # Cache of ready nodes. Re-scan the tree only when running low.
+    ready_cache: list[tuple[GraphRuntime, Node]] = []
+    RESCAN_THRESHOLD = MAX_IN_FLIGHT
+
+    def _refill_cache():
+        nonlocal ready_cache
+        ready_cache = root.get_all_ready()
+
     while root.is_active():
         if cancel_event and cancel_event.is_set():
             raise GraphCancelled("Graph run cancelled")
 
-        ready_nodes = root.get_all_ready()
+        if len(ready_cache) < RESCAN_THRESHOLD:
+            _refill_cache()
 
-        max_parallelism_seen = max(len(ready_nodes), max_parallelism_seen)
+        max_parallelism_seen = max(len(ready_cache), max_parallelism_seen)
         if debug:
-            print(f"Top of loop, {len(ready_nodes)} ready nodes")
+            print(f"Top of loop, {len(ready_cache)} ready nodes")
 
         # Submit ready nodes incrementally, cap in-flight, process completions.
-        i = 0
         pending: list[ray.ObjectRef] = []
         ref_meta: dict[ray.ObjectRef, tuple[GraphRuntime, Node]] = {}
 
-        while i < len(ready_nodes) or pending:
+        while ready_cache or pending:
             # Fill up to concurrency cap.
-            while i < len(ready_nodes) and len(pending) < MAX_IN_FLIGHT:
-                rt, node = ready_nodes[i]
-                i += 1
+            while ready_cache and len(pending) < MAX_IN_FLIGHT:
+                rt, node = ready_cache.pop()
                 rt.start(node)
                 try:
                     ref = _submit_node(rt, node, dry_run, debug)
@@ -240,13 +247,12 @@ def run_graph(
                         node, e.cause, _retrieve_logs(rt, node)
                     )
 
-            # Discover newly-ready nodes from subgraph expansion or
-            # child completion — visible immediately via get_all_ready().
-            new_ready = root.get_all_ready()
-            ready_nodes.extend(new_ready)
-            max_parallelism_seen = max(
-                len(ready_nodes) - i + len(pending), max_parallelism_seen
-            )
+            # Refill the cache when it runs low.
+            if len(ready_cache) < RESCAN_THRESHOLD:
+                _refill_cache()
+                max_parallelism_seen = max(
+                    len(ready_cache) + len(pending), max_parallelism_seen
+                )
 
     assert not root.is_active()
 
