@@ -9,6 +9,7 @@ export const AstroFlowImage = ({
     filter = undefined,
     showPolygons = false,
     size = "full",
+    showQualitySelector = true,
 }) => {
     const { validity } = useContext(AstroFlowContext);
 
@@ -59,16 +60,18 @@ export const AstroFlowImage = ({
                     />
                 )}
 
-                <div style={{
-                    position: 'absolute', top: 8, left: 8,
-                    pointerEvents: 'auto',
-                }}>
-                    <QualityLevelSelector
-                        selected={qualityLevel}
-                        available={enrichedLevels}
-                        onSelect={setQualityLevel}
-                    />
-                </div>
+                {showQualitySelector && (
+                    <div style={{
+                        position: 'absolute', top: 8, left: 8,
+                        pointerEvents: 'auto',
+                    }}>
+                        <QualityLevelSelector
+                            selected={qualityLevel}
+                            available={enrichedLevels}
+                            onSelect={setQualityLevel}
+                        />
+                    </div>
+                )}
             </div>
         </div>
     );

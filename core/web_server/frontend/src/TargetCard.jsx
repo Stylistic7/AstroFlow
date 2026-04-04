@@ -40,6 +40,7 @@ export default function TargetCard({ target_id }) {
                 objectType="stack"
                 objectId={stack_id}
                 size="thumbnail"
+                showQualitySelector={false}
                 style={{ height: "100%" }}
               />)
 
