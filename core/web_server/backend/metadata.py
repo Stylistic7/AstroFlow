@@ -5,7 +5,6 @@ from typing import Any
 from context import context
 from stacks.composite_stack import CalibrationStack
 from stacks.composite_stack import Stack
-from stacks.master import MastersDict
 from targets.types import Target
 from mosaics.types import Mosaic, Viewbox
 from mosaics.viewbox import compute_viewbox
@@ -49,26 +48,19 @@ def _get_polygons(object_type: type, level: QualityLevel, *args) -> list[dict[st
         return []
 
     obj = args[0]
-    masters = context.masters or MastersDict()
-    use_master = level in (QualityLevel.MASTER, QualityLevel.POST_PROCESSED)
 
     viewbox = compute_viewbox(level, obj)
 
     def project(object: Any, viewbox: Viewbox) -> dict[str, Any]:
-        from stacks.master import Master
         polygon = project_to_viewbox(object.footprint, viewbox)
-        obj_type = "stack" if isinstance(object, Master) else type(object).__name__.lower()
         return {
-            "type": obj_type,
+            "type": type(object).__name__.lower(),
             "color": "0xff0000",
             "stable_hash": object.stable_hash,
             "points": list(polygon.exterior.coords),
         }
 
     def resolve_stack(sid):
-        """Return the Master if available and appropriate, otherwise the Stack."""
-        if use_master and sid in masters:
-            return masters[sid]
         return stacks[sid].get()
 
     stacks = context.stacks

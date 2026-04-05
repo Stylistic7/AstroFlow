@@ -81,7 +81,9 @@ def test_step1_metadata_only(test_context):
 @pytest.mark.heavy
 def test_step2_metadata_and_regroup(test_context):
     _setup(test_context)
-    run_graph(Graph({**chain(scatter_compute_image_metadata, build_regroup_graph)}))
+    settings = context.settings
+    regroup = (build_regroup_graph, settings.clustering_settings, settings.decision_overrides)
+    run_graph(Graph({**chain(scatter_compute_image_metadata, regroup)}))
     objects = _ray_objects()
     _check_no_duplicates()
     types = Counter(type(obj).__name__ for obj in objects)
@@ -95,10 +97,15 @@ def test_step2_metadata_and_regroup(test_context):
 def test_step3_with_preview(test_context):
     from compute_graph.compute_graph import build_preview_graph
     _setup(test_context)
+    settings = context.settings
+    dev = settings.development_settings
+    min_frames = settings.clustering_settings.min_frames_in_stack
+    regroup = (build_regroup_graph, settings.clustering_settings, settings.decision_overrides)
+    preview = (build_preview_graph, dev, min_frames)
     run_graph(Graph({**chain(
         scatter_compute_image_metadata,
-        build_regroup_graph,
-        build_preview_graph,
+        regroup,
+        preview,
     )}))
     objects = _ray_objects()
     _check_no_duplicates()

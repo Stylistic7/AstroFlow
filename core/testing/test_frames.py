@@ -307,7 +307,7 @@ def make_synthetic_frames(
         )
 
         fn_hash = hash_source_code(compute_image_metadata)
-        call_hash = hash_call(fn_hash, context.settings.development_settings, Path(fits_filename))
+        call_hash = hash_call(fn_hash, context.settings.development_settings.test_mode, Path(fits_filename))
         key = ("compute_image_metadata", call_hash)
         context.set(key, metadata)
 

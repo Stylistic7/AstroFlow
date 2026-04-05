@@ -1,5 +1,4 @@
 from .astrometric_attributes import AstrometricAttributes
 from .chronology_attributes import ChronologyAttributes
 from .imaging_attributes import ImagingAttributes
-from .plate_solution_attributes import PlateSolutionAttributes
 from .state_attributes import AstroFlowStateAttributes

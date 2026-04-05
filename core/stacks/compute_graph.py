@@ -7,7 +7,6 @@ from beartype import beartype
 from decorators import node
 from stacks.stacking import stack_files
 from stacks.composite_stack import Run, Stack, RunsDict, StacksDict, CalibrationStacksDict
-from stacks.master import Master, MastersDict
 from stacks.types import StackIdDependency
 from stacks.post_process import post_process_stack
 
@@ -35,18 +34,6 @@ import structlog
 
 log = structlog.get_logger()
 
-
-@node
-def create_master(stack: Stack, image_metadata) -> Master:
-    """Build a Master object from the stacking result and store it in context."""
-    master = Master.from_stack_and_metadata(stack, image_metadata)
-    log.info("Created master", master=str(master))
-
-    masters = context.masters or MastersDict()
-    masters[master.stack_id] = master
-    context.masters = masters
-
-    return master
 
 @node
 def build_calibration_stack_subgraph(
@@ -101,22 +88,20 @@ def build_stacking_subgraph(
     test_mode = config.development_settings.test_mode
 
     if config.downscale_factor <= 1:
-        # Full: calibrate → stack → metadata → master → post-process → metadata
+        # Full: calibrate → stack → metadata → post-process → metadata
         steps = chain(
             (build_calibration_stack_subgraph, stack, config),
             (stack_files, stack, config),
             Node(compute_image_metadata, test_mode, name=f"stacking_{stack.stable_hash}"),
-            (create_master, stack),
             (post_process_stack, stack, config.development_settings.mock_pixinsight),
             Node(compute_image_metadata, test_mode, name=f"post_process_{stack.stable_hash}"),
         )
     else:
-        # Downscaled: calibrate → stack → metadata → master (no post-processing)
+        # Downscaled: calibrate → stack → metadata (no post-processing)
         steps = chain(
             (build_calibration_stack_subgraph, stack, config),
             (stack_files, stack, config),
             Node(compute_image_metadata, test_mode, name=f"stacking_{stack.stable_hash}"),
-            (create_master, stack),
         )
 
     return Graph(
