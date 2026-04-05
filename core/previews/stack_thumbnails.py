@@ -149,7 +149,7 @@ def stack_thumbnail_video(
         im = autostretch(np.clip(im, 0.0, 1.0))
         im = (im * 255.0).astype(np.uint8)
 
-        num_stars = light_frame.plate_solution.num_stars if light_frame.plate_solution else 0
+        num_stars = light_frame.plate_solution.num_stars if hasattr(light_frame, 'plate_solution') else 0
         included = is_frame_included(frame_hash, stack, config.decisions)
         im = _annotate_frame(im, num_stars, included)
 

@@ -154,7 +154,7 @@ def _detect_rotation_outliers(
             angles = [
                 m.plate_solution.rotation_angle
                 for m in run.metadata.values()
-                if m.plate_solution is not None
+                if hasattr(m, 'plate_solution')
             ]
             if angles:
                 run_angles[run_hash] = clustering.angular_mean_mod_pi(angles)

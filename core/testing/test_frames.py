@@ -10,7 +10,7 @@ import xxhash
 from typing import Any
 from pathlib import Path
 
-from metadata.classes import ImageMetadata
+from metadata.classes import ImageMetadata, LightImageMetadata
 from context import context
 import plate_solving
 from file_io.normalize_header import normalize_header
@@ -294,7 +294,7 @@ def make_synthetic_frames(
         else:
             plate_solution = None
 
-        metadata = ImageMetadata(
+        base_args = dict(
             content_hash=content_hash,
             stable_hash=content_hash,
             filename=fits_filename,
@@ -303,11 +303,14 @@ def make_synthetic_frames(
             height_pixels=height_pixels,
             channels=1,
             dtype=np.dtype(np.uint16),
-            plate_solution=plate_solution,
         )
+        if plate_solution is not None:
+            metadata = LightImageMetadata(**base_args, plate_solution=plate_solution)
+        else:
+            metadata = ImageMetadata(**base_args)
 
         fn_hash = hash_source_code(compute_image_metadata)
-        call_hash = hash_call(fn_hash, context.settings.development_settings, Path(fits_filename))
+        call_hash = hash_call(fn_hash, context.settings.development_settings.test_mode, Path(fits_filename))
         key = ("compute_image_metadata", call_hash)
         context.set(key, metadata)
 
@@ -325,7 +328,7 @@ def make_synthetic_frames(
         # Write a sidecar so compute_image_metadata can short-circuit
         # without reading the FITS file or invoking solve-field.
         from metadata.sidecar_io import write_image_metadata
-        sidecar_metadata = ImageMetadata(
+        sidecar_base = dict(
             content_hash=content_hash,
             stable_hash=content_hash,
             filename=Path(fits_filename),
@@ -334,8 +337,11 @@ def make_synthetic_frames(
             height_pixels=height_pixels,
             channels=1,
             dtype=np.dtype(np.uint16),
-            plate_solution=plate_solution,
         )
+        if plate_solution is not None:
+            sidecar_metadata = LightImageMetadata(**sidecar_base, plate_solution=plate_solution)
+        else:
+            sidecar_metadata = ImageMetadata(**sidecar_base)
         write_image_metadata(sidecar_metadata)
         if plate_solution is not None:
             from file_io.sidecar import set_section

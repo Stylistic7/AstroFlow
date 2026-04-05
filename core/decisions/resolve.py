@@ -75,7 +75,7 @@ def is_frame_included(
     if frame_hash not in metadata:
         return False
     m = metadata[frame_hash]
-    if m.plate_solution is None:
+    if not hasattr(m, 'plate_solution'):
         return False
 
     # Check the resolved quality threshold from the decision cache.
