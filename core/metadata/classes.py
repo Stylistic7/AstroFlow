@@ -14,9 +14,8 @@ if TYPE_CHECKING:
 FrameHash = NewType("FrameHash", str)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ImageMetadata:
-    """Metadata for any image (light or calibration). No plate solution."""
     content_hash: str
     stable_hash: str
     filename: Path
@@ -27,21 +26,7 @@ class ImageMetadata:
     channels: int
     dtype: np.dtype
 
-    def __setstate__(self, state):
-        # Handle old pickled objects that used slots=True (tuple format)
-        # or had a plate_solution field.
-        if isinstance(state, tuple):
-            _, slot_dict = state
-            state = slot_dict
-        if isinstance(state, dict):
-            ps = state.pop('plate_solution', None)
-            for k, v in state.items():
-                object.__setattr__(self, k, v)
-            # Migrate: if the old object had a plate_solution, upgrade
-            # to LightImageMetadata in-place.
-            if ps is not None:
-                self.__class__ = LightImageMetadata
-                object.__setattr__(self, 'plate_solution', ps)
+    plate_solution: PlateSolution | None = None
 
     @property
     def pixels(self) -> int:
@@ -60,22 +45,7 @@ class ImageMetadata:
         return self.pixels / 1e6
 
 
-@dataclass(frozen=True)
-class LightImageMetadata(ImageMetadata):
-    """Metadata for a plate-solved light image. Always has a plate solution."""
-    plate_solution: "PlateSolution" = None  # type: ignore[assignment]
-
-    def __setstate__(self, state):
-        # Handle old pickled objects that used slots=True (tuple format).
-        if isinstance(state, tuple):
-            _, slot_dict = state
-            state = slot_dict
-        if isinstance(state, dict):
-            for k, v in state.items():
-                object.__setattr__(self, k, v)
-
-
-class MetadataDict(dict):
+class MetadataDict(dict[FrameHash, ImageMetadata]):
     def __hash__(self):
         return hash_list_int(sorted(self.keys()))
 

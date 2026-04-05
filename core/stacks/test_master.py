@@ -4,7 +4,7 @@ import numpy as np
 from pathlib import Path
 
 from stacks.master import Master, MastersDict
-from metadata.classes import ImageMetadata, LightImageMetadata
+from metadata.classes import ImageMetadata
 from plate_solving import PlateSolution
 from units import Degrees, Radians, ArcsecondsPerPixel, Celsius, Seconds
 from testing.test_stacks import make_composite_stack
@@ -39,7 +39,7 @@ def _make_plate_solution(ra=100.0, dec=0.0, scale=2.21, rotation=0.0):
 def _make_image_metadata(ps=None):
     if ps is None:
         ps = _make_plate_solution()
-    return LightImageMetadata(
+    return ImageMetadata(
         content_hash="master_content_hash",
         stable_hash="master_stable_hash",
         filename=Path("/tmp/master.xisf"),
@@ -96,9 +96,10 @@ def test_master_without_plate_solution_raises():
         height_pixels=100,
         channels=1,
         dtype=np.dtype(np.uint16),
+        plate_solution=None,
     )
     import pytest
-    with pytest.raises(AttributeError):
+    with pytest.raises(ValueError, match="no plate solution"):
         Master.from_stack_and_metadata(stack, im)
 
 

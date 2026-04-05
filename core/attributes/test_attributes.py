@@ -30,6 +30,7 @@ def _make_im(content_hash, date_obs, **header_overrides):
         height_pixels=header["NAXIS2"],
         channels=1,
         dtype=np.dtype(np.uint16),
+        plate_solution=None,
     )
 
 

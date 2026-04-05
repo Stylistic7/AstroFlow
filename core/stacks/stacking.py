@@ -67,7 +67,7 @@ def _copy_frames_with_plate_solution(
                 if "invalid" in fits[0].header.get("BAYERPAT", "").lower():
                     del fits[0].header["BAYERPAT"]
 
-                if hasattr(frame, 'plate_solution'):
+                if frame.plate_solution:
                     fits[0].header["RA"] = frame.plate_solution.header["CRVAL1"]
                     fits[0].header["DEC"] = frame.plate_solution.header["CRVAL2"]
                     for k, v in frame.plate_solution.header.items():

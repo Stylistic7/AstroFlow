@@ -245,11 +245,22 @@ def place_image(
     viewbox: Viewbox,
     image_metadata,
 ) -> WithSidecar[TiffFilePath]:
-    # image_metadata is either LightImageMetadata or Master — both have
-    # filename and plate_solution (guaranteed by the type system).
-    args = (mode, mosaic, stack, filter, viewbox,
-            image_metadata.filename, image_metadata.plate_solution)
+    filename = image_metadata.filename
+    plate_solution = image_metadata.plate_solution
+    if plate_solution is None:
+        raise ValueError(
+            f"Cannot place image {filename} because it does not have a plate solution"
+        )
+
     if mode == QualityLevel.SUBFRAME:
-        return ray.get(place_image_subframe.remote(*args))
+        return ray.get(
+            place_image_subframe.remote(
+                mode, mosaic, stack, filter, viewbox, filename, plate_solution
+            )
+        )
     else:
-        return ray.get(place_image_master.remote(*args))
+        return ray.get(
+            place_image_master.remote(
+                mode, mosaic, stack, filter, viewbox, filename, plate_solution
+            )
+        )

@@ -17,7 +17,7 @@ import plate_solving
 from file_io.sidecar import load_sidecar, save_sidecar, sidecar_path_for
 from file_io.generic import read_header, get_content_hash, read_image_geometry
 from metadata.sidecar_io import write_image_metadata
-from metadata.classes import ImageMetadata, LightImageMetadata
+from metadata.classes import ImageMetadata
 import metadata.image_types as image_types
 
 testdata_dir = Path(__file__).resolve().parent.parent / "testdata" / "input"
@@ -46,7 +46,7 @@ for filename in fits_files:
     # Write full ImageMetadata to sidecar.
     content_hash = get_content_hash(filename)
     geometry = read_image_geometry(filename)
-    base_args = dict(
+    meta = ImageMetadata(
         content_hash=content_hash,
         stable_hash=header.get("STBLHASH", content_hash),
         filename=filename,
@@ -55,11 +55,8 @@ for filename in fits_files:
         height_pixels=geometry.height_pixels,
         channels=geometry.channels,
         dtype=geometry.dtype,
+        plate_solution=plate_solution,
     )
-    if plate_solution is not None:
-        meta = LightImageMetadata(**base_args, plate_solution=plate_solution)
-    else:
-        meta = ImageMetadata(**base_args)
     write_image_metadata(meta)
 
     stars = f", {plate_solution.num_stars} stars" if plate_solution else ""

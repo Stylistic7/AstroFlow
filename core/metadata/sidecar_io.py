@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from file_io.sidecar import get_section, set_section, get_file_size, sidecar_path_for
-from metadata.classes import ImageMetadata, LightImageMetadata
+from metadata.classes import ImageMetadata
 import plate_solving
 import metadata.image_types as image_types
 
@@ -72,7 +72,7 @@ def image_metadata_from_obj(
             plate_solution = plate_solving._plate_solution_from_obj(ps_obj)
 
     content_hash = obj["content_hash"]
-    base_args = dict(
+    return ImageMetadata(
         content_hash=content_hash,
         stable_hash=obj.get("stable_hash", content_hash),
         filename=filename,
@@ -81,10 +81,8 @@ def image_metadata_from_obj(
         height_pixels=obj["height_pixels"],
         channels=obj["channels"],
         dtype=np.dtype(obj["dtype"]),
+        plate_solution=plate_solution,
     )
-    if plate_solution is not None:
-        return LightImageMetadata(**base_args, plate_solution=plate_solution)
-    return ImageMetadata(**base_args)
 
 
 @beartype

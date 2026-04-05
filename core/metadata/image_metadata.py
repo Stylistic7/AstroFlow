@@ -7,7 +7,7 @@ from beartype import beartype
 from file_io.find_image_files import find_image_files
 from file_io.generic import read_header, get_content_hash, read_image_geometry
 import metadata.image_types as image_types
-from metadata.classes import ImageMetadata, LightImageMetadata, MetadataDict
+from metadata.classes import ImageMetadata, MetadataDict
 import plate_solving
 from dependency_graph import Graph
 from context import context
@@ -144,7 +144,16 @@ def compute_image_metadata(
         return None
     stable_hash = header.get("STBLHASH", content_hash)
 
-    base_args = dict(
+    if image_types.is_light_frame(header):
+        plate_solution = plate_solving.solve_field(filename, test_mode=test_mode)
+        if plate_solution is None:
+            raise ValueError(
+                f"Failed to plate-solve light frame: {filename}"
+            )
+    else:
+        plate_solution = None
+
+    result = ImageMetadata(
         content_hash=content_hash,
         stable_hash=stable_hash,
         filename=filename,
@@ -153,15 +162,8 @@ def compute_image_metadata(
         height_pixels=geometry.height_pixels,
         channels=geometry.channels,
         dtype=geometry.dtype,
+        plate_solution=plate_solution,
     )
-
-    if image_types.is_light_frame(header):
-        plate_solution = plate_solving.solve_field(filename, test_mode=test_mode)
-        if plate_solution is None:
-            raise ValueError(f"Failed to plate-solve light frame: {filename}")
-        result = LightImageMetadata(**base_args, plate_solution=plate_solution)
-    else:
-        result = ImageMetadata(**base_args)
 
     write_image_metadata(result)
     return result

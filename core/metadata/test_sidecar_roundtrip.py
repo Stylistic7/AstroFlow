@@ -24,6 +24,7 @@ def _make_metadata(**overrides) -> ImageMetadata:
         height_pixels=6388,
         channels=1,
         dtype=np.dtype(np.uint16),
+        plate_solution=None,
     )
     defaults.update(overrides)
     return ImageMetadata(**defaults)

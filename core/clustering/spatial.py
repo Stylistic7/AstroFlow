@@ -83,7 +83,7 @@ def cluster_by_image_center(
         for h, i in metadata.items()
         if image_types.is_light_frame(i.header)
         and not image_types.is_master(i.header)
-        and hasattr(i, 'plate_solution')
+        and type(i.plate_solution) is plate_solving.PlateSolution
     }
 
     # Split by image scale first so each spatial group has uniform FOV.
