@@ -25,7 +25,7 @@ from mosaics.types import Mosaic, Viewbox
 from mosaics.artifacts import placed_filename
 from decorators import node
 from metadata.classes import ImageMetadata
-from stacks.master import Master
+from plate_solving import PlateSolution
 from products import makes_image
 
 class ProjectionFailedException(Exception):
@@ -165,23 +165,12 @@ def _place_image(
     stack: Stack,
     filter: str,
     viewbox: Viewbox,
-    image_metadata: ImageMetadata | Master,
+    filename: Path,
+    plate_solution: PlateSolution,
 ) -> WithSidecar[TiffFilePath]:
-    # if context.dangerously_accept_existing_files and os.path.exists(filename):
-    #   print(f'### Dangerously skipping place_large_image because '
-    #         f'file {filename} already exists')
-    #   return filename
-
-    filename = image_metadata.filename
-
     log.info("Placing image", mode=mode, mosaic=str(mosaic), stack=str(stack), filename=filename, viewbox=str(viewbox))
 
-    if image_metadata.plate_solution is None:
-        raise ValueError(
-            f"Cannot place image {filename} because it does not have a plate "
-            f"solution"
-        )
-    wcs = WCS(image_metadata.plate_solution.header)
+    wcs = WCS(plate_solution.header)
 
     interp = _make_interpolator(filename)
 
@@ -218,11 +207,12 @@ def place_image_subframe(
     stack: Stack,
     filter: str,
     viewbox: Viewbox,
-    image_metadata: ImageMetadata | Master,
+    filename: Path,
+    plate_solution: PlateSolution,
 ) -> WithSidecar[TiffFilePath]:
     return ray.get(
         _place_image.remote(
-            mode, mosaic, stack, filter, viewbox, image_metadata
+            mode, mosaic, stack, filter, viewbox, filename, plate_solution
         )
     )
 
@@ -236,16 +226,16 @@ def place_image_master(
     stack: Stack,
     filter: str,
     viewbox: Viewbox,
-    image_metadata: ImageMetadata | Master,
+    filename: Path,
+    plate_solution: PlateSolution,
 ) -> WithSidecar[TiffFilePath]:
     return ray.get(
         _place_image.remote(
-            mode, mosaic, stack, filter, viewbox, image_metadata
+            mode, mosaic, stack, filter, viewbox, filename, plate_solution
         )
     )
 
 
-# TODO: These trampolines are ugly; can they be improved?
 @node
 def place_image(
     mode: QualityLevel,
@@ -253,17 +243,24 @@ def place_image(
     stack: Stack,
     filter: str,
     viewbox: Viewbox,
-    image_metadata: ImageMetadata | Master,
+    image_metadata,
 ) -> WithSidecar[TiffFilePath]:
+    filename = image_metadata.filename
+    plate_solution = image_metadata.plate_solution
+    if plate_solution is None:
+        raise ValueError(
+            f"Cannot place image {filename} because it does not have a plate solution"
+        )
+
     if mode == QualityLevel.SUBFRAME:
         return ray.get(
             place_image_subframe.remote(
-                mode, mosaic, stack, filter, viewbox, image_metadata
+                mode, mosaic, stack, filter, viewbox, filename, plate_solution
             )
         )
     else:
         return ray.get(
             place_image_master.remote(
-                mode, mosaic, stack, filter, viewbox, image_metadata
+                mode, mosaic, stack, filter, viewbox, filename, plate_solution
             )
         )
