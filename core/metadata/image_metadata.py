@@ -144,11 +144,14 @@ def compute_image_metadata(
         return None
     stable_hash = header.get("STBLHASH", content_hash)
 
-    plate_solution = (
-        plate_solving.solve_field(filename, test_mode=test_mode)
-        if image_types.is_light_frame(header)
-        else None
-    )
+    if image_types.is_light_frame(header):
+        plate_solution = plate_solving.solve_field(filename, test_mode=test_mode)
+        if plate_solution is None:
+            raise ValueError(
+                f"Failed to plate-solve light frame: {filename}"
+            )
+    else:
+        plate_solution = None
 
     result = ImageMetadata(
         content_hash=content_hash,

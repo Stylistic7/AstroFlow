@@ -184,10 +184,7 @@ def _place_image(
 
     interp = _make_interpolator(filename)
 
-    # Subframe WCS (from raw light frames) may not precisely match the
-    # mosaic viewbox footprint, so skip the footprint optimization.
-    skip_empty = mode != QualityLevel.SUBFRAME
-    image = _project_in_tiles(viewbox, interp, wcs, skip_empty=skip_empty)
+    image = _project_in_tiles(viewbox, interp, wcs, skip_empty=False)
 
     if mode == QualityLevel.SUBFRAME:
         output_filename = place_image_subframe.filename_fn(

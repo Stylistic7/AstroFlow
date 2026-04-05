@@ -10,6 +10,7 @@ from stacks.composite_stack import Run, Stack, RunsDict, StacksDict, Calibration
 from stacks.master import Master, MastersDict
 from stacks.types import StackIdDependency
 from stacks.post_process import post_process_stack
+
 from stacks.convert_to_dict import convert_to_dict
 from metadata.image_metadata import compute_image_metadata
 from decisions.settings import DevelopmentSettings
@@ -98,23 +99,28 @@ def build_stacking_subgraph(
     )
     node_status_fn = store_node_status
 
+    steps = [
+        (build_calibration_stack_subgraph, stack, config),
+        (stack_files, stack, config),
+        Node(
+            compute_image_metadata, config.development_settings.test_mode,
+            name=f"stacking_{stack.stable_hash}",
+        ),
+        (create_master, stack),
+    ]
+
+    # Downscaled masters skip post-processing — the point is speed.
+    if config.downscale_factor <= 1:
+        steps += [
+            (post_process_stack, stack, config.development_settings.mock_pixinsight),
+            Node(
+                compute_image_metadata, config.development_settings.test_mode,
+                name=f"post_process_{stack.stable_hash}",
+            ),
+        ]
+
     return Graph(
-        {
-            **chain(
-                (build_calibration_stack_subgraph, stack, config),
-                (stack_files, stack, config),
-                Node(
-                    compute_image_metadata, config.development_settings.test_mode,
-                    name=f"stacking_{stack.stable_hash}",
-                ),
-                (create_master, stack),
-                (post_process_stack, stack, config.development_settings.mock_pixinsight, config.downscale_factor),
-                Node(
-                    compute_image_metadata, config.development_settings.test_mode,
-                    name=f"post_process_{stack.stable_hash}",
-                ),
-            )
-        },
+        {**chain(*steps)},
         graph_update_fn=graph_update_fn,
         node_status_fn=node_status_fn,
     )

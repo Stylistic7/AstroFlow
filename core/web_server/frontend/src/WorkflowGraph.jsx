@@ -1,6 +1,7 @@
 import React, { useContext, useRef, useState, useEffect } from "react";
 
 import { NodeStatusDialog } from "./NodeStatusDialog.jsx";
+import AstroFlowContext from "./AstroFlowContext.jsx";
 
 // Zone.js is required before importing the Workflow Graph
 import 'zone.js';
@@ -28,20 +29,14 @@ const DEFAULT_LAYOUT_OPTIONS: LayoutOptions = {
 };
 
 export default function WorkflowGraph({ theme, url }) {
+  const { computeGraphStatus } = useContext(AstroFlowContext);
   const [computeGraph, setComputeGraph] = useState();
   const [nodeId, setNodeId] = useState(null);
   const [nodeLabel, setNodeLabel] = useState(null);
 
   useEffect(() => {
-    const loadComputeGraph = async () => {
-      let [s] = await Promise.all([
-        fetch(url).then(r => r.json()),
-      ]);
-      setComputeGraph(s);
-    };
-
-    loadComputeGraph();
-  }, [url]);
+    fetch(url).then(r => r.json()).then(s => setComputeGraph(s));
+  }, [url, computeGraphStatus]);
 
 
   // const computeGraph = {

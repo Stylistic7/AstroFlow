@@ -48,16 +48,16 @@ def _post_process_stack(master_path, stack: Stack, downscale_factor: int = 1) ->
 @makes_image(Stack).as_post_processed(stack_filename)
 @node(resources={"PixInsight": 1})
 @create_thumbnail
-def post_process_stack(stack: Stack, mock_pixinsight: bool, downscale_factor: int = 1) -> WithSidecar[XisfFilePath]:
-    level = QualityLevel.DOWNSCALED_MASTER if downscale_factor > 1 else QualityLevel.MASTER
-    master_fn = get_filename_fn(MediaType.IMAGE, Stack, level)
+def post_process_stack(stack: Stack, mock_pixinsight: bool) -> WithSidecar[XisfFilePath]:
+    from products import ensure_producers_registered
+    ensure_producers_registered()
+    master_fn = get_filename_fn(MediaType.IMAGE, Stack, QualityLevel.MASTER)
     master = master_fn(stack)
-    log.info("Post-processing stack", master=master)
 
     output_filename = post_process_stack.filename_fn(stack)
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 
-    result = _post_process_stack(master, stack, downscale_factor)
+    result = _post_process_stack(master, stack, downscale_factor=1)
     result.save_to(output_filename, mock=mock_pixinsight)
 
     return WithSidecar(XisfFilePath(output_filename))
