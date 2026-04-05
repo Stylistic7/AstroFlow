@@ -33,8 +33,6 @@ def performance_summary():
     functions: dict[str, list] = {}
     for key, samples in all_profiles.items():
         # key shape: ("profile", fn_name, quality_or_None, node_ip)
-        if len(key) != 4:
-            continue  # skip any stale keys from a previous key shape
         _, fn_name, quality, node_ip = key
         label = f"{fn_name} ({quality})" if quality else fn_name
         if label not in functions:
