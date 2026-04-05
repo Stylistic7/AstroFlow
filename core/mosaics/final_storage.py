@@ -4,7 +4,6 @@ import numpy as np
 import tifffile
 from beartype import beartype
 
-from context import context
 from mosaics.artifacts import mosaic_filename_tiff, mosaic_filename_xisf
 from mosaics.types import Mosaic
 from file_io.generic import read_image, copy_image
@@ -34,19 +33,16 @@ def make_preview_tiff(source_path: Path, dest_path: Path):
 @node(resources={"PixInsight": 1})
 @create_thumbnail
 def store_mosaic_color_channel_master(
-    mosaic: Mosaic, filter: str, input: ImageMetadata
+    mosaic: Mosaic, filter: str, input: ImageMetadata, mock_pixinsight: bool = False,
 ) -> WithSidecar[XisfFilePath]:
     filename = input.filename
     output = store_mosaic_color_channel_master.filename_fn(mosaic, filter)
     tiff_output = output.with_suffix(".tiff")
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    mock = context.settings.development_settings.mock_pixinsight
-
-    # Save via pix: opens the image in PixInsight and saves as uncompressed XISF
     image = Image.open(filename)
-    image.save_to(output, mock=mock)
-    make_preview_tiff(output if not mock else filename, tiff_output)
+    image.save_to(output, mock=mock_pixinsight)
+    make_preview_tiff(output if not mock_pixinsight else filename, tiff_output)
 
     return WithSidecar(output)
 
@@ -55,18 +51,16 @@ def store_mosaic_color_channel_master(
 @node(resources={"PixInsight": 1})
 @create_thumbnail
 def store_mosaic_color_channel_downscaled_master(
-    mosaic: Mosaic, filter: str, input: ImageMetadata
+    mosaic: Mosaic, filter: str, input: ImageMetadata, mock_pixinsight: bool = False,
 ) -> WithSidecar[XisfFilePath]:
     filename = input.filename
     output = store_mosaic_color_channel_downscaled_master.filename_fn(mosaic, filter)
     tiff_output = output.with_suffix(".tiff")
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    mock = context.settings.development_settings.mock_pixinsight
-
     image = Image.open(filename)
-    image.save_to(output, mock=mock)
-    make_preview_tiff(output if not mock else filename, tiff_output)
+    image.save_to(output, mock=mock_pixinsight)
+    make_preview_tiff(output if not mock_pixinsight else filename, tiff_output)
 
     return WithSidecar(output)
 
@@ -96,20 +90,19 @@ def store_mosaic_color_channel_subframe(
 @ray.remote
 @beartype
 def store_mosaic_color_channel(
-    mode: QualityLevel, mosaic: Mosaic, filter: str, input: ImageMetadata
+    mode: QualityLevel, mosaic: Mosaic, filter: str, input: ImageMetadata,
 ) -> WithSidecar:
-    print(
-        f"### store_mosaic_color_channel {mode=} {str(mosaic)} {filter=} {input=}"
-    )
+    from context import context
+    mock = context.settings.development_settings.mock_pixinsight
     if mode == QualityLevel.SUBFRAME:
         return ray.get(
             store_mosaic_color_channel_subframe.remote(mosaic, filter, input)
         )
     elif mode == QualityLevel.DOWNSCALED_MASTER:
         return ray.get(
-            store_mosaic_color_channel_downscaled_master.remote(mosaic, filter, input)
+            store_mosaic_color_channel_downscaled_master.remote(mosaic, filter, input, mock)
         )
     else:
         return ray.get(
-            store_mosaic_color_channel_master.remote(mosaic, filter, input)
+            store_mosaic_color_channel_master.remote(mosaic, filter, input, mock)
         )

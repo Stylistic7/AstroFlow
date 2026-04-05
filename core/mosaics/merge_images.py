@@ -62,7 +62,8 @@ def merge_images_with_maximum(
 @makes_image(MergedImage).as_master(merged_filename_xisf)
 @node
 def merge_images_with_pmm(
-    mosaic: Mosaic, input_0: ImageMetadata, input_1: ImageMetadata
+    mosaic: Mosaic, input_0: ImageMetadata, input_1: ImageMetadata,
+    mock_pixinsight: bool = False,
 ) -> WithSidecar[XisfFilePath]:
     output_filename = merge_images_with_pmm.filename_fn(mosaic, input_0, input_1)
 
@@ -71,11 +72,9 @@ def merge_images_with_pmm(
 
     Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
 
-    mock = context.settings.development_settings.mock_pixinsight
-
     images = Image.open_many([path_0, path_1])
     result = PhotometricMosaic(images)
-    result.save_to(output_filename, mock=mock)
+    result.save_to(output_filename, mock=mock_pixinsight)
 
     return WithSidecar(output_filename)
 
@@ -94,7 +93,8 @@ def merge_images(
             merge_images_with_maximum.remote(mosaic, input_0, input_1)
         )
     else:
-        result = ray.get(merge_images_with_pmm.remote(mosaic, input_0, input_1))
+        mock = context.settings.development_settings.mock_pixinsight
+        result = ray.get(merge_images_with_pmm.remote(mosaic, input_0, input_1, mock))
 
     log.info("Merge images complete", result=result)
     return result

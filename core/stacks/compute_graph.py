@@ -104,13 +104,13 @@ def build_stacking_subgraph(
                 (build_calibration_stack_subgraph, stack, config),
                 (stack_files, stack, config),
                 Node(
-                    compute_image_metadata, config.development_settings,
+                    compute_image_metadata, config.development_settings.test_mode,
                     name=f"stacking_{stack.stable_hash}",
                 ),
                 (create_master, stack),
-                (post_process_stack, stack, config.development_settings, config.downscale_factor),
+                (post_process_stack, stack, config.development_settings.mock_pixinsight, config.downscale_factor),
                 Node(
-                    compute_image_metadata, config.development_settings,
+                    compute_image_metadata, config.development_settings.test_mode,
                     name=f"post_process_{stack.stable_hash}",
                 ),
             )
@@ -140,7 +140,7 @@ def get_stack_image(
         return Graph({
             **chain(
                 (get_stack_subframe_image, stack),
-                Node(compute_image_metadata, config.development_settings, name=f"subframe_{stack.stable_hash}"),
+                Node(compute_image_metadata, config.development_settings.test_mode, name=f"subframe_{stack.stable_hash}"),
             )
         })
     else:

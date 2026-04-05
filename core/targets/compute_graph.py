@@ -54,7 +54,8 @@ def build_target_subgraph(
         graph_update_fn=graph_update_fn, node_status_fn=node_status_fn
     )
 
-    graph[(post_process_target, target, stacks)] = {
+    mock = config.development_settings.mock_pixinsight
+    graph[(post_process_target, target, stacks, mock)] = {
         (build_stacking_subgraph, stacks[stack_id].get(), config_for(stack_id))
         for stack_id in target.stack_ids
     }

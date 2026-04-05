@@ -88,7 +88,7 @@ def scatter_compute_image_metadata(*filenames_in: list[Path]) -> Graph:
     filenames_in = set(f for f in filenames_in if f is not None)
     filenames: set[str] = set(filenames_in)
 
-    development_settings = context.settings.development_settings
+    test_mode = context.settings.development_settings.test_mode
 
     # TODO: Don't do anything if the directory's modification time hasn't
     # changed since the last time it was listed.
@@ -98,7 +98,7 @@ def scatter_compute_image_metadata(*filenames_in: list[Path]) -> Graph:
         filenames.update(artifacts_for_dir)
 
     graph = Graph(
-        {load_metadata: {(compute_image_metadata, development_settings, Path(f)) for f in filenames}}
+        {load_metadata: {(compute_image_metadata, test_mode, Path(f)) for f in filenames}}
     )
 
     return graph
@@ -110,7 +110,7 @@ class DuplicateFileException(Exception):
 
 @node(num_cpus=0.25)
 def compute_image_metadata(
-    development_settings: DevelopmentSettings,
+    test_mode: bool,
     filename: os.PathLike,
 ) -> ImageMetadata:
     log.info("Computing image metadata", filename=str(filename))
@@ -145,7 +145,7 @@ def compute_image_metadata(
     stable_hash = header.get("STBLHASH", content_hash)
 
     plate_solution = (
-        plate_solving.solve_field(filename, development_settings=development_settings)
+        plate_solving.solve_field(filename, test_mode=test_mode)
         if image_types.is_light_frame(header)
         else None
     )

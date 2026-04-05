@@ -22,8 +22,6 @@ from beartype import beartype
 from file_io.conversion import convert_xisf_to_fits
 from file_io.sidecar import get_section, set_section, sidecar_path_for
 from units import Degrees, Radians, ArcsecondsPerPixel
-from decisions.settings import DevelopmentSettings
-
 _PLATESOLUTION_SCHEMA = "astroflow.platesolution.v2"
 
 
@@ -206,7 +204,7 @@ def _plate_solution_from_obj(obj: dict[str, Any]) -> PlateSolution:
 @beartype
 def solve_field(
     filename: Path | str,
-    development_settings: DevelopmentSettings = DevelopmentSettings(),
+    test_mode: bool = False,
     debug: bool = False,
 ) -> PlateSolution | None:
     filename = Path(filename)
@@ -249,7 +247,7 @@ def solve_field(
         "--crpix-center",
     ]
 
-    if development_settings.test_mode:
+    if test_mode:
         arguments += ["--cpulimit", "1"]
 
     result = _solve_field(filename, arguments, debug)

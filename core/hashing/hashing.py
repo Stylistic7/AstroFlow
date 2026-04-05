@@ -59,7 +59,9 @@ def make_hashable(value: Any) -> Any:
         return tuple(
             sorted((k, _maybe_use_content_hash(v)) for k, v in value.items())
         )
-    elif isinstance(value, (tuple, list, set)):
+    elif isinstance(value, set):
+        return tuple(sorted(_maybe_use_content_hash(v) for v in value))
+    elif isinstance(value, (tuple, list)):
         return tuple(_maybe_use_content_hash(v) for v in value)
     elif isinstance(value, frozenset):
         return tuple(sorted(value))

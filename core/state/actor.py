@@ -143,10 +143,12 @@ def _post_process(action: Action) -> Graph:
     print(f"### _post_process {action=}")
     if action["object_type"] == "stack":
         stack = context.stacks[action["object_id"]].get()
-        run_graph(Graph({(post_process_stack, stack): {}}))
+        mock = context.settings.development_settings.mock_pixinsight
+        run_graph(Graph({(post_process_stack, stack, mock): {}}))
     elif action["object_type"] == "target":
         target = context.targets[action["object_id"]].get()
-        run_graph(Graph({(post_process_target, target): {}}))
+        mock = context.settings.development_settings.mock_pixinsight
+        run_graph(Graph({(post_process_target, target, context.stacks, mock): {}}))
     elif action["object_type"] == "mosaic":
         mosaic = context.mosaics[action["object_id"]].get()
         run_graph(Graph({(post_process_mosaic, QualityLevel.MASTER, mosaic, context.stacks, context.targets): {}}))

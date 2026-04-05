@@ -72,14 +72,10 @@ def target_filename(target: Target, suffix: str) -> XisfFilePath:
 @makes_image(Target).as_post_processed(target_filename)
 @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD")
 @create_thumbnail
-def post_process_target(target: Target, stacks: StacksDict) -> None:
-    from context import context
-
+def post_process_target(target: Target, stacks: StacksDict, mock_pixinsight: bool = False) -> None:
     print(f"Entering post_process_target for {target}")
     image_paths = [stack_filename(stacks[stack_id].get()) for stack_id in target.stack_ids]
     images = Image.open_many(image_paths)
-
-    mock = context.settings.development_settings.mock_pixinsight
 
     result = _post_process_target(images, target)
     if result is None:
@@ -87,6 +83,6 @@ def post_process_target(target: Target, stacks: StacksDict) -> None:
 
     stars, starless = result
     if stars is not None:
-        stars.save_to(target_filename(target, "stars"), mock=mock)
+        stars.save_to(target_filename(target, "stars"), mock=mock_pixinsight)
     if starless is not None:
-        starless.save_to(target_filename(target, "starless"), mock=mock)
+        starless.save_to(target_filename(target, "starless"), mock=mock_pixinsight)

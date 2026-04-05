@@ -135,13 +135,13 @@ def test_three_by_one(test_context) -> None:
         merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_1"
     )
     meta_strip_1 = Node(
-        compute_image_metadata, config.development_settings, name="merge_mosaic_abc123_strip_1"
+        compute_image_metadata, config.development_settings.test_mode, name="merge_mosaic_abc123_strip_1"
     )
     merge_strip_2 = Node(
         merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_2"
     )
     meta_strip_2 = Node(
-        compute_image_metadata, config.development_settings, name="merge_mosaic_abc123_strip_2"
+        compute_image_metadata, config.development_settings.test_mode, name="merge_mosaic_abc123_strip_2"
     )
 
     expected_graph = Graph(
@@ -239,18 +239,18 @@ def test_two_by_three(test_context) -> None:
     )
 
     merge_a_b = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_b")
-    meta_a_b = Node(compute_image_metadata, config.development_settings, name="merge_mosaic_abc123_b")
+    meta_a_b = Node(compute_image_metadata, config.development_settings.test_mode, name="merge_mosaic_abc123_b")
     merge_a_b_c = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_c")
-    meta_a_b_c = Node(compute_image_metadata, config.development_settings, name="merge_mosaic_abc123_c")
+    meta_a_b_c = Node(compute_image_metadata, config.development_settings.test_mode, name="merge_mosaic_abc123_c")
     merge_d_e = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_e")
-    meta_d_e = Node(compute_image_metadata, config.development_settings, name="merge_mosaic_abc123_e")
+    meta_d_e = Node(compute_image_metadata, config.development_settings.test_mode, name="merge_mosaic_abc123_e")
     merge_d_e_f = Node(merge_images, mode, mosaic, name="merge_mosaic_abc123_f")
-    meta_d_e_f = Node(compute_image_metadata, config.development_settings, name="merge_mosaic_abc123_f")
+    meta_d_e_f = Node(compute_image_metadata, config.development_settings.test_mode, name="merge_mosaic_abc123_f")
     final_merge = Node(
         merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_1"
     )
     final_meta = Node(
-        compute_image_metadata, config.development_settings, name="merge_mosaic_abc123_strip_1"
+        compute_image_metadata, config.development_settings.test_mode, name="merge_mosaic_abc123_strip_1"
     )
 
     expected_graph = Graph(
@@ -342,12 +342,12 @@ def test_three_panes(test_context) -> None:
     merge_strip_0 = Node(
         merge_images, mode, mosaic, name="merge_mosaic_abc123_c"
     )
-    meta_strip_0 = Node(compute_image_metadata, config.development_settings, name="merge_mosaic_abc123_c")
+    meta_strip_0 = Node(compute_image_metadata, config.development_settings.test_mode, name="merge_mosaic_abc123_c")
     merge_strip_1 = Node(
         merge_images, mode, mosaic, name="merge_mosaic_abc123_strip_1"
     )
     meta_strip_1 = Node(
-        compute_image_metadata, config.development_settings, name="merge_mosaic_abc123_strip_1"
+        compute_image_metadata, config.development_settings.test_mode, name="merge_mosaic_abc123_strip_1"
     )
 
     expected_graph = Graph(
@@ -430,7 +430,7 @@ def test_orion_mosaic(test_context) -> None:
         name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea",
     )
     meta_0 = Node(
-        compute_image_metadata, config.development_settings,
+        compute_image_metadata, config.development_settings.test_mode,
         name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea",
     )
     merge_1_0__1_1 = Node(
@@ -438,14 +438,14 @@ def test_orion_mosaic(test_context) -> None:
         name=f"merge_{mosaic.stable_hash}_6d9f6be3ffab0f22",
     )
     meta_1 = Node(
-        compute_image_metadata, config.development_settings,
+        compute_image_metadata, config.development_settings.test_mode,
         name=f"merge_{mosaic.stable_hash}_6d9f6be3ffab0f22",
     )
     final_merge = Node(
         merge_images, mode, mosaic, name=f"merge_{mosaic.stable_hash}_strip_1"
     )
     final_meta = Node(
-        compute_image_metadata, config.development_settings, name=f"merge_{mosaic.stable_hash}_strip_1"
+        compute_image_metadata, config.development_settings.test_mode, name=f"merge_{mosaic.stable_hash}_strip_1"
     )
 
     expected_graph = Graph(
@@ -521,7 +521,7 @@ def test_orion_mosaic_one_by_two(test_context) -> None:
         merge_images, mode, mosaic, name=f"merge_{mosaic.stable_hash}_strip_1"
     )
     final_meta = Node(
-        compute_image_metadata, config.development_settings, name=f"merge_{mosaic.stable_hash}_strip_1"
+        compute_image_metadata, config.development_settings.test_mode, name=f"merge_{mosaic.stable_hash}_strip_1"
     )
 
     expected_graph = Graph(
@@ -594,7 +594,7 @@ def test_orion_mosaic_two_by_one(test_context) -> None:
         name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea",
     )
     meta = Node(
-        compute_image_metadata, config.development_settings,
+        compute_image_metadata, config.development_settings.test_mode,
         name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea",
     )
 
@@ -668,14 +668,14 @@ def test_orion_mosaic_missing_panel(test_context) -> None:
         name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea",
     )
     meta_1 = Node(
-        compute_image_metadata, config.development_settings,
+        compute_image_metadata, config.development_settings.test_mode,
         name=f"merge_{mosaic.stable_hash}_15a294ac14d63dea",
     )
     final_merge = Node(
         merge_images, mode, mosaic, name=f"merge_{mosaic.stable_hash}_strip_1"
     )
     final_meta = Node(
-        compute_image_metadata, config.development_settings, name=f"merge_{mosaic.stable_hash}_strip_1"
+        compute_image_metadata, config.development_settings.test_mode, name=f"merge_{mosaic.stable_hash}_strip_1"
     )
 
     expected_graph = Graph(
