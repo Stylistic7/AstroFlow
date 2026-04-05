@@ -25,6 +25,7 @@ from mosaics.types import Mosaic, Viewbox
 from mosaics.artifacts import placed_filename
 from decorators import node
 from metadata.classes import ImageMetadata
+from stacks.master import Master
 from products import makes_image
 
 class ProjectionFailedException(Exception):
@@ -164,7 +165,7 @@ def _place_image(
     stack: Stack,
     filter: str,
     viewbox: Viewbox,
-    image_metadata: ImageMetadata,
+    image_metadata: ImageMetadata | Master,
 ) -> WithSidecar[TiffFilePath]:
     # if context.dangerously_accept_existing_files and os.path.exists(filename):
     #   print(f'### Dangerously skipping place_large_image because '
@@ -217,7 +218,7 @@ def place_image_subframe(
     stack: Stack,
     filter: str,
     viewbox: Viewbox,
-    image_metadata: ImageMetadata,
+    image_metadata: ImageMetadata | Master,
 ) -> WithSidecar[TiffFilePath]:
     return ray.get(
         _place_image.remote(
@@ -235,7 +236,7 @@ def place_image_master(
     stack: Stack,
     filter: str,
     viewbox: Viewbox,
-    image_metadata: ImageMetadata,
+    image_metadata: ImageMetadata | Master,
 ) -> WithSidecar[TiffFilePath]:
     return ray.get(
         _place_image.remote(
@@ -252,7 +253,7 @@ def place_image(
     stack: Stack,
     filter: str,
     viewbox: Viewbox,
-    image_metadata: ImageMetadata,
+    image_metadata: ImageMetadata | Master,
 ) -> WithSidecar[TiffFilePath]:
     if mode == QualityLevel.SUBFRAME:
         return ray.get(

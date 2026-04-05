@@ -39,7 +39,6 @@ log = structlog.get_logger()
 @node
 def create_master(stack: Stack, image_metadata) -> Master:
     """Build a Master object from the stacking result and store it in context."""
-    from metadata.classes import ImageMetadata
     master = Master.from_stack_and_metadata(stack, image_metadata)
     log.info("Created master", master=str(master))
 
@@ -99,28 +98,29 @@ def build_stacking_subgraph(
     )
     node_status_fn = store_node_status
 
-    steps = [
-        (build_calibration_stack_subgraph, stack, config),
-        (stack_files, stack, config),
-        Node(
-            compute_image_metadata, config.development_settings.test_mode,
-            name=f"stacking_{stack.stable_hash}",
-        ),
-        (create_master, stack),
-    ]
+    test_mode = config.development_settings.test_mode
 
-    # Downscaled masters skip post-processing — the point is speed.
     if config.downscale_factor <= 1:
-        steps += [
+        # Full: calibrate → stack → metadata → master → post-process → metadata
+        steps = chain(
+            (build_calibration_stack_subgraph, stack, config),
+            (stack_files, stack, config),
+            Node(compute_image_metadata, test_mode, name=f"stacking_{stack.stable_hash}"),
+            (create_master, stack),
             (post_process_stack, stack, config.development_settings.mock_pixinsight),
-            Node(
-                compute_image_metadata, config.development_settings.test_mode,
-                name=f"post_process_{stack.stable_hash}",
-            ),
-        ]
+            Node(compute_image_metadata, test_mode, name=f"post_process_{stack.stable_hash}"),
+        )
+    else:
+        # Downscaled: calibrate → stack → metadata → master (no post-processing)
+        steps = chain(
+            (build_calibration_stack_subgraph, stack, config),
+            (stack_files, stack, config),
+            Node(compute_image_metadata, test_mode, name=f"stacking_{stack.stable_hash}"),
+            (create_master, stack),
+        )
 
     return Graph(
-        {**chain(*steps)},
+        {**steps},
         graph_update_fn=graph_update_fn,
         node_status_fn=node_status_fn,
     )

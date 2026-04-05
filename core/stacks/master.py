@@ -6,7 +6,6 @@ pre-stacking footprint (e.g. after WBPP autocrop).
 """
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Any
 from beartype import beartype
 
 from hashing import hash_list_int
@@ -15,6 +14,7 @@ from attributes import (
     AstrometricAttributes,
     ChronologyAttributes,
     ImagingAttributes,
+    PlateSolutionAttributes,
 )
 from stacks.types import StackHash
 from metadata.classes import ImageMetadata
@@ -32,6 +32,7 @@ class Master(
     AstrometricAttributes,
     ChronologyAttributes[StackHash],
     ImagingAttributes,
+    PlateSolutionAttributes,
 ):
     """The result of stacking a Stack — has its own post-stacking astrometry."""
     stack_id: StackHash
@@ -91,6 +92,7 @@ class Master(
             # Master-specific
             stack_id=stack.stable_hash,
             filename=image_metadata.filename,
+            plate_solution=ps,
         )
 
     def __hash__(self) -> int:
