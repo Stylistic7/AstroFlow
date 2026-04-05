@@ -79,15 +79,14 @@ def build_stacking_subgraph(
     stack: Stack,
     config: ProcessingConfig,
 ) -> Graph:
-    quality = "DownscaledMaster" if config.downscale_factor > 1 else "Master"
     graph_update_fn = partial(
-        store_workflow_graph, ("stack", stack.stable_hash, quality)
+        store_workflow_graph, ("stack", stack.stable_hash, config.quality.value)
     )
     node_status_fn = store_node_status
 
     test_mode = config.development_settings.test_mode
 
-    if config.downscale_factor <= 1:
+    if config.quality == QualityLevel.MASTER:
         # Full: calibrate → stack → metadata → post-process → metadata
         steps = chain(
             (build_calibration_stack_subgraph, stack, config),

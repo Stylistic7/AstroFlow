@@ -1,9 +1,28 @@
 from typing import Any
 from collections import Counter
+from dataclasses import is_dataclass, fields
 
 from dependency_graph import GraphStatus
 from profiling.estimate_time import estimate_time
+from previews.types import QualityLevel
 from beartype import beartype
+
+
+def _infer_node_quality(node) -> QualityLevel | None:
+    """Scan a pending node's args for a QualityLevel (type-based).
+
+    Mirrors @measure_performance's inference so progress estimates look up
+    the same profile bucket that was used at recording time.
+    """
+    for v in node.args:
+        if isinstance(v, QualityLevel):
+            return v
+        if is_dataclass(v) and not isinstance(v, type):
+            for f in fields(v):
+                inner = getattr(v, f.name, None)
+                if isinstance(inner, QualityLevel):
+                    return inner
+    return None
 
 
 # This function takes lists of ready, waiting, and done nodes from the
@@ -13,22 +32,26 @@ from beartype import beartype
 # TODO: Strongly-type the output.
 @beartype
 def graph_status_to_progress(status: GraphStatus) -> dict[str, Any]:
-    remaining_task_counts = Counter(
-        node.task._function.__name__
-        for node in status.ready_nodes + status.waiting_nodes
-    )
-    done_task_counts = Counter(
-        node.task._function.__name__ for node in status.done_nodes
-    )
+    def key_for(node) -> tuple[str, QualityLevel | None]:
+        return (node.task._function.__name__, _infer_node_quality(node))
 
-    status_dict = {}
-    for fn_name in set(remaining_task_counts.keys()) | set(done_task_counts.keys()):
-        estimated_time = estimate_time(fn_name, remaining_task_counts[fn_name])
+    remaining_counts: Counter = Counter(
+        key_for(n) for n in status.ready_nodes + status.waiting_nodes
+    )
+    done_counts: Counter = Counter(key_for(n) for n in status.done_nodes)
 
-        status_dict[fn_name] = {
-            "total_number": remaining_task_counts[fn_name] + done_task_counts[fn_name],
-            "remaining_number": remaining_task_counts[fn_name],
-            "estimated_time": estimated_time or 0,
+    status_dict: dict[str, Any] = {}
+    for (fn_name, quality) in set(remaining_counts.keys()) | set(done_counts.keys()):
+        k = (fn_name, quality)
+        remaining = remaining_counts[k]
+        total = remaining + done_counts[k]
+        estimated = estimate_time(fn_name, remaining, quality=quality)
+
+        label = f"{fn_name} ({quality.value})" if quality is not None else fn_name
+        status_dict[label] = {
+            "total_number": total,
+            "remaining_number": remaining,
+            "estimated_time": estimated or 0,
         }
 
     return status_dict

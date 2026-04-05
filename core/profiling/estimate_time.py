@@ -3,49 +3,73 @@ import numpy as np
 
 from context import context
 from beartype import beartype
+from previews.types import QualityLevel
 
 
 @beartype
-def estimate_time(fn_name: str, remaining: int = 1) -> float | None:
+def estimate_time(
+    fn_name: str,
+    remaining: int = 1,
+    quality: QualityLevel | None = None,
+) -> float | None:
     """Estimate seconds to complete `remaining` tasks of function `fn_name`.
 
     Uses historical wall_time_s from the profile data collected by
-    @measure_performance, combined with per-node CPU counts to model
-    parallel throughput across the Ray cluster.
+    @measure_performance, combined with the Ray resources the function
+    requires (captured from @node's ray_opts) to model correct parallel
+    throughput across the Ray cluster.
+
+    If `quality` is given, only samples recorded for that QualityLevel
+    contribute — so MASTER and DOWNSCALED_MASTER timings don't get mixed.
     """
     if remaining <= 0:
         return 0.0
 
-    # Collect all profile samples for this function across all nodes.
+    # Collect all profile samples for this function across all nodes and qualities.
     all_profiles = context.get_matching(("profile", fn_name))
     if not all_profiles:
         return None
 
-    # Flatten all wall_time_s samples.
-    wall_times = []
+    # Filter by quality (3rd tuple slot) if requested.
+    wall_times: list[float] = []
+    ray_opts: dict | None = None
+    quality_value = quality.value if quality is not None else None
     for key, samples in all_profiles.items():
+        # key shape: ("profile", fn_name, quality_value_or_None, node_ip)
+        if quality_value is not None and len(key) >= 3 and key[2] != quality_value:
+            continue
         for sample in samples:
             if "wall_time_s" in sample:
                 wall_times.append(sample["wall_time_s"])
+            if ray_opts is None and "ray_opts" in sample:
+                ray_opts = sample["ray_opts"]
 
     if not wall_times:
         return None
 
-    mean_task_time = np.mean(wall_times)
+    mean_task_time = float(np.mean(wall_times))
     if mean_task_time <= 0:
         return None
 
-    # Sum throughput across all alive nodes.
-    # Each node can run min(remaining, num_cpus) tasks in parallel.
-    total_throughput = 0.0
+    # Compute concurrency across the cluster, respecting both CPU and any
+    # custom resources (e.g. PixInsight=1) that the task requires.
+    num_cpus_per_task = float((ray_opts or {}).get("num_cpus", 1) or 1)
+    custom_resources = (ray_opts or {}).get("resources") or {}
+
+    total_concurrent = 0.0
     for node in ray.nodes():
         if not node.get("Alive", False):
             continue
-        num_cpus = node.get("Resources", {}).get("CPU", 0)
-        if num_cpus > 0:
-            total_throughput += num_cpus / mean_task_time  # tasks per second
+        node_res = node.get("Resources", {})
+        node_slots = node_res.get("CPU", 0) / num_cpus_per_task
+        for resource, amount in custom_resources.items():
+            if amount > 0:
+                available = node_res.get(resource, 0)
+                node_slots = min(node_slots, available / amount)
+        total_concurrent += node_slots
 
-    if total_throughput <= 0:
+    if total_concurrent <= 0:
         return None
 
-    return remaining / total_throughput
+    throughput = total_concurrent / mean_task_time  # tasks per second
+    return remaining / throughput

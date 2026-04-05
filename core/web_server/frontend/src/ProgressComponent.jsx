@@ -3,12 +3,19 @@ import { Box, Typography, LinearProgress, Menu } from '@mui/material';
 
 import AstroFlowContext from './AstroFlowContext.jsx';
 
-// Utility function to convert seconds to days, hours, and minutes
+// Format seconds as a human-friendly duration, showing only the
+// largest two units (e.g. "2d 3h", "5m 20s", "45s").
 const formatTime = (seconds) => {
-  const days = Math.floor(seconds / (3600 * 24));
-  const hours = Math.floor((seconds % (3600 * 24)) / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  return `${days}d ${hours}h ${minutes}m`;
+  const s = Math.max(0, Math.round(seconds));
+  const days = Math.floor(s / 86400);
+  const hours = Math.floor((s % 86400) / 3600);
+  const minutes = Math.floor((s % 3600) / 60);
+  const secs = s % 60;
+
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${secs}s`;
+  return `${secs}s`;
 };
 
 const ProgressComponent = () => {
@@ -23,7 +30,13 @@ const ProgressComponent = () => {
   // Calculate overall progress
   const totalItems = processEntries.reduce((acc, [key, value]) => acc + value.total_number, 0);
   const remainingItems = processEntries.reduce((acc, [key, value]) => acc + value.remaining_number, 0);
-  const totalRemainingTime = processEntries.reduce((acc, [key, value]) => acc + value.estimated_time, 0);
+  // Take the max across parallel function types rather than summing —
+  // different functions run concurrently in the compute graph, so the
+  // overall ETA is dominated by the slowest remaining stream, not their sum.
+  const totalRemainingTime = processEntries.reduce(
+    (acc, [key, value]) => Math.max(acc, value.estimated_time),
+    0,
+  );
 
   if (remainingItems === 0) {
     return <Typography variant="body2" color="textSecondary" align="center" sx={{ padding: '1em' }}>

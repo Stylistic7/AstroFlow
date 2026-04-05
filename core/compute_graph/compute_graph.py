@@ -285,11 +285,6 @@ def build_main_processing_graph(
     mosaics = objects.mosaics
     calibration_stacks = objects.calibration_stacks
 
-    _DOWNSCALE_FACTORS = {
-        QualityLevel.MASTER: 1,
-        QualityLevel.DOWNSCALED_MASTER: 8,
-    }
-
     def config_for(stack_id=None, mode=QualityLevel.MASTER):
         if stack_id:
             decisions = fd({k: v for k, v in decision_overrides.items()
@@ -301,7 +296,7 @@ def build_main_processing_graph(
             development_settings=development_settings,
             min_frames_in_stack=min_frames_in_stack,
             decisions=decisions,
-            downscale_factor=_DOWNSCALE_FACTORS.get(mode, 1),
+            quality=mode,
         )
 
     log.info("Building main processing graph", shopping_cart=shopping_cart)

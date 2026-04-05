@@ -42,11 +42,11 @@ def build_target_subgraph(
             development_settings=config.development_settings,
             min_frames_in_stack=config.min_frames_in_stack,
             decisions=decisions,
+            quality=config.quality,
         )
 
-    quality = "DownscaledMaster" if config.downscale_factor > 1 else "Master"
     graph_update_fn = partial(
-        store_workflow_graph, ("target", target.stable_hash, quality)
+        store_workflow_graph, ("target", target.stable_hash, config.quality.value)
     )
     node_status_fn = store_node_status
 

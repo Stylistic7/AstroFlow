@@ -32,10 +32,14 @@ def performance_summary():
 
     functions: dict[str, list] = {}
     for key, samples in all_profiles.items():
-        _, fn_name, node_ip = key
-        if fn_name not in functions:
-            functions[fn_name] = []
+        # key shape: ("profile", fn_name, quality_or_None, node_ip)
+        if len(key) != 4:
+            continue  # skip any stale keys from a previous key shape
+        _, fn_name, quality, node_ip = key
+        label = f"{fn_name} ({quality})" if quality else fn_name
+        if label not in functions:
+            functions[label] = []
         for sample in samples:
-            functions[fn_name].append({**sample, "node_ip": node_ip})
+            functions[label].append({**sample, "node_ip": node_ip, "quality": quality})
 
     return jsonify({"functions": functions})

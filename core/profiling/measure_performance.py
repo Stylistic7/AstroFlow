@@ -81,14 +81,39 @@ def _collect_image_stats_by_argument(func, args, kwargs):
     return by_arg, totals
 
 
-def _update_profile(fn_name: str, record: dict[str, Any], cache: CacheProtocol):
+def _update_profile(
+    fn_name: str,
+    quality: str | None,
+    record: dict[str, Any],
+    cache: CacheProtocol,
+):
     node_ip = ray.util.get_node_ip_address()
-    key = ("profile", fn_name, node_ip)
+    key = ("profile", fn_name, quality, node_ip)
     cache.and_equals(key, [record], _MAX_PROFILE_SAMPLES)
 
 
+def _infer_quality(args, kwargs) -> str | None:
+    """Scan args/kwargs for a QualityLevel instance; return its value or None.
+
+    Also looks one level inside dataclasses (e.g. ProcessingConfig.quality).
+    Type-based — no argument-name introspection.
+    """
+    from previews.types import QualityLevel
+    for v in (*args, *kwargs.values()):
+        if isinstance(v, QualityLevel):
+            return v.value
+        if is_dataclass(v) and not isinstance(v, type):
+            for f in fields(v):
+                inner = getattr(v, f.name, None)
+                if isinstance(inner, QualityLevel):
+                    return inner.value
+    return None
+
+
 def make_measure_performance_decorator(cache: CacheProtocol):
-    def decorator(func: Callable):
+    def decorator(func: Callable, ray_opts: dict[str, Any] | None = None):
+        ray_opts = ray_opts or {}
+
         @wraps(func)
         def wrapper(*args, **kwargs):
             process = psutil.Process(os.getpid())
@@ -124,9 +149,11 @@ def make_measure_performance_decorator(cache: CacheProtocol):
                 - baseline_rss,
                 "images": image_stats_by_arg,
                 "image_totals": image_totals,
+                "ray_opts": ray_opts,
             }
 
-            _update_profile(func.__name__, record, cache)
+            quality = _infer_quality(args, kwargs)
+            _update_profile(func.__name__, quality, record, cache)
             return result
 
         return wrapper

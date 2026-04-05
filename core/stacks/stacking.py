@@ -21,6 +21,7 @@ from decorators import node, create_thumbnail
 from decisions.settings import DevelopmentSettings, ProcessingConfig
 from decisions.resolve import resolve_calibration, resolve_decisions
 from decisions.compute_graph import ALL_EXCLUSION_TYPES
+from previews.types import QualityLevel, DOWNSCALE_FACTORS
 from products import makes_image
 import structlog
 
@@ -41,10 +42,11 @@ def _symlink_frames(filenames: list[str], dest_dir: str) -> None:
 
 
 def _copy_frames_with_plate_solution(
-    metadata: MetadataDict, dest_dir: str, downscale_factor: int = 1,
+    metadata: MetadataDict, dest_dir: str, quality: QualityLevel = QualityLevel.MASTER,
 ) -> None:
     from stacks.downscale import downscale_fits
 
+    downscale_factor = DOWNSCALE_FACTORS[quality]
     for frame in metadata.values():
         filename = frame.filename
         assert filename
@@ -78,20 +80,18 @@ def _setup_run(
     run: Run,
     calibration_stacks: CalibrationStacksDict,
     dest_dir: str,
-    downscale_factor: int = 1,
+    quality: QualityLevel = QualityLevel.MASTER,
 ) -> list[str]:
     filenames = [i.filename for i in run.metadata.values()]
     assert len(run.frames) == len(filenames)
 
-    _copy_frames_with_plate_solution(run.metadata, dest_dir, downscale_factor)
+    _copy_frames_with_plate_solution(run.metadata, dest_dir, quality)
 
     def get_dependency_filename(d):
         if isinstance(d, StackIdDependency):
             from products.registry import get_filename_fn, MediaType
-            from previews.types import QualityLevel
             cal_stack = calibration_stacks[d.stack_id]
-            level = QualityLevel.DOWNSCALED_MASTER if downscale_factor > 1 else QualityLevel.MASTER
-            filename_fn = get_filename_fn(MediaType.IMAGE, type(cal_stack), level)
+            filename_fn = get_filename_fn(MediaType.IMAGE, type(cal_stack), quality)
             return filename_fn(cal_stack)
         elif isinstance(d, FilenameDependency):
             return d.filename
@@ -108,13 +108,13 @@ def _setup_stack(
     stack: BaseStack,
     calibration_stacks: CalibrationStacksDict,
     dest_dir: str,
-    downscale_factor: int = 1,
+    quality: QualityLevel = QualityLevel.MASTER,
 ) -> list[str]:
     filenames = []
     for i, run in enumerate(stack.contents.values()):
         run_dir = os.path.join(dest_dir, f"RUN_{i}")
         os.makedirs(run_dir, exist_ok=True)
-        filenames.extend(_setup_run(run, calibration_stacks, run_dir, downscale_factor))
+        filenames.extend(_setup_run(run, calibration_stacks, run_dir, quality))
 
     return filenames
 
@@ -182,9 +182,7 @@ def stack_files(
 
     # Determine the output file, and the metadata it should have.
     from products.registry import get_filename_fn, MediaType
-    from previews.types import QualityLevel
-    level = QualityLevel.DOWNSCALED_MASTER if config.downscale_factor > 1 else QualityLevel.MASTER
-    filename_fn = get_filename_fn(MediaType.IMAGE, type(stack), level) or stack_files.filename_fn
+    filename_fn = get_filename_fn(MediaType.IMAGE, type(stack), config.quality) or stack_files.filename_fn
     dest_filename = filename_fn(stack)
     dest_filename_exists = os.path.exists(dest_filename)
     os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
@@ -211,7 +209,7 @@ def stack_files(
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
         log.debug("Using temporary directory", tmp_dir=tmp_dir)
 
-        filenames = _setup_stack(stack, calibration_stacks, tmp_dir, config.downscale_factor)
+        filenames = _setup_stack(stack, calibration_stacks, tmp_dir, config.quality)
 
         if len(filenames) < min_frames_in_stack:
             log.info("Not stacking, too few files", stack=str(stack), num_files=len(filenames))

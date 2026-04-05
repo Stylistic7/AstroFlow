@@ -6,6 +6,7 @@ from frozendict import frozendict
 from units import Radians
 from hashing import hash_dataclass
 from decisions.decisions import DecisionKey, DecisionOverride
+from previews.types import QualityLevel
 
 
 @dataclass(frozen=True)
@@ -57,7 +58,7 @@ class ProcessingConfig:
     development_settings: "DevelopmentSettings" = field(default_factory=lambda: DevelopmentSettings())
     min_frames_in_stack: int = 5
     decisions: frozendict = field(default_factory=frozendict)
-    downscale_factor: int = 1
+    quality: QualityLevel = QualityLevel.MASTER
 
     def __hash__(self):
         return hash_dataclass(self)

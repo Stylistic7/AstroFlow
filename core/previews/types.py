@@ -9,3 +9,13 @@ class QualityLevel(StrEnum):
     DOWNSCALED_MASTER = "DownscaledMaster"
     MASTER = "Master"
     POST_PROCESSED = "PostProcessed"
+
+
+# Integer downscale factor associated with each QualityLevel.
+# DOWNSCALED_MASTER is always 8x; everything else is full resolution.
+DOWNSCALE_FACTORS: dict[QualityLevel, int] = {
+    QualityLevel.SUBFRAME: 1,
+    QualityLevel.DOWNSCALED_MASTER: 8,
+    QualityLevel.MASTER: 1,
+    QualityLevel.POST_PROCESSED: 1,
+}

@@ -46,7 +46,7 @@ class _Node:
     def _wrap(self, func, ray_opts):
         wrapped = _beartype(func)
         wrapped = capture_logs(wrapped)
-        wrapped = measure_performance(wrapped)
+        wrapped = measure_performance(wrapped, ray_opts=ray_opts)
         return cached.remote(wrapped, **ray_opts)
 
 

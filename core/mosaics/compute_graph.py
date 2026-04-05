@@ -67,7 +67,7 @@ def build_mosaic_subgraph(
     config: "ProcessingConfig",
 ) -> Graph:
     log.info("Building mosaic subgraph", mode=mode, mosaic=str(mosaic), stacks=[str(s) for s in stacks])
-    viewbox = compute_viewbox(mode, mosaic, config.downscale_factor)
+    viewbox = compute_viewbox(mode, mosaic)
     filters = set(
         ref.get().filter for ref in stacks.values() if ref is not None
     )
