@@ -49,8 +49,6 @@ def _post_process_stack(master_path, stack: Stack, downscale_factor: int = 1) ->
 @node(resources={"PixInsight": 1})
 @create_thumbnail
 def post_process_stack(stack: Stack, mock_pixinsight: bool, downscale_factor: int = 1) -> WithSidecar[XisfFilePath]:
-    from products import ensure_producers_registered
-    ensure_producers_registered()
     level = QualityLevel.DOWNSCALED_MASTER if downscale_factor > 1 else QualityLevel.MASTER
     master_fn = get_filename_fn(MediaType.IMAGE, Stack, level)
     master = master_fn(stack)

@@ -71,6 +71,9 @@ def _init(state: State, action: Action) -> tuple[State, list[Action]]:
 def _populate_context(
     state: State, action: Action
 ) -> tuple[State, list[Action]]:
+    from products import ensure_producers_registered
+    ensure_producers_registered()
+
     # TODO: Put these in the UI.
     print(f"### _populate_context")
 
