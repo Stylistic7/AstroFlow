@@ -59,3 +59,45 @@ def test_downscaled_orion_mosaic(test_context):
     # Note: placement and merging are not tested here because mock
     # stacking doesn't re-solve WCS at downscaled resolution, causing
     # projection failures. Real PixInsight handles this correctly.
+
+
+@pytest.mark.heavy
+def test_downscaled_orion_mosaic_produces_tiled_tiff(test_context):
+    """The tiled TIFF that the web server serves must exist at the end
+    of the DOWNSCALED_MASTER pipeline, alongside its XISF sibling."""
+    add_orion_mosaic_images()
+
+    # Pass 1: identification.
+    run_graph(build_compute_graph())
+    assert len(context.mosaics) == 1
+    mosaic = next(iter(context.mosaics.values())).get()
+
+    # Assign flats.
+    flat_stack_id = next(
+        (sid for sid, s in context.calibration_stacks.items() if s.image_type == "flat"),
+        None,
+    )
+    assert flat_stack_id is not None
+    for stack_ref in context.stacks.values():
+        stack = stack_ref.get()
+        for run_hash in stack.contents:
+            set_flat(stack.stable_hash, run_hash, flat_stack_id)
+
+    # Pass 2: full DOWNSCALED_MASTER mosaic pipeline.
+    context.shopping_cart = [("mosaic", mosaic.stable_hash, "DownscaledMaster")]
+    run_graph(build_compute_graph(), debug=True)
+
+    print_tree(context.output_dir)
+
+    output = Path(context.output_dir)
+    xisfs = list(output.rglob("Mosaic/DownscaledMaster/*.xisf"))
+    tiffs = list(output.rglob("Mosaic/DownscaledMaster/*.tiff"))
+
+    # The per-filter XISF is the canonical final mosaic; the .tiff is
+    # what get_image()/tile_metadata streams to the browser.
+    assert len(xisfs) >= 1, f"Expected DownscaledMaster mosaic XISF(s), found: {xisfs}"
+    assert len(tiffs) >= 1, f"Expected DownscaledMaster tiled TIFF(s), found: {tiffs}"
+    # Every XISF should have a sibling tiled TIFF.
+    for xisf in xisfs:
+        sibling = xisf.with_suffix(".tiff")
+        assert sibling.exists(), f"Missing tiled TIFF beside {xisf}"

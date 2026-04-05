@@ -127,6 +127,12 @@ class AstrometricAttributes:
         )
         oldest_image_metadata = sorted_metadata[0]
 
+        for m in sorted_metadata:
+            assert m.plate_solution is not None, (
+                f"AstrometricAttributes.from_frames requires plate solutions; "
+                f"{m.filename} has none (DONTSOLV?)"
+            )
+
         center_raw = spherical_centroid_deg(
             [m.plate_solution.center for m in sorted_metadata]
         )

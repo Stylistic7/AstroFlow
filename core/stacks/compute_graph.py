@@ -84,23 +84,21 @@ def build_stacking_subgraph(
     )
     node_status_fn = store_node_status
 
-    test_mode = config.development_settings.test_mode
-
     if config.quality == QualityLevel.MASTER:
         # Full: calibrate → stack → metadata → post-process → metadata
         steps = chain(
             (build_calibration_stack_subgraph, stack, config),
             (stack_files, stack, config),
-            Node(compute_image_metadata, test_mode, name=f"stacking_{stack.stable_hash}"),
+            Node(compute_image_metadata, name=f"stacking_{stack.stable_hash}"),
             (post_process_stack, stack, config.development_settings.mock_pixinsight),
-            Node(compute_image_metadata, test_mode, name=f"post_process_{stack.stable_hash}"),
+            Node(compute_image_metadata, name=f"post_process_{stack.stable_hash}"),
         )
     else:
         # Downscaled: calibrate → stack → metadata (no post-processing)
         steps = chain(
             (build_calibration_stack_subgraph, stack, config),
             (stack_files, stack, config),
-            Node(compute_image_metadata, test_mode, name=f"stacking_{stack.stable_hash}"),
+            Node(compute_image_metadata, name=f"stacking_{stack.stable_hash}"),
         )
 
     return Graph(
@@ -130,7 +128,7 @@ def get_stack_image(
         return Graph({
             **chain(
                 (get_stack_subframe_image, stack),
-                Node(compute_image_metadata, config.development_settings.test_mode, name=f"subframe_{stack.stable_hash}"),
+                Node(compute_image_metadata, name=f"subframe_{stack.stable_hash}"),
             )
         })
     else:

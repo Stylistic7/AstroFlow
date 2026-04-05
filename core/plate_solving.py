@@ -25,6 +25,12 @@ from units import Degrees, Radians, ArcsecondsPerPixel
 _PLATESOLUTION_SCHEMA = "astroflow.platesolution.v2"
 
 
+class PlateSolveFailedException(Exception):
+    """Raised when solve-field fails on a light frame that was expected
+    to solve. Frames carrying the DONTSOLV header (synthetic noise used
+    by tests) do not raise — they simply return None from solve_field."""
+
+
 @dataclass(frozen=True)
 class PlateSolution:
     image_filename: str
@@ -204,7 +210,6 @@ def _plate_solution_from_obj(obj: dict[str, Any]) -> PlateSolution:
 @beartype
 def solve_field(
     filename: Path | str,
-    test_mode: bool = False,
     debug: bool = False,
 ) -> PlateSolution | None:
     filename = Path(filename)
@@ -228,6 +233,13 @@ def solve_field(
             print(f"### plate_solving: ignoring cached solution for {filename}: {e}")
             pass
 
+    # Synthetic noise frames opt out of solving via the DONTSOLV header.
+    from file_io.generic import read_header
+    header = read_header(filename)
+    if header.get("DONTSOLV"):
+        print(f"### Skipping solve for {filename} (DONTSOLV set)")
+        return None
+
     arguments = [
         "solve-field",
         "--overwrite",
@@ -246,9 +258,6 @@ def solve_field(
         "2",
         "--crpix-center",
     ]
-
-    if test_mode:
-        arguments += ["--cpulimit", "1"]
 
     result = _solve_field(filename, arguments, debug)
 

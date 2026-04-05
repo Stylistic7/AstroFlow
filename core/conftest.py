@@ -117,7 +117,6 @@ def identified_testdata(init_ray, tmp_path_factory):
         development_settings=DevelopmentSettings(
             mock_pixinsight=True,
             dangerously_allow_missing_files=True,
-            test_mode=True,
         ),
         preview_settings=PreviewSettings(
             subframe_thumbnail_width=1200,

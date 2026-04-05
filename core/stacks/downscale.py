@@ -91,6 +91,7 @@ def downscale_fits(
         "SET-TEMP",
         "FOCALLEN",
         "FOCUSPOS",
+        "DONTSOLV",
     )
     for k in keep:
         if k in h0:

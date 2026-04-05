@@ -245,6 +245,10 @@ def place_image(
     viewbox: Viewbox,
     image_metadata: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
+    assert image_metadata.plate_solution is not None, (
+        f"place_image requires a plate solution on {image_metadata.filename}; "
+        "DONTSOLV synthetic frames cannot be placed."
+    )
     args = (mode, mosaic, stack, filter, viewbox,
             image_metadata.filename, image_metadata.plate_solution)
     if mode == QualityLevel.SUBFRAME:

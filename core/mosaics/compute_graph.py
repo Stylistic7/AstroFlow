@@ -133,7 +133,7 @@ def build_placement_subgraph(
             **chain(
                 (get_stack_image, mode, stack, config),
                 (place_image, mode, mosaic, stack, filter, viewbox),
-                Node(compute_image_metadata, config.development_settings.test_mode, name="placed"),
+                Node(compute_image_metadata, name="placed"),
             )
         }
     )
@@ -225,7 +225,7 @@ def build_mosaic_filter_subgraph(
                     name=f"merge_{mosaic.stable_hash}_{stack_id}",
                 )
                 metadata_task = Node(
-                    compute_image_metadata, config.development_settings.test_mode,
+                    compute_image_metadata,
                     name=f"merge_{mosaic.stable_hash}_{stack_id}",
                 )
                 if prev_task is not None:
@@ -248,7 +248,7 @@ def build_mosaic_filter_subgraph(
                 name=f"merge_{mosaic.stable_hash}_strip_{i}",
             )
             metadata_task = Node(
-                compute_image_metadata, config.development_settings.test_mode,
+                compute_image_metadata,
                 name=f"merge_{mosaic.stable_hash}_strip_{i}",
             )
             graph[merge_task] = [prev_task, strip_tasks[i]]

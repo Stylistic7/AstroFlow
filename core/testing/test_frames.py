@@ -275,6 +275,9 @@ def make_synthetic_frames(
             "FOCALLEN": focal_length_m,
             "XPIXSZ": pixel_pitch_um,
             "YPIXSZ": pixel_pitch_um,
+            # Synthetic frames contain only noise (or a flat gradient) — mark
+            # them so solve-field is skipped if anything ever tries to run it.
+            "DONTSOLV": True,
         }
 
         if image_type.lower() in ["light", "flat"]:
@@ -307,7 +310,7 @@ def make_synthetic_frames(
         )
 
         fn_hash = hash_source_code(compute_image_metadata)
-        call_hash = hash_call(fn_hash, context.settings.development_settings.test_mode, Path(fits_filename))
+        call_hash = hash_call(fn_hash, Path(fits_filename))
         key = ("compute_image_metadata", call_hash)
         context.set(key, metadata)
 
