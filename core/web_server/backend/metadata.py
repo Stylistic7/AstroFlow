@@ -1,4 +1,5 @@
 import os
+import astropy.io.fits as pyfits
 from flask import Blueprint, jsonify, abort
 from typing import Any
 
@@ -11,6 +12,8 @@ from mosaics.viewbox import compute_viewbox
 from products.registry import get_producer, get_filename_fn, MediaType
 from previews.types import QualityLevel
 from mosaics.trimming import project_to_viewbox
+from metadata.sidecar_io import read_image_metadata
+from attributes.astrometric_attributes import _spherical_polygon_for_wcs
 from decisions.decisions import ObjectType, get_decisions_for_object
 
 metadata_bp = Blueprint("metadata", __name__)
@@ -73,18 +76,40 @@ def _get_polygons(object_type: type, level: QualityLevel, *args) -> list[dict[st
 
     if isinstance(obj, Mosaic):
         selected_filter = args[1] if len(args) > 1 else None
+        master_fn = get_filename_fn(MediaType.IMAGE, Stack, level)
         for t in obj.target_ids:
             target = targets[t].get()
             for sid in target.stack_ids:
                 stack = stacks[sid].get()
                 if selected_filter and stack.filter != selected_filter:
                     continue
-                poly = project(resolve_stack(sid), viewbox)
-                poly["target_id"] = t
-                poly["has_decisions"] = (
+
+                # Input polygon: the intersection of Run footprints.
+                input_poly = project(resolve_stack(sid), viewbox)
+                input_poly["polygon_type"] = "input"
+                input_poly["target_id"] = t
+                input_poly["has_decisions"] = (
                     len(get_decisions_for_object(ObjectType.STACK, sid)) > 0
                 )
-                objects.append(poly)
+                objects.append(input_poly)
+
+                # Output polygon: the WCS rectangle of the stacked master.
+                if master_fn:
+                    master_path = master_fn(stack)
+                    if master_path and os.path.exists(master_path):
+                        meta = read_image_metadata(master_path)
+                        if meta and meta.plate_solution:
+                            from astropy.wcs import WCS
+                            wcs = WCS(pyfits.Header(meta.plate_solution.header))
+                            output_footprint = _spherical_polygon_for_wcs(wcs)
+                            output_poly = project_to_viewbox(output_footprint, viewbox)
+                            objects.append({
+                                "type": "stack",
+                                "polygon_type": "output",
+                                "stable_hash": stack.stable_hash,
+                                "target_id": t,
+                                "points": list(output_poly.exterior.coords),
+                            })
 
     return objects
 

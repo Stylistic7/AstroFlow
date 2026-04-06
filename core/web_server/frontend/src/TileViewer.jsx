@@ -188,12 +188,14 @@ const ImperativeViewport = ({ objectType, imageHash, filter, qualityLevel, port,
         target: '#0000ff',
         mosaic: '#ff0000',
       };
+      const outputColor = '#00cc00';
 
       // Create polygon graphics and add them
       for (const poly of polygons) {
         const g = new PIXI.Graphics();
         g.zIndex = 9999;
-        g.lineStyle(imageWidth / 500, typeColors[poly.type], 1);
+        const color = poly.polygon_type === 'output' ? outputColor : (typeColors[poly.type] ?? '#ff0000');
+        g.lineStyle(imageWidth / 500, color, poly.polygon_type === 'output' ? 0.6 : 1);
         // g.beginFill(poly.color ?? 0xff0000, 0.2);
         g.moveTo(poly.points[0][0], poly.points[0][1]);
         for (let i = 1; i < poly.points.length; i++) {
