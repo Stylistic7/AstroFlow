@@ -183,7 +183,7 @@ def add_to_shopping_cart(object_type, object_id, quality):
     if entry not in cart:
         cart.append(entry)
         context.shopping_cart = cart
-        state_handle.cancel_and_restart()
+        state_handle.drain_and_restart()
     announce("reload_data")
     return Response(status=204)
 
@@ -197,7 +197,7 @@ def remove_from_shopping_cart(object_type, object_id, quality):
     if entry in cart:
         cart.remove(entry)
         context.shopping_cart = cart
-        state_handle.cancel_and_restart()
+        state_handle.drain_and_restart()
     announce("reload_data")
     return Response(status=204)
 

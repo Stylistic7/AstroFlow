@@ -114,7 +114,7 @@ def override_decision():
     new_settings = updater(settings)
     context.settings = new_settings
 
-    state.cancel_and_restart()
+    state.drain_and_restart()
 
     from products import invalidate_object
     object_type = key[1].value  # ObjectType enum → string

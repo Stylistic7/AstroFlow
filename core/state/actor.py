@@ -163,7 +163,7 @@ class StateActor:
         self._q: deque[Action] = deque()
         self._busy = False
         self._cv = Condition()
-        self._cancel_event = Event()
+        self._drain_event = Event()
         self._runner = Thread(target=self._run_loop, daemon=True)
         self._runner.start()
 
@@ -173,9 +173,10 @@ class StateActor:
             self._cv.notify()
             return len(self._q)
 
-    def cancel_and_restart(self) -> None:
-        """Cancel the current graph and enqueue a full restart."""
-        self._cancel_event.set()
+    def drain_and_restart(self) -> None:
+        """Stop starting new tasks in the current graph; let in-flight
+        finish; then enqueue a full restart."""
+        self._drain_event.set()
         self.enqueue(Action(type="run_entire_graph"))
 
     def is_busy(self) -> bool:
@@ -188,7 +189,7 @@ class StateActor:
                 while not self._q:
                     self._cv.wait()
                 action = self._q.popleft()
-                self._cancel_event.clear()
+                self._drain_event.clear()
                 self._busy = True
                 print(f"### set _busy {self._busy}")
             try:
@@ -225,12 +226,10 @@ class StateActor:
                 graph,
                 status_fn=status_fn,
                 status_interval=5,
-                cancel_event=self._cancel_event,
+                drain_event=self._drain_event,
             )
         except GraphCancelled:
-            print("### Graph cancelled, cleaning up PixInsight")
-            from pix.runner import kill_all_instances
-            kill_all_instances()
+            print("### Graph drained; restart already enqueued")
             return state, [Action(type="announce", message="reload_data")]
 
         return state, [Action(type="announce", message="reload_data")]
@@ -266,7 +265,7 @@ class StateActor:
                 )
                 if files_after > files_before:
                     print(f"### ASIAir download found {files_after - files_before} new files, restarting graph")
-                    self.cancel_and_restart()
+                    self.drain_and_restart()
             case "announce":
                 self.state, new_actions = _announce(self.state, action)
             case "process":
@@ -307,10 +306,10 @@ class State:
         actor = ray.get_actor("state", namespace=_get_namespace())
         return ray.get(actor.enqueue.remote(action))
 
-    def cancel_and_restart(self) -> None:
-        """Cancel the current graph and restart from the beginning."""
+    def drain_and_restart(self) -> None:
+        """Stop starting new tasks; let in-flight finish; then restart."""
         actor = ray.get_actor("state", namespace=_get_namespace())
-        ray.get(actor.cancel_and_restart.remote())
+        ray.get(actor.drain_and_restart.remote())
 
     def is_busy(self) -> bool:
         actor = ray.get_actor("state", namespace=_get_namespace())

@@ -125,7 +125,8 @@ def _retrieve_logs(rt: GraphRuntime, node: Node) -> list[Any]:
 
 
 class GraphCancelled(Exception):
-    """Raised when a graph run is cancelled via cancel_event."""
+    """Raised when a graph run is drained via drain_event — in-flight
+    tasks finished naturally, but waiting tasks were never submitted."""
     pass
 
 
@@ -136,7 +137,7 @@ def run_graph(
     status_interval: float = _MIN_STATUS_UPDATE_INTERVAL_SECS,
     trace: bool = False,
     debug: bool = False,
-    cancel_event: "threading.Event | None" = None,
+    drain_event: "threading.Event | None" = None,
 ) -> tuple[Any, "RunStats"]:
     num_nodes_run: int = 0
     last_status_time: float = 0
@@ -157,10 +158,10 @@ def run_graph(
         nonlocal ready_cache
         ready_cache = root.get_all_ready()
 
-    while root.is_active():
-        if cancel_event and cancel_event.is_set():
-            raise GraphCancelled("Graph run cancelled")
+    def _draining() -> bool:
+        return bool(drain_event and drain_event.is_set())
 
+    while root.is_active():
         if len(ready_cache) < RESCAN_THRESHOLD:
             _refill_cache()
 
@@ -172,8 +173,12 @@ def run_graph(
         ref_meta: dict[ray.ObjectRef, tuple[GraphRuntime, Node]] = {}
 
         while ready_cache or pending:
-            # Fill up to concurrency cap.
-            while ready_cache and len(pending) < MAX_IN_FLIGHT:
+            # Fill up to concurrency cap — but stop submitting once drained.
+            while (
+                ready_cache
+                and not _draining()
+                and len(pending) < MAX_IN_FLIGHT
+            ):
                 rt, node = ready_cache.pop()
                 rt.start(node)
                 try:
@@ -193,11 +198,6 @@ def run_graph(
                 pending, num_returns=k, timeout=TIMEOUT
             )
             pending = still_pending
-
-            if cancel_event and cancel_event.is_set():
-                for ref in pending:
-                    ray.cancel(ref, force=True)
-                raise GraphCancelled("Graph run cancelled")
 
             if not ready_refs:
                 # Periodic status/graph updates even without completions.
@@ -248,6 +248,12 @@ def run_graph(
             # Refill the cache when it runs low.
             if len(ready_cache) < RESCAN_THRESHOLD:
                 _refill_cache()
+
+        # Inner loop exited with ready_cache and pending both empty.
+        # If we're draining, the in-flight set has finished naturally —
+        # surface GraphCancelled so the caller can restart.
+        if _draining():
+            raise GraphCancelled("Graph run drained")
 
     assert not root.is_active()
 

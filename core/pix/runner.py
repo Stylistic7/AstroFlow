@@ -144,12 +144,6 @@ def _kill_instance(slot: int) -> None:
         pass  # Already gone
 
 
-def kill_all_instances() -> None:
-    """Kill all running PixInsight instances across all slots."""
-    for slot in _find_running_instances():
-        _kill_instance(slot)
-
-
 @contextmanager
 def _acquire_slot(slots: list[int]):
     """Acquire exclusive access to a PixInsight slot via file lock.
