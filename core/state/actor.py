@@ -12,7 +12,6 @@ from compute_graph import (
     build_preview_graph,
     build_main_processing_graph,
 )
-from stacks.compute_graph import process_stacks_for_ui
 from dependency_graph import (
     Graph,
     run_graph,
@@ -76,14 +75,7 @@ def _process_stack(action: Action) -> Graph:
                       if len(k) >= 3 and k[2] == stack_id}),
     )
 
-    return Graph(
-        {
-            **chain(
-                (build_stacking_subgraph, stack, config),
-                process_stacks_for_ui,
-            )
-        }
-    )
+    return Graph({(build_stacking_subgraph, stack, config): {}})
 
 
 def _process_target(action: Action) -> Graph:

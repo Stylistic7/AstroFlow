@@ -143,8 +143,9 @@ def _my_transform(v):
     return v
 
 
-@ray.remote(num_cpus=0.1)
-def _prepare_stack_for_ui(
+
+@node
+def prepare_stack_for_ui(
     stack: Stack,
     cal_stacks: CalibrationStacksDict,
     decisions,
@@ -153,14 +154,8 @@ def _prepare_stack_for_ui(
     from decisions.resolve import resolve_calibration, resolve_decisions
     from decisions.compute_graph import ALL_EXCLUSION_TYPES
 
-    # Resolve calibration so the UI shows calibration deps per run.
     stack = resolve_calibration(stack, cal_stacks, decisions)
-    # Publish quality/rotation decisions as side effects (for UI visibility).
     resolve_decisions(stack, ALL_EXCLUSION_TYPES, decisions, min_frames)
-
-    # Emit only the scalar fields the UI needs for starmap, cards, and search.
-    # Heavy fields (contents, projected_footprints, footprint) are fetched
-    # on demand via /stacks/<id>/detail.
     return {
         "stable_hash": stack.stable_hash,
         "content_hash": stack.content_hash,
@@ -186,27 +181,28 @@ def _prepare_stack_for_ui(
 
 
 @ray.remote(num_cpus=0.1)
-def process_stacks_for_ui(*_ancestor_results) -> dict:
-    from context import context
+def gather_ui_stacks(*stack_dicts) -> dict:
+    """Combine per-stack UI dicts into a single {hash: dict} mapping."""
+    return {d["stable_hash"]: d for d in stack_dicts}
+
+
+@node
+def process_stacks_for_ui(
+    decisions,
+    min_frames: int,
+    stacks: StacksDict,
+    cal_stacks: CalibrationStacksDict,
+) -> Graph:
     from cache.context_ref import ContextRef
 
-    stacks = context.stacks or {}
-    cal_stacks = context.calibration_stacks or CalibrationStacksDict()
-    decisions = context.settings.decision_overrides
-    min_frames = context.settings.clustering_settings.min_frames_in_stack
-
-    # Fire all stack preparations in parallel.
-    futures = {
-        h: _prepare_stack_for_ui.remote(
-            ref.get() if isinstance(ref, ContextRef) else ref,
-            cal_stacks, decisions, min_frames,
+    per_stack_tasks = []
+    for h, ref in stacks.items():
+        stack = ref.get() if isinstance(ref, ContextRef) else ref
+        per_stack_tasks.append(
+            (prepare_stack_for_ui, stack, cal_stacks, decisions, min_frames)
         )
-        for h, ref in stacks.items()
-    }
 
-    hashes = list(futures.keys())
-    results = ray.get(list(futures.values()))
-    return dict(zip(hashes, results))
+    return Graph({gather_ui_stacks: per_stack_tasks})
 
 
 @node

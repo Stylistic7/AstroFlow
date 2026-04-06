@@ -160,8 +160,13 @@ def scatter_spatial_groups(
     gather_stacks_task = Node(combine_dicts, name="combine_stacks")
     graph[gather_stacks_task] = stack_tasks
     graph[store_stacks] = {gather_stacks_task}
-    graph[process_stacks_for_ui] = {store_stacks, store_calibration_stacks}
-    graph[store_ui_stacks] = {process_stacks_for_ui}
+    process_stacks_task = (
+        process_stacks_for_ui,
+        decision_overrides,
+        clustering_settings.min_frames_in_stack,
+    )
+    graph[process_stacks_task] = {store_stacks, store_calibration_stacks}
+    graph[store_ui_stacks] = {process_stacks_task}
 
     gather_targets_task = Node(combine_dicts, name="combine_targets")
     graph[gather_targets_task] = target_tasks
