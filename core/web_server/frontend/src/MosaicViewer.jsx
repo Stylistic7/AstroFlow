@@ -1,6 +1,6 @@
 // MosaicViewer.jsx
-import React, { useContext, useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import React, { useContext, useEffect, useMemo, useState, useCallback } from "react";
+import { useParams, useSearchParams } from "react-router-dom";
 
 import {
 	Box,
@@ -28,15 +28,16 @@ import darkTheme from "./theme.js";
 
 export default function MosaicViewer() {
     const { mosaic_id } = useParams();
+    const [searchParams, setSearchParams] = useSearchParams();
     const { stacks, targets, mosaics } = useContext(AstroFlowContext);
 
 	const [tabIndex, setTabIndex] = useState(0);
 
 	// View toggles (add more here later: indices, exposure_widgets, etc.)
 	const [showOutline, setShowOutline] = useState(true);
-    
+
     const mosaic = mosaics[mosaic_id];
-    
+
 	const availableFilters = useMemo(() => {
 		if (!mosaic) return [];
 		let filters = new Set();
@@ -48,17 +49,34 @@ export default function MosaicViewer() {
 		return Array.from(filters);
 	}, [mosaic, stacks, targets]);
 
-	const [filter, setFilter] = useState(availableFilters[0]);
+	// Persist filter and quality level in URL query params so back-navigation restores them.
+	const filter = searchParams.get("filter") || availableFilters[0];
+	const setFilter = useCallback((f) => {
+		setSearchParams((prev) => { prev.set("filter", f); return prev; }, { replace: true });
+	}, [setSearchParams]);
 
 	useEffect(() => {
 		if (!availableFilters || availableFilters.length === 0) return;
-		setFilter((prev) =>
-			availableFilters.includes(prev) ? prev : availableFilters[0]
-		);
-	}, [mosaic_id, availableFilters]);
+		if (!availableFilters.includes(filter)) {
+			setFilter(availableFilters[0]);
+		}
+	}, [mosaic_id, availableFilters, filter, setFilter]);
 
-	const [qualityLevel, setQualityLevel, enrichedLevels] =
+	const [qualityLevel, setQualityLevelState, enrichedLevels] =
 		useQualityLevels("mosaic", mosaic_id, filter);
+
+	// Sync quality level to/from URL query param.
+	const qualityFromUrl = searchParams.get("quality");
+	const setQualityLevel = useCallback((q) => {
+		setQualityLevelState(q);
+		setSearchParams((prev) => { prev.set("quality", q); return prev; }, { replace: true });
+	}, [setQualityLevelState, setSearchParams]);
+
+	useEffect(() => {
+		if (qualityFromUrl && qualityFromUrl !== qualityLevel) {
+			setQualityLevelState(qualityFromUrl);
+		}
+	}, [qualityFromUrl]);
 
 	const [telescopiusOpen, setTelescopiusOpen] = useState(false);
 
