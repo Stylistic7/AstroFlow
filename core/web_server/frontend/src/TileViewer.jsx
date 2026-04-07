@@ -204,12 +204,25 @@ const ImperativeViewport = ({ objectType, imageHash, filter, qualityLevel, port,
         g.closePath();
         // g.endFill();
 
-        // Optional: make interactive
+        // Interactive: click to navigate, hover to highlight.
         g.interactive = true;
-        g.hitArea = new PIXI.Polygon(poly.points.flat()); // hit test against polygon area
+        g.hitArea = new PIXI.Polygon(poly.points.flat());
         g.eventMode = 'static';
         g.cursor = 'pointer';
         g.on('pointertap', (event) => onClick(poly, event));
+        // Add a transparent fill child that appears on hover.
+        const highlight = new PIXI.Graphics();
+        highlight.beginFill(0xffffff, 0.15);
+        highlight.moveTo(poly.points[0][0], poly.points[0][1]);
+        for (let i = 1; i < poly.points.length; i++) {
+          highlight.lineTo(poly.points[i][0], poly.points[i][1]);
+        }
+        highlight.closePath();
+        highlight.endFill();
+        highlight.visible = false;
+        g.addChild(highlight);
+        g.on('pointerover', () => { highlight.visible = true; });
+        g.on('pointerout', () => { highlight.visible = false; });
 
         viewport.addChild(g);
 
