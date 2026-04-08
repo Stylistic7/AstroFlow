@@ -77,11 +77,16 @@ def _get_polygons(object_type: type, level: QualityLevel, *args) -> list[dict[st
     if isinstance(obj, Mosaic):
         selected_filter = args[1] if len(args) > 1 else None
         master_fn = get_filename_fn(MediaType.IMAGE, Stack, level)
+        overrides = context.settings.decision_overrides
         for t in obj.target_ids:
             target = targets[t].get()
             for sid in target.stack_ids:
                 stack = stacks[sid].get()
                 if selected_filter and stack.filter != selected_filter:
+                    continue
+                # Skip quarantined stacks.
+                from decisions.compute_graph import _is_quarantined
+                if _is_quarantined(overrides, ObjectType.STACK, sid):
                     continue
 
                 # Input polygon: the intersection of Run footprints.
