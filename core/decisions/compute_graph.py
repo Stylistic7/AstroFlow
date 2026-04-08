@@ -29,14 +29,5 @@ def _is_quarantined(
 
 
 @node
-def scatter_customize_targets(
-    decision_overrides: frozendict, targets: TargetsDict
-) -> TargetsDict:
+def scatter_customize_targets(targets: TargetsDict) -> TargetsDict:
     return targets
-
-
-@node
-def scatter_customize_mosaics(
-    decision_overrides: frozendict, mosaics: MosaicsDict
-) -> MosaicsDict:
-    return mosaics

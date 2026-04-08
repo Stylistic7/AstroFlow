@@ -27,6 +27,7 @@ from decisions.resolve import is_frame_included, resolve_calibration
 from products import makes_image, makes_video
 from file_io.generic import read_image
 from decisions.settings import ProcessingConfig
+from decisions.decisions import decisions_for_stack
 
 
 @ray.remote(num_cpus=0.1)
@@ -39,7 +40,7 @@ def scatter_stack_thumbnails() -> Graph:
     subframe_thumbnail_width = settings.preview_settings.subframe_thumbnail_width
 
     def config_for(stack_hash):
-        decisions = frozendict({k: v for k, v in settings.decision_overrides.items() if len(k) >= 3 and k[2] == stack_hash})
+        decisions = decisions_for_stack(settings.decision_overrides, stack_hash)
         return ProcessingConfig(
             calibration_stacks=calibration_stacks,
             development_settings=settings.development_settings,

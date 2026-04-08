@@ -150,3 +150,19 @@ def get_decisions_for_object(
     """Read all decisions for a specific object from context."""
     from context import context
     return context.get(_decisions_key(object_type, object_id), {})
+
+
+def decisions_for_stack(
+    decision_overrides: frozendict, stack_id: str,
+) -> frozendict:
+    """Filter decision overrides to only those keyed to a specific stack.
+
+    Decision keys are (DecisionType, ObjectType, object_id, subject_id)
+    where position [2] is the stack hash. Passing per-stack filtered
+    decisions into @node functions ensures that changing one stack's
+    decisions doesn't invalidate another stack's cache.
+    """
+    return frozendict({
+        k: v for k, v in decision_overrides.items()
+        if len(k) >= 3 and k[2] == stack_id
+    })

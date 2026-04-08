@@ -143,6 +143,7 @@ const RunsTab = ({ stack }) => {
               <QuarantineToggle
                 objectType="stack"
                 objectId={run.id}
+                parentId={stack.stable_hash}
               />
             </Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

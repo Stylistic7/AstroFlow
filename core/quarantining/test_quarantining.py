@@ -7,6 +7,7 @@ from compute_graph import build_compute_graph
 from context import context
 from decisions.decisions import (
     DecisionType, DecisionOverride, BinaryChoice, ObjectType,
+    decisions_for_stack,
 )
 from decisions.helpers import exclude, quarantine_key
 from decisions.resolve import resolve_decisions
@@ -18,6 +19,9 @@ from stacks.composite_stack import Stack
 
 @pytest.mark.heavy
 def test_quarantine_run(test_context) -> None:
+    """Quarantining a run via quarantine_key(parent_id=stack_hash) must
+    produce a key that survives config_for's per-stack filtering and
+    actually excludes the run during resolve_decisions."""
     copy_testdata_frames(
         prefix="light_run_0",
         target_name="NGC7635",
@@ -64,13 +68,20 @@ def test_quarantine_run(test_context) -> None:
     assert len(stack.contents) == 2
     runs = list(stack.contents.keys())
 
-    # Quarantine the first run.
-    overrides = frozendict(exclude(
-        (DecisionType.QUARANTINE, ObjectType.STACK, stack.stable_hash, runs[0])
-    ))
+    # Build quarantine key the same way the web endpoint does:
+    # parent_id = stack hash, object_id = run hash.
+    key = quarantine_key(ObjectType.STACK, runs[0], parent_id=stack.stable_hash)
+    assert key[2] == stack.stable_hash, "key[2] must be the stack hash for config_for filtering"
+    assert key[3] == runs[0], "key[3] must be the run hash for _apply_run_exclusions"
+
+    overrides = frozendict(exclude(key))
+
+    # Simulate config_for's per-stack filtering via decisions_for_stack.
+    filtered = decisions_for_stack(overrides, stack.stable_hash)
+    assert len(filtered) == 1, "quarantine key must survive per-stack filtering"
 
     # resolve_decisions should filter to only the second run.
-    resolved = resolve_decisions(stack, ALL_EXCLUSION_TYPES, overrides, min_frames_in_stack=1)
+    resolved = resolve_decisions(stack, ALL_EXCLUSION_TYPES, filtered, min_frames_in_stack=1)
     assert resolved is not None
     assert list(resolved.contents.keys()) == [runs[1]]
 

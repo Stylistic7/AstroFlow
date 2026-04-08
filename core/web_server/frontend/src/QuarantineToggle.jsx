@@ -5,7 +5,7 @@ import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import ToggleIconButton from './ToggleIconButton';
 import AstroFlowContext from './AstroFlowContext.jsx';
 
-export default function QuarantineToggle({ objectType, objectId }) {
+export default function QuarantineToggle({ objectType, objectId, parentId }) {
   const { isQuarantined, refreshDecisions } = useContext(AstroFlowContext);
   const [loading, setLoading] = useState(false);
 
@@ -13,8 +13,11 @@ export default function QuarantineToggle({ objectType, objectId }) {
 
   const handleToggle = async () => {
     setLoading(true);
+    const url = parentId
+      ? `/api/quarantine/${objectType}/${objectId}?parent=${parentId}`
+      : `/api/quarantine/${objectType}/${objectId}`;
     try {
-      await fetch(`/api/quarantine/${objectType}/${objectId}`, {
+      await fetch(url, {
         method: 'POST',
       });
       await refreshDecisions();

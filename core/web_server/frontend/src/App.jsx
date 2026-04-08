@@ -161,9 +161,9 @@ function App() {
   const quarantinedSet = useMemo(() => {
     const set = new Set();
     for (const { key, choice } of decisionOverrides) {
-      // key: [DecisionType, ObjectType, object_id, subject_id]
+      // key: [DecisionType, ObjectType, parent_or_object_id, subject_id]
       if (key[0] === "quarantine" && choice === "exclude") {
-        set.add(`${key[1]}:${key[2]}`);
+        set.add(`${key[1]}:${key[3]}`);
       }
     }
     return set;

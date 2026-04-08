@@ -35,6 +35,7 @@ from decisions.compute_graph import (
 from mosaics.compute_graph import stacks_for_mosaic, targets_for_mosaic
 from cache.context_ref import ContextRef
 from decisions.settings import ClusteringSettings, DevelopmentSettings
+from decisions.decisions import decisions_for_stack
 from compute_graph.objects import Objects
 
 log = structlog.get_logger()
@@ -147,7 +148,7 @@ def scatter_spatial_groups(
 
         target_task = Node(identify_targets, clustering_settings.angular_tolerance, name=str(i))
         customize_targets_task = Node(
-            scatter_customize_targets, decision_overrides, name=str(i)
+            scatter_customize_targets, name=str(i)
         )
 
         # Each target identification depends on its own spatial group's stacks.
@@ -292,8 +293,7 @@ def build_main_processing_graph(
 
     def config_for(stack_id=None, mode=QualityLevel.MASTER):
         if stack_id:
-            decisions = fd({k: v for k, v in decision_overrides.items()
-                            if len(k) >= 3 and k[2] == stack_id})
+            decisions = decisions_for_stack(decision_overrides, stack_id)
         else:
             decisions = fd(decision_overrides)
         return ProcessingConfig(

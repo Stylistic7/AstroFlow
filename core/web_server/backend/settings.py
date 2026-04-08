@@ -25,13 +25,18 @@ def toggle_quarantine(object_type, object_id):
 
     Quarantine is a decision override: EXCLUDE means quarantined,
     absent means not quarantined.
+
+    For run-level quarantine (quarantining a run within a stack), pass
+    ?parent=<stack_hash> so the decision key uses the stack hash at
+    position [2] (required for per-stack decision filtering).
     """
     type_map = {"stack": ObjectType.STACK, "target": ObjectType.TARGET, "mosaic": ObjectType.MOSAIC}
     obj_type = type_map.get(object_type)
     if obj_type is None:
         return jsonify({"error": f"Unknown object type: {object_type}"}), 400
 
-    key = quarantine_key(obj_type, object_id)
+    parent_id = request.args.get("parent")
+    key = quarantine_key(obj_type, object_id, parent_id=parent_id)
 
     current_overrides = context.settings.decision_overrides
     is_currently_quarantined = (

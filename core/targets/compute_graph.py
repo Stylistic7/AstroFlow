@@ -14,6 +14,7 @@ from targets.types import TargetsDict
 from stacks.compute_graph import build_stacking_subgraph
 from stacks.convert_to_dict import convert_to_dict
 from decisions.settings import DevelopmentSettings
+from decisions.decisions import decisions_for_stack
 from dependency_graph.workflow_graph_adapter import (
     store_workflow_graph,
     store_node_status,
@@ -36,7 +37,7 @@ def build_target_subgraph(
     all_decisions = context.settings.decision_overrides
 
     def config_for(stack_id):
-        decisions = fd({k: v for k, v in all_decisions.items() if len(k) >= 3 and k[2] == stack_id})
+        decisions = decisions_for_stack(all_decisions, stack_id)
         return ProcessingConfig(
             calibration_stacks=config.calibration_stacks,
             development_settings=config.development_settings,

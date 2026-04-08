@@ -19,9 +19,17 @@ from decisions.decisions import (
 # Key builders
 # ---------------------------------------------------------------------------
 
-def quarantine_key(object_type: ObjectType, object_id: str) -> DecisionKey:
-    """Build the decision key for quarantining an object."""
-    return (DecisionType.QUARANTINE, object_type, object_id, object_id)
+def quarantine_key(
+    object_type: ObjectType, object_id: str, parent_id: str | None = None,
+) -> DecisionKey:
+    """Build the decision key for quarantining an object.
+
+    For run-level quarantine (a run within a stack), parent_id is the
+    stack hash. Position [2] must be the stack hash so per-stack
+    decision filtering picks it up; position [3] is the run hash so
+    _apply_run_exclusions knows which run to exclude.
+    """
+    return (DecisionType.QUARANTINE, object_type, parent_id or object_id, object_id)
 
 
 _CAL_DECISION_TYPES = {
@@ -69,9 +77,11 @@ def _add_overrides(overrides: dict[DecisionKey, DecisionOverride]) -> None:
     context.settings = replace(context.settings, decision_overrides=frozendict(current))
 
 
-def set_quarantine(object_type: ObjectType, object_id: str) -> None:
+def set_quarantine(
+    object_type: ObjectType, object_id: str, parent_id: str | None = None,
+) -> None:
     """Quarantine an object (stack, target, or mosaic)."""
-    _add_overrides(exclude(quarantine_key(object_type, object_id)))
+    _add_overrides(exclude(quarantine_key(object_type, object_id, parent_id)))
 
 
 def set_calibration(cal_type: str, stack_id: str, run_id: str, cal_stack_id: str) -> None:

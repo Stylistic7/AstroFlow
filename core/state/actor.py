@@ -6,6 +6,7 @@ from collections import deque
 from typing import Any
 
 from context import context
+from decisions.decisions import decisions_for_stack
 from compute_graph import (
     build_compute_graph,
     build_regroup_graph,
@@ -71,8 +72,7 @@ def _process_stack(action: Action) -> Graph:
         calibration_stacks=context.calibration_stacks,
         development_settings=settings.development_settings,
         min_frames_in_stack=settings.clustering_settings.min_frames_in_stack,
-        decisions=fd({k: v for k, v in settings.decision_overrides.items()
-                      if len(k) >= 3 and k[2] == stack_id}),
+        decisions=decisions_for_stack(settings.decision_overrides, stack_id),
     )
 
     return Graph({(build_stacking_subgraph, stack, config): {}})

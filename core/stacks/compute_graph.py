@@ -12,7 +12,9 @@ from stacks.post_process import post_process_stack
 
 from stacks.convert_to_dict import convert_to_dict
 from metadata.image_metadata import compute_image_metadata
+from dataclasses import replace
 from decisions.settings import DevelopmentSettings
+from decisions.decisions import decisions_for_stack
 from decisions.subframe_selection import get_light_frames_sorted_by_stars
 from previews.types import QualityLevel
 from dependency_graph import Graph, Node, chain
@@ -45,13 +47,18 @@ def build_calibration_stack_subgraph(
     # Resolve calibration to discover which cal stacks this stack depends on.
     enriched = resolve_calibration(stack, config.calibration_stacks, config.decisions)
 
+    # Calibration stacks have no per-stack decisions — give them a clean
+    # config so that light-stack quarantine changes don't invalidate their cache.
+    from frozendict import frozendict as fd
+    cal_config = replace(config, decisions=fd())
+
     def visit_cal_dependencies(run: Run) -> Graph:
         """Build tasks to stack all calibration dependencies of a run."""
         subgraph = {}
         for dep in run.dependencies.values():
             if isinstance(dep, StackIdDependency):
                 cal_stack = config.calibration_stacks[dep.stack_id]
-                task = (stack_files, cal_stack, config)
+                task = (stack_files, cal_stack, cal_config)
                 cal_run = next(iter(cal_stack.contents.values()))
                 inner = visit_cal_dependencies(cal_run)
                 subgraph[task] = list(inner.keys()) if inner else []
@@ -132,7 +139,9 @@ def get_stack_image(
             )
         })
     else:
-        return Graph({(build_stacking_subgraph, stack, config): {}})
+        filtered_config = replace(config, decisions=decisions_for_stack(
+            config.decisions, stack.stable_hash))
+        return Graph({(build_stacking_subgraph, stack, filtered_config): {}})
 
 
 def _my_transform(v):
@@ -190,16 +199,20 @@ def gather_ui_stacks(*stack_dicts) -> dict:
 def process_stacks_for_ui(
     decisions,
     min_frames: int,
-    stacks: StacksDict,
-    cal_stacks: CalibrationStacksDict,
+    *ancestor_results,
 ) -> Graph:
     from cache.context_ref import ContextRef
+
+    # Ancestor results arrive in non-deterministic set order; unpack by type.
+    stacks = next(r for r in ancestor_results if isinstance(r, StacksDict))
+    cal_stacks = next(r for r in ancestor_results if isinstance(r, CalibrationStacksDict))
 
     per_stack_tasks = []
     for h, ref in stacks.items():
         stack = ref.get() if isinstance(ref, ContextRef) else ref
+        stack_decisions = decisions_for_stack(decisions, stack.stable_hash)
         per_stack_tasks.append(
-            (prepare_stack_for_ui, stack, cal_stacks, decisions, min_frames)
+            (prepare_stack_for_ui, stack, cal_stacks, stack_decisions, min_frames)
         )
 
     return Graph({gather_ui_stacks: per_stack_tasks})
