@@ -68,7 +68,7 @@ def _setup(test_context):
     )
 
 
-@pytest.mark.heavy
+@pytest.mark.exhaustive
 def test_step1_metadata_only(test_context):
     _setup(test_context)
     run_graph(Graph({scatter_compute_image_metadata: {}}))
@@ -78,7 +78,7 @@ def test_step1_metadata_only(test_context):
     print(f"\nAfter metadata: {sum(types.values())} {dict(types.most_common())}")
 
 
-@pytest.mark.heavy
+@pytest.mark.exhaustive
 def test_step2_metadata_and_regroup(test_context):
     _setup(test_context)
     settings = context.settings
@@ -93,7 +93,7 @@ def test_step2_metadata_and_regroup(test_context):
     assert len(context.mosaics or {}) == 2
 
 
-@pytest.mark.heavy
+@pytest.mark.exhaustive
 def test_step3_with_preview(test_context):
     from compute_graph.compute_graph import build_preview_graph
     _setup(test_context)
@@ -116,7 +116,7 @@ def test_step3_with_preview(test_context):
     assert len(context.mosaics or {}) == 2
 
 
-@pytest.mark.heavy
+@pytest.mark.exhaustive
 def test_step4_full_graph_with_snapshots(test_context):
     from compute_graph.compute_graph import build_compute_graph
     _setup(test_context)

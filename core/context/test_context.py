@@ -120,6 +120,7 @@ def random_garbage(n: int) -> str:
     return "".join(random.choices(string.ascii_letters + string.digits, k=n))
 
 
+@pytest.mark.exhaustive
 def test_context_actor_speed(empty_context, benchmark):
     random.seed(42)
     random_dict = {
@@ -133,6 +134,7 @@ def test_context_actor_speed(empty_context, benchmark):
     benchmark(insert_into_context_actor)
 
 
+@pytest.mark.exhaustive
 def test_direct_diskcache_speed(empty_context, benchmark):
     random.seed(42)
     random_dict = {

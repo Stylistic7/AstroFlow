@@ -42,7 +42,7 @@ _CAL_TYPE_TO_DECISION_TYPE: dict[str, DecisionType] = {
 }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, order=True)
 class DecisionKey:
     """A typed key into the decision overrides dict.
 

@@ -9,7 +9,7 @@ from context import context
 from testing import copy_testdata_frames, make_synthetic_frames, print_tree
 
 
-@pytest.mark.heavy
+@pytest.mark.exhaustive
 def test_orion_pane(test_context):
     copy_testdata_frames(
         target_name="Orion Pane 1",

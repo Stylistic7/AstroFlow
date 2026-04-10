@@ -17,7 +17,6 @@ from testing import make_synthetic_frames, copy_testdata_frames
 from stacks.composite_stack import Stack
 
 
-@pytest.mark.heavy
 def test_quarantine_run(test_context) -> None:
     """Quarantining a run via DecisionKey.quarantine(parent_stack_id=...)
     must produce a key that survives config_for's per-stack filtering and
@@ -88,7 +87,6 @@ def test_quarantine_run(test_context) -> None:
     assert list(resolved.contents.keys()) == [runs[1]]
 
 
-@pytest.mark.heavy
 def test_quarantine_target(with_orion_mosaic):
     """Quarantining a target via decision override marks it as quarantined."""
     assert len(context.targets) == 4
@@ -105,7 +103,6 @@ def test_quarantine_target(with_orion_mosaic):
         assert not _is_quarantined(overrides, ObjectType.TARGET, h)
 
 
-@pytest.mark.heavy
 def test_quarantine_stack(with_orion_mosaic):
     """Quarantining a stack via decision override marks it as quarantined."""
     stack_hash = next(iter(context.stacks))

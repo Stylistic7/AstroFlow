@@ -17,7 +17,7 @@ def print_dict_skeleton(d, indent=0):
         print_dict_skeleton(d[k], indent + 1)
 
 
-@pytest.mark.heavy
+@pytest.mark.exhaustive
 def test_convert_to_dict(test_context) -> None:
     copy_testdata_frames(
         prefix="light_run_0",

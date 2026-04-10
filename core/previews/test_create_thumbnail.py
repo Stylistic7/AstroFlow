@@ -24,7 +24,7 @@ def stack_files(stack: Stack) -> TiffFilePath:
     return output_path
 
 
-@pytest.mark.heavy
+@pytest.mark.exhaustive
 def test_single_stack(test_context) -> None:
     copy_testdata_frames(
         prefix="light_run_0",

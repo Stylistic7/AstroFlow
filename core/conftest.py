@@ -1,4 +1,6 @@
+import faulthandler
 import os
+import signal
 import threading
 from dataclasses import dataclass
 from typing import Any
@@ -7,11 +9,26 @@ import psutil
 import ray
 import pytest
 
+# Dump stack traces of all threads on SIGUSR1 — lets us diagnose hangs
+# by sending kill -USR1 <pid>.
+faulthandler.register(signal.SIGUSR1)
+
 
 def pytest_collection_modifyitems(config, items):
     exclusive = [item for item in items if "exclusive" in item.keywords]
     normal = [item for item in items if "exclusive" not in item.keywords]
     items[:] = normal + exclusive  # run normal tests first
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_protocol(item, nextitem):
+    """Log every test start/end with pid+time so we can trace hangs."""
+    import time
+    print(f"\n[test-start pid={os.getpid()} t={time.time():.1f}] {item.nodeid}", flush=True)
+    start = time.monotonic()
+    yield
+    elapsed = time.monotonic() - start
+    print(f"[test-end   pid={os.getpid()} +{elapsed:.1f}s] {item.nodeid}", flush=True)
 
 
 _MAX_MEMORY_PERCENT = int(os.environ.get("ASTROFLOW_TEST_MAX_MEMORY_PERCENT", "50"))
@@ -56,17 +73,20 @@ def report_peak_memory(request):
 
 @pytest.fixture(scope="session", autouse=True)
 def init_ray(worker_id):
+    import time
+    print(f"[init_ray START pid={os.getpid()} t={time.time():.1f}]", flush=True)
     assert not ray.is_initialized()
-    from ray_infra.ray_local import enable_test_mode
+    from ray_infra.ray_local import enable_test_mode, disable_test_mode
 
     enable_test_mode()
     assert ray.is_initialized()
+    print(f"[init_ray READY pid={os.getpid()} t={time.time():.1f}]", flush=True)
 
     yield
 
-    # Force-disconnect so xdist workers exit promptly.  ray.shutdown()
-    # can block indefinitely waiting for background threads in actors.
-    ray.shutdown(_exiting_interpreter=True)
+    print(f"[init_ray TEARDOWN START pid={os.getpid()} t={time.time():.1f}]", flush=True)
+    disable_test_mode()
+    print(f"[init_ray TEARDOWN DONE pid={os.getpid()} t={time.time():.1f}]", flush=True)
 
 
 @pytest.fixture(autouse=True)
@@ -246,14 +266,17 @@ def orion_mosaic_snapshot(init_ray):
     hermetic context per test. The temp dirs are kept alive for the session
     so that tests which re-run the graph can find the input files.
     """
+    import time
     from testing.test_context import make_test_context
     from mosaics.orion_mosaic import add_orion_mosaic_images
     from compute_graph.compute_graph import build_compute_graph
     from dependency_graph import run_graph
 
+    print(f"[orion_snapshot START pid={os.getpid()} t={time.time():.1f}]", flush=True)
     ctx = make_test_context()
     add_orion_mosaic_images()
     run_graph(build_compute_graph())
+    print(f"[orion_snapshot READY pid={os.getpid()} t={time.time():.1f}]", flush=True)
 
     from context import context
     snapshot = ContextSnapshot(
@@ -262,8 +285,10 @@ def orion_mosaic_snapshot(init_ray):
         output_dir=str(context.output_dir),
     )
     yield snapshot
+    print(f"[orion_snapshot TEARDOWN pid={os.getpid()} t={time.time():.1f}]", flush=True)
     ctx.input_dir_obj.cleanup()
     ctx.output_dir_obj.cleanup()
+    print(f"[orion_snapshot CLEANED pid={os.getpid()} t={time.time():.1f}]", flush=True)
 
 
 @pytest.fixture

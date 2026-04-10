@@ -27,7 +27,7 @@ def _override_flats_for_all_stacks():
             set_flat(stack.stable_hash, run_hash, flat_stack_id)
 
 
-@pytest.mark.heavy
+@pytest.mark.exhaustive
 def test_sagittarius_mosaic(test_context) -> None:
     copy_testdata_frames(
         target_name="Sagittarius Pane 1",
@@ -55,7 +55,7 @@ def test_sagittarius_mosaic(test_context) -> None:
     assert len(context.mosaics) == 1
 
 
-@pytest.mark.heavy
+@pytest.mark.exhaustive
 def test_orion_mosaic(test_context) -> None:
     add_orion_mosaic_images()
 
@@ -125,7 +125,7 @@ def test_orion_mosaic(test_context) -> None:
     assert list(ui_mosaics.keys()) == [mosaic.stable_hash]
 
 
-@pytest.mark.heavy
+@pytest.mark.exhaustive
 def test_orion_mosaic_with_missing_panel(test_context) -> None:
     copy_testdata_frames(
         target_name="Orion Pane 1",
@@ -176,7 +176,7 @@ def random_garbage(n: int) -> str:
     return "".join(random.choices(string.ascii_letters + string.digits, k=n))
 
 
-@pytest.mark.heavy
+@pytest.mark.exhaustive
 def test_context_actor_speed(benchmark):
     copy_testdata_frames(
         target_name="Orion Pane 1",
@@ -218,7 +218,7 @@ def test_context_actor_speed(benchmark):
     benchmark(insert_into_context_actor)
 
 
-@pytest.mark.heavy
+@pytest.mark.exhaustive
 def test_direct_diskcache_speed(benchmark):
     copy_testdata_frames(
         target_name="Orion Pane 1",

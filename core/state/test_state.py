@@ -1,8 +1,6 @@
-import ray
-import os
 import datetime
+import pytest
 from pathlib import Path
-import time
 
 from compute_graph import build_compute_graph
 from context import context
@@ -12,11 +10,7 @@ from file_io.find_image_files import find_image_files
 from decisions.helpers import set_flat
 
 
-@ray.remote
-def my_task(input):
-    time.sleep(5)
-
-
+@pytest.mark.exhaustive
 def test_single_compute_graph(test_context):
     copy_testdata_frames(
         prefix="light_run_0",

@@ -6,7 +6,6 @@ from dependency_graph import run_graph
 from testing import make_synthetic_frames
 
 
-@pytest.mark.heavy
 def test_one_perfect_stack(test_context):
     make_synthetic_frames(
         ra=100,
@@ -30,7 +29,6 @@ def test_one_perfect_stack(test_context):
     assert len(stack.frames) == 10
 
 
-@pytest.mark.heavy
 def test_two_stacks_different_image_scales(test_context):
     make_synthetic_frames(
         ra=100,
@@ -73,7 +71,6 @@ def test_two_stacks_different_image_scales(test_context):
     assert len(frames) == 10
 
 
-@pytest.mark.heavy
 def test_two_stacks_different_image_sizes(test_context):
     # Note that these two groups have the same generic camera name, which is
     # typical of some capture software.
@@ -120,7 +117,6 @@ def test_two_stacks_different_image_sizes(test_context):
     assert stack.image_scale == 1.0
 
 
-@pytest.mark.heavy
 def test_multiple_exposures(test_context):
     make_synthetic_frames(
         ra=100,

@@ -12,7 +12,7 @@ from decisions.helpers import set_flat
 from previews.types import QualityLevel
 
 
-@pytest.mark.heavy
+@pytest.mark.exhaustive
 def test_downscaled_stack(test_context):
     """Stack a single pane at DOWNSCALED_MASTER quality with real PixInsight."""
     copy_testdata_frames(

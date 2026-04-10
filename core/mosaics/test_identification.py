@@ -26,7 +26,6 @@ def _make_targets_dict(*targets):
     })
 
 
-@pytest.mark.heavy
 def test_two_targets(test_context) -> None:
     # These two targets are on the celestial equator, but overlap by one degree
     # in right ascension. This is the easiest case to think about.
@@ -91,7 +90,6 @@ def test_two_targets(test_context) -> None:
     # self.assertTrue(np.isclose(ratio, (7 * 2) / (4 * 2 + 4 * 2), atol=1e-3))
 
 
-@pytest.mark.heavy
 def test_three_targets(test_context) -> None:
     foo_footprint = SingleSphericalPolygon.from_radec(
         [98.01, 102.01, 102.01, 98.01], [-1, -1, 1, 1], center=(100.01, 0.0)
@@ -175,7 +173,6 @@ def test_three_targets(test_context) -> None:
     # self.assertTrue(np.isclose(ratio, (7 * 2 + 4 * 1) / (3 * 4 * 2), atol=1e-3))
 
 
-@pytest.mark.heavy
 def test_three_out_of_order_targets(test_context) -> None:
     foo_footprint = SingleSphericalPolygon.from_radec(
         [98.01, 102.01, 102.01, 98.01], [0, 0, 2, 2]
@@ -252,7 +249,6 @@ def test_three_out_of_order_targets(test_context) -> None:
     )
 
 
-@pytest.mark.heavy
 def test_three_targets_and_an_outlier(test_context) -> None:
     foo_footprint = SingleSphericalPolygon.from_radec(
         [98, 102, 102, 98], [-1, -1, 1, 1]
@@ -348,7 +344,6 @@ def test_three_targets_and_an_outlier(test_context) -> None:
     assert sorted(mosaic.strips[1]) == sorted([foo.stable_hash])
 
 
-@pytest.mark.heavy
 def test_ic1318(test_context) -> None:
     foo_footprint = SingleSphericalPolygon(
         np.array(
@@ -424,7 +419,6 @@ def test_ic1318(test_context) -> None:
 
 
 # TODO: Make this actually test something.
-@pytest.mark.heavy
 def test_big_cygnus_pano(with_real_testdata) -> None:
     copy_testdata_into_cache()
 

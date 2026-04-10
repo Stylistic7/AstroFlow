@@ -12,7 +12,7 @@ from mosaics.orion_mosaic import add_orion_mosaic_images
 from metadata.image_metadata import load_metadata
 
 
-@pytest.mark.heavy
+@pytest.mark.exhaustive
 def test_hashes_and_metadata(test_context) -> None:
     """Hash stability for stacks and metadata after identification.
 

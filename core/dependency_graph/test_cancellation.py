@@ -42,7 +42,6 @@ def never_runs(counter, tag: str, *_ancestors):
     return tag
 
 
-@pytest.mark.heavy
 def test_drain_lets_inflight_finish_and_skips_waiting(test_context):
     """Graph with 2 slow leaf tasks and many waiting children. Setting
     drain_event *after* the leaves start should:
@@ -92,7 +91,6 @@ def test_drain_lets_inflight_finish_and_skips_waiting(test_context):
     assert elapsed >= 1.5, f"Drain returned too fast ({elapsed:.2f}s)"
 
 
-@pytest.mark.heavy
 def test_no_drain_runs_normally(test_context):
     """Without a drain event, the graph runs to completion."""
     @ray.remote

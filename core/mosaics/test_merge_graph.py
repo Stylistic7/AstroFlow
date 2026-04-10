@@ -69,7 +69,7 @@ def make_test_target(
     )
 
 
-@pytest.mark.heavy
+@pytest.mark.exhaustive
 def test_three_by_one(test_context) -> None:
     mode = QualityLevel.SUBFRAME
     filter = "H"
@@ -155,7 +155,7 @@ def test_three_by_one(test_context) -> None:
     assert canonicalize_graph(graph) == canonicalize_graph(expected_graph)
 
 
-@pytest.mark.heavy
+@pytest.mark.exhaustive
 def test_two_by_three(test_context) -> None:
     mode = QualityLevel.SUBFRAME
     filter = "H"
@@ -275,7 +275,7 @@ def test_two_by_three(test_context) -> None:
     assert canonicalize_graph(graph) == canonicalize_graph(expected_graph)
 
 
-@pytest.mark.heavy
+@pytest.mark.exhaustive
 def test_three_panes(test_context) -> None:
     mode = QualityLevel.SUBFRAME
     filter = "H"
@@ -363,7 +363,7 @@ def test_three_panes(test_context) -> None:
     assert canonicalize_graph(graph) == canonicalize_graph(expected_graph)
 
 
-@pytest.mark.heavy
+@pytest.mark.exhaustive
 def test_orion_mosaic(test_context) -> None:
     add_orion_mosaic_images()
 
@@ -470,7 +470,7 @@ def test_orion_mosaic(test_context) -> None:
     assert canonicalize_graph(graph) == canonicalize_graph(expected_graph)
 
 
-@pytest.mark.heavy
+@pytest.mark.exhaustive
 def test_orion_mosaic_one_by_two(test_context) -> None:
     add_orion_mosaic_images(panes=[1, 2])
 
@@ -540,7 +540,7 @@ def test_orion_mosaic_one_by_two(test_context) -> None:
     assert canonicalize_graph(graph) == canonicalize_graph(expected_graph)
 
 
-@pytest.mark.heavy
+@pytest.mark.exhaustive
 def test_orion_mosaic_two_by_one(test_context) -> None:
     add_orion_mosaic_images(panes=[1, 3])
 
@@ -608,7 +608,7 @@ def test_orion_mosaic_two_by_one(test_context) -> None:
     assert canonicalize_graph(graph) == canonicalize_graph(expected_graph)
 
 
-@pytest.mark.heavy
+@pytest.mark.exhaustive
 def test_orion_mosaic_missing_panel(test_context) -> None:
     add_orion_mosaic_images(panes=[1, 2, 3])
 

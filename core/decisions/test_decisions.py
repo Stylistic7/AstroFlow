@@ -83,7 +83,6 @@ def test_resolve_decision_override_caches_default_for_ui(test_context):
     assert cached[key].default_choice == BinaryChoice.INCLUDE
 
 
-@pytest.mark.heavy
 def test_rotation_outlier_detection_and_exclusion(test_context):
     """Rotation outlier: detection, resolve_decisions filtering, and cache key invalidation."""
     make_synthetic_frames(
@@ -152,7 +151,6 @@ def test_rotation_outlier_detection_and_exclusion(test_context):
     )
 
 
-@pytest.mark.heavy
 def test_subframe_quality_decision_and_filtering(test_context):
     """Subframe quality: detection, metadata, resolve_decisions filtering, and override."""
     make_synthetic_frames(
@@ -209,7 +207,6 @@ def test_subframe_quality_decision_and_filtering(test_context):
     assert len(resolved.all_frames()) <= 10
 
 
-@pytest.mark.heavy
 def test_no_subframe_decision_for_minor_exclusion(test_context):
     """When only a small fraction of frames are excluded, no decision is generated."""
     make_synthetic_frames(
@@ -242,7 +239,6 @@ def test_no_subframe_decision_for_minor_exclusion(test_context):
     assert len(quality_decisions) == 0
 
 
-@pytest.mark.heavy
 def test_no_decisions_for_uniform_rotation(test_context):
     """Frames with identical rotation should not generate decisions."""
     make_synthetic_frames(

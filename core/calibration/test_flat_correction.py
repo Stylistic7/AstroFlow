@@ -1,4 +1,5 @@
 import datetime
+import pytest
 
 from context import context
 from testing import make_synthetic_frames, copy_testdata_frames
@@ -6,6 +7,7 @@ from dependency_graph import run_graph
 from compute_graph import build_compute_graph
 
 
+@pytest.mark.exhaustive
 def test_one_perfect_stack(test_context) -> None:
     copy_testdata_frames(
         prefix="light_run",

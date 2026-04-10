@@ -12,7 +12,6 @@ from decisions.helpers import exclude
 from decisions.compute_graph import _is_quarantined
 
 
-@pytest.mark.heavy
 def test_is_quarantined(test_context):
     """_is_quarantined returns True only when an explicit EXCLUDE override exists."""
     overrides = frozendict(exclude(DecisionKey.quarantine(ObjectType.TARGET, "abc")))
@@ -21,7 +20,6 @@ def test_is_quarantined(test_context):
     assert not _is_quarantined(frozendict(), ObjectType.TARGET, "abc")
 
 
-@pytest.mark.heavy
 def test_all_stacks_quarantined_implies_target_quarantined(test_context):
     """When every stack in a target is quarantined, the target is effectively quarantined."""
     make_synthetic_frames(
@@ -52,7 +50,6 @@ def test_all_stacks_quarantined_implies_target_quarantined(test_context):
     )
 
 
-@pytest.mark.heavy
 def test_partial_quarantine_does_not_affect_target(test_context):
     """When only some stacks are quarantined, the target is not effectively quarantined."""
     make_synthetic_frames(

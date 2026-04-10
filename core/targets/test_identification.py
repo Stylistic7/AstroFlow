@@ -3,7 +3,6 @@ from context import context
 from stacks.composite_stack import Stack
 
 
-@pytest.mark.heavy
 def test_orion_nebula(with_real_testdata):
     assert len(context.stacks) > 0
     assert len(context.targets) > 0

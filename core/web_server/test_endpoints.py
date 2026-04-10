@@ -16,7 +16,7 @@ def client(test_context):
         yield client
 
 
-@pytest.mark.heavy
+@pytest.mark.exhaustive
 def test_orion_mosaic_endpoints(client, with_orion_mosaic):
     """Verify all API endpoints return correct data for a 4-pane Orion mosaic."""
     # /stacks

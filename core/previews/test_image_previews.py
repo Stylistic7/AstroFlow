@@ -18,7 +18,7 @@ from file_io.find_image_files import find_image_files
 ensure_producers_registered()
 
 
-@pytest.mark.heavy
+@pytest.mark.exhaustive
 def test_stack_dependency_graph(test_context) -> None:
     # These runs of dark and bias frames will be used by both runs of light
     # frames.

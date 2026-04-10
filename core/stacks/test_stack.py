@@ -10,7 +10,7 @@ from stacks.composite_stack import Stack
 from stacks.types import StackHash, StackIdDependency
 
 
-@pytest.mark.heavy
+@pytest.mark.exhaustive
 def test_one_dark_stack(test_context):
     make_synthetic_frames(
         prefix="dark",
@@ -44,7 +44,7 @@ def test_one_dark_stack(test_context):
     assert stack.height_pixels == 6388
 
 
-@pytest.mark.heavy
+@pytest.mark.exhaustive
 def test_one_light_one_dark(test_context):
     copy_testdata_frames(target_name="NGC7635", dest_dir=context.input_dirs[0])
     make_synthetic_frames(

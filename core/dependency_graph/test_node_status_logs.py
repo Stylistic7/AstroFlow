@@ -32,7 +32,6 @@ def _log_key(func, *args):
     return ("logs", func._function.__name__, call_hash)
 
 
-@pytest.mark.heavy
 def test_node_captures_structured_logs(test_context):
     task_node = Node(task_with_logs, 21)
     graph = Graph({task_node: {}})
@@ -57,7 +56,6 @@ def test_node_captures_structured_logs(test_context):
         assert "timestamp" in entry
 
 
-@pytest.mark.heavy
 def test_node_captures_logs_on_exception(test_context):
     task_node = Node(task_that_fails, 5)
     graph = Graph({task_node: {}})
