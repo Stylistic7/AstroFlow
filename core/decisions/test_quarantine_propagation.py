@@ -7,15 +7,15 @@ from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import run_graph
 from testing import make_synthetic_frames
-from decisions.decisions import ObjectType
-from decisions.helpers import quarantine_key, exclude
+from decisions.decisions import DecisionKey, ObjectType
+from decisions.helpers import exclude
 from decisions.compute_graph import _is_quarantined
 
 
 @pytest.mark.heavy
 def test_is_quarantined(test_context):
     """_is_quarantined returns True only when an explicit EXCLUDE override exists."""
-    overrides = frozendict(exclude(quarantine_key(ObjectType.TARGET, "abc")))
+    overrides = frozendict(exclude(DecisionKey.quarantine(ObjectType.TARGET, "abc")))
     assert _is_quarantined(overrides, ObjectType.TARGET, "abc")
     assert not _is_quarantined(overrides, ObjectType.TARGET, "xyz")
     assert not _is_quarantined(frozendict(), ObjectType.TARGET, "abc")
@@ -39,7 +39,7 @@ def test_all_stacks_quarantined_implies_target_quarantined(test_context):
     # Quarantine every stack.
     overrides = {}
     for stack_id in target.stack_ids:
-        overrides |= exclude(quarantine_key(ObjectType.STACK, stack_id))
+        overrides |= exclude(DecisionKey.quarantine(ObjectType.STACK, stack_id))
     overrides = frozendict(overrides)
 
     # Target itself is not explicitly quarantined...
@@ -75,7 +75,7 @@ def test_partial_quarantine_does_not_affect_target(test_context):
 
     # Quarantine only one stack.
     first_stack_id = target.stack_ids[0]
-    overrides = frozendict(exclude(quarantine_key(ObjectType.STACK, first_stack_id)))
+    overrides = frozendict(exclude(DecisionKey.quarantine(ObjectType.STACK, first_stack_id)))
 
     assert _is_quarantined(overrides, ObjectType.STACK, first_stack_id)
     assert not _is_quarantined(overrides, ObjectType.STACK, target.stack_ids[1])

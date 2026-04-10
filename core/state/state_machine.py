@@ -110,7 +110,7 @@ def _populate_context(
 
     context.shopping_cart = [
         ("mosaic", "75a1da6463e118e6", "DownscaledMaster"),
-        ("mosaic", "75a1da6463e118e6", "Masterow l"),
+        ("mosaic", "75a1da6463e118e6", "Master"),
     ]
     context.ray_head_node_enabled = True
 

@@ -22,11 +22,11 @@ def _apply_run_exclusions(
 ) -> Stack | None:
     """Remove runs excluded by a specific decision type."""
     excluded = {
-        key[3]  # subject_id = run hash
+        key.subject_id
         for key, override in decision_overrides.items()
         if (
-            key[0] == decision_type
-            and key[1] == ObjectType.STACK
+            key.decision_type == decision_type
+            and key.object_type == ObjectType.STACK
             and override.choice == BinaryChoice.EXCLUDE
         )
     }
@@ -79,10 +79,7 @@ def is_frame_included(
         return False
 
     # Check the resolved quality threshold from the decision cache.
-    quality_key = (
-        DecisionType.SUBFRAME_QUALITY, ObjectType.STACK,
-        stack.stable_hash, stack.stable_hash,
-    )
+    quality_key = DecisionKey.subframe_quality(stack.stable_hash)
 
     # Check override first.
     override = decision_overrides.get(quality_key)
@@ -109,16 +106,21 @@ def is_run_included(
     decision_overrides: frozendict[DecisionKey, DecisionOverride],
 ) -> bool:
     """Check if a run survives rotation/quarantine decisions. For per-run annotation."""
-    for dt in (DecisionType.QUARANTINE, DecisionType.ROTATION_OUTLIER):
-        key = (dt, ObjectType.STACK, stack.stable_hash, run_hash)
+    keys = (
+        DecisionKey.quarantine(
+            ObjectType.STACK, run_hash, parent_stack_id=stack.stable_hash,
+        ),
+        DecisionKey.rotation_outlier(stack.stable_hash, run_hash),
+    )
+
+    for key in keys:
         override = decision_overrides.get(key)
         if override is not None and override.choice == BinaryChoice.EXCLUDE:
             return False
 
     # Check published decisions — if the default is EXCLUDE (unlikely but possible).
     decisions = get_decisions_for_object(ObjectType.STACK, stack.stable_hash)
-    for dt in (DecisionType.QUARANTINE, DecisionType.ROTATION_OUTLIER):
-        key = (dt, ObjectType.STACK, stack.stable_hash, run_hash)
+    for key in keys:
         dp = decisions.get(key)
         if dp is not None:
             choice = resolve_decision(dp, decision_overrides, default=dp.default_choice)
@@ -131,12 +133,6 @@ def is_run_included(
 # ---------------------------------------------------------------------------
 # Calibration resolution via the decision framework
 # ---------------------------------------------------------------------------
-
-_CAL_DECISION_TYPES = {
-    "bias": DecisionType.CALIBRATION_BIAS,
-    "dark": DecisionType.CALIBRATION_DARK,
-    "flat": DecisionType.CALIBRATION_FLAT,
-}
 
 _CALIBRATIONS_FOR_IMAGE_TYPE = {
     "bias": [],
@@ -197,11 +193,8 @@ def resolve_calibration(
             if cal_type in deps:
                 continue  # Already set (e.g., from cal-to-cal association)
 
-            dt = _CAL_DECISION_TYPES[cal_type]
             decision = DecisionPoint.make(
-                decision_type=dt,
-                object_id=stack.stable_hash,
-                subject_id=run_hash,
+                key=DecisionKey.calibration(cal_type, stack.stable_hash, run_hash),
                 title=f"Calibration: {cal_type}",
                 description=f"Which {cal_type} stack to use for this run",
             )

@@ -6,10 +6,10 @@ from frozendict import frozendict
 from compute_graph import build_compute_graph
 from context import context
 from decisions.decisions import (
-    DecisionType, DecisionOverride, BinaryChoice, ObjectType,
+    DecisionKey, DecisionType, DecisionOverride, BinaryChoice, ObjectType,
     decisions_for_stack,
 )
-from decisions.helpers import exclude, quarantine_key
+from decisions.helpers import exclude
 from decisions.resolve import resolve_decisions
 from decisions.compute_graph import ALL_EXCLUSION_TYPES, _is_quarantined
 from dependency_graph import run_graph
@@ -19,8 +19,8 @@ from stacks.composite_stack import Stack
 
 @pytest.mark.heavy
 def test_quarantine_run(test_context) -> None:
-    """Quarantining a run via quarantine_key(parent_id=stack_hash) must
-    produce a key that survives config_for's per-stack filtering and
+    """Quarantining a run via DecisionKey.quarantine(parent_stack_id=...)
+    must produce a key that survives config_for's per-stack filtering and
     actually excludes the run during resolve_decisions."""
     copy_testdata_frames(
         prefix="light_run_0",
@@ -69,10 +69,12 @@ def test_quarantine_run(test_context) -> None:
     runs = list(stack.contents.keys())
 
     # Build quarantine key the same way the web endpoint does:
-    # parent_id = stack hash, object_id = run hash.
-    key = quarantine_key(ObjectType.STACK, runs[0], parent_id=stack.stable_hash)
-    assert key[2] == stack.stable_hash, "key[2] must be the stack hash for config_for filtering"
-    assert key[3] == runs[0], "key[3] must be the run hash for _apply_run_exclusions"
+    # parent_stack_id = stack hash, subject_id = run hash.
+    key = DecisionKey.quarantine(
+        ObjectType.STACK, runs[0], parent_stack_id=stack.stable_hash,
+    )
+    assert key.parent_stack_id == stack.stable_hash, "must be the stack hash for config_for filtering"
+    assert key.subject_id == runs[0], "must be the run hash for _apply_run_exclusions"
 
     overrides = frozendict(exclude(key))
 
@@ -93,7 +95,7 @@ def test_quarantine_target(with_orion_mosaic):
     assert len(context.mosaics) == 1
 
     target_hash = next(iter(context.targets))
-    overrides = frozendict(exclude(quarantine_key(ObjectType.TARGET, target_hash)))
+    overrides = frozendict(exclude(DecisionKey.quarantine(ObjectType.TARGET, target_hash)))
 
     assert _is_quarantined(overrides, ObjectType.TARGET, target_hash)
 
@@ -107,7 +109,7 @@ def test_quarantine_target(with_orion_mosaic):
 def test_quarantine_stack(with_orion_mosaic):
     """Quarantining a stack via decision override marks it as quarantined."""
     stack_hash = next(iter(context.stacks))
-    overrides = frozendict(exclude(quarantine_key(ObjectType.STACK, stack_hash)))
+    overrides = frozendict(exclude(DecisionKey.quarantine(ObjectType.STACK, stack_hash)))
 
     assert _is_quarantined(overrides, ObjectType.STACK, stack_hash)
 

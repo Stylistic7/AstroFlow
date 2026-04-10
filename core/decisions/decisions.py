@@ -10,7 +10,6 @@ from hashing import hash_dataclass
 class DecisionType(str, Enum):
     QUARANTINE = "quarantine"
     ROTATION_OUTLIER = "rotation_outlier"
-    SMALL_RUN = "small_run"
     SUBFRAME_QUALITY = "subframe_quality"
     CALIBRATION_BIAS = "calibration_bias"
     CALIBRATION_DARK = "calibration_dark"
@@ -21,8 +20,7 @@ class DecisionType(str, Enum):
 DECISION_PRECEDENCE: dict["DecisionType", int] = {
     DecisionType.QUARANTINE: 0,
     DecisionType.ROTATION_OUTLIER: 1,
-    DecisionType.SMALL_RUN: 2,
-    DecisionType.SUBFRAME_QUALITY: 3,
+    DecisionType.SUBFRAME_QUALITY: 2,
 }
 
 
@@ -37,9 +35,70 @@ class ObjectType(str, Enum):
     MOSAIC = "mosaic"
 
 
-# Unique identifier for a decision — deterministic tuple of enums/hashes.
-# e.g. (DecisionType.ROTATION_OUTLIER, ObjectType.STACK, stack_hash, substack_hash)
-DecisionKey = tuple[DecisionType, ObjectType, str, str]
+_CAL_TYPE_TO_DECISION_TYPE: dict[str, DecisionType] = {
+    "bias": DecisionType.CALIBRATION_BIAS,
+    "dark": DecisionType.CALIBRATION_DARK,
+    "flat": DecisionType.CALIBRATION_FLAT,
+}
+
+
+@dataclass(frozen=True)
+class DecisionKey:
+    """A typed key into the decision overrides dict.
+
+    `parent_stack_id` is the stack hash that owns this decision — used
+    by per-stack cache filtering. For stack/target/mosaic-level
+    decisions, `parent_stack_id == subject_id`. For run-level decisions,
+    `subject_id` is the run hash.
+    """
+    decision_type: DecisionType
+    object_type: ObjectType
+    parent_stack_id: str
+    subject_id: str
+
+    def __hash__(self):
+        return hash_dataclass(self)
+
+    def matches_stack(self, stack_id: str) -> bool:
+        """True if this decision belongs to the given stack."""
+        return self.parent_stack_id == stack_id
+
+    @classmethod
+    def quarantine(
+        cls,
+        object_type: "ObjectType",
+        object_id: str,
+        parent_stack_id: str | None = None,
+    ) -> "DecisionKey":
+        return cls(
+            DecisionType.QUARANTINE,
+            object_type,
+            parent_stack_id or object_id,
+            object_id,
+        )
+
+    @classmethod
+    def rotation_outlier(cls, stack_id: str, run_id: str) -> "DecisionKey":
+        return cls(
+            DecisionType.ROTATION_OUTLIER, ObjectType.STACK, stack_id, run_id,
+        )
+
+    @classmethod
+    def subframe_quality(cls, stack_id: str) -> "DecisionKey":
+        return cls(
+            DecisionType.SUBFRAME_QUALITY, ObjectType.STACK, stack_id, stack_id,
+        )
+
+    @classmethod
+    def calibration(
+        cls, cal_type: str, stack_id: str, run_id: str,
+    ) -> "DecisionKey":
+        return cls(
+            _CAL_TYPE_TO_DECISION_TYPE[cal_type],
+            ObjectType.STACK,
+            stack_id,
+            run_id,
+        )
 
 
 @dataclass(frozen=True)
@@ -59,25 +118,21 @@ class DecisionPoint:
 
     @staticmethod
     def make(
-        decision_type: DecisionType,
-        object_id: str,
-        subject_id: str,
+        key: DecisionKey,
         title: str,
         description: str,
         metadata: dict | frozendict = frozendict(),
-        object_type: ObjectType = ObjectType.STACK,
     ) -> "DecisionPoint":
-        key = (decision_type, object_type, object_id, subject_id)
         return DecisionPoint(
             key=key,
-            decision_type=decision_type,
+            decision_type=key.decision_type,
             default_choice=None,  # Filled by resolve_decision's lazy default
             title=title,
             description=description,
             metadata=frozendict(metadata) if isinstance(metadata, dict) else metadata,
-            object_type=object_type,
-            object_id=object_id,
-            subject_id=subject_id,
+            object_type=key.object_type,
+            object_id=key.parent_stack_id,
+            subject_id=key.subject_id,
         )
 
 
@@ -157,12 +212,11 @@ def decisions_for_stack(
 ) -> frozendict:
     """Filter decision overrides to only those keyed to a specific stack.
 
-    Decision keys are (DecisionType, ObjectType, object_id, subject_id)
-    where position [2] is the stack hash. Passing per-stack filtered
-    decisions into @node functions ensures that changing one stack's
-    decisions doesn't invalidate another stack's cache.
+    Passing per-stack filtered decisions into @node functions ensures
+    that changing one stack's decisions doesn't invalidate another
+    stack's cache.
     """
     return frozendict({
         k: v for k, v in decision_overrides.items()
-        if len(k) >= 3 and k[2] == stack_id
+        if k.matches_stack(stack_id)
     })

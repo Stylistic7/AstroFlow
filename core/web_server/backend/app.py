@@ -242,12 +242,11 @@ def stacks():
 @app.route("/api/decision_overrides")
 def decision_overrides():
     """Return all decision overrides for the frontend to resolve locally."""
-    from decisions.decisions import DecisionOverride
+    from web_server.backend.decisions import _serialize_key
     overrides = context.settings.decision_overrides or {}
-    # Serialize tuple keys to JSON-safe arrays
     return {
         "overrides": [
-            {"key": [e.value if hasattr(e, 'value') else e for e in k], "choice": v.choice.value}
+            {"key": _serialize_key(k), "choice": v.choice.value}
             for k, v in overrides.items()
         ]
     }

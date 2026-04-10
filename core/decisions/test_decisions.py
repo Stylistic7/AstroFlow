@@ -8,6 +8,7 @@ from context import context
 from dependency_graph import run_graph
 from testing import make_synthetic_frames
 from decisions.decisions import (
+    DecisionKey,
     DecisionPoint,
     DecisionType,
     BinaryChoice,
@@ -20,16 +21,21 @@ from decisions.resolve import resolve_decisions
 from decisions.compute_graph import ALL_EXCLUSION_TYPES
 
 
-def _make_decision(key):
+def _make_decision(key: DecisionKey) -> DecisionPoint:
     return DecisionPoint(
-        key=key, decision_type=key[0], default_choice=BinaryChoice.INCLUDE,
-        title="test", description="test",
-        object_type=key[1], object_id=key[2], subject_id=key[3],
+        key=key,
+        decision_type=key.decision_type,
+        default_choice=BinaryChoice.INCLUDE,
+        title="test",
+        description="test",
+        object_type=key.object_type,
+        object_id=key.parent_stack_id,
+        subject_id=key.subject_id,
     )
 
 
 def test_resolve_decision_default(test_context):
-    key = (DecisionType.ROTATION_OUTLIER, ObjectType.STACK, "s1", "r1")
+    key = DecisionKey.rotation_outlier("s1", "r1")
     dp = _make_decision(key)
     # No override → default value is computed, cached, and returned.
     assert resolve_decision(dp, frozendict(), default=BinaryChoice.INCLUDE) == BinaryChoice.INCLUDE
@@ -38,7 +44,7 @@ def test_resolve_decision_default(test_context):
 
 
 def test_resolve_decision_callable_default(test_context):
-    key = (DecisionType.ROTATION_OUTLIER, ObjectType.STACK, "s2", "r2")
+    key = DecisionKey.rotation_outlier("s2", "r2")
     dp = _make_decision(key)
     call_count = [0]
     def expensive_default():
@@ -53,7 +59,7 @@ def test_resolve_decision_callable_default(test_context):
 
 
 def test_resolve_decision_override(test_context):
-    key = (DecisionType.ROTATION_OUTLIER, ObjectType.STACK, "s1", "r1")
+    key = DecisionKey.rotation_outlier("s1", "r1")
     dp = _make_decision(key)
     overrides = frozendict({
         key: DecisionOverride(choice=BinaryChoice.EXCLUDE),
@@ -64,7 +70,7 @@ def test_resolve_decision_override(test_context):
 
 def test_resolve_decision_override_caches_default_for_ui(test_context):
     """When there's an override, the default is still computed and cached for the UI."""
-    key = (DecisionType.ROTATION_OUTLIER, ObjectType.STACK, "s3", "r3")
+    key = DecisionKey.rotation_outlier("s3", "r3")
     dp = _make_decision(key)
     overrides = frozendict({
         key: DecisionOverride(choice=BinaryChoice.EXCLUDE),

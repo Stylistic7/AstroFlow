@@ -8,7 +8,7 @@ from compute_graph import build_compute_graph
 from context import context
 from mosaics.orion_mosaic import add_orion_mosaic_images
 from decisions.helpers import set_flat, exclude
-from decisions.decisions import DecisionType, ObjectType, decisions_for_stack
+from decisions.decisions import DecisionKey, DecisionType, ObjectType, decisions_for_stack
 from testing import print_tree
 
 
@@ -141,8 +141,9 @@ def test_quarantine_run_only_invalidates_one_stack(test_context):
     target_stack = next(iter(context.stacks.values())).get()
     assert len(target_stack.contents) >= 1
     quarantined_run = list(target_stack.contents.keys())[0]
-    key = (DecisionType.QUARANTINE, ObjectType.STACK,
-           target_stack.stable_hash, quarantined_run)
+    key = DecisionKey.quarantine(
+        ObjectType.STACK, quarantined_run, parent_stack_id=target_stack.stable_hash,
+    )
     from dataclasses import replace as dc_replace
     new_overrides = frozendict(
         dict(context.settings.decision_overrides) | exclude(key)

@@ -80,9 +80,7 @@ def select_subframes(
         )
 
         decision = DecisionPoint.make(
-            decision_type=DecisionType.SUBFRAME_QUALITY,
-            object_id=stack.stable_hash,
-            subject_id=stack.stable_hash,
+            key=DecisionKey.subframe_quality(stack.stable_hash),
             title=f"{default_excluded} of {total_frames} frames excluded by quality filter",
             description=(
                 f"The quality filter (≥{_DEFAULT_QUALITY_THRESHOLD:.0%} of best star count) "

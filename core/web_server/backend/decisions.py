@@ -16,18 +16,23 @@ from state.actor import state
 decisions_bp = Blueprint("decisions", __name__)
 
 
-def _serialize_key(key: DecisionKey) -> list[str]:
-    """Serialize a DecisionKey tuple to JSON-safe list of strings."""
-    return [k.value if hasattr(k, "value") else str(k) for k in key]
+def _serialize_key(key: DecisionKey) -> dict:
+    """Serialize a DecisionKey to a JSON-safe dict."""
+    return {
+        "decision_type": key.decision_type.value,
+        "object_type": key.object_type.value,
+        "parent_stack_id": key.parent_stack_id,
+        "subject_id": key.subject_id,
+    }
 
 
-def _deserialize_key(raw: list[str]) -> DecisionKey:
-    """Deserialize a JSON list back to a DecisionKey tuple."""
-    return (
-        DecisionType(raw[0]),
-        ObjectType(raw[1]),
-        raw[2],
-        raw[3],
+def _deserialize_key(raw: dict) -> DecisionKey:
+    """Deserialize a JSON dict back to a DecisionKey."""
+    return DecisionKey(
+        decision_type=DecisionType(raw["decision_type"]),
+        object_type=ObjectType(raw["object_type"]),
+        parent_stack_id=raw["parent_stack_id"],
+        subject_id=raw["subject_id"],
     )
 
 
@@ -78,7 +83,6 @@ def _deserialize_choice(choice, decision_type: DecisionType):
         return None
     binary_types = {
         DecisionType.ROTATION_OUTLIER,
-        DecisionType.SMALL_RUN,
         DecisionType.SUBFRAME_QUALITY,
         DecisionType.QUARANTINE,
     }
@@ -106,7 +110,7 @@ def override_decision():
         if raw_choice is None:
             current.pop(key, None)
         else:
-            choice = _deserialize_choice(raw_choice, key[0])
+            choice = _deserialize_choice(raw_choice, key.decision_type)
             current[key] = DecisionOverride(choice=choice)
         return replace(settings, decision_overrides=frozendict(current))
 
@@ -117,9 +121,7 @@ def override_decision():
     state.drain_and_restart()
 
     from products import invalidate_object
-    object_type = key[1].value  # ObjectType enum → string
-    object_id = key[2]
-    invalidate_object(object_type, object_id)
+    invalidate_object(key.object_type.value, key.subject_id)
 
     return jsonify({
         "key": _serialize_key(key),

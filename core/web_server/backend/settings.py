@@ -5,7 +5,8 @@ from frozendict import frozendict
 from context import context
 from decisions.settings import Settings
 from decisions.decisions import ObjectType, BinaryChoice
-from decisions.helpers import quarantine_key, exclude
+from decisions.decisions import DecisionKey
+from decisions.helpers import exclude
 from web_server.backend.announcer import announce
 
 settings_bp = Blueprint("settings", __name__)
@@ -27,16 +28,16 @@ def toggle_quarantine(object_type, object_id):
     absent means not quarantined.
 
     For run-level quarantine (quarantining a run within a stack), pass
-    ?parent=<stack_hash> so the decision key uses the stack hash at
-    position [2] (required for per-stack decision filtering).
+    ?parent=<stack_hash> so the decision key carries the stack hash as
+    its parent_stack_id (required for per-stack decision filtering).
     """
     type_map = {"stack": ObjectType.STACK, "target": ObjectType.TARGET, "mosaic": ObjectType.MOSAIC}
     obj_type = type_map.get(object_type)
     if obj_type is None:
         return jsonify({"error": f"Unknown object type: {object_type}"}), 400
 
-    parent_id = request.args.get("parent")
-    key = quarantine_key(obj_type, object_id, parent_id=parent_id)
+    parent_stack_id = request.args.get("parent")
+    key = DecisionKey.quarantine(obj_type, object_id, parent_stack_id)
 
     current_overrides = context.settings.decision_overrides
     is_currently_quarantined = (

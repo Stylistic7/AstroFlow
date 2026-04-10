@@ -13,6 +13,7 @@ from decorators import node
 from cache.context_ref import ContextRef
 from context import context
 from decisions.decisions import (
+    DecisionKey,
     DecisionPoint,
     DecisionType,
     BinaryChoice,
@@ -175,9 +176,7 @@ def _detect_rotation_outliers(
                 continue
 
             dp = DecisionPoint.make(
-                decision_type=DecisionType.ROTATION_OUTLIER,
-                object_id=stack_hash,
-                subject_id=run_hash,
+                key=DecisionKey.rotation_outlier(stack_hash, run_hash),
                 title=f"Run rotation differs by {math.degrees(diff):.1f}°",
                 description=(
                     f"This run's mean rotation angle differs by "

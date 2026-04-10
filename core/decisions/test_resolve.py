@@ -1,11 +1,8 @@
 """Unit tests for decision resolve helpers."""
-from frozendict import frozendict
-
 from decisions.decisions import (
-    DecisionType, ObjectType, DecisionOverride, BinaryChoice, DECISION_PRECEDENCE,
+    DecisionKey, DecisionType, ObjectType, DECISION_PRECEDENCE,
+    _CAL_TYPE_TO_DECISION_TYPE,
 )
-from decisions.helpers import exclude, quarantine_key
-from decisions.resolve import _apply_run_exclusions
 
 
 def test_decision_precedence_order():
@@ -25,7 +22,14 @@ def test_calibrations_for_image_type():
 
 def test_cal_decision_types():
     """Verify the calibration decision type mapping."""
-    from decisions.resolve import _CAL_DECISION_TYPES
-    assert _CAL_DECISION_TYPES["bias"] == DecisionType.CALIBRATION_BIAS
-    assert _CAL_DECISION_TYPES["dark"] == DecisionType.CALIBRATION_DARK
-    assert _CAL_DECISION_TYPES["flat"] == DecisionType.CALIBRATION_FLAT
+    assert _CAL_TYPE_TO_DECISION_TYPE["bias"] == DecisionType.CALIBRATION_BIAS
+    assert _CAL_TYPE_TO_DECISION_TYPE["dark"] == DecisionType.CALIBRATION_DARK
+    assert _CAL_TYPE_TO_DECISION_TYPE["flat"] == DecisionType.CALIBRATION_FLAT
+
+
+def test_decision_key_via_calibration_constructor():
+    key = DecisionKey.calibration("bias", "stack_a", "run_b")
+    assert key.decision_type == DecisionType.CALIBRATION_BIAS
+    assert key.object_type == ObjectType.STACK
+    assert key.parent_stack_id == "stack_a"
+    assert key.subject_id == "run_b"
