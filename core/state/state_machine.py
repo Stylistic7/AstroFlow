@@ -72,6 +72,7 @@ def _populate_context(
     state: State, action: Action
 ) -> tuple[State, list[Action]]:
     from products import ensure_producers_registered
+
     ensure_producers_registered()
 
     # TODO: Put these in the UI.
@@ -89,7 +90,11 @@ def _populate_context(
 
     # Preserve existing decision overrides across restarts.
     existing_settings = context.settings
-    existing_overrides = existing_settings.decision_overrides if existing_settings else frozendict()
+    existing_overrides = (
+        existing_settings.decision_overrides
+        if existing_settings
+        else frozendict()
+    )
 
     context.settings = Settings(
         decision_overrides=existing_overrides,
@@ -103,10 +108,14 @@ def _populate_context(
         ),
     )
 
-    context.shopping_cart = [("mosaic", "75a1da6463e118e6", "DownscaledMaster")]
+    context.shopping_cart = [
+        ("mosaic", "75a1da6463e118e6", "DownscaledMaster"),
+        ("mosaic", "75a1da6463e118e6", "Masterow l"),
+    ]
     context.ray_head_node_enabled = True
 
     from state.actor import state as state_proxy
+
     state_proxy.enqueue(Action(type="run_entire_graph"))
 
     return state, []

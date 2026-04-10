@@ -18,6 +18,7 @@ from targets.types import Target
 from stacks.artifacts import stack_filename
 from stacks.composite_stack import StacksDict
 from products import makes_image
+from previews.types import QualityLevel
 
 
 def _post_process_target(images: ImageList, target: Target) -> tuple[Image, Image] | None:
@@ -69,7 +70,7 @@ def target_filename(target: Target, suffix: str) -> XisfFilePath:
     return XisfFilePath(f"target {target.stable_hash}_{suffix}.xisf")
 
 
-@makes_image(Target).as_post_processed(target_filename)
+@makes_image(Target).for_levels([QualityLevel.POST_PROCESSED], target_filename)
 @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD")
 @create_thumbnail
 def post_process_target(target: Target, stacks: StacksDict, mock_pixinsight: bool = False) -> None:

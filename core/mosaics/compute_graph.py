@@ -222,6 +222,7 @@ def build_mosaic_filter_subgraph(
                     merge_images,
                     mode,
                     mosaic,
+                    config.development_settings.mock_pixinsight,
                     name=f"merge_{mosaic.stable_hash}_{stack_id}",
                 )
                 metadata_task = Node(
@@ -245,6 +246,7 @@ def build_mosaic_filter_subgraph(
                 merge_images,
                 mode,
                 mosaic,
+                config.development_settings.mock_pixinsight,
                 name=f"merge_{mosaic.stable_hash}_strip_{i}",
             )
             metadata_task = Node(

@@ -21,7 +21,7 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
   const containerRef = useRef(null);
   const [containerSize, setContainerSize] = useState({ width: 800, height: 600 });
 
-  const { mosaics, stacks, targets } = useContext(AstroFlowContext);
+  const { mosaics, stacks, targets, showQuarantined, isQuarantined } = useContext(AstroFlowContext);
 
   const navigate = useNavigate();
 
@@ -127,13 +127,15 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
           metadata={metadata}
           mosaics={mosaics}
           onClick={onClick}
+          showQuarantined={showQuarantined}
+          isQuarantined={isQuarantined}
         />
       </Stage>
     </div>
   );
 };
 
-const ImperativeViewport = ({ objectType, imageHash, filter, qualityLevel, port, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, showPolygons, metadata, mosaics, onClick }) => {
+const ImperativeViewport = ({ objectType, imageHash, filter, qualityLevel, port, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, showPolygons, metadata, mosaics, onClick, showQuarantined, isQuarantined }) => {
   const app = useApp();
   const viewportRef = useRef(null);
   const spritesRef = useRef({});
@@ -181,7 +183,9 @@ const ImperativeViewport = ({ objectType, imageHash, filter, qualityLevel, port,
     };
 
     const updatePolygons = () => {
-      let polygons = metadata.objects;
+      let polygons = metadata.objects.filter(poly =>
+        showQuarantined || !isQuarantined(poly.type, poly.stable_hash)
+      );
 
       const typeColors = {
         stack: '#0000ff',

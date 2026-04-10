@@ -25,6 +25,7 @@ from stacks.composite_stack import Stack
 from decisions.subframe_selection import get_light_frames_sorted_by_stars
 from decisions.resolve import is_frame_included, resolve_calibration
 from products import makes_image, makes_video
+from previews.types import SUBFRAME
 from file_io.generic import read_image
 from decisions.settings import ProcessingConfig
 from decisions.decisions import decisions_for_stack
@@ -78,14 +79,14 @@ def get_best_light_frame(stack: Stack) -> WithSidecar:
     )
 
 
-@makes_image(Stack).as_subframe(get_best_light_frame)
+@makes_image(Stack).for_levels([SUBFRAME], get_best_light_frame)
 @node
 @create_thumbnail
 def stack_thumbnail(stack: Stack) -> WithSidecar:
     return get_best_light_frame(stack)
 
 
-@makes_image(CalibrationStack).as_subframe(get_first_frame)
+@makes_image(CalibrationStack).for_levels([SUBFRAME], get_first_frame)
 @node
 @create_thumbnail
 def calibration_stack_thumbnail(stack: CalibrationStack) -> WithSidecar:
@@ -118,7 +119,7 @@ def _annotate_frame(
     return im
 
 
-@makes_video(Stack).as_subframe()
+@makes_video(Stack).for_levels([SUBFRAME])
 @node(resources={"fastest_storage": 0.001})
 @create_video
 def stack_thumbnail_video(
@@ -157,7 +158,7 @@ def stack_thumbnail_video(
         yield im
 
 
-@makes_video(CalibrationStack).as_subframe()
+@makes_video(CalibrationStack).for_levels([SUBFRAME])
 @node(resources={"fastest_storage": 0.001})
 @create_video
 def calibration_stack_thumbnail_video(

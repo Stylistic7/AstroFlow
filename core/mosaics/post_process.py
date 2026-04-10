@@ -51,7 +51,7 @@ def _post_process_mosaic(images: ImageList, mosaic: Mosaic) -> Image | None:
     return None
 
 
-@makes_image(Mosaic).as_post_processed(mosaic_filename_xisf)
+@makes_image(Mosaic).for_levels([QualityLevel.POST_PROCESSED], mosaic_filename_xisf)
 @node(resources={"PixInsight": 1})
 @create_thumbnail
 def post_process_mosaic(
@@ -71,8 +71,8 @@ def post_process_mosaic(
         for stack_id in targets[target_id].get().stack_ids:
             filters.add(stacks[stack_id].get().filter)
 
-    from mosaics.final_storage import store_mosaic_color_channel_master
-    image_paths = [store_mosaic_color_channel_master.filename_fn(mosaic, f) for f in filters]
+    master_fn = get_filename_fn(MediaType.IMAGE, Mosaic, QualityLevel.MASTER)
+    image_paths = [master_fn(mosaic, f) for f in filters]
 
     images = Image.open_many(image_paths)
     result = _post_process_mosaic(images, mosaic)

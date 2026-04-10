@@ -142,9 +142,9 @@ def make_cached_decorator(
                     assert cached_result.ref is None
                 # Re-establish validity on cache hits (context may have been
                 # cleared since the product was originally produced).
-                if hasattr(func, '_validity_object_type'):
-                    from products.registry import _mark_valid
-                    _mark_valid(func._validity_object_type, func._validity_level, bound.args)
+                from products.registry import _mark_valid
+                for obj_type, level in getattr(func, '_validity_entries', []):
+                    _mark_valid(obj_type, level, bound.args)
                 return cached_result
 
             if dry_run:

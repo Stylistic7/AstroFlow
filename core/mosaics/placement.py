@@ -20,7 +20,8 @@ from file_io.generic import read_image
 from file_io.tiff_file_io import write_tiff_image
 from file_io.types import TiffFilePath, WithSidecar
 from context import context
-from previews.types import QualityLevel
+from previews.types import QualityLevel, SUBFRAME, MASTER, DOWNSCALED_MASTER
+from products.registry import get_filename_fn, MediaType
 from mosaics.types import Mosaic, Viewbox
 from mosaics.artifacts import placed_filename
 from decorators import node
@@ -157,85 +158,7 @@ def _project_in_tiles(
     return projected_image[0 : viewbox.num_pixels_y, 0 : viewbox.num_pixels_x]
 
 
-@ray.remote
-@beartype
-def _place_image(
-    mode: QualityLevel,
-    mosaic: Mosaic,
-    stack: Stack,
-    filter: str,
-    viewbox: Viewbox,
-    filename: Path,
-    plate_solution: PlateSolution,
-) -> WithSidecar[TiffFilePath]:
-    log.info("Placing image", mode=mode, mosaic=str(mosaic), stack=str(stack), filename=filename, viewbox=str(viewbox))
-
-    wcs = WCS(plate_solution.header)
-
-    interp = _make_interpolator(filename)
-
-    image = _project_in_tiles(viewbox, interp, wcs, skip_empty=False)
-
-    if mode == QualityLevel.SUBFRAME:
-        output_filename = place_image_subframe.filename_fn(
-            mosaic, stack, filter, viewbox
-        )
-    else:
-        output_filename = place_image_master.filename_fn(
-            mosaic, stack, filter, viewbox
-        )
-
-    if not np.any(image):
-        raise ProjectionFailedException(
-            f"Placed image for stack {stack.stable_hash} in mosaic "
-            f"{mosaic.stable_hash} is entirely blank. This likely indicates "
-            f"a WCS or viewbox mismatch."
-        )
-
-    write_tiff_image(output_filename, image, {"FILTER": filter, "STBLHASH": stack.stable_hash})
-    log.info("Place image complete", output_filename=output_filename)
-
-    return WithSidecar(output_filename)
-
-
-@makes_image(PlacedImage).as_subframe(placed_filename)
-@ray.remote
-@beartype
-def place_image_subframe(
-    mode: QualityLevel,
-    mosaic: Mosaic,
-    stack: Stack,
-    filter: str,
-    viewbox: Viewbox,
-    filename: Path,
-    plate_solution: PlateSolution,
-) -> WithSidecar[TiffFilePath]:
-    return ray.get(
-        _place_image.remote(
-            mode, mosaic, stack, filter, viewbox, filename, plate_solution
-        )
-    )
-
-
-@makes_image(PlacedImage).as_master(placed_filename)
-@ray.remote(memory=_PLACE_IMAGE_MEMORY_REQUIREMENT)
-@beartype
-def place_image_master(
-    mode: QualityLevel,
-    mosaic: Mosaic,
-    stack: Stack,
-    filter: str,
-    viewbox: Viewbox,
-    filename: Path,
-    plate_solution: PlateSolution,
-) -> WithSidecar[TiffFilePath]:
-    return ray.get(
-        _place_image.remote(
-            mode, mosaic, stack, filter, viewbox, filename, plate_solution
-        )
-    )
-
-
+@makes_image(PlacedImage).for_levels([SUBFRAME, MASTER, DOWNSCALED_MASTER], placed_filename)
 @node
 def place_image(
     mode: QualityLevel,
@@ -249,9 +172,24 @@ def place_image(
         f"place_image requires a plate solution on {image_metadata.filename}; "
         "DONTSOLV synthetic frames cannot be placed."
     )
-    args = (mode, mosaic, stack, filter, viewbox,
-            image_metadata.filename, image_metadata.plate_solution)
-    if mode == QualityLevel.SUBFRAME:
-        return ray.get(place_image_subframe.remote(*args))
-    else:
-        return ray.get(place_image_master.remote(*args))
+    log.info("Placing image", mode=mode, mosaic=str(mosaic), stack=str(stack),
+             filename=image_metadata.filename, viewbox=str(viewbox))
+
+    wcs = WCS(image_metadata.plate_solution.header)
+    interp = _make_interpolator(image_metadata.filename)
+    image = _project_in_tiles(viewbox, interp, wcs, skip_empty=False)
+
+    output_fn = get_filename_fn(MediaType.IMAGE, PlacedImage, mode)
+    output_filename = output_fn(mosaic, stack, filter, viewbox)
+
+    if not np.any(image):
+        raise ProjectionFailedException(
+            f"Placed image for stack {stack.stable_hash} in mosaic "
+            f"{mosaic.stable_hash} is entirely blank. This likely indicates "
+            f"a WCS or viewbox mismatch."
+        )
+
+    write_tiff_image(output_filename, image, {"FILTER": filter, "STBLHASH": stack.stable_hash})
+    log.info("Place image complete", output_filename=output_filename)
+
+    return WithSidecar(output_filename)

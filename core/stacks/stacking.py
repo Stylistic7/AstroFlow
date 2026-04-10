@@ -21,7 +21,7 @@ from decorators import node, create_thumbnail
 from decisions.settings import DevelopmentSettings, ProcessingConfig
 from decisions.resolve import resolve_calibration, resolve_decisions
 from decisions.compute_graph import ALL_EXCLUSION_TYPES
-from previews.types import QualityLevel, DOWNSCALE_FACTORS
+from previews.types import QualityLevel, MASTER, DOWNSCALED_MASTER, DOWNSCALE_FACTORS
 from products import makes_image
 import structlog
 
@@ -159,10 +159,8 @@ def _copy_wbpp_result(
     return WithSidecar(XisfFilePath(dest_filename))
 
 
-@makes_image(CalibrationStack).as_downscaled_master(stack_filename)
-@makes_image(CalibrationStack).as_master(stack_filename)
-@makes_image(Stack).as_downscaled_master(stack_filename)
-@makes_image(Stack).as_master(stack_filename)
+@makes_image(CalibrationStack).for_levels([MASTER, DOWNSCALED_MASTER], stack_filename)
+@makes_image(Stack).for_levels([MASTER, DOWNSCALED_MASTER], stack_filename)
 @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD")
 @create_thumbnail
 def stack_files(

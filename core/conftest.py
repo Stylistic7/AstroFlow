@@ -62,6 +62,12 @@ def init_ray(worker_id):
     enable_test_mode()
     assert ray.is_initialized()
 
+    yield
+
+    # Force-disconnect so xdist workers exit promptly.  ray.shutdown()
+    # can block indefinitely waiting for background threads in actors.
+    ray.shutdown(_exiting_interpreter=True)
+
 
 @pytest.fixture(autouse=True)
 def test_context(init_ray):

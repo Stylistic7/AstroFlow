@@ -143,11 +143,16 @@ class MediaProducerBuilder:
             resolved = None
             if filename_fn is not None:
                 resolved = fully_resolve(self.object_type, level, filename_fn)
-                func.filename_fn = resolved
-            # Store validity metadata on the function so the @node decorator
-            # can call _mark_valid after execution.
-            func._validity_object_type = self.object_type
-            func._validity_level = level
+                # Accumulate per-(object_type, level) filename_fns so stacking
+                # multiple @makes_image decorators on one function works.
+                if not hasattr(func, 'filename_fns'):
+                    func.filename_fns = {}
+                func.filename_fns[(self.object_type, level)] = resolved
+                func.filename_fn = resolved  # convenience alias (last wins)
+            # Accumulate validity entries for _mark_valid.
+            if not hasattr(func, '_validity_entries'):
+                func._validity_entries = []
+            func._validity_entries.append((self.object_type, level))
             register_producer(
                 self.media_type, self.object_type, level, func,
                 filename_fn=resolved,
@@ -156,17 +161,22 @@ class MediaProducerBuilder:
 
         return decorator
 
-    def as_subframe(self, filename_fn: FilenameFn | None = None):
-        return self._bind(QualityLevel.SUBFRAME, filename_fn)
+    def for_levels(
+        self,
+        levels: list[QualityLevel] | tuple[QualityLevel, ...],
+        filename_fn: FilenameFn | None = None,
+    ):
+        """Register a producer for one or more quality levels.
 
-    def as_downscaled_master(self, filename_fn: FilenameFn | None = None):
-        return self._bind(QualityLevel.DOWNSCALED_MASTER, filename_fn)
-
-    def as_master(self, filename_fn: FilenameFn | None = None):
-        return self._bind(QualityLevel.MASTER, filename_fn)
-
-    def as_post_processed(self, filename_fn: FilenameFn | None = None):
-        return self._bind(QualityLevel.POST_PROCESSED, filename_fn)
+        Usage:
+            @makes_image(Stack).for_levels([MASTER, DOWNSCALED_MASTER], stack_filename)
+            def stack_files(stack, config): ...
+        """
+        def decorator(func: Callable[..., Path]):
+            for level in levels:
+                self._bind(level, filename_fn)(func)
+            return func
+        return decorator
 
 
 def makes_image(object_type: type) -> MediaProducerBuilder:

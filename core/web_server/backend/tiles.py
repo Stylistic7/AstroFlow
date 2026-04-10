@@ -63,8 +63,20 @@ def get_image(
     with _cache_lock:
         key = (object_type, object_id, filter, level)
         if key in _image_cache:
-            _image_cache[key]["last_used"] = now
-            return _image_cache[key]["handle"]
+            entry = _image_cache[key]
+            # Evict if the source TIFF was modified since we cached it.
+            tiff_path = entry.get("tiff_path")
+            if tiff_path and os.path.exists(tiff_path):
+                disk_mtime = os.path.getmtime(tiff_path)
+                if disk_mtime > entry.get("mtime", 0):
+                    print(f"Tile cache stale for {key}, reloading")
+                    del _image_cache[key]
+                else:
+                    entry["last_used"] = now
+                    return entry["handle"]
+            else:
+                entry["last_used"] = now
+                return entry["handle"]
 
         if not load_if_missing:
             return None
@@ -129,6 +141,7 @@ def get_image(
         _image_cache[key] = {
             "handle": handle,
             "tiff_path": tiff_path,
+            "mtime": os.path.getmtime(tiff_path),
             "last_used": now,
         }
         return handle

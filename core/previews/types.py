@@ -11,6 +11,13 @@ class QualityLevel(StrEnum):
     POST_PROCESSED = "PostProcessed"
 
 
+# Module-level aliases for ergonomic imports.
+SUBFRAME = QualityLevel.SUBFRAME
+DOWNSCALED_MASTER = QualityLevel.DOWNSCALED_MASTER
+MASTER = QualityLevel.MASTER
+POST_PROCESSED = QualityLevel.POST_PROCESSED
+
+
 # Integer downscale factor associated with each QualityLevel.
 # DOWNSCALED_MASTER is always 8x; everything else is full resolution.
 DOWNSCALE_FACTORS: dict[QualityLevel, int] = {

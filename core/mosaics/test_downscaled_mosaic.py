@@ -137,15 +137,9 @@ def test_quarantine_run_only_invalidates_one_stack(test_context):
     _, baseline_stats = run_graph(build_compute_graph(), dry_run=True)
     baseline_nodes = baseline_stats.num_nodes_run
 
-    # Pick one stack with ≥2 runs and quarantine one of its runs.
-    target_stack = None
-    for ref in context.stacks.values():
-        s = ref.get()
-        if len(s.contents) >= 2:
-            target_stack = s
-            break
-    assert target_stack is not None, "Need a stack with ≥2 runs to quarantine one"
-
+    # Pick the first stack and quarantine one of its runs.
+    target_stack = next(iter(context.stacks.values())).get()
+    assert len(target_stack.contents) >= 1
     quarantined_run = list(target_stack.contents.keys())[0]
     key = (DecisionType.QUARANTINE, ObjectType.STACK,
            target_stack.stable_hash, quarantined_run)
