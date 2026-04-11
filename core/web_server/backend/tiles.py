@@ -1,149 +1,118 @@
+"""HTTP endpoints for serving image tiles to the web frontend.
+
+Tile pyramids are produced ahead of time as a side effect of the image
+producers themselves (via @create_tile_pyramid). This module just looks
+them up via `producer.tile_pyramid_fn(*args)` and serves them through
+large_image. There is no on-demand conversion: if a tile pyramid
+doesn't exist for a given object/level, the request returns 404.
+
+A small in-memory cache holds opened large_image handles, keyed by the
+on-disk tile pyramid path. The handle is invalidated when the source
+file's mtime advances (which happens when a producer rewrites its
+output in place — the @makes_image sidecar-discard pattern handles the
+cache-invalidation chain upstream of this layer).
+"""
 import io
 import os
-import time
 import threading
+
 import large_image
-from pathlib import Path
-import numpy as np
-import tifffile
 from flask import Blueprint, Response, send_file, abort, jsonify, request
 from flask_cors import cross_origin
 
 from context import context
-from file_io.generic import read_image
-from file_io.types import TiffFilePath, WithSidecar
-from previews.operations import autostretch
 from previews.types import QualityLevel
-from stacks.composite_stack import Stack
-from stacks.composite_stack import CalibrationStack
+from stacks.composite_stack import Stack, CalibrationStack
 from targets.types import Target
 from mosaics.types import Mosaic
-from products.registry import get_producer, get_filename_fn, MediaType
+from products.registry import get_producer, MediaType
 from web_server.backend.router import stateful_route
 
-# Settings
-TILE_CACHE_DIR = Path("/tmp/astroflow_tiles")
-TILE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-IN_PROGRESS = object()
-
-# Global cache state
-_image_cache = {}
-_cache_lock = threading.Lock()
 
 tiles_bp = Blueprint("tiles", __name__)
 
 
-def convert_to_tiff(source_path: Path, dest_path: Path):
-    """Read image and save to .tif"""
-    print(f"Converting {source_path} to {dest_path}...")
-    assert source_path != dest_path
-    arr = autostretch(read_image(source_path))
-    arr = (arr * 255.0).astype(np.uint8)
-    dest_path.parent.mkdir(parents=True, exist_ok=True)
-    tifffile.imwrite(dest_path, arr, tile=(256, 256), compression="deflate")
-    print(f"Conversion done.")
+# Path -> (large_image handle, source mtime). Cleared when the source
+# file's mtime advances. No locking needed because dict assignment is
+# atomic in CPython and the worst case is briefly opening a handle twice.
+_handle_cache: dict = {}
+_handle_cache_lock = threading.Lock()
 
 
-def get_image_for_level(object_type: type, level: QualityLevel, *args) -> Path | None:
-    """Get the image path for a specific quality level."""
-    filename_fn = get_filename_fn(MediaType.IMAGE, object_type, level)
-    if filename_fn is None:
-        return None
-    fragment = filename_fn(*args)
-    if fragment and os.path.exists(fragment.resolve_at(context.output_dir)):
-        return fragment
+_TYPE_MAP = {
+    "stack": Stack,
+    "calibration_stack": CalibrationStack,
+    "target": Target,
+    "mosaic": Mosaic,
+}
+
+
+def _resolve_obj_args(object_type: str, object_id: str, filter: str | None):
+    """Look up the object and return the (obj_type, obj_args) tuple
+    that the producer's tile_pyramid_fn expects as its first arg(s)."""
+    obj_cls = _TYPE_MAP.get(object_type)
+    if obj_cls is None:
+        raise ValueError(f"Unknown object_type {object_type}")
+
+    if object_type == "stack":
+        return obj_cls, (context.stacks[object_id].get(),)
+    if object_type == "calibration_stack":
+        return obj_cls, (context.calibration_stacks[object_id],)
+    if object_type == "target":
+        return obj_cls, (context.targets[object_id].get(), filter)
+    if object_type == "mosaic":
+        return obj_cls, (context.mosaics[object_id].get(), filter)
+
+
+def _tile_pyramid_path_for(
+    object_type: str, object_id: str, filter: str | None, level: str | None,
+):
+    """Find the tile pyramid for an object at a specific level (or the
+    best available level when level is None or 'auto'). Returns the
+    on-disk path or None if no producer has yet generated a tile pyramid
+    for this object/level."""
+    obj_cls, obj_args = _resolve_obj_args(object_type, object_id, filter)
+
+    if level and level != "auto":
+        levels_to_try = [QualityLevel(level)]
+    else:
+        # Best-quality first, falling back to lower quality.
+        levels_to_try = [
+            QualityLevel.POST_PROCESSED,
+            QualityLevel.MASTER,
+            QualityLevel.DOWNSCALED_MASTER,
+            QualityLevel.SUBFRAME,
+        ]
+
+    for q in levels_to_try:
+        producer = get_producer(MediaType.IMAGE, obj_cls, q)
+        if producer is None:
+            continue
+        if not hasattr(producer, "tile_pyramid_fn"):
+            continue
+        path = producer.tile_pyramid_fn(*obj_args)
+        if path is not None and os.path.exists(path):
+            return path
+
     return None
 
 
-def get_image(
-    object_type: str, object_id: str, filter: str, level: str = None, load_if_missing: bool = False,
-):
-    """Get a large_image handle from the cached TIFF, generating it if needed."""
-    now = time.time()
-    with _cache_lock:
-        key = (object_type, object_id, filter, level)
-        if key in _image_cache:
-            entry = _image_cache[key]
-            # Evict if the source TIFF was modified since we cached it.
-            tiff_path = entry.get("tiff_path")
-            if tiff_path and os.path.exists(tiff_path):
-                disk_mtime = os.path.getmtime(tiff_path)
-                if disk_mtime > entry.get("mtime", 0):
-                    print(f"Tile cache stale for {key}, reloading")
-                    del _image_cache[key]
-                else:
-                    entry["last_used"] = now
-                    return entry["handle"]
-            else:
-                entry["last_used"] = now
-                return entry["handle"]
+def _get_handle(tile_pyramid_path):
+    """Open a large_image handle for a tile pyramid path, with mtime-based
+    invalidation. Re-opens if the file has been rewritten since we last
+    cached it."""
+    path_str = os.fspath(tile_pyramid_path)
+    current_mtime = os.path.getmtime(path_str)
 
-        if not load_if_missing:
-            return None
+    with _handle_cache_lock:
+        cached = _handle_cache.get(path_str)
+        if cached is not None:
+            handle, cached_mtime = cached
+            if cached_mtime == current_mtime:
+                return handle
 
-        # Resolve the object and find the image at the requested level.
-        type_map = {"stack": Stack, "calibration_stack": CalibrationStack, "target": Target, "mosaic": Mosaic}
-        obj_cls = type_map.get(object_type)
-        if obj_cls is None:
-            raise ValueError(f"Unknown object_type {object_type}")
-
-        if object_type == "stack":
-            obj_args = (context.stacks[object_id].get(),)
-        elif object_type == "calibration_stack":
-            obj_args = (context.calibration_stacks[object_id],)
-        elif object_type == "target":
-            obj_args = (context.targets[object_id].get(), filter)
-        elif object_type == "mosaic":
-            obj_args = (context.mosaics[object_id].get(), filter)
-
-        if level and level != "auto":
-            ql = QualityLevel(level)
-            path = get_image_for_level(obj_cls, ql, *obj_args)
-        else:
-            # Fallback: find best available.
-            path = None
-            for ql in [QualityLevel.POST_PROCESSED, QualityLevel.MASTER, QualityLevel.DOWNSCALED_MASTER, QualityLevel.SUBFRAME]:
-                path = get_image_for_level(obj_cls, ql, *obj_args)
-                if path:
-                    break
-
-        if path is None:
-            print(f"No image found")
-            return None
-
-        # This prevents multiple requests from running the same image conversion
-        # multiple times in parallel.
-        _image_cache[key] = {
-            "handle": IN_PROGRESS,
-            "last_used": now,
-        }
-
-        if isinstance(path, WithSidecar):
-            path = path.path
-
-        if isinstance(path, TiffFilePath):
-            tiff_path = path.resolve_at(context.output_dir)
-        else:
-            if path.is_absolute():
-                tiff_path = TILE_CACHE_DIR / path.with_suffix(".tiff").name
-                print(f"### absolute path {path=} {tiff_path=}")
-                convert_to_tiff(path, tiff_path)
-            else:
-                original_path = path.resolve_at(context.output_dir)
-                tiff_path = path.resolve_at(TILE_CACHE_DIR).with_suffix(".tiff")
-                print(
-                    f"### relative path {path=} {original_path=} {tiff_path=}"
-                )
-                convert_to_tiff(original_path, tiff_path)
-
-        print(f"Opening file {tiff_path} with large_image...")
-        handle = large_image.open(tiff_path, plugin="vips")
-        _image_cache[key] = {
-            "handle": handle,
-            "tiff_path": tiff_path,
-            "mtime": os.path.getmtime(tiff_path),
-            "last_used": now,
-        }
+        handle = large_image.open(path_str, plugin="vips")
+        _handle_cache[path_str] = (handle, current_mtime)
         return handle
 
 
@@ -152,29 +121,23 @@ def get_image(
     sharding_key="object_id",
 )
 def tile_metadata(
-    object_type: str, object_id: str, filter: str, level: str = "auto", backend_port: int = None,
+    object_type: str, object_id: str, filter: str, level: str = "auto",
+    backend_port: int = None,
 ):
-    host_port = request.host.split(":")[-1]
-    print(f"### tile_metadata calling get_image on worker on port {host_port} level={level}")
-    source = get_image(object_type, object_id, filter, level=level, load_if_missing=True)
-
-    if source is None:
+    path = _tile_pyramid_path_for(object_type, object_id, filter, level)
+    if path is None:
         return abort(404)
 
-    if source is IN_PROGRESS:
-        return Response(status=202, headers={"Retry-After": "5"})
-
-    meta = source.getMetadata()
-    return jsonify(
-        {
-            "width": meta["sizeX"],
-            "height": meta["sizeY"],
-            "tileWidth": meta["tileWidth"],
-            "tileHeight": meta["tileHeight"],
-            "maxZoom": meta["levels"] - 1,
-            "port": backend_port,
-        }
-    )
+    handle = _get_handle(path)
+    meta = handle.getMetadata()
+    return jsonify({
+        "width": meta["sizeX"],
+        "height": meta["sizeY"],
+        "tileWidth": meta["tileWidth"],
+        "tileHeight": meta["tileHeight"],
+        "maxZoom": meta["levels"] - 1,
+        "port": backend_port,
+    })
 
 
 @tiles_bp.route(
@@ -182,15 +145,16 @@ def tile_metadata(
 )
 @cross_origin(origins="*")
 def serve_tile(
-    object_type: str, object_id: str, filter: str, level: str, z: str, x: str, y: str,
+    object_type: str, object_id: str, filter: str, level: str,
+    z: str, x: str, y: str,
 ):
-    source = get_image(object_type, object_id, filter, level=level, load_if_missing=False)
-
-    if source in [None, IN_PROGRESS]:
-        return Response(status=202, headers={"Retry-After": "5"})
+    path = _tile_pyramid_path_for(object_type, object_id, filter, level)
+    if path is None:
+        return abort(404)
 
     try:
-        tile_data = source.getTile(x, y, z, encoding="PNG")
+        handle = _get_handle(path)
+        tile_data = handle.getTile(x, y, z, encoding="PNG")
         return send_file(io.BytesIO(tile_data), mimetype="image/png")
     except Exception as e:
         print(f"Error serving tile for {object_type, object_id}: {e}")

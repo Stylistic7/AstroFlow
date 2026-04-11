@@ -2,6 +2,7 @@ from beartype import beartype as _beartype
 
 from cache.cached_decorator import make_cached_decorator
 from previews.create_thumbnail import make_create_thumbnail_decorator
+from previews.create_tile_pyramid import make_create_tile_pyramid_decorator
 from previews.create_video import make_create_video_decorator
 from profiling.measure_performance import make_measure_performance_decorator
 from dependency_graph.logging import make_capture_logs_decorator
@@ -14,6 +15,7 @@ cached = make_cached_decorator(
 )
 
 create_thumbnail = make_create_thumbnail_decorator(context)
+create_tile_pyramid = make_create_tile_pyramid_decorator(context)
 create_video = make_create_video_decorator(context)
 
 measure_performance = make_measure_performance_decorator(context)

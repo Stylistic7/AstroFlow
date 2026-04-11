@@ -17,7 +17,7 @@ from stacks.composite_stack import BaseStack, Stack, CalibrationStack, Calibrati
 from pix.tasks import run_wbpp
 from metadata.classes import MetadataDict
 from frozendict import frozendict
-from decorators import node, create_thumbnail
+from decorators import node, create_thumbnail, create_tile_pyramid
 from decisions.settings import DevelopmentSettings, ProcessingConfig
 from decisions.resolve import resolve_calibration, resolve_decisions
 from decisions.compute_graph import ALL_EXCLUSION_TYPES
@@ -163,6 +163,7 @@ def _copy_wbpp_result(
 @makes_image(CalibrationStack).for_levels([MASTER, DOWNSCALED_MASTER], stack_filename)
 @makes_image(Stack).for_levels([MASTER, DOWNSCALED_MASTER], stack_filename)
 @create_thumbnail
+@create_tile_pyramid
 def stack_files(
     stack: BaseStack,
     config: ProcessingConfig,
