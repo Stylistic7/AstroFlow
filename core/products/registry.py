@@ -140,6 +140,26 @@ class MediaProducerBuilder:
 
     def _bind(self, level: QualityLevel, filename_fn: FilenameFn | None = None):
         def decorator(func: Callable[..., Path]):
+            # Decoration order matters: @makes_image / @makes_video must
+            # be applied *inside* @node so that we wrap the raw function
+            # (not the Ray-task wrapper). cached_decorator stamps
+            # `_is_task = True` on the wrapper it returns, so spotting
+            # that attribute on `func` means the user wrote the decorators
+            # in the wrong order.
+            if getattr(func, '_is_task', False):
+                deco = (
+                    "makes_image" if self.media_type == MediaType.IMAGE
+                    else "makes_video"
+                )
+                raise TypeError(
+                    f"@{deco} must be applied inside @node, not outside. "
+                    f"Got @{deco}({self.object_type.__name__}) wrapping "
+                    f"a Ray task. Correct order:\n"
+                    f"    @node(...)\n"
+                    f"    @{deco}(...).for_levels(...)\n"
+                    f"    def {getattr(func, '__name__', '...')}(...): ..."
+                )
+
             resolved = None
             if filename_fn is not None:
                 resolved = fully_resolve(self.object_type, level, filename_fn)
@@ -149,15 +169,51 @@ class MediaProducerBuilder:
                     func.filename_fns = {}
                 func.filename_fns[(self.object_type, level)] = resolved
                 func.filename_fn = resolved  # convenience alias (last wins)
-            # Accumulate validity entries for _mark_valid.
+
+            # Accumulate validity entries (shared across stacked
+            # @makes_image decorators via the same list reference).
             if not hasattr(func, '_validity_entries'):
                 func._validity_entries = []
             func._validity_entries.append((self.object_type, level))
+
+            # Wrap the function once. Subsequent _bind calls (multiple
+            # levels in for_levels, or stacked @makes_image decorators
+            # for polymorphic producers like stack_files) skip the wrap
+            # and just append to the closure-captured `entries` list,
+            # which the wrap iterates at call time.
+            if getattr(func, '_makes_image_wrapped', False):
+                wrapped = func
+            else:
+                from functools import wraps
+                from file_io.sidecar import discard_sidecar
+                inner_func = func
+                entries = func._validity_entries  # closure-captured (shared)
+
+                @wraps(inner_func)
+                def wrapped(*args, **kwargs):
+                    result = inner_func(*args, **kwargs)
+                    if result is not None:
+                        for obj_type, lvl in entries:
+                            _mark_valid(obj_type, lvl, args)
+                        # The new image obsoletes any image_metadata /
+                        # plate_solution in the sidecar (computed from
+                        # the previous file content). Discard it so the
+                        # next compute_image_metadata call re-derives.
+                        discard_sidecar(result)
+                    return result
+
+                wrapped._validity_entries = entries
+                wrapped._makes_image_wrapped = True
+                if hasattr(inner_func, 'filename_fns'):
+                    wrapped.filename_fns = inner_func.filename_fns
+                if hasattr(inner_func, 'filename_fn'):
+                    wrapped.filename_fn = inner_func.filename_fn
+
             register_producer(
-                self.media_type, self.object_type, level, func,
+                self.media_type, self.object_type, level, wrapped,
                 filename_fn=resolved,
             )
-            return func
+            return wrapped
 
         return decorator
 
@@ -169,12 +225,13 @@ class MediaProducerBuilder:
         """Register a producer for one or more quality levels.
 
         Usage:
+            @node(...)
             @makes_image(Stack).for_levels([MASTER, DOWNSCALED_MASTER], stack_filename)
             def stack_files(stack, config): ...
         """
         def decorator(func: Callable[..., Path]):
             for level in levels:
-                self._bind(level, filename_fn)(func)
+                func = self._bind(level, filename_fn)(func)
             return func
         return decorator
 

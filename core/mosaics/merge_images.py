@@ -28,9 +28,9 @@ class MergedImage:
     pass
 
 
+@node(resources={"PixInsight": 1})
 @makes_image(MergedImage).for_levels([SUBFRAME], merged_filename_tiff)
 @makes_image(MergedImage).for_levels([MASTER, DOWNSCALED_MASTER], merged_filename_xisf)
-@node(resources={"PixInsight": 1})
 def merge_images(
     mode: QualityLevel,
     mosaic: Mosaic,

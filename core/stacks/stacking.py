@@ -159,9 +159,9 @@ def _copy_wbpp_result(
     return WithSidecar(XisfFilePath(dest_filename))
 
 
+@node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD")
 @makes_image(CalibrationStack).for_levels([MASTER, DOWNSCALED_MASTER], stack_filename)
 @makes_image(Stack).for_levels([MASTER, DOWNSCALED_MASTER], stack_filename)
-@node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD")
 @create_thumbnail
 def stack_files(
     stack: BaseStack,

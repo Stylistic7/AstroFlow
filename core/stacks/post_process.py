@@ -45,8 +45,8 @@ def _post_process_stack(master_path, stack: Stack, downscale_factor: int = 1) ->
     return MultiscaleGradientCorrection(calibrated)
 
 
-@makes_image(Stack).for_levels([QualityLevel.POST_PROCESSED], stack_filename)
 @node(resources={"PixInsight": 1})
+@makes_image(Stack).for_levels([QualityLevel.POST_PROCESSED], stack_filename)
 @create_thumbnail
 def post_process_stack(stack: Stack, mock_pixinsight: bool) -> WithSidecar[XisfFilePath]:
     from products import ensure_producers_registered

@@ -141,8 +141,25 @@ def test_quarantine_triggers_restack(test_context) -> None:
     def file_hash(p):
         return hashlib.sha256(p.read_bytes()).hexdigest()
 
+    def sidecar_image_metadata_content_hash(p):
+        """Read the cached image_metadata.content_hash from the sidecar.
+
+        This is the value compute_image_metadata stamped when it last
+        ran on this file. If it doesn't change between graph runs, the
+        sidecar shortcut returned stale data — i.e., compute_image_metadata
+        trusted a sidecar that no longer matched the file content.
+        """
+        from file_io.sidecar import get_section
+        im = get_section(p, "image_metadata")
+        return im.get("content_hash") if isinstance(im, dict) else None
+
     original_hash = file_hash(master_path)
     original_mtime = master_path.stat().st_mtime
+    original_meta_hash = sidecar_image_metadata_content_hash(master_path)
+    assert original_meta_hash is not None, (
+        "Expected compute_image_metadata to have written image_metadata "
+        "to the sidecar after the first stack run"
+    )
 
     # Identify which run's frames were copied into the master, and
     # quarantine THAT run, so the second re-stack must pick a different
@@ -163,6 +180,7 @@ def test_quarantine_triggers_restack(test_context) -> None:
     assert master_path.exists()
     new_mtime = master_path.stat().st_mtime
     new_hash = file_hash(master_path)
+    new_meta_hash = sidecar_image_metadata_content_hash(master_path)
 
     assert new_mtime > original_mtime, (
         f"Master mtime did not advance after quarantine "
@@ -171,6 +189,20 @@ def test_quarantine_triggers_restack(test_context) -> None:
     assert new_hash != original_hash, (
         "Master content unchanged after quarantine; stack_files "
         "reused a stale cached result"
+    )
+    # Locks in the sidecar-staleness fix: when stack_files rewrites the
+    # master, the cached_decorator's discard_sidecar hook clears the
+    # sidecar so compute_image_metadata re-derives image_metadata from
+    # the new file content.
+    assert new_meta_hash is not None, (
+        "Expected compute_image_metadata to re-populate image_metadata "
+        "in the sidecar after the second stack run"
+    )
+    assert new_meta_hash != original_meta_hash, (
+        f"Sidecar image_metadata.content_hash unchanged after re-stack "
+        f"({original_meta_hash} -> {new_meta_hash}); compute_image_metadata "
+        f"returned a stale cached value instead of re-deriving from the "
+        f"new master file"
     )
 
 

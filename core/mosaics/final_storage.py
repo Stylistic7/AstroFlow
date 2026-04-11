@@ -26,8 +26,8 @@ def make_preview_tiff(source_path: Path, dest_path: Path):
     tifffile.imwrite(dest_path, arr, tile=(256, 256), compression="deflate")
 
 
-@makes_image(Mosaic).for_levels([MASTER, DOWNSCALED_MASTER], mosaic_filename_xisf)
 @node(resources={"PixInsight": 1})
+@makes_image(Mosaic).for_levels([MASTER, DOWNSCALED_MASTER], mosaic_filename_xisf)
 @create_thumbnail
 def store_mosaic_color_channel_xisf(
     mode: QualityLevel, mosaic: Mosaic, filter: str, input: ImageMetadata,
@@ -46,8 +46,8 @@ def store_mosaic_color_channel_xisf(
     return WithSidecar(output)
 
 
-@makes_image(Mosaic).for_levels([SUBFRAME], mosaic_filename_tiff)
 @node(resources={"fastest_storage": 0.001})
+@makes_image(Mosaic).for_levels([SUBFRAME], mosaic_filename_tiff)
 @create_thumbnail
 def store_mosaic_color_channel_subframe(
     mosaic: Mosaic, filter: str, input: ImageMetadata

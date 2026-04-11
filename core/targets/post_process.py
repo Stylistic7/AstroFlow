@@ -70,8 +70,8 @@ def target_filename(target: Target, suffix: str) -> XisfFilePath:
     return XisfFilePath(f"target {target.stable_hash}_{suffix}.xisf")
 
 
-@makes_image(Target).for_levels([QualityLevel.POST_PROCESSED], target_filename)
 @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD")
+@makes_image(Target).for_levels([QualityLevel.POST_PROCESSED], target_filename)
 @create_thumbnail
 def post_process_target(target: Target, stacks: StacksDict, mock_pixinsight: bool = False) -> None:
     print(f"Entering post_process_target for {target}")

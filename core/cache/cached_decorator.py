@@ -140,11 +140,6 @@ def make_cached_decorator(
             if valid:
                 if isinstance(cached_result, ContextRef):
                     assert cached_result.ref is None
-                # Re-establish validity on cache hits (context may have been
-                # cleared since the product was originally produced).
-                from products.registry import _mark_valid
-                for obj_type, level in getattr(func, '_validity_entries', []):
-                    _mark_valid(obj_type, level, bound.args)
                 return cached_result
 
             if dry_run:
@@ -169,11 +164,6 @@ def make_cached_decorator(
                 )
             if isinstance(result, Path) and not result.exists():
                 raise FileNotFoundError(result)
-
-            # If the function is a @makes_image producer, mark the product valid.
-            if hasattr(func, '_validity_object_type'):
-                from products.registry import _mark_valid
-                _mark_valid(func._validity_object_type, func._validity_level, bound.args)
 
             result = content_hasher.set(result, call_hash)
             debug_print(
@@ -203,7 +193,7 @@ def make_cached_decorator(
         wrapper._function = func
         wrapper._is_task = True
 
-        for attr in ("filename_fn", "thumbnail_fn"):
+        for attr in ("filename_fn", "filename_fns", "thumbnail_fn"):
             if hasattr(func, attr):
                 setattr(wrapper, attr, getattr(func, attr))
 

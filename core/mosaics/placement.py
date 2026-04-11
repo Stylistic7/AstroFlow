@@ -158,8 +158,8 @@ def _project_in_tiles(
     return projected_image[0 : viewbox.num_pixels_y, 0 : viewbox.num_pixels_x]
 
 
-@makes_image(PlacedImage).for_levels([SUBFRAME, MASTER, DOWNSCALED_MASTER], placed_filename)
 @node
+@makes_image(PlacedImage).for_levels([SUBFRAME, MASTER, DOWNSCALED_MASTER], placed_filename)
 def place_image(
     mode: QualityLevel,
     mosaic: Mosaic,

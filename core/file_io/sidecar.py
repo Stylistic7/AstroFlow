@@ -81,3 +81,29 @@ def get_file_size(data_path: Path) -> int | None:
     sc_path = sidecar_path_for(data_path)
     root = load_sidecar(sc_path)
     return root.get("file_size")
+
+
+def discard_sidecar(obj: Any) -> None:
+    """Delete the sidecar .json file next to ``obj``, if it exists.
+
+    Called by cached_decorator's cache-miss path when an @makes_image
+    producer rewrites its output: any cached image_metadata or
+    plate_solution in the sidecar was computed from the previous file
+    content and is now stale. The next content_hasher.set call will
+    recreate the sidecar with only the new content_hash.
+
+    Only the sidecar .json is removed — the underlying data file is
+    never touched, preserving the "AstroFlow doesn't change the data
+    on your disk" invariant.
+    """
+    # Unwrap WithSidecar (or any wrapper exposing .path) to its underlying path.
+    while hasattr(obj, "path") and not isinstance(obj, (str, os.PathLike)):
+        obj = obj.path
+    try:
+        data_path = Path(os.fspath(obj))
+    except TypeError:
+        return
+    try:
+        sidecar_path_for(data_path).unlink()
+    except FileNotFoundError:
+        pass

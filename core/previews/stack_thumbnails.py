@@ -79,15 +79,15 @@ def get_best_light_frame(stack: Stack) -> WithSidecar:
     )
 
 
-@makes_image(Stack).for_levels([SUBFRAME], get_best_light_frame)
 @node
+@makes_image(Stack).for_levels([SUBFRAME], get_best_light_frame)
 @create_thumbnail
 def stack_thumbnail(stack: Stack) -> WithSidecar:
     return get_best_light_frame(stack)
 
 
-@makes_image(CalibrationStack).for_levels([SUBFRAME], get_first_frame)
 @node
+@makes_image(CalibrationStack).for_levels([SUBFRAME], get_first_frame)
 @create_thumbnail
 def calibration_stack_thumbnail(stack: CalibrationStack) -> WithSidecar:
     return get_first_frame(stack)
@@ -119,8 +119,8 @@ def _annotate_frame(
     return im
 
 
-@makes_video(Stack).for_levels([SUBFRAME])
 @node(resources={"fastest_storage": 0.001})
+@makes_video(Stack).for_levels([SUBFRAME])
 @create_video
 def stack_thumbnail_video(
     stack: Stack,
@@ -158,8 +158,8 @@ def stack_thumbnail_video(
         yield im
 
 
-@makes_video(CalibrationStack).for_levels([SUBFRAME])
 @node(resources={"fastest_storage": 0.001})
+@makes_video(CalibrationStack).for_levels([SUBFRAME])
 @create_video
 def calibration_stack_thumbnail_video(
     stack: CalibrationStack,
