@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify
 
-from context import context
+from context import local_context as context
 
 performance_bp = Blueprint("performance", __name__)
 

@@ -3,7 +3,7 @@ from flask import Blueprint, Response
 import json
 import subprocess
 
-from context import context
+from context import local_context as context
 
 compute_graphs_bp = Blueprint("compute_graphs", __name__)
 

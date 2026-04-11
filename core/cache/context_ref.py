@@ -9,6 +9,23 @@ from hashing.hashing import hash_list, hash_list_int
 Key = str | tuple[Any, ...]
 
 
+# Process-local override that lets ContextRef.get() bypass the Ray actor
+# when the calling process has direct access to the canonical diskcache
+# (i.e. it's running on the head node). The web server sets this at
+# startup; Ray workers leave it None and fall back to the actor.
+_active_context = None
+
+
+def use_local_context_for_refs() -> None:
+    """Opt this process into reading ContextRef values directly from the
+    local diskcache, bypassing the Ray actor. Only safe to call from
+    processes running on the Ray head node (where the local diskcache is
+    canonical)."""
+    global _active_context
+    from context import local_context
+    _active_context = local_context
+
+
 def _reconstruct_context_ref(
     cache_key: Any, content_hash: str, ref: "ray.ObjectRef | None"
 ) -> "ContextRef":
@@ -38,6 +55,8 @@ class ContextRef(Generic[T]):
                 return ray.get(self.ref, timeout=5)
             except Exception:
                 self.ref = None
+        if _active_context is not None:
+            return _active_context[self.cache_key]
         from context import context
         return context[self.cache_key]
 

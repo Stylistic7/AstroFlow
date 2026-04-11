@@ -3,7 +3,7 @@ import io
 import flask
 from flask import Blueprint, abort
 
-from context import context
+from context import local_context as context
 from stacks.composite_stack import CalibrationStack
 from stacks.composite_stack import Stack
 from products.registry import get_producer, MediaType

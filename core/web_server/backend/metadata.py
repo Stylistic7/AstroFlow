@@ -3,7 +3,7 @@ import astropy.io.fits as pyfits
 from flask import Blueprint, jsonify, abort
 from typing import Any
 
-from context import context
+from context import local_context as context
 from stacks.composite_stack import CalibrationStack
 from stacks.composite_stack import Stack
 from targets.types import Target

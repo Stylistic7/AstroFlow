@@ -54,15 +54,33 @@ def get_state(key: str):
     return _state.get(key, None)
 
 
+def is_head_node() -> bool:
+    """Whether this machine should run as the AstroFlow head node.
+
+    The flag is persisted in the local diskcache (set by populate_context
+    or the web UI) so it survives restarts. On a fresh machine that has
+    never been a head before, set the env var ASTROFLOW_HEAD_NODE=1 to
+    bootstrap it; that's a one-shot — the cache remembers afterwards.
+    """
+    cache = get_cache()
+    env = os.environ.get("ASTROFLOW_HEAD_NODE", "").lower()
+    if env in ("1", "true", "yes"):
+        cache["ray_head_node_enabled"] = True
+        return True
+    return cache.get("ray_head_node_enabled", False)
+
+
 def _init(state: State, action: Action) -> tuple[State, list[Action]]:
     new_actions = []
 
     new_actions.append(Action(type="prepare_pix"))
-    new_actions.append(Action(type="start_gunicorn"))
     new_actions.append(Action(type="start_astroflow_zeroconf"))
 
-    cache = get_cache()
-    if cache.get("ray_head_node_enabled", False):
+    # The web server (gunicorn) and the Ray head node only run on the
+    # head machine. Worker machines come up as Ray subordinates and never
+    # bind any web ports.
+    if is_head_node():
+        new_actions.append(Action(type="start_gunicorn"))
         new_actions.append(Action(type="start_ray_head_node"))
 
     return state, new_actions
@@ -244,26 +262,6 @@ def _update_asiair_services(
     return state, []
 
 
-def _start_flask(state: State, action: Action) -> tuple[State, list[Action]]:
-    from state.flask_control import FlaskThread
-
-    server_thread = FlaskThread()
-    server_thread.start()
-    state["flask_thread"] = server_thread
-
-    return state, []
-
-
-def _stop_flask(state: State, action: Action) -> tuple[State, list[Action]]:
-    if "flask_thread" not in state:
-        return state, []
-
-    state["flask_thread"].stop()
-    del state["flask_thread"]
-
-    return state, []
-
-
 def _prepare_pix(state: State, action: Action) -> tuple[State, list[Action]]:
     return state, []
 
@@ -378,8 +376,6 @@ _HANDLERS = {
     "prepare_pix": _prepare_pix,
     "add_to_shopping_cart": _add_to_shopping_cart,
     "remove_from_shopping_cart": _remove_from_shopping_cart,
-    "start_flask": _start_flask,
-    "stop_flask": _stop_flask,
     "start_gunicorn": _start_gunicorn,
     "stop_gunicorn": _stop_gunicorn,
     "start_ray_head_node": _start_ray_head_node,

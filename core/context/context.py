@@ -223,3 +223,113 @@ class Context:
 
 
 context = Context()
+
+
+class LocalContext:
+    """Direct-to-diskcache Context for processes that live on the same
+    machine as the canonical diskcache (i.e. the Ray head node). Bypasses
+    the ContextActor entirely — reads, writes, and atomic compound
+    operations all hit the local SQLite store directly.
+
+    The ContextActor still exists and is still used by Ray workers on
+    OTHER machines that need cross-node access to head-node state.
+    LocalContext is the head-node-local fast path for the web server,
+    eliminating the per-request Ray RPC roundtrip.
+
+    Surface mirrors `Context` exactly so callers can swap one for the
+    other without endpoint code changes.
+    """
+
+    def __init__(self) -> None:
+        pass
+
+    @property
+    def _cache(self):
+        # Resolved lazily so test fixtures that set ASTROFLOW_MOCK_CACHE
+        # after import are honored, and so the diskcache isn't opened
+        # in processes that never use LocalContext.
+        return get_cache()
+
+    def get(self, key: Key, default_value: Any = None) -> Any:
+        from cache.context_ref import strip_refs
+        return strip_refs(self._cache.get(key, default_value))
+
+    def __getattr__(self, key: Key) -> Any:
+        if isinstance(key, str) and key.startswith("__") and key.endswith("__"):
+            raise AttributeError(key)
+        if isinstance(key, str) and key.startswith("_"):
+            raise AttributeError(key)
+        return self.get(key)
+
+    @property
+    def settings(self):
+        from decisions.settings import Settings
+        return self.get("settings") or Settings()
+
+    def __getitem__(self, key: Key) -> Any:
+        return self.get(key)
+
+    def get_matching(self, key_fragment: Key) -> dict:
+        return {
+            key: self._cache[key]
+            for key in self._cache.iterkeys()
+            if starts_with(key, key_fragment)
+        }
+
+    def set(self, key: Key, value: Any) -> None:
+        from cache.context_ref import strip_refs
+        self._cache[key] = strip_refs(value)
+
+    def __setattr__(self, key: Key, value: Any) -> None:
+        self.set(key, value)
+
+    def __setitem__(self, key: Key, value: Any) -> None:
+        self.set(key, value)
+
+    def and_equals(
+        self, key: Key, value: Any, length_limit: int | None = None
+    ) -> None:
+        """Append value (a list) to an existing list at key — atomic."""
+        from cache.context_ref import strip_refs
+        with self._cache.transact():
+            old_value = self._cache.get(key, [])
+            new_value = old_value + value
+            if length_limit is not None:
+                new_value = new_value[-length_limit:]
+            self._cache[key] = strip_refs(new_value)
+
+    def plus_equals(self, key: Key, value: Any) -> None:
+        return self.and_equals(key, value)
+
+    def or_equals(self, key: Key, value: dict) -> None:
+        """Merge value into a dict stored at key — atomic."""
+        from cache.context_ref import strip_refs
+        with self._cache.transact():
+            old_value = self._cache.get(key, {})
+            if not isinstance(old_value, dict):
+                old_value = {}
+            self._cache[key] = strip_refs({**old_value, **value})
+
+    def __contains__(self, key: Key) -> bool:
+        return key in self._cache
+
+    def contains(self, key: Key) -> bool:
+        return key in self._cache
+
+    def delete(self, key: Key) -> None:
+        if key in self._cache:
+            del self._cache[key]
+
+    def set_many(self, items: dict) -> None:
+        from cache.context_ref import strip_refs
+        for key, value in items.items():
+            self._cache[key] = strip_refs(value)
+
+    def clear(self) -> None:
+        self._cache.clear()
+
+    def get_cache_keys(self) -> list:
+        return list(self._cache.iterkeys())
+
+
+local_context = LocalContext()

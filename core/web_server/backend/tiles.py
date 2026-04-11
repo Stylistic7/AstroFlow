@@ -17,10 +17,9 @@ import os
 import threading
 
 import large_image
-from flask import Blueprint, Response, send_file, abort, jsonify, request
-from flask_cors import cross_origin
+from flask import Blueprint, send_file, abort, jsonify
 
-from context import context
+from context import local_context as context
 from previews.types import QualityLevel
 from stacks.composite_stack import Stack, CalibrationStack
 from targets.types import Target
@@ -140,10 +139,12 @@ def tile_metadata(
     })
 
 
-@tiles_bp.route(
-    "/tile/<object_type>/<object_id>/<filter>/<level>/<int:z>/<int:x>/<int:y>.png"
+@stateful_route(
+    tiles_bp.route(
+        "/tile/<object_type>/<object_id>/<filter>/<level>/<int:z>/<int:x>/<int:y>.png"
+    ),
+    sharding_key="object_id",
 )
-@cross_origin(origins="*")
 def serve_tile(
     object_type: str, object_id: str, filter: str, level: str,
     z: str, x: str, y: str,

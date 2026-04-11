@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 import subprocess
 
-from context import context
+from context import local_context as context
 from file_io.generic import read_header
 from state.actor import state
 from stacks.stacking import stack_files

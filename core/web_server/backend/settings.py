@@ -2,7 +2,7 @@ from dataclasses import replace
 from flask import request, jsonify, Blueprint
 from frozendict import frozendict
 
-from context import context
+from context import local_context as context
 from decisions.settings import Settings
 from decisions.decisions import ObjectType, BinaryChoice
 from decisions.decisions import DecisionKey

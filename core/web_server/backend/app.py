@@ -14,13 +14,18 @@ from flask import request, jsonify, Response
 from dataclasses import asdict
 import operator
 from spherical_geometry.polygon import SingleSphericalPolygon
-import threading
 from dataclasses import replace
 from flask.json.provider import DefaultJSONProvider
 from pathlib import Path
 
 from state.state_machine import enqueue_action
-from context import context, get_cache
+from context import local_context as context, get_cache
+from cache.context_ref import use_local_context_for_refs
+
+# Opt this gunicorn worker into reading ContextRef values directly from
+# the local diskcache. Safe because the web server only runs on the Ray
+# head node (see state_machine._init).
+use_local_context_for_refs()
 from stacks.composite_stack import Stack
 from web_server.backend.files import files_bp
 from web_server.backend.tiles import tiles_bp
@@ -467,13 +472,3 @@ def ray_head_node_enabled():
     return jsonify({"enabled": cache.get("ray_head_node_enabled", False)})
 
 
-def flask_thread_body():
-    print("### Starting AstroFlow web server...")
-    app.run(host="0.0.0.0", port=80)
-
-
-def start_flask():
-    flask_thread = threading.Thread(target=flask_thread_body)
-    flask_thread.start()
-
-    return flask_thread
