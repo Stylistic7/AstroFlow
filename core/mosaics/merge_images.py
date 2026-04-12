@@ -28,10 +28,9 @@ class MergedImage:
     pass
 
 
-def _merge_tile_path(mode, mosaic, mock_pixinsight, input_0, input_1):
+def _merge_tile_path(mode, mosaic, filter, mock_pixinsight, input_0, input_1):
     """Fixed tile pyramid location per (mosaic, filter, mode). Each merge
     overwrites the previous, so the web server always serves the latest."""
-    filter = input_0.header.get("FILTER", "unknown")
     from context import context
     return context.output_dir / "Mosaic" / str(mode) / f"progress_{mosaic.stable_hash}_{filter}.tiff"
 
@@ -43,6 +42,7 @@ def _merge_tile_path(mode, mosaic, mock_pixinsight, input_0, input_1):
 def merge_images(
     mode: QualityLevel,
     mosaic: Mosaic,
+    filter: str,
     mock_pixinsight: bool,
     input_0: ImageMetadata,
     input_1: ImageMetadata,
