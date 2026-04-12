@@ -57,17 +57,19 @@ def get_state(key: str):
 def is_head_node() -> bool:
     """Whether this machine should run as the AstroFlow head node.
 
-    The flag is persisted in the local diskcache (set by populate_context
-    or the web UI) so it survives restarts. On a fresh machine that has
-    never been a head before, set the env var ASTROFLOW_HEAD_NODE=1 to
-    bootstrap it; that's a one-shot — the cache remembers afterwards.
+    Defaults to True — single-machine setups Just Work. Multi-machine
+    workers opt out by setting ASTROFLOW_HEAD_NODE=0 (env var, one-shot
+    — persisted in the cache) or toggling off in the web UI.
     """
     cache = get_cache()
     env = os.environ.get("ASTROFLOW_HEAD_NODE", "").lower()
     if env in ("1", "true", "yes"):
         cache["ray_head_node_enabled"] = True
         return True
-    return cache.get("ray_head_node_enabled", False)
+    if env in ("0", "false", "no"):
+        cache["ray_head_node_enabled"] = False
+        return False
+    return cache.get("ray_head_node_enabled", True)
 
 
 def _init(state: State, action: Action) -> tuple[State, list[Action]]:
