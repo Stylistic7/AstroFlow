@@ -150,6 +150,7 @@ def tile_metadata(
         "tileHeight": meta["tileHeight"],
         "maxZoom": meta["levels"] - 1,
         "port": backend_port,
+        "mtime": os.path.getmtime(path),
     })
 
 

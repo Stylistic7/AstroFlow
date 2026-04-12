@@ -21,7 +21,7 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
   const containerRef = useRef(null);
   const [containerSize, setContainerSize] = useState({ width: 800, height: 600 });
 
-  const { mosaics, stacks, targets, showQuarantined, isQuarantined } = useContext(AstroFlowContext);
+  const { mosaics, stacks, targets, showQuarantined, isQuarantined, computeGraphStatus } = useContext(AstroFlowContext);
 
   const navigate = useNavigate();
 
@@ -70,7 +70,7 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
     fetch(`/tile_metadata/${objectType}/${imageHash}/${filter}/${level}`)
       .then((res) => res.ok ? res.json() : null)
       .then((meta) => { if (meta) setTileMetadata(meta); });
-  }, [objectType, imageHash, filter, qualityLevelProp]);
+  }, [objectType, imageHash, filter, qualityLevelProp, computeGraphStatus]);
 
   const onClick = (poly, event) => {
     const e = event.nativeEvent; // underlying DOM PointerEvent
@@ -123,6 +123,7 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
           worldWidth={worldWidth}
           worldHeight={worldHeight}
           maxZoom={tileMetadata.maxZoom}
+          mtime={tileMetadata.mtime}
           showPolygons={showPolygons}
           metadata={metadata}
           mosaics={mosaics}
@@ -135,10 +136,21 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
   );
 };
 
-const ImperativeViewport = ({ objectType, imageHash, filter, qualityLevel, port, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, showPolygons, metadata, mosaics, onClick, showQuarantined, isQuarantined }) => {
+const ImperativeViewport = ({ objectType, imageHash, filter, qualityLevel, port, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, mtime, showPolygons, metadata, mosaics, onClick, showQuarantined, isQuarantined }) => {
   const app = useApp();
   const viewportRef = useRef(null);
   const spritesRef = useRef({});
+
+  // When the tile pyramid file changes (new merge completed), clear
+  // the sprite cache so tiles are re-fetched with the new content.
+  useEffect(() => {
+    if (!viewportRef.current) return;
+    Object.values(spritesRef.current).forEach(s => {
+      s.parent?.removeChild(s);
+      s.destroy();
+    });
+    spritesRef.current = {};
+  }, [mtime]);
 
   useEffect(() => {
     const screenWidth = app.renderer.view.clientWidth;
