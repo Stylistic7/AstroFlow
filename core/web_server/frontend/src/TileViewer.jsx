@@ -293,6 +293,7 @@ const ImperativeViewport = ({ objectType, imageHash, filter, qualityLevel, port,
           const tileLevel = qualityLevel || 'auto';
           const relativePath = `/tile/${objectType}/${imageHash}/${filter}/${tileLevel}/${bestZ}/${x}/${y}.png`;
           const url = new URL(relativePath, `${window.location.protocol}//${window.location.hostname}:${port}`);
+          if (mtime) url.searchParams.set('v', mtime);
           PIXI.Texture.fromURL(url.href)
             .then((texture) => {
               const sprite = new PIXI.Sprite(texture);
