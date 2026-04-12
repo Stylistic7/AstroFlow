@@ -193,9 +193,10 @@ def make_cached_decorator(
         wrapper._function = func
         wrapper._is_task = True
 
-        for attr in ("filename_fn", "filename_fns", "thumbnail_fn"):
-            if hasattr(func, attr):
-                setattr(wrapper, attr, getattr(func, attr))
+        # Forward all custom attributes from inner decorators (e.g.
+        # filename_fn, thumbnail_fn, tile_pyramid_fn, _validity_entries)
+        # so they survive the cached.remote wrapping.
+        wrapper.__dict__.update(func.__dict__)
 
         def is_cached(
             *args, injected_context: Optional[dict] = None, **kwargs
