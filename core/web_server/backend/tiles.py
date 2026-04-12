@@ -93,6 +93,20 @@ def _tile_pyramid_path_for(
         if path is not None and os.path.exists(path):
             return path
 
+    # Fallback: check for in-progress merge tile pyramids. merge_images
+    # writes these at a deterministic path per (mosaic, filter, mode),
+    # overwriting on each merge step. This surfaces partial mosaic results
+    # before the final store_mosaic_color_channel completes.
+    if obj_cls is Mosaic:
+        from pathlib import Path
+        output_dir = context.output_dir
+        if output_dir is not None:
+            mosaic_obj, mosaic_filter = obj_args[0], obj_args[1]
+            for q in levels_to_try:
+                progress = Path(output_dir) / "Mosaic" / str(q) / f"progress_{mosaic_obj.stable_hash}_{mosaic_filter}.tiff"
+                if progress.exists():
+                    return str(progress)
+
     return None
 
 

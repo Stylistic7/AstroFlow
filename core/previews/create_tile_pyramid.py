@@ -53,7 +53,32 @@ def make_create_tile_pyramid_decorator(
     cache: CacheProtocol,
     make_tile_pyramid: Callable[[Path, Path], None] = default_make_tile_pyramid,
 ):
-    def create_tile_pyramid(func: Callable):
+    def create_tile_pyramid(func: Callable = None, *, tile_filename: Callable = None):
+        """Decorator that generates a tile pyramid after the wrapped
+        function produces an image.
+
+        Usage::
+
+            @create_tile_pyramid                          # default: .tiff next to source
+            def my_producer(...): ...
+
+            @create_tile_pyramid(tile_filename=my_fn)     # custom: my_fn(*args, **kwargs) -> Path
+            def my_producer(...): ...
+
+        When ``tile_filename`` is provided, the tile pyramid is written
+        to ``tile_filename(*args, **kwargs)`` (overwriting any previous
+        file at that path) instead of being derived from the source.
+        This is useful when multiple calls should overwrite a single
+        tile pyramid at a fixed location (e.g. in-progress mosaic
+        merges).
+        """
+        if func is not None:
+            # Bare @create_tile_pyramid — func is the decorated function.
+            return _wrap(func, tile_filename=None)
+        # @create_tile_pyramid(tile_filename=...) — return a decorator.
+        return lambda f: _wrap(f, tile_filename=tile_filename)
+
+    def _wrap(func: Callable, tile_filename: Callable = None):
         fn_hash = hash_source_code(func)
 
         @wraps(func)
@@ -73,10 +98,22 @@ def make_create_tile_pyramid_decorator(
 
             source = Path(filename)
 
-            # If the producer's main output is already a TIFF (e.g.
-            # subframe-mode mosaics, which write a tiled tiff directly),
-            # use it as its own tile pyramid — no extra file needed.
-            if source.suffix.lower() in (".tif", ".tiff"):
+            if tile_filename is not None:
+                # Custom destination — always write a fresh tile pyramid
+                # (overwriting any previous file at this path).
+                tile_pyramid_path = Path(tile_filename(*args, **kwargs))
+                tile_pyramid_path.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    make_tile_pyramid(source, tile_pyramid_path)
+                except Exception as e:
+                    print(
+                        f"### Failed to make tile pyramid for {source}: {e}"
+                    )
+                    return result
+            elif source.suffix.lower() in (".tif", ".tiff"):
+                # Source is already a TIFF (e.g. subframe-mode mosaics,
+                # which write a tiled tiff directly) — use it as its
+                # own tile pyramid, no extra file needed.
                 tile_pyramid_path = source
             else:
                 tile_pyramid_path = source.with_suffix(".tiff")
