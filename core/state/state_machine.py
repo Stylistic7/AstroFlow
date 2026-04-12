@@ -74,13 +74,10 @@ def _init(state: State, action: Action) -> tuple[State, list[Action]]:
     new_actions = []
 
     new_actions.append(Action(type="prepare_pix"))
+    new_actions.append(Action(type="start_gunicorn"))
     new_actions.append(Action(type="start_astroflow_zeroconf"))
 
-    # The web server (gunicorn) and the Ray head node only run on the
-    # head machine. Worker machines come up as Ray subordinates and never
-    # bind any web ports.
     if is_head_node():
-        new_actions.append(Action(type="start_gunicorn"))
         new_actions.append(Action(type="start_ray_head_node"))
 
     return state, new_actions
