@@ -21,3 +21,7 @@ def ensure_producers_registered():
     import mosaics.merge_images  # noqa: F401 — MergedImage subframe + master
     import mosaics.final_storage  # noqa: F401 — Mosaic subframe + master
     import mosaics.post_process  # noqa: F401 — Mosaic post-processed
+    # OSS pipeline
+    import stacks.stacking_oss  # noqa: F401 — OSS stacking
+    import stacks.post_process_oss  # noqa: F401 — OSS post-processing
+    import mosaics.merge_images_oss  # noqa: F401 — OSS mosaic merging

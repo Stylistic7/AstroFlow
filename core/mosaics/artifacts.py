@@ -1,4 +1,5 @@
 from file_io.types import (
+    FitsFilePath,
     TiffFilePath,
     XisfFilePath,
 )
@@ -38,6 +39,14 @@ def merged_filename_xisf(
 ) -> XisfFilePath:
     return XisfFilePath(
         f"merged_{mosaic.stable_hash}_{image_0.stable_hash}_{image_1.stable_hash}.xisf"
+    )
+
+
+def merged_filename_fits(
+    mosaic: Mosaic, image_0: ImageMetadata, image_1: ImageMetadata
+) -> FitsFilePath:
+    return FitsFilePath(
+        f"merged_{mosaic.stable_hash}_{image_0.stable_hash}_{image_1.stable_hash}.fits"
     )
 
 

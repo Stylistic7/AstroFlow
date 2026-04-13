@@ -4,7 +4,7 @@ from pathlib import Path
 
 from stacks.composite_stack import BaseStack, Stack
 from catalogs import position_string
-from file_io.types import XisfFilePath
+from file_io.types import XisfFilePath, FitsFilePath
 
 
 def stack_filename(stack: BaseStack) -> Path:
@@ -36,3 +36,9 @@ def stack_filename(stack: BaseStack) -> Path:
         )
 
     assert False, f'unknown image_type "{stack.image_type}"'
+
+
+def stack_filename_fits(stack: BaseStack) -> Path:
+    """FITS variant of stack_filename for the OSS pipeline."""
+    xisf_path = stack_filename(stack)
+    return FitsFilePath(Path(str(xisf_path)).with_suffix(".fits"))

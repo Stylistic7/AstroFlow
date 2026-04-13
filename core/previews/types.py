@@ -7,10 +7,12 @@ PreviewHash = NewType("PreviewHash", str)
 class Implementation(StrEnum):
     PIXINSIGHT = "PixInsight"
     ASTROFLOW = "AstroFlow"
+    OSS = "OSS"
 
 
 PIXINSIGHT = Implementation.PIXINSIGHT
 ASTROFLOW = Implementation.ASTROFLOW
+OSS = Implementation.OSS
 ALL_IMPLEMENTATIONS = list(Implementation)
 
 
