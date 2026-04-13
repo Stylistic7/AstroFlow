@@ -4,6 +4,7 @@ from flask import Blueprint, jsonify, abort
 from typing import Any
 
 from context import local_context as context
+from previews.types import Implementation
 from stacks.composite_stack import CalibrationStack
 from stacks.composite_stack import Stack
 from targets.types import Target
@@ -26,22 +27,24 @@ _QUALITY_PRIORITY = [
 ]
 
 
-def _available_qualities(object_type: type, *args) -> list[tuple[QualityLevel, str]]:
+def _available_qualities(object_type: type, implementation: Implementation, *args) -> list[tuple[QualityLevel, str]]:
     """Return all quality levels that have files on disk, in priority order."""
     result = []
     for level in _QUALITY_PRIORITY:
-        filename_fn = get_filename_fn(MediaType.IMAGE, object_type, level)
+        filename_fn = get_filename_fn(MediaType.IMAGE, object_type, level, implementation)
         if filename_fn is None:
             continue
         filename = filename_fn(*args)
+        if filename is None:
+            continue
         if os.path.exists(filename):
             result.append((level, os.fspath(filename)))
     return result
 
 
-def _best_quality(object_type: type, *args) -> tuple[QualityLevel, str] | None:
+def _best_quality(object_type: type, implementation: Implementation, *args) -> tuple[QualityLevel, str] | None:
     """Find the best available quality level for an object."""
-    available = _available_qualities(object_type, *args)
+    available = _available_qualities(object_type, implementation, *args)
     return available[0] if available else None
 
 
@@ -199,8 +202,9 @@ def validity_all():
 def available_qualities(object_type: str, object_id: str, filter: str = None):
     """Return all quality levels with existence and validity status."""
     from products import is_object_valid
+    implementation = context.settings.implementation
     obj_type, args = _resolve_object(object_type, object_id, filter)
-    on_disk = dict(_available_qualities(obj_type, *args))  # level -> path
+    on_disk = dict(_available_qualities(obj_type, implementation, *args))  # level -> path
 
     levels = []
     for level in _QUALITY_PRIORITY:
@@ -250,19 +254,20 @@ def metadata(object_type: str, object_id: str, level_or_filter: str = None, filt
             filter = level_or_filter
             level = None
 
+    implementation = context.settings.implementation
     obj_type, args = _resolve_object(object_type, object_id, filter)
 
     if level is not None:
         quality_level = QualityLevel(level) if isinstance(level, str) else level
     else:
         # Fallback: find best quality.
-        result = _best_quality(obj_type, *args)
+        result = _best_quality(obj_type, implementation, *args)
         if result is None:
             return abort(404)
         quality_level, _ = result
 
     # Get the image path for the requested level.
-    filename_fn = get_filename_fn(MediaType.IMAGE, obj_type, quality_level)
+    filename_fn = get_filename_fn(MediaType.IMAGE, obj_type, quality_level, implementation)
     if filename_fn is None:
         return abort(404)
     filename = filename_fn(*args)

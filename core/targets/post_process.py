@@ -18,7 +18,7 @@ from targets.types import Target
 from stacks.artifacts import stack_filename
 from stacks.composite_stack import StacksDict
 from products import makes_image
-from previews.types import QualityLevel
+from previews.types import QualityLevel, PIXINSIGHT
 
 
 def _post_process_target(images: ImageList, target: Target) -> tuple[Image, Image] | None:
@@ -71,7 +71,7 @@ def target_filename(target: Target, suffix: str) -> XisfFilePath:
 
 
 @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD")
-@makes_image(Target).for_levels([QualityLevel.POST_PROCESSED], target_filename)
+@makes_image(Target, PIXINSIGHT, [QualityLevel.POST_PROCESSED], target_filename)
 @create_thumbnail
 def post_process_target(target: Target, stacks: StacksDict, mock_pixinsight: bool = False) -> None:
     print(f"Entering post_process_target for {target}")

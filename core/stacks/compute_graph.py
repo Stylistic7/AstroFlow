@@ -5,10 +5,9 @@ from spherical_geometry.polygon import SingleSphericalPolygon
 from functools import partial
 from beartype import beartype
 from decorators import node
-from stacks.stacking import stack_files
 from stacks.composite_stack import Run, Stack, RunsDict, StacksDict, CalibrationStacksDict
 from stacks.types import StackIdDependency
-from stacks.post_process import post_process_stack
+from products import get_producer, MediaType
 
 from stacks.convert_to_dict import convert_to_dict
 from metadata.image_metadata import compute_image_metadata
@@ -58,7 +57,8 @@ def build_calibration_stack_subgraph(
         for dep in run.dependencies.values():
             if isinstance(dep, StackIdDependency):
                 cal_stack = config.calibration_stacks[dep.stack_id]
-                task = (stack_files, cal_stack, cal_config)
+                stack_fn = get_producer(MediaType.IMAGE, type(cal_stack), config.quality, config.implementation)
+                task = (stack_fn, cal_stack, cal_config)
                 cal_run = next(iter(cal_stack.contents.values()))
                 inner = visit_cal_dependencies(cal_run)
                 subgraph[task] = list(inner.keys()) if inner else []
@@ -91,20 +91,23 @@ def build_stacking_subgraph(
     )
     node_status_fn = store_node_status
 
+    stack_fn = get_producer(MediaType.IMAGE, type(stack), config.quality, config.implementation)
+
     if config.quality == QualityLevel.MASTER:
         # Full: calibrate → stack → metadata → post-process → metadata
+        pp_fn = get_producer(MediaType.IMAGE, Stack, QualityLevel.POST_PROCESSED, config.implementation)
         steps = chain(
             (build_calibration_stack_subgraph, stack, config),
-            (stack_files, stack, config),
+            (stack_fn, stack, config),
             Node(compute_image_metadata, name=f"stacking_{stack.stable_hash}"),
-            (post_process_stack, stack, config.development_settings.mock_pixinsight),
+            (pp_fn, stack, config.development_settings.mock_pixinsight),
             Node(compute_image_metadata, name=f"post_process_{stack.stable_hash}"),
         )
     else:
         # Downscaled: calibrate → stack → metadata (no post-processing)
         steps = chain(
             (build_calibration_stack_subgraph, stack, config),
-            (stack_files, stack, config),
+            (stack_fn, stack, config),
             Node(compute_image_metadata, name=f"stacking_{stack.stable_hash}"),
         )
 

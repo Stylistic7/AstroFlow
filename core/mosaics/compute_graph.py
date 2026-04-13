@@ -11,19 +11,18 @@ from frozendict import frozendict
 from stacks.composite_stack import Stack, StacksDict, RunsDict, CalibrationStacksDict
 from decisions.settings import DevelopmentSettings
 from dependency_graph import Graph, Node, chain
-from mosaics.merge_images import merge_images
+from mosaics.merge_images import MergedImage
 from mosaics.types import Mosaic, MosaicsDict, Viewbox
 from mosaics.viewbox import compute_viewbox
-from mosaics.placement import place_image
-from mosaics.post_process import post_process_mosaic
+from mosaics.placement import PlacedImage
 from stacks.compute_graph import get_stack_image
 from stacks.types import StackHash
 from previews.types import QualityLevel
+from products import get_producer, MediaType
 from decorators import node
 from targets.types import TargetsDict, Target, TargetHash
 from metadata.image_metadata import compute_image_metadata
 from stacks.convert_to_dict import convert_to_dict
-from mosaics.final_storage import store_mosaic_color_channel
 from dependency_graph.workflow_graph_adapter import (
     store_workflow_graph,
     store_node_status,
@@ -109,12 +108,14 @@ def build_mosaic_subgraph(
             viewbox,
             config,
         )
+        from mosaics.final_storage import store_mosaic_color_channel
         store_task = (store_mosaic_color_channel, mode, mosaic, filter)
         graph[filter_subgraph_task] = {}
         graph[store_task] = {filter_subgraph_task}
         filter_done_tasks.append(store_task)
 
-    graph[(post_process_mosaic, mode, mosaic, stacks, targets)] = filter_done_tasks
+    pp_fn = get_producer(MediaType.IMAGE, Mosaic, QualityLevel.POST_PROCESSED, config.implementation)
+    graph[(pp_fn, mode, mosaic, stacks, targets)] = filter_done_tasks
 
     return graph
 
@@ -128,11 +129,15 @@ def build_placement_subgraph(
     viewbox: Viewbox,
     config: "ProcessingConfig",
 ) -> Graph:
+    from products import ensure_producers_registered
+    ensure_producers_registered()
+
+    place_fn = get_producer(MediaType.IMAGE, PlacedImage, mode, config.implementation)
     return Graph(
         {
             **chain(
                 (get_stack_image, mode, stack, config),
-                (place_image, mode, mosaic, stack, filter, viewbox),
+                (place_fn, mode, mosaic, stack, filter, viewbox),
                 Node(compute_image_metadata, name="placed"),
             )
         }
@@ -170,6 +175,9 @@ def build_mosaic_filter_subgraph(
     viewbox: Viewbox | None,
     config: "ProcessingConfig",
 ) -> Graph | None:
+    from products import ensure_producers_registered
+    ensure_producers_registered()
+
     log.info("Building mosaic filter subgraph", mode=mode, mosaic=str(mosaic), filter=filter, strips=mosaic.strips, viewbox=str(viewbox))
 
     graph_update_fn = partial(
@@ -191,6 +199,8 @@ def build_mosaic_filter_subgraph(
     #   merge(place_i, place_j) -> merge_j
     #   merge(merge_j, place_k) -> merge_k
     #   merge(merge_k, place_l) -> merge_l
+
+    merge_fn = get_producer(MediaType.IMAGE, MergedImage, mode, config.implementation)
 
     graph = Graph(
         graph_update_fn=graph_update_fn, node_status_fn=node_status_fn
@@ -219,7 +229,7 @@ def build_mosaic_filter_subgraph(
                     mode, mosaic, stack, filter, viewbox, config,
                 )
                 merge_task = Node(
-                    merge_images,
+                    merge_fn,
                     mode,
                     mosaic,
                     filter,
@@ -244,7 +254,7 @@ def build_mosaic_filter_subgraph(
             prev_task = strip_tasks[0]
         else:
             merge_task = Node(
-                merge_images,
+                merge_fn,
                 mode,
                 mosaic,
                 filter,

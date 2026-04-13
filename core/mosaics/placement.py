@@ -20,7 +20,7 @@ from file_io.generic import read_image
 from file_io.tiff_file_io import write_tiff_image
 from file_io.types import TiffFilePath, WithSidecar
 from context import context
-from previews.types import QualityLevel, SUBFRAME, MASTER, DOWNSCALED_MASTER
+from previews.types import QualityLevel, ALL_IMPLEMENTATIONS, SUBFRAME, MASTER, DOWNSCALED_MASTER
 from products.registry import get_filename_fn, MediaType
 from mosaics.types import Mosaic, Viewbox
 from mosaics.artifacts import placed_filename
@@ -159,7 +159,7 @@ def _project_in_tiles(
 
 
 @node
-@makes_image(PlacedImage).for_levels([SUBFRAME, MASTER, DOWNSCALED_MASTER], placed_filename)
+@makes_image(PlacedImage, ALL_IMPLEMENTATIONS, [SUBFRAME, MASTER, DOWNSCALED_MASTER], placed_filename)
 def place_image(
     mode: QualityLevel,
     mosaic: Mosaic,

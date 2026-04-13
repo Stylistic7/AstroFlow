@@ -9,7 +9,8 @@ from context import context
 from decorators import node
 from dependency_graph import Graph
 from targets.types import Target
-from targets.post_process import post_process_target
+from products import get_producer, MediaType
+from previews.types import QualityLevel
 from targets.types import TargetsDict
 from stacks.compute_graph import build_stacking_subgraph
 from stacks.convert_to_dict import convert_to_dict
@@ -44,6 +45,7 @@ def build_target_subgraph(
             min_frames_in_stack=config.min_frames_in_stack,
             decisions=decisions,
             quality=config.quality,
+            implementation=config.implementation,
         )
 
     graph_update_fn = partial(
@@ -56,7 +58,8 @@ def build_target_subgraph(
     )
 
     mock = config.development_settings.mock_pixinsight
-    graph[(post_process_target, target, stacks, mock)] = {
+    pp_fn = get_producer(MediaType.IMAGE, Target, QualityLevel.POST_PROCESSED, config.implementation)
+    graph[(pp_fn, target, stacks, mock)] = {
         (build_stacking_subgraph, stacks[stack_id].get(), config_for(stack_id))
         for stack_id in target.stack_ids
     }

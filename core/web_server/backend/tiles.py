@@ -83,8 +83,10 @@ def _tile_pyramid_path_for(
             QualityLevel.SUBFRAME,
         ]
 
+    implementation = context.settings.implementation
+
     for q in levels_to_try:
-        producer = get_producer(MediaType.IMAGE, obj_cls, q)
+        producer = get_producer(MediaType.IMAGE, obj_cls, q, implementation)
         if producer is None:
             continue
         if not hasattr(producer, "tile_pyramid_fn"):

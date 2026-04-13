@@ -4,6 +4,16 @@ from enum import StrEnum
 PreviewHash = NewType("PreviewHash", str)
 
 
+class Implementation(StrEnum):
+    PIXINSIGHT = "PixInsight"
+    ASTROFLOW = "AstroFlow"
+
+
+PIXINSIGHT = Implementation.PIXINSIGHT
+ASTROFLOW = Implementation.ASTROFLOW
+ALL_IMPLEMENTATIONS = list(Implementation)
+
+
 class QualityLevel(StrEnum):
     SUBFRAME = "Subframe"
     DOWNSCALED_MASTER = "DownscaledMaster"

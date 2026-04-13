@@ -8,7 +8,7 @@ from mosaics.types import Mosaic
 from file_io.generic import read_image
 from file_io.tiff_file_io import write_tiff_image
 from previews.operations import autostretch
-from previews.types import QualityLevel, SUBFRAME, MASTER, DOWNSCALED_MASTER
+from previews.types import QualityLevel, ALL_IMPLEMENTATIONS, PIXINSIGHT, SUBFRAME, MASTER, DOWNSCALED_MASTER
 from pix import Image
 from products import makes_image
 from decorators import node, create_thumbnail, create_tile_pyramid
@@ -17,7 +17,7 @@ from metadata.classes import ImageMetadata
 
 
 @node(resources={"PixInsight": 1})
-@makes_image(Mosaic).for_levels([MASTER, DOWNSCALED_MASTER], mosaic_filename_xisf)
+@makes_image(Mosaic, PIXINSIGHT, [MASTER, DOWNSCALED_MASTER], mosaic_filename_xisf)
 @create_thumbnail
 @create_tile_pyramid
 def store_mosaic_color_channel_xisf(
@@ -36,7 +36,7 @@ def store_mosaic_color_channel_xisf(
 
 
 @node(resources={"fastest_storage": 0.001})
-@makes_image(Mosaic).for_levels([SUBFRAME], mosaic_filename_tiff)
+@makes_image(Mosaic, ALL_IMPLEMENTATIONS, [SUBFRAME], mosaic_filename_tiff)
 @create_thumbnail
 @create_tile_pyramid
 def store_mosaic_color_channel_subframe(

@@ -45,15 +45,15 @@ def test_downscaled_orion_mosaic(test_context):
     output = Path(context.output_dir)
 
     # Calibration stacks should be in DownscaledMaster directory.
-    cal_masters = list(output.rglob("CalibrationStack/DownscaledMaster/*.xisf"))
+    cal_masters = list(output.rglob("CalibrationStack/DownscaledMaster/*/*.xisf"))
     assert len(cal_masters) >= 1, f"Expected calibration masters, found: {cal_masters}"
 
     # Light stack masters should be in DownscaledMaster directory.
-    stack_masters = list(output.rglob("Stack/DownscaledMaster/*.xisf"))
+    stack_masters = list(output.rglob("Stack/DownscaledMaster/*/*.xisf"))
     assert len(stack_masters) >= 1, f"Expected stack masters, found: {stack_masters}"
 
     # Full-resolution masters should NOT exist.
-    full_masters = list(output.rglob("Stack/Master/*.xisf"))
+    full_masters = list(output.rglob("Stack/Master/*/*.xisf"))
     assert len(full_masters) == 0, f"Unexpected full-resolution masters: {full_masters}"
 
     # Note: placement and merging are not tested here because mock
@@ -90,8 +90,8 @@ def test_downscaled_orion_mosaic_produces_tiled_tiff(test_context):
     print_tree(context.output_dir)
 
     output = Path(context.output_dir)
-    xisfs = list(output.rglob("Mosaic/DownscaledMaster/*.xisf"))
-    tiffs = list(output.rglob("Mosaic/DownscaledMaster/*.tiff"))
+    xisfs = list(output.rglob("Mosaic/DownscaledMaster/*/*.xisf"))
+    tiffs = list(output.rglob("Mosaic/DownscaledMaster/*/*.tiff"))
 
     # The per-filter XISF is the canonical final mosaic; the .tiff is
     # what get_image()/tile_metadata streams to the browser.

@@ -62,9 +62,9 @@ def test_downscaled_stack(test_context):
     print_tree(context.output_dir)
 
     # Verify downscaled master was produced.
-    downscaled_masters = list(Path(context.output_dir).rglob("DownscaledMaster/*.xisf"))
+    downscaled_masters = list(Path(context.output_dir).rglob("DownscaledMaster/**/*.xisf"))
     assert len(downscaled_masters) >= 1, f"Expected downscaled master files, found: {downscaled_masters}"
 
     # Full-resolution masters should NOT exist (we only asked for downscaled).
-    full_masters = list(Path(context.output_dir).rglob("Master/*.xisf"))
+    full_masters = list(Path(context.output_dir).rglob("Master/**/*.xisf"))
     assert len(full_masters) == 0, f"Unexpected full-resolution masters: {full_masters}"

@@ -12,7 +12,7 @@ from pix.tasks import PhotometricMosaic
 from metadata.classes import ImageMetadata
 from mosaics.types import Mosaic
 from mosaics.artifacts import merged_filename_tiff, merged_filename_xisf
-from previews.types import QualityLevel, SUBFRAME, MASTER, DOWNSCALED_MASTER
+from previews.types import QualityLevel, ALL_IMPLEMENTATIONS, PIXINSIGHT, SUBFRAME, MASTER, DOWNSCALED_MASTER
 from decorators import node, create_tile_pyramid
 from file_io.tiff_file_io import write_tiff_image
 from file_io.types import XisfFilePath, TiffFilePath, WithSidecar
@@ -36,8 +36,8 @@ def _merge_tile_path(mode, mosaic, filter, mock_pixinsight, input_0, input_1):
 
 
 @node(resources={"PixInsight": 1})
-@makes_image(MergedImage).for_levels([SUBFRAME], merged_filename_tiff)
-@makes_image(MergedImage).for_levels([MASTER, DOWNSCALED_MASTER], merged_filename_xisf)
+@makes_image(MergedImage, ALL_IMPLEMENTATIONS, [SUBFRAME], merged_filename_tiff)
+@makes_image(MergedImage, PIXINSIGHT, [MASTER, DOWNSCALED_MASTER], merged_filename_xisf)
 @create_tile_pyramid(tile_filename=_merge_tile_path)
 def merge_images(
     mode: QualityLevel,

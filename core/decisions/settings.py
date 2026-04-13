@@ -6,7 +6,7 @@ from frozendict import frozendict
 from units import Radians
 from hashing import hash_dataclass
 from decisions.decisions import DecisionKey, DecisionOverride
-from previews.types import QualityLevel
+from previews.types import QualityLevel, Implementation
 
 
 @dataclass(frozen=True)
@@ -58,6 +58,7 @@ class ProcessingConfig:
     min_frames_in_stack: int = 5
     decisions: frozendict = field(default_factory=frozendict)
     quality: QualityLevel = QualityLevel.MASTER
+    implementation: Implementation = Implementation.PIXINSIGHT
 
     def __hash__(self):
         return hash_dataclass(self)
@@ -71,6 +72,7 @@ class Settings:
     clustering_settings: ClusteringSettings = field(default_factory=ClusteringSettings)
     development_settings: DevelopmentSettings = field(default_factory=DevelopmentSettings)
     preview_settings: PreviewSettings = field(default_factory=PreviewSettings)
+    implementation: Implementation = Implementation.PIXINSIGHT
 
     def __hash__(self):
         return hash_dataclass(self)

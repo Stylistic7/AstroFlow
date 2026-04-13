@@ -21,7 +21,7 @@ from decorators import node, create_thumbnail, create_tile_pyramid
 from decisions.settings import DevelopmentSettings, ProcessingConfig
 from decisions.resolve import resolve_calibration, resolve_decisions
 from decisions.compute_graph import ALL_EXCLUSION_TYPES
-from previews.types import QualityLevel, MASTER, DOWNSCALED_MASTER, DOWNSCALE_FACTORS
+from previews.types import QualityLevel, PIXINSIGHT, MASTER, DOWNSCALED_MASTER, DOWNSCALE_FACTORS
 from products import makes_image
 import structlog
 
@@ -160,8 +160,8 @@ def _copy_wbpp_result(
 
 
 @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD")
-@makes_image(CalibrationStack).for_levels([MASTER, DOWNSCALED_MASTER], stack_filename)
-@makes_image(Stack).for_levels([MASTER, DOWNSCALED_MASTER], stack_filename)
+@makes_image(CalibrationStack, PIXINSIGHT, [MASTER, DOWNSCALED_MASTER], stack_filename)
+@makes_image(Stack, PIXINSIGHT, [MASTER, DOWNSCALED_MASTER], stack_filename)
 @create_thumbnail
 @create_tile_pyramid
 def stack_files(

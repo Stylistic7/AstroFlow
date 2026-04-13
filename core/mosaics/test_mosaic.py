@@ -102,21 +102,21 @@ def test_orion_mosaic(test_context) -> None:
                 print(f"### {file=} {header=}")
                 assert expected_header.items() <= header.items()
 
-    assert_files("CalibrationStack/Master/bias*.xisf", 1)
-    assert_files("CalibrationStack/Master/dark*.xisf", 1)
-    assert_files("CalibrationStack/Master/flat*.xisf", 1)
+    assert_files("CalibrationStack/Master/*/bias*.xisf", 1)
+    assert_files("CalibrationStack/Master/*/dark*.xisf", 1)
+    assert_files("CalibrationStack/Master/*/flat*.xisf", 1)
 
-    assert_files("Stack/Master/light*.xisf", 4, {"FILTER": "H"})
-    assert_files("Stack/PostProcessed/light*.xisf", 4, {"FILTER": "H"})
+    assert_files("Stack/Master/*/light*.xisf", 4, {"FILTER": "H"})
+    assert_files("Stack/PostProcessed/*/light*.xisf", 4, {"FILTER": "H"})
 
-    assert_files("PlacedImage/Subframe/placed*.tiff", 4, {"FILTER": "H"})
-    assert_files("PlacedImage/Master/placed*.tiff", 4, {"FILTER": "H"})
+    assert_files("PlacedImage/Subframe/*/placed*.tiff", 4, {"FILTER": "H"})
+    assert_files("PlacedImage/Master/*/placed*.tiff", 4, {"FILTER": "H"})
 
-    assert_files("MergedImage/Subframe/*.tiff", expected_header={"FILTER": "H"})
-    assert_files("MergedImage/Master/*.xisf", 3, {"FILTER": "H"})
+    assert_files("MergedImage/Subframe/*/*.tiff", expected_header={"FILTER": "H"})
+    assert_files("MergedImage/Master/*/*.xisf", 3, {"FILTER": "H"})
 
-    assert_files("Mosaic/Subframe/*.tiff", 1, {"FILTER": "H"})
-    assert_files("Mosaic/Master/*.xisf", 1, {"FILTER": "H"})
+    assert_files("Mosaic/Subframe/*/*.tiff", 1, {"FILTER": "H"})
+    assert_files("Mosaic/Master/*/*.xisf", 1, {"FILTER": "H"})
     # PostProcessed not produced — test data has only "H" filter,
     # which doesn't match any post-processing path (RGB or SHO).
 

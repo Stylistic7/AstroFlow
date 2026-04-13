@@ -13,7 +13,7 @@ from pix.tasks import (
 )
 from file_io.types import XisfFilePath, WithSidecar
 from decorators import node, create_thumbnail, create_tile_pyramid
-from previews.types import QualityLevel
+from previews.types import QualityLevel, PIXINSIGHT
 from mosaics.types import Mosaic
 from mosaics.artifacts import mosaic_filename_xisf
 from products import makes_image
@@ -52,7 +52,7 @@ def _post_process_mosaic(images: ImageList, mosaic: Mosaic) -> Image | None:
 
 
 @node(resources={"PixInsight": 1})
-@makes_image(Mosaic).for_levels([QualityLevel.POST_PROCESSED], mosaic_filename_xisf)
+@makes_image(Mosaic, PIXINSIGHT, [QualityLevel.POST_PROCESSED], mosaic_filename_xisf)
 @create_thumbnail
 @create_tile_pyramid
 def post_process_mosaic(

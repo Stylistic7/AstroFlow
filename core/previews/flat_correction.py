@@ -12,11 +12,11 @@ from stacks.run import Run
 from stacks.types import StackHash, StackIdDependency
 from file_io.tiff_file_io import write_tiff_image
 from products import makes_image
-from previews.types import SUBFRAME
+from previews.types import ALL_IMPLEMENTATIONS, SUBFRAME
 
 
 # TODO: This should be a new, distinct type, FlatCorrectedStack.
-@makes_image(Run).for_levels([SUBFRAME])
+@makes_image(Run, ALL_IMPLEMENTATIONS, [SUBFRAME])
 @measure_performance
 @create_thumbnail
 def flat_corrected_stack(

@@ -15,13 +15,14 @@ thumbnails_bp = Blueprint("thumbnails", __name__)
 
 
 def get_thumbnail(object_type: type, *args):
+    implementation = context.settings.implementation
     for level in [
         QualityLevel.POST_PROCESSED,
         QualityLevel.MASTER,
         QualityLevel.DOWNSCALED_MASTER,
         QualityLevel.SUBFRAME,
     ]:
-        if fn := get_producer(MediaType.IMAGE, object_type, level):
+        if fn := get_producer(MediaType.IMAGE, object_type, level, implementation):
             if hasattr(fn, "thumbnail_fn"):
                 if thumbnail := fn.thumbnail_fn(*args):
                     resp = flask.Response(
@@ -64,13 +65,14 @@ def run_thumbnail(stack_id: str, substack_id: str, flat_stack_id: str):
 
 
 def get_video(object_type: type, *args):
+    implementation = context.settings.implementation
     for level in [
         QualityLevel.POST_PROCESSED,
         QualityLevel.MASTER,
         QualityLevel.DOWNSCALED_MASTER,
         QualityLevel.SUBFRAME,
     ]:
-        if fn := get_producer(MediaType.VIDEO, object_type, level):
+        if fn := get_producer(MediaType.VIDEO, object_type, level, implementation):
             if hasattr(fn, "video_fn"):
                 if video := fn.video_fn(*args):
                     buffer = io.BytesIO()
