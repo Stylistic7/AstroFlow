@@ -17,6 +17,10 @@ def mosaic_filename_xisf(mosaic: Mosaic, filter: str) -> XisfFilePath:
     return XisfFilePath(f"final_{mosaic.stable_hash}_{filter}.xisf")
 
 
+def mosaic_filename_fits(mosaic: Mosaic, filter: str) -> FitsFilePath:
+    return FitsFilePath(f"final_{mosaic.stable_hash}_{filter}.fits")
+
+
 def tile_filename(mosaic: Mosaic, filter: str) -> TiffFilePath:
     filename = mosaic_filename_tiff(mosaic, filter)
     return TiffFilePath(

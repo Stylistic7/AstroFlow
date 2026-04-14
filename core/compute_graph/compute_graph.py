@@ -291,7 +291,9 @@ def build_main_processing_graph(
     mosaics = objects.mosaics
     calibration_stacks = objects.calibration_stacks
 
-    def config_for(stack_id=None, mode=QualityLevel.MASTER):
+    from previews.types import Implementation
+
+    def config_for(stack_id=None, mode=QualityLevel.MASTER, implementation=Implementation.PIXINSIGHT):
         if stack_id:
             decisions = decisions_for_stack(decision_overrides, stack_id)
         else:
@@ -302,6 +304,7 @@ def build_main_processing_graph(
             min_frames_in_stack=min_frames_in_stack,
             decisions=decisions,
             quality=mode,
+            implementation=implementation,
         )
 
     log.info("Building main processing graph", shopping_cart=shopping_cart)
@@ -309,20 +312,21 @@ def build_main_processing_graph(
     graph = Graph({})
     tasks = []
     for entry in shopping_cart:
-        # Shopping cart entries: (type, id) or (type, id, mode_str)
+        # Shopping cart entries: (type, id, mode_str?, implementation_str?)
         type, id = entry[0], entry[1]
         mode = QualityLevel(entry[2]) if len(entry) > 2 else QualityLevel.MASTER
+        impl = Implementation(entry[3]) if len(entry) > 3 else Implementation.PIXINSIGHT
 
         if type == "stack":
             if id not in stacks:
                 log.warning("Stack in shopping cart does not exist", stack_id=id)
                 continue
-            tasks.append((build_stacking_subgraph, stacks[id].get(), config_for(id, mode)))
+            tasks.append((build_stacking_subgraph, stacks[id].get(), config_for(id, mode, impl)))
         elif type == "target":
             if id not in targets:
                 log.warning("Target in shopping cart does not exist", target_id=id)
                 continue
-            tasks.append((build_target_subgraph, targets[id].get(), config_for(mode=mode)))
+            tasks.append((build_target_subgraph, targets[id].get(), config_for(mode=mode, implementation=impl)))
         if type == "mosaic":
             if id not in mosaics:
                 log.warning("Mosaic in shopping cart does not exist", mosaic_id=id)
@@ -336,7 +340,7 @@ def build_main_processing_graph(
                     mosaic,
                     stacks_for_mosaic(mosaic, stacks, targets),
                     targets_for_mosaic(mosaic, targets),
-                    config_for(mode=mode),
+                    config_for(mode=mode, implementation=impl),
                 )
             )
 

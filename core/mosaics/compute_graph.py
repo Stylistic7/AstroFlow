@@ -109,7 +109,7 @@ def build_mosaic_subgraph(
             config,
         )
         from mosaics.final_storage import store_mosaic_color_channel
-        store_task = (store_mosaic_color_channel, mode, mosaic, filter)
+        store_task = (store_mosaic_color_channel, mode, mosaic, filter, config.implementation)
         graph[filter_subgraph_task] = {}
         graph[store_task] = {filter_subgraph_task}
         filter_done_tasks.append(store_task)

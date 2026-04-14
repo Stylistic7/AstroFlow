@@ -18,7 +18,7 @@ from targets.types import Target
 from stacks.artifacts import stack_filename
 from stacks.composite_stack import StacksDict
 from products import makes_image
-from previews.types import QualityLevel, PIXINSIGHT
+from previews.types import QualityLevel, PIXINSIGHT, OSS
 
 
 def _post_process_target(images: ImageList, target: Target) -> tuple[Image, Image] | None:
@@ -87,3 +87,11 @@ def post_process_target(target: Target, stacks: StacksDict, mock_pixinsight: boo
         stars.save_to(target_filename(target, "stars"), mock=mock_pixinsight)
     if starless is not None:
         starless.save_to(target_filename(target, "starless"), mock=mock_pixinsight)
+
+
+@node
+@makes_image(Target, OSS, [QualityLevel.POST_PROCESSED], target_filename)
+@create_thumbnail
+def post_process_target_oss(target: Target, stacks: StacksDict, mock_pixinsight: bool = False) -> None:
+    """Stub: target post-processing for the OSS pipeline (TODO)."""
+    return None

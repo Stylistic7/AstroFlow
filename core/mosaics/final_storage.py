@@ -1,18 +1,19 @@
 import ray
+import shutil
 from pathlib import Path
 import numpy as np
 from beartype import beartype
 
-from mosaics.artifacts import mosaic_filename_tiff, mosaic_filename_xisf
+from mosaics.artifacts import mosaic_filename_tiff, mosaic_filename_xisf, mosaic_filename_fits
 from mosaics.types import Mosaic
 from file_io.generic import read_image
 from file_io.tiff_file_io import write_tiff_image
 from previews.operations import autostretch
-from previews.types import QualityLevel, ALL_IMPLEMENTATIONS, PIXINSIGHT, SUBFRAME, MASTER, DOWNSCALED_MASTER
+from previews.types import QualityLevel, Implementation, ALL_IMPLEMENTATIONS, PIXINSIGHT, OSS, SUBFRAME, MASTER, DOWNSCALED_MASTER
 from pix import Image
 from products import makes_image
 from decorators import node, create_thumbnail, create_tile_pyramid
-from file_io.types import TiffFilePath, XisfFilePath, WithSidecar
+from file_io.types import FitsFilePath, TiffFilePath, XisfFilePath, WithSidecar
 from metadata.classes import ImageMetadata
 
 
@@ -58,10 +59,26 @@ def store_mosaic_color_channel_subframe(
     return WithSidecar(output)
 
 
+@node
+@makes_image(Mosaic, OSS, [MASTER, DOWNSCALED_MASTER], mosaic_filename_fits)
+@create_thumbnail
+@create_tile_pyramid
+def store_mosaic_color_channel_oss(
+    mode: QualityLevel, mosaic: Mosaic, filter: str, input: ImageMetadata,
+) -> WithSidecar[FitsFilePath]:
+    """Copy the final merged FITS to the canonical mosaic path."""
+    fn = store_mosaic_color_channel_oss.filename_fns[(Mosaic, mode)]
+    output = fn(mosaic, filter)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(str(input.filename), str(output))
+    return WithSidecar(FitsFilePath(output))
+
+
 @ray.remote
 @beartype
 def store_mosaic_color_channel(
     mode: QualityLevel, mosaic: Mosaic, filter: str, input: ImageMetadata,
+    implementation: Implementation = PIXINSIGHT,
 ) -> WithSidecar:
     from context import context
     mock = context.settings.development_settings.mock_pixinsight
@@ -69,7 +86,10 @@ def store_mosaic_color_channel(
         return ray.get(
             store_mosaic_color_channel_subframe.remote(mosaic, filter, input)
         )
-    else:
+    if implementation == OSS:
         return ray.get(
-            store_mosaic_color_channel_xisf.remote(mode, mosaic, filter, input, mock)
+            store_mosaic_color_channel_oss.remote(mode, mosaic, filter, input)
         )
+    return ray.get(
+        store_mosaic_color_channel_xisf.remote(mode, mosaic, filter, input, mock)
+    )

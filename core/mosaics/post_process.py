@@ -13,7 +13,7 @@ from pix.tasks import (
 )
 from file_io.types import XisfFilePath, WithSidecar
 from decorators import node, create_thumbnail, create_tile_pyramid
-from previews.types import QualityLevel, PIXINSIGHT
+from previews.types import QualityLevel, PIXINSIGHT, OSS
 from mosaics.types import Mosaic
 from mosaics.artifacts import mosaic_filename_xisf
 from products import makes_image
@@ -87,3 +87,17 @@ def post_process_mosaic(
     result.save_to(output_filename, mock=mock)
 
     return WithSidecar(output_filename)
+
+
+@node
+@makes_image(Mosaic, OSS, [QualityLevel.POST_PROCESSED], mosaic_filename_xisf)
+@create_thumbnail
+@create_tile_pyramid
+def post_process_mosaic_oss(
+    mode: QualityLevel,
+    mosaic: Mosaic,
+    stacks: StacksDict,
+    targets: TargetsDict,
+) -> None:
+    """Stub: mosaic post-processing for the OSS pipeline (TODO)."""
+    return None
