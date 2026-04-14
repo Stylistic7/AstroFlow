@@ -42,7 +42,7 @@ def _merge_thumbnail_key(mode, mosaic, filter, *rest, **kwargs):
     return (mode, mosaic, filter)
 
 
-@node(resources={"PixInsight": 1})
+@node(resources={"PixInsight": 1}, auto_memory=True)
 @makes_image(MergedImage, ALL_IMPLEMENTATIONS, [SUBFRAME], merged_filename_tiff)
 @makes_image(MergedImage, PIXINSIGHT, [MASTER, DOWNSCALED_MASTER], merged_filename_xisf)
 @create_thumbnail(lookup_args=_merge_thumbnail_key)

@@ -23,7 +23,7 @@ from stacks.composite_stack import Stack
 log = structlog.get_logger()
 
 
-@node
+@node(auto_memory=True)
 @makes_image(Stack, OSS, [QualityLevel.POST_PROCESSED], stack_filename_fits)
 @create_thumbnail
 @create_tile_pyramid

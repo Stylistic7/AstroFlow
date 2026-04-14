@@ -68,6 +68,7 @@ def make_cached_decorator(
     cache_provider: Callable[[], CacheProtocol],
     content_hasher: ContentHashProtocol,
     call_hasher: Optional[Callable[[str, Any], str]],
+    memory_estimator: Optional[Callable[[Callable, tuple, dict], int]] = None,
     debug=False,
 ):
     cache: CacheProtocol | None = None
@@ -177,6 +178,10 @@ def make_cached_decorator(
         inner.__qualname__ = func.__qualname__
         inner.__module__ = func.__module__
 
+        # Pull our own kwargs out of ray_opts before handing to ray.remote
+        # (which would reject unknown kwargs).
+        auto_memory = ray_opts.pop("auto_memory", False)
+
         ray_func = (
             ray.remote(**ray_opts)(inner) if ray_opts else ray.remote(inner)
         )
@@ -187,7 +192,23 @@ def make_cached_decorator(
                 f"{func.__name__} is a remote task. Use `.remote(...)`."
             )
 
-        wrapper.remote = ray_func.remote
+        if auto_memory:
+            if memory_estimator is None:
+                raise RuntimeError(
+                    f"{func.__name__} uses auto_memory=True but this "
+                    f"make_cached_decorator was built without a memory_estimator."
+                )
+
+            def _auto_memory_remote(*args, **kwargs):
+                estimate = memory_estimator(func, args, kwargs)
+                print(
+                    f"### auto_memory: {func.__name__} → {estimate / 1024**3:.0f} GB"
+                )
+                return ray_func.options(memory=estimate).remote(*args, **kwargs)
+
+            wrapper.remote = _auto_memory_remote
+        else:
+            wrapper.remote = ray_func.remote
         wrapper.options = ray_func.options
         wrapper._original = func
         wrapper._function = func

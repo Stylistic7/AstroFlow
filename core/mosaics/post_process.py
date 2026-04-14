@@ -51,7 +51,7 @@ def _post_process_mosaic(images: ImageList, mosaic: Mosaic) -> Image | None:
     return None
 
 
-@node(resources={"PixInsight": 1})
+@node(resources={"PixInsight": 1}, auto_memory=True)
 @makes_image(Mosaic, PIXINSIGHT, [QualityLevel.POST_PROCESSED], mosaic_filename_xisf)
 @create_thumbnail
 @create_tile_pyramid

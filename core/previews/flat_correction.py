@@ -47,7 +47,7 @@ def flat_corrected_stack(
     return temp_file
 
 
-@node(memory=3 * 1024 * 1024 * 1024)
+@node
 def create_flat_correction_thumbnails(
     stack: Stack,
     calibration_stacks: CalibrationStacksDict,

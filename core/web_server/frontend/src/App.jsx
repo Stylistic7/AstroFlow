@@ -292,6 +292,27 @@ function App() {
                     <StackViewer />
                   </AppLayout>
                 } />
+                {/* Same target/stack drill-down as above, but preserving the
+                    detail viewer's (implementation × quality × filter) context
+                    in the URL so the breadcrumb back-stack stays intact. */}
+                <Route path="/mosaic/:mosaic_id/:implementation/:quality/:filter/target/:target_id" element={
+                  dataIsAvailable &&
+                  <AppLayout>
+                    <TargetPanel />
+                  </AppLayout>}
+                />
+                <Route path="/mosaic/:mosaic_id/:implementation/:quality/:filter/target/:target_id/stack/:stack_id" element={
+                  dataIsAvailable &&
+                  <AppLayout>
+                    <StackViewer />
+                  </AppLayout>
+                } />
+                <Route path="/mosaic/:mosaic_id/:implementation/:quality/:filter/target/:target_id/stack/:stack_id/calibration_stack/:calibration_stack_id" element={
+                  dataIsAvailable &&
+                  <AppLayout>
+                    <StackViewer />
+                  </AppLayout>
+                } />
                 <Route path="/disambiguation/" element={
                   dataIsAvailable &&
                   <AppLayout>

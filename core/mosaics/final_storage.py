@@ -17,7 +17,7 @@ from file_io.types import FitsFilePath, TiffFilePath, XisfFilePath, WithSidecar
 from metadata.classes import ImageMetadata
 
 
-@node(resources={"PixInsight": 1})
+@node(resources={"PixInsight": 1}, auto_memory=True)
 @makes_image(Mosaic, PIXINSIGHT, [MASTER, DOWNSCALED_MASTER], mosaic_filename_xisf)
 @create_thumbnail
 @create_tile_pyramid

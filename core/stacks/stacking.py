@@ -155,7 +155,7 @@ def _copy_wbpp_result(
     return WithSidecar(XisfFilePath(dest_filename))
 
 
-@node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD")
+@node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD", auto_memory=True)
 @makes_image(CalibrationStack, PIXINSIGHT, [MASTER, DOWNSCALED_MASTER], stack_filename)
 @makes_image(Stack, PIXINSIGHT, [MASTER, DOWNSCALED_MASTER], stack_filename)
 @create_thumbnail

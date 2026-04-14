@@ -49,7 +49,7 @@ def _blend(image_0, image_1):
     return (w_0 * image_0 + w_1 * image_1) / total
 
 
-@node
+@node(auto_memory=True)
 @makes_image(MergedImage, OSS, [MASTER, DOWNSCALED_MASTER], merged_filename_fits)
 @create_thumbnail(lookup_args=_merge_thumbnail_key)
 @create_tile_pyramid(tile_filename=_merge_tile_path)

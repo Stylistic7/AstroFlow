@@ -37,16 +37,9 @@ def make_large_image_remote(
 
 
 def test_decorator(test_context):
-    from ray.util import get_node_ip_address
+    from hashing import hash_source_code
 
     context.num_make_large_image_runs = 0
-    fn_name = "make_large_image_remote"
-    node_ip = get_node_ip_address()
-    # Profile keys now include the inferred QualityLevel (None when the
-    # function doesn't take one).
-    perf_key = ("profile", fn_name, None, node_ip)
-
-    context[perf_key] = []
 
     with tempfile.TemporaryDirectory() as output_dir:
         injected_context = {"output_dir": Path(output_dir)}
@@ -56,6 +49,9 @@ def test_decorator(test_context):
             )
         )
 
-    history = context.get(perf_key, [])
-    assert len(history) > 0
-    assert isinstance(history[0], dict)
+    # Profile keys are ("profile", fn_hash, fn_name, quality, node_ip).
+    # Match by prefix since node_ip varies by test environment.
+    matches = context.get_matching(("profile",))
+    histories = [v for v in matches.values() if v]
+    assert len(histories) > 0, f"No profile samples recorded; matches={matches}"
+    assert isinstance(histories[0][0], dict)

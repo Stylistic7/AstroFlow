@@ -158,7 +158,7 @@ def _project_in_tiles(
     return projected_image[0 : viewbox.num_pixels_y, 0 : viewbox.num_pixels_x]
 
 
-@node
+@node(auto_memory=True)
 @makes_image(PlacedImage, ALL_IMPLEMENTATIONS, [SUBFRAME, MASTER, DOWNSCALED_MASTER], placed_filename)
 def place_image(
     mode: QualityLevel,

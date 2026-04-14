@@ -9,6 +9,7 @@ import ray
 from collections.abc import Mapping
 from dataclasses import is_dataclass, fields
 
+from hashing import hash_source_code
 from protocols import CacheProtocol
 from metadata.classes import ImageMetadata
 
@@ -82,13 +83,14 @@ def _collect_image_stats_by_argument(func, args, kwargs):
 
 
 def _update_profile(
+    fn_hash: str,
     fn_name: str,
     quality: str | None,
     record: dict[str, Any],
     cache: CacheProtocol,
 ):
     node_ip = ray.util.get_node_ip_address()
-    key = ("profile", fn_name, quality, node_ip)
+    key = ("profile", fn_hash, fn_name, quality, node_ip)
     cache.and_equals(key, [record], _MAX_PROFILE_SAMPLES)
 
 
@@ -113,6 +115,7 @@ def _infer_quality(args, kwargs) -> str | None:
 def make_measure_performance_decorator(cache: CacheProtocol):
     def decorator(func: Callable, ray_opts: dict[str, Any] | None = None):
         ray_opts = ray_opts or {}
+        fn_hash = hash_source_code(func)
 
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -153,7 +156,7 @@ def make_measure_performance_decorator(cache: CacheProtocol):
             }
 
             quality = _infer_quality(args, kwargs)
-            _update_profile(func.__name__, quality, record, cache)
+            _update_profile(fn_hash, func.__name__, quality, record, cache)
             return result
 
         return wrapper

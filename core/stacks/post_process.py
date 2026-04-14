@@ -45,7 +45,7 @@ def _post_process_stack(master_path, stack: Stack, downscale_factor: int = 1) ->
     return MultiscaleGradientCorrection(calibrated)
 
 
-@node(resources={"PixInsight": 1})
+@node(resources={"PixInsight": 1}, auto_memory=True)
 @makes_image(Stack, PIXINSIGHT, [QualityLevel.POST_PROCESSED], stack_filename)
 @create_thumbnail
 @create_tile_pyramid

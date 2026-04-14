@@ -58,7 +58,7 @@ def _sigma_clipped_mean(frames):
     return np.sum(stack * mask, axis=0) / count
 
 
-@node
+@node(auto_memory=True)
 @makes_image(CalibrationStack, OSS, [MASTER, DOWNSCALED_MASTER], stack_filename_fits)
 @makes_image(Stack, OSS, [MASTER, DOWNSCALED_MASTER], stack_filename_fits)
 @create_thumbnail

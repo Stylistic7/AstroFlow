@@ -28,6 +28,8 @@ def start_ray_head_node(timeout=60):
     # TODO: Check for an existing Ray head node.
     ray_path = get_bin_dir() / "ray"
     # TODO: Put these resources in the UI.
+    # For debug-style one-task-at-a-time serialization, add {"fake_resource": 1}
+    # here and tag the target functions with resources={"fake_resource": 1}.
     resources = """'{"PixInsight": 1, "diskcache": 1, "fastest_storage": 1}'"""
     command = f"""ulimit -n 10000 && {ray_path} start --head --resources {resources}"""
     print(f'### Starting Ray head node with command "{command}"')
