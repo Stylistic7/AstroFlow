@@ -5,6 +5,57 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "astroflow"
 version = "0.1"
+requires-python = ">=3.11"
+
+# Every node (head or worker) installs the same set so behaviour is
+# identical everywhere. Splitting into head-vs-worker optional extras
+# would save a few MB of disk but makes debugging environment drift
+# harder; not worth it.
+dependencies = [
+    # Ray + core infra
+    "ray",
+    "diskcache",
+    "filelock",
+    "beartype",
+    "structlog",
+    "objsize",
+    "xxhash",
+    "psutil",
+    "netifaces",
+    "zeroconf",
+    "frozendict",
+    "python-dateutil",
+    "pytz",
+    "python-statemachine",
+    "requests",
+    # Astronomy / image pipeline
+    "astropy",
+    "astroalign",
+    "astroscrappy",
+    "photutils",
+    "cdshealpix",
+    "spherical-geometry",
+    "ephem",
+    "scipy",
+    "numpy",
+    "opencv-python",
+    "scikit-image",
+    "Pillow",
+    "tifffile",
+    "shapely",
+    "largestinteriorrectangle",
+    "large-image[vips]",
+    "xisf",
+    "h5py",
+    # Web UI
+    "flask",
+    "flask-cors",
+    "plotly",
+    "matplotlib",
+    "rich",
+    # Tests
+    "pytest",
+]
 
 [tool.setuptools.packages.find]
 include = ["cli", "core"]
