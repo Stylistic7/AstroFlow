@@ -13,7 +13,9 @@ requires-python = ">=3.11"
 # harder; not worth it.
 dependencies = [
     # Ray + core infra
-    "ray",
+    # Pin Ray: every node in the cluster must run the same version,
+    # otherwise workers can't connect to the head.
+    "ray==2.47.0",
     "diskcache",
     "filelock",
     "beartype",
