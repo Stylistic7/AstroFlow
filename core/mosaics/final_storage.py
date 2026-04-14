@@ -77,8 +77,8 @@ def store_mosaic_color_channel_oss(
 @ray.remote
 @beartype
 def store_mosaic_color_channel(
-    mode: QualityLevel, mosaic: Mosaic, filter: str, input: ImageMetadata,
-    implementation: Implementation = PIXINSIGHT,
+    mode: QualityLevel, mosaic: Mosaic, filter: str,
+    implementation: Implementation, input: ImageMetadata,
 ) -> WithSidecar:
     from context import context
     mock = context.settings.development_settings.mock_pixinsight

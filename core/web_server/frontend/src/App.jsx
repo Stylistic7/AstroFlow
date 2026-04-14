@@ -18,6 +18,7 @@ import WorkflowGraph from './WorkflowGraph.jsx';
 import TileViewer from './TileViewer.jsx';
 import StackViewer from './StackViewer.jsx';
 import MosaicViewer from './MosaicViewer.jsx';
+import MosaicDashboard from './MosaicDashboard.jsx';
 import AppLayout from './AppLayout.jsx';
 import PerformanceExplorer from './PerformanceExplorer.jsx';
 
@@ -250,6 +251,12 @@ function App() {
                   </AppLayout>
                 } />
                 <Route path="/mosaic/:mosaic_id" element={
+                  dataIsAvailable &&
+                  <AppLayout>
+                    <MosaicDashboard />
+                  </AppLayout>
+                } />
+                <Route path="/mosaic/:mosaic_id/:implementation/:quality/:filter" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <MosaicViewer />

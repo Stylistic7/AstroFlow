@@ -20,7 +20,7 @@ import large_image
 from flask import Blueprint, send_file, abort, jsonify
 
 from context import local_context as context
-from previews.types import QualityLevel
+from previews.types import QualityLevel, Implementation
 from stacks.composite_stack import Stack, CalibrationStack
 from targets.types import Target
 from mosaics.types import Mosaic
@@ -65,11 +65,13 @@ def _resolve_obj_args(object_type: str, object_id: str, filter: str | None):
 
 def _tile_pyramid_path_for(
     object_type: str, object_id: str, filter: str | None, level: str | None,
+    implementation: str | None = None,
 ):
     """Find the tile pyramid for an object at a specific level (or the
     best available level when level is None or 'auto'). Returns the
     on-disk path or None if no producer has yet generated a tile pyramid
-    for this object/level."""
+    for this object/level. If implementation is None, uses the active
+    setting."""
     obj_cls, obj_args = _resolve_obj_args(object_type, object_id, filter)
 
     if level and level != "auto":
@@ -83,10 +85,10 @@ def _tile_pyramid_path_for(
             QualityLevel.SUBFRAME,
         ]
 
-    implementation = context.settings.implementation
+    impl = Implementation(implementation) if implementation else context.settings.implementation
 
     for q in levels_to_try:
-        producer = get_producer(MediaType.IMAGE, obj_cls, q, implementation)
+        producer = get_producer(MediaType.IMAGE, obj_cls, q, impl)
         if producer is None:
             continue
         if not hasattr(producer, "tile_pyramid_fn"):
@@ -139,10 +141,30 @@ def tile_metadata(
     object_type: str, object_id: str, filter: str, level: str = "auto",
     backend_port: int = None,
 ):
-    path = _tile_pyramid_path_for(object_type, object_id, filter, level)
+    return _tile_metadata_response(
+        _tile_pyramid_path_for(object_type, object_id, filter, level),
+        backend_port,
+    )
+
+
+@stateful_route(
+    tiles_bp.route("/tile_metadata/<object_type>/<object_id>/<implementation>/<level>/<filter>"),
+    sharding_key="object_id",
+)
+def tile_metadata_specific(
+    object_type: str, object_id: str, implementation: str, level: str, filter: str,
+    backend_port: int = None,
+):
+    """tile_metadata pinned to a specific implementation."""
+    return _tile_metadata_response(
+        _tile_pyramid_path_for(object_type, object_id, filter, level, implementation),
+        backend_port,
+    )
+
+
+def _tile_metadata_response(path, backend_port):
     if path is None:
         return abort(404)
-
     handle = _get_handle(path)
     meta = handle.getMetadata()
     return jsonify({
@@ -167,6 +189,25 @@ def serve_tile(
     z: str, x: str, y: str,
 ):
     path = _tile_pyramid_path_for(object_type, object_id, filter, level)
+    return _serve_tile_response(path, object_type, object_id, x, y, z)
+
+
+@stateful_route(
+    tiles_bp.route(
+        "/tile/<object_type>/<object_id>/<implementation>/<level>/<filter>/<int:z>/<int:x>/<int:y>.png"
+    ),
+    sharding_key="object_id",
+)
+def serve_tile_specific(
+    object_type: str, object_id: str, implementation: str, level: str, filter: str,
+    z: str, x: str, y: str,
+):
+    """Tile pinned to a specific implementation."""
+    path = _tile_pyramid_path_for(object_type, object_id, filter, level, implementation)
+    return _serve_tile_response(path, object_type, object_id, x, y, z)
+
+
+def _serve_tile_response(path, object_type, object_id, x, y, z):
     if path is None:
         return abort(404)
 

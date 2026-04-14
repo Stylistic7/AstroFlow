@@ -88,8 +88,9 @@ def stack_files_oss(
             if not isinstance(dep, StackIdDependency):
                 continue
             cal_stack = config.calibration_stacks[dep.stack_id]
-            cal_data = (_load_calibration(cal_stack, config.quality, OSS)
-                        or _load_calibration(cal_stack, config.quality, config.implementation))
+            cal_data = _load_calibration(cal_stack, config.quality, OSS)
+            if cal_data is None:
+                cal_data = _load_calibration(cal_stack, config.quality, config.implementation)
             if cal_data is None:
                 continue
             if cal_stack.image_type == "bias": bias = cal_data
@@ -107,8 +108,11 @@ def stack_files_oss(
                 continue
             data = read_image(frame_meta.filename).astype(np.float32)
             if downscale_factor > 1:
-                from stacks.downscale import downscale_array
-                data = downscale_array(data, downscale_factor)
+                K = downscale_factor
+                h, w = data.shape
+                data = data[: h - h % K, : w - w % K]
+                h, w = data.shape
+                data = data.reshape(h // K, K, w // K, K).mean(axis=(1, 3))
             data = _calibrate(data, bias, dark, flat)
             if is_light:
                 header = read_header(frame_meta.filename)

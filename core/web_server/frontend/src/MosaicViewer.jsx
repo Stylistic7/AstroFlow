@@ -1,11 +1,17 @@
-// MosaicViewer.jsx
+// MosaicViewer.jsx — the detail page for a single
+// (mosaic × implementation × quality × filter). The dashboard
+// (MosaicDashboard.jsx) is the entry point; this is what you see
+// after clicking a thumbnail.
 import React, { useContext, useEffect, useMemo, useState, useCallback } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 
 import {
 	Box,
+	Breadcrumbs,
+	Button,
 	Divider,
 	IconButton,
+	Link,
 	Paper,
 	Tab,
 	Tabs,
@@ -17,68 +23,187 @@ import FullscreenIcon from "@mui/icons-material/Fullscreen";
 import ShareIcon from "@mui/icons-material/Share";
 
 import AstroFlowContext from "./AstroFlowContext.jsx";
-import { AstroFlowImage, useQualityLevels } from "./AstroFlowImage.jsx";
-import ColorChannelSelector from "./ColorChannelSelector.jsx";
-import QualityLevelSelector from "./QualityLevelSelector.jsx";
+import { AstroFlowImage } from "./AstroFlowImage.jsx";
 import TelescopiusDialog from "./TelescopiusDialog.jsx";
-
 import ToggleIconButton from "./ToggleIconButton";
 import WorkflowGraph from "./WorkflowGraph.jsx";
 import darkTheme from "./theme.js";
 
+const QUALITY_ORDER = ["PostProcessed", "Master", "DownscaledMaster", "Subframe"];
+
+
+function AlternateVersionsStrip({ mosaicId, implementation, quality, filter, versions, filters }) {
+    const navigate = useNavigate();
+    const go = (impl, q, f) => navigate(`/mosaic/${mosaicId}/${impl}/${q}/${f}`);
+
+    // Unique implementations that have any version.
+    const implementations = [...new Set(versions.map((v) => v.implementation))];
+    const qualities = QUALITY_ORDER.filter((q) =>
+        versions.some((v) => v.quality === q && v.implementation === implementation && v.exists)
+    );
+
+    const exists = (impl, q, f) => versions.some(
+        (v) => v.implementation === impl && v.quality === q && v.filter === f && v.exists
+    );
+
+    const Pill = ({ active, disabled, onClick, children }) => (
+        <Button
+            size="small"
+            variant={active ? "contained" : "outlined"}
+            disabled={disabled}
+            onClick={onClick}
+            sx={{ minWidth: 0, mr: 0.5, py: 0.25 }}
+        >
+            {children}
+        </Button>
+    );
+
+    return (
+        <Box sx={{
+            display: 'flex', gap: 2, alignItems: 'center',
+            px: 2, py: 1,
+            borderBottom: '1px solid', borderColor: 'divider',
+            flexWrap: 'wrap',
+        }}>
+            <Box>
+                <Typography variant="caption" sx={{ color: 'text.secondary', mr: 1 }}>
+                    Pipeline:
+                </Typography>
+                {implementations.map((impl) => (
+                    <Pill
+                        key={impl}
+                        active={impl === implementation}
+                        disabled={!exists(impl, quality, filter)}
+                        onClick={() => go(impl, quality, filter)}
+                    >
+                        {impl}
+                    </Pill>
+                ))}
+            </Box>
+            <Box>
+                <Typography variant="caption" sx={{ color: 'text.secondary', mr: 1 }}>
+                    Quality:
+                </Typography>
+                {qualities.map((q) => (
+                    <Pill
+                        key={q}
+                        active={q === quality}
+                        disabled={!exists(implementation, q, filter)}
+                        onClick={() => go(implementation, q, filter)}
+                    >
+                        {q}
+                    </Pill>
+                ))}
+            </Box>
+            <Box>
+                <Typography variant="caption" sx={{ color: 'text.secondary', mr: 1 }}>
+                    Filter:
+                </Typography>
+                {filters.map((f) => (
+                    <Pill
+                        key={f}
+                        active={f === filter}
+                        disabled={!exists(implementation, quality, f)}
+                        onClick={() => go(implementation, quality, f)}
+                    >
+                        {f}
+                    </Pill>
+                ))}
+            </Box>
+        </Box>
+    );
+}
+
+
 export default function MosaicViewer() {
-    const { mosaic_id } = useParams();
-    const [searchParams, setSearchParams] = useSearchParams();
-    const { stacks, targets, mosaics } = useContext(AstroFlowContext);
+    const { mosaic_id, implementation, quality, filter } = useParams();
+    const navigate = useNavigate();
+    const { stacks, targets, mosaics, computeGraphStatus } = useContext(AstroFlowContext);
 
 	const [tabIndex, setTabIndex] = useState(0);
-
-	// View toggles (add more here later: indices, exposure_widgets, etc.)
 	const [showOutline, setShowOutline] = useState(true);
-
-    const mosaic = mosaics[mosaic_id];
-
-	const availableFilters = useMemo(() => {
-		if (!mosaic) return [];
-		let filters = new Set();
-		for (let target_id of mosaic.target_ids) {
-			for (let stack_id of targets[target_id].stack_ids) {
-				filters.add(stacks[stack_id].filter);
-			}
-		}
-		return Array.from(filters);
-	}, [mosaic, stacks, targets]);
-
-	// Persist filter and quality level in URL query params so back-navigation restores them.
-	const filter = searchParams.get("filter") || availableFilters[0];
-	const setFilter = useCallback((f) => {
-		setSearchParams((prev) => { prev.set("filter", f); return prev; }, { replace: true });
-	}, [setSearchParams]);
-
-	useEffect(() => {
-		if (!availableFilters || availableFilters.length === 0) return;
-		if (!availableFilters.includes(filter)) {
-			setFilter(availableFilters[0]);
-		}
-	}, [mosaic_id, availableFilters, filter, setFilter]);
-
-	const [qualityLevel, setQualityLevelState, enrichedLevels] =
-		useQualityLevels("mosaic", mosaic_id, filter);
-
-	// Sync quality level to/from URL query param.
-	const qualityFromUrl = searchParams.get("quality");
-	const setQualityLevel = useCallback((q) => {
-		setQualityLevelState(q);
-		setSearchParams((prev) => { prev.set("quality", q); return prev; }, { replace: true });
-	}, [setQualityLevelState, setSearchParams]);
-
-	useEffect(() => {
-		if (qualityFromUrl && qualityFromUrl !== qualityLevel) {
-			setQualityLevelState(qualityFromUrl);
-		}
-	}, [qualityFromUrl]);
-
 	const [telescopiusOpen, setTelescopiusOpen] = useState(false);
+	const [versionsData, setVersionsData] = useState({ filters: [], versions: [] });
+
+    const mosaic = mosaics?.[mosaic_id];
+
+    useEffect(() => {
+        fetch(`/api/mosaic_versions/${mosaic_id}`)
+            .then((res) => res.ok ? res.json() : null)
+            .then((data) => data && setVersionsData(data))
+            .catch(() => {});
+    }, [mosaic_id, computeGraphStatus]);
+
+    // Keyboard shortcuts to flip between versions while staying at full screen:
+    //   [ ]   cycle implementation
+    //   { }   cycle quality
+    //   , .   cycle filter
+    useEffect(() => {
+        const handler = (e) => {
+            // Ignore when typing in an input.
+            if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+
+            const { implementations, qualities, filters } = (() => {
+                const vs = versionsData.versions;
+                const impls = [...new Set(vs.map((v) => v.implementation))];
+                const quals = QUALITY_ORDER.filter((q) =>
+                    vs.some((v) => v.quality === q && v.implementation === implementation && v.exists)
+                );
+                return { implementations: impls, qualities: quals, filters: versionsData.filters };
+            })();
+
+            const exists = (impl, q, f) => versionsData.versions.some(
+                (v) => v.implementation === impl && v.quality === q && v.filter === f && v.exists
+            );
+
+            const cycle = (list, current, dir) => {
+                const idx = list.indexOf(current);
+                if (idx < 0) return current;
+                return list[(idx + dir + list.length) % list.length];
+            };
+            const cycleToExisting = (list, current, dir, predicate) => {
+                // Step through until we find a combination that exists.
+                let candidate = current;
+                for (let i = 0; i < list.length; i++) {
+                    candidate = cycle(list, candidate, dir);
+                    if (predicate(candidate)) return candidate;
+                }
+                return current;
+            };
+
+            if (e.key === "[" || e.key === "]") {
+                const dir = e.key === "]" ? 1 : -1;
+                const next = cycleToExisting(
+                    implementations, implementation, dir,
+                    (i) => exists(i, quality, filter),
+                );
+                if (next !== implementation) navigate(`/mosaic/${mosaic_id}/${next}/${quality}/${filter}`);
+                e.preventDefault();
+            } else if (e.key === "{" || e.key === "}") {
+                const dir = e.key === "}" ? 1 : -1;
+                const next = cycleToExisting(
+                    qualities, quality, dir,
+                    (q) => exists(implementation, q, filter),
+                );
+                if (next !== quality) navigate(`/mosaic/${mosaic_id}/${implementation}/${next}/${filter}`);
+                e.preventDefault();
+            } else if (e.key === "," || e.key === ".") {
+                const dir = e.key === "." ? 1 : -1;
+                const next = cycleToExisting(
+                    filters, filter, dir,
+                    (f) => exists(implementation, quality, f),
+                );
+                if (next !== filter) navigate(`/mosaic/${mosaic_id}/${implementation}/${quality}/${next}`);
+                e.preventDefault();
+            }
+        };
+        window.addEventListener("keydown", handler);
+        return () => window.removeEventListener("keydown", handler);
+    }, [mosaic_id, implementation, quality, filter, versionsData, navigate]);
+
+    if (!mosaic) {
+        return <Typography sx={{ p: 3 }}>Loading…</Typography>;
+    }
 
 	return (
 		<Paper
@@ -101,41 +226,41 @@ export default function MosaicViewer() {
 				mosaic={mosaic}
 			/>
 
+			{/* Breadcrumb */}
+			<Box sx={{ px: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
+				<Breadcrumbs>
+					<Link
+						component="button"
+						underline="hover"
+						color="inherit"
+						onClick={() => navigate(`/mosaic/${mosaic_id}`)}
+					>
+						{mosaic.name || `Mosaic ${mosaic_id.slice(0, 8)}`}
+					</Link>
+					<Typography color="text.primary">{implementation}</Typography>
+					<Typography color="text.primary">{quality}</Typography>
+					<Typography color="text.primary">{filter}</Typography>
+				</Breadcrumbs>
+			</Box>
+
+			{/* Alternate versions strip */}
+			<AlternateVersionsStrip
+				mosaicId={mosaic_id}
+				implementation={implementation}
+				quality={quality}
+				filter={filter}
+				versions={versionsData.versions}
+				filters={versionsData.filters}
+			/>
+
 			{/* Control bar */}
-			<Box
-				sx={{
-					display: "flex",
-					alignItems: "center",
-					justifyContent: "center",
-					gap: 2,
-					py: 1,
-				}}
-			>
-				<QualityLevelSelector
-					selected={qualityLevel}
-					available={enrichedLevels}
-					onSelect={setQualityLevel}
-				/>
-				<Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
-
-				<ColorChannelSelector
-					stacks={stacks}
-					targets={targets}
-					mosaics={mosaics}
-					mosaic_id={mosaic_id}
-					filter={filter}
-					setFilter={setFilter}
-				/>
-
-				<Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
-
+			<Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 2, py: 1 }}>
 				<ToggleIconButton
 					name="outline"
 					icon={<FullscreenIcon />}
 					checked={showOutline}
 					handleChange={() => setShowOutline((v) => !v)}
 				/>
-
 				<Tooltip title="Export to Telescopius">
 					<IconButton
 						size="small"
@@ -180,8 +305,8 @@ export default function MosaicViewer() {
 						objectId={mosaic_id}
 						filter={filter}
 						showPolygons={showOutline}
-						qualityLevel={qualityLevel}
-						onQualityChange={setQualityLevel}
+						qualityLevel={quality}
+						implementation={implementation}
 						showQualitySelector={false}
 					/>
 				</Box>
@@ -198,7 +323,7 @@ export default function MosaicViewer() {
 				>
 					<WorkflowGraph
 						theme={darkTheme}
-						url={`/api/workflow_graph/mosaic/${mosaic_id}/${filter}${qualityLevel ? `/${qualityLevel}` : ''}`}
+						url={`/api/workflow_graph/mosaic/${mosaic_id}/${filter}/${quality}`}
 					/>
 				</Box>
 			</Box>

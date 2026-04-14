@@ -48,6 +48,22 @@ def _best_quality(object_type: type, implementation: Implementation, *args) -> t
     return available[0] if available else None
 
 
+def _mosaic_filters(mosaic) -> list[str]:
+    """All filters that any target in the mosaic has a stack in."""
+    stacks = context.stacks or {}
+    targets = context.targets or {}
+    filters = set()
+    for target_id in mosaic.target_ids:
+        target = targets[target_id].get()
+        for stack_id in target.stack_ids:
+            stack_ref = stacks.get(stack_id)
+            if stack_ref is None:
+                continue
+            filters.add(stack_ref.get().filter)
+    order = ["L", "H", "S", "O", "R", "G", "B"]
+    return sorted(filters, key=lambda f: (order.index(f) if f in order else len(order), f))
+
+
 def _get_polygons(object_type: type, level: QualityLevel, *args) -> list[dict[str, Any]]:
     """Compute projected polygons for an object at a given quality level."""
     if object_type is CalibrationStack:
@@ -279,4 +295,67 @@ def metadata(object_type: str, object_id: str, level_or_filter: str = None, filt
         "quality_level": quality_level.value,
         "image_path": image_path,
         "objects": objects,
+    })
+
+
+@metadata_bp.route("/api/mosaic_versions/<mosaic_id>")
+def mosaic_versions(mosaic_id: str):
+    """Return the (implementation × quality × filter) matrix for a mosaic.
+
+    Shape:
+      {
+        "filters": ["H", "S", "O"],
+        "versions": [
+          {"implementation": "PixInsight", "quality": "Master",
+           "filter": "H", "exists": true, "mtime": 1234567890.0},
+          ...
+        ],
+      }
+    """
+    mosaics = context.mosaics or {}
+    if mosaic_id not in mosaics:
+        return abort(404)
+    mosaic = mosaics[mosaic_id].get()
+    filters = _mosaic_filters(mosaic)
+
+    # Progress tile pyramids (written by merge_images) signal in-progress
+    # merges before the final store_mosaic_color_channel runs. Surface them
+    # so the dashboard shows thumbnails as merges stream in.
+    from pathlib import Path
+    output_dir = context.output_dir
+
+    def progress_path(level, f):
+        if output_dir is None:
+            return None
+        return Path(output_dir) / "Mosaic" / str(level) / f"progress_{mosaic.stable_hash}_{f}.tiff"
+
+    versions = []
+    for impl in Implementation:
+        for level in _QUALITY_PRIORITY:
+            filename_fn = get_filename_fn(MediaType.IMAGE, Mosaic, level, impl)
+            if filename_fn is None:
+                continue
+            for f in filters:
+                path = filename_fn(mosaic, f)
+                final_exists = path is not None and os.path.exists(path)
+                prog = progress_path(level, f)
+                progress_exists = prog is not None and prog.exists()
+                exists = final_exists or progress_exists
+                if final_exists:
+                    mtime = os.path.getmtime(path)
+                elif progress_exists:
+                    mtime = os.path.getmtime(prog)
+                else:
+                    mtime = None
+                versions.append({
+                    "implementation": impl.value,
+                    "quality": level.value,
+                    "filter": f,
+                    "exists": exists,
+                    "mtime": mtime,
+                })
+
+    return jsonify({
+        "filters": filters,
+        "versions": versions,
     })

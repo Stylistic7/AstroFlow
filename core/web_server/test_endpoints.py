@@ -83,3 +83,55 @@ def test_orion_mosaic_endpoints(client, with_orion_mosaic):
     for target in targets.values():
         for sid in target["stack_ids"]:
             assert sid in stacks, f"Target references nonexistent stack {sid}"
+
+
+@pytest.mark.exhaustive
+def test_orion_mosaic_versions_endpoint(client, with_orion_mosaic):
+    """Exercise the (implementation × quality × filter) matrix endpoints."""
+    mosaics = client.get("/api/mosaics").get_json()
+    mosaic_id = next(iter(mosaics.keys()))
+
+    # /api/mosaic_versions/<id>: returns a full matrix
+    resp = client.get(f"/api/mosaic_versions/{mosaic_id}")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert "filters" in data and "versions" in data
+    assert isinstance(data["filters"], list) and len(data["filters"]) > 0
+
+    versions = data["versions"]
+    assert len(versions) > 0
+    for v in versions:
+        assert set(v.keys()) >= {"implementation", "quality", "filter", "exists", "mtime"}
+        assert v["implementation"] in ("PixInsight", "AstroFlow", "OSS")
+        assert v["quality"] in ("PostProcessed", "Master", "DownscaledMaster", "Subframe")
+        assert v["filter"] in data["filters"]
+        if v["exists"]:
+            assert isinstance(v["mtime"], (int, float))
+        else:
+            assert v["mtime"] is None
+
+    # At least one version should have been produced by the test's compute graph.
+    existing = [v for v in versions if v["exists"]]
+    assert len(existing) > 0
+
+    # For each existing version, the implementation-specific thumbnail and
+    # tile_metadata routes should resolve.
+    for v in existing:
+        impl, q, f = v["implementation"], v["quality"], v["filter"]
+
+        thumb = client.get(f"/thumbnail/mosaic/{mosaic_id}/{impl}/{q}/{f}")
+        assert thumb.status_code in (200, 404), (
+            f"Thumbnail for {impl}/{q}/{f}: {thumb.status_code}"
+        )
+
+        meta = client.get(f"/tile_metadata/mosaic/{mosaic_id}/{impl}/{q}/{f}")
+        assert meta.status_code in (200, 404), (
+            f"tile_metadata for {impl}/{q}/{f}: {meta.status_code}"
+        )
+        if meta.status_code == 200:
+            m = meta.get_json()
+            for field in ("width", "height", "tileWidth", "tileHeight", "maxZoom", "mtime"):
+                assert field in m
+
+    # Unknown mosaic id → 404.
+    assert client.get("/api/mosaic_versions/does_not_exist").status_code == 404

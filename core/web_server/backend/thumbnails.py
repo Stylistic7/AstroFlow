@@ -7,29 +7,62 @@ from stacks.composite_stack import Stack
 from targets.types import Target
 from mosaics.types import Mosaic
 from products.registry import get_producer, MediaType
-from previews.types import QualityLevel
+from previews.types import QualityLevel, Implementation
 from stacks.run import Run
 from stacks.composite_stack import CalibrationStack
 
 thumbnails_bp = Blueprint("thumbnails", __name__)
 
 
+_ALL_LEVELS = [
+    QualityLevel.POST_PROCESSED,
+    QualityLevel.MASTER,
+    QualityLevel.DOWNSCALED_MASTER,
+    QualityLevel.SUBFRAME,
+]
+
+
+def _thumbnail_response(fn, level, *args):
+    """Try to render a thumbnail from a specific producer."""
+    if fn is None or not hasattr(fn, "thumbnail_fn"):
+        return None
+    thumbnail = fn.thumbnail_fn(*args)
+    if not thumbnail:
+        return None
+    resp = flask.Response(thumbnail, mimetype="image/png", direct_passthrough=True)
+    resp.headers["X-Quality-Level"] = level.value
+    return resp
+
+
 def get_thumbnail(object_type: type, *args):
+    """Return the best-available thumbnail (used by convenience routes)."""
     implementation = context.settings.implementation
-    for level in [
-        QualityLevel.POST_PROCESSED,
-        QualityLevel.MASTER,
-        QualityLevel.DOWNSCALED_MASTER,
-        QualityLevel.SUBFRAME,
-    ]:
-        if fn := get_producer(MediaType.IMAGE, object_type, level, implementation):
-            if hasattr(fn, "thumbnail_fn"):
-                if thumbnail := fn.thumbnail_fn(*args):
-                    resp = flask.Response(
-                        thumbnail, mimetype="image/png", direct_passthrough=True
-                    )
-                    resp.headers["X-Quality-Level"] = level.value
-                    return resp
+    for level in _ALL_LEVELS:
+        fn = get_producer(MediaType.IMAGE, object_type, level, implementation)
+        resp = _thumbnail_response(fn, level, *args)
+        if resp:
+            return resp
+    return abort(404)
+
+
+def get_specific_thumbnail(object_type: type, implementation: Implementation,
+                           level: QualityLevel, *args):
+    """Return the thumbnail for an exact (implementation, level)."""
+    fn = get_producer(MediaType.IMAGE, object_type, level, implementation)
+    resp = _thumbnail_response(fn, level, *args)
+    if resp:
+        return resp
+
+    # Fallback: for mosaics, serve the in-progress merge thumbnail so the
+    # dashboard has something to show before the final store runs. args is
+    # (mosaic, filter); merge_images keys its thumbnail by (mode, mosaic, filter).
+    if object_type is Mosaic:
+        from mosaics.merge_images import MergedImage
+        merge_fn = get_producer(MediaType.IMAGE, MergedImage, level, implementation)
+        if merge_fn is not None and hasattr(merge_fn, "thumbnail_fn"):
+            resp = _thumbnail_response(merge_fn, level, level, *args)
+            if resp:
+                return resp
 
     return abort(404)
 
@@ -47,6 +80,15 @@ def target_thumbnail(target_id: str):
 @thumbnails_bp.route("/thumbnail/mosaic/<mosaic_id>/<filter>")
 def mosaic_thumbnail(mosaic_id: str, filter: str):
     return get_thumbnail(Mosaic, context.mosaics[mosaic_id].get(), filter)
+
+
+@thumbnails_bp.route("/thumbnail/mosaic/<mosaic_id>/<implementation>/<quality>/<filter>")
+def mosaic_thumbnail_specific(mosaic_id: str, implementation: str, quality: str, filter: str):
+    """Thumbnail for an exact (mosaic, implementation, quality, filter)."""
+    return get_specific_thumbnail(
+        Mosaic, Implementation(implementation), QualityLevel(quality),
+        context.mosaics[mosaic_id].get(), filter,
+    )
 
 
 # TODO: Use better stack types.
