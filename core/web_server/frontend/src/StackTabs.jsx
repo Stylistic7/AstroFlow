@@ -27,7 +27,7 @@ function BlinkQualityInfo({ stack_id }) {
         const all = await res.json();
         const qd = all.find(d => d.decision_type === 'subframe_quality');
         setDecision(qd || null);
-      } catch { /* ignore */ }
+      } catch (e) { console.warn(e); }
     };
     fetchDecision();
   }, [stack_id]);

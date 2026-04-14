@@ -183,25 +183,17 @@ class Context:
     def __setitem__(self, key: Key, value: Any) -> Any:
         return self.set(key, value)
 
-    # TODO: Use the Pythonic operator.
     def and_equals(
         self, key: Key, value: Any, length_limit: int | None = None
     ) -> Any:
         actor = ray.get_actor("context", namespace=_get_namespace())
         return ray.get(actor.and_equals.remote(key, value, length_limit))
 
-    def plus_equals(self, key: Key, value: Any):
-        return self.and_equals(key, value)
-
     def or_equals(self, key: Key, value: dict) -> None:
         actor = ray.get_actor("context", namespace=_get_namespace())
         return ray.get(actor.or_equals.remote(key, value))
 
     def __contains__(self, key: Key) -> bool:
-        actor = ray.get_actor("context", namespace=_get_namespace())
-        return ray.get(actor.contains.remote(key))
-
-    def contains(self, key: Key) -> bool:
         actor = ray.get_actor("context", namespace=_get_namespace())
         return ray.get(actor.contains.remote(key))
 
@@ -298,9 +290,6 @@ class LocalContext:
                 new_value = new_value[-length_limit:]
             self._cache[key] = strip_refs(new_value)
 
-    def plus_equals(self, key: Key, value: Any) -> None:
-        return self.and_equals(key, value)
-
     def or_equals(self, key: Key, value: dict) -> None:
         """Merge value into a dict stored at key — atomic."""
         from cache.context_ref import strip_refs
@@ -311,9 +300,6 @@ class LocalContext:
             self._cache[key] = strip_refs({**old_value, **value})
 
     def __contains__(self, key: Key) -> bool:
-        return key in self._cache
-
-    def contains(self, key: Key) -> bool:
         return key in self._cache
 
     def delete(self, key: Key) -> None:

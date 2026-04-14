@@ -84,7 +84,7 @@ function App() {
       try {
         const d = await fetch('/api/decision_overrides').then(r => r.json());
         setDecisionOverrides(d.overrides || []);
-      } catch { /* ignore */ }
+      } catch (e) { console.warn(e); }
     };
 
     loadComputeGraphStatus();
@@ -189,7 +189,7 @@ function App() {
     try {
       const d = await fetch('/api/decision_overrides').then(r => r.json());
       setDecisionOverrides(d.overrides || []);
-    } catch { /* ignore */ }
+    } catch (e) { console.warn(e); }
   }, []);
 
   // TODO: It's a little awkward to have to put <Search /> in each of these

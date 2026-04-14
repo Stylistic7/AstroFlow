@@ -7,18 +7,13 @@ from context import local_context as context
 from stacks.composite_stack import CalibrationStack
 from stacks.composite_stack import Stack
 from products.registry import get_producer, MediaType
-from previews.types import QualityLevel
+from previews.types import QUALITY_PRIORITY
 
 videos_bp = Blueprint("videos", __name__)
 
 
 def get_video(object_type: type, *args):
-    for level in [
-        QualityLevel.POST_PROCESSED,
-        QualityLevel.MASTER,
-        QualityLevel.DOWNSCALED_MASTER,
-        QualityLevel.SUBFRAME,
-    ]:
+    for level in QUALITY_PRIORITY:
         if fn := get_producer(MediaType.VIDEO, object_type, level):
             if hasattr(fn, "video_fn"):
                 if video := fn.video_fn(*args):

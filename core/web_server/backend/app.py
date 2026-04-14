@@ -307,34 +307,6 @@ def plot():
     return flask.send_file(mem, mimetype="text/html")
 
 
-# @app.route('/get_num_stars_histogram_html/<stack_id>')
-# def get_num_stars_histogram_html(stack_id):
-#   print(f'Creating num stars histogram for stack id {stack_id}')
-#   stack = context.stacks[stack_id]
-#   plate_solutions = cache['plate_solutions']
-
-#   light_frames = [f for run in stack.runs.values() for f in run.frames]
-#   num_stars = [plate_solutions[f].num_stars for f in light_frames]
-#   print('num_stars', num_stars)
-
-#   colors = ['#A56CC1', '#A6ACEC']
-#   bin_size = (np.max(num_stars) - np.min(num_stars)) / 10
-#   fig = ff.create_distplot([num_stars], ['# Stars'],
-#                            colors=colors,
-#                            curve_type='normal',
-#                            bin_size=bin_size,
-#                            show_rug=False)
-
-#   # fig.update_layout(title_text='Hist and Curve Plot')
-
-#   buffer = io.StringIO()
-#   fig.write_html(buffer, full_html=False)
-#   mem = io.BytesIO()
-#   mem.write(buffer.getvalue().encode())
-#   mem.seek(0)
-#   return flask.send_file(mem, mimetype='text/html')
-
-
 @app.route("/api/recent")
 def recent():
     ui_targets = context.ui_targets or {}

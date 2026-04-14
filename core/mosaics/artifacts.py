@@ -4,9 +4,8 @@ from file_io.types import (
     XisfFilePath,
 )
 from metadata.classes import ImageMetadata
-from mosaics.types import Mosaic
-from stacks.composite_stack import Stack
 from mosaics.types import Mosaic, Viewbox
+from stacks.composite_stack import Stack
 
 
 def mosaic_filename_tiff(mosaic: Mosaic, filter: str) -> TiffFilePath:

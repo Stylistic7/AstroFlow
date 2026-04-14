@@ -11,7 +11,7 @@ from targets.types import Target
 from mosaics.types import Mosaic, Viewbox
 from mosaics.viewbox import compute_viewbox
 from products.registry import get_producer, get_filename_fn, MediaType
-from previews.types import QualityLevel
+from previews.types import QualityLevel, QUALITY_PRIORITY
 from mosaics.trimming import project_to_viewbox
 from metadata.sidecar_io import read_image_metadata
 from attributes.astrometric_attributes import _spherical_polygon_for_wcs
@@ -19,18 +19,10 @@ from decisions.decisions import ObjectType, get_decisions_for_object
 
 metadata_bp = Blueprint("metadata", __name__)
 
-_QUALITY_PRIORITY = [
-    QualityLevel.POST_PROCESSED,
-    QualityLevel.MASTER,
-    QualityLevel.DOWNSCALED_MASTER,
-    QualityLevel.SUBFRAME,
-]
-
-
 def _available_qualities(object_type: type, implementation: Implementation, *args) -> list[tuple[QualityLevel, str]]:
     """Return all quality levels that have files on disk, in priority order."""
     result = []
-    for level in _QUALITY_PRIORITY:
+    for level in QUALITY_PRIORITY:
         filename_fn = get_filename_fn(MediaType.IMAGE, object_type, level, implementation)
         if filename_fn is None:
             continue
@@ -223,7 +215,7 @@ def available_qualities(object_type: str, object_id: str, filter: str = None):
     on_disk = dict(_available_qualities(obj_type, implementation, *args))  # level -> path
 
     levels = []
-    for level in _QUALITY_PRIORITY:
+    for level in QUALITY_PRIORITY:
         path = on_disk.get(level)
         levels.append({
             "quality_level": level.value,
@@ -331,7 +323,7 @@ def mosaic_versions(mosaic_id: str):
 
     versions = []
     for impl in Implementation:
-        for level in _QUALITY_PRIORITY:
+        for level in QUALITY_PRIORITY:
             filename_fn = get_filename_fn(MediaType.IMAGE, Mosaic, level, impl)
             if filename_fn is None:
                 continue

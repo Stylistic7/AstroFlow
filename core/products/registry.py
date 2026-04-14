@@ -93,11 +93,8 @@ def _mark_valid(object_type: type, level: QualityLevel, implementation: Implemen
     if obj is None or not hasattr(obj, "stable_hash"):
         return
     key = (object_type.__name__.lower(), obj.stable_hash, level.value, implementation.value)
-    try:
-        from context import context
-        context.or_equals("validity", {key: True})
-    except Exception:
-        pass  # Don't let validity tracking break the producer
+    from context import context
+    context.or_equals("validity", {key: True})
 
 
 def invalidate_object(object_type: str, object_id: str, implementation: str = None) -> None:

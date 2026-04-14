@@ -24,7 +24,7 @@ export function useQualityLevels(objectType, objectId, filter) {
                 setQualityLevel(data.quality_level);
                 setAvailableLevels(data.available || []);
             })
-            .catch(() => {});
+            .catch((e) => console.warn(e));
     }, [objectType, objectId, filter]);
 
     const objectValidity = validity[`${objectType}:${objectId}`] || {};

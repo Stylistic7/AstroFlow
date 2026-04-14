@@ -7,19 +7,11 @@ from stacks.composite_stack import Stack
 from targets.types import Target
 from mosaics.types import Mosaic
 from products.registry import get_producer, MediaType
-from previews.types import QualityLevel, Implementation
+from previews.types import QualityLevel, Implementation, QUALITY_PRIORITY
 from stacks.run import Run
 from stacks.composite_stack import CalibrationStack
 
 thumbnails_bp = Blueprint("thumbnails", __name__)
-
-
-_ALL_LEVELS = [
-    QualityLevel.POST_PROCESSED,
-    QualityLevel.MASTER,
-    QualityLevel.DOWNSCALED_MASTER,
-    QualityLevel.SUBFRAME,
-]
 
 
 def _thumbnail_response(fn, level, *args):
@@ -37,7 +29,7 @@ def _thumbnail_response(fn, level, *args):
 def get_thumbnail(object_type: type, *args):
     """Return the best-available thumbnail (used by convenience routes)."""
     implementation = context.settings.implementation
-    for level in _ALL_LEVELS:
+    for level in QUALITY_PRIORITY:
         fn = get_producer(MediaType.IMAGE, object_type, level, implementation)
         resp = _thumbnail_response(fn, level, *args)
         if resp:
@@ -108,12 +100,7 @@ def run_thumbnail(stack_id: str, substack_id: str, flat_stack_id: str):
 
 def get_video(object_type: type, *args):
     implementation = context.settings.implementation
-    for level in [
-        QualityLevel.POST_PROCESSED,
-        QualityLevel.MASTER,
-        QualityLevel.DOWNSCALED_MASTER,
-        QualityLevel.SUBFRAME,
-    ]:
+    for level in QUALITY_PRIORITY:
         if fn := get_producer(MediaType.VIDEO, object_type, level, implementation):
             if hasattr(fn, "video_fn"):
                 if video := fn.video_fn(*args):

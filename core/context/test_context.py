@@ -95,7 +95,7 @@ def test_contains(empty_context):
     assert "ASTROFLOW_MOCK_CACHE" in os.environ
     print(f"ASTROFLOW_MOCK_CACHE is {os.environ['ASTROFLOW_MOCK_CACHE']}")
 
-    assert not context.contains("foo")
+    assert "foo" not in context
     cache = get_cache()
     print(f"### dir(cache) {dir(cache)}")
     print(f"### test_contains cache directory {cache.directory}")
@@ -105,10 +105,10 @@ def test_contains(empty_context):
 
     print(f"### test_contains inserting bar")
     context.bar = "baz"
-    assert context.contains("bar")
+    assert "bar" in context
 
     assert "foo" in cache
-    assert context.contains("foo")
+    assert "foo" in context
 
 
 def test_remote_fn(empty_context):

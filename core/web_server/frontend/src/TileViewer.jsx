@@ -44,7 +44,7 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
       fetch(metaUrl)
         .then((res) => res.ok ? res.json() : null)
         .then((meta) => { if (meta) setMetadata(meta); })
-        .catch(() => {});
+        .catch((e) => console.warn(e));
     } else {
       // Auto-detect best quality level.
       const bestUrl = filter !== undefined
@@ -61,7 +61,7 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
           return fetch(metaUrl).then((res) => res.json());
         })
         .then((meta) => { if (meta) setMetadata(meta); })
-        .catch(() => {});
+        .catch((e) => console.warn(e));
     }
   }, [objectType, imageHash, filter, qualityLevelProp]);
 

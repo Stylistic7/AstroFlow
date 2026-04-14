@@ -20,7 +20,7 @@ import large_image
 from flask import Blueprint, send_file, abort, jsonify
 
 from context import local_context as context
-from previews.types import QualityLevel, Implementation
+from previews.types import QualityLevel, Implementation, QUALITY_PRIORITY
 from stacks.composite_stack import Stack, CalibrationStack
 from targets.types import Target
 from mosaics.types import Mosaic
@@ -77,13 +77,7 @@ def _tile_pyramid_path_for(
     if level and level != "auto":
         levels_to_try = [QualityLevel(level)]
     else:
-        # Best-quality first, falling back to lower quality.
-        levels_to_try = [
-            QualityLevel.POST_PROCESSED,
-            QualityLevel.MASTER,
-            QualityLevel.DOWNSCALED_MASTER,
-            QualityLevel.SUBFRAME,
-        ]
+        levels_to_try = QUALITY_PRIORITY
 
     impl = Implementation(implementation) if implementation else context.settings.implementation
 

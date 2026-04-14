@@ -131,7 +131,7 @@ export default function MosaicViewer() {
         fetch(`/api/mosaic_versions/${mosaic_id}`)
             .then((res) => res.ok ? res.json() : null)
             .then((data) => data && setVersionsData(data))
-            .catch(() => {});
+            .catch((e) => console.warn(e));
     }, [mosaic_id, computeGraphStatus]);
 
     // Keyboard shortcuts to flip between versions while staying at full screen:

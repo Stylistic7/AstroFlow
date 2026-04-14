@@ -67,14 +67,14 @@ def stacks_to_hdf5(stacks, path):
         master_group = h5file.create_group("stack_master_thumbnail_images")
         for stable_hash in stacks:
             key = ("stack_subframe_thumbnail_image", stable_hash)
-            if context.contains(key):
+            if key in context:
                 image = context[key]
                 print(f"### create_dataset key {key} type(image) {type(image)}")
                 subframe_group.create_dataset(
                     stable_hash, data=context[key], compression="gzip"
                 )
             key = ("stack_master_thumbnail_image", stable_hash)
-            if context.contains(key):
+            if key in context:
                 image = context[key]
                 print(f"### create_dataset key {key} type(image) {type(image)}")
                 master_group.create_dataset(

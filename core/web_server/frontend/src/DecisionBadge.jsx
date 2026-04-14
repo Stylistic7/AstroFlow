@@ -20,7 +20,7 @@ export default function DecisionBadge({ objectType, objectId }) {
     try {
       const res = await fetch(`/api/decisions/for/${objectType}/${objectId}`);
       setDecisions(await res.json());
-    } catch { /* ignore */ }
+    } catch (e) { console.warn(e); }
   }, [objectType, objectId]);
 
   useEffect(() => { loadDecisions(); }, [loadDecisions]);

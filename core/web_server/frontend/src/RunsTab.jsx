@@ -34,7 +34,7 @@ const RunsTab = ({ stack }) => {
       try {
         const res = await fetch(`/api/decisions/for/stack/${stack.stable_hash}`);
         setDecisions(await res.json());
-      } catch { /* ignore */ }
+      } catch (e) { console.warn(e); }
     };
     fetchDecisions();
   }, [stack.stable_hash]);
@@ -44,7 +44,7 @@ const RunsTab = ({ stack }) => {
       try {
         const res = await fetch(`/api/stacks/${stack.stable_hash}/detail`);
         if (res.ok) setDetail(await res.json());
-      } catch { /* ignore */ }
+      } catch (e) { console.warn(e); }
     };
     fetchDetail();
   }, [stack.stable_hash]);
