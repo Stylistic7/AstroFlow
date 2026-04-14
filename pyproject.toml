@@ -52,6 +52,7 @@ dependencies = [
     # Web UI
     "flask",
     "flask-cors",
+    "gunicorn",
     "plotly",
     "matplotlib",
     "rich",
