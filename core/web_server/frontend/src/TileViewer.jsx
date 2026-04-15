@@ -130,13 +130,52 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
           onClick={onClick}
           showQuarantined={showQuarantined}
           isQuarantined={isQuarantined}
+          stacks={stacks}
         />
       </Stage>
     </div>
   );
 };
 
-const ImperativeViewport = ({ objectType, imageHash, filter, qualityLevel, port, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, mtime, showPolygons, metadata, mosaics, onClick, showQuarantined, isQuarantined }) => {
+
+/** Draw an exposure-duration clock face — same dial style as
+    ExposureDurationWidget — into a PIXI Graphics, centered at (cx, cy)
+    with the given pixel radius. `hours` is clamped to [0, 12). */
+function drawExposureClock(g, cx, cy, radius, hours) {
+  // Background disc.
+  g.beginFill(0x333333);
+  g.drawCircle(cx, cy, radius);
+  g.endFill();
+
+  // Wedge for the integration. ExposureDurationWidget paints the same
+  // value twice (red then blue) so the visible colour is blue.
+  const fraction = Math.min(Math.max(hours, 0), 11.999) / 12;
+  if (fraction > 0) {
+    const start = -Math.PI / 2;
+    const end = start + 2 * Math.PI * fraction;
+    g.beginFill(0x4278f5);
+    g.moveTo(cx, cy);
+    g.arc(cx, cy, radius, start, end);
+    g.lineTo(cx, cy);
+    g.endFill();
+  }
+
+  // 12 tick marks.
+  g.lineStyle(radius * 0.05, 0xffffff, 1);
+  for (let h = 0; h < 12; h++) {
+    const theta = (2 * Math.PI * h / 12) - Math.PI / 2;
+    g.moveTo(cx + radius * 0.75 * Math.cos(theta), cy + radius * 0.75 * Math.sin(theta));
+    g.lineTo(cx + radius * Math.cos(theta), cy + radius * Math.sin(theta));
+  }
+
+  // Outer ring.
+  g.lineStyle(radius * 0.18, 0xffffff, 1);
+  g.drawCircle(cx, cy, radius);
+  g.lineStyle(0);
+}
+
+
+const ImperativeViewport = ({ objectType, imageHash, filter, qualityLevel, port, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, mtime, showPolygons, metadata, mosaics, onClick, showQuarantined, isQuarantined, stacks }) => {
   const app = useApp();
   const viewportRef = useRef(null);
   const spritesRef = useRef({});
@@ -242,23 +281,45 @@ const ImperativeViewport = ({ objectType, imageHash, filter, qualityLevel, port,
 
         viewport.addChild(g);
 
-        // Decision indicator: amber dot at the top-right of the polygon bounding box.
-        if (poly.has_decisions) {
+        // Per-panel overlays anchored to the top-right corner of the
+        // polygon bounding box. Decision dot first (closest to the
+        // corner), exposure clock to its left.
+        if (poly.polygon_type === 'input') {
           const xs = poly.points.map(p => p[0]);
           const ys = poly.points.map(p => p[1]);
           const maxX = Math.max(...xs);
           const minY = Math.min(...ys);
           const dotRadius = imageWidth / 150;
 
-          const dot = new PIXI.Graphics();
-          dot.zIndex = 10000;
-          dot.beginFill(0xffa726, 0.9); // amber
-          dot.drawCircle(maxX, minY, dotRadius);
-          dot.endFill();
-          // White outline for visibility
-          dot.lineStyle(dotRadius * 0.2, 0xffffff, 0.8);
-          dot.drawCircle(maxX, minY, dotRadius);
-          viewport.addChild(dot);
+          if (poly.has_decisions) {
+            const dot = new PIXI.Graphics();
+            dot.zIndex = 10000;
+            dot.beginFill(0xffa726, 0.9); // amber
+            dot.drawCircle(maxX, minY, dotRadius);
+            dot.endFill();
+            dot.lineStyle(dotRadius * 0.2, 0xffffff, 0.8);
+            dot.drawCircle(maxX, minY, dotRadius);
+            viewport.addChild(dot);
+          }
+
+          // Exposure-duration clock for this stack. The polygon's
+          // stable_hash is the stack id (set by the backend in
+          // metadata.py); look it up to get integration time.
+          const stack = stacks?.[poly.stable_hash];
+          if (stack && typeof stack.integration === 'number') {
+            const clockRadius = imageWidth / 80;
+            const offset = poly.has_decisions ? dotRadius * 2.5 : 0;
+            const clock = new PIXI.Graphics();
+            clock.zIndex = 10000;
+            drawExposureClock(
+              clock,
+              maxX - offset - clockRadius,
+              minY + clockRadius,
+              clockRadius,
+              stack.integration / 3600,
+            );
+            viewport.addChild(clock);
+          }
         }
       }
 
@@ -340,7 +401,7 @@ const ImperativeViewport = ({ objectType, imageHash, filter, qualityLevel, port,
       try { viewport.destroy({ children: true }); } catch {}
       spritesRef.current = {};
     };
-  }, [app, mosaics, imageHash, filter, imageWidth, imageHeight, maxZoom, worldWidth, worldHeight, showPolygons]);
+  }, [app, mosaics, imageHash, filter, imageWidth, imageHeight, maxZoom, worldWidth, worldHeight, showPolygons, stacks]);
 
   return null;
 };
