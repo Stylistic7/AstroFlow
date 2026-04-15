@@ -36,7 +36,11 @@ dependencies = [
     "astroscrappy",
     "photutils",
     "cdshealpix",
-    "spherical-geometry",
+    # Pin spherical-geometry: SingleSphericalPolygon objects pickle/unpickle
+    # across cluster nodes; an attribute that exists in one version but
+    # not another (e.g. _degenerate) crashes the receiver. Same risk as
+    # the Ray wire-protocol pin above.
+    "spherical-geometry==1.4.0",
     "ephem",
     "scipy",
     "numpy",
