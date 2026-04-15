@@ -44,18 +44,35 @@ def _calibrate(data, bias, dark, flat):
     return data
 
 
+# Row-block size for the sigma-clip combine. Fixed (not memory-aware)
+# so the peak-RSS of this function is deterministic, which auto_memory
+# depends on. At 256 rows, a 20-frame stack of 6200-wide images uses
+# roughly 600 MB during the combine — small enough that the dominant
+# term in stack_files_oss's peak is the raw frame list, not the combine.
+_SIGMA_CLIP_ROWS_PER_CHUNK = 256
+
+
 def _sigma_clipped_mean(frames):
-    """Stack frames with 3-sigma rejection, averaging the survivors."""
+    """Stack frames with 3-sigma rejection, averaging the survivors.
+
+    Processes the image in row-blocks so the per-chunk working set stays
+    small regardless of how big the frames or how many of them there are.
+    """
     if len(frames) == 1:
         return frames[0]
-    stack = np.array(frames, dtype=np.float32)
-    mean = np.mean(stack, axis=0)
-    std = np.std(stack, axis=0)
-    std[std == 0] = 1.0
-    mask = np.abs(stack - mean) < 3.0 * std
-    count = np.sum(mask, axis=0).astype(np.float32)
-    count[count == 0] = 1.0
-    return np.sum(stack * mask, axis=0) / count
+    H, W = frames[0].shape
+    out = np.empty((H, W), dtype=np.float32)
+    for y0 in range(0, H, _SIGMA_CLIP_ROWS_PER_CHUNK):
+        y1 = min(y0 + _SIGMA_CLIP_ROWS_PER_CHUNK, H)
+        chunk = np.stack([f[y0:y1] for f in frames])  # (N, rows, W)
+        mean = chunk.mean(axis=0)
+        std = chunk.std(axis=0)
+        std[std == 0] = 1.0
+        mask = np.abs(chunk - mean) < 3.0 * std
+        count = mask.sum(axis=0).astype(np.float32)
+        count[count == 0] = 1.0
+        out[y0:y1] = (chunk * mask).sum(axis=0) / count
+    return out
 
 
 @node(auto_memory=True)
