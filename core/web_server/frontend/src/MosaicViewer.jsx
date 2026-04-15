@@ -7,11 +7,8 @@ import { useParams, useNavigate } from "react-router-dom";
 
 import {
 	Box,
-	Breadcrumbs,
-	Button,
 	Divider,
 	IconButton,
-	Link,
 	Paper,
 	Tab,
 	Tabs,
@@ -30,89 +27,6 @@ import WorkflowGraph from "./WorkflowGraph.jsx";
 import darkTheme from "./theme.js";
 
 const QUALITY_ORDER = ["PostProcessed", "Master", "DownscaledMaster", "Subframe"];
-
-
-function AlternateVersionsStrip({ mosaicId, implementation, quality, filter, versions, filters }) {
-    const navigate = useNavigate();
-    const go = (impl, q, f) => navigate(`/mosaic/${mosaicId}/${impl}/${q}/${f}`);
-
-    // Unique implementations that have any version.
-    const implementations = [...new Set(versions.map((v) => v.implementation))];
-    const qualities = QUALITY_ORDER.filter((q) =>
-        versions.some((v) => v.quality === q && v.implementation === implementation && v.exists)
-    );
-
-    const exists = (impl, q, f) => versions.some(
-        (v) => v.implementation === impl && v.quality === q && v.filter === f && v.exists
-    );
-
-    const Pill = ({ active, disabled, onClick, children }) => (
-        <Button
-            size="small"
-            variant={active ? "contained" : "outlined"}
-            disabled={disabled}
-            onClick={onClick}
-            sx={{ minWidth: 0, mr: 0.5, py: 0.25 }}
-        >
-            {children}
-        </Button>
-    );
-
-    return (
-        <Box sx={{
-            display: 'flex', gap: 2, alignItems: 'center',
-            px: 2, py: 1,
-            borderBottom: '1px solid', borderColor: 'divider',
-            flexWrap: 'wrap',
-        }}>
-            <Box>
-                <Typography variant="caption" sx={{ color: 'text.secondary', mr: 1 }}>
-                    Pipeline:
-                </Typography>
-                {implementations.map((impl) => (
-                    <Pill
-                        key={impl}
-                        active={impl === implementation}
-                        disabled={!exists(impl, quality, filter)}
-                        onClick={() => go(impl, quality, filter)}
-                    >
-                        {impl}
-                    </Pill>
-                ))}
-            </Box>
-            <Box>
-                <Typography variant="caption" sx={{ color: 'text.secondary', mr: 1 }}>
-                    Quality:
-                </Typography>
-                {qualities.map((q) => (
-                    <Pill
-                        key={q}
-                        active={q === quality}
-                        disabled={!exists(implementation, q, filter)}
-                        onClick={() => go(implementation, q, filter)}
-                    >
-                        {q}
-                    </Pill>
-                ))}
-            </Box>
-            <Box>
-                <Typography variant="caption" sx={{ color: 'text.secondary', mr: 1 }}>
-                    Filter:
-                </Typography>
-                {filters.map((f) => (
-                    <Pill
-                        key={f}
-                        active={f === filter}
-                        disabled={!exists(implementation, quality, f)}
-                        onClick={() => go(implementation, quality, f)}
-                    >
-                        {f}
-                    </Pill>
-                ))}
-            </Box>
-        </Box>
-    );
-}
 
 
 export default function MosaicViewer() {
@@ -226,32 +140,8 @@ export default function MosaicViewer() {
 				mosaic={mosaic}
 			/>
 
-			{/* Breadcrumb */}
-			<Box sx={{ px: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
-				<Breadcrumbs>
-					<Link
-						component="button"
-						underline="hover"
-						color="inherit"
-						onClick={() => navigate(`/mosaic/${mosaic_id}`)}
-					>
-						{mosaic.name || `Mosaic ${mosaic_id.slice(0, 8)}`}
-					</Link>
-					<Typography color="text.primary">{implementation}</Typography>
-					<Typography color="text.primary">{quality}</Typography>
-					<Typography color="text.primary">{filter}</Typography>
-				</Breadcrumbs>
-			</Box>
-
-			{/* Alternate versions strip */}
-			<AlternateVersionsStrip
-				mosaicId={mosaic_id}
-				implementation={implementation}
-				quality={quality}
-				filter={filter}
-				versions={versionsData.versions}
-				filters={versionsData.filters}
-			/>
+			{/* Implementation / quality / filter switching is now handled
+			    by the pill crumbs in AstroFlowBreadcrumbs. */}
 
 			{/* Control bar */}
 			<Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 2, py: 1 }}>
