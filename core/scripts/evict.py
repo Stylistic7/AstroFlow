@@ -6,28 +6,35 @@ from context import get_cache
 cache = get_cache()
 
 
-def starts_with(big_tuple, small_tuple):
-    if not small_tuple:
+def matches(big_tuple, pattern):
+    """Match big_tuple against a tuple pattern. The pattern is a prefix match;
+    a "*" position matches any single value at that position. Quote the
+    pattern on the shell command line to prevent glob expansion."""
+    if not pattern:
         return True
-    if len(small_tuple) > len(big_tuple):
+    if len(pattern) > len(big_tuple):
         return False
-    return big_tuple[: len(small_tuple)] == small_tuple
+    return all(p == "*" or p == b for p, b in zip(pattern, big_tuple))
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Safely manage cache entries using tuple prefix matching."
+        description=(
+            "Safely manage cache entries using tuple prefix matching. "
+            'Use "*" as a wildcard for any single tuple position '
+            "(quote the pattern to avoid shell globbing)."
+        )
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
         "--keep",
         nargs="+",
-        help="Keep keys starting with any of these tuple fragments, e.g. build_mosaic,filter_subgraph",
+        help='Keep keys matching any of these tuple patterns, e.g. \'profile,*,stack_files_oss\'',
     )
     group.add_argument(
         "--delete",
         nargs="+",
-        help="Delete keys starting with any of these tuple fragments.",
+        help="Delete keys matching any of these tuple patterns.",
     )
     parser.add_argument(
         "--confirm", action="store_true", help="Actually perform deletions."
@@ -49,9 +56,9 @@ def main():
         if not isinstance(key, tuple):
             return False
         if keep_prefixes:
-            return not any(starts_with(key, prefix) for prefix in keep_prefixes)
+            return not any(matches(key, pattern) for pattern in keep_prefixes)
         else:
-            return any(starts_with(key, prefix) for prefix in delete_prefixes)
+            return any(matches(key, pattern) for pattern in delete_prefixes)
 
     keys_to_delete = [key for key in cache.iterkeys() if should_delete(key)]
 
