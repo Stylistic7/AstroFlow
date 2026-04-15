@@ -15,12 +15,12 @@ from profiling.measure_performance import _infer_quality
 
 _GB = 1024 ** 3
 DEFAULT_MEMORY = 32 * _GB
-# No headroom multiplier. peak_rss_delta_b is a direct measurement of
-# what the task needed; padding it on top of Ray's 30% physical-RAM
-# reserve double-counts the safety margin and blocks tasks that
-# actually fit. If a task's true peak later creeps above the p95, the
-# next run records it and the estimate tracks — no buffer required.
-_HEADROOM_MULTIPLIER = 1.0
+# Modest headroom on top of observed p95. In practice 1.0× still leaves
+# room for tasks to overshoot — Python allocator overhead, occasional
+# input-size spikes, drift between samples and the current call. 1.1×
+# costs us almost nothing in scheduling density (~half a GB per task)
+# and the p95 estimator still trims the long tail.
+_HEADROOM_MULTIPLIER = 1.1
 
 
 def _p95(values: list[float]) -> float:
