@@ -296,11 +296,9 @@ def _schedule_download_from_asiairs(
     import ray
 
     scheduler = ray.get_actor("scheduler", namespace=_get_namespace())
-    scheduler.add.remote(
+    scheduler.start_asiair_download_poller.remote(
         interval_s=15 * 60,
-        action=dict(type="download_from_asiairs"),
         start_delay_s=30,
-        ignore_if_busy=True,
     )
 
     return state, []

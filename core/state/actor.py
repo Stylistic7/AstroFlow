@@ -31,7 +31,6 @@ from stacks.compute_graph import build_stacking_subgraph
 from targets.post_process import post_process_target
 from stacks.post_process import post_process_stack
 from mosaics.post_process import post_process_mosaic
-from asiair.download_asiair import download_from_asiairs
 from metadata.image_metadata import scatter_compute_image_metadata
 
 
@@ -45,16 +44,6 @@ def _announce(state: State, action: Action) -> tuple[State, list[Action]]:
     announce(action["message"])
 
     return state, []
-
-
-def _download_from_asiairs_only() -> Graph:
-    """Download from ASIAir devices without triggering the full compute graph."""
-    if len(context.asiair_devices) == 0:
-        print(f"### _download_from_asiairs no ASIAir devices found")
-        return Graph({})
-
-    return Graph({download_from_asiairs: {}})
-
 
 
 @ray.remote
@@ -242,22 +231,6 @@ class StateActor:
         match action["type"]:
             case "noop":
                 pass
-            case "download_from_asiairs":
-                from file_io.find_image_files import find_image_files
-                files_before = sum(
-                    len(find_image_files(str(d)))
-                    for d in (context.input_dirs or [])
-                )
-                self.state, new_actions = self._run_graph(
-                    self.state, _download_from_asiairs_only()
-                )
-                files_after = sum(
-                    len(find_image_files(str(d)))
-                    for d in (context.input_dirs or [])
-                )
-                if files_after > files_before:
-                    print(f"### ASIAir download found {files_after - files_before} new files, restarting graph")
-                    self.drain_and_restart()
             case "announce":
                 self.state, new_actions = _announce(self.state, action)
             case "process":

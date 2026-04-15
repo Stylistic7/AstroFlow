@@ -12,6 +12,7 @@ class SchedulerActor:
         self._jobs: List[
             Dict[str, Any]
         ] = []  # {"interval": float, "action": dict, "next": float}
+        self._asiair_poller_task = None
         self._run_task = asyncio.get_event_loop().create_task(self._run())
 
     async def add(
@@ -19,7 +20,6 @@ class SchedulerActor:
         interval_s: float,
         action: Dict[str, Any],
         start_delay_s: float = 0.0,
-        ignore_if_busy: bool = False,
     ) -> None:
         now = time.monotonic()
         self._jobs.append(
@@ -27,9 +27,40 @@ class SchedulerActor:
                 "interval": float(interval_s),
                 "action": dict(action),
                 "next": now + float(start_delay_s),
-                "ignore_if_busy": ignore_if_busy,
             }
         )
+
+    async def start_asiair_download_poller(
+        self, interval_s: float, start_delay_s: float = 0.0,
+    ) -> None:
+        """Run ASIAir downloads here in the scheduler, not via the StateActor.
+
+        Downloads are pure I/O; they have nothing to do with state-machine
+        consistency, so gating them on StateActor._busy meant they never ran
+        while the compute graph was up (i.e. essentially always). Downloads
+        now run in this actor's event loop on their own timer; only the
+        drain_and_restart handoff goes through the StateActor, and only
+        when there's something new to act on.
+        """
+        if self._asiair_poller_task is not None:
+            return
+        self._asiair_poller_task = asyncio.get_event_loop().create_task(
+            self._asiair_poll_loop(interval_s, start_delay_s)
+        )
+
+    async def _asiair_poll_loop(self, interval_s: float, start_delay_s: float) -> None:
+        try:
+            await asyncio.sleep(start_delay_s)
+            while True:
+                try:
+                    await asyncio.to_thread(_run_asiair_download_and_maybe_restart)
+                except Exception as e:
+                    # I/O failures should never kill the poller — it'll try
+                    # again on the next tick.
+                    print(f"### ASIAir poll raised, ignoring: {e}")
+                await asyncio.sleep(interval_s)
+        except asyncio.CancelledError:
+            pass
 
     async def _run(self) -> None:
         try:
@@ -37,7 +68,7 @@ class SchedulerActor:
                 now = time.monotonic()
                 for j in self._jobs:
                     if now >= j["next"]:
-                        self._dispatch(j["action"], j["ignore_if_busy"])
+                        self._dispatch(j["action"])
                         # drift-free advance
                         k = int((now - j["next"]) // j["interval"]) + 1
                         j["next"] += k * j["interval"]
@@ -45,17 +76,50 @@ class SchedulerActor:
         except asyncio.CancelledError:
             pass
 
-    def _dispatch(self, action: Dict[str, Any], ignore_if_busy: bool) -> None:
+    def _dispatch(self, action: Dict[str, Any]) -> None:
         state = ray.get_actor("state", namespace=_get_namespace())
-        if ignore_if_busy and ray.get(state.is_busy.remote()):
-            print(f"### ignoring action {action} because state actor is busy")
-            return
-
         state.enqueue.remote(action)
 
     async def stop(self) -> None:
-        self._run_task.cancel()
-        try:
-            await self._run_task
-        except asyncio.CancelledError:
-            pass
+        for task in (self._run_task, self._asiair_poller_task):
+            if task is None:
+                continue
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+
+def _run_asiair_download_and_maybe_restart() -> None:
+    """Download from all ASIAir devices in parallel; if any new files
+    landed on disk, ask the StateActor to drain and restart the
+    compute graph so they get processed."""
+    from context import context
+    from file_io.find_image_files import find_image_files
+    from asiair.download_asiair import download_from_asiair
+
+    devices = context.asiair_devices or []
+    if not devices:
+        return
+
+    input_dirs = context.input_dirs or []
+    if not input_dirs:
+        return
+    dest = input_dirs[0]
+    files_before = sum(len(find_image_files(str(d))) for d in input_dirs)
+
+    # Fan out one Ray task per device so downloads parallelize across
+    # whichever cluster nodes have a path to the ASIAir.
+    refs = [
+        download_from_asiair.remote("foo", dev["ip"], dest, "H")
+        for dev in devices
+    ]
+    ray.get(refs)
+
+    files_after = sum(len(find_image_files(str(d))) for d in input_dirs)
+    if files_after > files_before:
+        new_files = files_after - files_before
+        print(f"### ASIAir download found {new_files} new files, draining graph")
+        state = ray.get_actor("state", namespace=_get_namespace())
+        ray.get(state.drain_and_restart.remote())

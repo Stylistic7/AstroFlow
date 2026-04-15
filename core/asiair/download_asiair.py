@@ -15,8 +15,6 @@ import file_io
 import file_io.fits_file_io
 from file_io.sidecar import update_sidecar
 import time_util
-from context import context
-from dependency_graph import Graph
 
 # TODO: Improve / strengthen all the types in this file.
 
@@ -257,18 +255,3 @@ def download_from_asiair(
                     _download_logs_from_rig(rig, log_dir, date_dir)
 
 
-@ray.remote
-def downloads_complete():
-    pass
-
-
-@ray.remote
-def download_from_asiairs() -> Graph:
-    return Graph(
-        {
-            downloads_complete: {
-                (download_from_asiair, "foo", dev["ip"], context.input_dirs[0], "H")
-                for dev in context.asiair_devices
-            }
-        }
-    )
