@@ -1,8 +1,22 @@
 """OSS stacking: calibration + cosmic ray removal + astroalign + sigma-clipped combine.
 
 Replaces PixInsight's WBPP.
+
+Memory is bounded by a constant (a few same-shape float32 arrays),
+independent of stack size. The combine is a two-pass streaming
+algorithm:
+  * Pass 1: preprocess + register each frame, write it to a temp file,
+            and update per-pixel running sum and sum-of-squares.
+  * Pass 2: re-read each temp file, apply a 3σ mask against the mean
+            and std computed in pass 1, and accumulate the masked sum.
+  * Final: masked_sum / count.
+
+This preserves the sigma-clipped-mean behavior of the old in-memory
+version while dropping peak RSS from O(N_frames) to O(1).
 """
 import os
+import shutil
+import tempfile
 import numpy as np
 import structlog
 
@@ -44,35 +58,110 @@ def _calibrate(data, bias, dark, flat):
     return data
 
 
-# Row-block size for the sigma-clip combine. Fixed (not memory-aware)
-# so the peak-RSS of this function is deterministic, which auto_memory
-# depends on. At 256 rows, a 20-frame stack of 6200-wide images uses
-# roughly 600 MB during the combine — small enough that the dominant
-# term in stack_files_oss's peak is the raw frame list, not the combine.
-_SIGMA_CLIP_ROWS_PER_CHUNK = 256
+def _downscale(data, K):
+    if K <= 1:
+        return data
+    h, w = data.shape
+    data = data[: h - h % K, : w - w % K]
+    h, w = data.shape
+    return data.reshape(h // K, K, w // K, K).mean(axis=(1, 3))
 
 
-def _sigma_clipped_mean(frames):
-    """Stack frames with 3-sigma rejection, averaging the survivors.
+def _preprocess_frame(frame_meta, bias, dark, flat, downscale_factor, is_light):
+    """Load one raw frame, downscale, calibrate, and (for lights) remove
+    cosmic rays. Returns a float32 ndarray or None if the file is missing."""
+    if not os.path.exists(frame_meta.filename):
+        log.warning("Frame not found, skipping", filename=str(frame_meta.filename))
+        return None
+    data = read_image(frame_meta.filename).astype(np.float32)
+    data = _downscale(data, downscale_factor)
+    data = _calibrate(data, bias, dark, flat)
+    if is_light:
+        header = read_header(frame_meta.filename)
+        try:
+            _, data = detect_cosmics(
+                data,
+                gain=float(header.get("EGAIN", header.get("GAIN", 1.0))),
+                readnoise=float(header.get("RDNOISE", header.get("READNOIS", 10.0))),
+                sigclip=4.5, niter=3,
+            )
+        except Exception as e:
+            log.warning("Cosmic ray removal failed", error=str(e))
+    return data
 
-    Processes the image in row-blocks so the per-chunk working set stays
-    small regardless of how big the frames or how many of them there are.
+
+def _streaming_sigma_clipped_mean(preprocessed_frames, is_light):
+    """Two-pass sigma-clipped mean with streaming registration.
+
+    ``preprocessed_frames`` is an iterator of (index, ndarray) pairs — each
+    already calibrated, downscaled, and cosmic-ray-cleaned. For light
+    frames, all frames after the first are registered to the first.
+
+    Pass 1 writes each (registered) frame to a temp .npy, accumulating
+    sum / sum-of-squares. Pass 2 reloads each temp, applies the 3σ
+    mask, and accumulates the masked sum + per-pixel surviving count.
+
+    Returns (result, num_combined, reference_shape).
     """
-    if len(frames) == 1:
-        return frames[0]
-    H, W = frames[0].shape
-    out = np.empty((H, W), dtype=np.float32)
-    for y0 in range(0, H, _SIGMA_CLIP_ROWS_PER_CHUNK):
-        y1 = min(y0 + _SIGMA_CLIP_ROWS_PER_CHUNK, H)
-        chunk = np.stack([f[y0:y1] for f in frames])  # (N, rows, W)
-        mean = chunk.mean(axis=0)
-        std = chunk.std(axis=0)
+    temp_dir = tempfile.mkdtemp(prefix="stack_oss_")
+    try:
+        reference = None
+        sum_arr = None
+        sum_sq = None
+        n = 0
+        for i, frame in preprocessed_frames:
+            if is_light and reference is not None:
+                try:
+                    aligned, _ = aa_register(frame, reference)
+                    frame = np.nan_to_num(aligned, nan=0.0).astype(np.float32, copy=False)
+                except Exception as e:
+                    log.warning("Failed to register frame, skipping", index=i, error=str(e))
+                    continue
+            else:
+                frame = frame.astype(np.float32, copy=False)
+                if is_light:
+                    reference = frame
+
+            if sum_arr is None:
+                sum_arr = frame.astype(np.float32, copy=True)
+                sum_sq = frame * frame
+            else:
+                sum_arr += frame
+                sum_sq += frame * frame
+
+            np.save(os.path.join(temp_dir, f"{n}.npy"), frame, allow_pickle=False)
+            n += 1
+
+        if n == 0:
+            return None, 0, None
+        if n == 1:
+            one = np.load(os.path.join(temp_dir, "0.npy"))
+            return one, 1, one.shape
+
+        # Pass 1 statistics. var is clamped at 0 to absorb floating-point
+        # negatives (sum_sq/n can fall a hair below mean² when the samples
+        # are nearly identical).
+        mean = sum_arr / n
+        var = np.maximum(sum_sq / n - mean * mean, 0.0)
+        std = np.sqrt(var, dtype=np.float32)
         std[std == 0] = 1.0
-        mask = np.abs(chunk - mean) < 3.0 * std
-        count = mask.sum(axis=0).astype(np.float32)
+
+        # Release pass-1 scratch before pass 2 allocates its own.
+        del sum_arr, sum_sq, var
+
+        # Pass 2: masked combine.
+        masked_sum = np.zeros_like(mean)
+        count = np.zeros(mean.shape, dtype=np.float32)
+        for i in range(n):
+            frame = np.load(os.path.join(temp_dir, f"{i}.npy"))
+            mask = np.abs(frame - mean) < 3.0 * std
+            masked_sum += frame * mask
+            count += mask
+
         count[count == 0] = 1.0
-        out[y0:y1] = (chunk * mask).sum(axis=0) / count
-    return out
+        return masked_sum / count, n, mean.shape
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 @node(auto_memory=True)
@@ -114,58 +203,38 @@ def stack_files_oss(
             elif cal_stack.image_type == "dark": dark = cal_data
             elif cal_stack.image_type == "flat": flat = cal_data
 
-    # Collect, calibrate, and optionally clean each frame.
     downscale_factor = DOWNSCALE_FACTORS[config.quality]
     is_light = isinstance(stack, Stack)
-    frames = []
-    for run in stack.contents.values():
-        for frame_meta in run.metadata.values():
-            if not os.path.exists(frame_meta.filename):
-                log.warning("Frame not found, skipping", filename=str(frame_meta.filename))
-                continue
-            data = read_image(frame_meta.filename).astype(np.float32)
-            if downscale_factor > 1:
-                K = downscale_factor
-                h, w = data.shape
-                data = data[: h - h % K, : w - w % K]
-                h, w = data.shape
-                data = data.reshape(h // K, K, w // K, K).mean(axis=(1, 3))
-            data = _calibrate(data, bias, dark, flat)
-            if is_light:
-                header = read_header(frame_meta.filename)
-                try:
-                    _, data = detect_cosmics(
-                        data,
-                        gain=float(header.get("EGAIN", header.get("GAIN", 1.0))),
-                        readnoise=float(header.get("RDNOISE", header.get("READNOIS", 10.0))),
-                        sigclip=4.5, niter=3,
-                    )
-                except Exception as e:
-                    log.warning("Cosmic ray removal failed", error=str(e))
-            frames.append(data)
 
-    if len(frames) < config.min_frames_in_stack:
-        raise ValueError(f"Stack {stack} has only {len(frames)} frames (minimum {config.min_frames_in_stack})")
+    # Pre-count frames so we can enforce min_frames_in_stack before
+    # starting the expensive combine. The generator below is what actually
+    # drives the streaming combine.
+    frame_metas = [
+        fm
+        for run in stack.contents.values()
+        for fm in run.metadata.values()
+    ]
+    usable = [fm for fm in frame_metas if os.path.exists(fm.filename)]
+    if len(usable) < config.min_frames_in_stack:
+        raise ValueError(
+            f"Stack {stack} has only {len(usable)} frames "
+            f"(minimum {config.min_frames_in_stack})"
+        )
 
-    # Register light frames to the first one. Skip for calibration stacks
-    # (already aligned — same sensor, same session).
-    if is_light and len(frames) > 1:
-        reference = frames[0]
-        registered = [reference]
-        for i, frame in enumerate(frames[1:], start=1):
-            try:
-                aligned, _ = aa_register(frame, reference)
-                registered.append(np.nan_to_num(aligned, nan=0.0))
-            except Exception as e:
-                log.warning("Failed to register frame, skipping", index=i, error=str(e))
-        frames = registered
+    def frame_iter():
+        for i, fm in enumerate(usable):
+            data = _preprocess_frame(fm, bias, dark, flat, downscale_factor, is_light)
+            if data is not None:
+                yield i, data
 
-    result = _sigma_clipped_mean(frames)
+    result, num_combined, _ = _streaming_sigma_clipped_mean(frame_iter(), is_light)
+    if result is None:
+        raise ValueError(f"Stack {stack} produced no usable frames")
 
     header = pyfits.Header()
     header["IMAGETYP"] = f"Master {stack.image_type}"
     header["STBLHASH"] = stack.stable_hash
-    header["NCOMBINE"] = len(frames)
+    header["NCOMBINE"] = num_combined
     header["PIPELINE"] = "AstroFlow-OSS"
     if isinstance(stack, Stack):
         header["FILTER"] = stack.filter
@@ -175,5 +244,5 @@ def stack_files_oss(
     pyfits.PrimaryHDU(data=result.astype(np.float32), header=header).writeto(
         str(dest_filename), overwrite=True,
     )
-    log.info("OSS stacking complete", output=str(dest_filename), frames=len(frames))
+    log.info("OSS stacking complete", output=str(dest_filename), frames=num_combined)
     return WithSidecar(FitsFilePath(dest_filename))

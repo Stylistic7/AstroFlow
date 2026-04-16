@@ -20,6 +20,7 @@ from file_io.generic import read_image
 from file_io.tiff_file_io import write_tiff_image
 from file_io.types import TiffFilePath, WithSidecar
 from context import context
+from dependency_graph import Graph
 from previews.types import QualityLevel, ALL_IMPLEMENTATIONS, SUBFRAME, MASTER, DOWNSCALED_MASTER
 from products.registry import get_filename_fn, MediaType
 from mosaics.types import Mosaic, Viewbox
@@ -32,8 +33,10 @@ from products import makes_image
 class ProjectionFailedException(Exception):
     pass
 
-_PLACE_IMAGE_MEMORY_REQUIREMENT = 6 * 1024 * 1024 * 1024  # 6 GB
+_GB = 1024 ** 3
 _PLACE_TILE_MEMORY_REQUIREMENT = 128 * 1024 * 1024  # 128 MB
+_PLACE_IMAGE_BUILDER_MEMORY = 2 * _GB  # transient: load image + build interpolator, then ray.put
+_COMBINE_PLACE_TILES_MEMORY = 2 * _GB  # one viewbox-size float32 + incoming tile results
 
 log = structlog.get_logger()
 
@@ -117,14 +120,20 @@ def _make_interpolator(filename: Path):
     )
 
 
-def _project_in_tiles(
+@node(memory=_COMBINE_PLACE_TILES_MEMORY)
+def combine_place_tiles(
+    mode: QualityLevel,
+    mosaic: Mosaic,
+    stack: Stack,
+    filter: str,
     viewbox: Viewbox,
-    interp: RegularGridInterpolator,
-    wcs: WCS,
-    skip_empty: bool = True,
-):
-    wcs_ref = ray.put(wcs)
+    *tile_results: tuple[int, int, np.ndarray | None],
+) -> WithSidecar[TiffFilePath]:
+    """Reducer: assemble the N place_tile results into one TIFF.
 
+    Each tile_result is a (tile_y, tile_x, ndarray | None). None means
+    the tile fell outside the source image footprint and was skipped.
+    """
     projected_image = np.zeros(
         (
             viewbox.num_tiles_y * viewbox.tile_height,
@@ -132,55 +141,17 @@ def _project_in_tiles(
         ),
         dtype=np.float32,
     )
-
-    interp_ref = ray.put(interp)
-    remaining_refs = [
-        place_tile.remote(
-            viewbox, tile_y, tile_x, wcs_ref, interp_ref, skip_empty
-        )
-        for tile_y, tile_x in product(
-            range(viewbox.num_tiles_y), range(viewbox.num_tiles_x)
-        )
-    ]
-    while remaining_refs:
-        ready_refs, remaining_refs = ray.wait(remaining_refs, num_returns=1)
-        tile_y, tile_x, tile_data = ray.get(ready_refs[0])
+    for tile_y, tile_x, tile_data in tile_results:
         if tile_data is None:
             continue
-
-        tile_y_idx = tile_y * viewbox.tile_height
-        tile_x_idx = tile_x * viewbox.tile_width
+        ty = tile_y * viewbox.tile_height
+        tx = tile_x * viewbox.tile_width
         projected_image[
-            tile_y_idx : tile_y_idx + viewbox.tile_height,
-            tile_x_idx : tile_x_idx + viewbox.tile_width,
+            ty : ty + viewbox.tile_height,
+            tx : tx + viewbox.tile_width,
         ] = tile_data
 
-    return projected_image[0 : viewbox.num_pixels_y, 0 : viewbox.num_pixels_x]
-
-
-@node(auto_memory=True)
-@makes_image(PlacedImage, ALL_IMPLEMENTATIONS, [SUBFRAME, MASTER, DOWNSCALED_MASTER], placed_filename)
-def place_image(
-    mode: QualityLevel,
-    mosaic: Mosaic,
-    stack: Stack,
-    filter: str,
-    viewbox: Viewbox,
-    image_metadata: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
-    assert image_metadata.plate_solution is not None, (
-        f"place_image requires a plate solution on {image_metadata.filename}; "
-        "DONTSOLV synthetic frames cannot be placed."
-    )
-    log.info("Placing image", mode=mode, mosaic=str(mosaic), stack=str(stack),
-             filename=image_metadata.filename, viewbox=str(viewbox))
-
-    wcs = WCS(image_metadata.plate_solution.header)
-    interp = _make_interpolator(image_metadata.filename)
-    image = _project_in_tiles(viewbox, interp, wcs, skip_empty=False)
-
-    output_fn = get_filename_fn(MediaType.IMAGE, PlacedImage, mode)
-    output_filename = output_fn(mosaic, stack, filter, viewbox)
+    image = projected_image[: viewbox.num_pixels_y, : viewbox.num_pixels_x]
 
     if not np.any(image):
         raise ProjectionFailedException(
@@ -189,7 +160,56 @@ def place_image(
             f"a WCS or viewbox mismatch."
         )
 
+    output_fn = get_filename_fn(MediaType.IMAGE, PlacedImage, mode)
+    output_filename = output_fn(mosaic, stack, filter, viewbox)
     write_tiff_image(output_filename, image, {"FILTER": filter, "STBLHASH": stack.stable_hash})
     log.info("Place image complete", output_filename=output_filename)
-
     return WithSidecar(output_filename)
+
+
+@ray.remote(num_cpus=0.1, memory=_PLACE_IMAGE_BUILDER_MEMORY)
+@makes_image(PlacedImage, ALL_IMPLEMENTATIONS, [SUBFRAME, MASTER, DOWNSCALED_MASTER], placed_filename)
+def place_image(
+    mode: QualityLevel,
+    mosaic: Mosaic,
+    stack: Stack,
+    filter: str,
+    viewbox: Viewbox,
+    image_metadata: ImageMetadata,
+) -> Graph:
+    """Graph-builder for placing a source image onto the mosaic viewbox.
+
+    Previously this was a single @node task that fanned out place_tile
+    subtasks and awaited them internally. That pattern caused a classic
+    Ray deadlock: each parent held the memory estimate of a full placed
+    image (~10 GB) while waiting, so once enough parents piled up the
+    cluster couldn't schedule their subtasks and the system deadlocked.
+
+    Now this function builds an explicit Graph that Ray's scheduler
+    can see: N cheap place_tile tasks and a single combine_place_tiles
+    reducer. The builder itself uses transient memory to load the source
+    image and build the scipy interpolator, then ray.put()s them and
+    exits — no long-lived reservation.
+    """
+    assert image_metadata.plate_solution is not None, (
+        f"place_image requires a plate solution on {image_metadata.filename}; "
+        "DONTSOLV synthetic frames cannot be placed."
+    )
+    log.info("Placing image", mode=mode, mosaic=str(mosaic), stack=str(stack),
+             filename=image_metadata.filename, viewbox=str(viewbox))
+
+    wcs_ref = ray.put(WCS(image_metadata.plate_solution.header))
+    interp_ref = ray.put(_make_interpolator(image_metadata.filename))
+
+    tile_tasks = tuple(
+        (place_tile, viewbox, tile_y, tile_x, wcs_ref, interp_ref, False)
+        for tile_y, tile_x in product(
+            range(viewbox.num_tiles_y), range(viewbox.num_tiles_x)
+        )
+    )
+    combine_task = (combine_place_tiles, mode, mosaic, stack, filter, viewbox)
+
+    return Graph({
+        **{t: set() for t in tile_tasks},
+        combine_task: set(tile_tasks),
+    })
