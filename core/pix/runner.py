@@ -26,7 +26,7 @@ def _find_running_instances() -> dict[int, int]:
     try:
         result = subprocess.run(
             [_PIXINSIGHT_EXECUTABLE, "-e"],
-            text=True, capture_output=True, check=True,
+            text=True, capture_output=True, check=True, timeout=10,
         )
         slot_pid = {}
         for line in result.stdout.splitlines():
@@ -50,9 +50,12 @@ def _start_instance(slot: int) -> None:
         pid = existing[slot]
         if psutil.pid_exists(pid):
             return  # Already running
-        # Stale registration — wait for it to clear
+        # Stale registration — wait for it to clear (max 60s)
         print(f"### pix: Slot {slot} has stale PID {pid}, waiting for cleanup")
+        deadline = time.monotonic() + 60
         while slot in _find_running_instances():
+            if time.monotonic() > deadline:
+                raise TimeoutError(f"Stale PixInsight slot {slot} did not clear within 60s")
             time.sleep(2)
 
     subprocess.Popen(
@@ -68,7 +71,10 @@ def _start_instance(slot: int) -> None:
     )
     print(f"### pix: Started PixInsight instance at slot {slot}")
 
+    deadline = time.monotonic() + 120
     while slot not in _find_running_instances():
+        if time.monotonic() > deadline:
+            raise TimeoutError(f"PixInsight slot {slot} did not register within 120s")
         time.sleep(5)
 
 
@@ -168,6 +174,10 @@ def _acquire_slot(slots: list[int]):
         time.sleep(1)
 
 
+_START_SENTINEL_TIMEOUT = 60      # seconds to wait for PixInsight to begin executing
+_END_SENTINEL_TIMEOUT = 3600      # seconds to wait for the script to finish (1 hour)
+
+
 def run_scp(
     scp_commands: str,
     tmp_dir: Path,
@@ -183,7 +193,8 @@ def run_scp(
         scp_commands: The .scp commands (run -x lines, etc.)
         tmp_dir: Working directory for temp files and sentinels.
         slots: PixInsight slot numbers to try. Defaults to [1].
-        timeout: Maximum seconds to wait for completion.
+        timeout: Maximum seconds to wait for the end sentinel.
+            Defaults to _END_SENTINEL_TIMEOUT (1 hour).
     """
     if slots is None:
         slots = _DEFAULT_SLOTS
@@ -212,23 +223,44 @@ def run_scp(
             [_PIXINSIGHT_EXECUTABLE, f"--execute={slot}:{scp_filename}"]
         )
 
-        # Wait for start sentinel
+        instance_pid = _find_running_instances().get(slot)
+
+        def _instance_alive() -> bool:
+            return instance_pid is not None and psutil.pid_exists(instance_pid)
+
+        # Wait for start sentinel — if PixInsight crashed, was quit by
+        # the user, or never began executing the script, detect it
+        # immediately via the process check rather than waiting for a
+        # timeout.
+        start_deadline = start_time + _START_SENTINEL_TIMEOUT
         while not start_sentinel.exists():
-            if timeout and time.monotonic() - start_time > timeout:
+            if not _instance_alive():
+                print(f"### pix: PixInsight died before writing start sentinel, restarting")
+                _start_instance(slot)
+                raise TimeoutError("PixInsight exited before script started")
+            if time.monotonic() > start_deadline:
+                print(f"### pix: Start sentinel not written after {_START_SENTINEL_TIMEOUT}s, restarting instance")
                 _kill_instance(slot)
                 _start_instance(slot)
                 raise TimeoutError(
-                    f"PixInsight script did not start within {timeout}s"
+                    f"PixInsight script did not start within {_START_SENTINEL_TIMEOUT}s"
                 )
             time.sleep(5)
 
-        # Wait for end sentinel
+        # Wait for end sentinel — the actual script execution. WBPP on
+        # a big stack can legitimately take an hour. Check that
+        # PixInsight is still alive on every poll so a user-quit is
+        # detected within seconds, not after the full timeout.
+        end_deadline = start_time + (timeout if timeout is not None else _END_SENTINEL_TIMEOUT)
         while not end_sentinel.exists():
-            if timeout and time.monotonic() - start_time > timeout:
+            if not _instance_alive():
+                print(f"### pix: PixInsight died during script execution")
+                _start_instance(slot)
+                raise TimeoutError("PixInsight exited during script execution")
+            if time.monotonic() > end_deadline:
+                print(f"### pix: End sentinel not written after timeout, killing instance")
                 _kill_instance(slot)
-                raise TimeoutError(
-                    f"PixInsight script did not finish within {timeout}s"
-                )
+                raise TimeoutError("PixInsight script did not finish within timeout")
             time.sleep(1)
 
         print(f"### pix: Script completed in {time.monotonic() - start_time:.1f}s")

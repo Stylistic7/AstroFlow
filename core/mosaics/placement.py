@@ -20,7 +20,6 @@ from file_io.generic import read_image
 from file_io.tiff_file_io import write_tiff_image
 from file_io.types import TiffFilePath, WithSidecar
 from context import context
-from dependency_graph import Graph
 from previews.types import QualityLevel, ALL_IMPLEMENTATIONS, SUBFRAME, MASTER, DOWNSCALED_MASTER
 from products.registry import get_filename_fn, MediaType
 from mosaics.types import Mosaic, Viewbox
@@ -35,8 +34,6 @@ class ProjectionFailedException(Exception):
 
 _GB = 1024 ** 3
 _PLACE_TILE_MEMORY_REQUIREMENT = 128 * 1024 * 1024  # 128 MB
-_PLACE_IMAGE_BUILDER_MEMORY = 2 * _GB  # transient: load image + build interpolator, then ray.put
-_COMBINE_PLACE_TILES_MEMORY = 2 * _GB  # one viewbox-size float32 + incoming tile results
 
 log = structlog.get_logger()
 
@@ -120,20 +117,14 @@ def _make_interpolator(filename: Path):
     )
 
 
-@node(memory=_COMBINE_PLACE_TILES_MEMORY)
-def combine_place_tiles(
-    mode: QualityLevel,
-    mosaic: Mosaic,
-    stack: Stack,
-    filter: str,
+def _project_in_tiles(
     viewbox: Viewbox,
-    *tile_results: tuple[int, int, np.ndarray | None],
-) -> WithSidecar[TiffFilePath]:
-    """Reducer: assemble the N place_tile results into one TIFF.
+    interp: RegularGridInterpolator,
+    wcs: WCS,
+    skip_empty: bool = True,
+):
+    wcs_ref = ray.put(wcs)
 
-    Each tile_result is a (tile_y, tile_x, ndarray | None). None means
-    the tile fell outside the source image footprint and was skipped.
-    """
     projected_image = np.zeros(
         (
             viewbox.num_tiles_y * viewbox.tile_height,
@@ -141,33 +132,41 @@ def combine_place_tiles(
         ),
         dtype=np.float32,
     )
-    for tile_y, tile_x, tile_data in tile_results:
+
+    interp_ref = ray.put(interp)
+    remaining_refs = [
+        place_tile.remote(
+            viewbox, tile_y, tile_x, wcs_ref, interp_ref, skip_empty
+        )
+        for tile_y, tile_x in product(
+            range(viewbox.num_tiles_y), range(viewbox.num_tiles_x)
+        )
+    ]
+    while remaining_refs:
+        ready_refs, remaining_refs = ray.wait(remaining_refs, num_returns=1)
+        tile_y, tile_x, tile_data = ray.get(ready_refs[0])
         if tile_data is None:
             continue
-        ty = tile_y * viewbox.tile_height
-        tx = tile_x * viewbox.tile_width
+
+        tile_y_idx = tile_y * viewbox.tile_height
+        tile_x_idx = tile_x * viewbox.tile_width
         projected_image[
-            ty : ty + viewbox.tile_height,
-            tx : tx + viewbox.tile_width,
+            tile_y_idx : tile_y_idx + viewbox.tile_height,
+            tile_x_idx : tile_x_idx + viewbox.tile_width,
         ] = tile_data
 
-    image = projected_image[: viewbox.num_pixels_y, : viewbox.num_pixels_x]
-
-    if not np.any(image):
-        raise ProjectionFailedException(
-            f"Placed image for stack {stack.stable_hash} in mosaic "
-            f"{mosaic.stable_hash} is entirely blank. This likely indicates "
-            f"a WCS or viewbox mismatch."
-        )
-
-    output_fn = get_filename_fn(MediaType.IMAGE, PlacedImage, mode)
-    output_filename = output_fn(mosaic, stack, filter, viewbox)
-    write_tiff_image(output_filename, image, {"FILTER": filter, "STBLHASH": stack.stable_hash})
-    log.info("Place image complete", output_filename=output_filename)
-    return WithSidecar(output_filename)
+    return projected_image[0 : viewbox.num_pixels_y, 0 : viewbox.num_pixels_x]
 
 
-@ray.remote(num_cpus=0.1, memory=_PLACE_IMAGE_BUILDER_MEMORY)
+# Explicit memory ceiling (not auto_memory) because place_image spawns
+# place_tile subtasks and waits for them internally via ray.wait().
+# auto_memory's p95 captured the TOTAL RSS while the parent sat waiting
+# (including the interpolator + accumulated tile results ≈ 10 GB) and
+# then reserved that much — which starved the subtasks of scheduling
+# headroom and deadlocked the cluster. 2 GB covers the parent's own
+# footprint (interpolator + output buffer) while leaving room for many
+# concurrent place_tile subtasks.
+@node(auto_memory=True)
 @makes_image(PlacedImage, ALL_IMPLEMENTATIONS, [SUBFRAME, MASTER, DOWNSCALED_MASTER], placed_filename)
 def place_image(
     mode: QualityLevel,
@@ -176,21 +175,7 @@ def place_image(
     filter: str,
     viewbox: Viewbox,
     image_metadata: ImageMetadata,
-) -> Graph:
-    """Graph-builder for placing a source image onto the mosaic viewbox.
-
-    Previously this was a single @node task that fanned out place_tile
-    subtasks and awaited them internally. That pattern caused a classic
-    Ray deadlock: each parent held the memory estimate of a full placed
-    image (~10 GB) while waiting, so once enough parents piled up the
-    cluster couldn't schedule their subtasks and the system deadlocked.
-
-    Now this function builds an explicit Graph that Ray's scheduler
-    can see: N cheap place_tile tasks and a single combine_place_tiles
-    reducer. The builder itself uses transient memory to load the source
-    image and build the scipy interpolator, then ray.put()s them and
-    exits — no long-lived reservation.
-    """
+) -> WithSidecar[TiffFilePath]:
     assert image_metadata.plate_solution is not None, (
         f"place_image requires a plate solution on {image_metadata.filename}; "
         "DONTSOLV synthetic frames cannot be placed."
@@ -198,18 +183,21 @@ def place_image(
     log.info("Placing image", mode=mode, mosaic=str(mosaic), stack=str(stack),
              filename=image_metadata.filename, viewbox=str(viewbox))
 
-    wcs_ref = ray.put(WCS(image_metadata.plate_solution.header))
-    interp_ref = ray.put(_make_interpolator(image_metadata.filename))
+    wcs = WCS(image_metadata.plate_solution.header)
+    interp = _make_interpolator(image_metadata.filename)
+    image = _project_in_tiles(viewbox, interp, wcs, skip_empty=False)
 
-    tile_tasks = tuple(
-        (place_tile, viewbox, tile_y, tile_x, wcs_ref, interp_ref, False)
-        for tile_y, tile_x in product(
-            range(viewbox.num_tiles_y), range(viewbox.num_tiles_x)
+    output_fn = get_filename_fn(MediaType.IMAGE, PlacedImage, mode)
+    output_filename = output_fn(mosaic, stack, filter, viewbox)
+
+    if not np.any(image):
+        raise ProjectionFailedException(
+            f"Placed image for stack {stack.stable_hash} in mosaic "
+            f"{mosaic.stable_hash} is entirely blank. This likely indicates "
+            f"a WCS or viewbox mismatch."
         )
-    )
-    combine_task = (combine_place_tiles, mode, mosaic, stack, filter, viewbox)
 
-    return Graph({
-        **{t: set() for t in tile_tasks},
-        combine_task: set(tile_tasks),
-    })
+    write_tiff_image(output_filename, image, {"FILTER": filter, "STBLHASH": stack.stable_hash})
+    log.info("Place image complete", output_filename=output_filename)
+
+    return WithSidecar(output_filename)
