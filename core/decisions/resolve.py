@@ -180,9 +180,25 @@ def resolve_calibration(
             return None
         return min(filtered, key=lambda x: abs(x[0] - mid))[3]
 
+    # Build set of quarantined flat stack IDs so auto-selection skips them.
+    quarantined_flat_ids = {
+        key.subject_id
+        for key, override in decision_overrides.items()
+        if key.decision_type == DecisionType.QUARANTINE
+        and override.choice == BinaryChoice.EXCLUDE
+        and key.subject_id in cal_stacks
+        and cal_stacks[key.subject_id].image_type == "flat"
+    }
+
     def _choose_flat(run: Run):
-        # No automatic flat selection — the user must choose manually.
-        return None
+        cand = flat_by_cam_filter.get((run.camera, run.filter))
+        if not cand:
+            return None
+        cand = [(m, sid) for m, sid in cand if sid not in quarantined_flat_ids]
+        if not cand:
+            return None
+        mid = _midpoint_s(run.oldest_date, run.newest_date)
+        return min(cand, key=lambda x: abs(x[0] - mid))[1]
 
     pickers = {"bias": _choose_bias, "dark": _choose_dark, "flat": _choose_flat}
 

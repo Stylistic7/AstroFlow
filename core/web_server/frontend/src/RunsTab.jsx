@@ -1,4 +1,5 @@
 import { useContext, useEffect, useState, useCallback } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Box, Chip, Paper, Typography, IconButton } from '@mui/material';
 import QuarantineToggle from './QuarantineToggle.jsx';
 import FlatThumbnail from './FlatThumbnail.jsx';
@@ -9,6 +10,8 @@ import DecisionReviewDialog from './DecisionReviewDialog.jsx';
 
 const RunsTab = ({ stack }) => {
   const { calibrationStacks, isQuarantined, showQuarantined } = useContext(AstroFlowContext);
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const [flatIds, setFlatIds] = useState([]);
   const [selectedFlatsByRun, setSelectedFlatsByRun] = useState({});
@@ -189,7 +192,9 @@ const RunsTab = ({ stack }) => {
                   run={run}
                   flatStack={calibrationStacks[flatId]}
                   selected={selectedFlatId === flatId}
+                  quarantined={isQuarantined("stack", flatId)}
                   onSelect={() => handleSelectFlat(run.id, flatId)}
+                  onNavigate={(id) => navigate(`${location.pathname}/calibration_stack/${id}`)}
                 />
               ))}
             </Box>
