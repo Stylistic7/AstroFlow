@@ -1,10 +1,16 @@
-import React, { useState, useContext, useMemo } from "react";
+import React, { useState, useContext, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { styled, alpha } from '@mui/material/styles';
 import AppBar from '@mui/material/AppBar';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogTitle from '@mui/material/DialogTitle';
 import Toolbar from '@mui/material/Toolbar';
 import Tooltip from '@mui/material/Tooltip';
+import Typography from '@mui/material/Typography';
 import AstroFlowBreadcrumbs from "./AstroFlowBreadcrumbs.jsx";
 import IconButton from '@mui/material/IconButton';
 import InputBase from '@mui/material/InputBase';
@@ -12,6 +18,7 @@ import MenuItem from '@mui/material/MenuItem';
 import Menu from '@mui/material/Menu';
 import SearchIcon from '@mui/icons-material/Search';
 import AccountCircle from '@mui/icons-material/AccountCircle';
+import DeleteIcon from '@mui/icons-material/Delete';
 import MoreIcon from '@mui/icons-material/MoreVert';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
@@ -22,6 +29,81 @@ import ProgressComponent from './ProgressComponent.jsx';
 import RayStatus from './RayStatus.jsx';
 import ShoppingCartPanel from './ShoppingCartPanel.jsx';
 import { Document } from "flexsearch";
+
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(0)} MB`;
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
+}
+
+
+function TrashQuarantinedDialog({ open, onClose }) {
+  const [summary, setSummary] = useState(null);
+  const [trashing, setTrashing] = useState(false);
+  const [result, setResult] = useState(null);
+
+  useEffect(() => {
+    if (!open) { setSummary(null); setResult(null); return; }
+    fetch('/api/quarantined_files')
+      .then(r => r.json())
+      .then(setSummary)
+      .catch(e => console.warn(e));
+  }, [open]);
+
+  const handleTrash = async () => {
+    setTrashing(true);
+    try {
+      const res = await fetch('/api/trash_quarantined', { method: 'POST' });
+      const data = await res.json();
+      setResult(data);
+    } catch (e) {
+      setResult({ error: String(e), trashed: 0 });
+    }
+    setTrashing(false);
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>Move quarantined files to Trash</DialogTitle>
+      <DialogContent>
+        {result ? (
+          <Typography>
+            {result.error
+              ? `Error: ${result.error}`
+              : `Moved ${result.trashed} file${result.trashed !== 1 ? 's' : ''} to Trash. The compute graph will restart.`}
+          </Typography>
+        ) : summary ? (
+          <>
+            <Typography sx={{ mb: 1 }}>
+              <strong>{summary.file_count}</strong> file{summary.file_count !== 1 ? 's' : ''} ({formatBytes(summary.total_bytes)}) will be moved to the macOS Trash.
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              You can restore them from Trash if needed. The compute graph will drain and restart after the files are moved.
+            </Typography>
+          </>
+        ) : (
+          <Typography>Loading…</Typography>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>{result ? 'Close' : 'Cancel'}</Button>
+        {!result && summary && summary.file_count > 0 && (
+          <Button
+            onClick={handleTrash}
+            color="error"
+            variant="contained"
+            disabled={trashing}
+            startIcon={<DeleteIcon />}
+          >
+            {trashing ? 'Moving…' : 'Move to Trash'}
+          </Button>
+        )}
+      </DialogActions>
+    </Dialog>
+  );
+}
 
 
 const Search = styled('div')(({ theme }) => ({
@@ -150,6 +232,8 @@ export default function PrimarySearchAppBar() {
 
   const [anchorEl, setAnchorEl] = useState(null);
   const [mobileMoreAnchorEl, setMobileMoreAnchorEl] = useState(null);
+  const [quarantineMenuAnchor, setQuarantineMenuAnchor] = useState(null);
+  const [trashDialogOpen, setTrashDialogOpen] = useState(false);
 
   const isMenuOpen = Boolean(anchorEl);
   const isMobileMenuOpen = Boolean(mobileMoreAnchorEl);
@@ -249,18 +333,35 @@ export default function PrimarySearchAppBar() {
               }}
             />
           </Search>
-          {quarantineCount > 0 && (
-            <Tooltip title={showQuarantined
-              ? `Showing ${quarantineCount} quarantined item${quarantineCount > 1 ? 's' : ''} (click to hide)`
-              : `${quarantineCount} quarantined item${quarantineCount > 1 ? 's' : ''} hidden (click to show)`
-            }>
-              <IconButton color="inherit" onClick={toggleShowQuarantined} size="small">
-                <Badge badgeContent={quarantineCount} color="warning" max={99}>
-                  {showQuarantined ? <VisibilityIcon /> : <VisibilityOffIcon />}
-                </Badge>
-              </IconButton>
-            </Tooltip>
-          )}
+          {quarantineCount > 0 && (<>
+            <IconButton
+              color="inherit"
+              size="small"
+              onClick={(e) => setQuarantineMenuAnchor(e.currentTarget)}
+            >
+              <Badge badgeContent={quarantineCount} color="warning" max={99}>
+                {showQuarantined ? <VisibilityIcon /> : <VisibilityOffIcon />}
+              </Badge>
+            </IconButton>
+            <Menu
+              anchorEl={quarantineMenuAnchor}
+              open={Boolean(quarantineMenuAnchor)}
+              onClose={() => setQuarantineMenuAnchor(null)}
+            >
+              <MenuItem onClick={() => { toggleShowQuarantined(); setQuarantineMenuAnchor(null); }}>
+                {showQuarantined ? <VisibilityOffIcon sx={{ mr: 1 }} /> : <VisibilityIcon sx={{ mr: 1 }} />}
+                {showQuarantined ? 'Hide quarantined' : 'Show quarantined'}
+              </MenuItem>
+              <MenuItem onClick={() => { setTrashDialogOpen(true); setQuarantineMenuAnchor(null); }}>
+                <DeleteIcon sx={{ mr: 1 }} />
+                Move files to Trash…
+              </MenuItem>
+            </Menu>
+            <TrashQuarantinedDialog
+              open={trashDialogOpen}
+              onClose={() => setTrashDialogOpen(false)}
+            />
+          </>)}
           <Box sx={{ flexGrow: 1 }} />
           <ShoppingCartPanel />
           <VerticalDivider />

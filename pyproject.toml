@@ -30,6 +30,7 @@ dependencies = [
     "pytz",
     "python-statemachine",
     "requests",
+    "send2trash",
     # Astronomy / image pipeline
     "astropy",
     "astroalign",
