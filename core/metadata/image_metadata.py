@@ -170,7 +170,7 @@ def compute_image_metadata(
 
 
 
-@ray.remote(num_cpus=0.1, resources={"fastest_storage": 0.001})
+@ray.remote(num_cpus=0.1)
 @beartype
 @measure_performance
 def load_metadata() -> ContextRef[MetadataDict]:
