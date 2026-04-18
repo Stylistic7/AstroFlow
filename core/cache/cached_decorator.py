@@ -170,9 +170,9 @@ def make_cached_decorator(
         # (which would reject unknown kwargs).
         auto_memory = ray_opts.pop("auto_memory", False)
 
-        ray_func = (
-            ray.remote(**ray_opts)(inner) if ray_opts else ray.remote(inner)
-        )
+        ray_opts.setdefault("scheduling_strategy", "SPREAD")
+
+        ray_func = ray.remote(**ray_opts)(inner)
 
         @wraps(func)
         def wrapper(*args, **kwargs):

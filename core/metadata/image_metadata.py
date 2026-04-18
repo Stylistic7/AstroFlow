@@ -106,7 +106,7 @@ class DuplicateFileException(Exception):
     pass
 
 
-@node(num_cpus=0.25, scheduling_strategy="SPREAD")
+@node(num_cpus=0.25)
 def compute_image_metadata(
     filename: os.PathLike,
 ) -> ImageMetadata:
