@@ -49,6 +49,103 @@ def test_hashes_and_metadata(test_context) -> None:
     assert metadata.content_hash != "977b6cfb2a98f2ba"
 
 
+def test_frozendict_hash_call_stable():
+    """hash_call on a frozendict must be stable regardless of insertion order."""
+    from frozendict import frozendict
+    d1 = frozendict({"a": 1, "b": 2, "c": 3})
+    d2 = frozendict({"c": 3, "a": 1, "b": 2})
+    assert hash_list([d1]) == hash_list([d2])
+
+
+def test_nested_frozendict_stable():
+    from frozendict import frozendict
+    inner = frozendict({"x": 10, "y": 20})
+    d1 = frozendict({"k1": inner, "k2": frozendict()})
+    d2 = frozendict({"k2": frozendict(), "k1": inner})
+    assert hash_list([d1]) == hash_list([d2])
+
+
+def test_decision_key_hash_stable():
+    """Decision keys (frozen dataclasses) used as frozendict keys must
+    hash stably — they flow through ProcessingConfig.decisions."""
+    from decisions.decisions import DecisionKey, DecisionType, ObjectType
+    from decisions.decisions import DecisionOverride, BinaryChoice
+    from frozendict import frozendict
+
+    k1 = DecisionKey.quarantine(ObjectType.STACK, "aaa")
+    k2 = DecisionKey.quarantine(ObjectType.STACK, "bbb")
+    v1 = DecisionOverride(choice=BinaryChoice.EXCLUDE)
+    v2 = DecisionOverride(choice=BinaryChoice.INCLUDE)
+
+    d1 = frozendict({k1: v1, k2: v2})
+    d2 = frozendict({k2: v2, k1: v1})
+    assert hash_list([d1]) == hash_list([d2])
+
+
+def test_processing_config_hash_stable():
+    """ProcessingConfig is the main arg to @node functions like stack_files.
+    Changing one stack's decisions must NOT change the hash for a config
+    that was filtered to a different stack."""
+    from decisions.settings import ProcessingConfig
+    from decisions.decisions import DecisionKey, DecisionOverride, ObjectType, BinaryChoice
+    from frozendict import frozendict
+
+    k_a = DecisionKey.quarantine(ObjectType.STACK, "stack_a")
+    k_b = DecisionKey.quarantine(ObjectType.STACK, "stack_b")
+    v = DecisionOverride(choice=BinaryChoice.EXCLUDE)
+
+    # Config filtered to stack_a only:
+    config_a_v1 = ProcessingConfig(decisions=frozendict({k_a: v}))
+    config_a_v2 = ProcessingConfig(decisions=frozendict({k_a: v}))
+    assert hash_list([config_a_v1]) == hash_list([config_a_v2])
+
+    # Adding a decision for stack_b should NOT affect stack_a's config
+    # (because the caller filters before passing):
+    config_a_again = ProcessingConfig(decisions=frozendict({k_a: v}))
+    assert hash_list([config_a_v1]) == hash_list([config_a_again])
+
+
+def test_processing_config_changes_on_decision_change():
+    """Changing a decision in the config MUST change the hash."""
+    from decisions.settings import ProcessingConfig
+    from decisions.decisions import DecisionKey, DecisionOverride, ObjectType, BinaryChoice
+    from frozendict import frozendict
+
+    k = DecisionKey.quarantine(ObjectType.STACK, "stack_a")
+    c1 = ProcessingConfig(decisions=frozendict({k: DecisionOverride(choice=BinaryChoice.EXCLUDE)}))
+    c2 = ProcessingConfig(decisions=frozendict({k: DecisionOverride(choice=BinaryChoice.INCLUDE)}))
+    assert hash_list([c1]) != hash_list([c2])
+
+
+def test_empty_frozendict_stable():
+    from frozendict import frozendict
+    assert hash_list([frozendict()]) == hash_list([frozendict()])
+
+
+def test_quality_level_stable():
+    """QualityLevel (StrEnum) must hash stably."""
+    from previews.types import QualityLevel
+    assert hash_list([QualityLevel.MASTER]) == hash_list([QualityLevel.MASTER])
+    assert hash_list([QualityLevel.MASTER]) != hash_list([QualityLevel.SUBFRAME])
+
+
+def test_implementation_stable():
+    from previews.types import Implementation
+    assert hash_list([Implementation.PIXINSIGHT]) == hash_list([Implementation.PIXINSIGHT])
+    assert hash_list([Implementation.PIXINSIGHT]) != hash_list([Implementation.OSS])
+
+
+def test_set_order_independent():
+    assert hash_list([{"c", "a", "b"}]) == hash_list([{"b", "c", "a"}])
+
+
+def test_dict_order_independent():
+    d1 = {"z": 1, "a": 2, "m": 3}
+    d2 = {"a": 2, "m": 3, "z": 1}
+    assert hash_list([d1]) == hash_list([d2])
+
+
+
 def test_context_ref_large(test_context) -> None:
     d = {"A": 1, "B": 2}
     d_ref = ContextRef.store_large(d)

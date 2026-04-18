@@ -2,16 +2,13 @@ import ray
 import diskcache
 
 from cache.cached_decorator import make_cached_decorator
-from testing.sidecar_hasher import SidecarHasher
 from hashing import hash_call
 from context import context, get_cache
 from targets.types import TargetsDict
 
 
-sidecar_hasher = SidecarHasher()
 locally_cached = make_cached_decorator(
     cache_provider=get_cache,
-    content_hasher=sidecar_hasher,
     call_hasher=hash_call,
     debug=True,
 )

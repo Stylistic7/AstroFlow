@@ -18,12 +18,3 @@ class CacheProtocol(Protocol):
 
 
 ContentHash = NewType("ContentHash", str)
-
-
-@runtime_checkable
-class ContentHashProtocol(Protocol):
-    def has(self, obj: Any) -> bool: ...
-
-    def get(self, obj: Any) -> ContentHash: ...
-
-    def set(self, obj: Any, content_hash: ContentHash) -> Any: ...

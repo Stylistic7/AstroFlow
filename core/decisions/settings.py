@@ -38,7 +38,6 @@ class DevelopmentSettings:
     """Knobs used during development and testing."""
     mock_pixinsight: bool = False
     dangerously_accept_existing_files: bool = False
-    dangerously_allow_missing_files: bool = False
     override_filters: tuple[str, ...] | None = None
     skip_preview_graph: bool = False
 

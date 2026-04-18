@@ -142,7 +142,6 @@ def identified_testdata(init_ray, tmp_path_factory):
         clustering_settings=ClusteringSettings(min_frames_in_stack=3),
         development_settings=DevelopmentSettings(
             mock_pixinsight=True,
-            dangerously_allow_missing_files=True,
         ),
         preview_settings=PreviewSettings(
             subframe_thumbnail_width=1200,

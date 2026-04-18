@@ -11,7 +11,7 @@ from ray.runtime_context import get_runtime_context
 
 from hashing import hash_source_code
 from cache.context_ref import ContextRef
-from protocols import CacheProtocol, ContentHashProtocol
+from protocols import CacheProtocol
 from cache.types import NeverRun
 
 
@@ -66,7 +66,6 @@ def _bind_args(
 # directories.
 def make_cached_decorator(
     cache_provider: Callable[[], CacheProtocol],
-    content_hasher: ContentHashProtocol,
     call_hasher: Optional[Callable[[str, Any], str]],
     memory_estimator: Optional[Callable[[Callable, tuple, dict], int]] = None,
     debug=False,
@@ -108,21 +107,8 @@ def make_cached_decorator(
                     f"### cache key {key} contained large object, {size_mb:0.3f} MB"
                 )
 
-            stored_hash = None
-            try:
-                stored_hash = content_hasher.get(cached)
-            except KeyError:
-                print(
-                    f"### WARNING: Could not get content hash of object "
-                    f"type {type(cached)}"
-                )
-
-            if not content_hasher.has(cached) or stored_hash == call_hash:
-                debug_print(f"cache hit: {key}")
-                return key, call_hash, True, cached
-            else:
-                debug_print(f"cache mismatch ({stored_hash}): {key}")
-                return key, call_hash, False, None
+            debug_print(f"cache hit: {key}")
+            return key, call_hash, True, cached
 
         def inner(
             *args,
@@ -146,6 +132,9 @@ def make_cached_decorator(
             if dry_run:
                 return NeverRun
 
+            from context import context as _ctx
+            _ctx.and_equals("cache_misses", [(func.__name__, call_hash)], 10000)
+
             if TRACE_TASKS:
                 print(f">>> {func.__name__} (cache miss, running)")
             start_time = time.time()
@@ -166,7 +155,6 @@ def make_cached_decorator(
             if isinstance(result, Path) and not result.exists():
                 raise FileNotFoundError(result)
 
-            result = content_hasher.set(result, call_hash)
             debug_print(
                 f"storing: {key} as {type(result)} into cache {_resolve_cache().directory}"
             )

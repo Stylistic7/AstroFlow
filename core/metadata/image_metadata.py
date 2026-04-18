@@ -183,22 +183,22 @@ def load_metadata() -> ContextRef[MetadataDict]:
         resolved = str(Path(filename).resolve())
         return any(resolved.startswith(d) for d in input_dirs)
 
-    allow_missing = context.settings.development_settings.dangerously_allow_missing_files
-
     metadata = MetadataDict()
     for key, value in context.get_matching(("compute_image_metadata",)).items():
         try:
-            if isinstance(value.content_hash, str):
-                if value.content_hash not in quarantined_files:
-                    in_input = is_input_file(value.filename)
-                    if allow_missing or in_input:
-                        if "master" not in os.path.basename(value.filename).lower():
-                            exists = os.path.exists(value.filename)
-                            if exists or (allow_missing and not in_input):
-                                if not image_types.is_master(value.header):
-                                    existing = metadata.get(value.content_hash)
-                                    if existing is None or exists:
-                                        metadata[value.content_hash] = value
+            if not isinstance(value.content_hash, str):
+                continue
+            if value.content_hash in quarantined_files:
+                continue
+            if not is_input_file(value.filename):
+                continue
+            if image_types.is_master(value.header):
+                continue
+            if not os.path.exists(value.filename):
+                continue
+            existing = metadata.get(value.content_hash)
+            if existing is None:
+                metadata[value.content_hash] = value
         except Exception as e:
             log.warning("Rejecting bad metadata key", key=key, error=str(e), value_type=type(value).__name__)
 

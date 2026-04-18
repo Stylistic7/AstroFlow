@@ -89,8 +89,8 @@ def discard_sidecar(obj: Any) -> None:
     Called by cached_decorator's cache-miss path when an @makes_image
     producer rewrites its output: any cached image_metadata or
     plate_solution in the sidecar was computed from the previous file
-    content and is now stale. The next content_hasher.set call will
-    recreate the sidecar with only the new content_hash.
+    content and is now stale. The sidecar will be recreated when the
+    image metadata is recomputed.
 
     Only the sidecar .json is removed — the underlying data file is
     never touched, preserving the "AstroFlow doesn't change the data

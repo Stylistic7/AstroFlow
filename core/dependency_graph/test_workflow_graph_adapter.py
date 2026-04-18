@@ -9,17 +9,14 @@ from dependency_graph import Graph, Node, run_graph, GraphRuntime
 
 from cache.cached_decorator import make_cached_decorator
 from hashing import hash_call
-from testing.sidecar_hasher import SidecarHasher
 from dependency_graph.workflow_graph_adapter import to_workflow_graph
 
 log = structlog.get_logger()
 
 T = TypeVar("T")
 
-sidecar_hasher = SidecarHasher()
 cached = make_cached_decorator(
     cache_provider=get_cache,
-    content_hasher=sidecar_hasher,
     call_hasher=hash_call,
     debug=True,
 )

@@ -9,11 +9,9 @@ from profiling.memory_estimate import estimate_memory
 from dependency_graph.logging import make_capture_logs_decorator
 from hashing import hash_call
 from context import context, get_cache
-from decorators.content_hasher import ContentHasher
 
 cached = make_cached_decorator(
     cache_provider=get_cache,
-    content_hasher=ContentHasher(),
     call_hasher=hash_call,
     memory_estimator=estimate_memory,
 )

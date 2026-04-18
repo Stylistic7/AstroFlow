@@ -59,7 +59,7 @@ def _setup(test_context):
             min_frames_in_stack=3,
         ),
         development_settings=DevelopmentSettings(
-            mock_pixinsight=True, dangerously_allow_missing_files=True,
+            mock_pixinsight=True,
         ),
         preview_settings=PreviewSettings(
             subframe_thumbnail_width=1200, master_thumbnail_width=2160,
