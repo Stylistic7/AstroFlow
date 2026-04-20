@@ -5,8 +5,11 @@ import subprocess
 
 from context import local_context as context
 from file_io.generic import read_header
+from file_io.find_image_files import find_image_files
+from file_io.sidecar import get_section
+from metadata.image_types import is_light_frame
+from web_server.backend.announcer import announce
 from state.actor import state
-from stacks.stacking import stack_files
 
 files_bp = Blueprint("files", __name__)
 
@@ -70,6 +73,63 @@ def open_stack_master(stack_id):
     )
 
     return Response(status=200)
+
+
+def _find_unsolved_light_frames():
+    """Scan input dirs for light frames whose plate-solving failed."""
+    results = []
+    for input_dir in context.input_dirs or []:
+        for fits_path in find_image_files(str(input_dir)):
+            sidecar = get_section(Path(fits_path), "plate_solution")
+            if sidecar is None:
+                continue
+            if sidecar.get("data") is not None:
+                continue
+            try:
+                header = read_header(Path(fits_path))
+            except Exception:
+                continue
+            if not is_light_frame(header):
+                continue
+            results.append({
+                "filename": str(fits_path),
+                "size_bytes": os.path.getsize(fits_path),
+                "date_obs": header.get("DATE-OBS"),
+                "filter": header.get("FILTER"),
+                "exposure": header.get("EXPTIME") or header.get("EXPOSURE"),
+                "target": header.get("OBJECT"),
+            })
+    return results
+
+
+@files_bp.route("/api/unsolved_frames")
+def unsolved_frames():
+    frames = _find_unsolved_light_frames()
+    return jsonify({
+        "count": len(frames),
+        "total_bytes": sum(f["size_bytes"] for f in frames),
+        "frames": frames,
+    })
+
+
+@files_bp.route("/api/trash_unsolved", methods=["POST"])
+def trash_unsolved():
+    from send2trash import send2trash
+
+    frames = _find_unsolved_light_frames()
+    trashed = 0
+    for f in frames:
+        path = Path(f["filename"])
+        if path.exists():
+            send2trash(str(path))
+            sidecar = Path(str(path) + ".json")
+            if sidecar.exists():
+                send2trash(str(sidecar))
+            trashed += 1
+
+    announce("reload_data")
+    state.drain_and_restart()
+    return jsonify({"trashed": trashed})
 
 
 @files_bp.route("/api/open_image/<path:filename>")

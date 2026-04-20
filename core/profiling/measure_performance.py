@@ -90,7 +90,8 @@ def _update_profile(
     cache: CacheProtocol,
 ):
     node_ip = ray.util.get_node_ip_address()
-    key = ("profile", fn_hash, fn_name, quality, node_ip)
+    record["node_ip"] = node_ip
+    key = ("profile", fn_hash, fn_name, quality)
     cache.and_equals(key, [record], _MAX_PROFILE_SAMPLES)
 
 

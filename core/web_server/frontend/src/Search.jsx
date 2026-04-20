@@ -8,6 +8,12 @@ import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
+import Accordion from '@mui/material/Accordion';
+import AccordionSummary from '@mui/material/AccordionSummary';
+import AccordionDetails from '@mui/material/AccordionDetails';
+import List from '@mui/material/List';
+import ListItem from '@mui/material/ListItem';
+import ListItemText from '@mui/material/ListItemText';
 import Toolbar from '@mui/material/Toolbar';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
@@ -18,7 +24,9 @@ import MenuItem from '@mui/material/MenuItem';
 import Menu from '@mui/material/Menu';
 import SearchIcon from '@mui/icons-material/Search';
 import AccountCircle from '@mui/icons-material/AccountCircle';
+import BrokenImageIcon from '@mui/icons-material/BrokenImage';
 import DeleteIcon from '@mui/icons-material/Delete';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import MoreIcon from '@mui/icons-material/MoreVert';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
@@ -90,6 +98,110 @@ function TrashQuarantinedDialog({ open, onClose }) {
       <DialogActions>
         <Button onClick={onClose}>{result ? 'Close' : 'Cancel'}</Button>
         {!result && summary && summary.file_count > 0 && (
+          <Button
+            onClick={handleTrash}
+            color="error"
+            variant="contained"
+            disabled={trashing}
+            startIcon={<DeleteIcon />}
+          >
+            {trashing ? 'Moving…' : 'Move to Trash'}
+          </Button>
+        )}
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+
+function UnsolvedFramesDialog({ open, onClose }) {
+  const [data, setData] = useState(null);
+  const [trashing, setTrashing] = useState(false);
+  const [result, setResult] = useState(null);
+
+  useEffect(() => {
+    if (!open) { setData(null); setResult(null); return; }
+    fetch('/api/unsolved_frames')
+      .then(r => r.json())
+      .then(setData)
+      .catch(e => console.warn(e));
+  }, [open]);
+
+  const handleTrash = async () => {
+    setTrashing(true);
+    try {
+      const res = await fetch('/api/trash_unsolved', { method: 'POST' });
+      setResult(await res.json());
+    } catch (e) {
+      setResult({ error: String(e), trashed: 0 });
+    }
+    setTrashing(false);
+  };
+
+  const grouped = useMemo(() => {
+    if (!data?.frames) return {};
+    const groups = {};
+    for (const f of data.frames) {
+      const target = f.target || 'Unknown target';
+      if (!groups[target]) groups[target] = [];
+      groups[target].push(f);
+    }
+    return groups;
+  }, [data]);
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+      <DialogTitle>Unsolved light frames</DialogTitle>
+      <DialogContent>
+        {result ? (
+          <Typography>
+            {result.error
+              ? `Error: ${result.error}`
+              : `Moved ${result.trashed} file${result.trashed !== 1 ? 's' : ''} to Trash. The compute graph will restart.`}
+          </Typography>
+        ) : data ? (
+          data.count === 0 ? (
+            <Typography color="text.secondary">All light frames have been plate-solved.</Typography>
+          ) : (
+            <>
+              <Typography sx={{ mb: 2 }}>
+                <strong>{data.count}</strong> light frame{data.count !== 1 ? 's' : ''} ({formatBytes(data.total_bytes)}) failed plate-solving.
+                These frames are not used in any stack.
+              </Typography>
+              {Object.entries(grouped).sort().map(([target, frames]) => (
+                <Accordion key={target} disableGutters variant="outlined" sx={{ mb: 0.5 }}>
+                  <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                    <Typography>
+                      {target} — {frames.length} frame{frames.length !== 1 ? 's' : ''}
+                    </Typography>
+                  </AccordionSummary>
+                  <AccordionDetails sx={{ p: 0 }}>
+                    <List dense disablePadding>
+                      {frames.map((f, i) => (
+                        <ListItem key={i} sx={{ py: 0 }}>
+                          <ListItemText
+                            primary={f.filename.split('/').pop()}
+                            secondary={[f.date_obs, f.filter, f.exposure && `${f.exposure}s`].filter(Boolean).join(' · ')}
+                          />
+                        </ListItem>
+                      ))}
+                    </List>
+                  </AccordionDetails>
+                </Accordion>
+              ))}
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                Files will be moved to the macOS Trash and can be restored from Finder.
+                If many frames from the same target failed, the plate-solving arguments may need adjustment.
+              </Typography>
+            </>
+          )
+        ) : (
+          <Typography>Scanning…</Typography>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>{result ? 'Close' : 'Cancel'}</Button>
+        {!result && data && data.count > 0 && (
           <Button
             onClick={handleTrash}
             color="error"
@@ -234,6 +346,7 @@ export default function PrimarySearchAppBar() {
   const [mobileMoreAnchorEl, setMobileMoreAnchorEl] = useState(null);
   const [quarantineMenuAnchor, setQuarantineMenuAnchor] = useState(null);
   const [trashDialogOpen, setTrashDialogOpen] = useState(false);
+  const [unsolvedDialogOpen, setUnsolvedDialogOpen] = useState(false);
 
   const isMenuOpen = Boolean(anchorEl);
   const isMobileMenuOpen = Boolean(mobileMoreAnchorEl);
@@ -354,12 +467,20 @@ export default function PrimarySearchAppBar() {
               </MenuItem>
               <MenuItem onClick={() => { setTrashDialogOpen(true); setQuarantineMenuAnchor(null); }}>
                 <DeleteIcon sx={{ mr: 1 }} />
-                Move files to Trash…
+                Move quarantined to Trash…
+              </MenuItem>
+              <MenuItem onClick={() => { setUnsolvedDialogOpen(true); setQuarantineMenuAnchor(null); }}>
+                <BrokenImageIcon sx={{ mr: 1 }} />
+                Unsolved frames…
               </MenuItem>
             </Menu>
             <TrashQuarantinedDialog
               open={trashDialogOpen}
               onClose={() => setTrashDialogOpen(false)}
+            />
+            <UnsolvedFramesDialog
+              open={unsolvedDialogOpen}
+              onClose={() => setUnsolvedDialogOpen(false)}
             />
           </>)}
           <Box sx={{ flexGrow: 1 }} />

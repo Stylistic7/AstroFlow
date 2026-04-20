@@ -49,13 +49,10 @@ def estimate_memory(fn: Callable, args: tuple, kwargs: dict) -> int:
     fn_hash = hash_source_code(fn)
     quality = _infer_quality(args, kwargs)
 
-    prefix = ("profile", fn_hash, fn.__name__, quality)
-    matches = context.get_matching(prefix)
+    key = ("profile", fn_hash, fn.__name__, quality)
+    samples = context.get(key, [])
 
-    rsss: list[float] = []
-    for samples in matches.values():
-        for sample in samples:
-            rsss.append(sample["peak_rss_delta_b"])
+    rsss: list[float] = [s["peak_rss_delta_b"] for s in samples]
 
     if not rsss:
         return _DEFAULT_MEMORY_BY_QUALITY.get(quality, _DEFAULT_MEMORY_UNKNOWN)
