@@ -166,7 +166,7 @@ def _project_in_tiles(
 # headroom and deadlocked the cluster. 2 GB covers the parent's own
 # footprint (interpolator + output buffer) while leaving room for many
 # concurrent place_tile subtasks.
-@node
+@node(num_cpus=0)
 @makes_image(PlacedImage, ALL_IMPLEMENTATIONS, [SUBFRAME, MASTER, DOWNSCALED_MASTER], placed_filename)
 def place_image(
     mode: QualityLevel,
