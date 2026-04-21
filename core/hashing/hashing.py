@@ -78,9 +78,14 @@ def _is_dataclass_instance(obj: Any) -> bool:
     return hasattr(obj, "__dataclass_fields__") and not isinstance(obj, type)
 
 
+_source_hash_cache: dict[int, str] = {}
+
 @beartype
 def hash_source_code(func: Callable) -> str:
-    return xxhash.xxh64(inspect.getsource(func)).hexdigest()
+    key = id(func)
+    if key not in _source_hash_cache:
+        _source_hash_cache[key] = xxhash.xxh64(inspect.getsource(func)).hexdigest()
+    return _source_hash_cache[key]
 
 
 @beartype
