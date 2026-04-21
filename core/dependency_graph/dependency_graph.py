@@ -4,7 +4,6 @@ from functools import reduce
 from operator import add
 import time
 from typing import Callable, Any
-from objsize import get_deep_size
 
 from cache.types import NeverRun
 from dependency_graph import (
@@ -23,7 +22,6 @@ from dependency_graph.graph_runtime import GraphRuntime
 from .debugging import print_graph, node_to_string
 
 _MIN_STATUS_UPDATE_INTERVAL_SECS: float = 5.0
-_RESULT_SIZE_WARNING_THRESHOLD_MB: int = 10
 
 
 def _ray_object_count() -> int:
@@ -228,14 +226,6 @@ def run_graph(
                 num_nodes_run += 1
                 try:
                     result = ray.get(ref)
-                    if (
-                        result_size_mb := get_deep_size(result) / 1024 / 1024
-                    ) > _RESULT_SIZE_WARNING_THRESHOLD_MB:
-                        print(
-                            f"### WARNING: node {node_to_string(node)} produced "
-                            f"large object of type {type(result)} and "
-                            f"size {result_size_mb:.3f} MB"
-                        )
                     rt.node_completed(
                         node, result, _retrieve_logs(rt, node)
                     )
