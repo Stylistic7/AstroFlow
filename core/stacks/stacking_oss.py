@@ -176,7 +176,7 @@ def stack_files_oss(
     from products import ensure_producers_registered
     ensure_producers_registered()
 
-    stack = resolve_calibration(stack, config.calibration_stacks, config.decisions)
+    stack = resolve_calibration(stack, config.get_calibration_stacks(), config.decisions)
     if config.decisions and isinstance(stack, Stack):
         filtered = resolve_decisions(stack, ALL_EXCLUSION_TYPES, config.decisions, config.min_frames_in_stack)
         if filtered is None:
@@ -193,7 +193,7 @@ def stack_files_oss(
         for dep in run.dependencies.values():
             if not isinstance(dep, StackIdDependency):
                 continue
-            cal_stack = config.calibration_stacks[dep.stack_id]
+            cal_stack = config.get_calibration_stacks()[dep.stack_id]
             cal_data = _load_calibration(cal_stack, config.quality, OSS)
             if cal_data is None:
                 cal_data = _load_calibration(cal_stack, config.quality, config.implementation)

@@ -44,7 +44,7 @@ def build_calibration_stack_subgraph(
     from decisions.resolve import resolve_calibration
 
     # Resolve calibration to discover which cal stacks this stack depends on.
-    enriched = resolve_calibration(stack, config.calibration_stacks, config.decisions)
+    enriched = resolve_calibration(stack, config.get_calibration_stacks(), config.decisions)
 
     # Calibration stacks have no per-stack decisions — give them a clean
     # config so that light-stack quarantine changes don't invalidate their cache.
@@ -56,7 +56,7 @@ def build_calibration_stack_subgraph(
         subgraph = {}
         for dep in run.dependencies.values():
             if isinstance(dep, StackIdDependency):
-                cal_stack = config.calibration_stacks[dep.stack_id]
+                cal_stack = config.get_calibration_stacks()[dep.stack_id]
                 stack_fn = get_producer(MediaType.IMAGE, type(cal_stack), config.quality, config.implementation)
                 task = (stack_fn, cal_stack, cal_config)
                 cal_run = next(iter(cal_stack.contents.values()))

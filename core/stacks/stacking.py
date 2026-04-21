@@ -165,7 +165,7 @@ def stack_files(
     config: ProcessingConfig,
 ) -> WithSidecar[XisfFilePath]:
     # Resolve calibration (lazy, cached via decision framework).
-    stack = resolve_calibration(stack, config.calibration_stacks, config.decisions)
+    stack = resolve_calibration(stack, config.get_calibration_stacks(), config.decisions)
     # Apply exclusion decisions to filter frames before stacking (light stacks only).
     if config.decisions and isinstance(stack, Stack):
         filtered = resolve_decisions(stack, ALL_EXCLUSION_TYPES, config.decisions, config.min_frames_in_stack)
@@ -197,7 +197,7 @@ def stack_files(
         update_header(dest_filename, metadata)
         return WithSidecar(dest_filename)
 
-    calibration_stacks = config.calibration_stacks
+    calibration_stacks = config.get_calibration_stacks()
     min_frames_in_stack = config.min_frames_in_stack
     log.info("Calibration stacks", keys=list(calibration_stacks.keys()))
 

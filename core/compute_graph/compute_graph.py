@@ -243,9 +243,11 @@ def build_preview_graph(
     objects: Objects,
 ) -> Graph:
     from decisions.settings import ProcessingConfig
+    from cache.context_ref import ContextRef
 
+    cal_stacks_ref = ContextRef.store_large(objects.calibration_stacks)
     config = ProcessingConfig(
-        calibration_stacks=objects.calibration_stacks,
+        calibration_stacks=cal_stacks_ref,
         development_settings=development_settings,
         min_frames_in_stack=min_frames_in_stack,
     )
@@ -289,7 +291,8 @@ def build_main_processing_graph(
     stacks = objects.stacks
     targets = objects.targets
     mosaics = objects.mosaics
-    calibration_stacks = objects.calibration_stacks
+    from cache.context_ref import ContextRef
+    cal_stacks_ref = ContextRef.store_large(objects.calibration_stacks)
 
     from previews.types import Implementation
 
@@ -299,7 +302,7 @@ def build_main_processing_graph(
         else:
             decisions = fd(decision_overrides)
         return ProcessingConfig(
-            calibration_stacks=calibration_stacks,
+            calibration_stacks=cal_stacks_ref,
             development_settings=development_settings,
             min_frames_in_stack=min_frames_in_stack,
             decisions=decisions,

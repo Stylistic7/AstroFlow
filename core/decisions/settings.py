@@ -1,6 +1,7 @@
 import math
 import datetime
 from dataclasses import dataclass, field
+from typing import Any
 from frozendict import frozendict
 
 from units import Radians
@@ -52,12 +53,18 @@ class ProcessingConfig:
     Created once per graph run by the @ray.remote graph builder, then passed
     to all @node compute functions. Frozen and hashable for cache keys.
     """
-    calibration_stacks: frozendict = field(default_factory=frozendict)
+    calibration_stacks: Any = field(default_factory=frozendict)
     development_settings: "DevelopmentSettings" = field(default_factory=lambda: DevelopmentSettings())
     min_frames_in_stack: int = 5
     decisions: frozendict = field(default_factory=frozendict)
     quality: QualityLevel = QualityLevel.MASTER
     implementation: Implementation = Implementation.PIXINSIGHT
+
+    def get_calibration_stacks(self):
+        """Dereference calibration_stacks (may be a ContextRef or a plain dict)."""
+        if hasattr(self.calibration_stacks, 'cache_key'):
+            return self.calibration_stacks.get()
+        return self.calibration_stacks
 
     def __hash__(self):
         return hash_dataclass(self)

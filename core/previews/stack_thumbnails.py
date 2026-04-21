@@ -36,19 +36,21 @@ from decisions.decisions import decisions_for_stack
 def scatter_stack_thumbnails() -> Graph:
     tasks: list[TaskDescriptor] = list()
 
-    calibration_stacks = context.calibration_stacks
+    from cache.context_ref import ContextRef
+    cal_stacks_ref = ContextRef.store_large(context.calibration_stacks)
     settings = context.settings
     subframe_thumbnail_width = settings.preview_settings.subframe_thumbnail_width
 
     def config_for(stack_hash):
         decisions = decisions_for_stack(settings.decision_overrides, stack_hash)
         return ProcessingConfig(
-            calibration_stacks=calibration_stacks,
+            calibration_stacks=cal_stacks_ref,
             development_settings=settings.development_settings,
             min_frames_in_stack=settings.clustering_settings.min_frames_in_stack,
             decisions=decisions,
         )
 
+    calibration_stacks = cal_stacks_ref.get()
     for stack_hash, stack_ref in context.stacks.items():
         stack = stack_ref.get()
         tasks.append((stack_thumbnail, stack))
@@ -128,7 +130,7 @@ def stack_thumbnail_video(
     config: ProcessingConfig,
 ) -> Iterable[np.ndarray]:
     # Resolve calibration lazily (for flat correction of subframes).
-    stack = resolve_calibration(stack, config.calibration_stacks, config.decisions)
+    stack = resolve_calibration(stack, config.get_calibration_stacks(), config.decisions)
     # Sort all the light frames (no matter which run they're from) by the
     # number of stars. The better images should be in front.
     width = subframe_thumbnail_width

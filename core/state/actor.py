@@ -6,6 +6,7 @@ from collections import deque
 from typing import Any
 
 from context import context
+from cache.context_ref import ContextRef
 from decisions.decisions import decisions_for_stack
 from compute_graph import (
     build_compute_graph,
@@ -58,7 +59,7 @@ def _process_stack(action: Action) -> Graph:
     stack = context.stacks[stack_id].get()
     settings = context.settings
     config = ProcessingConfig(
-        calibration_stacks=context.calibration_stacks,
+        calibration_stacks=ContextRef.store_large(context.calibration_stacks),
         development_settings=settings.development_settings,
         min_frames_in_stack=settings.clustering_settings.min_frames_in_stack,
         decisions=decisions_for_stack(settings.decision_overrides, stack_id),
@@ -72,7 +73,7 @@ def _process_target(action: Action) -> Graph:
     target = context.targets[action["object_id"]].get()
     settings = context.settings
     config = ProcessingConfig(
-        calibration_stacks=context.calibration_stacks,
+        calibration_stacks=ContextRef.store_large(context.calibration_stacks),
         development_settings=settings.development_settings,
         min_frames_in_stack=settings.clustering_settings.min_frames_in_stack,
         decisions=settings.decision_overrides,
@@ -96,7 +97,7 @@ def _process_mosaic(action: Action) -> Graph:
     targets = context.targets
     settings = context.settings
     config = ProcessingConfig(
-        calibration_stacks=context.calibration_stacks,
+        calibration_stacks=ContextRef.store_large(context.calibration_stacks),
         development_settings=settings.development_settings,
         min_frames_in_stack=settings.clustering_settings.min_frames_in_stack,
         decisions=settings.decision_overrides,
