@@ -61,9 +61,7 @@ class ContextRef(Generic[T]):
         return context[self.cache_key]
 
     def __reduce__(self):
-        # Preserve the ref so it survives Ray task boundaries. The
-        # ContextActor strips refs before writing to diskcache.
-        return (_reconstruct_context_ref, (self.cache_key, self.content_hash, self.ref))
+        return (_reconstruct_context_ref, (self.cache_key, self.content_hash, None))
 
     def __hash__(self):
         return hash_list_int([self.content_hash])
