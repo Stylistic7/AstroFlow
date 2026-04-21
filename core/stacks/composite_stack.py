@@ -46,6 +46,7 @@ class BaseStack(
         return all_metadata
 
     def __hash__(self):
+        assert self.content_hash, f"{type(self).__name__} has empty content_hash"
         return hash_list_int([self.content_hash])
 
     def __eq__(self, other: object) -> bool:
@@ -122,6 +123,7 @@ class Stack(BaseStack, AstrometricAttributes):
         return cls(**attributes)
 
     def __hash__(self):
+        assert self.content_hash, f"{type(self).__name__} has empty content_hash"
         return hash_list_int([self.content_hash])
 
     def __eq__(self, other: object) -> bool:
@@ -171,6 +173,7 @@ class CalibrationStack(BaseStack):
         )
 
     def __hash__(self):
+        assert self.content_hash, f"{type(self).__name__} has empty content_hash"
         return hash_list_int([self.content_hash])
 
     def __eq__(self, other: object) -> bool:

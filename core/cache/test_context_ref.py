@@ -112,12 +112,12 @@ def test_get_does_not_call_ray_put(empty_context):
 # ---------------------------------------------------------------------------
 
 
-def test_pickling_preserves_ref(empty_context):
-    """Pickling preserves the ObjectRef for Ray task boundary serialization."""
+def test_pickling_drops_ref(empty_context):
+    """Pickling drops the ObjectRef (session-scoped, not portable)."""
     ref = ContextRef.store("my_key", "value")
     assert ref.ref is not None
     restored = pickle.loads(pickle.dumps(ref))
-    assert restored.ref is not None
+    assert restored.ref is None
     assert restored.cache_key == ref.cache_key
     assert restored.content_hash == ref.content_hash
 

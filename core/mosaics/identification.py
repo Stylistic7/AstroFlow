@@ -464,12 +464,17 @@ def identify_mosaics(
             projected_footprints=projected_footprints,
         )
 
+        from hashing import hash_list
+        target_ids = tuple(sorted(mosaic))
+        content_hash = hash_list(sorted(target_ids))
+
         attributes: dict[str, Any] = (
             asdict(chronology_attributes)
             | asdict(astrometric_attributes)
             | {
                 "stable_hash": stable_hash,
-                "target_ids": tuple(sorted(mosaic)),
+                "content_hash": content_hash,
+                "target_ids": target_ids,
                 "strips": strips,
             }
         )

@@ -14,6 +14,7 @@ cached = make_cached_decorator(
     cache_provider=get_cache,
     call_hasher=hash_call,
     memory_estimator=estimate_memory,
+    debug=True,
 )
 
 create_thumbnail = make_create_thumbnail_decorator(context)

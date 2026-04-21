@@ -32,6 +32,7 @@ class BaseRun(
     dependencies: DependenciesDict
 
     def __hash__(self) -> int:
+        assert self.content_hash, f"{type(self).__name__} has empty content_hash"
         return hash_list_int([self.content_hash])
 
     def __eq__(self, other: object) -> bool:
@@ -72,11 +73,15 @@ def run_from_frames(
     assert frame_metadata
     assert not any(is_master(i.header) for i in frame_metadata.values())
 
+    from hashing import hash_list
+    content_hash = hash_list(sorted(frames))
+
     attributes: dict[str, Any] = (
         asdict(chronology_attributes)
         | asdict(imaging_attributes)
         | asdict(astrometric_attributes)
         | {
+            "content_hash": content_hash,
             "frames": tuple(frames),
             "metadata": frame_metadata,
             "dependencies": frozendict(),
@@ -98,10 +103,14 @@ def calibration_run_from_frames(
     assert frame_metadata
     assert not any(is_master(i.header) for i in frame_metadata.values())
 
+    from hashing import hash_list
+    content_hash = hash_list(sorted(frames))
+
     attributes: dict[str, Any] = (
         asdict(chronology_attributes)
         | asdict(imaging_attributes)
         | {
+            "content_hash": content_hash,
             "frames": tuple(frames),
             "metadata": frame_metadata,
             "dependencies": frozendict(),

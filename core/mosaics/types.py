@@ -31,6 +31,7 @@ class Mosaic(
         )
 
     def __hash__(self) -> int:
+        assert self.content_hash, "Mosaic has empty content_hash"
         return hash_dataclass(self)
 
     def __eq__(self, other) -> bool:

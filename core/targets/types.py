@@ -27,13 +27,15 @@ class Target(
         chronology_attributes = ChronologyAttributes.from_objects(stacks)
         astrometric_attributes = AstrometricAttributes.from_objects(stacks)
 
+        from hashing import hash_list
         stable_hash = sorted(stacks, key=lambda s: s.oldest_date)[0].stable_hash
         stack_ids = tuple(s.stable_hash for s in stacks)
+        content_hash = hash_list(sorted(stack_ids))
 
         attributes: dict[str, Any] = (
             asdict(chronology_attributes)
             | asdict(astrometric_attributes)
-            | {"stable_hash": stable_hash, "stack_ids": stack_ids}
+            | {"stable_hash": stable_hash, "stack_ids": stack_ids, "content_hash": content_hash}
         )
 
         return cls(**attributes)
@@ -45,6 +47,7 @@ class Target(
         )
 
     def __hash__(self) -> int:
+        assert self.content_hash, "Target has empty content_hash"
         return hash_dataclass(self)
 
     def __eq__(self, other) -> bool:
