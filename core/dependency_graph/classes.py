@@ -85,14 +85,16 @@ class Node:
         )
 
     def __hash__(self) -> int:
-        return hash_list_int(
-            [
-                self.task._function.__module__,
-                self.task._function.__name__,
-                self.name,
-                self.args,
-            ]
-        )
+        if not hasattr(self, '_hash_cache'):
+            object.__setattr__(self, '_hash_cache', hash_list_int(
+                [
+                    self.task._function.__module__,
+                    self.task._function.__name__,
+                    self.name,
+                    self.args,
+                ]
+            ))
+        return self._hash_cache
 
     def __str__(self):
         return (
