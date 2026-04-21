@@ -262,5 +262,5 @@ def _fire_graph_updates(rt: GraphRuntime) -> None:
     """Fire graph_update_fn callbacks on all runtimes in the tree."""
     if rt.graph_update_fn is not None:
         rt.graph_update_fn(rt)
-    for child in {**rt._children, **rt._completed_children}.values():
+    for child in rt._children.values():
         _fire_graph_updates(child)

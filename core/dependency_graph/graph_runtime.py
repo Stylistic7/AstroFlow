@@ -77,10 +77,8 @@ class GraphRuntime:
         }
 
         # Children: nodes that returned a Graph get a child runtime.
-        # _children holds active children; _completed_children holds finished ones
-        # (kept for workflow_graph_adapter introspection).
         self._children: dict[Node, GraphRuntime] = {}
-        self._completed_children: dict[Node, GraphRuntime] = {}
+        self._child_done_count: int = 0
 
         # Results and metadata
         self.results = ResultDict()
@@ -187,8 +185,8 @@ class GraphRuntime:
         for node, child in list(self._children.items()):
             child._propagate_completed_children()
             if not child.is_active():
+                self._child_done_count += len(child._done) + child._child_done_count
                 self._mark_done(node, child.final_result, child.logs)
-                self._completed_children[node] = child
                 del self._children[node]
 
     def is_active(self) -> bool:
@@ -214,27 +212,24 @@ class GraphRuntime:
 
     # --- Status / introspection ---
 
-    def waiting(self) -> list[Node]:
-        return [
-            n for n in self._graph
-            if n not in self._done
-            and n not in self._started
-            and n not in self._ready
-        ]
+    def waiting_count(self) -> int:
+        return len(self._graph) - len(self._started) - len(self._ready)
 
     def get_status(self) -> GraphStatus:
+        done_count = len(self._done) + self._child_done_count
         status = GraphStatus(
-            list(self._done), self.get_ready(), self.waiting()
+            done_count=done_count,
+            ready_nodes=self.get_ready(),
+            waiting_count=self.waiting_count(),
         )
-        for child in {**self._children, **self._completed_children}.values():
+        for child in self._children.values():
             status = status + child.get_status()
         return status
 
     @property
     def subgraphs_by_parent(self) -> dict[Node, "GraphRuntime"]:
         """Recursively collect all child runtimes indexed by parent node."""
-        all_children = {**self._children, **self._completed_children}
-        result = dict(all_children)
-        for child in all_children.values():
+        result = dict(self._children)
+        for child in self._children.values():
             result.update(child.subgraphs_by_parent)
         return result

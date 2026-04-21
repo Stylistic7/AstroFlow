@@ -298,7 +298,7 @@ class TestStatus:
         status = rt.get_status()
         # B is waiting (dep A not done yet), inner is ready in child
         assert len(status.ready_nodes) == 1  # inner
-        assert len(status.waiting_nodes) == 1  # B
+        assert status.waiting_count == 1  # B
 
 
 class TestSubgraphsByParent:

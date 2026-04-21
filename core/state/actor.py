@@ -189,8 +189,9 @@ class StateActor:
         def status_fn(status: GraphStatus):
             from dependency_graph.progress import graph_status_to_progress
             progress = graph_status_to_progress(status)
-            total = sum(v["total_number"] for v in progress.values())
-            remaining = sum(v["remaining_number"] for v in progress.values())
+            totals = progress.pop("_totals", {"total_number": 0, "remaining_number": 0})
+            total = totals["total_number"]
+            remaining = totals["remaining_number"]
             print(f"### progress: {total - remaining}/{total} done, {len(progress)} task types")
 
             from context.context import _get_namespace

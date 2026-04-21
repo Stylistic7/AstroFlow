@@ -196,15 +196,15 @@ def canonicalize_graph(graph: Graph) -> CanonicalGraph:
 @beartype
 @dataclass
 class GraphStatus:
-    done_nodes: list[Node] = field(default_factory=list)
+    done_count: int = 0
     ready_nodes: list[Node] = field(default_factory=list)
-    waiting_nodes: list[Node] = field(default_factory=list)
+    waiting_count: int = 0
 
     def __add__(self, rhs: "GraphStatus") -> "GraphStatus":
         return GraphStatus(
-            done_nodes=self.done_nodes + rhs.done_nodes,
+            done_count=self.done_count + rhs.done_count,
             ready_nodes=self.ready_nodes + rhs.ready_nodes,
-            waiting_nodes=self.waiting_nodes + rhs.waiting_nodes,
+            waiting_count=self.waiting_count + rhs.waiting_count,
         )
 
 

@@ -563,15 +563,15 @@ def test_overhead(test_context) -> None:
 
 def test_graph_status_merging(test_context) -> None:
     status_1 = GraphStatus(
-        waiting_nodes=[Node(increment_foo)], done_nodes=[Node(increment_baz)]
+        waiting_count=1, done_count=1
     )
-    status_2 = GraphStatus(done_nodes=[Node(increment_bar)])
+    status_2 = GraphStatus(done_count=1)
 
     status = status_1 + status_2
     assert status == GraphStatus(
-        done_nodes=[Node(increment_baz), Node(increment_bar)],
+        done_count=2,
         ready_nodes=list(),
-        waiting_nodes=[Node(increment_foo)],
+        waiting_count=1,
     )
 
 
@@ -584,9 +584,9 @@ def test_status_fn(test_context) -> None:
         print("### status", status)
 
         print(
-            f"### done {len(status.done_nodes)} "
+            f"### done {status.done_count} "
             f"ready {len(status.ready_nodes)} "
-            f"waiting {len(status.waiting_nodes)}"
+            f"waiting {status.waiting_count}"
         )
 
         nonlocal final_status
@@ -599,9 +599,9 @@ def test_status_fn(test_context) -> None:
     assert stats.num_nodes_run == 9
 
     assert final_status is not None
-    assert len(final_status.done_nodes) == 9
+    assert final_status.done_count == 9
     assert len(final_status.ready_nodes) == 0
-    assert len(final_status.waiting_nodes) == 0
+    assert final_status.waiting_count == 0
 
 
 def test_trace(test_context) -> None:
@@ -628,9 +628,9 @@ def test_recursive_graph(test_context) -> None:
 
     def print_status(status: GraphStatus) -> None:
         print(
-            f"done {len(status.done_nodes)} "
+            f"done {status.done_count} "
             f"ready {len(status.ready_nodes)} "
-            f"waiting {len(status.waiting_nodes)}"
+            f"waiting {status.waiting_count}"
         )
 
         nonlocal final_status
@@ -638,9 +638,9 @@ def test_recursive_graph(test_context) -> None:
 
     _, stats = run_graph(graph, status_fn=print_status)
 
-    assert stats.num_nodes_run == len(final_status.done_nodes)
+    assert stats.num_nodes_run == final_status.done_count
     assert len(final_status.ready_nodes) == 0
-    assert len(final_status.waiting_nodes) == 0
+    assert final_status.waiting_count == 0
 
     assert (
         stats.num_nodes_run
