@@ -44,18 +44,6 @@ def get_specific_thumbnail(object_type: type, implementation: Implementation,
     resp = _thumbnail_response(fn, level, *args)
     if resp:
         return resp
-
-    # Fallback: for mosaics, serve the in-progress merge thumbnail so the
-    # dashboard has something to show before the final store runs. args is
-    # (mosaic, filter); merge_images keys its thumbnail by (mode, mosaic, filter).
-    if object_type is Mosaic:
-        from mosaics.merge_images import MergedImage
-        merge_fn = get_producer(MediaType.IMAGE, MergedImage, level, implementation)
-        if merge_fn is not None and hasattr(merge_fn, "thumbnail_fn"):
-            resp = _thumbnail_response(merge_fn, level, level, *args)
-            if resp:
-                return resp
-
     return abort(404)
 
 
