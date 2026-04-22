@@ -87,7 +87,7 @@ def _tile_pyramid_path_for(
             continue
         if not hasattr(producer, "tile_pyramid_fn"):
             continue
-        path = producer.tile_pyramid_fn(*obj_args)
+        path = producer.tile_pyramid_fn(*obj_args, level=q)
         if path is not None and os.path.exists(path):
             return path
 

@@ -6,7 +6,13 @@ from context import local_context as context
 from stacks.composite_stack import Stack
 from targets.types import Target
 from mosaics.types import Mosaic
+from mosaics.merge_images import MergedImage
 from products.registry import get_producer, MediaType
+from products.identity import (
+    ObjectId, PresentationType, StackId, TargetId,
+    MosaicChannelId, MergeProgressId,
+    CalibratedStackId, UncorrectedRunId,
+)
 from previews.types import QualityLevel, Implementation, QUALITY_PRIORITY
 from stacks.run import Run
 from stacks.composite_stack import CalibrationStack
@@ -14,76 +20,88 @@ from stacks.composite_stack import CalibrationStack
 thumbnails_bp = Blueprint("thumbnails", __name__)
 
 
-def _thumbnail_response(fn, level, *args):
-    """Try to render a thumbnail from a specific producer."""
-    if fn is None or not hasattr(fn, "thumbnail_fn"):
-        return None
-    thumbnail = fn.thumbnail_fn(*args)
-    if not thumbnail:
-        return None
-    resp = flask.Response(thumbnail, mimetype="image/png", direct_passthrough=True)
-    resp.headers["X-Quality-Level"] = level.value
-    return resp
-
-
-def get_thumbnail(object_type: type, *args):
-    """Return the best-available thumbnail (used by convenience routes)."""
+def get_thumbnail_by_id(object_type: type, identity: ObjectId):
+    """Return the best-available thumbnail using ObjectId-based lookup."""
     implementation = context.settings.implementation
     for level in QUALITY_PRIORITY:
-        fn = get_producer(MediaType.IMAGE, object_type, level, implementation)
-        resp = _thumbnail_response(fn, level, *args)
-        if resp:
+        key = identity.presentation_cache_key(
+            PresentationType.THUMBNAIL, object_type, level, implementation,
+        )
+        thumbnail = context.get(key)
+        if thumbnail:
+            resp = flask.Response(thumbnail, mimetype="image/png", direct_passthrough=True)
+            resp.headers["X-Quality-Level"] = level.value
             return resp
     return abort(404)
 
 
-def get_specific_thumbnail(object_type: type, implementation: Implementation,
-                           level: QualityLevel, *args):
+def get_specific_thumbnail_by_id(
+    object_type: type, implementation: Implementation,
+    level: QualityLevel, identity: ObjectId,
+):
     """Return the thumbnail for an exact (implementation, level)."""
-    fn = get_producer(MediaType.IMAGE, object_type, level, implementation)
-    resp = _thumbnail_response(fn, level, *args)
-    if resp:
+    key = identity.presentation_cache_key(
+        PresentationType.THUMBNAIL, object_type, level, implementation,
+    )
+    thumbnail = context.get(key)
+    if thumbnail:
+        resp = flask.Response(thumbnail, mimetype="image/png", direct_passthrough=True)
+        resp.headers["X-Quality-Level"] = level.value
         return resp
     return abort(404)
 
 
 @thumbnails_bp.route("/thumbnail/stack/<stack_id>")
 def stack_thumbnail(stack_id: str):
-    return get_thumbnail(Stack, context.stacks[stack_id].get())
+    stack = context.stacks[stack_id].get()
+    return get_thumbnail_by_id(Stack, StackId(stack=stack))
 
 
 @thumbnails_bp.route("/thumbnail/target/<target_id>")
 def target_thumbnail(target_id: str):
-    return get_thumbnail(Target, context.targets[target_id].get())
+    target = context.targets[target_id].get()
+    return get_thumbnail_by_id(Target, TargetId(target=target))
 
 
 @thumbnails_bp.route("/thumbnail/mosaic/<mosaic_id>/<filter>")
 def mosaic_thumbnail(mosaic_id: str, filter: str):
-    return get_thumbnail(Mosaic, context.mosaics[mosaic_id].get(), filter)
+    mosaic = context.mosaics[mosaic_id].get()
+    return get_thumbnail_by_id(Mosaic, MosaicChannelId(mosaic=mosaic, filter=filter))
 
 
 @thumbnails_bp.route("/thumbnail/mosaic/<mosaic_id>/<implementation>/<quality>/<filter>")
 def mosaic_thumbnail_specific(mosaic_id: str, implementation: str, quality: str, filter: str):
     """Thumbnail for an exact (mosaic, implementation, quality, filter)."""
-    return get_specific_thumbnail(
+    mosaic = context.mosaics[mosaic_id].get()
+    return get_specific_thumbnail_by_id(
         Mosaic, Implementation(implementation), QualityLevel(quality),
-        context.mosaics[mosaic_id].get(), filter,
+        MosaicChannelId(mosaic=mosaic, filter=filter),
     )
 
 
-# TODO: Use better stack types.
 @thumbnails_bp.route("/thumbnail/calibration_stack/<stack_id>")
 def calibration_stack_thumbnail(stack_id: str):
-    return get_thumbnail(CalibrationStack, context.calibration_stacks[stack_id])
+    stack = context.calibration_stacks[stack_id]
+    return get_thumbnail_by_id(CalibrationStack, StackId(stack=stack))
+
+
+@thumbnails_bp.route("/thumbnail/run/<stack_id>/<substack_id>")
+def uncorrected_run_thumbnail_route(stack_id: str, substack_id: str):
+    stack = context.stacks[stack_id].get()
+    substack = stack.contents[substack_id]
+    return get_thumbnail_by_id(
+        Run, UncorrectedRunId(stack=stack, substack=substack),
+    )
 
 
 @thumbnails_bp.route("/thumbnail/run/<stack_id>/<substack_id>/<flat_stack_id>")
 def run_thumbnail(stack_id: str, substack_id: str, flat_stack_id: str):
-    stacks = context.stacks
-    stack = stacks[stack_id].get()
+    stack = context.stacks[stack_id].get()
     substack = stack.contents[substack_id]
     flat_stack = context.calibration_stacks[flat_stack_id]
-    return get_thumbnail(Run, stack, substack, flat_stack)
+    return get_thumbnail_by_id(
+        Run, CalibratedStackId(stack=stack, substack=substack, flat_stack=flat_stack),
+    )
 
 
 def get_video(object_type: type, *args):
@@ -98,6 +116,3 @@ def get_video(object_type: type, *args):
                     return flask.send_file(buffer, mimetype="video/webm")
 
     return abort(404)
-
-
-    # Video endpoints moved to videos.py

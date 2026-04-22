@@ -1,9 +1,16 @@
+import dataclasses
+import inspect
+import os
+import tempfile
 from enum import Enum, auto
 from pathlib import Path
 from typing import Callable, Any, Type, Optional, Union
 
+import numpy as np
+
 from file_io.types import ContentHashable
 from previews.types import QualityLevel, Implementation
+from products.identity import ObjectId, PresentationType
 from context import context
 
 
@@ -151,12 +158,161 @@ def fully_resolve(
     return inner
 
 
+def _extract_identity(
+    identity_cls: type[ObjectId],
+    func: Callable,
+    args: tuple,
+    kwargs: dict,
+) -> ObjectId:
+    sig = inspect.signature(func)
+    bound = sig.bind(*args, **kwargs)
+    bound.apply_defaults()
+    id_fields = {f.name for f in dataclasses.fields(identity_cls)}
+    id_kwargs = {name: bound.arguments[name] for name in id_fields}
+    return identity_cls(**id_kwargs)
+
+
+def _detect_level(
+    func: Callable, args: tuple, kwargs: dict, levels: list[QualityLevel],
+) -> list[QualityLevel]:
+    if len(levels) == 1:
+        return levels
+    sig = inspect.signature(func)
+    bound = sig.bind(*args, **kwargs)
+    bound.apply_defaults()
+    if 'mode' in bound.arguments:
+        mode = bound.arguments['mode']
+        if isinstance(mode, QualityLevel):
+            return [mode]
+    return levels
+
+
+def _generate_presentations(
+    func: Callable,
+    result,
+    args: tuple,
+    kwargs: dict,
+    pres_entries: list[dict],
+) -> None:
+    if not pres_entries:
+        return
+
+    from previews.operations import resize_array, autostretch, array_to_png
+
+    for entry in pres_entries:
+        identity_cls = entry['identity_cls']
+        presentations = entry['presentations']
+        obj_type = entry['object_type']
+        implementations = entry['implementations']
+        levels = entry['levels']
+
+        try:
+            obj_id = _extract_identity(identity_cls, func, args, kwargs)
+        except (TypeError, KeyError) as e:
+            print(f"### Failed to extract {identity_cls.__name__}: {e}")
+            continue
+
+        active_levels = _detect_level(func, args, kwargs, levels)
+
+        for presentation in presentations:
+            if presentation == PresentationType.THUMBNAIL:
+                try:
+                    thumbnail = _make_thumbnail(result, resize_array, autostretch, array_to_png)
+                except Exception as e:
+                    print(f"### Failed to make thumbnail for {func.__name__}: {e}")
+                    continue
+                if thumbnail is None:
+                    continue
+                for impl in implementations:
+                    for level in active_levels:
+                        key = obj_id.presentation_cache_key(
+                            PresentationType.THUMBNAIL, obj_type, level, impl,
+                        )
+                        context[key] = thumbnail
+                        print(f"### Stored thumbnail {key}")
+
+            elif presentation == PresentationType.TILE_PYRAMID:
+                tile_path = _make_tile_pyramid(result)
+                if tile_path is None:
+                    continue
+                for impl in implementations:
+                    for level in active_levels:
+                        key = obj_id.presentation_cache_key(
+                            PresentationType.TILE_PYRAMID, obj_type, level, impl,
+                        )
+                        context[key] = str(tile_path)
+                        print(f"### Stored tile_pyramid {key}")
+
+
+def _make_thumbnail(result, resize_array, autostretch, array_to_png, width=2048):
+    if isinstance(result, np.ndarray):
+        return array_to_png(
+            autostretch(np.clip(resize_array(result, width), 0.0, 1.0))
+        )
+    if isinstance(result, tempfile._TemporaryFileWrapper):
+        filename = result.name
+    else:
+        filename = os.fspath(result)
+    if os.path.exists(filename):
+        from file_io.generic import read_image
+        return array_to_png(
+            autostretch(np.clip(resize_array(read_image(filename), width), 0.0, 1.0))
+        )
+    return None
+
+
+def _make_tile_pyramid(result) -> "Path | None":
+    if isinstance(result, np.ndarray):
+        return None
+    if isinstance(result, tempfile._TemporaryFileWrapper):
+        source = Path(result.name)
+    else:
+        source = Path(os.fspath(result))
+    if not source.exists():
+        return None
+    if source.suffix.lower() in (".tif", ".tiff"):
+        return source
+    tile_path = source.with_suffix(".tiff")
+    try:
+        from previews.create_tile_pyramid import default_make_tile_pyramid
+        default_make_tile_pyramid(source, tile_path)
+    except Exception as e:
+        print(f"### Failed to make tile pyramid for {source}: {e}")
+        return None
+    return tile_path
+
+
+_FILE_TYPE_SUFFIX = {
+    'FitsFilePath': '.fits',
+    'XisfFilePath': '.xisf',
+    'TiffFilePath': '.tiff',
+}
+
+
+def _make_filename_fn(identity_cls: type[ObjectId], file_type: type):
+    """Generate a filename_fn from an ObjectId class with filename_stem()."""
+    suffix = _FILE_TYPE_SUFFIX.get(file_type.__name__, '.fits')
+    fields = [f.name for f in dataclasses.fields(identity_cls)]
+    def fn(*args, **kwargs):
+        id_kwargs = {}
+        for i, name in enumerate(fields):
+            if name in kwargs:
+                id_kwargs[name] = kwargs[name]
+            elif i < len(args):
+                id_kwargs[name] = args[i]
+        return file_type(identity_cls(**id_kwargs).filename_stem() + suffix)
+    return fn
+
+
 def _bind_producer(
     media_type: MediaType,
     object_type: type,
     implementation: Implementation | list[Implementation],
     levels: list[QualityLevel],
     filename_fn: FilenameFn | None,
+    identity: "type[ObjectId] | None" = None,
+    presentations: "list[PresentationType] | None" = None,
+    file_type: "type | None" = None,
 ):
     """Decorator that registers a function as a producer for the given
     (object_type, level, implementation) combinations.
@@ -168,6 +324,11 @@ def _bind_producer(
         def stack_files(stack, config): ...
     """
     implementations = implementation if isinstance(implementation, list) else [implementation]
+
+    # Auto-generate filename_fn from identity when file_type is provided.
+    if filename_fn is None and identity is not None and file_type is not None:
+        if hasattr(identity, 'filename_stem'):
+            filename_fn = _make_filename_fn(identity, file_type)
 
     def decorator(func: Callable[..., Path]):
         # Decoration order matters: @makes_image / @makes_video must
@@ -187,6 +348,22 @@ def _bind_producer(
                 f"    def {getattr(func, '__name__', '...')}(...): ..."
             )
 
+        # Validate identity fields match producer params at decoration time.
+        if identity is not None:
+            import dataclasses
+            import inspect
+            id_fields = {f.name for f in dataclasses.fields(identity)}
+            raw_func = func._original if hasattr(func, '_original') else func
+            raw_func = raw_func.__wrapped__ if hasattr(raw_func, '__wrapped__') else raw_func
+            producer_params = set(inspect.signature(raw_func).parameters.keys())
+            missing = id_fields - producer_params
+            if missing:
+                raise TypeError(
+                    f"{identity.__name__} has fields {missing} that don't match "
+                    f"any parameter of {getattr(func, '__name__', '...')}. "
+                    f"ObjectId field names must be a subset of producer parameter names."
+                )
+
         # Accumulate validity entries (shared across stacked decorators
         # for polymorphic producers like stack_files).
         if not hasattr(func, '_validity_entries'):
@@ -196,6 +373,10 @@ def _bind_producer(
         # point at the outer (Ray-task) wrapper.
         if not hasattr(func, '_registry_keys'):
             func._registry_keys = []
+
+        # Accumulate presentation entries for ObjectId-based producers.
+        if not hasattr(func, '_presentation_entries'):
+            func._presentation_entries = []
 
         for impl in implementations:
             for level in levels:
@@ -210,6 +391,15 @@ def _bind_producer(
                 func._validity_entries.append((object_type, level, impl))
                 func._registry_keys.append((media_type, object_type, level, impl))
 
+        if identity is not None and presentations:
+            func._presentation_entries.append({
+                'identity_cls': identity,
+                'presentations': list(presentations),
+                'object_type': object_type,
+                'implementations': implementations,
+                'levels': levels,
+            })
+
         # Wrap the function once. Subsequent decorator calls (stacked
         # @makes_image decorators for polymorphic producers) skip the
         # wrap and just append to the closure-captured `entries` list.
@@ -220,6 +410,7 @@ def _bind_producer(
             from file_io.sidecar import discard_sidecar
             inner_func = func
             entries = func._validity_entries  # closure-captured (shared)
+            pres_entries = func._presentation_entries  # closure-captured (shared)
 
             @wraps(inner_func)
             def wrapped(*args, **kwargs):
@@ -227,10 +418,15 @@ def _bind_producer(
                 if result is not None:
                     for obj_type, lvl, impl in entries:
                         _mark_valid(obj_type, lvl, impl, args)
-                    discard_sidecar(result)
+                    if not isinstance(result, np.ndarray):
+                        discard_sidecar(result)
+                    _generate_presentations(
+                        inner_func, result, args, kwargs, pres_entries,
+                    )
                 return result
 
             wrapped._validity_entries = entries
+            wrapped._presentation_entries = pres_entries
             wrapped._makes_image_wrapped = True
             wrapped._registry_keys = func._registry_keys
             if hasattr(inner_func, 'filename_fns'):
@@ -257,12 +453,24 @@ def _bind_producer(
 def makes_image(
     object_type: type, implementation: Implementation,
     levels: list[QualityLevel], filename_fn: FilenameFn | None = None,
+    identity: type[ObjectId] | None = None,
+    presentations: list[PresentationType] | None = None,
+    file_type: type | None = None,
 ):
-    return _bind_producer(MediaType.IMAGE, object_type, implementation, levels, filename_fn)
+    return _bind_producer(
+        MediaType.IMAGE, object_type, implementation, levels, filename_fn,
+        identity=identity, presentations=presentations, file_type=file_type,
+    )
 
 
 def makes_video(
     object_type: type, implementation: Implementation,
     levels: list[QualityLevel], filename_fn: FilenameFn | None = None,
+    identity: type[ObjectId] | None = None,
+    presentations: list[PresentationType] | None = None,
+    file_type: type | None = None,
 ):
-    return _bind_producer(MediaType.VIDEO, object_type, implementation, levels, filename_fn)
+    return _bind_producer(
+        MediaType.VIDEO, object_type, implementation, levels, filename_fn,
+        identity=identity, presentations=presentations, file_type=file_type,
+    )

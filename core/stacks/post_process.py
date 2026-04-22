@@ -7,13 +7,16 @@ from pix.tasks import (
     SpectrophotometricFluxCalibration,
     MultiscaleGradientCorrection,
 )
-from decorators import node, create_thumbnail, create_tile_pyramid
+from decorators import node
 from stacks.composite_stack import Stack
-from stacks.artifacts import stack_filename
 from file_io.types import XisfFilePath, WithSidecar
 from products import makes_image, get_filename_fn, MediaType
+from products.identity import StackId, PresentationType
 from previews.types import QualityLevel, PIXINSIGHT
 import structlog
+
+THUMBNAIL = PresentationType.THUMBNAIL
+TILE_PYRAMID = PresentationType.TILE_PYRAMID
 
 log = structlog.get_logger()
 
@@ -46,9 +49,9 @@ def _post_process_stack(master_path, stack: Stack, downscale_factor: int = 1) ->
 
 
 @node(resources={"PixInsight": 1}, auto_memory=True)
-@makes_image(Stack, PIXINSIGHT, [QualityLevel.POST_PROCESSED], stack_filename)
-@create_thumbnail
-@create_tile_pyramid
+@makes_image(Stack, PIXINSIGHT, [QualityLevel.POST_PROCESSED],
+             identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
+             file_type=XisfFilePath)
 def post_process_stack(stack: Stack, mock_pixinsight: bool) -> WithSidecar[XisfFilePath]:
     from products import ensure_producers_registered
     ensure_producers_registered()

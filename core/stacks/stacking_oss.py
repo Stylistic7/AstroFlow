@@ -24,13 +24,16 @@ import astropy.io.fits as pyfits
 from astroalign import register as aa_register
 from astroscrappy import detect_cosmics
 
-from decorators import node, create_thumbnail, create_tile_pyramid
+from decorators import node
 from file_io.generic import read_image, read_header
 from file_io.types import FitsFilePath, WithSidecar
 from previews.types import OSS, MASTER, DOWNSCALED_MASTER, DOWNSCALE_FACTORS
 from products import makes_image
+from products.identity import StackId, PresentationType
 from products.registry import get_filename_fn, MediaType
-from stacks.artifacts import stack_filename_fits
+
+THUMBNAIL = PresentationType.THUMBNAIL
+TILE_PYRAMID = PresentationType.TILE_PYRAMID
 from stacks.composite_stack import BaseStack, Stack, CalibrationStack
 from stacks.types import StackIdDependency
 from decisions.resolve import resolve_calibration, resolve_decisions
@@ -165,10 +168,12 @@ def _streaming_sigma_clipped_mean(preprocessed_frames, is_light):
 
 
 @node(auto_memory=True)
-@makes_image(CalibrationStack, OSS, [MASTER, DOWNSCALED_MASTER], stack_filename_fits)
-@makes_image(Stack, OSS, [MASTER, DOWNSCALED_MASTER], stack_filename_fits)
-@create_thumbnail
-@create_tile_pyramid
+@makes_image(CalibrationStack, OSS, [MASTER, DOWNSCALED_MASTER],
+             identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
+             file_type=FitsFilePath)
+@makes_image(Stack, OSS, [MASTER, DOWNSCALED_MASTER],
+             identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
+             file_type=FitsFilePath)
 def stack_files_oss(
     stack: BaseStack,
     config: ProcessingConfig,

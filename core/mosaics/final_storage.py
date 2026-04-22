@@ -4,7 +4,6 @@ from pathlib import Path
 import numpy as np
 from beartype import beartype
 
-from mosaics.artifacts import mosaic_filename_tiff, mosaic_filename_xisf, mosaic_filename_fits
 from mosaics.types import Mosaic
 from file_io.generic import read_image
 from file_io.tiff_file_io import write_tiff_image
@@ -12,15 +11,19 @@ from previews.operations import autostretch
 from previews.types import QualityLevel, Implementation, ALL_IMPLEMENTATIONS, PIXINSIGHT, OSS, SUBFRAME, MASTER, DOWNSCALED_MASTER
 from pix import Image
 from products import makes_image
-from decorators import node, create_thumbnail, create_tile_pyramid
+from products.identity import MosaicChannelId, PresentationType
+from decorators import node
+
+THUMBNAIL = PresentationType.THUMBNAIL
+TILE_PYRAMID = PresentationType.TILE_PYRAMID
 from file_io.types import FitsFilePath, TiffFilePath, XisfFilePath, WithSidecar
 from metadata.classes import ImageMetadata
 
 
 @node(resources={"PixInsight": 1}, auto_memory=True)
-@makes_image(Mosaic, PIXINSIGHT, [MASTER, DOWNSCALED_MASTER], mosaic_filename_xisf)
-@create_thumbnail
-@create_tile_pyramid
+@makes_image(Mosaic, PIXINSIGHT, [MASTER, DOWNSCALED_MASTER],
+             identity=MosaicChannelId, presentations=[THUMBNAIL, TILE_PYRAMID],
+             file_type=XisfFilePath)
 def store_mosaic_color_channel_xisf(
     mode: QualityLevel, mosaic: Mosaic, filter: str, input: ImageMetadata,
     mock_pixinsight: bool = False,
@@ -37,9 +40,9 @@ def store_mosaic_color_channel_xisf(
 
 
 @node(resources={"fastest_storage": 0.001})
-@makes_image(Mosaic, ALL_IMPLEMENTATIONS, [SUBFRAME], mosaic_filename_tiff)
-@create_thumbnail
-@create_tile_pyramid
+@makes_image(Mosaic, ALL_IMPLEMENTATIONS, [SUBFRAME],
+             identity=MosaicChannelId, presentations=[THUMBNAIL, TILE_PYRAMID],
+             file_type=TiffFilePath)
 def store_mosaic_color_channel_subframe(
     mosaic: Mosaic, filter: str, input: ImageMetadata
 ) -> WithSidecar[TiffFilePath]:
@@ -60,9 +63,9 @@ def store_mosaic_color_channel_subframe(
 
 
 @node
-@makes_image(Mosaic, OSS, [MASTER, DOWNSCALED_MASTER], mosaic_filename_fits)
-@create_thumbnail
-@create_tile_pyramid
+@makes_image(Mosaic, OSS, [MASTER, DOWNSCALED_MASTER],
+             identity=MosaicChannelId, presentations=[THUMBNAIL, TILE_PYRAMID],
+             file_type=FitsFilePath)
 def store_mosaic_color_channel_oss(
     mode: QualityLevel, mosaic: Mosaic, filter: str, input: ImageMetadata,
 ) -> WithSidecar[FitsFilePath]:

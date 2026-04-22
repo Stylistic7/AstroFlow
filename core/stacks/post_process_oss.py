@@ -11,22 +11,25 @@ import astropy.io.fits as pyfits
 from photutils.background import Background2D, MedianBackground
 
 import plate_solving
-from decorators import node, create_thumbnail, create_tile_pyramid
+from decorators import node
 from file_io.generic import read_image
 from file_io.types import FitsFilePath, WithSidecar
 from previews.types import QualityLevel, OSS
 from products import makes_image
+from products.identity import StackId, PresentationType
 from products.registry import get_filename_fn, MediaType
-from stacks.artifacts import stack_filename_fits
+
+THUMBNAIL = PresentationType.THUMBNAIL
+TILE_PYRAMID = PresentationType.TILE_PYRAMID
 from stacks.composite_stack import Stack
 
 log = structlog.get_logger()
 
 
 @node(auto_memory=True)
-@makes_image(Stack, OSS, [QualityLevel.POST_PROCESSED], stack_filename_fits)
-@create_thumbnail
-@create_tile_pyramid
+@makes_image(Stack, OSS, [QualityLevel.POST_PROCESSED],
+             identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
+             file_type=FitsFilePath)
 def post_process_stack_oss(stack: Stack, mock_pixinsight: bool) -> WithSidecar[FitsFilePath]:
     from products import ensure_producers_registered
     ensure_producers_registered()

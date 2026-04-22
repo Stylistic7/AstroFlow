@@ -7,19 +7,22 @@ import astropy.io.fits as pyfits  # type: ignore
 import file_io
 from file_io.types import XisfFilePath, WithSidecar
 from file_io.generic import update_header, copy_image
-from stacks.artifacts import stack_filename
 from stacks.run import Run
 from stacks.types import StackIdDependency, FilenameDependency
 from stacks.composite_stack import BaseStack, Stack, CalibrationStack, CalibrationStacksDict
 from pix.tasks import run_wbpp
 from metadata.classes import MetadataDict
-from decorators import node, create_thumbnail, create_tile_pyramid
+from decorators import node
 from decisions.settings import DevelopmentSettings, ProcessingConfig
 from decisions.resolve import resolve_calibration, resolve_decisions
 from decisions.compute_graph import ALL_EXCLUSION_TYPES
 from previews.types import QualityLevel, PIXINSIGHT, MASTER, DOWNSCALED_MASTER, DOWNSCALE_FACTORS
 from products import makes_image
+from products.identity import StackId, PresentationType
 import structlog
+
+THUMBNAIL = PresentationType.THUMBNAIL
+TILE_PYRAMID = PresentationType.TILE_PYRAMID
 
 log = structlog.get_logger()
 
@@ -156,10 +159,12 @@ def _copy_wbpp_result(
 
 
 @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD", auto_memory=True)
-@makes_image(CalibrationStack, PIXINSIGHT, [MASTER, DOWNSCALED_MASTER], stack_filename)
-@makes_image(Stack, PIXINSIGHT, [MASTER, DOWNSCALED_MASTER], stack_filename)
-@create_thumbnail
-@create_tile_pyramid
+@makes_image(CalibrationStack, PIXINSIGHT, [MASTER, DOWNSCALED_MASTER],
+             identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
+             file_type=XisfFilePath)
+@makes_image(Stack, PIXINSIGHT, [MASTER, DOWNSCALED_MASTER],
+             identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
+             file_type=XisfFilePath)
 def stack_files(
     stack: BaseStack,
     config: ProcessingConfig,

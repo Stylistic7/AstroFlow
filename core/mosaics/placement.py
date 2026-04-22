@@ -23,11 +23,11 @@ from context import context
 from previews.types import QualityLevel, ALL_IMPLEMENTATIONS, SUBFRAME, MASTER, DOWNSCALED_MASTER
 from products.registry import get_filename_fn, MediaType
 from mosaics.types import Mosaic, Viewbox
-from mosaics.artifacts import placed_filename
 from decorators import node
 from metadata.classes import ImageMetadata
 from plate_solving import PlateSolution
 from products import makes_image
+from products.identity import PlacedImageId
 
 class ProjectionFailedException(Exception):
     pass
@@ -167,7 +167,8 @@ def _project_in_tiles(
 # footprint (interpolator + output buffer) while leaving room for many
 # concurrent place_tile subtasks.
 @node
-@makes_image(PlacedImage, ALL_IMPLEMENTATIONS, [SUBFRAME, MASTER, DOWNSCALED_MASTER], placed_filename)
+@makes_image(PlacedImage, ALL_IMPLEMENTATIONS, [SUBFRAME, MASTER, DOWNSCALED_MASTER],
+             identity=PlacedImageId, file_type=TiffFilePath)
 def place_image(
     mode: QualityLevel,
     mosaic: Mosaic,

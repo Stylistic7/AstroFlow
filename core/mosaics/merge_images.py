@@ -11,12 +11,15 @@ from pix import Image
 from pix.tasks import PhotometricMosaic
 from metadata.classes import ImageMetadata
 from mosaics.types import Mosaic
-from mosaics.artifacts import merged_filename_tiff, merged_filename_xisf
 from previews.types import QualityLevel, ALL_IMPLEMENTATIONS, PIXINSIGHT, SUBFRAME, MASTER, DOWNSCALED_MASTER
-from decorators import node, create_thumbnail, create_tile_pyramid
+from decorators import node, create_tile_pyramid
 from file_io.tiff_file_io import write_tiff_image
 from file_io.types import XisfFilePath, TiffFilePath, WithSidecar
+from mosaics.artifacts import merged_filename_tiff, merged_filename_xisf
 from products import makes_image
+from products.identity import MergeProgressId, PresentationType
+
+THUMBNAIL = PresentationType.THUMBNAIL
 from products.registry import get_filename_fn, MediaType
 from hashing import hash_list
 
@@ -35,17 +38,12 @@ def _merge_tile_path(mode, mosaic, filter, mock_pixinsight, input_0, input_1):
     return context.output_dir / "Mosaic" / str(mode) / f"progress_{mosaic.stable_hash}_{filter}.tiff"
 
 
-def _merge_thumbnail_key(mode, mosaic, filter, *rest, **kwargs):
-    """Stable thumbnail key per (mode, mosaic, filter). Each merge step
-    overwrites the previous thumbnail at this key, so the dashboard
-    always shows the latest merge progress."""
-    return (mode, mosaic, filter)
-
 
 @node(resources={"PixInsight": 1}, auto_memory=True)
-@makes_image(MergedImage, ALL_IMPLEMENTATIONS, [SUBFRAME], merged_filename_tiff)
-@makes_image(MergedImage, PIXINSIGHT, [MASTER, DOWNSCALED_MASTER], merged_filename_xisf)
-@create_thumbnail
+@makes_image(MergedImage, ALL_IMPLEMENTATIONS, [SUBFRAME], merged_filename_tiff,
+             identity=MergeProgressId, presentations=[THUMBNAIL])
+@makes_image(MergedImage, PIXINSIGHT, [MASTER, DOWNSCALED_MASTER], merged_filename_xisf,
+             identity=MergeProgressId, presentations=[THUMBNAIL])
 @create_tile_pyramid(tile_filename=_merge_tile_path)
 def merge_images(
     mode: QualityLevel,

@@ -9,7 +9,6 @@ from collections.abc import Iterable
 from context import context
 from decorators import (
     node,
-    create_thumbnail,
     create_video,
 )
 from previews.operations import resize_array
@@ -25,7 +24,10 @@ from stacks.composite_stack import Stack
 from decisions.subframe_selection import get_light_frames_sorted_by_stars
 from decisions.resolve import is_frame_included, resolve_calibration
 from products import makes_image, makes_video
+from products.identity import StackId, PresentationType
 from previews.types import ALL_IMPLEMENTATIONS, SUBFRAME
+
+THUMBNAIL = PresentationType.THUMBNAIL
 from file_io.generic import read_image
 from decisions.settings import ProcessingConfig
 from decisions.decisions import decisions_for_stack
@@ -82,15 +84,15 @@ def get_best_light_frame(stack: Stack) -> WithSidecar:
 
 
 @node
-@makes_image(Stack, ALL_IMPLEMENTATIONS, [SUBFRAME], get_best_light_frame)
-@create_thumbnail
+@makes_image(Stack, ALL_IMPLEMENTATIONS, [SUBFRAME], get_best_light_frame,
+             identity=StackId, presentations=[THUMBNAIL])
 def stack_thumbnail(stack: Stack) -> WithSidecar:
     return get_best_light_frame(stack)
 
 
 @node
-@makes_image(CalibrationStack, ALL_IMPLEMENTATIONS, [SUBFRAME], get_first_frame)
-@create_thumbnail
+@makes_image(CalibrationStack, ALL_IMPLEMENTATIONS, [SUBFRAME], get_first_frame,
+             identity=StackId, presentations=[THUMBNAIL])
 def calibration_stack_thumbnail(stack: CalibrationStack) -> WithSidecar:
     return get_first_frame(stack)
 

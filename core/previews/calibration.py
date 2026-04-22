@@ -93,7 +93,7 @@ def get_subframe_for_calibration_stack(
 
 
 def calibrate_subframe(
-    light_frame: ImageMetadata, dependencies: DependenciesDict, width: int
+    light_frame: ImageMetadata, dependencies: DependenciesDict, width: int = 2048,
 ) -> np.ndarray:
     assert light_frame.plate_solution is not None
     rotate = light_frame.plate_solution.rotation_angle < 0.0

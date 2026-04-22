@@ -5,7 +5,7 @@ import QuarantineToggle from './QuarantineToggle.jsx';
 const FlatThumbnail = ({ stack, run, flatStack, selected, quarantined, onSelect, onNavigate }) => {
   const thumbnailUrl = flatStack
     ? `/thumbnail/run/${stack.stable_hash}/${run.stable_hash}/${flatStack.stable_hash}`
-    : `/thumbnail/stack/${stack.stable_hash}`;
+    : `/thumbnail/run/${stack.stable_hash}/${run.stable_hash}`;
 
   const stable_hash = flatStack
     ? flatStack.stable_hash

@@ -24,13 +24,12 @@ def make_create_thumbnail_decorator(
         """Decorator that caches a thumbnail after the wrapped function writes an image.
 
         Thumbnails are keyed by the output filename so that the web
-        server can look them up via ``filename_fn(*args)`` from the
-        ``@makes_image`` registry — no arg-hash matching needed.
+        server can look them up via the level-specific ``filename_fns``
+        dict from ``@makes_image`` — no arg-hash matching needed.
 
-        When ``lookup_args`` is provided, its return value is used to
-        compute a custom output filename for storage/lookup. This lets
-        multiple calls (e.g. progressive mosaic merges) overwrite the
-        same thumbnail key.
+        When ``lookup_args`` is provided, its return value is used as
+        the cache key instead. This lets multiple calls (e.g.
+        progressive mosaic merges) overwrite the same thumbnail key.
         """
         if func is not None:
             return _wrap(func, lookup_args=None)
@@ -51,9 +50,9 @@ def make_create_thumbnail_decorator(
 
             if os.path.exists(filename):
                 if thumbnail := thumbnail_fn(filename):
-                    if hasattr(wrapper, 'filename_fn'):
+                    if lookup_args is not None:
                         try:
-                            canonical = str(wrapper.filename_fn(*args, **kwargs))
+                            canonical = str(lookup_args(*args, **kwargs))
                         except (TypeError, KeyError):
                             canonical = str(filename)
                     else:
@@ -67,14 +66,28 @@ def make_create_thumbnail_decorator(
 
             return result
 
-        def get_thumbnail_fn(*args, **kwargs) -> Optional[np.ndarray]:
-            if hasattr(wrapper, 'filename_fn'):
+        def get_thumbnail_fn(*args, level=None, **kwargs) -> Optional[np.ndarray]:
+            if lookup_args is not None:
                 try:
-                    path = wrapper.filename_fn(*args, **kwargs)
-                    if path:
-                        return cache.get(("thumbnail", str(path)))
+                    if level is not None:
+                        key = str(lookup_args(level, *args, **kwargs))
+                    else:
+                        key = str(lookup_args(*args, **kwargs))
+                    return cache.get(("thumbnail", key))
                 except (TypeError, KeyError):
                     pass
+            if hasattr(wrapper, 'filename_fns'):
+                for (obj_type, lvl), fn in wrapper.filename_fns.items():
+                    if level is not None and lvl != level:
+                        continue
+                    try:
+                        path = fn(*args, **kwargs)
+                        if path:
+                            result = cache.get(("thumbnail", str(path)))
+                            if result:
+                                return result
+                    except (TypeError, KeyError):
+                        continue
             return None
 
         wrapper.thumbnail_fn = get_thumbnail_fn

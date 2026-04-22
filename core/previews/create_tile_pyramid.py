@@ -134,16 +134,19 @@ def make_create_tile_pyramid_decorator(
 
             return result
 
-        def get_tile_pyramid_fn(*args, **kwargs) -> Optional[Path]:
-            if hasattr(wrapper, 'filename_fn'):
-                try:
-                    output_path = wrapper.filename_fn(*args, **kwargs)
-                    if output_path:
-                        path = cache.get(("tile_pyramid", str(output_path)))
-                        if path is not None:
-                            return Path(path)
-                except (TypeError, KeyError):
-                    pass
+        def get_tile_pyramid_fn(*args, level=None, **kwargs) -> Optional[Path]:
+            if hasattr(wrapper, 'filename_fns'):
+                for (obj_type, lvl), fn in wrapper.filename_fns.items():
+                    if level is not None and lvl != level:
+                        continue
+                    try:
+                        output_path = fn(*args, **kwargs)
+                        if output_path:
+                            path = cache.get(("tile_pyramid", str(output_path)))
+                            if path is not None:
+                                return Path(path)
+                    except (TypeError, KeyError):
+                        continue
             return None
 
         wrapper.tile_pyramid_fn = get_tile_pyramid_fn

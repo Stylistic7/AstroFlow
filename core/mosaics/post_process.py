@@ -12,11 +12,14 @@ from pix.tasks import (
     LinearFit,
 )
 from file_io.types import XisfFilePath, WithSidecar
-from decorators import node, create_thumbnail, create_tile_pyramid
+from decorators import node
 from previews.types import QualityLevel, PIXINSIGHT, OSS
 from mosaics.types import Mosaic
-from mosaics.artifacts import mosaic_filename_xisf
 from products import makes_image
+from products.identity import MosaicId, PresentationType
+
+THUMBNAIL = PresentationType.THUMBNAIL
+TILE_PYRAMID = PresentationType.TILE_PYRAMID
 from products.registry import get_filename_fn, MediaType
 from stacks.composite_stack import StacksDict
 from targets.types import TargetsDict
@@ -52,9 +55,9 @@ def _post_process_mosaic(images: ImageList, mosaic: Mosaic) -> Image | None:
 
 
 @node(resources={"PixInsight": 1}, auto_memory=True)
-@makes_image(Mosaic, PIXINSIGHT, [QualityLevel.POST_PROCESSED], mosaic_filename_xisf)
-@create_thumbnail
-@create_tile_pyramid
+@makes_image(Mosaic, PIXINSIGHT, [QualityLevel.POST_PROCESSED],
+             identity=MosaicId, presentations=[THUMBNAIL, TILE_PYRAMID],
+             file_type=XisfFilePath)
 def post_process_mosaic(
     mode: QualityLevel,
     mosaic: Mosaic,
@@ -90,9 +93,9 @@ def post_process_mosaic(
 
 
 @node
-@makes_image(Mosaic, OSS, [QualityLevel.POST_PROCESSED], mosaic_filename_xisf)
-@create_thumbnail
-@create_tile_pyramid
+@makes_image(Mosaic, OSS, [QualityLevel.POST_PROCESSED],
+             identity=MosaicId, presentations=[THUMBNAIL, TILE_PYRAMID],
+             file_type=XisfFilePath)
 def post_process_mosaic_oss(
     mode: QualityLevel,
     mosaic: Mosaic,

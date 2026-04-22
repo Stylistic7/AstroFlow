@@ -11,16 +11,19 @@ from pathlib import Path
 import astropy.io.fits as pyfits
 from scipy.ndimage import distance_transform_edt
 
-from decorators import node, create_thumbnail, create_tile_pyramid
+from decorators import node, create_tile_pyramid
 from file_io.generic import read_image
 from file_io.types import FitsFilePath, WithSidecar
 from hashing import hash_list
 from metadata.classes import ImageMetadata
 from mosaics.artifacts import merged_filename_fits
-from mosaics.merge_images import MergedImage, _merge_tile_path, _merge_thumbnail_key
+from mosaics.merge_images import MergedImage, _merge_tile_path
 from mosaics.types import Mosaic
 from previews.types import QualityLevel, OSS, MASTER, DOWNSCALED_MASTER
 from products import makes_image
+from products.identity import MergeProgressId, PresentationType
+
+THUMBNAIL = PresentationType.THUMBNAIL
 from products.registry import get_filename_fn, MediaType
 
 log = structlog.get_logger()
@@ -50,8 +53,8 @@ def _blend(image_0, image_1):
 
 
 @node(auto_memory=True)
-@makes_image(MergedImage, OSS, [MASTER, DOWNSCALED_MASTER], merged_filename_fits)
-@create_thumbnail
+@makes_image(MergedImage, OSS, [MASTER, DOWNSCALED_MASTER], merged_filename_fits,
+             identity=MergeProgressId, presentations=[THUMBNAIL])
 @create_tile_pyramid(tile_filename=_merge_tile_path)
 def merge_images_oss(
     mode: QualityLevel,
