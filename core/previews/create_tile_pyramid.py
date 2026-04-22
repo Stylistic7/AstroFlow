@@ -29,7 +29,7 @@ from typing import Callable, Optional
 import numpy as np
 import tifffile
 
-from hashing import hash_call, hash_source_code
+from hashing import hash_source_code
 from file_io.generic import read_image
 from previews.operations import autostretch
 from protocols import CacheProtocol
@@ -125,15 +125,7 @@ def make_create_tile_pyramid_decorator(
                     )
                     return result
 
-            # Index the tile pyramid path by the producer's call_hash.
-            call_hash = hash_call(fn_hash, *args, **kwargs)
-            cache[("tile_pyramid", call_hash)] = str(tile_pyramid_path)
-
-            # Index by first arg too, so consumers can look up with
-            # partial args (e.g. just the stack/mosaic without config).
-            if args:
-                first_arg_hash = hash_call(fn_hash, args[0])
-                cache[("tile_pyramid_index", first_arg_hash)] = call_hash
+            cache[("tile_pyramid", str(source))] = str(tile_pyramid_path)
 
             print(
                 f"### Wrote tile pyramid {tile_pyramid_path.name} "
@@ -143,20 +135,16 @@ def make_create_tile_pyramid_decorator(
             return result
 
         def get_tile_pyramid_fn(*args, **kwargs) -> Optional[Path]:
-            # Try index lookup by first arg first (this is the path
-            # consumers like the web server actually use).
-            if args:
-                first_arg_hash = hash_call(fn_hash, args[0])
-                index_key = ("tile_pyramid_index", first_arg_hash)
-                if (call_hash := cache.get(index_key)) is not None:
-                    path = cache.get(("tile_pyramid", call_hash))
-                    if path is not None:
-                        return Path(path)
-
-            # Fall back to full-args lookup.
-            call_hash = hash_call(fn_hash, *args, **kwargs)
-            path = cache.get(("tile_pyramid", call_hash))
-            return Path(path) if path else None
+            if hasattr(wrapper, 'filename_fn'):
+                try:
+                    output_path = wrapper.filename_fn(*args, **kwargs)
+                    if output_path:
+                        path = cache.get(("tile_pyramid", str(output_path)))
+                        if path is not None:
+                            return Path(path)
+                except (TypeError, KeyError):
+                    pass
+            return None
 
         wrapper.tile_pyramid_fn = get_tile_pyramid_fn
         return wrapper

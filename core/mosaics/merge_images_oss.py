@@ -51,7 +51,7 @@ def _blend(image_0, image_1):
 
 @node(auto_memory=True)
 @makes_image(MergedImage, OSS, [MASTER, DOWNSCALED_MASTER], merged_filename_fits)
-@create_thumbnail(lookup_args=_merge_thumbnail_key)
+@create_thumbnail
 @create_tile_pyramid(tile_filename=_merge_tile_path)
 def merge_images_oss(
     mode: QualityLevel,

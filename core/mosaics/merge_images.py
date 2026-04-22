@@ -45,7 +45,7 @@ def _merge_thumbnail_key(mode, mosaic, filter, *rest, **kwargs):
 @node(resources={"PixInsight": 1}, auto_memory=True)
 @makes_image(MergedImage, ALL_IMPLEMENTATIONS, [SUBFRAME], merged_filename_tiff)
 @makes_image(MergedImage, PIXINSIGHT, [MASTER, DOWNSCALED_MASTER], merged_filename_xisf)
-@create_thumbnail(lookup_args=_merge_thumbnail_key)
+@create_thumbnail
 @create_tile_pyramid(tile_filename=_merge_tile_path)
 def merge_images(
     mode: QualityLevel,

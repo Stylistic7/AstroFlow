@@ -132,9 +132,6 @@ def make_cached_decorator(
             if dry_run:
                 return NeverRun
 
-            from context import context as _ctx
-            _ctx.and_equals("cache_misses", [(func.__name__, call_hash)], 10000)
-
             if TRACE_TASKS:
                 print(f">>> {func.__name__} (cache miss, running)")
             start_time = time.time()
