@@ -168,6 +168,8 @@ def make_cached_decorator(
         auto_memory = ray_opts.pop("auto_memory", False)
 
         ray_opts.setdefault("scheduling_strategy", "SPREAD")
+        ray_opts.setdefault("max_retries", 3)
+        ray_opts.setdefault("retry_exceptions", True)
 
         ray_func = ray.remote(**ray_opts)(inner)
 
