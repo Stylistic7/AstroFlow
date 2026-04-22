@@ -51,7 +51,14 @@ def make_create_thumbnail_decorator(
 
             if os.path.exists(filename):
                 if thumbnail := thumbnail_fn(filename):
-                    thumbnail_key = ("thumbnail", str(filename))
+                    if hasattr(wrapper, 'filename_fn'):
+                        try:
+                            canonical = str(wrapper.filename_fn(*args, **kwargs))
+                        except (TypeError, KeyError):
+                            canonical = str(filename)
+                    else:
+                        canonical = str(filename)
+                    thumbnail_key = ("thumbnail", canonical)
                     cache[thumbnail_key] = thumbnail
                     print(
                         f"### Wrote thumbnail_key {thumbnail_key} "
