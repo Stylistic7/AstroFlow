@@ -4,6 +4,8 @@ from frozendict import frozendict
 from previews.calibration import calibrate_subframe
 from previews.operations import autostretch
 from decorators import node, measure_performance
+from decisions.resolve import resolve_calibration
+from decisions.settings import ProcessingConfig
 from stacks.composite_stack import Stack, CalibrationStacksDict
 from decisions.subframe_selection import get_light_frames_sorted_by_stars
 from stacks.run import Run
@@ -49,14 +51,20 @@ def uncorrected_run_thumbnail(
     best_in_run = next(l for l in light_frames_by_stars if l in substack.frames)
     light_frame = stack.all_metadata()[best_in_run]
 
-    return calibrate_subframe(light_frame, substack.dependencies)
+    # `substack.dependencies` has an auto-picked flat from resolve_calibration.
+    # Strip it so this thumbnail is genuinely uncorrected — otherwise it looks
+    # identical to the default "corrected" option in the UI.
+    dependencies = frozendict(
+        {k: v for k, v in substack.dependencies.items() if k != "flat"}
+    )
+    return calibrate_subframe(light_frame, dependencies)
 
 
 @node
 def create_flat_correction_thumbnails(
     stack: Stack,
     calibration_stacks: CalibrationStacksDict,
-    subframe_thumbnail_width: int,
+    config: ProcessingConfig,
 ) -> None:
     flat_stack_ids = [
         id
@@ -65,6 +73,11 @@ def create_flat_correction_thumbnails(
         and s.camera == stack.camera
         and s.filter == stack.filter
     ]
+
+    # `stack` comes from context.stacks with empty run.dependencies.
+    # Resolve so each substack has the auto-picked bias/dark — otherwise
+    # `calibrate_image` short-circuits with no correction at all.
+    stack = resolve_calibration(stack, calibration_stacks, config.decisions)
 
     for substack in stack.contents.values():
         uncorrected_run_thumbnail(stack, substack)

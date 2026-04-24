@@ -57,7 +57,7 @@ def scatter_stack_thumbnails() -> Graph:
         stack = stack_ref.get()
         tasks.append((stack_thumbnail, stack))
         tasks.append((stack_thumbnail_video, stack, subframe_thumbnail_width, config_for(stack_hash)))
-        tasks.append((create_flat_correction_thumbnails, stack, calibration_stacks, subframe_thumbnail_width))
+        tasks.append((create_flat_correction_thumbnails, stack, calibration_stacks, config_for(stack_hash)))
 
     for stack in calibration_stacks.values():
         tasks.append((calibration_stack_thumbnail, stack))
