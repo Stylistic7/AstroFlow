@@ -36,6 +36,7 @@ from web_server.backend.compute_graphs import compute_graphs_bp
 from web_server.backend.videos import videos_bp
 from web_server.backend.performance import performance_bp
 from web_server.backend.decisions import decisions_bp
+from web_server.backend.suggestions import suggestions_bp
 from web_server.backend.router import stateful_route
 
 import plotly.express as px
@@ -134,6 +135,7 @@ def _log_slow_requests(response):
     return response
 app.register_blueprint(performance_bp)
 app.register_blueprint(decisions_bp)
+app.register_blueprint(suggestions_bp)
 
 
 class CustomJSONProvider(DefaultJSONProvider):

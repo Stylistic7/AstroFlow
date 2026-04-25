@@ -36,6 +36,7 @@ import AstroFlowContext from './AstroFlowContext.jsx';
 import ProgressComponent from './ProgressComponent.jsx';
 import RayStatus from './RayStatus.jsx';
 import ShoppingCartPanel from './ShoppingCartPanel.jsx';
+import ObservingPlanChip from './suggestions/ObservingPlanChip.jsx';
 import { Document } from "flexsearch";
 
 
@@ -485,6 +486,8 @@ export default function PrimarySearchAppBar() {
           </>)}
           <Box sx={{ flexGrow: 1 }} />
           <ShoppingCartPanel />
+          <VerticalDivider />
+          <ObservingPlanChip />
           <VerticalDivider />
           <ProgressComponent />
           <VerticalDivider />

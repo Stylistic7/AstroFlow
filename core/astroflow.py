@@ -45,9 +45,6 @@ log = logger
 # TODO: Give the user an option to sort mosaics / targets by date, so they
 # can easily resume a previous project.
 
-# TODO: Emit mosaic plans in Telescopius format for easy continuation.
-
-
 # TODO: The adding of new files, and the removing of deleted files, should be
 # broken up into multiple smaller steps. If the user moves files around, we want
 # to give the user the chance to point the program at the new locations.

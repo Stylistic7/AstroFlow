@@ -18,6 +18,7 @@ import RuleIcon from '@mui/icons-material/Rule';
 import AstroFlowContext from './AstroFlowContext.jsx';
 import QuarantineToggle from './QuarantineToggle.jsx';
 import ShoppingCartMenu from './ShoppingCartMenu.jsx';
+import SuggestionBadge from './suggestions/SuggestionBadge.jsx';
 
 function capitalizeFirst(str) {
     return str.charAt(0).toUpperCase() + str.slice(1);
@@ -323,6 +324,12 @@ export default function AstroFlowBreadcrumbs() {
                     objectType={quarantineObjectType}
                     objectId={quarantineObjectId}
                 />
+                {(quarantineObjectType === "target" || quarantineObjectType === "mosaic") && (
+                    <SuggestionBadge
+                        objectType={quarantineObjectType}
+                        objectId={quarantineObjectId}
+                    />
+                )}
             </>)}
         </Box>
     );

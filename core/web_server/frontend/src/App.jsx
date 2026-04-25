@@ -39,6 +39,7 @@ function App() {
   const [rayStatus, setRayStatus] = useState({});
   const [decisionOverrides, setDecisionOverrides] = useState([]);
   const [validity, setValidity] = useState({});
+  const [observingPlan, setObservingPlan] = useState({ entries: [] });
   const [sseConnected, setSseConnected] = useState(false);
   const [showQuarantined, setShowQuarantined] = useState(
     () => localStorage.getItem('astroflow_showQuarantined') !== 'false'
@@ -192,6 +193,15 @@ function App() {
     } catch (e) { console.warn(e); }
   }, []);
 
+  const refreshObservingPlan = useCallback(async () => {
+    try {
+      const p = await fetch('/api/observing_plan').then(r => r.json());
+      setObservingPlan(p);
+    } catch (e) { console.warn(e); }
+  }, []);
+
+  useEffect(() => { refreshObservingPlan(); }, [refreshObservingPlan]);
+
   // TODO: It's a little awkward to have to put <Search /> in each of these
   // routes.
   return (
@@ -214,6 +224,8 @@ function App() {
             toggleShowQuarantined,
             quarantineCount,
             refreshDecisions,
+            observingPlan,
+            refreshObservingPlan,
             sseConnected,
           }}
         >

@@ -79,6 +79,7 @@ class Settings:
     development_settings: DevelopmentSettings = field(default_factory=DevelopmentSettings)
     preview_settings: PreviewSettings = field(default_factory=PreviewSettings)
     implementation: Implementation = Implementation.PIXINSIGHT
+    observer_location: tuple[float, float, float] | None = None  # (lat_deg, lon_deg, elevation_m)
 
     def __hash__(self):
         return hash_dataclass(self)
