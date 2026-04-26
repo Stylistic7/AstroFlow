@@ -136,14 +136,29 @@ def export_plan():
     plan = ObservingPlan(for_date=for_date, entries=entries)
     sugs = generate_suggestions(_ALL_FILTERS)
 
+    # Panel numbers come from Mosaic — single source of truth so the
+    # polygon labels in the viewer can't disagree with the export.
+    by_key = {s.stable_key(): s for s in sugs}
+    plan_mosaic_ids = {
+        by_key[e.suggestion_key].mosaic_id
+        for e in entries
+        if e.suggestion_key in by_key
+    }
+    mosaics = context.mosaics or {}
+    panel_numbers: dict[str, int] = {}
+    for mid in plan_mosaic_ids:
+        ref = mosaics.get(mid)
+        if ref is not None:
+            panel_numbers.update(ref.get().panel_numbers())
+
     if fmt == "telescopius":
         return Response(
-            telescopius_csv(plan, sugs),
+            telescopius_csv(plan, sugs, panel_numbers),
             mimetype="text/csv",
             headers={"Content-Disposition": f"attachment; filename=plan_{for_date}.csv"},
         )
     if fmt == "json":
-        return Response(rich_json(plan, sugs), mimetype="application/json")
+        return Response(rich_json(plan, sugs, panel_numbers), mimetype="application/json")
     if fmt == "text":
-        return Response(plain_text(plan, sugs), mimetype="text/plain")
+        return Response(plain_text(plan, sugs, panel_numbers), mimetype="text/plain")
     abort(400, description=f"unknown format {fmt!r}")

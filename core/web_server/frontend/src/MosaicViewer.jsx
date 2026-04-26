@@ -18,6 +18,7 @@ import {
 
 import FullscreenIcon from "@mui/icons-material/Fullscreen";
 import ShareIcon from "@mui/icons-material/Share";
+import PinIcon from "@mui/icons-material/Pin";
 
 import AstroFlowContext from "./AstroFlowContext.jsx";
 import { AstroFlowImage } from "./AstroFlowImage.jsx";
@@ -36,6 +37,7 @@ export default function MosaicViewer() {
 
 	const [tabIndex, setTabIndex] = useState(0);
 	const [showOutline, setShowOutline] = useState(true);
+	const [showPanelNumbers, setShowPanelNumbers] = useState(false);
 	const [telescopiusOpen, setTelescopiusOpen] = useState(false);
 	const [versionsData, setVersionsData] = useState({ filters: [], versions: [] });
 
@@ -151,6 +153,12 @@ export default function MosaicViewer() {
 					checked={showOutline}
 					handleChange={() => setShowOutline((v) => !v)}
 				/>
+				<ToggleIconButton
+					name="panel numbers"
+					icon={<PinIcon />}
+					checked={showPanelNumbers}
+					handleChange={() => setShowPanelNumbers((v) => !v)}
+				/>
 				<Tooltip title="Export to Telescopius">
 					<IconButton
 						size="small"
@@ -195,6 +203,7 @@ export default function MosaicViewer() {
 						objectId={mosaic_id}
 						filter={filter}
 						showPolygons={showOutline}
+						showPanelNumbers={showPanelNumbers}
 						qualityLevel={quality}
 						implementation={implementation}
 						showQualitySelector={false}

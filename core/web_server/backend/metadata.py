@@ -1,3 +1,4 @@
+import math
 import os
 import astropy.io.fits as pyfits
 from flask import Blueprint, jsonify, abort
@@ -93,6 +94,26 @@ def _get_polygons(object_type: type, level: QualityLevel, *args) -> list[dict[st
         master_fn = get_filename_fn(MediaType.IMAGE, Stack, QualityLevel.MASTER)
         overrides = context.settings.decision_overrides
         from decisions.compute_graph import _is_quarantined
+
+        target_numbers = obj.panel_numbers()
+
+        # Real-time rise time per panel for display in the viewer's
+        # panel labels. Computed against the observer's current LST so
+        # the wall-clock time the user sees is "next rise from now."
+        from astropy import units as u  # type: ignore
+        from astropy.coordinates import EarthLocation  # type: ignore
+        from astropy.time import Time  # type: ignore
+        from mosaics.rise_time import next_rise_utc
+        import datetime
+        lat, lon, elev = context.settings.observer_location
+        observer = EarthLocation(lat=lat * u.deg, lon=lon * u.deg, height=elev * u.m)
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        reference_astropy = Time(now_utc)
+        lst_at_ref = float(
+            reference_astropy.sidereal_time("apparent", longitude=observer.lon).hour
+        )
+        observer_lat_rad = math.radians(lat)
+
         for t in obj.target_ids:
             target = targets[t].get()
             # The stack at the selected filter (if any) drives the
@@ -117,6 +138,20 @@ def _get_polygons(object_type: type, level: QualityLevel, *args) -> list[dict[st
                 active_stack is not None
                 and len(get_decisions_for_object(ObjectType.STACK, active_stack.stable_hash)) > 0
             )
+            input_poly["ra_deg"] = float(target.center[0])
+            input_poly["dec_deg"] = float(target.center[1])
+            input_poly["rotation_deg"] = math.degrees(float(target.rotation_angle))
+            rise = next_rise_utc(
+                ra_deg=float(target.center[0]),
+                dec_deg=float(target.center[1]),
+                observer_lat_rad=observer_lat_rad,
+                lst_at_ref_hours=lst_at_ref,
+                reference_utc=now_utc,
+                altitude_threshold_deg=context.settings.usable_altitude_deg,
+            )
+            input_poly["rise_time_utc"] = rise.isoformat() if rise else None
+            if t in target_numbers:
+                input_poly["panel_number"] = target_numbers[t]
             objects.append(input_poly)
 
             # Output polygon: the WCS rectangle of the stacked master at

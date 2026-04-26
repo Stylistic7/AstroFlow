@@ -39,30 +39,42 @@ def _match(
 
 
 def telescopius_csv(
-    plan: ObservingPlan, suggestions: Iterable[Suggestion]
+    plan: ObservingPlan,
+    suggestions: Iterable[Suggestion],
+    panel_numbers: dict[str, int],
 ) -> str:
-    """Telescopius target-list CSV: Pane, RA, Dec, Notes."""
+    """Telescopius target-list CSV: Pane, RA, Dec, Notes.
+
+    `panel_numbers` maps target_id → 1-indexed panel number — same
+    numbering as the polygon labels in the mosaic viewer, so the user
+    can read "Panel 5" off this CSV and find polygon "5" in the image.
+    """
     pairs = _match(plan, suggestions)
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(["Pane", "RA", "Dec", "Notes"])
     for entry, s in pairs:
+        n = panel_numbers.get(s.target_id)
+        pane = f"Panel {n}: {s.panel_label}" if n is not None else s.panel_label
         notes = (
             f"{s.filter} — {entry.frame_count} x "
             f"{int(entry.exposure_per_frame_s)}s — {s.reason}"
         )
-        writer.writerow([s.panel_label, _hms(s.ra_deg), _dms(s.dec_deg), notes])
+        writer.writerow([pane, _hms(s.ra_deg), _dms(s.dec_deg), notes])
     return buf.getvalue()
 
 
 def rich_json(
-    plan: ObservingPlan, suggestions: Iterable[Suggestion]
+    plan: ObservingPlan,
+    suggestions: Iterable[Suggestion],
+    panel_numbers: dict[str, int],
 ) -> str:
     pairs = _match(plan, suggestions)
     payload = {
         "for_date": plan.for_date.isoformat(),
         "entries": [
             {
+                "panel_number": panel_numbers.get(s.target_id),
                 "suggestion": s.to_dict(),
                 "ra_hms": _hms(s.ra_deg),
                 "dec_dms": _dms(s.dec_deg),
@@ -77,13 +89,17 @@ def rich_json(
 
 
 def plain_text(
-    plan: ObservingPlan, suggestions: Iterable[Suggestion]
+    plan: ObservingPlan,
+    suggestions: Iterable[Suggestion],
+    panel_numbers: dict[str, int],
 ) -> str:
     pairs = _match(plan, suggestions)
     lines = [f"Observing plan for {plan.for_date.isoformat()}", ""]
     for entry, s in pairs:
+        n = panel_numbers.get(s.target_id)
+        prefix = f"Panel {n} ({s.panel_label})" if n is not None else s.panel_label
         lines.append(
-            f"- {s.panel_label} — {entry.frame_count} x "
+            f"- {prefix} — {entry.frame_count} x "
             f"{int(entry.exposure_per_frame_s)}s @ {s.filter} — "
             f"RA {_hms(s.ra_deg)}, Dec {_dms(s.dec_deg)} "
             f"({s.reason})"

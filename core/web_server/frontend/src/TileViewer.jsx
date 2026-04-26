@@ -9,7 +9,28 @@ import AstroFlowContext from './AstroFlowContext.jsx';
 
 const TILE_SIZE = 256;
 
-const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filter: filterProp, qualityLevel: qualityLevelProp, showPolygons }) => {
+// Match the HMS / DMS formatting in suggestions/export.py so polygon
+// labels read identically to the Telescopius / text export.
+const formatRaHms = (raDeg) => {
+  const raHours = ((raDeg % 360) + 360) % 360 / 15;
+  const h = Math.floor(raHours);
+  const mFloat = (raHours - h) * 60;
+  const m = Math.floor(mFloat);
+  const s = (mFloat - m) * 60;
+  return `${String(h).padStart(2, '0')}h${String(m).padStart(2, '0')}m${s.toFixed(1).padStart(4, '0')}s`;
+};
+
+const formatDecDms = (decDeg) => {
+  const sign = decDeg < 0 ? '-' : '+';
+  const absDec = Math.abs(decDeg);
+  const d = Math.floor(absDec);
+  const mFloat = (absDec - d) * 60;
+  const m = Math.floor(mFloat);
+  const s = (mFloat - m) * 60;
+  return `${sign}${String(d).padStart(2, '0')}°${String(m).padStart(2, '0')}'${s.toFixed(0).padStart(2, '0')}"`;
+};
+
+const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filter: filterProp, qualityLevel: qualityLevelProp, showPolygons, showPanelNumbers }) => {
   const { objectType: objectTypeParam, imageHash: imageHashParam, filter: filterParam } = useParams();
 
   const objectType = objectTypeProp ?? objectTypeParam;
@@ -21,7 +42,7 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
   const containerRef = useRef(null);
   const [containerSize, setContainerSize] = useState({ width: 800, height: 600 });
 
-  const { mosaics, stacks, targets, showQuarantined, isQuarantined, computeGraphStatus } = useContext(AstroFlowContext);
+  const { mosaics, stacks, targets, showQuarantined, isQuarantined, computeGraphStatus, observingPlan } = useContext(AstroFlowContext);
 
   const navigate = useNavigate();
 
@@ -63,7 +84,7 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
         .then((meta) => { if (meta) setMetadata(meta); })
         .catch((e) => console.warn(e));
     }
-  }, [objectType, imageHash, filter, qualityLevelProp]);
+  }, [objectType, imageHash, filter, qualityLevelProp, observingPlan]);
 
   useEffect(() => {
     const level = qualityLevelProp || 'auto';
@@ -125,6 +146,7 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
           maxZoom={tileMetadata.maxZoom}
           mtime={tileMetadata.mtime}
           showPolygons={showPolygons}
+          showPanelNumbers={showPanelNumbers}
           metadata={metadata}
           mosaics={mosaics}
           onClick={onClick}
@@ -175,7 +197,7 @@ function drawExposureClock(g, cx, cy, radius, hours) {
 }
 
 
-const ImperativeViewport = ({ objectType, imageHash, filter, qualityLevel, port, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, mtime, showPolygons, metadata, mosaics, onClick, showQuarantined, isQuarantined, stacks }) => {
+const ImperativeViewport = ({ objectType, imageHash, filter, qualityLevel, port, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, mtime, showPolygons, showPanelNumbers, metadata, mosaics, onClick, showQuarantined, isQuarantined, stacks }) => {
   const app = useApp();
   const viewportRef = useRef(null);
   const spritesRef = useRef({});
@@ -321,6 +343,61 @@ const ImperativeViewport = ({ objectType, imageHash, filter, qualityLevel, port,
             );
             viewport.addChild(clock);
           }
+
+          // Big centered "Panel N" number — matches the "Panel N" prefix
+          // in the Telescopius / text export so the user can map a row
+          // in the export to the polygon they need to image next.
+          // Underneath the number, show the panel center's RA/Dec for
+          // debugging — quick visual sanity check that polygon N really
+          // corresponds to the export's panel N.
+          if (showPanelNumbers && typeof poly.panel_number === 'number') {
+            const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+            const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+            const fontSize = Math.round(imageWidth / 30);
+            const number = new PIXI.Text(String(poly.panel_number), {
+              fontFamily: 'sans-serif',
+              fontSize,
+              fontWeight: 'bold',
+              fill: 0xffffff,
+              stroke: 0x000000,
+              strokeThickness: Math.max(2, fontSize * 0.12),
+              align: 'center',
+            });
+            number.anchor.set(0.5, 0.5);
+            number.position.set(cx, cy);
+            number.zIndex = 10001;
+            viewport.addChild(number);
+
+            if (typeof poly.ra_deg === 'number' && typeof poly.dec_deg === 'number') {
+              const coordsSize = Math.round(imageWidth / 90);
+              const lineHeight = coordsSize * 1.2;
+              const lines = [
+                formatRaHms(poly.ra_deg),
+                formatDecDms(poly.dec_deg),
+              ];
+              if (typeof poly.rotation_deg === 'number') {
+                lines.push(`PA ${poly.rotation_deg.toFixed(2)}°`);
+              }
+              if (poly.rise_time_utc) {
+                const rise = new Date(poly.rise_time_utc);
+                lines.push(`rises ${rise.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+              }
+              lines.forEach((text, i) => {
+                const t = new PIXI.Text(text, {
+                  fontFamily: 'monospace',
+                  fontSize: coordsSize,
+                  fill: 0xffffff,
+                  stroke: 0x000000,
+                  strokeThickness: Math.max(1, coordsSize * 0.15),
+                  align: 'center',
+                });
+                t.anchor.set(0.5, 0);
+                t.position.set(cx, cy + fontSize * 0.6 + i * lineHeight);
+                t.zIndex = 10001;
+                viewport.addChild(t);
+              });
+            }
+          }
         }
       }
 
@@ -402,7 +479,7 @@ const ImperativeViewport = ({ objectType, imageHash, filter, qualityLevel, port,
       try { viewport.destroy({ children: true }); } catch {}
       spritesRef.current = {};
     };
-  }, [app, mosaics, imageHash, filter, imageWidth, imageHeight, maxZoom, worldWidth, worldHeight, showPolygons, stacks]);
+  }, [app, mosaics, imageHash, filter, imageWidth, imageHeight, maxZoom, worldWidth, worldHeight, showPolygons, showPanelNumbers, stacks, metadata]);
 
   return null;
 };

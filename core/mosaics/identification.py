@@ -384,7 +384,9 @@ def _identify_overlapping_targets(
 
 @node
 def identify_mosaics(
-    angular_tolerance: Radians, targets: dict[TargetHash, ContextRef[Target]], debug: bool = False
+    angular_tolerance: Radians,
+    targets: dict[TargetHash, ContextRef[Target]],
+    debug: bool = False,
 ) -> MosaicsDict:
     resolved: dict[str, Target] = {k: ref.get() for k, ref in targets.items()}
     log.info("Identifying mosaics", num_targets=len(resolved))
@@ -468,6 +470,16 @@ def identify_mosaics(
         target_ids = tuple(sorted(mosaic))
         content_hash = hash_list(sorted(target_ids))
 
+        # Panel order — observer-independent, sorted by RA with the
+        # sequence rotated to start after the largest RA gap so the
+        # 0h/24h boundary doesn't split a strip. Same numbering anywhere
+        # on Earth, so the polygon labels in the viewer match the
+        # "Panel N" prefix in the Telescopius / text export.
+        from mosaics.rise_time import panel_order
+        panel_target_ids = panel_order(
+            [(t, float(resolved[t].center[0])) for t in mosaic]
+        )
+
         attributes: dict[str, Any] = (
             asdict(chronology_attributes)
             | asdict(astrometric_attributes)
@@ -476,6 +488,7 @@ def identify_mosaics(
                 "content_hash": content_hash,
                 "target_ids": target_ids,
                 "strips": strips,
+                "panel_target_ids": panel_target_ids,
             }
         )
 

@@ -23,6 +23,16 @@ class Mosaic(
 ):
     target_ids: tuple[TargetHash, ...]
     strips: tuple[Strip, ...]
+    # Same targets as `target_ids`, ordered for the user. Index + 1 is
+    # the panel number shown on polygon labels in the mosaic viewer and
+    # in the "Panel N" prefix of the Telescopius / text export — single
+    # source of truth so the two can never disagree. Sort key is RA
+    # ascending, which matches rise order for typical mosaics where
+    # panels share a Dec band.
+    panel_target_ids: tuple[TargetHash, ...]
+
+    def panel_numbers(self) -> dict[TargetHash, int]:
+        return {tid: i + 1 for i, tid in enumerate(self.panel_target_ids)}
 
     def __str__(self) -> str:
         return (

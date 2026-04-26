@@ -41,6 +41,7 @@ export const AstroFlowImage = ({
     objectId,
     filter = undefined,
     showPolygons = false,
+    showPanelNumbers = false,
     size = "full",
     showQualitySelector = true,
     qualityLevel: qualityLevelProp = undefined,
@@ -66,6 +67,7 @@ export const AstroFlowImage = ({
                         filter={filter}
                         qualityLevel={qualityLevel}
                         showPolygons={showPolygons}
+                        showPanelNumbers={showPanelNumbers}
                     />
                 ) : (
                     <img
