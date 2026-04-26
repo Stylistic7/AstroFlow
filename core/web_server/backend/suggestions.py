@@ -71,14 +71,11 @@ def suggestions_by_object(object_type: str, object_id: str):
 
 @suggestions_bp.route("/api/moon")
 def moon():
-    settings = context.settings
-    if settings is None or settings.observer_location is None:
-        return jsonify({"error": "observer_location not set"}), 400
     date_str = request.args.get("date")
     for_date = (
         datetime.date.fromisoformat(date_str) if date_str else datetime.date.today()
     )
-    lat, lon, elev = settings.observer_location
+    lat, lon, elev = context.settings.observer_location
     observer = EarthLocation(lat=lat * u.deg, lon=lon * u.deg, height=elev * u.m)
     conditions = compute_conditions(for_date, observer)
     return jsonify({

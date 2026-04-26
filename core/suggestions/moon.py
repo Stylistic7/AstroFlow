@@ -56,14 +56,15 @@ def recommend_filters(illum: float, altitude_deg: float) -> frozenset[str]:
     """Suggest filters to shoot tonight given moon conditions.
 
     Moon below horizon OR dim → all filters.
-    Moon bright AND up → narrowband only (H, S, O).
-    Moon moderate AND up → narrowband + luminance."""
+    Moon up AND moderate (0.3 < illum < 0.7) → narrowband only (H, S, O).
+    Moon up AND bright (illum > 0.7) → only H, S — OIII is too close to
+        the moon's blue-green light to come out clean."""
     ALL = frozenset({"H", "S", "O", "L", "R", "G", "B"})
     if altitude_deg < 0 or illum < 0.3:
         return ALL
     if illum > 0.7:
-        return frozenset({"H", "S", "O"})
-    return frozenset({"H", "S", "O", "L"})
+        return frozenset({"H", "S"})
+    return frozenset({"H", "S", "O"})
 
 
 def compute_conditions(for_date: date, observer: EarthLocation) -> MoonConditions:

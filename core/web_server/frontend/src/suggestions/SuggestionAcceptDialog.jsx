@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
+  Alert,
   Box,
   Dialog,
   DialogTitle,
@@ -16,6 +17,7 @@ import {
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import BrightnessHighIcon from '@mui/icons-material/BrightnessHigh';
 
 function hours(s) {
   return (s / 3600).toFixed(1);
@@ -62,6 +64,16 @@ export default function SuggestionAcceptDialog({
   acceptedKeys,
   onChanged,
 }) {
+  const [moon, setMoon] = useState(null);
+  useEffect(() => {
+    if (!open) return;
+    fetch('/api/moon')
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setMoon)
+      .catch(() => setMoon(null));
+  }, [open]);
+  const recommended = new Set(moon?.recommended_filters || []);
+
   return (
     <Dialog
       open={open}
@@ -77,6 +89,7 @@ export default function SuggestionAcceptDialog({
         </IconButton>
       </DialogTitle>
       <DialogContent>
+        {moon && <MoonBanner moon={moon} />}
         {suggestions.length === 0 ? (
           <Typography color="text.secondary">No suggestions.</Typography>
         ) : (
@@ -105,6 +118,7 @@ export default function SuggestionAcceptDialog({
                     suggestion={s}
                     accepted={acceptedKeys.has(s.stable_key)}
                     onChanged={onChanged}
+                    recommendedFilters={recommended}
                   />
                 ))}
               </List>
@@ -116,7 +130,35 @@ export default function SuggestionAcceptDialog({
   );
 }
 
-function SuggestionItem({ suggestion, accepted, onChanged }) {
+function MoonBanner({ moon }) {
+  const illumPct = Math.round(moon.illumination * 100);
+  const altRounded = Math.round(moon.altitude_at_midnight_deg);
+  const moonUp = moon.altitude_at_midnight_deg > 0;
+  const recommended = moon.recommended_filters || [];
+  const allFilters = ['H', 'S', 'O', 'L', 'R', 'G', 'B'];
+  const restricted = recommended.length < allFilters.length;
+  const severity = !moonUp ? 'success' : illumPct >= 70 ? 'warning' : 'info';
+  return (
+    <Alert
+      severity={severity}
+      icon={<BrightnessHighIcon />}
+      sx={{ mb: 2 }}
+    >
+      <Typography variant="body2">
+        Moon: {illumPct}% illuminated,{' '}
+        {moonUp
+          ? `${altRounded}° above horizon at midnight`
+          : `${Math.abs(altRounded)}° below horizon at midnight`}
+        .
+        {restricted &&
+          ` Only ${recommended.join(', ')} will come out clean tonight.`}
+      </Typography>
+    </Alert>
+  );
+}
+
+
+function SuggestionItem({ suggestion, accepted, onChanged, recommendedFilters }) {
   const [exposure, setExposure] = useState(suggestion.default_exposure_per_frame_s);
   const [count, setCount] = useState(suggestion.default_frame_count);
   const [busy, setBusy] = useState(false);
@@ -179,6 +221,15 @@ function SuggestionItem({ suggestion, accepted, onChanged }) {
       <Stack direction="row" spacing={1} alignItems="center" sx={{ width: '100%' }}>
         <Chip size="small" label={suggestion.filter} sx={{ minWidth: 36 }} />
         {kindChip}
+        {recommendedFilters && recommendedFilters.size > 0 && !recommendedFilters.has(suggestion.filter) && (
+          <Chip
+            size="small"
+            label="moonlit"
+            color="warning"
+            variant="outlined"
+            icon={<BrightnessHighIcon />}
+          />
+        )}
         <Box sx={{ flex: 1 }} />
       </Stack>
       <Typography variant="caption" color="text.secondary">
