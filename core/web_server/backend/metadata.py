@@ -92,43 +92,51 @@ def _get_polygons(object_type: type, level: QualityLevel, *args) -> list[dict[st
         # raw frame, not a Path, and read_image_metadata would reject it.
         master_fn = get_filename_fn(MediaType.IMAGE, Stack, QualityLevel.MASTER)
         overrides = context.settings.decision_overrides
+        from decisions.compute_graph import _is_quarantined
         for t in obj.target_ids:
             target = targets[t].get()
-            for sid in target.stack_ids:
-                stack = stacks[sid].get()
-                if selected_filter and stack.filter != selected_filter:
-                    continue
-                # Skip quarantined stacks.
-                from decisions.compute_graph import _is_quarantined
-                if _is_quarantined(overrides, ObjectType.STACK, sid):
-                    continue
+            # The stack at the selected filter (if any) drives the
+            # overlays (decision dot, exposure clock) and the green output
+            # rectangle. Targets are filter-independent, but each filter
+            # view shows the data state for its own stack.
+            active_stack = next(
+                (stacks[sid].get() for sid in target.stack_ids
+                 if (not selected_filter or stacks[sid].get().filter == selected_filter)
+                 and not _is_quarantined(overrides, ObjectType.STACK, sid)),
+                None,
+            )
 
-                # Input polygon: the intersection of Run footprints.
-                input_poly = project(resolve_stack(sid), viewbox)
-                input_poly["polygon_type"] = "input"
-                input_poly["target_id"] = t
-                input_poly["has_decisions"] = (
-                    len(get_decisions_for_object(ObjectType.STACK, sid)) > 0
-                )
-                objects.append(input_poly)
+            # Input polygon: always at the Target level so the panel
+            # outline shows up on every filter view, even if this target
+            # has no stack at the selected filter.
+            input_poly = project(target, viewbox)
+            input_poly["polygon_type"] = "input"
+            input_poly["target_id"] = t
+            input_poly["active_stack_hash"] = active_stack.stable_hash if active_stack else None
+            input_poly["has_decisions"] = (
+                active_stack is not None
+                and len(get_decisions_for_object(ObjectType.STACK, active_stack.stable_hash)) > 0
+            )
+            objects.append(input_poly)
 
-                # Output polygon: the WCS rectangle of the stacked master.
-                if master_fn:
-                    master_path = master_fn(stack)
-                    if master_path and os.path.exists(master_path):
-                        meta = read_image_metadata(master_path)
-                        if meta and meta.plate_solution:
-                            from astropy.wcs import WCS
-                            wcs = WCS(pyfits.Header(meta.plate_solution.header))
-                            output_footprint = _spherical_polygon_for_wcs(wcs)
-                            output_poly = project_to_viewbox(output_footprint, viewbox)
-                            objects.append({
-                                "type": "stack",
-                                "polygon_type": "output",
-                                "stable_hash": stack.stable_hash,
-                                "target_id": t,
-                                "points": list(output_poly.exterior.coords),
-                            })
+            # Output polygon: the WCS rectangle of the stacked master at
+            # the selected filter.
+            if active_stack and master_fn:
+                master_path = master_fn(active_stack)
+                if master_path and os.path.exists(master_path):
+                    meta = read_image_metadata(master_path)
+                    if meta and meta.plate_solution:
+                        from astropy.wcs import WCS
+                        wcs = WCS(pyfits.Header(meta.plate_solution.header))
+                        output_footprint = _spherical_polygon_for_wcs(wcs)
+                        output_poly = project_to_viewbox(output_footprint, viewbox)
+                        objects.append({
+                            "type": "stack",
+                            "polygon_type": "output",
+                            "stable_hash": active_stack.stable_hash,
+                            "target_id": t,
+                            "points": list(output_poly.exterior.coords),
+                        })
 
     return objects
 

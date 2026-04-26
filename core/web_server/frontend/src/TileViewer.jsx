@@ -302,10 +302,11 @@ const ImperativeViewport = ({ objectType, imageHash, filter, qualityLevel, port,
             viewport.addChild(dot);
           }
 
-          // Exposure-duration clock for this stack. The polygon's
-          // stable_hash is the stack id (set by the backend in
-          // metadata.py); look it up to get integration time.
-          const stack = stacks?.[poly.stable_hash];
+          // Exposure-duration clock for the stack at the selected
+          // filter. Input polygons are target-level (set by the backend
+          // in metadata.py), so the active stack is referenced
+          // explicitly via active_stack_hash.
+          const stack = poly.active_stack_hash ? stacks?.[poly.active_stack_hash] : null;
           if (stack && typeof stack.integration === 'number') {
             const clockRadius = imageWidth / 80;
             const offset = poly.has_decisions ? dotRadius * 2.5 : 0;
