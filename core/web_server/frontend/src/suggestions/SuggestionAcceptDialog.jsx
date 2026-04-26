@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  Box,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -18,6 +19,40 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 
 function hours(s) {
   return (s / 3600).toFixed(1);
+}
+
+// Group suggestions by their target (one panel = one target across
+// filters), sorted by panel_number so panels appear in the same order
+// as their polygon labels in the mosaic viewer. Returns
+// [[panel_number, panel_label, suggestions[]], ...].
+function groupByPanel(suggestions) {
+  const groups = new Map();
+  for (const s of suggestions) {
+    const key = s.target_id ?? `${s.panel_number}-${s.panel_label}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        panel_number: s.panel_number ?? null,
+        panel_label: s.panel_label,
+        suggestions: [],
+      });
+    }
+    groups.get(key).suggestions.push(s);
+  }
+  const arr = Array.from(groups.values()).map((g) => [
+    g.panel_number,
+    g.panel_label,
+    // Sort suggestions within a panel by filter for stable display.
+    g.suggestions.sort((a, b) => (a.filter || '').localeCompare(b.filter || '')),
+  ]);
+  arr.sort((a, b) => {
+    // Numbered panels before unnumbered, then by panel number.
+    const an = a[0], bn = b[0];
+    if (an === null && bn === null) return a[1].localeCompare(b[1]);
+    if (an === null) return 1;
+    if (bn === null) return -1;
+    return an - bn;
+  });
+  return arr;
 }
 
 export default function SuggestionAcceptDialog({
@@ -45,16 +80,36 @@ export default function SuggestionAcceptDialog({
         {suggestions.length === 0 ? (
           <Typography color="text.secondary">No suggestions.</Typography>
         ) : (
-          <List disablePadding>
-            {suggestions.map((s) => (
-              <SuggestionItem
-                key={s.stable_key}
-                suggestion={s}
-                accepted={acceptedKeys.has(s.stable_key)}
-                onChanged={onChanged}
-              />
-            ))}
-          </List>
+          groupByPanel(suggestions).map(([panelNumber, panelLabel, group]) => (
+            <Box
+              key={`${panelNumber ?? 'np'}-${panelLabel}`}
+              sx={{
+                mb: 3,
+                pb: 1,
+                borderBottom: '2px solid',
+                borderColor: 'divider',
+              }}
+            >
+              <Typography
+                variant="subtitle1"
+                sx={{ fontWeight: 600, mt: 1, mb: 0.5 }}
+              >
+                {panelNumber !== null
+                  ? `Panel ${panelNumber}: ${panelLabel}`
+                  : panelLabel}
+              </Typography>
+              <List disablePadding>
+                {group.map((s) => (
+                  <SuggestionItem
+                    key={s.stable_key}
+                    suggestion={s}
+                    accepted={acceptedKeys.has(s.stable_key)}
+                    onChanged={onChanged}
+                  />
+                ))}
+              </List>
+            </Box>
+          ))
         )}
       </DialogContent>
     </Dialog>
@@ -122,11 +177,9 @@ function SuggestionItem({ suggestion, accepted, onChanged }) {
       }}
     >
       <Stack direction="row" spacing={1} alignItems="center" sx={{ width: '100%' }}>
-        <Typography variant="subtitle2" sx={{ flex: 1 }}>
-          {suggestion.panel_label}
-        </Typography>
-        <Chip size="small" label={suggestion.filter} />
+        <Chip size="small" label={suggestion.filter} sx={{ minWidth: 36 }} />
         {kindChip}
+        <Box sx={{ flex: 1 }} />
       </Stack>
       <Typography variant="caption" color="text.secondary">
         {hours(suggestion.current_exposure_s)}h → {hours(suggestion.target_exposure_s)}h

@@ -32,11 +32,28 @@ def _set_plan_entries(entries: list[dict]) -> None:
     context.observing_plan = entries
 
 
+def _annotate_with_panel_numbers(sugs: list) -> list[dict]:
+    """Attach the per-mosaic panel_number to each suggestion dict so the
+    frontend can group + sort suggestions by panel — the same numbering
+    used by the polygon labels and the Telescopius export."""
+    mosaics = context.mosaics or {}
+    cache: dict[str, dict] = {}
+    out = []
+    for s in sugs:
+        d = s.to_dict()
+        if s.mosaic_id not in cache:
+            ref = mosaics.get(s.mosaic_id)
+            cache[s.mosaic_id] = ref.get().panel_numbers() if ref is not None else {}
+        d["panel_number"] = cache[s.mosaic_id].get(s.target_id)
+        out.append(d)
+    return out
+
+
 @suggestions_bp.route("/api/suggestions")
 def all_suggestions():
     """All suggestions across the Shopping Cart. Used for counts and summaries."""
     sugs = generate_suggestions(_ALL_FILTERS)
-    return jsonify({"suggestions": [s.to_dict() for s in sugs]})
+    return jsonify({"suggestions": _annotate_with_panel_numbers(sugs)})
 
 
 @suggestions_bp.route("/api/suggestions/by_object/<object_type>/<object_id>")
@@ -49,7 +66,7 @@ def suggestions_by_object(object_type: str, object_id: str):
         scoped = [s for s in sugs if s.mosaic_id == object_id]
     else:
         scoped = []
-    return jsonify({"suggestions": [s.to_dict() for s in scoped]})
+    return jsonify({"suggestions": _annotate_with_panel_numbers(scoped)})
 
 
 @suggestions_bp.route("/api/moon")
