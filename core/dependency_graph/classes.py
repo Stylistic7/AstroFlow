@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from hashing import hash_list_int
 from typing import Any, Union, TypeAlias
 from collections.abc import Iterable, Callable
@@ -200,6 +201,12 @@ class GraphStatus:
     ready_nodes: list[Node] = field(default_factory=list)
     in_flight_nodes: list[Node] = field(default_factory=list)
     waiting_count: int = 0
+    # Per-function-name counts. The UI uses these to render
+    # "place_image 12/34" — total is every node of that type known to
+    # the graph (including child runtimes), done is how many of those
+    # have finished. Keyed by `node.task._function.__name__`.
+    done_per_fn: Counter = field(default_factory=Counter)
+    total_per_fn: Counter = field(default_factory=Counter)
 
     def __add__(self, rhs: "GraphStatus") -> "GraphStatus":
         return GraphStatus(
@@ -207,6 +214,8 @@ class GraphStatus:
             ready_nodes=self.ready_nodes + rhs.ready_nodes,
             in_flight_nodes=self.in_flight_nodes + rhs.in_flight_nodes,
             waiting_count=self.waiting_count + rhs.waiting_count,
+            done_per_fn=self.done_per_fn + rhs.done_per_fn,
+            total_per_fn=self.total_per_fn + rhs.total_per_fn,
         )
 
 

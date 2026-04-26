@@ -189,10 +189,10 @@ class StateActor:
         def status_fn(status: GraphStatus):
             from dependency_graph.progress import graph_status_to_progress
             progress = graph_status_to_progress(status)
-            totals = progress.pop("_totals", {"total_number": 0, "remaining_number": 0})
+            totals = progress.get("_totals", {"total_number": 0, "remaining_number": 0})
             total = totals["total_number"]
             remaining = totals["remaining_number"]
-            print(f"### progress: {total - remaining}/{total} done, {len(progress)} task types")
+            print(f"### progress: {total - remaining}/{total} done, {len(progress) - 1} task types")
 
             from context.context import _get_namespace
             actor = ray.get_actor("context", namespace=_get_namespace())

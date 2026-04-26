@@ -13,7 +13,7 @@ in run_graph(). It manages a tree of subgraphs internally:
 from __future__ import annotations
 
 import inspect
-from collections import defaultdict
+from collections import Counter, defaultdict
 from typing import Any
 
 from dependency_graph.classes import (
@@ -79,6 +79,14 @@ class GraphRuntime:
         # Children: nodes that returned a Graph get a child runtime.
         self._children: dict[Node, GraphRuntime] = {}
         self._child_done_count: int = 0
+
+        # Per-function-name counters used for "place_image 12/34" style
+        # progress display. Total is fixed for this runtime; done is
+        # bumped in _mark_done.
+        self._total_per_fn: Counter = Counter(
+            n.task._function.__name__ for n in self._graph
+        )
+        self._done_per_fn: Counter = Counter()
 
         # Results and metadata
         self.results = ResultDict()
@@ -155,6 +163,7 @@ class GraphRuntime:
         self.results[node] = result
         self.logs[node] = logs
         self._done.add(node)
+        self._done_per_fn[node.task._function.__name__] += 1
         self._ready.discard(node)
 
         # Check if completing this node unblocks any dependents.
@@ -186,6 +195,12 @@ class GraphRuntime:
             child._propagate_completed_children()
             if not child.is_active():
                 self._child_done_count += len(child._done) + child._child_done_count
+                # Roll the child's per-fn counters up so they survive
+                # the child's removal from _children. Without this, the
+                # UI's "place_image 12/34" denominator would shrink as
+                # subgraphs finish.
+                self._done_per_fn += child._done_per_fn
+                self._total_per_fn += child._total_per_fn
                 self._mark_done(node, child.final_result, child.logs)
                 del self._children[node]
 
@@ -226,6 +241,8 @@ class GraphRuntime:
             ready_nodes=self.get_ready(),
             in_flight_nodes=list(in_flight),
             waiting_count=self.waiting_count(),
+            done_per_fn=Counter(self._done_per_fn),
+            total_per_fn=Counter(self._total_per_fn),
         )
         for child in self._children.values():
             status = status + child.get_status()
