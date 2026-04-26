@@ -87,7 +87,10 @@ def _get_polygons(object_type: type, level: QualityLevel, *args) -> list[dict[st
 
     if isinstance(obj, Mosaic):
         selected_filter = args[1] if len(args) > 1 else None
-        master_fn = get_filename_fn(MediaType.IMAGE, Stack, level)
+        # Output polygon comes from the stacked master's WCS regardless of
+        # the displayed level. At Subframe level the per-stack filename is a
+        # raw frame, not a Path, and read_image_metadata would reject it.
+        master_fn = get_filename_fn(MediaType.IMAGE, Stack, QualityLevel.MASTER)
         overrides = context.settings.decision_overrides
         for t in obj.target_ids:
             target = targets[t].get()
