@@ -217,9 +217,14 @@ class GraphRuntime:
 
     def get_status(self) -> GraphStatus:
         done_count = len(self._done) + self._child_done_count
+        # Parent nodes whose function returned a child Graph aren't doing
+        # work themselves; the actual in-flight work is in the child's
+        # in_flight_nodes when its get_status() is folded in below.
+        in_flight = self._started - self._done - self._children.keys()
         status = GraphStatus(
             done_count=done_count,
             ready_nodes=self.get_ready(),
+            in_flight_nodes=list(in_flight),
             waiting_count=self.waiting_count(),
         )
         for child in self._children.values():

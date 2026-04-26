@@ -38,17 +38,26 @@ def graph_status_to_progress(status: GraphStatus) -> dict[str, Any]:
         return (fn.__name__, hash_source_code(fn), _infer_node_quality(node))
 
     ready_counts: Counter = Counter(key_for(n) for n in status.ready_nodes)
-    total_remaining = len(status.ready_nodes) + status.waiting_count
+    in_flight_counts: Counter = Counter(key_for(n) for n in status.in_flight_nodes)
+    total_remaining = (
+        len(status.ready_nodes)
+        + len(status.in_flight_nodes)
+        + status.waiting_count
+    )
     total_all = total_remaining + status.done_count
 
     status_dict: dict[str, Any] = {}
-    for (fn_name, fn_hash, quality) in ready_counts.keys():
-        k = (fn_name, fn_hash, quality)
-        remaining = ready_counts[k]
+    for k in ready_counts.keys() | in_flight_counts.keys():
+        fn_name, fn_hash, quality = k
+        ready = ready_counts.get(k, 0)
+        running = in_flight_counts.get(k, 0)
+        remaining = ready + running
         estimated = estimate_time(fn_name, remaining, quality=quality, fn_hash=fn_hash)
 
         label = f"{fn_name} ({quality.value})" if quality is not None else fn_name
         status_dict[label] = {
+            "running_number": running,
+            "ready_number": ready,
             "total_number": remaining,
             "remaining_number": remaining,
             "estimated_time": estimated or 0,

@@ -562,15 +562,18 @@ def test_overhead(test_context) -> None:
 
 
 def test_graph_status_merging(test_context) -> None:
+    n1 = Node(process, 1)
+    n2 = Node(process, 2)
     status_1 = GraphStatus(
-        waiting_count=1, done_count=1
+        waiting_count=1, done_count=1, in_flight_nodes=[n1],
     )
-    status_2 = GraphStatus(done_count=1)
+    status_2 = GraphStatus(done_count=1, in_flight_nodes=[n2])
 
     status = status_1 + status_2
     assert status == GraphStatus(
         done_count=2,
         ready_nodes=list(),
+        in_flight_nodes=[n1, n2],
         waiting_count=1,
     )
 

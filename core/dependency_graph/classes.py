@@ -198,12 +198,14 @@ def canonicalize_graph(graph: Graph) -> CanonicalGraph:
 class GraphStatus:
     done_count: int = 0
     ready_nodes: list[Node] = field(default_factory=list)
+    in_flight_nodes: list[Node] = field(default_factory=list)
     waiting_count: int = 0
 
     def __add__(self, rhs: "GraphStatus") -> "GraphStatus":
         return GraphStatus(
             done_count=self.done_count + rhs.done_count,
             ready_nodes=self.ready_nodes + rhs.ready_nodes,
+            in_flight_nodes=self.in_flight_nodes + rhs.in_flight_nodes,
             waiting_count=self.waiting_count + rhs.waiting_count,
         )
 
