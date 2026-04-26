@@ -15,10 +15,10 @@ from ray_infra.ray_init import connect_to_ray_cluster
 # via Ray remote functions, giving the entire Ray cluster access to the
 # diskcache.
 #
-# While diskcache supports concurrent usage, context serializes all reads and
-# writes so they are deterministic. This is very useful, because compute graph
-# nodes often write their results into the context so that another node can
-# read them.
+# diskcache supports concurrent multi-thread/multi-process access, and the
+# compute graph passes data between nodes via function arguments rather than
+# through context, so the actor serves up to _MAX_CONCURRENCY calls in
+# parallel.
 #
 # Context maintains an in-memory cache, using the Ray object store. By default,
 # values written into context are both written to disk, and kept in-memory.
@@ -48,8 +48,14 @@ def starts_with(big_tuple, small_tuple):
     return big_tuple[: len(small_tuple)] == small_tuple
 
 
+_MAX_CONCURRENCY = 64
+
+
 @ray.remote(
-    resources={"diskcache": 0.001}, max_restarts=-1, max_task_retries=-1
+    resources={"diskcache": 0.001},
+    max_restarts=-1,
+    max_task_retries=-1,
+    max_concurrency=_MAX_CONCURRENCY,
 )
 class ContextActor:
     def __init__(self) -> None:
@@ -58,15 +64,13 @@ class ContextActor:
         self._peak_inflight = 0
         self._total_calls = 0
 
-    _MAX_CONCURRENCY = 64
-
     def _enter(self):
         self._inflight += 1
         self._total_calls += 1
         if self._inflight > self._peak_inflight:
             self._peak_inflight = self._inflight
-            if self._peak_inflight >= self._MAX_CONCURRENCY:
-                print(f"### ContextActor: concurrency limit hit ({self._peak_inflight}/{self._MAX_CONCURRENCY})")
+            if self._peak_inflight >= _MAX_CONCURRENCY:
+                print(f"### ContextActor: concurrency limit hit ({self._peak_inflight}/{_MAX_CONCURRENCY})")
 
     def _exit(self):
         self._inflight -= 1
