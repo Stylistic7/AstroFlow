@@ -93,9 +93,28 @@ def build_mosaic_subgraph(
                 log.warning("Skipping mosaic filter, all stacks missing", mosaic=str(mosaic), filter=filter)
                 continue
         else:
-            # In master mode, missing panels are not allowed; skip the filter.
+            # Master mode: the mosaic merge needs every panel, so a
+            # missing one means we can't produce the mosaic in this
+            # filter. Still kick off per-stack WBPP for the panels we
+            # DO have, so their masters are ready for the next time
+            # the user images and once the missing panels fill in.
             if any(None in strip for strip in strips):
-                log.warning("Skipping mosaic filter, some stacks missing", mosaic=str(mosaic), filter=filter)
+                log.warning(
+                    "Mosaic incomplete in this filter; stacking present panels only",
+                    mosaic=str(mosaic), filter=filter,
+                )
+                # Hang the per-stack stacking tasks off pp_fn as
+                # ancestors so the subgraph still has a single terminal
+                # node. pp_fn waits for them but doesn't consume their
+                # results.
+                for strip in strips:
+                    for stack_id in strip:
+                        if stack_id is None:
+                            continue
+                        stack = _unwrap(stacks[stack_id])
+                        filter_done_tasks.append(
+                            (get_stack_image, mode, stack, config)
+                        )
                 continue
 
         filter_subgraph_task = Node(
