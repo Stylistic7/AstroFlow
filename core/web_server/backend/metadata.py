@@ -154,8 +154,10 @@ def _get_polygons(object_type: type, level: QualityLevel, *args) -> list[dict[st
                 input_poly["panel_number"] = target_numbers[t]
             objects.append(input_poly)
 
-            # Output polygon: the WCS rectangle of the stacked master at
-            # the selected filter.
+            # Output polygon: the master's actual WCS rectangle. Drawn
+            # only when both the master image AND its computed metadata
+            # exist — green always means "this is exactly where the
+            # stacked image sits on disk."
             if active_stack and master_fn:
                 master_path = master_fn(active_stack)
                 if master_path and os.path.exists(master_path):
