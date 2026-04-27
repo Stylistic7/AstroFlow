@@ -77,7 +77,12 @@ class GraphRuntime:
         }
 
         # Children: nodes that returned a Graph get a child runtime.
+        # Active children participate in scheduling; completed ones are
+        # retained in `_completed_children` purely so the workflow-graph
+        # UI can still expand a subgraph after it finishes (otherwise a
+        # completed parent would visually collapse to a "simple" node).
         self._children: dict[Node, GraphRuntime] = {}
+        self._completed_children: dict[Node, GraphRuntime] = {}
         self._child_done_count: int = 0
 
         # Per-function-name counters used for "place_image 12/34" style
@@ -202,7 +207,10 @@ class GraphRuntime:
                 self._done_per_fn += child._done_per_fn
                 self._total_per_fn += child._total_per_fn
                 self._mark_done(node, child.final_result, child.logs)
-                del self._children[node]
+                # Move out of _children so we stop scheduling against
+                # it, but keep it in _completed_children so the
+                # workflow-graph UI can still render the subgraph.
+                self._completed_children[node] = self._children.pop(node)
 
     def is_active(self) -> bool:
         """True if there is still work to do at this level or any child."""
@@ -250,8 +258,13 @@ class GraphRuntime:
 
     @property
     def subgraphs_by_parent(self) -> dict[Node, "GraphRuntime"]:
-        """Recursively collect all child runtimes indexed by parent node."""
-        result = dict(self._children)
+        """Recursively collect all child runtimes indexed by parent node.
+        Includes completed subgraphs so the workflow-graph UI can still
+        expand a subgraph after it finishes.
+        """
+        result = {**self._children, **self._completed_children}
         for child in self._children.values():
+            result.update(child.subgraphs_by_parent)
+        for child in self._completed_children.values():
             result.update(child.subgraphs_by_parent)
         return result
