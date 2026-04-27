@@ -36,6 +36,25 @@ def _compute_threshold_stars(metadata, all_frames, threshold: float) -> int:
     return int(threshold * max(star_counts))
 
 
+def effective_integration(stack: Stack) -> float:
+    """Total exposure in seconds across frames that survive the default
+    subframe-quality filter. Side-effect-free: mirrors `select_subframes`'
+    inclusion math without publishing decisions or applying overrides.
+    Used by the UI to display "usable signal" rather than raw integration."""
+    metadata = stack.all_metadata()
+    all_frames = stack.all_frames()
+    if not all_frames:
+        return 0.0
+    threshold_stars = _compute_threshold_stars(
+        metadata, all_frames, _DEFAULT_QUALITY_THRESHOLD
+    )
+    return float(sum(
+        metadata[f].header.get("EXPOSURE", 0)
+        for f in all_frames
+        if metadata[f].plate_solution.num_stars >= threshold_stars
+    ))
+
+
 def select_subframes(
     stack: Stack,
     min_frames_in_stack: int,

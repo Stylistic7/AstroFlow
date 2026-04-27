@@ -14,7 +14,10 @@ from metadata.image_metadata import compute_image_metadata
 from dataclasses import replace
 from decisions.settings import DevelopmentSettings
 from decisions.decisions import decisions_for_stack
-from decisions.subframe_selection import get_light_frames_sorted_by_stars
+from decisions.subframe_selection import (
+    effective_integration,
+    get_light_frames_sorted_by_stars,
+)
 from previews.types import QualityLevel
 from dependency_graph import Graph, Node, chain
 from dependency_graph.workflow_graph_adapter import (
@@ -176,7 +179,10 @@ def prepare_stack_for_ui(
         "camera": stack.camera,
         "filter": stack.filter,
         "exposure": stack.exposure,
-        "integration": stack.integration,
+        # `integration` is the *effective* (post-subframe-selection)
+        # signal — what the viewer's exposure clock should reflect.
+        # Run-level views still derive raw per-frame data themselves.
+        "integration": effective_integration(stack),
         "mean_temperature": stack.mean_temperature,
         "image_scale": stack.image_scale,
         "rotation_angle": stack.rotation_angle,
