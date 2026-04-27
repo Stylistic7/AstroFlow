@@ -115,19 +115,25 @@ export default function ObservingPlanChip() {
           </Box>
         ) : (
           <List dense disablePadding>
-            {entries.map((e) => (
-              <ListItem key={e.suggestion_key} sx={{ pr: 7 }}>
-                <ListItemText
-                  primary={`${e.panel_label || '(panel)'} — ${e.filter}`}
-                  secondary={`${e.frame_count} × ${Math.round(e.exposure_per_frame_s)}s = ${hours(e.exposure_per_frame_s * e.frame_count)}h`}
-                />
-                <ListItemSecondaryAction>
-                  <IconButton size="small" onClick={() => removeEntry(e.suggestion_key)}>
-                    <DeleteIcon fontSize="small" />
-                  </IconButton>
-                </ListItemSecondaryAction>
-              </ListItem>
-            ))}
+            {entries.map((e) => {
+              const label = e.panel_label || '(panel)';
+              const primary = e.panel_number != null
+                ? `Panel ${e.panel_number}: ${label} — ${e.filter}`
+                : `${label} — ${e.filter}`;
+              return (
+                <ListItem key={e.suggestion_key} sx={{ pr: 7 }}>
+                  <ListItemText
+                    primary={primary}
+                    secondary={`${e.frame_count} × ${Math.round(e.exposure_per_frame_s)}s = ${hours(e.exposure_per_frame_s * e.frame_count)}h`}
+                  />
+                  <ListItemSecondaryAction>
+                    <IconButton size="small" onClick={() => removeEntry(e.suggestion_key)}>
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </ListItemSecondaryAction>
+                </ListItem>
+              );
+            })}
           </List>
         )}
         <Divider sx={{ my: 1 }} />

@@ -86,9 +86,33 @@ def moon():
     })
 
 
+def _entries_with_panel_numbers(entries: list[dict]) -> list[dict]:
+    """Annotate plan entries with panel_number (looked up from the
+    suggestion the entry came from), and sort by panel_number so the
+    Observing Plan dropdown matches the order of the polygon labels
+    and the Suggestions dialog. Entries whose suggestion can't be
+    resolved keep panel_number=None and sort to the end."""
+    sugs = generate_suggestions(_ALL_FILTERS)
+    by_key = {s.stable_key(): s for s in sugs}
+    mosaics = context.mosaics or {}
+    panel_cache: dict[str, dict] = {}
+    out = []
+    for e in entries:
+        s = by_key.get(e.get("suggestion_key"))
+        pn = None
+        if s is not None:
+            if s.mosaic_id not in panel_cache:
+                ref = mosaics.get(s.mosaic_id)
+                panel_cache[s.mosaic_id] = ref.get().panel_numbers() if ref else {}
+            pn = panel_cache[s.mosaic_id].get(s.target_id)
+        out.append({**e, "panel_number": pn})
+    out.sort(key=lambda x: (x["panel_number"] is None, x["panel_number"] or 0, x.get("filter") or ""))
+    return out
+
+
 @suggestions_bp.route("/api/observing_plan", methods=["GET"])
 def get_observing_plan():
-    return jsonify({"entries": _get_plan_entries()})
+    return jsonify({"entries": _entries_with_panel_numbers(_get_plan_entries())})
 
 
 @suggestions_bp.route("/api/observing_plan/accept", methods=["POST"])
