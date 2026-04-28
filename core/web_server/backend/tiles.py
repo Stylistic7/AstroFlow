@@ -81,22 +81,38 @@ def _tile_pyramid_path_for(
 
     impl = Implementation(implementation) if implementation else context.settings.implementation
 
+    from pathlib import Path
+    from products.registry import get_filename_fn
+
     for q in levels_to_try:
         producer = get_producer(MediaType.IMAGE, obj_cls, q, impl)
         if producer is None:
             continue
-        if not hasattr(producer, "tile_pyramid_fn"):
-            continue
-        path = producer.tile_pyramid_fn(*obj_args, level=q)
-        if path is not None and os.path.exists(path):
-            return path
+        # Legacy path: @create_tile_pyramid attaches `tile_pyramid_fn`
+        # directly to the producer.
+        if hasattr(producer, "tile_pyramid_fn"):
+            path = producer.tile_pyramid_fn(*obj_args, level=q)
+            if path is not None and os.path.exists(path):
+                return path
+        # Newer path: @makes_image with presentations=[TILE_PYRAMID]
+        # writes a .tiff sibling next to the master's main output but
+        # doesn't attach a lookup function — find the file by name.
+        master_fn = get_filename_fn(MediaType.IMAGE, obj_cls, q, impl)
+        if master_fn is not None:
+            try:
+                master_path = master_fn(*obj_args)
+            except (TypeError, KeyError):
+                master_path = None
+            if master_path is not None:
+                tiff = Path(str(master_path)).with_suffix(".tiff")
+                if tiff.exists():
+                    return tiff
 
-    # Fallback: check for in-progress merge tile pyramids. merge_images
-    # writes these at a deterministic path per (mosaic, filter, mode),
-    # overwriting on each merge step. This surfaces partial mosaic results
+    # Fallback: in-progress merge tile pyramids. merge_images writes
+    # these at a deterministic path per (mosaic, filter, mode),
+    # overwriting on each merge step — surfaces partial mosaic results
     # before the final store_mosaic_color_channel completes.
     if obj_cls is Mosaic:
-        from pathlib import Path
         output_dir = context.output_dir
         if output_dir is not None:
             mosaic_obj, mosaic_filter = obj_args[0], obj_args[1]

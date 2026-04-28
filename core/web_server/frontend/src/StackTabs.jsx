@@ -86,7 +86,14 @@ const StackTabs = ({ stack_type, stack, stack_id }) => {
   useEffect(() => {
     const checkTile = async () => {
       try {
-        const res = await fetch(`/tile/stack/${stack_id}/none/0/0/0.png`, { method: 'HEAD' });
+        // tile_metadata 200s when a tile pyramid resolves at any
+        // available level for the stack; 404s when nothing's been
+        // built yet. (Filter is unused at the stack level — passing
+        // "none" as a placeholder.)
+        const res = await fetch(
+          `/tile_metadata/stack/${stack_id}/none/auto`,
+          { method: 'HEAD' },
+        );
         setTileViewerAvailable(res.ok);
       } catch {
         setTileViewerAvailable(false);
@@ -136,21 +143,28 @@ const StackTabs = ({ stack_type, stack, stack_id }) => {
           )}
         </Box>
 
-        <Box hidden={tabIndex !== 1} sx={{ height: '100%', position: 'absolute', inset: 0, p: 3, display: 'flex', flexDirection: 'column' }}>
-          <video
-            loop
-            autoPlay
-            muted
-            ref={videoRef}
-            style={{ pointerEvents: 'auto', width: '100%', flex: 1, objectFit: 'contain' }}
-          >
-            <source
-              src={`/video/${stack_type}/${stack_id}`}
-              type="video/webm"
-            />
-            Your browser does not support the video tag.
-          </video>
-          {stack_type === 'stack' && <BlinkQualityInfo stack_id={stack_id} />}
+        <Box hidden={tabIndex !== 1} sx={{ height: '100%', position: 'absolute', inset: 0, p: 3 }}>
+          {/* Nested flex container — keeping `display: flex` on the
+              outer Box would override the `hidden` attribute's
+              `display: none` (sx wins specificity), leaving this tab
+              rendered on top of the Stacked tab and eating wheel
+              events before they reach the canvas. */}
+          <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <video
+              loop
+              autoPlay
+              muted
+              ref={videoRef}
+              style={{ pointerEvents: 'auto', width: '100%', flex: 1, objectFit: 'contain' }}
+            >
+              <source
+                src={`/video/${stack_type}/${stack_id}`}
+                type="video/webm"
+              />
+              Your browser does not support the video tag.
+            </video>
+            {stack_type === 'stack' && <BlinkQualityInfo stack_id={stack_id} />}
+          </Box>
         </Box>
 
         <Box hidden={tabIndex !== 2} sx={{ height: '100%', overflow: 'auto', position: 'absolute', inset: 0, p: 3 }}>
