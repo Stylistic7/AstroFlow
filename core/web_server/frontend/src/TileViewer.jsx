@@ -31,7 +31,8 @@ const formatDecDms = (decDeg) => {
 };
 
 const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filter: filterProp, qualityLevel: qualityLevelProp, showPolygons, showPanelNumbers }) => {
-  const { objectType: objectTypeParam, imageHash: imageHashParam, filter: filterParam } = useParams();
+  const params = useParams();
+  const { objectType: objectTypeParam, imageHash: imageHashParam, filter: filterParam } = params;
 
   const objectType = objectTypeProp ?? objectTypeParam;
   const imageHash = imageHashProp ?? imageHashParam;
@@ -96,22 +97,32 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
   const onClick = (poly, event) => {
     const e = event.nativeEvent; // underlying DOM PointerEvent
 
-    let url;
+    let suffix;
     if (poly.type === 'stack' && poly.target_id) {
-      // Stack polygon inside a mosaic/target — build the full waterfall path.
-      url = `target/${poly.target_id}/stack/${poly.stable_hash}`;
+      suffix = `target/${poly.target_id}/stack/${poly.stable_hash}`;
     } else if (poly.type === 'target' && filter && targets?.[poly.stable_hash]) {
       const target = targets[poly.stable_hash];
       const stackId = target.stack_ids?.find(s => stacks?.[s]?.filter === filter);
-      url = stackId
+      suffix = stackId
         ? `target/${poly.stable_hash}/stack/${stackId}`
         : `target/${poly.stable_hash}`;
     } else {
-      url = `${poly.type}/${poly.stable_hash}`;
+      suffix = `${poly.type}/${poly.stable_hash}`;
     }
 
+    // Build an absolute URL that drops the parent mosaic's
+    // implementation/quality/filter context. Those segments only
+    // describe how the user is currently viewing the merged mosaic
+    // image; once we drill into a target or stack they're meaningless,
+    // and keeping them in the URL pollutes the breadcrumbs. Browser
+    // history still preserves the original mosaic-with-pills URL so
+    // the back button returns there.
+    const url = params.mosaic_id
+      ? `/mosaic/${params.mosaic_id}/${suffix}`
+      : `/${suffix}`;
+
     if (e.metaKey || e.ctrlKey) {
-      window.open(`${window.location.pathname}/${url}`, '_blank');
+      window.open(url, '_blank');
     } else {
       navigate(url);
     }

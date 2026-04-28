@@ -125,24 +125,22 @@ export default function AstroFlowBreadcrumbs() {
     // TODO: Don't hardcode the font color; use the theme.
     const fontColor = "#aaa";
 
-    // The mosaic-detail-viewer URL includes (implementation, quality, filter)
-    // segments between the mosaic_id and any nested target/stack drilldown,
-    // so the breadcrumb back-stack preserves that context.
-    const version_path = (params.implementation && params.quality && params.filter)
-        ? `/${params.implementation}/${params.quality}/${params.filter}`
-        : "";
-
+    // Target/stack drill-down URLs intentionally drop the parent
+    // mosaic's (implementation, quality, filter) — those segments are
+    // image-viewer state and don't belong in deeper paths. The
+    // implementation/quality/filter pill crumbs below render only when
+    // we're on the mosaic image viewer route (where those params are
+    // actually set), so they disappear automatically as soon as the
+    // user clicks into a target.
     let mosaic_url = "";
-    let viewer_url = "";
     let target_url = "";
     let stack_url = "";
     let cal_stack_url = "";
     if (params.mosaic_id) {
         mosaic_url = `/mosaic/${params.mosaic_id}`;
-        viewer_url = `${mosaic_url}${version_path}`;
-        target_url = viewer_url;
-        stack_url = viewer_url;
-        cal_stack_url = viewer_url;
+        target_url = mosaic_url;
+        stack_url = mosaic_url;
+        cal_stack_url = mosaic_url;
     }
     if (params.target_id) {
         target_url += `/target/${params.target_id}`;
