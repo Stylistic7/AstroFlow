@@ -6,7 +6,7 @@ from frozendict import frozendict
 
 from stacks.composite_stack import Stack, CalibrationStacksDict
 from stacks.run import Run, RunsDict
-from stacks.types import StackIdDependency
+from stacks.types import FilenameDependency, StackIdDependency
 from decisions.decisions import (
     BinaryChoice, DecisionKey, DecisionOverride, DecisionPoint, DecisionType,
     ObjectType, DECISION_PRECEDENCE, resolve_decision, get_decisions_for_object,
@@ -154,10 +154,11 @@ def resolve_calibration(
     cached default or user override.
     """
     from calibration.calibration_frames import _build_cal_index, _midpoint_s
+    from calibration.directory_affinity import find_external_master
 
     bias_by_cam, dark_by_cam, flat_by_cam_filter = _build_cal_index(cal_stacks)
 
-    def _choose_bias(run: Run):
+    def _chronological_bias(run: Run):
         cand = bias_by_cam.get(run.camera)
         if not cand:
             return None
@@ -168,7 +169,7 @@ def resolve_calibration(
             return None
         return min(filtered, key=lambda x: abs(x[0] - mid))[2]
 
-    def _choose_dark(run: Run):
+    def _chronological_dark(run: Run):
         cand = dark_by_cam.get(run.camera)
         if not cand:
             return None
@@ -190,7 +191,7 @@ def resolve_calibration(
         and cal_stacks[key.subject_id].image_type == "flat"
     }
 
-    def _choose_flat(run: Run):
+    def _chronological_flat(run: Run):
         cand = flat_by_cam_filter.get((run.camera, run.filter))
         if not cand:
             return None
@@ -200,7 +201,32 @@ def resolve_calibration(
         mid = _midpoint_s(run.oldest_date, run.newest_date)
         return min(cand, key=lambda x: abs(x[0] - mid))[1]
 
-    pickers = {"bias": _choose_bias, "dark": _choose_dark, "flat": _choose_flat}
+    chronological = {
+        "bias": _chronological_bias,
+        "dark": _chronological_dark,
+        "flat": _chronological_flat,
+    }
+
+    def _default_choice(cal_type: str, run: Run) -> str | None:
+        """Try directory-affinity first; fall back to chronological.
+
+        Directory-affinity returns an absolute path to a pre-stacked external
+        master sitting in an ancestor directory of the run's frames (typically
+        a `Calibration Masters/MasterDark*.fit` file under the target's tree).
+        Chronological returns a StackHash of an AstroFlow-stacked calibration
+        stack. Disambiguated downstream by whether the choice starts with "/".
+        """
+        path = find_external_master(
+            (m.filename for m in run.metadata.values()),
+            kind=cal_type,
+            camera=run.camera,
+            temperature=run.mean_temperature,
+            filter=(run.filter if cal_type == "flat" else None),
+            exposure=(run.exposure if cal_type == "dark" else None),
+        )
+        if path is not None:
+            return path
+        return chronological[cal_type](run)
 
     new_contents = RunsDict()
     for run_hash, run in stack.contents.items():
@@ -212,17 +238,20 @@ def resolve_calibration(
             decision = DecisionPoint.make(
                 key=DecisionKey.calibration(cal_type, stack.stable_hash, run_hash),
                 title=f"Calibration: {cal_type}",
-                description=f"Which {cal_type} stack to use for this run",
+                description=f"Which {cal_type} source to use for this run",
             )
 
-            sid = resolve_decision(
+            choice = resolve_decision(
                 decision,
                 decision_overrides,
-                default=lambda r=run, p=pickers[cal_type]: p(r),
+                default=lambda c=cal_type, r=run: _default_choice(c, r),
             )
 
-            if sid is not None:
-                deps[cal_type] = StackIdDependency(stack_id=sid)
+            if choice is not None:
+                if isinstance(choice, str) and choice.startswith("/"):
+                    deps[cal_type] = FilenameDependency(filename=choice)
+                else:
+                    deps[cal_type] = StackIdDependency(stack_id=choice)
 
         new_contents[run_hash] = replace(run, dependencies=frozendict(deps))
 
