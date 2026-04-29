@@ -36,11 +36,18 @@ class Image:
         """Create a lazy image from a file on disk.
 
         This does not read the file — it just records that this file
-        will be opened when the recipe is executed.
+        will be opened when the recipe is executed. We do, however,
+        check that the file exists at construction time: a missing
+        input here will eventually launch PixInsight and hang on
+        ImageWindow.open until the script timeout, which is wasteful
+        and obscures the real cause. Failing fast lets Ray's retry
+        machinery and the next graph run handle it cleanly.
         """
         from pix.tasks.open_images import read_filter_from_header
 
         filename = Path(filename)
+        if not filename.exists():
+            raise FileNotFoundError(f"pix.Image.open: input does not exist: {filename}")
         recipe = Recipe(input_filenames=[filename])
         filter = read_filter_from_header(filename)
         view_id = view_id_for(filename)
@@ -48,8 +55,16 @@ class Image:
 
     @classmethod
     def open_many(cls, filenames: list[Path | str]) -> "ImageList":
-        """Create lazy images from multiple files on disk."""
+        """Create lazy images from multiple files on disk.
+
+        Same fail-fast behavior as `open`: any missing input raises
+        a FileNotFoundError listing every missing path, before any
+        PixInsight script work begins.
+        """
         filenames = [Path(f) for f in filenames]
+        missing = [str(f) for f in filenames if not f.exists()]
+        if missing:
+            raise FileNotFoundError(f"pix.Image.open_many: inputs do not exist: {missing}")
         recipe = Recipe(input_filenames=filenames)
         images = []
         for filename in filenames:
