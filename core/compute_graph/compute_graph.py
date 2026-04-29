@@ -127,6 +127,7 @@ def scatter_spatial_groups(
         identify_calibration_stacks,
         metadata_ref,
         clustering_settings.max_run_gap,
+        clustering_settings.min_frames_in_stack,
     )
 
     graph[associate_calibration_stacks] = {identify_cal_stacks_task}

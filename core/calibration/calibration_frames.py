@@ -15,6 +15,7 @@ from stacks.composite_stack import Stack, CalibrationStack, CalibrationStacksDic
 import clustering
 from cache.context_ref import ContextRef
 from metadata.classes import MetadataDict
+from metadata.image_types import is_master
 from beartype import beartype
 import structlog
 
@@ -22,9 +23,22 @@ log = structlog.get_logger()
 
 
 @node
-def identify_calibration_stacks(metadata_ref: ContextRef[MetadataDict], max_run_gap) -> CalibrationStacksDict:
+def identify_calibration_stacks(
+    metadata_ref: ContextRef[MetadataDict],
+    max_run_gap,
+    min_frames_in_stack: int = 2,
+) -> CalibrationStacksDict:
     log.info("Identifying calibration stacks")
     metadata = metadata_ref.get()
+
+    # Filter out any frames that look like already-stacked masters (by
+    # filename, BITPIX, or PROGRAM signature). `find_image_files` excludes
+    # the obvious `master*.fit` pattern, but external pre-stacked masters
+    # with misleading filenames or IMAGETYP can still reach us; this is
+    # the second-line defense.
+    metadata = MetadataDict({
+        h: m for h, m in metadata.items() if not is_master(m.header)
+    })
 
     def get_runs(frames: set[FrameHash]) -> list[list[FrameHash]]:
         if not len(frames):
@@ -34,7 +48,16 @@ def identify_calibration_stacks(metadata_ref: ContextRef[MetadataDict], max_run_
         result = clustering.cluster_continuous(
             items, epsilon=max_run_gap
         )
-        return [[x[0] for x in r] for r in result]
+        # A run of fewer than min_frames_in_stack frames is not actually
+        # stackable — typically a lone straggler frame, or an externally
+        # pre-stacked master that slipped past `find_image_files` because
+        # its filename or IMAGETYP didn't follow the master-naming
+        # convention. Either way, treating it as a 1-frame "stack" just
+        # produces a guaranteed-failing `stack_files` task and a missing-
+        # master file for downstream lights to choke on. Drop it here.
+        return [
+            [x[0] for x in r] for r in result if len(r) >= min_frames_in_stack
+        ]
 
     def group_by_header(
         images: list[ImageMetadata], key: str, default_value: Any
