@@ -38,7 +38,7 @@ class GunicornManager:
                 "--threads",
                 "4",
                 "--log-level",
-                "debug",
+                "warning",
                 "--capture-output",
             ]
 

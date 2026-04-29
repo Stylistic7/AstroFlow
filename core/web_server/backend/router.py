@@ -46,9 +46,6 @@ def stateful_route(
             if accepts_port:
                 kwargs[inject_name] = port
 
-            print(
-                f"### Calling stateful_route function {func.__name__} on port {host_port}"
-            )
             return func(*args, **kwargs)
 
         return route_decorator(wrapper)
