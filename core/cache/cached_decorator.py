@@ -188,9 +188,6 @@ def make_cached_decorator(
 
             def _auto_memory_remote(*args, **kwargs):
                 estimate = memory_estimator(func, args, kwargs)
-                print(
-                    f"### auto_memory: {func.__name__} → {estimate / 1024**3:.0f} GB"
-                )
                 return ray_func.options(memory=estimate).remote(*args, **kwargs)
 
             wrapper.remote = _auto_memory_remote
