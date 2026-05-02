@@ -33,11 +33,17 @@ def connect_to_ray_cluster():
             namespace="AstroFlow",
             runtime_env={
                 "working_dir": working_dir,
+                # web_server/backend Python is needed at runtime (the
+                # announcer is imported by status callbacks inside
+                # actors). We only want to skip the heavy artifacts:
+                # frontend node_modules + build, and the backend's
+                # built-static-assets dir.
                 "excludes": [
                     ".cache/",
                     "cache.tar.gz",
                     ".git/",
-                    "web_server/",
+                    "web_server/frontend/",
+                    "web_server/backend/static/",
                     "testdata/",
                     "pix/testdata/",
                 ],
