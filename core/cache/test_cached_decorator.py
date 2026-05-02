@@ -125,3 +125,47 @@ def test_large_object(test_context) -> None:
     assert all(r == 13 for r in captured.values())
 
 
+def test_cache_key_narrow_hides_irrelevant_args(test_context) -> None:
+    """`cache_key_narrow` lets a function declare which parts of its args
+    actually affect its result. The function still receives the full
+    args at runtime; only the cache key uses the narrowed view.
+    """
+    def narrow(args, kwargs):
+        # Only the first arg (`subject`) feeds the cache key. The second
+        # (`noise`) is dropped from hashing — different `noise` values
+        # for the same `subject` should hit the cache.
+        return (args[0],), {}
+
+    @cached.remote(cache_key_narrow=narrow)
+    def narrowed_f(subject, noise) -> int:
+        return subject + noise
+
+    # First call: cache miss, runs and stores under the narrowed key.
+    assert ray.get(narrowed_f.remote(10, 100)) == 110
+
+    # Same `subject`, different `noise`: with `narrow` dropping `noise`
+    # from the key, this is a cache hit and returns the previously-stored
+    # result (110), NOT 10+999=1009 — the function did not re-run.
+    assert ray.get(narrowed_f.remote(10, 999)) == 110
+
+    # `is_cached` confirms cache state at the narrowed-key level: the
+    # original call was stored, and any (10, *) call hits.
+    assert narrowed_f.is_cached(10, 100)
+    assert narrowed_f.is_cached(10, 999)
+    assert narrowed_f.is_cached(10, 0)
+    # A different `subject` is a fresh key — not cached yet.
+    assert not narrowed_f.is_cached(11, 100)
+
+
+def test_cache_key_narrow_default_falls_back_to_full_args(test_context) -> None:
+    """Without `cache_key_narrow`, the cache key is on the full args —
+    different args means different keys (the existing behavior)."""
+    @cached.remote
+    def plain_f(a, b) -> int:
+        return a + b
+
+    ray.get(plain_f.remote(1, 2))
+    assert plain_f.is_cached(1, 2)
+    assert not plain_f.is_cached(1, 3)  # different `b` → fresh key
+
+

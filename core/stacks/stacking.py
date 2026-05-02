@@ -158,7 +158,47 @@ def _copy_wbpp_result(
     return WithSidecar(XisfFilePath(dest_filename))
 
 
-@node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD", auto_memory=True)
+def narrow_stack_config(stack: BaseStack, config: ProcessingConfig) -> ProcessingConfig:
+    """Narrow `config` for cache-key hashing: keep only this stack's
+    decision overrides; drop `calibration_stacks` from the key entirely.
+
+    Why no cal_stacks filtering:
+    - `resolve_decision` caches the default in the context actor on the
+      first ask. Once it picks a bias / dark / flat, the choice is sticky
+      — new candidates don't re-bid. So the resolved deps for this stack
+      are fully determined by `(stack, this-stack's-decisions, context)`.
+    - The candidate set isn't an input to the cached result; only the
+      sticky pick is.
+    - Therefore `cal_stacks` doesn't need to be in the cache key at all.
+      Adding a bias for any camera no longer invalidates this stack's
+      cached master.
+
+    The function still receives the full `ProcessingConfig` at runtime —
+    `resolve_calibration` needs the full set to look up the picked dep
+    by id. This narrowing affects only the cache key.
+    """
+    from dataclasses import replace
+    from decisions.decisions import decisions_for_stack
+
+    return replace(
+        config,
+        # Constant marker — drops cal_stacks from the hash without
+        # changing the field's presence on the dataclass.
+        calibration_stacks=None,
+        decisions=decisions_for_stack(config.decisions, stack.stable_hash),
+    )
+
+
+def _stack_files_narrow(args, kwargs):
+    """`stack_files` cache-key hook: drop the global cal_stacks and
+    other-stack decisions so a new bias for an unrelated camera doesn't
+    invalidate this stack's cached master."""
+    stack, config, *rest = args
+    return (stack, narrow_stack_config(stack, config), *rest), kwargs
+
+
+@node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD", auto_memory=True,
+      cache_key_narrow=_stack_files_narrow)
 @makes_image(CalibrationStack, PIXINSIGHT, [MASTER, DOWNSCALED_MASTER],
              identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=XisfFilePath)

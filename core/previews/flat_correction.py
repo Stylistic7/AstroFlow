@@ -4,9 +4,7 @@ from frozendict import frozendict
 from previews.calibration import calibrate_subframe
 from previews.operations import autostretch
 from decorators import node, measure_performance
-from decisions.resolve import resolve_calibration
-from decisions.settings import ProcessingConfig
-from stacks.composite_stack import Stack, CalibrationStacksDict
+from stacks.composite_stack import Stack, CalibrationStack
 from decisions.subframe_selection import get_light_frames_sorted_by_stars
 from stacks.run import Run
 from stacks.types import StackHash, StackIdDependency
@@ -63,27 +61,19 @@ def uncorrected_run_thumbnail(
 @node
 def create_flat_correction_thumbnails(
     stack: Stack,
-    calibration_stacks: CalibrationStacksDict,
-    config: ProcessingConfig,
+    matching_flat_stacks: tuple[CalibrationStack, ...],
 ) -> None:
-    flat_stack_ids = [
-        id
-        for id, s in calibration_stacks.items()
-        if s.image_type == "flat"
-        and s.camera == stack.camera
-        and s.filter == stack.filter
-    ]
+    """Render an "uncorrected" thumbnail plus one per matching flat for each
+    substack of `stack`.
 
-    # `stack` comes from context.stacks with empty run.dependencies.
-    # Resolve so each substack has the auto-picked bias/dark — otherwise
-    # `calibrate_image` short-circuits with no correction at all.
-    stack = resolve_calibration(stack, calibration_stacks, config.decisions)
-
+    `stack` is expected to already be calibration-resolved (bias / dark
+    populated on each substack's dependencies). `matching_flat_stacks` is
+    pre-filtered at the scatter level to only the flats that match this
+    stack's camera + filter. Narrow inputs let the cache key invalidate
+    only when something this function actually uses changes — not on
+    every unrelated calibration-stack add elsewhere in the catalog.
+    """
     for substack in stack.contents.values():
         uncorrected_run_thumbnail(stack, substack)
-        for flat_stack_id in flat_stack_ids:
-            flat_corrected_stack(
-                stack,
-                substack,
-                calibration_stacks[flat_stack_id],
-            )
+        for flat_stack in matching_flat_stacks:
+            flat_corrected_stack(stack, substack, flat_stack)

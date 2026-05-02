@@ -84,10 +84,21 @@ def make_cached_decorator(
 
     def decorate(func: Callable, ray_opts: dict) -> Callable:
         fn_hash = hash_source_code(func)
+        # Pull out the optional cache-key narrowing hook. Functions opt in
+        # by passing `cache_key_narrow=...` to @node(); the hook receives
+        # `(args, kwargs)` and returns `(args, kwargs)` to be hashed
+        # *instead of* the actual call args. Function execution still
+        # gets the full original args — only the cache key uses the
+        # narrowed view. See docs in the per-function narrow modules.
+        cache_key_narrow = ray_opts.pop("cache_key_narrow", None)
         func = _beartype(func)
 
         def _get_cache_key_and_result(bound):
-            call_hash = call_hasher(fn_hash, *bound.args, **bound.kwargs)
+            if cache_key_narrow is not None:
+                hash_args, hash_kwargs = cache_key_narrow(bound.args, bound.kwargs)
+            else:
+                hash_args, hash_kwargs = bound.args, bound.kwargs
+            call_hash = call_hasher(fn_hash, *hash_args, **hash_kwargs)
             key = (func.__name__, call_hash)
 
             if key not in _resolve_cache():

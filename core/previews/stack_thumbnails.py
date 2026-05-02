@@ -52,12 +52,29 @@ def scatter_stack_thumbnails() -> Graph:
             decisions=decisions,
         )
 
-    calibration_stacks = cal_stacks_ref.get()
-    for stack_hash, stack_ref in context.stacks.items():
+    calibration_stacks = cal_stacks_ref.get() or {}
+    # Stacks / mosaics are populated as the main processing graph runs;
+    # if scatter fires before that on a fresh actor, there's just nothing
+    # to schedule yet. Next graph run picks them up once populated.
+    stacks = context.stacks or {}
+    for stack_hash, stack_ref in stacks.items():
         stack = stack_ref.get()
         tasks.append((stack_thumbnail, stack))
         tasks.append((stack_thumbnail_video, stack, subframe_thumbnail_width, config_for(stack_hash)))
-        tasks.append((create_flat_correction_thumbnails, stack, calibration_stacks, config_for(stack_hash)))
+
+        # Pre-narrow inputs to create_flat_correction_thumbnails so its cache
+        # key invalidates only on changes that actually affect its output.
+        # Passing the full calibration_stacks made every new bias/dark/flat
+        # added anywhere in the catalog miss the cache for every light stack.
+        decisions = decisions_for_stack(settings.decision_overrides, stack_hash)
+        resolved_stack = resolve_calibration(stack, calibration_stacks, decisions)
+        matching_flat_stacks = tuple(
+            s for s in calibration_stacks.values()
+            if s.image_type == "flat"
+            and s.camera == stack.camera
+            and s.filter == stack.filter
+        )
+        tasks.append((create_flat_correction_thumbnails, resolved_stack, matching_flat_stacks))
 
     for stack in calibration_stacks.values():
         tasks.append((calibration_stack_thumbnail, stack))
@@ -123,7 +140,19 @@ def _annotate_frame(
     return im
 
 
-@node(resources={"fastest_storage": 0.001})
+def _stack_thumbnail_video_narrow(args, kwargs):
+    """Cache-key hook: drop irrelevant cal_stacks and other-stack
+    decisions from `config` for hashing. Function still receives the
+    full ProcessingConfig at runtime — see `_stack_files_narrow` in
+    `stacks/stacking.py` for the full rationale.
+    """
+    from stacks.stacking import narrow_stack_config
+    stack, width, config, *rest = args
+    return (stack, width, narrow_stack_config(stack, config), *rest), kwargs
+
+
+@node(resources={"fastest_storage": 0.001},
+      cache_key_narrow=_stack_thumbnail_video_narrow)
 @makes_video(Stack, ALL_IMPLEMENTATIONS, [SUBFRAME])
 @create_video
 def stack_thumbnail_video(

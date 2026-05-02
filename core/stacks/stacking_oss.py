@@ -167,7 +167,14 @@ def _streaming_sigma_clipped_mean(preprocessed_frames, is_light):
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
-@node(auto_memory=True)
+def _stack_files_oss_narrow(args, kwargs):
+    """Cache-key hook: same shape as `stack_files`, see `_stack_files_narrow`."""
+    from stacks.stacking import narrow_stack_config
+    stack, config, *rest = args
+    return (stack, narrow_stack_config(stack, config), *rest), kwargs
+
+
+@node(auto_memory=True, cache_key_narrow=_stack_files_oss_narrow)
 @makes_image(CalibrationStack, OSS, [MASTER, DOWNSCALED_MASTER],
              identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=FitsFilePath)
