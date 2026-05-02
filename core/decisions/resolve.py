@@ -247,11 +247,20 @@ def resolve_calibration(
                 default=lambda c=cal_type, r=run: _default_choice(c, r),
             )
 
-            if choice is not None:
-                if isinstance(choice, str) and choice.startswith("/"):
-                    deps[cal_type] = FilenameDependency(filename=choice)
-                else:
-                    deps[cal_type] = StackIdDependency(stack_id=choice)
+            if choice is None:
+                continue
+            if isinstance(choice, str) and choice.startswith("/"):
+                deps[cal_type] = FilenameDependency(filename=choice)
+            elif choice in cal_stacks:
+                deps[cal_type] = StackIdDependency(stack_id=choice)
+            # else: a previously-cached choice referencing a calibration
+            # stack that's no longer present in cal_stacks (e.g., a small
+            # straggler stack that got filtered out at discovery). Skipping
+            # leaves no calibration of this kind on the run; downstream
+            # stack_files just doesn't symlink that calibration in. The
+            # cached default lives in context and refreshes on actor
+            # restart; the user can override explicitly via the decision
+            # API at any time.
 
         new_contents[run_hash] = replace(run, dependencies=frozendict(deps))
 
