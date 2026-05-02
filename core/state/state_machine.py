@@ -213,6 +213,14 @@ def _stop_ray_node(state: State, action: Action) -> tuple[State, list[Action]]:
     if "ray_process" not in state:
         return state, []
 
+    # Detach the Python client from the old cluster *before* tearing it
+    # down. Otherwise ray.is_initialized() stays True after `ray stop`,
+    # connect_to_ray_cluster() short-circuits on the next start, and any
+    # RPC against the dead GCS crashes with WrongClusterID.
+    import ray
+    if ray.is_initialized():
+        ray.shutdown()
+
     stop_ray_node()
     del state["ray_process"]
     state.pop("connected_head_ip", None)
