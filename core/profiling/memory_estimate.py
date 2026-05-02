@@ -29,6 +29,18 @@ _DEFAULT_MEMORY_BY_QUALITY = {
 }
 _DEFAULT_MEMORY_UNKNOWN = 4 * _GB
 
+# Hard ceiling on what a single task can request from Ray. A profile
+# sample contaminated by an OS-level memory spike (other process, leak,
+# brief peak under pressure) can push the p95 well above what any node
+# can actually fulfill, which manifests as autoscaler errors:
+#   "No available node types can fulfill resource request
+#    {'PixInsight': 1.0, 'memory': 52_613_349_376, 'CPU': 1.0}"
+# 32 GB is the largest request that consistently schedules on a 64 GB
+# Mac Studio (leaving headroom for other tasks plus OS). If a task
+# legitimately needs more, OOM during execution will surface that — much
+# better than silently stalling the whole pipeline.
+_MAX_MEMORY = 32 * _GB
+
 
 def _p95(values: list[float]) -> float:
     ordered = sorted(values)
@@ -58,4 +70,5 @@ def estimate_memory(fn: Callable, args: tuple, kwargs: dict) -> int:
         return _DEFAULT_MEMORY_BY_QUALITY.get(quality, _DEFAULT_MEMORY_UNKNOWN)
 
     estimate = _p95(rsss) * _HEADROOM_MULTIPLIER
-    return int(math.ceil(estimate / _GB) * _GB)
+    rounded = int(math.ceil(estimate / _GB) * _GB)
+    return min(rounded, _MAX_MEMORY)
