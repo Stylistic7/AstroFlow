@@ -10,33 +10,58 @@ import {
   ListItemText,
   Switch,
   Divider,
+  FormControl,
+  Select,
 } from "@mui/material";
 import { ExpandMore, ExpandLess, Circle } from "@mui/icons-material";
 import AstroFlowContext from './AstroFlowContext.jsx';
+
+const formatSpeed = (mbps) => {
+  if (!mbps) return "?";
+  if (mbps >= 1000) return `${mbps / 1000} Gbps`;
+  return `${mbps} Mbps`;
+};
 
 const RayStatus = () => {
   const { rayStatus, sseConnected } = useContext(AstroFlowContext);
 
   const [anchorEl, setAnchorEl] = useState(null);
   const [isHeadNode, setIsHeadNode] = useState(false);
+  const [clusterInterface, setClusterInterface] = useState("");
+  const [interfaces, setInterfaces] = useState([]);
 
   useEffect(() => {
-    fetch('/api/ray/head_node_enabled')
+    fetch('/api/network_settings')
       .then(r => r.json())
-      .then(j => setIsHeadNode(j.enabled))
+      .then(j => {
+        setIsHeadNode(j.ray_head_node_enabled);
+        setClusterInterface(j.cluster_interface || "");
+      })
+      .catch(console.error);
+    fetch('/api/network_interfaces')
+      .then(r => r.json())
+      .then(j => setInterfaces(j.interfaces || []))
       .catch(console.error);
   }, []);
+
+  const patchSettings = (updates) => {
+    fetch('/api/network_settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+  };
 
   const toggleHeadNode = () => {
     const newHeadState = !isHeadNode;
     setIsHeadNode(newHeadState);
-    fetch('/api/ray/head_node_enabled', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ enabled: newHeadState.toString() })
-    })
+    patchSettings({ ray_head_node_enabled: newHeadState });
+  };
+
+  const handleInterfaceChange = (e) => {
+    const value = e.target.value;
+    setClusterInterface(value);
+    patchSettings({ cluster_interface: value || null });
   };
 
   if (!sseConnected) {
@@ -100,6 +125,28 @@ const RayStatus = () => {
             Run Ray Head Node on this Machine
           </Typography>
           <Switch checked={isHeadNode} onChange={toggleHeadNode} />
+        </MenuItem>
+        <Divider />
+        <MenuItem disableRipple sx={{ flexDirection: "column", alignItems: "stretch" }}>
+          <Typography variant="body2" sx={{ mb: 0.5 }}>
+            Cluster network interface
+          </Typography>
+          <FormControl size="small" fullWidth>
+            <Select
+              value={clusterInterface}
+              onChange={handleInterfaceChange}
+              displayEmpty
+            >
+              <MenuItem value="">
+                <em>Auto (default route)</em>
+              </MenuItem>
+              {interfaces.map((iface) => (
+                <MenuItem key={iface.name} value={iface.name}>
+                  {iface.name} — {iface.ip} ({formatSpeed(iface.speed_mbps)})
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
         </MenuItem>
       </Menu>
     </>

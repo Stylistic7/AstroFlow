@@ -70,6 +70,12 @@ class AstroFlowZeroconf:
     port: int = 6379
     is_ray_head: bool = False
     mounted_volumes: list[str] = field(default_factory=list)
+    # When set, advertise this IP instead of the OS default-route
+    # heuristic. Used to broadcast the user-chosen cluster interface
+    # (e.g. 10 GbE) regardless of which interface holds the default
+    # route (typically WiFi). Multicast still goes out on every
+    # interface — only the address inside the announcement changes.
+    advertised_ip: str | None = None
     zeroconf: Zeroconf = field(init=False, repr=False)
     listener: AstroFlowListener = field(init=False, repr=False)
     service_info: ServiceInfo | None = field(default=None, init=False, repr=False)
@@ -90,7 +96,15 @@ class AstroFlowZeroconf:
         self._rescan_thread.start()
 
     def get_ip(self) -> str:
-        """Retrieve the local machine's LAN IP address."""
+        """The IP this instance advertises in zeroconf announcements.
+
+        Prefers the explicitly-pinned `advertised_ip` (set when the user
+        chose a specific cluster interface). Falls back to the OS
+        default-route heuristic, which on a WiFi+10GbE Mac will always
+        pick WiFi.
+        """
+        if self.advertised_ip:
+            return self.advertised_ip
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
             s.connect(("8.8.8.8", 80))
@@ -126,13 +140,18 @@ class AstroFlowZeroconf:
         print(f"Registering AstroFlow service: {self.instance_name} on {self.get_ip()}")
 
     def update_state(
-        self, is_ray_head: bool | None = None, mounted_volumes: list[str] | None = None
+        self,
+        is_ray_head: bool | None = None,
+        mounted_volumes: list[str] | None = None,
+        advertised_ip: str | None = None,
     ):
         """Call this function when the state changes."""
         if is_ray_head is not None:
             self.is_ray_head = is_ray_head
         if mounted_volumes is not None:
             self.mounted_volumes = mounted_volumes
+        if advertised_ip is not None:
+            self.advertised_ip = advertised_ip
         self.register_service()  # Re-register with updated state
 
     def _periodic_rescan(self):

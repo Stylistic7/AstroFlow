@@ -417,9 +417,9 @@ def get_last_run_logs():
 
 @app.route("/api/ray/head_node_enabled", methods=["GET", "POST"])
 def ray_head_node_enabled():
-    if request.method == "POST":
-        print(f"### ray_head_node_enabled method {request.method}")
+    from state.network_settings import get_network_settings, update_network_settings
 
+    if request.method == "POST":
         data = request.get_json() or request.form
         enabled_str = data.get("enabled")
 
@@ -427,22 +427,77 @@ def ray_head_node_enabled():
             return jsonify({"error": 'Missing "enabled" parameter'}), 400
 
         try:
-            ray_head_node_enabled = bool(strtobool(enabled_str))
+            enabled = bool(strtobool(enabled_str))
         except ValueError:
             return jsonify({"error": "Invalid boolean value"}), 400
 
-        print(f"### setting ray_head_node_enabled {ray_head_node_enabled}")
-        cache["ray_head_node_enabled"] = ray_head_node_enabled
-
-        if ray_head_node_enabled:
-            enqueue_action(dict(type="start_ray_head_node"))
-        else:
-            enqueue_action(dict(type="stop_ray_head_node"))
-
-        print("### Response to /ray_head_node_enabled done")
+        update_network_settings(ray_head_node_enabled=enabled)
+        enqueue_action(dict(type="restart_ray"))
         return Response(status=200)
 
-    # GET request: return the current value
-    return jsonify({"enabled": cache.get("ray_head_node_enabled", False)})
+    return jsonify({"enabled": get_network_settings().ray_head_node_enabled})
+
+
+@app.route("/api/network_interfaces", methods=["GET"])
+def network_interfaces():
+    """List candidate network interfaces for the cluster bind dropdown.
+
+    Returns up-interfaces that have at least one IPv4 address, with
+    their name, current IPv4 address, link speed (Mbps; 0 = unknown),
+    and MTU. Loopback is excluded — not useful for cluster bind.
+    """
+    import socket as _socket
+    import psutil
+
+    stats = psutil.net_if_stats()
+    addrs = psutil.net_if_addrs()
+    out = []
+    for name, st in stats.items():
+        if not st.isup:
+            continue
+        ipv4 = next(
+            (a.address for a in addrs.get(name, []) if a.family == _socket.AF_INET),
+            None,
+        )
+        if ipv4 is None or ipv4.startswith("127."):
+            continue
+        out.append({
+            "name": name,
+            "ip": ipv4,
+            "speed_mbps": st.speed,
+            "mtu": st.mtu,
+        })
+    out.sort(key=lambda i: (-i["speed_mbps"], i["name"]))
+    return jsonify({"interfaces": out})
+
+
+@app.route("/api/network_settings", methods=["GET", "PATCH"])
+def network_settings_endpoint():
+    """Read or partially-update the per-node network/Ray settings.
+
+    PATCH body fields are optional; any combination of
+    `ray_head_node_enabled` and `cluster_interface` is accepted.
+    A successful PATCH dispatches `restart_ray` so the change takes
+    effect immediately.
+    """
+    from state.network_settings import get_network_settings, update_network_settings
+
+    if request.method == "PATCH":
+        data = request.get_json() or {}
+        updates = {}
+        if "ray_head_node_enabled" in data:
+            updates["ray_head_node_enabled"] = bool(data["ray_head_node_enabled"])
+        if "cluster_interface" in data:
+            iface = data["cluster_interface"]
+            updates["cluster_interface"] = iface if iface else None
+        if updates:
+            update_network_settings(**updates)
+            enqueue_action(dict(type="restart_ray"))
+
+    ns = get_network_settings()
+    return jsonify({
+        "ray_head_node_enabled": ns.ray_head_node_enabled,
+        "cluster_interface": ns.cluster_interface,
+    })
 
 

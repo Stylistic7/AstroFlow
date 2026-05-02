@@ -22,6 +22,11 @@ from state.ray_control import (
     is_ray_connected,
 )
 from state.astroflow_zeroconf import AstroFlowZeroconf
+from state.network_settings import (
+    get_network_settings,
+    resolve_interface_ip,
+    update_network_settings,
+)
 from asiair.asiair_zeroconf import ASIAIRZeroconf
 from state.types import State, Action
 from dependency_graph import Graph, GraphRuntime
@@ -59,17 +64,16 @@ def is_head_node() -> bool:
 
     Defaults to True — single-machine setups Just Work. Multi-machine
     workers opt out by setting ASTROFLOW_HEAD_NODE=0 (env var, one-shot
-    — persisted in the cache) or toggling off in the web UI.
+    — persisted) or toggling off in the web UI.
     """
-    cache = get_cache()
     env = os.environ.get("ASTROFLOW_HEAD_NODE", "").lower()
     if env in ("1", "true", "yes"):
-        cache["ray_head_node_enabled"] = True
+        update_network_settings(ray_head_node_enabled=True)
         return True
     if env in ("0", "false", "no"):
-        cache["ray_head_node_enabled"] = False
+        update_network_settings(ray_head_node_enabled=False)
         return False
-    return cache.get("ray_head_node_enabled", True)
+    return get_network_settings().ray_head_node_enabled
 
 
 def _init(state: State, action: Action) -> tuple[State, list[Action]]:
@@ -127,7 +131,7 @@ def _populate_context(
     context.shopping_cart = [
         ("mosaic", "75a1da6463e118e6", "DownscaledMaster", "PixInsight"),
         # ("mosaic", "75a1da6463e118e6", "DownscaledMaster", "OSS"),
-        # ("mosaic", "75a1da6463e118e6", "Master", "PixInsight"),
+        ("mosaic", "75a1da6463e118e6", "Master", "PixInsight"),
         # ("mosaic", "75a1da6463e118e6", "Master", "OSS"),
     ]
     context.ray_head_node_enabled = True
@@ -143,7 +147,10 @@ def _start_astroflow_zeroconf(
     state: State, action: Action
 ) -> tuple[State, list[Action]]:
     assert "astroflow_zeroconf" not in state
-    state["astroflow_zeroconf"] = AstroFlowZeroconf(enqueue_action)
+    advertised_ip = resolve_interface_ip(get_network_settings().cluster_interface)
+    state["astroflow_zeroconf"] = AstroFlowZeroconf(
+        enqueue_action, advertised_ip=advertised_ip
+    )
 
     return state, []
 
@@ -160,7 +167,10 @@ def _start_asiair_zeroconf(
 def _advertise_zeroconf(
     state: State, action: Action
 ) -> tuple[State, list[Action]]:
-    state["astroflow_zeroconf"].update_state(is_ray_head=True)
+    advertised_ip = resolve_interface_ip(get_network_settings().cluster_interface)
+    state["astroflow_zeroconf"].update_state(
+        is_ray_head=True, advertised_ip=advertised_ip
+    )
     return state, []
 
 
@@ -182,7 +192,8 @@ def _start_ray_head_node(
     state: State, action: Action
 ) -> tuple[State, list[Action]]:
     assert "ray_process" not in state
-    state["ray_process"] = start_ray_head_node()
+    node_ip = resolve_interface_ip(get_network_settings().cluster_interface)
+    state["ray_process"] = start_ray_head_node(node_ip_address=node_ip)
 
     from web_server.backend.announcer import announce
 
@@ -204,14 +215,48 @@ def _stop_ray_node(state: State, action: Action) -> tuple[State, list[Action]]:
 
     stop_ray_node()
     del state["ray_process"]
+    state.pop("connected_head_ip", None)
     return state, []
+
+
+def _reconfigure_zeroconf(
+    state: State, action: Action
+) -> tuple[State, list[Action]]:
+    """Re-register the zeroconf service to reflect current settings —
+    the chosen interface (advertised IP) and head/subordinate role.
+    """
+    if "astroflow_zeroconf" not in state:
+        return state, []
+    ns = get_network_settings()
+    advertised_ip = resolve_interface_ip(ns.cluster_interface)
+    state["astroflow_zeroconf"].update_state(
+        is_ray_head=ns.ray_head_node_enabled,
+        advertised_ip=advertised_ip,
+    )
+    return state, []
+
+
+def _restart_ray(state: State, action: Action) -> tuple[State, list[Action]]:
+    """Tear down Ray and bring it back up with current settings.
+
+    Used when the user changes anything that affects the bind: the
+    head/subordinate toggle or the cluster interface. For the head
+    case, start_ray_head_node chains advertise_zeroconf itself; for
+    the subordinate case we re-register zeroconf so peers see the new
+    advertised IP, and the next discovery cycle reconnects.
+    """
+    actions = [Action(type="stop_ray_node")]
+    if get_network_settings().ray_head_node_enabled:
+        actions.append(Action(type="start_ray_head_node"))
+    else:
+        actions.append(Action(type="reconfigure_zeroconf"))
+    return state, actions
 
 
 def _update_astroflow_services(
     state: State, action: Action
 ) -> tuple[State, list[Action]]:
-    cache = get_cache()
-    if cache.get("ray_head_node_enabled", False):
+    if get_network_settings().ray_head_node_enabled:
         return state, []
 
     from web_server.backend.announcer import announce
@@ -228,17 +273,51 @@ def _update_astroflow_services(
             print("### Lost connection to head node, cleaning up")
             stop_ray_node()
             del state["ray_process"]
+            state.pop("connected_head_ip", None)
             announce("ray_status")
         return state, []
 
-    # Already connected — nothing to do.
+    # If we're connected to a different head IP than the one being
+    # advertised now, the head likely changed interfaces (or moved).
+    # Tear down so the start_ray_subordinate_node action below can
+    # reconnect to the new address.
+    if (
+        "ray_process" in state
+        and state.get("connected_head_ip") != head["ip"]
+    ):
+        print(
+            f"### Head IP changed "
+            f"{state.get('connected_head_ip')} -> {head['ip']}, reconnecting"
+        )
+        try:
+            stop_ray_node()
+        except Exception:
+            pass
+        state.pop("ray_process", None)
+        state.pop("connected_head_ip", None)
+
+    # Already connected to the right head — nothing to do.
     if "ray_process" in state:
         return state, []
 
-    # Try to connect to the discovered head node.
-    print(f"### Connecting to head node at {head['ip']}")
+    return state, [Action(type="start_ray_subordinate_node", head_ip=head["ip"])]
+
+
+def _start_ray_subordinate_node(
+    state: State, action: Action
+) -> tuple[State, list[Action]]:
+    assert "ray_process" not in state
+    head_ip = action["head_ip"]
+    node_ip = resolve_interface_ip(get_network_settings().cluster_interface)
+
+    from web_server.backend.announcer import announce
+
+    print(f"### Connecting to head node at {head_ip}")
     try:
-        state["ray_process"] = start_ray_subordinate_node(head["ip"])
+        state["ray_process"] = start_ray_subordinate_node(
+            head_ip, node_ip_address=node_ip
+        )
+        state["connected_head_ip"] = head_ip
         announce("ray_status")
         connect_to_ray_cluster()
     except Exception as e:
@@ -249,6 +328,7 @@ def _update_astroflow_services(
         except Exception:
             pass
         state.pop("ray_process", None)
+        state.pop("connected_head_ip", None)
 
     return state, []
 
@@ -377,7 +457,10 @@ _HANDLERS = {
     "start_gunicorn": _start_gunicorn,
     "stop_gunicorn": _stop_gunicorn,
     "start_ray_head_node": _start_ray_head_node,
+    "start_ray_subordinate_node": _start_ray_subordinate_node,
     "stop_ray_node": _stop_ray_node,
+    "reconfigure_zeroconf": _reconfigure_zeroconf,
+    "restart_ray": _restart_ray,
     "stop_scheduler": _stop_scheduler,
     "schedule_download_from_asiairs": _schedule_download_from_asiairs,
     "populate_context": _populate_context,

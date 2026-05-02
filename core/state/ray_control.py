@@ -24,14 +24,15 @@ def _wait_for_ray(timeout):
     raise TimeoutError(f"Ray node did not start within {timeout}s")
 
 
-def start_ray_head_node(timeout=60):
+def start_ray_head_node(node_ip_address: str | None = None, timeout=60):
     # TODO: Check for an existing Ray head node.
     ray_path = get_bin_dir() / "ray"
     # TODO: Put these resources in the UI.
     # For debug-style one-task-at-a-time serialization, add {"fake_resource": 1}
     # here and tag the target functions with resources={"fake_resource": 1}.
     resources = """'{"PixInsight": 1, "diskcache": 1, "fastest_storage": 1}'"""
-    command = f"""ulimit -n 10000 && {ray_path} start --head --resources {resources}"""
+    bind = f" --node-ip-address {node_ip_address}" if node_ip_address else ""
+    command = f"""ulimit -n 10000 && {ray_path} start --head{bind} --resources {resources}"""
     print(f'### Starting Ray head node with command "{command}"')
     process = subprocess.Popen(
         command,
@@ -64,11 +65,12 @@ def get_ip() -> str:
     return ip
 
 
-def start_ray_subordinate_node(head_node_address, timeout=60):
+def start_ray_subordinate_node(head_node_address, node_ip_address: str | None = None, timeout=60):
     ray_path = get_bin_dir() / "ray"
     # TODO: Put these resources in the UI.
     resources = """'{"PixInsight": 1}'"""
-    command = f"""ulimit -n 10000 && {ray_path} start --address {head_node_address}:6379 --node-ip-address {get_ip()} --resources {resources}"""
+    bind = node_ip_address or get_ip()
+    command = f"""ulimit -n 10000 && {ray_path} start --address {head_node_address}:6379 --node-ip-address {bind} --resources {resources}"""
     print(f'### Starting Ray subordinate node with command "{command}"')
     process = subprocess.Popen(
         command,
