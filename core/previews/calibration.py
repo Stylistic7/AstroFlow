@@ -34,19 +34,6 @@ def calibrate_image(
     )
     assert light_image is not None and dark_image is not None and flat_image is not None
 
-    image_sizes = {
-        light_image.shape,
-        dark_image.shape,
-        bias_image.shape,
-        flat_image.shape,
-    }
-    assert len(image_sizes) == 1, (
-        f"Shapes don't match: light {light_image.shape}, "
-        f"bias {bias_image.shape}, "
-        f"dark {dark_image.shape}, "
-        f"flat {flat_image.shape}"
-    )
-
     assert "EXPOSURE" in light_metadata.header, (
         f"### file {light_metadata.filename} does not have EXPOSURE tag"
     )
@@ -56,6 +43,21 @@ def calibrate_image(
     assert "EXPOSURE" in flat_metadata.header, (
         f"### file {flat_metadata.filename} does not have EXPOSURE tag"
     )
+
+    # Independent resize-to-width can leave light and cal frames with
+    # heights that differ by ±1 row when their native heights straddle an
+    # integer-truncation boundary (e.g. a sensor crop of 2 rows pushes
+    # 6388 → 6386 native, which rounds to 1365 vs. 1366 at width 2048).
+    # Crop everything to the minimum common shape — this is a thumbnail
+    # preview, sub-pixel registration is irrelevant.
+    h = min(light_image.shape[0], bias_image.shape[0],
+            dark_image.shape[0], flat_image.shape[0])
+    w = min(light_image.shape[1], bias_image.shape[1],
+            dark_image.shape[1], flat_image.shape[1])
+    light_image = light_image[:h, :w]
+    bias_image = bias_image[:h, :w]
+    dark_image = dark_image[:h, :w]
+    flat_image = flat_image[:h, :w]
 
     light_dark_scale = (
         light_metadata.header["EXPOSURE"] / dark_metadata.header["EXPOSURE"]
