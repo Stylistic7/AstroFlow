@@ -195,7 +195,9 @@ def _(wrapped: WithSidecar, metadata_in: dict[str, Any]) -> dict[str, Any]:
 
 def hash_of_image_data(filename: Path | str) -> str:
     try:
-        return xxhash.xxh64(read_image(filename).tobytes()).hexdigest()
+        h = xxhash.xxh64()
+        h.update(read_image(filename))
+        return h.hexdigest()
     except Exception as e:
         with open(filename, "rb") as f:
             return xxhash.xxh64(f.read()).hexdigest()
