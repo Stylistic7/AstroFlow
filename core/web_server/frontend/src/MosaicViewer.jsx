@@ -19,6 +19,7 @@ import {
 import FullscreenIcon from "@mui/icons-material/Fullscreen";
 import ShareIcon from "@mui/icons-material/Share";
 import PinIcon from "@mui/icons-material/Pin";
+import LaunchIcon from "@mui/icons-material/Launch";
 
 import AstroFlowContext from "./AstroFlowContext.jsx";
 import { AstroFlowImage } from "./AstroFlowImage.jsx";
@@ -117,6 +118,23 @@ export default function MosaicViewer() {
         return () => window.removeEventListener("keydown", handler);
     }, [mosaic_id, implementation, quality, filter, versionsData, navigate]);
 
+    // Furthest-processed file exists for the current (impl, filter)
+    // when versionsData has a Master version flagged exists. Backend
+    // accepts either the canonical store output or the per-filter
+    // merge-progress TIFF, both of which set exists=true.
+    const masterExists = versionsData.versions.some(
+        (v) => v.implementation === implementation
+            && v.quality === "Master"
+            && v.filter === filter
+            && v.exists,
+    );
+
+    const openInPixInsight = () => {
+        fetch(`/api/open_mosaic_master/${mosaic_id}/${implementation}/${filter}`)
+            .then((r) => { if (!r.ok) console.warn("open_mosaic_master failed", r.status); })
+            .catch(console.error);
+    };
+
     if (!mosaic) {
         return <Typography sx={{ p: 3 }}>Loading…</Typography>;
     }
@@ -167,6 +185,18 @@ export default function MosaicViewer() {
 					>
 						<ShareIcon fontSize="small" />
 					</IconButton>
+				</Tooltip>
+				<Tooltip title={masterExists ? "Open in PixInsight" : "No master image available yet"}>
+					<span>
+						<IconButton
+							size="small"
+							disabled={!masterExists}
+							onClick={openInPixInsight}
+							sx={{ color: 'text.secondary' }}
+						>
+							<LaunchIcon fontSize="small" />
+						</IconButton>
+					</span>
 				</Tooltip>
 			</Box>
 

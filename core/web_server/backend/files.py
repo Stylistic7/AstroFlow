@@ -144,3 +144,47 @@ def open_image(filename):
     )
 
     return Response(status=200)
+
+
+@files_bp.route("/api/open_mosaic_master/<mosaic_id>/<implementation>/<filter>")
+def open_mosaic_master(mosaic_id, implementation, filter):
+    """Open the most-processed image for a mosaic+filter in PixInsight.
+
+    Prefers the canonical Master output of store_mosaic_color_channel_*.
+    Falls back to the per-filter merge progress TIFF — overwritten by
+    each merge_images step, so it always reflects the latest state of
+    the in-flight mosaic for that filter.
+    """
+    from pathlib import Path
+    from products.registry import get_filename_fn, MediaType
+    from previews.types import QualityLevel, Implementation
+    from mosaics.types import Mosaic
+
+    mosaics = context.mosaics or {}
+    if mosaic_id not in mosaics:
+        return jsonify({"error": "mosaic not found"}), 404
+    mosaic = mosaics[mosaic_id].get()
+    impl = Implementation(implementation)
+
+    candidates = []
+
+    filename_fn = get_filename_fn(MediaType.IMAGE, Mosaic, QualityLevel.MASTER, impl)
+    if filename_fn is not None:
+        candidates.append(filename_fn(mosaic, filter))
+
+    if context.output_dir is not None:
+        candidates.append(
+            Path(context.output_dir) / "Mosaic" / str(QualityLevel.MASTER)
+            / f"progress_{mosaic.stable_hash}_{filter}.tiff"
+        )
+
+    for path in candidates:
+        if path is not None and Path(path).exists():
+            print(f"### opening {path} in PixInsight")
+            subprocess.Popen([
+                "/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight",
+                str(path),
+            ])
+            return jsonify({"opened": str(path)})
+
+    return jsonify({"error": "no image available to open"}), 404
