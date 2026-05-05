@@ -3,7 +3,23 @@ import subprocess
 import time
 import socket
 
+import psutil
+
 from base_path import get_bin_dir
+
+
+def _ray_memory_bytes() -> int:
+    """Memory to advertise to Ray as the node's static `memory` resource.
+
+    Ray's default at startup is `available × 0.7`, taken once — so if
+    PixInsight (or anything else heavy) was running when the head started,
+    the cluster ends up with a permanently smaller cap than the machine
+    can actually deliver. Anchoring on `total × 0.7` instead gives a
+    stable per-machine number that doesn't depend on what was running
+    at start time. The auto-memory system gates per-task scheduling, so
+    a generous static cap doesn't risk OOM on its own.
+    """
+    return int(psutil.virtual_memory().total * 0.7)
 
 
 def is_ray_connected():
@@ -32,7 +48,7 @@ def start_ray_head_node(node_ip_address: str | None = None, timeout=60):
     # here and tag the target functions with resources={"fake_resource": 1}.
     resources = """'{"PixInsight": 1, "diskcache": 1, "fastest_storage": 1}'"""
     bind = f" --node-ip-address {node_ip_address}" if node_ip_address else ""
-    command = f"""ulimit -n 10000 && {ray_path} start --head{bind} --resources {resources}"""
+    command = f"""ulimit -n 10000 && {ray_path} start --head{bind} --memory {_ray_memory_bytes()} --resources {resources}"""
     print(f'### Starting Ray head node with command "{command}"')
     process = subprocess.Popen(
         command,
@@ -70,7 +86,7 @@ def start_ray_subordinate_node(head_node_address, node_ip_address: str | None = 
     # TODO: Put these resources in the UI.
     resources = """'{"PixInsight": 1}'"""
     bind = node_ip_address or get_ip()
-    command = f"""ulimit -n 10000 && {ray_path} start --address {head_node_address}:6379 --node-ip-address {bind} --resources {resources}"""
+    command = f"""ulimit -n 10000 && {ray_path} start --address {head_node_address}:6379 --node-ip-address {bind} --memory {_ray_memory_bytes()} --resources {resources}"""
     print(f'### Starting Ray subordinate node with command "{command}"')
     process = subprocess.Popen(
         command,
