@@ -14,7 +14,7 @@ from previews.types import QualityLevel
 from targets.types import TargetsDict
 from stacks.compute_graph import build_stacking_subgraph
 from stacks.convert_to_dict import convert_to_dict
-from decisions.settings import DevelopmentSettings
+from decisions.settings import DevelopmentSettings, ProcessingConfig
 from decisions.decisions import decisions_for_stack
 from dependency_graph.workflow_graph_adapter import (
     store_workflow_graph,
@@ -28,9 +28,8 @@ log = structlog.get_logger()
 @beartype
 def build_target_subgraph(
     target: Target,
-    config: "ProcessingConfig",
+    config: ProcessingConfig,
 ) -> Graph:
-    from decisions.settings import ProcessingConfig
     from frozendict import frozendict as fd
     log.info("Building target subgraph", target=str(target))
 
