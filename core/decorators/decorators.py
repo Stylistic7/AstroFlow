@@ -49,8 +49,13 @@ class _Node:
         return lambda f: self._wrap(f, ray_opts)
 
     def _wrap(self, func, ray_opts):
+        # capture_logs needs the same narrow hook so its log/concerns
+        # cache keys agree with the cached layer's. cached.remote pops
+        # the kwarg from ray_opts during its own wrapping; peek it
+        # without consuming so both layers see the same callable.
+        cache_key_narrow = ray_opts.get("cache_key_narrow")
         wrapped = _beartype(func)
-        wrapped = capture_logs(wrapped)
+        wrapped = capture_logs(wrapped, cache_key_narrow=cache_key_narrow)
         wrapped = measure_performance(wrapped, ray_opts=ray_opts)
         return cached.remote(wrapped, **ray_opts)
 

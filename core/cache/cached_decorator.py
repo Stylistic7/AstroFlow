@@ -254,6 +254,33 @@ def make_cached_decorator(
 
         wrapper.invalidate = invalidate
 
+        def concerns(
+            *args, injected_context: Optional[dict] = None, **kwargs
+        ) -> list[dict]:
+            """Concerns reported by the most recent run with these inputs.
+
+            Looks up the per-object key written by `@capture_logs` when
+            the wrapped function is a registered producer. Returns a
+            (possibly empty) list of structlog event dicts; each carries
+            `event` (title), `detail`, and `_concern` ("warning"/"error")
+            plus any structured fields the caller attached. Returns []
+            when the function isn't a registered producer.
+            """
+            from dependency_graph.logging import _concerns_keys_for
+            bound = _bind_args(func, args, kwargs, injected_context)
+            if cache_key_narrow is not None:
+                hash_args, hash_kwargs = cache_key_narrow(bound.args, bound.kwargs)
+            else:
+                hash_args, hash_kwargs = bound.args, bound.kwargs
+            keys = _concerns_keys_for(func, hash_args, hash_kwargs)
+            cache = _resolve_cache()
+            for key in keys:
+                if key in cache:
+                    return cache[key]
+            return []
+
+        wrapper.concerns = concerns
+
         return wrapper
 
     class CachedTask:

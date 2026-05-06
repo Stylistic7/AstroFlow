@@ -26,6 +26,7 @@ import { AstroFlowImage } from "./AstroFlowImage.jsx";
 import TelescopiusDialog from "./TelescopiusDialog.jsx";
 import ToggleIconButton from "./ToggleIconButton";
 import WorkflowGraph from "./WorkflowGraph.jsx";
+import ConcernsBadge from "./ConcernsBadge.jsx";
 import darkTheme from "./theme.js";
 
 const QUALITY_ORDER = ["PostProcessed", "Master", "DownscaledMaster", "Subframe"];
@@ -198,6 +199,13 @@ export default function MosaicViewer() {
 						</IconButton>
 					</span>
 				</Tooltip>
+				<ConcernsBadge
+					objectType="mosaic"
+					objectId={mosaic_id}
+					quality={quality}
+					implementation={implementation}
+					filter={filter}
+				/>
 			</Box>
 
 			{/* Tabs */}

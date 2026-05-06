@@ -3,6 +3,7 @@ import { useParams, useLocation } from "react-router-dom";
 
 import StackThumbnail from "./StackThumbnail.jsx";
 import DecisionBadge from "./DecisionBadge.jsx";
+import ConcernsBadge from "./ConcernsBadge.jsx";
 import SuggestionBadge from "./suggestions/SuggestionBadge.jsx";
 import QuarantineToggle from "./QuarantineToggle.jsx";
 import ShoppingCartMenu from "./ShoppingCartMenu.jsx";
@@ -41,6 +42,7 @@ export default function TargetPanel() {
 							handleClick={event => window.open(`${location.pathname}/stack/${stack_id}`, '_blank')}
 						>
 							<DecisionBadge objectType="stack" objectId={stack_id} />
+							<ConcernsBadge objectType="stack" objectId={stack_id} />
 						</StackThumbnail>
 					))}
 			</div>

@@ -3,6 +3,7 @@ import { Box, Typography, IconButton, Paper } from '@mui/material';
 import { OpenInNew } from '@mui/icons-material';
 import MetadataItem from './MetadataItem.jsx';
 import DecisionBadge from './DecisionBadge.jsx';
+import ConcernsBadge from './ConcernsBadge.jsx';
 import AstroFlowContext from './AstroFlowContext.jsx';
 
 import { ra_to_hms, dec_to_dms, format_duration } from './units.js'
@@ -39,6 +40,7 @@ const StackHeader = ({ stack_type, stack, stack_id }) => {
         {stack_type === 'stack' && (
           <DecisionBadge objectType="stack" objectId={stack_id} />
         )}
+        <ConcernsBadge objectType="stack" objectId={stack_id} />
         <IconButton onClick={handleOpenStack}>
           <OpenInNew />
         </IconButton>

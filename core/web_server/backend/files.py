@@ -57,6 +57,99 @@ def select_file():
     return jsonify({"error": "Not yet reimplemented with decision overrides"}), 501
 
 
+@files_bp.route("/api/concerns/<object_type>/<object_id>", methods=["GET"])
+def concerns_for_object(object_type, object_id):
+    """Concerns reported by the most recent producer run for this object.
+
+    Looks up the per-object key written by `@capture_logs` when a
+    `@makes_image`-decorated producer ran. Returns a list of dicts;
+    each carries `event` (title), `detail`, and `_concern`
+    ("warning"/"error") plus any structured fields the emitter attached.
+
+    Query params (all required for full disambiguation):
+      quality (default "Master")
+      implementation (default "PixInsight")
+      filter — required for object_type=mosaic
+    """
+    from products.identity import StackId, MosaicChannelId
+    from previews.types import QualityLevel, Implementation
+    from context import get_cache
+
+    quality_str = request.args.get("quality", "Master")
+    impl_str = request.args.get("implementation", "PixInsight")
+    try:
+        quality = QualityLevel(quality_str)
+        implementation = Implementation(impl_str)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    if object_type == "stack":
+        if object_id not in (context.stacks or {}):
+            return jsonify({"error": "stack not found"}), 404
+        stack = context.stacks[object_id].get()
+        obj_id = StackId(stack=stack)
+        type_name = type(stack).__name__  # "Stack" or "CalibrationStack"
+    elif object_type == "mosaic":
+        if object_id not in (context.mosaics or {}):
+            return jsonify({"error": "mosaic not found"}), 404
+        mosaic = context.mosaics[object_id].get()
+        filter_arg = request.args.get("filter", "")
+        cache = get_cache()
+        # Mosaic-level direct concerns (from store_mosaic_color_channel
+        # and friends) plus bubbled-up stack-level concerns from each
+        # constituent stack at this filter — so a WBPP frame-drop on
+        # any input shows up on the mosaic detail page.
+        direct = cache.get(
+            (
+                "concerns", "Mosaic", str(quality), str(implementation),
+                MosaicChannelId(mosaic=mosaic, filter=filter_arg).cache_key(),
+            ),
+            [],
+        )
+        bubbled = []
+        for stack in _constituent_stacks(mosaic, filter_arg):
+            stack_concerns = cache.get(
+                (
+                    "concerns", type(stack).__name__, str(quality),
+                    str(implementation), StackId(stack=stack).cache_key(),
+                ),
+                [],
+            )
+            for c in stack_concerns:
+                bubbled.append({**c, "from_stack": stack.stable_hash})
+        return jsonify(direct + bubbled)
+    else:
+        return jsonify({"error": f"object_type {object_type!r} not supported"}), 400
+
+    key = (
+        "concerns",
+        type_name,
+        str(quality),
+        str(implementation),
+        obj_id.cache_key(),
+    )
+    cache = get_cache()
+    return jsonify(cache.get(key, []))
+
+
+def _constituent_stacks(mosaic, filter):
+    stacks = context.stacks or {}
+    targets = context.targets or {}
+    out = []
+    for target_id in mosaic.target_ids:
+        target_ref = targets.get(target_id)
+        if target_ref is None:
+            continue
+        for stack_id in target_ref.get().stack_ids:
+            stack_ref = stacks.get(stack_id)
+            if stack_ref is None:
+                continue
+            stack = stack_ref.get()
+            if stack.filter == filter:
+                out.append(stack)
+    return out
+
+
 @files_bp.route("/api/invalidate_stack/<stack_id>", methods=["POST"])
 def invalidate_stack(stack_id):
     """Drop the stack_files cache entry for one stack and rerun the graph.
