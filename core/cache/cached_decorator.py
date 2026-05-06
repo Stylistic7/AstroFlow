@@ -232,6 +232,28 @@ def make_cached_decorator(
 
         wrapper.is_cached = is_cached
 
+        def invalidate(
+            *args, injected_context: Optional[dict] = None, **kwargs
+        ) -> bool:
+            """Drop this call's cache entry. Returns True iff a key was deleted.
+
+            Uses the same key-derivation as `is_cached` (including any
+            cache_key_narrow hook), so callers can target the same entry
+            without knowing the underlying hash.
+            """
+            bound = _bind_args(func, args, kwargs, injected_context)
+            key, _, valid, _ = _get_cache_key_and_result(bound)
+            if not valid:
+                return False
+            cache = _resolve_cache()
+            try:
+                del cache[key]
+                return True
+            except KeyError:
+                return False
+
+        wrapper.invalidate = invalidate
+
         return wrapper
 
     class CachedTask:

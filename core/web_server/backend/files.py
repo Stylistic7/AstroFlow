@@ -57,6 +57,39 @@ def select_file():
     return jsonify({"error": "Not yet reimplemented with decision overrides"}), 501
 
 
+@files_bp.route("/api/invalidate_stack/<stack_id>", methods=["POST"])
+def invalidate_stack(stack_id):
+    """Drop the stack_files cache entry for one stack and rerun the graph.
+
+    Targets the same cache key that the main compute-graph builder uses
+    (via stack_files.invalidate which honors the cache_key_narrow hook),
+    then drains + restarts so the next graph rebuild picks up the
+    cache miss and re-stacks just this one.
+    """
+    from decisions.settings import ProcessingConfig
+    from previews.types import QualityLevel, Implementation
+    from stacks.stacking import stack_files
+
+    if stack_id not in (context.stacks or {}):
+        return jsonify({"error": "stack not found"}), 404
+
+    stack = context.stacks[stack_id].get()
+    settings = context.settings
+    config = ProcessingConfig(
+        # cache_key_narrow strips calibration_stacks; value here is irrelevant.
+        calibration_stacks=None,
+        development_settings=settings.development_settings,
+        min_frames_in_stack=settings.clustering_settings.min_frames_in_stack,
+        decisions=settings.decision_overrides,
+        quality=QualityLevel.MASTER,
+        implementation=Implementation.PIXINSIGHT,
+    )
+    deleted = stack_files.invalidate(stack, config)
+    if deleted:
+        state.drain_and_restart()
+    return jsonify({"stack_id": stack_id, "deleted": deleted})
+
+
 @files_bp.route("/api/open_stack_master/<stack_id>")
 def open_stack_master(stack_id):
     from products.registry import get_filename_fn, MediaType
