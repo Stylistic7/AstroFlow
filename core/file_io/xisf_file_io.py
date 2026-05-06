@@ -1,8 +1,11 @@
 import ast
+import base64
+import re
+import struct
 import numpy as np
 from pathlib import Path
 from my_xisf import XISF  # type: ignore
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from file_io.types import ImageGeometry
 from file_io.normalize_header import normalize_header
@@ -40,6 +43,38 @@ def read_xisf_header(filename: Path | str, debug: bool = False) -> dict:
             print(f"Normalized FITS entry {k} = {repr(v)}")
 
     return header
+
+
+def read_xisf_total_exposure_time(filename: Path | str) -> Optional[float]:
+    """Total integration time in seconds as recorded by PixInsight's
+    ImageIntegration in the master XISF, or None if absent.
+
+    PixInsight writes this as an XISF Property — not a FITS keyword —
+    at `<Property id="PCL:TotalExposureTime" type="F64Vector"
+    location="inline:base64">...</Property>` in the file's XML
+    metadata header. The value is the sum of EXPTIME across input
+    frames that actually contributed (weight > 0), so a discrepancy
+    against the expected total signals frame rejection during stacking.
+
+    Parses the XML directly to keep this useful even when the `xisf`
+    Python library doesn't expose Properties.
+    """
+    with open(filename, "rb") as f:
+        if f.read(8) != b"XISF0100":
+            return None
+        xml_len = struct.unpack("<I", f.read(4))[0]
+        f.read(4)  # reserved
+        xml = f.read(xml_len).decode("utf-8", errors="replace")
+    match = re.search(
+        r'<Property[^>]*?id="PCL:TotalExposureTime"[^>]*?>([^<]*)</Property>',
+        xml,
+    )
+    if not match:
+        return None
+    try:
+        return struct.unpack("<d", base64.b64decode(match.group(1)))[0]
+    except (struct.error, ValueError):
+        return None
 
 
 def read_xisf_image_geometry(filename: Path) -> ImageGeometry:

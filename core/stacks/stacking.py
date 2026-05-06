@@ -7,6 +7,7 @@ import astropy.io.fits as pyfits  # type: ignore
 import file_io
 from file_io.types import XisfFilePath, WithSidecar
 from file_io.generic import update_header, copy_image
+from file_io.xisf_file_io import read_xisf_total_exposure_time
 from stacks.run import Run
 from stacks.types import StackIdDependency, FilenameDependency
 from stacks.composite_stack import BaseStack, Stack, CalibrationStack, CalibrationStacksDict
@@ -262,6 +263,63 @@ def stack_files(
 
         log.info("Running WBPP", stack=str(stack))
         run_wbpp(Path(tmp_dir), Path(tmp_dir))
-        return _copy_wbpp_result(tmp_dir, dest_filename, metadata)
+        result = _copy_wbpp_result(tmp_dir, dest_filename, metadata)
+
+    _check_integration_time(stack, dest_filename)
+    return result
+
+
+def _check_integration_time(stack: BaseStack, master_path) -> None:
+    """Compare WBPP's recorded integration time against the input frames'
+    sum of EXPOSURE; flag a concern if WBPP integrated materially less.
+
+    A common WBPP failure mode is silent rejection of frames whose
+    StarAlignment couldn't register them — the master gets produced
+    but contains a fraction of the expected signal. The XISF stores
+    `PCL:TotalExposureTime` (sum of EXPTIME for frames with weight > 0);
+    we compare to `sum(EXPOSURE × frames)` from AstroFlow's view.
+    Calibration stacks skipped — TotalExposureTime semantics differ
+    for non-light masters.
+    """
+    if not isinstance(stack, Stack):
+        return
+
+    actual = read_xisf_total_exposure_time(master_path)
+    if actual is None:
+        return
+
+    metadata = stack.all_metadata()
+    expected = sum(
+        m.header.get("EXPOSURE", m.header.get("EXPTIME", 0) or 0) or 0
+        for m in metadata.values()
+    )
+    if expected <= 0:
+        return
+
+    ratio = actual / expected
+    if ratio >= 0.95:
+        return
+
+    from concerns import warn as _concern_warn
+
+    n_frames = len(metadata)
+    n_eq = actual / max(expected / max(n_frames, 1), 1)  # equivalent frames at avg exposure
+    _concern_warn(
+        title=(
+            f"WBPP integrated {actual / 3600:.2f} h of "
+            f"{expected / 3600:.2f} h ({ratio:.0%})"
+        ),
+        detail=(
+            f"The master integrates ~{n_eq:.0f} frames-worth of signal but "
+            f"{n_frames} frames were submitted to WBPP. The captured WBPP log "
+            f"for this run lists each rejection — most often a StarAlignment "
+            f"failure against a poorly-chosen reference. Re-stacking with the "
+            f"reference manually pinned often resolves it."
+        ),
+        actual_seconds=actual,
+        expected_seconds=expected,
+        ratio=round(ratio, 4),
+        frame_count=n_frames,
+    )
 
 
