@@ -8,7 +8,11 @@ function that runs a script-based Step immediately.
 from pathlib import Path
 from typing import Any
 
+import structlog
+
 from pix.recipe import Step
+
+log = structlog.get_logger()
 
 _SCRIPT_FILENAME = (
     "/Applications/PixInsight/src/scripts/BatchPreprocessing/WBPP.js"
@@ -58,3 +62,25 @@ def run_wbpp(
 
     with tempfile.TemporaryDirectory(prefix="pix-wbpp-") as tmp_dir:
         run_scp(scp, Path(tmp_dir), slots=slots, timeout=timeout)
+
+    # Re-emit WBPP's log files via structlog so the surrounding
+    # @capture_logs decorator on stack_files picks them up alongside its
+    # own logs. WBPP writes a top-level WBPP-LOG-*.log plus per-step
+    # text logs in a `logs/` subdir; both are useful for diagnosing why
+    # frames were rejected.
+    _capture_wbpp_logs(output_dir)
+
+
+def _capture_wbpp_logs(output_dir: Path) -> None:
+    seen: set[Path] = set()
+    for pattern in ("WBPP-LOG-*.log", "WBPP-*.log", "logs/*.txt", "logs/*.log"):
+        for path in sorted(output_dir.glob(pattern)):
+            if path in seen or not path.is_file():
+                continue
+            seen.add(path)
+            try:
+                content = path.read_text(errors="replace")
+            except Exception as e:
+                log.warning("Could not read WBPP log", path=str(path), error=str(e))
+                continue
+            log.info("WBPP log", source=path.name, content=content)
