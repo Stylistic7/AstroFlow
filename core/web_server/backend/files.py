@@ -57,6 +57,48 @@ def select_file():
     return jsonify({"error": "Not yet reimplemented with decision overrides"}), 501
 
 
+@files_bp.route("/api/stack/<stack_id>/stacking_report", methods=["GET"])
+def stacking_report(stack_id):
+    """Stacker-agnostic summary read off the master file on disk.
+
+    Resolves the master path for (stack_id, quality, implementation)
+    via the producers registry, then parses the file's headers and
+    XISF properties into a uniform shape (StackingReport). Returns
+    `null` when the master hasn't been produced yet.
+
+    Query params:
+      quality (default "Master")
+      implementation (default "PixInsight")
+    """
+    from products.registry import get_filename_fn, MediaType
+    from previews.types import QualityLevel, Implementation
+    from stacks.stacking_report import read_stacking_report
+
+    if stack_id not in (context.stacks or {}):
+        return jsonify({"error": "stack not found"}), 404
+    stack = context.stacks[stack_id].get()
+
+    quality_str = request.args.get("quality", "Master")
+    impl_str = request.args.get("implementation", "PixInsight")
+    try:
+        quality = QualityLevel(quality_str)
+        implementation = Implementation(impl_str)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    filename_fn = get_filename_fn(MediaType.IMAGE, type(stack), quality, implementation)
+    if filename_fn is None:
+        return jsonify(None)
+    master_path = filename_fn(stack)
+    if not master_path or not Path(master_path).exists():
+        return jsonify(None)
+
+    try:
+        return jsonify(read_stacking_report(master_path).to_json())
+    except Exception as e:
+        return jsonify({"error": f"failed to read report: {e}"}), 500
+
+
 @files_bp.route("/api/concerns/<object_type>/<object_id>", methods=["GET"])
 def concerns_for_object(object_type, object_id):
     """Concerns reported by the most recent producer run for this object.
