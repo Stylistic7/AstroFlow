@@ -5,6 +5,7 @@ rather than open views, and produces output files with unpredictable names.
 It doesn't fit the lazy Image model, so it's exposed as a direct execution
 function that runs a script-based Step immediately.
 """
+import re
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,14 @@ import structlog
 from pix.recipe import Step
 
 log = structlog.get_logger()
+
+
+class WBPPDuplicateMastersError(Exception):
+    """WBPP wrote multiple master files of the same logical name —
+    typically an internal naming collision that silently produced
+    extra autocropped (or other) masters. Caught and re-raised so
+    downstream code doesn't pick one at random and proceed.
+    """
 
 _SCRIPT_FILENAME = (
     "/Applications/PixInsight/src/scripts/BatchPreprocessing/WBPP.js"
@@ -67,8 +76,70 @@ def run_wbpp(
     # @capture_logs decorator on stack_files picks them up alongside its
     # own logs. WBPP writes a top-level WBPP-LOG-*.log plus per-step
     # text logs in a `logs/` subdir; both are useful for diagnosing why
-    # frames were rejected.
+    # frames were rejected. Capture before validation so the log is
+    # available in the per-call entry even when validation raises.
     _capture_wbpp_logs(output_dir)
+    _validate_wbpp_outputs(output_dir)
+
+
+# Trailing `_<digits>.xisf` retry suffix — strip so a retried master
+# write groups with its original. Doesn't match `_2x` (drizzle
+# variants) because the regex requires `.xisf` immediately after.
+_TRAILING_RETRY_SUFFIX = re.compile(r"_\d+(?=\.xisf$)")
+
+
+def _validate_wbpp_outputs(output_dir: Path) -> None:
+    """Raise if WBPP wrote multiple master files of the same flavor.
+
+    A normal WBPP run produces several distinct master files per
+    integration: the primary master, an autocropped variant, sometimes
+    a drizzled variant. Each should be unique. Two files with the same
+    logical name (in different subdirectories, or differing only by a
+    `_N` retry suffix) signal an internal WBPP naming collision —
+    raising here prevents the surrounding code from picking one at
+    random and silently proceeding with possibly the wrong master.
+
+    Also emits a concern with the duplicate paths, so the failure is
+    visible on the stack's detail page even after the exception
+    propagates.
+    """
+    masters = list(output_dir.rglob("master*.xisf"))
+    by_normalized: dict[str, list[Path]] = {}
+    for m in masters:
+        by_normalized.setdefault(_TRAILING_RETRY_SUFFIX.sub("", m.name), []).append(m)
+
+    duplicates = {n: paths for n, paths in by_normalized.items() if len(paths) > 1}
+    if not duplicates:
+        return
+
+    from concerns import error as _concern_error
+
+    detail_lines = []
+    for name, paths in sorted(duplicates.items()):
+        detail_lines.append(f"{name}:")
+        for p in paths:
+            try:
+                rel = p.relative_to(output_dir)
+            except ValueError:
+                rel = p
+            detail_lines.append(f"  {rel}")
+    detail = "\n".join(detail_lines)
+
+    _concern_error(
+        title="WBPP produced duplicate master files",
+        detail=(
+            "WBPP wrote multiple files with the same logical name. This "
+            "typically indicates an internal naming collision — the "
+            "captured WBPP log for this run should explain what went "
+            "wrong.\n\n"
+            f"Duplicates:\n{detail}"
+        ),
+        duplicate_count=sum(len(paths) for paths in duplicates.values()),
+        duplicate_names=sorted(duplicates.keys()),
+    )
+    raise WBPPDuplicateMastersError(
+        f"WBPP produced duplicate masters: {sorted(duplicates.keys())}"
+    )
 
 
 def _capture_wbpp_logs(output_dir: Path) -> None:
