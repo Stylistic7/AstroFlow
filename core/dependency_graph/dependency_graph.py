@@ -259,8 +259,16 @@ def run_graph(
 
 
 def _fire_graph_updates(rt: GraphRuntime) -> None:
-    """Fire graph_update_fn callbacks on all runtimes in the tree."""
+    """Fire graph_update_fn callbacks on all runtimes in the tree.
+
+    Walks both active and completed children — a fast-completing
+    subgraph can be moved to `_completed_children` between periodic
+    status ticks, and we still want its graph_update_fn to fire one
+    last time so its UI representation reflects the final state.
+    """
     if rt.graph_update_fn is not None:
         rt.graph_update_fn(rt)
     for child in rt._children.values():
+        _fire_graph_updates(child)
+    for child in rt._completed_children.values():
         _fire_graph_updates(child)
