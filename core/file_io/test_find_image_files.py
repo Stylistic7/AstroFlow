@@ -7,11 +7,15 @@ from file_io.find_image_files import find_image_files
 
 
 def test_finds_fits_files(tmp_path):
+    # XISF is intentionally excluded — AstroFlow writes XISF outputs
+    # and must not re-ingest them as raw input. See find_image_files
+    # docstring.
     (tmp_path / "a.fits").touch()
     (tmp_path / "b.fit").touch()
     (tmp_path / "c.xisf").touch()
     result = find_image_files(str(tmp_path))
-    assert len(result) == 3
+    assert len(result) == 2
+    assert all(p.endswith((".fits", ".fit")) for p in result)
 
 
 def test_ignores_non_image_files(tmp_path):

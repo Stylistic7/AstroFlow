@@ -70,8 +70,12 @@ def build_outer_dynamic_graph() -> Graph:
     )
 
 
-@cached.remote
+@cached.remote(max_retries=0)
 def task_raises_exception() -> None:
+    # Pin max_retries=0 so the task runs exactly once on the raise —
+    # Ray's default for application errors is 3 retries (4 total
+    # attempts), which would invalidate the per-call counter
+    # assertions below.
     context.num_task_raises_exception_runs = (
         context.num_task_raises_exception_runs + 1
     )
