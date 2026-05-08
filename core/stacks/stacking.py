@@ -265,15 +265,21 @@ def stack_files(
         # stale stack ever sneaks through with mixed exposures, fail
         # loud here rather than letting WBPP produce duplicate masters
         # downstream. Stack identification should make this unreachable.
-        exposures = {
-            m.header["EXPOSURE"]
+        # Tolerance matches ImagingAttributes — header float jitter is
+        # not a real mismatch.
+        from attributes.imaging_attributes import EXPOSURE_TOLERANCE_SECONDS
+        exposures = [
+            float(m.header["EXPOSURE"])
             for m in stack.all_metadata().values()
             if "EXPOSURE" in m.header
-        }
-        assert len(exposures) <= 1, (
-            f"Stack {stack.stable_hash} has mixed exposures {sorted(exposures)}; "
-            "WBPP would produce one master per exposure."
-        )
+        ]
+        if exposures:
+            spread = max(exposures) - min(exposures)
+            assert spread < EXPOSURE_TOLERANCE_SECONDS, (
+                f"Stack {stack.stable_hash} has mixed exposures "
+                f"(spread={spread:.4f}s, distinct={sorted(set(exposures))}); "
+                "WBPP would produce one master per exposure."
+            )
 
         log.info("Running WBPP", stack=str(stack))
         run_wbpp(Path(tmp_dir), Path(tmp_dir))
