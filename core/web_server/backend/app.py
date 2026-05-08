@@ -298,7 +298,7 @@ def stack_detail(stack_id):
 
 @app.route("/api/calibration_stacks")
 def calibration_stacks():
-    return context.ui_calibration_stacks
+    return _cached_json(context.ui_calibration_stacks or {})
 
 
 @app.route("/get_plot")
