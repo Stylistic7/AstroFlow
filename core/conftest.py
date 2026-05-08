@@ -74,11 +74,19 @@ def report_peak_memory(request):
 @pytest.fixture(scope="session", autouse=True)
 def init_ray(worker_id):
     import time
+    import tempfile
     print(f"[init_ray START pid={os.getpid()} t={time.time():.1f}]", flush=True)
     assert not ray.is_initialized()
     from ray_infra.ray_local import enable_test_mode, disable_test_mode
 
-    enable_test_mode()
+    # Per-worker Ray temp dir so xdist workers don't collide on
+    # /tmp/ray session metadata. worker_id is "master" for serial
+    # runs, "gw0".."gwN" under xdist. Use /tmp (not /var/folders/...)
+    # because macOS Unix-socket paths max out at 103 bytes — Ray
+    # writes plasma_store / raylet sockets a few subdirectories deep
+    # inside this root.
+    ray_temp_dir = tempfile.mkdtemp(prefix=f"ray-{worker_id}-", dir="/tmp")
+    enable_test_mode(ray_temp_dir=ray_temp_dir)
     assert ray.is_initialized()
     print(f"[init_ray READY pid={os.getpid()} t={time.time():.1f}]", flush=True)
 

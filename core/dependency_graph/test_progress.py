@@ -23,7 +23,17 @@ def process(runtime, i):
 
 
 def scatter(task, runtime, number):
-    return Graph({gather: {(task, runtime, i) for i in range(number)}})
+    # Stagger per-task runtimes so completions land sequentially in
+    # time. Identical runtimes (with time.sleep) wake every task
+    # within milliseconds of each other, and the status snapshot
+    # never catches the "some done, some still running" window the
+    # mid-progress assertion needs.
+    return Graph({
+        gather: {
+            (task, runtime * (i + 1) / number, i)
+            for i in range(number)
+        }
+    })
 
 
 def test_progress_during_execution(test_context):

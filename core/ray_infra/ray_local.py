@@ -23,7 +23,7 @@ _state_actor = None
 _scheduler_actor = None
 
 
-def enable_test_mode() -> None:
+def enable_test_mode(ray_temp_dir: str | None = None) -> None:
     global _context_actor, _state_actor, _scheduler_actor
 
     _log("enable_test_mode START")
@@ -37,12 +37,23 @@ def enable_test_mode() -> None:
     os.environ["ASTROFLOW_MOCK_NAMESPACE"] = namespace
     working_dir = os.getcwd()
 
-    _log(f"ray.init START namespace={namespace} working_dir={working_dir}")
+    # Per-caller Ray temp dir. xdist workers each call enable_test_mode
+    # at session start; without isolation they all write Ray session
+    # metadata to /tmp/ray and race ("Session name X does not match
+    # persisted value Y. Perhaps there was an error connecting to
+    # Redis"). Each worker passes its own dir. /tmp/ specifically
+    # because macOS limits Unix-socket paths to 103 bytes and Ray
+    # writes sockets several subdirectories deep inside this root.
+    if ray_temp_dir is None:
+        ray_temp_dir = tempfile.mkdtemp(prefix="ray-test-", dir="/tmp")
+
+    _log(f"ray.init START namespace={namespace} working_dir={working_dir} temp_dir={ray_temp_dir}")
     ray.init(
         address="local",
         namespace=namespace,
         resources={"diskcache": 1, "fastest_storage": 1, "PixInsight": 1},
         ignore_reinit_error=False,
+        _temp_dir=ray_temp_dir,
         runtime_env={
             "working_dir": working_dir,
             "excludes": [

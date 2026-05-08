@@ -197,16 +197,6 @@ def run_graph(
             )
             pending = still_pending
 
-            if not ready_refs:
-                # Periodic status/graph updates even without completions.
-                now = time.time()
-                if now > (last_status_time + status_interval):
-                    if status_fn:
-                        status_fn(root.get_status())
-                    _fire_graph_updates(root)
-                    last_status_time = now
-                continue
-
             for ref in ready_refs:
                 rt, node = ref_meta.pop(ref)
                 if trace:
@@ -238,6 +228,18 @@ def run_graph(
             # Refill the cache when it runs low.
             if len(ready_cache) < RESCAN_THRESHOLD:
                 _refill_cache()
+
+            # Periodic status/graph updates fire once per iteration
+            # — whether ray.wait returned completions or not. Putting
+            # them only inside the no-completions branch hid every
+            # mid-progress state from observers when completions
+            # arrived in batches.
+            now = time.time()
+            if now > (last_status_time + status_interval):
+                if status_fn:
+                    status_fn(root.get_status())
+                _fire_graph_updates(root)
+                last_status_time = now
 
         # Inner loop exited with ready_cache and pending both empty.
         # If we're draining, the in-flight set has finished naturally —
