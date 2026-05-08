@@ -52,9 +52,6 @@ class StackId(ObjectId):
 
     def filename_stem(self) -> str:
         stack = self.stack
-        def exposure_string(exposures):
-            return "_".join([f"{x}s" for x in exposures])
-
         if "bias" in stack.image_type:
             return (
                 f"bias_{stack.stable_hash}_{stack.camera}_"
@@ -63,7 +60,7 @@ class StackId(ObjectId):
         elif "dark" in stack.image_type:
             return (
                 f"dark_{stack.stable_hash}_{stack.camera}_"
-                f"{stack.mean_temperature:.0f}C_{exposure_string(stack.exposure)}_"
+                f"{stack.mean_temperature:.0f}C_{stack.exposure:.0f}s_"
                 f"{stack.stable_hash}"
             )
         elif "flat" in stack.image_type:

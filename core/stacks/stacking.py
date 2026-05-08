@@ -261,6 +261,20 @@ def stack_files(
         if development_settings.mock_pixinsight:
             return _mock_stacking(filenames[0], dest_filename, metadata)
 
+        # WBPP groups by EXPOSURE and emits one master per group; if a
+        # stale stack ever sneaks through with mixed exposures, fail
+        # loud here rather than letting WBPP produce duplicate masters
+        # downstream. Stack identification should make this unreachable.
+        exposures = {
+            m.header["EXPOSURE"]
+            for m in stack.all_metadata().values()
+            if "EXPOSURE" in m.header
+        }
+        assert len(exposures) <= 1, (
+            f"Stack {stack.stable_hash} has mixed exposures {sorted(exposures)}; "
+            "WBPP would produce one master per exposure."
+        )
+
         log.info("Running WBPP", stack=str(stack))
         run_wbpp(Path(tmp_dir), Path(tmp_dir))
         result = _copy_wbpp_result(tmp_dir, dest_filename, metadata)

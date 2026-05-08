@@ -104,19 +104,36 @@ def identify_stacks(
             assert len(set(filters)) == 1
             yield filter_frames
 
+    @beartype
+    def exposure_clusters(
+        frames: tuple[FrameHash, ...],
+    ) -> Iterator[tuple[FrameHash, ...]]:
+        # Continuous (not discrete) so 299.99s and 300.0s — capture-software
+        # rounding jitter — group together. WBPP groups by EXPOSURE and emits
+        # one master per group, so this is what makes AstroFlow's
+        # one-stack-one-master assumption hold.
+        exposures = [
+            (metadata[k].content_hash, metadata[k].header["EXPOSURE"])
+            for k in frames
+        ]
+        for cluster in clustering.cluster_continuous(exposures, epsilon=0.5):
+            exposure_frames, _ = zip(*cluster)
+            yield exposure_frames
+
     new_stacks = StacksDict()
     for scale_frames in scale_clusters():
         for camera_frames in camera_clusters(scale_frames):
             for rotation_frames in rotation_clusters(camera_frames):
                 for filter_frames in filter_clusters(rotation_frames):
-                    if len(filter_frames) >= min_frames_in_stack:
-                        new_stack = Stack.from_frames(
-                            filter_frames, metadata=metadata, max_run_gap=max_run_gap
-                        )
-                        if new_stack is not None:
-                            new_stacks[new_stack.stable_hash] = ContextRef.store(
-                                ("stacks", new_stack.stable_hash), new_stack
+                    for exposure_frames in exposure_clusters(filter_frames):
+                        if len(exposure_frames) >= min_frames_in_stack:
+                            new_stack = Stack.from_frames(
+                                exposure_frames, metadata=metadata, max_run_gap=max_run_gap
                             )
+                            if new_stack is not None:
+                                new_stacks[new_stack.stable_hash] = ContextRef.store(
+                                    ("stacks", new_stack.stable_hash), new_stack
+                                )
 
     assert None not in new_stacks.values()
 

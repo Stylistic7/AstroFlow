@@ -1,7 +1,6 @@
 from dataclasses import dataclass, asdict
 from typing import Any, Optional
 from collections.abc import Sequence
-import numpy as np
 import ray
 from beartype import beartype
 from frozendict import frozendict
@@ -72,33 +71,34 @@ class Stack(BaseStack, AstrometricAttributes):
         # to compute the hash of the whole stack.
         sorted_metadata = sorted(metadata_list, key=lambda i: i.header["DATE-OBS"])
 
-        contents = RunsDict()
-        exposures = [
-            (i.content_hash, i.header["EXPOSURE"])
+        # Stack identification clusters frames by exposure before calling
+        # us, so every frame here shares an EXPOSURE. Assert that
+        # invariant — a stale identification path would produce a Stack
+        # that breaks WBPP downstream.
+        exposures = {
+            i.header["EXPOSURE"]
             for i in metadata_list
             if "EXPOSURE" in i.header
-        ]
-        for exposure_cluster in cluster_continuous(exposures, epsilon=0.01):
-            exposure_frames, exposures = zip(*exposure_cluster)
-            assert np.all(np.isclose(exposures, exposures[0])), (
-                f"exposures {exposures} are clustered, but not all close"
-            )
+        }
+        assert len(exposures) <= 1, (
+            f"Stack.from_frames expected one EXPOSURE, got {sorted(exposures)}"
+        )
 
-            runs = cluster_continuous(
-                [
-                    (FrameHash(i.content_hash), i.header["DATE-OBS"])
-                    for i in sorted_metadata
-                    if i.content_hash in exposure_frames
-                ],
-                epsilon=max_run_gap,
-            )
+        contents = RunsDict()
+        runs = cluster_continuous(
+            [
+                (FrameHash(i.content_hash), i.header["DATE-OBS"])
+                for i in sorted_metadata
+            ],
+            epsilon=max_run_gap,
+        )
 
-            for run in runs:
-                run_frames = [x[0] for x in run]
-                new_stack = ray.get(
-                    run_from_frames.remote(run_frames, metadata)
-                )
-                contents[new_stack.stable_hash] = new_stack
+        for run in runs:
+            run_frames = [x[0] for x in run]
+            new_stack = ray.get(
+                run_from_frames.remote(run_frames, metadata)
+            )
+            contents[new_stack.stable_hash] = new_stack
 
         if not contents:
             return None

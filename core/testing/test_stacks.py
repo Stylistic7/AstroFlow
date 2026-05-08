@@ -29,7 +29,7 @@ def make_composite_stack(**kwargs: Any) -> Stack:
             camera="ZWO ASI6200MM Pro",
             filter="H",
             mean_temperature=Celsius(-20.0),
-            exposure=(Seconds(300.0),),
+            exposure=Seconds(300.0),
             integration=Seconds(1500.0),
             width_pixels=9576,
             height_pixels=6488,

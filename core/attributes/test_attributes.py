@@ -89,6 +89,6 @@ def test_imaging_from_frames():
     assert attrs.filter == "H"
     assert attrs.width_pixels == 9576
     assert attrs.height_pixels == 6388
-    assert attrs.exposure == (Seconds(300.0),)
+    assert attrs.exposure == Seconds(300.0)
     assert attrs.integration == Seconds(600.0)
     assert abs(attrs.mean_temperature - Celsius(-19.0)) < 0.01

@@ -118,6 +118,12 @@ def test_two_stacks_different_image_sizes(test_context):
 
 
 def test_multiple_exposures(test_context):
+    """Frames with different EXPOSURE values land in *separate* stacks.
+
+    WBPP groups by EXPOSURE and emits one master per group, so AstroFlow
+    splits at identification time rather than mixing exposures into a
+    single Stack and producing duplicate WBPP outputs.
+    """
     make_synthetic_frames(
         ra=100,
         dec=50,
@@ -139,23 +145,18 @@ def test_multiple_exposures(test_context):
 
     run_graph(build_compute_graph())
 
-    stacks = context.stacks
-    assert len(stacks) == 1
+    stacks = {h: ref.get() for h, ref in (context.stacks or {}).items()}
+    assert len(stacks) == 2
 
-    toplevel_stack = next(iter(stacks.values())).get()
-    print(f"### toplevel_stack {toplevel_stack}")
-    print(f"### toplevel_stack.contents {toplevel_stack.contents}")
-    assert toplevel_stack.center == pytest.approx([100, 50], abs=1e-12)
-    assert len(toplevel_stack.contents) == 2
+    by_exposure = {s.exposure: s for s in stacks.values()}
+    assert set(by_exposure) == {120.0, 300.0}
 
-    stack = list(toplevel_stack.contents.values())[0]
-    assert all("bar" in f.filename for f in stack.metadata.values())
-    assert len(stack.frames) == 7
-    assert stack.exposure == (120.0,)
-    assert stack.integration == 7 * 120
+    s120 = by_exposure[120.0]
+    assert all("bar" in f.filename for f in s120.all_metadata().values())
+    assert len(s120.all_frames()) == 7
+    assert s120.integration == 7 * 120
 
-    stack = list(toplevel_stack.contents.values())[1]
-    assert all("foo" in f.filename for f in stack.metadata.values())
-    assert len(stack.frames) == 5
-    assert stack.exposure == (300.0,)
-    assert stack.integration == 5 * 300
+    s300 = by_exposure[300.0]
+    assert all("foo" in f.filename for f in s300.all_metadata().values())
+    assert len(s300.all_frames()) == 5
+    assert s300.integration == 5 * 300

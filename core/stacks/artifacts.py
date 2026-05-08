@@ -8,9 +8,6 @@ from file_io.types import XisfFilePath, FitsFilePath
 
 
 def stack_filename(stack: BaseStack) -> Path:
-    def exposure_string(exposures):
-        return "_".join([f"{x}s" for x in exposures])
-
     if "bias" in stack.image_type:
         return XisfFilePath(
             f"bias_{stack.stable_hash}_{stack.camera}_"
@@ -19,7 +16,7 @@ def stack_filename(stack: BaseStack) -> Path:
     elif "dark" in stack.image_type:
         return XisfFilePath(
             f"dark_{stack.stable_hash}_{stack.camera}_"
-            f"{stack.mean_temperature:.0f}C_{exposure_string(stack.exposure)}_"
+            f"{stack.mean_temperature:.0f}C_{stack.exposure:.0f}s_"
             f"{stack.stable_hash}.xisf"
         )
     elif "flat" in stack.image_type:

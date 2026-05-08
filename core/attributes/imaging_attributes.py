@@ -9,11 +9,12 @@ from metadata.classes import MetadataDict, FrameHash
 from units import Celsius, Seconds
 
 
-def get_unique_quality(values: Iterable[str], allow_empty: bool = False) -> Any:
-    if allow_empty and len(values) == 0:
+def get_unique_quality(values: Iterable[Any], allow_empty: bool = False) -> Any:
+    distinct = set(values)
+    if allow_empty and not distinct:
         return None
-    assert len(values) == 1
-    return values[0]
+    assert len(distinct) == 1, f"non-unique values: {sorted(distinct)}"
+    return next(iter(distinct))
 
 
 @beartype
@@ -23,7 +24,12 @@ class ImagingAttributes:
     camera: str
     filter: str | None
     mean_temperature: Celsius
-    exposure: tuple[Seconds, ...]
+    # Single exposure duration shared by every frame in this stack/run.
+    # Mixed exposures break stacking — WBPP groups by EXPOSURE and emits
+    # one master per group, AstroFlow's master cache assumes a single
+    # output per stack — so we enforce uniformity at the type. Stack
+    # identification clusters by exposure to keep this guarantee.
+    exposure: Seconds
     integration: Seconds
     width_pixels: int
     height_pixels: int
@@ -48,16 +54,11 @@ class ImagingAttributes:
             )
             return values[0]
 
-        def get_quality_set(key: str) -> list[Any]:
-            return list(
-                set(i.header[key] for i in metadata_list if key in i.header)
-            )
-
         image_type = get_unique_quality("IMAGETYP")
         camera = get_unique_quality("INSTRUME")
         width_pixels = get_unique_quality("NAXIS1")
         height_pixels = get_unique_quality("NAXIS2")
-        exposure = tuple(Seconds(float(e)) for e in get_quality_set("EXPOSURE"))
+        exposure = Seconds(float(get_unique_quality("EXPOSURE")))
         filter = get_unique_quality("FILTER", allow_empty=True)
 
         integration = Seconds(sum(
@@ -85,14 +86,14 @@ class ImagingAttributes:
     def from_objects(
         cls, objects: Iterable["ImagingAttributes"]
     ) -> "ImagingAttributes":
-        image_type = get_unique_quality(o.image_type for o in objects)
-        camera = get_unique_quality(o.camera for o in objects)
+        image_type = get_unique_quality([o.image_type for o in objects])
+        camera = get_unique_quality([o.camera for o in objects])
         filter = list(set(o.filter for o in objects))
         mean_temperature = Celsius(np.mean([o.mean_temperature for o in objects]))
-        exposure = tuple(Seconds(v) for v in {v for o in objects for v in o.exposure})
+        exposure = get_unique_quality([o.exposure for o in objects])
         integration = Seconds(np.sum([o.integration for o in objects]))
-        width_pixels = get_unique_quality(o.width_pixels for o in objects)
-        height_pixels = get_unique_quality(o.height_pixels for o in objects)
+        width_pixels = get_unique_quality([o.width_pixels for o in objects])
+        height_pixels = get_unique_quality([o.height_pixels for o in objects])
 
         return cls(
             image_type,
