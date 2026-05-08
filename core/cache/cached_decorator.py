@@ -29,6 +29,28 @@ class Injected(Generic[T]):
     value: T
 
 
+def _cached_path_missing(cached: Any) -> Optional[Path]:
+    """If `cached` represents a file path that no longer exists on disk,
+    return the missing path; otherwise None.
+
+    Handles bare Path / FitsFilePath / XisfFilePath / TiffFilePath
+    (all subclass `Path`) plus `WithSidecar` wrappers around them.
+    Anything else (numpy arrays, dicts, plain strings, ContextRefs)
+    is left alone — only file-path returns are validated.
+
+    Lets the cache self-heal when an output file gets deleted out from
+    under us — the next read on a stale entry is treated as a miss and
+    the producer re-runs, rather than handing back a dangling path.
+    """
+    from file_io.types import WithSidecar
+
+    if isinstance(cached, WithSidecar):
+        cached = cached.path
+    if not isinstance(cached, Path):
+        return None
+    return cached if not cached.exists() else None
+
+
 class MissingInjectedValueError(Exception):
     pass
 
@@ -117,6 +139,14 @@ def make_cached_decorator(
                 debug_print(
                     f"### cache key {key} contained large object, {size_mb:0.3f} MB"
                 )
+
+            missing = _cached_path_missing(cached)
+            if missing is not None:
+                debug_print(
+                    f"cache hit on stale entry: {key} -> {missing} no longer "
+                    f"on disk, treating as miss"
+                )
+                return key, call_hash, False, None
 
             debug_print(f"cache hit: {key}")
             return key, call_hash, True, cached
