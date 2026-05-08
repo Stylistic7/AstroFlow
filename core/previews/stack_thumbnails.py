@@ -17,7 +17,8 @@ from frozendict import frozendict
 from previews.calibration import calibrate_subframe
 from file_io.types import FitsFilePath, WithSidecar
 from stacks.run import Run
-from stacks.composite_stack import CalibrationStack, CalibrationStacksDict
+from stacks.composite_stack import CalibrationStack, CalibrationStacksDict, StacksDict
+from cache.context_ref import ContextRef
 from dependency_graph import Graph, TaskDescriptor
 from previews.operations import autostretch
 from stacks.composite_stack import Stack
@@ -35,11 +36,21 @@ from decisions.decisions import decisions_for_stack
 
 @ray.remote(num_cpus=0.1)
 @beartype
-def scatter_stack_thumbnails() -> Graph:
+def scatter_stack_thumbnails(
+    cal_stacks_ref: ContextRef,
+    stacks: StacksDict,
+) -> Graph:
+    """Build the per-stack-thumbnail subgraph.
+
+    Receives `cal_stacks_ref` and `stacks` from the parent
+    `build_preview_graph` rather than reading them from the
+    ContextActor directly. The dep-graph already orders this task
+    after regroup/store completes — passing the data through enforces
+    that ordering at the type level rather than relying on the
+    ContextActor having been written to in time.
+    """
     tasks: list[TaskDescriptor] = list()
 
-    from cache.context_ref import ContextRef
-    cal_stacks_ref = ContextRef.store_large(context.calibration_stacks)
     settings = context.settings
     subframe_thumbnail_width = settings.preview_settings.subframe_thumbnail_width
 
@@ -53,10 +64,6 @@ def scatter_stack_thumbnails() -> Graph:
         )
 
     calibration_stacks = cal_stacks_ref.get() or {}
-    # Stacks / mosaics are populated as the main processing graph runs;
-    # if scatter fires before that on a fresh actor, there's just nothing
-    # to schedule yet. Next graph run picks them up once populated.
-    stacks = context.stacks or {}
     for stack_hash, stack_ref in stacks.items():
         stack = stack_ref.get()
         tasks.append((stack_thumbnail, stack))

@@ -254,7 +254,7 @@ def build_preview_graph(
     )
 
     tasks = []
-    tasks.append((scatter_stack_thumbnails,))
+    tasks.append((scatter_stack_thumbnails, cal_stacks_ref, objects.stacks))
 
     for mosaic_ref in objects.mosaics.values():
         mosaic = mosaic_ref.get()
