@@ -21,21 +21,64 @@ _RESTART_INTERVAL = int(os.environ.get("ASTROFLOW_PIX_RESTART_INTERVAL", "20"))
 _MAX_MEMORY_GB = float(os.environ.get("ASTROFLOW_PIX_MAX_MEMORY_GB", "32"))
 
 
+def _parse_e_output(stdout: str) -> dict[int, int]:
+    slot_pid: dict[int, int] = {}
+    for line in stdout.splitlines():
+        match = re.match(r"^\s*(\d+)\s+(\d+)$", line)
+        if match:
+            slot_pid[int(match.group(1))] = int(match.group(2))
+    return slot_pid
+
+
+def _find_via_psutil() -> dict[int, int]:
+    """OS-level fallback: scan the process table for PixInsight instances
+    we launched with `-n=<slot>`. Less authoritative than PI's own
+    registry — it can't see slots that are registered but whose process
+    has died, and won't find a manually-launched PI without `-n=`. Good
+    enough to prevent duplicate spawns when `-e` is broken.
+    """
+    instances: dict[int, int] = {}
+    for proc in psutil.process_iter(["pid", "exe", "cmdline"]):
+        try:
+            if proc.info["exe"] != _PIXINSIGHT_EXECUTABLE:
+                continue
+            for arg in proc.info["cmdline"] or []:
+                if arg.startswith("-n="):
+                    instances[int(arg.removeprefix("-n="))] = proc.info["pid"]
+                    break
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return instances
+
+
 def _find_running_instances() -> dict[int, int]:
-    """Return a map of slot -> PID for running PixInsight instances."""
+    """Return a map of slot -> PID for running PixInsight instances.
+
+    Authoritative path: ask PI itself via `-e`. Fallback: scan the OS
+    process table when `-e` fails. We must NOT silently treat "couldn't
+    query PI" as "registry empty" — that conflation is what causes
+    duplicate spawns to cascade when PI's IPC is broken on a host.
+    """
     try:
         result = subprocess.run(
             [_PIXINSIGHT_EXECUTABLE, "-e"],
-            text=True, capture_output=True, check=True, timeout=10,
+            text=True, capture_output=True, timeout=30,
         )
-        slot_pid = {}
-        for line in result.stdout.splitlines():
-            match = re.match(r"^\s*(\d+)\s+(\d+)$", line)
-            if match:
-                slot_pid[int(match.group(1))] = int(match.group(2))
-        return slot_pid
-    except Exception:
-        return {}
+    except subprocess.TimeoutExpired as e:
+        print(f"### pix: -e timed out after 30s; falling back to psutil. {e}")
+        return _find_via_psutil()
+    except FileNotFoundError as e:
+        print(f"### pix: PixInsight executable missing at {_PIXINSIGHT_EXECUTABLE}: {e}")
+        raise
+
+    if result.returncode != 0:
+        print(
+            f"### pix: -e exited {result.returncode}; "
+            f"stderr={result.stderr.strip()!r}; falling back to psutil"
+        )
+        return _find_via_psutil()
+
+    return _parse_e_output(result.stdout)
 
 
 def _start_instance(slot: int) -> None:
@@ -58,7 +101,7 @@ def _start_instance(slot: int) -> None:
                 raise TimeoutError(f"Stale PixInsight slot {slot} did not clear within 60s")
             time.sleep(2)
 
-    subprocess.Popen(
+    proc = subprocess.Popen(
         [
             _PIXINSIGHT_EXECUTABLE,
             f"-n={slot}",
@@ -69,13 +112,17 @@ def _start_instance(slot: int) -> None:
         ],
         start_new_session=True,
     )
-    print(f"### pix: Started PixInsight instance at slot {slot}")
+    print(f"### pix: Started PixInsight instance at slot {slot} (pid {proc.pid})")
 
+    # Wait for the spawned process to be alive. We have its PID directly
+    # from Popen, so a `pid_exists` check is enough — no need to ask PI's
+    # own registry, which would cost a subprocess invocation per poll
+    # (and a dock-icon flash on macOS) for every iteration.
     deadline = time.monotonic() + 120
-    while slot not in _find_running_instances():
+    while not psutil.pid_exists(proc.pid):
         if time.monotonic() > deadline:
             raise TimeoutError(f"PixInsight slot {slot} did not register within 120s")
-        time.sleep(5)
+        time.sleep(1)
 
 
 def _counter_path(slot: int) -> Path:
