@@ -80,7 +80,6 @@ def build_mosaic_subgraph(
     filter_done_tasks = []
     for filter in filters:
         strips = get_targets_for_filter(mosaic, filter, targets)
-        log.debug("Strips for filter", filter=filter, strips=strips)
 
         if mode == QualityLevel.SUBFRAME:
             # In subframe mode, missing panels are allowed. Just remove them from

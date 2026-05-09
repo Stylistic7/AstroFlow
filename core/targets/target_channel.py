@@ -87,6 +87,16 @@ def build_target_channel_subgraph(
     representative. MASTER / DOWNSCALED_MASTER modes go through the
     full stack-then-merge path.
     """
+    # Both branches must terminate in `compute_image_metadata` so the
+    # caller (build_placement_subgraph) can chain place_fn(...,
+    # image_metadata) on top without caring which mode produced the
+    # input. SUBFRAME terminates in subframe-path -> metadata; MASTER
+    # terminates in merge -> path -> metadata.
+    metadata_node = Node(
+        compute_image_metadata,
+        name=f"channel_{target.stable_hash}_{filter}_{config.quality.value}",
+    )
+
     if config.quality == QualityLevel.SUBFRAME:
         # Pick the first stack as the representative for this channel
         # in preview mode. Same behavior the old code had implicitly
@@ -95,10 +105,7 @@ def build_target_channel_subgraph(
         return Graph({
             **chain(
                 (get_stack_subframe_image, stacks[0]),
-                Node(
-                    compute_image_metadata,
-                    name=f"channel_subframe_{target.stable_hash}_{filter}",
-                ),
+                metadata_node,
             )
         })
 
@@ -126,4 +133,5 @@ def build_target_channel_subgraph(
     for task in per_stack_tasks:
         graph[task] = set()
     graph[merge_task] = set(per_stack_tasks)
+    graph[metadata_node] = {merge_task}
     return graph
