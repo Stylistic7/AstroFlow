@@ -57,6 +57,16 @@ def build_mosaic_subgraph(
     log.info("Building mosaic subgraph", mode=mode, mosaic=str(mosaic))
     viewbox = compute_viewbox(mode, mosaic)
 
+    # Normalize: callers (build_preview_graph, _process_mosaic) construct
+    # config without setting `quality`, leaving it at the dataclass default
+    # (MASTER). When that config flows down to build_target_channel_subgraph,
+    # the SUBFRAME short-circuit doesn't fire and we kick off MASTER-level
+    # stacking for every (target, filter) in the mosaic — even on a
+    # SUBFRAME preview pass with an empty shopping cart. Make `mode` the
+    # source of truth here so downstream code can rely on `config.quality`.
+    from dataclasses import replace
+    config = replace(config, quality=mode)
+
     filters: set[str] = set()
     for tid in mosaic.target_ids:
         filters.update(filters_for_target(_unwrap(targets[tid])))
