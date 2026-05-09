@@ -173,7 +173,18 @@ class StateActor:
                 self._busy = True
                 print(f"### set _busy {self._busy}")
             try:
-                self._handle(action)
+                try:
+                    self._handle(action)
+                except Exception:
+                    # Never let an exception escape the loop — a dead
+                    # _run_loop thread is invisible (Ray doesn't retry
+                    # actor-internal threads) and the actor silently
+                    # stops processing actions.
+                    import traceback
+                    print(
+                        f"### StateActor._run_loop: action {action!r} raised; "
+                        f"logging and continuing\n{traceback.format_exc()}"
+                    )
             finally:
                 with self._cv:
                     self._busy = bool(self._q)

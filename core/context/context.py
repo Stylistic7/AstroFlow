@@ -1,5 +1,6 @@
 import ray
 import os
+import diskcache
 
 from typing import Any
 from context.cache import get_cache
@@ -86,7 +87,22 @@ class ContextActor:
         self._enter()
         try:
             from cache.context_ref import strip_refs
-            return strip_refs(self.cache.get(key, default_value))
+            try:
+                return strip_refs(self.cache.get(key, default_value))
+            except diskcache.Timeout:
+                # Transient SQLite lock contention under heavy load
+                # (typically a long-running write holding the lock).
+                # The caller supplied default_value precisely for the
+                # "I can't get the data" case; let it through here too
+                # rather than propagating, which would otherwise crash
+                # the calling actor's thread (StateActor._run_loop has
+                # no top-level except). Logged loudly so the contention
+                # remains visible.
+                print(
+                    f"### ContextActor.get: diskcache.Timeout for key {key!r}; "
+                    f"returning default_value"
+                )
+                return default_value
         finally:
             self._exit()
 
