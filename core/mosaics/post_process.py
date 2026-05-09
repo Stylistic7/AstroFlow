@@ -21,8 +21,8 @@ from products.identity import MosaicId, PresentationType
 THUMBNAIL = PresentationType.THUMBNAIL
 TILE_PYRAMID = PresentationType.TILE_PYRAMID
 from products.registry import get_filename_fn, MediaType
-from stacks.composite_stack import StacksDict
 from targets.types import TargetsDict
+from targets.target_channel import filters_for_target
 
 log = structlog.get_logger()
 
@@ -61,7 +61,6 @@ def _post_process_mosaic(images: ImageList, mosaic: Mosaic) -> Image | None:
 def post_process_mosaic(
     mode: QualityLevel,
     mosaic: Mosaic,
-    stacks: StacksDict,
     targets: TargetsDict,
 ) -> WithSidecar[XisfFilePath] | None:
     from context import context
@@ -70,10 +69,9 @@ def post_process_mosaic(
     if mode != QualityLevel.MASTER:
         return None
 
-    filters = set()
+    filters: set[str] = set()
     for target_id in mosaic.target_ids:
-        for stack_id in targets[target_id].get().stack_ids:
-            filters.add(stacks[stack_id].get().filter)
+        filters.update(filters_for_target(targets[target_id].get()))
 
     master_fn = get_filename_fn(MediaType.IMAGE, Mosaic, QualityLevel.MASTER)
     image_paths = [master_fn(mosaic, f) for f in filters]
@@ -99,7 +97,6 @@ def post_process_mosaic(
 def post_process_mosaic_oss(
     mode: QualityLevel,
     mosaic: Mosaic,
-    stacks: StacksDict,
     targets: TargetsDict,
 ) -> None:
     """Stub: mosaic post-processing for the OSS pipeline (TODO)."""

@@ -15,12 +15,15 @@ from mosaics.merge_images import MergedImage
 from mosaics.types import Mosaic, MosaicsDict, Viewbox
 from mosaics.viewbox import compute_viewbox
 from mosaics.placement import PlacedImage
-from stacks.compute_graph import get_stack_image
 from stacks.types import StackHash
 from previews.types import QualityLevel
 from products import get_producer, MediaType
 from decorators import node
 from targets.types import TargetsDict, Target, TargetHash
+from targets.target_channel import (
+    TargetChannel, build_target_channel_subgraph,
+    channel_stacks_for, filters_for_target,
+)
 from metadata.image_metadata import compute_image_metadata
 from stacks.convert_to_dict import convert_to_dict
 from dependency_graph.workflow_graph_adapter import (
@@ -44,32 +47,19 @@ def _unwrap(ref):
     return ref.get() if isinstance(ref, ContextRef) else ref
 
 
-def stacks_for_mosaic(
-    mosaic: Mosaic, stacks: StacksDict, targets: TargetsDict
-) -> StacksDict:
-    """Returns only the stacks included in the mosaic."""
-    return StacksDict(
-        {
-            stack_id: stacks[stack_id]
-            for target_id in mosaic.target_ids
-            for stack_id in _unwrap(targets[target_id]).stack_ids
-        }
-    )
-
-
 @ray.remote(num_cpus=0.1)
 def build_mosaic_subgraph(
     mode: QualityLevel,
     mosaic: Mosaic,
-    stacks: StacksDict,
     targets: TargetsDict,
     config: "ProcessingConfig",
 ) -> Graph:
-    log.info("Building mosaic subgraph", mode=mode, mosaic=str(mosaic), stacks=[str(s) for s in stacks])
+    log.info("Building mosaic subgraph", mode=mode, mosaic=str(mosaic))
     viewbox = compute_viewbox(mode, mosaic)
-    filters = set(
-        ref.get().filter for ref in stacks.values() if ref is not None
-    )
+
+    filters: set[str] = set()
+    for tid in mosaic.target_ids:
+        filters.update(filters_for_target(_unwrap(targets[tid])))
 
     if config.development_settings.override_filters is not None:
         log.warning("Overriding filters", override_filters=config.development_settings.override_filters)
@@ -79,41 +69,37 @@ def build_mosaic_subgraph(
 
     filter_done_tasks = []
     for filter in filters:
-        strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
+        strips = get_targets_for_filter(mosaic, filter, targets)
         log.debug("Strips for filter", filter=filter, strips=strips)
 
         if mode == QualityLevel.SUBFRAME:
             # In subframe mode, missing panels are allowed. Just remove them from
             # the strips.
             strips = tuple(
-                tuple(s for s in strip if s is not None) for strip in strips
+                tuple(t for t in strip if t is not None) for strip in strips
             )
             strips = tuple(s for s in strips if len(s))
             if not strips:
-                log.warning("Skipping mosaic filter, all stacks missing", mosaic=str(mosaic), filter=filter)
+                log.warning("Skipping mosaic filter, all targets missing", mosaic=str(mosaic), filter=filter)
                 continue
         else:
             # Master mode: the mosaic merge needs every panel, so a
             # missing one means we can't produce the mosaic in this
-            # filter. Still kick off per-stack WBPP for the panels we
-            # DO have, so their masters are ready for the next time
-            # the user images and once the missing panels fill in.
+            # filter. Still kick off per-(target, filter) merges for
+            # the panels we DO have, so their masters are ready for
+            # the next time the user images.
             if any(None in strip for strip in strips):
                 log.warning(
-                    "Mosaic incomplete in this filter; stacking present panels only",
+                    "Mosaic incomplete in this filter; merging present panels only",
                     mosaic=str(mosaic), filter=filter,
                 )
-                # Hang the per-stack stacking tasks off pp_fn as
-                # ancestors so the subgraph still has a single terminal
-                # node. pp_fn waits for them but doesn't consume their
-                # results.
                 for strip in strips:
-                    for stack_id in strip:
-                        if stack_id is None:
+                    for target in strip:
+                        if target is None:
                             continue
-                        stack = _unwrap(stacks[stack_id])
                         filter_done_tasks.append(
-                            (get_stack_image, mode, stack, config)
+                            (build_target_channel_subgraph, target, filter,
+                             channel_stacks_for(target, filter), config)
                         )
                 continue
 
@@ -122,7 +108,6 @@ def build_mosaic_subgraph(
             mode,
             mosaic,
             strips,
-            stacks,
             filter,
             viewbox,
             config,
@@ -134,7 +119,7 @@ def build_mosaic_subgraph(
         filter_done_tasks.append(store_task)
 
     pp_fn = get_producer(MediaType.IMAGE, Mosaic, QualityLevel.POST_PROCESSED, config.implementation)
-    graph[(pp_fn, mode, mosaic, stacks, targets)] = filter_done_tasks
+    graph[(pp_fn, mode, mosaic, targets)] = filter_done_tasks
 
     return graph
 
@@ -143,7 +128,7 @@ def build_mosaic_subgraph(
 def build_placement_subgraph(
     mode: QualityLevel,
     mosaic: Mosaic,
-    stack: Stack,
+    target: Target,
     filter: str,
     viewbox: Viewbox,
     config: "ProcessingConfig",
@@ -152,44 +137,42 @@ def build_placement_subgraph(
     ensure_producers_registered()
 
     place_fn = get_producer(MediaType.IMAGE, PlacedImage, mode, config.implementation)
+    channel_stacks = channel_stacks_for(target, filter)
     return Graph(
         {
             **chain(
-                (get_stack_image, mode, stack, config),
-                (place_fn, mode, mosaic, stack, filter, viewbox),
+                (build_target_channel_subgraph, target, filter, channel_stacks, config),
+                Node(compute_image_metadata, name=f"channel_{target.stable_hash}_{filter}"),
+                (place_fn, mode, mosaic, target, filter, viewbox),
                 Node(compute_image_metadata, name="placed"),
             )
         }
     )
 
 
-def get_stacks_for_filter(
+def get_targets_for_filter(
     mosaic: Mosaic,
     filter: str,
     targets: TargetsDict,
-    stacks: StacksDict,
-) -> Optional[list[list[StackHash]]]:
-    """Returns the mosaics strips with target hashes replaced by stack hashes."""
+) -> tuple[tuple[Target | None, ...], ...]:
+    """Replace each TargetHash in mosaic.strips with the resolved Target,
+    or None if the target has no stack matching this filter.
+    """
+    def target_with_filter(target_id: TargetHash) -> Target | None:
+        target = _unwrap(targets[target_id])
+        return target if filter in filters_for_target(target) else None
 
-    def get_stack_for_target(target_id: TargetHash) -> StackHash:
-        # TODO: What should be done if there are several stacks in this target
-        # with the same filter, but, e.g. different rotations?
-        for stack_id in _unwrap(targets[target_id]).stack_ids:
-            if _unwrap(stacks[stack_id]).filter == filter:
-                return stack_id
-
-    def get_stacks_for_strip(strip: list[TargetHash]) -> list[StackHash]:
-        return tuple(get_stack_for_target(target_id) for target_id in strip)
-
-    return tuple(get_stacks_for_strip(strip) for strip in mosaic.strips)
+    return tuple(
+        tuple(target_with_filter(tid) for tid in strip)
+        for strip in mosaic.strips
+    )
 
 
 @ray.remote(num_cpus=0.1)
 def build_mosaic_filter_subgraph(
     mode: QualityLevel,
     mosaic: Mosaic,
-    strips: list[list[StackHash]] | tuple,
-    stacks: StacksDict | dict | object,
+    strips: tuple[tuple[Target | None, ...], ...] | tuple,
     filter: str,
     viewbox: Viewbox | None,
     config: "ProcessingConfig",
@@ -227,25 +210,24 @@ def build_mosaic_filter_subgraph(
     strip_tasks = []
     for strip in strips:
         prev_task = None
-        for i, stack_id in enumerate(strip):
-            # Missing stacks are acceptable, except in MASTER mode.
-            if stack_id is None:
+        for i, target in enumerate(strip):
+            # Missing targets are acceptable, except in MASTER mode.
+            if target is None:
                 if mode == QualityLevel.MASTER:
-                    log.warning("Returning None, stack for filter not found", filter=filter)
+                    log.warning("Returning None, target for filter not found", filter=filter)
                     return None
                 else:
                     continue
 
-            stack = _unwrap(stacks[stack_id])
             if i == 0:
                 prev_task = Node(
                     build_placement_subgraph,
-                    mode, mosaic, stack, filter, viewbox, config,
+                    mode, mosaic, target, filter, viewbox, config,
                 )
             else:
                 placement_task = Node(
                     build_placement_subgraph,
-                    mode, mosaic, stack, filter, viewbox, config,
+                    mode, mosaic, target, filter, viewbox, config,
                 )
                 merge_task = Node(
                     merge_fn,
@@ -253,11 +235,11 @@ def build_mosaic_filter_subgraph(
                     mosaic,
                     filter,
                     config.development_settings.mock_pixinsight,
-                    name=f"merge_{mosaic.stable_hash}_{stack_id}",
+                    name=f"merge_{mosaic.stable_hash}_{target.stable_hash}",
                 )
                 metadata_task = Node(
                     compute_image_metadata,
-                    name=f"merge_{mosaic.stable_hash}_{stack_id}",
+                    name=f"merge_{mosaic.stable_hash}_{target.stable_hash}",
                 )
                 if prev_task is not None:
                     graph[placement_task] = [prev_task]

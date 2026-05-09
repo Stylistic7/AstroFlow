@@ -16,6 +16,7 @@ from astropy import units as u  # type: ignore
 from dataclasses import dataclass
 
 from stacks.composite_stack import Stack
+from targets.types import Target
 from file_io.generic import read_image
 from file_io.tiff_file_io import write_tiff_image
 from file_io.types import TiffFilePath, WithSidecar
@@ -172,7 +173,7 @@ def _project_in_tiles(
 def place_image(
     mode: QualityLevel,
     mosaic: Mosaic,
-    stack: Stack,
+    target: Target,
     filter: str,
     viewbox: Viewbox,
     image_metadata: ImageMetadata,
@@ -181,24 +182,27 @@ def place_image(
         f"place_image requires a plate solution on {image_metadata.filename}; "
         "DONTSOLV synthetic frames cannot be placed."
     )
-    log.info("Placing image", mode=mode, mosaic=str(mosaic), stack=str(stack),
-             filename=image_metadata.filename, viewbox=str(viewbox))
+    log.info("Placing image", mode=mode, mosaic=str(mosaic), target=str(target),
+             filter=filter, filename=image_metadata.filename, viewbox=str(viewbox))
 
     wcs = WCS(image_metadata.plate_solution.header)
     interp = _make_interpolator(image_metadata.filename)
     image = _project_in_tiles(viewbox, interp, wcs, skip_empty=False)
 
     output_fn = get_filename_fn(MediaType.IMAGE, PlacedImage, mode)
-    output_filename = output_fn(mosaic, stack, filter, viewbox)
+    output_filename = output_fn(mosaic, target, filter, viewbox)
 
     if not np.any(image):
         raise ProjectionFailedException(
-            f"Placed image for stack {stack.stable_hash} in mosaic "
-            f"{mosaic.stable_hash} is entirely blank. This likely indicates "
-            f"a WCS or viewbox mismatch."
+            f"Placed image for target {target.stable_hash} in mosaic "
+            f"{mosaic.stable_hash} ({filter}) is entirely blank. This "
+            f"likely indicates a WCS or viewbox mismatch."
         )
 
-    write_tiff_image(output_filename, image, {"FILTER": filter, "STBLHASH": stack.stable_hash})
+    write_tiff_image(output_filename, image, {
+        "FILTER": filter,
+        "STBLHASH": target.stable_hash,
+    })
     log.info("Place image complete", output_filename=output_filename)
 
     return WithSidecar(output_filename)

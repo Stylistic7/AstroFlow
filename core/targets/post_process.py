@@ -12,12 +12,12 @@ from pix.tasks import (
     StarAlignment,
     LRGBCombination,
 )
+from context import context
 from file_io.types import XisfFilePath
 from decorators import node
 from targets.types import Target
-from stacks.artifacts import stack_filename
-from stacks.composite_stack import StacksDict
-from products import makes_image
+from targets.target_channel import TargetChannel, group_stacks_by_filter
+from products import makes_image, get_filename_fn, MediaType
 from products.identity import TargetId, PresentationType
 
 THUMBNAIL = PresentationType.THUMBNAIL
@@ -73,12 +73,27 @@ def target_filename(target: Target, suffix: str) -> XisfFilePath:
     return XisfFilePath(f"target {target.stable_hash}_{suffix}.xisf")
 
 
+def _target_channel_paths(target: Target, implementation) -> list[Path]:
+    """Resolve the per-(target, filter) merged-master paths.
+
+    Reads which filters this target has from `context.stacks` and looks
+    up the registered TargetChannel filename for each.
+    """
+    stacks = context.stacks
+    target_stacks = [stacks[sid].get() for sid in target.stack_ids]
+    by_filter = group_stacks_by_filter(target_stacks)
+    channel_fn = get_filename_fn(
+        MediaType.IMAGE, TargetChannel, QualityLevel.MASTER, implementation,
+    )
+    return [Path(channel_fn(target, f)) for f in by_filter.keys()]
+
+
 @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD", auto_memory=True)
 @makes_image(Target, PIXINSIGHT, [QualityLevel.POST_PROCESSED], target_filename,
              identity=TargetId, presentations=[THUMBNAIL])
-def post_process_target(target: Target, stacks: StacksDict, mock_pixinsight: bool = False) -> None:
+def post_process_target(target: Target, mock_pixinsight: bool = False) -> None:
     print(f"Entering post_process_target for {target}")
-    image_paths = [stack_filename(stacks[stack_id].get()) for stack_id in target.stack_ids]
+    image_paths = _target_channel_paths(target, PIXINSIGHT)
     images = Image.open_many(image_paths)
 
     result = _post_process_target(images, target)
@@ -95,6 +110,6 @@ def post_process_target(target: Target, stacks: StacksDict, mock_pixinsight: boo
 @node
 @makes_image(Target, OSS, [QualityLevel.POST_PROCESSED], target_filename,
              identity=TargetId, presentations=[THUMBNAIL])
-def post_process_target_oss(target: Target, stacks: StacksDict, mock_pixinsight: bool = False) -> None:
+def post_process_target_oss(target: Target, mock_pixinsight: bool = False) -> None:
     """Stub: target post-processing for the OSS pipeline (TODO)."""
     return None

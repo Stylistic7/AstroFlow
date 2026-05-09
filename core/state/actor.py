@@ -22,7 +22,6 @@ from dependency_graph import (
 )
 from mosaics.compute_graph import (
     build_mosaic_subgraph,
-    stacks_for_mosaic,
     targets_for_mosaic,
     process_mosaics_for_ui,
 )
@@ -110,7 +109,6 @@ def _process_mosaic(action: Action) -> Graph:
                 build_mosaic_subgraph,
                 QualityLevel(mode),
                 mosaic,
-                stacks_for_mosaic(mosaic, stacks, targets),
                 targets_for_mosaic(mosaic, targets),
                 config,
             )
@@ -130,7 +128,7 @@ def _post_process(action: Action) -> Graph:
     elif action["object_type"] == "target":
         target = context.targets[action["object_id"]].get()
         mock = context.settings.development_settings.mock_pixinsight
-        run_graph(Graph({(post_process_target, target, context.stacks, mock): {}}))
+        run_graph(Graph({(post_process_target, target, mock): {}}))
     elif action["object_type"] == "mosaic":
         mosaic = context.mosaics[action["object_id"]].get()
         run_graph(Graph({(post_process_mosaic, QualityLevel.MASTER, mosaic, context.stacks, context.targets): {}}))

@@ -85,6 +85,15 @@ class TargetId(ObjectId):
 
 
 @dataclass(frozen=True)
+class TargetChannelId(ObjectId):
+    target: Target
+    filter: str
+
+    def filename_stem(self) -> str:
+        return f"target_{self.target.stable_hash}_{self.filter}"
+
+
+@dataclass(frozen=True)
 class MosaicChannelId(ObjectId):
     mosaic: Mosaic
     filter: str
@@ -120,12 +129,12 @@ class MergeProgressId(ObjectId):
 @dataclass(frozen=True)
 class PlacedImageId(ObjectId):
     mosaic: Mosaic
-    stack: Stack
+    target: Target
     filter: str
     viewbox: Viewbox
 
     def filename_stem(self) -> str:
-        return f"placed_{self.mosaic.stable_hash}_{self.stack.stable_hash}_{self.filter}"
+        return f"placed_{self.mosaic.stable_hash}_{self.target.stable_hash}_{self.filter}"
 
 
 @dataclass(frozen=True)

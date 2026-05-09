@@ -32,7 +32,7 @@ from decorators import node
 from decisions.compute_graph import (
     scatter_customize_targets,
 )
-from mosaics.compute_graph import stacks_for_mosaic, targets_for_mosaic
+from mosaics.compute_graph import targets_for_mosaic
 from cache.context_ref import ContextRef
 from decisions.settings import ClusteringSettings, DevelopmentSettings
 from decisions.decisions import decisions_for_stack
@@ -263,7 +263,6 @@ def build_preview_graph(
                 build_mosaic_subgraph,
                 QualityLevel.SUBFRAME,
                 mosaic,
-                stacks_for_mosaic(mosaic, objects.stacks, objects.targets),
                 targets_for_mosaic(mosaic, objects.targets),
                 config,
             )
@@ -342,7 +341,6 @@ def build_main_processing_graph(
                     build_mosaic_subgraph,
                     mode,
                     mosaic,
-                    stacks_for_mosaic(mosaic, stacks, targets),
                     targets_for_mosaic(mosaic, targets),
                     config_for(mode=mode, implementation=impl),
                 )

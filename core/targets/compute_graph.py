@@ -12,10 +12,11 @@ from targets.types import Target
 from products import get_producer, MediaType
 from previews.types import QualityLevel
 from targets.types import TargetsDict
-from stacks.compute_graph import build_stacking_subgraph
+from targets.target_channel import (
+    TargetChannel, build_target_channel_subgraph, group_stacks_by_filter,
+)
 from stacks.convert_to_dict import convert_to_dict
 from decisions.settings import DevelopmentSettings, ProcessingConfig
-from decisions.decisions import decisions_for_stack
 from dependency_graph.workflow_graph_adapter import (
     store_workflow_graph,
     store_node_status,
@@ -30,22 +31,11 @@ def build_target_subgraph(
     target: Target,
     config: ProcessingConfig,
 ) -> Graph:
-    from frozendict import frozendict as fd
     log.info("Building target subgraph", target=str(target))
 
     stacks = context.stacks
-    all_decisions = context.settings.decision_overrides
-
-    def config_for(stack_id):
-        decisions = decisions_for_stack(all_decisions, stack_id)
-        return ProcessingConfig(
-            calibration_stacks=config.calibration_stacks,
-            development_settings=config.development_settings,
-            min_frames_in_stack=config.min_frames_in_stack,
-            decisions=decisions,
-            quality=config.quality,
-            implementation=config.implementation,
-        )
+    target_stacks = [stacks[sid].get() for sid in target.stack_ids]
+    by_filter = group_stacks_by_filter(target_stacks)
 
     graph_update_fn = partial(
         store_workflow_graph, ("target", target.stable_hash, config.quality.value)
@@ -58,9 +48,9 @@ def build_target_subgraph(
 
     mock = config.development_settings.mock_pixinsight
     pp_fn = get_producer(MediaType.IMAGE, Target, QualityLevel.POST_PROCESSED, config.implementation)
-    graph[(pp_fn, target, stacks, mock)] = {
-        (build_stacking_subgraph, stacks[stack_id].get(), config_for(stack_id))
-        for stack_id in target.stack_ids
+    graph[(pp_fn, target, mock)] = {
+        (build_target_channel_subgraph, target, filter_, tuple(channel_stacks), config)
+        for filter_, channel_stacks in by_filter.items()
     }
 
     return graph

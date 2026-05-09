@@ -19,7 +19,7 @@ from mosaics.merge_images import merge_images
 from mosaics.compute_graph import (
     build_mosaic_filter_subgraph,
     build_placement_subgraph,
-    get_stacks_for_filter,
+    get_targets_for_filter,
 )
 from metadata.image_metadata import compute_image_metadata
 from mosaics.orion_mosaic import add_orion_mosaic_images
@@ -106,7 +106,7 @@ def test_three_by_one(test_context) -> None:
             "c": make_composite_stack(stable_hash="c"),
         }
     )
-    strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
+    strips = get_targets_for_filter(mosaic, filter, targets)
     calibration_stacks = CalibrationStacksDict({})
 
     min_frames_in_stack = 3
@@ -201,7 +201,7 @@ def test_two_by_three(test_context) -> None:
         }
     )
 
-    strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
+    strips = get_targets_for_filter(mosaic, filter, targets)
     calibration_stacks = CalibrationStacksDict({})
 
     min_frames_in_stack = 3
@@ -316,7 +316,7 @@ def test_three_panes(test_context) -> None:
         }
     )
 
-    strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
+    strips = get_targets_for_filter(mosaic, filter, targets)
     calibration_stacks = CalibrationStacksDict({})
 
     min_frames_in_stack = 3
@@ -393,7 +393,7 @@ def test_orion_mosaic(test_context) -> None:
     filter = "H"
     viewbox = None
 
-    strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
+    strips = get_targets_for_filter(mosaic, filter, targets)
     calibration_stacks = CalibrationStacksDict({})
 
     min_frames_in_stack = 3
@@ -496,7 +496,7 @@ def test_orion_mosaic_one_by_two(test_context) -> None:
     filter = "H"
     viewbox = None
 
-    strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
+    strips = get_targets_for_filter(mosaic, filter, targets)
     calibration_stacks = CalibrationStacksDict({})
 
     min_frames_in_stack = 3
@@ -566,7 +566,7 @@ def test_orion_mosaic_two_by_one(test_context) -> None:
     filter = "H"
     viewbox = None
 
-    strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
+    strips = get_targets_for_filter(mosaic, filter, targets)
     calibration_stacks = CalibrationStacksDict({})
 
     min_frames_in_stack = 3
@@ -637,7 +637,7 @@ def test_orion_mosaic_missing_panel(test_context) -> None:
     filter = "H"
     viewbox = None
 
-    strips = get_stacks_for_filter(mosaic, filter, targets, stacks)
+    strips = get_targets_for_filter(mosaic, filter, targets)
     calibration_stacks = CalibrationStacksDict({})
 
     min_frames_in_stack = 3

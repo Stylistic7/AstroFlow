@@ -16,6 +16,7 @@ def ensure_producers_registered():
     import previews.flat_correction  # noqa: F401 — Run subframe
     import stacks.stacking  # noqa: F401 — Stack/CalibrationStack master
     import stacks.post_process  # noqa: F401 — Stack post-processed
+    import targets.merge_target_channel  # noqa: F401 — TargetChannel master (PixInsight)
     import targets.post_process  # noqa: F401 — Target post-processed
     import mosaics.placement  # noqa: F401 — PlacedImage subframe + master
     import mosaics.merge_images  # noqa: F401 — MergedImage subframe + master
@@ -24,4 +25,5 @@ def ensure_producers_registered():
     # OSS pipeline
     import stacks.stacking_oss  # noqa: F401 — OSS stacking
     import stacks.post_process_oss  # noqa: F401 — OSS post-processing
+    import targets.merge_target_channel_oss  # noqa: F401 — TargetChannel master (OSS)
     import mosaics.merge_images_oss  # noqa: F401 — OSS mosaic merging

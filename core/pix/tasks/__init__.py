@@ -3,6 +3,7 @@ from .starxterminator import StarXTerminator
 from .noisexterminator import NoiseXTerminator
 from .image_solver import ImageSolver
 from .star_alignment import StarAlignment
+from .hdr_composition import HDRComposition
 from .channel_combination import ChannelCombination
 from .lrgb_combination import LRGBCombination
 from .linear_fit import LinearFit
