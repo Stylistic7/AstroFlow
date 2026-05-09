@@ -5,6 +5,7 @@ import QuarantineToggle from './QuarantineToggle.jsx';
 import FlatThumbnail from './FlatThumbnail.jsx';
 import AstroFlowContext from './AstroFlowContext.jsx';
 import MetadataItem from './MetadataItem.jsx';
+import { format_duration } from './units.js';
 import FileBrowser from './FileBrowser.jsx';
 import DecisionReviewDialog from './DecisionReviewDialog.jsx';
 
@@ -152,8 +153,8 @@ const RunsTab = ({ stack }) => {
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Box>
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 4, rowGap: 1 }}>
-                  <MetadataItem label="Exposure" value={`${run.exposure.join(', ')}s`} />
-                  <MetadataItem label="Integration" value={`${(run.integration / 60).toFixed(0)}m`} />
+                  <MetadataItem label="Exposure" value={format_duration(run.exposure)} />
+                  <MetadataItem label="Integration" value={format_duration(run.integration)} />
                   <MetadataItem label="Temp" value={`${run.mean_temperature.toFixed(1)}°C`} />
                   <MetadataItem label="Filter" value={run.filter} />
                   {run.rotation_angle != null && <MetadataItem label="Rotation" value={`${(run.rotation_angle * 180 / Math.PI).toFixed(1)}°`} />}
