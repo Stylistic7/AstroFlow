@@ -1,6 +1,5 @@
 import ray
 import os
-import diskcache
 
 from typing import Any
 from context.cache import get_cache
@@ -84,25 +83,18 @@ class ContextActor:
         }
 
     def get(self, key: Key, default_value: Any) -> ray.ObjectRef:
+        # No Timeout catch here: the cache is configured with a multi-hour
+        # SQL timeout (see context/cache.py) so contention waits rather
+        # than fails. If a Timeout DOES propagate, treat it as a real
+        # error — silently substituting default_value here would be a
+        # correctness hazard for content-addressable lookups like
+        # `('large_object', H)`, where the data is genuinely there and
+        # the caller can't tell "absent" from "locked." The StateActor
+        # _run_loop safety net catches the rare propagation cleanly.
         self._enter()
         try:
             from cache.context_ref import strip_refs
-            try:
-                return strip_refs(self.cache.get(key, default_value))
-            except diskcache.Timeout:
-                # Transient SQLite lock contention under heavy load
-                # (typically a long-running write holding the lock).
-                # The caller supplied default_value precisely for the
-                # "I can't get the data" case; let it through here too
-                # rather than propagating, which would otherwise crash
-                # the calling actor's thread (StateActor._run_loop has
-                # no top-level except). Logged loudly so the contention
-                # remains visible.
-                print(
-                    f"### ContextActor.get: diskcache.Timeout for key {key!r}; "
-                    f"returning default_value"
-                )
-                return default_value
+            return strip_refs(self.cache.get(key, default_value))
         finally:
             self._exit()
 
