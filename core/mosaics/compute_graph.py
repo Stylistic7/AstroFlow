@@ -147,11 +147,14 @@ def build_placement_subgraph(
 
     place_fn = get_producer(MediaType.IMAGE, PlacedImage, mode, config.implementation)
     channel_stacks = channel_stacks_for(target, filter)
+    # build_target_channel_subgraph already terminates in
+    # compute_image_metadata, so place_fn consumes that ImageMetadata
+    # directly. The trailing compute_image_metadata is for the placed
+    # tiff that place_fn produces.
     return Graph(
         {
             **chain(
                 (build_target_channel_subgraph, target, filter, channel_stacks, config),
-                Node(compute_image_metadata, name=f"channel_{target.stable_hash}_{filter}"),
                 (place_fn, mode, mosaic, target, filter, viewbox),
                 Node(compute_image_metadata, name="placed"),
             )
