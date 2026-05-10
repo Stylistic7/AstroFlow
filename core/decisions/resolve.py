@@ -1,6 +1,7 @@
 """Apply decisions to a Stack to produce filtered or annotated views."""
 from __future__ import annotations
 
+import structlog
 from dataclasses import replace
 from frozendict import frozendict
 
@@ -10,9 +11,12 @@ from stacks.types import FilenameDependency, StackIdDependency
 from decisions.decisions import (
     BinaryChoice, DecisionKey, DecisionOverride, DecisionPoint, DecisionType,
     ObjectType, DECISION_PRECEDENCE, resolve_decision, get_decisions_for_object,
+    _decisions_key,
 )
 from decisions.subframe_selection import select_subframes
 from quarantining.quarantining import apply_quarantine
+
+log = structlog.get_logger()
 
 
 def _apply_run_exclusions(
@@ -228,6 +232,19 @@ def resolve_calibration(
             return path
         return chronological[cal_type](run)
 
+    def _apply_choice(deps, cal_type, choice, cal_stacks) -> bool:
+        """Convert a resolved choice to a dependency entry. Returns False
+        if the choice can't be applied (None, or a stale stack id)."""
+        if choice is None:
+            return False
+        if isinstance(choice, str) and choice.startswith("/"):
+            deps[cal_type] = FilenameDependency(filename=choice)
+            return True
+        if choice in cal_stacks:
+            deps[cal_type] = StackIdDependency(stack_id=choice)
+            return True
+        return False
+
     new_contents = RunsDict()
     for run_hash, run in stack.contents.items():
         deps = dict(run.dependencies)
@@ -247,20 +264,26 @@ def resolve_calibration(
                 default=lambda c=cal_type, r=run: _default_choice(c, r),
             )
 
-            if choice is None:
-                continue
-            if isinstance(choice, str) and choice.startswith("/"):
-                deps[cal_type] = FilenameDependency(filename=choice)
-            elif choice in cal_stacks:
-                deps[cal_type] = StackIdDependency(stack_id=choice)
-            # else: a previously-cached choice referencing a calibration
-            # stack that's no longer present in cal_stacks (e.g., a small
-            # straggler stack that got filtered out at discovery). Skipping
-            # leaves no calibration of this kind on the run; downstream
-            # stack_files just doesn't symlink that calibration in. The
-            # cached default lives in context and refreshes on actor
-            # restart; the user can override explicitly via the decision
-            # API at any time.
+            applied = _apply_choice(deps, cal_type, choice, cal_stacks)
+            if not applied and choice is not None:
+                # The cached default points to a calibration stack that's
+                # no longer present (cal stacks got re-identified after
+                # input data changed, the previously-picked stack was
+                # filtered out, etc.). The semantics of "default" is
+                # "best choice as of now," so recompute from current
+                # state and update the cached decision in place.
+                fresh_choice = _default_choice(cal_type, run)
+                log.warning(
+                    "Stale cached calibration default; re-resolving",
+                    cal_type=cal_type, stale=str(choice),
+                    fresh=str(fresh_choice),
+                    stack=stack.stable_hash, run=run_hash,
+                )
+                _apply_choice(deps, cal_type, fresh_choice, cal_stacks)
+                from context import context
+                obj_key = _decisions_key(decision.object_type, decision.object_id)
+                refreshed = replace(decision, default_choice=fresh_choice)
+                context.or_equals(obj_key, {decision.key: refreshed})
 
         new_contents[run_hash] = replace(run, dependencies=frozendict(deps))
 
