@@ -150,13 +150,20 @@ def build_placement_subgraph(
     # build_target_channel_subgraph already terminates in
     # compute_image_metadata, so place_fn consumes that ImageMetadata
     # directly. The trailing compute_image_metadata is for the placed
-    # tiff that place_fn produces.
+    # tiff that place_fn produces. Name must disambiguate this
+    # placement from every other (target, filter) placement —
+    # compute_image_metadata takes no positional args, so two Nodes
+    # with the same name collapse into one in the outer graph and
+    # all placements end up feeding into a single metadata node.
     return Graph(
         {
             **chain(
                 (build_target_channel_subgraph, target, filter, channel_stacks, config),
                 (place_fn, mode, mosaic, target, filter, viewbox),
-                Node(compute_image_metadata, name="placed"),
+                Node(
+                    compute_image_metadata,
+                    name=f"placed_{mosaic.stable_hash}_{target.stable_hash}_{filter}",
+                ),
             )
         }
     )
@@ -247,11 +254,11 @@ def build_mosaic_filter_subgraph(
                     mosaic,
                     filter,
                     config.development_settings.mock_pixinsight,
-                    name=f"merge_{mosaic.stable_hash}_{target.stable_hash}",
+                    name=f"merge_{mosaic.stable_hash}_{filter}_{target.stable_hash}",
                 )
                 metadata_task = Node(
                     compute_image_metadata,
-                    name=f"merge_{mosaic.stable_hash}_{target.stable_hash}",
+                    name=f"merge_{mosaic.stable_hash}_{filter}_{target.stable_hash}",
                 )
                 if prev_task is not None:
                     graph[placement_task] = [prev_task]
@@ -272,11 +279,11 @@ def build_mosaic_filter_subgraph(
                 mosaic,
                 filter,
                 config.development_settings.mock_pixinsight,
-                name=f"merge_{mosaic.stable_hash}_strip_{i}",
+                name=f"merge_{mosaic.stable_hash}_{filter}_strip_{i}",
             )
             metadata_task = Node(
                 compute_image_metadata,
-                name=f"merge_{mosaic.stable_hash}_strip_{i}",
+                name=f"merge_{mosaic.stable_hash}_{filter}_strip_{i}",
             )
             graph[merge_task] = [prev_task, strip_tasks[i]]
             graph[metadata_task] = [merge_task]
