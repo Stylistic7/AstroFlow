@@ -37,10 +37,12 @@ def _make_decision(key: DecisionKey) -> DecisionPoint:
 def test_resolve_decision_default(test_context):
     key = DecisionKey.rotation_outlier("s1", "r1")
     dp = _make_decision(key)
-    # No override → default value is computed, cached, and returned.
+    # No override → default is always whatever the current call passes.
+    # The cache in context is output-only (refreshed for the UI),
+    # never read back as a source of truth — so a different `default`
+    # on the next call wins.
     assert resolve_decision(dp, frozendict(), default=BinaryChoice.INCLUDE) == BinaryChoice.INCLUDE
-    # Second call returns cached default, not the new default argument.
-    assert resolve_decision(dp, frozendict(), default=BinaryChoice.EXCLUDE) == BinaryChoice.INCLUDE
+    assert resolve_decision(dp, frozendict(), default=BinaryChoice.EXCLUDE) == BinaryChoice.EXCLUDE
 
 
 def test_resolve_decision_callable_default(test_context):
@@ -50,12 +52,14 @@ def test_resolve_decision_callable_default(test_context):
     def expensive_default():
         call_count[0] += 1
         return BinaryChoice.INCLUDE
-    # First call: lambda runs, result cached.
+    # The callable runs every time — the cache isn't a memoization
+    # layer, it's a UI-display side effect. Callers that need to
+    # amortize an expensive computation should do so at their own
+    # call site (e.g., resolve_calibration's _build_cal_index).
     assert resolve_decision(dp, frozendict(), default=expensive_default) == BinaryChoice.INCLUDE
     assert call_count[0] == 1
-    # Second call: cached, lambda not called again.
     assert resolve_decision(dp, frozendict(), default=expensive_default) == BinaryChoice.INCLUDE
-    assert call_count[0] == 1
+    assert call_count[0] == 2
 
 
 def test_resolve_decision_override(test_context):

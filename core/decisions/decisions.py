@@ -154,48 +154,38 @@ def resolve_decision(
     overrides: frozendict[DecisionKey, DecisionOverride],
     default: Any,
 ) -> Any:
-    """Resolve a decision value with read-through caching.
+    """Resolve a decision value.
 
-    Three-tier resolution:
+    Two-tier resolution:
     1. User override → return immediately.
-    2. Cached default → return the previously-computed default from context.
-    3. Compute default → evaluate the callable (or use the value), cache it
-       in the DecisionPoint, publish to context, return it.
+    2. Otherwise → compute the default fresh from the supplied callable
+       (or use the value).
 
-    The `default` parameter can be either a plain value or a callable. If
-    callable, it's only invoked when there's no override and no cached
-    default — expensive default computations (like calibration matching)
-    are lazy and run at most once.
-
-    The cached DecisionPoint in context serves double duty: it's the
-    UI-visible decision metadata AND the cached default value. The UI can
-    always show what the system would have done by reading default_choice.
+    The cache in context is kept up to date for the UI's benefit (what
+    list_decisions reads) but is never consulted as the source of truth
+    here. A "default" is by definition "what the current code would
+    pick now"; serving a stale cached default for a calibration choice
+    that no longer exists in cal_stacks is the bug class this avoids.
+    Computing fresh on every call is cheap relative to the work that
+    follows it — the heavy index-building inside callers like
+    resolve_calibration is amortized once per call site, not per
+    decision.
     """
     from context import context
     from dataclasses import replace
 
-    # 1. User override wins.
+    value = default() if callable(default) else default
+
+    # Refresh the cached DecisionPoint so the UI display path sees the
+    # current default. Pipeline never reads back from this cache.
+    decision = replace(decision, default_choice=value)
+    obj_key = _decisions_key(decision.object_type, decision.object_id)
+    context.or_equals(obj_key, {decision.key: decision})
+
     override = overrides.get(decision.key)
     if override is not None:
-        # Still publish the decision so the UI can show default vs. override.
-        obj_key = _decisions_key(decision.object_type, decision.object_id)
-        if decision.key not in context.get(obj_key, {}):
-            # Compute default to cache it for UI display.
-            value = default() if callable(default) else default
-            decision = replace(decision, default_choice=value)
-            context.or_equals(obj_key, {decision.key: decision})
         return override.choice
 
-    # 2. Check for cached default in context.
-    obj_key = _decisions_key(decision.object_type, decision.object_id)
-    existing = context.get(obj_key, {})
-    if decision.key in existing:
-        return existing[decision.key].default_choice
-
-    # 3. Compute default (lazy), cache it, publish it.
-    value = default() if callable(default) else default
-    decision = replace(decision, default_choice=value)
-    context.or_equals(obj_key, {decision.key: decision})
     return value
 
 
