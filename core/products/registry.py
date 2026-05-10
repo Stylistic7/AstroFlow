@@ -151,8 +151,14 @@ def fully_resolve(
     def inner(*args, **kwargs):
         filename = filename_fn(*args, **kwargs)
         assert isinstance(filename, ContentHashable)
+        output_dir = context.output_dir
+        assert output_dir is not None, (
+            "context.output_dir is unset on this worker — "
+            "state_machine._populate_context must run before any "
+            "filename can be fully resolved."
+        )
         return filename.resolve_at(
-            context.output_dir / str(object_type.__name__) / str(level) / str(implementation)
+            output_dir / str(object_type.__name__) / str(level) / str(implementation)
         )
 
     return inner
