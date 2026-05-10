@@ -35,9 +35,28 @@ log = structlog.get_logger()
 
 
 def targets_for_mosaic(mosaic: Mosaic, targets: TargetsDict) -> TargetsDict:
-    """Returns only the targets included in the mosaic."""
+    """Returns only the targets included in the mosaic.
+
+    A cached mosaic can outlive the target identifications it was built
+    against (e.g., when a stack's content_hash changes and re-identification
+    produces different target stable_hashes). When that happens, mosaic.
+    target_ids references targets that no longer exist in the live
+    targets dict. Silently skipping those is wrong — the mosaic is no
+    longer a complete description of itself — but crashing the whole
+    graph build over a stale cache entry is also wrong. Skip + warn so
+    downstream graph code handles the partial mosaic via its existing
+    None-pane logic, and the user has the diagnostic to clear the
+    stale entry.
+    """
+    missing = [tid for tid in mosaic.target_ids if tid not in targets]
+    if missing:
+        log.warning(
+            "Mosaic references targets that no longer exist; skipping them",
+            mosaic=mosaic.stable_hash, missing=missing,
+            present=len(mosaic.target_ids) - len(missing),
+        )
     return TargetsDict(
-        {target_id: targets[target_id] for target_id in mosaic.target_ids}
+        {tid: targets[tid] for tid in mosaic.target_ids if tid in targets}
     )
 
 
