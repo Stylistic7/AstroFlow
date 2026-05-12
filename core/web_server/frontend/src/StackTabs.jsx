@@ -134,19 +134,25 @@ const StackTabs = ({ stack_type, stack, stack_id }) => {
       <Divider />
 
       <Box sx={{ flex: 1, p: 3, minHeight: 0, position: 'relative' }}>
-        <Box hidden={tabIndex !== 0} sx={{ height: '100%', overflow: 'hidden', position: 'absolute', inset: 0, p: 3, display: 'flex', flexDirection: 'column' }}>
-          {tileViewerAvailable ? (
-            <>
-              {stack_type === 'stack' && <StackingReportPanel stack_id={stack_id} />}
-              <Box sx={{ flex: 1, minHeight: 0 }}>
-                <TileViewer objectType={stack_type} imageHash={stack_id} />
-              </Box>
-            </>
-          ) : (
-            <Typography align="center" variant="h6" sx={{ mt: 10 }}>
-              This stack has not been integrated yet.
-            </Typography>
-          )}
+        <Box hidden={tabIndex !== 0} sx={{ height: '100%', overflow: 'hidden', position: 'absolute', inset: 0, p: 3 }}>
+          {/* Same nested-flex trick as the Blink tab: `display: flex`
+              on the outer Box would override `hidden`'s `display: none`
+              (sx wins specificity), leaving this tab rendered under the
+              Runs tab. */}
+          <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            {tileViewerAvailable ? (
+              <>
+                {stack_type === 'stack' && <StackingReportPanel stack_id={stack_id} />}
+                <Box sx={{ flex: 1, minHeight: 0 }}>
+                  <TileViewer objectType={stack_type} imageHash={stack_id} />
+                </Box>
+              </>
+            ) : (
+              <Typography align="center" variant="h6" sx={{ mt: 10 }}>
+                This stack has not been integrated yet.
+              </Typography>
+            )}
+          </Box>
         </Box>
 
         <Box hidden={tabIndex !== 1} sx={{ height: '100%', position: 'absolute', inset: 0, p: 3 }}>
